@@ -90,7 +90,7 @@ var cweDigits = regexp.MustCompile(`^(?i:cwe)?[-_: ]?0*([0-9]{1,6})$`)
 // "" for anything else.
 func NormalizeCWE(s string) string {
 	m := cweDigits.FindStringSubmatch(strings.TrimSpace(s))
-	if m == nil || m[1] == "" {
+	if len(m) < 2 || m[1] == "" {
 		return ""
 	}
 	n, err := strconv.Atoi(m[1])
@@ -238,28 +238,55 @@ type edge struct {
 // signal no longer holds are released.
 func PlanLinks(in Input) Plan {
 	var p Plan
-	batch := map[string]Finding{}
+	batch := make(map[string]bool, len(in.Batch))
 	for _, f := range in.Batch {
-		batch[f.ID] = f
+		batch[f.ID] = true
 	}
-	unlinked := map[string]bool{}
-	groupOf := map[string]string{} // member -> primary (active)
-	members := map[string]int{}    // primary -> active member count
-	activeRule := map[string]string{}
+	g := newGroups(in)
+	holds, edges, crowded := edgesOf(in, batch)
+	p.Crowded = crowded
+	p.Release = g.release(in.Existing, batch, holds)
+	for _, e := range edges {
+		if l, ok := g.place(e); ok {
+			p.Make = append(p.Make, l)
+		}
+	}
+	return p
+}
+
+// groups is the planner's view of the existing groups, updated as links
+// are planned.
+type groups struct {
+	unlinked   map[string]bool
+	groupOf    map[string]string // member -> primary (active)
+	members    map[string]int    // primary -> active member count
+	activeRule map[string]string // pair -> rule of an active link
+	created    map[string]time.Time
+}
+
+func newGroups(in Input) *groups {
+	g := &groups{unlinked: map[string]bool{}, groupOf: map[string]string{}, members: map[string]int{},
+		activeRule: map[string]string{}, created: in.Created}
 	for _, l := range in.Existing {
 		switch l.State {
 		case StateUnlinked:
-			unlinked[pairKey(l.PrimaryID, l.MemberID)] = true
+			g.unlinked[pairKey(l.PrimaryID, l.MemberID)] = true
 		case StateActive:
-			groupOf[l.MemberID] = l.PrimaryID
-			members[l.PrimaryID]++
-			activeRule[pairKey(l.PrimaryID, l.MemberID)] = l.Rule
+			g.groupOf[l.MemberID] = l.PrimaryID
+			g.members[l.PrimaryID]++
+			g.activeRule[pairKey(l.PrimaryID, l.MemberID)] = l.Rule
 		}
 	}
+	return g
+}
 
-	// Edges that hold now, from the shared keys.
-	holds := map[string]string{} // pair -> rule
+// edgesOf returns the pairs a rule joins now (pair -> rule, and in key
+// order), only pairs with a batch finding, and the number of keys skipped
+// for having too many holders.
+func edgesOf(in Input, batch map[string]bool) (map[string]string, []edge, int) {
+	holds := map[string]string{}
 	var edges []edge
+	crowded := 0
 	keys := make([]string, 0, len(in.Holders))
 	for k := range in.Holders {
 		keys = append(keys, k)
@@ -268,36 +295,18 @@ func PlanLinks(in Input) Plan {
 	for _, k := range keys {
 		hs := in.Holders[k]
 		if len(hs) > MaxHolders {
-			p.Crowded++
+			crowded++
 			continue
 		}
-		kind := in.KeyKinds[k]
 		for i := range hs {
 			for j := range hs {
 				a, b := hs[i], hs[j]
-				if a.FindingID >= b.FindingID {
+				if a.FindingID >= b.FindingID || (!batch[a.FindingID] && !batch[b.FindingID]) {
 					continue
 				}
-				// Only pairs with a batch finding are (re)decided now.
-				if _, ok := batch[a.FindingID]; !ok {
-					if _, ok := batch[b.FindingID]; !ok {
-						continue
-					}
-				}
-				rule := ""
-				switch kind {
-				case KindSASTCWE:
-					if strings.TrimSpace(a.Rule) != strings.TrimSpace(b.Rule) && overlaps(a.StartLine, a.EndLine, b.StartLine, b.EndLine) {
-						rule = RuleSASTOverlap
-					}
-				case KindSecretValue:
-					rule = RuleSecretValue
-				}
-				if rule == "" {
-					continue
-				}
+				rule := ruleOf(in.KeyKinds[k], a, b)
 				pk := pairKey(a.FindingID, b.FindingID)
-				if _, dup := holds[pk]; dup {
+				if _, dup := holds[pk]; rule == "" || dup {
 					continue
 				}
 				holds[pk] = rule
@@ -305,77 +314,95 @@ func PlanLinks(in Input) Plan {
 			}
 		}
 	}
+	return holds, edges, crowded
+}
 
-	// Release: an active link of a batch finding (member, or the primary of
-	// a group whose member is in the batch) whose rule no longer holds.
-	// vuln_alias links are decided at re-key, not here.
-	for _, l := range in.Existing {
-		if l.State != StateActive || l.Rule == RuleVulnAlias {
-			continue
+// ruleOf is the rule two holders of one key satisfy, "" for none.
+func ruleOf(kind string, a, b Holder) string {
+	switch kind {
+	case KindSASTCWE:
+		if strings.TrimSpace(a.Rule) != strings.TrimSpace(b.Rule) && overlaps(a.StartLine, a.EndLine, b.StartLine, b.EndLine) {
+			return RuleSASTOverlap
 		}
-		_, mIn := batch[l.MemberID]
-		_, pIn := batch[l.PrimaryID]
-		if !mIn && !pIn {
+	case KindSecretValue:
+		return RuleSecretValue
+	}
+	return ""
+}
+
+// release returns the active links of batch findings (as member, or as the
+// primary of a member in the batch) whose rule no longer holds. vuln_alias
+// links are decided at re-key, not here.
+func (g *groups) release(existing []Link, batch map[string]bool, holds map[string]string) []Link {
+	out := make([]Link, 0, len(existing))
+	for _, l := range existing {
+		if l.State != StateActive || l.Rule == RuleVulnAlias || (!batch[l.MemberID] && !batch[l.PrimaryID]) {
 			continue
 		}
 		if holds[pairKey(l.PrimaryID, l.MemberID)] == l.Rule {
 			continue
 		}
-		p.Release = append(p.Release, l)
-		delete(groupOf, l.MemberID)
-		members[l.PrimaryID]--
+		out = append(out, l)
+		delete(g.groupOf, l.MemberID)
+		delete(g.activeRule, pairKey(l.PrimaryID, l.MemberID))
+		g.members[l.PrimaryID]--
 	}
+	return out
+}
 
-	created := func(id string) time.Time { return in.Created[id] }
-	earlier := func(a, b string) bool {
-		ca, cb := created(a), created(b)
-		if !ca.Equal(cb) {
-			return ca.Before(cb)
-		}
-		return a < b
+func (g *groups) earlier(a, b string) bool {
+	ca, cb := g.created[a], g.created[b]
+	if !ca.Equal(cb) {
+		return ca.Before(cb)
 	}
-	isPrimary := func(id string) bool { return members[id] > 0 }
-	group := func(id string) string {
-		if g, ok := groupOf[id]; ok {
-			return g
-		}
-		if isPrimary(id) {
-			return id
-		}
-		return ""
+	return a < b
+}
+
+// group is the primary of id's group, "" for none.
+func (g *groups) group(id string) string {
+	if p, ok := g.groupOf[id]; ok {
+		return p
 	}
-	join := func(primary, member, rule string) {
-		if primary == member || unlinked[pairKey(primary, member)] || members[primary] >= MaxMembers {
-			return
-		}
-		if _, ok := activeRule[pairKey(primary, member)]; ok {
-			return
-		}
-		p.Make = append(p.Make, Link{PrimaryID: primary, MemberID: member, Rule: rule, State: StateActive})
-		groupOf[member] = primary
-		members[primary]++
-		activeRule[pairKey(primary, member)] = rule
+	if g.members[id] > 0 {
+		return id
 	}
-	for _, e := range edges {
-		if unlinked[pairKey(e.a, e.b)] {
-			continue
-		}
-		ga, gb := group(e.a), group(e.b)
-		switch {
-		case ga == "" && gb == "":
-			if earlier(e.a, e.b) {
-				join(e.a, e.b, e.rule)
-			} else {
-				join(e.b, e.a, e.rule)
-			}
-		case ga != "" && gb == "":
-			join(ga, e.b, e.rule)
-		case ga == "" && gb != "":
-			join(gb, e.a, e.rule)
-		}
-		// Both grouped (same or different group): nothing to do.
+	return ""
+}
+
+// place decides the link an edge makes: a finding joins the group of the
+// finding it matches, or two ungrouped findings form one with the earlier
+// as primary. Two grouped findings make nothing.
+func (g *groups) place(e edge) (Link, bool) {
+	if g.unlinked[pairKey(e.a, e.b)] {
+		return Link{}, false
 	}
-	return p
+	ga, gb := g.group(e.a), g.group(e.b)
+	switch {
+	case ga == "" && gb == "":
+		if g.earlier(e.a, e.b) {
+			return g.join(e.a, e.b, e.rule)
+		}
+		return g.join(e.b, e.a, e.rule)
+	case ga != "" && gb == "":
+		return g.join(ga, e.b, e.rule)
+	case ga == "" && gb != "":
+		return g.join(gb, e.a, e.rule)
+	}
+	return Link{}, false
+}
+
+func (g *groups) join(primary, member, rule string) (Link, bool) {
+	pk := pairKey(primary, member)
+	if primary == member || g.unlinked[pk] || g.members[primary] >= MaxMembers {
+		return Link{}, false
+	}
+	if _, ok := g.activeRule[pk]; ok {
+		return Link{}, false
+	}
+	g.groupOf[member] = primary
+	g.members[primary]++
+	g.activeRule[pk] = rule
+	return Link{PrimaryID: primary, MemberID: member, Rule: rule, State: StateActive}, true
 }
 
 // GroupMember is one finding of a same-issue group, as the group view shows
