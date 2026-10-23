@@ -50,6 +50,7 @@ tests that cover the console's most user-visible flows.
 | `26-findings-filters.spec.ts`               | Add filter, chips, unknown filter, pass-through filters       |
 | `28-dashboard-edit-chrome.spec.ts`          | Dashboard edit mode: widget headers fit at 1440px and 390px   |
 | `29-assets-quick-views.spec.ts`             | Sidebar quick views under Assets (lenses), no lens/type pills |
+| `30-assets-filters.spec.ts`                 | Asset Add filter, chips, no eager tag or business-unit load   |
 
 Each spec is designed to:
 
