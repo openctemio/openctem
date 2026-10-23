@@ -1700,6 +1700,7 @@
   "findings.identity.reason.dastRepair": "web finding key repaired",
   "findings.identity.reason.other": "merged",
   "findings.detail.section.identity": "the identity explanation",
+  "findings.importResults.notApplied": "The upload was stored but could not be imported ({code}). Nothing was changed; try again.",
   "findings.importResults.format": "Format",
   "findings.importResults.formatDetect": "Detect from the file",
   "findings.importResults.formatMapping": "Import mapping: {name}",
