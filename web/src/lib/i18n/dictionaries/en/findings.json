@@ -867,7 +867,7 @@
   "findings.signals.publicExploit": "Public exploit",
   "findings.signals.noExploit": "No known exploit",
   "findings.signals.epss": "EPSS {score}",
-  "findings.signals.epssWithPercentile": "EPSS {score} · {percentile} percentile",
+  "findings.signals.epssWithPercentile": "EPSS {score}, {percentile} percentile",
   "findings.signals.epssDetail": "Probability of exploitation in the next 30 days (FIRST EPSS)",
   "findings.signals.internetFacing": "Internet-facing",
   "findings.signals.networkReachable": "Network-reachable",
