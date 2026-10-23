@@ -581,7 +581,14 @@ export function AssetDetailSheet<T extends Asset>({
 
         {tab === 'software' && <AssetSoftwareTab assetId={asset.id} assetType={asset.type} />}
 
-        {tab === 'findings' && <AssetFindings assetId={asset.id} assetName={asset.name} />}
+        {tab === 'findings' && (
+          <AssetFindings
+            assetId={asset.id}
+            assetName={asset.name}
+            findingCount={asset.findingCount}
+            severityCounts={asset.findingSeverityCounts}
+          />
+        )}
 
         {tab === 'details' && (
           <DetailSections>

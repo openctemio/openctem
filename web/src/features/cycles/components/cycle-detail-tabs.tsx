@@ -261,12 +261,14 @@ export function CycleProfilesTab({ cycle }: { cycle: CtemCycle }) {
         linked.map((p) => p.id),
         draft
       )
-      await mutate()
       toast.success('Attacker profiles saved')
       setEditing(false)
     } catch (err) {
       toast.error(getErrorMessage(err, 'Failed to save attacker profiles'))
     } finally {
+      // A save that failed midway may have linked or unlinked some profiles:
+      // always show what the server holds now.
+      await mutate()
       setSaving(false)
     }
   }

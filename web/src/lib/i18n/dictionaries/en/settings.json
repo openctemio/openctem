@@ -603,6 +603,8 @@
   "settings.pentest.methodNameAria": "Methodology name, row {n}",
   "settings.pentest.methodKeyAria": "Methodology key, row {n}",
   "settings.pentest.removeMethodologyRow": "Remove methodology, row {n}",
+  "settings.item.import-mappings": "Import mappings",
+  "settings.desc.import-mappings": "Turn CSV, JSON or XML exports into findings and assets.",
   "settings.modules.pageDescription": "Pick the products your team runs and fine-tune individual features. Turning a module off hides it; its data is kept.",
   "settings.modules.phase.scoping": "Scoping",
   "settings.modules.phase.discovery": "Discovery",
