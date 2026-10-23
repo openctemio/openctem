@@ -281,7 +281,7 @@ export function DashboardHome() {
         <PageHeader
           title={dashboard?.name ?? t('dashboards.title', 'Dashboard')}
           description={
-            <span className="hidden sm:inline">
+            <span className="max-sm:hidden">
               {dashboard?.description ||
                 t(
                   'dashboards.description',

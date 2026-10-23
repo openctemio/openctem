@@ -115,6 +115,12 @@ npm run e2e:ui            # interactive Playwright UI runner
 npm run e2e:report        # open the most recent HTML report
 ```
 
+The request budget spec (`16-request-budget.spec.ts`, budgets in
+`request-budget.json`) loads every dashboard page. While changing one page,
+check only that page with `E2E_BUDGET_ROUTES=/ npx playwright test
+e2e/specs/16-request-budget.spec.ts` (comma-separated routes); CI always
+checks every page.
+
 By default the suite uses Chromium only. To add Firefox / WebKit,
 uncomment the relevant `projects:` entries in `playwright.config.ts`.
 

@@ -85,11 +85,16 @@ const routeBudgets = budget.routes as Record<string, number>
 
 test('every dashboard page stays within its request budget', async ({ page }) => {
   test.setTimeout(15 * 60_000)
-  const routes = dashboardRoutes()
-  expect(routes.length).toBeGreaterThan(50)
+  const all = dashboardRoutes()
+  expect(all.length).toBeGreaterThan(50)
   // Budget entries must name real pages, so a removed page does not keep a
   // stale allowance.
-  for (const listed of Object.keys(routeBudgets)) expect(routes, listed).toContain(listed)
+  for (const listed of Object.keys(routeBudgets)) expect(all, listed).toContain(listed)
+  // E2E_BUDGET_ROUTES="/,/findings" checks only those pages (a local run
+  // while changing one page); CI leaves it unset and checks every page.
+  const only = (process.env.E2E_BUDGET_ROUTES ?? '').split(',').filter(Boolean)
+  const routes = only.length ? all.filter((r) => only.includes(r)) : all
+  expect(routes.length).toBeGreaterThan(0)
 
   // A person's first visit to / stores their copy of the Overview template
   // (one write, once); the budget is for every load after that.

@@ -101,14 +101,14 @@ export interface DashboardFreshnessProps {
 }
 
 /**
- * "Your scope · Updated 2 min. ago · Next in 58 min." on one line that
- * truncates on a narrow screen (the full times are in the hover text), and a
+ * "Your scope · Updated 2m ago · Next in 58m" on one line; the next refresh
+ * truncates first on a narrow screen (the full times are in the hover text), and a
  * status line under it only when the figures are stale or still being built.
  */
 export function DashboardFreshness({ kind, data }: DashboardFreshnessProps) {
   const { t, locale } = useTranslation()
   const computed = data?.computed_at
-  const rel = (d: string) => formatRelativeTime(d, locale, new Date(), 'short')
+  const rel = (d: string) => formatRelativeTime(d, locale, new Date(), 'narrow')
   const sep = (
     <span aria-hidden className="shrink-0 px-1.5">
       ·
@@ -124,7 +124,7 @@ export function DashboardFreshness({ kind, data }: DashboardFreshnessProps) {
         {computed && (
           <>
             {sep}
-            <span className="min-w-0 truncate" title={formatAbsoluteTime(computed, locale)}>
+            <span className="shrink-0" title={formatAbsoluteTime(computed, locale)}>
               {t('dashboards.freshness.updated', 'Updated {time}', { time: rel(computed) })}
             </span>
           </>
@@ -256,7 +256,8 @@ export function ScheduleSelect({ schedule = '', onSchedule, className }: Schedul
   return (
     <Select value={toValue(schedule)} onValueChange={change} disabled={saving}>
       <SelectTrigger
-        className={cn('h-8 w-auto gap-1.5 text-xs', className)}
+        size="sm"
+        className={cn('w-auto gap-1.5', className)}
         aria-label={t('dashboards.schedule.label', 'Refresh schedule')}
       >
         <Clock className="h-3.5 w-3.5 shrink-0 text-muted-foreground" aria-hidden />
