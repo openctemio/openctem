@@ -34,7 +34,7 @@
   "easmReview.overview.openTotal": "{n} open in total",
   "easmReview.overview.risks": "Top external risks",
   "easmReview.overview.risksHint": "Open external exposures, most severe first",
-  "easmReview.overview.suggestions": "Suggestions",
+  "easmReview.overview.suggestions": "Review",
   "easmReview.overview.surface": "External surface",
   "easmReview.overview.surfaceHint": "Who it belongs to, what is new, how fresh the watch is",
   "easmReview.overview.total": "Domains, subdomains, IPs, certificates",

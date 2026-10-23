@@ -221,14 +221,6 @@ export const ASSETS_SECTION_TABS: readonly SectionTab[] = [
     module: 'assets',
     permission: Permission.AssetsRead,
   },
-  {
-    // Origins, endpoints, path patterns and their changes (RFC-056).
-    label: 'Web surface',
-    href: '/assets/web',
-    icon: Globe,
-    module: 'assets',
-    permission: Permission.AssetsRead,
-  },
 ]
 
 /**
@@ -288,7 +280,7 @@ export const ATTACK_SURFACE_SECTION_TABS: readonly SectionTab[] = [
     permission: Permission.AssetsRead,
   },
   {
-    label: 'Suggestions',
+    label: 'Review',
     href: '/attack-surface/review',
     icon: ClipboardCheck,
     module: 'attack_surface',
@@ -306,6 +298,17 @@ export const ATTACK_SURFACE_SECTION_TABS: readonly SectionTab[] = [
     href: '/attack-surface/changes',
     icon: History,
     module: 'attack_surface',
+    permission: Permission.AssetsRead,
+  },
+  {
+    // What the web origins serve: endpoints, parameters, the same path across
+    // origins and their changes (RFC-056). Its rows are endpoints, not assets,
+    // so it sits with the external surface work rather than as an asset lens
+    // (research/242 D4). The data is the assets module's.
+    label: 'Web surface',
+    href: '/attack-surface/web',
+    icon: Globe,
+    module: 'assets',
     permission: Permission.AssetsRead,
   },
 ]
