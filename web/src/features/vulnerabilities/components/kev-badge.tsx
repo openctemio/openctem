@@ -1,7 +1,6 @@
 'use client'
 
-import { AlertOctagon } from 'lucide-react'
-import { Badge } from '@/components/ui/badge'
+import { KevBadge as KevMark } from '@/components/ui/kev-badge'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { cn } from '@/lib/utils'
 import type { CISAKEVData } from '../types'
@@ -17,16 +16,7 @@ export function KEVBadge({ kev, className }: KEVBadgeProps) {
   return (
     <Tooltip>
       <TooltipTrigger asChild>
-        <Badge
-          className={cn(
-            'gap-1 bg-red-600 text-white hover:bg-red-700',
-            kev.is_past_due && 'ring-2 ring-red-300',
-            className
-          )}
-        >
-          <AlertOctagon className="h-3 w-3" />
-          KEV
-        </Badge>
+        <KevMark className={cn(kev.is_past_due && 'ring-2 ring-destructive/40', className)} />
       </TooltipTrigger>
       <TooltipContent side="top" className="max-w-xs">
         <div className="space-y-1 text-xs">
@@ -34,7 +24,9 @@ export function KEVBadge({ kev, className }: KEVBadgeProps) {
           <p>Added: {new Date(kev.date_added).toLocaleDateString()}</p>
           <p>
             Due: {new Date(kev.due_date).toLocaleDateString()}
-            {kev.is_past_due && <span className="ms-1 font-bold text-red-200">(Past Due)</span>}
+            {kev.is_past_due && (
+              <span className="ms-1 font-bold text-destructive-foreground">(Past Due)</span>
+            )}
           </p>
           {kev.ransomware_use && kev.ransomware_use !== 'Unknown' && (
             <p>Ransomware use: {kev.ransomware_use}</p>

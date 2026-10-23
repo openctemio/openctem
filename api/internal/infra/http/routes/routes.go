@@ -210,6 +210,9 @@ type Handlers struct {
 	// TicketMapping serves the ticket field and status mapping editor (nil
 	// without a database).
 	TicketMapping *handler.TicketMappingHandler
+	// ImportMapping serves the organization's import mappings (nil
+	// without a database).
+	ImportMapping *handler.ImportMappingHandler
 	GitHubWebhook *handler.GitHubWebhookHandler // nil if not initialized (no database)
 
 	// Pentest Campaign Management handlers
@@ -617,6 +620,9 @@ func Register(
 	}
 	if h.FindingImport != nil || h.IngestReceipt != nil {
 		registerFindingImportRoutes(router, h.FindingImport, h.IngestReceipt, authMiddleware, userSync)
+	}
+	if h.ImportMapping != nil {
+		registerImportMappingRoutes(router, h.ImportMapping, authMiddleware, userSync)
 	}
 
 	// Asset Owner routes (tenant from JWT token) - nested under assets

@@ -3,9 +3,13 @@
 import useSWR from 'swr'
 import useSWRMutation from 'swr/mutation'
 import { get, patch } from '@/lib/api/client'
+import { useRegisterPages } from '@/lib/api/use-register-pages'
 
 // Crown jewels = assets with is_crown_jewel=true
 // Uses existing asset API with filter param
+
+/** Page-1 URL of the crown jewel register; also its SWR key. */
+export const CROWN_JEWELS_URL = '/api/v1/assets?is_crown_jewel=true&per_page=100'
 
 interface PaginatedAssets {
   data: Record<string, unknown>[]
@@ -13,15 +17,14 @@ interface PaginatedAssets {
 }
 
 export function useCrownJewels() {
-  return useSWR<PaginatedAssets>('/api/v1/assets?is_crown_jewel=true&per_page=100', get, {
-    revalidateOnFocus: false,
-  })
+  return useRegisterPages<Record<string, unknown>>(CROWN_JEWELS_URL)
 }
 
-export function useAllAssets(search?: string) {
+// `enabled` keeps the picker idle until the designate dialog opens.
+export function useAllAssets(search?: string, enabled = true) {
   const params = new URLSearchParams({ per_page: '50', page: '1' })
   if (search) params.set('search', search)
-  return useSWR<PaginatedAssets>(`/api/v1/assets?${params.toString()}`, get, {
+  return useSWR<PaginatedAssets>(enabled ? `/api/v1/assets?${params.toString()}` : null, get, {
     revalidateOnFocus: false,
   })
 }
