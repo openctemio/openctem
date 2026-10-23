@@ -172,6 +172,8 @@ type Service struct {
 	resolveScope ScopeResolver
 	audit        Auditor
 	tempDir      string
+	// members re-reads the uploader's membership when the worker imports.
+	members MemberReader
 }
 
 // SetTempDir sets where the worker spools an uploaded archive ("" is the
