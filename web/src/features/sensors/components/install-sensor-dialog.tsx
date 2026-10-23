@@ -13,6 +13,7 @@ import {
 import { useTranslation } from '@/context/i18n-provider'
 import type { Sensor } from '@/lib/api/sensor-types'
 
+import { useOneTimeKeyGuard } from './one-time-key-guard'
 import { SensorInstallFlow, installStepLabel, type InstallStep } from './sensor-install-flow'
 
 /**
@@ -32,25 +33,33 @@ export function InstallSensorDialog({
 }) {
   const { t } = useTranslation()
   const [step, setStep] = useState<InstallStep>('name')
+  // The API key is on screen during the install step and never shown again.
+  const guard = useOneTimeKeyGuard(step === 'install', () => {
+    setStep('name')
+    onOpenChange(false)
+  })
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent size="xl">
-        <DialogHeader>
-          <DialogTitle>{t('sensors.installDialog.title')}</DialogTitle>
-          <DialogDescription>
-            <span className="sr-only">{t('sensors.installDialog.srDescription')} </span>
-            <span aria-live="polite">{installStepLabel(step, t)}</span>
-          </DialogDescription>
-        </DialogHeader>
-        <DialogBody className="p-0">
-          <SensorInstallFlow
-            variant="dialog"
-            onOpen={onOpen}
-            onDone={() => onOpenChange(false)}
-            onStepChange={setStep}
-          />
-        </DialogBody>
-      </DialogContent>
-    </Dialog>
+    <>
+      <Dialog open={open} onOpenChange={guard.requestClose}>
+        <DialogContent size="xl" {...guard.contentProps}>
+          <DialogHeader>
+            <DialogTitle>{t('sensors.installDialog.title')}</DialogTitle>
+            <DialogDescription>
+              <span className="sr-only">{t('sensors.installDialog.srDescription')} </span>
+              <span aria-live="polite">{installStepLabel(step, t)}</span>
+            </DialogDescription>
+          </DialogHeader>
+          <DialogBody className="p-0">
+            <SensorInstallFlow
+              variant="dialog"
+              onOpen={onOpen}
+              onDone={() => onOpenChange(false)}
+              onStepChange={setStep}
+            />
+          </DialogBody>
+        </DialogContent>
+      </Dialog>
+      {guard.confirm}
+    </>
   )
 }
