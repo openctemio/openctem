@@ -674,6 +674,12 @@ func (h *FindingImportHandler) commitImport(w http.ResponseWriter, r *http.Reque
 			}
 		}()
 	}
+	// Back-pressure before the body is read: a tenant at its queue limit
+	// gets 429 without storing a part.
+	if err := h.svc.AdmitUpload(r.Context(), tid); err != nil {
+		h.writeQueueErr(w, err)
+		return
+	}
 	r.Body = http.MaxBytesReader(w, r.Body, maxBody)
 	mr, err := r.MultipartReader()
 	if err != nil {

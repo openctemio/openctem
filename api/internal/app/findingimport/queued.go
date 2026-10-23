@@ -150,6 +150,16 @@ type Accepted struct {
 	Replayed bool
 }
 
+// AdmitUpload runs the tenant's queue back-pressure before an upload's
+// parts are read and stored, so a tenant at its limit writes nothing
+// (CommitUpload checks again against the stored queue).
+func (s *Service) AdmitUpload(ctx context.Context, tenantID shared.ID) error {
+	if s.queue == nil {
+		return ErrQueueUnavailable
+	}
+	return s.queue.Admit(ctx, tenantID)
+}
+
 // StagePart stores one part of an upload that is still being received.
 func (s *Service) StagePart(ctx context.Context, tenantID, jobID shared.ID, part int, name string, body []byte) error {
 	if s.queue == nil {

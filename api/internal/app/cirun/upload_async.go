@@ -37,6 +37,7 @@ import (
 // UploadQueue is the ingest queue (ingestqueue.Queue).
 type UploadQueue interface {
 	StagePart(ctx context.Context, tenantID, jobID shared.ID, part int, name string, body []byte) error
+	Admit(ctx context.Context, tenantID shared.ID) error
 	Commit(ctx context.Context, job *ingestjob.Job, admit func() error) (*ingestjob.Job, bool, error)
 	Get(ctx context.Context, tenantID, id shared.ID, kind ingestjob.Kind) (*ingestjob.Job, error)
 	Wait(ctx context.Context, tenantID, id shared.ID, kind ingestjob.Kind, wait time.Duration) (*ingestjob.Job, error)
@@ -195,6 +196,11 @@ func (s *Service) AcceptUpload(ctx context.Context, run *cirun.Run, body []byte,
 	}
 	env, err := json.Marshal(uploadEnvelope{Export: export})
 	if err != nil {
+		return nil, err
+	}
+	// Back-pressure before anything is stored: a tenant at its queue limit
+	// writes no sealed body (Commit checks again against the stored queue).
+	if err := s.uploads.Admit(ctx, run.TenantID); err != nil {
 		return nil, err
 	}
 	digest := sha256.Sum256(body)
