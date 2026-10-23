@@ -196,8 +196,10 @@ func (r *FindingRekeyRepository) Rekey(ctx context.Context, tenantID shared.ID, 
 	}
 	if takeKey {
 		if _, err := tx.ExecContext(ctx, `
-			UPDATE findings SET fingerprint = $1, fingerprint_version = $2, identity_key = $3::jsonb, updated_at = NOW()
-			WHERE id = $4 AND tenant_id = $5`, newFP, k.Version, string(raw), findingID, tenant); err != nil {
+			UPDATE findings SET fingerprint = $1, fingerprint_version = $2, identity_key = $3::jsonb, updated_at = NOW(),
+			       identity_algo = $6, identity_fields = $7
+			WHERE id = $4 AND tenant_id = $5`, append([]any{newFP, k.Version, string(raw), findingID, tenant},
+			identityRecipeArgs(k.Algo(), k.FieldNames())...)...); err != nil {
 			return vulnerability.RekeyResult{}, fmt.Errorf("re-key finding: %w", err)
 		}
 	}

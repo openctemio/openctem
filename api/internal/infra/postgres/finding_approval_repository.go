@@ -11,6 +11,7 @@ import (
 
 	"github.com/lib/pq"
 
+	"github.com/openctemio/openctem/api/pkg/domain/approvalpolicy"
 	"github.com/openctemio/openctem/api/pkg/domain/asset"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	tenantdom "github.com/openctemio/openctem/api/pkg/domain/tenant"
@@ -367,6 +368,14 @@ func (r *FindingApprovalRepository) ApproveAndApply(ctx context.Context, a *vuln
 		return fmt.Errorf("%w: only an approved request is applied", shared.ErrValidation)
 	}
 	return r.db.Transaction(ctx, func(tx *sql.Tx) error {
+		if a.SelfApproved {
+			// The sole member's own approval: the rule is checked again at
+			// the moment of writing, so a member who joined or a level
+			// raised since the service checked refuses it.
+			if err := recheckSoloApproval(ctx, tx, a); err != nil {
+				return err
+			}
+		}
 		res, err := tx.ExecContext(ctx, `
 			UPDATE finding_status_approvals SET
 				status = 'approved', approved_by = $3, approved_at = $4, expires_at = $5, version = $6,
@@ -388,7 +397,8 @@ func (r *FindingApprovalRepository) ApproveAndApply(ctx context.Context, a *vuln
 }
 
 // CreateApplied writes a request that is decided as it is made (a false
-// positive one person may decide alone) and applies it, in one transaction:
+// positive or accepted risk one person may decide alone under the
+// organization's level) and applies it, in one transaction:
 // the request row (approved, single_person), the finding's status and the
 // timeline entry. The one-pending-request index still applies to pending
 // rows only, so an earlier pending request of another person is left as is.
@@ -401,7 +411,7 @@ func (r *FindingApprovalRepository) CreateApplied(ctx context.Context, a *vulner
 		// inside the transaction, with the finding locked: a level raised or
 		// a finding that became material since the caller decided makes the
 		// decision fall back to a request for a second person.
-		if err := recheckSinglePersonFP(ctx, tx, a.TenantID, a.FindingID); err != nil {
+		if err := recheckSinglePerson(ctx, tx, a.TenantID, a.FindingID, vulnerability.FindingStatus(a.RequestedStatus)); err != nil {
 			return err
 		}
 		if _, err := tx.ExecContext(ctx, `
@@ -570,12 +580,46 @@ func claimFailure(ctx context.Context, tx *sql.Tx, a *vulnerability.Approval) er
 	return vulnerability.ErrConcurrentModification
 }
 
-// recheckSinglePersonFP answers vulnerability.ErrSinglePersonNotAllowed
-// unless the organization's level in force still lets one person decide a
-// false positive on the finding. The finding row is locked (FOR UPDATE) and
+// recheckSoloApproval answers vulnerability.ErrSoloApprovalNotAllowed
+// unless the approver is still the organization's only active person and
+// its owner, and, for an accepted risk,
+// vulnerability.ErrSoloApprovalFalsePositiveOnly unless the organization's
+// risk acceptance level in force is still high_and_above or off. The
+// tenant's row is read FOR SHARE, so a concurrent settings change waits for
+// this decision or is seen by it.
+func recheckSoloApproval(ctx context.Context, tx *sql.Tx, a *vulnerability.Approval) error {
+	var raw []byte
+	if err := tx.QueryRowContext(ctx, `
+		SELECT COALESCE(settings->'finding_approvals', '{}'::jsonb) FROM tenants WHERE id = $1 FOR SHARE`,
+		a.TenantID.String()).Scan(&raw); err != nil {
+		return fmt.Errorf("read the approval level: %w", err)
+	}
+	sole, err := isSoleActiveOwner(ctx, tx, a.TenantID, a.ApprovedBy.String())
+	if err != nil {
+		return err
+	}
+	if !sole {
+		return vulnerability.ErrSoloApprovalNotAllowed
+	}
+	if vulnerability.FindingStatus(a.RequestedStatus) != vulnerability.FindingStatusAccepted {
+		return nil
+	}
+	var settings tenantdom.FindingApprovalSettings
+	if err := json.Unmarshal(raw, &settings); err != nil {
+		return vulnerability.ErrSoloApprovalFalsePositiveOnly // unreadable: a second person decides
+	}
+	if settings.EffectiveAcceptApproval(time.Now()) == tenantdom.FPApprovalAll {
+		return vulnerability.ErrSoloApprovalFalsePositiveOnly
+	}
+	return nil
+}
+
+// recheckSinglePerson answers vulnerability.ErrSinglePersonNotAllowed
+// unless the organization's level in force (false positive or risk
+// acceptance, by status) still lets one person decide on the finding. The finding row is locked (FOR UPDATE) and
 // the tenant's settings row is read FOR SHARE, so a concurrent change of
 // either waits for this decision or is seen by it.
-func recheckSinglePersonFP(ctx context.Context, tx *sql.Tx, tenantID, findingID shared.ID) error {
+func recheckSinglePerson(ctx context.Context, tx *sql.Tx, tenantID, findingID shared.ID, status vulnerability.FindingStatus) error {
 	var raw []byte
 	if err := tx.QueryRowContext(ctx, `
 		SELECT COALESCE(settings->'finding_approvals', '{}'::jsonb) FROM tenants WHERE id = $1 FOR SHARE`,
@@ -606,7 +650,15 @@ func recheckSinglePersonFP(ctx context.Context, tx *sql.Tx, tenantID, findingID 
 		return fmt.Errorf("read false-positive facts: %w", err)
 	}
 	f.Severity = vulnerability.Severity(severity)
-	if !vulnerability.SinglePersonFP(settings.EffectiveFPApproval(time.Now()), f) {
+	level := settings.EffectiveFPApproval(time.Now())
+	switch status {
+	case vulnerability.FindingStatusFalsePositive:
+	case vulnerability.FindingStatusAccepted:
+		level = settings.EffectiveAcceptApproval(time.Now())
+	default:
+		return vulnerability.ErrSinglePersonNotAllowed
+	}
+	if !vulnerability.SinglePersonFP(level, f) {
 		return vulnerability.ErrSinglePersonNotAllowed
 	}
 	return nil
@@ -633,6 +685,101 @@ func (r *FindingApprovalRepository) PendingForDigest(ctx context.Context, limit 
 		out = append(out, a)
 	}
 	return out, rows.Err()
+}
+
+// DecidedAloneSince lists the requests of every tenant one person decided
+// (single_person under the organization's level, or the sole member's own
+// approval) at or after since, oldest first, at most limit (the daily
+// approver digest; a background job: each row carries its tenant and every
+// later read is scoped by it).
+func (r *FindingApprovalRepository) DecidedAloneSince(ctx context.Context, since time.Time, limit int) ([]*vulnerability.Approval, error) {
+	if limit <= 0 {
+		limit = 5000
+	}
+	rows, err := r.db.QueryContext(ctx, r.selectQuery()+` WHERE status = 'approved' AND (single_person OR self_approved)
+		AND approved_at >= $1 ORDER BY tenant_id, approved_at, id LIMIT $2`, since, limit)
+	if err != nil {
+		return nil, fmt.Errorf("list decisions made by one person for the digest: %w", err)
+	}
+	defer rows.Close()
+	out := make([]*vulnerability.Approval, 0)
+	for rows.Next() {
+		a, err := r.scanApprovalFromRows(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, a)
+	}
+	return out, rows.Err()
+}
+
+// FlagDecidedAlone raises the review flag (material_change_single_person,
+// change level_raised, with a timeline entry; flag_single_person_decision_review)
+// on every standing decision of status in the tenant whose latest approved
+// request one person decided (single_person or self_approved) and for which
+// needsSecond answers true on the finding's facts now. A decision already
+// flagged keeps its open flag. It answers how many decisions it put under
+// review. Every read and write names the tenant.
+func (r *FindingApprovalRepository) FlagDecidedAlone(ctx context.Context, tenantID shared.ID, status vulnerability.FindingStatus, level string,
+	needsSecond func(approvalpolicy.Facts) bool,
+) (int, error) {
+	ids, err := r.decidedAloneNeedingSecond(ctx, tenantID, status, needsSecond)
+	if err != nil || len(ids) == 0 {
+		return 0, err
+	}
+	if _, err := r.db.ExecContext(ctx, `
+		SELECT flag_single_person_decision_review($1, x, $2, 'level_raised', jsonb_build_object('level', $4::text))
+		FROM unnest($3::uuid[]) AS x`,
+		tenantID.String(), string(status), pq.Array(ids), level); err != nil {
+		return 0, fmt.Errorf("flag decisions made alone: %w", err)
+	}
+	return len(ids), nil
+}
+
+// decidedAloneNeedingSecond lists the findings of the tenant holding status
+// by a latest approved request one person decided, whose facts now make
+// needsSecond answer true.
+func (r *FindingApprovalRepository) decidedAloneNeedingSecond(ctx context.Context, tenantID shared.ID, status vulnerability.FindingStatus,
+	needsSecond func(approvalpolicy.Facts) bool,
+) ([]string, error) {
+	rows, err := r.db.QueryContext(ctx, `
+		WITH latest AS (
+			SELECT DISTINCT ON (x.finding_id) x.finding_id, x.single_person, x.self_approved
+			FROM finding_status_approvals x
+			WHERE x.tenant_id = $1 AND x.requested_status = $2 AND x.status = 'approved'
+			ORDER BY x.finding_id, x.approved_at DESC NULLS LAST, x.created_at DESC
+		)
+		SELECT l.finding_id, `+standingFactsSQL+`
+		FROM latest l
+		JOIN findings f ON f.tenant_id = $1 AND f.id = l.finding_id
+		LEFT JOIN assets a ON a.tenant_id = f.tenant_id AND a.id = f.asset_id
+		WHERE f.status = $2 AND (l.single_person OR l.self_approved)
+		ORDER BY l.finding_id`, tenantID.String(), string(status))
+	if err != nil {
+		return nil, fmt.Errorf("list decisions made alone: %w", err)
+	}
+	defer rows.Close()
+	var ids []string
+	for rows.Next() {
+		var (
+			id  string
+			raw []byte
+			f   approvalpolicy.Facts
+		)
+		if err := rows.Scan(&id, &raw); err != nil {
+			return nil, fmt.Errorf("scan decision made alone: %w", err)
+		}
+		if err := json.Unmarshal(raw, &f); err != nil {
+			return nil, fmt.Errorf("read the facts of a decision made alone: %w", err)
+		}
+		if needsSecond(f) {
+			ids = append(ids, id)
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("list decisions made alone: %w", err)
+	}
+	return ids, nil
 }
 
 // MarkDigestSent records that the user got the digest now, when the last
