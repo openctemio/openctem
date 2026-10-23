@@ -35,7 +35,7 @@ func (s *stubCIRuns) Authenticate(_ context.Context, token string) (*cirun.Run, 
 	return nil, cirun.ErrRunNotFound
 }
 
-func (s *stubCIRuns) AcceptUpload(context.Context, *cirun.Run, []byte, bool) (*cirunapp.UploadReceipt, error) {
+func (s *stubCIRuns) AcceptUpload(context.Context, *cirun.Run, []byte, bool, *cirunapp.MappingPin) (*cirunapp.UploadReceipt, error) {
 	return &cirunapp.UploadReceipt{UploadID: shared.NewID(), Status: "queued"}, nil
 }
 func (s *stubCIRuns) UploadStatus(context.Context, *cirun.Run, shared.ID, time.Duration) (*cirunapp.UploadReceipt, error) {
