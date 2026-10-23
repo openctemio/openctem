@@ -29,6 +29,7 @@ import {
   GatedSectionTabs,
   NoAccessState,
   PageHeader,
+  PageStack,
 } from '@/features/shared'
 import { Skeleton } from '@/components/ui/skeleton'
 import { SCOPE_SECTION_TABS } from '@/config/section-tabs'
@@ -43,101 +44,103 @@ export default function ProgramsPage() {
 
   return (
     <Main>
-      <PageHeader
-        title={t('programs.title', 'Programs')}
-        description={t(
-          'programs.description',
-          'Bug-bounty and disclosure programs you test under their published rules. Their targets are scanned only from your own sensors.'
-        )}
-      >
-        {canWrite && (
-          <Button asChild size="sm">
-            <Link href="/programs/new">
-              <Plus className="me-2 h-4 w-4" />
-              {t('programs.import', 'Import program')}
-            </Link>
-          </Button>
-        )}
-      </PageHeader>
-      <GatedSectionTabs tabs={SCOPE_SECTION_TABS} label="Scope sections" className="mt-4 mb-0" />
-
-      {!canRead ? (
-        <NoAccessState title={t('programs.title', 'Programs')} />
-      ) : isLoading ? (
-        <div className="mt-5 space-y-2 rounded-xl border p-3">
-          {[1, 2, 3].map((i) => (
-            <Skeleton key={i} className="h-10 w-full" />
-          ))}
-        </div>
-      ) : error ? (
-        <ErrorState
+      <PageStack>
+        <PageHeader
           title={t('programs.title', 'Programs')}
-          error={error}
-          onRetry={() => mutate()}
-        />
-      ) : (data ?? []).length === 0 ? (
-        <EmptyState
-          icon={Trophy}
-          title={t('programs.empty.title', 'No programs yet')}
           description={t(
-            'programs.empty.description',
-            'Import a program by pasting its scope; its in-scope targets become scope entries and its out-of-scope items program exclusions.'
+            'programs.description',
+            'Bug-bounty and disclosure programs you test under their published rules. Their targets are scanned only from your own sensors.'
           )}
-          action={
-            canWrite ? (
-              <Button asChild size="sm">
-                <Link href="/programs/new">
-                  <Plus className="me-2 h-4 w-4" />
-                  {t('programs.import', 'Import program')}
-                </Link>
-              </Button>
-            ) : undefined
-          }
-        />
-      ) : (
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead>{t('programs.col.name', 'Program')}</TableHead>
-              <TableHead>{t('programs.col.platform', 'Platform')}</TableHead>
-              <TableHead>{t('programs.col.status', 'Status')}</TableHead>
-              <TableHead>{t('programs.col.tier', 'Max tier')}</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {(data ?? []).map((p) => (
-              <TableRow key={p.id}>
-                <TableCell>
-                  <Link
-                    href={`/programs/${p.id}`}
-                    className="inline-flex items-center gap-1.5 font-medium hover:underline"
-                  >
-                    {p.visibility === 'private' && (
-                      <Lock
-                        className="text-muted-foreground h-3.5 w-3.5"
-                        aria-label={t('programs.visibility.private', 'Private')}
-                      />
-                    )}
-                    {p.name}
-                  </Link>
-                  {p.locked && (
-                    <span className="text-muted-foreground ml-2 text-xs">
-                      {t('programs.locked.badge', 'accept the terms to open')}
-                    </span>
-                  )}
-                </TableCell>
-                <TableCell className="text-muted-foreground">{p.platform || '-'}</TableCell>
-                <TableCell>
-                  <Badge variant={p.status === 'active' ? 'default' : 'secondary'}>
-                    {t(`programs.status.${p.status}`, PROGRAM_STATUS_LABEL[p.status])}
-                  </Badge>
-                </TableCell>
-                <TableCell className="font-mono text-xs">{p.locked ? '-' : p.max_tier}</TableCell>
-              </TableRow>
+        >
+          {canWrite && (
+            <Button asChild size="sm">
+              <Link href="/programs/new">
+                <Plus className="me-2 h-4 w-4" />
+                {t('programs.import', 'Import program')}
+              </Link>
+            </Button>
+          )}
+        </PageHeader>
+        <GatedSectionTabs tabs={SCOPE_SECTION_TABS} label="Scope sections" />
+
+        {!canRead ? (
+          <NoAccessState title={t('programs.title', 'Programs')} />
+        ) : isLoading ? (
+          <div className="space-y-2 rounded-xl border p-3">
+            {[1, 2, 3].map((i) => (
+              <Skeleton key={i} className="h-10 w-full" />
             ))}
-          </TableBody>
-        </Table>
-      )}
+          </div>
+        ) : error ? (
+          <ErrorState
+            title={t('programs.title', 'Programs')}
+            error={error}
+            onRetry={() => mutate()}
+          />
+        ) : (data ?? []).length === 0 ? (
+          <EmptyState
+            icon={Trophy}
+            title={t('programs.empty.title', 'No programs yet')}
+            description={t(
+              'programs.empty.description',
+              'Import a program by pasting its scope; its in-scope targets become scope entries and its out-of-scope items program exclusions.'
+            )}
+            action={
+              canWrite ? (
+                <Button asChild size="sm">
+                  <Link href="/programs/new">
+                    <Plus className="me-2 h-4 w-4" />
+                    {t('programs.import', 'Import program')}
+                  </Link>
+                </Button>
+              ) : undefined
+            }
+          />
+        ) : (
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>{t('programs.col.name', 'Program')}</TableHead>
+                <TableHead>{t('programs.col.platform', 'Platform')}</TableHead>
+                <TableHead>{t('programs.col.status', 'Status')}</TableHead>
+                <TableHead>{t('programs.col.tier', 'Max tier')}</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {(data ?? []).map((p) => (
+                <TableRow key={p.id}>
+                  <TableCell>
+                    <Link
+                      href={`/programs/${p.id}`}
+                      className="inline-flex items-center gap-1.5 font-medium hover:underline"
+                    >
+                      {p.visibility === 'private' && (
+                        <Lock
+                          className="text-muted-foreground h-3.5 w-3.5"
+                          aria-label={t('programs.visibility.private', 'Private')}
+                        />
+                      )}
+                      {p.name}
+                    </Link>
+                    {p.locked && (
+                      <span className="text-muted-foreground ml-2 text-xs">
+                        {t('programs.locked.badge', 'accept the terms to open')}
+                      </span>
+                    )}
+                  </TableCell>
+                  <TableCell className="text-muted-foreground">{p.platform || '-'}</TableCell>
+                  <TableCell>
+                    <Badge variant={p.status === 'active' ? 'default' : 'secondary'}>
+                      {t(`programs.status.${p.status}`, PROGRAM_STATUS_LABEL[p.status])}
+                    </Badge>
+                  </TableCell>
+                  <TableCell className="font-mono text-xs">{p.locked ? '-' : p.max_tier}</TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        )}
+      </PageStack>
     </Main>
   )
 }
