@@ -63,7 +63,76 @@ type Job struct {
 
 	// v2 is set for protocol v2 results jobs (RFC-026); nil for v1.
 	v2 *V2Segment
+
+	// kind is what the job applies; sourceRef the CI run or upload receipt
+	// it belongs to; submittedBy the principal that sent it; publicError the
+	// fixed code a client sees when it failed for good.
+	kind        Kind
+	sourceRef   string
+	submittedBy string
+	publicError string
 }
+
+// Kind is what a job applies.
+type Kind string
+
+const (
+	// KindSensor is a sensor report (protocol v1 or v2).
+	KindSensor Kind = "sensor"
+	// KindCIResults is a CI run's uploaded results (RFC-051).
+	KindCIResults Kind = "ci_results"
+	// KindFindingImport is a POST /findings/imports upload (RFC-122).
+	KindFindingImport Kind = "finding_import"
+)
+
+// IsUpload reports whether the job is a CI or import upload: its raw report
+// is in ingest_payloads and its payload column holds only the envelope.
+func (k Kind) IsUpload() bool { return k == KindCIResults || k == KindFindingImport }
+
+// NewUploadJob builds a pending CI results or import job. envelope is the
+// small JSON the processor needs besides the raw report (which is stored
+// sealed in ingest_payloads, never in the job row); digest is the SHA-256
+// of the raw report, the job's idempotency hash, so the same bytes for the
+// same reportID are one job.
+func NewUploadJob(id, tenantID shared.ID, kind Kind, sourceRef, submittedBy, reportID string, envelope, digest []byte) *Job {
+	now := time.Now()
+	if envelope == nil {
+		envelope = []byte("{}")
+	}
+	return &Job{
+		id: id, tenantID: tenantID, reportID: reportID, sourceType: string(kind),
+		payload: envelope, payloadSHA: append([]byte(nil), digest...),
+		status: StatusPending, maxAttempts: DefaultMaxAttempts,
+		availableAt: now, createdAt: now, updatedAt: now,
+		kind: kind, sourceRef: sourceRef, submittedBy: submittedBy,
+	}
+}
+
+// PermanentError is a job error a retry cannot fix (an unreadable report,
+// a report outside the run's repository, a run already judged). The worker
+// marks the job dead at once and shows Code to the client.
+type PermanentError struct {
+	Code string
+	Err  error
+}
+
+func (e *PermanentError) Error() string {
+	if e.Err == nil {
+		return e.Code
+	}
+	return e.Code + ": " + e.Err.Error()
+}
+
+func (e *PermanentError) Unwrap() error { return e.Err }
+
+// Permanent wraps err as a permanent job error with a fixed public code.
+func Permanent(code string, err error) error { return &PermanentError{Code: code, Err: err} }
+
+// Public error codes of a job that failed for good.
+const (
+	// ErrorApplyFailed: the retries ran out.
+	ErrorApplyFailed = "apply_failed"
+)
 
 // ProtocolV2 is the ingest_jobs.protocol value of a v2 results job.
 const ProtocolV2 = 2
@@ -164,12 +233,39 @@ func (j *Job) LockedAt() *time.Time   { return j.lockedAt }
 func (j *Job) AvailableAt() time.Time { return j.availableAt }
 func (j *Job) CreatedAt() time.Time   { return j.createdAt }
 func (j *Job) UpdatedAt() time.Time   { return j.updatedAt }
+func (j *Job) SourceRef() string      { return j.sourceRef }
+func (j *Job) SubmittedBy() string    { return j.submittedBy }
+func (j *Job) PublicError() string    { return j.publicError }
+
+// Kind returns what the job applies (a sensor report when unset).
+func (j *Job) Kind() Kind {
+	if j.kind == "" {
+		return KindSensor
+	}
+	return j.kind
+}
+
+// SetUpload attaches the upload columns when rehydrating a job (repository
+// use).
+func (j *Job) SetUpload(kind Kind, sourceRef, submittedBy, publicError string) {
+	j.kind, j.sourceRef, j.submittedBy, j.publicError = kind, sourceRef, submittedBy, publicError
+}
 
 // Backoff returns the retry delay for the given attempt count: exponential
 // (30s, 60s, 120s, …) capped at 10 minutes.
-func Backoff(attempts int) time.Duration {
-	const base = 30 * time.Second
-	const maxDelay = 10 * time.Minute
+func Backoff(attempts int) time.Duration { return backoff(attempts, 30*time.Second, 10*time.Minute) }
+
+// BackoffFor is the retry delay of a job of kind k: an upload someone waits
+// on (a CI gate, a person) retries after 2s, 4s, 8s ... capped at one
+// minute; a sensor report keeps Backoff.
+func BackoffFor(k Kind, attempts int) time.Duration {
+	if k.IsUpload() {
+		return backoff(attempts, 2*time.Second, time.Minute)
+	}
+	return Backoff(attempts)
+}
+
+func backoff(attempts int, base, maxDelay time.Duration) time.Duration {
 	d := base
 	for i := 1; i < attempts && d < maxDelay; i++ {
 		d *= 2
@@ -220,8 +316,10 @@ type Repository interface {
 	Complete(ctx context.Context, id ID, result []byte) error
 
 	// Fail records an error and either reschedules the job for retry at
-	// availableAt (status pending) or marks it dead when retries are exhausted.
-	Fail(ctx context.Context, id ID, errMsg string, availableAt time.Time, dead bool) error
+	// availableAt (status pending) or marks it dead when retries are
+	// exhausted. publicErr is the fixed code a client sees on a dead job
+	// (empty for a retry).
+	Fail(ctx context.Context, id ID, errMsg, publicErr string, availableAt time.Time, dead bool) error
 
 	// GetByID fetches a job scoped to its tenant (status polling).
 	GetByID(ctx context.Context, tenantID, id ID) (*Job, error)
@@ -237,6 +335,31 @@ type Repository interface {
 	// ReleaseStale resets jobs stuck in processing (worker crash) back to
 	// pending when their lock is older than olderThan. Returns the count reset.
 	ReleaseStale(ctx context.Context, olderThan time.Duration) (int, error)
+}
+
+// UploadRepository is the CI results and file import side of the queue.
+type UploadRepository interface {
+	// EnqueueUpload inserts a pending upload job. When the tenant already
+	// has a job with the same report id and digest, nothing is inserted and
+	// that job is returned with created=false.
+	EnqueueUpload(ctx context.Context, job *Job) (stored *Job, created bool, err error)
+	// FindRecentUpload returns the newest job of kind the principal sent
+	// with this digest since the given time that did not fail for good, or
+	// shared.ErrNotFound.
+	FindRecentUpload(ctx context.Context, tenantID shared.ID, kind Kind, submittedBy string, digest []byte, since time.Time) (*Job, error)
+	// GetUploadByKey returns the tenant's job with this report id and
+	// digest (the idempotency key), or shared.ErrNotFound.
+	GetUploadByKey(ctx context.Context, tenantID shared.ID, reportID string, digest []byte) (*Job, error)
+	// RequeueDeadUpload gives a dead upload job of the tenant a fresh retry
+	// budget, when its stored report is still there. It reports whether
+	// the job was requeued.
+	RequeueDeadUpload(ctx context.Context, tenantID, id shared.ID) (bool, error)
+	// BySource returns the newest job of kind for sourceRef of the tenant,
+	// or shared.ErrNotFound.
+	BySource(ctx context.Context, tenantID shared.ID, kind Kind, sourceRef string) (*Job, error)
+	// SourceState counts the tenant's jobs of kind for sourceRef that are
+	// not finished (pending or processing) and that failed for good.
+	SourceState(ctx context.Context, tenantID shared.ID, kind Kind, sourceRef string) (pending, dead int, err error)
 }
 
 // V2Repository is the protocol v2 side of the ingest queue (RFC-026). It is

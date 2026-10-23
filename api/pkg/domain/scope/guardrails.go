@@ -184,6 +184,12 @@ func (g Guardrails) CheckPattern(t TargetType, pattern string) error {
 	case TargetTypeDomain, TargetTypeSubdomain, TargetTypeEmailDomain:
 		wild, host := splitDomainWildcard(pattern)
 		return g.checkHost(host, wild)
+	case TargetTypeHost:
+		if a, err := netip.ParseAddr(strings.Trim(pattern, "[]")); err == nil {
+			return g.checkSet(ipSet{lo: a.Unmap(), hi: a.Unmap()})
+		}
+		wild, host := splitDomainWildcard(pattern)
+		return g.checkHost(host, wild)
 	case TargetTypeURL, TargetTypeAPI, TargetTypeWebsite:
 		if h := urlHost(pattern); h != "" {
 			wild, host := splitDomainWildcard(h)

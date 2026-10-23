@@ -143,6 +143,7 @@ group_role_bindings
 groups
 idempotency_keys
 ingest_jobs
+ingest_payloads
 ingest_receipt_coverage
 import_mapping_versions
 import_mappings

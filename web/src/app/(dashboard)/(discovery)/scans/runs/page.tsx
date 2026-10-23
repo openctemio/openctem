@@ -1,6 +1,7 @@
 'use client'
 
 import { Main } from '@/components/layout'
+import { PageStack } from '@/features/shared'
 import { ScanWindowsBanner } from '@/features/scan-windows'
 import { ScanRunsTab } from '@/features/scans/components/scan-runs-tab'
 import {
@@ -13,12 +14,14 @@ import {
 export default function ScanRunsPage() {
   return (
     <Main>
-      <ScansPageHeader>
-        <ScanCreateActions />
-      </ScansPageHeader>
-      <ScansSectionTabs />
-      <ScanWindowsBanner className="mt-5" />
-      <ScanRunsTab />
+      <PageStack>
+        <ScansPageHeader>
+          <ScanCreateActions />
+        </ScansPageHeader>
+        <ScansSectionTabs />
+        <ScanWindowsBanner />
+        <ScanRunsTab />
+      </PageStack>
     </Main>
   )
 }

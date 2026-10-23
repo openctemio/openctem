@@ -12,7 +12,7 @@ export interface PriorityBadgeProps extends Omit<
 > {
   /** The class to show: P0 (immediate) to P3 (track); null when not prioritised. */
   priorityClass: PriorityClass | null | undefined
-  /** Add the class name ("P0 · Immediate"): detail pages, desktop tables, drawers. */
+  /** Add the class name ("P0 Immediate", the code bold and the word regular): detail pages, desktop tables, drawers. */
   showWord?: boolean
 }
 
@@ -66,7 +66,15 @@ export const PriorityBadge = React.forwardRef<HTMLSpanElement, PriorityBadgeProp
         )}
       >
         <PriorityGlyph filled={BARS[cls]} />
-        <span aria-hidden>{showWord ? `${cls} · ${name}` : cls}</span>
+        <span aria-hidden>
+          <strong className="font-bold">{cls}</strong>
+          {showWord && (
+            <>
+              {' '}
+              <span className="font-normal">{name}</span>
+            </>
+          )}
+        </span>
       </span>
     )
   }

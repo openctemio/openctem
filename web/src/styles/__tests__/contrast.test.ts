@@ -34,11 +34,39 @@ function hex(theme: Record<string, string>, name: string, depth = 0): string {
   return v.toLowerCase()
 }
 
+/** Alpha-blend `fg` over `bg` (#rrggbb) at `alpha`. */
+function blend(fg: string, bg: string, alpha: number): string {
+  const ch = (h: string, i: number) => parseInt(h.slice(1 + i * 2, 3 + i * 2), 16)
+  return (
+    '#' +
+    [0, 1, 2]
+      .map((i) =>
+        Math.round(ch(fg, i) * alpha + ch(bg, i) * (1 - alpha))
+          .toString(16)
+          .padStart(2, '0')
+      )
+      .join('')
+  )
+}
+
 const THEMES = { light, dark } as const
 const SURFACES = ['--background', '--card', '--popover', '--surface-raised']
 const SEV = ['critical', 'high', 'medium', 'low', 'info']
 const PRIO = [0, 1, 2, 3]
-const STATUS_TONES = ['triage', 'open', 'progress', 'resolved', 'accepted', 'closed']
+const STATUS_TONES = ['triage', 'open', 'progress', 'waiting', 'resolved', 'accepted', 'closed']
+const HEALTH = ['ok', 'run', 'warn', 'down', 'idle']
+const TAG_COLOURS = [
+  'red',
+  'orange',
+  'amber',
+  'yellow',
+  'green',
+  'cyan',
+  'blue',
+  'violet',
+  'pink',
+  'grey',
+]
 /** Minimum normal-vision delta E between a priority mark and a severity mark. */
 const PRIO_SEV_MIN_DE = 10
 
@@ -163,6 +191,55 @@ describe('brand tokens', () => {
       }
       // The untouched (triage) lozenge is an empty dashed outline: the edge is its fill.
       pair('--st-triage-border', '--card', 3)
+    })
+
+    it(`${mode}: the waiting tone shares the accepted colours`, () => {
+      for (const part of ['bg', 'fg', 'border'])
+        expect(hex(t, `--st-waiting-${part}`)).toBe(hex(t, `--st-accepted-${part}`))
+    })
+
+    it(`${mode}: health icons are 3:1 on every surface and text stays foreground`, () => {
+      for (const h of HEALTH) for (const bg of SURFACES) pair(`--hl-${h}`, bg, 3)
+      for (const bg of SURFACES) pair('--foreground', bg, 7)
+    })
+
+    it(`${mode}: counter text at AA on its fill, emphasis too`, () => {
+      pair('--ctr-fg', '--ctr-bg', 4.5)
+      pair('--ctr-em-fg', '--ctr-em-bg', 4.5)
+      pair('--ctr-fg', '--card', 4.5)
+      pair('--ctr-em-bg', '--card', 3)
+    })
+
+    it(`${mode}: marker text and outline`, () => {
+      pair('--muted-foreground', '--card', 4.5)
+      pair('--border-strong', '--card', 3)
+    })
+
+    it(`${mode}: tag palette dots are 3:1 on the card, distinct, and never teal`, () => {
+      const seen = new Set<string>()
+      for (const c of TAG_COLOURS) {
+        pair(`--tag-${c}`, '--card', 3)
+        pair(`--tag-${c}`, '--background', 3)
+        const v = hex(t, `--tag-${c}`)
+        expect(seen.has(v), `${c} duplicates another tag colour`).toBe(false)
+        seen.add(v)
+        const [, chroma, hue] = oklch(v) as number[]
+        expect(
+          chroma >= 0.04 && hue >= ACCENT_BAND[0] && hue <= ACCENT_BAND[1],
+          `${c} sits in the accent band`
+        ).toBe(false)
+      }
+    })
+
+    it(`${mode}: no status tint of a state colour at 15% alpha is used for text (it fails AA)`, () => {
+      // Documents why the /15 tint pills were replaced: text-success on bg-success/15.
+      for (const s of ['--success', '--warning']) {
+        const fg = hex(t, s)
+        const card = hex(t, '--card')
+        const tint = blend(fg, card, 0.15)
+        const r = contrast(fg, tint)
+        if (mode === 'light') expect(r, `${s} on its 15% tint`).toBeLessThan(4.5)
+      }
     })
 
     it(`${mode}: priority steps from P0 (strongest) to P3 (quietest) by contrast with the card`, () => {
