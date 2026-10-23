@@ -1,0 +1,38 @@
+# zizmor configuration for the Workflow Lint job (.github/workflows/repo-security.yml).
+# Every entry states why it is safe; add a new one only with a reason, and
+# prefer fixing the workflow. Findings that cannot be fixed stay listed here
+# so a new occurrence elsewhere still fails the job.
+rules:
+  dangerous-triggers:
+    ignore:
+      # pull_request_target and issue_comment are what the CLA check needs
+      # (it writes a status and a signature file). No pull request code is
+      # checked out or run, the job reads only API data, and the file already
+      # carries the safety notes and the security-gate allow marker.
+      - cla.yml
+  artipacked:
+    ignore:
+      # These jobs push a branch or a tag with the release token on purpose
+      # (cut-release.sh, tag-release.sh, the helm-charts bump), so the
+      # checkout must keep its credentials. They run only on dispatch or on
+      # the protected main/develop branches, never on pull request code.
+      - release-train.yml
+      - release-publish.yml
+  archived-uses:
+    ignore:
+      # contributor-assistant/github-action is pinned by commit SHA and is the
+      # CLA check; the upstream repository is archived, with no fixed
+      # replacement. Tracked for replacement; the SHA pin means the code
+      # cannot change under us.
+      - cla.yml
+  self-repository:
+    # The `$/...` spelling of a same-repository action is new and not yet
+    # understood by actionlint or older runners; `./.github/actions/...`
+    # is the long-standing form and carries no risk.
+    disable: true
+  adhoc-packages:
+    ignore:
+      # One version-pinned dev tool installed without touching the lockfile
+      # (the SARIF formatter for the eslint upload); it runs on the code
+      # scanner job only, with no secrets.
+      - web-security.yml
