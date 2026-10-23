@@ -173,8 +173,14 @@ Threat model additions: the raw report is stored before secrets are masked,
 hence sealed per tenant, never served back, and deleted once applied; a
 hostile file is parsed only in the worker, with the importers' caps, and
 its failure surfaces as a fixed code (never its text); the uploader's rights
-are re-resolved when the job runs, never widened; the gate fails closed on
-a pending or failed upload.
+are re-resolved when the job runs, never widened: the worker re-reads the
+uploader's membership (a member who left or was suspended meanwhile is
+refused with `uploader_not_permitted`, a demoted administrator imports with
+the member's data scope); the gate fails closed on a pending or failed
+upload. A job's stored report is deleted in the statement that records it
+completed (a crash before that re-applies the upload), and at once when it
+fails for good with a fixed code (only `apply_failed` keeps it, for a retry
+of the same upload).
 
 ## 6b. Fairness and limits
 
@@ -185,11 +191,15 @@ organization moving and every scope consistent.
   finding or a CVE in the KEV catalogue, decided by the server from the
   decoded report), 1 interactive (a person's import, a CI upload a gate
   waits on), 2 bulk (sensor reports). The claim takes urgent first, then
-  interactive, then bulk; within a lane it is round-robin across
-  organizations (each one's oldest due job before anyone's second), then by
-  age. A report cannot ask for a lane; an organization that sends only
-  critical findings competes in the urgent lane with the same fair share and
-  running cap as everyone.
+  interactive, then bulk; within a lane it is fair across organizations by
+  share: jobs an organization already has running count, so the one holding
+  fewer workers goes first (each one's next job before anyone's second),
+  then by age. A report cannot ask for a lane, but the server derives it
+  from what the report says, so an organization's urgent lane goes ahead of
+  others for one job at a time (its first, with nothing of it running);
+  further urgent jobs of that organization queue as interactive. Flooding
+  critical findings orders an organization's own work, never the whole
+  worker pool.
 - **One job per scope.** `ingest_jobs.scope_key` names the asset scope a job
   writes: a CI run's repository, an organization's imports, a sensor
   report's segments and commit. At most one job per key is processing: the
@@ -199,7 +209,8 @@ organization moving and every scope consistent.
   skipped). Twenty jobs of a CI matrix on one repository apply one after
   another instead of deadlocking on the same rows.
 - **Running cap.** An organization has at most `INGEST_MAX_RUNNING_PER_TENANT`
-  (4) jobs processing across servers.
+  (2, half the workers of one server) jobs processing across servers, so the
+  other organizations always have workers.
 - **Workers.** Each server runs `INGEST_WORKERS` (4) workers; each claims one
   job at a time. The asset and finding writes go through their own pool
   (`DB_INGEST_MAX_CONNS`, 8, all idle-kept), so a burst of uploads cannot
