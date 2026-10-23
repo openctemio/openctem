@@ -68,7 +68,11 @@ function initials(name: string): string {
 /** The server accepts at most this many user ids per members request. */
 const NAME_BATCH_SIZE = 100
 
-type NameWaiter = { id: string; resolve: (name: string | null) => void; reject: (e: unknown) => void }
+type NameWaiter = {
+  id: string
+  resolve: (name: string | null) => void
+  reject: (e: unknown) => void
+}
 const pendingNames = new Map<string, NameWaiter[]>()
 const nameFlushTimers = new Map<string, ReturnType<typeof setTimeout>>()
 
@@ -129,7 +133,7 @@ export function useMemberName(id: string | undefined, enabled = true) {
   const allowed = can(Permission.MembersRead)
   const tenantId = currentTenant?.id
   const { data, isLoading, error } = useSWR(
-    enabled && allowed && tenantId && id ? ['member-name', tenantId, id] : null,
+    enabled && allowed && tenantId && id ? `member-name:${tenantId}:${id}` : null,
     () => lookupMemberName(tenantId as string, id as string),
     { revalidateOnFocus: false, dedupingInterval: 60000 }
   )
