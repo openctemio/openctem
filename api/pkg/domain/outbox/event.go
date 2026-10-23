@@ -44,6 +44,9 @@ type SendResult struct {
 	MessageID       string    `json:"message_id,omitempty"`
 	Error           string    `json:"error,omitempty"`
 	SentAt          time.Time `json:"sent_at"`
+	// Attempts is how many times the channel was tried (0 in archives
+	// written before per-channel delivery).
+	Attempts int `json:"attempts,omitempty"`
 }
 
 // =============================================================================

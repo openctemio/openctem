@@ -775,3 +775,18 @@ func NewIntegrationWithNotification(integration *Integration, notification *Noti
 		Notification: notification,
 	}
 }
+
+// eventPayloadVersions holds the payload version of each event type whose
+// outbound payload changed incompatibly since version 1. A receiver routes on
+// (type, version); an incompatible change to what a type sends bumps its
+// version here, and the change is listed in the changelog.
+var eventPayloadVersions = map[EventType]int{}
+
+// EventPayloadVersion is the version of the outbound payload of an event
+// type (1 unless eventPayloadVersions says otherwise).
+func EventPayloadVersion(t EventType) int {
+	if v, ok := eventPayloadVersions[t]; ok && v > 0 {
+		return v
+	}
+	return 1
+}
