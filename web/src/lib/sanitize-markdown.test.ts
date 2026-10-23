@@ -149,7 +149,8 @@ describe('sanitiseNode — event-handler attributes', () => {
       onMouseOver: 'x()',
     })
     sanitiseNode(node)
-    expect(Object.keys(node.properties || {})).toEqual(['href'])
+    // rel and referrerPolicy are the sanitiser's own (links to another origin).
+    expect(Object.keys(node.properties || {})).toEqual(['href', 'rel', 'referrerPolicy'])
   })
 
   it('does not strip "on" as a non-handler word', () => {
@@ -250,7 +251,11 @@ describe('sanitiseNode — attributes an author could invent (rehype-attr)', () 
       'data-anything': 'x',
     })
     sanitiseNode(node)
-    expect(node.properties).toEqual({ href: 'https://ok.test' })
+    expect(node.properties).toEqual({
+      href: 'https://ok.test',
+      rel: ['noopener', 'noreferrer', 'nofollow'],
+      referrerPolicy: 'no-referrer',
+    })
   })
 
   it('keeps only pipeline classes, from both className and raw class', () => {
@@ -304,7 +309,11 @@ describe('remote images are click-to-load (no tracking pixel)', () => {
     const node = element('img', { src: 'https://tracker.example.net/p.gif?u=1', alt: 'x' })
     sanitiseNode(node)
     expect(node.tagName).toBe('a')
-    expect(node.properties).toEqual({ href: 'https://tracker.example.net/p.gif?u=1' })
+    expect(node.properties).toEqual({
+      href: 'https://tracker.example.net/p.gif?u=1',
+      rel: ['noopener', 'noreferrer', 'nofollow'],
+      referrerPolicy: 'no-referrer',
+    })
     expect(node.children).toEqual([
       { type: 'text', value: 'https://tracker.example.net/p.gif?u=1' },
     ])
@@ -340,6 +349,30 @@ describe('remote images are click-to-load (no tracking pixel)', () => {
     sanitiseNode(node)
     sanitiseNode(node)
     expect(node.tagName).toBe('a')
-    expect(node.properties).toEqual({ href: 'https://tracker.example.net/p.gif' })
+    expect(node.properties).toEqual({
+      href: 'https://tracker.example.net/p.gif',
+      rel: ['noopener', 'noreferrer', 'nofollow'],
+      referrerPolicy: 'no-referrer',
+    })
+  })
+
+  it('gives every link to another origin no referrer and no opener, whatever the author set', () => {
+    const node = element('a', {
+      href: 'https://elsewhere.example.net/',
+      rel: ['opener'],
+      referrerPolicy: 'unsafe-url',
+    })
+    sanitiseNode(node)
+    expect(node.properties).toEqual({
+      href: 'https://elsewhere.example.net/',
+      rel: ['noopener', 'noreferrer', 'nofollow'],
+      referrerPolicy: 'no-referrer',
+    })
+  })
+
+  it('leaves in-app links alone', () => {
+    const node = element('a', { href: '/findings/1' })
+    sanitiseNode(node)
+    expect(node.properties).toEqual({ href: '/findings/1' })
   })
 })
