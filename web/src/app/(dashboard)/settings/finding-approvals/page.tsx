@@ -43,7 +43,7 @@ export default function FindingApprovalSettingsPage() {
             <section className="space-y-3">
               <div>
                 <h2 className="text-lg font-semibold">
-                  {t('findingApprovals.policy.title', 'Approval policy')}
+                  {t('findingApprovals.policy.tableTitle', 'Approval tiers and approvers')}
                 </h2>
                 <p className="text-sm text-muted-foreground">
                   {t(

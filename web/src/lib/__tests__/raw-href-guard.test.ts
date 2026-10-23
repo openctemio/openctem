@@ -60,6 +60,8 @@ const SAFE_TAGS = new Set(['SafeExternalLink'])
  * route builder or a constant.
  */
 const REVIEWED = new Set([
+  // My work drill: findingsDrillUrl() builds a fixed same-origin /findings path from the page's constant metric filters.
+  'app/(dashboard)/my-work/page.tsx|Link|href={findingsDrillUrl(MY_WORK_METRIC_FILTERS.open)}',
   // Asset group page: findingsHref() is a fixed same-origin /findings prefix with the group id encoded and a severity from a fixed list.
   'app/(dashboard)/(discovery)/assets/groups/[id]/page.tsx|NextLink|href={findingsHref(severity)}',
   // StatsCard href only receives the callers' own constant routes (attack surface tiles).

@@ -85,7 +85,7 @@ export interface AttackSurfaceStats {
   /** Assets added in the last `trendWindowDays` days (never negative). */
   totalAssetsChange: number
   /** "Became internet-facing" changes in the window: the same number as
-   * Assets > What changed > Newly exposed. */
+   * Assets > Activity > Newly exposed. */
   newlyExposed: number
   trendWindowDays: number
   assetBreakdown: AssetTypeBreakdown[]
