@@ -31,6 +31,9 @@ type Decision struct {
 	Baseline Facts
 	// End is the acceptance end (accepted risks).
 	End *time.Time
+	// AcceptLevel is the organization's risk acceptance level in force
+	// ("" = all): the tier an accepted risk needs now follows it.
+	AcceptLevel string
 }
 
 // Change is the controller's verdict for one decision.
@@ -47,8 +50,8 @@ type Change struct {
 // MaterialChange decides what the change from d.Baseline to now does to d
 // under policy p:
 //
-//   - accepted risk: ends when the tier it needs now is above the decided
-//     tier, or the cap for the facts now ends before the decided end (the
+//   - accepted risk: ends when the tier it needs now (under the
+//     organization's risk acceptance level) is above the decided tier, or the cap for the facts now ends before the decided end (the
 //     floor); any other signal flags it, or ends it under
 //     end_on_any_change;
 //   - false positive one person decided: any signal flags it (the floor), or
@@ -57,12 +60,10 @@ func MaterialChange(p Policy, d Decision, now Facts, at time.Time) Change {
 	signals := Signals(d.Baseline, now, p.EPSS())
 	ch := Change{Action: ActionNone, Signals: signals}
 	if d.Kind == KindAccepted {
-		classNow, _ := ClassOf(KindAccepted, now, p.EPSS())
-		ch.TierNow = p.TierFor(KindAccepted, classNow)
+		ch.TierNow = AcceptedTier(p, d.AcceptLevel, now)
 		decided := d.DecidedTier
 		if !decided.IsValid() {
-			classThen, _ := ClassOf(KindAccepted, d.Baseline, p.EPSS())
-			decided = p.TierFor(KindAccepted, classThen)
+			decided = AcceptedTier(p, d.AcceptLevel, d.Baseline)
 		}
 		if d.End != nil && at.Add(p.AcceptanceCap(now)).Before(*d.End) {
 			ch.CapEndsSooner = true

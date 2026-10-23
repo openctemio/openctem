@@ -131,6 +131,7 @@ type fakeStore struct {
 	replaced   map[shared.ID][]softwarematch.VersionVuln
 	dequeueIDs []shared.ID
 	state      map[string]time.Time
+	rekeys     []softwarematch.Rekey
 }
 
 func newFakeStore() *fakeStore {
@@ -196,6 +197,13 @@ func (f *fakeStore) LinkStates(_ context.Context, _ shared.ID, keys []softwarema
 func (f *fakeStore) CloseFindings(_ context.Context, _ shared.ID, ids []shared.ID, kind softwarematch.CloseKind) ([]shared.ID, error) {
 	f.closed[kind] = append(f.closed[kind], ids...)
 	return ids, nil
+}
+func (f *fakeStore) RekeyMatcherFinding(_ context.Context, _ shared.ID, r softwarematch.Rekey) (bool, error) {
+	f.rekeys = append(f.rekeys, r)
+	if f.taken[r.To] {
+		return false, nil
+	}
+	return true, nil
 }
 func (f *fakeStore) ReopenFindings(_ context.Context, _ shared.ID, ids []shared.ID) ([]shared.ID, error) {
 	f.reopened = append(f.reopened, ids...)

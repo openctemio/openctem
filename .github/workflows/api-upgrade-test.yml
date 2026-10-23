@@ -1,0 +1,118 @@
+name: API Upgrade Test
+
+# The previous release's database, upgraded to this tree: build the schema of
+# the last release tag (its own migrations, as the non-superuser migrator),
+# load representative rows (api/scripts/upgrade-test/seed.sql), apply this
+# tree's migrations, and assert the version and dirty flag, that no key table
+# lost a row, and that the API built from this tree starts against the result.
+# The steps and what they prove: .github/scripts/upgrade-test.sh.
+#
+#   - schedule: nightly (03:30 UTC, from the default branch's copy of this file)
+#   - push to a release/** branch, and a pull request into main (the release
+#     PR): the commit that is about to ship
+#   - workflow_dispatch: any time, optionally from an older release
+#
+# Not a required check (it does not run on ordinary pull requests); a failure
+# on a release branch is a reason not to merge the release PR.
+
+on:
+  schedule:
+    - cron: "30 3 * * *"
+  push:
+    branches: ["release/**"]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      prev:
+        description: "Release tag to upgrade from (default: the newest release tag before this commit)"
+        type: string
+        default: ""
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name != 'schedule' && github.event_name != 'workflow_dispatch' }}
+
+permissions:
+  contents: read
+  # Service containers pull the CI image mirror (ghcr.io/openctemio/mirror).
+  packages: read
+
+env:
+  GOWORK: "off"
+
+jobs:
+  upgrade:
+    name: Upgrade from the last release
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    services:
+      postgres:
+        image: ghcr.io/openctemio/mirror/postgres:17-alpine
+        credentials:
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+        env:
+          POSTGRES_USER: postgres
+          # Job-scoped throwaway database, trust auth on the service network:
+          # no credential literal in the repo. Role separation is what is
+          # under test, not passwords.
+          POSTGRES_HOST_AUTH_METHOD: trust
+          POSTGRES_DB: upgrade_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+      redis:
+        image: ghcr.io/openctemio/mirror/redis:7-alpine
+        credentials:
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      SUPER_URL: postgres://postgres@localhost:5432/upgrade_test?sslmode=disable
+      MIGRATOR_URL: postgres://openctem_migrator@localhost:5432/upgrade_test?sslmode=disable
+      APP_ROLE_URL: postgres://openctem_app@localhost:5432/upgrade_test?sslmode=disable
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # Every release tag, and the history that connects them to this commit.
+          fetch-depth: 0
+          fetch-tags: true
+          persist-credentials: false
+
+      - name: Setup Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: api/go.mod
+          # No build cache: this workflow runs on release branches, where a
+          # poisoned cache could reach the release build.
+          cache: false
+
+      - name: Install golang-migrate
+        working-directory: api
+        run: go install -tags 'postgres' github.com/golang-migrate/migrate/v4/cmd/migrate@v4.18.1
+
+      - name: Build the API from this tree
+        working-directory: api
+        run: go build -o "$RUNNER_TEMP/openctem-server" ./cmd/server
+
+      - name: Upgrade
+        env:
+          PREV: ${{ inputs.prev }}
+          REDIS_HOST: localhost
+          REDIS_PORT: 6379
+        run: |
+          args=(--server-bin "$RUNNER_TEMP/openctem-server")
+          if [ -n "$PREV" ]; then args+=(--prev "$PREV"); fi
+          bash .github/scripts/upgrade-test.sh "${args[@]}"

@@ -102,3 +102,34 @@ func TestEcosystemMapping(t *testing.T) {
 		t.Error("scheme mapping")
 	}
 }
+
+func TestDistroFromQualifier(t *testing.T) {
+	for q, want := range map[string]string{
+		"":                 "",
+		"debian-12/amd64":  "debian-12",
+		"debian-12":        "debian-12",
+		"amd64":            "",
+		"x86_64":           "",
+		"alpine-3.19":      "alpine-3.19",
+		" el9 / noarch ":   "el9",
+		"ubuntu-22.04/all": "ubuntu-22.04",
+	} {
+		if got := DistroFromQualifier(q); got != want {
+			t.Errorf("DistroFromQualifier(%q) = %q, want %q", q, got, want)
+		}
+	}
+	// The inverse of DistroQualifier for every shape it writes.
+	for _, in := range []string{
+		"pkg:deb/debian/openssl@3.0.11-1?arch=amd64&distro=debian-12",
+		"pkg:rpm/redhat/curl@8.0.1-1.el9?distro=el9",
+		"pkg:apk/alpine/busybox@1.36.1-r2?arch=x86_64",
+	} {
+		p, err := ParsePURL(in)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got, want := DistroFromQualifier(p.DistroQualifier()), p.Qualifiers["distro"]; got != want {
+			t.Errorf("%q: distro %q, want %q", in, got, want)
+		}
+	}
+}
