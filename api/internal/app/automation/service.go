@@ -325,6 +325,13 @@ func (s *WorkflowService) UpdateWorkflow(ctx context.Context, input UpdateWorkfl
 		if err := automationdom.ValidateMaxChanges(*input.MaxChangesPerRun); err != nil {
 			return nil, err
 		}
+		// The cap is part of the version: a new one withdraws a request
+		// waiting for approval (withdrawRequestIfChanged).
+		if *input.MaxChangesPerRun != w.MaxChangesPerRun && s.versions != nil {
+			if err := s.versions.RetirePending(ctx, input.TenantID, input.WorkflowID); err != nil {
+				return nil, err
+			}
+		}
 		w.MaxChangesPerRun = *input.MaxChangesPerRun
 	}
 
