@@ -166,8 +166,9 @@ export function DetailField({ label, children, full, className }: DetailFieldPro
   if (children === null || children === undefined || children === '') return null
   return (
     <div className={cn('min-w-0 space-y-0.5', full && 'sm:col-span-2', className)}>
-      <dt className="text-xs text-muted-foreground">{label}</dt>
-      <dd className="text-sm break-words">{children}</dd>
+      {/* Label and value share one size; the label is muted (research/244). */}
+      <dt className="text-body text-muted-foreground">{label}</dt>
+      <dd className="text-body break-words">{children}</dd>
     </div>
   )
 }

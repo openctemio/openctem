@@ -38,6 +38,8 @@ import {
   DetailStat,
   DetailStatGrid,
   EmptyState,
+  MetaItem,
+  MetaLine,
   RelativeTime,
   type DetailCalloutTone,
   type DetailCheck,
@@ -204,7 +206,6 @@ function toDetailCheck(
           type="button"
           variant="outline"
           size="sm"
-          className="h-7 px-2 text-xs"
           onClick={() => onAction(c.action as HealthCheckAction)}
         >
           {t(ACTION_LABEL[c.action].key, ACTION_LABEL[c.action].en)}
@@ -315,7 +316,6 @@ function HealthSummary({
                   type="button"
                   size="sm"
                   variant={i === 0 ? 'default' : 'outline'}
-                  className="h-7 px-2.5 text-xs"
                   disabled={a === 'refresh_content' && refreshing}
                   onClick={() => void run(a)}
                 >
@@ -328,13 +328,7 @@ function HealthSummary({
                   {t(ACTION_LABEL[a].key, ACTION_LABEL[a].en)}
                 </Button>
               ))}
-              <Button
-                type="button"
-                size="sm"
-                variant="ghost"
-                className="h-7 px-2 text-xs"
-                onClick={onActivity}
-              >
+              <Button type="button" size="sm" variant="ghost" onClick={onActivity}>
                 <History className="h-3.5 w-3.5" />
                 {t('sensors.detail.viewActivity', 'View activity')}
               </Button>
@@ -694,7 +688,7 @@ function ConnectionAndIdentity({
         <DetailField label={t('sensors.detail.f.apiKey', 'API key')}>
           <span className="flex flex-col gap-0.5">
             <span className="font-mono text-xs">{sensor.api_key_prefix}…</span>
-            <span className="text-xs [&>span]:text-xs">
+            <span className="text-meta [&>span]:text-meta">
               <SensorKeyCell sensor={sensor} now={now} />
             </span>
             {sensor.legacy_key && (
@@ -901,24 +895,29 @@ function SensorJobs({ sensor }: { sensor: Sensor }) {
                   </span>
                 </div>
                 {target && (
-                  <p className="truncate font-mono text-xs text-muted-foreground">{target}</p>
+                  <p className="truncate font-mono text-meta text-muted-foreground">{target}</p>
                 )}
-                <div className="flex flex-wrap gap-x-3 text-xs text-muted-foreground">
-                  <span>
-                    {t('sensors.detail.jobs.queued', 'queued')}{' '}
-                    <RelativeTime date={c.created_at} className="text-xs" />
-                  </span>
-                  {c.started_at && c.completed_at && (
-                    <span className="tabular-nums">
-                      {t('sensors.detail.jobs.took', 'took')}{' '}
-                      {formatDurationShort(
-                        (new Date(c.completed_at).getTime() - new Date(c.started_at).getTime()) /
-                          1000
-                      )}
-                    </span>
-                  )}
-                  {c.error_message && <span className="text-destructive">{c.error_message}</span>}
-                </div>
+                <MetaLine
+                  items={[
+                    <MetaItem key="queued" label={t('sensors.detail.jobs.queued', 'queued')}>
+                      <RelativeTime date={c.created_at} />
+                    </MetaItem>,
+                    c.started_at && c.completed_at ? (
+                      <span key="took" className="tabular-nums">
+                        {t('sensors.detail.jobs.took', 'took')}{' '}
+                        {formatDurationShort(
+                          (new Date(c.completed_at).getTime() - new Date(c.started_at).getTime()) /
+                            1000
+                        )}
+                      </span>
+                    ) : null,
+                    c.error_message ? (
+                      <span key="err" className="text-destructive">
+                        {c.error_message}
+                      </span>
+                    ) : null,
+                  ]}
+                />
               </li>
             )
           })}
