@@ -21,6 +21,8 @@ truth: this page describes them as of the merge-queue routing (#730, 2026-10-02)
 | Docker Publish (`docker-publish.yml`) | Tag `v*`, manual | Builds, smoke-tests, publishes, signs and SBOMs every image (see [Images](#images)); on a production release also the offline image bundle | — |
 | Release (`release.yml`) | Tag `v*`; dispatch on a tag | GitHub Release with the release archives (via Release archives), their SBOMs, the signed `checksums-sha256.txt`, build provenance, and the image pull lines | — |
 | Release archives (`release-dist.yml`) | Called by Release; PRs touching its inputs (`paths:`) | Builds the archives with `.github/scripts/release/build-dist.sh`; on a PR builds linux/amd64 only and runs `smoke-dist.sh` (versions, `-check-config` of the example settings, `systemd-analyze verify`/`security`, gateway Caddyfile, web/console health, the image kit's Dockerfiles), publishing nothing | — |
+| Tool Pin Freshness (`tool-pins.yml`) | Mondays 02:00 UTC (from `main`), manual | Compares the inline tool pins in `.github/tool-pins.tsv` with the newest stable releases and opens, updates or closes one issue "Tool pins to bump" (see [Tool pin freshness](#tool-pin-freshness)); `issues: write` only, no pull request | — |
+| API Upgrade Test (`api-upgrade-test.yml`) | Nightly 03:30 UTC (default branch), push to `release/**`, a PR into `main`, manual (optionally from an older release) | Builds the previous release's database, loads representative rows, applies this tree's migrations and asserts the result (see [Upgrade test](#upgrade-test)). Not required; a failure on a release branch means do not merge the release PR | — |
 | PR Release-Note Labels (`pr-labels.yml`) | PR (opened, pushed, reopened); same-repository PRs only | Adds the `notes:*` labels by the files and diffs the PR changes (see [Release-note labels](#release-note-labels)); not required, never fails a PR | — |
 | Release Train (`release-train.yml`) | Manual (a maintainer presses Run) | Proposes the version from conventional commits, picks the newest develop commit with every required check green, builds `release/vX.Y.Z` (with one commit setting `versions.yaml` `platform.release` to `vX.Y.Z`), opens and queues the release PR (see [Releases](#releases)) | — |
 | Release Publish (`release-publish.yml`) | A `release/v*` PR merged into `main`; manual | Tags `vX.Y.Z` (only if `main`'s tree is the release branch's and its `versions.yaml` says `vX.Y.Z`), starts Docker Publish + Release, opens the develop and helm-charts follow-up PRs, closes the train issue | — |
@@ -296,6 +298,69 @@ the queue (no required check; the PR and the push scan the change).
 - **Node:** every `actions/setup-node` step uses `node-version-file: web/.nvmrc`
   (`26`), the same major as `web/Dockerfile` (`node:26-alpine`). Node 25+ ships
   its own `localStorage`; `web/src/test/setup.ts` points Vitest back at jsdom's.
+
+### Tool pin freshness
+
+Linters, scanners, signing tools and the like are pinned inline (a version in a
+workflow `env`, a Makefile variable, a Dockerfile `ARG`), where Dependabot does not
+look. `.github/tool-pins.tsv` lists each pin: the tool, its GitHub repository, whether
+upstream versions come from releases or tags, the highest major version we follow
+(`golangci-lint` stays on v1 on purpose, its v2 does not read our config), the file
+and a regular expression that captures the pinned version, and flags (`checksum`: a
+SHA-256 sits next to the pin and changes with it; `optional`: the pin may not exist
+yet). Add a row whenever you pin a new tool inline.
+
+The weekly **Tool Pin Freshness** workflow runs `.github/scripts/tool-pins.py`. It
+opens or updates one issue labelled `tool-pins` with a table of the tools that have a
+newer stable release (release candidates are ignored) and closes the issue when
+nothing is behind. It uses the `GITHUB_TOKEN` of the job with `contents: read` and
+`issues: write`, so it never opens a pull request: a person or an agent bumps the
+pins in one pull request and CI runs on it, which is why it needs no GitHub App. A
+pin the script cannot find fails the run instead of passing silently (a renamed
+variable would otherwise turn the check into a check of nothing). The Workflow Lint
+job runs `.github/scripts/tool-pins.test.sh`. Run it by hand with
+`GH_TOKEN=$(gh auth token) python3 .github/scripts/tool-pins.py`.
+### Upgrade test
+
+`api-upgrade-test.yml` runs `.github/scripts/upgrade-test.sh`, which does what an operator does on upgrade day,
+on a scratch PostgreSQL 17 database:
+
+0. before any database work, refuses a migration of this tree numbered at or below the previous release's highest
+   version that the release does not have: `migrate up` applies only versions above the current one, so an upgraded
+   install would skip it silently (`--check-order` runs only this step, without a database);
+1. bootstraps the roles and applies the **previous release's** migrations (read from its git tag with `git archive`)
+   as the non-superuser migrator, then checks `schema_migrations` says that release's highest version and not dirty;
+2. loads representative rows, `api/scripts/upgrade-test/seed.sql`: three tenants with members and a role grant,
+   75 assets, 240 findings in several statuses, sources and severities, a sensor per tenant and 150 audit rows;
+3. applies **this tree's** migrations as the migrator and re-runs the roles script, as the `db-roles` and `migrate`
+   services of the Compose stack do;
+4. asserts that the version is this tree's highest migration and not dirty, that `schema_migrations` has one row,
+   that no key table (`tenants`, `users`, `tenant_members`, `user_roles`, `assets`, `findings`, `sensors`,
+   `audit_logs`, `roles`, `permissions`) lost a row, that the app role still reads the data, and that the API built
+   from this tree starts against the upgraded database as the app role and answers `/health` and `/ready` with 200.
+
+The release to start from is the newest `vX.Y.Z` tag reachable from the commit, other than a tag on the commit itself;
+the workflow checks out every tag, and `--prev vX.Y.Z` (or the `prev` input of a manual run) picks another, for example
+the release before last. The seed file runs against the **previous** release's schema, so it uses only columns every
+released schema has (identifiers, NOT NULL columns without a default, a few stable optional ones): add a table or a
+column to it only after the release that introduced it is the oldest one you still upgrade from. A table the seed
+cannot fill (a constraint it does not know) is left out rather than faked.
+
+It runs nightly and on release branches, not on pull requests, because it builds the API (about two minutes) and a
+migration chain; a migration that fails only on a populated table, or only after the previous release's data, is found
+within a day, and always before a release PR merges. Run it locally with a scratch PostgreSQL that has the
+`postgres` superuser and trust authentication:
+
+```bash
+export SUPER_URL=postgres://postgres@localhost:5432/upgrade_test?sslmode=disable \
+  MIGRATOR_URL=postgres://openctem_migrator@localhost:5432/upgrade_test?sslmode=disable \
+  APP_ROLE_URL=postgres://openctem_app@localhost:5432/upgrade_test?sslmode=disable
+(cd api && go build -o /tmp/openctem-server ./cmd/server)
+bash .github/scripts/upgrade-test.sh --server-bin /tmp/openctem-server   # needs migrate, psql, Redis
+```
+
+The database must be empty; the script refuses one that already has a schema. Its tag selection and refusals are
+tested by `.github/scripts/upgrade-test.test.sh` in **Workflow Lint**.
 
 ### Release-note labels
 
