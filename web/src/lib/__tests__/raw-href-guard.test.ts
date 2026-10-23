@@ -62,8 +62,8 @@ const SAFE_TAGS = new Set(['SafeExternalLink'])
 const REVIEWED = new Set([
   // Asset group page: findingsHref() is a fixed same-origin /findings prefix with the group id encoded and a severity from a fixed list.
   'app/(dashboard)/(discovery)/assets/groups/[id]/page.tsx|NextLink|href={findingsHref(severity)}',
-  // StatLink only forwards the page's own constant routes (INTERNET_FACING_HREF and siblings).
-  'app/(dashboard)/(scoping)/attack-surface/page.tsx|Link|href={href}',
+  // StatsCard href only receives the callers' own constant routes (attack surface tiles).
+  'features/shared/components/stats-card.tsx|Link|href={href}',
   // Dashboard drill-down links: DRILL (features/dashboard/lib/drill.ts) holds build-time constant
   // same-origin list routes; DrillCard only forwards its caller's DRILL value.
   'app/(dashboard)/insights/executive/page.tsx|Link|href={href}',
