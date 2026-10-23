@@ -8,6 +8,7 @@
 'use client'
 
 import { useEffect, useMemo, useState, useRef } from 'react'
+import { useRouter } from 'next/navigation'
 import {
   Dialog,
   DialogBody,
@@ -45,6 +46,8 @@ import {
   scheduleError,
 } from '../../lib/scan-form'
 import { getErrorMessage } from '@/lib/api/error-handler'
+import { post } from '@/lib/api/client'
+import { scanEndpoints } from '@/lib/api/endpoints'
 import { notifyScannerConfigWarnings } from '../../lib/scanner-config-warnings'
 import { useCreateScanConfig, invalidateScanConfigsCache } from '@/lib/api/scan-hooks'
 import { probeNewAssetsRequest } from '../../lib/continuous-discovery'
@@ -127,6 +130,9 @@ export function NewScanDialog({ open, onOpenChange, onSubmit }: NewScanDialogPro
   // Scan zones (RFC-023): the picker and routing preview appear once the
   // team has zones and the user may read them.
   const canReadZones = useHasPermission(Permission.ScanZonesRead)
+  // Run now needs scans:execute on top of the scans:write that creates it.
+  const canExecute = useHasPermission(Permission.ScansExecute)
+  const router = useRouter()
   const { data: zonesData } = useScanZones(canReadZones && open)
   const zones = useMemo(() => zonesData?.data ?? [], [zonesData?.data])
   // The previews take names: the picked assets by name, with the typed ones.
@@ -262,11 +268,12 @@ export function NewScanDialog({ open, onOpenChange, onSubmit }: NewScanDialogPro
       setCurrentStep(step)
     }
   }
-  const startLabel = formData.schedule.runImmediately
-    ? t('scans.new.startScan')
-    : formData.schedule.saveOnly
-      ? t('scans.new.saveScan')
-      : t('scans.new.scheduleScan')
+  const startLabel =
+    formData.schedule.runImmediately && canExecute
+      ? t('scans.new.startScan')
+      : formData.schedule.saveOnly
+        ? t('scans.new.saveScan')
+        : t('scans.new.scheduleScan')
 
   const handleSubmit = async (opts: { waitForScope?: boolean; skipRefused?: boolean } = {}) => {
     if (!validateCurrentStep()) return
@@ -333,7 +340,7 @@ export function NewScanDialog({ open, onOpenChange, onSubmit }: NewScanDialogPro
           await submitScanApproval(scanConfig.id, {
             justification: approvalJustification.trim(),
             ticket: approvalTicket.trim(),
-            run_on_approval: formData.schedule.runImmediately,
+            run_on_approval: formData.schedule.runImmediately && canExecute,
           })
           toast.success(
             t('scans.approval.submitted', 'Saved "{name}" and submitted it for approval', {
@@ -353,12 +360,8 @@ export function NewScanDialog({ open, onOpenChange, onSubmit }: NewScanDialogPro
         toast.success(t('scans.new.savedWaiting', undefined, { name: formData.name }), {
           description: t('scans.new.savedWaitingHint'),
         })
-      } else if (formData.schedule.runImmediately) {
-        // Trigger scan immediately if requested
-        // Import trigger function dynamically to avoid hook rules issue
-        const { post } = await import('@/lib/api/client')
-        const { scanEndpoints } = await import('@/lib/api/endpoints')
-
+      } else if (formData.schedule.runImmediately && canExecute) {
+        // Trigger scan immediately if requested (and the user may run scans)
         try {
           await post(scanEndpoints.trigger(scanConfig.id), {})
           toast.success(t('scans.new.started', undefined, { name: formData.name }))
@@ -382,9 +385,7 @@ export function NewScanDialog({ open, onOpenChange, onSubmit }: NewScanDialogPro
               action: {
                 label: t('scans.new.viewScan'),
                 onClick: () => {
-                  // Navigate to the scan detail page
-                  // eslint-disable-next-line @next/next/no-location-assign-relative-destination -- toast action outside the router context; a full navigation to the scan page is intended
-                  window.location.href = `/scans/${scanConfig.id}`
+                  router.push(`/scans/${scanConfig.id}`)
                 },
               },
               description: triggerErrorHint(triggerError) ?? t('scans.new.triggerManually'),
