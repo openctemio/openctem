@@ -28,7 +28,7 @@ Grouped by CTEM stage in `src/config/sidebar-data.ts`:
   Scope (`/scope`: Targets · Exclusions · Seeds), Threat model (tabs
   Threats · Attacker profiles).
 - **Discovery** — Scans, Sensors, Attack surface (+ external), Assets (one row;
-  tabs Inventory · Groups · What changed · Suggestions), Exposures (one row; its
+  tabs Inventory · Groups · Activity · Web surface · Suggestions), Exposures (one row; its
   Overview, Vulnerabilities, Secrets, Code weaknesses and Misconfigurations
   views are in-page section tabs), Credential leaks, Components.
   `/attack-surface/internal` and `/cloud` were retired; they redirect to the

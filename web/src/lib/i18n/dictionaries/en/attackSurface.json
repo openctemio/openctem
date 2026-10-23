@@ -145,7 +145,7 @@
   "attackSurface.overview.newInWindow": "{count} new in the last {days} days",
   "attackSurface.overview.internetFacing": "Internet-facing assets",
   "attackSurface.overview.newlyExposed": "{count} newly exposed in the last {days} days",
-  "attackSurface.overview.internetFacingInfo": "Assets whose exposure is public or that a source reported reachable from the internet. Newly exposed counts the same changes as Assets › What changed.",
+  "attackSurface.overview.internetFacingInfo": "Assets whose exposure is public or that a source reported reachable from the internet. Newly exposed counts the same changes as Assets › Activity.",
   "attackSurface.overview.criticalInternetFacing": "Critical internet-facing assets",
   "attackSurface.overview.criticalInternetFacingInfo": "Internet-facing assets with critical or high criticality. A population to watch, not open risks: open exposures are listed below.",
   "attackSurface.overview.avgRisk": "Average risk score",

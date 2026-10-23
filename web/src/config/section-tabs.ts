@@ -22,7 +22,6 @@ import {
   GitBranch,
   Globe,
   History,
-  ListTree,
   Link2,
   ListChecks,
   Radar,
@@ -202,17 +201,12 @@ export const ASSETS_SECTION_TABS: readonly SectionTab[] = [
     permission: Permission.AssetGroupsRead,
   },
   {
-    label: 'What changed',
+    // One feed of what changed on assets: new, gone and newly exposed assets,
+    // exposure changes, shadow IT, and value changes (RFC-069, `?view=values`).
+    // It keeps the URL the change digest links to.
+    label: 'Activity',
     href: '/assets/changes',
     icon: History,
-    module: 'assets',
-    permission: Permission.AssetsRead,
-  },
-  {
-    // Changes of asset values and of the sources that decide them (RFC-069).
-    label: 'Timeline',
-    href: '/assets/timeline',
-    icon: ListTree,
     module: 'assets',
     permission: Permission.AssetsRead,
   },

@@ -253,7 +253,7 @@ export const sidebarData: SidebarData = {
         // ----------------------------------------
         // ASSETS: one row for the inventory and what organises it. Its views
         // are in-page route tabs (ASSETS_SECTION_TABS), all under /assets:
-        // Inventory | Groups | What changed | Suggestions. What changed is the delta of the
+        // Inventory | Groups | Activity | Suggestions. Activity is the delta of the
         // inventory (fed by the same scans); groups organise it into scan
         // targets and RBAC scopes; relationship suggestions curate the asset
         // graph. The row has no gate of its own: each tab carries its module
