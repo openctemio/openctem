@@ -94,7 +94,7 @@ function severityBadgeClass(severity: string): string {
 type FetchState =
   | { status: 'idle' }
   | { status: 'loading' }
-  | { status: 'error'; message: string }
+  | { status: 'error'; message: string | null }
   | { status: 'done'; result: DryRunResult }
 
 interface DryRunDialogProps {
@@ -104,6 +104,7 @@ interface DryRunDialogProps {
 }
 
 export function DryRunDialog({ open, onOpenChange, rule }: DryRunDialogProps) {
+  const { t } = useTranslation()
   const [state, setState] = useState<FetchState>({ status: 'idle' })
 
   // Re-run whenever the dialog opens for a (possibly different) rule. Keyed on
@@ -135,9 +136,7 @@ export function DryRunDialog({ open, onOpenChange, rule }: DryRunDialogProps) {
       })
       .catch((err: unknown) => {
         if (cancelled) return
-        const message =
-          err instanceof Error ? err.message : 'Failed to evaluate the rule. Please try again.'
-        setState({ status: 'error', message })
+        setState({ status: 'error', message: err instanceof Error ? err.message : null })
       })
 
     return () => {
@@ -153,10 +152,15 @@ export function DryRunDialog({ open, onOpenChange, rule }: DryRunDialogProps) {
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <FlaskConical className="size-5" />
-            Dry run: {rule.name || '(unsaved rule)'}
+            {t('prioritization.dryRun.title', 'Dry run: {name}', {
+              name: rule.name || t('prioritization.dryRun.unsaved', '(unsaved rule)'),
+            })}
           </DialogTitle>
           <DialogDescription>
-            Preview the findings this rule would re-classify. No changes are applied.
+            {t(
+              'prioritization.dryRun.description',
+              'Preview the findings this rule would re-classify. No changes are applied.'
+            )}
           </DialogDescription>
         </DialogHeader>
 
@@ -164,7 +168,9 @@ export function DryRunDialog({ open, onOpenChange, rule }: DryRunDialogProps) {
           <div className="space-y-4 py-2">
             {/* Target priority */}
             <div className="flex items-center gap-2 text-sm">
-              <span className="text-muted-foreground">Would reclassify matching findings to</span>
+              <span className="text-muted-foreground">
+                {t('prioritization.dryRun.target', 'Would reclassify matching findings to')}
+              </span>
               <PriorityClassBadge priorityClass={rule.priority_class} />
             </div>
 
@@ -173,8 +179,16 @@ export function DryRunDialog({ open, onOpenChange, rule }: DryRunDialogProps) {
             ) : state.status === 'error' ? (
               <Alert variant="destructive">
                 <AlertTriangle className="size-4" />
-                <AlertTitle>Could not evaluate the rule</AlertTitle>
-                <AlertDescription>{state.message}</AlertDescription>
+                <AlertTitle>
+                  {t('prioritization.dryRun.errorTitle', 'Could not evaluate the rule')}
+                </AlertTitle>
+                <AlertDescription>
+                  {state.message ??
+                    t(
+                      'prioritization.dryRun.errorFallback',
+                      'Failed to evaluate the rule. Try again.'
+                    )}
+                </AlertDescription>
               </Alert>
             ) : state.status === 'done' ? (
               <ResultView result={state.result} targetClass={rule.priority_class} />
@@ -184,7 +198,7 @@ export function DryRunDialog({ open, onOpenChange, rule }: DryRunDialogProps) {
 
         <DialogFooter>
           <Button variant="outline" onClick={() => onOpenChange(false)}>
-            Close
+            {t('prioritization.dryRun.close', 'Close')}
           </Button>
         </DialogFooter>
       </DialogContent>
@@ -193,8 +207,13 @@ export function DryRunDialog({ open, onOpenChange, rule }: DryRunDialogProps) {
 }
 
 function LoadingState() {
+  const { t } = useTranslation()
   return (
-    <div className="space-y-4" aria-busy="true" aria-label="Evaluating rule">
+    <div
+      className="space-y-4"
+      aria-busy="true"
+      aria-label={t('prioritization.dryRun.evaluating', 'Evaluating rule')}
+    >
       <div className="rounded-md border p-4">
         <Skeleton className="mb-3 h-4 w-40" />
         <Skeleton className="h-8 w-56" />
@@ -218,9 +237,14 @@ function ResultView({ result, targetClass }: { result: DryRunResult; targetClass
     return (
       <div className="rounded-md border border-dashed p-6 text-center">
         <ListChecks className="text-muted-foreground mx-auto mb-2 size-6" />
-        <p className="text-sm font-medium">No findings to evaluate</p>
+        <p className="text-sm font-medium">
+          {t('prioritization.dryRun.none.title', 'No findings to evaluate')}
+        </p>
         <p className="text-muted-foreground mt-1 text-xs">
-          There are no findings in scope for this rule right now, so it would have no effect.
+          {t(
+            'prioritization.dryRun.none.desc',
+            'There are no findings in scope for this rule right now, so it would have no effect.'
+          )}
         </p>
       </div>
     )
@@ -281,7 +305,7 @@ function ResultView({ result, targetClass }: { result: DryRunResult; targetClass
       {matched > 0 ? (
         <div className="rounded-md border p-4">
           <div className="text-muted-foreground mb-3 text-sm font-medium">
-            Would-be priority distribution
+            {t('prioritization.dryRun.distribution', 'Would-be priority distribution')}
           </div>
           <div className="flex flex-wrap gap-3">
             {PRIORITY_ORDER.map((pc) => (
@@ -299,7 +323,7 @@ function ResultView({ result, targetClass }: { result: DryRunResult; targetClass
       {/* Sample findings */}
       <div className="space-y-2">
         <div className="flex items-center justify-between text-sm font-medium">
-          <span>Sample findings</span>
+          <span>{t('prioritization.dryRun.samples', 'Sample findings')}</span>
           {sample.length < matched ? (
             <span className="text-muted-foreground text-xs font-normal">
               {t('prioritization.dryRun.sampleShowing', 'Showing {shown} of {matched} matches', {
@@ -325,7 +349,10 @@ function ResultView({ result, targetClass }: { result: DryRunResult; targetClass
                     {f.severity}
                   </Badge>
                   <PriorityClassBadge priorityClass={f.current_class} showTooltip={false} />
-                  <ArrowRight className="text-muted-foreground size-3" aria-label="becomes" />
+                  <ArrowRight
+                    className="text-muted-foreground size-3"
+                    aria-label={t('prioritization.dryRun.becomes', 'becomes')}
+                  />
                   <PriorityClassBadge priorityClass={f.would_be_class} showTooltip={false} />
                 </div>
               </li>
@@ -333,7 +360,10 @@ function ResultView({ result, targetClass }: { result: DryRunResult; targetClass
           </ul>
         ) : (
           <p className="text-muted-foreground rounded-md border border-dashed p-4 text-center text-sm">
-            No findings match this rule — nothing would be reclassified.
+            {t(
+              'prioritization.dryRun.noMatch',
+              'No findings match this rule, so nothing would be reclassified.'
+            )}
           </p>
         )}
       </div>
