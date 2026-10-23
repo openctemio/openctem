@@ -16,8 +16,10 @@ import { getErrorMessage } from '@/lib/api/error-handler'
 import { safeAvatarSrc } from '@/lib/safe-href'
 import { identityProviderLabel } from '@/lib/identity-provider-label'
 import { LeaveOrganization } from '@/features/organization/components/leave-organization'
+import { useTranslation } from '@/context/i18n-provider'
 
 export default function ProfilePage() {
+  const { t } = useTranslation()
   const { profile, isLoading, isError, error, mutate } = useProfile()
   const { updateProfile, isUpdating } = useUpdateProfile()
 
@@ -55,10 +57,12 @@ export default function ProfilePage() {
       if (result) {
         mutate(result)
         setHasChanges(false)
-        toast.success('Profile updated successfully')
+        toast.success(t('account.profile.updated', 'Profile updated'))
       }
     } catch (error) {
-      toast.error(getErrorMessage(error, 'Failed to update profile'))
+      toast.error(
+        getErrorMessage(error, t('account.profile.updateFailed', 'Could not update the profile'))
+      )
     }
   }
 
@@ -88,7 +92,9 @@ export default function ProfilePage() {
       <Alert variant="destructive">
         <AlertCircle className="h-4 w-4" />
         <AlertDescription>
-          Failed to load profile: {error?.message || 'Unknown error'}
+          {t('account.profile.loadFailed', 'Could not load the profile: {message}', {
+            message: error?.message || t('account.unknownError', 'Unknown error'),
+          })}
         </AlertDescription>
       </Alert>
     )
@@ -101,9 +107,11 @@ export default function ProfilePage() {
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <User className="h-5 w-5" />
-            Profile Information
+            {t('account.profile.title', 'Profile information')}
           </CardTitle>
-          <CardDescription>Your name and contact details</CardDescription>
+          <CardDescription>
+            {t('account.profile.description', 'Your name and contact details')}
+          </CardDescription>
         </CardHeader>
         <CardContent>
           <div className="flex flex-col lg:flex-row gap-8">
@@ -120,12 +128,12 @@ export default function ProfilePage() {
             <div className="flex-1 space-y-4">
               {/* Name */}
               <div className="space-y-2">
-                <Label htmlFor="name">Full Name</Label>
+                <Label htmlFor="name">{t('account.profile.fullName', 'Full name')}</Label>
                 <Input
                   id="name"
                   value={formData.name}
                   onChange={(e) => handleChange('name', e.target.value)}
-                  placeholder="Enter your full name"
+                  placeholder={t('account.profile.fullNamePlaceholder', 'Enter your full name')}
                 />
               </div>
 
@@ -133,25 +141,30 @@ export default function ProfilePage() {
               <div className="space-y-2">
                 <Label htmlFor="email" className="flex items-center gap-2">
                   <Mail className="h-4 w-4" />
-                  Email
+                  {t('account.profile.email', 'Email')}
                 </Label>
                 <div className="flex items-center gap-2">
                   <Input id="email" value={profile?.email || ''} disabled className="bg-muted" />
                   {profile?.email_verified ? (
                     <Badge variant="outline" className="border-success/40 text-success">
                       <Check className="h-3 w-3 me-1" />
-                      Verified
+                      {t('account.profile.verified', 'Verified')}
                     </Badge>
                   ) : (
                     <Badge variant="outline" className="border-warning/40 text-warning">
-                      Unverified
+                      {t('account.profile.unverified', 'Unverified')}
                     </Badge>
                   )}
                 </div>
                 {profile?.auth_provider && profile.auth_provider !== 'local' && (
                   <p className="text-xs text-muted-foreground">
-                    Managed by your identity provider (
-                    {identityProviderLabel(profile.auth_provider)})
+                    {t(
+                      'account.profile.managedByProvider',
+                      'Managed by your identity provider ({provider})',
+                      {
+                        provider: identityProviderLabel(profile.auth_provider),
+                      }
+                    )}
                   </p>
                 )}
               </div>
@@ -160,14 +173,14 @@ export default function ProfilePage() {
               <div className="space-y-2">
                 <Label htmlFor="phone" className="flex items-center gap-2">
                   <Phone className="h-4 w-4" />
-                  Phone Number
+                  {t('account.profile.phone', 'Phone number')}
                 </Label>
                 <Input
                   id="phone"
                   type="tel"
                   value={formData.phone}
                   onChange={(e) => handleChange('phone', e.target.value)}
-                  placeholder="+84 xxx xxx xxx"
+                  placeholder={t('account.profile.phonePlaceholder', '+84 xxx xxx xxx')}
                 />
               </div>
             </div>
@@ -183,34 +196,46 @@ export default function ProfilePage() {
           ) : (
             <Save className="me-2 h-4 w-4" />
           )}
-          {isUpdating ? 'Saving...' : 'Save Changes'}
+          {isUpdating
+            ? t('account.saving', 'Saving...')
+            : t('account.profile.save', 'Save changes')}
         </Button>
       </div>
 
       {/* Account Info Card */}
       <Card>
         <CardHeader>
-          <CardTitle>Account Information</CardTitle>
-          <CardDescription>Details about your account</CardDescription>
+          <CardTitle>{t('account.info.title', 'Account information')}</CardTitle>
+          <CardDescription>
+            {t('account.info.description', 'Details about your account')}
+          </CardDescription>
         </CardHeader>
         <CardContent>
           <dl className="grid gap-4 sm:grid-cols-2">
             <div>
-              <dt className="text-sm font-medium text-muted-foreground">Account ID</dt>
+              <dt className="text-sm font-medium text-muted-foreground">
+                {t('account.info.userId', 'User ID')}
+              </dt>
               <dd className="text-sm font-mono mt-1">{profile?.id || '-'}</dd>
             </div>
             <div>
-              <dt className="text-sm font-medium text-muted-foreground">Auth Provider</dt>
+              <dt className="text-sm font-medium text-muted-foreground">
+                {t('account.info.authProvider', 'Sign-in method')}
+              </dt>
               <dd className="text-sm mt-1">{identityProviderLabel(profile?.auth_provider)}</dd>
             </div>
             <div>
-              <dt className="text-sm font-medium text-muted-foreground">Created</dt>
+              <dt className="text-sm font-medium text-muted-foreground">
+                {t('account.info.created', 'Created')}
+              </dt>
               <dd className="text-sm mt-1">
                 {profile?.created_at ? new Date(profile.created_at).toLocaleDateString() : '-'}
               </dd>
             </div>
             <div>
-              <dt className="text-sm font-medium text-muted-foreground">Last Updated</dt>
+              <dt className="text-sm font-medium text-muted-foreground">
+                {t('account.info.updated', 'Last updated')}
+              </dt>
               <dd className="text-sm mt-1">
                 {profile?.updated_at ? new Date(profile.updated_at).toLocaleDateString() : '-'}
               </dd>

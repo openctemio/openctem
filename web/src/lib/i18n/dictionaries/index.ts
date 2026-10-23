@@ -7,6 +7,7 @@
 // not imported, a key in the wrong file, a key in two files, or en and vi
 // key sets that differ.
 
+import en_account from './en/account.json'
 import en_activity from './en/activity.json'
 import en_auditLog from './en/auditLog.json'
 import en_actor from './en/actor.json'
@@ -82,6 +83,7 @@ import en_remediationClaim from './en/remediationClaim.json'
 import en_remediationCampaigns from './en/remediationCampaigns.json'
 import en_remediationQuery from './en/remediationQuery.json'
 import en_myWork from './en/myWork.json'
+import vi_account from './vi/account.json'
 import vi_activity from './vi/activity.json'
 import vi_auditLog from './vi/auditLog.json'
 import vi_actor from './vi/actor.json'
@@ -162,6 +164,7 @@ export type Dictionary = Record<string, string>
 
 /** Namespace name -> that namespace's catalog file, per locale. */
 export const enNamespaces: Record<string, Dictionary> = {
+  account: en_account,
   activity: en_activity,
   auditLog: en_auditLog,
   actor: en_actor,
@@ -240,6 +243,7 @@ export const enNamespaces: Record<string, Dictionary> = {
 }
 
 export const viNamespaces: Record<string, Dictionary> = {
+  account: vi_account,
   activity: vi_activity,
   auditLog: vi_auditLog,
   actor: vi_actor,
