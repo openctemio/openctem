@@ -250,7 +250,7 @@ export function LinkAssetsDialog({
                           <div className="flex items-center gap-2 text-xs text-muted-foreground">
                             <span className="capitalize">{asset.type.replace(/_/g, ' ')}</span>
                             {asset.criticality && (
-                              <Badge variant="outline" className="h-4 px-1 text-[10px]">
+                              <Badge variant="outline" className="h-4 px-1 text-meta">
                                 {asset.criticality}
                               </Badge>
                             )}
