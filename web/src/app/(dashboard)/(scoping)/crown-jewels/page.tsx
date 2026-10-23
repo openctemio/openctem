@@ -23,6 +23,7 @@ import {
   DetailStatGrid,
   ErrorState,
   type MetricStripItem,
+  CappedNotice,
 } from '@/features/shared'
 import { BUSINESS_CONTEXT_SECTION_TABS } from '@/config/section-tabs'
 import { Can, Permission, useHasPermission } from '@/lib/permissions'
@@ -605,6 +606,10 @@ export default function CrownJewelsPage() {
             onRowClick={(jewel) => setViewJewel(jewel)}
           />
         </div>
+        <CappedNotice
+          loaded={(apiCrownJewels?.data ?? []).length}
+          total={apiCrownJewels?.total ?? 0}
+        />
       </Main>
 
       {/* Create Dialog */}
