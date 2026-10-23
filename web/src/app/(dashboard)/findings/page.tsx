@@ -2108,7 +2108,14 @@ function FindingsContent() {
             className="h-8 shrink-0"
             onClick={() => setViewParam('verify')}
           >
-            {t('findings.view.awaitingVerification', 'Awaiting verification')}
+            {/* A short label on a narrow row, so the view title keeps its room
+                (at phone width the long one squeezed the title to nothing). */}
+            <span className="@md/actions:hidden">
+              {t('findings.view.awaitingVerificationShort', 'To verify')}
+            </span>
+            <span className="hidden @md/actions:inline">
+              {t('findings.view.awaitingVerification', 'Awaiting verification')}
+            </span>
             <span className="ms-2 tabular-nums text-muted-foreground">
               {awaitingVerification.toLocaleString()}
             </span>

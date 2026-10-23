@@ -6,3 +6,4 @@
 - KEV, EPSS and attack-path chips use theme tokens at a readable size, and the path chip says "Path" instead of relying on colour.
 - Phone cards lead with the priority class; a finding with no asset name shows "Unnamed asset" instead of an id fragment.
 - Refresh no longer toasts; the filter panel is a flat bordered panel.
+- On a phone the Awaiting verification button uses a short label, so the view title stays readable.
