@@ -33,6 +33,7 @@ import {
 } from '@/features/notifications/api/use-notification-api'
 import { useUserNotificationChannel } from '@/hooks/use-websocket'
 import { useTenant } from '@/context/tenant-provider'
+import { useTranslation } from '@/context/i18n-provider'
 import { useDisplayUser } from '@/hooks/use-display-user'
 import { safeHref } from '@/lib/safe-href'
 
@@ -141,6 +142,7 @@ function NotificationItem({ notification, onMarkAsRead, onClose }: NotificationI
 }
 
 export function NotificationBell() {
+  const { t } = useTranslation()
   const [open, setOpen] = useState(false)
   const { currentTenant } = useTenant()
   // The profile API is the reliable source of the user id: the auth store is
@@ -208,7 +210,7 @@ export function NotificationBell() {
               {unreadCount > 99 ? '99+' : unreadCount}
             </Badge>
           )}
-          <span className="sr-only">Notifications</span>
+          <span className="sr-only">{t('nav.item.notifications', 'Notifications')}</span>
         </Button>
       </PopoverTrigger>
 
@@ -233,7 +235,9 @@ export function NotificationBell() {
         collisionPadding={8}
       >
         <div className="flex items-center justify-between px-3 py-3 sm:px-4">
-          <h4 className="text-sm font-semibold sm:text-base">Notifications</h4>
+          <h4 className="text-sm font-semibold sm:text-base">
+            {t('nav.item.notifications', 'Notifications')}
+          </h4>
           {unreadCount > 0 && (
             <Button
               variant="ghost"
@@ -242,8 +246,10 @@ export function NotificationBell() {
               onClick={handleMarkAllAsRead}
             >
               <CheckCheck className="h-3 w-3 me-1 sm:me-1" />
-              <span className="hidden sm:inline">Mark all as read</span>
-              <span className="sm:hidden">Mark read</span>
+              <span className="hidden sm:inline">
+                {t('nav.bell.markAllRead', 'Mark all as read')}
+              </span>
+              <span className="sm:hidden">{t('nav.bell.markRead', 'Mark read')}</span>
             </Button>
           )}
         </div>
@@ -254,13 +260,19 @@ export function NotificationBell() {
           {isLoading ? (
             <div className="flex flex-col items-center justify-center py-10 text-muted-foreground sm:py-12">
               <Loader2 className="h-8 w-8 mb-2 animate-spin opacity-30 sm:h-10 sm:w-10 sm:mb-3" />
-              <p className="text-xs font-medium sm:text-sm">Loading notifications...</p>
+              <p className="text-xs font-medium sm:text-sm">
+                {t('nav.bell.loading', 'Loading notifications...')}
+              </p>
             </div>
           ) : notifications.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-10 text-muted-foreground sm:py-12">
               <Bell className="h-8 w-8 mb-2 opacity-30 sm:h-10 sm:w-10 sm:mb-3" />
-              <p className="text-xs font-medium sm:text-sm">No notifications</p>
-              <p className="text-[11px] sm:text-xs">You are all caught up!</p>
+              <p className="text-xs font-medium sm:text-sm">
+                {t('nav.bell.empty', 'No notifications')}
+              </p>
+              <p className="text-[11px] sm:text-xs">
+                {t('nav.bell.emptyHint', 'Nothing new since you last looked.')}
+              </p>
             </div>
           ) : (
             <div className="divide-y">
@@ -286,7 +298,7 @@ export function NotificationBell() {
             asChild
           >
             <Link href="/notifications" onClick={() => setOpen(false)}>
-              View all notifications
+              {t('nav.bell.viewAll', 'View all notifications')}
             </Link>
           </Button>
         </div>
