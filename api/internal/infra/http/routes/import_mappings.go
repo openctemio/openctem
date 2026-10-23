@@ -31,13 +31,13 @@ func registerImportMappingRoutes(router Router, h *handler.ImportMappingHandler,
 		r.GET("/", h.List, read)
 		r.GET("/templates", h.Templates, read)
 		r.POST("/", h.Create, manage, body)
-		r.POST("/validate", h.Validate, manage, body)
+		r.POST("/verify", h.Validate, manage, body)
 		r.POST("/preview", h.Preview, manage, previewRL.TenantMiddleware(),
 			middleware.BodyLimit(handler.MaxImportMappingPreviewBody))
 		r.GET("/{id}", h.Get, read)
 		r.PATCH("/{id}", h.Update, manage, body)
 		r.DELETE("/{id}", h.Delete, manage, requireStepUp())
 		r.POST("/{id}/versions", h.AddVersion, manage, body)
-		r.GET("/{id}/versions/{version}", h.GetVersion, read)
+		r.GET("/{id}/versions/{version_id}", h.GetVersion, read)
 	}, tenantMiddlewares...)
 }

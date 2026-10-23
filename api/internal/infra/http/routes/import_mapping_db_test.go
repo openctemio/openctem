@@ -101,7 +101,7 @@ func TestImportMappings_DB(t *testing.T) {
 	}
 
 	// Every by-id route answers 404 to the other organization.
-	p := map[string]string{"id": id, "version": "1"}
+	p := map[string]string{"id": id, "version_id": "1"}
 	for name, fn := range map[string]http.HandlerFunc{"get": m.mh.Get, "version": m.mh.GetVersion, "patch": m.mh.Update, "delete": m.mh.Delete, "add": m.mh.AddVersion} {
 		body := []byte(`{}`)
 		if name == "add" {
