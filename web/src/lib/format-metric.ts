@@ -130,6 +130,17 @@ export function formatRelativeTime(
   return rtf.format(Math.round(value), 'year')
 }
 
+/** A calendar date ("23 Oct 2026" / "23 thg 10, 2026") in the locale. Invalid dates are "—". */
+export function formatCalendarDate(date: string | Date | null | undefined, locale = 'en'): string {
+  const d = date == null ? null : typeof date === 'string' ? new Date(date) : date
+  if (!d || Number.isNaN(d.getTime())) return '—'
+  try {
+    return new Intl.DateTimeFormat(locale, { dateStyle: 'medium' }).format(d)
+  } catch {
+    return new Intl.DateTimeFormat('en', { dateStyle: 'medium' }).format(d)
+  }
+}
+
 /** The absolute date and time, for hover text next to a relative time. */
 export function formatAbsoluteTime(date: string | Date | null | undefined, locale = 'en'): string {
   const d = date == null ? null : typeof date === 'string' ? new Date(date) : date
