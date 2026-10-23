@@ -170,7 +170,7 @@ export function EASMOverview() {
                           href={EASM_REVIEW_HREF}
                           className="font-medium text-foreground underline underline-offset-2"
                         >
-                          {t('easmReview.overview.suggestions', 'Suggestions')}
+                          {t('easmReview.overview.suggestions', 'Review')}
                         </Link>
                       </>
                     ) : undefined

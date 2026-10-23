@@ -82,6 +82,7 @@ export const SCOPE_PAGE_SIZES = [10, 20, 30, 50, 100]
 /** Where scan approval governance (Off, On, Strict) is set. */
 const SCAN_APPROVAL_HREF = '/settings/scanning/scan-approval'
 
+/** English fallback; the key is scope.entries.perScanHint. */
 const PER_SCAN_HINT =
   'Scan intensity is chosen on each scan. Entry ceilings apply only in Strict governance.'
 
@@ -182,7 +183,7 @@ export function ScopeEntriesTable({
     }
     const out: RowAction[] = [
       {
-        label: 'Edit',
+        label: t('scope.entries.act.edit', 'Edit'),
         icon: Pencil,
         onClick: () => setEditEntry(e),
         permission: Permission.ScopeWrite,
@@ -190,10 +191,16 @@ export function ScopeEntriesTable({
     ]
     if (st === 'active') {
       out.push({
-        label: 'Deactivate',
+        label: t('scope.entries.act.deactivate', 'Deactivate'),
         icon: PowerOff,
         onClick: () =>
-          void act(() => setScopeTargetActive(id, false), `${e.pattern} deactivated`, 'Failed'),
+          void act(
+            () => setScopeTargetActive(id, false),
+            t('scope.entries.toast.deactivated', '{pattern} deactivated.', {
+              pattern: e.pattern ?? '',
+            }),
+            t('scope.existing.failed', 'The change was not saved.')
+          ),
         permission: Permission.ScopeWrite,
       })
     }
@@ -219,26 +226,40 @@ export function ScopeEntriesTable({
     }
     if (st === 'inactive') {
       out.push({
-        label: 'Activate (may need approval)',
+        label: t('scope.entries.act.activate', 'Activate (may need approval)'),
         icon: Power,
         onClick: () =>
-          void act(() => setScopeTargetActive(id, true), `${e.pattern} activated`, 'Failed'),
+          void act(
+            () => setScopeTargetActive(id, true),
+            t('scope.entries.toast.activated', '{pattern} activated.', {
+              pattern: e.pattern ?? '',
+            }),
+            t('scope.existing.failed', 'The change was not saved.')
+          ),
         disabled: !canApprove,
-        disabledReason: 'Activating widens scope: only a scope approver can do it.',
+        disabledReason: t(
+          'scope.entries.activateNeedsApprover',
+          'Activating widens scope: only a scope approver can do it.'
+        ),
       })
     }
     if (st === 'expired' || (st === 'active' && e.expires_at)) {
       out.push({
-        label: `Extend by ${renewDays} days (may need approval)`,
+        label: t('scope.entries.act.extend', 'Extend by {n} days (may need approval)', {
+          n: renewDays,
+        }),
         icon: CalendarClock,
         onClick: () =>
           void act(
             () => updateScopeTarget(id, { expires_in_days: renewDays }),
-            `${e.pattern} extended`,
-            'Extend failed'
+            t('scope.entries.toast.extended', '{pattern} extended.', { pattern: e.pattern ?? '' }),
+            t('scope.entries.extendFailed', 'Could not extend the entry.')
           ),
         disabled: !canApprove,
-        disabledReason: 'A later expiry widens scope: only a scope approver can do it.',
+        disabledReason: t(
+          'scope.entries.extendNeedsApprover',
+          'A later expiry widens scope: only a scope approver can do it.'
+        ),
       })
     }
     if (e.target_type === 'repository') {
@@ -250,7 +271,7 @@ export function ScopeEntriesTable({
       })
     }
     out.push({
-      label: 'Remove',
+      label: t('confirm.remove', 'Remove'),
       icon: Trash2,
       onClick: () => setDeleteEntry(e),
       destructive: true,
@@ -263,21 +284,23 @@ export function ScopeEntriesTable({
   const columns: ColumnDef<ApiScopeTarget>[] = [
     {
       accessorKey: 'pattern',
-      header: 'Entry',
+      header: t('scope.col.entry', 'Entry'),
       enableHiding: false,
       cell: ({ row }) => (
         <div className="min-w-0 space-y-0.5">
           <code className="break-all rounded bg-muted px-1.5 py-0.5 text-sm">
             {row.original.pattern}
           </code>
-          <p className="text-xs text-muted-foreground">Covers {coversText(row.original)}</p>
+          <p className="text-xs text-muted-foreground">
+            {t('scope.col.covers', 'Covers {what}', { what: coversText(row.original) })}
+          </p>
           <ManagedByCITrust entry={row.original} />
         </div>
       ),
     },
     {
       accessorKey: 'target_type',
-      header: 'Kind',
+      header: t('scope.col.kind', 'Kind'),
       cell: ({ row }) => (
         <div className="flex items-center gap-2 text-muted-foreground">
           {scopeKindIcon(row.original.target_type)}
@@ -289,15 +312,15 @@ export function ScopeEntriesTable({
     },
     {
       accessorKey: 'status',
-      header: 'Status',
+      header: t('scope.col.status', 'Status'),
       cell: ({ row }) => {
         const e = row.original
         const st = entryStatus(e)
         return (
           <TonePill
             tone={SCOPE_ENTRY_STATUS_TONE[st]}
-            label={SCOPE_ENTRY_STATUS_LABEL[st]}
-            title={SCOPE_ENTRY_STATUS_HINT[st]}
+            label={t(`scope.entry.status.${st}.label`, SCOPE_ENTRY_STATUS_LABEL[st])}
+            title={t(`scope.entry.status.${st}.hint`, SCOPE_ENTRY_STATUS_HINT[st])}
             detail={e.expires_at ? expiryText(e.expires_at) : undefined}
             state={st}
           />
@@ -327,7 +350,7 @@ export function ScopeEntriesTable({
 
     {
       accessorKey: 'reason',
-      header: 'Reason',
+      header: t('scope.col.reason', 'Reason'),
       cell: ({ row }) => {
         const text = row.original.reason || row.original.description
         return text ? (
@@ -341,7 +364,7 @@ export function ScopeEntriesTable({
     },
     {
       accessorKey: 'created_by',
-      header: 'Added by',
+      header: t('scope.col.addedBy', 'Added by'),
       cell: ({ row }) => <ActorChip actor={row.original.created_by} at={row.original.created_at} />,
     },
     {
@@ -349,7 +372,9 @@ export function ScopeEntriesTable({
       enableHiding: false,
       cell: ({ row }) => (
         <DataTableRowActions
-          label={`Actions for ${row.original.pattern}`}
+          label={t('scope.col.actionsFor', 'Actions for {pattern}', {
+            pattern: row.original.pattern ?? '',
+          })}
           actions={actionsFor(row.original)}
         />
       ),
@@ -363,8 +388,8 @@ export function ScopeEntriesTable({
       <div className="relative min-w-0 flex-1 sm:max-w-sm">
         <SearchIcon className="pointer-events-none absolute start-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
         <Input
-          placeholder="Search entries…"
-          aria-label="Search scope entries"
+          placeholder={t('scope.entries.search', 'Search entries…')}
+          aria-label={t('scope.entries.searchLabel', 'Search scope entries')}
           value={searchInput}
           onChange={(e) => onSearchInput(e.target.value)}
           className="h-9 ps-9"
@@ -375,17 +400,20 @@ export function ScopeEntriesTable({
         onValueChange={onKindChange}
         withAll
         className="h-9 w-auto min-w-36"
-        aria-label="Filter by kind"
+        aria-label={t('scope.filter.kind', 'Filter by kind')}
       />
       <Select value={query.status} onValueChange={onStatusChange}>
-        <SelectTrigger className="h-9 w-auto min-w-36" aria-label="Filter by status">
+        <SelectTrigger
+          className="h-9 w-auto min-w-36"
+          aria-label={t('scope.filter.status', 'Filter by status')}
+        >
           <SelectValue />
         </SelectTrigger>
         <SelectContent>
-          <SelectItem value="all">All statuses</SelectItem>
+          <SelectItem value="all">{t('scope.filter.allStatuses', 'All statuses')}</SelectItem>
           {IN_SCOPE_STATUSES.map((s) => (
             <SelectItem key={s} value={s}>
-              {SCOPE_ENTRY_STATUS_LABEL[s]}
+              {t(`scope.entry.status.${s}.label`, SCOPE_ENTRY_STATUS_LABEL[s])}
             </SelectItem>
           ))}
         </SelectContent>
@@ -424,11 +452,18 @@ export function ScopeEntriesTable({
             pagination={{ pageIndex: query.page - 1, pageSize: query.perPage }}
             onPaginationChange={onPagination}
             pageSizeOptions={SCOPE_PAGE_SIZES}
-            emptyMessage={filtersActive ? 'No entries match' : 'Nothing is in scope yet'}
+            emptyMessage={
+              filtersActive
+                ? t('scope.entries.noMatch', 'No entries match')
+                : t('scope.entries.emptyTitle', 'Nothing is in scope yet')
+            }
             emptyDescription={
               filtersActive
-                ? 'Try another search, kind or status.'
-                : 'Scans refuse every internet target no entry covers.'
+                ? t('scope.filter.tryAnother', 'Try another search, kind or status.')
+                : t(
+                    'scope.entries.emptyDescription',
+                    'Scans refuse every internet target no entry covers.'
+                  )
             }
           />
         </div>
@@ -453,10 +488,20 @@ export function ScopeEntriesTable({
           try {
             await removeTarget()
             await invalidateScopeCache()
-            toast.success(`${deleteEntry?.pattern} removed from scope`)
+            toast.success(
+              t('scope.entries.toast.removed', '{pattern} removed from scope.', {
+                pattern: deleteEntry?.pattern ?? '',
+              })
+            )
             setDeleteEntry(null)
           } catch (err) {
-            toast.error(scopeErrorMessage(t, err, 'Could not remove the entry.'))
+            toast.error(
+              scopeErrorMessage(
+                t,
+                err,
+                t('scope.entries.removeFailed', 'Could not remove the entry.')
+              )
+            )
           }
         }}
       />

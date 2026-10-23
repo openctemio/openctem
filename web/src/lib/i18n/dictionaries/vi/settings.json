@@ -903,5 +903,7 @@
   "settings.vulnMatching.panel.unknown": "không rõ",
   "settings.vulnMatching.panel.lowered": "Độ tin cậy bị giảm vì:",
   "settings.vulnMatching.panel.reported": "Điều lượt quét báo cáo",
-  "settings.vulnMatching.panel.footer": "Nâng cấp ra khỏi dải bị ảnh hưởng sẽ giải quyết phát hiện này ở lượt quét kế tiếp; công cụ quét hoặc phép xác thực xác nhận được nó sẽ thay thế bằng chứng này."
+  "settings.vulnMatching.panel.footer": "Nâng cấp ra khỏi dải bị ảnh hưởng sẽ giải quyết phát hiện này ở lượt quét kế tiếp; công cụ quét hoặc phép xác thực xác nhận được nó sẽ thay thế bằng chứng này.",
+  "settings.item.import-mappings": "Ánh xạ nhập dữ liệu",
+  "settings.desc.import-mappings": "Chuyển bản xuất CSV, JSON hoặc XML thành phát hiện và tài sản."
 }

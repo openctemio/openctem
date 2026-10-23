@@ -1,6 +1,7 @@
 'use client'
 
 import { useState } from 'react'
+import { useTranslation } from '@/context/i18n-provider'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { EmptyState } from '@/features/shared'
@@ -33,22 +34,28 @@ export function ScopePicker({
   isGenerating,
   onGenerate,
 }: ScopePickerProps) {
+  const { t } = useTranslation()
   const [selected, setSelected] = useState<string>('')
 
   if (!isLoading && crownJewels.length === 0) {
     return (
       <Card>
         <CardHeader>
-          <CardTitle className="text-base">Generate a threat model</CardTitle>
+          <CardTitle className="text-base">
+            {t('threatModel.picker.title', 'Generate a threat model')}
+          </CardTitle>
         </CardHeader>
         <CardContent>
           <EmptyState
             icon={Crown}
-            title="No crown jewels in scope"
-            description="Threat models are generated per crown jewel. Designate a critical asset as a crown jewel, then return here to generate its model."
+            title={t('threatModel.picker.emptyTitle', 'No crown jewels in scope')}
+            description={t(
+              'threatModel.picker.emptyDescription',
+              'Threat models are generated per crown jewel. Designate a critical asset as a crown jewel, then return here to generate its model.'
+            )}
             action={
               <Button variant="outline" asChild>
-                <a href="/crown-jewels">Manage crown jewels</a>
+                <a href="/crown-jewels">{t('threatModel.picker.manage', 'Manage crown jewels')}</a>
               </Button>
             }
             card={false}
@@ -61,22 +68,30 @@ export function ScopePicker({
   return (
     <Card>
       <CardHeader>
-        <CardTitle className="text-base">Generate a threat model</CardTitle>
+        <CardTitle className="text-base">
+          {t('threatModel.picker.title', 'Generate a threat model')}
+        </CardTitle>
         <CardDescription>
-          Pick a crown-jewel asset to build (or refresh) its derived threat model from attacker
-          profiles and attack paths.
+          {t(
+            'threatModel.picker.description',
+            'Pick a crown-jewel asset to build or refresh its derived threat model from attacker profiles and attack paths.'
+          )}
         </CardDescription>
       </CardHeader>
       <CardContent>
         <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
           <div className="flex-1 space-y-1.5">
             <label className="text-sm font-medium" htmlFor="crown-jewel-scope">
-              Crown-jewel scope
+              {t('threatModel.picker.scopeLabel', 'Crown-jewel scope')}
             </label>
             <Select value={selected} onValueChange={setSelected} disabled={isLoading}>
               <SelectTrigger id="crown-jewel-scope" className="w-full">
                 <SelectValue
-                  placeholder={isLoading ? 'Loading crown jewels…' : 'Select an asset'}
+                  placeholder={
+                    isLoading
+                      ? t('threatModel.picker.loading', 'Loading crown jewels…')
+                      : t('threatModel.picker.select', 'Select an asset')
+                  }
                 />
               </SelectTrigger>
               <SelectContent>
@@ -87,7 +102,7 @@ export function ScopePicker({
                       {cj.name}
                       {cj.criticality && (
                         <span className="text-muted-foreground text-xs capitalize">
-                          ({cj.criticality})
+                          ({t(`threatModel.criticality.${cj.criticality}`, cj.criticality)})
                         </span>
                       )}
                     </span>
@@ -99,7 +114,10 @@ export function ScopePicker({
           <Can
             permission={Permission.AssetsWrite}
             mode="disable"
-            disabledTooltip="You need assets:write to generate a threat model"
+            disabledTooltip={t(
+              'threatModel.picker.needWrite',
+              'You need assets:write to generate a threat model'
+            )}
           >
             <Button
               onClick={() => selected && onGenerate(selected)}
@@ -110,7 +128,9 @@ export function ScopePicker({
               ) : (
                 <Sparkles className="me-2 h-4 w-4" />
               )}
-              {isGenerating ? 'Generating…' : 'Generate'}
+              {isGenerating
+                ? t('threatModel.picker.generating', 'Generating…')
+                : t('threatModel.picker.generate', 'Generate')}
             </Button>
           </Can>
         </div>

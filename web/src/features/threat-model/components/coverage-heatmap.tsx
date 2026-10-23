@@ -1,5 +1,6 @@
 'use client'
 
+import { useTranslation } from '@/context/i18n-provider'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
@@ -29,6 +30,7 @@ interface CoverageHeatmapProps {
  * client-side Navigator layer (v4.5) export.
  */
 export function CoverageHeatmap({ modelId, modelName }: CoverageHeatmapProps) {
+  const { t } = useTranslation()
   const { coverage, isLoading } = useThreatModelCoverage(modelId)
 
   if (isLoading || !coverage) {
@@ -43,11 +45,18 @@ export function CoverageHeatmap({ modelId, modelName }: CoverageHeatmapProps) {
       {hasTechniques ? (
         <Card>
           <CardHeader>
-            <CardTitle className="text-base">ATT&CK Coverage Matrix</CardTitle>
+            <CardTitle className="text-base">
+              {t('threatModel.heatmap.title', 'ATT&CK coverage matrix')}
+            </CardTitle>
             <CardDescription>
-              Columns are kill-chain tactics; each cell is a technique colored by its worst-case
-              threat status. {coverage.totals.techniques} techniques ·{' '}
-              {Math.round(coverage.totals.coverage_pct)}% coverage.
+              {t(
+                'threatModel.heatmap.description',
+                'Columns are kill-chain tactics. Each cell is a technique colored by its worst-case threat status. {techniques, plural, one {# technique} other {# techniques}}, {pct}% coverage.',
+                {
+                  techniques: coverage.totals.techniques,
+                  pct: Math.round(coverage.totals.coverage_pct),
+                }
+              )}
             </CardDescription>
             <StatusLegend />
           </CardHeader>
@@ -66,8 +75,11 @@ export function CoverageHeatmap({ modelId, modelName }: CoverageHeatmapProps) {
       ) : (
         <EmptyState
           icon={Grid3x3}
-          title="No techniques in scope"
-          description="This threat model has no derived ATT&CK techniques yet. Refresh it once attack paths and attacker profiles are available."
+          title={t('threatModel.heatmap.emptyTitle', 'No techniques in scope')}
+          description={t(
+            'threatModel.heatmap.emptyDescription',
+            'This threat model has no derived ATT&CK techniques yet. Refresh it once attack paths and attacker profiles are available.'
+          )}
         />
       )}
     </div>
@@ -83,6 +95,7 @@ function CoverageToolbar({
   modelName: string
   disabled: boolean
 }) {
+  const { t } = useTranslation()
   const handleDownload = () => {
     const { layer, unmappedTactics } = buildNavigatorLayer(coverage, modelName)
     const blob = new Blob([JSON.stringify(layer, null, 2)], { type: 'application/json' })
@@ -95,35 +108,40 @@ function CoverageToolbar({
     a.remove()
     URL.revokeObjectURL(url)
     if (unmappedTactics.length > 0) {
-      toast.warning(`Layer exported; unmapped tactic shortnames: ${unmappedTactics.join(', ')}`)
+      toast.warning(
+        t(
+          'threatModel.heatmap.layerUnmapped',
+          'Layer exported. Unmapped tactic shortnames: {names}',
+          { names: unmappedTactics.join(', ') }
+        )
+      )
     } else {
-      toast.success('ATT&CK Navigator layer downloaded')
+      toast.success(t('threatModel.heatmap.layerDownloaded', 'ATT&CK Navigator layer downloaded.'))
     }
   }
 
   return (
     <div className="flex items-center justify-between gap-3">
       <p className="text-muted-foreground text-sm">
-        Open{' '}
-        <span className="text-red-600 dark:text-red-400 font-medium">{coverage.totals.open}</span> ·
-        Theoretical{' '}
-        <span className="text-slate-600 dark:text-slate-400 font-medium">
-          {coverage.totals.theoretical}
-        </span>{' '}
-        · Covered/Mitigated{' '}
-        <span className="text-green-600 dark:text-green-400 font-medium">
+        {t('threatModel.heatmap.open', 'Open')}{' '}
+        <span className="text-destructive font-medium">{coverage.totals.open}</span> ·{' '}
+        {t('threatModel.status.theoretical', 'Theoretical')}{' '}
+        <span className="font-medium">{coverage.totals.theoretical}</span> ·{' '}
+        {t('threatModel.heatmap.coveredMitigated', 'Covered/Mitigated')}{' '}
+        <span className="text-success font-medium">
           {coverage.totals.covered + coverage.totals.mitigated}
         </span>
       </p>
       <Button variant="outline" size="sm" onClick={handleDownload} disabled={disabled}>
         <Download className="me-2 h-4 w-4" />
-        Download Navigator layer
+        {t('threatModel.heatmap.download', 'Download Navigator layer')}
       </Button>
     </div>
   )
 }
 
 function StatusLegend() {
+  const { t } = useTranslation()
   return (
     <div className="flex flex-wrap gap-3 pt-2">
       {THREAT_STATUS_ORDER.map((status) => {
@@ -131,7 +149,7 @@ function StatusLegend() {
         return (
           <div key={status} className="flex items-center gap-1.5">
             <span className={cn('h-3 w-3 rounded-sm', style.dotClass)} />
-            <span className="text-muted-foreground text-xs">{style.label}</span>
+            <span className="text-muted-foreground text-xs">{t(style.labelKey, status)}</span>
           </div>
         )
       })}
@@ -156,6 +174,7 @@ function TacticColumn({ tactic, techniques }: { tactic: string; techniques: Cove
 }
 
 function TechniqueCell({ tech }: { tech: CoverageTechnique }) {
+  const { t } = useTranslation()
   const style = getThreatStatusStyle(tech.status)
   return (
     <TooltipProvider delayDuration={150}>
@@ -179,17 +198,28 @@ function TechniqueCell({ tech }: { tech: CoverageTechnique }) {
           <div className="space-y-1 text-sm">
             <p className="font-semibold">{tech.technique_name}</p>
             <p className="text-muted-foreground font-mono text-xs">
-              {tech.technique_id} · <span className="capitalize">{tech.status}</span> · max{' '}
-              {tech.max_score}
+              {tech.technique_id} · {t(style.labelKey, tech.status)} ·{' '}
+              {t('threatModel.heatmap.maxScore', 'max {score}', { score: tech.max_score })}
             </p>
             <div className="text-muted-foreground text-xs">
-              {tech.threat_count} threat{tech.threat_count === 1 ? '' : 's'} — open{' '}
-              {tech.counts.open}, mitigated {tech.counts.mitigated}, covered {tech.counts.covered},
-              accepted {tech.counts.accepted}, theoretical {tech.counts.theoretical}
+              {t(
+                'threatModel.heatmap.techniqueCounts',
+                '{n, plural, one {# threat} other {# threats}}: open {open}, mitigated {mitigated}, covered {covered}, accepted {accepted}, theoretical {theoretical}',
+                {
+                  n: tech.threat_count,
+                  open: tech.counts.open,
+                  mitigated: tech.counts.mitigated,
+                  covered: tech.counts.covered,
+                  accepted: tech.counts.accepted,
+                  theoretical: tech.counts.theoretical,
+                }
+              )}
             </div>
             {tech.mitigation_ids.length > 0 && (
               <p className="text-muted-foreground text-xs">
-                Mitigations: {tech.mitigation_ids.join(', ')}
+                {t('threatModel.heatmap.mitigations', 'Mitigations: {ids}', {
+                  ids: tech.mitigation_ids.join(', '),
+                })}
               </p>
             )}
           </div>

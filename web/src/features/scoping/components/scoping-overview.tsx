@@ -9,7 +9,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Skeleton } from '@/components/ui/skeleton'
 import { ErrorState, PageHeader } from '@/features/shared'
 import { CycleStatusBadge } from '@/features/cycles/components/cycle-status-badge'
-import { useNavItemAccess } from '@/lib/permissions'
+import { Permission, useHasPermission, useNavItemAccess } from '@/lib/permissions'
 import { cn } from '@/lib/utils'
 import { useScopingSummary, type ScopingSummary } from '../api'
 import { readinessRows, readinessScore, visibleReadiness, type ReadinessRow } from '../readiness'
@@ -146,6 +146,9 @@ export function ScopingOverview() {
   )
   const cycle = data?.active_cycle ?? null
   const cyclesOn = allowed({ module: 'ctem_cycles' })
+  // Starting a cycle creates one, which needs the write permission; opening the
+  // running cycle only reads it.
+  const canStartCycle = useHasPermission(Permission.CTEMCyclesWrite)
 
   return (
     <Main>
@@ -153,7 +156,7 @@ export function ScopingOverview() {
         title="Scoping"
         description="What the program protects this cycle, and whether that is written down."
       >
-        {cyclesOn && !isLoading && data && (
+        {cyclesOn && !isLoading && data && (cycle || canStartCycle) && (
           <Button asChild size="sm">
             {cycle ? (
               <Link href={`/cycles/${cycle.id}`}>
