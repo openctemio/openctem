@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs'
 import path from 'node:path'
 import { describe, expect, it } from 'vitest'
-import { contrast, oklch } from '../../../scripts/check-palette.mjs'
+import { ACCENT_BAND, contrast, oklch } from '../../../scripts/check-palette.mjs'
 
 /**
  * Brand tokens in src/styles/theme.css: the brand values themselves, and
@@ -37,6 +37,7 @@ function hex(theme: Record<string, string>, name: string, depth = 0): string {
 const THEMES = { light, dark } as const
 const SURFACES = ['--background', '--card', '--popover', '--surface-raised']
 const SEV = ['critical', 'high', 'medium', 'low', 'info']
+const PRIO = [0, 1, 2, 3]
 
 describe('brand tokens', () => {
   it('use the brand palette: paper and ink grounds, the teal accent', () => {
@@ -98,6 +99,37 @@ describe('brand tokens', () => {
       for (const s of ['--destructive', '--success', '--warning', '--info'])
         for (const bg of ['--background', '--card']) pair(s, bg, 4.5)
       pair('--destructive-foreground', '--destructive', 4.5)
+    })
+
+    it(`${mode}: priority box text at AA, marks at 3:1, edges visible`, () => {
+      for (const n of PRIO) {
+        pair(`--prio-${n}-fg`, `--prio-${n}-bg`, 4.5)
+        for (const bg of SURFACES) pair(`--prio-${n}`, bg, 3)
+        // P2 and P3 boxes are tints: their edge must separate them from the card.
+        if (n >= 2) pair(`--prio-${n}-border`, '--card', 3)
+      }
+    })
+
+    it(`${mode}: priority is its own system, never teal and never a severity hue`, () => {
+      for (const n of PRIO) {
+        for (const name of [
+          `--prio-${n}`,
+          `--prio-${n}-bg`,
+          `--prio-${n}-fg`,
+          `--prio-${n}-border`,
+        ]) {
+          const [, chroma, hue] = oklch(hex(t, name)) as number[]
+          // Not in the accent band (teal), and the ramp stays on the ink hue.
+          expect(chroma >= 0.04 && hue >= ACCENT_BAND[0] && hue <= ACCENT_BAND[1], name).toBe(false)
+          expect(chroma, name).toBeLessThan(0.1)
+        }
+        for (const s of SEV) expect(hex(t, `--prio-${n}`)).not.toBe(hex(t, `--sev-${s}`))
+      }
+    })
+
+    it(`${mode}: priority steps from P0 (strongest) to P3 (quietest) by contrast with the card`, () => {
+      const c = PRIO.map((n) => contrast(hex(t, `--prio-${n}`), hex(t, '--card')))
+      for (let i = 1; i < c.length; i++) expect(c[i]).toBeLessThan(c[i - 1])
     })
 
     it(`${mode}: severity text, marks and ink on a solid mark`, () => {
