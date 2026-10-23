@@ -123,14 +123,14 @@ func isCheckViolation(err error) bool {
 func isForeignKeyViolation(err error) bool {
 	var pqErr *pq.Error
 	if errors.As(err, &pqErr) {
-		return isForeignKeyCode(pqErr.Code)
+		return isForeignKeyCode(string(pqErr.Code))
 	}
 	return false
 }
 
 // isForeignKeyCode is the SQLSTATE test behind isForeignKeyViolation, for the
 // callers that also read the constraint name from the same pq.Error.
-func isForeignKeyCode(code pq.ErrorCode) bool {
+func isForeignKeyCode(code string) bool {
 	return code == "23503" || code == "23001"
 }
 
