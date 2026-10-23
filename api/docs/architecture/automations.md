@@ -148,7 +148,8 @@ class is the highest of its steps.
 - A draft with blocking validate problems is refused (400 `WORKFLOW_INVALID`,
   the problems in `details.problems`).
 - The approval binds the version's digest: a wrong digest, or a version a
-  newer publish request replaced (`retired`), is 409 `VERSION_CHANGED`; the
+  newer publish request replaced or a draft edit withdrew (`retired`: any
+  edit that changes the digest, not a node move), is 409 `VERSION_CHANGED`; the
   publisher approving is 403 `SELF_APPROVAL`. On approval the version goes
   live and its publisher becomes the owner live runs act as.
 - Rollback takes the same gate as the older version's class.
