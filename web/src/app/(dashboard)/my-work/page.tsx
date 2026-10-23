@@ -147,7 +147,7 @@ function MyWorkContent() {
           return (
             <div className="min-w-0 max-w-[520px]">
               <Link
-                href={`/findings/${f.id}`}
+                href={`/findings/${encodeURIComponent(f.id)}`}
                 dir="auto"
                 className="block truncate text-sm font-medium [unicode-bidi:isolate] hover:underline"
                 onClick={(e) => e.stopPropagation()}
