@@ -1001,10 +1001,6 @@
   "findings.approvals.emptyPending": "Không có yêu cầu nào đang chờ",
   "findings.approvals.emptyPendingDesc": "Yêu cầu đánh dấu dương tính giả hoặc chấp nhận rủi ro cần người thứ hai duyệt sẽ hiện ở đây. Yêu cầu đã quyết định nằm ở Đã phê duyệt, Đã từ chối và Tất cả.",
   "findings.approvals.refresh": "Làm mới",
-  "findings.approvals.backToFindings": "Quay lại Phát hiện",
-  "findings.approvals.loadFailed": "Không tải được yêu cầu phê duyệt",
-  "findings.approvals.unexpectedError": "Đã xảy ra lỗi không mong muốn",
-  "findings.approvals.retry": "Thử lại",
   "findings.approvals.tabAll": "Tất cả",
   "findings.approvals.status.pending": "Đang chờ",
   "findings.approvals.status.approved": "Đã phê duyệt",
@@ -1043,7 +1039,6 @@
   "findings.approvals.toast.rejectFailed": "Từ chối yêu cầu thất bại",
   "findings.approvals.toast.canceled": "Đã hủy yêu cầu",
   "findings.approvals.toast.cancelFailed": "Hủy yêu cầu thất bại",
-  "findings.approvals.toast.refreshed": "Đã làm mới danh sách phê duyệt",
   "findings.approvals.col.decideBy": "Hạn quyết định",
   "findings.approvals.action.remind": "Nhắc người phê duyệt",
   "findings.approvals.toast.reminded": "Đã nhắc {count} người phê duyệt",
@@ -1712,5 +1707,11 @@
   "findings.identity.reason.refingerprint": "trùng khóa sau khi tạo lại khóa",
   "findings.identity.reason.dastRepair": "sửa khóa phát hiện web",
   "findings.identity.reason.other": "đã gộp",
-  "findings.detail.section.identity": "giải thích danh tính"
+  "findings.detail.section.identity": "giải thích danh tính",
+  "findings.approvals.justificationLabel": "Lý do",
+  "findings.approvals.openFinding": "Mở phát hiện trong thẻ mới",
+  "findings.approvals.ownRequestShort": "Yêu cầu của bạn",
+  "findings.approvals.actionsFor": "Thao tác khác cho {title}",
+  "findings.approvals.errorTitle": "yêu cầu phê duyệt",
+  "findings.approvals.requestedLabel": "Yêu cầu:"
 }
