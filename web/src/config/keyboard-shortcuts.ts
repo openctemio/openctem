@@ -90,6 +90,13 @@ export const KEYBOARD_SHORTCUTS: KeyboardShortcut[] = [
     shells: ['app'],
   },
   {
+    id: 'add-filter',
+    label: 'Add a filter (findings list)',
+    keys: ['F'],
+    group: 'lists',
+    shells: ['app'],
+  },
+  {
     id: 'clear-selection',
     label: 'Clear the selected rows',
     keys: ['esc'],
