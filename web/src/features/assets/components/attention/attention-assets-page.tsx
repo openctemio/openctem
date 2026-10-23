@@ -10,52 +10,25 @@
  */
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { ArrowRight, Lock } from 'lucide-react'
-import Link from '@/components/link'
+import { Lock } from 'lucide-react'
 import { Main } from '@/components/layout'
-import { Button } from '@/components/ui/button'
-import { EmptyState, PageHeader } from '@/features/shared'
+import { EmptyState, PageHeader, PageStack } from '@/features/shared'
 import { useTranslation } from '@/context/i18n-provider'
 import { Permission, usePermissions } from '@/lib/permissions'
-import { safeHref } from '@/lib/safe-href'
 import { useAssets, type AssetSearchFilters } from '../../hooks/use-assets'
 import {
   attributionQuery,
   DEFAULT_PAGE_SIZE,
   serializeInventoryFilters,
-  type InventoryFilters,
 } from '../../lib/inventory-url'
 import type { Asset } from '../../types/asset.types'
-import { AssetAttentionTabs, AssetsSectionTabs } from '../assets-section-tabs'
+import { AssetsSectionTabs } from '../assets-section-tabs'
+import { AttentionQueueHeader } from './attention-queue-header'
+import { ATTENTION_FILTERS, type AttentionReason } from './attention-filters'
 import { InventoryBulkBar } from '../inventory/inventory-bulk-bar'
 import { InventoryTable } from '../inventory/inventory-table'
 
-export type AttentionReason = 'no_owner' | 'context' | 'unscanned'
-
-/** Each reason as an inventory filter: the list here and the inventory link agree. */
-export const ATTENTION_FILTERS: Record<AttentionReason, InventoryFilters> = {
-  no_owner: { hasOwner: false },
-  context: { criticalities: ['none'] },
-  unscanned: { coverage: 'uncovered' },
-}
-
-const COPY: Record<AttentionReason, { key: string; fallback: string }> = {
-  no_owner: {
-    key: 'assets.attention.noOwner',
-    fallback:
-      '{count, plural, one {# asset has no owner} other {# assets have no owner}}. Findings on them have nobody to assign to.',
-  },
-  context: {
-    key: 'assets.attention.context',
-    fallback:
-      '{count, plural, one {# asset has no criticality} other {# assets have no criticality}}. Priority uses the default for them.',
-  },
-  unscanned: {
-    key: 'assets.attention.unscanned',
-    fallback:
-      '{count, plural, one {# asset had no successful scan} other {# assets had no successful scan}} in 30 days.',
-  },
-}
+export { ATTENTION_FILTERS, type AttentionReason }
 
 export function AttentionAssetsPage({ reason }: { reason: AttentionReason }) {
   const { t } = useTranslation()
@@ -90,11 +63,7 @@ export function AttentionAssetsPage({ reason }: { reason: AttentionReason }) {
     clearSelection()
   }, [reason, page, pageSize, sort, clearSelection])
 
-  const title = t('assets.attention.title', 'Needs attention')
-  const description = t(
-    'assets.attention.description',
-    'Assets whose missing owner, criticality or scan weakens priority, assignment or coverage. Fix them in bulk here.'
-  )
+  const title = t('assets.overview.title', 'Assets')
 
   if (!canRead) {
     return (
@@ -114,30 +83,18 @@ export function AttentionAssetsPage({ reason }: { reason: AttentionReason }) {
   }
 
   const inventoryHref = `/assets?${serializeInventoryFilters(base).toString()}`
-  const copy = COPY[reason]
 
   return (
     <Main>
-      <PageHeader title={title} description={description} />
-      <AssetsSectionTabs />
-      <AssetAttentionTabs />
+      <PageStack>
+        <PageHeader title={title} />
+        <AssetsSectionTabs />
+        <AttentionQueueHeader
+          reason={reason}
+          count={isLoading ? undefined : total}
+          inventoryHref={inventoryHref}
+        />
 
-      <div
-        className="mt-5 flex flex-wrap items-center gap-3 rounded-lg border px-4 py-2.5 text-sm"
-        data-testid="attention-summary"
-      >
-        <span className="min-w-0 flex-1">
-          {isLoading ? ' ' : t(copy.key, copy.fallback, { count: total })}
-        </span>
-        <Button asChild variant="outline" size="sm">
-          <Link href={safeHref(inventoryHref) ?? '/assets'}>
-            {t('assets.attention.openInInventory', 'Open in the inventory')}
-            <ArrowRight className="ms-1.5 h-3.5 w-3.5" aria-hidden />
-          </Link>
-        </Button>
-      </div>
-
-      <div className="mt-4">
         <InventoryTable
           assets={assets}
           total={total}
@@ -162,7 +119,7 @@ export function AttentionAssetsPage({ reason }: { reason: AttentionReason }) {
             'Every asset you can see has this covered.'
           )}
         />
-      </div>
+      </PageStack>
 
       <InventoryBulkBar
         selected={selected}
