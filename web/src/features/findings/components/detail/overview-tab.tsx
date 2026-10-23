@@ -37,9 +37,6 @@ import {
   ShieldAlert,
 } from 'lucide-react'
 import { useTranslation } from '@/context/i18n-provider'
-import { usePermissionsSafe } from '@/context/permission-provider'
-import { runHref } from '@/features/scans/lib/run-display'
-import { safeHref } from '@/lib/safe-href'
 import { Badge } from '@/components/ui/badge'
 import { MarkdownPreview } from '@/components/ui/markdown-editor'
 import {
@@ -89,10 +86,6 @@ function Mono({ children }: { children: React.ReactNode }) {
 
 export function OverviewTab({ finding }: OverviewTabProps) {
   const { t, locale } = useTranslation()
-  const { hasPermission } = usePermissionsSafe()
-  // The run holds the tasks that found this (Scans > Runs).
-  const scanLink =
-    finding.scanId && hasPermission('scans:read') ? safeHref(runHref(finding.scanId)) : undefined
   const isHuman = HUMAN_SOURCES.has(finding.source)
 
   // Read from the AI triage endpoint, not from the first page of activities:
@@ -281,15 +274,9 @@ export function OverviewTab({ finding }: OverviewTabProps) {
                 ) : null}
               </DetailField>
               <DetailField label={t('findings.overviewTab.scan', 'Scan')}>
-                {finding.scanId ? (
-                  scanLink ? (
-                    <Link href={scanLink} className="text-primary hover:underline">
-                      <Mono>{finding.scanId}</Mono>
-                    </Link>
-                  ) : (
-                    <Mono>{finding.scanId}</Mono>
-                  )
-                ) : null}
+                {/* The id of the report that carried this finding, not a run id;
+                    "Last seen in" below links the run. */}
+                {finding.scanId ? <Mono>{finding.scanId}</Mono> : null}
               </DetailField>
               <DetailField label={t('findings.receipts.lastSeenIn', 'Last seen in')}>
                 <FindingLastSeenIn findingId={finding.id} />

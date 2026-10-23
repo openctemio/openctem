@@ -107,6 +107,9 @@ describe('markdown preview: raw HTML', () => {
       a.getAttribute('href')
     )
     expect(hrefs).toContain('https://tracker.example.net/p.gif')
+    const link = c.querySelector('.wmde-markdown a[href="https://tracker.example.net/p.gif"]')
+    expect(link?.getAttribute('rel')).toBe('noopener noreferrer nofollow')
+    expect(link?.getAttribute('referrerpolicy')).toBe('no-referrer')
   })
 
   it('does not let a raw id clobber a global name', () => {

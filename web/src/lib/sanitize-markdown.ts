@@ -103,6 +103,16 @@ function isRemoteImageSource(raw: unknown): boolean {
 }
 
 /**
+ * A link that leaves the app (a converted remote image, or any absolute
+ * http(s) link in the content) sends no Referer and no opener, and is not
+ * endorsed: the target learns nothing about the page it was clicked on.
+ * Set by the sanitiser itself on every pass; an author cannot choose `rel`.
+ */
+function externalLinkProps(): Record<string, unknown> {
+  return { rel: ['noopener', 'noreferrer', 'nofollow'], referrerPolicy: 'no-referrer' }
+}
+
+/**
  * Attributes an element may keep, compared lower-cased and with `-`
  * removed so the hast spelling (`colSpan`, `ariaHidden`, `dataCode`) and
  * the raw spelling some plugins write (`colspan`, `aria-hidden`,
@@ -220,6 +230,8 @@ function neutralise(node: HastNode): void {
  *  4. class → only the classes the pipeline itself emits.
  *  5. id and in-page `#fragment` links → `user-content-` prefix.
  *  6. Remote (other-origin) <img> → plain link to the URL, never auto-loaded.
+ *  7. Links to another origin → rel="noopener noreferrer nofollow" and
+ *     referrerpolicy="no-referrer".
  */
 export function sanitiseNode(node: HastNode, _index?: number, _parent?: HastNode): void {
   if (!node || node.type !== 'element' || !node.tagName) return
@@ -271,9 +283,13 @@ export function sanitiseNode(node: HastNode, _index?: number, _parent?: HastNode
   if (tag === 'img' && isRemoteImageSource(props.src)) {
     const src = String(props.src)
     node.tagName = 'a'
-    node.properties = { href: src }
+    node.properties = { href: src, ...externalLinkProps() }
     node.children = [{ type: 'text', value: src }]
     return
+  }
+  // Same origin test as images: absolute http(s) on another origin.
+  if (tag === 'a' && isRemoteImageSource(props.href)) {
+    Object.assign(props, externalLinkProps())
   }
 
   const href = props.href

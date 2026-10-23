@@ -1,6 +1,6 @@
 /**
  * Small fixes on the finding page: copy-link failure, assignee permission,
- * locale dates, EPSS floor, scan id link.
+ * locale dates, EPSS floor, scan id.
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen } from '@testing-library/react'
@@ -178,18 +178,13 @@ describe('EPSS floor', () => {
 })
 
 describe('scan id', () => {
-  const f = () => finding({ scanId: 'run-123' })
-
-  it('links to the run with scans:read', () => {
+  // finding.scan_id is the id of the report that carried the finding, not a
+  // scan run id, so it must not link to /scans/runs (the run is linked by
+  // "Last seen in").
+  it('is plain text even with scans:read', () => {
     perms = new Set(['scans:read'])
-    render(<OverviewTab finding={f()} />)
-    const a = screen.getByRole('link', { name: 'run-123' })
-    expect(a.getAttribute('href')).toContain('run-123')
-  })
-
-  it('is plain text without it', () => {
-    render(<OverviewTab finding={f()} />)
-    expect(screen.getByText('run-123')).toBeInTheDocument()
-    expect(screen.queryByRole('link', { name: 'run-123' })).toBeNull()
+    render(<OverviewTab finding={finding({ scanId: 'report-123' })} />)
+    expect(screen.getByText('report-123')).toBeInTheDocument()
+    expect(screen.queryByRole('link', { name: 'report-123' })).toBeNull()
   })
 })
