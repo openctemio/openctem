@@ -1,0 +1,462 @@
+{
+  "version": "1.3",
+  "metadata": {
+    "id": "budget-fixture",
+    "timestamp": "2026-10-02T08:15:00Z",
+    "source_type": "scanner",
+    "coverage_type": "full"
+  },
+  "tool": {
+    "name": "semgrep",
+    "version": "1.85.0"
+  },
+  "assets": [
+    {
+      "id": "repo",
+      "type": "repository",
+      "value": "github.com/acme/budget-app"
+    }
+  ],
+  "findings": [
+    {
+      "id": "s-1",
+      "type": "vulnerability",
+      "title": "SQL query built from request data (1)",
+      "severity": "medium",
+      "confidence": 90,
+      "rule_id": "python.django.security.injection.sql-1",
+      "asset_ref": "repo",
+      "location": {
+        "path": "app/views_0.py",
+        "start_line": 11,
+        "end_line": 11,
+        "snippet": "cursor.execute(q1)"
+      }
+    },
+    {
+      "id": "s-2",
+      "type": "vulnerability",
+      "title": "SQL query built from request data (2)",
+      "severity": "low",
+      "confidence": 90,
+      "rule_id": "python.django.security.injection.sql-2",
+      "asset_ref": "repo",
+      "location": {
+        "path": "app/views_0.py",
+        "start_line": 12,
+        "end_line": 12,
+        "snippet": "cursor.execute(q2)"
+      }
+    },
+    {
+      "id": "s-3",
+      "type": "vulnerability",
+      "title": "SQL query built from request data (3)",
+      "severity": "high",
+      "confidence": 90,
+      "rule_id": "python.django.security.injection.sql-3",
+      "asset_ref": "repo",
+      "location": {
+        "path": "app/views_0.py",
+        "start_line": 13,
+        "end_line": 13,
+        "snippet": "cursor.execute(q3)"
+      }
+    },
+    {
+      "id": "s-4",
+      "type": "vulnerability",
+      "title": "SQL query built from request data (4)",
+      "severity": "medium",
+      "confidence": 90,
+      "rule_id": "python.django.security.injection.sql-4",
+      "asset_ref": "repo",
+      "location": {
+        "path": "app/views_1.py",
+        "start_line": 14,
+        "end_line": 14,
+        "snippet": "cursor.execute(q4)"
+      }
+    },
+    {
+      "id": "s-5",
+      "type": "vulnerability",
+      "title": "SQL query built from request data (5)",
+      "severity": "low",
+      "confidence": 90,
+      "rule_id": "python.django.security.injection.sql-0",
+      "asset_ref": "repo",
+      "location": {
+        "path": "app/views_1.py",
+        "start_line": 15,
+        "end_line": 15,
+        "snippet": "cursor.execute(q5)"
+      }
+    },
+    {
+      "id": "s-6",
+      "type": "vulnerability",
+      "title": "SQL query built from request data (6)",
+      "severity": "high",
+      "confidence": 90,
+      "rule_id": "python.django.security.injection.sql-1",
+      "asset_ref": "repo",
+      "location": {
+        "path": "app/views_1.py",
+        "start_line": 16,
+        "end_line": 16,
+        "snippet": "cursor.execute(q6)"
+      }
+    },
+    {
+      "id": "s-7",
+      "type": "vulnerability",
+      "title": "SQL query built from request data (7)",
+      "severity": "medium",
+      "confidence": 90,
+      "rule_id": "python.django.security.injection.sql-2",
+      "asset_ref": "repo",
+      "location": {
+        "path": "app/views_1.py",
+        "start_line": 17,
+        "end_line": 17,
+        "snippet": "cursor.execute(q7)"
+      }
+    },
+    {
+      "id": "s-8",
+      "type": "vulnerability",
+      "title": "SQL query built from request data (8)",
+      "severity": "low",
+      "confidence": 90,
+      "rule_id": "python.django.security.injection.sql-3",
+      "asset_ref": "repo",
+      "location": {
+        "path": "app/views_2.py",
+        "start_line": 18,
+        "end_line": 18,
+        "snippet": "cursor.execute(q8)"
+      }
+    },
+    {
+      "id": "s-9",
+      "type": "vulnerability",
+      "title": "SQL query built from request data (9)",
+      "severity": "high",
+      "confidence": 90,
+      "rule_id": "python.django.security.injection.sql-4",
+      "asset_ref": "repo",
+      "location": {
+        "path": "app/views_2.py",
+        "start_line": 19,
+        "end_line": 19,
+        "snippet": "cursor.execute(q9)"
+      }
+    },
+    {
+      "id": "s-10",
+      "type": "vulnerability",
+      "title": "SQL query built from request data (10)",
+      "severity": "medium",
+      "confidence": 90,
+      "rule_id": "python.django.security.injection.sql-0",
+      "asset_ref": "repo",
+      "location": {
+        "path": "app/views_2.py",
+        "start_line": 20,
+        "end_line": 20,
+        "snippet": "cursor.execute(q10)"
+      }
+    },
+    {
+      "id": "s-11",
+      "type": "vulnerability",
+      "title": "SQL query built from request data (11)",
+      "severity": "low",
+      "confidence": 90,
+      "rule_id": "python.django.security.injection.sql-1",
+      "asset_ref": "repo",
+      "location": {
+        "path": "app/views_2.py",
+        "start_line": 21,
+        "end_line": 21,
+        "snippet": "cursor.execute(q11)"
+      }
+    },
+    {
+      "id": "s-12",
+      "type": "vulnerability",
+      "title": "SQL query built from request data (12)",
+      "severity": "high",
+      "confidence": 90,
+      "rule_id": "python.django.security.injection.sql-2",
+      "asset_ref": "repo",
+      "location": {
+        "path": "app/views_3.py",
+        "start_line": 22,
+        "end_line": 22,
+        "snippet": "cursor.execute(q12)"
+      }
+    },
+    {
+      "id": "s-13",
+      "type": "vulnerability",
+      "title": "SQL query built from request data (13)",
+      "severity": "medium",
+      "confidence": 90,
+      "rule_id": "python.django.security.injection.sql-3",
+      "asset_ref": "repo",
+      "location": {
+        "path": "app/views_3.py",
+        "start_line": 23,
+        "end_line": 23,
+        "snippet": "cursor.execute(q13)"
+      }
+    },
+    {
+      "id": "s-14",
+      "type": "vulnerability",
+      "title": "SQL query built from request data (14)",
+      "severity": "low",
+      "confidence": 90,
+      "rule_id": "python.django.security.injection.sql-4",
+      "asset_ref": "repo",
+      "location": {
+        "path": "app/views_3.py",
+        "start_line": 24,
+        "end_line": 24,
+        "snippet": "cursor.execute(q14)"
+      }
+    },
+    {
+      "id": "s-15",
+      "type": "vulnerability",
+      "title": "SQL query built from request data (15)",
+      "severity": "high",
+      "confidence": 90,
+      "rule_id": "python.django.security.injection.sql-0",
+      "asset_ref": "repo",
+      "location": {
+        "path": "app/views_3.py",
+        "start_line": 25,
+        "end_line": 25,
+        "snippet": "cursor.execute(q15)"
+      }
+    },
+    {
+      "id": "s-16",
+      "type": "vulnerability",
+      "title": "SQL query built from request data (16)",
+      "severity": "medium",
+      "confidence": 90,
+      "rule_id": "python.django.security.injection.sql-1",
+      "asset_ref": "repo",
+      "location": {
+        "path": "app/views_4.py",
+        "start_line": 26,
+        "end_line": 26,
+        "snippet": "cursor.execute(q16)"
+      }
+    },
+    {
+      "id": "s-17",
+      "type": "vulnerability",
+      "title": "SQL query built from request data (17)",
+      "severity": "low",
+      "confidence": 90,
+      "rule_id": "python.django.security.injection.sql-2",
+      "asset_ref": "repo",
+      "location": {
+        "path": "app/views_4.py",
+        "start_line": 27,
+        "end_line": 27,
+        "snippet": "cursor.execute(q17)"
+      }
+    },
+    {
+      "id": "s-18",
+      "type": "vulnerability",
+      "title": "SQL query built from request data (18)",
+      "severity": "high",
+      "confidence": 90,
+      "rule_id": "python.django.security.injection.sql-3",
+      "asset_ref": "repo",
+      "location": {
+        "path": "app/views_4.py",
+        "start_line": 28,
+        "end_line": 28,
+        "snippet": "cursor.execute(q18)"
+      }
+    },
+    {
+      "id": "s-19",
+      "type": "vulnerability",
+      "title": "SQL query built from request data (19)",
+      "severity": "medium",
+      "confidence": 90,
+      "rule_id": "python.django.security.injection.sql-4",
+      "asset_ref": "repo",
+      "location": {
+        "path": "app/views_4.py",
+        "start_line": 29,
+        "end_line": 29,
+        "snippet": "cursor.execute(q19)"
+      }
+    },
+    {
+      "id": "s-20",
+      "type": "vulnerability",
+      "title": "SQL query built from request data (20)",
+      "severity": "low",
+      "confidence": 90,
+      "rule_id": "python.django.security.injection.sql-0",
+      "asset_ref": "repo",
+      "location": {
+        "path": "app/views_5.py",
+        "start_line": 30,
+        "end_line": 30,
+        "snippet": "cursor.execute(q20)"
+      }
+    },
+    {
+      "id": "k-1",
+      "type": "secret",
+      "title": "Cloud access key",
+      "severity": "critical",
+      "rule_id": "aws-access-token",
+      "asset_ref": "repo",
+      "location": {
+        "path": "config/env_1.env",
+        "start_line": 3
+      },
+      "secret": {
+        "secret_type": "aws_access_key",
+        "masked_value": "AKIA****FAKE0001"
+      }
+    },
+    {
+      "id": "k-2",
+      "type": "secret",
+      "title": "Cloud access key",
+      "severity": "critical",
+      "rule_id": "aws-access-token",
+      "asset_ref": "repo",
+      "location": {
+        "path": "config/env_2.env",
+        "start_line": 3
+      },
+      "secret": {
+        "secret_type": "aws_access_key",
+        "masked_value": "AKIA****FAKE0002"
+      }
+    },
+    {
+      "id": "k-3",
+      "type": "secret",
+      "title": "Cloud access key",
+      "severity": "critical",
+      "rule_id": "aws-access-token",
+      "asset_ref": "repo",
+      "location": {
+        "path": "config/env_3.env",
+        "start_line": 3
+      },
+      "secret": {
+        "secret_type": "aws_access_key",
+        "masked_value": "AKIA****FAKE0003"
+      }
+    },
+    {
+      "id": "k-4",
+      "type": "secret",
+      "title": "Cloud access key",
+      "severity": "critical",
+      "rule_id": "aws-access-token",
+      "asset_ref": "repo",
+      "location": {
+        "path": "config/env_4.env",
+        "start_line": 3
+      },
+      "secret": {
+        "secret_type": "aws_access_key",
+        "masked_value": "AKIA****FAKE0004"
+      }
+    },
+    {
+      "id": "k-5",
+      "type": "secret",
+      "title": "Cloud access key",
+      "severity": "critical",
+      "rule_id": "aws-access-token",
+      "asset_ref": "repo",
+      "location": {
+        "path": "config/env_5.env",
+        "start_line": 3
+      },
+      "secret": {
+        "secret_type": "aws_access_key",
+        "masked_value": "AKIA****FAKE0005"
+      }
+    },
+    {
+      "id": "v-1",
+      "type": "vulnerability",
+      "title": "org.apache.logging.log4j:log4j-core: CVE-2021-44228",
+      "severity": "critical",
+      "rule_id": "CVE-2021-44228",
+      "asset_ref": "repo",
+      "location": {
+        "path": "pom.xml",
+        "start_line": 21
+      },
+      "vulnerability": {
+        "cve_id": "CVE-2021-44228",
+        "package": "org.apache.logging.log4j:log4j-core",
+        "ecosystem": "maven",
+        "affected_version": "2.14.1",
+        "fixed_version": "2.15.0",
+        "is_direct": true
+      }
+    },
+    {
+      "id": "v-2",
+      "type": "vulnerability",
+      "title": "org.springframework:spring-beans: CVE-2022-22965",
+      "severity": "critical",
+      "rule_id": "CVE-2022-22965",
+      "asset_ref": "repo",
+      "location": {
+        "path": "pom.xml",
+        "start_line": 22
+      },
+      "vulnerability": {
+        "cve_id": "CVE-2022-22965",
+        "package": "org.springframework:spring-beans",
+        "ecosystem": "maven",
+        "affected_version": "5.3.17",
+        "fixed_version": "5.3.18",
+        "is_direct": true
+      }
+    },
+    {
+      "id": "v-3",
+      "type": "vulnerability",
+      "title": "golang.org/x/net: CVE-2023-44487",
+      "severity": "high",
+      "rule_id": "CVE-2023-44487",
+      "asset_ref": "repo",
+      "location": {
+        "path": "go.mod",
+        "start_line": 23
+      },
+      "vulnerability": {
+        "cve_id": "CVE-2023-44487",
+        "package": "golang.org/x/net",
+        "ecosystem": "golang",
+        "affected_version": "0.15.0",
+        "fixed_version": "0.17.0",
+        "is_direct": true
+      }
+    }
+  ]
+}
