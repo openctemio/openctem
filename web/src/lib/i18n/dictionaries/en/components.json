@@ -106,7 +106,6 @@
   "components.kpi.fixable": "Fix available",
   "components.kpi.kev": "Known exploited",
   "components.kpi.outdated": "Outdated",
-  "components.kpi.outdatedHint": "Needs package health data from the vulnerability feed",
   "components.kpi.packages": "Packages",
   "components.kpi.packagesHint": "{versions} versions on {assets} assets",
   "components.kpi.vulnerable": "Vulnerable",
@@ -274,5 +273,14 @@
   "components.stepUp.useKeyInstead": "Use your security key or passkey instead",
   "components.stepUp.useCode": "Use a code from your authenticator app instead",
   "components.stepUp.useRecovery": "Use a recovery code instead",
-  "components.stepUp.useApp": "Use your authenticator app instead"
+  "components.stepUp.useApp": "Use your authenticator app instead",
+  "components.versions.loadError": "the versions",
+  "components.versions.empty": "No versions in use",
+  "components.versions.emptyHint": "No asset you can see has recorded a version of this package.",
+  "components.usages.loadError": "where this package is used",
+  "components.usages.empty": "Not used on any asset you can see",
+  "components.usages.emptyVersionHint": "No asset uses this version. Show all versions to see the rest.",
+  "components.usages.pathsLoadError": "the dependency paths",
+  "components.graph.loadError": "the dependency graph",
+  "components.vulns.loadError": "the vulnerabilities"
 }
