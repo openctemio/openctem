@@ -1,5 +1,6 @@
 'use client'
 
+import { SEVERITY_BADGE_SOFT } from '@/lib/severity-colors'
 import { useState, useMemo, useEffect } from 'react'
 import { ColumnDef } from '@tanstack/react-table'
 import { Main } from '@/components/layout'
@@ -97,13 +98,11 @@ const riskToleranceLabels: Record<RiskTolerance, string> = {
 }
 
 const riskToleranceColors: Record<RiskTolerance, string> = {
-  very_low:
-    'bg-green-500/10 text-green-500 border-green-500/20 dark:bg-green-900/30 dark:text-green-400',
-  low: 'bg-blue-500/10 text-blue-500 border-blue-500/20 dark:bg-blue-900/30 dark:text-blue-400',
-  medium:
-    'bg-yellow-500/10 text-yellow-500 border-yellow-500/20 dark:bg-yellow-900/30 dark:text-yellow-400',
-  high: 'bg-orange-500/10 text-orange-500 border-orange-500/20 dark:bg-orange-900/30 dark:text-orange-400',
-  very_high: 'bg-red-500/10 text-red-500 border-red-500/20 dark:bg-red-900/30 dark:text-red-400',
+  very_low: 'bg-success/10 text-success border-success/30',
+  low: SEVERITY_BADGE_SOFT.low,
+  medium: SEVERITY_BADGE_SOFT.medium,
+  high: SEVERITY_BADGE_SOFT.high,
+  very_high: SEVERITY_BADGE_SOFT.critical,
 }
 
 /** Filter children of a given parent from the full list */

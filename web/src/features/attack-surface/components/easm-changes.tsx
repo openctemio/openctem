@@ -24,7 +24,6 @@ import {
   type LucideIcon,
 } from 'lucide-react'
 import Link from '@/components/link'
-import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import {
   Select,
@@ -35,10 +34,12 @@ import {
 } from '@/components/ui/select'
 import { Skeleton } from '@/components/ui/skeleton'
 import { useTranslation } from '@/context/i18n-provider'
-import { EmptyState, ErrorState, RelativeTime } from '@/features/shared'
+import { EmptyState, ErrorState, RelativeTime, SeverityBadge } from '@/features/shared'
+import { assetDetailHref, isLinkableAssetId } from '@/features/findings/lib/asset-link'
 import { useUrlFilter, useUrlFilterList } from '@/hooks/use-url-param'
 import type { EASMChange } from '@/lib/api/generated'
 import { cn } from '@/lib/utils'
+import { toSeverity } from './easm-overview'
 import { useEASMChanges } from '../hooks/use-easm-changes'
 import {
   CHANGE_KINDS,
@@ -96,14 +97,23 @@ function ChangeDetail({ change }: { change: EASMChange }) {
   const { t } = useTranslation()
   const added = change.added ?? []
   const removed = change.removed ?? []
+  // The exposures list has no detail route: open it on this exposure's title.
+  const exposureHref =
+    change.exposure_id && change.new
+      ? `/exposures?state=all&q=${encodeURIComponent(change.new)}`
+      : undefined
   return (
     <div className="flex flex-wrap items-center gap-1 text-xs text-muted-foreground">
-      {change.severity && (
-        <Badge variant="outline" className="capitalize">
-          {change.severity}
-        </Badge>
-      )}
-      {change.exposure_id && change.new && <span className="break-all">{change.new}</span>}
+      {change.severity && <SeverityBadge severity={toSeverity(change.severity)} />}
+      {change.exposure_id &&
+        change.new &&
+        (exposureHref ? (
+          <Link href={exposureHref} className="break-all text-primary hover:underline">
+            {change.new}
+          </Link>
+        ) : (
+          <span className="break-all">{change.new}</span>
+        ))}
       {added.length > 0 && (
         <span className="break-all">
           {t('attackSurface.changes.added', 'Added: {values}', { values: added.join(', ') })}
@@ -121,8 +131,12 @@ function ChangeDetail({ change }: { change: EASMChange }) {
 function ChangeRow({ change }: { change: EASMChange }) {
   const { t } = useTranslation()
   const kindLabel = useKindLabel()
-  const kind = isChangeKind(change.kind ?? '') ? (change.kind as ChangeKind) : 'exposure_new'
-  const Icon = KIND_ICON[kind]
+  // A kind this build does not know yet (the API may add one first) is shown
+  // as itself, neutral, never as a new exposure.
+  const known = isChangeKind(change.kind ?? '')
+  const kind = known ? (change.kind as ChangeKind) : undefined
+  const Icon = kind ? KIND_ICON[kind] : History
+  const label = kind ? kindLabel(kind) : (change.kind ?? '').replace(/_/g, ' ')
   const name = change.asset_name || t('attackSurface.changes.noAsset', 'Not linked to an asset')
   return (
     <li className="flex items-start gap-3 py-3">
@@ -130,15 +144,15 @@ function ChangeRow({ change }: { change: EASMChange }) {
         aria-hidden
         className={cn(
           'mt-0.5 h-4 w-4 shrink-0',
-          RISKY.has(kind) ? 'text-destructive' : 'text-muted-foreground'
+          kind && RISKY.has(kind) ? 'text-destructive' : 'text-muted-foreground'
         )}
       />
       <div className="min-w-0 flex-1 space-y-1">
         <div className="flex flex-wrap items-center gap-2 text-sm">
-          <span className="font-medium">{kindLabel(kind)}</span>
-          {change.asset_id ? (
+          <span className="font-medium first-letter:uppercase">{label}</span>
+          {isLinkableAssetId(change.asset_id) ? (
             <Link
-              href={`/assets/${change.asset_id}`}
+              href={assetDetailHref(change.asset_id)}
               className="break-all text-primary hover:underline"
             >
               {name}
@@ -217,13 +231,7 @@ export function EASMChanges() {
 
   return (
     <div className="space-y-4">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <p className="text-sm text-muted-foreground">
-          {t(
-            'attackSurface.changes.description',
-            'Hosts, ports, certificates, DNS records, technologies and exposures that changed on your external attack surface. Only assets you can see are listed.'
-          )}
-        </p>
+      <div className="flex flex-wrap items-center justify-end gap-3">
         {explicit ? (
           <div className="flex items-center gap-2 text-sm">
             <span>
@@ -269,7 +277,8 @@ export function EASMChanges() {
               key={k}
               type="button"
               size="sm"
-              variant={active ? 'default' : 'outline'}
+              variant={active ? 'secondary' : 'outline'}
+              className={cn(active && 'ring-1 ring-ring')}
               aria-pressed={active}
               onClick={() => toggle(k)}
             >

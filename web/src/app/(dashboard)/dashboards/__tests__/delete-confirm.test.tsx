@@ -5,7 +5,10 @@ import userEvent from '@testing-library/user-event'
 import { deleteDashboard } from '@/features/dashboards/api/use-dashboards-api'
 import DashboardsPage from '../page'
 
-vi.mock('next/navigation', () => ({ useRouter: () => ({ push: vi.fn() }) }))
+vi.mock('next/navigation', () => ({
+  useRouter: () => ({ push: vi.fn() }),
+  useSearchParams: () => new URLSearchParams(),
+}))
 vi.mock('@/components/layout', () => ({
   Main: ({ children }: { children: React.ReactNode }) => <main>{children}</main>,
 }))
