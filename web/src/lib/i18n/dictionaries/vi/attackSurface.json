@@ -151,5 +151,10 @@
   "attackSurface.overview.avgRisk": "Điểm rủi ro trung bình",
   "attackSurface.overview.of100": "trên 100",
   "attackSurface.overview.noAssetsToScore": "Chưa có tài sản để chấm điểm",
-  "attackSurface.overview.seeNewlyExposed": "Xem những gì mới hướng Internet trong tuần này"
+  "attackSurface.overview.seeNewlyExposed": "Xem những gì mới hướng Internet trong tuần này",
+  "attackSurface.overview.infoLabel": "Cách tính \"{title}\"",
+  "attackSurface.decide.rulesWaiting.one": "1 quy tắc tên đang chờ",
+  "attackSurface.decide.rulesWaiting.other": "{count} quy tắc tên đang chờ",
+  "attackSurface.decide.review": "Xem xét",
+  "attackSurface.decide.undoFailed": "Hoàn tác thất bại"
 }

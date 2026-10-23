@@ -151,5 +151,10 @@
   "attackSurface.overview.avgRisk": "Average risk score",
   "attackSurface.overview.of100": "of 100",
   "attackSurface.overview.noAssetsToScore": "No assets to score",
-  "attackSurface.overview.seeNewlyExposed": "See what became internet-facing this week"
+  "attackSurface.overview.seeNewlyExposed": "See what became internet-facing this week",
+  "attackSurface.overview.infoLabel": "How {title} is measured",
+  "attackSurface.decide.rulesWaiting.one": "1 name rule waiting",
+  "attackSurface.decide.rulesWaiting.other": "{count} name rules waiting",
+  "attackSurface.decide.review": "Review",
+  "attackSurface.decide.undoFailed": "Undo failed"
 }
