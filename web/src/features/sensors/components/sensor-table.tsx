@@ -21,7 +21,6 @@ import {
 
 import type { Sensor } from '@/lib/api/sensor-types'
 import { sensorRoleOf } from '@/lib/api/sensor-types'
-import { SENSOR_TYPE_LABELS } from './sensor-type-icon'
 import { SensorStateBadge } from './sensor-state-badge'
 import {
   SensorJobsCell,
@@ -243,7 +242,7 @@ export function SensorTable({
       {
         id: 'type',
         meta: { label: t('sensors.table.col.role') },
-        accessorFn: (a) => SENSOR_TYPE_LABELS[a.type] ?? a.type,
+        accessorFn: (a) => a.type,
         header: ({ column }) => (
           <DataTableColumnHeader column={column} title={t('sensors.table.col.role')} />
         ),
@@ -254,10 +253,7 @@ export function SensorTable({
               : t('sensors.table.roleScanner')}
             <span className="text-muted-foreground">
               {' · '}
-              {t(
-                `sensors.table.type.${row.original.type}`,
-                SENSOR_TYPE_LABELS[row.original.type] ?? row.original.type
-              )}
+              {t(`sensors.table.type.${row.original.type}`, row.original.type)}
             </span>
           </span>
         ),
