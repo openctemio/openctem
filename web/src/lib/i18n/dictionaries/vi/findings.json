@@ -1630,6 +1630,8 @@
   "findings.export.busyHint": "Hãy đợi nó hoàn tất rồi thử lại.",
   "findings.export.failed": "Xuất thất bại. Hãy thử lại.",
   "findings.bulk.statusFailed": "Không thể cập nhật các phát hiện",
+  "findings.approvalDialog.titleDecideAccept": "Chấp nhận rủi ro",
+  "findings.approvalDialog.confirmTitleDecideAccept": "Xác nhận chấp nhận rủi ro",
   "findings.receipts.created": "Mới",
   "findings.receipts.updated": "Vẫn phát hiện",
   "findings.receipts.reactivated": "Mở lại",
