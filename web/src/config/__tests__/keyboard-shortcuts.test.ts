@@ -46,6 +46,10 @@ const HANDLERS: Record<string, [string, RegExp]> = {
     'features/findings/hooks/use-drawer-navigation.ts',
     /e\.key !== 'j' && e\.key !== 'k'/,
   ],
+  'add-filter': [
+    'features/findings/filters/add-filter-popover.tsx',
+    /e\.key !== 'f' \|\| e\.metaKey \|\| e\.ctrlKey \|\| e\.altKey/,
+  ],
   'clear-selection': [
     'features/shared/components/bulk-action-bar.tsx',
     /e\.key === 'Escape' && !e\.defaultPrevented\) onClear\(\)/,

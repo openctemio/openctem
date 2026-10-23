@@ -593,6 +593,13 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 		))
 	}
 
+	// SSO enforcement after a limits change: turned off once the organization
+	// lost sso.enforcement and the grace ended (never a lock-out).
+	if svc.Tenant != nil {
+		w.ControllerManager.Register(controller.NewSSOEnforcementEntitlementController(
+			svc.Tenant, time.Hour, log.With("controller", "sso-enforcement-entitlement")))
+	}
+
 	// SAML IdP certificate expiry: owners are alerted 30, 7 and 1 days before
 	// and on expiry, once per level per certificate.
 	if svc.SAML != nil {

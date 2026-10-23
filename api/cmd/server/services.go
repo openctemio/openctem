@@ -1084,6 +1084,9 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// The user service lets AddMember enforce Security.AllowedDomains and lets
 	// the suspend/reactivate notifier resolve the recipient.
 	s.Tenant.SetUserService(s.User)
+	// Requiring SSO needs sso.enforcement for the organization; the sweep turns it off
+	// after the grace once the organization lost it.
+	s.Tenant.SetSSOFeatureGate(s.Entitlement, repos.Tenant)
 
 	// Initialize asset services
 	s.Asset = asset.NewAssetService(repos.Asset, log)
@@ -1895,6 +1898,8 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// A suspended organization takes no provisioning.
 	s.SCIMToken.SetOrganizationGate(s.OrganizationGate)
 	s.SCIMToken.SetLegacyPeppers(cfg.Encryption.PreviousKeys...)
+	// Minting a SCIM token needs scim for the organization.
+	s.SCIMToken.SetFeatureGate(s.Entitlement)
 	s.SCIMProvisioning = scim.NewProvisioningService(
 		repos.User, repos.Tenant, scimMembershipAdapter{svc: s.Tenant}, log,
 	)
@@ -1902,6 +1907,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 		repos.ScimGroup, repos.Tenant, scimMembershipAdapter{svc: s.Tenant}, log,
 	)
 	s.SCIMGroups.SetAuditService(s.Audit)
+	s.SCIMGroups.SetFeatureGate(s.Entitlement)
 	// Outbound Jira ticketing resolves a client per tenant from that tenant's
 	// connected ticketing integration (base URL + decrypted credentials). The
 	// static client stays nil; the resolver is the production path (mirrors the
@@ -3191,6 +3197,9 @@ func (s *Services) InitAuthServices(cfg *config.Config, repos *Repositories, log
 		s.SSO.SetSignInHook(s.AccountDeletion.CancelOnSignIn)
 	}
 	s.SSO.SetSessionRevocationStore(sessionRevocations, revocationTTL)
+	// Configuring SSO connections needs sso.connections for the organization; sign-in
+	// through a configured connection is never gated.
+	s.SSO.SetFeatureGate(s.Entitlement)
 
 	// SSO P1: DNS-TXT domain-ownership verification. Wired as the PRIMARY JIT
 	// auto-provisioning gate — a non-member is auto-joined only when the email
