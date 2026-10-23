@@ -117,6 +117,11 @@ func (r Request) coverageScope() ingest.ActorScope {
 // note "incomplete" means nothing was closed because a file or a finding
 // failed.
 func (s *Service) closeUncovered(ctx context.Context, req Request, results []FileResult) (note string, untouched *int) {
+	// A file read through an import mapping never proves what it did not
+	// report (the handler refuses coverage=full with a mapping already).
+	if req.Mapping != nil {
+		return noteIncomplete, nil
+	}
 	repo, ok := s.repo.(coverageRepo)
 	rec, rok := s.receipts.(receiptRecorder)
 	if !ok || !rok {

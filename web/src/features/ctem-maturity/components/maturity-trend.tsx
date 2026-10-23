@@ -3,10 +3,11 @@
 import { TrendingUp } from 'lucide-react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { cn } from '@/lib/utils'
+import { useTranslation } from '@/context/i18n-provider'
 import { Sparkline } from './sparkline'
 import { METRIC_KEYS, type CtemMaturityTrend, type MetricKey } from '../api/use-ctem-maturity'
 
-const METRIC_LABEL: Record<MetricKey, string> = {
+const METRIC_FALLBACK: Record<MetricKey, string> = {
   mttr_hours: 'MTTR (hours)',
   findings_opened: 'Findings opened',
   findings_resolved: 'Findings resolved',
@@ -15,9 +16,8 @@ const METRIC_LABEL: Record<MetricKey, string> = {
   scope_drift_size: 'Scope drift',
 }
 
-function formatValue(v: number): string {
-  if (Number.isInteger(v)) return String(v)
-  return v.toFixed(1)
+function formatValue(v: number, locale: string): string {
+  return new Intl.NumberFormat(locale, { maximumFractionDigits: 1 }).format(v)
 }
 
 /**
@@ -32,6 +32,7 @@ export function MaturityTrendCard({
   trend: CtemMaturityTrend
   className?: string
 }) {
+  const { t, locale } = useTranslation()
   const cycleCount = trend.cycles_analyzed
 
   return (
@@ -39,11 +40,16 @@ export function MaturityTrendCard({
       <CardHeader>
         <CardTitle className="flex items-center gap-2 text-base">
           <TrendingUp className="text-muted-foreground h-4 w-4" />
-          Metric trends
+          {t('insights.maturity.trends.title', 'Metric trends')}
         </CardTitle>
         <CardDescription>
-          Each metric across {cycleCount} closed cycle{cycleCount === 1 ? '' : 's'}, oldest to
-          newest.
+          {t(
+            cycleCount === 1
+              ? 'insights.maturity.trends.description.one'
+              : 'insights.maturity.trends.description.other',
+            undefined,
+            { count: cycleCount }
+          )}
         </CardDescription>
       </CardHeader>
       <CardContent>
@@ -56,11 +62,18 @@ export function MaturityTrendCard({
             const latest = last === null ? undefined : last
             return (
               <li key={key} className="flex items-center justify-between gap-4 py-2.5">
-                <span className="text-sm">{METRIC_LABEL[key]}</span>
+                <span className="text-sm">
+                  {t(`insights.maturity.metric.${key}`, METRIC_FALLBACK[key])}
+                </span>
                 <div className="flex items-center gap-3">
-                  <Sparkline values={values} label={METRIC_LABEL[key]} />
+                  <Sparkline
+                    values={values}
+                    ariaLabel={t('insights.maturity.trends.sparkline', '{metric} trend', {
+                      metric: t(`insights.maturity.metric.${key}`, METRIC_FALLBACK[key]),
+                    })}
+                  />
                   <span className="text-muted-foreground w-12 text-end text-sm font-medium tabular-nums">
-                    {latest === undefined ? '—' : formatValue(latest)}
+                    {latest === undefined ? '—' : formatValue(latest, locale)}
                   </span>
                 </div>
               </li>
