@@ -268,3 +268,44 @@ Code: `pkg/domain/automation/run_limits.go` (the values),
 `WorkflowRunRepository.CreateRunIfUnderLimit` (enforcement),
 `WorkflowEventDispatcher.dispatchFindingsCreated`, and
 `WorkflowExecutor.ExecuteAsyncWithTenant`.
+
+## The console builder
+
+The Automations page (`web/src/app/(dashboard)/(mobilization)/automations`)
+edits the draft graph on a canvas (`web/src/features/workflows`). Below 900px
+the canvas becomes a list of steps in run order and the run trace becomes
+cards.
+
+- **Palette and pickers** come only from `GET /workflows/catalog`; the web
+  keeps no list of types. An entry whose permission the viewer lacks is
+  listed disabled with that permission. A stored node of a type the catalog
+  no longer lists shows as "Removed type: `<id>`", and
+  `disabled_reason = uses_removed_type` is explained on the canvas and in the
+  detail sheet. `update_status` offers only Confirmed and In progress; the
+  request actions say that they create a request a person decides.
+- **Simulate or live.** The header shows the mode, "Version N, published by X
+  on date" and "Unpublished changes" (`draft_changed`). Simulate is one click
+  (`PUT /workflows/{id}/mode`); live is reached only through publishing.
+  "Before going live" lists the rule's risk class and what publishing needs
+  (step-up for elevated, step-up and a second publisher for high), the latest
+  validate result and the change cap. A step-up answer opens the shared
+  re-authentication dialog and the publish is retried. A pending version shows
+  who published it and an Approve button for another holder of
+  `automations:publish` (the digest is sent with the approval); the publisher
+  never gets the button. The versions dialog lists every version with rollback.
+- **Preview** (`POST /workflows/{id}/preview`, 20, 50 or 100 subjects) puts
+  in/out and skipped counts on the steps and lists what would be sent; a 429
+  is explained. Without a preview, the counts of recorded simulate runs
+  (`GET /workflows/{id}/trace`) are shown.
+- **Validate** lists problems and warnings; one with a `node_key` selects that
+  step. Known codes are translated; others show the API's message.
+- **Run trace.** A row of Recent executions opens the run: per-step status,
+  in/out and skipped counts, errors, the deliveries ("Never sent: simulate"
+  in simulate) and "Kept until" from `retained_until`. A run paused at the
+  change cap offers Continue (`POST /workflow-runs/{id}/resume`) and Cancel.
+
+The page hides or disables each control by the permission it needs
+(`automations:write` to edit, preview, validate and run by hand;
+`automations:publish` to go live, approve, roll back, change the mode, switch
+on or off, delete and continue a paused run). The API is the authority for
+all of them.
