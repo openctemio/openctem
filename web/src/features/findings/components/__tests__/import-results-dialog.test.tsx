@@ -15,6 +15,11 @@ vi.mock('@/lib/api/client', () => ({
   csrfFetch: (...a: unknown[]) => fetchMock(...a),
 }))
 vi.mock('sonner', () => ({ toast: { success: vi.fn(), error: vi.fn() } }))
+// The recent-imports list fetches on its own; receipt-summary.test.tsx covers it.
+vi.mock('../receipt-summary', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../receipt-summary')>()),
+  RecentImports: () => null,
+}))
 
 function jsonResponse(status: number, body: unknown) {
   return {
@@ -95,9 +100,24 @@ describe('ImportResultsDialog', () => {
     expect(document.querySelector('img')).toBeNull()
 
     fetchMock.mockResolvedValueOnce(
-      jsonResponse(200, {
+      jsonResponse(201, {
         ...previewBody,
         dry_run: false,
+        receipt: {
+          id: 'r1',
+          status: 'completed',
+          source: { kind: 'upload', ref: 'r1' },
+          coverage: { type: 'partial' },
+          counts: {
+            created: 2,
+            updated: 0,
+            reactivated: 0,
+            closed: 0,
+            untouched: null,
+            skipped: 0,
+            failed: 0,
+          },
+        },
         files: [
           {
             ...previewBody.files[0],
@@ -119,6 +139,8 @@ describe('ImportResultsDialog', () => {
     await waitFor(() => expect(onImported).toHaveBeenCalled())
     expect(fetchMock.mock.calls[1][0]).toBe('/api/v1/findings/imports')
     expect(screen.getByText(/2 findings created/)).toBeInTheDocument()
+    // The upload's receipt: partial coverage closes nothing.
+    expect(screen.getByTestId('receipt-summary')).toHaveTextContent(/Partial coverage/)
   })
 
   it('sends the knowledge base before the file', async () => {
