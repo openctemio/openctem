@@ -110,6 +110,19 @@ vi.mock('@/features/assets/hooks/use-assets', () => ({
   useAsset: () => ({ asset: null, isLoading: false, error: undefined }),
 }))
 
+vi.mock('@/features/findings/filters/contract', async (orig) => ({
+  ...(await orig<typeof import('@/features/findings/filters/contract')>()),
+  useFindingFilterContract: () => ({ contract: undefined, isLoading: false, error: undefined }),
+}))
+vi.mock('@/features/saved-views/api/use-saved-views', async (orig) => ({
+  ...(await orig<typeof import('@/features/saved-views/api/use-saved-views')>()),
+  useSavedViews: () => ({ views: [], error: undefined, isLoading: false, mutate: vi.fn() }),
+}))
+vi.mock('@/features/findings/api/use-quick-views', () => ({
+  useFindingQuickViews: () => ({ data: undefined }),
+  refreshFindingQuickViews: vi.fn(),
+}))
+
 import FindingsPage from '../page'
 import { ApiClientError } from '@/lib/api/error-handler'
 

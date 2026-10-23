@@ -64,26 +64,31 @@ export function LoopViz({ result }: { result: StagesResult }) {
             >
               {value}
             </DrillLink>
-            {s.detail && (
-              <DrillLink
-                to={s.detail.drill}
-                className="w-fit text-xs text-muted-foreground hover:underline"
-              >
-                {t(s.detail.label_key, '{n}', { n: formatCount(s.detail.value, locale) })}
-              </DrillLink>
-            )}
+            {/* One internal grid for every stage: label, value, a two-line
+                sub-line block, then the status pinned to the bottom, so cards
+                in a row line up whatever their content. */}
+            <div className="flex min-h-9 flex-col gap-0.5 text-xs">
+              {s.detail && (
+                <DrillLink
+                  to={s.detail.drill}
+                  className="w-fit text-muted-foreground hover:underline"
+                >
+                  {t(s.detail.label_key, '{n}', { n: formatCount(s.detail.value, locale) })}
+                </DrillLink>
+              )}
+              {current ? (
+                <span className="inline-flex items-center gap-1.5 font-medium">
+                  <span className="size-2 shrink-0 rounded-full bg-brand" aria-hidden />
+                  {s.flag_key ? t(s.flag_key) : t('dashboardKit.stage.actHere', 'Act here')}
+                </span>
+              ) : (
+                s.flag_key && <span className="text-muted-foreground">{t(s.flag_key)}</span>
+              )}
+            </div>
             <span className="mt-auto inline-flex w-fit items-center gap-1 rounded-full border px-2 py-0.5 text-xs">
               {STATE_ICON[s.state]}
               {s.value == null && s.reason_key ? t(s.reason_key) : stateText[s.state]}
             </span>
-            {current ? (
-              <span className="inline-flex items-center gap-1.5 text-xs font-medium">
-                <span className="size-2 shrink-0 rounded-full bg-brand" aria-hidden />
-                {s.flag_key ? t(s.flag_key) : t('dashboardKit.stage.actHere', 'Act here')}
-              </span>
-            ) : (
-              s.flag_key && <span className="text-xs text-muted-foreground">{t(s.flag_key)}</span>
-            )}
           </li>
         )
       })}

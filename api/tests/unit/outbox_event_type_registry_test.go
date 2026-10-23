@@ -1,7 +1,6 @@
 package unit
 
 import (
-	"context"
 	"go/ast"
 	"go/parser"
 	"go/token"
@@ -312,12 +311,10 @@ func TestDefaultWhitelist_DeliversSLABreach(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			tenantID := shared.NewID()
-			// Retries deliberately exhausted. The decrypt stub below fails, so a
-			// MATCHED integration produces an all-failed result; with retries
-			// left that reschedules the entry and it is never archived, leaving
-			// nothing to assert on. Exhausted, the all-failed result is terminal
-			// and both outcomes reach the archive, so IntegrationsMatched is a
-			// like-for-like comparison across the cases.
+			// The decrypt stub below fails, so a MATCHED integration's channel
+			// fails every attempt; drainOutbox spends its attempts so the
+			// failure is terminal and both outcomes reach the archive, making
+			// IntegrationsMatched a like-for-like comparison across the cases.
 			entry := makeTestOutboxEntryExhausted(tenantID, tt.eventType, tt.severity)
 
 			// NewNotificationExtension is what the create path uses, so this is
@@ -332,9 +329,7 @@ func TestDefaultWhitelist_DeliversSLABreach(t *testing.T) {
 			}
 			svc := newTestOutboxService(outboxRepo, eventRepo, notifRepo, failDecrypt())
 
-			if _, _, err := svc.ProcessOutboxBatch(context.Background(), "worker-1", 50); err != nil {
-				t.Fatalf("ProcessOutboxBatch: %v", err)
-			}
+			drainOutbox(t, svc, outboxRepo.fetchPendingResult, eventRepo)
 
 			if eventRepo.lastCreated == nil {
 				t.Fatal("no event was archived; nothing was processed")
