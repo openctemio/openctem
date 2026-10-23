@@ -735,7 +735,7 @@ export function AddRelationshipDialog({
                           )
                         })}
                         {takenTargetIds.size > 0 && (
-                          <p className="text-[11px] text-muted-foreground text-center pt-2 border-t mt-2">
+                          <p className="text-meta text-muted-foreground text-center pt-2 border-t mt-2">
                             {takenTargetIds.size === 1
                               ? t(
                                   'assets.relationshipAdd.hiddenOne',

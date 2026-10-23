@@ -67,10 +67,6 @@ func (h *FindingActionHandler) Execute(ctx context.Context, input *ActionInput) 
 	switch input.ActionType {
 	case automationdom.ActionTypeAssignUser:
 		return h.assignUser(ctx, input)
-	case automationdom.ActionTypeAssignTeam:
-		return h.assignTeam(ctx, input)
-	case automationdom.ActionTypeUpdatePriority:
-		return h.updatePriority(ctx, input)
 	case automationdom.ActionTypeUpdateStatus:
 		return h.updateStatus(ctx, input)
 	case automationdom.ActionTypeAddTags:
@@ -121,51 +117,6 @@ func (h *FindingActionHandler) assignUser(ctx context.Context, input *ActionInpu
 	}
 
 	return nil, fmt.Errorf("vulnerability service not available")
-}
-
-func (h *FindingActionHandler) assignTeam(ctx context.Context, input *ActionInput) (map[string]any, error) {
-	findingID, err := h.getFindingID(input)
-	if err != nil {
-		return nil, err
-	}
-
-	teamID, ok := input.ActionConfig["team_id"].(string)
-	if !ok || teamID == "" {
-		return nil, fmt.Errorf("team_id is required for assign_team action")
-	}
-
-	// assign_team has no backing service yet. Fail loudly instead of returning
-	// {"assigned": true} — a silent no-op makes operators believe the finding
-	// was routed to a team when nothing happened. See updateStatus/assignUser
-	// for the wired pattern this should follow once a team-assignment service
-	// exists.
-	h.logger.Warn("assign_team workflow action is not implemented",
-		"finding_id", findingID,
-		"team_id", teamID,
-	)
-
-	return nil, fmt.Errorf("assign_team workflow action is not implemented")
-}
-
-func (h *FindingActionHandler) updatePriority(ctx context.Context, input *ActionInput) (map[string]any, error) {
-	findingID, err := h.getFindingID(input)
-	if err != nil {
-		return nil, err
-	}
-
-	priority, ok := input.ActionConfig["priority"].(string)
-	if !ok || priority == "" {
-		return nil, fmt.Errorf("priority is required for update_priority action")
-	}
-
-	// update_priority has no backing service yet — fail loudly rather than
-	// report a false {"updated": true} success.
-	h.logger.Warn("update_priority workflow action is not implemented",
-		"finding_id", findingID,
-		"priority", priority,
-	)
-
-	return nil, fmt.Errorf("update_priority workflow action is not implemented")
 }
 
 func (h *FindingActionHandler) updateStatus(ctx context.Context, input *ActionInput) (map[string]any, error) {
@@ -343,65 +294,11 @@ func NewPipelineTriggerHandler(scanRunSvc *scanrun.Service, scanSvc *scansvc.Ser
 // Execute executes a pipeline/scan trigger action.
 func (h *PipelineTriggerHandler) Execute(ctx context.Context, input *ActionInput) (map[string]any, error) {
 	switch input.ActionType {
-	case automationdom.ActionTypeTriggerPipeline:
-		return h.triggerPipeline(ctx, input)
 	case automationdom.ActionTypeTriggerScan:
 		return h.triggerScan(ctx, input)
 	default:
 		return nil, fmt.Errorf("unsupported action type: %s", input.ActionType)
 	}
-}
-
-func (h *PipelineTriggerHandler) triggerPipeline(ctx context.Context, input *ActionInput) (map[string]any, error) {
-	scanWorkflowID, ok := input.ActionConfig["pipeline_id"].(string)
-	if !ok || scanWorkflowID == "" {
-		return nil, fmt.Errorf("pipeline_id is required for trigger_pipeline action")
-	}
-
-	// Validate pipeline_id format
-	if _, err := shared.IDFromString(scanWorkflowID); err != nil {
-		return nil, fmt.Errorf("invalid pipeline_id: %w", err)
-	}
-
-	// Get optional asset ID
-	assetID := ""
-	if aID, ok := input.ActionConfig["asset_id"].(string); ok && aID != "" {
-		assetID = aID
-	}
-
-	h.logger.Info("triggering pipeline from workflow",
-		"pipeline_id", scanWorkflowID,
-		"asset_id", assetID,
-		"workflow_id", input.WorkflowID,
-	)
-
-	if h.scanRunService != nil {
-		// Build trigger input using TriggerRunInput
-		triggerInput := scanrun.TriggerRunInput{
-			TenantID:    input.TenantID.String(),
-			TemplateID:  scanWorkflowID,
-			AssetID:     assetID,
-			TriggerType: "api",
-			TriggeredBy: "workflow:" + input.WorkflowID.String(),
-			Context:     runContextWithCause(ctx, input.TriggerData),
-		}
-
-		run, err := h.scanRunService.TriggerPipeline(ctx, triggerInput)
-		if err != nil {
-			return nil, fmt.Errorf("failed to trigger pipeline: %w", err)
-		}
-
-		return map[string]any{
-			"pipeline_id": scanWorkflowID,
-			"run_id":      run.ID.String(),
-			"triggered":   true,
-			"action":      "trigger_pipeline",
-		}, nil
-	}
-
-	// No service: the step fails. A {"triggered": false} success would show
-	// a green run that started nothing.
-	return nil, fmt.Errorf("trigger_pipeline: pipeline service not available")
 }
 
 func (h *PipelineTriggerHandler) triggerScan(ctx context.Context, input *ActionInput) (map[string]any, error) {
@@ -681,46 +578,6 @@ func (h *AITriageActionHandler) getFindingID(input *ActionInput) (string, error)
 }
 
 // ----------------------------------------------------------------------------
-// Script Runner Handler (placeholder - would need sandboxing in production)
-// ----------------------------------------------------------------------------
-
-// ScriptRunnerHandler handles script execution actions.
-// NOTE: This is a placeholder. In production, script execution would need
-// proper sandboxing, resource limits, and security controls.
-type ScriptRunnerHandler struct {
-	logger *logger.Logger
-}
-
-// NewScriptRunnerHandler creates a new ScriptRunnerHandler.
-func NewScriptRunnerHandler(log *logger.Logger) *ScriptRunnerHandler {
-	return &ScriptRunnerHandler{
-		logger: log,
-	}
-}
-
-// Execute executes a script action.
-func (h *ScriptRunnerHandler) Execute(ctx context.Context, input *ActionInput) (map[string]any, error) {
-	// Script execution is disabled by default for security reasons
-	// In production, this would need:
-	// - Sandboxed execution environment (e.g., Docker, gVisor)
-	// - Resource limits (CPU, memory, time)
-	// - Network restrictions
-	// - Input validation
-	// - Output sanitization
-
-	h.logger.Warn("script execution requested but disabled for security",
-		"workflow_id", input.WorkflowID,
-		"node_key", input.NodeKey,
-	)
-
-	return map[string]any{
-		"executed": false,
-		"error":    "script execution is disabled for security reasons",
-		"action":   "run_script",
-	}, fmt.Errorf("script execution is disabled")
-}
-
-// ----------------------------------------------------------------------------
 // Handler Registration Helper
 // ----------------------------------------------------------------------------
 
@@ -755,8 +612,6 @@ func RegisterAllActionHandlersWithAI(
 	if vulnSvc != nil {
 		findingHandler := NewFindingActionHandler(vulnSvc, log)
 		executor.RegisterActionHandler(automationdom.ActionTypeAssignUser, findingHandler)
-		executor.RegisterActionHandler(automationdom.ActionTypeAssignTeam, findingHandler)
-		executor.RegisterActionHandler(automationdom.ActionTypeUpdatePriority, findingHandler)
 		executor.RegisterActionHandler(automationdom.ActionTypeUpdateStatus, findingHandler)
 		executor.RegisterActionHandler(automationdom.ActionTypeAddTags, findingHandler)
 		executor.RegisterActionHandler(automationdom.ActionTypeRemoveTags, findingHandler)
@@ -765,7 +620,6 @@ func RegisterAllActionHandlersWithAI(
 	// Pipeline/Scan actions
 	if scanRunSvc != nil || scanSvc != nil {
 		pipelineHandler := NewPipelineTriggerHandler(scanRunSvc, scanSvc, log)
-		executor.RegisterActionHandler(automationdom.ActionTypeTriggerPipeline, pipelineHandler)
 		executor.RegisterActionHandler(automationdom.ActionTypeTriggerScan, pipelineHandler)
 	}
 
@@ -783,9 +637,6 @@ func RegisterAllActionHandlersWithAI(
 		aiTriageHandler := NewAITriageActionHandler(aiTriageSvc, log)
 		executor.RegisterActionHandler(automationdom.ActionTypeTriggerAITriage, aiTriageHandler)
 	}
-
-	// Script runner (disabled by default)
-	executor.RegisterActionHandler(automationdom.ActionTypeRunScript, NewScriptRunnerHandler(log))
 }
 
 // runContextWithCause is the context of a scan an automation step starts:
