@@ -122,7 +122,7 @@ func TestIngestJobRepository_Lifecycle(t *testing.T) {
 		t.Fatalf("ClaimBatch job2: %v", err)
 	}
 	_, _ = db.ExecContext(ctx, "UPDATE ingest_jobs SET locked_at = NOW() - interval '1 hour' WHERE id = $1", stored2.ID().String())
-	released, err := repo.ReleaseStale(ctx, 30*time.Minute)
+	released, _, err := repo.ReleaseStale(ctx, 30*time.Minute)
 	if err != nil || released < 1 {
 		t.Fatalf("ReleaseStale = %d, err=%v (want >=1)", released, err)
 	}

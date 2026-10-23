@@ -162,6 +162,8 @@ type Repositories struct {
 	IngestJob    *postgres.IngestJobRepository
 	// IngestPayload holds the sealed raw reports of queued uploads.
 	IngestPayload *postgres.IngestPayloadRepository
+	// KEV answers whether CVE ids are in the KEV catalog (ingest lanes).
+	KEV *postgres.KEVLookup
 	// IngestReport tracks sensor protocol v2 results reports (RFC-026).
 	IngestReport *postgres.IngestReportRepository
 
@@ -520,6 +522,7 @@ func newRepositories(db *postgres.DB) *Repositories {
 		SensorResult:           postgres.NewSensorResultRepository(db),
 		IngestJob:              postgres.NewIngestJobRepository(db),
 		IngestPayload:          postgres.NewIngestPayloadRepository(db),
+		KEV:                    postgres.NewKEVLookup(db),
 		IngestReport:           postgres.NewIngestReportRepository(db),
 
 		// Scan coverage rotation (RFC-007)
@@ -655,7 +658,7 @@ func newRepositories(db *postgres.DB) *Repositories {
 		PriorityRule:  postgres.NewPriorityRuleRepository(db),
 		PriorityAudit: postgres.NewPriorityAuditRepository(db),
 
-		// B6 runtime loop — IOC catalogue + match log (migration 000156).
+		// B6 runtime loop — IOC catalog + match log (migration 000156).
 		IOC: postgres.NewIOCRepository(db),
 
 		// Validation evidence (CTEM Stage-4, migration 000178).
