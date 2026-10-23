@@ -164,8 +164,7 @@ export function FindingWhyItMatters({ finding, compact, className }: FindingWhyI
 
       {pc && cfg && (
         <div className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1">
-          <PriorityClassBadge priorityClass={pc} showTooltip={false} />
-          <span className="text-sm font-medium">{cfg.description.split(' — ')[0]}</span>
+          <PriorityClassBadge priorityClass={pc} showWord showTooltip={false} />
           <PriorityClassSla
             priorityClass={pc}
             assetId={slaAsset}

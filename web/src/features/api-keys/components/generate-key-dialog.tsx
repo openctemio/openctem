@@ -32,6 +32,7 @@ import {
 } from '@/components/ui/dialog'
 import { getErrorMessage } from '@/lib/api/error-handler'
 import { copyToClipboard } from '@/lib/clipboard'
+import { useTranslation } from '@/context/i18n-provider'
 import { API_KEY_EXPIRY_OPTIONS, DEFAULT_API_KEY_EXPIRY_DAYS } from '../lib/expiry'
 import type { CreateAPIKeyRequest } from '../types/api-key.types'
 
@@ -49,9 +50,9 @@ export function GenerateKeyDialog({
   onSubmit,
   onCreated,
   isMutating,
-  title = 'Generate API key',
-  description = 'Scope the key to the minimum permissions needed. The secret is shown once.',
-  namePlaceholder = 'Nightly export script',
+  title,
+  description,
+  namePlaceholder,
 }: {
   open: boolean
   onOpenChange: (o: boolean) => void
@@ -63,6 +64,7 @@ export function GenerateKeyDialog({
   description?: string
   namePlaceholder?: string
 }) {
+  const { t } = useTranslation()
   const [name, setName] = useState('')
   const [desc, setDesc] = useState('')
   const [expires, setExpires] = useState<string>(DEFAULT_API_KEY_EXPIRY_DAYS)
@@ -74,8 +76,9 @@ export function GenerateKeyDialog({
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
-    if (!name) return toast.error('Name is required')
-    if (scopes.length === 0) return toast.error('Select at least one scope')
+    if (!name) return toast.error(t('settings.keys.nameRequired', 'Name is required'))
+    if (scopes.length === 0)
+      return toast.error(t('settings.apiKeys.scopeRequired', 'Select at least one scope'))
     try {
       const res = await onSubmit({
         name,
@@ -90,7 +93,9 @@ export function GenerateKeyDialog({
       setExpires(DEFAULT_API_KEY_EXPIRY_DAYS)
       setScopes(DEFAULT_SCOPES)
     } catch (error) {
-      toast.error(getErrorMessage(error, 'Failed to create the API key'))
+      toast.error(
+        getErrorMessage(error, t('settings.apiKeys.createFailed', 'Failed to create the API key'))
+      )
     }
   }
 
@@ -98,27 +103,40 @@ export function GenerateKeyDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent size="sm">
         <DialogHeader>
-          <DialogTitle>{title}</DialogTitle>
-          <DialogDescription>{description}</DialogDescription>
+          <DialogTitle>
+            {title ?? t('settings.apiKeys.dialog.title', 'Generate API key')}
+          </DialogTitle>
+          <DialogDescription>
+            {description ??
+              t(
+                'settings.apiKeys.dialog.description',
+                'Scope the key to the minimum permissions needed. The secret is shown once.'
+              )}
+          </DialogDescription>
         </DialogHeader>
         <DialogForm onSubmit={handleSubmit}>
           <DialogBody className="space-y-4">
             <div className="space-y-2">
-              <Label htmlFor="key-name">Name</Label>
+              <Label htmlFor="key-name">{t('settings.keys.name', 'Name')}</Label>
               <Input
                 id="key-name"
                 value={name}
                 onChange={(e) => setName(e.target.value)}
-                placeholder={namePlaceholder}
+                placeholder={
+                  namePlaceholder ??
+                  t('settings.apiKeys.dialog.namePlaceholder', 'Nightly export script')
+                }
                 required
               />
             </div>
             <div className="space-y-2">
-              <Label htmlFor="key-desc">Description (optional)</Label>
+              <Label htmlFor="key-desc">
+                {t('settings.keys.descriptionOptional', 'Description (optional)')}
+              </Label>
               <Input id="key-desc" value={desc} onChange={(e) => setDesc(e.target.value)} />
             </div>
             <div className="space-y-2">
-              <Label htmlFor="key-expiry">Expires</Label>
+              <Label htmlFor="key-expiry">{t('settings.keys.expires', 'Expires')}</Label>
               <Select value={expires} onValueChange={setExpires}>
                 <SelectTrigger id="key-expiry">
                   <SelectValue />
@@ -126,15 +144,19 @@ export function GenerateKeyDialog({
                 <SelectContent>
                   {API_KEY_EXPIRY_OPTIONS.map((o) => (
                     <SelectItem key={o.value} value={o.value}>
-                      {o.label}
+                      {t(o.labelKey, o.label)}
                     </SelectItem>
                   ))}
                 </SelectContent>
               </Select>
             </div>
             <div className="space-y-2">
-              <Label>Scopes</Label>
-              <div className="grid grid-cols-2 gap-2">
+              <Label id="key-scopes-label">{t('settings.keys.scopes', 'Scopes')}</Label>
+              <div
+                className="grid grid-cols-2 gap-2"
+                role="group"
+                aria-labelledby="key-scopes-label"
+              >
                 {API_KEY_SCOPES.map((s) => (
                   <label key={s} className="flex items-center gap-2 text-sm">
                     <Checkbox checked={scopes.includes(s)} onCheckedChange={() => toggleScope(s)} />
@@ -146,10 +168,12 @@ export function GenerateKeyDialog({
           </DialogBody>
           <DialogFooter>
             <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
-              Cancel
+              {t('common.cancel', 'Cancel')}
             </Button>
             <Button type="submit" disabled={isMutating}>
-              {isMutating ? 'Generating...' : 'Generate'}
+              {isMutating
+                ? t('settings.keys.generating', 'Generating…')
+                : t('settings.keys.generate', 'Generate')}
             </Button>
           </DialogFooter>
         </DialogForm>
@@ -160,6 +184,7 @@ export function GenerateKeyDialog({
 
 /** Shows a freshly minted key once, with a copy button. */
 export function RevealKeyDialog({ value, onClose }: { value: string; onClose: () => void }) {
+  const { t } = useTranslation()
   const [copied, setCopied] = useState(false)
   async function copy() {
     await copyToClipboard(value)
@@ -170,21 +195,30 @@ export function RevealKeyDialog({ value, onClose }: { value: string; onClose: ()
     <Dialog open={!!value} onOpenChange={(o) => !o && onClose()}>
       <DialogContent size="sm">
         <DialogHeader>
-          <DialogTitle>Copy your API key</DialogTitle>
+          <DialogTitle>{t('settings.apiKeys.reveal.title', 'Copy your API key')}</DialogTitle>
           <DialogDescription>
-            This is the only time the full key is shown. Store it securely.
+            {t(
+              'settings.apiKeys.reveal.description',
+              'This is the only time the full key is shown. Store it securely.'
+            )}
           </DialogDescription>
         </DialogHeader>
         <DialogBody>
           <div className="bg-muted flex items-center gap-2 rounded-md p-3">
             <code className="flex-1 break-all text-xs">{value}</code>
-            <Button size="icon" variant="ghost" onClick={copy} title="Copy" aria-label="Copy key">
+            <Button
+              size="icon"
+              variant="ghost"
+              onClick={copy}
+              title={t('settings.keys.copy', 'Copy')}
+              aria-label={t('settings.apiKeys.reveal.copyLabel', 'Copy key')}
+            >
               {copied ? <Check className="h-4 w-4 text-success" /> : <Copy className="h-4 w-4" />}
             </Button>
           </div>
         </DialogBody>
         <DialogFooter>
-          <Button onClick={onClose}>Done</Button>
+          <Button onClick={onClose}>{t('settings.keys.done', 'Done')}</Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>
