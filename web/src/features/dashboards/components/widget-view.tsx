@@ -101,6 +101,8 @@ export interface WidgetViewProps {
   onRetry?: () => void
   actions?: ReactNode
   className?: string
+  /** Draws only the visualisation, without the bordered frame (for a host that already is a card). */
+  bare?: boolean
 }
 
 export function WidgetView({
@@ -112,6 +114,7 @@ export function WidgetView({
   onRetry,
   actions,
   className,
+  bare = false,
 }: WidgetViewProps) {
   const { t } = useTranslation()
   const spec: WidgetSpec | undefined = specOf(widget)
@@ -134,6 +137,7 @@ export function WidgetView({
 
   const model: WidgetModel = loading ? { state: 'loading' } : widgetModel(value, spec, stale)
   const reason = model.reasonKey ? t(model.reasonKey) : undefined
+  if (bare) return <Viz model={model} value={value} viz={model.viz} />
   return (
     <WidgetFrame
       title={title}

@@ -52,6 +52,7 @@ vi.mock('@/features/credentials', async (orig) => ({
       isLoading: false,
     }
   },
+  useCredentialEnumsApi: () => ({ data: undefined }),
   useRelatedCredentialsApi: () => ({ data: undefined, isLoading: false }),
 }))
 

@@ -11,13 +11,15 @@ import type { ReactNode } from 'react'
 
 const api = vi.hoisted(() => ({ get: vi.fn(), post: vi.fn(), del: vi.fn() }))
 vi.mock('@/lib/api/client', () => api)
-const perms = vi.hoisted(() => ({ write: true }))
+const perms = vi.hoisted(() => ({ write: true, del: true }))
 vi.mock('@/lib/permissions', async (orig) => {
   const actual = await orig<typeof import('@/lib/permissions')>()
   return {
     ...actual,
     usePermissions: () => ({
-      can: (p: string) => p !== actual.Permission.AssetsWrite || perms.write,
+      can: (p: string) =>
+        (p !== actual.Permission.AssetsWrite || perms.write) &&
+        (p !== actual.Permission.ScopeDelete || perms.del),
     }),
   }
 })
@@ -84,6 +86,8 @@ const queue = {
 }
 
 beforeEach(() => {
+  perms.del = true
+  window.history.replaceState(null, '', '/attack-surface/review')
   api.get.mockReset()
   api.post.mockReset()
   toast.success.mockReset()
@@ -198,5 +202,51 @@ describe('EASMReviewQueue', () => {
     await screen.findByText('api.acme.io')
     expect(screen.queryByRole('checkbox')).toBeNull()
     expect(screen.getByText(/needs permission to edit assets/)).toBeInTheDocument()
+  })
+
+  it('offers no Undo on added scope entries without scope delete', async () => {
+    perms.del = false
+    api.get.mockImplementation(byUrl(queue))
+    api.post.mockResolvedValue({
+      decided: [{ asset_id: A, from: 'needs_review', to: 'confirmed' }],
+      not_found: [],
+      scope: {
+        entries: [
+          {
+            asset_id: A,
+            name: 'api.acme.io',
+            pattern: 'api.acme.io',
+            outcome: 'added',
+            target_id: 'T1',
+          },
+        ],
+      },
+    })
+    const user = userEvent.setup()
+    wrap(<EASMReviewQueue />)
+    await screen.findByText('api.acme.io')
+    await user.click(screen.getByRole('checkbox', { name: 'Select all' }))
+    const bar = screen.getByRole('toolbar', { name: 'Decide selected assets' })
+    await user.click(within(bar).getByRole('button', { name: /Ours: add to scope/ }))
+    const call = toast.success.mock.calls.find((c) => c[0] === 'Added api.acme.io to scope')
+    expect(call).toBeDefined()
+    expect(call![1].action).toBeUndefined()
+  })
+
+  it('shows skeleton rows, not a text, while loading', async () => {
+    api.get.mockImplementation(() => new Promise(() => {}))
+    const { container } = wrap(<EASMReviewQueue />)
+    await waitFor(() =>
+      expect(container.querySelectorAll('[data-slot="skeleton"]').length).toBeGreaterThan(0)
+    )
+    expect(screen.queryByText('Loading…')).toBeNull()
+  })
+
+  it('keeps the search in the URL like the tab and the reason', async () => {
+    api.get.mockImplementation(byUrl(queue))
+    wrap(<EASMReviewQueue />)
+    await screen.findByText('api.acme.io')
+    await userEvent.type(screen.getByRole('textbox', { name: 'Search names' }), 'api')
+    expect(new URLSearchParams(window.location.search).get('q')).toBe('api')
   })
 })

@@ -54,7 +54,7 @@ const defaultConfig: SWRConfiguration = {
 // ENDPOINT BUILDERS
 // ============================================
 
-function buildCredentialsEndpoint(filters?: CredentialApiFilters): string {
+export function buildCredentialsEndpoint(filters?: CredentialApiFilters): string {
   const baseUrl = '/api/v1/credentials'
 
   if (!filters) return baseUrl
