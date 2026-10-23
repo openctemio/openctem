@@ -20,6 +20,7 @@ import {
   DetailStatGrid,
   DetailTabs,
   type MetricStripItem,
+  ErrorState,
   CappedNotice,
 } from '@/features/shared'
 import { BUSINESS_CONTEXT_SECTION_TABS } from '@/config/section-tabs'
@@ -238,7 +239,7 @@ const BUSINESS_UNIT_EXPORT_FIELDS: ExportFieldConfig<BusinessUnit>[] = [
 export default function BusinessUnitsPage() {
   const { t } = useTranslation()
   // Fetch from API, fallback to mock data if API returns empty
-  const { data: apiData, mutate: refreshList } = useBusinessUnits()
+  const { data: apiData, error: loadError, isLoading, mutate: refreshList } = useBusinessUnits()
   const { trigger: createBU } = useCreateBusinessUnit()
   const { trigger: updateBU } = useUpdateBusinessUnit()
   const apiBUs: BusinessUnit[] = useMemo(() => {
@@ -590,7 +591,7 @@ export default function BusinessUnitsPage() {
         />
       </div>
 
-      <div className="grid grid-cols-2 gap-4">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
         <div className="space-y-2">
           <Label htmlFor="criticality">Criticality</Label>
           <Select
@@ -645,7 +646,7 @@ export default function BusinessUnitsPage() {
         </p>
       </div>
 
-      <div className="grid grid-cols-2 gap-4">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
         <div className="space-y-2">
           <Label htmlFor="owner">Owner *</Label>
           <Input
@@ -699,13 +700,23 @@ export default function BusinessUnitsPage() {
           className="mt-4 mb-0"
         />
 
-        <MetricStrip className="mt-5" loading={!apiData} items={metrics} />
+        <MetricStrip className="mt-5" loading={isLoading} items={metrics} />
 
         <div className="mt-5">
           <DataTable
             columns={columns}
             data={filteredUnits}
             showSearch={false}
+            isLoading={isLoading}
+            errorState={
+              loadError ? (
+                <ErrorState
+                  title={t('scope.businessUnits.loadError', 'business units')}
+                  error={loadError}
+                  onRetry={() => refreshList()}
+                />
+              ) : undefined
+            }
             toolbarStart={
               <>
                 <div className="relative min-w-0 flex-1 sm:max-w-xs">
