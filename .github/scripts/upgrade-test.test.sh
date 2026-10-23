@@ -82,5 +82,32 @@ set -e
 check "missing database settings fail" "1" "$rc"
 case "$out" in *"SUPER_URL is required"*) echo "ok: message names the variable";; *) echo "FAIL: message: $out"; fails=$((fails + 1));; esac
 
+# A migration numbered at or below the previous release's highest that the
+# release does not have would be skipped by `migrate up`: refused.
+mig="$tmp/mig"
+mkdir -p "$mig/.github/scripts" "$mig/api/migrations"
+cp "$here/upgrade-test.sh" "$mig/.github/scripts/"
+git -C "$mig" init -q -b develop
+git -C "$mig" config user.name test
+git -C "$mig" config user.email test@example.invalid
+git -C "$mig" config commit.gpgsign false
+git -C "$mig" config tag.gpgsign false
+for n in 000001_a 000002_b 000005_c; do : >"$mig/api/migrations/$n.up.sql"; done
+git -C "$mig" add -A; git -C "$mig" commit -q -m rel; git -C "$mig" tag v1.0.0
+: >"$mig/api/migrations/000006_d.up.sql"
+git -C "$mig" mv api/migrations/000002_b.up.sql api/migrations/000002_renamed.up.sql
+git -C "$mig" add -A; git -C "$mig" commit -q -m next
+set +e
+out="$(bash "$mig/.github/scripts/upgrade-test.sh" --check-order 2>&1)"; rc=$?
+set -e
+check "new migrations above the release, and a renamed released one, pass" "0" "$rc"
+: >"$mig/api/migrations/000003_late.up.sql"
+git -C "$mig" add -A; git -C "$mig" commit -q -m late
+set +e
+out="$(bash "$mig/.github/scripts/upgrade-test.sh" --check-order 2>&1)"; rc=$?
+set -e
+check "a migration below the release's highest that it lacks fails" "1" "$rc"
+case "$out" in *"000003_late.up.sql"*) echo "ok: message names the file";; *) echo "FAIL: message: $out"; fails=$((fails + 1));; esac
+
 [ "$fails" -eq 0 ] || { echo "$fails failure(s)"; exit 1; }
 echo "upgrade-test self-test passed"

@@ -3,6 +3,7 @@
 #
 #   upgrade-test.sh [--prev vX.Y.Z] [--server-bin PATH]
 #   upgrade-test.sh --print-prev-tag      the release it would start from
+#   upgrade-test.sh --check-order [--prev vX.Y.Z]   only the migration-order check (no database)
 #
 # What an operator does on upgrade day, on a scratch database:
 #   1. bootstrap the roles and apply the PREVIOUS release's migrations as the
@@ -10,6 +11,10 @@
 #      that release has;
 #   2. load representative rows (api/scripts/upgrade-test/seed.sql);
 #   3. apply THIS tree's migrations, re-run the roles script;
+#   0. (before any database work) refuse a migration of this tree numbered at
+#      or below the previous release's highest that the release does not have:
+#      golang-migrate `up` only applies versions above the current one, so an
+#      install of that release would skip it silently;
 #   4. assert: the version is this tree's highest migration and not dirty, the
 #      schema_migrations row is single, no key table lost a row, and, when
 #      --server-bin is given, the API built from this tree starts against the
@@ -33,11 +38,13 @@ cd "$ROOT"
 PREV=""
 SERVER_BIN=""
 PRINT_ONLY=false
+CHECK_ORDER_ONLY=false
 while [ $# -gt 0 ]; do
   case "$1" in
     --prev) PREV="$2"; shift ;;
     --server-bin) SERVER_BIN="$2"; shift ;;
     --print-prev-tag) PRINT_ONLY=true ;;
+    --check-order) CHECK_ORDER_ONLY=true ;;
     *) echo "unknown argument: $1" >&2; exit 2 ;;
   esac
   shift
@@ -57,9 +64,11 @@ if [ "$PRINT_ONLY" = true ]; then echo "$PREV"; exit 0; fi
 [ -n "$PREV" ] || { echo "::error::no previous release tag is reachable from HEAD (fetch tags: fetch-depth 0)"; exit 1; }
 git rev-parse --verify --quiet "refs/tags/$PREV" >/dev/null || { echo "::error::$PREV is not a tag here"; exit 1; }
 
-: "${SUPER_URL:?SUPER_URL is required}"
-: "${MIGRATOR_URL:?MIGRATOR_URL is required}"
-: "${APP_ROLE_URL:?APP_ROLE_URL is required}"
+if [ "$CHECK_ORDER_ONLY" != true ]; then
+  : "${SUPER_URL:?SUPER_URL is required}"
+  : "${MIGRATOR_URL:?MIGRATOR_URL is required}"
+  : "${APP_ROLE_URL:?APP_ROLE_URL is required}"
+fi
 
 psql_super() { psql "$SUPER_URL" -X -v ON_ERROR_STOP=1 "$@"; }
 fail() { echo "::error::upgrade test: $*"; exit 1; }
@@ -77,13 +86,13 @@ max_version() {
   find "$1" -maxdepth 1 -name '*.up.sql' -printf '%f\n' | sed 's/_.*//' | sort -n | tail -n 1 | sed 's/^0*//'
 }
 
-if [ "$(psql_super -At -c "SELECT to_regclass('public.schema_migrations') IS NOT NULL")" = t ]; then
-  fail "the database already has a schema; it must be empty"
-fi
-
 echo "== Previous release: $PREV ($(git rev-parse --short "$PREV"))"
 mkdir -p "$work/prev"
-git archive "$PREV" api/migrations api/deploy/postgres 2>/dev/null | tar -x -C "$work/prev" || true
+# One archive per path: `git archive` fails as a whole when one path is
+# missing, and a release older than the roles script has no api/deploy/postgres.
+for p in api/migrations api/deploy/postgres; do
+  if git cat-file -e "$PREV:$p" 2>/dev/null; then git archive "$PREV" "$p" | tar -x -C "$work/prev"; fi
+done
 prev_migrations="$work/prev/api/migrations"
 [ -d "$prev_migrations" ] || fail "$PREV has no api/migrations"
 prev_roles="$work/prev/api/deploy/postgres/least-privilege-roles.sql"
@@ -92,6 +101,28 @@ prev_max="$(max_version "$prev_migrations")"
 new_max="$(max_version api/migrations)"
 echo "   its migrations end at $prev_max; this tree's end at $new_max"
 [ "$new_max" -ge "$prev_max" ] || fail "this tree's highest migration ($new_max) is below $PREV's ($prev_max)"
+
+# 0. Migration order. Every migration version of this tree at or below the
+# previous release's highest must be one that release already has; anything
+# else would be skipped by `migrate up` on an upgraded install. Compared by
+# version, not file name: a renamed released migration never runs again anyway.
+versions() { find "$1" -maxdepth 1 -name '*.up.sql' -printf '%f\n' | sed 's/_.*//; s/^0*//; s/^$/0/' | sort -n -u; }
+versions "$prev_migrations" >"$work/prev-versions"
+skipped=""
+while IFS= read -r v; do
+  if [ "$v" -le "$prev_max" ] && ! grep -qxF "$v" "$work/prev-versions"; then
+    skipped="$skipped $(find api/migrations -maxdepth 1 -name "*.up.sql" -printf '%f\n' | awk -F_ -v v="$v" '$1 + 0 == v' | head -n 1)"
+  fi
+done < <(versions api/migrations)
+if [ -n "$skipped" ]; then
+  fail "numbered at or below $PREV's highest migration ($prev_max) but not in $PREV, so an upgrade would skip them:$skipped (renumber above $prev_max)"
+fi
+echo "   no migration of this tree would be skipped on upgrade"
+if [ "$CHECK_ORDER_ONLY" = true ]; then exit 0; fi
+
+if [ "$(psql_super -At -c "SELECT to_regclass('public.schema_migrations') IS NOT NULL")" = t ]; then
+  fail "the database already has a schema; it must be empty"
+fi
 
 echo "== 1. The previous release's database"
 psql_super -q -f "$prev_roles"
