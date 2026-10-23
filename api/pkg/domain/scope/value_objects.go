@@ -374,6 +374,12 @@ func MatchesPattern(targetType TargetType, pattern, value string) bool {
 		if urlAuthorityWild(pattern) {
 			return false
 		}
+		// "*://host" means any scheme on that host: the value's own scheme
+		// takes the place of "*", so the star cannot swallow a host.
+		pattern, ok := bindWildScheme(pattern, value)
+		if !ok {
+			return false
+		}
 		return matchWildcard(pattern, value)
 	case TargetTypeHost:
 		// One address, or a name (*.name). A CIDR or a range belongs to an
@@ -596,4 +602,19 @@ func MatchesExclusionPattern(exclusionType ExclusionType, pattern, value string)
 	default:
 		return matchWildcard(pattern, value)
 	}
+}
+
+// bindWildScheme replaces a leading "*://" of a URL pattern with the
+// value's own scheme. A value without a plain scheme (letters, digits, "+",
+// "-") binds nothing. Patterns without "*://" come back unchanged.
+func bindWildScheme(pattern, value string) (string, bool) {
+	rest, ok := strings.CutPrefix(strings.ToLower(strings.TrimSpace(pattern)), "*://")
+	if !ok {
+		return pattern, true
+	}
+	s, _, found := strings.Cut(strings.ToLower(strings.TrimSpace(value)), "://")
+	if !found || s == "" || strings.ContainsAny(s, "/?#@.") {
+		return "", false
+	}
+	return s + "://" + rest, true
 }

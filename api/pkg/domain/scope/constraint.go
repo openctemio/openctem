@@ -292,6 +292,10 @@ func hasDotSegment(path string) bool {
 // port), and the value's path at or under the prefix, segment by segment,
 // without dot segments.
 func matchURLPrefix(pattern, value string) bool {
+	pattern, ok := bindWildScheme(pattern, value)
+	if !ok {
+		return false
+	}
 	origin, prefix, ok := urlPatternParts(pattern)
 	if !ok {
 		return false
