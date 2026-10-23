@@ -1,6 +1,11 @@
 'use client'
 
 import { slaStateClass } from '@/lib/sla-colors'
+import { HealthStatus } from '@/components/ui/health-status'
+import { StatusLozenge } from '@/components/ui/status-lozenge'
+import { DashedCircleGlyph, RingDotGlyph, type StatusGlyph } from '@/components/ui/status-glyphs'
+import type { HealthState } from '@/lib/health-colors'
+import type { StatusTone } from '@/lib/status-colors'
 import { SeverityBadge } from '@/components/ui/severity-badge'
 import { useTranslation } from '@/context/i18n-provider'
 import { deleteAssetSafely } from '@/features/assets/lib/safe-delete'
@@ -103,7 +108,6 @@ import {
   SCM_PROVIDER_LABELS,
   SEVERITY_LABELS,
   BRANCH_STATUS_LABELS,
-  BRANCH_STATUS_COLORS,
   SLA_STATUS_LABELS,
   SCANNER_TYPE_LABELS,
 } from '@/features/repositories'
@@ -148,15 +152,9 @@ const STATUS_LABELS: Record<string, string> = {
 }
 
 const TRIAGE_STATUS_LABELS: Record<TriageStatus, string> = {
-  needs_triage: 'Needs Triage',
+  needs_triage: 'Needs triage',
   triaged: 'Triaged',
   escalated: 'Escalated',
-}
-
-const TRIAGE_STATUS_COLORS: Record<TriageStatus, { bg: string; text: string }> = {
-  needs_triage: { bg: 'bg-yellow-500/15', text: 'text-yellow-600' },
-  triaged: { bg: 'bg-blue-500/15', text: 'text-blue-600' },
-  escalated: { bg: 'bg-red-500/15', text: 'text-red-600' },
 }
 
 const SCM_PROVIDER_COLORS: Record<SCMProvider, string> = {
@@ -599,19 +597,23 @@ function ProviderIcon({ provider, className }: { provider: SCMProvider; classNam
   }
 }
 
-function BranchStatusBadge({ status }: { status: BranchStatus }) {
-  const config: Record<BranchStatus, { icon: React.ReactNode }> = {
-    passed: { icon: <CheckCircle className="h-3 w-3" /> },
-    failed: { icon: <XCircle className="h-3 w-3" /> },
-    warning: { icon: <AlertTriangle className="h-3 w-3" /> },
-    scanning: { icon: <RefreshCw className="h-3 w-3 animate-spin" /> },
-    not_scanned: { icon: <Minus className="h-3 w-3" /> },
-  }
+const BRANCH_HEALTH: Record<BranchStatus, HealthState> = {
+  passed: 'ok',
+  failed: 'down',
+  warning: 'warn',
+  scanning: 'run',
+  not_scanned: 'off',
+}
+
+/** The scan result of a branch: a machine state, so a HealthStatus (nothing spins). */
+export function BranchStatusBadge({ status }: { status: BranchStatus }) {
+  const { t } = useTranslation()
   return (
-    <Badge variant="outline" className={cn('gap-1', BRANCH_STATUS_COLORS[status])}>
-      {config[status].icon}
-      {BRANCH_STATUS_LABELS[status]}
-    </Badge>
+    <HealthStatus
+      state={BRANCH_HEALTH[status]}
+      value={status}
+      label={t(`repositories.branchStatus.${status}`, BRANCH_STATUS_LABELS[status])}
+    />
   )
 }
 
@@ -623,11 +625,23 @@ function SeverityCountBadge({ severity, count }: { severity: Severity; count?: n
   )
 }
 
-function TriageStatusBadge({ status }: { status: TriageStatus }) {
+const TRIAGE_LOZENGE: Record<TriageStatus, { tone: StatusTone; icon: StatusGlyph }> = {
+  needs_triage: { tone: 'triage', icon: DashedCircleGlyph },
+  triaged: { tone: 'open', icon: RingDotGlyph },
+  escalated: { tone: 'waiting', icon: Clock },
+}
+
+/** The triage state of a repository finding: a workflow StatusLozenge. */
+export function TriageStatusBadge({ status }: { status: TriageStatus }) {
+  const { t } = useTranslation()
+  const { tone, icon } = TRIAGE_LOZENGE[status]
   return (
-    <Badge variant="outline" className={cn('gap-1 text-xs', TRIAGE_STATUS_COLORS[status])}>
-      {TRIAGE_STATUS_LABELS[status]}
-    </Badge>
+    <StatusLozenge
+      tone={tone}
+      icon={icon}
+      value={status}
+      label={t(`repositories.triage.${status}`, TRIAGE_STATUS_LABELS[status])}
+    />
   )
 }
 
