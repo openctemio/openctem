@@ -96,6 +96,9 @@ type ciRig struct {
 	db     *postgres.DB
 	svc    *cirunapp.Service
 	worker *controller.IngestWorkerController
+	// jobs and jp build more workers (the load harness).
+	jobs   *postgres.IngestJobRepository
+	jp     *ingest.JobProcessor
 	runner *handler.CIRunnerHandler
 	// asyncTrust is the trust asyncRun opens runs under (made once).
 	asyncTrust *cirun.TrustConfig
@@ -163,7 +166,7 @@ func newCIRigWith(t *testing.T, cfg cirunapp.Config, deps ...func(*cirunapp.Deps
 	srv := httptest.NewServer(router.Handler())
 	t.Cleanup(srv.Close)
 
-	r := &ciRig{t: t, db: db, svc: svc, repo: repo, srv: srv, idp: idp, worker: worker, runner: h}
+	r := &ciRig{t: t, db: db, svc: svc, repo: repo, srv: srv, idp: idp, worker: worker, runner: h, jobs: jobsRepo, jp: jp}
 	r.tenant, r.other = r.newTenant(), r.newTenant()
 	return r
 }
