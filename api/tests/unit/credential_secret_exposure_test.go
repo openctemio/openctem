@@ -325,3 +325,25 @@ func TestRedactDetails_MasksToolReportedSecretKeys(t *testing.T) {
 		t.Fatal("input must not be modified")
 	}
 }
+
+func TestRedactDetails_SecretKeyTables(t *testing.T) {
+	metadata := []string{"secret_type", "secret_valid", "secret_revoked", "secret_entropy",
+		"secret_needs_rotation", "secret_expires_at", "secret_masked_value", "secret_fingerprint_prefix",
+		"secret_id", "secret_set", "secret_changed", "secret_service", "secret_pre_existing",
+		"secret_not_observed", "secret_detection", "secret_scan", "secret_source", "secret_provider",
+		"secret_kind", "secret_status", "secret_name", "secret_length", "secret_count"}
+	for _, k := range metadata {
+		out := credential.RedactDetails(map[string]any{k: "meta"})
+		if out[k] != "meta" {
+			t.Errorf("%s is metadata and must be kept, got %v", k, out[k])
+		}
+	}
+	secrets := []string{"secret_key", "secret_access_key", "aws_secret_access_key", "secret_blob",
+		"connection_string", "dsn", "db_password", "slack_token", "client_secret"}
+	for _, k := range secrets {
+		out := credential.RedactDetails(map[string]any{k: "hunter2"})
+		if out[k] != credential.RedactedValue {
+			t.Errorf("%s must be masked, got %v", k, out[k])
+		}
+	}
+}
