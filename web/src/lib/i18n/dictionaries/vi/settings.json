@@ -905,5 +905,13 @@
   "settings.vulnMatching.panel.reported": "Điều lượt quét báo cáo",
   "settings.vulnMatching.panel.footer": "Nâng cấp ra khỏi dải bị ảnh hưởng sẽ giải quyết phát hiện này ở lượt quét kế tiếp; công cụ quét hoặc phép xác thực xác nhận được nó sẽ thay thế bằng chứng này.",
   "settings.item.import-mappings": "Ánh xạ nhập dữ liệu",
-  "settings.desc.import-mappings": "Chuyển bản xuất CSV, JSON hoặc XML thành phát hiện và tài sản."
+  "settings.desc.import-mappings": "Chuyển bản xuất CSV, JSON hoặc XML thành phát hiện và tài sản.",
+  "settings.pentest.form.tagInput": "Thẻ",
+  "settings.pentest.form.referenceInput": "URL tham chiếu",
+  "settings.pentest.typeNameAria": "Tên loại chiến dịch, dòng {n}",
+  "settings.pentest.typeKeyAria": "Khóa loại chiến dịch, dòng {n}",
+  "settings.pentest.removeTypeRow": "Xóa loại chiến dịch, dòng {n}",
+  "settings.pentest.methodNameAria": "Tên phương pháp luận, dòng {n}",
+  "settings.pentest.methodKeyAria": "Khóa phương pháp luận, dòng {n}",
+  "settings.pentest.removeMethodologyRow": "Xóa phương pháp luận, dòng {n}"
 }

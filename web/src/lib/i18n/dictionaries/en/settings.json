@@ -33,7 +33,7 @@
   "settings.pentest.form.cweSearch": "Search CWE (e.g., 89, XSS, injection)...",
   "settings.pentest.form.deadline": "Deadline",
   "settings.pentest.form.execPlaceholder": "Why does this matter to the business? (for non-technical stakeholders)\ne.g. customer personal data exposure, regulatory fines, reputational damage, operational downtime.",
-  "settings.pentest.form.execSummary": "Executive Summary",
+  "settings.pentest.form.execSummary": "Executive summary",
   "settings.pentest.form.hide": "hide",
   "settings.pentest.form.impact": "Impact",
   "settings.pentest.form.impactHint": "What can the attacker do, and how to fix it. Impact and the executive summary are both optional: fill what is relevant for the audience.",
@@ -905,5 +905,13 @@
   "settings.vulnMatching.panel.reported": "What the scan reported",
   "settings.vulnMatching.panel.footer": "Upgrading out of the range resolves this finding on the next scan; a scanner or a validation that confirms it replaces this evidence.",
   "settings.item.import-mappings": "Import mappings",
-  "settings.desc.import-mappings": "Turn CSV, JSON or XML exports into findings and assets."
+  "settings.desc.import-mappings": "Turn CSV, JSON or XML exports into findings and assets.",
+  "settings.pentest.form.tagInput": "Tag",
+  "settings.pentest.form.referenceInput": "Reference URL",
+  "settings.pentest.typeNameAria": "Campaign type name, row {n}",
+  "settings.pentest.typeKeyAria": "Campaign type key, row {n}",
+  "settings.pentest.removeTypeRow": "Remove campaign type, row {n}",
+  "settings.pentest.methodNameAria": "Methodology name, row {n}",
+  "settings.pentest.methodKeyAria": "Methodology key, row {n}",
+  "settings.pentest.removeMethodologyRow": "Remove methodology, row {n}"
 }
