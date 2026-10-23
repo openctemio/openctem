@@ -52,7 +52,11 @@ func TestFindingImport_AcceptedThenImported_DB(t *testing.T) {
 	if n := ih.count(t, `SELECT count(*) FROM ingest_receipts WHERE tenant_id = $1 AND id = $2 AND status = 'queued'`, ih.tenantID, first.ReceiptID); n != 1 {
 		t.Fatal("the receipt is not queued")
 	}
-	if n := ih.count(t, `SELECT count(*) FROM ingest_payloads WHERE tenant_id = $1 AND position('NessusClientData' in convert_from(sealed, 'LATIN1')) > 0`, ih.tenantID); n != 0 {
+	var sealed []byte
+	if err := ih.db.QueryRow(`SELECT sealed FROM ingest_payloads WHERE tenant_id = $1`, ih.tenantID).Scan(&sealed); err != nil {
+		t.Fatal(err)
+	}
+	if bytes.Contains(sealed, []byte("NessusClientData")) {
 		t.Fatal("the upload is stored in plaintext")
 	}
 	if n := ih.count(t, `SELECT count(*) FROM ingest_payloads WHERE tenant_id = $1`, ih.tenantID); n != 1 {
