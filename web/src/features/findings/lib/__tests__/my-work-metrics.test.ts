@@ -18,7 +18,12 @@ function parseLikeFindingsPage(url: string): FindingApiFilters {
   return f
 }
 
-const strip = (f: FindingApiFilters) => ({ ...f, page: undefined, per_page: undefined, sort: undefined })
+const strip = (f: FindingApiFilters) => ({
+  ...f,
+  page: undefined,
+  per_page: undefined,
+  sort: undefined,
+})
 
 describe('My work drill links', () => {
   const keys = Object.keys(MY_WORK_METRIC_FILTERS) as MyWorkMetricKey[]
@@ -34,7 +39,9 @@ describe('My work drill links', () => {
   it('opens the same severities and SLA statuses the figures count', () => {
     expect(findingsDrillUrl(MY_WORK_METRIC_FILTERS.critical)).toContain('severity=critical%2Chigh')
     expect(findingsDrillUrl(MY_WORK_METRIC_FILTERS.critical)).not.toContain('priority_class')
-    expect(findingsDrillUrl(MY_WORK_METRIC_FILTERS.overdue)).toContain('sla_status=overdue%2Cexceeded')
+    expect(findingsDrillUrl(MY_WORK_METRIC_FILTERS.overdue)).toContain(
+      'sla_status=overdue%2Cexceeded'
+    )
   })
 
   it('counts with the Open lens and without the list-hidden statuses', () => {
