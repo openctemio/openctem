@@ -9,8 +9,6 @@
 # reviewed exception and says why the id alone is safe.
 capability_repository.go:CapabilityRepository.GetByID:capabilities  D-11 baseline: add the tenant predicate
 ingest_job_repository.go:IngestJobRepository.ClaimBatch:ingest_jobs  D-11 baseline: add the tenant predicate
-ingest_job_repository.go:IngestJobRepository.Complete:ingest_jobs  D-11 baseline: add the tenant predicate
-ingest_job_repository.go:IngestJobRepository.Fail:ingest_jobs  D-11 baseline: add the tenant predicate
 ingest_report_repository.go:IngestReportRepository.Abandon:ingest_reports  D-11 baseline: add the tenant predicate
 ingest_report_repository.go:IngestReportRepository.ClaimFinalize:ingest_reports  D-11 baseline: add the tenant predicate
 ingest_report_repository.go:IngestReportRepository.Commit:ingest_reports  D-11 baseline: add the tenant predicate
