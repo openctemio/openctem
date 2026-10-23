@@ -32,5 +32,9 @@
   "exposures.bulk.partialFailed": "{failed} of {total} failed.",
   "exposures.bulk.resolveFailed": "Could not resolve the exposures.",
   "exposures.bulk.updateFailed": "Could not update the exposures.",
-  "exposures.bulk.reasonRequired": "Enter a reason."
+  "exposures.bulk.reasonRequired": "Enter a reason.",
+  "exposures.state.active": "Active",
+  "exposures.state.resolved": "Resolved",
+  "exposures.state.accepted": "Accepted",
+  "exposures.state.false_positive": "False positive"
 }

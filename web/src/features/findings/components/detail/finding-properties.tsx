@@ -230,7 +230,7 @@ export function FindingProperties({
         <Row label={t('findings.properties.priority', 'Priority')}>
           {finding.priorityClass ? (
             <span className="inline-flex items-center gap-1.5">
-              <PriorityClassBadge priorityClass={finding.priorityClass} />
+              <PriorityClassBadge priorityClass={finding.priorityClass} showWord />
               {finding.priorityClassOverride && (
                 <span className="text-xs text-muted-foreground">
                   {t('findings.properties.setManually', 'set manually')}
