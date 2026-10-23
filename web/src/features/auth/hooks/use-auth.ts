@@ -13,6 +13,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { toast } from 'sonner'
 import { getErrorMessage } from '@/lib/api/error-handler'
+import { useTranslation } from '@/context/i18n-provider'
 
 import { useAuthStore, forceLogin } from '@/stores/auth-store'
 import { refreshTokenAction } from '../actions/auth-actions'
@@ -40,6 +41,11 @@ const TOKEN_REFRESH_BEFORE_EXPIRY = 5 * 60 * 1000 // 5 minutes in ms
 export function useAuth(): UseAuthReturn {
   const [isLoading, setIsLoading] = useState(false)
   const refreshTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const { t } = useTranslation()
+  const tRef = useRef(t)
+  useEffect(() => {
+    tRef.current = t
+  }, [t])
   const isRefreshingRef = useRef(false)
 
   // Get auth state from store
@@ -200,7 +206,9 @@ export function useAuth(): UseAuthReturn {
 
       if (!success) {
         // Token refresh failed - notify user
-        toast.error('Session expired. Please login again.')
+        toast.error(
+          tRef.current('auth.login.sessionExpired', 'Your session expired. Sign in again.')
+        )
       }
     }, timeUntilRefresh)
 

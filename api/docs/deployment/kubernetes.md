@@ -20,7 +20,8 @@ developers who change those requirements (update the chart in the same release).
 | Ports | API 8080 (HTTP), 9090 (gRPC); web 3000 |
 | Probes | Liveness `GET /health`, readiness `GET /ready` (checks the database and Redis). `/metrics` needs the `METRICS_TOKEN` bearer token. |
 | Routing | `/api/*` (including the `/api/v1/ws` WebSocket) to the API, everything else to the web console |
-| State | Stateless pods; PostgreSQL 17 and Redis 7 run outside the API Deployment (managed services recommended) |
+| State | Stateless pods; PostgreSQL and Redis 7 run outside the API Deployment (managed services recommended) |
+| PostgreSQL | **16, 17 or 18; 17 is recommended** (the version CI runs the whole suite on, and the one the Compose files ship). 16 and 18 are tested nightly. Use the same major in the chart's PostgreSQL, a managed service or your own server; a major upgrade is the database's own dump/restore or `pg_upgrade`, not an OpenCTEM step |
 
 ## Related
 

@@ -26,6 +26,7 @@ import (
 	"github.com/openctemio/ctis/importer"
 
 	"github.com/openctemio/openctem/api/internal/app/findingimport"
+	appimportmapping "github.com/openctemio/openctem/api/internal/app/importmapping"
 	"github.com/openctemio/openctem/api/internal/app/ingest"
 	"github.com/openctemio/openctem/api/internal/app/ingestqueue"
 	"github.com/openctemio/openctem/api/pkg/domain/cirun"
@@ -76,6 +77,9 @@ const (
 	UploadErrorRunEvaluated = "run_evaluated"
 	UploadErrorRunGone      = "run_not_found"
 	UploadErrorVEXRefused   = "vex_not_accepted"
+	// UploadErrorMappingGone: the import mapping version pinned when the
+	// upload was accepted is no longer there (deleted or renamed).
+	UploadErrorMappingGone = "mapping_unavailable"
 )
 
 // uploadEnvelope is what the worker needs besides the raw body.
@@ -83,7 +87,20 @@ type uploadEnvelope struct {
 	// Export: the body is a tool export (SARIF, an SBOM, a ZIP ...), not a
 	// CTIS report.
 	Export bool `json:"export"`
+	// Mapping, when set, is the import mapping version the file is
+	// converted through, pinned at accept (an export only).
+	Mapping *MappingPin `json:"mapping,omitempty"`
 }
+
+// MappingPin names one exact import mapping version, as resolved at accept.
+type MappingPin = findingimport.MappingPin
+
+// MappingResolver resolves a pinned mapping version in an organization
+// (importmapping.Service).
+type MappingResolver = findingimport.MappingResolver
+
+// SetMappingResolver enables uploads through an import mapping.
+func (s *Service) SetMappingResolver(m MappingResolver) { s.mappings = m }
 
 // UploadResult is what an applied upload did, as the status read returns
 // it (the same fields the upload answered with when it was applied in the
@@ -175,7 +192,7 @@ func uploadPrincipal(runID shared.ID) string { return "run:" + runID.String() }
 // naming another asset (ErrReportOutOfScope) is refused at once; a tool
 // export is converted by the worker. The same body uploaded to the run
 // again is the same upload (Replayed).
-func (s *Service) AcceptUpload(ctx context.Context, run *cirun.Run, body []byte, export bool) (*UploadReceipt, error) {
+func (s *Service) AcceptUpload(ctx context.Context, run *cirun.Run, body []byte, export bool, pin *MappingPin) (*UploadReceipt, error) {
 	if s.uploads == nil {
 		return nil, ErrUploadsUnavailable
 	}
@@ -184,6 +201,9 @@ func (s *Service) AcceptUpload(ctx context.Context, run *cirun.Run, body []byte,
 	}
 	// A tool export is converted by the worker; a gate waits on it.
 	lane := ingestjob.LaneInteractive
+	if pin != nil {
+		export = true
+	}
 	if !export {
 		report, ok := DecodeReport(body)
 		if !ok {
@@ -194,7 +214,7 @@ func (s *Service) AcceptUpload(ctx context.Context, run *cirun.Run, body []byte,
 		}
 		lane = s.uploadLane(ctx, report)
 	}
-	env, err := json.Marshal(uploadEnvelope{Export: export})
+	env, err := json.Marshal(uploadEnvelope{Export: export, Mapping: pin})
 	if err != nil {
 		return nil, err
 	}
@@ -203,7 +223,11 @@ func (s *Service) AcceptUpload(ctx context.Context, run *cirun.Run, body []byte,
 	if err := s.uploads.Admit(ctx, run.TenantID); err != nil {
 		return nil, err
 	}
-	digest := sha256.Sum256(body)
+	keyed := body
+	if pin != nil {
+		keyed = append(append([]byte(nil), body...), "\x00"+pin.ID+"\x00"+pin.Format...)
+	}
+	digest := sha256.Sum256(keyed)
 	job := ingestjob.NewUploadJob(shared.NewID(), run.TenantID, ingestjob.KindCIResults, run.ID.String(),
 		uploadPrincipal(run.ID), "ci:"+run.ID.String(), env, digest[:])
 	// The uploads of one repository are applied one at a time: concurrent
@@ -321,7 +345,14 @@ func (s *Service) ProcessUploadJob(ctx context.Context, job *ingestjob.Job) ([]b
 	body := parts[0].Body
 	var res *UploadResult
 	if env.Export {
-		res, err = s.applyExport(ctx, run, body)
+		var mp *appimportmapping.Resolved
+		if env.Mapping != nil {
+			// The job's organization (the stored row), never the envelope's.
+			if mp, err = findingimport.ResolvePin(ctx, s.mappings, job.TenantID(), env.Mapping, UploadErrorMappingGone); err != nil {
+				return nil, err
+			}
+		}
+		res, err = s.applyExport(ctx, run, body, mp)
 	} else {
 		res, err = s.applyCTIS(ctx, run, body)
 	}
@@ -392,7 +423,7 @@ func (s *Service) applyCTIS(ctx context.Context, run *cirun.Run, body []byte) (*
 // limits and archive checks as the import endpoint) and applies each
 // converted report on the run's repository. The first report uses the slot
 // reserved at accept; each further one takes its own.
-func (s *Service) applyExport(ctx context.Context, run *cirun.Run, body []byte) (*UploadResult, error) {
+func (s *Service) applyExport(ctx context.Context, run *cirun.Run, body []byte, mp *appimportmapping.Resolved) (*UploadResult, error) {
 	res := &UploadResult{Files: []ExportFile{}, Known: []cirun.KnownFinding{}}
 	total := &ingest.Output{}
 	var firstErr error
@@ -403,6 +434,7 @@ func (s *Service) applyExport(ctx context.Context, run *cirun.Run, body []byte) 
 		// Code reports are filed on the run's repository, whatever the file
 		// names; ScopeImported then drops anything still elsewhere.
 		Repository: run.Repository, Branch: run.Branch, CommitSHA: run.CommitSHA,
+		Mapping: mp,
 	}, func(c findingimport.Converted) {
 		f := ExportFile{Name: c.Name}
 		if c.Error != nil {

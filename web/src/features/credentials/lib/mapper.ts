@@ -7,6 +7,7 @@
 import type { ApiCredential, ApiCredentialStats } from '../api/credential-api.types'
 import type { Asset } from '@/features/assets'
 import type { Status } from '@/features/shared/types'
+import type { CriticalityLevel } from '@/lib/criticality'
 import { severityCounts } from '@/lib/severity'
 
 // Map API state to frontend status
@@ -34,11 +35,38 @@ const severityToRiskScore: Record<string, number> = {
 export interface CredentialLeakDetails {
   source: string
   username: string
+  /** When the leak happened (details.breach_date), empty when the import did not say. */
   leakDate: string
+  /** The API severity as returned (critical, high, medium, low, info). */
+  severity: string
   hasSecret: boolean
   secretMasked?: string
   secretFingerprint?: string
+  /** The API credential type (password, api_key, ...); the page translates it. */
   credentialType: string
+}
+
+/** The known credential types, for their translated labels (credentials.type.*). */
+export const CREDENTIAL_TYPES = [
+  'password',
+  'api_key',
+  'oauth_token',
+  'ssh_key',
+  'private_key',
+  'database_cred',
+  'cloud_cred',
+  'session_token',
+  'jwt_token',
+  'certificate',
+  'other',
+] as const
+
+/** A breach date from the import's details, as YYYY-MM-DD, or '' when absent or not a date. */
+function breachDateOf(details: Record<string, unknown>): string {
+  const raw = details.breach_date
+  if (typeof raw !== 'string' || !raw) return ''
+  const day = raw.split('T')[0]
+  return Number.isNaN(new Date(day).getTime()) ? '' : day
 }
 
 /** A credential leak shaped like an asset row, so the shared table components render it. */
@@ -53,21 +81,6 @@ export function mapCredentialToAsset(credential: ApiCredential): CredentialLeakR
   // Extract context from details
   const username = (details.username as string) || ''
   const email = (details.email as string) || ''
-
-  // Determine credential type display name
-  const credTypeMap: Record<string, string> = {
-    password: 'Password',
-    api_key: 'API Key',
-    oauth_token: 'OAuth Token',
-    ssh_key: 'SSH Key',
-    private_key: 'Private Key',
-    database_cred: 'Database Credential',
-    cloud_cred: 'Cloud Credential',
-    session_token: 'Session Token',
-    jwt_token: 'JWT Token',
-    certificate: 'Certificate',
-    other: 'Other',
-  }
 
   // Every field on the generated wire type is optional: swag emits no `required`
   // list for response structs, so the contract says any of these may be absent.
@@ -85,7 +98,8 @@ export function mapCredentialToAsset(credential: ApiCredential): CredentialLeakR
     type: 'credential',
     name: credential.identifier ?? '',
     description: `${credType} from ${source}`,
-    criticality: severity === 'critical' || severity === 'high' ? 'critical' : 'high',
+    // The severity as the API returned it; info has no asset-criticality twin.
+    criticality: severity === 'info' || !severity ? 'none' : (severity as CriticalityLevel),
     status: stateToStatus[state] || 'active',
     scope: 'internal',
     exposure: 'public',
@@ -94,13 +108,14 @@ export function mapCredentialToAsset(credential: ApiCredential): CredentialLeakR
     metadata: {
       source,
       username: username || email,
-      leakDate: firstSeen.split('T')[0] || '',
+      leakDate: breachDateOf(details),
+      severity,
       // The API never returns the plaintext: only a mask and a keyed
       // fingerprint. The plaintext comes from POST /credentials/{id}/reveal.
       hasSecret: credential.has_secret ?? false,
       secretMasked: credential.secret_masked,
       secretFingerprint: credential.secret_fingerprint,
-      credentialType: credTypeMap[credType] || credType,
+      credentialType: credType,
     },
     tags: [],
     firstSeen,

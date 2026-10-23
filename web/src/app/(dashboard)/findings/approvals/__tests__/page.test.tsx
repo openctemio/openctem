@@ -732,6 +732,13 @@ describe('ApprovalsPage group exceptions', () => {
     expect(within(container).queryByRole('link')).not.toBeInTheDocument()
   })
 
+  it('the active tab points at a panel that exists', () => {
+    render(<ApprovalsPage />)
+    const tab = screen.getByRole('tab', { name: /Finding requests/ })
+    const panel = tab.getAttribute('aria-controls')
+    expect(panel && document.getElementById(panel)).toBeTruthy()
+  })
+
   it('counts pending group exceptions on the view switch and switches through the URL', () => {
     render(<ApprovalsPage />)
     const tab = screen.getByRole('tab', { name: /Group exceptions/ })
