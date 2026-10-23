@@ -112,6 +112,10 @@ func (r *importTestRig) process(t *testing.T) []FindingImportResponse {
 		if err != nil {
 			t.Fatalf("process: %v", err)
 		}
+		// The worker's Complete deletes the stored parts.
+		if err := r.queue.Done(context.Background(), job); err != nil {
+			t.Fatal(err)
+		}
 		var res findingimport.QueuedResult
 		if err := json.Unmarshal(raw, &res); err != nil {
 			t.Fatal(err)
