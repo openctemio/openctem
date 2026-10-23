@@ -56,6 +56,10 @@ for (const scheme of ['light', 'dark'] as const) {
     await more.click()
     const menu = page.getByRole('menu')
     await expect(menu).toBeVisible()
+    // The menu opens with a short zoom: measure once it has settled.
+    await menu.evaluate((el) =>
+      Promise.all(el.getAnimations({ subtree: true }).map((a) => a.finished))
+    )
     await testInfo.attach(`dashboard-header-390-${scheme}-menu.png`, {
       body: await page.screenshot(),
       contentType: 'image/png',
