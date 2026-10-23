@@ -64,6 +64,7 @@ import { assetDetailHref, isLinkableAssetId } from '../../lib/asset-link'
 import { findingAssetTypeLabel } from '../../lib/finding-asset-type'
 import { HUMAN_SOURCES, findingDescription } from '../../lib/finding-detail'
 import { buildRepositoryCodeUrl } from '../../lib/repository-url'
+import { FindingIdentitySection } from './finding-identity-section'
 
 interface OverviewTabProps {
   finding: FindingDetail
@@ -236,6 +237,8 @@ export function OverviewTab({ finding }: OverviewTabProps) {
       )}
 
       <IdentifiersSection finding={finding} />
+
+      <FindingIdentitySection findingId={finding.id} />
 
       {!isHuman && (
         <DetailDisclosure summary={t('findings.overviewTab.moreDetails', 'More details')}>
