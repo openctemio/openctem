@@ -15,6 +15,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/openctemio/openctem/api/internal/testdb"
@@ -124,6 +125,16 @@ func exerciseBranchCounts(ctx context.Context, t *testing.T, q queryer) []branch
 		WHERE tenant_id = $1 AND branch_id IS NOT NULL AND fingerprint ~ '-[0-9]*[147]$'`, tenant, branchA, branchB)
 	mustExecQ(ctx, t, q, `UPDATE findings SET branch_id = NULL WHERE tenant_id = $1 AND fingerprint = $2`, tenant, "bc-"+tenant[:8]+"-3")
 	check("branch move")
+
+	// The ingest upsert: INSERT ... ON CONFLICT DO UPDATE fires the update
+	// trigger for the rows that conflicted (here: re-rated and reopened)
+	// and the insert trigger for the new row.
+	mustExecQ(ctx, t, q, `INSERT INTO findings (tenant_id, asset_id, branch_id, source, tool_name, message, severity, status, fingerprint)
+		SELECT $1::uuid, $2::uuid, $3::uuid, 'sast', 'semgrep', 'm', 'critical', 'new', 'bc-' || left($1::text, 8) || '-' || g
+		FROM unnest(ARRAY['0', '5', '6', 'upsert']) g
+		ON CONFLICT (tenant_id, fingerprint) DO UPDATE SET severity = EXCLUDED.severity, status = EXCLUDED.status,
+			resolution = NULL, closure_reason = NULL, verification = NULL, resolved_at = NULL`, tenant, asset, branchB)
+	check("upsert")
 
 	// A re-sighting writes no counted input.
 	mustExecQ(ctx, t, q, `UPDATE findings SET last_seen_at = now(), severity = severity WHERE tenant_id = $1`, tenant)
@@ -266,5 +277,82 @@ func TestMigrationBranchCountsPerStatement(t *testing.T) {
 
 	if fmt.Sprint(rowTrigger) != fmt.Sprint(statementTrigger) {
 		t.Errorf("counters differ between the row and statement triggers:\nrow       %v\nstatement %v", rowTrigger, statementTrigger)
+	}
+}
+
+// TestBranchFindingCounts_ConcurrentWriters: concurrent committed writers
+// (inserts, ingest upserts, status, severity and branch moves, deletes), each
+// statement spanning both branches, leave the counters equal to the recount,
+// and none of them fails: the statement trigger locks the branch rows in one
+// order, after the read committed snapshot of the last writer to commit.
+func TestBranchFindingCounts_ConcurrentWriters(t *testing.T) {
+	db := setupTestDB(t)
+	t.Cleanup(func() { _ = db.Close() })
+	ctx := context.Background()
+
+	tenant := shared.NewID().String()
+	mustExecQ(ctx, t, db, `INSERT INTO tenants (id, name, slug) VALUES ($1, $2, $2)`, tenant, "bcc-"+tenant)
+	t.Cleanup(func() { _, _ = db.ExecContext(context.Background(), `DELETE FROM tenants WHERE id = $1`, tenant) })
+	var asset, branchA, branchB string
+	if err := db.QueryRowContext(ctx, `INSERT INTO assets (tenant_id, name, asset_type) VALUES ($1, $2, 'repository') RETURNING id`,
+		tenant, "github.com/acme/bcc-"+tenant).Scan(&asset); err != nil {
+		t.Fatal(err)
+	}
+	mustExecQ(ctx, t, db, `INSERT INTO asset_repositories (asset_id) VALUES ($1)`, asset)
+	for name, dst := range map[string]*string{"main": &branchA, "dev": &branchB} {
+		if err := db.QueryRowContext(ctx, `INSERT INTO repository_branches (repository_id, name) VALUES ($1, $2) RETURNING id`,
+			asset, name).Scan(dst); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	const writers, rounds = 8, 15
+	var wg sync.WaitGroup
+	errs := make(chan error, writers*rounds*6)
+	for w := 0; w < writers; w++ {
+		wg.Add(1)
+		go func(w int) {
+			defer wg.Done()
+			// Each writer owns its findings (so row locks on findings never
+			// collide) but every statement touches both shared branches.
+			fp := fmt.Sprintf("bcc-%s-%d-", tenant[:8], w)
+			stmts := []struct {
+				q    string
+				args []any
+			}{
+				{`INSERT INTO findings (tenant_id, asset_id, branch_id, source, tool_name, message, severity, status, fingerprint)
+					SELECT $1::uuid, $2::uuid, CASE WHEN g % 2 = 0 THEN $3::uuid ELSE $4::uuid END, 'sast', 'semgrep', 'm',
+						(ARRAY['critical','high','medium','low','info'])[1 + g % 5], 'new', $5 || g
+					FROM generate_series(1, 10) g
+					ON CONFLICT (tenant_id, fingerprint) DO UPDATE SET status = 'confirmed', severity = 'high'`,
+					[]any{tenant, asset, branchA, branchB, fp}},
+				{`UPDATE findings SET status = 'resolved', resolution = 'auto_fixed', closure_reason = 'fixed',
+					verification = 'covered_scan', resolved_at = now() WHERE tenant_id = $1 AND fingerprint LIKE $2 || '%' AND fingerprint ~ '[13579]$'`,
+					[]any{tenant, fp}},
+				{`UPDATE findings SET branch_id = CASE WHEN branch_id = $3 THEN $4::uuid ELSE $3::uuid END, severity = 'critical'
+					WHERE tenant_id = $1 AND fingerprint LIKE $2 || '%' AND branch_id IS NOT NULL`,
+					[]any{tenant, fp, branchA, branchB}},
+				{`DELETE FROM findings WHERE tenant_id = $1 AND fingerprint LIKE $2 || '%' AND fingerprint ~ '[48]$'`,
+					[]any{tenant, fp}},
+			}
+			for r := 0; r < rounds; r++ {
+				for _, s := range stmts {
+					if _, err := db.ExecContext(ctx, s.q, s.args...); err != nil {
+						errs <- fmt.Errorf("writer %d round %d: %w", w, r, err)
+						return
+					}
+				}
+			}
+		}(w)
+	}
+	wg.Wait()
+	close(errs)
+	for err := range errs {
+		t.Error(err)
+	}
+	for _, b := range []string{branchA, branchB} {
+		if got, want := branchCountsStored(ctx, t, db, b), branchCountsRecount(ctx, t, db, b); got != want {
+			t.Errorf("branch %s counters %+v, recount %+v", b, got, want)
+		}
 	}
 }
