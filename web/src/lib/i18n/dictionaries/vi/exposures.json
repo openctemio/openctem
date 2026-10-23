@@ -32,5 +32,9 @@
   "exposures.bulk.partialFailed": "{failed} trên {total} thất bại.",
   "exposures.bulk.resolveFailed": "Không thể xử lý các phơi nhiễm.",
   "exposures.bulk.updateFailed": "Không thể cập nhật các phơi nhiễm.",
-  "exposures.bulk.reasonRequired": "Nhập lý do."
+  "exposures.bulk.reasonRequired": "Nhập lý do.",
+  "exposures.state.active": "Đang hoạt động",
+  "exposures.state.resolved": "Đã khắc phục",
+  "exposures.state.accepted": "Đã chấp nhận",
+  "exposures.state.false_positive": "Dương tính giả"
 }

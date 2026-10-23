@@ -9,6 +9,7 @@
  * where (asset, source), then when (first / last seen), then trivia.
  */
 
+import { assigneeLabel } from '../../lib/assignee-label'
 import { VERSION_MATCH_TOOL } from '@/features/vuln-matching/types'
 import { findingStatusesInCategory } from '@/features/findings/types/finding.types'
 import Link from '@/components/link'
@@ -163,7 +164,10 @@ export function FindingProperties({
 
   const assigneeNode = hideTriage ? (
     <span className={triage.assignee ? undefined : 'text-muted-foreground'}>
-      {triage.assignee?.name || t('findings.properties.unassigned', 'Unassigned')}
+      {assigneeLabel(triage.assignee, {
+        assigned: t('findings.assigneeSelect.assigned', 'Assigned'),
+        unassigned: t('findings.properties.unassigned', 'Unassigned'),
+      })}
     </span>
   ) : (
     <AssigneeSelect
@@ -230,7 +234,7 @@ export function FindingProperties({
         <Row label={t('findings.properties.priority', 'Priority')}>
           {finding.priorityClass ? (
             <span className="inline-flex items-center gap-1.5">
-              <PriorityClassBadge priorityClass={finding.priorityClass} />
+              <PriorityClassBadge priorityClass={finding.priorityClass} showWord />
               {finding.priorityClassOverride && (
                 <span className="text-xs text-muted-foreground">
                   {t('findings.properties.setManually', 'set manually')}
