@@ -13,6 +13,8 @@ import { env } from '@/lib/env'
 import { getErrorMessage } from '@/lib/api/error-handler'
 import {
   useAssetGroupsApi,
+  useAllAssetGroupsApi,
+  ALL_ASSET_GROUPS_CAP,
   useAssetGroupApi,
   useGroupAssetsApi,
   useGroupFindingsApi,
@@ -193,6 +195,35 @@ export function useAssetGroup(groupId: string | null): UseAssetGroupReturn {
   }, [apiResult.data, apiResult.isLoading, apiResult.error, apiResult.mutate, groupId])
 
   return result
+}
+
+/**
+ * Every group matching the filters (up to ALL_ASSET_GROUPS_CAP) for a list
+ * that searches, selects and exports across all of them. `total` is the
+ * server's count; `truncated` is true when more groups exist than were loaded.
+ */
+export function useAllAssetGroups(options: UseAssetGroupsOptions = {}) {
+  const { filters, enabled = true } = options
+  const apiResult = useAllAssetGroupsApi(USE_REAL_API && enabled ? filters : null, {
+    revalidateOnFocus: false,
+  })
+  // Mock mode (development without an API) keeps the single-page mock list.
+  const mock = useAssetGroups({ filters, enabled: !USE_REAL_API && enabled })
+  return useMemo(() => {
+    if (!USE_REAL_API) return { ...mock, truncated: false, cap: ALL_ASSET_GROUPS_CAP }
+    const data = transformApiAssetGroups(apiResult.data?.data ?? [])
+    const total = apiResult.data?.total ?? 0
+    return {
+      data,
+      total,
+      truncated: total > data.length,
+      cap: ALL_ASSET_GROUPS_CAP,
+      isLoading: apiResult.isLoading,
+      isError: !!apiResult.error,
+      error: apiResult.error ?? null,
+      mutate: apiResult.mutate,
+    }
+  }, [apiResult.data, apiResult.isLoading, apiResult.error, apiResult.mutate, mock])
 }
 
 // ============================================

@@ -34,6 +34,16 @@ must_pass 'spinner' '<span className="animate-spin border-2 border-t-primary" />
 must_pass 'annotated exception' '<div className="border-l-4 border-l-primary" /> {/* stripe-ok: wizard step rail */}'
 must_pass 'plain card' '<div className="rounded border bg-card p-4" />'
 
+# priority / severity colours (the file is src/a.tsx, outside the shared modules)
+must_fail 'priority colour by hand' "const P1 = 'P1' // bg-orange-500"
+must_fail 'priority hex' "const pc = { P0: '#ff0000' }"
+must_fail 'severity map by palette' "critical: 'bg-red-500/10 text-red-500',"
+must_fail 'severity hex' "high: '#f97316',"
+must_fail 'sev token class by hand' '<span className="bg-sev-high/10" />'
+must_fail 'prio token var by hand' "fill: 'var(--prio-0)'"
+must_pass 'shared badge use' '<PriorityBadge priorityClass="P1" />'
+must_pass 'annotated colour exception' "critical: '#ff0000', // label-colour-ok: exported PDF palette"
+
 find "$t" -delete
 [ $fail = 0 ] && echo ok
 exit $fail
