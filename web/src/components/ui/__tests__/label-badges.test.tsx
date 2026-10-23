@@ -171,13 +171,15 @@ describe('KevBadge', () => {
   it('reads "past due" and turns the text red', () => {
     render(<KevBadge pastDue />)
     const el = screen.getByText(/KEV/).closest('[data-slot="kev-badge"]') as HTMLElement
-    expect(el.textContent).toContain('KEV · past due')
+    expect(el.textContent).toContain('KEV past due')
     expect(el.className).toContain('text-destructive')
   })
 
   it('reads "ransomware" for known ransomware use', () => {
     render(<KevBadge ransomware />)
-    expect(screen.getByText(/ransomware/).textContent).toContain('KEV · ransomware')
+    expect(
+      screen.getByText(/ransomware/).closest('[data-slot="kev-badge"]')?.textContent
+    ).toContain('KEV ransomware')
   })
 })
 

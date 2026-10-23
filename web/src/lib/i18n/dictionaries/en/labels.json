@@ -1,0 +1,23 @@
+{
+  "labels.health.ok": "OK",
+  "labels.health.run": "Running",
+  "labels.health.queued": "Queued",
+  "labels.health.warn": "Needs attention",
+  "labels.health.down": "Down",
+  "labels.health.paused": "Paused",
+  "labels.health.off": "Off",
+  "labels.health.unknown": "Unknown",
+  "labels.marker.beta": "Beta",
+  "labels.marker.preview": "Preview",
+  "labels.marker.new": "New",
+  "labels.marker.soon": "Soon",
+  "labels.marker.enterprise": "Enterprise",
+  "labels.marker.adminOnly": "Admin only",
+  "labels.marker.system": "System",
+  "labels.counter.aria": "{count} items",
+  "labels.due.in": "Due in {days} d",
+  "labels.due.today": "Due today",
+  "labels.due.overdue": "Overdue {days} d",
+  "labels.tag.remove": "Remove {label}",
+  "labels.more": "+{count} more"
+}
