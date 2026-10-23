@@ -70,6 +70,7 @@ type Service struct {
 	now        func() time.Time
 	keys       RemediationKeyApplier
 	alerts     AlertQueue
+	vex        VEXApplier
 	// maxRows bounds one pass's read of a tenant's matches (memory).
 	maxRows int
 }
@@ -93,6 +94,17 @@ type AlertQueue interface {
 // SetAlertQueue wires the emerging-threat planner (nil: matched findings
 // are not announced).
 func (s *Service) SetAlertQueue(q AlertQueue) { s.alerts = q }
+
+// VEXApplier applies the organization's VEX statements to the package
+// findings with these fingerprints (*vex.Service), the same sticky path
+// ingest uses for findings it creates.
+type VEXApplier interface {
+	ApplyToFingerprints(ctx context.Context, tenantID shared.ID, fingerprints []string) (int, error)
+}
+
+// SetVEXApplier wires the VEX statements (nil: matched findings are not
+// checked against them).
+func (s *Service) SetVEXApplier(v VEXApplier) { s.vex = v }
 
 // NewService creates the matcher. classifier, sla and assets are optional.
 func NewService(store softwarematch.Store, policy PolicyReader, findings FindingWriter, log *logger.Logger) *Service {
@@ -122,6 +134,9 @@ type Stats struct {
 	Created           int
 	Reopened          int
 	Closed            int
+	// Rekeyed counts matcher findings of package matches moved from the
+	// network identity to the package identity.
+	Rekeyed int
 	// CloseSkipped counts tenants whose close phase was skipped because
 	// the pass could not read all of their matches.
 	CloseSkipped int
@@ -275,6 +290,10 @@ type candidate struct {
 	label      vulnmatch.Label
 	reasons    []string
 	key        vulnerability.IdentityKey
+	// legacy is the network identity a package match was keyed on before
+	// matches on packages took the package identity; set only for package
+	// matches.
+	legacy *vulnerability.IdentityKey
 }
 
 // ReconcileTenant brings one organization's matcher findings in line with
@@ -310,6 +329,10 @@ func (s *Service) ReconcileTenant(ctx context.Context, tenantID shared.ID, st *S
 	for _, f := range existing {
 		byFP[f.Fingerprint] = f
 	}
+	rekeyed, err := s.adoptLegacyKeys(ctx, tenantID, desired, byFP, st)
+	if err != nil {
+		return err
+	}
 
 	var reopen []shared.ID
 	var create []*candidate
@@ -331,9 +354,11 @@ func (s *Service) ReconcileTenant(ctx context.Context, tenantID shared.ID, st *S
 		}
 		st.Reopened += len(done)
 	}
-	if err := s.create(ctx, tenantID, create, st); err != nil {
+	created, err := s.create(ctx, tenantID, create, st)
+	if err != nil {
 		return err
 	}
+	s.applyVEX(ctx, tenantID, append(created, rekeyed...))
 	if !complete {
 		// matched lacks the matches past the limit, so their live findings
 		// would look unmatched and be closed. Creating and reopening from
@@ -351,7 +376,7 @@ func (s *Service) plan(tenantID shared.ID, policy tenant.VulnMatchingSettings, m
 	desired := map[string]*candidate{}
 	matched := map[string]bool{}
 	for _, m := range matches {
-		key, ok := vulnerability.NetworkIdentity(m.AssetID.String(), m.Result.CVEID, "", m.Port, m.Transport)
+		key, legacy, ok := MatchIdentity(m)
 		if !ok {
 			continue
 		}
@@ -364,6 +389,11 @@ func (s *Service) plan(tenantID shared.ID, policy tenant.VulnMatchingSettings, m
 		conf, label, reasons := vulnmatch.Confidence(m.LinkConfidence, res, m.ConditionMet)
 		if res.Findable() {
 			matched[fp] = true
+			if legacy != nil {
+				// A finding still stored under the legacy key is matched too:
+				// it must not be closed while it waits to be re-keyed.
+				matched[legacy.Fingerprint()] = true
+			}
 		}
 		if !Passes(policy, m, res, conf) {
 			continue
@@ -371,7 +401,7 @@ func (s *Service) plan(tenantID shared.ID, policy tenant.VulnMatchingSettings, m
 		if prev, ok := desired[fp]; ok && prev.confidence >= conf {
 			continue
 		}
-		desired[fp] = &candidate{m: m, confidence: conf, label: label, reasons: reasons, key: key}
+		desired[fp] = &candidate{m: m, confidence: conf, label: label, reasons: reasons, key: key, legacy: legacy}
 	}
 	_ = tenantID
 	return desired, matched
@@ -394,9 +424,11 @@ func Passes(policy tenant.VulnMatchingSettings, m softwarematch.Match, res vulnm
 	return policy.SeverityPasses(m.CVE.Severity) || m.CVE.InKEV || m.CVE.EPSS >= tenant.DefaultVulnMatchMinEPSS
 }
 
-func (s *Service) create(ctx context.Context, tenantID shared.ID, cands []*candidate, st *Stats) error {
+// create stores findings for the candidates no finding holds yet and
+// returns the fingerprints of the findings it built.
+func (s *Service) create(ctx context.Context, tenantID shared.ID, cands []*candidate, st *Stats) ([]string, error) {
 	if len(cands) == 0 {
-		return nil
+		return nil, nil
 	}
 	assets := make([]shared.ID, 0, len(cands))
 	seen := map[shared.ID]bool{}
@@ -408,7 +440,7 @@ func (s *Service) create(ctx context.Context, tenantID shared.ID, cands []*candi
 	}
 	open, err := s.store.OpenCVEsOnAssets(ctx, tenantID, assets)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	fps := make([]string, 0, len(cands))
 	for _, c := range cands {
@@ -416,7 +448,7 @@ func (s *Service) create(ctx context.Context, tenantID shared.ID, cands []*candi
 	}
 	taken, err := s.store.ExistingFingerprints(ctx, tenantID, fps)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	kept := cands[:0]
 	cves := make([]softwarematch.CVEInfo, 0, len(cands))
@@ -431,11 +463,11 @@ func (s *Service) create(ctx context.Context, tenantID shared.ID, cands []*candi
 		cves = append(cves, c.m.CVE)
 	}
 	if len(kept) == 0 {
-		return nil
+		return nil, nil
 	}
 	defs, err := s.store.EnsureDefinitions(ctx, cves)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	findings := make([]*vulnerability.Finding, 0, len(kept))
 	for _, c := range kept {
@@ -452,7 +484,7 @@ func (s *Service) create(ctx context.Context, tenantID shared.ID, cands []*candi
 	s.enrich(ctx, tenantID, findings)
 	res, err := s.findings.CreateBatchWithResult(ctx, findings)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	if res != nil {
 		st.Created += res.Created
@@ -466,7 +498,11 @@ func (s *Service) create(ctx context.Context, tenantID shared.ID, cands []*candi
 			s.logger.Warn("vulnerability matching: remediation keys not derived", "tenant_id", tenantID.String(), "error", err)
 		}
 	}
-	return nil
+	built := make([]string, 0, len(findings))
+	for _, f := range findings {
+		built = append(built, f.Fingerprint())
+	}
+	return built, nil
 }
 
 // queueAlerts hands the vulnerabilities of the findings just stored to the
