@@ -778,8 +778,8 @@ widget kit's frame, with its own error boundary.
   640px one row: switcher, Customize, schedule picker, Refresh now, More. The
   dashboard description is hidden on a phone.
 - **Freshness line**: one muted line under the toolbar, "Your scope · Updated
-  2 min. ago · Next in 58 min." (short relative times, full dates on hover),
-  truncating on narrow screens; a status line appears under it only when the
+  2m ago · Next in 58m" (narrow relative times, full dates on hover); the next refresh
+  truncates first on narrow screens; a status line appears under it only when the
   figures are stale, the last refresh failed, or the data is being built for
   the first time. Refresh now answers a 429 with a message. The schedule
   picker is offered to the owner of a personal dashboard or a manager of an

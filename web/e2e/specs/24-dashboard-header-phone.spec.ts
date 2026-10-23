@@ -10,6 +10,9 @@ import { test, expect } from '../fixtures/authenticated-page'
  * in one toolbar row with their labels.
  */
 
+/** 44px touch target, with room for sub-pixel layout rounding. */
+const TOUCH = 43.5
+
 for (const scheme of ['light', 'dark'] as const) {
   test(`dashboard header at 390px in ${scheme}`, async ({ page }, testInfo) => {
     await page.setViewportSize({ width: 390, height: 844 })
@@ -29,7 +32,7 @@ for (const scheme of ['light', 'dark'] as const) {
     for (const b of [r, m]) expect(Math.abs(b.y - s.y)).toBeLessThan(2)
     expect(s.x).toBeLessThan(r.x)
     expect(r.x).toBeLessThan(m.x)
-    for (const b of [s, r, m]) expect(b.height).toBeGreaterThanOrEqual(44)
+    for (const b of [s, r, m]) expect(b.height).toBeGreaterThanOrEqual(TOUCH)
     expect(s.width).toBeGreaterThan(390 / 2)
     // Customize and the schedule are not in the row on a phone.
     await expect(toolbar.getByRole('button', { name: 'Customize' })).toBeHidden()
@@ -60,7 +63,7 @@ for (const scheme of ['light', 'dark'] as const) {
     const items = menu.getByRole('menuitem')
     for (const item of await items.all()) {
       const b = await item.boundingBox()
-      if (b) expect(b.height).toBeGreaterThanOrEqual(44)
+      if (b) expect(b.height).toBeGreaterThanOrEqual(TOUCH)
     }
   })
 }
@@ -71,11 +74,14 @@ test('dashboard header at 1440px is one toolbar row', async ({ page }) => {
   const toolbar = page.getByTestId('dashboard-toolbar')
   await expect(page.getByTestId('dashboard-meta')).toBeVisible({ timeout: 45_000 })
   const controls = toolbar.locator('button:visible, [role="combobox"]:visible')
-  const ys = await Promise.all(
-    (await controls.all()).map(async (c) => (await c.boundingBox())?.y ?? -1)
+  // Same row: every control's vertical centre on one line.
+  const centres = await Promise.all(
+    (await controls.all()).map(async (c) => {
+      const b = await c.boundingBox()
+      return b ? b.y + b.height / 2 : -1
+    })
   )
-  expect(ys.length).toBeGreaterThanOrEqual(3)
-  const first = ys[0]
-  for (const y of ys) expect(Math.abs(y - first)).toBeLessThan(2)
+  expect(centres.length).toBeGreaterThanOrEqual(3)
+  for (const y of centres) expect(Math.abs(y - centres[0])).toBeLessThan(2)
   await expect(toolbar.getByRole('button', { name: 'Refresh now' })).toContainText('Refresh now')
 })

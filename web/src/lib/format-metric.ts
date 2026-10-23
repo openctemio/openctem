@@ -111,7 +111,7 @@ export function formatRelativeTime(
   date: string | Date | null | undefined,
   locale = 'en',
   now: Date = new Date(),
-  /** `short` ("5 min. ago") for one-line meta text on narrow screens. */
+  /** `short` or `narrow` ("5m ago") for one-line meta text on narrow screens. */
   style: Intl.RelativeTimeFormatStyle = 'long'
 ): string {
   const d = date == null ? null : typeof date === 'string' ? new Date(date) : date
