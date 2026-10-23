@@ -14,6 +14,8 @@
   `ServiceProvider` is built from the stored certificate, the assertion
   signature, conditions and `InResponseTo` (replay) are validated, and a
   session is issued via `SSOService.CompleteFederatedLogin`.
+- **Hardening (shipped)** — one signed assertion, SHA-1 refused, assertion-ID
+  replay cache, certificate expiry alerts (see below).
 
 Only a platform administrator configures an organization's SAML provider, in
 the admin console; each change needs an organization owner's approval under
@@ -84,6 +86,47 @@ so no SAML sign-in could succeed. The crypto
 (XML-dsig signature verification) is handled by `github.com/crewjam/saml`, not
 hand-rolled.
 
+## Response hardening
+
+Design: research/232 D7 (identity providers), threat-model rows T9, T10 and T12.
+The library validates the signature, conditions, audience, destination and
+`InResponseTo`; the ACS adds what it leaves optional, in
+`internal/app/auth/saml_strict.go`, before and after the library runs:
+
+| Check | Rule | Why |
+|-------|------|-----|
+| One assertion | the `samlp:Response` holds exactly one plaintext `saml:Assertion` and no `EncryptedAssertion` | the library returns the first of several, a signature-wrapping surface |
+| Signed assertion | the assertion carries its own enveloped signature, verified against the configured certificate, even when the response is signed too | the library checks either the response or the assertion signature, not both |
+| No SHA-1 | any `SignatureMethod` or `DigestMethod` based on SHA-1, anywhere in the document, refuses the response (also enforced in the library's signature hook) | SHA-1 collisions are practical |
+| Replay cache | the assertion ID is recorded with `SET NX` under `saml:aid:{tenant}:{sha256(id)}` until the latest of `IssueInstant` + 90 s and every `NotOnOrAfter`, plus the 180 s clock skew and 2 min (capped at 24 h); a second sighting is refused | `InResponseTo` and the single-use cookie bind a response to one browser, the cache to one use |
+| HTTP-POST only | a `SAMLart` artifact is refused | resolving one makes the server call out; no artifact endpoint is advertised |
+
+The replay cache **fails closed**: if Redis returns an error, the sign-in is
+refused. A deployment without a Redis client keeps the IDs in process (single
+replica only) and logs a warning at start. Every refusal is logged with its
+reason; the browser sees the same generic SAML error.
+
+Signature-wrapping regression cases live in `TestSAMLXSWCorpus`
+(`internal/app/auth/saml_strict_test.go`). A comment inside a signed NameID
+(dropped by canonicalization, so the signature still verifies) never truncates
+it: the whole signed value is read (`TestSAMLNameIDCommentInjectionReadsWholeValue`).
+
+## Certificate expiry
+
+Signature checks fail once the IdP certificate expires, so an unnoticed
+expiry stops every SAML sign-in.
+
+- `PUT …/sso/saml` refuses a certificate that has already expired.
+- The admin read view returns `certificate_not_after` (RFC 3339).
+- The `saml-cert-expiry` controller (every 6 h) reads every **enabled** config,
+  500 organizations per page by tenant id, and
+  alerts the organization's owners, in-app (system alert, High) and by email,
+  when the certificate reaches 30, 7 or 1 day(s) before expiry and when it has
+  expired. `saml_providers.cert_expiry_notice_days` (migration `003295`) keeps the
+  tightest level sent, so each level is sent once; saving a different certificate
+  resets it. Only the owners of the organization that owns the certificate are
+  told.
+
 ## Code map
 
 | Piece | Where |
@@ -92,7 +135,9 @@ hand-rolled.
 | Service (config + metadata) | `internal/app/auth/saml.go` (`SAMLService`) |
 | Federated-login seam | `internal/app/auth/sso.go` (`SSOService.CompleteFederatedLogin`) |
 | HTTP | `internal/infra/http/handler/saml_handler.go`, routes in `routes/auth.go` |
-| Migration | `000182_saml_providers` |
+| Response hardening, replay cache | `internal/app/auth/saml_strict.go` |
+| Certificate expiry alerts | `internal/app/auth/saml_cert_expiry.go`, `internal/infra/controller/saml_cert_expiry.go` |
+| Migration | `000182_saml_providers`, `003295_saml_cert_expiry_notice` |
 
 ## Default role of just-in-time members
 

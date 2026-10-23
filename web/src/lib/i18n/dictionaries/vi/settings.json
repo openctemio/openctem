@@ -579,5 +579,20 @@
   "settings.slaPolicies.page.delete": "Xóa {name}",
   "settings.slaPolicies.page.defaultNoDelete": "Không thể xóa chính sách mặc định. Hãy đặt chính sách khác làm mặc định trước.",
   "settings.slaPolicies.page.defaultDone": "\"{name}\" hiện là chính sách mặc định",
-  "settings.slaPolicies.page.defaultFailed": "Không đổi được chính sách mặc định"
+  "settings.slaPolicies.page.defaultFailed": "Không đổi được chính sách mặc định",
+  "settings.scim.expiry.label": "Hết hạn sau",
+  "settings.scim.expiry.days": "{days} ngày",
+  "settings.scim.expiry.hint": "Token ngừng hoạt động sau khoảng thời gian này. Hãy xoay vòng token trước đó; token cũ vẫn hoạt động thêm 24 giờ sau khi xoay vòng.",
+  "settings.scim.status.active": "Đang hoạt động",
+  "settings.scim.status.expired": "Đã hết hạn",
+  "settings.scim.status.revoked": "Đã thu hồi",
+  "settings.scim.column.expires": "Hết hạn",
+  "settings.scim.metric.expired": "Token đã hết hạn",
+  "settings.scim.rotate.label": "Xoay vòng {name}",
+  "settings.scim.rotate.title": "Xoay vòng token SCIM {name}?",
+  "settings.scim.rotate.desc": "Một token mới được tạo và chỉ hiển thị một lần. Token hiện tại vẫn hoạt động thêm 24 giờ để bạn cập nhật nhà cung cấp danh tính, sau đó sẽ ngừng hoạt động.",
+  "settings.scim.rotate.confirm": "Xoay vòng",
+  "settings.scim.rotate.rotating": "Đang xoay vòng…",
+  "settings.scim.rotate.done": "Đã xoay vòng token. Token cũ sẽ ngừng hoạt động sau 24 giờ.",
+  "settings.scim.rotate.failed": "Không thể xoay vòng token"
 }

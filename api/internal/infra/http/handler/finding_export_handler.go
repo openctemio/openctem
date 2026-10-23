@@ -253,6 +253,8 @@ func (h *VulnerabilityHandler) ExportFindingsDocument(w http.ResponseWriter, r *
 // @Param  scan_id_not  query  []string  false  "scan id: none of (comma list)"  collectionFormat(csv)
 // @Param  file_path  query  string  false  "file path contains"
 // @Param  file_path_contains  query  string  false  "file path contains"
+// @Param  description  query  string  false  "description contains"
+// @Param  description_contains  query  string  false  "description contains"
 // @Param  asset_tag  query  []string  false  "asset tag: any of (comma list)"  collectionFormat(csv)
 // @Param  asset_tag_not  query  []string  false  "asset tag: none of (comma list)"  collectionFormat(csv)
 // @Param  asset_group_id  query  []string  false  "asset group id: any of (comma list)"  collectionFormat(csv)
@@ -309,7 +311,7 @@ func (h *VulnerabilityHandler) ExportFindingsDocument(w http.ResponseWriter, r *
 // @Param  updated_at_lt  query  string  false  "updated at less than (RFC 3339, YYYY-MM-DD, -P30D ago or P30D ahead)"
 // end filterspec-params
 // @Param        view   query  string  false  "Saved view ID: its filter, with the other params overriding it field by field"
-// @Param        q       query  string  false  "Free text"
+// @Param        q       query  string  false  "Matches title, file path, rule id, CVE id (exact) and asset name"
 // @Param        sort    query  string  false  "The list's sort keys, e.g. -cvss_score,severity"
 // @Success      200  {string}  string  "CSV or NDJSON stream"
 // @Failure      403  {object}  map[string]interface{}  "missing findings:export"

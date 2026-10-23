@@ -570,6 +570,7 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		RelationshipSuggestion: handler.NewRelationshipSuggestionHandler(svc.RelationshipSuggestion, log),
 		AssetImport:            newAssetImportHandler(svc, log),
 		FindingImport:          newFindingImportHandler(cfg, repos, svc, log),
+		IngestReceipt:          handler.NewIngestReceiptHandler(repos.IngestReceipt, svc.DataScope, log),
 		ReportSchedule:         newReportScheduleHandler(repos, svc, log),
 		UserDashboard:          handler.NewUserDashboardHandler(svc.UserDashboard, log).SetWidgetData(svc.DashboardWidgets),
 		SavedView:              handler.NewSavedViewHandler(svc.SavedView, log),
@@ -1584,12 +1585,15 @@ func newAssetImportHandler(svc *Services, log *logger.Logger) *handler.AssetImpo
 	return h
 }
 
-// newFindingImportHandler builds the handler of POST /findings/import: the
+// newFindingImportHandler builds the handler of POST /findings/imports: the
 // ctis importers, ingest with the uploader's rights, VEX documents applied
-// under INGEST_VEX.
+// under INGEST_VEX, the upload's receipt and the durable Idempotency-Key
+// store.
 func newFindingImportHandler(cfg *config.Config, repos *Repositories, svc *Services, log *logger.Logger) *handler.FindingImportHandler {
-	imp := findingimport.NewService(svc.Ingest, repos.Finding, ingest.ParseVEXMode(cfg.Ingest.VEX), log)
-	return handler.NewFindingImportHandler(imp, svc.DataScope, svc.Audit, log)
+	imp := findingimport.NewService(svc.Ingest, repos.Finding, repos.IngestReceipt, ingest.ParseVEXMode(cfg.Ingest.VEX), log)
+	h := handler.NewFindingImportHandler(imp, svc.DataScope, svc.Audit, log)
+	h.SetReceiptStores(repos.IngestReceipt, repos.IdempotencyKey)
+	return h
 }
 
 // newReportScheduleHandler builds the report schedule handler with its audit
@@ -1708,7 +1712,7 @@ func newCIHandlers(cfg *config.Config, repos *Repositories, svc *Services, redis
 	}
 	// VEX documents a run uploads: stored on the run repository's findings,
 	// never closing any (the run token is not a person with findings:approve).
-	runner.SetVEXApplier(findingimport.NewService(svc.Ingest, repos.Finding, ingest.ParseVEXMode(cfg.Ingest.VEX), log))
+	runner.SetVEXApplier(findingimport.NewService(svc.Ingest, repos.Finding, repos.IngestReceipt, ingest.ParseVEXMode(cfg.Ingest.VEX), log))
 	// Idempotency-Key on uploads needs the shared store; without Redis the header is ignored.
 	if redisClient != nil {
 		runner.SetIdempotencyStore(redisClient)
