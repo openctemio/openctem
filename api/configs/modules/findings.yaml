@@ -33,6 +33,7 @@
     - RiskSnapshotController
     - CTEMIDRefreshController
     - IngestWorkerController
+    - IngestReceiptRetentionController
     - JobRecoveryController
     - RetestScheduler
     - ThreatIntelRefreshController

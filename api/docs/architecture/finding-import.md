@@ -104,23 +104,31 @@ person rejected or canceled, gets none. Otherwise the findings it would
 request are counted (`would_close`); the count of requests made is `requested`. One
 statement touches at most 5,000 findings.
 
-## Producer record
+## Producer record: the upload receipt
 
-Every committed file gets a row in `finding_imports` (migration 001142)
-before anything is written: tenant, uploader (`actor_user_id`), format, the
-SHA-256 of the file name (the name itself is only in the audit log) and,
-when the file is done, the counts (assets and findings created and updated,
-components, VEX statements, skipped, VEX stored and requested; the column is `vex_closed`). A preview
-writes none. The record's id is:
+Every committed upload (one request, all its files) gets one receipt in
+`ingest_receipts` (migration 003308, formerly `finding_imports`; see
+[ingest-receipts.md](ingest-receipts.md)) before anything is written: tenant,
+uploader (`actor_user_id`), the SHA-256 of the first file name (the names
+themselves are only in the audit log), status `processing`. Each file's
+ingest adds what it did to the findings (created, still detected, reopened,
+skipped, failed) and links each finding to the receipt in
+`finding_ingest_actions`; when the request is done the receipt gets the
+file-level counts (components, VEX statements stored and requested, what the
+parsers skipped, the files that failed), the format (`mixed` for several)
+and its status (`completed`, or `failed` when no file was imported). A
+preview writes none. The receipt id is:
 
-- the report id of the ingest, so the findings the import created or updated
-  carry it as `scan_id`, as a scan's findings carry the scan;
-- stamped on the assets the import created or updated, within the uploader's
+- the report id of every file's ingest, so the findings the upload created
+  or updated carry it as `scan_id`, as a scan's findings carry the scan;
+- stamped on the assets each file created or updated, within the uploader's
   scope, as `assets.import_id` (the last import that wrote the asset);
-- returned per file as `import_id` and listed in the audit records.
+- returned as `receipt_id` and per file as `import_id`, and listed in the
+  audit records.
 
-So everything one import produced can be found (and purged) by its id. The
-record is read by `(tenant_id, id)` only.
+So everything one upload produced can be found (and purged) by its id. The
+receipt is read by `(tenant_id, id)` only. An upload never closes findings:
+its coverage is partial.
 
 ## Audit
 

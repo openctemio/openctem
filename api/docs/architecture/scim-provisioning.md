@@ -26,11 +26,37 @@ The organization owner mints a SCIM token (shown once); the IdP presents it as
 | Method | Path | Auth | Purpose |
 |--------|------|------|---------|
 | GET | `/api/v1/scim-tokens` | JWT, owner/admin | list a tenant's SCIM tokens |
-| POST/DELETE | `/api/v1/scim-tokens` | JWT, **owner only** | mint / revoke a tenant's SCIM token |
+| POST/DELETE | `/api/v1/scim-tokens` | JWT, **owner only** (mint: step-up) | mint (`expires_in_days` 1–365, required) / revoke a tenant's SCIM token |
+| POST | `/api/v1/scim-tokens/{id}/rotate` | JWT, **owner only**, step-up | mint a replacement (shown once); the old token stops within 24 h |
 | GET | `/scim/v2/ServiceProviderConfig`, `/ResourceTypes`, `/Schemas` | SCIM bearer | discovery |
 | GET | `/scim/v2/Users?filter=userName eq "x"` | SCIM bearer | list / filter |
 | POST | `/scim/v2/Users` | SCIM bearer | provision (find-or-create user + membership) |
 | GET/PUT/PATCH/DELETE | `/scim/v2/Users/{id}` | SCIM bearer | read / replace / patch-active / deprovision |
+
+### Token lifetime and rotation
+
+A SCIM token can create, suspend and re-role every member, so it expires
+like an API key:
+
+- **Lifetime.** `POST /api/v1/scim-tokens` requires `expires_in_days`, 1 to
+  365 (`scimtoken.ValidateLifetimeDays`); `scim_tokens.expires_at` is NOT NULL
+  (migration `003300`). An expired token answers 401 like an unknown one
+  (`TokenService.Authenticate` checks `UsableAt(now)`), so a caller cannot
+  tell expired from never existed. The list shows `expires_at` and the status
+  `expired`.
+- **Rotation.** `POST /api/v1/scim-tokens/{id}/rotate` (owner, step-up,
+  audited `scim_token.rotated`, High) mints a replacement with the same name,
+  for `expires_in_days` or, when omitted, the old token's lifetime, and
+  returns its plaintext once (`Cache-Control: no-store`). The old token's
+  expiry is brought forward to at most 24 hours from now
+  (`ShortenExpiry`: only ever earlier, only while active, inside the tenant),
+  so the identity provider can switch without a provisioning gap. A revoked,
+  expired or other organization's token is 404. If the old token cannot be
+  cut over, the new one is withdrawn and the rotation fails.
+- **Existing tokens.** Tokens minted before expiry existed got
+  `expires_at = migration time + 90 days`: provisioning keeps working while an
+  owner rotates them. After that they stop; rotate (or mint and revoke)
+  before then.
 
 ## Mapping to the domain
 
@@ -91,8 +117,8 @@ The organization owner mints a SCIM token (shown once); the IdP presents it as
 | Piece | Where |
 |-------|-------|
 | Token entity + repo iface | `pkg/domain/scimtoken/entity.go` |
-| Token persistence | `internal/infra/postgres/scim_token_repository.go`, migration `000179_scim_tokens` |
-| Token service (mint/revoke/authenticate) | `internal/app/scim/token_service.go` |
+| Token persistence | `internal/infra/postgres/scim_token_repository.go`, migrations `000179_scim_tokens`, `003300_scim_tokens_expiry` |
+| Token service (mint/rotate/revoke/authenticate) | `internal/app/scim/token_service.go` |
 | Provisioning service | `internal/app/scim/provisioning.go` |
 | Bearer-token middleware | `internal/infra/http/middleware/scim_auth.go` |
 | SCIM handlers | `internal/infra/http/handler/scim_handler.go` |

@@ -149,7 +149,7 @@ func TestSCIMProvisioning_RoundTrip_RealDB(t *testing.T) {
 	}
 
 	// 6. Token round-trip against the real scim_tokens table.
-	mint, terr := tokenSvc.Mint(ctx, tenantID, "okta", nil)
+	mint, terr := tokenSvc.Mint(ctx, tenantID, "okta", nil, 90)
 	if terr != nil {
 		t.Fatalf("mint token: %v", terr)
 	}
