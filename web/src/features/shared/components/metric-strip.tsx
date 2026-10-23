@@ -3,6 +3,7 @@
 import * as React from 'react'
 import Link from '@/components/link'
 import { Skeleton } from '@/components/ui/skeleton'
+import { safeHref } from '@/lib/safe-href'
 import { cn } from '@/lib/utils'
 
 /**
@@ -140,11 +141,14 @@ export function MetricStrip({
         )
         const interactive =
           'transition-colors hover:bg-accent/60 focus-visible:relative focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring'
-        if (item.href) {
+        // Pages pass their own routes, but the strip treats the value like any
+        // href: an unsafe one renders the tile without a link.
+        const href = item.href ? safeHref(item.href) : undefined
+        if (href) {
           return (
             <Link
               key={item.key}
-              href={item.href}
+              href={href}
               aria-current={item.active ? 'page' : undefined}
               title={item.description}
               data-slot="metric-tile"
