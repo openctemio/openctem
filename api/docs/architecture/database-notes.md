@@ -149,7 +149,7 @@ moved on. See [finding-row-version.md](finding-row-version.md).
   timeline entry on a false positive whose latest approved decision was one person's (`single_person` or
   `self_approved`). Called by the triggers `trg_findings_single_person_fp_review` (severity raised, KEV added)
   and `trg_finding_evidence_single_person_fp_review` (new evidence). See
-  [finding status lifecycle](finding-status-lifecycle.md#false-positive-approval-level).
+  [finding status lifecycle](finding-status-lifecycle.md#approval-levels-false-positive-and-risk-acceptance).
 
 ## Dashboard fact functions
 
