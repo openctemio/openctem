@@ -46,6 +46,8 @@ tests that cover the console's most user-visible flows.
 | `21-remediation-task-from-findings.spec.ts` | Create a task from findings, open it, hold and resume it      |
 | `23-findings-selection.spec.ts`             | Findings list selection resets; phone card checkbox and menu  |
 | `24-findings-states.spec.ts`                | Findings list: inline error, no access, nothing yet, no match |
+| `25-findings-quick-views.spec.ts`           | Sidebar quick views under Findings, counts, links             |
+| `26-findings-filters.spec.ts`               | Add filter, chips, unknown filter, pass-through filters       |
 
 Each spec is designed to:
 

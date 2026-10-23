@@ -12,6 +12,10 @@ import (
 	"github.com/openctemio/openctem/api/pkg/httpsec"
 )
 
+// TestEventType is the event type of a test delivery (and of a message
+// that names no type).
+const TestEventType = "test"
+
 // WebhookClient implements the Client interface for generic webhook notifications.
 type WebhookClient struct {
 	product    string // brand name in test messages
@@ -34,14 +38,9 @@ func NewWebhookClient(config Config) (*WebhookClient, error) {
 		}
 	}
 
-	hc := httpsec.SafeHTTPClient(30 * time.Second)
-	if config.AllowLoopback {
-		// Tests use httptest.NewServer which binds to 127.0.0.1; the
-		// SafeHTTPClient dialer would refuse that at connect time.
-		// Fall back to a plain client for the explicitly-opted-in
-		// test path only.
-		hc = &http.Client{Timeout: 30 * time.Second}
-	}
+	// SSRF-guarded, redirects refused (newHTTPClient); AllowLoopback is
+	// the unit-test path against httptest servers only.
+	hc := newHTTPClient(30*time.Second, config.AllowLoopback)
 	return &WebhookClient{
 		product:    config.productName(),
 		webhookURL: config.WebhookURL,
@@ -55,18 +54,27 @@ func (c *WebhookClient) Provider() string {
 }
 
 // WebhookPayload represents the JSON payload sent to the webhook.
+//
+// event_type is the catalog type of the event (new_finding,
+// sensor.offline, ...) and event_version the version of this payload for
+// that type; a receiver routes on the pair. idempotency_key is the same
+// value as the Idempotency-Key header: stable across retries and
+// redeliveries of one event, so a receiver can drop a duplicate.
 type WebhookPayload struct {
-	EventType   string              `json:"event_type"`
-	Timestamp   string              `json:"timestamp"`
-	Title       string              `json:"title"`
-	Body        string              `json:"body"`
-	Severity    string              `json:"severity"`
-	URL         string              `json:"url,omitempty"`
-	Fields      map[string]string   `json:"fields,omitempty"`
-	Color       string              `json:"color,omitempty"`
-	FooterText  string              `json:"footer_text,omitempty"`
-	Attachments []WebhookAttachment `json:"attachments,omitempty"`
-	Source      string              `json:"source"`
+	EventType      string              `json:"event_type"`
+	EventVersion   int                 `json:"event_version"`
+	IdempotencyKey string              `json:"idempotency_key,omitempty"`
+	OccurredAt     string              `json:"occurred_at"`
+	Timestamp      string              `json:"timestamp"`
+	Title          string              `json:"title"`
+	Body           string              `json:"body"`
+	Severity       string              `json:"severity"`
+	URL            string              `json:"url,omitempty"`
+	Fields         map[string]string   `json:"fields,omitempty"`
+	Color          string              `json:"color,omitempty"`
+	FooterText     string              `json:"footer_text,omitempty"`
+	Attachments    []WebhookAttachment `json:"attachments,omitempty"`
+	Source         string              `json:"source"`
 }
 
 // WebhookAttachment represents an attachment in the webhook payload.
@@ -93,10 +101,10 @@ func (c *WebhookClient) Send(ctx context.Context, msg Message) (*SendResult, err
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("User-Agent", "OpenCTEM-Notification/1.0")
 	// F-6: idempotency key for duplicate-delivery suppression.
+	// It is also in the JSON body (idempotency_key) for receivers that read
+	// the payload rather than the headers.
 	if msg.IdempotencyKey != "" {
 		req.Header.Set("Idempotency-Key", msg.IdempotencyKey)
-		// Also surface in the JSON body so receivers that read it from
-		// the payload (rather than headers) can dedupe too.
 	}
 
 	resp, err := c.httpClient.Do(req)
@@ -127,9 +135,10 @@ func (c *WebhookClient) Send(ctx context.Context, msg Message) (*SendResult, err
 // TestConnection tests the webhook configuration.
 func (c *WebhookClient) TestConnection(ctx context.Context) (*SendResult, error) {
 	testMsg := Message{
-		Title:    c.product + " Test Notification",
-		Body:     "This is a test notification to verify your webhook integration is working correctly.",
-		Severity: "low",
+		EventType: TestEventType,
+		Title:     c.product + " Test Notification",
+		Body:      "This is a test notification to verify your webhook integration is working correctly.",
+		Severity:  "low",
 	}
 	return c.Send(ctx, testMsg)
 }
@@ -146,17 +155,33 @@ func (c *WebhookClient) buildPayload(msg Message) WebhookPayload {
 		attachments = append(attachments, WebhookAttachment(att))
 	}
 
+	now := time.Now().UTC()
+	occurred := msg.OccurredAt.UTC()
+	if msg.OccurredAt.IsZero() {
+		occurred = now
+	}
+	eventType := msg.EventType
+	if eventType == "" {
+		eventType = TestEventType
+	}
+	version := msg.EventVersion
+	if version <= 0 {
+		version = 1
+	}
 	return WebhookPayload{
-		EventType:   "notification",
-		Timestamp:   time.Now().UTC().Format(time.RFC3339),
-		Title:       msg.Title,
-		Body:        msg.Body,
-		Severity:    msg.Severity,
-		URL:         msg.URL,
-		Fields:      msg.Fields,
-		Color:       color,
-		FooterText:  msg.FooterText,
-		Attachments: attachments,
-		Source:      "openctem.io",
+		EventType:      eventType,
+		EventVersion:   version,
+		IdempotencyKey: msg.IdempotencyKey,
+		OccurredAt:     occurred.Format(time.RFC3339),
+		Timestamp:      now.Format(time.RFC3339),
+		Title:          msg.Title,
+		Body:           msg.Body,
+		Severity:       msg.Severity,
+		URL:            msg.URL,
+		Fields:         msg.Fields,
+		Color:          color,
+		FooterText:     msg.FooterText,
+		Attachments:    attachments,
+		Source:         "openctem.io",
 	}
 }

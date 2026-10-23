@@ -32,10 +32,13 @@ const (
 
 // Service handles notification outbox operations.
 type Service struct {
-	outboxRepo        outboxdom.OutboxRepository
-	eventRepo         outboxdom.EventRepository
-	notificationRepo  integration.NotificationExtensionRepository
-	clientFactory     *notificationclient.ClientFactory
+	outboxRepo       outboxdom.OutboxRepository
+	eventRepo        outboxdom.EventRepository
+	notificationRepo integration.NotificationExtensionRepository
+	clientFactory    *notificationclient.ClientFactory
+	// newClient builds the provider client of one send (the factory; tests
+	// replace it to observe sends without a network).
+	newClient         func(notificationclient.Config) (notificationclient.Client, error)
 	credentialDecrypt func(string) (string, error)
 	log               *slog.Logger
 
@@ -62,7 +65,7 @@ func NewService(
 	credentialDecrypt func(string) (string, error),
 	log *slog.Logger,
 ) *Service {
-	return &Service{
+	s := &Service{
 		outboxRepo:        outboxRepo,
 		eventRepo:         eventRepo,
 		notificationRepo:  notificationRepo,
@@ -70,6 +73,8 @@ func NewService(
 		credentialDecrypt: credentialDecrypt,
 		log:               log,
 	}
+	s.newClient = s.clientFactory.CreateClient
+	return s
 }
 
 // =============================================================================
@@ -183,7 +188,12 @@ func (s *Service) ProcessOutboxBatch(ctx context.Context, workerID string, batch
 	return processed, failed, nil
 }
 
-// processOutboxEntry processes a single outbox entry.
+// processOutboxEntry processes a single outbox entry: one pass over its
+// channels. Each channel (integration) has its own delivery state
+// (outboxdom.ChannelDelivery): a channel that got the event is never sent it
+// again, a failed one is retried on its own backoff whatever the other
+// channels did, and the entry is archived only when every channel is
+// delivered or dead.
 func (s *Service) processOutboxEntry(ctx context.Context, entry *outboxdom.Outbox) error {
 	// Get all notification integrations for this tenant
 	integrations, err := s.getNotificationIntegrationsForTenant(ctx, entry.TenantID())
@@ -206,68 +216,81 @@ func (s *Service) processOutboxEntry(ctx context.Context, entry *outboxdom.Outbo
 		return err
 	}
 
-	// Collect processing results
-	results := outboxdom.ProcessingResults{
-		IntegrationsTotal:     len(integrations),
-		IntegrationsMatched:   0,
-		IntegrationsSucceeded: 0,
-		IntegrationsFailed:    0,
-		SendResults:           make([]outboxdom.SendResult, 0),
+	// First pass: the channels are the integrations whose filters match the
+	// event and that may receive it. Later passes keep that set: an
+	// integration added after the event does not get it.
+	if !entry.HasDeliveries() {
+		var ds []outboxdom.ChannelDelivery
+		for _, intg := range integrations {
+			if !s.shouldSendToIntegration(intg, entry) || !delivery.Allows(intg.Integration.ID()) {
+				continue
+			}
+			ds = append(ds, outboxdom.NewChannelDelivery(
+				intg.Integration.ID().String(), intg.Integration.Name(), intg.Integration.Provider().String()))
+		}
+		entry.SetDeliveries(ds)
 	}
 
-	// Send to each matching integration
-	var sendErrors []string
-
+	byID := make(map[string]*integration.IntegrationWithNotification, len(integrations))
 	for _, intg := range integrations {
-		// Check if this integration should receive this notification
-		if !s.shouldSendToIntegration(intg, entry) {
-			continue
-		}
-		if !delivery.Allows(intg.Integration.ID()) {
-			continue
-		}
-
-		results.IntegrationsMatched++
-
-		// Send notification and collect result
-		sendResult := s.sendToIntegration(ctx, intg, entry, delivery)
-		results.SendResults = append(results.SendResults, sendResult)
-
-		if sendResult.Status == "success" {
-			results.IntegrationsSucceeded++
-		} else {
-			results.IntegrationsFailed++
-			sendErrors = append(sendErrors, fmt.Sprintf("%s: %s", intg.Integration.Name(), sendResult.Error))
-		}
+		byID[intg.Integration.ID().String()] = intg
 	}
 
-	// Determine final status and mark entry
-	switch {
-	case results.IntegrationsSucceeded > 0:
-		// At least one integration succeeded
-		entry.MarkCompleted()
-		if len(sendErrors) > 0 {
-			s.log.Warn("some integrations failed",
+	now := time.Now()
+	deliveries := entry.Deliveries()
+	for i := range deliveries {
+		d := &deliveries[i]
+		if !d.Due(now) {
+			continue
+		}
+		intg, ok := byID[d.IntegrationID]
+		switch {
+		case !ok:
+			// Deleted, disabled or disconnected since the event: a failed
+			// attempt, so a channel that comes back within the retry window
+			// still gets the event.
+			d.RecordFailure(now, "integration is not connected")
+			continue
+		case !delivery.Allows(intg.Integration.ID()):
+			// The routing rule changed (the event's asset moved into a
+			// private program): never deliver it to this channel.
+			d.Abandon(now, "channel may no longer receive this event")
+			continue
+		}
+		result := s.sendToIntegration(ctx, intg, entry, delivery)
+		if result.Status == notificationStatusSuccess {
+			d.RecordSuccess(now, result.MessageID)
+		} else {
+			d.RecordFailure(now, result.Error)
+		}
+	}
+	entry.SetDeliveries(deliveries)
+
+	if !entry.SettleDeliveries(now) {
+		// A channel is still pending: the entry stays in the outbox, due at
+		// the earliest channel retry.
+		return s.outboxRepo.Update(ctx, entry)
+	}
+
+	succeeded, failed, sendResults := entry.DeliveryResults()
+	for _, r := range sendResults {
+		if r.Status != notificationStatusSuccess {
+			s.log.Error("notification channel dead-lettered after exhausting retries",
 				"outbox_id", entry.ID().String(),
-				"success_count", results.IntegrationsSucceeded,
-				"errors", sendErrors,
+				"tenant_id", entry.TenantID().String(),
+				"event_type", entry.EventType(),
+				"integration_id", r.IntegrationID,
+				"attempts", r.Attempts,
+				"last_error", r.Error,
 			)
 		}
-	case results.IntegrationsFailed > 0:
-		// All integrations failed
-		entry.MarkFailed(fmt.Sprintf("all integrations failed: %v", sendErrors))
-	default:
-		// No matching integrations (skipped)
-		entry.MarkCompleted()
 	}
-
-	// If MarkFailed rescheduled the entry for retry (status back to pending with
-	// a backoff), it must STAY in the outbox — persist and return. Without this,
-	// the code below archived + deleted it, so any transient downstream failure
-	// (Slack 5xx, SMTP timeout) silently dropped the notification on the first
-	// attempt and the entire exponential-backoff retry path was dead code.
-	if entry.Status() == outboxdom.OutboxStatusPending {
-		return s.outboxRepo.Update(ctx, entry)
+	results := outboxdom.ProcessingResults{
+		IntegrationsTotal:     len(integrations),
+		IntegrationsMatched:   len(sendResults),
+		IntegrationsSucceeded: succeeded,
+		IntegrationsFailed:    failed,
+		SendResults:           sendResults,
 	}
 
 	s.alertIfDeadLettered(entry)
@@ -475,7 +498,7 @@ func (s *Service) sendToIntegration(ctx context.Context, intg *integration.Integ
 	}
 
 	// Create client
-	client, err := s.clientFactory.CreateClient(config)
+	client, err := s.newClient(config)
 	if err != nil {
 		result.Status = notificationStatusFailed
 		result.Error = fmt.Sprintf("create client: %v", err)
@@ -492,6 +515,16 @@ func (s *Service) sendToIntegration(ctx context.Context, intg *integration.Integ
 	if err != nil {
 		result.Status = notificationStatusFailed
 		result.Error = err.Error()
+		return result
+	}
+	// The HTTP clients report a refused delivery (non-2xx, transport
+	// error, a redirect) as a result with Success false, not as an error.
+	if sendResult != nil && !sendResult.Success {
+		result.Status = notificationStatusFailed
+		result.Error = sendResult.Error
+		if result.Error == "" {
+			result.Error = "delivery refused"
+		}
 		return result
 	}
 
@@ -518,6 +551,9 @@ func (s *Service) buildMessage(intg *integration.IntegrationWithNotification, en
 		Severity:       entry.Severity().String(),
 		URL:            entry.URL(),
 		IdempotencyKey: "outbox-" + entry.ID().String(),
+		EventType:      entry.EventType(),
+		EventVersion:   integration.EventPayloadVersion(integration.EventType(entry.EventType())),
+		OccurredAt:     entry.CreatedAt(),
 	}
 	// Minimal by default: unless the channel opted in to details, nothing
 	// that names a finding or an asset leaves the platform, only the kind
