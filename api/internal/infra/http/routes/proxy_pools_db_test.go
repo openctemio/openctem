@@ -322,11 +322,16 @@ func TestProxyPools_PermissionsAndInUse(t *testing.T) {
 	if status, body := h.do(admin, http.MethodDelete, "/api/v1/proxy-pools/"+p.ID, nil); status != http.StatusNoContent {
 		t.Fatalf("delete = %d %s", status, body)
 	}
+	// An enabled pool needs a proxy: scans fail closed without one.
+	if status, body := h.do(admin, http.MethodPost, "/api/v1/proxy-pools/", map[string]any{"name": "empty"}); status != http.StatusBadRequest ||
+		!strings.Contains(body, "PROXY_POOL_NEEDS_ENDPOINT") {
+		t.Fatalf("enabled pool without a proxy = %d %s", status, body)
+	}
 	// One default per organization.
-	if status, _ := h.do(admin, http.MethodPost, "/api/v1/proxy-pools/", map[string]any{"name": "d1", "is_default": true}); status != http.StatusCreated {
+	if status, _ := h.do(admin, http.MethodPost, "/api/v1/proxy-pools/", map[string]any{"name": "d1", "is_default": true, "enabled": false}); status != http.StatusCreated {
 		t.Fatalf("first default = %d", status)
 	}
-	if status, body := h.do(admin, http.MethodPost, "/api/v1/proxy-pools/", map[string]any{"name": "d2", "is_default": true}); status != http.StatusConflict ||
+	if status, body := h.do(admin, http.MethodPost, "/api/v1/proxy-pools/", map[string]any{"name": "d2", "is_default": true, "enabled": false}); status != http.StatusConflict ||
 		!strings.Contains(body, "PROXY_POOL_DEFAULT_EXISTS") {
 		t.Fatalf("second default = %d %s", status, body)
 	}

@@ -5,6 +5,7 @@
  */
 
 import useSWR, { type SWRConfiguration } from 'swr'
+import useSWRInfinite from 'swr/infinite'
 import { get, post, put } from './client'
 import { useTenant } from '@/context/tenant-provider'
 
@@ -193,10 +194,13 @@ export interface ScanRuleTestResult {
 
 const SETTINGS = '/api/v1/organization/settings/scan-governance'
 const APPROVALS = '/api/v1/scan-approvals'
+/** The API caps a page at 100 requests. */
+export const APPROVALS_PER_PAGE = 100
 
 export const scanApprovalKeys = {
   settings: SETTINGS,
-  list: (status: string) => `${APPROVALS}?status=${encodeURIComponent(status)}&per_page=100`,
+  list: (status: string, page = 1) =>
+    `${APPROVALS}?status=${encodeURIComponent(status)}&page=${page}&per_page=${APPROVALS_PER_PAGE}`,
   scan: (scanId: string) => `/api/v1/scans/${encodeURIComponent(scanId)}/approval`,
 }
 
@@ -260,13 +264,29 @@ export function submitScanApproval(
   return post<ScanApprovalRequest>(scanApprovalKeys.scan(scanId), input)
 }
 
-/** The approvals inbox. */
+type ApprovalsPage = { data: ScanApprovalRequest[]; total: number }
+
+/**
+ * The approvals inbox, a page of 100 at a time: `loadMore` appends the next
+ * page, so older requests are reachable and `total` says how many exist.
+ */
 export function useScanApprovals(status: string) {
   const { currentTenant } = useTenant()
-  return useSWR<{ data: ScanApprovalRequest[]; total: number }>(
-    currentTenant ? scanApprovalKeys.list(status) : null,
-    (url: string) => get<{ data: ScanApprovalRequest[]; total: number }>(url)
-  )
+  const { data, error, isLoading, isValidating, size, setSize, mutate } =
+    useSWRInfinite<ApprovalsPage>(
+      (index) => (currentTenant ? scanApprovalKeys.list(status, index + 1) : null),
+      (url: string) => get<ApprovalsPage>(url)
+    )
+  const items = (data ?? []).flatMap((p) => p.data ?? [])
+  const merged = data ? { data: items, total: data[0]?.total ?? items.length } : undefined
+  return {
+    data: merged,
+    error,
+    isLoading,
+    isLoadingMore: isValidating && size > (data?.length ?? 0),
+    loadMore: () => void setSize(size + 1),
+    mutate: () => mutate(),
+  }
 }
 
 export function approveScanRequest(id: string, note: string) {

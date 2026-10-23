@@ -117,12 +117,12 @@ export function useComponentVersion(versionId: string | null) {
 
 export function useComponentVersions(id: string | null) {
   const enabled = useCanRead()
-  const { data, error, isLoading } = useSWR<{ data: ComponentVersion[] }>(
+  const { data, error, isLoading, mutate } = useSWR<{ data: ComponentVersion[] }>(
     enabled && id ? `${BASE}/${encodeURIComponent(id)}/versions` : null,
     (url: string) => get<{ data: ComponentVersion[] }>(url),
     swrConfig
   )
-  return { versions: data?.data ?? [], error, isLoading }
+  return { versions: data?.data ?? [], error, isLoading, mutate }
 }
 
 export interface UsageParams {
@@ -135,12 +135,12 @@ export interface UsageParams {
 
 export function useComponentUsages(id: string | null, params: UsageParams) {
   const enabled = useCanRead()
-  const { data, error, isLoading } = useSWR<ListResponse<ComponentUsage>>(
+  const { data, error, isLoading, mutate } = useSWR<ListResponse<ComponentUsage>>(
     enabled && id ? `${BASE}/${encodeURIComponent(id)}/assets${toQuery({ ...params })}` : null,
     (url: string) => get<ListResponse<ComponentUsage>>(url),
     swrConfig
   )
-  return { data, error, isLoading }
+  return { data, error, isLoading, mutate }
 }
 
 export function useComponentVulnerabilities(
@@ -153,36 +153,36 @@ export function useComponentVulnerabilities(
     page: params.page,
     per_page: params.per_page,
   })
-  const { data, error, isLoading } = useSWR<ListResponse<ComponentVulnerability>>(
+  const { data, error, isLoading, mutate } = useSWR<ListResponse<ComponentVulnerability>>(
     enabled && id ? `${BASE}/${encodeURIComponent(id)}/vulnerabilities${query}` : null,
     (url: string) => get<ListResponse<ComponentVulnerability>>(url),
     swrConfig
   )
-  return { data, error, isLoading }
+  return { data, error, isLoading, mutate }
 }
 
 export function useDependencyPaths(assetId: string | null, versionId: string | null) {
   const enabled = useCanRead()
-  const { data, error, isLoading } = useSWR<{ data: GraphNode[][] }>(
+  const { data, error, isLoading, mutate } = useSWR<{ data: GraphNode[][] }>(
     enabled && assetId && versionId
       ? `/api/v1/assets/${encodeURIComponent(assetId)}/dependency-paths${toQuery({ version_id: versionId, limit: 10 })}`
       : null,
     (url: string) => get<{ data: GraphNode[][] }>(url),
     swrConfig
   )
-  return { paths: data?.data ?? [], error, isLoading }
+  return { paths: data?.data ?? [], error, isLoading, mutate }
 }
 
 export function useDependencyGraph(assetId: string | null, focusVersionId?: string | null) {
   const enabled = useCanRead()
-  const { data, error, isLoading } = useSWR<DependencyGraph>(
+  const { data, error, isLoading, mutate } = useSWR<DependencyGraph>(
     enabled && assetId
       ? `/api/v1/assets/${encodeURIComponent(assetId)}/dependency-graph${toQuery({ focus: focusVersionId ?? undefined })}`
       : null,
     (url: string) => get<DependencyGraph>(url),
     swrConfig
   )
-  return { graph: data, error, isLoading }
+  return { graph: data, error, isLoading, mutate }
 }
 
 /**
