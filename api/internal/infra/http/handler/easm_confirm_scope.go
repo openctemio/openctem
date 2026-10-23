@@ -36,7 +36,7 @@ func auditConfirmEntries(ctx context.Context, audit AttributionAuditor, actx aud
 		if e.Outcome != easmapp.EntryAdded || e.TargetID == "" {
 			continue
 		}
-		_ = audit.LogEvent(ctx, actx, auditapp.NewSuccessEvent(auditdom.ActionScopeTargetCreated, auditdom.ResourceTypeScopeTarget, e.TargetID).
+		auditapp.RecordOrWarn(ctx, nil, audit, actx, auditapp.NewSuccessEvent(auditdom.ActionScopeTargetCreated, auditdom.ResourceTypeScopeTarget, e.TargetID).
 			WithResourceName(e.Pattern).WithMessage("Scope entry added: a person confirmed the asset as the organization's").
 			WithMetadata("via", via).WithMetadata("origin", "confirmed_asset").WithMetadata("asset_id", e.AssetID).
 			WithMetadata("status", e.Status))
