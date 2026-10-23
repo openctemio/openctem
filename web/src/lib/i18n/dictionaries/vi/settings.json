@@ -603,6 +603,8 @@
   "settings.pentest.methodNameAria": "Tên phương pháp luận, dòng {n}",
   "settings.pentest.methodKeyAria": "Khóa phương pháp luận, dòng {n}",
   "settings.pentest.removeMethodologyRow": "Xóa phương pháp luận, dòng {n}",
+  "settings.item.import-mappings": "Ánh xạ nhập dữ liệu",
+  "settings.desc.import-mappings": "Chuyển bản xuất CSV, JSON hoặc XML thành phát hiện và tài sản.",
   "settings.modules.pageDescription": "Chọn các sản phẩm đội của bạn dùng và tinh chỉnh từng tính năng. Tắt một mô-đun sẽ ẩn nó, dữ liệu vẫn được giữ lại.",
   "settings.modules.phase.scoping": "Xác định phạm vi",
   "settings.modules.phase.discovery": "Khám phá",
