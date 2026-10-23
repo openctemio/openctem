@@ -60,9 +60,8 @@ export function KEVIndicatorBadge({
         <TooltipTrigger asChild>
           <Badge
             className={cn(
-              isPastDue
-                ? 'bg-red-600 text-white hover:bg-red-700'
-                : 'bg-red-500 text-white hover:bg-red-600',
+              'bg-destructive text-destructive-foreground hover:bg-destructive/90',
+              isPastDue && 'ring-2 ring-destructive/40',
               sizeClasses[size],
               'gap-1 font-semibold',
               className
@@ -71,12 +70,12 @@ export function KEVIndicatorBadge({
             <AlertOctagon className={iconSizes[size]} />
             KEV
             {hasRansomware && <Skull className={cn(iconSizes[size], 'ms-0.5')} />}
-            {isPastDue && showDueDate && <span className="ms-1 text-red-200">OVERDUE</span>}
+            {isPastDue && showDueDate && <span className="ms-1 font-bold">OVERDUE</span>}
           </Badge>
         </TooltipTrigger>
         <TooltipContent side="top" className="max-w-sm">
           <div className="space-y-2">
-            <div className="flex items-center gap-2 font-semibold text-red-500">
+            <div className="flex items-center gap-2 font-semibold text-destructive">
               <AlertOctagon className="h-4 w-4" />
               CISA Known Exploited Vulnerability
             </div>
@@ -99,7 +98,7 @@ export function KEVIndicatorBadge({
               <div
                 className={cn(
                   'flex items-center gap-2 text-sm',
-                  isPastDue && 'text-red-500 font-medium'
+                  isPastDue && 'text-destructive font-medium'
                 )}
               >
                 <Clock className="h-3.5 w-3.5" />
@@ -111,7 +110,7 @@ export function KEVIndicatorBadge({
             )}
 
             {hasRansomware && (
-              <div className="flex items-center gap-2 text-sm text-orange-500">
+              <div className="flex items-center gap-2 text-sm text-warning">
                 <Skull className="h-3.5 w-3.5" />
                 <span>Known ransomware use: {kevData?.ransomware_use}</span>
               </div>
@@ -157,15 +156,13 @@ export function KEVStatus({ inKEV, kevData, className }: KEVStatusProps) {
   return (
     <div
       className={cn(
-        'space-y-3 p-4 rounded-lg border border-red-200 bg-red-50 dark:border-red-900 dark:bg-red-950/30',
+        'space-y-3 p-4 rounded-lg border border-destructive/30 bg-destructive/10',
         className
       )}
     >
       <div className="flex items-center gap-2">
-        <AlertOctagon className="h-5 w-5 text-red-500" />
-        <span className="font-semibold text-red-700 dark:text-red-400">
-          CISA Known Exploited Vulnerability
-        </span>
+        <AlertOctagon className="h-5 w-5 text-destructive" />
+        <span className="font-semibold text-destructive">CISA Known Exploited Vulnerability</span>
       </div>
 
       <div className="grid gap-2 text-sm">
@@ -180,7 +177,7 @@ export function KEVStatus({ inKEV, kevData, className }: KEVStatusProps) {
           <div
             className={cn(
               'flex items-center justify-between',
-              isPastDue && 'text-red-600 dark:text-red-400 font-medium'
+              isPastDue && 'text-destructive font-medium'
             )}
           >
             <span className={isPastDue ? '' : 'text-muted-foreground'}>Remediation Due:</span>
@@ -200,7 +197,7 @@ export function KEVStatus({ inKEV, kevData, className }: KEVStatusProps) {
         )}
 
         {hasRansomware && (
-          <div className="flex items-center justify-between text-orange-600 dark:text-orange-400">
+          <div className="flex items-center justify-between text-warning">
             <span className="flex items-center gap-1">
               <Skull className="h-3.5 w-3.5" />
               Ransomware Use:
@@ -238,7 +235,8 @@ export function KEVCompactIndicator({ inKEV, isPastDue, className }: KEVCompactI
           <div
             className={cn(
               'inline-flex items-center justify-center rounded p-1',
-              isPastDue ? 'bg-red-600 text-white' : 'bg-red-500 text-white',
+              'bg-destructive text-destructive-foreground',
+              isPastDue && 'ring-2 ring-destructive/40',
               className
             )}
           >

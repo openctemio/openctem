@@ -5,6 +5,8 @@
  * Critical for CTEM's emphasis on "identity exposure" as a key attack vector.
  */
 
+import { severityStyleParts } from '@/lib/severity-colors'
+import type { SeverityLevel } from '@/lib/severity'
 import type { Severity, Status } from '@/features/shared/types'
 
 // ============================================
@@ -116,15 +118,20 @@ export const IDENTITY_RISK_LABELS: Record<IdentityRisk, string> = {
   none: 'None',
 }
 
+const sevParts = (level: SeverityLevel) => {
+  const p = severityStyleParts(level)
+  return { bg: p.bgColor, text: p.textColor, border: p.color }
+}
+
 export const IDENTITY_RISK_COLORS: Record<
   IdentityRisk,
   { bg: string; text: string; border: string }
 > = {
-  critical: { bg: 'bg-red-500/15', text: 'text-red-600', border: 'border-red-500/30' },
-  high: { bg: 'bg-orange-500/15', text: 'text-orange-600', border: 'border-orange-500/30' },
-  medium: { bg: 'bg-yellow-500/15', text: 'text-yellow-600', border: 'border-yellow-500/30' },
-  low: { bg: 'bg-blue-500/15', text: 'text-blue-600', border: 'border-blue-500/30' },
-  none: { bg: 'bg-green-500/15', text: 'text-green-600', border: 'border-green-500/30' },
+  critical: sevParts('critical'),
+  high: sevParts('high'),
+  medium: sevParts('medium'),
+  low: sevParts('low'),
+  none: { bg: 'bg-success/15', text: 'text-success', border: 'border-success/30' },
 }
 
 /**

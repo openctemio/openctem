@@ -1,5 +1,6 @@
 'use client'
 
+import { KevBadge } from '@/components/ui/kev-badge'
 import { formatEpssScore } from '@/lib/epss'
 import { useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
@@ -125,7 +126,7 @@ function useTopRiskColumns(): ColumnDef<TopRiskRow>[] {
         header: t('insights.executive.colKev', 'KEV'),
         cell: ({ row }) =>
           row.original.is_in_kev ? (
-            <Badge variant="destructive">{t('insights.executive.colKev', 'KEV')}</Badge>
+            <KevBadge />
           ) : (
             <span className="text-xs text-muted-foreground">—</span>
           ),

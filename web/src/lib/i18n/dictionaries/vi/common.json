@@ -87,6 +87,8 @@
   "common.cvss.value.CIA.N": "Không",
   "common.failedToLoad": "Không tải được {title}",
   "common.unexpectedError": "Đã xảy ra lỗi không mong muốn",
+  "common.rateLimited": "Quá nhiều yêu cầu trong thời gian ngắn. Đợi vài giây rồi thử lại.",
+  "common.networkError": "Không kết nối được tới máy chủ. Kiểm tra kết nối rồi thử lại.",
   "common.moreTabs": "Thêm",
   "common.openFullPage": "Mở trang đầy đủ",
   "common.contextFilters.label": "Bộ lọc ngữ cảnh",
@@ -134,5 +136,6 @@
   "common.table.expandGroup": "Mở rộng {label}",
   "common.table.loading": "Đang tải",
   "common.yes": "Có",
-  "common.no": "Không"
+  "common.no": "Không",
+  "common.showingFirstOf": "Đang hiển thị {loaded} mục đầu tiên trong tổng số {total}"
 }
