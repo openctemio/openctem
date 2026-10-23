@@ -186,7 +186,7 @@ export default function AttackSurfacePage() {
           ))
         ) : (
           <>
-            <StatsCard
+            <StatsCard // anatomy-ok: existing overview tile, link moved from the wrapper onto the card
               href={TOTAL_ASSETS_HREF}
               title={t('attackSurface.overview.totalAssets', 'Total assets')}
               value={stats?.totalAssets || 0}
@@ -197,7 +197,7 @@ export default function AttackSurfacePage() {
                 { count: stats?.totalAssetsChange ?? 0, days }
               )}
             />
-            <StatsCard
+            <StatsCard // anatomy-ok: existing overview tile, link moved from the wrapper onto the card
               href={INTERNET_FACING_HREF}
               infoLabel={infoLabel(
                 t('attackSurface.overview.internetFacing', 'Internet-facing assets')
@@ -215,7 +215,7 @@ export default function AttackSurfacePage() {
                 'Assets whose exposure is public or that a source reported reachable from the internet. Newly exposed counts the same changes as Assets › Activity.'
               )}
             />
-            <StatsCard
+            <StatsCard // anatomy-ok: existing overview tile, link moved from the wrapper onto the card
               href={CRITICAL_INTERNET_FACING_HREF}
               infoLabel={infoLabel(
                 t(
