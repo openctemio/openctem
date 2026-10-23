@@ -149,7 +149,8 @@ describe('sanitiseNode — event-handler attributes', () => {
       onMouseOver: 'x()',
     })
     sanitiseNode(node)
-    expect(Object.keys(node.properties || {})).toEqual(['href'])
+    // rel and referrerPolicy are the sanitiser's own (links to another origin).
+    expect(Object.keys(node.properties || {})).toEqual(['href', 'rel', 'referrerPolicy'])
   })
 
   it('does not strip "on" as a non-handler word', () => {
@@ -250,7 +251,11 @@ describe('sanitiseNode — attributes an author could invent (rehype-attr)', () 
       'data-anything': 'x',
     })
     sanitiseNode(node)
-    expect(node.properties).toEqual({ href: 'https://ok.test' })
+    expect(node.properties).toEqual({
+      href: 'https://ok.test',
+      rel: ['noopener', 'noreferrer', 'nofollow'],
+      referrerPolicy: 'no-referrer',
+    })
   })
 
   it('keeps only pipeline classes, from both className and raw class', () => {
@@ -296,5 +301,87 @@ describe('sanitiseNode — attributes an author could invent (rehype-attr)', () 
     sanitiseNode(cb)
     expect(cb.tagName).toBe('input')
     expect(cb.properties).toEqual({ type: 'checkbox', checked: true, disabled: true })
+  })
+})
+
+describe('remote images are click-to-load (no tracking pixel)', () => {
+  it('replaces an other-origin https <img> with a plain link to the URL', () => {
+    const node = element('img', { src: 'https://tracker.example.net/p.gif?u=1', alt: 'x' })
+    sanitiseNode(node)
+    expect(node.tagName).toBe('a')
+    expect(node.properties).toEqual({
+      href: 'https://tracker.example.net/p.gif?u=1',
+      rel: ['noopener', 'noreferrer', 'nofollow'],
+      referrerPolicy: 'no-referrer',
+    })
+    expect(node.children).toEqual([
+      { type: 'text', value: 'https://tracker.example.net/p.gif?u=1' },
+    ])
+  })
+
+  it('replaces an http <img> too', () => {
+    const node = element('img', { src: 'http://tracker.example.net/p.gif' })
+    sanitiseNode(node)
+    expect(node.tagName).toBe('a')
+  })
+
+  it.each([['video'], ['audio'], ['source'], ['track']])(
+    'never auto-loads a remote src on <%s>',
+    (tag) => {
+      const node = element(tag, { src: 'https://tracker.example.net/v.mp4' })
+      sanitiseNode(node)
+      expect(node.properties?.src).toBe('#')
+    }
+  )
+
+  it('does not keep a protocol-relative source as an image', () => {
+    const node = element('img', { src: '//tracker.example.net/p.gif' })
+    sanitiseNode(node)
+    expect(node.tagName).toBe('img')
+    expect(node.properties?.src).toBe('#')
+  })
+
+  it.each([
+    ['/api/v1/attachments/abc'],
+    ['./a.png'],
+    ['../a.png'],
+    [`${window.location.origin}/a.png`],
+  ])('keeps %s as an image', (src) => {
+    const node = element('img', { src })
+    sanitiseNode(node)
+    expect(node.tagName).toBe('img')
+    expect(node.properties?.src).toBe(src)
+  })
+
+  it('is idempotent', () => {
+    const node = element('img', { src: 'https://tracker.example.net/p.gif' })
+    sanitiseNode(node)
+    sanitiseNode(node)
+    expect(node.tagName).toBe('a')
+    expect(node.properties).toEqual({
+      href: 'https://tracker.example.net/p.gif',
+      rel: ['noopener', 'noreferrer', 'nofollow'],
+      referrerPolicy: 'no-referrer',
+    })
+  })
+
+  it('gives every link to another origin no referrer and no opener, whatever the author set', () => {
+    const node = element('a', {
+      href: 'https://elsewhere.example.net/',
+      rel: ['opener'],
+      referrerPolicy: 'unsafe-url',
+    })
+    sanitiseNode(node)
+    expect(node.properties).toEqual({
+      href: 'https://elsewhere.example.net/',
+      rel: ['noopener', 'noreferrer', 'nofollow'],
+      referrerPolicy: 'no-referrer',
+    })
+  })
+
+  it('leaves in-app links alone', () => {
+    const node = element('a', { href: '/findings/1' })
+    sanitiseNode(node)
+    expect(node.properties).toEqual({ href: '/findings/1' })
   })
 })

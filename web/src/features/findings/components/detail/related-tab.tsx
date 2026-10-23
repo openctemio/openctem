@@ -234,51 +234,6 @@ export function RelatedTab({ finding }: RelatedTabProps) {
         </div>
       )}
 
-      {/* Summary Stats - only show when there's related findings data */}
-      {totalRelated > 0 && (
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          {similarFindings.length > 0 && (
-            <div className="flex items-center gap-3 rounded-lg border p-4">
-              <div className="bg-muted flex h-10 w-10 items-center justify-center rounded-full">
-                <Eye className="h-5 w-5 text-info" />
-              </div>
-              <div>
-                <p className="text-2xl font-bold">{similarFindings.length}</p>
-                <p className="text-muted-foreground text-xs">
-                  {t('findings.relatedTab.similar', 'Similar')}
-                </p>
-              </div>
-            </div>
-          )}
-          {linkedFindings.length > 0 && (
-            <div className="flex items-center gap-3 rounded-lg border p-4">
-              <div className="bg-muted flex h-10 w-10 items-center justify-center rounded-full">
-                <Link2 className="h-5 w-5 text-primary" />
-              </div>
-              <div>
-                <p className="text-2xl font-bold">{linkedFindings.length}</p>
-                <p className="text-muted-foreground text-xs">
-                  {t('findings.relatedTab.linked', 'Linked')}
-                </p>
-              </div>
-            </div>
-          )}
-          {finding.cve && sameCveFindings.length > 0 && (
-            <div className="flex items-center gap-3 rounded-lg border p-4">
-              <div className="bg-muted flex h-10 w-10 items-center justify-center rounded-full">
-                <Copy className="h-5 w-5 text-warning" />
-              </div>
-              <div>
-                <p className="text-2xl font-bold">{sameCveFindings.length}</p>
-                <p className="text-muted-foreground text-xs">
-                  {t('findings.relatedTab.sameCve', 'Same CVE')}
-                </p>
-              </div>
-            </div>
-          )}
-        </div>
-      )}
-
       {/* Similar Findings - only show section if has data */}
       {similarFindings.length > 0 && (
         <div>

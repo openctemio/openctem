@@ -140,14 +140,14 @@ function DetectionBadge({ item }: { item: ValidationEvidenceItem }) {
   )
 }
 
-function formatTimestamp(value?: string): string {
+function formatTimestamp(value: string | undefined, locale: string): string {
   if (!value) return ''
   const d = new Date(value)
-  return Number.isNaN(d.getTime()) ? value : d.toLocaleString()
+  return Number.isNaN(d.getTime()) ? value : d.toLocaleString(locale)
 }
 
 function EvidenceRow({ item }: { item: ValidationEvidenceItem }) {
-  const { t } = useTranslation()
+  const { t, locale } = useTranslation()
   return (
     <li className="flex flex-col gap-1 rounded-md border p-3">
       <div className="flex flex-wrap items-center gap-2">
@@ -168,7 +168,7 @@ function EvidenceRow({ item }: { item: ValidationEvidenceItem }) {
           <span className="text-muted-foreground text-xs">· {item.technique}</span>
         ) : null}
         <span className="text-muted-foreground ms-auto text-xs">
-          {formatTimestamp(item.created_at)}
+          {formatTimestamp(item.created_at, locale)}
         </span>
       </div>
       {item.summary ? <p className="text-sm">{item.summary}</p> : null}
