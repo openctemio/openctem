@@ -1747,5 +1747,6 @@
   "findings.epss.bandHint.moderate": "10% to 40%.",
   "findings.epss.bandHint.low": "Up to 10%.",
   "findings.epss.chipHint": "Shown in lists from 10%. The detail page always shows it.",
-  "findings.epss.label": "EPSS"
+  "findings.epss.label": "EPSS",
+  "findings.columns.exploitSignals": "Exploit signals"
 }
