@@ -908,7 +908,8 @@ Rules every visualization follows:
   frame's "How this is counted" popover.
 - **Phone.** Plots are 180px tall below 640px (220px above). A four-column
   dashboard is two columns on a phone: single-figure tiles (one column, one
-  row) sit two abreast and every other widget takes the full row. Widget
+  row) sit two abreast and every other widget takes the full row; rows fit
+  their content (the stored height applies from 640px). Widget
   titles wrap to two lines, and the per-widget "Updated" footer is hidden
   unless the widget is stale (the dashboard's meta line carries the time).
 - **Drill-down.** A mark, row or stage opens its list through a drill builder.
