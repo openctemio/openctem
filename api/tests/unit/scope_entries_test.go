@@ -411,3 +411,30 @@ func TestScopeEntry_RefusesWildcardAndRetiredTypes(t *testing.T) {
 		t.Fatalf("a URL with a host: %v", err)
 	}
 }
+
+// A legacy row the platform no longer accepts cannot be put back into effect.
+func TestScopeEntry_ActivateRefusesLegacyRows(t *testing.T) {
+	svc, tr, _ := entryService(t, 1, tenant.ScopeSettings{})
+	tenantID := shared.NewID()
+	now := time.Now()
+	for _, r := range []struct {
+		typ     scopedom.TargetType
+		pattern string
+		want    error
+	}{
+		{scopedom.TargetTypeCertificate, "abc", scopedom.ErrTargetTypeRetired},
+		{scopedom.TargetTypeNetwork, "*", scopedom.ErrTargetTypeRetired},
+		{scopedom.TargetTypeURL, "https://*", scopedom.ErrWildcardNotAllowed},
+		{scopedom.TargetTypeHost, "0.0.0.0/0", scopedom.ErrInvalidPattern},
+		{scopedom.TargetTypeDomain, "*.co.uk", scopedom.ErrPublicSuffix},
+	} {
+		row := scopedom.ReconstituteTarget(shared.NewID(), tenantID, r.typ, r.pattern, "", 0, scopedom.StatusInactive, nil, "", now, now)
+		tr.targets[row.ID().String()] = row
+		if _, err := svc.ActivateTarget(context.Background(), row.ID().String(), tenantID.String(), approverA); !errors.Is(err, r.want) {
+			t.Errorf("activate %s %q: %v, want %v", r.typ, r.pattern, err, r.want)
+		}
+		if row.Status() != scopedom.StatusInactive {
+			t.Errorf("%s %q changed status to %s", r.typ, r.pattern, row.Status())
+		}
+	}
+}

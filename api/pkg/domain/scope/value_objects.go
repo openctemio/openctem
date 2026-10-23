@@ -228,8 +228,11 @@ func ValidatePattern(targetType TargetType, pattern string) error {
 
 // validateHostPattern accepts a host name (or *.name) or one address.
 func validateHostPattern(pattern string) error {
-	if net.ParseIP(strings.Trim(pattern, "[]")) != nil {
+	if _, err := netip.ParseAddr(strings.Trim(pattern, "[]")); err == nil {
 		return nil
+	}
+	if _, ok := parseIPSet(pattern); ok || strings.Contains(pattern, "/") {
+		return fmt.Errorf("%w: a host is a name or one address; use a CIDR or range entry for a network", ErrInvalidPattern)
 	}
 	if strings.Contains(strings.TrimPrefix(pattern, "*."), "*") {
 		return ErrWildcardNotAllowed
@@ -373,8 +376,13 @@ func MatchesPattern(targetType TargetType, pattern, value string) bool {
 		}
 		return matchWildcard(pattern, value)
 	case TargetTypeHost:
+		// One address, or a name (*.name). A CIDR or a range belongs to an
+		// ip_range or cidr entry: as a host pattern it covers nothing.
+		if a, err := netip.ParseAddr(strings.Trim(strings.TrimSpace(pattern), "[]")); err == nil {
+			return matchCIDR(a.Unmap().String(), value)
+		}
 		if _, ok := parseIPSet(pattern); ok {
-			return matchCIDR(pattern, value)
+			return false
 		}
 		return matchDomain(pattern, value)
 	default:

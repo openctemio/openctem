@@ -48,7 +48,7 @@ func TestURLEntryNeedsSchemeAndConcreteHost(t *testing.T) {
 }
 
 func TestHostEntry(t *testing.T) {
-	for _, p := range []string{"*", "*.*", "a*.example.com", "*.example.*"} {
+	for _, p := range []string{"*", "*.*", "a*.example.com", "*.example.*", "0.0.0.0/0", "10.0.0.0/8", "1.0.0.0-223.255.255.255"} {
 		if err := ValidatePattern(TargetTypeHost, p); err == nil {
 			t.Errorf("host %q accepted", p)
 		}
@@ -125,5 +125,20 @@ func TestGuardrailsOnHostEntries(t *testing.T) {
 	}
 	if err := g.CheckPattern(TargetTypeDomain, "*.co.uk"); !errors.Is(err, ErrPublicSuffix) {
 		t.Errorf("*.co.uk: %v", err)
+	}
+}
+
+// A stored host row that is a network or a range covers nothing: those
+// belong to cidr and ip_range entries.
+func TestHostRowsNeverCoverNetworks(t *testing.T) {
+	for _, p := range []string{"0.0.0.0/0", "203.0.113.0/24", "1.0.0.0-223.255.255.255", "::/0"} {
+		for _, v := range []string{"203.0.113.9", "198.51.100.1", "victim.example"} {
+			if EntryMatches(TargetTypeHost, p, Constraint{}, v) {
+				t.Errorf("host %q covers %q", p, v)
+			}
+		}
+	}
+	if !EntryMatches(TargetTypeHost, "203.0.113.9", Constraint{}, "203.0.113.9") {
+		t.Error("a host address must cover itself")
 	}
 }
