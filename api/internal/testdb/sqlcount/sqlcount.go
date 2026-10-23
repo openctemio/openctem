@@ -1,3 +1,5 @@
+//lint:file-ignore SA1019 the wrapper forwards the legacy driver methods a driver may still rely on
+
 // Package sqlcount opens a database/sql handle that counts the statements
 // sent to PostgreSQL, so a test can budget how many round trips an operation
 // makes (an import that quietly turns into one query per finding shows up as
