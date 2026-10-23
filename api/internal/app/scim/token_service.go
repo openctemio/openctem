@@ -11,7 +11,9 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/openctemio/openctem/api/internal/app/entitlement"
 	"github.com/openctemio/openctem/api/pkg/crypto"
+	"github.com/openctemio/openctem/api/pkg/domain/limits"
 	"github.com/openctemio/openctem/api/pkg/domain/scimtoken"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	tenantdom "github.com/openctemio/openctem/api/pkg/domain/tenant"
@@ -28,12 +30,15 @@ const tokenPlaintextPrefix = "oct_scim_"
 type TokenService struct {
 	// orgs refuses the tokens of a suspended organization
 	// (docs/architecture/organization-suspension.md); nil admits all.
-	orgs   tenantdom.AccessGate
-	repo   scimtoken.Repository
-	pepper string
-	legacy []string // earlier peppers that still verify (key rotation)
-	logger *logger.Logger
-	now    func() time.Time
+	orgs tenantdom.AccessGate
+	// features refuses minting a token when the organization may not use
+	// SCIM (limits.FeatureSCIM); nil allows.
+	features entitlement.FeatureChecker
+	repo     scimtoken.Repository
+	pepper   string
+	legacy   []string // earlier peppers that still verify (key rotation)
+	logger   *logger.Logger
+	now      func() time.Time
 }
 
 // NewTokenService wires the service. pepper should be APP_ENCRYPTION_KEY.
@@ -70,6 +75,12 @@ type MintResult struct {
 	Plaintext string
 }
 
+// SetFeatureGate wires the feature check of SCIM: a new token needs scim to be
+// allowed (a token minted during the read-only grace would be new
+// configuration). Existing tokens keep working through the grace (the SCIM
+// API gate).
+func (s *TokenService) SetFeatureGate(g entitlement.FeatureChecker) { s.features = g }
+
 // Mint creates a new SCIM bearer token for a tenant, valid for
 // expiresInDays days (1..365, required: a provisioning credential that never
 // expires outlives the people and systems that hold it).
@@ -78,6 +89,9 @@ func (s *TokenService) Mint(ctx context.Context, tenantID shared.ID, name string
 		return nil, fmt.Errorf("%w: tenant id required", shared.ErrValidation)
 	}
 	if err := scimtoken.ValidateLifetimeDays(expiresInDays); err != nil {
+		return nil, err
+	}
+	if err := entitlement.RequireFeature(ctx, s.features, tenantID, limits.FeatureSCIM); err != nil {
 		return nil, err
 	}
 	if name == "" {
