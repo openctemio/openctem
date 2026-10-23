@@ -63,7 +63,7 @@ func (r *RemediationSuggestionRepository) Candidates(ctx context.Context, tenant
 	q := `
 		SELECT f.id, frk.remediation_key, frk.title, f.asset_id, COALESCE(f.priority_class, ''), f.severity,
 		       COALESCE(f.is_in_kev, false), f.sla_deadline, ` + FindingRiskPointsSQL + `,
-		       ou.user_id, og.group_id, COALESCE(f.rule_id, ''), COALESCE(f.title, f.message, '')
+		       ou.user_id, og.group_id, COALESCE(f.rule_id, ''), ` + FindingDisplayTitleSQL + `
 		FROM finding_remediation_keys frk
 		JOIN findings f ON f.id = frk.finding_id AND f.tenant_id = frk.tenant_id
 		LEFT JOIN assets a ON a.id = f.asset_id AND a.tenant_id = f.tenant_id
@@ -608,7 +608,7 @@ func (r *RemediationSuggestionRepository) SuggestionMembers(ctx context.Context,
 	if err := r.db.QueryRowContext(ctx, `SELECT COUNT(*)`+joins+where, args...).Scan(&total); err != nil {
 		return pagination.Result[remediation.SuggestionMember]{}, fmt.Errorf("count suggestion members: %w", err)
 	}
-	rows, err := r.db.QueryContext(ctx, `SELECT f.id, COALESCE(f.title, f.message, ''), f.severity, f.status,
+	rows, err := r.db.QueryContext(ctx, `SELECT f.id, `+FindingDisplayTitleSQL+`, f.severity, f.status,
 		COALESCE(f.priority_class, ''), f.asset_id, COALESCE(a.name, ''), f.sla_deadline,
 		COALESCE(f.rule_id, ''), COALESCE(f.cwe_ids, '{}'::text[]), COALESCE(f.file_path, ''), COALESCE(f.start_line, 0),
 		COALESCE(f.first_detected_branch, ''), COALESCE(f.network_port, 0), COALESCE(f.network_transport, ''),

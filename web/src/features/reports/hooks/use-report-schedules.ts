@@ -65,10 +65,10 @@ export function useReportSchedules() {
  */
 export function useExecutiveSummary(days: number) {
   const key = endpoints.dashboard.executiveSummary(days)
-  const { data, error, isLoading } = useSWR<ExecutiveSummary>(key, (url: string) =>
+  const { data, error, isLoading, mutate } = useSWR<ExecutiveSummary>(key, (url: string) =>
     get<ExecutiveSummary>(url)
   )
-  return { summary: data, error, isLoading }
+  return { summary: data, error, isLoading, retry: mutate }
 }
 
 /**

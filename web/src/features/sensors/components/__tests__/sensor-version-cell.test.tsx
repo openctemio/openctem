@@ -58,12 +58,13 @@ describe('SensorVersionCell', () => {
   it('shows an outdated SDK as information and an SDK advisory as a warning', () => {
     cell({ version: 'v0.5.0', sdk_version: 'v0.8.0', sdk_status: 'outdated' })
     const outdated = screen.getByText('SDK outdated')
-    expect(outdated.className).toContain('text-info')
+    // An outdated SDK is information, not urgency: a neutral tag.
+    expect(outdated.closest('[data-slot="tag"]')).not.toBeNull()
     expect(outdated).toHaveAttribute('title', 'SDK v0.9.0 is available')
 
     cell({ version: 'v0.5.0', sdk_version: 'v0.6.0', sdk_status: 'advisory' })
     const advisory = screen.getByText('SDK advisory')
-    expect(advisory.className).toContain('text-warning')
+    expect(advisory.closest('[data-health="warn"]')).not.toBeNull()
     expect(advisory).toHaveAttribute('title', 'This SDK release has a published security advisory')
   })
 

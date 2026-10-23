@@ -1,6 +1,7 @@
 'use client'
 
 import { Main } from '@/components/layout'
+import { PageStack } from '@/features/shared'
 import { ScanApprovalsInbox } from '@/features/scans/components/approval/scan-approvals-inbox'
 import {
   ScanCreateActions,
@@ -12,11 +13,13 @@ import {
 export default function ScanApprovalsPage() {
   return (
     <Main>
-      <ScansPageHeader>
-        <ScanCreateActions />
-      </ScansPageHeader>
-      <ScansSectionTabs />
-      <ScanApprovalsInbox />
+      <PageStack>
+        <ScansPageHeader>
+          <ScanCreateActions />
+        </ScansPageHeader>
+        <ScansSectionTabs />
+        <ScanApprovalsInbox />
+      </PageStack>
     </Main>
   )
 }

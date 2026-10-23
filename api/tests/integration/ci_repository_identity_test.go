@@ -37,7 +37,7 @@ func TestCIRepositoryIdentityByProviderID(t *testing.T) {
 		}
 		run, tok := ex["run_id"].(string), ex["token"].(string)
 		if len(f) > 0 {
-			if resp, out := r.post("/api/v1/ci/runs/"+run+"/results", tok, ciReport("github.com/"+repo, f...)); resp.StatusCode != http.StatusCreated {
+			if resp, out := r.upload(run, tok, ciReport("github.com/"+repo, f...)); resp.StatusCode != http.StatusAccepted {
 				t.Fatalf("upload: %d %v", resp.StatusCode, out)
 			}
 		}

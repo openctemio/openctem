@@ -12,6 +12,7 @@ import { ScanApprovalBadge } from '@/features/scans/components/approval/scan-app
 import {
   MetricStrip,
   type MetricStripItem,
+  PageStack,
   DataTable,
   DataTableColumnHeader,
   BulkActionBar,
@@ -222,19 +223,18 @@ function TableSkeleton() {
 export default function ScansPage() {
   return (
     <Main>
-      <ScansPageHeader>
-        <ScanCreateActions />
-      </ScansPageHeader>
-      <ScansSectionTabs />
-
-      <ScanWindowsBanner className="mt-5" />
-      <div className="mt-4">
+      {/* PageStack owns every gap (research/244): an optional banner that
+          renders nothing leaves no gap, so the strip sits 20px under the tabs
+          on every Scans tab. */}
+      <PageStack>
+        <ScansPageHeader>
+          <ScanCreateActions />
+        </ScansPageHeader>
+        <ScansSectionTabs />
+        <ScanWindowsBanner />
         <SensorOptInBanner />
-      </div>
-
-      <div className="mt-5">
         <ConfigurationsTab />
-      </div>
+      </PageStack>
     </Main>
   )
 }
@@ -777,28 +777,28 @@ function ConfigurationsTab() {
   const metrics: MetricStripItem[] = [
     {
       key: 'all',
-      label: 'Configurations',
+      label: t('scans.configs.metricAll', 'Configurations'),
       value: stats?.total ?? 0,
       onClick: () => setStatusFilter('all'),
       active: statusFilter === 'all',
     },
     {
       key: 'active',
-      label: 'Enabled',
+      label: t('scans.configs.metricEnabled', 'Enabled'),
       value: stats?.active ?? 0,
       onClick: () => toggleStatus('active'),
       active: statusFilter === 'active',
     },
     {
       key: 'paused',
-      label: 'Schedule paused',
+      label: t('scans.configs.metricPaused', 'Schedule paused'),
       value: stats?.paused ?? 0,
       onClick: () => toggleStatus('paused'),
       active: statusFilter === 'paused',
     },
     {
       key: 'disabled',
-      label: 'Disabled',
+      label: t('scans.configs.metricDisabled', 'Disabled'),
       value: stats?.disabled ?? 0,
       onClick: () => toggleStatus('disabled'),
       active: statusFilter === 'disabled',
@@ -891,8 +891,8 @@ function ConfigurationsTab() {
       <SearchBox
         value={searchQuery}
         onChange={setSearchQuery}
-        placeholder="Search configurations…"
-        label="Search scan configurations"
+        placeholder={t('scans.configs.searchPlaceholder', 'Search configurations…')}
+        label={t('scans.configs.searchLabel', 'Search scan configurations')}
       />
     </>
   )
@@ -901,11 +901,11 @@ function ConfigurationsTab() {
     <>
       <MetricStrip loading={isLoadingStats} items={metrics} />
 
-      <div className="mt-5 flex items-start gap-5">
+      <div className="flex items-start gap-5">
         {filtersOpen && (
           <aside
             id="scan-config-filters"
-            aria-label="Scan configuration filters"
+            aria-label={t('scans.configs.filtersLabel', 'Scan configuration filters')}
             className="sticky top-4 hidden h-[calc(100svh-7.5rem)] w-64 shrink-0 flex-col rounded-xl border bg-card p-4 shadow-sm lg:flex"
           >
             <div className="flex min-h-0 flex-1 flex-col">{facetPanel}</div>

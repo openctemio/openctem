@@ -27,7 +27,8 @@ import {
   type DedupReview,
 } from '../api/use-asset-dedup'
 import { dedupReasonLabel, describeEvidence } from '../lib/asset-identity'
-import { AssetAttentionTabs, AssetsSectionTabs } from './assets-section-tabs'
+import { AssetsSectionTabs } from './assets-section-tabs'
+import { AttentionQueueHeader } from './attention/attention-queue-header'
 
 // DedupReviewPage surfaces the identity/dedup flow that was previously
 // invisible: the correlator enqueues a pending review when several assets share
@@ -192,15 +193,14 @@ export function DedupReviewPage() {
 
   return (
     <Main>
-      <PageHeader
-        title={t('assets.attention.title', 'Needs attention')}
-        description={t(
-          'assets.duplicates.description',
-          'Approve or reject merges of assets that look like duplicates.'
-        )}
-      />
+      <PageHeader title={t('assets.overview.title', 'Assets')} />
       <AssetsSectionTabs />
-      <AssetAttentionTabs />
+      <div className="mt-5">
+        <AttentionQueueHeader
+          reason="duplicates"
+          count={isLoading ? undefined : (data?.total ?? reviews.length)}
+        />
+      </div>
       <div className="mt-5" />
 
       {isLoading ? (
