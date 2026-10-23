@@ -13,6 +13,7 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -148,4 +149,55 @@ func TestWorkflowPublishGate_DB(t *testing.T) {
 			t.Fatalf("publish with a missing setting = %d %s", s, b)
 		}
 	})
+}
+
+// A request waiting for approval is withdrawn by an edit that changes what
+// the draft does, so the second person never approves a version while the
+// editor shows them something else; moving a node keeps it.
+func TestWorkflowPublishGate_DraftEditWithdrawsRequest_DB(t *testing.T) {
+	f := newWFDB(t)
+	admin2 := shared.NewID().String()
+	f.exec(`INSERT INTO users (id, email, name) VALUES ($1, $2, 'Second Admin')`, admin2, admin2+"@wfd.test")
+	f.exec(`INSERT INTO tenant_members (user_id, tenant_id, role) VALUES ($1, $2, 'admin')`, admin2, f.tenantA)
+	t.Cleanup(func() { _, _ = f.raw.Exec(`DELETE FROM users WHERE id = $1`, admin2) })
+	f.stepUp.set(f.admin, true)
+	f.stepUp.set(admin2, true)
+	chain := func(tag string, x int) string {
+		return `[{"node_key":"t","node_type":"trigger","name":"t","config":{"trigger_type":"finding_created","trigger_config":{"allow_automation_triggers":true}}},
+			{"node_key":"a","node_type":"action","name":"a","ui_position":{"x":` + strconv.Itoa(x) + `,"y":0},"config":{"action_type":"add_tags","action_config":{"tags":["` + tag + `"]}}}]`
+	}
+	edges := `[{"source_node_key":"t","target_node_key":"a"}]`
+	request := func(wf string) PublishPendingResponse {
+		s, b := f.call(f.h.Publish, f.as(f.admin, http.MethodPost, `{}`, map[string]string{"id": wf}))
+		var p PublishPendingResponse
+		_ = json.Unmarshal([]byte(b), &p)
+		if s != http.StatusAccepted || p.Version == nil {
+			t.Fatalf("high-risk publish = %d %s", s, b)
+		}
+		return p
+	}
+	approve := func(wf string, p PublishPendingResponse) int {
+		r := f.as(f.admin, http.MethodPost, `{"digest":"`+p.Version.Digest+`"}`, map[string]string{"id": wf, "versionId": p.Version.ID})
+		r = r.WithContext(context.WithValue(r.Context(), middleware.UserIDKey, admin2))
+		s, _ := f.call(f.h.ApproveVersion, r)
+		return s
+	}
+	edit := func(wf, nodes string) {
+		if s, b := f.call(f.h.UpdateWorkflowGraph, f.as(f.admin, http.MethodPut, `{"nodes":`+nodes+`,"edges":`+edges+`}`, map[string]string{"id": wf})); s != http.StatusOK {
+			t.Fatalf("edit = %d %s", s, b)
+		}
+	}
+
+	wf := f.create(chain("v1", 0), edges)
+	p := request(wf)
+	edit(wf, chain("v2", 0))
+	if s := approve(wf, p); s != http.StatusConflict {
+		t.Fatalf("approving a request whose draft was edited = %d, want 409", s)
+	}
+
+	p = request(wf)
+	edit(wf, chain("v2", 300)) // only the position changes
+	if s := approve(wf, p); s != http.StatusOK {
+		t.Fatalf("approving after a node was only moved = %d, want 200", s)
+	}
 }
