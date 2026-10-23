@@ -213,8 +213,8 @@ func rekeyMergedFinding(ctx context.Context, tx *sql.Tx, tenantID, keepID string
 			return err
 		}
 		if _, err := tx.ExecContext(ctx,
-			`UPDATE findings SET fingerprint = $1, identity_key = COALESCE($4::jsonb, identity_key) WHERE id = $2 AND tenant_id = $3`,
-			newFP, f.id, tenantID, nullJSON(newKey)); err != nil {
+			`UPDATE findings SET fingerprint = $1, identity_key = COALESCE($4::jsonb, identity_key)`+mergedIdentityRecipeSQL+` WHERE id = $2 AND tenant_id = $3`,
+			append([]any{newFP, f.id, tenantID, nullJSON(newKey)}, identityKeyRecipeArgs(newKey)...)...); err != nil {
 			return fmt.Errorf("re-key merged finding: %w", err)
 		}
 		return nil
@@ -229,13 +229,20 @@ func rekeyMergedFinding(ctx context.Context, tx *sql.Tx, tenantID, keepID string
 			return err
 		}
 		if _, err := tx.ExecContext(ctx,
-			`UPDATE findings SET fingerprint = $1, identity_key = COALESCE($4::jsonb, identity_key) WHERE id = $2 AND tenant_id = $3`,
-			newFP, f.id, tenantID, nullJSON(newKey)); err != nil {
+			`UPDATE findings SET fingerprint = $1, identity_key = COALESCE($4::jsonb, identity_key)`+mergedIdentityRecipeSQL+` WHERE id = $2 AND tenant_id = $3`,
+			append([]any{newFP, f.id, tenantID, nullJSON(newKey)}, identityKeyRecipeArgs(newKey)...)...); err != nil {
 			return fmt.Errorf("re-key surviving finding: %w", err)
 		}
 		return nil
 	}
 }
+
+// mergedIdentityRecipeSQL keeps the recorded recipe of a finding re-keyed by
+// an asset merge (only the asset value changes, never a field name) and
+// fills it from the rewritten tuple ($5, $6) when none was recorded.
+const mergedIdentityRecipeSQL = `,
+			identity_fields = CASE WHEN identity_algo IS NULL AND $5::varchar IS NOT NULL THEN $6::text[] ELSE identity_fields END,
+			identity_algo = COALESCE(identity_algo, $5::varchar)`
 
 // mergedFindingFingerprint is f's fingerprint on the kept asset (and, for a
 // versioned key, the rewritten identity tuple), or "" when it cannot be
