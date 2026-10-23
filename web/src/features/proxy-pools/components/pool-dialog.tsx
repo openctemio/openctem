@@ -18,6 +18,13 @@ import {
 } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
 import { Switch } from '@/components/ui/switch'
 import { Textarea } from '@/components/ui/textarea'
 import { useTranslation } from '@/context/i18n-provider'
@@ -29,6 +36,7 @@ import {
   updateProxyPool,
 } from '../api/use-proxy-pools'
 import { describeProxyError, isInvalidEndpointError } from '../lib/errors'
+import { hasNoProxyLines } from '../lib/endpoints-text'
 import { maskPasteText } from '../lib/mask'
 import type { ProxyPool, ProxyStrategy } from '../types'
 import { PasteListField } from './paste-list-field'
@@ -61,7 +69,11 @@ export function PoolDialog({ open, onOpenChange, pool }: PoolDialogProps) {
     setError(null)
   }, [open, pool])
 
+  // The API refuses an enabled pool without a proxy: scans would fail closed.
+  const needsProxy = enabled && hasNoProxyLines(text)
+
   async function submit() {
+    if (needsProxy) return
     setSaving(true)
     setError(null)
     try {
@@ -74,14 +86,18 @@ export function PoolDialog({ open, onOpenChange, pool }: PoolDialogProps) {
           endpoints_text: text,
         })
       } else {
-        // The list first: it is the request most likely to be rejected.
-        if (text !== maskPasteText(pool.endpoints_text)) await saveProxyEndpoints(pool.id, text)
-        await updateProxyPool(pool.id, {
-          name: name.trim(),
-          description: description.trim(),
-          strategy,
-          enabled,
-        })
+        const changeList = text !== maskPasteText(pool.endpoints_text)
+        const fields = { name: name.trim(), description: description.trim(), strategy, enabled }
+        if (pool.enabled && !enabled) {
+          // Turn the pool off before emptying its list: the API refuses an
+          // enabled pool without a proxy.
+          await updateProxyPool(pool.id, fields)
+          if (changeList) await saveProxyEndpoints(pool.id, text)
+        } else {
+          // The list first: it is the request most likely to be rejected.
+          if (changeList) await saveProxyEndpoints(pool.id, text)
+          await updateProxyPool(pool.id, fields)
+        }
       }
       await invalidateProxyPools()
       toast.success(t('proxyPools.toast.poolSaved', 'Pool saved'))
@@ -153,36 +169,47 @@ export function PoolDialog({ open, onOpenChange, pool }: PoolDialogProps) {
               />
               <Label htmlFor="pool-enabled">{t('proxyPools.field.enabled', 'Enabled')}</Label>
             </div>
+            {needsProxy && (
+              <p className="text-sm text-muted-foreground" data-testid="pool-needs-proxy">
+                {t(
+                  'proxyPools.dialog.needsProxy',
+                  'Add at least one proxy before enabling the pool: scans fail closed when it has none.'
+                )}
+              </p>
+            )}
             <PasteListField value={text} onChange={setText} error={error} />
             <Collapsible>
               <CollapsibleTrigger asChild>
-                <Button type="button" variant="ghost" size="sm" className="-ml-2">
+                <Button type="button" variant="ghost" size="sm" className="-ms-2">
                   <ChevronDown className="size-4" aria-hidden />
                   {t('proxyPools.advanced', 'Advanced')}
                 </Button>
               </CollapsibleTrigger>
               <CollapsibleContent className="space-y-1.5 pt-2">
                 <Label htmlFor="pool-strategy">{t('proxyPools.field.strategy', 'Strategy')}</Label>
-                <select
-                  id="pool-strategy"
+                <Select
                   value={strategy}
-                  onChange={(e) => setStrategy(e.target.value as ProxyStrategy)}
+                  onValueChange={(v) => setStrategy(v as ProxyStrategy)}
                   disabled={saving}
-                  className="border-input bg-background h-9 w-full rounded-md border px-3 text-sm"
                 >
-                  <option value="sticky">
-                    {t(
-                      'proxyPools.strategy.sticky',
-                      'Sticky: spread by health, keep a target on one proxy'
-                    )}
-                  </option>
-                  <option value="priority">
-                    {t(
-                      'proxyPools.strategy.priority',
-                      'Priority: use the first healthy proxy in list order'
-                    )}
-                  </option>
-                </select>
+                  <SelectTrigger id="pool-strategy" className="w-full">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="sticky">
+                      {t(
+                        'proxyPools.strategy.sticky',
+                        'Sticky: spread by health, keep a target on one proxy'
+                      )}
+                    </SelectItem>
+                    <SelectItem value="priority">
+                      {t(
+                        'proxyPools.strategy.priority',
+                        'Priority: use the first healthy proxy in list order'
+                      )}
+                    </SelectItem>
+                  </SelectContent>
+                </Select>
               </CollapsibleContent>
             </Collapsible>
           </DialogBody>
@@ -195,7 +222,7 @@ export function PoolDialog({ open, onOpenChange, pool }: PoolDialogProps) {
             >
               {t('common.cancel', 'Cancel')}
             </Button>
-            <Button type="submit" disabled={saving || name.trim() === ''}>
+            <Button type="submit" disabled={saving || name.trim() === '' || needsProxy}>
               {saving && <Loader2 className="size-4 animate-spin" aria-hidden />}
               {t('proxyPools.save', 'Save')}
             </Button>

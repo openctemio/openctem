@@ -55,5 +55,8 @@
   "lookalikes.triageFailed": "Thay đổi chưa được lưu",
   "lookalikes.watchesDescription": "Các tên miền gốc của bạn (mục phạm vi tên miền vĩnh viễn hoặc tên miền đã xác minh) và các tên miền giả mạo của chúng. Việc kiểm tra là thụ động: tra cứu DNS và Certificate Transparency, hằng ngày với tên miền giả mạo đã đăng ký và hằng tuần với phần còn lại. Không liên hệ tới máy chủ của tên miền giả mạo nào.",
   "lookalikes.watchesTitle": "Tên miền đang theo dõi",
-  "lookalikes.web": "Có địa chỉ IP"
+  "lookalikes.web": "Có địa chỉ IP",
+  "lookalikes.maxInvalid": "Nhập một số nguyên từ 10 đến 1000",
+  "lookalikes.shownOf": "{shown} trên {total}",
+  "lookalikes.loadMore": "Tải thêm"
 }
