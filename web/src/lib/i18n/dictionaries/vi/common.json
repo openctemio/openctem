@@ -136,5 +136,6 @@
   "common.table.expandGroup": "Mở rộng {label}",
   "common.table.loading": "Đang tải",
   "common.yes": "Có",
-  "common.no": "Không"
+  "common.no": "Không",
+  "common.showingFirstOf": "Đang hiển thị {loaded} mục đầu tiên trong tổng số {total}"
 }

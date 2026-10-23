@@ -1,7 +1,6 @@
 {
   "attackSurface.changes.added": "Thêm: {values}",
   "attackSurface.changes.clearWindow": "Quay lại thay đổi gần đây",
-  "attackSurface.changes.description": "Máy chủ, cổng, chứng chỉ, bản ghi DNS, công nghệ và điểm phơi nhiễm đã thay đổi trên bề mặt tấn công bên ngoài của bạn. Chỉ liệt kê tài sản bạn được xem.",
   "attackSurface.changes.empty": "Không có thay đổi nào về máy chủ, cổng, chứng chỉ, DNS, công nghệ hay điểm phơi nhiễm trong khoảng thời gian này.",
   "attackSurface.changes.emptyFiltered": "Không có thay đổi thuộc các loại đã chọn trong khoảng thời gian này.",
   "attackSurface.changes.emptyTitle": "Không có thay đổi",
@@ -91,7 +90,6 @@
   "attackSurface.queue.emptyReviewDescription": "Mọi tên đã phát hiện đều đã có quyết định, hoặc chưa phát hiện tên nào.",
   "attackSurface.queue.errorTitle": "các mục bề mặt tấn công",
   "attackSurface.queue.everyReason": "Mọi lý do",
-  "attackSurface.queue.loading": "Đang tải…",
   "attackSurface.queue.moreEvidence": "+{count} khác",
   "attackSurface.queue.noEvidence": "Không có bằng chứng",
   "attackSurface.queue.notFound": "{count} không thay đổi: bạn không còn quyền truy cập",

@@ -87,5 +87,8 @@
   "easmReview.suggestions.weak": "Weak",
   "easmReview.suggestions.weakHint": "Only the names themselves point to it.",
   "easmReview.overview.includeDiscovered": "Include discovered assets",
-  "easmReview.overview.discovered": "Discovered, passive only until in scope"
+  "easmReview.overview.discovered": "Discovered, passive only until in scope",
+  "easmReview.suggestions.errorTitle": "suggested rules",
+  "easmReview.suggestions.namesOne": "{n} name fits no rule; decide it one by one ({names}).",
+  "easmReview.suggestions.namesMany": "{n} names fit no rule; decide them one by one ({names})."
 }
