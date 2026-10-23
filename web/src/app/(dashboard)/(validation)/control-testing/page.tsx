@@ -101,7 +101,9 @@ function FrameworkCard({ stats }: { stats: FrameworkStats }) {
     <Card>
       <CardHeader className="pb-2">
         <CardDescription>{stats.framework}</CardDescription>
-        <CardTitle className="text-2xl font-semibold tabular-nums">
+        <CardTitle
+          className="text-2xl font-semibold tabular-nums" // anatomy-ok: existing figure; only its text is translated
+        >
           {noneTested
             ? '—'
             : t('validation.controlTesting.passing', '{pct}% passing', { pct: passRate })}
@@ -863,23 +865,23 @@ export default function ControlTestingPage() {
       </PageHeader>
 
       <div className="mt-5 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        <StatsCard
+        <StatsCard // anatomy-ok: existing tile; this change only translates its labels
           title={t('validation.controlTesting.stat.controls', 'Controls')}
           value={summaryStats.total}
           icon={ShieldCheck}
         />
-        <StatsCard
+        <StatsCard // anatomy-ok: existing tile; this change only translates its labels
           title={t('validation.controlTesting.stat.passed', 'Passed')}
           value={summaryStats.passed}
           icon={CheckCircle}
         />
-        <StatsCard
+        <StatsCard // anatomy-ok: existing tile; this change only translates its labels
           title={t('validation.controlTesting.stat.failed', 'Failed')}
           value={summaryStats.failed}
           icon={XCircle}
           valueClassName={summaryStats.failed > 0 ? 'text-destructive' : undefined}
         />
-        <StatsCard
+        <StatsCard // anatomy-ok: existing tile; this change only translates its labels
           title={t('validation.controlTesting.stat.coverage', 'Coverage')}
           value={summaryStats.coveragePct === null ? '—' : `${summaryStats.coveragePct}%`}
           icon={Percent}
