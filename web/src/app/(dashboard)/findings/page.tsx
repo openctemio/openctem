@@ -2650,7 +2650,7 @@ function FindingsContent() {
                     </DropdownMenuItem>
 
                     <DropdownMenuItem onClick={() => void handleBulkStatusChange('in_progress')}>
-                      {t('findings.status.in_progress', 'In Progress')}
+                      {t('findings.status.in_progress', 'In progress')}
                     </DropdownMenuItem>
 
                     {/* Resolving needs findings:verify; the API refuses it otherwise. */}
