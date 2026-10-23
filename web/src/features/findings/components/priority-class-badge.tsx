@@ -1,9 +1,8 @@
 'use client'
 
 import { useTranslation } from '@/context/i18n-provider'
-import { Badge } from '@/components/ui/badge'
+import { PriorityBadge } from '@/components/ui/priority-badge'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
-import { cn } from '@/lib/utils'
 import type { PriorityClass } from '../types/finding.types'
 import { PRIORITY_CLASS_CONFIG } from '../types/finding.types'
 import { PriorityClassSla } from '@/features/sla/components/priority-class-sla'
@@ -16,6 +15,7 @@ interface PriorityClassBadgeProps {
   className?: string
 }
 
+/** PriorityBadge with the class meaning and its SLA window as a tooltip. */
 export function PriorityClassBadge({
   priorityClass,
   showTooltip = true,
@@ -25,11 +25,7 @@ export function PriorityClassBadge({
   const { t } = useTranslation()
   const config = PRIORITY_CLASS_CONFIG[priorityClass]
 
-  const badge = (
-    <Badge className={cn(config.color, config.textColor, 'font-mono font-bold text-xs', className)}>
-      {config.label}
-    </Badge>
-  )
+  const badge = <PriorityBadge priorityClass={priorityClass} className={className} />
 
   if (!showTooltip) return badge
 

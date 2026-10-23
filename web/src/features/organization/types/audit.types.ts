@@ -4,6 +4,7 @@
  * Type definitions for audit log viewing
  */
 
+import { severityStyleParts } from '@/lib/severity-colors'
 import { getActionLabel } from '@/lib/api/audit-types'
 
 // ============================================
@@ -119,20 +120,20 @@ export const RESULT_DISPLAY: Record<
   AuditResult,
   { label: string; color: string; bgColor: string }
 > = {
-  success: { label: 'Success', color: 'text-green-400', bgColor: 'bg-green-500/20' },
-  failure: { label: 'Failure', color: 'text-red-400', bgColor: 'bg-red-500/20' },
-  denied: { label: 'Denied', color: 'text-orange-400', bgColor: 'bg-orange-500/20' },
+  success: { label: 'Success', color: 'text-success', bgColor: 'bg-success/15' },
+  failure: { label: 'Failure', color: 'text-destructive', bgColor: 'bg-destructive/15' },
+  denied: { label: 'Denied', color: 'text-warning', bgColor: 'bg-warning/15' },
 }
 
 export const SEVERITY_DISPLAY: Record<
   AuditSeverity,
   { label: string; color: string; bgColor: string }
 > = {
-  info: { label: 'Info', color: 'text-blue-400', bgColor: 'bg-blue-500/20' },
-  low: { label: 'Low', color: 'text-green-400', bgColor: 'bg-green-500/20' },
-  medium: { label: 'Medium', color: 'text-yellow-400', bgColor: 'bg-yellow-500/20' },
-  high: { label: 'High', color: 'text-orange-400', bgColor: 'bg-orange-500/20' },
-  critical: { label: 'Critical', color: 'text-red-400', bgColor: 'bg-red-500/20' },
+  info: { label: 'Info', ...severityStyleParts('info') },
+  low: { label: 'Low', ...severityStyleParts('low') },
+  medium: { label: 'Medium', ...severityStyleParts('medium') },
+  high: { label: 'High', ...severityStyleParts('high') },
+  critical: { label: 'Critical', ...severityStyleParts('critical') },
 }
 
 export const ACTION_CATEGORIES: Record<string, { label: string; icon: string }> = {

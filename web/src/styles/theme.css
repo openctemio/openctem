@@ -70,6 +70,27 @@
   --sev-low-ink: #0a1628;
   --sev-info-ink: #ffffff;
 
+  /* Priority class (P0-P3): its own system, never a severity hue and never the
+     teal accent. A filled class box on the ink ramp, P0 strongest: --prio-N is
+     the mark (charts, dots; >= 3:1 on card, paper and raised), --prio-N-bg and
+     --prio-N-fg the box and its text (>= 4.5:1), --prio-N-border the box edge. */
+  --prio-0: #0a1628;
+  --prio-1: #2f4a78;
+  --prio-2: #6b82a8;
+  --prio-3: #76849e;
+  --prio-0-bg: #0a1628;
+  --prio-0-fg: #fafaf9;
+  --prio-0-border: #0a1628;
+  --prio-1-bg: #2f4a78;
+  --prio-1-fg: #ffffff;
+  --prio-1-border: #2f4a78;
+  --prio-2-bg: #dfe6f2;
+  --prio-2-fg: #1f3358;
+  --prio-2-border: #6b82a8;
+  --prio-3-bg: #f1f3f6;
+  --prio-3-fg: #4a5568;
+  --prio-3-border: #76849e;
+
   /* Elevation: overlays only. Motion. */
   --shadow-overlay: 0 8px 24px rgb(10 22 40 / 0.12), 0 1px 2px rgb(10 22 40 / 0.08);
   --dur-fast: 120ms;
@@ -158,6 +179,23 @@
   --sev-low-ink: #0a1628;
   --sev-info-ink: #0a1628;
 
+  --prio-0: #fafaf9;
+  --prio-1: #b4c3dd;
+  --prio-2: #7d93b8;
+  --prio-3: #66789a;
+  --prio-0-bg: #fafaf9;
+  --prio-0-fg: #0a1628;
+  --prio-0-border: #fafaf9;
+  --prio-1-bg: #b4c3dd;
+  --prio-1-fg: #0a1628;
+  --prio-1-border: #b4c3dd;
+  --prio-2-bg: #22365a;
+  --prio-2-fg: #d3ddef;
+  --prio-2-border: #7d93b8;
+  --prio-3-bg: #18263e;
+  --prio-3-fg: #a9b4c4;
+  --prio-3-border: #66789a;
+
   --shadow-overlay: 0 12px 32px rgb(0 0 0 / 0.45), 0 1px 2px rgb(0 0 0 / 0.3);
 
   /* Dashboard chart palette (validated: scripts/check-palette.mjs, source src/lib/chart-palette.json). */
@@ -216,6 +254,36 @@
     'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono',
     monospace;
 
+  /* Type scale (research/244). One size and one line height per role; nothing
+     under 12px. Classes: text-title, text-section, text-body, text-meta,
+     text-data, text-kpi. The kit sizes map onto it (text-xs = meta,
+     text-sm = body); arbitrary sizes (text-[10px]) are refused by
+     scripts/check-page-anatomy.sh. A label is muted, never smaller than its
+     value, and a line of metadata uses one size. */
+  --text-title: 1.5rem; /* page title, 24px */
+  --text-title--line-height: 2rem;
+  --text-title--font-weight: 600;
+  --text-section: 1rem; /* section and drawer title, 16px */
+  --text-section--line-height: 1.5rem;
+  --text-section--font-weight: 600;
+  --text-body: 0.875rem; /* body, values, buttons, 14px */
+  --text-body--line-height: 1.25rem;
+  --text-meta: 0.75rem; /* labels, metadata, chips, 12px */
+  --text-meta--line-height: 1rem;
+  --text-data: 0.8125rem; /* ids, hashes, versions in mono, 13px */
+  --text-data--line-height: 1.25rem;
+  --text-kpi: 1.5rem; /* a metric strip value, 24px, tabular */
+  --text-kpi--line-height: 2rem;
+  --text-kpi--font-weight: 600;
+
+  /* Page rhythm (research/244). The gap between the blocks of a page
+     (header, tabs, banner, metric strip, list) is owned by <PageStack>, never
+     by a block's own margin: page = 20px between blocks, page-tight = 16px
+     from a header to its tabs and from a toolbar to its table. Classes:
+     gap-page, gap-page-tight. */
+  --spacing-page: 1.25rem;
+  --spacing-page-tight: 1rem;
+
   --radius-sm: calc(var(--radius) - 4px);
   --radius-md: calc(var(--radius) - 2px);
   --radius-lg: var(--radius);
@@ -263,6 +331,22 @@
   --color-sev-medium-ink: var(--sev-medium-ink);
   --color-sev-low-ink: var(--sev-low-ink);
   --color-sev-info-ink: var(--sev-info-ink);
+  --color-prio-0: var(--prio-0);
+  --color-prio-0-bg: var(--prio-0-bg);
+  --color-prio-0-fg: var(--prio-0-fg);
+  --color-prio-0-border: var(--prio-0-border);
+  --color-prio-1: var(--prio-1);
+  --color-prio-1-bg: var(--prio-1-bg);
+  --color-prio-1-fg: var(--prio-1-fg);
+  --color-prio-1-border: var(--prio-1-border);
+  --color-prio-2: var(--prio-2);
+  --color-prio-2-bg: var(--prio-2-bg);
+  --color-prio-2-fg: var(--prio-2-fg);
+  --color-prio-2-border: var(--prio-2-border);
+  --color-prio-3: var(--prio-3);
+  --color-prio-3-bg: var(--prio-3-bg);
+  --color-prio-3-fg: var(--prio-3-fg);
+  --color-prio-3-border: var(--prio-3-border);
   --color-border: var(--border);
   --color-input: var(--input);
   --color-ring: var(--ring);

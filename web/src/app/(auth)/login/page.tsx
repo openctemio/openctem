@@ -2,21 +2,14 @@ import { cookies } from 'next/headers'
 import { redirect } from 'next/navigation'
 import { legalConfig } from '@/lib/legal'
 import { legalSettings } from '@/lib/legal-settings'
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardFooter,
-  CardHeader,
-  CardTitle,
-} from '@/components/ui/card'
+import { Card, CardContent, CardFooter } from '@/components/ui/card'
 import { env } from '@/lib/env'
 import { validateRedirectUrl } from '@/lib/redirect'
 import { hasSessionCookie } from '@/lib/middleware/auth'
 
 // Use refactored LoginForm from features directory
 import { LoginForm } from '@/features/auth/components/login-form'
-import { SignUpPrompt } from '@/features/auth/components/sign-up-prompt'
+import { LoginHeader } from '@/features/auth/components/login-header'
 import { LegalNotice } from '@/features/auth/components/legal-notice'
 import { isInvitationReturnTo } from '@/features/auth/lib/self-register'
 
@@ -87,26 +80,12 @@ export default async function SignIn({ searchParams }: LoginPageProps) {
 
   return (
     <Card className="gap-4">
-      <CardHeader>
-        <CardTitle className="text-lg tracking-tight">Sign in</CardTitle>
-        <CardDescription>
-          Enter your email and password below to <br />
-          log into your account.
-          {/* Sign-up is offered only when the server allows it, or when the
-              visitor came from an invitation (accounts are otherwise created
-              by an administrator). */}
-          <SignUpPrompt returnTo={returnTo} email={params.email} />
-        </CardDescription>
-      </CardHeader>
+      <LoginHeader returnTo={returnTo} email={params.email} />
       <CardContent>
         <LoginForm redirectTo={redirectTo} orgSlug={params.org} reauth={params.reauth === '1'} />
       </CardContent>
       <CardFooter className="justify-center empty:hidden">
-        <LegalNotice
-          action="clicking sign in"
-          termsUrl={legal.termsUrl}
-          privacyUrl={legal.privacyUrl}
-        />
+        <LegalNotice kind="signIn" termsUrl={legal.termsUrl} privacyUrl={legal.privacyUrl} />
       </CardFooter>
     </Card>
   )

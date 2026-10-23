@@ -20,15 +20,3 @@ export function SensorTypeIcon({ type, className }: SensorTypeIconProps) {
   const Icon = SENSOR_TYPE_ICONS[type] || Server
   return <Icon className={cn('h-4 w-4', className)} />
 }
-
-export const SENSOR_TYPE_COLORS: Record<SensorType, string> = {
-  worker: 'bg-blue-500/10 text-blue-600 border-blue-500/30',
-  collector: 'bg-green-500/10 text-green-600 border-green-500/30',
-  sensor: 'bg-orange-500/10 text-orange-600 border-orange-500/30',
-}
-
-export const SENSOR_TYPE_LABELS: Record<SensorType, string> = {
-  worker: 'Worker', // Daemon worker
-  collector: 'Collector', // Asset collector
-  sensor: 'External (EASM)', // legacy type 'sensor': an EASM vantage point
-}

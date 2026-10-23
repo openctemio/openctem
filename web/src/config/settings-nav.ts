@@ -472,7 +472,15 @@ export const settingsNav: SettingsNavGroup[] = [
         url: '/settings/finding-approvals',
         icon: ClipboardCheck,
         permission: Permission.SettingsRead,
-        keywords: ['approval', 'four-eyes', 'false positive', 'accepted risk', 'backup contact'],
+        keywords: [
+          'approval',
+          'approval policy',
+          'four-eyes',
+          'false positive',
+          'accepted risk',
+          'risk acceptance',
+          'backup contact',
+        ],
       },
       {
         id: 'risk-scoring',

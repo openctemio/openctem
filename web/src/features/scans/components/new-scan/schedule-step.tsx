@@ -8,6 +8,7 @@
 
 'use client'
 
+import { useEffect } from 'react'
 import { Button } from '@/components/ui/button'
 import { Label } from '@/components/ui/label'
 import { useTranslation } from '@/context/i18n-provider'
@@ -21,6 +22,7 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { cn } from '@/lib/utils'
+import { Permission, useHasPermission } from '@/lib/permissions'
 import type { NewScanFormData, ScanSchedule, ScheduleFrequency } from '../../types'
 import { FREQUENCY_OPTIONS, DAY_OPTIONS } from '../../types'
 import { schedulePreviewRequestFromForm } from '../../lib/schedule-preview'
@@ -61,6 +63,18 @@ export function ScheduleStep({
   const frequency = schedule.frequency ?? 'weekly'
   const problem = scheduleError(data, { requireFuture: requireFutureRun }, t)
   const later = !schedule.runImmediately && !schedule.saveOnly
+  // Creating a scan needs scans:write, running it needs scans:execute. Without
+  // the second, "Run now" would always end as created-but-refused, so it is
+  // off and the scan is saved without running.
+  const canExecute = useHasPermission(Permission.ScansExecute)
+  const runNowBlocked = !canExecute
+  const { runImmediately } = schedule
+  useEffect(() => {
+    if (runNowBlocked && runImmediately) {
+      onChange({ schedule: { ...schedule, runImmediately: false, saveOnly: offerSaveOnly } })
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- only the blocked default needs correcting
+  }, [runNowBlocked, runImmediately, offerSaveOnly])
 
   // A stored cron or RRULE schedule: shown as it is and kept, unless the
   // user replaces it with one of the frequencies.
@@ -109,14 +123,25 @@ export function ScheduleStep({
           <label
             htmlFor="run-now"
             className={cn(
-              'flex cursor-pointer items-center gap-3 rounded-lg border p-4 transition-colors',
+              'flex items-center gap-3 rounded-lg border p-4 transition-colors',
+              runNowBlocked ? 'cursor-not-allowed opacity-60' : 'cursor-pointer',
               schedule.runImmediately
                 ? 'border-primary bg-primary/5'
                 : 'border-border hover:border-primary/50'
             )}
           >
-            <RadioGroupItem value="now" id="run-now" />
-            <span className="font-medium">{t('scans.schedule.now')}</span>
+            <RadioGroupItem value="now" id="run-now" disabled={runNowBlocked} />
+            <span>
+              <span className="block font-medium">{t('scans.schedule.now')}</span>
+              {runNowBlocked && (
+                <span className="text-muted-foreground block text-xs">
+                  {t(
+                    'scanDetail.newScan.runNowNeedsExecute',
+                    'You can create scans but not run them. Ask an administrator for the scans:execute permission.'
+                  )}
+                </span>
+              )}
+            </span>
           </label>
 
           <div
