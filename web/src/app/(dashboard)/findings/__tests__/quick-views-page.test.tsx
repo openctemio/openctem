@@ -62,6 +62,15 @@ const sourcesCalls: boolean[] = []
 const quickViewsState: { views: Array<{ key: string; count: number; params: string }> } = {
   views: [],
 }
+vi.mock('@/features/findings/filters/contract', async (orig) => ({
+  ...(await orig<typeof import('@/features/findings/filters/contract')>()),
+  useFindingFilterContract: () => ({ contract: undefined, isLoading: false, error: undefined }),
+}))
+vi.mock('@/features/saved-views/api/use-saved-views', async (orig) => ({
+  ...(await orig<typeof import('@/features/saved-views/api/use-saved-views')>()),
+  useSavedViews: () => ({ views: [], error: undefined, isLoading: false, mutate: vi.fn() }),
+}))
+
 vi.mock('@/features/findings/api/use-quick-views', () => ({
   useFindingQuickViews: () => ({ data: { views: quickViewsState.views } }),
   refreshFindingQuickViews: vi.fn(),
