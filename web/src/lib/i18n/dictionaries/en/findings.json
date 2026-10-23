@@ -1394,5 +1394,7 @@
   "findings.list.selectRow": "Select finding {title}",
   "findings.list.kev": "KEV",
   "findings.bulk.assignFailed": "Failed to assign findings",
-  "findings.contextChips.crownJewels": "Crown jewels"
+  "findings.contextChips.crownJewels": "Crown jewels",
+  "findings.approvalDialog.titleDecideAccept": "Accept the risk",
+  "findings.approvalDialog.confirmTitleDecideAccept": "Confirm risk acceptance"
 }
