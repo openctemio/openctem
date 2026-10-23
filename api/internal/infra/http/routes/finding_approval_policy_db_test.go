@@ -273,7 +273,7 @@ func TestApprovalPolicy_SecurityPool_DB(t *testing.T) {
 	owner := h.member(org, "owner")
 	requester, outsider, outsider2, sec := h.member(org, "admin"), h.member(org, "admin"), h.member(org, "admin"), h.member(org, "admin")
 	g := h.group(org, sec)
-	h.expect(owner, http.MethodPut, "/api/v1/organization/settings/finding-approvals/",
+	h.expect(owner, http.MethodPatch, "/api/v1/organization/settings/finding-approvals/",
 		`{"policy":{"security_pool_group_id":"`+g+`"}}`, http.StatusOK)
 
 	high, _ := h.findingOnAsset(org, "high")
@@ -320,10 +320,10 @@ func TestApprovalPolicy_PolicyChanges_DB(t *testing.T) {
 	}
 
 	// Below the floor: refused.
-	h.expect(owner, http.MethodPut, url, `{"policy":{"tiers":{"accepted.high":"peer"}}}`, http.StatusBadRequest)
+	h.expect(owner, http.MethodPatch, url, `{"policy":{"tiers":{"accepted.high":"peer"}}}`, http.StatusBadRequest)
 	// A group of another organization: refused.
 	foreign := h.group(other)
-	h.expect(owner, http.MethodPut, url, `{"policy":{"security_pool_group_id":"`+foreign+`"}}`, http.StatusBadRequest)
+	h.expect(owner, http.MethodPatch, url, `{"policy":{"security_pool_group_id":"`+foreign+`"}}`, http.StatusBadRequest)
 
 	// Relaxing: pending for 24 hours, the stricter policy applies meanwhile.
 	var got struct {
@@ -332,7 +332,7 @@ func TestApprovalPolicy_PolicyChanges_DB(t *testing.T) {
 		PendingPolicyAt *string                            `json:"pending_policy_at"`
 		Floors          map[string]string                  `json:"floors"`
 	}
-	_ = json.Unmarshal([]byte(h.expect(owner, http.MethodPut, url, `{"policy":{"tiers":{"accepted.critical":"security"}}}`, http.StatusOK)), &got)
+	_ = json.Unmarshal([]byte(h.expect(owner, http.MethodPatch, url, `{"policy":{"tiers":{"accepted.critical":"security"}}}`, http.StatusOK)), &got)
 	if got.PendingPolicy == nil || got.PendingPolicy.Tiers["accepted.critical"] != "security" || got.PendingPolicyAt == nil {
 		t.Fatalf("relaxation not pending: %+v", got)
 	}
@@ -354,7 +354,7 @@ func TestApprovalPolicy_PolicyChanges_DB(t *testing.T) {
 	}
 
 	// Tightening is immediate: medium acceptances to dual.
-	h.expect(owner, http.MethodPut, url, `{"policy":{"tiers":{"accepted.critical":"security","accepted.standard":"dual"}}}`, http.StatusOK)
+	h.expect(owner, http.MethodPatch, url, `{"policy":{"tiers":{"accepted.critical":"security","accepted.standard":"dual"}}}`, http.StatusOK)
 	med, _ := h.findingOnAsset(org, "medium")
 	if r := h.requestAccept(admin, med); r.Tier != "dual" {
 		t.Fatalf("tightening not immediate: %s", r.Tier)
@@ -471,7 +471,7 @@ func TestApprovalPolicy_FreshPoolMemberDoesNotCount_DB(t *testing.T) {
 	requester, sec := h.member(org, "admin"), h.member(org, "admin")
 	g := h.group(org)
 	h.exec(`INSERT INTO group_members (group_id, user_id) VALUES ($1, $2)`, g, sec.id) // joined now
-	h.expect(owner, http.MethodPut, "/api/v1/organization/settings/finding-approvals/",
+	h.expect(owner, http.MethodPatch, "/api/v1/organization/settings/finding-approvals/",
 		`{"policy":{"security_pool_group_id":"`+g+`","security_pool_strict":true}}`, http.StatusOK)
 
 	high, _ := h.findingOnAsset(org, "high")
@@ -534,7 +534,7 @@ func TestApprovalPolicy_TicketRequestEndFollowsTheOrganizationCap_DB(t *testing.
 	h := newApprovalPolicyHarness(t)
 	org := h.tenantWithFindings()
 	owner := h.member(org, "owner")
-	h.expect(owner, http.MethodPut, "/api/v1/organization/settings/finding-approvals/",
+	h.expect(owner, http.MethodPatch, "/api/v1/organization/settings/finding-approvals/",
 		`{"policy":{"max_acceptance_days":{"standard":7}}}`, http.StatusOK)
 	low, _ := h.findingOnAsset(org, "low")
 	tid, err := shared.IDFromString(org)
@@ -563,7 +563,7 @@ func TestApprovalSettings_CancelPending_DB(t *testing.T) {
 	org := h.tenantWithFindings()
 	owner, member := h.member(org, "owner"), h.member(org, "member")
 	const path = "/api/v1/organization/settings/finding-approvals/"
-	h.expect(owner, http.MethodPut, path, `{"fp_approval":"off"}`, http.StatusOK)
+	h.expect(owner, http.MethodPatch, path, `{"fp_approval":"off"}`, http.StatusOK)
 	var st struct {
 		FPApproval        string `json:"fp_approval"`
 		PendingFPApproval string `json:"pending_fp_approval"`
@@ -578,10 +578,10 @@ func TestApprovalSettings_CancelPending_DB(t *testing.T) {
 	if st.PendingFPApproval != "off" || st.FPApproval != "all" {
 		t.Fatalf("lowering did not wait: %+v", st)
 	}
-	if code, _ := h.do(member, http.MethodPut, path, `{"cancel_pending":true}`); code != http.StatusForbidden {
+	if code, _ := h.do(member, http.MethodPatch, path, `{"cancel_pending":true}`); code != http.StatusForbidden {
 		t.Fatalf("a member canceled a change: %d", code)
 	}
-	h.expect(owner, http.MethodPut, path, `{"cancel_pending":true}`, http.StatusOK)
+	h.expect(owner, http.MethodPatch, path, `{"cancel_pending":true}`, http.StatusOK)
 	read()
 	if st.PendingFPApproval != "" || st.FPApproval != "all" {
 		t.Fatalf("pending change not canceled: %+v", st)

@@ -424,7 +424,6 @@ func registerVulnerabilityRoutes(
 	router.Group("/api/v1/organization/settings/finding-approvals", func(r Router) {
 		r.GET("/", h.GetFindingApprovalSettings, middleware.Require(permission.FindingsRead))
 		r.PATCH("/", h.UpdateFindingApprovalSettings, middleware.RequireAdmin(), middleware.Require(permission.SettingsWrite), requireStepUp())
-		r.PUT("/", h.UpdateFindingApprovalSettings, middleware.RequireAdmin(), middleware.Require(permission.SettingsWrite), requireStepUp())
 	}, tenantMiddlewares...)
 }
 

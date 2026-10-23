@@ -1394,5 +1394,7 @@
   "findings.list.selectRow": "Chọn phát hiện {title}",
   "findings.list.kev": "KEV",
   "findings.bulk.assignFailed": "Không thể giao các phát hiện",
-  "findings.contextChips.crownJewels": "Tài sản trọng yếu"
+  "findings.contextChips.crownJewels": "Tài sản trọng yếu",
+  "findings.approvalDialog.titleDecideAccept": "Chấp nhận rủi ro",
+  "findings.approvalDialog.confirmTitleDecideAccept": "Xác nhận chấp nhận rủi ro"
 }

@@ -294,8 +294,8 @@ type UpdateFindingApprovalSettingsRequest struct {
 	CancelPending bool `json:"cancel_pending"`
 }
 
-// UpdateFindingApprovalSettings handles PATCH (and, until the web moves,
-// PUT) /organization/settings/finding-approvals: an owner or administrator
+// UpdateFindingApprovalSettings handles PATCH
+// /organization/settings/finding-approvals: an owner or administrator
 // with settings:write and a recent re-authentication. The change is audited
 // at high severity with the values before and after, and the organization's
 // approvers (every owner and administrator among them) are told.
@@ -309,7 +309,6 @@ type UpdateFindingApprovalSettingsRequest struct {
 // @Success      200   {object}  FindingApprovalSettingsResponse
 // @Failure      403   {object}  map[string]string
 // @Router       /organization/settings/finding-approvals [patch]
-// @Router       /organization/settings/finding-approvals [put]
 func (h *VulnerabilityHandler) UpdateFindingApprovalSettings(w http.ResponseWriter, r *http.Request) {
 	if h.approvalSettings == nil {
 		apierror.NotFound("finding approval settings").WriteJSON(w)
