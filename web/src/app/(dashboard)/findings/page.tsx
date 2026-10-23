@@ -1677,6 +1677,7 @@ function FindingsContent() {
     canAssignOne,
     canChangeStatusOne,
     t,
+    locale,
   ])
 
   // ---- Filter model shared by the facet panel, the chips and the metrics ----
