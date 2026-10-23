@@ -68,6 +68,20 @@ describe('RunTimeline', () => {
     expect(getMock).toHaveBeenCalledWith('/api/v1/scan-runs/r1/events')
   })
 
+  it('puts time, task and actor on one metadata line', async () => {
+    getMock.mockResolvedValue({
+      truncated: false,
+      events: [
+        { id: '1', task_id: 'task-aaaa1111', event: 'claimed', platform: true, at: at(5000) },
+      ],
+    })
+    const { container } = fresh(<RunTimeline runId="r3" />)
+    await screen.findByText('Shared sensors')
+    const line = container.querySelector('[data-slot="meta-line"]')
+    expect(line).not.toBeNull()
+    expect(line).toHaveTextContent('Shared sensors')
+  })
+
   it('says when there is nothing yet', async () => {
     getMock.mockResolvedValue({ truncated: false, events: [] })
     fresh(<RunTimeline runId="r2" />)
