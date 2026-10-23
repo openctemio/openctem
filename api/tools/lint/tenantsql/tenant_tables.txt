@@ -95,6 +95,7 @@ dash_asset_rank
 dash_asset_state
 dash_dirty_assets
 dash_fact_status
+dash_ingest_day
 dash_refresh_requests
 dash_snapshots
 dashboard_audience
@@ -125,7 +126,7 @@ finding_evidence
 finding_evidence_secrets
 finding_fingerprints
 finding_group_assignments
-finding_imports
+finding_ingest_actions
 finding_injection_points
 finding_priority_queue
 finding_rekey_runs
@@ -141,6 +142,8 @@ group_asset_scope_rules
 group_role_bindings
 groups
 ingest_jobs
+ingest_receipt_coverage
+ingest_receipts
 ingest_reports
 instance_scan_zone_tenants
 integrations
@@ -159,6 +162,7 @@ notification_outbox
 notification_preferences
 notification_state
 notifications
+operations
 organization_join_requests
 pentest_campaign_checklist_items
 pentest_campaign_checklists

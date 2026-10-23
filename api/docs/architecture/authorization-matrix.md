@@ -209,8 +209,10 @@ check and answers `403 STEP_UP_REQUIRED` (outside the window) or
 `sessions.step_up_at`, server-side and per session. Routes:
 
 - `POST /api/v1/api-keys`, `DELETE /api/v1/api-keys/{id}`
-- `POST /api/v1/scim-tokens`
-- `PATCH /api/v1/tenants/{tenant}/settings/security`
+- `POST /api/v1/scim-tokens`, `POST /api/v1/scim-tokens/{id}/rotate`
+- `PATCH /api/v1/tenants/{tenant}/settings/security` (MFA, IP allowlist, allowed domains)
+- `PATCH /api/v1/tenants/{tenant}/settings/modules`, `POST .../settings/modules/reset`, `POST .../settings/modules/presets/{presetId}/apply`
+- `POST /api/v1/secret-store`, `PUT`/`DELETE /api/v1/secret-store/{id}`, `POST .../{id}/rotate`
 - `POST /api/v1/tenants/{tenant}/settings/sso/changes/{id}/approve`
 - `PUT /api/v1/organization/settings/domains/{domain_id}/signup-policy`
 - `DELETE /api/v1/tenants/{tenant}`
@@ -334,6 +336,7 @@ and SBOM import write it.
 | `POST /api/v1/findings` | `findings:write` |
 | `DELETE /api/v1/findings/{id}` | `findings:delete` (hard delete; the activity timeline goes with the row. An audit event `finding.deleted` is written first with the actor, title, severity, status, source, CVE, asset, fingerprint, tool and the number of activities removed; if that write fails the finding is not deleted) |
 | `PATCH /api/v1/findings/{id}/status` | `findings:status`; moving a finding **out of** an approved false positive or an accepted risk needs `findings:approve` as well (403 otherwise), on this route and on bulk status. A workflow, automation action or ticket webhook cannot move a finding out of a decided status at all (false positive, accepted risk, duplicate; a workflow also not out of resolved) |
+| `GET /api/v1/findings/{id}/duplicate-candidates` (suggestions for "mark duplicate", RFC-121) | `findings:triage`. The finding must be in the caller's tenant and data scope (else 404, also for another tenant's id); candidates are filtered with the findings-list scope rules (asset scope rows, private program assets, pentest member visibility), so neither the list nor `known_since` reveals a finding the caller cannot read. Nothing is merged |
 | `POST /api/v1/findings/{id}/duplicates` (mark the body's finding a duplicate of `{id}`, RFC-043) | `findings:triage`; refused with 409 (whatever the caller holds) when one finding is a false positive or risk acceptance and the other is not, or the two differ, because a merge writes no approval. Both findings must be in the caller's tenant and data scope (else 404) and on the same asset |
 | `POST /api/v1/findings` with `bounty_report`, `PUT /api/v1/findings/{id}/bounty-report` (bug-bounty report fields, RFC-121) | `findings:write`; setting or changing `reward` or `disclosure` also needs `findings:triage` (403 `TRIAGE_PERMISSION_REQUIRED`, nothing written). Only `bug_bounty` findings; the finding (or the asset on create) must be in the caller's tenant and data scope (else 404); a second finding for the same intake and ref is 409. Audited with old and new values |
 | `POST /api/v1/findings/{id}/assign` · `/unassign` · `/actions/assign-to-owners` | `findings:assign` |
@@ -642,7 +645,7 @@ authenticator code, and is audited.
 | Endpoint | Gate |
 |----------|------|
 | `GET /api/v1/scim-tokens` · `GET/PUT /group-mappings` | owner/admin (`RequireAdmin`); a `PUT` that adds, changes or removes a mapping **to admin** is owner only (service check, 403) |
-| `POST /api/v1/scim-tokens` · `DELETE /{id}` | **owner only** (`RequireOwner`); create also needs **step-up** |
+| `POST /api/v1/scim-tokens` · `POST /{id}/rotate` · `DELETE /{id}` | **owner only** (`RequireOwner`); create and rotate also need **step-up** |
 
 > A SCIM token can create, suspend and re-role every member, so minting and
 > revoking one is the owner's decision (owner decision 2026-10-02). Which IdP
@@ -723,7 +726,7 @@ the billing page in the UI.
 | `GET /api/v1/template-sources` · `/{id}` | `scans:sources:read` |
 | `POST /api/v1/template-sources` · `PUT /{id}` · `/{id}/enable` · `/disable` · `/sync` | `scans:sources:write` |
 | `DELETE /api/v1/template-sources/{id}` | `scans:sources:delete` |
-| Secret store `GET` / `POST`,`PUT`,`POST /{id}/rotate` / `DELETE` | `scans:secret_store:read` / `:write` and owner/admin / `:delete` |
+| Secret store `GET` / `POST`,`PUT`,`POST /{id}/rotate` / `DELETE` | `scans:secret_store:read` / `:write` and owner/admin / `:delete`; every write also needs **step-up** |
 
 #### Organization-wide scan configuration
 

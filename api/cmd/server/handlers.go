@@ -1588,7 +1588,7 @@ func newAssetImportHandler(svc *Services, log *logger.Logger) *handler.AssetImpo
 // ctis importers, ingest with the uploader's rights, VEX documents applied
 // under INGEST_VEX.
 func newFindingImportHandler(cfg *config.Config, repos *Repositories, svc *Services, log *logger.Logger) *handler.FindingImportHandler {
-	imp := findingimport.NewService(svc.Ingest, repos.Finding, ingest.ParseVEXMode(cfg.Ingest.VEX), log)
+	imp := findingimport.NewService(svc.Ingest, repos.Finding, repos.IngestReceipt, ingest.ParseVEXMode(cfg.Ingest.VEX), log)
 	return handler.NewFindingImportHandler(imp, svc.DataScope, svc.Audit, log)
 }
 
@@ -1708,7 +1708,7 @@ func newCIHandlers(cfg *config.Config, repos *Repositories, svc *Services, redis
 	}
 	// VEX documents a run uploads: stored on the run repository's findings,
 	// never closing any (the run token is not a person with findings:approve).
-	runner.SetVEXApplier(findingimport.NewService(svc.Ingest, repos.Finding, ingest.ParseVEXMode(cfg.Ingest.VEX), log))
+	runner.SetVEXApplier(findingimport.NewService(svc.Ingest, repos.Finding, repos.IngestReceipt, ingest.ParseVEXMode(cfg.Ingest.VEX), log))
 	// Idempotency-Key on uploads needs the shared store; without Redis the header is ignored.
 	if redisClient != nil {
 		runner.SetIdempotencyStore(redisClient)

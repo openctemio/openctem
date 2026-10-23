@@ -8,6 +8,7 @@ import ScimTokensPage from '@/app/(dashboard)/settings/scim/page'
 const mockMutate = vi.fn()
 const mockCreate = vi.fn()
 const mockRevoke = vi.fn()
+const mockRotate = vi.fn()
 let listData: { tokens: unknown[] } | undefined = { tokens: [] }
 let tenantAdmin = true
 let tenantOwner = true
@@ -20,6 +21,7 @@ vi.mock('@/features/scim-tokens/api/use-scim-tokens', () => ({
   },
   useCreateScimToken: () => ({ trigger: mockCreate, isMutating: false }),
   useRevokeScimToken: () => ({ trigger: mockRevoke, isMutating: false }),
+  useRotateScimToken: () => ({ trigger: mockRotate, isMutating: false }),
 }))
 
 vi.mock('@/lib/permissions', async (importOriginal) => ({
@@ -78,6 +80,7 @@ describe('ScimTokensPage', () => {
     expect(screen.getByText('Okta prod')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: /generate token/i })).toBeDisabled()
     expect(screen.getByRole('button', { name: /revoke okta prod/i })).toBeDisabled()
+    expect(screen.getByRole('button', { name: /rotate okta prod/i })).toBeDisabled()
     expect(
       screen.getAllByLabelText(/only the organization owner can generate or revoke scim tokens/i)
         .length
@@ -126,7 +129,8 @@ describe('ScimTokensPage', () => {
     await user.type(screen.getByLabelText('Name'), 'Okta prod')
     await user.click(screen.getByRole('button', { name: /^generate$/i }))
 
-    expect(mockCreate).toHaveBeenCalledWith({ name: 'Okta prod' })
+    // Every token has a lifetime: 90 days unless another is picked.
+    expect(mockCreate).toHaveBeenCalledWith({ name: 'Okta prod', expires_in_days: 90 })
     // Reveal dialog shows the one-time secret.
     expect(await screen.findByText('oct_scim_SECRETVALUE')).toBeInTheDocument()
     expect(screen.getByText('Copy your SCIM token')).toBeInTheDocument()
@@ -142,5 +146,52 @@ describe('ScimTokensPage', () => {
     await user.click(screen.getByRole('button', { name: /^generate$/i }))
 
     expect(mockCreate).not.toHaveBeenCalled()
+  })
+
+  it('shows an expired token as expired, with its expiry date, and no actions', () => {
+    listData = {
+      tokens: [
+        {
+          id: 't1',
+          name: 'Okta old',
+          prefix: 'oct_scim_ab',
+          status: 'expired',
+          created_at: '2026-01-01T00:00:00Z',
+          expires_at: '2026-04-01T00:00:00Z',
+        },
+      ],
+    }
+    render(<ScimTokensPage />)
+    expect(screen.getByText('Expired')).toBeInTheDocument()
+    expect(
+      screen.getByText(new Date('2026-04-01T00:00:00Z').toLocaleDateString())
+    ).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /rotate okta old/i })).toBeNull()
+    expect(screen.queryByRole('button', { name: /revoke okta old/i })).toBeNull()
+  })
+
+  it('rotates a token and reveals the replacement once', async () => {
+    listData = {
+      tokens: [
+        {
+          id: 't1',
+          name: 'Okta prod',
+          prefix: 'oct_scim_ab',
+          status: 'active',
+          created_at: '2026-06-01T00:00:00Z',
+          expires_at: '2026-12-01T00:00:00Z',
+        },
+      ],
+    }
+    mockRotate.mockResolvedValueOnce({ token: 'oct_scim_REPLACEMENT', replaced_id: 't1' })
+    const user = userEvent.setup()
+    render(<ScimTokensPage />)
+
+    await user.click(screen.getByRole('button', { name: /rotate okta prod/i }))
+    await user.click(await screen.findByRole('button', { name: /^rotate$/i }))
+
+    expect(mockRotate).toHaveBeenCalledWith('t1')
+    expect(await screen.findByText('oct_scim_REPLACEMENT')).toBeInTheDocument()
+    expect(mockMutate).toHaveBeenCalled()
   })
 })

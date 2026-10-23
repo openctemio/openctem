@@ -64,7 +64,7 @@ func TestSCIMTokenHandler_CreateAndRevokeAreAudited(t *testing.T) {
 	}
 
 	w := httptest.NewRecorder()
-	h.Create(w, withAuth(httptest.NewRequest(http.MethodPost, "/api/v1/scim-tokens", strings.NewReader(`{"name":"okta"}`))))
+	h.Create(w, withAuth(httptest.NewRequest(http.MethodPost, "/api/v1/scim-tokens", strings.NewReader(`{"name":"okta","expires_in_days":30}`))))
 	if w.Code != http.StatusCreated {
 		t.Fatalf("create: %d %s", w.Code, w.Body.String())
 	}

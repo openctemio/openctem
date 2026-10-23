@@ -57,6 +57,10 @@ func registerSCIMRoutes(
 			r.GET("/group-mappings", tokenHandler.GetGroupMappings, middleware.RequireAdmin())
 			r.PUT("/group-mappings", tokenHandler.SetGroupMappings, middleware.RequireAdmin(), requireStepUp())
 			r.DELETE("/{id}", tokenHandler.Revoke, middleware.RequireOwner())
+			// Rotation mints a replacement (shown once) and cuts the old
+			// token off within 24 hours: a credential hand-out like minting,
+			// so owner and step-up.
+			r.POST("/{id}/rotate", tokenHandler.Rotate, middleware.RequireOwner(), requireStepUp())
 		}, tenantMiddlewares...)
 	}
 }
