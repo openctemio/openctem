@@ -40,8 +40,8 @@ function jwt(payload: object): string {
 
 describe('proxyBodyPolicy', () => {
   it('streams the import routes up to the API limit of each', () => {
-    expect(proxyBodyPolicy('POST', 'findings/import')).toEqual({ limit: 110 * MiB, stream: true })
-    expect(proxyBodyPolicy('post', 'findings/import/')).toEqual({ limit: 110 * MiB, stream: true })
+    expect(proxyBodyPolicy('POST', 'findings/imports')).toEqual({ limit: 110 * MiB, stream: true })
+    expect(proxyBodyPolicy('post', 'findings/imports/')).toEqual({ limit: 110 * MiB, stream: true })
     expect(proxyBodyPolicy('POST', 'components/import')).toEqual({
       limit: 50 * MiB + 1,
       stream: true,
@@ -56,7 +56,9 @@ describe('proxyBodyPolicy', () => {
   it('keeps every other request at the default, read into memory', () => {
     const def = { limit: DEFAULT_PROXY_BODY_LIMIT, stream: false }
     expect(proxyBodyPolicy('POST', 'attachments')).toEqual(def)
-    expect(proxyBodyPolicy('PUT', 'findings/import')).toEqual(def)
+    expect(proxyBodyPolicy('PUT', 'findings/imports')).toEqual(def)
+    // The old singular route is gone: it gets the default limit.
+    expect(proxyBodyPolicy('POST', 'findings/import')).toEqual(def)
     expect(proxyBodyPolicy('POST', 'findings/import/x')).toEqual(def)
     expect(proxyBodyPolicy('POST', 'x/findings/import')).toEqual(def)
     expect(proxyBodyPolicy('POST', 'pentest/campaigns/not-a-uuid/findings/import')).toEqual(def)
