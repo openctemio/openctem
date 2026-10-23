@@ -9,6 +9,7 @@ import (
 
 	"github.com/openctemio/openctem/api/internal/metrics"
 	"github.com/openctemio/openctem/api/pkg/domain/ingestjob"
+	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/logger"
 )
 
@@ -17,7 +18,7 @@ type IngestJobQueue interface {
 	ClaimBatch(ctx context.Context, workerID string, limit int) ([]*ingestjob.Job, error)
 	Complete(ctx context.Context, id ingestjob.ID, attempts int, result []byte) error
 	Fail(ctx context.Context, id ingestjob.ID, attempts int, errMsg, publicErr string, availableAt time.Time, dead bool) error
-	Renew(ctx context.Context, id ingestjob.ID, attempts int) error
+	Renew(ctx context.Context, tenantID shared.ID, id ingestjob.ID, attempts int) error
 	ReleaseStale(ctx context.Context, olderThan time.Duration) (int, []*ingestjob.Job, error)
 	CountPending(ctx context.Context) (int, error)
 }
@@ -273,7 +274,7 @@ func (c *IngestWorkerController) renewLoop(ctx context.Context, cancel context.C
 		case <-ctx.Done():
 			return
 		case <-t.C:
-			err := c.queue.Renew(ctx, job.ID(), job.Attempts())
+			err := c.queue.Renew(ctx, job.TenantID(), job.ID(), job.Attempts())
 			switch {
 			case err == nil:
 			case errors.Is(err, ingestjob.ErrLeaseLost):

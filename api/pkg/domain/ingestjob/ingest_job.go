@@ -398,7 +398,7 @@ type Repository interface {
 
 	// Renew extends the lease of the attempt the worker is processing
 	// (locked_at = now); ErrLeaseLost when it no longer holds the job.
-	Renew(ctx context.Context, id ID, attempts int) error
+	Renew(ctx context.Context, tenantID shared.ID, id ID, attempts int) error
 
 	// Fail records an error and either reschedules the job for retry at
 	// availableAt (status pending) or marks it dead when retries are

@@ -78,10 +78,14 @@ func TestIngestLease_RenewKeepsTheLease_DB(t *testing.T) {
 	if _, err := db.ExecContext(ctx, `UPDATE ingest_jobs SET locked_at = NOW() - interval '1 hour' WHERE id = $1`, j.ID().String()); err != nil {
 		t.Fatal(err)
 	}
-	if err := repo.Renew(ctx, j.ID(), attempt+1); !errors.Is(err, ingestjob.ErrLeaseLost) {
+	if err := repo.Renew(ctx, j.TenantID(), j.ID(), attempt+1); !errors.Is(err, ingestjob.ErrLeaseLost) {
 		t.Fatalf("Renew with another attempt = %v", err)
 	}
-	if err := repo.Renew(ctx, j.ID(), attempt); err != nil {
+	// Another tenant cannot renew this tenant's lease, even with the right id and attempt.
+	if err := repo.Renew(ctx, newIngestJobTestTenant(t, db), j.ID(), attempt); !errors.Is(err, ingestjob.ErrLeaseLost) {
+		t.Fatalf("cross-tenant Renew = %v", err)
+	}
+	if err := repo.Renew(ctx, j.TenantID(), j.ID(), attempt); err != nil {
 		t.Fatal(err)
 	}
 	if _, dead, err := repo.ReleaseStale(ctx, 5*time.Minute); err != nil || len(mine(dead, tenant)) != 0 {
@@ -94,7 +98,7 @@ func TestIngestLease_RenewKeepsTheLease_DB(t *testing.T) {
 	if err := repo.Complete(ctx, j.ID(), attempt, []byte(`{}`)); err != nil {
 		t.Fatal(err)
 	}
-	if err := repo.Renew(ctx, j.ID(), attempt); !errors.Is(err, ingestjob.ErrLeaseLost) {
+	if err := repo.Renew(ctx, j.TenantID(), j.ID(), attempt); !errors.Is(err, ingestjob.ErrLeaseLost) {
 		t.Fatalf("Renew of a finished job = %v", err)
 	}
 }

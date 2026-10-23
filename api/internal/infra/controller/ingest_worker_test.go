@@ -57,7 +57,7 @@ func (q *stubQueue) Fail(_ context.Context, id ingestjob.ID, _ int, msg, public 
 	q.fails = append(q.fails, failCall{id, msg, public, dead})
 	return nil
 }
-func (q *stubQueue) Renew(_ context.Context, _ ingestjob.ID, _ int) error {
+func (q *stubQueue) Renew(_ context.Context, _ shared.ID, _ ingestjob.ID, _ int) error {
 	q.mu.Lock()
 	defer q.mu.Unlock()
 	q.renews++
