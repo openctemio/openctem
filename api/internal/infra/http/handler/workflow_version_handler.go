@@ -247,7 +247,7 @@ func (h *WorkflowHandler) SetMode(w http.ResponseWriter, r *http.Request) {
 		h.handleValidationError(w, err)
 		return
 	}
-	if _, err := h.service.SetMode(r.Context(), tenantID, userID, workflowID, automation.Mode(req.Mode)); err != nil {
+	if _, err := h.service.ChangeMode(r.Context(), tenantID, userID, workflowID, automation.Mode(req.Mode)); err != nil {
 		h.handleServiceError(w, err)
 		return
 	}

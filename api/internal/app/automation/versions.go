@@ -179,9 +179,9 @@ func (s *WorkflowService) publishDefinition(ctx context.Context, tenantID, userI
 	return &PublishResult{Version: v, Live: true}, nil
 }
 
-// SetMode switches an automation to simulate. Live is reached only by
+// ChangeMode switches an automation to simulate. Live is reached only by
 // publishing (Publish), so the go-live gate cannot be skipped.
-func (s *WorkflowService) SetMode(ctx context.Context, tenantID, userID, workflowID shared.ID, mode automationdom.Mode) (*automationdom.Workflow, error) {
+func (s *WorkflowService) ChangeMode(ctx context.Context, tenantID, userID, workflowID shared.ID, mode automationdom.Mode) (*automationdom.Workflow, error) {
 	if mode != automationdom.ModeSimulate {
 		return nil, shared.NewDomainError("MODE_LIVE_NEEDS_PUBLISH", "an automation goes live by publishing it", shared.ErrValidation)
 	}
