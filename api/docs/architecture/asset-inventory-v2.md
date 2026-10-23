@@ -269,12 +269,22 @@ dependency, monitor only or none, so a card equals the list it opens), the
 unowned, high-risk and first-seen-this-week ones, and the names in the
 review queue.
 
-A lens is a filter too: `/assets?lens=code` (the pills above the list)
-asks the list and stats for `lenses=code`, which matches the stored
+A lens is a filter too: `/assets?lens=code` asks the list and stats for
+`lenses=code`, which matches the stored
 `asset_lens`. It is not a list of types: an alias stored under another
 type's name (a container registry is `storage`/`container_registry`)
 belongs to its own lens. An overview card links to its lens, and its
 high-risk count to `min_risk_score=70`, the threshold of the count.
+
+The lenses are the inventory's quick views: while `/assets` is open, the
+sidebar lists All assets, every lens that holds one of the caller's assets
+and "Other" (types outside every lens, `?types=`) under the Assets row, each
+with its count. The counts come from the same data-scoped `/assets/stats`
+response the list reads, so the sidebar adds no request and a count equals
+the list it opens. The list names the open view and its total in its first
+line. A type is a filter of the view (the Type facet, `?types=`), not a
+second row of pills. The list has no metric strip: its numbers are the
+quick-view counts and the facet counts.
 
 ## Tag filter
 

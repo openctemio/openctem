@@ -24,6 +24,10 @@ type ComponentProcessor struct {
 	logger *slog.Logger
 	// license re-evaluates the license policy on the assets written.
 	license LicenseEvaluator
+	// sink queues the vulnerability matcher for the assets whose packages
+	// changed, so a dependency report is matched in minutes, not at the
+	// daily sweep.
+	sink SoftwareChangeSink
 }
 
 // LicenseEvaluator re-evaluates the organization's license policy on the
@@ -34,6 +38,9 @@ type LicenseEvaluator interface {
 
 // SetLicenseEvaluator wires the license policy evaluation.
 func (p *ComponentProcessor) SetLicenseEvaluator(e LicenseEvaluator) { p.license = e }
+
+// SetSoftwareChangeSink wires the matcher's queue of changed assets.
+func (p *ComponentProcessor) SetSoftwareChangeSink(sink SoftwareChangeSink) { p.sink = sink }
 
 // NewComponentProcessor creates a new component processor.
 func NewComponentProcessor(writer software.PackageWriter, logger *slog.Logger) *ComponentProcessor {
@@ -176,6 +183,7 @@ func (p *ComponentProcessor) ProcessBatch(
 		byAsset[depAssetIDs[i]] = append(byAsset[depAssetIDs[i]], nodes[i])
 	}
 	replace, partial := software.SnapshotMode(channel)
+	var changed []shared.ID
 	for _, assetID := range order {
 		res, err := p.writer.WritePackages(ctx, tenantID, software.PackageSnapshot{
 			AssetID: assetID, Channel: channel, Packages: byAsset[assetID], Replace: replace, Partial: partial,
@@ -187,6 +195,12 @@ func (p *ComponentProcessor) ProcessBatch(
 		}
 		output.ComponentsCreated += res.Versions
 		output.DependenciesLinked += res.Links
+		if PackagesChanged(res) {
+			changed = append(changed, assetID)
+		}
+	}
+	if p.sink != nil && len(changed) > 0 {
+		p.sink.SoftwareChanged(tenantID, changed)
 	}
 	if p.license != nil {
 		if _, err := p.license.EvaluateAssets(ctx, tenantID, order); err != nil {
@@ -194,6 +208,13 @@ func (p *ComponentProcessor) ProcessBatch(
 		}
 	}
 	return nil
+}
+
+// PackagesChanged reports whether a package write linked, removed or
+// superseded anything: the asset's inventory may now match other
+// vulnerabilities.
+func PackagesChanged(res software.PackageWriteResult) bool {
+	return res.Links > 0 || res.Removed > 0 || res.Superseded > 0
 }
 
 // resolveDepAssetIDs returns, index-aligned with report.Dependencies, the
