@@ -181,7 +181,7 @@ function AddFilter({
           <Plus className="size-3" aria-hidden />
           {t('assets.filters.add', 'Add filter')}
           <kbd
-            className="ms-1 rounded border px-1 font-sans text-[10px] text-muted-foreground"
+            className="ms-1 rounded border px-1 font-sans text-xs text-muted-foreground"
             aria-hidden
           >
             f
