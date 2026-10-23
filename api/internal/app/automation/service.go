@@ -447,6 +447,14 @@ func (s *WorkflowService) UpdateWorkflowGraph(ctx context.Context, input UpdateW
 		w.DisabledReason = ""
 	}
 
+	// A request waiting for approval is withdrawn before the graph is
+	// replaced by one that does something else (withdrawRequestIfChanged).
+	if s.versions != nil && s.draftDigest(ctx, input.TenantID, input.WorkflowID) != graphInputsDigest(w, input.Nodes, input.Edges) {
+		if err := s.versions.RetirePending(ctx, input.TenantID, input.WorkflowID); err != nil {
+			return nil, err
+		}
+	}
+
 	// Delete existing edges first (FK constraint)
 	if err := s.edgeRepo.DeleteByWorkflowID(ctx, input.WorkflowID); err != nil {
 		return nil, fmt.Errorf("failed to delete existing edges: %w", err)
@@ -586,6 +594,7 @@ func (s *WorkflowService) AddNode(ctx context.Context, input AddNodeInput) (*aut
 	if err := validateNodeConfigs(input.Config); err != nil {
 		return nil, err
 	}
+	before := s.draftDigest(ctx, input.TenantID, input.WorkflowID)
 
 	node, err := automationdom.NewNode(w.ID, input.NodeKey, input.NodeType, input.Name)
 	if err != nil {
@@ -597,6 +606,9 @@ func (s *WorkflowService) AddNode(ctx context.Context, input AddNodeInput) (*aut
 
 	if err := s.nodeRepo.Create(ctx, node); err != nil {
 		return nil, fmt.Errorf("failed to create node: %w", err)
+	}
+	if err := s.withdrawRequestIfChanged(ctx, input.TenantID, input.WorkflowID, before); err != nil {
+		return nil, err
 	}
 
 	return node, nil
@@ -631,6 +643,7 @@ func (s *WorkflowService) UpdateNode(ctx context.Context, input UpdateNodeInput)
 	if node.WorkflowID != input.WorkflowID {
 		return nil, shared.ErrNotFound
 	}
+	before := s.draftDigest(ctx, input.TenantID, input.WorkflowID)
 
 	if input.Name != nil {
 		node.Name = *input.Name
@@ -650,6 +663,9 @@ func (s *WorkflowService) UpdateNode(ctx context.Context, input UpdateNodeInput)
 
 	if err := s.nodeRepo.Update(ctx, node); err != nil {
 		return nil, fmt.Errorf("failed to update node: %w", err)
+	}
+	if err := s.withdrawRequestIfChanged(ctx, input.TenantID, input.WorkflowID, before); err != nil {
+		return nil, err
 	}
 
 	return node, nil
@@ -671,8 +687,12 @@ func (s *WorkflowService) DeleteNode(ctx context.Context, tenantID, _, workflowI
 	if node.WorkflowID != workflowID {
 		return shared.ErrNotFound
 	}
+	before := s.draftDigest(ctx, tenantID, workflowID)
 
-	return s.nodeRepo.Delete(ctx, nodeID)
+	if err := s.nodeRepo.Delete(ctx, nodeID); err != nil {
+		return err
+	}
+	return s.withdrawRequestIfChanged(ctx, tenantID, workflowID, before)
 }
 
 // --------------------------------------------------------------------------
@@ -725,9 +745,13 @@ func (s *WorkflowService) AddEdge(ctx context.Context, input AddEdgeInput) (*aut
 	if err := full.ValidateNewEdge(edge); err != nil {
 		return nil, err
 	}
+	before := automationdom.DefinitionOf(full).Digest()
 
 	if err := s.edgeRepo.Create(ctx, edge); err != nil {
 		return nil, fmt.Errorf("failed to create edge: %w", err)
+	}
+	if err := s.withdrawRequestIfChanged(ctx, input.TenantID, input.WorkflowID, before); err != nil {
+		return nil, err
 	}
 
 	return edge, nil
@@ -749,8 +773,12 @@ func (s *WorkflowService) DeleteEdge(ctx context.Context, tenantID, _, workflowI
 	if edge.WorkflowID != workflowID {
 		return shared.ErrNotFound
 	}
+	before := s.draftDigest(ctx, tenantID, workflowID)
 
-	return s.edgeRepo.Delete(ctx, edgeID)
+	if err := s.edgeRepo.Delete(ctx, edgeID); err != nil {
+		return err
+	}
+	return s.withdrawRequestIfChanged(ctx, tenantID, workflowID, before)
 }
 
 // --------------------------------------------------------------------------
@@ -1011,6 +1039,20 @@ func validateGraphInputs(nodes []CreateNodeInput, edges []CreateEdgeInput) error
 		trial.Edges = append(trial.Edges, edge)
 	}
 	return trial.ValidateGraph()
+}
+
+// graphInputsDigest is the digest w would have with the given graph.
+func graphInputsDigest(w *automationdom.Workflow, nodes []CreateNodeInput, edges []CreateEdgeInput) string {
+	trial := *w
+	trial.Nodes, trial.Edges = nil, nil
+	for _, n := range nodes {
+		trial.Nodes = append(trial.Nodes, &automationdom.Node{NodeKey: n.NodeKey, NodeType: n.NodeType, Name: n.Name, Config: n.Config})
+	}
+	for _, e := range edges {
+		trial.Edges = append(trial.Edges, &automationdom.Edge{SourceNodeKey: e.SourceNodeKey, TargetNodeKey: e.TargetNodeKey,
+			SourceHandle: e.SourceHandle, Label: e.Label})
+	}
+	return automationdom.DefinitionOf(&trial).Digest()
 }
 
 // validateSupportedNodeInputs refuses node inputs that use a trigger or action
