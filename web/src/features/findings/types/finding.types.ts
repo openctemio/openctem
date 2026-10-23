@@ -7,8 +7,9 @@
 import type { FindingLocation } from '@/features/findings/lib/finding-location'
 
 import type { Severity } from '@/features/shared/types'
-import { SEVERITY_BADGE_SOFT, type SeverityLevel } from '@/lib/severity-colors'
+import { severityStyleParts } from '@/lib/severity-colors'
 import type { CriticalityLevel } from '@/lib/criticality'
+import type { PriorityClass } from '@/lib/priority-colors'
 
 // ============================================
 // FINDING STATUS (Workflow-based)
@@ -51,58 +52,62 @@ export interface StatusConfig {
   showExpiration?: boolean
 }
 
+/**
+ * Status pills use neutral and state tokens only: severity hues belong to
+ * severity, priority has its own box, teal is the act-here accent.
+ */
 export const FINDING_STATUS_CONFIG: Record<FindingStatus, StatusConfig> = {
   new: {
     label: 'New',
     labelKey: 'findings.status.new',
-    color: 'border-blue-500/50',
-    bgColor: 'bg-blue-500/20',
-    textColor: 'text-blue-400',
+    color: 'border-primary/30',
+    bgColor: 'bg-primary/10',
+    textColor: 'text-foreground',
     icon: 'circle-dot',
     category: 'open',
   },
   confirmed: {
     label: 'Confirmed',
     labelKey: 'findings.status.confirmed',
-    color: 'border-orange-500/50',
-    bgColor: 'bg-orange-500/20',
-    textColor: 'text-orange-400',
+    color: 'border-primary/30',
+    bgColor: 'bg-primary/10',
+    textColor: 'text-foreground',
     icon: 'check-circle',
     category: 'open',
   },
   in_progress: {
     label: 'In Progress',
     labelKey: 'findings.status.in_progress',
-    color: 'border-yellow-500/50',
-    bgColor: 'bg-yellow-500/20',
-    textColor: 'text-yellow-400',
+    color: 'border-primary/40',
+    bgColor: 'bg-primary/15',
+    textColor: 'text-foreground',
     icon: 'loader',
     category: 'in_progress',
   },
   fix_applied: {
     label: 'Fix Applied',
     labelKey: 'findings.status.fix_applied',
-    color: 'border-yellow-600/50',
-    bgColor: 'bg-yellow-600/20',
-    textColor: 'text-yellow-500',
+    color: 'border-primary/40',
+    bgColor: 'bg-primary/15',
+    textColor: 'text-foreground',
     icon: 'wrench',
     category: 'in_progress',
   },
   resolved: {
     label: 'Resolved',
     labelKey: 'findings.status.resolved',
-    color: 'border-emerald-500/50',
-    bgColor: 'bg-emerald-500/20',
-    textColor: 'text-emerald-400',
+    color: 'border-success/40',
+    bgColor: 'bg-success/15',
+    textColor: 'text-success',
     icon: 'check-square',
     category: 'closed',
   },
   false_positive: {
     label: 'False Positive',
     labelKey: 'findings.status.false_positive',
-    color: 'border-slate-500/50',
-    bgColor: 'bg-slate-500/20',
-    textColor: 'text-slate-400',
+    color: 'border-border',
+    bgColor: 'bg-muted',
+    textColor: 'text-muted-foreground',
     icon: 'x-circle',
     category: 'closed',
     requiresApproval: true,
@@ -110,9 +115,9 @@ export const FINDING_STATUS_CONFIG: Record<FindingStatus, StatusConfig> = {
   accepted: {
     label: 'Risk Accepted',
     labelKey: 'findings.status.accepted',
-    color: 'border-amber-500/50',
-    bgColor: 'bg-amber-500/20',
-    textColor: 'text-amber-400',
+    color: 'border-warning/40',
+    bgColor: 'bg-warning/15',
+    textColor: 'text-warning',
     icon: 'alert-triangle',
     category: 'closed',
     requiresApproval: true,
@@ -121,9 +126,9 @@ export const FINDING_STATUS_CONFIG: Record<FindingStatus, StatusConfig> = {
   duplicate: {
     label: 'Duplicate',
     labelKey: 'findings.status.duplicate',
-    color: 'border-slate-500/50',
-    bgColor: 'bg-slate-500/20',
-    textColor: 'text-slate-400',
+    color: 'border-border',
+    bgColor: 'bg-muted',
+    textColor: 'text-muted-foreground',
     icon: 'copy',
     category: 'closed',
   },
@@ -131,18 +136,18 @@ export const FINDING_STATUS_CONFIG: Record<FindingStatus, StatusConfig> = {
   draft: {
     label: 'Draft',
     labelKey: 'findings.status.draft',
-    color: 'border-gray-500/50',
-    bgColor: 'bg-gray-500/20',
-    textColor: 'text-gray-400',
+    color: 'border-primary/30',
+    bgColor: 'bg-primary/10',
+    textColor: 'text-foreground',
     icon: 'file-edit',
     category: 'open',
   },
   in_review: {
     label: 'In Review',
     labelKey: 'findings.status.in_review',
-    color: 'border-blue-500/50',
-    bgColor: 'bg-blue-500/20',
-    textColor: 'text-blue-400',
+    color: 'border-primary/30',
+    bgColor: 'bg-primary/10',
+    textColor: 'text-foreground',
     icon: 'eye',
     category: 'open',
   },
@@ -178,25 +183,7 @@ export function requiresApproval(status: FindingStatus): boolean {
 // SEVERITY
 // ============================================
 
-/**
- * Split a centralized soft-tint palette entry into the discrete color fields
- * this config exposes. Keeps colors sourced from `@/lib/severity-colors` so the
- * app stays visually consistent (and `low` stays canonical blue, not green).
- */
-function softSeverityStyles(level: SeverityLevel): {
-  color: string
-  bgColor: string
-  textColor: string
-} {
-  const tokens = SEVERITY_BADGE_SOFT[level].split(' ')
-  const pick = (...prefixes: string[]): string =>
-    tokens.filter((t) => prefixes.some((p) => t.startsWith(p))).join(' ')
-  return {
-    color: pick('border-', 'dark:border-'),
-    bgColor: pick('bg-', 'dark:bg-'),
-    textColor: pick('text-', 'dark:text-'),
-  }
-}
+const softSeverityStyles = severityStyleParts
 
 export const SEVERITY_CONFIG: Record<
   Severity,
@@ -223,46 +210,23 @@ export const SEVERITY_CONFIG: Record<
 // The remediation window of each class is the organization's SLA policy,
 // read from the API (features/sla PriorityClassSla); it is not kept here.
 
-export type PriorityClass = 'P0' | 'P1' | 'P2' | 'P3'
+export type { PriorityClass }
 
+/**
+ * Label and meaning of each class. Colour is not here: it is the one priority
+ * token set in `@/lib/priority-colors` (rendered by `PriorityBadge`).
+ */
 export const PRIORITY_CLASS_CONFIG: Record<
   PriorityClass,
   {
     label: string
     description: string
-    color: string
-    bgColor: string
-    textColor: string
   }
 > = {
-  P0: {
-    label: 'P0',
-    description: 'Immediate — actively exploited, reachable',
-    color: 'border-red-600/70',
-    bgColor: 'bg-red-600/20',
-    textColor: 'text-red-500',
-  },
-  P1: {
-    label: 'P1',
-    description: 'Urgent — high exploit probability, reachable',
-    color: 'border-orange-500/70',
-    bgColor: 'bg-orange-500/20',
-    textColor: 'text-orange-500',
-  },
-  P2: {
-    label: 'P2',
-    description: 'Scheduled — moderate risk or compensating controls',
-    color: 'border-yellow-500/70',
-    bgColor: 'bg-yellow-500/20',
-    textColor: 'text-yellow-500',
-  },
-  P3: {
-    label: 'P3',
-    description: 'Track — low risk, fix opportunistically',
-    color: 'border-slate-500/70',
-    bgColor: 'bg-slate-500/20',
-    textColor: 'text-slate-400',
-  },
+  P0: { label: 'P0', description: 'Immediate — actively exploited, reachable' },
+  P1: { label: 'P1', description: 'Urgent — high exploit probability, reachable' },
+  P2: { label: 'P2', description: 'Scheduled — moderate risk or compensating controls' },
+  P3: { label: 'P3', description: 'Track — low risk, fix opportunistically' },
 }
 
 // ============================================

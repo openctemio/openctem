@@ -28,6 +28,8 @@ import {
 } from '@/features/account'
 import type { UpdatePreferencesInput } from '@/features/account'
 
+const THEME_FALLBACK = { light: 'Light', dark: 'Dark', system: 'System' } as const
+
 export default function PreferencesPage() {
   const { t } = useTranslation()
   const { theme, setTheme } = useTheme()
@@ -108,9 +110,11 @@ export default function PreferencesPage() {
       // reset this form to its defaults (23a B4).
       await mutate()
       setHasChanges(false)
-      toast.success('Preferences saved successfully')
+      toast.success(t('account.preferences.saved', 'Preferences saved'))
     } catch (error) {
-      toast.error(getErrorMessage(error, 'Failed to save preferences'))
+      toast.error(
+        getErrorMessage(error, t('account.preferences.saveFailed', 'Could not save preferences'))
+      )
     }
   }
 
@@ -126,7 +130,7 @@ export default function PreferencesPage() {
     setFormData(defaults)
     setTheme('system')
     setHasChanges(true)
-    toast.info('Preferences reset to defaults (unsaved)')
+    toast.info(t('account.preferences.resetDone', 'Preferences reset to defaults (not saved yet)'))
   }
 
   // Loading state
@@ -147,7 +151,7 @@ export default function PreferencesPage() {
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <Palette className="h-5 w-5" />
-            Appearance
+            {t('account.preferences.appearance', 'Appearance')}
           </CardTitle>
           <CardDescription>
             {t(
@@ -158,24 +162,30 @@ export default function PreferencesPage() {
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="space-y-2">
-            <Label>Theme</Label>
-            <div className="flex gap-2">
-              {(['light', 'dark', 'system'] as const).map((t) => (
+            <Label id="theme-label">{t('account.preferences.theme', 'Theme')}</Label>
+            <div className="flex gap-2" role="group" aria-labelledby="theme-label">
+              {(['light', 'dark', 'system'] as const).map((mode) => (
                 <Button
-                  key={t}
-                  variant={formData.theme === t ? 'default' : 'outline'}
+                  key={mode}
+                  variant={formData.theme === mode ? 'default' : 'outline'}
                   size="sm"
-                  onClick={() => handleChange('theme', t)}
+                  aria-pressed={formData.theme === mode}
+                  onClick={() => handleChange('theme', mode)}
                   className="flex-1"
                 >
-                  {t.charAt(0).toUpperCase() + t.slice(1)}
+                  {t(`account.preferences.theme.${mode}`, THEME_FALLBACK[mode])}
                 </Button>
               ))}
             </div>
             <p className="text-xs text-muted-foreground">
               {formData.theme === 'system'
-                ? 'Automatically switch based on your system settings'
-                : `Always use ${formData.theme} mode`}
+                ? t(
+                    'account.preferences.theme.systemHint',
+                    'Automatically switch based on your system settings'
+                  )
+                : formData.theme === 'dark'
+                  ? t('account.preferences.theme.darkHint', 'Always use dark mode')
+                  : t('account.preferences.theme.lightHint', 'Always use light mode')}
             </p>
           </div>
         </CardContent>
@@ -186,9 +196,14 @@ export default function PreferencesPage() {
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <Globe className="h-5 w-5" />
-            Localization
+            {t('account.preferences.localization', 'Localization')}
           </CardTitle>
-          <CardDescription>Timezone and date format preferences</CardDescription>
+          <CardDescription>
+            {t(
+              'account.preferences.localizationDescription',
+              'Timezone and date format preferences'
+            )}
+          </CardDescription>
         </CardHeader>
         <CardContent className="space-y-6">
           <div className="grid gap-4 sm:grid-cols-2">
@@ -198,7 +213,7 @@ export default function PreferencesPage() {
             <div className="space-y-2">
               <Label htmlFor="timezone" className="flex items-center gap-2">
                 <Clock className="h-4 w-4" />
-                Timezone
+                {t('account.preferences.timezone', 'Timezone')}
               </Label>
               <Select
                 value={formData.timezone}
@@ -225,7 +240,7 @@ export default function PreferencesPage() {
             <div className="space-y-2">
               <Label htmlFor="date-format" className="flex items-center gap-2">
                 <Calendar className="h-4 w-4" />
-                Date Format
+                {t('account.preferences.dateFormat', 'Date format')}
               </Label>
               <Select
                 value={formData.date_format}
@@ -246,7 +261,9 @@ export default function PreferencesPage() {
 
             {/* Time Format */}
             <div className="space-y-2">
-              <Label htmlFor="time-format">Time Format</Label>
+              <Label htmlFor="time-format">
+                {t('account.preferences.timeFormat', 'Time format')}
+              </Label>
               <Select
                 value={formData.time_format}
                 onValueChange={(value) => handleChange('time_format', value as '12h' | '24h')}
@@ -255,8 +272,12 @@ export default function PreferencesPage() {
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="24h">24-hour (14:30)</SelectItem>
-                  <SelectItem value="12h">12-hour (2:30 PM)</SelectItem>
+                  <SelectItem value="24h">
+                    {t('account.preferences.time24', '24-hour (14:30)')}
+                  </SelectItem>
+                  <SelectItem value="12h">
+                    {t('account.preferences.time12', '12-hour (2:30 PM)')}
+                  </SelectItem>
                 </SelectContent>
               </Select>
             </div>
@@ -268,7 +289,7 @@ export default function PreferencesPage() {
       <div className="flex justify-between">
         <Button variant="outline" onClick={handleReset}>
           <RotateCcw className="me-2 h-4 w-4" />
-          Reset to Defaults
+          {t('account.preferences.reset', 'Reset to defaults')}
         </Button>
         <Button onClick={handleSave} disabled={!hasChanges || isUpdating}>
           {isUpdating ? (
@@ -276,7 +297,9 @@ export default function PreferencesPage() {
           ) : (
             <Save className="me-2 h-4 w-4" />
           )}
-          {isUpdating ? 'Saving...' : 'Save Preferences'}
+          {isUpdating
+            ? t('account.saving', 'Saving...')
+            : t('account.preferences.save', 'Save preferences')}
         </Button>
       </div>
     </div>

@@ -14,8 +14,8 @@ export interface SectionTab {
   href: string
   /** Optional icon shown before the label. */
   icon?: React.ElementType
-  /** Optional: also mark active when the pathname starts with this prefix. */
-  matchPrefix?: string
+  /** Optional: also mark active when the pathname starts with this prefix (or any of these). */
+  matchPrefix?: string | readonly string[]
   /**
    * Module the tab's route needs. Tabs of one section can belong to different
    * modules (Business context: Crown jewels | Services | Units); render those
@@ -55,7 +55,9 @@ export function SectionTabs({ tabs, className, label = 'Sections', counts }: Sec
 
   const matches = (tab: SectionTab) =>
     pathname === tab.href ||
-    (tab.matchPrefix ? pathname.startsWith(tab.matchPrefix) : false) ||
+    (typeof tab.matchPrefix === 'string'
+      ? pathname.startsWith(tab.matchPrefix)
+      : (tab.matchPrefix?.some((p) => pathname.startsWith(p)) ?? false)) ||
     pathname.startsWith(`${tab.href}/`)
   const active = tabs.filter(matches).sort((a, b) => b.href.length - a.href.length)[0]?.href
 

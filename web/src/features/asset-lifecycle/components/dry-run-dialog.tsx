@@ -18,6 +18,7 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { getErrorMessage } from '@/lib/api/error-handler'
 import { useTenant } from '@/context/tenant-provider'
+import { useTranslation } from '@/context/i18n-provider'
 import { runAssetLifecycleDryRun } from '../api'
 import type { LifecycleRunReport } from '../types'
 
@@ -33,6 +34,7 @@ interface DryRunDialogProps {
 }
 
 export function DryRunDialog({ open, onOpenChange, onSuccess }: DryRunDialogProps) {
+  const { t } = useTranslation()
   const { currentTenant } = useTenant()
   const [report, setReport] = React.useState<LifecycleRunReport | null>(null)
   const [loading, setLoading] = React.useState(false)
@@ -73,19 +75,23 @@ export function DryRunDialog({ open, onOpenChange, onSuccess }: DryRunDialogProp
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <PlayCircle className="h-5 w-5" />
-            Lifecycle dry-run
+            {t('settings.assetLifecycle.dialog.title', 'Lifecycle dry run')}
           </DialogTitle>
           <DialogDescription>
-            Evaluates the current thresholds against live data without writing any status changes.
-            Use this to preview impact before enabling the feature or after changing thresholds.
+            {t(
+              'settings.assetLifecycle.dialog.description',
+              'Evaluates the current thresholds against live data without writing any status changes. Use this to preview impact before enabling the feature or after changing thresholds.'
+            )}
           </DialogDescription>
         </DialogHeader>
 
         <DialogBody className="grid gap-4">
           {!report && !loading && !error && (
             <div className="py-4 text-sm text-muted-foreground">
-              Click <span className="font-medium">Run now</span> to preview how many assets would
-              transition with your current settings.
+              {t(
+                'settings.assetLifecycle.dialog.prompt',
+                'Select Run now to preview how many assets would transition with your current settings.'
+              )}
             </div>
           )}
 
@@ -101,7 +107,9 @@ export function DryRunDialog({ open, onOpenChange, onSuccess }: DryRunDialogProp
           {error && (
             <Alert variant="destructive">
               <AlertTriangle className="h-4 w-4" />
-              <AlertTitle>Dry-run failed</AlertTitle>
+              <AlertTitle>
+                {t('settings.assetLifecycle.dialog.failed', 'Dry run failed')}
+              </AlertTitle>
               <AlertDescription>{error}</AlertDescription>
             </Alert>
           )}
@@ -110,23 +118,38 @@ export function DryRunDialog({ open, onOpenChange, onSuccess }: DryRunDialogProp
             <div className="space-y-4">
               <Alert>
                 <CheckCircle2 className="h-4 w-4" />
-                <AlertTitle>Dry-run complete</AlertTitle>
+                <AlertTitle>
+                  {t('settings.assetLifecycle.dialog.complete', 'Dry run complete')}
+                </AlertTitle>
                 <AlertDescription>
-                  Finished in {durationSeconds(report)}s. Nothing was written. Review the counts
-                  below before enabling the feature.
+                  {t(
+                    'settings.assetLifecycle.dialog.completeHint',
+                    'Finished in {seconds}s. Nothing was written. Review the counts below before enabling the feature.',
+                    { seconds: durationSeconds(report) }
+                  )}
                 </AlertDescription>
               </Alert>
 
               <div className="grid grid-cols-2 gap-3">
                 <StatBox
-                  label="Would be flagged stale"
+                  label={t('settings.assetLifecycle.dialog.wouldStale', 'Would be flagged stale')}
                   value={report.transitioned_to_stale.toLocaleString()}
                   emphasize={report.transitioned_to_stale > 0}
                 />
-                <StatBox label="Stale threshold" value={`${report.stale_threshold_days}d`} />
-                <StatBox label="Grace period" value={`${report.grace_period_days}d`} />
                 <StatBox
-                  label="Excluded source types"
+                  label={t('settings.assetLifecycle.dialog.staleThreshold', 'Stale threshold')}
+                  value={t('settings.assetLifecycle.dialog.daysShort', '{count}d', {
+                    count: report.stale_threshold_days,
+                  })}
+                />
+                <StatBox
+                  label={t('settings.assetLifecycle.dialog.gracePeriod', 'Grace period')}
+                  value={t('settings.assetLifecycle.dialog.daysShort', '{count}d', {
+                    count: report.grace_period_days,
+                  })}
+                />
+                <StatBox
+                  label={t('settings.assetLifecycle.excludedTypes', 'Excluded source types')}
                   value={report.excluded_source_types.join(', ') || '—'}
                 />
               </div>
@@ -134,10 +157,16 @@ export function DryRunDialog({ open, onOpenChange, onSuccess }: DryRunDialogProp
               {report.skipped && (
                 <Alert>
                   <AlertTriangle className="h-4 w-4" />
-                  <AlertTitle>Tenant skipped</AlertTitle>
+                  <AlertTitle>
+                    {t('settings.assetLifecycle.dialog.skipped', 'Organization skipped')}
+                  </AlertTitle>
                   <AlertDescription>
-                    Reason: <span className="font-mono">{report.skip_reason}</span>. When the worker
-                    runs live the same condition will cause it to no-op.
+                    {t('settings.assetLifecycle.dialog.reason', 'Reason:')}{' '}
+                    <span className="font-mono">{report.skip_reason}</span>.{' '}
+                    {t(
+                      'settings.assetLifecycle.dialog.skippedHint',
+                      'When the worker runs live, the same condition makes it do nothing.'
+                    )}
                   </AlertDescription>
                 </Alert>
               )}
@@ -145,7 +174,11 @@ export function DryRunDialog({ open, onOpenChange, onSuccess }: DryRunDialogProp
               {report.affected_asset_ids && report.affected_asset_ids.length > 0 && (
                 <div className="space-y-2">
                   <p className="text-sm font-medium">
-                    Sample affected assets ({report.affected_asset_ids.length} of up to 100):
+                    {t(
+                      'settings.assetLifecycle.dialog.sample',
+                      'Sample affected assets ({count} of up to 100):',
+                      { count: report.affected_asset_ids.length }
+                    )}
                   </p>
                   <div className="flex max-h-24 flex-wrap gap-1 overflow-y-auto rounded border bg-muted/30 p-2">
                     {report.affected_asset_ids.map((id) => (
@@ -162,10 +195,12 @@ export function DryRunDialog({ open, onOpenChange, onSuccess }: DryRunDialogProp
 
         <DialogFooter>
           <Button variant="outline" onClick={() => onOpenChange(false)}>
-            Close
+            {t('settings.assetLifecycle.dialog.close', 'Close')}
           </Button>
           <Button onClick={() => void handleRun()} disabled={loading}>
-            {report ? 'Run again' : 'Run now'}
+            {report
+              ? t('settings.assetLifecycle.dialog.runAgain', 'Run again')
+              : t('settings.assetLifecycle.dialog.runNow', 'Run now')}
           </Button>
         </DialogFooter>
       </DialogContent>

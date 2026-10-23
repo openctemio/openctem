@@ -26,5 +26,6 @@
   "help.about.loading": "Đang tải phiên bản",
   "help.shortcut.next-finding": "Mở phát hiện tiếp theo trong danh sách",
   "help.shortcut.previous-finding": "Mở phát hiện trước đó trong danh sách",
-  "help.shortcut.add-filter": "Thêm bộ lọc (danh sách phát hiện)"
+  "help.shortcut.add-filter": "Thêm bộ lọc (danh sách phát hiện)",
+  "help.shortcut.triage": "Mở các phát hiện cần phân loại"
 }
