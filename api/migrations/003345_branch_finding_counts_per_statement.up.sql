@@ -21,6 +21,11 @@
 -- data is rewritten. The counters stay correct through the switch (the
 -- recount reads the table, not a delta).
 
+-- DROP TRIGGER takes an ACCESS EXCLUSIVE lock on findings (no rewrite, held
+-- for the length of this transaction only). Fail fast instead of queueing
+-- every read of findings behind a long-running query.
+SET LOCAL lock_timeout = '5s';
+
 -- Recounts the given branches. Rows whose repository is gone (the cascade of
 -- a tenant delete) are left alone, as before.
 CREATE OR REPLACE FUNCTION refresh_branch_finding_counts(p_branch_ids uuid[]) RETURNS void
