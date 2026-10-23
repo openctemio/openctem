@@ -142,11 +142,13 @@ group_asset_scope_rules
 group_role_bindings
 groups
 idempotency_keys
-ingest_jobs
-ingest_payloads
-ingest_receipt_coverage
 import_mapping_versions
 import_mappings
+ingest_jobs
+ingest_payloads
+ingest_policy_versions
+ingest_receipt_coverage
+ingest_receipt_items
 ingest_receipts
 ingest_reports
 instance_scan_zone_tenants
