@@ -769,7 +769,10 @@ that finding is decided now (`accept_approval`, `can_decide_alone`).
 The sole member's own approval works for false positives and, under a risk
 acceptance level of `high_and_above` or `off`, for accepted risks (the end is
 cut to `vulnerability.SoloAcceptanceLimit`); under `all` an accepted risk waits
-for a second member. The rule is checked again inside the write transaction
+for a second member. The only member never accepts a risk through the
+single-person path, whatever the level: nobody else would see it, so the
+request waits for this self-approval (code, reason, shorter end). The rule is
+checked again inside the write transaction
 (`recheckSoloApproval`: still the only active person and an owner, and for an
 accepted risk the level still `high_and_above` or `off`), so a member who joined
 or a level raised after the service's check refuses it.

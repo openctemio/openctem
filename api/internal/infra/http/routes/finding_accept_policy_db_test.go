@@ -381,7 +381,9 @@ func TestFindingAcceptPolicy_DigestAndMaterialChange_DB(t *testing.T) {
 // risk stays pending (refused before any code is spent); under
 // high_and_above a material acceptance (which waits for a second person)
 // can be approved by its requester with an authenticator code, and its end
-// is cut to the self-approval limit; under off it applies at once.
+// is cut to the self-approval limit; under off it still waits for that
+// self-approval (nobody else would ever see a risk the only member accepts
+// alone), while a member of a larger organization decides alone under off.
 func TestFindingAcceptPolicy_SoleMemberNotBlocked_DB(t *testing.T) {
 	h := newSoloHarness(t)
 	org := h.tenantWithFindings()
@@ -414,7 +416,25 @@ func TestFindingAcceptPolicy_SoleMemberNotBlocked_DB(t *testing.T) {
 	body := `{"requested_status":"accepted","closure_reason":"no_fix_available","justification":"vendor patch next quarter","expires_at":"` +
 		end.UTC().Format(time.RFC3339) + `"}`
 	_ = json.Unmarshal([]byte(h.expect(owner, http.MethodPost, "/api/v1/findings/"+f2+"/approvals/", body, http.StatusCreated)), &r)
+	if r.Status != "pending" || r.SinglePerson {
+		t.Fatalf("sole member under off accepted a risk alone without an authenticator code: %+v", r)
+	}
+	if findingStatusOf(h.findingApprovalHarness, f2) != "confirmed" {
+		t.Fatal("the sole member's acceptance applied before the self-approval")
+	}
+	out = h.selfApprove(owner, r.ID, "222222", http.StatusOK)
+	if out["status"] != "approved" || out["end_shortened"] != true {
+		t.Fatalf("self-approval under off: %+v", out)
+	}
+	if n := h.countRows(`SELECT COUNT(*) FROM finding_status_approvals WHERE id = $1 AND self_approved
+		AND expires_at <= now() + interval '91 days'`, r.ID); n != 1 {
+		t.Fatal("the sole member's acceptance under off was not cut to the self-approval limit")
+	}
+	// Once a second person is active, the level lets a member decide alone.
+	h.member(org, "admin")
+	f3 := h.newFinding(org, "critical")
+	_ = json.Unmarshal([]byte(h.expect(owner, http.MethodPost, "/api/v1/findings/"+f3+"/approvals/", body, http.StatusCreated)), &r)
 	if r.Status != "approved" || !r.SinglePerson {
-		t.Fatalf("sole member under off: %+v", r)
+		t.Fatalf("a member of a two-person organization under off: %+v", r)
 	}
 }
