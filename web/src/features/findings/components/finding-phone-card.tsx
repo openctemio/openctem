@@ -2,13 +2,13 @@
 
 import type { ReactNode } from 'react'
 import { ChevronRight } from 'lucide-react'
-import { Badge } from '@/components/ui/badge'
 import { Checkbox } from '@/components/ui/checkbox'
 import { SeverityBadge } from '@/features/shared'
 import type { MobileRowSelection } from '@/features/shared'
 import type { Finding } from '@/features/findings'
 import { FindingStatusBadge } from '@/features/findings/components/finding-status-badge'
 import { FindingSubStatus } from '@/features/findings/components/lifecycle/finding-sub-status'
+import { ExploitSignals } from '@/features/findings/components/exploit-signals'
 import { PriorityClassBadge } from '@/features/findings/components/priority-class-badge'
 import { BranchOnlyBadge } from '@/features/findings/components/branch-only-badge'
 import { useTranslation } from '@/context/i18n-provider'
@@ -57,17 +57,8 @@ export function FindingPhoneCard({ finding: f, selection, onOpen, menu }: Findin
         onClick={() => onOpen(f)}
         className="flex min-w-0 flex-1 items-start gap-3 py-3 text-start focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
       >
-        {/* Priority leads (it already folds in severity, exploitability and
-            the asset); severity leads only while a finding has no class. */}
-        {f.priorityClass ? (
-          <PriorityClassBadge
-            priorityClass={f.priorityClass}
-            showTooltip={false}
-            className="mt-0.5 shrink-0"
-          />
-        ) : (
-          <SeverityBadge severity={f.severity} className="mt-0.5 shrink-0" />
-        )}
+        {/* Priority is the queue order, so it leads the card (left slot). */}
+        <PriorityClassBadge priorityClass={f.priorityClass} className="mt-0.5" />
         <div className="min-w-0 flex-1">
           <p dir="auto" className="line-clamp-2 text-sm font-medium [unicode-bidi:isolate]">
             {title}
@@ -93,15 +84,17 @@ export function FindingPhoneCard({ finding: f, selection, onOpen, menu }: Findin
             </p>
           )}
           <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
-            {f.priorityClass && <SeverityBadge severity={f.severity} />}
+            <SeverityBadge severity={f.severity} />
             <FindingStatusBadge status={f.status} />
             <FindingSubStatus subStatusId={f.subStatusId} />
             {f.branchOnly && <BranchOnlyBadge />}
-            {f.isInKev && (
-              <Badge variant="destructive" className="h-5 px-1.5 text-[11px]">
-                {t('findings.list.kev', 'KEV')}
-              </Badge>
-            )}
+            {/* At most one exploit chip on a phone row: KEV, else EPSS from 10%. */}
+            <ExploitSignals
+              variant="compact"
+              isInKev={f.isInKev}
+              kevDueDate={f.kevDueDate}
+              epssScore={f.epssScore}
+            />
           </div>
         </div>
         <ChevronRight

@@ -58,30 +58,47 @@ function card(
 }
 
 describe('FindingPhoneCard', () => {
-  it('leads with the priority class, and severity follows in the badge row', () => {
+  it('leads with the priority box and keeps severity and status under the title', () => {
     const { container } = card()
-    const open = container.querySelector('button.text-start') as HTMLElement
-    const badges = Array.from(
-      open.querySelectorAll(
-        '[data-slot="badge"], [data-slot="priority-badge"], [data-slot="severity-badge"]'
-      )
-    ).map((b) => b.textContent?.trim())
-    expect(badges[0]).toBe('P1')
-    expect(badges.slice(1).join(' ')).toMatch(/high/i)
+    const open = screen.getByText('SQL injection in login').closest('button') as HTMLElement
+    expect((open.firstElementChild as HTMLElement).getAttribute('data-slot')).toBe('priority-badge')
+    const under = open.querySelector('[data-slot="severity-badge"]') as HTMLElement
+    expect(under).not.toBeNull()
+    expect(container.querySelector('[data-slot="status-lozenge"]')).not.toBeNull()
   })
 
-  it('leads with severity while a finding has no priority class', () => {
-    render(
+  it('shows at most one exploit chip: KEV wins over EPSS, EPSS only from 10 percent', () => {
+    const { container, unmount } = card()
+    expect(container.querySelectorAll('[data-slot="kev-badge"]')).toHaveLength(1)
+    expect(container.querySelectorAll('[data-slot="epss-chip"]')).toHaveLength(0)
+    unmount()
+    const noKev = { ...finding, isInKev: false, epssScore: 0.9 } as unknown as Finding
+    const r = render(
       <FindingPhoneCard
-        finding={{ ...finding, priorityClass: undefined } as unknown as Finding}
+        finding={noKev}
         selection={{ selectable: false, selected: false, onSelectedChange: vi.fn() }}
         onOpen={vi.fn()}
         menu={null}
       />
     )
-    const open = screen.getByRole('button', { name: /SQL injection in login/ })
-    const first = open.querySelector('[data-slot="severity-badge"]')
-    expect(first?.textContent).toMatch(/high/i)
+    expect(r.container.querySelectorAll('[data-slot="epss-chip"]')).toHaveLength(1)
+    expect(r.container.querySelectorAll('[data-slot="kev-badge"]')).toHaveLength(0)
+    r.unmount()
+    const low = { ...finding, isInKev: false, epssScore: 0.05 } as unknown as Finding
+    const r2 = render(
+      <FindingPhoneCard
+        finding={low}
+        selection={{ selectable: false, selected: false, onSelectedChange: vi.fn() }}
+        onOpen={vi.fn()}
+        menu={null}
+      />
+    )
+    expect(r2.container.querySelectorAll('[data-slot="epss-chip"]')).toHaveLength(0)
+  })
+
+  it('carries no 10px or 11px text', () => {
+    const { container } = card()
+    expect(container.innerHTML).not.toMatch(/text-\[1[01]px\]/)
   })
 
   it('has a checkbox named after the finding and a row menu', () => {

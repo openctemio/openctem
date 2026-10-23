@@ -15,11 +15,10 @@ const TAB_LABEL_KEYS: Record<string, string> = {
   '/assets/attention': 'assets.tabs.attention',
   '/assets/groups': 'assets.tabs.groups',
   '/assets/changes': 'assets.tabs.changes',
-  '/assets/web': 'assets.tabs.webSurface',
 }
 
 /**
- * Inventory · Needs attention · Groups · Activity · Web surface, the route
+ * Inventory · Needs attention · Groups · Activity, the route
  * tabs of Discovery > Assets (research/242 D1). Placed directly under the
  * page's `PageHeader` (see docs/ui-style-contract.md); the next block carries
  * `mt-5`.

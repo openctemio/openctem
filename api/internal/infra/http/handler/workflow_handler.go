@@ -80,11 +80,14 @@ type CreateEdgeRequest struct {
 
 // WorkflowResponse represents the response for a workflow.
 type WorkflowResponse struct {
-	ID             string         `json:"id"`
-	TenantID       string         `json:"tenant_id"`
-	Name           string         `json:"name"`
-	Description    string         `json:"description,omitempty"`
-	IsActive       bool           `json:"is_active"`
+	ID          string `json:"id"`
+	TenantID    string `json:"tenant_id"`
+	Name        string `json:"name"`
+	Description string `json:"description,omitempty"`
+	IsActive    bool   `json:"is_active"`
+	// DisabledReason says why the platform switched the automation off
+	// ("uses_removed_type"); empty when it did not.
+	DisabledReason string         `json:"disabled_reason,omitempty"`
 	Tags           []string       `json:"tags,omitempty"`
 	Nodes          []NodeResponse `json:"nodes,omitempty"`
 	Edges          []EdgeResponse `json:"edges,omitempty"`
@@ -97,10 +100,10 @@ type WorkflowResponse struct {
 	CreatedBy      *string        `json:"created_by,omitempty"`
 	CreatedAt      string         `json:"created_at"`
 	UpdatedAt      string         `json:"updated_at"`
-	// UnsupportedFeatures lists the trigger and action types this workflow
-	// uses that the platform does not execute ("trigger:schedule",
-	// "action:assign_team", ...). Such a workflow stays readable but cannot
-	// be activated or saved until they are removed. Only set when the graph
+	// UnsupportedFeatures lists the removed trigger, action and notification
+	// types this workflow still holds ("trigger:schedule",
+	// "action:http_request", ...). Such a workflow stays readable but cannot
+	// be activated or saved until they are replaced. Only set when the graph
 	// is loaded.
 	UnsupportedFeatures []string `json:"unsupported_features,omitempty"`
 }
@@ -1049,6 +1052,7 @@ func toWorkflowResponse(wf *automation.Workflow) *WorkflowResponse {
 		Name:           wf.Name,
 		Description:    wf.Description,
 		IsActive:       wf.IsActive,
+		DisabledReason: wf.DisabledReason,
 		Tags:           wf.Tags,
 		TotalRuns:      wf.TotalRuns,
 		SuccessfulRuns: wf.SuccessfulRuns,
@@ -1109,39 +1113,12 @@ func toNodeResponse(n *automation.Node) *NodeResponse {
 			TriggerConfig:      n.Config.TriggerConfig,
 			ConditionExpr:      n.Config.ConditionExpr,
 			ActionType:         string(n.Config.ActionType),
-			ActionConfig:       redactActionConfig(n.Config.ActionType, n.Config.ActionConfig),
+			ActionConfig:       n.Config.ActionConfig,
 			NotificationType:   string(n.Config.NotificationType),
 			NotificationConfig: n.Config.NotificationConfig,
 		},
 		CreatedAt: n.CreatedAt.Format("2006-01-02T15:04:05Z07:00"),
 	}
-}
-
-// redactedValue replaces a secret in a response.
-const redactedValue = "[redacted]"
-
-// redactActionConfig hides the header values of a stored http_request node
-// (they are often credentials). The action is refused for new nodes; a
-// stored one keeps its headers only to keep running, and no reader of the
-// workflow sees them.
-func redactActionConfig(t automation.ActionType, cfg map[string]any) map[string]any {
-	if t != automation.ActionTypeHTTPRequest || cfg == nil {
-		return cfg
-	}
-	hdrs, ok := cfg["headers"].(map[string]any)
-	if !ok || len(hdrs) == 0 {
-		return cfg
-	}
-	out := make(map[string]any, len(cfg))
-	for k, v := range cfg {
-		out[k] = v
-	}
-	masked := make(map[string]any, len(hdrs))
-	for k := range hdrs {
-		masked[k] = redactedValue
-	}
-	out["headers"] = masked
-	return out
 }
 
 func toEdgeResponse(e *automation.Edge) *EdgeResponse {

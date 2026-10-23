@@ -11,7 +11,6 @@ import { useTranslation } from '@/context/i18n-provider'
 import * as React from 'react'
 import type { ColumnDef } from '@tanstack/react-table'
 import { Button } from '@/components/ui/button'
-import { Badge } from '@/components/ui/badge'
 import {
   DataTable,
   ErrorState,
@@ -20,6 +19,7 @@ import {
   type MobileRowSelection,
 } from '@/features/shared'
 import { formatEpssScore } from '@/lib/epss'
+import { KevBadge } from '@/components/ui/kev-badge'
 import { cn } from '@/lib/utils'
 import { useLazyGroupRows } from '@/hooks/use-lazy-group-rows'
 import type { FilterPanelToggleProps } from '@/features/shared/components/filter-button'
@@ -185,11 +185,7 @@ function GroupTitle({ group }: { group: FindingGroup }) {
           severity={group.severity as 'critical' | 'high' | 'medium' | 'low' | 'info'}
         />
       )}
-      {Boolean(meta.cisa_kev) && (
-        <Badge variant="destructive" className="h-5 px-1.5 text-[11px]">
-          {t('findings.list.kev', 'KEV')}
-        </Badge>
-      )}
+      {Boolean(meta.cisa_kev) && <KevBadge />}
       <span className="tabular-nums">· {facts.join(' · ')}</span>
     </span>
   )
