@@ -3,6 +3,7 @@ name: Release Tooling
 # The release train's scripts and the version manifest (api/docs/rfcs/RFC-037).
 #
 #   Release scripts       shellcheck + the shell tests of .github/scripts/release
+#                         (including the release-note labels and the Upgrade notes block)
 #   Version consistency   every versioned default agrees with versions.yaml
 #                         (the API embeds a copy of it: no Go file holds a
 #                         version),
@@ -20,7 +21,10 @@ on:
     paths:
       - versions.yaml
       - .github/scripts/release/**
+      - .github/scripts/pr-labels.py
+      - .github/workflows/pr-labels.yml
       - .github/workflows/release-*.yml
+      - api/scripts/changelog.py
       - api/.env.example
       - api/deploy/.env.example
       - api/deploy/docker-compose.yml
@@ -33,7 +37,10 @@ on:
     paths:
       - versions.yaml
       - .github/scripts/release/**
+      - .github/scripts/pr-labels.py
+      - .github/workflows/pr-labels.yml
       - .github/workflows/release-*.yml
+      - api/scripts/changelog.py
       - api/.env.example
       - api/deploy/.env.example
       - api/deploy/docker-compose.yml

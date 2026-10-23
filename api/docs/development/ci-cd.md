@@ -21,6 +21,7 @@ truth: this page describes them as of the merge-queue routing (#730, 2026-10-02)
 | Docker Publish (`docker-publish.yml`) | Tag `v*`, manual | Builds, smoke-tests, publishes, signs and SBOMs every image (see [Images](#images)); on a production release also the offline image bundle | — |
 | Release (`release.yml`) | Tag `v*`; dispatch on a tag | GitHub Release with the release archives (via Release archives), their SBOMs, the signed `checksums-sha256.txt`, build provenance, and the image pull lines | — |
 | Release archives (`release-dist.yml`) | Called by Release; PRs touching its inputs (`paths:`) | Builds the archives with `.github/scripts/release/build-dist.sh`; on a PR builds linux/amd64 only and runs `smoke-dist.sh` (versions, `-check-config` of the example settings, `systemd-analyze verify`/`security`, gateway Caddyfile, web/console health, the image kit's Dockerfiles), publishing nothing | — |
+| PR Release-Note Labels (`pr-labels.yml`) | PR (opened, pushed, reopened); same-repository PRs only | Adds the `notes:*` labels by the files and diffs the PR changes (see [Release-note labels](#release-note-labels)); not required, never fails a PR | — |
 | Release Train (`release-train.yml`) | Manual (a maintainer presses Run) | Proposes the version from conventional commits, picks the newest develop commit with every required check green, builds `release/vX.Y.Z` (with one commit setting `versions.yaml` `platform.release` to `vX.Y.Z`), opens and queues the release PR (see [Releases](#releases)) | — |
 | Release Publish (`release-publish.yml`) | A `release/v*` PR merged into `main`; manual | Tags `vX.Y.Z` (only if `main`'s tree is the release branch's and its `versions.yaml` says `vX.Y.Z`), starts Docker Publish + Release, opens the develop and helm-charts follow-up PRs, closes the train issue | — |
 | API CI `Detect API changes` step "Changelog fragments" | PR, merge queue, push (also docs-only changes) | `api/scripts/changelog.py check`: fragment format, no entry under Unreleased in `api/CHANGELOG.md`, no committed merge-conflict marker | — |
@@ -295,6 +296,37 @@ the queue (no required check; the PR and the push scan the change).
 - **Node:** every `actions/setup-node` step uses `node-version-file: web/.nvmrc`
   (`26`), the same major as `web/Dockerfile` (`node:26-alpine`). Node 25+ ships
   its own `localStorage`; `web/src/test/setup.ts` points Vitest back at jsdom's.
+
+### Release-note labels
+
+`pr-labels.yml` runs `.github/scripts/pr-labels.py` on every same-repository pull request and
+adds these labels, so the release notes can show an operator what to read before upgrading:
+
+| Label | Added when the PR |
+|---|---|
+| `notes:migration` | adds or changes a `api/migrations/*.up.sql` |
+| `notes:destructive-migration` | adds a line to a migration that drops a table, column or schema, truncates, renames, or changes a column type (SQL comments are ignored; deleting a migration does not count) |
+| `notes:identity` | changes finding identity or fingerprint code (`api/pkg/domain/vulnerability/identity*.go`, `fingerprint*.go`, `secret_fingerprint*.go`, `api/internal/app/ingest/identity*.go`) or the `github.com/openctemio/ctis` version in `api/go.mod` (tests alone do not count) |
+| `notes:api-contract` | changes a file in `api/internal/infra/http/handler/` or `routes/`, or `api/pkg/sensorproto/` (tests do not count) |
+
+The labeler reads the changed files through the API as data and runs from the base commit, so
+no pull request code runs; a fork pull request gets a read-only token, is skipped, and a
+maintainer adds the labels by hand. Labels are only added, never removed: add one by hand when a
+rule misses a change, remove one by hand when it over-reports. The destructive label is
+informational; the `Migration Safety` check and the `allow-destructive-migration` label still
+decide whether a destructive migration may merge.
+
+The release train groups the changelog fragments by these labels. The plan job runs
+`.github/scripts/release/fragment-labels.py`, which finds the pull request that added each
+fragment and keeps its `notes:*` labels, and `api/scripts/changelog.py preview --labels FILE`
+prints an **Upgrade notes** block ahead of the categories: the section titles of the fragments
+under "Destructive migrations (read before upgrading)", "Database migrations", "Finding identity
+and fingerprint changes" and "API contract changes". The follow-up PR that folds the fragments
+into `api/CHANGELOG.md` does the same: `python3 .github/scripts/release/fragment-labels.py --out
+/tmp/labels.json` (with `GH_TOKEN` set), then `python3 api/scripts/changelog.py release vX.Y.Z
+--labels /tmp/labels.json`. A fragment whose pull request cannot be found is named on stderr and
+only lacks its heading. Without `--labels` the notes are unchanged. The tests are
+`.github/scripts/release/tests/test_release_note_sections.sh`, run by Release Tooling.
 
 ### CI image mirror
 
