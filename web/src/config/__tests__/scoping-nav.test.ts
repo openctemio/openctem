@@ -11,6 +11,7 @@ import { existsSync, readdirSync, statSync } from 'node:fs'
 import { join } from 'node:path'
 import { sidebarData } from '../sidebar-data'
 import {
+  ASSET_ATTENTION_TABS,
   BUSINESS_CONTEXT_SECTION_TABS,
   SCOPE_SECTION_TABS,
   THREAT_MODEL_SECTION_TABS,
@@ -124,12 +125,14 @@ describe('Scoping rows', () => {
 })
 
 describe('moves out of Scoping', () => {
-  it('Attack surface is a Discovery row; Asset groups and Relationships are Assets tabs', () => {
+  it('Attack surface is a Discovery row; Asset groups and Needs attention are Assets tabs', () => {
     const discovery = links('Discovery')
     expect(discovery.map((i) => i.url)).toContain('/attack-surface')
     const assetTabs = row('Discovery', 'Assets').sections!.map((s) => s.href)
     expect(assetTabs).toContain('/assets/groups')
-    expect(assetTabs).toContain('/assets/suggestions')
+    // Relationship suggestions are a reason of Needs attention.
+    expect(assetTabs).toContain('/assets/attention')
+    expect(ASSET_ATTENTION_TABS.map((t) => t.href)).toContain('/assets/suggestions')
   })
 
   it('Compliance is an Insights row', () => {
