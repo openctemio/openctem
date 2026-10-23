@@ -362,9 +362,14 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 	w.ControllerManager.Register(controller.NewSensorLegacyKeysController(repos.Sensor, log.With("controller", "sensor-legacy-keys")))
 
 	// Ingest receipts (RFC-122): action rows after 90 days, run receipts
-	// and daily ingest facts after 400 days; upload receipts stay.
+	// and daily ingest facts after 400 days, expired Idempotency-Key
+	// records; upload receipts stay.
 	if repos.IngestReceipt != nil {
-		w.ControllerManager.Register(controller.NewIngestReceiptRetentionController(repos.IngestReceipt, 0))
+		ctl := controller.NewIngestReceiptRetentionController(repos.IngestReceipt, 0)
+		if repos.IdempotencyKey != nil {
+			ctl.WithIdempotencyKeys(repos.IdempotencyKey)
+		}
+		w.ControllerManager.Register(ctl)
 	}
 
 	// CI alerts (RFC-051 §10.6): missed schedules, lost coverage, failing
@@ -586,6 +591,13 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 				Logger:    log.With("controller", "domain-reverify"),
 			},
 		))
+	}
+
+	// SSO enforcement after a limits change: turned off once the organization
+	// lost sso.enforcement and the grace ended (never a lock-out).
+	if svc.Tenant != nil {
+		w.ControllerManager.Register(controller.NewSSOEnforcementEntitlementController(
+			svc.Tenant, time.Hour, log.With("controller", "sso-enforcement-entitlement")))
 	}
 
 	// SAML IdP certificate expiry: owners are alerted 30, 7 and 1 days before

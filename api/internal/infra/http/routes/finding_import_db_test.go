@@ -82,7 +82,7 @@ func (ih *importHarness) upload(t *testing.T, tenant, query, name string, data [
 	w, _ := mw.CreateFormFile("file", name)
 	_, _ = w.Write(data)
 	_ = mw.Close()
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/findings/import"+query, &buf)
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/findings/imports"+query, &buf)
 	req.Header.Set("Content-Type", mw.FormDataContentType())
 	ctx := context.WithValue(req.Context(), middleware.TenantIDKey, tenant)
 	if admin {
@@ -125,7 +125,7 @@ func TestFindingImport_RealFixtures_DB(t *testing.T) {
 				t.Fatalf("a preview wrote %d findings", n-before)
 			}
 			rec, resp = ih.upload(t, ih.tenantID, "", filepath.Base(p), data, true)
-			if rec.Code != http.StatusOK || resp.Files[0].Error != nil {
+			if rec.Code != http.StatusCreated || resp.Files[0].Error != nil {
 				t.Fatalf("import %d: %s", rec.Code, rec.Body.String())
 			}
 			f := resp.Files[0]
@@ -210,7 +210,7 @@ func TestFindingImport_VEXDocument_DB(t *testing.T) {
 
 	// Without findings:approve (not admin, no permission): stored, not closed.
 	rec, resp = ih.upload(t, ih.tenantID, "", "image.vex.json", doc, false)
-	if rec.Code != http.StatusOK || resp.Files[0].VEX.Requested != 0 || resp.Files[0].VEX.Stored != 1 {
+	if rec.Code != http.StatusCreated || resp.Files[0].VEX.Requested != 0 || resp.Files[0].VEX.Stored != 1 {
 		t.Fatalf("no-approve import: %s", rec.Body.String())
 	}
 	if s, v := status(web); s != "new" || v != "not_affected" {
@@ -218,7 +218,7 @@ func TestFindingImport_VEXDocument_DB(t *testing.T) {
 	}
 
 	rec, resp = ih.upload(t, ih.tenantID, "", "image.vex.json", doc, true)
-	if rec.Code != http.StatusOK || resp.Files[0].VEX.Requested != 1 {
+	if rec.Code != http.StatusCreated || resp.Files[0].VEX.Requested != 1 {
 		t.Fatalf("import: %s", rec.Body.String())
 	}
 	// Four-eyes: the upload requests a false positive; it does not set one.
@@ -261,7 +261,7 @@ func TestFindingImport_QualysPairInArchive_DB(t *testing.T) {
 	}
 	_ = zw.Close()
 	rec, resp := ih.upload(t, ih.tenantID, "", "qualys.zip", zbuf.Bytes(), true)
-	if rec.Code != http.StatusOK || len(resp.Files) != 1 || resp.Files[0].Error != nil || resp.Files[0].Format != "qualys" {
+	if rec.Code != http.StatusCreated || len(resp.Files) != 1 || resp.Files[0].Error != nil || resp.Files[0].Format != "qualys" {
 		t.Fatalf("%d: %s", rec.Code, rec.Body.String())
 	}
 	if resp.Files[0].Ingest == nil || resp.Files[0].Ingest.FindingsCreated == 0 {
@@ -300,14 +300,14 @@ func TestFindingImport_RecordsTheProducer_DB(t *testing.T) {
 		w, _ := mw.CreateFormFile("file", "weekly.nessus")
 		_, _ = w.Write(doc)
 		_ = mw.Close()
-		req := httptest.NewRequest(http.MethodPost, "/api/v1/findings/import"+query, &buf)
+		req := httptest.NewRequest(http.MethodPost, "/api/v1/findings/imports"+query, &buf)
 		req.Header.Set("Content-Type", mw.FormDataContentType())
 		c := context.WithValue(req.Context(), middleware.TenantIDKey, ih.tenantID)
 		c = context.WithValue(c, middleware.UserIDKey, user.String())
 		c = context.WithValue(c, middleware.IsAdminKey, true)
 		rec := httptest.NewRecorder()
 		ih.h.Import(rec, req.WithContext(c))
-		if rec.Code != http.StatusOK {
+		if want := map[bool]int{true: http.StatusOK, false: http.StatusCreated}[strings.Contains(query, "dry_run")]; rec.Code != want {
 			t.Fatalf("%d: %s", rec.Code, rec.Body.String())
 		}
 		var resp handler.FindingImportResponse
