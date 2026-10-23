@@ -247,10 +247,24 @@ func (s *VulnerabilityService) evaluateFindingRequest(ctx context.Context, f *vu
 	}
 	res := approvalpolicy.Evaluate(op.policy, approvalpolicy.Request{
 		Kind: kind, Facts: pf.Facts, RequesterID: requester, ActorMade: actorMade, RequesterCanApprove: requesterCanApprove,
-		FPLevel: op.fpLevel, AssetOwners: pf.AssetOwners, AssigneeID: pf.AssigneeID,
+		AutomationMade: automationRequestFrom(ctx),
+		FPLevel:        op.fpLevel, AssetOwners: pf.AssetOwners, AssigneeID: pf.AssigneeID,
 		Approvers: cands, SecurityPoolConfigured: op.poolConfigured,
 	})
 	return policyEvaluation{result: res, facts: pf.Facts, org: op}, nil
+}
+
+type automationRequestKey struct{}
+
+// withAutomationRequest marks ctx as carrying a request an automation made:
+// the policy never lets one person decide it.
+func withAutomationRequest(ctx context.Context) context.Context {
+	return context.WithValue(ctx, automationRequestKey{}, true)
+}
+
+func automationRequestFrom(ctx context.Context) bool {
+	v, _ := ctx.Value(automationRequestKey{}).(bool)
+	return v
 }
 
 // kindOfStatus maps a requested finding status to a policy kind.

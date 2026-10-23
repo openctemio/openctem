@@ -271,3 +271,9 @@ type RunScopeReader interface {
 	// 5,000 runs).
 	AggregateTrace(ctx context.Context, tenantID, workflowID shared.ID, mode Mode, since time.Time, scope *shared.DataScope) (*TraceAggregate, error)
 }
+
+// PausedRunResumer lets a paused run continue: it becomes pending again,
+// with its change cap confirmed, only if it is still paused.
+type PausedRunResumer interface {
+	ResumePaused(ctx context.Context, tenantID, runID shared.ID) (bool, error)
+}

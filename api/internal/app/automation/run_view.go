@@ -10,6 +10,8 @@ import (
 	"fmt"
 	"time"
 
+	auditapp "github.com/openctemio/openctem/api/internal/app/audit"
+	"github.com/openctemio/openctem/api/pkg/domain/audit"
 	automationdom "github.com/openctemio/openctem/api/pkg/domain/automation"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/pagination"
@@ -125,4 +127,35 @@ func (s *WorkflowService) Trace(ctx context.Context, in TraceInput) (*automation
 		return nil, err
 	}
 	return reader.AggregateTrace(ctx, in.TenantID, in.WorkflowID, in.Mode, time.Now().AddDate(0, 0, -in.Days), scope)
+}
+
+// ResumeRun lets a run paused at its change cap continue past the cap. Only
+// a still-paused run of the tenant resumes; its finished steps are kept.
+func (s *WorkflowService) ResumeRun(ctx context.Context, tenantID, userID, runID shared.ID) error {
+	run, err := s.runRepo.GetByTenantAndID(ctx, tenantID, runID)
+	if err != nil {
+		return err
+	}
+	if run.Status != automationdom.RunStatusPaused {
+		return shared.NewDomainError("INVALID_STATUS", "only a paused run can continue", shared.ErrValidation)
+	}
+	resumer, ok := s.runRepo.(automationdom.PausedRunResumer)
+	if !ok {
+		return fmt.Errorf("%w: runs cannot be resumed", shared.ErrNotImplemented)
+	}
+	resumed, err := resumer.ResumePaused(ctx, tenantID, runID)
+	if err != nil {
+		return err
+	}
+	if !resumed {
+		return shared.NewDomainError("INVALID_STATUS", "only a paused run can continue", shared.ErrValidation)
+	}
+	s.logAudit(ctx, auditapp.AuditContext{TenantID: tenantID.String(), ActorID: userID.String()},
+		auditapp.NewSuccessEvent(audit.ActionWorkflowRunResumed, audit.ResourceTypeWorkflowRun, runID.String()).
+			WithMessage("Automation run allowed past its change cap").
+			WithMetadata("workflow_id", run.WorkflowID.String()))
+	if s.executor != nil {
+		s.executor.ExecuteAsyncWithTenant(runID, tenantID)
+	}
+	return nil
 }
