@@ -142,3 +142,39 @@ func TestHostRowsNeverCoverNetworks(t *testing.T) {
 		t.Error("a host address must cover itself")
 	}
 }
+
+// "*://host" means any scheme on that host. The star must not swallow a
+// host: a value that carries the entry's text later in its path or query is
+// not covered.
+func TestWildSchemeURLEntryCannotCoverOtherHosts(t *testing.T) {
+	const pat = "*://app.example.com"
+	for _, v := range []string{
+		"https://victim.example/x://app.example.com",
+		"https://victim.example/x://app.example.com/",
+		"https://victim.example/?u=a://app.example.com",
+		"foo.bar://app.example.com",
+		"app.example.com",
+	} {
+		if EntryMatches(TargetTypeURL, pat, Constraint{}, v) {
+			t.Errorf("%q covered by %q", v, pat)
+		}
+	}
+	for _, v := range []string{"http://app.example.com", "https://app.example.com"} {
+		if !EntryMatches(TargetTypeURL, pat, Constraint{}, v) {
+			t.Errorf("%q not covered by %q", v, pat)
+		}
+	}
+	if !EntryMatches(TargetTypeURL, "*://app.example.com/*", Constraint{}, "https://app.example.com/path") {
+		t.Error("wild scheme with a path star does not cover its own host")
+	}
+	if EntryMatches(TargetTypeURL, "*://app.example.com/*", Constraint{}, "https://victim.example/x://app.example.com/path") {
+		t.Error("wild scheme with a path star covers another host")
+	}
+	// The path-limited form binds the value's scheme too.
+	if EntryMatches(TargetTypeURL, "*://app.example.com/api/*", Constraint{}, "https://victim.example/x://app.example.com/api/a") {
+		t.Error("path-limited wild scheme covers another host")
+	}
+	if !EntryMatches(TargetTypeURL, "*://app.example.com/api/*", Constraint{}, "https://app.example.com/api/a") {
+		t.Error("path-limited wild scheme does not cover its own host")
+	}
+}
