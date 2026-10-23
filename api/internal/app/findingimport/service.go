@@ -174,6 +174,9 @@ type Service struct {
 	tempDir      string
 	// members re-reads the uploader's membership when the worker imports.
 	members MemberReader
+	// keys and perms re-check the upload's API key and findings:approve.
+	keys  KeyReader
+	perms PermissionReader
 }
 
 // SetTempDir sets where the worker spools an uploaded archive ("" is the

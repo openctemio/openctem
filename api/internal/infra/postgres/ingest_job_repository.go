@@ -222,7 +222,11 @@ func (r *IngestJobRepository) ClaimBatch(ctx context.Context, workerID string, l
 }
 
 // Complete marks a job completed with its result counts.
-func (r *IngestJobRepository) Complete(ctx context.Context, id ingestjob.ID, result []byte) error {
+//
+// It only writes while the job is still processing the claimed attempt:
+// a worker whose lease expired (the job was released, or claimed again)
+// gets ingestjob.ErrLeaseLost and writes nothing.
+func (r *IngestJobRepository) Complete(ctx context.Context, id ingestjob.ID, attempts int, result []byte) error {
 	// An upload's envelope (who uploaded, from where) is not kept once it
 	// is applied, and its stored report is deleted in the same statement:
 	// the parts outlive the apply until the job is recorded completed, so
@@ -234,22 +238,40 @@ func (r *IngestJobRepository) Complete(ctx context.Context, id ingestjob.ID, res
 			SET status = 'completed', result = $2, error = NULL,
 				payload = CASE WHEN kind <> 'sensor' THEN convert_to('{}', 'UTF8') ELSE payload END,
 				locked_by = NULL, locked_at = NULL, updated_at = NOW()
-			WHERE id = $1
+			WHERE id = $1 AND status = 'processing' AND attempts = $3
 			RETURNING id, tenant_id, kind
+		), del AS (
+			DELETE FROM ingest_payloads p
+			USING done d
+			WHERE d.kind <> 'sensor' AND p.job_id = d.id AND p.tenant_id = d.tenant_id
 		)
-		DELETE FROM ingest_payloads p
-		USING done d
-		WHERE d.kind <> 'sensor' AND p.job_id = d.id AND p.tenant_id = d.tenant_id`
-	_, err := r.db.ExecContext(ctx, query, id.String(), result)
-	if err != nil {
+		SELECT count(*) FROM done`
+	var n int
+	if err := r.db.QueryRowContext(ctx, query, id.String(), result, attempts).Scan(&n); err != nil {
 		return fmt.Errorf("complete ingest job: %w", err)
+	}
+	if n == 0 {
+		return ingestjob.ErrLeaseLost
+	}
+	return nil
+}
+
+// Renew extends the lease of the attempt the worker is processing.
+func (r *IngestJobRepository) Renew(ctx context.Context, id ingestjob.ID, attempts int) error {
+	res, err := r.db.ExecContext(ctx, `UPDATE ingest_jobs SET locked_at = $3
+		WHERE id = $1 AND status = 'processing' AND attempts = $2`, id.String(), attempts, time.Now())
+	if err != nil {
+		return fmt.Errorf("renew ingest job lease: %w", err)
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return ingestjob.ErrLeaseLost
 	}
 	return nil
 }
 
 // Fail reschedules a job for retry (status pending, gated by availableAt) or
 // marks it dead when retries are exhausted.
-func (r *IngestJobRepository) Fail(ctx context.Context, id ingestjob.ID, errMsg, publicErr string, availableAt time.Time, dead bool) error {
+func (r *IngestJobRepository) Fail(ctx context.Context, id ingestjob.ID, attempts int, errMsg, publicErr string, availableAt time.Time, dead bool) error {
 	status := ingestjob.StatusPending
 	if dead {
 		status = ingestjob.StatusDead
@@ -264,16 +286,21 @@ func (r *IngestJobRepository) Fail(ctx context.Context, id ingestjob.ID, errMsg,
 			UPDATE ingest_jobs
 			SET status = $2, error = $3, available_at = $4, public_error = NULLIF($5, ''),
 				locked_by = NULL, locked_at = NULL, updated_at = NOW()
-			WHERE id = $1
+			WHERE id = $1 AND status = 'processing' AND attempts = $6
 			RETURNING id, tenant_id, kind
+		), del AS (
+			DELETE FROM ingest_payloads p
+			USING failed f
+			WHERE $2 = 'dead' AND $5 <> '' AND $5 <> '` + ingestjob.ErrorApplyFailed + `'
+			  AND f.kind <> 'sensor' AND p.job_id = f.id AND p.tenant_id = f.tenant_id
 		)
-		DELETE FROM ingest_payloads p
-		USING failed f
-		WHERE $2 = 'dead' AND $5 <> '' AND $5 <> '` + ingestjob.ErrorApplyFailed + `'
-		  AND f.kind <> 'sensor' AND p.job_id = f.id AND p.tenant_id = f.tenant_id`
-	_, err := r.db.ExecContext(ctx, query, id.String(), status.String(), errMsg, availableAt, publicErr)
-	if err != nil {
+		SELECT count(*) FROM failed`
+	var n int
+	if err := r.db.QueryRowContext(ctx, query, id.String(), status.String(), errMsg, availableAt, publicErr, attempts).Scan(&n); err != nil {
 		return fmt.Errorf("fail ingest job: %w", err)
+	}
+	if n == 0 {
+		return ingestjob.ErrLeaseLost
 	}
 	return nil
 }

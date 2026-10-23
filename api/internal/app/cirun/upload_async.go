@@ -392,7 +392,22 @@ func (s *Service) applyCTIS(ctx context.Context, run *cirun.Run, body []byte) (*
 // limits and archive checks as the import endpoint) and applies each
 // converted report on the run's repository. The first report uses the slot
 // reserved at accept; each further one takes its own.
-func (s *Service) applyExport(ctx context.Context, run *cirun.Run, body []byte) (*UploadResult, error) {
+//
+// A failed attempt gives back the further slots it took: the job is retried
+// and takes them again, so a retry never uses a run's slots twice.
+func (s *Service) applyExport(ctx context.Context, run *cirun.Run, body []byte) (out *UploadResult, err error) {
+	extra := 0
+	defer func() {
+		if err != nil && extra > 0 {
+			if rerr := s.repo.ReleaseRunReports(context.WithoutCancel(ctx), run.TenantID, run.ID, extra); rerr != nil {
+				s.log.Warn("ci results: give back report slots", "run_id", run.ID.String(), "error", rerr)
+			}
+		}
+	}()
+	return s.applyExportSlots(ctx, run, body, &extra)
+}
+
+func (s *Service) applyExportSlots(ctx context.Context, run *cirun.Run, body []byte, extra *int) (*UploadResult, error) {
 	res := &UploadResult{Files: []ExportFile{}, Known: []cirun.KnownFinding{}}
 	total := &ingest.Output{}
 	var firstErr error
@@ -428,7 +443,9 @@ func (s *Service) applyExport(ctx context.Context, run *cirun.Run, body []byte) 
 			dropped, err := ScopeImported(rep, run)
 			res.FindingsDroppedOutOfScope += dropped
 			if err == nil && reports > 0 {
-				err = s.repo.ReserveRunReport(ctx, run.TenantID, run.ID)
+				if err = s.repo.ReserveRunReport(ctx, run.TenantID, run.ID); err == nil {
+					*extra++
+				}
 			}
 			if err != nil {
 				firstErr = err

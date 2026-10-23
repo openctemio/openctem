@@ -802,9 +802,11 @@ func (h *FindingImportHandler) commitImport(w http.ResponseWriter, r *http.Reque
 func (h *FindingImportHandler) callerOf(r *http.Request) findingimport.Caller {
 	if h.ds != nil {
 		c := h.ds.CallerOf(r.Context())
-		return findingimport.Caller{UserID: c.UserID, IsAdmin: c.IsAdmin, IsOwner: c.IsOwner, APIKey: c.APIKey}
+		return findingimport.Caller{UserID: c.UserID, IsAdmin: c.IsAdmin, IsOwner: c.IsOwner, APIKey: c.APIKey,
+			APIKeyID: middleware.GetAPIKeyID(r.Context())}
 	}
-	return findingimport.Caller{UserID: middleware.GetUserID(r.Context()), APIKey: middleware.GetAPIKeyID(r.Context()) != ""}
+	keyID := middleware.GetAPIKeyID(r.Context())
+	return findingimport.Caller{UserID: middleware.GetUserID(r.Context()), APIKey: keyID != "", APIKeyID: keyID}
 }
 
 // writeQueueErr answers an upload that could not be stored.
