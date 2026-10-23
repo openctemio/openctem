@@ -327,18 +327,22 @@ not. A cell can never be `single` for `accepted`: the level is the only switch.
 
 **No bypass.** Suppression rules (`rule_accepted`), group exceptions on remediation tasks, bulk status moves (by id or by filter),
 imports and requests made by automation (AI triage, VEX, ticket integrations: `ActorMade`) never decide
-alone, whatever the level. Only `POST /findings/{id}/approvals` by a person with the approve permission does.
+alone, whatever the level. Only `POST /findings/{id}/approvals` by a person with the approve permission, in
+their own session, does: an API key or an MCP access token never decides alone.
 
 **Changing the level.** `PATCH /api/v1/organization/settings/finding-approvals` with `accept_approval`
 (owner or administrator, `settings:write`, recent re-authentication). A lower level takes effect 24 hours
 later (`pending_accept_approval`, `pending_accept_approval_at`); raising is immediate and cancels a waiting
 lowering; `cancel_pending` drops it. Every change is audited at high severity with the values before and
-after, and the approvers (every owner and administrator is one) are told of a lowering.
+after, and the approvers (every owner and administrator is one) are told of a lowering (every lowering in the
+change is named). Raising a level puts the standing decisions one person made that the new level gives to a
+second person under review (`material_change_single_person`, change `level_raised`); they stand until an
+approver looks again.
 
 **The sole member.** Under `high_and_above` or `off` the sole member of an organization can approve their own
 pending accepted risk with an authenticator code and a reason; the end is cut to the self-approval limit
 (`SoloAcceptanceLimit`: 7 days for P0 or KEV, 45 for P1, 90 otherwise). Under `all` it stays pending until a
-second member, as before.
+second member, as before. Membership and the level are checked again in the write transaction.
 
 Migration `003344_single_person_acceptance_review` extends the single-person review triggers to accepted
 risks and indexes the decisions one person made for the digest.
