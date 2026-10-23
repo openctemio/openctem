@@ -319,6 +319,7 @@ pin the script cannot find fails the run instead of passing silently (a renamed
 variable would otherwise turn the check into a check of nothing). The Workflow Lint
 job runs `.github/scripts/tool-pins.test.sh`. Run it by hand with
 `GH_TOKEN=$(gh auth token) python3 .github/scripts/tool-pins.py`.
+
 ### Release-note labels
 
 `pr-labels.yml` runs `.github/scripts/pr-labels.py` on every same-repository pull request and
