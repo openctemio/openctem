@@ -2308,6 +2308,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	s.VulnMatch.SetEnrichment(s.PriorityClassification, sla.NewApplier(s.SLA), repos.Asset)
 	s.VulnMatch.SetLinkReader(repos.Software)
 	s.VulnMatch.SetRemediationKeyApplier(remediationKeys)
+	s.VulnMatch.SetVEXApplier(s.VEX) // The organization's VEX statements cover matched findings too
 	// Emerging-threat alerts (RFC-117): matched findings are announced by
 	// their alert. The delivery sinks are wired with the workers.
 	if repos.ThreatAlert != nil {
