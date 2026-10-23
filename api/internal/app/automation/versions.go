@@ -229,6 +229,12 @@ func (s *WorkflowService) Rollback(ctx context.Context, in PublishInput, version
 	if err := target.ValidateSupported(); err != nil {
 		return nil, err
 	}
+	// An older version may predate a guardrail (an update_status target a
+	// person decides, a request without its reason): it is not published
+	// again as it was.
+	if err := validateNodeConfigs(old.Definition.Configs()...); err != nil {
+		return nil, err
+	}
 	return s.publishDefinition(ctx, in.TenantID, in.UserID, target, audit.ActionWorkflowRolledBack,
 		fmt.Sprintf("rolled back to version %d", old.Version))
 }
@@ -287,6 +293,34 @@ func (s *WorkflowService) publishDefinition(ctx context.Context, tenantID, userI
 	}
 	s.logAudit(ctx, actx, event(action, fmt.Sprintf("Automation '%s' %s as version %d (%s risk)", w.Name, verb, v.Version, v.RiskClass)))
 	return &PublishResult{Version: v, Live: true}, nil
+}
+
+// draftDigest is the digest of the automation's draft ("" when versions are
+// not configured or the draft cannot be read).
+func (s *WorkflowService) draftDigest(ctx context.Context, tenantID, workflowID shared.ID) string {
+	if s.versions == nil {
+		return ""
+	}
+	w, err := s.GetWorkflow(ctx, tenantID, workflowID)
+	if err != nil {
+		return ""
+	}
+	return automationdom.DefinitionOf(w).Digest()
+}
+
+// withdrawRequestIfChanged retires the version waiting for approval when an
+// edit changed what the draft does (its digest differs from before). The
+// second person reviews the automation as the editor shows it, so a request
+// cannot stay approvable after the draft moved away from it (the publisher
+// asks again). An unknown before-digest withdraws (fail safe).
+func (s *WorkflowService) withdrawRequestIfChanged(ctx context.Context, tenantID, workflowID shared.ID, before string) error {
+	if s.versions == nil {
+		return nil
+	}
+	if before != "" && s.draftDigest(ctx, tenantID, workflowID) == before {
+		return nil
+	}
+	return s.versions.RetirePending(ctx, tenantID, workflowID)
 }
 
 // ApproveVersion is the second person's approval of a high-risk version: the

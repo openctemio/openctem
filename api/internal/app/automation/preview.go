@@ -134,6 +134,10 @@ func (s *WorkflowService) Preview(ctx context.Context, in DraftInput, limit int)
 	if err != nil {
 		return nil, err
 	}
+	ctx = s.withFindingViewer(ctx)
+	if err := s.assertDraftSubjectsVisible(ctx, in.TenantID, w, scope); err != nil {
+		return nil, err
+	}
 	triggers := w.GetTriggerNodes()
 	trigger := triggers[0]
 	subjects, err := s.previewSubjects(ctx, in.TenantID, trigger.Config.TriggerType, scope, limit)
@@ -154,6 +158,39 @@ func (s *WorkflowService) Preview(ctx context.Context, in DraftInput, limit int)
 	}
 	res.Steps = agg.list()
 	return res, nil
+}
+
+// errPreviewSubjectHidden refuses a preview whose draft names a finding or
+// asset the caller may not read, exactly like one that does not exist.
+var errPreviewSubjectHidden = shared.NewDomainError("PREVIEW_SUBJECT_NOT_FOUND",
+	"a step names a finding or asset that is not in your data scope", shared.ErrNotFound)
+
+// assertDraftSubjectsVisible refuses a draft whose steps name a fixed
+// finding or asset (action_config finding_id, asset_id) outside the caller's
+// scope: the evaluator reads such a subject to say what the step would do,
+// and the preview would hand its title, severity and status to the caller.
+// A nil scope (an owner) reads everything.
+func (s *WorkflowService) assertDraftSubjectsVisible(ctx context.Context, tenantID shared.ID, w *automationdom.Workflow, scope *shared.DataScope) error {
+	if scope == nil {
+		return nil
+	}
+	reader, _ := s.runRepo.(automationdom.RunScopeReader)
+	for _, n := range w.Nodes {
+		findings, assets := stepSubjects(n.Config.ActionConfig, nil)
+		for _, id := range append(findings, assets...) {
+			if reader == nil {
+				return errPreviewSubjectHidden
+			}
+			ok, err := reader.SubjectVisible(ctx, tenantID, id, scope)
+			if err != nil {
+				return err
+			}
+			if !ok {
+				return errPreviewSubjectHidden
+			}
+		}
+	}
+	return nil
 }
 
 type previewSubject struct {

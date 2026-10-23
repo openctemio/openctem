@@ -157,3 +157,40 @@ func TestWorkflowGuardrails_DB(t *testing.T) {
 		}
 	})
 }
+
+// An older version that predates the guardrails (here an update_status to
+// resolved, as migration automation_versions stored version 1 of an existing
+// automation) is not published again by a rollback; a new change cap
+// withdraws a request waiting for approval.
+func TestWorkflowGuardrails_RollbackAndCap_DB(t *testing.T) {
+	f := newWFDB(t)
+	f.stepUp.set(f.admin, true)
+	wf := f.create(tagFlow("g"))
+	def := `{"nodes":[{"id":"` + shared.NewID().String() + `","node_key":"t","node_type":"trigger","name":"t","ui_position":{"x":0,"y":0},"config":{"trigger_type":"finding_created"}},
+		{"id":"` + shared.NewID().String() + `","node_key":"s","node_type":"action","name":"s","ui_position":{"x":0,"y":0},"config":{"action_type":"update_status","action_config":{"status":"resolved"}}}],
+		"edges":[{"source_node_key":"t","target_node_key":"s"}]}`
+	old := shared.NewID().String()
+	f.exec(`INSERT INTO automation_versions (id, tenant_id, automation_id, version, definition, digest, risk_class, status, published_by)
+		VALUES ($1, $2, $3, 1, $4::jsonb, $5, 'elevated', 'superseded', $6)`, old, f.tenantA, wf, def, strings.Repeat("a", 64), f.admin)
+	s, b := f.call(f.h.Rollback, f.as(f.admin, http.MethodPost, `{}`, map[string]string{"id": wf, "versionId": old}))
+	if s != http.StatusBadRequest || !strings.Contains(b, "AUTOMATION_STATUS_NOT_ALLOWED") {
+		t.Fatalf("rollback to a version that closes findings = %d %s, want 400 AUTOMATION_STATUS_NOT_ALLOWED", s, b)
+	}
+
+	// High risk via chaining; a pending request is withdrawn by a new cap.
+	chained := f.create(`[{"node_key":"t","node_type":"trigger","name":"t","config":{"trigger_type":"finding_created","trigger_config":{"allow_automation_triggers":true}}},
+		{"node_key":"a","node_type":"action","name":"a","config":{"action_type":"add_tags","action_config":{"tags":["c"]}}}]`,
+		`[{"source_node_key":"t","target_node_key":"a"}]`)
+	s, b = f.call(f.h.Publish, f.as(f.admin, http.MethodPost, `{}`, map[string]string{"id": chained}))
+	if s != http.StatusAccepted {
+		t.Fatalf("high-risk publish = %d %s", s, b)
+	}
+	if s, b := f.call(f.h.UpdateWorkflow, f.as(f.admin, http.MethodPut, `{"max_changes_per_run":100}`, map[string]string{"id": chained})); s != http.StatusOK {
+		t.Fatalf("set cap = %d %s", s, b)
+	}
+	var pending int
+	_ = f.raw.QueryRow(`SELECT count(*) FROM automation_versions WHERE automation_id = $1 AND status = 'pending_approval'`, chained).Scan(&pending)
+	if pending != 0 {
+		t.Fatalf("%d versions still wait for approval after the cap changed", pending)
+	}
+}
