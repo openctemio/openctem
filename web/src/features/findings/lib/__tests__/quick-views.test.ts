@@ -48,6 +48,12 @@ describe('quickViewIsActive', () => {
       true,
     ],
     ['an extra filter is no longer the view', 'severity=high', ACTIVE, false],
+    [
+      'a column choice does not change the view',
+      'status=new&state=all&columns=asset,status',
+      TRIAGE,
+      true,
+    ],
     ['the link the view makes is the view', 'status=new&state=all', TRIAGE, true],
     ['the same filter under the open lens is not the view', 'status=new', TRIAGE, false],
     ['plain list is not Needs triage', '', TRIAGE, false],

@@ -8,6 +8,10 @@ import { DedupReviewPage } from '../dedup-review-page'
 vi.mock('@/components/layout', () => ({
   Main: ({ children }: { children: React.ReactNode }) => <main>{children}</main>,
 }))
+vi.mock('../assets-section-tabs', () => ({
+  AssetsSectionTabs: () => null,
+  AssetAttentionTabs: () => null,
+}))
 vi.mock('@/lib/permissions', async (orig) => ({
   ...(await orig<typeof import('@/lib/permissions')>()),
   Can: ({ children }: { children: React.ReactNode }) => <>{children}</>,
