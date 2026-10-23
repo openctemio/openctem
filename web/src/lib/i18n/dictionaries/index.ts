@@ -43,6 +43,7 @@ import en_help from './en/help.json'
 import en_insights from './en/insights.json'
 import en_licensePolicy from './en/licensePolicy.json'
 import en_notificationTypes from './en/notificationTypes.json'
+import en_notifications from './en/notifications.json'
 import en_notificationChannels from './en/notificationChannels.json'
 import en_scmIntegration from './en/scmIntegration.json'
 import en_notificationPresets from './en/notificationPresets.json'
@@ -122,6 +123,7 @@ import vi_help from './vi/help.json'
 import vi_insights from './vi/insights.json'
 import vi_licensePolicy from './vi/licensePolicy.json'
 import vi_notificationTypes from './vi/notificationTypes.json'
+import vi_notifications from './vi/notifications.json'
 import vi_notificationChannels from './vi/notificationChannels.json'
 import vi_scmIntegration from './vi/scmIntegration.json'
 import vi_notificationPresets from './vi/notificationPresets.json'
@@ -206,6 +208,7 @@ export const enNamespaces: Record<string, Dictionary> = {
   insights: en_insights,
   licensePolicy: en_licensePolicy,
   notificationTypes: en_notificationTypes,
+  notifications: en_notifications,
   notificationChannels: en_notificationChannels,
   scmIntegration: en_scmIntegration,
   notificationPresets: en_notificationPresets,
@@ -288,6 +291,7 @@ export const viNamespaces: Record<string, Dictionary> = {
   insights: vi_insights,
   licensePolicy: vi_licensePolicy,
   notificationTypes: vi_notificationTypes,
+  notifications: vi_notifications,
   notificationChannels: vi_notificationChannels,
   scmIntegration: vi_scmIntegration,
   notificationPresets: vi_notificationPresets,

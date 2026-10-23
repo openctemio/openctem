@@ -1,18 +1,12 @@
-'use client'
-
-import { useCallback, useMemo, useRef } from 'react'
+import { useCallback, useMemo } from 'react'
 import { useListParams } from '@/hooks/use-list-params'
 import Link from '@/components/link'
-import { formatRelative } from '@/lib/format-date'
 import {
   AlertTriangle,
   Bell,
-  BellOff,
   CheckCheck,
   ChevronLeft,
   ChevronRight,
-  Inbox,
-  Info,
   Loader2,
   Settings,
 } from 'lucide-react'
@@ -23,8 +17,6 @@ import { useDisplayUser } from '@/hooks/use-display-user'
 import { useUserNotificationChannel } from '@/hooks/use-websocket'
 import { PageHeader } from '@/features/shared'
 import { Button } from '@/components/ui/button'
-import { Badge } from '@/components/ui/badge'
-import { Card, CardContent } from '@/components/ui/card'
 import {
   Select,
   SelectContent,
@@ -32,138 +24,17 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { cn } from '@/lib/utils'
-import { SEVERITY_BADGE_SOFT, SEVERITY_TEXT_COLORS } from '@/lib/severity-colors'
 import {
   useNotificationsApi,
   useUnreadCountApi,
-  markNotificationAsRead,
-  markAllNotificationsAsRead,
-  invalidateNotificationsCache,
-  type UserNotification,
   type NotificationListFilters,
 } from '@/features/notifications/api/use-notification-api'
-import {
-  NOTIFICATION_TYPE_ICONS,
-  NOTIFICATION_TYPE_LABELS,
-} from '@/features/notifications/lib/notification-types'
-import { safeHref } from '@/lib/safe-href'
+import { useMarkNotifications } from '@/features/notifications/api/use-mark-notifications'
+import { NotificationRow } from '@/features/notifications/components/notification-row'
 import { SEVERITY_LABELS, SEVERITY_LEVELS } from '@/lib/severity'
 import { useTranslation } from '@/context/i18n-provider'
 
-const severityColors: Record<string, string> = { ...SEVERITY_TEXT_COLORS }
-
-const severityBgColors: Record<string, string> = {
-  critical: SEVERITY_BADGE_SOFT.critical,
-  high: SEVERITY_BADGE_SOFT.high,
-  medium: SEVERITY_BADGE_SOFT.medium,
-  low: SEVERITY_BADGE_SOFT.low,
-  info: 'bg-muted border-muted-foreground/10',
-}
-
 const PER_PAGE = 20
-
-function NotificationRow({
-  notification,
-  onMarkAsRead,
-}: {
-  notification: UserNotification
-  onMarkAsRead: (id: string) => void
-}) {
-  const Icon = NOTIFICATION_TYPE_ICONS[notification.notification_type] || Info
-  const typeLabel =
-    NOTIFICATION_TYPE_LABELS[notification.notification_type] || notification.notification_type
-
-  const handleMarkAsRead = (e: React.MouseEvent | React.KeyboardEvent) => {
-    if (!notification.is_read) {
-      e.preventDefault()
-      onMarkAsRead(notification.id)
-    }
-  }
-
-  const ariaLabel = `${notification.is_read ? '' : 'Unread: '}${notification.title} - ${typeLabel} - ${notification.severity}`
-
-  const rowContent = (
-    <>
-      <div
-        className={cn(
-          'mt-0.5 flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full border sm:h-9 sm:w-9',
-          severityBgColors[notification.severity],
-          severityColors[notification.severity]
-        )}
-      >
-        <Icon className="h-4 w-4 flex-shrink-0" />
-      </div>
-
-      <div className="flex-1 min-w-0 space-y-1">
-        <div className="flex items-start justify-between gap-2">
-          <p className={cn('text-sm leading-snug', !notification.is_read && 'font-medium')}>
-            {notification.title}
-          </p>
-          <div className="flex items-center gap-2 flex-shrink-0">
-            <Badge variant="outline" className="text-[10px] hidden sm:inline-flex">
-              {typeLabel}
-            </Badge>
-            <Badge
-              variant="outline"
-              className={cn('text-[10px]', severityColors[notification.severity])}
-            >
-              {notification.severity}
-            </Badge>
-          </div>
-        </div>
-
-        {notification.body && (
-          <p className="text-xs text-muted-foreground line-clamp-2">{notification.body}</p>
-        )}
-
-        <p className="text-xs text-muted-foreground">{formatRelative(notification.created_at)}</p>
-      </div>
-
-      {!notification.is_read && (
-        <div className="mt-2 flex-shrink-0">
-          <div className="h-2 w-2 rounded-full bg-primary" />
-        </div>
-      )}
-    </>
-  )
-
-  const rowClassName = cn(
-    'flex items-start gap-3 rounded-lg border p-3 transition-colors hover:bg-muted/50 sm:gap-4 sm:p-4',
-    !notification.is_read && 'border-primary/20 bg-primary/5'
-  )
-
-  // The target comes from the server; a stored javascript:/data: value must
-  // not become a link.
-  const href = safeHref(notification.url)
-  if (href) {
-    return (
-      <Link
-        href={href}
-        className={cn(rowClassName, 'block')}
-        onClick={handleMarkAsRead}
-        aria-label={ariaLabel}
-      >
-        {rowContent}
-      </Link>
-    )
-  }
-
-  return (
-    <div
-      className={rowClassName}
-      onClick={handleMarkAsRead}
-      onKeyDown={(e) => {
-        if (e.key === 'Enter' || e.key === ' ') handleMarkAsRead(e)
-      }}
-      role="button"
-      tabIndex={0}
-      aria-label={ariaLabel}
-    >
-      {rowContent}
-    </div>
-  )
-}
 
 export default function NotificationsPage() {
   const { t } = useTranslation()
@@ -209,34 +80,14 @@ export default function NotificationsPage() {
   const total = data?.total ?? 0
   const unreadCount = unreadData?.count ?? 0
 
-  const markingRef = useRef<Set<string>>(new Set())
-
-  const handleMarkAsRead = useCallback(async (id: string) => {
-    if (markingRef.current.has(id)) return
-    markingRef.current.add(id)
-    try {
-      await markNotificationAsRead(id)
-      await invalidateNotificationsCache()
-    } catch {
-      // Silent fail — will retry on next poll
-    } finally {
-      markingRef.current.delete(id)
-    }
-  }, [])
-
-  const handleMarkAllAsRead = useCallback(async () => {
-    try {
-      await markAllNotificationsAsRead()
-      await invalidateNotificationsCache()
-    } catch {
-      // Silent fail
-    }
-  }, [])
+  const { markRead, markAllRead } = useMarkNotifications()
 
   // Reset page when filters change
   const handleSeverityChange = (value: string) => list.setFilter('severity', value)
 
   const handleReadFilterChange = (value: string) => list.setFilter('read', value)
+
+  const filtered = severityFilter !== 'all' || readFilter !== 'all'
 
   return (
     <Main>
@@ -244,131 +95,124 @@ export default function NotificationsPage() {
         <PageHeader title={t('settings.notifications.title', 'Notifications')} />
         <div className="flex items-center gap-2">
           {unreadCount > 0 && (
-            <Button variant="outline" size="sm" onClick={handleMarkAllAsRead}>
-              <CheckCheck className="h-4 w-4 me-1.5" />
-              Mark all as read
-            </Button>
+            <>
+              <span className="text-sm text-muted-foreground">
+                {t('notifications.unreadCount', '{n} unread', { n: unreadCount })}
+              </span>
+              <Button variant="outline" size="sm" onClick={() => void markAllRead()}>
+                <CheckCheck className="h-4 w-4 me-1.5" />
+                {t('notifications.markAllRead', 'Mark all as read')}
+              </Button>
+            </>
           )}
           <Button variant="outline" size="sm" asChild>
             <Link href="/account/notifications">
               <Settings className="h-4 w-4 me-1.5" />
-              Settings
+              {t('notifications.settings', 'Settings')}
             </Link>
           </Button>
         </div>
       </div>
 
-      {/* Summary Stats */}
-      <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-3">
-        <Card>
-          <CardContent className="flex items-center gap-3 p-4">
-            <div className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-full bg-primary/10 text-primary">
-              <Bell className="h-4 w-4" />
-            </div>
-            <div>
-              <p className="text-2xl font-semibold">{unreadCount}</p>
-              <p className="text-xs text-muted-foreground">Unread</p>
-            </div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="flex items-center gap-3 p-4">
-            <div className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-full bg-muted text-muted-foreground">
-              <BellOff className="h-4 w-4" />
-            </div>
-            <div>
-              <p className="text-2xl font-semibold">{Math.max(0, total - unreadCount)}</p>
-              <p className="text-xs text-muted-foreground">Read</p>
-            </div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="flex items-center gap-3 p-4">
-            <div className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-full bg-muted text-muted-foreground">
-              <Inbox className="h-4 w-4" />
-            </div>
-            <div>
-              <p className="text-2xl font-semibold">{total}</p>
-              <p className="text-xs text-muted-foreground">Total</p>
-            </div>
-          </CardContent>
-        </Card>
-      </div>
-
       {/* Filters */}
       <div className="mt-4 flex flex-wrap items-center gap-3">
         <Select value={severityFilter} onValueChange={handleSeverityChange}>
-          <SelectTrigger className="w-[130px] h-8 text-xs" aria-label="Filter by severity">
-            <SelectValue placeholder="Severity" />
+          <SelectTrigger
+            className="h-8 w-auto min-w-[8rem] text-xs"
+            aria-label={t('notifications.filters.severity', 'Filter by severity')}
+          >
+            <SelectValue placeholder={t('notifications.filters.severityPlaceholder', 'Severity')} />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="all">All severities</SelectItem>
+            <SelectItem value="all">
+              {t('notifications.filters.severityAll', 'All severities')}
+            </SelectItem>
             {SEVERITY_LEVELS.map((s) => (
               <SelectItem key={s} value={s}>
-                {SEVERITY_LABELS[s]}
+                {t(`severity.${s}`, SEVERITY_LABELS[s])}
               </SelectItem>
             ))}
           </SelectContent>
         </Select>
         <Select value={readFilter} onValueChange={handleReadFilterChange}>
-          <SelectTrigger className="w-[120px] h-8 text-xs" aria-label="Filter by read status">
-            <SelectValue placeholder="Status" />
+          <SelectTrigger
+            className="h-8 w-auto min-w-[8rem] text-xs"
+            aria-label={t('notifications.filters.status', 'Filter by read status')}
+          >
+            <SelectValue placeholder={t('notifications.filters.statusPlaceholder', 'Status')} />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="all">All</SelectItem>
-            <SelectItem value="unread">Unread</SelectItem>
-            <SelectItem value="read">Read</SelectItem>
+            <SelectItem value="all">{t('notifications.filters.statusAll', 'All')}</SelectItem>
+            <SelectItem value="unread">
+              {t('notifications.filters.statusUnread', 'Unread')}
+            </SelectItem>
+            <SelectItem value="read">{t('notifications.filters.statusRead', 'Read')}</SelectItem>
           </SelectContent>
         </Select>
       </div>
 
       {/* Notification List */}
-      <Card className="mt-4">
-        <CardContent className="p-0">
-          {isLoading ? (
-            <div className="flex flex-col items-center justify-center py-16 text-muted-foreground">
-              <Loader2 className="h-8 w-8 mb-3 animate-spin opacity-30" />
-              <p className="text-sm">Loading notifications...</p>
-            </div>
-          ) : error && !data ? (
-            <div className="flex flex-col items-center justify-center py-16 text-muted-foreground">
-              <AlertTriangle className="h-8 w-8 mb-3 opacity-30" />
-              <p className="text-sm font-medium">Failed to load notifications</p>
-              <p className="text-xs mt-1">Please try refreshing the page</p>
-            </div>
-          ) : notifications.length === 0 ? (
-            <div className="flex flex-col items-center justify-center py-16 text-muted-foreground">
-              <Bell className="h-10 w-10 mb-3 opacity-30" />
-              <p className="text-sm font-medium">
-                {severityFilter === 'all' && readFilter === 'all'
-                  ? 'No notifications yet'
-                  : 'No matching notifications'}
-              </p>
-              <p className="text-xs mt-1">
-                {severityFilter === 'all' && readFilter === 'all'
-                  ? 'Notifications will appear here when events occur'
-                  : 'Try adjusting your filters'}
-              </p>
-            </div>
-          ) : (
-            <div className="divide-y p-2 sm:p-3 space-y-2">
-              {notifications.map((notification) => (
-                <NotificationRow
-                  key={notification.id}
-                  notification={notification}
-                  onMarkAsRead={handleMarkAsRead}
-                />
-              ))}
-            </div>
-          )}
-        </CardContent>
-      </Card>
+      <div className="mt-4">
+        {isLoading ? (
+          <div
+            role="status"
+            className="flex flex-col items-center justify-center py-16 text-muted-foreground"
+          >
+            <Loader2 className="h-8 w-8 mb-3 animate-spin opacity-30" aria-hidden />
+            <p className="text-sm">{t('notifications.list.loading', 'Loading notifications')}</p>
+          </div>
+        ) : error && !data ? (
+          <div
+            role="alert"
+            className="flex flex-col items-center justify-center gap-3 py-16 text-muted-foreground"
+          >
+            <AlertTriangle className="h-8 w-8 opacity-30" aria-hidden />
+            <p className="text-sm font-medium">
+              {t('notifications.list.loadFailed', "Couldn't load notifications")}
+            </p>
+            <Button variant="outline" size="sm" onClick={() => void mutate()}>
+              {t('notifications.list.retry', 'Retry')}
+            </Button>
+          </div>
+        ) : notifications.length === 0 ? (
+          <div className="flex flex-col items-center justify-center py-16 text-muted-foreground">
+            <Bell className="h-10 w-10 mb-3 opacity-30" aria-hidden />
+            <p className="text-sm font-medium">
+              {filtered
+                ? t('notifications.list.emptyFilteredTitle', 'No matching notifications')
+                : t('notifications.list.emptyTitle', 'No notifications yet')}
+            </p>
+            <p className="text-xs mt-1">
+              {filtered
+                ? t('notifications.list.emptyFilteredHint', 'Try adjusting your filters')
+                : t(
+                    'notifications.list.emptyHint',
+                    'Notifications will appear here when events occur'
+                  )}
+            </p>
+          </div>
+        ) : (
+          <div className="divide-y border-y">
+            {notifications.map((notification) => (
+              <NotificationRow
+                key={notification.id}
+                notification={notification}
+                onMarkAsRead={markRead}
+              />
+            ))}
+          </div>
+        )}
+      </div>
 
       {/* Pagination */}
       {totalPages > 1 && (
         <div className="mt-4 flex items-center justify-between">
           <p className="text-sm text-muted-foreground">
-            Page {page} of {totalPages} ({total} total)
+            {t('notifications.pagination.page', 'Page {page} of {pages} ({total} total)', {
+              page,
+              pages: totalPages,
+              total,
+            })}
           </p>
           <div className="flex items-center gap-2">
             <Button
@@ -378,7 +222,7 @@ export default function NotificationsPage() {
               disabled={page <= 1}
             >
               <ChevronLeft className="h-4 w-4 me-1" />
-              Previous
+              {t('notifications.pagination.previous', 'Previous')}
             </Button>
             <Button
               variant="outline"
@@ -386,7 +230,7 @@ export default function NotificationsPage() {
               onClick={() => setPage(Math.min(totalPages, page + 1))}
               disabled={page >= totalPages}
             >
-              Next
+              {t('notifications.pagination.next', 'Next')}
               <ChevronRight className="h-4 w-4 ms-1" />
             </Button>
           </div>
