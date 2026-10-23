@@ -433,7 +433,6 @@
   "sensors.list.zoneGap": "no online sensor, scans here will wait",
   "sensors.list.onlineCount": "{count} online",
   "sensors.list.noZoneHint": "takes jobs that no zone claims",
-  "sensors.list.toast.refreshed": "Sensors refreshed",
   "sensors.list.toast.deleted": "Sensor \"{name}\" deleted",
   "sensors.list.toast.deleteFailed": "Failed to delete sensor",
   "sensors.list.toast.bulkDeleted": "{count} sensor(s) deleted successfully",
