@@ -2316,6 +2316,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 		s.ThreatAlerts = threatalertapp.NewService(repos.ThreatAlert, s.Audit, log)
 	}
 	s.Ingest.SetSoftwareChangeSink(s.VulnMatch)
+	s.SBOMImport.SetSoftwareChangeSink(s.VulnMatch)                  // An imported SBOM is matched in minutes
 	s.Ingest.SetRepositoryExtensionRepository(repos.RepoExt)         // Wire repository extension for auto web_url
 	s.Ingest.SetRelationshipRepository(repos.AssetRelationship)      // Wire subdomain-to-domain relationships
 	s.Ingest.SetAssetStateHistoryRepository(repos.AssetStateHistory) // Record appeared/recovered on discovery
