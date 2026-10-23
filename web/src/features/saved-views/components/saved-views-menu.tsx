@@ -34,11 +34,13 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { useMyGroups } from '@/features/access-control/api/use-groups'
+import type { ViewChange } from '../lib/view-changes'
 
 import {
   createSavedView,
   deleteSavedView,
   duplicateSavedView,
+  updateSavedView,
   type SavedView,
   type SavedViewPage,
   useSavedViews,
@@ -49,15 +51,52 @@ interface SavedViewsMenuProps {
   page: SavedViewPage
   /** The saved view the page shows, if any. */
   activeId?: string
-  /** True when the URL has filter params on top of the active view. */
+  /** True when the list differs from the active view (used when `changes` is not given). */
   modified?: boolean
+  /** What differs from the active view; any change shows the unsaved-changes dot. */
+  changes?: ViewChange[]
   /** The current group-by, saved with the view. */
   groupBy?: string
+  /** The optional columns the list shows, saved with the view. */
+  columns?: string[]
+  /** The row density the list shows, saved with the view (omitted when no choice was made). */
+  density?: string
+  /** Throw away the unsaved changes: back to the view as saved. */
+  onDiscard?: () => void
   /** Open a view (the page puts `view=<id>` in its URL). */
   onSelect: (view: SavedView | null) => void
 }
 
 const PERSONAL = 'personal'
+
+/** "2 filters added, columns changed": what the unsaved dot stands for. */
+export function summarizeChanges(
+  changes: ViewChange[],
+  t: (key: string, fallback?: string, vars?: Record<string, string | number>) => string
+): string {
+  return changes
+    .map((c) => {
+      switch (c.kind) {
+        case 'filters':
+          return t(
+            'confirm.savedView.change.filters',
+            '{count, plural, one {# filter added} other {# filters added}}',
+            { count: c.count }
+          )
+        case 'search':
+          return t('confirm.savedView.change.search', 'search changed')
+        case 'sort':
+          return t('confirm.savedView.change.sort', 'sort changed')
+        case 'group':
+          return t('confirm.savedView.change.group', 'grouping changed')
+        case 'columns':
+          return t('confirm.savedView.change.columns', 'columns changed')
+        case 'density':
+          return t('confirm.savedView.change.density', 'density changed')
+      }
+    })
+    .join(', ')
+}
 
 /**
  * The toolbar's saved views menu (UI contract D15): open a view, save the
@@ -69,7 +108,11 @@ export function SavedViewsMenu({
   page,
   activeId,
   modified,
+  changes,
   groupBy,
+  columns,
+  density,
+  onDiscard,
   onSelect,
 }: SavedViewsMenuProps) {
   // The list loads when it is about to be shown (pointer over or focus on the
@@ -90,6 +133,7 @@ export function SavedViewsMenu({
   const active = views.find((v) => v.id === activeId)
   const mine = views.filter((v) => v.is_owner)
   const shared = views.filter((v) => !v.is_owner)
+  const dirty = !!active && (changes ? changes.length > 0 : !!modified)
 
   const save = async () => {
     setSaving(true)
@@ -100,6 +144,8 @@ export function SavedViewsMenu({
         query: viewQueryFromSearch(window.location.search),
         group_id: share === PERSONAL ? undefined : share,
         group_by: groupBy || undefined,
+        columns,
+        density,
       })
       await mutate()
       setSaveOpen(false)
@@ -107,6 +153,37 @@ export function SavedViewsMenu({
       setShare(PERSONAL)
       toast.success(t('confirm.savedView.saved', 'Saved view "{name}"', { name: view.name }))
       onSelect(view)
+    } catch (e) {
+      toast.error(
+        e instanceof Error
+          ? e.message
+          : t('confirm.savedView.saveFailed', 'Could not save the view')
+      )
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  /** Saves the changes into the open view (its owner only). */
+  const saveChanges = async () => {
+    if (!active) return
+    setSaving(true)
+    try {
+      const view = await updateSavedView(active.id, {
+        page,
+        name: active.name,
+        description: active.description,
+        // The open view stays in the query: the API saves its filter with the
+        // URL's filters on top, as the list runs it.
+        query: viewQueryFromSearch(window.location.search),
+        group_id: active.group_id,
+        group_by: groupBy || undefined,
+        columns,
+        density,
+      })
+      await mutate()
+      toast.success(t('confirm.savedView.updated', 'Updated view "{name}"', { name: view.name }))
+      onDiscard?.()
     } catch (e) {
       toast.error(
         e instanceof Error
@@ -212,7 +289,16 @@ export function SavedViewsMenu({
             size="sm"
             className="h-9 max-w-[14rem]"
             // The name stays readable when only the icon shows (narrow toolbar).
-            aria-label={active ? active.name : t('confirm.savedView.trigger', 'Views')}
+            aria-label={
+              active
+                ? dirty
+                  ? t('confirm.savedView.triggerDirty', '{name}, unsaved changes', {
+                      name: active.name,
+                    })
+                  : active.name
+                : t('confirm.savedView.trigger', 'Views')
+            }
+            data-dirty={dirty ? 'true' : undefined}
             onPointerEnter={() => setWanted(true)}
             onFocus={() => setWanted(true)}
           >
@@ -221,14 +307,42 @@ export function SavedViewsMenu({
             <span className="hidden truncate @2xl/toolbar:inline">
               {active ? active.name : t('confirm.savedView.trigger', 'Views')}
             </span>
-            {active && modified && (
-              <span className="ms-1 hidden text-xs text-muted-foreground @2xl/toolbar:inline">
-                {t('confirm.savedView.modified', '(modified)')}
-              </span>
+            {dirty && (
+              // The unsaved-changes dot: state by shape and colour, never colour alone
+              // (the button's name says it too).
+              <span
+                data-testid="saved-view-dirty-dot"
+                aria-hidden
+                className="ms-1.5 size-2 shrink-0 rounded-full bg-warning"
+              />
             )}
           </Button>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end" className="w-64">
+          {dirty && active && (
+            <>
+              <DropdownMenuLabel className="text-xs font-normal text-muted-foreground">
+                {t('confirm.savedView.unsaved', 'Unsaved changes to “{name}”: {changes}', {
+                  name: active.name,
+                  changes: changes ? summarizeChanges(changes, t) : '',
+                })}
+              </DropdownMenuLabel>
+              {active.is_owner && (
+                <DropdownMenuItem disabled={saving} onSelect={() => void saveChanges()}>
+                  {t('confirm.savedView.saveChanges', 'Save changes')}
+                </DropdownMenuItem>
+              )}
+              <DropdownMenuItem onSelect={() => setSaveOpen(true)}>
+                {t('confirm.savedView.saveAsNew', 'Save as new view…')}
+              </DropdownMenuItem>
+              {onDiscard && (
+                <DropdownMenuItem onSelect={onDiscard}>
+                  {t('confirm.savedView.discard', 'Discard changes')}
+                </DropdownMenuItem>
+              )}
+              <DropdownMenuSeparator />
+            </>
+          )}
           {mine.length > 0 && (
             <DropdownMenuLabel>{t('confirm.savedView.mine', 'My views')}</DropdownMenuLabel>
           )}

@@ -43,6 +43,7 @@ export const NON_FILTER_PARAMS: ReadonlySet<string> = new Set([
   'group',
   'view',
   'density',
+  'columns',
   'tab',
   'state',
   'strict',

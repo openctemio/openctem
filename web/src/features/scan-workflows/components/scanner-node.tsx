@@ -4,6 +4,7 @@ import { memo, useState, useCallback, useMemo, useEffect } from 'react'
 import { Handle, Position, type NodeProps, type Node } from '@xyflow/react'
 import { Radar, Play, Flag, Clock, Link2, AlertTriangle } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { useTranslation } from '@/context/i18n-provider'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
 import { Badge } from '@/components/ui/badge'
@@ -161,6 +162,7 @@ function getColorsForCategory(categoryColor?: string) {
 }
 
 function ScannerNodeComponent({ data, selected }: NodeProps<ScannerNode>) {
+  const { t } = useTranslation()
   const colors = getColorsForCategory(data.categoryColor)
 
   // Validation: step must have either a tool or capabilities
@@ -169,7 +171,7 @@ function ScannerNodeComponent({ data, selected }: NodeProps<ScannerNode>) {
   const isValid = data.isValid !== undefined ? data.isValid : hasToolOrCapabilities
   const validationMessage =
     data.validationMessage ||
-    (!hasToolOrCapabilities ? 'Step requires a scanner or capabilities' : '')
+    (!hasToolOrCapabilities ? t('workflowStages.node.requiresScanner') : '')
 
   // Local state for controlled inputs
   const [localLabel, setLocalLabel] = useState(data.label)
@@ -270,7 +272,11 @@ function ScannerNodeComponent({ data, selected }: NodeProps<ScannerNode>) {
       )}
     >
       {/* Target Handle: the step's typed input ports */}
-      <TypedHandle type="target" ports={data.inPorts ?? []} label="Takes" />
+      <TypedHandle
+        type="target"
+        ports={data.inPorts ?? []}
+        label={t('workflowStages.node.takes')}
+      />
 
       {/* Header with icon and name */}
       <div
@@ -298,7 +304,8 @@ function ScannerNodeComponent({ data, selected }: NodeProps<ScannerNode>) {
             value={localLabel}
             onChange={handleLabelChange}
             className="h-7 px-1.5 text-sm font-medium border-0 bg-transparent focus-visible:ring-0 focus-visible:ring-offset-0 p-0"
-            placeholder="Step name"
+            placeholder={t('workflowStages.node.stepName')}
+            aria-label={t('workflowStages.node.stepName')}
           />
         </div>
       </div>
@@ -307,25 +314,24 @@ function ScannerNodeComponent({ data, selected }: NodeProps<ScannerNode>) {
       <div className="px-3 py-2 space-y-2">
         {/* Step Key (auto-generated) */}
         <div className="flex items-center gap-1.5">
-          <span className="text-[10px] text-muted-foreground w-12 shrink-0">Key:</span>
+          <span className="text-[10px] text-muted-foreground w-12 shrink-0">
+            {t('workflowStages.node.key')}
+          </span>
           <Input
             value={localStepKey}
             onChange={handleStepKeyChange}
             readOnly={data.stepKeyLocked}
-            aria-label="Step key"
-            title={
-              data.stepKeyLocked
-                ? 'Fixed once saved: run history and other steps refer to it.'
-                : undefined
-            }
+            aria-label={t('workflowStages.node.stepKeyAria')}
+            title={data.stepKeyLocked ? t('workflowStages.node.keyLocked') : undefined}
             className="h-5 px-1 text-[10px] font-mono border-dashed border-slate-300 dark:border-slate-600 bg-slate-50 dark:bg-slate-800/50 focus-visible:ring-0"
-            placeholder="step-key"
+            placeholder={t('workflowStages.node.keyPlaceholder')}
           />
         </div>
 
         {/* Tool Selector */}
         <Select value={data.tool || '__none__'} onValueChange={handleToolChange}>
           <SelectTrigger
+            aria-label={t('workflowStages.node.scannerAria')}
             className={cn(
               'h-7 text-xs bg-slate-50 dark:bg-slate-800',
               !isValid
@@ -333,15 +339,17 @@ function ScannerNodeComponent({ data, selected }: NodeProps<ScannerNode>) {
                 : 'border-slate-200 dark:border-slate-700'
             )}
           >
-            <SelectValue placeholder="Select scanner">
+            <SelectValue placeholder={t('workflowStages.node.selectScanner')}>
               {data.toolDisplayName ||
                 data.tool ||
-                (data.capabilityName ? 'Any tool (see settings)' : 'No scanner')}
+                (data.capabilityName
+                  ? t('workflowStages.node.anyTool')
+                  : t('workflowStages.node.noScanner'))}
             </SelectValue>
           </SelectTrigger>
           <SelectContent position="popper" className="max-h-60">
             <SelectItem value="__none__">
-              <span className="text-muted-foreground">No scanner</span>
+              <span className="text-muted-foreground">{t('workflowStages.node.noScanner')}</span>
             </SelectItem>
             {data.availableTools?.map((tool) => (
               <SelectItem key={tool.name} value={tool.name}>
@@ -369,6 +377,7 @@ function ScannerNodeComponent({ data, selected }: NodeProps<ScannerNode>) {
             step={60}
             value={localTimeout}
             onChange={handleTimeoutChange}
+            aria-label={t('workflowStages.node.timeoutAria')}
             className="h-6 px-1.5 text-xs flex-1 border-slate-200 dark:border-slate-700"
           />
           <Badge variant="secondary" className="text-[9px] px-1 py-0 shrink-0">
@@ -387,14 +396,20 @@ function ScannerNodeComponent({ data, selected }: NodeProps<ScannerNode>) {
                 </Badge>
               )}
             </div>
-            <PortChips label="takes" ports={data.inPorts ?? []} labels={data.portLabels} />
-            <PortChips label="gives" ports={data.outPorts ?? []} labels={data.portLabels} />
+            <PortChips
+              label={t('workflowStages.node.takesLower')}
+              ports={data.inPorts ?? []}
+              labels={data.portLabels}
+            />
+            <PortChips
+              label={t('workflowStages.node.givesLower')}
+              ports={data.outPorts ?? []}
+              labels={data.portLabels}
+            />
           </div>
         ) : (
           (data.tool || localCapabilities.length > 0) && (
-            <p className="text-[10px] text-muted-foreground">
-              No typed ports: runs on the scan&apos;s targets and takes no data from earlier steps.
-            </p>
+            <p className="text-[10px] text-muted-foreground">{t('workflowStages.node.noPorts')}</p>
           )
         )}
 
@@ -449,13 +464,14 @@ function ScannerNodeComponent({ data, selected }: NodeProps<ScannerNode>) {
             onClick={() => setShowDescription(true)}
             className="text-[10px] text-muted-foreground hover:text-foreground"
           >
-            + Add description
+            + {t('workflowStages.node.addDescription')}
           </button>
         ) : (
           <Textarea
             value={localDescription}
             onChange={handleDescriptionChange}
-            placeholder="Optional description..."
+            placeholder={t('workflowStages.node.descriptionPlaceholder')}
+            aria-label={t('workflowStages.node.descriptionAria')}
             rows={2}
             className="text-xs resize-none border-slate-200 dark:border-slate-700"
           />
@@ -463,7 +479,11 @@ function ScannerNodeComponent({ data, selected }: NodeProps<ScannerNode>) {
       </div>
 
       {/* Source Handle: the step's typed output ports */}
-      <TypedHandle type="source" ports={data.outPorts ?? []} label="Gives" />
+      <TypedHandle
+        type="source"
+        ports={data.outPorts ?? []}
+        label={t('workflowStages.node.gives')}
+      />
     </div>
   )
 }

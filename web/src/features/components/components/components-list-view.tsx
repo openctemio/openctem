@@ -105,7 +105,9 @@ export function ComponentsListView() {
     per_page: list.perPage,
     sort: list.sort,
   })
-  const { data: summary, isLoading: summaryLoading } = useComponentsSummary(filters)
+  // The tiles are page-level (the whole inventory, whatever the filters), so a
+  // tile's number is what its preset opens.
+  const { data: summary, isLoading: summaryLoading } = useComponentsSummary({})
 
   const [filtersOpen, setFiltersOpen] = useFiltersOpen()
   const [sheetOpen, setSheetOpen] = useState(false)
@@ -118,6 +120,9 @@ export function ComponentsListView() {
   const hasQuery = activeCount > 0 || list.q !== ''
 
   const applyPreset = (p: ComponentPreset) => {
+    // A preset replaces every filter, the search included.
+    setSearch('')
+    setListSearch('')
     for (const name of Object.keys(COMPONENT_FILTER_DEFAULTS) as ComponentFilterName[]) {
       list.setFilter(name, PRESET_FILTERS[p][name] ?? '')
     }
@@ -160,19 +165,15 @@ export function ComponentsListView() {
       onClick: () => applyPreset('fixable'),
       active: preset === 'fixable',
     },
-    {
+  ]
+  // No package health data: no tile, rather than a dash with an apology.
+  if (summary?.outdated != null) {
+    metrics.push({
       key: 'outdated',
       label: t('components.kpi.outdated', 'Outdated'),
-      value: summary?.outdated ?? '—',
-      hint:
-        summary?.outdated == null
-          ? t(
-              'components.kpi.outdatedHint',
-              'Needs package health data from the vulnerability feed'
-            )
-          : undefined,
-    },
-  ]
+      value: summary.outdated,
+    })
+  }
 
   const columns = useMemo<ColumnDef<ComponentPackage>[]>(
     () => [
