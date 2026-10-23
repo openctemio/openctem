@@ -108,12 +108,12 @@ describe('AutomationCanvas steps', () => {
 
   it('shows preview counts on the steps', () => {
     renderCanvas({
-      counts: new Map([['a1', { in: 12, out: 10, skipped: { held_daily_cap: 2 } }]]),
+      counts: new Map([['a1', { in: 12, out: 10, skipped: { no_change: 2 } }]]),
     })
     const counts = screen.getAllByTestId('step-counts')[0]
     expect(counts).toHaveTextContent('in 12')
     expect(counts).toHaveTextContent('out 10')
-    expect(counts).toHaveTextContent('2 held by the daily cap')
+    expect(counts).toHaveTextContent('2 nothing to change')
   })
 
   it('selects the step a validate problem points at', async () => {
