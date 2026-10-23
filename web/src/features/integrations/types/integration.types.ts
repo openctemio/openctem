@@ -5,6 +5,8 @@
  * Integrations are pull-based data sources that the platform connects to.
  */
 
+import { SEVERITY_DOT_COLORS } from '@/lib/severity-colors'
+
 /**
  * Integration category
  */
@@ -86,12 +88,12 @@ export const ALL_NOTIFICATION_SEVERITIES: {
   label: string
   color: string
 }[] = [
-  { value: 'critical', label: 'Critical', color: 'bg-red-500' },
-  { value: 'high', label: 'High', color: 'bg-orange-500' },
-  { value: 'medium', label: 'Medium', color: 'bg-yellow-500' },
-  { value: 'low', label: 'Low', color: 'bg-blue-500' },
-  { value: 'info', label: 'Info', color: 'bg-gray-500' },
-  { value: 'none', label: 'None', color: 'bg-gray-300' },
+  { value: 'critical', label: 'Critical', color: SEVERITY_DOT_COLORS.critical },
+  { value: 'high', label: 'High', color: SEVERITY_DOT_COLORS.high },
+  { value: 'medium', label: 'Medium', color: SEVERITY_DOT_COLORS.medium },
+  { value: 'low', label: 'Low', color: SEVERITY_DOT_COLORS.low },
+  { value: 'info', label: 'Info', color: SEVERITY_DOT_COLORS.info },
+  { value: 'none', label: 'None', color: 'bg-muted-foreground/40' },
 ]
 
 /**
