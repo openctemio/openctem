@@ -10,6 +10,7 @@ import {
   EmptyState,
   DataTable,
   DataTableColumnHeader,
+  ErrorState,
   CappedNotice,
 } from '@/features/shared'
 import { Button } from '@/components/ui/button'
@@ -28,6 +29,9 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { Plus, RefreshCw, CalendarClock, Lightbulb } from 'lucide-react'
 import { post } from '@/lib/api/client'
 import { useRegisterPages } from '@/lib/api/use-register-pages'
+import { getErrorMessage } from '@/lib/api/error-handler'
+import { Can, Permission } from '@/lib/permissions'
+import { formatDateOnly } from '@/lib/date-only'
 import { toast } from 'sonner'
 import { CyclePolicyCard, summarizeEvaluation, type CtemCycle } from '@/features/cycles'
 import { CycleStatusBadge } from '@/features/cycles/components/cycle-status-badge'
@@ -39,8 +43,7 @@ const LESSONS_CALLOUT_CLASS =
 const LESSONS_ICON_CLASS = 'h-4 w-4 text-amber-500' // palette-ok: distinct lessons info accent
 
 function formatDate(dateStr: string): string {
-  if (!dateStr) return '-'
-  return new Date(dateStr).toLocaleDateString()
+  return formatDateOnly(dateStr) || '-'
 }
 
 // CTEM operating rhythm (https://ctem.org/docs/stages/ctem-mobilization): the
@@ -84,6 +87,7 @@ export default function CtemCyclesPage() {
   const { t } = useTranslation()
   const router = useRouter()
   const {
+    error: loadError,
     data: response,
     isLoading,
     mutate,
@@ -123,11 +127,20 @@ export default function CtemCyclesPage() {
     setFormData({ name: '', description: '', start_date: '', end_date: '' })
   }
 
+  const [isCreating, setIsCreating] = useState(false)
   const handleCreate = async () => {
+    if (isCreating) return
     if (!formData.name) {
       toast.error('Please provide a cycle name')
       return
     }
+    if (formData.start_date && formData.end_date && formData.end_date < formData.start_date) {
+      toast.error(
+        t('scope.cycles.endBeforeStart', 'The end date must not be before the start date.')
+      )
+      return
+    }
+    setIsCreating(true)
     try {
       const created = await post<CtemCycle>('/api/v1/ctem-cycles', formData)
       await mutate()
@@ -136,8 +149,10 @@ export default function CtemCyclesPage() {
       resetForm()
       // Straight to the new cycle, where its charter is written.
       if (created?.id) router.push(`/cycles/${created.id}`)
-    } catch {
-      toast.error('Failed to create cycle')
+    } catch (err) {
+      toast.error(getErrorMessage(err, t('scope.cycles.createFailed', 'Failed to create cycle')))
+    } finally {
+      setIsCreating(false)
     }
   }
 
@@ -205,10 +220,12 @@ export default function CtemCyclesPage() {
             'Plan and run CTEM cycles: the charter, the scope it freezes and the outcome it is judged by.'
           )}
         >
-          <Button size="sm" onClick={() => setIsCreateOpen(true)}>
-            <Plus className="me-2 h-4 w-4" />
-            New cycle
-          </Button>
+          <Can permission={Permission.CTEMCyclesWrite}>
+            <Button size="sm" onClick={() => setIsCreateOpen(true)}>
+              <Plus className="me-2 h-4 w-4" />
+              New cycle
+            </Button>
+          </Can>
         </PageHeader>
 
         <div className="mt-4">
@@ -256,6 +273,12 @@ export default function CtemCyclesPage() {
                 <Skeleton key={i} className="h-10 w-full" />
               ))}
             </div>
+          ) : loadError ? (
+            <ErrorState
+              title={t('scope.cycles.loadError', 'cycles')}
+              error={loadError}
+              onRetry={() => mutate()}
+            />
           ) : cycles.length === 0 ? (
             <EmptyState
               icon={RefreshCw}
@@ -347,7 +370,9 @@ export default function CtemCyclesPage() {
             <Button variant="outline" onClick={() => setIsCreateOpen(false)}>
               Cancel
             </Button>
-            <Button onClick={handleCreate}>Create</Button>
+            <Button onClick={handleCreate} disabled={isCreating}>
+              Create
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

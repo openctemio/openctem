@@ -89,6 +89,9 @@ import en_remediationClaim from './en/remediationClaim.json'
 import en_remediationCampaigns from './en/remediationCampaigns.json'
 import en_remediationQuery from './en/remediationQuery.json'
 import en_myWork from './en/myWork.json'
+import en_threatModel from './en/threatModel.json'
+import en_attackerProfiles from './en/attackerProfiles.json'
+import en_letters from './en/letters.json'
 import vi_account from './vi/account.json'
 import en_crownJewels from './en/crownJewels.json'
 import vi_activity from './vi/activity.json'
@@ -172,6 +175,9 @@ import vi_remediationClaim from './vi/remediationClaim.json'
 import vi_remediationCampaigns from './vi/remediationCampaigns.json'
 import vi_remediationQuery from './vi/remediationQuery.json'
 import vi_myWork from './vi/myWork.json'
+import vi_threatModel from './vi/threatModel.json'
+import vi_attackerProfiles from './vi/attackerProfiles.json'
+import vi_letters from './vi/letters.json'
 import vi_crownJewels from './vi/crownJewels.json'
 
 export type Dictionary = Record<string, string>
@@ -260,6 +266,9 @@ export const enNamespaces: Record<string, Dictionary> = {
   remediationCampaigns: en_remediationCampaigns,
   remediationQuery: en_remediationQuery,
   myWork: en_myWork,
+  threatModel: en_threatModel,
+  attackerProfiles: en_attackerProfiles,
+  letters: en_letters,
   crownJewels: en_crownJewels,
 }
 
@@ -346,6 +355,9 @@ export const viNamespaces: Record<string, Dictionary> = {
   remediationCampaigns: vi_remediationCampaigns,
   remediationQuery: vi_remediationQuery,
   myWork: vi_myWork,
+  threatModel: vi_threatModel,
+  attackerProfiles: vi_attackerProfiles,
+  letters: vi_letters,
   crownJewels: vi_crownJewels,
 }
 
