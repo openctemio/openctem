@@ -2138,5 +2138,17 @@
   "scans.failure.ERROR.text": "The tool could not run this check (template not available, or a tool error).",
   "scans.failure.ERROR.fix": "The finding is unchanged. Verify it by hand, or retest after the sensor's templates are updated.",
   "scans.failure.RETEST_UNAVAILABLE.text": "The tool could not run this check, so there is nothing to retest with it.",
-  "scans.failure.RETEST_UNAVAILABLE.fix": "The finding is unchanged. Verify it by hand."
+  "scans.failure.RETEST_UNAVAILABLE.fix": "The finding is unchanged. Verify it by hand.",
+  "scans.runs.listName": "the run list",
+  "scans.configs.metricAll": "Configurations",
+  "scans.configs.metricEnabled": "Enabled",
+  "scans.configs.metricPaused": "Schedule paused",
+  "scans.configs.metricDisabled": "Disabled",
+  "scans.configs.searchPlaceholder": "Search configurations…",
+  "scans.configs.searchLabel": "Search scan configurations",
+  "scans.configs.filtersLabel": "Scan configuration filters",
+  "scans.workflows.ownerFilter": "Workflow owner",
+  "scans.workflows.ownerAll": "All workflows",
+  "scans.workflows.ownerMine": "My workflows",
+  "scans.workflows.ownerSystem": "System templates"
 }

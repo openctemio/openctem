@@ -168,6 +168,10 @@ var catalog = []Metric{
 	{ID: "findings.age_bands", Group: "remediation", Kind: MetricKindCount, Filters: f1Dims, GroupBys: groupableF1, MaxGroupBy: 2,
 		DefaultGroupBy: []Dimension{DimSeverity, DimAgeBand}, Polarity: PolarityLowerBetter},
 	{ID: "sla.within", Group: "remediation", Kind: MetricKindRatio, Filters: f1Dims, Polarity: PolarityHigherBetter},
+	// Share of the assets the coverage ledger tracks that had a successful
+	// discovery run within the coverage window. A blocked or failed run
+	// never counts as covered; nothing tracked is not measured, never 0 %.
+	{ID: "coverage.discovery", Group: "ctem", Kind: MetricKindRatio, Polarity: PolarityHigherBetter},
 	{ID: "fix.time_to_fix", Group: "remediation", Kind: MetricKindDuration, Filters: f2Dims, GroupBys: []Dimension{DimPriorityClass, DimSeverity}, MaxGroupBy: 1,
 		Polarity: PolarityLowerBetter, Timed: true},
 	{ID: "flow.new_vs_fixed", Group: "remediation", Kind: MetricKindSeries, Filters: f2Dims, Polarity: PolarityNeutral, Timed: true,
