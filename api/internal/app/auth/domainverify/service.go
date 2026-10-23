@@ -67,6 +67,9 @@ type Service struct {
 
 	// claimListener hears SSO claim transitions (RFC-058 home cascade).
 	claimListener ClaimListener
+	// lossListener is told when a domain verified for SSO fails its periodic
+	// re-verification (the owners are alerted; SSO enforcement stays on).
+	lossListener DomainLossListener
 
 	// ssoReady reports whether an organization has a usable SSO sign-in
 	// (sso_required needs one). Nil: sso_required is refused.
@@ -198,6 +201,22 @@ func (s *Service) AddDomain(ctx context.Context, tenantID shared.ID, rawDomain s
 // List returns all verified-domain rows for a tenant.
 func (s *Service) List(ctx context.Context, tenantID shared.ID) ([]*verifieddomain.VerifiedDomain, error) {
 	return s.repo.ListByTenant(ctx, tenantID)
+}
+
+// HasVerifiedSSODomain reports whether the organization holds at least one
+// domain verified for SSO. Tenant-scoped; a lookup error is returned so the
+// caller fails closed.
+func (s *Service) HasVerifiedSSODomain(ctx context.Context, tenantID shared.ID) (bool, error) {
+	rows, err := s.repo.ListByTenant(ctx, tenantID)
+	if err != nil {
+		return false, err
+	}
+	for _, vd := range rows {
+		if vd.TenantID() == tenantID && vd.AdmitsSSO() {
+			return true, nil
+		}
+	}
+	return false, nil
 }
 
 // Delete removes a tenant's verified-domain row by id.
@@ -332,6 +351,15 @@ type ClaimListener interface {
 	HomeDomainRestored(ctx context.Context, home shared.ID, domain string)
 }
 
+// DomainLossListener hears that a domain verified for SSO failed its periodic
+// DNS re-verification.
+type DomainLossListener interface {
+	SSODomainVerificationLost(ctx context.Context, tenantID shared.ID, domain string)
+}
+
+// SetDomainLossListener wires the alert for a lapsed SSO domain.
+func (s *Service) SetDomainLossListener(l DomainLossListener) { s.lossListener = l }
+
 // SetClaimListener wires the claim transitions.
 func (s *Service) SetClaimListener(l ClaimListener) { s.claimListener = l }
 
@@ -369,6 +397,10 @@ func (s *Service) ReverifyDue(ctx context.Context, staleness time.Duration, batc
 			continue
 		}
 		s.claimChanged(ctx, vd, wasHolder)
+		if before == verifieddomain.StatusVerified && !vd.IsVerified() && vd.Purpose() == verifieddomain.PurposeSSO &&
+			s.lossListener != nil {
+			s.lossListener.SSODomainVerificationLost(ctx, vd.TenantID(), vd.Domain())
+		}
 		if vd.Status() != before {
 			changed++
 			s.logger.Info("verified domain status changed on re-verify",

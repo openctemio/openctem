@@ -398,6 +398,7 @@ func (s *Service) EvaluateCommandCoverage(ctx context.Context, tenantID, command
 		out.NotObserved = append(out.NotObserved, s.markSecretsNotObserved(ctx, tenantID, commandID, d.query, false)...)
 	}
 	if len(stale) == 0 {
+		s.recordCoverageReceipt(ctx, tenantID, commandID, d.query, out, false)
 		return out
 	}
 	out.Held = s.coverageGuard.Holds(len(stale), open)
@@ -445,6 +446,7 @@ func (s *Service) EvaluateCommandCoverage(ctx context.Context, tenantID, command
 		s.logger.Info("coverage auto-resolve: resolved findings", append(logArgs, "resolved", len(resolved))...)
 	}
 	s.auditCoverageAutoResolve(ctx, tenantID, commandID, d.query, out, open)
+	s.recordCoverageReceipt(ctx, tenantID, commandID, d.query, out, false)
 	return out
 }
 
@@ -504,6 +506,7 @@ func (s *Service) evaluateRepoCoverage(ctx context.Context, tenantID, commandID 
 	}
 	out.NotObserved = append(out.NotObserved, s.markSecretsNotObserved(ctx, tenantID, commandID, d.query, true)...)
 	if len(stale) == 0 {
+		s.recordCoverageReceipt(ctx, tenantID, commandID, d.query, out, true)
 		return out
 	}
 	out.WouldResolve = stale
@@ -529,6 +532,7 @@ func (s *Service) evaluateRepoCoverage(ctx context.Context, tenantID, commandID 
 		s.logger.Info("repository auto-resolve: resolved findings", append(logArgs, "resolved", len(resolved))...)
 	}
 	s.auditCoverageAutoResolve(ctx, tenantID, commandID, d.query, out, open)
+	s.recordCoverageReceipt(ctx, tenantID, commandID, d.query, out, true)
 	return out
 }
 
