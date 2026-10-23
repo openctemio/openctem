@@ -130,7 +130,6 @@ import {
   Loader2,
   Route,
   ClipboardList,
-  AlertOctagon,
   Wrench,
   Search,
   ArrowLeft,
@@ -145,6 +144,7 @@ import {
   FINDING_STATUS_CONFIG,
   findingStatusesInCategory,
 } from '@/features/findings'
+import { KevBadge } from '@/components/ui/kev-badge'
 import { PriorityClassBadge } from '@/features/findings/components/priority-class-badge'
 import { BranchOnlyBadge } from '@/features/findings/components/branch-only-badge'
 import { SlaStatusBadge } from '@/features/sla/components/sla-status-badge'
@@ -1377,10 +1377,7 @@ function FindingsContent() {
                 {row.original.isInKev && (
                   <Tooltip>
                     <TooltipTrigger asChild>
-                      <span className="inline-flex shrink-0 items-center gap-0.5 rounded-full bg-red-600 px-1.5 py-0.5 text-[10px] font-semibold text-white">
-                        <AlertOctagon className="h-2.5 w-2.5" />
-                        {t('findings.list.kev', 'KEV')}
-                      </span>
+                      <KevBadge />
                     </TooltipTrigger>
                     <TooltipContent side="top" className="max-w-xs text-xs">
                       <p className="font-semibold">
@@ -1399,7 +1396,7 @@ function FindingsContent() {
                 {typeof row.original.epssScore === 'number' && row.original.epssScore > 0 && (
                   <Tooltip>
                     <TooltipTrigger asChild>
-                      <span className="inline-flex shrink-0 items-center rounded-full bg-amber-500/15 px-1.5 py-0.5 text-[10px] font-medium text-amber-700 dark:text-amber-400">
+                      <span className="inline-flex shrink-0 items-center rounded-full bg-muted px-1.5 py-0.5 text-[10px] font-medium text-foreground">
                         {t('findings.list.epss', 'EPSS {score}', {
                           score: formatEpssScore(row.original.epssScore),
                         })}
@@ -1416,7 +1413,7 @@ function FindingsContent() {
                 {hasDataFlow && (
                   <Tooltip>
                     <TooltipTrigger asChild>
-                      <span className="inline-flex items-center gap-0.5 rounded-full bg-blue-500/20 px-1.5 py-0.5 text-[10px] font-medium text-blue-400 shrink-0">
+                      <span className="inline-flex items-center gap-0.5 rounded-full bg-muted px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground shrink-0">
                         <Route className="h-2.5 w-2.5" />
                       </span>
                     </TooltipTrigger>

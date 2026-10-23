@@ -29,6 +29,7 @@ import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Skeleton } from '@/components/ui/skeleton'
 import { cn } from '@/lib/utils'
 import { post } from '@/lib/api/client'
+import { PRIORITY_ORDER } from '@/lib/priority-colors'
 import { PriorityClassBadge } from '@/features/findings/components/priority-class-badge'
 import { SEVERITY_BADGE_SOFT, type SeverityLevel } from '@/lib/severity-colors'
 import { AlertTriangle, ArrowRight, FlaskConical, ListChecks } from 'lucide-react'
@@ -83,7 +84,6 @@ export interface DryRunResult {
 }
 
 const DRY_RUN_ENDPOINT = '/api/v1/priority-rules/dry-run'
-const PRIORITY_ORDER: PriorityClass[] = ['P0', 'P1', 'P2', 'P3']
 
 /** Map a raw severity string to its centralized soft-tint badge classes. */
 function severityBadgeClass(severity: string): string {
