@@ -13,6 +13,8 @@ import { ErrorState, MetricStrip, PageHeader, type MetricStripItem } from '@/fea
 import { Skeleton } from '@/components/ui/skeleton'
 import { Tabs, TabsContent, TabsCount, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { useUrlFilter } from '@/hooks/use-url-param'
+import { formatDateOnly, parseDateOnly } from '@/lib/date-only'
+import { useTranslation } from '@/context/i18n-provider'
 import { CharterEditorSheet, summarizeEvaluation } from '@/features/cycles'
 import { useCycle, useCycleProfiles, useCycleScope } from '@/features/cycles/api'
 import { CycleStatusBadge } from '@/features/cycles/components/cycle-status-badge'
@@ -29,13 +31,13 @@ const TABS = ['charter', 'scope', 'profiles', 'outcome'] as const
 type CycleTab = (typeof TABS)[number]
 
 function formatDate(d?: string): string {
-  return d ? new Date(d).toLocaleDateString() : ''
+  return formatDateOnly(d)
 }
 
 /** "Day 23 of 90" while running, the date range otherwise. */
 function timeline(cycle: CtemCycle): { value: string; hint?: string } {
-  const start = cycle.start_date ? new Date(cycle.start_date) : null
-  const end = cycle.end_date ? new Date(cycle.end_date) : null
+  const start = cycle.start_date ? parseDateOnly(cycle.start_date) : null
+  const end = cycle.end_date ? parseDateOnly(cycle.end_date) : null
   if (!start || !end) return { value: 'No dates' }
   const range = `${formatDate(cycle.start_date)} – ${formatDate(cycle.end_date)}`
   if (cycle.status !== 'active') return { value: range }
@@ -51,8 +53,9 @@ function CycleDetail() {
   const { data: cycle, error, isLoading, mutate } = useCycle(id)
   useBreadcrumbTitle(cycle?.name)
   const frozen = cycle && cycle.status !== 'planning'
-  const { data: scope } = useCycleScope(frozen ? (id ?? null) : null)
-  const { data: profiles } = useCycleProfiles(id)
+  const { t } = useTranslation()
+  const { data: scope, error: scopeError } = useCycleScope(frozen ? (id ?? null) : null)
+  const { data: profiles, error: profilesError } = useCycleProfiles(id)
   const [tabParam, setTab] = useUrlFilter('tab', 'charter')
   const tab: CycleTab = (TABS as readonly string[]).includes(tabParam)
     ? (tabParam as CycleTab)
@@ -88,17 +91,23 @@ function CycleDetail() {
     {
       key: 'scope',
       label: 'Assets in scope',
-      value: frozen ? (scope?.length ?? '…') : '—',
-      hint: frozen
-        ? 'frozen on Activate'
-        : `${charter.in_scope_services?.length ?? 0} in-scope services`,
+      value: frozen ? (scope?.length ?? (scopeError ? '—' : '…')) : '—',
+      hint:
+        frozen && scopeError
+          ? t('scope.cycles.scopeLoadFailed', 'Scope could not be loaded.')
+          : frozen
+            ? 'frozen on Activate'
+            : `${charter.in_scope_services?.length ?? 0} in-scope services`,
       onClick: () => setTab('scope'),
       active: tab === 'scope',
     },
     {
       key: 'profiles',
       label: 'Attacker profiles',
-      value: profileCount ?? '…',
+      value: profileCount ?? (profilesError ? '—' : '…'),
+      hint: profilesError
+        ? t('scope.cycles.profilesLoadFailed', 'Attacker profiles could not be loaded.')
+        : undefined,
       onClick: () => setTab('profiles'),
       active: tab === 'profiles',
     },

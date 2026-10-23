@@ -120,7 +120,6 @@
   "attackSurface.tab.label": "Attack surface sections",
   "attackSurface.tab.overview": "Overview",
   "attackSurface.tab.review": "Review",
-  "attackSurface.tab.suggestions": "Suggestions",
   "attackSurface.title": "Attack surface",
   "attackSurface.decide.addresses.value": "Add them to scan every port of these addresses. Today only the names are scanned, so a service that answers on the address without a name is missed.",
   "attackSurface.decide.addresses.caution": "A name never makes an address yours: it may be shared, or released and now used by someone else. Add only addresses you know are yours.",
@@ -310,5 +309,8 @@
   "attackSurface.monitoring.lastRun": "Last run",
   "attackSurface.monitoring.dns": "DNS checks",
   "attackSurface.monitoring.dnsDescription": "Dangling CNAME and NS records, lame delegations and email security (SPF, DMARC), looked up through DNS only.",
-  "attackSurface.monitoring.howOften": "How often"
+  "attackSurface.monitoring.howOften": "How often",
+  "attackSurface.tab.webSurface": "Web surface",
+  "attackSurface.web.description": "What your web origins serve: endpoints, their parameters (names only), the same path across origins, and what changed.",
+  "attackSurface.web.shortDescription": "Origins, endpoints and parameters."
 }
