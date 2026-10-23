@@ -16,6 +16,8 @@ type fakePackageWriter struct {
 	snaps   []software.PackageSnapshot
 	tenants []shared.ID
 	err     error
+	// res, when set, is returned instead of one link per package.
+	res *software.PackageWriteResult
 }
 
 func (f *fakePackageWriter) WritePackages(_ context.Context, tenantID shared.ID, snap software.PackageSnapshot) (software.PackageWriteResult, error) {
@@ -23,6 +25,9 @@ func (f *fakePackageWriter) WritePackages(_ context.Context, tenantID shared.ID,
 	f.snaps = append(f.snaps, snap)
 	if f.err != nil {
 		return software.PackageWriteResult{}, f.err
+	}
+	if f.res != nil {
+		return *f.res, nil
 	}
 	return software.PackageWriteResult{Links: len(snap.Packages), Versions: 1}, nil
 }
@@ -168,6 +173,85 @@ func TestPackageChannel(t *testing.T) {
 	for _, c := range cases {
 		if got := PackageChannel(c.sensor, c.source); got != c.want {
 			t.Errorf("PackageChannel(%v, %q) = %q, want %q", c.sensor, c.source, got, c.want)
+		}
+	}
+}
+
+type recordingSink struct {
+	tenants []shared.ID
+	assets  [][]shared.ID
+}
+
+func (r *recordingSink) SoftwareChanged(tenantID shared.ID, assetIDs []shared.ID) {
+	r.tenants = append(r.tenants, tenantID)
+	r.assets = append(r.assets, assetIDs)
+}
+
+// A dependency report queues the vulnerability matcher once, for the
+// assets whose packages changed; a failed or empty write does not.
+func TestComponentProcessor_QueuesMatcherForChangedAssets(t *testing.T) {
+	tenant := shared.NewID()
+	a1, a2 := shared.NewID(), shared.NewID()
+	report := &ctis.Report{
+		Assets: []ctis.Asset{{ID: "r1", Value: "svc-one"}, {ID: "r2", Value: "svc-two"}},
+		Dependencies: []ctis.Dependency{
+			{Name: "lodash", Version: "4.17.21", PURL: "pkg:npm/lodash@4.17.21", Path: "svc-one/package-lock.json"},
+			{Name: "flask", Version: "3.0.0", PURL: "pkg:pypi/flask@3.0.0", Path: "svc-two/requirements.txt"},
+		},
+	}
+	assets := map[string]shared.ID{"r1": a1, "r2": a2}
+
+	sink := &recordingSink{}
+	p := NewComponentProcessor(&fakePackageWriter{}, slog.Default())
+	p.SetSoftwareChangeSink(sink)
+	if err := p.ProcessBatch(context.Background(), tenant, report, assets, software.ChannelSensor, &Output{}); err != nil {
+		t.Fatal(err)
+	}
+	if len(sink.tenants) != 1 || sink.tenants[0] != tenant || len(sink.assets[0]) != 2 {
+		t.Fatalf("queued %v %v, want one call for both assets", sink.tenants, sink.assets)
+	}
+
+	for name, w := range map[string]*fakePackageWriter{
+		"write failed":    {err: errors.New("boom")},
+		"nothing changed": {res: &software.PackageWriteResult{}},
+	} {
+		sink := &recordingSink{}
+		p := NewComponentProcessor(w, slog.Default())
+		p.SetSoftwareChangeSink(sink)
+		if err := p.ProcessBatch(context.Background(), tenant, report, assets, software.ChannelSensor, &Output{}); err != nil {
+			t.Fatal(err)
+		}
+		if len(sink.tenants) != 0 {
+			t.Fatalf("%s: queued %v", name, sink.assets)
+		}
+	}
+}
+
+// The ingest service's sink reaches dependency reports too, not only
+// technology observations.
+func TestSetSoftwareChangeSink_WiresDependencyReports(t *testing.T) {
+	p := NewComponentProcessor(&fakePackageWriter{}, slog.Default())
+	s := &Service{componentProcessor: p}
+	sink := &recordingSink{}
+	s.SetSoftwareChangeSink(sink)
+	if p.sink != sink {
+		t.Fatal("dependency reports do not queue the matcher")
+	}
+}
+
+func TestPackagesChanged(t *testing.T) {
+	for _, c := range []struct {
+		res  software.PackageWriteResult
+		want bool
+	}{
+		{software.PackageWriteResult{}, false},
+		{software.PackageWriteResult{Versions: 2, Products: 1, Edges: 4}, false},
+		{software.PackageWriteResult{Links: 1}, true},
+		{software.PackageWriteResult{Removed: 1}, true},
+		{software.PackageWriteResult{Superseded: 1}, true},
+	} {
+		if got := PackagesChanged(c.res); got != c.want {
+			t.Errorf("%+v: %v", c.res, got)
 		}
 	}
 }
