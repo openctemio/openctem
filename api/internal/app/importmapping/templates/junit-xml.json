@@ -1,0 +1,33 @@
+{
+  "apiVersion": "openctem.io/mapping/v1",
+  "source": "xml",
+  "each": "//testcase",
+  "notes": "Starter: JUnit-style results of a check runner; a failed case is a medium finding, an errored case a low one, a passed or skipped case nothing.",
+  "identity": ["rule_id", "title"],
+  "records": [
+    {
+      "when": {"path": "/failure", "exists": true},
+      "kind": "finding",
+      "set": {
+        "type": {"const": "misconfiguration"},
+        "title": {"path": "/@name", "trim": true},
+        "rule_id": {"path": "/@classname", "trim": true},
+        "severity": {"path": "/failure/@type", "lower": true, "map": {"critical": "critical", "high": "high", "medium": "medium", "low": "low"}, "default": "medium"},
+        "message": "/failure/@message",
+        "description": {"path": "/failure/#text", "max_bytes": 8192}
+      }
+    },
+    {
+      "when": {"path": "/error", "exists": true},
+      "kind": "finding",
+      "set": {
+        "type": {"const": "misconfiguration"},
+        "title": {"path": "/@name", "trim": true},
+        "rule_id": {"path": "/@classname", "trim": true},
+        "severity": {"const": "low"},
+        "message": "/error/@message",
+        "description": "/error/#text"
+      }
+    }
+  ]
+}
