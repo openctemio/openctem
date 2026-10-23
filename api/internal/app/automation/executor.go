@@ -29,6 +29,7 @@ type WorkflowExecutor struct {
 	workflowRepo automationdom.WorkflowRepository
 	runRepo      automationdom.RunRepository
 	nodeRunRepo  automationdom.NodeRunRepository
+	versions     automationdom.VersionRepository
 
 	// Action handlers
 	actionHandlers      map[automationdom.ActionType]ActionHandler
@@ -235,6 +236,27 @@ func (e *WorkflowExecutor) ExecuteWithTenant(ctx context.Context, runID shared.I
 	wf, err := e.workflowRepo.GetWithGraph(execCtx, run.WorkflowID)
 	if err != nil {
 		return fmt.Errorf("failed to load workflow: %w", err)
+	}
+
+	// A live run executes the version it pinned when it was created, not
+	// the draft as it is now (versions.go). A live run without a pinned
+	// version would act on the unpublished draft, past the go-live gate: it
+	// is refused once versions are configured.
+	if run.Mode == automationdom.ModeLive && run.VersionID == nil && e.versions != nil {
+		return fmt.Errorf("integrity error: live run %s has no pinned version", run.ID)
+	}
+	if run.VersionID != nil {
+		if e.versions == nil {
+			return fmt.Errorf("load run version: versions are not configured")
+		}
+		v, err := e.versions.GetByTenantAndID(execCtx, run.TenantID, *run.VersionID)
+		if err != nil {
+			return fmt.Errorf("failed to load run version: %w", err)
+		}
+		if v.AutomationID != wf.ID {
+			return fmt.Errorf("integrity error: run version belongs to another automation")
+		}
+		wf = v.Definition.Materialize(wf)
 	}
 
 	// SEC-WF05: Verify workflow belongs to same tenant
@@ -665,6 +687,12 @@ func (e *WorkflowExecutor) executeActionNode(ctx context.Context, execCtx *Execu
 		return nil, err
 	}
 
+	// Only a live run calls an action handler; any other run (simulate, or
+	// a mode this build does not know) records what the step would do.
+	if execCtx.Run.Mode != automationdom.ModeLive {
+		return simulatedOutput(node), nil
+	}
+
 	// Build action input
 	input := &ActionInput{
 		TenantID:     execCtx.Run.TenantID,
@@ -718,6 +746,11 @@ func (e *WorkflowExecutor) executeNotificationNode(ctx context.Context, execCtx 
 		return nil, err
 	}
 
+	// Only a live run sends; any other run records what the step would send.
+	if execCtx.Run.Mode != automationdom.ModeLive {
+		return simulatedOutput(node), nil
+	}
+
 	// Build notification input
 	input := &NotificationInput{
 		TenantID:           execCtx.Run.TenantID,
@@ -731,6 +764,19 @@ func (e *WorkflowExecutor) executeNotificationNode(ctx context.Context, execCtx 
 	}
 
 	return e.notificationHandler.Send(WithAutomationCause(stepCtx, stepCause(execCtx.Run, node.NodeKey)), input)
+}
+
+// simulatedOutput is the output of an action or notification step of a
+// simulate run: what it would have done, nothing done.
+func simulatedOutput(node *automationdom.Node) map[string]any {
+	out := map[string]any{"simulated": true}
+	if node.Config.ActionType != "" {
+		out["would"] = string(node.Config.ActionType)
+	}
+	if node.Config.NotificationType != "" {
+		out["would"] = "notify:" + string(node.Config.NotificationType)
+	}
+	return out
 }
 
 // updateRunStats updates the run statistics.
