@@ -74,7 +74,7 @@ type Job struct {
 	submittedBy string
 	publicError string
 
-	// lane orders the claim; scopeKey serialises the jobs that write one
+	// lane orders the claim; scopeKey serializes the jobs that write one
 	// asset scope (at most one processing per key).
 	lane     Lane
 	scopeKey string

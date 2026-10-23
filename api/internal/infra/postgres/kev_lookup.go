@@ -7,7 +7,7 @@ import (
 	"github.com/lib/pq"
 )
 
-// KEVLookup answers whether CVE ids are in the KEV catalogue (a global
+// KEVLookup answers whether CVE ids are in the KEV catalog (a global
 // reference table, no tenant data).
 type KEVLookup struct {
 	db *DB
