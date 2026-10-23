@@ -100,8 +100,13 @@ jobs:
         run: |
           img="ghcr.io/openctemio/mirror/postgres:${PG}-alpine@${DIGEST}"
           if ! docker pull -q "$img"; then
+            # Until the mirror has copied the image: the ECR copy, then Docker Hub
+            # (same digest), each with the retry helper for registry limits.
             img="public.ecr.aws/docker/library/postgres:${PG}-alpine@${DIGEST}"
-            bash .github/scripts/retry.sh docker pull -q "$img"
+            if ! bash .github/scripts/retry.sh docker pull -q "$img"; then
+              img="docker.io/library/postgres:${PG}-alpine@${DIGEST}"
+              bash .github/scripts/retry.sh docker pull -q "$img"
+            fi
           fi
           docker run -d --name pg -p 5432:5432 -e POSTGRES_USER=postgres \
             -e POSTGRES_HOST_AUTH_METHOD=trust -e POSTGRES_DB=lp_test "$img"
@@ -153,6 +158,7 @@ jobs:
       # missing database fails the job instead of passing silently. The two
       # tests that need CREATEDB skip here by design and run in API CI on 17.
       - name: Run the DB-backed packages as the app role (shard ${{ matrix.shard }}/3)
+        id: suite
         shell: bash # -o pipefail: the pipe into tee/jq must not hide a failure
         env:
           SHARD: ${{ matrix.shard }}
@@ -177,7 +183,7 @@ jobs:
                   else empty end'
 
       - name: No DB-backed test was skipped
-        if: ${{ !cancelled() }}
+        if: ${{ !cancelled() && steps.suite.outcome != 'skipped' }}
         run: bash ../.github/scripts/check-db-test-skips.sh pg-test.json
 
       - name: PostgreSQL log tail (on failure)
