@@ -99,13 +99,11 @@ check_http_client() {
         # IsIPBlocked with a custom dialer. The &http.Client{...} here
         # wraps that custom dialer, equivalent to SafeHTTPClient.
         'api/internal/infra/fetchers/http_fetcher.go'
-        # Webhook fallback: SafeHTTPClient is attempted first; the
-        # fallback path only fires when the helper returns nil (tests).
-        'api/internal/infra/notifier/webhook.go'
-        # Splunk HEC fallback: identical pattern to webhook.go —
-        # SafeHTTPClient is used in production; the plain &http.Client
-        # fires only on the AllowLoopback test path (httptest 127.0.0.1).
-        'api/internal/infra/notifier/splunk.go'
+        # Notifier clients (newHTTPClient): SafeHTTPClient with redirects
+        # refused in production; the plain &http.Client fires only on the
+        # AllowLoopback unit-test path (httptest binds 127.0.0.1), and it
+        # refuses redirects too.
+        'api/internal/infra/notifier/client.go'
         # Sensor Tenable.sc connector (RFC-047): reaches an operator-configured
         # Tenable.sc that usually sits on a private address, so the RFC1918
         # block of SafeHTTPClient cannot apply. Its own dialer resolves once
@@ -345,9 +343,8 @@ check_httpsec_used() {
         'api/internal/infra/llm/claude.go'
         'api/internal/infra/llm/gemini.go'
         'api/internal/infra/llm/openai.go'
-        'api/internal/infra/notifier/slack.go'
-        'api/internal/infra/notifier/teams.go'
-        'api/internal/infra/notifier/telegram.go'
+        # Every notifier client is built by newHTTPClient here.
+        'api/internal/infra/notifier/client.go'
         'api/internal/infra/notifier/webhook.go'
         'api/internal/infra/jira/client.go'
         'api/internal/app/auth/sso.go'

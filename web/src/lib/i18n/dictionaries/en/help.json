@@ -23,5 +23,8 @@
   "help.about.release": "Release",
   "help.about.rc": "Release candidate",
   "help.about.unavailable": "unavailable",
-  "help.about.loading": "Loading version"
+  "help.about.loading": "Loading version",
+  "help.shortcut.next-finding": "Open the next finding in the list",
+  "help.shortcut.previous-finding": "Open the previous finding in the list",
+  "help.shortcut.add-filter": "Add a filter (findings list)"
 }

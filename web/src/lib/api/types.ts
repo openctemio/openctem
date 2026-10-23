@@ -27,6 +27,8 @@ export interface ApiError {
   message: string
   details?: Record<string, unknown>
   statusCode?: number
+  /** The server's id for the failed request, to quote to support. */
+  requestId?: string
 }
 
 /**

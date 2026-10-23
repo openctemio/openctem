@@ -24,8 +24,8 @@ func NewScimTokenRepository(db *DB) *ScimTokenRepository {
 
 func (r *ScimTokenRepository) Create(ctx context.Context, t *scimtoken.ScimToken) error {
 	const q = `
-		INSERT INTO scim_tokens (id, tenant_id, name, token_hash, token_prefix, status, created_by, created_at, last_used_at, key_pepper_id)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+		INSERT INTO scim_tokens (id, tenant_id, name, token_hash, token_prefix, status, created_by, created_at, last_used_at, key_pepper_id, expires_at)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
 	`
 	_, err := r.db.ExecContext(ctx, q,
 		t.ID().String(),
@@ -38,6 +38,7 @@ func (r *ScimTokenRepository) Create(ctx context.Context, t *scimtoken.ScimToken
 		t.CreatedAt(),
 		t.LastUsedAt(),
 		r.value(),
+		t.ExpiresAt(),
 	)
 	if err != nil {
 		return fmt.Errorf("insert scim token: %w", err)
@@ -47,7 +48,7 @@ func (r *ScimTokenRepository) Create(ctx context.Context, t *scimtoken.ScimToken
 
 func (r *ScimTokenRepository) GetByHash(ctx context.Context, tokenHash string) (*scimtoken.ScimToken, error) {
 	const q = `
-		SELECT id, tenant_id, name, token_hash, token_prefix, status, created_by, created_at, last_used_at
+		SELECT id, tenant_id, name, token_hash, token_prefix, status, created_by, created_at, last_used_at, expires_at
 		  FROM scim_tokens WHERE token_hash = $1
 	`
 	return r.scanOne(r.db.QueryRowContext(ctx, q, tokenHash))
@@ -55,7 +56,7 @@ func (r *ScimTokenRepository) GetByHash(ctx context.Context, tokenHash string) (
 
 func (r *ScimTokenRepository) GetByID(ctx context.Context, tenantID, id shared.ID) (*scimtoken.ScimToken, error) {
 	const q = `
-		SELECT id, tenant_id, name, token_hash, token_prefix, status, created_by, created_at, last_used_at
+		SELECT id, tenant_id, name, token_hash, token_prefix, status, created_by, created_at, last_used_at, expires_at
 		  FROM scim_tokens WHERE tenant_id = $1 AND id = $2
 	`
 	return r.scanOne(r.db.QueryRowContext(ctx, q, tenantID.String(), id.String()))
@@ -63,7 +64,7 @@ func (r *ScimTokenRepository) GetByID(ctx context.Context, tenantID, id shared.I
 
 func (r *ScimTokenRepository) ListByTenant(ctx context.Context, tenantID shared.ID) ([]*scimtoken.ScimToken, error) {
 	const q = `
-		SELECT id, tenant_id, name, token_hash, token_prefix, status, created_by, created_at, last_used_at
+		SELECT id, tenant_id, name, token_hash, token_prefix, status, created_by, created_at, last_used_at, expires_at
 		  FROM scim_tokens WHERE tenant_id = $1 ORDER BY created_at DESC
 	`
 	rows, err := r.db.QueryContext(ctx, q, tenantID.String())
@@ -91,6 +92,20 @@ func (r *ScimTokenRepository) Update(ctx context.Context, t *scimtoken.ScimToken
 	_, err := r.db.ExecContext(ctx, q, string(t.Status()), t.LastUsedAt(), t.ID().String(), t.TenantID().String())
 	if err != nil {
 		return fmt.Errorf("update scim token: %w", err)
+	}
+	return nil
+}
+
+// ShortenExpiry brings an active token's expiry forward to at (never later
+// than it was), without touching its status, so a concurrent revoke stands.
+func (r *ScimTokenRepository) ShortenExpiry(ctx context.Context, tenantID, id shared.ID, at time.Time) error {
+	const q = `UPDATE scim_tokens SET expires_at = LEAST(expires_at, $1) WHERE id = $2 AND tenant_id = $3 AND status = 'active'`
+	res, err := r.db.ExecContext(ctx, q, at, id.String(), tenantID.String())
+	if err != nil {
+		return fmt.Errorf("shorten scim token expiry: %w", err)
+	}
+	if n, err := res.RowsAffected(); err == nil && n == 0 {
+		return scimtoken.ErrNotFound
 	}
 	return nil
 }
@@ -124,8 +139,9 @@ func (r *ScimTokenRepository) scanRow(s scimRowScanner) (*scimtoken.ScimToken, e
 		createdBy                                    sql.NullString
 		createdAt                                    sql.NullTime
 		lastUsedAt                                   sql.NullTime
+		expiresAt                                    time.Time
 	)
-	if err := s.Scan(&idStr, &tenantStr, &name, &hash, &prefix, &status, &createdBy, &createdAt, &lastUsedAt); err != nil {
+	if err := s.Scan(&idStr, &tenantStr, &name, &hash, &prefix, &status, &createdBy, &createdAt, &lastUsedAt, &expiresAt); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, err
 		}
@@ -156,7 +172,7 @@ func (r *ScimTokenRepository) scanRow(s scimRowScanner) (*scimtoken.ScimToken, e
 	if createdAt.Valid {
 		created = createdAt.Time
 	}
-	return scimtoken.Reconstruct(id, tenantID, name, hash, prefix, scimtoken.Status(status), createdByPtr, created, lastUsed), nil
+	return scimtoken.Reconstruct(id, tenantID, name, hash, prefix, scimtoken.Status(status), createdByPtr, created, lastUsed, expiresAt), nil
 }
 
 // RehashKey replaces the stored hash of a SCIM token made with an earlier pepper
