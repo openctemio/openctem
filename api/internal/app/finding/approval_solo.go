@@ -109,6 +109,22 @@ func (s *VulnerabilityService) SelfApprovalAvailable(ctx context.Context, tenant
 	return err == nil && removed == nil
 }
 
+// requesterIsSoleMember reports whether userID is the organization's only
+// active person and its owner. A failed check answers true, so a risk is
+// never accepted alone unseen (fail closed: the request waits); without the
+// sole-member path wired there is no such member to tell apart (false).
+func (s *VulnerabilityService) requesterIsSoleMember(ctx context.Context, tid, userID shared.ID) bool {
+	if s.soleOwners == nil {
+		return false
+	}
+	sole, err := s.soleOwners.IsSoleActiveOwner(ctx, tid, userID.String())
+	if err != nil {
+		s.logger.Warn("sole member check", "error", logger.SanitizeError(err))
+		return true
+	}
+	return sole
+}
+
 // SelfApproveSolo applies the caller's own pending request when they are
 // the organization's only active person and its owner, with a fresh
 // authenticator code and a reason. The route requires findings:approve.

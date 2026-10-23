@@ -342,7 +342,9 @@ approver looks again.
 **The sole member.** Under `high_and_above` or `off` the sole member of an organization can approve their own
 pending accepted risk with an authenticator code and a reason; the end is cut to the self-approval limit
 (`SoloAcceptanceLimit`: 7 days for P0 or KEV, 45 for P1, 90 otherwise). Under `all` it stays pending until a
-second member, as before. Membership and the level are checked again in the write transaction.
+second member, as before. The sole member's acceptance never applies through the single-person path (nobody
+else would see it): under `off` too it waits for this self-approval. Membership and the level are checked again
+in the write transaction.
 
 Migration `003344_single_person_acceptance_review` extends the single-person review triggers to accepted
 risks and indexes the decisions one person made for the digest.

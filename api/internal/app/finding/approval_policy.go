@@ -337,6 +337,13 @@ func (s *VulnerabilityService) FindingApprovalPolicy(ctx context.Context, tenant
 	if err != nil {
 		return nil, err
 	}
+	if kind == approvalpolicy.KindAccepted && ev.result.SinglePerson() && s.requesterIsSoleMember(ctx, tid, caller) {
+		// As on the request path: the only member's acceptance waits for
+		// their self-approval, so the dialog does not say it applies at once.
+		if ev, err = s.evaluateFindingRequest(ctx, f, kind, caller, false, false, caller); err != nil {
+			return nil, err
+		}
+	}
 	v := &ApprovalPolicyView{Result: ev.result, EligibleCount: len(ev.result.Eligible), PoolCount: len(ev.result.EligiblePool)}
 	if why, ok := ev.result.Excluded[caller]; ok && why != approvalpolicy.ExcludedRequester {
 		v.CallerExcluded = string(why)
