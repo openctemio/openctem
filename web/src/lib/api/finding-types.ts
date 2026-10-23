@@ -14,8 +14,30 @@ import type { FindingStatus } from '@/features/findings/types/finding.types'
 export type { FindingStatus }
 
 // Finding source (how the finding was discovered)
+// Mirrors the API enum (api/pkg/domain/vulnerability/value_objects.go,
+// AllFindingSources plus the legacy aliases sarif and sca_tool).
 export type FindingSource =
-  'sast' | 'sca' | 'dast' | 'iac' | 'secret' | 'manual' | 'pentest' | 'bug_bounty'
+  | 'sast'
+  | 'dast'
+  | 'sca'
+  | 'secret'
+  | 'iac'
+  | 'container'
+  | 'cspm'
+  | 'easm'
+  | 'va'
+  | 'rasp'
+  | 'waf'
+  | 'siem'
+  | 'manual'
+  | 'pentest'
+  | 'bug_bounty'
+  | 'red_team'
+  | 'external'
+  | 'threat_intel'
+  | 'vendor'
+  | 'sarif'
+  | 'sca_tool'
 
 /**
  * Finding entity from API
