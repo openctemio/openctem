@@ -3382,8 +3382,11 @@ var findingStatsSelect = `
 			COUNT(*) FILTER (WHERE severity = 'medium' AND ` + openLens + `) as open_medium,
 			COUNT(*) FILTER (WHERE severity = 'low' AND ` + openLens + `) as open_low,
 			COUNT(*) FILTER (WHERE severity IN ('info', 'none') AND ` + openLens + `) as open_info,
-			-- Fixes claimed by an owner, waiting for a verifier.
-			COUNT(*) FILTER (WHERE status = 'fix_applied') as awaiting_verification,
+			-- Fixes claimed by an owner, waiting for a verifier: the verification
+			-- queue. Pentest findings are verified in their own module (the
+			-- grouped queue and the verify actions leave them out), so they
+			-- are not counted here either.
+			COUNT(*) FILTER (WHERE status = 'fix_applied' AND source <> 'pentest') as awaiting_verification,
 			COUNT(*) FILTER (WHERE ` + vulnerability.FindingLensSQL(vulnerability.FindingLensOpen) + `) as state_open,
 			COUNT(*) FILTER (WHERE ` + vulnerability.FindingLensSQL(vulnerability.FindingLensFixed) + `) as state_fixed,
 			COUNT(*) FILTER (WHERE ` + vulnerability.FindingLensSQL(vulnerability.FindingLensDispositioned) + `) as state_dispositioned
