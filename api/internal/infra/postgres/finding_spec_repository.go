@@ -9,6 +9,7 @@ import (
 
 	"github.com/lib/pq"
 
+	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
 	"github.com/openctemio/openctem/api/pkg/filterspec"
 	"github.com/openctemio/openctem/api/pkg/pagination"
@@ -324,6 +325,50 @@ func (r *FindingRepository) CountFacetsWhere(ctx context.Context, w *filterspec.
 			return nil, vulnerability.ErrFindingCountTimeout
 		}
 		return nil, fmt.Errorf("failed to count finding facets: %w", err)
+	}
+	return out, tx.Commit()
+}
+
+// IDsWhere returns up to limit ids of the findings matching a compiled
+// filter, in id order, in one read-only statement with the list timeout.
+// Bulk changes by filter select their rows with it.
+func (r *FindingRepository) IDsWhere(ctx context.Context, w *filterspec.Where, limit int) ([]shared.ID, error) {
+	if err := checkFindingWhere(w); err != nil {
+		return nil, err
+	}
+	if limit <= 0 {
+		return nil, nil
+	}
+	tx, err := r.db.BeginTx(ctx, &sql.TxOptions{ReadOnly: true})
+	if err != nil {
+		return nil, fmt.Errorf("begin finding ids: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+	if _, err := tx.ExecContext(ctx, "SET LOCAL statement_timeout = '"+findingListTimeout+"'"); err != nil {
+		return nil, fmt.Errorf("set finding ids timeout: %w", err)
+	}
+	// w.SQL comes only from filterspec.Compile (registry SQL, bound values).
+	query := "SELECT findings.id FROM findings WHERE " + w.SQL + //nolint:gosec // G202: see above
+		fmt.Sprintf(" ORDER BY findings.id LIMIT $%d", w.NextArg)
+	rows, err := tx.QueryContext(ctx, query, append(append([]any(nil), w.Args...), limit)...)
+	if err != nil {
+		return nil, fmt.Errorf("failed to select finding ids: %w", err)
+	}
+	defer rows.Close()
+	out := make([]shared.ID, 0, min(limit, 1024))
+	for rows.Next() {
+		var s string
+		if err := rows.Scan(&s); err != nil {
+			return nil, err
+		}
+		id, err := shared.IDFromString(s)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("failed to iterate finding ids: %w", err)
 	}
 	return out, tx.Commit()
 }

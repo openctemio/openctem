@@ -57,6 +57,22 @@ const (
 	// does not check against its entity (pkg/querylang). Details carry the
 	// byte range, line and column of each problem.
 	CodeInvalidQuery Code = "INVALID_QUERY"
+	// CodeSelectionChanged is a 409 for a bulk change by filter whose
+	// filter, recompiled in the caller's scope, no longer selects the count
+	// the caller confirmed. Details carry the new count.
+	CodeSelectionChanged Code = "SELECTION_CHANGED"
+	// CodeBulkTooLarge is a 400 for a bulk change by filter over its cap.
+	CodeBulkTooLarge Code = "BULK_TOO_LARGE"
+	// CodeBulkNotAllowed is a 400 for a change that is never made in bulk
+	// by filter (false positive, accepted risk, duplicate: they stay
+	// per-finding requests with their own approval).
+	CodeBulkNotAllowed Code = "BULK_NOT_ALLOWED"
+	// CodeOperationRunning is a 409: the caller already has an operation
+	// running.
+	CodeOperationRunning Code = "OPERATION_RUNNING"
+	// CodeIdempotencyKeyReused is a 422: the idempotency key was used before
+	// with a different request.
+	CodeIdempotencyKeyReused Code = "IDEMPOTENCY_KEY_REUSED"
 )
 
 // Error represents a standardized API error.
