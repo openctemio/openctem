@@ -16,6 +16,7 @@ import {
   colSpanFor,
   columnsClass,
   gridColumnSpan,
+  phoneSpan,
   widgetSpanClass,
   normalizeColumns,
   widgetRowSpan,
@@ -52,8 +53,13 @@ export function DashboardView({ dashboard, data, loading, failed, onRetry }: Das
   }
   return (
     <div
-      className={cn('grid gap-4', columnsClass(cols))}
-      style={{ gridAutoRows: `minmax(${ROW_HEIGHT}px, auto)` }}
+      // Rows keep their stored height from 640px; on a phone every widget is
+      // as tall as its content, so a two-row figure leaves no empty space.
+      className={cn(
+        'grid gap-3 sm:gap-4 sm:[grid-auto-rows:minmax(var(--row),auto)]',
+        columnsClass(cols)
+      )}
+      style={{ '--row': `${ROW_HEIGHT}px` } as React.CSSProperties}
       data-columns={cols}
     >
       {layout.map((w, i) => {
@@ -66,10 +72,14 @@ export function DashboardView({ dashboard, data, loading, failed, onRetry }: Das
               {
                 '--span': gridColumnSpan(colSpanFor(w.w, cols)),
                 '--span-sm': gridColumnSpan(Math.min(2, colSpanFor(w.w, cols))),
-                gridRow: widgetRowSpan(w.h),
+                '--span-xs': phoneSpan(w.w, w.h, cols),
+                '--row-span': widgetRowSpan(w.h),
               } as React.CSSProperties
             }
-            className={cn('flex min-w-0 flex-col', widgetSpanClass(cols))}
+            className={cn(
+              'flex min-w-0 flex-col sm:[grid-row:var(--row-span)]',
+              widgetSpanClass(cols)
+            )}
             data-widget-index={i}
           >
             <WidgetErrorBoundary
@@ -85,6 +95,7 @@ export function DashboardView({ dashboard, data, loading, failed, onRetry }: Das
                     : valueAt(data, i)
                 }
                 asOf={data?.computed_at}
+                pageAsOf={data?.computed_at}
                 stale={data?.stale}
                 loading={loading && !data && !failed}
                 onRetry={onRetry}

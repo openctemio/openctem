@@ -26,7 +26,7 @@
     font-feature-settings:
       'cv11' 1,
       'ss01' 1;
-    @apply bg-background text-foreground has-[div[data-variant='inset']]:bg-sidebar min-h-svh w-full;
+    @apply bg-background text-foreground min-h-svh w-full;
     overscroll-behavior: none;
   }
 

@@ -127,6 +127,13 @@ func (s *Service) IngestV2Segment(ctx context.Context, prov Provenance, report *
 	if err != nil {
 		return nil, err
 	}
+	// The findings of a command's run must all be on the run's receipt: its
+	// action rows decide which open findings the run did not report. A
+	// segment whose receipt write failed is retried (re-ingesting it is
+	// idempotent) instead of leaving its findings looking unreported.
+	if out.ReceiptFailed && opts.Binding.Kind == BindingCommand {
+		return nil, fmt.Errorf("segment of report %s: receipt not recorded", prov.ReportID)
+	}
 
 	res := &SegmentResult{}
 	o := &res.Outcome

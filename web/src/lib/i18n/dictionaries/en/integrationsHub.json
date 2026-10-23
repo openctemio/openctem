@@ -38,5 +38,7 @@
   "integrationsHub.status.error": "Error",
   "integrationsHub.status.expired": "Expired",
   "integrationsHub.status.pending": "Pending",
-  "integrationsHub.title": "Integrations"
+  "integrationsHub.title": "Integrations",
+  "integrationsHub.categories.import-mappings.title": "Import mappings",
+  "integrationsHub.categories.import-mappings.description": "Turn CSV, JSON or XML exports into findings and assets"
 }

@@ -1,0 +1,21 @@
+{
+  "apiVersion": "openctem.io/mapping/v1",
+  "source": "csv",
+  "csv": {"delimiter": "auto"},
+  "notes": "Starter: one finding per row with title, severity, asset, CVE and description columns. Rename the paths to your column names.",
+  "identity": ["title", "asset_value", "vulnerability.cve_id"],
+  "records": [
+    {
+      "when": {"path": "/title", "exists": true},
+      "kind": "finding",
+      "set": {
+        "title": {"path": "/title", "trim": true},
+        "severity": {"path": "/severity", "trim": true, "lower": true, "map": {"critical": "critical", "high": "high", "medium": "medium", "moderate": "medium", "low": "low", "info": "info", "informational": "info"}},
+        "asset_value": {"path": "/asset", "trim": true},
+        "asset_type": {"path": "/asset_type", "trim": true, "lower": true, "default": "host"},
+        "vulnerability.cve_id": {"path": "/cve", "trim": true, "upper": true},
+        "description": "/description"
+      }
+    }
+  ]
+}

@@ -41,7 +41,7 @@ importance rule, program metrics and software matches all read it.
 
 "Newly exposed" is one computation too: the state-history changes that made an
 asset internet-facing (`asset.NewlyExposedHistory`), counted the same way by
-Assets › What changed (`/state-history/counts`) and the attack surface overview
+Assets › Activity (`/state-history/counts`) and the attack surface overview
 (`newly_exposed`).
 
 ## 1. Flow
@@ -120,7 +120,7 @@ API connector already uses (`pkg/httpsec`).
 | `/attack-surface` | Real, over `GET /attack-surface/stats`; the trend fields are hard-coded 0 in the API |
 | `/attack-surface/external` | Partial: client-side over the first 100 assets; the "Expiring certs" card is always 0 |
 | `/assets/{domains,certificates,ip-addresses,websites,services}` | Real lists over `/assets?types=`; certificates without `not_after` show as valid; websites without a status show 200 |
-| `/assets/changes` (What changed) | Real |
+| `/assets/changes` (Activity: inventory changes, and value changes with `?view=values`) | Real |
 | `/attack-paths`, `/exposure-chains`, `/exposures` | Real |
 | `/exposures/{vulnerabilities,secrets,code,misconfigurations}` | Partial: side cards show tenant-wide numbers |
 | `/scope`, `/scoping` | Real |
@@ -305,11 +305,11 @@ the scope decisions that still need a person, one card each
 
 `total` is the number of decisions waiting: one per card, plus one per
 suggested rule about names and one for the names no rule groups (address rules
-belong to the addresses card). It is the Suggestions tab and sidebar badge
+belong to the addresses card). It is the Review tab and sidebar badge
 (`GET /easm/suggestions?view=count`, seeded by the session bootstrap as
 `badges.easm_review`). The web console shows the cards in the Decide panel
 (`web/src/features/attack-surface/components/easm-decide-panel.tsx`) on the
-Suggestions tab and, with "Not now", at the top of the overview; the row list
+Review tab and, with "Not now", at the top of the overview; the row list
 is behind "Show all items".
 A card holds at most 200 items (`truncated` says more exist). Accepting one
 is an ordinary `POST /scope/targets/bulk` with its items (exact `ip_address`

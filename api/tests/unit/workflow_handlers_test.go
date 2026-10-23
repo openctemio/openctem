@@ -2,26 +2,11 @@ package unit
 
 import (
 	"context"
-	"io"
 	"strings"
 	"testing"
 
 	automationsvc "github.com/openctemio/openctem/api/internal/app/automation"
-	"github.com/openctemio/openctem/api/pkg/logger"
 )
-
-// =============================================================================
-// Helpers
-// =============================================================================
-
-// wfHandlerNewLogger creates a no-op logger for handler tests.
-func wfHandlerNewLogger() *logger.Logger {
-	return logger.New(logger.Config{
-		Level:  "error",
-		Format: "json",
-		Output: io.Discard,
-	})
-}
 
 // =============================================================================
 // TestWfHandlerConditionEvaluator — DefaultConditionEvaluator.Evaluate

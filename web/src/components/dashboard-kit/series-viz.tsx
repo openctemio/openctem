@@ -40,6 +40,8 @@ const TOOLTIP_STYLE = {
   fontSize: 12,
 }
 export const CHART_HEIGHT = 220
+/** Plot height: shorter on a phone so a chart and its legend fit one screen. */
+const PLOT_CLASS = 'h-[180px] sm:h-[220px]'
 
 type Row = Record<string, number | string>
 
@@ -59,6 +61,26 @@ export function toRows(result: TimeSeriesResult, sign: Record<string, number> = 
 function useSeriesMeta(result: TimeSeriesResult) {
   const label = useLabel()
   return result.series.map((s, i) => ({ key: s.key, label: label(s), color: seriesVar(s.key, i) }))
+}
+
+/** "Aug 7 to Oct 23. Latest: P0 20, P1 35, P2 42" — the accessible name of a series chart. */
+function useSeriesSummary(result: TimeSeriesResult, unit: MetricUnit = 'count') {
+  const { t, locale } = useTranslation()
+  const label = useLabel()
+  const ts = result.series.flatMap((s) => s.points.map((p) => p.t)).sort()
+  if (ts.length === 0) return undefined
+  const latest = result.series
+    .map((s) => {
+      const last = s.points[s.points.length - 1]
+      return last ? `${label(s)} ${formatMetric(last.v, unit, locale)}` : null
+    })
+    .filter(Boolean)
+    .join(', ')
+  return t('dashboardKit.summary.series', '{from} to {to}. Latest: {values}', {
+    from: formatBucket(ts[0], result.bucket, locale),
+    to: formatBucket(ts[ts.length - 1], result.bucket, locale),
+    values: latest,
+  })
 }
 
 function useDrillNavigate(drill?: DrillFn) {
@@ -87,11 +109,13 @@ export function ColumnViz({
   const rows = useMemo(() => toRows(result), [result])
   const go = useDrillNavigate(drill)
   const motion = reduced ? { isAnimationActive: false } : {}
+  const summary = useSeriesSummary(result, unit)
   return (
     <ChartOrTable
+      summary={summary}
       chart={
         <div className="flex flex-col gap-2">
-          <div style={{ height: CHART_HEIGHT }}>
+          <div className={PLOT_CLASS}>
             <ResponsiveContainer width="100%" height="100%">
               <BarChart data={rows} margin={{ top: 4, right: 4, bottom: 0, left: -12 }}>
                 <CartesianGrid vertical={false} stroke="var(--border)" strokeDasharray="3 3" />
@@ -156,6 +180,7 @@ export function AreaLineViz({
   const rows = useMemo(() => toRows(result), [result])
   const go = useDrillNavigate(drill)
   const motion = reduced ? { isAnimationActive: false } : {}
+  const summary = useSeriesSummary(result, unit)
   const common = {
     data: rows,
     margin: { top: 4, right: 4, bottom: 0, left: -12 },
@@ -202,9 +227,10 @@ export function AreaLineViz({
   )
   return (
     <ChartOrTable
+      summary={summary}
       chart={
         <div className="flex flex-col gap-2">
-          <div style={{ height: CHART_HEIGHT }}>
+          <div className={PLOT_CLASS}>
             <ResponsiveContainer width="100%" height="100%">
               {mode === 'area' ? (
                 <AreaChart {...common}>
@@ -277,12 +303,18 @@ export function DivergingViz({ result, drill }: { result: TimeSeriesResult; dril
             n: formatCount(net, locale),
           })
         : t('dashboardKit.flow.even', 'As many fixed as found')
+  const range = useSeriesSummary(result)
   return (
     <ChartOrTable
+      summary={
+        range ? t('dashboardKit.summary.join', '{a}. {b}', { a: summary, b: range }) : summary
+      }
       chart={
         <div className="flex flex-col gap-2">
-          <p className="text-xs text-muted-foreground">{summary}</p>
-          <div style={{ height: CHART_HEIGHT }}>
+          <p className="text-xs text-muted-foreground" aria-hidden>
+            {summary}
+          </p>
+          <div className={PLOT_CLASS}>
             <ResponsiveContainer width="100%" height="100%">
               <BarChart
                 data={rows}

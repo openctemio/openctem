@@ -1,11 +1,12 @@
 'use client'
 
 /**
- * Settings > Finding approvals: how the organization governs false-positive
- * and accepted-risk decisions (api/docs/architecture/finding-status-lifecycle.md).
- * Saving needs settings:write and a recent sign-in (the API client asks for
- * re-authentication); every change is audited and the approvers are told. A
- * lower false-positive level takes effect 24 hours later; a higher one at once.
+ * Settings > Finding approvals: the organization's approval policy for
+ * false positives and accepted risks, the second-look share and the backup
+ * contact (api/docs/architecture/finding-status-lifecycle.md, "Approval
+ * levels"). Saving needs settings:write and a recent sign-in (the API client
+ * asks for re-authentication); every change is audited and the approvers are
+ * told. A lower level takes effect 24 hours later; a higher one at once.
  */
 
 import { useEffect, useId, useState } from 'react'
@@ -31,13 +32,15 @@ interface FindingApprovalSettingsFormProps {
   onSaved?: (next: FindingApprovalSettings) => void
 }
 
+type TFn = ReturnType<typeof useTranslation>['t']
+
+/** What a level decides: a false positive or an accepted risk. */
+export type ApprovalLevelKind = 'fp' | 'accept'
+
 const LEVELS: FPApprovalLevel[] = ['all', 'high_and_above', 'off']
 
-/** The level's label and explanation. */
-export function fpLevelText(
-  t: ReturnType<typeof useTranslation>['t'],
-  level: FPApprovalLevel
-): { label: string; help: string } {
+/** The false-positive level's label and explanation. */
+export function fpLevelText(t: TFn, level: FPApprovalLevel): { label: string; help: string } {
   switch (level) {
     case 'high_and_above':
       return {
@@ -66,9 +69,178 @@ export function fpLevelText(
   }
 }
 
+/** The risk acceptance level's label and explanation. */
+export function acceptLevelText(t: TFn, level: FPApprovalLevel): { label: string; help: string } {
+  switch (level) {
+    case 'high_and_above':
+      return {
+        label: t('findingApprovals.acceptLevel.high_and_above', 'Only for serious findings'),
+        help: t(
+          'findingApprovals.acceptLevel.high_and_aboveHelp',
+          'A second person approves accepting the risk of a critical or high finding, a known exploited vulnerability (KEV), P0 or P1, a validated exploit, or a crown-jewel or internet-exposed asset. Anyone with approval permission may accept the others alone, with a reason and an end date.'
+        ),
+      }
+    case 'off':
+      return {
+        label: t('findingApprovals.acceptLevel.off', 'Never'),
+        help: t(
+          'findingApprovals.acceptLevel.offHelp',
+          'Anyone with approval permission may accept the risk of any finding alone, with a reason and an end date.'
+        ),
+      }
+    default:
+      return {
+        label: t('findingApprovals.acceptLevel.all', 'Always (recommended)'),
+        help: t(
+          'findingApprovals.acceptLevel.allHelp',
+          'Every accepted risk needs a second person to approve it.'
+        ),
+      }
+  }
+}
+
+function levelText(t: TFn, kind: ApprovalLevelKind, level: FPApprovalLevel) {
+  return kind === 'accept' ? acceptLevelText(t, level) : fpLevelText(t, level)
+}
+
 function clampPercent(v: number): number {
   if (!Number.isFinite(v)) return 0
   return Math.min(10, Math.max(0, Math.round(v)))
+}
+
+interface LevelSelectorProps {
+  kind: ApprovalLevelKind
+  value: FPApprovalLevel
+  inForce: FPApprovalLevel
+  pending?: FPApprovalLevel
+  pendingAt?: string
+  changed: boolean
+  canEdit: boolean
+  canceling: boolean
+  onChange: (level: FPApprovalLevel) => void
+  onCancelPending: () => void
+}
+
+/** One level: its choices, the waiting lowering, and the warnings. */
+function LevelSelector({
+  kind,
+  value,
+  inForce,
+  pending,
+  pendingAt,
+  changed,
+  canEdit,
+  canceling,
+  onChange,
+  onCancelPending,
+}: LevelSelectorProps) {
+  const { t } = useTranslation()
+  const id = useId()
+  const title =
+    kind === 'accept'
+      ? t('findingApprovals.acceptLevel.title', 'Risk acceptance')
+      : t('findingApprovals.fpLevel.title', 'False positive')
+  const description =
+    kind === 'accept'
+      ? t(
+          'findingApprovals.acceptLevel.description',
+          'When accepting the risk of a finding needs a second person. Bulk changes, suppression rules, task exceptions, imports and automation always need one.'
+        )
+      : t(
+          'findingApprovals.fpLevel.description',
+          'When marking a finding a false positive needs a second person.'
+        )
+  const at = pendingAt ? new Date(pendingAt).toLocaleString() : ''
+  return (
+    <fieldset className="min-w-0 space-y-3" aria-labelledby={`${id}-title`}>
+      <div className="space-y-1">
+        <h3 id={`${id}-title`} className="text-sm font-semibold">
+          {title}
+        </h3>
+        <p className="text-sm text-muted-foreground">{description}</p>
+      </div>
+      {pending && (
+        <Alert>
+          <Clock className="h-4 w-4" aria-hidden />
+          <AlertTitle>
+            {t('findingApprovals.fpLevel.pendingTitle', 'A lower level is waiting')}
+          </AlertTitle>
+          <AlertDescription>
+            {t(
+              'findingApprovals.fpLevel.pendingBody',
+              '"{level}" takes effect at {at}. Until then "{current}" applies.',
+              {
+                level: levelText(t, kind, pending).label,
+                current: levelText(t, kind, inForce).label,
+                at,
+              }
+            )}
+          </AlertDescription>
+          {canEdit && (
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              className="col-start-2 mt-2 justify-self-start"
+              disabled={canceling}
+              onClick={onCancelPending}
+            >
+              {t('findingApprovals.settings.cancelPending', 'Cancel the change')}
+            </Button>
+          )}
+        </Alert>
+      )}
+      <RadioGroup
+        value={value}
+        onValueChange={(v) => onChange(v as FPApprovalLevel)}
+        disabled={!canEdit}
+        aria-label={title}
+        className="space-y-3"
+      >
+        {LEVELS.map((l) => {
+          const text = levelText(t, kind, l)
+          return (
+            <div key={l} className="flex items-start gap-3">
+              <RadioGroupItem value={l} id={`${id}-${l}`} className="mt-1" />
+              <Label htmlFor={`${id}-${l}`} className="grid gap-1 font-normal">
+                <span className="font-medium">{text.label}</span>
+                <span className="text-sm text-muted-foreground">{text.help}</span>
+              </Label>
+            </div>
+          )
+        })}
+      </RadioGroup>
+      {value === 'off' && (
+        <Alert variant="destructive">
+          <AlertTriangle className="h-4 w-4" aria-hidden />
+          <AlertTitle>
+            {kind === 'accept'
+              ? t('findingApprovals.acceptLevel.offWarningTitle', 'One person can accept any risk')
+              : t('findingApprovals.fpLevel.offWarningTitle', 'One person can hide any finding')}
+          </AlertTitle>
+          <AlertDescription>
+            {kind === 'accept'
+              ? t(
+                  'findingApprovals.acceptLevel.offWarning',
+                  'A single stolen session or a single mistake can accept the risk of a critical finding. Decisions stay audited, end on their date, appear in the approvals digest and get a review flag when the finding later changes, but nobody checks them first.'
+                )
+              : t(
+                  'findingApprovals.fpLevel.offWarning',
+                  'A single stolen session or a single mistake can mark a critical finding a false positive. Decisions stay audited and get a review flag when the finding later changes, but nobody checks them first.'
+                )}
+          </AlertDescription>
+        </Alert>
+      )}
+      {changed && LEVELS.indexOf(value) > LEVELS.indexOf(inForce) && (
+        <p className="text-sm text-muted-foreground">
+          {t(
+            'findingApprovals.fpLevel.lowerDelay',
+            'A lower level takes effect 24 hours after you save it, and every approver is told. A higher level takes effect at once.'
+          )}
+        </p>
+      )}
+    </fieldset>
+  )
 }
 
 export function FindingApprovalSettingsForm({
@@ -78,34 +250,41 @@ export function FindingApprovalSettingsForm({
 }: FindingApprovalSettingsFormProps) {
   const { t } = useTranslation()
   const id = useId()
-  const inForce: FPApprovalLevel = settings.fp_approval ?? 'all'
+  const fpInForce: FPApprovalLevel = settings.fp_approval ?? 'all'
+  const acceptInForce: FPApprovalLevel = settings.accept_approval ?? 'all'
   // The level last chosen: a waiting lower level, else the one in force.
-  const chosen: FPApprovalLevel = settings.pending_fp_approval ?? inForce
+  const fpChosen: FPApprovalLevel = settings.pending_fp_approval ?? fpInForce
+  const acceptChosen: FPApprovalLevel = settings.pending_accept_approval ?? acceptInForce
   const [email, setEmail] = useState(settings.backup_contact_email ?? '')
-  const [level, setLevel] = useState<FPApprovalLevel>(chosen)
+  const [fpLevel, setFPLevel] = useState<FPApprovalLevel>(fpChosen)
+  const [acceptLevel, setAcceptLevel] = useState<FPApprovalLevel>(acceptChosen)
   const percentInForce = settings.second_look_percent ?? 0
   // The share last chosen: a waiting lower share, else the one in force.
   const chosenPercent = settings.pending_second_look_percent ?? percentInForce
   const [percent, setPercent] = useState(chosenPercent)
   const [saving, setSaving] = useState(false)
-  const [canceling, setCanceling] = useState<'level' | 'percent' | null>(null)
+  const [canceling, setCanceling] = useState<'fp' | 'accept' | 'percent' | null>(null)
 
   useEffect(() => {
     setEmail(settings.backup_contact_email ?? '')
-    setLevel(settings.pending_fp_approval ?? settings.fp_approval ?? 'all')
+    setFPLevel(settings.pending_fp_approval ?? settings.fp_approval ?? 'all')
+    setAcceptLevel(settings.pending_accept_approval ?? settings.accept_approval ?? 'all')
     setPercent(settings.pending_second_look_percent ?? settings.second_look_percent ?? 0)
   }, [
     settings.backup_contact_email,
     settings.fp_approval,
     settings.pending_fp_approval,
+    settings.accept_approval,
+    settings.pending_accept_approval,
     settings.second_look_percent,
     settings.pending_second_look_percent,
   ])
 
   const emailChanged = email.trim() !== (settings.backup_contact_email ?? '')
-  const levelChanged = level !== chosen
+  const fpChanged = fpLevel !== fpChosen
+  const acceptChanged = acceptLevel !== acceptChosen
   const percentChanged = percent !== chosenPercent
-  const dirty = emailChanged || levelChanged || percentChanged
+  const dirty = emailChanged || fpChanged || acceptChanged || percentChanged
 
   const save = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -113,11 +292,13 @@ export function FindingApprovalSettingsForm({
     try {
       const next = await updateFindingApprovalSettings({
         ...(emailChanged ? { backup_contact_email: email.trim() } : {}),
-        ...(levelChanged ? { fp_approval: level } : {}),
+        ...(fpChanged ? { fp_approval: fpLevel } : {}),
+        ...(acceptChanged ? { accept_approval: acceptLevel } : {}),
         ...(percentChanged ? { second_look_percent: percent } : {}),
       })
       toast.success(
-        (next?.pending_fp_approval && levelChanged) ||
+        (next?.pending_fp_approval && fpChanged) ||
+          (next?.pending_accept_approval && acceptChanged) ||
           (next?.pending_second_look_percent !== undefined && percentChanged)
           ? t(
               'findingApprovals.settings.savedPending',
@@ -138,16 +319,13 @@ export function FindingApprovalSettingsForm({
     }
   }
 
-  const pendingAt = settings.pending_fp_approval_at
-    ? new Date(settings.pending_fp_approval_at).toLocaleString()
-    : ''
   const pendingPercentAt = settings.pending_second_look_at
     ? new Date(settings.pending_second_look_at).toLocaleString()
     : ''
 
-  // Cancel the waiting lowerings: the API drops them and keeps the values in
-  // force (`what` only says which button shows the busy state).
-  const cancelPending = async (what: 'level' | 'percent') => {
+  // Cancel the waiting lowerings: the API drops them all and keeps the values
+  // in force (`what` only says which button shows the busy state).
+  const cancelPending = async (what: 'fp' | 'accept' | 'percent') => {
     setCanceling(what)
     try {
       const next = await updateFindingApprovalSettings({ cancel_pending: true })
@@ -172,89 +350,42 @@ export function FindingApprovalSettingsForm({
       <Card>
         <CardHeader>
           <CardTitle className="text-base">
-            {t('findingApprovals.fpLevel.title', 'False-positive approval')}
+            {t('findingApprovals.approvalPolicy.title', 'Approval policy')}
           </CardTitle>
           <CardDescription>
             {t(
-              'findingApprovals.fpLevel.description',
-              'When marking a finding a false positive needs a second person. An accepted risk always needs a second person, whatever you choose here.'
+              'findingApprovals.approvalPolicy.description',
+              'Whether a second person must approve before a finding is marked a false positive or its risk is accepted. The two settings are separate. Whoever decides, a reason is required, the decision is audited and an accepted risk ends on its date.'
             )}
           </CardDescription>
         </CardHeader>
-        <CardContent className="space-y-4">
-          {settings.pending_fp_approval && (
-            <Alert>
-              <Clock className="h-4 w-4" aria-hidden />
-              <AlertTitle>
-                {t('findingApprovals.fpLevel.pendingTitle', 'A lower level is waiting')}
-              </AlertTitle>
-              <AlertDescription>
-                {t(
-                  'findingApprovals.fpLevel.pendingBody',
-                  '"{level}" takes effect at {at}. Until then "{current}" applies.',
-                  {
-                    level: fpLevelText(t, settings.pending_fp_approval).label,
-                    current: fpLevelText(t, inForce).label,
-                    at: pendingAt,
-                  }
-                )}
-              </AlertDescription>
-              {canEdit && (
-                <Button
-                  type="button"
-                  size="sm"
-                  variant="outline"
-                  className="col-start-2 mt-2 justify-self-start"
-                  disabled={canceling !== null}
-                  onClick={() => void cancelPending('level')}
-                >
-                  {t('findingApprovals.settings.cancelPending', 'Cancel the change')}
-                </Button>
-              )}
-            </Alert>
-          )}
-          <RadioGroup
-            value={level}
-            onValueChange={(v) => setLevel(v as FPApprovalLevel)}
-            disabled={!canEdit}
-            aria-label={t('findingApprovals.fpLevel.title', 'False-positive approval')}
-            className="space-y-3"
-          >
-            {LEVELS.map((l) => {
-              const text = fpLevelText(t, l)
-              return (
-                <div key={l} className="flex items-start gap-3">
-                  <RadioGroupItem value={l} id={`${id}-level-${l}`} className="mt-1" />
-                  <Label htmlFor={`${id}-level-${l}`} className="grid gap-1 font-normal">
-                    <span className="font-medium">{text.label}</span>
-                    <span className="text-sm text-muted-foreground">{text.help}</span>
-                  </Label>
-                </div>
-              )
-            })}
-          </RadioGroup>
-          {level === 'off' && (
-            <Alert variant="destructive">
-              <AlertTriangle className="h-4 w-4" aria-hidden />
-              <AlertTitle>
-                {t('findingApprovals.fpLevel.offWarningTitle', 'One person can hide any finding')}
-              </AlertTitle>
-              <AlertDescription>
-                {t(
-                  'findingApprovals.fpLevel.offWarning',
-                  'A single stolen session or a single mistake can mark a critical finding a false positive. Decisions stay audited and get a review flag when the finding later changes, but nobody checks them first.'
-                )}
-              </AlertDescription>
-            </Alert>
-          )}
-          {levelChanged && LEVELS.indexOf(level) > LEVELS.indexOf(inForce) && (
-            <p className="text-sm text-muted-foreground">
-              {t(
-                'findingApprovals.fpLevel.lowerDelay',
-                'A lower level takes effect 24 hours after you save it, and every approver is told. A higher level takes effect at once.'
-              )}
-            </p>
-          )}
+        <CardContent className="space-y-6">
+          <div className="grid gap-6 md:grid-cols-2">
+            <LevelSelector
+              kind="fp"
+              value={fpLevel}
+              inForce={fpInForce}
+              pending={settings.pending_fp_approval}
+              pendingAt={settings.pending_fp_approval_at}
+              changed={fpChanged}
+              canEdit={canEdit}
+              canceling={canceling !== null}
+              onChange={setFPLevel}
+              onCancelPending={() => void cancelPending('fp')}
+            />
+            <LevelSelector
+              kind="accept"
+              value={acceptLevel}
+              inForce={acceptInForce}
+              pending={settings.pending_accept_approval}
+              pendingAt={settings.pending_accept_approval_at}
+              changed={acceptChanged}
+              canEdit={canEdit}
+              canceling={canceling !== null}
+              onChange={setAcceptLevel}
+              onCancelPending={() => void cancelPending('accept')}
+            />
+          </div>
           {settings.pending_second_look_percent !== undefined && (
             <Alert>
               <Clock className="h-4 w-4" aria-hidden />
@@ -289,7 +420,7 @@ export function FindingApprovalSettingsForm({
               )}
             </Alert>
           )}
-          <div className="space-y-2">
+          <div className="space-y-2 border-t pt-4">
             <Label htmlFor={`${id}-second-look`}>
               {t(
                 'findingApprovals.fpLevel.secondLook',

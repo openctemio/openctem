@@ -61,7 +61,7 @@ describe('EASMOverview', () => {
     expect(screen.getByText(/7 open in total/)).toBeInTheDocument()
     expect(screen.getByText(/Dangling CNAME · old.acme.com/)).toBeInTheDocument()
     // Names waiting for review link to the review queue.
-    expect(screen.getByRole('link', { name: 'Suggestions' })).toHaveAttribute(
+    expect(screen.getByRole('link', { name: 'Review' })).toHaveAttribute(
       'href',
       '/attack-surface/review'
     )

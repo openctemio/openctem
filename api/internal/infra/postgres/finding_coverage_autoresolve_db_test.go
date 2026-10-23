@@ -3,6 +3,7 @@ package postgres
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"sort"
 	"testing"
 
@@ -95,6 +96,20 @@ func (f *coverageFixture) run(t *testing.T, scanID shared.ID, status string, tou
 	return cmd, report
 }
 
+// receipt records the command's receipt (as the ingest of its reports
+// does) with an action row for each finding the run reported.
+func (f *coverageFixture) receipt(t *testing.T, cmd shared.ID, reported ...shared.ID) shared.ID {
+	t.Helper()
+	id := shared.NewID()
+	f.exec(t, `INSERT INTO ingest_receipts (id, tenant_id, source_kind, source_ref, tool_name)
+		VALUES ($1, $2, 'command', $3, 'nuclei')`, id, f.tenant, cmd.String())
+	for _, fid := range reported {
+		f.exec(t, `INSERT INTO finding_ingest_actions (tenant_id, receipt_id, finding_id, action)
+			VALUES ($1, $2, $3, 'still_detected')`, f.tenant, id, fid)
+	}
+	return id
+}
+
 // finding inserts an open finding of the tool on the asset, last seen by the
 // given scan id (a report id, or anything for a v1 sighting).
 func (f *coverageFixture) finding(t *testing.T, asset shared.ID, tool, scanID string, branch *shared.ID) shared.ID {
@@ -170,7 +185,8 @@ func TestCoverageAutoResolve_NonRepositoryFindings(t *testing.T) {
 		t.Fatalf("coverage = %+v", cov)
 	}
 
-	q := ingestreport.CoverageQuery{AssetIDs: []shared.ID{f.host}, ToolName: "nuclei", ProfileID: f.profile.String(), SeenScanIDs: []string{today}}
+	f.receipt(t, cmd)
+	q := ingestreport.CoverageQuery{AssetIDs: []shared.ID{f.host}, ToolName: "nuclei", ProfileID: f.profile.String(), SeenScanIDs: []string{today}, CommandID: cmd}
 	stale, open, err := repo.CoverageStaleFindings(ctx, f.tenant, q)
 	if err != nil {
 		t.Fatalf("CoverageStaleFindings: %v", err)
@@ -210,5 +226,60 @@ func TestCoverageAutoResolve_NonRepositoryFindings(t *testing.T) {
 	// Another tenant cannot read the command.
 	if _, err := repo.CommandCoverage(ctx, shared.NewID(), cmd); err == nil {
 		t.Fatal("command coverage leaked across tenants")
+	}
+}
+
+// TestCoverageAbsence_ReceiptDecides: what a run did not report is decided by
+// the action rows of its receipt. A finding with an action row stays open
+// whatever its scan_id says (a concurrent run of the same profile wrote its
+// own report id there); a run without a complete receipt (none, another
+// tenant's, or past the action cap) closes nothing.
+func TestCoverageAbsence_ReceiptDecides(t *testing.T) {
+	f := newCoverageFixture(t)
+	ctx := context.Background()
+	repo := NewFindingRepository(&DB{DB: f.db})
+
+	_, earlier := f.run(t, f.scan, "completed", f.host)
+	gone := f.finding(t, f.host, "nuclei", earlier, nil)
+	reported := f.finding(t, f.host, "nuclei", earlier, nil)
+	cmd, today := f.run(t, f.scan, "completed", f.host)
+	// A concurrent run of the same profile sighted "reported" after this
+	// run did: its scan_id is the other run's report id.
+	_, concurrent := f.run(t, f.scan, "completed", f.host)
+	f.exec(t, `UPDATE findings SET scan_id = $1 WHERE id = $2`, concurrent, reported)
+	q := ingestreport.CoverageQuery{AssetIDs: []shared.ID{f.host}, ToolName: "nuclei", ProfileID: f.profile.String(),
+		SeenScanIDs: []string{today}, CommandID: cmd}
+
+	// No receipt yet: nothing can be proven absent.
+	if stale, _, err := repo.CoverageStaleFindings(ctx, f.tenant, q); !errors.Is(err, ingestreport.ErrReceiptIncomplete) || len(stale) != 0 {
+		t.Fatalf("without a receipt: stale = %v, err = %v; want none and ErrReceiptIncomplete", stale, err)
+	}
+	// Another tenant's receipt for a command of the same id proves nothing here.
+	other := seedTestTenant(ctx, t, f.db)
+	f.exec(t, `INSERT INTO ingest_receipts (id, tenant_id, source_kind, source_ref) VALUES ($1, $2, 'command', $3)`,
+		shared.NewID(), other, cmd.String())
+	if _, _, err := repo.CoverageStaleFindings(ctx, f.tenant, q); !errors.Is(err, ingestreport.ErrReceiptIncomplete) {
+		t.Fatalf("with only another tenant's receipt: err = %v, want ErrReceiptIncomplete", err)
+	}
+	if _, _, err := repo.CoverageStaleFindings(ctx, other, q); !errors.Is(err, ingestreport.ErrReceiptIncomplete) {
+		t.Fatalf("other tenant evaluating this tenant's command: err = %v, want ErrReceiptIncomplete", err)
+	}
+
+	receipt := f.receipt(t, cmd, reported)
+	stale, open, err := repo.CoverageStaleFindings(ctx, f.tenant, q)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := idStrings(stale); len(got) != 1 || got[0] != gone.String() || open != 2 {
+		t.Fatalf("stale = %v open = %d, want only %s and 2 (the reported finding has an action row)", got, open, gone)
+	}
+	if n, err := repo.CoverageUntouched(ctx, f.tenant, q, false); err != nil || n != 1 {
+		t.Fatalf("untouched = %d, %v; want 1 (gone)", n, err)
+	}
+
+	// Past the action cap the receipt no longer lists everything reported.
+	f.exec(t, `UPDATE ingest_receipts SET actions_truncated = true WHERE id = $1`, receipt)
+	if stale, _, err := repo.CoverageStaleFindings(ctx, f.tenant, q); !errors.Is(err, ingestreport.ErrReceiptIncomplete) || len(stale) != 0 {
+		t.Fatalf("truncated receipt: stale = %v, err = %v; want none and ErrReceiptIncomplete", stale, err)
 	}
 }

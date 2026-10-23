@@ -34,6 +34,7 @@ var keyChainExempt = map[string]string{
 	// their own authentication (the CI OIDC token, the CI run token).
 	"/api/v1/ci/oidc/exchange":                    "own authenticator (CI OIDC token), outside the key chains",
 	"/api/v1/ci/runs/{id}/results":                "CI run token only (AuthenticateRun), outside the key chains",
+	"/api/v1/ci/runs/{id}/results/{report_id}":    "CI run token only (AuthenticateRun), outside the key chains",
 	"/api/v1/ci/runs/{id}/baseline-diff":          "CI run token only (AuthenticateRun), outside the key chains",
 	"/api/v1/ci/runs/{id}/evaluate":               "CI run token only (AuthenticateRun), outside the key chains",
 	"/api/v1/hooks/github-app":                    "GitHub App webhook (HMAC), mounted outside every key chain",
