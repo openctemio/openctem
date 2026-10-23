@@ -1,12 +1,9 @@
 'use client'
 
 import useSWR from 'swr'
+import useSWRInfinite from 'swr/infinite'
 import { del, get, post, put } from '@/lib/api/client'
-import type {
-  LookalikeCandidateList,
-  LookalikeWatch,
-  LookalikeWatchList,
-} from '@/lib/api/generated'
+import type { LookalikeWatch, LookalikeWatchList } from '@/lib/api/generated'
 import type { ExposureListResponse } from '@/lib/api/exposure-types'
 import { usePermissions, Permission } from '@/lib/permissions'
 import { useTenantModules } from '@/features/integrations/api/use-tenant-modules'
@@ -37,19 +34,12 @@ export function useLookalikeWatches() {
   }
 }
 
-/** Registered lookalikes of one watch. */
-export function useRegisteredLookalikes(watchId: string | null) {
-  const { data, error, isLoading } = useSWR<LookalikeCandidateList>(
-    watchId ? `${LOOKALIKE_WATCHES_KEY}/${encodeURIComponent(watchId)}/registered` : null,
-    get,
-    { revalidateOnFocus: false }
-  )
-  return { items: data?.items ?? [], error, isLoading }
-}
+export const LOOKALIKE_PAGE_SIZE = 50
 
 /**
- * Open lookalike exposures to triage (GET /api/v1/exposures, the
- * findings:read and exposures:read gates apply server-side).
+ * Lookalike exposures to triage (GET /api/v1/exposures, the findings:read and
+ * exposures:read gates apply server-side), one page at a time: `loadMore`
+ * appends the next page, `total` is the whole count in this state.
  */
 export function useLookalikeExposures(
   state: 'active' | 'accepted' | 'false_positive' | 'resolved'
@@ -57,13 +47,30 @@ export function useLookalikeExposures(
   const { can } = usePermissions()
   const on = useModuleOn()
   const allowed = on && can(Permission.FindingsRead) && can(Permission.ExposuresRead)
-  const key = allowed
-    ? `/api/v1/exposures?event_type=lookalike_domain&state=${state}&per_page=50`
-    : null
-  const { data, error, isLoading, mutate } = useSWR<ExposureListResponse>(key, get, {
-    revalidateOnFocus: false,
-  })
-  return { exposures: data?.data ?? [], total: data?.total ?? 0, error, isLoading, mutate, allowed }
+  const { data, error, isLoading, isValidating, mutate, size, setSize } =
+    useSWRInfinite<ExposureListResponse>(
+      (index) =>
+        allowed
+          ? `/api/v1/exposures?event_type=lookalike_domain&state=${state}&page=${index + 1}&per_page=${LOOKALIKE_PAGE_SIZE}`
+          : null,
+      get,
+      { revalidateOnFocus: false, revalidateFirstPage: false }
+    )
+  const exposures = (data ?? []).flatMap((p) => p?.data ?? [])
+  const total = data?.[0]?.total ?? 0
+  const loadingMore = isValidating && size > (data?.length ?? 0)
+  return {
+    exposures,
+    total,
+    error,
+    isLoading,
+    mutate,
+    allowed,
+    hasMore: exposures.length < total,
+    loadingMore,
+    loadMore: () => setSize(size + 1),
+    reset: () => setSize(1),
+  }
 }
 
 export interface LookalikeWatchInput {

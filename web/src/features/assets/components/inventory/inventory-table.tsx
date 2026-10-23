@@ -104,6 +104,8 @@ interface InventoryTableProps {
   resetSelectionKey: number
   toolbarStart?: ReactNode
   toolbarEnd?: ReactNode
+  /** A full-width row under the toolbar: the filter chips. */
+  toolbarBelow?: ReactNode
   hasFilters: boolean
   /** Called after an asset is edited from the detail sheet (e.g. tags), to refetch the list. */
   onAssetUpdated?: () => void
@@ -134,6 +136,7 @@ export function InventoryTable({
   resetSelectionKey,
   toolbarStart,
   toolbarEnd,
+  toolbarBelow,
   hasFilters,
   onAssetUpdated,
   typeView = null,
@@ -144,7 +147,18 @@ export function InventoryTable({
   filterTags,
   onToggleTagFilter,
 }: InventoryTableProps) {
-  const [selectedAsset, setSelectedAsset] = useState<Asset | null>(null)
+  const [selectedSnapshot, setSelectedAsset] = useState<Asset | null>(null)
+  // The asset the drawer asked to delete: once the refreshed list no longer
+  // holds it, the drawer closes instead of staying open on a deleted row.
+  const [deleteRequestedId, setDeleteRequestedId] = useState<string | null>(null)
+  // The drawer shows the row as the list now has it (an edit refreshes the
+  // list), falling back to the snapshot for an asset opened from elsewhere.
+  const selectedAsset = useMemo(() => {
+    if (!selectedSnapshot) return null
+    const inList = assets.find((a) => a.id === selectedSnapshot.id)
+    if (!inList && deleteRequestedId === selectedSnapshot.id) return null
+    return inList ?? selectedSnapshot
+  }, [selectedSnapshot, assets, deleteRequestedId])
   const { t } = useTranslation()
   const { can } = usePermissions()
   const canWriteAssets = can(Permission.AssetsWrite)
@@ -536,6 +550,7 @@ export function InventoryTable({
         showSearch={false}
         toolbarStart={toolbarStart}
         toolbarEnd={toolbarEnd}
+        toolbarBelow={toolbarBelow}
         getRowId={(a) => a.id}
         manualPagination
         rowCount={total}
@@ -618,7 +633,10 @@ export function InventoryTable({
           if (selectedAsset) onEditAsset?.(selectedAsset)
         }}
         onDelete={() => {
-          if (selectedAsset) onDeleteAsset?.(selectedAsset)
+          if (selectedAsset) {
+            setDeleteRequestedId(selectedAsset.id)
+            onDeleteAsset?.(selectedAsset)
+          }
         }}
         canEdit={canWriteAssets && !!onEditAsset}
         canDelete={canDeleteAssets && !!onDeleteAsset}

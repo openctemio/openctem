@@ -25,24 +25,21 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { Badge } from '@/components/ui/badge'
-import { CRON_PRESETS, humanizeCron } from '../lib/cron'
+import { CRON_PRESETS, humanizeCron, weekdayName } from '../lib/cron'
 import type { CreateReportScheduleInput, ReportType } from '../types'
 
-const REPORT_TYPES: { value: ReportType; label: string }[] = [
-  { value: 'executive_summary', label: 'Executive Summary' },
-  { value: 'summary', label: 'Summary Digest' },
-  { value: 'findings', label: 'Findings Digest' },
+const REPORT_TYPES: { value: ReportType; labelKey: string; fallback: string }[] = [
+  {
+    value: 'executive_summary',
+    labelKey: 'reports.type.executive_summary',
+    fallback: 'Executive summary',
+  },
+  { value: 'summary', labelKey: 'reports.type.summary', fallback: 'Summary digest' },
+  { value: 'findings', labelKey: 'reports.type.findings', fallback: 'Findings digest' },
 ]
 
-const WEEKDAYS = [
-  { value: '1', label: 'Monday' },
-  { value: '2', label: 'Tuesday' },
-  { value: '3', label: 'Wednesday' },
-  { value: '4', label: 'Thursday' },
-  { value: '5', label: 'Friday' },
-  { value: '6', label: 'Saturday' },
-  { value: '0', label: 'Sunday' },
-]
+/** Monday first; the value is the cron day-of-week (0 = Sunday). */
+const WEEKDAY_VALUES = [1, 2, 3, 4, 5, 6, 0]
 
 const COMMON_TIMEZONES = [
   'UTC',
@@ -72,7 +69,7 @@ interface NewScheduleDialogProps {
 }
 
 export function NewScheduleDialog({ onCreate }: NewScheduleDialogProps) {
-  const { t } = useTranslation()
+  const { t, locale } = useTranslation()
   const [open, setOpen] = useState(false)
   const [submitting, setSubmitting] = useState(false)
 
@@ -100,13 +97,13 @@ export function NewScheduleDialog({ onCreate }: NewScheduleDialogProps) {
     return CRON_PRESETS[cadence].build(hour, minute, parseInt(weekday, 10), parseInt(monthDay, 10))
   }, [cadence, customCron, time, weekday, monthDay])
 
-  const cronPreview = useMemo(() => (cron ? humanizeCron(cron) : ''), [cron])
+  const cronPreview = useMemo(() => (cron ? humanizeCron(cron, t, locale) : ''), [cron, t, locale])
 
   const addRecipient = useCallback(() => {
     const value = recipientInput.trim()
     if (!value) return
     if (!EMAIL_RE.test(value)) {
-      toast.error('Enter a valid email address')
+      toast.error(t('reports.dialog.invalidEmail', 'Enter a valid email address'))
       return
     }
     if (recipients.includes(value)) {
@@ -115,7 +112,7 @@ export function NewScheduleDialog({ onCreate }: NewScheduleDialogProps) {
     }
     setRecipients((prev) => [...prev, value])
     setRecipientInput('')
-  }, [recipientInput, recipients])
+  }, [recipientInput, recipients, t])
 
   const removeRecipient = useCallback((email: string) => {
     setRecipients((prev) => prev.filter((r) => r !== email))
@@ -136,15 +133,20 @@ export function NewScheduleDialog({ onCreate }: NewScheduleDialogProps) {
 
   const handleSubmit = useCallback(async () => {
     if (!name.trim()) {
-      toast.error('Name is required')
+      toast.error(t('reports.dialog.nameRequired', 'Name is required'))
       return
     }
     if (!cron) {
-      toast.error('A cron expression is required')
+      toast.error(t('reports.dialog.cronRequired', 'A cron expression is required'))
       return
     }
     if (recipients.length === 0) {
-      toast.error('Add at least one recipient — the digest is emailed to them')
+      toast.error(
+        t(
+          'reports.dialog.recipientRequired',
+          'Add at least one recipient. The digest is emailed to them.'
+        )
+      )
       return
     }
     setSubmitting(true)
@@ -157,27 +159,31 @@ export function NewScheduleDialog({ onCreate }: NewScheduleDialogProps) {
         timezone,
         recipients: recipients.map((email) => ({ email })),
       })
-      toast.success('Schedule created')
+      toast.success(t('reports.dialog.created', 'Schedule created'))
       resetForm()
       setOpen(false)
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Failed to create schedule')
+      toast.error(
+        err instanceof Error
+          ? err.message
+          : t('reports.dialog.createFailed', 'Failed to create schedule')
+      )
     } finally {
       setSubmitting(false)
     }
-  }, [name, cron, recipients, reportType, timezone, onCreate, resetForm])
+  }, [name, cron, recipients, reportType, timezone, onCreate, resetForm, t])
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>
         <Button size="sm">
           <Plus className="h-4 w-4" />
-          New schedule
+          {t('reports.dialog.new', 'New schedule')}
         </Button>
       </DialogTrigger>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>New report schedule</DialogTitle>
+          <DialogTitle>{t('reports.dialog.title', 'New report schedule')}</DialogTitle>
           <DialogDescription>
             {t(
               'reports.schedule.newDescription',
@@ -189,39 +195,41 @@ export function NewScheduleDialog({ onCreate }: NewScheduleDialogProps) {
         <DialogBody>
           <div className="space-y-4 py-2">
             <div className="space-y-2">
-              <Label htmlFor="schedule-name">Name</Label>
+              <Label htmlFor="schedule-name">{t('reports.dialog.name', 'Name')}</Label>
               <Input
                 id="schedule-name"
                 value={name}
                 onChange={(e) => setName(e.target.value)}
-                placeholder="Weekly exec digest"
+                placeholder={t('reports.dialog.namePlaceholder', 'Weekly exec digest')}
               />
             </div>
 
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
-                <Label>Report type</Label>
+                <Label>{t('reports.dialog.reportType', 'Report type')}</Label>
                 <Select value={reportType} onValueChange={(v) => setReportType(v as ReportType)}>
                   <SelectTrigger>
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    {REPORT_TYPES.map((t) => (
-                      <SelectItem key={t.value} value={t.value}>
-                        {t.label}
+                    {REPORT_TYPES.map((rt) => (
+                      <SelectItem key={rt.value} value={rt.value}>
+                        {t(rt.labelKey, rt.fallback)}
                       </SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
               </div>
               <div className="space-y-2">
-                <Label>Format</Label>
+                <Label>{t('reports.dialog.format', 'Format')}</Label>
                 <Select value="html" disabled>
                   <SelectTrigger>
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="html">HTML email digest</SelectItem>
+                    <SelectItem value="html">
+                      {t('reports.dialog.formatHtml', 'HTML email digest')}
+                    </SelectItem>
                   </SelectContent>
                 </Select>
               </div>
@@ -229,7 +237,7 @@ export function NewScheduleDialog({ onCreate }: NewScheduleDialogProps) {
 
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
-                <Label>Cadence</Label>
+                <Label>{t('reports.dialog.cadence', 'Cadence')}</Label>
                 <Select
                   value={cadence}
                   onValueChange={(v) => setCadence(v as keyof typeof CRON_PRESETS)}
@@ -240,7 +248,7 @@ export function NewScheduleDialog({ onCreate }: NewScheduleDialogProps) {
                   <SelectContent>
                     {Object.entries(CRON_PRESETS).map(([key, preset]) => (
                       <SelectItem key={key} value={key}>
-                        {preset.label}
+                        {t(preset.labelKey, preset.fallback)}
                       </SelectItem>
                     ))}
                   </SelectContent>
@@ -248,7 +256,7 @@ export function NewScheduleDialog({ onCreate }: NewScheduleDialogProps) {
               </div>
               {cadence !== 'custom' && (
                 <div className="space-y-2">
-                  <Label htmlFor="schedule-time">Time</Label>
+                  <Label htmlFor="schedule-time">{t('reports.dialog.time', 'Time')}</Label>
                   <Input
                     id="schedule-time"
                     type="time"
@@ -261,15 +269,15 @@ export function NewScheduleDialog({ onCreate }: NewScheduleDialogProps) {
 
             {cadence === 'weekly' && (
               <div className="space-y-2">
-                <Label>Day of week</Label>
+                <Label>{t('reports.dialog.dayOfWeek', 'Day of week')}</Label>
                 <Select value={weekday} onValueChange={setWeekday}>
                   <SelectTrigger>
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    {WEEKDAYS.map((d) => (
-                      <SelectItem key={d.value} value={d.value}>
-                        {d.label}
+                    {WEEKDAY_VALUES.map((d) => (
+                      <SelectItem key={d} value={String(d)}>
+                        {weekdayName(d, locale)}
                       </SelectItem>
                     ))}
                   </SelectContent>
@@ -279,7 +287,9 @@ export function NewScheduleDialog({ onCreate }: NewScheduleDialogProps) {
 
             {cadence === 'monthly' && (
               <div className="space-y-2">
-                <Label htmlFor="schedule-monthday">Day of month</Label>
+                <Label htmlFor="schedule-monthday">
+                  {t('reports.dialog.dayOfMonth', 'Day of month')}
+                </Label>
                 <Input
                   id="schedule-monthday"
                   type="number"
@@ -293,7 +303,9 @@ export function NewScheduleDialog({ onCreate }: NewScheduleDialogProps) {
 
             {cadence === 'custom' && (
               <div className="space-y-2">
-                <Label htmlFor="schedule-cron">Cron expression</Label>
+                <Label htmlFor="schedule-cron">
+                  {t('reports.dialog.cronExpression', 'Cron expression')}
+                </Label>
                 <Input
                   id="schedule-cron"
                   value={customCron}
@@ -302,13 +314,16 @@ export function NewScheduleDialog({ onCreate }: NewScheduleDialogProps) {
                   className="font-mono"
                 />
                 <p className="text-xs text-muted-foreground">
-                  Standard 5-field cron: minute hour day-of-month month day-of-week.
+                  {t(
+                    'reports.dialog.cronHint',
+                    'Standard 5-field cron: minute hour day-of-month month day-of-week.'
+                  )}
                 </p>
               </div>
             )}
 
             <div className="space-y-2">
-              <Label>Timezone</Label>
+              <Label>{t('reports.dialog.timezone', 'Timezone')}</Label>
               <Select value={timezone} onValueChange={setTimezone}>
                 <SelectTrigger>
                   <SelectValue />
@@ -325,12 +340,15 @@ export function NewScheduleDialog({ onCreate }: NewScheduleDialogProps) {
 
             {cronPreview && (
               <p className="rounded-md bg-muted px-3 py-2 text-sm text-muted-foreground">
-                Runs <span className="font-medium text-foreground">{cronPreview}</span> ({timezone})
+                {t('reports.dialog.runs', 'Runs')}{' '}
+                <span className="font-medium text-foreground">{cronPreview}</span> ({timezone})
               </p>
             )}
 
             <div className="space-y-2">
-              <Label htmlFor="schedule-recipient">Recipients</Label>
+              <Label htmlFor="schedule-recipient">
+                {t('reports.dialog.recipients', 'Recipients')}
+              </Label>
               <div className="flex gap-2">
                 <Input
                   id="schedule-recipient"
@@ -343,10 +361,10 @@ export function NewScheduleDialog({ onCreate }: NewScheduleDialogProps) {
                       addRecipient()
                     }
                   }}
-                  placeholder="exec@company.com"
+                  placeholder={t('reports.dialog.recipientPlaceholder', 'exec@company.com')}
                 />
                 <Button type="button" variant="outline" onClick={addRecipient}>
-                  Add
+                  {t('reports.dialog.add', 'Add')}
                 </Button>
               </div>
               {recipients.length > 0 && (
@@ -357,7 +375,7 @@ export function NewScheduleDialog({ onCreate }: NewScheduleDialogProps) {
                       <button
                         type="button"
                         onClick={() => removeRecipient(email)}
-                        aria-label={`Remove ${email}`}
+                        aria-label={t('reports.dialog.remove', 'Remove {email}', { email })}
                         className="ml-1 rounded-full hover:text-destructive"
                       >
                         <X className="h-3 w-3" />
@@ -372,10 +390,12 @@ export function NewScheduleDialog({ onCreate }: NewScheduleDialogProps) {
 
         <DialogFooter>
           <Button variant="outline" onClick={() => setOpen(false)} disabled={submitting}>
-            Cancel
+            {t('reports.dialog.cancel', 'Cancel')}
           </Button>
           <Button onClick={handleSubmit} disabled={submitting}>
-            {submitting ? 'Creating…' : 'Create schedule'}
+            {submitting
+              ? t('reports.dialog.creating', 'Creating…')
+              : t('reports.dialog.create', 'Create schedule')}
           </Button>
         </DialogFooter>
       </DialogContent>
