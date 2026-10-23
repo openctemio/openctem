@@ -553,6 +553,9 @@ func (h *AdminOrganizationHandler) SetSSOEnforcement(w http.ResponseWriter, r *h
 	settings, err := h.tenants.UpdateSecuritySettings(r.Context(), id.String(),
 		tenantapp.UpdateSecuritySettingsInput{SSOEnforced: req.Enforced}, adminAuditContext(r, id.String()))
 	if err != nil {
+		if WriteFeatureDenied(w, err) {
+			return
+		}
 		switch {
 		case errors.Is(err, shared.ErrNotFound):
 			apierror.NotFound("organization").WriteJSON(w)

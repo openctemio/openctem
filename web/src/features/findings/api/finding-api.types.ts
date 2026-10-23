@@ -737,7 +737,9 @@ export interface FindingApiFilters {
   view?: string
   /** Scanner rule families (Nessus / Tenable.sc plugin family). Sent as `family`. */
   families?: string[]
-  /** An approval request for the finding is pending. Sent as `pending_approval=true`. */
+  /** Filters the page URL carries that the typed fields above do not: param name to value, sent as they are. */
+  extra?: Record<string, string>
+  /** An approval request for the finding is pending (or, with false, is not). Sent as `pending_approval`. */
   pending_approval?: boolean
   /** Accepted risks that lapse by then (`P30D` = 30 days ahead). Sent as `acceptance_expires_at_lte`. */
   acceptance_expires_at_lte?: string
