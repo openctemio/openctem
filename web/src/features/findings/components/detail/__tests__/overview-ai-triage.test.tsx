@@ -13,6 +13,15 @@ vi.mock('@/context/tenant-provider', () => ({
 vi.mock('@/context/permission-provider', () => ({
   usePermissionsSafe: () => ({ hasPermission: (p: string) => perms.includes(p) }),
 }))
+// The identity section has its own test; here it reads nothing.
+vi.mock('../../../api/use-finding-identity', () => ({
+  useFindingIdentity: () => ({
+    identity: null,
+    isLoading: false,
+    error: undefined,
+    mutate: vi.fn(),
+  }),
+}))
 vi.mock('../../../api/use-finding-groups', () => ({ useRelatedCVEs: () => ({ data: undefined }) }))
 
 const { OverviewTab } = await import('../overview-tab')
