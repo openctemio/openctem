@@ -617,6 +617,21 @@ func (s *Service) ActivateTarget(ctx context.Context, targetID string, tenantID 
 	case target.IsPending() && s.entriesNeedApproval(ctx, parsedTenantID):
 		return target, nil // it waits for its approvals
 	}
+	// A legacy row the platform no longer accepts (a retired type, a
+	// wildcard, a public suffix) never comes back into effect.
+	if target.TargetType().Retired() {
+		return nil, scopedom.ErrTargetTypeRetired
+	}
+	if err := scopedom.ValidatePattern(target.TargetType(), target.Pattern()); err != nil {
+		return nil, err
+	}
+	g := scopedom.DefaultGuardrails()
+	if s.guardrails != nil {
+		g = *s.guardrails
+	}
+	if err := g.CheckPattern(target.TargetType(), target.Pattern()); err != nil {
+		return nil, err
+	}
 	// An entry a CI trust manages is put into effect by its first verified
 	// run, never by hand.
 	if err := s.refuseCITrustManaged(ctx, target); err != nil {

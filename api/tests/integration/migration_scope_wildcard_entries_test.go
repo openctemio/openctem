@@ -41,7 +41,7 @@ func TestMigrationScopeWildcardEntries(t *testing.T) {
 		{"01000000-0000-4000-8000-000000000003", tenantA, "container", "reg*", "active", true},
 		{"01000000-0000-4000-8000-000000000004", tenantA, "url", "*", "active", true},
 		{"01000000-0000-4000-8000-000000000005", tenantA, "website", "https://*.example.com", "active", true},
-		{"01000000-0000-4000-8000-000000000006", tenantA, "api", "app.example.com", "active", true},
+		{"01000000-0000-4000-8000-000000000006", tenantA, "api", "app.example.com", "active", false},
 		{"01000000-0000-4000-8000-000000000007", tenantA, "host", "*", "active", true},
 		{"01000000-0000-4000-8000-000000000008", tenantA, "mobile_app", "*", "pending", true},
 		{"01000000-0000-4000-8000-000000000009", tenantB, "database", "*", "active", true},
@@ -57,6 +57,12 @@ func TestMigrationScopeWildcardEntries(t *testing.T) {
 		{"01000000-0000-4000-8000-000000000011", tenantB, "repository", "github.com/org/*", "active", false},
 		{"01000000-0000-4000-8000-000000000012", tenantA, "website", "*://shop.example.com", "active", false},
 		{"01000000-0000-4000-8000-000000000013", tenantA, "url", "*.example.com", "active", true},
+		{"01000000-0000-4000-8000-000000000014", tenantA, "host", "0.0.0.0/0", "active", true},
+		{"01000000-0000-4000-8000-000000000015", tenantA, "host", "1.0.0.0-223.255.255.255", "active", true},
+		{"01000000-0000-4000-8000-000000000016", tenantA, "host", "*.com", "active", true},
+		{"01000000-0000-4000-8000-000000000017", tenantA, "host", "203.0.113.5", "active", false},
+		{"01000000-0000-4000-8000-000000000018", tenantA, "api", "*.api.example.com", "active", true},
+		{"01000000-0000-4000-8000-000000000019", tenantA, "website", "shop.example.com", "active", false},
 	}
 	for _, r := range rows {
 		exec(`INSERT INTO scope_targets (id, tenant_id, target_type, pattern, status) VALUES ($1, $2, $3, $4, $5)`,

@@ -185,8 +185,8 @@ func (g Guardrails) CheckPattern(t TargetType, pattern string) error {
 		wild, host := splitDomainWildcard(pattern)
 		return g.checkHost(host, wild)
 	case TargetTypeHost:
-		if set, ok := parseIPSet(pattern); ok {
-			return g.checkSet(set)
+		if a, err := netip.ParseAddr(strings.Trim(pattern, "[]")); err == nil {
+			return g.checkSet(ipSet{lo: a.Unmap(), hi: a.Unmap()})
 		}
 		wild, host := splitDomainWildcard(pattern)
 		return g.checkHost(host, wild)

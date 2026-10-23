@@ -24,12 +24,15 @@ WITH hit AS (
           (target_type IN ('certificate', 'container', 'database', 'mobile_app', 'cloud_resource', 'network')
            AND pattern LIKE '%*%')
        OR (target_type IN ('url', 'api', 'website')
-           AND (pattern !~* '^(https?|\*)://'
-                OR split_part(substr(pattern, strpos(pattern, '://') + 3), '/', 1) LIKE '%*%'
-                OR split_part(substr(pattern, strpos(pattern, '://') + 3), '/', 1) = ''))
+           AND ((pattern !~* '^(https?|\*)://' AND pattern LIKE '%*%')
+                OR (pattern LIKE '%://%'
+                    AND (split_part(substr(pattern, strpos(pattern, '://') + 3), '/', 1) LIKE '%*%'
+                         OR split_part(substr(pattern, strpos(pattern, '://') + 3), '/', 1) = ''))))
        OR (target_type = 'host'
-           AND pattern LIKE '%*%'
-           AND pattern !~ '^\*\.[^*]+$')
+           AND (pattern LIKE '%/%'
+                OR pattern ~ '^[0-9a-fA-F:.]+-[0-9a-fA-F:.]+$'
+                OR (pattern LIKE '%*%' AND pattern !~ '^\*\.[^*]+$')
+                OR pattern ~ '^\*\*?\.[^.*]+\.?$'))
      )
 ), taken AS (
     UPDATE scope_targets st
