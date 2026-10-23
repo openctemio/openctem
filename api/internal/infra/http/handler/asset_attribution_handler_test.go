@@ -9,6 +9,8 @@ import (
 	"testing"
 
 	auditapp "github.com/openctemio/openctem/api/internal/app/audit"
+	easmapp "github.com/openctemio/openctem/api/internal/app/easm"
+	"github.com/openctemio/openctem/api/internal/app/scopeauth"
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
 	"github.com/openctemio/openctem/api/internal/infra/postgres"
 	assetdom "github.com/openctemio/openctem/api/pkg/domain/asset"
@@ -178,5 +180,53 @@ func TestAssetAttributionHandler_ActiveGate(t *testing.T) {
 	gate.err = context.DeadlineExceeded
 	if _, body := getAttribution(t, h, tenant); body.ActiveChecksAllowed {
 		t.Fatalf("a failed gate lookup reported scannable: %+v", body)
+	}
+}
+
+type visibleAssets struct{ visible map[string]bool }
+
+func (v visibleAssets) GetAssetWithScope(_ context.Context, _, id, _ string, _ bool) (*assetdom.Asset, error) {
+	if v.visible[id] {
+		return nil, nil
+	}
+	return nil, shared.ErrNotFound
+}
+
+type fakeCertStandings struct{ st easmapp.CertStanding }
+
+func (f fakeCertStandings) CertificateStandings(_ context.Context, _ shared.ID, ids []shared.ID) (map[string]easmapp.CertStanding, error) {
+	return map[string]easmapp.CertStanding{ids[0].String(): f.st}, nil
+}
+
+// A certificate's standing names only the endpoints the caller may see: the
+// ones outside the caller's data scope are dropped from the list and left
+// unnamed where the standing points at them. The standing itself stays.
+func TestAssetAttributionHandler_CertificateStandingFollowsDataScope(t *testing.T) {
+	tenant := shared.NewID()
+	mine, hidden := shared.NewID().String(), shared.NewID().String()
+	st := easmapp.CertStanding{
+		Standing:      easmapp.CertStandingInScope,
+		ServedBy:      &scopeauth.Via{Kind: scopeauth.KindServedBy, Endpoint: hidden, Name: "secret.example.com:443", Pattern: "*.example.com"},
+		Endpoints:     []easmapp.CertEndpoint{{AssetID: mine, Name: "a.example.com:443"}, {AssetID: hidden, Name: "secret.example.com:443"}},
+		EndpointCount: 2,
+		Ownership:     easmapp.CertOwnershipYours,
+	}
+	h := NewAssetAttributionHandler(&fakeAttrReader{view: &postgres.AttributionView{}}, visibleAssets{visible: map[string]bool{mine: true}}, logger.NewNop())
+	h.SetCertificateReader(fakeCertStandings{st: st})
+	var resp AssetAttributionResponse
+	h.applyCertificate(context.Background(), tenant, shared.NewID().String(), &resp)
+	c := resp.Certificate
+	if c == nil || c.Standing != easmapp.CertStandingInScope || c.EndpointCount != 2 {
+		t.Fatalf("certificate = %+v", c)
+	}
+	if len(c.Endpoints) != 1 || c.Endpoints[0].AssetID != mine {
+		t.Errorf("endpoints = %+v", c.Endpoints)
+	}
+	if c.ServedBy == nil || c.ServedBy.Endpoint != "" || c.ServedBy.Name != "" || c.ServedBy.Pattern != "*.example.com" {
+		t.Errorf("served_by = %+v", c.ServedBy)
+	}
+	raw, _ := json.Marshal(resp)
+	if strings.Contains(string(raw), "secret.example.com") || strings.Contains(string(raw), hidden) {
+		t.Errorf("a hidden endpoint leaked: %s", raw)
 	}
 }
