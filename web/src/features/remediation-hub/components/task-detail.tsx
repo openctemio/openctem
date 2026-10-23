@@ -9,6 +9,7 @@
  * undone from its toast.
  */
 
+import { useBreadcrumbTitle } from '@/components/layout'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { usePathname, useRouter, useSearchParams } from 'next/navigation'
 import useSWRInfinite from 'swr/infinite'
@@ -99,6 +100,7 @@ export function TaskDetail({ taskId }: { taskId: string }) {
   const owners = useOwnerNames()
   const revalidate = useRevalidateHub()
   const { data: task, error, isLoading, mutate } = useTask(taskId)
+  useBreadcrumbTitle(task?.title)
   const { data: timeline } = useTaskTimeline(taskId)
   const members = useSWRInfinite<Page<TaskMember>>(
     (index, prev) =>
@@ -429,7 +431,10 @@ export function TaskDetail({ taskId }: { taskId: string }) {
         </Button>
         <div className="min-w-0 flex-1 basis-64">
           <h1 className="text-2xl font-bold tracking-tight break-words">{task.title}</h1>
-          <p className="text-muted-foreground text-sm break-words">{task.action_title}</p>
+          {/* A task named after its fix action would repeat the title. */}
+          {task.action_title && task.action_title.trim() !== task.title.trim() && (
+            <p className="text-muted-foreground text-sm break-words">{task.action_title}</p>
+          )}
           <div className="mt-2 flex flex-wrap items-center gap-2 text-sm">
             <TaskStatePill state={task.state} />
             <DeadlinePill task={task} />

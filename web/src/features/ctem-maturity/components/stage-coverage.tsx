@@ -3,16 +3,21 @@
 import { Check, Minus, Layers } from 'lucide-react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { cn } from '@/lib/utils'
+import { useTranslation } from '@/context/i18n-provider'
 import type { CTEMStageCoverage } from '../api/use-ctem-maturity'
 
 // The five CTEM stages, in program order. Keys map to the boolean flags
 // on ctemcycle.CTEMStageCoverage.
-const STAGES: { key: keyof CTEMStageCoverage; label: string; hint: string }[] = [
-  { key: 'scoping', label: 'Scoping', hint: 'a scope was frozen at activation' },
-  { key: 'discovery', label: 'Discovery', hint: 'findings were opened' },
-  { key: 'prioritization', label: 'Prioritization', hint: 'priority classes were applied' },
-  { key: 'validation', label: 'Validation', hint: 'closed findings carried evidence' },
-  { key: 'mobilization', label: 'Mobilization', hint: 'findings were resolved' },
+const STAGES: {
+  key: Exclude<keyof CTEMStageCoverage, 'covered_count'>
+  label: string
+  hint: string
+}[] = [
+  { key: 'scoping', label: 'Scoping', hint: 'A scope was frozen at activation' },
+  { key: 'discovery', label: 'Discovery', hint: 'Findings were opened' },
+  { key: 'prioritization', label: 'Prioritization', hint: 'Priority classes were applied' },
+  { key: 'validation', label: 'Validation', hint: 'Closed findings carried evidence' },
+  { key: 'mobilization', label: 'Mobilization', hint: 'Findings were resolved' },
 ]
 
 /**
@@ -27,16 +32,20 @@ export function StageCoverageCard({
   coverage: CTEMStageCoverage
   className?: string
 }) {
+  const { t } = useTranslation()
   return (
     <Card className={cn(className)}>
       <CardHeader>
         <CardTitle className="flex items-center gap-2 text-base">
           <Layers className="text-muted-foreground h-4 w-4" />
-          CTEM stage coverage
+          {t('insights.maturity.stages.title', 'CTEM stage coverage')}
         </CardTitle>
         <CardDescription>
-          Stages the latest closed cycle exercised — {coverage.covered_count} of {STAGES.length}.
-          Reported alongside the score, not part of it.
+          {t(
+            'insights.maturity.stages.description',
+            'Stages the latest closed cycle exercised: {covered} of {total}. Reported alongside the score, not part of it.',
+            { covered: coverage.covered_count, total: STAGES.length }
+          )}
         </CardDescription>
       </CardHeader>
       <CardContent>
@@ -48,9 +57,7 @@ export function StageCoverageCard({
                 <span
                   className={cn(
                     'flex h-6 w-6 shrink-0 items-center justify-center rounded-full',
-                    covered
-                      ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-400' // palette-ok: covered-stage success accent, no semantic success token
-                      : 'bg-muted text-muted-foreground'
+                    covered ? 'bg-success/10 text-success' : 'bg-muted text-muted-foreground'
                   )}
                   aria-hidden
                 >
@@ -58,10 +65,17 @@ export function StageCoverageCard({
                 </span>
                 <div className="min-w-0">
                   <p className={cn('text-sm', covered ? 'font-medium' : 'text-muted-foreground')}>
-                    {s.label}
-                    <span className="sr-only">{covered ? ' covered' : ' not covered'}</span>
+                    {t(`insights.maturity.stage.${s.key}`, s.label)}
+                    <span className="sr-only">
+                      {' '}
+                      {covered
+                        ? t('insights.maturity.stages.covered', 'covered')
+                        : t('insights.maturity.stages.notCovered', 'not covered')}
+                    </span>
                   </p>
-                  <p className="text-muted-foreground text-xs">{s.hint}</p>
+                  <p className="text-muted-foreground text-xs">
+                    {t(`insights.maturity.stage.${s.key}.hint`, s.hint)}
+                  </p>
                 </div>
               </li>
             )
