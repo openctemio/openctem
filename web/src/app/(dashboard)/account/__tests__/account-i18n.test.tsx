@@ -1,4 +1,25 @@
 import { describe, it, expect, vi } from 'vitest'
+
+// The hooks below return the same object on every render, like the real SWR
+// hooks do. The pages copy them into state in an effect keyed on the object, so a
+// fresh literal per call would re-render forever and run the worker out of memory.
+const h = vi.hoisted(() => ({
+  profile: {
+    id: 'user-1234',
+    email: 'a@b.co',
+    name: 'An',
+    email_verified: true,
+    auth_provider: 'local',
+  },
+  preferences: { theme: 'system', language: 'en' },
+  notificationPrefs: {
+    in_app_enabled: true,
+    muted_types: [] as string[],
+    min_severity: 'info',
+    auto_watch: true,
+  },
+  activities: [] as unknown[],
+}))
 import { render, screen } from '@testing-library/react'
 import { I18nProvider } from '@/context/i18n-provider'
 import ProfilePage from '../page'
@@ -23,12 +44,7 @@ vi.mock('@/features/auth/components/password-policy-hint', () => ({
 }))
 vi.mock('@/features/notifications/api/use-notification-api', () => ({
   useNotificationPreferencesApi: () => ({
-    data: {
-      in_app_enabled: true,
-      muted_types: [],
-      min_severity: 'info',
-      auto_watch: true,
-    },
+    data: h.notificationPrefs,
     isLoading: false,
     error: undefined,
     mutate: vi.fn(),
@@ -39,25 +55,19 @@ vi.mock('@/features/notifications/api/use-notification-api', () => ({
 vi.mock('@/features/account', async (orig) => ({
   ...(await orig<object>()),
   useProfile: () => ({
-    profile: {
-      id: 'user-1234',
-      email: 'a@b.co',
-      name: 'An',
-      email_verified: true,
-      auth_provider: 'local',
-    },
+    profile: h.profile,
     isLoading: false,
     isError: false,
     mutate: vi.fn(),
   }),
   useUpdateProfile: () => ({ updateProfile: vi.fn(), isUpdating: false }),
   usePreferences: () => ({
-    preferences: { theme: 'system', language: 'en' },
+    preferences: h.preferences,
     isLoading: false,
     mutate: vi.fn(),
   }),
   useUpdatePreferences: () => ({ updatePreferences: vi.fn(), isUpdating: false }),
-  useAccountActivity: () => ({ activities: [], total: 0, totalPages: 0, isLoading: false }),
+  useAccountActivity: () => ({ activities: h.activities, total: 0, totalPages: 0, isLoading: false }),
 }))
 
 const inVi = (ui: React.ReactElement) => render(<I18nProvider locale="vi">{ui}</I18nProvider>)
