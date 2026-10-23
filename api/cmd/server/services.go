@@ -1026,6 +1026,8 @@ type ServiceDeps struct {
 	DB          *sql.DB
 	Repos       *Repositories
 	RedisClient *redis.Client
+	// IngestDB is the ingest pool (DB_INGEST_MAX_CONNS); nil uses the API's.
+	IngestDB *postgres.DB
 }
 
 // NewServices initializes all services.
@@ -2253,7 +2255,14 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	})
 
 	// Initialize ingest service (unified ingestion engine)
-	s.Ingest = ingest.NewService(repos.Asset, repos.Finding, repos.Vulnerability, repos.Component, repos.Sensor, repos.Branch, repos.Tenant, repos.Audit, log)
+	// The heavy ingest writes run on the ingest pool when one is open.
+	ingAsset, ingFinding, ingVuln, ingComp, ingBranch := repos.Asset, repos.Finding, repos.Vulnerability, repos.Component, repos.Branch
+	if deps.IngestDB != nil {
+		ingAsset, ingFinding = postgres.NewAssetRepository(deps.IngestDB), postgres.NewFindingRepository(deps.IngestDB)
+		ingVuln, ingComp = postgres.NewVulnerabilityRepository(deps.IngestDB), postgres.NewComponentRepository(deps.IngestDB)
+		ingBranch = postgres.NewBranchRepository(deps.IngestDB)
+	}
+	s.Ingest = ingest.NewService(ingAsset, ingFinding, ingVuln, ingComp, repos.Sensor, ingBranch, repos.Tenant, repos.Audit, log)
 	// DefectDojo co-existence sync (RFC-013): pull a tenant's DefectDojo findings
 	// and ingest them as CTIS (one-way; OpenCTEM is the system of record).
 	s.DefectDojoSync = defectdojo.NewSyncService(repos.Integration, s.Ingest, s.Encryptor, log)
@@ -3545,7 +3554,12 @@ func initIngestQueue(cfg *config.Config, repos *Repositories) (*ingestqueue.Queu
 	if err != nil {
 		return nil, err
 	}
-	return ingestqueue.New(repos.IngestJob, repos.IngestPayload, sealer), nil
+	q := ingestqueue.New(repos.IngestJob, repos.IngestPayload, sealer)
+	// Back-pressure at accept: 429 past the tenant's queue limit, refused
+	// when the depth cannot be read.
+	q.SetBackpressure(repos.IngestJob, cfg.Ingest.MaxPendingPerTenant)
+	repos.IngestJob.SetMaxRunningPerTenant(cfg.Ingest.MaxRunningPerTenant)
+	return q, nil
 }
 
 // initEncryptor initializes the credentials encryptor.

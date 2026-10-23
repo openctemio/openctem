@@ -7,6 +7,7 @@ package ingestjob
 import (
 	"context"
 	"crypto/sha256"
+	"encoding/hex"
 	"strconv"
 	"time"
 
@@ -71,6 +72,69 @@ type Job struct {
 	sourceRef   string
 	submittedBy string
 	publicError string
+
+	// lane orders the claim; scopeKey serialises the jobs that write one
+	// asset scope (at most one processing per key).
+	lane     Lane
+	scopeKey string
+}
+
+// Lane orders the claim: urgent before interactive before bulk, fair across
+// tenants within a lane. The server decides it, never the report.
+type Lane int
+
+const (
+	// LaneUrgent: a report with a KEV or critical finding from a trusted
+	// channel (a CI run).
+	LaneUrgent Lane = 0
+	// LaneInteractive: someone waits on it (a person's import, a CI gate).
+	LaneInteractive Lane = 1
+	// LaneBulk: scheduled sensor runs (the default).
+	LaneBulk Lane = 2
+)
+
+// String names the lane (metrics, logs).
+func (l Lane) String() string {
+	switch l {
+	case LaneUrgent:
+		return "urgent"
+	case LaneInteractive:
+		return "interactive"
+	default:
+		return "bulk"
+	}
+}
+
+// MaxScopeKey bounds a scope key (the column width).
+const MaxScopeKey = 160
+
+// ScopeKey builds the scope key of a tenant's asset scope: "<tenant>:<part>:...".
+func ScopeKey(tenantID shared.ID, parts ...string) string {
+	k := tenantID.String()
+	for _, p := range parts {
+		k += ":" + p
+	}
+	if len(k) > MaxScopeKey {
+		sum := sha256.Sum256([]byte(k))
+		k = tenantID.String() + ":h:" + hex.EncodeToString(sum[:16])
+	}
+	return k
+}
+
+// Lane returns the job's lane (bulk unless set).
+func (j *Job) Lane() Lane { return j.lane }
+
+// ScopeKey returns the job's scope key ("" for none).
+func (j *Job) ScopeKey() string { return j.scopeKey }
+
+// Route sets the lane and scope key of a not-yet-stored job (also used when
+// rehydrating a job).
+func (j *Job) Route(lane Lane, scopeKey string) *Job {
+	if lane < LaneUrgent || lane > LaneBulk {
+		lane = LaneBulk
+	}
+	j.lane, j.scopeKey = lane, scopeKey
+	return j
 }
 
 // Kind is what a job applies.
@@ -104,7 +168,7 @@ func NewUploadJob(id, tenantID shared.ID, kind Kind, sourceRef, submittedBy, rep
 		payload: envelope, payloadSHA: append([]byte(nil), digest...),
 		status: StatusPending, maxAttempts: DefaultMaxAttempts,
 		availableAt: now, createdAt: now, updatedAt: now,
-		kind: kind, sourceRef: sourceRef, submittedBy: submittedBy,
+		kind: kind, sourceRef: sourceRef, submittedBy: submittedBy, lane: LaneInteractive,
 	}
 }
 
@@ -176,6 +240,10 @@ func NewV2Job(tenantID shared.ID, sensorID *shared.ID, reportUUID string, seg V2
 	}
 	j := NewJob(tenantID, sensorID, prefix+"/"+suffix, "", payload)
 	j.v2 = &seg
+	// The segments and the commit of one report run one at a time.
+	if !seg.ReportRef.IsZero() {
+		j.scopeKey = ScopeKey(tenantID, "report", seg.ReportRef.String())
+	}
 	return j
 }
 
@@ -205,6 +273,7 @@ func NewJob(tenantID shared.ID, sensorID *shared.ID, reportID, sourceType string
 		attempts:    0,
 		maxAttempts: DefaultMaxAttempts,
 		priority:    0,
+		lane:        LaneBulk,
 		availableAt: now,
 		createdAt:   now,
 		updatedAt:   now,
@@ -295,7 +364,7 @@ func FromRow(
 		payload: payload, payloadSHA: payloadSHA,
 		status: status, attempts: attempts, maxAttempts: maxAttempts, priority: priority,
 		result: result, lastError: lastError, lockedBy: lockedBy, lockedAt: lockedAt,
-		availableAt: availableAt, createdAt: createdAt, updatedAt: updatedAt,
+		availableAt: availableAt, createdAt: createdAt, updatedAt: updatedAt, lane: LaneBulk,
 	}
 }
 
@@ -333,8 +402,10 @@ type Repository interface {
 	CountPending(ctx context.Context) (int, error)
 
 	// ReleaseStale resets jobs stuck in processing (worker crash) back to
-	// pending when their lock is older than olderThan. Returns the count reset.
-	ReleaseStale(ctx context.Context, olderThan time.Duration) (int, error)
+	// pending when their lock is older than olderThan. A job with no attempts
+	// left is marked dead instead (a payload that crashes the worker is not
+	// retried for ever) and returned in dead. Returns the count reset.
+	ReleaseStale(ctx context.Context, olderThan time.Duration) (released int, dead []*Job, err error)
 }
 
 // UploadRepository is the CI results and file import side of the queue.

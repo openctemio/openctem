@@ -330,6 +330,9 @@ func (h *CIRunnerHandler) UploadResults(w http.ResponseWriter, r *http.Request) 
 			apierror.BadRequest("Invalid JSON request body").WriteJSON(w)
 			return
 		}
+		if writeBackpressure(w, err) {
+			return
+		}
 		h.writeErr(w, "upload CI results", err)
 		return
 	}

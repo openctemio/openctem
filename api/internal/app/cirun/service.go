@@ -188,6 +188,7 @@ type Service struct {
 	secrets   SecretExposureRaiser
 	uploads   UploadQueue
 	vex       VEXApplier
+	kev       KEVChecker
 
 	renameMu   sync.Mutex
 	renameSeen map[string]time.Time

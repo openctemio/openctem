@@ -379,6 +379,12 @@ type IngestConfig struct {
 	// MaxPendingPerTenant bounds a tenant's queue depth; further submissions get
 	// 429 + Retry-After. 0 disables the check.
 	MaxPendingPerTenant int
+	// Workers is how many ingest jobs one server processes at once
+	// (INGEST_WORKERS, default 4).
+	Workers int
+	// MaxRunningPerTenant caps one tenant's processing jobs across servers
+	// (INGEST_MAX_RUNNING_PER_TENANT, default 4).
+	MaxRunningPerTenant int
 
 	// V2Results mounts sensor protocol v2 results (RFC-026) at
 	// /api/v2/sensor, processes its jobs and advertises it to v1 sensors that
@@ -661,14 +667,17 @@ func (c *ServerConfig) TLSEnabled() bool { return c.TLSCertFile != "" }
 
 // DatabaseConfig holds database configuration.
 type DatabaseConfig struct {
-	Host            string
-	Port            int
-	User            string
-	Password        string
-	Name            string
-	SSLMode         string
-	MaxOpenConns    int
-	MaxIdleConns    int
+	Host         string
+	Port         int
+	User         string
+	Password     string
+	Name         string
+	SSLMode      string
+	MaxOpenConns int
+	MaxIdleConns int
+	// IngestMaxConns sizes the ingest pool (DB_INGEST_MAX_CONNS, default 8):
+	// the connections ingest writes use, apart from the API's pool.
+	IngestMaxConns  int
 	ConnMaxLifetime time.Duration
 	// JITEnabled controls PostgreSQL's JIT compiler for the API's sessions
 	// (env DB_JIT_ENABLED, default false). JIT pays off for long analytical
@@ -719,6 +728,19 @@ func (c *DatabaseConfig) AdminConfig() *DatabaseConfig {
 	a := *c
 	a.User, a.Password = c.AdminUser, c.AdminPassword
 	a.MaxOpenConns, a.MaxIdleConns = 5, 2
+	return &a
+}
+
+// IngestConfig returns the database settings of the ingest pool: the API's
+// settings with IngestMaxConns open connections, all kept idle (bursts do
+// not churn connections).
+func (c *DatabaseConfig) IngestConfig() *DatabaseConfig {
+	a := *c
+	n := c.IngestMaxConns
+	if n <= 0 {
+		n = 8
+	}
+	a.MaxOpenConns, a.MaxIdleConns = n, n
 	return &a
 }
 
@@ -1578,6 +1600,7 @@ func Load() (*Config, error) {
 			SSLMode:         getEnv("DB_SSLMODE", "disable"),
 			MaxOpenConns:    getEnvInt("DB_MAX_OPEN_CONNS", 25),
 			MaxIdleConns:    getEnvInt("DB_MAX_IDLE_CONNS", 5),
+			IngestMaxConns:  getEnvInt("DB_INGEST_MAX_CONNS", 8),
 			ConnMaxLifetime: getEnvDuration("DB_CONN_MAX_LIFETIME", 5*time.Minute),
 			JITEnabled:      getEnvBool("DB_JIT_ENABLED", false),
 		},
@@ -1762,6 +1785,8 @@ func Load() (*Config, error) {
 		Ingest: IngestConfig{
 			Mode:                  getEnv("INGEST_MODE", "sync"),
 			MaxPendingPerTenant:   getEnvInt("INGEST_MAX_PENDING_PER_TENANT", 100),
+			Workers:               getEnvInt("INGEST_WORKERS", 4),
+			MaxRunningPerTenant:   getEnvInt("INGEST_MAX_RUNNING_PER_TENANT", 4),
 			V2Results:             getEnvBool("SENSOR_PROTOCOL_V2_RESULTS", true),
 			V2BlindingRatio:       getEnvFloat("SENSOR_V2_BLINDING_RATIO", 0.5),
 			V2BlindingMinFindings: getEnvInt("SENSOR_V2_BLINDING_MIN_FINDINGS", 100),

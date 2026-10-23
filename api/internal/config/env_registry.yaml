@@ -218,6 +218,12 @@ vars:
     type: bool
     default: "false"
     description: "PostgreSQL JIT for the API's sessions. Off by default because request-path queries pay the JIT compile cost without benefiting from it."
+  - name: DB_INGEST_MAX_CONNS
+    component: api
+    group: "Database (PostgreSQL)"
+    type: int
+    default: "8"
+    description: "Connections of the ingest pool, apart from the API's pool: the asset and finding writes of the ingest worker (CI results, imports, sensor reports) use it, so a burst of uploads cannot take the connections the API's requests need. All are kept idle."
   - name: DB_MAX_IDLE_CONNS
     component: api
     group: "Database (PostgreSQL)"
@@ -1285,7 +1291,13 @@ vars:
     group: "Ingest"
     type: int
     default: "100"
-    description: "Queue depth per organization in `async` mode; further submissions get `429` with `Retry-After`. `0` turns the check off."
+    description: "Unfinished ingest jobs per organization (CI uploads, imports, sensor report segments); a further upload gets `429` with a `Retry-After` computed from how fast the organization's jobs drain. A depth that cannot be read refuses the upload (`503`). `0` turns the check off."
+  - name: INGEST_MAX_RUNNING_PER_TENANT
+    component: api
+    group: "Ingest"
+    type: int
+    default: "4"
+    description: "Ingest jobs of one organization processing at once, across servers, so one organization cannot hold every worker."
   - name: INGEST_MODE
     component: api
     group: "Ingest"
@@ -1304,6 +1316,12 @@ vars:
     type: string
     default: "dry_run"
     description: "How a VEX `not_affected` statement in a scan report acts on the matching open finding: `off`, `dry_run` or `enforce`. A false positive needs four-eyes, so `enforce` requests one (a pending approval by the actor `vex`, with the justification) that a person with `findings:approve` decides; it never sets the status itself."
+  - name: INGEST_WORKERS
+    component: api
+    group: "Ingest"
+    type: int
+    default: "4"
+    description: "Ingest jobs one server processes at once. Jobs of one asset scope (one repository, one organization's imports, one sensor report) never run together; size it to `DB_INGEST_MAX_CONNS`."
   - name: SENSOR_PROTOCOL_V2_RESULTS
     component: api
     group: "Ingest"
