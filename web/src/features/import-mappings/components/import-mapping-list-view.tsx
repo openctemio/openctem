@@ -11,7 +11,6 @@ import { EmptyState, ErrorState, PageHeader, RelativeTime } from '@/features/sha
 import { Can, Permission } from '@/lib/permissions'
 import { useTranslation } from '@/context/i18n-provider'
 import { useImportMappings } from '../api/import-mappings-api'
-import { IMPORT_MAPPINGS_PATH } from '../lib/paths'
 
 /** Settings → Integrations → Import mappings: the organization's mappings. */
 export function ImportMappingListView() {
@@ -22,7 +21,7 @@ export function ImportMappingListView() {
   const newButton = (
     <Can permission={Permission.IntegrationsManage}>
       <Button asChild>
-        <Link href={`${IMPORT_MAPPINGS_PATH}/new`}>
+        <Link href="/settings/integrations/import-mappings/new">
           <Plus className="me-2 h-4 w-4" aria-hidden />
           {t('importMappings.list.new', 'New mapping')}
         </Link>
@@ -72,7 +71,7 @@ export function ImportMappingListView() {
                 <CardContent className="flex flex-wrap items-center justify-between gap-3 p-4">
                   <div className="min-w-0 flex-1 basis-60">
                     <Link
-                      href={`${IMPORT_MAPPINGS_PATH}/${m.id}`}
+                      href={`/settings/integrations/import-mappings/${encodeURIComponent(m.id)}`}
                       className="break-all font-medium hover:underline"
                     >
                       {m.name}

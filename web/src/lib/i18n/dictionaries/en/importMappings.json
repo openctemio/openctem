@@ -113,7 +113,7 @@
   "importMappings.start.blankHelp": "One finding per CSV row from title and severity columns; build the rest from your sample.",
   "importMappings.start.title": "Start from",
   "importMappings.tab.mapping": "Mapping",
-  "importMappings.tab.versions": "Versions ({count})",
+  "importMappings.tab.versions": "Versions",
   "importMappings.table.addAssetRule": "Add an asset rule",
   "importMappings.table.addFindingRule": "Add a finding rule",
   "importMappings.table.addRow": "Add a field",
