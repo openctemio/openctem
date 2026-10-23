@@ -289,6 +289,34 @@ func (s *WorkflowService) publishDefinition(ctx context.Context, tenantID, userI
 	return &PublishResult{Version: v, Live: true}, nil
 }
 
+// draftDigest is the digest of the automation's draft ("" when versions are
+// not configured or the draft cannot be read).
+func (s *WorkflowService) draftDigest(ctx context.Context, tenantID, workflowID shared.ID) string {
+	if s.versions == nil {
+		return ""
+	}
+	w, err := s.GetWorkflow(ctx, tenantID, workflowID)
+	if err != nil {
+		return ""
+	}
+	return automationdom.DefinitionOf(w).Digest()
+}
+
+// withdrawRequestIfChanged retires the version waiting for approval when an
+// edit changed what the draft does (its digest differs from before). The
+// second person reviews the automation as the editor shows it, so a request
+// cannot stay approvable after the draft moved away from it (the publisher
+// asks again). An unknown before-digest withdraws (fail safe).
+func (s *WorkflowService) withdrawRequestIfChanged(ctx context.Context, tenantID, workflowID shared.ID, before string) error {
+	if s.versions == nil {
+		return nil
+	}
+	if before != "" && s.draftDigest(ctx, tenantID, workflowID) == before {
+		return nil
+	}
+	return s.versions.RetirePending(ctx, tenantID, workflowID)
+}
+
 // ApproveVersion is the second person's approval of a high-risk version: the
 // approver holds the publish permission (route), re-authenticated recently,
 // is not the publisher, and names the digest they reviewed. The version goes
