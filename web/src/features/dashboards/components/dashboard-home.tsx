@@ -47,11 +47,12 @@ import { dashboardDataKey, refreshDashboard, useDashboardData } from '../api/wid
 import { DEFAULT_TEMPLATE, templateByKey, templateLayout, templateNameKey } from '../templates'
 import { DASHBOARD_CHOICE_KEY, parseRef, pickLanding, refKey, type DashboardRef } from '../landing'
 import {
-  needsCtemHint,
-  readCtemHintDismissed,
-  withCtemLoop,
-  writeCtemHintDismissed,
-} from '../ctem-hint'
+  layoutHintFor,
+  readLayoutHintDismissed,
+  withTemplateWidgets,
+  writeLayoutHintDismissed,
+} from '../layout-hint'
+import { metricNameKey } from '../metrics'
 import { DashboardFreshness } from './dashboard-freshness'
 import { DashboardSwitcher } from './dashboard-switcher'
 import { DashboardView } from './dashboard-view'
@@ -159,53 +160,37 @@ export function DashboardHome() {
     writeChoice(ref)
   }, [])
 
-  // The one-time CTEM offer on an Overview copy made before the template
-  // carried the loop. Nothing changes until the viewer chooses.
+  // The offer on a personal copy of a template that has gained widgets since
+  // the copy was made. Nothing changes until the viewer chooses.
   const [hintDismissed, setHintDismissed] = useState(true)
-  useEffect(() => setHintDismissed(readCtemHintDismissed()), [])
+  useEffect(() => setHintDismissed(readLayoutHintDismissed()), [])
   const [hintBusy, setHintBusy] = useState(false)
-  const showCtemHint =
-    !hintDismissed &&
-    !seeded &&
-    active?.kind === 'personal' &&
-    needsCtemHint(dashboard ? { ...dashboard, kind: 'personal' } : undefined)
+  const layoutHint =
+    !hintDismissed && !seeded && active?.kind === 'personal'
+      ? layoutHintFor(dashboard ? { ...dashboard, kind: 'personal' } : undefined)
+      : null
   const dismissHint = () => {
-    writeCtemHintDismissed()
+    writeLayoutHintDismissed()
     setHintDismissed(true)
   }
-  const addCtemLoop = async () => {
-    if (!dashboard) return
+  const addTemplateWidgets = async () => {
+    if (!dashboard || !layoutHint) return
     setHintBusy(true)
     try {
       await updateDashboard(dashboard.id, {
         name: dashboard.name,
         description: dashboard.description,
         columns: dashboard.columns,
-        layout: withCtemLoop(dashboard.layout ?? []),
+        layout: withTemplateWidgets(
+          dashboard.layout ?? [],
+          templateByKey(layoutHint.template),
+          layoutHint.missing
+        ),
       })
       dismissHint()
       await Promise.all([revalidate(), data.mutate()])
-      toast.success(t('dashboards.ctemHint.added', 'The CTEM loop was added to this dashboard'))
-    } catch (e) {
-      toast.error(getErrorMessage(e))
-    } finally {
-      setHintBusy(false)
-    }
-  }
-  const switchToCtem = async () => {
-    setHintBusy(true)
-    try {
-      const tpl = templateByKey('ctem')
-      const d = await createDashboard({
-        name: t(templateNameKey(tpl.key), tpl.key),
-        columns: tpl.columns,
-        layout: templateLayout(tpl),
-      })
-      dismissHint()
-      await revalidate()
-      choose({ kind: 'personal', id: d.id })
       toast.success(
-        t('dashboards.ctemHint.switched', 'The CTEM dashboard was added; your Overview is kept')
+        t('dashboards.layoutHint.added', 'The new widgets were added to this dashboard')
       )
     } catch (e) {
       toast.error(getErrorMessage(e))
@@ -213,6 +198,45 @@ export function DashboardHome() {
       setHintBusy(false)
     }
   }
+  const switchToTemplate = async () => {
+    if (!layoutHint) return
+    setHintBusy(true)
+    try {
+      const tpl = templateByKey(layoutHint.template)
+      const name = t(templateNameKey(tpl.key), tpl.key)
+      // Names are unique per person: the copy the hint is shown on often has
+      // the template's own name.
+      const taken = new Set(personal.map((d) => d.name.trim().toLowerCase()))
+      const base = t('dashboards.layoutHint.copyName', '{name} (new layout)', { name })
+      let copyName = taken.has(name.toLowerCase()) ? base : name
+      for (let n = 2; taken.has(copyName.toLowerCase()); n++) copyName = `${base} ${n}`
+      const d = await createDashboard({
+        name: copyName,
+        columns: tpl.columns,
+        layout: templateLayout(tpl),
+      })
+      dismissHint()
+      await revalidate()
+      choose({ kind: 'personal', id: d.id })
+      toast.success(
+        t(
+          'dashboards.layoutHint.switched',
+          'The new {name} layout was added; your dashboard is kept',
+          {
+            name,
+          }
+        )
+      )
+    } catch (e) {
+      toast.error(getErrorMessage(e))
+    } finally {
+      setHintBusy(false)
+    }
+  }
+  const hintNames = layoutHint
+    ? layoutHint.missing.slice(0, 4).map((m) => t(metricNameKey(m), m))
+    : []
+  const hintMore = layoutHint ? layoutHint.missing.length - hintNames.length : 0
 
   const refresh = async () => {
     if (!active) return
@@ -403,30 +427,39 @@ export function DashboardHome() {
                 </Link>
               </p>
             )}
-            {showCtemHint && (
+            {layoutHint && (
               <div
                 className="flex flex-wrap items-center gap-2 rounded-md border px-3 py-2 text-sm"
                 role="status"
-                data-testid="ctem-hint"
+                data-testid="layout-hint"
               >
-                <span className="min-w-0 flex-1 text-muted-foreground">
-                  {t(
-                    'dashboards.ctemHint.text',
-                    'The CTEM loop is back: see scoping, discovery, prioritization, validation and mobilization at a glance.'
-                  )}
+                <span className="min-w-0 flex-1 basis-60 text-muted-foreground">
+                  {t('dashboards.layoutHint.text', 'New on the {template} layout: {names}.', {
+                    template: t(templateNameKey(layoutHint.template), layoutHint.template),
+                    names:
+                      hintNames.join(', ') +
+                      (hintMore > 0
+                        ? ` ${t('dashboards.layoutHint.more', 'and {n} more', { n: hintMore })}`
+                        : ''),
+                  })}
                 </span>
-                <Button size="sm" variant="outline" disabled={hintBusy} onClick={addCtemLoop}>
-                  {t('dashboards.ctemHint.add', 'Add the CTEM loop')}
+                <Button
+                  size="sm"
+                  variant="outline"
+                  disabled={hintBusy}
+                  onClick={addTemplateWidgets}
+                >
+                  {t('dashboards.layoutHint.add', 'Add them to this dashboard')}
                 </Button>
-                <Button size="sm" variant="ghost" disabled={hintBusy} onClick={switchToCtem}>
-                  {t('dashboards.ctemHint.switch', 'Switch to the CTEM template')}
+                <Button size="sm" variant="ghost" disabled={hintBusy} onClick={switchToTemplate}>
+                  {t('dashboards.layoutHint.switch', 'Switch to the new layout')}
                 </Button>
                 <Button
                   size="icon"
                   variant="ghost"
                   className="h-8 w-8"
                   onClick={dismissHint}
-                  aria-label={t('dashboards.ctemHint.dismiss', 'Dismiss')}
+                  aria-label={t('dashboards.layoutHint.dismiss', 'Dismiss')}
                 >
                   <X className="h-4 w-4" aria-hidden />
                 </Button>

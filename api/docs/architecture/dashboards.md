@@ -207,6 +207,7 @@ widget has `widget_type` `metric` or `note` and a `config` of this form
   | `intel.kev_open` | scalar, preset KEV | as above | F1 |
   | `findings.age_bands` | matrix severity × age band | as above | F1 |
   | `sla.within` | ratio | none | F1 |
+  | `coverage.discovery` | ratio: ledger-tracked assets in scope with a successful discovery run in the coverage window (blocked or failed runs never count); nothing tracked is not measured; opens the uncovered assets | none | coverage ledger + `assets` |
   | `exposure.open_by_priority` | time series by priority (P0-P2) | priority or severity | F1 + F2 |
   | `flow.new_vs_fixed` | time series of flows | none | F2 |
   | `fix.time_to_fix` | duration (1: category) | priority or severity | F2 |
@@ -751,18 +752,26 @@ widget kit's frame, with its own error boundary.
   own, none from the organization) gets a personal copy of the CTEM
   template, created once and computed for their own access, with a hint to
   customize it or choose another template.
-- **CTEM offer**: a personal dashboard that is a copy of the Overview template
-  (its `w_ov*` widget ids) without the CTEM loop shows a one-time hint: "Add
-  the CTEM loop" (inserts the loop after the leading row of figures and saves
-  the layout), "Switch to the CTEM template" (adds a CTEM dashboard and opens
-  it; the Overview copy is kept), or dismiss. Nothing changes until the viewer
-  chooses; the dismissal is kept in the browser. No request is made for the
-  hint.
+- **New layout offer**: a personal copy of the Overview or CTEM template
+  (three or more of its `w_ov*` / `w_ct*` widget ids) that lacks some of the
+  template's widgets (by metric) shows a hint naming them: "Add them to this
+  dashboard" (each missing widget is inserted where the template has it: a
+  single figure after its predecessor, a larger widget before its successor;
+  every existing widget keeps its place, size and settings, and the layout is
+  saved), "Switch to the new layout" (adds a fresh copy of the template under
+  a name the person does not already use, e.g. "CTEM (new layout)", and opens
+  it; the old dashboard is kept), or dismiss. Nothing changes until the viewer
+  chooses; the dismissal is kept in the browser per layout version
+  (`LAYOUT_HINT_VERSION` in `layout-hint.ts`). No request is made for the
+  hint, and organization dashboards never show it.
 - **Templates** are typed widget configs in
-  `web/src/features/dashboards/templates.json`: CTEM (the first-visit
-  default: active exposure figures, the CTEM loop, fix next, attack paths to
-  crown jewels, priority over time), Overview (with the CTEM loop after its
-  figures), Executive, Vulnerability program, Triage. `/dashboards` copies one into a personal
+  `web/src/features/dashboards/templates.json`. CTEM (the first-visit
+  default) and Overview share one set: the figure row (open P0-P1, KEV open,
+  open within SLA, time to fix median with p90), discovery coverage beside
+  priority over time, the CTEM loop, new vs fixed, the severity × age
+  heatmap, fix next and attack paths to crown jewels; CTEM puts the loop
+  right after the figures and attack paths before fix next, Overview puts
+  the loop after the charts. Then Executive, Vulnerability program, Triage. `/dashboards` copies one into a personal
   dashboard ("Use template"); the copy is a stored dashboard like any other.
   `api/pkg/domain/dashboard/templates_test.go` parses every template widget
   with the server's spec validation, so a template is never refused on save.

@@ -43,6 +43,7 @@ export const METRICS: readonly MetricMeta[] = [
   { id: 'flow.new_vs_fixed', group: 'remediation', unit: 'count', defaultGroupBy: [] },
   { id: 'sla.at_risk', group: 'remediation', unit: 'count', defaultGroupBy: [] },
   { id: 'crown_jewels.exposed', group: 'ctem', unit: 'count', defaultGroupBy: [] },
+  { id: 'coverage.discovery', group: 'ctem', unit: 'percent', defaultGroupBy: [] },
   { id: 'ctem.loop', group: 'ctem', unit: 'count', defaultGroupBy: [] },
   { id: 'attack_paths.to_crown_jewels', group: 'ctem', unit: 'count', defaultGroupBy: [] },
 ]
