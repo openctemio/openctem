@@ -105,10 +105,14 @@ export function SavedViewsMenu({
       setSaveOpen(false)
       setName('')
       setShare(PERSONAL)
-      toast.success(`Saved view "${view.name}"`)
+      toast.success(t('confirm.savedView.saved', 'Saved view "{name}"', { name: view.name }))
       onSelect(view)
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : 'Could not save the view')
+      toast.error(
+        e instanceof Error
+          ? e.message
+          : t('confirm.savedView.saveFailed', 'Could not save the view')
+      )
     } finally {
       setSaving(false)
     }
@@ -122,7 +126,11 @@ export function SavedViewsMenu({
       setPendingDelete(null)
       toast.success(t('confirm.savedView.deleted', 'View "{name}" deleted', { name: view.name }))
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : 'Could not delete the view')
+      toast.error(
+        e instanceof Error
+          ? e.message
+          : t('confirm.savedView.deleteFailed', 'Could not delete the view')
+      )
     }
   }
 
@@ -130,10 +138,14 @@ export function SavedViewsMenu({
     try {
       const copy = await duplicateSavedView(view.id)
       await mutate()
-      toast.success(`Created "${copy.name}"`)
+      toast.success(t('confirm.savedView.created', 'Created "{name}"', { name: copy.name }))
       onSelect(copy)
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : 'Could not duplicate the view')
+      toast.error(
+        e instanceof Error
+          ? e.message
+          : t('confirm.savedView.duplicateFailed', 'Could not duplicate the view')
+      )
     }
   }
 
@@ -147,7 +159,9 @@ export function SavedViewsMenu({
       {view.group_name && (
         <Users
           className="h-3 w-3 text-muted-foreground"
-          aria-label={`Shared with ${view.group_name}`}
+          aria-label={t('confirm.savedView.sharedWith', 'Shared with {group}', {
+            group: view.group_name,
+          })}
         />
       )}
       {view.is_owner ? (
@@ -169,7 +183,9 @@ export function SavedViewsMenu({
         <button
           type="button"
           className="rounded-sm p-0.5 hover:bg-muted"
-          aria-label={`Duplicate view ${view.name}`}
+          aria-label={t('confirm.savedView.duplicateLabel', 'Duplicate view {name}', {
+            name: view.name,
+          })}
           onClick={(e) => {
             e.stopPropagation()
             void duplicate(view)
@@ -207,22 +223,30 @@ export function SavedViewsMenu({
             </span>
             {active && modified && (
               <span className="ms-1 hidden text-xs text-muted-foreground @2xl/toolbar:inline">
-                (modified)
+                {t('confirm.savedView.modified', '(modified)')}
               </span>
             )}
           </Button>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end" className="w-64">
-          {mine.length > 0 && <DropdownMenuLabel>My views</DropdownMenuLabel>}
+          {mine.length > 0 && (
+            <DropdownMenuLabel>{t('confirm.savedView.mine', 'My views')}</DropdownMenuLabel>
+          )}
           {mine.map(item)}
-          {shared.length > 0 && <DropdownMenuLabel>Shared with my groups</DropdownMenuLabel>}
+          {shared.length > 0 && (
+            <DropdownMenuLabel>
+              {t('confirm.savedView.sharedWithMyGroups', 'Shared with my groups')}
+            </DropdownMenuLabel>
+          )}
           {shared.map(item)}
           {views.length > 0 && <DropdownMenuSeparator />}
           {active && (
-            <DropdownMenuItem onSelect={() => onSelect(null)}>Clear view</DropdownMenuItem>
+            <DropdownMenuItem onSelect={() => onSelect(null)}>
+              {t('confirm.savedView.clear', 'Clear view')}
+            </DropdownMenuItem>
           )}
           <DropdownMenuItem onSelect={() => setSaveOpen(true)}>
-            Save current filters as a view
+            {t('confirm.savedView.saveCurrent', 'Save current filters as a view')}
           </DropdownMenuItem>
         </DropdownMenuContent>
       </DropdownMenu>
@@ -230,16 +254,18 @@ export function SavedViewsMenu({
       <Dialog open={saveOpen} onOpenChange={setSaveOpen}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Save view</DialogTitle>
+            <DialogTitle>{t('confirm.savedView.saveTitle', 'Save view')}</DialogTitle>
             <DialogDescription>
-              Saves the current filters, sort and grouping. A shared view shares the filters, not
-              the results: everyone sees the findings they are allowed to see.
+              {t(
+                'confirm.savedView.saveDesc',
+                'Saves the current filters, sort and grouping. A shared view shares the filters, not the results: everyone sees the findings they are allowed to see.'
+              )}
             </DialogDescription>
           </DialogHeader>
           <DialogBody>
             <div className="space-y-4">
               <div className="space-y-2">
-                <Label htmlFor="saved-view-name">Name</Label>
+                <Label htmlFor="saved-view-name">{t('confirm.savedView.name', 'Name')}</Label>
                 <Input
                   id="saved-view-name"
                   value={name}
@@ -248,13 +274,17 @@ export function SavedViewsMenu({
                 />
               </div>
               <div className="space-y-2">
-                <Label htmlFor="saved-view-share">Visible to</Label>
+                <Label htmlFor="saved-view-share">
+                  {t('confirm.savedView.visibleTo', 'Visible to')}
+                </Label>
                 <Select value={share} onValueChange={setShare}>
                   <SelectTrigger id="saved-view-share">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value={PERSONAL}>Only me</SelectItem>
+                    <SelectItem value={PERSONAL}>
+                      {t('confirm.savedView.onlyMe', 'Only me')}
+                    </SelectItem>
                     {groups.map((g) => (
                       <SelectItem key={g.id} value={g.id}>
                         {g.name}
@@ -267,10 +297,10 @@ export function SavedViewsMenu({
           </DialogBody>
           <DialogFooter>
             <Button variant="outline" onClick={() => setSaveOpen(false)}>
-              Cancel
+              {t('common.cancel', 'Cancel')}
             </Button>
             <Button onClick={() => void save()} disabled={saving || name.trim() === ''}>
-              Save
+              {t('common.save', 'Save')}
             </Button>
           </DialogFooter>
         </DialogContent>

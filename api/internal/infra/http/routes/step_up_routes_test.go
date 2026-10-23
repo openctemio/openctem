@@ -194,6 +194,7 @@ var stepUpRoutes = []string{
 	"POST /api/v1/findings/{id}/severity-requests/{id}/approve",
 	"DELETE /api/v1/findings/{id}",
 	"POST /api/v1/findings/bulk/status",
+	"POST /api/v1/findings/bulk/by-filter/status",
 	// The finding approval settings: lowering the false-positive or risk
 	// acceptance level lets one person close risk.
 	"PATCH /api/v1/organization/settings/finding-approvals",
