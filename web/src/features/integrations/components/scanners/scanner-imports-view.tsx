@@ -35,7 +35,7 @@ import { ImportResultsDialog } from '@/features/findings/components/import-resul
 import { toast } from 'sonner'
 import { useTranslation } from '@/context/i18n-provider'
 
-/** POST /findings/import requires all three (api routes/finding_import.go). */
+/** POST /findings/imports requires all three (api routes/finding_import.go). */
 const IMPORT_PERMISSIONS = [
   Permission.AssetsWrite,
   Permission.FindingsWrite,
