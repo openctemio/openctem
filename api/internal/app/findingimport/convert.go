@@ -14,6 +14,9 @@ import (
 
 	"github.com/openctemio/ctis"
 	"github.com/openctemio/ctis/importer"
+	"github.com/openctemio/ctis/importer/mapping"
+
+	appimportmapping "github.com/openctemio/openctem/api/internal/app/importmapping"
 )
 
 // Upload is one uploaded file: an export of another tool or a ZIP of them.
@@ -28,6 +31,10 @@ type Upload struct {
 	KnowledgeBase []byte
 	// Format forces the format of a single file (empty: detected).
 	Format importer.Format
+	// Mapping, when set, converts the single file through an organization's
+	// import mapping instead of an importer (Format is then its receipt
+	// format, "mapping:<name>@<n>").
+	Mapping *appimportmapping.Resolved
 	// MinSeverity drops findings below it (empty keeps all).
 	MinSeverity ctis.Severity
 	// ReportIDPrefix names the reports: "<prefix>-<n>". A caller that
@@ -84,7 +91,7 @@ func Convert(ctx context.Context, up Upload, each func(Converted)) (archive bool
 		return false, &FileError{Kind: KindReadFailed, Message: "the upload could not be read"}
 	}
 	if importer.IsZip(head) {
-		if up.Format != "" {
+		if up.Format != "" || up.Mapping != nil {
 			return true, &FileError{Kind: KindMalformed, Message: "format applies to a single file, not to an archive"}
 		}
 		return true, convertArchive(ctx, up, br, each)
@@ -98,6 +105,9 @@ func Convert(ctx context.Context, up Upload, each func(Converted)) (archive bool
 }
 
 func convertOne(ctx context.Context, up Upload, name string, r io.Reader, kb []byte, format importer.Format, n int) Converted {
+	if up.Mapping != nil {
+		return convertMapped(ctx, up, name, r, n)
+	}
 	var kbr io.Reader
 	if kb != nil {
 		kbr = bytes.NewReader(kb)
@@ -120,6 +130,62 @@ func convertOne(ctx context.Context, up Upload, name string, r io.Reader, kb []b
 		return Converted{Name: name, Error: fileError(err)}
 	}
 	return Converted{Name: name, Result: res}
+}
+
+// convertMapped converts one file through an import mapping. The result
+// looks like an importer's: the format is the mapping's receipt format, the
+// tool is "mapped:<name>" (never a name from the file), and a CI run's
+// repository is the asset of every record that names none.
+func convertMapped(ctx context.Context, up Upload, name string, r io.Reader, n int) Converted {
+	m := up.Mapping
+	report, st, err := m.Compiled.Apply(ctx, r, appimportmapping.ApplyOptions(m, FileLimits.MaxInputBytes))
+	if err != nil {
+		return Converted{Name: name, Error: mappedError(err)}
+	}
+	report.Metadata.ID = fmt.Sprintf("%s-%d", up.ReportIDPrefix, n)
+	report.Metadata.SourceType = "manual"
+	// A mapped file never proves what it did not report.
+	report.Metadata.CoverageType = "partial"
+	res := &importer.Result{
+		Format: importer.Format(m.Format()),
+		Report: report,
+		Stats: importer.Stats{Records: st.Records, Assets: st.Assets, Findings: st.Findings,
+			Components: st.Dependencies, Skipped: st.Skipped, BySeverity: map[ctis.Severity]int{}},
+	}
+	kept := report.Findings[:0]
+	for _, f := range report.Findings {
+		if up.MinSeverity != "" && f.Severity.Score() < up.MinSeverity.Score() {
+			res.Stats.Skipped++
+			res.Stats.Findings--
+			continue
+		}
+		if up.Repository != "" && strings.TrimSpace(f.AssetValue) == "" {
+			f.AssetType, f.AssetValue = ctis.AssetTypeRepository, up.Repository
+		}
+		res.Stats.BySeverity[f.Severity]++
+		kept = append(kept, f)
+	}
+	report.Findings = kept
+	for _, is := range st.Issues {
+		res.Issues = append(res.Issues, importer.Issue{Line: is.Record, Message: is.String()})
+	}
+	return Converted{Name: name, Result: res}
+}
+
+func mappedError(err error) *FileError {
+	fe := &FileError{Kind: KindMalformed, Message: err.Error()}
+	switch {
+	case errors.Is(err, mapping.ErrInputTooLarge), errors.Is(err, importer.ErrTooLarge):
+		fe.Kind, fe.Message = KindTooLarge, "the file is larger than the import limit"
+	case errors.Is(err, importer.ErrUnsafe):
+		fe.Kind = KindUnsafe
+	case errors.Is(err, context.Canceled), errors.Is(err, context.DeadlineExceeded):
+		fe.Kind, fe.Message = KindFailed, "the import took too long"
+	}
+	if len(fe.Message) > 300 {
+		fe.Message = strings.ToValidUTF8(fe.Message[:300], "")
+	}
+	return fe
 }
 
 func convertArchive(ctx context.Context, up Upload, r io.Reader, each func(Converted)) *FileError {

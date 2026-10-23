@@ -189,6 +189,7 @@ type Service struct {
 	uploads   UploadQueue
 	vex       VEXApplier
 	kev       KEVChecker
+	mappings  MappingResolver
 
 	renameMu   sync.Mutex
 	renameSeen map[string]time.Time
