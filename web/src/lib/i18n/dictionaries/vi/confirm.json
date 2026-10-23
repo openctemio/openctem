@@ -380,5 +380,22 @@
   "confirm.savedView.trigger": "Chế độ xem",
   "confirm.slaPolicy.makeDefaultTitle": "Đặt \"{name}\" làm chính sách SLA mặc định?",
   "confirm.slaPolicy.makeDefaultDesc": "Từ nay hạn chót mới sẽ theo chính sách này. Các phát hiện đang mở được tính lại ngay: nơi chính sách này có thời hạn ngắn hơn thì hạn chót được kéo sớm hơn; hạn chót không bao giờ bị lùi lại, nên đổi trở lại sẽ không khôi phục hạn chót cũ.",
-  "confirm.slaPolicy.makeDefaultConfirm": "Đặt làm mặc định"
+  "confirm.slaPolicy.makeDefaultConfirm": "Đặt làm mặc định",
+  "confirm.savedView.saved": "Đã lưu chế độ xem \"{name}\"",
+  "confirm.savedView.saveFailed": "Không thể lưu chế độ xem",
+  "confirm.savedView.deleteFailed": "Không thể xóa chế độ xem",
+  "confirm.savedView.created": "Đã tạo \"{name}\"",
+  "confirm.savedView.duplicateFailed": "Không thể nhân bản chế độ xem",
+  "confirm.savedView.sharedWith": "Chia sẻ với {group}",
+  "confirm.savedView.duplicateLabel": "Nhân bản chế độ xem {name}",
+  "confirm.savedView.modified": "(đã sửa)",
+  "confirm.savedView.mine": "Chế độ xem của tôi",
+  "confirm.savedView.sharedWithMyGroups": "Chia sẻ với nhóm của tôi",
+  "confirm.savedView.clear": "Bỏ chế độ xem",
+  "confirm.savedView.saveCurrent": "Lưu bộ lọc hiện tại thành chế độ xem",
+  "confirm.savedView.saveTitle": "Lưu chế độ xem",
+  "confirm.savedView.saveDesc": "Lưu bộ lọc, thứ tự sắp xếp và cách nhóm hiện tại. Chế độ xem được chia sẻ chỉ chia sẻ bộ lọc, không chia sẻ kết quả: mỗi người chỉ thấy các phát hiện mà họ được phép xem.",
+  "confirm.savedView.name": "Tên",
+  "confirm.savedView.visibleTo": "Hiển thị cho",
+  "confirm.savedView.onlyMe": "Chỉ mình tôi"
 }
