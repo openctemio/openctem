@@ -695,14 +695,8 @@ func (s *SSOService) HandleCallback(ctx context.Context, input SSOCallbackInput)
 		// `mail`. A rogue directory on a multi-tenant authority can set a user's
 		// `mail` to a victim's address without owning the domain, so we require
 		// `xms_edov == true` (email domain owner-verified) and take the email +
-		// immutable (issuer, subject) from the token. If the provider returned no
-		// verifiable id_token (e.g. missing "openid" scope) we fail closed rather
-		// than trusting Graph mail.
-		if claims == nil {
-			s.logger.Warn("entra_id SSO refused: no verifiable id_token (the 'openid' scope is required)",
-				"provider", input.Provider, "source", rp.source)
-			return nil, ErrSSOInvalidIDToken
-		}
+		// immutable (issuer, subject) from the token (verifyIDToken refused a
+		// login without one).
 		info, cerr := entraUserInfoFromClaims(claims)
 		if cerr != nil {
 			s.logger.Warn("entra_id SSO refused", "reason", cerr.Error(),
@@ -719,13 +713,11 @@ func (s *SSOService) HandleCallback(ctx context.Context, input SSOCallbackInput)
 			s.logger.Error("SSO user info failed", "provider", input.Provider, "error", err)
 			return nil, ErrSSOUserInfoFailed
 		}
-		// Carry the verified id_token identity into account binding when present.
-		// These come from the signature-verified, JWKS-pinned id_token (not the
-		// userinfo body), so they are authoritative for distinguishing IdPs.
-		if claims != nil {
-			userInfo.Issuer = canonicalIssuer(claims.Issuer)
-			userInfo.Subject = claims.Subject
-		}
+		// The account binding comes from the signature-verified, JWKS-pinned
+		// id_token (not the userinfo body), so it is authoritative for
+		// distinguishing IdPs.
+		userInfo.Issuer = canonicalIssuer(claims.Issuer)
+		userInfo.Subject = claims.Subject
 	}
 
 	// SECURITY: Require email from SSO provider
@@ -763,15 +755,12 @@ func (s *SSOService) HandleCallback(ctx context.Context, input SSOCallbackInput)
 	// The platform env fallback counts as the tenant's IdP: it is used only for
 	// a tenant the operator opted in (envFallbackAllowedForTenant) and in place
 	// of a provider of its own.
-	// Capture the IdP session binding from the verified id_token (when present) so
+	// Capture the IdP session binding from the verified id_token so
 	// an OIDC Back-Channel Logout can later revoke this exact session. issuer/sid/
 	// sub come ONLY from the signature-verified id_token, never the userinfo body.
-	var fed federatedBinding
-	if claims != nil {
-		fed = federatedBinding{issuer: claims.Issuer, sid: claims.SID, sub: claims.Subject, mfa: oidcMFAEvidence(claims)}
-		if claims.AuthTime != nil {
-			fed.authTime = claims.AuthTime.Time
-		}
+	fed := federatedBinding{issuer: claims.Issuer, sid: claims.SID, sub: claims.Subject, mfa: oidcMFAEvidence(claims)}
+	if claims.AuthTime != nil {
+		fed.authTime = claims.AuthTime.Time
 	}
 	sessionResult, err := s.createSession(ctx, u, sessiondom.AuthMethodSSO, t.ID(), fed)
 	if err != nil {

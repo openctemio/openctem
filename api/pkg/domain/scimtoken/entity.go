@@ -6,6 +6,7 @@ package scimtoken
 import (
 	"context"
 	"errors"
+	"fmt"
 	"time"
 
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
@@ -33,10 +34,31 @@ type ScimToken struct {
 	createdBy  *shared.ID
 	createdAt  time.Time
 	lastUsedAt *time.Time
+	expiresAt  time.Time
 }
 
-// New creates an active SCIM token.
-func New(id, tenantID shared.ID, name, tokenHash, prefix string) *ScimToken {
+// Lifetime bounds of a token, in days (the same bounds as API keys), and the
+// time a rotated token keeps working so the identity provider can be switched
+// to its replacement.
+const (
+	MinLifetimeDays = 1
+	MaxLifetimeDays = 365
+	RotationOverlap = 24 * time.Hour
+)
+
+// ErrInvalidLifetime refuses a lifetime outside MinLifetimeDays..MaxLifetimeDays.
+var ErrInvalidLifetime = fmt.Errorf("%w: expires_in_days must be between %d and %d", shared.ErrValidation, MinLifetimeDays, MaxLifetimeDays)
+
+// ValidateLifetimeDays checks a requested lifetime.
+func ValidateLifetimeDays(days int) error {
+	if days < MinLifetimeDays || days > MaxLifetimeDays {
+		return ErrInvalidLifetime
+	}
+	return nil
+}
+
+// New creates an active SCIM token that expires at expiresAt.
+func New(id, tenantID shared.ID, name, tokenHash, prefix string, expiresAt time.Time) *ScimToken {
 	return &ScimToken{
 		id:        id,
 		tenantID:  tenantID,
@@ -45,11 +67,12 @@ func New(id, tenantID shared.ID, name, tokenHash, prefix string) *ScimToken {
 		prefix:    prefix,
 		status:    StatusActive,
 		createdAt: time.Now().UTC(),
+		expiresAt: expiresAt.UTC(),
 	}
 }
 
 // Reconstruct rebuilds a token from persistence.
-func Reconstruct(id, tenantID shared.ID, name, tokenHash, prefix string, status Status, createdBy *shared.ID, createdAt time.Time, lastUsedAt *time.Time) *ScimToken {
+func Reconstruct(id, tenantID shared.ID, name, tokenHash, prefix string, status Status, createdBy *shared.ID, createdAt time.Time, lastUsedAt *time.Time, expiresAt time.Time) *ScimToken {
 	return &ScimToken{
 		id:         id,
 		tenantID:   tenantID,
@@ -60,6 +83,7 @@ func Reconstruct(id, tenantID shared.ID, name, tokenHash, prefix string, status 
 		createdBy:  createdBy,
 		createdAt:  createdAt,
 		lastUsedAt: lastUsedAt,
+		expiresAt:  expiresAt,
 	}
 }
 
@@ -72,9 +96,38 @@ func (t *ScimToken) Status() Status         { return t.status }
 func (t *ScimToken) CreatedBy() *shared.ID  { return t.createdBy }
 func (t *ScimToken) CreatedAt() time.Time   { return t.createdAt }
 func (t *ScimToken) LastUsedAt() *time.Time { return t.lastUsedAt }
+func (t *ScimToken) ExpiresAt() time.Time   { return t.expiresAt }
 
-// IsActive reports whether the token may authenticate.
+// IsActive reports whether the token is not revoked. It says nothing about
+// expiry: authentication uses UsableAt.
 func (t *ScimToken) IsActive() bool { return t.status == StatusActive }
+
+// UsableAt reports whether the token may authenticate at now: not revoked
+// and not expired. A token with no expiry recorded is not usable.
+func (t *ScimToken) UsableAt(now time.Time) bool {
+	return t.status == StatusActive && !t.expiresAt.IsZero() && now.Before(t.expiresAt)
+}
+
+// ExpireBy brings the expiry forward to at (a rotation's overlap); it never
+// extends a token.
+func (t *ScimToken) ExpireBy(at time.Time) {
+	if t.expiresAt.IsZero() || at.Before(t.expiresAt) {
+		t.expiresAt = at.UTC()
+	}
+}
+
+// LifetimeDays is the token's lifetime in whole days, within the bounds (a
+// rotation without an explicit lifetime gives the new token the old one's).
+func (t *ScimToken) LifetimeDays() int {
+	days := int(t.expiresAt.Sub(t.createdAt).Round(24*time.Hour) / (24 * time.Hour))
+	switch {
+	case days < MinLifetimeDays:
+		return MinLifetimeDays
+	case days > MaxLifetimeDays:
+		return MaxLifetimeDays
+	}
+	return days
+}
 
 // Revoke marks the token unusable.
 func (t *ScimToken) Revoke() { t.status = StatusRevoked }
@@ -98,4 +151,8 @@ type Repository interface {
 	// still-active token. This avoids a last-used write on the auth path
 	// clobbering a concurrent revoke (which would resurrect the token).
 	TouchLastUsed(ctx context.Context, tenantID, id shared.ID, at time.Time) error
+	// ShortenExpiry brings an active token's expiry forward to at (never
+	// later), without touching status. ErrNotFound when no active token of
+	// the tenant has that id.
+	ShortenExpiry(ctx context.Context, tenantID, id shared.ID, at time.Time) error
 }

@@ -1644,6 +1644,7 @@
   "admin.ssoEnforcementCard.required": "Required",
   "admin.ssoEnforcementCard.notRequired": "Not required",
   "admin.ssoEnforcementCard.configureSamlOrAnOidc": "Configure SAML or an OIDC provider first.",
+  "admin.ssoEnforcementCard.needsVerifiedDomain": "Needs at least one domain verified for SSO. If a domain later fails its DNS check, SSO stays required and the owners are alerted.",
   "admin.ssoPostureBadges.notConfigured": "Not configured",
   "admin.ssoPostureBadges.enforced": "Enforced",
   "admin.targetMappingDialog.editTargetMapping": "Edit target mapping",

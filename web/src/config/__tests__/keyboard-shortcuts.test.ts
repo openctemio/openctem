@@ -38,6 +38,14 @@ const HANDLERS: Record<string, [string, RegExp]> = {
     'features/activity/components/activity-trigger.tsx',
     /e\.key !== 'c' && e\.key !== 'C'[\s\S]*e\.metaKey \|\| e\.ctrlKey \|\| e\.altKey/,
   ],
+  'next-finding': [
+    'features/findings/hooks/use-drawer-navigation.ts',
+    /e\.key !== 'j' && e\.key !== 'k'/,
+  ],
+  'previous-finding': [
+    'features/findings/hooks/use-drawer-navigation.ts',
+    /e\.key !== 'j' && e\.key !== 'k'/,
+  ],
   'clear-selection': [
     'features/shared/components/bulk-action-bar.tsx',
     /e\.key === 'Escape' && !e\.defaultPrevented\) onClear\(\)/,

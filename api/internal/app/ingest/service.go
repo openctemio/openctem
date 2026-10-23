@@ -138,6 +138,10 @@ type Service struct {
 	// (sensor_reach.go); nil: nothing outside the tenant-wide roles.
 	reach ReachSource
 
+	// receipts records what each ingest and coverage decision did
+	// (receipt.go). Nil: no receipts are written.
+	receipts ReceiptRecorder
+
 	logger *logger.Logger
 
 	// statsUpdateMu protects concurrent stats updates
@@ -705,6 +709,9 @@ func (s *Service) Ingest(ctx context.Context, agt *sensor.Sensor, input Input) (
 	)
 
 	recordWithheld(output)
+
+	// Step 5b: the receipt of the upload or run this report belongs to.
+	s.recordReceipt(ctx, agt, tenantID, binding, opts, report, output)
 
 	// Step 6: Create audit log for ingestion
 	s.createIngestAuditLog(ctx, agt, tenantID, report, output)

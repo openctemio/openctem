@@ -32,7 +32,7 @@ func TestTokenAuthenticate_SuspendedOrganization(t *testing.T) {
 	ctx := context.Background()
 	svc, _ := newTokenSvc()
 	tenantID := shared.NewID()
-	res, err := svc.Mint(ctx, tenantID, "okta", nil)
+	res, err := svc.Mint(ctx, tenantID, "okta", nil, 90)
 	if err != nil {
 		t.Fatal(err)
 	}
