@@ -111,7 +111,16 @@ export function ImportResultsDialog({
         onImported?.()
       }
     } catch (e) {
-      if (e instanceof FindingImportError) {
+      if (e instanceof FindingImportError && e.code) {
+        // A stored upload the server could not import: a fixed code.
+        setError({
+          message: t(
+            'findings.importResults.notApplied',
+            'The upload was stored but could not be imported ({code}). Nothing was changed; try again.',
+            { code: e.code }
+          ),
+        })
+      } else if (e instanceof FindingImportError) {
         setError({ message: e.message, file: e.file })
       } else {
         setError({ message: t('findings.importResults.failed', 'The import failed') })

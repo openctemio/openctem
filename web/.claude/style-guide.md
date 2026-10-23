@@ -457,3 +457,19 @@ export function UserProfile() {
 **Remember**: Clean, professional code without emoji! 🎯
 
 (Yes, emoji in docs is OK 😊)
+
+## Labels
+
+Pick the label primitive by meaning (`src/components/ui`); never style a `<Badge>` by hand.
+
+| Meaning                                                        | Primitive                                                                            |
+| -------------------------------------------------------------- | ------------------------------------------------------------------------------------ |
+| a number                                                       | `Counter`                                                                            |
+| about the feature (beta, soon, admin only)                     | `Marker`                                                                             |
+| how bad (severity, risk score) / the decision                  | `SeverityBadge` (`score`) / `PriorityBadge`                                          |
+| a work item's lifecycle, moved by people                       | `StatusLozenge` (tones: triage, open, progress, waiting, resolved, accepted, closed) |
+| a machine's state (sensor, run, integration, credential)       | `HealthStatus`                                                                       |
+| one fact that raises urgency (KEV, EPSS, due, internet-facing) | `SignalChip`, `DueChip`                                                              |
+| a classification (type, environment, label, role, tool)        | `Tag`                                                                                |
+
+Rules: colour follows the category, never the attention wanted; teal is act-here only; text is sans, sentence case, at least 12 px (mono only for ids, CVEs, versions); every coloured label has text plus a shape; nothing spins or pulses; no separator glyphs inside a label (render the parts as separate elements). Colours live in `src/styles/theme.css` and `src/lib/*-colors.ts`; `scripts/check-palette-drift.sh` refuses hand-styled labels on added lines (annotate a real exception with `label-ok: <reason>`). A user tag colour is a palette name from `src/lib/tag-colors.ts`, shown as a dot.

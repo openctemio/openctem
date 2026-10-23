@@ -82,6 +82,10 @@ const POLLING_BASELINE: Record<string, number> = {
   // pushes; the page is for an operator watching the fleet (30 s).
   'console/features/admin-console/api/use-shared-fleet.ts': 2,
   'features/ai-triage/hooks/use-ai-triage.ts': 1,
+  // Dashboard figures are precomputed snapshots on a refresh schedule no event
+  // announces: one read when the next snapshot is due (at least 30 s apart),
+  // every 15 s only while the first build runs.
+  'features/dashboards/api/widget-data.ts': 1,
   'features/ci-runners/api/use-ci.ts': 1,
   // Runs and refused exchanges are polled only while the CI setup dialog
   // waits for a first run (10 s, the dialog open): neither is pushed as an
