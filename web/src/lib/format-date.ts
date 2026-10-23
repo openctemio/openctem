@@ -1,4 +1,12 @@
 import { format, formatDistanceToNow } from 'date-fns'
+import { enUS, vi } from 'date-fns/locale'
+
+const DATE_FNS_LOCALES = { en: enUS, vi } as const
+
+function dateFnsLocale(locale?: string) {
+  const base = (locale ?? 'en').toLowerCase().split('-')[0] as keyof typeof DATE_FNS_LOCALES
+  return DATE_FNS_LOCALES[base] ?? enUS
+}
 
 /**
  * Safe date helpers.
@@ -16,15 +24,19 @@ function toDate(value: string | number | Date | null | undefined): Date | null {
   return Number.isNaN(d.getTime()) ? null : d
 }
 
-/** Relative time ("3 days ago"), safe against missing/invalid input. */
+/**
+ * Relative time ("3 days ago"), safe against missing/invalid input. Pass the
+ * app locale (`useTranslation().locale`) to localize it; English by default.
+ */
 export function formatRelative(
   value: string | number | Date | null | undefined,
-  fallback = '—'
+  fallback = '—',
+  locale?: string
 ): string {
   const d = toDate(value)
   if (!d) return fallback
   try {
-    return formatDistanceToNow(d, { addSuffix: true })
+    return formatDistanceToNow(d, { addSuffix: true, locale: dateFnsLocale(locale) })
   } catch {
     return fallback
   }
