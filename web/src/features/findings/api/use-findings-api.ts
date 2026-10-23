@@ -105,6 +105,7 @@ export function buildFindingsQuery(filters: FindingApiFilters): URLSearchParams 
   if (filters.epss_min != null) params.set('epss_score_gte', String(filters.epss_min))
   if (filters.finding_ids?.length) params.set('id', filters.finding_ids.join(','))
   if (filters.cve_ids?.length) params.set('cve_id', filters.cve_ids.join(','))
+  if (filters.cve_id_unset) params.set('cve_id_null', 'true')
   if (filters.finding_types?.length) params.set('finding_type', filters.finding_types.join(','))
   if (filters.families?.length) params.set('family', filters.families.join(','))
   if (filters.state) params.set('state', filters.state)
