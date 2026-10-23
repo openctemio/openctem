@@ -15,6 +15,7 @@ import {
   DetailSheet,
   StackedCell,
   type MetricStripItem,
+  ErrorState,
 } from '@/features/shared'
 import { BUSINESS_CONTEXT_SECTION_TABS } from '@/config/section-tabs'
 import { Button } from '@/components/ui/button'
@@ -23,7 +24,6 @@ import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { Badge } from '@/components/ui/badge'
 import { Switch } from '@/components/ui/switch'
-import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Skeleton } from '@/components/ui/skeleton'
 import {
   Dialog,
@@ -43,7 +43,7 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
-import { Plus, Pencil, Trash2, AlertCircle, RefreshCw, Link2 } from 'lucide-react'
+import { Plus, Pencil, Trash2, Link2 } from 'lucide-react'
 import { BusinessServiceAssets } from '@/features/business-services/components/business-service-assets'
 import { toast } from 'sonner'
 import { get, post, put, del } from '@/lib/api/client'
@@ -460,17 +460,13 @@ export default function BusinessServicesPage() {
           ))}
         </div>
       ) : error ? (
-        <Alert variant="destructive" className="mt-5">
-          <AlertCircle className="h-4 w-4" />
-          <AlertTitle>Failed to load business services</AlertTitle>
-          <AlertDescription className="flex flex-wrap items-center gap-3">
-            {error instanceof Error ? error.message : 'Unknown error'}
-            <Button variant="outline" size="sm" onClick={() => void mutate()}>
-              <RefreshCw className="me-2 h-4 w-4" />
-              Retry
-            </Button>
-          </AlertDescription>
-        </Alert>
+        <div className="mt-5">
+          <ErrorState
+            title={t('scope.businessServices.loadError', 'business services')}
+            error={error}
+            onRetry={() => void mutate()}
+          />
+        </div>
       ) : (
         <div className="mt-5">
           <DataTable
@@ -593,7 +589,7 @@ export default function BusinessServicesPage() {
                 </div>
               </div>
 
-              <div className="grid grid-cols-3 gap-4">
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
                 <div className="grid gap-2">
                   <Label htmlFor="availability_target">Availability (%)</Label>
                   <Input
@@ -627,7 +623,7 @@ export default function BusinessServicesPage() {
                 </div>
               </div>
 
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                 <div className="grid gap-2">
                   <Label htmlFor="owner_name">Owner name</Label>
                   <Input

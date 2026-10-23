@@ -326,5 +326,11 @@
   "scope.selfApprove.reason": "Vì sao mục này được áp dụng mà không cần người thứ hai?",
   "scope.selfApprove.submit": "Phê duyệt",
   "scope.selfApprove.done": "{pattern} đã có hiệu lực",
-  "scope.selfApprove.failed": "Không thể phê duyệt mục này."
+  "scope.selfApprove.failed": "Không thể phê duyệt mục này.",
+  "scope.cycles.endBeforeStart": "Ngày kết thúc không được trước ngày bắt đầu.",
+  "scope.cycles.createFailed": "Không thể tạo chu kỳ",
+  "scope.cycles.loadError": "các chu kỳ",
+  "scope.cycles.scopeLoadFailed": "Không thể tải phạm vi.",
+  "scope.businessServices.loadError": "các dịch vụ nghiệp vụ",
+  "scope.businessUnits.loadError": "các đơn vị kinh doanh"
 }

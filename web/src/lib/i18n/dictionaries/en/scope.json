@@ -326,5 +326,11 @@
   "scope.selfApprove.reason": "Why may it take effect without a second person?",
   "scope.selfApprove.submit": "Approve",
   "scope.selfApprove.done": "{pattern} is in effect",
-  "scope.selfApprove.failed": "Could not approve the entry."
+  "scope.selfApprove.failed": "Could not approve the entry.",
+  "scope.cycles.endBeforeStart": "The end date must not be before the start date.",
+  "scope.cycles.createFailed": "Failed to create cycle",
+  "scope.cycles.loadError": "cycles",
+  "scope.cycles.scopeLoadFailed": "Scope could not be loaded.",
+  "scope.businessServices.loadError": "business services",
+  "scope.businessUnits.loadError": "business units"
 }

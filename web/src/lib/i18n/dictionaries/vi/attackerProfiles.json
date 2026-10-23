@@ -1,0 +1,10 @@
+{
+  "attackerProfiles.builtIn": "Hồ sơ dựng sẵn",
+  "attackerProfiles.createFailed": "Không thể tạo hồ sơ kẻ tấn công",
+  "attackerProfiles.loadError": "các hồ sơ kẻ tấn công",
+  "attackerProfiles.type.custom": "Tùy chỉnh",
+  "attackerProfiles.type.external_stolen_creds": "Bên ngoài, dùng thông tin đăng nhập bị đánh cắp",
+  "attackerProfiles.type.external_unauth": "Bên ngoài, chưa xác thực",
+  "attackerProfiles.type.malicious_insider": "Người trong nội bộ có ý đồ xấu",
+  "attackerProfiles.type.supplier_compromise": "Nhà cung cấp bị xâm nhập"
+}
