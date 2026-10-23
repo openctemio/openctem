@@ -70,6 +70,7 @@ describe('publish gate', () => {
     expect(approvalState(pending, 'u-bob', true)).toBe('can_approve')
     expect(approvalState(pending, 'u-alice', true)).toBe('self')
     expect(approvalState(pending, 'u-bob', false)).toBe('no_permission')
+    expect(approvalState(pending, undefined, true)).toBe('no_permission')
     expect(approvalState({ pending_version: null }, 'u-bob', true)).toBe('none')
   })
 })
