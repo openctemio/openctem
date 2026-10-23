@@ -89,6 +89,20 @@ describe('SensorContentSection', () => {
     expect(screen.getByText(/not controlled/)).toBeInTheDocument()
   })
 
+  it('redacts the query string of a content source URL', () => {
+    render(
+      <SensorContentSection
+        sensor={sensorWith({
+          content: [{ ...trivy, source: 'https://feeds.example/db.tgz?sig=SECRET&se=1' }],
+        })}
+        now={NOW}
+        canManage={false}
+      />
+    )
+    expect(screen.getByText('https://feeds.example/db.tgz?…')).toBeInTheDocument()
+    expect(document.body.textContent).not.toContain('SECRET')
+  })
+
   it('shows when the sensor last checked for a newer version', () => {
     render(
       <SensorContentSection
