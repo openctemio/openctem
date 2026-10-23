@@ -34,9 +34,10 @@ const (
 	// previewRecords bounds the records a preview maps (identity
 	// collisions are counted over all of them).
 	previewRecords = 10_000
-	// previewTimeout bounds one preview.
-	previewTimeout = 10 * time.Second
 )
+
+// previewTimeout bounds one preview (a variable for tests).
+var previewTimeout = 10 * time.Second
 
 // Repository stores mappings and their versions. Every method is scoped to
 // the organization it is given.

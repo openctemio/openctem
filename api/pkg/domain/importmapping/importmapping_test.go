@@ -41,6 +41,14 @@ func TestCompilePolicy(t *testing.T) {
 		"no identity":           {strings.Replace(findingDoc(`["title"]`, ``), `"identity": ["title"],`, ``, 1), "declares its identity"},
 		"identity not member":   {findingDoc(`["description"]`, `, "description": "/d"`), "not an identity member"},
 		"constant identity":     {findingDoc(`["rule_id"]`, `, "rule_id": {"const": "X"}`), "constant"},
+		// A const passes through the map, so the map decides the type.
+		"type const remapped":    {findingDoc(`["title"]`, `, "type": {"const": "vulnerability", "map": {"vulnerability": "secret"}}`), "type must be one of"},
+		"type const default":     {findingDoc(`["title"]`, `, "type": {"const": "vulnerability", "map": {"x": "misconfiguration"}, "default": "secret"}`), "type must be one of"},
+		"type const bad default": {findingDoc(`["title"]`, `, "type": {"const": "vulnerability", "default": "secret"}`), "type must be one of"},
+		// Near-constant identities: a default every record without the
+		// value shares, or a map with one output.
+		"identity default":       {findingDoc(`["title", "rule_id"]`, `, "rule_id": {"path": "/never", "default": "X"}`), "has a default"},
+		"identity one-value map": {findingDoc(`["title", "rule_id"]`, `, "rule_id": {"path": "/r", "map": {"a": "X", "b": "X"}}`), "same output"},
 		"asset criticality": {`{"apiVersion": "openctem.io/mapping/v1", "source": "csv", "records": [
 		  {"kind": "asset", "set": {"type": {"const": "host"}, "value": "/h", "criticality": {"const": "critical"}}}]}`, `"criticality" is reserved`},
 		"asset properties": {`{"apiVersion": "openctem.io/mapping/v1", "source": "csv", "records": [
@@ -79,6 +87,13 @@ func TestIdentityChanged(t *testing.T) {
 		"identity member source": {strings.Replace(findingDoc(`["title", "asset_value"]`, `, "description": "/d"`), `"title": "/title"`, `"title": {"path": "/title", "lower": true}`, 1), true},
 		"asset source":           {strings.Replace(findingDoc(`["title", "asset_value"]`, `, "description": "/d"`), `"asset_value": "/host"`, `"asset_value": "/ip"`, 1), true},
 		"asset type added":       {findingDoc(`["title", "asset_value"]`, `, "description": "/d", "asset_type": {"const": "ip_address"}`), true},
+		// Members the server keys findings on change the identity even when
+		// the mapping does not declare them.
+		"undeclared key member": {findingDoc(`["title", "asset_value"]`, `, "description": "/d", "vulnerability.package": "/pkg"`), true},
+		"rule id source":        {findingDoc(`["title", "asset_value"]`, `, "description": "/d", "rule_id": "/rule"`), true},
+		"type changed":          {findingDoc(`["title", "asset_value"]`, `, "description": "/d", "type": {"const": "misconfiguration"}`), true},
+		"recipe block added":    {findingDoc(`["title", "asset_value"]`, `, "description": "/d", "network.service": "/svc"`), true},
+		"cosmetic block member": {findingDoc(`["title", "asset_value"]`, `, "description": "/d", "vulnerability.fixed_version": "/fix"`), false},
 	}
 	for name, c := range cases {
 		if got := IdentityChanged(base, mustCompile(t, c.doc)); got != c.changed {

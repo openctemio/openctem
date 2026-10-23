@@ -128,6 +128,8 @@ var stepUpRoutes = []string{
 	"POST /api/v1/integrations/ticket-mappings/{id}/dry-run",
 	// Deleting a profile sends the destination back to the built-in fields.
 	"DELETE /api/v1/integrations/ticket-mappings/{id}",
+	// Deleting an import mapping breaks every upload and CI job that names it.
+	"DELETE /api/v1/import-mappings/{id}",
 	"PATCH /api/v1/attachments/storage-config",
 	// Widening scope (RFC-054 §6): approving an entry, the settings, and
 	// taking an exclusion out of effect.
@@ -245,6 +247,7 @@ func TestStepUpRoutes_RequireRecentAuth(t *testing.T) {
 			registerUserRoutes(router, &handler.UserHandler{}, nil, auth, nil, config.AuthProviderLocal)
 			registerIntegrationRoutes(router, &handler.IntegrationHandler{}, nil, nil, auth, nil, chain(), nil, nil, &handler.TicketMappingHandler{})
 			registerAttachmentRoutes(router, &handler.AttachmentHandler{}, auth, nil)
+			registerImportMappingRoutes(router, &handler.ImportMappingHandler{}, auth, nil)
 			registerScopeRoutes(router, &handler.ScopeHandler{}, auth, nil, chain())
 			registerProgramRoutes(router, &handler.BountyProgramHandler{}, auth, nil, chain())
 			registerScannerTemplateRoutes(router, &handler.ScannerTemplateHandler{}, auth, nil, chain())

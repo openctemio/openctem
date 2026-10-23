@@ -215,6 +215,16 @@ func Compile(doc []byte) (*mapping.Mapping, []string) {
 		}
 	}
 	ident := m.Identity()
+	for i, r := range m.Rules() {
+		if r.Kind != mapping.KindFinding {
+			continue
+		}
+		for _, t := range ident {
+			if p := checkIdentitySpec(t, readSpec(r.Specs[t])); p != "" {
+				problems = append(problems, fmt.Sprintf("records[%d]: %s", i, p))
+			}
+		}
+	}
 	if findings && len(ident) == 0 {
 		problems = append(problems, "identity: a mapping that makes findings declares its identity members (for example [\"title\", \"asset_value\"])")
 	}
@@ -229,38 +239,77 @@ func Compile(doc []byte) (*mapping.Mapping, []string) {
 	return m, nil
 }
 
-// checkFindingType: a constant type, or a mapped one whose every table
-// value and default, is an allowed finding type.
+// checkFindingType: every value the type can take is an allowed finding
+// type. A map decides the output whatever the source (a const or a path
+// passes through it), so its values and the default are checked; else a
+// const and the default are. A path or template without a map is refused.
 func checkFindingType(v specView) string {
 	bad := "type must be one of vulnerability, misconfiguration (a constant, or a map whose values are)"
 	str := func(x any) (string, bool) { s, ok := x.(string); return s, ok }
+	allowed := func(x any) bool { s, ok := str(x); return ok && allowedFindingTypes[s] }
 	switch {
-	case v.Const != nil:
-		if s, ok := str(v.Const); !ok || !allowedFindingTypes[s] {
-			return bad
-		}
 	case len(v.Map) > 0:
 		for _, out := range v.Map {
 			if !allowedFindingTypes[out] {
 				return bad
 			}
 		}
-		if v.Default != nil {
-			if s, ok := str(v.Default); !ok || !allowedFindingTypes[s] {
-				return bad
-			}
+	case v.Const != nil:
+		if !allowed(v.Const) {
+			return bad
 		}
 	default:
+		return bad
+	}
+	if v.Default != nil && !allowed(v.Default) {
 		return bad
 	}
 	return ""
 }
 
-// identityInputs are the members whose value specs decide a finding's
-// identity under a mapping: the declared members and the asset the finding
-// lands on.
+// checkIdentitySpec refuses an identity member that is the same for most
+// records without being a plain constant (which the language refuses): a
+// default gives every record missing the value one shared identity, and a
+// map with one output value is a constant.
+func checkIdentitySpec(member string, v specView) string {
+	if v.Default != nil {
+		return fmt.Sprintf("identity member %q has a default; records without the value would share one identity", member)
+	}
+	if len(v.Map) > 0 {
+		outs := map[string]bool{}
+		for _, out := range v.Map {
+			outs[out] = true
+		}
+		if len(outs) == 1 {
+			return fmt.Sprintf("identity member %q maps every value to the same output, so it is a constant", member)
+		}
+	}
+	return ""
+}
+
+// fingerprintInputs are the finding members the server reads to key a
+// finding (the version-2 recipes and the version-1 key), besides the
+// asset: changing how any of them is mapped can key findings differently,
+// whatever identity the mapping declares.
+var fingerprintInputs = []string{
+	"type", "rule_id", "title",
+	"location.path", "location.start_line", "location.end_line", "location.start_column", "location.end_column", "location.snippet",
+	"network.port", "network.protocol",
+	"vulnerability.cve_id", "vulnerability.cve_ids", "vulnerability.package", "vulnerability.purl",
+	"vulnerability.ecosystem", "vulnerability.affected_version",
+	"misconfiguration.policy_id", "misconfiguration.resource_type", "misconfiguration.resource_name",
+}
+
+// presenceGroups are the finding blocks whose mere presence picks the
+// identity recipe (a misconfiguration block makes a misconfiguration key,
+// a network block a network one).
+var presenceGroups = []string{"misconfiguration.", "network."}
+
+// identityInputs are, per finding rule, the value specs that decide a
+// finding's key: the declared members, the asset, every fingerprint input,
+// and which blocks that pick the recipe the rule sets.
 func identityInputs(m *mapping.Mapping) map[string][]string {
-	members := append(m.Identity(), "asset_value", "asset_type")
+	members := append(append(m.Identity(), "asset_value", "asset_type"), fingerprintInputs...)
 	out := map[string][]string{}
 	for _, r := range m.Rules() {
 		if r.Kind != mapping.KindFinding {
@@ -269,14 +318,19 @@ func identityInputs(m *mapping.Mapping) map[string][]string {
 		for _, t := range members {
 			out[t] = append(out[t], r.Specs[t])
 		}
+		for _, g := range presenceGroups {
+			set := slices.ContainsFunc(r.Targets, func(t string) bool { return strings.HasPrefix(t, g) })
+			out["block:"+g] = append(out["block:"+g], strconv.FormatBool(set))
+		}
 	}
 	return out
 }
 
 // IdentityChanged reports whether next keys findings differently from prev:
-// another identity list, or another value spec for an identity member or
-// the finding's asset in any finding rule. A change of description,
-// severity or any other member is not an identity change.
+// another identity list, another value spec for an identity member, the
+// finding's asset or any member the server keys findings on, or a block
+// that picks the recipe added or removed, in any finding rule. A change of
+// description, severity or any other member is not an identity change.
 func IdentityChanged(prev, next *mapping.Mapping) bool {
 	if !slices.Equal(prev.Identity(), next.Identity()) {
 		return true

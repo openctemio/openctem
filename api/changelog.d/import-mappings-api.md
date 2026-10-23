@@ -7,7 +7,7 @@
 ### Security: import mappings cannot set reserved fields or collapse identities
 
 - A mapping sets only allow-listed members. The organization, asset ownership and criticality, statuses, provenance, fingerprints, KEV and EPSS flags, branch and commit are reserved. Finding types are limited to vulnerability and misconfiguration.
-- A mapping that makes findings declares its identity members. A constant identity is refused. A new version that changes the identity needs explicit confirmation and is marked `identity_changed`.
+- A mapping that makes findings declares its identity members. A constant or near-constant identity (a member with a default, or a map with one output) is refused. A new version that changes the identity, including how any member the server keys findings on is mapped, needs explicit confirmation and is marked `identity_changed`. A finding type is checked for every value its spec can produce.
 - A mapping of another organization is unknown by name and by id.
 - XML samples and uploads are read without any document type declaration, so no entities and no external resources. CSV cells are kept as text, and CSV exports keep neutralising formula cells.
-- The ctis module is pinned to the commit that adds CSV and XML mapping inputs (ctis PR #76) until the next ctis release.
+- The ctis module is pinned to the commit that adds CSV and XML mapping inputs (ctis PR #76, merged on ctis main) until the next ctis release.
