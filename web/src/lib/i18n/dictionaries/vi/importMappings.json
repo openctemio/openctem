@@ -113,7 +113,7 @@
   "importMappings.start.blankHelp": "Một phát hiện cho mỗi dòng CSV từ cột title và severity; dựng phần còn lại từ tệp mẫu của bạn.",
   "importMappings.start.title": "Bắt đầu từ",
   "importMappings.tab.mapping": "Ánh xạ",
-  "importMappings.tab.versions": "Phiên bản ({count})",
+  "importMappings.tab.versions": "Phiên bản",
   "importMappings.table.addAssetRule": "Thêm quy tắc tài sản",
   "importMappings.table.addFindingRule": "Thêm quy tắc phát hiện",
   "importMappings.table.addRow": "Thêm trường",

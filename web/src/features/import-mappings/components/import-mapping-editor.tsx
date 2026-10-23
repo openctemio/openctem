@@ -10,7 +10,7 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Switch } from '@/components/ui/switch'
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { Tabs, TabsContent, TabsCount, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Textarea } from '@/components/ui/textarea'
 import { ConfirmDialog } from '@/components/confirm-dialog'
 import { ErrorState, PageHeader } from '@/features/shared'
@@ -343,7 +343,7 @@ export function ImportMappingEditor({ id }: { id?: string }) {
   return (
     <Main>
       <Link
-        href={IMPORT_MAPPINGS_PATH}
+        href="/settings/integrations/import-mappings"
         className="mb-3 inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
       >
         <ArrowLeft className="h-4 w-4" aria-hidden />
@@ -482,9 +482,8 @@ export function ImportMappingEditor({ id }: { id?: string }) {
                   {t('importMappings.tab.mapping', 'Mapping')}
                 </TabsTrigger>
                 <TabsTrigger value="versions">
-                  {t('importMappings.tab.versions', 'Versions ({count})', {
-                    count: detail?.versions.length ?? 0,
-                  })}
+                  {t('importMappings.tab.versions', 'Versions')}
+                  <TabsCount value={detail?.versions.length} />
                 </TabsTrigger>
               </TabsList>
             )}
