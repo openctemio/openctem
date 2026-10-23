@@ -61,36 +61,56 @@ type RunDetail struct {
 
 // GetRunForCaller returns a run of the tenant with its steps and deliveries,
 // when its subject is in the caller's scope (404 otherwise, like a run that
-// does not exist).
+// does not exist). A delivery about another finding the caller may not read
+// (a step that names a fixed finding) keeps its channel and status, not its
+// payload.
 func (s *WorkflowService) GetRunForCaller(ctx context.Context, tenantID, userID, runID shared.ID) (*RunDetail, error) {
 	ctx = s.withFindingViewer(ctx)
 	run, err := s.GetRun(ctx, tenantID, runID)
 	if err != nil {
 		return nil, err
 	}
+	scope, err := s.callerScope(ctx, tenantID, userID)
+	if err != nil {
+		return nil, err
+	}
+	reader, _ := s.runRepo.(automationdom.RunScopeReader)
+	visible := func(id shared.ID) (bool, error) {
+		if scope == nil {
+			return true, nil
+		}
+		if reader == nil {
+			return false, nil
+		}
+		return reader.SubjectVisible(ctx, tenantID, id, scope)
+	}
 	if run.SubjectID != nil {
-		scope, err := s.callerScope(ctx, tenantID, userID)
+		ok, err := visible(*run.SubjectID)
 		if err != nil {
 			return nil, err
 		}
-		if scope != nil {
-			reader, ok := s.runRepo.(automationdom.RunScopeReader)
-			if !ok {
-				return nil, shared.ErrNotFound
-			}
-			visible, err := reader.SubjectVisible(ctx, tenantID, *run.SubjectID, scope)
-			if err != nil {
-				return nil, err
-			}
-			if !visible {
-				return nil, shared.ErrNotFound
-			}
+		if !ok {
+			return nil, shared.ErrNotFound
 		}
 	}
 	d := &RunDetail{Run: run, RetainedUntil: automationdom.RetainedUntil(run.Mode, run.CreatedAt)}
 	if s.deliveries != nil {
 		if d.Deliveries, err = s.deliveries.ListByRun(ctx, tenantID, runID); err != nil {
 			return nil, fmt.Errorf("list run deliveries: %w", err)
+		}
+	}
+	for _, dl := range d.Deliveries {
+		raw, _ := dl.Payload["finding_id"].(string)
+		fid, err := shared.IDFromString(raw)
+		if err != nil || (run.SubjectID != nil && fid == *run.SubjectID) {
+			continue
+		}
+		ok, err := visible(fid)
+		if err != nil {
+			return nil, err
+		}
+		if !ok {
+			dl.Payload = map[string]any{"redacted": "not_in_scope"}
 		}
 	}
 	return d, nil
