@@ -29,8 +29,8 @@ distributions (Debian, Ubuntu, RHEL and derivatives), not Alpine/musl. Node.js
 is not bundled: it gets security releases between ours, and your package
 manager should apply them.
 
-Not shipped as archives: PostgreSQL and Redis (use your distribution's or a
-managed service), the scanning sensor (released by openctemio/sensor with its
+Not shipped as archives: PostgreSQL (16, 17 or 18; 17 recommended) and Redis 7
+(use your distribution's or a managed service), the scanning sensor (released by openctemio/sensor with its
 own signed archives), the all-in-one image (containers only).
 
 ## 1. Verify the download

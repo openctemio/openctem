@@ -44,11 +44,6 @@ export function EndpointTable({ poolId, endpoints, canWrite }: EndpointTableProp
     try {
       await updateProxyEndpoint(poolId, e.id, body)
       await invalidateProxyPools()
-      toast.success(
-        body.reset_health
-          ? t('proxyPools.toast.healthReset', 'Health reset')
-          : t('proxyPools.toast.endpointUpdated', 'Proxy updated')
-      )
     } catch (err) {
       toast.error(
         describeProxyError(err, t, t('proxyPools.toast.updateFailed', 'Could not update the proxy'))
@@ -99,6 +94,7 @@ export function EndpointTable({ poolId, endpoints, canWrite }: EndpointTableProp
                     <span className="break-all">{endpointUrl(e)}</span>
                     {e.has_credentials && (
                       <Lock
+                        role="img"
                         className="size-3.5 shrink-0 text-muted-foreground"
                         aria-label={t(
                           'proxyPools.hasCredentials',

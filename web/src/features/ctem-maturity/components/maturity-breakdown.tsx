@@ -4,10 +4,11 @@ import { Gauge } from 'lucide-react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Progress } from '@/components/ui/progress'
 import { cn } from '@/lib/utils'
+import { useTranslation } from '@/context/i18n-provider'
 import type { MaturityBreakdown, MaturityComponent } from '../api/use-ctem-maturity'
 
-/** Human labels for the component names returned by ctemcycle.ComputeMaturity. */
-const COMPONENT_LABEL: Record<string, string> = {
+/** English names for the component names returned by ctemcycle.ComputeMaturity. */
+const COMPONENT_FALLBACK: Record<string, string> = {
   validation_coverage: 'Validation coverage',
   resolution_throughput: 'Resolution throughput',
   mttr_trend: 'MTTR trend',
@@ -15,29 +16,29 @@ const COMPONENT_LABEL: Record<string, string> = {
   scope_stability: 'Scope stability',
 }
 
-function componentLabel(name: string): string {
-  return COMPONENT_LABEL[name] ?? name.replace(/_/g, ' ')
-}
-
-/**
- * Score → traffic-light accent, dark-mode aware. There is no semantic
- * success/warning token in theme.css (only `destructive`), so the
- * green/amber bands use the same explicit palette pair the rest of the
- * app's health scales use (e.g. validation-coverage-card). The low band
- * uses the semantic `text-destructive` token.
- */
+/** Score to traffic-light accent: the semantic success, warning and destructive tokens. */
 export function scoreTone(score: number): string {
-  if (score >= 80) return 'text-emerald-600 dark:text-emerald-400' // palette-ok: health scale, no success token
-  if (score >= 50) return 'text-amber-600 dark:text-amber-400' // palette-ok: health scale, no warning token
+  if (score >= 80) return 'text-success'
+  if (score >= 50) return 'text-warning'
   return 'text-destructive'
 }
 
-function ComponentRow({ c }: { c: MaturityComponent }) {
+function formatNumber(v: number, locale: string, digits: number): string {
+  return new Intl.NumberFormat(locale, { maximumFractionDigits: digits }).format(v)
+}
+
+function ComponentRow({ c, measured }: { c: MaturityComponent; measured: boolean }) {
+  const { t, locale } = useTranslation()
   return (
     <div className="rounded-md border p-3">
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
-          <p className="text-sm font-medium">{componentLabel(c.name)}</p>
+          <p className="text-sm font-medium">
+            {t(
+              `insights.maturity.component.${c.name}`,
+              COMPONENT_FALLBACK[c.name] ?? c.name.replace(/_/g, ' ')
+            )}
+          </p>
           <p className="text-muted-foreground mt-0.5 text-xs">{c.detail}</p>
         </div>
         <div className="text-end">
@@ -52,23 +53,24 @@ function ComponentRow({ c }: { c: MaturityComponent }) {
       </div>
       <div className="text-muted-foreground mt-2 flex items-center justify-between text-xs tabular-nums">
         <span>
-          weight <span className="text-foreground font-medium">{Math.round(c.weight * 100)}%</span>
+          {t('insights.maturity.weight', 'weight')}{' '}
+          <span className="text-foreground font-medium">{Math.round(c.weight * 100)}%</span>
         </span>
         <span>
-          raw <span className="text-foreground font-medium">{formatRaw(c.raw_value)}</span>
+          {t('insights.maturity.raw', 'raw')}{' '}
+          <span className="text-foreground font-medium">
+            {measured ? formatNumber(c.raw_value, locale, 1) : '—'}
+          </span>
         </span>
         <span>
-          contribution{' '}
-          <span className="text-foreground font-medium">+{c.contribution.toFixed(1)}</span>
+          {t('insights.maturity.contribution', 'contribution')}{' '}
+          <span className="text-foreground font-medium">
+            {measured ? `+${formatNumber(c.contribution, locale, 1)}` : '—'}
+          </span>
         </span>
       </div>
     </div>
   )
-}
-
-function formatRaw(v: number): string {
-  if (Number.isInteger(v)) return String(v)
-  return v.toFixed(2)
 }
 
 /**
@@ -84,7 +86,10 @@ export function MaturityBreakdownCard({
   maturity: MaturityBreakdown
   className?: string
 }) {
+  const { t } = useTranslation()
   const components = maturity.components ?? []
+  // One cycle is not a trend: raw values and contributions need at least two.
+  const measured = maturity.cycles_analyzed >= 2
   const score = Math.round(maturity.score)
 
   return (
@@ -92,16 +97,23 @@ export function MaturityBreakdownCard({
       <CardHeader>
         <CardTitle className="flex items-center gap-2 text-base">
           <Gauge className="text-muted-foreground h-4 w-4" />
-          CTEM program maturity
+          {t('insights.maturity.breakdown.title', 'CTEM program maturity')}
         </CardTitle>
         <CardDescription>
-          A transparent composite: score = Σ (component score × weight), across{' '}
-          {maturity.cycles_analyzed} closed cycle{maturity.cycles_analyzed === 1 ? '' : 's'}.
+          {t(
+            maturity.cycles_analyzed === 1
+              ? 'insights.maturity.breakdown.description.one'
+              : 'insights.maturity.breakdown.description.other',
+            undefined,
+            { count: maturity.cycles_analyzed }
+          )}
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
         <div className="flex items-end justify-between">
-          <span className="text-muted-foreground text-sm">Overall</span>
+          <span className="text-muted-foreground text-sm">
+            {t('insights.maturity.breakdown.overall', 'Overall')}
+          </span>
           <span className={cn('text-4xl font-bold tabular-nums', scoreTone(score))}>
             {score}
             <span className="text-muted-foreground ms-1 text-base font-normal">/ 100</span>
@@ -111,7 +123,7 @@ export function MaturityBreakdownCard({
 
         <div className="grid gap-2 sm:grid-cols-2">
           {components.map((c) => (
-            <ComponentRow key={c.name} c={c} />
+            <ComponentRow key={c.name} c={c} measured={measured} />
           ))}
         </div>
       </CardContent>
