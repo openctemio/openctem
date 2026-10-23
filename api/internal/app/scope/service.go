@@ -136,6 +136,9 @@ func (s *Service) CreateTarget(ctx context.Context, input CreateTargetInput) (*s
 	if err != nil {
 		return nil, err // wraps shared.ErrValidation
 	}
+	if targetType.Retired() {
+		return nil, scopedom.ErrTargetTypeRetired
+	}
 	if targetType == scopedom.TargetTypeRepository {
 		// One spelling per repository pattern, so duplicates are found.
 		input.Pattern = scopedom.NormalizeRepositoryPattern(input.Pattern)
@@ -143,6 +146,9 @@ func (s *Service) CreateTarget(ctx context.Context, input CreateTargetInput) (*s
 	source, err := scopedom.ParseGeneralSource(input.AuthorizationSource)
 	if err != nil {
 		return nil, err
+	}
+	if err := scopedom.ValidatePattern(targetType, input.Pattern); err != nil {
+		return nil, err // wraps shared.ErrValidation
 	}
 
 	if err := s.targetDuplicate(ctx, tenantID, targetType, input.Pattern); err != nil {

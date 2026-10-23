@@ -318,6 +318,9 @@ func matchURLPrefix(pattern, value string) bool {
 // dispatch gate, the claim re-check, the signer's ledger) uses it, so the
 // ledger is never wider than the entries in the database.
 func EntryMatches(t TargetType, pattern string, c Constraint, value string) bool {
+	if !t.AuthorizesProbes() {
+		return false
+	}
 	if URLPathLimited(t, pattern) {
 		return matchURLPrefix(pattern, value)
 	}
