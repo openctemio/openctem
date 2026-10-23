@@ -1722,5 +1722,6 @@
   "findings.sourceCategory.cloud": "Đám mây",
   "findings.sourceCategory.vulnerability_assessment": "Đánh giá lỗ hổng",
   "findings.sourceCategory.other": "Khác",
-  "findings.list.unnamedAsset": "Tài sản chưa đặt tên"
+  "findings.list.unnamedAsset": "Tài sản chưa đặt tên",
+  "findings.view.awaitingVerificationShort": "Cần xác minh"
 }
