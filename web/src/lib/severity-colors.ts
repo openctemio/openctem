@@ -70,6 +70,15 @@ export const SEVERITY_TEXT_COLORS: Record<SeverityLevel, string> = {
   info: 'text-sev-info-text',
 }
 
+/** Colour of a severity shape mark (the glyph beside inline severity text). */
+export const SEVERITY_MARK_COLORS: Record<SeverityLevel, string> = {
+  critical: 'text-sev-critical',
+  high: 'text-sev-high',
+  medium: 'text-sev-medium',
+  low: 'text-sev-low',
+  info: 'text-sev-info',
+}
+
 /** Dot / indicator fill. */
 export const SEVERITY_DOT_COLORS: Record<SeverityLevel, string> = {
   critical: 'bg-sev-critical',
