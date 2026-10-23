@@ -6,7 +6,11 @@ import (
 
 	automationsvc "github.com/openctemio/openctem/api/internal/app/automation"
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
+	"github.com/openctemio/openctem/api/pkg/apierror"
 )
+
+// The 401/403 answers of the catalog route (named for the spec generator).
+var _ = apierror.Error{}
 
 // WorkflowCatalogEntry is one type a builder may offer. Allowed says
 // whether the caller holds its permission, so the builder can explain a type
@@ -26,6 +30,15 @@ type WorkflowCatalogResponse struct {
 }
 
 // GetCatalog handles GET /api/v1/workflows/catalog.
+// @Summary      Automation catalog
+// @Description  Every trigger, action and notification type the automation engine runs, in builder order, with the permission each needs and whether the caller holds it. A type not listed here is refused on save.
+// @Tags         Automations
+// @Produce      json
+// @Success      200  {object}  WorkflowCatalogResponse
+// @Failure      401  {object}  apierror.Error
+// @Failure      403  {object}  apierror.Error
+// @Security     BearerAuth
+// @Router       /workflows/catalog [get]
 func (h *WorkflowHandler) GetCatalog(w http.ResponseWriter, r *http.Request) {
 	resp := WorkflowCatalogResponse{
 		Triggers:      []WorkflowCatalogEntry{},
