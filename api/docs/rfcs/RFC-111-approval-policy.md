@@ -340,6 +340,6 @@ pending accepted risk with an authenticator code and a reason; the end is cut to
 (`SoloAcceptanceLimit`: 7 days for P0 or KEV, 45 for P1, 90 otherwise). Under `all` it stays pending until a
 second member, as before.
 
-Migration `003330_single_person_acceptance_review` extends the single-person review triggers to accepted
+Migration `003344_single_person_acceptance_review` extends the single-person review triggers to accepted
 risks and indexes the decisions one person made for the digest.
 
