@@ -139,7 +139,7 @@ export function FindingProvenanceSection({ finding }: { finding: FindingDetail }
                 <li key={b.name} className="flex flex-wrap items-center gap-x-1.5 gap-y-0.5">
                   <span className="font-medium">{b.name}</span>
                   {b.isDefault && (
-                    <Badge variant="secondary" className="h-5 px-1.5 text-xs">
+                    <Badge variant="secondary" className="h-5 px-1.5 text-meta">
                       {t('findings.provenance.default', 'default')}
                     </Badge>
                   )}

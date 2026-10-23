@@ -9,6 +9,7 @@
  * where (asset, source), then when (first / last seen), then trivia.
  */
 
+import { assigneeLabel } from '../../lib/assignee-label'
 import { VERSION_MATCH_TOOL } from '@/features/vuln-matching/types'
 import { findingStatusesInCategory } from '@/features/findings/types/finding.types'
 import Link from '@/components/link'
@@ -51,8 +52,8 @@ function Row({ label, children }: { label: string; children: React.ReactNode }) 
     return null
   return (
     <div className="grid min-h-8 grid-cols-[6.5rem_minmax(0,1fr)] items-center gap-x-3">
-      <dt className="text-xs text-muted-foreground">{label}</dt>
-      <dd className="min-w-0 text-sm break-words">{children}</dd>
+      <dt className="text-body text-muted-foreground">{label}</dt>
+      <dd className="min-w-0 text-body break-words">{children}</dd>
     </div>
   )
 }
@@ -164,7 +165,10 @@ export function FindingProperties({
 
   const assigneeNode = hideTriage ? (
     <span className={triage.assignee ? undefined : 'text-muted-foreground'}>
-      {triage.assignee?.name || t('findings.properties.unassigned', 'Unassigned')}
+      {assigneeLabel(triage.assignee, {
+        assigned: t('findings.assigneeSelect.assigned', 'Assigned'),
+        unassigned: t('findings.properties.unassigned', 'Unassigned'),
+      })}
     </span>
   ) : (
     <AssigneeSelect
@@ -231,7 +235,7 @@ export function FindingProperties({
         <Row label={t('findings.properties.priority', 'Priority')}>
           {finding.priorityClass ? (
             <span className="inline-flex items-center gap-1.5">
-              <PriorityClassBadge priorityClass={finding.priorityClass} />
+              <PriorityClassBadge priorityClass={finding.priorityClass} showWord />
               {finding.priorityClassOverride && (
                 <span className="text-xs text-muted-foreground">
                   {t('findings.properties.setManually', 'set manually')}

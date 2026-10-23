@@ -142,6 +142,7 @@
   "common.unsafeLink": "Link not opened: the URL uses a scheme that is not allowed",
   "common.collapse": "Collapse",
   "common.showingFirstOf": "Showing the first {loaded} of {total}",
+  "common.viewSwitcher.label": "View",
   "common.bootstrap.busyTitle": "The server is busy",
   "common.bootstrap.busyBody": "It asked us to slow down. We try again in a few seconds, or retry now.",
   "common.bootstrap.unreachableTitle": "Can’t reach the server",

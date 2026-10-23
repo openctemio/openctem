@@ -193,13 +193,13 @@ func TestActivateWorkflow_RefusesUnreachableNode(t *testing.T) {
 }
 
 func TestWorkflowTypes_StatusChangedValidRunScriptUnsupported(t *testing.T) {
-	if !automation.TriggerTypeFindingStatusChanged.IsValid() || !automation.TriggerTypeFindingStatusChanged.IsSupported() {
-		t.Fatal("finding_status_changed is fired by the finding service and must be a valid, supported trigger")
+	if !automation.TriggerTypeFindingStatusChanged.IsValid() {
+		t.Fatal("finding_status_changed is fired by the finding service and must be a valid trigger")
 	}
-	if automation.ActionTypeRunScript.IsSupported() {
-		t.Fatal("run_script has no sandbox and must be refused on write")
+	if automation.ActionType("run_script").IsValid() {
+		t.Fatal("run_script is a removed type and must be refused on write")
 	}
-	err := automation.ValidateSupported(automation.NodeConfig{ActionType: automation.ActionTypeRunScript})
+	err := automation.ValidateSupported(automation.NodeConfig{ActionType: automation.ActionType("run_script")})
 	var de *shared.DomainError
 	if !errors.As(err, &de) || de.Code != automation.ErrCodeUnsupportedWorkflowFeature || !strings.Contains(err.Error(), "action:run_script") {
 		t.Fatalf("run_script: want %s naming action:run_script, got %v", automation.ErrCodeUnsupportedWorkflowFeature, err)

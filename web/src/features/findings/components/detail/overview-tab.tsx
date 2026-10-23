@@ -50,7 +50,9 @@ import { copyToClipboard } from '@/lib/clipboard'
 import { UntrustedTextBlock } from '@/features/shared/components/untrusted-text-block'
 import { useTriageResult } from '@/features/ai-triage/api'
 import { useRelatedCVEs } from '../../api/use-finding-groups'
-import { formatEpssPercentile, formatEpssScore } from '@/lib/epss'
+import { formatEpssPercentile } from '@/lib/epss'
+import { EpssChip } from '@/components/ui/epss-chip'
+import { KevBadge } from '@/components/ui/kev-badge'
 import { cn, sanitizeExternalUrl } from '@/lib/utils'
 import type { FindingDetail } from '../../types'
 import { FINDING_TYPE_CONFIG } from '../../types'
@@ -412,8 +414,12 @@ function IdentifiersSection({ finding }: { finding: FindingDetail }) {
         </DetailField>
         <DetailField label="EPSS">
           {finding.epssScore !== undefined ? (
-            <span className="tabular-nums">
-              {formatEpssScore(finding.epssScore, finding.epssScore < 0.1 ? 2 : 1)}
+            <span className="inline-flex flex-wrap items-center gap-x-2 gap-y-1 tabular-nums">
+              <EpssChip
+                score={finding.epssScore}
+                threshold={0}
+                digits={finding.epssScore < 0.1 ? 2 : 1}
+              />
               {finding.epssPercentile !== undefined && (
                 <span className="text-muted-foreground">
                   {' '}
@@ -519,13 +525,17 @@ function IdentifiersSection({ finding }: { finding: FindingDetail }) {
         </DetailField>
         <DetailField label={t('findings.overviewTab.kev', 'CISA KEV')}>
           {adv?.kev ? (
-            <span className="font-medium text-destructive">
-              {t('findings.overviewTab.kevListed', 'Added {added} · due {due}', {
-                added: adv.kev.dateAdded.slice(0, 10),
-                due: adv.kev.dueDate.slice(0, 10),
-              })}
-              {adv.kev.ransomwareUse === 'Known' &&
-                ` · ${t('findings.overviewTab.kevRansomware', 'used by ransomware')}`}
+            <span className="inline-flex flex-wrap items-center gap-x-2 gap-y-1">
+              <KevBadge
+                pastDue={adv.kev.isPastDue}
+                ransomware={adv.kev.ransomwareUse === 'Known'}
+              />
+              <span>
+                {t('findings.overviewTab.kevListed', 'Added {added} · due {due}', {
+                  added: adv.kev.dateAdded.slice(0, 10),
+                  due: adv.kev.dueDate.slice(0, 10),
+                })}
+              </span>
             </span>
           ) : adv ? (
             t('findings.overviewTab.notListed', 'Not listed')

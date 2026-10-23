@@ -10,6 +10,7 @@ import type { Severity } from '@/features/shared/types'
 import { severityStyleParts } from '@/lib/severity-colors'
 import type { CriticalityLevel } from '@/lib/criticality'
 import type { PriorityClass } from '@/lib/priority-colors'
+import type { StatusTone } from '@/lib/status-colors'
 
 // ============================================
 // FINDING STATUS (Workflow-based)
@@ -39,86 +40,84 @@ export type FindingStatus =
 
 export type StatusCategory = 'open' | 'in_progress' | 'closed'
 
+export type StatusIconKey =
+  | 'dashed'
+  | 'ring-dot'
+  | 'half'
+  | 'three-quarter'
+  | 'check'
+  | 'slashed'
+  | 'eye'
+  | 'copy'
+  | 'shield-alert'
+
 export interface StatusConfig {
   /** English label; the localised one is `labelKey` in the i18n dictionaries. */
   label: string
   labelKey: string
-  color: string
-  bgColor: string
-  textColor: string
-  icon: string
+  /** Workflow category tint of the lozenge (see lib/status-colors.ts). */
+  tone: StatusTone
+  /** Progression icon key, rendered by FindingStatusBadge. */
+  icon: StatusIconKey
   category: StatusCategory
   requiresApproval?: boolean
   showExpiration?: boolean
 }
 
 /**
- * Status pills use neutral and state tokens only: severity hues belong to
- * severity, priority has its own box, teal is the act-here accent.
+ * Status colour follows the workflow category (`tone`), never one hue per
+ * status: severity hues belong to severity, priority has its own violet box,
+ * teal is the act-here accent.
  */
 export const FINDING_STATUS_CONFIG: Record<FindingStatus, StatusConfig> = {
   new: {
     label: 'New',
     labelKey: 'findings.status.new',
-    color: 'border-primary/30',
-    bgColor: 'bg-primary/10',
-    textColor: 'text-foreground',
-    icon: 'circle-dot',
+    tone: 'triage',
+    icon: 'dashed',
     category: 'open',
   },
   confirmed: {
     label: 'Confirmed',
     labelKey: 'findings.status.confirmed',
-    color: 'border-primary/30',
-    bgColor: 'bg-primary/10',
-    textColor: 'text-foreground',
-    icon: 'check-circle',
+    tone: 'open',
+    icon: 'ring-dot',
     category: 'open',
   },
   in_progress: {
-    label: 'In Progress',
+    label: 'In progress',
     labelKey: 'findings.status.in_progress',
-    color: 'border-primary/40',
-    bgColor: 'bg-primary/15',
-    textColor: 'text-foreground',
-    icon: 'loader',
+    tone: 'progress',
+    icon: 'half',
     category: 'in_progress',
   },
   fix_applied: {
-    label: 'Fix Applied',
+    label: 'Fix applied',
     labelKey: 'findings.status.fix_applied',
-    color: 'border-primary/40',
-    bgColor: 'bg-primary/15',
-    textColor: 'text-foreground',
-    icon: 'wrench',
+    tone: 'progress',
+    icon: 'three-quarter',
     category: 'in_progress',
   },
   resolved: {
     label: 'Resolved',
     labelKey: 'findings.status.resolved',
-    color: 'border-success/40',
-    bgColor: 'bg-success/15',
-    textColor: 'text-success',
-    icon: 'check-square',
+    tone: 'resolved',
+    icon: 'check',
     category: 'closed',
   },
   false_positive: {
-    label: 'False Positive',
+    label: 'False positive',
     labelKey: 'findings.status.false_positive',
-    color: 'border-border',
-    bgColor: 'bg-muted',
-    textColor: 'text-muted-foreground',
-    icon: 'x-circle',
+    tone: 'closed',
+    icon: 'slashed',
     category: 'closed',
     requiresApproval: true,
   },
   accepted: {
-    label: 'Risk Accepted',
+    label: 'Risk accepted',
     labelKey: 'findings.status.accepted',
-    color: 'border-warning/40',
-    bgColor: 'bg-warning/15',
-    textColor: 'text-warning',
-    icon: 'alert-triangle',
+    tone: 'accepted',
+    icon: 'shield-alert',
     category: 'closed',
     requiresApproval: true,
     showExpiration: true,
@@ -126,9 +125,7 @@ export const FINDING_STATUS_CONFIG: Record<FindingStatus, StatusConfig> = {
   duplicate: {
     label: 'Duplicate',
     labelKey: 'findings.status.duplicate',
-    color: 'border-border',
-    bgColor: 'bg-muted',
-    textColor: 'text-muted-foreground',
+    tone: 'closed',
     icon: 'copy',
     category: 'closed',
   },
@@ -136,18 +133,14 @@ export const FINDING_STATUS_CONFIG: Record<FindingStatus, StatusConfig> = {
   draft: {
     label: 'Draft',
     labelKey: 'findings.status.draft',
-    color: 'border-primary/30',
-    bgColor: 'bg-primary/10',
-    textColor: 'text-foreground',
-    icon: 'file-edit',
+    tone: 'triage',
+    icon: 'dashed',
     category: 'open',
   },
   in_review: {
-    label: 'In Review',
+    label: 'In review',
     labelKey: 'findings.status.in_review',
-    color: 'border-primary/30',
-    bgColor: 'bg-primary/10',
-    textColor: 'text-foreground',
+    tone: 'triage',
     icon: 'eye',
     category: 'open',
   },
