@@ -119,6 +119,9 @@ type Outbox struct {
 	createdAt   time.Time
 	updatedAt   time.Time
 	processedAt *time.Time
+
+	// Per-channel delivery state (delivery.go).
+	deliveries []ChannelDelivery
 }
 
 // =============================================================================
@@ -338,6 +341,15 @@ func (o *Outbox) ResetForRetry() {
 	o.lockedBy = ""
 	o.processedAt = nil
 	o.updatedAt = now
+	// A manual retry gives every channel that did not get the event a fresh
+	// budget; channels that got it are not sent it again.
+	for i := range o.deliveries {
+		if o.deliveries[i].Status == DeliveryDead {
+			o.deliveries[i].Status = DeliveryPending
+			o.deliveries[i].Attempts = 0
+			o.deliveries[i].NextAttemptAt = nil
+		}
+	}
 }
 
 // =============================================================================

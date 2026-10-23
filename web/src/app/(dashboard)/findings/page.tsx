@@ -14,13 +14,9 @@ import { useState, useMemo, useCallback, useEffect, type ReactNode } from 'react
 import Link from '@/components/link'
 import {
   DEFAULT_FINDING_LENS,
-  FINDING_LENSES,
   lensLabelKey,
-  lensDescriptionKey,
   parseFindingLens,
-  type FindingLens,
 } from '@/features/findings/lib/state-lens'
-import { findingsOverview } from '@/features/findings/lib/findings-overview'
 import { mapDataFlow } from '@/features/findings/lib/finding-detail'
 import {
   readFindingHash,
@@ -56,8 +52,6 @@ import {
   SeverityBadge,
   DataTable,
   DataTableColumnHeader,
-  MetricStrip,
-  type MetricStripItem,
   FacetPanel,
   FacetSection,
   FacetOption,
@@ -67,7 +61,6 @@ import {
   FilterPanelToggle,
   FilterSheet,
   TruncatedText,
-  SegmentedLens,
   DrillDownBreadcrumb,
   ErrorState,
   type MobileRowSelection,
@@ -98,6 +91,30 @@ import {
 import { Skeleton } from '@/components/ui/skeleton'
 import { accessStateOf, errorDetails } from '@/lib/api/access-state'
 import { describePermissionDenied } from '@/lib/api/permission-denied'
+import {
+  useFindingQuickViews,
+  refreshFindingQuickViews,
+} from '@/features/findings/api/use-quick-views'
+import {
+  QUICK_VIEW_LABELS,
+  knownQuickViews,
+  quickViewIsActive,
+  quickViewLabelKey,
+  type QuickViewKey,
+} from '@/features/findings/lib/quick-views'
+import {
+  FilterBar,
+  InvalidFilterNotice,
+  invalidFilterParams,
+} from '@/features/findings/filters/filter-bar'
+import {
+  CONTEXT_FILTER_PARAMS,
+  OWNED_FILTER_PARAMS,
+  useFindingFilterContract,
+  withOwnedFields,
+} from '@/features/findings/filters/contract'
+import { NON_FILTER_PARAMS, readFilters } from '@/features/findings/filters/model'
+import { useSavedViews } from '@/features/saved-views/api/use-saved-views'
 import { findingsEmptyKind } from '@/features/findings/lib/empty-kind'
 import { downloadFindingsExport, exportTruncated } from '@/features/findings/api/export-findings'
 import { FindingsEmptyState } from '@/features/findings/components/findings-empty-state'
@@ -163,7 +180,6 @@ import {
   useFindingApi,
   useFindingStatsApi,
   buildFindingsExportUrl,
-  invalidateFindingsCache,
   type FindingStatsFilters,
 } from '@/features/findings/api/use-findings-api'
 import { ConfirmDialog } from '@/components/confirm-dialog'
@@ -369,7 +385,6 @@ const STATUS_GROUPS = [
   { key: 'closed', label: 'Closed', values: findingStatusesInCategory('closed') },
   { key: 'pre_publication', label: 'Pentest workflow', values: [...PRE_PUBLICATION] },
 ]
-const OVERDUE_SLA = ['overdue', 'exceeded']
 const SLA_OPTIONS: SLAStatus[] = ['overdue', 'exceeded', 'warning', 'on_track', 'not_applicable']
 const PRIORITY_OPTIONS = [
   { value: 'P0', hint: 'Act now' },
@@ -509,6 +524,14 @@ function FindingsContent() {
   // them out unless this is on (then it shows only them).
   const [branchOnlyFilter, setBranchOnlyFilter] = useUrlFilter('branch_only', 'false')
   const [slaFilter, setSlaFilter] = useUrlFilterList('sla_status')
+  // Set by the Pending approval and Accepted · expiring quick views.
+  const [pendingApprovalParam, setPendingApprovalParam] = useUrlFilter('pending_approval', '')
+  const [acceptanceExpiresParam, setAcceptanceExpiresParam] = useUrlFilter(
+    'acceptance_expires_at_lte',
+    ''
+  )
+  const pendingApprovalFilter =
+    pendingApprovalParam === 'true' ? true : pendingApprovalParam === 'false' ? false : undefined
   const [searchQuery, setSearchQuery] = useUrlFilter('q', '')
   // The state lens (Open, the default · Fixed · Dispositioned · All). A saved
   // view carries its own status scope, so the default lens is not laid on top
@@ -679,7 +702,7 @@ function FindingsContent() {
   // Findings selected to spin up (or join) a remediation task. Non-null = dialog open.
   const [remedFindings, setRemedFindings] = useState<{ id: string; title: string }[] | null>(null)
   const { hasPermission } = usePermissions()
-  // The gate of POST /findings/import (the API stays authoritative).
+  // The gate of POST /findings/imports (the API stays authoritative).
   const canImport =
     hasPermission('findings:write') &&
     hasPermission('assets:write') &&
@@ -709,7 +732,13 @@ function FindingsContent() {
   // The source catalog is data, not a hardcoded list. The previous inline list
   // had drifted: it omitted cspm, which live findings actually use, so those
   // findings could not be filtered for at all.
-  const { data: sourceCatalog } = useFindingSourcesApi()
+  // Fetched when the Source filter is opened (or a source is already picked),
+  // not with every page load.
+  const [sourcesWanted, setSourcesWanted] = useState(false)
+  const { data: sourceCatalog } = useFindingSourcesApi(
+    undefined,
+    sourcesWanted || sourceFilter.length > 0
+  )
 
   const sourceGroups = useMemo(() => {
     const grouped = groupFindingSourcesByCategory(sourceCatalog?.data ?? [])
@@ -745,6 +774,44 @@ function FindingsContent() {
   // "All" who picks a filter with only 2 pages would sit on an empty page.
   // Keyed on the filter *values*, so the first render (reading a shared link
   // with ?page=3) is not reset — only a later filter change is.
+  // Filters in the URL that the page does not draw itself (an EPSS floor, a
+  // port, a tag...). They go to the API as they are; the filter contract names
+  // them, so it is loaded when the URL holds one, or when the picker opens.
+  const unownedParams = useMemo(
+    () =>
+      Array.from(new Set(searchParams.keys())).filter(
+        (k) =>
+          !NON_FILTER_PARAMS.has(k) && !OWNED_FILTER_PARAMS.has(k) && !CONTEXT_FILTER_PARAMS.has(k)
+      ),
+    [searchParams]
+  )
+  const [pickerOpen, setPickerOpen] = useState(false)
+  const {
+    contract: loadedContract,
+    isLoading: contractLoading,
+    error: contractError,
+  } = useFindingFilterContract(pickerOpen || unownedParams.length > 0)
+  const filterContract = useMemo(() => withOwnedFields(loadedContract), [loadedContract])
+  const unknownParams = useMemo(
+    () =>
+      loadedContract
+        ? readFilters(searchParams, filterContract, CONTEXT_FILTER_PARAMS).unknown
+        : [],
+    [loadedContract, filterContract, searchParams]
+  )
+  const extraParams = useMemo(() => {
+    const extra: Record<string, string> = {}
+    for (const k of unownedParams) {
+      // Once the contract is known, a param it does not know is shown as an
+      // unknown filter and kept out of the request, so the list still loads.
+      if (unknownParams.includes(k)) continue
+      const v = searchParams.get(k)
+      if (v) extra[k] = v
+    }
+    return extra
+  }, [unownedParams, unknownParams, searchParams])
+  const extraKey = JSON.stringify(extraParams)
+
   const filterKey = [
     assetIdFilter,
     scanIdFilter,
@@ -769,6 +836,9 @@ function FindingsContent() {
     branchOnlyActive,
     mineActive,
     slaFilter.join(),
+    pendingApprovalParam,
+    acceptanceExpiresParam,
+    extraKey,
     debouncedSearch,
     sortParam,
   ].join('|')
@@ -840,6 +910,9 @@ function FindingsContent() {
     if (branchOnlyActive) filters.branch_only = true
     if (mineActive) filters.assigned_to_me = true
     if (slaFilter.length > 0) filters.sla_statuses = slaFilter
+    if (pendingApprovalFilter !== undefined) filters.pending_approval = pendingApprovalFilter
+    if (Object.keys(extraParams).length > 0) filters.extra = extraParams
+    if (acceptanceExpiresParam) filters.acceptance_expires_at_lte = acceptanceExpiresParam
     return filters
   }, [
     assetIdFilter,
@@ -862,6 +935,9 @@ function FindingsContent() {
     branchOnlyActive,
     mineActive,
     slaFilter,
+    pendingApprovalFilter,
+    acceptanceExpiresParam,
+    extraParams,
     debouncedSearch,
     HIDDEN_STATUSES,
     pagination,
@@ -872,24 +948,13 @@ function FindingsContent() {
     rawLens,
   ])
 
-  // The state tab counts follow the filter (RFC-048: stats take the list's
-  // filter): the same filter under every lens at once (by_state), so a tab's
-  // count is the total its list shows.
-  const lensStatsFilters = useMemo(() => {
-    const { page: _page, per_page: _perPage, sort: _sort, state: _state, ...rest } = apiFilters
-    return { ...rest, state: 'all' as const }
-  }, [apiFilters])
-
-  // The overview strip describes the page's scope: every finding the caller
-  // may see (their data scope applies server-side), narrowed only by the
-  // context filters the page was opened with (an asset, a scan run, a CVE or
-  // rule group's "View", the other group drill-downs). Those are the page's
-  // scope, shown as chips above the table: "Total 114" over an asset's 3
-  // findings contradicted the list. The state tab, search and facet filters
-  // never move the strip; filter-aware numbers live in the tab counts. With no
-  // filter set, the overview and tab-count requests are the same URL, so the
-  // page loads ONE stats response; neither key holds the state tab, so
-  // switching tabs sends no stats request (research/81).
+  // The stats describe the page's scope: every finding the caller may see
+  // (their data scope applies server-side), narrowed only by the context
+  // filters the page was opened with (an asset, a scan run, a CVE or rule
+  // group's "View", the other group drill-downs). They give the empty state
+  // its organization total and the count of findings the filters hide; the
+  // sidebar's quick views carry the per-view counts. The key holds no facet,
+  // search or state, so filtering sends no stats request (research/81).
   const overviewStatsFilters = useMemo(
     (): FindingStatsFilters => ({
       state: 'all',
@@ -908,7 +973,7 @@ function FindingsContent() {
     }),
     [HIDDEN_STATUSES, apiFilters]
   )
-  // The context filters as the chips (and the strip's scope) read them.
+  // The context filters as the chips read them.
   const contextFilterValues = {
     assetId: assetIdFilter,
     scanId: scanIdFilter,
@@ -923,21 +988,18 @@ function FindingsContent() {
     crownJewel: crownJewelActive,
   }
   const hasContextScope = hasFindingContextFilters(contextFilterValues)
-  // keepPreviousData: a filter change keeps the numbers on screen until the
-  // new ones arrive, instead of blanking the strip and the tab counts.
+  // keepPreviousData: a context change keeps the numbers until the new ones arrive.
   const {
     data: findingStats,
     isLoading: statsLoading,
     mutate: mutateOverviewStats,
   } = useFindingStatsApi(overviewStatsFilters, { enabled: urlSettled, keepPreviousData: true })
-  const { data: lensStats, mutate: mutateLensStats } = useFindingStatsApi(lensStatsFilters, {
-    enabled: urlSettled,
-    keepPreviousData: true,
-  })
   const statsFailed = !findingStats && !statsLoading
+  // A change moves findings between views: the sidebar counts reload with the stats.
+  const { data: quickViewData } = useFindingQuickViews(urlSettled)
   const mutateStats = useCallback(
-    () => Promise.all([mutateOverviewStats(), mutateLensStats()]),
-    [mutateOverviewStats, mutateLensStats]
+    () => Promise.all([mutateOverviewStats(), refreshFindingQuickViews()]),
+    [mutateOverviewStats]
   )
 
   // The flat list. The grouped and verification views render their own rows,
@@ -961,14 +1023,6 @@ function FindingsContent() {
     return mutateFindingsList()
   }, [mutateFindingsList])
 
-  // Headline numbers all come from the one overview stats response — no
-  // per-number list requests (those pushed a single page load past the
-  // per-user read limit). '—' until the api exposes the field (older api).
-  const overview = useMemo(() => findingsOverview(findingStats), [findingStats])
-
-  // Initial loading state (only true when we don't have stats yet)
-  const isInitialLoading = (!urlSettled || statsLoading) && !findingStats
-
   // Transform API data to UI format
   const findings = useMemo(() => {
     if (!findingsResponse?.data) return []
@@ -988,8 +1042,9 @@ function FindingsContent() {
   const [bulkBusy, setBulkBusy] = useState(false)
 
   const handleRefresh = async () => {
+    // Each request once: the list, the stats and the sidebar counts. (A blanket
+    // invalidation of every /findings key here sent all of them a second time.)
     await Promise.all([mutateFindings(), mutateStats()])
-    await invalidateFindingsCache()
     toast.success(t('findings.toast.refreshed', 'Findings refreshed'))
   }
 
@@ -1575,8 +1630,6 @@ function FindingsContent() {
   const setSeverities = (next: string[]) => setSeverityParam(next)
   const toggleIn = (list: string[], value: string) =>
     list.includes(value) ? list.filter((v) => v !== value) : [...list, value]
-  const sameSet = (a: string[], b: string[]) =>
-    a.length === b.length && a.every((v) => b.includes(v))
 
   // A plain function, not useCallback: this block sits below the early `error`
   // return, so a hook here would be conditional.
@@ -1589,7 +1642,15 @@ function FindingsContent() {
     setBranchOnlyFilter('false')
     setSlaFilter([])
     setSourceFilter([])
+    // Filters the page does not draw itself: every one of them goes.
+    if (unownedParams.length > 0) {
+      const next = new URLSearchParams(window.location.search)
+      for (const k of unownedParams) next.delete(k)
+      replaceUrlSearch(next)
+    }
     setMineFilter('false')
+    setPendingApprovalParam('')
+    setAcceptanceExpiresParam('')
     setSearchQuery('')
   }
 
@@ -1607,113 +1668,11 @@ function FindingsContent() {
     Number(kevActive) +
     Number(reachableActive) +
     Number(branchOnlyActive) +
+    Number(pendingApprovalParam !== '') +
+    Number(acceptanceExpiresParam !== '') +
+    unownedParams.length +
     slaFilter.length +
     sourceFilter.length
-
-  // Each card is a shortcut: it applies exactly the filter it counts (the
-  // Open tab plus one facet), shows as active while that filter is the whole
-  // view, and clears it on a second click. Its number never moves with the
-  // tab or the filters (research/81).
-  const onlyFacet = (facet: 'none' | 'critical' | 'high' | 'sla' | 'kev') =>
-    !groupBy &&
-    !verifyView &&
-    activeCount === (facet === 'none' ? 0 : facet === 'sla' ? OVERDUE_SLA.length : 1) &&
-    (facet !== 'critical' || sameSet(severities, ['critical'])) &&
-    (facet !== 'high' || sameSet(severities, ['high'])) &&
-    (facet !== 'sla' || sameSet(slaFilter, OVERDUE_SLA)) &&
-    (facet !== 'kev' || kevActive)
-  const showOnly = (nextLens: FindingLens, apply?: () => void) => {
-    clearAllFilters()
-    setGroupParam('')
-    setViewParam('')
-    setLensParam(nextLens)
-    apply?.()
-  }
-  const openCard = (facet: 'critical' | 'high' | 'sla' | 'kev', apply: () => void) => {
-    const on = lens === 'open' && onlyFacet(facet)
-    showOnly('open', on ? undefined : apply)
-  }
-
-  const metrics: MetricStripItem[] = [
-    {
-      key: 'total',
-      label: t('findings.metrics.total', 'Total'),
-      description: hasContextScope
-        ? t(
-            'findings.metrics.totalScopedDescription',
-            'Every finding in the scope shown above the table (an asset, a scan or a group), in every state (the All tab).'
-          )
-        : t(
-            'findings.metrics.totalDesc',
-            'Every finding you can see, in every state (the All tab).'
-          ),
-      value: overview.total,
-      onClick: () => showOnly(lens === 'all' && onlyFacet('none') ? 'open' : 'all'),
-      active: lens === 'all' && onlyFacet('none'),
-    },
-    {
-      key: 'open',
-      label: t('findings.metrics.open', 'Open'),
-      description: t('findings.metrics.openDesc', 'Findings that still need work (the Open tab).'),
-      value: overview.open,
-      onClick: () => showOnly('open'),
-      active: lens === 'open' && onlyFacet('none'),
-    },
-    {
-      key: 'critical',
-      label: t('findings.metrics.criticalOpen', 'Critical open'),
-      description: t('findings.metrics.criticalOpenDesc', 'Open findings of critical severity.'),
-      value: overview.criticalOpen,
-      tone: 'danger',
-      onClick: () => openCard('critical', () => setSeverities(['critical'])),
-      active: lens === 'open' && onlyFacet('critical'),
-    },
-    {
-      key: 'high',
-      label: t('findings.metrics.highOpen', 'High open'),
-      description: t('findings.metrics.highOpenDesc', 'Open findings of high severity.'),
-      value: overview.highOpen,
-      onClick: () => openCard('high', () => setSeverities(['high'])),
-      active: lens === 'open' && onlyFacet('high'),
-    },
-    {
-      key: 'overdue',
-      label: t('findings.metrics.overdue', 'Overdue SLA'),
-      description: t(
-        'findings.metrics.overdueDesc',
-        "Open findings past the remediation deadline of your organization's SLA policy."
-      ),
-      value: overview.overdue,
-      tone: 'danger',
-      onClick: () => openCard('sla', () => setSlaFilter(OVERDUE_SLA)),
-      active: lens === 'open' && onlyFacet('sla'),
-    },
-    {
-      key: 'kev',
-      label: t('findings.metrics.kev', 'In CISA KEV'),
-      description: t(
-        'findings.metrics.kevDesc',
-        'Open findings whose CVE is in the CISA Known Exploited Vulnerabilities catalog.'
-      ),
-      value: overview.kev,
-      tone: 'danger',
-      onClick: () => openCard('kev', () => setKevFilter('true')),
-      active: lens === 'open' && onlyFacet('kev'),
-    },
-    {
-      // The verification queue: fixes claimed by owners, waiting for a
-      // verifier to confirm or reject (grouped by CVE).
-      key: 'verify',
-      label: t('findings.metrics.verify', 'Awaiting verification'),
-      description: t(
-        'findings.metrics.verifyDesc',
-        'Fixes claimed by an owner, waiting for a verifier.'
-      ),
-      value: overview.awaitingVerification,
-      onClick: () => setViewParam(verifyView ? '' : 'verify'),
-      active: verifyView,
-    },
-  ]
 
   const facetPanel = (
     <FacetPanel activeCount={activeCount} onClearAll={clearAllFilters}>
@@ -1830,6 +1789,7 @@ function FindingsContent() {
         title={t('findings.facet.source', 'Source')}
         selectedCount={sourceFilter.length}
         defaultOpen={false}
+        onOpenChange={(open) => open && setSourcesWanted(true)}
       >
         {sourceGroups.length === 0 ? (
           <p className="py-1 text-xs text-muted-foreground">
@@ -1863,7 +1823,23 @@ function FindingsContent() {
   const facetPanelScrollable = <div className="flex min-h-0 flex-1 flex-col">{facetPanel}</div>
 
   // The grouped views do not load the flat page; the tab count is the same number.
-  const total = findingsResponse?.total ?? lensStats?.by_state?.[lens] ?? 0
+  const total = findingsResponse?.total ?? 0
+  // The view this list is: a built-in quick view when the URL is exactly one,
+  // a saved view, or a custom combination of filters.
+  const activeQuickView = knownQuickViews(quickViewData?.views).find((v) =>
+    quickViewIsActive(searchParams, v)
+  )
+  const viewTitle = activeQuickView
+    ? t(
+        quickViewLabelKey(activeQuickView.key),
+        QUICK_VIEW_LABELS[activeQuickView.key as QuickViewKey]
+      )
+    : savedId
+      ? t('findings.view.saved', 'Saved view')
+      : lens === 'all' && activeCount === 0
+        ? t('findings.view.all', 'All findings')
+        : t('findings.view.custom', 'Custom view')
+  const awaitingVerification = findingStats?.awaiting_verification ?? 0
   // Which kind of empty this is: from the organization's total (scope-only
   // stats), the filters the person set, the search, and a refused read.
   const emptyKind = findingsEmptyKind({
@@ -2046,22 +2022,25 @@ function FindingsContent() {
     <FindingContextChips {...contextFilterValues} onRemove={removeContextParam} />
   ) : undefined
 
-  const toolbarStart = filterSearch
-
-  const lensControl = (
-    <SegmentedLens<FindingLens>
-      label={t('findings.lens.label', 'Finding state')}
-      countNoun={t('findings.lens.countNoun', 'findings')}
-      value={lens}
-      onChange={(next) => setLensParam(next)}
-      options={FINDING_LENSES.map((l) => ({
-        ...l,
-        label: t(lensLabelKey(l.value), l.label),
-        description: t(lensDescriptionKey(l.value), l.description),
-        count: lensStats?.by_state?.[l.value],
-      }))}
+  const { views: savedViewList } = useSavedViews('findings', !!savedId)
+  const openView = savedViewList.find((v) => v.id === savedId)
+  const filterBar = (
+    <FilterBar
+      search={searchParams}
+      contract={filterContract}
+      pickerContract={loadedContract}
+      contractLoading={contractLoading}
+      contractFailed={!!contractError}
+      skip={CONTEXT_FILTER_PARAMS}
+      viewFilter={openView?.filter}
+      canReadAssets={hasPermission(Permission.AssetsRead)}
+      leading={contextChips}
+      onPickerOpenChange={setPickerOpen}
+      onSearchChange={replaceUrlSearch}
     />
   )
+
+  const toolbarStart = filterSearch
 
   // Second row (the table toolbar): which rows and how they show. Saved views
   // and Group sit beside the search they work with; the table's own View menu
@@ -2079,18 +2058,50 @@ function FindingsContent() {
     </>
   )
 
-  // First row: the state lens (the list's main axis) and the page actions.
-  // It never wraps: below 42rem of list width the actions fold into "More
-  // actions", and on a phone the lens scrolls sideways inside its own box.
-  // DOM order = visual order = tab order: lens, refresh, export, task.
+  // First row: which view this is and how many findings it holds, then the
+  // page actions. It never wraps: below 42rem of list width the actions fold
+  // into "More actions". DOM order = visual order = tab order: view,
+  // verification queue, refresh, export, task.
   const primaryRow = (
     <div
       data-testid="findings-toolbar-primary"
       className="@container/actions flex items-center gap-2"
     >
-      {/* Fades its end edge only when the row is too narrow for the whole lens. */}
-      <div className="no-scrollbar min-w-0 overflow-x-auto @max-[26rem]/actions:[mask-image:linear-gradient(to_right,black_80%,transparent)] @max-[26rem]/actions:rtl:[mask-image:linear-gradient(to_left,black_80%,transparent)]">
-        {lensControl}
+      <div className="flex min-w-0 items-center gap-3">
+        <h2
+          data-testid="findings-view-title"
+          className="min-w-0 truncate text-sm font-medium"
+          title={viewTitle}
+        >
+          {viewTitle}
+        </h2>
+        {!groupBy && (
+          <span
+            className="shrink-0 text-sm tabular-nums text-muted-foreground"
+            aria-label={t(
+              'findings.view.total',
+              '{count, plural, one {# finding} other {# findings}}',
+              {
+                count: total,
+              }
+            )}
+          >
+            {total.toLocaleString()}
+          </span>
+        )}
+        {awaitingVerification > 0 && hasPermission(Permission.FindingsVerify) && (
+          <Button
+            variant="outline"
+            size="sm"
+            className="h-8 shrink-0"
+            onClick={() => setViewParam('verify')}
+          >
+            {t('findings.view.awaitingVerification', 'Awaiting verification')}
+            <span className="ms-2 tabular-nums text-muted-foreground">
+              {awaitingVerification.toLocaleString()}
+            </span>
+          </Button>
+        )}
       </div>
       <div className="ms-auto flex shrink-0 items-center gap-2">
         {groupBy === 'owner_id' && hasUnassignedGroup && (
@@ -2273,8 +2284,6 @@ function FindingsContent() {
         </PageHeader>
 
         <>
-          <MetricStrip className="mt-5" loading={isInitialLoading} items={metrics} />
-
           <div className="mt-5 flex items-start">
             {/* Always mounted so opening and closing can animate: the slot's
                 width (and the gap after it) eases between 0 and the card's
@@ -2345,7 +2354,7 @@ function FindingsContent() {
                     setHasUnassignedGroup(groups.some((g) => g.group_key === 'unassigned'))
                   }
                   toolbarStart={toolbarStart}
-                  toolbarBelow={contextChips}
+                  toolbarBelow={filterBar}
                   toolbarEnd={toolbarEnd}
                   emptyDescription={
                     activeCount > 0
@@ -2357,7 +2366,7 @@ function FindingsContent() {
                   }
                 />
               ) : !findingsResponse && findingsLoading ? (
-                <FindingsTableSkeleton contextChips={contextChips} />
+                <FindingsTableSkeleton contextChips={filterBar} />
               ) : (
                 <>
                   <div
@@ -2379,7 +2388,7 @@ function FindingsContent() {
                     showSearch={false}
                     toolbarStart={toolbarStart}
                     toolbarEnd={toolbarEnd}
-                    toolbarBelow={contextChips}
+                    toolbarBelow={filterBar}
                     getRowId={(f) => f.id}
                     manualPagination
                     rowCount={total}
@@ -2413,7 +2422,17 @@ function FindingsContent() {
                       />
                     }
                     errorState={
-                      error && accessStateOf(error) !== 'no_access' ? (
+                      error && invalidFilterParams(error) ? (
+                        <InvalidFilterNotice
+                          params={invalidFilterParams(error) ?? []}
+                          onRemove={(names) => {
+                            const next = new URLSearchParams(window.location.search)
+                            for (const n of names) next.delete(n)
+                            next.delete('page')
+                            replaceUrlSearch(next)
+                          }}
+                        />
+                      ) : error && accessStateOf(error) !== 'no_access' ? (
                         <ErrorState
                           title={t('findings.list.errorTitle', 'findings')}
                           error={error}

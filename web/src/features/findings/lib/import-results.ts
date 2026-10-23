@@ -1,5 +1,5 @@
 /**
- * Display helpers for the finding import (POST /api/v1/findings/import).
+ * Display helpers for the finding import (POST /api/v1/findings/imports).
  * Every value comes from an uploaded file and is rendered as text.
  */
 

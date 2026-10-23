@@ -83,6 +83,9 @@ func (h *SCIMTokenHandler) SetGroupMappings(w http.ResponseWriter, r *http.Reque
 		RequestID:  middleware.GetRequestID(r.Context()),
 	}
 	if err := h.groups.SetRoleMappings(r.Context(), tenantID, body.Mappings, actx); err != nil {
+		if WriteFeatureDenied(w, err) {
+			return
+		}
 		if errors.Is(err, shared.ErrForbidden) {
 			apierror.Forbidden("Only the organization owner can map a group to the admin role or change such a mapping").WriteJSON(w)
 			return
@@ -160,7 +163,7 @@ func (h *SCIMTokenHandler) Create(w http.ResponseWriter, r *http.Request) {
 
 	res, err := h.tokens.Mint(r.Context(), tenantID, req.Name, h.callerID(r), req.ExpiresInDays)
 	if err != nil {
-		if writeSCIMTokenError(w, err) {
+		if writeSCIMTokenError(w, err) || WriteFeatureDenied(w, err) {
 			return
 		}
 		h.logger.Error("mint scim token failed", "error", err)

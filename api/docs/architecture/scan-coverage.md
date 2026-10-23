@@ -1,7 +1,7 @@
 # License-Aware Scan Coverage (Tenable Nessus Pro + Tenable.sc)
 
 > **Status**: `.nessus` uploads go through the shared ctis importer
-> (`POST /findings/import`, [finding-import.md](finding-import.md)). The live connector and the coverage scheduler are **paused** (owner
+> (`POST /findings/imports`, [finding-import.md](finding-import.md)). The live connector and the coverage scheduler are **paused** (owner
 > decision D-14): sensor v0.8.0 removed the Tenable runner, so new Tenable
 > integrations are refused, the scheduler is not registered and the web hides
 > Connect/Edit/Coverage, all behind one switch
@@ -107,7 +107,7 @@ port/protocol).
 ## Upload endpoint
 
 Until the live Tenable connector lands, results enter OpenCTEM by uploading a
-`.nessus` export (or a ZIP of them) to `POST /api/v1/findings/import`
+`.nessus` export (or a ZIP of them) to `POST /api/v1/findings/imports`
 ([finding-import.md](finding-import.md)). Settings → Vulnerability scanners
 sends `?min_severity=low` to skip informational results. The upload runs with
 the uploader's rights and is always partial coverage: it never auto-resolves.
@@ -153,7 +153,7 @@ Full design + code-ownership + tenant-isolation in
 [RFC-007 §3.9](../rfcs/RFC-007-license-aware-scan-coverage.md).
 
 Today (Phase 1): on-prem unreachable from the api is already covered by an external
-cron pushing `.nessus` to `POST /findings/import` — no sensor needed yet.
+cron pushing `.nessus` to `POST /findings/imports` — no sensor needed yet.
 
 ### Configuring a Tenable integration (shipped)
 
@@ -213,7 +213,7 @@ a scan zone covering them, as for any other scan.
 
 | Phase | Scope | Status |
 |-------|-------|--------|
-| 1 | `.nessus → CTIS` findings adapter + batch-scoped safety + manual ingest endpoint | **Done** — now the ctis importer + `POST /findings/import` |
+| 1 | `.nessus → CTIS` findings adapter + batch-scoped safety + manual ingest endpoint | **Done** — now the ctis importer + `POST /findings/imports` |
 | 2 | `ScanEngine` connector (Nessus Pro + Tenable.sc) + runner executor | **Done (mock-first)** — sdk-go tenable client/parser, sensor `TenableExecutor`; live-appliance REST verification pending |
 | 3 | Coverage scheduler (rotation cursor, dispatch, license headroom) | **Done (unlimited engine)** — planner + dispatcher + scheduler + live controller + `scan_coverage_state` |
 | 3.5 | `.sc` active-IP accounting + reclaim gated on ingest ACK | Planned |

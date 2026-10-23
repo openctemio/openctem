@@ -168,7 +168,11 @@ var dataSurfaceRegistry = map[string]dataSurface{
 	// --- scoped ------------------------------------------------------------------
 	"/api/v1/assets":                                      {classScoped, "route guard on /assets/{id}/**, list, stats and facets scoped (RFC-042 F10)"},
 	"/api/v1/findings":                                    {classScoped, "route guard on /findings/{id}/**, lists and bulk paths scoped"},
-	"POST /api/v1/findings/import":                        {classScoped, "runs with the uploader's rights: ingest Actor (in-scope assets only, no auto-resolve) and VEX documents applied to in-scope findings only"},
+	"POST /api/v1/findings/imports":                       {classScoped, "runs with the uploader's rights: ingest Actor (in-scope assets only, no auto-resolve) and VEX documents applied to in-scope findings only"},
+	"GET /api/v1/findings/imports":                        {classPartial, "receipt counts are organization-wide: only callers with the organization view (unrestricted scope or dashboards:org:view) list others' receipts; everyone else lists only their own uploads (RFC-122 §4)"},
+	"GET /api/v1/findings/imports/{id}":                   {classPartial, "organization-wide counts behind the organization view, else only the caller's own upload (404); by_severity counts only findings in the caller's scope (RFC-122 §4)"},
+	"GET /api/v1/findings/imports/{id}/actions":           {classScoped, "receipt visible as for the detail; rows filtered by the caller's data scope and pentest visibility (RFC-122 §4)"},
+	"GET /api/v1/findings/{id}/imports":                   {classScoped, "datascope.AssertFinding first (404 out of scope); lists receipt ids, kinds and actions, no counts"},
 	"POST /api/v1/findings/$":                             {classScoped, "asset_id through AssertAssetRef (tenant + caller scope), branch bound to the asset (research 21b C1)"},
 	"/api/v1/compliance/findings":                         {classScoped, "route guard on /compliance/findings/{id}/**"},
 	"/api/v1/verification-checklists":                     {classScoped, "route guard on the finding id"},
