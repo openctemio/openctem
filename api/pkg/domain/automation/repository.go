@@ -107,6 +107,11 @@ type RunFilter struct {
 	TriggeredBy *shared.ID
 	StartedFrom *time.Time
 	StartedTo   *time.Time
+	// Mode keeps runs of one mode.
+	Mode *Mode
+	// Scope keeps only runs whose subject (finding or asset) is in this data
+	// scope; runs without a subject are kept. Nil: no scope filter.
+	Scope *shared.DataScope
 }
 
 // RunRepository defines the interface for workflow run persistence.
@@ -238,4 +243,31 @@ type ModeSetter interface {
 // automation (runs that read its draft as they start).
 type DraftRunCounter interface {
 	CountActiveDraftRuns(ctx context.Context, tenantID, workflowID shared.ID) (int, error)
+}
+
+// StepAggregate is the trace of one step summed over many runs.
+type StepAggregate struct {
+	NodeKey string
+	In      int
+	Out     int
+	Skipped map[string]int
+}
+
+// TraceAggregate is the trace of an automation over a window, counted only
+// over runs whose subject the caller may see.
+type TraceAggregate struct {
+	Runs                int
+	Steps               []StepAggregate
+	DeliveriesByChannel map[string]int
+}
+
+// RunScopeReader answers scope questions about runs.
+type RunScopeReader interface {
+	// SubjectVisible reports whether subjectID (a finding or asset of the
+	// tenant) is inside scope.
+	SubjectVisible(ctx context.Context, tenantID, subjectID shared.ID, scope *shared.DataScope) (bool, error)
+	// AggregateTrace sums the steps of the automation's runs of mode since
+	// the time, over runs whose subject is in scope (at most the latest
+	// 5,000 runs).
+	AggregateTrace(ctx context.Context, tenantID, workflowID shared.ID, mode Mode, since time.Time, scope *shared.DataScope) (*TraceAggregate, error)
 }

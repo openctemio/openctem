@@ -237,7 +237,8 @@ func (r *AutomationRunStepRepository) Update(ctx context.Context, nr *automation
 		UPDATE automation_run_steps
 		SET status = $2, error_message = $3, error_code = $4,
 		    input = $5, output = $6, condition_result = $7,
-		    started_at = $8, completed_at = $9
+		    started_at = $8, completed_at = $9,
+		    in_count = $10, out_count = $11, skipped = $12
 		WHERE id = $1
 		  AND status NOT IN ('completed', 'failed', 'skipped')
 	`
@@ -252,6 +253,9 @@ func (r *AutomationRunStepRepository) Update(ctx context.Context, nr *automation
 		nr.ConditionResult,
 		nr.StartedAt,
 		nr.CompletedAt,
+		nr.InCount,
+		nr.OutCount,
+		skippedJSON(nr.Skipped),
 	)
 
 	if err != nil {
@@ -370,10 +374,7 @@ func (r *AutomationRunStepRepository) GetPendingByDependencies(ctx context.Conte
 
 func (r *AutomationRunStepRepository) selectQuery() string {
 	return `
-		SELECT id, automation_run_id, node_id, node_key, node_type,
-		       status, error_message, error_code,
-		       input, output, condition_result,
-		       started_at, completed_at, created_at
+		SELECT ` + automationRunStepColumns + `
 		FROM automation_run_steps
 	`
 }

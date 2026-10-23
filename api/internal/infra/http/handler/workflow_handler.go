@@ -195,6 +195,25 @@ type WorkflowRunResponse struct {
 	ErrorMessage   string            `json:"error_message,omitempty"`
 	NodeRuns       []NodeRunResponse `json:"node_runs,omitempty"`
 	CreatedAt      string            `json:"created_at"`
+	// Deliveries and RetainedUntil are set on GET /workflow-runs/{id}.
+	Deliveries    []WorkflowDeliveryResponse `json:"deliveries,omitempty"`
+	RetainedUntil *string                    `json:"retained_until,omitempty"`
+}
+
+// WorkflowDeliveryResponse is one message or ticket a step sent (live) or
+// would have sent (simulate: never sent).
+type WorkflowDeliveryResponse struct {
+	ID          string         `json:"id"`
+	NodeKey     string         `json:"node_key"`
+	Channel     string         `json:"channel"`
+	Target      string         `json:"target,omitempty"`
+	Mode        string         `json:"mode"`
+	Status      string         `json:"status"`
+	Attempts    int            `json:"attempts"`
+	Payload     map[string]any `json:"payload,omitempty"`
+	ExternalRef string         `json:"external_ref,omitempty"`
+	Error       string         `json:"error,omitempty"`
+	CreatedAt   string         `json:"created_at"`
 }
 
 // NodeRunResponse represents a node run in the response.
@@ -211,6 +230,11 @@ type NodeRunResponse struct {
 	CompletedAt   *string        `json:"completed_at,omitempty"`
 	ErrorMessage  string         `json:"error_message,omitempty"`
 	ErrorCode     string         `json:"error_code,omitempty"`
+	// Trace: subjects that reached the step, that it acted on (or would
+	// act on), and per reason those it left alone.
+	InCount  int            `json:"in_count"`
+	OutCount int            `json:"out_count"`
+	Skipped  map[string]int `json:"skipped,omitempty"`
 }
 
 // --- Workflow Handlers ---
@@ -942,14 +966,25 @@ func (h *WorkflowHandler) GetRun(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	run, err := h.service.GetRun(r.Context(), tenantUUID, runUUID)
+	userUUID, _ := shared.IDFromString(middleware.GetUserID(r.Context()))
+	d, err := h.service.GetRunForCaller(r.Context(), tenantUUID, userUUID, runUUID)
 	if err != nil {
 		h.handleServiceError(w, err)
 		return
 	}
 
+	resp := toWorkflowRunResponse(d.Run)
+	until := d.RetainedUntil.Format("2006-01-02T15:04:05Z07:00")
+	resp.RetainedUntil = &until
+	for _, dl := range d.Deliveries {
+		resp.Deliveries = append(resp.Deliveries, WorkflowDeliveryResponse{
+			ID: dl.ID.String(), NodeKey: dl.NodeKey, Channel: dl.Channel, Target: dl.Target, Mode: string(dl.Mode),
+			Status: string(dl.Status), Attempts: dl.Attempts, Payload: dl.Payload, ExternalRef: dl.ExternalRef,
+			Error: dl.Error, CreatedAt: dl.CreatedAt.Format("2006-01-02T15:04:05Z07:00"),
+		})
+	}
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(toWorkflowRunResponse(run))
+	json.NewEncoder(w).Encode(resp)
 }
 
 // ListRuns handles GET /api/v1/workflow-runs
@@ -983,8 +1018,12 @@ func (h *WorkflowHandler) ListRuns(w http.ResponseWriter, r *http.Request) {
 		s := automation.RunStatus(status)
 		input.Status = &s
 	}
+	if mode := automation.Mode(r.URL.Query().Get("mode")); mode.IsValid() {
+		input.Mode = &mode
+	}
 
-	result, err := h.service.ListRuns(r.Context(), input)
+	userUUID, _ := shared.IDFromString(middleware.GetUserID(r.Context()))
+	result, err := h.service.ListRunsForCaller(r.Context(), userUUID, input)
 	if err != nil {
 		h.handleServiceError(w, err)
 		return
@@ -1195,6 +1234,9 @@ func toNodeRunResponse(nr *automation.NodeRun) NodeRunResponse {
 		Output:        nr.Output,
 		ErrorMessage:  nr.ErrorMessage,
 		ErrorCode:     nr.ErrorCode,
+		InCount:       nr.InCount,
+		OutCount:      nr.OutCount,
+		Skipped:       nr.Skipped,
 	}
 
 	if nr.StartedAt != nil {

@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"strings"
 	"sync"
 	"time"
 
@@ -30,6 +31,11 @@ type WorkflowExecutor struct {
 	runRepo      automationdom.RunRepository
 	nodeRunRepo  automationdom.NodeRunRepository
 	versions     automationdom.VersionRepository
+	// deliveries records what egress steps sent or would have sent.
+	deliveries automationdom.DeliveryRepository
+	// evaluator is the only thing a simulate run's action and notification
+	// steps reach (evaluate.go).
+	evaluator StepEvaluator
 
 	// Action handlers
 	actionHandlers      map[automationdom.ActionType]ActionHandler
@@ -120,6 +126,22 @@ func WithExecutorAuditService(svc *auditapp.AuditService) WorkflowExecutorOption
 func WithExecutorStepAuthorizer(a StepAuthorizer) WorkflowExecutorOption {
 	return func(e *WorkflowExecutor) {
 		e.authorizer = a
+	}
+}
+
+// WithExecutorNotificationHandler sets the handler live notification steps
+// send through (the default is built from the outbox service).
+func WithExecutorNotificationHandler(h NotificationHandler) WorkflowExecutorOption {
+	return func(e *WorkflowExecutor) {
+		e.notificationHandler = h
+	}
+}
+
+// WithExecutorDeliveries sets where egress steps record what they sent or
+// would have sent.
+func WithExecutorDeliveries(r automationdom.DeliveryRepository) WorkflowExecutorOption {
+	return func(e *WorkflowExecutor) {
+		e.deliveries = r
 	}
 }
 
@@ -319,7 +341,28 @@ type ExecutionContext struct {
 	Context           map[string]any // Shared context across nodes
 	CompletedNodeKeys map[string]bool
 	NodeRunsByKey     map[string]*automationdom.NodeRun
-	mu                sync.RWMutex
+	// traces holds the trace a step set while it ran (keyed by node key).
+	traces map[string]automationdom.StepTrace
+	mu     sync.RWMutex
+}
+
+// setTrace records the trace of the step nodeKey.
+func (ec *ExecutionContext) setTrace(nodeKey string, t automationdom.StepTrace) {
+	ec.mu.Lock()
+	defer ec.mu.Unlock()
+	if ec.traces == nil {
+		ec.traces = map[string]automationdom.StepTrace{}
+	}
+	ec.traces[nodeKey] = t
+}
+
+// takeTrace returns and forgets the trace of the step nodeKey.
+func (ec *ExecutionContext) takeTrace(nodeKey string) (automationdom.StepTrace, bool) {
+	ec.mu.Lock()
+	defer ec.mu.Unlock()
+	t, ok := ec.traces[nodeKey]
+	delete(ec.traces, nodeKey)
+	return t, ok
 }
 
 // SetContextValue sets a value in the execution context.
@@ -556,14 +599,26 @@ func (e *WorkflowExecutor) executeNode(ctx context.Context, execCtx *ExecutionCo
 	cancelStep()
 
 	// Update node run result
+	trace, traced := execCtx.takeTrace(node.NodeKey)
 	if execErr != nil {
 		code := "EXECUTION_ERROR"
 		if IsRunNotAuthorized(execErr) {
 			code = ErrCodeRunNotAuthorized
 		}
+		if !traced {
+			trace = automationdom.StepTrace{In: 1}
+			if code == ErrCodeRunNotAuthorized {
+				trace.Skip(automationdom.SkipNotAuthorized, 1)
+			}
+		}
+		nodeRun.SetTrace(trace)
 		nodeRun.Fail(execErr.Error(), code)
 		e.updateRunStats(execCtx, false)
 	} else {
+		if !traced {
+			trace = automationdom.StepTrace{In: 1, Out: 1}
+		}
+		nodeRun.SetTrace(trace)
 		nodeRun.Complete(output)
 		execCtx.MarkNodeCompleted(node.NodeKey)
 		e.updateRunStats(execCtx, true)
@@ -593,6 +648,9 @@ func (e *WorkflowExecutor) skipNode(ctx context.Context, execCtx *ExecutionConte
 		return nil
 	}
 
+	var t automationdom.StepTrace
+	t.Skip(automationdom.SkipBranchNotTaken, 1)
+	nodeRun.SetTrace(t)
 	nodeRun.Skip(reason)
 	execCtx.MarkNodeCompleted(node.NodeKey)
 
@@ -651,6 +709,13 @@ func (e *WorkflowExecutor) executeConditionNode(ctx context.Context, execCtx *Ex
 	}
 
 	nodeRun.SetConditionResult(result)
+	t := automationdom.StepTrace{In: 1}
+	if result {
+		t.Out = 1
+	} else {
+		t.Skip(automationdom.SkipConditionFalse, 1)
+	}
+	execCtx.setTrace(node.NodeKey, t)
 
 	return map[string]any{
 		"result":     result,
@@ -668,15 +733,6 @@ func (e *WorkflowExecutor) executeActionNode(ctx context.Context, execCtx *Execu
 		return nil, fmt.Errorf("action type %s is not supported; edit the automation to remove it", actionType)
 	}
 
-	// Look up the action handler
-	e.mu.RLock()
-	handler, ok := e.actionHandlers[actionType]
-	e.mu.RUnlock()
-
-	if !ok {
-		return nil, fmt.Errorf("no handler registered for action type: %s", actionType)
-	}
-
 	stepCtx, err := e.authorizeStep(ctx, execCtx, node.Config, node.Config.ActionConfig)
 	if err != nil {
 		return nil, err
@@ -685,7 +741,16 @@ func (e *WorkflowExecutor) executeActionNode(ctx context.Context, execCtx *Execu
 	// A simulate run never calls an action handler: it records what the step
 	// would do.
 	if execCtx.Run.Mode == automationdom.ModeSimulate {
-		return simulatedOutput(node), nil
+		return e.simulateStep(stepCtx, execCtx, node)
+	}
+
+	// Look up the action handler
+	e.mu.RLock()
+	handler, ok := e.actionHandlers[actionType]
+	e.mu.RUnlock()
+
+	if !ok {
+		return nil, fmt.Errorf("no handler registered for action type: %s", actionType)
 	}
 
 	// Build action input
@@ -704,7 +769,11 @@ func (e *WorkflowExecutor) executeActionNode(ctx context.Context, execCtx *Execu
 	// Execute the action as the run principal. The events the step causes
 	// (a status change, a scan) carry the run as their cause, so they cannot
 	// start a loop (loop_guard.go).
-	return handler.Execute(WithAutomationCause(stepCtx, stepCause(execCtx.Run, node.NodeKey)), input)
+	out, err := handler.Execute(WithAutomationCause(stepCtx, stepCause(execCtx.Run, node.NodeKey)), input)
+	if actionType == automationdom.ActionTypeCreateTicket || actionType == automationdom.ActionTypeUpdateTicket {
+		e.recordLiveTicket(ctx, execCtx, node, out, err)
+	}
+	return out, err
 }
 
 // authorizeStep checks that the run's principal may run a step with this
@@ -733,9 +802,6 @@ func (e *WorkflowExecutor) authorizeStep(ctx context.Context, execCtx *Execution
 
 // executeNotificationNode executes a notification node.
 func (e *WorkflowExecutor) executeNotificationNode(ctx context.Context, execCtx *ExecutionContext, node *automationdom.Node) (map[string]any, error) {
-	if e.notificationHandler == nil {
-		return nil, fmt.Errorf("notification handler not configured")
-	}
 	stepCtx, err := e.authorizeStep(ctx, execCtx, node.Config, nil)
 	if err != nil {
 		return nil, err
@@ -743,7 +809,10 @@ func (e *WorkflowExecutor) executeNotificationNode(ctx context.Context, execCtx 
 
 	// A simulate run never sends: it records what the step would send.
 	if execCtx.Run.Mode == automationdom.ModeSimulate {
-		return simulatedOutput(node), nil
+		return e.simulateStep(stepCtx, execCtx, node)
+	}
+	if e.notificationHandler == nil {
+		return nil, fmt.Errorf("notification handler not configured")
 	}
 
 	// Build notification input
@@ -758,11 +827,81 @@ func (e *WorkflowExecutor) executeNotificationNode(ctx context.Context, execCtx 
 		Context:            e.buildNodeInput(execCtx, node),
 	}
 
-	return e.notificationHandler.Send(WithAutomationCause(stepCtx, stepCause(execCtx.Run, node.NodeKey)), input)
+	out, sendErr := e.notificationHandler.Send(WithAutomationCause(stepCtx, stepCause(execCtx.Run, node.NodeKey)), input)
+	d := notificationDelivery(input)
+	d.Status, d.Attempts = automationdom.DeliverySent, 1
+	if sendErr != nil {
+		d.Status, d.Error = automationdom.DeliveryFailed, sendErr.Error()
+	}
+	e.recordDelivery(ctx, execCtx, node, d)
+	return out, sendErr
+}
+
+// simulateStep evaluates a step of a simulate run: it records what the
+// step would do (its trace and any delivery, mode simulate), and never calls
+// a handler.
+func (e *WorkflowExecutor) simulateStep(ctx context.Context, execCtx *ExecutionContext, node *automationdom.Node) (map[string]any, error) {
+	if e.evaluator == nil {
+		return simulatedOutput(node), nil
+	}
+	eff, err := e.evaluator.Evaluate(ctx, &EvalInput{
+		TenantID: execCtx.Run.TenantID, WorkflowID: execCtx.Workflow.ID, RunID: execCtx.Run.ID,
+		NodeKey: node.NodeKey, Config: node.Config, TriggerData: execCtx.TriggerData,
+	})
+	if err != nil {
+		return nil, err
+	}
+	execCtx.setTrace(node.NodeKey, eff.Trace)
+	if eff.Delivery != nil {
+		eff.Delivery.Status = automationdom.DeliverySimulated
+		e.recordDelivery(ctx, execCtx, node, eff.Delivery)
+	}
+	return eff.Output, nil
+}
+
+// recordLiveTicket records the delivery of a live ticket step.
+func (e *WorkflowExecutor) recordLiveTicket(ctx context.Context, execCtx *ExecutionContext, node *automationdom.Node, out map[string]any, err error) {
+	provider, _ := out["provider"].(string)
+	if provider == "" {
+		provider, _ = node.Config.ActionConfig["provider"].(string)
+	}
+	if provider == "" {
+		provider = "jira"
+	}
+	findingID, _ := out["finding_id"].(string)
+	d := &automationdom.Delivery{Channel: strings.ToLower(provider), Attempts: 1, Status: automationdom.DeliverySent,
+		Payload: map[string]any{"provider": provider, "finding_id": findingID}}
+	if project, ok := node.Config.ActionConfig["project_key"].(string); ok {
+		d.Target = project
+	}
+	switch {
+	case err != nil:
+		d.Status, d.Error = automationdom.DeliveryFailed, err.Error()
+	case out["held"] == true:
+		d.Status = automationdom.DeliveryHeld
+		d.Payload["held_reason"], _ = out["held_reason"].(string)
+	default:
+		d.ExternalRef, _ = out["ticket_key"].(string)
+	}
+	e.recordDelivery(ctx, execCtx, node, d)
+}
+
+// recordDelivery stores d for the step (best effort: a lost record never
+// changes the step's outcome).
+func (e *WorkflowExecutor) recordDelivery(ctx context.Context, execCtx *ExecutionContext, node *automationdom.Node, d *automationdom.Delivery) {
+	if e.deliveries == nil || d == nil {
+		return
+	}
+	d.TenantID, d.RunID, d.NodeKey, d.Mode = execCtx.Run.TenantID, execCtx.Run.ID, node.NodeKey, execCtx.Run.Mode
+	d.IdempotencyKey = execCtx.Run.ID.String() + ":" + node.NodeKey
+	if err := e.deliveries.Record(context.WithoutCancel(ctx), d); err != nil {
+		e.logger.Warn("failed to record an automation delivery", "run_id", execCtx.Run.ID, "node_key", node.NodeKey, "error", err)
+	}
 }
 
 // simulatedOutput is the output of an action or notification step of a
-// simulate run: what it would have done, nothing done.
+// simulate run when no evaluator is configured: what it would have done,
+// nothing done.
 func simulatedOutput(node *automationdom.Node) map[string]any {
 	out := map[string]any{"simulated": true}
 	if node.Config.ActionType != "" {
