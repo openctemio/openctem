@@ -6,7 +6,7 @@
  * positive, accepted risk, duplicate) is never counted as fixed.
  */
 
-export type FindingLens = 'open' | 'fixed' | 'dispositioned' | 'all'
+export type FindingLens = 'open' | 'fixed' | 'dispositioned' | 'closed' | 'all'
 
 export const DEFAULT_FINDING_LENS: FindingLens = 'open'
 
@@ -22,6 +22,11 @@ export const FINDING_LENSES: { value: FindingLens; label: string; description: s
     value: 'dispositioned',
     label: 'Dispositioned',
     description: 'False positives, accepted risks and duplicates (never counted as fixed)',
+  },
+  {
+    value: 'closed',
+    label: 'Closed',
+    description: 'Fixed and dispositioned together',
   },
   { value: 'all', label: 'All', description: 'Every finding' },
 ]
