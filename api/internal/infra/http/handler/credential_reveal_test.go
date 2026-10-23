@@ -152,3 +152,19 @@ func TestExposureResponse_NeverCarriesTheSecret(t *testing.T) {
 		}
 	}
 }
+
+func TestExposureResponse_MasksToolReportedSecretKeys(t *testing.T) {
+	now := time.Now().UTC()
+	ev := exposure.Reconstitute(shared.NewID(), shared.NewID(), nil,
+		exposure.EventTypeCredentialLeaked, exposure.SeverityHigh, exposure.StateActive,
+		"scan finding", "", map[string]any{"password": "hunter2-raw", "nested": map[string]any{"token": "tok-raw"}, "host": "h"},
+		"fp3", "scanner", now, now, nil, nil, "", now, now)
+	raw, _ := json.Marshal(toExposureResponse(ev))
+	s := string(raw)
+	if strings.Contains(s, "hunter2-raw") || strings.Contains(s, "tok-raw") {
+		t.Fatalf("exposure response leaks a details secret: %s", s)
+	}
+	if !strings.Contains(s, `"password":"********"`) || !strings.Contains(s, `"host":"h"`) {
+		t.Fatalf("unexpected details: %s", s)
+	}
+}
