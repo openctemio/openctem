@@ -26,6 +26,6 @@ func programSyncAuditor(svc *auditapp.AuditService) bpapp.SyncAuditor {
 		for k, v := range meta {
 			event = event.WithMetadata(k, v)
 		}
-		_ = svc.LogEvent(ctx, actx, event)
+		auditapp.RecordOrWarn(ctx, nil, svc, actx, event)
 	}
 }
