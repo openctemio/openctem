@@ -19,5 +19,14 @@
   "labels.due.today": "Due today",
   "labels.due.overdue": "Overdue {days} d",
   "labels.tag.remove": "Remove {label}",
-  "labels.more": "+{count} more"
+  "labels.more": "+{count} more",
+  "labels.status.active": "Active",
+  "labels.status.stale": "Stale",
+  "labels.status.inactive": "Inactive",
+  "labels.status.archived": "Archived",
+  "labels.status.pending": "Pending",
+  "labels.status.completed": "Completed",
+  "labels.status.failed": "Failed",
+  "labels.pendingSetup.label": "Pending setup",
+  "labels.pendingSetup.hint": "Account created by an administrator; the user has not set a password yet"
 }

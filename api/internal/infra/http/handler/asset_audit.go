@@ -27,7 +27,7 @@ func (h *AssetHandler) auditAsset(r *http.Request, action auditdom.Action, asset
 	for k, v := range metadata {
 		event = event.WithMetadata(k, v)
 	}
-	_ = h.auditService.LogEvent(r.Context(), h.buildAuditContext(r), event)
+	auditapp.RecordOrWarn(r.Context(), h.logger, h.auditService, h.buildAuditContext(r), event)
 }
 
 // assetChangedFields names the fields that differ between two versions of an

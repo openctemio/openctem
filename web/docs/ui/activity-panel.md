@@ -35,14 +35,14 @@ visible from every tab.
 
 ### URL and keyboard
 
-| What                   | How                                                                                                                        |
-| ---------------------- | -------------------------------------------------------------------------------------------------------------------------- |
-| Link to the open panel | `?activity=open` (pages). Drawers keep the state in memory so closing the drawer leaves no parameter.                      |
-| Old links              | `?tab=activity` opens the panel and drops `tab` (finding and repository pages).                                            |
-| Open                   | Click the summary; `C` (outside text fields) opens it on the comment box; in the findings drawer `⌘/Ctrl+C` does the same. |
-| Close                  | `Esc`, the close button, or a click outside. Focus returns to the summary.                                                 |
-| Send                   | `⌘/Ctrl+Enter` in the comment box.                                                                                         |
-| Filter                 | All · Comments · Changes, a radio group (arrow keys move between them).                                                    |
+| What                   | How                                                                                                                                              |
+| ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Link to the open panel | `?activity=open` (pages). Drawers keep the state in memory so closing the drawer leaves no parameter.                                            |
+| Old links              | `?tab=activity` opens the panel and drops `tab` (finding and repository pages).                                                                  |
+| Open                   | Click the summary; `C` (outside text fields) opens it on the comment box, in the findings drawer too. The platform copy chord is never captured. |
+| Close                  | `Esc`, the close button, or a click outside. Focus returns to the summary.                                                                       |
+| Send                   | `⌘/Ctrl+Enter` in the comment box.                                                                                                               |
+| Filter                 | All · Comments · Changes, a radio group (arrow keys move between them).                                                                          |
 
 ## Patterns the panel follows
 
