@@ -9,6 +9,7 @@ import { ShieldAlert, ShieldCheck, ShieldHalf, Shield } from 'lucide-react'
 
 import { Badge } from '@/components/ui/badge'
 import { useTranslation } from '@/context/i18n-provider'
+import { SEVERITY_BADGE_SOFT } from '@/lib/severity-colors'
 import { cn } from '@/lib/utils'
 
 import type { RoleRisk, RoleSummary } from '../types/role.types'
@@ -16,8 +17,8 @@ import type { RoleRisk, RoleSummary } from '../types/role.types'
 const RISK_STYLE: Record<RoleRisk, string> = {
   low: 'border-border text-muted-foreground',
   medium: 'border-primary/30 text-primary',
-  high: 'border-warning/50 bg-warning/10 text-warning',
-  critical: 'border-destructive/50 bg-destructive/10 text-destructive',
+  high: SEVERITY_BADGE_SOFT.high,
+  critical: SEVERITY_BADGE_SOFT.critical,
 }
 
 const RISK_ICON: Record<RoleRisk, typeof Shield> = {

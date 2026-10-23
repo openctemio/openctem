@@ -319,7 +319,8 @@ function FilterSelect({
   options: [string, string][]
 }) {
   return (
-    <div className="w-40 space-y-1">
+    // Grows to its longest option ("Open (not closed)" was cut off at a fixed w-40).
+    <div className="min-w-40 space-y-1">
       <Label htmlFor={id} className="text-xs text-muted-foreground">
         {label}
       </Label>

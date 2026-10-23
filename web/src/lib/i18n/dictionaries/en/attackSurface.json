@@ -1,7 +1,6 @@
 {
   "attackSurface.changes.added": "Added: {values}",
   "attackSurface.changes.clearWindow": "Back to recent changes",
-  "attackSurface.changes.description": "Hosts, ports, certificates, DNS records, technologies and exposures that changed on your external attack surface. Only assets you can see are listed.",
   "attackSurface.changes.empty": "No host, port, certificate, DNS, technology or exposure change in this window.",
   "attackSurface.changes.emptyFiltered": "No change of the selected kinds in this window.",
   "attackSurface.changes.emptyTitle": "Nothing changed",
@@ -91,7 +90,6 @@
   "attackSurface.queue.emptyReviewDescription": "Every discovered name has a decision, or none has been found yet.",
   "attackSurface.queue.errorTitle": "the attack surface items",
   "attackSurface.queue.everyReason": "Every reason",
-  "attackSurface.queue.loading": "Loading…",
   "attackSurface.queue.moreEvidence": "+{count} more",
   "attackSurface.queue.noEvidence": "No evidence",
   "attackSurface.queue.notFound": "{count} not changed: no longer available to you",
