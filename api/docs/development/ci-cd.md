@@ -13,7 +13,7 @@ truth: this page describes them as of the merge-queue routing (#730, 2026-10-02)
 | Web CI (`web-ci.yml`) | PR / push to `main`, `develop`; merge queue | `API contract` (generates the contract files; for an API change compares them with the base and reports the difference), `API contract report` (the pull request comment), `Web checks` (type-check against the generated contract, ESLint, Prettier, palette drift) and `Web tests` (Vitest in three parallel shards); `next build` (push only) | **Web CI OK** |
 | CodeQL (`codeql.yml`) | PR / push; merge queue; weekly (Mon 00:00 UTC) | One matrix over the languages: Go (built inside `api/`) and JavaScript/TypeScript (`web/`), one category per language. PR and merge queue: only the changed language(s). Push to `develop`/`main` and weekly: both, so each branch keeps a fresh baseline per category | **CodeQL OK** |
 | All-in-one CI (`allinone-ci.yml`) | PR / push; merge queue | Builds `openctem-api`, `openctem-web` and the all-in-one `openctem` image exactly as a release does, smoke-tests them (arch, ELF, executes) and runs the all-in-one in both gateway modes against Postgres + Redis. Nothing is pushed. Merge queue and pushes only (see [Tiers](#tiers)). | **All-in-one OK** |
-| Repository Security (`repo-security.yml`) | PR / push; merge queue; weekly | Betterleaks (root `.betterleaks.toml`, `.gitleaksignore`): a PR or queued group scans only its own commits (`base..head`); a push to `develop`/`main` and the weekly run scan the full history. Customer identifiers: fixed strings from the `CUSTOMER_DENYLIST` repository secret (never committed; empty = skipped with a notice) and the live LAN range outside tests, over every tracked file, printing only file:line. Commit emails: a PR or queued group fails when one of its commits has an address from the `COMMIT_EMAIL_DENYLIST` repository secret (case-insensitive fixed strings such as a domain; never committed; empty = skipped with a notice) as author, committer or `Co-authored-by` trailer, printing only the commit and the field; outside contributors are covered by the CLA check. **Workflow Lint**: actionlint over the workflows, action pins, and the self-tests of the CI scripts (change routing, CodeQL alert gate, security gate and its CODEOWNERS mirror), plus the check that `api/` and `web/` depend on no sensor module or SDK. **Dependency Review** (PR only) | **Secret Scanning**, **Workflow Lint** |
+| Repository Security (`repo-security.yml`) | PR / push; merge queue; weekly | Betterleaks (root `.betterleaks.toml`, `.gitleaksignore`): a PR or queued group scans only its own commits (`base..head`); a push to `develop`/`main` and the weekly run scan the full history. Customer identifiers: fixed strings from the `CUSTOMER_DENYLIST` repository secret (never committed; empty = skipped with a notice) and the live LAN range outside tests, over every tracked file, printing only file:line. Commit emails: a PR or queued group fails when one of its commits has an address from the `COMMIT_EMAIL_DENYLIST` repository secret (case-insensitive fixed strings such as a domain; never committed; empty = skipped with a notice) as author, committer or `Co-authored-by` trailer, printing only the commit and the field; outside contributors are covered by the CLA check. **Workflow Lint**: actionlint and zizmor (pinned; suppressions are per line with a reason, inline or in `.github/zizmor.yml`, never per file) over the workflows, action pins, and the self-tests of the CI scripts (change routing, CodeQL alert gate, security gate and its CODEOWNERS mirror), plus the check that `api/` and `web/` depend on no sensor module or SDK. **Dependency Review** (PR only) | **Secret Scanning**, **Workflow Lint** |
 | Docs check (`docs-check.yml`) | PR / push to `main`, `develop`; merge queue | One job, **Docs check**: `scripts/docs_check.py` (Markdown is English, has no private addresses or internal host names, relative links and anchors resolve), the RFC index check, then `scripts/check_docs_links.py` checks every `docs.openctem.io` link in code (page and `#anchor`, against a checkout of `openctemio/docs` `main`) and every `github.com/openctemio/<repo>/blob\|tree/<ref>/<path>#anchor` link (this repository from the checkout, others fetched shallowly); tests are skipped, `docs-links: ignore` skips a line. Locally: `python3 scripts/check_docs_links.py --docs ../docs --fetch-other .` | **Docs check** |
 | API Security (`api-security.yml`) | PR / push (`paths:` api side, see below); weekly | One job for govulncheck + Trivy (fs) + license check; Semgrep; Snyk (only if `vars.ENABLE_SNYK == 'true'`), license check, image scan (only for `main` / weekly) | — |
 | Web Security (`web-security.yml`) | PR / push (`paths:` web side, see below); weekly | One job for npm audit + Trivy (fs) + ESLint security rules; Snyk (opt-in as above), image scan (only for `main` / weekly) | — |
@@ -22,6 +22,7 @@ truth: this page describes them as of the merge-queue routing (#730, 2026-10-02)
 | Release (`release.yml`) | Tag `v*`; dispatch on a tag | GitHub Release with the release archives (via Release archives), their SBOMs, the signed `checksums-sha256.txt`, build provenance, and the image pull lines | — |
 | Release archives (`release-dist.yml`) | Called by Release; PRs touching its inputs (`paths:`) | Builds the archives with `.github/scripts/release/build-dist.sh`; on a PR builds linux/amd64 only and runs `smoke-dist.sh` (versions, `-check-config` of the example settings, `systemd-analyze verify`/`security`, gateway Caddyfile, web/console health, the image kit's Dockerfiles), publishing nothing | — |
 | Tool Pin Freshness (`tool-pins.yml`) | Mondays 02:00 UTC (from `main`), manual | Compares the inline tool pins in `.github/tool-pins.tsv` with the newest stable releases and opens, updates or closes one issue "Tool pins to bump" (see [Tool pin freshness](#tool-pin-freshness)); `issues: write` only, no pull request | — |
+| PR Release-Note Labels (`pr-labels.yml`) | PR (opened, pushed, reopened); same-repository PRs only | Adds the `notes:*` labels by the files and diffs the PR changes (see [Release-note labels](#release-note-labels)); not required, never fails a PR | — |
 | Release Train (`release-train.yml`) | Manual (a maintainer presses Run) | Proposes the version from conventional commits, picks the newest develop commit with every required check green, builds `release/vX.Y.Z` (with one commit setting `versions.yaml` `platform.release` to `vX.Y.Z`), opens and queues the release PR (see [Releases](#releases)) | — |
 | Release Publish (`release-publish.yml`) | A `release/v*` PR merged into `main`; manual | Tags `vX.Y.Z` (only if `main`'s tree is the release branch's and its `versions.yaml` says `vX.Y.Z`), starts Docker Publish + Release, opens the develop and helm-charts follow-up PRs, closes the train issue | — |
 | API CI `Detect API changes` step "Changelog fragments" | PR, merge queue, push (also docs-only changes) | `api/scripts/changelog.py check`: fragment format, no entry under Unreleased in `api/CHANGELOG.md`, no committed merge-conflict marker | — |
@@ -318,6 +319,36 @@ pin the script cannot find fails the run instead of passing silently (a renamed
 variable would otherwise turn the check into a check of nothing). The Workflow Lint
 job runs `.github/scripts/tool-pins.test.sh`. Run it by hand with
 `GH_TOKEN=$(gh auth token) python3 .github/scripts/tool-pins.py`.
+### Release-note labels
+
+`pr-labels.yml` runs `.github/scripts/pr-labels.py` on every same-repository pull request and
+adds these labels, so the release notes can show an operator what to read before upgrading:
+
+| Label | Added when the PR |
+|---|---|
+| `notes:migration` | adds or changes a `api/migrations/*.up.sql` |
+| `notes:destructive-migration` | adds a line to a migration that drops a table, column or schema, truncates, renames, or changes a column type (SQL comments are ignored; deleting a migration does not count) |
+| `notes:identity` | changes finding identity or fingerprint code (`api/pkg/domain/vulnerability/identity*.go`, `fingerprint*.go`, `secret_fingerprint*.go`, `api/internal/app/ingest/identity*.go`) or the `github.com/openctemio/ctis` version in `api/go.mod` (tests alone do not count) |
+| `notes:api-contract` | changes a file in `api/internal/infra/http/handler/` or `routes/`, or `api/pkg/sensorproto/` (tests do not count) |
+
+The labeler reads the changed files through the API as data and runs from the base commit, so
+no pull request code runs; a fork pull request gets a read-only token, is skipped, and a
+maintainer adds the labels by hand. Labels are only added, never removed: add one by hand when a
+rule misses a change, remove one by hand when it over-reports. The destructive label is
+informational; the `Migration Safety` check and the `allow-destructive-migration` label still
+decide whether a destructive migration may merge.
+
+The release train groups the changelog fragments by these labels. The plan job runs
+`.github/scripts/release/fragment-labels.py`, which finds the pull request that added each
+fragment and keeps its `notes:*` labels, and `api/scripts/changelog.py preview --labels FILE`
+prints an **Upgrade notes** block ahead of the categories: the section titles of the fragments
+under "Destructive migrations (read before upgrading)", "Database migrations", "Finding identity
+and fingerprint changes" and "API contract changes". The follow-up PR that folds the fragments
+into `api/CHANGELOG.md` does the same: `python3 .github/scripts/release/fragment-labels.py --out
+/tmp/labels.json` (with `GH_TOKEN` set), then `python3 api/scripts/changelog.py release vX.Y.Z
+--labels /tmp/labels.json`. A fragment whose pull request cannot be found is named on stderr and
+only lacks its heading. Without `--labels` the notes are unchanged. The tests are
+`.github/scripts/release/tests/test_release_note_sections.sh`, run by Release Tooling.
 
 ### CI image mirror
 
@@ -376,7 +407,7 @@ GHCR, authenticated with the job's `GITHUB_TOKEN`:
   `GITHUB_TOKEN` is read-only as well.
 - **No `pull_request_target`.** PR workflows run with the PR's read-only token
   and no secrets for fork PRs; nothing checks out a PR head with a write token.
-- Downloaded tools are pinned by version and SHA-256 (betterleaks, actionlint).
+- Downloaded tools are pinned by version and SHA-256 (betterleaks, actionlint, zizmor).
 
 ### Generated contract files
 

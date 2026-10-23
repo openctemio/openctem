@@ -2,6 +2,7 @@ package ingest
 
 import (
 	"context"
+	"errors"
 	"testing"
 
 	"github.com/openctemio/ctis"
@@ -121,4 +122,27 @@ func TestRecordCoverageReceipt(t *testing.T) {
 			t.Fatalf("an ineligible run was recorded: %+v", rec.deltas)
 		}
 	})
+}
+
+type failingReceiptStore struct{}
+
+func (failingReceiptStore) Record(context.Context, *ingestreceipt.Delta) (shared.ID, error) {
+	return shared.ID{}, errors.New("down")
+}
+
+// A receipt that could not be written is flagged on the output, so a
+// command-bound segment can be retried rather than leave its findings off
+// the receipt that decides absence.
+func TestRecordReceipt_FailureIsFlagged(t *testing.T) {
+	svc := &Service{logger: logger.NewNop(), receipts: failingReceiptStore{}}
+	out := &Output{SightedFingerprints: []string{"a"}}
+	svc.recordReceipt(context.Background(), &sensor.Sensor{ID: shared.NewID()}, shared.NewID(), TrustedBinding(), Options{}, &ctis.Report{}, out)
+	if !out.ReceiptFailed || out.ReceiptID != "" {
+		t.Fatalf("ReceiptFailed = %v, ReceiptID = %q; want true and empty", out.ReceiptFailed, out.ReceiptID)
+	}
+	ok := &Output{}
+	(&Service{logger: logger.NewNop(), receipts: &fakeReceipts{}}).recordReceipt(context.Background(), &sensor.Sensor{ID: shared.NewID()}, shared.NewID(), TrustedBinding(), Options{}, &ctis.Report{}, ok)
+	if ok.ReceiptFailed {
+		t.Fatal("a recorded receipt was flagged as failed")
+	}
 }

@@ -151,7 +151,7 @@ func recordCoverageDecision(ctx context.Context, tx *sql.Tx, d *ingestreceipt.De
 
 // resolveReceiptSource returns the receipt key of a source: a command in a
 // scan run counts toward the run's receipt.
-func resolveReceiptSource(ctx context.Context, tx *sql.Tx, tenantID shared.ID, s ingestreceipt.Source) (ingestreceipt.SourceKind, string, error) {
+func resolveReceiptSource(ctx context.Context, tx rowQuerier, tenantID shared.ID, s ingestreceipt.Source) (ingestreceipt.SourceKind, string, error) {
 	if s.CommandID == nil {
 		if !s.Kind.IsValid() || s.Ref == "" || len(s.Ref) > 128 {
 			return "", "", fmt.Errorf("%w: invalid receipt source", shared.ErrValidation)
