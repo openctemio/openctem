@@ -1620,6 +1620,8 @@ func newFindingImportService(cfg *config.Config, repos *Repositories, svc *Servi
 	}
 	if svc.IngestQueue != nil && svc.DataScope != nil {
 		imp.SetQueue(svc.IngestQueue, findingimport.DataScopeResolver(svc.DataScope), audit)
+		// The worker re-reads the uploader's membership before importing.
+		imp.SetMembers(repos.Tenant)
 	}
 	return imp
 }

@@ -19,6 +19,7 @@ import {
   DetailStatGrid,
   DetailTabs,
   type MetricStripItem,
+  CappedNotice,
 } from '@/features/shared'
 import { BUSINESS_CONTEXT_SECTION_TABS } from '@/config/section-tabs'
 import { Can, Permission, useHasPermission, usePermissions } from '@/lib/permissions'
@@ -772,6 +773,7 @@ export default function BusinessUnitsPage() {
             onRowClick={(unit) => openView(unit)}
           />
         </div>
+        <CappedNotice loaded={(apiData?.data ?? []).length} total={apiData?.total ?? 0} />
       </Main>
 
       {/* Create Dialog */}
