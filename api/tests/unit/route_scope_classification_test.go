@@ -169,6 +169,7 @@ var dataSurfaceRegistry = map[string]dataSurface{
 	// --- scoped ------------------------------------------------------------------
 	"/api/v1/assets":                                      {classScoped, "route guard on /assets/{id}/**, list, stats and facets scoped (RFC-042 F10)"},
 	"/api/v1/findings":                                    {classScoped, "route guard on /findings/{id}/**, lists and bulk paths scoped"},
+	"GET /api/v1/findings/{id}/identity":                  {classScoped, "route guard on the finding plus the GET /findings/{id} check; merged duplicates and their tools listed only when in the caller's scope (no count of the others); names only, never a key or value"},
 	"POST /api/v1/findings/imports":                       {classScoped, "runs with the uploader's rights: ingest Actor (in-scope assets only); closes only with coverage=full over asset ids all visible to the uploader (findings:status, findings:bulk_update, step-up); VEX documents applied to in-scope findings only"},
 	"GET /api/v1/findings/imports":                        {classPartial, "receipt counts are organization-wide: only callers with the organization view (unrestricted scope or dashboards:org:view) list others' receipts; everyone else lists only their own uploads (RFC-122 §4)"},
 	"GET /api/v1/findings/imports/{id}":                   {classPartial, "organization-wide counts behind the organization view, else only the caller's own upload (404); by_severity counts only findings in the caller's scope (RFC-122 §4)"},
@@ -323,6 +324,7 @@ func TestDataSurfaceLookup_LongestPrefixWins(t *testing.T) {
 		"GET /api/v1/compliance/frameworks/":                   classConfig,
 		"POST /api/v1/findings/":                               classScoped,
 		"POST /api/v1/findings/search":                         classScoped,
+		"GET /api/v1/findings/{id}/identity":                   classScoped,
 	}
 	// An exact key classifies only its own path.
 	if key, _, _ := lookupDataSurface("POST", "/api/v1/findings/search"); key == "POST /api/v1/findings/$" {
