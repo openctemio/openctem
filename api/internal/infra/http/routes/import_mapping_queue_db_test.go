@@ -24,6 +24,12 @@ import (
 // accept sends an import and leaves it queued (no worker run).
 func (m *mappingHarness) accept(t *testing.T, tenant, query string, data []byte) handler.FindingImportResponse {
 	t.Helper()
+	return m.acceptKeyed(t, tenant, query, data, shared.NewID().String())
+}
+
+// acceptKeyed is accept with a chosen Idempotency-Key ("" sends none).
+func (m *mappingHarness) acceptKeyed(t *testing.T, tenant, query string, data []byte, key string) handler.FindingImportResponse {
+	t.Helper()
 	var buf bytes.Buffer
 	mw := multipart.NewWriter(&buf)
 	w, _ := mw.CreateFormFile("file", "export.csv")
@@ -31,7 +37,9 @@ func (m *mappingHarness) accept(t *testing.T, tenant, query string, data []byte)
 	_ = mw.Close()
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/findings/imports"+query, &buf)
 	req.Header.Set("Content-Type", mw.FormDataContentType())
-	req.Header.Set("Idempotency-Key", shared.NewID().String())
+	if key != "" {
+		req.Header.Set("Idempotency-Key", key)
+	}
 	ctx := context.WithValue(req.Context(), middleware.TenantIDKey, tenant)
 	ctx = context.WithValue(ctx, middleware.UserIDKey, m.userID)
 	ctx = context.WithValue(ctx, middleware.IsAdminKey, true)
@@ -168,5 +176,67 @@ func TestImportMapping_QueuedPinOfAnotherOrganizationIsRefused_DB(t *testing.T) 
 		if n := m.count(t, `SELECT count(*) FROM findings WHERE tenant_id = $1`, tid); n != 0 {
 			t.Fatalf("findings in %s: %d", tid, n)
 		}
+	}
+}
+
+// Without an Idempotency-Key the dedup digest alone decides whether an
+// upload is a repeat. It covers the pinned mapping version, so the same
+// body and query after a new version is published is a new upload whose
+// findings come from that version.
+func TestImportMapping_SameBodyAfterNewVersionIsANewUpload_DB(t *testing.T) {
+	m := newMappingHarness(t)
+	id := m.createMapping(t, m.tenant, "pinned-vm")
+	p := map[string]string{"id": id}
+	csv := []byte("title,severity,host,note\nOpenSSL out of date,High,web-01.example.com,upgrade\n")
+
+	first := m.acceptKeyed(t, m.tenant, "?format=mapping:pinned-vm", csv, "")
+	if again := m.acceptKeyed(t, m.tenant, "?format=mapping:pinned-vm", csv, ""); again.ReceiptID != first.ReceiptID {
+		t.Fatalf("same body, same version must replay the receipt: %s vs %s", again.ReceiptID, first.ReceiptID)
+	}
+	m.drain(t)
+
+	v2 := strings.Replace(dbMappingDoc, `"severity": {"path": "/severity", "lower": true}`, `"severity": {"const": "critical"}`, 1)
+	if rec, _ := m.call(t, m.tenant, m.mh.AddVersion, http.MethodPost, "/", jsonBody(t, map[string]any{"mapping": json.RawMessage(v2)}), p); rec.Code != http.StatusCreated {
+		t.Fatalf("v2: %d %s", rec.Code, rec.Body)
+	}
+	second := m.acceptKeyed(t, m.tenant, "?format=mapping:pinned-vm", csv, "")
+	if second.ReceiptID == first.ReceiptID {
+		t.Fatalf("a new version must be a new receipt: %s vs %s", second.ReceiptID, first.ReceiptID)
+	}
+	m.drain(t)
+	if n := m.count(t, `SELECT count(*) FROM ingest_receipts WHERE tenant_id = $1 AND format = 'mapping:pinned-vm@2'`, m.tenant); n != 1 {
+		t.Fatalf("receipts on @2: %d", n)
+	}
+	if n := m.count(t, `SELECT count(*) FROM findings WHERE tenant_id = $1 AND severity = 'critical'`, m.tenant); n != 1 {
+		t.Fatalf("version 2 findings: %d", n)
+	}
+}
+
+// A dry-run preview through a mapping parses the file with the mapping's
+// resolved format, not the raw "mapping:..." selector.
+func TestImportMapping_DryRunUsesTheResolvedFormat_DB(t *testing.T) {
+	m := newMappingHarness(t)
+	m.createMapping(t, m.tenant, "pinned-vm")
+	var buf bytes.Buffer
+	mw := multipart.NewWriter(&buf)
+	w, _ := mw.CreateFormFile("file", "export.csv")
+	_, _ = w.Write([]byte("title,severity,host,note\nOpenSSL out of date,High,web-01.example.com,upgrade\n"))
+	_ = mw.Close()
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/findings/imports?dry_run=true&format=mapping:pinned-vm", &buf)
+	req.Header.Set("Content-Type", mw.FormDataContentType())
+	ctx := context.WithValue(req.Context(), middleware.TenantIDKey, m.tenant)
+	ctx = context.WithValue(ctx, middleware.UserIDKey, m.userID)
+	ctx = context.WithValue(ctx, middleware.IsAdminKey, true)
+	rec := httptest.NewRecorder()
+	m.h.Import(rec, req.WithContext(ctx))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("dry run: %d %s", rec.Code, rec.Body)
+	}
+	var resp handler.FindingImportResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatal(err)
+	}
+	if len(resp.Files) != 1 || resp.Files[0].Stats.Findings != 1 || resp.Files[0].Format != "mapping:pinned-vm@1" {
+		t.Fatalf("preview: %s", rec.Body)
 	}
 }
