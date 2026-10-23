@@ -589,3 +589,57 @@ func (r *FindingIssueLinkRepository) planTenant(ctx context.Context, tenantID sh
 	rep.Linked, rep.Released, rep.Crowded = len(plan.Make), len(plan.Release), plan.Crowded
 	return rep, nil
 }
+
+// LinkAliasCollisions links, as the same issue, each finding still stored
+// under an advisory key (Former) to the live finding of the same asset that
+// holds the CVE key the feed gives it (Canonical). The earlier-created one
+// is the primary. Never a merge: each keeps its status and triage; a pair a
+// person unlinked stays unlinked.
+func (r *FindingIssueLinkRepository) LinkAliasCollisions(ctx context.Context, tenantID shared.ID, pairs []ingest.AliasCollision) (int, error) {
+	if len(pairs) == 0 {
+		return 0, nil
+	}
+	tenant := tenantID.String()
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return 0, fmt.Errorf("begin alias links: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+	if _, err := tx.ExecContext(ctx, `SELECT pg_advisory_xact_lock(hashtextextended('issue_links:' || $1, 0))`, tenant); err != nil {
+		return 0, fmt.Errorf("lock issue links: %w", err)
+	}
+	made := 0
+	for _, p := range pairs {
+		if p.Former == "" || p.Canonical == "" || p.Former == p.Canonical {
+			continue
+		}
+		var a, b string
+		var aCreated, bCreated time.Time
+		err := tx.QueryRowContext(ctx, `
+			SELECT o.id, o.created_at, c.id, c.created_at
+			FROM findings o JOIN findings c ON c.tenant_id = o.tenant_id AND c.asset_id = o.asset_id AND c.id <> o.id
+			WHERE o.tenant_id = $1 AND o.fingerprint = $2 AND c.fingerprint = $3
+			  AND o.status <> 'duplicate' AND c.status <> 'duplicate'`, tenant, p.Former, p.Canonical).Scan(&a, &aCreated, &b, &bCreated)
+		if errors.Is(err, sql.ErrNoRows) {
+			continue
+		}
+		if err != nil {
+			return made, fmt.Errorf("find alias collision: %w", err)
+		}
+		primary, member := a, b
+		if bCreated.Before(aCreated) || (bCreated.Equal(aCreated) && b < a) {
+			primary, member = b, a
+		}
+		ok, err := makeIssueLink(ctx, tx, tenant, issuelink.Link{PrimaryID: primary, MemberID: member, Rule: issuelink.RuleVulnAlias})
+		if err != nil {
+			return made, err
+		}
+		if ok {
+			made++
+		}
+	}
+	if err := tx.Commit(); err != nil {
+		return made, fmt.Errorf("commit alias links: %w", err)
+	}
+	return made, nil
+}

@@ -2777,6 +2777,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// Cross-rule correlation of DAST findings (research/134 section 12).
 	s.Ingest.SetCorrelationStore(repos.FindingCorrelation)
 	s.Ingest.SetIssueLinkStore(repos.FindingIssueLinks)
+	s.Ingest.SetVulnAliasResolver(repos.CVECorpus)
 
 	// Initialize access control services
 	s.Group = accesscontrol.NewGroupService(repos.Group, log,

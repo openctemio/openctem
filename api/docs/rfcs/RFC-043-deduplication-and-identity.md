@@ -658,5 +658,5 @@ a pair whose signal no longer holds (the code moved) is released.
 |---|---|
 | Same-issue links (`sast_overlap`, `secret_value`), API, dashboard facts, finding page, `refingerprint -links` | implemented |
 | Identity explanation (recipe and field names, reporting tools, merged duplicates) | in progress (P0) |
-| Alias canonicalisation, multi-CVE SCA split, `vuln_alias` links | in progress (P0); the alias map fills once the feed publishes it |
+| Alias canonicalisation, multi-CVE SCA split, `vuln_alias` links, `refingerprint -vuln-aliases` | implemented on the platform; the alias map fills once the feed publishes it (collector change in the feed repository) |
 | CWE parent/child, SAST source-to-sink via data flow, code-to-image, host vs port, IaC policy equivalence, group severity/SLA/ticket offers, technique groups (§7.1) | planned |
