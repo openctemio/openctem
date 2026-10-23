@@ -307,8 +307,12 @@ func (s *Service) Create(ctx context.Context, input CreateInput) (*CreateResult,
 	)
 	if s.audit != nil && input.AuditContext != nil {
 		if err := s.audit.LogAPIKeyCreated(ctx, *input.AuditContext, key.ID().String(), key.Name(), key.Scopes()); err != nil {
-			s.logger.Warn("audit event was not recorded", "action", "api_key.created",
+			// Fail closed: a key whose creation cannot be recorded is revoked
+			// before its plaintext is returned, so it is never usable.
+			s.logger.Error("audit event was not recorded; revoking the new key", "action", "api_key.created",
 				"resource_id", logger.SanitizeValue(key.ID().String()), "error", logger.SanitizeError(err))
+			s.undoCreate(ctx, key)
+			return nil, auditapp.ErrNotRecorded
 		}
 	}
 
@@ -316,6 +320,27 @@ func (s *Service) Create(ctx context.Context, input CreateInput) (*CreateResult,
 		Key:       key,
 		Plaintext: plaintext,
 	}, nil
+}
+
+// undoCreate revokes a key created a moment ago (falling back to deleting it)
+// so it cannot authenticate.
+func (s *Service) undoCreate(ctx context.Context, key *apikeydom.APIKey) {
+	by := key.ID()
+	if cb := key.CreatedBy(); cb != nil {
+		by = *cb
+	} else if u := key.UserID(); u != nil {
+		by = *u
+	}
+	if err := key.Revoke(by); err == nil {
+		uerr := s.repo.Update(ctx, key)
+		if uerr == nil {
+			return
+		}
+		s.logger.Error("could not revoke an unaudited api key", "id", key.ID().String(), "error", logger.SanitizeError(uerr))
+	}
+	if err := s.repo.Delete(ctx, key.ID(), key.TenantID()); err != nil {
+		s.logger.Error("could not delete an unaudited api key", "id", key.ID().String(), "error", logger.SanitizeError(err))
+	}
 }
 
 // Authenticate resolves a raw `oct_` API key to its active key entity, or a

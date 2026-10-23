@@ -33,9 +33,12 @@ func (f *importIngester) Ingest(_ context.Context, _ *sensor.Sensor, in ingest.I
 	return &ingest.Output{FindingsCreated: len(in.Report.Findings), AssetsCreated: len(in.Report.Assets)}, nil
 }
 
-type importVEXRepo struct{ applies int }
+type importVEXRepo struct{ applies, uploads int }
 
-func (f *importVEXRepo) CreateUpload(context.Context, *ingestreceipt.Upload) error { return nil }
+func (f *importVEXRepo) CreateUpload(context.Context, *ingestreceipt.Upload) error {
+	f.uploads++
+	return nil
+}
 
 func (f *importVEXRepo) FinishUpload(context.Context, shared.ID, shared.ID, *ingestreceipt.UploadResult) error {
 	return nil
@@ -61,11 +64,15 @@ func (importScope) AssetsInScope(context.Context, []shared.ID) ([]shared.ID, err
 // memQueue is an in-memory ingest queue: the handler test runs the worker's
 // side itself (process).
 type memQueue struct {
-	parts map[shared.ID][]ingestqueue.OpenedPart
-	jobs  []*ingestjob.Job
+	parts    map[shared.ID][]ingestqueue.OpenedPart
+	jobs     []*ingestjob.Job
+	admitErr error
+	// staged counts StagePart calls (a refused upload must store nothing).
+	staged int
 }
 
 func (q *memQueue) StagePart(_ context.Context, _, jobID shared.ID, part int, name string, body []byte) error {
+	q.staged++
 	if q.parts == nil {
 		q.parts = map[shared.ID][]ingestqueue.OpenedPart{}
 	}
@@ -80,6 +87,7 @@ func (q *memQueue) Discard(_ context.Context, _, jobID shared.ID) { delete(q.par
 func (q *memQueue) Recent(context.Context, shared.ID, ingestjob.Kind, string, []byte, time.Duration) (*ingestjob.Job, error) {
 	return nil, nil
 }
+func (q *memQueue) Admit(context.Context, shared.ID) error { return q.admitErr }
 func (q *memQueue) Get(context.Context, shared.ID, shared.ID, ingestjob.Kind) (*ingestjob.Job, error) {
 	return nil, shared.ErrNotFound
 }
@@ -417,5 +425,27 @@ func TestSafeFileName(t *testing.T) {
 		if got := findingimport.SafeName(in); got != want {
 			t.Errorf("safeFileName(%q) = %q, want %q", in, got, want)
 		}
+	}
+}
+
+// A tenant at its queue limit gets 429 with Retry-After, and the refused
+// upload leaves no receipt and no stored part.
+func TestFindingImport_QueueFullIs429WithoutAReceipt(t *testing.T) {
+	ing := &importIngester{}
+	repo := &importVEXRepo{}
+	svc := findingimport.NewService(ing, repo, repo, ingest.SourceResolveDryRun, logger.NewNop())
+	q := &memQueue{admitErr: &ingestqueue.ErrQueueFull{RetryAfter: 30 * time.Second}}
+	svc.SetQueue(q, func(context.Context, shared.ID, findingimport.Caller) (ingest.ActorScope, ingest.ActorScope, error) {
+		return nil, nil, nil
+	}, nil)
+	h := &FindingImportHandler{svc: svc, logger: logger.NewNop()}
+	h.actorOf = func(context.Context, shared.ID) (ingest.ActorScope, error) { return nil, nil }
+	body, ct := multipartBody(t, part{"file", "scan.nessus", []byte(importNessus)})
+	rec := doImport(t, h, "", body, ct)
+	if rec.Code != http.StatusTooManyRequests || rec.Header().Get("Retry-After") != "30" {
+		t.Fatalf("status %d Retry-After %q: %s", rec.Code, rec.Header().Get("Retry-After"), rec.Body.String())
+	}
+	if repo.uploads != 0 || len(q.jobs) != 0 || len(q.parts) != 0 || q.staged != 0 {
+		t.Fatalf("receipts %d, jobs %d, parts %d (staged %d) after a refusal", repo.uploads, len(q.jobs), len(q.parts), q.staged)
 	}
 }

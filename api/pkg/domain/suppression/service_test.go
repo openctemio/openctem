@@ -150,7 +150,12 @@ func (m *mockRepository) FindPendingByTenant(_ context.Context, tenantID shared.
 	return result, nil
 }
 
-func (m *mockRepository) Delete(_ context.Context, tenantID, ruleID shared.ID) error {
+func (m *mockRepository) Delete(_ context.Context, tenantID, ruleID, deletedBy shared.ID, details map[string]any) error {
+	// The real Delete writes the "deleted" audit row in its transaction: when
+	// that fails, nothing is deleted.
+	if m.auditErr != nil {
+		return m.auditErr
+	}
 	if m.deleteErr != nil {
 		return m.deleteErr
 	}

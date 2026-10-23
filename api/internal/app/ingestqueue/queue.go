@@ -39,7 +39,24 @@ type Queue struct {
 	payloads ingestpayload.Repository
 	sealer   *ingestpayload.Sealer
 	now      func() time.Time
+	// depth and limit are the back-pressure at accept (Admit); limit 0
+	// disables it.
+	depth DepthReader
+	limit int
 }
+
+// Admit runs the back-pressure check for a tenant (see SetBackpressure).
+func (q *Queue) Admit(ctx context.Context, tenantID shared.ID) error {
+	if err := q.ready(); err != nil {
+		return err
+	}
+	return Admit(ctx, q.depth, tenantID, q.limit, q.now())
+}
+
+// SetBackpressure refuses a new upload of a tenant with limit unfinished
+// jobs (429 with Retry-After) and any upload when the depth cannot be read
+// (fail closed). limit <= 0 disables the check.
+func (q *Queue) SetBackpressure(depth DepthReader, limit int) { q.depth, q.limit = depth, limit }
 
 // New builds a queue. Every argument is required: without a sealer nothing
 // is accepted (raw reports are never stored in plaintext).
@@ -103,6 +120,12 @@ func (q *Queue) Commit(ctx context.Context, job *ingestjob.Job, admit func() err
 		}
 		return existing, false, nil
 	case !errors.Is(err, shared.ErrNotFound):
+		q.Discard(context.WithoutCancel(ctx), job.TenantID(), job.ID())
+		return nil, false, err
+	}
+	// A new upload only: a retry of a stored one is answered whatever the
+	// queue holds.
+	if err := Admit(ctx, q.depth, job.TenantID(), q.limit, q.now()); err != nil {
 		q.Discard(context.WithoutCancel(ctx), job.TenantID(), job.ID())
 		return nil, false, err
 	}

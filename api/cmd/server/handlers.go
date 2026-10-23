@@ -1777,6 +1777,8 @@ func newCIRunService(cfg *config.Config, repos *Repositories, svc *Services, log
 	// Uploads are stored and applied by the ingest worker; VEX documents a
 	// run uploads are stored on the run repository's findings, never
 	// closing any (the run token is not a person with findings:approve).
+	// A CI upload with a KEV finding takes the urgent lane.
+	ciSvc.SetKEVChecker(repos.KEV)
 	if svc.ImportMapping != nil {
 		ciSvc.SetMappingResolver(svc.ImportMapping)
 	}
