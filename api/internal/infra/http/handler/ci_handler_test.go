@@ -6,13 +6,9 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
-
-	"github.com/openctemio/ctis"
-	"github.com/openctemio/ctis/importer"
+	"time"
 
 	cirunapp "github.com/openctemio/openctem/api/internal/app/cirun"
-	"github.com/openctemio/openctem/api/internal/app/findingimport"
-	"github.com/openctemio/openctem/api/internal/app/ingest"
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
 	"github.com/openctemio/openctem/api/pkg/domain/cirun"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
@@ -21,8 +17,10 @@ import (
 
 type fakeCIService struct {
 	CIAdminService
-	imported  []*ctis.Report
-	ctisPath  int
+	accepted  [][]byte
+	exports   []bool
+	pins      []*cirunapp.MappingPin
+	acceptErr error
 	run       *cirun.Run
 	exchanged string
 	created   bool
@@ -40,22 +38,18 @@ func (f *fakeCIService) Authenticate(_ context.Context, token string) (*cirun.Ru
 	return nil, cirun.ErrRunNotFound
 }
 
-func (f *fakeCIService) UploadReport(context.Context, *cirun.Run, *ctis.Report) (*ingest.Output, error) {
-	f.ctisPath++
-	return &ingest.Output{}, nil
-}
-
-func (f *fakeCIService) KnownFindings(context.Context, *cirun.Run, *ingest.Output) ([]cirun.KnownFinding, int) {
-	return nil, 0
-}
-
-func (f *fakeCIService) UploadImported(_ context.Context, run *cirun.Run, report *ctis.Report) (*ingest.Output, int, error) {
-	dropped, err := cirunapp.ScopeImported(report, run)
-	if err != nil {
-		return nil, dropped, err
+func (f *fakeCIService) AcceptUpload(_ context.Context, _ *cirun.Run, body []byte, export bool, pin *cirunapp.MappingPin) (*cirunapp.UploadReceipt, error) {
+	if f.acceptErr != nil {
+		return nil, f.acceptErr
 	}
-	f.imported = append(f.imported, report)
-	return &ingest.Output{FindingsCreated: len(report.Findings)}, dropped, nil
+	f.accepted = append(f.accepted, body)
+	f.exports = append(f.exports, export)
+	f.pins = append(f.pins, pin)
+	return &cirunapp.UploadReceipt{UploadID: shared.NewID(), Status: "queued"}, nil
+}
+
+func (f *fakeCIService) UploadStatus(_ context.Context, run *cirun.Run, id shared.ID, _ time.Duration) (*cirunapp.UploadReceipt, error) {
+	return nil, cirun.ErrRunNotFound
 }
 
 func (f *fakeCIService) BaselineDiff(context.Context, *cirun.Run, []string) (*cirunapp.BaselineDiffOutput, error) {
@@ -188,41 +182,6 @@ func TestCIAdminDataScope(t *testing.T) {
 		`{"repository_asset_id":"`+run.RepositoryAssetID.String()+`","commit_sha":"abcdef1","reason":"hotfix for an outage"}`, tenant))
 	if w.Code != http.StatusNotFound || svc.created {
 		t.Fatalf("out of scope override: %d created=%v", w.Code, svc.created)
-	}
-}
-
-type recordingVEX struct{ calls int }
-
-func (v *recordingVEX) ApplyVEXStatements(context.Context, findingimport.Request, []importer.VEXStatement) (*findingimport.VEXSummary, error) {
-	v.calls++
-	return &findingimport.VEXSummary{}, nil
-}
-
-// A VEX document uploaded by a run that already has its verdict is refused,
-// like a findings report: the verdict is final and did not see it.
-func TestCIUploadVEXAfterVerdictRefused(t *testing.T) {
-	const doc = `{"@context":"https://openvex.dev/ns/v0.2.0","@id":"https://example.com/vex/1","author":"Security team",
-"timestamp":"2026-10-01T00:00:00Z","version":1,"statements":[
- {"vulnerability":{"name":"CVE-2021-23337"},"products":[{"@id":"pkg:npm/lodash@4.17.20"}],"status":"not_affected",
-  "justification":"vulnerable_code_not_in_execute_path"}]}`
-	for status, want := range map[string]int{cirun.StatusEvaluated: http.StatusConflict, cirun.StatusRunning: http.StatusCreated} {
-		run := &cirun.Run{ID: shared.NewID(), TenantID: shared.NewID(), RepositoryAssetID: shared.NewID(),
-			Repository: "github.com/acme/api", Status: status}
-		h := NewCIRunnerHandler(&fakeCIService{run: run}, logger.NewNop())
-		vex := &recordingVEX{}
-		h.SetVEXApplier(vex)
-		r := httptest.NewRequest(http.MethodPost, "/api/v1/ci/runs/x/results", strings.NewReader(doc))
-		r.SetPathValue("id", run.ID.String())
-		r.Header.Set("Authorization", "Bearer octci_"+strings.Repeat("a", 43))
-		r.Header.Set("Content-Type", "application/json")
-		w := httptest.NewRecorder()
-		h.AuthenticateRun(http.HandlerFunc(h.UploadResults)).ServeHTTP(w, r)
-		if w.Code != want {
-			t.Fatalf("%s run: %d, want %d: %s", status, w.Code, want, w.Body.String())
-		}
-		if applied := vex.calls > 0; applied != (status == cirun.StatusRunning) {
-			t.Fatalf("%s run: VEX applied = %v", status, applied)
-		}
 	}
 }
 

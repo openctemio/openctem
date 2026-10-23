@@ -19,6 +19,7 @@
 
 import { useMemo, useState } from 'react'
 import { Main } from '@/components/layout'
+import { useRouter } from 'next/navigation'
 import { PageHeader, EmptyState, MetricStrip } from '@/features/shared'
 import { useTenant } from '@/context/tenant-provider'
 import { usePermissions, Permission } from '@/lib/permissions'
@@ -34,7 +35,6 @@ import {
 } from '@/components/ui/select'
 import { cn } from '@/lib/utils'
 import { AreaChart, Area, ResponsiveContainer, XAxis, YAxis, Tooltip } from '@/components/charts'
-import { SEVERITY_CHART_COLORS } from '@/lib/severity-colors'
 import { CHART_TOOLTIP_PROPS, STATE_BADGE_SOFT, type CtemState } from '../lib/ctem-colors'
 import {
   useExecutiveSummary,
@@ -43,6 +43,10 @@ import {
   useRiskTrend,
   useValidationCoverage,
 } from '../hooks/use-ctem-dashboard'
+import { WidgetError } from './widget-error'
+import { PERIOD_OPTIONS, formatPct, formatTickDate, formatCount, type Period } from '../lib/format'
+import { OWNER_COVERAGE_TARGET_PCT } from '../lib/data-quality'
+import { DRILL } from '../lib/drill'
 import { ProgramMetricsSection } from './program-metrics-section'
 import {
   type MetricStatus,
@@ -73,14 +77,6 @@ import { useTranslation } from '@/context/i18n-provider'
 // TYPES / CONSTANTS
 // ============================================
 
-type Period = '30' | '90' | '365'
-
-const PERIOD_OPTIONS: { value: Period; label: string }[] = [
-  { value: '30', label: 'Last 30 days' },
-  { value: '90', label: 'Last 90 days' },
-  { value: '365', label: 'Last year' },
-]
-
 interface OutcomeMetric {
   id: string
   label: string
@@ -91,31 +87,25 @@ interface OutcomeMetric {
   /** The guide's target. */
   target: string
   status: MetricStatus
-  /** Real data source, or the deferral reason for a pending metric. */
-  source: string
   /** Optional extra context (e.g. the P0↔P1 mapping). */
   hint?: string
 }
 
-const STATUS_META: Record<MetricStatus, { label: string; icon: LucideIcon }> = {
-  good: { label: 'On track', icon: CheckCircle2 },
-  warn: { label: 'Watch', icon: AlertTriangle },
-  crit: { label: 'Off track', icon: XCircle },
-  pending: { label: 'Not measured', icon: MinusCircle },
-}
+const STATUS_META: Record<MetricStatus, { labelKey: string; fallback: string; icon: LucideIcon }> =
+  {
+    good: { labelKey: 'insights.status.good', fallback: 'On track', icon: CheckCircle2 },
+    warn: { labelKey: 'insights.status.warn', fallback: 'Watch', icon: AlertTriangle },
+    crit: { labelKey: 'insights.status.crit', fallback: 'Off track', icon: XCircle },
+    pending: { labelKey: 'insights.status.pending', fallback: 'Not measured', icon: MinusCircle },
+  }
 
 // ============================================
 // HELPERS
 // ============================================
 
-function fmtPct(v: number | null | undefined): string | null {
+function fmtPct(v: number | null | undefined, locale: string, n?: number): string | null {
   if (v === null || v === undefined || Number.isNaN(v)) return null
-  return `${v.toFixed(1)}%`
-}
-
-function fmtDays(v: number | null): string | null {
-  if (v === null) return null
-  return `${v.toFixed(1)}d`
+  return formatPct(v, { locale, n })
 }
 
 // A value is coloured only when it is a problem; the status pill carries the
@@ -136,6 +126,7 @@ function statusBadgeClass(status: MetricStatus): string {
 // ============================================
 
 function StatusPill({ status }: { status: MetricStatus }) {
+  const { t } = useTranslation()
   const meta = STATUS_META[status]
   const Icon = meta.icon
   return (
@@ -144,12 +135,13 @@ function StatusPill({ status }: { status: MetricStatus }) {
       className={cn('shrink-0 gap-1 whitespace-nowrap', statusBadgeClass(status))}
     >
       <Icon className="h-3 w-3" />
-      {meta.label}
+      {t(meta.labelKey, meta.fallback)}
     </Badge>
   )
 }
 
 function MetricCard({ metric }: { metric: OutcomeMetric }) {
+  const { t } = useTranslation()
   return (
     <Card className="flex flex-col">
       <CardHeader className="space-y-1 pb-2">
@@ -166,13 +158,13 @@ function MetricCard({ metric }: { metric: OutcomeMetric }) {
           <StatusPill status={metric.status} />
         </div>
         <p className="mt-1 text-xs text-muted-foreground">
-          Target: <span className="font-medium text-foreground">{metric.target}</span>
+          {t('insights.target', 'Target:')}{' '}
+          <span className="font-medium text-foreground">{metric.target}</span>
         </p>
-        {metric.hint && <p className="mt-2 text-[11px] text-muted-foreground">{metric.hint}</p>}
-        <p className="mt-2 border-t pt-2 text-[11px] text-muted-foreground">
-          {metric.status === 'pending' ? 'Source: ' : 'From: '}
-          {metric.source}
-        </p>
+        {/* Where each figure comes from: program-health lib and the API handlers
+            (executive-summary, mttr-analytics, data-quality, risk-trend,
+            validation/coverage); it is not shown to users. */}
+        {metric.hint && <p className="mt-2 text-xs text-muted-foreground">{metric.hint}</p>}
       </CardContent>
     </Card>
   )
@@ -202,7 +194,8 @@ function ScorecardSkeleton() {
 // ============================================
 
 export function ProgramHealthView() {
-  const { t } = useTranslation()
+  const { t, locale } = useTranslation()
+  const router = useRouter()
   const { currentTenant } = useTenant()
   const { can } = usePermissions()
   const [period, setPeriod] = useState<Period>('90')
@@ -210,21 +203,45 @@ export function ProgramHealthView() {
   const tenantId = currentTenant?.id ?? null
   const canRead = can(Permission.DashboardRead)
 
-  const { data: summary, isLoading: summaryLoading } = useExecutiveSummary(tenantId)
-  const { data: mttr, isLoading: mttrLoading } = useMttrAnalytics(tenantId)
-  const { data: quality, isLoading: qualityLoading } = useDataQuality(tenantId)
+  const {
+    data: summary,
+    isLoading: summaryLoading,
+    error: summaryError,
+    mutate: retrySummary,
+  } = useExecutiveSummary(tenantId, Number(period))
+  const {
+    data: mttr,
+    isLoading: mttrLoading,
+    error: mttrError,
+    mutate: retryMttr,
+  } = useMttrAnalytics(tenantId)
+  const {
+    data: quality,
+    isLoading: qualityLoading,
+    error: qualityError,
+    mutate: retryQuality,
+  } = useDataQuality(tenantId)
   const { data: riskTrend, isLoading: trendLoading } = useRiskTrend(tenantId, Number(period))
-  const { data: validation, isLoading: validationLoading } = useValidationCoverage(tenantId)
+  const {
+    data: validation,
+    isLoading: validationLoading,
+    error: validationError,
+    mutate: retryValidation,
+  } = useValidationCoverage(tenantId)
 
   const loading = summaryLoading || mttrLoading || qualityLoading || validationLoading
 
   // The stored history, ending at today's live open count (the same figure
   // as the rest of the page), so the trend never ends on yesterday's snapshot.
-  const openSeries = useMemo(() => {
-    const series = (riskTrend ?? []).map((p) => p.findings_open)
-    if (!summary || summary.scoped) return summary?.scoped ? [] : series
-    return series.length > 0 ? [...series.slice(0, -1), summary.findings_total] : series
+  // The chart plots this same series, so its last point is the "+N open" figure.
+  const openPoints = useMemo(() => {
+    const points = (riskTrend ?? []).map((p) => ({ date: p.date, open: p.findings_open }))
+    if (!summary || summary.scoped) return summary?.scoped ? [] : points
+    return points.length > 0
+      ? [...points.slice(0, -1), { ...points[points.length - 1], open: summary.findings_total }]
+      : points
   }, [riskTrend, summary])
+  const openSeries = useMemo(() => openPoints.map((p) => p.open), [openPoints])
   const trendDelta = exposureTrendDelta(openSeries)
 
   const metrics = useMemo<OutcomeMetric[]>(() => {
@@ -237,10 +254,10 @@ export function ProgramHealthView() {
     // 4/5. Regression (re-open / rediscovery).
     const reopenPct = summary?.regression_rate_pct
     const rediscovered = summary?.regression_count
-    // 8. Confirm-or-downgrade outcome (RFC-011.2 Phase 2a → 2c). `dgValidated`
-    // is the denominator (distinct findings with validation evidence): undefined
-    // = API predates the metric → "not measured"; 0 = wired but empty until
-    // validations run → "0% (no validations yet)", never "not measured".
+    // 8. Confirm-or-downgrade outcome. `dgValidated` is the denominator
+    // (distinct findings with validation evidence): undefined = API predates the
+    // metric, so "not measured"; 0 = wired but empty until validations run, so
+    // "0% (no validations yet)", never "not measured".
     const dgValidated = validation?.downgrade_validated
     const dgDowngraded = validation?.downgraded
     const dgPct = validation?.downgrade_pct
@@ -248,12 +265,19 @@ export function ProgramHealthView() {
       dgValidated === undefined
         ? null
         : dgValidated <= 0
-          ? '0% (no validations yet)'
-          : fmtPct(dgPct)
+          ? t('insights.programHealth.downgradeNone', '0% (no validations yet)')
+          : fmtPct(dgPct, locale)
     const dgHint =
       dgValidated && dgValidated > 0
-        ? `${dgDowngraded ?? 0} of ${dgValidated} validated finding${dgValidated === 1 ? '' : 's'} downgraded.`
+        ? t(
+            dgValidated === 1
+              ? 'insights.programHealth.downgradeHint.one'
+              : 'insights.programHealth.downgradeHint.other',
+            undefined,
+            { downgraded: dgDowngraded ?? 0, count: dgValidated }
+          )
         : undefined
+    const windowLabel = t(`insights.period.window.d${period}`, `${period} days`)
 
     return [
       {
@@ -263,10 +287,9 @@ export function ProgramHealthView() {
           'dashboardMetrics.program.p0FixedMeasures',
           'P0 findings fixed in the period ÷ (P0 open + P0 fixed)'
         ),
-        display: fmtPct(completion),
+        display: fmtPct(completion, locale),
         target: '> 90%',
         status: remediationCompletionState(completion),
-        source: 'executive-summary (p0_resolved_period ÷ p0_open + p0_resolved_period)',
       },
       {
         id: 'remediation-time',
@@ -275,28 +298,34 @@ export function ProgramHealthView() {
           'dashboardMetrics.program.p0MeanTimeMeasures',
           'Mean time from discovery to fix for P0 findings fixed in the last 90 days'
         ),
-        display: fmtDays(p0Days),
-        target: '< 14 days',
+        display:
+          p0Days === null
+            ? null
+            : t('insights.programHealth.days', '{value}d', { value: p0Days.toFixed(1) }),
+        target: t('insights.programHealth.targetDays', '< {value} days', { value: 14 }),
         status: remediationTimeState(p0Days),
-        source: 'mttr-analytics by_priority_class.P0 (mean)',
       },
       {
         id: 'owner-coverage',
-        label: 'Asset owner coverage',
-        measures: 'In-scope assets with an assigned owner',
-        display: fmtPct(quality?.asset_ownership_pct),
-        target: '100%',
+        label: t('insights.ownerCoverage.label', 'Asset owner coverage'),
+        measures: t(
+          'insights.ownerCoverage.measures',
+          'Assets in inventory with an assigned owner'
+        ),
+        display: fmtPct(quality?.asset_ownership_pct, locale),
+        target: t('insights.ownerCoverage.target', '≥ {pct}%', { pct: OWNER_COVERAGE_TARGET_PCT }),
         status: ownerCoverageState(quality?.asset_ownership_pct),
-        source: 'data-quality (asset_ownership_pct)',
       },
       {
         id: 'reopen-rate',
-        label: 'Remediation re-open rate',
-        measures: 'Resolved findings that regressed / reopened',
-        display: fmtPct(reopenPct),
+        label: t('insights.programHealth.reopen', 'Remediation re-open rate'),
+        measures: t(
+          'insights.programHealth.reopenMeasures',
+          'Resolved findings that regressed or reopened'
+        ),
+        display: fmtPct(reopenPct, locale),
         target: '< 20%',
         status: reopenRateState(reopenPct),
-        source: 'executive-summary (regression_rate_pct)',
       },
       {
         id: 'rediscovered',
@@ -305,7 +334,7 @@ export function ProgramHealthView() {
           'dashboardMetrics.program.rediscoveredMeasures',
           'Findings that came back after being fixed, in the period'
         ),
-        display: rediscovered === undefined ? null : String(rediscovered),
+        display: rediscovered === undefined ? null : formatCount(rediscovered, locale),
         target: '→ 0',
         status:
           rediscovered === undefined
@@ -315,7 +344,6 @@ export function ProgramHealthView() {
               : rediscovered >= 1
                 ? 'warn'
                 : 'good',
-        source: 'executive-summary (regression_count — the 000199 regression trigger)',
       },
       {
         id: 'sla-compliance',
@@ -324,52 +352,71 @@ export function ProgramHealthView() {
           'dashboardMetrics.program.slaMeasures',
           'Open findings with an SLA that are not past it'
         ),
-        display: fmtPct(summary?.sla_compliance_pct),
+        display: fmtPct(summary?.sla_compliance_pct, locale, summary?.findings_total),
         target: '≥ 90%',
         status: slaComplianceState(summary?.sla_compliance_pct),
-        source: 'executive-summary (sla_compliance_pct)',
       },
       {
         id: 'exposure-trend',
         label: t('dashboardMetrics.program.exposureTrend', 'Open findings trend'),
         measures: t(
           'dashboardMetrics.program.exposureTrendMeasures',
-          'Open findings now vs {window} ago — should fall after ramp-up',
-          { window: period === '365' ? '1y' : `${period}d` }
+          'Open findings now vs {window} ago, which should fall after ramp-up',
+          { window: windowLabel }
         ),
-        display: trendDelta === null ? null : `${trendDelta > 0 ? '+' : ''}${trendDelta} open`,
-        target: 'Trending down',
+        display:
+          trendDelta === null
+            ? null
+            : t('insights.programHealth.openDelta', '{delta} open', {
+                delta: `${trendDelta > 0 ? '+' : ''}${formatCount(trendDelta, locale)}`,
+              }),
+        target: t('insights.programHealth.trendingDown', 'Trending down'),
         status: exposureTrendState(trendDelta),
-        source: 'risk-trend (findings_open, first) → executive-summary (findings_total, now)',
       },
       {
         id: 'validation-downgrade',
-        label: 'Validation downgrade %',
-        measures: 'Findings de-prioritised after validation proved them non-exploitable',
+        label: t('insights.programHealth.downgrade', 'Validation downgrade %'),
+        measures: t(
+          'insights.programHealth.downgradeMeasures',
+          'Findings de-prioritised after validation proved them non-exploitable'
+        ),
         display: dgDisplay,
         target: '25–40%',
         status: downgradeState(dgPct, dgValidated),
-        source: 'validation/coverage (downgraded ÷ distinct findings with validation evidence)',
         hint: dgHint,
       },
     ]
-  }, [summary, mttr, quality, period, trendDelta, validation, t])
+  }, [summary, mttr, quality, period, trendDelta, validation, t, locale])
 
   if (!canRead) {
     return (
       <Main>
-        <PageHeader title="Program health" />
+        <PageHeader title={t('insights.programHealth.title', 'Program health')} />
         <EmptyState
           className="mt-5"
           icon={Lock}
-          title="You don’t have access to program metrics."
-          description="Dashboard read permission is required to view program health."
+          title={t(
+            'insights.programHealth.noAccessTitle',
+            'You don’t have access to program metrics.'
+          )}
+          description={t(
+            'insights.programHealth.noAccessDescription',
+            'Dashboard read permission is required to view program health.'
+          )}
         />
       </Main>
     )
   }
 
   const hasAnyData = !!summary || !!mttr || !!quality
+  // Every source failed: say so, rather than "no data yet".
+  const allFailed = !hasAnyData && !!(summaryError || mttrError || qualityError || validationError)
+  const retryAll = () => {
+    void retrySummary()
+    void retryMttr()
+    void retryQuality()
+    void retryValidation()
+  }
 
   return (
     <Main>
@@ -381,13 +428,16 @@ export function ProgramHealthView() {
         )}
       >
         <Select value={period} onValueChange={(v) => setPeriod(v as Period)}>
-          <SelectTrigger className="h-9 w-[150px]" aria-label="Period">
+          <SelectTrigger
+            className="h-9 w-[150px]"
+            aria-label={t('insights.period.label', 'Period')}
+          >
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
             {PERIOD_OPTIONS.map((opt) => (
               <SelectItem key={opt.value} value={opt.value}>
-                {opt.label}
+                {t(opt.labelKey, opt.fallback)}
               </SelectItem>
             ))}
           </SelectContent>
@@ -397,11 +447,16 @@ export function ProgramHealthView() {
       <div className="mt-5">
         {loading ? (
           <ScorecardSkeleton />
+        ) : allFailed ? (
+          <WidgetError onRetry={retryAll} className="rounded-lg border py-8" />
         ) : !hasAnyData ? (
           <EmptyState
             icon={ShieldCheck}
-            title="No program data yet"
-            description="Once findings are ingested and remediation begins, outcome metrics populate here."
+            title={t('insights.programHealth.emptyTitle', 'No program data yet')}
+            description={t(
+              'insights.programHealth.emptyDescription',
+              'Once findings are ingested and remediation begins, outcome metrics populate here.'
+            )}
           />
         ) : (
           <>
@@ -416,90 +471,129 @@ export function ProgramHealthView() {
             {/* Exposure-count trend chart (the guide's day-60 down-slope). */}
             <Card className="mt-5">
               <CardHeader className="pb-2">
-                <CardTitle className="text-sm font-medium">Exposure over time</CardTitle>
+                <CardTitle className="text-sm font-medium">
+                  {t('insights.programHealth.chartTitle', 'Exposure over time')}
+                </CardTitle>
                 <CardDescription className="text-xs">
-                  Open findings across the selected window — a healthy program bends this down.
+                  {t(
+                    'insights.programHealth.chartDescription',
+                    'Open findings across the selected window. A healthy program bends this down.'
+                  )}
                 </CardDescription>
               </CardHeader>
               <CardContent>
                 {trendLoading ? (
                   <Skeleton className="h-48 w-full" />
-                ) : openSeries.length > 1 ? (
-                  <div className="h-48 w-full">
-                    <ResponsiveContainer width="100%" height="100%">
-                      <AreaChart data={riskTrend} margin={{ top: 4, right: 8, bottom: 0, left: 0 }}>
-                        <defs>
-                          <linearGradient id="exposureFill" x1="0" y1="0" x2="0" y2="1">
-                            <stop
-                              offset="5%"
-                              stopColor={SEVERITY_CHART_COLORS.info}
-                              stopOpacity={0.35}
-                            />
-                            <stop
-                              offset="95%"
-                              stopColor={SEVERITY_CHART_COLORS.info}
-                              stopOpacity={0}
-                            />
-                          </linearGradient>
-                        </defs>
-                        <XAxis
-                          dataKey="date"
-                          tick={{ fontSize: 11, fill: 'var(--muted-foreground)' }}
-                          tickLine={false}
-                          axisLine={false}
-                          minTickGap={24}
-                        />
-                        <YAxis
-                          tick={{ fontSize: 11, fill: 'var(--muted-foreground)' }}
-                          tickLine={false}
-                          axisLine={false}
-                          width={36}
-                          allowDecimals={false}
-                        />
-                        <Tooltip {...CHART_TOOLTIP_PROPS} />
-                        <Area
-                          type="monotone"
-                          dataKey="findings_open"
-                          name="Open findings"
-                          stroke={SEVERITY_CHART_COLORS.info}
-                          strokeWidth={2}
-                          fill="url(#exposureFill)"
-                        />
-                      </AreaChart>
-                    </ResponsiveContainer>
-                  </div>
+                ) : openPoints.length > 1 ? (
+                  <>
+                    <div className="h-48 w-full" aria-hidden>
+                      <ResponsiveContainer width="100%" height="100%">
+                        <AreaChart
+                          data={openPoints}
+                          margin={{ top: 4, right: 8, bottom: 0, left: 0 }}
+                        >
+                          <XAxis
+                            dataKey="date"
+                            tick={{ fontSize: 11, fill: 'var(--muted-foreground)' }}
+                            tickLine={false}
+                            axisLine={false}
+                            minTickGap={24}
+                            tickFormatter={(d: string) => formatTickDate(d, locale)}
+                          />
+                          <YAxis
+                            tick={{ fontSize: 11, fill: 'var(--muted-foreground)' }}
+                            tickLine={false}
+                            axisLine={false}
+                            width={36}
+                            allowDecimals={false}
+                          />
+                          <Tooltip
+                            {...CHART_TOOLTIP_PROPS}
+                            labelFormatter={(d) => formatTickDate(String(d), locale)}
+                          />
+                          <Area
+                            type="monotone"
+                            dataKey="open"
+                            name={t('insights.programHealth.chartSeries', 'Open findings')}
+                            stroke="var(--viz-cat-1)"
+                            strokeWidth={2}
+                            fill="var(--viz-cat-1)"
+                            fillOpacity={0.15}
+                          />
+                        </AreaChart>
+                      </ResponsiveContainer>
+                    </div>
+                    <table className="sr-only">
+                      <caption>
+                        {t('insights.programHealth.chartTitle', 'Exposure over time')}
+                      </caption>
+                      <thead>
+                        <tr>
+                          <th scope="col">{t('insights.programHealth.colDate', 'Date')}</th>
+                          <th scope="col">
+                            {t('insights.programHealth.chartSeries', 'Open findings')}
+                          </th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {openPoints.map((p) => (
+                          <tr key={p.date}>
+                            <td>{formatTickDate(p.date, locale)}</td>
+                            <td>{formatCount(p.open, locale)}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </>
                 ) : (
                   <EmptyState
                     card={false}
                     className="py-10"
                     icon={Target}
-                    title="Not enough trend history yet"
-                    description="The chart needs at least two risk snapshots."
+                    title={t(
+                      'insights.programHealth.chartEmptyTitle',
+                      'Not enough trend history yet'
+                    )}
+                    description={t(
+                      'insights.programHealth.chartEmptyDescription',
+                      'The chart needs at least two risk snapshots.'
+                    )}
                   />
                 )}
               </CardContent>
             </Card>
 
-            {/* Activity metrics — deliberately de-emphasised: context, not goals. */}
+            {/* Activity metrics: deliberately de-emphasised, context rather than goals. */}
             {summary && (
               <section className="mt-5 space-y-3">
                 <div>
-                  <h2 className="text-base font-semibold">Activity (context, not goals)</h2>
+                  <h2 className="text-base font-semibold">
+                    {t('insights.programHealth.activityTitle', 'Activity (context, not goals)')}
+                  </h2>
                   <p className="text-sm text-muted-foreground">
-                    Volume numbers — useful for context, but not what the program is judged on.
+                    {t(
+                      'insights.programHealth.activityDescription',
+                      'Volume numbers are useful for context, but not what the program is judged on.'
+                    )}
                   </p>
                 </div>
                 <MetricStrip
                   items={[
-                    { key: 'open', label: 'Total open findings', value: summary.findings_total },
+                    {
+                      key: 'open',
+                      label: t('insights.programHealth.totalOpen', 'Total open findings'),
+                      value: summary.findings_total,
+                      // The open-findings list total is this figure.
+                      onClick: () => router.push(DRILL.open),
+                    },
                     {
                       key: 'new',
-                      label: 'New this period',
+                      label: t('insights.programHealth.newPeriod', 'New this period'),
                       value: summary.findings_new_period ?? 0,
                     },
                     {
                       key: 'resolved',
-                      label: 'Resolved this period',
+                      label: t('insights.programHealth.resolvedPeriod', 'Resolved this period'),
                       value: summary.findings_resolved_period,
                     },
                   ]}

@@ -2,17 +2,32 @@
 
 import { useTranslation } from '@/context/i18n-provider'
 import { cn } from '@/lib/utils'
-import { normalizeSeverity, SEVERITY_LABEL_KEYS, SEVERITY_LABELS } from '@/lib/severity'
+import {
+  normalizeSeverity,
+  SEVERITY_LABEL_KEYS,
+  SEVERITY_LABELS,
+  type SeverityLevel,
+} from '@/lib/severity'
 import {
   SEVERITY_BADGE_SOFT,
   SEVERITY_DOT_COLORS,
   SEVERITY_TEXT_COLORS,
 } from '@/lib/severity-colors'
 import { SeverityGlyph } from '@/components/ui/severity-glyph'
+import { useRiskThresholds } from '@/context/risk-scoring-provider'
+import { getRiskLevel } from '@/features/shared/types'
 
 export interface SeverityBadgeProps {
   /** A severity value from the API; `none` shows as info, unknown values as neutral. */
-  severity: string | null | undefined
+  severity?: string | null | undefined
+  /**
+   * A 0-100 risk score instead of a severity: the glyph of its band (from the
+   * organization's thresholds), the number as the text, and the band word with
+   * `showBand`. Minimal and no-risk scores use the info ring.
+   */
+  score?: number | null
+  /** With `score`: add the band word after the number ("92 Critical"). */
+  showBand?: boolean
   /** Override the label (a count, "Informational"). */
   children?: React.ReactNode
   /**
@@ -31,28 +46,47 @@ export interface SeverityBadgeProps {
  */
 export function SeverityBadge({
   severity,
+  score,
+  showBand,
   children,
   variant = 'inline',
   className,
 }: SeverityBadgeProps) {
   const { t } = useTranslation()
-  const level = severity ? normalizeSeverity(severity) : null
-  const label = level
-    ? t(SEVERITY_LABEL_KEYS[level], SEVERITY_LABELS[level])
-    : t('severity.unknown', 'Unknown')
+  const thresholds = useRiskThresholds()
+  const hasScore = typeof score === 'number' && Number.isFinite(score)
+  const band = hasScore ? getRiskLevel(score, thresholds) : null
+  const level: SeverityLevel | null = band
+    ? band.key === 'minimal' || band.key === 'none'
+      ? 'info'
+      : band.key
+    : severity
+      ? (normalizeSeverity(severity) ?? null)
+      : null
+  const bandWord = band ? t(`riskScore.level.${band.key}`, band.label) : null
+  const label = hasScore
+    ? `${Number.isInteger(score) ? score : score.toFixed(1)}${showBand ? ` ${bandWord}` : ''}`
+    : level
+      ? t(SEVERITY_LABEL_KEYS[level], SEVERITY_LABELS[level])
+      : t('severity.unknown', 'Unknown')
+  const aria = hasScore
+    ? `${Number.isInteger(score) ? score : score.toFixed(1)}, ${bandWord}`
+    : undefined
   if (variant === 'inline') {
     return (
       <span
         data-slot="severity-badge"
         data-severity={level ?? 'unknown'}
         data-variant="inline"
+        data-score={hasScore ? score : undefined}
+        aria-label={aria}
         className={cn(
           'inline-flex w-fit shrink-0 items-center gap-1 whitespace-nowrap text-xs font-medium',
           level ? SEVERITY_TEXT_COLORS[level] : 'text-muted-foreground',
           className
         )}
       >
-        <SeverityGlyph level={level} />
+        <SeverityGlyph level={level ?? null} />
         {children ?? label}
       </span>
     )
@@ -62,6 +96,8 @@ export function SeverityBadge({
       data-slot="severity-badge"
       data-severity={level ?? 'unknown'}
       data-variant="soft"
+      data-score={hasScore ? score : undefined}
+      aria-label={aria}
       className={cn(
         'inline-flex w-fit shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full border px-2 py-0.5 text-xs font-medium',
         level ? SEVERITY_BADGE_SOFT[level] : 'border-border bg-muted text-muted-foreground',

@@ -33,7 +33,7 @@ func TestCIRunner_AggregateRun(t *testing.T) {
 	}
 	upload := func(run, token string, f ctis.Finding) int {
 		t.Helper()
-		resp, _ := r.post("/api/v1/ci/runs/"+run+"/results", token, ciReport(repoName, f))
+		resp, _ := r.upload(run, token, ciReport(repoName, f))
 		return resp.StatusCode
 	}
 
@@ -48,10 +48,10 @@ func TestCIRunner_AggregateRun(t *testing.T) {
 		t.Fatalf("jobs did not join one run with their own tokens: %v / %v", a, b)
 	}
 	// The first job's token still works after the second joined.
-	if c := upload(run, tokB, ciFinding("Weak hash", "go.weak-hash", "medium", ctis.FindingTypeVulnerability, "hash.go", 10)); c != http.StatusCreated {
+	if c := upload(run, tokB, ciFinding("Weak hash", "go.weak-hash", "medium", ctis.FindingTypeVulnerability, "hash.go", 10)); c != http.StatusAccepted {
 		t.Fatalf("upload job B: %d", c)
 	}
-	if c := upload(run, tokA, ciFinding("SQL injection", "go.sqli", "high", ctis.FindingTypeVulnerability, "db.go", 7)); c != http.StatusCreated {
+	if c := upload(run, tokA, ciFinding("SQL injection", "go.sqli", "high", ctis.FindingTypeVulnerability, "db.go", 7)); c != http.StatusAccepted {
 		t.Fatalf("upload job A: %d", c)
 	}
 	var tokens, runs int
@@ -145,7 +145,7 @@ func TestCIRunner_AggregateRun(t *testing.T) {
 		t.Fatalf("continuation: %d %v", resp.StatusCode, renewed)
 	}
 	for _, tok := range []string{d["token"].(string), e["token"].(string), renewed["token"].(string)} {
-		if c := upload(run4, tok, ciFinding("X", "x", "low", ctis.FindingTypeVulnerability, "x.go", 1)); c != http.StatusCreated {
+		if c := upload(run4, tok, ciFinding("X", "x", "low", ctis.FindingTypeVulnerability, "x.go", 1)); c != http.StatusAccepted {
 			t.Fatalf("a job token stopped working after a renewal: %d", c)
 		}
 	}
