@@ -298,3 +298,48 @@ describe('sanitiseNode — attributes an author could invent (rehype-attr)', () 
     expect(cb.properties).toEqual({ type: 'checkbox', checked: true, disabled: true })
   })
 })
+
+describe('remote images are click-to-load (no tracking pixel)', () => {
+  it('replaces an other-origin https <img> with a plain link to the URL', () => {
+    const node = element('img', { src: 'https://tracker.example.net/p.gif?u=1', alt: 'x' })
+    sanitiseNode(node)
+    expect(node.tagName).toBe('a')
+    expect(node.properties).toEqual({ href: 'https://tracker.example.net/p.gif?u=1' })
+    expect(node.children).toEqual([
+      { type: 'text', value: 'https://tracker.example.net/p.gif?u=1' },
+    ])
+  })
+
+  it('replaces an http <img> too', () => {
+    const node = element('img', { src: 'http://tracker.example.net/p.gif' })
+    sanitiseNode(node)
+    expect(node.tagName).toBe('a')
+  })
+
+  it('does not keep a protocol-relative source as an image', () => {
+    const node = element('img', { src: '//tracker.example.net/p.gif' })
+    sanitiseNode(node)
+    expect(node.tagName).toBe('img')
+    expect(node.properties?.src).toBe('#')
+  })
+
+  it.each([
+    ['/api/v1/attachments/abc'],
+    ['./a.png'],
+    ['../a.png'],
+    [`${window.location.origin}/a.png`],
+  ])('keeps %s as an image', (src) => {
+    const node = element('img', { src })
+    sanitiseNode(node)
+    expect(node.tagName).toBe('img')
+    expect(node.properties?.src).toBe(src)
+  })
+
+  it('is idempotent', () => {
+    const node = element('img', { src: 'https://tracker.example.net/p.gif' })
+    sanitiseNode(node)
+    sanitiseNode(node)
+    expect(node.tagName).toBe('a')
+    expect(node.properties).toEqual({ href: 'https://tracker.example.net/p.gif' })
+  })
+})

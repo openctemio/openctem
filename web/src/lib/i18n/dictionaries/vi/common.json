@@ -134,5 +134,9 @@
   "common.table.expandGroup": "Mở rộng {label}",
   "common.table.loading": "Đang tải",
   "common.yes": "Có",
-  "common.no": "Không"
+  "common.no": "Không",
+  "common.copyFailed": "Không thể sao chép",
+  "common.opensNewTab": "(mở trong thẻ mới)",
+  "common.unsafeLink": "Liên kết không được mở: URL dùng giao thức không được phép",
+  "common.collapse": "Thu gọn"
 }

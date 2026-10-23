@@ -106,7 +106,7 @@ function RepositoryLink({
   return (
     <SafeExternalLink
       href={link}
-      className="inline-flex items-center gap-1 text-xs text-blue-400 hover:text-blue-300 transition-colors shrink-0"
+      className="inline-flex items-center gap-1 text-xs text-primary hover:text-primary/80 transition-colors shrink-0"
       title={t('findings.evidenceTab.viewInRepo', 'View in repository')}
     >
       {isGitHub ? (
@@ -125,7 +125,7 @@ function RepositoryLink({
 }
 
 export function EvidenceTab({ evidence, finding }: EvidenceTabProps) {
-  const { t } = useTranslation()
+  const { t, locale } = useTranslation()
   const [expandedItems, setExpandedItems] = useState<Set<string>>(new Set())
   // The tool's own proof (request, response, match), masked server-side.
   const { data: evidenceItems } = useFindingEvidenceItems(finding?.id ?? null)
@@ -189,7 +189,7 @@ export function EvidenceTab({ evidence, finding }: EvidenceTabProps) {
   }
 
   const formatDate = (dateString: string) => {
-    return new Date(dateString).toLocaleDateString('en-US', {
+    return new Date(dateString).toLocaleDateString(locale, {
       month: 'short',
       day: 'numeric',
       year: 'numeric',
@@ -409,7 +409,7 @@ export function EvidenceTab({ evidence, finding }: EvidenceTabProps) {
                 {repositoryCodeUrl ? (
                   <SafeExternalLink
                     href={repositoryCodeUrl}
-                    className="text-sm font-mono text-blue-400 hover:text-blue-300 hover:underline break-all inline-flex items-center gap-1"
+                    className="text-sm font-mono text-primary hover:text-primary/80 hover:underline break-all inline-flex items-center gap-1"
                   >
                     {finding.filePath}
                     {finding.startLine && (
@@ -423,7 +423,7 @@ export function EvidenceTab({ evidence, finding }: EvidenceTabProps) {
                     <ExternalLink className="h-3 w-3 shrink-0 ms-1" />
                   </SafeExternalLink>
                 ) : (
-                  <p className="text-sm font-mono text-slate-300 break-all">
+                  <p className="text-sm font-mono break-all">
                     {finding.filePath}
                     {finding.startLine && (
                       <span className="text-muted-foreground">
@@ -542,7 +542,7 @@ export function EvidenceTab({ evidence, finding }: EvidenceTabProps) {
                       </div>
                       <div className="flex items-center gap-2">
                         <Avatar className="h-6 w-6">
-                          <AvatarFallback className="text-[10px]">
+                          <AvatarFallback className="text-xs">
                             {getInitials(item.createdBy.name)}
                           </AvatarFallback>
                         </Avatar>
@@ -596,7 +596,7 @@ export function EvidenceTab({ evidence, finding }: EvidenceTabProps) {
                             </span>
                             <div className="flex-1 min-w-0">
                               {frame.location?.path && (
-                                <span className="text-blue-400 break-all">
+                                <span className="text-primary break-all">
                                   {toDisplayText(frame.location.path)}
                                   {frame.location.start_line && (
                                     <span className="text-muted-foreground">
@@ -670,7 +670,7 @@ export function EvidenceTab({ evidence, finding }: EvidenceTabProps) {
                       </div>
                       <div className="flex-1 min-w-0">
                         {loc.path ? (
-                          <p className="text-sm font-mono text-blue-400 break-all">
+                          <p className="text-sm font-mono text-primary break-all">
                             {toDisplayText(loc.path)}
                             {loc.start_line && (
                               <span className="text-muted-foreground">
@@ -782,7 +782,7 @@ export function EvidenceTab({ evidence, finding }: EvidenceTabProps) {
                             {isExternal ? (
                               <SafeExternalLink
                                 href={uri}
-                                className="text-sm text-blue-400 hover:underline break-all inline-flex items-center gap-1"
+                                className="text-sm text-primary hover:underline break-all inline-flex items-center gap-1"
                               >
                                 {uri}
                                 <ExternalLink className="h-3 w-3 flex-shrink-0" />
