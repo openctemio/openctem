@@ -146,13 +146,17 @@ member may write to but not see. When the request has read every part,
 
 - refuses to close anything (`coverage_note = incomplete`, coverage stays
   `partial`) when a file failed, a finding could not be stored, the parser
-  skipped a record, a file named no tool, or the request was cut short;
+  skipped a record, a file named no tool, a file's receipt write failed, or the
+  request was cut short; also when the receipt passed its action cap and no
+  longer lists everything the upload reported (`AbsenceReceiptByID`);
 - checks the declaration again (`scope_changed`, nothing closed, when an
   asset left the uploader's scope or the organization while the upload ran);
 - per tool: candidates are the open findings on the declared assets last
   seen by that tool, not a branch occurrence, not from a human source (pentest,
   manual, bug bounty, red team), not a leaked secret, and not reported by
-  this upload (their `scan_id` is not the receipt id);
+  this upload: no action row on the upload's receipt (the same rule as a
+  covered scan, see "Absence"). A concurrent upload of the same tool
+  overwrites `scan_id`, so `scan_id` alone does not prove absence;
 - the blinding guard holds a mass close (`held`, nothing closed);
 - otherwise closes them (`resolved`, verification `covered_scan`, timeline
   "An upload that declared full coverage ... no longer reported it"),
