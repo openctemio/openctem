@@ -1,5 +1,6 @@
 @import 'tailwindcss';
 @import 'tw-animate-css';
+@import '../styles/fonts.css';
 @import '../styles/theme.css';
 
 @custom-variant dark (&:is(.dark *));
@@ -21,6 +22,10 @@
     overscroll-behavior: none;
   }
   body {
+    /* Inter: single-storey a (cv11) and open digits (ss01). */
+    font-feature-settings:
+      'cv11' 1,
+      'ss01' 1;
     @apply bg-background text-foreground has-[div[data-variant='inset']]:bg-sidebar min-h-svh w-full;
     overscroll-behavior: none;
   }
