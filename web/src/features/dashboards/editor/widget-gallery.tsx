@@ -20,6 +20,7 @@ import {
   SheetTitle,
 } from '@/components/ui/sheet'
 import { Skeleton } from '@/components/ui/skeleton'
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { useTranslation } from '@/context/i18n-provider'
 import { previewWidget, type WidgetValue } from '../api/widget-data'
 import {
@@ -41,7 +42,7 @@ import { newMetricSpec } from './spec-ops'
 /** Live previews loaded per opening of the gallery (the server limits previews per person). */
 export const PREVIEWS_PER_OPEN = 12
 
-type Tab = 'all' | MetricGroup | 'advanced'
+type Tab = 'all' | MetricGroup
 
 export interface WidgetGalleryProps {
   open: boolean
@@ -70,18 +71,24 @@ function PreviewCard({
   metric,
   taken,
   takeSlot,
+  cache,
   onAdd,
 }: {
   metric: CatalogMetric
   taken: ReadonlySet<string>
   takeSlot: () => boolean
+  /** Previews already loaded in this opening (survives tab switches). */
+  cache: Map<string, WidgetValue>
   onAdd: (spec: WidgetSpec, preview?: WidgetValue) => void
 }) {
   const { t } = useTranslation()
   const spec = useMemo(() => newMetricSpec(metric, taken), [metric, taken])
   const ref = useRef<HTMLDivElement>(null)
-  const [preview, setPreview] = useState<WidgetValue | undefined>()
-  const [state, setState] = useState<'idle' | 'loading' | 'done' | 'skipped'>('idle')
+  const cached = cache.get(metric.id)
+  const [preview, setPreview] = useState<WidgetValue | undefined>(cached)
+  const [state, setState] = useState<'idle' | 'loading' | 'done' | 'skipped'>(
+    cached ? 'done' : 'idle'
+  )
 
   useEffect(() => {
     const el = ref.current
@@ -93,7 +100,10 @@ function PreviewCard({
       }
       setState('loading')
       previewWidget('metric', spec as unknown as Record<string, unknown>)
-        .then((v) => setPreview(v))
+        .then((v) => {
+          if (v) cache.set(metric.id, v)
+          setPreview(v)
+        })
         .catch(() => setPreview(undefined))
         .finally(() => setState('done'))
     }
@@ -109,13 +119,13 @@ function PreviewCard({
     })
     io.observe(el)
     return () => io.disconnect()
-  }, [spec, state, takeSlot])
+  }, [spec, state, takeSlot, cache, metric.id])
 
   const name = t(metricNameKey(metric.id), metric.id)
   return (
     <div
       ref={ref}
-      className="flex flex-col gap-2 rounded-lg border p-3"
+      className="flex min-w-0 flex-col gap-2 rounded-lg border p-3"
       data-testid={`gallery-card-${metric.id}`}
     >
       <div className="flex items-start justify-between gap-2">
@@ -136,13 +146,14 @@ function PreviewCard({
           {t('dashboards.gallery.add', 'Add')}
         </Button>
       </div>
-      <div className="pointer-events-none min-h-[7rem]" aria-hidden={state !== 'done'}>
-        {state === 'loading' || (state === 'done' && preview) ? (
+      <div className="pointer-events-none min-h-[7rem] min-w-0" aria-hidden={state !== 'done'}>
+        {state === 'loading' ? (
+          <Skeleton className="h-28 w-full" />
+        ) : state === 'done' && preview ? (
           <WidgetView
             widget={{ widget_type: 'metric', config: spec as unknown as Record<string, unknown> }}
             value={preview}
-            loading={state === 'loading'}
-            className="border-dashed"
+            bare
           />
         ) : state === 'done' ? (
           <p className="text-xs text-muted-foreground">
@@ -177,14 +188,17 @@ export function WidgetGallery({
   const [tab, setTab] = useState<Tab>('all')
   const [query, setQuery] = useState('')
   const takeSlot = useSlots(open, PREVIEWS_PER_OPEN)
+  const [cache] = useState(() => new Map<string, WidgetValue>())
+  useEffect(() => {
+    if (!open) cache.clear()
+  }, [open, cache])
 
   const q = query.trim().toLowerCase()
   const metrics = useMemo(() => {
     const all = catalog.data?.metrics ?? []
     return all.filter((m) => {
       const group = metricMeta(m.id)?.group ?? (m.group as MetricGroup)
-      if (tab !== 'all' && tab !== 'advanced' && group !== tab) return false
-      if (tab === 'advanced') return false
+      if (tab !== 'all' && group !== tab) return false
       if (!q) return true
       const hay =
         `${t(metricNameKey(m.id), m.id)} ${t(metricDefinitionKey(m.id), '')}`.toLowerCase()
@@ -194,7 +208,11 @@ export function WidgetGallery({
 
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
-      <SheetContent side="right" className="w-full sm:max-w-[34rem]">
+      <SheetContent
+        side="right"
+        data-testid="widget-gallery-sheet"
+        className="w-full max-w-none min-w-0 sm:max-w-[min(34rem,100vw)]"
+      >
         <SheetHeader>
           <SheetTitle>{t('dashboards.gallery.title', 'Add a widget')}</SheetTitle>
           <SheetDescription>
@@ -205,8 +223,8 @@ export function WidgetGallery({
           </SheetDescription>
         </SheetHeader>
         <SheetBody>
-          <div className="flex flex-col gap-3">
-            <div className="relative">
+          <Tabs value={tab} onValueChange={(v) => setTab(v as Tab)} className="min-w-0 gap-3">
+            <div className="relative min-w-0">
               <Search
                 className="absolute start-2.5 top-2.5 h-4 w-4 text-muted-foreground"
                 aria-hidden
@@ -219,29 +237,14 @@ export function WidgetGallery({
                 className="ps-8"
               />
             </div>
-            <div
-              role="group"
-              aria-label={t('dashboards.gallery.groups', 'Widget groups')}
-              className="flex flex-wrap gap-1.5"
-            >
-              {(['all', ...METRIC_GROUPS, 'advanced'] as Tab[]).map((g) => (
-                <Button
-                  key={g}
-                  type="button"
-                  size="sm"
-                  variant={tab === g ? 'secondary' : 'ghost'}
-                  aria-pressed={tab === g}
-                  onClick={() => setTab(g)}
-                >
-                  {g === 'all'
-                    ? t('dashboards.gallery.all', 'All')
-                    : g === 'advanced'
-                      ? t('dashboards.gallery.advanced', 'Advanced')
-                      : t(`dashboards.group.${g}`, g)}
-                </Button>
+            <TabsList aria-label={t('dashboards.gallery.groups', 'Widget groups')}>
+              {(['all', ...METRIC_GROUPS] as Tab[]).map((g) => (
+                <TabsTrigger key={g} value={g}>
+                  {g === 'all' ? t('dashboards.gallery.all', 'All') : t(`dashboards.group.${g}`, g)}
+                </TabsTrigger>
               ))}
-            </div>
-            {(tab === 'advanced' || (tab === 'all' && !q)) && (
+            </TabsList>
+            {tab === 'all' && !q && (
               <button
                 type="button"
                 onClick={onAddNote}
@@ -258,30 +261,33 @@ export function WidgetGallery({
                 </span>
               </button>
             )}
-            {catalog.isLoading ? (
-              <Skeleton className="h-40 w-full" />
-            ) : catalog.error ? (
-              <p className="text-sm text-destructive" role="alert">
-                {t('dashboards.gallery.failed', 'The widget list could not be loaded.')}
-              </p>
-            ) : metrics.length === 0 && tab !== 'advanced' ? (
-              <p className="text-sm text-muted-foreground">
-                {t('dashboards.gallery.none', 'No widget matches.')}
-              </p>
-            ) : (
-              <div className="grid gap-3">
-                {metrics.map((m) => (
-                  <PreviewCard
-                    key={m.id}
-                    metric={m}
-                    taken={taken}
-                    takeSlot={takeSlot}
-                    onAdd={(spec, preview) => onAddMetric(spec, m, preview)}
-                  />
-                ))}
-              </div>
-            )}
-          </div>
+            <TabsContent value={tab} className="flex min-w-0 flex-col gap-3">
+              {catalog.isLoading ? (
+                <Skeleton className="h-40 w-full" />
+              ) : catalog.error ? (
+                <p className="text-sm text-destructive" role="alert">
+                  {t('dashboards.gallery.failed', 'The widget list could not be loaded.')}
+                </p>
+              ) : metrics.length === 0 ? (
+                <p className="text-sm text-muted-foreground">
+                  {t('dashboards.gallery.none', 'No widget matches.')}
+                </p>
+              ) : (
+                <div className="grid min-w-0 grid-cols-[minmax(0,1fr)] gap-3">
+                  {metrics.map((m) => (
+                    <PreviewCard
+                      key={m.id}
+                      metric={m}
+                      taken={taken}
+                      takeSlot={takeSlot}
+                      cache={cache}
+                      onAdd={(spec, preview) => onAddMetric(spec, m, preview)}
+                    />
+                  ))}
+                </div>
+              )}
+            </TabsContent>
+          </Tabs>
         </SheetBody>
       </SheetContent>
     </Sheet>

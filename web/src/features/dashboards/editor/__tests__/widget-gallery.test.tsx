@@ -60,11 +60,95 @@ describe('WidgetGallery', () => {
     )
     await waitFor(() => expect(preview).toHaveBeenCalledTimes(PREVIEWS_PER_OPEN))
     expect(screen.getAllByText('Add it to see your figures.')).toHaveLength(5)
-    await userEvent.click(screen.getByRole('button', { name: 'Exposure' }))
+    await userEvent.click(screen.getByRole('tab', { name: 'Exposure' }))
     expect(screen.getAllByTestId(/^gallery-card-/)).toHaveLength(1)
-    await userEvent.click(screen.getByRole('button', { name: 'All' }))
+    await userEvent.click(screen.getByRole('tab', { name: 'All' }))
     await userEvent.type(screen.getByRole('textbox', { name: 'Search widgets' }), 'open findings')
     expect(screen.getAllByTestId(/^gallery-card-/)).toHaveLength(1)
     expect(preview).toHaveBeenCalledTimes(PREVIEWS_PER_OPEN)
+  })
+
+  it('has one-row group tabs with a roving tabindex, and a shrinkable single-column card list', async () => {
+    preview.mockResolvedValue(undefined)
+    render(
+      <WidgetGallery
+        open
+        onOpenChange={() => {}}
+        taken={new Set()}
+        onAddMetric={() => {}}
+        onAddNote={() => {}}
+      />
+    )
+    const tabs = screen.getAllByRole('tab')
+    expect(tabs).toHaveLength(5)
+    expect(screen.queryByRole('tab', { name: 'Advanced' })).toBeNull()
+    expect(tabs.filter((t) => t.getAttribute('tabindex') !== '-1').length).toBeLessThanOrEqual(1)
+    expect(screen.getByRole('tablist').className).toContain('overflow-x-auto')
+    expect(screen.getByRole('tablist').className).not.toContain('flex-wrap')
+    // A wide preview must not stretch the list past the sheet.
+    const card = screen.getAllByTestId(/^gallery-card-/)[0]
+    expect(card.className).toContain('min-w-0')
+    expect(card.parentElement?.className).toContain('grid-cols-[minmax(0,1fr)]')
+    await userEvent.click(tabs[0])
+    await userEvent.keyboard('{ArrowRight}')
+    expect(tabs[1]).toHaveFocus()
+  })
+
+  it('does not request a loaded preview again when a tab is switched back', async () => {
+    preview.mockReset()
+    preview.mockResolvedValue({
+      id: 'x',
+      index: 0,
+      widget_type: 'metric',
+      state: 'ready',
+      shape: 'scalar',
+      scalar: { value: 1 },
+    })
+    render(
+      <WidgetGallery
+        open
+        onOpenChange={() => {}}
+        taken={new Set()}
+        onAddMetric={() => {}}
+        onAddNote={() => {}}
+      />
+    )
+    await waitFor(() => expect(preview).toHaveBeenCalledTimes(PREVIEWS_PER_OPEN))
+    await userEvent.click(screen.getByRole('tab', { name: 'Exposure' }))
+    await screen.findByTestId('gallery-card-findings.open')
+    await userEvent.click(screen.getByRole('tab', { name: 'All' }))
+    await userEvent.click(screen.getByRole('tab', { name: 'Remediation and SLA' }))
+    await userEvent.click(screen.getByRole('tab', { name: 'All' }))
+    expect(preview).toHaveBeenCalledTimes(PREVIEWS_PER_OPEN)
+    expect(screen.getAllByText('Add it to see your figures.')).toHaveLength(5)
+  })
+
+  it('draws the preview without a nested bordered frame, and keeps the note card in All', async () => {
+    preview.mockReset()
+    preview.mockResolvedValue({
+      id: 'x',
+      index: 0,
+      widget_type: 'metric',
+      state: 'ready',
+      shape: 'scalar',
+      scalar: { value: 1 },
+    })
+    render(
+      <WidgetGallery
+        open
+        onOpenChange={() => {}}
+        taken={new Set()}
+        onAddMetric={() => {}}
+        onAddNote={() => {}}
+      />
+    )
+    await waitFor(() => expect(preview).toHaveBeenCalled())
+    const card = screen.getByTestId('gallery-card-findings.open')
+    await waitFor(() => expect(card.querySelector('[class*="pointer-events-none"]')).not.toBeNull())
+    await waitFor(() => expect(preview).toHaveBeenCalledTimes(PREVIEWS_PER_OPEN))
+    expect(card.querySelectorAll('[class*="border"]').length).toBe(
+      card.className.includes('border') ? 1 : 0
+    )
+    expect(screen.getByText('Text for context, links or instructions.')).toBeInTheDocument()
   })
 })
