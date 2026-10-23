@@ -50,7 +50,7 @@ function StatusBadge({ k }: { k: APIKey }) {
   const { t } = useTranslation()
   if (k.status === 'revoked' || k.revoked_at) {
     return (
-      <Badge className="border-0 bg-red-500/10 text-red-600 dark:text-red-400">
+      <Badge className="border-0 bg-destructive/10 text-destructive">
         {t('settings.keys.status.revoked', 'Revoked')}
       </Badge>
     )
@@ -63,7 +63,7 @@ function StatusBadge({ k }: { k: APIKey }) {
     )
   }
   return (
-    <Badge className="border-0 bg-green-500/10 text-green-600 dark:text-green-400">
+    <Badge className="border-0 bg-success/10 text-success">
       {t('settings.keys.status.active', 'Active')}
     </Badge>
   )
