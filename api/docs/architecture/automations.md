@@ -36,6 +36,48 @@ types clears the reason. Scans keep their own schedules; a sweep schedule for
 rules (a saved filter evaluated on a schedule, for digests and periodic
 sweeps) is designed separately and is not a trigger yet.
 
+## Versions and mode
+
+The nodes and edges of an automation are its **draft**. `POST
+/api/v1/workflows/{id}/publish` stores the draft as an immutable row of
+`automation_versions` (definition, SHA-256 digest, risk class, publisher)
+and makes it the **published version**: the automation switches to
+`mode = live` and `published_version_id` points at it. The previous
+published version becomes `superseded`.
+
+| Mode | Runs execute | Effects |
+|---|---|---|
+| `simulate` (every new automation) | the draft | none: action and notification steps record what they would do |
+| `live` | the published version, pinned when the run is created | the steps act |
+
+- A run pins its version (`automation_runs.version_id`, `mode`). Editing the
+  draft never changes a live automation, nor a run already created; an
+  unpublished trigger change never changes what starts it (the dispatcher
+  matches a live automation on its published trigger).
+- `draft_changed` on `GET /workflows/{id}` says the draft differs from the
+  published version (digest of the steps, ignoring node positions).
+- `POST /workflows/{id}/versions/{versionId}/rollback` publishes an older
+  definition again as a new version; history keeps every version
+  (`GET /workflows/{id}/versions`, `GET /workflows/{id}/versions/{versionId}`).
+- `PUT /workflows/{id}/mode {"mode":"simulate"}` switches back in one call
+  and keeps the published version. Live is reached only by publishing.
+- **Owner.** Publishing (and switching on) makes the caller the owner live
+  runs act as. Editing the draft does not change the owner any more: a draft
+  only simulates, and nothing an editor changes acts before someone publishes
+  it. Publishing needs the permission of every step, like switching on.
+- The draft cannot be replaced while a simulate run of it waits or runs;
+  live runs do not block an edit. Run steps keep the node id of the
+  definition they ran (the foreign key to the draft's nodes is gone, so
+  replacing the draft no longer deletes earlier runs' step history).
+- **Upgrade.** Migration `automation_versions` makes every automation that
+  is switched on version 1, published by its owner, live, so working rules
+  keep acting. Automations that are off stay in simulate without a version.
+
+Risk classes (`pkg/domain/automation/risk.go`): low (tags), elevated
+(status, assignment, tickets, notifications, AI triage), high (scans, and
+any automation that lets automation-caused events start it). The go-live
+gate built on them is described in RFC-125 §2 D6.
+
 ## One run per subject
 
 An event starts **one run per matching subject**. A batch of new findings

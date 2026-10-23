@@ -700,15 +700,21 @@ const (
 	ActionSecurityCrossTenantAccess Action = "security.cross_tenant_access"
 
 	// Workflow actions
-	ActionWorkflowCreated      Action = "workflow.created"
-	ActionWorkflowUpdated      Action = "workflow.updated"
-	ActionWorkflowDeleted      Action = "workflow.deleted"
-	ActionWorkflowActivated    Action = "workflow.activated"
-	ActionWorkflowDeactivated  Action = "workflow.deactivated"
-	ActionWorkflowRunTriggered Action = "workflow_run.triggered"
-	ActionWorkflowRunCompleted Action = "workflow_run.completed"
-	ActionWorkflowRunFailed    Action = "workflow_run.failed"
-	ActionWorkflowRunCanceled  Action = "workflow_run.canceled"
+	ActionWorkflowCreated     Action = "workflow.created"
+	ActionWorkflowUpdated     Action = "workflow.updated"
+	ActionWorkflowDeleted     Action = "workflow.deleted"
+	ActionWorkflowActivated   Action = "workflow.activated"
+	ActionWorkflowDeactivated Action = "workflow.deactivated"
+	// Versions and go-live (RFC-125).
+	ActionWorkflowPublished        Action = "workflow.published"
+	ActionWorkflowPublishRequested Action = "workflow.publish_requested"
+	ActionWorkflowVersionApproved  Action = "workflow.version_approved"
+	ActionWorkflowRolledBack       Action = "workflow.rolled_back"
+	ActionWorkflowModeChanged      Action = "workflow.mode_changed"
+	ActionWorkflowRunTriggered     Action = "workflow_run.triggered"
+	ActionWorkflowRunCompleted     Action = "workflow_run.completed"
+	ActionWorkflowRunFailed        Action = "workflow_run.failed"
+	ActionWorkflowRunCanceled      Action = "workflow_run.canceled"
 
 	// Rule actions
 	ActionRuleSourceCreated   Action = "rule_source.created"
@@ -894,6 +900,8 @@ func (a Action) IsValid() bool {
 		ActionSecurityValidationFailed, ActionSecurityCrossTenantAccess,
 		ActionWorkflowCreated, ActionWorkflowUpdated, ActionWorkflowDeleted,
 		ActionWorkflowActivated, ActionWorkflowDeactivated,
+		ActionWorkflowPublished, ActionWorkflowPublishRequested, ActionWorkflowVersionApproved,
+		ActionWorkflowRolledBack, ActionWorkflowModeChanged,
 		ActionWorkflowRunTriggered, ActionWorkflowRunCompleted, ActionWorkflowRunFailed, ActionWorkflowRunCanceled,
 		ActionRuleSourceCreated, ActionRuleSourceUpdated, ActionRuleSourceDeleted,
 		ActionRuleOverrideCreated, ActionRuleOverrideUpdated, ActionRuleOverrideDeleted,
