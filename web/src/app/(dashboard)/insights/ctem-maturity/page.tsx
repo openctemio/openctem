@@ -73,7 +73,7 @@ function ModuleDisabledState() {
       )}
       action={
         <Button variant="outline" size="sm" asChild>
-          <Link href="/dashboard">
+          <Link href="/">
             <ArrowLeft className="me-2 h-4 w-4" />
             {t('insights.backToDashboard', 'Back to dashboard')}
           </Link>
