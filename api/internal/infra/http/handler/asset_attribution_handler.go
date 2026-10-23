@@ -227,8 +227,24 @@ func (h *AssetAttributionHandler) applyActiveGate(ctx context.Context, tenantID 
 			h.logger.Warn("asset scope lookup failed", "error", logger.SanitizeError(err))
 			return
 		}
-		resp.ScopeStatus, resp.CoveredBy = status, via
+		resp.ScopeStatus, resp.CoveredBy = status, h.visibleVia(via, resp)
 	}
+}
+
+// visibleVia keeps an endpoint that served a certificate out of covered_by
+// unless the caller may see it: the endpoint named there is the one
+// applyCertificate already filtered. Without a filtered standing to copy
+// from, the endpoint stays unnamed.
+func (h *AssetAttributionHandler) visibleVia(via *scopeauth.Via, resp *AssetAttributionResponse) *scopeauth.Via {
+	if via == nil || via.Endpoint == "" {
+		return via
+	}
+	v := *via
+	v.Endpoint, v.Name = "", ""
+	if resp.Certificate != nil && resp.Certificate.ServedBy != nil && resp.Certificate.ServedBy.Endpoint == via.Endpoint {
+		v.Endpoint, v.Name = via.Endpoint, via.Name
+	}
+	return &v
 }
 
 // applyCertificate fills the certificate standing of a certificate asset.
