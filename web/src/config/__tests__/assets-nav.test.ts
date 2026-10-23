@@ -1,13 +1,13 @@
 /**
- * Discovery > Assets is one row with route tabs Inventory | Groups | What
- * changed | Suggestions (docs/ui/scoping-ia-2026-10.md, C8). The retired
+ * Discovery > Assets is one row with route tabs Inventory | Groups | Activity
+ * | Web surface | Suggestions (docs/ui/scoping-ia-2026-10.md, C8). The retired
  * /attack-surface/internal and /cloud pages redirect to the inventory with the
  * filter they applied (D5). Every tab lives under /assets (/assets/groups,
  * /assets/suggestions): a URL mirrors its place in the nav (RFC-042 §6.3.6,
  * §6.19). The APIs stay /api/v1/asset-groups and /api/v1/relationships.
  */
 import { describe, expect, it } from 'vitest'
-import { existsSync, readdirSync, statSync } from 'node:fs'
+import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs'
 import { join } from 'node:path'
 import { sidebarData } from '../sidebar-data'
 import { ASSETS_SECTION_TABS } from '../section-tabs'
@@ -36,8 +36,7 @@ describe('Discovery > Assets', () => {
     expect(ASSETS_SECTION_TABS.map((t) => [t.label, t.href, t.module])).toEqual([
       ['Inventory', '/assets', 'assets'],
       ['Groups', '/assets/groups', 'assets'],
-      ['What changed', '/assets/changes', 'assets'],
-      ['Timeline', '/assets/timeline', 'assets'],
+      ['Activity', '/assets/changes', 'assets'],
       ['Web surface', '/assets/web', 'assets'],
       ['Suggestions', '/assets/suggestions', 'relationships'],
     ])
@@ -199,5 +198,29 @@ describe('Relationship suggestions live under /assets/suggestions', () => {
     expect(existsSync(join(ASSETS_DIR, '..', 'relationships'))).toBe(false)
     expect(existsSync(join(ASSETS_DIR, 'suggestions', 'page.tsx'))).toBe(true)
     expect(resolveLegacyRoute('/relationships/suggestions')).toBeNull()
+  })
+})
+
+describe('Retired asset routes', () => {
+  it('Timeline is part of Activity: no page and no link reaches /assets/timeline', () => {
+    const appDir = join(__dirname, '../../app/(dashboard)/(discovery)/assets/timeline')
+    expect(existsSync(appDir)).toBe(false)
+    const srcDir = join(__dirname, '../..')
+    const offenders: string[] = []
+    const walk = (dir: string) => {
+      for (const entry of readdirSync(dir, { withFileTypes: true })) {
+        const name = entry.name
+        const full = join(dir, name)
+        if (entry.isDirectory()) {
+          if (name !== 'node_modules' && name !== '__tests__') walk(full)
+        } else if (entry.isFile() && /\.(tsx?|json)$/.test(name)) {
+          const text = readFileSync(full, 'utf8')
+          if (text.includes("'/assets/timeline") || text.includes('"/assets/timeline'))
+            offenders.push(full)
+        }
+      }
+    }
+    walk(srcDir)
+    expect(offenders).toEqual([])
   })
 })

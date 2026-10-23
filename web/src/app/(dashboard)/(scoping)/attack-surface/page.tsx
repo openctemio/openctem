@@ -197,7 +197,7 @@ export default function AttackSurfacePage() {
                 )}
                 info={t(
                   'attackSurface.overview.internetFacingInfo',
-                  'Assets whose exposure is public or that a source reported reachable from the internet. Newly exposed counts the same changes as Assets › What changed.'
+                  'Assets whose exposure is public or that a source reported reachable from the internet. Newly exposed counts the same changes as Assets › Activity.'
                 )}
               />
             </StatLink>
