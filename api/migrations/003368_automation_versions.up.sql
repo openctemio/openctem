@@ -38,12 +38,12 @@ CREATE INDEX idx_automation_versions_tenant ON automation_versions (tenant_id, a
 CREATE UNIQUE INDEX uq_automation_versions_published ON automation_versions (automation_id) WHERE status = 'published';
 
 COMMENT ON TABLE automation_versions IS 'Immutable published definitions of an automation; live runs execute the published one';
-COMMENT ON COLUMN automation_versions.digest IS 'SHA-256 of the definition; an approval binds it';
+COMMENT ON COLUMN automation_versions.digest IS 'SHA-256 of the definition (Definition.Digest); an approval binds it. The literal backfill marks a row migrated from an old graph until the API recomputes it';
 
 ALTER TABLE automations
     ADD COLUMN mode VARCHAR(10) NOT NULL DEFAULT 'simulate',
     ADD COLUMN published_version_id UUID REFERENCES automation_versions (id) ON DELETE SET NULL,
-    ADD CONSTRAINT chk_automations_mode CHECK (mode IN ('simulate', 'live'));
+    ADD CONSTRAINT chk_automations_mode CHECK (mode IN ('simulate', 'live')) NOT VALID;
 
 COMMENT ON COLUMN automations.mode IS 'live: runs execute the published version; simulate: runs execute the draft and only record what they would do';
 
@@ -51,7 +51,10 @@ COMMENT ON COLUMN automations.mode IS 'live: runs execute the published version;
 ALTER TABLE automation_runs
     ADD COLUMN mode VARCHAR(10) NOT NULL DEFAULT 'live',
     ADD COLUMN version_id UUID REFERENCES automation_versions (id) ON DELETE SET NULL,
-    ADD CONSTRAINT chk_automation_runs_mode CHECK (mode IN ('simulate', 'live'));
+    ADD CONSTRAINT chk_automation_runs_mode CHECK (mode IN ('simulate', 'live')) NOT VALID;
+-- The check is validated by the next migration (automation_versions_validate),
+-- so this one never scans the whole runs table under its lock.
+CREATE INDEX idx_automation_runs_version ON automation_runs (version_id) WHERE version_id IS NOT NULL;
 ALTER TABLE automation_runs ALTER COLUMN mode SET DEFAULT 'simulate';
 
 ALTER TABLE automation_run_steps DROP CONSTRAINT IF EXISTS automation_run_steps_node_id_fkey;
@@ -59,7 +62,9 @@ ALTER TABLE automation_run_steps DROP CONSTRAINT IF EXISTS automation_run_steps_
 -- Version 1 of every automation that is switched on, from its current graph.
 INSERT INTO automation_versions (tenant_id, automation_id, version, definition, digest, risk_class, status, published_by, published_at)
 SELECT a.tenant_id, a.id, 1, d.definition,
-       encode(sha256(convert_to(d.definition::text, 'UTF8')), 'hex'),
+       -- Placeholder: the API computes the canonical digest (Definition.Digest in
+       -- Go) for these rows at startup; SQL cannot reproduce that encoding.
+       'backfill',
        CASE
            WHEN EXISTS (SELECT 1 FROM automation_nodes n WHERE n.automation_id = a.id
                          AND (n.config->>'action_type' NOT IN ('add_tags', 'remove_tags', 'assign_user', 'update_status',

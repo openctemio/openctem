@@ -161,10 +161,9 @@ func (h *WorkflowHandler) Publish(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	if !h.requireWorkflowPermissions(w, r, tenantID, workflowID) {
-		return
-	}
-	if _, err := h.service.Publish(r.Context(), automationsvc.PublishInput{TenantID: tenantID, UserID: userID, WorkflowID: workflowID}); err != nil {
+	if _, err := h.service.Publish(r.Context(), automationsvc.PublishInput{
+		TenantID: tenantID, UserID: userID, WorkflowID: workflowID, Authorize: h.authorizeDefinition(r),
+	}); err != nil {
 		h.handleServiceError(w, err)
 		return
 	}
@@ -194,24 +193,27 @@ func (h *WorkflowHandler) Rollback(w http.ResponseWriter, r *http.Request) {
 		apierror.BadRequest("Invalid version ID").WriteJSON(w)
 		return
 	}
-	old, err := h.service.GetVersion(r.Context(), tenantID, workflowID, versionID)
-	if err != nil {
-		h.handleServiceError(w, err)
-		return
-	}
-	// The caller needs the permission of every step the old version has.
-	cfgs := make([]*NodeConfigRequest, 0, len(old.Definition.Nodes))
-	for _, n := range old.Definition.Nodes {
-		cfgs = append(cfgs, &NodeConfigRequest{ActionType: string(n.Config.ActionType), NotificationType: string(n.Config.NotificationType)})
-	}
-	if !h.requireActionPermissions(w, r, cfgs...) {
-		return
-	}
-	if _, err := h.service.Rollback(r.Context(), automationsvc.PublishInput{TenantID: tenantID, UserID: userID, WorkflowID: workflowID}, versionID); err != nil {
+	if _, err := h.service.Rollback(r.Context(), automationsvc.PublishInput{
+		TenantID: tenantID, UserID: userID, WorkflowID: workflowID, Authorize: h.authorizeDefinition(r),
+	}, versionID); err != nil {
 		h.handleServiceError(w, err)
 		return
 	}
 	h.writeWorkflowDetail(w, r, tenantID, workflowID, http.StatusOK)
+}
+
+// authorizeDefinition is the publish permission check: the caller needs the
+// permission of every step of the definition the service is about to store.
+func (h *WorkflowHandler) authorizeDefinition(r *http.Request) func(automation.Definition) error {
+	return func(d automation.Definition) error {
+		perm, ok := authorizeActionConfigs(r.Context(), definitionConfigs(d)...)
+		if ok {
+			return nil
+		}
+		h.logger.Warn("workflow publish permission denied",
+			"user_id", middleware.GetUserID(r.Context()), "required_permission", string(perm))
+		return shared.NewDomainError("FORBIDDEN", "insufficient permission for a workflow action node; '"+string(perm)+"' is required", shared.ErrForbidden)
+	}
 }
 
 // SetWorkflowModeRequest is the body of PUT /workflows/{id}/mode.
