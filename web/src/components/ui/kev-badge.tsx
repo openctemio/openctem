@@ -32,23 +32,15 @@ export const KevBadge = React.forwardRef<HTMLSpanElement, KevBadgeProps>(functio
       icon={Zap}
       tone="alert"
       alertText={pastDue}
+      qualifiers={[
+        ...(ransomware ? [t('findings.list.kevRansomware', 'Ransomware')] : []),
+        ...(pastDue ? [t('findings.list.kevPastDue', 'Past due')] : []),
+      ]}
       data-past-due={pastDue ? 'true' : undefined}
       data-ransomware={ransomware ? 'true' : undefined}
       {...props}
     >
-      <span>{label ?? t('findings.list.kev', 'KEV')}</span>
-      {ransomware && (
-        <>
-          {' '}
-          <span>{t('findings.list.kevRansomware', 'ransomware')}</span>
-        </>
-      )}
-      {pastDue && (
-        <>
-          {' '}
-          <span>{t('findings.list.kevPastDue', 'past due')}</span>
-        </>
-      )}
+      {label ?? t('findings.list.kev', 'KEV')}
     </SignalChip>
   )
 })

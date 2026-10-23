@@ -117,9 +117,13 @@ describe('KevBadge and EpssChip presets', () => {
     expect(el.getAttribute('data-ransomware')).toBe('true')
     expect(el.className).toContain('text-destructive')
     expect(screen.getByText('KEV')).toBeTruthy()
-    expect(screen.getByText('past due')).toBeTruthy()
-    expect(screen.getByText('ransomware')).toBeTruthy()
-    expect(el.textContent).not.toMatch(/[·•∙]/)
+    expect(el.getAttribute('aria-label')).toBe('KEV, ransomware, past due')
+    expect(el.getAttribute('data-segmented')).toBe('true')
+    const q = el.querySelector('[data-slot="signal-chip-qualifier"]') as HTMLElement
+    expect(q.className).toContain('border-l')
+    expect(screen.getByText('Past due')).toBeTruthy()
+    expect(screen.getByText('Ransomware')).toBeTruthy()
+    expect(el.textContent).not.toMatch(/[·•∙│|]/)
   })
 
   it('KevBadge on time is neutral text with a red bolt', () => {
@@ -127,6 +131,7 @@ describe('KevBadge and EpssChip presets', () => {
     expect(container.firstElementChild?.className).not.toContain('text-destructive')
     expect(container.querySelector('svg')?.getAttribute('class')).toContain('text-sig-icon')
     expect(screen.getByText('KEV 3')).toBeTruthy()
+    expect(container.querySelector('[data-slot="signal-chip-qualifier"]')).toBeNull()
   })
 
   it('EpssChip keeps threshold, label and neutral colour', () => {
