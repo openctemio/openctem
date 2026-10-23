@@ -51,7 +51,7 @@ func TestCICoverageAndAlerts(t *testing.T) {
 	assetID := shared.MustIDFromString(ex["repository_asset_id"].(string))
 	secret := ciFinding("AWS key", "aws-access-key", "high", ctis.FindingTypeSecret, "config.go", 3)
 	rep := ciReport(repoName, secret) // tool: semgrep (sast)
-	if resp, out := r.post("/api/v1/ci/runs/"+runID+"/results", token, rep); resp.StatusCode != http.StatusCreated {
+	if resp, out := r.upload(runID, token, rep); resp.StatusCode != http.StatusAccepted {
 		t.Fatalf("upload: %d %v", resp.StatusCode, out)
 	}
 	if resp, v := r.post("/api/v1/ci/runs/"+runID+"/evaluate", token, nil); resp.StatusCode != http.StatusOK || v["verdict"] != "fail" {

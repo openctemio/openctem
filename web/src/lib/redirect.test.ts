@@ -12,27 +12,27 @@ describe('validateRedirectUrl', () => {
   })
 
   it('blocks plain external and protocol-relative redirects', () => {
-    expect(validateRedirectUrl('https://evil.com')).toBe('/dashboard')
-    expect(validateRedirectUrl('//evil.com')).toBe('/dashboard')
-    expect(validateRedirectUrl('/\\evil.com')).toBe('/dashboard')
-    expect(validateRedirectUrl('/javascript:alert(1)')).toBe('/dashboard')
+    expect(validateRedirectUrl('https://evil.com')).toBe('/')
+    expect(validateRedirectUrl('//evil.com')).toBe('/')
+    expect(validateRedirectUrl('/\\evil.com')).toBe('/')
+    expect(validateRedirectUrl('/javascript:alert(1)')).toBe('/')
   })
 
   // Regression: open redirect via embedded control characters. Browsers strip
   // tab/newline/CR while parsing the navigation target, so these collapse to a
   // protocol-relative external URL after validation.
   it('blocks control-character bypasses (tab/newline/CR)', () => {
-    expect(validateRedirectUrl('/\t/evil.com')).toBe('/dashboard')
-    expect(validateRedirectUrl('/\n/evil.com')).toBe('/dashboard')
-    expect(validateRedirectUrl('/\r/evil.com')).toBe('/dashboard')
-    expect(validateRedirectUrl('/\u0000/evil.com')).toBe('/dashboard')
+    expect(validateRedirectUrl('/\t/evil.com')).toBe('/')
+    expect(validateRedirectUrl('/\n/evil.com')).toBe('/')
+    expect(validateRedirectUrl('/\r/evil.com')).toBe('/')
+    expect(validateRedirectUrl('/\u0000/evil.com')).toBe('/')
   })
 
   // Regression: a same-origin absolute URL whose path is protocol-relative
   // ("https://app//evil.com" -> pathname "//evil.com").
   it('blocks same-origin URLs with a protocol-relative path', () => {
-    expect(validateRedirectUrl('http://localhost:3000//evil.com')).toBe('/dashboard')
-    expect(validateRedirectUrl('http://localhost:3000/\\evil.com')).toBe('/dashboard')
+    expect(validateRedirectUrl('http://localhost:3000//evil.com')).toBe('/')
+    expect(validateRedirectUrl('http://localhost:3000/\\evil.com')).toBe('/')
   })
 
   it('reduces a same-origin absolute URL to its safe path', () => {
@@ -40,9 +40,9 @@ describe('validateRedirectUrl', () => {
   })
 
   it('returns the default for empty input', () => {
-    expect(validateRedirectUrl('')).toBe('/dashboard')
-    expect(validateRedirectUrl(null)).toBe('/dashboard')
-    expect(validateRedirectUrl(undefined)).toBe('/dashboard')
+    expect(validateRedirectUrl('')).toBe('/')
+    expect(validateRedirectUrl(null)).toBe('/')
+    expect(validateRedirectUrl(undefined)).toBe('/')
     expect(validateRedirectUrl('/x', '/')).toBe('/x')
   })
 })

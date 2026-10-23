@@ -29,6 +29,7 @@ import en_emergingThreats from './en/emergingThreats.json'
 import en_auth from './en/auth.json'
 import en_automations from './en/automations.json'
 import en_common from './en/common.json'
+import en_labels from './en/labels.json'
 import en_dashboardMetrics from './en/dashboardMetrics.json'
 import en_dashboardKit from './en/dashboardKit.json'
 import en_dashboards from './en/dashboards.json'
@@ -118,6 +119,7 @@ import vi_emergingThreats from './vi/emergingThreats.json'
 import vi_auth from './vi/auth.json'
 import vi_automations from './vi/automations.json'
 import vi_common from './vi/common.json'
+import vi_labels from './vi/labels.json'
 import vi_dashboardMetrics from './vi/dashboardMetrics.json'
 import vi_dashboardKit from './vi/dashboardKit.json'
 import vi_dashboards from './vi/dashboards.json'
@@ -212,6 +214,7 @@ export const enNamespaces: Record<string, Dictionary> = {
   auth: en_auth,
   automations: en_automations,
   common: en_common,
+  labels: en_labels,
   dashboardMetrics: en_dashboardMetrics,
   dashboardKit: en_dashboardKit,
   dashboards: en_dashboards,
@@ -304,6 +307,7 @@ export const viNamespaces: Record<string, Dictionary> = {
   auth: vi_auth,
   automations: vi_automations,
   common: vi_common,
+  labels: vi_labels,
   dashboardMetrics: vi_dashboardMetrics,
   dashboardKit: vi_dashboardKit,
   dashboards: vi_dashboards,

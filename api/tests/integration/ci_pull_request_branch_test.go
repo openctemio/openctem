@@ -45,7 +45,7 @@ func TestCIPullRequestResultsNeverPoisonARealBranch(t *testing.T) {
 	}
 	upload := func(run, tok string, f ...ctis.Finding) {
 		t.Helper()
-		if resp, out := r.post("/api/v1/ci/runs/"+run+"/results", tok, ciReport("github.com/acme/api", f...)); resp.StatusCode != http.StatusCreated {
+		if resp, out := r.upload(run, tok, ciReport("github.com/acme/api", f...)); resp.StatusCode != http.StatusAccepted {
 			t.Fatalf("upload: %d %v", resp.StatusCode, out)
 		}
 	}

@@ -294,6 +294,16 @@ jobs:
           bash scripts/check-page-anatomy.sh "$base"
           sh scripts/check-page-anatomy.test.sh
 
+      # No separator glyphs in UI text (research/248): added lines only. Spacing
+      # (MetaLine) or formatList separates facts, not a middle dot, bullet or
+      # spaced em dash. Escape with `separator-ok: <reason>`.
+      - name: Check separators
+        if: github.event_name == 'pull_request'
+        run: |
+          base="$(bash ../.github/scripts/effective-base.sh web "origin/${GITHUB_BASE_REF}")"
+          bash scripts/check-separators.sh "$base"
+          sh scripts/check-separators.test.sh
+
   # The Vitest suite, in three parallel shards (vitest --shard). Same setup as
   # `Web checks`; the endpoint check reads api/api/openapi/routes.txt.
   tests:
