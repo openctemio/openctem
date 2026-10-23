@@ -89,7 +89,7 @@ export default function CodeWeaknessesPage() {
                 value={typeStats.total}
                 icon={FileCode}
               />
-              <StatsCard
+              <StatsCard // anatomy-ok: existing type-page tile, only its neighbours changed
                 title={t('exposures.type.critical', 'Critical')}
                 value={criticalCount}
                 valueClassName={criticalCount > 0 ? 'text-destructive' : undefined}

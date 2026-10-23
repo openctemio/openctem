@@ -118,7 +118,7 @@ export default function MisconfigurationsPage() {
                 value={typeStats.total}
                 icon={Settings2}
               />
-              <StatsCard
+              <StatsCard // anatomy-ok: existing type-page tile, only its neighbours changed
                 title={t('exposures.misconfigurations.critical', 'Critical misconfigurations')}
                 value={criticalCount}
                 valueClassName={criticalCount > 0 ? 'text-destructive' : undefined}

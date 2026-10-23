@@ -88,7 +88,7 @@ function OverviewTab() {
           value={typeStats.total}
           icon={Bug}
         />
-        <StatsCard
+        <StatsCard // anatomy-ok: existing type-page tile, only its neighbours changed
           title={t('exposures.type.critical', 'Critical')}
           value={criticalCount}
           valueClassName={criticalCount > 0 ? 'text-destructive' : undefined}

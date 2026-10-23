@@ -112,7 +112,7 @@ export default function SecretsExposurePage() {
                 }
                 icon={Clock}
               />
-              <StatsCard
+              <StatsCard // anatomy-ok: existing type-page tile, only its neighbours changed
                 title={t('exposures.type.riskScore', 'Risk score')}
                 value={formatRiskScore(typeStats.riskScore)}
                 description={getRiskLevel(typeStats.riskScore).label}
