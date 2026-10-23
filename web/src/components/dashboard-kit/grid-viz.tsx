@@ -6,6 +6,7 @@
  * SLA due). The CTEM loop is loop-viz.tsx.
  */
 
+import { CircleAlert } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { useTranslation } from '@/context/i18n-provider'
 import { SEQUENTIAL_STEPS, sequentialStep } from '@/lib/chart-palette'
@@ -20,6 +21,11 @@ import type { DrillFn, ItemsResult, MatrixResult } from './types'
 export function heatStep(value: number, max: number): number {
   if (value <= 0 || max <= 0) return -1
   return Math.min(SEQUENTIAL_STEPS - 1, Math.floor((value / max) * SEQUENTIAL_STEPS))
+}
+
+/** A deadline already behind us. */
+function isPast(iso: string | null | undefined): boolean {
+  return !!iso && Date.parse(iso) < Date.now()
 }
 
 const isSeverity = (k: string): k is SeverityLevel => k in SEVERITY_DOT_COLORS
@@ -145,8 +151,22 @@ export function ItemsViz({
       <ul className="flex flex-col divide-y">
         {rows.map((r) => {
           const due = r.due_at ? formatRelativeTime(r.due_at, locale) : null
+          const overdue = isPast(r.due_at)
+          const sev = r.severity && isSeverity(r.severity) ? r.severity : null
           const body = (
             <div className="flex items-center gap-2 py-1.5 text-sm">
+              {sev && (
+                <span
+                  className="inline-flex shrink-0 items-center"
+                  title={t(`severity.${sev}`, sev)}
+                >
+                  <span
+                    className={cn('size-2 rounded-full', SEVERITY_DOT_COLORS[sev])}
+                    aria-hidden
+                  />
+                  <span className="sr-only">{t(`severity.${sev}`, sev)}</span>
+                </span>
+              )}
               {r.priority && (
                 <Badge variant="outline" className="shrink-0 tabular-nums">
                   {r.priority}
@@ -172,11 +192,17 @@ export function ItemsViz({
                   {r.asset}
                 </span>
               )}
-              {due && (
-                <span className="shrink-0 text-xs text-muted-foreground">
-                  {t('dashboardKit.items.due', 'due {time}', { time: due })}
-                </span>
-              )}
+              {due &&
+                (overdue ? (
+                  <span className="inline-flex shrink-0 items-center gap-1 text-xs font-medium text-destructive">
+                    <CircleAlert className="size-3.5" aria-hidden />
+                    {t('dashboardKit.items.overdue', 'Overdue {time}', { time: due })}
+                  </span>
+                ) : (
+                  <span className="shrink-0 text-xs text-muted-foreground">
+                    {t('dashboardKit.items.due', 'due {time}', { time: due })}
+                  </span>
+                ))}
             </div>
           )
           return (
@@ -193,9 +219,11 @@ export function ItemsViz({
           to={viewAllHref}
           className="mt-auto self-end pt-1 text-xs text-primary hover:underline"
         >
-          {t('dashboardKit.items.viewAll', 'View all {n}', {
-            n: formatCount(result.total, locale),
-          })}
+          {result.total != null
+            ? t('dashboardKit.items.viewAll', 'View all {n}', {
+                n: formatCount(result.total, locale),
+              })
+            : t('dashboardKit.items.viewAllNoCount', 'View all')}
         </DrillLink>
       )}
     </div>

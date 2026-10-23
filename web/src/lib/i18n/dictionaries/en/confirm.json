@@ -101,6 +101,7 @@
   "confirm.crownJewel.removeDesc": "Its crown-jewel tracking and protection requirements are removed. The asset itself stays, and you can designate it again later.",
   "confirm.crownJewel.removeTitle": "Remove \"{name}\" from your crown jewels?",
   "confirm.dashboard.deleteDesc": "The dashboard and its widget layout are deleted for everyone who can see it. Your data is not affected. This cannot be undone.",
+  "confirm.dashboard.deleteDescPersonal": "Your dashboard and its layout are deleted. Copies you shared and your data are not affected. This cannot be undone.",
   "confirm.dashboard.deleteLabel": "Delete dashboard {name}",
   "confirm.dashboard.deleteTitle": "Delete dashboard \"{name}\"?",
   "confirm.dashboard.deleted": "Dashboard \"{name}\" deleted",

@@ -98,6 +98,14 @@ function writeChoice(ref: DashboardRef) {
   }
 }
 
+function clearChoice() {
+  try {
+    window.localStorage.removeItem(DASHBOARD_CHOICE_KEY)
+  } catch {
+    // A per-viewer convenience only.
+  }
+}
+
 export function DashboardHome() {
   const { t } = useTranslation()
   const { canAny, can } = usePermissions()
@@ -259,11 +267,17 @@ export function DashboardHome() {
     await Promise.all([revalidate(), data.mutate()])
   }
 
-  const run = async (fn: () => Promise<unknown>, done: string) => {
+  // The new default shows in the switcher and menu: no success toast.
+  const setDefault = async (d: Dashboard, org: boolean) => {
     try {
-      await fn()
+      await (org ? setOrgDefaultDashboard(d.id) : setDefaultDashboard(d.id))
+      // A stored last choice outranks the default on the next visit, so the
+      // new personal default would never take effect.
+      if (!org) {
+        clearChoice()
+        setChosen(null)
+      }
       await revalidate()
-      toast.success(done)
     } catch (e) {
       toast.error(getErrorMessage(e))
     }
@@ -294,6 +308,8 @@ export function DashboardHome() {
 
   const isOrg = active?.kind === 'organization'
   const canSchedule = !!dashboard && (isOrg ? canOrgManage : true)
+  // An organization dashboard is edited only by those who may manage them.
+  const canCustomize = !!dashboard && (isOrg ? canOrgManage : true)
   const isDefault = dashboard ? (isOrg ? dashboard.is_org_default : dashboard.is_default) : false
 
   return (
@@ -326,7 +342,7 @@ export function DashboardHome() {
               onChoose={choose}
               className="h-11 min-w-0 max-w-none flex-1 justify-start sm:h-8 sm:max-w-[16rem] sm:flex-none"
             />
-            {dashboard && !isOrg && (
+            {canCustomize && (
               <Button
                 variant="outline"
                 size="sm"
@@ -345,9 +361,7 @@ export function DashboardHome() {
                 className="hidden sm:flex"
               />
             )}
-            {dashboard && !customizing && (
-              <RefreshButton onRefresh={refresh} disabled={!data.data} />
-            )}
+            {dashboard && !customizing && <RefreshButton onRefresh={refresh} />}
             {dashboard && (
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
@@ -361,7 +375,7 @@ export function DashboardHome() {
                   </Button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="end" className="w-64">
-                  {!isOrg && (
+                  {canCustomize && (
                     <DropdownMenuItem
                       className={cn(ITEM, 'sm:hidden')}
                       onSelect={() => setCustomizing(true)}
@@ -380,15 +394,7 @@ export function DashboardHome() {
                   {!isDefault && (!isOrg || canOrgManage) && (
                     <DropdownMenuItem
                       className={ITEM}
-                      onSelect={() =>
-                        run(
-                          () =>
-                            isOrg
-                              ? setOrgDefaultDashboard(dashboard.id)
-                              : setDefaultDashboard(dashboard.id),
-                          t('dashboards.actions.defaultSet', 'Default dashboard set')
-                        )
-                      }
+                      onSelect={() => setDefault(dashboard, isOrg)}
                     >
                       <Star className="me-2 h-4 w-4" aria-hidden />
                       {isOrg
@@ -396,12 +402,14 @@ export function DashboardHome() {
                         : t('dashboards.actions.setDefault', 'Set as my default')}
                     </DropdownMenuItem>
                   )}
-                  <DropdownMenuItem className={ITEM} asChild>
-                    <Link href="/dashboards">
-                      <Pencil className="me-2 h-4 w-4" aria-hidden />
-                      {t('dashboards.actions.edit', 'Edit details')}
-                    </Link>
-                  </DropdownMenuItem>
+                  {(!isOrg || canOrgManage) && (
+                    <DropdownMenuItem className={ITEM} asChild>
+                      <Link href="/dashboards">
+                        <Pencil className="me-2 h-4 w-4" aria-hidden />
+                        {t('dashboards.actions.edit', 'Edit details')}
+                      </Link>
+                    </DropdownMenuItem>
+                  )}
                   {canSchedule && !customizing && (
                     <div className="sm:hidden">
                       <DropdownMenuSeparator />
@@ -536,8 +544,8 @@ export function DashboardHome() {
           name: pendingDelete?.name ?? '',
         })}
         desc={t(
-          'confirm.dashboard.deleteDesc',
-          'The dashboard and its widget layout are deleted for everyone who can see it. Your data is not affected. This cannot be undone.'
+          'confirm.dashboard.deleteDescPersonal',
+          'Your dashboard and its layout are deleted. Copies you shared and your data are not affected. This cannot be undone.'
         )}
         confirmText={t('confirm.delete', 'Delete')}
         handleConfirm={() => (pendingDelete ? remove(pendingDelete) : undefined)}

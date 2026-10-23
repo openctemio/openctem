@@ -36,6 +36,9 @@ import { kitPolarity, metricDefinitionKey, metricNameKey, skeletonFor } from '..
 
 /** The list a mark opens: a category row's own drill-down, else the widget's. */
 function drillFor(v: WidgetValue | undefined, fallback?: string): DrillFn {
+  // A matrix cell or a time bucket has its own total; the widget's generic
+  // list has another, so these marks open nothing until per-mark lists exist.
+  if (v?.shape === 'matrix' || v?.shape === 'time_series') return () => undefined
   return ({ key }) => {
     const row = key ? v?.category?.rows.find((r) => r.key === key) : undefined
     return safeInternalHref(row?.drill) ?? fallback
@@ -96,6 +99,8 @@ export interface WidgetViewProps {
   value: WidgetValue | undefined
   /** When the dashboard's figures were computed. */
   asOf?: string
+  /** The dashboard's own time; a widget shows its time only when stale or different. */
+  pageAsOf?: string
   stale?: boolean
   loading?: boolean
   onRetry?: () => void
@@ -107,6 +112,7 @@ export function WidgetView({
   widget,
   value,
   asOf,
+  pageAsOf,
   stale = false,
   loading = false,
   onRetry,
@@ -139,11 +145,12 @@ export function WidgetView({
       title={title}
       definition={metric ? t(metricDefinitionKey(metric), '') || undefined : undefined}
       asOf={model.state === 'loading' ? null : asOf}
+      pageAsOf={pageAsOf}
       state={model.state}
       skeleton={skeletonFor(value?.shape)}
       notMeasuredReason={reason}
       emptyMessage={reason}
-      onRetry={model.state === 'error' || model.state === 'stale' ? onRetry : undefined}
+      onRetry={model.state === 'error' ? onRetry : undefined}
       actions={actions}
       className={className}
     >
