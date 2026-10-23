@@ -9,6 +9,7 @@ import (
 	"net/netip"
 	"regexp"
 	"slices"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -1728,11 +1729,40 @@ func (r *AssetRepository) UpsertBatch(ctx context.Context, assets []*asset.Asset
 	// covers the case where the batch contains two assets with the same
 	// (tenant_id, name) — ON CONFLICT cannot update a row twice in one
 	// statement.
-	created, updated, persistedIDs, err = r.upsertBatchMultiRow(ctx, assets)
+	//
+	// The rows are written in (tenant, name) order, so concurrent uploads of
+	// overlapping assets lock them in one order and queue instead of
+	// deadlocking. A deadlock or serialization failure that still happens
+	// runs the transaction again; it never drops to the per-row path, which
+	// would meet the same conflict one row at a time.
+	sorted := sortedAssetsForWrite(assets)
+	err = retryWriteConflict(ctx, func() error {
+		var txErr error
+		created, updated, persistedIDs, txErr = r.upsertBatchMultiRow(ctx, sorted)
+		return txErr
+	})
+	if isWriteConflict(err) {
+		return 0, 0, nil, err
+	}
 	if err != nil {
-		return r.upsertBatchPerRow(ctx, assets)
+		return r.upsertBatchPerRow(ctx, sorted)
 	}
 	return created, updated, persistedIDs, nil
+}
+
+// sortedAssetsForWrite returns the assets in (tenant, name) order, the
+// order every batched asset write locks rows in. The caller's slice is not
+// reordered.
+func sortedAssetsForWrite(assets []*asset.Asset) []*asset.Asset {
+	out := append([]*asset.Asset(nil), assets...)
+	sort.SliceStable(out, func(i, j int) bool {
+		ti, tj := out[i].TenantID().String(), out[j].TenantID().String()
+		if ti != tj {
+			return ti < tj
+		}
+		return out[i].Name() < out[j].Name()
+	})
+	return out
 }
 
 // checkNewAssets checks the assets of a batch that do not exist yet (by id or
@@ -1928,9 +1958,20 @@ func assetUpsertArgs(a *asset.Asset) ([]any, error) {
 // ensureRepositoryExtensions inserts the asset_repositories rows required by the
 // repository_branches FK for any repository-type assets in the batch. Idempotent
 // (ON CONFLICT DO NOTHING). Runs in the same tx as the asset upsert.
-func (r *AssetRepository) ensureRepositoryExtensions(ctx context.Context, tx *sql.Tx, assets []*asset.Asset) error {
+//
+// The row is keyed by the id the upsert stored (persistedIDs, name -> id from
+// its RETURNING), never by the in-memory a.ID(): when two uploads create the
+// same new repository at once, the one that loses the insert race keeps the
+// winner's row, and its own fresh id names no asset. Using it failed the
+// foreign key and rolled back every asset and finding of that upload.
+func (r *AssetRepository) ensureRepositoryExtensions(ctx context.Context, tx *sql.Tx, assets []*asset.Asset, persistedIDs map[string]shared.ID) error {
 	for _, a := range assets {
 		if !a.Type().IsRepository() {
+			continue
+		}
+		id, ok := persistedIDs[a.Name()]
+		if !ok || id.IsZero() {
+			// The upsert did not store this row (refused); nothing to extend.
 			continue
 		}
 		const repoQuery = `
@@ -1938,7 +1979,7 @@ func (r *AssetRepository) ensureRepositoryExtensions(ctx context.Context, tx *sq
 			VALUES ($1, $2, 'main', 'private')
 			ON CONFLICT (asset_id) DO NOTHING
 		`
-		if _, err := tx.ExecContext(ctx, repoQuery, a.ID().String(), a.Name()); err != nil {
+		if _, err := tx.ExecContext(ctx, repoQuery, id.String(), a.Name()); err != nil {
 			return fmt.Errorf("failed to ensure repository extension for %s: %w", a.Name(), err)
 		}
 	}
@@ -2033,7 +2074,7 @@ func (r *AssetRepository) upsertBatchMultiRow(ctx context.Context, assets []*ass
 		return 0, 0, nil, err
 	}
 
-	if err = r.ensureRepositoryExtensions(ctx, tx, assets); err != nil {
+	if err := r.ensureRepositoryExtensions(ctx, tx, assets, persistedIDs); err != nil {
 		return 0, 0, nil, err
 	}
 
@@ -2164,7 +2205,7 @@ func (r *AssetRepository) upsertBatchPerRow(ctx context.Context, assets []*asset
 		}
 	}
 
-	if err := r.ensureRepositoryExtensions(ctx, tx, stored); err != nil {
+	if err := r.ensureRepositoryExtensions(ctx, tx, stored, persistedIDs); err != nil {
 		return created, updated, nil, err
 	}
 
