@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { render, screen } from '@testing-library/react'
+import { render, screen, within } from '@testing-library/react'
 import type { FindingDetail } from '../../../types'
 import { FindingIntelSection } from '../finding-intel-section'
 
@@ -60,7 +60,7 @@ describe('FindingIntelSection', () => {
     const s = screen.getByRole('region', { name: 'Intelligence' })
     expect(s).toHaveTextContent('Known exploited since Jan 2, 2026 · due Jan 23, 2026')
     // The chip carries the ransomware use and the passed CISA due date.
-    expect(s).toHaveTextContent('KEV · ransomware · past due')
+    expect(within(s).getByLabelText('KEV, ransomware, past due')).toBeInTheDocument()
   })
 
   it('renders nothing for a finding with no vulnerability facts', () => {
