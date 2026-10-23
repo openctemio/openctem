@@ -18,10 +18,11 @@ export function useCrownJewels() {
   })
 }
 
-export function useAllAssets(search?: string) {
+// `enabled` keeps the picker idle until the designate dialog opens.
+export function useAllAssets(search?: string, enabled = true) {
   const params = new URLSearchParams({ per_page: '50', page: '1' })
   if (search) params.set('search', search)
-  return useSWR<PaginatedAssets>(`/api/v1/assets?${params.toString()}`, get, {
+  return useSWR<PaginatedAssets>(enabled ? `/api/v1/assets?${params.toString()}` : null, get, {
     revalidateOnFocus: false,
   })
 }
