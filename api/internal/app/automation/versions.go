@@ -229,6 +229,12 @@ func (s *WorkflowService) Rollback(ctx context.Context, in PublishInput, version
 	if err := target.ValidateSupported(); err != nil {
 		return nil, err
 	}
+	// An older version may predate a guardrail (an update_status target a
+	// person decides, a request without its reason): it is not published
+	// again as it was.
+	if err := validateNodeConfigs(old.Definition.Configs()...); err != nil {
+		return nil, err
+	}
 	return s.publishDefinition(ctx, in.TenantID, in.UserID, target, audit.ActionWorkflowRolledBack,
 		fmt.Sprintf("rolled back to version %d", old.Version))
 }
