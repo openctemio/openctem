@@ -24,11 +24,11 @@ interface ManualEvidenceNotesSectionProps {
   findingId: string
 }
 
-function formatDate(dateString: string): string {
+function formatDate(dateString: string, locale: string): string {
   const d = new Date(dateString)
   return Number.isNaN(d.getTime())
     ? dateString
-    : d.toLocaleDateString('en-US', {
+    : d.toLocaleDateString(locale, {
         month: 'short',
         day: 'numeric',
         year: 'numeric',
@@ -59,7 +59,7 @@ function NoteCard({
   onDelete: (note: FindingEvidenceNote) => void
   isDeleting: boolean
 }) {
-  const { t } = useTranslation()
+  const { t, locale } = useTranslation()
   const hasUrl = !!note.url
   return (
     <div className="rounded-lg border p-4">
@@ -72,7 +72,7 @@ function NoteCard({
           {hasUrl && (
             <SafeExternalLink
               href={note.url}
-              className="inline-flex items-center gap-1 text-sm text-blue-400 hover:underline break-all"
+              className="inline-flex items-center gap-1 text-sm text-primary hover:underline break-all"
             >
               {note.url}
               <ExternalLink className="h-3 w-3 shrink-0" />
@@ -86,7 +86,7 @@ function NoteCard({
             )}
             <span className="flex items-center gap-1">
               <Calendar className="h-3 w-3" />
-              {formatDate(note.created_at)}
+              {formatDate(note.created_at, locale)}
             </span>
             <span className="flex items-center gap-1">
               <User className="h-3 w-3" />
@@ -98,7 +98,7 @@ function NoteCard({
           <Button
             size="icon"
             variant="ghost"
-            className="text-muted-foreground hover:text-red-500 h-8 w-8 shrink-0"
+            className="text-muted-foreground hover:text-destructive h-8 w-8 shrink-0"
             aria-label={t('findings.manualEvidence.deleteAria', 'Delete evidence note')}
             disabled={isDeleting}
             onClick={() => onDelete(note)}
