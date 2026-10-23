@@ -11,8 +11,12 @@ const state = vi.hoisted(() => ({ items: [] as unknown[] }))
 vi.mock('@/components/layout', () => ({
   Main: ({ children }: { children: React.ReactNode }) => <main>{children}</main>,
 }))
-vi.mock('@/features/workflows/components/automation-canvas', () => ({
-  AutomationCanvas: () => null,
+vi.mock('@/features/workflows/components/automation-workbench', () => ({
+  AutomationWorkbench: () => null,
+}))
+vi.mock('@/features/workflows/components/automation-run-sheet', () => ({
+  AutomationRunSheet: () => null,
+  useRunStatusLabel: () => (s: string) => s,
 }))
 vi.mock('@/hooks/use-url-param', () => ({
   useUrlFilter: (_k: string, fallback: string) => [fallback, vi.fn()],
@@ -20,6 +24,7 @@ vi.mock('@/hooks/use-url-param', () => ({
 vi.mock('@/lib/permissions', async (orig) => ({
   ...(await orig<typeof import('@/lib/permissions')>()),
   Can: ({ children }: { children: React.ReactNode }) => <>{children}</>,
+  useHasPermission: () => true,
 }))
 vi.mock('@/lib/api/workflow-hooks', () => ({
   useWorkflows: () => ({
@@ -102,12 +107,17 @@ describe('Automations page i18n', () => {
     expect(container.textContent).not.toContain('success)')
   })
 
-  it('keeps English text out of the JSX of the page, canvas and inspector', () => {
+  it('keeps English text out of the JSX of the page and the automation components', () => {
     const root = join(__dirname, '../../../../../')
     const files = [
       'app/(dashboard)/(mobilization)/automations/page.tsx',
       'features/workflows/components/automation-canvas.tsx',
       'features/workflows/components/automation-inspector.tsx',
+      'features/workflows/components/automation-lifecycle-bar.tsx',
+      'features/workflows/components/automation-versions-dialog.tsx',
+      'features/workflows/components/automation-run-sheet.tsx',
+      'features/workflows/components/automation-trace-panels.tsx',
+      'features/workflows/components/automation-workbench.tsx',
     ]
     for (const f of files) {
       const src = readFileSync(join(root, f), 'utf8')

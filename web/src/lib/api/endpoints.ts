@@ -1638,6 +1638,36 @@ export const workflowEndpoints = {
    * Trigger workflow run
    */
   trigger: (workflowId: string) => `/api/v1/workflows/${workflowId}/runs`,
+
+  /** Trigger, action and notification types the builder may offer. */
+  catalog: () => '/api/v1/workflows/catalog',
+
+  /** Published versions (newest first). */
+  versions: (workflowId: string) => `/api/v1/workflows/${workflowId}/versions`,
+
+  /** Publish the draft (go live). */
+  publish: (workflowId: string) => `/api/v1/workflows/${workflowId}/publish`,
+
+  /** A second publisher approves a pending version. */
+  approveVersion: (workflowId: string, versionId: string) =>
+    `/api/v1/workflows/${workflowId}/versions/${versionId}/approve`,
+
+  /** Republish an older version as a new one. */
+  rollbackVersion: (workflowId: string, versionId: string) =>
+    `/api/v1/workflows/${workflowId}/versions/${versionId}/rollback`,
+
+  /** Switch to simulate (live is reached only through publish). */
+  mode: (workflowId: string) => `/api/v1/workflows/${workflowId}/mode`,
+
+  /** Run the draft on recent subjects; nothing is stored. */
+  preview: (workflowId: string) => `/api/v1/workflows/${workflowId}/preview`,
+
+  /** Static check of the draft graph. */
+  validate: (workflowId: string) => `/api/v1/workflows/${workflowId}/validate`,
+
+  /** Per-step counts over recorded runs. */
+  trace: (workflowId: string, mode: 'simulate' | 'live' = 'simulate', days = 30) =>
+    `/api/v1/workflows/${workflowId}/trace?mode=${mode}&days=${days}`,
 } as const
 
 /**
@@ -1661,6 +1691,9 @@ export const workflowRunEndpoints = {
    * Cancel a running workflow
    */
   cancel: (runId: string) => `/api/v1/workflow-runs/${runId}/cancel`,
+
+  /** Continue a run paused at the change cap. */
+  resume: (runId: string) => `/api/v1/workflow-runs/${runId}/resume`,
 } as const
 
 // ============================================

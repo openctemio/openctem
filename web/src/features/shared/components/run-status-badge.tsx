@@ -9,6 +9,7 @@ import {
   CircleDashed,
   AlertTriangle,
   ShieldAlert,
+  PauseCircle,
   type LucideIcon,
 } from 'lucide-react'
 
@@ -56,6 +57,8 @@ const RUN_STATUS: Record<string, RunStatusConfig> = {
     className: 'bg-warning/15 text-warning',
   },
   canceled: { label: 'Canceled', icon: Ban, className: 'bg-muted text-muted-foreground' },
+  // Stopped part way and waiting for a person (an automation run at its change cap).
+  paused: { label: 'Paused', icon: PauseCircle, className: 'bg-warning/15 text-warning' },
   // The trigger was refused before anything was dispatched (scope gate,
   // freeze window, no sensor, wildcard target...). Nothing ran.
   blocked: {

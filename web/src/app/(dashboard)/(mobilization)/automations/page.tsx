@@ -66,7 +66,7 @@ import {
 } from '@/components/ui/dropdown-menu'
 import { toast } from 'sonner'
 import { cn } from '@/lib/utils'
-import { Can, Permission } from '@/lib/permissions'
+import { Can, Permission, useHasPermission } from '@/lib/permissions'
 import { get, put, csrfFetch } from '@/lib/api/client'
 import { getErrorMessage } from '@/lib/api/error-handler'
 import { workflowEndpoints } from '@/lib/api/endpoints'
@@ -79,7 +79,11 @@ import {
   invalidateWorkflowsCache,
   invalidateWorkflowRunsCache,
 } from '@/lib/api/workflow-hooks'
-import { AutomationCanvas } from '@/features/workflows/components/automation-canvas'
+import { AutomationWorkbench } from '@/features/workflows/components/automation-workbench'
+import {
+  AutomationRunSheet,
+  useRunStatusLabel,
+} from '@/features/workflows/components/automation-run-sheet'
 import {
   fromApiGraph,
   starterGraph,
@@ -92,7 +96,6 @@ import type {
   CreateWorkflowRequest,
   UpdateWorkflowGraphRequest,
 } from '@/lib/api/workflow-types'
-import { getUnsupportedWorkflowFeatures } from '@/lib/api/workflow-types'
 import { useAutomationLabels } from '@/features/workflows/lib/use-automation-labels'
 
 type T = ReturnType<typeof useTranslation>['t']
@@ -138,11 +141,11 @@ function UnsupportedBadge({ features }: { features: string[] }) {
     <Badge
       variant="outline"
       className="border-warning/30 bg-warning/10 text-warning text-xs"
-      title={t('automations.unsupported.badgeTitle', 'Not supported: {features}', {
+      title={t('automations.unsupported.badgeTitle', 'Removed types: {features}', {
         features: features.map(labels.feature).join(', '),
       })}
     >
-      {t('automations.unsupported.badge', 'Unsupported')}
+      {t('automations.unsupported.badge', 'Removed type')}
     </Badge>
   )
 }
@@ -159,9 +162,11 @@ function getActionNames(workflow: Workflow): string[] {
 function WorkflowTriggerButton({
   workflowId,
   workflowName,
+  disabled = false,
 }: {
   workflowId: string
   workflowName: string
+  disabled?: boolean
 }) {
   const { t } = useTranslation()
   const { trigger, isMutating } = useTriggerWorkflow(workflowId)
@@ -188,7 +193,7 @@ function WorkflowTriggerButton({
   }
 
   return (
-    <DropdownMenuItem onClick={handleRun} disabled={isMutating}>
+    <DropdownMenuItem onClick={handleRun} disabled={disabled || isMutating}>
       <Play className="me-2 h-4 w-4" />
       {isMutating
         ? t('automations.menu.running', 'Running...')
@@ -209,6 +214,11 @@ export default function WorkflowsPage() {
   const deleteWorkflowId = pendingDelete?.id ?? null
   const { t } = useTranslation()
   const labels = useAutomationLabels()
+  const runStatusLabel = useRunStatusLabel()
+  const canWrite = useHasPermission(Permission.AutomationsWrite)
+  const canPublish = useHasPermission(Permission.AutomationsPublish)
+  // The run whose trace is open (a row of Recent executions).
+  const [openRunId, setOpenRunId] = useState<string | null>(null)
   const triggerOf = (w: Workflow) => getTriggerDisplay(w, t, labels.trigger)
   const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false)
   const [newWorkflowName, setNewWorkflowName] = useState('')
@@ -308,7 +318,10 @@ export default function WorkflowsPage() {
       }
 
       // Atomic update - replaces entire graph in a single transaction
-      await put<Workflow>(workflowEndpoints.updateGraph(editingWorkflow.id), request)
+      const updated = await put<Workflow>(
+        workflowEndpoints.updateGraph(editingWorkflow.id),
+        request
+      )
 
       toast.success(
         t('automations.toast.saved', 'Workflow "{name}" saved successfully', {
@@ -316,7 +329,8 @@ export default function WorkflowsPage() {
         })
       )
       await invalidateWorkflowsCache()
-      setEditingWorkflow(null)
+      // Stay on the saved draft: simulate, preview and going live follow a save.
+      setEditingWorkflow(updated ?? editingWorkflow)
     } catch (err) {
       console.error('Failed to save workflow:', err)
       toast.error(
@@ -464,7 +478,19 @@ export default function WorkflowsPage() {
     setSelectedWorkflow(workflow)
   }
 
-  const handleEditInBuilder = (workflow: Workflow) => {
+  const handleEditInBuilder = async (listed: Workflow) => {
+    // List items may omit the graph; load the full automation to edit it.
+    let workflow = listed
+    if (!listed.nodes) {
+      try {
+        workflow = await get<Workflow>(workflowEndpoints.get(listed.id))
+      } catch (err) {
+        toast.error(
+          getErrorMessage(err, t('automations.toast.loadFailed', 'Could not load the workflow'))
+        )
+        return
+      }
+    }
     // Load the workflow into the visual builder for editing
     setEditingWorkflow(workflow)
     // A workflow without nodes opens as the starter graph (one manual trigger).
@@ -540,7 +566,7 @@ export default function WorkflowsPage() {
         <div className="min-w-0 max-w-[360px]">
           <div className="flex min-w-0 items-center gap-2">
             <p className="truncate text-sm font-medium">{row.original.name}</p>
-            <UnsupportedBadge features={getUnsupportedWorkflowFeatures(row.original)} />
+            <UnsupportedBadge features={row.original.unsupported_features ?? []} />
           </div>
           {row.original.description && (
             <p className="truncate text-xs text-muted-foreground">{row.original.description}</p>
@@ -638,19 +664,22 @@ export default function WorkflowsPage() {
       cell: ({ row }) => {
         // An unsupported workflow can be switched off, never on (API 400).
         const blocked =
-          !row.original.is_active && getUnsupportedWorkflowFeatures(row.original).length > 0
+          !canPublish ||
+          (!row.original.is_active && (row.original.unsupported_features ?? []).length > 0)
         return (
           <div onClick={(e) => e.stopPropagation()}>
             <Switch
               checked={row.original.is_active}
               disabled={blocked}
               title={
-                blocked
-                  ? t(
-                      'automations.unsupported.switchTitle',
-                      'Uses an unsupported trigger or action'
-                    )
-                  : undefined
+                !canPublish
+                  ? t('automations.golive.noPermission', 'Needs the publish permission')
+                  : blocked
+                    ? t(
+                        'automations.unsupported.switchTitle',
+                        'Uses an unsupported trigger or action'
+                      )
+                    : undefined
               }
               onCheckedChange={(checked) => handleToggleWorkflow(row.original, checked)}
               aria-label={
@@ -692,7 +721,11 @@ export default function WorkflowsPage() {
                 <Pencil className="me-2 h-4 w-4" />
                 {t('automations.menu.editInBuilder', 'Edit in builder')}
               </DropdownMenuItem>
-              <WorkflowTriggerButton workflowId={workflow.id} workflowName={workflow.name} />
+              <WorkflowTriggerButton
+                workflowId={workflow.id}
+                workflowName={workflow.name}
+                disabled={!canWrite}
+              />
               <DropdownMenuSeparator />
               <DropdownMenuItem onClick={() => handleDuplicateWorkflow(workflow)}>
                 <Copy className="me-2 h-4 w-4" />
@@ -702,7 +735,7 @@ export default function WorkflowsPage() {
               <DropdownMenuItem
                 className="text-destructive focus:text-destructive"
                 onSelect={() => setPendingDelete(workflow)}
-                disabled={isDeleting && deleteWorkflowId === workflow.id}
+                disabled={!canPublish || (isDeleting && deleteWorkflowId === workflow.id)}
               >
                 <Trash2 className="me-2 h-4 w-4" />
                 {t('confirm.delete', 'Delete')}
@@ -732,7 +765,21 @@ export default function WorkflowsPage() {
       header: ({ column }) => (
         <DataTableColumnHeader column={column} title={t('automations.columns.status', 'Status')} />
       ),
-      cell: ({ row }) => <RunStatusBadge status={row.original.status} />,
+      cell: ({ row }) => (
+        <RunStatusBadge status={row.original.status} label={runStatusLabel(row.original.status)} />
+      ),
+    },
+    {
+      id: 'mode',
+      enableSorting: false,
+      header: t('automations.columns.mode', 'Mode'),
+      cell: ({ row }) => (
+        <span className="text-sm text-muted-foreground">
+          {row.original.mode === 'simulate'
+            ? t('automations.mode.simulate', 'Simulate')
+            : t('automations.mode.live', 'Live')}
+        </span>
+      ),
     },
     {
       id: 'nodes',
@@ -918,6 +965,7 @@ export default function WorkflowsPage() {
                 showColumnToggle={false}
                 showPagination={false}
                 getRowId={(r) => r.id}
+                onRowClick={(r) => setOpenRunId(r.id)}
                 toolbarStart={
                   <span className="text-sm text-muted-foreground">
                     {t('automations.executions.latest', 'Latest {n} runs', { n: runs.length })}
@@ -972,7 +1020,7 @@ export default function WorkflowsPage() {
                       <RefreshCw className="me-2 h-4 w-4" />
                       {t('automations.builder.reset', 'Reset')}
                     </Button>
-                    <Button size="sm" onClick={handleSaveWorkflow} disabled={isSaving}>
+                    <Button size="sm" onClick={handleSaveWorkflow} disabled={isSaving || !canWrite}>
                       <Save className="me-2 h-4 w-4" />
                       {isSaving
                         ? t('automations.builder.saving', 'Saving...')
@@ -984,7 +1032,8 @@ export default function WorkflowsPage() {
                 </div>
               </CardHeader>
               <CardContent className="p-0">
-                <AutomationCanvas
+                <AutomationWorkbench
+                  workflow={editingWorkflow}
                   nodes={nodes}
                   edges={edges}
                   setNodes={setNodes}
@@ -1015,6 +1064,20 @@ export default function WorkflowsPage() {
         />
       </Main>
 
+      {openRunId &&
+        (() => {
+          const run = runs.find((r) => r.id === openRunId)
+          const wf = run ? workflows.find((w) => w.id === run.workflow_id) : undefined
+          return (
+            <AutomationRunSheet
+              runId={openRunId}
+              workflowName={wf?.name}
+              nodeName={(key) => wf?.nodes?.find((n) => n.node_key === key)?.name}
+              onClose={() => setOpenRunId(null)}
+            />
+          )
+        })()}
+
       {/* Workflow Detail Sheet */}
       {selectedWorkflow &&
         (() => {
@@ -1022,7 +1085,7 @@ export default function WorkflowsPage() {
           const successRate =
             wf.total_runs > 0 ? Math.round((wf.successful_runs / wf.total_runs) * 100) : 0
           const actions = getActionNames(wf)
-          const unsupported = getUnsupportedWorkflowFeatures(wf)
+          const unsupported = wf.unsupported_features ?? []
           return (
             <DetailSheet
               open
@@ -1044,6 +1107,11 @@ export default function WorkflowsPage() {
                           ? t('automations.status.active', 'Active')
                           : t('automations.status.inactive', 'Inactive')}
                       </Badge>
+                      <Badge variant="outline" className="text-xs">
+                        {wf.mode === 'live'
+                          ? t('automations.mode.live', 'Live')
+                          : t('automations.mode.simulate', 'Simulate')}
+                      </Badge>
                       <UnsupportedBadge features={unsupported} />
                     </>
                   }
@@ -1064,6 +1132,19 @@ export default function WorkflowsPage() {
               }
             >
               <div className="space-y-5">
+                {wf.disabled_reason === 'uses_removed_type' && (
+                  <Alert>
+                    <AlertTitle>
+                      {t('automations.disabled.title', 'Switched off by the platform')}
+                    </AlertTitle>
+                    <AlertDescription>
+                      {t(
+                        'automations.disabled.removedType',
+                        'Switched off: a step uses a type the platform no longer runs. Replace or remove the step marked "Removed type", then publish again.'
+                      )}
+                    </AlertDescription>
+                  </Alert>
+                )}
                 {unsupported.length > 0 && (
                   <Alert variant="destructive">
                     <AlertTitle>
