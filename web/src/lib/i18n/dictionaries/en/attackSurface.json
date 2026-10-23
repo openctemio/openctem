@@ -149,9 +149,11 @@
   "attackSurface.overview.of100": "of 100",
   "attackSurface.overview.noAssetsToScore": "No assets to score",
   "attackSurface.overview.seeNewlyExposed": "See what became internet-facing this week",
-  "attackSurface.tab.webSurface": "Web surface",
-  "attackSurface.web.description": "What your web origins serve: endpoints, their parameters (names only), the same path across origins, and what changed.",
-  "attackSurface.web.shortDescription": "Origins, endpoints and parameters.",
+  "attackSurface.overview.infoLabel": "How {title} is measured",
+  "attackSurface.decide.rulesWaiting.one": "1 name rule waiting",
+  "attackSurface.decide.rulesWaiting.other": "{count} name rules waiting",
+  "attackSurface.decide.review": "Review",
+  "attackSurface.decide.undoFailed": "Undo failed",
   "attackSurface.external.title": "External attack surface",
   "attackSurface.external.description": "Every internet-facing asset, riskiest first.",
   "attackSurface.external.scanPage": "Scan this page",
@@ -307,5 +309,8 @@
   "attackSurface.monitoring.lastRun": "Last run",
   "attackSurface.monitoring.dns": "DNS checks",
   "attackSurface.monitoring.dnsDescription": "Dangling CNAME and NS records, lame delegations and email security (SPF, DMARC), looked up through DNS only.",
-  "attackSurface.monitoring.howOften": "How often"
+  "attackSurface.monitoring.howOften": "How often",
+  "attackSurface.tab.webSurface": "Web surface",
+  "attackSurface.web.description": "What your web origins serve: endpoints, their parameters (names only), the same path across origins, and what changed.",
+  "attackSurface.web.shortDescription": "Origins, endpoints and parameters."
 }

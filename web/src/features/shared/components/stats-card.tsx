@@ -1,6 +1,7 @@
 'use client'
 
 import type * as React from 'react'
+import Link from '@/components/link'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { cn } from '@/lib/utils'
@@ -26,6 +27,9 @@ interface StatsCardProps {
   /** Accessible name of the info button. Pass a translated label; the
    *  English default is kept for callers not yet translated. */
   infoLabel?: string
+  /** Makes the whole card open this list. The title is the link (a stretched
+   *  hit area), so the info button stays a sibling, never nested in the anchor. */
+  href?: string
 }
 
 export function StatsCard({
@@ -40,6 +44,7 @@ export function StatsCard({
   iconClassName,
   info,
   infoLabel,
+  href,
 }: StatsCardProps) {
   const changeColors = {
     positive: 'text-success',
@@ -51,17 +56,34 @@ export function StatsCard({
     changeType === 'positive' ? TrendingUp : changeType === 'negative' ? TrendingDown : Minus
 
   return (
-    <Card className={cn(className)}>
+    <Card
+      className={cn(
+        href &&
+          'relative transition-shadow focus-within:ring-2 focus-within:ring-ring hover:shadow-md',
+        className
+      )}
+    >
       <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
         <div className="flex min-w-0 items-center gap-1.5">
-          <CardTitle className="text-sm font-medium">{title}</CardTitle>
+          <CardTitle className="text-sm font-medium">
+            {href ? (
+              <Link
+                href={href}
+                className="after:absolute after:inset-0 after:rounded-xl focus-visible:outline-none"
+              >
+                {title}
+              </Link>
+            ) : (
+              title
+            )}
+          </CardTitle>
           {info && (
             <Tooltip>
               <TooltipTrigger asChild>
                 <button
                   type="button"
                   aria-label={infoLabel ?? `How ${title} is measured`}
-                  className="shrink-0 rounded-sm text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                  className="relative z-10 shrink-0 rounded-sm text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                 >
                   <Info className="h-3.5 w-3.5" />
                 </button>
