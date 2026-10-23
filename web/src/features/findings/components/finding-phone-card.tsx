@@ -57,7 +57,17 @@ export function FindingPhoneCard({ finding: f, selection, onOpen, menu }: Findin
         onClick={() => onOpen(f)}
         className="flex min-w-0 flex-1 items-start gap-3 py-3 text-start focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
       >
-        <SeverityBadge severity={f.severity} className="mt-0.5 shrink-0" />
+        {/* Priority leads (it already folds in severity, exploitability and
+            the asset); severity leads only while a finding has no class. */}
+        {f.priorityClass ? (
+          <PriorityClassBadge
+            priorityClass={f.priorityClass}
+            showTooltip={false}
+            className="mt-0.5 shrink-0"
+          />
+        ) : (
+          <SeverityBadge severity={f.severity} className="mt-0.5 shrink-0" />
+        )}
         <div className="min-w-0 flex-1">
           <p dir="auto" className="line-clamp-2 text-sm font-medium [unicode-bidi:isolate]">
             {title}
@@ -83,12 +93,12 @@ export function FindingPhoneCard({ finding: f, selection, onOpen, menu }: Findin
             </p>
           )}
           <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
-            {f.priorityClass && <PriorityClassBadge priorityClass={f.priorityClass} />}
+            {f.priorityClass && <SeverityBadge severity={f.severity} />}
             <FindingStatusBadge status={f.status} />
             <FindingSubStatus subStatusId={f.subStatusId} />
             {f.branchOnly && <BranchOnlyBadge />}
             {f.isInKev && (
-              <Badge variant="destructive" className="h-5 px-1.5 text-[10px]">
+              <Badge variant="destructive" className="h-5 px-1.5 text-[11px]">
                 {t('findings.list.kev', 'KEV')}
               </Badge>
             )}

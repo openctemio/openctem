@@ -186,8 +186,8 @@ function GroupTitle({ group }: { group: FindingGroup }) {
         />
       )}
       {Boolean(meta.cisa_kev) && (
-        <Badge variant="destructive" className="h-5 px-1.5 text-[10px]">
-          KEV
+        <Badge variant="destructive" className="h-5 px-1.5 text-[11px]">
+          {t('findings.list.kev', 'KEV')}
         </Badge>
       )}
       <span className="tabular-nums">· {facts.join(' · ')}</span>

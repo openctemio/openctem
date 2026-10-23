@@ -58,6 +58,30 @@ function card(
 }
 
 describe('FindingPhoneCard', () => {
+  it('leads with the priority class, and severity follows in the badge row', () => {
+    const { container } = card()
+    const open = container.querySelector('button.text-start') as HTMLElement
+    const badges = Array.from(open.querySelectorAll('[data-slot="badge"]')).map((b) =>
+      b.textContent?.trim()
+    )
+    expect(badges[0]).toBe('P1')
+    expect(badges.slice(1).join(' ')).toMatch(/high/i)
+  })
+
+  it('leads with severity while a finding has no priority class', () => {
+    render(
+      <FindingPhoneCard
+        finding={{ ...finding, priorityClass: undefined } as unknown as Finding}
+        selection={{ selectable: false, selected: false, onSelectedChange: vi.fn() }}
+        onOpen={vi.fn()}
+        menu={null}
+      />
+    )
+    const open = screen.getByRole('button', { name: /SQL injection in login/ })
+    const first = open.querySelector('[data-slot="badge"]')
+    expect(first?.textContent).toMatch(/high/i)
+  })
+
   it('has a checkbox named after the finding and a row menu', () => {
     card()
     expect(
