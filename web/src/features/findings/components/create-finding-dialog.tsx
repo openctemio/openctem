@@ -113,8 +113,13 @@ export function CreateFindingDialog({ open, onOpenChange, onSuccess }: CreateFin
     skip: !open,
   })
 
-  // Fetch finding sources from API (dynamic configuration)
-  const { data: findingSourcesData, isLoading: sourcesLoading } = useFindingSourcesApi()
+  // Fetch finding sources from API (dynamic configuration). The dialog stays
+  // mounted on the findings page, so the catalog loads when it opens, not with
+  // every page load (request budget, web/e2e/request-budget.json).
+  const { data: findingSourcesData, isLoading: sourcesLoading } = useFindingSourcesApi(
+    undefined,
+    open
+  )
 
   // Group sources by category for the select dropdown
   const sourceGroups = useMemo(() => {
