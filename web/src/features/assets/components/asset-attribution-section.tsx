@@ -135,7 +135,7 @@ export function AssetAttributionSection({
   // endpoint puts it in scope or holds it, and there is nothing to add.
   const cert = attribution?.certificate ? certificateStandingText(t, attribution.certificate) : null
   const scope = attribution && !cert ? scopeStandingText(t, attribution) : null
-  const canAddScope = can(Permission.ScopeWrite) && !!assetName
+  const canAddScope = can(Permission.ScopeWrite) && !!assetName && assetType !== 'certificate'
 
   return (
     <DetailSection title={t('assets.attribution.title', 'Ownership and scope')} icon={ShieldCheck}>
