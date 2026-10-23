@@ -9,6 +9,8 @@ interface PageHeaderProps {
   description?: ReactNode
   children?: ReactNode
   className?: string
+  /** Classes for the actions group, e.g. `basis-full sm:basis-auto` for a toolbar that fills a phone row. */
+  actionsClassName?: string
 }
 
 /**
@@ -17,7 +19,13 @@ interface PageHeaderProps {
  * to be `shrink-0`, so a long description held it at its one-line width and
  * pushed the actions past the edge of the page, where they were clipped.
  */
-export function PageHeader({ title, description, children, className }: PageHeaderProps) {
+export function PageHeader({
+  title,
+  description,
+  children,
+  className,
+  actionsClassName,
+}: PageHeaderProps) {
   return (
     <div
       data-slot="page-header"
@@ -40,7 +48,12 @@ export function PageHeader({ title, description, children, className }: PageHead
         // Pages often wrap their buttons in their own <div className="flex gap-2">,
         // which does not wrap and pushed the last button off-screen on narrow
         // widths. Direct child groups wrap too, so the actions always fit.
-        <div className="flex max-w-full shrink-0 flex-wrap items-center gap-2 [&>div]:max-w-full [&>div]:flex-wrap">
+        <div
+          className={cn(
+            'flex max-w-full shrink-0 flex-wrap items-center gap-2 [&>div]:max-w-full [&>div]:flex-wrap',
+            actionsClassName
+          )}
+        >
           {children}
         </div>
       )}
