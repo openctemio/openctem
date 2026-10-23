@@ -1,146 +1,27 @@
-'use client'
-
-import { useCallback } from 'react'
-import { useState } from 'react'
+import { useCallback, useState } from 'react'
 import Link from '@/components/link'
-import { formatRelative } from '@/lib/format-date'
-import {
-  AlertTriangle,
-  Bell,
-  Bug,
-  CheckCheck,
-  CheckCircle,
-  Info,
-  Loader2,
-  Scan,
-  User,
-  XCircle,
-} from 'lucide-react'
+import { AlertCircle, Bell, CheckCheck, Loader2, RotateCw } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Separator } from '@/components/ui/separator'
 import { Badge } from '@/components/ui/badge'
-import { cn } from '@/lib/utils'
-import { SEVERITY_TEXT_COLORS } from '@/lib/severity-colors'
 import {
   useNotificationsApi,
   useUnreadCountApi,
-  markNotificationAsRead,
-  markAllNotificationsAsRead,
-  invalidateNotificationsCache,
-  type UserNotification,
 } from '@/features/notifications/api/use-notification-api'
+import { useMarkNotifications } from '@/features/notifications/api/use-mark-notifications'
+import { NotificationRow } from '@/features/notifications/components/notification-row'
 import { useUserNotificationChannel } from '@/hooks/use-websocket'
 import { useTenant } from '@/context/tenant-provider'
 import { useDisplayUser } from '@/hooks/use-display-user'
-import { safeHref } from '@/lib/safe-href'
+import { useTranslation } from '@/context/i18n-provider'
 
-const severityColors: Record<string, string> = { ...SEVERITY_TEXT_COLORS }
-
-const severityBgColors: Record<string, string> = {
-  critical: 'bg-red-500/10',
-  high: 'bg-orange-500/10',
-  medium: 'bg-yellow-500/10',
-  low: 'bg-blue-500/10',
-  info: 'bg-muted',
-}
-
-const typeIcons: Record<string, typeof AlertTriangle> = {
-  finding_new: Bug,
-  finding_assigned: User,
-  finding_status_change: CheckCircle,
-  finding_comment: Info,
-  finding_mention: User,
-  scan_started: Scan,
-  scan_completed: CheckCircle,
-  scan_failed: XCircle,
-  asset_new: Info,
-  member_invited: User,
-  member_joined: User,
-  role_changed: User,
-  system_alert: AlertTriangle,
-}
-
-interface NotificationItemProps {
-  notification: UserNotification
-  onMarkAsRead: (id: string) => void
-  onClose: () => void
-}
-
-function NotificationItem({ notification, onMarkAsRead, onClose }: NotificationItemProps) {
-  const Icon = typeIcons[notification.notification_type] || Info
-
-  const handleClick = () => {
-    if (!notification.is_read) {
-      onMarkAsRead(notification.id)
-    }
-    onClose()
-  }
-
-  const content = (
-    <div
-      className={cn(
-        'flex gap-2 p-2.5 hover:bg-muted/50 cursor-pointer transition-colors sm:gap-3 sm:p-3',
-        !notification.is_read && 'bg-muted/30'
-      )}
-      onClick={handleClick}
-    >
-      <div
-        className={cn(
-          'mt-0.5 flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-full sm:h-7 sm:w-7',
-          severityBgColors[notification.severity],
-          severityColors[notification.severity]
-        )}
-      >
-        <Icon className="h-3.5 w-3.5 flex-shrink-0 sm:h-4 sm:w-4" />
-      </div>
-      <div className="flex-1 min-w-0 space-y-0.5 sm:space-y-1">
-        {/*
-          break-words (overflow-wrap: anywhere) so long phrases like
-          `You have been added to the team "Security Operations"` wrap
-          inside the narrow mobile popover instead of running off the
-          right edge. line-clamp-2 caps height; ellipsis appears at the
-          end of line 2 only when wrap actually happens. Without
-          break-words the content was running past the popover and the
-          line-clamp ellipsis was hidden behind the cut-off.
-        */}
-        <p
-          className={cn(
-            'text-xs leading-tight sm:text-sm break-words line-clamp-2',
-            !notification.is_read && 'font-medium'
-          )}
-        >
-          {notification.title}
-        </p>
-        {notification.body && (
-          <p className="text-[11px] text-muted-foreground line-clamp-2 break-words sm:text-xs">
-            {notification.body}
-          </p>
-        )}
-        <p className="text-[11px] text-muted-foreground sm:text-xs">
-          {formatRelative(notification.created_at)}
-        </p>
-      </div>
-      {!notification.is_read && (
-        <div className="mt-1.5 flex-shrink-0 sm:mt-2">
-          <div className="h-1.5 w-1.5 rounded-full bg-primary sm:h-2 sm:w-2" />
-        </div>
-      )}
-    </div>
-  )
-
-  // The target comes from the server; a stored javascript:/data: value must
-  // not become a link.
-  const href = safeHref(notification.url)
-  if (href) {
-    return <Link href={href}>{content}</Link>
-  }
-
-  return content
-}
+/** The bell shows the latest few; the page has the full list. */
+const BELL_PER_PAGE = 10
 
 export function NotificationBell() {
+  const { t } = useTranslation()
   const [open, setOpen] = useState(false)
   const { currentTenant } = useTenant()
   // The profile API is the reliable source of the user id: the auth store is
@@ -151,8 +32,9 @@ export function NotificationBell() {
   const {
     data: notificationsData,
     isLoading,
+    error,
     mutate: mutateNotifications,
-  } = useNotificationsApi(1, 20, undefined, { enabled: open })
+  } = useNotificationsApi(1, BELL_PER_PAGE, undefined, { enabled: open })
   const { data: unreadData, mutate: mutateUnreadCount } = useUnreadCountApi()
 
   const notifications = notificationsData?.data ?? []
@@ -176,39 +58,31 @@ export function NotificationBell() {
     ),
   })
 
-  const handleMarkAsRead = useCallback(async (id: string) => {
-    try {
-      await markNotificationAsRead(id)
-      await invalidateNotificationsCache()
-    } catch {
-      // Silently fail - notification will still appear as unread
-      // and will be retried on next poll
-    }
-  }, [])
-
-  const handleMarkAllAsRead = useCallback(async () => {
-    try {
-      await markAllNotificationsAsRead()
-      await invalidateNotificationsCache()
-    } catch {
-      // Silently fail
-    }
-  }, [])
+  const { markRead, markAllRead } = useMarkNotifications()
 
   return (
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
-        <Button variant="ghost" size="icon" className="relative">
+        <Button
+          variant="ghost"
+          size="icon"
+          className="relative"
+          aria-label={
+            unreadCount > 0
+              ? t('notifications.bell.label', 'Notifications, {n} unread', { n: unreadCount })
+              : t('notifications.bell.labelNone', 'Notifications')
+          }
+        >
           <Bell className="h-5 w-5" />
           {unreadCount > 0 && (
             <Badge
               variant="destructive"
               className="absolute -top-1 -right-1 h-5 min-w-5 rounded-full px-1 text-xs flex items-center justify-center"
+              aria-hidden
             >
               {unreadCount > 99 ? '99+' : unreadCount}
             </Badge>
           )}
-          <span className="sr-only">Notifications</span>
         </Button>
       </PopoverTrigger>
 
@@ -233,17 +107,21 @@ export function NotificationBell() {
         collisionPadding={8}
       >
         <div className="flex items-center justify-between px-3 py-3 sm:px-4">
-          <h4 className="text-sm font-semibold sm:text-base">Notifications</h4>
+          <h4 className="text-sm font-semibold sm:text-base">
+            {t('notifications.bell.labelNone', 'Notifications')}
+          </h4>
           {unreadCount > 0 && (
             <Button
               variant="ghost"
               size="sm"
               className="h-auto px-2 py-1 text-xs text-muted-foreground hover:text-foreground"
-              onClick={handleMarkAllAsRead}
+              onClick={() => void markAllRead()}
             >
               <CheckCheck className="h-3 w-3 me-1 sm:me-1" />
-              <span className="hidden sm:inline">Mark all as read</span>
-              <span className="sm:hidden">Mark read</span>
+              <span className="hidden sm:inline">
+                {t('notifications.markAllRead', 'Mark all as read')}
+              </span>
+              <span className="sm:hidden">{t('notifications.bell.markAllShort', 'Mark read')}</span>
             </Button>
           )}
         </div>
@@ -252,24 +130,49 @@ export function NotificationBell() {
 
         <ScrollArea className="h-[320px] sm:h-[400px]">
           {isLoading ? (
-            <div className="flex flex-col items-center justify-center py-10 text-muted-foreground sm:py-12">
-              <Loader2 className="h-8 w-8 mb-2 animate-spin opacity-30 sm:h-10 sm:w-10 sm:mb-3" />
-              <p className="text-xs font-medium sm:text-sm">Loading notifications...</p>
+            <div
+              role="status"
+              className="flex flex-col items-center justify-center py-10 text-muted-foreground sm:py-12"
+            >
+              <Loader2
+                className="h-8 w-8 mb-2 animate-spin opacity-30 sm:h-10 sm:w-10 sm:mb-3"
+                aria-hidden
+              />
+              <p className="text-xs font-medium sm:text-sm">
+                {t('notifications.list.loading', 'Loading notifications')}
+              </p>
+            </div>
+          ) : error && !notificationsData ? (
+            <div
+              role="alert"
+              className="flex flex-col items-center justify-center gap-2 py-10 text-muted-foreground sm:py-12"
+            >
+              <AlertCircle className="h-5 w-5 text-destructive" aria-hidden />
+              <p className="text-xs font-medium sm:text-sm">
+                {t('notifications.list.loadFailed', "Couldn't load notifications")}
+              </p>
+              <Button variant="outline" size="sm" onClick={() => void mutateNotifications()}>
+                <RotateCw className="me-1.5 h-3 w-3" aria-hidden />
+                {t('notifications.list.retry', 'Retry')}
+              </Button>
             </div>
           ) : notifications.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-10 text-muted-foreground sm:py-12">
-              <Bell className="h-8 w-8 mb-2 opacity-30 sm:h-10 sm:w-10 sm:mb-3" />
-              <p className="text-xs font-medium sm:text-sm">No notifications</p>
-              <p className="text-[11px] sm:text-xs">You are all caught up!</p>
+              <Bell className="h-8 w-8 mb-2 opacity-30 sm:h-10 sm:w-10 sm:mb-3" aria-hidden />
+              <p className="text-xs font-medium sm:text-sm">
+                {t('notifications.bell.empty', 'No notifications')}
+              </p>
+              <p className="text-xs">{t('notifications.bell.caughtUp', 'You are all caught up')}</p>
             </div>
           ) : (
             <div className="divide-y">
               {notifications.map((notification) => (
-                <NotificationItem
+                <NotificationRow
                   key={notification.id}
                   notification={notification}
-                  onMarkAsRead={handleMarkAsRead}
-                  onClose={() => setOpen(false)}
+                  onMarkAsRead={markRead}
+                  onNavigate={() => setOpen(false)}
+                  compact
                 />
               ))}
             </div>
@@ -286,7 +189,7 @@ export function NotificationBell() {
             asChild
           >
             <Link href="/notifications" onClick={() => setOpen(false)}>
-              View all notifications
+              {t('notifications.bell.viewAll', 'View all notifications')}
             </Link>
           </Button>
         </div>

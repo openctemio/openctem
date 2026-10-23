@@ -8,6 +8,7 @@
  * only when every task of it is fully in their data scope); the API decides.
  */
 
+import { useBreadcrumbTitle } from '@/components/layout'
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import {
@@ -76,6 +77,7 @@ export function CampaignDetail({ campaignId }: { campaignId: string }) {
   const revalidateCampaigns = useRevalidateCampaigns()
   const revalidateHub = useRevalidateHub()
   const { data: campaign, error, isLoading, mutate } = useRemediationCampaign(campaignId)
+  useBreadcrumbTitle(campaign?.name)
   const [page, setPage] = useState(1)
   const {
     data: taskPage,

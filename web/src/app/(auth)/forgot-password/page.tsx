@@ -20,6 +20,7 @@ import {
 import { Input } from '@/components/ui/input'
 
 import { forgotPasswordSchema, type ForgotPasswordInput } from '@/features/auth/schemas/auth.schema'
+import { translatingResolver } from '@/features/auth/lib/translating-resolver'
 import { forgotPasswordAction } from '@/features/auth/actions/local-auth-actions'
 import { usePasswordPolicy } from '@/features/auth/api/use-auth-providers'
 import { formatLinkLifetime } from '@/features/auth/lib/password-policy'
@@ -32,7 +33,7 @@ export default function ForgotPasswordPage() {
   const { t } = useTranslation()
 
   const form = useForm<ForgotPasswordInput>({
-    resolver: zodResolver(forgotPasswordSchema),
+    resolver: translatingResolver(zodResolver(forgotPasswordSchema), t),
     defaultValues: {
       email: '',
     },
@@ -58,7 +59,7 @@ export default function ForgotPasswordPage() {
       <Card className="gap-4">
         <CardHeader>
           <CardTitle className="text-lg tracking-tight">
-            {t('auth.forgot.sentTitle', 'Check your email')}
+            <h1>{t('auth.forgot.sentTitle', 'Check your email')}</h1>
           </CardTitle>
           <CardDescription>
             {t(
@@ -88,7 +89,7 @@ export default function ForgotPasswordPage() {
     <Card className="gap-4">
       <CardHeader>
         <CardTitle className="text-lg tracking-tight">
-          {t('auth.forgot.title', 'Forgot password')}
+          <h1>{t('auth.forgot.title', 'Forgot password')}</h1>
         </CardTitle>
         <CardDescription>
           {t(

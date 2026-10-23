@@ -197,7 +197,7 @@ export interface RiskLevelConfig {
  *                           overflowing past 100, improving ranking at the top.
  * Empty/absent is treated as "multiply".
  */
-export type ScoreCompositionMode = 'multiply' | 'amplify_headroom'
+export type ScoreCompositionMode = 'likelihood_impact' | 'multiply' | 'amplify_headroom'
 
 export interface RiskScoringSettings {
   preset?: string
