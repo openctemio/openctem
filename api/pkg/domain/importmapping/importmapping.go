@@ -232,7 +232,7 @@ func Compile(doc []byte) (*mapping.Mapping, []string) {
 // checkFindingType: a constant type, or a mapped one whose every table
 // value and default, is an allowed finding type.
 func checkFindingType(v specView) string {
-	bad := fmt.Sprintf("type must be one of vulnerability, misconfiguration (a constant, or a map whose values are)")
+	bad := "type must be one of vulnerability, misconfiguration (a constant, or a map whose values are)"
 	str := func(x any) (string, bool) { s, ok := x.(string); return s, ok }
 	switch {
 	case v.Const != nil:
