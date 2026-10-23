@@ -147,8 +147,10 @@ export function useAssetSlaPolicyApi(assetId: string | null, config?: SWRConfigu
   })
 }
 
-function assetSlaPolicyUrl(assetId: string): string {
-  return `/api/v1/assets/${encodeURIComponent(assetId)}/sla-policy/`
+// No trailing slash: the web server answers ".../sla-policy/" with a redirect
+// to ".../sla-policy", which cost every finding and asset page a round trip.
+export function assetSlaPolicyUrl(assetId: string): string {
+  return `/api/v1/assets/${encodeURIComponent(assetId)}/sla-policy`
 }
 
 /**
