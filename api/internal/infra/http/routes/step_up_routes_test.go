@@ -199,7 +199,6 @@ var stepUpRoutes = []string{
 	// The finding approval settings: lowering the false-positive or risk
 	// acceptance level lets one person close risk.
 	"PATCH /api/v1/organization/settings/finding-approvals",
-	"PUT /api/v1/organization/settings/finding-approvals",
 }
 
 func TestStepUpRoutes_RequireRecentAuth(t *testing.T) {

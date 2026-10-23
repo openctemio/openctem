@@ -288,3 +288,40 @@ func TestCredentialsReveal_OnlyOwnerAndAdminByDefault(t *testing.T) {
 		t.Error("member and viewer must not hold findings:credentials:reveal")
 	}
 }
+
+func TestRedactDetails_MasksToolReportedSecretKeys(t *testing.T) {
+	in := map[string]any{
+		"password":                         "p4ss",
+		"API_KEY":                          "k",
+		"credential_type":                  "password",
+		"secret_value":                     "raw",
+		credential.DetailSecretMasked:      "ab****",
+		credential.DetailSecretFingerprint: "fp",
+		"nested":                           map[string]any{"token": "t0k", "host": "h", "list": []any{map[string]any{"client_secret": "cs"}}},
+		"items":                            []any{map[string]any{"private_key": "pk", "name": "n"}},
+		"secret_extra":                     "x",
+	}
+	out := credential.RedactDetails(in)
+	b, _ := json.Marshal(out)
+	s := string(b)
+	for _, raw := range []string{"p4ss", `"k"`, "raw", "t0k", `"cs"`, `"pk"`, `"x"`} {
+		if strings.Contains(s, raw) {
+			t.Fatalf("raw value %s leaked: %s", raw, s)
+		}
+	}
+	if out["password"] != credential.RedactedValue || out["secret_extra"] != credential.RedactedValue {
+		t.Fatalf("sensitive keys must be masked: %v", out)
+	}
+	if _, has := out["secret_value"]; has {
+		t.Fatal("secret_value must be removed")
+	}
+	if out[credential.DetailSecretMasked] != "ab****" || out[credential.DetailSecretFingerprint] != "fp" {
+		t.Fatalf("safe keys must be kept: %v", out)
+	}
+	if out["credential_type"] != "password" || out["nested"].(map[string]any)["host"] != "h" {
+		t.Fatalf("non-sensitive keys must be kept: %v", out)
+	}
+	if in["password"] != "p4ss" || in["nested"].(map[string]any)["token"] != "t0k" {
+		t.Fatal("input must not be modified")
+	}
+}

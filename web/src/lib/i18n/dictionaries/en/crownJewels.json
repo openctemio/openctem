@@ -1,0 +1,20 @@
+{
+  "crownJewels.export.businessImpact": "Business impact score",
+  "crownJewels.export.criticality": "Criticality",
+  "crownJewels.export.exposure": "Exposure",
+  "crownJewels.export.findings": "Open findings",
+  "crownJewels.export.internetFacing": "Internet-facing",
+  "crownJewels.export.name": "Name",
+  "crownJewels.export.owner": "Owner",
+  "crownJewels.export.ownerEmail": "Owner email",
+  "crownJewels.export.risk": "Risk score",
+  "crownJewels.export.tags": "Tags",
+  "crownJewels.export.type": "Type",
+  "crownJewels.loadError": "crown jewels",
+  "crownJewels.no": "No",
+  "crownJewels.unassigned": "Unassigned",
+  "crownJewels.viewDetails": "View details",
+  "crownJewels.whyNoNotes": "No business impact notes recorded.",
+  "crownJewels.whyNotes": "Business impact notes",
+  "crownJewels.yes": "Yes"
+}

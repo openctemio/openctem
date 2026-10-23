@@ -130,7 +130,6 @@ import {
   Loader2,
   Route,
   ClipboardList,
-  AlertOctagon,
   Wrench,
   Search,
   ArrowLeft,
@@ -145,6 +144,7 @@ import {
   FINDING_STATUS_CONFIG,
   findingStatusesInCategory,
 } from '@/features/findings'
+import { KevBadge } from '@/components/ui/kev-badge'
 import { PriorityClassBadge } from '@/features/findings/components/priority-class-badge'
 import { BranchOnlyBadge } from '@/features/findings/components/branch-only-badge'
 import { SlaStatusBadge } from '@/features/sla/components/sla-status-badge'
@@ -173,6 +173,12 @@ import { AddFindingsToTaskDialog } from '@/features/remediation-hub/components/a
 import { CreateTaskFromQueryDialog } from '@/features/remediation-hub/components/create-task-from-query-dialog'
 import { taskQueryApi } from '@/features/remediation-hub/api/use-task-query'
 import { VerifyGroupActions } from '@/features/findings/components/verify-group-actions'
+import { VerifyNoCveList } from '@/features/findings/components/verify-no-cve-list'
+import {
+  queueContextFilters,
+  verifyQueueQuery,
+  verifyQueueNoCveQuery,
+} from '@/features/findings/lib/verify-queue'
 import { type FindingGroup } from '@/features/findings/api/use-finding-groups'
 import {
   useFindingsApi,
@@ -599,6 +605,8 @@ function FindingsContent() {
     ? (groupParam as GroupByDimension)
     : null
   const verifyView = viewParam === 'verify'
+  // How many queue findings have no CVE (the by-CVE groups do not hold them).
+  const [verifyNoCveTotal, setVerifyNoCveTotal] = useState(0)
   // A saved view (D15) lives in the same param as its id; the API applies its
   // filter, with any filter in the URL on top, as the viewer.
   const savedId = savedViewId(viewParam)
@@ -959,17 +967,8 @@ function FindingsContent() {
     (): FindingStatsFilters => ({
       state: 'all',
       exclude_statuses: HIDDEN_STATUSES,
-      asset_id: apiFilters.asset_id,
-      scan_id: apiFilters.scan_id,
-      cve_ids: apiFilters.cve_ids,
-      rule_id: apiFilters.rule_id,
-      families: apiFilters.families,
-      finding_types: apiFilters.finding_types,
-      component_id: apiFilters.component_id,
-      asset_owner_id: apiFilters.asset_owner_id,
-      asset_owner_unassigned: apiFilters.asset_owner_unassigned,
-      asset_group_id: apiFilters.asset_group_id,
-      asset_crown_jewel: apiFilters.asset_crown_jewel,
+      // The scope the verification queue shares with its count.
+      ...queueContextFilters(apiFilters),
     }),
     [HIDDEN_STATUSES, apiFilters]
   )
@@ -1377,10 +1376,7 @@ function FindingsContent() {
                 {row.original.isInKev && (
                   <Tooltip>
                     <TooltipTrigger asChild>
-                      <span className="inline-flex shrink-0 items-center gap-0.5 rounded-full bg-red-600 px-1.5 py-0.5 text-[10px] font-semibold text-white">
-                        <AlertOctagon className="h-2.5 w-2.5" />
-                        {t('findings.list.kev', 'KEV')}
-                      </span>
+                      <KevBadge />
                     </TooltipTrigger>
                     <TooltipContent side="top" className="max-w-xs text-xs">
                       <p className="font-semibold">
@@ -1399,7 +1395,7 @@ function FindingsContent() {
                 {typeof row.original.epssScore === 'number' && row.original.epssScore > 0 && (
                   <Tooltip>
                     <TooltipTrigger asChild>
-                      <span className="inline-flex shrink-0 items-center rounded-full bg-amber-500/15 px-1.5 py-0.5 text-[10px] font-medium text-amber-700 dark:text-amber-400">
+                      <span className="inline-flex shrink-0 items-center rounded-full bg-muted px-1.5 py-0.5 text-[10px] font-medium text-foreground">
                         {t('findings.list.epss', 'EPSS {score}', {
                           score: formatEpssScore(row.original.epssScore),
                         })}
@@ -1416,7 +1412,7 @@ function FindingsContent() {
                 {hasDataFlow && (
                   <Tooltip>
                     <TooltipTrigger asChild>
-                      <span className="inline-flex items-center gap-0.5 rounded-full bg-blue-500/20 px-1.5 py-0.5 text-[10px] font-medium text-blue-400 shrink-0">
+                      <span className="inline-flex items-center gap-0.5 rounded-full bg-muted px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground shrink-0">
                         <Route className="h-2.5 w-2.5" />
                       </span>
                     </TooltipTrigger>
@@ -2320,29 +2316,51 @@ function FindingsContent() {
                 // nothing here is real yet, and nothing is fetched.
                 <FindingsTableSkeleton />
               ) : verifyView ? (
-                <FindingGroupsTable
-                  {...groupedProps}
-                  dimension="cve_id"
-                  statuses="fix_applied"
-                  renderGroupActions={verifyActions}
-                  toolbarStart={
-                    <>
-                      <Button variant="ghost" size="sm" onClick={() => setViewParam('')}>
-                        <ArrowLeft className="me-2 h-4 w-4" />
-                        {t('findings.verify.all', 'All findings')}
-                      </Button>
-                      <span className="text-sm text-muted-foreground">
-                        {t('findings.verify.title', 'Fixes awaiting verification, by CVE')}
-                      </span>
-                    </>
-                  }
-                  toolbarEnd={refreshButton}
-                  emptyMessage={t('findings.verify.empty', 'No fixes awaiting verification')}
-                  emptyDescription={t(
-                    'findings.verify.emptyHint',
-                    'Fixes that owners mark as applied wait here for a verifier.'
-                  )}
-                />
+                <div className="space-y-3">
+                  <FindingGroupsTable
+                    {...groupedProps}
+                    dimension="cve_id"
+                    query={verifyQueueQuery(apiFilters)}
+                    statuses="fix_applied"
+                    renderGroupActions={verifyActions}
+                    toolbarStart={
+                      <>
+                        <Button variant="ghost" size="sm" onClick={() => setViewParam('')}>
+                          <ArrowLeft className="me-2 h-4 w-4" />
+                          {t('findings.verify.all', 'All findings')}
+                        </Button>
+                        <span className="text-sm text-muted-foreground">
+                          {t('findings.verify.title', 'Fixes awaiting verification')}
+                        </span>
+                      </>
+                    }
+                    toolbarEnd={refreshButton}
+                    emptyMessage={
+                      verifyNoCveTotal > 0
+                        ? t('findings.verify.noCveGroups', 'No fixes awaiting verification by CVE')
+                        : t('findings.verify.empty', 'No fixes awaiting verification')
+                    }
+                    emptyDescription={
+                      verifyNoCveTotal > 0
+                        ? t(
+                            'findings.verify.noCveGroupsHint',
+                            'The fixes below have no CVE: verify them one by one.'
+                          )
+                        : t(
+                            'findings.verify.emptyHint',
+                            'Fixes that owners mark as applied wait here for a verifier.'
+                          )
+                    }
+                  />
+                  <VerifyNoCveList
+                    query={verifyQueueNoCveQuery(apiFilters)}
+                    canVerify={canVerify}
+                    onOpen={(f) => handleRowClick(transformApiToUiFinding(f))}
+                    onDone={refreshAfterDrawerChange}
+                    onTotal={setVerifyNoCveTotal}
+                    reloadKey={groupsReloadKey}
+                  />
+                </div>
               ) : groupBy ? (
                 <FindingGroupsTable
                   {...groupedProps}
