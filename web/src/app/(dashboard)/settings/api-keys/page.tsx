@@ -47,18 +47,25 @@ function isActive(k: APIKey): boolean {
 }
 
 function StatusBadge({ k }: { k: APIKey }) {
+  const { t } = useTranslation()
   if (k.status === 'revoked' || k.revoked_at) {
-    return <Badge className="border-0 bg-red-500/10 text-red-600 dark:text-red-400">Revoked</Badge>
+    return (
+      <Badge className="border-0 bg-red-500/10 text-red-600 dark:text-red-400">
+        {t('settings.keys.status.revoked', 'Revoked')}
+      </Badge>
+    )
   }
   if (isExpired(k)) {
     return (
       <Badge className="border-0 bg-orange-500/10 text-orange-600 dark:text-orange-400">
-        Expired
+        {t('settings.keys.status.expired', 'Expired')}
       </Badge>
     )
   }
   return (
-    <Badge className="border-0 bg-green-500/10 text-green-600 dark:text-green-400">Active</Badge>
+    <Badge className="border-0 bg-green-500/10 text-green-600 dark:text-green-400">
+      {t('settings.keys.status.active', 'Active')}
+    </Badge>
   )
 }
 
@@ -76,21 +83,25 @@ function KeyRowActions({ k, onChanged }: { k: APIKey; onChanged: () => void }) {
   async function handleRevoke() {
     try {
       await revoke(k.id)
-      toast.success('Key revoked')
+      toast.success(t('settings.apiKeys.revoked', 'Key revoked'))
       setRevokeOpen(false)
       onChanged()
     } catch (error) {
-      toast.error(getErrorMessage(error, 'Failed to revoke the key'))
+      toast.error(
+        getErrorMessage(error, t('settings.apiKeys.revokeFailed', 'Failed to revoke the key'))
+      )
     }
   }
   async function handleDelete() {
     try {
       await del(k.id)
-      toast.success('Key deleted')
+      toast.success(t('settings.apiKeys.deleted', 'Key deleted'))
       setDeleteOpen(false)
       onChanged()
     } catch (error) {
-      toast.error(getErrorMessage(error, 'Failed to delete the key'))
+      toast.error(
+        getErrorMessage(error, t('settings.apiKeys.deleteFailed', 'Failed to delete the key'))
+      )
     }
   }
 
@@ -175,6 +186,7 @@ function LoadingSkeleton() {
 const API_KEY_PAGE_SIZES = [10, 20, 50, 100]
 
 export default function APIKeysPage() {
+  const { t } = useTranslation()
   const list = useListParams({ pageSizes: API_KEY_PAGE_SIZES, defaultPageSize: 20 })
   const { pagination, setPagination, setPage } = list
   const resetPage = useCallback(() => setPage(1), [setPage])
@@ -200,7 +212,9 @@ export default function APIKeysPage() {
     () => [
       {
         accessorKey: 'name',
-        header: ({ column }) => <DataTableColumnHeader column={column} title="Name" />,
+        header: ({ column }) => (
+          <DataTableColumnHeader column={column} title={t('settings.keys.name', 'Name')} />
+        ),
         cell: ({ row }) => (
           <StackedCell
             primary={row.original.name}
@@ -210,7 +224,7 @@ export default function APIKeysPage() {
       },
       {
         id: 'scopes',
-        header: 'Scopes',
+        header: t('settings.keys.scopes', 'Scopes'),
         enableSorting: false,
         cell: ({ row }) => (
           <div className="flex flex-wrap gap-1">
@@ -229,42 +243,55 @@ export default function APIKeysPage() {
       },
       {
         id: 'status',
-        header: 'Status',
+        header: t('settings.keys.status', 'Status'),
         enableSorting: false,
         cell: ({ row }) => <StatusBadge k={row.original} />,
       },
       {
         accessorKey: 'last_used_at',
-        header: ({ column }) => <DataTableColumnHeader column={column} title="Last used" />,
+        header: ({ column }) => (
+          <DataTableColumnHeader column={column} title={t('settings.keys.lastUsed', 'Last used')} />
+        ),
         cell: ({ row }) =>
           row.original.last_used_at ? (
             <RelativeTime date={row.original.last_used_at} />
           ) : (
-            <span className="text-muted-foreground text-xs">Never</span>
+            <span className="text-muted-foreground text-xs">
+              {t('settings.keys.never', 'Never')}
+            </span>
           ),
       },
       {
         accessorKey: 'expires_at',
-        header: ({ column }) => <DataTableColumnHeader column={column} title="Expires" />,
+        header: ({ column }) => (
+          <DataTableColumnHeader column={column} title={t('settings.keys.expires', 'Expires')} />
+        ),
         cell: ({ row }) =>
           row.original.expires_at ? (
             <RelativeTime date={row.original.expires_at} />
           ) : (
-            <span className="text-muted-foreground text-xs">Never</span>
+            <span className="text-muted-foreground text-xs">
+              {t('settings.keys.never', 'Never')}
+            </span>
           ),
       },
       {
         id: 'actions',
-        header: () => <div className="text-end">Actions</div>,
+        header: () => <div className="text-end">{t('settings.keys.actions', 'Actions')}</div>,
         enableSorting: false,
         enableHiding: false,
         cell: ({ row }) => <KeyRowActions k={row.original} onChanged={() => mutate()} />,
       },
     ],
-    [mutate]
+    [mutate, t]
   )
 
   const total = data?.total ?? 0
+  const pageTitle = t('settings.apiKeys.title', 'API keys')
+  const pageDesc = t(
+    'settings.apiKeys.description',
+    'Keys for scripts and tools that call the API.'
+  )
 
   if (isLoading) return <LoadingSkeleton />
   // A failed read must not render as "No API keys yet" with all-zero stats —
@@ -272,18 +299,18 @@ export default function APIKeysPage() {
   if (error)
     return (
       <Main>
-        <PageHeader title="API keys" description="Keys for scripts and tools that call the API." />
-        <ErrorState title="API keys" error={error} onRetry={() => void mutate()} />
+        <PageHeader title={pageTitle} description={pageDesc} />
+        <ErrorState title={pageTitle} error={error} onRetry={() => void mutate()} />
       </Main>
     )
 
   return (
     <Main>
-      <PageHeader title="API keys" description="Keys for scripts and tools that call the API.">
+      <PageHeader title={pageTitle} description={pageDesc}>
         {canGenerate && (
           <Button size="sm" onClick={() => setGenOpen(true)}>
             <Plus className="me-2 h-4 w-4" />
-            Generate API Key
+            {t('settings.apiKeys.generate', 'Generate API key')}
           </Button>
         )}
       </PageHeader>
@@ -292,30 +319,42 @@ export default function APIKeysPage() {
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <KeyRound className="h-5 w-5" />
-            API Key Management
+            {t('settings.apiKeys.cardTitle', 'API key management')}
           </CardTitle>
           <CardDescription>
             {ownKeysOnly
-              ? 'Your own keys. Owners and administrators see and manage every key in the organization.'
-              : 'Each key is scoped to specific permissions and can be set to expire automatically.'}
+              ? t(
+                  'settings.apiKeys.cardDescOwn',
+                  'Your own keys. Owners and administrators see and manage every key in the organization.'
+                )
+              : t(
+                  'settings.apiKeys.cardDescAll',
+                  'Each key is scoped to specific permissions and can be set to expire automatically.'
+                )}
           </CardDescription>
         </CardHeader>
         <CardContent>
           {total === 0 && !search ? (
             <EmptyState
               icon={KeyRound}
-              title="No API keys yet"
+              title={t('settings.apiKeys.emptyTitle', 'No API keys yet')}
               description={
                 canGenerate
-                  ? 'Generate a scoped key for programmatic access to the API.'
-                  : 'Ask an owner or administrator if you need a key.'
+                  ? t(
+                      'settings.apiKeys.emptyDescGenerate',
+                      'Generate a scoped key for programmatic access to the API.'
+                    )
+                  : t(
+                      'settings.apiKeys.emptyDescAsk',
+                      'Ask an owner or administrator if you need a key.'
+                    )
               }
               card={false}
               action={
                 canGenerate ? (
                   <Button size="sm" onClick={() => setGenOpen(true)}>
                     <Plus className="me-2 h-4 w-4" />
-                    Generate API Key
+                    {t('settings.apiKeys.generate', 'Generate API key')}
                   </Button>
                 ) : undefined
               }
@@ -330,22 +369,22 @@ export default function APIKeysPage() {
               pagination={pagination}
               onPaginationChange={setPagination}
               pageSizeOptions={API_KEY_PAGE_SIZES}
-              paginationNoun="keys"
+              paginationNoun={t('settings.apiKeys.noun', 'keys')}
               showSearch={false}
               toolbarStart={
                 <Input
-                  placeholder="Search API keys..."
+                  placeholder={t('settings.apiKeys.searchPlaceholder', 'Search API keys…')}
                   value={searchParam}
                   onChange={(e) => {
                     setSearchParam(e.target.value)
                     resetPage()
                   }}
                   className="h-9 max-w-sm"
-                  aria-label="Search API keys"
+                  aria-label={t('settings.apiKeys.searchLabel', 'Search API keys')}
                 />
               }
-              emptyMessage="No API keys"
-              emptyDescription="No API keys match your search."
+              emptyMessage={t('settings.apiKeys.noKeys', 'No API keys')}
+              emptyDescription={t('settings.apiKeys.noMatch', 'No API keys match your search.')}
             />
           )}
         </CardContent>
