@@ -92,6 +92,11 @@ vi.mock('@/features/assets/hooks/use-assets', () => ({
   useAsset: () => ({ asset: null, isLoading: false, error: undefined }),
 }))
 
+vi.mock('@/features/findings/api/use-quick-views', () => ({
+  useFindingQuickViews: () => ({ data: undefined }),
+  refreshFindingQuickViews: vi.fn(),
+}))
+
 import FindingsPage from '../page'
 
 /**
@@ -117,11 +122,11 @@ describe('Findings toolbar layout', () => {
     statsCalls.length = 0
   })
 
-  it('puts the lens and the page actions in row 1, never in the table toolbar', () => {
+  it('puts the view title and the page actions in row 1, never in the table toolbar', () => {
     renderAt()
     const primary = screen.getByTestId('findings-toolbar-primary')
     const toolbar = screen.getByTestId('data-table-toolbar')
-    const lens = screen.getByRole('radiogroup', { name: 'Finding state' })
+    const lens = screen.getByTestId('findings-view-title')
     expect(primary.contains(lens)).toBe(true)
     expect(toolbar.contains(lens)).toBe(false)
     expect(follows(primary, toolbar)).toBe(true)
@@ -129,7 +134,7 @@ describe('Findings toolbar layout', () => {
     const refresh = within(primary).getByRole('button', { name: 'Refresh' })
     const exportBtn = within(primary).getByRole('button', { name: 'Export' })
     const task = within(primary).getByRole('button', { name: /task from filters/i })
-    // Tab order = visual order: lens, refresh, export, task.
+    // Tab order = visual order: view, refresh, export, task.
     expect(follows(lens, refresh)).toBe(true)
     expect(follows(refresh, exportBtn)).toBe(true)
     expect(follows(exportBtn, task)).toBe(true)
@@ -162,10 +167,10 @@ describe('Findings toolbar layout', () => {
     expect(screen.getByTestId('findings-toolbar-primary').className).toMatch(/@container\/actions/)
   })
 
-  it('grouped view keeps the same two rows (lens in row 1, search in row 2)', () => {
+  it('grouped view keeps the same two rows (view title in row 1, search in row 2)', () => {
     renderAt('?group=severity')
     const primary = screen.getByTestId('findings-toolbar-primary')
-    expect(within(primary).getByRole('radiogroup', { name: 'Finding state' })).toBeInTheDocument()
+    expect(within(primary).getByTestId('findings-view-title')).toBeInTheDocument()
     expect(within(primary).queryByRole('button', { name: 'Export' })).toBeNull()
     const toolbar = screen.getByTestId('data-table-toolbar')
     expect(within(toolbar).getByRole('textbox', { name: 'Search findings' })).toBeInTheDocument()
