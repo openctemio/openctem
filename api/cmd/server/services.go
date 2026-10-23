@@ -2670,6 +2670,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 		repos.WorkflowNodeRun,
 		log, automation.WithExecutorDB(deps.DB), automation.WithExecutorOutboxService(s.Outbox), automation.WithExecutorIntegrationService(s.Integration), automation.WithExecutorAuditService(s.Audit),
 		automation.WithExecutorStepAuthorizer(workflowAuthorizer),
+		automation.WithExecutorVersions(repos.WorkflowVersion),
 	)
 
 	// Register all action handlers for the workflow executor. Use the AI-aware
@@ -2708,6 +2709,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 		log, automation.WithWorkflowAuditService(s.Audit), automation.WithWorkflowExecutor(workflowExecutor),
 		automation.WithWorkflowStepAuthorizer(workflowAuthorizer),
 		automation.WithWorkflowSubjectReaders(repos.Finding, repos.Asset),
+		automation.WithWorkflowVersions(repos.WorkflowVersion),
 	)
 
 	// Initialize workflow event dispatcher for automatic workflow triggering
