@@ -89,6 +89,18 @@ vi.mock('@/hooks/use-url-param', async () => {
     }, [])
   }
   return {
+    // The list hook reads the whole query and writes it back in one go.
+    useUrlParams: () => {
+      useSubscribe()
+      return new URLSearchParams(urlState)
+    },
+    replaceUrlSearch: (next: URLSearchParams) => {
+      for (const k of Object.keys(urlState)) delete urlState[k]
+      next.forEach((v, k) => {
+        urlState[k] = v
+      })
+      urlListeners.forEach((l) => l())
+    },
     useUrlFilter: (key: string, fallback: string) => {
       useSubscribe()
       return [urlState[key] ?? fallback, (v: string) => setUrl(key, v, fallback)]

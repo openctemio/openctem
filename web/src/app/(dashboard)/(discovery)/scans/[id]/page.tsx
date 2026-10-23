@@ -70,7 +70,8 @@ import {
 } from '@/features/scans/lib/run-display'
 import { isManagedScan, managedScanLabel } from '@/features/scans/lib/scan-status'
 import { ManagedScanBanner } from '@/features/scans/components/managed-scan-banner'
-import { useUrlFilter, useUrlFilterNumber } from '@/hooks/use-url-param'
+import { useUrlFilter } from '@/hooks/use-url-param'
+import { useListParams } from '@/hooks/use-list-params'
 import { useRunChannels } from '@/hooks/use-websocket'
 import { del, post } from '@/lib/api/client'
 import { scanRunEndpoints, scanEndpoints } from '@/lib/api/endpoints'
@@ -159,8 +160,9 @@ export default function ScanDetailPage() {
   // The run history is an embedded list; its page and size live in the URL
   // (a reload or a shared link keeps them), and "View all runs" opens the
   // Runs list filtered to this scan.
-  const [runPage, setRunPage] = useUrlFilterNumber('page', 1)
-  const [runPerPage, setRunPerPage] = useUrlFilterNumber('per_page', 25)
+  const runList = useListParams({ pageSizes: RUN_PAGE_SIZES, defaultPageSize: 25 })
+  const runPage = runList.page
+  const runPerPage = runList.perPage
 
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false)
   const [editOpen, setEditOpen] = useState(false)
@@ -613,15 +615,8 @@ export default function ScanDetailPage() {
             onRowClick={(run) => setOpenRunId(run.id)}
             manualPagination
             rowCount={runsResponse?.total ?? 0}
-            pagination={{ pageIndex: runPage - 1, pageSize: runPerPage }}
-            onPaginationChange={(next) => {
-              if (next.pageSize !== runPerPage) {
-                setRunPage(1)
-                setRunPerPage(next.pageSize)
-              } else {
-                setRunPage(next.pageIndex + 1)
-              }
-            }}
+            pagination={runList.pagination}
+            onPaginationChange={runList.setPagination}
             pageSize={runPerPage}
             pageSizeOptions={RUN_PAGE_SIZES}
             paginationNoun={t('scanDetail.runs.noun')}
