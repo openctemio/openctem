@@ -975,6 +975,11 @@ func (r *TenantRepository) SearchMembersWithUserInfo(ctx context.Context, tenant
 		args = append(args, filters.Kind)
 		argIndex++
 	}
+	if len(filters.UserIDs) > 0 {
+		whereClause += fmt.Sprintf(" AND m.user_id = ANY($%d::uuid[])", argIndex)
+		args = append(args, pq.Array(filters.UserIDs))
+		argIndex++
+	}
 
 	// Single query with COUNT(*) OVER() window function to avoid 2 round-trips
 	// This returns total matching count alongside each row.
