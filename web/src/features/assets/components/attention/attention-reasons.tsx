@@ -14,6 +14,7 @@ import Link from '@/components/link'
 import { useTranslation } from '@/context/i18n-provider'
 import { ASSET_ATTENTION_REASONS, type AttentionReasonDef } from '@/config/section-tabs'
 import { useVisibleSectionTabs } from '@/lib/permissions'
+import { safeHref } from '@/lib/safe-href'
 import { cn } from '@/lib/utils'
 import { useAttentionCount } from './use-attention-count'
 
@@ -30,14 +31,14 @@ function ReasonRow({ reason }: { reason: AttentionReasonDef }) {
   return (
     <li>
       <Link
-        href={reason.href}
+        href={safeHref(reason.href) ?? '/assets/attention'}
         data-testid={`attention-reason-${reason.id}`}
         className="group flex min-h-16 items-center gap-4 rounded-lg border bg-card px-4 py-3 outline-none transition-colors hover:bg-muted/50 focus-visible:ring-2 focus-visible:ring-ring"
       >
         <Icon className="size-[18px] shrink-0 text-muted-foreground" aria-hidden />
         <span className="min-w-0 flex-1">
           <span className="block text-sm font-semibold">{t(reason.labelKey, reason.label)}</span>
-          <span className="block text-[13px] text-muted-foreground">
+          <span className="block text-sm text-muted-foreground">
             {empty
               ? t('assets.attention.nothing', 'Nothing to do here.')
               : t(reason.whyKey, reason.why)}
