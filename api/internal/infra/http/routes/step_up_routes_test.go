@@ -15,6 +15,7 @@ import (
 	"testing"
 	"time"
 
+	auditapp "github.com/openctemio/openctem/api/internal/app/audit"
 	cirunapp "github.com/openctemio/openctem/api/internal/app/cirun"
 	"github.com/openctemio/openctem/api/internal/config"
 	infrahttp "github.com/openctemio/openctem/api/internal/infra/http"
@@ -61,6 +62,20 @@ func (stubCISettings) GetSettings(context.Context, shared.ID) (cirunapp.Settings
 
 func (stubCISettings) UpdateSettings(_ context.Context, _ shared.ID, in cirunapp.Settings, _ cirunapp.Actor) (cirunapp.Settings, error) {
 	return in, nil
+}
+
+// stubApprovalSettings wires the finding approval settings routes so that
+// reaching the handler is not mistaken for an unregistered route.
+type stubApprovalSettings struct{}
+
+func (stubApprovalSettings) GetFindingApprovalSettings(context.Context, string) (*tenant.FindingApprovalSettings, error) {
+	return &tenant.FindingApprovalSettings{}, nil
+}
+
+func (stubApprovalSettings) UpdateFindingApprovalSettings(_ context.Context, _ string, _ func(*tenant.FindingApprovalSettings) error,
+	_ auditapp.AuditContext,
+) (before, after *tenant.FindingApprovalSettings, err error) {
+	return &tenant.FindingApprovalSettings{}, &tenant.FindingApprovalSettings{}, nil
 }
 
 // stepUpRoutes is every route that requires step-up. Adding requireStepUp()
@@ -179,6 +194,10 @@ var stepUpRoutes = []string{
 	"POST /api/v1/findings/{id}/severity-requests/{id}/approve",
 	"DELETE /api/v1/findings/{id}",
 	"POST /api/v1/findings/bulk/status",
+	// The finding approval settings: lowering the false-positive or risk
+	// acceptance level lets one person close risk.
+	"PATCH /api/v1/organization/settings/finding-approvals",
+	"PUT /api/v1/organization/settings/finding-approvals",
 }
 
 func TestStepUpRoutes_RequireRecentAuth(t *testing.T) {
@@ -246,7 +265,9 @@ func TestStepUpRoutes_RequireRecentAuth(t *testing.T) {
 			registerScopeRoutes(router, &handler.ScopeHandler{}, auth, nil, chain())
 			registerProgramRoutes(router, &handler.BountyProgramHandler{}, auth, nil, chain())
 			registerScannerTemplateRoutes(router, &handler.ScannerTemplateHandler{}, auth, nil, chain())
-			registerVulnerabilityRoutes(router, &handler.VulnerabilityHandler{}, nil, nil, nil, auth, nil)
+			vulnH := &handler.VulnerabilityHandler{}
+			vulnH.SetFindingApprovalSettings(stubApprovalSettings{})
+			registerVulnerabilityRoutes(router, vulnH, nil, nil, nil, auth, nil)
 			registerFindingRetestCheckRoutes(router, &handler.FindingRetestCheckHandler{}, auth, nil)
 			registerSensorManagementRoutes(router, &handler.SensorHandler{}, nil, nil, auth, nil)
 			registerCredentialRoutes(router, &handler.CredentialImportHandler{}, auth, nil, chain())

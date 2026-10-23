@@ -13,8 +13,10 @@ package finding
 //   - a fresh code from the owner's authenticator app (a stolen cookie or
 //     password alone is not enough; a used code cannot be replayed) and a
 //     reason;
-//   - a false positive only: an accepted risk is never self-approved (risk
-//     acceptance is always four-eyes) and waits for a second member;
+//   - an accepted risk only when the organization's risk acceptance level
+//     is high_and_above or off (under all it waits for a second member), and
+//     it ends much sooner than one another person approved
+//     (vulnerability.SoloAcceptanceLimit);
 //   - marked self_approved on the request and the timeline, audited at high
 //     severity, announced on the organization's channels and emailed to the
 //     backup contact when one is configured.
@@ -146,10 +148,13 @@ func (s *VulnerabilityService) SelfApproveSolo(ctx context.Context, in SelfAppro
 		return nil, fmt.Errorf("%w: the requested acceptance end has passed; submit a new request", shared.ErrValidation)
 	case a.RequestedBy.IsZero() || a.RequestedBy != uid:
 		return nil, vulnerability.ErrSoloApprovalNotAllowed
-	case vulnerability.FindingStatus(a.RequestedStatus) != vulnerability.FindingStatusFalsePositive:
-		// Risk acceptance is always four-eyes: refused before the sole-member
-		// check and before any authenticator code is spent.
-		return nil, vulnerability.ErrSoloApprovalFalsePositiveOnly
+	}
+	// An accepted risk under the risk acceptance level "all" is four-eyes:
+	// refused before the sole-member check and before any authenticator code
+	// is spent.
+	acceptAlone, err := s.soloMayAccept(ctx, tid, a)
+	if err != nil {
+		return nil, err
 	}
 	if err := s.checkSoleMember(ctx, tid, in.UserID); err != nil {
 		return nil, err
@@ -176,8 +181,16 @@ func (s *VulnerabilityService) SelfApproveSolo(ctx context.Context, in SelfAppro
 	if !f.CanTransitionTo(status) {
 		return nil, fmt.Errorf("%w: cannot transition from %s to %s", shared.ErrValidation, f.Status(), status)
 	}
-	if err := a.SelfApprove(uid, reason); err != nil {
+	if err := a.SelfApprove(uid, reason, acceptAlone); err != nil {
 		return nil, err
+	}
+	shortened := false
+	if status == vulnerability.FindingStatusAccepted {
+		limit := now.Add(vulnerability.SoloAcceptanceLimit(f))
+		if a.ExpiresAt.After(limit) {
+			a.ExpiresAt = &limit
+			shortened = true
+		}
 	}
 	changes := map[string]any{
 		"approval_id":      a.ID.String(),
@@ -200,7 +213,33 @@ func (s *VulnerabilityService) SelfApproveSolo(ctx context.Context, in SelfAppro
 	s.afterApplied(ctx, tid, in.UserID, []*vulnerability.Finding{f}, status)
 	s.announceSelfApproval(ctx, a, f.Title(), reason)
 	s.logger.Warn("finding request self-approved by the sole member", "approval_id", a.ID.String())
-	return &SelfApproveResult{Approval: a}, nil
+	return &SelfApproveResult{Approval: a, EndShortened: shortened}, nil
+}
+
+// soloMayAccept answers whether the sole member may approve their own
+// request a: always for a false positive; for an accepted risk only when the
+// organization's risk acceptance level in force is high_and_above or off
+// (else vulnerability.ErrSoloApprovalFalsePositiveOnly). Any other status is
+// refused.
+func (s *VulnerabilityService) soloMayAccept(ctx context.Context, tid shared.ID, a *vulnerability.Approval) (bool, error) {
+	switch vulnerability.FindingStatus(a.RequestedStatus) {
+	case vulnerability.FindingStatusFalsePositive:
+		return false, nil
+	case vulnerability.FindingStatusAccepted:
+	default:
+		return false, vulnerability.ErrSoloApprovalFalsePositiveOnly
+	}
+	if s.approvalSettings == nil {
+		return false, vulnerability.ErrSoloApprovalFalsePositiveOnly
+	}
+	settings, err := s.approvalSettings.GetFindingApprovalSettings(ctx, tid.String())
+	if err != nil {
+		return false, fmt.Errorf("read the organization's approval settings: %w", err)
+	}
+	if settings == nil || settings.EffectiveAcceptApproval(time.Now()) == tenantdom.FPApprovalAll {
+		return false, vulnerability.ErrSoloApprovalFalsePositiveOnly
+	}
+	return true, nil
 }
 
 // announceSelfApproval puts the self-approval on the organization's

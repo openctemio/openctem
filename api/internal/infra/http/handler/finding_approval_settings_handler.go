@@ -53,7 +53,7 @@ type SelfApproveResponse struct {
 // active member of the organization, an owner, approves their own request
 // with a fresh authenticator code and a reason. Every refusal is audited.
 // @Summary      Approve your own request as the sole member
-// @Description  The owner of an organization with exactly one active person approves their own pending finding request with a fresh authenticator code and a reason. Refused when another member is active or one was suspended or removed in the last 7 days. An accepted risk is shortened to the self-approval limit. Requires findings:approve.
+// @Description  The owner of an organization with exactly one active person approves their own pending finding request with a fresh authenticator code and a reason. Refused when another member is active or one was suspended or removed in the last 7 days. An accepted risk is approved this way only when the organization's risk acceptance level is high_and_above or off, and its end is shortened to the self-approval limit. Requires findings:approve.
 // @Tags         Findings
 // @Accept       json
 // @Produce      json
@@ -113,7 +113,14 @@ type FindingApprovalSettingsResponse struct {
 	// PendingFPApprovalAt (a lowering waits 24 hours).
 	PendingFPApproval   string  `json:"pending_fp_approval,omitempty"`
 	PendingFPApprovalAt *string `json:"pending_fp_approval_at,omitempty"`
-	SecondLookPercent   int     `json:"second_look_percent"`
+	// AcceptApproval is the risk acceptance approval level in force: all,
+	// high_and_above or off.
+	AcceptApproval string `json:"accept_approval" enums:"all,high_and_above,off"`
+	// PendingAcceptApproval is a lower level that takes effect at
+	// PendingAcceptApprovalAt (a lowering waits 24 hours).
+	PendingAcceptApproval   string  `json:"pending_accept_approval,omitempty" enums:"high_and_above,off"`
+	PendingAcceptApprovalAt *string `json:"pending_accept_approval_at,omitempty"`
+	SecondLookPercent       int     `json:"second_look_percent"`
 	// PendingSecondLookPercent is a lower share that takes effect at
 	// PendingSecondLookAt (a lowering waits 24 hours).
 	PendingSecondLookPercent *int    `json:"pending_second_look_percent,omitempty"`
@@ -219,7 +226,12 @@ func toFindingApprovalSettingsResponse(s *tenantdom.FindingApprovalSettings) Fin
 	out := FindingApprovalSettingsResponse{
 		BackupContactEmail: s.BackupContactEmail,
 		FPApproval:         s.EffectiveFPApproval(now),
+		AcceptApproval:     s.EffectiveAcceptApproval(now),
 		SecondLookPercent:  s.EffectiveSecondLookPercent(now),
+	}
+	if level, at := s.PendingAcceptApprovalIn(now); level != "" {
+		v := at.UTC().Format(time.RFC3339)
+		out.PendingAcceptApproval, out.PendingAcceptApprovalAt = level, &v
 	}
 	if s.PendingSecondLookPercent != nil && s.PendingSecondLookAt != nil && now.Before(*s.PendingSecondLookAt) {
 		at := s.PendingSecondLookAt.UTC().Format(time.RFC3339)
@@ -267,23 +279,28 @@ type UpdateFindingApprovalSettingsRequest struct {
 	BackupContactEmail *string `json:"backup_contact_email" validate:"omitempty,max=254"`
 	// FPApproval: all, high_and_above or off. A lower level than the one in
 	// force takes effect 24 hours later; a higher one at once.
-	FPApproval        *string `json:"fp_approval" validate:"omitempty,oneof=all high_and_above off"`
+	FPApproval *string `json:"fp_approval" validate:"omitempty,oneof=all high_and_above off"`
+	// AcceptApproval: all, high_and_above or off, for accepted risks. A
+	// lower level than the one in force takes effect 24 hours later; a
+	// higher one at once.
+	AcceptApproval    *string `json:"accept_approval" validate:"omitempty,oneof=all high_and_above off"`
 	SecondLookPercent *int    `json:"second_look_percent" validate:"omitempty,min=0,max=10"`
 	// Policy replaces the approval policy. A change that relaxes anything
 	// takes effect 24 hours later (the stricter of both applies meanwhile).
 	Policy *ApprovalPolicyDTO `json:"policy"`
-	// CancelPending drops the waiting lowerings (false-positive level,
-	// second look share, relaxing policy) and keeps the values in force. It
-	// is applied before the other fields.
+	// CancelPending drops the waiting lowerings (false-positive and risk
+	// acceptance levels, second look share, relaxing policy) and keeps the
+	// values in force. It is applied before the other fields.
 	CancelPending bool `json:"cancel_pending"`
 }
 
-// UpdateFindingApprovalSettings handles PUT /organization/settings/finding-approvals
-// (settings:write and a recent re-authentication). The change is audited
-// with the values before and after, and the organization's approvers are
-// told.
+// UpdateFindingApprovalSettings handles PATCH (and, until the web moves,
+// PUT) /organization/settings/finding-approvals: an owner or administrator
+// with settings:write and a recent re-authentication. The change is audited
+// at high severity with the values before and after, and the organization's
+// approvers (every owner and administrator among them) are told.
 // @Summary      Change the finding approval settings
-// @Description  Partial update of the organization's finding approval settings. Requires settings:write and a recent re-authentication; audited, approvers told.
+// @Description  Partial update of the organization's finding approval settings, including the false-positive and risk acceptance approval levels (all, high_and_above, off). Lowering a level takes effect 24 hours later; raising is immediate. Requires an owner or administrator with settings:write and a recent re-authentication; audited, owners, administrators and approvers told.
 // @Tags         Findings
 // @Accept       json
 // @Produce      json
@@ -291,6 +308,7 @@ type UpdateFindingApprovalSettingsRequest struct {
 // @Param        body  body      UpdateFindingApprovalSettingsRequest  true  "Fields to change"
 // @Success      200   {object}  FindingApprovalSettingsResponse
 // @Failure      403   {object}  map[string]string
+// @Router       /organization/settings/finding-approvals [patch]
 // @Router       /organization/settings/finding-approvals [put]
 func (h *VulnerabilityHandler) UpdateFindingApprovalSettings(w http.ResponseWriter, r *http.Request) {
 	if h.approvalSettings == nil {
@@ -331,6 +349,11 @@ func (h *VulnerabilityHandler) UpdateFindingApprovalSettings(w http.ResponseWrit
 				return err
 			}
 		}
+		if req.AcceptApproval != nil {
+			if err := s.SetAcceptApproval(*req.AcceptApproval, time.Now()); err != nil {
+				return err
+			}
+		}
 		if req.SecondLookPercent != nil {
 			if err := s.SetSecondLookPercent(*req.SecondLookPercent, time.Now()); err != nil {
 				return err
@@ -348,6 +371,10 @@ func (h *VulnerabilityHandler) UpdateFindingApprovalSettings(w http.ResponseWrit
 		body = fmt.Sprintf("An administrator lowered the false-positive approval level to %q. It takes effect at %s unless it is raised again before then.",
 			resp.PendingFPApproval, *resp.PendingFPApprovalAt)
 	}
+	if resp.PendingAcceptApproval != "" && resp.PendingAcceptApproval != toFindingApprovalSettingsResponse(before).PendingAcceptApproval {
+		body = fmt.Sprintf("An administrator lowered the risk acceptance approval level to %q. It takes effect at %s unless it is raised again before then.",
+			resp.PendingAcceptApproval, *resp.PendingAcceptApprovalAt)
+	}
 	if resp.PendingPolicyAt != nil && (toFindingApprovalSettingsResponse(before).PendingPolicyAt == nil ||
 		*toFindingApprovalSettingsResponse(before).PendingPolicyAt != *resp.PendingPolicyAt) {
 		body = fmt.Sprintf("An administrator relaxed the approval policy. The change takes effect at %s unless it is reverted before then; until then the stricter rules apply.",
@@ -363,6 +390,8 @@ func (h *VulnerabilityHandler) UpdateFindingApprovalSettings(w http.ResponseWrit
 // decided now.
 type FalsePositivePolicyResponse struct {
 	FPApproval string `json:"fp_approval"`
+	// AcceptApproval is the organization's risk acceptance level in force.
+	AcceptApproval string `json:"accept_approval" enums:"all,high_and_above,off"`
 	// SinglePerson: a holder of findings:approve may mark this finding a
 	// false positive alone (it applies at once, a closure reason and a note
 	// still required). CanDecideAlone adds that the caller holds it.
@@ -406,7 +435,7 @@ type ApprovalEvaluationResponse struct {
 // GetFalsePositivePolicy handles GET /findings/{id}/approvals/policy
 // (findings:read; the finding must be in the caller's data scope).
 // @Summary      How a false positive on a finding is decided
-// @Description  Whether the organization's false-positive approval level lets one person mark this finding a false positive now, and whether the caller may. Requires findings:read and the finding in the caller's data scope.
+// @Description  Whether the organization's approval level lets one person mark this finding a false positive (or, with status=accepted, accept its risk) now, and whether the caller may. Requires findings:read and the finding in the caller's data scope.
 // @Tags         Findings
 // @Produce      json
 // @Security     BearerAuth
@@ -454,10 +483,30 @@ func (h *VulnerabilityHandler) GetFalsePositivePolicy(w http.ResponseWriter, r *
 		MinNoteLength: res.MinNoteLength, MaxAcceptanceDays: v.MaxAcceptanceDays,
 		DecideWithinDays: int(res.DecideWithin / (24 * time.Hour)), CallerExcluded: v.CallerExcluded,
 	}
-	if status == string(vulnerability.FindingStatusFalsePositive) {
-		// One rule for the dialog and the request path: the evaluation.
-		out.CanDecideAlone = res.SinglePerson()
+	// One rule for the dialog and the request path: the evaluation.
+	out.CanDecideAlone = res.SinglePerson()
+	if status == string(vulnerability.FindingStatusAccepted) {
+		out.SinglePerson = res.Floor == approvalpolicy.TierSingle
+	}
+	if acc, err := h.acceptLevel(r); err == nil {
+		out.AcceptApproval = acc
+	} else {
+		h.handleServiceError(w, err, "finding")
+		return
 	}
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(out)
+}
+
+// acceptLevel is the caller's organization's risk acceptance level in force
+// (all when the settings are not wired).
+func (h *VulnerabilityHandler) acceptLevel(r *http.Request) (string, error) {
+	if h.approvalSettings == nil {
+		return tenantdom.FPApprovalAll, nil
+	}
+	s, err := h.approvalSettings.GetFindingApprovalSettings(r.Context(), middleware.GetTenantID(r.Context()))
+	if err != nil {
+		return "", err
+	}
+	return s.EffectiveAcceptApproval(time.Now()), nil
 }
