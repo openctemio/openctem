@@ -327,6 +327,7 @@ func (c *Client) VerifyIDToken(ctx context.Context, raw string, exp Expectations
 		IssuerCheckedByCaller: exp.IssuerRule != nil,
 		Audience:              exp.ClientID,
 		Leeway:                signInLeeway,
+		Algorithms:            IdentityTokenAlgorithms,
 	}); err != nil {
 		return nil, fmt.Errorf("id_token: %w", err)
 	}

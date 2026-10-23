@@ -3,6 +3,7 @@
 import * as React from 'react'
 import { cn } from '@/lib/utils'
 import { useIsMobile } from '@/hooks/use-mobile'
+import { useTranslation } from '@/context/i18n-provider'
 import {
   ColumnDef,
   ColumnFiltersState,
@@ -69,6 +70,13 @@ import { pageSizeChoices } from '@/lib/page-size-options'
 
 export { groupRowsForDisplay, rowsForServerGroups, type DataTableRowGroups }
 
+/** What a phone card needs to offer the row's selection checkbox. */
+export interface MobileRowSelection {
+  selectable: boolean
+  selected: boolean
+  onSelectedChange: (selected: boolean) => void
+}
+
 interface DataTableProps<TData, TValue> {
   columns: ColumnDef<TData, TValue>[]
   data: TData[]
@@ -81,6 +89,16 @@ interface DataTableProps<TData, TValue> {
   pageSizeOptions?: number[]
   emptyMessage?: string
   emptyDescription?: string
+  /**
+   * Replaces the default "nothing here" block when there are no rows, so a
+   * page can say which kind of empty it is and offer the next action.
+   */
+  emptyState?: React.ReactNode
+  /**
+   * Shown in place of the rows when the read failed. The toolbar, filters and
+   * chips stay; the error does not replace the page.
+   */
+  errorState?: React.ReactNode
   onRowClick?: (row: TData) => void
   /**
    * Notified whenever the row selection changes, with the selected row data.
@@ -153,8 +171,12 @@ interface DataTableProps<TData, TValue> {
    * Phone layout: below `md` each row renders through this as a stacked card
    * instead of the table — a many-column table squeezed to phone width leaves
    * only the pinned name readable. Pagination stays the same.
+   *
+   * The second argument is the row's selection: `selectable` is true when the
+   * table has a selection column, so a card offers the same checkbox the
+   * table row has.
    */
-  mobileRow?: (row: TData) => React.ReactNode
+  mobileRow?: (row: TData, selection: MobileRowSelection) => React.ReactNode
   /**
    * Without `mobileRow`, rows still render as cards below `md`, built from the
    * columns (first column as title, the next few as fields). Set false to keep
@@ -201,9 +223,9 @@ const LOADING_ROWS = 5
 const COMPACT_CELL_CLASS = 'py-1'
 const COMPACT_HEAD_CLASS = 'h-8'
 
-const DENSITY_LABELS: Record<TableDensity, string> = {
-  compact: 'Compact',
-  comfortable: 'Comfortable',
+const DENSITY_LABEL_KEYS: Record<TableDensity, [string, string]> = {
+  compact: ['common.table.densityCompact', 'Compact'],
+  comfortable: ['common.table.densityComfortable', 'Comfortable'],
 }
 
 /** Fixed width of the selection column, so the pinned column after it knows its offset. */
@@ -336,18 +358,22 @@ function AutoMobileCard<TData>({
 const INTERACTIVE_SELECTOR =
   'button, a[href], input, select, textarea, label, [role="checkbox"], [role="switch"], [role="menuitem"], [data-radix-collection-item]'
 
+const NO_ROWS: never[] = []
+
 export function DataTable<TData, TValue>({
   columns,
   data,
   searchKey,
-  searchPlaceholder = 'Search...',
+  searchPlaceholder,
   showColumnToggle = true,
   showPagination = true,
   showSearch = true,
   pageSize = 10,
   pageSizeOptions = [10, 20, 30, 50, 100],
-  emptyMessage = 'No results found',
+  emptyMessage,
   emptyDescription,
+  emptyState,
+  errorState,
   onRowClick,
   onSelectionChange,
   manualPagination = false,
@@ -370,10 +396,16 @@ export function DataTable<TData, TValue>({
   isLoading = false,
   initialColumnVisibility,
   rowGroups,
-  paginationNoun = 'results',
-  pageSizeLabel = 'Rows per page',
+  paginationNoun,
+  pageSizeLabel,
   defaultDensity = 'comfortable',
 }: DataTableProps<TData, TValue>) {
+  const { t } = useTranslation()
+  // Defaults are translated here, not in the signature: they depend on the locale.
+  searchPlaceholder ??= t('common.table.search', 'Search...')
+  emptyMessage ??= t('common.table.noResults', 'No results found')
+  paginationNoun ??= t('common.table.resultsNoun', 'results')
+  pageSizeLabel ??= t('common.table.rowsPerPage', 'Rows per page')
   const [density, setDensity] = useTableDensity(defaultDensity)
   const compact = density === 'compact'
   // Cards replace the table on phones. Decided in JS rather than by hiding one
@@ -407,7 +439,10 @@ export function DataTable<TData, TValue>({
   // empty list with no search or filter says just what is empty.
   const filterActive = Boolean(globalFilter) || columnFilters.length > 0
   const emptyHint =
-    emptyDescription ?? (filterActive ? 'Try adjusting your search or filters' : undefined)
+    emptyDescription ??
+    (filterActive
+      ? t('common.table.adjustSearch', 'Try adjusting your search or filters')
+      : undefined)
   const rowGroupsRef = React.useRef(rowGroups)
   rowGroupsRef.current = rowGroups
   const [sortedRowModel] = React.useState(() =>
@@ -416,7 +451,8 @@ export function DataTable<TData, TValue>({
   const groupExpansion = useGroupExpansion(rowGroups)
 
   const table = useReactTable({
-    data,
+    // A failed read shows its error instead of rows left over from an earlier one.
+    data: errorState ? (NO_ROWS as TData[]) : data,
     columns,
     ...(getRowId ? { getRowId } : {}),
     onSortingChange: serverSorting
@@ -536,13 +572,20 @@ export function DataTable<TData, TValue>({
     return () => ro.disconnect()
   }, [measureEdges, data, columnVisibility])
 
-  // Clear the selection whenever the parent bumps resetSelectionKey.
-  const lastResetKey = React.useRef(resetSelectionKey)
+  // Clear the selection whenever the parent bumps resetSelectionKey, and
+  // whenever a server-paged table changes page, page size or sort: the rows
+  // the selection was made on are no longer the rows on screen, and a bulk
+  // action must never reach rows the user cannot see.
+  const pageScope = manualPagination
+    ? `${pagination?.pageIndex ?? 0}|${pagination?.pageSize ?? pageSize}|${JSON.stringify(sorting)}`
+    : ''
+  const lastResetKey = React.useRef(`${resetSelectionKey}|${pageScope}`)
   React.useEffect(() => {
-    if (lastResetKey.current === resetSelectionKey) return
-    lastResetKey.current = resetSelectionKey
+    const next = `${resetSelectionKey}|${pageScope}`
+    if (lastResetKey.current === next) return
+    lastResetKey.current = next
     setRowSelection({})
-  }, [resetSelectionKey])
+  }, [resetSelectionKey, pageScope])
 
   // Rows of this page in display order: one pseudo-group without rowGroups.
   const pageRows = table.getRowModel().rows
@@ -652,7 +695,10 @@ export function DataTable<TData, TValue>({
           {/* Selection info - hidden on mobile when no selection */}
           {showSelectionCount && selectedCount > 0 && (
             <span className="text-sm text-muted-foreground hidden sm:inline">
-              {selectedCount} of {totalCount} selected
+              {t('common.table.selectedOf', '{selected} of {total} selected', {
+                selected: selectedCount,
+                total: totalCount,
+              })}
             </span>
           )}
 
@@ -664,15 +710,17 @@ export function DataTable<TData, TValue>({
                 variant="outline"
                 size="sm"
                 className={cn('h-9', phoneCards && 'hidden')}
-                aria-label="Table view: density and columns"
+                aria-label={t('common.table.viewMenu', 'Table view: density and columns')}
               >
                 <SlidersHorizontal className="h-4 w-4 @xl/toolbar:me-2" />
-                <span className="sr-only @xl/toolbar:not-sr-only">View</span>
+                <span className="sr-only @xl/toolbar:not-sr-only">
+                  {t('common.table.view', 'View')}
+                </span>
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" className="w-[200px]">
               <DropdownMenuLabel className="text-xs text-muted-foreground">
-                Density
+                {t('common.table.density', 'Density')}
               </DropdownMenuLabel>
               <DropdownMenuRadioGroup
                 value={density}
@@ -680,7 +728,7 @@ export function DataTable<TData, TValue>({
               >
                 {(['compact', 'comfortable'] as const).map((d) => (
                   <DropdownMenuRadioItem key={d} value={d}>
-                    {DENSITY_LABELS[d]}
+                    {t(DENSITY_LABEL_KEYS[d][0], DENSITY_LABEL_KEYS[d][1])}
                   </DropdownMenuRadioItem>
                 ))}
               </DropdownMenuRadioGroup>
@@ -688,7 +736,7 @@ export function DataTable<TData, TValue>({
                 <>
                   <DropdownMenuSeparator />
                   <DropdownMenuLabel className="text-xs text-muted-foreground">
-                    Columns
+                    {t('common.table.columns', 'Columns')}
                   </DropdownMenuLabel>
                 </>
               )}
@@ -772,7 +820,13 @@ export function DataTable<TData, TValue>({
                     <div id={ids.rows} className="divide-y">
                       {group.rows.map((row) =>
                         mobileRow ? (
-                          <div key={row.id}>{mobileRow(row.original)}</div>
+                          <div key={row.id}>
+                            {mobileRow(row.original, {
+                              selectable: canSelectGroups,
+                              selected: row.getIsSelected(),
+                              onSelectedChange: (v) => row.toggleSelected(v),
+                            })}
+                          </div>
                         ) : (
                           <AutoMobileCard
                             key={row.id}
@@ -783,7 +837,11 @@ export function DataTable<TData, TValue>({
                         )
                       )}
                       {loading && (
-                        <div aria-busy="true" aria-label="Loading" className="space-y-2 px-3 py-3">
+                        <div
+                          aria-busy="true"
+                          aria-label={t('common.table.loading', 'Loading')}
+                          className="space-y-2 px-3 py-3"
+                        >
                           <Skeleton className="h-4 w-2/3" />
                           <Skeleton className="h-3 w-1/3" />
                         </div>
@@ -795,7 +853,7 @@ export function DataTable<TData, TValue>({
               )
             })
           ) : isLoading ? (
-            <div aria-busy="true" aria-label="Loading">
+            <div aria-busy="true" aria-label={t('common.table.loading', 'Loading')}>
               {Array.from({ length: LOADING_ROWS }).map((_, i) => (
                 <div key={i} className="space-y-2 px-3 py-3">
                   <Skeleton className="h-4 w-2/3" />
@@ -804,11 +862,14 @@ export function DataTable<TData, TValue>({
               ))}
             </div>
           ) : (
-            <div className="flex flex-col items-center justify-center gap-2 py-12 text-center">
-              <Inbox className="h-10 w-10 text-muted-foreground/50" />
-              <p className="text-sm font-medium">{emptyMessage}</p>
-              {emptyHint && <p className="text-xs text-muted-foreground">{emptyHint}</p>}
-            </div>
+            (errorState ??
+            emptyState ?? (
+              <div className="flex flex-col items-center justify-center gap-2 py-12 text-center">
+                <Inbox className="h-10 w-10 text-muted-foreground/50" />
+                <p className="text-sm font-medium">{emptyMessage}</p>
+                {emptyHint && <p className="text-xs text-muted-foreground">{emptyHint}</p>}
+              </div>
+            ))
           )}
         </div>
       )}
@@ -983,11 +1044,13 @@ export function DataTable<TData, TValue>({
               ) : (
                 <TableRow>
                   <TableCell colSpan={columns.length} className="h-48 text-center">
-                    <div className="flex flex-col items-center justify-center gap-2">
-                      <Inbox className="h-10 w-10 text-muted-foreground/50" />
-                      <p className="text-sm font-medium">{emptyMessage}</p>
-                      {emptyHint && <p className="text-xs text-muted-foreground">{emptyHint}</p>}
-                    </div>
+                    {errorState ?? emptyState ?? (
+                      <div className="flex flex-col items-center justify-center gap-2">
+                        <Inbox className="h-10 w-10 text-muted-foreground/50" />
+                        <p className="text-sm font-medium">{emptyMessage}</p>
+                        {emptyHint && <p className="text-xs text-muted-foreground">{emptyHint}</p>}
+                      </div>
+                    )}
                   </TableCell>
                 </TableRow>
               )}
@@ -997,7 +1060,7 @@ export function DataTable<TData, TValue>({
       </div>
 
       {/* Pagination */}
-      {showPagination && (
+      {showPagination && !errorState && (
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           {/* Row count info - centered on mobile. Under manual pagination the
               total is the server row count, not the current page's length. */}
@@ -1010,12 +1073,12 @@ export function DataTable<TData, TValue>({
             const end = Math.min((pageIndex + 1) * ps, total)
             return (
               <div className="text-sm text-muted-foreground text-center sm:text-start">
-                Showing <span className="font-medium">{start}</span>
-                {' - '}
-                <span className="font-medium">{end}</span>
-                {' of '}
-                <span className="font-medium">{total}</span>
-                {` ${paginationNoun}`}
+                {t('common.table.showing', 'Showing {start} - {end} of {total} {noun}', {
+                  start,
+                  end,
+                  total,
+                  noun: paginationNoun,
+                })}
               </div>
             )
           })()}
@@ -1052,7 +1115,7 @@ export function DataTable<TData, TValue>({
                 variant="outline"
                 size="icon"
                 className="h-8 w-8"
-                aria-label="First page"
+                aria-label={t('common.table.firstPage', 'First page')}
                 onClick={() => table.setPageIndex(0)}
                 disabled={!table.getCanPreviousPage()}
               >
@@ -1062,7 +1125,7 @@ export function DataTable<TData, TValue>({
                 variant="outline"
                 size="icon"
                 className="h-8 w-8"
-                aria-label="Previous page"
+                aria-label={t('common.table.previousPage', 'Previous page')}
                 onClick={() => table.previousPage()}
                 disabled={!table.getCanPreviousPage()}
               >
@@ -1070,18 +1133,18 @@ export function DataTable<TData, TValue>({
               </Button>
 
               {/* Page indicator */}
-              <span className="flex items-center gap-1 text-sm">
-                <span className="text-muted-foreground">Page</span>
-                <span className="font-medium">{table.getState().pagination.pageIndex + 1}</span>
-                <span className="text-muted-foreground">of</span>
-                <span className="font-medium">{table.getPageCount()}</span>
+              <span className="text-sm text-muted-foreground">
+                {t('common.table.pageOf', 'Page {page} of {pages}', {
+                  page: table.getState().pagination.pageIndex + 1,
+                  pages: table.getPageCount(),
+                })}
               </span>
 
               <Button
                 variant="outline"
                 size="icon"
                 className="h-8 w-8"
-                aria-label="Next page"
+                aria-label={t('common.table.nextPage', 'Next page')}
                 onClick={() => table.nextPage()}
                 disabled={!table.getCanNextPage()}
               >
@@ -1091,7 +1154,7 @@ export function DataTable<TData, TValue>({
                 variant="outline"
                 size="icon"
                 className="h-8 w-8"
-                aria-label="Last page"
+                aria-label={t('common.table.lastPage', 'Last page')}
                 onClick={() => table.setPageIndex(table.getPageCount() - 1)}
                 disabled={!table.getCanNextPage()}
               >
