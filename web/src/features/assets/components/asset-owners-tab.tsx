@@ -54,6 +54,7 @@ import { getErrorMessage } from '@/lib/api/error-handler'
 import { useDebounce } from '@/hooks/use-debounce'
 import { useGroups } from '@/features/access-control/api/use-groups'
 import { useTranslation } from '@/context/i18n-provider'
+import { ErrorState } from '@/features/shared'
 
 // Backend response shape for GET /tenants/{slug}/members?include=user
 // (defined inline because the typed lib hook doesn't support include param yet)
@@ -246,7 +247,7 @@ const OWNERSHIP_PRIORITY: Record<string, number> = {
 
 export function AssetOwnersTab({ assetId }: AssetOwnersTabProps) {
   const { t } = useTranslation()
-  const { owners, isLoading, mutate } = useAssetOwners(assetId)
+  const { owners, isLoading, error: ownersError, mutate } = useAssetOwners(assetId)
   const { can } = usePermissions()
   const canEdit = can(Permission.AssetsWrite)
   const canDelete = can(Permission.AssetsDelete)
@@ -522,7 +523,7 @@ export function AssetOwnersTab({ assetId }: AssetOwnersTabProps) {
             })}
           </h3>
         </div>
-        {canEdit && (
+        {canEdit && !ownersError && (
           <Button variant="outline" size="sm" onClick={() => setShowAddDialog(true)}>
             <UserPlus className="me-1.5 h-3.5 w-3.5" />
             {t('assets.ownersTab.addOwner', 'Add Owner')}
@@ -541,6 +542,12 @@ export function AssetOwnersTab({ assetId }: AssetOwnersTabProps) {
         <div className="flex items-center justify-center py-8 text-sm text-muted-foreground">
           {t('assets.ownersTab.loading', 'Loading owners...')}
         </div>
+      ) : ownersError ? (
+        <ErrorState
+          title={t('assetDetail.ownersErrorTitle', 'owners')}
+          error={ownersError}
+          onRetry={() => mutate()}
+        />
       ) : owners.length === 0 ? (
         <div className="flex flex-col items-center justify-center rounded-lg border border-dashed py-8">
           <Users className="h-8 w-8 text-muted-foreground/50" />

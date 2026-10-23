@@ -7,7 +7,9 @@ import { useTranslation } from '@/context/i18n-provider'
 import {
   ColumnDef,
   ColumnFiltersState,
+  type Column,
   type Header,
+  type Table as TanstackTable,
   type Row,
   SortingState,
   VisibilityState,
@@ -197,6 +199,21 @@ interface DataTableProps<TData, TValue> {
    */
   initialColumnVisibility?: VisibilityState
   /**
+   * Controlled column visibility. With it the table shows exactly these
+   * columns and reports every change through `onColumnVisibilityChange`
+   * (a page that saves the columns with a view, or keeps them in the URL).
+   * Without it the table keeps its own state, started from
+   * `initialColumnVisibility`.
+   */
+  columnVisibility?: VisibilityState
+  onColumnVisibilityChange?: (next: VisibilityState) => void
+  /**
+   * Controlled row density: shown as given, and every pick goes to
+   * `onDensityChange` instead of the per-browser preference.
+   */
+  density?: TableDensity
+  onDensityChange?: (next: TableDensity) => void
+  /**
    * Grouped list: a full-width header row before each group's rows, in one
    * table (see "Grouped lists" in docs/ui-style-contract.md). Client groups
    * follow `order`, then first appearance, and a client-paginated table pages
@@ -361,6 +378,17 @@ const INTERACTIVE_SELECTOR =
 
 const NO_ROWS: never[] = []
 
+/**
+ * A column whose definition gives no header (TanStack fills in its default,
+ * which renders nothing for a column without an accessor): row actions and
+ * similar. Its header cell still needs a name for screen readers.
+ */
+function isHeaderless<TData>(table: TanstackTable<TData>, column: Column<TData, unknown>): boolean {
+  const def = column.columnDef as { header?: unknown; accessorKey?: unknown }
+  if (def.accessorKey !== undefined) return false
+  return def.header === undefined || def.header === table._getDefaultColumnDef().header
+}
+
 export function DataTable<TData, TValue>({
   columns,
   data,
@@ -396,6 +424,10 @@ export function DataTable<TData, TValue>({
   mobileCards = true,
   isLoading = false,
   initialColumnVisibility,
+  columnVisibility: columnVisibilityProp,
+  onColumnVisibilityChange,
+  density: densityProp,
+  onDensityChange,
   rowGroups,
   paginationNoun,
   pageSizeLabel,
@@ -407,7 +439,9 @@ export function DataTable<TData, TValue>({
   emptyMessage ??= t('common.table.noResults', 'No results found')
   paginationNoun ??= t('common.table.resultsNoun', 'results')
   pageSizeLabel ??= t('common.table.rowsPerPage', 'Rows per page')
-  const [density, setDensity] = useTableDensity(defaultDensity)
+  const [storedDensity, setStoredDensity] = useTableDensity(defaultDensity)
+  const density = densityProp ?? storedDensity
+  const setDensity = onDensityChange ?? setStoredDensity
   const compact = density === 'compact'
   // Cards replace the table on phones. Decided in JS rather than by hiding one
   // with CSS, so only one of the two is ever rendered.
@@ -431,8 +465,22 @@ export function DataTable<TData, TValue>({
   const serverSorting = manualPagination && !!onSortingChange
   const sorting = serverSorting ? (sortingProp ?? []) : internalSorting
   const [columnFilters, setColumnFilters] = React.useState<ColumnFiltersState>([])
-  const [columnVisibility, setColumnVisibility] = React.useState<VisibilityState>(
+  const [ownVisibility, setOwnVisibility] = React.useState<VisibilityState>(
     () => initialColumnVisibility ?? {}
+  )
+  const columnVisibility = columnVisibilityProp ?? ownVisibility
+  const columnVisibilityRef = React.useRef(columnVisibility)
+  columnVisibilityRef.current = columnVisibility
+  const setColumnVisibility = React.useCallback(
+    (updater: VisibilityState | ((old: VisibilityState) => VisibilityState)) => {
+      const next = typeof updater === 'function' ? updater(columnVisibilityRef.current) : updater
+      if (columnVisibilityProp !== undefined || onColumnVisibilityChange) {
+        onColumnVisibilityChange?.(next)
+      } else {
+        setOwnVisibility(next)
+      }
+    },
+    [columnVisibilityProp, onColumnVisibilityChange]
   )
   const [rowSelection, setRowSelection] = React.useState({})
   const [globalFilter, setGlobalFilter] = React.useState('')
@@ -899,9 +947,17 @@ export function DataTable<TData, TValue>({
                         compact && COMPACT_HEAD_CLASS
                       )}
                     >
-                      {header.isPlaceholder
-                        ? null
-                        : flexRender(header.column.columnDef.header, header.getContext())}
+                      {header.isPlaceholder ? null : !isHeaderless(table, header.column) ? (
+                        flexRender(header.column.columnDef.header, header.getContext())
+                      ) : (
+                        // A column with no visible header (row actions, the
+                        // selection box) still names itself to screen readers.
+                        <span className="sr-only">
+                          {header.column.id === 'select'
+                            ? t('common.table.selectColumn', 'Select')
+                            : t('common.table.actionsColumn', 'Actions')}
+                        </span>
+                      )}
                     </TableHead>
                   )
                 })}
@@ -1092,7 +1148,10 @@ export function DataTable<TData, TValue>({
                   table.setPageSize(Number(value))
                 }}
               >
-                <SelectTrigger className="h-8 w-[70px]">
+                <SelectTrigger
+                  className="h-8 w-[70px]"
+                  aria-label={`${pageSizeLabel}: ${table.getState().pagination.pageSize}`}
+                >
                   <SelectValue placeholder={table.getState().pagination.pageSize} />
                 </SelectTrigger>
                 <SelectContent side="top">
