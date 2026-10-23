@@ -41,7 +41,9 @@ describe('business-services page load failure', () => {
     getMock.mockRejectedValue(new Error('boom'))
     renderPage()
     const retry = await screen.findByRole('button', { name: /retry/i })
-    expect(screen.queryByText(/No business services yet|Create a service to get started/i)).toBeNull()
+    expect(
+      screen.queryByText(/No business services yet|Create a service to get started/i)
+    ).toBeNull()
     const calls = getMock.mock.calls.length
     getMock.mockResolvedValue({ data: [], total: 0 })
     await userEvent.setup().click(retry)
