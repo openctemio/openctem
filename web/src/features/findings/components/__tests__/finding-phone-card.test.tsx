@@ -61,9 +61,11 @@ describe('FindingPhoneCard', () => {
   it('leads with the priority class, and severity follows in the badge row', () => {
     const { container } = card()
     const open = container.querySelector('button.text-start') as HTMLElement
-    const badges = Array.from(open.querySelectorAll('[data-slot="badge"]')).map((b) =>
-      b.textContent?.trim()
-    )
+    const badges = Array.from(
+      open.querySelectorAll(
+        '[data-slot="badge"], [data-slot="priority-badge"], [data-slot="severity-badge"]'
+      )
+    ).map((b) => b.textContent?.trim())
     expect(badges[0]).toBe('P1')
     expect(badges.slice(1).join(' ')).toMatch(/high/i)
   })
@@ -78,7 +80,7 @@ describe('FindingPhoneCard', () => {
       />
     )
     const open = screen.getByRole('button', { name: /SQL injection in login/ })
-    const first = open.querySelector('[data-slot="badge"]')
+    const first = open.querySelector('[data-slot="severity-badge"]')
     expect(first?.textContent).toMatch(/high/i)
   })
 
