@@ -155,13 +155,7 @@ describe('dashboard accessibility', () => {
     const { layout, data } = overview()
     const { container } = render(
       <main>
-        <DashboardFreshness
-          kind="personal"
-          data={data}
-          canSchedule
-          onRefresh={async () => {}}
-          onSchedule={async () => {}}
-        />
+        <DashboardFreshness kind="personal" data={data} />
         <DashboardView dashboard={{ layout, columns: 4 }} data={data} loading={false} />
       </main>
     )

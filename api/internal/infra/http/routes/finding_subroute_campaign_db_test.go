@@ -39,6 +39,7 @@ var findingSubRoutes = []struct{ name, method, suffix string }{
 	{"ticket links", http.MethodGet, "/ticket-links"},
 	{"ticket holds", http.MethodGet, "/ticket-holds"},
 	{"priority explanation", http.MethodGet, "/priority-explanation"},
+	{"identity explanation", http.MethodGet, "/identity"},
 	{"comments", http.MethodGet, "/comments"},
 	{"a future sub-route", http.MethodGet, "/not-yet-built"},
 }

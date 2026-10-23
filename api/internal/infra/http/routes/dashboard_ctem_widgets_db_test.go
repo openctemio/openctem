@@ -24,6 +24,7 @@ var ctemLayout = []any{
 	metricWidget("w_loop", "ctem.loop", nil),
 	metricWidget("w_cj", "crown_jewels.exposed", nil),
 	metricWidget("w_paths", "attack_paths.to_crown_jewels", map[string]any{"limit": 5}),
+	metricWidget("w_cov", "coverage.discovery", nil),
 }
 
 // newCTEMEnv extends the pentest fixture: A1 and B1 are crown jewels (A1 in
@@ -228,6 +229,23 @@ func TestDashboardCTEMWidgets_ScopeAndParity_DB(t *testing.T) {
 			}
 			if got := e.assetTotal(t, tc.user, tc.admin, "coverage=uncovered&program_assets=exclude"); int64(got) != tc.uncovered {
 				t.Errorf("parity uncovered: widget %d, asset list %d", tc.uncovered, got)
+			}
+
+			// The catalog coverage figure is the same read as the loop's
+			// Discovery stage, in the same scope; nothing tracked is not
+			// measured, never 0 %.
+			cov := byID(t, out, "w_cov")
+			if tc.tracked == 0 {
+				if cov.State != widgets.StateNotMeasured || cov.Reason != widgets.ReasonNoTrackedAssets || (cov.Ratio != nil && cov.Ratio.ValuePct != nil) {
+					t.Errorf("coverage without tracked assets = %+v", cov)
+				}
+			} else {
+				if cov.State != widgets.StateReady || cov.Ratio == nil || cov.Ratio.Den != tc.tracked || cov.Ratio.Num != tc.tracked-tc.uncovered {
+					t.Errorf("coverage = %+v, want %d of %d", cov.Ratio, tc.tracked-tc.uncovered, tc.tracked)
+				}
+				if cov.Drill != "/assets?coverage=uncovered&program_assets=exclude" {
+					t.Errorf("coverage drill %s", cov.Drill)
+				}
 			}
 
 			val := stage(t, loop, widgets.StageValidate)
