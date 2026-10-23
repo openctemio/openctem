@@ -179,7 +179,7 @@ export default function ScopePage() {
       ? canWrite && (
           <Button size="sm" onClick={() => setExcludeOpen(true)}>
             <ShieldOff className="h-4 w-4" />
-            Put out of scope
+            {t('scope.putOut', 'Put out of scope')}
           </Button>
         )
       : tab === 'proof' || tab === 'networks'
@@ -196,18 +196,25 @@ export default function ScopePage() {
   return (
     <Main>
       <PageHeader
-        title="Scope"
-        description="What scans may touch. Anything not listed is out of scope, and an exclusion always wins."
+        title={t('scope.title', 'Scope')}
+        description={t(
+          'scope.description',
+          'What scans may touch. Anything not listed is out of scope, and an exclusion always wins.'
+        )}
       >
         <Button asChild variant="outline" size="sm">
           <Link href="/settings/scope">
             <Settings2 className="h-4 w-4" />
-            Policy
+            {t('scope.policy', 'Policy')}
           </Link>
         </Button>
         {primary}
       </PageHeader>
-      <GatedSectionTabs tabs={SCOPE_SECTION_TABS} label="Scope sections" className="mt-4 mb-0" />
+      <GatedSectionTabs
+        tabs={SCOPE_SECTION_TABS}
+        label={t('scope.sections', 'Scope sections')}
+        className="mt-4 mb-0"
+      />
 
       <MetricStrip
         className="mt-5"
@@ -226,10 +233,12 @@ export default function ScopePage() {
             </TabsTrigger>
             {showApprovals && (
               <TabsTrigger value="approvals">
-                Approvals <TabsCount value={pending} />
+                {t('scope.tabs.approvals', 'Approvals')} <TabsCount value={pending} />
               </TabsTrigger>
             )}
-            {proofVisible && <TabsTrigger value="proof">Domain proof</TabsTrigger>}
+            {proofVisible && (
+              <TabsTrigger value="proof">{t('scope.tabs.proof', 'Domain proof')}</TabsTrigger>
+            )}
             {proofVisible && (
               <TabsTrigger value="networks">{t('networkSeeds.tab', 'Networks')}</TabsTrigger>
             )}
