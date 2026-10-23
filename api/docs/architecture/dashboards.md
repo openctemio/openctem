@@ -477,6 +477,7 @@ scoped read never does (the same rule as the findings list).
 | `dash_asset_rank` (F3) | asset × list kind × partition, top 10 | kinds `fix_next` (priority, severity, newest), `sla_due` (earliest SLA deadline), `oldest` (first detected); `finding_id`, `priority_class`, `severity`, `sort_at` |
 | `dash_dirty_assets` | one row per pending mark | `tenant_id`, `asset_id`, `reasons` (bits), `marked_at` |
 | `dash_fact_status` | tenant | `rebuilt_at` (last full rebuild, NULL = never built), `aged_marked_at` |
+| `dash_ingest_day` | tenant × UTC day × source kind (`sensor`, `import`, `connector`, `ci`) × tool | `reports`, `received`, `created`, `still_detected`, `reopened`, `closed`, `skipped`, `failed`, `suppressed`. Not per asset and not maintained by the facts maintainer: the receipt writer upserts it in the transaction that records each ingest ([ingest-receipts.md](ingest-receipts.md)); kept 13 months; organization-wide only |
 
 What is stored, exactly:
 

@@ -50,6 +50,7 @@ var sqlProfiles = map[string]SQLProfile{
 	"TicketHoldReleaseController":         SQLBatched,
 	"ScannerOutputRetentionController":    SQLBatched,
 	"CommandLogRetentionController":       SQLBatched,
+	"IngestReceiptRetentionController":    SQLBatched, // action rows, run receipts, daily facts in LIMIT batches
 	"HeartbeatHistoryRetentionController": SQLBatched,
 	"WebSurfaceRetentionController":       SQLBatched,
 	"AccessRequestRetentionController":    SQLBatched,

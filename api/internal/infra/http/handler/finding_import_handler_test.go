@@ -15,6 +15,7 @@ import (
 	"github.com/openctemio/openctem/api/internal/app/findingimport"
 	"github.com/openctemio/openctem/api/internal/app/ingest"
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
+	"github.com/openctemio/openctem/api/pkg/domain/ingestreceipt"
 	"github.com/openctemio/openctem/api/pkg/domain/sensor"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
@@ -30,11 +31,9 @@ func (f *importIngester) Ingest(_ context.Context, _ *sensor.Sensor, in ingest.I
 
 type importVEXRepo struct{ applies int }
 
-func (f *importVEXRepo) CreateFindingImport(context.Context, *vulnerability.FindingImport) error {
-	return nil
-}
+func (f *importVEXRepo) CreateUpload(context.Context, *ingestreceipt.Upload) error { return nil }
 
-func (f *importVEXRepo) FinishFindingImport(context.Context, *vulnerability.FindingImport) error {
+func (f *importVEXRepo) FinishUpload(context.Context, shared.ID, shared.ID, *ingestreceipt.UploadResult) error {
 	return nil
 }
 
@@ -57,7 +56,8 @@ func (importScope) AssetsInScope(context.Context, []shared.ID) ([]shared.ID, err
 
 func newImportTestHandler(restricted bool) (*FindingImportHandler, *importIngester) {
 	ing := &importIngester{}
-	svc := findingimport.NewService(ing, &importVEXRepo{}, ingest.SourceResolveDryRun, logger.NewNop())
+	repo := &importVEXRepo{}
+	svc := findingimport.NewService(ing, repo, repo, ingest.SourceResolveDryRun, logger.NewNop())
 	h := &FindingImportHandler{svc: svc, logger: logger.NewNop()}
 	h.actorOf = func(context.Context, shared.ID) (ingest.ActorScope, error) {
 		if restricted {
