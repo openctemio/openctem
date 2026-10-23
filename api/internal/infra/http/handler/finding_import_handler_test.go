@@ -99,7 +99,7 @@ func multipartBody(t *testing.T, parts ...part) (*bytes.Buffer, string) {
 
 func doImport(t *testing.T, h *FindingImportHandler, query string, body io.Reader, ctype string) *httptest.ResponseRecorder {
 	t.Helper()
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/findings/import"+query, body)
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/findings/imports"+query, body)
 	req.Header.Set("Content-Type", ctype)
 	req = req.WithContext(context.WithValue(req.Context(), middleware.TenantIDKey, shared.NewID().String()))
 	rec := httptest.NewRecorder()
@@ -156,7 +156,7 @@ func TestFindingImport_CommitRunsWithTheUploadersScope(t *testing.T) {
 	h, ing := newImportTestHandler(true)
 	body, ct := multipartBody(t, part{"file", "scan.nessus", []byte(importNessus)})
 	rec := doImport(t, h, "", body, ct)
-	if rec.Code != http.StatusOK {
+	if rec.Code != http.StatusCreated {
 		t.Fatalf("status %d: %s", rec.Code, rec.Body.String())
 	}
 	if len(ing.calls) != 1 || ing.calls[0].Options.Actor == nil || ing.calls[0].CoverageType != ingest.CoverageTypePartial {
@@ -210,7 +210,7 @@ func TestFindingImport_Refusals(t *testing.T) {
 		h, ing := newImportTestHandler(false)
 		body, ct := multipartBody(t, part{"file", "a.zip", bomb})
 		rec := doImport(t, h, "", body, ct)
-		if rec.Code != http.StatusOK {
+		if rec.Code != http.StatusCreated {
 			t.Fatalf("status %d: %s", rec.Code, rec.Body.String())
 		}
 		resp := decodeImport(t, rec)
@@ -251,7 +251,7 @@ func TestFindingImport_ArchiveImportsEachFile(t *testing.T) {
 	z := zipOf(t, map[string][]byte{"a/one.nessus": []byte(importNessus), "two.nessus": []byte(importNessus), "notes.txt": []byte("hello")})
 	body, ct := multipartBody(t, part{"file", "batch.zip", z})
 	rec := doImport(t, h, "", body, ct)
-	if rec.Code != http.StatusOK {
+	if rec.Code != http.StatusCreated {
 		t.Fatalf("status %d: %s", rec.Code, rec.Body.String())
 	}
 	resp := decodeImport(t, rec)

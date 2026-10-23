@@ -3,7 +3,7 @@ import type { Page, TestInfo } from '@playwright/test'
 
 /**
  * Findings list toolbar layout. Two rows that never reflow into each other:
- * row 1 = state lens + page actions, row 2 = [filter | search] + saved views,
+ * row 1 = view title + page actions, row 2 = [filter | search] + saved views,
  * Group and the table's View menu. The filter button is joined to the search
  * field, so the field can never drop onto a line of its own under the button
  * (the bug this guards), and no control may stick out past the list's edge.
@@ -61,7 +61,7 @@ for (const width of WIDTHS) {
   }, info) => {
     await page.setViewportSize({ width, height: 900 })
     await page.goto('/findings')
-    await expect(page.getByRole('radiogroup', { name: /finding state/i })).toBeVisible({
+    await expect(page.getByTestId('findings-view-title')).toBeVisible({
       timeout: 20_000,
     })
     await page.waitForLoadState('networkidle')

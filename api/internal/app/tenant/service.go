@@ -15,6 +15,7 @@ import (
 
 	"github.com/openctemio/openctem/api/internal/app/accesscontrol"
 	auditapp "github.com/openctemio/openctem/api/internal/app/audit"
+	"github.com/openctemio/openctem/api/internal/app/entitlement"
 
 	"github.com/openctemio/openctem/api/pkg/crypto"
 	"github.com/openctemio/openctem/api/pkg/domain/audit"
@@ -110,6 +111,10 @@ type TenantService struct {
 	// warning is logged): the never-lock-out guarantee still holds because the
 	// owner is always break-glass exempt at the enforcement gate.
 	ssoPathChecker SSOPathChecker
+	// features gates sso.enforcement by the organization's limits; enforced
+	// lists the organizations that enforce SSO (the post-grace sweep).
+	features SSOFeatureGate
+	enforced SSOEnforcedLister
 	// ssoDomains reports whether a tenant holds a domain verified for SSO
 	// (requiring SSO needs one). Nil: requiring SSO is refused.
 	ssoDomains SSODomainChecker
@@ -243,6 +248,24 @@ func WithTenantRoleService(svc *accesscontrol.RoleService) TenantServiceOption {
 // RoleService — same pattern as SetMembershipCache).
 func (s *TenantService) SetRoleService(svc *accesscontrol.RoleService) {
 	s.roleService = svc
+}
+
+// SSOFeatureGate is the entitlement check of the sign-in features.
+type SSOFeatureGate interface {
+	Allowed(ctx context.Context, tenantID shared.ID, feature string) (bool, error)
+	Usable(ctx context.Context, tenantID shared.ID, feature string) (bool, error)
+}
+
+// SSOEnforcedLister lists the organizations that currently enforce SSO.
+type SSOEnforcedLister interface {
+	ListSSOEnforcedTenantIDs(ctx context.Context, limit int) ([]shared.ID, error)
+}
+
+// SetSSOFeatureGate wires the feature check of SSO enforcement: turning it on
+// needs sso.enforcement, and SweepDeniedSSOEnforcement turns it off once the
+// organization lost the feature and its grace ended.
+func (s *TenantService) SetSSOFeatureGate(g SSOFeatureGate, enforced SSOEnforcedLister) {
+	s.features, s.enforced = g, enforced
 }
 
 // SetSSOPathChecker wires the SSO-path checker after construction. TenantService
@@ -2154,6 +2177,11 @@ func (s *TenantService) UpdateSecuritySettings(ctx context.Context, tenantID str
 		// Only gate when this request actually asserts enforcement ON. The owner
 		// break-glass at the enforcement gate is the ultimate lock-out guarantee, so
 		// if the checker is unavailable we log and allow rather than hard-fail.
+		if input.SSOEnforced != nil && *input.SSOEnforced && !before.SSOEnforced && s.features != nil {
+			if err := entitlement.RequireFeature(ctx, s.features, t.ID(), limits.FeatureSSOEnforcement); err != nil {
+				return err
+			}
+		}
 		if input.SSOEnforced != nil && *input.SSOEnforced {
 			if s.ssoPathChecker == nil {
 				s.logger.Warn("sso_enforced enabled without an SSO-path checker wired; skipping usable-path guard",

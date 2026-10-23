@@ -113,6 +113,20 @@ vi.mock('@/features/assets/hooks/use-assets', () => ({
   useAsset: () => ({ asset: { id: ASSET_ID, name: 'www.example.test' }, isLoading: false }),
 }))
 
+vi.mock('@/features/findings/filters/contract', async (orig) => ({
+  ...(await orig<typeof import('@/features/findings/filters/contract')>()),
+  useFindingFilterContract: () => ({ contract: undefined, isLoading: false, error: undefined }),
+}))
+vi.mock('@/features/saved-views/api/use-saved-views', async (orig) => ({
+  ...(await orig<typeof import('@/features/saved-views/api/use-saved-views')>()),
+  useSavedViews: () => ({ views: [], error: undefined, isLoading: false, mutate: vi.fn() }),
+}))
+
+vi.mock('@/features/findings/api/use-quick-views', () => ({
+  useFindingQuickViews: () => ({ data: undefined }),
+  refreshFindingQuickViews: vi.fn(),
+}))
+
 import FindingsPage from '../page'
 import {
   buildFindingStatsUrl,
@@ -123,7 +137,6 @@ const sentList = () =>
   listCalls.filter((c) => c.enabled).map((c) => buildFindingsEndpoint(c.filters as never))
 const sentStats = () =>
   new Set(statsCalls.filter((c) => c.enabled).map((c) => buildFindingStatsUrl(c.filters as never)))
-const card = (label: RegExp) => screen.getByRole('button', { name: label })
 
 beforeEach(() => {
   listCalls.length = 0
@@ -173,26 +186,22 @@ describe('Findings opened for an asset', () => {
     expect(new URLSearchParams(window.location.search).get('page')).toBe('3')
   })
 
-  it('scopes the overview strip to the asset, in the same single stats request as the tabs', () => {
+  it('scopes the stats to the asset, in one request', () => {
     window.history.replaceState(null, '', `/findings?asset_id=${ASSET_ID}`)
     render(<FindingsPage />)
 
     const stats = sentStats()
     expect(stats.size).toBe(1)
     expect([...stats][0]).toContain(`asset_id=${ASSET_ID}`)
-    expect(card(/^Total/)).toHaveTextContent('3')
-    expect(card(/^Open/)).toHaveTextContent('3')
-    expect(screen.getByRole('radio', { name: /^All/ })).toHaveTextContent('3')
-    expect(card(/^Total/)).toHaveAttribute('title', expect.stringContaining('scope'))
   })
 
-  it('a facet filter on top of the asset moves the tab counts, not the strip', () => {
+  it('a facet filter on top of the asset sends no extra stats request', () => {
     window.history.replaceState(null, '', `/findings?asset_id=${ASSET_ID}&severity=low`)
     render(<FindingsPage />)
 
     const stats = [...sentStats()]
-    expect(stats).toHaveLength(2)
-    expect(stats.every((u) => u.includes(`asset_id=${ASSET_ID}`))).toBe(true)
-    expect(stats.filter((u) => u.includes('severity=low'))).toHaveLength(1)
+    expect(stats).toHaveLength(1)
+    expect(stats[0]).toContain(`asset_id=${ASSET_ID}`)
+    expect(stats[0]).not.toContain('severity=low')
   })
 })
