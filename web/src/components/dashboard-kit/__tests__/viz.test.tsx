@@ -56,6 +56,37 @@ describe('StatViz', () => {
   })
 })
 
+describe('Sparkline', () => {
+  it('labels both ends with date and value, and reads as one sentence', () => {
+    render(
+      <StatViz
+        result={{
+          shape: 'scalar',
+          value: 56,
+          previous: 41,
+          series: [
+            { t: '2026-09-24', v: 43 },
+            { t: '2026-10-08', v: 50 },
+            { t: '2026-10-23', v: 56 },
+          ],
+        }}
+      />
+    )
+    const spark = screen.getByTestId('sparkline')
+    expect(within(spark).getByText('43')).toBeInTheDocument()
+    expect(within(spark).getByText('Sep 24')).toBeInTheDocument()
+    expect(within(spark).getByText('Oct 23')).toBeInTheDocument()
+    expect(spark).toHaveTextContent('Trend from 43 on Sep 24 to 56 on Oct 23')
+    // The change names its base.
+    expect(screen.getByText('vs 41 previous period')).toBeInTheDocument()
+  })
+
+  it('draws nothing with fewer than two points', () => {
+    render(<StatViz result={{ shape: 'scalar', value: 5, series: [{ t: '2026-10-01', v: 5 }] }} />)
+    expect(screen.queryByTestId('sparkline')).toBeNull()
+  })
+})
+
 describe('ProgressViz', () => {
   it('is a meter against the target, with icon and words', () => {
     render(
@@ -90,6 +121,13 @@ const SEVERITY: CategoryResult = {
 }
 
 describe('BarViz', () => {
+  it('names the figure by its largest rows', () => {
+    render(<BarViz result={SEVERITY} />)
+    expect(screen.getByRole('figure')).toHaveAccessibleName(
+      'Largest: High 50, Medium 24, Critical 22'
+    )
+  })
+
   it('keeps ordinal order, prints values and links each bar to its list', () => {
     render(<BarViz result={SEVERITY} drill={({ key }) => `/findings?state=open&severity=${key}`} />)
     const links = screen.getAllByRole('link')
@@ -165,6 +203,24 @@ describe('series visualizations', () => {
     expect(screen.getByText('Fixing faster than finding: 7 fewer open')).toBeInTheDocument()
   })
 
+  it('every chart is a figure named by a one-line summary (first and last bucket, latest values)', () => {
+    render(<ColumnViz result={FLOW} />)
+    const fig = screen.getByRole('figure')
+    expect(fig).toHaveAccessibleName(/^Oct 5 to Oct 12\. Latest: /)
+    expect(screen.getByTestId('chart-summary')).toHaveTextContent('Latest:')
+    // The table twin replaces the figure.
+    fireEvent.click(screen.getByRole('button', { name: 'Show table' }))
+    expect(screen.queryByRole('figure')).toBeNull()
+    expect(screen.getByRole('table')).toBeInTheDocument()
+  })
+
+  it('diverging bars name the net and the range', () => {
+    render(<DivergingViz result={FLOW} />)
+    expect(screen.getByRole('figure')).toHaveAccessibleName(
+      /^Fixing faster than finding: 7 fewer open\. Oct 5 to Oct 12/
+    )
+  })
+
   it('columns have a table view with every point and drill links', () => {
     render(<ColumnViz result={FLOW} drill={({ series, t }) => `/findings?${series}_on=${t}`} />)
     fireEvent.click(screen.getByRole('button', { name: 'Show table' }))
@@ -200,6 +256,11 @@ describe('grid visualizations', () => {
       '/findings?severity=critical&age_band=0-30'
     )
     expect(screen.getByText('0')).toBeInTheDocument()
+    // Scale legend, the peak as the figure's name, a severity dot on the row.
+    expect(screen.getByText('Fewer')).toBeInTheDocument()
+    expect(screen.getByText('max 9')).toBeInTheDocument()
+    expect(screen.getByRole('figure')).toHaveAccessibleName('Highest: Critical, 0-30: 9')
+    expect(document.querySelector('.bg-sev-critical')).not.toBeNull()
   })
 
   it('stages show not measured as grey with the reason, never as good', () => {
