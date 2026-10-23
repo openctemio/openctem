@@ -239,7 +239,7 @@ export function RunDetailSheet({ runId, onOpenChange }: RunDetailSheetProps) {
                   {toDisplayText(run.error_message)}
                 </span>
                 {run.refusal_code && (
-                  <span className="mt-1 block font-mono text-xs text-muted-foreground">
+                  <span className="mt-1 block font-mono text-meta text-muted-foreground">
                     {toDisplayText(run.refusal_code)}
                   </span>
                 )}
@@ -334,7 +334,9 @@ export function RunDetailSheet({ runId, onOpenChange }: RunDetailSheetProps) {
                         {formatTime(deadline.at)}
                         {deadline.relative && ` · ${deadline.relative}`}
                       </span>
-                      <span className="text-muted-foreground block text-xs">{deadline.reason}</span>
+                      <span className="text-muted-foreground block text-meta">
+                        {deadline.reason}
+                      </span>
                     </DetailField>
                   )}
                   {runId && (

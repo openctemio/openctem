@@ -22,6 +22,8 @@ export interface FindingImportOptions {
   dryRun: boolean
   /** Drop findings below this severity (server default: keep all). */
   minSeverity?: ImportMinSeverity
+  /** A format to use instead of detecting it, e.g. `mapping:<name>` for a saved import mapping. */
+  format?: string
 }
 
 /** An import the server refused, with the refused file's details when it sent them. */
@@ -79,6 +81,7 @@ export async function importFindings(opts: FindingImportOptions): Promise<Findin
   const params = new URLSearchParams()
   if (opts.dryRun) params.set('dry_run', 'true')
   if (opts.minSeverity) params.set('min_severity', opts.minSeverity)
+  if (opts.format) params.set('format', opts.format)
   const qs = params.toString()
   const query = qs ? `?${qs}` : ''
   const res = await csrfFetch(`/api/v1/findings/imports${query}`, { method: 'POST', body: form })

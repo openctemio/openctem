@@ -30,7 +30,7 @@ export function IntensityBadge({
   return (
     <Badge
       variant="outline"
-      className={cn('gap-1 text-[11px] font-normal', STYLE[intensity].className, className)}
+      className={cn('gap-1 text-meta font-normal', STYLE[intensity].className, className)}
       title={t('scans.intensity.badgeTitle', undefined, { level: label })}
     >
       {STYLE[intensity].icon}
