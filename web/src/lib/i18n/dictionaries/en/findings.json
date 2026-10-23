@@ -1704,5 +1704,9 @@
   "findings.identity.reason.refingerprint": "same key after re-keying",
   "findings.identity.reason.dastRepair": "web finding key repaired",
   "findings.identity.reason.other": "merged",
-  "findings.detail.section.identity": "the identity explanation"
+  "findings.detail.section.identity": "the identity explanation",
+  "findings.metadata.title": "Scanner metadata",
+  "findings.metadata.showAll": "Show all ({count})",
+  "findings.retestCheck.headerNamePlaceholder": "Accept",
+  "findings.verification.loadTitle": "verification"
 }

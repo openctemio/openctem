@@ -382,7 +382,7 @@ function HTTPExchangeView({ item }: { item: EvidenceItem }) {
       </div>
       {q && (
         <div className="space-y-1.5">
-          <h4 className="flex items-center gap-1.5 text-xs font-semibold uppercase text-muted-foreground">
+          <h4 className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
             <ArrowUpRight className="h-3.5 w-3.5" aria-hidden />
             {t('findings.evidenceItems.request', 'Request')}
           </h4>
@@ -425,7 +425,7 @@ function HTTPExchangeView({ item }: { item: EvidenceItem }) {
       )}
       {s && (
         <div className="space-y-1.5">
-          <h4 className="flex items-center gap-1.5 text-xs font-semibold uppercase text-muted-foreground">
+          <h4 className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
             <ArrowDownLeft className="h-3.5 w-3.5" aria-hidden />
             {t('findings.evidenceItems.response', 'Response')}
           </h4>

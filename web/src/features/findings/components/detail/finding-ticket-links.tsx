@@ -141,12 +141,12 @@ export function FindingTicketLinks({
             <ExternalLink className="h-3 w-3 shrink-0" aria-hidden />
           </a>
           {l.last_status && (
-            <Badge variant="secondary" className="text-[10px]">
+            <Badge variant="secondary" className="text-xs">
               {l.last_status}
             </Badge>
           )}
           {l.sync_error && (
-            <Badge variant="destructive" className="text-[10px]" title={l.sync_error}>
+            <Badge variant="destructive" className="text-xs" title={l.sync_error}>
               {t('findings.ticketLinks.syncError', 'Sync error')}
             </Badge>
           )}

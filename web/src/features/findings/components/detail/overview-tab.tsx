@@ -37,6 +37,9 @@ import {
   ShieldAlert,
 } from 'lucide-react'
 import { useTranslation } from '@/context/i18n-provider'
+import { usePermissionsSafe } from '@/context/permission-provider'
+import { runHref } from '@/features/scans/lib/run-display'
+import { safeHref } from '@/lib/safe-href'
 import { Badge } from '@/components/ui/badge'
 import { MarkdownPreview } from '@/components/ui/markdown-editor'
 import {
@@ -85,7 +88,11 @@ function Mono({ children }: { children: React.ReactNode }) {
 }
 
 export function OverviewTab({ finding }: OverviewTabProps) {
-  const { t } = useTranslation()
+  const { t, locale } = useTranslation()
+  const { hasPermission } = usePermissionsSafe()
+  // The run holds the tasks that found this (Scans > Runs).
+  const scanLink =
+    finding.scanId && hasPermission('scans:read') ? safeHref(runHref(finding.scanId)) : undefined
   const isHuman = HUMAN_SOURCES.has(finding.source)
 
   // Read from the AI triage endpoint, not from the first page of activities:
@@ -274,13 +281,21 @@ export function OverviewTab({ finding }: OverviewTabProps) {
                 ) : null}
               </DetailField>
               <DetailField label={t('findings.overviewTab.scan', 'Scan')}>
-                {finding.scanId ? <Mono>{finding.scanId}</Mono> : null}
+                {finding.scanId ? (
+                  scanLink ? (
+                    <Link href={scanLink} className="text-primary hover:underline">
+                      <Mono>{finding.scanId}</Mono>
+                    </Link>
+                  ) : (
+                    <Mono>{finding.scanId}</Mono>
+                  )
+                ) : null}
               </DetailField>
               <DetailField label={t('findings.receipts.lastSeenIn', 'Last seen in')}>
                 <FindingLastSeenIn findingId={finding.id} />
               </DetailField>
               <DetailField label={t('findings.overviewTab.recorded', 'Recorded')}>
-                {new Date(finding.createdAt).toLocaleString('en-US', {
+                {new Date(finding.createdAt).toLocaleString(locale, {
                   dateStyle: 'medium',
                   timeStyle: 'short',
                 })}
@@ -314,8 +329,8 @@ function CveLink({ id }: { id: string }) {
   )
 }
 
-function formatDay(iso: string): string {
-  return new Date(iso).toLocaleDateString('en-US', {
+function formatDay(iso: string, locale: string): string {
+  return new Date(iso).toLocaleDateString(locale, {
     month: 'short',
     day: 'numeric',
     year: 'numeric',
@@ -328,7 +343,7 @@ function formatDay(iso: string): string {
  * when the latest sighting wrote it. Collapsed by default.
  */
 function ScannerOutputSection({ output }: { output: NonNullable<FindingDetail['scannerOutput']> }) {
-  const { t } = useTranslation()
+  const { t, locale } = useTranslation()
   return (
     <DetailSection
       title={t('findings.overviewTab.scannerOutput', 'Scanner output')}
@@ -341,7 +356,7 @@ function ScannerOutputSection({ output }: { output: NonNullable<FindingDetail['s
             {' '}
             ·{' '}
             {t('findings.overviewTab.fromSighting', 'from the sighting of {date}', {
-              date: formatDay(output.updatedAt),
+              date: formatDay(output.updatedAt, locale),
             })}
           </>
         )}
@@ -360,7 +375,7 @@ function ScannerOutputSection({ output }: { output: NonNullable<FindingDetail['s
 }
 
 function IdentifiersSection({ finding }: { finding: FindingDetail }) {
-  const { t } = useTranslation()
+  const { t, locale } = useTranslation()
   const adv = finding.advisory
   const sf = finding.scannerFacts
   const cweNum = finding.cwe?.replace(/^CWE-/i, '')
@@ -455,7 +470,7 @@ function IdentifiersSection({ finding }: { finding: FindingDetail }) {
           {port ? <Mono>{port}</Mono> : null}
         </DetailField>
         <DetailField label={t('findings.overviewTab.patchPublished', 'Patch published')}>
-          {sf?.patchPublishedAt ? formatDay(sf.patchPublishedAt) : null}
+          {sf?.patchPublishedAt ? formatDay(sf.patchPublishedAt, locale) : null}
         </DetailField>
         <DetailField
           label={
@@ -508,7 +523,7 @@ function IdentifiersSection({ finding }: { finding: FindingDetail }) {
         <DetailField label="OWASP">{finding.owasp}</DetailField>
         <DetailField label={t('findings.overviewTab.published', 'Published')}>
           {adv?.publishedAt
-            ? new Date(adv.publishedAt).toLocaleDateString('en-US', {
+            ? new Date(adv.publishedAt).toLocaleDateString(locale, {
                 month: 'short',
                 day: 'numeric',
                 year: 'numeric',
@@ -661,14 +676,14 @@ function AIFalsePositiveLikelihood({ data }: { data: AITriageSummaryData }) {
 
 /** The latest completed AI triage. */
 function AITriageSummary({ data }: { data: AITriageSummaryData }) {
-  const { t } = useTranslation()
+  const { t, locale } = useTranslation()
   return (
     <DetailSection
       title={t('findings.overviewTab.aiAnalysis', 'AI analysis')}
       icon={Bot}
       actions={
         <span className="text-xs text-muted-foreground">
-          {new Date(data.createdAt).toLocaleDateString('en-US', {
+          {new Date(data.createdAt).toLocaleDateString(locale, {
             month: 'short',
             day: 'numeric',
             hour: '2-digit',

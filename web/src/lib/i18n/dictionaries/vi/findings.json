@@ -1704,5 +1704,9 @@
   "findings.identity.reason.refingerprint": "trùng khóa sau khi tạo lại khóa",
   "findings.identity.reason.dastRepair": "sửa khóa phát hiện web",
   "findings.identity.reason.other": "đã gộp",
-  "findings.detail.section.identity": "giải thích danh tính"
+  "findings.detail.section.identity": "giải thích danh tính",
+  "findings.metadata.title": "Siêu dữ liệu của trình quét",
+  "findings.metadata.showAll": "Hiện tất cả ({count})",
+  "findings.retestCheck.headerNamePlaceholder": "Accept",
+  "findings.verification.loadTitle": "xác minh"
 }
