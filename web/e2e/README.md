@@ -45,6 +45,7 @@ tests that cover the console's most user-visible flows.
 | `20-sensor-tool-settings-drawer.spec.ts`    | Expanded tool settings stay reachable in the sensor drawer   |
 | `21-remediation-task-from-findings.spec.ts` | Create a task from findings, open it, hold and resume it     |
 | `23-findings-selection.spec.ts`             | Findings list selection resets; phone card checkbox and menu |
+| `24-dashboard-header-phone.spec.ts`         | Dashboard header: one toolbar row at 390px and at 1440px     |
 
 Each spec is designed to:
 

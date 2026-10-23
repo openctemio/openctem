@@ -110,16 +110,18 @@ const RELATIVE_STEPS: Array<[Intl.RelativeTimeFormatUnit, number]> = [
 export function formatRelativeTime(
   date: string | Date | null | undefined,
   locale = 'en',
-  now: Date = new Date()
+  now: Date = new Date(),
+  /** `short` ("5 min. ago") for one-line meta text on narrow screens. */
+  style: Intl.RelativeTimeFormatStyle = 'long'
 ): string {
   const d = date == null ? null : typeof date === 'string' ? new Date(date) : date
   if (!d || Number.isNaN(d.getTime())) return '—'
   let value = (d.getTime() - now.getTime()) / 1000
   let rtf: Intl.RelativeTimeFormat
   try {
-    rtf = new Intl.RelativeTimeFormat(locale, { numeric: 'auto' })
+    rtf = new Intl.RelativeTimeFormat(locale, { numeric: 'auto', style })
   } catch {
-    rtf = new Intl.RelativeTimeFormat('en', { numeric: 'auto' })
+    rtf = new Intl.RelativeTimeFormat('en', { numeric: 'auto', style })
   }
   for (const [unit, size] of RELATIVE_STEPS) {
     if (Math.abs(value) < size) return rtf.format(Math.round(value), unit)
