@@ -306,7 +306,9 @@ export function DivergingViz({ result, drill }: { result: TimeSeriesResult; dril
   const range = useSeriesSummary(result)
   return (
     <ChartOrTable
-      summary={range ? `${summary}. ${range}` : summary}
+      summary={
+        range ? t('dashboardKit.summary.join', '{a}. {b}', { a: summary, b: range }) : summary
+      }
       chart={
         <div className="flex flex-col gap-2">
           <p className="text-xs text-muted-foreground" aria-hidden>

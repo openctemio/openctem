@@ -58,8 +58,8 @@ func TestCIRunOverFindingsCapFailsClosed(t *testing.T) {
 
 	// Exactly at the cap, and a repeat of what is recorded: judged normally.
 	run, tok := open("1")
-	if resp, out := r.post("/api/v1/ci/runs/"+run+"/results", tok,
-		ciReport(repoName, ciFinding("Low", "go.low", "low", ctis.FindingTypeVulnerability, "a.go", 1))); resp.StatusCode != http.StatusCreated {
+	if resp, out := r.upload(run, tok,
+		ciReport(repoName, ciFinding("Low", "go.low", "low", ctis.FindingTypeVulnerability, "a.go", 1))); resp.StatusCode != http.StatusAccepted {
 		t.Fatalf("upload: %d %v", resp.StatusCode, out)
 	}
 	fill(run, cirun.MaxRunFindings-1, "fp")

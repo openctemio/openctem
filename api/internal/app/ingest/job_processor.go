@@ -70,6 +70,48 @@ type JobProcessor struct {
 	// v2 processes protocol v2 results jobs (RFC-026). Nil when v2 results
 	// are disabled; a v2 job then fails and is retried until it is enabled.
 	v2 *V2JobProcessor
+	// kinds process the upload jobs (CI results, file imports) by kind.
+	kinds map[ingestjob.Kind]KindProcessor
+}
+
+// KindProcessor applies the jobs of one upload kind (a CI run's results, a
+// file import) and is told when one failed for good.
+type KindProcessor interface {
+	Process(ctx context.Context, job *ingestjob.Job) ([]byte, error)
+	DeadLetter(ctx context.Context, job *ingestjob.Job, publicErr string)
+}
+
+// KindFuncs adapts two functions to a KindProcessor.
+type KindFuncs struct {
+	ProcessFn    func(ctx context.Context, job *ingestjob.Job) ([]byte, error)
+	DeadLetterFn func(ctx context.Context, job *ingestjob.Job, publicErr string)
+}
+
+// Process implements KindProcessor.
+func (k KindFuncs) Process(ctx context.Context, job *ingestjob.Job) ([]byte, error) {
+	return k.ProcessFn(ctx, job)
+}
+
+// DeadLetter implements KindProcessor.
+func (k KindFuncs) DeadLetter(ctx context.Context, job *ingestjob.Job, publicErr string) {
+	if k.DeadLetterFn != nil {
+		k.DeadLetterFn(ctx, job, publicErr)
+	}
+}
+
+// SetKind routes the jobs of kind to p.
+func (p *JobProcessor) SetKind(kind ingestjob.Kind, kp KindProcessor) {
+	if p.kinds == nil {
+		p.kinds = map[ingestjob.Kind]KindProcessor{}
+	}
+	p.kinds[kind] = kp
+}
+
+// DeadLetter tells the job's kind processor that it failed for good.
+func (p *JobProcessor) DeadLetter(ctx context.Context, job *ingestjob.Job, publicErr string) {
+	if kp := p.kinds[job.Kind()]; kp != nil {
+		kp.DeadLetter(ctx, job, publicErr)
+	}
 }
 
 // SetV2 enables processing of protocol v2 results jobs.
@@ -94,6 +136,14 @@ func NewJobProcessor(service *Service) *JobProcessor {
 // the audit log, and the job completes without being retried. Returns the
 // marshaled counts (or the drop) to store on the completed job.
 func (p *JobProcessor) Process(ctx context.Context, job *ingestjob.Job) ([]byte, error) {
+	if k := job.Kind(); k != ingestjob.KindSensor {
+		kp := p.kinds[k]
+		if kp == nil {
+			// Not wired in this process (yet): retried, then dead.
+			return nil, fmt.Errorf("no processor for %s jobs", k)
+		}
+		return kp.Process(ctx, job)
+	}
 	if job.V2() != nil {
 		if p.v2 == nil {
 			return nil, errors.New("protocol v2 results job, but v2 results are disabled")

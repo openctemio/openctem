@@ -40,6 +40,17 @@ Design: [RFC-126](../rfcs/RFC-126-import-mappings.md). The language: ctis
      of records without one;
    - the receipt's format is `mapping:<name>@<n>`, and the asset source name
      is `mapped:<name>`.
+   A committed upload is applied by the ingest worker, not in the request
+   (RFC-122). Accept resolves the mapping in the caller's organization (the
+   run's, for CI) and answers 400 `unknown_mapping` when it does not
+   resolve. The queued job pins the exact mapping id and version
+   (`mapping:<name>@<n>`), never "latest". The worker resolves that pin again
+   in the job's own organization (the stored job row, never the envelope);
+   a mapping deleted, renamed or replaced since, or one that no longer
+   passes validation, fails the upload with the fixed code
+   `mapping_unavailable`. It never falls back to another version or to
+   another organization's mapping. A preview (`dry_run=true`) still runs in
+   the request.
 5. Ingest decides identity as for any report (RFC-043). Nothing closes:
    the handler refuses `coverage=full`, and `closeUncovered` closes nothing
    for an upload through a mapping.

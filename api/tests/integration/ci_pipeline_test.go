@@ -185,7 +185,7 @@ func TestCIPipelines(t *testing.T) {
 		rp.Tool = &ctis.Tool{Name: "Sem<grep>\u202e", Version: "1.2.3\x00evil"}
 		return rp
 	}()
-	if resp, out := r.post("/api/v1/ci/runs/"+mrun+"/results", mtok, rep); resp.StatusCode != http.StatusCreated {
+	if resp, out := r.upload(mrun, mtok, rep); resp.StatusCode != http.StatusAccepted {
 		t.Fatalf("upload: %d %v", resp.StatusCode, out)
 	}
 	if resp, v := r.post("/api/v1/ci/runs/"+mrun+"/evaluate", mtok, map[string]int{"scan_failures": 2}); resp.StatusCode != http.StatusOK {

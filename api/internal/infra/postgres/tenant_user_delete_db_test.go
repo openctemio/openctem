@@ -330,6 +330,10 @@ var seedOverrides = map[string]func(s *schemaSeeder) map[string]any{
 		return map[string]any{"filename_sha256": strings.Repeat("ab", 32), "source_kind": "upload", "source_ref": s.uniq(),
 			"coverage": "partial", "status": "completed", "errors": "[]", "findings_untouched": nil}
 	},
+	// digest is a SHA-256 (CHECK: 32 bytes); part and size have range CHECKs.
+	"ingest_payloads": func(*schemaSeeder) map[string]any {
+		return map[string]any{"part": 0, "size_bytes": 1, "digest": strings.Repeat("d", 32), "sealed": "s", "key_id": "k"}
+	},
 	// key_hash is a hex SHA-256 (CHECK); a pending key has no answer yet.
 	"idempotency_keys": func(*schemaSeeder) map[string]any {
 		return map[string]any{"key_hash": strings.Repeat("ab", 32), "state": "pending", "request_sha256": nil,

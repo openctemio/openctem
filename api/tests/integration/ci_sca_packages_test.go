@@ -45,7 +45,7 @@ func ciSCAUpload(t *testing.T, r *ciRig, tenant shared.ID, cfg *cirun.TrustConfi
 	if code != http.StatusCreated {
 		t.Fatalf("exchange: %d %v", code, ex)
 	}
-	if resp, out := r.post("/api/v1/ci/runs/"+ex["run_id"].(string)+"/results", ex["token"].(string), ciSCAReport(t, repoName)); resp.StatusCode != http.StatusCreated {
+	if resp, out := r.upload(ex["run_id"].(string), ex["token"].(string), ciSCAReport(t, repoName)); resp.StatusCode != http.StatusAccepted {
 		t.Fatalf("upload: %d %v", resp.StatusCode, out)
 	}
 	return shared.MustIDFromString(ex["repository_asset_id"].(string))
