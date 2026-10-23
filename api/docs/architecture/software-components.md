@@ -79,7 +79,11 @@ tenant:
 
 - the package list groups the in-scope links by product, joins the open
   findings on `component_id` for severity, KEV and fix counts, and returns
-  facets from the same filtered set;
+  facets from the same filtered set. Its search `q` matches name and
+  namespace; a package URL (`pkg:type/namespace/name[@version]`, parsed and
+  canonicalised like a capture) matches that package exactly, and a version
+  in it keeps only the links of that version, so counts answer "which assets
+  run this version";
 - detail, versions, where-used and vulnerabilities answer 404 when the
   product has no in-scope link;
 - dependency paths and the graph walk `asset_software_edges` of one in-scope
