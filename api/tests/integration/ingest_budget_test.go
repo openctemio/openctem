@@ -307,12 +307,12 @@ func TestSQLCounterSeesQueriesExecsAndTransactions(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	defer func() { _ = st.Close() }()
 	for i := 0; i < 3; i++ {
 		if err := st.QueryRowContext(ctx, i).Scan(&one); err != nil {
 			t.Fatal(err)
 		}
 	}
-	_ = st.Close()
 	if err := tx.Commit(); err != nil {
 		t.Fatal(err)
 	}

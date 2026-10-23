@@ -96,6 +96,9 @@ func (c *Counter) tx() {
 	c.mu.Unlock()
 }
 
+// verbOther is the verb of a statement with no keyword (empty, or only comments).
+const verbOther = "OTHER"
+
 // verb is the first keyword of a statement, after leading whitespace and
 // SQL comments.
 func verb(query string) string {
@@ -106,13 +109,13 @@ func verb(query string) string {
 		case strings.HasPrefix(q, "--"):
 			i := strings.IndexByte(q, '\n')
 			if i < 0 {
-				return "OTHER"
+				return verbOther
 			}
 			q = q[i+1:]
 		case strings.HasPrefix(q, "/*"):
 			i := strings.Index(q, "*/")
 			if i < 0 {
-				return "OTHER"
+				return verbOther
 			}
 			q = q[i+2:]
 		default:
@@ -121,7 +124,7 @@ func verb(query string) string {
 				end = len(q)
 			}
 			if end == 0 {
-				return "OTHER"
+				return verbOther
 			}
 			return strings.ToUpper(q[:end])
 		}
