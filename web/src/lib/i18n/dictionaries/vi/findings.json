@@ -867,7 +867,7 @@
   "findings.signals.publicExploit": "Có mã khai thác công khai",
   "findings.signals.noExploit": "Chưa có mã khai thác đã biết",
   "findings.signals.epss": "EPSS {score}",
-  "findings.signals.epssWithPercentile": "EPSS {score} · bách phân vị {percentile}",
+  "findings.signals.epssWithPercentile": "EPSS {score}, bách phân vị {percentile}",
   "findings.signals.epssDetail": "Xác suất bị khai thác trong 30 ngày tới (FIRST EPSS)",
   "findings.signals.internetFacing": "Hướng ra Internet",
   "findings.signals.networkReachable": "Truy cập được qua mạng nội bộ",
