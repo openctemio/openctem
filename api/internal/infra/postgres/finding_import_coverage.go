@@ -26,17 +26,27 @@ var importCoverageScope = `
 	AND f.status IN ` + autoResolveFromSQL + `
 	AND f.source NOT IN ` + coverageProtectedSources
 
+// importNotReportedSQL is true for a finding of the scope the upload did not
+// report: no action row on the upload's receipt ($4), the same rule as a
+// covered scan (finding_absence_receipt.go). scan_id is not proof of absence:
+// a concurrent upload of the same tool overwrites it with its own receipt id.
+// A finding whose scan_id is this receipt still counts as reported.
+var importNotReportedSQL = `COALESCE(f.scan_id, '') <> $4 AND NOT ` + receiptSeenSQL("f", "$4")
+
 // ImportCoverageCandidates returns the open findings of the scope the upload
-// (receiptID, its report id and so the scan_id of what it reported) did not
-// report, and how many open findings the scope has (the blinding guard).
+// (receiptID) did not report, and how many open findings the scope has (the
+// blinding guard). The receipt must be complete (AbsenceReceiptByID).
 func (r *FindingRepository) ImportCoverageCandidates(ctx context.Context, tenantID shared.ID, assets []shared.ID, tool string,
 	receiptID shared.ID) (stale []shared.ID, open int, err error) {
 	if len(assets) == 0 || tool == "" {
 		return nil, 0, nil
 	}
+	if _, err := r.AbsenceReceiptByID(ctx, tenantID, receiptID); err != nil {
+		return nil, 0, err
+	}
 	rows, err := r.db.QueryContext(ctx, `
 		SELECT f.id::text, COUNT(*) OVER (),
-			COALESCE(f.scan_id, '') <> $4 AND NOT `+secretFindingSQL("f")+`
+			`+importNotReportedSQL+` AND NOT `+secretFindingSQL("f")+`
 		FROM findings f
 		WHERE `+importCoverageScope,
 		tenantID.String(), pq.Array(importScopeIDs(assets)), tool, receiptID.String())
@@ -77,7 +87,7 @@ func (r *FindingRepository) ResolveImportCoverage(ctx context.Context, tenantID 
 		SET status = 'resolved', resolution = 'auto_fixed', closure_reason = 'fixed', verification = 'covered_scan',
 			resolved_at = NOW(), updated_at = NOW()
 		WHERE `+importCoverageScope+`
-			AND COALESCE(f.scan_id, '') <> $4
+			AND `+importNotReportedSQL+`
 			AND NOT `+secretFindingSQL("f")+`
 			AND f.id = ANY($5::uuid[])
 		RETURNING f.id::text`,
@@ -90,7 +100,7 @@ func (r *FindingRepository) ImportCoverageUntouched(ctx context.Context, tenantI
 	receiptID shared.ID) (int, error) {
 	var n int
 	err := r.db.QueryRowContext(ctx, `SELECT count(*) FROM findings f WHERE `+importCoverageScope+`
-		AND COALESCE(f.scan_id, '') <> $4`,
+		AND `+importNotReportedSQL,
 		tenantID.String(), pq.Array(importScopeIDs(assets)), tool, receiptID.String()).Scan(&n)
 	if err != nil {
 		return 0, fmt.Errorf("import coverage untouched: %w", err)

@@ -306,7 +306,8 @@ func (r *SoftwareMatchRepository) matches(ctx context.Context, where string, lim
 				WHERE c.tenant_id = s.tenant_id AND c.asset_id = s.asset_id
 				  AND c.product_id = m.condition_product_id AND c.superseded_at IS NULL)),
 			r.description, COALESCE(r.severity, ''), r.cvss_score, COALESCE(r.cvss_vector, ''), r.cwes,
-			(k.cve_id IS NOT NULL), COALESCE(e.epss_score, 0)
+			(k.cve_id IS NOT NULL), COALESCE(e.epss_score, 0),
+			s.source = 'package', COALESCE(v.purl, '')
 		FROM asset_software s
 		JOIN assets a ON a.id = s.asset_id AND a.tenant_id = s.tenant_id
 		JOIN software_products p ON p.id = s.product_id
@@ -335,7 +336,7 @@ func (r *SoftwareMatchRepository) matches(ctx context.Context, where string, lim
 			&m.Result.CVEID, &m.Result.AffectedID, &m.Result.RangeText, &m.Result.AllVersions, &m.Result.Adjustment,
 			pq.Array(&reasons), &cond, &m.ConditionMet,
 			&desc, &m.CVE.Severity, &score, &m.CVE.CVSSVector, pq.Array(&cwes),
-			&m.CVE.InKEV, &m.CVE.EPSS); err != nil {
+			&m.CVE.InKEV, &m.CVE.EPSS, &m.Package, &m.PURL); err != nil {
 			return nil, fmt.Errorf("tenant matches: %w", err)
 		}
 		m.AssetID, m.ProductID, m.VersionID = shared.MustIDFromString(asset), shared.MustIDFromString(pid), shared.MustIDFromString(vid)
@@ -388,6 +389,29 @@ func (r *SoftwareMatchRepository) MatcherFindings(ctx context.Context, tenantID 
 		out = append(out, f)
 	}
 	return out, rows.Err()
+}
+
+// RekeyMatcherFinding (see softwarematch.Store). The fingerprint alias
+// trigger keeps From as an alias of the finding; the unique index and the
+// NOT EXISTS guard decide a race, and losing it is not an error.
+func (r *SoftwareMatchRepository) RekeyMatcherFinding(ctx context.Context, tenantID shared.ID, k softwarematch.Rekey) (bool, error) {
+	if k.From == "" || k.To == "" || k.From == k.To || len(k.IdentityKey) == 0 || k.FindingID.IsZero() || k.ComponentID.IsZero() {
+		return false, nil
+	}
+	res, err := r.db.ExecContext(ctx, `
+		UPDATE findings f
+		SET fingerprint = $3, fingerprint_version = $4, identity_key = $5::jsonb, component_id = $6, updated_at = NOW()
+		WHERE f.tenant_id = $1 AND f.id = $7 AND f.fingerprint = $2 AND `+matcherOwnedSQL+`
+		  AND NOT EXISTS (SELECT 1 FROM findings c WHERE c.tenant_id = $1 AND c.fingerprint = $3)`,
+		tenantID.String(), k.From, k.To, k.Version, string(k.IdentityKey), k.ComponentID.String(), k.FindingID.String())
+	if err != nil {
+		if isUniqueViolation(err) {
+			return false, nil
+		}
+		return false, fmt.Errorf("rekey matcher finding: %w", err)
+	}
+	n, _ := res.RowsAffected()
+	return n > 0, nil
 }
 
 // OpenCVEsOnAssets (see softwarematch.Store).
