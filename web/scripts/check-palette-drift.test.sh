@@ -47,6 +47,23 @@ must_pass 'shared lozenge use' '<StatusLozenge tone="open" label="x" />'
 must_pass 'shared badge use' '<PriorityBadge priorityClass="P1" />'
 must_pass 'annotated colour exception' "critical: '#ff0000', // label-colour-ok: exported PDF palette"
 
+# one label system: no hand-styled labels (colour on Badge, tiny text, uppercase / mono, spin, new maps)
+must_fail 'semantic colour on Badge' '<Badge variant="outline" className="bg-success/10 text-success">x</Badge>'
+must_fail 'border colour on Badge' '<Badge className="border-warning">x</Badge>'
+must_fail 'tiny text on a pill' '<span className="rounded-full px-2 text-[10px]">x</span>'
+must_fail 'tiny text on Badge' '<Badge className="text-[11px]">x</Badge>'
+must_fail 'uppercase Badge' '<Badge className="uppercase">{row.source}</Badge>'
+must_fail 'mono Badge' '<Badge className="font-mono">{row.name}</Badge>'
+must_fail 'spinning status' '<Loader2 className="size-3 animate-spin" /> {statusLabel}'
+must_fail 'spinning health badge' '<RunBadge className="animate-spin" />'
+must_fail 'new colour map' 'const FOO_STATUS_COLORS = { a: "x" }'
+must_fail 'new badge map' 'export const FOO_BADGE_CLASS = {}'
+must_pass 'Badge without colour' '<Badge variant="outline">{count}</Badge>'
+must_pass 'plain 12px text on a pill' '<span className="rounded-full px-2 text-xs">x</span>'
+must_pass 'spinner on a button' '<Loader2 className="size-4 animate-spin" />'
+must_pass 'label primitive' '<HealthStatus state="ok" label="Online" />'
+must_pass 'annotated label exception' '<Badge className="font-mono">{id}</Badge> {/* label-ok: a commit id */}'
+
 find "$t" -delete
 [ $fail = 0 ] && echo ok
 exit $fail

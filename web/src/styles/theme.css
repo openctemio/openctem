@@ -117,6 +117,38 @@
   /* The bolt of an exploit chip (KEV): the chip is neutral, only this icon is red. */
   --sig-icon: var(--destructive);
 
+  /* Waiting on a person or decision: the accepted amber, told apart by its icon. */
+  --st-waiting-bg: var(--st-accepted-bg);
+  --st-waiting-fg: var(--st-accepted-fg);
+  --st-waiting-border: var(--st-accepted-border);
+
+  /* Machine health icons (HealthStatus): the text stays --foreground. Each is
+     >= 3:1 on the card (WCAG 1.4.11); the idle grey is the neutral states. */
+  --hl-ok: var(--success);
+  --hl-run: var(--info);
+  --hl-warn: var(--warning);
+  --hl-down: var(--destructive);
+  --hl-idle: #7d8799;
+
+  /* Counter: neutral pill, ink fill only for "waiting for you". */
+  --ctr-bg: #eef0f3;
+  --ctr-fg: #0a1628;
+  --ctr-em-bg: #0a1628;
+  --ctr-em-fg: #fafaf9;
+
+  /* The fixed palette of a user-chosen tag colour: an 8px dot, never a fill.
+     >= 3:1 on the card. Teal is not in the list (it is the act-here accent). */
+  --tag-red: #dc2626;
+  --tag-orange: #ea580c;
+  --tag-amber: #d97706;
+  --tag-yellow: #b58900;
+  --tag-green: #16a34a;
+  --tag-cyan: #0891b2;
+  --tag-blue: #2563eb;
+  --tag-violet: #7c3aed;
+  --tag-pink: #db2777;
+  --tag-grey: #6b7280;
+
   /* Elevation: overlays only. Motion. */
   --shadow-overlay: 0 8px 24px rgb(10 22 40 / 0.12), 0 1px 2px rgb(10 22 40 / 0.08);
   --dur-fast: 120ms;
@@ -240,6 +272,37 @@
   --st-closed-bg: transparent;
   --st-closed-fg: #a9b4c4;
   --st-closed-border: var(--border-subtle);
+
+  --st-waiting-bg: var(--st-accepted-bg);
+  --st-waiting-fg: var(--st-accepted-fg);
+  --st-waiting-border: var(--st-accepted-border);
+
+  /* Machine health icons (HealthStatus): the text stays --foreground. Each is
+     >= 3:1 on the card (WCAG 1.4.11); the idle grey is the neutral states. */
+  --hl-ok: var(--success);
+  --hl-run: var(--info);
+  --hl-warn: var(--warning);
+  --hl-down: var(--destructive);
+  --hl-idle: #63728a;
+
+  /* Counter: neutral pill, ink fill only for "waiting for you". */
+  --ctr-bg: #1e2c45;
+  --ctr-fg: #fafaf9;
+  --ctr-em-bg: #fafaf9;
+  --ctr-em-fg: #0a1628;
+
+  /* The fixed palette of a user-chosen tag colour: an 8px dot, never a fill.
+     >= 3:1 on the card. Teal is not in the list (it is the act-here accent). */
+  --tag-red: #f87171;
+  --tag-orange: #fb923c;
+  --tag-amber: #f59e0b;
+  --tag-yellow: #facc15;
+  --tag-green: #4ade80;
+  --tag-cyan: #22d3ee;
+  --tag-blue: #60a5fa;
+  --tag-violet: #a78bfa;
+  --tag-pink: #f472b6;
+  --tag-grey: #94a3b8;
 
   --shadow-overlay: 0 12px 32px rgb(0 0 0 / 0.45), 0 1px 2px rgb(0 0 0 / 0.3);
 
@@ -411,6 +474,28 @@
   --color-st-closed-fg: var(--st-closed-fg);
   --color-st-closed-border: var(--st-closed-border);
   --color-sig-icon: var(--sig-icon);
+  --color-st-waiting-bg: var(--st-waiting-bg);
+  --color-st-waiting-fg: var(--st-waiting-fg);
+  --color-st-waiting-border: var(--st-waiting-border);
+  --color-hl-ok: var(--hl-ok);
+  --color-hl-run: var(--hl-run);
+  --color-hl-warn: var(--hl-warn);
+  --color-hl-down: var(--hl-down);
+  --color-hl-idle: var(--hl-idle);
+  --color-ctr-bg: var(--ctr-bg);
+  --color-ctr-fg: var(--ctr-fg);
+  --color-ctr-em-bg: var(--ctr-em-bg);
+  --color-ctr-em-fg: var(--ctr-em-fg);
+  --color-tag-red: var(--tag-red);
+  --color-tag-orange: var(--tag-orange);
+  --color-tag-amber: var(--tag-amber);
+  --color-tag-yellow: var(--tag-yellow);
+  --color-tag-green: var(--tag-green);
+  --color-tag-cyan: var(--tag-cyan);
+  --color-tag-blue: var(--tag-blue);
+  --color-tag-violet: var(--tag-violet);
+  --color-tag-pink: var(--tag-pink);
+  --color-tag-grey: var(--tag-grey);
   --color-border: var(--border);
   --color-input: var(--input);
   --color-ring: var(--ring);
