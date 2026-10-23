@@ -18,6 +18,7 @@ import (
 	evidenceapp "github.com/openctemio/openctem/api/internal/app/evidence"
 	"github.com/openctemio/openctem/api/pkg/domain/asset"
 	"github.com/openctemio/openctem/api/pkg/domain/branch"
+	"github.com/openctemio/openctem/api/pkg/domain/ingestreceipt"
 	"github.com/openctemio/openctem/api/pkg/domain/sensor"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/domain/software"
@@ -46,6 +47,8 @@ type FindingProcessor struct {
 
 	// findingCreatedCallback is called after findings are successfully created
 	findingCreatedCallback FindingCreatedCallback
+	// sideEffects, when set, stores that work durably instead (side_effects.go).
+	sideEffects SideEffectQueue
 
 	// priorityClassifier enriches + classifies findings after creation (RFC-004)
 	priorityClassifier PriorityClassifier
@@ -338,11 +341,15 @@ func (p *FindingProcessor) processBatch(
 			if output.ExcludedAssetRefs[ctisFinding.AssetRef] {
 				// Its asset matches a scope exclusion and was not added.
 				output.FindingsSkipped++
+				addItem(output, report, &ctisFinding, ingestreceipt.DispositionOutOfScope, ingestreceipt.ReasonExcluded,
+					ingestreceipt.PolicyScopeExclusion, nil)
 				continue
 			}
 			if output.OutOfScopeAssetRefs[ctisFinding.AssetRef] {
 				// The upload's actor may not change its asset.
 				output.FindingsSkipped++
+				addItem(output, report, &ctisFinding, ingestreceipt.DispositionOutOfScope, ingestreceipt.ReasonOutsideScope,
+					ingestreceipt.PolicyUploaderScope, nil)
 				continue
 			}
 			// Determine target asset
@@ -372,6 +379,8 @@ func (p *FindingProcessor) processBatch(
 				)
 				addError(output, fmt.Sprintf("finding %d: no target asset", i))
 				output.FindingsSkipped++
+				addItem(output, report, &ctisFinding, ingestreceipt.DispositionRejected, ingestreceipt.ReasonNoTargetAsset,
+					ingestreceipt.PolicyValidation, nil)
 				continue
 			}
 
@@ -593,7 +602,7 @@ func (p *FindingProcessor) processBatch(
 	// being closed on a later pass. Rules are loaded ONCE per batch
 	// (tenant-scoped). The returned map (index → rule id) is recorded for audit
 	// AFTER insert, once the findings have persisted IDs. Nil-safe.
-	suppressionDecisions := p.applySuppressions(ctx, tenantID, newFindings)
+	suppressionDecisions := p.applySuppressions(ctx, tenantID, newFindings, output.policy)
 
 	// Fingerprints of findings that already existed: their remediation keys
 	// are re-derived after enrichment (Step 5c).
@@ -2566,6 +2575,18 @@ func (p *FindingProcessor) afterCreate(
 			output.FindingsSuppressed += n
 			p.logger.Info("suppressed findings at ingest via approved rules", "count", n)
 		}
+		// The receipt records each as suppressed, with the rule and the
+		// policy version that decided it.
+		var version int64
+		if output.policy != nil {
+			version = output.policy.Version
+		}
+		for idx, ruleID := range decisions {
+			rid := ruleID
+			output.Decided = append(output.Decided, ingestreceipt.PolicyAction{FindingID: newFindings[idx].ID(),
+				Action: ingestreceipt.ActionSuppressed, Policy: ingestreceipt.PolicySuppressionRule, PolicyID: &rid,
+				PolicyVersion: version})
+		}
 	}
 
 	// Derive remediation-group keys (RFC-015). Best-effort; grouping is a
@@ -2582,9 +2603,14 @@ func (p *FindingProcessor) afterCreate(
 	// Trigger workflow events (notifications, ticket rules) for newly
 	// created findings. A branch-only finding is not exposure yet: its
 	// workflows run when a counting branch sees it (promoteBranchOnly).
-	if p.findingCreatedCallback != nil {
+	if p.findingCreatedCallback != nil || p.sideEffects != nil {
 		if counting := p.withoutBranchOnly(ctx, tenantID, withoutDecided(created)); len(counting) > 0 {
-			p.findingCreatedCallback(ctx, tenantID, counting)
+			switch {
+			case p.sideEffects != nil:
+				p.enqueueCreated(ctx, tenantID, counting)
+			default:
+				p.findingCreatedCallback(ctx, tenantID, counting)
+			}
 		}
 	}
 
@@ -2617,4 +2643,31 @@ func (p *FindingProcessor) applyVEXStatements(ctx context.Context, tenantID shar
 	if _, err := p.vexStatements.ApplyToFingerprints(ctx, tenantID, fps); err != nil {
 		p.logger.Warn("applying vex statements failed", "tenant_id", tenantID.String(), "error", err)
 	}
+}
+
+// addItem records a reported item that did not become a finding, with the
+// policy (and its version) that decided it. Only an identity key, the tool,
+// a title and the severity are kept: no evidence. Capped with the receipt.
+func addItem(output *Output, report *ctis.Report, f *ctis.Finding, disp ingestreceipt.Disposition, reason, policy string,
+	assetID *shared.ID) {
+	if len(output.Items) >= ingestreceipt.MaxActionsPerReceipt {
+		return
+	}
+	tool := ""
+	if report.Tool != nil {
+		tool = report.Tool.Name
+	}
+	path, line := "", 0
+	if f.Location != nil {
+		path, line = f.Location.Path, f.Location.StartLine
+	}
+	var version int64
+	if output.policy != nil {
+		version = output.policy.Version
+	}
+	output.Items = append(output.Items, ingestreceipt.Item{
+		Key:         ingestreceipt.ItemKey(tool, f.RuleID, f.Title, f.AssetRef, f.AssetValue, path, strconv.Itoa(line)),
+		Disposition: disp, ReasonCode: reason, AssetID: assetID, Tool: tool, Title: f.Title,
+		Severity: string(f.Severity), Policy: policy, PolicyVersion: version,
+	})
 }

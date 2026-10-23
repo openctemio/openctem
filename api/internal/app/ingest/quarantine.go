@@ -18,10 +18,12 @@ import (
 	"github.com/openctemio/openctem/api/internal/metrics"
 	"github.com/openctemio/openctem/api/pkg/domain/audit"
 	"github.com/openctemio/openctem/api/pkg/domain/command"
+	"github.com/openctemio/openctem/api/pkg/domain/ingestreceipt"
 	"github.com/openctemio/openctem/api/pkg/domain/ingestreport"
 	"github.com/openctemio/openctem/api/pkg/domain/sensor"
 	"github.com/openctemio/openctem/api/pkg/domain/sensorresult"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/pkg/logger"
 	protov2 "github.com/openctemio/openctem/api/pkg/sensorproto/v2"
 )
 
@@ -305,6 +307,7 @@ func (s *Service) admitUnsolicited(ctx context.Context, agt *sensor.Sensor, tena
 		}
 		return false, err
 	}
+	s.recordQuarantined(ctx, agt, tenantID, sub.Report)
 	metrics.SensorUnsolicitedResultsTotal.WithLabelValues("quarantined").Inc()
 	s.logger.Info("unsolicited sensor report quarantined",
 		"sensor_id", agt.ID.String(), "sensor_type", string(sensorType), "tenant_id", tenantID.String(),
@@ -576,4 +579,27 @@ func (s *Service) admitPush(ctx context.Context, sensorID, tenantID shared.ID, r
 		s.pushRefusals.ObservePushRefusal(ctx, tenantID, sensorID, route, reason)
 	}
 	return refusal
+}
+
+// recordQuarantined records, on the sensor report's receipt, each finding
+// of a quarantined report as quarantined (the quarantine policy decided;
+// nothing became a finding). Best effort: the report is safely stored.
+func (s *Service) recordQuarantined(ctx context.Context, agt *sensor.Sensor, tenantID shared.ID, report *ctis.Report) {
+	if s.receipts == nil || report == nil || len(report.Findings) == 0 {
+		return
+	}
+	out := &Output{}
+	for i := range report.Findings {
+		addItem(out, report, &report.Findings[i], ingestreceipt.DispositionQuarantined, ingestreceipt.ReasonNoCommand,
+			ingestreceipt.PolicyQuarantine, nil)
+	}
+	d := &ingestreceipt.Delta{TenantID: tenantID, Source: receiptSource(agt, Binding{Kind: BindingUnsolicited}, Options{}, report),
+		Received: len(report.Findings), Items: out.Items, At: time.Now()}
+	if report.Tool != nil {
+		d.Tool = report.Tool.Name
+	}
+	if _, err := s.receipts.Record(ctx, d); err != nil {
+		metrics.IngestReceiptWriteFailures.WithLabelValues("quarantine").Inc()
+		s.logger.Warn("quarantine receipt not recorded", "tenant_id", tenantID.String(), "error", logger.SanitizeError(err))
+	}
 }

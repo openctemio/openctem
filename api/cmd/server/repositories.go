@@ -163,6 +163,8 @@ type Repositories struct {
 	IngestPayload *postgres.IngestPayloadRepository
 	// KEV answers whether CVE ids are in the KEV catalogue (ingest lanes).
 	KEV *postgres.KEVLookup
+	// IngestPolicyVersions versions the policies ingest snapshots.
+	IngestPolicyVersions *postgres.IngestPolicyVersions
 	// IngestReport tracks sensor protocol v2 results reports (RFC-026).
 	IngestReport *postgres.IngestReportRepository
 
@@ -519,6 +521,7 @@ func newRepositories(db *postgres.DB) *Repositories {
 		IngestJob:              postgres.NewIngestJobRepository(db),
 		IngestPayload:          postgres.NewIngestPayloadRepository(db),
 		KEV:                    postgres.NewKEVLookup(db),
+		IngestPolicyVersions:   postgres.NewIngestPolicyVersions(db),
 		IngestReport:           postgres.NewIngestReportRepository(db),
 
 		// Scan coverage rotation (RFC-007)

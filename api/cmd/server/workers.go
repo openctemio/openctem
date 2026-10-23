@@ -1346,6 +1346,9 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 		if ciSvc := newCIRunService(cfg, repos, svc, log); ciSvc != nil {
 			jobs.SetKind(ingestjob.KindCIResults, ingest.KindFuncs{ProcessFn: ciSvc.ProcessUploadJob, DeadLetterFn: ciSvc.DeadLetter})
 		}
+		if svc.WorkflowDispatcher != nil {
+			jobs.SetKind(ingestjob.KindSideEffects, ingest.NewSideEffectProcessor(repos.Finding, svc.WorkflowDispatcher.RunFindingsCreated))
+		}
 		imp := newFindingImportService(cfg, repos, svc, log)
 		jobs.SetKind(ingestjob.KindFindingImport, ingest.KindFuncs{ProcessFn: imp.ProcessImportJob, DeadLetterFn: imp.DeadLetter})
 		w.ControllerManager.Register(controller.NewIngestWorkerController(
