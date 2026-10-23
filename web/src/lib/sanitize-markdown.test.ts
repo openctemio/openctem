@@ -325,6 +325,15 @@ describe('remote images are click-to-load (no tracking pixel)', () => {
     expect(node.tagName).toBe('a')
   })
 
+  it.each([['video'], ['audio'], ['source'], ['track']])(
+    'never auto-loads a remote src on <%s>',
+    (tag) => {
+      const node = element(tag, { src: 'https://tracker.example.net/v.mp4' })
+      sanitiseNode(node)
+      expect(node.properties?.src).toBe('#')
+    }
+  )
+
   it('does not keep a protocol-relative source as an image', () => {
     const node = element('img', { src: '//tracker.example.net/p.gif' })
     sanitiseNode(node)
