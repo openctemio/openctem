@@ -433,7 +433,6 @@
   "sensors.list.zoneGap": "không có sensor trực tuyến, các scan ở đây sẽ phải chờ",
   "sensors.list.onlineCount": "{count} trực tuyến",
   "sensors.list.noZoneHint": "nhận các job mà không vùng nào nhận",
-  "sensors.list.toast.refreshed": "Đã làm mới danh sách sensor",
   "sensors.list.toast.deleted": "Đã xóa sensor \"{name}\"",
   "sensors.list.toast.deleteFailed": "Không xóa được sensor",
   "sensors.list.toast.bulkDeleted": "Đã xóa {count} sensor",
@@ -1374,5 +1373,9 @@
   "sensors.pair.getSensor.title": "Chưa có sensor?",
   "sensors.pair.getSensor.body": "Hãy cài sensor lên máy chủ trước. Sensor chỉ cần URL của nền tảng (và dấu vân tay CA của nền tảng nếu bạn dùng CA riêng). Không cần sao chép khóa: sensor tự tạo khóa khi ghép cặp.",
   "sensors.pair.getSensor.pull": "Lấy image của sensor",
-  "sensors.pair.getSensor.guide": "Mở hướng dẫn cài đặt sensor"
+  "sensors.pair.getSensor.guide": "Mở hướng dẫn cài đặt sensor",
+  "sensors.keyGuard.title": "Bạn đã sao chép khóa chưa?",
+  "sensors.keyGuard.desc": "Khóa chỉ hiển thị một lần. Nếu đóng cửa sổ này khi chưa sao chép, bạn phải đổi khóa lần nữa.",
+  "sensors.keyGuard.confirm": "Vẫn đóng",
+  "sensors.keyGuard.cancel": "Giữ mở"
 }
