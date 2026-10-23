@@ -46,7 +46,7 @@ export function FactChip({ tone = 'neutral', className, ...props }: FactChipProp
 
 /** A monospace run inside a chip, for identifiers (IPs, ports, hosts). */
 export function ChipMono({ children }: { children: React.ReactNode }) {
-  return <span className="min-w-0 truncate font-mono text-[11.5px]">{children}</span>
+  return <span className="min-w-0 truncate font-mono text-meta">{children}</span>
 }
 
 /** Chips laid out in a wrapping row. */
