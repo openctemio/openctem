@@ -67,9 +67,12 @@ type memQueue struct {
 	parts    map[shared.ID][]ingestqueue.OpenedPart
 	jobs     []*ingestjob.Job
 	admitErr error
+	// staged counts StagePart calls (a refused upload must store nothing).
+	staged int
 }
 
 func (q *memQueue) StagePart(_ context.Context, _, jobID shared.ID, part int, name string, body []byte) error {
+	q.staged++
 	if q.parts == nil {
 		q.parts = map[shared.ID][]ingestqueue.OpenedPart{}
 	}
@@ -116,6 +119,10 @@ func (r *importTestRig) process(t *testing.T) []FindingImportResponse {
 		raw, err := r.svc.ProcessImportJob(context.Background(), job)
 		if err != nil {
 			t.Fatalf("process: %v", err)
+		}
+		// The worker's Complete deletes the stored parts.
+		if err := r.queue.Done(context.Background(), job); err != nil {
+			t.Fatal(err)
 		}
 		var res findingimport.QueuedResult
 		if err := json.Unmarshal(raw, &res); err != nil {
@@ -438,7 +445,7 @@ func TestFindingImport_QueueFullIs429WithoutAReceipt(t *testing.T) {
 	if rec.Code != http.StatusTooManyRequests || rec.Header().Get("Retry-After") != "30" {
 		t.Fatalf("status %d Retry-After %q: %s", rec.Code, rec.Header().Get("Retry-After"), rec.Body.String())
 	}
-	if repo.uploads != 0 || len(q.jobs) != 0 || len(q.parts) != 0 {
-		t.Fatalf("receipts %d, jobs %d, parts %d after a refusal", repo.uploads, len(q.jobs), len(q.parts))
+	if repo.uploads != 0 || len(q.jobs) != 0 || len(q.parts) != 0 || q.staged != 0 {
+		t.Fatalf("receipts %d, jobs %d, parts %d (staged %d) after a refusal", repo.uploads, len(q.jobs), len(q.parts), q.staged)
 	}
 }

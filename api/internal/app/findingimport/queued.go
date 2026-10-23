@@ -31,6 +31,7 @@ import (
 	"github.com/openctemio/openctem/api/pkg/domain/ingestjob"
 	"github.com/openctemio/openctem/api/pkg/domain/ingestreceipt"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/pkg/domain/tenant"
 	"github.com/openctemio/openctem/api/pkg/logger"
 )
 
@@ -72,6 +73,44 @@ func (s *Service) SetQueue(q Queue, resolve ScopeResolver, audit Auditor) {
 	s.queue, s.resolveScope, s.audit = q, resolve, audit
 }
 
+// MemberReader reads a user's membership of a tenant (tenant.Repository).
+type MemberReader interface {
+	GetMembership(ctx context.Context, userID, tenantID shared.ID) (*tenant.Membership, error)
+}
+
+// SetMembers makes the worker re-read the uploader's membership before it
+// imports a committed upload: the rights recorded at accept time are only
+// ever narrowed by it, never widened.
+func (s *Service) SetMembers(m MemberReader) { s.members = m }
+
+// currentCaller narrows the uploader recorded at accept time to the
+// uploader's membership now: a member who left or was suspended meanwhile
+// is shared.ErrNotFound (the upload is refused), a demoted administrator or
+// owner imports with the member's data scope. Rights are never widened: a flag is kept only when both the record and
+// the current role grant it.
+func (s *Service) currentCaller(ctx context.Context, tenantID shared.ID, env *Envelope) error {
+	if s.members == nil || env.Caller.UserID == "" {
+		return nil
+	}
+	uid, err := shared.IDFromString(env.Caller.UserID)
+	if err != nil {
+		return fmt.Errorf("%w: invalid uploader", shared.ErrNotFound)
+	}
+	m, err := s.members.GetMembership(ctx, uid, tenantID)
+	if errors.Is(err, shared.ErrNotFound) {
+		return err
+	}
+	if err != nil {
+		return fmt.Errorf("read the uploader's membership: %w", err)
+	}
+	if m == nil || !m.IsActive() {
+		return fmt.Errorf("%w: the uploader is no longer an active member", shared.ErrNotFound)
+	}
+	env.Caller.IsOwner = env.Caller.IsOwner && m.IsOwner()
+	env.Caller.IsAdmin = env.Caller.IsAdmin && (m.IsOwner() || m.IsAdmin())
+	return nil
+}
+
 // ErrQueueUnavailable: committed uploads are not available.
 var ErrQueueUnavailable = errors.New("imports are not available right now")
 
@@ -109,6 +148,16 @@ type Accepted struct {
 	// Replayed: the same files from the same principal were uploaded
 	// within DigestWindow; this is that upload.
 	Replayed bool
+}
+
+// AdmitUpload runs the tenant's queue back-pressure before an upload's
+// parts are read and stored, so a tenant at its limit writes nothing
+// (CommitUpload checks again against the stored queue).
+func (s *Service) AdmitUpload(ctx context.Context, tenantID shared.ID) error {
+	if s.queue == nil {
+		return ErrQueueUnavailable
+	}
+	return s.queue.Admit(ctx, tenantID)
 }
 
 // StagePart stores one part of an upload that is still being received.
@@ -216,6 +265,11 @@ func (s *Service) ProcessImportJob(ctx context.Context, job *ingestjob.Job) ([]b
 	if env.Caller.UserID == "" && !env.Caller.APIKey {
 		return nil, ingestjob.Permanent(ImportErrorUploaderGone, errors.New("no uploader recorded"))
 	}
+	if err := s.currentCaller(ctx, tenantID, &env); errors.Is(err, shared.ErrNotFound) {
+		return nil, ingestjob.Permanent(ImportErrorUploaderGone, err)
+	} else if err != nil {
+		return nil, err
+	}
 	actor, coverage, err := s.resolveScope(ctx, tenantID, env.Caller)
 	if errors.Is(err, shared.ErrNotFound) {
 		return nil, ingestjob.Permanent(ImportErrorUploaderGone, err)
@@ -271,10 +325,9 @@ func (s *Service) ProcessImportJob(ctx context.Context, job *ingestjob.Job) ([]b
 	if err != nil {
 		return nil, err
 	}
-	if err := s.queue.Done(ctx, job); err != nil {
-		s.logger.Warn("finding import: stored parts not deleted (the janitor will)", "job_id", job.ID().String(),
-			"error", logger.SanitizeError(err))
-	}
+	// The stored parts are deleted when the worker records the job
+	// completed (IngestJobRepository.Complete), not here: a crash before
+	// that re-imports the upload instead of failing an applied one.
 	return out, nil
 }
 
