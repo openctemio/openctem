@@ -261,7 +261,12 @@ func (e *WorkflowExecutor) ExecuteWithTenant(ctx context.Context, runID shared.I
 	}
 
 	// A live run executes the version it pinned when it was created, not
-	// the draft as it is now (versions.go).
+	// the draft as it is now (versions.go). A live run without a pinned
+	// version would act on the unpublished draft, past the go-live gate: it
+	// is refused once versions are configured.
+	if run.Mode == automationdom.ModeLive && run.VersionID == nil && e.versions != nil {
+		return fmt.Errorf("integrity error: live run %s has no pinned version", run.ID)
+	}
 	if run.VersionID != nil {
 		if e.versions == nil {
 			return fmt.Errorf("load run version: versions are not configured")
@@ -738,9 +743,9 @@ func (e *WorkflowExecutor) executeActionNode(ctx context.Context, execCtx *Execu
 		return nil, err
 	}
 
-	// A simulate run never calls an action handler: it records what the step
-	// would do.
-	if execCtx.Run.Mode == automationdom.ModeSimulate {
+	// Only a live run calls an action handler; any other run (simulate, or
+	// a mode this build does not know) records what the step would do.
+	if execCtx.Run.Mode != automationdom.ModeLive {
 		return e.simulateStep(stepCtx, execCtx, node)
 	}
 
@@ -807,8 +812,8 @@ func (e *WorkflowExecutor) executeNotificationNode(ctx context.Context, execCtx 
 		return nil, err
 	}
 
-	// A simulate run never sends: it records what the step would send.
-	if execCtx.Run.Mode == automationdom.ModeSimulate {
+	// Only a live run sends; any other run records what the step would send.
+	if execCtx.Run.Mode != automationdom.ModeLive {
 		return e.simulateStep(stepCtx, execCtx, node)
 	}
 	if e.notificationHandler == nil {
