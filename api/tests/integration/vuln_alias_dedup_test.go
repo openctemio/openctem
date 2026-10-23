@@ -203,6 +203,39 @@ func TestVulnAlias_HeldCVEKeyLinksNeverMerges(t *testing.T) {
 	}
 }
 
+// After the collision the advisory tool's report lands on the CVE finding;
+// the advisory finding takes that sighting too (scan, tool, time), so a
+// coverage auto-resolve of its tool does not close it as fixed while the
+// vulnerability is still reported. Its status never moves.
+func TestVulnAlias_CollisionKeepsTheAdvisoryFindingSighted(t *testing.T) {
+	a := newAliasRig(t)
+	tn := a.r.newTenant("osv-scanner", "trivy")
+	ghsa, cve := randomGHSA(t), randomCVE(t)
+	a.scan(t, tn, "osv-scanner", "shop", ghsaOnly(ghsa))
+	a.scan(t, tn, "trivy", "shop", cveSCA(cve))
+	rows := a.rows(t, tn)
+	if len(rows) != 2 {
+		t.Fatalf("two findings before the alias, got %+v", rows)
+	}
+	scanOf := func(id string) (scan, tool string) {
+		if err := a.r.db.QueryRow(`SELECT COALESCE(scan_id, ''), COALESCE(last_seen_tool, '') FROM findings WHERE id = $1`, id).Scan(&scan, &tool); err != nil {
+			t.Fatal(err)
+		}
+		return scan, tool
+	}
+	before, _ := scanOf(rows[0].id)
+	a.alias(t, ghsa, cve)
+	a.scan(t, tn, "osv-scanner", "shop", ghsaOnly(ghsa))
+	advScan, advTool := scanOf(rows[0].id)
+	cveScan, _ := scanOf(rows[1].id)
+	if advScan == before || advScan != cveScan || advTool != "osv-scanner" {
+		t.Fatalf("the advisory finding was not sighted by the run (scan %q -> %q, CVE finding %q, tool %q)", before, advScan, cveScan, advTool)
+	}
+	if after := a.rows(t, tn); after[0].status != rows[0].status || after[1].status != rows[1].status {
+		t.Fatalf("a carried sighting changed a status: %+v -> %+v", rows, after)
+	}
+}
+
 func TestVulnAlias_ReportIDsNeverCanonicaliseAnotherFinding(t *testing.T) {
 	a := newAliasRig(t)
 	tn := a.r.newTenant("tool-a", "tool-b")

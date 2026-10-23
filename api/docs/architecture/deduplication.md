@@ -182,6 +182,10 @@ Two tools often name one vulnerability differently (`GHSA-35jh-r3h4-6jhm`,
   live finding of the asset already holds the CVE key, nothing is merged:
   the two are linked as the same issue (rule `vuln_alias`, see below), each
   keeping its status and decisions (`internal/app/ingest/vuln_alias.go`).
+  The advisory tool's report now lands on the CVE finding, so the advisory
+  finding, while open, takes that sighting too (scan, tool and time, never a
+  status): coverage auto-resolve does not close it as fixed while its tool
+  still reports the vulnerability.
 - **Without a new sighting.** `refingerprint -vuln-aliases [-tenant <id>]
   [-apply]` rewrites only the vulnerability field of each stored tuple
   (`vuln` for SCA and network, `rule` for DAST), re-keys in place when the

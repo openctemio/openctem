@@ -610,6 +610,15 @@ func (r *FindingIssueLinkRepository) planTenant(ctx context.Context, tenantID sh
 	return rep, nil
 }
 
+// carryAliasSightingSQL gives the advisory finding ($2) the sighting the
+// CVE finding ($3) just took, while it is open (LinkAliasCollisions).
+var carryAliasSightingSQL = `
+	UPDATE findings o SET scan_id = c.scan_id, last_seen_tool = c.last_seen_tool,
+		last_seen_at = GREATEST(o.last_seen_at, c.last_seen_at)
+	FROM findings c
+	WHERE o.tenant_id = $1 AND o.id = $2 AND c.tenant_id = $1 AND c.id = $3
+	  AND o.status IN ` + autoResolveFromSQL
+
 // LinkAliasCollisions links, as the same issue, each finding still stored
 // under an advisory key (Former) to the live finding of the same asset that
 // holds the CVE key the feed gives it (Canonical). The earlier-created one
@@ -645,6 +654,15 @@ func (r *FindingIssueLinkRepository) LinkAliasCollisions(ctx context.Context, te
 		}
 		if err != nil {
 			return made, fmt.Errorf("find alias collision: %w", err)
+		}
+		// The report that names the advisory id now lands on the CVE
+		// finding, so the advisory finding is no longer sighted by its own
+		// tool: coverage auto-resolve would close it as fixed while the
+		// vulnerability is still reported. It takes the sighting too (scan,
+		// time and tool; never a status), so it closes only when its tool
+		// stops reporting the vulnerability.
+		if _, err := tx.ExecContext(ctx, carryAliasSightingSQL, tenant, a, b); err != nil {
+			return made, fmt.Errorf("carry alias sighting: %w", err)
 		}
 		primary, member := a, b
 		if bCreated.Before(aCreated) || (bCreated.Equal(aCreated) && b < a) {
