@@ -31,6 +31,32 @@ interface ErrorStateProps {
  * it, a switched-off module says that, and neither offers a Retry that cannot
  * help or shows the raw API message.
  */
+type Translate = ReturnType<typeof useTranslation>['t']
+
+/**
+ * The sentence shown under the title. A rate limit and a lost connection get
+ * our own words (the server's text for them is English-only and says nothing
+ * about what to do); every other error keeps the server's message.
+ */
+function errorMessage(error: unknown, t: Translate): string {
+  const status = (error as { statusCode?: unknown } | undefined)?.statusCode
+  if (status === 429) {
+    return t(
+      'common.rateLimited',
+      'Too many requests in a short time. Wait a few seconds, then retry.'
+    )
+  }
+  if (error instanceof TypeError && /fetch|network/i.test(error.message)) {
+    return t(
+      'common.networkError',
+      'The server could not be reached. Check your connection, then retry.'
+    )
+  }
+  return error instanceof Error && error.message
+    ? error.message
+    : t('common.unexpectedError', 'An unexpected error occurred')
+}
+
 export function ErrorState({ title, error, onRetry }: ErrorStateProps) {
   const { t } = useTranslation()
   const access = accessStateOf(error)
@@ -62,11 +88,7 @@ export function ErrorState({ title, error, onRetry }: ErrorStateProps) {
       <AlertCircle />
       <AlertTitle>{t('common.failedToLoad', 'Failed to load {title}', { title })}</AlertTitle>
       <AlertDescription>
-        <p>
-          {error instanceof Error
-            ? error.message
-            : t('common.unexpectedError', 'An unexpected error occurred')}
-        </p>
+        <p>{errorMessage(error, t)}</p>
         <div className="mt-2 flex flex-wrap items-center gap-2">
           {onRetry && (
             <Button variant="outline" size="sm" onClick={onRetry}>
@@ -85,7 +107,10 @@ export function ErrorState({ title, error, onRetry }: ErrorStateProps) {
             >
               <Copy className="me-2 h-4 w-4" />
               {t('common.copyRequestId', 'Copy request ID')}
-              <span className="ms-2 font-mono text-xs text-muted-foreground">{requestId}</span>
+              {/* The id is long; on a phone the button copies it without printing it. */}
+              <span className="ms-2 hidden font-mono text-xs text-muted-foreground sm:inline">
+                {requestId}
+              </span>
             </Button>
           )}
         </div>
