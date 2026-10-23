@@ -116,7 +116,7 @@ the audit log records `finding.duplicate_marked`.
 
 **Why a finding is one (identity explanation):** every keying records the
 recipe in `findings.identity_algo` and the NAMES of the key's fields, in recipe
-order, in `findings.identity_fields` (migration `003347`, nullable, no
+order, in `findings.identity_fields` (migration `003351`, nullable, no
 backfill). Recipe names: `v2/<kind>` (`v2/sca`, `v2/sast`, `v2/secret`,
 `v2/dast`, `v2/network`, `v2/misconfig`) set by `Finding.SetIdentity`;
 `v1/ingest` for the server's version-1 ingest key (F1, also when a
