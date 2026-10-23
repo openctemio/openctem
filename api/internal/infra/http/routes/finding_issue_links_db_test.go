@@ -154,7 +154,9 @@ func TestIssueLinks_CrossTenantFindingIs404AndUntouched(t *testing.T) {
 
 	tenantB, assetB, f1, f2 := shared.NewID(), shared.NewID(), shared.NewID(), shared.NewID()
 	h.exec(`INSERT INTO tenants (id, name, slug) VALUES ($1, $2, $2)`, tenantB.String(), "ds-"+tenantB.String())
-	t.Cleanup(func() { _, _ = h.db.ExecContext(context.Background(), `DELETE FROM tenants WHERE id = $1`, tenantB.String()) })
+	t.Cleanup(func() {
+		_, _ = h.db.ExecContext(context.Background(), `DELETE FROM tenants WHERE id = $1`, tenantB.String())
+	})
 	h.exec(`INSERT INTO assets (id, tenant_id, name, asset_type, exposure, criticality) VALUES ($1, $2, 'xt-asset', 'domain', 'public', 'high')`,
 		assetB.String(), tenantB.String())
 	for _, f := range []shared.ID{f1, f2} {
