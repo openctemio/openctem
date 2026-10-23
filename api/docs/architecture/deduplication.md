@@ -218,7 +218,9 @@ How it runs:
 - **Groups.** One indexed lookup finds the other holders of the batch's keys;
   `issuelink.PlanLinks` decides the links. A group is a star around its
   primary (the earliest-created finding when it formed); a finding joins the
-  group of the finding it matches; two groups are never fused. Caps: a key
+  group of the secret it shares, but a SAST group only by overlapping its
+  primary (line overlap is not transitive, so a wide range never chains two
+  separate issues into one group); two groups are never fused. Caps: a key
   held by more than 200 findings links nothing, a group has at most 50
   members. Derivation runs under a per-tenant transaction lock
   (`FindingIssueLinkRepository`, `internal/infra/postgres/finding_issue_link_repository.go`).
@@ -227,15 +229,21 @@ How it runs:
   /api/v1/findings/{id}/issue-links/{other}` (`findings:triage`, both
   findings in the caller's data scope) ends a link as `unlinked`: the pair is
   never linked again automatically; both timelines get `issue_unlinked` and
-  the audit log `finding.issue_unlinked`.
+  the audit log `finding.issue_unlinked`. A timeline entry names the other
+  finding only when both are on one asset: a link across repositories (one
+  secret in two) writes no `issue_linked` entry, and its unlink entries name
+  no id, so a viewer of one repository never learns that another holds the
+  same secret.
 - **Reading.** `GET /api/v1/findings/{id}/issue-links` (`findings:read`)
   lists the members the caller may see, the primary first, with the rule and
   the field names it compared; a member on an asset outside the caller's
   scope is neither listed nor counted.
 - **Dashboard facts.** `dash_recompute_asset` (migration
-  `003350_finding_issue_links`) skips a linked member when another member of
-  its group on the same asset, in the same state, counts already (the
-  primary, else the earliest). A link or unlink marks both assets dirty.
+  `003350_finding_issue_links`) skips a linked member when another finding
+  of its group on the same asset, in the same state, is at least as severe
+  and as urgent (the primary first, then the earliest), so counting once
+  never hides a higher severity or priority. A link or unlink marks both
+  assets dirty.
 - **Finding merge.** Keys and links stay on the tombstone (tombstones are
   never candidates); the survivor's are derived again on its next sighting.
 - **Existing findings.** `refingerprint -links [-tenant <id>] [-apply]`
