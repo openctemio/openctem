@@ -83,6 +83,15 @@ var stepUpRoutes = []string{
 	// Risk scoring settings decide every asset's risk band and, with the
 	// ownership floor, finding priorities (docs/architecture/scoring-versions.md).
 	"PATCH /api/v1/tenants/acme/settings/risk-scoring",
+	// Module toggles change what the organization runs and exposes.
+	"PATCH /api/v1/tenants/acme/settings/modules",
+	"POST /api/v1/tenants/acme/settings/modules/reset",
+	"POST /api/v1/tenants/acme/settings/modules/presets/vm/apply",
+	// Stored secrets authenticate the organization to outside systems.
+	"POST /api/v1/secret-store",
+	"PUT /api/v1/secret-store/{id}",
+	"POST /api/v1/secret-store/{id}/rotate",
+	"DELETE /api/v1/secret-store/{id}",
 	// Turning AI triage on lets finding content go to the AI provider.
 	"PUT /api/v1/organization/settings/ai",
 	"POST /api/v1/tenants/acme/settings/sso/changes/{id}/approve",
@@ -109,6 +118,7 @@ var stepUpRoutes = []string{
 	"PUT /api/v1/integrations/{id}/notification",
 	// The group mapping decides which role a directory group's members get.
 	"PUT /api/v1/scim-tokens/group-mappings",
+	"POST /api/v1/scim-tokens/{id}/rotate",
 	"POST /api/v1/integrations/{id}/jira-webhook/secret/rotate",
 	"PUT /api/v1/integrations/{id}/jira-webhook/secret",
 	"POST /api/v1/integrations/{id}/github-webhook/secret/rotate",
@@ -169,6 +179,7 @@ var stepUpRoutes = []string{
 	"POST /api/v1/findings/{id}/severity-requests/{id}/approve",
 	"DELETE /api/v1/findings/{id}",
 	"POST /api/v1/findings/bulk/status",
+	"POST /api/v1/findings/bulk/by-filter/status",
 }
 
 func TestStepUpRoutes_RequireRecentAuth(t *testing.T) {
@@ -242,6 +253,7 @@ func TestStepUpRoutes_RequireRecentAuth(t *testing.T) {
 			registerCredentialRoutes(router, &handler.CredentialImportHandler{}, auth, nil, chain())
 			registerFindingLifecycleRoutes(router, &handler.FindingLifecycleHandler{}, auth, nil)
 			registerScanGovernanceRoutes(router, &handler.ScanGovernanceHandler{}, auth, nil)
+			registerSecretStoreRoutes(router, &handler.SecretStoreHandler{}, auth, nil)
 			registerPriorityRuleRoutes(router, &handler.PriorityRuleHandler{}, auth, nil, chain())
 			scanH := &handler.ScanHandler{}
 			scanH.SetApprovals(&handler.ScanApprovalHandler{})
