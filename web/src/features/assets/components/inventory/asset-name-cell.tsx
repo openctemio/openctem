@@ -19,6 +19,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip
 import { useTranslation } from '@/context/i18n-provider'
 import { copyToClipboard } from '@/lib/clipboard'
 import { middleEllipsis } from '@/lib/middle-ellipsis'
+import { safeHref } from '@/lib/safe-href'
 import { toDisplayText } from '@/lib/untrusted-text'
 import { cn } from '@/lib/utils'
 import { AssetTypeIcon } from '../../lib/asset-type-icon'
@@ -68,7 +69,7 @@ export function AssetNameCell({
         <TooltipTrigger asChild>
           <div className="grid min-w-0">
             <Link
-              href={href}
+              href={safeHref(href) ?? '/assets'}
               onClick={onOpen}
               dir="auto"
               aria-label={name}
