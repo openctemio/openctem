@@ -320,6 +320,8 @@ func (r *DashboardWidgetRepository) FixHist(ctx context.Context, scope dashboard
 // Rank implements dashboard.FactReader. The rank fact holds finding ids
 // only; the list fields are read from the findings by id, inside the tenant,
 // and a finding no longer open (the facts lag by seconds) is left out.
+// findings.title is nullable (most scanner findings carry only a rule id or
+// a message), so the title falls back to the rule, the CVE, then the message.
 func (r *DashboardWidgetRepository) Rank(ctx context.Context, scope dashboard.ReadScope, kind dashboard.RankKind, f dashboard.WidgetFilter, limit int) ([]dashboard.RankItem, error) {
 	order := ""
 	switch kind {
@@ -344,7 +346,8 @@ func (r *DashboardWidgetRepository) Rank(ctx context.Context, scope dashboard.Re
 			       row_number() OVER (ORDER BY ` + order + `) AS pos
 			FROM dash_asset_rank r WHERE ` + b.sql() + `
 		)
-		SELECT f.id, f.title, k.severity, k.priority_class, f.asset_id, COALESCE(a.name, ''), k.sort_at, f.sla_deadline,
+		SELECT f.id, COALESCE(NULLIF(f.title, ''), NULLIF(f.rule_id, ''), NULLIF(f.cve_id, ''), NULLIF(left(f.message, 200), ''), ''),
+		       COALESCE(k.severity, ''), COALESCE(k.priority_class, ''), f.asset_id, COALESCE(a.name, ''), k.sort_at, f.sla_deadline,
 		       COALESCE(f.is_in_kev, false), k.is_pentest, k.pentest_campaign_id
 		FROM ranked k
 		JOIN findings f ON f.tenant_id = $1 AND f.id = k.finding_id AND ` + openFindingStatusClause + `

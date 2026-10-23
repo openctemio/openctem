@@ -14,6 +14,11 @@ export const PROXIED_RESPONSE_HEADERS = [
   'x-request-id',
   'x-total-count',
   'x-permission-stale',
+  // An export's cap and outcome (findings and audit-log exports): the page
+  // compares the cap with the list total to say when rows were left out.
+  'x-export-max-rows',
+  'x-export-rows',
+  'x-export-truncated',
 ] as const
 
 /** Headers of a streamed (binary) answer: the same, plus its length. */

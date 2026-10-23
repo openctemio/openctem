@@ -164,6 +164,11 @@ evaluate.mockImplementation(async (ids: string[], to: string) =>
   )
 )
 
+vi.mock('@/features/findings/api/use-quick-views', () => ({
+  useFindingQuickViews: () => ({ data: undefined }),
+  refreshFindingQuickViews: vi.fn(),
+}))
+
 import FindingsPage from '../page'
 
 describe('Findings bulk resolve', () => {

@@ -67,7 +67,9 @@ describe('ImportResultsDialog', () => {
     await chooseFile()
     await userEvent.click(screen.getByRole('button', { name: /Preview/ }))
     await waitFor(() => expect(fetchMock).toHaveBeenCalled())
-    expect(fetchMock.mock.calls[0][0]).toBe('/api/v1/findings/import?dry_run=true&min_severity=low')
+    expect(fetchMock.mock.calls[0][0]).toBe(
+      '/api/v1/findings/imports?dry_run=true&min_severity=low'
+    )
   })
 
   it('previews first and writes nothing until Import', async () => {
@@ -81,7 +83,7 @@ describe('ImportResultsDialog', () => {
 
     await waitFor(() => expect(screen.getByTestId('import-summary')).toBeInTheDocument())
     const [url, init] = fetchMock.mock.calls[0]
-    expect(url).toBe('/api/v1/findings/import?dry_run=true')
+    expect(url).toBe('/api/v1/findings/imports?dry_run=true')
     expect((init as RequestInit).method).toBe('POST')
     expect(screen.getByText('Nessus (.nessus)')).toBeInTheDocument()
     expect(screen.getByText('high: 2')).toBeInTheDocument()
@@ -115,7 +117,7 @@ describe('ImportResultsDialog', () => {
     )
     await userEvent.click(screen.getByRole('button', { name: /^Import$/ }))
     await waitFor(() => expect(onImported).toHaveBeenCalled())
-    expect(fetchMock.mock.calls[1][0]).toBe('/api/v1/findings/import')
+    expect(fetchMock.mock.calls[1][0]).toBe('/api/v1/findings/imports')
     expect(screen.getByText(/2 findings created/)).toBeInTheDocument()
   })
 
