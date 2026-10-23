@@ -152,6 +152,47 @@ func TestIssueLinks_SASTTwoEnginesSameLineSameWeakness(t *testing.T) {
 	}
 }
 
+// Counting a group once never hides a higher severity: a critical member
+// of a medium primary is still counted as critical.
+func TestIssueLinks_DashboardCountsOnceWithoutHidingSeverity(t *testing.T) {
+	l := newLinkRig(t, true)
+	tn := l.r.newTenant("semgrep", "codeql")
+	l.scan(t, tn, "semgrep", "shop", sastAt("python.django.security.injection.sql", "app/views.py", 42, 42, "x", "CWE-89"))
+	l.scan(t, tn, "codeql", "shop", sastAt("py/sql-injection", "app/views.py", 42, 43, "", "CWE-89"))
+	primary := l.idOf(t, tn, "python.django.security.injection.sql", "app/views.py")
+	member := l.idOf(t, tn, "py/sql-injection", "app/views.py")
+	if !l.linked(t, tn, primary, member) {
+		t.Fatal("not linked")
+	}
+	var asset string
+	if err := l.r.db.QueryRow(`SELECT asset_id FROM findings WHERE id = $1`, primary).Scan(&asset); err != nil {
+		t.Fatal(err)
+	}
+	facts := func(sev string) int {
+		if _, err := l.r.db.Exec(`SELECT dash_recompute_asset($1, $2)`, tn.tenant.String(), asset); err != nil {
+			t.Fatal(err)
+		}
+		return l.count(t, `SELECT COALESCE(sum(finding_count), 0) FROM dash_asset_state WHERE tenant_id = $1 AND asset_id = $2 AND severity = $3`,
+			tn.tenant.String(), asset, sev)
+	}
+	if _, err := l.r.db.Exec(`UPDATE findings SET severity = 'medium' WHERE id = $1`, primary); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := l.r.db.Exec(`UPDATE findings SET severity = 'critical' WHERE id = $1`, member); err != nil {
+		t.Fatal(err)
+	}
+	if facts("critical") != 1 {
+		t.Fatal("the critical member was hidden behind its medium primary")
+	}
+	// Equal severity: counted once (the primary).
+	if _, err := l.r.db.Exec(`UPDATE findings SET severity = 'high' WHERE id IN ($1, $2)`, primary, member); err != nil {
+		t.Fatal(err)
+	}
+	if n := facts("high"); n != 1 {
+		t.Fatalf("an equal-severity group counted %d times, want once", n)
+	}
+}
+
 func TestIssueLinks_SASTSamePathOnAnotherAssetIsNotLinked(t *testing.T) {
 	l := newLinkRig(t, true)
 	tn := l.r.newTenant("semgrep", "codeql")
@@ -190,6 +231,34 @@ func TestIssueLinks_SecretSameValueAcrossFilesAndRepositories(t *testing.T) {
 			t.Fatalf("finding %s (another value, or a mask) was linked", id)
 		}
 	}
+	// The member in the same repository names its primary on its timeline;
+	// the member in another repository does not (a viewer of that repository
+	// alone must not learn the other holds the same secret, or its id).
+	sameRepo, crossRepo := b, c
+	if l.count(t, `SELECT count(*) FROM finding_issue_links WHERE member_id = $1`, a) == 1 {
+		sameRepo = a
+	}
+	if l.count(t, `SELECT count(*) FROM finding_activities WHERE finding_id = $1 AND activity_type = 'issue_linked'`, sameRepo) != 1 {
+		t.Fatal("no timeline entry on the member in the same repository")
+	}
+	if n := l.count(t, `SELECT count(*) FROM finding_activities WHERE finding_id = $1
+		AND (activity_type = 'issue_linked' OR message LIKE '%' || $2 || '%' OR changes::text LIKE '%' || $2 || '%')`, crossRepo, a); n != 0 {
+		t.Fatalf("the member in another repository has %d timeline entries naming the group", n)
+	}
+	cID, _ := shared.IDFromString(crossRepo)
+	var primary string
+	if err := l.r.db.QueryRow(`SELECT primary_id FROM finding_issue_links WHERE member_id = $1 AND state = 'active'`, crossRepo).Scan(&primary); err != nil {
+		t.Fatal(err)
+	}
+	pID, _ := shared.IDFromString(primary)
+	if _, _, err := l.repo.Unlink(context.Background(), tn.tenant, pID, cID, ""); err != nil {
+		t.Fatal(err)
+	}
+	if n := l.count(t, `SELECT count(*) FROM finding_activities WHERE finding_id = $1 AND activity_type = 'issue_unlinked'
+		AND (message LIKE '%' || $2 || '%' OR changes::text LIKE '%' || $2 || '%')`, crossRepo, primary); n != 0 {
+		t.Fatal("the unlink entry names a finding on another asset")
+	}
+
 	// No link key is a value a person could read back.
 	if l.count(t, `SELECT count(*) FROM finding_link_keys WHERE key LIKE '%EXAMPLE%'`) != 0 {
 		t.Fatal("a link key contains the secret")

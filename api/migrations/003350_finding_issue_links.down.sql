@@ -175,6 +175,7 @@ COMMENT ON FUNCTION dash_recompute_asset(uuid, uuid) IS
 
 DROP TABLE IF EXISTS finding_issue_links;
 DROP TABLE IF EXISTS finding_link_keys;
+DROP FUNCTION IF EXISTS dash_severity_rank(text);
 
 -- The facts may have counted groups once: rebuild them.
 UPDATE dash_fact_status SET rebuild_requested_at = now() WHERE rebuilt_at IS NOT NULL;
