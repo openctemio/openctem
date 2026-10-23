@@ -137,6 +137,7 @@
   "common.table.loading": "Loading",
   "common.yes": "Yes",
   "common.no": "No",
+  "common.showingFirstOf": "Showing the first {loaded} of {total}",
   "common.bootstrap.busyTitle": "The server is busy",
   "common.bootstrap.busyBody": "It asked us to slow down. We try again in a few seconds, or retry now.",
   "common.bootstrap.unreachableTitle": "Can’t reach the server",
