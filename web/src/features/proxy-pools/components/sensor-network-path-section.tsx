@@ -4,6 +4,16 @@ import { useState } from 'react'
 import { Waypoints } from 'lucide-react'
 import { toast } from 'sonner'
 
+import { ConfirmDialog } from '@/components/confirm-dialog'
+import { Button } from '@/components/ui/button'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
+import { Skeleton } from '@/components/ui/skeleton'
 import { useTranslation } from '@/context/i18n-provider'
 import { DetailSection } from '@/features/shared'
 import { Permission, useHasPermission } from '@/lib/permissions'
@@ -45,21 +55,24 @@ export function SensorNetworkPathSection({ sensorId }: { sensorId: string }) {
   const pools = useProxyPools(canRead)
   const assignments = useProxyAssignments(canRead)
   const [saving, setSaving] = useState(false)
+  const [confirmDirect, setConfirmDirect] = useState(false)
   if (!canRead) return null
 
+  const failed = !!pools.error || !!assignments.error
+  const loading = !failed && (!pools.data || !assignments.data)
   const row = assignments.data?.items.find((a) => a.sensor_id === sensorId)
   const value = pathValue(row?.mode, row?.pool_id)
   const list = pools.data?.items ?? []
   // A pool the list no longer holds would show a blank select.
   const known =
     value === 'inherit' || value === 'direct' || list.some((p) => `${POOL_PREFIX}${p.id}` === value)
+  const defaultOn = list.some((p) => p.is_default && p.enabled)
 
   async function change(next: string) {
     setSaving(true)
     try {
       await setProxyAssignment(sensorId, pathRequest(next))
       await invalidateProxyPools()
-      toast.success(t('proxyPools.sensor.saved', 'Network path saved'))
     } catch (e) {
       toast.error(
         describeProxyError(
@@ -73,29 +86,64 @@ export function SensorNetworkPathSection({ sensorId }: { sensorId: string }) {
     }
   }
 
+  function choose(next: string) {
+    // Direct sends this sensor's scans from its own address, around the
+    // organization's proxies: ask first while they are on.
+    if (next === 'direct' && defaultOn) setConfirmDirect(true)
+    else void change(next)
+  }
+
   return (
     <DetailSection title={t('proxyPools.sensor.title', 'Network path')} icon={Waypoints}>
       <div className="space-y-2">
-        <label htmlFor="sensor-network-path" className="sr-only">
-          {t('proxyPools.sensor.title', 'Network path')}
-        </label>
-        <select
-          id="sensor-network-path"
-          value={known ? value : 'inherit'}
-          disabled={!canWrite || saving || assignments.isLoading}
-          onChange={(e) => void change(e.target.value)}
-          className="border-input bg-background h-9 w-full rounded-md border px-3 text-sm"
-        >
-          <option value="inherit">
-            {t('proxyPools.sensor.inherit', 'Inherit (organization default)')}
-          </option>
-          <option value="direct">{t('proxyPools.sensor.direct', 'Direct')}</option>
-          {list.map((p) => (
-            <option key={p.id} value={`${POOL_PREFIX}${p.id}`}>
-              {p.name}
-            </option>
-          ))}
-        </select>
+        {failed ? (
+          <div className="flex flex-wrap items-center gap-2" role="alert">
+            <p className="text-sm text-destructive">
+              {t('proxyPools.sensor.loadFailed', 'Could not load the network path.')}
+            </p>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => {
+                void pools.mutate()
+                void assignments.mutate()
+              }}
+            >
+              {t('common.retry', 'Retry')}
+            </Button>
+          </div>
+        ) : loading ? (
+          <Skeleton className="h-9 w-full" data-testid="network-path-skeleton" />
+        ) : (
+          <>
+            <label htmlFor="sensor-network-path" className="sr-only">
+              {t('proxyPools.sensor.title', 'Network path')}
+            </label>
+            <Select
+              value={known ? value : 'inherit'}
+              disabled={!canWrite || saving}
+              onValueChange={choose}
+            >
+              <SelectTrigger id="sensor-network-path" className="w-full">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="inherit">
+                  {t('proxyPools.sensor.inherit', 'Inherit (organization default)')}
+                </SelectItem>
+                <SelectItem value="direct">{t('proxyPools.sensor.direct', 'Direct')}</SelectItem>
+                {list.map((p) => (
+                  <SelectItem key={p.id} value={`${POOL_PREFIX}${p.id}`}>
+                    {p.enabled
+                      ? p.name
+                      : t('proxyPools.sensor.poolDisabled', '{name} (disabled)', { name: p.name })}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </>
+        )}
         <p className="text-xs text-muted-foreground">
           <span>
             {t(
@@ -105,6 +153,21 @@ export function SensorNetworkPathSection({ sensorId }: { sensorId: string }) {
           </span>
         </p>
       </div>
+      <ConfirmDialog
+        open={confirmDirect}
+        onOpenChange={setConfirmDirect}
+        destructive
+        title={t('proxyPools.sensor.directTitle', 'Send this sensor direct?')}
+        desc={t(
+          'proxyPools.sensor.directDesc',
+          "The organization's proxies are on. A direct sensor sends its scan traffic from its own address, around them."
+        )}
+        confirmText={t('proxyPools.sensor.directConfirm', 'Go direct')}
+        handleConfirm={() => {
+          setConfirmDirect(false)
+          return change('direct')
+        }}
+      />
     </DetailSection>
   )
 }
