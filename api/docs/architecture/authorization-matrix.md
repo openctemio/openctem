@@ -2068,10 +2068,12 @@ person, its principal, and never as the system:
   entity by forging the event that names it. The caller must hold the
   permission of every step, and the subject must be in their data scope (a
   subject outside it answers 404, like one that does not exist);
-- an event run acts as the automation's owner (`workflows.created_by`, the
-  column the member lifecycle pauses and reassigns). Whoever creates,
-  switches on, or changes what an automation does (graph, node, edge)
-  becomes its owner.
+- an event run acts as the automation's owner (`automations.created_by`,
+  the column the member lifecycle pauses and reassigns). Whoever creates,
+  publishes or switches on an automation becomes its owner. Editing the
+  draft (graph, node, edge) does not: a draft only runs in simulate, and a
+  live automation runs its published version until someone publishes again
+  ([automations.md](automations.md), "Versions and mode").
 
 Before every action and notification step the principal is checked again,
 live (`workflow.PrincipalAuthorizer`): an active member with an active

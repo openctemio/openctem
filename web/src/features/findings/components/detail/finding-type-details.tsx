@@ -35,12 +35,12 @@ function Mono({ children }: { children: React.ReactNode }) {
   return <span className="font-mono text-body break-all">{children}</span>
 }
 
-function formatDate(iso?: string) {
+function formatDate(iso: string | undefined, locale: string) {
   if (!iso) return undefined
   const d = new Date(iso)
   return isNaN(d.getTime())
     ? undefined
-    : d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+    : d.toLocaleDateString(locale, { month: 'short', day: 'numeric', year: 'numeric' })
 }
 
 // ---------------------------------------------------------------------------
@@ -103,7 +103,7 @@ function PackageSection({ finding }: { finding: FindingDetail }) {
 }
 
 function SecretSection({ finding }: { finding: FindingDetail }) {
-  const { t } = useTranslation()
+  const { t, locale } = useTranslation()
   const s = finding.secretDetails
   if (!s) return null
   const active = s.valid === true && s.revoked !== true
@@ -134,7 +134,7 @@ function SecretSection({ finding }: { finding: FindingDetail }) {
             <span className="text-muted-foreground">
               {' · '}
               {t('findings.typeDetails.checked', 'checked {date}', {
-                date: formatDate(s.verifiedAt) ?? '',
+                date: formatDate(s.verifiedAt, locale) ?? '',
               })}
             </span>
           )}
@@ -163,10 +163,10 @@ function SecretSection({ finding }: { finding: FindingDetail }) {
               : null}
         </DetailField>
         <DetailField label={t('findings.typeDetails.expires', 'Expires')}>
-          {formatDate(s.expiresAt)}
+          {formatDate(s.expiresAt, locale)}
         </DetailField>
         <DetailField label={t('findings.typeDetails.rotationDue', 'Rotation due')}>
-          {formatDate(s.rotationDueAt)}
+          {formatDate(s.rotationDueAt, locale)}
         </DetailField>
         <DetailField label={t('findings.typeDetails.scopes', 'Scopes')} full>
           {s.scopes && s.scopes.length > 0 ? (

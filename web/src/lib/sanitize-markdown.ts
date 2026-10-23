@@ -79,6 +79,37 @@ export interface HastNode {
   tagName?: string
   children?: HastNode[]
   properties?: Record<string, unknown>
+  value?: string
+}
+
+/**
+ * A remote image fires a request as soon as the page renders: a pentest or
+ * member-written description could embed a tracking pixel and learn the
+ * viewer's IP address and timing. An absolute http(s) source on another
+ * origin is therefore never loaded; it becomes a plain link the viewer may
+ * click. Relative paths (including the attachments API) and same-origin
+ * sources keep rendering.
+ */
+function isRemoteImageSource(raw: unknown): boolean {
+  if (typeof raw !== 'string') return false
+  const url = normaliseURL(raw)
+  if (!/^https?:/i.test(url)) return false
+  try {
+    const self = typeof window !== 'undefined' ? window.location.origin : ''
+    return new URL(url).origin !== self
+  } catch {
+    return true
+  }
+}
+
+/**
+ * A link that leaves the app (a converted remote image, or any absolute
+ * http(s) link in the content) sends no Referer and no opener, and is not
+ * endorsed: the target learns nothing about the page it was clicked on.
+ * Set by the sanitiser itself on every pass; an author cannot choose `rel`.
+ */
+function externalLinkProps(): Record<string, unknown> {
+  return { rel: ['noopener', 'noreferrer', 'nofollow'], referrerPolicy: 'no-referrer' }
 }
 
 /**
@@ -198,6 +229,9 @@ function neutralise(node: HastNode): void {
  *  3. URL attrs with non-whitelisted scheme → rewrite to `#`.
  *  4. class → only the classes the pipeline itself emits.
  *  5. id and in-page `#fragment` links → `user-content-` prefix.
+ *  6. Remote (other-origin) <img> → plain link to the URL, never auto-loaded.
+ *  7. Links to another origin → rel="noopener noreferrer nofollow" and
+ *     referrerpolicy="no-referrer".
  */
 export function sanitiseNode(node: HastNode, _index?: number, _parent?: HastNode): void {
   if (!node || node.type !== 'element' || !node.tagName) return
@@ -246,6 +280,23 @@ export function sanitiseNode(node: HastNode, _index?: number, _parent?: HastNode
     if (id) props.id = id
     else delete props.id
   }
+  if (tag === 'img' && isRemoteImageSource(props.src)) {
+    const src = String(props.src)
+    node.tagName = 'a'
+    node.properties = { href: src, ...externalLinkProps() }
+    node.children = [{ type: 'text', value: src }]
+    return
+  }
+  // Any other element that fetches its src on render (video, audio, source,
+  // track) gets the same rule: a remote source is never loaded.
+  if (tag !== 'img' && isRemoteImageSource(props.src)) {
+    props.src = '#'
+  }
+  // Same origin test as images: absolute http(s) on another origin.
+  if (tag === 'a' && isRemoteImageSource(props.href)) {
+    Object.assign(props, externalLinkProps())
+  }
+
   const href = props.href
   if (typeof href === 'string' && href.startsWith('#') && href.length > 1) {
     const target = prefixId(href.slice(1))

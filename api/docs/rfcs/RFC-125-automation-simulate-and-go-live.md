@@ -97,7 +97,7 @@ Both are rate limited per user.
 | Step | Pull request | Status |
 |---|---|---|
 | Catalog, removed types (`automations_removed_types`) | this RFC's first pull request | In review |
-| Versions and mode | stacked | Designed |
+| Versions and mode (`automation_versions`) | stacked | In review |
 | Simulate engine, trace, deliveries, retention | stacked | Designed |
 | Preview and validate | stacked | Designed |
 | Go-live gate and permissions | stacked | Designed |

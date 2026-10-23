@@ -36,7 +36,7 @@ export function FindingPeople({ findingId, assignee }: FindingPeopleProps) {
   return (
     <div role="group" aria-label={t('findings.people.title', 'People')} className="space-y-2">
       <div className="my-2 border-t" role="presentation" />
-      <h3 className="text-xs font-medium tracking-wide text-muted-foreground uppercase">
+      <h3 className="text-xs font-medium text-muted-foreground">
         {t('findings.people.title', 'People')}
       </h3>
       <div className="grid min-h-8 grid-cols-[6.5rem_minmax(0,1fr)] items-center gap-x-3">
