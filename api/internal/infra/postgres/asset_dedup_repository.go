@@ -406,29 +406,40 @@ func (r *AssetDedupRepository) RejectReview(ctx context.Context, tenantID string
 	return nil
 }
 
-// GetMergeLog returns recent merge events. A non-nil scope keeps the events
-// whose kept asset is in it (the merged asset no longer exists).
-func (r *AssetDedupRepository) GetMergeLog(ctx context.Context, tenantID string, limit int, scope *shared.DataScope) ([]map[string]any, error) {
+// GetMergeLog returns recent merge events and the number of events that match.
+// A non-nil scope keeps the events whose kept asset is in it (the merged asset
+// no longer exists). A non-empty assetID narrows the events to those that kept
+// or absorbed that asset; the tenant and scope filters always apply on top, so
+// another tenant's or an out-of-scope asset id matches nothing.
+func (r *AssetDedupRepository) GetMergeLog(ctx context.Context, tenantID, assetID string, limit int, scope *shared.DataScope) ([]map[string]any, int, error) {
 	if limit <= 0 || limit > 100 {
 		limit = 50
 	}
 	scopeCond, args := dataScopeCond("kept_asset_id", scope, []any{tenantID, limit})
-	//nolint:gosec // G202: scopeCond is built from fixed SQL and numbered placeholders
+	assetCond := sqlTrue
+	if assetID != "" {
+		args = append(args, assetID)
+		assetCond = fmt.Sprintf("(kept_asset_id = $%d OR merged_asset_id = $%d)", len(args), len(args))
+	}
+	where := "tenant_id = $1 AND " + scopeCond + " AND " + assetCond
+	//nolint:gosec // G202: where is built from fixed SQL and numbered placeholders
 	query := `
 		SELECT id, kept_asset_id, kept_asset_name, merged_asset_id, merged_asset_name,
-			correlation_type, correlation_value, action, old_name, new_name, source, created_at
+			correlation_type, correlation_value, action, old_name, new_name, source, created_at,
+			COUNT(*) OVER () AS total_count
 		FROM asset_merge_log
-		WHERE tenant_id = $1 AND ` + scopeCond + `
+		WHERE ` + where + `
 		ORDER BY created_at DESC
 		LIMIT $2
 	`
 	rows, err := r.db.QueryContext(ctx, query, args...)
 	if err != nil {
-		return nil, err
+		return nil, 0, err
 	}
 	defer func() { _ = rows.Close() }()
 
 	var results []map[string]any
+	total := 0
 	cols, _ := rows.Columns()
 	for rows.Next() {
 		values := make([]any, len(cols))
@@ -437,10 +448,16 @@ func (r *AssetDedupRepository) GetMergeLog(ctx context.Context, tenantID string,
 			ptrs[i] = &values[i]
 		}
 		if err := rows.Scan(ptrs...); err != nil {
-			return nil, err
+			return nil, 0, err
 		}
 		row := make(map[string]any)
 		for i, col := range cols {
+			if col == "total_count" {
+				if n, ok := values[i].(int64); ok {
+					total = int(n)
+				}
+				continue
+			}
 			// lib/pq scans TEXT/VARCHAR columns into an interface{} as []byte.
 			// Left as-is, JSON-encoding turns every text field (asset names,
 			// reason, ...) into a base64 blob in the admin merge-log response.
@@ -454,7 +471,7 @@ func (r *AssetDedupRepository) GetMergeLog(ctx context.Context, tenantID string,
 		results = append(results, row)
 	}
 	if err := rows.Err(); err != nil {
-		return nil, err
+		return nil, 0, err
 	}
-	return results, nil
+	return results, total, nil
 }

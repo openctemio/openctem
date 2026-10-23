@@ -1,8 +1,8 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { useRouter } from 'next/navigation'
-import { ArrowLeft, Plus, Star, Trash2, Pencil, LayoutGrid, ExternalLink } from 'lucide-react'
+import { useRouter, useSearchParams } from 'next/navigation'
+import { ArrowLeft, Plus, Star, Trash2, Pencil, ExternalLink, LayoutDashboard } from 'lucide-react'
 import { Main } from '@/components/layout'
 import { ConfirmDialog } from '@/components/confirm-dialog'
 import { useTranslation } from '@/context/i18n-provider'
@@ -12,6 +12,7 @@ import { Badge } from '@/components/ui/badge'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
+import { uniqueDashboardName } from '@/features/dashboards/lib/unique-name'
 import { Skeleton } from '@/components/ui/skeleton'
 import { toast } from 'sonner'
 import { cn } from '@/lib/utils'
@@ -42,12 +43,17 @@ import type { DashboardWidget } from '@/features/dashboards/api/dashboards.types
  * open it to populate it.
  */
 export default function DashboardsPage() {
-  const [editId, setEditId] = useState<string | null>(null)
+  // The edit form is part of the URL (`?edit=<id>`): Back returns to the list
+  // and the form can be linked to.
+  const router = useRouter()
+  const editId = useSearchParams()?.get('edit') || null
 
   if (editId) {
-    return <DashboardEditForm id={editId} onBack={() => setEditId(null)} />
+    return <DashboardEditForm id={editId} onBack={() => router.push('/dashboards')} />
   }
-  return <DashboardsList onEdit={setEditId} />
+  return (
+    <DashboardsList onEdit={(id) => router.push(`/dashboards?edit=${encodeURIComponent(id)}`)} />
+  )
 }
 
 // ── Column-layout picker options ─────────────────────────────────────────────
@@ -94,9 +100,16 @@ function DashboardsList({ onEdit }: { onEdit: (id: string) => void }) {
   const createFrom = async (name: string, layout: DashboardWidget[], columns = 2) => {
     setBusy(true)
     try {
-      const d = await createDashboard({ name, layout, columns })
+      const d = await createDashboard({
+        name: uniqueDashboardName(
+          name,
+          saved.map((x) => x.name),
+          name
+        ),
+        layout,
+        columns,
+      })
       await revalidate()
-      toast.success(t('dashboards.manage.created', 'Created "{name}"', { name }))
       onEdit(d.id)
     } catch (e) {
       toast.error(getErrorMessage(e))
@@ -105,9 +118,9 @@ function DashboardsList({ onEdit }: { onEdit: (id: string) => void }) {
     }
   }
 
-  const openView = (id: string) => {
+  const openView = (id: string, customize = false) => {
     rememberChoice(id)
-    router.push('/')
+    router.push(customize ? '/?customize=1' : '/')
   }
 
   const remove = async (id: string, name: string) => {
@@ -125,7 +138,6 @@ function DashboardsList({ onEdit }: { onEdit: (id: string) => void }) {
     try {
       await setDefaultDashboard(id)
       await revalidate()
-      toast.success(t('dashboards.actions.defaultSet', 'Default dashboard set'))
     } catch (e) {
       toast.error(getErrorMessage(e))
     }
@@ -159,10 +171,7 @@ function DashboardsList({ onEdit }: { onEdit: (id: string) => void }) {
           {DASHBOARD_TEMPLATES.map((tpl) => (
             <Card key={tpl.key} className="flex flex-col">
               <CardHeader className="pb-2">
-                <CardTitle className="flex items-center gap-2 text-base">
-                  <LayoutGrid className="h-4 w-4 text-muted-foreground" aria-hidden />
-                  {t(templateNameKey(tpl.key), tpl.key)}
-                </CardTitle>
+                <CardTitle className="text-base">{t(templateNameKey(tpl.key), tpl.key)}</CardTitle>
                 <CardDescription>{t(templateDescriptionKey(tpl.key), '')}</CardDescription>
               </CardHeader>
               <CardContent className="mt-auto flex items-center justify-between">
@@ -170,7 +179,9 @@ function DashboardsList({ onEdit }: { onEdit: (id: string) => void }) {
                   {t('dashboards.manage.widgetCount', '{n} widgets', { n: tpl.widgets.length })}
                 </span>
                 <Button
+                  type="button"
                   size="sm"
+                  variant="outline"
                   disabled={busy}
                   onClick={() =>
                     createFrom(
@@ -213,13 +224,14 @@ function DashboardsList({ onEdit }: { onEdit: (id: string) => void }) {
                 <CardHeader className="pb-2">
                   <CardTitle className="flex items-center gap-2 text-base">
                     <button
+                      type="button"
                       className="truncate text-start hover:underline"
                       onClick={() => openView(d.id)}
                     >
                       {d.name}
                     </button>
                     {d.is_default && (
-                      <Badge variant="secondary" className="shrink-0 gap-1 text-[10px]">
+                      <Badge variant="secondary" className="shrink-0 gap-1">
                         <Star className="h-3 w-3" aria-hidden />{' '}
                         {t('dashboards.switcher.default', 'Default')}
                       </Badge>
@@ -237,26 +249,42 @@ function DashboardsList({ onEdit }: { onEdit: (id: string) => void }) {
                     })}
                   </span>
                   <div className="flex gap-1">
-                    <Button size="sm" onClick={() => openView(d.id)}>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      onClick={() => openView(d.id)}
+                    >
                       <ExternalLink className="me-2 h-4 w-4" aria-hidden />{' '}
                       {t('dashboards.manage.open', 'Open')}
                     </Button>
-                    <Button size="sm" variant="outline" onClick={() => onEdit(d.id)}>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      onClick={() => openView(d.id, true)}
+                    >
+                      <LayoutDashboard className="me-2 h-4 w-4" aria-hidden />{' '}
+                      {t('dashboards.manage.customize', 'Customize')}
+                    </Button>
+                    <Button type="button" size="sm" variant="outline" onClick={() => onEdit(d.id)}>
                       <Pencil className="me-2 h-4 w-4" aria-hidden />{' '}
                       {t('dashboards.manage.edit', 'Edit')}
                     </Button>
                     {!d.is_default && (
                       <Button
+                        type="button"
                         size="icon"
                         variant="ghost"
                         title={t('dashboards.actions.setDefault', 'Set as my default')}
                         aria-label={t('dashboards.actions.setDefault', 'Set as my default')}
                         onClick={() => makeDefault(d.id)}
                       >
-                        <Star className="h-4 w-4" />
+                        <Star className="h-4 w-4" aria-hidden />
                       </Button>
                     )}
                     <Button
+                      type="button"
                       size="icon"
                       variant="ghost"
                       title={t('confirm.delete', 'Delete')}
@@ -265,7 +293,7 @@ function DashboardsList({ onEdit }: { onEdit: (id: string) => void }) {
                       })}
                       onClick={() => setPendingDelete({ id: d.id, name: d.name })}
                     >
-                      <Trash2 className="h-4 w-4" />
+                      <Trash2 className="h-4 w-4" aria-hidden />
                     </Button>
                   </div>
                 </CardContent>
@@ -330,7 +358,6 @@ function DashboardEditForm({ id, onBack }: { id: string; onBack: () => void }) {
       const layout: DashboardWidget[] = data.layout
       await updateDashboard(id, { name: trimmed, description: description.trim(), columns, layout })
       await revalidate()
-      toast.success(t('dashboards.editor.saved', 'Dashboard saved'))
       if (thenOpen) {
         rememberChoice(id)
         router.push('/')
@@ -394,82 +421,76 @@ function DashboardEditForm({ id, onBack }: { id: string; onBack: () => void }) {
 
       <div className="mx-auto mt-2 w-full max-w-3xl space-y-6">
         {/* General */}
-        <Card>
-          <CardHeader className="pb-3">
-            <CardTitle className="text-base">{t('dashboards.manage.general', 'General')}</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="space-y-1.5">
-              <label htmlFor="dash-name" className="text-sm font-medium">
-                {t('dashboards.manage.name', 'Name')} <span className="text-destructive">*</span>
-              </label>
-              <Input
-                id="dash-name"
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-                maxLength={100}
-                placeholder={t(
-                  'dashboards.manage.namePlaceholder',
-                  'For example: Executive overview'
-                )}
-              />
-            </div>
-            <div className="space-y-1.5">
-              <label htmlFor="dash-desc" className="text-sm font-medium">
-                {t('dashboards.manage.descriptionLabel', 'Description')}
-              </label>
-              <Textarea
-                id="dash-desc"
-                value={description}
-                onChange={(e) => setDescription(e.target.value)}
-                maxLength={500}
-                rows={3}
-                placeholder={t(
-                  'dashboards.manage.descriptionPlaceholder',
-                  'What is this dashboard for? (optional)'
-                )}
-              />
-              <p className="text-xs text-muted-foreground">{description.length}/500</p>
-            </div>
-          </CardContent>
-        </Card>
+        <section className="space-y-4">
+          <h2 className="text-base font-medium">{t('dashboards.manage.general', 'General')}</h2>
+          <div className="space-y-1.5">
+            <label htmlFor="dash-name" className="text-sm font-medium">
+              {t('dashboards.manage.name', 'Name')} <span className="text-destructive">*</span>
+            </label>
+            <Input
+              id="dash-name"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              maxLength={100}
+              placeholder={t(
+                'dashboards.manage.namePlaceholder',
+                'For example: Executive overview'
+              )}
+            />
+          </div>
+          <div className="space-y-1.5">
+            <label htmlFor="dash-desc" className="text-sm font-medium">
+              {t('dashboards.manage.descriptionLabel', 'Description')}
+            </label>
+            <Textarea
+              id="dash-desc"
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+              maxLength={500}
+              rows={3}
+              placeholder={t(
+                'dashboards.manage.descriptionPlaceholder',
+                'What is this dashboard for? (optional)'
+              )}
+            />
+            <p className="text-xs text-muted-foreground">{description.length}/500</p>
+          </div>
+        </section>
 
         {/* Layout */}
-        <Card>
-          <CardHeader className="pb-3">
-            <CardTitle className="text-base">{t('dashboards.manage.layout', 'Layout')}</CardTitle>
-            <CardDescription>
+        <section className="space-y-3 border-t pt-6">
+          <div>
+            <h2 className="text-base font-medium">{t('dashboards.manage.layout', 'Layout')}</h2>
+            <p className="text-sm text-muted-foreground">
               {t(
                 'dashboards.manage.layoutHint',
                 'How many columns the dashboard is arranged in. Each widget keeps its share of the row.'
               )}
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="flex flex-wrap gap-3">
-              {LAYOUT_OPTIONS.map((cols) => (
-                <button
-                  key={cols}
-                  type="button"
-                  onClick={() => setColumns(cols)}
-                  className="flex flex-col items-center gap-1.5"
-                  aria-pressed={columns === cols}
-                  aria-label={t('dashboards.manage.columns', '{n} columns', { n: cols })}
+            </p>
+          </div>
+          <div className="flex flex-wrap gap-3">
+            {LAYOUT_OPTIONS.map((cols) => (
+              <button
+                key={cols}
+                type="button"
+                onClick={() => setColumns(cols)}
+                className="flex flex-col items-center gap-1.5"
+                aria-pressed={columns === cols}
+                aria-label={t('dashboards.manage.columns', '{n} columns', { n: cols })}
+              >
+                <LayoutPreview cols={cols} active={columns === cols} />
+                <span
+                  className={cn(
+                    'text-xs',
+                    columns === cols ? 'font-medium text-foreground' : 'text-muted-foreground'
+                  )}
                 >
-                  <LayoutPreview cols={cols} active={columns === cols} />
-                  <span
-                    className={cn(
-                      'text-xs',
-                      columns === cols ? 'font-medium text-foreground' : 'text-muted-foreground'
-                    )}
-                  >
-                    {cols}
-                  </span>
-                </button>
-              ))}
-            </div>
-          </CardContent>
-        </Card>
+                  {cols}
+                </span>
+              </button>
+            ))}
+          </div>
+        </section>
       </div>
     </Main>
   )

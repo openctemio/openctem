@@ -1,6 +1,7 @@
 'use client'
 
 import { useMemo } from 'react'
+import { useTranslation } from '@/context/i18n-provider'
 import type { ColumnDef } from '@tanstack/react-table'
 import { Main } from '@/components/layout'
 import {
@@ -38,58 +39,89 @@ function StatsCardSkeleton() {
   )
 }
 
-const buColumns: ColumnDef<BusinessUnit>[] = [
-  {
-    accessorKey: 'name',
-    header: ({ column }) => <DataTableColumnHeader column={column} title="Business unit" />,
-    cell: ({ row }) => (
-      <div className="min-w-0">
-        <span className="font-medium">{row.original.name}</span>
-        {row.original.description && (
-          <p className="line-clamp-1 text-xs text-muted-foreground">{row.original.description}</p>
-        )}
-      </div>
-    ),
-  },
-  {
-    accessorKey: 'owner_name',
-    header: 'Owner',
-    cell: ({ row }) => (
-      <span className="text-sm text-muted-foreground">{row.original.owner_name || '—'}</span>
-    ),
-  },
-  {
-    accessorKey: 'asset_count',
-    header: ({ column }) => <DataTableColumnHeader column={column} title="Assets" />,
-    cell: ({ row }) => <span className="tabular-nums">{row.original.asset_count}</span>,
-  },
-  {
-    accessorKey: 'critical_finding_count',
-    header: ({ column }) => <DataTableColumnHeader column={column} title="Critical findings" />,
-    cell: ({ row }) => {
-      const n = row.original.critical_finding_count
-      return (
-        <span className={n > 0 ? 'font-medium tabular-nums text-destructive' : 'tabular-nums'}>
-          {n}
-        </span>
-      )
+type TFn = ReturnType<typeof useTranslation>['t']
+
+function buildColumns(t: TFn): ColumnDef<BusinessUnit>[] {
+  return [
+    {
+      accessorKey: 'name',
+      header: ({ column }) => (
+        <DataTableColumnHeader
+          column={column}
+          title={t('prioritization.businessImpact.col.unit', 'Business unit')}
+        />
+      ),
+      cell: ({ row }) => (
+        <div className="min-w-0">
+          <span className="font-medium">{row.original.name}</span>
+          {row.original.description && (
+            <p className="line-clamp-1 text-xs text-muted-foreground">{row.original.description}</p>
+          )}
+        </div>
+      ),
     },
-  },
-  {
-    accessorKey: 'finding_count',
-    header: ({ column }) => <DataTableColumnHeader column={column} title="Findings" />,
-    cell: ({ row }) => <span className="tabular-nums">{row.original.finding_count}</span>,
-  },
-  {
-    accessorKey: 'avg_risk_score',
-    header: ({ column }) => <DataTableColumnHeader column={column} title="Avg risk" />,
-    cell: ({ row }) => (
-      <RiskScoreBadge score={Number((row.original.avg_risk_score || 0).toFixed(1))} size="sm" />
-    ),
-  },
-]
+    {
+      accessorKey: 'owner_name',
+      header: t('prioritization.businessImpact.col.owner', 'Owner'),
+      cell: ({ row }) => (
+        <span className="text-sm text-muted-foreground">{row.original.owner_name || '—'}</span>
+      ),
+    },
+    {
+      accessorKey: 'asset_count',
+      header: ({ column }) => (
+        <DataTableColumnHeader
+          column={column}
+          title={t('prioritization.businessImpact.col.assets', 'Assets')}
+        />
+      ),
+      cell: ({ row }) => <span className="tabular-nums">{row.original.asset_count}</span>,
+    },
+    {
+      accessorKey: 'critical_finding_count',
+      header: ({ column }) => (
+        <DataTableColumnHeader
+          column={column}
+          title={t('prioritization.businessImpact.col.critical', 'Critical findings')}
+        />
+      ),
+      cell: ({ row }) => {
+        const n = row.original.critical_finding_count
+        return (
+          <span className={n > 0 ? 'font-medium tabular-nums text-destructive' : 'tabular-nums'}>
+            {n}
+          </span>
+        )
+      },
+    },
+    {
+      accessorKey: 'finding_count',
+      header: ({ column }) => (
+        <DataTableColumnHeader
+          column={column}
+          title={t('prioritization.businessImpact.col.findings', 'Findings')}
+        />
+      ),
+      cell: ({ row }) => <span className="tabular-nums">{row.original.finding_count}</span>,
+    },
+    {
+      accessorKey: 'avg_risk_score',
+      header: ({ column }) => (
+        <DataTableColumnHeader
+          column={column}
+          title={t('prioritization.businessImpact.col.risk', 'Avg risk')}
+        />
+      ),
+      cell: ({ row }) => (
+        <RiskScoreBadge score={Number((row.original.avg_risk_score || 0).toFixed(1))} size="sm" />
+      ),
+    },
+  ]
+}
 
 export default function BusinessImpactPage() {
+  const { t } = useTranslation()
+  const buColumns = useMemo(() => buildColumns(t), [t])
   const { currentTenant } = useTenant()
   const { stats, isLoading: statsLoading } = useDashboardStats(currentTenant?.id || null)
   const { stats: assetStats, isLoading: assetStatsLoading } = useAssetStats()
@@ -135,8 +167,11 @@ export default function BusinessImpactPage() {
   return (
     <Main>
       <PageHeader
-        title="Business impact"
-        description="Where vulnerabilities hit the business hardest — by asset criticality, crown jewel and business unit."
+        title={t('prioritization.businessImpact.title', 'Business impact')}
+        description={t(
+          'prioritization.businessImpact.description',
+          'Where vulnerabilities hit the business hardest, by asset criticality, crown jewel and business unit.'
+        )}
       />
 
       <div className="mt-5 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
@@ -145,29 +180,45 @@ export default function BusinessImpactPage() {
         ) : (
           <>
             <StatsCard
-              title="Assets"
+              title={t('prioritization.businessImpact.stat.assets', 'Assets')}
               value={assetStats.total}
               icon={Activity}
-              description={`${assetStats.withFindings} with findings`}
+              description={t(
+                'prioritization.businessImpact.stat.withFindings',
+                '{count} with findings',
+                { count: assetStats.withFindings }
+              )}
             />
             <StatsCard
-              title="Critical findings"
+              title={t('prioritization.businessImpact.stat.critical', 'Critical findings')}
               value={criticalFindings}
               icon={AlertTriangle}
-              description={`${highFindings} high severity`}
+              description={t(
+                'prioritization.businessImpact.stat.highSeverity',
+                '{count} high severity',
+                { count: highFindings }
+              )}
               valueClassName={criticalFindings > 0 ? 'text-destructive' : undefined}
             />
             <StatsCard
-              title="Critical assets"
+              title={t('prioritization.businessImpact.stat.criticalAssets', 'Critical assets')}
               value={criticalAssets}
               icon={Shield}
-              description={`${assetStats.highRiskCount} high-risk (score ≥ 70)`}
+              description={t(
+                'prioritization.businessImpact.stat.highRisk',
+                '{count} high-risk (score ≥ 70)',
+                {
+                  count: assetStats.highRiskCount,
+                }
+              )}
             />
             <StatsCard
-              title="Average CVSS"
+              title={t('prioritization.businessImpact.stat.cvss', 'Average CVSS')}
               value={stats.findings.averageCvss.toFixed(1)}
               icon={BarChart3}
-              description={`${stats.findings.total} findings`}
+              description={t('prioritization.businessImpact.stat.findings', '{count} findings', {
+                count: stats.findings.total,
+              })}
             />
           </>
         )}
@@ -176,8 +227,15 @@ export default function BusinessImpactPage() {
       <div className="mt-5 grid grid-cols-1 gap-5 lg:grid-cols-3">
         <Card>
           <CardHeader>
-            <CardTitle className="text-base">Asset criticality</CardTitle>
-            <CardDescription>How your assets spread across criticality levels.</CardDescription>
+            <CardTitle className="text-base">
+              {t('prioritization.businessImpact.criticality.title', 'Asset criticality')}
+            </CardTitle>
+            <CardDescription>
+              {t(
+                'prioritization.businessImpact.criticality.description',
+                'How your assets spread across criticality levels.'
+              )}
+            </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
             {assetStatsLoading
@@ -194,7 +252,7 @@ export default function BusinessImpactPage() {
                         <span
                           className={`size-2 shrink-0 rounded-full ${CRITICALITY_DOT_COLORS[level]}`}
                         />
-                        {CRITICALITY_LABELS[level]}
+                        {t(`criticality.${level}`, CRITICALITY_LABELS[level])}
                       </span>
                       <span className="text-sm font-semibold tabular-nums">
                         {count}{' '}
@@ -211,9 +269,17 @@ export default function BusinessImpactPage() {
 
         <Card className="lg:col-span-2">
           <CardHeader>
-            <CardTitle className="text-base">Crown jewels</CardTitle>
+            <CardTitle className="text-base">
+              {t('prioritization.businessImpact.crown.title', 'Crown jewels')}
+            </CardTitle>
             <CardDescription>
-              Highest-risk crown-jewel assets ({crownData?.total ?? 0} in total).
+              {t(
+                'prioritization.businessImpact.crown.description',
+                'Highest-risk crown-jewel assets ({total} in total).',
+                {
+                  total: crownData?.total ?? 0,
+                }
+              )}
             </CardDescription>
           </CardHeader>
           <CardContent>
@@ -226,8 +292,11 @@ export default function BusinessImpactPage() {
             ) : topCrownJewels.length === 0 ? (
               <EmptyState
                 icon={Crown}
-                title="No crown jewels yet"
-                description="Mark assets as crown jewels from the Crown jewels page."
+                title={t('prioritization.businessImpact.crown.emptyTitle', 'No crown jewels yet')}
+                description={t(
+                  'prioritization.businessImpact.crown.emptyDescription',
+                  'Mark assets as crown jewels from the Crown jewels page.'
+                )}
                 card={false}
               />
             ) : (
@@ -240,7 +309,14 @@ export default function BusinessImpactPage() {
                     <div className="min-w-0">
                       <p className="truncate text-sm font-medium">{asset.name}</p>
                       <p className="text-xs text-muted-foreground capitalize">
-                        {asset.type} · {asset.finding_count ?? 0} findings
+                        {t(
+                          'prioritization.businessImpact.crown.meta',
+                          '{type} · {count} findings',
+                          {
+                            type: asset.type,
+                            count: asset.finding_count ?? 0,
+                          }
+                        )}
                       </p>
                     </div>
                     <RiskScoreBadge score={asset.risk_score ?? 0} size="sm" />
@@ -254,9 +330,17 @@ export default function BusinessImpactPage() {
 
       <section className="mt-5 space-y-3">
         <div>
-          <h2 className="text-base font-semibold">Business units</h2>
+          <h2 className="text-base font-semibold">
+            {t('prioritization.businessImpact.units.title', 'Business units')}
+          </h2>
           <p className="text-sm text-muted-foreground">
-            Risk by business area ({buData?.total ?? 0} units), riskiest first.
+            {t(
+              'prioritization.businessImpact.units.description',
+              'Risk by business area ({total} units), riskiest first.',
+              {
+                total: buData?.total ?? 0,
+              }
+            )}
           </p>
         </div>
         {buLoading ? (
@@ -268,16 +352,28 @@ export default function BusinessImpactPage() {
         ) : sortedUnits.length === 0 ? (
           <EmptyState
             icon={Building2}
-            title="No business units yet"
-            description="Create business units from the Scoping section."
+            title={t('prioritization.businessImpact.units.emptyTitle', 'No business units yet')}
+            description={t(
+              'prioritization.businessImpact.units.emptyDescription',
+              'Create business units from the Scoping section.'
+            )}
           />
         ) : (
           <DataTable
             columns={buColumns}
             data={sortedUnits}
-            searchPlaceholder="Search business units…"
-            emptyMessage="No business units match"
-            emptyDescription="Try a different search."
+            searchPlaceholder={t(
+              'prioritization.businessImpact.units.search',
+              'Search business units…'
+            )}
+            emptyMessage={t(
+              'prioritization.businessImpact.units.noMatch',
+              'No business units match'
+            )}
+            emptyDescription={t(
+              'prioritization.businessImpact.units.noMatchHint',
+              'Try a different search.'
+            )}
           />
         )}
       </section>

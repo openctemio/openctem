@@ -19,6 +19,7 @@ type fakeCIService struct {
 	CIAdminService
 	accepted  [][]byte
 	exports   []bool
+	pins      []*cirunapp.MappingPin
 	acceptErr error
 	run       *cirun.Run
 	exchanged string
@@ -37,12 +38,13 @@ func (f *fakeCIService) Authenticate(_ context.Context, token string) (*cirun.Ru
 	return nil, cirun.ErrRunNotFound
 }
 
-func (f *fakeCIService) AcceptUpload(_ context.Context, _ *cirun.Run, body []byte, export bool) (*cirunapp.UploadReceipt, error) {
+func (f *fakeCIService) AcceptUpload(_ context.Context, _ *cirun.Run, body []byte, export bool, pin *cirunapp.MappingPin) (*cirunapp.UploadReceipt, error) {
 	if f.acceptErr != nil {
 		return nil, f.acceptErr
 	}
 	f.accepted = append(f.accepted, body)
 	f.exports = append(f.exports, export)
+	f.pins = append(f.pins, pin)
 	return &cirunapp.UploadReceipt{UploadID: shared.NewID(), Status: "queued"}, nil
 }
 

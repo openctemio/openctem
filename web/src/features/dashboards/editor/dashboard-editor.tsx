@@ -40,6 +40,7 @@ import {
   X,
 } from 'lucide-react'
 import { toast } from 'sonner'
+import { ConfirmDialog } from '@/components/confirm-dialog'
 import { Button } from '@/components/ui/button'
 import {
   DropdownMenu,
@@ -150,6 +151,22 @@ export function DashboardEditor({ dashboard, kind, data, onExit }: DashboardEdit
   const cardRefs = useRef(new Map<string, HTMLDivElement>())
 
   const dirty = history.past.length > 0
+  const historyRef = useRef(history)
+  useEffect(() => {
+    historyRef.current = history
+  }, [history])
+  const [confirmDiscard, setConfirmDiscard] = useState(false)
+
+  // Leaving the page with unsaved changes asks the browser to confirm.
+  useEffect(() => {
+    if (!dirty) return
+    const guard = (e: BeforeUnloadEvent) => {
+      e.preventDefault()
+      e.returnValue = ''
+    }
+    window.addEventListener('beforeunload', guard)
+    return () => window.removeEventListener('beforeunload', guard)
+  }, [dirty])
   const set = useCallback((next: DashboardWidget[], message?: string) => {
     dispatch({ type: 'set', layout: withUids(next) })
     if (message) setAnnouncement(message)
@@ -177,10 +194,18 @@ export function DashboardEditor({ dashboard, kind, data, onExit }: DashboardEdit
       ops.remove(layout, i),
       t('dashboards.editor.removed', '{name} removed', { name: nameOf(w) })
     )
+    // The removal is the newest history step. If anything changed after it, a
+    // plain undo would revert that change instead, so the widget is put back
+    // at its index.
+    const stepsAfterRemoval = historyRef.current.past.length + 1
     toast(t('dashboards.editor.removed', '{name} removed', { name: nameOf(w) }), {
       action: {
         label: t('dashboards.editor.undo', 'Undo'),
-        onClick: () => dispatch({ type: 'undo' }),
+        onClick: () => {
+          const h = historyRef.current
+          if (h.past.length === stepsAfterRemoval) dispatch({ type: 'undo' })
+          else set(ops.insert(h.present, w, i))
+        },
       },
     })
   }
@@ -359,7 +384,12 @@ export function DashboardEditor({ dashboard, kind, data, onExit }: DashboardEdit
           <Plus className="me-1.5 h-4 w-4" aria-hidden />
           {t('dashboards.editor.add', 'Add widget')}
         </Button>
-        <Button variant="outline" size="sm" onClick={() => onExit(false)} disabled={saving}>
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => (dirty ? setConfirmDiscard(true) : onExit(false))}
+          disabled={saving}
+        >
           <X className="me-1.5 h-4 w-4" aria-hidden />
           {t('dashboards.config.cancel', 'Cancel')}
         </Button>
@@ -435,8 +465,25 @@ export function DashboardEditor({ dashboard, kind, data, onExit }: DashboardEdit
         onAddMetric={addMetric}
         onAddNote={addNote}
       />
+      <ConfirmDialog
+        open={confirmDiscard}
+        onOpenChange={setConfirmDiscard}
+        destructive
+        title={t('dashboards.editor.discardTitle', 'Discard your changes?')}
+        desc={t(
+          'dashboards.editor.discardDesc',
+          'The changes you made to this dashboard are lost if you leave without saving.'
+        )}
+        confirmText={t('dashboards.editor.discard', 'Discard changes')}
+        cancelBtnText={t('dashboards.editor.keepEditing', 'Keep editing')}
+        handleConfirm={() => {
+          setConfirmDiscard(false)
+          onExit(false)
+        }}
+      />
       <WidgetConfigPanel
         spec={editing?.spec ?? null}
+        initialValue={editing ? values.get(editing.uid) : undefined}
         onCancel={() => setEditing(null)}
         onApply={applyConfig}
       />
@@ -660,7 +707,9 @@ function EditorCard({
               >
                 <Trash2 className="me-2 h-4 w-4" aria-hidden />
                 {t('dashboards.editor.removeShort', 'Remove')}
-                <DropdownMenuShortcut>Del</DropdownMenuShortcut>
+                <DropdownMenuShortcut>
+                  {t('dashboards.editor.keyDelete', 'Del')}
+                </DropdownMenuShortcut>
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
