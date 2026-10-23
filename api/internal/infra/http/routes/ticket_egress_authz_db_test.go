@@ -157,6 +157,13 @@ func (h *egressHarness) seed() {
 			VALUES ($1::uuid, $2, $3, $4, 'nuclei', 'exposed-panel', 'hit', 'high', $1::text, 'confirmed')`,
 			f.id.String(), f.tenant.String(), f.asset.String(), f.source)
 	}
+	// The member is on the pentest finding's campaign, so the campaign gate
+	// admits them and the egress rule itself is what refuses the ticket.
+	campaign := shared.NewID()
+	h.exec(`INSERT INTO pentest_campaigns (id, tenant_id, name) VALUES ($1, $2, 'engagement')`, campaign.String(), h.tenantA.String())
+	h.exec(`INSERT INTO pentest_campaign_members (tenant_id, campaign_id, user_id, role) VALUES ($1, $2, $3, 'lead')`,
+		h.tenantA.String(), campaign.String(), h.member.String())
+	h.exec(`UPDATE findings SET pentest_campaign_id = $1 WHERE id = $2`, campaign.String(), h.pentestFinding.String())
 	// The member's data scope is asset A1 only.
 	h.exec(`INSERT INTO user_accessible_assets (user_id, tenant_id, asset_id, ownership_type) VALUES ($1, $2, $3, 'secondary')`,
 		h.member.String(), h.tenantA.String(), h.assetA1.String())
@@ -164,7 +171,12 @@ func (h *egressHarness) seed() {
 
 func (h *egressHarness) post(perms []permission.Permission, path, body string) (int, string) {
 	h.t.Helper()
-	req, err := http.NewRequestWithContext(context.Background(), http.MethodPost, h.srv.URL+path, strings.NewReader(body))
+	return h.send(http.MethodPost, perms, path, body)
+}
+
+func (h *egressHarness) send(method string, perms []permission.Permission, path, body string) (int, string) {
+	h.t.Helper()
+	req, err := http.NewRequestWithContext(context.Background(), method, h.srv.URL+path, strings.NewReader(body))
 	if err != nil {
 		h.t.Fatal(err)
 	}
@@ -225,6 +237,19 @@ func TestTicketEgress_PentestRefusedOnGenericRoute(t *testing.T) {
 	}
 	if uris.String != "" {
 		t.Fatalf("refused finding got a work item link: %q", uris.String)
+	}
+}
+
+func TestTicketEgress_UnlinkNeedsFixApply(t *testing.T) {
+	h := newEgressHarness(t)
+	path := "/api/v1/findings/" + h.inScope.String() + "/ticket-links/" + shared.NewID().String()
+	status, body := h.send(http.MethodDelete, teWritePerms, path, "")
+	if status != http.StatusForbidden || !strings.Contains(body, "findings:fix_apply") {
+		t.Fatalf("unlink without findings:fix_apply = %d (%s), want 403 naming the permission", status, body)
+	}
+	withFix := append([]permission.Permission{permission.FindingsFixApply}, teWritePerms...)
+	if status, body := h.send(http.MethodDelete, withFix, path, ""); status == http.StatusForbidden {
+		t.Fatalf("unlink with findings:fix_apply refused by the gate: %s", body)
 	}
 }
 

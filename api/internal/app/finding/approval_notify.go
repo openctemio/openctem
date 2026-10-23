@@ -179,7 +179,7 @@ func (s *VulnerabilityService) RemindApprovers(ctx context.Context, tenantID, ap
 	if a.BatchID != nil {
 		return nil, 0, vulnerability.ErrBatchMember
 	}
-	if err := s.dataScope.AssertFinding(ctx, tid, a.FindingID); err != nil {
+	if err := s.AssertFindingAccess(ctx, tid, a.FindingID); err != nil {
 		return nil, 0, err
 	}
 	now := time.Now()

@@ -1,0 +1,99 @@
+'use client'
+
+/**
+ * The one dashboard renderer: every widget of a layout, laid out in the
+ * dashboard's columns, drawn from the dashboard's stored snapshot. Each
+ * widget has its own error boundary, so one bad result never blanks the page.
+ */
+
+import { WidgetErrorBoundary, WidgetFrame } from '@/components/dashboard-kit'
+import { useTranslation } from '@/context/i18n-provider'
+import { cn } from '@/lib/utils'
+import type { Dashboard, DashboardWidget } from '../api/dashboards.types'
+import type { DashboardData, WidgetValue } from '../api/widget-data'
+import {
+  ROW_HEIGHT,
+  colSpanFor,
+  columnsClass,
+  gridColumnSpan,
+  widgetSpanClass,
+  normalizeColumns,
+  widgetRowSpan,
+} from '../layout'
+import { WidgetView } from './widget-view'
+
+export interface DashboardViewProps {
+  dashboard: Pick<Dashboard, 'layout' | 'columns'>
+  data: DashboardData | undefined
+  loading: boolean
+  /** The data request failed (every widget shows the error with Retry). */
+  failed?: boolean
+  onRetry?: () => void
+}
+
+/** The result of the widget at `index` of the layout. */
+function valueAt(data: DashboardData | undefined, index: number): WidgetValue | undefined {
+  return data?.widgets.find((w) => w.index === index)
+}
+
+export function DashboardView({ dashboard, data, loading, failed, onRetry }: DashboardViewProps) {
+  const { t } = useTranslation()
+  const cols = normalizeColumns(dashboard.columns)
+  const layout: DashboardWidget[] = dashboard.layout ?? []
+  if (layout.length === 0) {
+    return (
+      <div className="rounded-lg border border-dashed py-12 text-center text-sm text-muted-foreground">
+        {t(
+          'dashboards.view.empty',
+          'This dashboard has no widgets yet. Choose Customize to add some.'
+        )}
+      </div>
+    )
+  }
+  return (
+    <div
+      className={cn('grid gap-4', columnsClass(cols))}
+      style={{ gridAutoRows: `minmax(${ROW_HEIGHT}px, auto)` }}
+      data-columns={cols}
+    >
+      {layout.map((w, i) => {
+        const spec = w.config as { id?: string } | undefined
+        const title = t('dashboards.widget.failed', 'This widget could not be shown')
+        return (
+          <div
+            key={spec?.id ?? `${w.widget_type}-${i}`}
+            style={
+              {
+                '--span': gridColumnSpan(colSpanFor(w.w, cols)),
+                '--span-sm': gridColumnSpan(Math.min(2, colSpanFor(w.w, cols))),
+                gridRow: widgetRowSpan(w.h),
+              } as React.CSSProperties
+            }
+            className={cn('flex min-w-0 flex-col', widgetSpanClass(cols))}
+            data-widget-index={i}
+          >
+            <WidgetErrorBoundary
+              fallback={(reset) => (
+                <WidgetFrame title={title} state="error" onRetry={reset} className="flex-1" />
+              )}
+            >
+              <WidgetView
+                widget={w}
+                value={
+                  failed
+                    ? { id: '', index: i, widget_type: w.widget_type, state: 'error' }
+                    : valueAt(data, i)
+                }
+                asOf={data?.computed_at}
+                stale={data?.stale}
+                loading={loading && !data && !failed}
+                onRetry={onRetry}
+                className="flex-1"
+              />
+            </WidgetErrorBoundary>
+          </div>
+        )
+      })}
+    </div>
+  )
+}

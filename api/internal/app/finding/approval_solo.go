@@ -133,7 +133,7 @@ func (s *VulnerabilityService) SelfApproveSolo(ctx context.Context, in SelfAppro
 	if a.BatchID != nil {
 		return nil, vulnerability.ErrBatchMember
 	}
-	if err := s.dataScope.AssertFinding(ctx, tid, a.FindingID); err != nil {
+	if err := s.AssertFindingAccess(ctx, tid, a.FindingID); err != nil {
 		return nil, err
 	}
 	now := time.Now()

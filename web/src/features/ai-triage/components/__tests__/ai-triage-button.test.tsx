@@ -16,7 +16,7 @@ globalThis.ResizeObserver ??= class {
 
 let hasModule = true
 let config: Partial<AIConfig> | undefined
-let role = 'member'
+let perms: string[] = []
 const trigger = vi.fn()
 const mutateConfig = vi.fn()
 const toastError = vi.fn()
@@ -30,8 +30,8 @@ vi.mock('@/features/integrations/api/use-tenant-modules', () => ({
 vi.mock('@/hooks/use-websocket', () => ({
   useTriageChannel: () => ({ isSubscribed: false }),
 }))
-vi.mock('@/context/tenant-provider', () => ({
-  useTenant: () => ({ currentTenant: { id: 't1', slug: 'acme', role } }),
+vi.mock('@/context/permission-provider', () => ({
+  usePermissionsSafe: () => ({ hasPermission: (p: string) => perms.includes(p) }),
 }))
 vi.mock('../../api', () => ({
   useAIConfig: () => ({ data: config, isLoading: false, mutate: mutateConfig }),
@@ -43,7 +43,7 @@ describe('AITriageButton', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     hasModule = true
-    role = 'member'
+    perms = ['ai_triage:read', 'ai_triage:trigger']
     config = { isEnabled: true }
   })
 
@@ -53,44 +53,20 @@ describe('AITriageButton', () => {
     expect(container).toBeEmptyDOMElement()
   })
 
-  it('tells an administrator AI triage is off and links to Settings > AI', async () => {
-    role = 'admin'
-    config = { isEnabled: false, reason: 'not_enabled' }
-    render(<AITriageButton findingId="f1" />)
-    const button = screen.getByRole('button', { name: /AI triage/ })
-    expect(button).toHaveAttribute('aria-disabled', 'true')
-    await userEvent.click(button)
-    expect(screen.getByText(/Turn it on in Settings > AI/)).toBeInTheDocument()
-    expect(screen.getByRole('link', { name: /Open Settings > AI/ })).toHaveAttribute(
-      'href',
-      '/settings/ai'
-    )
-    expect(trigger).not.toHaveBeenCalled()
+  it.each([
+    ['not opted in', { isEnabled: false, reason: 'not_enabled' as const }],
+    ['no platform provider', { isEnabled: false, reason: 'platform_not_configured' as const }],
+    ['allowance used up', { isEnabled: false, reason: 'budget_exhausted' as const }],
+  ])('renders nothing when the organization cannot use AI triage (%s)', (_n, cfg) => {
+    config = cfg
+    const { container } = render(<AITriageButton findingId="f1" />)
+    expect(container).toBeEmptyDOMElement()
   })
 
-  it('tells a member to ask an administrator, without a settings link', async () => {
-    config = { isEnabled: false, reason: 'not_enabled' }
-    render(<AITriageButton findingId="f1" />)
-    await userEvent.click(screen.getByRole('button', { name: /AI triage/ }))
-    expect(screen.getByText(/Ask an organization administrator/)).toBeInTheDocument()
-    expect(screen.queryByRole('link')).toBeNull()
-    expect(screen.queryByText(/permission/i)).toBeNull()
-  })
-
-  it('says the platform has no AI provider, never "no permission"', async () => {
-    role = 'owner'
-    config = { isEnabled: false, reason: 'platform_not_configured' }
-    render(<AITriageButton findingId="f1" />)
-    await userEvent.click(screen.getByRole('button', { name: /AI triage/ }))
-    expect(screen.getByText(/A platform administrator sets up the AI provider/)).toBeInTheDocument()
-    expect(screen.queryByRole('link')).toBeNull()
-  })
-
-  it('says the monthly allowance is used up', async () => {
-    config = { isEnabled: false, reason: 'budget_exhausted' }
-    render(<AITriageButton findingId="f1" />)
-    await userEvent.click(screen.getByRole('button', { name: /AI triage/ }))
-    expect(screen.getByText(/monthly AI allowance/)).toBeInTheDocument()
+  it('renders nothing without the ai_triage:trigger permission', () => {
+    perms = ['ai_triage:read']
+    const { container } = render(<AITriageButton findingId="f1" />)
+    expect(container).toBeEmptyDOMElement()
   })
 
   it('starts an analysis when AI is available', async () => {

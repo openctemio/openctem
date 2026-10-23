@@ -73,6 +73,20 @@ cap per day; the preview shows the backlog before saving. Tightening a policy
 never closes or changes existing issues. Counter rows older than seven days are
 deleted by the same job.
 
+The job and the workflow path can reach the same finding together, so every
+create (workflow, a person's Create ticket, the release job) first takes a
+per-finding lock (a Postgres advisory lock keyed on tenant, integration and
+finding, on its own connection) and creates under it: the second caller waits,
+then finds the first one's issue instead of filing another. The lock holds a
+pool connection for a tracker call, so each API process allows at most 8 such
+creates at once and 2 per tenant; others wait (up to 2 minutes) without a
+connection, so a burst of workflow creates cannot exhaust the pool and one
+tenant's slow tracker cannot hold every slot. A run may take up to
+10 minutes (the controller's reconcile budget) because each create is a tracker
+call. Rarely, the caller that lost the race has already taken a daily-cap slot
+for an issue that was not created again; the counter is per day, so it
+self-corrects.
+
 ## API
 
 | Route | Gate | Notes |

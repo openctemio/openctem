@@ -39,6 +39,7 @@ import { getTriageCacheKey } from '@/features/ai-triage/api'
 import { useFindingApi } from '@/features/findings/api/use-findings-api'
 import { useFindingActivityFeed } from '@/features/findings/hooks/use-finding-activity-feed'
 import { useFindingTriage } from '@/features/findings/hooks/use-finding-triage'
+import { useFindingEvidenceCount } from '@/features/findings/hooks/use-finding-evidence-count'
 import type { FindingDetail } from '@/features/findings/types'
 import { toFindingDetail, findingShortName } from '@/features/findings/lib/finding-detail'
 import { FindingActivityView } from '@/features/findings/components/finding-activity'
@@ -46,6 +47,7 @@ import { isBreach, daysUntil } from '@/features/sla/lib/sla'
 import {
   DataFlowTab,
   EvidenceTab,
+  FindingApprovalBand,
   FindingFixCard,
   FindingHeader,
   FindingProperties,
@@ -56,9 +58,11 @@ import {
   OverviewTab,
   RelatedTab,
   RemediationTab,
+  VerificationPanel,
 } from '@/features/findings/components/detail'
 import { FromTaskCrumb } from '@/features/remediation-hub/components/from-task-crumb'
 import { FindingTaskBand } from '@/features/remediation-hub/components/finding-task-band'
+import { isLoadFailure } from '@/features/findings/components/detail/section-load-error'
 import { PentestDetailsTab } from '@/features/findings/components/detail/pentest-details-tab'
 import { getSourceLayout, getOrderedTabs } from '@/features/findings/config/source-layout'
 import '@/features/findings/config/register-layouts'
@@ -77,15 +81,6 @@ const TAB_LABEL: Record<string, string> = {
   'attack-path': 'Data flow',
   pentest: 'Pentest details',
   related: 'Related',
-}
-
-function evidenceCount(f: FindingDetail) {
-  return (
-    (f.contextSnippet || f.snippet ? 1 : 0) +
-    (f.stacks?.length || 0) +
-    (f.relatedLocations?.length || 0) +
-    (f.attachments?.length || 0)
-  )
 }
 
 function dataFlowCount(f: FindingDetail) {
@@ -132,7 +127,14 @@ export default function FindingDetailPage() {
   const id = params.id as string
   const { mutate } = useSWRConfig()
 
-  const { data: apiFinding, error, isLoading, mutate: mutateFinding } = useFindingApi(id)
+  // The page renders its own error state, so the generic error toast is off
+  // (a bad link must not also pop a raw error). 4xx is never retried.
+  const {
+    data: apiFinding,
+    error,
+    isLoading,
+    mutate: mutateFinding,
+  } = useFindingApi(id, { onError: () => {} })
 
   const handleTriageCompleted = () => {
     if (id) mutate(getTriageCacheKey(id))
@@ -146,6 +148,9 @@ export default function FindingDetailPage() {
   // also gives the Overview its latest AI triage.
   const feed = useFindingActivityFeed(id, {
     fromFinding: finding?.activities,
+    // Nothing else is requested until the finding itself loaded: a bad link
+    // costs one request, not three.
+    enabled: !!finding,
     onTriageActivity: handleTriageCompleted,
   })
 
@@ -153,6 +158,9 @@ export default function FindingDetailPage() {
     finding ?? { id, status: 'new', severity: 'medium', assignee: undefined },
     { onStatusChange: () => void mutateFinding(), onAssigneeChange: () => void mutateFinding() }
   )
+
+  // The Evidence tab's number counts every source the tab shows.
+  const evidenceTabCount = useFindingEvidenceCount(finding)
 
   // Tabs: the source layout decides order and which apply; Related is last.
   // Activity is not a tab (it opens the ActivityPanel); `?tab=activity` links
@@ -168,6 +176,37 @@ export default function FindingDetailPage() {
     return (
       <Main>
         <LoadingSkeleton />
+      </Main>
+    )
+  }
+
+  // A server or network failure is retryable and must not read as "not found".
+  // Missing and refused ids share one copy, so the page gives no oracle.
+  if (error && !finding && isLoadFailure(error)) {
+    return (
+      <Main>
+        <div
+          className="flex h-[50vh] items-center justify-center"
+          data-testid="finding-load-failed"
+        >
+          <div className="text-center">
+            <h1 className="text-2xl font-semibold">
+              {t('findings.detail.loadFailed.title', 'Could not load this finding')}
+            </h1>
+            <p className="mt-2 text-muted-foreground">
+              {t(
+                'findings.detail.loadFailed.description',
+                'Something went wrong on our side or the connection dropped. Try again.'
+              )}
+            </p>
+            <div className="mt-4 flex justify-center gap-2">
+              <Button onClick={() => void mutateFinding()}>{t('common.retry', 'Retry')}</Button>
+              <Button variant="outline" onClick={() => router.push('/findings')}>
+                {t('findings.detail.notFound.back', 'Back to findings')}
+              </Button>
+            </div>
+          </div>
+        </div>
       </Main>
     )
   }
@@ -218,6 +257,10 @@ export default function FindingDetailPage() {
           <div className="rounded-lg border bg-card p-3 lg:p-4">
             <FindingProperties finding={finding} triage={triage} />
           </div>
+          <VerificationPanel
+            findingId={finding.id}
+            className="mt-4 rounded-lg border bg-card p-3 lg:p-4"
+          />
           <FindingRetestSection
             finding={{ ...finding, status: triage.status }}
             className="mt-4 rounded-lg border bg-card p-3 lg:p-4"
@@ -240,6 +283,7 @@ export default function FindingDetailPage() {
         </aside>
 
         <div className="min-w-0 space-y-4 lg:col-start-1">
+          <FindingApprovalBand findingId={finding.id} />
           {slaLate && (
             <DetailCallout
               tone="destructive"
@@ -278,8 +322,8 @@ export default function FindingDetailPage() {
                 {tabs.map((key) => (
                   <TabsTrigger key={key} value={key}>
                     {TAB_LABEL[key] ? t(`findings.detail.tab.${key}`, TAB_LABEL[key]) : key}
-                    {key === 'evidence' && evidenceCount(finding) > 0 && (
-                      <TabsCount value={evidenceCount(finding)} />
+                    {key === 'evidence' && evidenceTabCount > 0 && (
+                      <TabsCount value={evidenceTabCount} />
                     )}
                     {key === 'attack-path' && <TabsCount value={dataFlowCount(finding)} />}
                   </TabsTrigger>
@@ -288,7 +332,7 @@ export default function FindingDetailPage() {
             </div>
 
             <TabsContent value="overview" className="mt-5">
-              <OverviewTab finding={finding} activities={feed.activities} />
+              <OverviewTab finding={finding} />
             </TabsContent>
             <TabsContent value="evidence" className="mt-5">
               <EvidenceTab evidence={finding.evidence} finding={finding} />

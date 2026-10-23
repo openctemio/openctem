@@ -55,7 +55,7 @@ func (r *memSLARepo) GetByAsset(_ context.Context, tenantID, assetID shared.ID) 
 func (r *memSLARepo) GetTenantDefault(_ context.Context, tenantID shared.ID) (*sladom.Policy, error) {
 	r.lookups++
 	for _, p := range r.policies {
-		if p.TenantID() == tenantID && p.AssetID() == nil && p.IsDefault() {
+		if p.TenantID() == tenantID && p.AssetID() == nil && p.IsDefault() && p.IsActive() {
 			return p, nil
 		}
 	}
@@ -107,6 +107,28 @@ func TestSLADeadlineFunc_MatchesPerFindingLookup(t *testing.T) {
 	}
 	if repo.lists != 1 {
 		t.Errorf("ListByTenant calls = %d, want 1", repo.lists)
+	}
+}
+
+// An inactive default never governs, with or without an asset: asset-less
+// findings fall back to the platform windows, not the inactive policy's.
+func TestSLADeadlineFunc_InactiveDefaultIgnored(t *testing.T) {
+	tenant := shared.NewID()
+	t0 := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	repo := &memSLARepo{policies: []*sladom.Policy{mkPolicy(tenant, nil, true, false, 1, t0)}}
+	svc := NewService(repo, logger.NewNop())
+	ctx := context.Background()
+	fn, err := svc.SLADeadlineFunc(ctx, tenant.String())
+	if err != nil {
+		t.Fatal(err)
+	}
+	detected := time.Date(2026, 3, 1, 0, 0, 0, 0, time.UTC)
+	for _, asset := range []string{"", shared.NewID().String()} {
+		got, _ := fn(asset, "", vulnerability.SeverityHigh, detected)
+		want, _ := deadlineForPriority(nil, "", vulnerability.SeverityHigh, detected)
+		if !got.Equal(want) {
+			t.Errorf("asset %q: deadline %v follows the inactive default, want platform %v", asset, got, want)
+		}
 	}
 }
 

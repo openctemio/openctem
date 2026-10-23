@@ -571,7 +571,7 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		AssetImport:            newAssetImportHandler(svc, log),
 		FindingImport:          newFindingImportHandler(cfg, repos, svc, log),
 		ReportSchedule:         newReportScheduleHandler(repos, svc, log),
-		UserDashboard:          handler.NewUserDashboardHandler(svc.UserDashboard, log),
+		UserDashboard:          handler.NewUserDashboardHandler(svc.UserDashboard, log).SetWidgetData(svc.DashboardWidgets),
 		SavedView:              handler.NewSavedViewHandler(svc.SavedView, log),
 
 		// Vulnerabilities & Exposures
@@ -623,6 +623,7 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		SensorContent:    handler.NewSensorContentHandler(svc.SensorContent, sensorHandler, log),
 		SensorResults:    handler.NewSensorResultHandler(svc.Ingest, sensorHandler, log),
 		ScanZone:         handler.NewScanZoneHandler(svc.ScanZone, svc.Scan, log),
+		ProxyPool:        handler.NewProxyPoolHandler(svc.ProxyPool, log),
 		ScanWindow:       newScanWindowHandler(svc, log),
 		FindingLifecycle: handler.NewFindingLifecycleHandler(svc.FindingLifecycle, log),
 		Ingest:           ingestHandler,

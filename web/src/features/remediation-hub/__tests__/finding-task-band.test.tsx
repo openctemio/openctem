@@ -68,8 +68,15 @@ describe('FindingTaskBand', () => {
     const { container, rerender } = render(<FindingTaskBand findingId="f1" />)
     expect(container).toBeEmptyDOMElement()
     tasksResult.data = undefined
-    tasksResult.error = new Error('module off')
+    tasksResult.error = Object.assign(new Error('module off'), { statusCode: 403 })
     rerender(<FindingTaskBand findingId="f1" />)
     expect(container).toBeEmptyDOMElement()
+  })
+
+  it('shows an error row, not an empty band, when the read fails (5xx)', () => {
+    tasksResult.data = undefined
+    tasksResult.error = Object.assign(new Error('boom'), { statusCode: 500 })
+    render(<FindingTaskBand findingId="f1" />)
+    expect(screen.getByTestId('section-load-error')).toBeInTheDocument()
   })
 })

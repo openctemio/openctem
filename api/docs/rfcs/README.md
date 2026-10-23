@@ -49,7 +49,7 @@ RFC-003 (asset source priority) was withdrawn on 2026-10-05; see
 | [RFC-031](RFC-031-managed-sensor-updates.md) | Managed sensor updates: scanner content now, signed images next | **Part A implemented** in the API (tenant content policy: `sensor_content_policies`, sensor content routes); **Part B Proposed**. |
 | [RFC-032](RFC-032-sensor-enrollment-and-identity.md) | Sensor enrollment, identity and declared capabilities | **Accepted** (2026-10-02; decisions in §10.1). |
 | [RFC-033](RFC-033-sensor-manifest.md) | Sensor manifest: register what a sensor is once, heartbeat a digest | **Implemented** (accepted 2026-10-02; decisions in §10.2). |
-| [RFC-034](RFC-034-sensor-network-egress.md) | Sensor network egress: proxies per scan zone | **Proposed** (2026-10-02). |
+| [RFC-034](RFC-034-sensor-network-egress.md) | Sensor network egress: proxies per scan zone | **Partly implemented** (proposed 2026-10-02; amended 2026-10-21 by §0, proxy pools). |
 | [RFC-035](RFC-035-sensor-control-plane-under-load.md) | Sensor control plane under load: heartbeats that survive the scans they supervise | **Accepted** (decisions 2026-10-02, §6.1; proposed in api#727). |
 | [RFC-036](RFC-036-easm.md) | External Attack Surface Management (EASM) | **Accepted** (2026-10-02; decisions O1–O10 in §12.3). |
 | [RFC-037](RFC-037-versioning-and-release-train.md) | Versioning rule and release train | **Accepted** (decisions 2026-10-02, §8; design PR #787). |
@@ -129,6 +129,8 @@ RFC-003 (asset source priority) was withdrawn on 2026-10-05; see
 | [RFC-118](RFC-118-rule-sources.md) | Rule sources for scans | Accepted (2026-10-19). |
 | [RFC-119](RFC-119-ai-triage-governance.md) | AI triage governance | Accepted (2026-10-19). |
 | [RFC-120](RFC-120-participants-and-watchers.md) | Participants and watchers on findings and remediation tasks | Accepted (2026-10-20). |
+| [RFC-121](RFC-121-bug-bounty-reports.md) | Bug-bounty and disclosure reports as findings | Accepted (2026-10-22). |
+| [RFC-123](RFC-123-identity-providers-and-sign-in-policy.md) | Identity provider catalogue and sign-in policy | Accepted (2026-10-22). |
 <!-- END RFC INDEX -->
 
 > Status legend: **Proposed** = under review · **Phase N done** = that phase shipped to `develop` · **Implemented** = fully landed.

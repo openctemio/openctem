@@ -252,9 +252,19 @@ const (
 	// another member's reaction from a finding comment (moderation). A
 	// person adding or removing their own reaction is not audited.
 	ActionFindingCommentReactionRemoved Action = "finding.comment_reaction_removed"
+	// ActionFindingCommentEdited records the author changing a finding
+	// comment: the previous and new text are kept in the activity trail.
+	ActionFindingCommentEdited Action = "finding.comment_edited"
+	// ActionFindingCommentDeleted records the author deleting a finding
+	// comment; the original text stays in the activity trail.
+	ActionFindingCommentDeleted Action = "finding.comment_deleted"
 	// ActionFindingDuplicateMarked records a user folding a finding into the
 	// one it duplicates (RFC-043 §9): which finding, into which, both statuses.
 	ActionFindingDuplicateMarked Action = "finding.duplicate_marked"
+	// ActionFindingBountyReportChanged records a change of a bug-bounty
+	// finding's report fields (RFC-121), with the old and new value of every
+	// changed field (reward and disclosure included).
+	ActionFindingBountyReportChanged Action = "finding.bounty_report_changed"
 	// ActionFindingsRefingerprinted records one run of the refingerprint
 	// command re-keying a tenant's findings to the current identity recipe:
 	// counts re-keyed and merged, and the run id. One entry per tenant per run.
@@ -422,6 +432,18 @@ const (
 	ActionScanZoneDeleted          Action = "scan_zone.deleted"
 	ActionScanZoneSensorAssigned   Action = "scan_zone.sensor_assigned"
 	ActionScanZoneSensorUnassigned Action = "scan_zone.sensor_unassigned"
+
+	// Proxy pool actions (RFC-034): every change to a pool, its endpoints or
+	// credentials, a sensor's network path, and the platform quarantining an
+	// endpoint.
+	ActionProxyPoolCreated            Action = "proxy_pool.created"
+	ActionProxyPoolUpdated            Action = "proxy_pool.updated"
+	ActionProxyPoolDeleted            Action = "proxy_pool.deleted"
+	ActionProxyPoolEndpointsChanged   Action = "proxy_pool.endpoints_changed"
+	ActionProxyPoolCredentialsChanged Action = "proxy_pool.credentials_changed"
+	ActionProxyPoolEndpointUpdated    Action = "proxy_pool.endpoint_updated"
+	ActionProxyPoolEndpointQuarantine Action = "proxy_pool.endpoint_quarantined"
+	ActionSensorNetworkPathChanged    Action = "sensor.network_path_changed"
 
 	// API key (oct_) actions — tenant-scoped programmatic credentials.
 	ActionAPIKeyCreated Action = "api_key.created"
@@ -795,7 +817,7 @@ func (a Action) IsValid() bool {
 		ActionFindingTicketLinked, ActionFindingTicketUnlinked,
 		ActionFindingRetestRequested, ActionFindingEvidenceRevealed, ActionFindingVerificationChecklistUpdated, ActionFindingClassified,
 		ActionFindingRetestCheckSaved, ActionFindingRetestCheckRemoved, ActionFindingRetestCheckApproved,
-		ActionFindingCommentReactionRemoved, ActionFindingDuplicateMarked,
+		ActionFindingCommentReactionRemoved, ActionFindingCommentEdited, ActionFindingCommentDeleted, ActionFindingDuplicateMarked, ActionFindingBountyReportChanged,
 		ActionFindingsRefingerprinted, ActionAssetsMerged,
 		ActionFindingSeverityChanged, ActionFindingSeverityRequested, ActionFindingSeverityRequestClosed,
 		ActionBranchCreated, ActionBranchUpdated, ActionBranchDeleted, ActionBranchScanned, ActionBranchSetDefault,
@@ -820,6 +842,9 @@ func (a Action) IsValid() bool {
 		ActionIntegrationSyncRequested,
 		ActionScanZoneCreated, ActionScanZoneUpdated, ActionScanZoneDeleted,
 		ActionScanZoneSensorAssigned, ActionScanZoneSensorUnassigned,
+		ActionProxyPoolCreated, ActionProxyPoolUpdated, ActionProxyPoolDeleted, ActionProxyPoolEndpointsChanged,
+		ActionProxyPoolCredentialsChanged, ActionProxyPoolEndpointUpdated, ActionProxyPoolEndpointQuarantine,
+		ActionSensorNetworkPathChanged,
 		ActionAPIKeyCreated, ActionAPIKeyRevoked, ActionAPIKeyDeleted,
 		ActionCredentialCreated, ActionCredentialUpdated, ActionCredentialDeleted, ActionCredentialAccessed,
 		ActionCredentialRevealed,
@@ -924,7 +949,7 @@ func (a Action) Category() string {
 		ActionFindingTriaged, ActionFindingAssigned, ActionFindingUnassigned, ActionFindingCommented, ActionFindingBulkUpdated,
 		ActionFindingEvidenceAdded, ActionFindingEvidenceDeleted, ActionFindingRemediationStepAdded,
 		ActionFindingTicketLinked, ActionFindingTicketUnlinked,
-		ActionFindingRetestRequested, ActionFindingEvidenceRevealed, ActionFindingVerificationChecklistUpdated, ActionFindingClassified, ActionFindingCommentReactionRemoved, ActionFindingDuplicateMarked,
+		ActionFindingRetestRequested, ActionFindingEvidenceRevealed, ActionFindingVerificationChecklistUpdated, ActionFindingClassified, ActionFindingCommentReactionRemoved, ActionFindingCommentEdited, ActionFindingCommentDeleted, ActionFindingDuplicateMarked, ActionFindingBountyReportChanged,
 		ActionFindingRetestCheckSaved, ActionFindingRetestCheckRemoved, ActionFindingRetestCheckApproved,
 		ActionFindingsRefingerprinted,
 		ActionFindingSeverityChanged, ActionFindingSeverityRequested, ActionFindingSeverityRequestClosed:
@@ -958,6 +983,11 @@ func (a Action) Category() string {
 	case ActionScanZoneCreated, ActionScanZoneUpdated, ActionScanZoneDeleted,
 		ActionScanZoneSensorAssigned, ActionScanZoneSensorUnassigned:
 		return "scan_zone"
+	case ActionProxyPoolCreated, ActionProxyPoolUpdated, ActionProxyPoolDeleted, ActionProxyPoolEndpointsChanged,
+		ActionProxyPoolCredentialsChanged, ActionProxyPoolEndpointUpdated, ActionProxyPoolEndpointQuarantine:
+		return "proxy_pool"
+	case ActionSensorNetworkPathChanged:
+		return "sensor"
 	case ActionIntegrationSyncRequested:
 		return "integration"
 	case ActionAPIKeyCreated, ActionAPIKeyRevoked, ActionAPIKeyDeleted:
@@ -1054,6 +1084,7 @@ const (
 	ResourceTypeToken          ResourceType = "token"
 	ResourceTypeSensor         ResourceType = "sensor"
 	ResourceTypeScanZone       ResourceType = "scan_zone"
+	ResourceTypeProxyPool      ResourceType = "proxy_pool"
 	ResourceTypeGroup          ResourceType = "group"
 	ResourceTypePermissionSet  ResourceType = "permission_set"
 	ResourceTypeRole           ResourceType = "role"
@@ -1118,7 +1149,7 @@ func (r ResourceType) IsValid() bool {
 		ResourceTypeInvitation, ResourceTypeRepository, ResourceTypeBranch,
 		ResourceTypeComponent, ResourceTypeVulnerability, ResourceTypeFinding,
 		ResourceTypeFindingComment, ResourceTypeSLAPolicy, ResourceTypeSavedView, ResourceTypeScan,
-		ResourceTypeAsset, ResourceTypeSettings, ResourceTypeToken, ResourceTypeSensor, ResourceTypeScanZone,
+		ResourceTypeAsset, ResourceTypeSettings, ResourceTypeToken, ResourceTypeSensor, ResourceTypeScanZone, ResourceTypeProxyPool,
 		ResourceTypeGroup, ResourceTypePermissionSet, ResourceTypeRole,
 		ResourceTypeScanWorkflow, ResourceTypeScanWorkflowStep, ResourceTypeScanRun, ResourceTypeScanConfig,
 		ResourceTypeScanProfile, ResourceTypeCommand,

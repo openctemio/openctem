@@ -914,6 +914,93 @@ func TestMFA_OrganizationPolicy(t *testing.T) {
 		}
 	})
 
+	// "SSO must prove MFA" (research/232 D9, threat T17): the tenant's own
+	// IdP passes the 2FA requirement only with signed MFA evidence.
+	ownIdPSession := func(t *testing.T, slug, role string, method session.AuthMethod, evidence, requireProof bool) (*mfaHarness, *tenant.Tenant, *auth.LoginResult) {
+		t.Helper()
+		h := newMFAHarness(t)
+		tn := newPolicyTenant(t, h.tenants, slug, false)
+		// The password login that seeds the session runs with no 2FA rule;
+		// the session is then turned into an own-IdP sign-in.
+		pre := tn.TypedSettings()
+		pre.Security.MFARequiredForAdmins = false
+		_ = tn.UpdateSettings(pre)
+		h.tenants.userMemberships = []tenant.UserMembership{{TenantID: tn.ID().String(), TenantSlug: tn.Slug(), TenantName: "Acme", Role: role}}
+		uid := h.seedUser(t, slug+"@example.com")
+		ms, _ := tenant.NewMembership(uid, tn.ID(), tenant.Role(role), nil)
+		h.tenants.memberships = append(h.tenants.memberships, ms)
+		res := h.login(t, slug+"@example.com")
+		sess := h.sessions.sessions[res.SessionID]
+		sess.SetAuthMethod(method)
+		sess.SetIDPTenant(tn.ID())
+		sess.SetMFAEvidence(evidence)
+		st := tn.TypedSettings()
+		st.Security.MFARequiredForAdmins = true // the default of a new organization
+		st.Security.SSORequireMFAEvidence = requireProof
+		_ = tn.UpdateSettings(st)
+		return h, tn, res
+	}
+	requireAll := func(tn *tenant.Tenant) {
+		st := tn.TypedSettings()
+		st.Security.MFARequired = true
+		_ = tn.UpdateSettings(st)
+	}
+
+	t.Run("TestSSORequireMFAEvidenceRefusesPwdOnly: own-IdP session without MFA evidence is refused at exchange and refresh", func(t *testing.T) {
+		for _, method := range []session.AuthMethod{session.AuthMethodSSO, session.AuthMethodSAML} {
+			h, tn, res := ownIdPSession(t, "proof-"+string(method), "member", method, false, false)
+			requireAll(tn)
+			// Before the switch: the own IdP owns the second factor.
+			ex, err := h.svc.ExchangeToken(context.Background(), auth.ExchangeTokenInput{RefreshToken: res.RefreshToken, TenantID: tn.ID().String()})
+			if err != nil {
+				t.Fatalf("%s: own-IdP session refused before the switch: %v", method, err)
+			}
+			st := tn.TypedSettings()
+			st.Security.SSORequireMFAEvidence = true
+			_ = tn.UpdateSettings(st)
+			_, err = h.svc.RefreshToken(context.Background(), auth.RefreshTokenInput{RefreshToken: ex.RefreshToken, TenantID: tn.ID().String()})
+			if !errors.Is(err, auth.ErrSSOMFAEvidenceRequired) {
+				t.Fatalf("%s: refresh without MFA evidence must be refused, got %v", method, err)
+			}
+			if !errors.Is(err, auth.ErrMFAEnrollmentRequired) {
+				t.Fatalf("%s: the refusal must also read as the 2FA refusal, got %v", method, err)
+			}
+		}
+	})
+
+	t.Run("TestSSORequireMFAEvidenceAcceptsAmrMfa: own-IdP session with OIDC amr=mfa or a SAML multi-factor context passes", func(t *testing.T) {
+		for _, method := range []session.AuthMethod{session.AuthMethodSSO, session.AuthMethodSAML} {
+			h, tn, res := ownIdPSession(t, "proven-"+string(method), "member", method, true, true)
+			requireAll(tn)
+			if _, err := h.svc.ExchangeToken(context.Background(), auth.ExchangeTokenInput{RefreshToken: res.RefreshToken, TenantID: tn.ID().String()}); err != nil {
+				t.Fatalf("%s: session with MFA evidence refused: %v", method, err)
+			}
+		}
+	})
+
+	t.Run("the switch applies only to members who must use 2FA", func(t *testing.T) {
+		// Admins-only rule, member role: no requirement, no proof needed.
+		h, tn, res := ownIdPSession(t, "member-only", "member", session.AuthMethodSSO, false, true)
+		if _, err := h.svc.ExchangeToken(context.Background(), auth.ExchangeTokenInput{RefreshToken: res.RefreshToken, TenantID: tn.ID().String()}); err != nil {
+			t.Fatalf("a member outside the 2FA requirement was refused: %v", err)
+		}
+		// Same rule, admin role: proof needed.
+		h2, tn2, res2 := ownIdPSession(t, "admin-proof", "admin", session.AuthMethodSSO, false, true)
+		if _, err := h2.svc.ExchangeToken(context.Background(), auth.ExchangeTokenInput{RefreshToken: res2.RefreshToken, TenantID: tn2.ID().String()}); !errors.Is(err, auth.ErrSSOMFAEvidenceRequired) {
+			t.Fatalf("an admin's own-IdP session without proof must be refused, got %v", err)
+		}
+	})
+
+	t.Run("another organization's IdP with MFA evidence never satisfies this organization", func(t *testing.T) {
+		h, tn, res := ownIdPSession(t, "cross", "member", session.AuthMethodSSO, true, true)
+		requireAll(tn)
+		other, _ := tenant.NewTenant("Other", "cross-other", "creator")
+		h.sessions.sessions[res.SessionID].SetIDPTenant(other.ID()) // issued by another tenant's IdP
+		if _, err := h.svc.ExchangeToken(context.Background(), auth.ExchangeTokenInput{RefreshToken: res.RefreshToken, TenantID: tn.ID().String()}); !errors.Is(err, auth.ErrMFAEnrollmentRequired) {
+			t.Fatalf("a foreign IdP's session must be refused, got %v", err)
+		}
+	})
+
 	// New organizations require 2FA for owners and administrators.
 	t.Run("new org: an unenrolled owner or admin is sent to enrollment, a member is not", func(t *testing.T) {
 		for role, wantEnroll := range map[string]bool{"owner": true, "admin": true, "member": false, "viewer": false} {

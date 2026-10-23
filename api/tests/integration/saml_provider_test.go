@@ -123,3 +123,80 @@ func TestSAMLService_Metadata(t *testing.T) {
 		t.Error("metadata is not a SAML EntityDescriptor")
 	}
 }
+
+// The certificate-expiry notice state is per organization, and replacing the
+// IdP certificate resets it so the new certificate gets its own alerts. A
+// disabled config is never swept.
+func TestSAMLProvider_CertificateNoticeState(t *testing.T) {
+	sqlDB := setupTestDB(t)
+	db := &postgres.DB{DB: sqlDB}
+	ctx := context.Background()
+
+	tenantA := createTestTenant(t, sqlDB, "saml-cert-a")
+	tenantB := createTestTenant(t, sqlDB, "saml-cert-b")
+	t.Cleanup(func() { cleanupTestData(sqlDB, tenantA); cleanupTestData(sqlDB, tenantB) })
+
+	repo := postgres.NewSAMLProviderRepository(db)
+	for _, tid := range []shared.ID{tenantA, tenantB} {
+		p := samlprovider.New(shared.NewID(), tid, "https://idp.example", "https://idp.example/sso", samlTestCertPEM(t))
+		p.SetEnabled(true)
+		if err := repo.Upsert(ctx, p); err != nil {
+			t.Fatalf("upsert: %v", err)
+		}
+	}
+	if err := repo.SetCertificateNotice(ctx, tenantA, 7); err != nil {
+		t.Fatalf("set notice: %v", err)
+	}
+	notice := func(tid shared.ID) *int {
+		recs, err := repo.ListEnabledCertificates(ctx, shared.ID{}, 10000)
+		if err != nil {
+			t.Fatalf("list: %v", err)
+		}
+		for _, r := range recs {
+			if r.TenantID == tid {
+				return r.NoticeDays
+			}
+		}
+		t.Fatalf("tenant %s not listed", tid)
+		return nil
+	}
+	if n := notice(tenantA); n == nil || *n != 7 {
+		t.Fatalf("tenant A notice: %v", n)
+	}
+	if n := notice(tenantB); n != nil {
+		t.Fatalf("tenant B must be untouched by tenant A's notice, got %d", *n)
+	}
+
+	// Same certificate re-saved (another field changed): notice kept.
+	same, _ := repo.GetByTenant(ctx, tenantA)
+	same.SetDefaultRole("member")
+	if err := repo.Upsert(ctx, same); err != nil {
+		t.Fatalf("re-save: %v", err)
+	}
+	if n := notice(tenantA); n == nil || *n != 7 {
+		t.Fatalf("re-saving the same certificate must keep the notice, got %v", n)
+	}
+
+	// New certificate: notice reset.
+	cur, _ := repo.GetByTenant(ctx, tenantA)
+	next := samlprovider.Reconstruct(cur.ID(), tenantA, cur.IDPEntityID(), cur.IDPSSOURL(), samlTestCertPEM(t),
+		cur.AllowedDomains(), cur.DefaultRole(), cur.AutoProvision(), true, cur.CreatedAt(), cur.UpdatedAt())
+	if err := repo.Upsert(ctx, next); err != nil {
+		t.Fatalf("rotate: %v", err)
+	}
+	if n := notice(tenantA); n != nil {
+		t.Fatalf("a new certificate must reset the notice, got %d", *n)
+	}
+
+	// Disabled: not swept.
+	next.SetEnabled(false)
+	if err := repo.Upsert(ctx, next); err != nil {
+		t.Fatalf("disable: %v", err)
+	}
+	recs, _ := repo.ListEnabledCertificates(ctx, shared.ID{}, 10000)
+	for _, r := range recs {
+		if r.TenantID == tenantA {
+			t.Fatal("a disabled SAML config must not be swept")
+		}
+	}
+}

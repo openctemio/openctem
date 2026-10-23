@@ -24,6 +24,7 @@ func TestSecurityChangeSeverity(t *testing.T) {
 		ForbidToolInsecureTLS:                     true,
 		PersonalAccounts:                          tenantdom.PersonalAccountsAllowedWithMFA,
 		JITRequiresApproval:                       true,
+		SSORequireMFAEvidence:                     true,
 	}
 	with := func(f func(s *tenantdom.SecuritySettings)) tenantdom.SecuritySettings {
 		s := base
@@ -48,6 +49,7 @@ func TestSecurityChangeSeverity(t *testing.T) {
 		{"tool insecure tls allowed again", with(func(s *tenantdom.SecuritySettings) { s.ForbidToolInsecureTLS = false }), audit.SeverityHigh},
 		{"personal accounts relaxed", with(func(s *tenantdom.SecuritySettings) { s.PersonalAccounts = tenantdom.PersonalAccountsAllowed }), audit.SeverityHigh},
 		{"jit approval off", with(func(s *tenantdom.SecuritySettings) { s.JITRequiresApproval = false }), audit.SeverityHigh},
+		{"sso mfa proof off", with(func(s *tenantdom.SecuritySettings) { s.SSORequireMFAEvidence = false }), audit.SeverityHigh},
 		{"sso exception added", with(func(s *tenantdom.SecuritySettings) {
 			s.SSOExceptions = []tenantdom.SSOException{{UserID: "u1"}}
 		}), audit.SeverityHigh},

@@ -13,6 +13,10 @@ import { useTranslation } from '@/context/i18n-provider'
 import { usePermissions } from '@/context/permission-provider'
 import { Permission } from '@/lib/permissions'
 import { cn } from '@/lib/utils'
+import {
+  SectionLoadError,
+  isLoadFailure,
+} from '@/features/findings/components/detail/section-load-error'
 import { useTasks } from '../api/use-remediation-hub'
 import { DeadlinePill, TaskStatePill } from './task-bits'
 
@@ -26,12 +30,21 @@ export function FindingTaskBand({
   const { t } = useTranslation()
   const { hasPermission } = usePermissions()
   const canRead = hasPermission(Permission.RemediationRead)
-  const { data, error } = useTasks(
+  const { data, error, mutate } = useTasks(
     { findingId, perPage: 3, sort: 'updated' },
     canRead && !!findingId
   )
   const tasks = data?.data ?? []
-  if (!canRead || error || tasks.length === 0) return null
+  if (!canRead) return null
+  if (error && isLoadFailure(error))
+    return (
+      <SectionLoadError
+        title={t('findings.detail.section.task', 'the remediation task')}
+        onRetry={() => void mutate()}
+        className={className}
+      />
+    )
+  if (error || tasks.length === 0) return null
   return (
     <div
       className={cn('bg-muted/40 flex flex-col gap-2 rounded-lg border p-3 text-sm', className)}

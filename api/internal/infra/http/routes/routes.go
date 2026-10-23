@@ -3,7 +3,10 @@
 package routes
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
+	"io"
 	"net/http"
 	"time"
 
@@ -16,11 +19,13 @@ import (
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
 	"github.com/openctemio/openctem/api/internal/infra/sensortransport"
 	"github.com/openctemio/openctem/api/internal/infra/websocket"
+	"github.com/openctemio/openctem/api/pkg/apierror"
 	moduledom "github.com/openctemio/openctem/api/pkg/domain/module"
 	"github.com/openctemio/openctem/api/pkg/domain/permission"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	signupdom "github.com/openctemio/openctem/api/pkg/domain/signup"
 	"github.com/openctemio/openctem/api/pkg/domain/tenant"
+	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
 	"github.com/openctemio/openctem/api/pkg/jwt"
 	"github.com/openctemio/openctem/api/pkg/keycloak"
 	"github.com/openctemio/openctem/api/pkg/logger"
@@ -131,6 +136,7 @@ type Handlers struct {
 	SensorContent *handler.SensorContentHandler // scanner content policy + refresh (RFC-031); nil without a database
 	SensorResults *handler.SensorResultHandler  // unsolicited results policy + quarantine review (RFC-040); nil without a database
 	ScanZone      *handler.ScanZoneHandler      // nil if not initialized (no database)
+	ProxyPool     *handler.ProxyPoolHandler     // nil if not initialized (no database)
 	ScanWindow    *handler.ScanWindowHandler    // nil if not initialized (no database)
 	// FindingLifecycle serves sub-statuses and lifecycle schemes (RFC-110); nil without a database.
 	FindingLifecycle *handler.FindingLifecycleHandler
@@ -997,6 +1003,9 @@ func Register(
 	if h.ScanZone != nil {
 		registerScanZoneRoutes(router, h.ScanZone, authMiddleware, userSync)
 	}
+	if h.ProxyPool != nil {
+		registerProxyPoolRoutes(router, h.ProxyPool, authMiddleware, userSync)
+	}
 	if h.ScanWindow != nil {
 		registerScanWindowRoutes(router, h.ScanWindow, authMiddleware, userSync)
 	}
@@ -1300,6 +1309,40 @@ var stepUpChecker middleware.RecentAuthChecker //nolint:gochecknoglobals // set 
 // 403 STEP_UP_REQUIRED. Mount it after the route's permission check.
 func requireStepUp() Middleware {
 	return middleware.RequireRecentAuth(stepUpChecker, authapp.StepUpWindow)
+}
+
+// requireStepUpWhenClosing is requireStepUp for POST /findings/bulk/status
+// only when the target status closes findings (resolved, false positive,
+// accepted, ...): moving findings between open states needs no
+// re-authentication. The body is read, then restored for the handler. It is
+// decoded the way the handler decodes it (first JSON value, trailing bytes
+// ignored) and the status normalised the way the service parses it (case,
+// spaces), so the gate and the handler always see the same target. Only a
+// valid open status skips the gate: a body that cannot be parsed, or names no
+// or an unknown status, is gated too (the handler then rejects it).
+func requireStepUpWhenClosing() Middleware {
+	gate := requireStepUp()
+	return func(next http.Handler) http.Handler {
+		gated := gate(next)
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, 1<<20))
+			if err != nil {
+				apierror.BadRequest("Invalid request body").WriteJSON(w)
+				return
+			}
+			r.Body = io.NopCloser(bytes.NewReader(body))
+			var req struct {
+				Status string `json:"status"`
+			}
+			if json.NewDecoder(bytes.NewReader(body)).Decode(&req) == nil {
+				if st, err := vulnerability.ParseFindingStatus(req.Status); err == nil && !st.IsClosed() {
+					next.ServeHTTP(w, r)
+					return
+				}
+			}
+			gated.ServeHTTP(w, r)
+		})
+	}
 }
 
 // tenantSecurityPolicyAdapter adapts tenant.Repository to

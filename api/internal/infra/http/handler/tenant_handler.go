@@ -522,7 +522,7 @@ func (h *TenantHandler) buildAuditContext(r *http.Request) auditsvc.AuditContext
 	actx := auditsvc.AuditContext{
 		ActorIP:   getClientIP(r),
 		UserAgent: r.UserAgent(),
-		RequestID: r.Header.Get("X-Request-ID"),
+		RequestID: middleware.GetRequestID(r.Context()),
 	}
 
 	// Set actor info if available
@@ -1970,7 +1970,7 @@ func (h *TenantHandler) declineInvitation(w http.ResponseWriter, r *http.Request
 	// Delete the invitation (public decline: the token authorizes it; pass the
 	// invitation's own tenant so the scoping check is satisfied).
 	if err := h.service.DeleteInvitation(r.Context(), invitation.TenantID().String(), invitation.ID().String(), auditsvc.AuditContext{
-		ActorIP: getClientIP(r), UserAgent: r.UserAgent(), RequestID: r.Header.Get("X-Request-ID"),
+		ActorIP: getClientIP(r), UserAgent: r.UserAgent(), RequestID: middleware.GetRequestID(r.Context()),
 	}); err != nil {
 		h.handleServiceError(w, err)
 		return
@@ -2098,6 +2098,9 @@ type SecuritySettingsResponse struct {
 	SSOExceptions []tenant.SSOException `json:"sso_exceptions"`
 	// JITRequiresApproval: SSO newcomers wait for an administrator's approval.
 	JITRequiresApproval bool `json:"jit_requires_approval"`
+	// SSORequireMFAEvidence: a sign-in through the organization's own identity
+	// provider must carry the provider's proof of a second factor.
+	SSORequireMFAEvidence bool `json:"sso_require_mfa_evidence"`
 	// CurrentIP is the caller's IP as the API sees it, the value the IP
 	// allowlist is checked against (empty outside a request context).
 	CurrentIP string `json:"current_ip,omitempty"`
@@ -2137,6 +2140,7 @@ func toSettingsResponse(s *tenant.Settings) SettingsResponse {
 			ExternalAccessEndRequired:                 s.Security.ExternalAccessEndRequired,
 			SSOExceptions:                             nonNilSSOExceptions(s.Security.SSOExceptions),
 			JITRequiresApproval:                       s.Security.JITRequiresApproval,
+			SSORequireMFAEvidence:                     s.Security.SSORequireMFAEvidence,
 		},
 		Branding: BrandingSettingsResponse{
 			PrimaryColor: s.Branding.PrimaryColor,
@@ -2273,6 +2277,8 @@ type UpdateSecuritySettingsRequest struct {
 	// JITRequiresApproval holds SSO newcomers until an administrator
 	// approves them (RFC-058).
 	JITRequiresApproval *bool `json:"jit_requires_approval"`
+	// SSORequireMFAEvidence: see SecuritySettingsResponse.
+	SSORequireMFAEvidence *bool `json:"sso_require_mfa_evidence"`
 }
 
 // UpdateSecuritySettings handles PATCH /api/v1/tenants/{tenant}/settings/security
@@ -2315,8 +2321,12 @@ func (h *TenantHandler) UpdateSecuritySettings(w http.ResponseWriter, r *http.Re
 		ExternalAccessEndRequired:                 req.ExternalAccessEndRequired,
 		SSOExceptions:                             req.SSOExceptions,
 		JITRequiresApproval:                       req.JITRequiresApproval,
+		SSORequireMFAEvidence:                     req.SSORequireMFAEvidence,
 		// Lockout guard: the saved IP allowlist must include this IP.
 		RequesterIP: clientIP,
+		// Lockout guard: "SSO must prove two-factor" must not refuse this
+		// owner's own session.
+		RequesterSessionID: middleware.GetSessionID(r.Context()),
 	}
 
 	actx := h.buildAuditContext(r)

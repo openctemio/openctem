@@ -97,30 +97,63 @@ func (r *SLAPolicyRepository) GetByAsset(ctx context.Context, tenantID, assetID 
 
 // GetTenantDefault retrieves the default policy for a tenant.
 //
-// The single-default invariant is enforced at write time (UnsetTenantDefaults),
-// but ORDER BY + LIMIT 1 makes the read deterministic as a safety net even if
-// stale data ever has more than one default row.
+// The single-default invariant is enforced by a partial unique index and
+// UpdateMakingDefault. An inactive default never governs: it is skipped, like
+// an inactive asset policy in GetByAsset.
 func (r *SLAPolicyRepository) GetTenantDefault(ctx context.Context, tenantID shared.ID) (*sla.Policy, error) {
-	query := r.selectQuery() + ` WHERE tenant_id = $1 AND is_default = true AND asset_id IS NULL
+	query := r.selectQuery() + ` WHERE tenant_id = $1 AND is_default = true AND is_active = true AND asset_id IS NULL
 		ORDER BY created_at ASC LIMIT 1`
 	row := r.db.QueryRowContext(ctx, query, tenantID.String())
 	return r.scanPolicy(row)
 }
 
-// UnsetTenantDefaults clears is_default on all of the tenant's tenant-wide
-// (asset_id IS NULL) policies except exceptID, enforcing a single default.
-func (r *SLAPolicyRepository) UnsetTenantDefaults(ctx context.Context, tenantID, exceptID shared.ID) error {
-	query := `UPDATE sla_policies
-		SET is_default = false, updated_at = now()
-		WHERE tenant_id = $1 AND asset_id IS NULL AND is_default = true AND id <> $2`
-	if _, err := r.db.ExecContext(ctx, query, tenantID.String(), exceptID.String()); err != nil {
+// Update updates an existing policy.
+func (r *SLAPolicyRepository) Update(ctx context.Context, policy *sla.Policy) error {
+	return r.updateExec(ctx, r.db, policy)
+}
+
+// UpdateMakingDefault writes the policy and makes it the tenant's only default
+// in one transaction. An advisory lock keyed by tenant serializes concurrent
+// make-default calls (a row lock alone cannot: once the first commits, the
+// second's lock query no longer matches the old default and would skip it),
+// and the old default row is locked FOR UPDATE as well.
+func (r *SLAPolicyRepository) UpdateMakingDefault(ctx context.Context, policy *sla.Policy) (err error) {
+	if policy.AssetID() != nil || !policy.IsDefault() || !policy.IsActive() {
+		return fmt.Errorf("%w: only an active tenant-wide policy can be the default", shared.ErrValidation)
+	}
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("failed to begin transaction: %w", err)
+	}
+	defer func() {
+		if err != nil {
+			_ = tx.Rollback()
+		}
+	}()
+
+	tenant := policy.TenantID().String()
+	if _, err = tx.ExecContext(ctx, `SELECT pg_advisory_xact_lock(hashtextextended('sla_default:' || $1::text, 0))`, tenant); err != nil {
+		return fmt.Errorf("failed to lock tenant default: %w", err)
+	}
+	if _, err = tx.ExecContext(ctx, `SELECT id FROM sla_policies
+		WHERE tenant_id = $1 AND asset_id IS NULL AND is_default = true FOR UPDATE`, tenant); err != nil {
+		return fmt.Errorf("failed to lock current default SLA policy: %w", err)
+	}
+	if _, err = tx.ExecContext(ctx, `UPDATE sla_policies SET is_default = false, updated_at = now()
+		WHERE tenant_id = $1 AND asset_id IS NULL AND is_default = true AND id <> $2`,
+		tenant, policy.ID().String()); err != nil {
 		return fmt.Errorf("failed to unset existing default SLA policies: %w", err)
+	}
+	if err := r.updateExec(ctx, tx, policy); err != nil {
+		return err
+	}
+	if err = tx.Commit(); err != nil {
+		return fmt.Errorf("failed to commit default change: %w", err)
 	}
 	return nil
 }
 
-// Update updates an existing policy.
-func (r *SLAPolicyRepository) Update(ctx context.Context, policy *sla.Policy) error {
+func (r *SLAPolicyRepository) updateExec(ctx context.Context, ex sqlExecer, policy *sla.Policy) error {
 	escalationConfig, err := json.Marshal(policy.EscalationConfig())
 	if err != nil {
 		return fmt.Errorf("failed to marshal escalation config: %w", err)
@@ -136,7 +169,7 @@ func (r *SLAPolicyRepository) Update(ctx context.Context, policy *sla.Policy) er
 		WHERE id = $1 AND tenant_id = $15
 	`
 
-	result, err := r.db.ExecContext(ctx, query,
+	result, err := ex.ExecContext(ctx, query,
 		policy.ID().String(),
 		policy.Name(),
 		nullString(policy.Description()),
@@ -218,19 +251,6 @@ func (r *SLAPolicyRepository) ListByTenant(ctx context.Context, tenantID shared.
 	}
 
 	return policies, nil
-}
-
-// ExistsByAsset checks if an asset-specific policy exists.
-func (r *SLAPolicyRepository) ExistsByAsset(ctx context.Context, assetID shared.ID) (bool, error) {
-	query := `SELECT EXISTS(SELECT 1 FROM sla_policies WHERE asset_id = $1)`
-
-	var exists bool
-	err := r.db.QueryRowContext(ctx, query, assetID.String()).Scan(&exists)
-	if err != nil {
-		return false, fmt.Errorf("failed to check SLA policy existence: %w", err)
-	}
-
-	return exists, nil
 }
 
 // Helper methods

@@ -25,3 +25,16 @@ func TestTicketHoldReleaseController_ExclusiveAndBounded(t *testing.T) {
 		t.Fatalf("limit %d err %v", r.limit, err)
 	}
 }
+
+// A batch of tracker calls outlasts the 2-minute interval: the controller asks
+// for a longer reconcile budget.
+func TestTicketHoldRelease_HasALongerReconcileBudget(t *testing.T) {
+	var c Controller = NewTicketHoldReleaseController(nil, nil, 0, 0, nil)
+	rt, ok := c.(ReconcileTimeouter)
+	if !ok {
+		t.Fatal("the controller does not implement ReconcileTimeouter")
+	}
+	if got := rt.ReconcileTimeout(); got < 10*time.Minute {
+		t.Fatalf("reconcile timeout = %v, want at least 10m", got)
+	}
+}

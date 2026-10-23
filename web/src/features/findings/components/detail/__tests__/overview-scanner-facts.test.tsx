@@ -2,6 +2,7 @@ import { describe, it, expect, vi } from 'vitest'
 import { fireEvent, render, screen } from '@testing-library/react'
 import type { FindingDetail } from '../../../types'
 
+vi.mock('@/features/ai-triage/api', () => ({ useTriageResult: () => ({ data: null }) }))
 vi.mock('@/lib/clipboard', () => ({ copyToClipboard: vi.fn(async () => true) }))
 vi.mock('../../../api/use-finding-groups', () => ({
   useRelatedCVEs: (cve: string | null) => ({

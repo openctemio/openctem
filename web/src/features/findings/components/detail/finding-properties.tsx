@@ -33,17 +33,17 @@ import { PriorityClassBadge } from '../priority-class-badge'
 import { findingAssetTypeLabel } from '../../lib/finding-asset-type'
 import { userTags } from '../../lib/finding-display'
 import { assetDetailHref, isLinkableAssetId } from '../../lib/asset-link'
-import { findingSourceLabel, HUMAN_SOURCES } from '../../lib/finding-detail'
+import { findingSourceLabel, isTriageLocked } from '../../lib/finding-detail'
 import { closureReasonLabel, verificationLabel } from '../../lib/closure'
 import { CRITICALITY_LABELS } from '@/lib/criticality'
 
 const CLOSED = new Set<string>(findingStatusesInCategory('closed'))
 
-function formatDate(iso?: string): string {
+function formatDate(iso: string | undefined, locale: string): string {
   if (!iso) return ''
   const d = new Date(iso)
   if (isNaN(d.getTime())) return ''
-  return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+  return d.toLocaleDateString(locale, { month: 'short', day: 'numeric', year: 'numeric' })
 }
 
 function Row({ label, children }: { label: string; children: React.ReactNode }) {
@@ -67,7 +67,7 @@ export function SlaDue({
   status?: string
   closed?: boolean
 }) {
-  const { t } = useTranslation()
+  const { t, locale } = useTranslation()
   if (!deadline)
     return <span className="text-muted-foreground">{t('findings.properties.noSla', 'No SLA')}</span>
   const days = daysUntil(deadline)
@@ -88,7 +88,7 @@ export function SlaDue({
             : t('findings.properties.leftMany', '{count} days left', { count: days })
   return (
     <span>
-      <span className="tabular-nums">{formatDate(deadline)}</span>
+      <span className="tabular-nums">{formatDate(deadline, locale)}</span>
       {rel && !closed && (
         <span
           className={cn(
@@ -125,11 +125,10 @@ export function FindingProperties({
   hideTriage,
   className,
 }: FindingPropertiesProps) {
-  const { t } = useTranslation()
+  const { t, locale } = useTranslation()
   const [more, setMore] = useState(false)
   const moreId = useId()
-  const isHuman = HUMAN_SOURCES.has(finding.source)
-  const locked = readOnly || isHuman
+  const locked = isTriageLocked(finding.source, readOnly)
   // Re-scoring needs findings:severity, which a remediation owner may lack.
   const canRescore = useCanMutate('PATCH /api/v1/findings/{id}/severity')
   const asset = finding.assets[0]
@@ -307,7 +306,7 @@ export function FindingProperties({
         </Row>
         <Row label={t('findings.properties.firstSeen', 'First seen')}>
           <span title={finding.discoveredAt}>
-            <span className="tabular-nums">{formatDate(finding.discoveredAt)}</span>
+            <span className="tabular-nums">{formatDate(finding.discoveredAt, locale)}</span>
             <span className="block text-xs text-muted-foreground">
               <RelativeTime date={finding.discoveredAt} />
             </span>
@@ -317,7 +316,7 @@ export function FindingProperties({
           finding.lastSeenAt.slice(0, 10) !== finding.discoveredAt.slice(0, 10) && (
             <Row label={t('findings.properties.lastSeen', 'Last seen')}>
               <span className="tabular-nums" title={finding.lastSeenAt}>
-                {formatDate(finding.lastSeenAt)}
+                {formatDate(finding.lastSeenAt, locale)}
               </span>
             </Row>
           )}
@@ -332,7 +331,7 @@ export function FindingProperties({
         )}
         {finding.resolvedAt && (
           <Row label={t('findings.properties.resolved', 'Resolved')}>
-            <span className="tabular-nums">{formatDate(finding.resolvedAt)}</span>
+            <span className="tabular-nums">{formatDate(finding.resolvedAt, locale)}</span>
           </Row>
         )}
         {finding.observation === 'stale' && (

@@ -221,6 +221,8 @@ func registerVulnerabilityRoutes(
 
 		// Stats endpoint (must be before /{id} to avoid route conflicts)
 		r.GET("/stats", h.GetFindingStats, middleware.Require(permission.FindingsRead), heavyReads.Middleware())
+		// The list's quick views with the caller's counts (one scoped statement).
+		r.GET("/quick-views", h.FindingQuickViews, middleware.Require(permission.FindingsRead), heavyReads.Middleware())
 
 		// The FilterDocument form of the list (RFC-048): read-only, same
 		// permission and scope as GET /findings.
@@ -240,7 +242,7 @@ func registerVulnerabilityRoutes(
 		// Bulk operations (must be before /{id})
 		// Each needs the single-item permission too: bulk_update widens the
 		// reach of a move, it does not replace the right to make it.
-		r.POST("/bulk/status", h.BulkUpdateFindingsStatus, middleware.RequireAll(permission.FindingsBulkUpdate, permission.FindingsStatus))
+		r.POST("/bulk/status", h.BulkUpdateFindingsStatus, middleware.RequireAll(permission.FindingsBulkUpdate, permission.FindingsStatus), requireStepUpWhenClosing())
 		r.POST("/bulk/assign", h.BulkAssignFindings, middleware.RequireAll(permission.FindingsBulkUpdate, permission.FindingsAssign))
 
 		// Remediation groups (RFC-015): one fix → many findings (must be before /{id}).
@@ -270,6 +272,8 @@ func registerVulnerabilityRoutes(
 		// decision states what the move itself would need.
 		r.GET("/{id}/transitions", h.GetFindingTransitions, middleware.Require(permission.FindingsRead))
 		r.POST("/transitions/preview", h.EvaluateFindingTransitions, middleware.Require(permission.FindingsRead))
+		// How the finding can be verified (advisory; the engine enforces).
+		r.GET("/{id}/verification", h.GetFindingVerificationPlan, middleware.Require(permission.FindingsRead))
 
 		// Assignment operations
 		r.GET("/{id}/assignable", h.ListAssignableMembers, middleware.Require(permission.FindingsAssign))
@@ -284,7 +288,7 @@ func registerVulnerabilityRoutes(
 		// A severity downgrade waiting for approval: approving or rejecting it
 		// is an approval decision (findings:approve, eligibility checked by
 		// the approval policy in the service); the requester withdraws it.
-		r.POST("/{id}/severity-requests/{request_id}/approve", h.ApproveSeverityRequest, middleware.Require(permission.FindingsApprove))
+		r.POST("/{id}/severity-requests/{request_id}/approve", h.ApproveSeverityRequest, middleware.Require(permission.FindingsApprove), requireStepUp())
 		r.POST("/{id}/severity-requests/{request_id}/reject", h.RejectSeverityRequest, middleware.Require(permission.FindingsApprove))
 		r.POST("/{id}/severity-requests/{request_id}/cancel", h.CancelSeverityRequest, middleware.Require(permission.FindingsSeverity))
 
@@ -294,6 +298,10 @@ func registerVulnerabilityRoutes(
 		// in the body into this one; merging with an approval disposition
 		// also needs findings:approve (checked in the service).
 		r.POST("/{id}/duplicates", h.AddFindingDuplicate, middleware.Require(permission.FindingsTriage))
+		// Bug-bounty report fields (RFC-121): an edit of the finding; a
+		// reward or disclosure change also needs findings:triage (checked in
+		// the service, 403 naming it).
+		r.PUT("/{id}/bounty-report", h.UpdateFindingBountyReport, middleware.Require(permission.FindingsWrite), handler.FindingIfMatch)
 		// Cross-rule correlation (research/134 section 12): the detections of
 		// one issue; un-duplicating a correlated detection and confirming a
 		// suggestion are triage decisions.
@@ -311,7 +319,9 @@ func registerVulnerabilityRoutes(
 		// Retest now (POST /{id}/retests) re-runs the finding's own check.
 		if findingActionsHandler != nil {
 			// CTEM Stage-4: dispatch a validation (safe-check) job for this finding.
-			r.POST("/{id}/validate", findingActionsHandler.RequestValidation, middleware.Require(permission.FindingsWrite))
+			// An active probe whose outcome is applied to the finding: the same
+			// segregation-of-duties permission as a retest (findings:verify).
+			r.POST("/{id}/validate", findingActionsHandler.RequestValidation, middleware.Require(permission.FindingsVerify))
 		}
 
 		// Tags
@@ -335,16 +345,16 @@ func registerVulnerabilityRoutes(
 			// issue of the organization's Jira site; unlink. Linking also
 			// needs findings:fix_apply: moving a linked issue to Done is a
 			// fix claim, which a member without that permission could not
-			// make directly.
+			// make directly. Unlinking needs the same two permissions.
 			r.GET("/{id}/ticket-links", jiraHandler.ListTicketLinks, middleware.Require(permission.FindingsRead))
 			// Why the automatic path has not filed an issue yet (holds).
 			r.GET("/{id}/ticket-holds", jiraHandler.ListTicketHolds, middleware.Require(permission.FindingsRead))
 			r.POST("/{id}/ticket-links", jiraHandler.LinkTicketIssue, middleware.RequireAll(permission.FindingsWrite, permission.FindingsFixApply))
-			r.DELETE("/{id}/ticket-links/{link_id}", jiraHandler.UnlinkTicketIssue, middleware.Require(permission.FindingsWrite))
+			r.DELETE("/{id}/ticket-links/{link_id}", jiraHandler.UnlinkTicketIssue, middleware.RequireAll(permission.FindingsWrite, permission.FindingsFixApply))
 		}
 
 		// Delete operations
-		r.DELETE("/{id}", h.DeleteFinding, middleware.Require(permission.FindingsDelete))
+		r.DELETE("/{id}", h.DeleteFinding, middleware.Require(permission.FindingsDelete), requireStepUp())
 	}, tenantMiddlewares...)
 
 	// The findings filter contract (RFC-048): fields, operators, limits.
@@ -391,7 +401,7 @@ func registerVulnerabilityRoutes(
 	// Approval management routes - tenant from JWT token
 	router.Group("/api/v1/approvals", func(r Router) {
 		r.GET("/", h.ListApprovals, middleware.Require(permission.FindingsRead))
-		r.POST("/{id}/approve", h.ApproveApproval, middleware.Require(permission.FindingsApprove))
+		r.POST("/{id}/approve", h.ApproveApproval, middleware.Require(permission.FindingsApprove), requireStepUp())
 		r.POST("/{id}/reject", h.RejectApproval, middleware.Require(permission.FindingsApprove))
 		r.POST("/{id}/cancel", h.CancelApproval, middleware.Require(permission.FindingsWrite))
 		r.POST("/{id}/remind", h.RemindApprovals, middleware.Require(permission.FindingsWrite))
@@ -403,7 +413,7 @@ func registerVulnerabilityRoutes(
 		// the service checks every member is in the caller's data scope.
 		r.GET("/batches", h.ListApprovalBatches, middleware.Require(permission.FindingsRead))
 		r.GET("/batches/{id}", h.GetApprovalBatch, middleware.Require(permission.FindingsRead))
-		r.POST("/batches/{id}/approve", h.ApproveApprovalBatch, middleware.Require(permission.FindingsApprove))
+		r.POST("/batches/{id}/approve", h.ApproveApprovalBatch, middleware.Require(permission.FindingsApprove), requireStepUp())
 		r.POST("/batches/{id}/reject", h.RejectApprovalBatch, middleware.Require(permission.FindingsApprove))
 		r.POST("/batches/{id}/cancel", h.CancelApprovalBatch, middleware.Require(permission.FindingsWrite))
 	}, tenantMiddlewares...)

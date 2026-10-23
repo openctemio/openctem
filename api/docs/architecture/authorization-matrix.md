@@ -29,7 +29,7 @@ contributes — derive the exact strings from `AllPermissions()`.
 | Assets | 11 | `assets:read/write/delete/import/export`, `asset_groups:*`, `components:*` |
 | Findings | 32 | `findings:read/write/delete/assign/triage/status/export/approve/fix_apply/verify`, `exposures:*`, `suppressions:*`, `vulnerabilities:*`, `credentials:*`, `remediation:*`, `workflows:*`, `policies:*` |
 | Scans | 23 | `scans:read/write/delete/execute`, `scans:windows:manage`, `scans:windows:override`, `scan_profiles:*`, `sources:*`, `tools:*`, `tenant_tools:*`, `scanner_templates:*`, `secret_store:*` |
-| Sensors | 14 | `sensors:read/write/delete`, `sensors:commands:read/write/delete`, `sensors:zones:read/write/delete`, `sensors:pair`, `sensors:approve`, `sensors:grant:narrow/widen`, `sensors:revoke` (RFC-052) |
+| Sensors | 17 | `sensors:read/write/delete`, `sensors:commands:read/write/delete`, `sensors:zones:read/write/delete`, `sensors:egress:read/write/delete` (proxy pools), `sensors:pair`, `sensors:approve`, `sensors:grant:narrow/widen`, `sensors:revoke` (RFC-052) |
 | Team | 20 | `team:*`, `members:*`, `groups:*`, `roles:*`, `assignment_rules:*` |
 | Integrations | 18 | `integrations:read/manage`, `scm_connections:*`, `notifications:*`, `webhooks:*`, `api_keys:*`, `pipelines:*` |
 | Settings (billing, SLA) | 6 | `billing:read/write/manage`, `sla:read/write/delete` |
@@ -286,6 +286,9 @@ Details: [api-keys.md](./api-keys.md).
 > Deleting a business unit drops its asset links and detaches its child units
 > for the whole organization, so it is owner/admin only (owner decision
 > 2026-10-02); members keep creating, editing and linking assets.
+>
+> The gate is not the whole rule: which units a member sees follows their data
+> scope (see "Visibility of groups, units and services" under Data scope).
 
 #### AI applications (MCP) (`/api/v1/mcp-access`, `/api/v1/oauth/requests`)
 
@@ -332,6 +335,7 @@ and SBOM import write it.
 | `DELETE /api/v1/findings/{id}` | `findings:delete` (hard delete; the activity timeline goes with the row. An audit event `finding.deleted` is written first with the actor, title, severity, status, source, CVE, asset, fingerprint, tool and the number of activities removed; if that write fails the finding is not deleted) |
 | `PATCH /api/v1/findings/{id}/status` | `findings:status`; moving a finding **out of** an approved false positive or an accepted risk needs `findings:approve` as well (403 otherwise), on this route and on bulk status. A workflow, automation action or ticket webhook cannot move a finding out of a decided status at all (false positive, accepted risk, duplicate; a workflow also not out of resolved) |
 | `POST /api/v1/findings/{id}/duplicates` (mark the body's finding a duplicate of `{id}`, RFC-043) | `findings:triage`; refused with 409 (whatever the caller holds) when one finding is a false positive or risk acceptance and the other is not, or the two differ, because a merge writes no approval. Both findings must be in the caller's tenant and data scope (else 404) and on the same asset |
+| `POST /api/v1/findings` with `bounty_report`, `PUT /api/v1/findings/{id}/bounty-report` (bug-bounty report fields, RFC-121) | `findings:write`; setting or changing `reward` or `disclosure` also needs `findings:triage` (403 `TRIAGE_PERMISSION_REQUIRED`, nothing written). Only `bug_bounty` findings; the finding (or the asset on create) must be in the caller's tenant and data scope (else 404); a second finding for the same intake and ref is 409. Audited with old and new values |
 | `POST /api/v1/findings/{id}/assign` · `/unassign` · `/actions/assign-to-owners` | `findings:assign` |
 | `POST /api/v1/findings/bulk/status` | `findings:bulk_update` **and** `findings:status` (the bulk permission widens the reach of a move; it does not replace the right to make it) |
 | `POST /api/v1/findings/bulk/assign` | `findings:bulk_update` **and** `findings:assign` |
@@ -493,6 +497,29 @@ create's target validator, exclusions, zone routing) in one call.
 > another tenant cannot be linked even by a wrong handler. See
 > [scan-zones.md](scan-zones.md).
 
+#### Proxy pools (`/api/v1/proxy-pools`, RFC-034)
+
+| Endpoint | Permission Required |
+|----------|---------------------|
+| `GET /api/v1/proxy-pools` · `/{id}` · `/assignments` | `sensors:egress:read` |
+| `POST /api/v1/proxy-pools` | `sensors:egress:write` |
+| `PATCH /api/v1/proxy-pools/{id}` | `sensors:egress:write` |
+| `PUT /api/v1/proxy-pools/{id}/endpoints` · `PATCH /{id}/endpoints/{endpoint_id}` | `sensors:egress:write` |
+| `PUT /api/v1/proxy-pools/assignments/{sensor_id}` | `sensors:egress:write` |
+| `DELETE /api/v1/proxy-pools/{id}` | `sensors:egress:delete` |
+
+> Seeded by migration `sensor_proxy_pools`: owner and admin only (a pool
+> decides where every scan's traffic exits and holds credentials);
+> `sensors:egress:write` and `:delete` are admin-only, so no custom role may
+> carry them (trigger extended in the same migration). Object level: every
+> query carries `tenant_id`; endpoints and assignments have composite foreign
+> keys `(tenant_id, pool_id)` and `(tenant_id, sensor_id)`, so a pool or
+> sensor of another tenant, or a shared sensor, cannot be linked. No response
+> carries a credential. The sensor side
+> (`POST /api/v2/sensor/commands/{id}/egress-credentials` and `/egress-report`)
+> answers only the sensor holding the command's lease. See
+> [sensor-proxies.md](sensor-proxies.md).
+
 #### Content catalog (`/api/v1/content`, RFC-099)
 
 | Endpoint | Permission Required |
@@ -547,7 +574,8 @@ authenticator code, and is audited.
 >
 > **No custom role may carry them** (settings decision B1, 2026-10-04):
 > `sensors:write`, `sensors:delete`,
-> `sensors:zones:write` and `sensors:zones:delete` are admin-only
+> `sensors:zones:write`, `sensors:zones:delete`, `sensors:egress:write` and
+> `sensors:egress:delete` are admin-only
 > (`pkg/domain/permission/admin_only.go`). The role service refuses them on
 > create and update, whoever edits the role (400), and a trigger on
 > `role_permissions` refuses a row that would put one on a custom role
@@ -800,7 +828,8 @@ Organization dashboards belong to the organization.
 |----------|---------------------|
 | `GET/POST /api/v1/me/dashboards`, `GET/PUT/DELETE /api/v1/me/dashboards/{id}`, `POST …/{id}/default`, `PUT …/{id}/schedule` | self (owner only) |
 | `POST /api/v1/me/dashboards/{id}/share` | self; recipients must be active members of the tenant; each gets a layout copy of their own (audited) |
-| `GET /api/v1/organization/dashboards`, `GET …/{id}` | `dashboards:org:view` (or `dashboards:org:manage`); a viewer outside the dashboard's audience gets it left out of the list and 404 by id; managers see every one with its audience |
+| `GET /api/v1/me/dashboards/{id}/data`, `POST …/{id}/refresh`, `POST /api/v1/me/dashboards/widget-preview`, `GET /api/v1/me/dashboards/widget-catalog` | self (owner only); figures follow the caller's own data scope and pentest campaign membership; Refresh now budgeted (1/min per person and dashboard, 30/h per organization) |
+| `GET /api/v1/organization/dashboards`, `GET …/{id}`, `GET …/{id}/data`, `POST …/{id}/refresh` | `dashboards:org:view` (or `dashboards:org:manage`); a viewer outside the dashboard's audience gets it left out of the list and 404 by id; managers see every one with its audience |
 | `POST /api/v1/me/dashboards` with `from_organization_dashboard_id` ("duplicate to mine") | `dashboards:org:view` + audience; copies the layout into a new personal dashboard of the caller |
 | `POST /api/v1/organization/dashboards`, `PUT/DELETE …/{id}`, `POST …/{id}/default`, `PUT …/order`, `PUT …/{id}/audience`, `PUT …/{id}/schedule` | `dashboards:org:manage` (owner and admin by default), audited |
 | `GET /api/v1/organization/settings/dashboards` | `dashboard:read` |
@@ -1354,6 +1383,24 @@ comments, comment reactions, activity, the live `finding:{id}` channel and the
 MCP per-finding tools and prompts: the team sees every finding of its
 campaign, a client the published ones, anyone else gets 404; admins pass.
 
+The same rule is enforced in `middleware.DataScopeGuard` for **every** route
+under `/findings/{id}/**`, not only the ones above. In the server the guard's
+finding check is the finding service's `AssertFindingAccess` (pentest
+findings by campaign, others by data scope); a guard built on the bare
+enforcer applies the same rule through `Enforcer.AssertFindingCampaign`. The
+routes covered: AI triage (latest, history,
+a result by id, and sending the finding to the model), approvals, ticket
+links and holds, the priority explanation and any route added later. A
+non-member, a client on an unpublished finding, or a non-admin on a pentest
+finding without a campaign gets 404 before the handler runs. A lookup error
+denies. The bulk AI triage request applies the rule to each finding it names
+(reported as "finding not found"), and so does a triage result read by its
+id. Approvals follow their finding outside `/findings/{id}` too: the
+`/approvals` list (rows and per-status counts) keeps a pentest finding's
+approvals for its campaign team (a client: published findings), and approve,
+reject, cancel, remind, self-approve and the group-exception decisions refuse
+a caller who cannot open the finding with 404.
+
 Comments on a pentest finding carry a visibility (migration
 `002072_finding_comment_visibility`):
 
@@ -1536,10 +1583,35 @@ these counts cover only the assets they can see: `asset_count` on `GET
 and are replaced in the response), the asset, crown-jewel and in-business-unit
 counts of `GET /scoping/summary`, `asset_breakdown` and `risk_score` of `GET
 /attack-surface/stats`, and the exposure-chain `summary` (recomputed from the
-chains the caller may see). Counts that stay organization-wide, because they
-count configuration and expose no asset name or id: the business service,
-business unit, boundary, attacker profile, threat model and cycle totals of
+chains the caller may see), and the business service and business unit totals
+of `/scoping/summary` (only the visible ones, below). Counts that stay
+organization-wide, because they count configuration and expose no asset name or
+id: the boundary, attacker profile, threat model and cycle totals of
 `/scoping/summary`, the attack-path `summary`, and threat-model rollups.
+
+**Visibility of groups, units and services** (research/233 D4). The names,
+descriptions and owners of asset groups, business units and business services
+describe the organization, so a caller restricted to their scope rows sees one
+only when it touches their scope:
+
+| Container | Visible to a restricted caller when |
+|---|---|
+| Asset group | one of its live members is in their scope, or an active `asset_group_match` scope rule of an active team they are a current member of names it (an empty group named by the rule stays visible to that team) |
+| Business unit | the unit, or a unit below it in the hierarchy, holds a live asset in their scope; the ancestors of a visible unit are visible, so the tree stays connected |
+| Business service | it links a live asset in their scope |
+
+Anything else is absent from the list, search and stats, the totals count only
+the visible rows (nothing reports how many are hidden), and a read by id
+answers 404, as do a group's members and findings and a service's assets. A
+write answers 404 the same way, except on a container with no asset at all (one
+the caller just created; for a business unit also no unit below it, since a
+unit's criticality reaches the assets of the units below), which stays
+writable so it can be filled; a business
+unit cannot be placed under a parent the caller cannot see. The owner email of
+a group, unit or service is shown only to an owner, administrator or full-data
+reader; a restricted caller's edit keeps the stored value. The predicates live
+in `pkg/filterspec/visibility.go` and are applied in SQL. A member with no
+scope row sees no group, unit or service.
 
 **Team membership end dates are read at scope time.** A membership whose
 `expires_at` has passed grants no data scope even before the expiry
@@ -1841,8 +1913,9 @@ a personal address, or be a work domain nobody has verified.
 | `POST /approvals/{id}/{approve,reject,cancel}`; `GET /approvals` | bypass | 404 / list, total and status counts filtered in SQL |
 | `POST /findings/ai-triage/bulk`; `GET /findings/{id}/ai-triage/{triageId}` | bypass | out-of-scope ids reported as not found; a result is checked against its own finding |
 | `GET /exposures`, `/exposures/{id}`, `/{id}/history`, state changes, ctem-id, delete | **bypass** | list filtered; by-id 404. An exposure with no asset is hidden from restricted members |
-| `GET /asset-groups/{id}/assets`, `/{id}/findings` | **bypass** | filtered |
-| `GET /asset-groups` (+ `/{id}`, `/stats`, and the group returned by create, update, add and remove) counts | **bypass (asset_count, per-kind counts, risk_score and finding_count over every member, tenant-wide; the risk and has_findings filters and the count/risk sorts could probe them; L-18)** | computed over the members in the reader's scope; filters and sorts use those values. The group list itself stays tenant configuration |
+| `GET /asset-groups/{id}/assets`, `/{id}/findings` | **bypass** | filtered; 404 on a group not visible to the caller |
+| `GET /asset-groups` (+ `/{id}`, `/stats`, and the group returned by create, update, add and remove) counts | **bypass (asset_count, per-kind counts, risk_score and finding_count over every member, tenant-wide; the risk and has_findings filters and the count/risk sorts could probe them; L-18)** | computed over the members in the reader's scope; filters and sorts use those values |
+| `GET /asset-groups` (+ `/{id}`, search, `/stats` with its totals and breakdowns), `GET /business-units` (+ `/{id}`, search), `GET /business-services` (+ `/{id}`, `/{id}/assets`) | **bypass (every group, unit and service of the tenant with its name, description and owner, incl. the owner email; tenant-wide totals)** | only the containers visible to the caller ("Visibility of groups, units and services"); totals over those; 404 by id; owner email for full-data readers only (research/233 F1–F3) |
 | `GET /attack-surface/attack-paths` | **bypass (summary counts over the whole graph)** | `top_assets` filtered and `summary` recomputed over the assets the caller may see (entry points, reachable assets, critical reachable, crown jewels at risk, total paths, max depth); reachability itself is still the whole graph's. A viewer with `dashboards:org:view` keeps the organization summary and still gets only their own rows |
 | `GET /threat-intel/stats` (EPSS and KEV counts) | **bypass (organization-wide exposure counts)** | the open findings counted (EPSS high / critical, KEV past due) are those on assets in the caller's scope; `dashboards:org:view` or full data access counts the organization. The catalog totals (entries, ransomware, recently added) are public feed context |
 | `GET /validation/coverage` | **bypass (organization-wide KPI)** | per-severity totals, validated, downgrade and priority-class coverage count the findings on assets in the caller's scope; `dashboards:org:view` or full data access counts the organization |
@@ -2655,10 +2728,10 @@ accountable for it (`service_owner_id`, the creator), and never signs in.
 |---|---|
 | Never signs in | no password and no federated identity (CHECK on `users`); its address is on the unroutable `service-accounts.invalid` domain; no set-password link is issued for it |
 | One organization | trigger on `tenant_members`: a service account is a member of its own organization only |
-| Never owner, administrator or full data | trigger on `tenant_members` (label) and on `user_roles` (owner, admin, any full-data role); the role grant guard refuses the same (`ErrServiceAccountRoleCeiling`); a team carrying a full-data role refuses it as it refuses an external member |
+| Never owner, administrator or full data | trigger on `tenant_members` (label) and on `user_roles` (owner, admin, any full-data role); the role grant guard refuses the same (`ErrServiceAccountRoleCeiling`); a team carrying a full-data role refuses it as it refuses an external member; turning on `has_full_data_access` for a role a service account holds, directly or through a team, is refused (`UpdateRole` and a `BEFORE UPDATE OF has_full_data_access` trigger on `roles`) |
 | Starts with nothing | created with no role: roles come from the role APIs (grant ceiling) and teams; data scope from teams |
 | Acts through keys | keys are minted for it with `POST /api/v1/service-accounts/{id}/api-keys` (`user_id` = the account); each scope must be held by the person minting it, and at request time a key carries only the scopes the account still holds, within its data scope; keys are read-only on the REST API, and no key reaches `/api/v1/service-accounts` |
-| Keys outlive their minter? No | the active keys a person minted for service accounts are revoked (audited, `revoked_by` = the acting administrator) when that person is offboarded or leaves, or is demoted from administrator or owner to member or viewer; the access report lists them first (`service_account_keys`) and the offboarding result and the audit event count them (`revoked_service_account_keys`) |
+| Keys outlive their minter? No | the active keys a person minted for service accounts are revoked (audited, `revoked_by` = the acting administrator) when that person is offboarded or leaves, is suspended, is demoted from administrator or owner to member or viewer, or loses `service_accounts:manage` because a custom role was removed from them (and no other role or team gives it back); the demotion revoke commits in the same transaction as the role change, so a failed revoke refuses the change; the access report lists the keys first (`service_account_keys`) and the offboarding result and the audit event count them (`revoked_service_account_keys`) |
 | Removal | `DELETE /api/v1/service-accounts/{id}` removes the account with its roles, team memberships and keys at once |
 
 A team binding is held to the same ceiling in both orders: binding a full-data
