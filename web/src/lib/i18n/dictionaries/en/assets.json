@@ -56,7 +56,6 @@
   "assets.tabs.attention": "Needs attention",
   "assets.tabs.groups": "Groups",
   "assets.tabs.changes": "Activity",
-  "assets.tabs.webSurface": "Web surface",
   "assets.attention.title": "Needs attention",
   "assets.attention.description": "Assets whose missing owner, criticality or scan weakens priority, assignment or coverage. Fix them in bulk here.",
   "assets.attention.tabsAria": "Needs attention reasons",
@@ -1178,5 +1177,7 @@
   "assets.nameCell.expiresIn": "expires in {count, plural, one {# day} other {# days}}",
   "assets.nameCell.sans": "Also names: {names}",
   "assets.nameCell.copy": "Copy {name}",
-  "assets.nameCell.copied": "Copied"
+  "assets.nameCell.copied": "Copied",
+  "assets.view.list": "List view",
+  "assets.view.categories": "Category view"
 }

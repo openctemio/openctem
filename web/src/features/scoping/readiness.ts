@@ -7,12 +7,15 @@
  * Pure, so the rules are unit-tested; the page and the dashboard tile share it.
  */
 import type { ScopingSummary } from './api'
+import type { useTranslation } from '@/context/i18n-provider'
+
+type Translate = ReturnType<typeof useTranslation>['t']
 
 export interface ReadinessRow {
   key: string
   label: string
   ready: boolean
-  /** What was measured, e.g. "3 of 9". */
+  /** What was measured, e.g. "3 of 9" (already translated). */
   value: string
   /** The page that fixes it, and the verb on its button. */
   href: string
@@ -21,10 +24,9 @@ export interface ReadinessRow {
   module?: string
 }
 
-const of = (n: number, total: number) => `${n} of ${total}`
-const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? one : many}`
+const SEP = ' · '
 
-export function readinessRows(s: ScopingSummary): ReadinessRow[] {
+export function readinessRows(s: ScopingSummary, t: Translate): ReadinessRow[] {
   const cycle = s.active_cycle
   const active = cycle?.status === 'active'
   const charterWritten = !!cycle && cycle.objectives + cycle.success_criteria > 0
@@ -32,93 +34,138 @@ export function readinessRows(s: ScopingSummary): ReadinessRow[] {
   const svc = s.business_services
   const assets = s.assets
   const tm = s.threat_models
+  const of = (n: number, total: number) =>
+    t('scoping.readiness.ofTotal', '{n} of {total}', { n, total })
+  const noCycle = t('scoping.readiness.noCycle', 'No cycle')
 
   return [
     {
       key: 'cycle',
-      label: 'Cycle active with a charter',
+      label: t('scoping.readiness.cycle.label', 'Cycle active with a charter'),
       ready: active && charterWritten,
       value: cycle
-        ? `${cycle.name} · ${cycle.status}${charterWritten ? '' : ' · no charter'}`
-        : 'No cycle',
+        ? [
+            cycle.name,
+            t(`scoping.cycleStatus.${cycle.status}`, cycle.status),
+            ...(charterWritten ? [] : [t('scoping.readiness.cycle.noCharter', 'no charter')]),
+          ].join(SEP)
+        : noCycle,
       href: cycle ? `/cycles/${cycle.id}` : '/cycles',
-      action: cycle ? 'Open' : 'Start',
+      action: cycle
+        ? t('scoping.readiness.action.open', 'Open')
+        : t('scoping.readiness.action.start', 'Start'),
       module: 'ctem_cycles',
     },
     {
       key: 'crown_jewels',
-      label: 'Crown jewels identified',
+      label: t('scoping.readiness.crownJewels.label', 'Crown jewels identified'),
       ready: cj.total > 0,
-      value: plural(cj.total, 'asset'),
+      value: t('scoping.readiness.assetCount', '{n, plural, one {# asset} other {# assets}}', {
+        n: cj.total,
+      }),
       href: '/crown-jewels',
-      action: cj.total > 0 ? 'Review' : 'Designate',
+      action:
+        cj.total > 0
+          ? t('scoping.readiness.action.review', 'Review')
+          : t('scoping.readiness.action.designate', 'Designate'),
       module: 'crown_jewels',
     },
     {
       key: 'crown_jewel_owners',
-      label: 'Crown jewels have an owner',
+      label: t('scoping.readiness.owners.label', 'Crown jewels have an owner'),
       ready: cj.total > 0 && cj.with_owner >= cj.total,
       value: of(cj.with_owner, cj.total),
       href: '/assets?is_crown_jewel=true&has_owner=false',
-      action: 'Assign',
+      action: t('scoping.readiness.action.assign', 'Assign'),
       module: 'crown_jewels',
     },
     {
       key: 'services',
-      label: 'Business services defined',
+      label: t('scoping.readiness.services.label', 'Business services defined'),
       ready: svc.total > 0,
-      value: plural(svc.total, 'service'),
+      value: t(
+        'scoping.readiness.serviceCount',
+        '{n, plural, one {# service} other {# services}}',
+        { n: svc.total }
+      ),
       href: '/business-services',
-      action: svc.total > 0 ? 'Open' : 'Define',
+      action:
+        svc.total > 0
+          ? t('scoping.readiness.action.open', 'Open')
+          : t('scoping.readiness.action.define', 'Define'),
       module: 'business_services',
     },
     {
       key: 'service_assets',
-      label: 'Services linked to their assets',
+      label: t('scoping.readiness.serviceAssets.label', 'Services linked to their assets'),
       ready: svc.total > 0 && svc.with_assets >= svc.total,
       value: of(svc.with_assets, svc.total),
       href: '/business-services',
-      action: 'Link',
+      action: t('scoping.readiness.action.link', 'Link'),
       module: 'business_services',
     },
     {
       key: 'business_units',
-      label: 'Assets mapped to a business unit',
+      label: t('scoping.readiness.businessUnits.label', 'Assets mapped to a business unit'),
       ready: assets.total > 0 && assets.in_business_unit >= assets.total,
       value: of(assets.in_business_unit, assets.total),
       href: s.business_units.total > 0 ? '/assets' : '/business-units',
-      action: s.business_units.total > 0 ? 'Map' : 'Create units',
+      action:
+        s.business_units.total > 0
+          ? t('scoping.readiness.action.map', 'Map')
+          : t('scoping.readiness.action.createUnits', 'Create units'),
       module: 'business_units',
     },
     {
       key: 'boundary',
-      label: 'Boundary in effect (scope entries and exclusions)',
+      label: t(
+        'scoping.readiness.boundary.label',
+        'Boundary in effect (scope entries and exclusions)'
+      ),
       ready: s.boundary.targets > 0,
-      value:
-        `${plural(s.boundary.targets, 'entry', 'entries')} in effect · ${plural(s.boundary.exclusions, 'exclusion')}` +
-        (s.boundary.targets_waiting > 0
-          ? ` · ${s.boundary.targets_waiting} waiting for approval`
-          : ''),
+      value: [
+        t(
+          'scoping.readiness.boundary.entries',
+          '{n, plural, one {# entry} other {# entries}} in effect',
+          { n: s.boundary.targets }
+        ),
+        t(
+          'scoping.readiness.boundary.exclusions',
+          '{n, plural, one {# exclusion} other {# exclusions}}',
+          { n: s.boundary.exclusions }
+        ),
+        ...(s.boundary.targets_waiting > 0
+          ? [
+              t('scoping.readiness.boundary.waiting', '{n} waiting for approval', {
+                n: s.boundary.targets_waiting,
+              }),
+            ]
+          : []),
+      ].join(SEP),
       href: '/scope',
-      action: 'Open',
+      action: t('scoping.readiness.action.open', 'Open'),
       module: 'scope_config',
     },
     {
       key: 'attacker_profiles',
-      label: 'Attacker profiles chosen for the cycle',
+      label: t('scoping.readiness.profiles.label', 'Attacker profiles chosen for the cycle'),
       ready: !!cycle && cycle.attacker_profiles > 0,
-      value: cycle ? plural(cycle.attacker_profiles, 'profile') : 'No cycle',
+      value: cycle
+        ? t('scoping.readiness.profileCount', '{n, plural, one {# profile} other {# profiles}}', {
+            n: cycle.attacker_profiles,
+          })
+        : noCycle,
       href: cycle ? `/cycles/${cycle.id}?tab=profiles` : '/cycles',
-      action: 'Choose',
+      action: t('scoping.readiness.action.choose', 'Choose'),
       module: 'ctem_cycles',
     },
     {
       key: 'threat_models',
-      label: 'Threat model for each crown jewel',
+      label: t('scoping.readiness.threatModels.label', 'Threat model for each crown jewel'),
       ready: cj.total > 0 && tm.crown_jewels_covered >= cj.total,
       value: of(tm.crown_jewels_covered, cj.total),
       href: '/threat-model',
-      action: 'Generate',
+      action: t('scoping.readiness.action.generate', 'Generate'),
       module: 'threat_model',
     },
   ]

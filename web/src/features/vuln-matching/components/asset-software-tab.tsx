@@ -10,13 +10,9 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip
 import { useTranslation } from '@/context/i18n-provider'
 import { useComponentsList } from '@/features/components'
 import { cn } from '@/lib/utils'
-import {
-  EmptyState,
-  ErrorState,
-  EPSSScoreBadge,
-  RelativeTime,
-  SeverityBadge,
-} from '@/features/shared'
+import { KevBadge } from '@/components/ui/kev-badge'
+import { EpssChip } from '@/components/ui/epss-chip'
+import { EmptyState, ErrorState, RelativeTime, SeverityBadge } from '@/features/shared'
 import { normalizeSeverity, SEVERITY_LEVELS, type SeverityLevel } from '@/lib/severity'
 
 import { useAssetSoftware } from '../api'
@@ -295,8 +291,8 @@ function MatchRow({ match, assetId }: { match: AssetSoftwareMatchResponse; asset
           {match.cve_id}
         </Link>
         <SeverityBadge severity={severity} />
-        {match.in_kev && <Badge variant="destructive">KEV</Badge>}
-        {(match.epss ?? 0) > 0 && <EPSSScoreBadge score={match.epss} size="sm" />}
+        {match.in_kev && <KevBadge />}
+        <EpssChip score={match.epss} />
         <Badge variant={match.label === 'likely' ? 'default' : 'outline'}>
           {match.label === 'likely'
             ? t('assets.software.likely', 'Likely')

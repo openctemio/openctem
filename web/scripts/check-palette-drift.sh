@@ -121,12 +121,13 @@ fi
 # Priority (P0-P3) and severity (critical..info) each have one token set: the
 # --prio-* / --sev-* tokens in src/styles/theme.css, read through
 # src/lib/priority-colors.ts and src/lib/severity-colors.ts and rendered by
-# <PriorityBadge> and <SeverityBadge>. Outside those modules an added line may
+# <PriorityBadge> and <SeverityBadge>. Workflow status has the --st-* tokens, read
+# through src/lib/status-colors.ts and rendered by <StatusLozenge>. Outside those modules an added line may
 # not (1) name a --prio/--sev token or its Tailwind class, (2) colour a priority
 # class with a palette class or hex, or (3) key a palette class or hex by a
 # severity name. Annotate a real exception with `label-colour-ok: <reason>`.
-LABEL_ALLOW='^(web/)?src/(lib/(priority-colors|severity-colors|chart-palette)[.]ts|styles/theme[.]css)$|(__tests__/|[.]test[.]tsx?$)'
-LABEL_TOKEN='\b(bg|text|border|ring|fill|stroke|from|via|to|divide|outline|shadow)-(prio|sev)-[a-z0-9-]+|var\(--(prio|sev|viz-sev)-'
+LABEL_ALLOW='^(web/)?src/(lib/(priority-colors|severity-colors|status-colors|chart-palette)[.]ts|styles/theme[.]css)$|(__tests__/|[.]test[.]tsx?$)'
+LABEL_TOKEN='\b(bg|text|border|ring|fill|stroke|from|via|to|divide|outline|shadow)-(prio|sev|st)-[a-z0-9-]+|var\(--(prio|sev|st|viz-sev)-'
 LABEL_COLOUR="(\\b${PROPS}-${PALETTE}-[0-9]{2,3}\\b|#[0-9a-fA-F]{6}\\b)"
 label_lines="$(git diff --unified=0 "$merge_base"...HEAD -- 'src/*.tsx' 'src/*.ts' \
   | awk -v allow="$LABEL_ALLOW" '
@@ -148,6 +149,7 @@ Priority and severity each have ONE colour source, so a P0 or a Critical looks t
 same in a list, a chart and a drawer:
   priority  <PriorityBadge priorityClass="P1" />   src/lib/priority-colors.ts
   severity  <SeverityBadge severity="high" />      src/lib/severity-colors.ts
+  status    <StatusLozenge tone="progress" />      src/lib/status-colors.ts
 Charts take PRIORITY_CHART_COLORS / SEVERITY_CHART_COLORS. Teal is the act-here
 accent and is never a priority or severity colour. If this really is neither,
 say so on the line:  // label-colour-ok: <reason>

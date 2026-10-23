@@ -18,6 +18,8 @@ import { Progress } from '@/components/ui/progress'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Swords, Play } from 'lucide-react'
 import { toast } from 'sonner'
+import { useTranslation } from '@/context/i18n-provider'
+import { formatDateSafe } from '@/lib/format-date'
 import {
   useSimulations,
   useRunSimulation,
@@ -26,6 +28,7 @@ import {
 
 // Theme tokens only: a bypass is the one outcome worth colouring.
 function ResultBadge({ result }: { result: string }) {
+  const { t } = useTranslation()
   if (!result) return <span className="text-xs text-muted-foreground">—</span>
   const bypassed = result === 'bypassed'
   return (
@@ -33,15 +36,17 @@ function ResultBadge({ result }: { result: string }) {
       variant={bypassed ? 'outline' : 'secondary'}
       className={bypassed ? 'capitalize text-destructive' : 'capitalize'}
     >
-      {result}
+      {t(`validation.simulation.result.${result}`, result)}
     </Badge>
   )
 }
 
 function StatusBadge({ status }: { status: string }) {
+  const { t } = useTranslation()
+  const value = status || 'draft'
   return (
     <Badge variant={status === 'active' ? 'default' : 'secondary'} className="capitalize">
-      {status || 'draft'}
+      {t(`validation.simulation.status.${value}`, value)}
     </Badge>
   )
 }
@@ -58,6 +63,7 @@ function LoadingSkeleton() {
 }
 
 export default function AttackSimulationPage() {
+  const { t } = useTranslation()
   const { data, isLoading, mutate } = useSimulations()
   const { trigger: runSimulation } = useRunSimulation()
 
@@ -65,13 +71,19 @@ export default function AttackSimulationPage() {
     async (simId: string) => {
       try {
         const result = await runSimulation(simId)
-        toast.success(`Simulation completed: ${result?.result ?? 'done'}`)
+        toast.success(
+          t('validation.simulation.ranDone', 'Simulation completed: {result}', {
+            result: result?.result
+              ? t(`validation.simulation.result.${result.result}`, result.result)
+              : t('validation.simulation.ranDoneFallback', 'done'),
+          })
+        )
         mutate()
       } catch {
-        toast.error('Failed to run simulation')
+        toast.error(t('validation.simulation.runFailed', 'Failed to run simulation'))
       }
     },
-    [runSimulation, mutate]
+    [runSimulation, mutate, t]
   )
 
   const stats = useMemo(() => {
@@ -91,7 +103,12 @@ export default function AttackSimulationPage() {
     () => [
       {
         accessorKey: 'name',
-        header: ({ column }) => <DataTableColumnHeader column={column} title="Technique" />,
+        header: ({ column }) => (
+          <DataTableColumnHeader
+            column={column}
+            title={t('validation.simulation.col.technique', 'Technique')}
+          />
+        ),
         cell: ({ row }) => {
           const sim = row.original
           return (
@@ -109,7 +126,12 @@ export default function AttackSimulationPage() {
       },
       {
         accessorKey: 'mitre_tactic',
-        header: ({ column }) => <DataTableColumnHeader column={column} title="Tactic" />,
+        header: ({ column }) => (
+          <DataTableColumnHeader
+            column={column}
+            title={t('validation.simulation.col.tactic', 'Tactic')}
+          />
+        ),
         cell: ({ row }) => (
           <Badge variant="outline" className="text-xs">
             {row.original.mitre_tactic || row.original.simulation_type}
@@ -118,18 +140,28 @@ export default function AttackSimulationPage() {
       },
       {
         accessorKey: 'last_run_at',
-        header: ({ column }) => <DataTableColumnHeader column={column} title="Last run" />,
+        header: ({ column }) => (
+          <DataTableColumnHeader
+            column={column}
+            title={t('validation.simulation.col.lastRun', 'Last run')}
+          />
+        ),
         cell: ({ row }) => (
           <span className="text-muted-foreground text-sm">
             {row.original.last_run_at
-              ? new Date(row.original.last_run_at).toLocaleDateString()
-              : 'Never'}
+              ? formatDateSafe(row.original.last_run_at)
+              : t('validation.simulation.never', 'Never')}
           </span>
         ),
       },
       {
         accessorKey: 'detection_rate',
-        header: ({ column }) => <DataTableColumnHeader column={column} title="Detection rate" />,
+        header: ({ column }) => (
+          <DataTableColumnHeader
+            column={column}
+            title={t('validation.simulation.col.detectionRate', 'Detection rate')}
+          />
+        ),
         cell: ({ row }) => (
           <div className="flex flex-wrap items-center gap-2">
             <Progress value={row.original.detection_rate} className="h-2 w-16" />
@@ -139,12 +171,22 @@ export default function AttackSimulationPage() {
       },
       {
         accessorKey: 'last_result',
-        header: ({ column }) => <DataTableColumnHeader column={column} title="Result" />,
+        header: ({ column }) => (
+          <DataTableColumnHeader
+            column={column}
+            title={t('validation.simulation.col.result', 'Result')}
+          />
+        ),
         cell: ({ row }) => <ResultBadge result={row.original.last_result} />,
       },
       {
         accessorKey: 'status',
-        header: ({ column }) => <DataTableColumnHeader column={column} title="Status" />,
+        header: ({ column }) => (
+          <DataTableColumnHeader
+            column={column}
+            title={t('validation.simulation.col.status', 'Status')}
+          />
+        ),
         cell: ({ row }) => <StatusBadge status={row.original.status} />,
       },
       {
@@ -163,12 +205,12 @@ export default function AttackSimulationPage() {
             }}
           >
             <Play className="h-3.5 w-3.5" />
-            Run
+            {t('validation.simulation.run', 'Run')}
           </Button>
         ),
       },
     ],
-    [handleRun]
+    [handleRun, t]
   )
 
   if (isLoading) return <LoadingSkeleton />
@@ -176,18 +218,42 @@ export default function AttackSimulationPage() {
   const simulations = data?.data ?? []
 
   const metrics: MetricStripItem[] = [
-    { key: 'total', label: 'Simulations', value: stats.total },
-    { key: 'active', label: 'Active', value: stats.active },
-    { key: 'caught', label: 'Detected or prevented', value: stats.completed },
-    { key: 'bypassed', label: 'Bypassed', value: stats.failed, tone: 'danger' },
-    { key: 'rate', label: 'Avg detection rate', value: `${Math.round(stats.avgDetection)}%` },
+    {
+      key: 'total',
+      label: t('validation.simulation.metric.total', 'Simulations'),
+      value: stats.total,
+    },
+    {
+      key: 'active',
+      label: t('validation.simulation.metric.active', 'Active'),
+      value: stats.active,
+    },
+    {
+      key: 'caught',
+      label: t('validation.simulation.metric.caught', 'Detected or prevented'),
+      value: stats.completed,
+    },
+    {
+      key: 'bypassed',
+      label: t('validation.simulation.metric.bypassed', 'Bypassed'),
+      value: stats.failed,
+      tone: 'danger',
+    },
+    {
+      key: 'rate',
+      label: t('validation.simulation.metric.rate', 'Avg detection rate'),
+      value: `${Math.round(stats.avgDetection)}%`,
+    },
   ]
 
   return (
     <Main>
       <PageHeader
-        title="Attack simulation"
-        description="Run MITRE ATT&CK-mapped attack techniques to check that your controls catch them."
+        title={t('validation.simulation.title', 'Attack simulation')}
+        description={t(
+          'validation.simulation.description',
+          'Run MITRE ATT&CK-mapped attack techniques to check that your controls catch them.'
+        )}
       />
 
       <MetricStrip className="mt-5" items={metrics} />
@@ -196,16 +262,19 @@ export default function AttackSimulationPage() {
         {simulations.length === 0 ? (
           <EmptyState
             icon={Swords}
-            title="No simulations yet"
-            description="Simulations appear here once they are created for this tenant."
+            title={t('validation.simulation.emptyTitle', 'No simulations yet')}
+            description={t(
+              'validation.simulation.emptyDesc',
+              'Simulations appear here once they are created for this tenant.'
+            )}
           />
         ) : (
           <DataTable
             columns={columns}
             data={simulations}
-            searchPlaceholder="Search simulations…"
-            emptyMessage="No simulations match"
-            emptyDescription="Try a different search."
+            searchPlaceholder={t('validation.simulation.searchPlaceholder', 'Search simulations…')}
+            emptyMessage={t('validation.simulation.noMatch', 'No simulations match')}
+            emptyDescription={t('validation.simulation.noMatchDesc', 'Try a different search.')}
           />
         )}
       </div>

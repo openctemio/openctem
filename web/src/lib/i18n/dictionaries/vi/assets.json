@@ -56,7 +56,6 @@
   "assets.tabs.attention": "Cần xử lý",
   "assets.tabs.groups": "Nhóm",
   "assets.tabs.changes": "Hoạt động",
-  "assets.tabs.webSurface": "Bề mặt web",
   "assets.attention.title": "Cần xử lý",
   "assets.attention.description": "Tài sản thiếu chủ sở hữu, mức độ quan trọng hoặc lần quét, làm yếu việc ưu tiên, phân công hoặc độ phủ. Xử lý hàng loạt tại đây.",
   "assets.attention.tabsAria": "Lý do cần xử lý",
@@ -1178,5 +1177,7 @@
   "assets.nameCell.expiresIn": "hết hạn sau {count, plural, other {# ngày}}",
   "assets.nameCell.sans": "Các tên khác: {names}",
   "assets.nameCell.copy": "Sao chép {name}",
-  "assets.nameCell.copied": "Đã sao chép"
+  "assets.nameCell.copied": "Đã sao chép",
+  "assets.view.list": "Xem dạng danh sách",
+  "assets.view.categories": "Xem theo danh mục"
 }
