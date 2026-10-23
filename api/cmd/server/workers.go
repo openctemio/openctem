@@ -428,6 +428,8 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 	// Automation runs a restart left pending or running end as failed (on
 	// start and every 15 minutes), so they stop holding the active-run cap.
 	w.ControllerManager.Register(controller.NewAutomationRunReaper(repos.WorkflowRun, 0, log))
+	// Simulate runs are kept 30 days, live runs 180 (RFC-125).
+	w.ControllerManager.Register(controller.NewAutomationRunRetention(repos.WorkflowDelivery, log))
 
 	// One-off scans that never ran are archived after 30 days (audited).
 	w.ControllerManager.Register(controller.NewOneOffScanArchiveController(svc.Scan, 0, 0))

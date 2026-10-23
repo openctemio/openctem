@@ -37,6 +37,8 @@ type WorkflowService struct {
 	runRepo      automationdom.RunRepository
 	nodeRunRepo  automationdom.NodeRunRepository
 	versions     automationdom.VersionRepository
+	deliveries   automationdom.DeliveryRepository
+	scope        ScopeChecker
 	executor     *WorkflowExecutor
 	auditService *auditapp.AuditService
 	logger       *logger.Logger
@@ -803,7 +805,15 @@ func (s *WorkflowService) TriggerWorkflow(ctx context.Context, input TriggerWork
 	if !input.UserID.IsZero() {
 		run.SetTriggeredBy(input.UserID)
 	}
-	run.SetSubject(input.SubjectID, input.IdempotencyKey)
+	// A run always records the finding or asset its trigger names, so reads
+	// of it follow the data scope (run_view.go).
+	subject := input.SubjectID
+	if subject == nil {
+		if id, err := shared.IDFromString(subjectFromTrigger(input.TriggerData)); err == nil {
+			subject = &id
+		}
+	}
+	run.SetSubject(subject, input.IdempotencyKey)
 
 	run.TotalNodes = len(graph.Nodes)
 
@@ -861,8 +871,11 @@ type ListWorkflowRunsInput struct {
 	TenantID   shared.ID
 	WorkflowID *shared.ID
 	Status     *automationdom.RunStatus
-	Page       int
-	PerPage    int
+	Mode       *automationdom.Mode
+	// scope, when set, keeps runs whose subject is inside it (run_view.go).
+	scope   *shared.DataScope
+	Page    int
+	PerPage int
 }
 
 // ListRuns lists workflow runs.
@@ -871,6 +884,8 @@ func (s *WorkflowService) ListRuns(ctx context.Context, input ListWorkflowRunsIn
 		TenantID:   &input.TenantID,
 		WorkflowID: input.WorkflowID,
 		Status:     input.Status,
+		Mode:       input.Mode,
+		Scope:      input.scope,
 	}
 
 	page := pagination.Pagination{

@@ -203,12 +203,13 @@ type Repositories struct {
 	StepRun          *postgres.StepRunRepository
 
 	// Workflows
-	Workflow        *postgres.AutomationRepository
-	WorkflowNode    *postgres.AutomationNodeRepository
-	WorkflowEdge    *postgres.AutomationEdgeRepository
-	WorkflowRun     *postgres.AutomationRunRepository
-	WorkflowNodeRun *postgres.AutomationRunStepRepository
-	WorkflowVersion *postgres.AutomationVersionRepository
+	Workflow         *postgres.AutomationRepository
+	WorkflowNode     *postgres.AutomationNodeRepository
+	WorkflowEdge     *postgres.AutomationEdgeRepository
+	WorkflowRun      *postgres.AutomationRunRepository
+	WorkflowNodeRun  *postgres.AutomationRunStepRepository
+	WorkflowVersion  *postgres.AutomationVersionRepository
+	WorkflowDelivery *postgres.AutomationDeliveryRepository
 
 	// Suppressions
 	Suppression *postgres.SuppressionRepository
@@ -551,12 +552,13 @@ func newRepositories(db *postgres.DB) *Repositories {
 		StepRun:          postgres.NewStepRunRepository(db),
 
 		// Workflows
-		Workflow:        postgres.NewAutomationRepository(db),
-		WorkflowNode:    postgres.NewAutomationNodeRepository(db),
-		WorkflowEdge:    postgres.NewAutomationEdgeRepository(db),
-		WorkflowRun:     postgres.NewAutomationRunRepository(db),
-		WorkflowNodeRun: postgres.NewAutomationRunStepRepository(db),
-		WorkflowVersion: postgres.NewAutomationVersionRepository(db),
+		Workflow:         postgres.NewAutomationRepository(db),
+		WorkflowNode:     postgres.NewAutomationNodeRepository(db),
+		WorkflowEdge:     postgres.NewAutomationEdgeRepository(db),
+		WorkflowRun:      postgres.NewAutomationRunRepository(db),
+		WorkflowNodeRun:  postgres.NewAutomationRunStepRepository(db),
+		WorkflowVersion:  postgres.NewAutomationVersionRepository(db),
+		WorkflowDelivery: postgres.NewAutomationDeliveryRepository(db),
 
 		// Suppressions
 		Suppression:        postgres.NewSuppressionRepository(db),

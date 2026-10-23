@@ -73,6 +73,42 @@ published version becomes `superseded`.
   is switched on version 1, published by its owner, live, so working rules
   keep acting. Automations that are off stay in simulate without a version.
 
+### Simulate by construction, the run trace and deliveries
+
+An action or notification step is either **executed** (the handlers, which
+hold the services that change data, open tickets, start scans and send
+messages) or **evaluated** (`internal/app/automation/evaluate.go`). A simulate
+run reaches only the evaluator, whose single dependency is a read-only finding
+reader: by type it cannot write or reach the network. A unit test walks the
+evaluator's fields and fails if anything else appears there, and another runs
+an automation whose live handlers call a fake server: in simulate the server
+receives nothing. The step's permission and the subject's scope are still
+checked for the owner before evaluation, so a simulation also shows steps the
+owner may not run.
+
+Each step records a trace on `automation_run_steps`: `in_count` (subjects
+that reached it), `out_count` (acted on, or would act on) and `skipped`, per
+reason (`condition_false`, `branch_not_taken`, `no_change`, `no_subject`,
+`refused:not_authorized`). Every notification and ticket step records a
+delivery in `automation_deliveries`: channel, target, mode, status
+(`simulated`, never sent; `sent`, `failed`, `held` by a create policy),
+attempts, external reference, and a payload limited to an allow-list
+(title, severity, subject, provider, project, issue type, repository, body
+length): never a body, headers or a secret.
+
+- `GET /workflow-runs/{id}` returns the steps with their trace, the
+  deliveries and `retained_until`.
+- `GET /workflows/{id}/trace?mode=simulate&days=30` sums the trace and the
+  deliveries per channel over the window.
+- **Scope.** Runs record the finding or asset their trigger names
+  (`subject_id`). A run about a subject outside the caller's data scope is
+  not listed and answers 404, and the trace counts only runs the caller may
+  see (runs without a subject, such as a finished scan, are visible to every
+  reader).
+- **Retention.** Simulate runs are kept 30 days, live runs and their
+  deliveries 180 days; the `automation-run-retention` controller (every 6
+  hours, one replica) deletes older finished runs in batches.
+
 Risk classes (`pkg/domain/automation/risk.go`): low (tags), elevated
 (status, assignment, tickets, notifications, AI triage), high (scans, and
 any automation that lets automation-caused events start it). The go-live

@@ -3,6 +3,7 @@ package handler
 import (
 	"encoding/json"
 	"net/http"
+	"strconv"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -263,4 +264,69 @@ func (h *WorkflowHandler) writeWorkflowDetail(w http.ResponseWriter, r *http.Req
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
 	_ = json.NewEncoder(w).Encode(toWorkflowDetailResponse(d))
+}
+
+// WorkflowTraceStep is one step's trace summed over runs.
+type WorkflowTraceStep struct {
+	NodeKey string         `json:"node_key"`
+	In      int            `json:"in"`
+	Out     int            `json:"out"`
+	Skipped map[string]int `json:"skipped,omitempty"`
+}
+
+// WorkflowTraceResponse is an automation's trace over a window, counted over
+// runs whose subject the caller may see.
+type WorkflowTraceResponse struct {
+	Mode                string              `json:"mode"`
+	Days                int                 `json:"days"`
+	Runs                int                 `json:"runs"`
+	Steps               []WorkflowTraceStep `json:"steps"`
+	DeliveriesByChannel map[string]int      `json:"deliveries_by_channel"`
+}
+
+// GetTrace handles GET /api/v1/workflows/{id}/trace?mode=simulate&days=30.
+// @Summary      Automation trace
+// @Description  Per-step in, out and per-reason skipped counts summed over the automation's runs of one mode in the last days (default simulate, 30; at most 180), and deliveries per channel. Only runs whose subject (finding or asset) is in the caller's data scope are counted.
+// @Tags         Automations
+// @Produce      json
+// @Param        id    path      string  true   "Automation ID"
+// @Param        mode  query     string  false  "simulate or live"
+// @Param        days  query     int     false  "Days back (1-180)"
+// @Success      200   {object}  WorkflowTraceResponse
+// @Failure      404   {object}  apierror.Error
+// @Security     BearerAuth
+// @Router       /workflows/{id}/trace [get]
+func (h *WorkflowHandler) GetTrace(w http.ResponseWriter, r *http.Request) {
+	tenantID, workflowID, userID, ok := workflowPathIDs(w, r)
+	if !ok {
+		return
+	}
+	in := automationsvc.TraceInput{TenantID: tenantID, UserID: userID, WorkflowID: workflowID,
+		Mode: automation.Mode(r.URL.Query().Get("mode"))}
+	if d := r.URL.Query().Get("days"); d != "" {
+		n, err := strconv.Atoi(d)
+		if err != nil || n < 1 || n > 180 {
+			apierror.BadRequest("days must be between 1 and 180").WriteJSON(w)
+			return
+		}
+		in.Days = n
+	}
+	agg, err := h.service.Trace(r.Context(), in)
+	if err != nil {
+		h.handleServiceError(w, err)
+		return
+	}
+	if !in.Mode.IsValid() {
+		in.Mode = automation.ModeSimulate
+	}
+	if in.Days == 0 {
+		in.Days = 30
+	}
+	resp := WorkflowTraceResponse{Mode: string(in.Mode), Days: in.Days, Runs: agg.Runs,
+		Steps: []WorkflowTraceStep{}, DeliveriesByChannel: agg.DeliveriesByChannel}
+	for _, s := range agg.Steps {
+		resp.Steps = append(resp.Steps, WorkflowTraceStep{NodeKey: s.NodeKey, In: s.In, Out: s.Out, Skipped: s.Skipped})
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(resp)
 }
