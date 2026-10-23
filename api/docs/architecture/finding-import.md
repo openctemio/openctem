@@ -34,6 +34,7 @@ Multipart form:
 | `?dry_run=true` | Preview: parse and count; nothing is written |
 | `?format=` | Force the format of a single file |
 | `?min_severity=` | Drop findings below `info`, `low`, `medium`, `high` or `critical` |
+| `?coverage=full&asset_id=…` | Declares the upload a complete scan of the named assets (1 to 100) by each file's tool: the open findings of that tool on them that the upload does not report are closed. Needs `findings:status`, `findings:bulk_update` and step-up; not with `min_severity`; every asset must be visible to the uploader ([ingest-receipts.md](ingest-receipts.md#full-coverage-uploads)) |
 | `Idempotency-Key` header | 1 to 128 printable ASCII characters: a retry of the same upload returns the first answer (below) |
 
 The format is read from the content (`importer.IsZip`, `importer.Detect` on
@@ -88,8 +89,9 @@ A preview ignores the key.
 - The report is ingested through
   `ingest.Service` with the uploader's data scope as `Options.Actor`, so a
   restricted uploader only adds findings to existing assets in their scope
-  and creates none. Coverage is always **partial**: an import never
-  auto-resolves anything, whatever the file says.
+  and creates none. Coverage is **partial** unless the upload declares
+  `coverage=full` for explicit assets: without that an import never closes
+  anything, whatever the file says.
 - The tenant comes from the authenticated request, never from the file.
 
 ## VEX documents
@@ -152,8 +154,8 @@ preview writes none. The receipt id is:
   audit records.
 
 So everything one upload produced can be found (and purged) by its id. The
-receipt is read by `(tenant_id, id)` only. An upload never closes findings:
-its coverage is partial.
+receipt is read by `(tenant_id, id)` only. An upload closes findings only
+with a declared full scope (above).
 
 ## Audit
 
