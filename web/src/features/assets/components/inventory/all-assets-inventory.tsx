@@ -3,8 +3,10 @@
 /**
  * Unified All-Assets inventory: ONE server-paginated table across every asset
  * type, composed like the Findings list (the reference list page — see
- * docs/ui-style-contract.md): metric strip, then a single toolbar row above the
- * table, a floating filter panel beside it and a floating bulk-action bar.
+ * docs/ui-style-contract.md): the open view's name and count, then a single
+ * toolbar row above the table, a filter panel beside it and a floating
+ * bulk-action bar. The views themselves (All assets and the registry's lenses,
+ * with counts) are listed in the sidebar under Assets (research/242 D5).
  *
  * State model: the URL query string is the single source of truth. Filters are
  * parsed from it on every render and written back with router.replace, so a
@@ -18,7 +20,7 @@
  * from its attributes, row actions, and an empty state that says how to find
  * the type. Create, edit, delete and CSV export work for every type here.
  * `?lens=` narrows it to one registry lens (every type of it, aliases
- * included), picked from the lens pills above the table.
+ * included), picked from the sidebar's quick views; a type is a filter.
  */
 
 import { AssetsSectionTabs } from '../assets-section-tabs'
@@ -51,7 +53,7 @@ import { useTranslation } from '@/context/i18n-provider'
 import { useTenant } from '@/context/tenant-provider'
 import { useLastVisit } from '../../hooks/use-last-visit'
 import { useAssets, useAssetStats, type AssetSearchFilters } from '../../hooks/use-assets'
-import type { Asset, AssetType } from '../../types/asset.types'
+import type { Asset } from '../../types/asset.types'
 import { useBusinessUnits } from '@/features/business-units/api/use-business-units'
 import {
   buildFacetGroups,
@@ -72,12 +74,11 @@ import {
   type InventoryFilters,
 } from '../../lib/inventory-url'
 import { InventoryViewsMenu } from './inventory-views-menu'
-import { InventoryStatStrip } from './inventory-stat-strip'
 import { InventoryBulkBar } from './inventory-bulk-bar'
 import { InventoryFacetPanel } from './inventory-facet-panel'
 import { InventoryTable } from './inventory-table'
-import { InventoryLensBar, inventoryLenses } from './inventory-lens-bar'
-import { lensCounts, lensOfType } from '../../lib/inventory-lenses'
+import { InventoryHiddenChip } from './inventory-hidden-chip'
+import { inventoryLenses, lensCounts } from '../../lib/inventory-lenses'
 
 const FILTERS_OPEN_KEY = 'openctem:assets-filters-open'
 
@@ -266,7 +267,7 @@ export function AllAssetsInventory({ viewSwitcher }: { viewSwitcher?: ReactNode 
   const searchFilters = useMemo(() => toSearchFilters(filters), [filters])
   const { assets, total, isFirstLoad, isLoading, isError, error, mutate } =
     useAssetsKeepingPrevious(searchFilters)
-  const { stats, isLoading: statsLoading, error: statsError, mutate: statsMutate } = useAssetStats()
+  const { stats, isLoading: statsLoading, mutate: statsMutate } = useAssetStats()
   const { data: buData } = useBusinessUnits()
 
   // Typed mode: the list is one type (and maybe one sub-type).
@@ -276,20 +277,20 @@ export function AllAssetsInventory({ viewSwitcher }: { viewSwitcher?: ReactNode 
     [registry, filters.types, filters.subType]
   )
   const facetKeys = useMemo(() => typeView?.facets.map((f) => f.key) ?? [], [typeView])
-  // The lens's label when the list is one lens (and not one type).
-  const lensLabel = useMemo(
+  // The open lens (when the list is one lens and not one type).
+  const lens = useMemo(
     () =>
       !typeView && filters.lens
-        ? inventoryLenses(registry).find((l) => l.id === filters.lens)?.label
+        ? inventoryLenses(registry).find((l) => l.id === filters.lens)
         : undefined,
     [registry, typeView, filters.lens]
   )
+  const lensLabel = lens ? t(`assets.lens.${lens.id}`, lens.label) : undefined
   // The type's (or lens's) own counts. Without either this is the same
   // request as the tenant-wide stats above (SWR shares it).
   const {
     stats: typeStats,
     isLoading: typeStatsLoading,
-    error: typeStatsError,
     mutate: typeStatsMutate,
   } = useAssetStats({
     types: typeView ? [typeView.type] : undefined,
@@ -298,11 +299,24 @@ export function AllAssetsInventory({ viewSwitcher }: { viewSwitcher?: ReactNode 
     countBy: facetKeys.length > 0 ? facetKeys : undefined,
   })
   const scopeLabel = typeView?.plural ?? lensLabel
-  // Lens and type pill counts: the caller's scoped, unfiltered stats.
-  const lensCountsData = useMemo(
-    () => lensCounts(registry, stats.byTypeSubType),
-    [registry, stats.byTypeSubType]
-  )
+  // Type counts for the Type facet: the open lens's types, or every type,
+  // from the caller's scoped, unfiltered stats.
+  const typeOptions = useMemo(() => {
+    const counts = lensCounts(registry, stats.byTypeSubType)
+    const chips = filters.lens
+      ? (counts.chips[filters.lens] ?? [])
+      : Object.values(counts.chips).flat()
+    const labels: Record<string, string> = {}
+    const values: Record<string, number> = {}
+    for (const c of chips) {
+      labels[c.type] = t(`assets.typeLabel.${c.type}`, c.label)
+      values[c.type] = (values[c.type] ?? 0) + c.count
+    }
+    if (!filters.lens) {
+      for (const type of counts.otherTypes) labels[type] ??= t(`assets.typeLabel.${type}`, type)
+    }
+    return { labels, counts: values }
+  }, [registry, stats.byTypeSubType, filters.lens, t])
   const attributeFacets = useMemo(
     () =>
       (typeView?.facets ?? []).map((attribute) => ({
@@ -312,15 +326,6 @@ export function AllAssetsInventory({ viewSwitcher }: { viewSwitcher?: ReactNode 
       })),
     [typeView, typeStats]
   )
-  const boolFacets = useMemo(
-    () =>
-      (typeView?.facets ?? [])
-        .filter((f) => f.kind === 'bool')
-        .slice(0, 3)
-        .map((f) => ({ key: f.key, label: propertyLabel(f.key) })),
-    [typeView]
-  )
-
   const businessUnitLabels = useMemo(() => {
     const map: Record<string, string> = {}
     for (const bu of buData?.data ?? []) map[bu.id] = bu.name
@@ -328,8 +333,8 @@ export function AllAssetsInventory({ viewSwitcher }: { viewSwitcher?: ReactNode 
   }, [buData])
 
   const facetGroups = useMemo(
-    () => buildFacetGroups(businessUnitLabels, t),
-    [businessUnitLabels, t]
+    () => buildFacetGroups(businessUnitLabels, t, typeOptions),
+    [businessUnitLabels, t, typeOptions]
   )
   // The expiry views, for a list that can hold expiring assets. Built on
   // every render (two small objects) so their "now" is never stale.
@@ -351,11 +356,14 @@ export function AllAssetsInventory({ viewSwitcher }: { viewSwitcher?: ReactNode 
     [filters, setFilters]
   )
 
-  // Search has its own box in the toolbar, so the filter button counts the rest.
-  const activeCount = countActiveFilters(filters) - (filters.search ? 1 : 0)
+  // Search has its own box in the toolbar, and the lens is the open view (the
+  // sidebar's quick view), so the filter button counts the rest.
+  const activeCount =
+    countActiveFilters(filters) - (filters.search ? 1 : 0) - (filters.lens ? 1 : 0)
+  // Clearing the filters keeps the open view.
   const clearAll = useCallback(
-    () => setFilters({ sort: filters.sort, pageSize: filters.pageSize }),
-    [setFilters, filters.sort, filters.pageSize]
+    () => setFilters({ lens: filters.lens, sort: filters.sort, pageSize: filters.pageSize }),
+    [setFilters, filters.lens, filters.sort, filters.pageSize]
   )
 
   // Row selection: the table owns the checkboxes; bumping the epoch clears
@@ -468,7 +476,7 @@ export function AllAssetsInventory({ viewSwitcher }: { viewSwitcher?: ReactNode 
 
   return (
     <Main>
-      <PageHeader title={scopeLabel ?? t('assets.overview.title', 'Assets')}>
+      <PageHeader title={t('assets.overview.title', 'Assets')}>
         <Button
           variant="outline"
           size="sm"
@@ -487,37 +495,23 @@ export function AllAssetsInventory({ viewSwitcher }: { viewSwitcher?: ReactNode 
       </PageHeader>
       <AssetsSectionTabs />
 
-      <InventoryLensBar
-        className="mt-5"
-        registry={registry}
-        // One type picked from a lens's chips (or a ?types= link) keeps its lens lit.
-        value={filters.lens ?? (typeView ? lensOfType(registry, filters.types?.[0]) : undefined)}
-        types={filters.types}
-        counts={statsLoading ? undefined : lensCountsData}
-        total={statsLoading ? undefined : stats.total}
-        onChange={({ lens, types }) =>
-          setFilters({
-            ...filters,
-            lens,
-            types: types as AssetType[] | undefined,
-            subType: undefined,
-            page: 1,
-          })
-        }
-      />
+      <div className="mt-5 flex min-w-0 flex-wrap items-baseline gap-x-2 gap-y-0.5">
+        <h2 data-testid="inventory-view-title" className="text-base font-semibold">
+          {scopeLabel ?? t('assets.quickView.all', 'All assets')}
+        </h2>
+        <span className="text-sm tabular-nums text-muted-foreground">
+          {(scopeLabel ? typeStatsLoading : statsLoading)
+            ? ''
+            : (scopeLabel ? typeStats : stats).total.toLocaleString()}
+        </span>
+        {lens?.description && (
+          <span className="text-xs text-muted-foreground">
+            {t(`assets.lensDescription.${lens.id}`, lens.description)}
+          </span>
+        )}
+      </div>
 
-      <InventoryStatStrip
-        className="mt-4"
-        stats={scopeLabel ? typeStats : stats}
-        filters={filters}
-        isLoading={scopeLabel ? typeStatsLoading : statsLoading}
-        isError={Boolean(scopeLabel ? typeStatsError : statsError)}
-        onChange={setFilters}
-        typeLabel={scopeLabel}
-        boolFacets={boolFacets}
-      />
-
-      <div className="mt-5 flex items-start">
+      <div className="mt-3 flex items-start">
         {/* Always mounted so opening and closing can animate: the slot's width
             (and the gap after it) eases between 0 and the card's width while
             the card fades, and the table beside it resizes in step. The card
@@ -541,23 +535,6 @@ export function AllAssetsInventory({ viewSwitcher }: { viewSwitcher?: ReactNode 
         </div>
 
         <div className="min-w-0 flex-1">
-          {!filters.attribution?.length && (
-            <p className="mb-2 text-sm text-muted-foreground" data-slot="attribution-default">
-              {t(
-                'assets.triage.defaultHint',
-                'Showing your inventory, including what discovery found (passive only until a scope entry covers it). Names awaiting review and names marked not yours are hidden.'
-              )}{' '}
-              <button
-                type="button"
-                className="font-medium text-foreground underline underline-offset-2"
-                onClick={() =>
-                  setFilters({ ...filters, attribution: [...ATTRIBUTION_FILTER_VALUES], page: 1 })
-                }
-              >
-                {t('assets.triage.showAll', 'Show all')}
-              </button>
-            </p>
-          )}
           {isError ? (
             <Alert variant="destructive">
               <AlertTitle>
@@ -612,6 +589,19 @@ export function AllAssetsInventory({ viewSwitcher }: { viewSwitcher?: ReactNode 
                   />
                   {refreshButton}
                 </>
+              }
+              toolbarBelow={
+                !filters.attribution?.length ? (
+                  <InventoryHiddenChip
+                    onShowAll={() =>
+                      setFilters({
+                        ...filters,
+                        attribution: [...ATTRIBUTION_FILTER_VALUES],
+                        page: 1,
+                      })
+                    }
+                  />
+                ) : undefined
               }
               hasFilters={!isInventoryFilterEmpty(filters)}
               typeView={typeView}

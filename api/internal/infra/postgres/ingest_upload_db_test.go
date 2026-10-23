@@ -106,6 +106,40 @@ func TestIngestUploadJobs_DB(t *testing.T) {
 	if plain, err := sealer.Open(got[0]); err != nil || string(plain) != "report" {
 		t.Fatalf("open stored part: %q %v", plain, err)
 	}
+	// A retry failure keeps the report; apply_failed (dead) keeps it for a
+	// requeue; a permanent failure with a fixed code deletes it with the
+	// failure (it never runs again), and only the failed job's own parts.
+	if err := repo.Fail(ctx, job.ID(), "transient", "", time.Now(), false); err != nil {
+		t.Fatal(err)
+	}
+	if err := repo.Fail(ctx, job.ID(), "boom", ingestjob.ErrorApplyFailed, time.Now(), true); err != nil {
+		t.Fatal(err)
+	}
+	if got, _ := payloads.List(ctx, tenant, job.ID()); len(got) != 1 {
+		t.Fatalf("apply_failed dropped the stored report: %d parts", len(got))
+	}
+	permRef := shared.NewID().String()
+	perm := ingestjob.NewUploadJob(shared.NewID(), tenant, ingestjob.KindCIResults, permRef, "run:"+permRef, "ci:"+permRef, nil, digest)
+	if _, _, err := repo.EnqueueUpload(ctx, perm); err != nil {
+		t.Fatal(err)
+	}
+	permPart, _ := sealer.Seal(tenant, perm.ID(), 0, "results", []byte("garbage"))
+	if err := payloads.Put(ctx, permPart); err != nil {
+		t.Fatal(err)
+	}
+	if err := repo.Fail(ctx, perm.ID(), "unreadable", "unreadable", time.Now(), true); err != nil {
+		t.Fatal(err)
+	}
+	if got, _ := payloads.List(ctx, tenant, perm.ID()); len(got) != 0 {
+		t.Fatalf("a permanently failed upload kept %d stored parts", len(got))
+	}
+	if got, _ := payloads.List(ctx, tenant, job.ID()); len(got) != 1 {
+		t.Fatalf("another job's report was deleted: %d parts", len(got))
+	}
+	if ok, err := repo.RequeueDeadUpload(ctx, tenant, job.ID()); err != nil || !ok {
+		t.Fatalf("requeue after apply_failed: %v %v", ok, err)
+	}
+
 	// An applied upload keeps no envelope.
 	if err := repo.Complete(ctx, job.ID(), []byte(`{}`)); err != nil {
 		t.Fatal(err)

@@ -4,9 +4,14 @@ import { useMemo, useState } from 'react'
 import Link from '@/components/link'
 import { useRouter } from 'next/navigation'
 import type { ColumnDef } from '@tanstack/react-table'
-import useSWR from 'swr'
 import { Main } from '@/components/layout'
-import { PageHeader, EmptyState, DataTable, DataTableColumnHeader } from '@/features/shared'
+import {
+  PageHeader,
+  EmptyState,
+  DataTable,
+  DataTableColumnHeader,
+  CappedNotice,
+} from '@/features/shared'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -21,18 +26,12 @@ import {
 } from '@/components/ui/dialog'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Plus, RefreshCw, CalendarClock, Lightbulb } from 'lucide-react'
-import { get, post } from '@/lib/api/client'
+import { post } from '@/lib/api/client'
+import { useRegisterPages } from '@/lib/api/use-register-pages'
 import { toast } from 'sonner'
 import { CyclePolicyCard, summarizeEvaluation, type CtemCycle } from '@/features/cycles'
 import { CycleStatusBadge } from '@/features/cycles/components/cycle-status-badge'
 import { useTranslation } from '@/context/i18n-provider'
-
-interface PaginatedResponse {
-  data: CtemCycle[]
-  total: number
-  page: number
-  per_page: number
-}
 
 // Feed-forward "lessons" callout accent — a distinct info hue, not a severity/status color.
 const LESSONS_CALLOUT_CLASS =
@@ -88,9 +87,7 @@ export default function CtemCyclesPage() {
     data: response,
     isLoading,
     mutate,
-  } = useSWR<PaginatedResponse>('/api/v1/ctem-cycles?per_page=100', get, {
-    revalidateOnFocus: false,
-  })
+  } = useRegisterPages<CtemCycle>('/api/v1/ctem-cycles?per_page=100')
 
   const cycles = useMemo(() => response?.data ?? [], [response])
 
@@ -276,6 +273,7 @@ export default function CtemCyclesPage() {
             />
           )}
         </div>
+        <CappedNotice loaded={cycles.length} total={response?.total ?? 0} />
       </Main>
 
       <Dialog open={isCreateOpen} onOpenChange={setIsCreateOpen}>

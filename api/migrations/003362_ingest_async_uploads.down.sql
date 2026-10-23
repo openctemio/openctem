@@ -1,4 +1,4 @@
--- Reverts 003360_ingest_async_uploads. Queued uploads are lost: their raw
+-- Reverts 003362_ingest_async_uploads. Queued uploads are lost: their raw
 -- reports are dropped with ingest_payloads and their jobs are removed, and a
 -- receipt still queued is marked failed.
 

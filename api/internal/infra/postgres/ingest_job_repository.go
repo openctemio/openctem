@@ -88,7 +88,7 @@ func (r *IngestJobRepository) getByIdempotencyKey(ctx context.Context, tenantID 
 
 // DefaultMaxRunningPerTenant bounds a tenant's processing jobs when no cap
 // is configured.
-const DefaultMaxRunningPerTenant = 4
+const DefaultMaxRunningPerTenant = 2
 
 // SetMaxRunningPerTenant caps how many jobs of one tenant are processing at
 // once (<= 0 keeps DefaultMaxRunningPerTenant).
@@ -106,7 +106,14 @@ func (r *IngestJobRepository) runningCap() int {
 //
 // Order: lane first (urgent, interactive, bulk), then round-robin across
 // tenants within a lane (each tenant's oldest due job before any tenant's
-// second), then age. Guards:
+// second), then age. The tenant's share counts its running jobs too
+// (tenant_running + rn): a tenant already holding workers comes after one
+// holding fewer, so a tenant with an older backlog cannot keep every freed
+// worker. The urgent lane goes ahead of other tenants for one job of a
+// tenant at a time (its first, with nothing of it running); further urgent
+// jobs of that tenant queue as interactive. The lane is derived from the
+// report, which the tenant writes, so it orders a tenant's own work but
+// cannot buy one tenant the whole worker pool. Guards:
 //   - attempts < max_attempts: a job whose attempts ran out is never claimed
 //     again (a payload that kills the worker, its lease expired);
 //   - one processing job per scope_key: a candidate whose scope has a
@@ -151,7 +158,8 @@ func (r *IngestJobRepository) ClaimBatch(ctx context.Context, workerID string, l
 		)
 		SELECT id FROM ranked
 		WHERE sn = 1 AND rn <= $3 - tenant_running
-		ORDER BY lane, rn, available_at
+		ORDER BY CASE WHEN lane = 0 AND tenant_running + rn > 1 THEN 1 ELSE lane END,
+			tenant_running + rn, lane, available_at
 		LIMIT $2`
 
 	rows, err := tx.QueryContext(ctx, candidateQuery, now, limit, r.runningCap())
@@ -215,13 +223,22 @@ func (r *IngestJobRepository) ClaimBatch(ctx context.Context, workerID string, l
 // Complete marks a job completed with its result counts.
 func (r *IngestJobRepository) Complete(ctx context.Context, id ingestjob.ID, result []byte) error {
 	// An upload's envelope (who uploaded, from where) is not kept once it
-	// is applied.
+	// is applied, and its stored report is deleted in the same statement:
+	// the parts outlive the apply until the job is recorded completed, so
+	// a crash in between re-applies the upload instead of finding its
+	// report gone and failing an upload that was applied.
 	const query = `
-		UPDATE ingest_jobs
-		SET status = 'completed', result = $2, error = NULL,
-			payload = CASE WHEN kind <> 'sensor' THEN convert_to('{}', 'UTF8') ELSE payload END,
-			locked_by = NULL, locked_at = NULL, updated_at = NOW()
-		WHERE id = $1`
+		WITH done AS (
+			UPDATE ingest_jobs
+			SET status = 'completed', result = $2, error = NULL,
+				payload = CASE WHEN kind <> 'sensor' THEN convert_to('{}', 'UTF8') ELSE payload END,
+				locked_by = NULL, locked_at = NULL, updated_at = NOW()
+			WHERE id = $1
+			RETURNING id, tenant_id, kind
+		)
+		DELETE FROM ingest_payloads p
+		USING done d
+		WHERE d.kind <> 'sensor' AND p.job_id = d.id AND p.tenant_id = d.tenant_id`
 	_, err := r.db.ExecContext(ctx, query, id.String(), result)
 	if err != nil {
 		return fmt.Errorf("complete ingest job: %w", err)
@@ -236,11 +253,23 @@ func (r *IngestJobRepository) Fail(ctx context.Context, id ingestjob.ID, errMsg,
 	if dead {
 		status = ingestjob.StatusDead
 	}
+	// An upload that failed for good with a fixed code (unreadable, out of
+	// scope, ...) never runs again: its stored report is deleted with the
+	// failure, so uploads that fail at once cannot pile sealed bodies up on
+	// disk outside the tenant's queue limit. Only apply_failed keeps its
+	// report (a retry of the same upload re-queues it, RequeueDeadUpload).
 	const query = `
-		UPDATE ingest_jobs
-		SET status = $2, error = $3, available_at = $4, public_error = NULLIF($5, ''),
-			locked_by = NULL, locked_at = NULL, updated_at = NOW()
-		WHERE id = $1`
+		WITH failed AS (
+			UPDATE ingest_jobs
+			SET status = $2, error = $3, available_at = $4, public_error = NULLIF($5, ''),
+				locked_by = NULL, locked_at = NULL, updated_at = NOW()
+			WHERE id = $1
+			RETURNING id, tenant_id, kind
+		)
+		DELETE FROM ingest_payloads p
+		USING failed f
+		WHERE $2 = 'dead' AND $5 <> '' AND $5 <> '` + ingestjob.ErrorApplyFailed + `'
+		  AND f.kind <> 'sensor' AND p.job_id = f.id AND p.tenant_id = f.tenant_id`
 	_, err := r.db.ExecContext(ctx, query, id.String(), status.String(), errMsg, availableAt, publicErr)
 	if err != nil {
 		return fmt.Errorf("fail ingest job: %w", err)
