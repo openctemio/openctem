@@ -15,6 +15,7 @@ import {
   DataTableColumnHeader,
   type MetricStripItem,
 } from '@/features/shared'
+import { slaStateClass } from '@/lib/sla-colors'
 import { SeverityBadge } from '@/features/shared/components/severity-badge'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -168,9 +169,19 @@ function MyWorkContent() {
         cell: ({ row }) => {
           const sla = (row.original.sla_status || '').toLowerCase()
           if (sla === 'overdue' || sla === 'exceeded') {
-            return <Badge variant="destructive">{t('myWork.sla.overdue')}</Badge>
+            return (
+              <Badge variant="outline" className={slaStateClass(sla)}>
+                {t('myWork.sla.overdue')}
+              </Badge>
+            )
           }
-          if (sla === 'warning') return <Badge variant="secondary">{t('myWork.sla.dueSoon')}</Badge>
+          if (sla === 'warning') {
+            return (
+              <Badge variant="outline" className={slaStateClass(sla)}>
+                {t('myWork.sla.dueSoon')}
+              </Badge>
+            )
+          }
           return <span className="text-sm text-muted-foreground">—</span>
         },
       },
