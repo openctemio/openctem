@@ -1001,10 +1001,6 @@
   "findings.approvals.emptyPending": "No pending requests",
   "findings.approvals.emptyPendingDesc": "A false positive or risk acceptance that needs a second person appears here. Decided requests are under Approved, Rejected and All.",
   "findings.approvals.refresh": "Refresh",
-  "findings.approvals.backToFindings": "Back to Findings",
-  "findings.approvals.loadFailed": "Failed to load approvals",
-  "findings.approvals.unexpectedError": "An unexpected error occurred",
-  "findings.approvals.retry": "Retry",
   "findings.approvals.tabAll": "All",
   "findings.approvals.status.pending": "Pending",
   "findings.approvals.status.approved": "Approved",
@@ -1043,7 +1039,6 @@
   "findings.approvals.toast.rejectFailed": "Failed to reject request",
   "findings.approvals.toast.canceled": "Approval request canceled",
   "findings.approvals.toast.cancelFailed": "Failed to cancel request",
-  "findings.approvals.toast.refreshed": "Approvals refreshed",
   "findings.approvals.col.decideBy": "Decide by",
   "findings.approvals.action.remind": "Remind approvers",
   "findings.approvals.toast.reminded": "Reminded {count} approver(s)",
@@ -1704,5 +1699,11 @@
   "findings.identity.reason.refingerprint": "same key after re-keying",
   "findings.identity.reason.dastRepair": "web finding key repaired",
   "findings.identity.reason.other": "merged",
-  "findings.detail.section.identity": "the identity explanation"
+  "findings.detail.section.identity": "the identity explanation",
+  "findings.approvals.justificationLabel": "Justification",
+  "findings.approvals.openFinding": "Open finding in a new tab",
+  "findings.approvals.ownRequestShort": "Your request",
+  "findings.approvals.actionsFor": "More actions for {title}",
+  "findings.approvals.errorTitle": "approval requests",
+  "findings.approvals.requestedLabel": "Requested:"
 }
