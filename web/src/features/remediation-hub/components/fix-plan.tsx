@@ -15,8 +15,8 @@ import { EmptyState } from '@/features/shared/components/empty-state'
 import { ErrorState } from '@/features/shared/components/error-state'
 import { MetricStrip, type MetricStripItem } from '@/features/shared'
 import { useSuggestionStats, useSuggestions, useTasks } from '../api/use-remediation-hub'
-import type { TaskState } from '../api/types'
 import { DeadlinePill, TaskProgress, TaskStatePill } from './task-bits'
+import { VIEW_FILTERS } from './task-views'
 
 interface PlanRow {
   id: string
@@ -29,16 +29,15 @@ interface PlanRow {
   taskRef?: Parameters<typeof DeadlinePill>[0]['task'] & Parameters<typeof TaskProgress>[0]['task']
 }
 
-const OPEN_STATES: TaskState[] = ['open', 'in_progress', 'verifying', 'on_hold']
-
 export function FixPlan() {
   const { t } = useTranslation()
-  const tasks = useTasks({ states: OPEN_STATES, sort: 'risk', perPage: 25 })
+  // The strip tiles open the task views of the same names, so they count the
+  // same states (`VIEW_FILTERS`).
+  const tasks = useTasks({ ...VIEW_FILTERS.open, sort: 'risk', perPage: 25 })
   const sugg = useSuggestions({ perPage: 25 })
   const stats = useSuggestionStats()
-  const mine = useTasks({ mine: true, states: ['open', 'in_progress', 'verifying'], perPage: 1 })
-  // Counted on the server over every open task, not over the rows on screen.
-  const overdue = useTasks({ states: OPEN_STATES, overdue: true, perPage: 1 })
+  // Counted on the server over every matching task, not over the rows on screen.
+  const mine = useTasks({ ...VIEW_FILTERS.mine, perPage: 1 })
 
   const rows = useMemo<PlanRow[]>(() => {
     const out: PlanRow[] = []
@@ -70,38 +69,43 @@ export function FixPlan() {
 
   // A number that has not arrived (or failed) is a dash, never a 0 that reads as good news.
   const num = (q: { data?: { total: number } }) => (q.data ? q.data.total : '—')
-  const loading = [tasks, overdue, mine, stats].some((q) => q.isLoading && !q.data)
+  const loading = [tasks, mine, stats].some((q) => q.isLoading && !q.data)
   const metrics: MetricStripItem[] = [
-    { key: 'open', label: t('remediationHub.plan.openTasks'), value: num(tasks) },
     {
-      key: 'overdue',
-      label: t('remediationHub.plan.overdue'),
-      value: num(overdue),
-      tone: 'danger',
+      key: 'open',
+      label: t('remediationHub.plan.openTasks'),
+      value: num(tasks),
+      href: '/remediation/tasks?view=open',
     },
     {
       key: 'review',
       label: t('remediationHub.plan.toReview'),
       value: stats.data ? stats.data.proposed : '—',
+      href: '/remediation/suggestions',
     },
-    { key: 'mine', label: t('remediationHub.plan.mine'), value: num(mine) },
+    {
+      key: 'mine',
+      label: t('remediationHub.plan.mine'),
+      value: num(mine),
+      href: '/remediation/tasks?view=mine',
+    },
   ]
 
-  const failed = [tasks, sugg, stats, mine, overdue].find((q) => q.error)
+  const failed = [tasks, sugg, stats, mine].find((q) => q.error)
   if (failed) {
     return (
       <ErrorState
         title={t('remediationHub.plan.loadError')}
         error={failed.error}
         onRetry={() => {
-          for (const q of [tasks, sugg, stats, mine, overdue]) void q.mutate()
+          for (const q of [tasks, sugg, stats, mine]) void q.mutate()
         }}
       />
     )
   }
 
   return (
-    <div className="space-y-4">
+    <>
       <MetricStrip items={metrics} loading={loading} />
       {tasks.isLoading && !tasks.data ? (
         <Skeleton className="h-64 w-full" />
@@ -141,6 +145,6 @@ export function FixPlan() {
           ))}
         </ol>
       )}
-    </div>
+    </>
   )
 }

@@ -2,121 +2,63 @@
 
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Skeleton } from '@/components/ui/skeleton'
-import { StatsCard } from '@/features/shared/components/stats-card'
+import { MetricStrip, type MetricStripItem } from '@/features/shared/components/metric-strip'
 import { cn } from '@/lib/utils'
 import { useTranslation } from '@/context/i18n-provider'
 import { SEVERITY_DOT_COLORS } from '@/lib/severity-colors'
-import {
-  Activity,
-  AlertOctagon,
-  AlertTriangle,
-  TrendingUp,
-  Calendar,
-  Skull,
-  Shield,
-} from 'lucide-react'
 import type { EPSSStats, KEVStats } from '@/lib/api/threatintel-types'
 
 /** Value colour for a problem count: red only while it is above zero. */
 const alarm = (n: number) => (n > 0 ? 'text-destructive' : undefined)
 
-function StatsGridSkeleton({ className }: { className?: string }) {
-  return (
-    <div className={cn('grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4', className)}>
-      {[...Array(4)].map((_, i) => (
-        <Card key={i}>
-          <CardContent className="space-y-2">
-            <Skeleton className="h-4 w-24" />
-            <Skeleton className="h-7 w-16" />
-          </CardContent>
-        </Card>
-      ))}
-    </div>
-  )
-}
-
-interface EPSSStatsCardsProps {
-  stats: EPSSStats
+interface ThreatIntelStripProps {
+  epssStats?: EPSSStats
+  kevStats?: KEVStats
   isLoading?: boolean
   className?: string
 }
 
-/** EPSS headline numbers, as the shared StatsCard grid. */
-export function EPSSStatsCards({ stats, isLoading, className }: EPSSStatsCardsProps) {
+/**
+ * The exploitation headline numbers as one strip. Each tile opens the findings
+ * list it filters: EPSS above 30%, EPSS above 10%, and findings on the CISA
+ * KEV catalogue. Figures with no list behind them (catalogue size, rates) are
+ * not tiles.
+ */
+export function ThreatIntelStrip({
+  epssStats,
+  kevStats,
+  isLoading,
+  className,
+}: ThreatIntelStripProps) {
   const { t } = useTranslation()
-  if (isLoading || !stats) return <StatsGridSkeleton className={className} />
-
-  const critical = stats.critical_risk_count ?? 0
+  const items: MetricStripItem[] = [
+    {
+      key: 'epss-critical',
+      label: t('threatIntel.stats.criticalRisk'),
+      hint: t('threatIntel.stats.epssAbove30'),
+      value: epssStats?.critical_risk_count ?? 0,
+      href: '/findings?epss_score_gte=0.3',
+    },
+    {
+      key: 'epss-high',
+      label: t('threatIntel.stats.highRisk'),
+      hint: t('threatIntel.stats.epssAbove10'),
+      value: epssStats?.high_risk_count ?? 0,
+      href: '/findings?epss_score_gte=0.1',
+    },
+    {
+      key: 'kev',
+      label: t('threatIntel.stats.kevEntries'),
+      value: kevStats?.total_entries ?? 0,
+      href: '/findings?is_in_kev=true',
+    },
+  ]
   return (
-    <div className={cn('grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4', className)}>
-      <StatsCard
-        title={t('threatIntel.stats.cvesTracked')}
-        value={(stats.total_scores ?? 0).toLocaleString()}
-        icon={Activity}
-      />
-      <StatsCard
-        title={t('threatIntel.stats.criticalRisk')}
-        value={critical.toLocaleString()}
-        description={t('threatIntel.stats.epssAbove30')}
-        icon={AlertOctagon}
-        valueClassName={alarm(critical)}
-      />
-      <StatsCard
-        title={t('threatIntel.stats.highRisk')}
-        value={(stats.high_risk_count ?? 0).toLocaleString()}
-        description={t('threatIntel.stats.epssAbove10')}
-        icon={AlertTriangle}
-      />
-      <StatsCard
-        title={t('threatIntel.stats.highRiskRate')}
-        value={
-          stats.total_scores > 0
-            ? `${((stats.high_risk_count / stats.total_scores) * 100).toFixed(2)}%`
-            : t('threatIntel.stats.notAvailable')
-        }
-        icon={TrendingUp}
-      />
-    </div>
-  )
-}
-
-interface KEVStatsCardsProps {
-  stats: KEVStats
-  isLoading?: boolean
-  className?: string
-}
-
-/** CISA KEV headline numbers, as the shared StatsCard grid. */
-export function KEVStatsCards({ stats, isLoading, className }: KEVStatsCardsProps) {
-  const { t } = useTranslation()
-  if (isLoading || !stats) return <StatsGridSkeleton className={className} />
-
-  const pastDue = stats.past_due_count ?? 0
-  return (
-    <div className={cn('grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4', className)}>
-      <StatsCard
-        title={t('threatIntel.stats.kevEntries')}
-        value={(stats.total_entries ?? 0).toLocaleString()}
-        icon={Shield}
-      />
-      <StatsCard
-        title={t('threatIntel.stats.pastDue')}
-        value={pastDue.toLocaleString()}
-        description={t('threatIntel.stats.pastDueHint')}
-        icon={AlertOctagon}
-        valueClassName={alarm(pastDue)}
-      />
-      <StatsCard
-        title={t('threatIntel.stats.added30')}
-        value={(stats.recently_added_last_30_days ?? 0).toLocaleString()}
-        icon={Calendar}
-      />
-      <StatsCard
-        title={t('threatIntel.stats.ransomware')}
-        value={(stats.ransomware_related_count ?? 0).toLocaleString()}
-        icon={Skull}
-      />
-    </div>
+    <MetricStrip
+      items={items}
+      loading={Boolean(isLoading) || !epssStats || !kevStats}
+      className={className}
+    />
   )
 }
 
@@ -130,28 +72,14 @@ interface ThreatIntelOverviewProps {
 }
 
 /**
- * The threat landscape: EPSS and CISA KEV headline numbers, then how each
- * breaks down. Flat — one card per number, section headings outside cards —
- * rather than stat cards nested inside section cards.
+ * The threat landscape: the strip of headline numbers, then how EPSS and CISA
+ * KEV break down. Renders several blocks, so the caller's `PageStack` places them.
  */
-export function ThreatIntelOverview({
-  epssStats,
-  kevStats,
-  isLoading,
-  className,
-}: ThreatIntelOverviewProps) {
+export function ThreatIntelOverview({ epssStats, kevStats, isLoading }: ThreatIntelOverviewProps) {
   const { t } = useTranslation()
   return (
-    <div className={cn('space-y-5', className)}>
-      <section className="space-y-3">
-        <h2 className="text-base font-semibold">{t('threatIntel.overview.epssHeading')}</h2>
-        <EPSSStatsCards stats={epssStats} isLoading={isLoading} />
-      </section>
-
-      <section className="space-y-3">
-        <h2 className="text-base font-semibold">{t('threatIntel.overview.kevHeading')}</h2>
-        <KEVStatsCards stats={kevStats} isLoading={isLoading} />
-      </section>
+    <>
+      <ThreatIntelStrip epssStats={epssStats} kevStats={kevStats} isLoading={isLoading} />
 
       <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
         <Card>
@@ -174,7 +102,7 @@ export function ThreatIntelOverview({
           </CardContent>
         </Card>
       </div>
-    </div>
+    </>
   )
 }
 
