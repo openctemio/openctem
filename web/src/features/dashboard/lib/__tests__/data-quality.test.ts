@@ -52,8 +52,8 @@ describe('staleState', () => {
 })
 
 describe('formatters', () => {
-  it('fmtPct renders one decimal or null when absent', () => {
-    expect(fmtPct(95)).toBe('95.0%')
+  it('fmtPct renders a whole percent or null when absent', () => {
+    expect(fmtPct(95)).toBe('95%')
     expect(fmtPct(undefined)).toBeNull()
   })
   it('fmtAge renders hours under 48h and days beyond', () => {

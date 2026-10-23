@@ -21,8 +21,9 @@ import {
   DetailSheet,
   DetailStat,
   DetailStatGrid,
-  DetailTabs,
+  ErrorState,
   type MetricStripItem,
+  CappedNotice,
 } from '@/features/shared'
 import { BUSINESS_CONTEXT_SECTION_TABS } from '@/config/section-tabs'
 import { Can, Permission, useHasPermission } from '@/lib/permissions'
@@ -44,15 +45,8 @@ import {
   Pencil,
   Trash2,
   Crown,
-  Database,
-  Server,
-  AppWindow,
-  HardDrive,
-  Lightbulb,
-  DollarSign,
   Users,
   Mail,
-  Link2,
   ShieldCheck,
   ShieldX,
 } from 'lucide-react'
@@ -73,10 +67,8 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { ConfirmDialog } from '@/components/confirm-dialog'
-import { TabsCount } from '@/components/ui/tabs'
 import { toast } from 'sonner'
 import {
-  getDependencies,
   type CrownJewel,
   type AssetCategory,
   type ProtectionLevel,
@@ -93,32 +85,23 @@ import { Progress } from '@/components/ui/progress'
 import { cn } from '@/lib/utils'
 import { CRITICALITY_BADGE_SOFT, type CriticalityLevel } from '@/lib/criticality-colors'
 import { useTranslation } from '@/context/i18n-provider'
-
-const categoryIcons: Record<AssetCategory, React.ElementType> = {
-  data: Database,
-  system: Server,
-  application: AppWindow,
-  infrastructure: HardDrive,
-  intellectual_property: Lightbulb,
-  financial: DollarSign,
-}
+import { useDebounce } from '@/hooks/use-debounce'
+import { getAssetTypeIcon } from '@/features/assets/lib/asset-type-icon'
+import { ASSET_TYPE_LABELS } from '@/features/assets/types/asset.types'
+import { formatDateOnly } from '@/lib/date-only'
 
 const CROWN_JEWELS_KEY = '/api/v1/assets?is_crown_jewel=true&per_page=100'
 
-const CROWN_JEWEL_EXPORT_FIELDS: ExportFieldConfig<CrownJewel>[] = [
-  { header: 'Name', accessor: (j) => j.name },
-  { header: 'Category', accessor: (j) => j.category },
-  { header: 'Description', accessor: (j) => j.description ?? '' },
-  { header: 'Status', accessor: (j) => j.status },
-  { header: 'Owner', accessor: (j) => j.owner },
-  { header: 'Business Unit', accessor: (j) => j.businessUnit },
-  { header: 'Risk Score', accessor: (j) => j.riskScore },
-  { header: 'Exposures', accessor: (j) => j.exposureCount ?? 0 },
-  { header: 'Tags', accessor: (j) => (j.tags ?? []).join('; ') },
-]
+type TFn = ReturnType<typeof useTranslation>['t']
 
-function impactLabel(score: number) {
-  return score >= 67 ? 'High' : score >= 34 ? 'Medium' : 'Low'
+function impactBand(score: number): 'high' | 'medium' | 'low' {
+  return score >= 67 ? 'high' : score >= 34 ? 'medium' : 'low'
+}
+
+/** Asset type label: the shared English type names, else the raw type made readable. */
+function assetTypeLabel(type: string | undefined): string {
+  if (!type) return ASSET_TYPE_LABELS.unclassified
+  return (ASSET_TYPE_LABELS as Record<string, string>)[type] ?? type.replace(/_/g, ' ')
 }
 
 // Internet-facing, the product's one definition (API internet_facing:
@@ -129,20 +112,24 @@ function isExposed(j: CrownJewel) {
 }
 
 // Compact findings-by-severity chips (only non-zero bands).
-function SeverityChips({ sev }: { sev?: CrownJewel['findingSeverity'] }) {
+function SeverityChips({ sev, t }: { sev?: CrownJewel['findingSeverity']; t: TFn }) {
   if (!sev) return <span className="text-muted-foreground text-xs">—</span>
   const parts = SEVERITY_LEVELS.map((level) => ({
     n: sev[level] ?? 0,
     level,
     k: level === 'info' ? 'I' : level.charAt(0).toUpperCase(),
   })).filter((p) => p.n > 0)
-  if (parts.length === 0) return <span className="text-muted-foreground text-xs">None</span>
+  if (parts.length === 0)
+    return <span className="text-muted-foreground text-xs">{t('crownJewels.none', 'None')}</span>
   return (
     <span className="inline-flex items-center gap-1">
       {parts.map((p) => (
         <span
           key={p.k}
-          title={`${p.n} ${p.level}`}
+          title={t('crownJewels.severityChip', '{count} {level}', {
+            count: p.n,
+            level: t(`severity.${p.level}`, p.level),
+          })}
           className={cn(
             'rounded px-1.5 py-0.5 text-[10px] font-semibold tabular-nums',
             SEVERITY_BADGE_SOLID[p.level]
@@ -157,7 +144,8 @@ function SeverityChips({ sev }: { sev?: CrownJewel['findingSeverity'] }) {
 }
 
 export default function CrownJewelsPage() {
-  const { t } = useTranslation()
+  const { t, locale } = useTranslation()
+  const criticalityText = (c: string) => t(`criticality.${c}`, c)
   // Same bands as RiskScoreBadge, so the sheet's label matches the table's badge.
   const riskThresholds = useRiskThresholds()
   const riskLabel = (score: number) => {
@@ -165,14 +153,17 @@ export default function CrownJewelsPage() {
     return t(`riskScore.level.${level.key}`, level.label)
   }
   // Fetch from API, fallback to mock if no API data
-  const { data: apiCrownJewels } = useCrownJewels()
+  const { data: apiCrownJewels, error: loadError, isLoading, mutate: reload } = useCrownJewels()
   const { trigger: designate, isMutating: isDesignating } = useDesignateCrownJewel()
   const { trigger: undesignate, isMutating: isUndesignating } = useUndesignateCrownJewel()
 
   // Asset search for the "designate" create dialog
   const [assetSearch, setAssetSearch] = useState('')
   const [selectedAssetId, setSelectedAssetId] = useState<string>('')
-  const { data: allAssets } = useAllAssets(assetSearch)
+  const debouncedAssetSearch = useDebounce(assetSearch, 300)
+  const [isCreateOpen, setIsCreateOpen] = useState(false)
+  // Only fetch candidates while the designate dialog is open.
+  const { data: allAssets } = useAllAssets(debouncedAssetSearch, isCreateOpen)
   const apiMapped: CrownJewel[] = useMemo(() => {
     if (!apiCrownJewels?.data?.length) return []
     return apiCrownJewels.data.map((a: Record<string, unknown>) => {
@@ -197,7 +188,8 @@ export default function CrownJewelsPage() {
         dataClassification: (cls || 'internal') as DataClassification,
         piiExposed: Boolean(a.pii_data_exposed),
         phiExposed: Boolean(a.phi_data_exposed),
-        owner: owner?.name || (a.owner_ref as string) || 'Unassigned',
+        owner: owner?.name || (a.owner_ref as string) || '',
+        businessImpact: (props.business_impact_notes as string) || '',
         ownerEmail: owner?.email || '',
         tags: (a.tags as string[]) || [],
         exposureCount: (a.exposure_count as number) || 0,
@@ -209,20 +201,42 @@ export default function CrownJewelsPage() {
     })
   }, [apiCrownJewels])
   const [crownJewels, setCrownJewels] = useState<CrownJewel[]>([])
-  const { handleExport } = useCsvExport(crownJewels, CROWN_JEWEL_EXPORT_FIELDS, 'crown-jewels')
+  // Only fields the assets API returns; the old category, status and business
+  // unit columns were always empty.
+  const exportFields: ExportFieldConfig<CrownJewel>[] = [
+    { header: t('crownJewels.export.name', 'Name'), accessor: (j) => j.name },
+    { header: t('crownJewels.export.type', 'Type'), accessor: (j) => j.assetType ?? '' },
+    {
+      header: t('crownJewels.export.criticality', 'Criticality'),
+      accessor: (j) => j.criticality ?? '',
+    },
+    { header: t('crownJewels.export.exposure', 'Exposure'), accessor: (j) => j.exposure ?? '' },
+    {
+      header: t('crownJewels.export.internetFacing', 'Internet-facing'),
+      accessor: (j) =>
+        j.isInternetFacing ? t('crownJewels.yes', 'Yes') : t('crownJewels.no', 'No'),
+    },
+    { header: t('crownJewels.export.risk', 'Risk score'), accessor: (j) => j.riskScore },
+    {
+      header: t('crownJewels.export.businessImpact', 'Business impact score'),
+      accessor: (j) => j.businessImpactScore ?? 0,
+    },
+    {
+      header: t('crownJewels.export.findings', 'Open findings'),
+      accessor: (j) => j.findingCount ?? 0,
+    },
+    { header: t('crownJewels.export.owner', 'Owner'), accessor: (j) => j.owner },
+    { header: t('crownJewels.export.ownerEmail', 'Owner email'), accessor: (j) => j.ownerEmail },
+    { header: t('crownJewels.export.tags', 'Tags'), accessor: (j) => (j.tags ?? []).join('; ') },
+  ]
+  const { handleExport } = useCsvExport(crownJewels, exportFields, 'crown-jewels')
   useEffect(() => {
     setCrownJewels(apiMapped)
   }, [apiMapped])
   const [viewJewel, setViewJewel] = useState<CrownJewel | null>(null)
-  const [jewelTab, setJewelTab] = useState<'overview' | 'dependencies'>('overview')
   const canWriteAssets = useHasPermission(Permission.AssetsWrite)
-  // A different jewel opens on its overview.
-  useEffect(() => {
-    setJewelTab('overview')
-  }, [viewJewel?.id])
   const [editJewel, setEditJewel] = useState<CrownJewel | null>(null)
   const [deleteJewel, setDeleteJewel] = useState<CrownJewel | null>(null)
-  const [isCreateOpen, setIsCreateOpen] = useState(false)
   // Filters and search live in the URL so a filtered view can be linked to.
   // Exposure and asset type are what the assets API actually returns; the old
   // status/category filters matched fields it never sends, so they emptied the list.
@@ -274,10 +288,12 @@ export default function CrownJewelsPage() {
   }, [crownJewels, filterExposure, filterType, searchQuery])
 
   const exposedOnly = filterExposure === 'exposed'
+  const whyScore = viewJewel?.businessImpactScore ?? 0
+  const whyLevel = whyScore >= 67 ? 'high' : whyScore >= 34 ? 'moderate' : 'limited'
   const metrics: MetricStripItem[] = [
     {
       key: 'total',
-      label: 'Crown jewels',
+      label: t('crownJewels.metric.total', 'Crown jewels'),
       value: stats.total,
       onClick: () => {
         setFilterExposure('all')
@@ -287,7 +303,7 @@ export default function CrownJewelsPage() {
     },
     {
       key: 'exposed',
-      label: 'Internet-exposed',
+      label: t('crownJewels.metric.exposed', 'Internet-exposed'),
       value: stats.exposed,
       tone: 'danger',
       onClick: () => setFilterExposure(exposedOnly ? 'all' : 'exposed'),
@@ -295,11 +311,16 @@ export default function CrownJewelsPage() {
     },
     {
       key: 'critical',
-      label: 'With critical findings',
+      label: t('crownJewels.metric.critical', 'With critical findings'),
       value: stats.withCritical,
       tone: 'danger',
     },
-    { key: 'risk', label: 'Average risk score', value: stats.averageRiskScore, hint: 'of 100' },
+    {
+      key: 'risk',
+      label: t('crownJewels.metric.risk', 'Average risk score'),
+      value: stats.averageRiskScore,
+      hint: t('crownJewels.metric.riskHint', 'of 100'),
+    },
   ]
 
   const resetForm = () => {
@@ -319,11 +340,11 @@ export default function CrownJewelsPage() {
 
   const handleCreate = async () => {
     if (!selectedAssetId) {
-      toast.error('Please select an asset to designate as a crown jewel')
+      toast.error(t('crownJewels.toast.selectAsset', 'Select an asset to designate.'))
       return
     }
     if (!formData.businessImpact) {
-      toast.error('Please provide a business impact description')
+      toast.error(t('crownJewels.toast.notesRequired', 'Enter the business impact notes.'))
       return
     }
     try {
@@ -340,19 +361,19 @@ export default function CrownJewelsPage() {
         businessImpactNotes: formData.businessImpact,
       })
       await mutate(CROWN_JEWELS_KEY)
-      toast.success('Asset designated as a crown jewel')
+      toast.success(t('crownJewels.toast.designated', 'Asset designated as a crown jewel.'))
       setIsCreateOpen(false)
       setSelectedAssetId('')
       setAssetSearch('')
       resetForm()
     } catch {
-      toast.error('Failed to designate crown jewel')
+      toast.error(t('crownJewels.toast.designateFailed', 'Could not designate the crown jewel.'))
     }
   }
 
   const handleEdit = async () => {
     if (!editJewel || !formData.businessImpact) {
-      toast.error('Please fill in all required fields')
+      toast.error(t('crownJewels.toast.required', 'Fill in all required fields.'))
       return
     }
     try {
@@ -364,11 +385,11 @@ export default function CrownJewelsPage() {
         businessImpactNotes: formData.businessImpact,
       })
       await mutate(CROWN_JEWELS_KEY)
-      toast.success('Crown jewel updated successfully')
+      toast.success(t('crownJewels.toast.updated', 'Crown jewel updated.'))
       setEditJewel(null)
       resetForm()
     } catch {
-      toast.error('Failed to update crown jewel')
+      toast.error(t('crownJewels.toast.updateFailed', 'Could not update the crown jewel.'))
     }
   }
 
@@ -377,10 +398,10 @@ export default function CrownJewelsPage() {
     try {
       await undesignate({ assetId: deleteJewel.id as string })
       await mutate(CROWN_JEWELS_KEY)
-      toast.success('Crown jewel removed successfully')
+      toast.success(t('crownJewels.toast.removed', 'Crown jewel removed.'))
       setDeleteJewel(null)
     } catch {
-      toast.error('Failed to remove crown jewel')
+      toast.error(t('crownJewels.toast.removeFailed', 'Could not remove the crown jewel.'))
     }
   }
 
@@ -403,20 +424,21 @@ export default function CrownJewelsPage() {
   const columns: ColumnDef<CrownJewel>[] = [
     {
       accessorKey: 'name',
-      header: ({ column }) => <DataTableColumnHeader column={column} title="Asset" />,
+      header: ({ column }) => (
+        <DataTableColumnHeader column={column} title={t('crownJewels.col.asset', 'Asset')} />
+      ),
       cell: ({ row }) => {
         const jewel = row.original
-        // Icon by real asset category when known, else a neutral default —
-        // never render an undefined element.
-        const CategoryIcon = categoryIcons[jewel.category] ?? Database
+        // Icon of the asset's real type.
+        const TypeIcon = getAssetTypeIcon(jewel.assetType)
         return (
           <div className="flex min-w-0 items-center gap-2.5">
-            <CategoryIcon className="h-4 w-4 shrink-0 text-muted-foreground" />
+            <TypeIcon className="h-4 w-4 shrink-0 text-muted-foreground" />
             <div className="min-w-0">
               <div className="truncate font-medium">{jewel.name}</div>
-              <div className="text-xs text-muted-foreground capitalize">
-                {jewel.assetType ?? 'asset'}
-                {jewel.criticality ? ` · ${jewel.criticality}` : ''}
+              <div className="text-xs text-muted-foreground">
+                {assetTypeLabel(jewel.assetType)}
+                {jewel.criticality ? ` · ${criticalityText(jewel.criticality)}` : ''}
               </div>
             </div>
           </div>
@@ -425,53 +447,70 @@ export default function CrownJewelsPage() {
     },
     {
       accessorKey: 'riskScore',
-      header: ({ column }) => <DataTableColumnHeader column={column} title="Risk" />,
+      header: ({ column }) => (
+        <DataTableColumnHeader column={column} title={t('crownJewels.col.risk', 'Risk')} />
+      ),
       cell: ({ row }) => <RiskScoreBadge score={row.original.riskScore} size="sm" />,
     },
     {
       accessorKey: 'businessImpactScore',
-      header: ({ column }) => <DataTableColumnHeader column={column} title="Business impact" />,
+      header: ({ column }) => (
+        <DataTableColumnHeader
+          column={column}
+          title={t('crownJewels.col.impact', 'Business impact')}
+        />
+      ),
       cell: ({ row }) => {
         const b = row.original.businessImpactScore ?? 0
         return (
           <div className="flex items-center gap-2">
             <span className="w-7 text-end font-medium tabular-nums">{b}</span>
-            <Progress value={b} className="h-1.5 w-16" aria-label={`Business impact ${b} of 100`} />
+            <Progress
+              value={b}
+              className="h-1.5 w-16"
+              aria-label={t('crownJewels.impactAria', 'Business impact {score} of 100', {
+                score: b,
+              })}
+            />
           </div>
         )
       },
     },
     {
       id: 'findings',
-      header: ({ column }) => <DataTableColumnHeader column={column} title="Findings" />,
-      cell: ({ row }) => <SeverityChips sev={row.original.findingSeverity} />,
+      header: ({ column }) => (
+        <DataTableColumnHeader column={column} title={t('crownJewels.col.findings', 'Findings')} />
+      ),
+      cell: ({ row }) => <SeverityChips sev={row.original.findingSeverity} t={t} />,
     },
     {
       id: 'exposure',
-      header: ({ column }) => <DataTableColumnHeader column={column} title="Exposure" />,
+      header: ({ column }) => (
+        <DataTableColumnHeader column={column} title={t('crownJewels.col.exposure', 'Exposure')} />
+      ),
       cell: ({ row }) => {
         const exposed = isExposed(row.original)
         return exposed ? (
           <Badge variant="outline" className="border-destructive/30 text-destructive">
             <ShieldX className="me-1 h-3 w-3" />
-            Internet-exposed
+            {t('crownJewels.exposed', 'Internet-exposed')}
           </Badge>
         ) : (
           <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
             <ShieldCheck className="h-3 w-3" />
-            Not exposed
+            {t('crownJewels.notExposed', 'Not exposed')}
           </span>
         )
       },
     },
     {
       accessorKey: 'owner',
-      header: ({ column }) => <DataTableColumnHeader column={column} title="Owner" />,
+      header: ({ column }) => (
+        <DataTableColumnHeader column={column} title={t('crownJewels.col.owner', 'Owner')} />
+      ),
       cell: ({ row }) => (
-        <span
-          className={cn('text-sm', row.original.owner === 'Unassigned' && 'text-muted-foreground')}
-        >
-          {row.original.owner}
+        <span className={cn('text-sm', !row.original.owner && 'text-muted-foreground')}>
+          {row.original.owner || t('crownJewels.unassigned', 'Unassigned')}
         </span>
       ),
     },
@@ -480,27 +519,29 @@ export default function CrownJewelsPage() {
       cell: ({ row }) => {
         const jewel = row.original
         return (
-          <Can permission={Permission.AssetsWrite}>
-            <DataTableRowActions
-              actions={[
-                { label: 'View details', icon: Eye, onClick: () => setViewJewel(jewel) },
-                {
-                  label: 'Edit',
-                  icon: Pencil,
-                  onClick: () => openEdit(jewel),
-                  permission: Permission.AssetsWrite,
-                },
-                {
-                  label: 'Remove',
-                  icon: Trash2,
-                  onClick: () => setDeleteJewel(jewel),
-                  destructive: true,
-                  separatorBefore: true,
-                  permission: Permission.AssetsWrite,
-                },
-              ]}
-            />
-          </Can>
+          <DataTableRowActions
+            actions={[
+              {
+                label: t('crownJewels.viewDetails', 'View details'),
+                icon: Eye,
+                onClick: () => setViewJewel(jewel),
+              },
+              {
+                label: t('crownJewels.action.edit', 'Edit'),
+                icon: Pencil,
+                onClick: () => openEdit(jewel),
+                permission: Permission.AssetsWrite,
+              },
+              {
+                label: t('crownJewels.action.remove', 'Remove'),
+                icon: Trash2,
+                onClick: () => setDeleteJewel(jewel),
+                destructive: true,
+                separatorBefore: true,
+                permission: Permission.AssetsWrite,
+              },
+            ]}
+          />
         )
       },
     },
@@ -510,29 +551,42 @@ export default function CrownJewelsPage() {
     <>
       <Main>
         <PageHeader
-          title="Crown jewels"
-          description="The assets whose compromise would hurt the business most."
+          title={t('crownJewels.title', 'Crown jewels')}
+          description={t(
+            'crownJewels.description',
+            'The assets whose compromise would hurt the business most.'
+          )}
         >
           <Can permission={Permission.AssetsWrite}>
             <Button size="sm" onClick={() => setIsCreateOpen(true)}>
               <Plus className="me-2 h-4 w-4" />
-              Designate crown jewel
+              {t('crownJewels.designate', 'Designate crown jewel')}
             </Button>
           </Can>
         </PageHeader>
         <GatedSectionTabs
           tabs={BUSINESS_CONTEXT_SECTION_TABS}
-          label="Business context sections"
+          label={t('businessContext.sectionsLabel', 'Business context sections')}
           className="mt-4 mb-0"
         />
 
-        <MetricStrip className="mt-5" loading={!apiCrownJewels} items={metrics} />
+        <MetricStrip className="mt-5" loading={isLoading} items={metrics} />
 
         <div className="mt-5">
           <DataTable
             columns={columns}
             data={filteredJewels}
             showSearch={false}
+            isLoading={isLoading}
+            errorState={
+              loadError ? (
+                <ErrorState
+                  title={t('crownJewels.loadError', 'crown jewels')}
+                  error={loadError}
+                  onRetry={() => reload()}
+                />
+              ) : undefined
+            }
             toolbarStart={
               <>
                 <div className="relative min-w-0 flex-1 sm:max-w-xs">
@@ -540,34 +594,45 @@ export default function CrownJewelsPage() {
                   <Input
                     value={searchQuery}
                     onChange={(e) => setSearchQuery(e.target.value)}
-                    placeholder="Search name or owner…"
-                    aria-label="Search crown jewels"
+                    placeholder={t('crownJewels.search.placeholder', 'Search name or owner…')}
+                    aria-label={t('crownJewels.search.aria', 'Search crown jewels')}
                     className="h-9 ps-9"
                   />
                 </div>
                 <Select value={filterExposure} onValueChange={setFilterExposure}>
-                  <SelectTrigger className="h-9 w-auto min-w-36" aria-label="Filter by exposure">
+                  <SelectTrigger
+                    className="h-9 w-auto min-w-36"
+                    aria-label={t('crownJewels.filter.exposure.aria', 'Filter by exposure')}
+                  >
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="all">Any exposure</SelectItem>
-                    <SelectItem value="exposed">Internet-exposed</SelectItem>
-                    <SelectItem value="not_exposed">Not exposed</SelectItem>
+                    <SelectItem value="all">
+                      {t('crownJewels.filter.exposure.any', 'Any exposure')}
+                    </SelectItem>
+                    <SelectItem value="exposed">
+                      {t('crownJewels.exposed', 'Internet-exposed')}
+                    </SelectItem>
+                    <SelectItem value="not_exposed">
+                      {t('crownJewels.notExposed', 'Not exposed')}
+                    </SelectItem>
                   </SelectContent>
                 </Select>
                 {assetTypes.length > 1 && (
                   <Select value={filterType} onValueChange={setFilterType}>
                     <SelectTrigger
                       className="h-9 w-auto min-w-32"
-                      aria-label="Filter by asset type"
+                      aria-label={t('crownJewels.filter.type.aria', 'Filter by asset type')}
                     >
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="all">All types</SelectItem>
-                      {assetTypes.map((t) => (
-                        <SelectItem key={t} value={t} className="capitalize">
-                          {t.replace(/_/g, ' ')}
+                      <SelectItem value="all">
+                        {t('crownJewels.filter.type.all', 'All types')}
+                      </SelectItem>
+                      {assetTypes.map((type) => (
+                        <SelectItem key={type} value={type}>
+                          {assetTypeLabel(type)}
                         </SelectItem>
                       ))}
                     </SelectContent>
@@ -584,20 +649,29 @@ export default function CrownJewelsPage() {
                 disabled={crownJewels.length === 0}
               >
                 <Download className="h-4 w-4 md:me-2" />
-                <span className="hidden md:inline">Export</span>
+                <span className="sr-only md:not-sr-only">{t('common.export', 'Export')}</span>
               </Button>
             }
             emptyMessage={
-              crownJewels.length === 0 ? 'No crown jewels yet' : 'No crown jewels match'
+              crownJewels.length === 0
+                ? t('crownJewels.empty.none', 'No crown jewels yet')
+                : t('crownJewels.empty.noMatch', 'No crown jewels match')
             }
             emptyDescription={
               crownJewels.length === 0
-                ? 'Designate a critical asset as a crown jewel to track it here.'
-                : 'Try adjusting your search or filters.'
+                ? t(
+                    'crownJewels.empty.noneDesc',
+                    'Designate a critical asset as a crown jewel to track it here.'
+                  )
+                : t('crownJewels.empty.noMatchDesc', 'Try adjusting your search or filters.')
             }
             onRowClick={(jewel) => setViewJewel(jewel)}
           />
         </div>
+        <CappedNotice
+          loaded={(apiCrownJewels?.data ?? []).length}
+          total={apiCrownJewels?.total ?? 0}
+        />
       </Main>
 
       {/* Create Dialog */}
@@ -614,15 +688,22 @@ export default function CrownJewelsPage() {
       >
         <DialogContent size="lg">
           <DialogHeader>
-            <DialogTitle>Designate crown jewel</DialogTitle>
+            <DialogTitle>
+              {t('crownJewels.dialog.designateTitle', 'Designate crown jewel')}
+            </DialogTitle>
             <DialogDescription>
-              Select an existing asset to designate as a crown jewel that needs special protection
+              {t(
+                'crownJewels.dialog.designateDesc',
+                'Select an existing asset to designate as a crown jewel that needs special protection.'
+              )}
             </DialogDescription>
           </DialogHeader>
           <DialogBody>
             <div className="space-y-4">
               <div className="space-y-2">
-                <Label htmlFor="asset-search">Search asset *</Label>
+                <Label htmlFor="asset-search">
+                  {t('crownJewels.dialog.searchAsset', 'Search asset *')}
+                </Label>
                 <Input
                   id="asset-search"
                   value={assetSearch}
@@ -630,7 +711,7 @@ export default function CrownJewelsPage() {
                     setAssetSearch(e.target.value)
                     setSelectedAssetId('')
                   }}
-                  placeholder="Type to search assets..."
+                  placeholder={t('crownJewels.dialog.searchPh', 'Type to search assets...')}
                 />
                 {allAssets?.data && allAssets.data.length > 0 && (
                   <div className="border rounded-md max-h-64 overflow-y-auto overscroll-contain">
@@ -649,7 +730,7 @@ export default function CrownJewelsPage() {
                         <span className="font-medium">{a.name as string}</span>
                         {(a.type as string | undefined) && (
                           <span className="ms-2 text-xs text-muted-foreground">
-                            {a.type as string}
+                            {assetTypeLabel(a.type as string)}
                           </span>
                         )}
                       </button>
@@ -657,16 +738,25 @@ export default function CrownJewelsPage() {
                   </div>
                 )}
                 {selectedAssetId && (
-                  <p className="text-xs text-muted-foreground">Asset selected: {assetSearch}</p>
+                  <p className="text-xs text-muted-foreground">
+                    {t('crownJewels.dialog.selected', 'Asset selected: {name}', {
+                      name: assetSearch,
+                    })}
+                  </p>
                 )}
               </div>
               <div className="space-y-2">
-                <Label htmlFor="businessImpact">Business impact notes *</Label>
+                <Label htmlFor="businessImpact">
+                  {t('crownJewels.dialog.notes', 'Business impact notes *')}
+                </Label>
                 <Textarea
                   id="businessImpact"
                   value={formData.businessImpact}
                   onChange={(e) => setFormData({ ...formData, businessImpact: e.target.value })}
-                  placeholder="Describe the impact if this asset is compromised..."
+                  placeholder={t(
+                    'crownJewels.dialog.notesPh',
+                    'Describe the impact if this asset is compromised...'
+                  )}
                   rows={3}
                 />
               </div>
@@ -674,10 +764,12 @@ export default function CrownJewelsPage() {
           </DialogBody>
           <DialogFooter>
             <Button variant="outline" onClick={() => setIsCreateOpen(false)}>
-              Cancel
+              {t('common.cancel', 'Cancel')}
             </Button>
             <Button onClick={handleCreate} disabled={isDesignating}>
-              {isDesignating ? 'Designating...' : 'Designate'}
+              {isDesignating
+                ? t('crownJewels.dialog.designating', 'Designating...')
+                : t('crownJewels.dialog.designateButton', 'Designate')}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -695,20 +787,27 @@ export default function CrownJewelsPage() {
       >
         <DialogContent size="lg">
           <DialogHeader>
-            <DialogTitle>Edit crown jewel</DialogTitle>
+            <DialogTitle>{t('crownJewels.dialog.editTitle', 'Edit crown jewel')}</DialogTitle>
             <DialogDescription>
-              Update business impact notes for {editJewel?.name}
+              {t('crownJewels.dialog.editDesc', 'Update the business impact notes for {name}.', {
+                name: editJewel?.name ?? '',
+              })}
             </DialogDescription>
           </DialogHeader>
           <DialogBody>
             <div className="space-y-4">
               <div className="space-y-2">
-                <Label htmlFor="edit-businessImpact">Business impact notes *</Label>
+                <Label htmlFor="edit-businessImpact">
+                  {t('crownJewels.dialog.notes', 'Business impact notes *')}
+                </Label>
                 <Textarea
                   id="edit-businessImpact"
                   value={formData.businessImpact}
                   onChange={(e) => setFormData({ ...formData, businessImpact: e.target.value })}
-                  placeholder="Describe the impact if this asset is compromised..."
+                  placeholder={t(
+                    'crownJewels.dialog.notesPh',
+                    'Describe the impact if this asset is compromised...'
+                  )}
                   rows={4}
                 />
               </div>
@@ -716,10 +815,12 @@ export default function CrownJewelsPage() {
           </DialogBody>
           <DialogFooter>
             <Button variant="outline" onClick={() => setEditJewel(null)}>
-              Cancel
+              {t('common.cancel', 'Cancel')}
             </Button>
             <Button onClick={handleEdit} disabled={isDesignating}>
-              {isDesignating ? 'Saving...' : 'Save changes'}
+              {isDesignating
+                ? t('crownJewels.dialog.saving', 'Saving...')
+                : t('crownJewels.dialog.save', 'Save changes')}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -730,25 +831,24 @@ export default function CrownJewelsPage() {
         <DetailSheet
           open
           onOpenChange={(open) => !open && setViewJewel(null)}
-          panel={jewelTab}
           header={
             <DetailHeader
               title={viewJewel.name}
               badges={
                 <>
-                  <Badge variant="outline" className="gap-1 text-xs capitalize">
+                  <Badge variant="outline" className="gap-1 text-xs">
                     <Crown className="h-3 w-3" />
-                    {viewJewel.assetType ?? 'asset'}
+                    {assetTypeLabel(viewJewel.assetType)}
                   </Badge>
                   {viewJewel.criticality && (
                     <Badge
                       variant="outline"
                       className={cn(
-                        'text-xs capitalize',
+                        'text-xs',
                         CRITICALITY_BADGE_SOFT[viewJewel.criticality as CriticalityLevel]
                       )}
                     >
-                      {viewJewel.criticality}
+                      {criticalityText(viewJewel.criticality)}
                     </Badge>
                   )}
                   {isExposed(viewJewel) && (
@@ -756,7 +856,7 @@ export default function CrownJewelsPage() {
                       variant="outline"
                       className="border-destructive/30 bg-destructive/10 text-xs text-destructive"
                     >
-                      Internet-exposed
+                      {t('crownJewels.exposed', 'Internet-exposed')}
                     </Badge>
                   )}
                 </>
@@ -766,7 +866,7 @@ export default function CrownJewelsPage() {
                 canWriteAssets ? (
                   <Button size="sm" variant="outline" onClick={() => openEdit(viewJewel)}>
                     <Pencil className="h-4 w-4" />
-                    Edit
+                    {t('crownJewels.action.edit', 'Edit')}
                   </Button>
                 ) : undefined
               }
@@ -774,7 +874,7 @@ export default function CrownJewelsPage() {
                 canWriteAssets
                   ? [
                       {
-                        label: 'Remove crown jewel',
+                        label: t('crownJewels.action.removeJewel', 'Remove crown jewel'),
                         icon: Trash2,
                         destructive: true,
                         onSelect: () => {
@@ -788,195 +888,181 @@ export default function CrownJewelsPage() {
               onClose={() => setViewJewel(null)}
             />
           }
-          tabs={
-            <DetailTabs
-              tabs={[
-                { value: 'overview', label: 'Overview' },
-                {
-                  value: 'dependencies',
-                  label: (
-                    <>
-                      Dependencies
-                      <TabsCount value={getDependencies(viewJewel.id).length} />
-                    </>
-                  ),
-                },
-              ]}
-              value={jewelTab}
-              onValueChange={setJewelTab}
-            />
-          }
         >
-          {jewelTab === 'overview' ? (
-            <div className="space-y-5">
-              {isExposed(viewJewel) && (
-                <DetailCallout
-                  tone="destructive"
-                  icon={ShieldX}
-                  title={`Reachable from the internet (${viewJewel.exposure})`}
-                >
-                  This drives its risk. Review the attack paths in Exposure Chains.
-                </DetailCallout>
-              )}
-
-              <DetailStatGrid aria-label="Key numbers">
-                <DetailStat
-                  label="Risk"
-                  value={viewJewel.riskScore}
-                  tone={
-                    ['critical', 'high'].includes(riskLabel(viewJewel.riskScore).toLowerCase())
-                      ? 'destructive'
-                      : 'default'
-                  }
-                  caption={riskLabel(viewJewel.riskScore)}
-                />
-                <DetailStat
-                  label="Business impact"
-                  value={viewJewel.businessImpactScore ?? 0}
-                  caption={impactLabel(viewJewel.businessImpactScore ?? 0)}
-                />
-                <DetailStat
-                  label="Open findings"
-                  value={viewJewel.findingCount ?? 0}
-                  tone={(viewJewel.findingSeverity?.critical ?? 0) > 0 ? 'destructive' : 'default'}
-                />
-              </DetailStatGrid>
-
-              <DetailSections>
-                {viewJewel.description && (
-                  <DetailSection title="Description">
-                    <p className="text-sm text-muted-foreground">{viewJewel.description}</p>
-                  </DetailSection>
+          <div className="space-y-5">
+            {isExposed(viewJewel) && (
+              <DetailCallout
+                tone="destructive"
+                icon={ShieldX}
+                title={t(
+                  'crownJewels.sheet.reachable',
+                  'Reachable from the internet ({exposure})',
+                  { exposure: viewJewel.exposure ?? '' }
                 )}
-                {/* Why it's a crown jewel: one honest sentence. */}
-                <DetailSection title="Why it is critical">
-                  <p className="text-sm leading-relaxed text-muted-foreground">
-                    Compromise would have{' '}
-                    {(viewJewel.businessImpactScore ?? 0) >= 67
-                      ? 'high'
-                      : (viewJewel.businessImpactScore ?? 0) >= 34
-                        ? 'moderate'
-                        : 'limited'}{' '}
-                    business impact ({viewJewel.businessImpactScore ?? 0}/100)
-                    {viewJewel.piiExposed ? ' and it handles PII' : ''}.{' '}
-                    {isExposed(viewJewel)
-                      ? 'It is reachable from the internet, so reducing its exposure is the priority.'
-                      : 'It is not internet-reachable, which keeps its risk contained.'}
+              >
+                {t(
+                  'crownJewels.sheet.reachableDesc',
+                  'This drives its risk. Review the attack paths in Exposure Chains.'
+                )}
+              </DetailCallout>
+            )}
+
+            <DetailStatGrid aria-label={t('crownJewels.sheet.keyNumbers', 'Key numbers')}>
+              <DetailStat
+                label={t('crownJewels.sheet.stat.risk', 'Risk')}
+                value={viewJewel.riskScore}
+                tone={
+                  ['critical', 'high'].includes(riskLabel(viewJewel.riskScore).toLowerCase())
+                    ? 'destructive'
+                    : 'default'
+                }
+                caption={riskLabel(viewJewel.riskScore)}
+              />
+              <DetailStat
+                label={t('crownJewels.sheet.stat.impact', 'Business impact')}
+                value={viewJewel.businessImpactScore ?? 0}
+                caption={t(
+                  `crownJewels.impact.${impactBand(viewJewel.businessImpactScore ?? 0)}`,
+                  impactBand(viewJewel.businessImpactScore ?? 0)
+                )}
+              />
+              <DetailStat
+                label={t('crownJewels.sheet.stat.findings', 'Open findings')}
+                value={viewJewel.findingCount ?? 0}
+                tone={(viewJewel.findingSeverity?.critical ?? 0) > 0 ? 'destructive' : 'default'}
+              />
+            </DetailStatGrid>
+
+            <DetailSections>
+              {viewJewel.description && (
+                <DetailSection title={t('crownJewels.sheet.description', 'Description')}>
+                  <p className="text-sm text-muted-foreground">{viewJewel.description}</p>
+                </DetailSection>
+              )}
+              {/* Why it's a crown jewel: one honest sentence. */}
+              <DetailSection title={t('crownJewels.sheet.why', 'Why it is critical')}>
+                <p className="text-sm leading-relaxed text-muted-foreground">
+                  {t(
+                    `crownJewels.sheet.why.${whyLevel}${viewJewel.piiExposed ? 'Pii' : ''}`,
+                    'Compromise would have {level} business impact ({score}/100).',
+                    { level: whyLevel, score: viewJewel.businessImpactScore ?? 0 }
+                  )}{' '}
+                  {isExposed(viewJewel)
+                    ? t(
+                        'crownJewels.sheet.whyExposed',
+                        'It is reachable from the internet, so reducing its exposure is the priority.'
+                      )
+                    : t(
+                        'crownJewels.sheet.whyContained',
+                        'It is not internet-reachable, which keeps its risk contained.'
+                      )}
+                </p>
+                <p className="mt-2 text-sm whitespace-pre-wrap">
+                  {viewJewel.businessImpact || (
+                    <span className="text-muted-foreground">
+                      {t('crownJewels.whyNoNotes', 'No business impact notes recorded.')}
+                    </span>
+                  )}
+                </p>
+              </DetailSection>
+
+              <DetailSection
+                title={t('crownJewels.sheet.openFindings', 'Open findings')}
+                count={viewJewel.findingCount ?? 0}
+              >
+                {(viewJewel.findingCount ?? 0) > 0 ? (
+                  <SeverityChips sev={viewJewel.findingSeverity} t={t} />
+                ) : (
+                  <p className="flex items-center gap-2 text-sm text-muted-foreground">
+                    <ShieldCheck className="h-4 w-4" />{' '}
+                    {t('crownJewels.sheet.noFindings', 'No open findings on this asset.')}
+                  </p>
+                )}
+              </DetailSection>
+
+              {!isExposed(viewJewel) && (
+                <DetailSection title={t('crownJewels.sheet.reachability', 'Reachability')}>
+                  <p className="flex items-start gap-2 text-sm text-muted-foreground">
+                    <ShieldCheck className="mt-0.5 h-4 w-4 shrink-0" />
+                    {t(
+                      'crownJewels.sheet.notReachable',
+                      'Not reachable from the internet: no public attack path reaches this asset.'
+                    )}
                   </p>
                 </DetailSection>
-
-                <DetailSection title="Open findings" count={viewJewel.findingCount ?? 0}>
-                  {(viewJewel.findingCount ?? 0) > 0 ? (
-                    <SeverityChips sev={viewJewel.findingSeverity} />
-                  ) : (
-                    <p className="flex items-center gap-2 text-sm text-muted-foreground">
-                      <ShieldCheck className="h-4 w-4" /> No open findings on this asset.
-                    </p>
-                  )}
-                </DetailSection>
-
-                {!isExposed(viewJewel) && (
-                  <DetailSection title="Reachability">
-                    <p className="flex items-start gap-2 text-sm text-muted-foreground">
-                      <ShieldCheck className="mt-0.5 h-4 w-4 shrink-0" />
-                      Not reachable from the internet: no public attack path reaches this asset.
-                    </p>
-                  </DetailSection>
-                )}
-
-                <DetailSection title="Details">
-                  <DetailFieldGrid>
-                    <DetailField label="Type">
-                      <span className="capitalize">{viewJewel.assetType ?? 'asset'}</span>
-                    </DetailField>
-                    {viewJewel.criticality && (
-                      <DetailField label="Criticality">
-                        <span className="capitalize">{viewJewel.criticality}</span>
-                      </DetailField>
-                    )}
-                    <DetailField label="Data classification">
-                      <span className="capitalize">
-                        {viewJewel.dataClassification.replace('_', ' ')}
-                      </span>
-                    </DetailField>
-                    {(viewJewel.piiExposed || viewJewel.phiExposed) && (
-                      <DetailField label="Sensitive data">
-                        {[viewJewel.piiExposed && 'PII', viewJewel.phiExposed && 'PHI']
-                          .filter(Boolean)
-                          .join(', ')}
-                      </DetailField>
-                    )}
-                    {viewJewel.lastAssessed && (
-                      <DetailField label="Last assessed">
-                        {new Date(viewJewel.lastAssessed).toLocaleDateString()}
-                      </DetailField>
-                    )}
-                  </DetailFieldGrid>
-                </DetailSection>
-
-                <DetailSection title="Owner" icon={Users}>
-                  <p className="font-medium">{viewJewel.owner}</p>
-                  {viewJewel.ownerEmail ? (
-                    <p className="flex items-center gap-1 text-sm break-all text-muted-foreground">
-                      <Mail className="h-3 w-3 shrink-0" />
-                      {viewJewel.ownerEmail}
-                    </p>
-                  ) : (
-                    <p className="text-xs text-muted-foreground">
-                      Assign an owner so alerts route correctly
-                    </p>
-                  )}
-                </DetailSection>
-
-                {viewJewel.tags.length > 0 && (
-                  <DetailSection title="Tags" count={viewJewel.tags.length}>
-                    <div className="flex flex-wrap gap-1.5">
-                      {viewJewel.tags.map((tag) => (
-                        <Badge key={tag} variant="secondary">
-                          {tag}
-                        </Badge>
-                      ))}
-                    </div>
-                  </DetailSection>
-                )}
-              </DetailSections>
-            </div>
-          ) : (
-            <DetailSection title="Dependencies" count={getDependencies(viewJewel.id).length}>
-              <p className="text-sm text-muted-foreground">
-                Assets that this crown jewel depends on or is connected to.
-              </p>
-              {getDependencies(viewJewel.id).length > 0 ? (
-                <ul className="divide-y rounded-lg border">
-                  {getDependencies(viewJewel.id).map((dep) => (
-                    <li
-                      key={dep.id}
-                      className="flex flex-wrap items-center justify-between gap-2 px-3 py-2.5"
-                    >
-                      <span className="flex min-w-0 items-center gap-2">
-                        <Link2 className="h-4 w-4 shrink-0 text-muted-foreground" />
-                        <span className="font-medium break-all">{dep.dependsOnName}</span>
-                      </span>
-                      <span className="flex flex-wrap items-center gap-2">
-                        <Badge variant="outline">{dep.dependencyType}</Badge>
-                        <Badge
-                          variant="outline"
-                          className={cn(
-                            'capitalize',
-                            CRITICALITY_BADGE_SOFT[dep.criticality as CriticalityLevel]
-                          )}
-                        >
-                          {dep.criticality}
-                        </Badge>
-                      </span>
-                    </li>
-                  ))}
-                </ul>
-              ) : (
-                <p className="text-sm text-muted-foreground">No dependencies mapped yet.</p>
               )}
-            </DetailSection>
-          )}
+
+              <DetailSection title={t('crownJewels.sheet.details', 'Details')}>
+                <DetailFieldGrid>
+                  <DetailField label={t('crownJewels.sheet.type', 'Type')}>
+                    <span>{assetTypeLabel(viewJewel.assetType)}</span>
+                  </DetailField>
+                  {viewJewel.criticality && (
+                    <DetailField label={t('crownJewels.sheet.criticality', 'Criticality')}>
+                      <span>{criticalityText(viewJewel.criticality)}</span>
+                    </DetailField>
+                  )}
+                  <DetailField label={t('crownJewels.sheet.classification', 'Data classification')}>
+                    <span>
+                      {t(
+                        `crownJewels.classification.${viewJewel.dataClassification}`,
+                        viewJewel.dataClassification.replace('_', ' ')
+                      )}
+                    </span>
+                  </DetailField>
+                  {(viewJewel.piiExposed || viewJewel.phiExposed) && (
+                    <DetailField label={t('crownJewels.sheet.sensitive', 'Sensitive data')}>
+                      {[
+                        viewJewel.piiExposed && t('crownJewels.sensitive.pii', 'PII'),
+                        viewJewel.phiExposed && t('crownJewels.sensitive.phi', 'PHI'),
+                      ]
+                        .filter(Boolean)
+                        .join(', ')}
+                    </DetailField>
+                  )}
+                  {viewJewel.lastAssessed && (
+                    <DetailField label={t('crownJewels.sheet.lastAssessed', 'Last assessed')}>
+                      {formatDateOnly(viewJewel.lastAssessed, locale)}
+                    </DetailField>
+                  )}
+                </DetailFieldGrid>
+              </DetailSection>
+
+              <DetailSection title={t('crownJewels.sheet.owner', 'Owner')} icon={Users}>
+                <p className="font-medium">
+                  {viewJewel.owner || t('crownJewels.unassigned', 'Unassigned')}
+                </p>
+                {viewJewel.ownerEmail ? (
+                  <p className="flex items-center gap-1 text-sm break-all text-muted-foreground">
+                    <Mail className="h-3 w-3 shrink-0" />
+                    {viewJewel.ownerEmail}
+                  </p>
+                ) : (
+                  <p className="text-xs text-muted-foreground">
+                    {t(
+                      'crownJewels.sheet.assignOwner',
+                      'Assign an owner so alerts route correctly'
+                    )}
+                  </p>
+                )}
+              </DetailSection>
+
+              {viewJewel.tags.length > 0 && (
+                <DetailSection
+                  title={t('crownJewels.sheet.tags', 'Tags')}
+                  count={viewJewel.tags.length}
+                >
+                  <div className="flex flex-wrap gap-1.5">
+                    {viewJewel.tags.map((tag) => (
+                      <Badge key={tag} variant="secondary">
+                        {tag}
+                      </Badge>
+                    ))}
+                  </div>
+                </DetailSection>
+              )}
+            </DetailSections>
+          </div>
         </DetailSheet>
       )}
 

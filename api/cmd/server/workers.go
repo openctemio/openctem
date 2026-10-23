@@ -46,6 +46,7 @@ import (
 	"github.com/openctemio/openctem/api/internal/infra/jobs"
 	"github.com/openctemio/openctem/api/internal/infra/postgres"
 	"github.com/openctemio/openctem/api/pkg/domain/durablejob"
+	"github.com/openctemio/openctem/api/pkg/domain/ingestjob"
 	integrationdom "github.com/openctemio/openctem/api/pkg/domain/integration"
 	sensordom "github.com/openctemio/openctem/api/pkg/domain/sensor"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
@@ -1335,6 +1336,12 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 					Ratio: cfg.Ingest.V2BlindingRatio, MinFindings: cfg.Ingest.V2BlindingMinFindings,
 				}, log))
 		}
+		// CI results and file imports accepted with 202 (RFC-122).
+		if ciSvc := newCIRunService(cfg, repos, svc, log); ciSvc != nil {
+			jobs.SetKind(ingestjob.KindCIResults, ingest.KindFuncs{ProcessFn: ciSvc.ProcessUploadJob, DeadLetterFn: ciSvc.DeadLetter})
+		}
+		imp := newFindingImportService(cfg, repos, svc, log)
+		jobs.SetKind(ingestjob.KindFindingImport, ingest.KindFuncs{ProcessFn: imp.ProcessImportJob, DeadLetterFn: imp.DeadLetter})
 		w.ControllerManager.Register(controller.NewIngestWorkerController(
 			repos.IngestJob,
 			jobs,
@@ -1343,6 +1350,7 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 				BatchSize:    5,
 				MaxPerTick:   50,
 				LeaseTimeout: 5 * time.Minute,
+				Workers:      cfg.Ingest.Workers,
 				Logger:       log.With("controller", "ingest-worker"),
 			},
 		))

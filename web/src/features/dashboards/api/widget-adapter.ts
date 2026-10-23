@@ -160,7 +160,7 @@ function toResult(v: WidgetValue, spec: WidgetSpec | undefined): WidgetResult | 
           kev: r.kev,
           href: `/findings/${encodeURIComponent(r.id)}`,
         })),
-        total: it.rows.length,
+        total: typeof it.total === 'number' ? it.total : null,
       }
       return out
     }

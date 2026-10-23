@@ -5,7 +5,7 @@ import { Layers } from 'lucide-react'
 
 import { Skeleton } from '@/components/ui/skeleton'
 import { useTranslation } from '@/context/i18n-provider'
-import { EmptyState, ErrorState, RelativeTime } from '@/features/shared'
+import { EmptyState, ErrorState, ListItem, MetaItem, RelativeTime } from '@/features/shared'
 import { cn } from '@/lib/utils'
 
 import { useAssetTechnologies } from '../../hooks/use-asset-technologies'
@@ -14,7 +14,8 @@ import { groupByCategory, useCategoryLabel } from './technologies-by-category'
 /**
  * The asset's Technologies tab (RFC-112): every technology probes detected,
  * grouped by category, with version, the tool's confidence, the source and
- * first and last seen. A row per technology; on a phone each row stacks.
+ * first and last seen. A row per technology: the name on its own line, one
+ * metadata line under it (research/244), so the name is never squeezed.
  */
 export function AssetTechnologiesTab({
   assetId,
@@ -69,36 +70,35 @@ export function AssetTechnologiesTab({
           </h4>
           <ul className="divide-y rounded-lg border">
             {g.items.map((item) => (
-              <li
+              <ListItem
                 key={item.name}
-                className="grid gap-1 px-3 py-2 text-sm sm:grid-cols-[minmax(0,1fr)_auto_auto] sm:items-center sm:gap-4"
-              >
-                <span className="min-w-0 break-words">
-                  <span className="font-medium">{item.name}</span>
-                  {item.version && <span className="ml-1.5 tabular-nums">{item.version}</span>}
-                </span>
-                <span className="text-xs text-muted-foreground">
-                  {[
-                    item.confidence
-                      ? t('assets.technologies.confidence', 'Confidence {value}', {
-                          value: item.confidence,
-                        })
-                      : null,
-                    item.source
-                      ? t('assets.technologies.source', 'Source: {source}', { source: item.source })
-                      : null,
-                  ]
-                    .filter(Boolean)
-                    .join(' · ')}
-                </span>
-                <span className="text-xs text-muted-foreground">
-                  {t('assets.technologies.firstSeen', 'First seen')}{' '}
-                  <RelativeTime date={item.first_seen_at} />
-                  {' · '}
-                  {t('assets.technologies.lastSeen', 'Last seen')}{' '}
-                  <RelativeTime date={item.last_seen_at} />
-                </span>
-              </li>
+                title={
+                  <>
+                    {item.name}
+                    {item.version && (
+                      <span className="ms-1.5 font-normal tabular-nums text-muted-foreground">
+                        {item.version}
+                      </span>
+                    )}
+                  </>
+                }
+                meta={[
+                  item.confidence
+                    ? t('assets.technologies.confidence', 'Confidence {value}', {
+                        value: item.confidence,
+                      })
+                    : null,
+                  item.source
+                    ? t('assets.technologies.source', 'Source: {source}', { source: item.source })
+                    : null,
+                  <MetaItem key="first" label={t('assets.technologies.firstSeen', 'First seen')}>
+                    <RelativeTime date={item.first_seen_at} />
+                  </MetaItem>,
+                  <MetaItem key="last" label={t('assets.technologies.lastSeen', 'Last seen')}>
+                    <RelativeTime date={item.last_seen_at} />
+                  </MetaItem>,
+                ]}
+              />
             ))}
           </ul>
         </section>

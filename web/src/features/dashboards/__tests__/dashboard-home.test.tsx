@@ -225,6 +225,58 @@ describe('DashboardHome', () => {
     expect(screen.getByRole('button', { name: 'Refresh now' })).toBeEnabled()
   })
 
+  it('Customize is offered on an organization dashboard to a manager only', () => {
+    perms.list = ['dashboards:org:view', 'dashboards:org:manage']
+    api.org = [dash('o2', 'Overview', { is_org_default: true })]
+    data.byKey['organization:o2'] = snapshot('organization', 1)
+    renderHome()
+    expect(screen.getByRole('button', { name: 'Customize' })).toBeInTheDocument()
+  })
+
+  it('Edit details is hidden on an organization dashboard for a viewer, shown to a manager', async () => {
+    perms.list = ['dashboards:org:view']
+    api.org = [dash('o2', 'Overview', { is_org_default: true })]
+    data.byKey['organization:o2'] = snapshot('organization', 1)
+    const { unmount } = renderHome()
+    await userEvent.click(screen.getByRole('button', { name: 'More dashboard actions' }))
+    expect(screen.queryByRole('menuitem', { name: 'Edit details' })).toBeNull()
+    unmount()
+    perms.list = ['dashboards:org:view', 'dashboards:org:manage']
+    renderHome()
+    await userEvent.click(screen.getByRole('button', { name: 'More dashboard actions' }))
+    expect(screen.getByRole('menuitem', { name: 'Edit details' })).toBeInTheDocument()
+  })
+
+  it('Refresh now stays enabled when the figures failed to load', () => {
+    api.mine = [dash('p1', 'Mine', { is_default: true })]
+    renderHome()
+    expect(screen.getByRole('button', { name: 'Refresh now' })).toBeEnabled()
+  })
+
+  it('the personal delete confirm does not claim the dashboard is deleted for everyone', async () => {
+    api.mine = [dash('p1', 'Mine', { is_default: true })]
+    data.byKey['personal:p1'] = snapshot('personal', 5)
+    renderHome()
+    await userEvent.click(screen.getByRole('button', { name: 'More dashboard actions' }))
+    await userEvent.click(screen.getByRole('menuitem', { name: 'Delete' }))
+    const dialog = await screen.findByRole('alertdialog')
+    expect(dialog).toHaveTextContent('Copies you shared and your data are not affected')
+    expect(dialog).not.toHaveTextContent('for everyone')
+  })
+
+  it('setting a default clears the stored last choice and shows no success toast', async () => {
+    api.mine = [dash('p1', 'Mine', { is_default: true }), dash('p2', 'Other')]
+    data.byKey['personal:p2'] = snapshot('personal', 5)
+    window.localStorage.setItem(DASHBOARD_CHOICE_KEY, 'personal:p2')
+    renderHome()
+    await userEvent.click(screen.getByRole('button', { name: 'More dashboard actions' }))
+    await userEvent.click(screen.getByRole('menuitem', { name: 'Set as my default' }))
+    const { setDefaultDashboard } = await import('../api/use-dashboards-api')
+    await waitFor(() => expect(setDefaultDashboard).toHaveBeenCalledWith('p2'))
+    await waitFor(() => expect(window.localStorage.getItem(DASHBOARD_CHOICE_KEY)).toBeNull())
+    expect(toast.success).not.toHaveBeenCalled()
+  })
+
   it('a manager may set the organization schedule', () => {
     perms.list = ['dashboards:org:view', 'dashboards:org:manage']
     api.org = [dash('o2', 'Overview', { is_org_default: true })]
@@ -257,7 +309,8 @@ describe('DashboardHome', () => {
     renderHome()
     await userEvent.click(screen.getByRole('button', { name: 'Refresh now' }))
     await waitFor(() => expect(data.refresh).toHaveBeenCalledWith('personal', 'p1'))
-    expect(toast.success).toHaveBeenCalled()
+    // The Updated line already shows the change: no success toast.
+    expect(toast.success).not.toHaveBeenCalled()
     data.refresh.mockRejectedValueOnce(new ApiClientError('limited', 'TOO_MANY_REQUESTS', 429))
     await userEvent.click(screen.getByRole('button', { name: 'Refresh now' }))
     await waitFor(() => expect(toast.info).toHaveBeenCalled())

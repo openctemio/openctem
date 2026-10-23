@@ -1,5 +1,6 @@
 import * as React from 'react'
 
+import { useTranslation } from '@/context/i18n-provider'
 import { safeHref, type SafeHrefOptions } from '@/lib/safe-href'
 
 export interface SafeExternalLinkProps extends Omit<
@@ -32,12 +33,16 @@ export function SafeExternalLink({
   ref,
   ...rest
 }: SafeExternalLinkProps) {
+  const { t } = useTranslation()
   const safe = safeHref(href, urlOptions)
   if (!safe) {
     return (
       <span
         className={className}
-        title={title ?? 'Link not opened: the URL uses a scheme that is not allowed'}
+        title={
+          title ??
+          t('common.unsafeLink', 'Link not opened: the URL uses a scheme that is not allowed')
+        }
         data-unsafe-href=""
       >
         {children}

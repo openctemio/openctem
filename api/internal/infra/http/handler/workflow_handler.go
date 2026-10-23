@@ -80,27 +80,42 @@ type CreateEdgeRequest struct {
 
 // WorkflowResponse represents the response for a workflow.
 type WorkflowResponse struct {
-	ID             string         `json:"id"`
-	TenantID       string         `json:"tenant_id"`
-	Name           string         `json:"name"`
-	Description    string         `json:"description,omitempty"`
-	IsActive       bool           `json:"is_active"`
-	Tags           []string       `json:"tags,omitempty"`
-	Nodes          []NodeResponse `json:"nodes,omitempty"`
-	Edges          []EdgeResponse `json:"edges,omitempty"`
-	TotalRuns      int            `json:"total_runs"`
-	SuccessfulRuns int            `json:"successful_runs"`
-	FailedRuns     int            `json:"failed_runs"`
-	LastRunID      *string        `json:"last_run_id,omitempty"`
-	LastRunAt      *string        `json:"last_run_at,omitempty"`
-	LastRunStatus  string         `json:"last_run_status,omitempty"`
-	CreatedBy      *string        `json:"created_by,omitempty"`
-	CreatedAt      string         `json:"created_at"`
-	UpdatedAt      string         `json:"updated_at"`
-	// UnsupportedFeatures lists the trigger and action types this workflow
-	// uses that the platform does not execute ("trigger:schedule",
-	// "action:assign_team", ...). Such a workflow stays readable but cannot
-	// be activated or saved until they are removed. Only set when the graph
+	ID          string `json:"id"`
+	TenantID    string `json:"tenant_id"`
+	Name        string `json:"name"`
+	Description string `json:"description,omitempty"`
+	IsActive    bool   `json:"is_active"`
+	// DisabledReason says why the platform switched the automation off
+	// ("uses_removed_type"); empty when it did not.
+	DisabledReason string `json:"disabled_reason,omitempty"`
+	// Mode: live runs execute the published version; simulate runs execute
+	// the draft and only record what they would do.
+	Mode string `json:"mode"`
+	// RiskClass is the class of the draft (low, elevated, high); set on the
+	// single-automation answers.
+	RiskClass string `json:"risk_class,omitempty"`
+	// DraftChanged: the draft differs from the published version.
+	DraftChanged bool `json:"draft_changed"`
+	// PublishedVersion is the version live runs execute; PendingVersion the
+	// newest one waiting for a second person.
+	PublishedVersion *WorkflowVersionResponse `json:"published_version,omitempty"`
+	PendingVersion   *WorkflowVersionResponse `json:"pending_version,omitempty"`
+	Tags             []string                 `json:"tags,omitempty"`
+	Nodes            []NodeResponse           `json:"nodes,omitempty"`
+	Edges            []EdgeResponse           `json:"edges,omitempty"`
+	TotalRuns        int                      `json:"total_runs"`
+	SuccessfulRuns   int                      `json:"successful_runs"`
+	FailedRuns       int                      `json:"failed_runs"`
+	LastRunID        *string                  `json:"last_run_id,omitempty"`
+	LastRunAt        *string                  `json:"last_run_at,omitempty"`
+	LastRunStatus    string                   `json:"last_run_status,omitempty"`
+	CreatedBy        *string                  `json:"created_by,omitempty"`
+	CreatedAt        string                   `json:"created_at"`
+	UpdatedAt        string                   `json:"updated_at"`
+	// UnsupportedFeatures lists the removed trigger, action and notification
+	// types this workflow still holds ("trigger:schedule",
+	// "action:http_request", ...). Such a workflow stays readable but cannot
+	// be activated or saved until they are replaced. Only set when the graph
 	// is loaded.
 	UnsupportedFeatures []string `json:"unsupported_features,omitempty"`
 }
@@ -169,6 +184,8 @@ type WorkflowRunResponse struct {
 	TriggerType    string            `json:"trigger_type"`
 	TriggerData    map[string]any    `json:"trigger_data,omitempty"`
 	Status         string            `json:"status"`
+	Mode           string            `json:"mode"`
+	VersionID      *string           `json:"version_id,omitempty"`
 	StartedAt      *string           `json:"started_at,omitempty"`
 	CompletedAt    *string           `json:"completed_at,omitempty"`
 	TotalNodes     int               `json:"total_nodes"`
@@ -299,14 +316,7 @@ func (h *WorkflowHandler) GetWorkflow(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	wf, err := h.service.GetWorkflow(r.Context(), tenantUUID, workflowUUID)
-	if err != nil {
-		h.handleServiceError(w, err)
-		return
-	}
-
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(toWorkflowResponse(wf))
+	h.writeWorkflowDetail(w, r, tenantUUID, workflowUUID, http.StatusOK)
 }
 
 // ListWorkflows handles GET /api/v1/workflows
@@ -1049,6 +1059,8 @@ func toWorkflowResponse(wf *automation.Workflow) *WorkflowResponse {
 		Name:           wf.Name,
 		Description:    wf.Description,
 		IsActive:       wf.IsActive,
+		DisabledReason: wf.DisabledReason,
+		Mode:           string(wf.Mode),
 		Tags:           wf.Tags,
 		TotalRuns:      wf.TotalRuns,
 		SuccessfulRuns: wf.SuccessfulRuns,
@@ -1109,39 +1121,12 @@ func toNodeResponse(n *automation.Node) *NodeResponse {
 			TriggerConfig:      n.Config.TriggerConfig,
 			ConditionExpr:      n.Config.ConditionExpr,
 			ActionType:         string(n.Config.ActionType),
-			ActionConfig:       redactActionConfig(n.Config.ActionType, n.Config.ActionConfig),
+			ActionConfig:       n.Config.ActionConfig,
 			NotificationType:   string(n.Config.NotificationType),
 			NotificationConfig: n.Config.NotificationConfig,
 		},
 		CreatedAt: n.CreatedAt.Format("2006-01-02T15:04:05Z07:00"),
 	}
-}
-
-// redactedValue replaces a secret in a response.
-const redactedValue = "[redacted]"
-
-// redactActionConfig hides the header values of a stored http_request node
-// (they are often credentials). The action is refused for new nodes; a
-// stored one keeps its headers only to keep running, and no reader of the
-// workflow sees them.
-func redactActionConfig(t automation.ActionType, cfg map[string]any) map[string]any {
-	if t != automation.ActionTypeHTTPRequest || cfg == nil {
-		return cfg
-	}
-	hdrs, ok := cfg["headers"].(map[string]any)
-	if !ok || len(hdrs) == 0 {
-		return cfg
-	}
-	out := make(map[string]any, len(cfg))
-	for k, v := range cfg {
-		out[k] = v
-	}
-	masked := make(map[string]any, len(hdrs))
-	for k := range hdrs {
-		masked[k] = redactedValue
-	}
-	out["headers"] = masked
-	return out
 }
 
 func toEdgeResponse(e *automation.Edge) *EdgeResponse {
@@ -1164,6 +1149,8 @@ func toWorkflowRunResponse(run *automation.Run) *WorkflowRunResponse {
 		TriggerType:    string(run.TriggerType),
 		TriggerData:    run.TriggerData,
 		Status:         string(run.Status),
+		Mode:           string(run.Mode),
+		VersionID:      idPtrString(run.VersionID),
 		TotalNodes:     run.TotalNodes,
 		CompletedNodes: run.CompletedNodes,
 		FailedNodes:    run.FailedNodes,

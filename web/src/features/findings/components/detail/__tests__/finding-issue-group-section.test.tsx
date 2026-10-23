@@ -72,7 +72,8 @@ describe('FindingIssueGroupSection', () => {
   it('lists the members with tool, rule and the reason they are linked', () => {
     render(<FindingIssueGroupSection findingId="f1" />)
     expect(screen.getByText('Same issue in other tools')).toBeInTheDocument()
-    expect(screen.getByText('codeql · py/sql-injection')).toBeInTheDocument()
+    expect(screen.getByText('codeql')).toBeInTheDocument()
+    expect(screen.getByText('py/sql-injection')).toBeInTheDocument()
     expect(
       screen.getByText('Same file and asset, overlapping lines, same weakness (CWE)')
     ).toBeInTheDocument()

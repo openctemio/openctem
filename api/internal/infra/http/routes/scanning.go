@@ -798,6 +798,8 @@ func registerWorkflowRoutes(
 	router.Group("/api/v1/workflows", func(r Router) {
 		// Read operations
 		r.GET("/", h.ListWorkflows, middleware.Require(permission.WorkflowsRead))
+		// The trigger, action and notification types the engine runs.
+		r.GET("/catalog", h.GetCatalog, middleware.Require(permission.WorkflowsRead))
 		r.GET("/{id}", h.GetWorkflow, middleware.Require(permission.WorkflowsRead))
 
 		// Write operations
@@ -821,6 +823,14 @@ func registerWorkflowRoutes(
 
 		// Workflow runs (executions)
 		r.POST("/{id}/runs", h.TriggerWorkflow, middleware.Require(permission.WorkflowsWrite))
+
+		// Versions and mode: publishing makes the draft a version and the
+		// automation live; simulate is one call back.
+		r.GET("/{id}/versions", h.ListVersions, middleware.Require(permission.WorkflowsRead))
+		r.GET("/{id}/versions/{version_id}", h.GetVersion, middleware.Require(permission.WorkflowsRead))
+		r.POST("/{id}/publish", h.Publish, middleware.Require(permission.WorkflowsWrite))
+		r.POST("/{id}/versions/{version_id}/rollback", h.Rollback, middleware.Require(permission.WorkflowsWrite))
+		r.PUT("/{id}/mode", h.SetMode, middleware.Require(permission.WorkflowsWrite))
 	}, tenantMiddlewares...)
 
 	// Workflow Run routes - direct access

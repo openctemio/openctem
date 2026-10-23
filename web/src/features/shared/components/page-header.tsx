@@ -11,6 +11,12 @@ interface PageHeaderProps {
   className?: string
   /** Classes for the actions group, e.g. `basis-full sm:basis-auto` for a toolbar that fills a phone row. */
   actionsClassName?: string
+  /**
+   * A list/grid ViewSwitcher. It owns the far right of the title row at every
+   * width and never wraps with the actions: on a phone the actions drop to their
+   * own row under the title, so the switcher sits in the same place on every view.
+   */
+  viewSwitcher?: ReactNode
 }
 
 /**
@@ -25,9 +31,11 @@ export function PageHeader({
   children,
   className,
   actionsClassName,
+  viewSwitcher,
 }: PageHeaderProps) {
   return (
     <div
+      data-slot="page-header"
       className={cn(
         'flex min-w-0 flex-wrap items-start justify-between gap-x-4 gap-y-3',
         className
@@ -43,6 +51,11 @@ export function PageHeader({
           </div>
         )}
       </div>
+      {viewSwitcher && (
+        <div data-slot="page-header-view-switcher" className="order-2 shrink-0 sm:order-3">
+          {viewSwitcher}
+        </div>
+      )}
       {children && (
         // Pages often wrap their buttons in their own <div className="flex gap-2">,
         // which does not wrap and pushed the last button off-screen on narrow
@@ -50,6 +63,8 @@ export function PageHeader({
         <div
           className={cn(
             'flex max-w-full shrink-0 flex-wrap items-center gap-2 [&>div]:max-w-full [&>div]:flex-wrap',
+            // With a switcher: full row under the title on a phone, left of it from sm.
+            viewSwitcher && 'order-3 basis-full sm:order-2 sm:basis-auto',
             actionsClassName
           )}
         >

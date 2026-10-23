@@ -1782,7 +1782,7 @@ func TestWfExec_Execute_UnknownNodeType_NodeFails(t *testing.T) {
 	}
 }
 
-// A stored workflow that still holds a refused action (trigger_pipeline) never
+// A stored workflow that still holds a removed action (trigger_pipeline) never
 // runs it, even with a handler registered for the type.
 func TestWfExec_Execute_StoredUnsupportedActionNeverRuns(t *testing.T) {
 	tenantID := shared.NewID()
@@ -1792,10 +1792,11 @@ func TestWfExec_Execute_StoredUnsupportedActionNeverRuns(t *testing.T) {
 	executor := wfExecNewExecutor(workflowRepo, runRepo, nodeRunRepo)
 
 	handler := &wfExecMockActionHandler{}
-	executor.RegisterActionHandler(automation.ActionTypeTriggerPipeline, handler)
+	executor.RegisterActionHandler(automation.ActionType("trigger_pipeline"), handler)
 
 	wf, _, actionNode := wfExecBuildSimpleWorkflow(tenantID)
-	_ = actionNode.SetActionConfig(automation.ActionTypeTriggerPipeline, map[string]any{"pipeline_id": shared.NewID().String()})
+	actionNode.Config.ActionType = automation.ActionType("trigger_pipeline")
+	actionNode.Config.ActionConfig = map[string]any{"pipeline_id": shared.NewID().String()}
 	workflowRepo.Create(context.Background(), wf)
 
 	run := wfExecBuildRun(wf, tenantID)

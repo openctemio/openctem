@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | Status | Accepted (2026-10-22). Built in steps; [ingest-receipts.md](../architecture/ingest-receipts.md) says what is shipped |
-| Scope | api (`pkg/domain/ingestreceipt`, `internal/app/ingest`, `internal/app/findingimport`, findings import routes, migrations), web (import page, scan run page, finding detail) |
+| Scope | api (`pkg/domain/ingestreceipt`, `pkg/domain/ingestpayload`, `internal/app/ingest`, `internal/app/ingestqueue`, `internal/app/findingimport`, `internal/app/cirun`, findings import and CI upload routes, migrations), web (import page, scan run page, finding detail) |
 | Architecture | [ingest-receipts.md](../architecture/ingest-receipts.md), [finding-import.md](../architecture/finding-import.md) |
 | Related | RFC-026 (sensor results ingest), RFC-040 (result binding), RFC-043 (deduplication), RFC-048 (list query contract), RFC-051 (CI runs), RFC-041 (API conventions) |
 
@@ -111,12 +111,131 @@ cannot see. So:
 - Fail closed: a store that cannot claim, read or finish the key refuses
   the request with 503 before any file is read for import.
 - Kept 24 hours; an hourly job deletes expired keys.
+- Without a key, the same files (same fingerprint) from the same principal
+  within 10 minutes are the same upload: the answer names the first
+  upload's receipt (`Idempotent-Replayed: true`). A CI run's upload is keyed
+  by the run and the SHA-256 of the body, so the same body sent to the run
+  again is always the same upload.
+
+## 6a. Accept fast, apply async
+
+CI results (`POST /api/v1/ci/runs/{id}/results`) and committed file imports
+(`POST /api/v1/findings/imports`) are no longer applied inside the request,
+where a large report ran into the request timeout and many concurrent
+uploads competed for the API's connections. The request stores the upload
+and answers **202**; the ingest worker applies it from the existing
+`ingest_jobs` queue (no new broker).
+
+- **Accept.** The tenant comes from the credential (run token, session, API
+  key). What is cheap is checked at once: a CTIS report from a CI run is
+  decoded with the bounded pre-check and must name only the run's
+  repository (400 otherwise); the run takes a report slot (409 after the
+  verdict or past the cap); an import's parameters, coverage declaration
+  and Idempotency-Key are checked as before. Tool exports and import files
+  are parsed by the worker. The raw bytes are stored in `ingest_payloads`,
+  one row per part, gzip-compressed and sealed with AES-256-GCM under a key
+  derived per tenant from `APP_ENCRYPTION_KEY` (HKDF; the additional data
+  binds each row to its tenant, job and part, so a row copied elsewhere does
+  not open; previous keys still open their rows during a rotation). Parts
+  are capped at 128 MiB each, 64 per upload. Then one job (`kind`
+  `ci_results` or `finding_import`, `source_ref` the run or the receipt) is
+  enqueued, idempotent by `(tenant, report id, digest)`.
+- **Answer.** CI: `202` with `upload_id` and `Location:
+  /api/v1/ci/runs/{id}/results/{report_id}`. Import: `202` with the receipt
+  id (receipt status `queued`) and `Location: /api/v1/findings/imports/{id}`.
+- **Apply.** The worker opens the parts, re-reads what the job needs at the
+  time it runs (the CI run; the uploader's data scope from the caller
+  recorded at accept, so a narrowed scope applies and a removed member is
+  refused), applies them exactly as the request did, stores the result on
+  the job (counts, the decided results a CI job may hide, an import's
+  per-file results), finishes the receipt, and deletes the parts and the
+  job's envelope. A failure a retry cannot fix (an unreadable file, a
+  report outside the run's repository, a run already judged, a part that
+  does not open) is dead at once with a fixed `error_code`; others retry
+  (2 s, 4 s, 8 s ... capped at a minute for uploads) and are dead after 5
+  attempts (`apply_failed`). A dead import marks its receipt `failed` with
+  that code; its parts are kept 7 days.
+- **Read.** `GET /api/v1/ci/runs/{id}/results/{report_id}?wait=N` (run
+  token) and `GET /api/v1/findings/imports/{id}/result?wait=N` answer
+  `queued`, `processing`, `applied` (with the result) or `failed` (with the
+  code); `wait` (at most 10 s, so the answer fits the server's write
+  timeout) long-polls. An upload of another run or tenant is 404; an
+  import's result is visible to whoever may read its receipt.
+- **CI gate.** `POST /ci/runs/{id}/evaluate` waits up to 10 s for the run's
+  uploads. Still pending: `503 INGEST_PENDING` with `Retry-After`, and the
+  runner asks again (one command for the pipeline). The verdict's save is
+  refused while any upload of the run is pending, so a verdict is never
+  computed over part of the results, even for an upload accepted during the
+  wait. An upload that failed for good fails the run (`upload_not_applied`).
+- A preview (`dry_run=true`) still runs in the request: it writes nothing.
+
+Threat model additions: the raw report is stored before secrets are masked,
+hence sealed per tenant, never served back, and deleted once applied; a
+hostile file is parsed only in the worker, with the importers' caps, and
+its failure surfaces as a fixed code (never its text); the uploader's rights
+are re-resolved when the job runs, never widened: the worker re-reads the
+uploader's membership (a member who left or was suspended meanwhile is
+refused with `uploader_not_permitted`, a demoted administrator imports with
+the member's data scope); the gate fails closed on a pending or failed
+upload. A job's stored report is deleted in the statement that records it
+completed (a crash before that re-applies the upload), and at once when it
+fails for good with a fixed code (only `apply_failed` keeps it, for a retry
+of the same upload).
+
+## 6b. Fairness and limits
+
+Many CI pipelines, sensors and people upload at once; the queue keeps every
+organization moving and every scope consistent.
+
+- **Lanes.** `ingest_jobs.lane`: 0 urgent (a CI report with a critical
+  finding or a CVE in the KEV catalogue, decided by the server from the
+  decoded report), 1 interactive (a person's import, a CI upload a gate
+  waits on), 2 bulk (sensor reports). The claim takes urgent first, then
+  interactive, then bulk; within a lane it is fair across organizations by
+  share: jobs an organization already has running count, so the one holding
+  fewer workers goes first (each one's next job before anyone's second),
+  then by age. A report cannot ask for a lane, but the server derives it
+  from what the report says, so an organization's urgent lane goes ahead of
+  others for one job at a time (its first, with nothing of it running);
+  further urgent jobs of that organization queue as interactive. Flooding
+  critical findings orders an organization's own work, never the whole
+  worker pool.
+- **One job per scope.** `ingest_jobs.scope_key` names the asset scope a job
+  writes: a CI run's repository, an organization's imports, a sensor
+  report's segments and commit. At most one job per key is processing: the
+  claim skips a scope with a running job and takes one job per scope per
+  batch, and the unique partial index `ux_ingest_jobs_scope_running` makes a
+  concurrent claim of the same scope by another worker fail (that job is
+  skipped). Twenty jobs of a CI matrix on one repository apply one after
+  another instead of deadlocking on the same rows.
+- **Running cap.** An organization has at most `INGEST_MAX_RUNNING_PER_TENANT`
+  (2, half the workers of one server) jobs processing across servers, so the
+  other organizations always have workers.
+- **Workers.** Each server runs `INGEST_WORKERS` (4) workers; each claims one
+  job at a time. The asset and finding writes go through their own pool
+  (`DB_INGEST_MAX_CONNS`, 8, all idle-kept), so a burst of uploads cannot
+  take the API's connections.
+- **Back-pressure.** At accept (CI, import, sensor segment), an organization
+  with `INGEST_MAX_PENDING_PER_TENANT` (100) unfinished jobs gets `429`
+  (`INGEST_QUEUE_FULL`; sensors `queue-full`) with a `Retry-After` from how
+  fast its jobs drained over the last 5 minutes (5 s to 5 min). A depth that
+  cannot be read refuses the upload with `503` and `Retry-After` (fail
+  closed); nothing is stored. An import is checked before its receipt is
+  written, so a refused one leaves no trace.
+- **Poison.** A job is claimed only while `attempts < max_attempts`
+  (attempts count at claim). A lease that expires on the last attempt (a
+  payload that crashes or hangs the worker) makes the job dead with
+  `apply_failed`; its owner is told (the import's receipt fails, the CI gate
+  fails the run).
 
 ## 7. API
 
 | Route | Gate | Notes |
 |---|---|---|
-| `POST /api/v1/findings/imports` | `findings:write` + `assets:write` + `assets:import` | multipart; `201` + `Location` + the receipt and the per-file results; `dry_run=true` previews (`200`) |
+| `POST /api/v1/findings/imports` | `findings:write` + `assets:write` + `assets:import` | multipart; `202` + `Location` (the receipt, status `queued`), applied by the ingest worker (§6a); `dry_run=true` previews in the request (`200`) |
+| `GET /api/v1/findings/imports/{id}/result` | `findings:read` | state of a committed upload (`queued`, `processing`, `applied`, `failed` + `error_code`), its per-file results and its receipt; `wait` ≤ 10 s; visible as the receipt |
+| `POST /api/v1/ci/runs/{id}/results` | CI run token | `202` + `upload_id` + `Location` (§6a); the same body to the run again is the same upload |
+| `GET /api/v1/ci/runs/{id}/results/{report_id}` | CI run token | state of the run's upload and, once applied, its counts and decided results; `wait` ≤ 10 s; another run's upload is 404 |
 | `GET /api/v1/findings/imports` | `findings:read` | list of receipts (§4); filters `source_kind`, `source_ref`; `page`, `per_page` ≤ 100; unknown parameter → 400 |
 | `GET /api/v1/findings/imports/{id}` | `findings:read` | one receipt, counts by severity of the visible actions |
 | `GET /api/v1/findings/imports/{id}/actions` | `findings:read` | the per-finding actions the caller may see; filter `action` |
@@ -142,3 +261,8 @@ cannot see. So:
 3. Full-coverage uploads (`coverage=full` with an explicit scope).
 4. Web: receipts on the import page and the scan run page, "last seen in"
    on the finding detail (en and vi).
+5. Accept fast, apply async (§6a): CI results and committed imports stored
+   sealed and applied by the ingest worker; the CI gate waits on the run's
+   uploads.
+6. Fairness and limits (§6b): lanes, one running job per scope, a running
+   cap, workers on their own pool, fail-closed back-pressure, poison cap.

@@ -82,6 +82,27 @@ beforeEach(() => {
 })
 
 describe('suggested rules', () => {
+  it('a failing suggestions read shows an error with a retry, not nothing', async () => {
+    api.get.mockRejectedValueOnce(new Error('boom')).mockResolvedValue(suggestions)
+    wrap(<EASMRuleSuggestions onApplied={() => {}} />)
+    expect(await screen.findByText('Failed to load suggested rules')).toBeInTheDocument()
+    await userEvent.click(screen.getByRole('button', { name: 'Retry' }))
+    expect(await screen.findByText('*.dev.example.com.au')).toBeInTheDocument()
+  })
+
+  it('in names mode, says names fit no rule and opens the full list', async () => {
+    window.history.replaceState(null, '', '/attack-surface/review')
+    api.get.mockResolvedValue({
+      suggestions: [],
+      individual: [{ asset_id: 'n1', name: 'odd.example.org' }],
+    })
+    wrap(<EASMRuleSuggestions namesOnly onApplied={() => {}} />)
+    expect(await screen.findByText(/1 name fits no rule/)).toBeInTheDocument()
+    expect(screen.queryByText(/shared or CDN/)).not.toBeInTheDocument()
+    await userEvent.click(screen.getByRole('button', { name: 'Show all items' }))
+    expect(new URLSearchParams(window.location.search).get('all')).toBe('1')
+  })
+
   it('show what each rule covers, what stays out, and the evidence', async () => {
     api.get.mockResolvedValue(suggestions)
     wrap(<EASMRuleSuggestions onApplied={() => {}} />)

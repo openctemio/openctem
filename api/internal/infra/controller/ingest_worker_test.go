@@ -15,9 +15,10 @@ type completeCall struct {
 	result []byte
 }
 type failCall struct {
-	id   ingestjob.ID
-	msg  string
-	dead bool
+	id     ingestjob.ID
+	msg    string
+	public string
+	dead   bool
 }
 
 type stubQueue struct {
@@ -27,6 +28,7 @@ type stubQueue struct {
 	fails         []failCall
 	releaseStale  int
 	releaseStaleN int
+	staleDead     []*ingestjob.Job
 }
 
 func (q *stubQueue) ClaimBatch(_ context.Context, _ string, _ int) ([]*ingestjob.Job, error) {
@@ -41,13 +43,13 @@ func (q *stubQueue) Complete(_ context.Context, id ingestjob.ID, result []byte) 
 	q.completes = append(q.completes, completeCall{id, result})
 	return nil
 }
-func (q *stubQueue) Fail(_ context.Context, id ingestjob.ID, msg string, _ time.Time, dead bool) error {
-	q.fails = append(q.fails, failCall{id, msg, dead})
+func (q *stubQueue) Fail(_ context.Context, id ingestjob.ID, msg, public string, _ time.Time, dead bool) error {
+	q.fails = append(q.fails, failCall{id, msg, public, dead})
 	return nil
 }
-func (q *stubQueue) ReleaseStale(_ context.Context, _ time.Duration) (int, error) {
+func (q *stubQueue) ReleaseStale(_ context.Context, _ time.Duration) (int, []*ingestjob.Job, error) {
 	q.releaseStale++
-	return q.releaseStaleN, nil
+	return q.releaseStaleN, q.staleDead, nil
 }
 func (q *stubQueue) CountPending(_ context.Context) (int, error) { return 0, nil }
 
@@ -139,5 +141,65 @@ func TestIngestWorker_DrainsMultipleBatches(t *testing.T) {
 	}
 	if n != 3 || len(q.completes) != 3 {
 		t.Fatalf("processed=%d completes=%d (want 3/3)", n, len(q.completes))
+	}
+}
+
+// deadLetterProcessor records the jobs it is told failed for good.
+type deadLetterProcessor struct {
+	stubProcessor
+	dead []string
+}
+
+func (p *deadLetterProcessor) DeadLetter(_ context.Context, _ *ingestjob.Job, code string) {
+	p.dead = append(p.dead, code)
+}
+
+// A permanent error (an unreadable upload) is dead at its first attempt,
+// with its fixed code for the client, and the processor is told.
+func TestIngestWorker_PermanentErrorIsDeadAtOnce(t *testing.T) {
+	q := &stubQueue{batches: [][]*ingestjob.Job{{newJob(t)}}}
+	p := &deadLetterProcessor{stubProcessor: stubProcessor{err: ingestjob.Permanent("unreadable", errors.New("bad xml"))}}
+	c := NewIngestWorkerController(q, p, &IngestWorkerControllerConfig{})
+	if _, err := c.Reconcile(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if len(q.fails) != 1 || !q.fails[0].dead || q.fails[0].public != "unreadable" {
+		t.Fatalf("fails = %+v", q.fails)
+	}
+	if len(p.dead) != 1 || p.dead[0] != "unreadable" {
+		t.Fatalf("dead letters = %v", p.dead)
+	}
+}
+
+// A transient error retries without a public code; once the attempts run
+// out the job is dead with apply_failed.
+func TestIngestWorker_ExhaustedRetriesAreApplyFailed(t *testing.T) {
+	job := ingestjob.FromRow(shared.NewID(), shared.NewID(), nil, "r", "", []byte("{}"), make([]byte, 32),
+		ingestjob.StatusProcessing, ingestjob.DefaultMaxAttempts, ingestjob.DefaultMaxAttempts, 0, nil, "", "", nil,
+		time.Now(), time.Now(), time.Now())
+	q := &stubQueue{batches: [][]*ingestjob.Job{{newJob(t)}, {job}}}
+	p := &deadLetterProcessor{stubProcessor: stubProcessor{err: errors.New("db down")}}
+	c := NewIngestWorkerController(q, p, &IngestWorkerControllerConfig{})
+	if _, err := c.Reconcile(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if len(q.fails) != 2 || q.fails[0].dead || q.fails[0].public != "" || !q.fails[1].dead || q.fails[1].public != ingestjob.ErrorApplyFailed {
+		t.Fatalf("fails = %+v", q.fails)
+	}
+	if len(p.dead) != 1 {
+		t.Fatalf("dead letters = %v", p.dead)
+	}
+}
+
+// A job whose lease expired on its last attempt is dead-lettered once.
+func TestIngestWorker_StaleDeadJobsAreDeadLettered(t *testing.T) {
+	q := &stubQueue{staleDead: []*ingestjob.Job{newJob(t)}}
+	p := &deadLetterProcessor{}
+	c := NewIngestWorkerController(q, p, &IngestWorkerControllerConfig{})
+	if _, err := c.Reconcile(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if len(p.dead) != 1 || p.dead[0] != ingestjob.ErrorApplyFailed {
+		t.Fatalf("dead letters = %v", p.dead)
 	}
 }

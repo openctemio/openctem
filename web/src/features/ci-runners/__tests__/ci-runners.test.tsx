@@ -632,6 +632,10 @@ describe('CITrustSettings', () => {
     expect(screen.getByTestId('ci-legacy-audience')).toHaveTextContent(
       'https://openctem.example.com'
     )
+    // One "until"-style date, formatted in the console language (Jan 12, 2027), not twice.
+    const text = screen.getByTestId('ci-legacy-audience').textContent ?? ''
+    expect(text).toContain('Jan 12, 2027')
+    expect(text.match(/until/gi)).toBeNull()
   })
 
   it('a member cannot add trust or break-glass', async () => {

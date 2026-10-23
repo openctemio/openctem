@@ -8,6 +8,7 @@ let apps: unknown = { github: { configured: true, slug: 'openctem' }, data: [], 
 const mockInstallURL = vi.fn()
 const mockConnect = vi.fn()
 const mockComplete = vi.fn()
+const mockReplace = vi.fn()
 let search = new URLSearchParams()
 
 vi.mock('../api/use-ci', async (importOriginal) => ({
@@ -23,6 +24,8 @@ vi.mock('../api/use-ci', async (importOriginal) => ({
 vi.mock('next/navigation', async (importOriginal) => ({
   ...(await importOriginal<typeof import('next/navigation')>()),
   useSearchParams: () => search,
+  useRouter: () => ({ replace: mockReplace, push: vi.fn() }),
+  usePathname: () => '/ci-cd/github-app/callback',
 }))
 
 vi.mock('@/context/tenant-provider', () => ({
@@ -109,6 +112,8 @@ describe('GitHub setup redirect', () => {
     await waitFor(() => expect(screen.getByText(/installed on acme/i)).toBeInTheDocument())
     expect(mockComplete).toHaveBeenCalledTimes(1)
     expect(mockComplete).toHaveBeenCalledWith({ installation_id: 42, code: 'c', state: 's.sig' })
+    // code and state leave the address bar and the history entry.
+    await waitFor(() => expect(mockReplace).toHaveBeenCalledWith('/ci-cd/github-app/callback'))
   })
 
   it('does not call the API without installation details', async () => {

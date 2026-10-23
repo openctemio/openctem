@@ -30,7 +30,7 @@ func TestCIRepositoryPolicyFile(t *testing.T) {
 		_, ex := r.post("/api/v1/ci/oidc/exchange", "", map[string]string{"tenant_id": r.tenant.String(),
 			"id_token": r.idp.token(t, cfg.Audience, "acme/api", ref, sha, map[string]any{"job_id": job})})
 		id, tok := ex["run_id"].(string), ex["token"].(string)
-		if resp, out := r.post("/api/v1/ci/runs/"+id+"/results", tok, ciReport(repoName, medium)); resp.StatusCode != http.StatusCreated {
+		if resp, out := r.upload(id, tok, ciReport(repoName, medium)); resp.StatusCode != http.StatusAccepted {
 			t.Fatalf("upload: %d %v", resp.StatusCode, out)
 		}
 		body := map[string]any{}

@@ -13,11 +13,13 @@
  * to read members it reads "A team member".
  */
 
-import { useMemo } from 'react'
+import useSWR from 'swr'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import { useTranslation } from '@/context/i18n-provider'
 import { useTenant } from '@/context/tenant-provider'
-import { useMembers } from '@/features/organization/api/use-members'
+import type { MemberListResponse } from '@/features/organization/types/member.types'
+import { fetcher } from '@/lib/api/client'
+import { tenantEndpoints } from '@/lib/api/endpoints'
 import { Permission, usePermissions } from '@/lib/permissions'
 import { cn } from '@/lib/utils'
 
@@ -63,26 +65,87 @@ function initials(name: string): string {
   return (first + last).toUpperCase()
 }
 
+/** The server accepts at most this many user ids per members request. */
+const NAME_BATCH_SIZE = 100
+
+type NameWaiter = {
+  id: string
+  resolve: (name: string | null) => void
+  reject: (e: unknown) => void
+}
+const pendingNames = new Map<string, NameWaiter[]>()
+const nameFlushTimers = new Map<string, ReturnType<typeof setTimeout>>()
+
+async function flushNames(tenantId: string) {
+  const waiters = pendingNames.get(tenantId) ?? []
+  pendingNames.delete(tenantId)
+  nameFlushTimers.delete(tenantId)
+  const ids = [...new Set(waiters.map((w) => w.id))]
+  const found = new Map<string, string>()
+  try {
+    for (let i = 0; i < ids.length; i += NAME_BATCH_SIZE) {
+      const params = new URLSearchParams({
+        include: 'user',
+        per_page: String(NAME_BATCH_SIZE),
+        user_ids: ids.slice(i, i + NAME_BATCH_SIZE).join(','),
+      })
+      const res = await fetcher<MemberListResponse>(
+        `${tenantEndpoints.members(tenantId)}?${params.toString()}`
+      )
+      for (const m of res.data ?? []) if (m.user_id) found.set(m.user_id, m.name || '')
+    }
+    for (const w of waiters) w.resolve(found.has(w.id) ? (found.get(w.id) ?? '') : null)
+  } catch (e) {
+    for (const w of waiters) w.reject(e)
+  }
+}
+
 /**
- * Names of this organization's members by user id. Loads once per tenant
- * (cached by SWR, shared by every chip on the page).
+ * Looks one user id up by its exact id. Lookups made in the same tick, by
+ * every chip on the page, leave as ONE members request filtered by user_ids,
+ * so a person is found however many members the organization has (the old
+ * lookup read the first 100 and called everyone else a former member).
+ * Resolves null when the id is not a member of the organization.
  */
-export function useMemberNames(enabled = true) {
+export function lookupMemberName(tenantId: string, id: string): Promise<string | null> {
+  return new Promise((resolve, reject) => {
+    const list = pendingNames.get(tenantId) ?? []
+    list.push({ id, resolve, reject })
+    pendingNames.set(tenantId, list)
+    if (!nameFlushTimers.has(tenantId)) {
+      nameFlushTimers.set(
+        tenantId,
+        setTimeout(() => void flushNames(tenantId), 10)
+      )
+    }
+  })
+}
+
+/**
+ * The name of one organization member, by user id. Needs members:read; the
+ * server answers only for members of this organization (current members:
+ * active and suspended). `found` is false only after the lookup finished and
+ * the id is not a member, which is when "Former member" is true.
+ */
+export function useMemberName(id: string | undefined, enabled = true) {
   const { currentTenant } = useTenant()
   const { can } = usePermissions()
   const allowed = can(Permission.MembersRead)
-  // Current members (active and suspended): a person who left is not listed
-  // and reads "Former member", which is what they are.
-  const { members, isLoading } = useMembers(enabled && allowed ? currentTenant?.id : undefined, {
-    status: 'current',
-    limit: 100,
-  })
-  const names = useMemo(() => {
-    const m = new Map<string, string>()
-    for (const x of members) if (x.user_id) m.set(x.user_id, x.name || '')
-    return m
-  }, [members])
-  return { names, allowed, isLoading }
+  const tenantId = currentTenant?.id
+  const { data, isLoading, error } = useSWR(
+    enabled && allowed && tenantId && id ? `member-name:${tenantId}:${id}` : null,
+    () => lookupMemberName(tenantId as string, id as string),
+    { revalidateOnFocus: false, dedupingInterval: 60000 }
+  )
+  return {
+    name: data ?? undefined,
+    found: typeof data === 'string',
+    /** The lookup finished (the id may still be unknown: data is null). */
+    done: data !== undefined,
+    allowed,
+    isLoading,
+    failed: !!error,
+  }
 }
 
 interface ActorChipProps {
@@ -98,7 +161,7 @@ export function ActorChip({ actor, at, className, compact }: ActorChipProps) {
   const { t } = useTranslation()
   const ref = toActorRef(actor)
   const needsLookup = ref?.kind === 'user' && !ref.name && !ref.former_member
-  const { names, allowed, isLoading } = useMemberNames(needsLookup)
+  const lookup = useMemberName(ref?.id, needsLookup)
 
   if (!ref) return <span className={cn('text-sm text-muted-foreground', className)}>-</span>
 
@@ -112,9 +175,11 @@ export function ActorChip({ actor, at, className, compact }: ActorChipProps) {
     label = ref.name
   } else if (ref.former_member) {
     label = t('actor.former', 'Former member')
-  } else if (ref.id && names.has(ref.id)) {
-    label = names.get(ref.id) || t('actor.member', 'A team member')
-  } else if (!allowed || isLoading) {
+  } else if (lookup.found) {
+    label = lookup.name || t('actor.member', 'A team member')
+  } else if (!lookup.allowed || lookup.isLoading || lookup.failed || !lookup.done) {
+    // No permission, still loading or the lookup failed: the person is not
+    // known to be gone, so do not say so.
     label = t('actor.member', 'A team member')
   } else {
     label = t('actor.former', 'Former member')

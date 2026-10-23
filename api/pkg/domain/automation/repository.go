@@ -227,3 +227,15 @@ type OwnerSetter interface {
 	// when there is none.
 	SetOwner(ctx context.Context, tenantID, id, ownerID shared.ID) error
 }
+
+// ModeSetter sets an automation's mode (simulate or live) without touching
+// its other columns. Switching to live goes through VersionRepository.Publish.
+type ModeSetter interface {
+	SetMode(ctx context.Context, tenantID, id shared.ID, mode Mode) error
+}
+
+// DraftRunCounter counts the waiting and running simulate runs of an
+// automation (runs that read its draft as they start).
+type DraftRunCounter interface {
+	CountActiveDraftRuns(ctx context.Context, tenantID, workflowID shared.ID) (int, error)
+}
