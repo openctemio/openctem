@@ -1657,5 +1657,9 @@
   "findings.receipts.actionReopened": "reopened it",
   "findings.receipts.actionClosed": "closed it",
   "findings.receipts.actionStillDetected": "still detected it",
-  "findings.receipts.lastSeenIn": "Last seen in"
+  "findings.receipts.lastSeenIn": "Last seen in",
+  "findings.importResults.format": "Format",
+  "findings.importResults.formatDetect": "Detect from the file",
+  "findings.importResults.formatMapping": "Import mapping: {name}",
+  "findings.importResults.formatMappingHint": "The file is read with the latest version of this mapping. A mapped import never resolves findings missing from the file."
 }

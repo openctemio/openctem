@@ -594,5 +594,7 @@
   "settings.scim.rotate.confirm": "Xoay vòng",
   "settings.scim.rotate.rotating": "Đang xoay vòng…",
   "settings.scim.rotate.done": "Đã xoay vòng token. Token cũ sẽ ngừng hoạt động sau 24 giờ.",
-  "settings.scim.rotate.failed": "Không thể xoay vòng token"
+  "settings.scim.rotate.failed": "Không thể xoay vòng token",
+  "settings.item.import-mappings": "Ánh xạ nhập dữ liệu",
+  "settings.desc.import-mappings": "Chuyển bản xuất CSV, JSON hoặc XML thành phát hiện và tài sản."
 }

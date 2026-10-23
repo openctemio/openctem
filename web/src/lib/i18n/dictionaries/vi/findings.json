@@ -1657,5 +1657,9 @@
   "findings.receipts.actionReopened": "đã mở lại",
   "findings.receipts.actionClosed": "đã đóng",
   "findings.receipts.actionStillDetected": "vẫn phát hiện",
-  "findings.receipts.lastSeenIn": "Thấy lần cuối trong"
+  "findings.receipts.lastSeenIn": "Thấy lần cuối trong",
+  "findings.importResults.format": "Định dạng",
+  "findings.importResults.formatDetect": "Nhận biết từ tệp",
+  "findings.importResults.formatMapping": "Ánh xạ nhập dữ liệu: {name}",
+  "findings.importResults.formatMappingHint": "Tệp được đọc bằng phiên bản mới nhất của ánh xạ này. Lần nhập qua ánh xạ không bao giờ đóng các phát hiện vắng mặt trong tệp."
 }
