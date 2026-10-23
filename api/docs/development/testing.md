@@ -71,6 +71,36 @@ migrate -path migrations -database "postgres://postgres@localhost:55432/app_test
 make test-db TEST_DATABASE_URL="postgres://postgres@localhost:55432/app_test?sslmode=disable"
 ```
 
+## Ingest query budget
+
+`tests/integration/ingest_budget_test.go` imports the checked-in CTIS report
+`tests/integration/testdata/ingest_budget/report.json` (28 findings: SAST, secrets
+and CVEs) through the real ingest service, then re-imports it three times: unchanged,
+with one finding gone, and with one new finding. It counts the SQL statements and
+transactions of each phase (`internal/testdb/sqlcount` wraps the `lib/pq` driver:
+every Exec, Query and prepared-statement run counts, a COPY counts once, BEGIN and
+COMMIT are counted separately as transactions) and fails when a phase sends more than
+its entry in `tests/integration/testdata/ingest_budget.json`. A change that turns a
+per-report cost into a per-finding cost (an N+1) shows up here as a jump in the count,
+long before it shows up as latency. The failure message lists the statements by kind
+(SELECT, INSERT, UPDATE, ...).
+
+The test waits for the goroutines an ingest leaves behind (the audit entry, the sensor
+counters) before it reads the count, and gives each run CVE ids of its own so a catalog
+row another test created cannot change the count.
+
+When a change legitimately needs more statements, or saves some, regenerate the
+budget from a migrated `*_test` database and review the diff of the budget file in the
+pull request, with the reason:
+
+```bash
+make budgets-update TEST_DATABASE_URL=postgres://postgres@localhost:55432/app_test?sslmode=disable
+```
+
+A run under budget passes and logs that `make budgets-update` would lock the saving in.
+The test runs in the normal DB-backed shards (it lives in `tests/integration`), so the
+shard check needs no change.
+
 ## Golden Files
 
 For complex output validation:

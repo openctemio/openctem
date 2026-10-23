@@ -43,6 +43,7 @@ type IntegrationHandler struct {
 	logger               *logger.Logger
 	testNotifRateLimiter *testNotificationRateLimiter
 	audit                *auditapp.AuditService
+	redeliverer          DeliveryRedeliverer
 
 	// Private program names in event titles and bodies (programScrubber).
 	programScrubber

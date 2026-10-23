@@ -89,3 +89,33 @@ export function widgetSpanClass(columns: number | undefined): string {
       return 'md:[grid-column:var(--span)]'
   }
 }
+
+/**
+ * The editor's grid: one column on a phone (a list of widgets with their
+ * handles and menus), the dashboard's columns from the same breakpoints as
+ * the view above that. Spans arrive in `--span` / `--span-sm` and apply only
+ * once the grid has the columns (see `widgetSpanClass`).
+ */
+export function editorColumnsClass(columns: number | undefined): string {
+  switch (normalizeColumns(columns)) {
+    case 1:
+      return 'grid-cols-1'
+    case 3:
+      return 'grid-cols-1 md:grid-cols-3'
+    case 4:
+      return 'grid-cols-1 sm:grid-cols-2 xl:grid-cols-4'
+    default:
+      return 'grid-cols-1 md:grid-cols-2'
+  }
+}
+
+export function editorSpanClass(columns: number | undefined): string {
+  switch (normalizeColumns(columns)) {
+    case 1:
+      return ''
+    case 4:
+      return 'sm:[grid-column:var(--span-sm)] xl:[grid-column:var(--span)]'
+    default:
+      return 'md:[grid-column:var(--span)]'
+  }
+}

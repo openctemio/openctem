@@ -15,11 +15,9 @@ organization's findings. The ingest service writes it; nothing else does.
 | Receipts table, per-finding action log, coverage decisions, daily ingest fact (migration `003308_ingest_receipts`) | shipped |
 | Writer in ingest (every report), in coverage decisions, and for uploads (one receipt per request) | shipped |
 | Retention job (`ingest-receipt-retention`) | shipped |
-| Receipts API (`GET /findings/imports`, `/{id}`, `/{id}/actions`, `GET /findings/{id}/imports`), `POST /findings/imports` with 201 and the receipt, durable `Idempotency-Key` (migration `003320_idempotency_keys`) | shipped |
-| Full-coverage uploads (`coverage=full` with an explicit scope) | shipped |
 | Receipts API (`GET /findings/imports`, `/{id}`, `/{id}/actions`, `GET /findings/{id}/imports`), `POST /findings/imports` with 201 and the receipt, durable `Idempotency-Key` (migration `003325_idempotency_keys`) | shipped |
-| Full-coverage uploads (`coverage=full` with an explicit scope) | planned (RFC-122 §5) |
-| Web: import page, scan run page, finding "last seen in" | planned |
+| Full-coverage uploads (`coverage=full` with an explicit scope) | shipped |
+| Web: receipt and recent imports in the import dialog, "What this run did to findings" on the scan run page, "Last seen in" on the finding overview (en, vi) | shipped |
 
 ## Which receipt
 
@@ -66,7 +64,45 @@ command of another tenant is refused.
 5. upsert the day's `dash_ingest_day` row with the same counts.
 
 A failed write is logged and counted in
-`openctem_ingest_receipt_write_failures_total{origin}`; the ingest stands.
+`openctem_ingest_receipt_write_failures_total{origin}`. The ingest stands and its
+output says so (`Output.ReceiptFailed`). A segment of a command's run is
+retried instead (`IngestV2Segment`), because that run's receipt decides absence
+(below), and re-ingesting a segment is idempotent.
+
+## Absence
+
+A covered run closes the open findings of its scope that it did not report.
+"Did not report" is decided from the run's receipt
+(`internal/infra/postgres/finding_absence_receipt.go`): a finding counts as seen
+when it has an action row on the receipt (`created`, `still_detected`,
+`reopened` or `closed`). The writer records every finding the report named,
+before and whatever the outcome of the finding writes.
+
+`findings.scan_id` is not used as proof of absence. It names the report that
+wrote the finding last. A concurrent run of the same tool and profile
+overwrites it with its own report id, and a sighting write that lost a
+deadlock leaves the previous one. Either made a finding the run did report look
+unreported, and the run closed it. A finding whose `scan_id` is one of the
+run's reports still counts as seen. The like-for-like guards are unchanged:
+same tool, same scan profile, a clean command, the blinding guard.
+
+A receipt that cannot prove absence closes nothing. The evaluation ends with the
+reason `receipt_incomplete` (`ingestreport.ErrReceiptIncomplete`) when:
+
+- the run has no receipt in the tenant (none was written, or the command
+  belongs to another tenant);
+- the receipt passed its action cap (`actions_truncated`), so it no longer
+  lists everything the run reported.
+
+`CoverageStaleFindings`, `RepoCoverageStaleFindings`, the secret variants and
+`CoverageUntouched` read the receipt of the query's `CommandID`, which is the
+scan run's receipt for a command of a run. Tested by
+`tests/integration/absence_receipt_test.go`: a concurrent run overwriting
+`scan_id`, a lost sighting, and 8 concurrent runs of one profile, none of which
+closes what it reported. Also by
+`internal/infra/postgres/finding_coverage_autoresolve_db_test.go`
+(`TestCoverageAbsence_ReceiptDecides`): no receipt, another tenant's receipt, a
+truncated receipt.
 
 ## Coverage decisions
 
@@ -151,11 +187,31 @@ action and coverage rows go with them), facts older than 400 days, in
 batches of 5,000 and at most 100,000 rows of each kind per pass. Upload
 receipts are kept.
 
+## Web
+
+`web/src/features/findings/components/receipt-summary.tsx` (one component
+set, token classes only):
+
+- `ReceiptSummary`: the seven counts (untouched shows "—" under partial
+  coverage) and a line saying whether the coverage could close anything,
+  that a close was held, or that the action list was truncated;
+- `RecentImports`: the latest five upload receipts, at the bottom of the
+  import dialog before a file is chosen;
+- `RunReceiptSection`: the scan run's receipt in the run sheet; nothing when
+  the API returns none (a member without the organization view);
+- `FindingLastSeenIn`: the newest receipt that acted on the finding, linked
+  to the run page for a scan run.
+
+Data comes from `web/src/features/findings/api/receipts-api.ts` (SWR, keyed
+only inside an organization). Text is in the `findings.receipts.*` keys (en
+and vi).
+
 ## Key files
 
 - `api/migrations/003308_ingest_receipts.up.sql`
 - `api/pkg/domain/ingestreceipt/receipt.go`
 - `api/internal/infra/postgres/ingest_receipt_repository.go`
+- `api/internal/infra/postgres/finding_absence_receipt.go`
 - `api/internal/app/ingest/receipt.go`, `coverage_autoresolve.go`
 - `api/internal/app/findingimport/service.go`
 - `api/internal/infra/controller/ingest_receipt_retention.go`
