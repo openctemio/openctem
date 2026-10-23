@@ -29,7 +29,11 @@ Every producer (sensor and CI CTIS dependencies, SBOM upload, finding import,
 scanner findings that name a package) goes through one writer:
 
 1. parse each purl (type, namespace, name, version, qualifiers); entries
-   without a purl use the ecosystem and name;
+   without a purl use the ecosystem and name. Namespace and name are
+   lower-cased for the types the package URL specification calls case
+   insensitive (alpm, apk, bitbucket, composer, deb, github, hex, npm, pypi),
+   and a PyPI name has `_` replaced by `-`: the same folding as the finding
+   identity, so a package and the findings on it name it the same way;
 2. resolve products for the batch (tenant row, then global row, else create a
    tenant-private row);
 3. ensure versions (scheme from the purl type; `normalized = raw`);
@@ -37,6 +41,11 @@ scanner findings that name a package) goes through one writer:
    and channel (a re-report without a license keeps the recorded one);
 5. replace the edges of the reported locations, then recompute `depth`
    breadth-first from the direct links (cycles are tolerated).
+
+A write that linked, removed or superseded packages queues the
+organization for the vulnerability matcher, so a new dependency report or
+SBOM is matched within minutes rather than at the daily sweep
+([vulnerability-matching.md](vulnerability-matching.md)).
 
 Each link belongs to the channel that listed it (`channel`), and a report
 prunes only its own channel's links: another producer's inventory of the
