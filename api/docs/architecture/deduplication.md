@@ -198,7 +198,7 @@ How it runs:
   the field names it compared; a member on an asset outside the caller's
   scope is neither listed nor counted.
 - **Dashboard facts.** `dash_recompute_asset` (migration
-  `003341_finding_issue_links`) skips a linked member when another member of
+  `003346_finding_issue_links`) skips a linked member when another member of
   its group on the same asset, in the same state, counts already (the
   primary, else the earliest). A link or unlink marks both assets dirty.
 - **Finding merge.** Keys and links stay on the tombstone (tombstones are

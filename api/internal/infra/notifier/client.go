@@ -4,8 +4,11 @@ package notifier
 import (
 	"context"
 	"fmt"
+	"net/http"
+	"time"
 
 	"github.com/openctemio/openctem/api/pkg/brand"
+	"github.com/openctemio/openctem/api/pkg/httpsec"
 	"github.com/openctemio/openctem/api/pkg/safetext"
 )
 
@@ -28,6 +31,15 @@ type Message struct {
 	// duplicate delivery that follows a worker crash + UnlockStale
 	// re-queue. Providers that do not support dedup can ignore it.
 	IdempotencyKey string
+
+	// EventType is the catalog type of the event (new_finding,
+	// sensor.offline, ...; pkg/domain/integration AllEventTypes) and
+	// EventVersion the version of its payload. The generic webhook sends
+	// them so a receiver can route on the type; empty for a test message.
+	EventType    string
+	EventVersion int
+	// OccurredAt is when the event was recorded (zero: now).
+	OccurredAt time.Time
 }
 
 // Attachment represents a message attachment.
@@ -249,4 +261,20 @@ func GetSeverityEmoji(severity string) string {
 	default:
 		return "\U00002139" // ℹ️
 	}
+}
+
+// newHTTPClient is the HTTP client of every notifier: the SSRF-guarded
+// client (each dial resolves once and refuses blocked ranges), with redirects
+// refused. A destination that answers 3xx is a failed delivery: following it
+// would hand the body and headers to a host the channel was not configured
+// with. allowLoopback is for unit tests against httptest servers only.
+func newHTTPClient(timeout time.Duration, allowLoopback bool) *http.Client {
+	hc := httpsec.SafeHTTPClient(timeout)
+	if allowLoopback {
+		hc = &http.Client{Timeout: timeout}
+	}
+	hc.CheckRedirect = func(*http.Request, []*http.Request) error {
+		return http.ErrUseLastResponse
+	}
+	return hc
 }
