@@ -235,7 +235,7 @@ function GraphNode({ node, isCentral, onClick }: GraphNodeProps) {
             <text
               y={NODE_RADIUS + 28}
               textAnchor="middle"
-              className="text-[10px] fill-muted-foreground"
+              className="text-meta fill-muted-foreground"
             >
               {label}
             </text>
@@ -520,7 +520,7 @@ export function RelationshipGraphView({
             <Badge
               key={type}
               variant="outline"
-              className="text-[10px]"
+              className="text-meta"
               style={{ borderColor: ASSET_TYPE_COLORS[type] }}
             >
               {EXTENDED_ASSET_TYPE_LABELS[type]}
