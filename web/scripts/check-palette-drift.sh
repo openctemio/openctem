@@ -125,7 +125,7 @@ fi
 # not (1) name a --prio/--sev token or its Tailwind class, (2) colour a priority
 # class with a palette class or hex, or (3) key a palette class or hex by a
 # severity name. Annotate a real exception with `label-colour-ok: <reason>`.
-LABEL_ALLOW='^(web/)?src/(lib/(priority-colors|severity-colors|chart-palette)\.ts|styles/theme\.css)$|(__tests__/|\.test\.tsx?$)'
+LABEL_ALLOW='^(web/)?src/(lib/(priority-colors|severity-colors|chart-palette)[.]ts|styles/theme[.]css)$|(__tests__/|[.]test[.]tsx?$)'
 LABEL_TOKEN='\b(bg|text|border|ring|fill|stroke|from|via|to|divide|outline|shadow)-(prio|sev)-[a-z0-9-]+|var\(--(prio|sev|viz-sev)-'
 LABEL_COLOUR="(\\b${PROPS}-${PALETTE}-[0-9]{2,3}\\b|#[0-9a-fA-F]{6}\\b)"
 label_lines="$(git diff --unified=0 "$merge_base"...HEAD -- 'src/*.tsx' 'src/*.ts' \
