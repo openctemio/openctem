@@ -679,7 +679,7 @@ var Registry = []Definition{
 		Core:       true,
 		UserFacing: true,
 		Permission: "team:read",
-		Jobs:       []string{"MemberAccessExpiryController", "TeamMembershipExpiryController", "ServiceKeyCreatorController", "AccessRequestRetentionController", "SignupEventRetentionController", "SAMLCertExpiryController", "RoleSyncController", "IdleWorkspaceController"},
+		Jobs:       []string{"MemberAccessExpiryController", "TeamMembershipExpiryController", "ServiceKeyCreatorController", "AccessRequestRetentionController", "SignupEventRetentionController", "SSOEnforcementEntitlementController", "SAMLCertExpiryController", "RoleSyncController", "IdleWorkspaceController"},
 	},
 	{
 		ID: ModuleGroups, Slug: "groups", Name: "Groups",
