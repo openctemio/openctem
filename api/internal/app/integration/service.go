@@ -2677,6 +2677,9 @@ type NotificationEventSendResult struct {
 	MessageID       string    `json:"message_id,omitempty"`
 	Error           string    `json:"error,omitempty"`
 	SentAt          time.Time `json:"sent_at"`
+	// Attempts is how many times the channel was tried (absent in events
+	// archived before per-channel delivery).
+	Attempts int `json:"attempts,omitempty"`
 }
 
 // GetNotificationEvents retrieves notification events for a specific integration.
@@ -2767,6 +2770,7 @@ func (s *IntegrationService) GetNotificationEvents(ctx context.Context, input Ge
 					MessageID:       sr.MessageID,
 					Error:           sr.Error,
 					SentAt:          sr.SentAt,
+					Attempts:        sr.Attempts,
 				})
 			}
 		}

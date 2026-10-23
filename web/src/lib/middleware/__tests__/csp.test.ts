@@ -33,6 +33,12 @@ describe('buildCsp', () => {
     expect(directive(dev, 'script-src')).toContain("'unsafe-eval'")
   })
 
+  it('loads fonts and styles from our own origin only (self-hosted fonts, no CDN)', () => {
+    expect(directive(prod, 'font-src')).toEqual(["'self'", 'data:'])
+    for (const d of ['style-src', 'style-src-elem'])
+      expect(directive(prod, d).filter((s) => s.startsWith('http'))).toEqual([])
+  })
+
   it('locks plugins, framing, base and forms', () => {
     expect(directive(prod, 'object-src')).toEqual(["'none'"])
     expect(directive(prod, 'frame-ancestors')).toEqual(["'none'"])

@@ -643,7 +643,9 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 			h.SetAuditService(svc.Audit)
 			return h
 		}(),
-		SCIMAuth: middleware.SCIMAuth(svc.SCIMToken),
+		// SCIM requests also need SCIM to be available for the organization (a loss
+		// keeps it during the read-only grace).
+		SCIMAuth: middleware.SCIMAuthWithFeature(svc.SCIMToken, svc.Entitlement),
 
 		// Scanning & ScanRuns
 		ScanProfile:         handler.NewScanProfileHandler(svc.ScanProfile, v, log),

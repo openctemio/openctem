@@ -311,16 +311,18 @@ func (r *LimitsRepository) ListGrace(ctx context.Context, tenantID shared.ID) (m
 }
 
 // StartGrace starts grace for features the organization just lost; a grace
-// already running is kept as it is. Only module features have a grace row.
+// already running is kept as it is. Modules and the named features
+// (limits.NamedFeatures) have a grace row; any other name is ignored.
 func (r *LimitsRepository) StartGrace(ctx context.Context, tenantID shared.ID, features []string, until time.Time) error {
 	if len(features) == 0 {
 		return nil
 	}
 	_, err := r.db.ExecContext(ctx, `
 		INSERT INTO tenant_module_grace (tenant_id, module_id, read_only_until)
-		SELECT $1, m.id, $3 FROM modules m WHERE m.id = ANY($2)
+		SELECT DISTINCT $1::uuid, f, $3::timestamptz FROM unnest($2::text[]) AS f
+		 WHERE f = ANY($4::text[]) OR EXISTS (SELECT 1 FROM modules m WHERE m.id = f)
 		ON CONFLICT (tenant_id, module_id) DO NOTHING`,
-		tenantID.String(), pq.Array(features), until)
+		tenantID.String(), pq.Array(features), until, pq.Array(limits.NamedFeatures))
 	if err != nil {
 		return fmt.Errorf("start feature grace: %w", err)
 	}

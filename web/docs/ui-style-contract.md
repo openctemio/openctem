@@ -210,8 +210,31 @@ load.
   IPs, ports, file paths, URLs, API keys, code snippets. Never for numbers,
   labels, statuses or prose.
 - Numbers that line up use `tabular-nums`.
+- One text face and one mono, self-hosted: Inter (`font-sans`, with the
+  single-storey a and open digits) and JetBrains Mono (`font-mono`). The
+  files and their OFL licences are in `web/public/fonts`, declared in
+  `src/styles/fonts.css` with Latin, Latin Extended and Vietnamese subsets;
+  no font CDN (the CSP allows fonts from our own origin only).
 
 ## 6. Colour
+
+- Brand tokens (`src/styles/theme.css`): paper `#FAFAF9` ground and ink
+  `#0A1628` text in light; ink ground and paper text in dark, with dark
+  surfaces derived from the ink hue (never teal). The kit names
+  (`background`, `card`, `primary`, `muted`, …) are aliases of these values.
+  `primary` is ink (paper in dark), not teal.
+- Teal marks the one place to act: `signal` (the focus ring, a page's one
+  primary call to action), `signal-text` (links), `signal-ink` (text on a
+  `signal` fill). Never a surface, heading, icon, chart series or tint.
+  `brand` is the logo marker dot only.
+- Extra surface tokens: `surface-raised` (hover, selected row),
+  `surface-sunken` (wells), `border-subtle` (inner dividers),
+  `border-strong` (inputs, 3:1), `fg-dim` (low-priority rows; a colour, never
+  opacity).
+- Radius by role: 4 px chips (`rounded-sm`), 6 px buttons and inputs
+  (`rounded-md`), 8 px cards and dialogs (`rounded-lg`).
+- `src/styles/__tests__/contrast.test.ts` checks the brand values and every
+  text and control pair at WCAG AA in both themes.
 
 - Theme tokens only (`bg-card`, `text-muted-foreground`, `border`,
   `text-destructive`, `bg-accent`, …). No palette literals (`text-amber-500`,
@@ -223,7 +246,9 @@ load.
   as `text-success` or a tint such as `bg-warning/15 text-warning`.
 - Errors that replace content use the shared `ErrorState` (a destructive
   `Alert` with Retry), never a hand-made red box.
-- Severity: `SeverityBadge` / `src/lib/severity-colors.ts`. Criticality:
+- Severity: `SeverityBadge` / `src/lib/severity-colors.ts`, on the
+  `sev-*` tokens (marks), `sev-*-text` (text at AA) and `sev-*-ink` (text on
+  a solid mark). Severity colour is for severity only. Criticality:
   `src/lib/criticality-colors.ts`. Charts: the chart colour sources.
 
 ## 7. States
