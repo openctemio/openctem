@@ -48,6 +48,7 @@ tests that cover the console's most user-visible flows.
 | `24-findings-states.spec.ts`                | Findings list: inline error, no access, nothing yet, no match |
 | `26-dashboard-edit-chrome.spec.ts`          | Dashboard edit mode: widget headers fit at 1440px and 390px   |
 | `25-findings-quick-views.spec.ts`           | Sidebar quick views under Findings, counts, links             |
+| `26-findings-filters.spec.ts`               | Add filter, chips, unknown filter, pass-through filters       |
 
 Each spec is designed to:
 

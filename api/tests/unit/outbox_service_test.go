@@ -2193,14 +2193,12 @@ func TestProcessOutboxBatch_AllFailedExhausted(t *testing.T) {
 
 	svc := newTestOutboxService(outboxRepo, eventRepo, notifRepo, failDecrypt())
 
-	processed, failed, err := svc.ProcessOutboxBatch(context.Background(), "worker-1", 50)
-	if err != nil {
-		t.Fatalf("expected no batch error, got %v", err)
+	// Every pass is a processed entry (a failed send is a channel outcome,
+	// not a processing error); the channel's attempts run out.
+	if failed := drainOutbox(t, svc, outboxRepo.fetchPendingResult, eventRepo); failed != 0 {
+		t.Errorf("expected failed=0, got %d", failed)
 	}
-	if processed != 1 || failed != 0 {
-		t.Errorf("expected processed=1 failed=0, got processed=%d failed=%d", processed, failed)
-	}
-	// Exhausted entry is terminal -> archived + deleted, NOT re-queued.
+	// Exhausted channel is terminal -> archived + deleted, NOT re-queued.
 	if eventRepo.createCalls != 1 {
 		t.Errorf("expected 1 event archive call (terminal failure), got %d", eventRepo.createCalls)
 	}
