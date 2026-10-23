@@ -75,6 +75,18 @@ describe('useFindingTriage — no render loop', () => {
     expect(result.current.assignee).toBe(first)
   })
 
+  it('adopts the name when the enriched record arrives for the same assignee', () => {
+    const { result, rerender } = renderHook(({ f }) => useFindingTriage(f), {
+      initialProps: { f: target({ assignee: user('u1', '') }) },
+    })
+    expect(result.current.assignee?.name).toBe('')
+    rerender({ f: target({ assignee: user('u1', 'Admin User') }) })
+    expect(result.current.assignee?.name).toBe('Admin User')
+    // a later nameless rebuild never blanks it again
+    rerender({ f: target({ assignee: user('u1', '') }) })
+    expect(result.current.assignee?.name).toBe('Admin User')
+  })
+
   it('follows the server when the assignee actually changes', () => {
     const { result, rerender } = renderHook(({ f }) => useFindingTriage(f), {
       initialProps: { f: target({ assignee: user('u1') }) },

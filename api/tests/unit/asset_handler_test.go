@@ -13,6 +13,7 @@ import (
 	"github.com/openctemio/openctem/api/internal/app/integration"
 	"github.com/openctemio/openctem/api/internal/infra/http/handler"
 	"github.com/openctemio/openctem/api/pkg/domain/asset"
+	"github.com/openctemio/openctem/api/pkg/domain/attribution"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/logger"
 	"github.com/openctemio/openctem/api/pkg/pagination"
@@ -200,11 +201,11 @@ func (m *HandlerMockRepository) ListDistinctTags(_ context.Context, _ shared.ID,
 	return out, nil
 }
 
-func (m *HandlerMockRepository) GetAssetTypeBreakdown(_ context.Context, _ shared.ID, _ *shared.DataScope) (map[string]asset.AssetTypeStats, error) {
+func (m *HandlerMockRepository) GetAssetTypeBreakdown(_ context.Context, _ shared.ID, _ *shared.DataScope, _ *attribution.StateFilter) (map[string]asset.AssetTypeStats, error) {
 	return make(map[string]asset.AssetTypeStats), nil
 }
 
-func (m *HandlerMockRepository) GetAverageRiskScore(_ context.Context, _ shared.ID, _ *shared.DataScope) (float64, error) {
+func (m *HandlerMockRepository) GetAverageRiskScore(_ context.Context, _ shared.ID, _ *shared.DataScope, _ *attribution.StateFilter) (float64, error) {
 	return 0, nil
 }
 

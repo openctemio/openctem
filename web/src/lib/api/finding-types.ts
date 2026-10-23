@@ -13,9 +13,10 @@ export type FindingSeverity = 'critical' | 'high' | 'medium' | 'low' | 'info'
 import type { FindingStatus } from '@/features/findings/types/finding.types'
 export type { FindingStatus }
 
-// Finding source (how the finding was discovered)
-export type FindingSource =
-  'sast' | 'sca' | 'dast' | 'iac' | 'secret' | 'manual' | 'pentest' | 'bug_bounty'
+// Finding source (how the finding was discovered): the one registry is
+// features/findings/api/finding-api.types.ts, which mirrors the API enum.
+import type { FindingSource } from '@/features/findings/api/finding-api.types'
+export type { FindingSource }
 
 /**
  * Finding entity from API
@@ -143,7 +144,7 @@ export interface FindingStats {
   total: number
   by_severity: Record<FindingSeverity, number>
   by_status: Record<FindingStatus, number>
-  by_source: Record<FindingSource, number>
+  by_source: Partial<Record<FindingSource, number>>
 }
 
 /**
@@ -178,13 +179,14 @@ export const SEVERITY_CONFIG: Record<
 /**
  * Source configuration for UI display
  */
-export const SOURCE_CONFIG: Record<FindingSource, { label: string; description: string }> = {
-  sast: { label: 'SAST', description: 'Static Application Security Testing' },
-  sca: { label: 'SCA', description: 'Software Composition Analysis' },
-  dast: { label: 'DAST', description: 'Dynamic Application Security Testing' },
-  iac: { label: 'IaC', description: 'Infrastructure as Code Scanning' },
-  secret: { label: 'Secret', description: 'Secret/Credential Detection' },
-  manual: { label: 'Manual', description: 'Manually Reported' },
-  pentest: { label: 'Pentest', description: 'Penetration Testing' },
-  bug_bounty: { label: 'Bug Bounty', description: 'Bug Bounty Program' },
-}
+export const SOURCE_CONFIG: Partial<Record<FindingSource, { label: string; description: string }>> =
+  {
+    sast: { label: 'SAST', description: 'Static Application Security Testing' },
+    sca: { label: 'SCA', description: 'Software Composition Analysis' },
+    dast: { label: 'DAST', description: 'Dynamic Application Security Testing' },
+    iac: { label: 'IaC', description: 'Infrastructure as Code Scanning' },
+    secret: { label: 'Secret', description: 'Secret/Credential Detection' },
+    manual: { label: 'Manual', description: 'Manually Reported' },
+    pentest: { label: 'Pentest', description: 'Penetration Testing' },
+    bug_bounty: { label: 'Bug Bounty', description: 'Bug Bounty Program' },
+  }

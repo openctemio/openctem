@@ -56,7 +56,6 @@
   "assets.tabs.attention": "Needs attention",
   "assets.tabs.groups": "Groups",
   "assets.tabs.changes": "Activity",
-  "assets.tabs.webSurface": "Web surface",
   "assets.attention.title": "Needs attention",
   "assets.attention.description": "Assets whose missing owner, criticality or scan weakens priority, assignment or coverage. Fix them in bulk here.",
   "assets.attention.tabsAria": "Needs attention reasons",
@@ -1172,5 +1171,7 @@
   "assets.facets.value.scopes.cloud": "Cloud",
   "assets.facets.value.scopes.partner": "Partner",
   "assets.facets.value.scopes.vendor": "Vendor",
-  "assets.facets.value.scopes.shadow": "Shadow IT"
+  "assets.facets.value.scopes.shadow": "Shadow IT",
+  "assets.view.list": "List view",
+  "assets.view.categories": "Category view"
 }
