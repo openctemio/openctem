@@ -1,5 +1,6 @@
 'use client'
 
+import { seriesVar } from '@/lib/chart-palette'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { formatChartDate } from '@/lib/format-chart-date'
 import { Clock, TrendingDown, TrendingUp } from 'lucide-react'
@@ -128,8 +129,18 @@ export function RiskVelocityCard() {
                 <XAxis dataKey="week" tick={{ fontSize: 10 }} />
                 <YAxis hide />
                 <Tooltip contentStyle={{ fontSize: 12 }} />
-                <Bar dataKey="New" fill="#ef4444" radius={[2, 2, 0, 0]} barSize={12} />
-                <Bar dataKey="Resolved" fill="#22c55e" radius={[2, 2, 0, 0]} barSize={12} />
+                <Bar
+                  dataKey="New"
+                  fill={seriesVar('opened', 0)}
+                  radius={[2, 2, 0, 0]}
+                  barSize={12}
+                />
+                <Bar
+                  dataKey="Resolved"
+                  fill={seriesVar('fixed', 1)}
+                  radius={[2, 2, 0, 0]}
+                  barSize={12}
+                />
               </BarChart>
             </ResponsiveContainer>
           </div>
