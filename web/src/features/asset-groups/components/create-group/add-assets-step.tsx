@@ -36,13 +36,20 @@ interface AddAssetsStepProps {
   data: CreateGroupFormData
   onChange: (data: Partial<CreateGroupFormData>) => void
   ungroupedAssets: Asset[]
+  /** The list is searched on the server: called with the typed text, and the client does not filter by name again. */
+  onSearchChange?: (search: string) => void
 }
 
 function generateId(): string {
   return `new-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`
 }
 
-export function AddAssetsStep({ data, onChange, ungroupedAssets }: AddAssetsStepProps) {
+export function AddAssetsStep({
+  data,
+  onChange,
+  ungroupedAssets,
+  onSearchChange,
+}: AddAssetsStepProps) {
   const [searchQuery, setSearchQuery] = React.useState('')
   const [typeFilter, setTypeFilter] = React.useState<AssetType | 'all'>('all')
   const [newAssetType, setNewAssetType] = React.useState<AssetType>('domain')
@@ -101,7 +108,7 @@ export function AddAssetsStep({ data, onChange, ungroupedAssets }: AddAssetsStep
     if (typeFilter !== 'all') {
       result = result.filter((asset) => asset.type === typeFilter)
     }
-    if (searchQuery) {
+    if (searchQuery && !onSearchChange) {
       const query = searchQuery.toLowerCase()
       result = result.filter(
         (asset) =>
@@ -110,7 +117,7 @@ export function AddAssetsStep({ data, onChange, ungroupedAssets }: AddAssetsStep
       )
     }
     return result
-  }, [ungroupedAssets, typeFilter, searchQuery])
+  }, [ungroupedAssets, typeFilter, searchQuery, onSearchChange])
 
   // Toggle asset selection
   const toggleAsset = (assetId: string) => {
@@ -203,7 +210,10 @@ export function AddAssetsStep({ data, onChange, ungroupedAssets }: AddAssetsStep
               <Input
                 placeholder="Search assets..."
                 value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
+                onChange={(e) => {
+                  setSearchQuery(e.target.value)
+                  onSearchChange?.(e.target.value)
+                }}
                 className="ps-9 h-9"
               />
             </div>

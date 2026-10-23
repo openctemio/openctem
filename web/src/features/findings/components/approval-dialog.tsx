@@ -90,11 +90,14 @@ export function ApprovalDialog({
   const [expiresAt, setExpiresAt] = useState(() => acceptanceDate(defaultDays))
   const [step, setStep] = useState<'input' | 'confirm'>('input')
   const { trigger: requestApproval, isMutating } = useRequestApproval(findingId)
-  // The organization may let a person with approval permission decide a
-  // false positive alone.
-  const decideAlone = isFalsePositive && fpPolicy?.can_decide_alone === true
+  // The organization's false-positive or risk acceptance level may let a
+  // person with approval permission decide alone.
+  const isAccepted = targetStatus === 'accepted'
+  const decideAlone = (isFalsePositive || isAccepted) && fpPolicy?.can_decide_alone === true
   const othersMayDecideAlone =
-    isFalsePositive && fpPolicy?.single_person === true && !fpPolicy.can_decide_alone
+    (isFalsePositive || isAccepted) &&
+    fpPolicy?.single_person === true &&
+    !fpPolicy.can_decide_alone
 
   const statusConfig = FINDING_STATUS_CONFIG[targetStatus]
   const statusLabel = statusConfig ? t(statusConfig.labelKey, statusConfig.label) : targetStatus
@@ -167,14 +170,20 @@ export function ApprovalDialog({
       const appliedAlone =
         (result as { status?: string; single_person?: boolean } | undefined)?.single_person === true
       toast.success(
-        appliedAlone
+        appliedAlone && isAccepted
           ? t(
-              'findingApprovals.single.applied',
-              'Marked a false positive. It is recorded with your name and reason.'
+              'findingApprovals.single.appliedAccept',
+              'Risk accepted until {date}. It is recorded with your name and reason.',
+              { date: new Date(`${expiresAt}T00:00:00`).toLocaleDateString() }
             )
-          : t('findings.approvalDialog.submitted', 'Approval request submitted for "{status}"', {
-              status: statusLabel,
-            })
+          : appliedAlone
+            ? t(
+                'findingApprovals.single.applied',
+                'Marked a false positive. It is recorded with your name and reason.'
+              )
+            : t('findings.approvalDialog.submitted', 'Approval request submitted for "{status}"', {
+                status: statusLabel,
+              })
       )
       setJustification('')
       setReason('')
@@ -205,12 +214,14 @@ export function ApprovalDialog({
         {step === 'input' ? (
           <>
             <DialogHeader>
-              {/* The organization's false-positive level decides whether this
-                  is a request or a decision; the copy says which. */}
+              {/* The organization's level decides whether this is a request
+                  or a decision; the copy says which. */}
               <DialogTitle>
-                {decideAlone
-                  ? t('findings.approvalDialog.titleDecide', 'Mark as false positive')
-                  : t('findings.approvalDialog.title', 'Request Status Approval')}
+                {decideAlone && isAccepted
+                  ? t('findings.approvalDialog.titleDecideAccept', 'Accept the risk')
+                  : decideAlone
+                    ? t('findings.approvalDialog.titleDecide', 'Mark as false positive')
+                    : t('findings.approvalDialog.title', 'Request Status Approval')}
               </DialogTitle>
               <DialogDescription>
                 {decideAlone
@@ -232,10 +243,15 @@ export function ApprovalDialog({
                     role="status"
                     className="rounded-md border border-warning/30 bg-warning/10 px-3 py-2 text-sm"
                   >
-                    {t(
-                      'findingApprovals.single.notice',
-                      "This organization doesn't require approval for this finding: it is marked a false positive at once. Choose a reason and explain it; the decision is audited and flagged for review if the finding later becomes more serious."
-                    )}
+                    {isAccepted
+                      ? t(
+                          'findingApprovals.single.acceptNotice',
+                          "This organization doesn't require approval for this finding: the risk is accepted at once, until the date you choose. Choose a reason and explain it; the decision is audited, listed in the approvals digest and flagged for review if the finding later becomes more serious."
+                        )
+                      : t(
+                          'findingApprovals.single.notice',
+                          "This organization doesn't require approval for this finding: it is marked a false positive at once. Choose a reason and explain it; the decision is audited and flagged for review if the finding later becomes more serious."
+                        )}
                   </div>
                 )}
                 {evaluation && !decideAlone && evaluation.tier !== 'single' && (
@@ -243,10 +259,15 @@ export function ApprovalDialog({
                 )}
                 {othersMayDecideAlone && (
                   <p className="text-sm text-muted-foreground">
-                    {t(
-                      'findingApprovals.single.othersNotice',
-                      'A person with approval permission could mark this finding a false positive alone; your request waits for one of them.'
-                    )}
+                    {isAccepted
+                      ? t(
+                          'findingApprovals.single.othersNoticeAccept',
+                          'A person with approval permission could accept this risk alone; your request waits for one of them.'
+                        )
+                      : t(
+                          'findingApprovals.single.othersNotice',
+                          'A person with approval permission could mark this finding a false positive alone; your request waits for one of them.'
+                        )}
                   </p>
                 )}
                 <div className="grid gap-2">
@@ -342,9 +363,11 @@ export function ApprovalDialog({
           <>
             <DialogHeader>
               <DialogTitle>
-                {decideAlone
-                  ? t('findings.approvalDialog.confirmTitleDecide', 'Confirm false positive')
-                  : t('findings.approvalDialog.confirmTitle', 'Confirm Approval Request')}
+                {decideAlone && isAccepted
+                  ? t('findings.approvalDialog.confirmTitleDecideAccept', 'Confirm risk acceptance')
+                  : decideAlone
+                    ? t('findings.approvalDialog.confirmTitleDecide', 'Confirm false positive')
+                    : t('findings.approvalDialog.confirmTitle', 'Confirm Approval Request')}
               </DialogTitle>
               <DialogDescription>
                 {t(
@@ -392,9 +415,11 @@ export function ApprovalDialog({
               <Button onClick={handleSubmit} disabled={isMutating}>
                 {isMutating
                   ? t('findings.approvalDialog.submitting', 'Submitting...')
-                  : decideAlone
-                    ? t('findingApprovals.single.submit', 'Mark as false positive')
-                    : t('findings.approvalDialog.submit', 'Submit for Approval')}
+                  : decideAlone && isAccepted
+                    ? t('findingApprovals.single.submitAccept', 'Accept the risk')
+                    : decideAlone
+                      ? t('findingApprovals.single.submit', 'Mark as false positive')
+                      : t('findings.approvalDialog.submit', 'Submit for Approval')}
               </Button>
             </DialogFooter>
           </>

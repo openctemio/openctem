@@ -3,6 +3,7 @@
 import { Scale } from 'lucide-react'
 
 import { Badge } from '@/components/ui/badge'
+import { useTranslation } from '@/context/i18n-provider'
 import { DetailSection, UntrustedTextBlock } from '@/features/shared'
 
 import { reasonLabel, versionMatchEvidence } from '../types'
@@ -17,55 +18,93 @@ interface VersionMatchPanelProps {
  * in, and what lowered the confidence. Renders nothing for other findings.
  */
 export function VersionMatchPanel({ metadata }: VersionMatchPanelProps) {
+  const { t } = useTranslation()
   const ev = versionMatchEvidence(metadata)
   if (!ev) return null
   const likely = ev.label === 'likely'
   return (
-    <DetailSection title="Why this finding" icon={Scale}>
+    <DetailSection title={t('settings.vulnMatching.panel.title', 'Why this finding')} icon={Scale}>
       <div className="space-y-3 text-sm">
         <p>
-          A scan saw{' '}
+          {t('settings.vulnMatching.panel.sawPrefix', 'A scan saw')}{' '}
           <span className="font-medium">
             {[ev.vendor, ev.product].filter(Boolean).join(' ')} {ev.version}
           </span>
-          {ev.location ? ` on ${ev.location}` : ''}, and the advisory lists that version as
-          affected. Nothing has exploited or probed it: the version alone is the evidence.
+          {ev.location
+            ? t('settings.vulnMatching.panel.onLocation', ' on {location}', {
+                location: ev.location,
+              })
+            : ''}
+          {t(
+            'settings.vulnMatching.panel.sawSuffix',
+            ', and the advisory lists that version as affected. Nothing has exploited or probed it: the version alone is the evidence.'
+          )}
         </p>
         <div className="flex flex-wrap items-center gap-1.5">
           <Badge variant={likely ? 'default' : 'outline'}>
-            {likely ? 'Likely' : 'Potential'}
-            {ev.confidence != null ? ` · confidence ${ev.confidence}` : ''}
+            {likely
+              ? t('assets.software.likely', 'Likely')
+              : t('assets.software.potential', 'Potential')}
+            {ev.confidence != null
+              ? ` · ${t('assets.software.confidence', 'confidence {value}', { value: ev.confidence })}`
+              : ''}
           </Badge>
           {ev.qualifier && (
             <Badge
               variant="outline"
-              title="Distribution build: the vendor may have back-ported fixes"
+              title={t(
+                'assets.software.qualifierHint',
+                'Distribution build: the vendor may have back-ported fixes'
+              )}
             >
               {ev.qualifier}
             </Badge>
           )}
-          {ev.source && <Badge variant="secondary">Source: {ev.source.toUpperCase()}</Badge>}
+          {ev.source && (
+            <Badge variant="secondary">
+              {t('settings.vulnMatching.panel.source', 'Source: {name}', {
+                name: ev.source.toUpperCase(),
+              })}
+            </Badge>
+          )}
         </div>
         <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1">
-          <dt className="text-muted-foreground">Affected range</dt>
-          <dd className="tabular-nums">{ev.range || 'not stated'}</dd>
-          <dt className="text-muted-foreground">Observed version</dt>
-          <dd className="tabular-nums">{ev.version || 'unknown'}</dd>
+          <dt className="text-muted-foreground">
+            {t('settings.vulnMatching.panel.range', 'Affected range')}
+          </dt>
+          <dd className="tabular-nums">
+            {ev.range || t('assets.software.rangeNotStated', 'not stated')}
+          </dd>
+          <dt className="text-muted-foreground">
+            {t('settings.vulnMatching.panel.observed', 'Observed version')}
+          </dt>
+          <dd className="tabular-nums">
+            {ev.version || t('settings.vulnMatching.panel.unknown', 'unknown')}
+          </dd>
         </dl>
         {(ev.reasons ?? []).length > 0 && (
           <div>
-            <p className="text-muted-foreground">Confidence lowered because:</p>
+            <p className="text-muted-foreground">
+              {t('settings.vulnMatching.panel.lowered', 'Confidence lowered because:')}
+            </p>
             <ul className="list-disc pl-5">
               {(ev.reasons ?? []).map((r) => (
-                <li key={r}>{reasonLabel(r)}</li>
+                <li key={r}>{t(`assets.software.reason.${r}`, reasonLabel(r))}</li>
               ))}
             </ul>
           </div>
         )}
-        {ev.evidence && <UntrustedTextBlock label="What the scan reported" text={ev.evidence} />}
+        {ev.evidence && (
+          <UntrustedTextBlock
+            label={t('settings.vulnMatching.panel.reported', 'What the scan reported')}
+            text={ev.evidence}
+          />
+        )}
         <p className="text-xs text-muted-foreground">
-          Upgrading out of the range resolves this finding on the next scan; a scanner or a
-          validation that confirms it replaces this evidence.
+          {t(
+            'settings.vulnMatching.panel.footer',
+            'Upgrading out of the range resolves this finding on the next scan; a scanner or a validation that confirms it replaces this evidence.'
+          )}
         </p>
       </div>
     </DetailSection>
