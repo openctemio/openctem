@@ -225,6 +225,38 @@ How it runs:
 4. Post-insert hooks run on the in-memory `newFindings` (created callback `:495`,
    assignment, remediation keys, exposure bridge, suppression audit).
 
+### 1.2 Concurrent uploads
+
+Many pipelines, sensors and tools upload at once, often the same findings (CI
+re-runs, matrix jobs). The batched writes are deadlock-safe:
+
+- **One lock order.** Every batched write takes its row locks in a stable order:
+  assets by `(tenant, name)` (`UpsertBatch`), new findings by fingerprint
+  (`CreateBatchWithResult`), existing findings by id (`EnrichBatchByFingerprints`
+  reads them `ORDER BY id FOR NO KEY UPDATE`, `UpdateScanIDBatchByFingerprints`
+  locks them the same way in a CTE). Concurrent writers of the same rows queue
+  instead of deadlocking.
+- **Enrichment under the lock.** `EnrichBatchByFingerprints` locks the stored rows,
+  reads them, merges each sighting (`Finding.EnrichFrom`) and writes them in one
+  transaction, so no writer can change a row between the read and the write. The
+  `row_version` predicate stays as a guard. Before this, every concurrent writer
+  but one lost the optimistic race, ran out of retries and fell back to a
+  sighting-only update.
+- **Bounded retry on conflict.** A deadlock (`40P01`) or serialization failure
+  (`40001`) that still happens, for example through a trigger or another code path,
+  rolls back only that statement or transaction. It runs again, up to 5 times
+  with jittered exponential back-off from 20 ms (`write_retry.go`). It never drops
+  to the per-row fallback, which would meet the same conflict row by row.
+- **One sighting per report.** When enrichment fails partway, only the findings it
+  did not write get the sighting-only fallback (`vulnerability.EnrichIncompleteError`),
+  so no finding is counted or rewritten twice.
+
+Measured with the research/241 harness (20 concurrent uploads of the same 500
+findings to one repository, 3 rounds): before, 7–30 deadlocks per round, 9–17 of
+20 uploads with errors, and 3,000 of 10,000 sightings recorded in one round.
+After, 0 deadlocks, 0 uploads with errors, and every sighting recorded
+(`tests/integration/ingest_concurrent_resighting_test.go`).
+
 ## 2. Entity table
 
 Status: **OK** works as intended · **PARTIAL** works for the common case with a
@@ -275,7 +307,15 @@ Names are normalized by `pkg/domain/asset/normalize.go` at construction
 (`entity.go:117`). Ingest upserts with
 `INSERT … ON CONFLICT (tenant_id, name) DO UPDATE … RETURNING` (`asset_repository.go:1439-1482`),
 so concurrent ingests of one normalized name are safe (**P1:** 12 concurrent
-ingests → 1 asset). Strong identifiers (RFC-028) live in `asset_identifiers`
+ingests → 1 asset). Every row written after the upsert in the same transaction
+uses the id the upsert returned for the name, never the in-memory id of the
+asset the report built: when two uploads create the same new repository at once,
+the loser's in-memory id names no row. The repository extension
+(`asset_repositories`, `ensureRepositoryExtensions`) is keyed that way, so the
+losing upload attaches its findings to the stored repository instead of failing
+the foreign key and dropping the upload (research/241 L7: 20 concurrent uploads
+to one new repository, 2–7 failed before, 0 after;
+`tests/integration/ingest_repository_race_test.go`). Strong identifiers (RFC-028) live in `asset_identifiers`
 with `UNIQUE (tenant_id, kind, value) WHERE strong` (`000243:30-31`).
 
 | Asset type | Normalization | Status | Proven failure (P3 / P17) |

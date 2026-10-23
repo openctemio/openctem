@@ -830,8 +830,7 @@ widget kit's frame, with its own error boundary.
 ## Widget kit (web)
 
 `web/src/components/dashboard-kit/` is what every dashboard widget renders
-with. No page uses it yet: the dashboard pages move to it together with the
-widget data endpoint.
+with (the `/` dashboard and the editor's previews).
 
 ### Frame and states
 
@@ -866,13 +865,13 @@ figure means not measured and is never drawn as 0.
 
 | Visualization | Shapes | Notes |
 |---|---|---|
-| `StatViz` | scalar, ratio, duration | value, change against the previous period, sparkline, target chip |
+| `StatViz` | scalar, ratio, duration | value, change against the previous period with its base ("+15 vs 41 previous period"), a labelled sparkline (first and last bucket's value and date printed under the line, one sentence for screen readers; nothing with fewer than two points), target chip |
 | `ProgressViz` | ratio | a meter against the target, with the target tick |
 | `BarViz` | category | one bar per key or one stacked bar with shares; values printed |
 | `ColumnViz` | time_series (flows) | stacked columns per bucket |
 | `AreaLineViz` | time_series (stocks) | stacked area or lines, markers for scoring changes |
 | `DivergingViz` | time_series with `opened` / `fixed` | opened up, fixed down, the net in words |
-| `HeatmapViz` | matrix | every value printed, shaded on the sequential ramp |
+| `HeatmapViz` | matrix | every value printed, shaded on the sequential ramp, with a Fewer-More scale and the maximum; column headers wrap rather than truncate; severity rows carry their severity dot |
 | `LoopViz` | stages | the CTEM loop as an ordered list (`<ol>`); each stage's figure and second figure link to their lists, its state is an icon and words in a pill (never a coloured stripe; cards keep one neutral border), unmeasured stages show "—" with the reason; the focus stage is `aria-current="step"` and marked "Act here" with the brand accent (`--brand`, the only use of it) |
 | `PathsViz` | paths | reachable crown jewels (linked to the attack paths) and the top ones with the entry points reaching them; "none designated" and "none reachable" are different states |
 | `ItemsViz` | items | rows with priority, KEV, asset and due time, and "View all" |
@@ -885,6 +884,16 @@ Rules every visualization follows:
   a screen reader hears "better" or "worse". The target chip carries an icon
   and words (on target, close to target, off target, not measured).
 - **Table view.** Every chart has a "Show table" toggle with the exact figures.
+- **Named figure.** A chart is a `role="figure"` named by one sentence: a
+  series chart by its first and last bucket and latest values, the diverging
+  chart by its net, a bar chart by its largest rows, a heatmap by its peak
+  cell. The metric's definition comes from the same registry key as the
+  frame's "How this is counted" popover.
+- **Phone.** Plots are 180px tall below 640px (220px above). A four-column
+  dashboard is two columns on a phone: single-figure tiles (one column, one
+  row) sit two abreast and every other widget takes the full row. Widget
+  titles wrap to two lines, and the per-widget "Updated" footer is hidden
+  unless the widget is stale (the dashboard's meta line carries the time).
 - **Drill-down.** A mark, row or stage opens its list through a drill builder.
   The path is reduced to a same-origin path (`safeInternalHref`); anything else
   renders as plain text, so a server-supplied path cannot leave the app.
@@ -918,7 +927,10 @@ icon and a label.
 palette against its mode's card surface: adjacent-pair separation under
 protanopia and deuteranopia (OKLab ΔE ≥ 8, 6-8 only with secondary encoding),
 normal-vision separation (≥ 15), chroma, lightness band, contrast, monotone
-sequential steps with readable ink, and that the theme tokens equal the JSON.
+sequential steps with readable ink, the accent band (no data colour at OKLCH
+hue 165-200, which belongs to the brand teal that marks where to act), and
+that the theme tokens equal the JSON. The dark card surface is the brand's
+ink-derived `#0F1D33`.
 A unit test (`dashboard-kit/__tests__/palette.test.ts`) runs the same check in
 CI. Two documented relaxations, both covered by the table view and labels:
 some light-mode marks are below 3:1 against white, and the dark severity

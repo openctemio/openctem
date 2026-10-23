@@ -165,10 +165,7 @@ function SidebarProvider({
                 ...style,
               } as React.CSSProperties
             }
-            className={cn(
-              'group/sidebar-wrapper has-data-[variant=inset]:bg-sidebar flex h-svh w-full overflow-hidden',
-              className
-            )}
+            className={cn('group/sidebar-wrapper flex h-svh w-full overflow-hidden', className)}
             {...props}
           >
             {children}
@@ -264,7 +261,7 @@ function Sidebar({
           // Adjust the padding for floating and inset variants.
           variant === 'floating' || variant === 'inset'
             ? 'p-2 group-data-[collapsible=icon]:w-[calc(var(--sidebar-width-icon)+(--spacing(4))+2px)]'
-            : 'group-data-[collapsible=icon]:w-(--sidebar-width-icon) group-data-[side=left]:border-e group-data-[side=right]:border-s',
+            : 'group-data-[collapsible=icon]:w-(--sidebar-width-icon) group-data-[side=left]:border-e group-data-[side=right]:border-s border-sidebar-border',
           className
         )}
         {...props}
@@ -341,7 +338,6 @@ function SidebarInset({ className, ...props }: React.ComponentProps<'div'>) {
         // min-w-0: as a flex-1 item its min-width would otherwise be its content's
         // min-content width; this keeps the content column bounded by the viewport.
         'bg-background relative flex w-full min-w-0 min-h-0 flex-1 flex-col overflow-hidden',
-        'md:peer-data-[variant=inset]:m-2 md:peer-data-[variant=inset]:ms-0 md:peer-data-[variant=inset]:rounded-xl md:peer-data-[variant=inset]:shadow-sm md:peer-data-[variant=inset]:peer-data-[state=collapsed]:ms-2',
         className
       )}
       {...props}
