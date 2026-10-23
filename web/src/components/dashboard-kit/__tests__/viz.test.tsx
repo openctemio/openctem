@@ -335,3 +335,35 @@ describe('grid visualizations', () => {
     expect(links.map((l) => l.getAttribute('href'))).toEqual(['/findings/f1', '/findings/f2'])
   })
 })
+
+describe('ItemsViz View all', () => {
+  const row = { id: 'f1', title: 'A finding', href: '/findings/f1', severity: 'high' }
+  it('shows no number unless the server sent a list total (never the row count)', () => {
+    render(
+      <ItemsViz
+        result={{ shape: 'items', rows: [row, { ...row, id: 'f2' }] }}
+        viewAllHref="/findings"
+      />
+    )
+    const link = screen.getByRole('link', { name: 'View all' })
+    expect(link).toHaveAttribute('href', '/findings')
+  })
+  it('shows the real total when sent', () => {
+    render(
+      <ItemsViz result={{ shape: 'items', rows: [row], total: 340 }} viewAllHref="/findings" />
+    )
+    expect(screen.getByRole('link', { name: 'View all 340' })).toBeInTheDocument()
+  })
+  it('marks an overdue row with the word Overdue and shows severity', () => {
+    render(
+      <ItemsViz
+        result={{
+          shape: 'items',
+          rows: [{ ...row, due_at: new Date(Date.now() - 3 * 86_400_000).toISOString() }],
+        }}
+      />
+    )
+    expect(screen.getByText(/^Overdue/)).toBeInTheDocument()
+    expect(screen.getByText('High')).toBeInTheDocument()
+  })
+})

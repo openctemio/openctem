@@ -2,6 +2,7 @@ package controller
 
 import (
 	"context"
+	"errors"
 	"time"
 
 	"github.com/openctemio/openctem/api/internal/metrics"
@@ -13,7 +14,7 @@ import (
 type IngestJobQueue interface {
 	ClaimBatch(ctx context.Context, workerID string, limit int) ([]*ingestjob.Job, error)
 	Complete(ctx context.Context, id ingestjob.ID, result []byte) error
-	Fail(ctx context.Context, id ingestjob.ID, errMsg string, availableAt time.Time, dead bool) error
+	Fail(ctx context.Context, id ingestjob.ID, errMsg, publicErr string, availableAt time.Time, dead bool) error
 	ReleaseStale(ctx context.Context, olderThan time.Duration) (int, error)
 	CountPending(ctx context.Context) (int, error)
 }
@@ -22,6 +23,12 @@ type IngestJobQueue interface {
 // returns the result counts to persist on completion.
 type IngestJobProcessor interface {
 	Process(ctx context.Context, job *ingestjob.Job) ([]byte, error)
+}
+
+// DeadLetterer is told when a job failed for good, so the upload's receipt
+// (or the CI run waiting on it) records the failure.
+type DeadLetterer interface {
+	DeadLetter(ctx context.Context, job *ingestjob.Job, publicErr string)
 }
 
 // IngestWorkerControllerConfig configures the async-ingest worker (RFC-005).
@@ -139,10 +146,19 @@ func (c *IngestWorkerController) processOne(ctx context.Context, job *ingestjob.
 	result, err := c.processor.Process(ctx, job)
 	if err != nil {
 		// attempts was already incremented by ClaimBatch; dead once it reaches
-		// the ceiling.
+		// the ceiling. A permanent error (an unreadable upload, a report
+		// outside the run's repository) is dead at once: a retry cannot fix
+		// it, and its fixed code is what the client sees.
 		dead := job.Attempts() >= job.MaxAttempts()
-		retryAt := time.Now().Add(ingestjob.Backoff(job.Attempts()))
-		if failErr := c.queue.Fail(ctx, job.ID(), err.Error(), retryAt, dead); failErr != nil {
+		publicErr := ""
+		var perm *ingestjob.PermanentError
+		if errors.As(err, &perm) {
+			dead, publicErr = true, perm.Code
+		} else if dead {
+			publicErr = ingestjob.ErrorApplyFailed
+		}
+		retryAt := time.Now().Add(ingestjob.BackoffFor(job.Kind(), job.Attempts()))
+		if failErr := c.queue.Fail(ctx, job.ID(), err.Error(), publicErr, retryAt, dead); failErr != nil {
 			c.logger.Error("ingest: failed to mark job failed", "job_id", job.ID().String(), "error", failErr)
 		} else {
 			c.logger.Warn("ingest: job processing failed",
@@ -151,6 +167,9 @@ func (c *IngestWorkerController) processOne(ctx context.Context, job *ingestjob.
 		outcome := "retried"
 		if dead {
 			outcome = "dead"
+			if dl, ok := c.processor.(DeadLetterer); ok {
+				dl.DeadLetter(ctx, job, publicErr)
+			}
 		}
 		metrics.IngestJobsProcessedTotal.WithLabelValues(outcome).Inc()
 		return

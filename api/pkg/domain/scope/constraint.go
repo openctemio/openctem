@@ -292,6 +292,10 @@ func hasDotSegment(path string) bool {
 // port), and the value's path at or under the prefix, segment by segment,
 // without dot segments.
 func matchURLPrefix(pattern, value string) bool {
+	pattern, ok := bindWildScheme(pattern, value)
+	if !ok {
+		return false
+	}
 	origin, prefix, ok := urlPatternParts(pattern)
 	if !ok {
 		return false
@@ -318,6 +322,9 @@ func matchURLPrefix(pattern, value string) bool {
 // dispatch gate, the claim re-check, the signer's ledger) uses it, so the
 // ledger is never wider than the entries in the database.
 func EntryMatches(t TargetType, pattern string, c Constraint, value string) bool {
+	if !t.AuthorizesProbes() {
+		return false
+	}
 	if URLPathLimited(t, pattern) {
 		return matchURLPrefix(pattern, value)
 	}
