@@ -167,9 +167,16 @@ const DISCOVERED_BY_FALLBACK: Record<string, string> = {
   matches_scope_target: 'Under a scope entry',
 }
 
+/** The asset types the Type facet offers (the open lens's, or all) with labels and counts. */
+export interface TypeFacetOptions {
+  labels: Record<string, string>
+  counts: Record<string, number>
+}
+
 export function buildFacetGroups(
   businessUnitLabels: Record<string, string>,
-  t: FacetT = englishT
+  t: FacetT = englishT,
+  typeOptions?: TypeFacetOptions
 ): FacetGroup[] {
   return [
     scopingFacetGroup(t),
@@ -177,6 +184,23 @@ export function buildFacetGroups(
       id: 'kind',
       label: 'Kind',
       facets: [
+        ...(typeOptions
+          ? [
+              {
+                kind: 'multi',
+                filterKey: 'types',
+                label: t('assets.facets.type', 'Type'),
+                source: 'static',
+                // Most assets first; a type picked by hand that the counts do
+                // not list (none in scope) is added by the panel itself.
+                values: Object.keys(typeOptions.labels).sort(
+                  (a, b) => (typeOptions.counts[b] ?? 0) - (typeOptions.counts[a] ?? 0)
+                ),
+                labelFor: (v: string) => typeOptions.labels[v] ?? v,
+                counts: () => typeOptions.counts,
+              } satisfies MultiFacetDef,
+            ]
+          : []),
         {
           kind: 'multi',
           filterKey: 'criticalities',
