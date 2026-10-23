@@ -104,7 +104,10 @@ export default function ScopePage() {
   }
 
   // Counts for the tabs and the strip (one row each; the lists load their own).
-  const { data: activeEntries } = useScopeTargetsApi({ status: 'active', per_page: 1 })
+  const { data: activeEntries, error: activeEntriesError } = useScopeTargetsApi({
+    status: 'active',
+    per_page: 1,
+  })
   const { data: inEntries } = useScopeTargetsApi({
     status: 'active,pending,expired,inactive',
     per_page: 1,
@@ -113,7 +116,10 @@ export default function ScopePage() {
     status: 'active,pending,inactive,expired,rejected',
     per_page: 1,
   })
-  const { data: activeOut } = useScopeExclusionsApi({ status: 'active', per_page: 1 })
+  const { data: activeOut, error: activeOutError } = useScopeExclusionsApi({
+    status: 'active',
+    per_page: 1,
+  })
   const { total: pending } = usePendingScopeChanges()
   // Without approvals in force and nothing waiting there is nothing to decide.
   const showApprovals = entriesNeedApproval || pending > 0
@@ -123,6 +129,12 @@ export default function ScopePage() {
   // rows (its tab filtered to status active); the tabs count every row they
   // list, whatever its status.
   const openInEffect = (next: 'in' | 'out') => {
+    // Clicking the tile that is already showing its rows clears the filter.
+    if (tab === next && status === 'active') {
+      setStatus('all')
+      setPage(1)
+      return
+    }
     selectTab(next)
     setStatus('active')
   }
@@ -167,7 +179,7 @@ export default function ScopePage() {
       ? canWrite && (
           <Button size="sm" onClick={() => setExcludeOpen(true)}>
             <ShieldOff className="h-4 w-4" />
-            Put out of scope
+            {t('scope.putOut', 'Put out of scope')}
           </Button>
         )
       : tab === 'proof' || tab === 'networks'
@@ -184,20 +196,31 @@ export default function ScopePage() {
   return (
     <Main>
       <PageHeader
-        title="Scope"
-        description="What scans may touch. Anything not listed is out of scope, and an exclusion always wins."
+        title={t('scope.title', 'Scope')}
+        description={t(
+          'scope.description',
+          'What scans may touch. Anything not listed is out of scope, and an exclusion always wins.'
+        )}
       >
         <Button asChild variant="outline" size="sm">
           <Link href="/settings/scope">
             <Settings2 className="h-4 w-4" />
-            Policy
+            {t('scope.policy', 'Policy')}
           </Link>
         </Button>
         {primary}
       </PageHeader>
-      <GatedSectionTabs tabs={SCOPE_SECTION_TABS} label="Scope sections" className="mt-4 mb-0" />
+      <GatedSectionTabs
+        tabs={SCOPE_SECTION_TABS}
+        label={t('scope.sections', 'Scope sections')}
+        className="mt-4 mb-0"
+      />
 
-      <MetricStrip className="mt-5" items={metrics} />
+      <MetricStrip
+        className="mt-5"
+        loading={(!activeEntries && !activeEntriesError) || (!activeOut && !activeOutError)}
+        items={metrics}
+      />
 
       <Tabs value={tab} onValueChange={selectTab} className="mt-5">
         <div className="no-scrollbar -mx-4 overflow-x-auto px-4 sm:mx-0 sm:px-0">
@@ -210,10 +233,12 @@ export default function ScopePage() {
             </TabsTrigger>
             {showApprovals && (
               <TabsTrigger value="approvals">
-                Approvals <TabsCount value={pending} />
+                {t('scope.tabs.approvals', 'Approvals')} <TabsCount value={pending} />
               </TabsTrigger>
             )}
-            {proofVisible && <TabsTrigger value="proof">Domain proof</TabsTrigger>}
+            {proofVisible && (
+              <TabsTrigger value="proof">{t('scope.tabs.proof', 'Domain proof')}</TabsTrigger>
+            )}
             {proofVisible && (
               <TabsTrigger value="networks">{t('networkSeeds.tab', 'Networks')}</TabsTrigger>
             )}
@@ -250,6 +275,10 @@ export default function ScopePage() {
             onSearchInput={setSearchInput}
             onKindChange={(v) => {
               setKind(v)
+              setPage(1)
+            }}
+            onStatusChange={(v) => {
+              setStatus(v)
               setPage(1)
             }}
             onPagination={onPagination}

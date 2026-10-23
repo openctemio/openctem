@@ -76,7 +76,7 @@
   "programs.new.descriptionSources": "Enter the scope by hand or import the scope file from the program page. In-scope targets become scope entries that take effect when you accept the program rules; out-of-scope items stop program entries only, never your own scope.",
   "programs.new.done": "Program imported",
   "programs.new.submit": "Accept and import",
-  "programs.new.title": "Add program",
+  "programs.new.title": "Import program",
   "programs.notify.attach": "Attach channel",
   "programs.notify.attached": "Channel attached",
   "programs.notify.detach": "Detach",
@@ -202,5 +202,6 @@
   "programs.visibility.publicHint": "Program members and everyone who sees the whole organization.",
   "programs.visibility.title": "Who can see this program",
   "programs.windows": "Testing windows",
-  "programs.windowsAny": "Any time"
+  "programs.windowsAny": "Any time",
+  "programs.back": "Back to programs"
 }

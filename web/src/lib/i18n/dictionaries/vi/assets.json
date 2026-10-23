@@ -56,7 +56,6 @@
   "assets.tabs.attention": "Cần xử lý",
   "assets.tabs.groups": "Nhóm",
   "assets.tabs.changes": "Hoạt động",
-  "assets.tabs.webSurface": "Bề mặt web",
   "assets.attention.title": "Cần xử lý",
   "assets.attention.description": "Tài sản thiếu chủ sở hữu, mức độ quan trọng hoặc lần quét, làm yếu việc ưu tiên, phân công hoặc độ phủ. Xử lý hàng loạt tại đây.",
   "assets.attention.tabsAria": "Lý do cần xử lý",
@@ -1172,5 +1171,7 @@
   "assets.facets.value.scopes.cloud": "Đám mây",
   "assets.facets.value.scopes.partner": "Đối tác",
   "assets.facets.value.scopes.vendor": "Nhà cung cấp",
-  "assets.facets.value.scopes.shadow": "Shadow IT"
+  "assets.facets.value.scopes.shadow": "Shadow IT",
+  "assets.view.list": "Xem dạng danh sách",
+  "assets.view.categories": "Xem theo danh mục"
 }

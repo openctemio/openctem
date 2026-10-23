@@ -9,7 +9,6 @@ import {
   type BulkFindingResult,
   type BulkSummary,
 } from '@/features/findings/lib/bulk-result'
-import { formatEpssScore } from '@/lib/epss'
 import { useState, useMemo, useCallback, useEffect, useRef, type ReactNode } from 'react'
 import Link from '@/components/link'
 import {
@@ -159,7 +158,7 @@ import {
   FINDING_STATUS_CONFIG,
   findingStatusesInCategory,
 } from '@/features/findings'
-import { KevBadge } from '@/components/ui/kev-badge'
+import { ExploitSignals } from '@/features/findings/components/exploit-signals'
 import { PriorityClassBadge } from '@/features/findings/components/priority-class-badge'
 import { BranchOnlyBadge } from '@/features/findings/components/branch-only-badge'
 import { SlaStatusBadge } from '@/features/sla/components/sla-status-badge'
@@ -1383,6 +1382,23 @@ function FindingsContent() {
         enableHiding: false,
       },
       {
+        accessorKey: 'priorityClass',
+        meta: { label: t('findings.columns.priority', 'Priority') },
+        enableHiding: false,
+        header: ({ column }) => (
+          <DataTableColumnHeader
+            column={column}
+            title={t('findings.columns.priority', 'Priority')}
+          />
+        ),
+        cell: ({ row }) => {
+          return <PriorityClassBadge priorityClass={row.original.priorityClass} showWord />
+        },
+        filterFn: (row, id, value) => {
+          return value.includes(row.getValue(id))
+        },
+      },
+      {
         accessorKey: 'title',
         meta: { label: t('findings.columns.title', 'Title') },
         enableSorting: false,
@@ -1419,43 +1435,6 @@ function FindingsContent() {
                   {toDisplayText(row.getValue('title'), 500)}
                 </p>
                 {row.original.branchOnly && <BranchOnlyBadge />}
-                {/* KEV — actively exploited; the single most urgent triage signal */}
-                {row.original.isInKev && (
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <KevBadge />
-                    </TooltipTrigger>
-                    <TooltipContent side="top" className="max-w-xs text-xs">
-                      <p className="font-semibold">
-                        {t('findings.list.kevTitle', 'CISA Known Exploited Vulnerability')}
-                      </p>
-                      {row.original.kevDueDate && (
-                        <p>
-                          {t('findings.list.kevDue', 'Remediate by {date}', {
-                            date: new Date(row.original.kevDueDate).toLocaleDateString(),
-                          })}
-                        </p>
-                      )}
-                    </TooltipContent>
-                  </Tooltip>
-                )}
-                {typeof row.original.epssScore === 'number' && row.original.epssScore > 0 && (
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <span className="inline-flex shrink-0 items-center rounded-full bg-muted px-1.5 py-0.5 text-[10px] font-medium text-foreground">
-                        {t('findings.list.epss', 'EPSS {score}', {
-                          score: formatEpssScore(row.original.epssScore),
-                        })}
-                      </span>
-                    </TooltipTrigger>
-                    <TooltipContent side="top" className="max-w-xs text-xs">
-                      {t(
-                        'findings.list.epssHint',
-                        'Exploit Prediction Scoring System — estimated probability of exploitation in the next 30 days'
-                      )}
-                    </TooltipContent>
-                  </Tooltip>
-                )}
                 {hasDataFlow && (
                   <Tooltip>
                     <TooltipTrigger asChild>
@@ -1495,23 +1474,33 @@ function FindingsContent() {
         },
       },
       {
-        accessorKey: 'priorityClass',
-        meta: { label: t('findings.columns.priority', 'Priority') },
-        enableHiding: false,
+        accessorKey: 'status',
+        meta: { label: t('findings.columns.status', 'Status') },
         header: ({ column }) => (
-          <DataTableColumnHeader
-            column={column}
-            title={t('findings.columns.priority', 'Priority')}
-          />
+          <DataTableColumnHeader column={column} title={t('findings.columns.status', 'Status')} />
         ),
-        cell: ({ row }) => {
-          const pc = row.original.priorityClass
-          if (!pc) return <span className="text-muted-foreground text-xs">-</span>
-          return <PriorityClassBadge priorityClass={pc} />
-        },
+        cell: ({ row }) => (
+          <span className="inline-flex flex-wrap items-center gap-1">
+            <FindingStatusBadge status={row.getValue('status')} />
+            <FindingSubStatus subStatusId={row.original.subStatusId} />
+          </span>
+        ),
         filterFn: (row, id, value) => {
           return value.includes(row.getValue(id))
         },
+      },
+      {
+        id: 'signals',
+        meta: { label: t('findings.columns.exploitSignals', 'Exploit signals') },
+        enableSorting: false,
+        header: () => t('findings.columns.exploitSignals', 'Exploit signals'),
+        cell: ({ row }) => (
+          <ExploitSignals
+            isInKev={row.original.isInKev}
+            kevDueDate={row.original.kevDueDate}
+            epssScore={row.original.epssScore}
+          />
+        ),
       },
       {
         id: 'source',
@@ -1579,22 +1568,6 @@ function FindingsContent() {
             )
           }
           return <span className="text-muted-foreground text-sm">—</span>
-        },
-      },
-      {
-        accessorKey: 'status',
-        meta: { label: t('findings.columns.status', 'Status') },
-        header: ({ column }) => (
-          <DataTableColumnHeader column={column} title={t('findings.columns.status', 'Status')} />
-        ),
-        cell: ({ row }) => (
-          <span className="inline-flex flex-wrap items-center gap-1">
-            <FindingStatusBadge status={row.getValue('status')} />
-            <FindingSubStatus subStatusId={row.original.subStatusId} />
-          </span>
-        ),
-        filterFn: (row, id, value) => {
-          return value.includes(row.getValue(id))
         },
       },
       {
@@ -2650,7 +2623,7 @@ function FindingsContent() {
                     </DropdownMenuItem>
 
                     <DropdownMenuItem onClick={() => void handleBulkStatusChange('in_progress')}>
-                      {t('findings.status.in_progress', 'In Progress')}
+                      {t('findings.status.in_progress', 'In progress')}
                     </DropdownMenuItem>
 
                     {/* Resolving needs findings:verify; the API refuses it otherwise. */}

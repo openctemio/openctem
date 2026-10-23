@@ -55,7 +55,7 @@
   "confirm.assetRelationship.removeTitle": "Gỡ quan hệ giữa {source} và {target}?",
   "confirm.assignmentRule.deleteDesc": "Phát hiện mới không còn được định tuyến theo quy tắc này. Các phát hiện nó đã phân công giữ nguyên người phụ trách. Không thể hoàn tác.",
   "confirm.assignmentRule.deleteTitle": "Xóa quy tắc phân công \"{name}\"?",
-  "confirm.attackerProfile.deleteDesc": "Không thể hoàn tác.",
+  "confirm.attackerProfile.deleteDesc": "Hồ sơ sẽ bị gỡ khỏi mọi chu kỳ đang dùng nó. Không thể hoàn tác.",
   "confirm.attackerProfile.deleteTitle": "Xóa hồ sơ kẻ tấn công \"{name}\"?",
   "confirm.auditChain.rebaseline": "Thiết lập lại",
   "confirm.auditChain.rebaselineCheck": "Máy chủ kiểm tra lại chuỗi và từ chối nếu có gì chưa được giải thích hoặc chuỗi đã thay đổi kể từ lần xem xét này. Thao tác được ghi vào nhật ký kiểm toán của tổ chức và của nền tảng.",
