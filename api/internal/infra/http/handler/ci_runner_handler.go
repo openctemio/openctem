@@ -38,7 +38,7 @@ import (
 type CIRunService interface {
 	Exchange(ctx context.Context, in cirunapp.ExchangeInput) (*cirunapp.ExchangeOutput, error)
 	Authenticate(ctx context.Context, token string) (*cirun.Run, error)
-	AcceptUpload(ctx context.Context, run *cirun.Run, body []byte, export bool) (*cirunapp.UploadReceipt, error)
+	AcceptUpload(ctx context.Context, run *cirun.Run, body []byte, export bool, pin *cirunapp.MappingPin) (*cirunapp.UploadReceipt, error)
 	UploadStatus(ctx context.Context, run *cirun.Run, uploadID shared.ID, wait time.Duration) (*cirunapp.UploadReceipt, error)
 	BaselineDiff(ctx context.Context, run *cirun.Run, fingerprints []string) (*cirunapp.BaselineDiffOutput, error)
 	Evaluate(ctx context.Context, run *cirun.Run, in cirunapp.EvaluateInput) (*cirunapp.Verdict, error)
@@ -48,12 +48,17 @@ type CIRunService interface {
 type CIRunnerHandler struct {
 	svc    CIRunService
 	logger *logger.Logger
+	// mappings resolves format=mapping:<name> (nil: refused).
+	mappings ImportMappingResolver
 	// secretKeys derives the job's secret hashing key (nil: none).
 	secretKeys SecretKeys
 	// idem is the durable Idempotency-Key store (nil: a request with a key
 	// is refused, 503).
 	idem idempotency.Store
 }
+
+// SetMappingResolver wires the organization's import mappings.
+func (h *CIRunnerHandler) SetMappingResolver(m ImportMappingResolver) { h.mappings = m }
 
 // SetIdempotencyStore wires the durable Idempotency-Key store of the
 // upload endpoint.
@@ -282,6 +287,7 @@ func (h *CIRunnerHandler) AuthenticateRun(next http.Handler) http.Handler {
 // @Produce      json
 // @Param        id   path string true "Run ID"
 // @Param        body body CTISIngestRequest true "CTIS report"
+// @Param        format query string false "mapping:<name>[@<version>]: convert the file through the organization's import mapping (always partial coverage). The version is pinned when the upload is accepted; if that version is gone when the upload is applied, it fails with mapping_unavailable"
 // @Param        Idempotency-Key header string false "Retry key: the same key and body replays the first answer (stored 24 hours); the same key with another body is 422"
 // @Success      202  {object}  CIUploadAccepted
 // @Failure      400  {object}  apierror.Error
@@ -308,7 +314,29 @@ func (h *CIRunnerHandler) UploadResults(w http.ResponseWriter, r *http.Request) 
 		apierror.BadRequest("Failed to read request body").WriteJSON(w)
 		return
 	}
-	sum := sha256.Sum256(body)
+	// format=mapping:<name>[@<version>]: the file goes through the
+	// organization's import mapping (always partial coverage). The
+	// organization is the run's, from its token; the version is pinned here
+	// and the worker applies exactly that version.
+	var pin *cirunapp.MappingPin
+	if f := strings.TrimSpace(r.URL.Query().Get("format")); f != "" {
+		mp, ok, apiErr := resolveMappingFormat(r.Context(), h.mappings, run.TenantID, f)
+		if !ok {
+			apierror.BadRequest("format takes mapping:<name>[@<version>]; other formats are detected from the content").WriteJSON(w)
+			return
+		}
+		if apiErr != nil {
+			apiErr.WriteJSON(w)
+			return
+		}
+		pin = &cirunapp.MappingPin{ID: mp.Mapping.ID.String(), Format: mp.Format()}
+	}
+	// The same body through another mapping (or version) is another upload.
+	keyed := body
+	if pin != nil {
+		keyed = append(append([]byte(nil), body...), "\x00"+pin.ID+"\x00"+pin.Format...)
+	}
+	sum := sha256.Sum256(keyed)
 	digest := hex.EncodeToString(sum[:])
 	claim, handled := h.claimUploadKey(w, r, run, digest)
 	if handled {
@@ -324,7 +352,7 @@ func (h *CIRunnerHandler) UploadResults(w http.ResponseWriter, r *http.Request) 
 			}
 		}()
 	}
-	rec, err := h.svc.AcceptUpload(r.Context(), run, body, isToolExport(body, r.Header.Get("Content-Type")))
+	rec, err := h.svc.AcceptUpload(r.Context(), run, body, isToolExport(body, r.Header.Get("Content-Type")), pin)
 	if err != nil {
 		if errors.Is(err, cirunapp.ErrInvalidReport) {
 			apierror.BadRequest("Invalid JSON request body").WriteJSON(w)

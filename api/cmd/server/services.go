@@ -92,6 +92,7 @@ import (
 	"github.com/openctemio/openctem/api/internal/app/exposure"
 	"github.com/openctemio/openctem/api/internal/app/exposurebridge"
 	findinglifecycleapp "github.com/openctemio/openctem/api/internal/app/findinglifecycle"
+	appimportmapping "github.com/openctemio/openctem/api/internal/app/importmapping"
 	"github.com/openctemio/openctem/api/internal/app/ingest"
 	"github.com/openctemio/openctem/api/internal/app/jira"
 	licapp "github.com/openctemio/openctem/api/internal/app/licensepolicy"
@@ -868,6 +869,8 @@ type Services struct {
 	TicketPolicy *jira.PolicyGate
 	// TicketMapping manages ticket field and status mapping profiles.
 	TicketMapping *appticketmap.Service
+	// ImportMapping manages the organization's import mappings (RFC-126).
+	ImportMapping *appimportmapping.Service
 
 	// GitHub Issues ticket provider (create-from-finding + link only)
 	GitHubTicket *ticketing.GitHubTicketService
@@ -1955,6 +1958,9 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// Ticket field and status mapping profiles: the editor reads the
 	// integration's own Jira site; previews load objects through the caller's
 	// data scope.
+	if repos.ImportMapping != nil {
+		s.ImportMapping = appimportmapping.NewService(repos.ImportMapping)
+	}
 	if repos.TicketMapping != nil {
 		objects := ticketMappingObjects{findings: repos.Finding, assets: repos.Asset, users: repos.User,
 			tasks: s.RemediationTask, taskRepo: repos.RemediationTask}

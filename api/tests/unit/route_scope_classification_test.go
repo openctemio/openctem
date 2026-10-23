@@ -108,6 +108,7 @@ var dataSurfaceRegistry = map[string]dataSurface{
 	"/api/v1/api-keys":                             {classConfig, "API keys"},
 	"/api/v1/audit-logs":                           {classConfig, "audit log (admin)"},
 	"/api/v1/integrations":                         {classConfig, "integrations; delivery history is channel-manager only (L-03)"},
+	"/api/v1/import-mappings":                      {classConfig, "organization import mappings (RFC-126); preview maps an uploaded sample and reads no stored finding or asset"},
 	"/api/v1/integrations/{id}/scans/run":          {classScoped, "scans assets by id through a connector: an asset outside the caller's data scope answers 404 (act scope)"},
 	"/api/v1/notification-outbox":                  {classConfig, "delivery queue, channel-manager only (L-03)"},
 	"/api/v1/scope":                                {classConfig, "scope targets, exclusions (two-person, L-07) and schedules"},

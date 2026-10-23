@@ -10,6 +10,7 @@
  * always labelled; status colours (good / warning / critical / unmeasured)
  * are separate tokens and always come with an icon and a label.
  */
+import { isPriorityClass, PRIORITY_CHART_COLORS } from '@/lib/priority-colors'
 import { SEVERITY_LEVELS, type SeverityLevel } from '@/lib/severity'
 import palette from './chart-palette.json'
 
@@ -45,23 +46,14 @@ export function sequentialStep(step: number): { fill: string; ink: string } {
 }
 
 const SEVERITY_KEYS = new Set<string>(SEVERITY_LEVELS)
-/** Priority classes reuse the severity ramp, most urgent first. */
-const PRIORITY_TO_SEVERITY: Record<string, SeverityKey> = {
-  P0: 'critical',
-  P1: 'high',
-  P2: 'medium',
-  P3: 'low',
-}
-
 /**
  * The colour of a series by its key: severities and priority classes have
- * their ordinal colour; anything else takes the categorical slot of its
+ * their ordinal colour (priority has its own ink ramp, never the severity hues); anything else takes the categorical slot of its
  * position, which the caller keeps stable (colour follows the entity).
  */
 export function seriesVar(key: string, index: number): string {
   if (SEVERITY_KEYS.has(key)) return severityVar(key as SeverityKey)
-  const sev = PRIORITY_TO_SEVERITY[key]
-  if (sev) return severityVar(sev)
+  if (isPriorityClass(key)) return PRIORITY_CHART_COLORS[key]
   if (key === 'opened' || key === 'fixed') return divergingVar(key)
   if (key === 'other') return 'var(--viz-cat-other)'
   return categoricalVar(index)

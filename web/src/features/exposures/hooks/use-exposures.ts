@@ -19,11 +19,12 @@ import type {
 /**
  * Hook to fetch paginated exposures list
  * Tenant is extracted from JWT token
- * Only fetches if user has findings:read permission (exposures are security findings)
+ * Only fetches if the user has findings:read and exposures:read: GET /exposures
+ * requires both, so a caller with one would only collect a 403.
  */
 export function useExposures(tenantId: string | null, filters?: ExposureListFilters) {
   const { can } = usePermissions()
-  const canReadFindings = can(Permission.FindingsRead)
+  const canReadFindings = can(Permission.FindingsRead) && can(Permission.ExposuresRead)
 
   // Only fetch if user has permission
   const shouldFetch = tenantId && canReadFindings
