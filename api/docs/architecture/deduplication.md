@@ -114,6 +114,36 @@ that was approved (or not needed) for a different finding. Request the
 decision on the finding itself. The activity on both findings names the user;
 the audit log records `finding.duplicate_marked`.
 
+**Why a finding is one (identity explanation):** every keying records the
+recipe in `findings.identity_algo` and the NAMES of the key's fields, in recipe
+order, in `findings.identity_fields` (migration `003351`, nullable, no
+backfill). Recipe names: `v2/<kind>` (`v2/sca`, `v2/sast`, `v2/secret`,
+`v2/dast`, `v2/network`, `v2/misconfig`) set by `Finding.SetIdentity`;
+`v1/ingest` for the server's version-1 ingest key (F1, also when a
+report-chosen key is re-keyed to it); `manual/v1` for a manual finding (F2,
+fields `asset, rule, path, line, message`); `pentest/v1` for a pentest finding
+(F3, fields `campaign, title`). They are written by the insert, kept by the
+re-sighting upsert (a row without them takes the incoming ones only when both
+were keyed by the same recipe version), and rewritten with the key by every
+re-key (version-2 adoption, former-key adoption, the re-key job, the DAST
+repair, an asset merge). A version-2 row keyed before the columns existed is
+explained from `identity_key` (`derived: true`); a version-1 row without them
+is `legacy: true`. Values (asset id, secret HMAC, path, snippet hash) are never
+copied out of `identity_key`.
+`GET /api/v1/findings/{id}/identity` (`findings:read`) answers with
+`algo`, `version`, `fields`, `derived`, `legacy`, `sources` (the finding's
+tool, the tools of the ingest receipts that touched it and the tools of its
+merged duplicates, each with its latest sighting, at most 20) and `merged`
+(tombstones with `duplicate_of = id`: id, tool, merge time and cause code from
+the tombstone's `duplicate_marked` activity, newest first, at most 50). The
+finding passes the same check as `GET /findings/{id}` (route guard and
+service; 404 otherwise, another tenant 404); each tombstone, and its tool, is
+listed only when it is in the caller's data scope (asset scope rows or
+assignee, never a hidden program asset), and the response carries no count of
+the others. No key, fingerprint, partial fingerprint or secret material is
+returned. The finding detail shows it as "Why this is one finding"
+(`web/src/features/findings/components/detail/finding-identity-section.tsx`).
+
 Known limits: the SAST occurrence index is counted within one report, so twin
 snippets split across report chunks can swap; the secret HMAC is over the
 masked value the sensor sends (CTIS carries no raw value), so two secrets that

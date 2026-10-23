@@ -272,6 +272,9 @@ func registerVulnerabilityRoutes(
 		r.GET("/{id}", h.GetFinding, middleware.Require(permission.FindingsRead))
 		// Priority explainability: why does this finding hold its P-class?
 		r.GET("/{id}/priority-explanation", h.ExplainPriority, middleware.Require(permission.FindingsRead))
+		// Why this is one finding: recipe and field names of its key, the tools
+		// that reported it, the merged duplicates in the caller's scope.
+		r.GET("/{id}/identity", h.GetFindingIdentity, middleware.Require(permission.FindingsRead))
 
 		// Write operations
 		r.POST("/", h.CreateFinding, middleware.Require(permission.FindingsWrite))
@@ -447,6 +450,7 @@ func registerVulnerabilityRoutes(
 	// recent re-authentication (audited, approvers told).
 	router.Group("/api/v1/organization/settings/finding-approvals", func(r Router) {
 		r.GET("/", h.GetFindingApprovalSettings, middleware.Require(permission.FindingsRead))
+		r.PATCH("/", h.UpdateFindingApprovalSettings, middleware.RequireAdmin(), middleware.Require(permission.SettingsWrite), requireStepUp())
 		r.PUT("/", h.UpdateFindingApprovalSettings, middleware.RequireAdmin(), middleware.Require(permission.SettingsWrite), requireStepUp())
 	}, tenantMiddlewares...)
 }

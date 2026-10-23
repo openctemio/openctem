@@ -65,6 +65,7 @@ import { FindingAssetName } from './detail/finding-asset-name'
 import { FindingProperties } from './detail/finding-properties'
 import { FindingProvenanceSection } from './detail/finding-provenance-section'
 import { FindingIssueGroupSection } from './detail/finding-issue-group-section'
+import { FindingIdentitySection } from './detail/finding-identity-section'
 import { FindingTypePanel } from './detail/finding-type-panel'
 import { FindingIntelSection } from './detail/finding-intel-section'
 import { FindingRetestSection } from './detail/finding-retest'
@@ -343,6 +344,7 @@ export function FindingDetailDrawer({
               <FindingProperties finding={detail} triage={triage} hideTriage />
               <FindingIntelSection finding={detail} />
               <FindingProvenanceSection finding={detail} />
+              <FindingIdentitySection findingId={detail.id} />
               <VerificationPanel findingId={detail.id} />
               <FindingRetestSection finding={{ ...detail, status: triage.status }} />
               <FindingRetestCheckSection finding={detail} />

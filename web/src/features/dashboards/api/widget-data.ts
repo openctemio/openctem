@@ -79,7 +79,8 @@ export interface WidgetValue {
   items?: {
     rows: Array<{
       id: string
-      title: string
+      /** Null or empty when the finding was stored without a title. */
+      title: string | null
       severity: string
       priority_class: string
       asset_id?: string
