@@ -16,6 +16,7 @@ import {
   colSpanFor,
   columnsClass,
   gridColumnSpan,
+  phoneSpan,
   widgetSpanClass,
   normalizeColumns,
   widgetRowSpan,
@@ -52,7 +53,7 @@ export function DashboardView({ dashboard, data, loading, failed, onRetry }: Das
   }
   return (
     <div
-      className={cn('grid gap-4', columnsClass(cols))}
+      className={cn('grid gap-3 sm:gap-4', columnsClass(cols))}
       style={{ gridAutoRows: `minmax(${ROW_HEIGHT}px, auto)` }}
       data-columns={cols}
     >
@@ -66,6 +67,7 @@ export function DashboardView({ dashboard, data, loading, failed, onRetry }: Das
               {
                 '--span': gridColumnSpan(colSpanFor(w.w, cols)),
                 '--span-sm': gridColumnSpan(Math.min(2, colSpanFor(w.w, cols))),
+                '--span-xs': phoneSpan(w.w, w.h, cols),
                 gridRow: widgetRowSpan(w.h),
               } as React.CSSProperties
             }
