@@ -15,11 +15,47 @@ import (
 // module level (NamedFeatures). Every feature is allowed unless denied.
 // Core modules can never be denied.
 
+// Named features of sign-in (research/232 D16). Security controls (MFA,
+// passkeys, session policy, audit, break-glass) are never features: they are
+// free everywhere. These are allowed unless the operator or a source (the
+// hosted control plane) denies them, so a self-managed instance keeps them.
+const (
+	// FeatureSSOConnections: configuring per-organization SAML and OIDC
+	// connections (create or change; delete always works).
+	FeatureSSOConnections = "sso.connections"
+	// FeatureSSOEnforcement: requiring SSO sign-in for members.
+	FeatureSSOEnforcement = "sso.enforcement"
+	// FeatureSCIM: SCIM provisioning (tokens and the SCIM API).
+	FeatureSCIM = "scim"
+	// FeatureSSOGroupLinks: identity-provider group to role links.
+	FeatureSSOGroupLinks = "sso.group_links"
+	// FeatureLDAP: LDAP sign-in (reserved; not built).
+	FeatureLDAP = "ldap"
+)
+
 // NamedFeatures are the deniable features below module level, each checked
-// with entitlement.Service.Allowed at its own seam. Add a key here, check it
-// at the seam, and list it in docs/architecture/limits.md (a test compares
-// them). None exist yet: every module-level feature is a module id.
-var NamedFeatures = []string{}
+// with entitlement.Service.Allowed (or Usable) at its own seam. Add a key
+// here, check it at the seam, and list it in docs/architecture/limits.md (a
+// test compares them).
+var NamedFeatures = []string{FeatureLDAP, FeatureSCIM, FeatureSSOConnections, FeatureSSOEnforcement, FeatureSSOGroupLinks}
+
+// ErrFeatureDenied refuses a change that needs a feature the organization's
+// plan does not include. Unavailable: the entitlement could not be read, so
+// the change was refused (fail-closed).
+type ErrFeatureDenied struct {
+	Feature     string
+	Unavailable bool
+}
+
+func (e *ErrFeatureDenied) Error() string {
+	if e.Unavailable {
+		return "feature could not be checked: " + e.Feature
+	}
+	return "feature not available for this organization: " + e.Feature
+}
+
+// Unwrap makes the refusal a shared.ErrForbidden.
+func (e *ErrFeatureDenied) Unwrap() error { return shared.ErrForbidden }
 
 var featurePattern = regexp.MustCompile(`^[a-z][a-z0-9_.-]{0,99}$`)
 
