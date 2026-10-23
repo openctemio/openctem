@@ -37,6 +37,21 @@ func (s *WorkflowService) callerScope(ctx context.Context, tenantID, userID shar
 	return s.scope.ForUser(ctx, tenantID, userID)
 }
 
+// findingViewerRecorder records on ctx who reads finding rows, so storage
+// applies the pentest member-visibility rule (datascope.Enforcer).
+type findingViewerRecorder interface {
+	WithFindingViewer(ctx context.Context) context.Context
+}
+
+// withFindingViewer is ctx with the reader recorded when the scope checker
+// can do so. Without it storage applies the rule to everyone (fail closed).
+func (s *WorkflowService) withFindingViewer(ctx context.Context) context.Context {
+	if r, ok := s.scope.(findingViewerRecorder); ok {
+		return r.WithFindingViewer(ctx)
+	}
+	return ctx
+}
+
 // RunDetail is one run with its steps, deliveries and retention.
 type RunDetail struct {
 	Run           *automationdom.Run
@@ -48,6 +63,7 @@ type RunDetail struct {
 // when its subject is in the caller's scope (404 otherwise, like a run that
 // does not exist).
 func (s *WorkflowService) GetRunForCaller(ctx context.Context, tenantID, userID, runID shared.ID) (*RunDetail, error) {
+	ctx = s.withFindingViewer(ctx)
 	run, err := s.GetRun(ctx, tenantID, runID)
 	if err != nil {
 		return nil, err
@@ -83,6 +99,7 @@ func (s *WorkflowService) GetRunForCaller(ctx context.Context, tenantID, userID,
 // ListRunsForCaller is ListRuns limited to runs whose subject is in the
 // caller's scope.
 func (s *WorkflowService) ListRunsForCaller(ctx context.Context, userID shared.ID, input ListWorkflowRunsInput) (pagination.Result[*automationdom.Run], error) {
+	ctx = s.withFindingViewer(ctx)
 	scope, err := s.callerScope(ctx, input.TenantID, userID)
 	if err != nil {
 		return pagination.Result[*automationdom.Run]{}, err
@@ -104,6 +121,7 @@ type TraceInput struct {
 // Trace sums the steps of the automation's runs of a mode over the last days,
 // counting only runs whose subject the caller may see.
 func (s *WorkflowService) Trace(ctx context.Context, in TraceInput) (*automationdom.TraceAggregate, error) {
+	ctx = s.withFindingViewer(ctx)
 	if _, err := s.workflowRepo.GetByTenantAndID(ctx, in.TenantID, in.WorkflowID); err != nil {
 		return nil, err
 	}
