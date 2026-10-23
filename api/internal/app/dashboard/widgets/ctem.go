@@ -129,7 +129,6 @@ func (s *Service) SetAttackPaths(r AttackPathReader) { s.paths = r }
 const (
 	drillCrownJewels = "/assets?is_crown_jewel=true&program_assets=exclude"
 	drillUncovered   = "/assets?coverage=uncovered&program_assets=exclude"
-	drillValidation  = "/validation"
 	drillAttackPaths = "/attack-paths"
 )
 
@@ -161,6 +160,30 @@ func (s *Service) crownJewelsExposed(ctx context.Context, v *WidgetValue, f dash
 	}
 	v.Scalar = &ScalarValue{Value: c.Exposed}
 	v.TargetMet = targetMet(v.Target, float64(c.Exposed))
+	return nil
+}
+
+// discoveryCoverage is the coverage.discovery ratio: ledger-tracked assets
+// in scope with a successful run in the coverage window, over all tracked
+// assets in scope (the same read as the loop's Discovery stage). It opens the
+// uncovered assets, which are what to act on.
+func (s *Service) discoveryCoverage(ctx context.Context, v *WidgetValue, target *dashboard.WidgetTarget, compare bool, scope dashboard.ReadScope) error {
+	disc, err := s.facts.Discovery(ctx, scope, s.now().Add(-asset.CoverageWindow))
+	if err != nil {
+		return err
+	}
+	v.Ratio = &RatioValue{Num: disc.Covered, Den: disc.Tracked}
+	v.Drill = drillUncovered
+	if disc.Tracked == 0 {
+		v.State, v.Reason = StateNotMeasured, ReasonNoTrackedAssets
+		return nil
+	}
+	pct := round1(float64(disc.Covered) * 100 / float64(disc.Tracked))
+	v.Ratio.ValuePct = &pct
+	v.TargetMet = targetMet(target, pct)
+	if compare {
+		v.PreviousReason = ReasonNoHistoryForBy
+	}
 	return nil
 }
 
@@ -230,7 +253,7 @@ func (s *Service) ctemLoop(ctx context.Context, v *WidgetValue, scope dashboard.
 
 	// Validate: share of open findings with validation evidence; retests
 	// completed in the window.
-	validate := StageValue{Key: StageValidate, Unit: UnitPercent, Drill: drillValidation,
+	validate := StageValue{Key: StageValidate, Unit: UnitPercent,
 		Detail: &StageDetail{Key: "retests", Value: val.RetestsRun}}
 	if val.Open == 0 {
 		validate.State, validate.Reason = StageNotMeasured, ReasonNothingToValidate
@@ -245,7 +268,7 @@ func (s *Service) ctemLoop(ctx context.Context, v *WidgetValue, scope dashboard.
 
 	// Mobilize: share of open findings with an SLA that is not breached.
 	breachedDrill := drillHref(breachedF)
-	mobilize := StageValue{Key: StageMobilize, Unit: UnitPercent, Drill: breachedDrill,
+	mobilize := StageValue{Key: StageMobilize, Unit: UnitPercent,
 		Detail: &StageDetail{Key: "breached", Value: breached, Drill: breachedDrill}}
 	if den == 0 {
 		mobilize.State, mobilize.Reason = StageNotMeasured, ReasonNoDenominator

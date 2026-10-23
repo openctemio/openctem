@@ -19,6 +19,7 @@ import type { ColumnDef } from '@tanstack/react-table'
 import {
   DataTable,
   DataTableColumnHeader,
+  ErrorState,
   MetricStrip,
   type MetricStripItem,
   RunStatusBadge,
@@ -95,7 +96,7 @@ export function ScanRunsTab() {
     <Can
       permission={Permission.ScansRead}
       fallback={
-        <p className="mt-5 rounded-md border p-6 text-sm text-muted-foreground">
+        <p className="rounded-md border p-6 text-sm text-muted-foreground">
           {t('scans.runs.noPermission')}
         </p>
       }
@@ -175,7 +176,7 @@ function ScanRunsTable() {
     per_page: perPage,
   }
 
-  const { data, isLoading, error } = useScanRuns(filters, swrConfig)
+  const { data, isLoading, error, mutate } = useScanRuns(filters, swrConfig)
   const runs = data?.data ?? []
   // The counts follow the list: live while a listed run is live.
   const runsLive = runs.some(isRunInProgress)
@@ -391,25 +392,15 @@ function ScanRunsTable() {
       key: 'partial',
       label: t('scans.runStatus.partial'),
       value: counts?.partial ?? 0,
+      tone: 'warning',
       onClick: () => toggleStatus('partial'),
       active: statusFilter === 'partial',
     },
-    // The API counts timed-out runs as failed here; the status filter keeps
-    // them apart, so this tile does not filter.
-    {
-      key: 'failed',
-      label: t('scans.runs.failedOrTimedOut'),
-      value: counts?.failed ?? 0,
-      tone: 'danger',
-    },
-    {
-      key: 'canceled',
-      label: t('scans.runStatus.canceled'),
-      value: counts?.canceled ?? 0,
-      onClick: () => toggleStatus('canceled'),
-      active: statusFilter === 'canceled',
-    },
   ]
+  // Five tiles, each the shortcut of one Status value (research/244: a tile
+  // filters the list below, at most five). Failed, timed out, canceled and
+  // blocked are in the Status filter: the overview counts failed and timed
+  // out together, so a "Failed" tile could not equal the list it opens.
 
   const toolbarStart = (
     <div className="flex flex-wrap items-center gap-2">
@@ -498,43 +489,43 @@ function ScanRunsTable() {
   )
 
   return (
+    // Fragment: the strip and the table are blocks of the page's PageStack,
+    // which owns the 20px between them (research/244).
     <>
       <MetricStrip loading={isLoadingStats} items={metrics} />
-
-      <div className="mt-5">
-        {error ? (
-          <div className="rounded-md border p-6 text-sm">
-            <p className="font-medium">{t('scans.runs.loadFailed')}</p>
-            <Button variant="link" className="h-auto p-0" onClick={() => window.location.reload()}>
-              {t('scans.runs.reload')}
-            </Button>
-          </div>
-        ) : (
-          <DataTable
-            columns={columns}
-            data={runs}
-            isLoading={isLoading && !data}
-            showSearch={false}
-            toolbarStart={toolbarStart}
-            toolbarEnd={toolbarEnd}
-            getRowId={(r) => r.id}
-            onRowClick={(r) => setOpenRunId(r.id)}
-            manualPagination
-            rowCount={data?.total ?? 0}
-            pageCount={data?.total_pages}
-            pagination={pagination}
-            onPaginationChange={list.setPagination}
-            pageSize={perPage}
-            pageSizeOptions={[...SCAN_PAGE_SIZES]}
-            sorting={sorting}
-            onSortingChange={list.setSorting}
-            paginationNoun={t('scans.runs.noun')}
-            emptyMessage={filtered ? t('scans.runs.emptyFiltered') : t('scans.runs.empty')}
-            emptyDescription={filtered ? t('scans.runs.tryOther') : t('scans.runs.emptyHint')}
-          />
-        )}
-      </div>
-
+      {/* A failed read keeps the toolbar and filters; the error takes the
+          rows' place with a Retry (one message, no toast). */}
+      <DataTable
+        columns={columns}
+        data={error ? [] : runs}
+        isLoading={isLoading && !data}
+        errorState={
+          error ? (
+            <ErrorState
+              title={t('scans.runs.listName', 'the run list')}
+              error={error}
+              onRetry={() => void mutate()}
+            />
+          ) : undefined
+        }
+        showSearch={false}
+        toolbarStart={toolbarStart}
+        toolbarEnd={toolbarEnd}
+        getRowId={(r) => r.id}
+        onRowClick={(r) => setOpenRunId(r.id)}
+        manualPagination
+        rowCount={data?.total ?? 0}
+        pageCount={data?.total_pages}
+        pagination={pagination}
+        onPaginationChange={list.setPagination}
+        pageSize={perPage}
+        pageSizeOptions={[...SCAN_PAGE_SIZES]}
+        sorting={sorting}
+        onSortingChange={list.setSorting}
+        paginationNoun={t('scans.runs.noun')}
+        emptyMessage={filtered ? t('scans.runs.emptyFiltered') : t('scans.runs.empty')}
+        emptyDescription={filtered ? t('scans.runs.tryOther') : t('scans.runs.emptyHint')}
+      />
       <RunDetailSheet runId={openRunId} onOpenChange={(o) => !o && closeRun()} />
     </>
   )

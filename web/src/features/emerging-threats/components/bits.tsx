@@ -2,6 +2,7 @@
 
 /** Small pieces shared by the emerging-threat list and detail. */
 
+import { KevBadge } from '@/components/ui/kev-badge'
 import type { Locale } from 'date-fns'
 import { Badge } from '@/components/ui/badge'
 import { useTranslation } from '@/context/i18n-provider'
@@ -90,7 +91,7 @@ export function ExploitBadges({
   const { t } = useTranslation()
   return (
     <div className="flex flex-wrap items-center gap-1">
-      {inKev && <Badge variant="destructive">{t('emergingThreats.exploit.kev')}</Badge>}
+      {inKev && <KevBadge label={t('emergingThreats.exploit.kev')} />}
       {ransomware && <Badge variant="destructive">{t('emergingThreats.exploit.ransomware')}</Badge>}
       {epss != null && (
         <Badge variant="outline" className="tabular-nums">

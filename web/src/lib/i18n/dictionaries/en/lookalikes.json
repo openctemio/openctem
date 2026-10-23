@@ -55,5 +55,8 @@
   "lookalikes.triageFailed": "The change was not saved",
   "lookalikes.watchesDescription": "Your root domains (a permanent domain scope entry or a verified domain) and their lookalikes. Checks are passive: DNS lookups and Certificate Transparency, daily for registered lookalikes and weekly for the rest. No lookalike host is contacted.",
   "lookalikes.watchesTitle": "Watched domains",
-  "lookalikes.web": "Has addresses"
+  "lookalikes.web": "Has addresses",
+  "lookalikes.maxInvalid": "Enter a whole number from 10 to 1000",
+  "lookalikes.shownOf": "{shown} of {total}",
+  "lookalikes.loadMore": "Load more"
 }

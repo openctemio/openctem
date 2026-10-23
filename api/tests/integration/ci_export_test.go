@@ -25,6 +25,13 @@ func (r *ciRig) postRaw(path, bearer string, body []byte) (int, map[string]any) 
 	defer func() { _ = resp.Body.Close() }()
 	out := map[string]any{}
 	_ = json.NewDecoder(resp.Body).Decode(&out)
+	if resp.StatusCode == http.StatusAccepted {
+		// Stored: apply it as the worker does and answer with its state.
+		r.drain()
+		uid, _ := out["upload_id"].(string)
+		loc := strings.TrimSuffix(path, "/results") + "/results/" + uid
+		_, out = r.get(loc, bearer)
+	}
 	return resp.StatusCode, out
 }
 
@@ -57,7 +64,7 @@ func TestCIRunner_UploadToolExport(t *testing.T) {
 	token, runID := ex["token"].(string), ex["run_id"].(string)
 
 	code, out := r.postRaw("/api/v1/ci/runs/"+runID+"/results", token, []byte(ciOSVExport))
-	if code != http.StatusCreated {
+	if code != http.StatusAccepted || out["status"] != "applied" {
 		t.Fatalf("upload: %d %v", code, out)
 	}
 	if out["findings_dropped_out_of_scope"] != float64(1) || out["findings_created"] == float64(0) {
@@ -78,11 +85,22 @@ func TestCIRunner_UploadToolExport(t *testing.T) {
 		t.Fatal("the finding of another repository was ingested")
 	}
 
-	// Hostile export: refused, nothing written.
-	code, _ = r.postRaw("/api/v1/ci/runs/"+runID+"/results", token,
+	// Hostile export: stored, then refused by the worker for good with a
+	// fixed code; nothing written, nothing echoed.
+	before := 0
+	_ = r.db.QueryRowContext(ctx, `SELECT count(*) FROM findings WHERE tenant_id = $1`, r.tenant.String()).Scan(&before)
+	code, xxe := r.postRaw("/api/v1/ci/runs/"+runID+"/results", token,
 		[]byte(`<?xml version="1.0"?><!DOCTYPE NessusClientData_v2 [<!ENTITY x SYSTEM "file:///etc/passwd">]><NessusClientData_v2>&x;</NessusClientData_v2>`))
-	if code != http.StatusBadRequest {
-		t.Fatalf("xxe: %d", code)
+	if code != http.StatusAccepted || xxe["status"] != "failed" || xxe["error_code"] != "unreadable" {
+		t.Fatalf("xxe: %d %v", code, xxe)
+	}
+	if b, _ := json.Marshal(xxe); strings.Contains(string(b), "root:") || strings.Contains(string(b), "passwd") {
+		t.Fatalf("xxe echoed: %s", b)
+	}
+	after := 0
+	_ = r.db.QueryRowContext(ctx, `SELECT count(*) FROM findings WHERE tenant_id = $1`, r.tenant.String()).Scan(&after)
+	if after != before {
+		t.Fatalf("a refused export wrote %d findings", after-before)
 	}
 
 	// A token of this tenant's run cannot post to a run id of another.

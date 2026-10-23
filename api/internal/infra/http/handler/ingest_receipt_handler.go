@@ -20,6 +20,8 @@ import (
 	"github.com/go-chi/chi/v5"
 
 	"github.com/openctemio/openctem/api/internal/app/datascope"
+	"github.com/openctemio/openctem/api/internal/app/findingimport"
+	"github.com/openctemio/openctem/api/internal/app/ingestqueue"
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
 	"github.com/openctemio/openctem/api/pkg/apierror"
 	"github.com/openctemio/openctem/api/pkg/domain/ingestreceipt"
@@ -46,7 +48,18 @@ type IngestReceiptHandler struct {
 	repo   IngestReceiptReader
 	scope  *datascope.Enforcer
 	logger *logger.Logger
+	// imports reads the per-file results of a committed upload the ingest
+	// worker imported (nil: the result read answers 404).
+	imports ImportResults
 }
+
+// ImportResults reads a committed upload's state (findingimport.Service).
+type ImportResults interface {
+	UploadResult(ctx context.Context, tenantID, receiptID shared.ID, wait time.Duration) (*findingimport.UploadState, error)
+}
+
+// SetImportResults wires the result read of committed uploads.
+func (h *IngestReceiptHandler) SetImportResults(r ImportResults) { h.imports = r }
 
 // NewIngestReceiptHandler creates the handler.
 func NewIngestReceiptHandler(repo IngestReceiptReader, scope *datascope.Enforcer, log *logger.Logger) *IngestReceiptHandler {
@@ -447,5 +460,58 @@ func (h *IngestReceiptHandler) FindingReceipts(w http.ResponseWriter, r *http.Re
 			Source: ReceiptSource{Kind: string(fa.SourceKind), Ref: fa.SourceRef}, Tool: fa.ToolName,
 			Action: string(fa.Action), At: fa.At})
 	}
+	writeJSON(w, http.StatusOK, out)
+}
+
+// Result handles GET /api/v1/findings/imports/{id}/result.
+//
+// @Summary      Per-file results of a committed upload
+// @Description  A committed upload is imported by the ingest worker. This read answers its state (queued, processing, applied or failed with a fixed error_code) and, once applied, the per-file results the upload used to answer with, and its receipt. wait=N (seconds, at most 10) waits for the import to finish first. Visible to the same callers as the receipt (another member's upload is 404 without the organization view).
+// @Tags         Findings
+// @Produce      json
+// @Param        id    path   string  true   "Receipt id"
+// @Param        wait  query  int     false  "Seconds to wait for the import to finish (at most 10)"
+// @Success      200  {object}  FindingImportResponse
+// @Failure      400  {object}  apierror.Error
+// @Failure      404  {object}  apierror.Error
+// @Security     BearerAuth
+// @Router       /findings/imports/{id}/result [get]
+func (h *IngestReceiptHandler) Result(w http.ResponseWriter, r *http.Request) {
+	if _, ok := strictParams(w, r, map[string]bool{"wait": true}); !ok {
+		return
+	}
+	v, rec, ok := h.loadVisible(w, r)
+	if !ok {
+		return
+	}
+	if h.imports == nil || rec.SourceKind != ingestreceipt.SourceUpload {
+		apierror.NotFound("Import result").WriteJSON(w)
+		return
+	}
+	st, err := h.imports.UploadResult(r.Context(), v.tenant, rec.ID, ingestqueue.ClampWait(r.URL.Query().Get("wait")))
+	if errors.Is(err, shared.ErrNotFound) {
+		// An upload imported before uploads were queued has no job: its
+		// receipt is all there is.
+		rr := toReceiptResponse(rec)
+		writeJSON(w, http.StatusOK, FindingImportResponse{ReceiptID: rec.ID.String(), Status: string(ingestqueue.StatusApplied),
+			Receipt: &rr, Files: []ImportFileResponse{}})
+		return
+	}
+	if err != nil {
+		h.logger.Error("receipts: import result", "error", err)
+		apierror.InternalServerError("could not read the import").WriteJSON(w)
+		return
+	}
+	out := FindingImportResponse{ReceiptID: rec.ID.String(), Status: string(st.Status), ErrorCode: st.ErrorCode,
+		Files: make([]ImportFileResponse, 0, len(st.Files))}
+	for i := range st.Files {
+		out.Files = append(out.Files, toImportFileResponse(&st.Files[i]))
+	}
+	// The receipt as it stands after the wait.
+	if fresh, err := h.repo.Get(r.Context(), v.tenant, rec.ID); err == nil {
+		rec = fresh
+	}
+	rr := toReceiptResponse(rec)
+	out.Receipt = &rr
 	writeJSON(w, http.StatusOK, out)
 }

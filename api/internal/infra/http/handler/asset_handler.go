@@ -175,7 +175,7 @@ func (h *AssetHandler) auditCreateMerged(r *http.Request, a *asset.Asset, change
 		WithMessage("Create request matched an existing asset and updated it").
 		WithMetadata("changed_fields", changed).
 		WithSeverity(auditdom.SeverityMedium)
-	_ = h.auditService.LogEvent(r.Context(), h.buildAuditContext(r), event)
+	auditapp.RecordOrWarn(r.Context(), h.logger, h.auditService, h.buildAuditContext(r), event)
 }
 
 // DuplicateAssetDetails is the details object of the 409 a create returns
@@ -257,7 +257,7 @@ func (h *AssetHandler) SnoozeAssetLifecycle(w http.ResponseWriter, r *http.Reque
 			WithMetadata("days", req.Days).
 			WithMetadata("reactivate", req.Reactivate).
 			WithSeverity(auditdom.SeverityLow)
-		_ = h.auditService.LogEvent(r.Context(), h.buildAuditContext(r), event)
+		auditapp.RecordOrWarn(r.Context(), h.logger, h.auditService, h.buildAuditContext(r), event)
 	}
 
 	w.WriteHeader(http.StatusNoContent)
@@ -297,7 +297,7 @@ func (h *AssetHandler) UnsnoozeAssetLifecycle(w http.ResponseWriter, r *http.Req
 		event := auditapp.NewSuccessEvent(auditdom.ActionAssetLifecycleUnsnoozed, auditdom.ResourceTypeAsset, assetID).
 			WithMessage("Lifecycle snooze cleared").
 			WithSeverity(auditdom.SeverityLow)
-		_ = h.auditService.LogEvent(r.Context(), h.buildAuditContext(r), event)
+		auditapp.RecordOrWarn(r.Context(), h.logger, h.auditService, h.buildAuditContext(r), event)
 	}
 
 	w.WriteHeader(http.StatusNoContent)

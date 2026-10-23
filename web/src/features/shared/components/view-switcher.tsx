@@ -3,6 +3,7 @@
 import type { LucideIcon } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
+import { useTranslation } from '@/context/i18n-provider'
 import { cn } from '@/lib/utils'
 
 export interface ViewOption<T extends string> {
@@ -27,11 +28,12 @@ export function ViewSwitcher<T extends string>({
   onChange: (value: T) => void
   className?: string
 }) {
+  const { t } = useTranslation()
   return (
     <div
       role="group"
-      aria-label="View"
-      className={cn('flex h-9 items-center rounded-md border p-0.5', className)}
+      aria-label={t('common.viewSwitcher.label', 'View')}
+      className={cn('flex h-9 shrink-0 items-center rounded-md border p-0.5', className)}
     >
       {options.map(({ value: v, label, icon: Icon }) => (
         <Tooltip key={v}>

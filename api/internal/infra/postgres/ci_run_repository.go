@@ -817,7 +817,9 @@ func (r *CIRunRepository) SaveVerdict(ctx context.Context, tenantID, runID share
 	res, err := r.db.ExecContext(ctx, `UPDATE ci_runs SET status = 'evaluated', verdict = $3, verdict_detail = $4,
 		evaluated_at = $5, failed_capabilities = $7, updated_at = NOW(),`+decorationQueued+`
 		WHERE tenant_id = $1 AND id = $2 AND status = 'running' AND findings_count = $6
-		  AND (NOT findings_over_cap OR $4::jsonb @> '{"reasons":[{"code":"`+cirun.ReasonTooManyFindings+`"}]}')`,
+		  AND (NOT findings_over_cap OR $4::jsonb @> '{"reasons":[{"code":"`+cirun.ReasonTooManyFindings+`"}]}')
+		  AND NOT EXISTS (SELECT 1 FROM ingest_jobs j WHERE j.tenant_id = $1 AND j.kind = 'ci_results'
+		      AND j.source_ref = $2::text AND j.status IN ('pending', 'processing'))`,
 		tenantID.String(), runID.String(), verdict, detail, at, expectFindings, pq.Array(failedCapabilities))
 	if err != nil {
 		return err
@@ -833,6 +835,16 @@ func (r *CIRunRepository) SaveVerdict(ctx context.Context, tenantID, runID share
 		}
 		if status != string(cirun.StatusRunning) {
 			return cirun.ErrRunEvaluated
+		}
+		// An upload accepted after the gate's wait: the verdict waits for it.
+		var pending bool
+		if err := r.db.QueryRowContext(ctx, `SELECT EXISTS (SELECT 1 FROM ingest_jobs WHERE tenant_id = $1
+			AND kind = 'ci_results' AND source_ref = $2 AND status IN ('pending', 'processing'))`,
+			tenantID.String(), runID.String()).Scan(&pending); err != nil {
+			return err
+		}
+		if pending {
+			return cirun.ErrRunUploadsPending
 		}
 		return cirun.ErrRunChanged
 	}

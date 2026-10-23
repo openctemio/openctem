@@ -38,6 +38,7 @@ export function reasonKeyOf(reason: string | undefined): string {
   switch (reason) {
     case 'no_denominator':
     case 'no_crown_jewels':
+    case 'no_tracked_assets':
     case 'no_relationship_data':
     case 'too_few_fixed':
     case 'legacy_tile':
@@ -149,7 +150,9 @@ function toResult(v: WidgetValue, spec: WidgetSpec | undefined): WidgetResult | 
         shape: 'items',
         rows: it.rows.map((r) => ({
           id: r.id,
-          title: r.title,
+          // A finding stored without a title arrives as null or empty; the
+          // list shows a named placeholder instead of a blank row.
+          title: r.title ?? '',
           priority: r.priority_class || null,
           severity: r.severity || null,
           asset: r.asset_name ?? null,
@@ -157,7 +160,7 @@ function toResult(v: WidgetValue, spec: WidgetSpec | undefined): WidgetResult | 
           kev: r.kev,
           href: `/findings/${encodeURIComponent(r.id)}`,
         })),
-        total: it.rows.length,
+        total: typeof it.total === 'number' ? it.total : null,
       }
       return out
     }

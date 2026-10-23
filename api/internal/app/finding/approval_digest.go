@@ -1,12 +1,16 @@
 package finding
 
-// The daily digest of finding requests waiting for each approver
+// The daily digest of finding requests waiting for each approver, and of
+// the decisions one person made alone in the last day
 // (api/docs/architecture/finding-status-lifecycle.md, "Approvals").
 //
-// Threat model: the digest changes nobody's power; it only reminds. What it
-// may leak is bounded like every approval notice: an approver is counted
-// only the requests they may decide (not their own, the finding in their data
-// scope), titles are those of findings they can see, never justifications or
+// Threat model: the digest changes nobody's power; it reminds, and it makes
+// every single-person decision (a false positive or accepted risk decided
+// under the organization's level, or the sole member's own approval) visible
+// to the other approvers. What it may leak is bounded like every approval
+// notice: an approver is counted only the requests they may decide and the
+// decisions of others (not their own, the finding in their data scope),
+// titles are those of findings they can see, never justifications or
 // evidence; service accounts are never sent one; it goes at most once a day
 // per approver and organization, and muting the digest notification type
 // opts out of it (in-app and email).
@@ -31,6 +35,17 @@ const ApprovalDigestInterval = 23 * time.Hour
 // maxDigestTitles is how many request titles one digest names.
 const maxDigestTitles = 5
 
+// DecidedAloneWindow is how far back a digest looks for decisions one
+// person made: a day, a little more than ApprovalDigestInterval so no
+// decision falls between two digests.
+const DecidedAloneWindow = 24 * time.Hour
+
+// decidedAloneStore lists the decisions one person made since a time
+// (*postgres.FindingApprovalRepository).
+type decidedAloneStore interface {
+	DecidedAloneSince(ctx context.Context, since time.Time, limit int) ([]*vulnerability.Approval, error)
+}
+
 // approvalDigestStore lists pending requests and records sent digests
 // (*postgres.FindingApprovalRepository).
 type approvalDigestStore interface {
@@ -51,8 +66,10 @@ func (s *VulnerabilityService) SetApprovalDigestPreferences(p NotificationPrefer
 }
 
 // SendApprovalDigests sends the daily digest to every approver who has
-// requests waiting for them, at most once per ApprovalDigestInterval. It
-// answers how many digests it sent. A background job (no request user).
+// requests waiting for them or whom another person's decision made alone in
+// the last DecidedAloneWindow concerns, at most once per
+// ApprovalDigestInterval. It answers how many digests it sent. A background
+// job (no request user).
 func (s *VulnerabilityService) SendApprovalDigests(ctx context.Context) (int, error) {
 	store, ok := s.approvalRepo.(approvalDigestStore)
 	if !ok || s.approverDir == nil {
@@ -62,17 +79,33 @@ func (s *VulnerabilityService) SendApprovalDigests(ctx context.Context) (int, er
 	if err != nil {
 		return 0, err
 	}
+	var alone []*vulnerability.Approval
+	if ds, ok := s.approvalRepo.(decidedAloneStore); ok {
+		if alone, err = ds.DecidedAloneSince(ctx, time.Now().Add(-DecidedAloneWindow), 0); err != nil {
+			return 0, err
+		}
+	}
 	byTenant := map[shared.ID][]*vulnerability.Approval{}
+	aloneByTenant := map[shared.ID][]*vulnerability.Approval{}
 	order := []shared.ID{}
+	seen := map[shared.ID]bool{}
 	for _, a := range pending {
-		if _, seen := byTenant[a.TenantID]; !seen {
+		if !seen[a.TenantID] {
+			seen[a.TenantID] = true
 			order = append(order, a.TenantID)
 		}
 		byTenant[a.TenantID] = append(byTenant[a.TenantID], a)
 	}
+	for _, a := range alone {
+		if !seen[a.TenantID] {
+			seen[a.TenantID] = true
+			order = append(order, a.TenantID)
+		}
+		aloneByTenant[a.TenantID] = append(aloneByTenant[a.TenantID], a)
+	}
 	sent := 0
 	for _, tid := range order {
-		n, err := s.sendTenantDigests(ctx, store, tid, byTenant[tid])
+		n, err := s.sendTenantDigests(ctx, store, tid, byTenant[tid], aloneByTenant[tid])
 		if err != nil {
 			s.logger.Warn("approval digest: tenant", "tenant_id", tid.String(), "error", logger.SanitizeError(err))
 			continue
@@ -82,13 +115,18 @@ func (s *VulnerabilityService) SendApprovalDigests(ctx context.Context) (int, er
 	return sent, nil
 }
 
-func (s *VulnerabilityService) sendTenantDigests(ctx context.Context, store approvalDigestStore, tid shared.ID, pending []*vulnerability.Approval) (int, error) {
+func (s *VulnerabilityService) sendTenantDigests(ctx context.Context, store approvalDigestStore, tid shared.ID,
+	pending, alone []*vulnerability.Approval,
+) (int, error) {
 	approvers, err := s.approverDir.FindingApprovers(ctx, tid)
 	if err != nil {
 		return 0, err
 	}
-	ids := make([]shared.ID, 0, len(pending))
+	ids := make([]shared.ID, 0, len(pending)+len(alone))
 	for _, a := range pending {
+		ids = append(ids, a.FindingID)
+	}
+	for _, a := range alone {
 		ids = append(ids, a.FindingID)
 	}
 	findings, err := s.findingRepo.GetByIDs(ctx, tid, ids)
@@ -109,7 +147,10 @@ func (s *VulnerabilityService) sendTenantDigests(ctx context.Context, store appr
 			continue
 		}
 		mine := s.decidableBy(ctx, tid, uid, pending)
-		if len(mine) == 0 || s.digestMuted(ctx, tid, uid) {
+		// Decisions of others made alone: the same rule (not their own, the
+		// finding in their data scope).
+		others := s.decidableBy(ctx, tid, uid, alone)
+		if (len(mine) == 0 && len(others) == 0) || s.digestMuted(ctx, tid, uid) {
 			continue
 		}
 		ok, err := store.MarkDigestSent(ctx, tid, uid, ApprovalDigestInterval)
@@ -125,14 +166,20 @@ func (s *VulnerabilityService) sendTenantDigests(ctx context.Context, store appr
 				names = append(names, statusLabel(a.RequestedStatus)+": "+t)
 			}
 		}
-		s.deliverDigest(ctx, tid, uid, ap.Email, len(mine), soon, names)
+		aloneNames := make([]string, 0, maxDigestTitles)
+		for _, a := range others {
+			if t := oneLineTitle(titles[a.FindingID]); t != "" && len(aloneNames) < maxDigestTitles {
+				aloneNames = append(aloneNames, statusLabel(a.RequestedStatus)+": "+t)
+			}
+		}
+		s.deliverDigest(ctx, tid, uid, ap.Email, digestCounts{pending: len(mine), soon: soon, alone: len(others)}, names, aloneNames)
 		sent++
 	}
 	return sent, nil
 }
 
-// decidableBy keeps the requests the user may decide: not their own, and
-// the finding in their data scope.
+// decidableBy keeps the requests the user may decide (or, for decisions,
+// may see): not their own, and the finding in their data scope.
 func (s *VulnerabilityService) decidableBy(ctx context.Context, tid, uid shared.ID, pending []*vulnerability.Approval) []*vulnerability.Approval {
 	ids := make([]shared.ID, 0, len(pending))
 	for _, a := range pending {
@@ -163,14 +210,32 @@ func (s *VulnerabilityService) digestMuted(ctx context.Context, tid, uid shared.
 	return err == nil && p != nil && p.IsTypeMuted(notificationdom.TypeFindingApprovalDigest)
 }
 
-func (s *VulnerabilityService) deliverDigest(ctx context.Context, tid, uid shared.ID, email string, total, soon int, names []string) {
+// digestCounts are the numbers one digest reports.
+type digestCounts struct {
+	// pending requests the approver may decide, soon of them expiring
+	// within two days; alone: decisions others made by themselves in the
+	// last DecidedAloneWindow.
+	pending, soon, alone int
+}
+
+func (s *VulnerabilityService) deliverDigest(ctx context.Context, tid, uid shared.ID, email string, n digestCounts, names, aloneNames []string) {
+	total, soon := n.pending, n.soon
 	title := fmt.Sprintf("%d finding request(s) wait for your decision", total)
+	if total == 0 {
+		title = fmt.Sprintf("%d finding decision(s) were made by one person", n.alone)
+	}
 	body := title + "."
-	if soon > 0 {
+	if total > 0 && soon > 0 {
 		body += fmt.Sprintf(" %d expire within two days.", soon)
 	}
 	if len(names) > 0 {
 		body += " " + strings.Join(names, "; ") + "."
+	}
+	if total > 0 && n.alone > 0 {
+		body += fmt.Sprintf(" %d decision(s) were made by one person in the last day.", n.alone)
+	}
+	if len(aloneNames) > 0 {
+		body += " Decided by one person: " + strings.Join(aloneNames, "; ") + "."
 	}
 	if s.approvalInApp != nil {
 		if err := s.approvalInApp.Notify(ctx, notificationdom.NotificationParams{
@@ -197,8 +262,23 @@ func (s *VulnerabilityService) deliverDigest(ctx context.Context, tid, uid share
 	if soon > 0 {
 		expiring = fmt.Sprintf("<p>%d of them expire within two days if nobody decides.</p>", soon)
 	}
-	mailBody := fmt.Sprintf(`<p>%d finding request(s) wait for your decision.</p>%s%s
+	decided := ""
+	if n.alone > 0 {
+		var ai strings.Builder
+		for _, nm := range aloneNames {
+			ai.WriteString("<li>" + html.EscapeString(nm) + "</li>")
+		}
+		decided = fmt.Sprintf("<p>%d decision(s) were made by one person in the last day, under the organization's approval levels or as its only member.</p>", n.alone)
+		if ai.Len() > 0 {
+			decided += "<ul>" + ai.String() + "</ul>"
+		}
+	}
+	waiting := ""
+	if total > 0 {
+		waiting = fmt.Sprintf("<p>%d finding request(s) wait for your decision.</p>", total)
+	}
+	mailBody := fmt.Sprintf(`%s%s%s%s
 <p>Review them: <a href="%s">%s</a> (sign-in required). To stop this daily summary, mute "Approvals digest" in your notification settings.</p>`,
-		total, expiring, list, html.EscapeString(link), html.EscapeString(link))
+		waiting, expiring, list, decided, html.EscapeString(link), html.EscapeString(link))
 	s.approvalMail.SendFindingApprovalMail(ctx, tid.String(), []string{email}, "[Findings] "+title, mailBody)
 }

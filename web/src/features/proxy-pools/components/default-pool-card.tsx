@@ -18,6 +18,7 @@ import {
   updateProxyPool,
 } from '../api/use-proxy-pools'
 import { describeProxyError, isInvalidEndpointError } from '../lib/errors'
+import { hasNoProxyLines } from '../lib/endpoints-text'
 import { maskPasteText } from '../lib/mask'
 import type { ProxyPool } from '../types'
 import { EndpointTable } from './endpoint-table'
@@ -49,7 +50,7 @@ export function DefaultPoolCard({ pool, canWrite }: DefaultPoolCardProps) {
   }, [stored, pool?.enabled, pool?.revision])
 
   const dirty = text !== stored || enabled !== (pool?.enabled ?? false)
-  const noLines = text.split('\n').every((l) => l.trim() === '' || l.trim().startsWith('#'))
+  const noLines = hasNoProxyLines(text)
   const needLines = enabled && noLines
 
   async function save() {
@@ -73,8 +74,12 @@ export function DefaultPoolCard({ pool, canWrite }: DefaultPoolCardProps) {
           endpoints_text: text,
         })
       } else {
+        // The API refuses an enabled pool without a proxy: turn the pool off
+        // before emptying its list, and fill the list before turning it on.
+        const turningOff = pool.enabled && !enabled
+        if (turningOff) await updateProxyPool(pool.id, { enabled })
         if (text !== stored) await saveProxyEndpoints(pool.id, text)
-        if (enabled !== pool.enabled) await updateProxyPool(pool.id, { enabled })
+        if (!turningOff && enabled !== pool.enabled) await updateProxyPool(pool.id, { enabled })
       }
       await invalidateProxyPools()
       toast.success(t('proxyPools.toast.saved', 'Proxies saved'))

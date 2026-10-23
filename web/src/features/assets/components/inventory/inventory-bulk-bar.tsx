@@ -223,7 +223,8 @@ export function InventoryBulkBar({ selected, canWrite, onClear, onDone }: BulkBa
     { revalidateOnFocus: false, dedupingInterval: 30000, keepPreviousData: true }
   )
   const { groups: groupsData, isLoading: groupsLoading } = useGroups(
-    ownerDialogOpen ? { search: debouncedSearch.trim() || undefined } : undefined
+    ownerDialogOpen ? { search: debouncedSearch.trim() || undefined } : undefined,
+    ownerDialogOpen
   )
 
   const userOptions: PickerOption[] = useMemo(

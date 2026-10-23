@@ -38,6 +38,7 @@ import { IconGoogle, IconGithub, IconMicrosoft } from '@/assets/brand-icons'
 
 // Import schema and server actions
 import { registerSchema, type RegisterInput } from '../schemas/auth.schema'
+import { translatingResolver } from '../lib/translating-resolver'
 import { passwordPolicyIssue } from '../lib/password-policy'
 import { PasswordPolicyHint } from './password-policy-hint'
 import { registerAction } from '../actions/local-auth-actions'
@@ -147,7 +148,7 @@ export function RegisterForm({
 
   // Form setup with centralized schema
   const form = useForm<RegisterInput>({
-    resolver: zodResolver(registerSchema),
+    resolver: translatingResolver(zodResolver(registerSchema), t),
     defaultValues: {
       firstName: '',
       lastName: '',
@@ -185,7 +186,7 @@ export function RegisterForm({
       if (result.success) {
         toast.success(
           result.message ||
-            'Registration successful! Please check your email to verify your account.'
+            t('auth.register.success', 'Account created. Check your email to verify your account.')
         )
         // Invited: sign in and land back on the invitation to accept it.
         router.push(
@@ -204,7 +205,7 @@ export function RegisterForm({
       } else if (result.code === 'CAPTCHA_FAILED') {
         toast.error(t('auth.captcha.failed', 'Complete the security check and try again.'))
       } else {
-        toast.error(result.error || 'Registration failed')
+        toast.error(result.error || t('auth.register.failed', 'Registration failed'))
       }
     })
   }
@@ -221,7 +222,11 @@ export function RegisterForm({
     } catch (error) {
       setLoadingProvider(null)
       console.error(`Social login error (${provider}):`, error)
-      toast.error(`Failed to sign up with ${identityProviderLabel(provider)}. Please try again.`)
+      toast.error(
+        t('auth.register.providerFailed', 'Could not sign up with {provider}. Try again.', {
+          provider: identityProviderLabel(provider),
+        })
+      )
     }
   }
 
@@ -269,7 +274,7 @@ export function RegisterForm({
               </div>
               <div className="relative flex justify-center text-xs uppercase">
                 <span className="bg-background text-muted-foreground px-2">
-                  Or register with email
+                  {t('auth.register.orWithEmail', 'Or register with email')}
                 </span>
               </div>
             </div>
@@ -283,10 +288,10 @@ export function RegisterForm({
             name="firstName"
             render={({ field }) => (
               <FormItem>
-                <FormLabel>First Name</FormLabel>
+                <FormLabel>{t('auth.register.firstName', 'First name')}</FormLabel>
                 <FormControl>
                   <Input
-                    placeholder="John"
+                    placeholder={t('auth.register.firstNamePlaceholder', 'John')}
                     autoComplete="given-name"
                     disabled={isLoading}
                     {...field}
@@ -302,10 +307,10 @@ export function RegisterForm({
             name="lastName"
             render={({ field }) => (
               <FormItem>
-                <FormLabel>Last Name</FormLabel>
+                <FormLabel>{t('auth.register.lastName', 'Last name')}</FormLabel>
                 <FormControl>
                   <Input
-                    placeholder="Doe"
+                    placeholder={t('auth.register.lastNamePlaceholder', 'Doe')}
                     autoComplete="family-name"
                     disabled={isLoading}
                     {...field}
@@ -323,7 +328,7 @@ export function RegisterForm({
           name="email"
           render={({ field }) => (
             <FormItem>
-              <FormLabel>Email</FormLabel>
+              <FormLabel>{t('auth.register.email', 'Email')}</FormLabel>
               <FormControl>
                 <Input
                   placeholder="name@example.com"
@@ -344,10 +349,10 @@ export function RegisterForm({
           name="password"
           render={({ field }) => (
             <FormItem>
-              <FormLabel>Password</FormLabel>
+              <FormLabel>{t('auth.register.password', 'Password')}</FormLabel>
               <FormControl>
                 <PasswordInput
-                  placeholder="Create a password"
+                  placeholder={t('auth.register.passwordPlaceholder', 'Create a password')}
                   autoComplete="new-password"
                   disabled={isLoading}
                   {...field}
@@ -365,10 +370,10 @@ export function RegisterForm({
           name="confirmPassword"
           render={({ field }) => (
             <FormItem>
-              <FormLabel>Confirm Password</FormLabel>
+              <FormLabel>{t('auth.register.confirmPassword', 'Confirm password')}</FormLabel>
               <FormControl>
                 <PasswordInput
-                  placeholder="Confirm your password"
+                  placeholder={t('auth.register.confirmPlaceholder', 'Confirm your password')}
                   autoComplete="new-password"
                   disabled={isLoading}
                   {...field}
@@ -394,7 +399,7 @@ export function RegisterForm({
           ) : (
             <UserPlus className="h-4 w-4" />
           )}
-          Create Account
+          {t('auth.register.submit', 'Create account')}
         </Button>
       </form>
     </Form>

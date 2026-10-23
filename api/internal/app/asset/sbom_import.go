@@ -38,6 +38,16 @@ type SBOMLicenseEvaluator interface {
 // SetLicenseEvaluator wires the license policy evaluation after an import.
 func (s *SBOMImportService) SetLicenseEvaluator(e SBOMLicenseEvaluator) { s.license = e }
 
+// SBOMChangeSink queues the vulnerability matcher for assets whose packages
+// changed (*vulnmatch.Service).
+type SBOMChangeSink interface {
+	SoftwareChanged(tenantID shared.ID, assetIDs []shared.ID)
+}
+
+// SetSoftwareChangeSink wires the matcher's queue: an imported SBOM is
+// matched in minutes instead of at the daily sweep.
+func (s *SBOMImportService) SetSoftwareChangeSink(sink SBOMChangeSink) { s.sink = sink }
+
 // SBOMStore writes packages and reads the current inventory for the diff.
 type SBOMStore interface {
 	software.PackageWriter
@@ -47,6 +57,7 @@ type SBOMStore interface {
 // SBOMImportService imports CycloneDX and SPDX documents.
 type SBOMImportService struct {
 	license      SBOMLicenseEvaluator
+	sink         SBOMChangeSink
 	store        SBOMStore
 	assetChecker assetTenantChecker
 	dataScope    *datascope.Enforcer
@@ -139,6 +150,9 @@ func (s *SBOMImportService) ImportSBOM(ctx context.Context, tenantID, assetID st
 		return nil, err
 	}
 	res.Written = &written
+	if s.sink != nil && (written.Links > 0 || written.Removed > 0 || written.Superseded > 0) {
+		s.sink.SoftwareChanged(tid, []shared.ID{aid})
+	}
 	if s.license != nil {
 		if _, err := s.license.EvaluateAssets(ctx, tid, []shared.ID{aid}); err != nil {
 			s.logger.Warn("license policy evaluation failed", "tenant_id", tid.String(), "error", err)

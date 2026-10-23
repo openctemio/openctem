@@ -7,7 +7,9 @@ package handler
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
 	"encoding/base64"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -17,29 +19,27 @@ import (
 	"strings"
 	"time"
 
-	"github.com/openctemio/ctis"
 	"github.com/openctemio/ctis/importer"
 
 	cirunapp "github.com/openctemio/openctem/api/internal/app/cirun"
-	"github.com/openctemio/openctem/api/internal/app/findingimport"
 	"github.com/openctemio/openctem/api/internal/app/ingest"
+	"github.com/openctemio/openctem/api/internal/app/ingestqueue"
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
 	"github.com/openctemio/openctem/api/pkg/apierror"
 	"github.com/openctemio/openctem/api/pkg/domain/cirun"
+	"github.com/openctemio/openctem/api/pkg/domain/idempotency"
 	"github.com/openctemio/openctem/api/pkg/domain/scangov"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	tenantdom "github.com/openctemio/openctem/api/pkg/domain/tenant"
 	"github.com/openctemio/openctem/api/pkg/logger"
-	protov2 "github.com/openctemio/openctem/api/pkg/sensorproto/v2"
 )
 
 // CIRunService is what the CI runner endpoints need.
 type CIRunService interface {
 	Exchange(ctx context.Context, in cirunapp.ExchangeInput) (*cirunapp.ExchangeOutput, error)
 	Authenticate(ctx context.Context, token string) (*cirun.Run, error)
-	UploadReport(ctx context.Context, run *cirun.Run, report *ctis.Report) (*ingest.Output, error)
-	KnownFindings(ctx context.Context, run *cirun.Run, out *ingest.Output) ([]cirun.KnownFinding, int)
-	UploadImported(ctx context.Context, run *cirun.Run, report *ctis.Report) (*ingest.Output, int, error)
+	AcceptUpload(ctx context.Context, run *cirun.Run, body []byte, export bool, pin *cirunapp.MappingPin) (*cirunapp.UploadReceipt, error)
+	UploadStatus(ctx context.Context, run *cirun.Run, uploadID shared.ID, wait time.Duration) (*cirunapp.UploadReceipt, error)
 	BaselineDiff(ctx context.Context, run *cirun.Run, fingerprints []string) (*cirunapp.BaselineDiffOutput, error)
 	Evaluate(ctx context.Context, run *cirun.Run, in cirunapp.EvaluateInput) (*cirunapp.Verdict, error)
 }
@@ -48,22 +48,21 @@ type CIRunService interface {
 type CIRunnerHandler struct {
 	svc    CIRunService
 	logger *logger.Logger
-	// vex applies the VEX statements of an uploaded VEX document; nil
-	// refuses VEX documents.
-	vex CIVEXApplier
+	// mappings resolves format=mapping:<name> (nil: refused).
+	mappings ImportMappingResolver
 	// secretKeys derives the job's secret hashing key (nil: none).
 	secretKeys SecretKeys
-	// idem stores answers for Idempotency-Key (nil: the header is ignored).
-	idem IdempotencyStore
+	// idem is the durable Idempotency-Key store (nil: a request with a key
+	// is refused, 503).
+	idem idempotency.Store
 }
 
-// CIVEXApplier applies converted VEX statements (findingimport.Service).
-type CIVEXApplier interface {
-	ApplyVEXStatements(ctx context.Context, req findingimport.Request, stmts []importer.VEXStatement) (*findingimport.VEXSummary, error)
-}
+// SetMappingResolver wires the organization's import mappings.
+func (h *CIRunnerHandler) SetMappingResolver(m ImportMappingResolver) { h.mappings = m }
 
-// SetVEXApplier wires VEX documents uploaded by a run.
-func (h *CIRunnerHandler) SetVEXApplier(v CIVEXApplier) { h.vex = v }
+// SetIdempotencyStore wires the durable Idempotency-Key store of the
+// upload endpoint.
+func (h *CIRunnerHandler) SetIdempotencyStore(s idempotency.Store) { h.idem = s }
 
 // NewCIRunnerHandler creates the handler.
 func NewCIRunnerHandler(svc CIRunService, log *logger.Logger) *CIRunnerHandler {
@@ -282,19 +281,21 @@ func (h *CIRunnerHandler) AuthenticateRun(next http.Handler) http.Handler {
 
 // UploadResults handles POST /api/v1/ci/runs/{id}/results
 // @Summary      Upload a CI run's results
-// @Description  A CTIS report from the run, or a file a tool wrote in a format the importers read (SARIF, an SBOM, OSV results, ...; detected from the content, a ZIP of them too). It may name only the run's repository (an exported file's findings on any other asset are dropped and counted); the branch, commit and pull request come from the verified OIDC token, not from the report. Findings are recorded for the run's gate verdict. For a CTIS report, known lists the report's results that carry a decision the gate honors (false positive, duplicate, accepted risk, approved suppression), by index, so the job can leave them out of its own output: at most 10,000 (lowest indexes first), with known_total counting them all and known_truncated set when some were left out.
+// @Description  A CTIS report from the run, or a file a tool wrote in a format the importers read (SARIF, an SBOM, OSV results, ...; detected from the content, a ZIP of them too). The upload is stored and applied by the ingest worker: the answer is 202 with the upload id and its Location, as soon as the upload is stored. A CTIS report is checked first: it may name only the run's repository (else 400 REPORT_OUT_OF_SCOPE). A tool export is converted when it is applied; its findings on any other asset are dropped and counted. The branch, commit and pull request come from the verified OIDC token, not from the report. GET the Location (with ?wait=10 to wait) for the counts and, for a CTIS report, known: the report's results that carry a decision the gate honors, by index (at most 10,000, lowest first; known_total counts them all). The same body uploaded to the run again is the same upload (Idempotent-Replayed: true). The verdict waits for the run's uploads and fails a run whose upload could not be applied.
 // @Tags         CI
 // @Accept       json
 // @Produce      json
 // @Param        id   path string true "Run ID"
 // @Param        body body CTISIngestRequest true "CTIS report"
-// @Param        Idempotency-Key header string false "Retry key: the same key and body replays the first answer (stored one hour)"
-// @Success      201  {object}  CIUploadResponse
+// @Param        format query string false "mapping:<name>[@<version>]: convert the file through the organization's import mapping (always partial coverage). The version is pinned when the upload is accepted; if that version is gone when the upload is applied, it fails with mapping_unavailable"
+// @Param        Idempotency-Key header string false "Retry key: the same key and body replays the first answer (stored 24 hours); the same key with another body is 422"
+// @Success      202  {object}  CIUploadAccepted
 // @Failure      400  {object}  apierror.Error
 // @Failure      401  {object}  apierror.Error
 // @Failure      404  {object}  apierror.Error
 // @Failure      409  {object}  apierror.Error
 // @Failure      422  {object}  apierror.Error
+// @Failure      503  {object}  apierror.Error
 // @Security     CIRunToken
 // @Router       /ci/runs/{id}/results [post]
 func (h *CIRunnerHandler) UploadResults(w http.ResponseWriter, r *http.Request) {
@@ -303,88 +304,199 @@ func (h *CIRunnerHandler) UploadResults(w http.ResponseWriter, r *http.Request) 
 		apierror.Unauthorized("A CI run token is required").WriteJSON(w)
 		return
 	}
-	if h.idempotentUpload(w, r, run.TenantID.String(), run.ID.String(), func(w http.ResponseWriter, r *http.Request) {
-		h.uploadResults(w, r, run)
-	}) {
-		return
-	}
-	h.uploadResults(w, r, run)
-}
-
-func (h *CIRunnerHandler) uploadResults(w http.ResponseWriter, r *http.Request, run *cirun.Run) {
 	body, err := io.ReadAll(r.Body)
 	if err != nil {
+		var mbe *http.MaxBytesError
+		if errors.As(err, &mbe) {
+			apierror.New(http.StatusRequestEntityTooLarge, "PAYLOAD_TOO_LARGE", "The upload is too large").WriteJSON(w)
+			return
+		}
 		apierror.BadRequest("Failed to read request body").WriteJSON(w)
 		return
 	}
-	if isToolExport(body, r.Header.Get("Content-Type")) {
-		h.uploadExport(w, r, run, body)
+	// format=mapping:<name>[@<version>]: the file goes through the
+	// organization's import mapping (always partial coverage). The
+	// organization is the run's, from its token; the version is pinned here
+	// and the worker applies exactly that version.
+	var pin *cirunapp.MappingPin
+	if f := strings.TrimSpace(r.URL.Query().Get("format")); f != "" {
+		mp, ok, apiErr := resolveMappingFormat(r.Context(), h.mappings, run.TenantID, f)
+		if !ok {
+			apierror.BadRequest("format takes mapping:<name>[@<version>]; other formats are detected from the content").WriteJSON(w)
+			return
+		}
+		if apiErr != nil {
+			apiErr.WriteJSON(w)
+			return
+		}
+		pin = &cirunapp.MappingPin{ID: mp.Mapping.ID.String(), Format: mp.Format()}
+	}
+	// The same body through another mapping (or version) is another upload.
+	keyed := body
+	if pin != nil {
+		keyed = append(append([]byte(nil), body...), "\x00"+pin.ID+"\x00"+pin.Format...)
+	}
+	sum := sha256.Sum256(keyed)
+	digest := hex.EncodeToString(sum[:])
+	claim, handled := h.claimUploadKey(w, r, run, digest)
+	if handled {
 		return
 	}
-	report, ok := decodeCTISReport(body)
-	if !ok {
-		apierror.BadRequest("Invalid JSON request body").WriteJSON(w)
-		return
+	completed := false
+	if claim != nil {
+		defer func() {
+			if !completed {
+				if err := h.idem.Release(context.WithoutCancel(r.Context()), claim); err != nil {
+					h.logger.Warn("ci upload: release idempotency key", "error", logger.SanitizeError(err))
+				}
+			}
+		}()
 	}
-	out, err := h.svc.UploadReport(r.Context(), run, report)
+	rec, err := h.svc.AcceptUpload(r.Context(), run, body, isToolExport(body, r.Header.Get("Content-Type")), pin)
 	if err != nil {
+		if errors.Is(err, cirunapp.ErrInvalidReport) {
+			apierror.BadRequest("Invalid JSON request body").WriteJSON(w)
+			return
+		}
 		h.writeErr(w, "upload CI results", err)
 		return
 	}
+	location := "/api/v1/ci/runs/" + run.ID.String() + "/results/" + rec.UploadID.String()
+	resp, err := json.Marshal(newUploadAccepted(rec, location))
+	if err != nil {
+		apierror.InternalServerError("upload CI results failed").WriteJSON(w)
+		return
+	}
+	if claim != nil {
+		uid := rec.UploadID
+		if err := h.idem.Complete(context.WithoutCancel(r.Context()), claim, digest, http.StatusAccepted, resp, &uid); err != nil {
+			// Stored: the key stays pending until it expires, so a retry
+			// meanwhile is refused (409) rather than accepted twice.
+			h.logger.Error("ci upload: store idempotent answer", "error", logger.SanitizeError(err))
+		}
+		completed = true
+	}
+	w.Header().Set("Location", location)
 	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusCreated)
-	known, total := h.svc.KnownFindings(r.Context(), run, out)
-	if known == nil {
-		known = []cirun.KnownFinding{}
+	if rec.Replayed {
+		w.Header().Set("Idempotent-Replayed", "true")
 	}
-	_ = json.NewEncoder(w).Encode(CIUploadResponse{IngestResponse: newIngestResponse(out), Known: known,
-		KnownTotal: total, KnownTruncated: total > len(known)})
+	w.WriteHeader(http.StatusAccepted)
+	_, _ = w.Write(resp)
 }
 
-// CIUploadResponse is the result of a CI report upload: the ingest counts,
-// and the results of this report that carry a decision the gate honors (a
-// false positive, duplicate, accepted risk or approved suppression), by their
-// index in the report. The job leaves those out of its own output.
-//
-// The response stays small whatever the report's size: known lists at most
-// cirun.MaxKnownInResponse results (lowest indexes first); known_total counts
-// them all and known_truncated says some were left out. A job that reads
-// only known shows the rest of its results, which is safe; the gate judges
-// every finding on the platform either way.
-type CIUploadResponse struct {
-	IngestResponse
-	Known          []cirun.KnownFinding `json:"known"`
-	KnownTotal     int                  `json:"known_total"`
-	KnownTruncated bool                 `json:"known_truncated,omitempty"`
+// CIUploadAccepted is the answer to a stored upload.
+type CIUploadAccepted struct {
+	// UploadID names the upload; Location reads its state.
+	UploadID string `json:"upload_id"`
+	// Status: queued, processing, applied or failed.
+	Status   string `json:"status"`
+	Location string `json:"location"`
 }
 
-// decodeCTISReport accepts {"report": {...}} or a bare report, refusing
-// fields outside the contract.
-//
-// The bounded I-JSON pre-pass runs first: nothing is decoded until the
-// document's item counts are within ingest.CIReportBounds, so a small body
-// cannot expand into gigabytes of decoded structs.
-func decodeCTISReport(body []byte) (*ctis.Report, bool) {
-	if ingest.CheckIJSONBounded(body, protov2.DefaultMaxJSONDepth, ingest.CIReportBounds) != nil {
-		return nil, false
-	}
-	var req CTISIngestRequest
-	dec := json.NewDecoder(bytes.NewReader(body))
-	dec.DisallowUnknownFields()
-	if err := dec.Decode(&req); err == nil && req.Report.Version != "" {
-		return &req.Report, true
-	}
-	var report ctis.Report
-	dec = json.NewDecoder(bytes.NewReader(body))
-	dec.DisallowUnknownFields()
-	if err := dec.Decode(&report); err != nil {
-		return nil, false
-	}
-	if report.Version == "" {
-		report.Version = "1.0"
-	}
-	return &report, true
+func newUploadAccepted(rec *cirunapp.UploadReceipt, location string) CIUploadAccepted {
+	return CIUploadAccepted{UploadID: rec.UploadID.String(), Status: string(rec.Status), Location: location}
 }
+
+// CIUploadStatus is the state of one upload of a run. Once it is applied it
+// carries what the upload did (the counts, the decided results for a CTIS
+// report, the files of a tool export).
+type CIUploadStatus struct {
+	UploadID string `json:"upload_id"`
+	// Status: queued, processing, applied or failed.
+	Status string `json:"status"`
+	// ErrorCode says why a failed upload was not applied (a fixed code:
+	// unreadable, too_large, report_out_of_scope, run_evaluated,
+	// apply_failed, ...).
+	ErrorCode string `json:"error_code,omitempty"`
+	*cirunapp.UploadResult
+}
+
+// UploadStatus handles GET /api/v1/ci/runs/{id}/results/{report_id}
+// @Summary      State of a CI run's upload
+// @Description  queued, processing, applied (with the counts, and for a CTIS report the results that carry a decision the gate honors, by index) or failed (with a fixed error code). wait=N (seconds, at most 10) waits for the upload to finish before answering. An upload of another run is 404.
+// @Tags         CI
+// @Produce      json
+// @Param        id         path  string true  "Run ID"
+// @Param        report_id  path  string true  "Upload ID (upload_id of the upload answer)"
+// @Param        wait       query int    false "Seconds to wait for the upload to finish (at most 10)"
+// @Success      200  {object}  CIUploadStatus
+// @Failure      401  {object}  apierror.Error
+// @Failure      404  {object}  apierror.Error
+// @Security     CIRunToken
+// @Router       /ci/runs/{id}/results/{report_id} [get]
+func (h *CIRunnerHandler) UploadStatus(w http.ResponseWriter, r *http.Request) {
+	run := CIRunFromContext(r.Context())
+	if run == nil {
+		apierror.Unauthorized("A CI run token is required").WriteJSON(w)
+		return
+	}
+	uid, err := shared.IDFromString(r.PathValue("report_id"))
+	if err != nil {
+		apierror.NotFound("CI upload").WriteJSON(w)
+		return
+	}
+	rec, err := h.svc.UploadStatus(r.Context(), run, uid, ingestqueue.ClampWait(r.URL.Query().Get("wait")))
+	if err != nil {
+		if errors.Is(err, shared.ErrNotFound) {
+			apierror.NotFound("CI upload").WriteJSON(w)
+			return
+		}
+		h.writeErr(w, "read CI upload", err)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(CIUploadStatus{UploadID: rec.UploadID.String(), Status: string(rec.Status),
+		ErrorCode: rec.ErrorCode, UploadResult: rec.Result})
+}
+
+// claimUploadKey claims the request's Idempotency-Key in the durable store
+// (tenant + run + route + key). handled is true when the answer was written:
+// a bad key (400), the store down (503, fail closed), a key in flight (409),
+// reused with another body (422), or a replay of the stored answer.
+func (h *CIRunnerHandler) claimUploadKey(w http.ResponseWriter, r *http.Request, run *cirun.Run, digest string) (*idempotency.Claim, bool) {
+	key := r.Header.Get(idempotency.Header)
+	if key == "" {
+		return nil, false
+	}
+	scope, err := idempotency.NewScope(run.TenantID, "run:"+run.ID.String(), ciUploadRoute, key)
+	if err != nil {
+		apierror.BadRequest(err.Error()).WriteJSON(w)
+		return nil, true
+	}
+	if h.idem == nil {
+		h.logger.Error("ci upload: Idempotency-Key sent but no key store is wired")
+		storeUnavailable(w)
+		return nil, true
+	}
+	c, existing, err := h.idem.Claim(r.Context(), scope, time.Minute)
+	if err != nil {
+		h.logger.Error("ci upload: idempotency store", "error", logger.SanitizeError(err))
+		storeUnavailable(w)
+		return nil, true
+	}
+	if existing == nil {
+		return c, false
+	}
+	switch {
+	case existing.State != idempotency.StateDone:
+		writeIdempotencyRefusal(w, true)
+	case existing.RequestSHA256 != digest:
+		writeIdempotencyRefusal(w, false)
+	default:
+		w.Header().Set("Content-Type", "application/json")
+		w.Header().Set("Idempotent-Replayed", "true")
+		if existing.ReceiptID != nil {
+			w.Header().Set("Location", "/api/v1/ci/runs/"+run.ID.String()+"/results/"+existing.ReceiptID.String())
+		}
+		w.WriteHeader(existing.Status)
+		_, _ = w.Write(existing.Response)
+	}
+	return nil, true
+}
+
+// ciUploadRoute is the route a CI upload key is scoped to.
+const ciUploadRoute = "POST /ci/runs/{id}/results"
 
 // CIBaselineDiffRequest lists finding fingerprints to compare.
 type CIBaselineDiffRequest struct {
@@ -486,6 +598,14 @@ func (h *CIRunnerHandler) writeErr(w http.ResponseWriter, what string, err error
 		apierror.New(http.StatusBadRequest, "REPORT_OUT_OF_SCOPE", "A CI run may report only on its own repository.").WriteJSON(w)
 	case errors.As(err, &de) && de.Code == ingest.CodePayloadTooLarge:
 		apierror.New(http.StatusRequestEntityTooLarge, "PAYLOAD_TOO_LARGE", de.Message).WriteJSON(w)
+	case errors.Is(err, cirunapp.ErrUploadsPending):
+		// The verdict waits for the run's uploads; the runner asks again.
+		w.Header().Set("Retry-After", "3")
+		apierror.New(http.StatusServiceUnavailable, "INGEST_PENDING",
+			"The run's uploads are still being applied; ask for the verdict again shortly.").WriteJSON(w)
+	case errors.Is(err, cirunapp.ErrUploadsUnavailable), errors.Is(err, ingestqueue.ErrUnavailable):
+		w.Header().Set("Retry-After", "30")
+		apierror.ServiceUnavailable("CI uploads are not available right now").WriteJSON(w)
 	case errors.Is(err, shared.ErrValidation):
 		apierror.BadRequest("Invalid request: " + sanitizeLogField(err.Error())).WriteJSON(w)
 	case errors.Is(err, shared.ErrConflict):
@@ -532,138 +652,4 @@ func isToolExport(body []byte, contentType string) bool {
 		}
 	}
 	return true
-}
-
-// CIExportResponse is the result of a run's uploaded tool export.
-type CIExportResponse struct {
-	IngestResponse
-	// Files of the upload with their format (a ZIP has several).
-	Files []CIExportFile `json:"files"`
-	// FindingsDroppedOutOfScope counts findings the file filed on an asset
-	// other than the run's repository; they were not ingested.
-	FindingsDroppedOutOfScope int `json:"findings_dropped_out_of_scope"`
-	// VEXStored counts findings of the run's repository a VEX statement was
-	// stored on (a run never closes findings).
-	VEXStored int `json:"vex_stored,omitempty"`
-}
-
-// CIExportFile is one converted file of a run's upload.
-type CIExportFile struct {
-	Name   string           `json:"name"`
-	Format string           `json:"format,omitempty"`
-	Error  *ImportFileError `json:"error,omitempty"`
-}
-
-// onlyAsset is the data scope of a run: its repository asset only.
-type onlyAsset shared.ID
-
-func (o onlyAsset) AssetsInScope(_ context.Context, ids []shared.ID) ([]shared.ID, error) {
-	out := make([]shared.ID, 0, 1)
-	for _, id := range ids {
-		if id == shared.ID(o) {
-			out = append(out, id)
-		}
-	}
-	return out, nil
-}
-
-// uploadExport converts a run's tool export through findingimport.Convert
-// (the same content sniffing, limits and archive checks as the import
-// endpoint) and ingests each converted report for the run.
-func (h *CIRunnerHandler) uploadExport(w http.ResponseWriter, r *http.Request, run *cirun.Run, body []byte) {
-	resp := CIExportResponse{Files: []CIExportFile{}}
-	total := &ingest.Output{}
-	var firstErr error
-	var refusedFile *findingimport.FileError
-	_, refused := findingimport.Convert(r.Context(), findingimport.Upload{
-		Name: "results", Body: bytes.NewReader(body), ReportIDPrefix: run.ID.String(),
-		// Code reports are filed on the run's repository, whatever the file
-		// names; ScopeImported then drops anything still elsewhere.
-		Repository: run.Repository, Branch: run.Branch, CommitSHA: run.CommitSHA,
-	}, func(c findingimport.Converted) {
-		f := CIExportFile{Name: c.Name}
-		if c.Error != nil {
-			f.Error = &ImportFileError{Kind: c.Error.Kind, Message: c.Error.Message, Line: c.Error.Line, Column: c.Error.Column}
-			if refusedFile == nil {
-				refusedFile = c.Error
-			}
-			resp.Files = append(resp.Files, f)
-			return
-		}
-		f.Format = string(c.Result.Format)
-		resp.Files = append(resp.Files, f)
-		if firstErr != nil {
-			return
-		}
-		rep := c.Result.Report
-		if len(rep.Findings) > 0 || len(rep.Dependencies) > 0 {
-			out, dropped, err := h.svc.UploadImported(r.Context(), run, rep)
-			resp.FindingsDroppedOutOfScope += dropped
-			if err != nil {
-				firstErr = err
-				return
-			}
-			addOutput(total, out)
-		}
-		if len(c.Result.VEX) > 0 {
-			if h.vex == nil {
-				return
-			}
-			// Like findings, statements belong to a run that is still
-			// being judged; VEX never closes a finding, so the status of
-			// the authenticated run is enough here.
-			if run.Status == cirun.StatusEvaluated {
-				firstErr = cirun.ErrRunEvaluated
-				return
-			}
-			sum, err := h.vex.ApplyVEXStatements(r.Context(), findingimport.Request{
-				TenantID: run.TenantID, Actor: onlyAsset(run.RepositoryAssetID), SessionID: run.ID.String(),
-			}, c.Result.VEX)
-			if err != nil {
-				firstErr = err
-				return
-			}
-			resp.VEXStored += sum.Stored
-		}
-	})
-	if refused != nil {
-		status := http.StatusBadRequest
-		if refused.Kind == findingimport.KindTooLarge {
-			status = http.StatusRequestEntityTooLarge
-		}
-		apierror.New(status, "UNREADABLE_RESULTS", refused.Message).WriteJSON(w)
-		return
-	}
-	if firstErr != nil {
-		h.writeErr(w, "upload CI results", firstErr)
-		return
-	}
-	if len(resp.Files) == 1 && refusedFile != nil {
-		status := http.StatusBadRequest
-		if refusedFile.Kind == findingimport.KindTooLarge {
-			status = http.StatusRequestEntityTooLarge
-		}
-		apierror.New(status, "UNREADABLE_RESULTS", refusedFile.Message).WithDetails(resp.Files[0]).WriteJSON(w)
-		return
-	}
-	total.ReportID = run.ID.String()
-	resp.IngestResponse = newIngestResponse(total)
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusCreated)
-	_ = json.NewEncoder(w).Encode(resp)
-}
-
-// addOutput sums the counts of one converted file's ingest.
-func addOutput(t, o *ingest.Output) {
-	if o == nil {
-		return
-	}
-	t.AssetsCreated += o.AssetsCreated
-	t.AssetsUpdated += o.AssetsUpdated
-	t.FindingsCreated += o.FindingsCreated
-	t.FindingsUpdated += o.FindingsUpdated
-	t.FindingsSkipped += o.FindingsSkipped
-	t.CVEsCreated += o.CVEsCreated
-	t.CVEsUpdated += o.CVEsUpdated
-	t.Errors = append(t.Errors, o.Errors...)
 }

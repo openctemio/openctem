@@ -1,37 +1,38 @@
 'use client'
 
 import { useTranslation } from '@/context/i18n-provider'
-import { Badge } from '@/components/ui/badge'
+import { PriorityBadge } from '@/components/ui/priority-badge'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
-import { cn } from '@/lib/utils'
 import type { PriorityClass } from '../types/finding.types'
 import { PRIORITY_CLASS_CONFIG } from '../types/finding.types'
 import { PriorityClassSla } from '@/features/sla/components/priority-class-sla'
 
 interface PriorityClassBadgeProps {
-  priorityClass: PriorityClass
+  /** The finding's class; null or missing renders the "not prioritised" dash. */
+  priorityClass: PriorityClass | null | undefined
+  /** Add the class name ("P0 Immediate"). */
+  showWord?: boolean
   showTooltip?: boolean
   /** The finding's asset, so the tooltip states that asset's SLA window. */
   assetId?: string | null
   className?: string
 }
 
+/** PriorityBadge with the class meaning and its SLA window as a tooltip. */
 export function PriorityClassBadge({
   priorityClass,
   showTooltip = true,
+  showWord,
   assetId,
   className,
 }: PriorityClassBadgeProps) {
   const { t } = useTranslation()
-  const config = PRIORITY_CLASS_CONFIG[priorityClass]
-
   const badge = (
-    <Badge className={cn(config.color, config.textColor, 'font-mono font-bold text-xs', className)}>
-      {config.label}
-    </Badge>
+    <PriorityBadge priorityClass={priorityClass} showWord={showWord} className={className} />
   )
 
-  if (!showTooltip) return badge
+  if (!priorityClass || !showTooltip) return badge
+  const config = PRIORITY_CLASS_CONFIG[priorityClass]
 
   return (
     <Tooltip>

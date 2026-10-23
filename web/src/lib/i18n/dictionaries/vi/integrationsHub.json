@@ -38,5 +38,7 @@
   "integrationsHub.status.error": "Lỗi",
   "integrationsHub.status.expired": "Đã hết hạn",
   "integrationsHub.status.pending": "Đang chờ",
-  "integrationsHub.title": "Tích hợp"
+  "integrationsHub.title": "Tích hợp",
+  "integrationsHub.categories.import-mappings.title": "Ánh xạ nhập dữ liệu",
+  "integrationsHub.categories.import-mappings.description": "Chuyển bản xuất CSV, JSON hoặc XML thành phát hiện và tài sản"
 }

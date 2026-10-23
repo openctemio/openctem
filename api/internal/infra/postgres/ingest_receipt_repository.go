@@ -151,7 +151,7 @@ func recordCoverageDecision(ctx context.Context, tx *sql.Tx, d *ingestreceipt.De
 
 // resolveReceiptSource returns the receipt key of a source: a command in a
 // scan run counts toward the run's receipt.
-func resolveReceiptSource(ctx context.Context, tx *sql.Tx, tenantID shared.ID, s ingestreceipt.Source) (ingestreceipt.SourceKind, string, error) {
+func resolveReceiptSource(ctx context.Context, tx rowQuerier, tenantID shared.ID, s ingestreceipt.Source) (ingestreceipt.SourceKind, string, error) {
 	if s.CommandID == nil {
 		if !s.Kind.IsValid() || s.Ref == "" || len(s.Ref) > 128 {
 			return "", "", fmt.Errorf("%w: invalid receipt source", shared.ErrValidation)
@@ -289,12 +289,27 @@ func (r *IngestReceiptRepository) CreateUpload(ctx context.Context, u *ingestrec
 	if u.ActorUserID != nil {
 		actor = u.ActorUserID.String()
 	}
+	status := u.Status
+	if status == "" {
+		status = ingestreceipt.StatusProcessing
+	}
 	_, err := r.db.ExecContext(ctx, `
 		INSERT INTO ingest_receipts (id, tenant_id, actor_user_id, source_kind, source_ref, format, filename_sha256, status)
-		VALUES ($1, $2, $3, 'upload', $6, NULLIF($4, ''), NULLIF($5, ''), 'processing')`,
-		u.ID.String(), u.TenantID.String(), actor, u.Format, u.FilenameSHA256, u.ID.String())
+		VALUES ($1, $2, $3, 'upload', $6, NULLIF($4, ''), NULLIF($5, ''), $7)`,
+		u.ID.String(), u.TenantID.String(), actor, u.Format, u.FilenameSHA256, u.ID.String(), status)
 	if err != nil {
 		return fmt.Errorf("create upload receipt: %w", err)
+	}
+	return nil
+}
+
+// MarkUploadProcessing moves a queued upload receipt to processing (the
+// ingest worker picked it up).
+func (r *IngestReceiptRepository) MarkUploadProcessing(ctx context.Context, tenantID, id shared.ID) error {
+	if _, err := r.db.ExecContext(ctx, `UPDATE ingest_receipts SET status = 'processing', updated_at = now()
+		WHERE tenant_id = $1 AND id = $2 AND source_kind = 'upload' AND status = 'queued'`,
+		tenantID.String(), id.String()); err != nil {
+		return fmt.Errorf("mark upload receipt processing: %w", err)
 	}
 	return nil
 }

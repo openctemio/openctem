@@ -38,8 +38,8 @@ func (s *fakeMaterialStore) RevokeFalsePositive(context.Context, vulnerability.S
 
 type failingPolicies struct{}
 
-func (failingPolicies) EffectiveApprovalPolicy(context.Context, shared.ID) (approvalpolicy.Policy, error) {
-	return approvalpolicy.Policy{}, errors.New("policy unavailable")
+func (failingPolicies) EffectiveApprovalPolicy(context.Context, shared.ID) (approvalpolicy.Policy, string, error) {
+	return approvalpolicy.Policy{}, "", errors.New("policy unavailable")
 }
 
 // Every decision looked at is marked checked, a failed one too: otherwise a

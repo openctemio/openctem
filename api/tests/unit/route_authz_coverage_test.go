@@ -52,6 +52,7 @@ var routeAuthzAllowlist = map[string]string{
 	// CI runner identity (RFC-051): machine credentials, not permissions.
 	"POST /api/v1/ci/oidc/exchange":                    "public: a CI provider's signed OIDC token is the credential, verified against the tenant's trust configurations; per-IP rate limit; every refusal is the same 401",
 	"POST /api/v1/ci/runs/{id}/results":                "CI run token (AuthenticateRun): 15-minute token bound to one run on one repository asset; tenant from the token",
+	"GET /api/v1/ci/runs/{id}/results/{report_id}":     "CI run token (AuthenticateRun): the state of one of the run's own uploads; another run's upload is 404",
 	"POST /api/v1/ci/runs/{id}/baseline-diff":          "CI run token (AuthenticateRun): the run's repository only",
 	"POST /api/v1/ci/runs/{id}/evaluate":               "CI run token (AuthenticateRun): the run's own verdict",
 	"POST /hooks/jira-integrations/{integration_id}":   "public: the URL names one Jira integration and its own secret (X-Hub-Signature, HMAC-SHA256 over the raw body) is the credential, verified before anything is parsed; replayed and stale deliveries refused; per-IP and per-integration limits",
