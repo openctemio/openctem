@@ -80,7 +80,8 @@ describe('WidgetGallery', () => {
       />
     )
     const tabs = screen.getAllByRole('tab')
-    expect(tabs).toHaveLength(6)
+    expect(tabs).toHaveLength(5)
+    expect(screen.queryByRole('tab', { name: 'Advanced' })).toBeNull()
     expect(tabs.filter((t) => t.getAttribute('tabindex') !== '-1').length).toBeLessThanOrEqual(1)
     expect(screen.getByRole('tablist').className).toContain('overflow-x-auto')
     expect(screen.getByRole('tablist').className).not.toContain('flex-wrap')
@@ -91,5 +92,63 @@ describe('WidgetGallery', () => {
     await userEvent.click(tabs[0])
     await userEvent.keyboard('{ArrowRight}')
     expect(tabs[1]).toHaveFocus()
+  })
+
+  it('does not request a loaded preview again when a tab is switched back', async () => {
+    preview.mockReset()
+    preview.mockResolvedValue({
+      id: 'x',
+      index: 0,
+      widget_type: 'metric',
+      state: 'ready',
+      shape: 'scalar',
+      scalar: { value: 1 },
+    })
+    render(
+      <WidgetGallery
+        open
+        onOpenChange={() => {}}
+        taken={new Set()}
+        onAddMetric={() => {}}
+        onAddNote={() => {}}
+      />
+    )
+    await waitFor(() => expect(preview).toHaveBeenCalledTimes(PREVIEWS_PER_OPEN))
+    await userEvent.click(screen.getByRole('tab', { name: 'Exposure' }))
+    await screen.findByTestId('gallery-card-findings.open')
+    await userEvent.click(screen.getByRole('tab', { name: 'All' }))
+    await userEvent.click(screen.getByRole('tab', { name: 'Remediation and SLA' }))
+    await userEvent.click(screen.getByRole('tab', { name: 'All' }))
+    expect(preview).toHaveBeenCalledTimes(PREVIEWS_PER_OPEN)
+    expect(screen.getAllByText('Add it to see your figures.')).toHaveLength(5)
+  })
+
+  it('draws the preview without a nested bordered frame, and keeps the note card in All', async () => {
+    preview.mockReset()
+    preview.mockResolvedValue({
+      id: 'x',
+      index: 0,
+      widget_type: 'metric',
+      state: 'ready',
+      shape: 'scalar',
+      scalar: { value: 1 },
+    })
+    render(
+      <WidgetGallery
+        open
+        onOpenChange={() => {}}
+        taken={new Set()}
+        onAddMetric={() => {}}
+        onAddNote={() => {}}
+      />
+    )
+    await waitFor(() => expect(preview).toHaveBeenCalled())
+    const card = screen.getByTestId('gallery-card-findings.open')
+    await waitFor(() => expect(card.querySelector('[class*="pointer-events-none"]')).not.toBeNull())
+    await waitFor(() => expect(preview).toHaveBeenCalledTimes(PREVIEWS_PER_OPEN))
+    expect(card.querySelectorAll('[class*="border"]').length).toBe(
+      card.className.includes('border') ? 1 : 0
+    )
+    expect(screen.getByText('Text for context, links or instructions.')).toBeInTheDocument()
   })
 })

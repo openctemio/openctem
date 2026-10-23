@@ -16,6 +16,7 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { Switch } from '@/components/ui/switch'
+import { useTranslation } from '@/context/i18n-provider'
 import type { ScanWorkflowStep } from '@/lib/api'
 import type { Capability, CapabilityParam, GraphIssue } from '../lib/capability-graph'
 import { paramValue, selectionOf, toolsMissingParams, withParam } from '../lib/step-settings'
@@ -43,6 +44,7 @@ export function NodeInspector({
   onChange: (step: ScanWorkflowStep) => void
   onClose: () => void
 }) {
+  const { t } = useTranslation()
   const mode = selectionOf(step)
   const missing = capability ? toolsMissingParams(capability, step.config) : {}
   // Settings outside the capability contract (a pinned tool's own keys,
@@ -54,7 +56,7 @@ export function NodeInspector({
 
   return (
     <aside
-      aria-label={`Settings of ${step.name}`}
+      aria-label={t('workflowStages.inspector.aria', 'Settings of {name}', { name: step.name })}
       className="flex w-80 shrink-0 flex-col border-s bg-background"
     >
       <div className="flex items-start justify-between gap-2 border-b px-4 py-3">
@@ -71,10 +73,17 @@ export function NodeInspector({
               </Badge>
             </p>
           ) : (
-            <p className="text-xs text-muted-foreground">No capability contract</p>
+            <p className="text-xs text-muted-foreground">
+              {t('workflowStages.inspector.noContract')}
+            </p>
           )}
         </div>
-        <Button variant="ghost" size="icon" onClick={onClose} aria-label="Close settings">
+        <Button
+          variant="ghost"
+          size="icon"
+          onClick={onClose}
+          aria-label={t('workflowStages.inspector.close')}
+        >
           <X className="h-4 w-4" />
         </Button>
       </div>
@@ -82,7 +91,7 @@ export function NodeInspector({
       <ScrollArea className="flex-1">
         <div className="space-y-5 px-4 py-4">
           {issues.length > 0 && (
-            <ul className="space-y-2" aria-label="Problems of this step">
+            <ul className="space-y-2" aria-label={t('workflowStages.inspector.problems')}>
               {issues.map((is, i) => (
                 <li
                   key={`${is.code}-${i}`}
@@ -99,8 +108,11 @@ export function NodeInspector({
           )}
           {!capability ? (
             <p className="text-xs text-muted-foreground">
-              {step.tool || 'This tool'} has no capability contract: it runs with its own settings
-              on the scan&apos;s targets and takes no data from earlier steps.
+              {t(
+                'workflowStages.inspector.noContractBody',
+                "{tool} has no capability contract: it runs with its own settings on the scan's targets and takes no data from earlier steps.",
+                { tool: step.tool || t('workflowStages.inspector.thisTool') }
+              )}
             </p>
           ) : (
             <>
@@ -114,10 +126,12 @@ export function NodeInspector({
               />
               <section className="space-y-3">
                 <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                  Settings
+                  {t('workflowStages.inspector.settings')}
                 </h3>
                 {capability.params.length === 0 && (
-                  <p className="text-xs text-muted-foreground">This capability has no settings.</p>
+                  <p className="text-xs text-muted-foreground">
+                    {t('workflowStages.inspector.noSettings')}
+                  </p>
                 )}
                 {capability.params.map((p) => (
                   <ParamField
@@ -134,10 +148,10 @@ export function NodeInspector({
               {extra.length > 0 && (
                 <section className="space-y-2">
                   <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                    Other settings
+                    {t('workflowStages.inspector.otherSettings')}
                   </h3>
                   <p className="text-xs text-muted-foreground">
-                    Not part of this capability: only a pinned tool reads them.
+                    {t('workflowStages.inspector.otherSettingsHint')}
                   </p>
                   <ul className="space-y-1">
                     {extra.map(([k, v]) => (
@@ -151,12 +165,14 @@ export function NodeInspector({
                             variant="ghost"
                             size="sm"
                             className="ms-auto h-6 px-2 text-xs"
-                            aria-label={`Remove ${k}`}
+                            aria-label={t('workflowStages.inspector.removeAria', 'Remove {key}', {
+                              key: k,
+                            })}
                             onClick={() =>
                               onChange({ ...step, config: withParam(step.config, k, undefined) })
                             }
                           >
-                            Remove
+                            {t('workflowStages.inspector.remove')}
                           </Button>
                         )}
                       </li>
@@ -169,12 +185,12 @@ export function NodeInspector({
 
           <section className="space-y-3">
             <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-              Run
+              {t('workflowStages.inspector.run')}
             </h3>
             <NumberField
               id={`${step.id}-timeout`}
-              label="Timeout (seconds)"
-              help="60 to 86400."
+              label={t('workflowStages.inspector.timeout')}
+              help={t('workflowStages.inspector.timeoutHelp')}
               value={step.timeout_seconds ?? 3600}
               min={60}
               max={86400}
@@ -199,6 +215,7 @@ function ParamField({
   readOnly?: boolean
   onChange: (value: unknown) => void
 }) {
+  const { t } = useTranslation()
   const [error, setError] = useState<string | undefined>()
   const id = `param-${param.name}`
   const set = (raw: string | boolean | string[]) => {
@@ -258,7 +275,7 @@ function ParamField({
           onValueChange={(v) => set(v)}
         >
           <SelectTrigger id={id} className="h-8 text-xs">
-            <SelectValue placeholder="Default" />
+            <SelectValue placeholder={t('workflowStages.inspector.default')} />
           </SelectTrigger>
           <SelectContent>
             {param.enum.map((opt) => (
@@ -288,7 +305,9 @@ function ParamField({
         defaultValue={shown}
         disabled={readOnly}
         inputMode={param.type === 'integer' ? 'numeric' : undefined}
-        placeholder={param.type === 'port_list' ? '80,443,8000-8100' : 'Default'}
+        placeholder={
+          param.type === 'port_list' ? '80,443,8000-8100' : t('workflowStages.inspector.default')
+        }
         aria-invalid={!!error}
         aria-describedby={`${id}-help`}
         className="h-8 text-xs"
@@ -298,18 +317,18 @@ function ParamField({
         id={`${id}-help`}
         className={error ? 'text-xs text-destructive' : 'text-xs text-muted-foreground'}
       >
-        {error ?? describeParam(param)}
+        {error ?? describeParam(param, t)}
       </p>
     </div>
   )
 }
 
-function describeParam(p: CapabilityParam): string {
+function describeParam(p: CapabilityParam, t: ReturnType<typeof useTranslation>['t']): string {
   const range =
     p.min !== undefined && p.max !== undefined
-      ? ` (${p.min} to ${p.max})`
+      ? t('workflowStages.inspector.range', ' ({min} to {max})', { min: p.min, max: p.max })
       : p.type === 'string_list'
-        ? ' (comma-separated)'
+        ? t('workflowStages.inspector.commaSeparated')
         : ''
   return `${p.description}${range}`
 }
@@ -333,6 +352,7 @@ function NumberField({
   readOnly?: boolean
   onChange: (n: number | undefined) => void
 }) {
+  const { t } = useTranslation()
   const [error, setError] = useState<string | undefined>()
   return (
     <div className="space-y-1">
@@ -351,7 +371,7 @@ function NumberField({
         onBlur={(e) => {
           const n = Number(e.target.value)
           if (!Number.isInteger(n) || n < min || n > max) {
-            setError(`${min} to ${max}.`)
+            setError(t('workflowStages.inspector.rangeError', '{min} to {max}.', { min, max }))
             return
           }
           setError(undefined)

@@ -52,6 +52,7 @@ tests that cover the console's most user-visible flows.
 | `28-dashboard-edit-chrome.spec.ts`          | Dashboard edit mode: widget headers fit at 1440px and 390px                        |
 | `29-dashboard-add-widget-sheet.spec.ts`     | Add a widget sheet: nothing past its edges, one-row tabs                           |
 | `30-drawer-text-layout.spec.ts`             | Drawers: no word broken over two lines, one size per meta line, nothing under 12px |
+| `30-findings-triage-and-views.spec.ts`      | Triage button, always-on Priority, columns in the URL                              |
 | `31-assets-quick-views.spec.ts`             | Sidebar quick views under Assets (lenses), no lens/type pills                      |
 
 Each spec is designed to:

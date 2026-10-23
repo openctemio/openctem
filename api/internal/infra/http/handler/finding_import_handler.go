@@ -61,7 +61,13 @@ type FindingImportHandler struct {
 	// durable Idempotency-Key store (nil: a request with a key is refused).
 	receipts IngestReceiptReader
 	idem     idempotency.Store
+	// mappings resolves format=mapping:<ref> (nil: such a format is
+	// refused).
+	mappings ImportMappingResolver
 }
+
+// SetMappingResolver wires the organization's import mappings.
+func (h *FindingImportHandler) SetMappingResolver(m ImportMappingResolver) { h.mappings = m }
 
 // SetReceiptStores wires the receipt reader and the Idempotency-Key store.
 func (h *FindingImportHandler) SetReceiptStores(receipts IngestReceiptReader, idem idempotency.Store) {
@@ -266,7 +272,13 @@ func (h *FindingImportHandler) Import(w http.ResponseWriter, r *http.Request) { 
 		req.ActorUserID = &uid
 	}
 	if f := strings.TrimSpace(q.Get("format")); f != "" {
-		if !importer.Format(f).IsValid() {
+		if mp, ok, apiErr := resolveMappingFormat(r.Context(), h.mappings, tid, f); ok {
+			if apiErr != nil {
+				apiErr.WriteJSON(w)
+				return
+			}
+			req.Mapping, req.Format = mp, importer.Format(mp.Format())
+		} else if !importer.Format(f).IsValid() {
 			apierror.BadRequest("unknown format; supported: " + strings.Join(supportedFormats(), ", ")).WriteJSON(w)
 			return
 		}
@@ -283,6 +295,10 @@ func (h *FindingImportHandler) Import(w http.ResponseWriter, r *http.Request) { 
 
 	if apiErr := h.parseCoverage(r, &req); apiErr != nil {
 		apiErr.WriteJSON(w)
+		return
+	}
+	if req.Mapping != nil && req.Coverage.Full {
+		apierror.BadRequest("an import through a mapping is always partial coverage; coverage=full is not accepted").WriteJSON(w)
 		return
 	}
 

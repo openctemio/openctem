@@ -16,4 +16,14 @@ describe('ApprovalFindingLink', () => {
     expect(screen.getByRole('link', { name: 'Untitled finding' })).toBeInTheDocument()
     expect(document.body.textContent).not.toContain('dcdc3001')
   })
+
+  it('renders a scanner title as isolated plain text', () => {
+    // A right-to-left override inside a title must not reorder the text
+    // around it, and control characters are stripped for display.
+    render(<ApprovalFindingLink findingId={ID} findingTitle={'abc\u202Eexe.txt\u0007'} />)
+    const link = screen.getByRole('link')
+    expect(link).toHaveAttribute('dir', 'auto')
+    expect(link.className).toContain('[unicode-bidi:isolate]')
+    expect(link.textContent).not.toContain('\u0007')
+  })
 })
