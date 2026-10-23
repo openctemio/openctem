@@ -29,6 +29,7 @@ API or the web console, and lists every key below.
 | `Effective(tenant)` | limits with usage, denied features, `over_limit`, `applies` |
 | `NotEntitled(tenant)` | the modules the organization may not use (module gate, jobs, console) |
 | `Allowed(tenant, feature)` | a named feature below module level |
+| `Usable(tenant, feature)` | a named feature that may keep running: allowed, or inside its read-only grace |
 | `CheckOrgsPerUser(user)` | the per-person cap on self-service organizations |
 | `ApplyControlPlane(...)` | the control plane's write (internal API) |
 
@@ -92,8 +93,29 @@ The limit is 5 seats; 7 are in use. Remove some, or ask your administrator for m
 
 Deniable features are the non-core top-level modules (by module id) plus
 the named features below module level, each checked with `Allowed` at its
-own seam. There are no named features yet. Core modules can never be
-denied.
+own seam. Core modules can never be denied.
+
+The named features are the sign-in features of research/232 D16. Security
+controls (MFA, passkeys, session policy, audit, break-glass) are never
+features: they are free everywhere. Like every feature, these are allowed
+unless the operator or a source (the hosted control plane) denies them, so a
+self-managed instance keeps all of them; the hosted service's control plane
+decides which organizations get them.
+
+| Feature | Seam (refused when denied) | After a downgrade |
+|---|---|---|
+| `sso.connections` | creating or changing a SAML or OIDC connection: console PUT/POST, a pending change's submission and its approval (`SSOService.requireConnections`) | sign-in through a connection already configured keeps working (never a lock-out); deleting one always works |
+| `sso.enforcement` | turning SSO enforcement on (`TenantService.UpdateSecuritySettings`) | enforcement stays during the grace, then the `sso-enforcement-entitlement` controller (hourly) turns it off and tells the owners and administrators: members sign in with a password (and 2FA where required) again |
+| `scim` | minting a SCIM token (`TokenService.Mint`) and the SCIM API (`middleware.SCIMFeatureGate`, after the token is authenticated) | existing tokens keep working during the grace (`Usable`), then 403; no new token |
+| `sso.group_links` | changing SCIM group to role mappings (`GroupService.SetRoleMappings`) | existing mappings keep applying |
+| `ldap` | reserved: there is no LDAP sign-in yet | — |
+
+`Usable(tenant, feature)` answers "may it keep running": allowed, or denied
+less than the grace period ago. The grace of a named feature is a row in
+`tenant_module_grace` like a module's (the key is a module id or a named
+feature). A refused change answers
+`403 FEATURE_NOT_INCLUDED`, or `503` when the limits could not be read; every
+seam fails closed.
 
 ### Counting usage
 
