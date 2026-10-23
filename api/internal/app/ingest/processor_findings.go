@@ -3,6 +3,7 @@ package ingest
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"sort"
 	"strconv"
@@ -684,19 +685,26 @@ func (p *FindingProcessor) processBatch(
 		if len(existingNewData) > 0 {
 			enriched, err := p.repo.EnrichBatchByFingerprints(ctx, tenantID, existingNewData, scanID)
 			if err != nil {
-				// Graceful fallback: if enrichment fails, fall back to scan-id-only update
-				// Logged and reported on the ingest result: the new scanner
-				// data of these findings is not stored, only the sighting.
+				// Graceful fallback: the findings whose enrichment did not
+				// land get a sighting-only update. Logged and reported on the
+				// ingest result: their new scanner data is not stored. Only
+				// the ones not written are retried, so a finding the batch
+				// already counted is not counted (or rewritten) twice.
+				fallbackFPs := make([]string, 0, len(existingNewData))
+				var incomplete *vulnerability.EnrichIncompleteError
+				if errors.As(err, &incomplete) {
+					fallbackFPs = append(fallbackFPs, incomplete.Fingerprints...)
+				} else {
+					for _, f := range existingNewData {
+						fallbackFPs = append(fallbackFPs, f.Fingerprint())
+					}
+				}
+				output.FindingsUpdated = int(enriched)
 				p.logger.Error("enrichment failed, falling back to scan-id-only update",
 					"error", err,
-					"count", len(existingNewData),
+					"count", len(fallbackFPs),
 				)
-				addError(output, fmt.Sprintf("enrich %d existing findings failed, only their sighting was recorded: %v", len(existingNewData), err))
-				// Collect fingerprints from failed enrichment for fallback
-				fallbackFPs := make([]string, 0, len(existingNewData))
-				for _, f := range existingNewData {
-					fallbackFPs = append(fallbackFPs, f.Fingerprint())
-				}
+				addError(output, fmt.Sprintf("enrich %d existing findings failed, only their sighting was recorded: %v", len(fallbackFPs), err))
 				unenrichedFingerprints = append(unenrichedFingerprints, fallbackFPs...)
 			} else {
 				output.FindingsUpdated = int(enriched)

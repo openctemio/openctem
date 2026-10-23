@@ -38,9 +38,9 @@ name: CLA
 # block the queue.
 
 on:
-  pull_request_target: # security-review: allow GHA-PR-TARGET no pull request code is checked out or run; see the safety notes above
+  pull_request_target: # security-review: allow GHA-PR-TARGET no pull request code is checked out or run; see the safety notes above; zizmor: ignore[dangerous-triggers]
     types: [opened, synchronize, reopened]
-  issue_comment:
+  issue_comment: # zizmor: ignore[dangerous-triggers] comment text is only compared in expressions, never run
     types: [created]
   merge_group:
     types: [checks_requested]

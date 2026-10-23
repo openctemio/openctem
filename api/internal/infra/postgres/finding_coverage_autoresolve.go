@@ -176,6 +176,10 @@ func (r *FindingRepository) coverageStale(ctx context.Context, tenantID shared.I
 	if seen == nil {
 		seen = []string{}
 	}
+	receipt, err := r.commandAbsenceReceipt(ctx, tenantID, q)
+	if err != nil {
+		return nil, 0, err
+	}
 	rows, err := r.db.QueryContext(ctx, `
 		WITH open_findings AS (
 			SELECT f.id, f.tenant_id, f.scan_id
@@ -191,6 +195,8 @@ func (r *FindingRepository) coverageStale(ctx context.Context, tenantID shared.I
 		SELECT o.id::text, COUNT(*) OVER () AS open_total,
 			(
 				NOT (COALESCE(o.scan_id, '') = ANY($4))
+				-- Reported by this run: an action row on its receipt.
+				AND NOT `+receiptSeenSQL("o", "$7")+`
 				AND EXISTS (
 					SELECT 1
 					FROM ingest_reports ir
@@ -206,7 +212,7 @@ func (r *FindingRepository) coverageStale(ctx context.Context, tenantID shared.I
 				)
 			) AS stale
 		FROM open_findings o`,
-		tenantID.String(), pq.Array(assets), q.ToolName, pq.Array(seen), q.ProfileID, secrets)
+		tenantID.String(), pq.Array(assets), q.ToolName, pq.Array(seen), q.ProfileID, secrets, receipt.String())
 	if err != nil {
 		return nil, 0, fmt.Errorf("coverage stale findings: %w", err)
 	}
@@ -350,16 +356,28 @@ func (r *FindingRepository) CoverageUntouched(ctx context.Context, tenantID shar
 		join = `JOIN repository_branches rb ON rb.id = f.branch_id AND rb.is_default = true`
 		scope = `AND COALESCE(f.last_seen_tool, f.tool_name) = $3`
 	}
+	// Untouched is counted against the receipt like the candidates; an
+	// incomplete receipt closed nothing, so the scan_id test alone counts.
+	receipt, err := r.commandAbsenceReceipt(ctx, tenantID, q)
+	notSeen := ``
+	args := []any{tenantID.String(), pq.Array(assets), q.ToolName, pq.Array(seen)}
+	switch {
+	case err == nil:
+		notSeen = `AND NOT ` + receiptSeenSQL("f", "$5")
+		args = append(args, receipt.String())
+	case !errors.Is(err, ingestreport.ErrReceiptIncomplete):
+		return 0, err
+	}
 	var n int
-	err := r.db.QueryRowContext(ctx, `
+	err = r.db.QueryRowContext(ctx, `
 		SELECT count(*)
 		FROM findings f `+join+`
 		WHERE f.tenant_id = $1
 			AND f.asset_id = ANY($2) `+scope+`
 			AND f.status IN `+autoResolveFromSQL+`
 			AND f.source NOT IN `+coverageProtectedSources+`
-			AND NOT (COALESCE(f.scan_id, '') = ANY($4))`,
-		tenantID.String(), pq.Array(assets), q.ToolName, pq.Array(seen)).Scan(&n)
+			AND NOT (COALESCE(f.scan_id, '') = ANY($4)) `+notSeen,
+		args...).Scan(&n)
 	if err != nil {
 		return 0, fmt.Errorf("coverage untouched findings: %w", err)
 	}

@@ -23,6 +23,8 @@ vi.mock('../../../api/use-finding-identity', () => ({
   }),
 }))
 vi.mock('../../../api/use-finding-groups', () => ({ useRelatedCVEs: () => ({ data: undefined }) }))
+// The "last seen in" line fetches receipts on its own (receipt-summary.test.tsx).
+vi.mock('../../receipt-summary', () => ({ FindingLastSeenIn: () => null }))
 
 const { OverviewTab } = await import('../overview-tab')
 
