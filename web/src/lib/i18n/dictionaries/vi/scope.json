@@ -46,6 +46,8 @@
   "scope.error.PUBLIC_SUFFIX": "Hậu tố công cộng (như com.vn hay azurewebsites.net) không thể là một mục phạm vi. Hãy nhập tên miền do tổ chức bạn đăng ký.",
   "scope.error.DENY_LIST": "Nền tảng không cho phép mục tiêu này làm mục phạm vi.",
   "scope.error.CIDR_TOO_LARGE": "Dải địa chỉ này lớn hơn mức nền tảng cho phép. Hãy chia thành các dải nhỏ hơn.",
+  "scope.error.SCOPE_WILDCARD_NOT_ALLOWED": "Loại mục phạm vi này không nhận ký tự đại diện. Hãy nhập một giá trị cụ thể, hoặc thêm một tên miền như *.example.com.",
+  "scope.error.SCOPE_TARGET_TYPE_RETIRED": "Loại này không thể là một mục phạm vi. Hãy thêm tên miền, địa chỉ hoặc mạng đang phục vụ nó.",
   "scope.error.ONE_OFF_TOO_LONG": "Mục tạm thời không thể kéo dài hơn mức tổ chức bạn cho phép.",
   "scope.error.ONE_OFF_DISABLED": "Tổ chức của bạn không cho phép mục phạm vi tạm thời.",
   "scope.error.REASON_REQUIRED": "Hãy nêu lý do được phép quét mục tiêu này. Lý do được lưu trong nhật ký kiểm toán.",

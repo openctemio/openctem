@@ -141,6 +141,10 @@ export const SCOPE_ERROR_TEXT = {
   DENY_LIST: 'The platform does not allow this target as a scope entry.',
   CIDR_TOO_LARGE:
     'This address range is larger than the platform allows. Split it into smaller ranges.',
+  SCOPE_WILDCARD_NOT_ALLOWED:
+    'This kind of scope entry takes no wildcard. Name one exact value, or add a domain such as *.example.com.',
+  SCOPE_TARGET_TYPE_RETIRED:
+    'This type cannot be a scope entry. Add the domain, address or network that serves it.',
   ONE_OFF_TOO_LONG: 'A one-off entry cannot last longer than your organization allows.',
   ONE_OFF_DISABLED: 'Your organization does not allow one-off scope entries.',
   REASON_REQUIRED: 'Say why this target may be probed. The reason is kept in the audit log.',

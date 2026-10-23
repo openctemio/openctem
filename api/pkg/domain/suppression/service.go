@@ -703,11 +703,14 @@ func (s *Service) DeleteRule(ctx context.Context, tenantID, ruleID, deletedBy sh
 		return err
 	}
 
-	// Record audit before deletion
-	_ = s.repo.RecordAudit(ctx, ruleID, "deleted", &deletedBy, map[string]any{
+	// Record audit before deletion, and fail closed: a rule is never deleted
+	// without the row that says who deleted it.
+	if err := s.repo.RecordAudit(ctx, ruleID, "deleted", &deletedBy, map[string]any{
 		"name":   rule.Name(),
 		"status": string(rule.Status()),
-	})
+	}); err != nil {
+		return fmt.Errorf("record suppression rule deletion: %w", err)
+	}
 
 	// Delete lifts the rule's suppressions in the same transaction: the
 	// findings it hid return to the open backlog unless another active rule
