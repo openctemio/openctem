@@ -126,19 +126,41 @@ test('every dashboard page stays within its request budget', async ({ page }) =>
   expect(problems, problems.join('\n')).toEqual([])
 })
 
-test('findings: one stats response, and a tab switch sends none', async ({ page }) => {
+test('findings: one stats and one quick-views response, and a view switch sends no stats', async ({
+  page,
+}) => {
   const requests = await apiRequestsOfLoad(page, '/findings')
   const stats = requests.filter((r) => r.includes('/api/v1/findings/stats'))
   expect(stats, requests.join('\n')).toHaveLength(1)
+  const quickViews = requests.filter((r) => r.includes('/api/v1/findings/quick-views'))
+  expect(quickViews, requests.join('\n')).toHaveLength(1)
+  // The source catalog loads when the Source filter opens, not with the page.
+  expect(requests.filter((r) => r.includes('/api/v1/finding-sources'))).toHaveLength(0)
 
   const afterSwitch: string[] = []
   const listen = (req: Request) => {
     if (req.url().includes('/api/v1/findings/stats')) afterSwitch.push(req.url())
   }
   page.on('request', listen)
-  await page.getByRole('radio', { name: /^Fixed/ }).click()
-  await expect(page).toHaveURL(/state=fixed/)
+  await page.getByRole('link', { name: /^Closed/ }).click()
+  await expect(page).toHaveURL(/state=closed/)
   await page.waitForTimeout(QUIET_MS)
   page.off('request', listen)
   expect(afterSwitch).toEqual([])
+})
+
+test('findings: Refresh sends each request once', async ({ page }) => {
+  await apiRequestsOfLoad(page, '/findings')
+  const seen: string[] = []
+  const listen = (req: Request) => {
+    if (isApi(req) && req.method() === 'GET')
+      seen.push(new URL(req.url()).pathname + new URL(req.url()).search)
+  }
+  page.on('request', listen)
+  await page.getByRole('button', { name: 'Refresh' }).click()
+  await page.waitForTimeout(QUIET_MS)
+  page.off('request', listen)
+  const counts = new Map<string, number>()
+  for (const r of seen) counts.set(r, (counts.get(r) ?? 0) + 1)
+  expect([...counts].filter(([, n]) => n > 1)).toEqual([])
 })

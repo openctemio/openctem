@@ -7,6 +7,7 @@ import (
 	"io"
 	"mime/multipart"
 	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
 	"time"
@@ -21,12 +22,13 @@ import (
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
 	"github.com/openctemio/openctem/api/pkg/apierror"
 	auditdom "github.com/openctemio/openctem/api/pkg/domain/audit"
+	"github.com/openctemio/openctem/api/pkg/domain/idempotency"
 	"github.com/openctemio/openctem/api/pkg/domain/permission"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/logger"
 )
 
-// Upload limits of POST /findings/import.
+// Upload limits of POST /findings/imports.
 const (
 	// MaxFindingImportBody bounds the whole multipart body.
 	MaxFindingImportBody = 110 << 20
@@ -41,17 +43,29 @@ const (
 	maxAuditedImportIDs = 100
 )
 
-// FindingImportHandler serves POST /api/v1/findings/import.
+// FindingImportHandler serves POST /api/v1/findings/imports.
 type FindingImportHandler struct {
 	svc *findingimport.Service
 	// actorOf resolves the uploader's data scope: nil is unrestricted.
 	actorOf func(ctx context.Context, tenantID shared.ID) (ingest.ActorScope, error)
-	audit   *auditapp.AuditService
-	logger  *logger.Logger
+	// coverageOf resolves the uploader's visibility for a full-coverage
+	// declaration (nil func: the declaration falls back to actorOf).
+	coverageOf func(ctx context.Context, tenantID shared.ID) (ingest.ActorScope, error)
+	audit      *auditapp.AuditService
+	logger     *logger.Logger
 	// tempDir is where an uploaded archive is spooled ("" = os.TempDir()).
 	tempDir string
 	// maxBody bounds the request body (0 = MaxFindingImportBody).
 	maxBody int64
+	// receipts reads the upload's receipt for the response; idem is the
+	// durable Idempotency-Key store (nil: a request with a key is refused).
+	receipts IngestReceiptReader
+	idem     idempotency.Store
+}
+
+// SetReceiptStores wires the receipt reader and the Idempotency-Key store.
+func (h *FindingImportHandler) SetReceiptStores(receipts IngestReceiptReader, idem idempotency.Store) {
+	h.receipts, h.idem = receipts, idem
 }
 
 // NewFindingImportHandler creates the handler. Without a data scope
@@ -59,6 +73,17 @@ type FindingImportHandler struct {
 func NewFindingImportHandler(svc *findingimport.Service, ds *datascope.Enforcer, audit *auditapp.AuditService, log *logger.Logger) *FindingImportHandler {
 	h := &FindingImportHandler{svc: svc, audit: audit, logger: log}
 	if ds != nil {
+		// A full-coverage declaration names assets: each must be visible to
+		// the uploader, so an unrestricted member cannot close the findings
+		// of a private program asset hidden from them (nil: an
+		// administrator, every asset).
+		h.coverageOf = func(ctx context.Context, tenantID shared.ID) (ingest.ActorScope, error) {
+			scope, err := ds.Resolve(ctx, tenantID)
+			if err != nil || scope == nil {
+				return nil, err
+			}
+			return uploaderScope{enforcer: ds, scope: scope}, nil
+		}
 		h.actorOf = func(ctx context.Context, tenantID shared.ID) (ingest.ActorScope, error) {
 			scope, err := ds.Resolve(ctx, tenantID)
 			if err != nil || !scope.Restricted() {
@@ -102,7 +127,10 @@ func (h *FindingImportHandler) SetActorResolver(fn func(ctx context.Context, ten
 
 // FindingImportResponse is the result of an import or a preview.
 type FindingImportResponse struct {
-	SessionID string `json:"session_id"`
+	// Receipt is what the upload did to the organization's findings (absent
+	// in a preview).
+	Receipt   *ReceiptResponse `json:"receipt,omitempty"`
+	SessionID string           `json:"session_id"`
 	// ReceiptID is the upload's receipt (empty in a preview): what the
 	// upload did to the organization's findings.
 	ReceiptID string `json:"receipt_id,omitempty"`
@@ -183,25 +211,32 @@ type ImportIngestSummary struct {
 	Errors                  []string `json:"errors,omitempty"`
 }
 
-// Import handles POST /api/v1/findings/import.
+// Import handles POST /api/v1/findings/imports.
 //
 // @Summary      Import results from another tool
-// @Description  Multipart upload of an exported file (Nessus .nessus, Qualys detection XML with an optional KnowledgeBase part, CycloneDX, SPDX, OSV results, CSAF, OpenVEX, DefectDojo Generic Findings JSON) or a ZIP of them. The format is detected from the content. With dry_run=true the files are only parsed and counted. The import runs with the uploader's rights: findings land only on assets in the uploader's data scope, nothing is auto-resolved, and a VEX not_affected statement only requests a false positive (a pending request that a second person decides under the approval policy), and only under INGEST_VEX=enforce for an uploader holding findings:approve. Send the knowledge_base part before the file part.
+// @Description  Multipart upload of an exported file (Nessus .nessus, Qualys detection XML with an optional KnowledgeBase part, CycloneDX, SPDX, OSV results, CSAF, OpenVEX, DefectDojo Generic Findings JSON) or a ZIP of them. The format is detected from the content. A committed upload answers 201 with Location and its receipt (what it did to the organization's findings); with dry_run=true the files are only parsed and counted (200). The import runs with the uploader's rights: findings land only on assets in the uploader's data scope, nothing is closed unless the upload declares coverage=full for explicit asset_id values (then the open findings of each file's tool on those assets that the upload did not report are closed, with the same guards as a covered scan), and a VEX not_affected statement only requests a false positive (a pending request that a second person decides under the approval policy), and only under INGEST_VEX=enforce for an uploader holding findings:approve. Send the knowledge_base part before the file part. An Idempotency-Key header (1-128 printable ASCII) makes a retry of the same files return the first answer (Idempotent-Replayed: true); the same key with other files is 422, while the first request runs 409, and when the key store is unavailable 503 (nothing imported).
 // @Tags         Findings
 // @Accept       multipart/form-data
 // @Produce      json
-// @Param        file            formData  file    true   "Exported file or ZIP archive"
-// @Param        knowledge_base  formData  file    false  "Qualys KnowledgeBase XML (before file)"
-// @Param        dry_run         query     bool    false  "Parse and count only"
-// @Param        format          query     string  false  "Force the format of a single file"
-// @Param        min_severity    query     string  false  "Drop findings below: info, low, medium, high, critical"
-// @Success      200  {object}  FindingImportResponse
+// @Param        file             formData  file    true   "Exported file or ZIP archive"
+// @Param        knowledge_base   formData  file    false  "Qualys KnowledgeBase XML (before file)"
+// @Param        dry_run          query     bool    false  "Parse and count only"
+// @Param        format           query     string  false  "Force the format of a single file"
+// @Param        min_severity     query     string  false  "Drop findings below: info, low, medium, high, critical"
+// @Param        coverage         query     string  false  "partial (default, closes nothing) or full: the upload is a complete scan of the asset_id assets by each file's tool, and their open findings of that tool it does not report are closed (needs findings:status, findings:bulk_update and step-up; not with min_severity)"
+// @Param        asset_id         query     []string  false  "With coverage=full: 1 to 100 asset ids visible to the uploader"  collectionFormat(multi)
+// @Param        Idempotency-Key  header    string  false  "Makes a retry of the same upload return the first answer"
+// @Success      200  {object}  FindingImportResponse  "Preview"
+// @Success      201  {object}  FindingImportResponse  "Committed, with the receipt"
 // @Failure      400  {object}  apierror.Error
+// @Failure      409  {object}  apierror.Error
 // @Failure      413  {object}  apierror.Error
+// @Failure      422  {object}  apierror.Error
 // @Failure      429  {object}  apierror.Error
+// @Failure      503  {object}  apierror.Error
 // @Security     BearerAuth
-// @Router       /findings/import [post]
-func (h *FindingImportHandler) Import(w http.ResponseWriter, r *http.Request) {
+// @Router       /findings/imports [post]
+func (h *FindingImportHandler) Import(w http.ResponseWriter, r *http.Request) { //nolint:cyclop,gocognit // one upload flow: params, key, parts, receipt
 	tid, err := shared.IDFromString(middleware.MustGetTenantID(r.Context()))
 	if err != nil {
 		apierror.BadRequest("invalid tenant").WriteJSON(w)
@@ -246,10 +281,32 @@ func (h *FindingImportHandler) Import(w http.ResponseWriter, r *http.Request) {
 		req.MinSeverity = sev
 	}
 
+	if apiErr := h.parseCoverage(r, &req); apiErr != nil {
+		apiErr.WriteJSON(w)
+		return
+	}
+
 	maxBody := h.maxBody
 	if maxBody <= 0 {
 		maxBody = MaxFindingImportBody
 	}
+
+	// Idempotency-Key (a preview writes nothing and ignores it).
+	claim, hasher, handled := h.claimKey(w, r, tid, q, maxBody, req.DryRun)
+	if handled {
+		return
+	}
+	completed := false
+	if claim != nil {
+		defer func() {
+			if !completed {
+				if err := h.idem.Release(context.WithoutCancel(r.Context()), claim); err != nil {
+					h.logger.Warn("finding import: release idempotency key", "error", logger.SanitizeError(err))
+				}
+			}
+		}()
+	}
+
 	r.Body = http.MaxBytesReader(w, r.Body, maxBody)
 	mr, err := r.MultipartReader()
 	if err != nil {
@@ -269,13 +326,22 @@ func (h *FindingImportHandler) Import(w http.ResponseWriter, r *http.Request) {
 	var kb []byte
 	var results []findingimport.FileResult
 	files := 0
+	finished := false
 	// The receipt is finished on every way out once it exists: a request
 	// refused halfway still says what its earlier files wrote.
 	defer func() {
-		if !req.ReceiptID.IsZero() {
-			h.svc.FinishUpload(context.WithoutCancel(ctx), req, results)
+		if !req.ReceiptID.IsZero() && !finished {
+			h.svc.FinishUpload(context.WithoutCancel(ctx), req, results, false)
 		}
 	}()
+	// hashed wraps a part for the request fingerprint when a key is used.
+	hashed := func(p *multipart.Part) (io.Reader, func() error) {
+		if hasher == nil {
+			return p, func() error { return nil }
+		}
+		pr := hasher.part(p.FormName(), p)
+		return pr, pr.done
+	}
 	for {
 		part, err := mr.NextPart()
 		if errors.Is(err, io.EOF) {
@@ -285,9 +351,10 @@ func (h *FindingImportHandler) Import(w http.ResponseWriter, r *http.Request) {
 			writeBodyError(w, err)
 			return
 		}
+		body, done := hashed(part)
 		switch part.FormName() {
 		case "knowledge_base":
-			kb, err = io.ReadAll(io.LimitReader(part, maxImportKB+1))
+			kb, err = io.ReadAll(io.LimitReader(body, maxImportKB+1))
 			if err != nil {
 				writeBodyError(w, err)
 				return
@@ -311,7 +378,7 @@ func (h *FindingImportHandler) Import(w http.ResponseWriter, r *http.Request) {
 				req.ReceiptID = id
 				resp.ReceiptID = id.String()
 			}
-			out, status, apiErr := h.importPart(ctx, req, part, kb, len(results))
+			out, status, apiErr := h.importPart(ctx, req, part, body, kb, len(results))
 			if apiErr != nil {
 				apiErr.WriteJSON(w)
 				return
@@ -323,8 +390,14 @@ func (h *FindingImportHandler) Import(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 			results = append(results, out...)
-		default:
-			// Unknown parts are drained, never stored.
+		}
+		// Unknown parts are drained, never stored; every part is read to
+		// its end for the fingerprint.
+		if err := done(); err != nil {
+			writeBodyError(w, err)
+			return
+		}
+		if hasher == nil && part.FormName() != "file" && part.FormName() != "knowledge_base" {
 			if _, err := io.Copy(io.Discard, part); err != nil {
 				writeBodyError(w, err)
 				return
@@ -341,7 +414,156 @@ func (h *FindingImportHandler) Import(w http.ResponseWriter, r *http.Request) {
 	}
 	h.auditImport(r, req, results)
 
-	writeJSON(w, http.StatusOK, resp)
+	if req.DryRun {
+		writeJSON(w, http.StatusOK, resp)
+		return
+	}
+	h.svc.FinishUpload(context.WithoutCancel(ctx), req, results, true)
+	finished = true
+	if h.receipts != nil {
+		if rec, err := h.receipts.Get(context.WithoutCancel(ctx), tid, req.ReceiptID); err == nil {
+			rr := toReceiptResponse(rec)
+			resp.Receipt = &rr
+		} else {
+			h.logger.Warn("finding import: read receipt", "error", err)
+		}
+	}
+	body, err := storableResponse(resp)
+	if err != nil {
+		apierror.InternalServerError("import failed").WriteJSON(w)
+		return
+	}
+	if claim != nil {
+		rid := req.ReceiptID
+		if err := h.idem.Complete(context.WithoutCancel(ctx), claim, hasher.sum(), http.StatusCreated, body, &rid); err != nil {
+			// The upload is stored; the key stays pending until it expires,
+			// so a retry meanwhile is refused (409) rather than imported
+			// again.
+			h.logger.Error("finding import: store idempotent answer", "error", logger.SanitizeError(err))
+		}
+		completed = true
+	}
+	w.Header().Set("Location", "/api/v1/findings/imports/"+req.ReceiptID.String())
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusCreated)
+	_, _ = w.Write(body)
+}
+
+// claimKey claims the request's Idempotency-Key. handled is true when the
+// answer was written: a bad key (400), the store down (503, fail closed), a
+// key in flight (409) or reused (422), or a replay of the stored answer.
+// Without a key (or in a preview) claim and hasher are nil.
+func (h *FindingImportHandler) claimKey(w http.ResponseWriter, r *http.Request, tid shared.ID, q url.Values, maxBody int64,
+	dryRun bool) (*idempotency.Claim, *requestHasher, bool) {
+	key := r.Header.Get(idempotency.Header)
+	if key == "" || dryRun {
+		return nil, nil, false
+	}
+	scope, err := idempotency.NewScope(tid, importPrincipal(r), findingImportRoute, key)
+	if err != nil {
+		apierror.BadRequest(err.Error()).WriteJSON(w)
+		return nil, nil, true
+	}
+	if h.idem == nil {
+		h.logger.Error("finding import: Idempotency-Key sent but no key store is wired")
+		storeUnavailable(w)
+		return nil, nil, true
+	}
+	c, existing, err := h.idem.Claim(r.Context(), scope, findingImportTimeout+5*time.Minute)
+	if err != nil {
+		h.logger.Error("finding import: idempotency store", "error", logger.SanitizeError(err))
+		storeUnavailable(w)
+		return nil, nil, true
+	}
+	if existing == nil {
+		return c, newRequestHasher(q), false
+	}
+	if existing.State != idempotency.StateDone {
+		writeIdempotencyRefusal(w, true)
+		return nil, nil, true
+	}
+	fp, err := fingerprintRequest(r, maxBody, w)
+	switch {
+	case err != nil:
+		writeBodyError(w, err)
+	case fp != existing.RequestSHA256:
+		writeIdempotencyRefusal(w, false)
+	default:
+		replay(w, existing)
+	}
+	return nil, nil, true
+}
+
+// parseCoverage reads coverage=full and its asset_id values. Declaring full
+// coverage closes findings in bulk, so it needs findings:status and
+// findings:bulk_update (the route adds step-up), cannot drop findings with
+// min_severity, and every asset must be the organization's and visible to
+// the uploader (one answer for a missing and a hidden asset).
+func (h *FindingImportHandler) parseCoverage(r *http.Request, req *findingimport.Request) *apierror.Error {
+	q := r.URL.Query()
+	switch c := q.Get("coverage"); c {
+	case "", "partial":
+	case "full":
+		req.Coverage.Full = true
+	default:
+		return apierror.BadRequest("coverage must be partial or full")
+	}
+	raw := q["asset_id"]
+	if len(raw) > findingimport.MaxCoverageAssets {
+		return apierror.BadRequest(findingimport.ErrCoverageScope.Error())
+	}
+	for _, v := range raw {
+		id, err := shared.IDFromString(v)
+		if err != nil {
+			return apierror.BadRequest(findingimport.ErrCoverageScope.Error())
+		}
+		req.Coverage.AssetIDs = append(req.Coverage.AssetIDs, id)
+	}
+	if req.Coverage.Full {
+		// A full-coverage upload is a bulk close: the permissions of POST
+		// /findings/bulk/status closing findings (the route adds its
+		// step-up).
+		for _, p := range []permission.Permission{permission.FindingsStatus, permission.FindingsBulkUpdate} {
+			if !middleware.HasPermission(r.Context(), p.String()) {
+				return apierror.Forbidden("coverage=full closes findings and needs " + permission.FindingsStatus.String() +
+					" and " + permission.FindingsBulkUpdate.String())
+			}
+		}
+		if req.MinSeverity != "" {
+			// Findings below min_severity are dropped, so their absence
+			// proves nothing.
+			return apierror.BadRequest("coverage=full cannot be combined with min_severity")
+		}
+		if h.coverageOf != nil {
+			scope, err := h.coverageOf(r.Context(), req.TenantID)
+			if err != nil {
+				h.logger.Error("finding import: resolve coverage scope", "error", err)
+				return apierror.InternalServerError("import failed")
+			}
+			req.CoverageScope = scope
+		}
+	}
+	if err := h.svc.CheckCoverage(r.Context(), *req); err != nil {
+		switch {
+		case errors.Is(err, findingimport.ErrCoverageScope):
+			return apierror.BadRequest(err.Error())
+		case errors.Is(err, findingimport.ErrCoverageUnsupported):
+			return apierror.New(http.StatusNotImplemented, "NOT_IMPLEMENTED", err.Error())
+		default:
+			h.logger.Error("finding import: check coverage", "error", err)
+			return apierror.InternalServerError("import failed")
+		}
+	}
+	return nil
+}
+
+// importPrincipal is who an Idempotency-Key belongs to: the API key, or the
+// user, behind the request.
+func importPrincipal(r *http.Request) string {
+	if k := middleware.GetAPIKeyID(r.Context()); k != "" {
+		return "key:" + k
+	}
+	return "user:" + middleware.GetUserID(r.Context())
 }
 
 // importPart imports one file part through findingimport (the one entry
@@ -349,9 +571,9 @@ func (h *FindingImportHandler) Import(w http.ResponseWriter, r *http.Request) {
 // be read, or an upload refused as a whole, it returns the HTTP status the
 // request fails with and the file to describe.
 func (h *FindingImportHandler) importPart(ctx context.Context, req findingimport.Request, part *multipart.Part,
-	kb []byte, index int) ([]findingimport.FileResult, int, *apierror.Error) {
+	body io.Reader, kb []byte, index int) ([]findingimport.FileResult, int, *apierror.Error) {
 	name := findingimport.SafeName(part.FileName())
-	tr := &readErrTracker{r: part}
+	tr := &readErrTracker{r: body}
 	up := findingimport.Upload{
 		Name:           name,
 		Body:           tr,

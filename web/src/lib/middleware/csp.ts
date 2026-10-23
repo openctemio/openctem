@@ -82,10 +82,10 @@ export function buildCsp(options: CspOptions): string {
   return [
     "default-src 'self'",
     `script-src ${script.join(' ')}`,
-    "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
-    "style-src-elem 'self' 'unsafe-inline' https://fonts.googleapis.com",
+    "style-src 'self' 'unsafe-inline'",
+    "style-src-elem 'self' 'unsafe-inline'",
     "img-src 'self' data: https:",
-    "font-src 'self' data: https://fonts.gstatic.com",
+    "font-src 'self' data:",
     connectSrc(options),
     "object-src 'none'",
     // Cloudflare Turnstile, the CAPTCHA on the public sign-up forms, runs in

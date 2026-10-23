@@ -32,8 +32,7 @@ test.describe('Asset tag CRUD', () => {
     // The drawer's title (its only h2) is the asset's name.
     const assetName = await sheet!.getByRole('heading', { level: 2 }).first().innerText()
 
-    const tags = () =>
-      page.getByRole('dialog').getByRole('region', { name: 'Tags' })
+    const tags = () => page.getByRole('dialog').getByRole('region', { name: 'Tags' })
     const reopen = async () => {
       await page.reload()
       await page.getByRole('row').filter({ hasText: assetName }).first().click()

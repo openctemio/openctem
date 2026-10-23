@@ -116,6 +116,20 @@ vi.mock('@/features/components/api/hooks', () => ({
   }),
 }))
 
+vi.mock('@/features/findings/filters/contract', async (orig) => ({
+  ...(await orig<typeof import('@/features/findings/filters/contract')>()),
+  useFindingFilterContract: () => ({ contract: undefined, isLoading: false, error: undefined }),
+}))
+vi.mock('@/features/saved-views/api/use-saved-views', async (orig) => ({
+  ...(await orig<typeof import('@/features/saved-views/api/use-saved-views')>()),
+  useSavedViews: () => ({ views: [], error: undefined, isLoading: false, mutate: vi.fn() }),
+}))
+
+vi.mock('@/features/findings/api/use-quick-views', () => ({
+  useFindingQuickViews: () => ({ data: undefined }),
+  refreshFindingQuickViews: vi.fn(),
+}))
+
 import FindingsPage from '../page'
 
 function openAt(search: string) {

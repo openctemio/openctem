@@ -1,5 +1,5 @@
 /**
- * POST /api/v1/findings/import: results exported by other tools (Nessus,
+ * POST /api/v1/findings/imports: results exported by other tools (Nessus,
  * Qualys, CycloneDX, SPDX, OSV, CSAF, OpenVEX, DefectDojo, or a ZIP of them).
  * The server detects the format from the content; `dryRun` only parses and
  * counts.
@@ -46,7 +46,7 @@ export async function importFindings(opts: FindingImportOptions): Promise<Findin
   if (opts.minSeverity) params.set('min_severity', opts.minSeverity)
   const qs = params.toString()
   const query = qs ? `?${qs}` : ''
-  const res = await csrfFetch(`/api/v1/findings/import${query}`, { method: 'POST', body: form })
+  const res = await csrfFetch(`/api/v1/findings/imports${query}`, { method: 'POST', body: form })
   let body: unknown = null
   try {
     body = await res.json()
