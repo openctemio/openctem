@@ -113,8 +113,12 @@ export function CreateFindingDialog({ open, onOpenChange, onSuccess }: CreateFin
     skip: !open,
   })
 
-  // Fetch finding sources from API (dynamic configuration)
-  const { data: findingSourcesData, isLoading: sourcesLoading } = useFindingSourcesApi()
+  // Fetch finding sources from API (dynamic configuration) only once the
+  // dialog opens: the page mounts this dialog closed on every load.
+  const { data: findingSourcesData, isLoading: sourcesLoading } = useFindingSourcesApi(
+    undefined,
+    open
+  )
 
   // Group sources by category for the select dropdown
   const sourceGroups = useMemo(() => {
