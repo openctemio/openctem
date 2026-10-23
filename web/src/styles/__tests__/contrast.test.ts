@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs'
 import path from 'node:path'
 import { describe, expect, it } from 'vitest'
-import { ACCENT_BAND, contrast, oklch } from '../../../scripts/check-palette.mjs'
+import { ACCENT_BAND, contrast, deltaE, oklch } from '../../../scripts/check-palette.mjs'
 
 /**
  * Brand tokens in src/styles/theme.css: the brand values themselves, and
@@ -38,6 +38,9 @@ const THEMES = { light, dark } as const
 const SURFACES = ['--background', '--card', '--popover', '--surface-raised']
 const SEV = ['critical', 'high', 'medium', 'low', 'info']
 const PRIO = [0, 1, 2, 3]
+const STATUS_TONES = ['triage', 'open', 'progress', 'resolved', 'accepted', 'closed']
+/** Minimum normal-vision delta E between a priority mark and a severity mark. */
+const PRIO_SEV_MIN_DE = 10
 
 describe('brand tokens', () => {
   it('use the brand palette: paper and ink grounds, the teal accent', () => {
@@ -103,14 +106,19 @@ describe('brand tokens', () => {
 
     it(`${mode}: priority box text at AA, marks at 3:1, edges visible`, () => {
       for (const n of PRIO) {
-        pair(`--prio-${n}-fg`, `--prio-${n}-bg`, 4.5)
+        // A transparent box sits on the card.
+        pair(
+          `--prio-${n}-fg`,
+          t[`--prio-${n}-bg`] === 'transparent' ? '--card' : `--prio-${n}-bg`,
+          4.5
+        )
         for (const bg of SURFACES) pair(`--prio-${n}`, bg, 3)
         // P2 and P3 boxes are tints: their edge must separate them from the card.
         if (n >= 2) pair(`--prio-${n}-border`, '--card', 3)
       }
     })
 
-    it(`${mode}: priority is its own system, never teal and never a severity hue`, () => {
+    it(`${mode}: priority is a violet system (P3 neutral), never teal, apart from every severity hue`, () => {
       for (const n of PRIO) {
         for (const name of [
           `--prio-${n}`,
@@ -118,13 +126,43 @@ describe('brand tokens', () => {
           `--prio-${n}-fg`,
           `--prio-${n}-border`,
         ]) {
+          const v = t[name]
+          if (v === 'transparent') continue
           const [, chroma, hue] = oklch(hex(t, name)) as number[]
-          // Not in the accent band (teal), and the ramp stays on the ink hue.
+          // Not in the accent band (teal).
           expect(chroma >= 0.04 && hue >= ACCENT_BAND[0] && hue <= ACCENT_BAND[1], name).toBe(false)
-          expect(chroma, name).toBeLessThan(0.1)
+          // Violet band, except the deliberately neutral P3 and the plain white or dark text of P0.
+          if (n <= 2 && chroma >= 0.04 && !name.endsWith('-fg'))
+            expect(hue, `${name} hue`).toBeGreaterThanOrEqual(280)
+          if (n <= 2 && chroma >= 0.04 && !name.endsWith('-fg'))
+            expect(hue, `${name} hue`).toBeLessThanOrEqual(305)
         }
-        for (const s of SEV) expect(hex(t, `--prio-${n}`)).not.toBe(hex(t, `--sev-${s}`))
+        for (const s of SEV) {
+          expect(hex(t, `--prio-${n}`)).not.toBe(hex(t, `--sev-${s}`))
+          if (n <= 2)
+            expect(
+              deltaE(hex(t, `--prio-${n}`), hex(t, `--sev-${s}`)),
+              `--prio-${n} vs --sev-${s}`
+            ).toBeGreaterThanOrEqual(PRIO_SEV_MIN_DE)
+        }
       }
+      // P0 sits more than 60 degrees of hue from critical.
+      const hueGap = Math.abs(
+        (oklch(hex(t, '--prio-0')) as number[])[2] -
+          (oklch(hex(t, '--sev-critical')) as number[])[2]
+      )
+      expect(Math.min(hueGap, 360 - hueGap)).toBeGreaterThan(60)
+    })
+
+    it(`${mode}: status lozenge text at AA on its fill and on the card, edges visible`, () => {
+      for (const tone of STATUS_TONES) {
+        const fg = `--st-${tone}-fg`
+        pair(fg, '--card', 4.5)
+        pair(fg, '--background', 4.5)
+        if (t[`--st-${tone}-bg`] !== 'transparent') pair(fg, `--st-${tone}-bg`, 4.5)
+      }
+      // The untouched (triage) lozenge is an empty dashed outline: the edge is its fill.
+      pair('--st-triage-border', '--card', 3)
     })
 
     it(`${mode}: priority steps from P0 (strongest) to P3 (quietest) by contrast with the card`, () => {

@@ -23,7 +23,15 @@ import {
   TableRow,
 } from '@/components/ui/table'
 import { useTranslation } from '@/context/i18n-provider'
-import { EmptyState, ErrorState, GatedSectionTabs, PageHeader, PageStack } from '@/features/shared'
+import {
+  EmptyState,
+  ErrorState,
+  GatedSectionTabs,
+  NoAccessState,
+  PageHeader,
+  PageStack,
+} from '@/features/shared'
+import { Skeleton } from '@/components/ui/skeleton'
 import { SCOPE_SECTION_TABS } from '@/config/section-tabs'
 import { PROGRAM_STATUS_LABEL, usePrograms } from '@/features/programs'
 import { Permission, useHasPermission } from '@/lib/permissions'
@@ -31,6 +39,7 @@ import { Permission, useHasPermission } from '@/lib/permissions'
 export default function ProgramsPage() {
   const { t } = useTranslation()
   const canWrite = useHasPermission(Permission.ProgramsWrite)
+  const canRead = useHasPermission(Permission.ProgramsRead)
   const { data, error, isLoading, mutate } = usePrograms()
 
   return (
@@ -44,9 +53,9 @@ export default function ProgramsPage() {
           )}
         >
           {canWrite && (
-            <Button asChild>
+            <Button asChild size="sm">
               <Link href="/programs/new">
-                <Plus className="mr-2 h-4 w-4" />
+                <Plus className="me-2 h-4 w-4" />
                 {t('programs.import', 'Import program')}
               </Link>
             </Button>
@@ -54,13 +63,21 @@ export default function ProgramsPage() {
         </PageHeader>
         <GatedSectionTabs tabs={SCOPE_SECTION_TABS} label="Scope sections" />
 
-        {error ? (
+        {!canRead ? (
+          <NoAccessState title={t('programs.title', 'Programs')} />
+        ) : isLoading ? (
+          <div className="space-y-2 rounded-xl border p-3">
+            {[1, 2, 3].map((i) => (
+              <Skeleton key={i} className="h-10 w-full" />
+            ))}
+          </div>
+        ) : error ? (
           <ErrorState
             title={t('programs.title', 'Programs')}
             error={error}
             onRetry={() => mutate()}
           />
-        ) : !isLoading && (data ?? []).length === 0 ? (
+        ) : (data ?? []).length === 0 ? (
           <EmptyState
             icon={Trophy}
             title={t('programs.empty.title', 'No programs yet')}
@@ -68,6 +85,16 @@ export default function ProgramsPage() {
               'programs.empty.description',
               'Import a program by pasting its scope; its in-scope targets become scope entries and its out-of-scope items program exclusions.'
             )}
+            action={
+              canWrite ? (
+                <Button asChild size="sm">
+                  <Link href="/programs/new">
+                    <Plus className="me-2 h-4 w-4" />
+                    {t('programs.import', 'Import program')}
+                  </Link>
+                </Button>
+              ) : undefined
+            }
           />
         ) : (
           <Table>

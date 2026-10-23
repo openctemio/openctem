@@ -19,7 +19,7 @@ export function BranchOnlyBadge({ className }: { className?: string }) {
       <TooltipTrigger asChild>
         <Badge
           variant="outline"
-          className={cn('h-5 shrink-0 gap-0.5 px-1.5 text-[10px] font-medium', className)}
+          className={cn('shrink-0 gap-0.5 px-1.5 text-xs font-medium', className)}
           data-slot="branch-only"
         >
           <GitBranch className="h-2.5 w-2.5" aria-hidden />
