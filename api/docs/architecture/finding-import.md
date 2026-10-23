@@ -63,7 +63,7 @@ error.
 
 A client that may retry (a CI job whose answer was lost) sends
 `Idempotency-Key`. The key is kept in Postgres (`idempotency_keys`, migration
-003320), hashed, per organization, principal (the user or API key) and
+003325), hashed, per organization, principal (the user or API key) and
 route, for 24 hours:
 
 - the same key with the same request (the query and each part's form name
