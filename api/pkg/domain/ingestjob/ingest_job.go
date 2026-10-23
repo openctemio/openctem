@@ -147,6 +147,9 @@ const (
 	KindCIResults Kind = "ci_results"
 	// KindFindingImport is a POST /findings/imports upload (RFC-122).
 	KindFindingImport Kind = "finding_import"
+	// KindSideEffects is the after-commit work of an ingest batch
+	// (automations on its new findings).
+	KindSideEffects Kind = "side_effects"
 )
 
 // IsUpload reports whether the job is a CI or import upload: its raw report

@@ -7,6 +7,7 @@ package postgres
 
 import (
 	"context"
+	"database/sql"
 	"fmt"
 	"strconv"
 	"time"
@@ -106,7 +107,8 @@ func (r *IngestReceiptRepository) ListActions(ctx context.Context, tenantID, rec
 	if err := r.db.QueryRowContext(ctx, `SELECT count(*)`+from, args...).Scan(&total); err != nil {
 		return nil, 0, fmt.Errorf("count receipt actions: %w", err)
 	}
-	rows, err := r.db.QueryContext(ctx, `SELECT a.finding_id::text, a.action, COALESCE(f.title, ''), COALESCE(f.severity, ''), a.created_at`+from+
+	rows, err := r.db.QueryContext(ctx, `SELECT a.finding_id::text, a.action, COALESCE(f.title, ''), COALESCE(f.severity, ''), a.created_at,
+		COALESCE(a.policy, ''), a.policy_id::text, a.policy_version`+from+
 		` ORDER BY a.created_at DESC, a.finding_id LIMIT `+strconv.Itoa(p.Limit())+` OFFSET `+strconv.Itoa(p.Offset()), args...)
 	if err != nil {
 		return nil, 0, fmt.Errorf("list receipt actions: %w", err)
@@ -116,8 +118,19 @@ func (r *IngestReceiptRepository) ListActions(ctx context.Context, tenantID, rec
 	for rows.Next() {
 		var row ingestreceipt.ActionRow
 		var id, action string
-		if err := rows.Scan(&id, &action, &row.Title, &row.Severity, &row.At); err != nil {
+		var policyID sql.NullString
+		var version sql.NullInt64
+		if err := rows.Scan(&id, &action, &row.Title, &row.Severity, &row.At, &row.Policy, &policyID, &version); err != nil {
 			return nil, 0, fmt.Errorf("scan receipt action: %w", err)
+		}
+		if policyID.Valid {
+			if pid, err := shared.IDFromString(policyID.String); err == nil {
+				row.PolicyID = &pid
+			}
+		}
+		if version.Valid {
+			v := version.Int64
+			row.PolicyVersion = &v
 		}
 		row.FindingID, _ = shared.IDFromString(id)
 		row.Action = ingestreceipt.Action(action)
@@ -155,4 +168,83 @@ func (r *IngestReceiptRepository) FindingActions(ctx context.Context, tenantID, 
 		out = append(out, fa)
 	}
 	return out, rows.Err()
+}
+
+// itemScope is the visibility of a receipt's items: an item on an asset is
+// visible when the asset is in the caller's scope; an item with no asset
+// (rejected before it had one, quarantined) only to an unrestricted caller.
+func itemScope(tenantID, receiptID shared.ID, scope *shared.DataScope) (string, []any) {
+	args := []any{tenantID.String(), receiptID.String()}
+	cond, args := dataScopeCond("i.asset_id", scope, args)
+	if scope != nil {
+		cond = "(i.asset_id IS NOT NULL AND " + cond + ")"
+	}
+	return `i.tenant_id = $1 AND i.receipt_id = $2 AND ` + cond, args
+}
+
+// ItemCounts counts a receipt's items per disposition, over the items the
+// caller may see.
+func (r *IngestReceiptRepository) ItemCounts(ctx context.Context, tenantID, receiptID shared.ID, scope *shared.DataScope) (map[string]int, error) {
+	where, args := itemScope(tenantID, receiptID, scope)
+	rows, err := r.db.QueryContext(ctx, `SELECT i.disposition, count(*) FROM ingest_receipt_items i WHERE `+where+` GROUP BY 1`, args...)
+	if err != nil {
+		return nil, fmt.Errorf("count receipt items: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+	out := map[string]int{}
+	for rows.Next() {
+		var d string
+		var n int
+		if err := rows.Scan(&d, &n); err != nil {
+			return nil, fmt.Errorf("scan receipt item count: %w", err)
+		}
+		out[d] = n
+	}
+	return out, rows.Err()
+}
+
+// ListItems lists a receipt's items the caller may see, newest first;
+// disposition "" lists all.
+func (r *IngestReceiptRepository) ListItems(ctx context.Context, tenantID, receiptID shared.ID, disposition ingestreceipt.Disposition,
+	scope *shared.DataScope, p pagination.Pagination) ([]ingestreceipt.ItemRow, int64, error) {
+	where, args := itemScope(tenantID, receiptID, scope)
+	if disposition != "" {
+		args = append(args, string(disposition))
+		where += " AND i.disposition = $" + strconv.Itoa(len(args))
+	}
+	var total int64
+	if err := r.db.QueryRowContext(ctx, `SELECT count(*) FROM ingest_receipt_items i WHERE `+where, args...).Scan(&total); err != nil {
+		return nil, 0, fmt.Errorf("count receipt items: %w", err)
+	}
+	rows, err := r.db.QueryContext(ctx, `SELECT i.item_key, i.disposition, i.reason_code, i.asset_id::text, COALESCE(i.tool_name, ''),
+		COALESCE(i.title, ''), COALESCE(i.severity, ''), COALESCE(i.policy, ''), i.policy_id::text, COALESCE(i.policy_version, 0), i.created_at
+		FROM ingest_receipt_items i WHERE `+where+` ORDER BY i.created_at DESC, i.item_key LIMIT `+strconv.Itoa(p.Limit())+
+		` OFFSET `+strconv.Itoa(p.Offset()), args...)
+	if err != nil {
+		return nil, 0, fmt.Errorf("list receipt items: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+	out := make([]ingestreceipt.ItemRow, 0, p.Limit())
+	for rows.Next() {
+		var row ingestreceipt.ItemRow
+		var disp string
+		var assetID, policyID sql.NullString
+		if err := rows.Scan(&row.Key, &disp, &row.ReasonCode, &assetID, &row.Tool, &row.Title, &row.Severity, &row.Policy,
+			&policyID, &row.PolicyVersion, &row.At); err != nil {
+			return nil, 0, fmt.Errorf("scan receipt item: %w", err)
+		}
+		row.Disposition = ingestreceipt.Disposition(disp)
+		if assetID.Valid {
+			if id, err := shared.IDFromString(assetID.String); err == nil {
+				row.AssetID = &id
+			}
+		}
+		if policyID.Valid {
+			if id, err := shared.IDFromString(policyID.String); err == nil {
+				row.PolicyID = &id
+			}
+		}
+		out = append(out, row)
+	}
+	return out, total, rows.Err()
 }
