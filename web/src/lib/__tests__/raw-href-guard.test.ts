@@ -64,12 +64,6 @@ const REVIEWED = new Set([
   'app/(dashboard)/(discovery)/assets/groups/[id]/page.tsx|NextLink|href={findingsHref(severity)}',
   // StatLink only forwards the page's own constant routes (INTERNET_FACING_HREF and siblings).
   'app/(dashboard)/(scoping)/attack-surface/page.tsx|Link|href={href}',
-  // Dashboard drill-down links: DRILL (features/dashboard/lib/drill.ts) holds build-time constant
-  // same-origin list routes; DrillCard only forwards its caller's DRILL value.
-  'app/(dashboard)/insights/executive/page.tsx|Link|href={href}',
-  'app/(dashboard)/insights/executive/page.tsx|DrillCard|href={DRILL.slaBreached}',
-  'app/(dashboard)/insights/executive/page.tsx|DrillCard|href={DRILL.p0Open}',
-  'app/(dashboard)/insights/executive/page.tsx|DrillCard|href={DRILL.p1Open}',
   // LEGAL_DOCS paths are constants in src/lib/legal.ts (/terms, /privacy, ...).
   'features/legal/components/legal-document.tsx|Link|href={d.path}',
   // Fix plan rows: href is built in the same file as /remediation/tasks/{id} or /remediation/suggestions.

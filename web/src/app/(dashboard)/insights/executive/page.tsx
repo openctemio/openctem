@@ -74,7 +74,7 @@ function useTopRiskColumns(): ColumnDef<TopRiskRow>[] {
         cell: ({ row }) =>
           row.original.finding_id ? (
             <Link
-              href={`/findings/${row.original.finding_id}`}
+              href={`/findings/${encodeURIComponent(row.original.finding_id)}`}
               className="block max-w-md truncate text-sm font-medium hover:underline focus-visible:underline"
             >
               {row.original.title}
