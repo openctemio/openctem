@@ -157,7 +157,9 @@ export function ScanApprovalsInbox() {
   const { t } = useTranslation()
   const me = useAuthStore((s) => s.user?.id)
   const [filter, setFilter] = useState<'pending' | 'all'>('pending')
-  const { data, error, isLoading, mutate } = useScanApprovals(filter === 'pending' ? 'pending' : '')
+  const { data, error, isLoading, isLoadingMore, loadMore, mutate } = useScanApprovals(
+    filter === 'pending' ? 'pending' : ''
+  )
   const [open, setOpen] = useState<Record<string, boolean>>({})
   const [action, setAction] = useState<{ kind: Action; req: ScanApprovalRequest } | null>(null)
   const [note, setNote] = useState('')
@@ -211,6 +213,7 @@ export function ScanApprovalsInbox() {
         <Button
           size="sm"
           variant={filter === 'pending' ? 'default' : 'outline'}
+          aria-pressed={filter === 'pending'}
           onClick={() => setFilter('pending')}
         >
           {t('scans.approval.filterPending', 'Awaiting approval')}
@@ -218,6 +221,7 @@ export function ScanApprovalsInbox() {
         <Button
           size="sm"
           variant={filter === 'all' ? 'default' : 'outline'}
+          aria-pressed={filter === 'all'}
           onClick={() => setFilter('all')}
         >
           {t('scans.approval.filterAll', 'All requests')}
@@ -242,123 +246,143 @@ export function ScanApprovalsInbox() {
           )}
         />
       ) : (
-        <ul className="divide-y rounded-md border" data-testid="scan-approvals">
-          {items.map((req) => {
-            const expanded = !!open[req.id]
-            const mine = req.requested_by?.id === me
-            const pending = req.status === 'pending'
-            return (
-              <li key={req.id}>
-                <div className="flex flex-wrap items-center gap-3 p-3">
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    aria-expanded={expanded}
-                    aria-label={t('scans.approval.toggleDetails', 'Show details')}
-                    onClick={() => setOpen((o) => ({ ...o, [req.id]: !expanded }))}
-                  >
-                    {expanded ? (
-                      <ChevronDown className="size-4" />
-                    ) : (
-                      <ChevronRight className="size-4" />
-                    )}
-                  </Button>
-                  <div className="min-w-0 flex-1 space-y-1">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <Link href={`/scans/${req.scan_id}`} className="font-medium hover:underline">
-                        {req.scan_name || req.scan_id}
-                      </Link>
-                      <StatusBadge status={req.status} />
-                      {req.emergency && (
-                        <Badge variant="destructive">
-                          {t('scans.approval.emergency', 'Emergency run')}
-                        </Badge>
+        <>
+          <ul className="divide-y rounded-md border" data-testid="scan-approvals">
+            {items.map((req) => {
+              const expanded = !!open[req.id]
+              const mine = req.requested_by?.id === me
+              const pending = req.status === 'pending'
+              return (
+                <li key={req.id}>
+                  <div className="flex flex-wrap items-center gap-3 p-3">
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      aria-expanded={expanded}
+                      aria-label={t('scans.approval.toggleDetails', 'Show details')}
+                      onClick={() => setOpen((o) => ({ ...o, [req.id]: !expanded }))}
+                    >
+                      {expanded ? (
+                        <ChevronDown className="size-4" />
+                      ) : (
+                        <ChevronRight className="size-4" />
                       )}
-                      {req.definition.intensity && (
-                        <Badge variant="outline">{req.definition.intensity}</Badge>
+                    </Button>
+                    <div className="min-w-0 flex-1 space-y-1">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <Link
+                          href={`/scans/${req.scan_id}`}
+                          className="font-medium hover:underline"
+                        >
+                          {req.scan_name || req.scan_id}
+                        </Link>
+                        <StatusBadge status={req.status} />
+                        {req.emergency && (
+                          <Badge variant="destructive">
+                            {t('scans.approval.emergency', 'Emergency run')}
+                          </Badge>
+                        )}
+                        {req.definition.intensity && (
+                          <Badge variant="outline">{req.definition.intensity}</Badge>
+                        )}
+                      </div>
+                      <p className="text-sm text-muted-foreground">
+                        {t('scans.approval.requestedBy', 'Requested by {name} {when}', {
+                          name: req.requested_by?.name ?? '—',
+                          when: formatRelative(req.requested_at),
+                        })}
+                        {' · '}
+                        {(req.evaluation.matched ?? []).map((r) => r.name).join(', ')}
+                      </p>
+                      {pending && (
+                        <p className="text-xs text-muted-foreground">
+                          {t('scans.approval.remaining', '{count} approval(s) left · {who}', {
+                            count: req.remaining,
+                            who: approversText(t, req.evaluation),
+                          })}
+                        </p>
                       )}
                     </div>
-                    <p className="text-sm text-muted-foreground">
-                      {t('scans.approval.requestedBy', 'Requested by {name} {when}', {
-                        name: req.requested_by?.name ?? '—',
-                        when: formatRelative(req.requested_at),
-                      })}
-                      {' · '}
-                      {(req.evaluation.matched ?? []).map((r) => r.name).join(', ')}
-                    </p>
                     {pending && (
-                      <p className="text-xs text-muted-foreground">
-                        {t('scans.approval.remaining', '{count} approval(s) left · {who}', {
-                          count: req.remaining,
-                          who: approversText(t, req.evaluation),
-                        })}
-                      </p>
-                    )}
-                  </div>
-                  {pending && (
-                    <div className="flex flex-wrap gap-2">
-                      {req.can_approve && (
-                        <>
-                          <Button size="sm" onClick={() => setAction({ kind: 'approve', req })}>
-                            {t('scans.approval.approve', 'Approve')}
-                          </Button>
+                      <div className="flex flex-wrap gap-2">
+                        {req.can_approve && (
+                          <>
+                            <Button size="sm" onClick={() => setAction({ kind: 'approve', req })}>
+                              {t('scans.approval.approve', 'Approve')}
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() => setAction({ kind: 'reject', req })}
+                            >
+                              {t('scans.approval.reject', 'Reject')}
+                            </Button>
+                          </>
+                        )}
+                        {req.self_approval_available && (
                           <Button
                             size="sm"
                             variant="outline"
-                            onClick={() => setAction({ kind: 'reject', req })}
+                            onClick={() => setAction({ kind: 'self', req })}
                           >
-                            {t('scans.approval.reject', 'Reject')}
+                            <ShieldCheck className="me-1 size-4" />
+                            {t('scans.approval.selfApprove', 'Approve my own scan')}
                           </Button>
-                        </>
-                      )}
-                      {req.self_approval_available && (
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          onClick={() => setAction({ kind: 'self', req })}
-                        >
-                          <ShieldCheck className="me-1 size-4" />
-                          {t('scans.approval.selfApprove', 'Approve my own scan')}
-                        </Button>
-                      )}
-                      {mine && (
-                        <>
-                          <Button
-                            size="sm"
-                            variant="ghost"
-                            disabled={busy}
-                            onClick={() =>
-                              void run(
-                                () => remindScanApprovers(req.id),
-                                t('scans.approval.remindedToast', 'Approvers reminded')
-                              )
-                            }
-                          >
-                            {t('scans.approval.remind', 'Remind')}
-                          </Button>
-                          <Button
-                            size="sm"
-                            variant="ghost"
-                            disabled={busy}
-                            onClick={() =>
-                              void run(
-                                () => cancelScanRequest(req.id),
-                                t('scans.approval.canceledToast', 'Request withdrawn')
-                              )
-                            }
-                          >
-                            {t('scans.approval.withdraw', 'Withdraw')}
-                          </Button>
-                        </>
-                      )}
-                    </div>
-                  )}
-                </div>
-                {expanded && <RequestDetails req={req} />}
-              </li>
-            )
-          })}
-        </ul>
+                        )}
+                        {mine && (
+                          <>
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              disabled={busy}
+                              onClick={() =>
+                                void run(
+                                  () => remindScanApprovers(req.id),
+                                  t('scans.approval.remindedToast', 'Approvers reminded')
+                                )
+                              }
+                            >
+                              {t('scans.approval.remind', 'Remind')}
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              disabled={busy}
+                              onClick={() =>
+                                void run(
+                                  () => cancelScanRequest(req.id),
+                                  t('scans.approval.canceledToast', 'Request withdrawn')
+                                )
+                              }
+                            >
+                              {t('scans.approval.withdraw', 'Withdraw')}
+                            </Button>
+                          </>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                  {expanded && <RequestDetails req={req} />}
+                </li>
+              )
+            })}
+          </ul>
+          {items.length < (data?.total ?? 0) && (
+            <div className="flex flex-wrap items-center gap-3">
+              <p className="text-sm text-muted-foreground" data-testid="scan-approvals-count">
+                {t('scanApprovals.showing', 'Showing {shown} of {total}', {
+                  shown: items.length,
+                  total: data?.total ?? 0,
+                })}
+              </p>
+              <Button variant="outline" size="sm" onClick={loadMore} disabled={isLoadingMore}>
+                {isLoadingMore
+                  ? t('scanApprovals.loadingMore', 'Loading')
+                  : t('scanApprovals.loadMore', 'Load more')}
+              </Button>
+            </div>
+          )}
+        </>
       )}
 
       <StepUpDialog

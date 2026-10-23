@@ -2,29 +2,12 @@
  * CTEM dashboard color helpers.
  *
  * Single source of truth for the colors the CTEM story cards use, so nothing
- * hardcodes a Tailwind palette class or a raw hex. Priority classes reuse the
- * existing severity hue ramp; the one color the platform genuinely has no token
- * for — "good / on-track / resolved" green — is defined here once and annotated
- * for the palette-drift gate.
+ * hardcodes a Tailwind palette class or a raw hex. Priority classes have their own
+ * ramp (lib/priority-colors.ts), never the severity hues; health states use the
+ * state tokens (success, warning, destructive), never severity.
  */
 
-import {
-  SEVERITY_BADGE_SOFT,
-  SEVERITY_CHART_COLORS,
-  SEVERITY_DOT_COLORS,
-  SEVERITY_TEXT_COLORS,
-} from '@/lib/severity-colors'
-import type { PriorityClass } from '@/features/findings/types/finding.types'
-
-/** Priority classes map onto the severity hue ramp: P0=crit, P1=high, P2=med, P3=low. */
-export const PRIORITY_CHART_COLORS: Record<PriorityClass, string> = {
-  P0: SEVERITY_CHART_COLORS.critical,
-  P1: SEVERITY_CHART_COLORS.high,
-  P2: SEVERITY_CHART_COLORS.medium,
-  P3: SEVERITY_CHART_COLORS.low,
-}
-
-export const PRIORITY_ORDER: PriorityClass[] = ['P0', 'P1', 'P2', 'P3']
+export { PRIORITY_CHART_COLORS, PRIORITY_ORDER } from '@/lib/priority-colors'
 
 /** Recharts <Tooltip> props that adapt to light/dark via theme tokens. */
 export const CHART_TOOLTIP_PROPS = {
@@ -39,9 +22,6 @@ export const CHART_TOOLTIP_PROPS = {
   itemStyle: { color: 'var(--popover-foreground)' },
 } as const
 
-/** Chart hex for "resolved / good" — no severity or semantic token covers it. */
-export const RESOLVED_CHART_COLOR = '#22c55e'
-
 /**
  * Health state used by the CTEM loop stage stripes and coverage bars. `none`
  * is a figure that is not measured (no denominator, or its read failed): it is
@@ -49,41 +29,32 @@ export const RESOLVED_CHART_COLOR = '#22c55e'
  */
 export type CtemState = 'good' | 'warn' | 'crit' | 'none'
 
-const GOOD_STRIPE = 'bg-emerald-500' // palette-ok: no semantic/severity token for "on-track" green
-const GOOD_TEXT = 'text-emerald-600 dark:text-emerald-400' // palette-ok: no semantic/severity token for success
-const GOOD_BAR = 'bg-emerald-500' // palette-ok: no semantic/severity token for success
-
 export const STATE_STRIPE: Record<CtemState, string> = {
-  good: GOOD_STRIPE,
-  warn: SEVERITY_DOT_COLORS.medium,
-  crit: SEVERITY_DOT_COLORS.critical,
+  good: 'bg-success',
+  warn: 'bg-warning',
+  crit: 'bg-destructive',
   none: 'bg-muted-foreground/30',
 }
 
 export const STATE_TEXT: Record<CtemState, string> = {
-  good: GOOD_TEXT,
-  warn: SEVERITY_TEXT_COLORS.medium,
-  crit: SEVERITY_TEXT_COLORS.critical,
+  good: 'text-success',
+  warn: 'text-warning',
+  crit: 'text-destructive',
   none: 'text-muted-foreground',
 }
 
 export const STATE_BAR: Record<CtemState, string> = {
-  good: GOOD_BAR,
-  warn: SEVERITY_DOT_COLORS.medium,
-  crit: SEVERITY_DOT_COLORS.critical,
+  good: 'bg-success',
+  warn: 'bg-warning',
+  crit: 'bg-destructive',
   none: 'bg-muted-foreground/30',
 }
 
-/** Soft badge (bg + text + border) per health state — for pass/warn/fail chips.
- * Warn/crit reuse the severity soft ramp; "good" green has no token, so it is
- * annotated for the palette-drift gate exactly like GOOD_* above. */
-const GOOD_BADGE_SOFT =
-  'bg-emerald-500/10 text-emerald-600 border-emerald-500/20 dark:text-emerald-400' // palette-ok: no semantic/severity token for "on-track" green
-
+/** Soft badge (bg + text + border) per health state, for pass/warn/fail chips. */
 export const STATE_BADGE_SOFT: Record<CtemState, string> = {
-  good: GOOD_BADGE_SOFT,
-  warn: SEVERITY_BADGE_SOFT.medium,
-  crit: SEVERITY_BADGE_SOFT.critical,
+  good: 'bg-success/10 text-success border-success/30',
+  warn: 'bg-warning/10 text-warning border-warning/40',
+  crit: 'bg-destructive/10 text-destructive border-destructive/30',
   none: 'bg-muted text-muted-foreground border-border',
 }
 
