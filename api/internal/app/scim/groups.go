@@ -7,7 +7,9 @@ import (
 	"strings"
 
 	auditapp "github.com/openctemio/openctem/api/internal/app/audit"
+	"github.com/openctemio/openctem/api/internal/app/entitlement"
 	auditdom "github.com/openctemio/openctem/api/pkg/domain/audit"
+	"github.com/openctemio/openctem/api/pkg/domain/limits"
 	"github.com/openctemio/openctem/api/pkg/domain/scimgroup"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	tenantdom "github.com/openctemio/openctem/api/pkg/domain/tenant"
@@ -65,6 +67,8 @@ type GroupService struct {
 	roles   RoleManager
 	audit   AuditLogger
 	logger  *logger.Logger
+	// features gates group links by the organization's limits.
+	features entitlement.FeatureChecker
 }
 
 // SetAuditService wires the audit log for mapping changes.
@@ -252,6 +256,9 @@ func (s *GroupService) GetRoleMappings(ctx context.Context, tenantID shared.ID) 
 	return out, nil
 }
 
+// SetFeatureGate wires the feature check of group links (sso.group_links).
+func (s *GroupService) SetFeatureGate(g entitlement.FeatureChecker) { s.features = g }
+
 // SetRoleMappings replaces the tenant's group → role overrides and
 // re-reconciles every current group member so the change takes effect
 // immediately. actx names the person saving (ActorID required).
@@ -267,6 +274,9 @@ func (s *GroupService) GetRoleMappings(ctx context.Context, tenantID shared.ID) 
 //     role changes it causes are made as the actor, so the peer-administrator
 //     rule and the audit trail both name them.
 func (s *GroupService) SetRoleMappings(ctx context.Context, tenantID shared.ID, mappings map[string]string, actx auditapp.AuditContext) error {
+	if err := entitlement.RequireFeature(ctx, s.features, tenantID, limits.FeatureSSOGroupLinks); err != nil {
+		return err
+	}
 	actorID, err := shared.IDFromString(actx.ActorID)
 	if err != nil {
 		return fmt.Errorf("%w: an acting user is required", shared.ErrValidation)

@@ -15,7 +15,7 @@ import (
 
 // TestDeleteCascade_RepositoryBranchWithFindings guards migration 000238:
 // deleting a tenant or a repository asset whose branch has findings used to
-// fail, because update_branch_finding_counts() updated a branch row whose
+// fail, because the branch counter trigger updated a branch row whose
 // repository the same cascade had already removed. Since 000378 only a tenant
 // delete still cascades findings; an asset delete refuses them.
 //

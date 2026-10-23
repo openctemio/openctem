@@ -8,4 +8,4 @@
 - New `PATCH /api/v1/organization/settings/finding-approvals` (partial update; it replaces `PUT`, see the removal entry). `GET /api/v1/findings/{id}/approvals/policy` returns `accept_approval`, and `can_decide_alone` now also answers for `status=accepted`.
 - The daily approvals digest now lists the decisions one person made in the last day (false positives and accepted risks, including the sole member's own approvals) to every other approver who can see the finding.
 - A single-person acceptance gets the `material_change_single_person` review flag on a severity rise, a KEV listing or new evidence; the material-change controller ends it when the finding now needs a second person under the level in force.
-- **Migration** `003344_single_person_acceptance_review`: replaces the single-person review trigger functions so they cover accepted risks, and adds a partial index for the digest. Short locks only; nothing is rewritten.
+- **Migration** `003349_single_person_acceptance_review`: replaces the single-person review trigger functions so they cover accepted risks, and adds a partial index for the digest. Short locks only; nothing is rewritten.

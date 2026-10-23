@@ -20,6 +20,7 @@
  * them.
  */
 
+import { FindingLastSeenIn } from '../receipt-summary'
 import { useCallback, useMemo, useState } from 'react'
 import Link from '@/components/link'
 import {
@@ -63,6 +64,7 @@ import { assetDetailHref, isLinkableAssetId } from '../../lib/asset-link'
 import { findingAssetTypeLabel } from '../../lib/finding-asset-type'
 import { HUMAN_SOURCES, findingDescription } from '../../lib/finding-detail'
 import { buildRepositoryCodeUrl } from '../../lib/repository-url'
+import { FindingIdentitySection } from './finding-identity-section'
 
 interface OverviewTabProps {
   finding: FindingDetail
@@ -236,6 +238,8 @@ export function OverviewTab({ finding }: OverviewTabProps) {
 
       <IdentifiersSection finding={finding} />
 
+      <FindingIdentitySection findingId={finding.id} />
+
       {!isHuman && (
         <DetailDisclosure summary={t('findings.overviewTab.moreDetails', 'More details')}>
           <div className="mt-3 space-y-4">
@@ -271,6 +275,9 @@ export function OverviewTab({ finding }: OverviewTabProps) {
               </DetailField>
               <DetailField label={t('findings.overviewTab.scan', 'Scan')}>
                 {finding.scanId ? <Mono>{finding.scanId}</Mono> : null}
+              </DetailField>
+              <DetailField label={t('findings.receipts.lastSeenIn', 'Last seen in')}>
+                <FindingLastSeenIn findingId={finding.id} />
               </DetailField>
               <DetailField label={t('findings.overviewTab.recorded', 'Recorded')}>
                 {new Date(finding.createdAt).toLocaleString('en-US', {

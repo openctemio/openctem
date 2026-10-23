@@ -93,6 +93,16 @@ describe('LoopViz', () => {
     expect(within(discovery).queryByText('0')).toBeNull()
   })
 
+  it('every stage card has the same internal grid: the status is last, pinned to the bottom', () => {
+    render(<LoopViz result={loop} />)
+    for (const li of screen.getAllByRole('listitem')) {
+      const status = li.lastElementChild as HTMLElement
+      expect(status).toHaveClass('mt-auto', 'rounded-full')
+      // The sub-line block (detail and flag) keeps its height when empty.
+      expect(status.previousElementSibling).toHaveClass('min-h-9')
+    }
+  })
+
   it('states are words and icons on a neutral border, never a coloured stripe', () => {
     const { container } = render(<LoopViz result={loop} />)
     expect(screen.getAllByText('On track')).toHaveLength(2)
