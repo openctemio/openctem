@@ -2,6 +2,7 @@ package handler
 
 import (
 	"context"
+	"crypto/sha256"
 	"encoding/hex"
 	"errors"
 	"fmt"
@@ -288,8 +289,9 @@ func (h *FindingImportHandler) Import(w http.ResponseWriter, r *http.Request) { 
 		} else if !importer.Format(f).IsValid() {
 			apierror.BadRequest("unknown format; supported: " + strings.Join(supportedFormats(), ", ")).WriteJSON(w)
 			return
+		} else {
+			req.Format = importer.Format(f)
 		}
-		req.Format = importer.Format(f)
 	}
 	if s := strings.TrimSpace(q.Get("min_severity")); s != "" {
 		sev := ctis.Severity(strings.ToLower(s))
@@ -776,6 +778,11 @@ func (h *FindingImportHandler) commitImport(w http.ResponseWriter, r *http.Reque
 	}
 	fp := hasher.sum()
 	digest, _ := hex.DecodeString(fp)
+	if env.Mapping != nil {
+		// The same files through another mapping or version are another upload.
+		d := sha256.Sum256(append(digest, []byte("\x00"+env.Mapping.ID+"\x00"+env.Mapping.Format)...))
+		digest = d[:]
+	}
 	var actorUser *shared.ID
 	if req.ActorUserID != nil {
 		actorUser = req.ActorUserID
