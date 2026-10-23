@@ -85,6 +85,15 @@ func workflowPathIDs(w http.ResponseWriter, r *http.Request) (tenantID, workflow
 }
 
 // ListVersions handles GET /api/v1/workflows/{id}/versions.
+// @Summary      List automation versions
+// @Description  The published versions of an automation, newest first (status published, pending_approval, superseded or retired).
+// @Tags         Automations
+// @Produce      json
+// @Param        id   path      string  true  "Automation ID"
+// @Success      200  {object}  map[string][]WorkflowVersionResponse
+// @Failure      404  {object}  apierror.Error
+// @Security     BearerAuth
+// @Router       /workflows/{id}/versions [get]
 func (h *WorkflowHandler) ListVersions(w http.ResponseWriter, r *http.Request) {
 	tenantID, workflowID, _, ok := workflowPathIDs(w, r)
 	if !ok {
@@ -104,6 +113,16 @@ func (h *WorkflowHandler) ListVersions(w http.ResponseWriter, r *http.Request) {
 }
 
 // GetVersion handles GET /api/v1/workflows/{id}/versions/{versionId}.
+// @Summary      Get an automation version
+// @Description  One version with its stored definition (nodes and edges).
+// @Tags         Automations
+// @Produce      json
+// @Param        id         path      string  true  "Automation ID"
+// @Param        versionId  path      string  true  "Version ID"
+// @Success      200  {object}  WorkflowVersionResponse
+// @Failure      404  {object}  apierror.Error
+// @Security     BearerAuth
+// @Router       /workflows/{id}/versions/{versionId} [get]
 func (h *WorkflowHandler) GetVersion(w http.ResponseWriter, r *http.Request) {
 	tenantID, workflowID, _, ok := workflowPathIDs(w, r)
 	if !ok {
@@ -126,6 +145,17 @@ func (h *WorkflowHandler) GetVersion(w http.ResponseWriter, r *http.Request) {
 // Publish handles POST /api/v1/workflows/{id}/publish: the draft becomes a
 // new version and goes live. The caller needs the permission of every step,
 // as switching an automation on does.
+// @Summary      Publish an automation
+// @Description  Stores the draft as a new immutable version and makes it the version live runs execute (mode live). The caller needs the permission of every step and becomes the owner live runs act as.
+// @Tags         Automations
+// @Produce      json
+// @Param        id   path      string  true  "Automation ID"
+// @Success      200  {object}  WorkflowResponse
+// @Failure      400  {object}  apierror.Error
+// @Failure      403  {object}  apierror.Error
+// @Failure      404  {object}  apierror.Error
+// @Security     BearerAuth
+// @Router       /workflows/{id}/publish [post]
 func (h *WorkflowHandler) Publish(w http.ResponseWriter, r *http.Request) {
 	tenantID, workflowID, userID, ok := workflowPathIDs(w, r)
 	if !ok {
@@ -143,6 +173,17 @@ func (h *WorkflowHandler) Publish(w http.ResponseWriter, r *http.Request) {
 
 // Rollback handles POST /api/v1/workflows/{id}/versions/{versionId}/rollback:
 // the older version's definition is published again as a new version.
+// @Summary      Roll an automation back to a version
+// @Description  Publishes the older version's definition again as a new version.
+// @Tags         Automations
+// @Produce      json
+// @Param        id         path      string  true  "Automation ID"
+// @Param        versionId  path      string  true  "Version ID"
+// @Success      200  {object}  WorkflowResponse
+// @Failure      403  {object}  apierror.Error
+// @Failure      404  {object}  apierror.Error
+// @Security     BearerAuth
+// @Router       /workflows/{id}/versions/{versionId}/rollback [post]
 func (h *WorkflowHandler) Rollback(w http.ResponseWriter, r *http.Request) {
 	tenantID, workflowID, userID, ok := workflowPathIDs(w, r)
 	if !ok {
@@ -180,6 +221,18 @@ type SetWorkflowModeRequest struct {
 
 // SetMode handles PUT /api/v1/workflows/{id}/mode. Only simulate is
 // accepted: an automation goes live by publishing.
+// @Summary      Switch an automation to simulate
+// @Description  Simulate runs execute the draft and record what they would do. Live is reached only by publishing (400 MODE_LIVE_NEEDS_PUBLISH).
+// @Tags         Automations
+// @Accept       json
+// @Produce      json
+// @Param        id    path      string                  true  "Automation ID"
+// @Param        body  body      SetWorkflowModeRequest  true  "Mode"
+// @Success      200   {object}  WorkflowResponse
+// @Failure      400   {object}  apierror.Error
+// @Failure      404   {object}  apierror.Error
+// @Security     BearerAuth
+// @Router       /workflows/{id}/mode [put]
 func (h *WorkflowHandler) SetMode(w http.ResponseWriter, r *http.Request) {
 	tenantID, workflowID, userID, ok := workflowPathIDs(w, r)
 	if !ok {
