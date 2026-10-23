@@ -9,7 +9,8 @@ import (
 )
 
 // LatestFindingIDs returns the ids of the tenant's latest findings inside
-// scope (nil: every finding), newest first. Automation preview samples them.
+// scope (nil: every finding) that the reader may see under the pentest
+// member-visibility rule, newest first. Automation preview samples them.
 func (r *AutomationRunRepository) LatestFindingIDs(ctx context.Context, tenantID shared.ID, scope *shared.DataScope, limit int) ([]shared.ID, error) {
 	args := []any{tenantID.String(), limit}
 	cond := "TRUE"
@@ -17,6 +18,7 @@ func (r *AutomationRunRepository) LatestFindingIDs(ctx context.Context, tenantID
 		var sa []any
 		cond, sa = filterspec.AssigneeScopeSQL("f.asset_id", "f.assigned_to", scope, 3)
 		args = append(args, sa...)
+		cond += " AND " + runFindingVisibleSQL(ctx, "f", "$1", scope)
 	}
 	return r.latestIDs(ctx, `SELECT f.id FROM findings f WHERE f.tenant_id = $1 AND `+cond+` ORDER BY f.created_at DESC LIMIT $2`, args)
 }
