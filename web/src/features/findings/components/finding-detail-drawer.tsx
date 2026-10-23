@@ -64,6 +64,7 @@ import { FindingTaskBand } from '@/features/remediation-hub/components/finding-t
 import { FindingAssetName } from './detail/finding-asset-name'
 import { FindingProperties } from './detail/finding-properties'
 import { FindingProvenanceSection } from './detail/finding-provenance-section'
+import { FindingIssueGroupSection } from './detail/finding-issue-group-section'
 import { FindingTypePanel } from './detail/finding-type-panel'
 import { FindingIntelSection } from './detail/finding-intel-section'
 import { FindingRetestSection } from './detail/finding-retest'
@@ -346,6 +347,7 @@ export function FindingDetailDrawer({
               <FindingRetestSection finding={{ ...detail, status: triage.status }} />
               <FindingRetestCheckSection finding={detail} />
               <FindingTenableRescanSection finding={detail} />
+              <FindingIssueGroupSection findingId={detail.id} />
 
               {description.text && (
                 <DetailSection

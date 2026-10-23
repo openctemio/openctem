@@ -180,6 +180,7 @@ func newDSHarness(t *testing.T) *dsHarness {
 	vulnSvc.SetAccessControlRepository(accessRepo)
 	vulnSvc.SetAssigneeChecker(accessRepo)
 	vulnSvc.SetDataScope(enforcer)
+	vulnSvc.SetIssueLinkStore(postgres.NewFindingIssueLinkRepository(db))
 	vulnSvc.SetAssetRepository(assetRepo)
 	vulnSvc.SetAuditService(auditapp.NewAuditService(postgres.NewAuditRepository(db), log))
 

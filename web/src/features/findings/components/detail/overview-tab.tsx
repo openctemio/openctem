@@ -63,6 +63,7 @@ import { assetDetailHref, isLinkableAssetId } from '../../lib/asset-link'
 import { findingAssetTypeLabel } from '../../lib/finding-asset-type'
 import { HUMAN_SOURCES, findingDescription } from '../../lib/finding-detail'
 import { buildRepositoryCodeUrl } from '../../lib/repository-url'
+import { FindingIssueGroupSection } from './finding-issue-group-section'
 
 interface OverviewTabProps {
   finding: FindingDetail
@@ -148,6 +149,8 @@ export function OverviewTab({ finding }: OverviewTabProps) {
       {(finding.filePath || finding.snippet || finding.contextSnippet) && (
         <CodeLocationSection finding={finding} />
       )}
+
+      <FindingIssueGroupSection findingId={finding.id} />
 
       {finding.scannerOutput && <ScannerOutputSection output={finding.scannerOutput} />}
 

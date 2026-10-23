@@ -1,0 +1,6 @@
+### Added: same-issue links between findings of different tools
+
+- Two SAST engines that flag the same lines of a file with the same weakness (CWE), and one secret value found in several files or repositories, are now linked as the same issue: the finding page shows the group ("Same issue in other tools") and the dashboard facts count it once per asset and state. Each finding keeps its own status, severity, SLA, ticket, task and approvals; nothing is merged.
+- `GET /api/v1/findings/{id}/issue-links` (`findings:read`) lists the group members the caller may see; `DELETE /api/v1/findings/{id}/issue-links/{other}` (`findings:triage`) takes a finding out of a group, records it on both timelines and in the audit log (`finding.issue_unlinked`), and the pair is never linked again automatically.
+- Migration `003341_finding_issue_links`: tables `finding_link_keys` and `finding_issue_links`, the timeline entry types `issue_linked` and `issue_unlinked`, and the dashboard fact builder counting a group once.
+- **Upgrade note:** to link findings stored before this release, run `refingerprint -links` (dry run) and then `refingerprint -links -apply` in the API container. New scans link on their own.

@@ -1394,5 +1394,18 @@
   "findings.list.selectRow": "Select finding {title}",
   "findings.list.kev": "KEV",
   "findings.bulk.assignFailed": "Failed to assign findings",
-  "findings.contextChips.crownJewels": "Crown jewels"
+  "findings.contextChips.crownJewels": "Crown jewels",
+  "findings.issueGroup.heading": "Same issue in other tools",
+  "findings.issueGroup.explainer": "These findings report one issue. They are linked, not merged: each keeps its own status, and the dashboard counts the group once.",
+  "findings.issueGroup.whyLinked": "Why linked",
+  "findings.issueGroup.rule.sastOverlap": "Same file and asset, overlapping lines, same weakness (CWE)",
+  "findings.issueGroup.rule.secretValue": "Same secret value",
+  "findings.issueGroup.rule.vulnAlias": "Same vulnerability under another identifier, same asset",
+  "findings.issueGroup.primary": "First reported",
+  "findings.issueGroup.thisFinding": "This finding",
+  "findings.issueGroup.unlink": "Unlink",
+  "findings.issueGroup.unlinked": "Taken out of the group",
+  "findings.issueGroup.unlinkFailed": "Could not unlink",
+  "findings.issueGroup.confirmTitle": "Unlink this finding?",
+  "findings.issueGroup.confirmDesc": "It leaves the group and is counted on its own again. It will not be linked to this group automatically again. Neither finding changes otherwise."
 }
