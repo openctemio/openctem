@@ -162,7 +162,7 @@ type Repositories struct {
 	IngestJob    *postgres.IngestJobRepository
 	// IngestPayload holds the sealed raw reports of queued uploads.
 	IngestPayload *postgres.IngestPayloadRepository
-	// KEV answers whether CVE ids are in the KEV catalogue (ingest lanes).
+	// KEV answers whether CVE ids are in the KEV catalog (ingest lanes).
 	KEV *postgres.KEVLookup
 	// IngestPolicyVersions versions the policies ingest snapshots.
 	IngestPolicyVersions *postgres.IngestPolicyVersions
@@ -657,7 +657,7 @@ func newRepositories(db *postgres.DB) *Repositories {
 		PriorityRule:  postgres.NewPriorityRuleRepository(db),
 		PriorityAudit: postgres.NewPriorityAuditRepository(db),
 
-		// B6 runtime loop — IOC catalogue + match log (migration 000156).
+		// B6 runtime loop — IOC catalog + match log (migration 000156).
 		IOC: postgres.NewIOCRepository(db),
 
 		// Validation evidence (CTEM Stage-4, migration 000178).

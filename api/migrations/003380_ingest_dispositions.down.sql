@@ -1,4 +1,4 @@
--- Reverts 003365_ingest_dispositions. Side-effect jobs are dropped (their
+-- Reverts 003380_ingest_dispositions. Side-effect jobs are dropped (their
 -- automations are not started); suppressed and held action rows are dropped.
 DELETE FROM ingest_jobs WHERE kind = 'side_effects';
 ALTER TABLE ingest_jobs DROP CONSTRAINT IF EXISTS chk_ingest_jobs_kind;

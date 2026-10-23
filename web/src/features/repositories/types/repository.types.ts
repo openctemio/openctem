@@ -296,18 +296,7 @@ export const BRANCH_STATUS_LABELS: Record<BranchStatus, string> = {
   failed: 'Failed',
   warning: 'Warning',
   scanning: 'Scanning',
-  not_scanned: 'Not Scanned',
-}
-
-export const BRANCH_STATUS_COLORS: Record<
-  BranchStatus,
-  { bg: string; text: string; border: string }
-> = {
-  passed: { bg: 'bg-green-500/15', text: 'text-green-600', border: 'border-green-500/30' },
-  failed: { bg: 'bg-red-500/15', text: 'text-red-600', border: 'border-red-500/30' },
-  warning: { bg: 'bg-yellow-500/15', text: 'text-yellow-600', border: 'border-yellow-500/30' },
-  scanning: { bg: 'bg-blue-500/15', text: 'text-blue-600', border: 'border-blue-500/30' },
-  not_scanned: { bg: 'bg-gray-500/15', text: 'text-gray-600', border: 'border-gray-500/30' },
+  not_scanned: 'Not scanned',
 }
 
 export interface Branch {
