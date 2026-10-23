@@ -134,7 +134,7 @@ var dataSurfaceRegistry = map[string]dataSurface{
 	"/hooks/github-integrations":                   {classSystem, "inbound GitHub webhook: the integration named in the URL and its own HMAC secret decide the one tenant"},
 	"/api/v1/hooks/github-app":                     {classSystem, "GitHub App webhook: HMAC-verified installation status events (RFC-077)"},
 	"POST /api/v1/ci/runs/{id}/results":            {classSystem, "CI run token: write to the run's repository only (RFC-051)"},
-	"GET /api/v1/ci/runs/{id}/results/{upload_id}": {classSystem, "CI run token: the state of the run's own upload; another run's upload is 404 (RFC-051, RFC-122)"},
+	"GET /api/v1/ci/runs/{id}/results/{report_id}": {classSystem, "CI run token: the state of the run's own upload; another run's upload is 404 (RFC-051, RFC-122)"},
 	"POST /api/v1/ci/runs/{id}/baseline-diff":      {classSystem, "CI run token: the run's repository only (RFC-051)"},
 	"POST /api/v1/ci/runs/{id}/evaluate":           {classSystem, "CI run token: the run's own verdict (RFC-051)"},
 	"/api/v1/sensors":                              {classConfig, "sensor management; host details, quarantined results and config reports are owner/admin only"},

@@ -157,7 +157,7 @@ func newCIRigWith(t *testing.T, cfg cirunapp.Config, deps ...func(*cirunapp.Deps
 	router := infrahttp.NewChiRouter()
 	router.POST("/api/v1/ci/oidc/exchange", h.Exchange)
 	router.POST("/api/v1/ci/runs/{id}/results", h.UploadResults, h.AuthenticateRun)
-	router.GET("/api/v1/ci/runs/{id}/results/{upload_id}", h.UploadStatus, h.AuthenticateRun)
+	router.GET("/api/v1/ci/runs/{id}/results/{report_id}", h.UploadStatus, h.AuthenticateRun)
 	router.POST("/api/v1/ci/runs/{id}/baseline-diff", h.BaselineDiff, h.AuthenticateRun)
 	router.POST("/api/v1/ci/runs/{id}/evaluate", h.Evaluate, h.AuthenticateRun)
 	srv := httptest.NewServer(router.Handler())

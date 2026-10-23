@@ -59,13 +59,13 @@ graph TD
 | `POST /api/v1/ci/oidc/exchange` | per-address backstop (600/min) → per pipeline identity limit (60/min per organization + token issuer at one address; claims read unverified, only to pick the bucket) → handler (32 KB body, unknown fields refused). Both in the shared store; see "Exchange rate limit" below |
 | `POST /api/v1/ci/trust-configs/preview` | session tenant chain → `scans` module → `scans:ci:write` → per-person limit (10/min) |
 | `POST /api/v1/ci/runs/{id}/results` | per-IP limit → `AuthenticateRun` (token hash lookup, path id = run) → per-run limit → ingest per-tenant limit and concurrency cap → 50 MB body → decompression → stored sealed, `202` (see "Uploads are applied by the ingest worker") |
-| `GET /api/v1/ci/runs/{id}/results/{upload_id}` | per-IP limit → `AuthenticateRun` → per-run limit |
+| `GET /api/v1/ci/runs/{id}/results/{report_id}` | per-IP limit → `AuthenticateRun` → per-run limit |
 | `POST /api/v1/ci/runs/{id}/baseline-diff`, `/evaluate` | per-IP limit → `AuthenticateRun` → per-run limit |
 
 ### Uploads are applied by the ingest worker
 
 An upload is stored and answered `202` with `upload_id` and
-`Location: /api/v1/ci/runs/{id}/results/{upload_id}`; the ingest worker applies
+`Location: /api/v1/ci/runs/{id}/results/{report_id}`; the ingest worker applies
 it from the `ingest_jobs` queue (kind `ci_results`), exactly as the request
 used to ([RFC-122 §6a](../rfcs/RFC-122-ingest-receipts.md)). At accept a CTIS
 report is decoded (bounded) and must name only the run's repository (400
@@ -76,7 +76,7 @@ The same body sent to the run again is the same upload
 (`Idempotent-Replayed: true`); `Idempotency-Key` uses the durable store
 (24 hours, 503 when the store is down).
 
-`GET .../results/{upload_id}?wait=10` answers `queued`, `processing`,
+`GET .../results/{report_id}?wait=10` answers `queued`, `processing`,
 `applied` (with the counts and `known`) or `failed` with a fixed
 `error_code` (`unreadable`, `too_large`, `report_out_of_scope`,
 `run_evaluated`, `payload_unavailable`, `apply_failed`).
@@ -314,7 +314,7 @@ A decision made on the platform holds on the next run of the same repository:
   pending request never counts. With the suppressions module off, rules do
   not apply.
 - **Job output.** The state of an applied CTIS upload
-  (`GET /ci/runs/{id}/results/{upload_id}`) carries `known`: the indexes, in that report, of the results that carry such
+  (`GET /ci/runs/{id}/results/{report_id}`) carries `known`: the indexes, in that report, of the results that carry such
   a decision, with the decision and the finding id. The job leaves them out of
   its console summary, SARIF and merge request report and says how many it
   hid. It learns nothing about findings it did not report, and nothing about
@@ -402,7 +402,7 @@ A decision made on the platform holds on the next run of the same repository:
   setting is read only for one-shot sensors, and an unreadable setting
   refuses.
 - A run token (`octci_`) authenticates only `/ci/runs/{its id}/{results,
-  results/{upload_id},baseline-diff,evaluate}`: every session, API-key, console and MCP route
+  results/{report_id},baseline-diff,evaluate}`: every session, API-key, console and MCP route
   refuses it, and the run routes refuse every other credential
   (`routes/ci_run_token_scope_db_test.go`). Another run's id answers 404.
 - Refusals before a trust configuration admitted the token are uniform to the

@@ -141,7 +141,7 @@ and answers **202**; the ingest worker applies it from the existing
   `ci_results` or `finding_import`, `source_ref` the run or the receipt) is
   enqueued, idempotent by `(tenant, report id, digest)`.
 - **Answer.** CI: `202` with `upload_id` and `Location:
-  /api/v1/ci/runs/{id}/results/{upload_id}`. Import: `202` with the receipt
+  /api/v1/ci/runs/{id}/results/{report_id}`. Import: `202` with the receipt
   id (receipt status `queued`) and `Location: /api/v1/findings/imports/{id}`.
 - **Apply.** The worker opens the parts, re-reads what the job needs at the
   time it runs (the CI run; the uploader's data scope from the caller
@@ -155,7 +155,7 @@ and answers **202**; the ingest worker applies it from the existing
   (2 s, 4 s, 8 s ... capped at a minute for uploads) and are dead after 5
   attempts (`apply_failed`). A dead import marks its receipt `failed` with
   that code; its parts are kept 7 days.
-- **Read.** `GET /api/v1/ci/runs/{id}/results/{upload_id}?wait=N` (run
+- **Read.** `GET /api/v1/ci/runs/{id}/results/{report_id}?wait=N` (run
   token) and `GET /api/v1/findings/imports/{id}/result?wait=N` answer
   `queued`, `processing`, `applied` (with the result) or `failed` (with the
   code); `wait` (at most 10 s, so the answer fits the server's write
@@ -183,7 +183,7 @@ a pending or failed upload.
 | `POST /api/v1/findings/imports` | `findings:write` + `assets:write` + `assets:import` | multipart; `202` + `Location` (the receipt, status `queued`), applied by the ingest worker (§6a); `dry_run=true` previews in the request (`200`) |
 | `GET /api/v1/findings/imports/{id}/result` | `findings:read` | state of a committed upload (`queued`, `processing`, `applied`, `failed` + `error_code`), its per-file results and its receipt; `wait` ≤ 10 s; visible as the receipt |
 | `POST /api/v1/ci/runs/{id}/results` | CI run token | `202` + `upload_id` + `Location` (§6a); the same body to the run again is the same upload |
-| `GET /api/v1/ci/runs/{id}/results/{upload_id}` | CI run token | state of the run's upload and, once applied, its counts and decided results; `wait` ≤ 10 s; another run's upload is 404 |
+| `GET /api/v1/ci/runs/{id}/results/{report_id}` | CI run token | state of the run's upload and, once applied, its counts and decided results; `wait` ≤ 10 s; another run's upload is 404 |
 | `GET /api/v1/findings/imports` | `findings:read` | list of receipts (§4); filters `source_kind`, `source_ref`; `page`, `per_page` ≤ 100; unknown parameter → 400 |
 | `GET /api/v1/findings/imports/{id}` | `findings:read` | one receipt, counts by severity of the visible actions |
 | `GET /api/v1/findings/imports/{id}/actions` | `findings:read` | the per-finding actions the caller may see; filter `action` |
