@@ -9,7 +9,11 @@ import { AlertTriangle, Shield, Target, FileWarning, Clock, Bot, XCircle } from 
 import { useTranslation } from '@/context/i18n-provider'
 import { TriageStatusBadge } from './triage-status-badge'
 import { triageFailureMessage } from '../lib/messages'
-import { SEVERITY_BADGE_LIGHT, type SeverityLevel } from '@/lib/severity-colors'
+import {
+  SEVERITY_BADGE_LIGHT,
+  SEVERITY_TEXT_COLORS,
+  type SeverityLevel,
+} from '@/lib/severity-colors'
 import type { AITriageResult, Exploitability } from '../types'
 import { EXPLOITABILITY_CONFIG, EFFORT_CONFIG } from '../types'
 
@@ -25,23 +29,24 @@ export function TriageResultCard({ result, className }: TriageResultCardProps) {
   }
 
   const getSeverityColor = (severity: string | undefined) => {
-    if (!severity) return 'bg-gray-100 text-gray-800'
+    if (!severity) return 'bg-muted text-muted-foreground'
     return (
-      SEVERITY_BADGE_LIGHT[severity.toLowerCase() as SeverityLevel] ?? 'bg-gray-100 text-gray-800'
+      SEVERITY_BADGE_LIGHT[severity.toLowerCase() as SeverityLevel] ??
+      'bg-muted text-muted-foreground'
     )
   }
 
   const getRiskScoreColor = (score: number) => {
-    if (score >= 80) return 'text-red-600'
-    if (score >= 60) return 'text-orange-600'
-    if (score >= 40) return 'text-yellow-600'
-    return 'text-green-600'
+    if (score >= 80) return SEVERITY_TEXT_COLORS.critical
+    if (score >= 60) return SEVERITY_TEXT_COLORS.high
+    if (score >= 40) return SEVERITY_TEXT_COLORS.medium
+    return 'text-success'
   }
 
   const getFPColor = (likelihood: number) => {
-    if (likelihood >= 0.7) return 'text-green-600' // High FP = likely safe
-    if (likelihood >= 0.3) return 'text-yellow-600'
-    return 'text-red-600' // Low FP = likely real
+    if (likelihood >= 0.7) return 'text-success' // High FP = likely safe
+    if (likelihood >= 0.3) return SEVERITY_TEXT_COLORS.medium
+    return SEVERITY_TEXT_COLORS.critical // Low FP = likely real
   }
 
   if (result.status === 'pending' || result.status === 'processing') {

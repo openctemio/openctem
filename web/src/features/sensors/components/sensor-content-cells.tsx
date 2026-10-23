@@ -1,7 +1,7 @@
 'use client'
 
 import { useState } from 'react'
-import { RefreshCw } from 'lucide-react'
+import { PackageCheck } from 'lucide-react'
 import { toast } from 'sonner'
 
 import { ConfirmDialog } from '@/components/confirm-dialog'
@@ -102,7 +102,7 @@ export function FleetContentRefreshButton({
   return (
     <>
       <Button type="button" variant="outline" size="sm" onClick={() => setOpen(true)}>
-        <RefreshCw className="h-4 w-4" />
+        <PackageCheck className="h-4 w-4" aria-hidden />
         {t('sensors.contentCells.refresh')}
       </Button>
       <ConfirmDialog
