@@ -25,6 +25,7 @@ import {
 import { Main } from '@/components/layout'
 import {
   DataTable,
+  ErrorState,
   EmptyState,
   GatedButton,
   MetricStrip,
@@ -97,8 +98,8 @@ import {
   useCanApproveExposures,
   PendingDispositionBadge,
   PendingDispositionPanel,
-  notifyPendingDispositions,
 } from '@/features/exposures/components'
+import { runPool, summarizeBulk } from '@/features/exposures/lib/bulk'
 import type {
   ExposureEvent,
   ExposureListFilters,
@@ -229,7 +230,12 @@ export default function ExposuresPage() {
     mutate: refreshExposures,
   } = useExposures(tenantId, apiFilters)
 
-  const { stats, isLoading: statsLoading, mutate: refreshStats } = useExposureStats(tenantId)
+  const {
+    stats,
+    isLoading: statsLoading,
+    error: statsError,
+    mutate: refreshStats,
+  } = useExposureStats(tenantId)
 
   const isLoading = exposuresLoading || statsLoading
 
@@ -245,7 +251,11 @@ export default function ExposuresPage() {
         {
           onTruncated: (loaded) =>
             toast.warning(
-              `Export limited to the first ${loaded.toLocaleString()} exposures — refine filters to export the rest`
+              t(
+                'exposures.export.truncated',
+                'Export limited to the first {count} exposures. Refine the filters to export the rest.',
+                { count: loaded.toLocaleString() }
+              )
             ),
         }
       )
@@ -255,7 +265,7 @@ export default function ExposuresPage() {
     } finally {
       setIsExporting(false)
     }
-  }, [isExporting, apiFilters])
+  }, [isExporting, apiFilters, t])
 
   const handleRefresh = useCallback(() => {
     refreshExposures()
@@ -302,33 +312,34 @@ export default function ExposuresPage() {
   }, [handleRefresh, clearSelection])
 
   // Bulk handlers apply the per-exposure state-change API to every selected id.
-  // ExposureBulkActions surfaces the success/error toast and clears selection;
-  // we only refresh on completion. Throwing propagates to its catch so a
-  // partial/total failure shows the error toast instead of a false success.
+  // They run through a pool of 5, never reject on a partial failure and return
+  // the outcome; ExposureBulkActions owns the toasts and clears selection. The
+  // list refreshes after every run so rows that did change are not left stale.
   const handleBulkResolve = useCallback(
     async (ids: string[]) => {
-      await Promise.all(ids.map((id) => resolveExposure(id)))
+      const results = await runPool(ids, (id) => resolveExposure(id))
       handleRefresh()
+      return summarizeBulk(results)
     },
     [handleRefresh]
   )
 
   const handleBulkAccept = useCallback(
     async (ids: string[], reason: string) => {
-      const results = await Promise.all(ids.map((id) => acceptExposure(id, { reason })))
-      notifyPendingDispositions(results, t)
+      const results = await runPool(ids, (id) => acceptExposure(id, { reason }))
       handleRefresh()
+      return summarizeBulk(results, (r) => Boolean(r?.pending_disposition))
     },
-    [handleRefresh, t]
+    [handleRefresh]
   )
 
   const handleBulkFalsePositive = useCallback(
     async (ids: string[], reason: string) => {
-      const results = await Promise.all(ids.map((id) => markExposureFalsePositive(id, { reason })))
-      notifyPendingDispositions(results, t)
+      const results = await runPool(ids, (id) => markExposureFalsePositive(id, { reason }))
       handleRefresh()
+      return summarizeBulk(results, (r) => Boolean(r?.pending_disposition))
     },
-    [handleRefresh, t]
+    [handleRefresh]
   )
 
   const clearFilters = useCallback(() => {
@@ -376,8 +387,12 @@ export default function ExposuresPage() {
     },
     {
       key: 'resolved',
-      label: 'Resolved',
-      value: stats?.resolved_count ?? 0,
+      label: t('exposures.metrics.closed', 'Closed'),
+      // Same three states the Closed view lists, so the tile equals its list.
+      value:
+        (stats?.by_state?.resolved ?? 0) +
+        (stats?.by_state?.accepted ?? 0) +
+        (stats?.by_state?.false_positive ?? 0),
       onClick: () => setView('resolved'),
       active: activeView === 'resolved',
     },
@@ -499,7 +514,10 @@ export default function ExposuresPage() {
     <Main>
       <PageHeader
         title="Exposures"
-        description="Changes to your attack surface that need a decision — resolve, accept or dismiss them."
+        description={t(
+          'exposures.page.description',
+          'Changes to your attack surface that need a decision. Resolve, accept or dismiss them.'
+        )}
       />
 
       <ExposuresTabs />
@@ -511,7 +529,15 @@ export default function ExposuresPage() {
         </TabsList>
 
         <TabsContent value="list" className="mt-5 space-y-5">
-          <MetricStrip loading={statsLoading} items={metrics} />
+          {statsError ? (
+            <ErrorState
+              title={t('exposures.stats.errorTitle', 'exposure statistics')}
+              error={statsError}
+              onRetry={() => refreshStats()}
+            />
+          ) : (
+            <MetricStrip loading={statsLoading} items={metrics} />
+          )}
 
           {exposuresError ? (
             <Alert variant="destructive">
@@ -562,7 +588,13 @@ export default function ExposuresPage() {
         </TabsContent>
 
         <TabsContent value="analytics" className="mt-5 space-y-5">
-          {statsLoading ? (
+          {statsError ? (
+            <ErrorState
+              title={t('exposures.stats.errorTitle', 'exposure statistics')}
+              error={statsError}
+              onRetry={() => refreshStats()}
+            />
+          ) : statsLoading ? (
             <div className="grid gap-4 md:grid-cols-2">
               <Skeleton className="h-64 w-full rounded-xl" />
               <Skeleton className="h-64 w-full rounded-xl" />
