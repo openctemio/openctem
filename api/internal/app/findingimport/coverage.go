@@ -16,6 +16,7 @@ import (
 
 	"github.com/openctemio/openctem/api/internal/app/ingest"
 	"github.com/openctemio/openctem/api/pkg/domain/ingestreceipt"
+	"github.com/openctemio/openctem/api/pkg/domain/ingestreport"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 )
 
@@ -126,7 +127,9 @@ func (s *Service) closeUncovered(ctx context.Context, req Request, results []Fil
 		// A skipped record (below min_severity, or unusable) is a finding
 		// the file may hold but the upload did not report: closing on its
 		// absence would close what is still there.
-		if fr.Error != nil || fr.Stats.Skipped > 0 || fr.Ingest != nil && len(fr.Ingest.FailedFindings) > 0 {
+		// A file whose receipt write failed left its findings off the
+		// receipt that decides what the upload did not report.
+		if fr.Error != nil || fr.Stats.Skipped > 0 || fr.Ingest != nil && (len(fr.Ingest.FailedFindings) > 0 || fr.Ingest.ReceiptFailed) {
 			return noteIncomplete, nil
 		}
 		if fr.Ingest != nil && fr.Tool != "" {
@@ -154,6 +157,11 @@ func (s *Service) closeUncovered(ctx context.Context, req Request, results []Fil
 	total := 0
 	for _, tool := range names {
 		stale, open, err := repo.ImportCoverageCandidates(ctx, req.TenantID, assets, tool, req.ReceiptID)
+		if errors.Is(err, ingestreport.ErrReceiptIncomplete) {
+			// Past the action cap the receipt no longer lists everything
+			// the upload reported: absence cannot be decided.
+			return noteIncomplete, nil
+		}
 		if err != nil {
 			s.logger.Warn("finding import: coverage candidates", "tenant_id", req.TenantID.String(), "error", err)
 			return "error", nil
