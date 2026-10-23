@@ -1760,5 +1760,6 @@
   "findings.epss.bandHint.moderate": "Từ 10% đến 40%.",
   "findings.epss.bandHint.low": "Đến 10%.",
   "findings.epss.chipHint": "Hiện trong danh sách từ 10%. Trang chi tiết luôn hiển thị.",
-  "findings.epss.label": "EPSS"
+  "findings.epss.label": "EPSS",
+  "findings.columns.exploitSignals": "Tín hiệu khai thác"
 }
