@@ -45,11 +45,11 @@ describe('getRiskLevel', () => {
     })
 
     it('returns correct colors', () => {
-      expect(getRiskLevel(90).color).toBe('bg-red-500')
-      expect(getRiskLevel(70).color).toBe('bg-orange-500')
-      expect(getRiskLevel(50).color).toBe('bg-yellow-500')
-      expect(getRiskLevel(30).color).toBe('bg-blue-500')
-      expect(getRiskLevel(10).color).toBe('bg-green-500')
+      expect(getRiskLevel(90).color).toBe('bg-sev-critical')
+      expect(getRiskLevel(70).color).toBe('bg-sev-high')
+      expect(getRiskLevel(50).color).toBe('bg-sev-medium')
+      expect(getRiskLevel(30).color).toBe('bg-sev-low')
+      expect(getRiskLevel(10).color).toBe('bg-success')
     })
   })
 

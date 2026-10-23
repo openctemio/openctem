@@ -1,5 +1,6 @@
 'use client'
 
+import { SEVERITY_PROGRESS_COLORS } from '@/lib/severity-colors'
 import { use, useState, useMemo, useCallback } from 'react'
 import NextLink from '@/components/link'
 import { useRouter } from 'next/navigation'
@@ -769,15 +770,16 @@ function AssetGroupDetailContent({ params }: PageProps) {
                     <div className="flex-1">
                       <Progress
                         value={group.riskScore}
-                        className={`h-3 ${
+                        className={cn(
+                          'h-3',
                           group.riskScore >= 80
-                            ? '[&>div]:bg-red-500'
+                            ? SEVERITY_PROGRESS_COLORS.critical
                             : group.riskScore >= 60
-                              ? '[&>div]:bg-orange-500'
+                              ? SEVERITY_PROGRESS_COLORS.high
                               : group.riskScore >= 40
-                                ? '[&>div]:bg-yellow-500'
-                                : '[&>div]:bg-green-500'
-                        }`}
+                                ? SEVERITY_PROGRESS_COLORS.medium
+                                : '[&>div]:bg-success'
+                        )}
                       />
                       <div className="flex justify-between mt-1 text-xs text-muted-foreground">
                         <span>Low</span>

@@ -99,22 +99,22 @@ export const EXPLOIT_MATURITY_CONFIG: Record<
 > = {
   none: {
     label: 'None',
-    color: 'bg-gray-500 text-white',
+    color: 'bg-muted text-muted-foreground',
     description: 'No known exploit',
   },
   poc: {
     label: 'PoC',
-    color: 'bg-yellow-500 text-black',
+    color: 'bg-warning/15 text-warning',
     description: 'Proof-of-concept exploit exists',
   },
   functional: {
     label: 'Functional',
-    color: 'bg-orange-500 text-white',
+    color: 'border border-destructive/40 bg-destructive/10 text-destructive',
     description: 'Working exploit available',
   },
   weaponized: {
     label: 'Weaponized',
-    color: 'bg-red-600 text-white',
+    color: 'bg-destructive text-destructive-foreground',
     description: 'Widely exploited in the wild',
   },
 }
