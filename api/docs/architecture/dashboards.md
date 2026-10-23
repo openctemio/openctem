@@ -781,10 +781,18 @@ widget kit's frame, with its own error boundary.
   never requested) and "Mine", search above eight entries, New and Manage.
 - **Scope badge**: "Organization-wide" or "Your scope", from the response's
   `scope`; drill-downs open lists in the viewer's own access.
-- **Freshness line**: when the figures were computed, the next scheduled
-  refresh, stale and failed states, Refresh now (429 answered with a
-  message), and the schedule picker for the owner of a personal dashboard or
-  a manager of an organization dashboard (the server checks both).
+- **Toolbar**: on a phone (below 640px) one row with the switcher filling the
+  width, an icon-only Refresh now and an icon-only More menu (44px targets,
+  accessible names); Customize and the refresh schedule move into More. From
+  640px one row: switcher, Customize, schedule picker, Refresh now, More. The
+  dashboard description is hidden on a phone.
+- **Freshness line**: one muted line under the toolbar, "Your scope · Updated
+  2m ago · Next in 58m" (narrow relative times, full dates on hover); the next refresh
+  truncates first on narrow screens; a status line appears under it only when the
+  figures are stale, the last refresh failed, or the data is being built for
+  the first time. Refresh now answers a 429 with a message. The schedule
+  picker is offered to the owner of a personal dashboard or a manager of an
+  organization dashboard (the server checks both).
 - **Actions**: Customize (personal), Duplicate to mine (organization), Set as
   default (personal; organization for managers), Delete (personal).
 - **Customize** (owner of a personal dashboard; `dashboards:org:manage` for

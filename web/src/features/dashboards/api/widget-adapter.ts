@@ -150,7 +150,9 @@ function toResult(v: WidgetValue, spec: WidgetSpec | undefined): WidgetResult | 
         shape: 'items',
         rows: it.rows.map((r) => ({
           id: r.id,
-          title: r.title,
+          // A finding stored without a title arrives as null or empty; the
+          // list shows a named placeholder instead of a blank row.
+          title: r.title ?? '',
           priority: r.priority_class || null,
           severity: r.severity || null,
           asset: r.asset_name ?? null,
