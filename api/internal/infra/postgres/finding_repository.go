@@ -204,7 +204,8 @@ var findingCreateSQL = `
 			fingerprint_version, identity_key,
 			` + findingTypeColumnsSQL + `,
 			` + findingNetworkColumnsSQL + `,
-			` + findingScannerColumnsSQL + `
+			` + findingScannerColumnsSQL + `,
+			` + findingIdentityColumnsSQL + `
 		)
 		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, $32, $33, $34,
 			$35, $36, $37, $38, $39, $40, $41, $42, $43, $44, $45, $46, $47, $48, $49, $50,
@@ -213,7 +214,8 @@ var findingCreateSQL = `
 			$83, $84, $85, $86, $87, $88,
 			$89, $90, $91, $92, $93, $94` + findingTypePlaceholders(95) +
 	findingNetworkPlaceholders(95+findingTypeColumnCount) +
-	findingScannerPlaceholders(95+findingTypeColumnCount+findingNetworkColumnCount) + `)
+	findingScannerPlaceholders(95+findingTypeColumnCount+findingNetworkColumnCount) +
+	findingIdentityPlaceholders(95+findingTypeColumnCount+findingNetworkColumnCount+findingScannerColumnCount) + `)
 	`
 
 // findingCreateArgs is the argument list for findingCreateSQL. metadata is
@@ -341,6 +343,7 @@ func findingCreateArgs(finding *vulnerability.Finding, metadata []byte) ([]any, 
 	args = append(args, findingTypeArgs(finding)...) // $95…
 	args = append(args, findingNetworkArgs(finding)...)
 	args = append(args, findingScannerArgs(finding)...)
+	args = append(args, findingIdentityArgs(finding)...)
 	return args, nil
 }
 
@@ -751,7 +754,8 @@ func findingInsertColumnsSQL() string {
 			fingerprint_version, identity_key,
 			` + findingTypeColumnsSQL + `,
 			` + findingNetworkColumnsSQL + `,
-			` + findingScannerColumnsSQL + `
+			` + findingScannerColumnsSQL + `,
+			` + findingIdentityColumnsSQL + `
 		)`
 }
 
@@ -888,7 +892,7 @@ func findingUpsertConflictSQL() string {
 			tags = ` + findingTagsMergeSQL("findings.tags", "EXCLUDED.tags") + `,
 			-- Rule name: first non-empty one wins, as in EnrichFrom.
 			rule_name = COALESCE(NULLIF(findings.rule_name, ''), EXCLUDED.rule_name)` +
-		findingTypeConflictSQL() + findingNetworkConflictSQL() + findingScannerConflictSQL() + "\n\t"
+		findingTypeConflictSQL() + findingNetworkConflictSQL() + findingScannerConflictSQL() + findingIdentityConflictSQL() + "\n\t"
 }
 
 // findingTagsMergeSQL is the SQL expression merging a stored and an incoming
@@ -921,7 +925,7 @@ func (r *FindingRepository) execFindingInsert(ctx context.Context, stmt *sql.Stm
 
 // findingInsertColumnCount is the number of columns in the findings INSERT.
 // It MUST stay in sync with findingInsertColumnsSQL and findingInsertArgs.
-const findingInsertColumnCount = 94 + findingTypeColumnCount + findingNetworkColumnCount + findingScannerColumnCount
+const findingInsertColumnCount = 94 + findingTypeColumnCount + findingNetworkColumnCount + findingScannerColumnCount + findingIdentityColumnCount
 
 // findingInsertArgs returns the ordered argument list for a single findings
 // INSERT row. Shared by the single-row prepared-statement path and the
@@ -1056,7 +1060,7 @@ func findingInsertArgs(finding *vulnerability.Finding) ([]any, error) {
 		// Identity recipe version and tuple (RFC-043 §6).
 		finding.FingerprintVersion(),
 		nullJSON(finding.IdentityKey()),
-	}, append(append(findingTypeArgs(finding), findingNetworkArgs(finding)...), findingScannerArgs(finding)...)...), nil
+	}, append(append(append(findingTypeArgs(finding), findingNetworkArgs(finding)...), findingScannerArgs(finding)...), findingIdentityArgs(finding)...)...), nil
 }
 
 // PentestCampaignRole returns the user's role in a pentest campaign of the
