@@ -394,8 +394,20 @@
   "confirm.savedView.clear": "Bỏ chế độ xem",
   "confirm.savedView.saveCurrent": "Lưu bộ lọc hiện tại thành chế độ xem",
   "confirm.savedView.saveTitle": "Lưu chế độ xem",
-  "confirm.savedView.saveDesc": "Lưu bộ lọc, thứ tự sắp xếp và cách nhóm hiện tại. Chế độ xem được chia sẻ chỉ chia sẻ bộ lọc, không chia sẻ kết quả: mỗi người chỉ thấy các phát hiện mà họ được phép xem.",
+  "confirm.savedView.saveDesc": "Lưu bộ lọc, thứ tự sắp xếp, cách nhóm, các cột và mật độ hiện tại. Chế độ xem được chia sẻ chỉ chia sẻ bộ lọc, không chia sẻ kết quả: mỗi người chỉ thấy các phát hiện mà họ được phép xem.",
   "confirm.savedView.name": "Tên",
   "confirm.savedView.visibleTo": "Hiển thị cho",
-  "confirm.savedView.onlyMe": "Chỉ mình tôi"
+  "confirm.savedView.onlyMe": "Chỉ mình tôi",
+  "confirm.savedView.change.filters": "{count, plural, other {đã thêm # bộ lọc}}",
+  "confirm.savedView.change.search": "đã đổi từ khóa tìm kiếm",
+  "confirm.savedView.change.sort": "đã đổi thứ tự sắp xếp",
+  "confirm.savedView.change.group": "đã đổi cách nhóm",
+  "confirm.savedView.change.columns": "đã đổi các cột",
+  "confirm.savedView.change.density": "đã đổi mật độ",
+  "confirm.savedView.triggerDirty": "{name}, có thay đổi chưa lưu",
+  "confirm.savedView.unsaved": "Có thay đổi chưa lưu trong “{name}”: {changes}",
+  "confirm.savedView.saveChanges": "Lưu thay đổi",
+  "confirm.savedView.saveAsNew": "Lưu thành chế độ xem mới…",
+  "confirm.savedView.discard": "Bỏ thay đổi",
+  "confirm.savedView.updated": "Đã cập nhật chế độ xem \"{name}\""
 }
