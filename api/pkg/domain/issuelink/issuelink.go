@@ -372,6 +372,13 @@ func (g *groups) group(id string) string {
 // place decides the link an edge makes: a finding joins the group of the
 // finding it matches, or two ungrouped findings form one with the earlier
 // as primary. Two grouped findings make nothing.
+//
+// A secret value is one credential, so matching any member is matching the
+// group. A SAST overlap is not transitive (40-45 overlaps 42 and 44-50, which
+// do not overlap each other): a finding joins a SAST group only by matching
+// its primary, so a wide line range can never chain separate issues into one
+// group (counted once), and every member's link still holds when it is
+// derived again (no release and re-link on each sighting).
 func (g *groups) place(e edge) (Link, bool) {
 	if g.unlinked[pairKey(e.a, e.b)] {
 		return Link{}, false
@@ -384,8 +391,14 @@ func (g *groups) place(e edge) (Link, bool) {
 		}
 		return g.join(e.b, e.a, e.rule)
 	case ga != "" && gb == "":
+		if e.rule == RuleSASTOverlap && ga != e.a {
+			return Link{}, false
+		}
 		return g.join(ga, e.b, e.rule)
 	case ga == "" && gb != "":
+		if e.rule == RuleSASTOverlap && gb != e.b {
+			return Link{}, false
+		}
 		return g.join(gb, e.a, e.rule)
 	}
 	return Link{}, false

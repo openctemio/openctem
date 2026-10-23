@@ -141,6 +141,34 @@ func TestPlan_JoinsExistingGroupKeepsPrimaryAndDoesNotFuseGroups(t *testing.T) {
 	}
 }
 
+// A wide range overlapping two separate issues must not chain them into one
+// group: a SAST finding joins a group only by overlapping its primary.
+func TestPlan_SASTWideRangeNeverChainsSeparateIssues(t *testing.T) {
+	a := sast("a", "r1", 10, 12, "CWE-89")
+	b := sast("b", "r2", 40, 41, "CWE-89")
+	wide := sast("w", "r3", 1, 1000, "CWE-89")
+	existing := []Link{{PrimaryID: "a", MemberID: "w", Rule: RuleSASTOverlap, State: StateActive}}
+	p := plan([]Finding{b}, []Finding{a, wide}, existing)
+	if len(p.Make) != 0 {
+		t.Fatalf("b joined a's group through member w: %+v", p.Make)
+	}
+	// Derived again, a member that overlaps the primary keeps its link.
+	p = plan([]Finding{wide}, []Finding{a, b}, existing)
+	if len(p.Release) != 0 {
+		t.Fatalf("released w's link to the primary it overlaps: %+v", p.Release)
+	}
+	// One batch: the wide finding pairs with the primary only.
+	p = plan([]Finding{a, wide, b}, nil, nil)
+	for _, l := range p.Make {
+		if (l.PrimaryID == "a" && l.MemberID == "b") || (l.PrimaryID == "b" && l.MemberID == "a") {
+			t.Fatalf("a and b (disjoint lines) ended up in one group: %+v", p.Make)
+		}
+		if l.MemberID == "b" && l.PrimaryID != "w" {
+			t.Fatalf("b joined a group whose primary it does not overlap: %+v", p.Make)
+		}
+	}
+}
+
 func TestPlan_ReleasesALinkWhoseSignalIsGone(t *testing.T) {
 	a := sast("a", "r1", 42, 42, "CWE-89")
 	moved := sast("b", "r2", 90, 91, "CWE-89") // no longer overlaps

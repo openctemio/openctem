@@ -108,6 +108,13 @@ $$;
 
 -- The fact builder counts a same-issue group once per asset and state. No
 -- rebuild is needed: no link exists yet.
+
+-- Severity order for counting a group once (most severe first).
+CREATE OR REPLACE FUNCTION dash_severity_rank(p_severity text) RETURNS smallint
+LANGUAGE sql IMMUTABLE PARALLEL SAFE AS $$
+    SELECT CASE p_severity WHEN 'critical' THEN 1 WHEN 'high' THEN 2 WHEN 'medium' THEN 3
+                           WHEN 'low' THEN 4 WHEN 'info' THEN 5 ELSE 6 END::smallint
+$$;
 CREATE OR REPLACE FUNCTION dash_recompute_asset(p_tenant uuid, p_asset uuid) RETURNS integer
 LANGUAGE plpgsql AS $$
 DECLARE
@@ -138,8 +145,10 @@ BEGIN
           AND NOT f.branch_only
           AND dash_finding_lens(f.status) IS NOT NULL
           -- A finding linked as the same issue as another finding of this
-          -- asset in the same state is counted once: the group's primary,
-          -- else its earliest member in that state.
+          -- asset in the same state is counted once: a member is left out
+          -- when another finding of its group there is at least as severe
+          -- and at least as urgent (the primary first, then the earliest),
+          -- so counting once never hides a higher severity or priority.
           AND NOT EXISTS (
               SELECT 1
               FROM finding_issue_links l
@@ -153,7 +162,11 @@ BEGIN
                 AND g.asset_id IS NOT DISTINCT FROM f.asset_id
                 AND NOT g.branch_only
                 AND dash_finding_lens(g.status) = dash_finding_lens(f.status)
-                AND (g.id = l.primary_id OR (g.created_at, g.id) < (f.created_at, f.id)))
+                AND dash_severity_rank(g.severity) <= dash_severity_rank(f.severity)
+                AND COALESCE(g.priority_class, 'none') <= COALESCE(f.priority_class, 'none')
+                AND (g.id = l.primary_id
+                     OR (dash_severity_rank(g.severity), COALESCE(g.priority_class, 'none'), g.created_at, g.id)
+                      < (dash_severity_rank(f.severity), COALESCE(f.priority_class, 'none'), f.created_at, f.id)))
     ),
     -- F1
     s_new AS (

@@ -613,18 +613,19 @@ Candidates come only from server-computed keys stored in `finding_link_keys`
 (one indexed lookup per ingest batch, no scan of a tenant's findings). A key
 held by more than 200 findings creates no link (a test fixture secret), and a
 group never exceeds 50 members. A group is a star around its primary, the
-earliest-created finding when it formed; two groups are never fused
-automatically. A pair a person unlinked is never linked again automatically;
+earliest-created finding when it formed; a finding joins a SAST group only by
+overlapping its primary (line overlap is not transitive); two groups are never
+fused automatically. A pair a person unlinked is never linked again automatically;
 a pair whose signal no longer holds (the code moved) is released.
 
 ### 17.4 Effects
 
 | Concern | Same-issue group |
 |---|---|
-| Dashboard facts | counted once per asset and state (the primary, else the earliest member in that state); a group across repositories counts once per repository, since each repository has its own clean-up |
+| Dashboard facts | counted once per asset and state: a member is left out when another finding of its group there is at least as severe and as urgent (the primary first, then the earliest), so a higher severity is never hidden; a group across repositories counts once per repository, since each repository has its own clean-up |
 | Status, severity, SLA, tickets, tasks, approvals | per finding; a decision on one member is never applied to the others |
 | Visibility | a member on an asset outside the caller's data scope is never listed or counted; a group with no other visible member is shown as none |
-| Timeline and audit | a link writes `issue_linked` on the member; an unlink writes `issue_unlinked` on both and the audit event `finding.issue_unlinked` |
+| Timeline and audit | a link writes `issue_linked` on the member when both are on one asset; an unlink writes `issue_unlinked` on both and the audit event `finding.issue_unlinked`. An entry names the other finding only when both are on one asset (a viewer of one repository may not see the other) |
 | Finding merge | links and keys stay on the tombstone; the survivor's are derived again on its next sighting or by the backfill |
 
 ### 17.5 Threat model
