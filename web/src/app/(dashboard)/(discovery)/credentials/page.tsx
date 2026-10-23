@@ -150,8 +150,6 @@ export default function CredentialsPage() {
   const { data: enums } = useCredentialEnumsApi()
   const sourceOptions = enums?.source_types ?? []
   const sourceLabel = (v: string) => t(`credentials.source.${v}`, v.replace(/_/g, ' '))
-  const apiSource = sourceFilter !== 'all' ? [sourceFilter] : undefined
-  const apiSeverity = SEVERITY_FILTERS.includes(severityFilter) ? [severityFilter] : undefined
 
   const listFilters = useMemo(
     () => ({
@@ -159,11 +157,10 @@ export default function CredentialsPage() {
       per_page: list.perPage,
       sort: list.sort || undefined,
       state: apiStateFilter.length > 0 ? apiStateFilter : undefined,
-      source: apiSource,
-      severity: apiSeverity,
+      source: sourceFilter !== 'all' ? [sourceFilter] : undefined,
+      severity: SEVERITY_FILTERS.includes(severityFilter) ? [severityFilter] : undefined,
       search: debouncedSearch.trim() || undefined,
     }),
-    // eslint-disable-next-line react-hooks/exhaustive-deps
     [
       list.page,
       list.perPage,
