@@ -20,6 +20,7 @@ organization's findings. The ingest service writes it; nothing else does.
 | Fairness and limits: lanes (urgent KEV/critical, interactive, bulk), one processing job per scope key, per-organization running cap, parallel workers on their own pool, 429 + Retry-After past the queue limit, refusal when the depth cannot be read, dead after the last attempt's lease (migration `003363_ingest_lanes_scope`, RFC-122 §6b) | shipped |
 | Queue hygiene: `ingest-queue-retention` (stored parts once unneeded, finished jobs and reports after 30 days); a quarantined report marked accepted only after it applied (migration `003364_quarantine_apply_claim`, RFC-122 §6c) | shipped |
 | Dispositions: suppressed (with rule and policy version), out of scope, rejected and quarantined items on the receipt (`ingest_receipt_items`, `GET /findings/imports/{id}/items`); versioned policy snapshot that fails the ingest when it cannot load; automations of new findings through a durable `side_effects` job (migration `003365_ingest_dispositions`, RFC-122 §6d). `filtered` and `held` are reserved for ingest filters and the review gate | shipped |
+| Nightly load harness (`TestIngestLoad`, workflow `api-ingest-load.yml`): concurrent uploads, the urgent lane behind bulk work, one repository from many runs (RFC-122 §6e) | shipped |
 | Full-coverage uploads (`coverage=full` with an explicit scope) | shipped |
 | Web: receipt and recent imports in the import dialog, "What this run did to findings" on the scan run page, "Last seen in" on the finding overview (en, vi) | shipped |
 
