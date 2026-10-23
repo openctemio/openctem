@@ -76,6 +76,7 @@ import { useListParams } from '@/hooks/use-list-params'
 import { exportToCsv } from '@/hooks/use-csv-export'
 import { getErrorMessage } from '@/lib/api/error-handler'
 import { Can, Permission, usePermissions } from '@/lib/permissions'
+import { ACTIONABLE_SEVERITIES } from '@/lib/severity'
 import type { RiskLevelThresholds } from '@/features/shared/types'
 import {
   externalSurfaceFilters,
@@ -99,7 +100,7 @@ const TYPE_VALUES = [
   'host',
 ] as const
 
-const RISK_VALUES: RiskBand[] = ['critical', 'high', 'medium', 'low']
+const RISK_VALUES: readonly RiskBand[] = ACTIONABLE_SEVERITIES
 
 const CREATE_TYPES = ['domain', 'subdomain', 'ip_address', 'service', 'certificate'] as const
 
