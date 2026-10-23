@@ -18,7 +18,21 @@ import { test, expect } from '../fixtures/authenticated-page'
  *
  * A migrated page joins ROUTES in the pull request that migrates it.
  */
-const ROUTES = ['/scans', '/scans/runs', '/scans/workflows', '/scans/approvals']
+const ROUTES = [
+  '/scans',
+  '/scans/runs',
+  '/scans/workflows',
+  '/scans/approvals',
+  '/remediation',
+  '/remediation/campaigns',
+  '/remediation/suggestions',
+  '/remediation/tasks',
+  '/programs',
+  '/scope',
+  '/scope/letters',
+  '/threat-intel',
+  '/automations',
+]
 
 const PAGE_GAP = 20
 const TIGHT_GAP = 16

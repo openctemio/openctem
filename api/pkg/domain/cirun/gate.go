@@ -36,6 +36,9 @@ const (
 	ReasonEPSS        = "epss"
 	ReasonSeverity    = "severity"
 	ReasonScanFailure = "scan_failure"
+	// ReasonUploadNotApplied: an upload of the run could not be applied
+	// (unreadable, or its retries ran out), so its findings are not judged.
+	ReasonUploadNotApplied = "upload_not_applied"
 	// ReasonMissingCapability: the repository is expected to be scanned for
 	// a capability (its coverage expectation) and the run reported no tool
 	// with it, for example because the pipeline was edited to skip it.
@@ -341,6 +344,9 @@ type GateInput struct {
 	// every open secret blocks.
 	DefaultBranch bool
 	ScanFailures  int
+	// UploadsNotApplied counts the run's uploads the platform could not
+	// apply; any fails the run.
+	UploadsNotApplied int
 	// NoResults: nothing was uploaded to the run.
 	NoResults bool
 	// FailedCapabilities are the capabilities the job reported as not clean
@@ -511,6 +517,10 @@ func Evaluate(in GateInput) GateVerdict {
 	if in.ScanFailures > 0 {
 		add(GateReason{Code: ReasonScanFailure,
 			Message: fmt.Sprintf("%d scanner(s) failed to run or to report: the run cannot be judged", in.ScanFailures)})
+	}
+	if in.UploadsNotApplied > 0 {
+		add(GateReason{Code: ReasonUploadNotApplied,
+			Message: fmt.Sprintf("%d upload(s) of this run could not be applied: the run cannot be judged", in.UploadsNotApplied)})
 	}
 	if in.NoResults {
 		add(GateReason{Code: ReasonNoResults,

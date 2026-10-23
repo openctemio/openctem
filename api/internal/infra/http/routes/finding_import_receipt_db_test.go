@@ -34,7 +34,7 @@ func TestFindingImport_ReceiptPartialUploadNeverCloses_DB(t *testing.T) {
 	repo := postgres.NewIngestReceiptRepository(&postgres.DB{DB: ih.db})
 
 	rec, first := ih.upload(t, ih.tenantID, "", "full.nessus", []byte(receiptNessusFull), true)
-	if rec.Code != http.StatusCreated || first.ReceiptID == "" {
+	if rec.Code != http.StatusAccepted || first.ReceiptID == "" {
 		t.Fatalf("first upload %d: %s", rec.Code, rec.Body.String())
 	}
 	r1, err := repo.Get(ctx, tenant, shared.MustIDFromString(first.ReceiptID))
@@ -46,7 +46,7 @@ func TestFindingImport_ReceiptPartialUploadNeverCloses_DB(t *testing.T) {
 	}
 
 	rec, second := ih.upload(t, ih.tenantID, "", "subset.nessus", []byte(receiptNessusSubset), true)
-	if rec.Code != http.StatusCreated || second.ReceiptID == "" || second.ReceiptID == first.ReceiptID {
+	if rec.Code != http.StatusAccepted || second.ReceiptID == "" || second.ReceiptID == first.ReceiptID {
 		t.Fatalf("second upload %d: %s", rec.Code, rec.Body.String())
 	}
 	r2, err := repo.Get(ctx, tenant, shared.MustIDFromString(second.ReceiptID))

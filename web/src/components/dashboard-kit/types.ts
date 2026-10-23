@@ -131,7 +131,8 @@ export interface ItemRow {
 export interface ItemsResult {
   shape: 'items'
   rows: ItemRow[]
-  total: number
+  /** The list's real total; absent until the server sends one (never rows.length). */
+  total?: number | null
   as_of?: string
 }
 

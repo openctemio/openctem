@@ -39,6 +39,10 @@ var ErrRunReportCap = fmt.Errorf("%w: a CI run accepts at most %d reports", shar
 
 // ErrRunChanged: a report was recorded while the verdict was computed, so
 // the verdict did not see it; the caller judges the run again.
+// ErrRunUploadsPending: a verdict was refused because an upload of the run
+// was accepted and is not applied yet.
+var ErrRunUploadsPending = fmt.Errorf("%w: the CI run has uploads still being applied", shared.ErrConflict)
+
 var ErrRunChanged = fmt.Errorf("%w: the CI run recorded a report while it was judged", shared.ErrConflict)
 
 // Run statuses.

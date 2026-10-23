@@ -40,10 +40,15 @@ interface MergeLogEntry {
   created_at: string
 }
 
-export function useDedupReviews() {
-  return useSWR<{ data: DedupReview[]; total: number }>('/api/v1/assets/dedup/reviews', get, {
-    revalidateOnFocus: false,
-  })
+/** `enabled` false sends nothing (a count shown only while its menu is open). */
+export function useDedupReviews(enabled = true) {
+  return useSWR<{ data: DedupReview[]; total: number }>(
+    enabled ? '/api/v1/assets/dedup/reviews' : null,
+    get,
+    {
+      revalidateOnFocus: false,
+    }
+  )
 }
 
 export function useMergeLog(limit = 50) {
