@@ -56,6 +56,13 @@ import { toast } from 'sonner'
 import { usePermissions } from '@/lib/permissions'
 import { useTranslation } from '@/context/i18n-provider'
 
+function scimOwnerOnlyReason(tr: ReturnType<typeof useTranslation>['t']): string {
+  return tr(
+    'settings.scim.ownerOnly',
+    'Only the organization owner can generate or revoke SCIM tokens: a token can create, suspend and re-role every member.'
+  )
+}
+
 function isActive(t: ScimToken): boolean {
   return t.status === 'active'
 }
@@ -91,7 +98,7 @@ function GenerateTokenDialog({
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
-    if (!name.trim()) return toast.error('Name is required')
+    if (!name.trim()) return toast.error(tr('settings.keys.nameRequired', 'Name is required'))
     try {
       const res = await trigger({ name: name.trim(), expires_in_days: days })
       onCreated(res?.token ?? '')
@@ -99,7 +106,9 @@ function GenerateTokenDialog({
       setName('')
       setDays(SCIM_TOKEN_DEFAULT_LIFETIME_DAYS)
     } catch (error) {
-      toast.error(getErrorMessage(error, 'Failed to create SCIM token'))
+      toast.error(
+        getErrorMessage(error, tr('settings.scim.createFailed', 'Failed to create SCIM token'))
+      )
     }
   }
 
@@ -107,21 +116,23 @@ function GenerateTokenDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent size="sm">
         <DialogHeader>
-          <DialogTitle>Generate SCIM token</DialogTitle>
+          <DialogTitle>{tr('settings.scim.dialog.title', 'Generate SCIM token')}</DialogTitle>
           <DialogDescription>
-            Your identity provider presents this token as a bearer credential when provisioning
-            users. The secret is shown once.
+            {tr(
+              'settings.scim.dialog.description',
+              'Your identity provider presents this token as a bearer credential when provisioning users. The secret is shown once.'
+            )}
           </DialogDescription>
         </DialogHeader>
         <DialogForm onSubmit={handleSubmit}>
           <DialogBody className="space-y-4">
             <div className="space-y-2">
-              <Label htmlFor="scim-token-name">Name</Label>
+              <Label htmlFor="scim-token-name">{tr('settings.keys.name', 'Name')}</Label>
               <Input
                 id="scim-token-name"
                 value={name}
                 onChange={(e) => setName(e.target.value)}
-                placeholder="Okta production"
+                placeholder={tr('settings.scim.dialog.namePlaceholder', 'Okta production')}
                 required
               />
             </div>
@@ -151,10 +162,12 @@ function GenerateTokenDialog({
           </DialogBody>
           <DialogFooter>
             <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
-              Cancel
+              {tr('common.cancel', 'Cancel')}
             </Button>
             <Button type="submit" disabled={isMutating}>
-              {isMutating ? 'Generating...' : 'Generate'}
+              {isMutating
+                ? tr('settings.keys.generating', 'Generating…')
+                : tr('settings.keys.generate', 'Generate')}
             </Button>
           </DialogFooter>
         </DialogForm>
@@ -164,6 +177,7 @@ function GenerateTokenDialog({
 }
 
 function RevealTokenDialog({ value, onClose }: { value: string; onClose: () => void }) {
+  const { t: tr } = useTranslation()
   const [copied, setCopied] = useState(false)
   async function copy() {
     const ok = await copyToClipboard(value)
@@ -171,29 +185,37 @@ function RevealTokenDialog({ value, onClose }: { value: string; onClose: () => v
       setCopied(true)
       setTimeout(() => setCopied(false), 1500)
     } else {
-      toast.error('Copy failed')
+      toast.error(tr('settings.keys.copyFailed', 'Copy failed'))
     }
   }
   return (
     <Dialog open={!!value} onOpenChange={(o) => !o && onClose()}>
       <DialogContent size="sm">
         <DialogHeader>
-          <DialogTitle>Copy your SCIM token</DialogTitle>
+          <DialogTitle>{tr('settings.scim.reveal.title', 'Copy your SCIM token')}</DialogTitle>
           <DialogDescription>
-            This is the only time the full token is shown. Paste it into your IdP&apos;s SCIM
-            configuration as the bearer token, then store it securely.
+            {tr(
+              'settings.scim.reveal.description',
+              "This is the only time the full token is shown. Paste it into your IdP's SCIM configuration as the bearer token, then store it securely."
+            )}
           </DialogDescription>
         </DialogHeader>
         <DialogBody>
           <div className="bg-muted flex items-center gap-2 rounded-md p-3">
             <code className="flex-1 break-all text-xs">{value}</code>
-            <Button size="icon" variant="ghost" onClick={copy} title="Copy">
+            <Button
+              size="icon"
+              variant="ghost"
+              onClick={copy}
+              title={tr('settings.keys.copy', 'Copy')}
+              aria-label={tr('settings.scim.reveal.copyLabel', 'Copy token')}
+            >
               {copied ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
             </Button>
           </div>
         </DialogBody>
         <DialogFooter>
-          <Button onClick={onClose}>Done</Button>
+          <Button onClick={onClose}>{tr('settings.keys.done', 'Done')}</Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>
@@ -205,6 +227,7 @@ function RevealTokenDialog({ value, onClose }: { value: string; onClose: () => v
 // ─────────────────────────────────────────────────────────
 
 function ScimEndpointCard() {
+  const { t: tr } = useTranslation()
   const [baseURL, setBaseURL] = useState('')
   const [copied, setCopied] = useState(false)
   useEffect(() => {
@@ -218,22 +241,31 @@ function ScimEndpointCard() {
       setCopied(true)
       setTimeout(() => setCopied(false), 1500)
     } else {
-      toast.error('Copy failed')
+      toast.error(tr('settings.keys.copyFailed', 'Copy failed'))
     }
   }
   return (
     <Card className="mt-5">
       <CardHeader>
-        <CardTitle>SCIM endpoint</CardTitle>
+        <CardTitle>{tr('settings.scim.endpoint.title', 'SCIM endpoint')}</CardTitle>
         <CardDescription>
-          Configure your identity provider (Okta, Microsoft Entra ID, etc.) with this base URL and a
-          token below. Authentication uses an HTTP bearer token.
+          {tr(
+            'settings.scim.endpoint.description',
+            'Configure your identity provider (Okta, Microsoft Entra ID, etc.) with this base URL and a token below. Authentication uses an HTTP bearer token.'
+          )}
         </CardDescription>
       </CardHeader>
       <CardContent>
         <div className="bg-muted flex items-center gap-2 rounded-md p-3">
           <code className="flex-1 break-all text-xs">{baseURL || '…'}</code>
-          <Button size="icon" variant="ghost" onClick={copy} title="Copy" disabled={!baseURL}>
+          <Button
+            size="icon"
+            variant="ghost"
+            onClick={copy}
+            title={tr('settings.keys.copy', 'Copy')}
+            aria-label={tr('settings.scim.endpoint.copyLabel', 'Copy base URL')}
+            disabled={!baseURL}
+          >
             {copied ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
           </Button>
         </div>
@@ -245,9 +277,6 @@ function ScimEndpointCard() {
 // ─────────────────────────────────────────────────────────
 // Token actions cell (inline revoke button + confirm dialog)
 // ─────────────────────────────────────────────────────────
-
-const SCIM_OWNER_ONLY_REASON =
-  'Only the organization owner can generate or revoke SCIM tokens: a token can create, suspend and re-role every member.'
 
 function TokenActionsCell({
   t,
@@ -264,6 +293,7 @@ function TokenActionsCell({
   const [rotateOpen, setRotateOpen] = useState(false)
   // `t` is the token here, so the translator is `tr`.
   const { t: tr } = useTranslation()
+  const ownerOnlyReason = scimOwnerOnlyReason(tr)
   const { trigger: revoke, isMutating: revoking } = useRevokeScimToken()
   const { trigger: rotate, isMutating: rotating } = useRotateScimToken()
 
@@ -286,11 +316,11 @@ function TokenActionsCell({
   async function handleRevoke() {
     try {
       await revoke(t.id)
-      toast.success('Token revoked')
+      toast.success(tr('settings.scim.revoked', 'Token revoked'))
       setRevokeOpen(false)
       onChanged()
     } catch (error) {
-      toast.error(getErrorMessage(error, 'Failed to revoke'))
+      toast.error(getErrorMessage(error, tr('settings.scim.revokeFailed', 'Failed to revoke')))
     }
   }
 
@@ -301,7 +331,7 @@ function TokenActionsCell({
           variant="ghost"
           size="icon"
           allowed={canRevoke}
-          reason={SCIM_OWNER_ONLY_REASON}
+          reason={ownerOnlyReason}
           onClick={() => setRotateOpen(true)}
           title={canRevoke ? tr('settings.scim.rotate.confirm', 'Rotate') : undefined}
           aria-label={tr('settings.scim.rotate.label', 'Rotate {name}', { name: t.name })}
@@ -314,7 +344,7 @@ function TokenActionsCell({
           variant="ghost"
           size="icon"
           allowed={canRevoke}
-          reason={SCIM_OWNER_ONLY_REASON}
+          reason={ownerOnlyReason}
           onClick={() => setRevokeOpen(true)}
           title={canRevoke ? tr('confirm.revoke', 'Revoke') : undefined}
           aria-label={tr('confirm.scimToken.revokeLabel', 'Revoke {name}', { name: t.name })}
@@ -363,10 +393,11 @@ function TokenActionsCell({
 
 /** "Generate token" — enabled for the owner, disabled with the reason for administrators. */
 function GenerateTokenButton({ canMint, onClick }: { canMint: boolean; onClick: () => void }) {
+  const { t: tr } = useTranslation()
   return (
-    <GatedButton size="sm" allowed={canMint} reason={SCIM_OWNER_ONLY_REASON} onClick={onClick}>
+    <GatedButton size="sm" allowed={canMint} reason={scimOwnerOnlyReason(tr)} onClick={onClick}>
       <Plus className="me-2 h-4 w-4" />
-      Generate token
+      {tr('settings.scim.generate', 'Generate token')}
     </GatedButton>
   )
 }
@@ -409,7 +440,9 @@ export default function ScimTokensPage() {
     () => [
       {
         accessorKey: 'name',
-        header: ({ column }) => <DataTableColumnHeader column={column} title="Name" />,
+        header: ({ column }) => (
+          <DataTableColumnHeader column={column} title={tr('settings.keys.name', 'Name')} />
+        ),
         cell: ({ row }) => {
           const t = row.original
           return <StackedCell primary={t.name} secondary={<code>{t.prefix}…</code>} />
@@ -417,12 +450,16 @@ export default function ScimTokensPage() {
       },
       {
         accessorKey: 'status',
-        header: ({ column }) => <DataTableColumnHeader column={column} title="Status" />,
+        header: ({ column }) => (
+          <DataTableColumnHeader column={column} title={tr('settings.keys.status', 'Status')} />
+        ),
         cell: ({ row }) => <StatusBadge t={row.original} />,
       },
       {
         accessorKey: 'created_at',
-        header: ({ column }) => <DataTableColumnHeader column={column} title="Created" />,
+        header: ({ column }) => (
+          <DataTableColumnHeader column={column} title={tr('settings.keys.created', 'Created')} />
+        ),
         cell: ({ row }) => (
           <span className="text-muted-foreground text-xs">
             {new Date(row.original.created_at).toLocaleDateString()}
@@ -431,12 +468,17 @@ export default function ScimTokensPage() {
       },
       {
         accessorKey: 'last_used_at',
-        header: ({ column }) => <DataTableColumnHeader column={column} title="Last used" />,
+        header: ({ column }) => (
+          <DataTableColumnHeader
+            column={column}
+            title={tr('settings.keys.lastUsed', 'Last used')}
+          />
+        ),
         cell: ({ row }) => (
           <span className="text-muted-foreground text-xs">
             {row.original.last_used_at
               ? new Date(row.original.last_used_at).toLocaleDateString()
-              : 'Never'}
+              : tr('settings.keys.never', 'Never')}
           </span>
         ),
       },
@@ -473,21 +515,32 @@ export default function ScimTokensPage() {
   )
 
   const metrics: MetricStripItem[] = [
-    { key: 'total', label: 'Total tokens', value: stats.total },
-    { key: 'active', label: 'Active tokens', value: stats.active },
+    { key: 'total', label: tr('settings.scim.metric.total', 'Total tokens'), value: stats.total },
+    {
+      key: 'active',
+      label: tr('settings.scim.metric.active', 'Active tokens'),
+      value: stats.active,
+    },
     {
       key: 'expired',
       label: tr('settings.scim.metric.expired', 'Expired tokens'),
       value: stats.expired,
     },
-    { key: 'revoked', label: 'Revoked tokens', value: stats.revoked },
+    {
+      key: 'revoked',
+      label: tr('settings.scim.metric.revoked', 'Revoked tokens'),
+      value: stats.revoked,
+    },
   ]
 
   return (
     <Main>
       <PageHeader
-        title="Directory sync (SCIM)"
-        description="Automate user provisioning and deprovisioning from your identity provider."
+        title={tr('settings.scim.title', 'Directory sync (SCIM)')}
+        description={tr(
+          'settings.scim.description',
+          'Automate user provisioning and deprovisioning from your identity provider.'
+        )}
       >
         {canManage && <GenerateTokenButton canMint={canMint} onClick={() => setGenOpen(true)} />}
       </PageHeader>
@@ -498,8 +551,11 @@ export default function ScimTokensPage() {
         <div className="mt-5">
           <EmptyState
             icon={ShieldCheck}
-            title="Managed by your team's owners and admins"
-            description="SCIM tokens let your identity provider create and remove accounts in this team. Ask an owner or admin to set it up."
+            title={tr('settings.scim.managed.title', "Managed by your team's owners and admins")}
+            description={tr(
+              'settings.scim.managed.description',
+              'SCIM tokens let your identity provider create and remove accounts in this team. Ask an owner or admin to set it up.'
+            )}
           />
         </div>
       ) : isLoading ? (
@@ -507,7 +563,11 @@ export default function ScimTokensPage() {
       ) : error ? (
         // Don't render a failed read as "No SCIM tokens yet" with zeroed stats.
         <div className="mt-5">
-          <ErrorState title="SCIM tokens" error={error} onRetry={() => void mutate()} />
+          <ErrorState
+            title={tr('settings.scim.errorTitle', 'SCIM tokens')}
+            error={error}
+            onRetry={() => void mutate()}
+          />
         </div>
       ) : (
         <>
@@ -519,8 +579,11 @@ export default function ScimTokensPage() {
             {tokens.length === 0 ? (
               <EmptyState
                 icon={KeyRound}
-                title="No SCIM tokens yet"
-                description="Generate a token to connect your identity provider for automated user provisioning."
+                title={tr('settings.scim.emptyTitle', 'No SCIM tokens yet')}
+                description={tr(
+                  'settings.scim.emptyDescription',
+                  'Generate a token to connect your identity provider for automated user provisioning.'
+                )}
                 action={<GenerateTokenButton canMint={canMint} onClick={() => setGenOpen(true)} />}
               />
             ) : (
@@ -528,7 +591,7 @@ export default function ScimTokensPage() {
                 columns={columns}
                 data={tokens}
                 getRowId={(t) => t.id}
-                searchPlaceholder="Search tokens..."
+                searchPlaceholder={tr('settings.scim.searchPlaceholder', 'Search tokens…')}
                 showSelectionCount={false}
               />
             )}

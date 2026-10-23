@@ -123,7 +123,7 @@ describe('RiskSummarySection', () => {
     const link = screen.getByRole('link', { name: 'SQL injection in login' })
     expect(link).toHaveAttribute('href', '/findings/f1')
     expect(screen.getByText('KEV')).toBeInTheDocument()
-    expect(screen.getByText('EPSS 62%')).toBeInTheDocument()
+    expect(screen.getByLabelText('EPSS 62%')).toBeInTheDocument()
   })
 
   it('links to the Findings tab', async () => {

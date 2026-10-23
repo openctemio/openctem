@@ -31,34 +31,17 @@ import {
   EASMOverview,
   useAttackSurfaceStats,
 } from '@/features/attack-surface'
+import { STATS_ATTRIBUTION } from '@/features/attack-surface/lib/external-filters'
 import type { LucideIcon } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { assetDetailHref, isLinkableAssetId } from '@/features/findings/lib/asset-link'
 import { useTranslation } from '@/context/i18n-provider'
 
-/** A stat card that opens the rows it counts. */
-function StatLink({
-  href,
-  label,
-  children,
-}: {
-  href: string
-  label: string
-  children: React.ReactNode
-}) {
-  return (
-    <Link
-      href={href}
-      aria-label={label}
-      className="block rounded-xl transition-shadow hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-    >
-      {children}
-    </Link>
-  )
-}
-
 // Drill-downs: each card opens exactly the population it counts.
-const INTERNET_FACING_HREF = '/assets?internet_facing=true'
-const CRITICAL_INTERNET_FACING_HREF = '/assets?internet_facing=true&criticalities=critical,high'
+// They carry the attribution the stats count, so a tile and its list agree.
+const TOTAL_ASSETS_HREF = `/assets?attribution=${STATS_ATTRIBUTION}`
+const INTERNET_FACING_HREF = `/assets?internet_facing=true&attribution=${STATS_ATTRIBUTION}`
+const CRITICAL_INTERNET_FACING_HREF = `/assets?internet_facing=true&criticalities=critical,high&attribution=${STATS_ATTRIBUTION}`
 const NEWLY_EXPOSED_HREF = '/assets/changes?view=newly_exposed'
 
 // Asset type to icon mapping. Icons stay muted: the type name carries the meaning.
@@ -107,6 +90,21 @@ const assetTypeNames: Record<string, string> = {
 
 const EXPOSURES = ['public', 'restricted', 'private', 'isolated', 'unknown'] as const
 
+/** An asset name that opens the asset when its id is known; truncates, never overflows. */
+function AssetName({ id, name }: { id?: string; name: string }) {
+  if (!isLinkableAssetId(id)) {
+    return <p className="min-w-0 truncate text-sm font-medium">{name}</p>
+  }
+  return (
+    <Link
+      href={assetDetailHref(id)}
+      className="min-w-0 truncate text-sm font-medium hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+    >
+      {name}
+    </Link>
+  )
+}
+
 function ListRowsSkeleton({ rows }: { rows: number }) {
   return (
     <div className="divide-y">
@@ -126,6 +124,8 @@ function ListRowsSkeleton({ rows }: { rows: number }) {
 export default function AttackSurfacePage() {
   const { t } = useTranslation()
   const { stats, isLoading, error } = useAttackSurfaceStats()
+  const infoLabel = (title: string) =>
+    t('attackSurface.overview.infoLabel', 'How {title} is measured', { title })
   const typeName = (type: string, singular = false) => {
     const plural = assetTypeNames[type]
     if (!plural) return type
@@ -186,60 +186,54 @@ export default function AttackSurfacePage() {
           ))
         ) : (
           <>
-            <StatLink
-              href="/assets"
-              label={t('attackSurface.overview.totalAssets', 'Total assets')}
-            >
-              <StatsCard
-                title={t('attackSurface.overview.totalAssets', 'Total assets')}
-                value={stats?.totalAssets || 0}
-                icon={Layers}
-                description={t(
-                  'attackSurface.overview.newInWindow',
-                  '{count} new in the last {days} days',
-                  { count: stats?.totalAssetsChange ?? 0, days }
-                )}
-              />
-            </StatLink>
-            <StatLink
+            <StatsCard // anatomy-ok: existing overview tile, link moved from the wrapper onto the card
+              href={TOTAL_ASSETS_HREF}
+              title={t('attackSurface.overview.totalAssets', 'Total assets')}
+              value={stats?.totalAssets || 0}
+              icon={Layers}
+              description={t(
+                'attackSurface.overview.newInWindow',
+                '{count} new in the last {days} days',
+                { count: stats?.totalAssetsChange ?? 0, days }
+              )}
+            />
+            <StatsCard // anatomy-ok: existing overview tile, link moved from the wrapper onto the card
               href={INTERNET_FACING_HREF}
-              label={t('attackSurface.overview.internetFacing', 'Internet-facing assets')}
-            >
-              <StatsCard
-                title={t('attackSurface.overview.internetFacing', 'Internet-facing assets')}
-                value={stats?.internetFacingAssets || 0}
-                icon={Network}
-                description={t(
-                  'attackSurface.overview.newlyExposed',
-                  '{count} newly exposed in the last {days} days',
-                  { count: stats?.newlyExposed ?? 0, days }
-                )}
-                info={t(
-                  'attackSurface.overview.internetFacingInfo',
-                  'Assets whose exposure is public or that a source reported reachable from the internet. Newly exposed counts the same changes as Assets › Activity.'
-                )}
-              />
-            </StatLink>
-            <StatLink
+              infoLabel={infoLabel(
+                t('attackSurface.overview.internetFacing', 'Internet-facing assets')
+              )}
+              title={t('attackSurface.overview.internetFacing', 'Internet-facing assets')}
+              value={stats?.internetFacingAssets || 0}
+              icon={Network}
+              description={t(
+                'attackSurface.overview.newlyExposed',
+                '{count} newly exposed in the last {days} days',
+                { count: stats?.newlyExposed ?? 0, days }
+              )}
+              info={t(
+                'attackSurface.overview.internetFacingInfo',
+                'Assets whose exposure is public or that a source reported reachable from the internet. Newly exposed counts the same changes as Assets › Activity.'
+              )}
+            />
+            <StatsCard // anatomy-ok: existing overview tile, link moved from the wrapper onto the card
               href={CRITICAL_INTERNET_FACING_HREF}
-              label={t(
+              infoLabel={infoLabel(
+                t(
+                  'attackSurface.overview.criticalInternetFacing',
+                  'Critical internet-facing assets'
+                )
+              )}
+              title={t(
                 'attackSurface.overview.criticalInternetFacing',
                 'Critical internet-facing assets'
               )}
-            >
-              <StatsCard
-                title={t(
-                  'attackSurface.overview.criticalInternetFacing',
-                  'Critical internet-facing assets'
-                )}
-                value={stats?.criticalInternetFacingAssets || 0}
-                icon={AlertTriangle}
-                info={t(
-                  'attackSurface.overview.criticalInternetFacingInfo',
-                  'Internet-facing assets with critical or high criticality. A population to watch, not open risks: open exposures are listed below.'
-                )}
-              />
-            </StatLink>
+              value={stats?.criticalInternetFacingAssets || 0}
+              icon={AlertTriangle}
+              info={t(
+                'attackSurface.overview.criticalInternetFacingInfo',
+                'Internet-facing assets with critical or high criticality. A population to watch, not open risks: open exposures are listed below.'
+              )}
+            />
             <Card>
               <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
                 <CardTitle className="text-sm font-medium">
@@ -381,13 +375,8 @@ export default function AttackSurfacePage() {
                     <div className="flex min-w-0 items-center gap-3">
                       <Server className="h-4 w-4 shrink-0 text-muted-foreground" />
                       <div className="min-w-0">
-                        <div className="flex flex-wrap items-center gap-2">
-                          <p className="truncate text-sm font-medium">{service.name}</p>
-                          {service.port && (
-                            <span className="font-mono text-xs text-muted-foreground">
-                              :{service.port}
-                            </span>
-                          )}
+                        <div className="flex items-center gap-2">
+                          <AssetName id={service.id} name={service.name} />
                         </div>
                         <p className="text-xs text-muted-foreground">
                           {typeName(service.type, true)} · <RelativeTime date={service.lastSeen} />
@@ -451,8 +440,11 @@ export default function AttackSurfacePage() {
             />
           ) : (
             <div className="divide-y">
-              {changes.map((change, idx) => (
-                <div key={idx} className="flex items-center justify-between gap-3 py-2.5">
+              {changes.map((change) => (
+                <div
+                  key={`${change.assetId ?? change.assetName}-${change.type}-${change.timestamp}`}
+                  className="flex items-center justify-between gap-3 py-2.5"
+                >
                   <div className="flex min-w-0 items-center gap-3">
                     <Badge
                       variant={change.type === 'added' ? 'secondary' : 'outline'}
@@ -460,7 +452,7 @@ export default function AttackSurfacePage() {
                     >
                       {changeName(change.type)}
                     </Badge>
-                    <span className="truncate text-sm font-medium">{change.assetName}</span>
+                    <AssetName id={change.assetId} name={change.assetName} />
                   </div>
                   <span className="shrink-0 text-xs text-muted-foreground">
                     <RelativeTime date={change.timestamp} />

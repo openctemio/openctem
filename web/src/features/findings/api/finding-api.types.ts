@@ -30,6 +30,7 @@ export type FindingSource =
   // Cloud & Infrastructure security
   | 'cspm' // Cloud Security Posture Management (cloud posture scanners)
   | 'easm' // External Attack Surface Management (ProjectDiscovery and external data sources)
+  | 'va' // Network/host vulnerability assessment (Nessus, Tenable, Qualys, OpenVAS)
   // Runtime & Production
   | 'rasp' // Runtime Application Self-Protection
   | 'waf' // Web Application Firewall findings
@@ -43,6 +44,9 @@ export type FindingSource =
   | 'external' // Imported from external tools/systems
   | 'threat_intel' // Threat intelligence feeds
   | 'vendor' // Vendor security assessments/third-party audits
+  // Legacy aliases the API still accepts
+  | 'sarif'
+  | 'sca_tool'
 
 export type ApiFindingType = 'vulnerability' | 'secret' | 'misconfiguration' | 'compliance' | 'web3'
 
