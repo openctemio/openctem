@@ -10,7 +10,7 @@ vi.mock('next/navigation', () => ({ usePathname: () => '/scans/runs' }))
 
 /**
  * Page anatomy primitives (research/244). jsdom does not lay out, so these
- * pin the contract the Playwright rhythm check (web/e2e/specs/29-page-rhythm)
+ * pin the contract the Playwright rhythm check (web/e2e/specs/31-page-rhythm)
  * measures in a browser: who owns each gap, and the hooks it relies on.
  */
 describe('PageStack', () => {
