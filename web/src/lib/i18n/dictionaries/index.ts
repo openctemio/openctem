@@ -85,6 +85,7 @@ import en_myWork from './en/myWork.json'
 import en_threatModel from './en/threatModel.json'
 import en_attackerProfiles from './en/attackerProfiles.json'
 import en_letters from './en/letters.json'
+import en_crownJewels from './en/crownJewels.json'
 import vi_activity from './vi/activity.json'
 import vi_auditLog from './vi/auditLog.json'
 import vi_actor from './vi/actor.json'
@@ -163,6 +164,7 @@ import vi_myWork from './vi/myWork.json'
 import vi_threatModel from './vi/threatModel.json'
 import vi_attackerProfiles from './vi/attackerProfiles.json'
 import vi_letters from './vi/letters.json'
+import vi_crownJewels from './vi/crownJewels.json'
 
 export type Dictionary = Record<string, string>
 
@@ -246,6 +248,7 @@ export const enNamespaces: Record<string, Dictionary> = {
   threatModel: en_threatModel,
   attackerProfiles: en_attackerProfiles,
   letters: en_letters,
+  crownJewels: en_crownJewels,
 }
 
 export const viNamespaces: Record<string, Dictionary> = {
@@ -327,6 +330,7 @@ export const viNamespaces: Record<string, Dictionary> = {
   threatModel: vi_threatModel,
   attackerProfiles: vi_attackerProfiles,
   letters: vi_letters,
+  crownJewels: vi_crownJewels,
 }
 
 const merge = (parts: Record<string, Dictionary>): Dictionary =>

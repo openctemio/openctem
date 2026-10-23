@@ -78,6 +78,8 @@ var removedRoutes = map[string]string{
 	"POST /api/v1/commands/{id}/cancel":           "a scan run is canceled as a whole: POST /api/v1/scan-runs/{id}/cancel",
 	"DELETE /api/v1/commands/{id}":                "dead (sensors:commands:delete removed with it)",
 	"GET /api/v1/auth/oauth/providers":            "GET /api/v1/auth/providers",
+	// A partial update is PATCH; the web console moved with this change.
+	"PUT /api/v1/organization/settings/finding-approvals": "PATCH /api/v1/organization/settings/finding-approvals (same body, same gate)",
 }
 
 func TestRemovedRoutes_NotRegistered(t *testing.T) {
@@ -356,5 +358,43 @@ func TestRemovedRoutes_Issue970UnusedRoutesAreGone(t *testing.T) {
 		if code := serve(tc.method, tc.path); code != reachedHandler {
 			t.Errorf("%s %s: got %d, want the handler", tc.method, tc.path, code)
 		}
+	}
+}
+
+// PUT on the finding approval settings is gone: an owner with every
+// permission and a recent re-authentication gets 405 (the path keeps GET and
+// PATCH), and PATCH still reaches the handler.
+func TestRemovedRoutes_FindingApprovalSettingsPutIsGone(t *testing.T) {
+	withStepUpChecker(t, alwaysSteppedUp{})
+	auth := func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			ctx := context.WithValue(r.Context(), middleware.IsAdminKey, true)
+			ctx = context.WithValue(ctx, middleware.TenantIDKey, shared.NewID().String())
+			ctx = context.WithValue(ctx, middleware.UserIDKey, shared.NewID().String())
+			ctx = context.WithValue(ctx, middleware.SessionIDKey, "removed-routes")
+			next.ServeHTTP(w, r.WithContext(ctx))
+		})
+	}
+	router := infrahttp.NewChiRouter()
+	vh := &handler.VulnerabilityHandler{}
+	vh.SetFindingApprovalSettings(stubApprovalSettings{})
+	registerVulnerabilityRoutes(router, vh, nil, nil, nil, auth, nil)
+	mux := router.(interface{ Handler() http.Handler }).Handler()
+
+	serve := func(method string) (code int) {
+		defer func() {
+			if recover() != nil {
+				code = reachedHandler
+			}
+		}()
+		rec := httptest.NewRecorder()
+		mux.ServeHTTP(rec, httptest.NewRequest(method, "/api/v1/organization/settings/finding-approvals/", strings.NewReader(`{"accept_approval":"all"}`)))
+		return rec.Code
+	}
+	if code := serve(http.MethodPut); code != http.StatusMethodNotAllowed {
+		t.Errorf("PUT: got %d, want 405", code)
+	}
+	if code := serve(http.MethodPatch); code == http.StatusNotFound || code == http.StatusMethodNotAllowed {
+		t.Errorf("PATCH: got %d, want the handler", code)
 	}
 }
