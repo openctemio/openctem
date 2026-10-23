@@ -11,6 +11,7 @@ import (
 
 	"github.com/openctemio/openctem/api/pkg/domain/automation"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
 	"github.com/openctemio/openctem/api/pkg/filterspec"
 	"github.com/openctemio/openctem/api/pkg/pagination"
 )
@@ -96,7 +97,7 @@ func (r *AutomationRunRepository) List(ctx context.Context, filter automation.Ru
 
 	baseQuery := r.selectQuery()
 	countQuery := "SELECT COUNT(*) FROM automation_runs"
-	whereClause, args := r.buildWhereClause(filter)
+	whereClause, args := r.buildWhereClause(ctx, filter)
 
 	if whereClause != "" {
 		baseQuery += " WHERE " + whereClause
@@ -508,16 +509,30 @@ func (r *AutomationRunRepository) insertRun(ctx context.Context, tx *sql.Tx, run
 }
 
 // runSubjectScopeSQL keeps runs (table alias runs) whose subject is a
-// finding or an asset inside scope, or that have no subject. Placeholders
-// start at first.
-func runSubjectScopeSQL(runs string, scope *shared.DataScope, first int) (string, []any) {
+// finding or an asset inside scope, or that have no subject. A finding
+// subject also follows the pentest member-visibility rule (runFindingVisibleSQL).
+// Placeholders start at first.
+func runSubjectScopeSQL(ctx context.Context, runs string, scope *shared.DataScope, first int) (string, []any) {
 	fCond, fArgs := filterspec.AssigneeScopeSQL("f.asset_id", "f.assigned_to", scope, first)
 	aCond, aArgs := filterspec.ScopeSQL("a.id", scope, first+len(fArgs))
 	cond := fmt.Sprintf(`(%[1]s.subject_id IS NULL
-		OR EXISTS (SELECT 1 FROM findings f WHERE f.tenant_id = %[1]s.tenant_id AND f.id = %[1]s.subject_id AND %[2]s)
+		OR EXISTS (SELECT 1 FROM findings f WHERE f.tenant_id = %[1]s.tenant_id AND f.id = %[1]s.subject_id AND %[2]s AND %[4]s)
 		OR EXISTS (SELECT 1 FROM assets a WHERE a.tenant_id = %[1]s.tenant_id AND a.id = %[1]s.subject_id AND %[3]s))`,
-		runs, fCond, aCond)
+		runs, fCond, aCond, runFindingVisibleSQL(ctx, "f", runs+".tenant_id", scope))
 	return cond, append(fArgs, aArgs...)
+}
+
+// runFindingVisibleSQL is the findings list's pentest member-visibility rule
+// for a run subject read by a person (scope non-nil): an administrator (the
+// finding viewer the service recorded on ctx) sees every pentest finding of
+// the tenant; anyone else, and a read with no viewer recorded (fail closed),
+// only those of the campaigns they are a member of. The user is the typed
+// scope user, never request text.
+func runFindingVisibleSQL(ctx context.Context, alias, tenantExpr string, scope *shared.DataScope) string {
+	if v, ok := shared.FindingViewerOf(ctx); ok && v.Admin {
+		return sqlTrue
+	}
+	return vulnerability.FindingMemberVisibilitySQL(alias, tenantExpr, "'"+scope.UserID.String()+"'::uuid")
 }
 
 var _ automation.RunScopeReader = (*AutomationRunRepository)(nil)
@@ -530,7 +545,7 @@ func (r *AutomationRunRepository) SubjectVisible(ctx context.Context, tenantID, 
 	args = append(args, aArgs...)
 	var ok bool
 	err := r.db.QueryRowContext(ctx, `SELECT
-		EXISTS (SELECT 1 FROM findings f WHERE f.tenant_id = $1 AND f.id = $2 AND `+fCond+`)
+		EXISTS (SELECT 1 FROM findings f WHERE f.tenant_id = $1 AND f.id = $2 AND `+fCond+` AND `+runFindingVisibleSQL(ctx, "f", "$1", scope)+`)
 		OR EXISTS (SELECT 1 FROM assets a WHERE a.tenant_id = $1 AND a.id = $2 AND `+aCond+`)`, args...).Scan(&ok)
 	if err != nil {
 		return false, fmt.Errorf("check run subject scope: %w", err)
@@ -544,7 +559,7 @@ func (r *AutomationRunRepository) AggregateTrace(ctx context.Context, tenantID, 
 	cond := "TRUE"
 	if scope != nil {
 		var scopeArgs []any
-		cond, scopeArgs = runSubjectScopeSQL("ru", scope, len(args)+1)
+		cond, scopeArgs = runSubjectScopeSQL(ctx, "ru", scope, len(args)+1)
 		args = append(args, scopeArgs...)
 	}
 	runsCTE := `WITH r AS (
@@ -655,7 +670,7 @@ func (r *AutomationRunRepository) selectQuery() string {
 	`
 }
 
-func (r *AutomationRunRepository) buildWhereClause(filter automation.RunFilter) (string, []any) {
+func (r *AutomationRunRepository) buildWhereClause(ctx context.Context, filter automation.RunFilter) (string, []any) {
 	var conditions []string
 	var args []any
 
@@ -700,7 +715,7 @@ func (r *AutomationRunRepository) buildWhereClause(filter automation.RunFilter) 
 	}
 
 	if filter.Scope != nil {
-		cond, scopeArgs := runSubjectScopeSQL("automation_runs", filter.Scope, len(args)+1)
+		cond, scopeArgs := runSubjectScopeSQL(ctx, "automation_runs", filter.Scope, len(args)+1)
 		args = append(args, scopeArgs...)
 		conditions = append(conditions, cond)
 	}
