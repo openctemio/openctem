@@ -155,7 +155,9 @@ function MyWorkContent() {
                 {toDisplayText(findingName(f), 500) || t('myWork.untitled')}
               </Link>
               {f.asset?.name && (
-                <p className="truncate text-xs text-muted-foreground">{toDisplayText(f.asset.name, 200)}</p>
+                <p className="truncate text-xs text-muted-foreground">
+                  {toDisplayText(f.asset.name, 200)}
+                </p>
               )}
             </div>
           )
