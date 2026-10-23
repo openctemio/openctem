@@ -101,5 +101,5 @@ phase and reuses this path.
   listing every finding it closed.
 
 Files exported by other tools reach this storage through the finding import
-(`POST /findings/import`, [finding-import.md](finding-import.md)), which also
+(`POST /findings/imports`, [finding-import.md](finding-import.md)), which also
 applies VEX documents to matching findings.

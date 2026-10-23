@@ -1,5 +1,5 @@
 /**
- * SCIM token hooks — SWR over /api/v1/scim-tokens (List/Create/Revoke).
+ * SCIM token hooks — SWR over /api/v1/scim-tokens (List/Create/Revoke/Rotate).
  * Tenant is determined from the JWT token. Revoke uses DELETE (the backend
  * marks the token revoked rather than removing the row).
  */
@@ -13,6 +13,7 @@ import { useTenant } from '@/context/tenant-provider'
 import type {
   CreateScimTokenRequest,
   CreateScimTokenResponse,
+  RotateScimTokenResponse,
   ScimTokenListResponse,
 } from '../types/scim-token.types'
 
@@ -40,5 +41,18 @@ export function useRevokeScimToken() {
   return useSWRMutation(
     currentTenant ? BASE_URL : null,
     async (_url: string, { arg }: { arg: string }) => del<void>(`${BASE_URL}/${arg}`)
+  )
+}
+
+/**
+ * Rotates a token: the replacement's plaintext is returned once and the old
+ * token keeps working for 24 hours, so the identity provider can switch.
+ */
+export function useRotateScimToken() {
+  const { currentTenant } = useTenant()
+  return useSWRMutation(
+    currentTenant ? BASE_URL : null,
+    async (_url: string, { arg }: { arg: string }) =>
+      post<RotateScimTokenResponse>(`${BASE_URL}/${arg}/rotate`, {})
   )
 }

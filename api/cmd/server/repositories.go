@@ -294,10 +294,14 @@ type Repositories struct {
 	EASMDNS        *postgres.EASMDNSRepository
 	VerifiedNames  *postgres.VerifiedDomainNameRepository
 	// CI runs, trust configurations and the gate (RFC-051)
-	CIRun       *postgres.CIRunRepository
-	CodeScan    *postgres.CodeScanRepository
-	SCMApp      *postgres.SCMAppInstallationRepository
-	EASMSummary *postgres.EASMSummaryRepository
+	CIRun *postgres.CIRunRepository
+	// IngestReceipt stores the receipts of uploads and sensor runs (RFC-122).
+	IngestReceipt *postgres.IngestReceiptRepository
+	// IdempotencyKey is the durable Idempotency-Key store (RFC-122).
+	IdempotencyKey *postgres.IdempotencyKeyRepository
+	CodeScan       *postgres.CodeScanRepository
+	SCMApp         *postgres.SCMAppInstallationRepository
+	EASMSummary    *postgres.EASMSummaryRepository
 	// EASMLookalike stores lookalike watches and candidates (RFC-083).
 	EASMLookalike *postgres.EASMLookalikeRepository
 	// EASMNetworkSeed stores AS number and organization seeds (RFC-082).
@@ -615,6 +619,8 @@ func newRepositories(db *postgres.DB) *Repositories {
 		EASMDNS:          postgres.NewEASMDNSRepository(db),
 		VerifiedNames:    postgres.NewVerifiedDomainNameRepository(db),
 		CIRun:            postgres.NewCIRunRepository(db),
+		IngestReceipt:    postgres.NewIngestReceiptRepository(db),
+		IdempotencyKey:   postgres.NewIdempotencyKeyRepository(db),
 		CodeScan:         postgres.NewCodeScanRepository(db),
 		SCMApp:           postgres.NewSCMAppInstallationRepository(db),
 		EASMSummary:      postgres.NewEASMSummaryRepository(db),

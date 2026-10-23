@@ -1084,6 +1084,9 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// The user service lets AddMember enforce Security.AllowedDomains and lets
 	// the suspend/reactivate notifier resolve the recipient.
 	s.Tenant.SetUserService(s.User)
+	// Requiring SSO needs sso.enforcement for the organization; the sweep turns it off
+	// after the grace once the organization lost it.
+	s.Tenant.SetSSOFeatureGate(s.Entitlement, repos.Tenant)
 
 	// Initialize asset services
 	s.Asset = asset.NewAssetService(repos.Asset, log)
@@ -1286,6 +1289,8 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	s.Vulnerability.SetKEVChecker(repos.ThreatIntel.KEV()) // governed classification: does the new CVE keep KEV standing
 	s.Vulnerability.SetAssetRefChecker(s.DataScope)        // POST /findings asset_id: tenant + caller scope
 	s.Vulnerability.SetBranchLookup(repos.Branch)          // a finding branch must belong to its asset
+	// Bulk changes by filter run as operations the caller reads back.
+	s.Vulnerability.SetOperationStore(postgres.NewOperationRepository(&postgres.DB{DB: deps.DB}))
 	s.FindingActivity = activity.NewFindingActivityService(repos.FindingActivity, repos.Finding, log)
 	s.FindingActivity.SetUserRepo(repos.User) // Wire user lookup for activity broadcasts
 	// Note: WebSocket broadcaster is wired later after WebSocketHub is initialized
@@ -1892,6 +1897,8 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// A suspended organization takes no provisioning.
 	s.SCIMToken.SetOrganizationGate(s.OrganizationGate)
 	s.SCIMToken.SetLegacyPeppers(cfg.Encryption.PreviousKeys...)
+	// Minting a SCIM token needs scim for the organization.
+	s.SCIMToken.SetFeatureGate(s.Entitlement)
 	s.SCIMProvisioning = scim.NewProvisioningService(
 		repos.User, repos.Tenant, scimMembershipAdapter{svc: s.Tenant}, log,
 	)
@@ -1899,6 +1906,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 		repos.ScimGroup, repos.Tenant, scimMembershipAdapter{svc: s.Tenant}, log,
 	)
 	s.SCIMGroups.SetAuditService(s.Audit)
+	s.SCIMGroups.SetFeatureGate(s.Entitlement)
 	// Outbound Jira ticketing resolves a client per tenant from that tenant's
 	// connected ticketing integration (base URL + decrypted credentials). The
 	// static client stays nil; the resolver is the production path (mirrors the
@@ -2314,6 +2322,8 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	s.Ingest.SetExclusionSource(s.Scope)                             // New assets matching a scope exclusion are not added (RFC-042 F16)
 	// Secret findings: fingerprint keyed by the platform secret (RFC-043).
 	s.Ingest.SetSecretFingerprinter(vulnerability.NewSecretFingerprinter([]byte(cfg.FingerprintSecret())))
+	// Receipts of uploads and sensor runs, with the daily ingest fact (RFC-122).
+	s.Ingest.SetReceiptRecorder(repos.IngestReceipt)
 	// Coverage-scoped auto-resolve of non-repository findings (default dry_run).
 	s.Ingest.SetCoverageAutoResolve(ingest.ParseCoverageAutoResolveMode(cfg.Ingest.CoverageAutoResolve), ingest.BlindingGuard{
 		Ratio: cfg.Ingest.V2BlindingRatio, MinFindings: cfg.Ingest.V2BlindingMinFindings,
@@ -3184,6 +3194,9 @@ func (s *Services) InitAuthServices(cfg *config.Config, repos *Repositories, log
 		s.SSO.SetSignInHook(s.AccountDeletion.CancelOnSignIn)
 	}
 	s.SSO.SetSessionRevocationStore(sessionRevocations, revocationTTL)
+	// Configuring SSO connections needs sso.connections for the organization; sign-in
+	// through a configured connection is never gated.
+	s.SSO.SetFeatureGate(s.Entitlement)
 
 	// SSO P1: DNS-TXT domain-ownership verification. Wired as the PRIMARY JIT
 	// auto-provisioning gate — a non-member is auto-joined only when the email
@@ -3223,6 +3236,10 @@ func (s *Services) InitAuthServices(cfg *config.Config, repos *Repositories, log
 	// A domain the home organization stops holding suspends the members it
 	// managed elsewhere; proving it again restores them (RFC-058).
 	s.DomainVerify.SetClaimListener(s.Tenant)
+	// A lapsed SSO domain alerts the owners; turning SSO enforcement on needs a
+	// verified SSO domain.
+	s.DomainVerify.SetDomainLossListener(s.Tenant)
+	s.Tenant.SetSSODomainChecker(s.DomainVerify)
 	s.Auth.SetLapsedDomainChecker(s.DomainVerify)
 	// Per-domain sign-up policy (RFC-104): sso_required, join by domain and
 	// blocking new organizations for accounts on a claimed domain.
@@ -3299,6 +3316,14 @@ func (s *Services) InitAuthServices(cfg *config.Config, repos *Repositories, log
 
 	// SAML 2.0 SP (RFC-009 9d/9e): reuses SSO's session/provisioning tail.
 	s.SAML = auth.NewSAMLService(repos.SAMLProvider, repos.Tenant, s.SSO, log)
+	// Each assertion is accepted once across every replica; without Redis the
+	// IDs are kept in process (single replica only).
+	if redisClient != nil {
+		s.SAML.SetReplayStore(redisClient)
+	} else {
+		log.Warn("saml: no Redis client; assertion replay cache kept in process (single-replica only)")
+	}
+	s.SAML.SetCertExpiryAlerts(repos.SAMLProvider, repos.Tenant, s.Notification)
 
 	// A platform administrator's SAML / identity-provider change waits for an
 	// owner of the organization; owners are told in-app (and by email, wired
