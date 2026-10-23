@@ -114,7 +114,7 @@ export const sidebarData: SidebarData = {
           // Badge is dynamically fetched from dashboard stats - see useDynamicBadges hook
           permission: Permission.FindingsRead,
           module: 'findings',
-          quickViews: true,
+          quickViews: 'findings',
         },
         {
           // The four-eyes inbox: false-positive and risk-acceptance requests
@@ -264,6 +264,9 @@ export const sidebarData: SidebarData = {
           url: '/assets',
           icon: Container,
           sections: ASSETS_SECTION_TABS,
+          // The inventory's lenses (All assets, External surface, ...) with
+          // counts, listed under this row while the inventory is open.
+          quickViews: 'assets',
         },
         // /assets opens on the full, filterable list; the category cards are a
         // view switch on the same page (?view=categories). Every asset type is a
