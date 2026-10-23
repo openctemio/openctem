@@ -1382,5 +1382,17 @@
   "findings.detail.section.retestCheck": "kiểm tra kiểm thử lại",
   "findings.detail.loadFailed.title": "Không thể tải phát hiện này",
   "findings.detail.loadFailed.description": "Đã xảy ra lỗi phía máy chủ hoặc kết nối bị gián đoạn. Hãy thử lại.",
+  "findings.row.actionsFor": "Thao tác cho {title}",
+  "findings.row.viewDetails": "Xem chi tiết",
+  "findings.row.openToAssign": "Mở để giao…",
+  "findings.row.openToChangeStatus": "Mở để đổi trạng thái…",
+  "findings.row.copyId": "Sao chép ID",
+  "findings.row.copyLink": "Sao chép liên kết",
+  "findings.row.openToMarkFalsePositive": "Mở để đánh dấu dương tính giả…",
+  "findings.row.delete": "Xóa",
+  "findings.list.selectAll": "Chọn tất cả các dòng trên trang này",
+  "findings.list.selectRow": "Chọn phát hiện {title}",
+  "findings.list.kev": "KEV",
+  "findings.bulk.assignFailed": "Không thể giao các phát hiện",
   "findings.contextChips.crownJewels": "Tài sản trọng yếu"
 }

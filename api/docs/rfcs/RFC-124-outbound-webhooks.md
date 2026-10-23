@@ -1,4 +1,4 @@
-# RFC-122: Outbound webhooks: delivery per channel, typed events, signing and redelivery
+# RFC-124: Outbound webhooks: delivery per channel, typed events, signing and redelivery
 
 | | |
 |---|---|

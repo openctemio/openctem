@@ -30,6 +30,13 @@ var ErrTokenSize = errors.New("token is empty or too large")
 // can never be used as an HMAC secret.
 var signingMethods = []string{"RS256", "RS384", "RS512", "PS256", "ES256"}
 
+// IdentityTokenAlgorithms are the only algorithms accepted for a sign-in
+// id_token and an OIDC back-channel logout token: RS256 (what every supported
+// identity provider signs with by default), PS256 and ES256. HMAC (a leaked
+// client secret could mint tokens) and "none" are never accepted. Other
+// flows (CI workload tokens) keep the wider list of their issuers.
+var IdentityTokenAlgorithms = []string{"RS256", "PS256", "ES256"}
+
 // TokenPolicy is what VerifyJWT checks. Leaving the issuer or the audience
 // unchecked must be asked for explicitly, so a missing value fails closed.
 type TokenPolicy struct {
@@ -49,6 +56,10 @@ type TokenPolicy struct {
 	Leeway time.Duration
 	// ExpOptional allows a token without exp (an OIDC logout token).
 	ExpOptional bool
+	// Algorithms narrows the accepted algorithms to a subset of the shared
+	// allowlist (empty: the shared allowlist). An entry outside it is ignored,
+	// so a policy can never widen what is accepted.
+	Algorithms []string
 	// IgnoreTimes skips the exp, nbf and iat checks against the clock; the
 	// signature, iss and aud are still checked. Only a diagnostic preview
 	// that never grants anything may set it.
@@ -70,8 +81,12 @@ func (c *Client) VerifyJWT(ctx context.Context, raw string, claims jwtv5.Claims,
 		(p.Audience == "" && !p.AudienceCheckedByCaller) {
 		return errIncompletePolicy
 	}
+	methods := allowedMethods(p.Algorithms)
+	if len(methods) == 0 {
+		return errIncompletePolicy
+	}
 	opts := []jwtv5.ParserOption{
-		jwtv5.WithValidMethods(signingMethods),
+		jwtv5.WithValidMethods(methods),
 		jwtv5.WithIssuedAt(),
 		jwtv5.WithLeeway(p.Leeway),
 		jwtv5.WithTimeFunc(c.now),
@@ -116,6 +131,23 @@ func (c *Client) VerifyJWT(ctx context.Context, raw string, claims jwtv5.Claims,
 	}
 	_, err := jwtv5.NewParser(opts...).ParseWithClaims(raw, claims, keyFunc)
 	return err
+}
+
+// allowedMethods is the shared allowlist, narrowed to want when it is set.
+func allowedMethods(want []string) []string {
+	if len(want) == 0 {
+		return signingMethods
+	}
+	out := make([]string, 0, len(want))
+	for _, w := range want {
+		for _, m := range signingMethods {
+			if w == m {
+				out = append(out, m)
+				break
+			}
+		}
+	}
+	return out
 }
 
 // unverifiedIssuedAt reads iat from a token without verifying it, to pick

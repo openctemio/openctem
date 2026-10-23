@@ -23,6 +23,8 @@ import (
 	"github.com/openctemio/ctis/importer"
 
 	"github.com/openctemio/openctem/api/internal/app/ingest"
+	"github.com/openctemio/openctem/api/internal/metrics"
+	"github.com/openctemio/openctem/api/pkg/domain/ingestreceipt"
 	"github.com/openctemio/openctem/api/pkg/domain/sensor"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
@@ -37,11 +39,18 @@ type Ingester interface {
 // Repository records imports and matches and updates the tenant's findings
 // for a VEX document (postgres.FindingRepository).
 type Repository interface {
-	CreateFindingImport(ctx context.Context, rec *vulnerability.FindingImport) error
-	FinishFindingImport(ctx context.Context, rec *vulnerability.FindingImport) error
 	StampAssetsImport(ctx context.Context, tenantID, importID shared.ID, ids []shared.ID) (int64, error)
 	MatchVEXDocument(ctx context.Context, tenantID shared.ID, q vulnerability.VEXDocumentQuery, limit int) ([]vulnerability.VEXCandidate, error)
 	ApplyVEXDocument(ctx context.Context, tenantID shared.ID, ids []shared.ID, v vulnerability.InteropVEX, requestNotAffected bool, reason string) (stored, requested []shared.ID, err error)
+}
+
+// ReceiptStore records the receipt of an upload
+// (postgres.IngestReceiptRepository): created before anything is written,
+// finished with the file-level counts once every file is done. The findings
+// counts are recorded by each file's ingest.
+type ReceiptStore interface {
+	CreateUpload(ctx context.Context, u *ingestreceipt.Upload) error
+	FinishUpload(ctx context.Context, tenantID, id shared.ID, r *ingestreceipt.UploadResult) error
 }
 
 // Limits of one upload. The handler enforces the body size; these bound
@@ -85,6 +94,10 @@ type Request struct {
 	MinSeverity ctis.Severity
 	// SessionID names the import; report ids derive from it.
 	SessionID string
+	// ReceiptID is the upload's receipt (BeginUpload); zero in a preview.
+	// Every file of the upload is ingested under it: it is the report id,
+	// so the findings' scan_id, and the assets' import_id.
+	ReceiptID shared.ID
 }
 
 // FileError is why a file could not be imported, with its place in the file.
@@ -121,8 +134,9 @@ type VEXSummary struct {
 
 // FileResult is the outcome of one file.
 type FileResult struct {
-	// ImportID is the import record of a committed file: the producer of
-	// what it wrote (findings.scan_id, assets.import_id). Empty in a preview.
+	// ImportID is the receipt of the upload the file was committed in: the
+	// producer of what it wrote (findings.scan_id, assets.import_id). Empty
+	// in a preview.
 	ImportID string           `json:"import_id,omitempty"`
 	Name     string           `json:"name"`
 	Format   importer.Format  `json:"format,omitempty"`
@@ -136,18 +150,92 @@ type FileResult struct {
 
 // Service imports uploaded files.
 type Service struct {
-	ingest  Ingester
-	repo    Repository
-	vexMode ingest.VEXMode
-	logger  *logger.Logger
+	ingest   Ingester
+	repo     Repository
+	receipts ReceiptStore
+	vexMode  ingest.VEXMode
+	logger   *logger.Logger
 }
 
 // NewService creates the import service. vexMode is INGEST_VEX.
-func NewService(ing Ingester, repo Repository, vexMode ingest.VEXMode, log *logger.Logger) *Service {
+func NewService(ing Ingester, repo Repository, receipts ReceiptStore, vexMode ingest.VEXMode, log *logger.Logger) *Service {
 	if vexMode == "" {
 		vexMode = ingest.SourceResolveDryRun
 	}
-	return &Service{ingest: ing, repo: repo, vexMode: vexMode, logger: log}
+	return &Service{ingest: ing, repo: repo, receipts: receipts, vexMode: vexMode, logger: log}
+}
+
+// ErrReceiptUnavailable is returned by BeginUpload when the receipt cannot
+// be recorded: nothing is imported without a producer record.
+var ErrReceiptUnavailable = errors.New("recording the import failed")
+
+// BeginUpload records the receipt of an upload before anything is written,
+// so every finding and asset it writes names an existing producer. name is
+// the first file's name (only its hash is stored).
+func (s *Service) BeginUpload(ctx context.Context, req Request, name string) (shared.ID, error) {
+	if s.receipts == nil {
+		return shared.ID{}, ErrReceiptUnavailable
+	}
+	u := &ingestreceipt.Upload{
+		ID:             shared.NewID(),
+		TenantID:       req.TenantID,
+		ActorUserID:    req.ActorUserID,
+		Format:         string(req.Format),
+		FilenameSHA256: nameHash(name),
+	}
+	if err := s.receipts.CreateUpload(ctx, u); err != nil {
+		s.logger.Error("finding import: receipt", "tenant_id", req.TenantID.String(), "error", err)
+		return shared.ID{}, ErrReceiptUnavailable
+	}
+	return u.ID, nil
+}
+
+// FinishUpload stores the file-level counts of an upload on its receipt:
+// components, VEX statements, what the parsers skipped, the files that
+// failed (by index and a fixed code). The upload failed when no file was
+// imported. Best-effort: what the files wrote is already stored.
+func (s *Service) FinishUpload(ctx context.Context, req Request, results []FileResult) {
+	if s.receipts == nil || req.ReceiptID.IsZero() {
+		return
+	}
+	res := &ingestreceipt.UploadResult{Status: ingestreceipt.StatusCompleted}
+	formats := map[importer.Format]bool{}
+	ok := 0
+	for i, fr := range results {
+		if fr.Format != "" {
+			formats[fr.Format] = true
+		}
+		if fr.Error != nil {
+			if len(res.Errors) < ingestreceipt.MaxErrors {
+				res.Errors = append(res.Errors, ingestreceipt.ErrorEntry{Index: i, Code: "file_" + fr.Error.Kind})
+			}
+			continue
+		}
+		ok++
+		res.Components += fr.Stats.Components
+		res.Statements += fr.Stats.Statements
+		res.Skipped += fr.Stats.Skipped
+		if v := fr.VEX; v != nil {
+			res.VEXStored += v.Stored
+			res.VEXRequested += v.Requested
+		}
+	}
+	if ok == 0 {
+		res.Status = ingestreceipt.StatusFailed
+	}
+	switch len(formats) {
+	case 0:
+	case 1:
+		for f := range formats {
+			res.Format = string(f)
+		}
+	default:
+		res.Format = "mixed"
+	}
+	if err := s.receipts.FinishUpload(ctx, req.TenantID, req.ReceiptID, res); err != nil {
+		metrics.IngestReceiptWriteFailures.WithLabelValues("upload").Inc()
+		s.logger.Warn("finding import: finish receipt", "tenant_id", req.TenantID.String(), "error", err)
+	}
 }
 
 // VEXMode returns the mode VEX documents are applied in.
@@ -172,7 +260,18 @@ func (s *Service) ImportUpload(ctx context.Context, req Request, up Upload) (res
 // ImportFile imports one file (not an archive); kb is the Qualys
 // KnowledgeBase companion, may be nil. index numbers the file within the
 // request.
-func (s *Service) ImportFile(ctx context.Context, req Request, index int, name string, r io.Reader, kb io.Reader) FileResult {
+//
+// Outside a preview, a request without a receipt gets one of its own: the
+// file is a one-file upload.
+func (s *Service) ImportFile(ctx context.Context, req Request, index int, name string, r io.Reader, kb io.Reader) (fr FileResult) {
+	if !req.DryRun && req.ReceiptID.IsZero() {
+		id, err := s.BeginUpload(ctx, req, name)
+		if err != nil {
+			return FileResult{Name: SafeName(name), Error: &FileError{Kind: KindFailed, Message: err.Error()}}
+		}
+		req.ReceiptID = id
+		defer func() { s.FinishUpload(context.WithoutCancel(ctx), req, []FileResult{fr}) }()
+	}
 	up := Upload{Name: name, Body: r, ReportIDPrefix: fmt.Sprintf("%s-%d", req.SessionID, index)}
 	if kb != nil {
 		b, err := io.ReadAll(io.LimitReader(kb, MaxKnowledgeBase+1))
@@ -191,7 +290,7 @@ func (s *Service) ImportFile(ctx context.Context, req Request, index int, name s
 	return results[0]
 }
 
-// store records and ingests one converted file.
+// store ingests one converted file under the upload's receipt.
 func (s *Service) store(ctx context.Context, req Request, c Converted) FileResult {
 	fr := FileResult{Name: c.Name}
 	if c.Error != nil {
@@ -199,7 +298,6 @@ func (s *Service) store(ctx context.Context, req Request, c Converted) FileResul
 		return fr
 	}
 	res := c.Result
-	name := c.Name
 	fr.Format = res.Format
 	fr.Stats = res.Stats
 	fr.Issues = res.Issues
@@ -208,33 +306,21 @@ func (s *Service) store(ctx context.Context, req Request, c Converted) FileResul
 		fr.Unmapped = fr.Unmapped[:MaxUnmappedListed]
 	}
 
-	var rec *vulnerability.FindingImport
 	if !req.DryRun {
-		// The record exists before anything is written, so every finding
-		// and asset the import writes names an existing producer.
-		rec = &vulnerability.FindingImport{
-			ID:             shared.NewID(),
-			TenantID:       req.TenantID,
-			ActorUserID:    req.ActorUserID,
-			Format:         string(res.Format),
-			FilenameSHA256: nameHash(name),
-		}
-		if err := s.repo.CreateFindingImport(ctx, rec); err != nil {
-			s.logger.Error("finding import: record", "tenant_id", req.TenantID.String(), "error", err)
-			fr.Error = &FileError{Message: "recording the import failed", Kind: KindFailed}
+		if req.ReceiptID.IsZero() {
+			fr.Error = &FileError{Message: ErrReceiptUnavailable.Error(), Kind: KindFailed}
 			return fr
 		}
-		fr.ImportID = rec.ID.String()
-		// The report id becomes the findings' scan_id: the import is their
+		fr.ImportID = req.ReceiptID.String()
+		// The report id becomes the findings' scan_id: the upload is their
 		// producer, as a scan is.
-		res.Report.Metadata.ID = rec.ID.String()
+		res.Report.Metadata.ID = req.ReceiptID.String()
 	}
 
 	if !req.DryRun && hasContent(res.Report) {
 		out, err := s.ingestReport(ctx, req, res.Report)
 		if err != nil {
 			fr.Error = &FileError{Message: err.Error(), Kind: KindFailed}
-			s.finish(ctx, req, rec, &fr)
 			return fr
 		}
 		fr.Ingest = out
@@ -247,7 +333,7 @@ func (s *Service) store(ctx context.Context, req Request, c Converted) FileResul
 		}
 		fr.VEX = sum
 	}
-	s.finish(ctx, req, rec, &fr)
+	s.stampAssets(ctx, req, &fr)
 	return fr
 }
 
@@ -257,29 +343,16 @@ func nameHash(name string) string {
 	return hex.EncodeToString(sum[:])
 }
 
-// finish stamps the assets the import wrote with its id and stores its
-// counts. Best-effort: the results are already stored.
-func (s *Service) finish(ctx context.Context, req Request, rec *vulnerability.FindingImport, fr *FileResult) {
-	if rec == nil {
+// stampAssets stamps the assets a committed file wrote with the upload's
+// receipt id. Best-effort: the results are already stored.
+func (s *Service) stampAssets(ctx context.Context, req Request, fr *FileResult) {
+	if req.DryRun || req.ReceiptID.IsZero() || fr.Ingest == nil {
 		return
 	}
-	rec.Components = fr.Stats.Components
-	rec.Statements = fr.Stats.Statements
-	rec.Skipped = fr.Stats.Skipped
-	if o := fr.Ingest; o != nil {
-		rec.AssetsCreated, rec.AssetsUpdated = o.AssetsCreated, o.AssetsUpdated
-		rec.FindingsCreated, rec.FindingsUpdated = o.FindingsCreated, o.FindingsUpdated
-		if ids := s.writtenAssets(ctx, req, o.AssetMap); len(ids) > 0 {
-			if _, err := s.repo.StampAssetsImport(ctx, req.TenantID, rec.ID, ids); err != nil {
-				s.logger.Warn("finding import: stamp assets", "tenant_id", req.TenantID.String(), "error", err)
-			}
+	if ids := s.writtenAssets(ctx, req, fr.Ingest.AssetMap); len(ids) > 0 {
+		if _, err := s.repo.StampAssetsImport(ctx, req.TenantID, req.ReceiptID, ids); err != nil {
+			s.logger.Warn("finding import: stamp assets", "tenant_id", req.TenantID.String(), "error", err)
 		}
-	}
-	if v := fr.VEX; v != nil {
-		rec.VEXStored, rec.VEXRequested = v.Stored, v.Requested
-	}
-	if err := s.repo.FinishFindingImport(ctx, rec); err != nil {
-		s.logger.Warn("finding import: counts", "tenant_id", req.TenantID.String(), "error", err)
 	}
 }
 
@@ -318,6 +391,7 @@ func (s *Service) ingestReport(ctx context.Context, req Request, report *ctis.Re
 	report.Metadata.Branch = nil
 	in := ingest.Input{Report: report, CoverageType: ingest.CoverageTypePartial}
 	in.Options.Actor = req.Actor
+	in.Options.Receipt = &ingestreceipt.Source{Kind: ingestreceipt.SourceUpload, Ref: req.ReceiptID.String()}
 	// A person's file: an import for attribute reconciliation (RFC-069).
 	in.Options.SourceKind, in.Options.SourceName = asset.SourceKindImport, importSourceName(req.Format)
 	// The ingest service takes its tenant from a sensor record; this one

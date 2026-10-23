@@ -326,3 +326,42 @@ func (r *FindingRepository) ResolveSourceMitigated(ctx context.Context, tenantID
 	}
 	return out, nil
 }
+
+// CoverageUntouched counts the open findings of a covered scope that the run
+// neither reported nor closed (for its receipt): the query's tool, on its
+// assets, not seen by any of its reports. repo selects the default-branch
+// findings of a repository scan instead of the non-repository ones. Run
+// after the decision acted, so the findings it closed are not counted.
+func (r *FindingRepository) CoverageUntouched(ctx context.Context, tenantID shared.ID, q ingestreport.CoverageQuery, repo bool) (int, error) {
+	if len(q.AssetIDs) == 0 || q.ToolName == "" {
+		return 0, nil
+	}
+	assets := make([]string, len(q.AssetIDs))
+	for i, a := range q.AssetIDs {
+		assets[i] = a.String()
+	}
+	seen := q.SeenScanIDs
+	if seen == nil {
+		seen = []string{}
+	}
+	scope := `AND f.branch_id IS NULL AND f.tool_name = $3`
+	join := ``
+	if repo {
+		join = `JOIN repository_branches rb ON rb.id = f.branch_id AND rb.is_default = true`
+		scope = `AND COALESCE(f.last_seen_tool, f.tool_name) = $3`
+	}
+	var n int
+	err := r.db.QueryRowContext(ctx, `
+		SELECT count(*)
+		FROM findings f `+join+`
+		WHERE f.tenant_id = $1
+			AND f.asset_id = ANY($2) `+scope+`
+			AND f.status IN `+autoResolveFromSQL+`
+			AND f.source NOT IN `+coverageProtectedSources+`
+			AND NOT (COALESCE(f.scan_id, '') = ANY($4))`,
+		tenantID.String(), pq.Array(assets), q.ToolName, pq.Array(seen)).Scan(&n)
+	if err != nil {
+		return 0, fmt.Errorf("coverage untouched findings: %w", err)
+	}
+	return n, nil
+}

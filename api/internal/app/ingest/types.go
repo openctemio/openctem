@@ -7,6 +7,7 @@ import (
 	"github.com/openctemio/ctis"
 
 	"github.com/openctemio/openctem/api/pkg/domain/asset"
+	"github.com/openctemio/openctem/api/pkg/domain/ingestreceipt"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 )
 
@@ -128,6 +129,10 @@ type Options struct {
 	// SourceRun is the import, sync run or feed sequence of a server-side
 	// ingest (trusted binding only; informational).
 	SourceRun string
+	// Receipt is the receipt this ingest counts toward (an upload sets its
+	// own). Nil derives it from the binding: the command's scan run or the
+	// command, the CI run, the connector run, or the sensor's report.
+	Receipt *ingestreceipt.Source
 	// NoExposureProjection: the report lists targets someone published, not
 	// what was observed (program targets, RFC-065 §16.8), so its service
 	// assets open no exposure.
@@ -182,7 +187,10 @@ func (i Input) IsFullCoverage() bool {
 
 // Output represents the result of ingestion.
 type Output struct {
-	ReportID      string `json:"report_id"`
+	ReportID string `json:"report_id"`
+	// ReceiptID is the receipt the ingest was recorded on ("" when the
+	// receipt could not be written; the ingest itself stands).
+	ReceiptID     string `json:"receipt_id,omitempty"`
 	AssetsCreated int    `json:"assets_created"`
 	AssetsUpdated int    `json:"assets_updated"`
 	// AssetsSkippedExcluded counts new assets not added because they match
@@ -268,6 +276,11 @@ type Output struct {
 	// AssetMap maps each CTIS asset id of the report to the persisted asset
 	// it was merged into. Not exposed; v2 derives per-item outcomes from it.
 	AssetMap map[string]shared.ID `json:"-"`
+
+	// CreatedIDs and ReopenedIDs are the findings this report created and
+	// reopened (for the receipt's action log).
+	CreatedIDs  []shared.ID `json:"-"`
+	ReopenedIDs []shared.ID `json:"-"`
 
 	// SightedFingerprints are the stored fingerprints of the findings this
 	// report sighted (after alias resolution). Not exposed; the CI gate
