@@ -110,7 +110,7 @@
   "dashboards.freshness.building": "Dashboard data is being built for the first time.",
   "dashboards.freshness.failed": "The last refresh failed; these are the last good figures.",
   "dashboards.freshness.manual": "Refreshed on request only",
-  "dashboards.freshness.next": "Next refresh {time}",
+  "dashboards.freshness.next": "Next {time}",
   "dashboards.freshness.stale": "These figures are older than their schedule.",
   "dashboards.freshness.updated": "Updated {time}",
   "dashboards.gallery.add": "Add",

@@ -29,6 +29,7 @@ import { useTranslation } from '@/context/i18n-provider'
 import { PageHeader } from '@/features/shared'
 import { getErrorMessage } from '@/lib/api/error-handler'
 import { Permission, usePermissions } from '@/lib/permissions'
+import { cn } from '@/lib/utils'
 import {
   DASHBOARDS_KEY,
   createDashboard,
@@ -52,9 +53,17 @@ import {
   withCtemLoop,
   writeCtemHintDismissed,
 } from '../ctem-hint'
-import { DashboardFreshness } from './dashboard-freshness'
+import {
+  DashboardFreshness,
+  RefreshButton,
+  ScheduleMenuItems,
+  ScheduleSelect,
+} from './dashboard-freshness'
 import { DashboardSwitcher } from './dashboard-switcher'
 import { DashboardView } from './dashboard-view'
+
+/** Menu rows are 44px tall on a phone (touch target), the kit default from 640px. */
+const ITEM = 'min-h-11 sm:min-h-8'
 
 export function DashboardSkeleton() {
   return (
@@ -266,27 +275,38 @@ export function DashboardHome() {
   return (
     <Main>
       <div className="flex flex-col gap-4">
+        {/* Phone: the switcher fills row 1 beside icon-only Refresh and More;
+            Customize and the schedule move into More. From 640px one toolbar
+            row: switcher, Customize, schedule, Refresh now, More. */}
         <PageHeader
           title={dashboard?.name ?? t('dashboards.title', 'Dashboard')}
           description={
-            dashboard?.description ||
-            t(
-              'dashboards.description',
-              'How exposed you are, whether it is getting better, and what to do next.'
-            )
+            <span className="hidden sm:inline">
+              {dashboard?.description ||
+                t(
+                  'dashboards.description',
+                  'How exposed you are, whether it is getting better, and what to do next.'
+                )}
+            </span>
           }
+          actionsClassName="basis-full sm:basis-auto"
         >
-          <div className="flex items-center gap-2">
+          <div
+            className="flex w-full min-w-0 flex-nowrap items-center gap-2 sm:w-auto"
+            data-testid="dashboard-toolbar"
+          >
             <DashboardSwitcher
               personal={personal}
               organization={organization}
               active={active}
               onChoose={choose}
+              className="h-11 min-w-0 max-w-none flex-1 justify-start sm:h-8 sm:max-w-[16rem] sm:flex-none"
             />
             {dashboard && !isOrg && (
               <Button
                 variant="outline"
                 size="sm"
+                className="hidden sm:inline-flex"
                 onClick={() => setCustomizing(true)}
                 disabled={customizing}
               >
@@ -294,27 +314,48 @@ export function DashboardHome() {
                 {t('dashboards.actions.customize', 'Customize')}
               </Button>
             )}
+            {canSchedule && !customizing && (
+              <ScheduleSelect
+                schedule={dashboard?.refresh_schedule}
+                onSchedule={schedule}
+                className="hidden sm:flex"
+              />
+            )}
+            {dashboard && !customizing && (
+              <RefreshButton onRefresh={refresh} disabled={!data.data} />
+            )}
             {dashboard && (
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
                   <Button
                     variant="outline"
                     size="icon"
-                    className="h-8 w-8"
+                    className="h-11 w-11 shrink-0 sm:h-8 sm:w-8"
                     aria-label={t('dashboards.actions.more', 'More dashboard actions')}
                   >
                     <MoreHorizontal className="h-4 w-4" aria-hidden />
                   </Button>
                 </DropdownMenuTrigger>
-                <DropdownMenuContent align="end" className="w-56">
+                <DropdownMenuContent align="end" className="w-64">
+                  {!isOrg && (
+                    <DropdownMenuItem
+                      className={cn(ITEM, 'sm:hidden')}
+                      onSelect={() => setCustomizing(true)}
+                      disabled={customizing}
+                    >
+                      <SlidersHorizontal className="me-2 h-4 w-4" aria-hidden />
+                      {t('dashboards.actions.customize', 'Customize')}
+                    </DropdownMenuItem>
+                  )}
                   {isOrg && (
-                    <DropdownMenuItem onSelect={() => duplicate(dashboard.id)}>
+                    <DropdownMenuItem className={ITEM} onSelect={() => duplicate(dashboard.id)}>
                       <Copy className="me-2 h-4 w-4" aria-hidden />
                       {t('dashboards.actions.duplicate', 'Duplicate to mine')}
                     </DropdownMenuItem>
                   )}
                   {!isDefault && (!isOrg || canOrgManage) && (
                     <DropdownMenuItem
+                      className={ITEM}
                       onSelect={() =>
                         run(
                           () =>
@@ -331,17 +372,26 @@ export function DashboardHome() {
                         : t('dashboards.actions.setDefault', 'Set as my default')}
                     </DropdownMenuItem>
                   )}
-                  <DropdownMenuItem asChild>
+                  <DropdownMenuItem className={ITEM} asChild>
                     <Link href="/dashboards">
                       <Pencil className="me-2 h-4 w-4" aria-hidden />
                       {t('dashboards.actions.edit', 'Edit details')}
                     </Link>
                   </DropdownMenuItem>
+                  {canSchedule && !customizing && (
+                    <div className="sm:hidden">
+                      <DropdownMenuSeparator />
+                      <ScheduleMenuItems
+                        schedule={dashboard.refresh_schedule}
+                        onSchedule={schedule}
+                      />
+                    </div>
+                  )}
                   {!isOrg && (
                     <>
                       <DropdownMenuSeparator />
                       <DropdownMenuItem
-                        className="text-destructive focus:text-destructive"
+                        className={cn(ITEM, 'text-destructive focus:text-destructive')}
                         onSelect={() => setPendingDelete(dashboard)}
                       >
                         <Trash2 className="me-2 h-4 w-4" aria-hidden />
@@ -354,6 +404,9 @@ export function DashboardHome() {
             )}
           </div>
         </PageHeader>
+        {dashboard && active && !customizing && (
+          <DashboardFreshness kind={active.kind} data={data.data} />
+        )}
 
         {listsLoading ? (
           <DashboardSkeleton />
@@ -432,14 +485,6 @@ export function DashboardHome() {
                 </Button>
               </div>
             )}
-            <DashboardFreshness
-              kind={active.kind}
-              data={data.data}
-              schedule={dashboard.refresh_schedule}
-              canSchedule={canSchedule}
-              onRefresh={refresh}
-              onSchedule={schedule}
-            />
             <DashboardView
               dashboard={dashboard}
               data={data.data}

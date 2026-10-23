@@ -107,7 +107,13 @@ export function ItemsViz({
                   {t('dashboardKit.items.kev', 'KEV')}
                 </Badge>
               )}
-              <span className="min-w-0 flex-1 truncate">{r.title}</span>
+              {r.title?.trim() ? (
+                <span className="min-w-0 flex-1 truncate">{r.title}</span>
+              ) : (
+                <span className="min-w-0 flex-1 truncate text-muted-foreground">
+                  {t('dashboardKit.items.untitled', 'Untitled finding')}
+                </span>
+              )}
               {r.asset && (
                 <span className="hidden max-w-[10rem] truncate text-xs text-muted-foreground sm:inline">
                   {r.asset}

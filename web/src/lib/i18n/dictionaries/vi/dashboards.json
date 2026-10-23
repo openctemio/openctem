@@ -110,7 +110,7 @@
   "dashboards.freshness.building": "Dữ liệu bảng điều khiển đang được tạo lần đầu.",
   "dashboards.freshness.failed": "Lần làm mới gần nhất thất bại; đây là số liệu tốt gần nhất.",
   "dashboards.freshness.manual": "Chỉ làm mới khi yêu cầu",
-  "dashboards.freshness.next": "Làm mới tiếp theo {time}",
+  "dashboards.freshness.next": "Lần tới {time}",
   "dashboards.freshness.stale": "Các số liệu này cũ hơn lịch làm mới.",
   "dashboards.freshness.updated": "Cập nhật {time}",
   "dashboards.gallery.add": "Thêm",
