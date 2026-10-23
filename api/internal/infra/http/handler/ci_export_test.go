@@ -122,7 +122,7 @@ func TestCIUploadStatus_OtherRunIs404(t *testing.T) {
 	h := NewCIRunnerHandler(&fakeCIService{}, logger.NewNop())
 	run := exportRun()
 	r := httptest.NewRequest(http.MethodGet, "/api/v1/ci/runs/x/results/y", nil)
-	r.SetPathValue("upload_id", shared.NewID().String())
+	r.SetPathValue("report_id", shared.NewID().String())
 	r = r.WithContext(context.WithValue(r.Context(), ciRunContextKey{}, run))
 	w := httptest.NewRecorder()
 	h.UploadStatus(w, r)

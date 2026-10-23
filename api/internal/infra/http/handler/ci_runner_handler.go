@@ -384,26 +384,26 @@ type CIUploadStatus struct {
 	*cirunapp.UploadResult
 }
 
-// UploadStatus handles GET /api/v1/ci/runs/{id}/results/{upload_id}
+// UploadStatus handles GET /api/v1/ci/runs/{id}/results/{report_id}
 // @Summary      State of a CI run's upload
 // @Description  queued, processing, applied (with the counts, and for a CTIS report the results that carry a decision the gate honors, by index) or failed (with a fixed error code). wait=N (seconds, at most 10) waits for the upload to finish before answering. An upload of another run is 404.
 // @Tags         CI
 // @Produce      json
 // @Param        id         path  string true  "Run ID"
-// @Param        upload_id  path  string true  "Upload ID"
+// @Param        report_id  path  string true  "Upload ID (upload_id of the upload answer)"
 // @Param        wait       query int    false "Seconds to wait for the upload to finish (at most 10)"
 // @Success      200  {object}  CIUploadStatus
 // @Failure      401  {object}  apierror.Error
 // @Failure      404  {object}  apierror.Error
 // @Security     CIRunToken
-// @Router       /ci/runs/{id}/results/{upload_id} [get]
+// @Router       /ci/runs/{id}/results/{report_id} [get]
 func (h *CIRunnerHandler) UploadStatus(w http.ResponseWriter, r *http.Request) {
 	run := CIRunFromContext(r.Context())
 	if run == nil {
 		apierror.Unauthorized("A CI run token is required").WriteJSON(w)
 		return
 	}
-	uid, err := shared.IDFromString(r.PathValue("upload_id"))
+	uid, err := shared.IDFromString(r.PathValue("report_id"))
 	if err != nil {
 		apierror.NotFound("CI upload").WriteJSON(w)
 		return
