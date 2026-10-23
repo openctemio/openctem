@@ -21,6 +21,7 @@ import {
 } from '@/components/ui/dropdown-menu'
 import { Input } from '@/components/ui/input'
 import { useTranslation } from '@/context/i18n-provider'
+import { cn } from '@/lib/utils'
 import type { Dashboard } from '../api/dashboards.types'
 import type { DashboardRef } from '../landing'
 
@@ -37,6 +38,8 @@ export interface DashboardSwitcherProps {
   onChoose: (ref: DashboardRef) => void
   /** Extra entries (built-in views) rendered after the two groups. */
   extra?: React.ReactNode
+  /** Classes for the trigger button (the phone toolbar lets it fill the row). */
+  className?: string
 }
 
 export function DashboardSwitcher({
@@ -46,6 +49,7 @@ export function DashboardSwitcher({
   fallbackLabel,
   onChoose,
   extra,
+  className,
 }: DashboardSwitcherProps) {
   const { t } = useTranslation()
   const [query, setQuery] = useState('')
@@ -87,12 +91,12 @@ export function DashboardSwitcher({
         <Button
           variant="outline"
           size="sm"
-          className="max-w-[16rem]"
+          className={cn('max-w-[16rem]', className)}
           aria-label={t('dashboards.switcher.label', 'Switch dashboard: {name}', { name: label })}
         >
           <LayoutGrid className="me-2 h-4 w-4 shrink-0" aria-hidden />
-          <span className="truncate">{label}</span>
-          <ChevronDown className="ms-2 h-4 w-4 shrink-0" aria-hidden />
+          <span className="me-2 truncate">{label}</span>
+          <ChevronDown className="ms-auto h-4 w-4 shrink-0" aria-hidden />
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="w-64">
