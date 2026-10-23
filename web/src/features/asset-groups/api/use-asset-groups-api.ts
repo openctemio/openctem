@@ -195,6 +195,48 @@ export function useAssetGroupsApi(
   return useSWR<ApiAssetGroupListResponse>(key, fetchAssetGroups, { ...defaultConfig, ...config })
 }
 
+// A list that shows every group (search, select and export cover them all):
+// the API pages at 100, so this walks the pages up to a cap and reports the
+// real total. The key carries a prefix so the groups cache invalidation
+// (which matches '/asset-groups') reaches it too.
+const ALL_KEY_PREFIX = 'all:'
+export const ALL_ASSET_GROUPS_PAGE_SIZE = 100
+export const ALL_ASSET_GROUPS_CAP = 1000
+
+async function fetchAllAssetGroups(key: string): Promise<ApiAssetGroupListResponse> {
+  const url = key.slice(ALL_KEY_PREFIX.length)
+  const sep = url.includes('?') ? '&' : '?'
+  const rows: ApiAssetGroup[] = []
+  let total = 0
+  let first: ApiAssetGroupListResponse | undefined
+  for (let page = 1; rows.length < ALL_ASSET_GROUPS_CAP; page++) {
+    const res = await fetchAssetGroups(
+      `${url}${sep}page=${page}&per_page=${ALL_ASSET_GROUPS_PAGE_SIZE}`
+    )
+    first ??= res
+    const data = res.data ?? []
+    total = res.total ?? total
+    rows.push(...data)
+    if (data.length === 0 || rows.length >= total) break
+  }
+  return { ...first, data: rows, total } as ApiAssetGroupListResponse
+}
+
+/** Every group matching the filters (up to ALL_ASSET_GROUPS_CAP), with the full total. */
+export function useAllAssetGroupsApi(
+  filters?: AssetGroupApiFilters | null,
+  config?: SWRConfiguration
+) {
+  const { currentTenant } = useTenant()
+  const { can } = usePermissions()
+  const shouldFetch = currentTenant && can(Permission.AssetGroupsRead) && filters !== null
+  const key = shouldFetch ? ALL_KEY_PREFIX + buildAssetGroupsEndpoint(filters ?? undefined) : null
+  return useSWR<ApiAssetGroupListResponse>(key, fetchAllAssetGroups, {
+    ...defaultConfig,
+    ...config,
+  })
+}
+
 /**
  * Fetch a single asset group by ID
  * Only fetches if user has asset-groups:read permission
