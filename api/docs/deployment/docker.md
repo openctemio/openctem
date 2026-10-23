@@ -15,7 +15,7 @@ deploy OpenCTEM with Docker Compose or the all-in-one image, follow
 |------|---------|
 | `api/Dockerfile` | Multi-target build: `development` (Air, Delve, migrate), `base` and `builder`, `production` (Alpine, non-root user `openctem`) |
 | `api/Dockerfile.migrations`, `Dockerfile.seed`, `Dockerfile.admin-cli` | The `migrations`, `seed` and `admin-cli` release images |
-| `api/docker-compose.yml` | Base services: PostgreSQL 17 and Redis 7 (ports published for development) |
+| `api/docker-compose.yml` | Base services: PostgreSQL 17 and Redis 7 (ports published for development). Supported PostgreSQL: 16, 17 and 18; 17 is recommended. |
 | `api/docker-compose.dev.yml` | The API in the `development` target, source bind-mounted |
 | `api/deploy/docker-compose.yml` | The supported Compose deployment: gateway (one HTTPS port), web, API, PostgreSQL and Redis with TLS, and the one-shot `datastore-tls`, `db-roles` and `migrate` services |
 | `api/deploy/backup.sh` | Backup (`backup`), restore check (`verify`) and restore (`restore <dir> --yes`) of that stack; encrypts with age when `BACKUP_AGE_RECIPIENT` is set (decrypt with `BACKUP_AGE_IDENTITY`) |

@@ -353,9 +353,25 @@ func (h *TicketMappingHandler) DiscardDraft(w http.ResponseWriter, r *http.Reque
 		apierror.NotFound("mapping").WriteJSON(w)
 		return
 	}
+	before, err := h.svc.GetProfile(r.Context(), tid, id)
+	if err != nil {
+		h.fail(w, err)
+		return
+	}
 	if err := h.svc.DiscardDraft(r.Context(), tid, id); err != nil {
 		h.fail(w, err)
 		return
+	}
+	// Discarding throws away unpublished mapping work: it is a configuration
+	// change like saving the draft, so it is audited the same way. No draft,
+	// nothing changed, nothing to audit.
+	if before.Draft != nil {
+		var after any
+		if before.Published != nil {
+			after = before.Published.Spec
+		}
+		h.auditMapping(r, auditdom.ActionTicketMappingUpdated, before.Profile, before.Draft.Spec, after,
+			fmt.Sprintf("Ticket mapping %q draft v%d discarded", before.Profile.Name, before.Draft.Version))
 	}
 	w.WriteHeader(http.StatusNoContent)
 }

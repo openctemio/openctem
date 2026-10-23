@@ -1,7 +1,6 @@
 'use client'
 
 import { formatDistanceToNow, type Locale } from 'date-fns'
-import { cn } from '@/lib/utils'
 
 interface RelativeTimeProps {
   /** ISO string, Date, or nullish. Nullish / invalid renders an em-dash. */
@@ -21,10 +20,12 @@ interface RelativeTimeProps {
 export function RelativeTime({ date, addSuffix = true, className, locale }: RelativeTimeProps) {
   const d = date == null ? null : typeof date === 'string' ? new Date(date) : date
   if (!d || Number.isNaN(d.getTime())) {
-    return <span className={cn('text-sm text-muted-foreground', className)}>—</span>
+    return <span className={className}>—</span>
   }
   return (
-    <span className={cn('text-sm text-muted-foreground', className)} title={d.toLocaleString()}>
+    // Size and colour come from the surrounding line (one size per line of
+    // metadata, research/244); the absolute time is the tooltip.
+    <span className={className} title={d.toLocaleString()}>
       {formatDistanceToNow(d, { addSuffix, locale })}
     </span>
   )
