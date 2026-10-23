@@ -2,29 +2,27 @@
 
 import type * as React from 'react'
 import { cn } from '@/lib/utils'
+import { HealthStatus } from '@/components/ui/health-status'
+import type { HealthState } from '@/lib/health-colors'
 
 /**
- * A state as a small tinted pill with a dot: the one look for a computed
- * state (a sensor's heartbeat state, a CI pipeline's status). Theme tokens
- * only (style contract §6); the label carries the meaning, never the colour
- * alone.
+ * A computed state (a sensor's heartbeat state, a CI pipeline's status): the
+ * shared HealthStatus label, an icon and plain text. The tone picks the state:
+ * success is ok, warning needs attention, destructive is down, info is in
+ * motion, muted is off. The text stays in the foreground colour, so every
+ * tone passes AA, and the icon shape differs per tone, so colour is never the
+ * only cue. A domain with a finer vocabulary (queued, paused, unknown) renders
+ * HealthStatus directly.
  */
 export type PillTone = 'success' | 'warning' | 'destructive' | 'info' | 'muted'
 
-export const PILL_TONE_CLASS: Record<PillTone, string> = {
-  success: 'bg-success/15 text-success',
-  warning: 'bg-warning/15 text-warning',
-  destructive: 'bg-destructive/15 text-destructive',
-  info: 'bg-info/15 text-info',
-  muted: 'bg-muted text-muted-foreground',
-}
-
-export const PILL_DOT_CLASS: Record<PillTone, string> = {
-  success: 'bg-success',
-  warning: 'bg-warning',
-  destructive: 'bg-destructive',
-  info: 'bg-info',
-  muted: 'bg-muted-foreground',
+/** The health state each tone renders as. */
+export const PILL_TONE_STATE: Record<PillTone, HealthState> = {
+  success: 'ok',
+  warning: 'warn',
+  destructive: 'down',
+  info: 'run',
+  muted: 'off',
 }
 
 export interface TonePillProps {
@@ -32,7 +30,7 @@ export interface TonePillProps {
   label: React.ReactNode
   /** Tooltip: what the state means. */
   title?: string
-  /** A muted line under the pill ("heartbeat 4s ago", "last run 3h ago"). */
+  /** A muted line under the label ("heartbeat 4s ago", "last run 3h ago"). */
   detail?: React.ReactNode
   /** Rendered as `data-state`, for tests and styling hooks. */
   state?: string
@@ -40,24 +38,19 @@ export interface TonePillProps {
 }
 
 export function TonePill({ tone, label, title, detail, state, className }: TonePillProps) {
-  const pill = (
-    <span
-      className={cn(
-        'inline-flex items-center gap-1.5 whitespace-nowrap rounded-full px-2 py-0.5 text-xs font-medium',
-        PILL_TONE_CLASS[tone],
-        !detail && className
-      )}
+  const status = (
+    <HealthStatus
+      state={PILL_TONE_STATE[tone]}
+      label={label}
       title={title}
-      data-state={state}
-    >
-      <span aria-hidden className={cn('size-1.5 rounded-full', PILL_DOT_CLASS[tone])} />
-      {label}
-    </span>
+      value={state}
+      className={!detail ? className : undefined}
+    />
   )
-  if (!detail) return pill
+  if (!detail) return status
   return (
     <span className={cn('inline-flex flex-col items-start gap-0.5', className)}>
-      {pill}
+      {status}
       <span className="text-xs text-muted-foreground">{detail}</span>
     </span>
   )

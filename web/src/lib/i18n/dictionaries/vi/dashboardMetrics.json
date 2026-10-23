@@ -16,7 +16,7 @@
   "dashboardMetrics.program.rediscoveredMeasures": "Phát hiện xuất hiện lại sau khi đã khắc phục, trong kỳ",
   "dashboardMetrics.program.slaMeasures": "Phát hiện đang mở có SLA và chưa quá hạn",
   "dashboardMetrics.program.exposureTrend": "Xu hướng phát hiện đang mở",
-  "dashboardMetrics.program.exposureTrendMeasures": "Phát hiện đang mở hiện tại so với {window} trước — nên giảm sau giai đoạn đầu",
+  "dashboardMetrics.program.exposureTrendMeasures": "Số phát hiện đang mở hiện tại so với {window} trước, nên giảm sau giai đoạn đầu",
   "dashboardMetrics.state.loadFailed": "Không tải được các số liệu này",
   "dashboardMetrics.state.retry": "Thử lại"
 }

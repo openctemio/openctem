@@ -17,8 +17,8 @@ organization's findings. The ingest service writes it; nothing else does.
 | Retention job (`ingest-receipt-retention`) | shipped |
 | Receipts API (`GET /findings/imports`, `/{id}`, `/{id}/actions`, `GET /findings/{id}/imports`), `POST /findings/imports`, durable `Idempotency-Key` (migration `003325_idempotency_keys`) | shipped |
 | Accept fast, apply async: CI results and committed imports stored sealed (`ingest_payloads`), answered 202, applied by the ingest worker; receipt status `queued`; `GET /findings/imports/{id}/result` and `GET /ci/runs/{id}/results/{report_id}`; the CI gate waits on the run's uploads (migration `003362_ingest_async_uploads`, RFC-122 §6a) | shipped |
-| Fairness and limits: lanes (urgent KEV/critical, interactive, bulk), one processing job per scope key, per-organization running cap, parallel workers on their own pool, 429 + Retry-After past the queue limit, refusal when the depth cannot be read, dead after the last attempt's lease (migration `003363_ingest_lanes_scope`, RFC-122 §6b) | shipped |
-| Queue hygiene: `ingest-queue-retention` (stored parts once unneeded, finished jobs and reports after 30 days); a quarantined report marked accepted only after it applied (migration `003364_quarantine_apply_claim`, RFC-122 §6c) | shipped |
+| Fairness and limits: lanes (urgent KEV/critical, interactive, bulk), one processing job per scope key, per-organization running cap, parallel workers on their own pool, 429 + Retry-After past the queue limit, refusal when the depth cannot be read, dead after the last attempt's lease (migration `003378_ingest_lanes_scope`, RFC-122 §6b) | shipped |
+| Queue hygiene: `ingest-queue-retention` (stored parts once unneeded, finished jobs and reports after 30 days); a quarantined report marked accepted only after it applied (migration `003379_quarantine_apply_claim`, RFC-122 §6c) | shipped |
 | Full-coverage uploads (`coverage=full` with an explicit scope) | shipped |
 | Web: receipt and recent imports in the import dialog, "What this run did to findings" on the scan run page, "Last seen in" on the finding overview (en, vi) | shipped |
 
