@@ -14,7 +14,8 @@ import { Check, Info, X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
 import { useTranslation } from '@/context/i18n-provider'
-import { TonePill, type PillTone } from '@/features/shared'
+import { ErrorState, TonePill, type PillTone } from '@/features/shared'
+import { useUrlFilter } from '@/hooks/use-url-param'
 import { coversText, scopeRefusalLabel } from '@/features/scope'
 import { Permission, usePermissions } from '@/lib/permissions'
 import { useEASMRuleSuggestions, type EASMRuleSuggestion } from '../hooks/use-easm-rules'
@@ -84,6 +85,15 @@ function isAddressName(name: string | undefined): boolean {
   return /^\d{1,3}(\.\d{1,3}){3}(:\d+.*)?$/.test(n) || /^\[?[0-9a-f:]+\]?(:\d+.*)?$/i.test(n)
 }
 
+function sampleNames(items: { name?: string }[]): string {
+  return (
+    items
+      .slice(0, 3)
+      .map((i) => i.name)
+      .join(', ') + (items.length > 3 ? '…' : '')
+  )
+}
+
 export function EASMRuleSuggestions({
   onApplied,
   namesOnly = false,
@@ -95,6 +105,7 @@ export function EASMRuleSuggestions({
   const { t } = useTranslation()
   const { can } = usePermissions()
   const { suggestions, isLoading, error, mutate } = useEASMRuleSuggestions()
+  const [, setAll] = useUrlFilter('all', '0')
   const [open, setOpen] = useState<{
     s: EASMRuleSuggestion
     action: 'accept_rule' | 'reject_rule'
@@ -102,7 +113,15 @@ export function EASMRuleSuggestions({
   // A rule creates a scope entry or exclusion: scope:write and assets:write.
   const canDecide = can(Permission.ScopeWrite) && can(Permission.AssetsWrite)
 
-  if (error) return null
+  if (error) {
+    return (
+      <ErrorState
+        title={t('easmReview.suggestions.errorTitle', 'suggested rules')}
+        error={error}
+        onRetry={() => void mutate()}
+      />
+    )
+  }
   if (isLoading && !suggestions) {
     return (
       <div className="grid gap-3 md:grid-cols-2">
@@ -206,21 +225,36 @@ export function EASMRuleSuggestions({
       </ul>
       {individual.length > 0 && (
         <p className="text-sm text-muted-foreground">
-          {t(
-            individual.length === 1
-              ? 'easmReview.suggestions.individualOne'
-              : 'easmReview.suggestions.individualMany',
-            individual.length === 1
-              ? '{n} shared or CDN address is never grouped; decide it one by one in the list below ({names}).'
-              : '{n} shared or CDN addresses are never grouped; decide them one by one in the list below ({names}).',
-            {
-              n: individual.length,
-              names:
-                individual
-                  .slice(0, 3)
-                  .map((i) => i.name)
-                  .join(', ') + (individual.length > 3 ? '…' : ''),
-            }
+          {namesOnly
+            ? t(
+                individual.length === 1
+                  ? 'easmReview.suggestions.namesOne'
+                  : 'easmReview.suggestions.namesMany',
+                individual.length === 1
+                  ? '{n} name fits no rule; decide it one by one ({names}).'
+                  : '{n} names fit no rule; decide them one by one ({names}).',
+                { n: individual.length, names: sampleNames(individual) }
+              )
+            : t(
+                individual.length === 1
+                  ? 'easmReview.suggestions.individualOne'
+                  : 'easmReview.suggestions.individualMany',
+                individual.length === 1
+                  ? '{n} shared or CDN address is never grouped; decide it one by one in the list below ({names}).'
+                  : '{n} shared or CDN addresses are never grouped; decide them one by one in the list below ({names}).',
+                { n: individual.length, names: sampleNames(individual) }
+              )}
+          {namesOnly && (
+            <>
+              {' '}
+              <button
+                type="button"
+                className="text-primary underline-offset-2 hover:underline"
+                onClick={() => setAll('1')}
+              >
+                {t('attackSurface.suggestions.showAll', 'Show all items')}
+              </button>
+            </>
           )}
         </p>
       )}

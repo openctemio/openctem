@@ -87,5 +87,8 @@
   "easmReview.suggestions.weak": "Yếu",
   "easmReview.suggestions.weakHint": "Chỉ có chính các tên chỉ tới nó.",
   "easmReview.overview.includeDiscovered": "Tính cả tài sản được phát hiện",
-  "easmReview.overview.discovered": "Đã phát hiện, chỉ thụ động cho đến khi vào phạm vi"
+  "easmReview.overview.discovered": "Đã phát hiện, chỉ thụ động cho đến khi vào phạm vi",
+  "easmReview.suggestions.errorTitle": "các quy tắc gợi ý",
+  "easmReview.suggestions.namesOne": "{n} tên không thuộc quy tắc nào; hãy quyết định riêng ({names}).",
+  "easmReview.suggestions.namesMany": "{n} tên không thuộc quy tắc nào; hãy quyết định riêng từng tên ({names})."
 }
