@@ -131,7 +131,7 @@ export function AutomationVersionsDialog({
                           who: person(v.approved_by, v.approved_by_name),
                         })}`}
                     </span>
-                    {(v.status === 'superseded' || v.status === 'retired') && (
+                    {v.status === 'superseded' && (
                       <Button
                         size="sm"
                         variant="outline"
