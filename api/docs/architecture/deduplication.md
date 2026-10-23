@@ -158,6 +158,40 @@ The API never sets `Snippet`, `LogicalLocation`, `TargetHost`, `TargetPath`,
 `Parameter` or `ImageTarget`, so the line-independent `sast-content` recipe and
 the `dast` / `container` recipes are unreachable from ingest.
 
+### Canonical vulnerability ids
+
+Design: [RFC-043 §17.2](../rfcs/RFC-043-deduplication-and-identity.md#172-canonicalisation-before-keying).
+Two tools often name one vulnerability differently (`GHSA-35jh-r3h4-6jhm`,
+`CVE-2021-23337`). Before an SCA, network or DAST finding is keyed:
+
+- **Its own ids first.** A finding that names a CVE keys on it. The other
+  CVEs among its CTIS typed ids join `cve_ids`, and a network or SCA finding
+  that names several CVEs becomes one finding per CVE (decisions D3, D20);
+  the copy for the CVE it was keyed on keeps its key and triage.
+- **Feed aliases.** A finding that names no CVE, only advisory ids (its rule
+  id or typed ids: GHSA, PYSEC-, GO-, RUSTSEC-, …), is keyed on the CVE the
+  signed feed ties them to (`vuln_id_aliases`, filled by the bundle importer;
+  see vulnerability-matching.md), only when every id it names that the feed
+  knows leads to the **same single** CVE. Its `cve_id` is set to it.
+  Otherwise it keeps its advisory key, so an over-broad advisory never fuses
+  two CVEs. A report's own ids decide only that report's key: an alias one
+  report asserts is never applied to another finding.
+- **Stored findings keep their triage.** The key the finding had (on the
+  advisory) is a former key: on its next sighting a finding stored under it
+  takes the CVE key in place (its old key stays an alias). When another
+  live finding of the asset already holds the CVE key, nothing is merged:
+  the two are linked as the same issue (rule `vuln_alias`, see below), each
+  keeping its status and decisions (`internal/app/ingest/vuln_alias.go`).
+- **Without a new sighting.** `refingerprint -vuln-aliases [-tenant <id>]
+  [-apply]` rewrites only the vulnerability field of each stored tuple
+  (`vuln` for SCA and network, `rule` for DAST), re-keys in place when the
+  CVE key is free, links otherwise; dry run by default, idempotent, one
+  `findings.refingerprinted` audit entry per tenant it changed
+  (`internal/infra/postgres/finding_alias_rekey.go`).
+
+Until the feed publishes the map, `vuln_id_aliases` is empty and keys are
+unchanged; the feed status shows whether a map was applied.
+
 ### Same issue across tools (links)
 
 Design: [RFC-043 §17](../rfcs/RFC-043-deduplication-and-identity.md#17-cross-tool-deduplication-amendment-2026-10-23).
@@ -171,6 +205,7 @@ and approvals.
 |---|---|---|
 | `sast_overlap` | same asset and repository path, different rule ids, overlapping line ranges, a shared CWE (`CWE-89`, `cwe-089` and `89` are one) | across assets (a monorepo split into two assets), the same rule, another CWE on the line, disjoint lines |
 | `secret_value` | the same per-tenant keyed hash of the raw secret, in another file or repository | a secret known only by its mask; another tenant. CI-hashed secrets link within one repository (the CI key is per repository) |
+| `vuln_alias` | a finding still stored under its advisory key while another finding of the asset holds the CVE key the feed gives it | across assets; decided when keys change, not released on a sighting |
 
 How it runs:
 
