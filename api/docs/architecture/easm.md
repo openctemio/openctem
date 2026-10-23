@@ -305,11 +305,11 @@ the scope decisions that still need a person, one card each
 
 `total` is the number of decisions waiting: one per card, plus one per
 suggested rule about names and one for the names no rule groups (address rules
-belong to the addresses card). It is the Suggestions tab and sidebar badge
+belong to the addresses card). It is the Review tab and sidebar badge
 (`GET /easm/suggestions?view=count`, seeded by the session bootstrap as
 `badges.easm_review`). The web console shows the cards in the Decide panel
 (`web/src/features/attack-surface/components/easm-decide-panel.tsx`) on the
-Suggestions tab and, with "Not now", at the top of the overview; the row list
+Review tab and, with "Not now", at the top of the overview; the row list
 is behind "Show all items".
 A card holds at most 200 items (`truncated` says more exist). Accepting one
 is an ordinary `POST /scope/targets/bulk` with its items (exact `ip_address`

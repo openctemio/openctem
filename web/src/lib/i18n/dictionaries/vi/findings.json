@@ -1729,5 +1729,9 @@
   "findings.approvals.ownRequestShort": "Yêu cầu của bạn",
   "findings.approvals.actionsFor": "Thao tác khác cho {title}",
   "findings.approvals.errorTitle": "yêu cầu phê duyệt",
-  "findings.approvals.requestedLabel": "Yêu cầu:"
+  "findings.approvals.requestedLabel": "Yêu cầu:",
+  "findings.importResults.format": "Định dạng",
+  "findings.importResults.formatDetect": "Nhận biết từ tệp",
+  "findings.importResults.formatMapping": "Ánh xạ nhập dữ liệu: {name}",
+  "findings.importResults.formatMappingHint": "Tệp được đọc bằng phiên bản mới nhất của ánh xạ này. Lần nhập qua ánh xạ không bao giờ đóng các phát hiện vắng mặt trong tệp."
 }
