@@ -2138,5 +2138,17 @@
   "scans.failure.ERROR.text": "Công cụ không chạy được phép kiểm tra này (không có mẫu, hoặc lỗi công cụ).",
   "scans.failure.ERROR.fix": "Phát hiện không thay đổi. Xác minh thủ công, hoặc kiểm tra lại sau khi mẫu của cảm biến được cập nhật.",
   "scans.failure.RETEST_UNAVAILABLE.text": "Công cụ không chạy được phép kiểm tra này nên không có gì để kiểm tra lại.",
-  "scans.failure.RETEST_UNAVAILABLE.fix": "Phát hiện không thay đổi. Xác minh thủ công."
+  "scans.failure.RETEST_UNAVAILABLE.fix": "Phát hiện không thay đổi. Xác minh thủ công.",
+  "scans.runs.listName": "danh sách lượt chạy",
+  "scans.configs.metricAll": "Cấu hình",
+  "scans.configs.metricEnabled": "Đang bật",
+  "scans.configs.metricPaused": "Tạm dừng lịch",
+  "scans.configs.metricDisabled": "Đã tắt",
+  "scans.configs.searchPlaceholder": "Tìm cấu hình…",
+  "scans.configs.searchLabel": "Tìm cấu hình quét",
+  "scans.configs.filtersLabel": "Bộ lọc cấu hình quét",
+  "scans.workflows.ownerFilter": "Chủ sở hữu quy trình",
+  "scans.workflows.ownerAll": "Tất cả quy trình",
+  "scans.workflows.ownerMine": "Quy trình của tôi",
+  "scans.workflows.ownerSystem": "Mẫu hệ thống"
 }
