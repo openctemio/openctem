@@ -7,12 +7,30 @@
  */
 
 import { useState } from 'react'
-import { ArrowLeft, ChevronRight, Copy, GitBranch, Network, PackageX } from 'lucide-react'
+import {
+  ArrowLeft,
+  ChevronRight,
+  Copy,
+  GitBranch,
+  Layers,
+  Network,
+  PackageX,
+  ShieldCheck,
+} from 'lucide-react'
 import { toast } from 'sonner'
 import Link from '@/components/link'
 import { Main } from '@/components/layout'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
+import { Checkbox } from '@/components/ui/checkbox'
+import { Label } from '@/components/ui/label'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
 import {
   Dialog,
   DialogBody,
@@ -73,7 +91,11 @@ export function ComponentDetailView({ id }: { id: string }) {
   const tab = (
     ['versions', 'assets', 'vulnerabilities', 'vex'].includes(tabParam) ? tabParam : 'versions'
   ) as Tab
-  const [versionFilter, setVersionFilter] = useState<ComponentVersion | null>(null)
+  // The version the Where used tab is narrowed to lives in the URL, so a
+  // reload or a shared link keeps it.
+  const [versionParam, setVersionParam] = useUrlFilter('version', '')
+  const { versions } = useComponentVersions(id)
+  const versionFilter = versionParam ? versions.find((v) => v.id === versionParam) : undefined
 
   const copyPurl = async () => {
     if (!pkg) return
@@ -148,19 +170,15 @@ export function ComponentDetailView({ id }: { id: string }) {
       value: pkg?.kev ?? 0,
       tone: pkg?.kev ? 'danger' : 'default',
     },
-    {
+  ]
+  // No package health data: no tile, rather than a dash with an apology.
+  if (pkg?.health?.latest_version) {
+    metrics.push({
       key: 'latest',
       label: t('components.detail.latest', 'Latest version'),
-      value: pkg?.health?.latest_version ?? '—',
-      hint:
-        pkg && !pkg.health
-          ? t(
-              'components.kpi.outdatedHint',
-              'Needs package health data from the vulnerability feed'
-            )
-          : undefined,
-    },
-  ]
+      value: pkg.health.latest_version,
+    })
+  }
 
   return (
     <Main>
@@ -232,16 +250,19 @@ export function ComponentDetailView({ id }: { id: string }) {
           <VersionsTable
             id={id}
             onShowUsages={(v) => {
-              setVersionFilter(v)
+              setVersionParam(v.id)
               setTabParam('assets')
             }}
           />
         </TabsContent>
         <TabsContent value="assets" className="mt-4">
           <UsagesTable
+            // Remount on a new version so the page starts again at 1.
+            key={versionParam || 'all'}
             id={id}
-            version={versionFilter}
-            onClearVersion={() => setVersionFilter(null)}
+            versionId={versionParam || undefined}
+            versionLabel={versionFilter?.version}
+            onClearVersion={() => setVersionParam('')}
           />
         </TabsContent>
         <TabsContent value="vulnerabilities" className="mt-4">
@@ -263,8 +284,29 @@ function VersionsTable({
   onShowUsages: (v: ComponentVersion) => void
 }) {
   const { t } = useTranslation()
-  const { versions, isLoading } = useComponentVersions(id)
+  const { versions, error, isLoading, mutate } = useComponentVersions(id)
   if (isLoading && !versions.length) return <TableSkeleton rows={4} />
+  if (error && !versions.length) {
+    return (
+      <ErrorState
+        title={t('components.versions.loadError', 'the versions')}
+        error={error}
+        onRetry={() => void mutate()}
+      />
+    )
+  }
+  if (!versions.length) {
+    return (
+      <EmptyState
+        icon={Layers}
+        title={t('components.versions.empty', 'No versions in use')}
+        description={t(
+          'components.versions.emptyHint',
+          'No asset you can see has recorded a version of this package.'
+        )}
+      />
+    )
+  }
   return (
     <div className="overflow-x-auto rounded-md border">
       <Table>
@@ -334,11 +376,13 @@ function VersionsTable({
 
 function UsagesTable({
   id,
-  version,
+  versionId,
+  versionLabel,
   onClearVersion,
 }: {
   id: string
-  version: ComponentVersion | null
+  versionId?: string
+  versionLabel?: string
   onClearVersion: () => void
 }) {
   const { t } = useTranslation()
@@ -347,17 +391,19 @@ function UsagesTable({
   const [perPage, setPerPage] = useState(25)
   const [expanded, setExpanded] = useState<string | null>(null)
   const [graphFor, setGraphFor] = useState<ComponentUsage | null>(null)
-  const { data, isLoading } = useComponentUsages(id, {
-    version_id: version?.id,
+  const { data, error, isLoading, mutate } = useComponentUsages(id, {
+    version_id: versionId,
     page,
     per_page: perPage,
   })
 
   return (
     <div className="space-y-3">
-      {version && (
+      {versionId && (
         <div className="flex flex-wrap items-center gap-2 text-sm">
-          {t('components.usages.versionFilter', 'Version {version}', { version: version.version })}
+          {t('components.usages.versionFilter', 'Version {version}', {
+            version: versionLabel ?? versionId,
+          })}
           <Button variant="ghost" size="sm" onClick={onClearVersion}>
             {t('components.usages.allVersions', 'Show all versions')}
           </Button>
@@ -365,6 +411,25 @@ function UsagesTable({
       )}
       {isLoading && !data ? (
         <TableSkeleton rows={4} />
+      ) : error && !data ? (
+        <ErrorState
+          title={t('components.usages.loadError', 'where this package is used')}
+          error={error}
+          onRetry={() => void mutate()}
+        />
+      ) : data && data.total === 0 ? (
+        <EmptyState
+          icon={Layers}
+          title={t('components.usages.empty', 'Not used on any asset you can see')}
+          description={
+            versionId
+              ? t(
+                  'components.usages.emptyVersionHint',
+                  'No asset uses this version. Show all versions to see the rest.'
+                )
+              : undefined
+          }
+        />
       ) : (
         <div className="overflow-x-auto rounded-md border">
           <Table>
@@ -509,9 +574,18 @@ function UsageRow({
 
 function UsagePaths({ usage }: { usage: ComponentUsage }) {
   const { t } = useTranslation()
-  const { paths, isLoading } = useDependencyPaths(usage.asset_id, usage.version_id)
+  const { paths, error, isLoading, mutate } = useDependencyPaths(usage.asset_id, usage.version_id)
   if (isLoading)
     return <p className="text-sm text-muted-foreground">{t('common.loading', 'Loading…')}</p>
+  if (error) {
+    return (
+      <ErrorState
+        title={t('components.usages.pathsLoadError', 'the dependency paths')}
+        error={error}
+        onRetry={() => void mutate()}
+      />
+    )
+  }
   if (!paths.length || paths.every((p) => p.length <= 1)) {
     return (
       <p className="text-sm text-muted-foreground">
@@ -544,7 +618,16 @@ function UsagePaths({ usage }: { usage: ComponentUsage }) {
 
 function AssetGraph({ usage }: { usage: ComponentUsage }) {
   const { t } = useTranslation()
-  const { graph, isLoading } = useDependencyGraph(usage.asset_id, usage.version_id)
+  const { graph, error, isLoading, mutate } = useDependencyGraph(usage.asset_id, usage.version_id)
+  if (error && !graph) {
+    return (
+      <ErrorState
+        title={t('components.graph.loadError', 'the dependency graph')}
+        error={error}
+        onRetry={() => void mutate()}
+      />
+    )
+  }
   if (isLoading || !graph)
     return <p className="text-sm text-muted-foreground">{t('common.loading', 'Loading…')}</p>
   return <DependencyGraphView graph={graph} focusVersionId={usage.version_id} />
@@ -555,7 +638,7 @@ function VulnerabilitiesTable({ id }: { id: string }) {
   const [page, setPage] = useState(1)
   const [perPage, setPerPage] = useState(25)
   const [includeResolved, setIncludeResolved] = useState(false)
-  const { data, isLoading } = useComponentVulnerabilities(id, {
+  const { data, error, isLoading, mutate } = useComponentVulnerabilities(id, {
     include_resolved: includeResolved,
     page,
     per_page: perPage,
@@ -563,21 +646,33 @@ function VulnerabilitiesTable({ id }: { id: string }) {
   if (isLoading && !data) return <TableSkeleton rows={4} />
   return (
     <div className="space-y-3">
-      <label className="inline-flex items-center gap-2 text-sm">
-        <input
-          type="checkbox"
+      <div className="inline-flex items-center gap-2 text-sm">
+        <Checkbox
+          id="components-include-resolved"
           checked={includeResolved}
-          onChange={(e) => setIncludeResolved(e.target.checked)}
+          onCheckedChange={(checked) => {
+            setIncludeResolved(checked === true)
+            setPage(1)
+          }}
         />
-        {t('components.vulns.includeResolved', 'Include closed findings')}
-      </label>
-      {data && data.total === 0 ? (
-        <p className="rounded-md border p-4 text-sm text-muted-foreground">
-          {t(
+        <Label htmlFor="components-include-resolved" className="font-normal">
+          {t('components.vulns.includeResolved', 'Include closed findings')}
+        </Label>
+      </div>
+      {error && !data ? (
+        <ErrorState
+          title={t('components.vulns.loadError', 'the vulnerabilities')}
+          error={error}
+          onRetry={() => void mutate()}
+        />
+      ) : data && data.total === 0 ? (
+        <EmptyState
+          icon={ShieldCheck}
+          title={t(
             'components.vulns.empty',
             'No vulnerabilities recorded for this package on the assets you can see.'
           )}
-        </p>
+        />
       ) : (
         <div className="overflow-x-auto rounded-md border">
           <Table>
@@ -596,12 +691,16 @@ function VulnerabilitiesTable({ id }: { id: string }) {
               {(data?.data ?? []).map((v) => (
                 <TableRow key={v.vulnerability_id}>
                   <TableCell>
-                    <Link
-                      href={`/findings?cve_id=${encodeURIComponent(v.cve_id)}`}
-                      className="font-medium hover:underline"
-                    >
-                      {v.cve_id || v.title}
-                    </Link>
+                    {v.vulnerability_id ? (
+                      <Link
+                        href={`/findings?vulnerability_id=${encodeURIComponent(v.vulnerability_id)}`}
+                        className="font-medium hover:underline"
+                      >
+                        {v.cve_id || v.title}
+                      </Link>
+                    ) : (
+                      <span className="font-medium">{v.cve_id || v.title}</span>
+                    )}
                     <div className="flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground">
                       {v.cvss_score != null && <span>CVSS {v.cvss_score.toFixed(1)}</span>}
                       {v.epss_score != null && <span>EPSS {(v.epss_score * 100).toFixed(1)}%</span>}
@@ -670,18 +769,21 @@ function PageControls({
         })}
       </span>
       <div className="flex items-center gap-2">
-        <select
-          className="h-8 rounded-md border bg-background px-2 text-sm"
-          value={perPage}
-          aria-label={t('components.pager.perPage', 'Rows per page')}
-          onChange={(e) => onPerPage(Number(e.target.value))}
-        >
-          {[25, 50, 100].map((n) => (
-            <option key={n} value={n}>
-              {n}
-            </option>
-          ))}
-        </select>
+        <Select value={String(perPage)} onValueChange={(v) => onPerPage(Number(v))}>
+          <SelectTrigger
+            className="h-8 w-auto min-w-16"
+            aria-label={t('components.pager.perPage', 'Rows per page')}
+          >
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {[25, 50, 100].map((n) => (
+              <SelectItem key={n} value={String(n)}>
+                {n}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
         <Button variant="outline" size="sm" disabled={page <= 1} onClick={() => onPage(page - 1)}>
           {t('components.pager.previous', 'Previous')}
         </Button>

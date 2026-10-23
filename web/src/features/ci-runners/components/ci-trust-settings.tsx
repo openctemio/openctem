@@ -49,6 +49,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { ConfirmDialog } from '@/components/confirm-dialog'
 import { useTranslation } from '@/context/i18n-provider'
 import { useBrand } from '@/context/brand-provider'
+import { formatLocalized } from '@/lib/format-date'
 import { useTenant } from '@/context/tenant-provider'
 import { getErrorMessage } from '@/lib/api/error-handler'
 import { copyToClipboard } from '@/lib/clipboard'
@@ -179,7 +180,7 @@ function TrustConfigsSection({ canWrite }: { canWrite: boolean }) {
   const [editing, setEditing] = useState<CITrustConfig | 'new' | null>(null)
   const [snippetOf, setSnippetOf] = useState<CITrustConfig | null>(null)
   const [deleting, setDeleting] = useState<CITrustConfig | null>(null)
-  const { t } = useTranslation()
+  const { t, locale } = useTranslation()
   const configs = data?.data ?? []
 
   if (error)
@@ -280,7 +281,7 @@ function TrustConfigsSection({ canWrite }: { canWrite: boolean }) {
                     'Pipelines that existed before may still use the old audience {value} until {until}, until they use the new one once. Update their pipeline to the current snippet.',
                     {
                       value: c.legacy_audience,
-                      until: new Date(c.legacy_audience_until).toLocaleDateString(),
+                      until: formatLocalized(c.legacy_audience_until, locale),
                     }
                   )}
                 </span>
@@ -293,7 +294,7 @@ function TrustConfigsSection({ canWrite }: { canWrite: boolean }) {
               <span>
                 {t('scans.ci.trust.lastUsedValue', 'Last used: {value}', {
                   value: c.last_used_at
-                    ? new Date(c.last_used_at).toLocaleString()
+                    ? formatLocalized(c.last_used_at, locale, { time: true })
                     : t('scans.ci.trust.never', 'never'),
                 })}
               </span>
@@ -1561,7 +1562,7 @@ function OverridesSection({ canOverride }: { canOverride: boolean }) {
   const { trigger: revoke } = useRevokeGateOverride()
   const [open, setOpen] = useState(false)
   const [pendingRevoke, setPendingRevoke] = useState<{ id: string; sha: string } | null>(null)
-  const { t } = useTranslation()
+  const { t, locale } = useTranslation()
   const overrides = data?.data ?? []
 
   if (error)
@@ -1624,7 +1625,7 @@ function OverridesSection({ canOverride }: { canOverride: boolean }) {
                 <p className="break-words">{o.reason}</p>
                 <p className="text-xs text-muted-foreground">
                   {t('scans.ci.breakGlass.until', 'Until {time} · repository {id}', {
-                    time: o.expires_at ? new Date(o.expires_at).toLocaleString() : '',
+                    time: o.expires_at ? formatLocalized(o.expires_at, locale, { time: true }) : '',
                     id: o.repository_asset_id ?? '',
                   })}
                 </p>

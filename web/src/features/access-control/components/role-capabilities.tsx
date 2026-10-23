@@ -6,6 +6,7 @@ import { Badge } from '@/components/ui/badge'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
 import { cn } from '@/lib/utils'
+import { useTranslation } from '@/context/i18n-provider'
 import { featureCapabilities, useAuthzReference } from '../lib/authz-reference'
 
 interface RoleCapabilitiesProps {
@@ -22,6 +23,7 @@ interface RoleCapabilitiesProps {
  * documentation's per-feature pages.
  */
 export function RoleCapabilities({ permissions, adminBypass }: RoleCapabilitiesProps) {
+  const { t } = useTranslation()
   const { reference, unavailable } = useAuthzReference()
   const [open, setOpen] = useState<Set<string>>(new Set())
 
@@ -38,7 +40,10 @@ export function RoleCapabilities({ permissions, adminBypass }: RoleCapabilitiesP
   if (unavailable) {
     return (
       <p className="text-sm text-muted-foreground">
-        The authorization reference is not available in this build.
+        {t(
+          'org.roleCaps.unavailable',
+          'The authorization reference is not available in this build.'
+        )}
       </p>
     )
   }
@@ -64,8 +69,11 @@ export function RoleCapabilities({ permissions, adminBypass }: RoleCapabilitiesP
     <div className="space-y-2">
       <p className="text-sm text-muted-foreground">
         {adminBypass
-          ? 'Owners and administrators pass every permission check.'
-          : 'Actions this role’s permissions allow, by feature. Teams still decide which assets it sees, and a disabled module hides the feature.'}
+          ? t('org.roleCaps.adminBypass', 'Owners and administrators pass every permission check.')
+          : t(
+              'org.roleCaps.intro',
+              'Actions this role’s permissions allow, by feature. Teams still decide which assets it sees, and a disabled module hides the feature.'
+            )}
       </p>
       <ul className="divide-y rounded-md border">
         {rows.map(({ feature, held, allowedRoutes, gatedRoutes }) => {
@@ -88,7 +96,10 @@ export function RoleCapabilities({ permissions, adminBypass }: RoleCapabilitiesP
                     variant={all ? 'default' : none ? 'outline' : 'secondary'}
                     className="font-normal tabular-nums"
                   >
-                    {allowedRoutes} of {gatedRoutes} actions
+                    {t('org.roleCaps.actionsOf', '{allowed} of {total} actions', {
+                      allowed: allowedRoutes,
+                      total: gatedRoutes,
+                    })}
                   </Badge>
                 </CollapsibleTrigger>
                 <CollapsibleContent>
@@ -100,11 +111,14 @@ export function RoleCapabilities({ permissions, adminBypass }: RoleCapabilitiesP
                         return (
                           <li key={p} className="flex items-center gap-2 text-sm">
                             {has ? (
-                              <Check className="h-3.5 w-3.5 text-success" aria-label="Held" />
+                              <Check
+                                className="h-3.5 w-3.5 text-success"
+                                aria-label={t('org.roleCaps.held', 'Held')}
+                              />
                             ) : (
                               <Minus
                                 className="h-3.5 w-3.5 text-muted-foreground"
-                                aria-label="Not held"
+                                aria-label={t('org.roleCaps.notHeld', 'Not held')}
                               />
                             )}
                             <span className={cn(!has && 'text-muted-foreground')}>

@@ -120,6 +120,9 @@ test.describe('Sensor row actions', () => {
     await expect(dialog.getByRole('button', { name: 'Hide API key' })).toBeVisible()
     await expect(dialog.getByRole('button', { name: 'Copy API key' })).toBeVisible()
     await dialog.getByRole('button', { name: 'Close' }).first().click()
+    // The key is shown once: closing asks for confirmation first.
+    const guard = page.getByRole('alertdialog', { name: 'Did you copy the key?' })
+    await guard.getByRole('button', { name: 'Close anyway' }).click()
     await expect(dialog).toBeHidden()
 
     // Clean up the sensor this test created.

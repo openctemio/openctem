@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 
 	"github.com/openctemio/openctem/api/pkg/crypto"
 )
@@ -226,5 +227,87 @@ func RedactDetails(details map[string]any) map[string]any {
 	delete(out, DetailSecretValue)
 	delete(out, DetailSecretCiphertext)
 	delete(out, DetailSecretScheme)
+	return redactSensitiveKeys(out)
+}
+
+// RedactedValue replaces the value of a sensitive details key.
+const RedactedValue = "********"
+
+var sensitiveKeyExact = map[string]bool{
+	"password": true, "passwd": true, "api_key": true, "apikey": true,
+	"token": true, "access_token": true, "refresh_token": true,
+	"private_key": true, "privatekey": true, "secret": true,
+	"client_secret": true, "credential": true, "credentials": true,
+	"secret_access_key": true, "aws_secret_access_key": true,
+	"connection_string": true, "dsn": true,
+}
+
+// secretMetadataSuffixes are the `secret_<x>` keys that describe a secret
+// (its type, validity, rotation state) without carrying it. They stay verbatim.
+var secretMetadataSuffixes = map[string]bool{
+	"type": true, "valid": true, "revoked": true, "entropy": true,
+	"needs_rotation": true, "expires_at": true, "masked": true,
+	"masked_value": true, "fingerprint": true, "fingerprint_prefix": true,
+	"id": true, "set": true, "changed": true, "service": true,
+	"pre_existing": true, "not_observed": true, "detection": true,
+	"scan": true, "source": true, "provider": true, "kind": true,
+	"status": true, "name": true, "length": true, "count": true,
+}
+
+var sensitiveKeySuffixes = []string{"_password", "_passwd", "_token", "_api_key", "_secret", "_private_key"}
+
+// isSensitiveDetailKey reports whether a details key carries a tool-reported
+// secret. The masked value and the keyed fingerprint are safe by design.
+func isSensitiveDetailKey(key string) bool {
+	k := strings.ToLower(strings.ReplaceAll(key, "-", "_"))
+	if k == DetailSecretMasked || k == DetailSecretFingerprint {
+		return false
+	}
+	if sensitiveKeyExact[k] {
+		return true
+	}
+	if rest, ok := strings.CutPrefix(k, "secret_"); ok {
+		return !secretMetadataSuffixes[rest]
+	}
+	for _, suf := range sensitiveKeySuffixes {
+		if strings.HasSuffix(k, suf) {
+			return true
+		}
+	}
+	return false
+}
+
+// redactSensitiveKeys masks every sensitive key, recursively through nested
+// maps and arrays. It builds new containers and never mutates its input.
+func redactSensitiveKeys(m map[string]any) map[string]any {
+	out := make(map[string]any, len(m))
+	for k, v := range m {
+		if isSensitiveDetailKey(k) {
+			out[k] = RedactedValue
+			continue
+		}
+		out[k] = redactSensitiveValue(v)
+	}
 	return out
+}
+
+func redactSensitiveValue(v any) any {
+	switch t := v.(type) {
+	case map[string]any:
+		return redactSensitiveKeys(t)
+	case []any:
+		out := make([]any, len(t))
+		for i, e := range t {
+			out[i] = redactSensitiveValue(e)
+		}
+		return out
+	case []map[string]any:
+		out := make([]any, len(t))
+		for i, e := range t {
+			out[i] = redactSensitiveKeys(e)
+		}
+		return out
+	default:
+		return v
+	}
 }
