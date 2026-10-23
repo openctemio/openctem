@@ -13,6 +13,7 @@ import (
 	"database/sql"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -60,6 +61,15 @@ type v2HarnessOpts struct {
 	control       *handler.SensorControlV2Handler
 	// ciKeys, when set, is the "OIDC required for CI" policy.
 	ciKeys handler.CIRunnerKeyPolicy
+	// depth, when set, replaces the queue depth reader.
+	depth brokenDepth
+}
+
+// brokenDepth is a queue depth that cannot be read.
+type brokenDepth struct{ on bool }
+
+func (brokenDepth) CountPendingByTenant(context.Context, shared.ID) (int, error) {
+	return 0, errors.New("connection refused")
 }
 
 func newV2Harness(t *testing.T, opts v2HarnessOpts) *v2Harness {
@@ -94,6 +104,9 @@ func newV2Harness(t *testing.T, opts v2HarnessOpts) *v2Harness {
 		limits = protov2.DefaultLimits()
 	}
 	receiver := ingest.NewV2Receiver(h.reports, parked, h.jobs, postgres.NewCommandRepository(db), limits, opts.maxPending, log)
+	if opts.depth.on {
+		receiver = ingest.NewV2Receiver(h.reports, parked, opts.depth, postgres.NewCommandRepository(db), limits, opts.maxPending, log)
+	}
 	h.proc = ingest.NewV2JobProcessor(ingestSvc, h.reports, h.jobs, limits, ingest.DefaultBlindingGuard(), log)
 
 	// A user route behind the real JWT authenticator, for route isolation.
@@ -607,6 +620,14 @@ func TestSensorV2_RateLimitAndQueueFull(t *testing.T) {
 	q.expect(resp, raw, 202, "")
 	resp, raw = q.do(http.MethodPut, "/api/v2/sensor/results/"+newReportID(), good)
 	q.expect(resp, raw, 429, "queue-full")
+
+	// A queue depth that cannot be read refuses (fail closed), with a delay.
+	b := newV2Harness(t, v2HarnessOpts{maxPending: 100, depth: brokenDepth{on: true}})
+	resp, raw = b.do(http.MethodPut, "/api/v2/sensor/results/"+newReportID(), good)
+	b.expect(resp, raw, 503, "unavailable")
+	if resp.Header.Get("Retry-After") == "" {
+		t.Fatal("503 without Retry-After")
+	}
 }
 
 // A completed v2 report counts toward the sensor's totals once, as a v1

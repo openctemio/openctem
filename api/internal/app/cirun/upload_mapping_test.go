@@ -236,3 +236,5 @@ func TestCIUpload_MappingOfAnotherOrganizationIsRefused(t *testing.T) {
 		t.Fatalf("applied %d reports from another organization's mapping", len(f.ing.reports))
 	}
 }
+
+func (q *memQueue) Admit(context.Context, shared.ID) error { return nil }
