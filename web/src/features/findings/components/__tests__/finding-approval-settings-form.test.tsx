@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen } from '@testing-library/react'
+import { render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { FindingApprovalSettingsForm } from '../finding-approval-settings-form'
 
@@ -51,6 +51,81 @@ describe('FindingApprovalSettingsForm', () => {
   })
 })
 
+/** The false-positive and risk acceptance selectors of the approval policy card. */
+const fpGroup = () => within(screen.getByRole('group', { name: /false positive/i }))
+const acceptGroup = () => within(screen.getByRole('group', { name: /risk acceptance/i }))
+
+describe('FindingApprovalSettingsForm — risk acceptance level', () => {
+  beforeEach(() => update.mockReset())
+
+  it('shows both selectors in one approval policy card, defaulting to two people', () => {
+    render(<FindingApprovalSettingsForm settings={{ backup_contact_email: '' }} canEdit />)
+    expect(screen.getByText('Approval policy')).toBeInTheDocument()
+    expect(fpGroup().getByRole('radio', { name: /always/i })).toBeChecked()
+    expect(acceptGroup().getByRole('radio', { name: /always/i })).toBeChecked()
+  })
+
+  it('warns on off, says a lowering waits 24 hours, and saves only accept_approval', async () => {
+    update.mockResolvedValue({
+      backup_contact_email: '',
+      accept_approval: 'all',
+      pending_accept_approval: 'off',
+    })
+    render(
+      <FindingApprovalSettingsForm
+        settings={{ backup_contact_email: '', fp_approval: 'all', accept_approval: 'all' }}
+        canEdit
+      />
+    )
+    expect(screen.queryByText(/one person can accept any risk/i)).not.toBeInTheDocument()
+    await userEvent.click(acceptGroup().getByRole('radio', { name: /never/i }))
+    expect(screen.getByText(/one person can accept any risk/i)).toBeInTheDocument()
+    expect(acceptGroup().getByText(/takes effect 24 hours after you save/i)).toBeInTheDocument()
+    // The false-positive selector is untouched.
+    expect(fpGroup().getByRole('radio', { name: /always/i })).toBeChecked()
+    await userEvent.click(screen.getByRole('button', { name: /save changes/i }))
+    expect(update).toHaveBeenCalledWith({ accept_approval: 'off' })
+  })
+
+  it('shows the scheduled lowering with its time and cancels it', async () => {
+    update.mockResolvedValue({ backup_contact_email: '', accept_approval: 'all' })
+    const onSaved = vi.fn()
+    render(
+      <FindingApprovalSettingsForm
+        settings={{
+          backup_contact_email: '',
+          accept_approval: 'all',
+          pending_accept_approval: 'high_and_above',
+          pending_accept_approval_at: '2026-10-24T12:00:00Z',
+        }}
+        canEdit
+        onSaved={onSaved}
+      />
+    )
+    expect(acceptGroup().getByText(/a lower level is waiting/i)).toBeInTheDocument()
+    expect(acceptGroup().getByRole('radio', { name: /only for serious findings/i })).toBeChecked()
+    await userEvent.click(acceptGroup().getByRole('button', { name: /cancel the change/i }))
+    expect(update).toHaveBeenCalledWith({ cancel_pending: true })
+    expect(onSaved).toHaveBeenCalled()
+  })
+
+  it('is read-only without settings:write', () => {
+    render(
+      <FindingApprovalSettingsForm
+        settings={{
+          backup_contact_email: '',
+          accept_approval: 'all',
+          pending_accept_approval: 'off',
+          pending_accept_approval_at: '2026-10-24T12:00:00Z',
+        }}
+        canEdit={false}
+      />
+    )
+    expect(acceptGroup().getByRole('radio', { name: /never/i })).toBeDisabled()
+    expect(screen.queryByRole('button', { name: /cancel the change/i })).not.toBeInTheDocument()
+  })
+})
+
 describe('FindingApprovalSettingsForm — false-positive level', () => {
   beforeEach(() => update.mockReset())
 
@@ -67,7 +142,7 @@ describe('FindingApprovalSettingsForm — false-positive level', () => {
       />
     )
     expect(screen.queryByText(/one person can hide any finding/i)).not.toBeInTheDocument()
-    await userEvent.click(screen.getByRole('radio', { name: /never/i }))
+    await userEvent.click(fpGroup().getByRole('radio', { name: /never/i }))
     expect(screen.getByText(/one person can hide any finding/i)).toBeInTheDocument()
     expect(screen.getByText(/takes effect 24 hours after you save/i)).toBeInTheDocument()
     await userEvent.click(screen.getByRole('button', { name: /save changes/i }))
@@ -88,8 +163,8 @@ describe('FindingApprovalSettingsForm — false-positive level', () => {
       />
     )
     expect(screen.getByText(/a lower level is waiting/i)).toBeInTheDocument()
-    expect(screen.getByRole('radio', { name: /only for serious findings/i })).toBeChecked()
-    await userEvent.click(screen.getByRole('radio', { name: /always/i }))
+    expect(fpGroup().getByRole('radio', { name: /only for serious findings/i })).toBeChecked()
+    await userEvent.click(fpGroup().getByRole('radio', { name: /always/i }))
     await userEvent.click(screen.getByRole('button', { name: /save changes/i }))
     expect(update).toHaveBeenCalledWith({ fp_approval: 'all' })
   })

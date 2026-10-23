@@ -20,10 +20,9 @@
 --
 -- Live impact: three nullable columns and one defaulted column on
 -- ingest_jobs (a metadata-only change on PostgreSQL 11+), a partial index on
--- rows that do not exist yet (no existing row has a source_ref), one new
--- empty table, and a check constraint swap on ingest_receipts validated
--- against the existing rows (all are processing/completed/failed). No
--- backfill.
+-- rows that do not exist yet (no existing row has a source_ref; the build
+-- still reads the table once under a SHARE lock), one new empty table, and
+-- check constraints added NOT VALID (no scan; see each). No backfill.
 
 ALTER TABLE ingest_jobs
     ADD COLUMN IF NOT EXISTS kind         varchar(16) NOT NULL DEFAULT 'sensor',
@@ -31,8 +30,11 @@ ALTER TABLE ingest_jobs
     ADD COLUMN IF NOT EXISTS submitted_by varchar(80),
     ADD COLUMN IF NOT EXISTS public_error varchar(48);
 
+-- NOT VALID: every existing row has the default 'sensor', so there is
+-- nothing to check, and skipping the scan keeps the ACCESS EXCLUSIVE lock on
+-- the live queue short. New and updated rows are checked.
 ALTER TABLE ingest_jobs
-    ADD CONSTRAINT chk_ingest_jobs_kind CHECK (kind IN ('sensor', 'ci_results', 'finding_import'));
+    ADD CONSTRAINT chk_ingest_jobs_kind CHECK (kind IN ('sensor', 'ci_results', 'finding_import')) NOT VALID;
 
 -- The gate and the status reads look a run's (or an upload's) jobs up.
 CREATE INDEX IF NOT EXISTS ix_ingest_jobs_source_ref
@@ -78,5 +80,7 @@ COMMENT ON COLUMN ingest_payloads.digest IS
     'SHA-256 of the plaintext part; checked after opening.';
 
 ALTER TABLE ingest_receipts DROP CONSTRAINT IF EXISTS chk_ingest_receipts_status;
+-- NOT VALID: the new set is a superset of the old, validated one, so the
+-- existing rows already satisfy it; no scan under the ACCESS EXCLUSIVE lock.
 ALTER TABLE ingest_receipts
-    ADD CONSTRAINT chk_ingest_receipts_status CHECK (status IN ('queued', 'processing', 'completed', 'failed'));
+    ADD CONSTRAINT chk_ingest_receipts_status CHECK (status IN ('queued', 'processing', 'completed', 'failed')) NOT VALID;

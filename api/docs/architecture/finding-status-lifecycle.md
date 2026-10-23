@@ -661,7 +661,7 @@ server, when it is made and again when someone approves it
   `policy_eval` (the evaluation, as evidence) and, when decided,
   `decision_facts` (the facts it was decided on).
 - **The organization's policy** is `settings.finding_approvals.policy`
-  (`GET/PUT /api/v1/organization/settings/finding-approvals/`, same gate as
+  (`GET/PATCH /api/v1/organization/settings/finding-approvals/`, same gate as
   the rest of the section: `settings:write`, an owner or administrator, recent
   re-authentication; audited with before and after; approvers told). It only
   adds: tier cells per `<kind>.<class>` (never below the floor), security
@@ -752,8 +752,8 @@ daily approvals digest lists the decisions one person made in the last day to
 every other approver who can see the finding.
 
 Changing a level needs an owner or administrator with `settings:write` and a
-recent re-authentication (`PATCH /api/v1/organization/settings/finding-approvals`;
-`PUT` stays until the web moves), is audited at high severity with before/after,
+recent re-authentication (`PATCH /api/v1/organization/settings/finding-approvals`),
+is audited at high severity with before/after,
 and the approvers (every owner and administrator is one) are told; a lower level
 takes effect 24 hours later (`pending_fp_approval_at`,
 `pending_accept_approval_at`), a higher one at once, and `cancel_pending` drops

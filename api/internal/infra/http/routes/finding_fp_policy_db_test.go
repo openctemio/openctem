@@ -179,15 +179,15 @@ func TestFindingFPPolicy_LoweringWaits24Hours_DB(t *testing.T) {
 	h.mintToken(&writer, org)
 	const url = "/api/v1/organization/settings/finding-approvals/"
 
-	h.expect(writer, http.MethodPut, url, `{"fp_approval":"off"}`, http.StatusForbidden)
-	h.expect(owner, http.MethodPut, url, `{"fp_approval":"sometimes"}`, http.StatusUnprocessableEntity)
+	h.expect(writer, http.MethodPatch, url, `{"fp_approval":"off"}`, http.StatusForbidden)
+	h.expect(owner, http.MethodPatch, url, `{"fp_approval":"sometimes"}`, http.StatusUnprocessableEntity)
 
 	var got struct {
 		FPApproval string  `json:"fp_approval"`
 		Pending    string  `json:"pending_fp_approval"`
 		PendingAt  *string `json:"pending_fp_approval_at"`
 	}
-	_ = json.Unmarshal([]byte(h.expect(owner, http.MethodPut, url, `{"fp_approval":"off"}`, http.StatusOK)), &got)
+	_ = json.Unmarshal([]byte(h.expect(owner, http.MethodPatch, url, `{"fp_approval":"off"}`, http.StatusOK)), &got)
 	if got.FPApproval != "all" || got.Pending != "off" || got.PendingAt == nil {
 		t.Fatalf("lowering: %+v", got)
 	}
@@ -216,7 +216,7 @@ func TestFindingFPPolicy_LoweringWaits24Hours_DB(t *testing.T) {
 	}
 	// Raising is immediate.
 	got.Pending, got.PendingAt = "", nil
-	_ = json.Unmarshal([]byte(h.expect(owner, http.MethodPut, url, `{"fp_approval":"all"}`, http.StatusOK)), &got)
+	_ = json.Unmarshal([]byte(h.expect(owner, http.MethodPatch, url, `{"fp_approval":"all"}`, http.StatusOK)), &got)
 	if got.FPApproval != "all" || got.Pending != "" {
 		t.Fatalf("raising: %+v", got)
 	}
@@ -225,9 +225,9 @@ func TestFindingFPPolicy_LoweringWaits24Hours_DB(t *testing.T) {
 		t.Fatal("raising the level was not immediate")
 	}
 	// A lowering raised back within the 24 hours never takes effect.
-	h.expect(owner, http.MethodPut, url, `{"fp_approval":"high_and_above"}`, http.StatusOK)
+	h.expect(owner, http.MethodPatch, url, `{"fp_approval":"high_and_above"}`, http.StatusOK)
 	got.Pending, got.PendingAt = "", nil
-	_ = json.Unmarshal([]byte(h.expect(owner, http.MethodPut, url, `{"fp_approval":"all"}`, http.StatusOK)), &got)
+	_ = json.Unmarshal([]byte(h.expect(owner, http.MethodPatch, url, `{"fp_approval":"all"}`, http.StatusOK)), &got)
 	if got.Pending != "" {
 		t.Fatalf("a canceled lowering is still pending: %+v", got)
 	}
@@ -317,15 +317,15 @@ func TestFindingFPPolicy_ReviewShouldFixes_DB(t *testing.T) {
 	h.customRoleMember(settingsWriter, org, permission.SettingsWrite, permission.SettingsRead, permission.FindingsRead)
 	h.mintToken(&settingsWriter, org)
 	const url = "/api/v1/organization/settings/finding-approvals/"
-	h.expect(settingsWriter, http.MethodPut, url, `{"fp_approval":"all"}`, http.StatusForbidden)
+	h.expect(settingsWriter, http.MethodPatch, url, `{"fp_approval":"all"}`, http.StatusForbidden)
 
-	h.expect(owner, http.MethodPut, url, `{"second_look_percent":10}`, http.StatusOK)
+	h.expect(owner, http.MethodPatch, url, `{"second_look_percent":10}`, http.StatusOK)
 	var got struct {
 		Share   int    `json:"second_look_percent"`
 		Pending *int   `json:"pending_second_look_percent"`
 		At      string `json:"pending_second_look_at"`
 	}
-	_ = json.Unmarshal([]byte(h.expect(owner, http.MethodPut, url, `{"second_look_percent":0}`, http.StatusOK)), &got)
+	_ = json.Unmarshal([]byte(h.expect(owner, http.MethodPatch, url, `{"second_look_percent":0}`, http.StatusOK)), &got)
 	if got.Share != 10 || got.Pending == nil || *got.Pending != 0 || got.At == "" {
 		t.Fatalf("lowering the second-look share: %+v", got)
 	}
