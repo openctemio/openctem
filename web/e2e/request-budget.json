@@ -8,6 +8,7 @@
     "/scope": 10,
     "/sensors": 10,
     "/assets": 10,
+    "/assets/attention": 10,
     "/assets/changes": 5,
     "/insights/program-health": 8,
     "/attack-surface/external": 7,
@@ -19,6 +20,7 @@
     "/settings/scanning/scan-windows": 7,
     "/settings/scanning/sensor-safety": 7
   },
+  "$comment_attention": "/assets/attention lists five reasons with a count each. The counts come from the queues' own caller-scoped list endpoints (three asset lists with per_page=1, the suggestion count, the duplicate reviews), so a number never covers assets the reader cannot open; one summary endpoint (research/233 P1) would replace them. 10 matches /assets, which sends a similar set of list requests.",
   "sessionOnlyFromBootstrap": [
     "/api/v1/users/me",
     "/api/v1/users/me/tenants",

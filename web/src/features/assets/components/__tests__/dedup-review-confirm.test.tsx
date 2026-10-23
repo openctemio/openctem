@@ -10,8 +10,8 @@ vi.mock('@/components/layout', () => ({
 }))
 vi.mock('../assets-section-tabs', () => ({
   AssetsSectionTabs: () => null,
-  AssetAttentionTabs: () => null,
 }))
+vi.mock('../attention/attention-queue-header', () => ({ AttentionQueueHeader: () => null }))
 vi.mock('@/lib/permissions', async (orig) => ({
   ...(await orig<typeof import('@/lib/permissions')>()),
   Can: ({ children }: { children: React.ReactNode }) => <>{children}</>,
