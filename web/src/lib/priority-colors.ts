@@ -15,14 +15,12 @@
 export const PRIORITY_ORDER = ['P0', 'P1', 'P2', 'P3'] as const
 export type PriorityClass = (typeof PRIORITY_ORDER)[number]
 
-const BOX = (n: 0 | 1 | 2 | 3) => `bg-prio-${n}-bg text-prio-${n}-fg border-prio-${n}-border`
-
-/** The class box: fill, text and edge. */
+/** The class box: fill, text and edge. Literal classes, so Tailwind generates them. */
 export const PRIORITY_BOX_CLASS: Record<PriorityClass, string> = {
-  P0: BOX(0),
-  P1: BOX(1),
-  P2: BOX(2),
-  P3: BOX(3),
+  P0: 'bg-prio-0-bg text-prio-0-fg border-prio-0-border',
+  P1: 'bg-prio-1-bg text-prio-1-fg border-prio-1-border',
+  P2: 'bg-prio-2-bg text-prio-2-fg border-prio-2-border',
+  P3: 'bg-prio-3-bg text-prio-3-fg border-prio-3-border',
 }
 
 /** Chart series, legend swatches and dots (recharts fill/stroke, inline SVG). */
