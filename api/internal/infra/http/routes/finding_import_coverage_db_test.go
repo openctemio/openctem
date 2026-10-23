@@ -194,7 +194,7 @@ func TestFindingImport_FullCoverageConcurrentUploads_DB(t *testing.T) {
 	perms := []string{permission.FindingsWrite.String(), permission.AssetsWrite.String(), permission.AssetsImport.String(),
 		permission.FindingsStatus.String(), permission.FindingsBulkUpdate.String()}
 
-	if rec, _ := ih.uploadAs(t, "", perms, receiptNessusFull); rec.Code != http.StatusCreated {
+	if rec, _ := ih.uploadAs(t, "", perms, receiptNessusFull); rec.Code != http.StatusAccepted {
 		t.Fatalf("baseline %d %s", rec.Code, rec.Body.String())
 	}
 	var assetID string
@@ -219,7 +219,7 @@ func TestFindingImport_FullCoverageConcurrentUploads_DB(t *testing.T) {
 	close(start)
 	wg.Wait()
 	for i, c := range codes {
-		if c != http.StatusCreated {
+		if c != http.StatusAccepted {
 			t.Errorf("upload %d: %d", i, c)
 		}
 	}
