@@ -22,6 +22,7 @@ import en_assetGroups from './en/assetGroups.json'
 import en_assetTimeline from './en/assetTimeline.json'
 import en_attackSurface from './en/attackSurface.json'
 import en_brand from './en/brand.json'
+import en_businessContext from './en/businessContext.json'
 import en_easmReview from './en/easmReview.json'
 import en_threatIntel from './en/threatIntel.json'
 import en_emergingThreats from './en/emergingThreats.json'
@@ -75,6 +76,7 @@ import en_scanApprovals from './en/scanApprovals.json'
 import en_scans from './en/scans.json'
 import en_scanDetail from './en/scanDetail.json'
 import en_scope from './en/scope.json'
+import en_scoping from './en/scoping.json'
 import en_sensors from './en/sensors.json'
 import en_settings from './en/settings.json'
 import en_securityOverview from './en/securityOverview.json'
@@ -109,6 +111,7 @@ import vi_assetGroups from './vi/assetGroups.json'
 import vi_assetTimeline from './vi/assetTimeline.json'
 import vi_attackSurface from './vi/attackSurface.json'
 import vi_brand from './vi/brand.json'
+import vi_businessContext from './vi/businessContext.json'
 import vi_easmReview from './vi/easmReview.json'
 import vi_threatIntel from './vi/threatIntel.json'
 import vi_emergingThreats from './vi/emergingThreats.json'
@@ -162,6 +165,7 @@ import vi_scanApprovals from './vi/scanApprovals.json'
 import vi_scans from './vi/scans.json'
 import vi_scanDetail from './vi/scanDetail.json'
 import vi_scope from './vi/scope.json'
+import vi_scoping from './vi/scoping.json'
 import vi_sensors from './vi/sensors.json'
 import vi_settings from './vi/settings.json'
 import vi_securityOverview from './vi/securityOverview.json'
@@ -201,6 +205,7 @@ export const enNamespaces: Record<string, Dictionary> = {
   assetTimeline: en_assetTimeline,
   attackSurface: en_attackSurface,
   brand: en_brand,
+  businessContext: en_businessContext,
   easmReview: en_easmReview,
   threatIntel: en_threatIntel,
   emergingThreats: en_emergingThreats,
@@ -255,6 +260,7 @@ export const enNamespaces: Record<string, Dictionary> = {
   scans: en_scans,
   scanDetail: en_scanDetail,
   scope: en_scope,
+  scoping: en_scoping,
   sensors: en_sensors,
   settings: en_settings,
   securityOverview: en_securityOverview,
@@ -291,6 +297,7 @@ export const viNamespaces: Record<string, Dictionary> = {
   assetTimeline: vi_assetTimeline,
   attackSurface: vi_attackSurface,
   brand: vi_brand,
+  businessContext: vi_businessContext,
   easmReview: vi_easmReview,
   threatIntel: vi_threatIntel,
   emergingThreats: vi_emergingThreats,
@@ -345,6 +352,7 @@ export const viNamespaces: Record<string, Dictionary> = {
   scans: vi_scans,
   scanDetail: vi_scanDetail,
   scope: vi_scope,
+  scoping: vi_scoping,
   sensors: vi_sensors,
   settings: vi_settings,
   securityOverview: vi_securityOverview,
