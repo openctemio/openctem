@@ -90,13 +90,13 @@ describe('counts', () => {
         status: 'completed',
         in_count: 12,
         out_count: 11,
-        skipped: { 'refused:already_in_active_task': 1 },
+        skipped: { 'refused:not_authorized': 1 },
       },
     ])
     expect(r.get('a1')).toEqual({
       in: 12,
       out: 11,
-      skipped: { 'refused:already_in_active_task': 1 },
+      skipped: { 'refused:not_authorized': 1 },
     })
   })
 

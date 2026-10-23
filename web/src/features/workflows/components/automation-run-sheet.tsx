@@ -56,6 +56,8 @@ export function AutomationRunDetail({
 }) {
   const { t } = useTranslation()
   const canPublish = useHasPermission(Permission.AutomationsPublish)
+  // Cancelling narrows, so it needs only the write permission; continuing needs publish.
+  const canWrite = useHasPermission(Permission.AutomationsWrite)
   const [busy, setBusy] = useState<null | 'resume' | 'cancel'>(null)
   const mode = run.mode ?? 'live'
   const rows = useMemo(() => traceRowsFromNodeRuns(run.node_runs, nodeName), [run, nodeName])
@@ -114,7 +116,7 @@ export function AutomationRunDetail({
                 size="sm"
                 variant="outline"
                 onClick={() => act('cancel')}
-                disabled={!canPublish || busy !== null}
+                disabled={!canWrite || busy !== null}
               >
                 <XCircle className="h-4 w-4" />
                 {t('automations.run.cancel', 'Cancel run')}

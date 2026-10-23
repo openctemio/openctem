@@ -60,25 +60,17 @@ const RISK: Record<string, [string, string]> = {
   high: ['automations.risk.high', 'High'],
 }
 
+// The skipped-reason keys the run trace and preview emit.
 const SKIP_REASON: Record<string, [string, string]> = {
+  condition_false: ['automations.skip.conditionFalse', 'condition false'],
+  branch_not_taken: ['automations.skip.branchNotTaken', 'branch not taken'],
+  no_change: ['automations.skip.noChange', 'nothing to change'],
+  no_subject: ['automations.skip.noSubject', 'no subject'],
+  'refused:not_authorized': ['automations.skip.notAuthorized', 'refused: owner not authorized'],
   'refused:status_not_allowed': [
     'automations.skip.statusNotAllowed',
     'refused: status target not allowed',
   ],
-  'refused:already_in_active_task': [
-    'automations.skip.alreadyInActiveTask',
-    'already in an active task',
-  ],
-  'refused:out_of_scope': ['automations.skip.outOfScope', 'outside the owner’s scope'],
-  'refused:missing_permission': [
-    'automations.skip.missingPermission',
-    'owner lacks the permission',
-  ],
-  condition_false: ['automations.skip.conditionFalse', 'condition false'],
-  cooldown: ['automations.skip.cooldown', 'cooldown'],
-  held_daily_cap: ['automations.skip.heldDailyCap', 'held by the daily cap'],
-  change_cap: ['automations.skip.changeCap', 'change cap reached'],
-  duplicate: ['automations.skip.duplicate', 'duplicate'],
 }
 
 const VALIDATION: Record<string, [string, string]> = {

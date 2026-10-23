@@ -369,12 +369,22 @@ export interface WorkflowPreviewRequest {
   edges?: CreateEdgeRequest[]
 }
 
+/** One message a preview would send (never sent). */
+export interface WorkflowPreviewDelivery {
+  node_key: string
+  subject_id?: string
+  channel: string
+  target: string
+  payload?: { title?: string; severity?: string; subject_id?: string } & Record<string, unknown>
+}
+
 /** POST /workflows/{id}/preview: the trace shape, nothing stored. */
 export interface WorkflowPreviewResponse {
   subjects: number
   sample_ids?: string[]
   steps: WorkflowStepTrace[]
-  deliveries?: Omit<WorkflowDelivery, 'id' | 'created_at'>[]
+  /** Would-sends: a preview never sends anything. */
+  deliveries?: WorkflowPreviewDelivery[]
 }
 
 export interface WorkflowValidationIssue {

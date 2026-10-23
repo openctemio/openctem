@@ -110,7 +110,9 @@ export function ValidationPanel({
   )
 }
 
-type DeliveryRow = Omit<WorkflowDelivery, 'id' | 'created_at'> & { id?: string }
+// A run delivery, or a preview would-send (no id, mode or status: never sent).
+type DeliveryRow = Pick<WorkflowDelivery, 'node_key' | 'channel' | 'target' | 'payload'> &
+  Partial<Pick<WorkflowDelivery, 'id' | 'mode' | 'status' | 'external_ref'>>
 
 /**
  * What a run sent or would send. A simulate delivery never leaves the
@@ -135,7 +137,7 @@ export function DeliveriesList({
     )
   }
   const status = (d: DeliveryRow) => {
-    if (d.mode === 'simulate' || d.status === 'simulated')
+    if (!d.mode || d.mode === 'simulate' || d.status === 'simulated')
       return t('automations.deliveries.neverSent', 'Never sent: simulate')
     if (d.status === 'sent') return t('automations.deliveries.sent', 'Sent')
     if (d.status === 'held') return t('automations.deliveries.held', 'Held')

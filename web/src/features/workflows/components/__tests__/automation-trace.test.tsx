@@ -3,9 +3,9 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 
 import type { WorkflowRun } from '@/lib/api/workflow-types'
 import { AutomationRunDetail } from '../automation-run-sheet'
-import { ValidationPanel } from '../automation-trace-panels'
+import { DeliveriesList, ValidationPanel } from '../automation-trace-panels'
 
-const perms = vi.hoisted(() => ({ publish: true }))
+const perms = vi.hoisted(() => ({ publish: true, write: true }))
 const api = vi.hoisted(() => ({
   resumeWorkflowRun: vi.fn(),
   cancelWorkflowRun: vi.fn(),
@@ -14,7 +14,8 @@ const api = vi.hoisted(() => ({
 
 vi.mock('@/lib/permissions', async (orig) => ({
   ...(await orig<typeof import('@/lib/permissions')>()),
-  useHasPermission: () => perms.publish,
+  useHasPermission: (p: string) =>
+    p === 'automations:publish' ? perms.publish : p === 'automations:write' ? perms.write : false,
 }))
 vi.mock('@/lib/api/workflow-hooks', () => ({ ...api, useWorkflowRun: vi.fn() }))
 vi.mock('sonner', () => ({ toast: { error: vi.fn(), success: vi.fn() } }))
@@ -22,6 +23,7 @@ vi.mock('sonner', () => ({ toast: { error: vi.fn(), success: vi.fn() } }))
 beforeEach(() => {
   vi.clearAllMocks()
   perms.publish = true
+  perms.write = true
 })
 
 describe('ValidationPanel', () => {
@@ -171,5 +173,30 @@ describe('AutomationRunDetail', () => {
       />
     )
     expect(screen.getByRole('button', { name: /Continue/ })).toBeDisabled()
+    // Cancelling narrows: the write permission is enough.
+    expect(screen.getByRole('button', { name: /Cancel run/ })).toBeEnabled()
+  })
+
+  it('needs the write permission to cancel a paused run', () => {
+    perms.write = false
+    render(
+      <AutomationRunDetail
+        run={run({ status: 'paused', pause_reason: 'blast_radius' })}
+        nodeName={() => undefined}
+      />
+    )
+    expect(screen.getByRole('button', { name: /Cancel run/ })).toBeDisabled()
+  })
+})
+
+describe('DeliveriesList', () => {
+  it('shows a preview would-send (no mode or status) as never sent', () => {
+    render(
+      <DeliveriesList
+        mode="simulate"
+        deliveries={[{ node_key: 'n1', channel: 'teams', target: 'SecOps', payload: {} }]}
+      />
+    )
+    expect(screen.getByTestId('deliveries-list')).toHaveTextContent('Never sent: simulate')
   })
 })
