@@ -749,6 +749,8 @@ export interface FindingApiFilters {
   asset_owner_id?: string
   /** Assets with no primary owner (the Unassigned owner row). Sent as `asset_owner_id_null=true`. */
   asset_owner_unassigned?: boolean
+  /** Findings with no CVE (a rule-only finding). Sent as `cve_id_null=true`. */
+  cve_id_unset?: boolean
   /** Findings on the members of an asset group (the group page's links). Sent as `asset_group_id`. */
   asset_group_id?: string
   /** Findings on crown jewels (the dashboard's "crown jewels exposed"). Sent as `asset_crown_jewel=true`. */

@@ -4,7 +4,7 @@
  * permissions.
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen } from '@testing-library/react'
+import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { SWRConfig } from 'swr'
 import type { ReactNode } from 'react'
@@ -131,5 +131,57 @@ describe('EASMLookalikes', () => {
     expect(screen.queryByRole('button', { name: 'Watch' })).toBeNull()
     expect(screen.queryByRole('button', { name: 'Taken down' })).toBeNull()
     expect(screen.queryByRole('button', { name: 'Stop watching example.com' })).toBeNull()
+  })
+
+  it('shows how many of the lookalikes are listed and loads the next page', async () => {
+    api.get.mockImplementation((url: string) =>
+      Promise.resolve(url.startsWith('/api/v1/exposures') ? { ...exposures, total: 120 } : watches)
+    )
+    wrap(<EASMLookalikes />)
+    expect(await screen.findByText('1 of 120')).toBeInTheDocument()
+    await userEvent.click(screen.getByRole('button', { name: 'Load more' }))
+    await waitFor(() =>
+      expect(api.get.mock.calls.some((c) => String(c[0]).includes('page=2'))).toBe(true)
+    )
+  })
+
+  it('colours high and critical severity like the rest of the product', async () => {
+    api.get.mockImplementation((url: string) =>
+      Promise.resolve(
+        url.startsWith('/api/v1/exposures')
+          ? { total: 1, data: [{ ...exposures.data[0], severity: 'high' }] }
+          : watches
+      )
+    )
+    wrap(<EASMLookalikes />)
+    const badge = await screen.findByText('High')
+    expect(badge.className).not.toContain('bg-secondary')
+  })
+
+  it('shows skeleton rows while the lists load', async () => {
+    api.get.mockImplementation(() => new Promise(() => {}))
+    const { container } = wrap(<EASMLookalikes />)
+    await waitFor(() =>
+      expect(container.querySelectorAll('[data-slot="skeleton"]').length).toBeGreaterThan(0)
+    )
+  })
+
+  it('reopening the settings starts from the saved values, and a bad max cannot be saved', async () => {
+    wrap(<EASMLookalikes />)
+    await screen.findByText('example.com')
+    const toggle = () =>
+      userEvent.click(screen.getByRole('button', { name: 'Settings of example.com' }))
+    await toggle()
+    const max = () => document.getElementById('watch-w1-max') as HTMLInputElement
+    expect(max().value).toBe('300')
+    await userEvent.clear(max())
+    expect(screen.getByRole('button', { name: 'Save' })).toBeDisabled()
+    expect(screen.getAllByText('Enter a whole number from 10 to 1000').length).toBeGreaterThan(0)
+    await userEvent.type(max(), '5')
+    expect(screen.getByRole('button', { name: 'Save' })).toBeDisabled()
+    await toggle()
+    await toggle()
+    expect(max().value).toBe('300')
+    expect(screen.getByRole('button', { name: 'Save' })).toBeEnabled()
   })
 })

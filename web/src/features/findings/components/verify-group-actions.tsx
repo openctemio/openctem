@@ -28,14 +28,22 @@ import { getErrorMessage } from '@/lib/api/error-handler'
 import type { FindingGroup } from '../api/use-finding-groups'
 
 interface VerifyGroupActionsProps {
-  group: FindingGroup
+  /** A CVE group; every claimed fix of its CVE is approved or rejected. */
+  group?: FindingGroup
+  /** Or one finding with no CVE: only that finding is approved or rejected. */
+  finding?: { id: string; title: string }
   /** Called after the group's fixes were approved or rejected. */
   onDone?: () => void
 }
 
 /** Approve / Reject for one CVE group in the verification queue. */
-export function VerifyGroupActions({ group, onDone }: VerifyGroupActionsProps) {
+export function VerifyGroupActions({ group, finding, onDone }: VerifyGroupActionsProps) {
   const { t } = useTranslation()
+  const key = finding?.id ?? group?.group_key ?? ''
+  const label = finding?.title ?? group?.label ?? ''
+  const count = finding ? 1 : (group?.stats?.fix_applied ?? 0)
+  // One finding goes by its id; a CVE group by its CVE.
+  const target = finding ? { finding_ids: [finding.id] } : { filter: { cve_ids: [key] } }
   const [busy, setBusy] = useState(false)
   const [rejectOpen, setRejectOpen] = useState(false)
   const [reason, setReason] = useState('')
@@ -44,8 +52,8 @@ export function VerifyGroupActions({ group, onDone }: VerifyGroupActionsProps) {
     setBusy(true)
     try {
       const result = await post<{ updated: number }>('/api/v1/findings/actions/verify', {
-        filter: { cve_ids: [group.group_key] },
-        note: `Batch verified: ${group.label}`,
+        ...target,
+        note: `Batch verified: ${label}`,
       })
       toast.success(
         t('findings.verifyGroup.verified', '{count} findings verified', { count: result.updated })
@@ -65,7 +73,7 @@ export function VerifyGroupActions({ group, onDone }: VerifyGroupActionsProps) {
     setBusy(true)
     try {
       const result = await post<{ updated: number }>('/api/v1/findings/actions/reject-fix', {
-        filter: { cve_ids: [group.group_key] },
+        ...target,
         reason: reason.trim(),
       })
       toast.success(
@@ -119,19 +127,19 @@ export function VerifyGroupActions({ group, onDone }: VerifyGroupActionsProps) {
           </AlertDialogHeader>
           <AlertDialogBody className="grid gap-4">
             <div className="my-2 rounded-lg border bg-muted/50 p-3">
-              <p className="font-medium">{group.label}</p>
+              <p className="font-medium">{label}</p>
               <p className="text-sm text-muted-foreground">
                 {t('findings.verifyGroup.reopened', '{count} findings will be reopened', {
-                  count: group.stats?.fix_applied ?? 0,
+                  count,
                 })}
               </p>
             </div>
             <div className="space-y-2">
-              <label htmlFor={`reject-${group.group_key}`} className="text-sm font-medium">
+              <label htmlFor={`reject-${key}`} className="text-sm font-medium">
                 {t('findings.verifyGroup.reason', 'Reason')}
               </label>
               <Textarea
-                id={`reject-${group.group_key}`}
+                id={`reject-${key}`}
                 placeholder={t(
                   'findings.verifyGroup.reasonPlaceholder',
                   'e.g. Vulnerability still present: log4j 2.14.0 detected on server'

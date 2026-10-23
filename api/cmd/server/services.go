@@ -90,6 +90,7 @@ import (
 	"github.com/openctemio/openctem/api/internal/app/exposure"
 	"github.com/openctemio/openctem/api/internal/app/exposurebridge"
 	findinglifecycleapp "github.com/openctemio/openctem/api/internal/app/findinglifecycle"
+	appimportmapping "github.com/openctemio/openctem/api/internal/app/importmapping"
 	"github.com/openctemio/openctem/api/internal/app/ingest"
 	"github.com/openctemio/openctem/api/internal/app/jira"
 	licapp "github.com/openctemio/openctem/api/internal/app/licensepolicy"
@@ -866,6 +867,8 @@ type Services struct {
 	TicketPolicy *jira.PolicyGate
 	// TicketMapping manages ticket field and status mapping profiles.
 	TicketMapping *appticketmap.Service
+	// ImportMapping manages the organization's import mappings (RFC-126).
+	ImportMapping *appimportmapping.Service
 
 	// GitHub Issues ticket provider (create-from-finding + link only)
 	GitHubTicket *ticketing.GitHubTicketService
@@ -1948,6 +1951,9 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// Ticket field and status mapping profiles: the editor reads the
 	// integration's own Jira site; previews load objects through the caller's
 	// data scope.
+	if repos.ImportMapping != nil {
+		s.ImportMapping = appimportmapping.NewService(repos.ImportMapping)
+	}
 	if repos.TicketMapping != nil {
 		objects := ticketMappingObjects{findings: repos.Finding, assets: repos.Asset, users: repos.User,
 			tasks: s.RemediationTask, taskRepo: repos.RemediationTask}
@@ -2309,6 +2315,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	s.VulnMatch.SetEnrichment(s.PriorityClassification, sla.NewApplier(s.SLA), repos.Asset)
 	s.VulnMatch.SetLinkReader(repos.Software)
 	s.VulnMatch.SetRemediationKeyApplier(remediationKeys)
+	s.VulnMatch.SetVEXApplier(s.VEX) // The organization's VEX statements cover matched findings too
 	// Emerging-threat alerts (RFC-117): matched findings are announced by
 	// their alert. The delivery sinks are wired with the workers.
 	if repos.ThreatAlert != nil {
@@ -2317,6 +2324,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 		s.ThreatAlerts = threatalertapp.NewService(repos.ThreatAlert, s.Audit, log)
 	}
 	s.Ingest.SetSoftwareChangeSink(s.VulnMatch)
+	s.SBOMImport.SetSoftwareChangeSink(s.VulnMatch)                  // An imported SBOM is matched in minutes
 	s.Ingest.SetRepositoryExtensionRepository(repos.RepoExt)         // Wire repository extension for auto web_url
 	s.Ingest.SetRelationshipRepository(repos.AssetRelationship)      // Wire subdomain-to-domain relationships
 	s.Ingest.SetAssetStateHistoryRepository(repos.AssetStateHistory) // Record appeared/recovered on discovery

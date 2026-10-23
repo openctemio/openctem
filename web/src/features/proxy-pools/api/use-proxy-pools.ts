@@ -49,16 +49,10 @@ export function useProxyAssignments(enabled = true) {
   )
 }
 
-/** Revalidates every proxy pool request (list, assignments). */
+/** Revalidates every proxy pool request (list, assignments), keeping the data on screen. */
 export async function invalidateProxyPools() {
   const { mutate } = await import('swr')
-  await mutate(
-    (key) => typeof key === 'string' && key.startsWith(API_BASE.PROXY_POOLS),
-    undefined,
-    {
-      revalidate: true,
-    }
-  )
+  await mutate((key) => typeof key === 'string' && key.startsWith(API_BASE.PROXY_POOLS))
 }
 
 export function createProxyPool(body: CreateProxyPoolRequest) {
