@@ -201,3 +201,24 @@ func TestWorkflowPublishGate_DraftEditWithdrawsRequest_DB(t *testing.T) {
 		t.Fatalf("approving after a node was only moved = %d, want 200", s)
 	}
 }
+
+// A rollback targets only a version that was live: a request retired before
+// anyone approved it cannot come back through a rollback.
+func TestWorkflowPublishGate_RollbackOnlyToLiveVersions_DB(t *testing.T) {
+	f := newWFDB(t)
+	f.stepUp.set(f.admin, true)
+	wf := f.create(`[{"node_key":"t","node_type":"trigger","name":"t","config":{"trigger_type":"finding_created","trigger_config":{"allow_automation_triggers":true}}},
+		{"node_key":"a","node_type":"action","name":"a","config":{"action_type":"add_tags","action_config":{"tags":["r"]}}}]`,
+		`[{"source_node_key":"t","target_node_key":"a"}]`)
+	s, b := f.call(f.h.Publish, f.as(f.admin, http.MethodPost, `{}`, map[string]string{"id": wf}))
+	var p PublishPendingResponse
+	_ = json.Unmarshal([]byte(b), &p)
+	if s != http.StatusAccepted || p.Version == nil {
+		t.Fatalf("high-risk publish = %d %s", s, b)
+	}
+	f.exec(`UPDATE automation_versions SET status = 'retired' WHERE id = $1`, p.Version.ID)
+	s, b = f.call(f.h.Rollback, f.as(f.admin, http.MethodPost, `{}`, map[string]string{"id": wf, "versionId": p.Version.ID}))
+	if s != http.StatusBadRequest || !strings.Contains(b, "VERSION_NOT_PUBLISHED") {
+		t.Fatalf("rollback to a retired request = %d %s, want 400 VERSION_NOT_PUBLISHED", s, b)
+	}
+}

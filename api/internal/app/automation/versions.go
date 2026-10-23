@@ -221,6 +221,13 @@ func (s *WorkflowService) Rollback(ctx context.Context, in PublishInput, version
 	if err != nil {
 		return nil, err
 	}
+	// Only a version that once went live is rolled back to: a request that
+	// was retired before anyone approved it never passed the gate, and a
+	// rollback must not turn it into a second chance with a draft the
+	// approver sees that differs from it.
+	if old.Status != automationdom.VersionPublished && old.Status != automationdom.VersionSuperseded {
+		return nil, shared.NewDomainError("VERSION_NOT_PUBLISHED", "only a version that was live can be rolled back to", shared.ErrValidation)
+	}
 	w, err := s.workflowRepo.GetByTenantAndID(ctx, in.TenantID, in.WorkflowID)
 	if err != nil {
 		return nil, err
