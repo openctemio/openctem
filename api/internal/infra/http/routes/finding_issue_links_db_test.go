@@ -145,3 +145,56 @@ func TestIssueLinks_GroupIsScopedAndUnlinkIsAudited(t *testing.T) {
 		t.Fatalf("memberA still sees a group %v", ids)
 	}
 }
+
+// A caller of tenant A who names real findings of tenant B (a linked pair)
+// gets 404 on both routes, and tenant B's links, findings, timelines and
+// audit log are untouched.
+func TestIssueLinks_CrossTenantFindingIs404AndUntouched(t *testing.T) {
+	h := newDSHarness(t)
+
+	tenantB, assetB, f1, f2 := shared.NewID(), shared.NewID(), shared.NewID(), shared.NewID()
+	h.exec(`INSERT INTO tenants (id, name, slug) VALUES ($1, $2, $2)`, tenantB.String(), "ds-"+tenantB.String())
+	t.Cleanup(func() { _, _ = h.db.ExecContext(context.Background(), `DELETE FROM tenants WHERE id = $1`, tenantB.String()) })
+	h.exec(`INSERT INTO assets (id, tenant_id, name, asset_type, exposure, criticality) VALUES ($1, $2, 'xt-asset', 'domain', 'public', 'high')`,
+		assetB.String(), tenantB.String())
+	for _, f := range []shared.ID{f1, f2} {
+		h.exec(`INSERT INTO findings (id, tenant_id, asset_id, source, tool_name, message, severity, fingerprint, status)
+			VALUES ($1::uuid, $2, $3, 'sast', 'xt-tool', 'xt finding', 'high', $1::text, 'new')`, f.String(), tenantB.String(), assetB.String())
+	}
+	h.exec(`INSERT INTO finding_issue_links (tenant_id, primary_id, member_id, rule, basis) VALUES ($1, $2, $3, 'secret_value', '{secret}')`,
+		tenantB.String(), f1.String(), f2.String())
+
+	base := "/api/v1/findings/" + f1.String() + "/issue-links"
+	for _, c := range []struct {
+		method, path string
+	}{
+		{http.MethodGet, base},
+		{http.MethodDelete, base + "/" + f2.String()},
+		{http.MethodGet, "/api/v1/findings/" + f2.String() + "/issue-links"},
+		{http.MethodDelete, "/api/v1/findings/" + f2.String() + "/issue-links/" + f1.String()},
+	} {
+		status, body := h.issueCall(c.method, h.owner, true, nil, c.path)
+		if status != http.StatusNotFound {
+			t.Fatalf("%s %s = %d %s, want 404", c.method, c.path, status, body)
+		}
+		if strings.Contains(body, f1.String()) && c.method == http.MethodGet && strings.Contains(body, "members") {
+			t.Fatalf("response leaks tenant B members: %s", body)
+		}
+	}
+
+	if n := h.countRows(`SELECT count(*) FROM finding_issue_links WHERE tenant_id = $1 AND state = 'active' AND ended_by IS NULL`, tenantB.String()); n != 1 {
+		t.Fatalf("tenant B active links %d, want 1 unchanged", n)
+	}
+	if n := h.countRows(`SELECT count(*) FROM finding_activities WHERE tenant_id = $1`, tenantB.String()); n != 0 {
+		t.Fatalf("tenant B timeline entries %d, want 0", n)
+	}
+	if n := h.countRows(`SELECT count(*) FROM audit_logs WHERE tenant_id = $1`, tenantB.String()); n != 0 {
+		t.Fatalf("tenant B audit entries %d, want 0", n)
+	}
+	for _, f := range []shared.ID{f1, f2} {
+		var st string
+		if err := h.db.QueryRow(`SELECT status FROM findings WHERE id = $1`, f.String()).Scan(&st); err != nil || st != "new" {
+			t.Fatalf("tenant B finding status %q err %v", st, err)
+		}
+	}
+}
