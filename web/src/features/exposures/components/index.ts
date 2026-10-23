@@ -49,3 +49,4 @@ export {
   findingsHrefForSources,
   listedFindingCount,
 } from './exposures-section'
+export { ExposureDetailsView, REDACTED_VALUE } from './exposure-details-view'
