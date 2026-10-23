@@ -95,6 +95,9 @@ func (s *SAMLService) UpsertConfig(ctx context.Context, tenantID shared.ID, in S
 // that waits for an owner's approval is validated with it when submitted and
 // rebuilt with it when approved.
 func (s *SAMLService) BuildConfig(ctx context.Context, tenantID shared.ID, in SAMLConfigInput) (*samldom.SAMLProvider, error) {
+	if err := s.sso.requireConnections(ctx, tenantID); err != nil {
+		return nil, err
+	}
 	if strings.TrimSpace(in.IDPEntityID) == "" || strings.TrimSpace(in.IDPSSOURL) == "" {
 		return nil, samlValidationErr("idp_entity_id and idp_sso_url are required")
 	}
