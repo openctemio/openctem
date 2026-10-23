@@ -417,3 +417,10 @@ func (fga *FindingGroupAssignment) RuleID() *shared.ID { return fga.ruleID }
 
 // AssignedAt returns the assignment timestamp.
 func (fga *FindingGroupAssignment) AssignedAt() time.Time { return fga.assignedAt }
+
+// MemberProfile is the display profile of an active tenant member.
+type MemberProfile struct {
+	UserID shared.ID
+	Name   string
+	Email  string
+}

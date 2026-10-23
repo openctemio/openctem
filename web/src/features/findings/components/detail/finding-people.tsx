@@ -40,10 +40,10 @@ export function FindingPeople({ findingId, assignee }: FindingPeopleProps) {
         {t('findings.people.title', 'People')}
       </h3>
       <div className="grid min-h-8 grid-cols-[6.5rem_minmax(0,1fr)] items-center gap-x-3">
-        <span className="text-xs text-muted-foreground">
+        <span className="text-body text-muted-foreground">
           {t('findings.properties.assignee', 'Assignee')}
         </span>
-        <div className="min-w-0 text-sm break-words">{assignee}</div>
+        <div className="min-w-0 text-body break-words">{assignee}</div>
       </div>
       <WatchersBlock
         kind="finding"

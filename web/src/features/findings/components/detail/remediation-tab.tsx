@@ -569,7 +569,7 @@ export function RemediationTab({ remediation, finding }: RemediationTabProps) {
                       {step.completedBy && step.completedAt && (
                         <div className="text-muted-foreground flex items-center gap-2 text-xs">
                           <Avatar className="h-4 w-4">
-                            <AvatarFallback className="text-[8px]">
+                            <AvatarFallback className="text-meta">
                               {getInitials(step.completedBy.name)}
                             </AvatarFallback>
                           </Avatar>

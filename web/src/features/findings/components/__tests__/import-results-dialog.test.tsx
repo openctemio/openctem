@@ -15,6 +15,18 @@ vi.mock('@/lib/api/client', () => ({
   csrfFetch: (...a: unknown[]) => fetchMock(...a),
 }))
 vi.mock('sonner', () => ({ toast: { success: vi.fn(), error: vi.fn() } }))
+// Saved import mappings offered as formats (features/import-mappings).
+let mappingItems: { id: string; name: string }[] = []
+let perms = new Set<string>()
+vi.mock('@/features/import-mappings/api/import-mappings-api', () => ({
+  useImportMappings: (enabled: boolean) => ({
+    data: enabled ? { items: mappingItems } : undefined,
+  }),
+}))
+vi.mock('@/lib/permissions', () => ({
+  Permission: { IntegrationsRead: 'integrations:read', AssetsImport: 'assets:import' },
+  useHasAnyPermission: (...p: string[]) => p.some((x) => perms.has(x)),
+}))
 // The recent-imports list fetches on its own; receipt-summary.test.tsx covers it.
 vi.mock('../receipt-summary', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../receipt-summary')>()),
@@ -64,6 +76,37 @@ async function chooseFile(name = 'scan.nessus') {
 describe('ImportResultsDialog', () => {
   beforeEach(() => {
     fetchMock.mockReset()
+    mappingItems = []
+    perms = new Set()
+  })
+
+  it('offers no format choice without saved mappings or without a permission to list them', () => {
+    const { unmount } = render(<ImportResultsDialog open onOpenChange={vi.fn()} />)
+    expect(screen.queryByLabelText('Format')).toBeNull()
+    unmount()
+    mappingItems = [{ id: 'm1', name: 'vendor-csv' }]
+    render(<ImportResultsDialog open onOpenChange={vi.fn()} />)
+    expect(screen.queryByLabelText('Format')).toBeNull()
+  })
+
+  it('imports with a saved mapping as the format and drops the Qualys knowledge base', async () => {
+    // Radix Select scrolls the chosen option into view; jsdom lacks it.
+    Element.prototype.scrollIntoView ??= () => {}
+    mappingItems = [{ id: 'm1', name: 'vendor-csv' }]
+    perms = new Set(['assets:import'])
+    fetchMock.mockResolvedValueOnce(jsonResponse(200, previewBody))
+    const user = userEvent.setup()
+    render(<ImportResultsDialog open onOpenChange={vi.fn()} />)
+    expect(screen.getByLabelText(/Qualys KnowledgeBase/)).toBeInTheDocument()
+    await user.click(screen.getByLabelText('Format'))
+    await user.click(screen.getByRole('option', { name: 'Import mapping: vendor-csv' }))
+    expect(screen.queryByLabelText(/Qualys KnowledgeBase/)).toBeNull()
+    await chooseFile('export.csv')
+    await user.click(screen.getByRole('button', { name: /Preview/ }))
+    await waitFor(() => expect(fetchMock).toHaveBeenCalled())
+    expect(fetchMock.mock.calls[0][0]).toBe(
+      '/api/v1/findings/imports?dry_run=true&format=mapping%3Avendor-csv'
+    )
   })
 
   it('sends the minimum severity a caller sets (the scanners page skips info)', async () => {

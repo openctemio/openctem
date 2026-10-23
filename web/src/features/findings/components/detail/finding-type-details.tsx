@@ -32,7 +32,7 @@ function meta(f: FindingDetail, ...keys: string[]): string {
 }
 
 function Mono({ children }: { children: React.ReactNode }) {
-  return <span className="font-mono text-[13px] break-all">{children}</span>
+  return <span className="font-mono text-body break-all">{children}</span>
 }
 
 function formatDate(iso: string | undefined, locale: string) {
