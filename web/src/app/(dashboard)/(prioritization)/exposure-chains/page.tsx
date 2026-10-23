@@ -144,13 +144,17 @@ export default function ExposureChainsPage() {
         <LoadingSkeleton />
       ) : error ? (
         // A failed read is not "no data": say we could not find out.
-        <ErrorState
-          title={t('prioritization.errorTitle.exposureChains', 'exposure chains')}
-          error={error}
-          onRetry={() => void mutate()}
-        />
+        <div className="mt-5">
+          <ErrorState
+            title={t('prioritization.errorTitle.exposureChains', 'exposure chains')}
+            error={error}
+            onRetry={() => void mutate()}
+          />
+        </div>
       ) : !hasData ? (
-        <NoRelationshipData />
+        <div className="mt-5">
+          <NoRelationshipData />
+        </div>
       ) : (
         <>
           {/* Stats row */}
@@ -237,8 +241,8 @@ export default function ExposureChainsPage() {
                   <p>
                     <strong className="text-foreground">
                       {t('prioritization.exposureChains.howEntryLead', 'Entry point')}
-                    </strong>{' '}
-                    —{' '}
+                    </strong>
+                    {': '}
                     {t(
                       'prioritization.exposureChains.howEntry',
                       'any asset with public exposure, the foothold an attacker reaches directly.'
@@ -247,8 +251,8 @@ export default function ExposureChainsPage() {
                   <p>
                     <strong className="text-foreground">
                       {t('prioritization.exposureChains.howPathLead', 'Path')}
-                    </strong>{' '}
-                    —{' '}
+                    </strong>
+                    {': '}
                     {t(
                       'prioritization.exposureChains.howPath',
                       'search over attack-path relationships (runs_on, depends_on, exposes, stores_data_in, ...) capturing the shortest route to each dangerous asset.'
@@ -257,8 +261,8 @@ export default function ExposureChainsPage() {
                   <p>
                     <strong className="text-foreground">
                       {t('prioritization.exposureChains.howTargetLead', 'Target')}
-                    </strong>{' '}
-                    —{' '}
+                    </strong>
+                    {': '}
                     {t(
                       'prioritization.exposureChains.howTarget',
                       'an asset carrying open KEV or critical findings. A directly-exposed target (0 hops) is the most urgent.'
@@ -267,8 +271,8 @@ export default function ExposureChainsPage() {
                   <p>
                     <strong className="text-foreground">
                       {t('prioritization.exposureChains.howScoreLead', 'Score')}
-                    </strong>{' '}
-                    —{' '}
+                    </strong>
+                    {': '}
                     {t(
                       'prioritization.exposureChains.howScore',
                       'KEV-weighted danger x criticality x crown-jewel, amplified the closer the target sits to the internet.'
