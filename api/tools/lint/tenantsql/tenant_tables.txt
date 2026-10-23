@@ -128,6 +128,8 @@ finding_fingerprints
 finding_group_assignments
 finding_ingest_actions
 finding_injection_points
+finding_issue_links
+finding_link_keys
 finding_priority_queue
 finding_rekey_runs
 finding_remediation_keys
