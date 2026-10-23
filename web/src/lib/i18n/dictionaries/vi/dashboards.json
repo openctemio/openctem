@@ -120,7 +120,6 @@
   "dashboards.freshness.updated": "Cập nhật {time}",
   "dashboards.gallery.add": "Thêm",
   "dashboards.gallery.addNamed": "Thêm {name}",
-  "dashboards.gallery.advanced": "Nâng cao",
   "dashboards.gallery.all": "Tất cả",
   "dashboards.gallery.description": "Bản xem trước dùng số liệu của chính bạn. Thêm widget rồi thay đổi cách đếm và cách hiển thị.",
   "dashboards.gallery.failed": "Không tải được danh sách widget.",
