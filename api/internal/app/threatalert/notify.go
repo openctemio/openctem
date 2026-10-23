@@ -132,7 +132,7 @@ func whyNow(a *threatalert.Alert) string {
 	if len(parts) == 0 {
 		return "newly published"
 	}
-	return strings.Join(parts, " · ")
+	return strings.Join(parts, ", ")
 }
 
 // affects is the alert's reach in one line: counts, and names only when
