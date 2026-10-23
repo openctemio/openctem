@@ -182,6 +182,8 @@ func (s *Service) AcceptUpload(ctx context.Context, run *cirun.Run, body []byte,
 	if run == nil {
 		return nil, cirun.ErrRunNotFound
 	}
+	// A tool export is converted by the worker; a gate waits on it.
+	lane := ingestjob.LaneInteractive
 	if !export {
 		report, ok := DecodeReport(body)
 		if !ok {
@@ -190,6 +192,7 @@ func (s *Service) AcceptUpload(ctx context.Context, run *cirun.Run, body []byte,
 		if err := ScopeReport(report, run); err != nil {
 			return nil, err
 		}
+		lane = s.uploadLane(ctx, report)
 	}
 	env, err := json.Marshal(uploadEnvelope{Export: export})
 	if err != nil {
@@ -198,6 +201,9 @@ func (s *Service) AcceptUpload(ctx context.Context, run *cirun.Run, body []byte,
 	digest := sha256.Sum256(body)
 	job := ingestjob.NewUploadJob(shared.NewID(), run.TenantID, ingestjob.KindCIResults, run.ID.String(),
 		uploadPrincipal(run.ID), "ci:"+run.ID.String(), env, digest[:])
+	// The uploads of one repository are applied one at a time: concurrent
+	// jobs of a CI matrix never write the same rows together.
+	job.Route(lane, ingestjob.ScopeKey(run.TenantID, "repo", run.RepositoryAssetID.String()))
 	if err := s.uploads.StagePart(ctx, run.TenantID, job.ID(), 0, "results", body); err != nil {
 		return nil, fmt.Errorf("store CI upload: %w", err)
 	}

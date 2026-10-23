@@ -803,6 +803,9 @@ func (h *FindingImportHandler) callerOf(r *http.Request) findingimport.Caller {
 
 // writeQueueErr answers an upload that could not be stored.
 func (h *FindingImportHandler) writeQueueErr(w http.ResponseWriter, err error) {
+	if writeBackpressure(w, err) {
+		return
+	}
 	if errors.Is(err, findingimport.ErrQueueUnavailable) || errors.Is(err, ingestqueue.ErrUnavailable) {
 		w.Header().Set("Retry-After", "30")
 		apierror.ServiceUnavailable("imports are not available right now; nothing was imported").WriteJSON(w)

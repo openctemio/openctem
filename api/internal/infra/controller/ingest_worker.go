@@ -3,6 +3,8 @@ package controller
 import (
 	"context"
 	"errors"
+	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/openctemio/openctem/api/internal/metrics"
@@ -15,7 +17,7 @@ type IngestJobQueue interface {
 	ClaimBatch(ctx context.Context, workerID string, limit int) ([]*ingestjob.Job, error)
 	Complete(ctx context.Context, id ingestjob.ID, result []byte) error
 	Fail(ctx context.Context, id ingestjob.ID, errMsg, publicErr string, availableAt time.Time, dead bool) error
-	ReleaseStale(ctx context.Context, olderThan time.Duration) (int, error)
+	ReleaseStale(ctx context.Context, olderThan time.Duration) (int, []*ingestjob.Job, error)
 	CountPending(ctx context.Context) (int, error)
 }
 
@@ -45,7 +47,10 @@ type IngestWorkerControllerConfig struct {
 	LeaseTimeout time.Duration
 	// WorkerID identifies this replica's worker in locked_by. Default: "ingest-worker".
 	WorkerID string
-	Logger   *logger.Logger
+	// Workers is how many jobs this replica processes at once (each claims
+	// one job at a time; jobs of one scope never run together). Default: 1.
+	Workers int
+	Logger  *logger.Logger
 }
 
 // IngestWorkerController drains the ingest_jobs queue: it reclaims stale jobs,
@@ -80,6 +85,9 @@ func NewIngestWorkerController(queue IngestJobQueue, processor IngestJobProcesso
 	if cfg.WorkerID == "" {
 		cfg.WorkerID = "ingest-worker"
 	}
+	if cfg.Workers <= 0 {
+		cfg.Workers = 1
+	}
 	log := cfg.Logger
 	if log == nil {
 		log = logger.NewNop()
@@ -102,12 +110,25 @@ func (c *IngestWorkerController) Interval() time.Duration { return c.cfg.Interva
 // as stale. Grant the batch the lease window it already holds exclusively.
 func (c *IngestWorkerController) ReconcileTimeout() time.Duration { return c.cfg.LeaseTimeout }
 
-// Reconcile reclaims stale jobs then drains pending jobs up to MaxPerTick.
+// Reconcile reclaims stale jobs, then drains pending jobs with Workers
+// goroutines, at most MaxPerTick jobs in all. Each goroutine claims one job
+// at a time, so a claimed job is always being worked on (it holds its
+// scope) and the claim's lane and tenant order decides what runs next.
 func (c *IngestWorkerController) Reconcile(ctx context.Context) (int, error) {
-	if released, err := c.queue.ReleaseStale(ctx, c.cfg.LeaseTimeout); err != nil {
+	released, dead, err := c.queue.ReleaseStale(ctx, c.cfg.LeaseTimeout)
+	switch {
+	case err != nil:
 		c.logger.Warn("ingest: release stale jobs failed", "error", err)
-	} else if released > 0 {
-		c.logger.Info("ingest: reclaimed stale jobs", "count", released)
+	case released > 0 || len(dead) > 0:
+		c.logger.Info("ingest: reclaimed stale jobs", "released", released, "dead", len(dead))
+	}
+	// A job whose lease expired on its last attempt (a payload that kills
+	// the worker) is dead: its owner is told once.
+	for _, job := range dead {
+		metrics.IngestJobsProcessedTotal.WithLabelValues("dead").Inc()
+		if dl, ok := c.processor.(DeadLetterer); ok {
+			dl.DeadLetter(ctx, job, ingestjob.ErrorApplyFailed)
+		}
 	}
 
 	// Periodic processor housekeeping (protocol v2: expire uncommitted
@@ -121,24 +142,41 @@ func (c *IngestWorkerController) Reconcile(ctx context.Context) (int, error) {
 		metrics.IngestQueueDepth.Set(float64(depth))
 	}
 
-	processed := 0
-	for processed < c.cfg.MaxPerTick {
-		if ctx.Err() != nil {
-			return processed, ctx.Err()
-		}
-		jobs, err := c.queue.ClaimBatch(ctx, c.cfg.WorkerID, c.cfg.BatchSize)
-		if err != nil {
-			return processed, err
-		}
-		if len(jobs) == 0 {
-			break
-		}
-		for _, job := range jobs {
-			c.processOne(ctx, job)
-			processed++
-		}
+	var (
+		processed atomic.Int64
+		mu        sync.Mutex
+		firstErr  error
+		wg        sync.WaitGroup
+	)
+	for range c.cfg.Workers {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for processed.Load() < int64(c.cfg.MaxPerTick) && ctx.Err() == nil {
+				jobs, err := c.queue.ClaimBatch(ctx, c.cfg.WorkerID, 1)
+				if err != nil {
+					mu.Lock()
+					if firstErr == nil {
+						firstErr = err
+					}
+					mu.Unlock()
+					return
+				}
+				if len(jobs) == 0 {
+					return
+				}
+				for _, job := range jobs {
+					c.processOne(ctx, job)
+					processed.Add(1)
+				}
+			}
+		}()
 	}
-	return processed, nil
+	wg.Wait()
+	if firstErr == nil && ctx.Err() != nil {
+		firstErr = ctx.Err()
+	}
+	return int(processed.Load()), firstErr
 }
 
 // processOne runs a single job and records the outcome.
