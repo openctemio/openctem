@@ -28,7 +28,8 @@ vi.mock('swr', () => ({
   useSWRConfig: () => ({ mutate: vi.fn() }),
 }))
 
-vi.mock('@/features/findings/api/use-findings-api', () => ({
+vi.mock('@/features/findings/api/use-findings-api', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/features/findings/api/use-findings-api')>()),
   useFindingApi: () => ({ data: undefined }),
   useFindingsApi: (filters: Record<string, unknown>) => {
     listCalls.push(filters)
@@ -201,6 +202,20 @@ describe('Findings list with quick views', () => {
     render(<FindingsPage />)
     fireEvent.click(screen.getByRole('button', { name: /awaiting verification/i }))
     expect(params().get('view')).toBe('verify')
+  })
+
+  it('opens the queue with a section for the claimed fixes that have no CVE', () => {
+    openAt('?view=verify&asset_id=asset-1')
+    render(<FindingsPage />)
+    // The by-CVE groups leave a finding without a CVE out; this list holds
+    // them, in the same scope as the count.
+    const noCve = listCalls.find((f) => f.cve_id_unset === true)
+    expect(noCve).toMatchObject({
+      statuses: ['fix_applied'],
+      asset_id: 'asset-1',
+      extra: { source_not: 'pentest' },
+    })
+    expect(statsCalls.some((f) => f?.asset_id === 'asset-1')).toBe(true)
   })
 
   it('does not load the source catalog until the Source filter is opened', () => {

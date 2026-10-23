@@ -47,3 +47,11 @@ develop's.
 not folded at a release stay in `changelog.d/` forever and their notes reach no
 changelog. (Fragments shipped up to v0.11.0 were folded in one catch-up under
 `## v0.11.0 and earlier` with `changelog.py archive`.)
+
+## Operator headings in the release notes
+
+A pull request is labelled `notes:migration`, `notes:destructive-migration`, `notes:identity` or
+`notes:api-contract` automatically by the files it changes (`.github/workflows/pr-labels.yml`).
+When the release is cut, the fragments of those pull requests are also listed under an
+**Upgrade notes** block, grouped by those headings, ahead of the categories. Write the upgrade
+step in the fragment itself, as before; the block only points readers at it.

@@ -4,9 +4,15 @@ import { useMemo, useState } from 'react'
 import Link from '@/components/link'
 import { useRouter } from 'next/navigation'
 import type { ColumnDef } from '@tanstack/react-table'
-import useSWR from 'swr'
 import { Main } from '@/components/layout'
-import { PageHeader, EmptyState, DataTable, DataTableColumnHeader } from '@/features/shared'
+import {
+  PageHeader,
+  EmptyState,
+  DataTable,
+  DataTableColumnHeader,
+  ErrorState,
+  CappedNotice,
+} from '@/features/shared'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -21,49 +27,29 @@ import {
 } from '@/components/ui/dialog'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Plus, RefreshCw, CalendarClock, Lightbulb } from 'lucide-react'
-import { get, post } from '@/lib/api/client'
+import { post } from '@/lib/api/client'
+import { useRegisterPages } from '@/lib/api/use-register-pages'
+import { getErrorMessage } from '@/lib/api/error-handler'
+import { Can, Permission } from '@/lib/permissions'
+import { formatDateOnly } from '@/lib/date-only'
 import { toast } from 'sonner'
 import { CyclePolicyCard, summarizeEvaluation, type CtemCycle } from '@/features/cycles'
 import { CycleStatusBadge } from '@/features/cycles/components/cycle-status-badge'
 import { useTranslation } from '@/context/i18n-provider'
 
-interface PaginatedResponse {
-  data: CtemCycle[]
-  total: number
-  page: number
-  per_page: number
-}
+// Feed-forward "lessons" callout: the muted card tone, no accent colour.
+const LESSONS_CALLOUT_CLASS = 'rounded-lg border bg-muted/40 p-3'
+const LESSONS_ICON_CLASS = 'h-4 w-4 text-muted-foreground'
 
-// Feed-forward "lessons" callout accent — a distinct info hue, not a severity/status color.
-const LESSONS_CALLOUT_CLASS =
-  'rounded-lg border border-amber-500/30 bg-amber-500/5 p-3 dark:bg-amber-900/10' // palette-ok: distinct lessons info accent
-const LESSONS_ICON_CLASS = 'h-4 w-4 text-amber-500' // palette-ok: distinct lessons info accent
-
-function formatDate(dateStr: string): string {
-  if (!dateStr) return '-'
-  return new Date(dateStr).toLocaleDateString()
+function formatDate(dateStr: string | undefined, locale: string): string {
+  return formatDateOnly(dateStr, locale) || '-'
 }
 
 // CTEM operating rhythm (https://ctem.org/docs/stages/ctem-mobilization): the
-// prescribed cadence that keeps a cycle running. Purely a reference rhythm —
+// prescribed cadence that keeps a cycle running. Purely a reference rhythm,
 // no scheduler is implied; the dates are anchored to real cycle data below.
-const CTEM_CADENCE = [
-  {
-    key: 'weekly',
-    label: 'Weekly triage',
-    detail: 'Review new exposures, re-prioritize, unblock owners.',
-  },
-  {
-    key: 'monthly',
-    label: 'Monthly steering',
-    detail: 'Trend risk & SLA burn-down with sponsors; adjust focus.',
-  },
-  {
-    key: 'quarterly',
-    label: 'Quarterly scope refresh',
-    detail: 'Revisit the charter & scope; fold in last cycle’s lessons.',
-  },
-] as const
+// The labels live in the catalog under scoping.cycles.cadence.<key>.
+const CTEM_CADENCE = ['weekly', 'monthly', 'quarterly'] as const
 
 // nextWeekday returns the next occurrence of the given weekday (0=Sun) from
 // today, used to anchor the weekly-triage checkpoint to a real date.
@@ -82,15 +68,14 @@ function firstOfNextMonth(): Date {
 }
 
 export default function CtemCyclesPage() {
-  const { t } = useTranslation()
+  const { t, locale } = useTranslation()
   const router = useRouter()
   const {
+    error: loadError,
     data: response,
     isLoading,
     mutate,
-  } = useSWR<PaginatedResponse>('/api/v1/ctem-cycles?per_page=100', get, {
-    revalidateOnFocus: false,
-  })
+  } = useRegisterPages<CtemCycle>('/api/v1/ctem-cycles?per_page=100')
 
   const cycles = useMemo(() => response?.data ?? [], [response])
 
@@ -126,21 +111,32 @@ export default function CtemCyclesPage() {
     setFormData({ name: '', description: '', start_date: '', end_date: '' })
   }
 
+  const [isCreating, setIsCreating] = useState(false)
   const handleCreate = async () => {
+    if (isCreating) return
     if (!formData.name) {
-      toast.error('Please provide a cycle name')
+      toast.error(t('scoping.cycles.nameRequired', 'Enter a cycle name.'))
       return
     }
+    if (formData.start_date && formData.end_date && formData.end_date < formData.start_date) {
+      toast.error(
+        t('scope.cycles.endBeforeStart', 'The end date must not be before the start date.')
+      )
+      return
+    }
+    setIsCreating(true)
     try {
       const created = await post<CtemCycle>('/api/v1/ctem-cycles', formData)
       await mutate()
-      toast.success('Cycle created')
+      toast.success(t('scoping.cycles.created', 'Cycle created.'))
       setIsCreateOpen(false)
       resetForm()
       // Straight to the new cycle, where its charter is written.
       if (created?.id) router.push(`/cycles/${created.id}`)
-    } catch {
-      toast.error('Failed to create cycle')
+    } catch (err) {
+      toast.error(getErrorMessage(err, t('scope.cycles.createFailed', 'Failed to create cycle')))
+    } finally {
+      setIsCreating(false)
     }
   }
 
@@ -148,7 +144,9 @@ export default function CtemCyclesPage() {
     () => [
       {
         accessorKey: 'name',
-        header: ({ column }) => <DataTableColumnHeader column={column} title="Name" />,
+        header: ({ column }) => (
+          <DataTableColumnHeader column={column} title={t('scoping.cycles.col.name', 'Name')} />
+        ),
         cell: ({ row }) => (
           <Link href={`/cycles/${row.original.id}`} className="font-medium hover:underline">
             {row.original.name}
@@ -157,32 +155,41 @@ export default function CtemCyclesPage() {
       },
       {
         accessorKey: 'status',
-        header: ({ column }) => <DataTableColumnHeader column={column} title="Status" />,
+        header: ({ column }) => (
+          <DataTableColumnHeader column={column} title={t('scoping.cycles.col.status', 'Status')} />
+        ),
         cell: ({ row }) => <CycleStatusBadge status={row.original.status} />,
       },
       {
         accessorKey: 'start_date',
-        header: ({ column }) => <DataTableColumnHeader column={column} title="Start date" />,
-        cell: ({ row }) => formatDate(row.original.start_date),
+        header: ({ column }) => (
+          <DataTableColumnHeader
+            column={column}
+            title={t('scoping.cycles.col.start', 'Start date')}
+          />
+        ),
+        cell: ({ row }) => formatDate(row.original.start_date, locale),
       },
       {
         accessorKey: 'end_date',
-        header: ({ column }) => <DataTableColumnHeader column={column} title="End date" />,
-        cell: ({ row }) => formatDate(row.original.end_date),
+        header: ({ column }) => (
+          <DataTableColumnHeader column={column} title={t('scoping.cycles.col.end', 'End date')} />
+        ),
+        cell: ({ row }) => formatDate(row.original.end_date, locale),
       },
       {
         id: 'criteria',
-        header: () => <span>Success criteria</span>,
+        header: () => <span>{t('scoping.cycles.col.criteria', 'Success criteria')}</span>,
         enableSorting: false,
         cell: ({ row }) => {
           const ev = row.original.charter_evaluation
-          const summary = summarizeEvaluation(ev)
+          const summary = summarizeEvaluation(ev, t)
           if (!summary) return <span className="text-muted-foreground">-</span>
           return (
             <Link
               href={`/cycles/${row.original.id}?tab=outcome`}
               className="text-start text-sm tabular-nums hover:underline"
-              title="View the success criteria outcome"
+              title={t('scoping.cycles.viewOutcome', 'View the success criteria outcome')}
             >
               {summary}
               {ev?.completion_rate !== undefined && (
@@ -195,7 +202,7 @@ export default function CtemCyclesPage() {
         },
       },
     ],
-    []
+    [t, locale]
   )
 
   return (
@@ -208,46 +215,54 @@ export default function CtemCyclesPage() {
             'Plan and run CTEM cycles: the charter, the scope it freezes and the outcome it is judged by.'
           )}
         >
-          <Button size="sm" onClick={() => setIsCreateOpen(true)}>
-            <Plus className="me-2 h-4 w-4" />
-            New cycle
-          </Button>
+          <Can permission={Permission.CTEMCyclesWrite}>
+            <Button size="sm" onClick={() => setIsCreateOpen(true)}>
+              <Plus className="me-2 h-4 w-4" />
+              {t('scoping.cycles.new', 'New cycle')}
+            </Button>
+          </Can>
         </PageHeader>
 
         <div className="mt-4">
           <CyclePolicyCard />
         </div>
 
-        {/* CTEM operating rhythm — a lightweight, always-visible reminder of
+        {/* CTEM operating rhythm: a lightweight, always-visible reminder of
             the prescribed cadence. Checkpoints are anchored to real dates: the
             weekly/monthly ones to the calendar, the quarterly scope refresh to
             the active cycle's end date. No scheduler is implied. One strip with
             dividers rather than a card of cards. */}
-        <section aria-label="Operating rhythm" className="mt-5">
+        <section aria-label={t('scoping.cycles.rhythm', 'Operating rhythm')} className="mt-5">
           <div className="grid overflow-hidden rounded-xl border bg-card sm:grid-cols-3">
-            {CTEM_CADENCE.map((c) => {
+            {CTEM_CADENCE.map((key) => {
               let when = ''
-              if (c.key === 'weekly') when = formatDate(nextWeekday(1).toISOString())
-              else if (c.key === 'monthly') when = formatDate(firstOfNextMonth().toISOString())
-              else if (c.key === 'quarterly')
-                when = activeCycle?.end_date ? formatDate(activeCycle.end_date) : ''
+              if (key === 'weekly') when = formatDate(nextWeekday(1).toISOString(), locale)
+              else if (key === 'monthly')
+                when = formatDate(firstOfNextMonth().toISOString(), locale)
+              else if (key === 'quarterly')
+                when = activeCycle?.end_date ? formatDate(activeCycle.end_date, locale) : ''
               return (
-                <div key={c.key} className="-ms-px -mt-px border-s border-t px-4 py-3">
+                <div key={key} className="-ms-px -mt-px border-s border-t px-4 py-3">
                   <div className="flex items-center justify-between gap-2">
                     <span className="flex items-center gap-2 text-sm font-medium">
                       <CalendarClock className="h-4 w-4 text-muted-foreground" />
-                      {c.label}
+                      {t(`scoping.cycles.cadence.${key}.label`, key)}
                     </span>
                     {when && <span className="text-xs text-muted-foreground">{when}</span>}
                   </div>
-                  <p className="mt-1 text-xs text-muted-foreground">{c.detail}</p>
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    {t(`scoping.cycles.cadence.${key}.detail`, key)}
+                  </p>
                 </div>
               )
             })}
           </div>
           {!activeCycle && (
             <p className="mt-2 text-xs text-muted-foreground">
-              Activate a cycle to anchor the quarterly scope-refresh checkpoint to its end date.
+              {t(
+                'scoping.cycles.cadence.anchorHint',
+                'Activate a cycle to anchor the quarterly scope refresh to its end date.'
+              )}
             </p>
           )}
         </section>
@@ -259,6 +274,12 @@ export default function CtemCyclesPage() {
                 <Skeleton key={i} className="h-10 w-full" />
               ))}
             </div>
+          ) : loadError ? (
+            <ErrorState
+              title={t('scope.cycles.loadError', 'cycles')}
+              error={loadError}
+              onRetry={() => mutate()}
+            />
           ) : cycles.length === 0 ? (
             <EmptyState
               icon={RefreshCw}
@@ -270,20 +291,27 @@ export default function CtemCyclesPage() {
               columns={columns}
               data={cycles}
               onRowClick={(cycle) => router.push(`/cycles/${cycle.id}`)}
-              searchPlaceholder="Search cycles..."
-              emptyMessage="No cycles found"
-              emptyDescription="No cycles match the current search."
+              searchPlaceholder={t('scoping.cycles.search', 'Search cycles')}
+              emptyMessage={t('scoping.cycles.noMatch', 'No cycles found')}
+              emptyDescription={t(
+                'scoping.cycles.noMatchHint',
+                'No cycles match the current search.'
+              )}
             />
           )}
         </div>
+        <CappedNotice loaded={cycles.length} total={response?.total ?? 0} />
       </Main>
 
       <Dialog open={isCreateOpen} onOpenChange={setIsCreateOpen}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>New CTEM cycle</DialogTitle>
+            <DialogTitle>{t('scoping.cycles.dialog.title', 'New CTEM cycle')}</DialogTitle>
             <DialogDescription>
-              Start a new continuous threat exposure management cycle
+              {t(
+                'scoping.cycles.dialog.description',
+                'Start a new continuous threat exposure management cycle.'
+              )}
             </DialogDescription>
           </DialogHeader>
           <DialogBody>
@@ -295,37 +323,47 @@ export default function CtemCyclesPage() {
                 <div className={LESSONS_CALLOUT_CLASS}>
                   <div className="flex items-center gap-2 text-sm font-medium">
                     <Lightbulb className={LESSONS_ICON_CLASS} />
-                    Lessons from {lastLessons.name}
+                    {t('scoping.cycles.lessonsFrom', 'Lessons from {name}', {
+                      name: lastLessons.name,
+                    })}
                   </div>
                   <p className="mt-1 whitespace-pre-wrap text-xs text-muted-foreground">
                     {lastLessons.charter?.scope_refinement_notes}
                   </p>
                   <p className="mt-1.5 text-[11px] text-muted-foreground">
-                    Carry the relevant items into this cycle&rsquo;s scope and charter.
+                    {t(
+                      'scoping.cycles.lessonsHint',
+                      'Carry the relevant items into the scope and charter of this cycle.'
+                    )}
                   </p>
                 </div>
               )}
               <div className="space-y-2">
-                <Label htmlFor="name">Name *</Label>
+                <Label htmlFor="name">{t('scoping.cycles.field.name', 'Name')} *</Label>
                 <Input
                   id="name"
                   value={formData.name}
                   onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                  placeholder="e.g., Q2 2026 CTEM Cycle"
+                  placeholder={t('scoping.cycles.field.namePlaceholder', 'e.g. Q2 2026 CTEM cycle')}
                 />
               </div>
               <div className="space-y-2">
-                <Label htmlFor="description">Description</Label>
+                <Label htmlFor="description">
+                  {t('scoping.cycles.field.description', 'Description')}
+                </Label>
                 <Input
                   id="description"
                   value={formData.description}
                   onChange={(e) => setFormData({ ...formData, description: e.target.value })}
-                  placeholder="Brief description of cycle goals"
+                  placeholder={t(
+                    'scoping.cycles.field.descriptionPlaceholder',
+                    'Brief description of the cycle goals'
+                  )}
                 />
               </div>
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                 <div className="space-y-2">
-                  <Label htmlFor="start_date">Start date</Label>
+                  <Label htmlFor="start_date">{t('scoping.cycles.col.start', 'Start date')}</Label>
                   <Input
                     id="start_date"
                     type="date"
@@ -334,7 +372,7 @@ export default function CtemCyclesPage() {
                   />
                 </div>
                 <div className="space-y-2">
-                  <Label htmlFor="end_date">End date</Label>
+                  <Label htmlFor="end_date">{t('scoping.cycles.col.end', 'End date')}</Label>
                   <Input
                     id="end_date"
                     type="date"
@@ -347,9 +385,11 @@ export default function CtemCyclesPage() {
           </DialogBody>
           <DialogFooter>
             <Button variant="outline" onClick={() => setIsCreateOpen(false)}>
-              Cancel
+              {t('common.cancel', 'Cancel')}
             </Button>
-            <Button onClick={handleCreate}>Create</Button>
+            <Button onClick={handleCreate} disabled={isCreating}>
+              {t('scoping.cycles.create', 'Create')}
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

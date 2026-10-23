@@ -1,25 +1,29 @@
 package finding
 
-// The organization's false-positive approval level
-// (api/docs/architecture/finding-status-lifecycle.md, "False-positive
-// approval level").
+// The organization's false-positive and risk acceptance approval levels
+// (api/docs/architecture/finding-status-lifecycle.md, "Approval levels").
 //
-// Threat model: four-eyes on a false positive stops one stolen session or
-// one careless person from hiding a real issue. An organization may decide
-// that for some findings this costs more than it protects. The relaxation is
-// bounded:
+// Threat model: four-eyes on a false positive or an accepted risk stops one
+// stolen session or one careless person from hiding a real issue. An
+// organization may decide that for some findings this costs more than it
+// protects. The relaxation is bounded:
 //   - only a holder of findings:approve (someone who could approve anyway)
-//     with the finding in their data scope, and only for a false positive
-//     (an accepted risk always needs a second person);
+//     with the finding in their data scope, who does not own its asset, and
+//     only through a person's own request on one finding: suppression rules,
+//     group and bulk requests, imports and automation (AI triage, VEX,
+//     ticket integrations) never decide alone, whatever the level;
 //   - under high_and_above, never for a material finding (critical, high,
 //     KEV, P0/P1, a validated exploit, a crown-jewel or internet-exposed
 //     asset);
 //   - a VEX-aligned closure reason and a note are required, as for any
-//     request; the decision is marked single_person, audited and on the
-//     timeline;
-//   - a later material change (severity up, KEV added, new evidence) raises
-//     a review flag (database triggers), and an optional random share is
-//     flagged for a second look;
+//     request, and an accepted risk always ends within the organization's
+//     cap; the decision is marked single_person, audited, on the timeline
+//     and in the next approvals digest;
+//   - a later material change (severity, priority or exposure up, KEV
+//     added, new evidence) raises a review flag (database triggers and the
+//     material-change controller, which also ends an accepted risk whose
+//     tier now needs a second person), and an optional random share of
+//     false positives is flagged for a second look;
 //   - lowering the level takes effect only 24 hours later (raising is
 //     immediate), the change needs settings:write and a recent
 //     re-authentication, is audited and every approver is told.
@@ -31,6 +35,7 @@ import (
 	"math/big"
 	"time"
 
+	"github.com/openctemio/openctem/api/pkg/domain/approvalpolicy"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	tenantdom "github.com/openctemio/openctem/api/pkg/domain/tenant"
 	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
@@ -54,9 +59,50 @@ type decisionReviewRaiser interface {
 // positive picked for a second look.
 const DecisionReviewSecondLook = "second_look_sample"
 
-// FPPolicyDecision is how a false positive on one finding is decided now.
+// decidedAloneReviewer flags the standing decisions one person made
+// (*postgres.FindingApprovalRepository).
+type decidedAloneReviewer interface {
+	FlagDecidedAlone(ctx context.Context, tenantID shared.ID, status vulnerability.FindingStatus, level string,
+		needsSecond func(approvalpolicy.Facts) bool) (int, error)
+}
+
+// ReviewDecidedAlone flags for review every standing decision of status
+// (false positive or accepted risk) in the tenant that one person made,
+// under a level or as the sole member, and that level now gives to a second
+// person: all of them under all, the material ones under high_and_above,
+// none under off. It runs when a level is raised. The decisions stand (a
+// legitimate decision is not undone by a later setting); the review flag
+// and a timeline entry ask a person with the approve permission to look
+// again. It answers how many decisions are now under review.
+func (s *VulnerabilityService) ReviewDecidedAlone(ctx context.Context, tenantID string, status vulnerability.FindingStatus, level string) (int, error) {
+	tid, err := shared.IDFromString(tenantID)
+	if err != nil {
+		return 0, fmt.Errorf("%w: invalid tenant id", shared.ErrValidation)
+	}
+	if status != vulnerability.FindingStatusFalsePositive && status != vulnerability.FindingStatusAccepted {
+		return 0, fmt.Errorf("%w: only false positives and accepted risks are decided alone", shared.ErrValidation)
+	}
+	if !approvalpolicy.LevelNeedsSecond(level, true) {
+		return 0, nil // off: nothing needs a second person
+	}
+	store, ok := s.approvalRepo.(decidedAloneReviewer)
+	if !ok {
+		return 0, fmt.Errorf("%w: reviewing decisions made alone is not available", shared.ErrNotImplemented)
+	}
+	op, err := s.orgApprovalPolicy(ctx, tid)
+	if err != nil {
+		return 0, err
+	}
+	threshold := op.policy.EPSS()
+	return store.FlagDecidedAlone(ctx, tid, status, level, func(f approvalpolicy.Facts) bool {
+		return approvalpolicy.LevelNeedsSecond(level, approvalpolicy.MaterialForFalsePositive(f, threshold))
+	})
+}
+
+// FPPolicyDecision is how a false positive (or, for applySinglePerson, an
+// accepted risk) on one finding is decided now.
 type FPPolicyDecision struct {
-	// Level is the organization's level in force.
+	// Level is the organization's level in force (of the decision's kind).
 	Level string
 	// SinglePerson: a holder of findings:approve may decide it alone.
 	SinglePerson bool
@@ -117,11 +163,11 @@ func (s *VulnerabilityService) falsePositivePolicy(ctx context.Context, tid, fid
 	return d, nil
 }
 
-// applySinglePersonFP decides the requester's false positive at once: the
-// request row (approved, single_person), the finding's status and the
-// timeline entry in one transaction; then, by the organization's share, a
-// second-look flag.
-func (s *VulnerabilityService) applySinglePersonFP(ctx context.Context, a *vulnerability.Approval, d FPPolicyDecision) (*vulnerability.Approval, error) {
+// applySinglePerson decides the requester's false positive or accepted risk
+// at once: the request row (approved, single_person), the finding's status
+// (and acceptance end) and the timeline entry in one transaction; then, for
+// a false positive and by the organization's share, a second-look flag.
+func (s *VulnerabilityService) applySinglePerson(ctx context.Context, a *vulnerability.Approval, d FPPolicyDecision) (*vulnerability.Approval, error) {
 	store, ok := s.approvalRepo.(singlePersonStore)
 	if !ok {
 		return nil, fmt.Errorf("%w: single-person decisions are not available", shared.ErrNotImplemented)
@@ -130,23 +176,30 @@ func (s *VulnerabilityService) applySinglePersonFP(ctx context.Context, a *vulne
 		return nil, err
 	}
 	by := a.RequestedBy
+	accepted := vulnerability.FindingStatus(a.RequestedStatus) == vulnerability.FindingStatusAccepted
+	changes := map[string]any{
+		"approval_id":      a.ID.String(),
+		"requested_status": a.RequestedStatus,
+		"closure_reason":   a.ClosureReason.String(),
+		"justification":    a.Justification,
+		"approved_by":      by.String(),
+		"single_person":    true,
+	}
+	if accepted {
+		changes["accept_approval"] = d.Level
+		changes["acceptance_end"] = a.ExpiresAt.UTC().Format(time.RFC3339)
+	} else {
+		changes["fp_approval"] = d.Level
+	}
 	entry, err := vulnerability.NewFindingActivity(a.TenantID, a.FindingID, vulnerability.ActivityApprovalApproved,
-		&by, vulnerability.ActorTypeUser, map[string]any{
-			"approval_id":      a.ID.String(),
-			"requested_status": a.RequestedStatus,
-			"closure_reason":   a.ClosureReason.String(),
-			"justification":    a.Justification,
-			"approved_by":      by.String(),
-			"single_person":    true,
-			"fp_approval":      d.Level,
-		}, vulnerability.SourceAPI, nil)
+		&by, vulnerability.ActorTypeUser, changes, vulnerability.SourceAPI, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to build the decision activity: %w", err)
 	}
 	if err := store.CreateApplied(ctx, a, entry); err != nil {
 		return nil, err
 	}
-	if d.SecondLookPercent > 0 && sampled(d.SecondLookPercent) {
+	if !accepted && d.SecondLookPercent > 0 && sampled(d.SecondLookPercent) {
 		if raiser, ok := s.findingRepo.(decisionReviewRaiser); ok {
 			if _, err := raiser.RaiseDecisionReview(ctx, a.TenantID, a.FindingID, DecisionReviewSecondLook,
 				map[string]any{"approval_id": a.ID.String(), "second_look_percent": d.SecondLookPercent}); err != nil {
@@ -154,8 +207,8 @@ func (s *VulnerabilityService) applySinglePersonFP(ctx context.Context, a *vulne
 			}
 		}
 	}
-	s.logger.Info("false positive decided by one person under the organization's level",
-		"finding_id", a.FindingID.String(), "level", d.Level)
+	s.logger.Info("finding decision made by one person under the organization's level",
+		"finding_id", a.FindingID.String(), "status", a.RequestedStatus, "level", d.Level)
 	return a, nil
 }
 

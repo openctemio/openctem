@@ -23,8 +23,16 @@ import { useUrlFilter } from '@/hooks/use-url-param'
 export default function AttackSurfaceSuggestionsPage() {
   const { t } = useTranslation()
   const [all, setAll] = useUrlFilter('all', '0')
-  const [tab] = useUrlFilter('tab', '')
-  const showAll = all === '1' || tab !== ''
+  const [tab, setTab] = useUrlFilter('tab', '')
+  const [reason, setReason] = useUrlFilter('reason', '')
+  // A deep link (?tab=, ?reason=) opens the list it filters; Hide closes it by
+  // clearing all three, otherwise it would stay open.
+  const showAll = all === '1' || tab !== '' || reason !== ''
+  const hideAll = () => {
+    setAll('0')
+    setTab('')
+    setReason('')
+  }
   return (
     <Main>
       <PageHeader
@@ -46,7 +54,7 @@ export default function AttackSurfaceSuggestionsPage() {
               <h2 className="text-base font-semibold">
                 {t('attackSurface.suggestions.allItems', 'All items')}
               </h2>
-              <Button size="sm" variant="ghost" onClick={() => setAll('0')}>
+              <Button size="sm" variant="ghost" onClick={hideAll}>
                 {t('attackSurface.suggestions.hideAll', 'Hide items')}
               </Button>
             </div>

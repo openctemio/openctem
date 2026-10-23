@@ -17,6 +17,10 @@ updates:
       time: "06:00"
       timezone: "Asia/Ho_Chi_Minh"
     open-pull-requests-limit: 10
+    # A new release waits seven days before Dependabot proposes it (security
+    # updates ignore the cooldown), so a compromised release is yanked first.
+    cooldown:
+      default-days: 7
     labels: ["dependencies", "go", "api"]
     commit-message:
       prefix: "deps(api)"
@@ -37,6 +41,10 @@ updates:
       time: "06:00"
       timezone: "Asia/Ho_Chi_Minh"
     open-pull-requests-limit: 10
+    # A new release waits seven days before Dependabot proposes it (security
+    # updates ignore the cooldown), so a compromised release is yanked first.
+    cooldown:
+      default-days: 7
     labels: ["dependencies", "npm", "web"]
     commit-message:
       prefix: "deps(web)"
@@ -77,6 +85,10 @@ updates:
       time: "06:00"
       timezone: "Asia/Ho_Chi_Minh"
     open-pull-requests-limit: 5
+    # A new release waits seven days before Dependabot proposes it (security
+    # updates ignore the cooldown), so a compromised release is yanked first.
+    cooldown:
+      default-days: 7
     labels: ["dependencies", "github-actions"]
     commit-message:
       prefix: "deps(actions)"
@@ -100,6 +112,10 @@ updates:
       time: "06:00"
       timezone: "Asia/Ho_Chi_Minh"
     open-pull-requests-limit: 5
+    # A new release waits seven days before Dependabot proposes it (security
+    # updates ignore the cooldown), so a compromised release is yanked first.
+    cooldown:
+      default-days: 7
     labels: ["dependencies", "docker"]
     commit-message:
       prefix: "deps(images)"

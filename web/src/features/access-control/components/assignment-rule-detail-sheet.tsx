@@ -134,7 +134,7 @@ export function AssignmentRuleDetailSheet({
 
   const handleSave = async () => {
     if (!editForm.name) {
-      toast.error('Rule name is required')
+      toast.error(t('org.ruleDetail.nameRequired', 'Rule name is required'))
       return
     }
 
@@ -146,12 +146,12 @@ export function AssignmentRuleDetailSheet({
         target_group_id: editForm.target_group_id,
         is_active: editForm.is_active,
       })
-      toast.success('Assignment rule updated')
+      toast.success(t('org.ruleDetail.updated', 'Assignment rule updated'))
       setIsEditing(false)
       mutate()
       onUpdate?.()
     } catch (error) {
-      toast.error(getErrorMessage(error, 'Failed to update rule'))
+      toast.error(getErrorMessage(error, t('org.ruleDetail.updateFailed', 'Failed to update rule')))
     }
   }
 
@@ -160,23 +160,27 @@ export function AssignmentRuleDetailSheet({
 
     try {
       await updateAssignmentRule({ is_active: !assignmentRule.is_active })
-      toast.success(assignmentRule.is_active ? 'Rule deactivated' : 'Rule activated')
+      toast.success(
+        assignmentRule.is_active
+          ? t('org.ruleDetail.deactivated', 'Rule deactivated')
+          : t('org.ruleDetail.activated', 'Rule activated')
+      )
       mutate()
       onUpdate?.()
     } catch (error) {
-      toast.error(getErrorMessage(error, 'Failed to update rule'))
+      toast.error(getErrorMessage(error, t('org.ruleDetail.updateFailed', 'Failed to update rule')))
     }
   }
 
   const handleDelete = async () => {
     try {
       await deleteAssignmentRule()
-      toast.success('Assignment rule deleted')
+      toast.success(t('org.ruleDetail.deleted', 'Assignment rule deleted'))
       setDeleteDialogOpen(false)
       onOpenChange(false)
       onDelete?.()
     } catch (error) {
-      toast.error(getErrorMessage(error, 'Failed to delete rule'))
+      toast.error(getErrorMessage(error, t('org.ruleDetail.deleteFailed', 'Failed to delete rule')))
     }
   }
 
@@ -190,22 +194,28 @@ export function AssignmentRuleDetailSheet({
         { method: 'POST' }
       )
       if (result) {
-        toast.success(`Rule matched ${result.matching_findings} finding(s)`)
+        toast.success(
+          t('org.assignmentRules.testMatched', 'Rule matched {count} finding(s)', {
+            count: result.matching_findings,
+          })
+        )
       }
     } catch (error) {
-      toast.error(getErrorMessage(error, 'Failed to test rule'))
+      toast.error(
+        getErrorMessage(error, t('org.assignmentRules.testFailed', 'Failed to test rule'))
+      )
     } finally {
       setIsTesting(false)
     }
-  }, [ruleId])
+  }, [ruleId, t])
 
   const conditionLabels: Record<string, string> = {
-    asset_type: 'Asset Type',
-    finding_severity: 'Finding Severity',
-    finding_type: 'Finding Type',
-    finding_source: 'Finding Source',
-    asset_tags: 'Asset Tags',
-    file_path_pattern: 'File Path Pattern',
+    asset_type: t('org.assignmentRules.cond.asset_type', 'Asset type'),
+    finding_severity: t('org.assignmentRules.cond.finding_severity', 'Severity'),
+    finding_type: t('org.assignmentRules.cond.finding_type', 'Finding type'),
+    finding_source: t('org.assignmentRules.cond.finding_source', 'Source'),
+    asset_tags: t('org.assignmentRules.cond.asset_tags', 'Tags'),
+    file_path_pattern: t('org.assignmentRules.cond.file_path_pattern', 'File path'),
   }
 
   const rule = assignmentRule
@@ -216,23 +226,25 @@ export function AssignmentRuleDetailSheet({
   const menu: DetailMenuItem[] = []
   if (rule) {
     menu.push({
-      label: 'Copy ID',
+      label: t('org.ruleDetail.copyId', 'Copy ID'),
       icon: Hash,
       onSelect: () => {
         copyToClipboard(rule.id)
-        toast.success('Rule ID copied to clipboard')
+        toast.success(t('org.ruleDetail.idCopied', 'Rule ID copied'))
       },
     })
     if (canWrite) {
       menu.push({
-        label: rule.is_active ? 'Deactivate' : 'Activate',
+        label: rule.is_active
+          ? t('org.ruleDetail.deactivate', 'Deactivate')
+          : t('org.ruleDetail.activate', 'Activate'),
         icon: rule.is_active ? PowerOff : Power,
         onSelect: handleToggleActive,
       })
     }
     if (canDelete) {
       menu.push({
-        label: 'Delete rule',
+        label: t('org.ruleDetail.deleteRule', 'Delete rule'),
         icon: Trash2,
         destructive: true,
         separatorBefore: true,
@@ -253,13 +265,13 @@ export function AssignmentRuleDetailSheet({
               rule && isEditing ? (
                 <Input
                   autoFocus
-                  aria-label="Rule name"
+                  aria-label={t('org.ruleDetail.ruleName', 'Rule name')}
                   value={editForm.name}
                   onChange={(e) => setEditForm({ ...editForm, name: e.target.value })}
                   className="h-8 text-base font-semibold"
                 />
               ) : (
-                (rule?.name ?? 'Assignment rule')
+                (rule?.name ?? t('org.ruleDetail.fallbackTitle', 'Assignment rule'))
               )
             }
             badges={
@@ -271,13 +283,22 @@ export function AssignmentRuleDetailSheet({
                     rule.is_active && 'border-success/30 bg-success/10 text-success'
                   )}
                 >
-                  {rule.is_active ? 'Active' : 'Inactive'}
+                  {rule.is_active
+                    ? t('org.assignmentRules.status.active', 'Active')
+                    : t('org.assignmentRules.status.inactive', 'Inactive')}
                 </Badge>
               ) : undefined
             }
             meta={
               rule
-                ? [`Priority ${rule.priority}`, `Created ${formatDate(rule.created_at)}`]
+                ? [
+                    t('org.ruleDetail.metaPriority', 'Priority {priority}', {
+                      priority: rule.priority,
+                    }),
+                    t('org.ruleDetail.metaCreated', 'Created {date}', {
+                      date: formatDate(rule.created_at),
+                    }),
+                  ]
                 : undefined
             }
             actions={
@@ -290,10 +311,10 @@ export function AssignmentRuleDetailSheet({
                       ) : (
                         <Save className="h-4 w-4" />
                       )}
-                      Save
+                      {t('org.ruleDetail.save', 'Save')}
                     </Button>
                     <Button size="sm" variant="outline" onClick={() => setIsEditing(false)}>
-                      Cancel
+                      {t('common.cancel', 'Cancel')}
                     </Button>
                   </>
                 ) : (
@@ -301,7 +322,7 @@ export function AssignmentRuleDetailSheet({
                     {canWrite && (
                       <Button size="sm" onClick={handleStartEdit}>
                         <Pencil className="h-4 w-4" />
-                        Edit
+                        {t('org.assignmentRules.edit', 'Edit')}
                       </Button>
                     )}
                     <Button size="sm" variant="outline" onClick={handleTest} disabled={isTesting}>
@@ -310,7 +331,7 @@ export function AssignmentRuleDetailSheet({
                       ) : (
                         <Play className="h-4 w-4" />
                       )}
-                      Test rule
+                      {t('org.assignmentRules.testRule', 'Test rule')}
                     </Button>
                   </>
                 )
@@ -331,42 +352,51 @@ export function AssignmentRuleDetailSheet({
           <DetailCallout
             tone="destructive"
             icon={AlertCircle}
-            title="Failed to load assignment rule"
+            title={t('org.ruleDetail.loadFailed', 'Failed to load assignment rule')}
             actions={
               <Button variant="outline" size="sm" onClick={() => mutate()}>
-                Try again
+                {t('org.ruleDetail.tryAgain', 'Try again')}
               </Button>
             }
           />
         ) : (
           <div className="space-y-5">
             {!rule.is_active && !isEditing && (
-              <DetailCallout tone="warning" icon={AlertCircle} title="This rule is inactive">
-                It does not route new findings until it is activated.
+              <DetailCallout
+                tone="warning"
+                icon={AlertCircle}
+                title={t('org.ruleDetail.inactiveTitle', 'This rule is inactive')}
+              >
+                {t(
+                  'org.ruleDetail.inactiveBody',
+                  'It does not route new findings until it is activated.'
+                )}
               </DetailCallout>
             )}
 
             <DetailSections>
-              <DetailSection title="Description">
+              <DetailSection title={t('org.ruleDetail.description', 'Description')}>
                 {isEditing ? (
                   <Textarea
-                    aria-label="Description"
+                    aria-label={t('org.ruleDetail.description', 'Description')}
                     value={editForm.description}
                     onChange={(e) => setEditForm({ ...editForm, description: e.target.value })}
                     rows={2}
                   />
                 ) : (
                   <p className="text-sm text-muted-foreground">
-                    {rule.description || 'No description'}
+                    {rule.description || t('org.ruleDetail.noDescription', 'No description')}
                   </p>
                 )}
               </DetailSection>
 
-              <DetailSection title="Routing" icon={Target}>
+              <DetailSection title={t('org.ruleDetail.routing', 'Routing')} icon={Target}>
                 {isEditing ? (
                   <div className="space-y-4">
                     <div className="space-y-2">
-                      <Label htmlFor="rule-priority">Priority</Label>
+                      <Label htmlFor="rule-priority">
+                        {t('org.assignmentRules.col.priority', 'Priority')}
+                      </Label>
                       <Input
                         id="rule-priority"
                         type="number"
@@ -377,13 +407,17 @@ export function AssignmentRuleDetailSheet({
                       />
                     </div>
                     <div className="space-y-2">
-                      <Label>Target group</Label>
+                      <Label htmlFor="rule-detail-team">
+                        {t('org.assignmentRules.targetTeam', 'Target team')}
+                      </Label>
                       <Select
                         value={editForm.target_group_id}
                         onValueChange={(v) => setEditForm({ ...editForm, target_group_id: v })}
                       >
-                        <SelectTrigger aria-label="Target group">
-                          <SelectValue placeholder="Select group" />
+                        <SelectTrigger id="rule-detail-team">
+                          <SelectValue
+                            placeholder={t('org.ruleDetail.selectTeam', 'Select team')}
+                          />
                         </SelectTrigger>
                         <SelectContent>
                           {groups.map((g) => (
@@ -395,9 +429,11 @@ export function AssignmentRuleDetailSheet({
                       </Select>
                     </div>
                     <div className="flex items-center justify-between">
-                      <Label>Active</Label>
+                      <Label htmlFor="rule-detail-active">
+                        {t('org.ruleDetail.active', 'Active')}
+                      </Label>
                       <Switch
-                        aria-label="Active"
+                        id="rule-detail-active"
                         checked={editForm.is_active}
                         onCheckedChange={(v) => setEditForm({ ...editForm, is_active: v })}
                       />
@@ -405,17 +441,25 @@ export function AssignmentRuleDetailSheet({
                   </div>
                 ) : (
                   <DetailFieldGrid>
-                    <DetailField label="Target group">
-                      {groupMap[rule.target_group_id] || 'Unknown group'}
+                    <DetailField label={t('org.assignmentRules.targetTeam', 'Target team')}>
+                      {groupMap[rule.target_group_id] ||
+                        t('org.ruleDetail.unknownTeam', 'Unknown team')}
                     </DetailField>
-                    <DetailField label="Priority">{rule.priority}</DetailField>
+                    <DetailField label={t('org.assignmentRules.col.priority', 'Priority')}>
+                      {rule.priority}
+                    </DetailField>
                   </DetailFieldGrid>
                 )}
               </DetailSection>
 
-              <DetailSection title="Conditions" count={conditionEntries.length}>
+              <DetailSection
+                title={t('org.ruleDetail.conditions', 'Conditions')}
+                count={conditionEntries.length}
+              >
                 {conditionEntries.length === 0 ? (
-                  <p className="text-sm text-muted-foreground">No conditions defined</p>
+                  <p className="text-sm text-muted-foreground">
+                    {t('org.ruleDetail.noConditions', 'No conditions defined')}
+                  </p>
                 ) : (
                   <DetailFieldGrid>
                     {conditionEntries.map(([key, value]) => (
@@ -433,12 +477,16 @@ export function AssignmentRuleDetailSheet({
                 )}
               </DetailSection>
 
-              <DetailSection title="Details">
+              <DetailSection title={t('org.ruleDetail.details', 'Details')}>
                 <DetailFieldGrid>
-                  <DetailField label="Created">{formatDate(rule.created_at)}</DetailField>
-                  <DetailField label="Updated">{formatDate(rule.updated_at)}</DetailField>
-                  <DetailField label="Rule ID" full>
-                    <DetailCopyId id={rule.id} label="Rule ID" />
+                  <DetailField label={t('org.ruleDetail.created', 'Created')}>
+                    {formatDate(rule.created_at)}
+                  </DetailField>
+                  <DetailField label={t('org.ruleDetail.updatedAt', 'Updated')}>
+                    {formatDate(rule.updated_at)}
+                  </DetailField>
+                  <DetailField label={t('org.ruleDetail.ruleId', 'Rule ID')} full>
+                    <DetailCopyId id={rule.id} label={t('org.ruleDetail.ruleId', 'Rule ID')} />
                   </DetailField>
                 </DetailFieldGrid>
               </DetailSection>

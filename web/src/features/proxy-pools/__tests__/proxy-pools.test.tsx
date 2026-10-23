@@ -1,11 +1,21 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 
 import { ApiClientError } from '@/lib/api/error-handler'
 import { TooltipProvider } from '@/components/ui/tooltip'
 
 import { endpointUrl, maskPasteText } from '../lib/mask'
 import type { ProxyPool } from '../types'
+
+globalThis.ResizeObserver ??= class {
+  observe() {}
+  unobserve() {}
+  disconnect() {}
+} as unknown as typeof ResizeObserver
+// Radix Select uses pointer capture and scrollIntoView, which jsdom lacks.
+Element.prototype.hasPointerCapture ??= () => false
+Element.prototype.releasePointerCapture ??= () => {}
+Element.prototype.scrollIntoView ??= () => {}
 
 let pools: ProxyPool[] = []
 let assignments: { sensor_id: string; mode: string; pool_id?: string }[] = []
@@ -15,17 +25,27 @@ const deletePool = vi.fn()
 const setAssignment = vi.fn()
 const patchEndpoint = vi.fn()
 
+let poolsError: unknown
+let assignmentsPending = false
+const poolsMutate = vi.fn()
+const assignmentsMutate = vi.fn()
+const updatePool = vi.fn().mockResolvedValue({})
 vi.mock('../api/use-proxy-pools', () => ({
   useProxyPools: () => ({
-    data: { items: pools },
+    data: poolsError ? undefined : { items: pools },
     isLoading: false,
-    error: undefined,
-    mutate: vi.fn(),
+    error: poolsError,
+    mutate: poolsMutate,
   }),
-  useProxyAssignments: () => ({ data: { items: assignments }, isLoading: false }),
+  useProxyAssignments: () => ({
+    data: assignmentsPending ? undefined : { items: assignments },
+    isLoading: assignmentsPending,
+    error: undefined,
+    mutate: assignmentsMutate,
+  }),
   invalidateProxyPools: vi.fn(),
   createProxyPool: (...a: unknown[]) => createPool(...a),
-  updateProxyPool: vi.fn().mockResolvedValue({}),
+  updateProxyPool: (...a: unknown[]) => updatePool(...a),
   deleteProxyPool: (...a: unknown[]) => deletePool(...a),
   saveProxyEndpoints: (...a: unknown[]) => saveEndpoints(...a),
   updateProxyEndpoint: (...a: unknown[]) => patchEndpoint(...a),
@@ -121,6 +141,8 @@ beforeEach(() => {
   pools = [pool()]
   assignments = []
   perms = ALL
+  poolsError = undefined
+  assignmentsPending = false
 })
 
 describe('Proxies page', () => {
@@ -228,7 +250,7 @@ describe('Proxies page', () => {
   })
 
   it('explains a pool that is still in use when delete answers 409', async () => {
-    pools = [pool(), pool({ id: 'p2', name: 'Segment A', is_default: false, assigned_sensors: 2 })]
+    pools = [pool(), pool({ id: 'p2', name: 'Segment A', is_default: false })]
     deletePool.mockRejectedValue(new ApiClientError('pool in use', 'PROXY_POOL_IN_USE', 409))
     const { toast } = await import('sonner')
     renderPanel()
@@ -242,11 +264,61 @@ describe('Proxies page', () => {
     )
   })
 
+  it('disables Delete with a reason while sensors use the pool, and says "1 sensor"', () => {
+    pools = [pool(), pool({ id: 'p2', name: 'Segment A', is_default: false, assigned_sensors: 1 })]
+    renderPanel()
+    expect(screen.getByRole('button', { name: 'Delete Segment A' })).toBeDisabled()
+    expect(screen.getByLabelText(/Sensors still use this pool/)).toBeInTheDocument()
+    expect(screen.getByText(/1 sensor assigned/)).toBeInTheDocument()
+    expect(screen.queryByText(/1 sensors assigned/)).not.toBeInTheDocument()
+  })
+
+  it('does not toast when an endpoint is reset (the row updates in place)', async () => {
+    patchEndpoint.mockResolvedValue({})
+    const { toast } = await import('sonner')
+    renderPanel()
+    fireEvent.click(screen.getAllByRole('button', { name: /Reset health/ })[0])
+    await waitFor(() => expect(patchEndpoint).toHaveBeenCalled())
+    expect(toast.success).not.toHaveBeenCalled()
+  })
+
   it('without delete permission the delete button is disabled', () => {
     perms = ['sensors:egress:read', 'sensors:egress:write']
     pools = [pool(), pool({ id: 'p2', name: 'Segment A', is_default: false })]
     renderPanel()
     expect(screen.getByRole('button', { name: /Delete Segment A|permission/ })).toBeDisabled()
+  })
+})
+
+describe('New pool dialog', () => {
+  function openNew() {
+    renderPanel()
+    fireEvent.click(screen.getByRole('button', { name: /New pool/ }))
+  }
+
+  it('blocks Save while the pool is enabled without a proxy', async () => {
+    openNew()
+    const dialog = within(await screen.findByRole('dialog'))
+    fireEvent.change(dialog.getByLabelText('Name'), { target: { value: 'seg' } })
+    expect(dialog.getByTestId('pool-needs-proxy')).toBeInTheDocument()
+    expect(dialog.getByRole('button', { name: 'Save' })).toBeDisabled()
+    fireEvent.click(dialog.getByLabelText('Enabled'))
+    expect(dialog.queryByTestId('pool-needs-proxy')).not.toBeInTheDocument()
+    expect(dialog.getByRole('button', { name: 'Save' })).toBeEnabled()
+  })
+
+  it('turns a pool off before emptying its list (the API refuses an enabled empty pool)', async () => {
+    const order: string[] = []
+    saveEndpoints.mockImplementation(async () => void order.push('list'))
+    updatePool.mockImplementation(async () => void order.push('pool'))
+    pools = [pool(), pool({ id: 'p2', name: 'Segment A', is_default: false })]
+    renderPanel()
+    fireEvent.click(screen.getByRole('button', { name: 'Edit' }))
+    const dialog = within(await screen.findByRole('dialog'))
+    fireEvent.change(dialog.getByTestId('proxy-paste-list'), { target: { value: '' } })
+    fireEvent.click(dialog.getByLabelText('Enabled'))
+    fireEvent.click(dialog.getByRole('button', { name: 'Save' }))
+    await waitFor(() => expect(order).toEqual(['pool', 'list']))
   })
 })
 
@@ -259,6 +331,10 @@ describe('Sensor network path', () => {
       </TooltipProvider>
     )
   }
+  const choose = async (name: RegExp | string) => {
+    fireEvent.click(screen.getByRole('combobox'))
+    fireEvent.click(await screen.findByRole('option', { name }))
+  }
 
   it('maps the select to the assignment body', () => {
     expect(pathRequest('inherit')).toEqual({ mode: 'inherit' })
@@ -269,19 +345,81 @@ describe('Sensor network path', () => {
   it('sends the chosen pool for this sensor', async () => {
     setAssignment.mockResolvedValue({})
     renderSection()
-    fireEvent.change(screen.getByRole('combobox'), { target: { value: 'pool:p2' } })
+    await choose('Segment A')
     await waitFor(() =>
       expect(setAssignment).toHaveBeenCalledWith('s1', { mode: 'pool', pool_id: 'p2' })
     )
+  })
+
+  it('does not toast a saved network path', async () => {
+    setAssignment.mockResolvedValue({})
+    const { toast } = await import('sonner')
+    renderSection()
+    await choose('Segment A')
+    await waitFor(() => expect(setAssignment).toHaveBeenCalled())
+    expect(toast.success).not.toHaveBeenCalled()
   })
 
   it('shows the stored assignment and is read-only without write', () => {
     assignments = [{ sensor_id: 's1', mode: 'direct' }]
     perms = ['sensors:egress:read']
     renderSection()
-    const select = screen.getByRole('combobox') as HTMLSelectElement
-    expect(select.value).toBe('direct')
+    const select = screen.getByRole('combobox')
+    expect(select).toHaveTextContent('Direct')
     expect(select).toBeDisabled()
+  })
+
+  it('never shows "Inherit" when the pools request failed: an error with Retry, and no select', () => {
+    assignments = [{ sensor_id: 's1', mode: 'direct' }]
+    poolsError = new Error('boom')
+    renderSection()
+    expect(screen.queryByRole('combobox')).not.toBeInTheDocument()
+    expect(screen.queryByText(/Inherit/)).not.toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Retry' }))
+    expect(poolsMutate).toHaveBeenCalled()
+    expect(assignmentsMutate).toHaveBeenCalled()
+  })
+
+  it('shows a skeleton, not "Inherit", while the assignments load', () => {
+    assignmentsPending = true
+    renderSection()
+    expect(screen.getByTestId('network-path-skeleton')).toBeInTheDocument()
+    expect(screen.queryByText(/Inherit/)).not.toBeInTheDocument()
+  })
+
+  it('asks before going direct while the organization default is on', async () => {
+    setAssignment.mockResolvedValue({})
+    renderSection()
+    await choose('Direct')
+    expect(await screen.findByText('Send this sensor direct?')).toBeInTheDocument()
+    expect(setAssignment).not.toHaveBeenCalled()
+    fireEvent.click(screen.getByRole('button', { name: 'Go direct' }))
+    await waitFor(() => expect(setAssignment).toHaveBeenCalledWith('s1', { mode: 'direct' }))
+  })
+
+  it('goes direct without asking when no default pool is on', async () => {
+    setAssignment.mockResolvedValue({})
+    pools = []
+    render(
+      <TooltipProvider>
+        <SensorNetworkPathSection sensorId="s1" />
+      </TooltipProvider>
+    )
+    await choose('Direct')
+    await waitFor(() => expect(setAssignment).toHaveBeenCalledWith('s1', { mode: 'direct' }))
+  })
+
+  it('marks a disabled pool in the list', async () => {
+    renderSection()
+    pools = [pool(), pool({ id: 'p2', name: 'Segment A', is_default: false, enabled: false })]
+    cleanup()
+    render(
+      <TooltipProvider>
+        <SensorNetworkPathSection sensorId="s1" />
+      </TooltipProvider>
+    )
+    fireEvent.click(screen.getByRole('combobox'))
+    expect(await screen.findByRole('option', { name: 'Segment A (disabled)' })).toBeInTheDocument()
   })
 
   it('renders nothing without read permission', () => {

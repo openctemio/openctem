@@ -96,20 +96,35 @@ export function versionMatchEvidence(
 }
 
 /** Form validation of the policy; null when valid. */
-export function validateVulnMatching(s: {
-  min_confidence?: number | null
-  muted_products?: string[] | null
-}): string | null {
+export function validateVulnMatching(
+  s: {
+    min_confidence?: number | null
+    muted_products?: string[] | null
+  },
+  t: (key: string, fallback?: string, vars?: Record<string, string | number>) => string = (
+    _key,
+    fallback = '',
+    vars
+  ) => fallback.replace(/\{(\w+)\}/g, (_m, name: string) => String(vars?.[name] ?? ''))
+): string | null {
   const c = s.min_confidence
   if (c != null && (!Number.isInteger(c) || c < 0 || c > 100)) {
-    return 'Minimum confidence must be a whole number between 0 and 100.'
+    return t(
+      'settings.vulnMatching.errConfidence',
+      'Minimum confidence must be a whole number between 0 and 100.'
+    )
   }
   const muted = s.muted_products ?? []
   if (muted.length > MAX_MUTED_PRODUCTS) {
-    return `At most ${MAX_MUTED_PRODUCTS} muted products.`
+    return t('settings.vulnMatching.errMutedMax', 'At most {max} muted products.', {
+      max: MAX_MUTED_PRODUCTS,
+    })
   }
   if (muted.some((p) => p.trim() === '' || p.length > 200)) {
-    return 'A muted product name must be 1 to 200 characters.'
+    return t(
+      'settings.vulnMatching.errMutedName',
+      'A muted product name must be 1 to 200 characters.'
+    )
   }
   return null
 }

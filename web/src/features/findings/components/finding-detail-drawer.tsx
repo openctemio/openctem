@@ -64,6 +64,7 @@ import { FindingTaskBand } from '@/features/remediation-hub/components/finding-t
 import { FindingAssetName } from './detail/finding-asset-name'
 import { FindingProperties } from './detail/finding-properties'
 import { FindingProvenanceSection } from './detail/finding-provenance-section'
+import { FindingIdentitySection } from './detail/finding-identity-section'
 import { FindingTypePanel } from './detail/finding-type-panel'
 import { FindingIntelSection } from './detail/finding-intel-section'
 import { FindingRetestSection } from './detail/finding-retest'
@@ -74,6 +75,8 @@ import { FindingActivity } from './finding-activity'
 import { AdvisoryText } from './detail/advisory-text'
 import type { EntityActivityHandle } from '@/features/activity/components/entity-activity'
 import { AIProposalBadge } from './ai-proposal-badge'
+import { toDisplayText } from '@/lib/untrusted-text'
+import { formatAbsoluteTime, formatRelativeTime } from '@/lib/format-metric'
 
 /** The drawer inside a task: position in the task's findings and the task to return to. */
 export interface FindingDrawerTaskNav {
@@ -123,7 +126,7 @@ export function FindingDetailDrawer({
   onAssigneeChange,
   taskNav,
 }: FindingDetailDrawerProps) {
-  const { t } = useTranslation()
+  const { t, locale } = useTranslation()
   const router = useRouter()
   const canCreateTicket = useCanCreateTicket()
   const [ticketOpen, setTicketOpen] = useState(false)
@@ -342,6 +345,7 @@ export function FindingDetailDrawer({
               <FindingProperties finding={detail} triage={triage} hideTriage />
               <FindingIntelSection finding={detail} />
               <FindingProvenanceSection finding={detail} />
+              <FindingIdentitySection findingId={detail.id} />
               <VerificationPanel findingId={detail.id} />
               <FindingRetestSection finding={{ ...detail, status: triage.status }} />
               <FindingRetestCheckSection finding={detail} />
@@ -367,30 +371,45 @@ export function FindingDetailDrawer({
                       <li key={a.id} className="space-y-1 rounded-md border p-2.5 text-xs">
                         <div className="flex items-center justify-between">
                           <Badge variant="outline" className="text-[11px]">
-                            {APPROVAL_STATUS_CONFIG[a.status as ApprovalStatus]?.label ?? a.status}
+                            {t(
+                              `findings.approvals.status.${a.status}`,
+                              APPROVAL_STATUS_CONFIG[a.status as ApprovalStatus]?.label ?? a.status
+                            )}
                           </Badge>
-                          <span className="text-muted-foreground">
-                            {new Date(a.created_at).toLocaleDateString('en-US', {
-                              month: 'short',
-                              day: 'numeric',
-                              year: 'numeric',
-                            })}
-                          </span>
+                          <time
+                            dateTime={a.created_at}
+                            title={formatAbsoluteTime(a.created_at, locale)}
+                            className="text-muted-foreground"
+                          >
+                            {formatRelativeTime(a.created_at, locale)}
+                          </time>
                         </div>
                         <p className="text-muted-foreground">
                           {t('findings.drawer.requested', 'Requested:')}{' '}
                           <span className="font-medium text-foreground">
-                            {FINDING_STATUS_CONFIG[a.requested_status as FindingStatus]?.label ??
-                              a.requested_status}
+                            {(() => {
+                              const cfg = FINDING_STATUS_CONFIG[a.requested_status as FindingStatus]
+                              return cfg ? t(cfg.labelKey, cfg.label) : a.requested_status
+                            })()}
                           </span>
                         </p>
                         <AIProposalBadge approval={a} />
+                        {/* Member text: plain, capped and bidi-isolated, so a
+                            right-to-left override cannot change how it reads. */}
                         {a.justification && (
-                          <p className="line-clamp-2 text-muted-foreground">{a.justification}</p>
+                          <p
+                            dir="auto"
+                            className="line-clamp-2 text-muted-foreground [unicode-bidi:isolate]"
+                          >
+                            {toDisplayText(a.justification, 500)}
+                          </p>
                         )}
                         {a.rejection_reason && (
                           <p className="line-clamp-2 text-destructive">
-                            {t('findings.drawer.reason', 'Reason:')} {a.rejection_reason}
+                            {t('findings.drawer.reason', 'Reason:')}{' '}
+                            <span dir="auto" className="[unicode-bidi:isolate]">
+                              {toDisplayText(a.rejection_reason, 500)}
+                            </span>
                           </p>
                         )}
                       </li>
