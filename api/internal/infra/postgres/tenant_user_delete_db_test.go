@@ -285,6 +285,22 @@ var seedOverrides = map[string]func(s *schemaSeeder) map[string]any{
 		}
 		return map[string]any{"primary_id": first["id"], "member_id": second}
 	},
+	// A same-issue link joins two different findings of the tenant.
+	"finding_issue_links": func(s *schemaSeeder) map[string]any {
+		first := s.rows["findings"]
+		var second string
+		if err := s.tx.QueryRowContext(s.ctx, `INSERT INTO findings (tenant_id, asset_id, source, tool_name, message, severity, fingerprint, status)
+			SELECT tenant_id, asset_id, source, tool_name, message, severity, $2, status FROM findings WHERE id = $1
+			RETURNING id`, first["id"], s.uniq()).Scan(&second); err != nil {
+			s.t.Fatalf("insert second finding: %v", err)
+		}
+		return map[string]any{"primary_id": first["id"], "member_id": second, "rule": "secret_value", "state": "active",
+			"ended_at": nil, "ended_by": nil}
+	},
+	// A link key is a hex SHA-256.
+	"finding_link_keys": func(s *schemaSeeder) map[string]any {
+		return map[string]any{"kind": "secret_value", "key": strings.Repeat("ab", 32), "start_line": nil, "end_line": nil}
+	},
 	"vex_statements": func(*schemaSeeder) map[string]any {
 		return map[string]any{"vuln_id": "CVE-2026-0001", "status": "affected", "origin": "manual",
 			"justification": nil, "versions": "{}", "version_range": nil}
