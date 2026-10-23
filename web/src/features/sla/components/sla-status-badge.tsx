@@ -1,5 +1,6 @@
 import { Timer } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { useTranslation } from '@/context/i18n-provider'
 import {
   SLA_STATUS_LABELS,
   SLA_STATUS_COLORS,
@@ -21,9 +22,11 @@ export function SlaStatusBadge({
   status?: string | null
   className?: string
 }) {
+  const { t } = useTranslation()
   const key = (status as SLAStatus) || 'not_applicable'
   const colors = SLA_STATUS_COLORS[key] ?? SLA_STATUS_COLORS.not_applicable
-  const label = SLA_STATUS_LABELS[key] ?? SLA_STATUS_LABELS.not_applicable
+  const fallback = SLA_STATUS_LABELS[key] ?? SLA_STATUS_LABELS.not_applicable
+  const label = t(`findings.sla.${SLA_STATUS_LABELS[key] ? key : 'not_applicable'}`, fallback)
 
   return (
     <span
