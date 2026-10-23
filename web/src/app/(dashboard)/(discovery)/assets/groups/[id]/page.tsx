@@ -24,6 +24,8 @@ import { CRITICALITY_BADGE_SOFT } from '@/lib/criticality-colors'
 import { CRITICALITY_LABELS } from '@/lib/criticality'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
+import { FindingStatusBadge } from '@/features/findings/components/finding-status-badge'
+import type { FindingStatus } from '@/features/findings/types'
 import { Progress } from '@/components/ui/progress'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
@@ -93,11 +95,6 @@ const SEVERITY_RANK: Record<string, number> = { critical: 5, high: 4, medium: 3,
 const assetStatusClass: Record<string, string> = {
   active: 'border-success/30 bg-success/15 text-success',
   monitoring: 'border-info/30 bg-info/15 text-info',
-}
-
-const findingStatusClass: Record<string, string> = {
-  resolved: 'border-success/30 bg-success/15 text-success',
-  in_progress: 'border-info/30 bg-info/15 text-info',
 }
 
 const assetTypeIcons: Record<string, React.ReactNode> = {
@@ -417,17 +414,7 @@ function AssetGroupDetailContent({ params }: PageProps) {
             title={t('assetGroups.detail.col.status', 'Status')}
           />
         ),
-        cell: ({ row }) => (
-          <Badge
-            variant="outline"
-            className={cn(
-              findingStatusClass[row.original.status] ??
-                'border-warning/30 bg-warning/15 text-warning'
-            )}
-          >
-            {t(`findings.status.${row.original.status}`, row.original.status.replace(/_/g, ' '))}
-          </Badge>
-        ),
+        cell: ({ row }) => <FindingStatusBadge status={row.original.status as FindingStatus} />,
       },
       {
         accessorKey: 'assetName',
