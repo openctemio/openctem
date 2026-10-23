@@ -226,7 +226,15 @@ Names are normalized by `pkg/domain/asset/normalize.go` at construction
 (`entity.go:117`). Ingest upserts with
 `INSERT … ON CONFLICT (tenant_id, name) DO UPDATE … RETURNING` (`asset_repository.go:1439-1482`),
 so concurrent ingests of one normalized name are safe (**P1:** 12 concurrent
-ingests → 1 asset). Strong identifiers (RFC-028) live in `asset_identifiers`
+ingests → 1 asset). Every row written after the upsert in the same transaction
+uses the id the upsert returned for the name, never the in-memory id of the
+asset the report built: when two uploads create the same new repository at once,
+the loser's in-memory id names no row. The repository extension
+(`asset_repositories`, `ensureRepositoryExtensions`) is keyed that way, so the
+losing upload attaches its findings to the stored repository instead of failing
+the foreign key and dropping the upload (research/241 L7: 20 concurrent uploads
+to one new repository, 2–7 failed before, 0 after;
+`tests/integration/ingest_repository_race_test.go`). Strong identifiers (RFC-028) live in `asset_identifiers`
 with `UNIQUE (tenant_id, kind, value) WHERE strong` (`000243:30-31`).
 
 | Asset type | Normalization | Status | Proven failure (P3 / P17) |
