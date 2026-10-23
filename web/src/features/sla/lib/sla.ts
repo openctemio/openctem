@@ -1,10 +1,7 @@
 import type { LucideIcon } from 'lucide-react'
 import { AlertTriangle, Clock, CheckCircle2 } from 'lucide-react'
-import {
-  SLA_STATUS_COLORS,
-  SLA_STATUS_LABELS,
-  type SLAStatus,
-} from '@/features/repositories/types/repository.types'
+import { SLA_STATE_CLASS } from '@/lib/sla-colors'
+import { SLA_STATUS_LABELS, type SLAStatus } from '@/features/repositories/types/repository.types'
 
 /**
  * SLA helpers shared by the breach board and the findings SLA column.
@@ -17,7 +14,7 @@ import {
 export const BREACH_STATUSES: SLAStatus[] = ['overdue', 'exceeded']
 
 /**
- * Icon per SLA status — single-sourced alongside SLA_STATUS_COLORS /
+ * Icon per SLA status — single-sourced alongside SLA_STATE_CLASS /
  * SLA_STATUS_LABELS so every SLA badge (findings list, breach board, finding
  * header) reads the SAME color, label and icon for a given backend status and
  * cannot drift. Breach states are never green.
@@ -32,7 +29,7 @@ export const SLA_STATUS_ICONS: Record<SLAStatus, LucideIcon> = {
 
 export interface SlaBadgeMeta {
   label: string
-  colors: { bg: string; text: string }
+  className: string
   Icon: LucideIcon
 }
 
@@ -44,11 +41,11 @@ export interface SlaBadgeMeta {
  * a reassuring green "Breached").
  */
 export function slaBadgeMeta(status?: string | null): SlaBadgeMeta | null {
-  if (!status || status === 'not_applicable' || !(status in SLA_STATUS_COLORS)) return null
+  if (!status || status === 'not_applicable' || !(status in SLA_STATE_CLASS)) return null
   const key = status as SLAStatus
   return {
     label: SLA_STATUS_LABELS[key],
-    colors: SLA_STATUS_COLORS[key],
+    className: SLA_STATE_CLASS[key],
     Icon: SLA_STATUS_ICONS[key],
   }
 }
