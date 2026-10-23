@@ -150,7 +150,8 @@ func TestFindingApprovals_SoleOwnerSelfApproval_DB(t *testing.T) {
 	a2 := h.requestStatus(owner, fp2, "false_positive")
 	h.selfApprove(owner, a2, "111111", http.StatusForbidden)
 
-	// Risk acceptance is always four-eyes: a sole member cannot approve their
+	// Under the default risk acceptance level (all) an accepted risk is
+	// four-eyes: a sole member cannot approve their
 	// own accepted risk, even with a valid code. It stays pending, the refusal
 	// is audited, and the code is not spent (it still works for a false positive).
 	kev := h.newFinding(org, "high")

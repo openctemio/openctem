@@ -129,9 +129,9 @@ func ClassOf(k Kind, f Facts, epssThreshold float64) (Class, []string) {
 	return class, reasons
 }
 
-// MaterialForFalsePositive reports whether a false positive on a finding
-// with these facts always needs a second person under the
-// high_and_above level: its class is above standard, or its asset is a
+// MaterialForFalsePositive reports whether a false positive or an accepted
+// risk on a finding with these facts always needs a second person under the
+// high_and_above level (one classifier for both levels): its class is above standard, or its asset is a
 // crown jewel or internet exposed.
 func MaterialForFalsePositive(f Facts, epssThreshold float64) bool {
 	c, _ := ClassOf(KindFalsePositive, f, epssThreshold)

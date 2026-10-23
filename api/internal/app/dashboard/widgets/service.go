@@ -453,6 +453,9 @@ func (s *Service) metric(ctx context.Context, v *WidgetValue, m dashboard.Metric
 		v.Drill = drillHref(f)
 		return s.count(ctx, v, f, gb, win, compare, spec.Data.Limit, agg)
 	case dashboard.MetricKindRatio:
+		if m.ID == "coverage.discovery" {
+			return s.discoveryCoverage(ctx, v, spec.Target, compare, agg)
+		}
 		num, den, err := s.facts.SLAWithin(ctx, agg, f)
 		if err != nil {
 			return err
