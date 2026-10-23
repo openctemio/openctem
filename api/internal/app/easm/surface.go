@@ -46,9 +46,12 @@ func internetFacing(t asset.AssetType, subType string) bool {
 // internet-facing type, or any other type (a host, whatever its source)
 // whose name is a bare public DNS name or public IP address. The stored type
 // is chosen by whoever creates the asset, so it cannot decide whether a name
-// is held for scope coverage. Repositories are judged by repository entries.
+// is held for scope coverage. Repositories are judged by repository entries,
+// certificates by their endpoints.
 func governed(a *asset.Asset) bool {
-	if a.Type() == asset.AssetTypeRepository {
+	// A certificate is evidence, not a probe target: it is judged by the
+	// endpoints that served it (cert_standing.go).
+	if a.Type() == asset.AssetTypeRepository || a.Type() == asset.AssetTypeCertificate {
 		return false
 	}
 	return internetFacing(a.Type(), a.SubType()) || publicBareName(a.Name())
