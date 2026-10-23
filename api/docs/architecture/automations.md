@@ -101,8 +101,9 @@ length): never a body, headers or a secret.
 - `GET /workflows/{id}/trace?mode=simulate&days=30` sums the trace and the
   deliveries per channel over the window.
 - **Scope.** Runs record the finding or asset their trigger names
-  (`subject_id`). A run about a subject outside the caller's data scope is
-  not listed and answers 404, and the trace counts only runs the caller may
+  (`subject_id`). A run about a subject outside the caller's data scope, or
+  about a pentest finding of a campaign the caller is not a member of
+  (administrators excepted), is not listed and answers 404, and the trace counts only runs the caller may
   see (runs without a subject, such as a finished scan, are visible to every
   reader).
 - **Retention.** Simulate runs are kept 30 days, live runs and their
@@ -147,7 +148,8 @@ class is the highest of its steps.
 - A draft with blocking validate problems is refused (400 `WORKFLOW_INVALID`,
   the problems in `details.problems`).
 - The approval binds the version's digest: a wrong digest, or a version a
-  newer publish request replaced (`retired`), is 409 `VERSION_CHANGED`; the
+  newer publish request replaced or a draft edit withdrew (`retired`: any
+  edit that changes the digest, not a node move), is 409 `VERSION_CHANGED`; the
   publisher approving is 403 `SELF_APPROVAL`. On approval the version goes
   live and its publisher becomes the owner live runs act as.
 - Rollback takes the same gate as the older version's class.
