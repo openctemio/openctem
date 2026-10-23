@@ -207,6 +207,7 @@ widget has `widget_type` `metric` or `note` and a `config` of this form
   | `intel.kev_open` | scalar, preset KEV | as above | F1 |
   | `findings.age_bands` | matrix severity × age band | as above | F1 |
   | `sla.within` | ratio | none | F1 |
+  | `coverage.discovery` | ratio: ledger-tracked assets in scope with a successful discovery run in the coverage window (blocked or failed runs never count); nothing tracked is not measured; opens the uncovered assets | none | coverage ledger + `assets` |
   | `exposure.open_by_priority` | time series by priority (P0-P2) | priority or severity | F1 + F2 |
   | `flow.new_vs_fixed` | time series of flows | none | F2 |
   | `fix.time_to_fix` | duration (1: category) | priority or severity | F2 |
@@ -751,18 +752,26 @@ widget kit's frame, with its own error boundary.
   own, none from the organization) gets a personal copy of the CTEM
   template, created once and computed for their own access, with a hint to
   customize it or choose another template.
-- **CTEM offer**: a personal dashboard that is a copy of the Overview template
-  (its `w_ov*` widget ids) without the CTEM loop shows a one-time hint: "Add
-  the CTEM loop" (inserts the loop after the leading row of figures and saves
-  the layout), "Switch to the CTEM template" (adds a CTEM dashboard and opens
-  it; the Overview copy is kept), or dismiss. Nothing changes until the viewer
-  chooses; the dismissal is kept in the browser. No request is made for the
-  hint.
+- **New layout offer**: a personal copy of the Overview or CTEM template
+  (three or more of its `w_ov*` / `w_ct*` widget ids) that lacks some of the
+  template's widgets (by metric) shows a hint naming them: "Add them to this
+  dashboard" (each missing widget is inserted where the template has it: a
+  single figure after its predecessor, a larger widget before its successor;
+  every existing widget keeps its place, size and settings, and the layout is
+  saved), "Switch to the new layout" (adds a fresh copy of the template under
+  a name the person does not already use, e.g. "CTEM (new layout)", and opens
+  it; the old dashboard is kept), or dismiss. Nothing changes until the viewer
+  chooses; the dismissal is kept in the browser per layout version
+  (`LAYOUT_HINT_VERSION` in `layout-hint.ts`). No request is made for the
+  hint, and organization dashboards never show it.
 - **Templates** are typed widget configs in
-  `web/src/features/dashboards/templates.json`: CTEM (the first-visit
-  default: active exposure figures, the CTEM loop, fix next, attack paths to
-  crown jewels, priority over time), Overview (with the CTEM loop after its
-  figures), Executive, Vulnerability program, Triage. `/dashboards` copies one into a personal
+  `web/src/features/dashboards/templates.json`. CTEM (the first-visit
+  default) and Overview share one set: the figure row (open P0-P1, KEV open,
+  open within SLA, time to fix median with p90), discovery coverage beside
+  priority over time, the CTEM loop, new vs fixed, the severity × age
+  heatmap, fix next and attack paths to crown jewels; CTEM puts the loop
+  right after the figures and attack paths before fix next, Overview puts
+  the loop after the charts. Then Executive, Vulnerability program, Triage. `/dashboards` copies one into a personal
   dashboard ("Use template"); the copy is a stored dashboard like any other.
   `api/pkg/domain/dashboard/templates_test.go` parses every template widget
   with the server's spec validation, so a template is never refused on save.
@@ -772,10 +781,18 @@ widget kit's frame, with its own error boundary.
   never requested) and "Mine", search above eight entries, New and Manage.
 - **Scope badge**: "Organization-wide" or "Your scope", from the response's
   `scope`; drill-downs open lists in the viewer's own access.
-- **Freshness line**: when the figures were computed, the next scheduled
-  refresh, stale and failed states, Refresh now (429 answered with a
-  message), and the schedule picker for the owner of a personal dashboard or
-  a manager of an organization dashboard (the server checks both).
+- **Toolbar**: on a phone (below 640px) one row with the switcher filling the
+  width, an icon-only Refresh now and an icon-only More menu (44px targets,
+  accessible names); Customize and the refresh schedule move into More. From
+  640px one row: switcher, Customize, schedule picker, Refresh now, More. The
+  dashboard description is hidden on a phone.
+- **Freshness line**: one muted line under the toolbar, "Your scope · Updated
+  2m ago · Next in 58m" (narrow relative times, full dates on hover); the next refresh
+  truncates first on narrow screens; a status line appears under it only when the
+  figures are stale, the last refresh failed, or the data is being built for
+  the first time. Refresh now answers a 429 with a message. The schedule
+  picker is offered to the owner of a personal dashboard or a manager of an
+  organization dashboard (the server checks both).
 - **Actions**: Customize (personal), Duplicate to mine (organization), Set as
   default (personal; organization for managers), Delete (personal).
 - **Customize** (owner of a personal dashboard; `dashboards:org:manage` for
@@ -899,7 +916,8 @@ Rules every visualization follows:
   frame's "How this is counted" popover.
 - **Phone.** Plots are 180px tall below 640px (220px above). A four-column
   dashboard is two columns on a phone: single-figure tiles (one column, one
-  row) sit two abreast and every other widget takes the full row. Widget
+  row) sit two abreast and every other widget takes the full row; rows fit
+  their content (the stored height applies from 640px). Widget
   titles wrap to two lines, and the per-widget "Updated" footer is hidden
   unless the widget is stale (the dashboard's meta line carries the time).
 - **Drill-down.** A mark, row or stage opens its list through a drill builder.
