@@ -61,5 +61,12 @@
   "riskScore.impact.apply": "Apply changes",
   "riskScore.impact.applied": "Settings applied. Scores are being recomputed in the background.",
   "riskScore.impact.recalculateQueued": "{count} assets queued for a new risk score.",
-  "riskScore.impact.reviewAndSave": "Review and save"
+  "riskScore.impact.reviewAndSave": "Review and save",
+  "riskScore.model.label": "Score composition",
+  "riskScore.model.likelihoodImpact": "Likelihood × impact (default)",
+  "riskScore.model.likelihoodImpactHint": "Risk = findings score × exposure % × criticality % × (1 − control reduction).",
+  "riskScore.model.noticeTitle": "Likelihood × impact model",
+  "riskScore.model.notice": "Risk is the findings score times the exposure and criticality factors below, lowered by compensating controls. Component weights, exposure multipliers, finding impact and CTEM points apply only to the weighted compositions; choose one under Score composition to edit them.",
+  "riskScore.model.howLikelihood": "Risk = findings score × exposure factor × criticality factor × (1 − control reduction). The findings score grows with each open finding by severity, with diminishing returns; exploit signals count one severity higher.",
+  "riskScore.model.howLikelihoodZero": "An asset with no open finding has a risk of 0. Exposure and criticality scale risk; they are not risk on their own."
 }
