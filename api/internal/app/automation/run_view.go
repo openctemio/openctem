@@ -37,6 +37,21 @@ func (s *WorkflowService) callerScope(ctx context.Context, tenantID, userID shar
 	return s.scope.ForUser(ctx, tenantID, userID)
 }
 
+// findingViewerRecorder records on ctx who reads finding rows, so storage
+// applies the pentest member-visibility rule (datascope.Enforcer).
+type findingViewerRecorder interface {
+	WithFindingViewer(ctx context.Context) context.Context
+}
+
+// withFindingViewer is ctx with the reader recorded when the scope checker
+// can do so. Without it storage applies the rule to everyone (fail closed).
+func (s *WorkflowService) withFindingViewer(ctx context.Context) context.Context {
+	if r, ok := s.scope.(findingViewerRecorder); ok {
+		return r.WithFindingViewer(ctx)
+	}
+	return ctx
+}
+
 // RunDetail is one run with its steps, deliveries and retention.
 type RunDetail struct {
 	Run           *automationdom.Run
@@ -46,29 +61,36 @@ type RunDetail struct {
 
 // GetRunForCaller returns a run of the tenant with its steps and deliveries,
 // when its subject is in the caller's scope (404 otherwise, like a run that
-// does not exist).
+// does not exist). A delivery about another finding the caller may not read
+// (a step that names a fixed finding) keeps its channel and status, not its
+// payload.
 func (s *WorkflowService) GetRunForCaller(ctx context.Context, tenantID, userID, runID shared.ID) (*RunDetail, error) {
+	ctx = s.withFindingViewer(ctx)
 	run, err := s.GetRun(ctx, tenantID, runID)
 	if err != nil {
 		return nil, err
 	}
+	scope, err := s.callerScope(ctx, tenantID, userID)
+	if err != nil {
+		return nil, err
+	}
+	reader, _ := s.runRepo.(automationdom.RunScopeReader)
+	visible := func(id shared.ID) (bool, error) {
+		if scope == nil {
+			return true, nil
+		}
+		if reader == nil {
+			return false, nil
+		}
+		return reader.SubjectVisible(ctx, tenantID, id, scope)
+	}
 	if run.SubjectID != nil {
-		scope, err := s.callerScope(ctx, tenantID, userID)
+		ok, err := visible(*run.SubjectID)
 		if err != nil {
 			return nil, err
 		}
-		if scope != nil {
-			reader, ok := s.runRepo.(automationdom.RunScopeReader)
-			if !ok {
-				return nil, shared.ErrNotFound
-			}
-			visible, err := reader.SubjectVisible(ctx, tenantID, *run.SubjectID, scope)
-			if err != nil {
-				return nil, err
-			}
-			if !visible {
-				return nil, shared.ErrNotFound
-			}
+		if !ok {
+			return nil, shared.ErrNotFound
 		}
 	}
 	d := &RunDetail{Run: run, RetainedUntil: automationdom.RetainedUntil(run.Mode, run.CreatedAt)}
@@ -77,12 +99,27 @@ func (s *WorkflowService) GetRunForCaller(ctx context.Context, tenantID, userID,
 			return nil, fmt.Errorf("list run deliveries: %w", err)
 		}
 	}
+	for _, dl := range d.Deliveries {
+		raw, _ := dl.Payload["finding_id"].(string)
+		fid, err := shared.IDFromString(raw)
+		if err != nil || (run.SubjectID != nil && fid == *run.SubjectID) {
+			continue
+		}
+		ok, err := visible(fid)
+		if err != nil {
+			return nil, err
+		}
+		if !ok {
+			dl.Payload = map[string]any{"redacted": "not_in_scope"}
+		}
+	}
 	return d, nil
 }
 
 // ListRunsForCaller is ListRuns limited to runs whose subject is in the
 // caller's scope.
 func (s *WorkflowService) ListRunsForCaller(ctx context.Context, userID shared.ID, input ListWorkflowRunsInput) (pagination.Result[*automationdom.Run], error) {
+	ctx = s.withFindingViewer(ctx)
 	scope, err := s.callerScope(ctx, input.TenantID, userID)
 	if err != nil {
 		return pagination.Result[*automationdom.Run]{}, err
@@ -104,6 +141,7 @@ type TraceInput struct {
 // Trace sums the steps of the automation's runs of a mode over the last days,
 // counting only runs whose subject the caller may see.
 func (s *WorkflowService) Trace(ctx context.Context, in TraceInput) (*automationdom.TraceAggregate, error) {
+	ctx = s.withFindingViewer(ctx)
 	if _, err := s.workflowRepo.GetByTenantAndID(ctx, in.TenantID, in.WorkflowID); err != nil {
 		return nil, err
 	}
