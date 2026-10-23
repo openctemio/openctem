@@ -1,0 +1,28 @@
+# Tool versions pinned inline (outside Dependabot's reach), checked weekly by
+# .github/workflows/tool-pins.yml via .github/scripts/tool-pins.py, which
+# explains the columns. A bump is a human or agent pull request, so CI runs on it.
+#
+# name	repository	source	highest major	file	regex (one group)	flags
+golangci-lint	golangci/golangci-lint	releases	1	api/Makefile	^GOLANGCI_LINT_VERSION \?= (v[0-9.]+)	
+govulncheck	golang/vuln	tags	-	.github/workflows/api-security.yml	govulncheck@(v[0-9.]+)	
+go-licenses	google/go-licenses	releases	-	.github/workflows/api-security.yml	go-licenses@(v[0-9.]+)	
+staticcheck	dominikh/go-tools	tags	-	.github/workflows/api-ci.yml	STATICCHECK_VERSION=(v[0-9.]+)	
+migrate (CI)	golang-migrate/migrate	releases	-	.github/workflows/api-ci.yml	migrate/v4/cmd/migrate@(v[0-9.]+)	
+migrate (image)	golang-migrate/migrate	releases	-	api/Dockerfile	migrate/v4/cmd/migrate@(v[0-9.]+)	
+swag (Makefile)	swaggo/swag	releases	-	api/Makefile	^SWAG_VERSION \?= (v[0-9.]+)	
+swag (image)	swaggo/swag	releases	-	api/Dockerfile	^ARG SWAG_VERSION=(v[0-9.]+)	
+air	air-verse/air	releases	-	api/Dockerfile	air@(v[0-9.]+)	
+delve	go-delve/delve	releases	-	api/Dockerfile	delve/cmd/dlv@(v[0-9.]+)	
+betterleaks (workflow)	betterleaks/betterleaks	releases	-	.github/workflows/repo-security.yml	BETTERLEAKS_VERSION: ([0-9.]+)	checksum
+betterleaks (Makefile)	betterleaks/betterleaks	releases	-	api/Makefile	betterleaks@(v[0-9.]+)	
+actionlint	rhysd/actionlint	releases	-	.github/workflows/repo-security.yml	ACTIONLINT_VERSION: ([0-9.]+)	checksum
+zizmor	zizmorcore/zizmor	releases	-	.github/workflows/repo-security.yml	ZIZMOR_VERSION: ([0-9.]+)	optional,checksum
+trivy (workflows)	aquasecurity/trivy	releases	-	.github/workflows/allinone-ci.yml	version: (v[0-9.]+)	
+trivy (air-gap tools image)	aquasecurity/trivy	releases	-	deploy/airgap/gitlab/Dockerfile.ci-tools	^ARG TRIVY_VERSION=([0-9.]+)	checksum
+cosign (air-gap tools image)	sigstore/cosign	releases	-	deploy/airgap/gitlab/Dockerfile.ci-tools	^ARG COSIGN_VERSION=(v[0-9.]+)	checksum
+crane (workflow)	google/go-containerregistry	releases	-	.github/workflows/ci-image-mirror.yml	CRANE_VERSION: (v[0-9.]+)	checksum
+crane (air-gap tools image)	google/go-containerregistry	releases	-	deploy/airgap/gitlab/Dockerfile.ci-tools	^ARG CRANE_VERSION=(v[0-9.]+)	checksum
+oras (air-gap tools image)	oras-project/oras	releases	-	deploy/airgap/gitlab/Dockerfile.ci-tools	^ARG ORAS_VERSION=([0-9.]+)	checksum
+caddy (all-in-one image)	caddyserver/caddy	releases	-	deploy/allinone/Dockerfile	^ARG CADDY_VERSION=(v[0-9.]+)	
+caddy (gateway image)	caddyserver/caddy	releases	-	api/deploy/gateway/Dockerfile	^ARG CADDY_VERSION=(v[0-9.]+)	
+caddy-l4	mholt/caddy-l4	releases	-	api/deploy/gateway/Dockerfile	^ARG CADDY_L4_VERSION=(v[0-9.]+)	

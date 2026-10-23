@@ -21,6 +21,7 @@ truth: this page describes them as of the merge-queue routing (#730, 2026-10-02)
 | Docker Publish (`docker-publish.yml`) | Tag `v*`, manual | Builds, smoke-tests, publishes, signs and SBOMs every image (see [Images](#images)); on a production release also the offline image bundle | — |
 | Release (`release.yml`) | Tag `v*`; dispatch on a tag | GitHub Release with the release archives (via Release archives), their SBOMs, the signed `checksums-sha256.txt`, build provenance, and the image pull lines | — |
 | Release archives (`release-dist.yml`) | Called by Release; PRs touching its inputs (`paths:`) | Builds the archives with `.github/scripts/release/build-dist.sh`; on a PR builds linux/amd64 only and runs `smoke-dist.sh` (versions, `-check-config` of the example settings, `systemd-analyze verify`/`security`, gateway Caddyfile, web/console health, the image kit's Dockerfiles), publishing nothing | — |
+| Tool Pin Freshness (`tool-pins.yml`) | Mondays 02:00 UTC (from `main`), manual | Compares the inline tool pins in `.github/tool-pins.tsv` with the newest stable releases and opens, updates or closes one issue "Tool pins to bump" (see [Tool pin freshness](#tool-pin-freshness)); `issues: write` only, no pull request | — |
 | Release Train (`release-train.yml`) | Manual (a maintainer presses Run) | Proposes the version from conventional commits, picks the newest develop commit with every required check green, builds `release/vX.Y.Z` (with one commit setting `versions.yaml` `platform.release` to `vX.Y.Z`), opens and queues the release PR (see [Releases](#releases)) | — |
 | Release Publish (`release-publish.yml`) | A `release/v*` PR merged into `main`; manual | Tags `vX.Y.Z` (only if `main`'s tree is the release branch's and its `versions.yaml` says `vX.Y.Z`), starts Docker Publish + Release, opens the develop and helm-charts follow-up PRs, closes the train issue | — |
 | API CI `Detect API changes` step "Changelog fragments" | PR, merge queue, push (also docs-only changes) | `api/scripts/changelog.py check`: fragment format, no entry under Unreleased in `api/CHANGELOG.md`, no committed merge-conflict marker | — |
@@ -295,6 +296,28 @@ the queue (no required check; the PR and the push scan the change).
 - **Node:** every `actions/setup-node` step uses `node-version-file: web/.nvmrc`
   (`26`), the same major as `web/Dockerfile` (`node:26-alpine`). Node 25+ ships
   its own `localStorage`; `web/src/test/setup.ts` points Vitest back at jsdom's.
+
+### Tool pin freshness
+
+Linters, scanners, signing tools and the like are pinned inline (a version in a
+workflow `env`, a Makefile variable, a Dockerfile `ARG`), where Dependabot does not
+look. `.github/tool-pins.tsv` lists each pin: the tool, its GitHub repository, whether
+upstream versions come from releases or tags, the highest major version we follow
+(`golangci-lint` stays on v1 on purpose, its v2 does not read our config), the file
+and a regular expression that captures the pinned version, and flags (`checksum`: a
+SHA-256 sits next to the pin and changes with it; `optional`: the pin may not exist
+yet). Add a row whenever you pin a new tool inline.
+
+The weekly **Tool Pin Freshness** workflow runs `.github/scripts/tool-pins.py`. It
+opens or updates one issue labelled `tool-pins` with a table of the tools that have a
+newer stable release (release candidates are ignored) and closes the issue when
+nothing is behind. It uses the `GITHUB_TOKEN` of the job with `contents: read` and
+`issues: write`, so it never opens a pull request: a person or an agent bumps the
+pins in one pull request and CI runs on it, which is why it needs no GitHub App. A
+pin the script cannot find fails the run instead of passing silently (a renamed
+variable would otherwise turn the check into a check of nothing). The Workflow Lint
+job runs `.github/scripts/tool-pins.test.sh`. Run it by hand with
+`GH_TOKEN=$(gh auth token) python3 .github/scripts/tool-pins.py`.
 
 ### CI image mirror
 
