@@ -112,3 +112,35 @@ export function severityChartData(
     color: SEVERITY_CHART_COLORS[s],
   }))
 }
+
+/** Fill of a `Progress` indicator in the severity hue (a risk-score bar). */
+export const SEVERITY_PROGRESS_COLORS: Record<SeverityLevel, string> = {
+  critical: '[&>div]:bg-sev-critical',
+  high: '[&>div]:bg-sev-high',
+  medium: '[&>div]:bg-sev-medium',
+  low: '[&>div]:bg-sev-low',
+  info: '[&>div]:bg-sev-info',
+}
+
+/** SVG stroke in the severity hue (progress rings, sparklines). */
+export const SEVERITY_STROKE_COLORS: Record<SeverityLevel, string> = {
+  critical: 'stroke-sev-critical',
+  high: 'stroke-sev-high',
+  medium: 'stroke-sev-medium',
+  low: 'stroke-sev-low',
+  info: 'stroke-sev-info',
+}
+
+/**
+ * The soft badge split into its parts, for configs that keep `color` (border),
+ * `bgColor` and `textColor` apart. Same tokens as SEVERITY_BADGE_SOFT.
+ */
+export function severityStyleParts(level: SeverityLevel): {
+  color: string
+  bgColor: string
+  textColor: string
+} {
+  const tokens = SEVERITY_BADGE_SOFT[level].split(' ')
+  const pick = (prefix: string) => tokens.filter((t) => t.startsWith(prefix)).join(' ')
+  return { color: pick('border-'), bgColor: pick('bg-'), textColor: pick('text-') }
+}

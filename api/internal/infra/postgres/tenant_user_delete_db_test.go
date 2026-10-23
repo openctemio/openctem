@@ -403,6 +403,10 @@ var seedOverrides = map[string]func(s *schemaSeeder) map[string]any{
 			"previous_exposure": "public", "previous_criticality": "high", "previous_crown_jewel": true,
 			"lowered_fields": "{exposure}"}
 	},
+	// An import mapping's name is a slug and its source a closed set (CHECKs; RFC-126).
+	"import_mappings": func(*schemaSeeder) map[string]any {
+		return map[string]any{"name": "probe-mapping", "source": "csv", "latest_version": 1}
+	},
 	"scan_window_overrides": func(*schemaSeeder) map[string]any {
 		return map[string]any{"reason": "incident rescan now", "starts_at": "2026-10-05T10:00:00Z", "ends_at": "2026-10-05T11:00:00Z"}
 	},

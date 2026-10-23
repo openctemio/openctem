@@ -146,6 +146,8 @@ groups
 idempotency_keys
 ingest_jobs
 ingest_receipt_coverage
+import_mapping_versions
+import_mappings
 ingest_receipts
 ingest_reports
 instance_scan_zone_tenants

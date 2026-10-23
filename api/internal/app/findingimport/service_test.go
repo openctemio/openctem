@@ -215,7 +215,13 @@ func TestImportFile_RealFixtures(t *testing.T) {
 				kb = bytes.NewReader(b)
 			}
 			svc, ing, _ := newSvc(ingest.SourceResolveDryRun)
-			fr := svc.ImportFile(context.Background(), Request{TenantID: shared.NewID(), SessionID: "s"}, 0, base, f, kb)
+			req := Request{TenantID: shared.NewID(), SessionID: "s"}
+			// A CSV is read only when the format is named (it has no
+			// signature to detect).
+			if strings.HasSuffix(base, ".csv") {
+				req.Format = importer.Format(filepath.Base(filepath.Dir(p)))
+			}
+			fr := svc.ImportFile(context.Background(), req, 0, base, f, kb)
 			if fr.Error != nil {
 				t.Fatalf("%+v", fr.Error)
 			}
