@@ -32,7 +32,7 @@ func TestCIToken_ReExchange(t *testing.T) {
 	}
 	upload := func(run, token string) int {
 		t.Helper()
-		resp, _ := r.post("/api/v1/ci/runs/"+run+"/results", token,
+		resp, _ := r.upload(run, token,
 			ciReport(repoName, ciFinding("Weak hash", "go.weak-hash", "medium", ctis.FindingTypeVulnerability, "hash.go", 10)))
 		return resp.StatusCode
 	}
@@ -54,7 +54,7 @@ func TestCIToken_ReExchange(t *testing.T) {
 		tokens = append(tokens, again["token"].(string))
 	}
 	for i, tk := range tokens {
-		if c := upload(run, tk); c != http.StatusCreated {
+		if c := upload(run, tk); c != http.StatusAccepted {
 			t.Fatalf("upload with token %d: %d", i+1, c)
 		}
 	}

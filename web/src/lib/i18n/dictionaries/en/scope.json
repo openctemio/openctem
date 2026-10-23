@@ -46,6 +46,8 @@
   "scope.error.PUBLIC_SUFFIX": "A public suffix (such as com.vn or azurewebsites.net) cannot be a scope entry. Enter a domain your organization registered.",
   "scope.error.DENY_LIST": "The platform does not allow this target as a scope entry.",
   "scope.error.CIDR_TOO_LARGE": "This address range is larger than the platform allows. Split it into smaller ranges.",
+  "scope.error.SCOPE_WILDCARD_NOT_ALLOWED": "This kind of scope entry takes no wildcard. Name one exact value, or add a domain such as *.example.com.",
+  "scope.error.SCOPE_TARGET_TYPE_RETIRED": "This type cannot be a scope entry. Add the domain, address or network that serves it.",
   "scope.error.ONE_OFF_TOO_LONG": "A one-off entry cannot last longer than your organization allows.",
   "scope.error.ONE_OFF_DISABLED": "Your organization does not allow one-off scope entries.",
   "scope.error.REASON_REQUIRED": "Say why this target may be probed. The reason is kept in the audit log.",

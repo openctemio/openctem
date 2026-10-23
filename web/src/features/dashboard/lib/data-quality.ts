@@ -14,6 +14,7 @@
  */
 
 import type { CtemState } from './ctem-colors'
+import { formatPct } from './format'
 
 /** A metric whose data source hasn't produced a value yet. */
 export type MetricStatus = Exclude<CtemState, 'none'> | 'pending'
@@ -22,10 +23,13 @@ function isMissing(v: number | null | undefined): v is null | undefined {
   return v === null || v === undefined || Number.isNaN(v)
 }
 
-/** Asset owner coverage. Higher is better; CTEM target ≥ 95% (100% is the goal). */
+/** The one owner-coverage target, shown by Program health and Data quality alike. */
+export const OWNER_COVERAGE_TARGET_PCT = 95
+
+/** Asset owner coverage. Higher is better; on track from OWNER_COVERAGE_TARGET_PCT. */
 export function ownershipState(pct: number | null | undefined): MetricStatus {
   if (isMissing(pct)) return 'pending'
-  if (pct >= 95) return 'good'
+  if (pct >= OWNER_COVERAGE_TARGET_PCT) return 'good'
   if (pct >= 75) return 'warn'
   return 'crit'
 }
@@ -57,9 +61,9 @@ export function staleState(pct: number | null | undefined): MetricStatus {
 }
 
 /** Format a percentage for display, or null when the metric is not measured. */
-export function fmtPct(v: number | null | undefined): string | null {
+export function fmtPct(v: number | null | undefined, locale?: string): string | null {
   if (isMissing(v)) return null
-  return `${v.toFixed(1)}%`
+  return formatPct(v, { locale })
 }
 
 /** Format an hours value as the most readable freshness unit (h / d), or null. */

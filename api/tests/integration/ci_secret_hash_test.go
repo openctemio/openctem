@@ -50,7 +50,7 @@ func TestCISecretHash_KeepsIdentityWithoutTheRawValue(t *testing.T) {
 	}
 	upload := func(id, tok string, fs ...ctis.Finding) {
 		t.Helper()
-		if resp, out := r.post("/api/v1/ci/runs/"+id+"/results", tok, ciReport(repoName, fs...)); resp.StatusCode != http.StatusCreated {
+		if resp, out := r.upload(id, tok, ciReport(repoName, fs...)); resp.StatusCode != http.StatusAccepted {
 			t.Fatalf("upload: %d %v", resp.StatusCode, out)
 		}
 	}

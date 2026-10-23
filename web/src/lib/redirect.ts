@@ -17,22 +17,22 @@ import { env } from './env'
  * 4. Returns safe default if invalid
  *
  * @param url - URL to validate
- * @param defaultUrl - Default URL to return if validation fails (default: '/dashboard')
+ * @param defaultUrl - Default URL to return if validation fails (default: '/')
  * @returns Safe internal URL
  *
  * @example
  * // Valid internal redirects
- * validateRedirectUrl('/dashboard')           // ✅ '/dashboard'
+ * validateRedirectUrl('/dashboard')        // ✅ '/dashboard'
  * validateRedirectUrl('/profile?tab=settings') // ✅ '/profile?tab=settings'
  *
  * // Invalid external redirects
- * validateRedirectUrl('https://evil.com')     // ❌ '/dashboard'
- * validateRedirectUrl('//evil.com')           // ❌ '/dashboard'
- * validateRedirectUrl('javascript:alert(1)')  // ❌ '/dashboard'
+ * validateRedirectUrl('https://evil.com')     // ❌ '/'
+ * validateRedirectUrl('//evil.com')           // ❌ '/'
+ * validateRedirectUrl('javascript:alert(1)')  // ❌ '/'
  */
 export function validateRedirectUrl(
   url: string | null | undefined,
-  defaultUrl: string = '/dashboard'
+  defaultUrl: string = '/'
 ): string {
   // No URL provided
   if (!url) {
@@ -200,7 +200,7 @@ export function sanitizeUrlForDisplay(url: string): string {
  */
 export function getCurrentReturnUrl(): string {
   if (typeof window === 'undefined') {
-    return '/dashboard'
+    return '/'
   }
 
   const { pathname, search, hash } = window.location

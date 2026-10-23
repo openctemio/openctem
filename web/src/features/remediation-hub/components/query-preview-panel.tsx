@@ -179,8 +179,11 @@ export function QueryPreviewPanel({
                       <td className="py-1 pr-2">
                         <SeverityBadge severity={s.severity as Severity} />
                       </td>
-                      <td className="max-w-64 truncate py-1 pr-2" title={s.title}>
-                        {s.title}
+                      <td
+                        className="max-w-64 truncate py-1 pr-2"
+                        title={s.title || t('remediationQuery.preview.untitled')}
+                      >
+                        {s.title || t('remediationQuery.preview.untitled')}
                       </td>
                       <td className="max-w-40 truncate py-1 pr-2" title={s.asset_name}>
                         {s.asset_name}
