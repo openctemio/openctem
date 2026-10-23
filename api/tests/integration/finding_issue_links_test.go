@@ -3,7 +3,7 @@ package integration
 // Same-issue links across tools at ingest: two SAST engines that flag one
 // line with the same weakness, and one secret value found in several files
 // and repositories, are linked without being merged (each finding keeps its
-// status); the false-link cases from the use-case catalogue stay apart; the
+// status); the false-link cases from the use-case catalog stay apart; the
 // dashboard facts count a group once; the backfill finds the same links.
 
 import (

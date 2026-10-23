@@ -51,13 +51,26 @@ type IssueLinkDerivation struct {
 const linkableFindingSQL = `f.status <> 'duplicate' AND NOT f.branch_only
 	AND f.identity_key IS NOT NULL AND f.identity_key->>'kind' IN ('sast', 'secret')`
 
+// The linkable findings of a tenant: all of them, or those under the
+// fingerprints or ids in $2.
+const (
+	linkableSelect = `
+		SELECT f.id, COALESCE(f.asset_id::text, ''), f.identity_key, COALESCE(f.file_path, ''),
+		       COALESCE(f.start_line, 0), COALESCE(f.end_line, 0), COALESCE(f.cwe_ids, '{}'), COALESCE(f.rule_id, ''), f.created_at
+		FROM findings f
+		WHERE f.tenant_id = $1 AND ` + linkableFindingSQL
+	linkableAll           = linkableSelect
+	linkableByFingerprint = linkableSelect + ` AND f.fingerprint = ANY($2)`
+	linkableByID          = linkableSelect + ` AND f.id = ANY($2::uuid[])`
+)
+
 // DeriveByFingerprints recomputes the keys and links of the tenant's findings
 // stored under the fingerprints (an ingest batch).
 func (r *FindingIssueLinkRepository) DeriveByFingerprints(ctx context.Context, tenantID shared.ID, fingerprints []string) (IssueLinkDerivation, error) {
 	if len(fingerprints) == 0 {
 		return IssueLinkDerivation{}, nil
 	}
-	return r.derive(ctx, tenantID, `f.fingerprint = ANY($2)`, pq.Array(fingerprints))
+	return r.derive(ctx, tenantID, linkableByFingerprint, pq.Array(fingerprints))
 }
 
 // DeriveIssueLinks is DeriveByFingerprints for ingest.
@@ -72,7 +85,7 @@ func (r *FindingIssueLinkRepository) DeriveByIDs(ctx context.Context, tenantID s
 	if len(ids) == 0 {
 		return IssueLinkDerivation{}, nil
 	}
-	return r.derive(ctx, tenantID, `f.id = ANY($2::uuid[])`, pq.Array(ids))
+	return r.derive(ctx, tenantID, linkableByID, pq.Array(ids))
 }
 
 // ListLinkableIDs pages through the tenant's linkable findings by id (the
@@ -121,7 +134,7 @@ func (r *FindingIssueLinkRepository) TenantsWithLinkableFindings(ctx context.Con
 	return out, rows.Err()
 }
 
-func (r *FindingIssueLinkRepository) derive(ctx context.Context, tenantID shared.ID, where string, arg any) (IssueLinkDerivation, error) {
+func (r *FindingIssueLinkRepository) derive(ctx context.Context, tenantID shared.ID, query string, arg any) (IssueLinkDerivation, error) {
 	var res IssueLinkDerivation
 	tenant := tenantID.String()
 	tx, err := r.db.BeginTx(ctx, nil)
@@ -133,7 +146,7 @@ func (r *FindingIssueLinkRepository) derive(ctx context.Context, tenantID shared
 		return res, fmt.Errorf("lock issue links: %w", err)
 	}
 
-	batch, err := loadLinkable(ctx, tx, tenant, where, arg)
+	batch, err := loadLinkable(ctx, tx, query, tenant, arg)
 	if err != nil {
 		return res, err
 	}
@@ -217,13 +230,6 @@ func (r *FindingIssueLinkRepository) derive(ctx context.Context, tenantID shared
 	return res, nil
 }
 
-func linkArgs(tenant string, arg any) []any {
-	if arg == nil {
-		return []any{tenant}
-	}
-	return []any{tenant, arg}
-}
-
 func execRows(ctx context.Context, tx *sql.Tx, q string, args ...any) (int64, error) {
 	r, err := tx.ExecContext(ctx, q, args...)
 	if err != nil {
@@ -240,12 +246,8 @@ func nullIntArray(in []sql.NullInt64) any {
 // planner's inputs: the SAST path from the identity tuple (already
 // normalized), the secret's keyed hash only from a key built on the raw
 // value (field "secret"), never from a mask key.
-func loadLinkable(ctx context.Context, tx *sql.Tx, tenant, where string, arg any) ([]issuelink.Finding, error) {
-	rows, err := tx.QueryContext(ctx, `
-		SELECT f.id, COALESCE(f.asset_id::text, ''), f.identity_key, COALESCE(f.file_path, ''),
-		       COALESCE(f.start_line, 0), COALESCE(f.end_line, 0), COALESCE(f.cwe_ids, '{}'), COALESCE(f.rule_id, ''), f.created_at
-		FROM findings f
-		WHERE f.tenant_id = $1 AND `+where+` AND `+linkableFindingSQL, linkArgs(tenant, arg)...)
+func loadLinkable(ctx context.Context, tx *sql.Tx, query string, args ...any) ([]issuelink.Finding, error) {
+	rows, err := tx.QueryContext(ctx, query, args...)
 	if err != nil {
 		return nil, fmt.Errorf("load linkable findings: %w", err)
 	}
@@ -497,7 +499,7 @@ func (r *FindingIssueLinkRepository) Unlink(ctx context.Context, tenantID, findi
 	}
 	pc, _ := json.Marshal(map[string]string{"member_id": memberID})
 	mc, _ := json.Marshal(map[string]string{"primary_id": primaryID})
-	actorType := "user"
+	actorType := actorTypeUser
 	if actor == nil {
 		actorType = "system"
 	}
@@ -564,7 +566,7 @@ func (r *FindingIssueLinkRepository) planTenant(ctx context.Context, tenantID sh
 		return nil, fmt.Errorf("begin link plan: %w", err)
 	}
 	defer func() { _ = tx.Rollback() }()
-	all, err := loadLinkable(ctx, tx, tenant, `true`, nil)
+	all, err := loadLinkable(ctx, tx, linkableAll, tenant)
 	if err != nil {
 		return nil, err
 	}
