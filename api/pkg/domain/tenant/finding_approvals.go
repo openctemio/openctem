@@ -28,14 +28,23 @@ type FindingApprovalSettings struct {
 	BackupContactEmail string `json:"backup_contact_email,omitempty"`
 	// FPApproval is who decides a false positive: all (default; a second
 	// person always), high_and_above (a second person only for a material
-	// finding) or off (one person). An accepted risk always needs a second
-	// person, whatever this says.
+	// finding) or off (one person).
 	FPApproval string `json:"fp_approval,omitempty"`
 	// PendingFPApproval is a lower level chosen less than
 	// FPApprovalLoweringDelay ago; it takes effect at
 	// PendingFPApprovalAt. Raising the level is immediate and clears it.
 	PendingFPApproval   string     `json:"pending_fp_approval,omitempty"`
 	PendingFPApprovalAt *time.Time `json:"pending_fp_approval_at,omitempty"`
+	// AcceptApproval is who decides an accepted risk, with the same levels
+	// and the same material classifier as FPApproval: all (default; a
+	// second person always), high_and_above or off. Suppression rules,
+	// group decisions and requests made by automation never follow it.
+	AcceptApproval string `json:"accept_approval,omitempty"`
+	// PendingAcceptApproval is a lower level chosen less than
+	// FPApprovalLoweringDelay ago; it takes effect at
+	// PendingAcceptApprovalAt. Raising the level is immediate and clears it.
+	PendingAcceptApproval   string     `json:"pending_accept_approval,omitempty"`
+	PendingAcceptApprovalAt *time.Time `json:"pending_accept_approval_at,omitempty"`
 	// SecondLookPercent is the share (0-10) of single-person false
 	// positives flagged for a second person to look at.
 	SecondLookPercent int `json:"second_look_percent,omitempty"`
@@ -117,13 +126,7 @@ func (s *FindingApprovalSettings) SetSecondLookPercent(p int, now time.Time) err
 // EffectiveFPApproval is the level in force at now: a pending lower level
 // once its time has come, else the stored level (all when unset).
 func (s FindingApprovalSettings) EffectiveFPApproval(now time.Time) string {
-	if s.PendingFPApproval != "" && s.PendingFPApprovalAt != nil && !now.Before(*s.PendingFPApprovalAt) {
-		return s.PendingFPApproval
-	}
-	if s.FPApproval == "" {
-		return FPApprovalAll
-	}
-	return s.FPApproval
+	return effectiveLevel(s.FPApproval, s.PendingFPApproval, s.PendingFPApprovalAt, now)
 }
 
 // SetFPApproval chooses a new level at now. A level at or above the one in
@@ -136,24 +139,73 @@ func (s *FindingApprovalSettings) SetFPApproval(level string, now time.Time) err
 	if err != nil {
 		return err
 	}
-	current := s.EffectiveFPApproval(now)
-	if FPApprovalLevelRank(level) >= FPApprovalLevelRank(current) {
-		s.FPApproval, s.PendingFPApproval, s.PendingFPApprovalAt = level, "", nil
-		return nil
-	}
-	at := now.Add(FPApprovalLoweringDelay).UTC()
-	s.FPApproval, s.PendingFPApproval, s.PendingFPApprovalAt = current, level, &at
+	s.FPApproval, s.PendingFPApproval, s.PendingFPApprovalAt =
+		setLevel(s.EffectiveFPApproval(now), level, now)
 	return nil
 }
 
-// CancelPending drops every waiting lowering (false-positive level, second
-// look share, relaxing policy) so the values in force at now stay. A change
+// EffectiveAcceptApproval is the risk acceptance level in force at now: a
+// pending lower level once its time has come, else the stored level (all
+// when unset, so an organization that never chose keeps two people).
+func (s FindingApprovalSettings) EffectiveAcceptApproval(now time.Time) string {
+	return effectiveLevel(s.AcceptApproval, s.PendingAcceptApproval, s.PendingAcceptApprovalAt, now)
+}
+
+// SetAcceptApproval chooses a new risk acceptance level at now, with the
+// rule of SetFPApproval: raising is immediate and cancels a pending
+// lowering; lowering waits FPApprovalLoweringDelay.
+func (s *FindingApprovalSettings) SetAcceptApproval(level string, now time.Time) error {
+	level, err := parseApprovalLevel("accept_approval", level)
+	if err != nil {
+		return err
+	}
+	s.AcceptApproval, s.PendingAcceptApproval, s.PendingAcceptApprovalAt =
+		setLevel(s.EffectiveAcceptApproval(now), level, now)
+	return nil
+}
+
+// PendingAcceptApprovalIn answers the waiting lower risk acceptance level
+// and its time, when one waits at now.
+func (s FindingApprovalSettings) PendingAcceptApprovalIn(now time.Time) (string, *time.Time) {
+	if s.PendingAcceptApproval != "" && s.PendingAcceptApprovalAt != nil && now.Before(*s.PendingAcceptApprovalAt) {
+		return s.PendingAcceptApproval, s.PendingAcceptApprovalAt
+	}
+	return "", nil
+}
+
+// effectiveLevel is a level in force at now: the pending one once its time
+// has come, else the stored one (all when unset).
+func effectiveLevel(stored, pending string, pendingAt *time.Time, now time.Time) string {
+	if pending != "" && pendingAt != nil && !now.Before(*pendingAt) {
+		return pending
+	}
+	if stored == "" {
+		return FPApprovalAll
+	}
+	return stored
+}
+
+// setLevel answers the stored level, the pending level and its time after
+// choosing next while current is in force: at or above current applies at
+// once; below waits FPApprovalLoweringDelay with current kept meanwhile.
+func setLevel(current, next string, now time.Time) (stored, pending string, pendingAt *time.Time) {
+	if FPApprovalLevelRank(next) >= FPApprovalLevelRank(current) {
+		return next, "", nil
+	}
+	at := now.Add(FPApprovalLoweringDelay).UTC()
+	return current, next, &at
+}
+
+// CancelPending drops every waiting lowering (false-positive and risk
+// acceptance levels, second look share, relaxing policy) so the values in force at now stay. A change
 // whose time has already come is in force and stays.
 func (s *FindingApprovalSettings) CancelPending(now time.Time) {
 	s.FPApproval = s.EffectiveFPApproval(now)
+	s.AcceptApproval = s.EffectiveAcceptApproval(now)
 	s.SecondLookPercent = s.EffectiveSecondLookPercent(now)
 	s.Policy = s.EffectivePolicy(now)
 	s.PendingFPApproval, s.PendingFPApprovalAt = "", nil
+	s.PendingAcceptApproval, s.PendingAcceptApprovalAt = "", nil
 	s.PendingSecondLookPercent, s.PendingSecondLookAt = nil, nil
 	s.PendingPolicy, s.PendingPolicyAt = nil, nil
 }
@@ -168,6 +220,14 @@ func (s FindingApprovalSettings) Normalized() (FindingApprovalSettings, error) {
 	}
 	if s.PendingFPApproval != "" {
 		if _, err := ParseFPApprovalLevel(s.PendingFPApproval); err != nil {
+			return s, err
+		}
+	}
+	for _, v := range []string{s.AcceptApproval, s.PendingAcceptApproval} {
+		if v == "" {
+			continue
+		}
+		if _, err := parseApprovalLevel("accept_approval", v); err != nil {
 			return s, err
 		}
 	}
@@ -202,7 +262,7 @@ func (t *Tenant) UpdateFindingApprovalSettings(s FindingApprovalSettings) error 
 	return t.UpdateSettings(settings)
 }
 
-// FP approval levels, strictest first.
+// Approval levels (false positive and risk acceptance), strictest first.
 const (
 	// FPApprovalAll: every false positive needs a second person (default).
 	FPApprovalAll = "all"
@@ -227,6 +287,11 @@ func FPApprovalLevelRank(level string) int {
 
 // ParseFPApprovalLevel validates a level ("" is the default, all).
 func ParseFPApprovalLevel(s string) (string, error) {
+	return parseApprovalLevel("fp_approval", s)
+}
+
+// parseApprovalLevel validates the level of field ("" is the default, all).
+func parseApprovalLevel(field, s string) (string, error) {
 	switch strings.TrimSpace(s) {
 	case "", FPApprovalAll:
 		return FPApprovalAll, nil
@@ -235,11 +300,12 @@ func ParseFPApprovalLevel(s string) (string, error) {
 	case FPApprovalOff:
 		return FPApprovalOff, nil
 	}
-	return "", fmt.Errorf("%w: fp_approval must be all, high_and_above or off", shared.ErrValidation)
+	return "", fmt.Errorf("%w: %s must be all, high_and_above or off", shared.ErrValidation, field)
 }
 
-// FPApprovalLoweringDelay is how long a lower false-positive approval level
-// waits before it takes effect (raising takes effect at once).
+// FPApprovalLoweringDelay is how long a lower approval level (false
+// positive or risk acceptance) waits before it takes effect (raising takes
+// effect at once).
 const FPApprovalLoweringDelay = 24 * time.Hour
 
 // MaxSecondLookPercent bounds the share of single-person false positives
