@@ -39,6 +39,10 @@ type WorkflowService struct {
 	versions     automationdom.VersionRepository
 	deliveries   automationdom.DeliveryRepository
 	scope        ScopeChecker
+	// Preview and validate (preview.go).
+	sampler      SubjectSampler
+	evaluator    StepEvaluator
+	integrations IntegrationLookup
 	executor     *WorkflowExecutor
 	auditService *auditapp.AuditService
 	logger       *logger.Logger

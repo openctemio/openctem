@@ -144,7 +144,9 @@ func newWFDB(t *testing.T, extraExecutorOpts ...automationsvc.WorkflowExecutorOp
 		automationsvc.WithWorkflowStepAuthorizer(authorizer),
 		automationsvc.WithWorkflowSubjectReaders(postgres.NewFindingRepository(db), postgres.NewAssetRepository(db)),
 		automationsvc.WithWorkflowVersions(f.versions),
-		automationsvc.WithWorkflowRunReaders(enforcer, f.deliveries))
+		automationsvc.WithWorkflowRunReaders(enforcer, f.deliveries),
+		automationsvc.WithWorkflowPreview(runRepo, automationsvc.NewSimulateEvaluator(postgres.NewFindingRepository(db)),
+			postgres.NewIntegrationRepository(db)))
 	f.h = NewWorkflowHandler(f.svc, validator.New(), logger.NewNop())
 	return f
 }
