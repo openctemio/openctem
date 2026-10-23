@@ -76,7 +76,7 @@ import {
   markExposureFalsePositive,
 } from '@/features/exposures/hooks'
 import {
-  EXPOSURE_STATE_BADGE,
+  ExposureStateBadge,
   ExposureSeverityBreakdown,
   ExposureStateBreakdown,
   getExposureColumns,
@@ -704,8 +704,6 @@ function ExposureDetailSheet({
 
   if (!exposure) return null
 
-  const state = EXPOSURE_STATE_BADGE[exposure.state]
-
   return (
     <DetailSheet
       open={open}
@@ -716,7 +714,7 @@ function ExposureDetailSheet({
           badges={
             <>
               <SeverityBadge severity={exposure.severity} />
-              {state && <Badge variant={state.variant}>{state.label}</Badge>}
+              <ExposureStateBadge state={exposure.state} />
               <PendingDispositionBadge exposure={exposure} />
             </>
           }

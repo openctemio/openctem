@@ -27,6 +27,10 @@ type Workflow struct {
 
 	// Status
 	IsActive bool
+	// DisabledReason says why the platform switched the automation off
+	// (DisabledReasonRemovedType); "" when it did not. Switching it on
+	// clears it.
+	DisabledReason string
 
 	// Metadata
 	Tags []string
@@ -78,6 +82,7 @@ func (w *Workflow) SetCreatedBy(userID shared.ID) {
 // Activate activates the workflow.
 func (w *Workflow) Activate() {
 	w.IsActive = true
+	w.DisabledReason = ""
 	w.UpdatedAt = time.Now()
 }
 

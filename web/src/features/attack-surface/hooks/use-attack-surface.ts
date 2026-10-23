@@ -19,7 +19,6 @@ interface ExposedServiceResponse {
   id: string
   name: string
   type: string
-  port?: number
   exposure: string
   criticality: string
   finding_count: number
@@ -28,6 +27,7 @@ interface ExposedServiceResponse {
 
 interface AssetChangeResponse {
   type: string
+  asset_id?: string
   asset_name: string
   asset_type: string
   timestamp: string
@@ -60,7 +60,6 @@ export interface ExposedService {
   id: string
   name: string
   type: string
-  port?: number
   exposure: string
   criticality: string
   findingCount: number
@@ -69,6 +68,8 @@ export interface ExposedService {
 
 export interface AssetChange {
   type: 'added' | 'removed' | 'changed'
+  /** The asset's id, when the API sends one (a link target). */
+  assetId?: string
   assetName: string
   assetType: string
   timestamp: string
@@ -116,7 +117,6 @@ function transformResponse(data: AttackSurfaceStatsResponse): AttackSurfaceStats
         id: item.id,
         name: item.name,
         type: item.type,
-        port: item.port,
         exposure: item.exposure,
         criticality: item.criticality,
         findingCount: item.finding_count,
@@ -125,6 +125,7 @@ function transformResponse(data: AttackSurfaceStatsResponse): AttackSurfaceStats
     recentChanges:
       data.recent_changes?.map((item) => ({
         type: item.type as 'added' | 'removed' | 'changed',
+        assetId: item.asset_id || undefined,
         assetName: item.asset_name,
         assetType: item.asset_type,
         timestamp: item.timestamp,

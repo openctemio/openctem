@@ -798,6 +798,8 @@ func registerWorkflowRoutes(
 	router.Group("/api/v1/workflows", func(r Router) {
 		// Read operations
 		r.GET("/", h.ListWorkflows, middleware.Require(permission.WorkflowsRead))
+		// The trigger, action and notification types the engine runs.
+		r.GET("/catalog", h.GetCatalog, middleware.Require(permission.WorkflowsRead))
 		r.GET("/{id}", h.GetWorkflow, middleware.Require(permission.WorkflowsRead))
 
 		// Write operations

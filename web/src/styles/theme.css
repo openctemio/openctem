@@ -70,26 +70,52 @@
   --sev-low-ink: #0a1628;
   --sev-info-ink: #ffffff;
 
-  /* Priority class (P0-P3): its own system, never a severity hue and never the
-     teal accent. A filled class box on the ink ramp, P0 strongest: --prio-N is
-     the mark (charts, dots; >= 3:1 on card, paper and raised), --prio-N-bg and
-     --prio-N-fg the box and its text (>= 4.5:1), --prio-N-border the box edge. */
-  --prio-0: #0a1628;
-  --prio-1: #2f4a78;
-  --prio-2: #6b82a8;
-  --prio-3: #76849e;
-  --prio-0-bg: #0a1628;
-  --prio-0-fg: #fafaf9;
-  --prio-0-border: #0a1628;
-  --prio-1-bg: #2f4a78;
-  --prio-1-fg: #ffffff;
-  --prio-1-border: #2f4a78;
-  --prio-2-bg: #dfe6f2;
-  --prio-2-fg: #1f3358;
-  --prio-2-border: #6b82a8;
-  --prio-3-bg: #f1f3f6;
-  --prio-3-fg: #4a5568;
-  --prio-3-border: #76849e;
+  /* Priority class (P0-P3): CTEM's decision, the only filled label in a row. Its
+     own violet system (oklch hue about 293): never a severity hue, never the teal
+     accent, never ink. P3 is neutral on purpose ("track"). --prio-N is the mark
+     (charts, dots; >= 3:1 on card, paper and raised, strictly falling contrast),
+     --prio-N-bg / -fg the box and its text (>= 4.5:1), --prio-N-border the edge. */
+  --prio-0: #5b21b6;
+  --prio-1: #7c3aed;
+  --prio-2: #8f6ee6;
+  --prio-3: #7d8799;
+  --prio-0-bg: #5b21b6;
+  --prio-0-fg: #ffffff;
+  --prio-0-border: #5b21b6;
+  --prio-1-bg: #ede9fe;
+  --prio-1-fg: #4c1d95;
+  --prio-1-border: #8b5cf6;
+  --prio-2-bg: transparent;
+  --prio-2-fg: #5b21b6;
+  --prio-2-border: #8b5cf6;
+  --prio-3-bg: transparent;
+  --prio-3-fg: #525252;
+  --prio-3-border: #7d8799;
+
+  /* Workflow status by category (a lozenge tint, not one colour per status):
+     triage (untouched, dashed edge), open, progress, resolved, accepted, closed
+     (not fixed). -fg on -bg and on the card >= 4.5:1. A transparent -bg sits on the card. */
+  --st-triage-bg: transparent;
+  --st-triage-fg: #0a1628;
+  --st-triage-border: #7d8799;
+  --st-open-bg: #eef0f3;
+  --st-open-fg: #0a1628;
+  --st-open-border: #eef0f3;
+  --st-progress-bg: #e8f0fd;
+  --st-progress-fg: #1d4fb0;
+  --st-progress-border: #e8f0fd;
+  --st-resolved-bg: #e7f6ec;
+  --st-resolved-fg: #15663a;
+  --st-resolved-border: #e7f6ec;
+  --st-accepted-bg: #fdf3e2;
+  --st-accepted-fg: #8a4b06;
+  --st-accepted-border: #fdf3e2;
+  --st-closed-bg: transparent;
+  --st-closed-fg: #525252;
+  --st-closed-border: var(--border-subtle);
+
+  /* The bolt of an exploit chip (KEV): the chip is neutral, only this icon is red. */
+  --sig-icon: var(--destructive);
 
   /* Elevation: overlays only. Motion. */
   --shadow-overlay: 0 8px 24px rgb(10 22 40 / 0.12), 0 1px 2px rgb(10 22 40 / 0.08);
@@ -179,22 +205,41 @@
   --sev-low-ink: #0a1628;
   --sev-info-ink: #0a1628;
 
-  --prio-0: #fafaf9;
-  --prio-1: #b4c3dd;
-  --prio-2: #7d93b8;
-  --prio-3: #66789a;
-  --prio-0-bg: #fafaf9;
+  --prio-0: #c4b5fd;
+  --prio-1: #a48af5;
+  --prio-2: #8064dc;
+  --prio-3: #63728a;
+  --prio-0-bg: #b39dfa;
   --prio-0-fg: #0a1628;
-  --prio-0-border: #fafaf9;
-  --prio-1-bg: #b4c3dd;
-  --prio-1-fg: #0a1628;
-  --prio-1-border: #b4c3dd;
-  --prio-2-bg: #22365a;
-  --prio-2-fg: #d3ddef;
-  --prio-2-border: #7d93b8;
-  --prio-3-bg: #18263e;
+  --prio-0-border: #b39dfa;
+  --prio-1-bg: #2a2150;
+  --prio-1-fg: #ddd6fe;
+  --prio-1-border: #8b74e0;
+  --prio-2-bg: transparent;
+  --prio-2-fg: #c4b5fd;
+  --prio-2-border: #8b74e0;
+  --prio-3-bg: transparent;
   --prio-3-fg: #a9b4c4;
-  --prio-3-border: #66789a;
+  --prio-3-border: #63728a;
+
+  --st-triage-bg: transparent;
+  --st-triage-fg: #fafaf9;
+  --st-triage-border: #63728a;
+  --st-open-bg: #1e2c45;
+  --st-open-fg: #fafaf9;
+  --st-open-border: #1e2c45;
+  --st-progress-bg: #13284a;
+  --st-progress-fg: #9cc2ff;
+  --st-progress-border: #13284a;
+  --st-resolved-bg: #0f2e22;
+  --st-resolved-fg: #7ee2a0;
+  --st-resolved-border: #0f2e22;
+  --st-accepted-bg: #33240c;
+  --st-accepted-fg: #f5c26b;
+  --st-accepted-border: #33240c;
+  --st-closed-bg: transparent;
+  --st-closed-fg: #a9b4c4;
+  --st-closed-border: var(--border-subtle);
 
   --shadow-overlay: 0 12px 32px rgb(0 0 0 / 0.45), 0 1px 2px rgb(0 0 0 / 0.3);
 
@@ -347,6 +392,25 @@
   --color-prio-3-bg: var(--prio-3-bg);
   --color-prio-3-fg: var(--prio-3-fg);
   --color-prio-3-border: var(--prio-3-border);
+  --color-st-triage-bg: var(--st-triage-bg);
+  --color-st-triage-fg: var(--st-triage-fg);
+  --color-st-triage-border: var(--st-triage-border);
+  --color-st-open-bg: var(--st-open-bg);
+  --color-st-open-fg: var(--st-open-fg);
+  --color-st-open-border: var(--st-open-border);
+  --color-st-progress-bg: var(--st-progress-bg);
+  --color-st-progress-fg: var(--st-progress-fg);
+  --color-st-progress-border: var(--st-progress-border);
+  --color-st-resolved-bg: var(--st-resolved-bg);
+  --color-st-resolved-fg: var(--st-resolved-fg);
+  --color-st-resolved-border: var(--st-resolved-border);
+  --color-st-accepted-bg: var(--st-accepted-bg);
+  --color-st-accepted-fg: var(--st-accepted-fg);
+  --color-st-accepted-border: var(--st-accepted-border);
+  --color-st-closed-bg: var(--st-closed-bg);
+  --color-st-closed-fg: var(--st-closed-fg);
+  --color-st-closed-border: var(--st-closed-border);
+  --color-sig-icon: var(--sig-icon);
   --color-border: var(--border);
   --color-input: var(--input);
   --color-ring: var(--ring);
