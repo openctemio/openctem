@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react'
 import { Maximize, Minimize } from 'lucide-react'
 import { Button } from '@/components/ui/button'
+import { useTranslation } from '@/context/i18n-provider'
 
 /**
  * Header button that toggles browser full-screen via the Fullscreen API.
@@ -12,6 +13,7 @@ import { Button } from '@/components/ui/button'
  * which doesn't expose it for arbitrary elements) so there's no dead button.
  */
 export function FullscreenToggle() {
+  const { t } = useTranslation()
   const [supported, setSupported] = useState(false)
   const [isFullscreen, setIsFullscreen] = useState(false)
 
@@ -33,7 +35,9 @@ export function FullscreenToggle() {
   }
 
   const Icon = isFullscreen ? Minimize : Maximize
-  const label = isFullscreen ? 'Exit full screen' : 'Full screen'
+  const label = isFullscreen
+    ? t('nav.header.exitFullScreen', 'Exit full screen')
+    : t('nav.header.fullScreen', 'Full screen')
 
   return (
     <Button
