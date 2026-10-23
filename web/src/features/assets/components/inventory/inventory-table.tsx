@@ -104,6 +104,8 @@ interface InventoryTableProps {
   resetSelectionKey: number
   toolbarStart?: ReactNode
   toolbarEnd?: ReactNode
+  /** A full-width row under the toolbar: the filter chips. */
+  toolbarBelow?: ReactNode
   hasFilters: boolean
   /** Called after an asset is edited from the detail sheet (e.g. tags), to refetch the list. */
   onAssetUpdated?: () => void
@@ -134,6 +136,7 @@ export function InventoryTable({
   resetSelectionKey,
   toolbarStart,
   toolbarEnd,
+  toolbarBelow,
   hasFilters,
   onAssetUpdated,
   typeView = null,
@@ -536,6 +539,7 @@ export function InventoryTable({
         showSearch={false}
         toolbarStart={toolbarStart}
         toolbarEnd={toolbarEnd}
+        toolbarBelow={toolbarBelow}
         getRowId={(a) => a.id}
         manualPagination
         rowCount={total}

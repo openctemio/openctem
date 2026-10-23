@@ -23,6 +23,8 @@ const perms = vi.hoisted(() => ({ granted: new Set<string>() }))
 vi.mock('@/lib/permissions', () => ({
   Permission: {
     SensorsDelete: 'sensors:delete',
+    SensorsWrite: 'sensors:write',
+    SensorsRevoke: 'sensors:revoke',
     ScanZonesRead: 'zones:read',
     ScanZonesWrite: 'zones:write',
   },
@@ -91,7 +93,7 @@ function renderDialog(s: Partial<Sensor> = {}, onOpenChange = vi.fn()) {
 describe('EditSensorDialog', () => {
   beforeEach(() => {
     for (const f of [api.update, api.revoke, api.remove, api.assign, api.unassign]) f.mockClear()
-    perms.granted = new Set(['sensors:delete'])
+    perms.granted = new Set(['sensors:delete', 'sensors:write'])
     api.zones.value = []
   })
 
