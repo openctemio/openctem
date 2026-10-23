@@ -276,6 +276,20 @@ type's name (a container registry is `storage`/`container_registry`)
 belongs to its own lens. An overview card links to its lens, and its
 high-risk count to `min_risk_score=70`, the threshold of the count.
 
+## Needs attention
+
+Assets › Needs attention (`/assets/attention`) is the data-quality queue.
+Its reasons are route tabs: No owner (`has_owner=false`), Criticality not
+set (`criticalities=none`) and Not scanned (`coverage=uncovered`) list the
+inventory under that one filter, with the default attribution, the same
+table and the same bulk bar (set owner, set criticality, tags); each links to
+the same filter in the inventory. Relationships (`/assets/suggestions`,
+module `relationships`) and Possible duplicates (`/assets/duplicates`) are
+the other reasons and keep their URLs. Counts and rows come from the
+data-scoped asset list, so a reader sees only their own assets. Unplaced
+(assets in no hierarchy group) and the union view follow with the group
+hierarchy.
+
 ## Tag filter
 
 `GET /assets` filters by tags in three ways, combinable with each other and
