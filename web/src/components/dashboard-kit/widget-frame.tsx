@@ -360,7 +360,10 @@ export function WidgetFrame(props: WidgetFrameProps) {
       )}
     >
       <header className="mb-2 flex items-start gap-2">
-        <h3 id={titleId} className="min-w-0 flex-1 text-sm font-medium line-clamp-2 sm:line-clamp-1">
+        <h3
+          id={titleId}
+          className="min-w-0 flex-1 text-sm font-medium line-clamp-2 sm:line-clamp-1"
+        >
           {title}
         </h3>
         {definition && (
