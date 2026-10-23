@@ -29,4 +29,16 @@ describe('proxy response headers', () => {
     expect(to.get('x-internal')).toBeNull()
     expect(to.get('x-total-count')).toBeNull()
   })
+
+  it("keeps an export's cap and outcome headers", () => {
+    const from = new Headers({
+      'content-type': 'text/csv',
+      'x-export-max-rows': '10000',
+      'x-export-truncated': 'true',
+    })
+    const to = new Headers()
+    copyProxiedHeaders(from, to, PROXIED_STREAM_HEADERS)
+    expect(to.get('x-export-max-rows')).toBe('10000')
+    expect(to.get('x-export-truncated')).toBe('true')
+  })
 })
