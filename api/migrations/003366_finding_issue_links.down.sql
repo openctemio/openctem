@@ -1,120 +1,9 @@
--- Same-issue links between findings (docs/architecture/deduplication.md,
--- "Same issue across tools").
---
--- Two findings that different tools (or rules) report for one issue, on a
--- strong signal that is not an identity (two engines flag one SAST line with
--- the same weakness; one secret value found in two files), are linked as the
--- same issue: shown as one group and counted once in the dashboard facts,
--- while each keeps its own status, SLA, ticket and task. A link never
--- changes a finding.
---
--- finding_link_keys: the server-computed keys candidates are found by
--- (indexed; never values a person can read back). finding_issue_links: one
--- row per (primary, member) pair; a group is a star around its primary (the
--- earliest-created finding when the group formed). A pair a person unlinked
--- keeps its row (state unlinked) and is never linked again automatically; a
--- pair whose signal no longer holds is released by the system.
-
-CREATE TABLE IF NOT EXISTS finding_link_keys (
-    tenant_id  uuid        NOT NULL,
-    finding_id uuid        NOT NULL,
-    kind       varchar(16) NOT NULL,
-    key        char(64)    NOT NULL,
-    start_line integer,
-    end_line   integer,
-    CONSTRAINT pk_finding_link_keys PRIMARY KEY (finding_id, kind, key),
-    CONSTRAINT fk_finding_link_keys_tenant FOREIGN KEY (tenant_id) REFERENCES tenants (id) ON DELETE CASCADE,
-    CONSTRAINT fk_finding_link_keys_finding FOREIGN KEY (finding_id, tenant_id)
-        REFERENCES findings (id, tenant_id) ON DELETE CASCADE,
-    CONSTRAINT chk_finding_link_keys_kind CHECK (kind IN ('sast_cwe', 'secret_value')),
-    CONSTRAINT chk_finding_link_keys_key CHECK (key ~ '^[0-9a-f]{64}$'),
-    CONSTRAINT chk_finding_link_keys_lines CHECK (start_line IS NULL OR (start_line >= 0 AND end_line >= start_line))
-);
-CREATE INDEX IF NOT EXISTS idx_finding_link_keys_lookup ON finding_link_keys (tenant_id, kind, key);
-COMMENT ON TABLE finding_link_keys IS
-    'Server-computed keys same-issue candidates are found by (one indexed lookup per ingest batch). sast_cwe: hash of asset, path and one CWE, with the line range; secret_value: hash of the per-tenant keyed hash of a raw secret. Never returned by the API.';
-
-CREATE TABLE IF NOT EXISTS finding_issue_links (
-    id          uuid        NOT NULL DEFAULT uuid_generate_v7(),
-    tenant_id   uuid        NOT NULL,
-    primary_id  uuid        NOT NULL,
-    member_id   uuid        NOT NULL,
-    rule        varchar(24) NOT NULL,
-    basis       text[]      NOT NULL DEFAULT '{}',
-    state       varchar(16) NOT NULL DEFAULT 'active',
-    created_at  timestamptz NOT NULL DEFAULT now(),
-    updated_at  timestamptz NOT NULL DEFAULT now(),
-    ended_at    timestamptz,
-    ended_by    uuid,
-    CONSTRAINT pk_finding_issue_links PRIMARY KEY (id),
-    CONSTRAINT fk_finding_issue_links_tenant FOREIGN KEY (tenant_id) REFERENCES tenants (id) ON DELETE CASCADE,
-    CONSTRAINT fk_finding_issue_links_primary FOREIGN KEY (primary_id, tenant_id)
-        REFERENCES findings (id, tenant_id) ON DELETE CASCADE,
-    CONSTRAINT fk_finding_issue_links_member FOREIGN KEY (member_id, tenant_id)
-        REFERENCES findings (id, tenant_id) ON DELETE CASCADE,
-    CONSTRAINT fk_finding_issue_links_ended_by FOREIGN KEY (ended_by) REFERENCES users (id) ON DELETE SET NULL,
-    CONSTRAINT chk_finding_issue_links_distinct CHECK (primary_id <> member_id),
-    CONSTRAINT chk_finding_issue_links_rule CHECK (rule IN ('sast_overlap', 'secret_value', 'vuln_alias')),
-    CONSTRAINT chk_finding_issue_links_state CHECK (state IN ('active', 'unlinked', 'released')),
-    CONSTRAINT chk_finding_issue_links_basis CHECK (cardinality(basis) <= 8),
-    CONSTRAINT chk_finding_issue_links_ended CHECK ((state = 'active') = (ended_at IS NULL))
-);
--- A finding is a member of at most one group, and one row per pair.
-CREATE UNIQUE INDEX IF NOT EXISTS uq_finding_issue_links_active_member
-    ON finding_issue_links (tenant_id, member_id) WHERE state = 'active';
-CREATE UNIQUE INDEX IF NOT EXISTS uq_finding_issue_links_pair
-    ON finding_issue_links (tenant_id, primary_id, member_id);
-CREATE INDEX IF NOT EXISTS idx_finding_issue_links_primary
-    ON finding_issue_links (tenant_id, primary_id) WHERE state = 'active';
-CREATE INDEX IF NOT EXISTS idx_finding_issue_links_member ON finding_issue_links (tenant_id, member_id);
-COMMENT ON TABLE finding_issue_links IS
-    'Same-issue links: a member and the primary of its group. Never changes either finding. state: active, unlinked (by a person, ended_by; never linked again automatically), released (the signal no longer holds). basis lists the field names the rule compared, never values.';
-
--- A link or unlink changes what the dashboard facts count: mark both assets.
-CREATE OR REPLACE FUNCTION finding_issue_links_mark_dash() RETURNS trigger
-LANGUAGE plpgsql AS $$
-BEGIN
-    PERFORM dash_mark_asset(f.tenant_id, f.asset_id, 1::smallint)
-    FROM findings f
-    WHERE f.tenant_id = NEW.tenant_id AND f.id IN (NEW.primary_id, NEW.member_id);
-    RETURN NULL;
-END;
-$$;
-COMMENT ON FUNCTION finding_issue_links_mark_dash() IS
-    'Marks the assets of both findings of a same-issue link dirty for the dashboard facts when the link is made or ends.';
+-- Removes same-issue links and restores the fact builder that counts every
+-- finding. The two timeline entry types stay allowed (rows may use them).
 
 DROP TRIGGER IF EXISTS trg_finding_issue_links_mark_dash ON finding_issue_links;
-CREATE TRIGGER trg_finding_issue_links_mark_dash
-    AFTER INSERT OR UPDATE OF state, primary_id ON finding_issue_links
-    FOR EACH ROW EXECUTE FUNCTION finding_issue_links_mark_dash();
+DROP FUNCTION IF EXISTS finding_issue_links_mark_dash();
 
--- Timeline entries for a link and an unlink. The list is read back from the
--- constraint and written again with the new values.
-DO $$
-DECLARE
-    vals text[];
-    added text[] := ARRAY['issue_linked', 'issue_unlinked'];
-BEGIN
-    SELECT array_agg(DISTINCT m[1]) INTO vals
-    FROM pg_constraint c, regexp_matches(pg_get_constraintdef(c.oid), '''([a-z0-9_]+)''', 'g') AS m
-    WHERE c.conname = 'chk_activity_type' AND c.conrelid = 'finding_activities'::regclass;
-    IF vals IS NOT NULL AND NOT vals @> added THEN
-        ALTER TABLE finding_activities DROP CONSTRAINT chk_activity_type;
-        EXECUTE format('ALTER TABLE finding_activities ADD CONSTRAINT chk_activity_type CHECK (activity_type IN (%s)) NOT VALID',
-            (SELECT string_agg(quote_literal(v), ', ' ORDER BY v) FROM (SELECT DISTINCT unnest(vals || added) AS v) u));
-    END IF;
-END;
-$$;
-
--- The fact builder counts a same-issue group once per asset and state. No
--- rebuild is needed: no link exists yet.
-
--- Severity order for counting a group once (most severe first).
-CREATE OR REPLACE FUNCTION dash_severity_rank(p_severity text) RETURNS smallint
-LANGUAGE sql IMMUTABLE PARALLEL SAFE AS $$
-    SELECT CASE p_severity WHEN 'critical' THEN 1 WHEN 'high' THEN 2 WHEN 'medium' THEN 3
-                           WHEN 'low' THEN 4 WHEN 'info' THEN 5 ELSE 6 END::smallint
-$$;
 CREATE OR REPLACE FUNCTION dash_recompute_asset(p_tenant uuid, p_asset uuid) RETURNS integer
 LANGUAGE plpgsql AS $$
 DECLARE
@@ -144,29 +33,6 @@ BEGIN
           AND ((p_asset = v_none AND f.asset_id IS NULL) OR f.asset_id = p_asset)
           AND NOT f.branch_only
           AND dash_finding_lens(f.status) IS NOT NULL
-          -- A finding linked as the same issue as another finding of this
-          -- asset in the same state is counted once: a member is left out
-          -- when another finding of its group there is at least as severe
-          -- and at least as urgent (the primary first, then the earliest),
-          -- so counting once never hides a higher severity or priority.
-          AND NOT EXISTS (
-              SELECT 1
-              FROM finding_issue_links l
-              JOIN findings g ON g.tenant_id = l.tenant_id
-               AND (g.id = l.primary_id
-                    OR g.id IN (SELECT l2.member_id FROM finding_issue_links l2
-                                WHERE l2.tenant_id = l.tenant_id AND l2.primary_id = l.primary_id
-                                  AND l2.state = 'active'))
-              WHERE l.tenant_id = p_tenant AND l.member_id = f.id AND l.state = 'active'
-                AND g.id <> f.id
-                AND g.asset_id IS NOT DISTINCT FROM f.asset_id
-                AND NOT g.branch_only
-                AND dash_finding_lens(g.status) = dash_finding_lens(f.status)
-                AND dash_severity_rank(g.severity) <= dash_severity_rank(f.severity)
-                AND COALESCE(g.priority_class, 'none') <= COALESCE(f.priority_class, 'none')
-                AND (g.id = l.primary_id
-                     OR (dash_severity_rank(g.severity), COALESCE(g.priority_class, 'none'), g.created_at, g.id)
-                      < (dash_severity_rank(f.severity), COALESCE(f.priority_class, 'none'), f.created_at, f.id)))
     ),
     -- F1
     s_new AS (
@@ -305,4 +171,12 @@ END;
 $$;
 
 COMMENT ON FUNCTION dash_recompute_asset(uuid, uuid) IS
-    'Dashboard facts: recomputes F1, F2 (history window) and F3 of one asset from its findings, writing only differences; returns the number of fact rows changed. All-zero asset id = findings without an asset. Pentest findings without a campaign carry the all-f campaign id, which matches no membership. A same-issue group counts once per state.';
+    'Dashboard facts: recomputes F1, F2 (history window) and F3 of one asset from its findings, writing only differences; returns the number of fact rows changed. All-zero asset id = findings without an asset. Pentest findings without a campaign carry the all-f campaign id, which matches no membership.';
+
+DROP INDEX IF EXISTS idx_finding_issue_links_ended_by;
+DROP TABLE IF EXISTS finding_issue_links;
+DROP TABLE IF EXISTS finding_link_keys;
+DROP FUNCTION IF EXISTS dash_severity_rank(text);
+
+-- The facts may have counted groups once: rebuild them.
+UPDATE dash_fact_status SET rebuild_requested_at = now() WHERE rebuilt_at IS NOT NULL;
