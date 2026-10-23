@@ -42,7 +42,7 @@ import { newMetricSpec } from './spec-ops'
 /** Live previews loaded per opening of the gallery (the server limits previews per person). */
 export const PREVIEWS_PER_OPEN = 12
 
-type Tab = 'all' | MetricGroup | 'advanced'
+type Tab = 'all' | MetricGroup
 
 export interface WidgetGalleryProps {
   open: boolean
@@ -71,18 +71,24 @@ function PreviewCard({
   metric,
   taken,
   takeSlot,
+  cache,
   onAdd,
 }: {
   metric: CatalogMetric
   taken: ReadonlySet<string>
   takeSlot: () => boolean
+  /** Previews already loaded in this opening (survives tab switches). */
+  cache: Map<string, WidgetValue>
   onAdd: (spec: WidgetSpec, preview?: WidgetValue) => void
 }) {
   const { t } = useTranslation()
   const spec = useMemo(() => newMetricSpec(metric, taken), [metric, taken])
   const ref = useRef<HTMLDivElement>(null)
-  const [preview, setPreview] = useState<WidgetValue | undefined>()
-  const [state, setState] = useState<'idle' | 'loading' | 'done' | 'skipped'>('idle')
+  const cached = cache.get(metric.id)
+  const [preview, setPreview] = useState<WidgetValue | undefined>(cached)
+  const [state, setState] = useState<'idle' | 'loading' | 'done' | 'skipped'>(
+    cached ? 'done' : 'idle'
+  )
 
   useEffect(() => {
     const el = ref.current
@@ -94,7 +100,10 @@ function PreviewCard({
       }
       setState('loading')
       previewWidget('metric', spec as unknown as Record<string, unknown>)
-        .then((v) => setPreview(v))
+        .then((v) => {
+          if (v) cache.set(metric.id, v)
+          setPreview(v)
+        })
         .catch(() => setPreview(undefined))
         .finally(() => setState('done'))
     }
@@ -110,7 +119,7 @@ function PreviewCard({
     })
     io.observe(el)
     return () => io.disconnect()
-  }, [spec, state, takeSlot])
+  }, [spec, state, takeSlot, cache, metric.id])
 
   const name = t(metricNameKey(metric.id), metric.id)
   return (
@@ -138,12 +147,13 @@ function PreviewCard({
         </Button>
       </div>
       <div className="pointer-events-none min-h-[7rem] min-w-0" aria-hidden={state !== 'done'}>
-        {state === 'loading' || (state === 'done' && preview) ? (
+        {state === 'loading' ? (
+          <Skeleton className="h-28 w-full" />
+        ) : state === 'done' && preview ? (
           <WidgetView
             widget={{ widget_type: 'metric', config: spec as unknown as Record<string, unknown> }}
             value={preview}
-            loading={state === 'loading'}
-            className="border-dashed"
+            bare
           />
         ) : state === 'done' ? (
           <p className="text-xs text-muted-foreground">
@@ -178,14 +188,17 @@ export function WidgetGallery({
   const [tab, setTab] = useState<Tab>('all')
   const [query, setQuery] = useState('')
   const takeSlot = useSlots(open, PREVIEWS_PER_OPEN)
+  const [cache] = useState(() => new Map<string, WidgetValue>())
+  useEffect(() => {
+    if (!open) cache.clear()
+  }, [open, cache])
 
   const q = query.trim().toLowerCase()
   const metrics = useMemo(() => {
     const all = catalog.data?.metrics ?? []
     return all.filter((m) => {
       const group = metricMeta(m.id)?.group ?? (m.group as MetricGroup)
-      if (tab !== 'all' && tab !== 'advanced' && group !== tab) return false
-      if (tab === 'advanced') return false
+      if (tab !== 'all' && group !== tab) return false
       if (!q) return true
       const hay =
         `${t(metricNameKey(m.id), m.id)} ${t(metricDefinitionKey(m.id), '')}`.toLowerCase()
@@ -225,17 +238,13 @@ export function WidgetGallery({
               />
             </div>
             <TabsList aria-label={t('dashboards.gallery.groups', 'Widget groups')}>
-              {(['all', ...METRIC_GROUPS, 'advanced'] as Tab[]).map((g) => (
+              {(['all', ...METRIC_GROUPS] as Tab[]).map((g) => (
                 <TabsTrigger key={g} value={g}>
-                  {g === 'all'
-                    ? t('dashboards.gallery.all', 'All')
-                    : g === 'advanced'
-                      ? t('dashboards.gallery.advanced', 'Advanced')
-                      : t(`dashboards.group.${g}`, g)}
+                  {g === 'all' ? t('dashboards.gallery.all', 'All') : t(`dashboards.group.${g}`, g)}
                 </TabsTrigger>
               ))}
             </TabsList>
-            {(tab === 'advanced' || (tab === 'all' && !q)) && (
+            {tab === 'all' && !q && (
               <button
                 type="button"
                 onClick={onAddNote}
@@ -259,7 +268,7 @@ export function WidgetGallery({
                 <p className="text-sm text-destructive" role="alert">
                   {t('dashboards.gallery.failed', 'The widget list could not be loaded.')}
                 </p>
-              ) : metrics.length === 0 && tab !== 'advanced' ? (
+              ) : metrics.length === 0 ? (
                 <p className="text-sm text-muted-foreground">
                   {t('dashboards.gallery.none', 'No widget matches.')}
                 </p>
@@ -271,6 +280,7 @@ export function WidgetGallery({
                       metric={m}
                       taken={taken}
                       takeSlot={takeSlot}
+                      cache={cache}
                       onAdd={(spec, preview) => onAddMetric(spec, m, preview)}
                     />
                   ))}

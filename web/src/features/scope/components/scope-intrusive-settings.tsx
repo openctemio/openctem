@@ -71,11 +71,13 @@ export function ScopeIntrusiveSettings({
       })
       setReason('')
       if (out) onSaved?.(out)
-      toast.success('Intrusive entry limit saved', {
-        description: 'Every administrator was notified.',
+      toast.success(t('scope.intrusive.saved', 'Intrusive entry limit saved'), {
+        description: t('scope.settings.notified', 'Every administrator was notified.'),
       })
     } catch (err) {
-      toast.error(scopeErrorMessage(t, err, 'Could not save the setting.'))
+      toast.error(
+        scopeErrorMessage(t, err, t('scope.intrusive.saveFailed', 'Could not save the setting.'))
+      )
     } finally {
       setSaving(false)
     }
@@ -83,11 +85,14 @@ export function ScopeIntrusiveSettings({
 
   return (
     <SettingsSection
-      title="Intrusive (T2) entries"
+      title={t('scope.intrusive.title', 'Intrusive (T2) entries')}
       description={
         owner
-          ? 'Only an owner changes this. Saving asks for a reason and for you to confirm your identity; it is audited and every administrator is told.'
-          : 'Set by an owner of your organization.'
+          ? t(
+              'scope.intrusive.ownerHint',
+              'Only an owner changes this. Saving asks for a reason and for you to confirm your identity; it is audited and every administrator is told.'
+            )
+          : t('scope.intrusive.readHint', 'Set by an owner of your organization.')
       }
       actions={
         owner ? (
@@ -97,7 +102,7 @@ export function ScopeIntrusiveSettings({
             disabled={saving || !dirty || !reason.trim()}
           >
             {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
-            Save
+            {t('scope.intrusive.save', 'Save')}
           </Button>
         ) : undefined
       }
@@ -107,12 +112,13 @@ export function ScopeIntrusiveSettings({
           <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between sm:gap-6">
             <div className="min-w-0 sm:max-w-md">
               <Label htmlFor={`${id}-t2`} className="text-sm font-medium">
-                Longest intrusive entry
+                {t('scope.intrusive.longest', 'Longest intrusive entry')}
               </Label>
               <p className="mt-1 text-sm text-muted-foreground text-pretty">
-                How long an entry that allows intrusive (T2) probes may last. Every T2 entry still
-                needs a verified domain and an approval. Long and permanent T2 entries are confirmed
-                again periodically, or they fall back to non-intrusive (T1).
+                {t(
+                  'scope.intrusive.longestHint',
+                  'How long an entry that allows intrusive (T2) probes may last. Every T2 entry still needs a verified domain and an approval. Long and permanent T2 entries are confirmed again periodically, or they fall back to non-intrusive (T1).'
+                )}
               </p>
             </div>
             <Select
@@ -126,7 +132,7 @@ export function ScopeIntrusiveSettings({
               <SelectContent>
                 {(Object.keys(T2_DURATION_LABEL) as ScopeT2MaxDuration[]).map((k) => (
                   <SelectItem key={k} value={k}>
-                    {T2_DURATION_LABEL[k]}
+                    {t(`scope.intrusive.duration.${k}`, T2_DURATION_LABEL[k])}
                   </SelectItem>
                 ))}
               </SelectContent>
@@ -135,12 +141,13 @@ export function ScopeIntrusiveSettings({
           <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between sm:gap-6">
             <div className="min-w-0 sm:max-w-md">
               <Label htmlFor={`${id}-attest`} className="text-sm font-medium">
-                Confirm long T2 entries every
+                {t('scope.intrusive.confirmEvery', 'Confirm long T2 entries every')}
               </Label>
               <p className="mt-1 text-sm text-muted-foreground text-pretty">
-                30 to 180 days. When a confirmation is due, owners and administrators are asked
-                &quot;Keep T2?&quot;. Without an answer within 14 days the entry falls back to
-                non-intrusive (T1); it is never removed.
+                {t(
+                  'scope.intrusive.confirmEveryHint',
+                  '30 to 180 days. When a confirmation is due, owners and administrators are asked "Keep T2?". Without an answer within 14 days the entry falls back to non-intrusive (T1); it is never removed.'
+                )}
               </p>
             </div>
             <div className="flex shrink-0 items-center gap-2">
@@ -154,18 +161,23 @@ export function ScopeIntrusiveSettings({
                 onChange={(e) => setDays(Number(e.target.value))}
                 disabled={!owner || saving}
               />
-              <span className="text-sm text-muted-foreground">days</span>
+              <span className="text-sm text-muted-foreground">
+                {t('scope.settings.days', 'days')}
+              </span>
             </div>
           </div>
           {owner && dirty && (
             <div className="space-y-2">
-              <Label htmlFor={`${id}-reason`}>Reason</Label>
+              <Label htmlFor={`${id}-reason`}>{t('scope.intrusive.reason', 'Reason')}</Label>
               <Textarea
                 id={`${id}-reason`}
                 rows={2}
                 maxLength={1000}
                 value={reason}
-                placeholder="For example: standing pentest contract, ticket SEC-42."
+                placeholder={t(
+                  'scope.intrusive.reasonPlaceholder',
+                  'For example: standing pentest contract, ticket SEC-42.'
+                )}
                 onChange={(e) => setReason(e.target.value)}
               />
             </div>

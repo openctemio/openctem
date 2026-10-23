@@ -9,6 +9,7 @@
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useSearchParams } from 'next/navigation'
 import dynamic from 'next/dynamic'
 import { useSWRConfig } from 'swr'
 import { Copy, MoreHorizontal, Pencil, SlidersHorizontal, Star, Trash2, X } from 'lucide-react'
@@ -45,6 +46,7 @@ import {
 } from '../api/use-dashboards-api'
 import type { Dashboard, DashboardRefreshSchedule } from '../api/dashboards.types'
 import { dashboardDataKey, refreshDashboard, useDashboardData } from '../api/widget-data'
+import { uniqueDashboardName } from '../lib/unique-name'
 import { DEFAULT_TEMPLATE, templateByKey, templateLayout, templateNameKey } from '../templates'
 import { DASHBOARD_CHOICE_KEY, parseRef, pickLanding, refKey, type DashboardRef } from '../landing'
 import {
@@ -169,6 +171,15 @@ export function DashboardHome() {
     active &&
     (active.kind === 'personal' ? personal : (organization ?? [])).find((d) => d.id === active.id)
 
+  // `/?customize=1` (from the dashboards list) opens straight in customize mode.
+  const startCustomizing = useSearchParams()?.get('customize') === '1'
+  const customizeStarted = useRef(false)
+  useEffect(() => {
+    if (!startCustomizing || customizeStarted.current || !dashboard || !active) return
+    customizeStarted.current = true
+    if (active.kind === 'personal' || canOrgManage) setCustomizing(true)
+  }, [startCustomizing, dashboard, active, canOrgManage])
+
   const data = useDashboardData(active?.kind ?? 'personal', active?.id ?? null)
 
   const choose = useCallback((ref: DashboardRef) => {
@@ -223,10 +234,12 @@ export function DashboardHome() {
       const name = t(templateNameKey(tpl.key), tpl.key)
       // Names are unique per person: the copy the hint is shown on often has
       // the template's own name.
-      const taken = new Set(personal.map((d) => d.name.trim().toLowerCase()))
       const base = t('dashboards.layoutHint.copyName', '{name} (new layout)', { name })
-      let copyName = taken.has(name.toLowerCase()) ? base : name
-      for (let n = 2; taken.has(copyName.toLowerCase()); n++) copyName = `${base} ${n}`
+      const copyName = uniqueDashboardName(
+        name,
+        personal.map((d) => d.name),
+        base
+      )
       const d = await createDashboard({
         name: copyName,
         columns: tpl.columns,

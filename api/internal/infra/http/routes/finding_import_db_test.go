@@ -117,14 +117,19 @@ func TestFindingImport_RealFixtures_DB(t *testing.T) {
 				t.Fatal(err)
 			}
 			before := ih.count(t, `SELECT count(*) FROM findings WHERE tenant_id = $1`, ih.tenantID)
-			rec, resp := ih.upload(t, ih.tenantID, "?dry_run=true", filepath.Base(p), data, true)
+			// A CSV has no signature to detect: its format is named.
+			format := ""
+			if strings.HasSuffix(p, ".csv") {
+				format = "&format=" + filepath.Base(filepath.Dir(p))
+			}
+			rec, resp := ih.upload(t, ih.tenantID, "?dry_run=true"+format, filepath.Base(p), data, true)
 			if rec.Code != http.StatusOK || len(resp.Files) != 1 || resp.Files[0].Error != nil {
 				t.Fatalf("preview %d: %s", rec.Code, rec.Body.String())
 			}
 			if n := ih.count(t, `SELECT count(*) FROM findings WHERE tenant_id = $1`, ih.tenantID); n != before {
 				t.Fatalf("a preview wrote %d findings", n-before)
 			}
-			rec, resp = ih.upload(t, ih.tenantID, "", filepath.Base(p), data, true)
+			rec, resp = ih.upload(t, ih.tenantID, strings.Replace(format, "&", "?", 1), filepath.Base(p), data, true)
 			if rec.Code != http.StatusCreated || resp.Files[0].Error != nil {
 				t.Fatalf("import %d: %s", rec.Code, rec.Body.String())
 			}

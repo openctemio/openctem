@@ -36,6 +36,11 @@ export function MorePoolsSection({ pools, canWrite, canDelete }: MorePoolsSectio
     'You need the sensors:egress:delete permission to delete pools'
   )
 
+  const inUse = t(
+    'proxyPools.deleteInUse',
+    'Sensors still use this pool. Set their network path to another pool, Direct or Inherit first.'
+  )
+
   return (
     <section aria-labelledby="more-pools-heading" className="space-y-3" data-testid="more-pools">
       <div className="flex flex-wrap items-end justify-between gap-2">
@@ -85,9 +90,13 @@ export function MorePoolsSection({ pools, canWrite, canDelete }: MorePoolsSectio
                     )}
                   </CardTitle>
                   <CardDescription>
-                    {t('proxyPools.assignedSensors', '{count} sensors assigned', {
-                      count: p.assigned_sensors,
-                    })}
+                    {p.assigned_sensors === 1
+                      ? t('proxyPools.assignedSensors.one', '{count} sensor assigned', {
+                          count: p.assigned_sensors,
+                        })
+                      : t('proxyPools.assignedSensors.other', '{count} sensors assigned', {
+                          count: p.assigned_sensors,
+                        })}
                     {p.description ? ` · ${p.description}` : ''}
                   </CardDescription>
                 </div>
@@ -102,8 +111,8 @@ export function MorePoolsSection({ pools, canWrite, canDelete }: MorePoolsSectio
                     {t('proxyPools.edit', 'Edit')}
                   </GatedButton>
                   <GatedButton
-                    allowed={canDelete}
-                    reason={noDelete}
+                    allowed={canDelete && p.assigned_sensors === 0}
+                    reason={canDelete ? inUse : noDelete}
                     variant="ghost"
                     size="sm"
                     aria-label={t('proxyPools.deleteNamed', 'Delete {name}', { name: p.name })}

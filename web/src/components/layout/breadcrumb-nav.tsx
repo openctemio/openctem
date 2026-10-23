@@ -13,7 +13,13 @@ import {
 } from '@/components/ui/breadcrumb'
 import { Fragment } from 'react'
 import { cn } from '@/lib/utils'
-import { breadcrumbLabel, recordLabel } from './breadcrumb-labels'
+import { useTranslation } from '@/context/i18n-provider'
+import {
+  breadcrumbLabel,
+  breadcrumbLabelKey,
+  recordLabel,
+  recordLabelKey,
+} from './breadcrumb-labels'
 import { breadcrumbHasPage, isIdSegment } from './breadcrumb-routes'
 import { NavPendingHint } from './sidebar-link'
 import { useBreadcrumbTitles } from './breadcrumb-title'
@@ -29,6 +35,13 @@ interface BreadcrumbNavProps {
 
 export function BreadcrumbNav({ pageTitle, className, hideIdSegment = true }: BreadcrumbNavProps) {
   const pathname = usePathname()
+  const { t } = useTranslation()
+  const crumb = (path: string, segment: string) => {
+    const key = breadcrumbLabelKey(path, segment)
+    const label = breadcrumbLabel(path, segment)
+    return key ? t(key, label) : label
+  }
+  const record = (parent: string | undefined) => t(recordLabelKey(parent), recordLabel(parent))
   // Names pages gave the records in the URL; an id with no name yet shows
   // what kind of record it is ("Scan"), never the id.
   const titles = useBreadcrumbTitles()
@@ -55,9 +68,7 @@ export function BreadcrumbNav({ pageTitle, className, hideIdSegment = true }: Br
     }
     if (filteredSegments.length < segments.length) {
       detailPageLabel =
-        pageTitle ||
-        titles.get(pathname) ||
-        recordLabel(filteredSegments[filteredSegments.length - 1])
+        pageTitle || titles.get(pathname) || record(filteredSegments[filteredSegments.length - 1])
     }
   }
 
@@ -69,8 +80,8 @@ export function BreadcrumbNav({ pageTitle, className, hideIdSegment = true }: Br
   const breadcrumbItems = filteredSegments.map((segment, index) => {
     const path = '/' + filteredSegments.slice(0, index + 1).join('/')
     const label = isIdSegment(segment)
-      ? (titles.get(path) ?? recordLabel(filteredSegments[index - 1]))
-      : breadcrumbLabel(path, segment)
+      ? (titles.get(path) ?? record(filteredSegments[index - 1]))
+      : crumb(path, segment)
     // When on a detail page, the parent (e.g., "Findings") becomes a link, not current page
     const isLast = index === filteredSegments.length - 1 && detailPageLabel === null
 
@@ -98,7 +109,7 @@ export function BreadcrumbNav({ pageTitle, className, hideIdSegment = true }: Br
           <BreadcrumbLink asChild>
             <Link href="/" className="flex items-center gap-1">
               <Home className="h-4 w-4" />
-              <span className="sr-only">Dashboard</span>
+              <span className="sr-only">{t('nav.item.dashboard', 'Dashboard')}</span>
               <NavPendingHint quiet />
             </Link>
           </BreadcrumbLink>

@@ -253,6 +253,10 @@ The live order is:
      production splits the two. Tests that create a scratch database
      (`testdb.PrivateDatabase`, the sensor-rename upgrade test, the bootstrap
      test) need CREATEDB, so they use `DATABASE_ADMIN_URL` (the superuser).
+- Workflow **API PostgreSQL Compatibility** (`api-pg-compat.yml`) repeats steps 1 to 4 on
+  PostgreSQL **16 and 18** (the DB-backed packages in three shards each): nightly, on a push to
+  `develop` that changes a migration, this script or the PostgreSQL repositories, and by hand.
+  PostgreSQL 17 stays the version the whole suite runs on for every pull request.
 - `deploy/postgres/least_privilege_test.go` (runs when `DATABASE_ADMIN_URL` or `DATABASE_URL` is a superuser):
   - creates a scratch database and bootstraps it;
   - asserts the app role's attributes and memberships;

@@ -19,10 +19,15 @@ import type { ReportSchedule } from '../types'
 import { ConfirmDialog } from '@/components/confirm-dialog'
 import { useTranslation } from '@/context/i18n-provider'
 
-const REPORT_TYPE_LABELS: Record<string, string> = {
-  executive_summary: 'Executive summary',
-  summary: 'Summary digest',
-  findings: 'Findings digest',
+const REPORT_TYPE_KEYS: Record<string, { key: string; fallback: string }> = {
+  executive_summary: { key: 'reports.type.executive_summary', fallback: 'Executive summary' },
+  summary: { key: 'reports.type.summary', fallback: 'Summary digest' },
+  findings: { key: 'reports.type.findings', fallback: 'Findings digest' },
+}
+
+/** A run status as words; an unknown status falls back to its raw code. */
+function statusLabel(t: ReturnType<typeof useTranslation>['t'], status: string): string {
+  return t(`reports.status.${status}`, status.replace(/_/g, ' '))
 }
 
 function statusVariant(status?: string): 'default' | 'secondary' | 'destructive' | 'outline' {
@@ -40,15 +45,16 @@ function statusVariant(status?: string): 'default' | 'secondary' | 'destructive'
 }
 
 function LastRunCell({ schedule }: { schedule: ReportSchedule }) {
+  const { t } = useTranslation()
   if (!schedule.last_run_at) {
-    return <span className="text-muted-foreground">Never</span>
+    return <span className="text-muted-foreground">{t('reports.schedules.never', 'Never')}</span>
   }
   return (
     <div className="flex flex-col gap-1">
       <RelativeTime date={schedule.last_run_at} className="text-sm" />
       {schedule.last_status && (
         <Badge variant={statusVariant(schedule.last_status)} className="w-fit text-xs">
-          {schedule.last_status.replace(/_/g, ' ')}
+          {statusLabel(t, schedule.last_status)}
         </Badge>
       )}
     </div>
@@ -56,7 +62,7 @@ function LastRunCell({ schedule }: { schedule: ReportSchedule }) {
 }
 
 export function ReportSchedulesSection() {
-  const { t } = useTranslation()
+  const { t, locale } = useTranslation()
   const { schedules, isLoading, error, createSchedule, toggleSchedule, deleteSchedule } =
     useReportSchedules()
   const [pendingToggle, setPendingToggle] = useState<string | null>(null)
@@ -130,7 +136,12 @@ export function ReportSchedulesSection() {
       header: t('reports.schedules.colType', 'Type'),
       cell: ({ row }) => (
         <span className="text-sm">
-          {REPORT_TYPE_LABELS[row.original.report_type] ?? row.original.report_type}
+          {REPORT_TYPE_KEYS[row.original.report_type]
+            ? t(
+                REPORT_TYPE_KEYS[row.original.report_type].key,
+                REPORT_TYPE_KEYS[row.original.report_type].fallback
+              )
+            : row.original.report_type}
         </span>
       ),
     },
@@ -140,7 +151,7 @@ export function ReportSchedulesSection() {
       header: t('reports.schedules.colCadence', 'Cadence'),
       cell: ({ row }) => (
         <div className="flex flex-col">
-          <span className="text-sm">{humanizeCron(row.original.cron_expression)}</span>
+          <span className="text-sm">{humanizeCron(row.original.cron_expression, t, locale)}</span>
           <span className="text-xs text-muted-foreground">{row.original.timezone}</span>
         </div>
       ),
@@ -235,7 +246,9 @@ export function ReportSchedulesSection() {
     <section className="space-y-3">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div className="min-w-0">
-          <h2 className="text-base font-semibold">Scheduled reports</h2>
+          <h2 className="text-base font-semibold">
+            {t('reports.schedules.title', 'Scheduled reports')}
+          </h2>
           <p className="text-sm text-muted-foreground">
             {t(
               'reports.schedulesHint',
@@ -250,7 +263,7 @@ export function ReportSchedulesSection() {
         )}
       </div>
       {isLoading ? (
-        <div className="space-y-px overflow-hidden rounded-xl border">
+        <div className="space-y-px overflow-hidden rounded-lg border">
           {Array.from({ length: 3 }).map((_, i) => (
             <Skeleton key={i} className="h-12 w-full rounded-none" />
           ))}
@@ -258,16 +271,21 @@ export function ReportSchedulesSection() {
       ) : error ? (
         <Alert variant="destructive">
           <AlertCircle className="h-4 w-4" />
-          <AlertTitle>Failed to load schedules</AlertTitle>
+          <AlertTitle>{t('reports.schedules.loadFailed', 'Failed to load schedules')}</AlertTitle>
           <AlertDescription>
-            {error instanceof Error ? error.message : 'An unexpected error occurred'}
+            {error instanceof Error
+              ? error.message
+              : t('reports.schedules.unexpected', 'An unexpected error occurred')}
           </AlertDescription>
         </Alert>
       ) : schedules.length === 0 ? (
         <EmptyState
           icon={CalendarClock}
-          title="No scheduled reports yet"
-          description="Create a schedule to email a recurring finding-summary digest to your team."
+          title={t('reports.schedules.emptyTitle', 'No scheduled reports yet')}
+          description={t(
+            'reports.schedules.emptyDescription',
+            'Create a schedule to email a recurring finding-summary digest to your team.'
+          )}
           action={
             <Can permission="reports:write">
               <NewScheduleDialog onCreate={createSchedule} />
@@ -282,7 +300,7 @@ export function ReportSchedulesSection() {
           showSearch={false}
           showColumnToggle={false}
           showPagination={schedules.length > 10}
-          emptyMessage="No scheduled reports"
+          emptyMessage={t('reports.schedules.emptyMessage', 'No scheduled reports')}
         />
       )}
       <ConfirmDialog

@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react'
 import { devLog } from '@/lib/logger'
 import { reportRouteError } from '@/lib/error-reporting'
+import { useTranslation } from '@/context/i18n-provider'
 import Link from '@/components/link'
 import { AlertCircle, Loader2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
@@ -55,6 +56,7 @@ function isAuthError(error: Error & { statusCode?: number; code?: string }): boo
 
 export default function AuthError({ error, reset }: ErrorProps) {
   const [isRedirecting, setIsRedirecting] = useState(false)
+  const { t } = useTranslation()
 
   useEffect(() => {
     console.error('Auth error:', error)
@@ -80,8 +82,12 @@ export default function AuthError({ error, reset }: ErrorProps) {
             <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center">
               <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
             </div>
-            <CardTitle>Session Expired</CardTitle>
-            <CardDescription>Redirecting to login...</CardDescription>
+            <CardTitle>
+              <h1>{t('auth.error.sessionExpired', 'Session expired')}</h1>
+            </CardTitle>
+            <CardDescription>
+              {t('auth.error.redirecting', 'Redirecting to sign in...')}
+            </CardDescription>
           </CardHeader>
         </Card>
       </div>
@@ -95,18 +101,24 @@ export default function AuthError({ error, reset }: ErrorProps) {
           <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-destructive/10">
             <AlertCircle className="h-6 w-6 text-destructive" />
           </div>
-          <CardTitle>Authentication Error</CardTitle>
-          <CardDescription>Something went wrong during authentication.</CardDescription>
+          <CardTitle>
+            <h1>{t('auth.error.title', 'Authentication error')}</h1>
+          </CardTitle>
+          <CardDescription>
+            {t('auth.error.body', 'Something went wrong during authentication.')}
+          </CardDescription>
         </CardHeader>
         <CardContent className="text-center">
           {error.digest && (
-            <p className="text-muted-foreground text-sm">Error ID: {error.digest}</p>
+            <p className="text-muted-foreground text-sm">
+              {t('auth.error.errorId', 'Error ID: {id}', { id: error.digest })}
+            </p>
           )}
         </CardContent>
         <CardFooter className="flex justify-center gap-2">
-          <Button onClick={reset}>Try again</Button>
+          <Button onClick={reset}>{t('auth.error.tryAgain', 'Try again')}</Button>
           <Button variant="outline" asChild>
-            <Link href="/login">Back to login</Link>
+            <Link href="/login">{t('auth.error.backToSignIn', 'Back to sign in')}</Link>
           </Button>
         </CardFooter>
       </Card>

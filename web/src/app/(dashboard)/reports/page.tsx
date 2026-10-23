@@ -9,6 +9,7 @@ import { PentestReportsSection } from '@/features/pentest/components/pentest-rep
 import { useModuleEnabled } from '@/features/integrations/api/use-tenant-modules'
 import { useHasPermission, Permission } from '@/lib/permissions'
 import { useUrlFilter } from '@/hooks/use-url-param'
+import { useTranslation } from '@/context/i18n-provider'
 
 /**
  * Security Reports.
@@ -22,6 +23,7 @@ import { useUrlFilter } from '@/hooks/use-url-param'
  *   pentest:read; a campaign's own reports are the Report tab of its page.
  */
 export default function ReportsPage() {
+  const { t } = useTranslation()
   const pentestEnabled = useModuleEnabled('pentest')
   const canReadPentest = useHasPermission(Permission.PentestRead)
   const showPentest = pentestEnabled && canReadPentest
@@ -31,11 +33,14 @@ export default function ReportsPage() {
   const header = (actions: ReactNode) => (
     <>
       <PageHeader
-        title="Reports"
+        title={t('reports.page.title', 'Reports')}
         description={
           tab === 'pentest'
-            ? 'Reports generated for pentest campaigns.'
-            : 'Schedule recurring digests and export the executive summary.'
+            ? t('reports.page.pentestDescription', 'Reports generated for pentest campaigns.')
+            : t(
+                'reports.page.programDescription',
+                'Schedule recurring digests and export the executive summary.'
+              )
         }
       >
         {actions}
@@ -47,8 +52,8 @@ export default function ReportsPage() {
           className="mt-4"
         >
           <TabsList>
-            <TabsTrigger value="program">Program</TabsTrigger>
-            <TabsTrigger value="pentest">Pentest</TabsTrigger>
+            <TabsTrigger value="program">{t('reports.page.tabProgram', 'Program')}</TabsTrigger>
+            <TabsTrigger value="pentest">{t('reports.page.tabPentest', 'Pentest')}</TabsTrigger>
           </TabsList>
         </Tabs>
       )}
