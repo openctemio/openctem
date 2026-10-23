@@ -55,7 +55,7 @@
   "confirm.assetRelationship.removeTitle": "Remove the relationship between {source} and {target}?",
   "confirm.assignmentRule.deleteDesc": "New findings are no longer routed by it. Findings it already assigned keep their owner. This cannot be undone.",
   "confirm.assignmentRule.deleteTitle": "Delete the assignment rule \"{name}\"?",
-  "confirm.attackerProfile.deleteDesc": "This cannot be undone.",
+  "confirm.attackerProfile.deleteDesc": "It is removed from every cycle that uses it. This cannot be undone.",
   "confirm.attackerProfile.deleteTitle": "Delete the attacker profile \"{name}\"?",
   "confirm.auditChain.rebaseline": "Rebaseline",
   "confirm.auditChain.rebaselineCheck": "The server checks the chain again and refuses if anything is unexplained or the chain changed since this review. The action is recorded in the organization audit log and the platform audit log.",

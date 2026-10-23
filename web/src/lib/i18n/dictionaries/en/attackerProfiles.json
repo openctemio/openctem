@@ -1,0 +1,10 @@
+{
+  "attackerProfiles.builtIn": "Built-in profile",
+  "attackerProfiles.createFailed": "Failed to create attacker profile",
+  "attackerProfiles.loadError": "attacker profiles",
+  "attackerProfiles.type.custom": "Custom",
+  "attackerProfiles.type.external_stolen_creds": "External, stolen credentials",
+  "attackerProfiles.type.external_unauth": "External, unauthenticated",
+  "attackerProfiles.type.malicious_insider": "Malicious insider",
+  "attackerProfiles.type.supplier_compromise": "Supplier compromise"
+}

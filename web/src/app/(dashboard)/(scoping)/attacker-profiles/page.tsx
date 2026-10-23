@@ -11,6 +11,7 @@ import {
   EmptyState,
   GatedSectionTabs,
   PageHeader,
+  ErrorState,
 } from '@/features/shared'
 import { THREAT_MODEL_SECTION_TABS } from '@/config/section-tabs'
 import { Button } from '@/components/ui/button'
@@ -39,6 +40,8 @@ import { ConfirmDialog } from '@/components/confirm-dialog'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Plus, Trash2, Lock, Target } from 'lucide-react'
 import { get, post, del } from '@/lib/api/client'
+import { getErrorMessage } from '@/lib/api/error-handler'
+import { profileTypeLabel } from '@/features/cycles/api'
 import { Can, Permission } from '@/lib/permissions'
 import { toast } from 'sonner'
 import { useTranslation } from '@/context/i18n-provider'
@@ -79,20 +82,13 @@ const profileTypeColors: Record<string, string> = {
   custom: 'bg-muted text-muted-foreground',
 }
 
-const profileTypeLabels: Record<string, string> = {
-  external_unauth: 'External (Unauthenticated)',
-  external_stolen_creds: 'External (Stolen Credentials)',
-  malicious_insider: 'Malicious Insider',
-  supplier_compromise: 'Supply Chain Compromise',
-  custom: 'Custom',
-}
-
 const NETWORK_ACCESS_OPTIONS = ['external', 'internal', 'dmz'] as const
 const CREDENTIAL_LEVEL_OPTIONS = ['none', 'user', 'admin'] as const
 
 export default function AttackerProfilesPage() {
   const { t } = useTranslation()
   const {
+    error: loadError,
     data: response,
     isLoading,
     mutate,
@@ -128,11 +124,14 @@ export default function AttackerProfilesPage() {
     })
   }
 
+  const [isCreating, setIsCreating] = useState(false)
   const handleCreate = async () => {
+    if (isCreating) return
     if (!formData.name) {
       toast.error('Please provide a profile name')
       return
     }
+    setIsCreating(true)
     try {
       // The backend requires `capabilities` as a structured object, not a
       // string array — sending an array 400s and the create silently failed.
@@ -155,8 +154,15 @@ export default function AttackerProfilesPage() {
       toast.success('Attacker profile created')
       setIsCreateOpen(false)
       resetForm()
-    } catch {
-      toast.error('Failed to create attacker profile')
+    } catch (err) {
+      toast.error(
+        getErrorMessage(
+          err,
+          t('attackerProfiles.createFailed', 'Failed to create attacker profile')
+        )
+      )
+    } finally {
+      setIsCreating(false)
     }
   }
 
@@ -182,7 +188,12 @@ export default function AttackerProfilesPage() {
           return (
             <div className="flex items-center gap-2 font-medium">
               {profile.name}
-              {profile.is_default && <Lock className="h-3 w-3 text-muted-foreground" />}
+              {profile.is_default && (
+                <Lock
+                  className="h-3 w-3 text-muted-foreground"
+                  aria-label={t('attackerProfiles.builtIn', 'Built-in profile')}
+                />
+              )}
             </div>
           )
         },
@@ -197,7 +208,10 @@ export default function AttackerProfilesPage() {
               variant="outline"
               className={profileTypeColors[profile.profile_type] || profileTypeColors.custom}
             >
-              {profileTypeLabels[profile.profile_type] || profile.profile_type}
+              {t(
+                `attackerProfiles.type.${profile.profile_type}`,
+                profileTypeLabel(profile.profile_type)
+              )}
             </Badge>
           )
         },
@@ -266,7 +280,7 @@ export default function AttackerProfilesPage() {
         },
       },
     ],
-    []
+    [t]
   )
 
   return (
@@ -296,6 +310,12 @@ export default function AttackerProfilesPage() {
                 <Skeleton key={i} className="h-10 w-full" />
               ))}
             </div>
+          ) : loadError ? (
+            <ErrorState
+              title={t('attackerProfiles.loadError', 'attacker profiles')}
+              error={loadError}
+              onRetry={() => mutate()}
+            />
           ) : profiles.length === 0 ? (
             <EmptyState
               icon={Target}
@@ -434,7 +454,9 @@ export default function AttackerProfilesPage() {
             <Button variant="outline" onClick={() => setIsCreateOpen(false)}>
               Cancel
             </Button>
-            <Button onClick={handleCreate}>Create</Button>
+            <Button onClick={handleCreate} disabled={isCreating}>
+              Create
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -445,7 +467,10 @@ export default function AttackerProfilesPage() {
         title={t('confirm.attackerProfile.deleteTitle', 'Delete the attacker profile "{name}"?', {
           name: deleteProfile?.name ?? '',
         })}
-        desc={t('confirm.attackerProfile.deleteDesc', 'This cannot be undone.')}
+        desc={t(
+          'confirm.attackerProfile.deleteDesc',
+          'It is removed from every cycle that uses it. This cannot be undone.'
+        )}
         confirmText={t('confirm.delete', 'Delete')}
         destructive
         handleConfirm={handleDelete}

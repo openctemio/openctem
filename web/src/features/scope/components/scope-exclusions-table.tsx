@@ -29,6 +29,13 @@ import {
 import { toast } from 'sonner'
 import { Input } from '@/components/ui/input'
 import { Skeleton } from '@/components/ui/skeleton'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
 import { ConfirmDialog } from '@/components/confirm-dialog'
 import { useTranslation } from '@/context/i18n-provider'
 import {
@@ -95,6 +102,7 @@ interface ScopeExclusionsTableProps {
   searchInput: string
   onSearchInput: (v: string) => void
   onKindChange: (v: string) => void
+  onStatusChange: (v: string) => void
   onPagination: (p: { pageIndex: number; pageSize: number }) => void
 }
 
@@ -103,6 +111,7 @@ export function ScopeExclusionsTable({
   searchInput,
   onSearchInput,
   onKindChange,
+  onStatusChange,
   onPagination,
 }: ScopeExclusionsTableProps) {
   const { t } = useTranslation()
@@ -312,7 +321,8 @@ export function ScopeExclusionsTable({
     },
   ]
 
-  const filtersActive = !!query.search || query.kind !== 'all'
+  // The strip's "Exclusions in effect" sets status=active, so status counts here.
+  const filtersActive = !!query.search || query.kind !== 'all' || query.status !== 'all'
 
   return (
     <>
@@ -348,6 +358,19 @@ export function ScopeExclusionsTable({
                 className="h-9 w-auto min-w-36"
                 aria-label="Filter by kind"
               />
+              <Select value={query.status} onValueChange={onStatusChange}>
+                <SelectTrigger className="h-9 w-auto min-w-36" aria-label="Filter by status">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All statuses</SelectItem>
+                  {OUT_STATUSES.map((s) => (
+                    <SelectItem key={s} value={s}>
+                      {EXCLUSION_STATUS[s]?.label ?? s}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </>
           }
           manualPagination
@@ -358,7 +381,7 @@ export function ScopeExclusionsTable({
           emptyMessage={filtersActive ? 'No exclusions match' : 'Nothing is excluded'}
           emptyDescription={
             filtersActive
-              ? 'Try another search or kind.'
+              ? 'Try another search, kind or status.'
               : 'Add systems scans must never touch: fragile production hosts, partners’ systems, payment gateways.'
           }
         />
