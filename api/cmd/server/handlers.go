@@ -643,7 +643,9 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 			h.SetAuditService(svc.Audit)
 			return h
 		}(),
-		SCIMAuth: middleware.SCIMAuth(svc.SCIMToken),
+		// SCIM requests also need SCIM to be available for the organization (a loss
+		// keeps it during the read-only grace).
+		SCIMAuth: middleware.SCIMAuthWithFeature(svc.SCIMToken, svc.Entitlement),
 
 		// Scanning & ScanRuns
 		ScanProfile:         handler.NewScanProfileHandler(svc.ScanProfile, v, log),
@@ -856,6 +858,8 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 	handlers.Tool.SetAuditService(svc.Audit)
 	// Configuration changes audited with a before/after diff.
 	handlers.Integration.SetAuditService(svc.Audit)
+	// Redelivery of an archived notification event to one channel (RFC-124).
+	handlers.Integration.SetDeliveryRedeliverer(svc.Outbox)
 	handlers.TemplateSource.SetAuditService(svc.Audit)
 	handlers.SLA.SetAuditService(svc.Audit)
 	handlers.AssignmentRule.SetAuditService(svc.Audit)

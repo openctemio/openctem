@@ -27,6 +27,7 @@ import (
 	"github.com/openctemio/openctem/api/pkg/domain/ingestreceipt"
 	"github.com/openctemio/openctem/api/pkg/domain/sensor"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	tooldom "github.com/openctemio/openctem/api/pkg/domain/tool"
 	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
 	"github.com/openctemio/openctem/api/pkg/logger"
 )
@@ -94,6 +95,12 @@ type Request struct {
 	MinSeverity ctis.Severity
 	// SessionID names the import; report ids derive from it.
 	SessionID string
+	// Coverage is what the upload declares it covered (§ coverage.go);
+	// the zero value is partial and closes nothing.
+	Coverage Coverage
+	// CoverageScope is the uploader's visibility for a full-coverage
+	// declaration (nil: fall back to Actor); see Request.coverageScope.
+	CoverageScope ingest.ActorScope
 	// ReceiptID is the upload's receipt (BeginUpload); zero in a preview.
 	// Every file of the upload is ingested under it: it is the report id,
 	// so the findings' scan_id, and the assets' import_id.
@@ -137,9 +144,12 @@ type FileResult struct {
 	// ImportID is the receipt of the upload the file was committed in: the
 	// producer of what it wrote (findings.scan_id, assets.import_id). Empty
 	// in a preview.
-	ImportID string           `json:"import_id,omitempty"`
-	Name     string           `json:"name"`
-	Format   importer.Format  `json:"format,omitempty"`
+	ImportID string          `json:"import_id,omitempty"`
+	Name     string          `json:"name"`
+	Format   importer.Format `json:"format,omitempty"`
+	// Tool is the scanner the file's report names (canonical), the tool of
+	// a full-coverage scope.
+	Tool     string           `json:"-"`
 	Error    *FileError       `json:"error,omitempty"`
 	Stats    importer.Stats   `json:"stats"`
 	Issues   []importer.Issue `json:"issues,omitempty"`
@@ -193,12 +203,27 @@ func (s *Service) BeginUpload(ctx context.Context, req Request, name string) (sh
 // FinishUpload stores the file-level counts of an upload on its receipt:
 // components, VEX statements, what the parsers skipped, the files that
 // failed (by index and a fixed code). The upload failed when no file was
-// imported. Best-effort: what the files wrote is already stored.
-func (s *Service) FinishUpload(ctx context.Context, req Request, results []FileResult) {
+// imported. complete says the request read every part; only a complete
+// full-coverage upload closes what it did not report (closeUncovered).
+// Best-effort: what the files wrote is already stored.
+func (s *Service) FinishUpload(ctx context.Context, req Request, results []FileResult, complete bool) {
 	if s.receipts == nil || req.ReceiptID.IsZero() {
 		return
 	}
 	res := &ingestreceipt.UploadResult{Status: ingestreceipt.StatusCompleted}
+	if req.Coverage.Full {
+		note := noteIncomplete
+		var untouched *int
+		if complete {
+			note, untouched = s.closeUncovered(ctx, req, results)
+		}
+		res.Coverage, res.CoverageNote, res.Untouched = ingestreceipt.CoverageFull, note, untouched
+		if untouched == nil {
+			// Coverage was declared but not proven: the receipt stays
+			// partial and says why.
+			res.Coverage = ingestreceipt.CoveragePartial
+		}
+	}
 	formats := map[importer.Format]bool{}
 	ok := 0
 	for i, fr := range results {
@@ -270,7 +295,7 @@ func (s *Service) ImportFile(ctx context.Context, req Request, index int, name s
 			return FileResult{Name: SafeName(name), Error: &FileError{Kind: KindFailed, Message: err.Error()}}
 		}
 		req.ReceiptID = id
-		defer func() { s.FinishUpload(context.WithoutCancel(ctx), req, []FileResult{fr}) }()
+		defer func() { s.FinishUpload(context.WithoutCancel(ctx), req, []FileResult{fr}, true) }()
 	}
 	up := Upload{Name: name, Body: r, ReportIDPrefix: fmt.Sprintf("%s-%d", req.SessionID, index)}
 	if kb != nil {
@@ -299,6 +324,9 @@ func (s *Service) store(ctx context.Context, req Request, c Converted) FileResul
 	}
 	res := c.Result
 	fr.Format = res.Format
+	if res.Report != nil && res.Report.Tool != nil {
+		fr.Tool = tooldom.CanonicalName(res.Report.Tool.Name)
+	}
 	fr.Stats = res.Stats
 	fr.Issues = res.Issues
 	fr.Unmapped = res.Unmapped
