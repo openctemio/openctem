@@ -28,7 +28,7 @@ import { SEVERITY_LEVELS, type SeverityLevel } from '@/lib/severity'
 import { useTranslation } from '@/context/i18n-provider'
 
 /** Threshold wording per level (the list runs least severe first). */
-const MIN_SEVERITY_LABELS: Record<SeverityLevel, string> = {
+const MIN_SEVERITY_FALLBACK: Record<SeverityLevel, string> = {
   info: 'Info (all)',
   low: 'Low and above',
   medium: 'Medium and above',
@@ -96,9 +96,9 @@ export default function NotificationsSettingsPage() {
       await updateNotificationPreferences(update)
       await invalidatePreferencesCache()
       setDirty(false)
-      toast.success('Notification settings saved')
+      toast.success(t('account.notifications.saved', 'Notification settings saved'))
     } catch {
-      toast.error('Failed to save notification settings')
+      toast.error(t('account.notifications.saveFailed', 'Could not save notification settings'))
     } finally {
       setIsSaving(false)
     }
@@ -117,7 +117,7 @@ export default function NotificationsSettingsPage() {
   if (error && !preferences) {
     return (
       <ErrorState
-        title="notification settings"
+        title={t('account.notifications.errorSubject', 'notification settings')}
         error={error}
         onRetry={() => {
           void mutate()
@@ -132,15 +132,23 @@ export default function NotificationsSettingsPage() {
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <Bell className="h-5 w-5" />
-            In-app notifications
+            {t('account.notifications.inApp', 'In-app notifications')}
           </CardTitle>
-          <CardDescription>The bell in the top bar.</CardDescription>
+          <CardDescription>
+            {t('account.notifications.inAppHint', 'The bell in the top bar.')}
+          </CardDescription>
         </CardHeader>
         <CardContent>
           <div className="flex items-center justify-between gap-4">
             <div>
-              <Label htmlFor="in-app-enabled">Show in-app notifications</Label>
-              <p className="text-sm text-muted-foreground">{inAppEnabled ? 'On' : 'Off'}</p>
+              <Label htmlFor="in-app-enabled">
+                {t('account.notifications.inAppShow', 'Show in-app notifications')}
+              </Label>
+              <p className="text-sm text-muted-foreground">
+                {inAppEnabled
+                  ? t('account.notifications.on', 'On')
+                  : t('account.notifications.off', 'Off')}
+              </p>
             </div>
             <Switch
               id="in-app-enabled"
@@ -155,15 +163,24 @@ export default function NotificationsSettingsPage() {
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <AlertTriangle className="h-5 w-5" />
-            Severity filter
+            {t('account.notifications.severityFilter', 'Severity filter')}
           </CardTitle>
-          <CardDescription>Only notify me at or above this severity.</CardDescription>
+          <CardDescription>
+            {t(
+              'account.notifications.severityFilterHint',
+              'Only notify me at or above this severity.'
+            )}
+          </CardDescription>
         </CardHeader>
         <CardContent>
           <div className="flex flex-wrap items-center justify-between gap-4">
             <div>
-              <Label htmlFor="min-severity">Minimum severity</Label>
-              <p className="text-sm text-muted-foreground">Lower severities are left out</p>
+              <Label htmlFor="min-severity">
+                {t('account.notifications.minSeverity', 'Minimum severity')}
+              </Label>
+              <p className="text-sm text-muted-foreground">
+                {t('account.notifications.minSeverityHint', 'Lower severities are left out')}
+              </p>
             </div>
             <Select value={minSeverity} onValueChange={edit(setMinSeverity)}>
               <SelectTrigger id="min-severity" className="w-[180px]">
@@ -172,7 +189,7 @@ export default function NotificationsSettingsPage() {
               <SelectContent>
                 {[...SEVERITY_LEVELS].reverse().map((s) => (
                   <SelectItem key={s} value={s}>
-                    {MIN_SEVERITY_LABELS[s]}
+                    {t(`account.notifications.min.${s}`, MIN_SEVERITY_FALLBACK[s])}
                   </SelectItem>
                 ))}
               </SelectContent>
@@ -261,7 +278,9 @@ export default function NotificationsSettingsPage() {
           ) : (
             <Save className="me-2 h-4 w-4" />
           )}
-          {isSaving ? 'Saving…' : 'Save changes'}
+          {isSaving
+            ? t('account.saving', 'Saving...')
+            : t('account.notifications.save', 'Save changes')}
         </Button>
       </div>
     </div>
