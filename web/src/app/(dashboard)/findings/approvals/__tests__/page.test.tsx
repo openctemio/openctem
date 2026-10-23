@@ -49,6 +49,17 @@ vi.mock('@/features/findings/api/use-findings-api', () => ({
     isMutating: false,
   })),
   remindApprovers: vi.fn(),
+  // The finding an approve/reject dialog is about.
+  useFindingApi: vi.fn(() => ({
+    data: {
+      id: 'finding-abc123def456',
+      title: 'SQL injection in orders search',
+      severity: 'high',
+      cve_id: 'CVE-2026-0420',
+      asset: { id: 'asset-1', name: 'orders-api' },
+    },
+    isLoading: false,
+  })),
 }))
 
 // Group exceptions: the pending count and the panel's list.
@@ -339,11 +350,10 @@ describe('ApprovalsPage', () => {
       expect(screen.getByText('Loading approvals…')).toBeInTheDocument()
     })
 
-    it('renders back link to findings page', () => {
+    it('has no title-case back link: the sidebar already leads to Findings', () => {
       mockHook({ data: { data: [], total: 0, page: 1, per_page: 20, status_counts: {} } })
       render(<ApprovalsPage />)
-      const backLink = screen.getByText('Back to Findings')
-      expect(backLink.closest('a')).toHaveAttribute('href', '/findings')
+      expect(screen.queryByText('Back to Findings')).not.toBeInTheDocument()
     })
 
     it('renders refresh button', () => {
@@ -371,17 +381,19 @@ describe('ApprovalsPage', () => {
   // ============================================
 
   describe('error state', () => {
-    it('shows full-page error with retry button', () => {
+    it('shows the error inside the list, keeping the header and the tabs', () => {
       mockHook({ error: new Error('Network error') })
       render(<ApprovalsPage />)
-      expect(screen.getByText('Failed to load approvals')).toBeInTheDocument()
-      expect(screen.getByText('Retry')).toBeInTheDocument()
+      expect(screen.getByRole('heading', { name: 'Approval requests' })).toBeInTheDocument()
+      expect(screen.getByRole('tab', { name: /Group exceptions/ })).toBeInTheDocument()
+      expect(screen.getByRole('alert')).toHaveTextContent(/approval requests/)
+      expect(screen.queryByTestId('data-table')).not.toBeInTheDocument()
     })
 
     it('calls mutate when retry is clicked', () => {
       mockHook({ error: new Error('Network error') })
       render(<ApprovalsPage />)
-      fireEvent.click(screen.getByText('Retry'))
+      fireEvent.click(screen.getByRole('button', { name: /retry/i }))
       expect(mockMutate).toHaveBeenCalled()
     })
   })
@@ -565,6 +577,19 @@ describe('ApprovalsPage', () => {
       render(<ApprovalsPage />)
       fireEvent.click(screen.getByRole('button', { name: 'Refresh' }))
       expect(mockMutate).toHaveBeenCalled()
+      // The spinning button is the feedback; no toast for a visible change.
+      expect(toast.success).not.toHaveBeenCalled()
+    })
+
+    it('never offers a header sort on one page of a server-paginated list', () => {
+      mockHook({
+        data: { data: mockApprovals, total: 3, page: 1, per_page: 20, status_counts: COUNTS },
+      })
+      render(<ApprovalsPage />)
+      const sortable = (captured.columns as { enableSorting?: boolean }[]).filter(
+        (c) => c.enableSorting !== false
+      )
+      expect(sortable).toHaveLength(0)
     })
   })
 })
@@ -603,8 +628,7 @@ describe('ApprovalsPage approval policy', () => {
     const user = userEvent.setup()
     render(<ApprovalsPage />)
     const { container } = cell('actions', dualRow)
-    await user.click(within(container).getByRole('button'))
-    await user.click(await screen.findByRole('menuitem', { name: /approve/i }))
+    await user.click(within(container).getByRole('button', { name: /approve/i }))
     const dialog = await screen.findByRole('alertdialog')
     await user.click(within(dialog).getByRole('button', { name: 'Approve' }))
   }
@@ -696,11 +720,23 @@ describe('ApprovalsPage group exceptions', () => {
     expect(link).toHaveAttribute('href', '/findings/approvals?view=groups&batch=batch-1')
   })
 
-  it('a request outside any group keeps its actions menu', () => {
+  it('a request outside any group offers its decision on the row', () => {
     render(<ApprovalsPage />)
-    const { container } = cell('actions', { ...memberRow, batch_id: undefined })
-    expect(within(container).getByRole('button')).toBeInTheDocument()
+    const { container } = cell('actions', {
+      ...memberRow,
+      batch_id: undefined,
+      requested_by: 'user-2',
+    })
+    expect(within(container).getByRole('button', { name: /approve/i })).toBeInTheDocument()
+    expect(within(container).getByRole('button', { name: /reject/i })).toBeInTheDocument()
     expect(within(container).queryByRole('link')).not.toBeInTheDocument()
+  })
+
+  it('the active tab points at a panel that exists', () => {
+    render(<ApprovalsPage />)
+    const tab = screen.getByRole('tab', { name: /Finding requests/ })
+    const panel = tab.getAttribute('aria-controls')
+    expect(panel && document.getElementById(panel)).toBeTruthy()
   })
 
   it('counts pending group exceptions on the view switch and switches through the URL', () => {
@@ -730,5 +766,108 @@ describe('ApprovalsPage group exceptions', () => {
     expect(within(container).getByRole('link')).toHaveAttribute('href', '/remediation/tasks/task-1')
     expect(cell('tier', row).container.textContent).toContain('0 of 1 approvals')
     expect(cell('members', row).container.textContent).toBe('3')
+  })
+})
+
+// ============================================
+// DECIDING: THE ROW, THE DIALOGS, A FAILED REJECT
+// ============================================
+
+describe('ApprovalsPage deciding', () => {
+  type Col = { id?: string; cell?: (c: unknown) => React.ReactNode }
+  const otherRow = {
+    ...mockApprovals[0],
+    id: 'approval-o',
+    requested_by: 'user-2',
+    finding_title: 'SQL injection in orders search',
+    justification: 'Only reachable from the test harness.\nSee ticket OPS-1.',
+  }
+
+  beforeEach(() => {
+    vi.clearAllMocks()
+    listState.view = ''
+    mockHook({
+      data: {
+        data: [otherRow] as unknown as typeof mockApprovals,
+        total: 1,
+        page: 1,
+        per_page: 20,
+        status_counts: COUNTS,
+      },
+    })
+  })
+
+  function cell(id: string, row: unknown) {
+    const col = (captured.columns as Col[]).find((c) => c.id === id)
+    expect(col?.cell).toBeDefined()
+    return render(<div>{col?.cell?.({ row: { original: row } })}</div>)
+  }
+
+  it('your own request shows no decision buttons, only that it is yours', () => {
+    render(<ApprovalsPage />)
+    const { container } = cell('actions', { ...otherRow, requested_by: 'user-1' })
+    expect(within(container).queryByRole('button', { name: /^approve$/i })).toBeNull()
+    expect(within(container).queryByRole('button', { name: /^reject$/i })).toBeNull()
+    expect(container).toHaveTextContent('Your request')
+  })
+
+  it('the more-actions menu is named after the finding', () => {
+    render(<ApprovalsPage />)
+    const { container } = cell('actions', { ...otherRow, requested_by: 'user-1' })
+    expect(
+      within(container).getByRole('button', {
+        name: 'More actions for SQL injection in orders search',
+      })
+    ).toBeInTheDocument()
+  })
+
+  it('the reject dialog shows the finding and the whole justification', async () => {
+    const user = userEvent.setup()
+    render(<ApprovalsPage />)
+    const { container } = cell('actions', otherRow)
+    await user.click(within(container).getByRole('button', { name: /reject/i }))
+    const dialog = await screen.findByRole('dialog')
+    const summary = within(dialog).getByTestId('approval-finding-summary')
+    expect(summary).toHaveTextContent('SQL injection in orders search')
+    expect(summary).toHaveTextContent('orders-api')
+    expect(summary).toHaveTextContent('CVE-2026-0420')
+    const just = within(dialog).getByTestId('approval-justification')
+    expect(just).toHaveAttribute('dir', 'auto')
+    expect(just.textContent).toContain('See ticket OPS-1.')
+    expect(within(dialog).getByRole('link', { name: /open finding/i })).toHaveAttribute(
+      'href',
+      '/findings/finding-abc123def456'
+    )
+  })
+
+  it('a failed reject keeps the dialog open with the typed reason and says why', async () => {
+    mockTriggerReject.mockRejectedValue(new Error('boom'))
+    const user = userEvent.setup()
+    render(<ApprovalsPage />)
+    const { container } = cell('actions', otherRow)
+    await user.click(within(container).getByRole('button', { name: /reject/i }))
+    const dialog = await screen.findByRole('dialog')
+    const box = within(dialog).getByRole('textbox')
+    fireEvent.change(box, { target: { value: 'Not reachable is not proven' } })
+    await user.click(within(dialog).getByRole('button', { name: 'Reject' }))
+    expect(await within(dialog).findByRole('alert')).toHaveTextContent('Failed to reject request')
+    expect(screen.getByRole('dialog')).toBeInTheDocument()
+    expect(within(dialog).getByRole('textbox')).toHaveValue('Not reachable is not proven')
+    expect(toast.error).not.toHaveBeenCalled()
+  })
+
+  it('a successful reject closes the dialog', async () => {
+    mockTriggerReject.mockResolvedValue({})
+    const user = userEvent.setup()
+    render(<ApprovalsPage />)
+    const { container } = cell('actions', otherRow)
+    await user.click(within(container).getByRole('button', { name: /reject/i }))
+    const dialog = await screen.findByRole('dialog')
+    fireEvent.change(within(dialog).getByRole('textbox'), {
+      target: { value: 'Reachable from the internet' },
+    })
+    await user.click(within(dialog).getByRole('button', { name: 'Reject' }))
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
+    expect(mockTriggerReject).toHaveBeenCalledWith({ reason: 'Reachable from the internet' })
   })
 })

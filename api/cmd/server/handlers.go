@@ -591,6 +591,7 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		FindingEvidenceItems: handler.NewFindingEvidenceItemsHandler(svc.Evidence, log),
 		JiraWebhook:          jiraWebhookHandler,
 		TicketMapping:        ticketMappingHandler,
+		ImportMapping:        newImportMappingHandler(svc, log),
 		GitHubWebhook:        githubWebhookHandler,
 		Exposure:             handler.NewExposureHandler(svc.Exposure, svc.User, v, log),
 		ThreatIntel:          handler.NewThreatIntelHandler(svc.ThreatIntel, v, log).SetDataScope(svc.DataScope),
@@ -1589,6 +1590,15 @@ func newAssetImportHandler(svc *Services, log *logger.Logger) *handler.AssetImpo
 	return h
 }
 
+// newImportMappingHandler builds the import mapping handler (nil without
+// its service).
+func newImportMappingHandler(svc *Services, log *logger.Logger) *handler.ImportMappingHandler {
+	if svc.ImportMapping == nil {
+		return nil
+	}
+	return handler.NewImportMappingHandler(svc.ImportMapping, svc.Audit, log)
+}
+
 // newFindingImportHandler builds the handler of POST /findings/imports: the
 // ctis importers, ingest with the uploader's rights, VEX documents applied
 // under INGEST_VEX, the upload's receipt and the durable Idempotency-Key
@@ -1597,6 +1607,9 @@ func newFindingImportHandler(cfg *config.Config, repos *Repositories, svc *Servi
 	imp := findingimport.NewService(svc.Ingest, repos.Finding, repos.IngestReceipt, ingest.ParseVEXMode(cfg.Ingest.VEX), log)
 	h := handler.NewFindingImportHandler(imp, svc.DataScope, svc.Audit, log)
 	h.SetReceiptStores(repos.IngestReceipt, repos.IdempotencyKey)
+	if svc.ImportMapping != nil {
+		h.SetMappingResolver(svc.ImportMapping)
+	}
 	return h
 }
 
@@ -1711,6 +1724,9 @@ func newCIHandlers(cfg *config.Config, repos *Repositories, svc *Services, redis
 	}
 	admin.SetRefusalService(ciSvc)
 	runner := handler.NewCIRunnerHandler(ciSvc, log)
+	if svc.ImportMapping != nil {
+		runner.SetMappingResolver(svc.ImportMapping)
+	}
 	if fp := vulnerability.NewSecretFingerprinter([]byte(cfg.FingerprintSecret())); fp != nil {
 		runner.SetSecretKeys(fp)
 	}
