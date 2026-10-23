@@ -80,7 +80,7 @@ func TestThreatAlerts_DB(t *testing.T) {
 	// Every other organization of the shared test database counts as
 	// baselined, so the planner's baseline sweep reaches these four.
 	mustExec(t, db, `INSERT INTO threat_alert_tenant_state (tenant_id, baseline_at)
-		SELECT id, now() FROM tenants WHERE id NOT IN ($1, $2, $3, $4) ON CONFLICT DO NOTHING`, A.String(), B.String(), C.String(), D.String())
+		SELECT id, now() FROM tenants WHERE id NOT IN ($1, $2, $3, $4) FOR KEY SHARE ON CONFLICT DO NOTHING`, A.String(), B.String(), C.String(), D.String())
 
 	asset := func(tenant shared.ID, name, exposure, criticality string) shared.ID {
 		t.Helper()

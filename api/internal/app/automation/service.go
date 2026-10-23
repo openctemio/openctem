@@ -409,6 +409,11 @@ func (s *WorkflowService) UpdateWorkflowGraph(ctx context.Context, input UpdateW
 	if input.Tags != nil {
 		w.Tags = input.Tags
 	}
+	// The new graph holds only known types: a removed-type reason no longer
+	// applies (the automation stays off until someone switches it on).
+	if w.DisabledReason == automationdom.DisabledReasonRemovedType {
+		w.DisabledReason = ""
+	}
 
 	// Delete existing edges first (FK constraint)
 	if err := s.edgeRepo.DeleteByWorkflowID(ctx, input.WorkflowID); err != nil {

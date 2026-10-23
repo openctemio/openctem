@@ -161,13 +161,39 @@ export function EASMDecidePanel({ compact = false }: { compact?: boolean }) {
     )
   }
   if (isLoading && !cards) {
-    return <Skeleton className="h-28 w-full rounded-xl" />
+    // The compact panel renders nothing when no card is waiting: no skeleton,
+    // so the overview does not jump when the answer is empty.
+    return compact ? null : <Skeleton className="h-28 w-full rounded-xl" />
   }
 
   // "Not now" hides a card from the overview for 30 days (or until it shows
   // something new), for this viewer; the Suggestions tab lists every card.
   const shown = (cards?.cards ?? []).filter((c) => !compact || !snoozed(tenantId, c))
-  if (compact && shown.length === 0) return null
+  // The tab badge also counts the name-rule cards, which only the Suggestions
+  // tab lists: when they are all that waits, say so in one line.
+  const ruleCount = Math.max(0, (cards?.total ?? 0) - (cards?.cards?.length ?? 0))
+  if (compact && shown.length === 0) {
+    if (ruleCount === 0) return null
+    return (
+      <p
+        className="flex items-center justify-between gap-2 text-sm"
+        data-testid="decide-rules-line"
+      >
+        <span>
+          {plural(
+            t,
+            'attackSurface.decide.rulesWaiting',
+            ruleCount,
+            '1 name rule waiting',
+            '{count} name rules waiting'
+          )}
+        </span>
+        <Link href={EASM_SUGGESTIONS_HREF} className="text-primary hover:underline">
+          {t('attackSurface.decide.review', 'Review')}
+        </Link>
+      </p>
+    )
+  }
 
   return (
     <section aria-label={t('attackSurface.decide.label', 'Decide')} className="space-y-3">
@@ -260,7 +286,13 @@ function AddressesCard({
           action: {
             label: t('attackSurface.decide.undo', 'Undo'),
             onClick: () =>
-              void decideAttribution(ids, 'automatic').then(() => refreshEASMSuggestions()),
+              void decideAttribution(ids, 'automatic')
+                .then(() => refreshEASMSuggestions())
+                .catch((err) =>
+                  toast.error(
+                    getErrorMessage(err, t('attackSurface.decide.undoFailed', 'Undo failed'))
+                  )
+                ),
           },
         }
       )

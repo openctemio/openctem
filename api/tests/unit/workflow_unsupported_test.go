@@ -11,11 +11,12 @@ import (
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 )
 
-// The schedule/finding_age/finding_updated/webhook triggers never fire, the
-// assign_team/update_priority actions always fail at run time and
-// trigger_pipeline (a scan workflow run outside any scan) is refused by design. The API must refuse to
-// create, edit or activate workflows that use them (a 400: ErrValidation),
-// while stored workflows that already use them stay readable and flagged.
+// The schedule/finding_age/finding_updated/webhook triggers, the
+// assign_team/update_priority/run_script/http_request/trigger_pipeline
+// actions and the pagerduty notification are removed types. The API must
+// refuse to create, edit or activate workflows that use them (a 400:
+// ErrValidation), while stored workflows that still hold one stay readable
+// and flagged.
 
 func unsupportedCases() []struct {
 	name string
@@ -27,15 +28,16 @@ func unsupportedCases() []struct {
 		cfg  automation.NodeConfig
 		want string
 	}{
-		{"schedule trigger", automation.NodeConfig{TriggerType: automation.TriggerTypeSchedule}, "trigger:schedule"},
-		{"finding_age trigger", automation.NodeConfig{TriggerType: automation.TriggerTypeFindingAge}, "trigger:finding_age"},
-		{"assign_team action", automation.NodeConfig{ActionType: automation.ActionTypeAssignTeam}, "action:assign_team"},
-		{"update_priority action", automation.NodeConfig{ActionType: automation.ActionTypeUpdatePriority}, "action:update_priority"},
-		{"run_script action", automation.NodeConfig{ActionType: automation.ActionTypeRunScript}, "action:run_script"},
-		{"finding_updated trigger", automation.NodeConfig{TriggerType: automation.TriggerTypeFindingUpdated}, "trigger:finding_updated"},
-		{"webhook trigger", automation.NodeConfig{TriggerType: automation.TriggerTypeWebhook}, "trigger:webhook"},
-		{"trigger_pipeline action", automation.NodeConfig{ActionType: automation.ActionTypeTriggerPipeline}, "action:trigger_pipeline"},
-		{"http_request action", automation.NodeConfig{ActionType: automation.ActionTypeHTTPRequest}, "action:http_request"},
+		{"schedule trigger", automation.NodeConfig{TriggerType: automation.TriggerType("schedule")}, "trigger:schedule"},
+		{"finding_age trigger", automation.NodeConfig{TriggerType: automation.TriggerType("finding_age")}, "trigger:finding_age"},
+		{"assign_team action", automation.NodeConfig{ActionType: automation.ActionType("assign_team")}, "action:assign_team"},
+		{"update_priority action", automation.NodeConfig{ActionType: automation.ActionType("update_priority")}, "action:update_priority"},
+		{"run_script action", automation.NodeConfig{ActionType: automation.ActionType("run_script")}, "action:run_script"},
+		{"finding_updated trigger", automation.NodeConfig{TriggerType: automation.TriggerType("finding_updated")}, "trigger:finding_updated"},
+		{"webhook trigger", automation.NodeConfig{TriggerType: automation.TriggerType("webhook")}, "trigger:webhook"},
+		{"trigger_pipeline action", automation.NodeConfig{ActionType: automation.ActionType("trigger_pipeline")}, "action:trigger_pipeline"},
+		{"http_request action", automation.NodeConfig{ActionType: automation.ActionType("http_request")}, "action:http_request"},
+		{"pagerduty notification", automation.NodeConfig{NotificationType: automation.NotificationType("pagerduty")}, "notification:pagerduty"},
 	}
 }
 
@@ -63,7 +65,7 @@ func TestWorkflowSupport_TypeSets(t *testing.T) {
 		automation.TriggerTypeAssetDiscovered, automation.TriggerTypeScanCompleted,
 		automation.TriggerTypeAITriageCompleted, automation.TriggerTypeAITriageFailed,
 	} {
-		if !tr.IsSupported() {
+		if !tr.IsValid() {
 			t.Errorf("trigger %s should be supported", tr)
 		}
 	}
@@ -73,7 +75,7 @@ func TestWorkflowSupport_TypeSets(t *testing.T) {
 		automation.ActionTypeTriggerScan,
 		automation.ActionTypeTriggerAITriage,
 	} {
-		if !a.IsSupported() {
+		if !a.IsValid() {
 			t.Errorf("action %s should be supported", a)
 		}
 	}
@@ -121,7 +123,7 @@ func TestUpdateWorkflowGraph_RejectsUnsupportedBeforeDeletingGraph(t *testing.T)
 	_, err := service.UpdateWorkflowGraph(ctx, automationsvc.UpdateWorkflowGraphInput{
 		TenantID: tenantID, UserID: shared.NewID(), WorkflowID: wf.ID,
 		Nodes: []automationsvc.CreateNodeInput{
-			{NodeKey: "trigger_1", NodeType: automation.NodeTypeTrigger, Config: automation.NodeConfig{TriggerType: automation.TriggerTypeSchedule}},
+			{NodeKey: "trigger_1", NodeType: automation.NodeTypeTrigger, Config: automation.NodeConfig{TriggerType: automation.TriggerType("schedule")}},
 		},
 	})
 	assertUnsupportedErr(t, err, "trigger:schedule")
@@ -140,7 +142,7 @@ func TestAddAndUpdateNode_RejectUnsupportedTypes(t *testing.T) {
 
 	_, err := service.AddNode(ctx, automationsvc.AddNodeInput{
 		TenantID: tenantID, WorkflowID: wf.ID, NodeKey: "a1", NodeType: automation.NodeTypeAction,
-		Config: automation.NodeConfig{ActionType: automation.ActionTypeAssignTeam},
+		Config: automation.NodeConfig{ActionType: automation.ActionType("assign_team")},
 	})
 	assertUnsupportedErr(t, err, "action:assign_team")
 	if nodeRepo.GetNodeCount() != 0 {
@@ -151,7 +153,7 @@ func TestAddAndUpdateNode_RejectUnsupportedTypes(t *testing.T) {
 	act.Config.ActionType = automation.ActionTypeUpdateStatus
 	_ = nodeRepo.Create(ctx, act)
 
-	cfg := automation.NodeConfig{ActionType: automation.ActionTypeUpdatePriority}
+	cfg := automation.NodeConfig{ActionType: automation.ActionType("update_priority")}
 	_, err = service.UpdateNode(ctx, automationsvc.UpdateNodeInput{
 		TenantID: tenantID, WorkflowID: wf.ID, NodeID: act.ID, Config: &cfg,
 	})
@@ -171,7 +173,7 @@ func TestUpdateWorkflow_CannotActivateUnsupported_ButCanDeactivate(t *testing.T)
 	trig, _ := automation.NewNode(wf.ID, "trigger_1", automation.NodeTypeTrigger, "t")
 	trig.Config.TriggerType = automation.TriggerTypeManual
 	act, _ := automation.NewNode(wf.ID, "a1", automation.NodeTypeAction, "a")
-	act.Config.ActionType = automation.ActionTypeAssignTeam
+	act.Config.ActionType = automation.ActionType("assign_team")
 	wf.Nodes = []*automation.Node{trig, act}
 	_ = workflowRepo.Create(ctx, wf)
 
@@ -243,7 +245,7 @@ func TestValidateTriggerConfig_ScanStatusFilter(t *testing.T) {
 
 // Refusing trigger_pipeline says what to use instead.
 func TestWorkflowSupport_TriggerPipelinePointsToTriggerScan(t *testing.T) {
-	err := automation.ValidateSupported(automation.NodeConfig{ActionType: automation.ActionTypeTriggerPipeline})
+	err := automation.ValidateSupported(automation.NodeConfig{ActionType: automation.ActionType("trigger_pipeline")})
 	assertUnsupportedErr(t, err, "action:trigger_pipeline")
 	if !strings.Contains(err.Error(), "trigger_scan") {
 		t.Fatalf("error %q does not point to trigger_scan", err.Error())
