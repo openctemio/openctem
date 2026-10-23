@@ -7,6 +7,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	dom "github.com/openctemio/openctem/api/pkg/domain/importmapping"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
@@ -319,5 +320,22 @@ func TestValidate(t *testing.T) {
 	}
 	if v := svc.Validate(nil); v.Valid {
 		t.Fatal("empty is valid")
+	}
+}
+
+// A preview is bounded in time: past previewTimeout it is refused, and
+// nothing of the sample comes back.
+func TestPreviewTimeout(t *testing.T) {
+	saved := previewTimeout
+	previewTimeout = time.Nanosecond
+	t.Cleanup(func() { previewTimeout = saved })
+	svc := NewService(newMemRepo())
+	sample := "title,severity,host\n" + strings.Repeat("secret-row,low,h\n", 1000)
+	_, err := svc.PreviewDocument(context.Background(), json.RawMessage(csvDoc), strings.NewReader(sample))
+	if !errors.Is(err, shared.ErrValidation) || !strings.Contains(err.Error(), "took too long") {
+		t.Fatalf("want a timeout refusal, got %v", err)
+	}
+	if strings.Contains(err.Error(), "secret-row") {
+		t.Fatalf("the refusal quotes the sample: %v", err)
 	}
 }

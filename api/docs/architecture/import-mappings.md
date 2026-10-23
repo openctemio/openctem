@@ -25,7 +25,9 @@ Design: [RFC-126](../rfcs/RFC-126-import-mappings.md). The language: ctis
    stand-in asset `ingest.PreviewAssetID(type, value)`. Equal keys in one
    sample are an `identity_collision` warning.
 3. `POST /import-mappings` stores version 1. `POST /{id}/versions` stores the
-   next version and compares identities (`importmapping.IdentityChanged`).
+   next version and compares identities (`importmapping.IdentityChanged`):
+   the declared members, the finding's asset, every member the server keys
+   findings on (`fingerprintInputs`) and the blocks that pick the recipe.
    An identity change answers 409 `identity_change_unconfirmed` until
    `confirm_identity_change` is sent; the version is then stored with
    `identity_changed = true`. A new version keeps the mapping's `source`.
@@ -38,7 +40,9 @@ Design: [RFC-126](../rfcs/RFC-126-import-mappings.md). The language: ctis
      of records without one;
    - the receipt's format is `mapping:<name>@<n>`, and the asset source name
      is `mapped:<name>`.
-5. Ingest decides identity as for any report (RFC-043). Nothing closes.
+5. Ingest decides identity as for any report (RFC-043). Nothing closes:
+   the handler refuses `coverage=full`, and `closeUncovered` closes nothing
+   for an upload through a mapping.
 
 ## Data
 

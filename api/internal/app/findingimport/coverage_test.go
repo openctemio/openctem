@@ -91,6 +91,22 @@ func TestCloseUncovered(t *testing.T) {
 	}
 }
 
+// An upload through an import mapping closes nothing, even when a caller
+// got coverage=full past the handler.
+func TestCloseUncoveredMappedNeverCloses(t *testing.T) {
+	repo := &coverageFake{assets: 1, open: 2, stale: []shared.ID{shared.NewID()}}
+	svc := NewService(&fakeIngester{}, repo, repo, ingest.SourceResolveDryRun, logger.NewNop())
+	req := coverageReq()
+	req.Mapping = resolvedCSV(t)
+	svc.FinishUpload(context.Background(), req, []FileResult{{Tool: "mapped:legacy-vm", Ingest: &ingest.Output{}}}, true)
+	if len(repo.resolved) != 0 || len(repo.finished) != 1 {
+		t.Fatalf("a mapped upload closed %d findings", len(repo.resolved))
+	}
+	if f := repo.finished[0]; f.Coverage != ingestreceipt.CoveragePartial {
+		t.Fatalf("receipt coverage %q", f.Coverage)
+	}
+}
+
 // The declaration is checked again when the close is due: an asset that
 // left the uploader's scope while the upload ran closes nothing, and the
 // receipt says why.

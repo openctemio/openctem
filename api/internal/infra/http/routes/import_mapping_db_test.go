@@ -12,6 +12,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
+	auditapp "github.com/openctemio/openctem/api/internal/app/audit"
 	appimportmapping "github.com/openctemio/openctem/api/internal/app/importmapping"
 	"github.com/openctemio/openctem/api/internal/app/ingest"
 	"github.com/openctemio/openctem/api/internal/infra/http/handler"
@@ -53,7 +54,8 @@ func newMappingHarness(t *testing.T) *mappingHarness {
 		}
 		_, _ = ih.db.ExecContext(context.Background(), `DELETE FROM tenants WHERE id = $1`, other.String())
 	})
-	return &mappingHarness{importHarness: ih, mh: handler.NewImportMappingHandler(svc, nil, logger.NewNop()),
+	audit := auditapp.NewAuditService(postgres.NewAuditRepository(&postgres.DB{DB: ih.db}), logger.NewNop())
+	return &mappingHarness{importHarness: ih, mh: handler.NewImportMappingHandler(svc, audit, logger.NewNop()),
 		other: other.String(), tenant: ih.tenantID}
 }
 
@@ -185,9 +187,27 @@ func TestImportMappings_DB(t *testing.T) {
 		t.Fatalf("preview wrote findings: %d -> %d", before, after)
 	}
 
-	// Delete; the findings it imported stay.
+	// Rename, then delete; the findings it imported stay.
+	if rec, _ := m.call(t, m.tenant, m.mh.Update, http.MethodPatch, "/", jsonBody(t, map[string]any{"name": "legacy-vm-2"}), p); rec.Code != http.StatusOK {
+		t.Fatalf("rename: %d %s", rec.Code, rec.Body)
+	}
 	if rec, _ := m.call(t, m.tenant, m.mh.Delete, http.MethodDelete, "/", nil, p); rec.Code != http.StatusNoContent {
 		t.Fatalf("delete: %d %s", rec.Code, rec.Body)
+	}
+	// Every write is audited in the owner organization, the confirmed
+	// identity change marked; nothing is audited in the other one (its
+	// refused attempts changed nothing).
+	for action, want := range map[string]int{"import_mapping.created": 1, "import_mapping.version_created": 2,
+		"import_mapping.updated": 1, "import_mapping.deleted": 1} {
+		if n := m.count(t, `SELECT count(*) FROM audit_logs WHERE tenant_id = $1 AND action = $2 AND resource_type = 'import_mapping' AND resource_id = $3`, m.tenant, action, id); n != want {
+			t.Errorf("audit %s: %d rows, want %d", action, n, want)
+		}
+	}
+	if n := m.count(t, `SELECT count(*) FROM audit_logs WHERE tenant_id = $1 AND action = 'import_mapping.version_created' AND (metadata->>'identity_changed')::boolean`, m.tenant); n != 2 {
+		t.Errorf("identity changes audited: %d, want 2", n)
+	}
+	if n := m.count(t, `SELECT count(*) FROM audit_logs WHERE tenant_id = $1 AND resource_type = 'import_mapping'`, m.other); n != 0 {
+		t.Errorf("audit rows in the other organization: %d", n)
 	}
 	if n := m.count(t, `SELECT count(*) FROM import_mapping_versions WHERE tenant_id = $1`, m.tenant); n != 0 {
 		t.Fatalf("versions left: %d", n)

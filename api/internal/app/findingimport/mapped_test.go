@@ -82,6 +82,10 @@ func TestConvert_MappingRepositoryDefault(t *testing.T) {
 	if refused != nil || got == nil || got.Error != nil {
 		t.Fatalf("refused %+v got %+v", refused, got)
 	}
+	// A CI upload reads coverage from the report: a mapped one is partial.
+	if cov := got.Result.Report.Metadata.CoverageType; cov != string(ingest.CoverageTypePartial) {
+		t.Fatalf("coverage %q", cov)
+	}
 	f := got.Result.Report.Findings[0]
 	if f.AssetValue != "github.com/example/app" || f.AssetType != ctis.AssetTypeRepository {
 		t.Fatalf("finding %+v", f)
