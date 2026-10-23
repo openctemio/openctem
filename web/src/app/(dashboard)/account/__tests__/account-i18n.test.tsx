@@ -67,7 +67,12 @@ vi.mock('@/features/account', async (orig) => ({
     mutate: vi.fn(),
   }),
   useUpdatePreferences: () => ({ updatePreferences: vi.fn(), isUpdating: false }),
-  useAccountActivity: () => ({ activities: h.activities, total: 0, totalPages: 0, isLoading: false }),
+  useAccountActivity: () => ({
+    activities: h.activities,
+    total: 0,
+    totalPages: 0,
+    isLoading: false,
+  }),
 }))
 
 const inVi = (ui: React.ReactElement) => render(<I18nProvider locale="vi">{ui}</I18nProvider>)
