@@ -102,8 +102,20 @@ func packagesCTE(f component.Filter, args *sqlArgs) string {
 
 	var prod strings.Builder
 	if q := strings.TrimSpace(f.Query); q != "" {
-		like := args.add("%" + escapeLikePattern(q) + "%")
-		prod.WriteString(" AND (p.name ILIKE " + like + " OR p.purl_name ILIKE " + like + " OR p.purl_namespace ILIKE " + like + ")")
+		if p, ok := searchPURL(q); ok {
+			// A pasted package URL is an exact package; its version, when it
+			// has one, keeps only the links of that version (where is
+			// log4j-core 2.14.1?).
+			prod.WriteString(" AND p.purl_type = " + args.add(p.Type) + " AND p.purl_namespace = " + args.add(p.Namespace) +
+				" AND p.purl_name = " + args.add(p.Name))
+			if p.Version != "" {
+				link.WriteString(" AND EXISTS (SELECT 1 FROM software_versions sv WHERE sv.id = s.software_version_id AND sv.raw = " +
+					args.add(p.Version) + ")")
+			}
+		} else {
+			like := args.add("%" + escapeLikePattern(q) + "%")
+			prod.WriteString(" AND (p.name ILIKE " + like + " OR p.purl_name ILIKE " + like + " OR p.purl_namespace ILIKE " + like + ")")
+		}
 	}
 	if len(f.PURLTypes) > 0 {
 		prod.WriteString(" AND p.purl_type = ANY(" + args.add(pq.Array(f.PURLTypes)) + ")")
@@ -183,6 +195,20 @@ func packagesCTE(f component.Filter, args *sqlArgs) string {
 			LEFT JOIN pf ON pf.product_id = pl.product_id
 			WHERE p.purl_type IS NOT NULL` + prod.String() + `
 		)`
+}
+
+// searchPURL reads a search text as a package URL, canonicalised the way
+// the catalog stores packages; false when it is not one (the text then
+// matches names).
+func searchPURL(q string) (software.PURL, bool) {
+	if len(q) < 4 || !strings.EqualFold(q[:4], "pkg:") {
+		return software.PURL{}, false
+	}
+	p, err := software.ParsePURL(q)
+	if err != nil {
+		return software.PURL{}, false
+	}
+	return p, true
 }
 
 func packageOrder(sortKey string) string {

@@ -26,10 +26,12 @@ import (
 
 	auditapp "github.com/openctemio/openctem/api/internal/app/audit"
 	"github.com/openctemio/openctem/api/internal/app/datascope"
+	appimportmapping "github.com/openctemio/openctem/api/internal/app/importmapping"
 	"github.com/openctemio/openctem/api/internal/app/ingest"
 	"github.com/openctemio/openctem/api/internal/app/ingestqueue"
 	"github.com/openctemio/openctem/api/pkg/domain/apikey"
 	auditdom "github.com/openctemio/openctem/api/pkg/domain/audit"
+	"github.com/openctemio/openctem/api/pkg/domain/importmapping"
 	"github.com/openctemio/openctem/api/pkg/domain/ingestjob"
 	"github.com/openctemio/openctem/api/pkg/domain/ingestreceipt"
 	"github.com/openctemio/openctem/api/pkg/domain/permission"
@@ -194,17 +196,70 @@ type EnvelopePart struct {
 
 // Envelope is what the worker needs besides the stored parts.
 type Envelope struct {
-	SessionID   string         `json:"session_id"`
-	Format      string         `json:"format,omitempty"`
-	MinSeverity string         `json:"min_severity,omitempty"`
-	CanApprove  bool           `json:"can_approve,omitempty"`
-	CoverageAll bool           `json:"coverage_full,omitempty"`
-	CoverageIDs []string       `json:"coverage_asset_ids,omitempty"`
-	Caller      Caller         `json:"caller"`
-	Parts       []EnvelopePart `json:"parts"`
+	SessionID   string   `json:"session_id"`
+	Format      string   `json:"format,omitempty"`
+	MinSeverity string   `json:"min_severity,omitempty"`
+	CanApprove  bool     `json:"can_approve,omitempty"`
+	CoverageAll bool     `json:"coverage_full,omitempty"`
+	CoverageIDs []string `json:"coverage_asset_ids,omitempty"`
+	Caller      Caller   `json:"caller"`
+	// Mapping is the import mapping version the file is converted through,
+	// pinned at accept (Format is then empty). The organization is never
+	// part of it: the worker uses the job's.
+	Mapping *MappingPin    `json:"mapping,omitempty"`
+	Parts   []EnvelopePart `json:"parts"`
 	// Audit is the request's audit context (who, from where), for the
 	// record written when the upload is imported.
 	Audit auditapp.AuditContext `json:"audit"`
+}
+
+// MappingPin names one exact import mapping version: the mapping's id (a
+// deleted and re-created mapping of the same name is another mapping) and
+// its receipt format "mapping:<name>@<n>", both as resolved at accept.
+type MappingPin struct {
+	ID     string `json:"id"`
+	Format string `json:"format"`
+}
+
+// MappingResolver resolves a pinned mapping version in an organization
+// (importmapping.Service).
+type MappingResolver interface {
+	Resolve(ctx context.Context, tenantID shared.ID, ref importmapping.FormatRef) (*appimportmapping.Resolved, error)
+}
+
+// SetMappingResolver enables committed uploads through an import mapping.
+func (s *Service) SetMappingResolver(m MappingResolver) { s.mappings = m }
+
+func (s *Service) resolvePin(ctx context.Context, tenantID shared.ID, pin *MappingPin) (*appimportmapping.Resolved, error) {
+	return ResolvePin(ctx, s.mappings, tenantID, pin, ImportErrorMappingGone)
+}
+
+// ResolvePin finds a pinned mapping version again in the job's organization.
+// A version that is gone, a mapping renamed or replaced, or one that no
+// longer passes validation fails the upload for good with the fixed code
+// (ingestjob.PermanentError): never another version, never another
+// organization. Any other error is retried.
+func ResolvePin(ctx context.Context, res MappingResolver, tenantID shared.ID, pin *MappingPin, code string) (*appimportmapping.Resolved, error) {
+	gone := func(err error) error { return ingestjob.Permanent(code, err) }
+	ref, ok, err := importmapping.ParseFormat(pin.Format)
+	if err != nil || !ok || ref.Version <= 0 {
+		return nil, gone(errors.New("malformed mapping pin"))
+	}
+	if _, err := shared.IDFromString(pin.ID); err != nil || res == nil {
+		return nil, gone(errors.New("mapping not resolvable"))
+	}
+	r, err := res.Resolve(ctx, tenantID, importmapping.FormatRef{Ref: pin.ID, Version: ref.Version})
+	var ve *appimportmapping.ValidationError
+	switch {
+	case errors.Is(err, importmapping.ErrUnknownMapping), errors.As(err, &ve):
+		return nil, gone(err)
+	case err != nil:
+		return nil, err
+	}
+	if r.Format() != pin.Format {
+		return nil, gone(errors.New("mapping renamed since accept"))
+	}
+	return r, nil
 }
 
 // Accepted is a stored upload.
@@ -275,8 +330,12 @@ func (s *Service) CommitUpload(ctx context.Context, tenantID shared.ID, actorUse
 		return nil, err
 	}
 	receiptID := shared.NewID()
+	receiptFormat := env.Format
+	if env.Mapping != nil {
+		receiptFormat = env.Mapping.Format
+	}
 	if err := s.receipts.CreateUpload(ctx, &ingestreceipt.Upload{
-		ID: receiptID, TenantID: tenantID, ActorUserID: actorUserID, Format: env.Format,
+		ID: receiptID, TenantID: tenantID, ActorUserID: actorUserID, Format: receiptFormat,
 		FilenameSHA256: nameHash(firstName), Status: ingestreceipt.StatusQueued,
 	}); err != nil {
 		s.DiscardParts(context.WithoutCancel(ctx), tenantID, jobID)
@@ -312,6 +371,9 @@ func (s *Service) failReceipt(ctx context.Context, tenantID, receiptID shared.ID
 const (
 	ImportErrorUploaderGone = "uploader_not_permitted"
 	ImportErrorUnreadable   = "unreadable"
+	// ImportErrorMappingGone: the import mapping version pinned when the
+	// upload was accepted is no longer there.
+	ImportErrorMappingGone = "mapping_unavailable"
 )
 
 // ProcessImportJob imports a queued upload (the ingest worker, kind
@@ -350,6 +412,14 @@ func (s *Service) ProcessImportJob(ctx context.Context, job *ingestjob.Job) ([]b
 	req, err := env.request(tenantID, receiptID, actor, coverage)
 	if err != nil {
 		return nil, ingestjob.Permanent(ImportErrorUnreadable, err)
+	}
+	if env.Mapping != nil {
+		// The job's organization (the stored row), never the envelope's.
+		mp, err := s.resolvePin(ctx, tenantID, env.Mapping)
+		if err != nil {
+			return nil, err
+		}
+		req.Mapping, req.Format = mp, importer.Format(mp.Format())
 	}
 	parts, err := s.queue.Parts(ctx, job)
 	if err != nil {

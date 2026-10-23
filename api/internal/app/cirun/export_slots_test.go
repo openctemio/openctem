@@ -76,7 +76,7 @@ func TestApplyExport_FailedAttemptGivesBackItsSlots(t *testing.T) {
 	run := &cirun.Run{ID: shared.NewID(), TenantID: shared.NewID(), Repository: "github.com/acme/api", Branch: "main", CommitSHA: "abc"}
 	repo := &slotRepo{}
 	s := &Service{repo: repo, ingester: &failSecond{}, log: logger.NewNop()}
-	if _, err := s.applyExport(context.Background(), run, sarifZip(t, 3)); err == nil {
+	if _, err := s.applyExport(context.Background(), run, sarifZip(t, 3), nil); err == nil {
 		t.Fatal("expected the second report to fail the attempt")
 	}
 	if repo.reserved != 1 || repo.released != 1 {
@@ -86,7 +86,7 @@ func TestApplyExport_FailedAttemptGivesBackItsSlots(t *testing.T) {
 	// A successful attempt keeps the slots it took.
 	repo = &slotRepo{}
 	s = &Service{repo: repo, ingester: &failSecond{calls: 5}, log: logger.NewNop()}
-	if _, err := s.applyExport(context.Background(), run, sarifZip(t, 3)); err != nil {
+	if _, err := s.applyExport(context.Background(), run, sarifZip(t, 3), nil); err != nil {
 		t.Fatal(err)
 	}
 	if repo.reserved != 2 || repo.released != 0 {

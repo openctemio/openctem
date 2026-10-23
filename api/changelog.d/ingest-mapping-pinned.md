@@ -1,0 +1,2 @@
+### Changed
+- A queued upload through an import mapping (`format=mapping:<name>[@<version>]`, on findings imports and on CI run results) is applied with the exact mapping version resolved when the upload was accepted, even if a newer version is published meanwhile. A mapping that does not resolve at accept is still a 400 `unknown_mapping`. If the pinned version is deleted or renamed before the worker applies the upload, the upload fails with the fixed code `mapping_unavailable`; it is never applied with another version or another organization's mapping.
