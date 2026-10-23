@@ -2,7 +2,7 @@
 
 import { useCallback } from 'react'
 import { toast } from 'sonner'
-import { ClipboardCheck, Sparkles, Loader2 } from 'lucide-react'
+import { ClipboardCheck, ListChecks, Loader2 } from 'lucide-react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -69,7 +69,7 @@ export function ComplianceMappingCard({ findingId }: ComplianceMappingCardProps)
               {isMutating ? (
                 <Loader2 className="me-1.5 h-3.5 w-3.5 animate-spin" />
               ) : (
-                <Sparkles className="me-1.5 h-3.5 w-3.5" />
+                <ListChecks className="me-1.5 h-3.5 w-3.5" />
               )}
               {t('findings.complianceCard.autoMap', 'Auto-map to OWASP')}
             </Button>

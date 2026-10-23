@@ -46,6 +46,7 @@ audit_log_chain
 audit_logs
 authorization_letters
 automation_runs
+automation_versions
 automations
 bounty_program_attestations
 bounty_program_channels

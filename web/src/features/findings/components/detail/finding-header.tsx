@@ -130,7 +130,7 @@ export function FindingHeader({ finding, status, onTriageCompleted }: FindingHea
               href={`https://nvd.nist.gov/vuln/detail/${encodeURIComponent(finding.cve)}`}
               target="_blank"
               rel="noopener noreferrer"
-              aria-label={t('findings.header.cveOnNvd', '{cve} on NVD', { cve: finding.cve })}
+              aria-label={`${t('findings.header.cveOnNvd', '{cve} on NVD', { cve: finding.cve })} ${t('common.opensNewTab', '(opens in a new tab)')}`}
             >
               {finding.cve}
               <ExternalLink className="h-3 w-3" aria-hidden />
@@ -151,7 +151,7 @@ export function FindingHeader({ finding, status, onTriageCompleted }: FindingHea
               href={`https://cwe.mitre.org/data/definitions/${encodeURIComponent(cweNum)}.html`}
               target="_blank"
               rel="noopener noreferrer"
-              aria-label={t('findings.header.cweOnMitre', '{cwe} on MITRE', { cwe: finding.cwe })}
+              aria-label={`${t('findings.header.cweOnMitre', '{cwe} on MITRE', { cwe: finding.cwe })} ${t('common.opensNewTab', '(opens in a new tab)')}`}
             >
               {finding.cwe}
               <ExternalLink className="h-3 w-3" aria-hidden />
@@ -203,9 +203,10 @@ export function FindingHeader({ finding, status, onTriageCompleted }: FindingHea
           </DropdownMenuTrigger>
           <DropdownMenuContent align="start" className="w-52">
             <DropdownMenuItem
-              onClick={() => {
-                void copyToClipboard(`${window.location.origin}/findings/${finding.id}`)
-                toast.success(t('findings.header.linkCopied', 'Link copied'))
+              onClick={async () => {
+                const ok = await copyToClipboard(`${window.location.origin}/findings/${finding.id}`)
+                if (ok) toast.success(t('findings.header.linkCopied', 'Link copied'))
+                else toast.error(t('common.copyFailed', 'Could not copy'))
               }}
             >
               <Link2 className="h-4 w-4" />

@@ -2688,6 +2688,14 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 		workflowPrincipalContext,
 	)
 
+	// Versions the migration backfilled carry a placeholder digest; store the
+	// canonical one (idempotent, a no-op once repaired).
+	if n, err := repos.WorkflowVersion.RepairBackfilledDigests(context.Background()); err != nil {
+		return nil, fmt.Errorf("repair automation version digests: %w", err)
+	} else if n > 0 {
+		log.Info("repaired automation version digests", "versions", n)
+	}
+
 	// Initialize workflow executor
 	workflowExecutor := automation.NewWorkflowExecutor(
 		repos.Workflow,
@@ -2695,6 +2703,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 		repos.WorkflowNodeRun,
 		log, automation.WithExecutorDB(deps.DB), automation.WithExecutorOutboxService(s.Outbox), automation.WithExecutorIntegrationService(s.Integration), automation.WithExecutorAuditService(s.Audit),
 		automation.WithExecutorStepAuthorizer(workflowAuthorizer),
+		automation.WithExecutorVersions(repos.WorkflowVersion),
 	)
 
 	// Register all action handlers for the workflow executor. Use the AI-aware
@@ -2733,6 +2742,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 		log, automation.WithWorkflowAuditService(s.Audit), automation.WithWorkflowExecutor(workflowExecutor),
 		automation.WithWorkflowStepAuthorizer(workflowAuthorizer),
 		automation.WithWorkflowSubjectReaders(repos.Finding, repos.Asset),
+		automation.WithWorkflowVersions(repos.WorkflowVersion),
 	)
 
 	// Initialize workflow event dispatcher for automatic workflow triggering

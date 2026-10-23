@@ -7,6 +7,7 @@ import (
 	automationsvc "github.com/openctemio/openctem/api/internal/app/automation"
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
 	"github.com/openctemio/openctem/api/pkg/apierror"
+	automationdom "github.com/openctemio/openctem/api/pkg/domain/automation"
 	"github.com/openctemio/openctem/api/pkg/domain/permission"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 )
@@ -51,6 +52,15 @@ func (h *WorkflowHandler) requireActionPermissions(w http.ResponseWriter, r *htt
 	return true
 }
 
+// definitionConfigs lists the permission-relevant config of every node of d.
+func definitionConfigs(d automationdom.Definition) []*NodeConfigRequest {
+	out := make([]*NodeConfigRequest, 0, len(d.Nodes))
+	for _, n := range d.Nodes {
+		out = append(out, &NodeConfigRequest{ActionType: string(n.Config.ActionType), NotificationType: string(n.Config.NotificationType)})
+	}
+	return out
+}
+
 // requireWorkflowPermissions is requireActionPermissions over every node the
 // stored workflow has, plus extra (the configs the request adds). Any change
 // to what a workflow does (an edge, a deleted node, a trigger filter, switching
@@ -74,6 +84,16 @@ func (h *WorkflowHandler) requireWorkflowPermissions(w http.ResponseWriter, r *h
 			ActionType:       string(c.ActionType),
 			NotificationType: string(c.NotificationType),
 		})
+	}
+	// A live automation runs its published version, which the draft may no
+	// longer match: the caller needs the permissions of both.
+	if wf.Mode == automationdom.ModeLive {
+		published, err := h.service.PublishedDefinition(r.Context(), tenantID, workflowID)
+		if err != nil {
+			h.handleServiceError(w, err)
+			return false
+		}
+		configs = append(configs, definitionConfigs(published)...)
 	}
 	configs = append(configs, extra...)
 	return h.requireActionPermissions(w, r, configs...)

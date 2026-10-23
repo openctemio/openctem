@@ -211,6 +211,7 @@ type Repositories struct {
 	WorkflowEdge    *postgres.AutomationEdgeRepository
 	WorkflowRun     *postgres.AutomationRunRepository
 	WorkflowNodeRun *postgres.AutomationRunStepRepository
+	WorkflowVersion *postgres.AutomationVersionRepository
 
 	// Suppressions
 	Suppression *postgres.SuppressionRepository
@@ -562,6 +563,7 @@ func newRepositories(db *postgres.DB) *Repositories {
 		WorkflowEdge:    postgres.NewAutomationEdgeRepository(db),
 		WorkflowRun:     postgres.NewAutomationRunRepository(db),
 		WorkflowNodeRun: postgres.NewAutomationRunStepRepository(db),
+		WorkflowVersion: postgres.NewAutomationVersionRepository(db),
 
 		// Suppressions
 		Suppression:        postgres.NewSuppressionRepository(db),
