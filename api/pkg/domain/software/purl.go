@@ -41,8 +41,14 @@ type PURL struct {
 }
 
 // lowerCaseTypes are the package URL types whose namespace and name are case
-// insensitive (the package URL specification lower-cases them).
-var lowerCaseTypes = map[string]bool{"npm": true, "pypi": true, "github": true, "bitbucket": true, "composer": true}
+// insensitive (the package URL specification lower-cases them). The finding
+// identity (vulnerability.CanonicalPURLIdentity) folds the same types, so a
+// package and the findings on it name it the same way; a test keeps the two
+// equal.
+var lowerCaseTypes = map[string]bool{
+	"alpm": true, "apk": true, "bitbucket": true, "composer": true, "deb": true,
+	"github": true, "hex": true, "npm": true, "pypi": true,
+}
 
 // ParsePURL parses and canonicalises a package URL. Percent-encoded segments
 // are decoded; the subpath is dropped; a PyPI name is lower-cased with "_"
