@@ -77,4 +77,12 @@ describe('risk scoring: the default likelihood × impact model', () => {
     expect(screen.getByText('Component weights')).toBeInTheDocument()
     expect(screen.queryByText('Likelihood × impact model')).not.toBeInTheDocument()
   })
+
+  it('ties every number field to its label', () => {
+    settings.current = { ...base, score_composition_mode: 'multiply' }
+    render(<Page />)
+    for (const input of document.querySelectorAll('input[type="number"]')) {
+      expect(document.querySelector(`label[for="${input.id}"]`), input.outerHTML).not.toBeNull()
+    }
+  })
 })
