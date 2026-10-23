@@ -18,6 +18,7 @@ const api = vi.hoisted(() => ({
   reject: vi.fn(),
   selfApprove: vi.fn(),
   mutate: vi.fn(),
+  loadMore: vi.fn(),
 }))
 vi.mock('@/lib/api/scan-approval-hooks', () => ({
   useScanApprovals: () => ({
@@ -25,6 +26,8 @@ vi.mock('@/lib/api/scan-approval-hooks', () => ({
     error: undefined,
     isLoading: false,
     mutate: api.mutate,
+    loadMore: api.loadMore,
+    isLoadingMore: false,
   }),
   approveScanRequest: api.approve,
   rejectScanRequest: api.reject,
@@ -148,6 +151,36 @@ describe('Approvals inbox', () => {
     const buttons = screen.getAllByRole('button', { name: 'Approve' })
     await user.click(buttons[buttons.length - 1])
     await waitFor(() => expect(api.approve).toHaveBeenCalledWith('r1', 'ok'))
+  })
+
+  // The API returns at most 100 requests a page; the rest was dropped without a word.
+  it('says how many requests exist and loads more', async () => {
+    api.loadMore.mockClear()
+    api.list = {
+      data: Array.from({ length: 100 }, (_, i) => request({ id: `r${i}` })),
+      total: 130,
+    }
+    render(<ScanApprovalsInbox />)
+    expect(screen.getByTestId('scan-approvals-count')).toHaveTextContent('Showing 100 of 130')
+    await userEvent.click(screen.getByRole('button', { name: 'Load more' }))
+    expect(api.loadMore).toHaveBeenCalledTimes(1)
+  })
+
+  it('shows no count or Load more when everything is loaded', () => {
+    api.list = { data: [request()], total: 1 }
+    render(<ScanApprovalsInbox />)
+    expect(screen.queryByRole('button', { name: 'Load more' })).toBeNull()
+  })
+
+  it('marks the active filter as pressed', async () => {
+    api.list = { data: [request()], total: 1 }
+    render(<ScanApprovalsInbox />)
+    const pending = screen.getByRole('button', { name: 'Awaiting approval' })
+    const all = screen.getByRole('button', { name: 'All requests' })
+    expect(pending).toHaveAttribute('aria-pressed', 'true')
+    expect(all).toHaveAttribute('aria-pressed', 'false')
+    await userEvent.click(all)
+    expect(all).toHaveAttribute('aria-pressed', 'true')
   })
 
   it('offers no decision when the API says the viewer may not approve', () => {
