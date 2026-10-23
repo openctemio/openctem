@@ -22,8 +22,10 @@ ALTER TABLE ingest_jobs
     ADD COLUMN IF NOT EXISTS lane      smallint    NOT NULL DEFAULT 2,
     ADD COLUMN IF NOT EXISTS scope_key varchar(160);
 
+-- NOT VALID: every existing row has the default 2; skipping the scan keeps
+-- the ACCESS EXCLUSIVE lock on the live queue short. New rows are checked.
 ALTER TABLE ingest_jobs
-    ADD CONSTRAINT chk_ingest_jobs_lane CHECK (lane BETWEEN 0 AND 2);
+    ADD CONSTRAINT chk_ingest_jobs_lane CHECK (lane BETWEEN 0 AND 2) NOT VALID;
 
 -- One running job per scope key: the claim relies on this to serialise a
 -- scope across workers and replicas.

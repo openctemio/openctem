@@ -31,13 +31,13 @@ import (
 	"github.com/openctemio/openctem/api/pkg/domain/cirun"
 	"github.com/openctemio/openctem/api/pkg/domain/ingestjob"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
-	"github.com/openctemio/openctem/api/pkg/logger"
 	protov2 "github.com/openctemio/openctem/api/pkg/sensorproto/v2"
 )
 
 // UploadQueue is the ingest queue (ingestqueue.Queue).
 type UploadQueue interface {
 	StagePart(ctx context.Context, tenantID, jobID shared.ID, part int, name string, body []byte) error
+	Admit(ctx context.Context, tenantID shared.ID) error
 	Commit(ctx context.Context, job *ingestjob.Job, admit func() error) (*ingestjob.Job, bool, error)
 	Get(ctx context.Context, tenantID, id shared.ID, kind ingestjob.Kind) (*ingestjob.Job, error)
 	Wait(ctx context.Context, tenantID, id shared.ID, kind ingestjob.Kind, wait time.Duration) (*ingestjob.Job, error)
@@ -198,6 +198,11 @@ func (s *Service) AcceptUpload(ctx context.Context, run *cirun.Run, body []byte,
 	if err != nil {
 		return nil, err
 	}
+	// Back-pressure before anything is stored: a tenant at its queue limit
+	// writes no sealed body (Commit checks again against the stored queue).
+	if err := s.uploads.Admit(ctx, run.TenantID); err != nil {
+		return nil, err
+	}
 	digest := sha256.Sum256(body)
 	job := ingestjob.NewUploadJob(shared.NewID(), run.TenantID, ingestjob.KindCIResults, run.ID.String(),
 		uploadPrincipal(run.ID), "ci:"+run.ID.String(), env, digest[:])
@@ -327,10 +332,9 @@ func (s *Service) ProcessUploadJob(ctx context.Context, job *ingestjob.Job) ([]b
 	if err != nil {
 		return nil, err
 	}
-	if err := s.uploads.Done(ctx, job); err != nil {
-		s.log.Warn("ci upload: raw report not deleted (the janitor will)", "job_id", job.ID().String(),
-			"error", logger.SanitizeError(err))
-	}
+	// The raw report is deleted when the worker records the job completed
+	// (IngestJobRepository.Complete), not here: a crash before that
+	// re-applies the upload instead of failing an applied one.
 	return out, nil
 }
 

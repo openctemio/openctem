@@ -1296,8 +1296,8 @@ vars:
     component: api
     group: "Ingest"
     type: int
-    default: "4"
-    description: "Ingest jobs of one organization processing at once, across servers, so one organization cannot hold every worker."
+    default: "2"
+    description: "Ingest jobs of one organization processing at once, across servers, so one organization cannot hold every worker. Keep it below `INGEST_WORKERS` times the number of servers."
   - name: INGEST_MODE
     component: api
     group: "Ingest"
