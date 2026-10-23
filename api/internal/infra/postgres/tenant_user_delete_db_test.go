@@ -326,8 +326,9 @@ var seedOverrides = map[string]func(s *schemaSeeder) map[string]any{
 	"content_install_requests": func(*schemaSeeder) map[string]any {
 		return map[string]any{"action": "uninstall", "target_row_id": nil, "status": "pending", "decided_by": nil}
 	},
-	"finding_imports": func(*schemaSeeder) map[string]any {
-		return map[string]any{"filename_sha256": strings.Repeat("ab", 32)}
+	"ingest_receipts": func(s *schemaSeeder) map[string]any {
+		return map[string]any{"filename_sha256": strings.Repeat("ab", 32), "source_kind": "upload", "source_ref": s.uniq(),
+			"coverage": "partial", "status": "completed", "errors": "[]", "findings_untouched": nil}
 	},
 	// fingerprint has a NOT LIKE CHECK; its literal is the excluded pattern.
 	"finding_fingerprints": func(s *schemaSeeder) map[string]any { return map[string]any{"fingerprint": s.uniq()} },

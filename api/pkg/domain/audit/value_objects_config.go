@@ -9,6 +9,7 @@ const (
 
 	ActionSCIMTokenCreated Action = "scim_token.created"
 	ActionSCIMTokenRevoked Action = "scim_token.revoked"
+	ActionSCIMTokenRotated Action = "scim_token.rotated"
 
 	ActionStorageConfigUpdated Action = "storage_config.updated"
 
@@ -66,6 +67,7 @@ var configActions = map[Action]struct{}{
 	ActionInvitationResent:                {},
 	ActionSCIMTokenCreated:                {},
 	ActionSCIMTokenRevoked:                {},
+	ActionSCIMTokenRotated:                {},
 	ActionStorageConfigUpdated:            {},
 	ActionIntegrationCreated:              {},
 	ActionIntegrationUpdated:              {},

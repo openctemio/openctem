@@ -574,6 +574,7 @@ func (p *FindingProcessor) processBatch(
 			reopened := make([]vulnerability.ReopenedFinding, 0, len(reopenedMap))
 			for _, rf := range reopenedMap {
 				reopened = append(reopened, rf)
+				output.ReopenedIDs = append(output.ReopenedIDs, rf.ID)
 			}
 			// Fresh SLA + ticket comment + notification (RFC-039 D2, §7.4-7.5),
 			// for findings that count as exposure.
@@ -633,6 +634,7 @@ func (p *FindingProcessor) processBatch(
 				if result.WasInserted(i) {
 					createdFindings = append(createdFindings, f)
 					createdIndex[i] = struct{}{}
+					output.CreatedIDs = append(output.CreatedIDs, f.ID())
 				} else {
 					resighted = append(resighted, f.Fingerprint())
 				}

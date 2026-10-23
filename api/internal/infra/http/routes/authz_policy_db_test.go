@@ -477,9 +477,9 @@ func TestAuthzPolicy_SCIMTokensAreOwnerOnly_DB(t *testing.T) {
 	tid := h.tenant()
 	owner, admin := h.member(tid, "owner"), h.member(tid, "admin")
 
-	h.expect(admin, http.MethodPost, "/api/v1/scim-tokens", `{"name":"idp"}`, http.StatusForbidden)
+	h.expect(admin, http.MethodPost, "/api/v1/scim-tokens", `{"name":"idp","expires_in_days":30}`, http.StatusForbidden)
 	h.expect(admin, http.MethodGet, "/api/v1/scim-tokens", "", http.StatusOK)
-	body := h.expect(owner, http.MethodPost, "/api/v1/scim-tokens", `{"name":"idp"}`, http.StatusCreated)
+	body := h.expect(owner, http.MethodPost, "/api/v1/scim-tokens", `{"name":"idp","expires_in_days":30}`, http.StatusCreated)
 	var created struct {
 		ID string `json:"id"`
 	}
