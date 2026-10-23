@@ -76,7 +76,9 @@ describe('FindingWhyItMatters', () => {
   it('leads with the P-class and the reason, then the grouped signals', () => {
     render(<FindingWhyItMatters finding={finding()} />)
     const panel = screen.getByRole('region', { name: 'Why it matters' })
-    expect(within(panel).getByText('P1 · Urgent')).toBeInTheDocument()
+    expect(within(panel).getByRole('img', { name: 'Priority P1, Urgent' })).toHaveTextContent(
+      'P1 Urgent'
+    )
     // The P1 window of the finding's asset, as the API reports it.
     expect(within(panel).getByText('fix within 9 days')).toBeInTheDocument()
     expect(slaPolicy).toHaveBeenCalledWith('dcdc1111-0000-0000-0000-000000000001')
