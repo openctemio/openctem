@@ -1,5 +1,6 @@
 'use client'
 
+import { StatusLozenge } from '@/components/ui/status-lozenge'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Separator } from '@/components/ui/separator'
@@ -361,10 +362,12 @@ export function RemediationTab({ remediation, finding }: RemediationTabProps) {
             <Code2 className="h-4 w-4" />
             {t('findings.remediationTab.autoFixCode', 'Auto-Fix Code')}
             {isAutoFixable && (
-              <Badge variant="outline" className="ms-2 border-success/50 text-success">
-                <Zap className="h-3 w-3 me-1" />
-                {t('findings.remediationTab.autoFixable', 'Auto-fixable')}
-              </Badge>
+              <StatusLozenge
+                tone="resolved"
+                icon={Zap}
+                label={t('findings.remediationTab.autoFixable', 'Auto-fixable')}
+                className="ms-2"
+              />
             )}
           </h3>
 
