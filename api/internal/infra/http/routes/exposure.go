@@ -263,6 +263,9 @@ func registerVulnerabilityRoutes(
 		r.GET("/{id}", h.GetFinding, middleware.Require(permission.FindingsRead))
 		// Priority explainability: why does this finding hold its P-class?
 		r.GET("/{id}/priority-explanation", h.ExplainPriority, middleware.Require(permission.FindingsRead))
+		// Why this is one finding: recipe and field names of its key, the tools
+		// that reported it, the merged duplicates in the caller's scope.
+		r.GET("/{id}/identity", h.GetFindingIdentity, middleware.Require(permission.FindingsRead))
 
 		// Write operations
 		r.POST("/", h.CreateFinding, middleware.Require(permission.FindingsWrite))
