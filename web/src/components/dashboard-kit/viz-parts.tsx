@@ -20,7 +20,7 @@ import {
 import Link from '@/components/link'
 import { Button } from '@/components/ui/button'
 import { useTranslation } from '@/context/i18n-provider'
-import { formatDelta, formatMetric, type MetricUnit } from '@/lib/format-metric'
+import { formatBucket, formatDelta, formatMetric, type MetricUnit } from '@/lib/format-metric'
 import { safeInternalHref } from '@/lib/safe-href'
 import { cn } from '@/lib/utils'
 import { deltaTone, targetStatus, type TargetStatus } from './compare'
@@ -64,10 +64,13 @@ export function DeltaText({
   unit,
   polarity,
   comparedTo,
+  previous,
 }: {
   delta: number | null | undefined
   unit: MetricUnit
   polarity: Polarity
+  /** The previous period's value, printed so the change has a base ("vs 41 previous period"). */
+  previous?: number | null
   /** What the change is against (default: "vs previous period"). */
   comparedTo?: string
 }) {
@@ -75,7 +78,13 @@ export function DeltaText({
   if (delta == null || !Number.isFinite(delta)) return null
   const tone = deltaTone(delta, polarity)
   const Icon = delta > 0 ? ArrowUpRight : delta < 0 ? ArrowDownRight : ArrowRight
-  const against = comparedTo ?? t('dashboardKit.delta.vsPrevious', 'vs previous period')
+  const against =
+    comparedTo ??
+    (previous != null && Number.isFinite(previous)
+      ? t('dashboardKit.delta.vsPreviousValue', 'vs {value} previous period', {
+          value: formatMetric(previous, unit, locale),
+        })
+      : t('dashboardKit.delta.vsPrevious', 'vs previous period'))
   const verdict =
     tone === 'better'
       ? t('dashboardKit.delta.better', 'better')
@@ -147,16 +156,26 @@ export function TargetChip({
   )
 }
 
-/** A tiny trend line (no axes). Decorative: the figure and delta carry the meaning. */
+/**
+ * A small trend line whose ends are labelled: the first and last bucket's
+ * date and value are printed under the line, so the trend is readable and
+ * never decorative. Screen readers get the same as one sentence. Needs two
+ * points or more; with fewer nothing is drawn.
+ */
 export function Sparkline({
   points,
+  unit = 'count',
+  bucket = 'day',
   className,
   height = 32,
 }: {
   points: SeriesPoint[] | undefined
+  unit?: MetricUnit
+  bucket?: 'day' | 'week' | 'month'
   className?: string
   height?: number
 }) {
+  const { t, locale } = useTranslation()
   if (!points || points.length < 2) return null
   const width = 120
   const vs = points.map((p) => p.v)
@@ -171,22 +190,53 @@ export function Sparkline({
       return `${i === 0 ? 'M' : 'L'}${x.toFixed(1)},${y.toFixed(1)}`
     })
     .join(' ')
+  const first = points[0]
+  const last = points[points.length - 1]
+  const ends = [first, last].map((p) => ({
+    date: formatBucket(p.t, bucket, locale),
+    value: formatMetric(p.v, unit, locale),
+  }))
+  const summary = t(
+    'dashboardKit.sparkline.summary',
+    'Trend from {from} on {start} to {to} on {end}',
+    {
+      from: ends[0].value,
+      start: ends[0].date,
+      to: ends[1].value,
+      end: ends[1].date,
+    }
+  )
   return (
-    <svg
-      viewBox={`0 0 ${width} ${height}`}
-      preserveAspectRatio="none"
-      className={cn('h-8 w-full text-muted-foreground', className)}
-      aria-hidden
-      focusable="false"
-    >
-      <path
-        d={d}
-        fill="none"
-        stroke="currentColor"
-        strokeWidth={2}
-        vectorEffect="non-scaling-stroke"
-      />
-    </svg>
+    <figure className={cn('flex flex-col gap-0.5', className)} data-testid="sparkline">
+      <svg
+        viewBox={`0 0 ${width} ${height}`}
+        preserveAspectRatio="none"
+        className="h-8 w-full text-muted-foreground"
+        aria-hidden
+        focusable="false"
+      >
+        <path
+          d={d}
+          fill="none"
+          stroke="currentColor"
+          strokeWidth={2}
+          vectorEffect="non-scaling-stroke"
+        />
+      </svg>
+      <figcaption className="flex justify-between gap-2 text-[11px] leading-tight text-muted-foreground">
+        <span className="sr-only">{summary}</span>
+        {ends.map((e, i) => (
+          <span
+            key={i}
+            aria-hidden
+            className={cn('flex flex-col tabular-nums', i === 1 && 'items-end text-end')}
+          >
+            <span className="font-medium text-foreground">{e.value}</span>
+            <span>{e.date}</span>
+          </span>
+        ))}
+      </figcaption>
+    </figure>
   )
 }
 
@@ -218,10 +268,13 @@ export function Legend({ entries }: { entries: LegendEntry[] }) {
 export function ChartOrTable({
   chart,
   table,
+  summary,
   defaultView = 'chart',
 }: {
   chart: ReactNode
   table: ReactNode
+  /** One sentence that says what the chart shows (its accessible name). */
+  summary?: string
   defaultView?: 'chart' | 'table'
 }) {
   const { t } = useTranslation()
@@ -243,7 +296,18 @@ export function ChartOrTable({
             : t('dashboardKit.action.showChart', 'Show chart')}
         </Button>
       </div>
-      <div className="min-h-0 flex-1">{view === 'chart' ? chart : table}</div>
+      {view === 'chart' ? (
+        <div className="min-h-0 flex-1" role="figure" aria-label={summary}>
+          {summary && (
+            <p className="sr-only" data-testid="chart-summary">
+              {summary}
+            </p>
+          )}
+          {chart}
+        </div>
+      ) : (
+        <div className="min-h-0 flex-1">{table}</div>
+      )}
     </div>
   )
 }

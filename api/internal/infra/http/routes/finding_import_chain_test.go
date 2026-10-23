@@ -37,7 +37,7 @@ func TestFindingImportChain_BodyLimitOverridesGlobal(t *testing.T) {
 
 	send := func(size int, perms []string) int {
 		read = 0
-		r := httptest.NewRequest(http.MethodPost, "/api/v1/findings/import/", bytes.NewReader(make([]byte, size)))
+		r := httptest.NewRequest(http.MethodPost, "/api/v1/findings/imports/", bytes.NewReader(make([]byte, size)))
 		ctx := context.WithValue(r.Context(), middleware.TenantIDKey, "tenant-1")
 		ctx = context.WithValue(ctx, middleware.FetchedPermissionsKey, perms)
 		rec := httptest.NewRecorder()

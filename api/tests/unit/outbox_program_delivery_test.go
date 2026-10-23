@@ -35,8 +35,39 @@ func (f *fakeDeliveryResolver) RestrictedAssets(context.Context, shared.ID, []sh
 	return nil, f.err
 }
 
-// exhaustedFindingEntry is a finding notice with no retries left, so a
-// failed send is archived (with its send results) at once.
+// drainOutbox runs processing passes, each channel's backoff elapsed before
+// every pass, until the entries are archived or every channel spent its
+// attempts. It returns the failed count of the first pass.
+func drainOutbox(t *testing.T, svc *outboxapp.Service, entries []*outbox.Outbox, eventRepo *mockEventRepo) int {
+	t.Helper()
+	first := -1
+	for i := 0; i < outbox.MaxDeliveryAttempts(); i++ {
+		past := time.Now().Add(-time.Second)
+		for _, e := range entries {
+			ds := e.Deliveries()
+			for j := range ds {
+				if ds[j].Status == outbox.DeliveryPending {
+					ds[j].NextAttemptAt = &past
+				}
+			}
+			e.SetDeliveries(ds)
+		}
+		_, failed, err := svc.ProcessOutboxBatch(context.Background(), "w", 10)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if first < 0 {
+			first = failed
+		}
+		if eventRepo.createCalls > 0 {
+			break
+		}
+	}
+	return first
+}
+
+// exhaustedFindingEntry is a finding notice; drainOutbox spends its
+// channels' attempts, so a failed send is archived with its send results.
 func exhaustedFindingEntry(tenantID shared.ID, findingID uuid.UUID) *outbox.Outbox {
 	now := time.Now()
 	return outbox.Reconstitute(outbox.NewID(), tenantID, "new_finding", "finding", &findingID,
@@ -75,10 +106,7 @@ func TestOutboxProgramDelivery(t *testing.T) {
 		if resolver != nil {
 			svc.SetDeliveryResolver(resolver)
 		}
-		_, failed, err := svc.ProcessOutboxBatch(context.Background(), "w", 10)
-		if err != nil {
-			t.Fatal(err)
-		}
+		failed := drainOutbox(t, svc, outboxRepo.fetchPendingResult, eventRepo)
 		return outboxRepo, eventRepo, failed
 	}
 
@@ -95,9 +123,15 @@ func TestOutboxProgramDelivery(t *testing.T) {
 		if !got[attached.Integration.ID().String()] {
 			t.Fatal("program channel did not receive the event")
 		}
-		if len(resolver.subjects) != 1 || len(resolver.subjects[0].FindingIDs) != 1 ||
-			resolver.subjects[0].FindingIDs[0].String() != findingID.String() {
-			t.Fatalf("subject = %+v", resolver.subjects)
+		// Resolved on every pass (the routing may change between retries),
+		// always for the entry's finding.
+		if len(resolver.subjects) == 0 {
+			t.Fatal("routing never resolved")
+		}
+		for _, subj := range resolver.subjects {
+			if len(subj.FindingIDs) != 1 || subj.FindingIDs[0].String() != findingID.String() {
+				t.Fatalf("subject = %+v", resolver.subjects)
+			}
 		}
 	})
 
