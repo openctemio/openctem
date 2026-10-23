@@ -126,6 +126,21 @@ type Config struct {
 	// KnownLimit bounds the decided results one upload response lists
 	// (zero takes cirun.MaxKnownInResponse).
 	KnownLimit int
+	// GateUploadWait bounds how long a verdict request waits for the run's
+	// uploads to be applied before it answers "still applying, ask again"
+	// (zero takes DefaultGateUploadWait).
+	GateUploadWait time.Duration
+}
+
+// DefaultGateUploadWait is how long a verdict request waits for the run's
+// uploads: short enough that the answer fits the server's write timeout.
+const DefaultGateUploadWait = 10 * time.Second
+
+func (c Config) gateUploadWait() time.Duration {
+	if c.GateUploadWait <= 0 {
+		return DefaultGateUploadWait
+	}
+	return c.GateUploadWait
 }
 
 func (c Config) knownLimit() int {
@@ -171,6 +186,8 @@ type Service struct {
 	gitlab    GitLabClients
 	identity  RepositoryIdentity
 	secrets   SecretExposureRaiser
+	uploads   UploadQueue
+	vex       VEXApplier
 
 	renameMu   sync.Mutex
 	renameSeen map[string]time.Time
@@ -1070,21 +1087,16 @@ func (s *Service) organizationOpen(ctx context.Context, tenantID shared.ID) erro
 
 // ------------------------------------------------------------------ upload --
 
-// UploadReport applies a report to the run's repository and records what it
+// applyReport applies a report to the run's repository and records what it
 // sighted for the gate. The report may name only the run's repository; the
 // branch and commit come from the verified token, never from the report.
-func (s *Service) UploadReport(ctx context.Context, run *cirun.Run, report *ctis.Report) (*ingest.Output, error) {
+// The report's slot on the run was reserved when it was accepted
+// (AcceptUpload), so the cap and the verdict are checked there.
+func (s *Service) applyReport(ctx context.Context, run *cirun.Run, report *ctis.Report) (*ingest.Output, error) {
 	if report == nil {
 		return nil, fmt.Errorf("%w: report is required", shared.ErrValidation)
 	}
 	if err := ScopeReport(report, run); err != nil {
-		return nil, err
-	}
-	// The run status and report count on run are the snapshot of the token
-	// lookup; the slot is taken atomically against the stored run, so
-	// concurrent uploads (or the files of one ZIP) cannot pass the cap or
-	// land after the verdict.
-	if err := s.repo.ReserveRunReport(ctx, run.TenantID, run.ID); err != nil {
 		return nil, err
 	}
 	out, err := s.ingester.IngestForCIRun(ctx, run.TenantID, run.ID, run.Repository, report)

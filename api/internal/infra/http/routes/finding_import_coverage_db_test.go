@@ -42,13 +42,15 @@ func (ih *importHarness) uploadAs(t *testing.T, query string, perms []string, do
 	_ = mw.Close()
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/findings/imports"+query, &buf)
 	req.Header.Set("Content-Type", mw.FormDataContentType())
+	req.Header.Set("Idempotency-Key", shared.NewID().String())
 	c := context.WithValue(req.Context(), middleware.TenantIDKey, ih.tenantID)
+	c = context.WithValue(c, middleware.UserIDKey, ih.userID)
 	c = context.WithValue(c, middleware.FetchedPermissionsKey, perms)
 	rec := httptest.NewRecorder()
 	ih.h.Import(rec, req.WithContext(c))
 	var resp handler.FindingImportResponse
 	_ = json.Unmarshal(rec.Body.Bytes(), &resp)
-	return rec, resp
+	return rec, ih.finish(t, rec, resp)
 }
 
 // Only an upload that declares full coverage of explicit assets closes what
@@ -64,7 +66,7 @@ func TestFindingImport_FullCoverageCloses_DB(t *testing.T) {
 	statusOnly := append(append([]string{}, write...), permission.FindingsStatus.String())
 	withStatus := append(append([]string{}, statusOnly...), permission.FindingsBulkUpdate.String())
 
-	if rec, _ := ih.uploadAs(t, "", write, receiptNessusFull); rec.Code != http.StatusCreated {
+	if rec, _ := ih.uploadAs(t, "", write, receiptNessusFull); rec.Code != http.StatusAccepted {
 		t.Fatalf("baseline %d %s", rec.Code, rec.Body.String())
 	}
 	var assetID string
@@ -113,7 +115,7 @@ func TestFindingImport_FullCoverageCloses_DB(t *testing.T) {
 
 	// The same asset named twice is one asset.
 	rec, resp := ih.uploadAs(t, full+"&asset_id="+assetID, withStatus, receiptNessusSubset)
-	if rec.Code != http.StatusCreated || resp.Receipt == nil {
+	if rec.Code != http.StatusAccepted || resp.Receipt == nil {
 		t.Fatalf("full-coverage upload %d %s", rec.Code, rec.Body.String())
 	}
 	r := resp.Receipt
@@ -145,6 +147,7 @@ func TestFindingImport_FullCoverageHiddenAsset_DB(t *testing.T) {
 	svc := findingimport.NewService(ih.ingest, postgres.NewFindingRepository(pdb), receipts, ingest.SourceResolveDryRun, logger.NewNop())
 	ih.h = handler.NewFindingImportHandler(svc, enforcer, nil, logger.NewNop())
 	ih.h.SetReceiptStores(receipts, postgres.NewIdempotencyKeyRepository(pdb))
+	ih.wire(svc, findingimport.DataScopeResolver(enforcer))
 
 	program, hidden, open := shared.NewID().String(), shared.NewID().String(), shared.NewID().String()
 	for _, q := range []struct {
@@ -171,7 +174,7 @@ func TestFindingImport_FullCoverageHiddenAsset_DB(t *testing.T) {
 	if rec.Code != http.StatusBadRequest {
 		t.Fatalf("a private program asset hidden from the uploader was accepted: %d %s", rec.Code, rec.Body.String())
 	}
-	if rec, _ := ih.uploadAs(t, "?coverage=full&asset_id="+open, perms, receiptNessusSubset); rec.Code != http.StatusCreated {
+	if rec, _ := ih.uploadAs(t, "?coverage=full&asset_id="+open, perms, receiptNessusSubset); rec.Code != http.StatusAccepted {
 		t.Fatalf("a visible asset: %d %s", rec.Code, rec.Body.String())
 	}
 }

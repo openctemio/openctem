@@ -65,7 +65,7 @@ func TestCIRunner_VerdictSeesConcurrentReport(t *testing.T) {
 	}
 
 	// After the verdict an upload is refused (409), never recorded unseen.
-	resp, body := r.post("/api/v1/ci/runs/"+runID+"/results", token, map[string]any{
+	resp, body := r.upload(runID, token, map[string]any{
 		"version": "1.0", "metadata": map[string]any{"source_type": "scanner"},
 		"tool": map[string]any{"name": "semgrep"},
 	})

@@ -1657,5 +1657,6 @@
   "findings.receipts.actionReopened": "reopened it",
   "findings.receipts.actionClosed": "closed it",
   "findings.receipts.actionStillDetected": "still detected it",
-  "findings.receipts.lastSeenIn": "Last seen in"
+  "findings.receipts.lastSeenIn": "Last seen in",
+  "findings.importResults.notApplied": "The upload was stored but could not be imported ({code}). Nothing was changed; try again."
 }
