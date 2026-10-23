@@ -162,6 +162,7 @@ notification_outbox
 notification_preferences
 notification_state
 notifications
+operations
 organization_join_requests
 pentest_campaign_checklist_items
 pentest_campaign_checklists

@@ -5,6 +5,7 @@ import { ListFilter, PanelLeftClose } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { cn } from '@/lib/utils'
+import { useTranslation } from '@/context/i18n-provider'
 
 /**
  * The one Filters trigger. Every filter panel, sheet or popover in the app opens
@@ -42,12 +43,18 @@ export interface FilterButtonProps extends Omit<
 
 export const FilterButton = React.forwardRef<HTMLButtonElement, FilterButtonProps>(
   function FilterButton(
-    { activeCount = 0, panelOpen, label = 'Filters', className, ...props },
+    { activeCount = 0, panelOpen, label: labelProp, className, ...props },
     ref
   ) {
+    const { t } = useTranslation()
+    const label = labelProp ?? t('common.filters', 'Filters')
     const active = activeCount > 0
-    const accessibleName = active ? `${label} (${activeCount} active)` : label
-    const tooltip = panelOpen ? `Hide ${label.toLowerCase()}` : label
+    const accessibleName = active
+      ? t('common.filterButton.active', '{label} ({count} active)', { label, count: activeCount })
+      : label
+    const tooltip = panelOpen
+      ? t('common.filterButton.hide', 'Hide {label}', { label: label.toLowerCase() })
+      : label
     const Icon = panelOpen ? PanelLeftClose : ListFilter
 
     return (

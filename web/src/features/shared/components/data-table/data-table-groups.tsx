@@ -11,6 +11,7 @@
  *   expand; `renderFooter` carries "Show N more".
  */
 
+import { useTranslation } from '@/context/i18n-provider'
 import * as React from 'react'
 import type { Row, RowModel, Table as TanstackTable } from '@tanstack/react-table'
 import { ChevronRight } from 'lucide-react'
@@ -195,6 +196,7 @@ export function GroupHeaderContent<TData>({
   controlsId,
   headerId,
 }: GroupHeaderProps<TData>) {
+  const { t } = useTranslation()
   const originals = groupRows ?? rows.map((r) => r.original)
   const content = rowGroups.renderHeader(groupKey, originals)
   const actions = rowGroups.renderActions?.(groupKey, originals)
@@ -213,7 +215,11 @@ export function GroupHeaderContent<TData>({
           onClick={onToggle}
           aria-expanded={expanded}
           aria-controls={controlsId}
-          aria-label={`${expanded ? 'Collapse' : 'Expand'} ${label}`}
+          aria-label={
+            expanded
+              ? t('common.table.collapseGroup', 'Collapse {label}', { label })
+              : t('common.table.expandGroup', 'Expand {label}', { label })
+          }
           className="-ms-1 inline-flex size-6 shrink-0 items-center justify-center rounded-sm text-muted-foreground hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
         >
           <ChevronRight
