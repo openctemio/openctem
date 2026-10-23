@@ -70,10 +70,15 @@ type MintResult struct {
 	Plaintext string
 }
 
-// Mint creates a new SCIM bearer token for a tenant.
-func (s *TokenService) Mint(ctx context.Context, tenantID shared.ID, name string, createdBy *shared.ID) (*MintResult, error) {
+// Mint creates a new SCIM bearer token for a tenant, valid for
+// expiresInDays days (1..365, required: a provisioning credential that never
+// expires outlives the people and systems that hold it).
+func (s *TokenService) Mint(ctx context.Context, tenantID shared.ID, name string, createdBy *shared.ID, expiresInDays int) (*MintResult, error) {
 	if tenantID.IsZero() {
 		return nil, fmt.Errorf("%w: tenant id required", shared.ErrValidation)
+	}
+	if err := scimtoken.ValidateLifetimeDays(expiresInDays); err != nil {
+		return nil, err
 	}
 	if name == "" {
 		name = "SCIM token"
@@ -87,15 +92,62 @@ func (s *TokenService) Mint(ctx context.Context, tenantID shared.ID, name string
 	hash := crypto.HashTokenPeppered(plaintext, s.pepper)
 	prefix := plaintext[:len(tokenPlaintextPrefix)+4]
 
-	tok := scimtoken.New(shared.NewID(), tenantID, name, hash, prefix)
+	expiresAt := s.now().Add(time.Duration(expiresInDays) * 24 * time.Hour)
+	tok := scimtoken.New(shared.NewID(), tenantID, name, hash, prefix, expiresAt)
 	if createdBy != nil && !createdBy.IsZero() {
 		tok.SetCreatedBy(*createdBy)
 	}
 	if err := s.repo.Create(ctx, tok); err != nil {
 		return nil, err
 	}
-	s.logger.Info("scim token minted", "tenant_id", tenantID.String(), "token_id", tok.ID().String())
+	s.logger.Info("scim token minted", "tenant_id", tenantID.String(), "token_id", tok.ID().String(), "expires_at", expiresAt)
 	return &MintResult{Token: tok, Plaintext: plaintext}, nil
+}
+
+// RotateResult is a rotation: the replacement token (plaintext shown once)
+// and the time the replaced one stops working.
+type RotateResult struct {
+	MintResult
+	Replaced          *scimtoken.ScimToken
+	ReplacedExpiresAt time.Time
+}
+
+// Rotate replaces one of the tenant's usable tokens: it mints a new token
+// with the same name, valid for expiresInDays days (0 keeps the old token's
+// lifetime), and brings the old token's expiry forward to at most
+// RotationOverlap from now, so the identity provider can switch to the new
+// token without a provisioning gap. A revoked, expired or other tenant's
+// token is ErrNotFound.
+func (s *TokenService) Rotate(ctx context.Context, tenantID, id shared.ID, createdBy *shared.ID, expiresInDays int) (*RotateResult, error) {
+	old, err := s.repo.GetByID(ctx, tenantID, id)
+	if err != nil {
+		return nil, err
+	}
+	now := s.now()
+	if !old.UsableAt(now) {
+		return nil, scimtoken.ErrNotFound
+	}
+	if expiresInDays == 0 {
+		expiresInDays = old.LifetimeDays()
+	}
+	minted, err := s.Mint(ctx, tenantID, old.Name(), createdBy, expiresInDays)
+	if err != nil {
+		return nil, err
+	}
+	cutoff := now.Add(scimtoken.RotationOverlap)
+	if err := s.repo.ShortenExpiry(ctx, tenantID, old.ID(), cutoff); err != nil {
+		// The old token could not be cut over (revoked meanwhile, or a
+		// write failure): withdraw the new one rather than leave two
+		// long-lived tokens.
+		minted.Token.Revoke()
+		if rerr := s.repo.Update(ctx, minted.Token); rerr != nil {
+			s.logger.Error("scim token rotation: withdrawing the new token failed", "token_id", minted.Token.ID().String(), "error", rerr)
+		}
+		return nil, fmt.Errorf("rotate scim token: %w", err)
+	}
+	old.ExpireBy(cutoff)
+	s.logger.Info("scim token rotated", "tenant_id", tenantID.String(), "token_id", old.ID().String(), "replacement_id", minted.Token.ID().String())
+	return &RotateResult{MintResult: *minted, Replaced: old, ReplacedExpiresAt: old.ExpiresAt()}, nil
 }
 
 // List returns a tenant's SCIM tokens (metadata only; never the plaintext/hash).
@@ -133,7 +185,9 @@ func (s *TokenService) Authenticate(ctx context.Context, plaintext string) (*sci
 		matched = crypto.HashTokenPeppered(plaintext, p)
 		tok, err = s.repo.GetByHash(ctx, matched)
 	}
-	if err != nil || !tok.IsActive() {
+	// Revoked, expired or unknown: one answer, so a caller cannot tell an
+	// expired token from one that never existed.
+	if err != nil || !tok.UsableAt(s.now()) {
 		return nil, scimtoken.ErrNotFound
 	}
 	// A suspended organization takes no provisioning. Checked after the

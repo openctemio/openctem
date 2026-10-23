@@ -23,5 +23,7 @@
   "help.about.release": "Bản phát hành",
   "help.about.rc": "Bản phát hành thử nghiệm",
   "help.about.unavailable": "không khả dụng",
-  "help.about.loading": "Đang tải phiên bản"
+  "help.about.loading": "Đang tải phiên bản",
+  "help.shortcut.next-finding": "Mở phát hiện tiếp theo trong danh sách",
+  "help.shortcut.previous-finding": "Mở phát hiện trước đó trong danh sách"
 }
