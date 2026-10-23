@@ -57,7 +57,7 @@ export function NavQuickViewList({
             className="relative h-auto min-h-7 w-full py-1 text-[13px] text-sidebar-foreground/80 data-[active=true]:font-medium in-data-[mobile=true]:min-h-11 in-data-[mobile=true]:text-base"
           >
             <SidebarLink
-              href={safeHref(v.href) ?? fallbackHref}
+              href={safeHref(v.href) ?? safeHref(fallbackHref) ?? '/'}
               aria-current={v.active ? 'page' : undefined}
               onClick={() => setOpenMobile(false)}
             >
