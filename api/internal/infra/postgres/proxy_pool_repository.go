@@ -77,7 +77,7 @@ func mapProxyPoolWriteError(err error) error {
 			return proxypool.ErrPoolNameTaken
 		case pqErr.Code == "23505":
 			return fmt.Errorf("%w: proxy endpoint listed twice", shared.ErrValidation)
-		case pqErr.Code == "23503" && pqErr.Constraint == "fk_proxy_sensor_assignments_pool":
+		case isForeignKeyCode(string(pqErr.Code)) && pqErr.Constraint == "fk_proxy_sensor_assignments_pool":
 			return proxypool.ErrPoolInUse
 		}
 	}
