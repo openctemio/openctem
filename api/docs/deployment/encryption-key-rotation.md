@@ -29,6 +29,7 @@ The list lives in `internal/app/rekey/rekey.go`. It was enumerated from every
 |---|---|
 | `integrations.credentials_encrypted` | integration credentials (Jira, SCM, notification channels, ...) |
 | `integrations.metadata.webhook_secret_encrypted` | Jira webhook secret |
+| `integrations.metadata.signing_secret_encrypted`, `signing_secret_previous_encrypted` | outbound webhook signing secrets (current, and the previous one during a rotation overlap) |
 | `integration_scm_extensions.webhook_secret_encrypted` | SCM webhook secret |
 | `tenant_identity_providers.client_secret_encrypted` | organization SSO client secret |
 | `platform_identity_provider.client_secret_encrypted` | platform admin IdP client secret |
