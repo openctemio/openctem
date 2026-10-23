@@ -9,7 +9,7 @@ import { isTagPaletteName, TAG_SWATCH_CLASS, type TagPaletteName } from '@/lib/t
 
 export interface TagProps {
   /** The text: a label, an asset type, a role, a tool. Sentence case, sans. */
-  label: string
+  label: React.ReactNode
   /** A decorative icon (an asset type, a tool). */
   icon?: LucideIcon
   /**
@@ -71,8 +71,14 @@ export function Tag({
   const { t } = useTranslation()
   const plain = variant === 'plain'
   const dot = isTagPaletteName(swatch) ? swatch : null
+  const tooltip =
+    title ?? (typeof label === 'string' ? (scope ? `${scope}: ${label}` : label) : undefined)
   const text = (
-    <span className={cn('min-w-0 truncate', level === 4 && 'font-bold')} data-slot="tag-label">
+    <span
+      className={cn('min-w-0 truncate', level === 4 && 'font-bold')}
+      data-slot="tag-label"
+      title={tooltip}
+    >
       {label}
     </span>
   )
@@ -82,7 +88,7 @@ export function Tag({
       data-variant={plain ? 'plain' : scope ? 'scoped' : 'default'}
       data-swatch={dot ?? undefined}
       data-level={level}
-      title={title ?? (scope ? `${scope}: ${label}` : label)}
+      title={tooltip}
       className={cn(
         'inline-flex h-[22px] w-fit max-w-[200px] shrink-0 items-center whitespace-nowrap text-xs font-medium leading-none text-foreground',
         plain ? 'gap-1.5' : 'rounded-full border border-border bg-card',
@@ -127,7 +133,9 @@ export function Tag({
         <button
           type="button"
           onClick={onRemove}
-          aria-label={t('labels.tag.remove', 'Remove {label}', { label })}
+          aria-label={t('labels.tag.remove', 'Remove {label}', {
+            label: typeof label === 'string' ? label : '',
+          })}
           className="-mr-1 ml-1 inline-flex size-4 shrink-0 items-center justify-center rounded-full text-muted-foreground hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
         >
           <X className="size-3" aria-hidden />
