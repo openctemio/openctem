@@ -86,14 +86,24 @@ function toPayload(form: FormState): AssetLifecycleSettings {
   }
 }
 
-function validate(form: FormState): string | null {
+type Translate = (key: string, fallback?: string, vars?: Record<string, string | number>) => string
+
+function validate(form: FormState, t: Translate): string | null {
   const stale = Number(form.stale_threshold_days)
   if (!Number.isInteger(stale) || stale < MIN_THRESHOLD_DAYS || stale > MAX_THRESHOLD_DAYS) {
-    return `Stale threshold must be between ${MIN_THRESHOLD_DAYS} and ${MAX_THRESHOLD_DAYS} days.`
+    return t(
+      'settings.assetLifecycle.staleRange',
+      'Stale threshold must be between {min} and {max} days.',
+      { min: MIN_THRESHOLD_DAYS, max: MAX_THRESHOLD_DAYS }
+    )
   }
   const grace = Number(form.grace_period_days)
   if (!Number.isInteger(grace) || grace < MIN_GRACE_DAYS || grace > MAX_GRACE_DAYS) {
-    return `Grace period must be between ${MIN_GRACE_DAYS} and ${MAX_GRACE_DAYS} days.`
+    return t(
+      'settings.assetLifecycle.graceRange',
+      'Grace period must be between {min} and {max} days.',
+      { min: MIN_GRACE_DAYS, max: MAX_GRACE_DAYS }
+    )
   }
   return null
 }
@@ -135,7 +145,7 @@ export function LifecycleSettingsForm({
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!currentTenant) return
-    const err = validate(form)
+    const err = validate(form, t)
     if (err) {
       toast.error(err)
       return
@@ -143,7 +153,7 @@ export function LifecycleSettingsForm({
     try {
       setSubmitting(true)
       const saved = await updateAssetLifecycleSettings(currentTenant.id, toPayload(form))
-      toast.success('Lifecycle settings saved')
+      toast.success(t('settings.assetLifecycle.saved', 'Lifecycle settings saved'))
       setForm(toFormState(saved))
       setBaseline(toFormState(saved))
       void mutate(`/api/v1/tenants/${currentTenant.id}/settings/asset-lifecycle`, saved, false)
@@ -176,7 +186,7 @@ export function LifecycleSettingsForm({
             </div>
             <div className="flex items-center gap-2">
               <Label htmlFor="enabled" className="text-sm text-muted-foreground">
-                Enabled
+                {t('settings.assetLifecycle.enabled', 'Enabled')}
               </Label>
               <Switch
                 id="enabled"
@@ -191,26 +201,37 @@ export function LifecycleSettingsForm({
           {needsDryRun && (
             <Alert variant="destructive">
               <AlertCircle className="h-4 w-4" />
-              <AlertTitle>Dry-run required before enabling</AlertTitle>
+              <AlertTitle>
+                {t('settings.assetLifecycle.dryRunRequired', 'Dry run required before enabling')}
+              </AlertTitle>
               <AlertDescription>
-                Run a dry-run to preview how many assets would be flagged stale with your current
-                thresholds. The toggle unlocks once the dry-run completes without errors.
+                {t(
+                  'settings.assetLifecycle.dryRunRequiredHint',
+                  'Run a dry run to preview how many assets would be flagged stale with your current thresholds. The switch unlocks once the dry run completes without errors.'
+                )}
               </AlertDescription>
             </Alert>
           )}
           {dryRunDone && !form.enabled && (
             <Alert>
               <PlayCircle className="h-4 w-4" />
-              <AlertTitle>Dry-run completed</AlertTitle>
+              <AlertTitle>
+                {t('settings.assetLifecycle.dryRunDone', 'Dry run completed')}
+              </AlertTitle>
               <AlertDescription>
-                You can now flip the enabled toggle to start automatic stale-detection.
+                {t(
+                  'settings.assetLifecycle.dryRunDoneHint',
+                  'You can now turn on the switch to start automatic stale-asset detection.'
+                )}
               </AlertDescription>
             </Alert>
           )}
 
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
             <div className="space-y-2">
-              <Label htmlFor="stale-threshold">Stale threshold (days)</Label>
+              <Label htmlFor="stale-threshold">
+                {t('settings.assetLifecycle.staleThreshold', 'Stale threshold (days)')}
+              </Label>
               <Input
                 id="stale-threshold"
                 type="number"
@@ -220,11 +241,16 @@ export function LifecycleSettingsForm({
                 onChange={(e) => setForm((s) => ({ ...s, stale_threshold_days: e.target.value }))}
               />
               <p className="text-xs text-muted-foreground">
-                Assets not seen for this many days are flagged stale.
+                {t(
+                  'settings.assetLifecycle.staleThresholdHint',
+                  'Assets not seen for this many days are flagged stale.'
+                )}
               </p>
             </div>
             <div className="space-y-2">
-              <Label htmlFor="grace-period">Discovery grace (days)</Label>
+              <Label htmlFor="grace-period">
+                {t('settings.assetLifecycle.graceDays', 'Discovery grace (days)')}
+              </Label>
               <Input
                 id="grace-period"
                 type="number"
@@ -234,7 +260,10 @@ export function LifecycleSettingsForm({
                 onChange={(e) => setForm((s) => ({ ...s, grace_period_days: e.target.value }))}
               />
               <p className="text-xs text-muted-foreground">
-                Newly discovered assets are immune for this many days.
+                {t(
+                  'settings.assetLifecycle.graceHint',
+                  'Newly discovered assets are immune for this many days.'
+                )}
               </p>
             </div>
           </div>
@@ -242,13 +271,20 @@ export function LifecycleSettingsForm({
           <Separator />
 
           <div className="space-y-3">
-            <Label>Excluded source types</Label>
+            <Label id="lifecycle-excluded-label">
+              {t('settings.assetLifecycle.excludedTypes', 'Excluded source types')}
+            </Label>
             <p className="text-xs text-muted-foreground">
-              Assets discovered this way are never auto-demoted. The category comes from how the
-              asset was discovered; assets created by hand count as manual. Manual and imported
-              assets default to excluded.
+              {t(
+                'settings.assetLifecycle.excludedTypesHint',
+                'Assets discovered this way are never auto-demoted. The category comes from how the asset was discovered; assets created by hand count as manual. Manual and imported assets default to excluded.'
+              )}
             </p>
-            <div className="flex flex-wrap gap-2">
+            <div
+              className="flex flex-wrap gap-2"
+              role="group"
+              aria-labelledby="lifecycle-excluded-label"
+            >
               {KNOWN_SOURCE_TYPES.map((type) => {
                 const active = form.excluded_source_types.includes(type)
                 return (
@@ -256,13 +292,14 @@ export function LifecycleSettingsForm({
                     key={type}
                     type="button"
                     onClick={() => toggleExcludedType(type)}
+                    aria-pressed={active}
                     className="transition-opacity"
                   >
                     <Badge
                       variant={active ? 'default' : 'outline'}
                       className={active ? '' : 'opacity-60 hover:opacity-90'}
                     >
-                      {type}
+                      {t(`settings.assetLifecycle.sourceType.${type}`, type)}
                     </Badge>
                   </button>
                 )
@@ -275,11 +312,13 @@ export function LifecycleSettingsForm({
           <div className="flex items-center justify-between">
             <div>
               <Label htmlFor="pause-on-integration-failure" className="font-medium">
-                Pause lifecycle when ingest is silent
+                {t('settings.assetLifecycle.pauseSilent', 'Pause lifecycle when ingest is silent')}
               </Label>
               <p className="text-xs text-muted-foreground">
-                Skip the tenant entirely if no asset has been seen in the past 48 hours — prevents a
-                crashed sensor from wiping the fleet.
+                {t(
+                  'settings.assetLifecycle.pauseSilentHint',
+                  'Skip the organization entirely if no asset has been seen in the past 48 hours. This stops a crashed sensor from wiping the fleet.'
+                )}
               </p>
             </div>
             <Switch
