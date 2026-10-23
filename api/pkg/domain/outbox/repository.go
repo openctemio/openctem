@@ -110,6 +110,10 @@ type EventRepository interface {
 	// GetByID retrieves an event by ID.
 	GetByID(ctx context.Context, id ID) (*Event, error)
 
+	// GetByTenantAndID retrieves one of the tenant's events; another
+	// tenant's event is ErrEventNotFound.
+	GetByTenantAndID(ctx context.Context, tenantID shared.ID, id ID) (*Event, error)
+
 	// Delete removes an event.
 	Delete(ctx context.Context, id ID) error
 
