@@ -13,7 +13,9 @@ import { firstDataRow } from '../helpers/table'
  *  c. no visible text is smaller than 12px.
  *
  * Runs at a phone (390) and a desktop (1440) width over the asset drawer
- * (every tab), the finding drawer, a scan run view and a sensor drawer.
+ * (every tab), the finding drawer, a scan run view and a sensor drawer. The
+ * drawer is opened from the desktop list (a phone shows cards, not table
+ * rows) and the viewport is then set to the size under test.
  * Each skips when the organization has no such data. Read-only: nothing is
  * created or changed.
  */
@@ -82,12 +84,14 @@ async function check(root: Locator, label: string) {
 for (const size of SIZES) {
   test.describe(`drawer text layout (${size.name})`, () => {
     test.beforeEach(async ({ page }) => {
-      await page.setViewportSize({ width: size.width, height: size.height })
+      await page.setViewportSize({ width: 1440, height: 900 })
     })
+    const atSize = (page: Page) => page.setViewportSize({ width: size.width, height: size.height })
 
     test('asset drawer, every tab', async ({ page }, info) => {
       const sheet = await openFirstAssetSheet(page)
       test.skip(!sheet, 'No assets in tenant')
+      await atSize(page)
       const tabs = sheet!.getByRole('tab')
       const count = await tabs.count()
       for (let i = 0; i < count; i++) {
@@ -107,6 +111,7 @@ for (const size of SIZES) {
       await row!.click()
       const sheet = page.getByRole('dialog')
       await expect(sheet).toBeVisible({ timeout: 15_000 })
+      await atSize(page)
       await page.waitForLoadState('networkidle')
       await shot(page, info, `${size.name}-finding`)
       await check(sheet, 'finding drawer')
@@ -142,6 +147,7 @@ for (const size of SIZES) {
       await row!.click()
       const sheet = page.getByRole('dialog')
       await expect(sheet).toBeVisible({ timeout: 15_000 })
+      await atSize(page)
       await page.waitForLoadState('networkidle')
       await shot(page, info, `${size.name}-scan-run`)
       await check(sheet, 'scan run view')
@@ -158,6 +164,7 @@ for (const size of SIZES) {
       await first.click()
       const sheet = page.locator('[data-slot="detail-sheet"]')
       await expect(sheet).toBeVisible()
+      await atSize(page)
       await page.waitForLoadState('networkidle')
       await shot(page, info, `${size.name}-sensor`)
       await check(sheet, 'sensor drawer')
