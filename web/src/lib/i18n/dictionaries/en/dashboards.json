@@ -112,7 +112,6 @@
   "dashboards.freshness.updated": "Updated {time}",
   "dashboards.gallery.add": "Add",
   "dashboards.gallery.addNamed": "Add {name}",
-  "dashboards.gallery.advanced": "Advanced",
   "dashboards.gallery.all": "All",
   "dashboards.gallery.description": "Previews show your own figures. Add a widget, then change what it counts and how it is drawn.",
   "dashboards.gallery.failed": "The widget list could not be loaded.",
