@@ -1,0 +1,20 @@
+{
+  "crownJewels.export.businessImpact": "Điểm tác động kinh doanh",
+  "crownJewels.export.criticality": "Mức độ quan trọng",
+  "crownJewels.export.exposure": "Mức độ phơi nhiễm",
+  "crownJewels.export.findings": "Phát hiện đang mở",
+  "crownJewels.export.internetFacing": "Hướng ra internet",
+  "crownJewels.export.name": "Tên",
+  "crownJewels.export.owner": "Chủ sở hữu",
+  "crownJewels.export.ownerEmail": "Email chủ sở hữu",
+  "crownJewels.export.risk": "Điểm rủi ro",
+  "crownJewels.export.tags": "Thẻ",
+  "crownJewels.export.type": "Loại",
+  "crownJewels.loadError": "các tài sản trọng yếu",
+  "crownJewels.no": "Không",
+  "crownJewels.unassigned": "Chưa phân công",
+  "crownJewels.viewDetails": "Xem chi tiết",
+  "crownJewels.whyNoNotes": "Chưa có ghi chú tác động kinh doanh.",
+  "crownJewels.whyNotes": "Ghi chú tác động kinh doanh",
+  "crownJewels.yes": "Có"
+}
