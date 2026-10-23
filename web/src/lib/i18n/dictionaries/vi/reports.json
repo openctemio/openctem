@@ -18,5 +18,13 @@
   "reports.schedules.stateActive": "Đang bật",
   "reports.schedules.statePaused": "Tạm dừng",
   "reports.schedules.pauseLabel": "Tạm dừng {name}",
-  "reports.schedules.resumeLabel": "Bật lại {name}"
+  "reports.schedules.resumeLabel": "Bật lại {name}",
+  "reports.executive.exported": "Đã xuất tóm tắt điều hành",
+  "reports.executive.exportFailed": "Xuất thất bại",
+  "reports.executive.title": "Tóm tắt điều hành",
+  "reports.executive.preparing": "Đang chuẩn bị…",
+  "reports.executive.download": "Tải CSV",
+  "reports.executive.risk": "Điểm rủi ro",
+  "reports.executive.open": "Phát hiện đang mở",
+  "reports.executive.p0": "P0 đang mở"
 }
