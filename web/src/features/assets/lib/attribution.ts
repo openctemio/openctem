@@ -25,6 +25,35 @@ export interface AttributionEvidence {
   last_observed_at: string
 }
 
+/** One endpoint that served a certificate and how the gate judges it. */
+export interface CertificateEndpoint {
+  asset_id: string
+  name: string
+  /** The gate's refusal for the endpoint; absent when probes may reach it. */
+  state?: string
+  guardrail?: string
+  covered_by?: { kind?: string; id?: string; pattern?: string; proof?: string }
+}
+
+/** `certificate` on a certificate asset's attribution (RFC-054 §19). */
+export interface CertificateStanding {
+  standing: 'in_scope' | 'low_impact' | 'held' | 'not_applicable' | string
+  /** The endpoint a scope entry covers, with that entry. Names are empty when the caller may not see the endpoint. */
+  served_by?: {
+    kind?: string
+    id?: string
+    pattern?: string
+    proof?: string
+    endpoint?: string
+    name?: string
+  }
+  held_by?: CertificateEndpoint
+  endpoints: CertificateEndpoint[]
+  endpoint_count: number
+  ownership: 'yours' | 'third_party' | 'none' | string
+  owned_by?: { kind?: string; id?: string; pattern?: string; proof?: string; name?: string }
+}
+
 /** GET /api/v1/assets/{id}/attribution */
 export interface AssetAttribution {
   state: AttributionState
@@ -51,6 +80,8 @@ export interface AssetAttribution {
   scope_status?: 'in_scope' | 'out_of_scope' | 'internal' | 'not_applicable' | string
   /** The organization's scope entry, seed or verified domain that covers it. */
   covered_by?: { kind?: string; id?: string; pattern?: string; proof?: string }
+  /** On a certificate: why it is in scope or held, and whether it is yours. */
+  certificate?: CertificateStanding
   /** The refusal code (RFC-054 §6.5) when active checks are blocked. */
   blocked_code?: string
   /**
@@ -354,4 +385,97 @@ export function scanStanding(
 export function decisionsFor(state: AttributionState): AttributionDecision[] {
   const all: AttributionDecision[] = ['confirmed', 'rejected', 'dependency', 'monitor_only']
   return all.filter((d) => d !== state)
+}
+
+/** Why an endpoint is refused, as the end of "Held because {endpoint} is ...". */
+function heldReason(t: AttributionT, state?: string): string {
+  switch (state) {
+    case 'platform_denied':
+      return t('assets.certificate.held.platformDenied', 'not allowed by the platform')
+    case 'rejected':
+      return t('assets.certificate.held.rejected', 'marked not yours')
+    case 'dependency':
+      return t('assets.certificate.held.dependency', 'third-party infrastructure')
+    case 'monitor_only':
+      return t('assets.certificate.held.monitorOnly', 'watched passively only')
+    case 'wildcard_only':
+      return t('assets.certificate.held.wildcardOnly', 'a wildcard DNS name')
+    case 'guardrailed':
+      return t('assets.certificate.held.guardrailed', 'held by a platform guardrail')
+    default:
+      return t('assets.certificate.held.uncovered', 'not covered by a scope entry')
+  }
+}
+
+/**
+ * The one line a certificate shows for scope: it is never in scope by its
+ * fingerprint, only through the endpoints that served it. `endpointId` is the
+ * endpoint to open (absent when the caller may not see it). `ownership` is the
+ * separate "is it yours" sentence, if there is one.
+ */
+export function certificateStandingText(
+  t: AttributionT,
+  c: CertificateStanding
+): { text: string; ok: boolean; endpointId?: string; ownership?: string } {
+  const ownership =
+    c.ownership === 'yours' && c.owned_by?.name
+      ? t('assets.certificate.ownership.yours', 'Yours: it names {name}, under {pattern}.', {
+          name: c.owned_by.name,
+          pattern: c.owned_by.pattern ?? '',
+        })
+      : c.ownership === 'third_party'
+        ? t(
+            'assets.certificate.ownership.thirdParty',
+            'A third-party certificate on your endpoint.'
+          )
+        : undefined
+  const unseen = t('assets.certificate.anEndpoint', 'an endpoint')
+  const more = Math.max(0, c.endpoint_count - 1)
+  switch (c.standing) {
+    case 'in_scope': {
+      const by = c.served_by
+      const base = t(
+        'assets.certificate.inScope',
+        'In scope because {endpoint} serves it and the scope entry {pattern} covers that endpoint.',
+        { endpoint: by?.name || unseen, pattern: by?.pattern ?? '' }
+      )
+      const extra =
+        more > 0
+          ? ' ' +
+            t('assets.certificate.moreEndpoints', '{n} more endpoints also serve it.', { n: more })
+          : ''
+      return { text: base + extra, ok: true, endpointId: by?.endpoint || undefined, ownership }
+    }
+    case 'low_impact':
+      return {
+        text: t(
+          'assets.certificate.lowImpact',
+          'Low-impact checks only: an endpoint serves it, and no scope entry covers that endpoint.'
+        ),
+        ok: false,
+        endpointId: c.endpoints[0]?.asset_id,
+        ownership,
+      }
+    case 'held': {
+      const h = c.held_by
+      return {
+        text: t('assets.certificate.held', 'Held because {endpoint} is {reason}.', {
+          endpoint: h?.name || unseen,
+          reason: heldReason(t, h?.state),
+        }),
+        ok: false,
+        endpointId: h?.asset_id || undefined,
+        ownership,
+      }
+    }
+    default:
+      return {
+        text: t(
+          'assets.certificate.notServed',
+          'No known endpoint serves this certificate, so there is nothing to scan.'
+        ),
+        ok: true,
+        ownership,
+      }
+  }
 }
