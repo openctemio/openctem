@@ -1,0 +1,4 @@
+### Fixed: a covered scan no longer closes findings it reported
+
+- A covered scan (a clean, full-coverage sensor run) closes the open findings of its scope that it did not report. "Not reported" was decided from `findings.scan_id`, the report that wrote the finding last. A concurrent run of the same tool and profile overwrote it with its own id, and a sighting write that lost a deadlock left the old one. Either way the scan closed a finding it had just reported. Absence is now decided from the run's receipt: a finding with an action row on the receipt was reported. A run whose receipt is missing or past its 50,000-action cap closes nothing (reason `receipt_incomplete`).
+- A segment of a command's run whose receipt could not be written is now retried, instead of being applied without its receipt.
