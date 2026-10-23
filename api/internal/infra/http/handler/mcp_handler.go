@@ -446,7 +446,7 @@ func (h *MCPHandler) auditToolCall(r *http.Request, tenantID, toolName string, a
 		UserAgent:  r.UserAgent(),
 		RequestID:  middleware.GetRequestID(r.Context()),
 	}
-	_ = h.audit.LogEvent(ctx, actx, event)
+	auditapp.RecordOrWarn(ctx, h.logger, h.audit, actx, event)
 }
 
 // auditPromptGet records one MCP prompts/get. Nil-safe like auditToolCall. The
@@ -481,7 +481,7 @@ func (h *MCPHandler) auditPromptGet(r *http.Request, tenantID, promptName string
 		UserAgent:  r.UserAgent(),
 		RequestID:  middleware.GetRequestID(r.Context()),
 	}
-	_ = h.audit.LogEvent(ctx, actx, event)
+	auditapp.RecordOrWarn(ctx, h.logger, h.audit, actx, event)
 }
 
 // mcpAuditSafeArgs is the allowlist of tool-argument keys whose scalar value is
