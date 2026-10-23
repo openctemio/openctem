@@ -303,6 +303,28 @@ merge into the survivor and tombstone the loser (RFC-043 §5).
 | Asset dedup review pairs | partial unique on `keep_asset_id` | **BROKEN** | keep = most findings (`correlator.go:186-193`); reversed pending pairs not checked (`asset_dedup_repository.go:241-243`) | scan 1 proposes keep A/merge B, scan 2 keep B/merge A → two contradictory pending reviews (**code**) |
 | Comments / activities | append-only, cascade with the finding | **OK** | — | lost on a finding delete (§2.4) |
 
+### 2.6 Branch counters
+
+`repository_branches.findings_total` and `findings_critical/high/medium/low` count
+the open findings of a branch (`is_open_finding_status`). Statement triggers on
+`findings` keep them up to date (migration `branch_finding_counts_per_statement`):
+
+- `trg_findings_branch_counts_insert` / `_delete` collect the distinct `branch_id`
+  of the statement's rows from its transition table.
+- `trg_findings_branch_counts_update` collects the old and new branch of every row
+  whose `branch_id`, `status` or `severity` changed. A re-sighting that moves no
+  counted value recounts nothing.
+- `refresh_branch_finding_counts(uuid[])` locks the touched branch rows in id
+  order, then recounts each branch once in one aggregate pass. It skips a branch
+  whose repository is gone, as in the cascade of a tenant delete.
+
+The counts are a recount, not deltas, so they stay exact and heal a counter that
+drifted. The row trigger they replace recounted the whole branch five times for
+every inserted row. That was quadratic in the report size: 5,000 findings took
+37.6 s in research/241, against 7.3 s with the trigger off. It also held the
+branch row lock for the whole upload. Parity with the row trigger is tested by
+`tests/integration/branch_finding_counts_test.go`.
+
 ## 3. Open pull requests that change identity
 
 Read from the PR diffs on 2026-10-03; line numbers are the PRs' new-file lines.
