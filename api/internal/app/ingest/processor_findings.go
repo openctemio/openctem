@@ -1227,6 +1227,7 @@ func (p *FindingProcessor) buildFinding(
 
 	// Set core identifiers
 	f.SetFingerprint(fp)
+	f.MarkIngestV1Key() // a version-2 identity applied later replaces it
 	f.SetSensorID(sensorID)
 	f.SetScanID(report.Metadata.ID)
 
