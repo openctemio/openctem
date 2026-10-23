@@ -111,12 +111,17 @@ export function buildFindingsQuery(filters: FindingApiFilters): URLSearchParams 
   if (filters.asset_owner_id) params.set('asset_owner_id', filters.asset_owner_id)
   if (filters.asset_owner_unassigned) params.set('asset_owner_id_null', 'true')
   if (filters.asset_group_id) params.set('asset_group_id', filters.asset_group_id)
-  if (filters.pending_approval) params.set('pending_approval', 'true')
+  if (filters.pending_approval !== undefined)
+    params.set('pending_approval', String(filters.pending_approval))
   if (filters.acceptance_expires_at_lte)
     params.set('acceptance_expires_at_lte', filters.acceptance_expires_at_lte)
   if (filters.asset_crown_jewel) params.set('asset_crown_jewel', 'true')
   if (filters.view) params.set('view', filters.view)
   if (filters.sort) params.set('sort', filters.sort)
+  // Filters the page carries as they are (the filter contract names them).
+  for (const [name, value] of Object.entries(filters.extra ?? {})) {
+    if (!params.has(name)) params.set(name, value)
+  }
   return params
 }
 

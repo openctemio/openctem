@@ -1,6 +1,7 @@
 package routes
 
 import (
+	"net/http"
 	"time"
 
 	"github.com/openctemio/openctem/api/internal/config"
@@ -32,8 +33,11 @@ func registerFindingImportRoutes(router Router, h *handler.FindingImportHandler,
 			// The route's own body limit replaces the global one (10 MiB by
 			// default), which otherwise refused every file above it with a
 			// misleading "larger than 110 MiB" answer.
+			// coverage=full closes findings in bulk: step-up, as POST
+			// /findings/bulk/status closing findings.
 			r.POST("/", h.Import,
 				middleware.RequireAll(permission.FindingsWrite, permission.AssetsWrite, permission.AssetsImport),
+				requireStepUpWhenFullCoverage(),
 				importRL.TenantMiddleware(),
 				middleware.BodyLimit(handler.MaxFindingImportBody))
 		}
@@ -49,5 +53,23 @@ func registerFindingImportRoutes(router Router, h *handler.FindingImportHandler,
 		router.Group("/api/v1/findings/{id}/imports", func(r Router) {
 			r.GET("/", receipts.FindingReceipts, middleware.Require(permission.FindingsRead))
 		}, tenantMiddlewares...)
+	}
+}
+
+// requireStepUpWhenFullCoverage is requireStepUp for an upload that declares
+// coverage=full (it closes what it does not report). Any other upload,
+// which closes nothing, needs no re-authentication. The query is read the
+// way the handler reads it (the first coverage value).
+func requireStepUpWhenFullCoverage() Middleware {
+	gate := requireStepUp()
+	return func(next http.Handler) http.Handler {
+		gated := gate(next)
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if r.URL.Query().Get("coverage") == "full" {
+				gated.ServeHTTP(w, r)
+				return
+			}
+			next.ServeHTTP(w, r)
+		})
 	}
 }
