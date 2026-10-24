@@ -797,54 +797,56 @@ func registerWorkflowRoutes(
 	// Workflow routes - tenant from JWT token
 	router.Group("/api/v1/workflows", func(r Router) {
 		// Read operations
-		r.GET("/", h.ListWorkflows, middleware.Require(permission.WorkflowsRead))
+		r.GET("/", h.ListWorkflows, middleware.Require(permission.AutomationsRead))
 		// The trigger, action and notification types the engine runs.
-		r.GET("/catalog", h.GetCatalog, middleware.Require(permission.WorkflowsRead))
-		r.GET("/{id}", h.GetWorkflow, middleware.Require(permission.WorkflowsRead))
+		r.GET("/catalog", h.GetCatalog, middleware.Require(permission.AutomationsRead))
+		r.GET("/{id}", h.GetWorkflow, middleware.Require(permission.AutomationsRead))
 
 		// Write operations
-		r.POST("/", h.CreateWorkflow, middleware.Require(permission.WorkflowsWrite))
-		r.PUT("/{id}", h.UpdateWorkflow, middleware.Require(permission.WorkflowsWrite))
+		r.POST("/", h.CreateWorkflow, middleware.Require(permission.AutomationsWrite))
+		r.PUT("/{id}", h.UpdateWorkflow, middleware.Require(permission.AutomationsWrite))
 
 		// Delete operations
-		r.DELETE("/{id}", h.DeleteWorkflow, middleware.Require(permission.WorkflowsWrite))
+		r.DELETE("/{id}", h.DeleteWorkflow, middleware.Require(permission.AutomationsPublish))
 
 		// Graph update (atomic replacement of all nodes and edges)
-		r.PUT("/{id}/graph", h.UpdateWorkflowGraph, middleware.Require(permission.WorkflowsWrite))
+		r.PUT("/{id}/graph", h.UpdateWorkflowGraph, middleware.Require(permission.AutomationsWrite))
 
 		// Workflow nodes management
-		r.POST("/{id}/nodes", h.AddNode, middleware.Require(permission.WorkflowsWrite))
-		r.PUT("/{id}/nodes/{nodeId}", h.UpdateNode, middleware.Require(permission.WorkflowsWrite))
-		r.DELETE("/{id}/nodes/{nodeId}", h.DeleteNode, middleware.Require(permission.WorkflowsWrite))
+		r.POST("/{id}/nodes", h.AddNode, middleware.Require(permission.AutomationsWrite))
+		r.PUT("/{id}/nodes/{nodeId}", h.UpdateNode, middleware.Require(permission.AutomationsWrite))
+		r.DELETE("/{id}/nodes/{nodeId}", h.DeleteNode, middleware.Require(permission.AutomationsWrite))
 
 		// Workflow edges management
-		r.POST("/{id}/edges", h.AddEdge, middleware.Require(permission.WorkflowsWrite))
-		r.DELETE("/{id}/edges/{edgeId}", h.DeleteEdge, middleware.Require(permission.WorkflowsWrite))
+		r.POST("/{id}/edges", h.AddEdge, middleware.Require(permission.AutomationsWrite))
+		r.DELETE("/{id}/edges/{edgeId}", h.DeleteEdge, middleware.Require(permission.AutomationsWrite))
 
 		// Workflow runs (executions)
-		r.POST("/{id}/runs", h.TriggerWorkflow, middleware.Require(permission.WorkflowsWrite))
+		r.POST("/{id}/runs", h.TriggerWorkflow, middleware.Require(permission.AutomationsWrite))
 
 		// Versions and mode: publishing makes the draft a version and the
 		// automation live; simulate is one call back.
-		r.GET("/{id}/versions", h.ListVersions, middleware.Require(permission.WorkflowsRead))
-		r.GET("/{id}/versions/{version_id}", h.GetVersion, middleware.Require(permission.WorkflowsRead))
-		r.POST("/{id}/publish", h.Publish, middleware.Require(permission.WorkflowsWrite))
-		r.POST("/{id}/versions/{version_id}/rollback", h.Rollback, middleware.Require(permission.WorkflowsWrite))
-		r.PUT("/{id}/mode", h.SetMode, middleware.Require(permission.WorkflowsWrite))
+		r.GET("/{id}/versions", h.ListVersions, middleware.Require(permission.AutomationsRead))
+		r.GET("/{id}/versions/{version_id}", h.GetVersion, middleware.Require(permission.AutomationsRead))
+		// Going live is gated by the rule's risk (step-up, second approver).
+		r.POST("/{id}/publish", h.Publish, middleware.Require(permission.AutomationsPublish))
+		r.POST("/{id}/versions/{version_id}/approve", h.ApproveVersion, middleware.Require(permission.AutomationsPublish))
+		r.POST("/{id}/versions/{version_id}/rollback", h.Rollback, middleware.Require(permission.AutomationsPublish))
+		r.PUT("/{id}/mode", h.SetMode, middleware.Require(permission.AutomationsPublish))
 		// Per-step trace summed over runs the caller may see.
-		r.GET("/{id}/trace", h.GetTrace, middleware.Require(permission.WorkflowsRead))
+		r.GET("/{id}/trace", h.GetTrace, middleware.Require(permission.AutomationsRead))
 		// Preview (in the caller's scope, nothing stored) and validate a draft.
-		r.POST("/{id}/preview", h.Preview, middleware.Require(permission.WorkflowsWrite))
-		r.POST("/{id}/verify", h.Validate, middleware.Require(permission.WorkflowsWrite))
+		r.POST("/{id}/preview", h.Preview, middleware.Require(permission.AutomationsWrite))
+		r.POST("/{id}/verify", h.Validate, middleware.Require(permission.AutomationsWrite))
 	}, tenantMiddlewares...)
 
 	// Workflow Run routes - direct access
 	router.Group("/api/v1/workflow-runs", func(r Router) {
 		// Read operations
-		r.GET("/", h.ListRuns, middleware.Require(permission.WorkflowsRead))
-		r.GET("/{id}", h.GetRun, middleware.Require(permission.WorkflowsRead))
+		r.GET("/", h.ListRuns, middleware.Require(permission.AutomationsRead))
+		r.GET("/{id}", h.GetRun, middleware.Require(permission.AutomationsRead))
 
 		// Write operations
-		r.POST("/{id}/cancel", h.CancelRun, middleware.Require(permission.WorkflowsWrite))
+		r.POST("/{id}/cancel", h.CancelRun, middleware.Require(permission.AutomationsWrite))
 	}, tenantMiddlewares...)
 }
