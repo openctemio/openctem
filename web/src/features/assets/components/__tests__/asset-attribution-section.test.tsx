@@ -177,4 +177,20 @@ describe('AssetAttributionSection', () => {
     ).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Add to scope' })).not.toBeInTheDocument()
   })
+
+  it('never offers Add to scope on a certificate', async () => {
+    perms = ['assets:read', 'assets:write', 'attack_surface:scope:write']
+    api.get.mockResolvedValue({
+      ...review,
+      state: 'confirmed',
+      active_checks_allowed: false,
+      active_checks_blocked_by: 'out_of_scope',
+      scope_status: 'out_of_scope',
+    })
+    wrap(<AssetAttributionSection assetId="a1" assetName="ab:cd:ef" assetType="certificate" />)
+    expect(
+      await screen.findByText('Out of scope: no scope entry covers this name.')
+    ).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Add to scope' })).not.toBeInTheDocument()
+  })
 })
