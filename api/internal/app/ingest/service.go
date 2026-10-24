@@ -342,6 +342,12 @@ func (s *Service) SetSecretFingerprinter(fp *vulnerability.SecretFingerprinter) 
 // SetCorrelationStore wires cross-rule finding correlation (nil: off).
 func (s *Service) SetCorrelationStore(c CorrelationStore) { s.findingProcessor.SetCorrelationStore(c) }
 
+// SetVulnAliasResolver wires the feed's vulnerability id aliases into
+// keying (nil: off).
+func (s *Service) SetVulnAliasResolver(r VulnAliasResolver) {
+	s.findingProcessor.SetVulnAliasResolver(r)
+}
+
 // SetIssueLinkStore wires same-issue links between findings (nil: off).
 func (s *Service) SetIssueLinkStore(l IssueLinkStore) { s.findingProcessor.SetIssueLinkStore(l) }
 
