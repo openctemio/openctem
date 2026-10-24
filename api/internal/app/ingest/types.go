@@ -307,6 +307,15 @@ type Output struct {
 	// because they lie outside their command's addresses. Their findings
 	// are skipped, never attached to another asset of the report.
 	OutOfScopeAssetRefs map[string]bool `json:"-"`
+
+	// Decided are the new findings a policy decided (suppressed, held),
+	// and Items the reported items that did not become findings, with the
+	// policy and version that decided them: the receipt records both.
+	Decided []ingestreceipt.PolicyAction `json:"-"`
+	Items   []ingestreceipt.Item         `json:"-"`
+
+	// policy is the snapshot this ingest applies.
+	policy *PolicySnapshot
 }
 
 // FailedFinding contains details about a finding that failed during ingestion.

@@ -48,6 +48,7 @@ func registerFindingImportRoutes(router Router, h *handler.FindingImportHandler,
 			r.GET("/{id}", receipts.Get, middleware.Require(permission.FindingsRead))
 			r.GET("/{id}/actions", receipts.Actions, middleware.Require(permission.FindingsRead))
 			r.GET("/{id}/result", receipts.Result, middleware.Require(permission.FindingsRead))
+			r.GET("/{id}/items", receipts.Items, middleware.Require(permission.FindingsRead))
 		}
 	}, tenantMiddlewares...)
 	if receipts != nil {
