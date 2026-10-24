@@ -15,6 +15,7 @@
   "proxyPools.default.title": "Use proxies for scans",
   "proxyPools.default.toggle": "Use proxies for scans",
   "proxyPools.delete": "Delete",
+  "proxyPools.deleteButton": "Delete pool",
   "proxyPools.deleteDesc": "The pool and its proxies are deleted. Their stored credentials are erased.",
   "proxyPools.deleteInUse": "Sensors still use this pool. Set their network path to another pool, Direct or Inherit first.",
   "proxyPools.deleteNamed": "Delete {name}",
@@ -69,6 +70,5 @@
   "proxyPools.toast.poolSaved": "Pool saved",
   "proxyPools.toast.saveFailed": "Could not save the proxies",
   "proxyPools.toast.saved": "Proxies saved",
-  "proxyPools.toast.updateFailed": "Could not update the proxy",
-  "proxyPools.deleteButton": "Delete pool"
+  "proxyPools.toast.updateFailed": "Could not update the proxy"
 }

@@ -15,6 +15,7 @@
   "proxyPools.default.title": "Dùng proxy cho lượt quét",
   "proxyPools.default.toggle": "Dùng proxy cho lượt quét",
   "proxyPools.delete": "Xóa",
+  "proxyPools.deleteButton": "Xóa pool",
   "proxyPools.deleteDesc": "Pool và các proxy của nó bị xóa. Thông tin đăng nhập đã lưu của chúng bị xóa sạch.",
   "proxyPools.deleteInUse": "Vẫn còn sensor dùng pool này. Hãy đặt đường mạng của các sensor đó sang pool khác, Trực tiếp hoặc Kế thừa trước.",
   "proxyPools.deleteNamed": "Xóa {name}",
@@ -69,6 +70,5 @@
   "proxyPools.toast.poolSaved": "Đã lưu pool",
   "proxyPools.toast.saveFailed": "Không lưu được proxy",
   "proxyPools.toast.saved": "Đã lưu proxy",
-  "proxyPools.toast.updateFailed": "Không cập nhật được proxy",
-  "proxyPools.deleteButton": "Xóa pool"
+  "proxyPools.toast.updateFailed": "Không cập nhật được proxy"
 }
