@@ -3,7 +3,7 @@
 import { Main } from '@/components/layout'
 import { Skeleton } from '@/components/ui/skeleton'
 import { useTranslation } from '@/context/i18n-provider'
-import { ErrorState, PageHeader } from '@/features/shared'
+import { ErrorState, PageHeader, PageStack } from '@/features/shared'
 import { useAdmin } from '@console/features/admin-console/components/admin-console-shell'
 import { useEmailSettings } from '@console/features/admin-console/api/use-email-settings'
 import { EmailSettingsForm } from '@console/features/admin-console/components/email-settings-form'
@@ -20,11 +20,11 @@ export default function EmailSettingsPage() {
 
   return (
     <Main>
-      <PageHeader
-        title={t('admin.email.pageTitle', 'E-mail')}
-        description={t('admin.email.pageDescription', 'How this deployment sends e-mail.')}
-      />
-      <div className="mt-5">
+      <PageStack>
+        <PageHeader
+          title={t('admin.email.pageTitle', 'E-mail')}
+          description={t('admin.email.pageDescription', 'How this deployment sends e-mail.')}
+        />
         {error ? (
           <ErrorState
             title={t('admin.email.errorSubject', 'the e-mail settings')}
@@ -40,7 +40,7 @@ export default function EmailSettingsPage() {
             onSaved={() => void mutate()}
           />
         )}
-      </div>
+      </PageStack>
     </Main>
   )
 }

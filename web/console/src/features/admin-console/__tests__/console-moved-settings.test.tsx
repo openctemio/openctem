@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen, waitFor } from '@testing-library/react'
+import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 
 import {
@@ -50,10 +50,13 @@ beforeEach(() => {
 
 async function confirmWithReason(reason = 'rotate the key') {
   await userEvent.click(screen.getByRole('button', { name: 'Save' }))
-  const confirm = screen.getByRole('button', { name: 'Confirm' })
-  expect(confirm).toBeDisabled()
+  const confirmButton = () => {
+    const buttons = within(screen.getByRole('alertdialog')).getAllByRole('button')
+    return buttons[buttons.length - 1]
+  }
+  expect(confirmButton()).toBeDisabled()
   await userEvent.type(screen.getByLabelText('Reason'), reason)
-  await userEvent.click(screen.getByRole('button', { name: 'Confirm' }))
+  await userEvent.click(confirmButton())
 }
 
 describe('CAPTCHA settings', () => {
@@ -179,7 +182,7 @@ describe('Platform AI provider', () => {
     )
     await userEvent.click(screen.getByRole('button', { name: 'Save policy' }))
     await userEvent.type(screen.getByLabelText('Reason'), 'security review')
-    await userEvent.click(screen.getByRole('button', { name: 'Confirm' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Change policy' }))
     await waitFor(() =>
       expect(saveOrgAIPolicy).toHaveBeenCalledWith({
         allow_org_provider: false,
@@ -217,7 +220,9 @@ describe('Deployment region', () => {
     await userEvent.type(screen.getByLabelText('Region name'), 'eu-central')
     await userEvent.click(screen.getByRole('button', { name: 'Set the region' }))
     await userEvent.type(screen.getByLabelText('Reason'), 'EU data residency')
-    await userEvent.click(screen.getByRole('button', { name: 'Confirm' }))
+    expect(screen.getByRole('button', { name: 'Set region' })).toBeDisabled()
+    await userEvent.type(screen.getByLabelText(/Type eu-central to confirm/), 'eu-central')
+    await userEvent.click(screen.getByRole('button', { name: 'Set region' }))
     await waitFor(() =>
       expect(setRegion).toHaveBeenCalledWith({ region: 'eu-central', reason: 'EU data residency' })
     )

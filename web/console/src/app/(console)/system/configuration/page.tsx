@@ -7,7 +7,7 @@ import { Main } from '@/components/layout'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import { ErrorState, PageHeader, RelativeTime } from '@/features/shared'
+import { ErrorState, PageHeader, PageStack, RelativeTime } from '@/features/shared'
 import { TonePill } from '@/features/shared/components/tone-pill'
 import { useTranslation } from '@/context/i18n-provider'
 import { useConfiguration } from '@console/features/admin-console/api/use-configuration'
@@ -38,14 +38,14 @@ export default function ConfigurationPage() {
 
   return (
     <Main>
-      <PageHeader
-        title={t('admin.nav.configuration', 'Configuration')}
-        description={t(
-          'admin.config.description',
-          'Every setting of this installation: what you change here (applied at once) and what the server configuration sets (needs a restart). Secrets are never shown, only whether they are set.'
-        )}
-      />
-      <div className="mt-5 space-y-4">
+      <PageStack>
+        <PageHeader
+          title={t('admin.nav.configuration', 'Configuration')}
+          description={t(
+            'admin.config.description',
+            'Every setting of this installation: what you change here (applied at once) and what the server configuration sets (needs a restart). Secrets are never shown, only whether they are set.'
+          )}
+        />
         <DeploymentRegionCard canEdit={adminCan(me.role, 'super_admin')} />
         <Tabs value={filter} onValueChange={(v) => setFilter(v as ConfigFilter)}>
           <TabsList className="flex-wrap">
@@ -92,7 +92,7 @@ export default function ConfigurationPage() {
             )
           })
         )}
-      </div>
+      </PageStack>
     </Main>
   )
 }

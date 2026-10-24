@@ -9,7 +9,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { useTranslation } from '@/context/i18n-provider'
 import { fetcher } from '@/lib/api/client'
 import { usePermissions, Permission } from '@/lib/permissions'
-import { ErrorState, ReadOnlyNotice, SettingsSection } from '@/features/shared'
+import { ErrorState, PageStack, ReadOnlyNotice, SettingsSection } from '@/features/shared'
 import { ORGANIZATION_LIMITS_URL } from '@/features/limits/api/use-organization-limits'
 import { useLifecycleSubStatuses } from '../../api/use-finding-lifecycles'
 import { planLimit, type PlanLimitRow } from '../../lib/lifecycle'
@@ -55,7 +55,7 @@ export function FindingLifecycleSettings() {
   const catalog = subs.data.data ?? []
 
   return (
-    <div className="space-y-5">
+    <PageStack>
       {!canWrite && (
         <ReadOnlyNotice
           reason={t(
@@ -73,7 +73,7 @@ export function FindingLifecycleSettings() {
             {t('findingLifecycle.tabs.lifecycles', 'Lifecycles')}
           </TabsTrigger>
         </TabsList>
-        <TabsContent value="sub-statuses" className="mt-4">
+        <TabsContent value="sub-statuses">
           <SettingsSection
             title={t('findingLifecycle.subStatus.title', 'Sub-statuses')}
             description={
@@ -117,10 +117,10 @@ export function FindingLifecycleSettings() {
             />
           </SettingsSection>
         </TabsContent>
-        <TabsContent value="lifecycles" className="mt-4">
+        <TabsContent value="lifecycles">
           <LifecycleSchemes catalog={catalog} canWrite={canWrite} limit={schemeLimit} />
         </TabsContent>
       </Tabs>
-    </div>
+    </PageStack>
   )
 }

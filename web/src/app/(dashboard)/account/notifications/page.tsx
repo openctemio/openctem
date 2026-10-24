@@ -16,7 +16,7 @@ import {
 } from '@/components/ui/select'
 import { Bell, AlertTriangle, Save, Loader2 } from 'lucide-react'
 import { toast } from 'sonner'
-import { ErrorState } from '@/features/shared'
+import { ErrorState, PageStack } from '@/features/shared'
 import {
   useNotificationPreferencesApi,
   updateNotificationPreferences,
@@ -106,11 +106,11 @@ export default function NotificationsSettingsPage() {
 
   if (isLoading) {
     return (
-      <div className="grid gap-6">
+      <PageStack>
         <Skeleton className="h-32 w-full" />
         <Skeleton className="h-32 w-full" />
         <Skeleton className="h-64 w-full" />
-      </div>
+      </PageStack>
     )
   }
 
@@ -127,7 +127,7 @@ export default function NotificationsSettingsPage() {
   }
 
   return (
-    <div className="grid gap-6">
+    <PageStack>
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
@@ -283,6 +283,6 @@ export default function NotificationsSettingsPage() {
             : t('account.notifications.save', 'Save changes')}
         </Button>
       </div>
-    </div>
+    </PageStack>
   )
 }

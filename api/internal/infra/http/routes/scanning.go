@@ -197,7 +197,10 @@ func registerSensorManagementRoutes(
 		r.POST("/{id}/revoke", h.Revoke, middleware.RequireAny(permission.SensorsWrite, permission.SensorsRevoke), own)
 
 		// Delete operations
-		r.DELETE("/{id}", h.Delete, middleware.Require(permission.SensorsDelete), own)
+		// Deleting removes the sensor and its history and cannot be undone:
+		// a recent sign-in. Revoking (above) stays the fast way to cut a
+		// sensor off.
+		r.DELETE("/{id}", h.Delete, middleware.Require(permission.SensorsDelete), requireStepUp(), own)
 	}, tenantMiddlewares...)
 
 }
@@ -877,5 +880,7 @@ func registerWorkflowRoutes(
 
 		// Write operations
 		r.POST("/{id}/cancel", h.CancelRun, middleware.Require(permission.AutomationsWrite))
+		// A run paused at its change cap continues only on a publisher's word.
+		r.POST("/{id}/approve", h.ResumeRun, middleware.Require(permission.AutomationsPublish))
 	}, tenantMiddlewares...)
 }
