@@ -288,5 +288,6 @@
   "dashboards.viz.table": "Table",
   "dashboards.widget.failed": "This widget could not be shown",
   "dashboards.widget.legacy": "Earlier tile",
-  "dashboards.widget.note": "Note"
+  "dashboards.widget.note": "Note",
+  "dashboards.manage.widgets": "{n} widgets"
 }

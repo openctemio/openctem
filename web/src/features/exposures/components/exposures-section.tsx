@@ -17,12 +17,10 @@ import type { FindingTypeStats } from '../hooks/use-finding-type-stats'
 /**
  * Overview · Vulnerabilities · Secrets · Code weaknesses · Misconfigurations.
  * Placed directly under the page's `PageHeader`, like every route-tab strip
- * (see docs/ui-style-contract.md); the page's content follows with `mt-5`.
+ * (see docs/ui-style-contract.md).
  */
 export function ExposuresTabs() {
-  return (
-    <SectionTabs tabs={EXPOSURES_SECTION_TABS} label="Exposures sections" className="mt-4 mb-0" />
-  )
+  return <SectionTabs tabs={EXPOSURES_SECTION_TABS} label="Exposures sections" />
 }
 
 /**

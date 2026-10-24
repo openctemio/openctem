@@ -19,6 +19,7 @@ import { toast } from 'sonner'
 
 import {
   PageHeader,
+  PageStack,
   DataTable,
   DataTableColumnHeader,
   DataTableRowActions,
@@ -228,7 +229,7 @@ export function IOCsPanel() {
   )
 
   return (
-    <>
+    <PageStack>
       <PageHeader
         title="Indicators of compromise"
         description="Indicators correlated against runtime telemetry to reopen the findings they belong to."
@@ -241,37 +242,35 @@ export function IOCsPanel() {
         </Can>
       </PageHeader>
 
-      <div className="mt-5">
-        {isLoading ? (
-          <div className="space-y-2">
-            {Array.from({ length: 5 }).map((_, i) => (
-              <Skeleton key={i} className="h-12 w-full" />
-            ))}
-          </div>
-        ) : error ? (
-          <Alert variant="destructive">
-            <AlertCircle />
-            <AlertTitle>Failed to load indicators</AlertTitle>
-            <AlertDescription>
-              <p>{getErrorMessage(error, 'Please try again.')}</p>
-              <Button variant="outline" size="sm" className="mt-2" onClick={() => mutate()}>
-                <RefreshCw className="me-2 h-4 w-4" />
-                Retry
-              </Button>
-            </AlertDescription>
-          </Alert>
-        ) : (
-          <DataTable
-            columns={columns}
-            data={iocs}
-            searchPlaceholder="Search indicators…"
-            emptyMessage="No indicators"
-            emptyDescription="Add an indicator of compromise to start correlating runtime telemetry."
-            onRowClick={(row) => setSelectedId(row.id)}
-            toolbarEnd={filterSelects}
-          />
-        )}
-      </div>
+      {isLoading ? (
+        <div className="space-y-2">
+          {Array.from({ length: 5 }).map((_, i) => (
+            <Skeleton key={i} className="h-12 w-full" />
+          ))}
+        </div>
+      ) : error ? (
+        <Alert variant="destructive">
+          <AlertCircle />
+          <AlertTitle>Failed to load indicators</AlertTitle>
+          <AlertDescription>
+            <p>{getErrorMessage(error, 'Please try again.')}</p>
+            <Button variant="outline" size="sm" className="mt-2" onClick={() => mutate()}>
+              <RefreshCw className="me-2 h-4 w-4" />
+              Retry
+            </Button>
+          </AlertDescription>
+        </Alert>
+      ) : (
+        <DataTable
+          columns={columns}
+          data={iocs}
+          searchPlaceholder="Search indicators…"
+          emptyMessage="No indicators"
+          emptyDescription="Add an indicator of compromise to start correlating runtime telemetry."
+          onRowClick={(row) => setSelectedId(row.id)}
+          toolbarEnd={filterSelects}
+        />
+      )}
 
       <IOCDetailSheet
         ioc={selected}
@@ -293,7 +292,7 @@ export function IOCsPanel() {
           mutate()
         }}
       />
-    </>
+    </PageStack>
   )
 }
 
