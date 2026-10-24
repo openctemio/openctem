@@ -66,7 +66,7 @@ import {
   useBulkAssetGroupOperations,
 } from '@/features/asset-groups'
 import { useAssets } from '@/features/assets'
-import { useDebounce } from '@/hooks/use-debounce'
+import { useSearchQuery } from '@/hooks/use-search-query'
 import type { AssetGroup, CreateAssetGroupInput } from '@/features/asset-groups/types'
 import type { Asset } from '@/features/assets/types'
 import { GroupAddAssetsDialog } from '@/features/asset-groups/components/group-add-assets-dialog'
@@ -209,7 +209,7 @@ export default function AssetGroupsPage() {
     (hasFindings !== null ? 1 : 0)
 
   // The search box writes the URL on every key; the request waits for a pause.
-  const debouncedSearch = useDebounce(searchQuery.trim(), 300)
+  const debouncedSearch = useSearchQuery(searchQuery).term
 
   // Build API filters
   const apiFilters = useMemo(() => {
@@ -259,7 +259,7 @@ export default function AssetGroupsPage() {
 
   // Get all assets for create dialog (lazy: only fetch when dialog is open)
   const [createSearch, setCreateSearch] = useState('')
-  const debouncedCreateSearch = useDebounce(createSearch.trim(), 300)
+  const debouncedCreateSearch = useSearchQuery(createSearch).term
   const { assets: foundAssets } = useAssets({
     search: debouncedCreateSearch || undefined,
     pageSize: 20,

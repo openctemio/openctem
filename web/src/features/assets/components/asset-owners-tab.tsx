@@ -51,7 +51,7 @@ import useSWR from 'swr'
 import { useTenant } from '@/context/tenant-provider'
 import { get } from '@/lib/api/client'
 import { getErrorMessage } from '@/lib/api/error-handler'
-import { useDebounce } from '@/hooks/use-debounce'
+import { useSearchQuery } from '@/hooks/use-search-query'
 import { useGroups } from '@/features/access-control/api/use-groups'
 import { useTranslation } from '@/context/i18n-provider'
 import { ErrorState } from '@/features/shared'
@@ -277,7 +277,7 @@ export function AssetOwnersTab({ assetId }: AssetOwnersTabProps) {
   // query parameter on /tenants/{slug}/members and /groups, so this scales
   // to tenants with thousands of members.
   const [searchValue, setSearchValue] = useState('')
-  const debouncedSearch = useDebounce(searchValue, 250)
+  const debouncedSearch = useSearchQuery(searchValue).term
 
   // Edit owner state
   const [editOwnershipType, setEditOwnershipType] = useState<OwnershipType>('primary')

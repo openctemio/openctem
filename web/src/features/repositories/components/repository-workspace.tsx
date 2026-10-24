@@ -57,7 +57,7 @@ import { AssetSlaPolicyCard } from '@/features/sla/components/sla-windows'
 import type { ActivityItem } from '@/features/activity/types'
 import { Input } from '@/components/ui/input'
 import { Switch } from '@/components/ui/switch'
-import { useDebounce } from '@/hooks/use-debounce'
+import { useSearchQuery } from '@/hooks/use-search-query'
 import { Skeleton } from '@/components/ui/skeleton'
 import { toast } from 'sonner'
 import {
@@ -1416,7 +1416,7 @@ function FindingsTab({
 
   // Read filters from URL (shareable)
   const [searchInput, setSearchInput] = useState(searchParams.get('q') || '')
-  const debouncedSearch = useDebounce(searchInput, 300)
+  const debouncedSearch = useSearchQuery(searchInput).term
   const [severityFilter, setSeverityFilter] = useState<string>(
     searchParams.get('severity') || 'all'
   )

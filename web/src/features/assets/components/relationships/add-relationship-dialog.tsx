@@ -39,7 +39,7 @@ import {
 import { Badge } from '@/components/ui/badge'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Slider } from '@/components/ui/slider'
-import { useDebounce } from '@/hooks/use-debounce'
+import { useSearchQuery } from '@/hooks/use-search-query'
 import { cn } from '@/lib/utils'
 import type {
   RelationshipType,
@@ -229,7 +229,7 @@ export function AddRelationshipDialog({
   // target when multi-selecting.
   const [isControlPlane, setIsControlPlane] = React.useState(false)
   const [searchQuery, setSearchQuery] = React.useState('')
-  const debouncedQuery = useDebounce(searchQuery, 250)
+  const debouncedQuery = useSearchQuery(searchQuery).term
 
   // Server-side search results
   const [searchResults, setSearchResults] = React.useState<AssetOption[]>([])

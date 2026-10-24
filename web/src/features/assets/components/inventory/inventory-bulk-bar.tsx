@@ -69,7 +69,7 @@ import { BulkActionBar } from '@/features/shared'
 import { cn } from '@/lib/utils'
 import { get } from '@/lib/api/client'
 import { getErrorMessage } from '@/lib/api/error-handler'
-import { useDebounce } from '@/hooks/use-debounce'
+import { useSearchQuery } from '@/hooks/use-search-query'
 import { useTenant } from '@/context/tenant-provider'
 import { useGroups } from '@/features/access-control/api/use-groups'
 import { updateAsset } from '../../hooks/use-assets'
@@ -168,7 +168,7 @@ export function InventoryBulkBar({ selected, canWrite, onClear, onDone }: BulkBa
   const [ownershipType, setOwnershipType] = useState<OwnershipType>('primary')
   const [pickerOpen, setPickerOpen] = useState(false)
   const [pickerSearch, setPickerSearch] = useState('')
-  const debouncedSearch = useDebounce(pickerSearch, 250)
+  const debouncedSearch = useSearchQuery(pickerSearch).term
 
   const { currentTenant } = useTenant()
   const tenantSlug = currentTenant?.slug ?? null

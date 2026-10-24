@@ -26,7 +26,7 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { cn } from '@/lib/utils'
-import { useDebounce } from '@/hooks/use-debounce'
+import { useSearchQuery } from '@/hooks/use-search-query'
 import { getErrorMessage } from '@/lib/api/error-handler'
 import { ASSET_TYPE_COLORS, ASSET_TYPE_LABELS, useAssets } from '@/features/assets'
 import type { Asset, AssetType } from '@/features/assets'
@@ -52,7 +52,7 @@ interface AssetSourceProps {
 export function AssetSource({ selected, onChange }: AssetSourceProps) {
   const { t } = useTranslation()
   const [search, setSearch] = useState('')
-  const debouncedSearch = useDebounce(search, 300)
+  const debouncedSearch = useSearchQuery(search).term
   const [type, setType] = useState<string>(ALL)
   const [criticality, setCriticality] = useState<string>(ALL)
   const [selectedOnly, setSelectedOnly] = useState(false)
