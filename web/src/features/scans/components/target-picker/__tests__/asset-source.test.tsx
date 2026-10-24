@@ -23,7 +23,7 @@ vi.mock('@/features/assets', () => ({
     }
   },
   ASSET_TYPE_LABELS: { domain: 'Domain' },
-  ASSET_TYPE_COLORS: { domain: { bg: 'bg-x', text: 'text-x' } },
+  ASSET_TYPE_TILE: { bg: 'bg-x', text: 'text-x' },
 }))
 const fetchAll = vi.fn()
 vi.mock('@/features/assets/hooks/use-assets', () => ({
