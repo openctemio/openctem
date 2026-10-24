@@ -233,9 +233,7 @@ func Decide(check, reach CheckResult, matchedAt string, cls ...Class) Verdict {
 		if !reach.Missing {
 			detail = nonEmpty(evidence.RedactText(reach.Summary), "the reachability probe did not connect")
 		}
-		c := firstClass(cls)
-		c.ReachConfirmed = reached
-		return decideNotMatched(AnalyzeAttempt(check.Evidence, matchedAt), matchedAt, reached, detail, c)
+		return decideNotMatched(AnalyzeAttempt(check.Evidence, matchedAt), matchedAt, reached, detail, firstClass(cls))
 	default:
 		return inconclusive(ReasonError, nonEmpty(evidence.RedactText(check.Summary), "the template re-run was inconclusive"))
 	}

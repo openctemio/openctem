@@ -23,8 +23,8 @@ decides:
 | matched | any | `still_vulnerable` (`matched`) | open: unchanged · `resolved` → `confirmed` (regression) · `fix_applied` → `in_progress`; validation `reproducible`, observation `present` |
 | no match | request to the finding's endpoint, answered 1xx–4xx except 401/403/407/429, with no edge marker | `confirmed_fixed` (`not_matched`) | status unchanged, validation `not_reproducible` ("verified fixed — awaiting confirmation"); → `resolved` (`fixed` / `retest`) only with `settings.retest.auto_resolve`; `resolved` stays |
 | no match | any answer carrying a CDN or WAF challenge or block marker (a vendor header or error page), or a throttle with a vendor marker | `inconclusive` (`edge_blocked`), never a fix | unchanged |
-| no match | origin 401 / 403 (no edge marker), exposure-class check, second sighting (previous retest was the same refusal, or the probe saw the host answer) | `confirmed_fixed` (`access_denied`), "access now denied by the server" | as for any confirmed fix |
-| no match | origin 401 / 403, exposure-class check, first sighting | `inconclusive` (`access_denied`) | unchanged |
+| no match | origin 401 / 403 (no edge marker), exposure-class platform template, second sighting (the previous completed retest, at least an hour earlier, was the same origin refusal) | `confirmed_fixed` (`access_denied`), "access now denied by the server" | as for any confirmed fix |
+| no match | origin 401 / 403, exposure-class template, first sighting, or less than an hour after the first | `inconclusive` (`access_denied`) | unchanged |
 | no match | origin 401 / 403, any other class | `inconclusive` (`access_denied`), "access denied: cannot confirm the fix" | unchanged |
 | no match | answered 429 (no edge marker) | `inconclusive` (`blocked`) | unchanged |
 | no match | answered 407 | `inconclusive` (`auth_changed`) | unchanged |
@@ -44,14 +44,20 @@ A challenge or block page of a CDN or WAF says nothing about the service, so
 it is `edge_blocked` (the message names the vendor and asks to allow the
 scanner at the edge, see the edge-protection guidance) and is never a fix. A
 bare 403 with no marker is the origin's own answer. For an exposure-class
-check (template tags such as `exposure`, `exposed-panel`, `swagger`,
-`config`, `backup`, `debug`, `listing`, `disclosure`; any attacking tag such
-as `rce`, `sqli`, `xss`, `lfi`, `bypass` or `default-login` wins and makes it
-another class) a server that refuses the request has removed what was
-exposed: that is a fix once seen twice, on two consecutive retests of the
-same check or on one retest while the reachability probe saw the host answer.
-For every other class a refusal may only mean the check never reached the
-vulnerable code, so it stays inconclusive. The classification needs no new
+platform template the class comes from the template's own tags (such as
+`exposure`, `exposed-panel`, `swagger`, `config`, `backup`, `debug`,
+`listing`, `disclosure`; any attacking tag such as `rce`, `sqli`, `xss`,
+`lfi`, `bypass` or `default-login` wins), recorded by the scanner at the
+finding's last sighting in `findings.template_exposure`. It is never read
+from the finding's own tags, which a user can edit, and it is not recorded
+for an organization's own rules or a custom retest check. A server that
+refuses the request has then removed what was exposed: that is a fix once
+seen twice, on two consecutive retests of the same check at least an hour
+apart, both answered by the origin (an edge-marked answer in between is not a
+refusal and resets the count; the reachability probe is not a second
+sighting). For every other class a refusal may only mean the check never
+reached the vulnerable code, so it stays inconclusive. The classification
+needs no new
 data from the sensor: the evidence it already reports carries the response.
 
 A tool that retests gives an unverifiable item a reason code (sdk-go

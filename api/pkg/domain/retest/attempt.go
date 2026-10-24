@@ -182,8 +182,8 @@ func edgeLabel(v edgeprotect.Verdict) string {
 
 // decideAccessDenied settles an origin 401 or 403 (no edge marker). For an
 // exposure class check (an exposed page, document or panel) the server now
-// refusing the request is the fix, once it is seen twice: on two retests in
-// a row, or on one retest while the reachability probe saw the host answer.
+// refusing the request is the fix, once it is seen twice: on two consecutive
+// retests at least MinDenialGap apart, both answered by the origin.
 // For any other class a refusal says nothing about the weakness, because the
 // check may simply have been refused before reaching the vulnerable code.
 func decideAccessDenied(a Attempt, shown string, cls Class) Verdict {
@@ -192,7 +192,7 @@ func decideAccessDenied(a Attempt, shown string, cls Class) Verdict {
 		return Verdict{Outcome: OutcomeInconclusive, Code: ReasonAccessDenied,
 			Reason: shown + " answered " + status + ": access denied: cannot confirm the fix"}
 	}
-	if cls.PriorAccessDenied || cls.ReachConfirmed {
+	if cls.PriorAccessDenied {
 		return Verdict{Outcome: OutcomeConfirmedFixed, Code: ReasonAccessDenied,
 			Reason: shown + " answered " + status + ": access now denied by the server"}
 	}

@@ -789,20 +789,25 @@ func (s *Service) matchedAt(ctx context.Context, rt *retestdom.Retest) string {
 }
 
 // settleClass is what the settlement needs to know about the finding: whether
-// its check is an exposure class (from the template tags recorded with the
-// finding; a custom check never is) and whether its previous completed
-// retest was an origin refusal of the same check. Anything unreadable gives
-// the careful answer (not exposure, no prior refusal).
+// the platform template that matched it is of the exposure class (from the
+// template tags the scanner recorded at the sighting, never the finding's
+// editable tags; a custom check never is) and whether its previous completed
+// retest, at least MinDenialGap ago, was an origin refusal of the same check.
+// Anything unreadable gives the careful answer.
 func (s *Service) settleClass(ctx context.Context, rt *retestdom.Retest) retestdom.Class {
 	var cls retestdom.Class
-	if rt.CheckID == nil {
-		if f, err := s.findings.GetByID(ctx, rt.TenantID, rt.FindingID); err == nil && f != nil {
-			cls.Exposure = retestdom.ExposureClass(f.Tags())
-		}
-	}
-	if !cls.Exposure {
+	if rt.CheckID != nil {
 		return cls
 	}
+	store, ok := s.findings.(vulnerability.TemplateProvenanceStore)
+	if !ok {
+		return cls
+	}
+	p, err := store.TemplateBaseline(ctx, rt.TenantID, rt.FindingID)
+	if err != nil || !p.ExposureClass {
+		return cls
+	}
+	cls.Exposure = true
 	prev, err := s.store.ListByFinding(ctx, rt.TenantID, rt.FindingID, 5)
 	if err != nil {
 		return cls
@@ -812,7 +817,8 @@ func (s *Service) settleClass(ctx context.Context, rt *retestdom.Retest) retestd
 			continue
 		}
 		cls.PriorAccessDenied = p.Outcome == retestdom.OutcomeInconclusive &&
-			p.ReasonCode == retestdom.ReasonAccessDenied && p.TemplateID == rt.TemplateID && p.Target == rt.Target
+			p.ReasonCode == retestdom.ReasonAccessDenied && p.TemplateID == rt.TemplateID && p.Target == rt.Target &&
+			p.CompletedAt != nil && s.now().Sub(*p.CompletedAt) >= retestdom.MinDenialGap
 		break
 	}
 	return cls
