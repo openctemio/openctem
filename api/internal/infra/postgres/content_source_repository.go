@@ -302,21 +302,20 @@ func (r *ContentSourceRepository) RequestSyncUnscoped(ctx context.Context, id sh
 }
 
 // SaveSyncUnscoped writes a sync's outcome and releases the lease, only
-// while the source's lease is still the one the sync ran under. A sync or
-// change requested after the claim stays queued, and the config authors
-// are consumed only when the configuration did not change after the claim.
+// while the source's lease is still the one the sync ran under. A sync
+// requested after the claim stays queued. Config authors are never cleared
+// here: only a review by someone else consumes them (Promote).
 func (r *ContentSourceRepository) SaveSyncUnscoped(ctx context.Context, id shared.ID, o cs.SyncOutcome) error {
 	res, err := r.db.ExecContext(ctx, `
 		UPDATE content_sources SET
 			last_sync_status = $2, last_sync_error = $3, last_sync_commit = COALESCE($4, last_sync_commit),
 			last_sync_report = $5, last_sync_at = $6, next_sync_at = $7, sync_lease_until = NULL,
 			sync_requested_at = CASE WHEN $8 AND sync_requested_at <= $12 THEN NULL ELSE sync_requested_at END,
-			consecutive_failures = CASE WHEN $9 THEN 0 WHEN $10 THEN consecutive_failures ELSE consecutive_failures + 1 END,
-			config_authors = CASE WHEN $13 AND (config_changed_at IS NULL OR config_changed_at <= $12) THEN '{}'::uuid[] ELSE config_authors END
+			consecutive_failures = CASE WHEN $9 THEN 0 WHEN $10 THEN consecutive_failures ELSE consecutive_failures + 1 END
 		WHERE id = $1 AND sync_lease_until = $11`,
 		id.String(), string(o.Status), nullString(truncate(o.Error, 2000)), nullString(o.Commit), nullBytes(o.Report),
 		o.At, nullTime(o.NextSyncAt), o.ClearRequest, o.ResetFailures, o.KeepFailures,
-		o.LeaseUntil.Truncate(time.Microsecond), o.ClaimedAt, o.ConsumeAuthors)
+		o.LeaseUntil.Truncate(time.Microsecond), o.ClaimedAt)
 	if err != nil {
 		return fmt.Errorf("save rule source sync: %w", err)
 	}
@@ -329,7 +328,7 @@ func (r *ContentSourceRepository) SaveSyncUnscoped(ctx context.Context, id share
 const contentSnapshotColumns = `
 	id, source_id, scope, tenant_id, upstream_revision, COALESCE(ref, ''), digest, content_pack_id, platform_pack_id,
 	size_bytes, file_count, file_index, rules, rule_count, tier, lint, COALESCE(license_spdx, ''), service_use, redistribution, signature,
-	diff, checks, review_required, state, synced_by, config_authors, promoted_by, promoted_at, rejected_by, rejected_at,
+	diff, checks, review_required, state, synced_by, config_authors, config_as_of, promoted_by, promoted_at, rejected_by, rejected_at,
 	COALESCE(reject_reason, ''), created_at`
 
 func scanContentSnapshot(row interface{ Scan(...any) error }) (*cs.Snapshot, error) {
@@ -339,13 +338,13 @@ func scanContentSnapshot(row interface{ Scan(...any) error }) (*cs.Snapshot, err
 		tenantID, packID, platformPackID     sql.NullString
 		syncedBy, promotedBy, rejectedBy     sql.NullString
 		authors                              pq.StringArray
-		promotedAt, rejectedAt               sql.NullTime
+		promotedAt, rejectedAt, asOf         sql.NullTime
 		fileIndex, rules, lint, diff, checks []byte
 		redistribution                       sql.NullBool
 	)
 	if err := row.Scan(&id, &sourceID, &scope, &tenantID, &sn.UpstreamRevision, &sn.Ref, &sn.Digest, &packID, &platformPackID,
 		&sn.SizeBytes, &sn.FileCount, &fileIndex, &rules, &sn.RuleCount, &tier, &lint, &sn.LicenseSPDX, &sn.ServiceUse, &redistribution, &sn.Signature,
-		&diff, &checks, &sn.ReviewRequired, &state, &syncedBy, &authors, &promotedBy, &promotedAt, &rejectedBy, &rejectedAt,
+		&diff, &checks, &sn.ReviewRequired, &state, &syncedBy, &authors, &asOf, &promotedBy, &promotedAt, &rejectedBy, &rejectedAt,
 		&sn.RejectReason, &sn.CreatedAt); err != nil {
 		return nil, err
 	}
@@ -356,6 +355,7 @@ func scanContentSnapshot(row interface{ Scan(...any) error }) (*cs.Snapshot, err
 	sn.TenantID, sn.ContentPackID, sn.PlatformPackID = parseNullID(tenantID), parseNullID(packID), parseNullID(platformPackID)
 	sn.SyncedBy, sn.PromotedBy, sn.RejectedBy = parseNullID(syncedBy), parseNullID(promotedBy), parseNullID(rejectedBy)
 	sn.ConfigAuthors = contentIDsOf(authors)
+	sn.ConfigAsOf = nullTimeValue(asOf)
 	sn.PromotedAt, sn.RejectedAt = nullTimeValue(promotedAt), nullTimeValue(rejectedAt)
 	sn.Redistribution = nullBoolValue(redistribution)
 	for _, d := range []struct {
@@ -395,12 +395,12 @@ func (r *ContentSourceRepository) CreateSnapshot(ctx context.Context, sn *cs.Sna
 	_, err = r.db.ExecContext(ctx, `
 		INSERT INTO content_source_snapshots (id, source_id, scope, tenant_id, upstream_revision, ref, digest,
 			content_pack_id, platform_pack_id, size_bytes, file_count, file_index, rules, rule_count, tier, lint,
-			license_spdx, signature, diff, checks, review_required, state, synced_by, created_at, service_use, redistribution, config_authors)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27)`,
+			license_spdx, signature, diff, checks, review_required, state, synced_by, created_at, service_use, redistribution, config_authors, config_as_of)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28)`,
 		sn.ID.String(), sn.SourceID.String(), string(sn.Scope), nullIDPtr(sn.TenantID), sn.UpstreamRevision, nullString(sn.Ref),
 		sn.Digest, nullIDPtr(sn.ContentPackID), nullIDPtr(sn.PlatformPackID), sn.SizeBytes, sn.FileCount,
 		fileIndex, rules, sn.RuleCount, string(sn.Tier), lint, nullString(sn.LicenseSPDX), sn.Signature,
-		diff, checks, sn.ReviewRequired, string(sn.State), nullIDPtr(sn.SyncedBy), sn.CreatedAt, sn.ServiceUse, nullBoolPtr(sn.Redistribution), pq.Array(contentIDStrings(sn.ConfigAuthors)))
+		diff, checks, sn.ReviewRequired, string(sn.State), nullIDPtr(sn.SyncedBy), sn.CreatedAt, sn.ServiceUse, nullBoolPtr(sn.Redistribution), pq.Array(contentIDStrings(sn.ConfigAuthors)), nullTime(sn.ConfigAsOf))
 	if err != nil {
 		if isUniqueViolation(err) {
 			return fmt.Errorf("%w: snapshot of this digest exists", shared.ErrConflict)
@@ -510,13 +510,24 @@ func (r *ContentSourceRepository) Promote(ctx context.Context, tenantID, sourceI
 				return err
 			}
 		}
+		// A review by someone else consumes the config authors it covered:
+		// the changes made up to the snapshot's claim. Later changes stay.
+		if sn.ReviewRequired {
+			if _, err := tx.ExecContext(ctx, `UPDATE content_sources SET config_authors = '{}'::uuid[]
+				WHERE id = $1 AND tenant_id = $2 AND $3::timestamptz IS NOT NULL
+				AND (config_changed_at IS NULL OR config_changed_at <= $3)`,
+				src.ID.String(), tenantID.String(), nullTime(sn.ConfigAsOf)); err != nil {
+				return fmt.Errorf("consume config authors: %w", err)
+			}
+		}
 		return applyPromotionUnscoped(ctx, tx, src, sn.ID, by, at)
 	})
 }
 
 // PromoteUnscoped is the sync worker's automatic promotion.
 func (r *ContentSourceRepository) PromoteUnscoped(ctx context.Context, sourceID, snapshotID shared.ID, at time.Time) error {
-	return r.db.Transaction(ctx, func(tx *sql.Tx) error {
+	policyChanged := false
+	err := r.db.Transaction(ctx, func(tx *sql.Tx) error {
 		src, err := scanContentSource(tx.QueryRowContext(ctx, `SELECT `+contentSourceColumns+`
 			FROM content_sources WHERE id = $1 FOR UPDATE`, sourceID.String()))
 		if err != nil {
@@ -530,8 +541,23 @@ func (r *ContentSourceRepository) PromoteUnscoped(ctx context.Context, sourceID,
 		if cs.SnapshotState(state) != cs.StateCandidate {
 			return cs.ErrNotCandidate
 		}
+		// The policy is read again under the lock: a switch to review made
+		// during the sync stops the automatic promotion, and the snapshot
+		// then needs review.
+		if src.Policy != cs.PolicyAuto {
+			if _, err := tx.ExecContext(ctx, `UPDATE content_source_snapshots SET review_required = true
+				WHERE source_id = $1 AND id = $2`, sourceID.String(), snapshotID.String()); err != nil {
+				return fmt.Errorf("mark snapshot for review: %w", err)
+			}
+			policyChanged = true
+			return nil // commit the review mark
+		}
 		return applyPromotionUnscoped(ctx, tx, src, snapshotID, nil, at)
 	})
+	if err == nil && policyChanged {
+		return cs.ErrPolicyChanged
+	}
+	return err
 }
 
 // applyPromotionUnscoped runs inside a transaction that holds the source's

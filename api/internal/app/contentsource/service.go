@@ -71,11 +71,12 @@ type Service struct {
 	fetch   func(context.Context, fetchers.GitRequest) (*fetchers.GitSnapshot, error)
 	private func(rawURL string) (bool, error)
 
-	modules   ModuleGuard
-	syncing   sync.Map // source id -> struct{}: one sync per source per process
-	fetches   chan struct{}
-	testLimit *windowLimiter
-	hookLimit *windowLimiter
+	modules     ModuleGuard
+	syncing     sync.Map // source id -> struct{}: one sync per source per process
+	fetches     chan struct{}
+	tenantTests tenantTests
+	testLimit   *windowLimiter
+	hookLimit   *windowLimiter
 }
 
 // NewService creates the service. enc is required to store credentials;
@@ -132,6 +133,26 @@ const (
 	// the sync worker waits for its next run.
 	MaxConcurrentFetches = 3
 )
+
+// tenantTests lets one organization run one Test at a time, so it cannot
+// hold every fetch slot.
+type tenantTests struct {
+	mu     sync.Mutex
+	active map[shared.ID]struct{}
+}
+
+func (t *tenantTests) acquire(id shared.ID) (release func(), ok bool) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	if _, busy := t.active[id]; busy {
+		return nil, false
+	}
+	if t.active == nil {
+		t.active = map[shared.ID]struct{}{}
+	}
+	t.active[id] = struct{}{}
+	return func() { t.mu.Lock(); delete(t.active, id); t.mu.Unlock() }, true
+}
 
 // SetMaxConcurrentFetches replaces the cap of concurrent fetches (tests).
 func (s *Service) SetMaxConcurrentFetches(n int) { s.fetches = make(chan struct{}, n) }

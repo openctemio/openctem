@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -129,9 +130,11 @@ func SnapshotGit(ctx context.Context, req GitRequest) (*GitSnapshot, error) {
 		return nil, fmt.Errorf("create clone directory: %w", err)
 	}
 	defer func() { _ = os.RemoveAll(dir) }()
-	if err := checkFreeDisk(dir); err != nil {
+	releaseDisk, err := reserveDisk(dir)
+	if err != nil {
 		return nil, err
 	}
+	defer releaseDisk()
 
 	repo, commit, err := cloneRef(ctx, dir, req)
 	if err != nil {
@@ -195,18 +198,33 @@ func SnapshotGit(ctx context.Context, req GitRequest) (*GitSnapshot, error) {
 	return out, nil
 }
 
-// checkFreeDisk refuses a fetch when the clone directory's disk would be
-// left with less than MinFreeDiskBytes after a clone of MaxCloneBytes. It
+var (
+	diskMu       sync.Mutex
+	reservedDisk int // clones in flight in this process
+)
+
+// reserveDisk refuses a fetch when the clone directory's disk would be left
+// with less than MinFreeDiskBytes after this clone and every clone already
+// in flight (each may grow to MaxCloneBytes before it is measured), and
+// otherwise reserves room for this one until the returned func runs. It
 // fails closed when the free space cannot be read.
-func checkFreeDisk(dir string) error {
+func reserveDisk(dir string) (release func(), err error) {
+	diskMu.Lock()
+	defer diskMu.Unlock()
 	free, err := freeDiskBytes(dir)
 	if err != nil {
-		return fmt.Errorf("check free disk space: %w", err)
+		return nil, fmt.Errorf("check free disk space: %w", err)
 	}
-	if free < uint64(MaxCloneBytes)+MinFreeDiskBytes { //nolint:gosec // MaxCloneBytes is positive
-		return ErrLowDisk
+	need := uint64(reservedDisk+1)*uint64(MaxCloneBytes) + MinFreeDiskBytes //nolint:gosec // both positive
+	if free < need {
+		return nil, ErrLowDisk
 	}
-	return nil
+	reservedDisk++
+	return func() {
+		diskMu.Lock()
+		reservedDisk--
+		diskMu.Unlock()
+	}, nil
 }
 
 func readBlob(b *object.Blob) ([]byte, error) {

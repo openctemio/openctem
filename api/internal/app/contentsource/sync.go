@@ -230,6 +230,11 @@ func (s *Service) Test(ctx context.Context, a Actor, in TestInput) (*Report, err
 	if err := s.checkHost(ctx, a.TenantID, src.URL); err != nil {
 		return nil, err
 	}
+	releaseTenant, ok := s.tenantTests.acquire(a.TenantID)
+	if !ok {
+		return nil, dom.ErrFetchBusy
+	}
+	defer releaseTenant()
 	release, ok := s.acquireFetch()
 	if !ok {
 		return nil, dom.ErrFetchBusy
@@ -320,7 +325,7 @@ func (s *Service) syncSource(ctx context.Context, src *dom.Source, actor *shared
 		SizeBytes: pack.SizeBytes, FileCount: pack.FileCount, FileIndex: dom.FileIndexOf(arc.Files),
 		Rules: rules, RuleCount: len(rules), Tier: rep.Lint.Tier, Lint: rep.Lint, LicenseSPDX: rep.License,
 		ServiceUse: src.LicenseServiceUse && !dom.NoServiceLicenses[rep.License],
-		Signature:  pack.Signature, State: dom.StateCandidate, SyncedBy: actor, ConfigAuthors: src.ConfigAuthors, CreatedAt: s.now().UTC(),
+		Signature:  pack.Signature, State: dom.StateCandidate, SyncedBy: actor, ConfigAuthors: src.ConfigAuthors, ConfigAsOf: claimedAt(src), CreatedAt: s.now().UTC(),
 	}
 	sn.Diff = dom.ComputeDiff(base, rules, sn.Tier, sn.LicenseSPDX)
 	sn.Checks, sn.ReviewRequired = dom.EvaluatePromotion(src.Policy, base, sn, dup)
@@ -345,6 +350,10 @@ func (s *Service) syncSource(ctx context.Context, src *dom.Source, actor *shared
 		WithMetadata("blocked", sn.Checks.Blocked))
 	if sn.Checks.AutoPromote {
 		if err := s.repo.PromoteUnscoped(ctx, src.ID, sn.ID, s.now().UTC()); err != nil {
+			if errors.Is(err, dom.ErrPolicyChanged) {
+				sn.ReviewRequired, sn.Checks.AutoPromote = true, false
+				return rep, nil
+			}
 			return rep, err
 		}
 		sn.State = dom.StatePromoted
@@ -422,7 +431,7 @@ func (s *Service) runOne(ctx context.Context, src *dom.Source) {
 		out.Commit = rep.Commit
 	}
 	if err == nil {
-		out.Status, out.ResetFailures, out.ConsumeAuthors = dom.SyncSuccess, true, true
+		out.Status, out.ResetFailures = dom.SyncSuccess, true
 		result := "new"
 		if rep != nil && rep.Unchanged {
 			result = "unchanged"
@@ -499,4 +508,14 @@ func (s *Service) CollectGarbage(ctx context.Context) (int, error) {
 		s.deletePack(ctx, o.TenantID, o.PackID, "orphan")
 	}
 	return n, nil
+}
+
+// claimedAt is the claim time of a claimed source, nil for one that was not
+// claimed (a snapshot without it consumes no config authors when promoted).
+func claimedAt(src *dom.Source) *time.Time {
+	if src.ClaimedAt.IsZero() {
+		return nil
+	}
+	t := src.ClaimedAt.UTC()
+	return &t
 }

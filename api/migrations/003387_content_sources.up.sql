@@ -143,6 +143,9 @@ CREATE TABLE content_source_snapshots (
     synced_by         uuid REFERENCES users(id) ON DELETE SET NULL,
     -- Members who changed the configuration this snapshot was synced from.
     config_authors    uuid[] NOT NULL DEFAULT '{}',
+    -- Claim time of the sync that made this snapshot: changes made up to it are
+    -- the ones a review of this snapshot covers.
+    config_as_of      timestamptz,
     promoted_by       uuid REFERENCES users(id) ON DELETE SET NULL,
     promoted_at       timestamptz,
     rejected_by       uuid REFERENCES users(id) ON DELETE SET NULL,

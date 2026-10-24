@@ -150,6 +150,7 @@ var (
 	ErrSlugTaken         = shared.NewDomainError("SLUG_TAKEN", "a rule source with this slug exists", shared.ErrAlreadyExists)
 	ErrNotCandidate      = shared.NewDomainError("NOT_CANDIDATE", "only a candidate snapshot can be promoted or rejected", shared.ErrConflict)
 	ErrNoPrevious        = shared.NewDomainError("NO_PREVIOUS", "the source has no previous snapshot to roll back to", shared.ErrConflict)
+	ErrPolicyChanged     = shared.NewDomainError("POLICY_CHANGED", "the promotion policy changed during the sync; the snapshot needs review", shared.ErrConflict)
 	ErrFourEyes          = shared.NewDomainError("FOUR_EYES", "this snapshot needs review by a member who did not change the source configuration it came from", shared.ErrForbidden)
 	ErrApprovalRequired  = shared.NewDomainError("APPROVAL_REQUIRED", "turning off review needs the permission to approve rule source snapshots", shared.ErrForbidden)
 	ErrLeaseLost         = shared.NewDomainError("LEASE_LOST", "the sync's claim expired or was taken over", shared.ErrConflict)

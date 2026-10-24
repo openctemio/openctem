@@ -169,3 +169,29 @@ func TestSnapshotGit_RefusesOnLowDisk(t *testing.T) {
 		t.Fatalf("enough disk: %v", err)
 	}
 }
+
+// SECURITY: clones in flight count against the free disk, so concurrent
+// fetches cannot each pass a check that only fits one.
+func TestReserveDisk_CountsClonesInFlight(t *testing.T) {
+	prev := freeDiskBytes
+	t.Cleanup(func() { freeDiskBytes = prev })
+	freeDiskBytes = func(string) (uint64, error) { return 2*uint64(MaxCloneBytes) + MinFreeDiskBytes, nil }
+	r1, err := reserveDisk(".")
+	if err != nil {
+		t.Fatal(err)
+	}
+	r2, err := reserveDisk(".")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := reserveDisk("."); !errors.Is(err, ErrLowDisk) {
+		t.Fatalf("third clone fits no more: %v", err)
+	}
+	r1()
+	r3, err := reserveDisk(".")
+	if err != nil {
+		t.Fatalf("a released reservation frees room: %v", err)
+	}
+	r2()
+	r3()
+}
