@@ -480,3 +480,36 @@ func TestClassifyNuclei(t *testing.T) {
 		t.Fatalf("namespaced kind: %+v", rep)
 	}
 }
+
+// Rule source snapshots count inside the same byte quota as uploads: a
+// tenant whose stored bytes (of any pack) fill the quota gets no new snapshot.
+func TestStoreSnapshotCountsInsideByteQuota(t *testing.T) {
+	svc, repo, _, _ := newTestService(t)
+	ctx := context.Background()
+	tid := shared.NewID()
+	arc, err := dom.Canonicalize(tarOf(t, map[string]string{"a.yaml": "rules: []\n"}), dom.DefaultLimits)
+	if err != nil {
+		t.Fatal(err)
+	}
+	in := SnapshotInput{TenantID: tid, Name: "acme", Version: "v1", Kind: dom.KindSemgrepRules, Archive: arc}
+	// Room for exactly the archive: stored.
+	repo.blobs[tid.String()+"|sha256:other"] = &dom.Blob{TenantID: tid, Digest: "sha256:other", SizeBytes: MaxBytesPerTenant - arc.Size()}
+	if _, err := svc.StoreSnapshot(ctx, in); err != nil {
+		t.Fatalf("a snapshot that fits the quota: %v", err)
+	}
+	// Full: a different snapshot is refused (a re-store of the same digest is
+	// deduplicated and needs no room).
+	arc2, err := dom.Canonicalize(tarOf(t, map[string]string{"a.yaml": "rules: []\n# 2\n"}), dom.DefaultLimits)
+	if err != nil {
+		t.Fatal(err)
+	}
+	in2 := SnapshotInput{TenantID: tid, Name: "acme", Version: "v2", Kind: dom.KindSemgrepRules, Archive: arc2}
+	if _, err := svc.StoreSnapshot(ctx, in2); !errors.Is(err, dom.ErrQuota) {
+		t.Fatalf("a snapshot over the quota: %v", err)
+	}
+	// Another tenant is unaffected.
+	in2.TenantID = shared.NewID()
+	if _, err := svc.StoreSnapshot(ctx, in2); err != nil {
+		t.Fatalf("another tenant: %v", err)
+	}
+}

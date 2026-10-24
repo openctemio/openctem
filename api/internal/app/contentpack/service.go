@@ -177,7 +177,7 @@ func (s *Service) Upload(ctx context.Context, in UploadInput, actx auditapp.Audi
 }
 
 // storeBlob stores the canonical archive once per tenant and digest. room is
-// the bytes the tenant may still add (negative: no byte quota applies).
+// the bytes the tenant may still add (zero or negative: none).
 func (s *Service) storeBlob(ctx context.Context, tid shared.ID, arc *dom.Archive, room int64) (*dom.Blob, error) {
 	b, err := s.repo.GetBlob(ctx, tid, arc.Digest)
 	if err == nil {
@@ -186,7 +186,7 @@ func (s *Service) storeBlob(ctx context.Context, tid shared.ID, arc *dom.Archive
 	if !errors.Is(err, dom.ErrNotFound) {
 		return nil, err
 	}
-	if room >= 0 && arc.Size() > room {
+	if arc.Size() > room {
 		return nil, fmt.Errorf("%w (%d bytes stored)", dom.ErrQuota, MaxBytesPerTenant)
 	}
 	name := strings.TrimPrefix(arc.Digest, "sha256:") + ".tar"
@@ -226,8 +226,9 @@ type SnapshotInput struct {
 }
 
 // StoreSnapshot signs and stores a rule source snapshot as a pack. It is
-// not audited here (the rule source records the sync), and the byte quota of
-// uploads does not apply: the content_storage_mb limit covers snapshots.
+// not audited here (the rule source records the sync). Its bytes count
+// inside the same per-organization storage quota as uploads; the
+// content_storage_mb limit is a separate, per-organization cap on snapshots.
 func (s *Service) StoreSnapshot(ctx context.Context, in SnapshotInput) (*dom.Pack, error) {
 	if s.signer == nil {
 		return nil, dom.ErrSigningKey
@@ -238,7 +239,11 @@ func (s *Service) StoreSnapshot(ctx context.Context, in SnapshotInput) (*dom.Pac
 	if err := errors.Join(dom.ValidateName(in.Name), dom.ValidateVersion(in.Version), dom.ValidateKind(in.Kind)); err != nil {
 		return nil, err
 	}
-	blob, err := s.storeBlob(ctx, in.TenantID, in.Archive, -1)
+	_, used, err := s.repo.Usage(ctx, in.TenantID)
+	if err != nil {
+		return nil, err
+	}
+	blob, err := s.storeBlob(ctx, in.TenantID, in.Archive, MaxBytesPerTenant-used)
 	if err != nil {
 		return nil, err
 	}
