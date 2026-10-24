@@ -575,6 +575,7 @@ export default function ApprovalsPage() {
       },
       {
         accessorKey: 'finding_id',
+        meta: { primary: true },
         header: t('findings.approvals.col.finding', 'Finding'),
         cell: ({ row }) => (
           <ApprovalFindingLink
