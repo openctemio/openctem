@@ -34,7 +34,9 @@ test('domain proof opens in Scoping > Scope', async ({ page }) => {
   await expect(page.getByRole('heading', { name: 'Domain proof' })).toBeVisible({
     timeout: 30_000,
   })
-  await expect(page.getByRole('link', { name: /^Domain proof/ })).toHaveAttribute(
+  // The breadcrumb also names the page; check the section tab.
+  const tabs = page.getByRole('navigation', { name: 'Scope sections' })
+  await expect(tabs.getByRole('link', { name: /^Domain proof/ })).toHaveAttribute(
     'aria-current',
     'page'
   )
