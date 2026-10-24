@@ -25,7 +25,7 @@ import {
 } from '@/lib/api/workflow-types'
 import { PERSON_CLOSURE_REASONS, closureReasonLabel } from '@/features/findings/lib/closure'
 import type { AutomationNode, AutomationNodeData } from '../lib/automation-graph'
-import { catalogEntriesFor, removedTypeOf } from '../lib/automation-lifecycle'
+import { catalogEntriesFor, unlistedTypeOf } from '../lib/automation-lifecycle'
 import { useAutomationLabels } from '../lib/use-automation-labels'
 
 /** Comma-separated tags as a list, trimmed, without blanks. */
@@ -284,7 +284,7 @@ function ActionFields({
   const labels = useAutomationLabels()
   const type = config.action_type
   const ac = config.action_config ?? {}
-  const removed = removedTypeOf(catalog, 'action', config)
+  const removed = unlistedTypeOf(catalog, 'action', config)
   const setAc = (next: Record<string, unknown>) => onChange({ ...config, action_config: next })
   return (
     <>
@@ -392,8 +392,8 @@ export function AutomationInspector({
   const [label, setLabel] = useState(data.label)
   useEffect(() => setLabel(data.label), [node.id, data.label])
   const setConfig = (c: WorkflowNodeConfig) => onChange({ ...data, config: c })
-  const triggerRemoved = removedTypeOf(catalog, 'trigger', config)
-  const notificationRemoved = removedTypeOf(catalog, 'notification', config)
+  const triggerRemoved = unlistedTypeOf(catalog, 'trigger', config)
+  const notificationRemoved = unlistedTypeOf(catalog, 'notification', config)
 
   return (
     <div className="space-y-4" data-testid="automation-inspector">

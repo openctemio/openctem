@@ -161,6 +161,8 @@ describe('AutomationRunDetail', () => {
     fireEvent.click(screen.getByRole('button', { name: /Continue/ }))
     await waitFor(() => expect(api.resumeWorkflowRun).toHaveBeenCalledWith('r58'))
     fireEvent.click(screen.getByRole('button', { name: /Cancel run/ }))
+    expect(api.cancelWorkflowRun).not.toHaveBeenCalled()
+    fireEvent.click(await screen.findByRole('button', { name: 'Cancel this run' }))
     await waitFor(() => expect(api.cancelWorkflowRun).toHaveBeenCalledWith('r58'))
   })
 

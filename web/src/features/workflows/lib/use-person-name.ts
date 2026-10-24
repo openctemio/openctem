@@ -1,7 +1,7 @@
 'use client'
 
 import { useTranslation } from '@/context/i18n-provider'
-import { useUser } from '@/stores/auth-store'
+import { useDisplayUser } from '@/hooks/use-display-user'
 
 /** "22 Nov 2026" in the viewer's language. */
 export function formatDay(value: string | null | undefined, locale: string): string {
@@ -14,7 +14,7 @@ export function formatDay(value: string | null | undefined, locale: string): str
 /** Who published or approved: "you" for the viewer, else the name the API sent, else the id. */
 export function usePersonName() {
   const { t } = useTranslation()
-  const me = useUser()
+  const me = useDisplayUser()
   return (id: string | null | undefined, name?: string | null): string => {
     if (!id) return '—'
     if (me?.id && id === me.id) return t('automations.version.you', 'you')
