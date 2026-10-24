@@ -8,6 +8,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"strconv"
 	"time"
 
@@ -371,6 +372,11 @@ func FromRow(
 	}
 }
 
+// ErrLeaseLost: the worker no longer holds the job's lease (it expired and
+// the job was released or claimed by another attempt); the worker stops
+// and writes nothing.
+var ErrLeaseLost = errors.New("ingest job lease lost")
+
 // Repository persists and claims ingest jobs.
 type Repository interface {
 	// Enqueue inserts a pending job. If a job with the same idempotency key
@@ -385,13 +391,21 @@ type Repository interface {
 	ClaimBatch(ctx context.Context, workerID string, limit int) ([]*Job, error)
 
 	// Complete marks a job completed and stores its result counts (JSON).
-	Complete(ctx context.Context, id ID, result []byte) error
+	// attempts is the attempt the worker claimed: the write only happens
+	// while the job is still processing that attempt, else ErrLeaseLost
+	// (the lease expired and the job was released or claimed again).
+	Complete(ctx context.Context, id ID, attempts int, result []byte) error
+
+	// Renew extends the lease of the attempt the worker is processing
+	// (locked_at = now); ErrLeaseLost when it no longer holds the job.
+	Renew(ctx context.Context, tenantID shared.ID, id ID, attempts int) error
 
 	// Fail records an error and either reschedules the job for retry at
 	// availableAt (status pending) or marks it dead when retries are
 	// exhausted. publicErr is the fixed code a client sees on a dead job
 	// (empty for a retry).
-	Fail(ctx context.Context, id ID, errMsg, publicErr string, availableAt time.Time, dead bool) error
+	// Like Complete it only writes for the claimed attempt (ErrLeaseLost).
+	Fail(ctx context.Context, id ID, attempts int, errMsg, publicErr string, availableAt time.Time, dead bool) error
 
 	// GetByID fetches a job scoped to its tenant (status polling).
 	GetByID(ctx context.Context, tenantID, id ID) (*Job, error)

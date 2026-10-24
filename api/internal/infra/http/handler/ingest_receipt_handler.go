@@ -561,6 +561,19 @@ func (h *IngestReceiptHandler) FindingReceipts(w http.ResponseWriter, r *http.Re
 	writeJSON(w, http.StatusOK, out)
 }
 
+// resultStatusWithoutJob is the state to answer for an upload receipt that
+// has no queue job: only a receipt that itself finished (an import from
+// before uploads were queued) is answered, as applied or failed.
+func resultStatusWithoutJob(rec *ingestreceipt.Receipt) (ingestqueue.Status, bool) {
+	switch rec.Status {
+	case ingestreceipt.StatusCompleted:
+		return ingestqueue.StatusApplied, true
+	case ingestreceipt.StatusFailed:
+		return ingestqueue.StatusFailed, true
+	}
+	return "", false
+}
+
 // Result handles GET /api/v1/findings/imports/{id}/result.
 //
 // @Summary      Per-file results of a committed upload
@@ -589,9 +602,15 @@ func (h *IngestReceiptHandler) Result(w http.ResponseWriter, r *http.Request) {
 	st, err := h.imports.UploadResult(r.Context(), v.tenant, rec.ID, ingestqueue.ClampWait(r.URL.Query().Get("wait")))
 	if errors.Is(err, shared.ErrNotFound) {
 		// An upload imported before uploads were queued has no job: its
-		// receipt is all there is.
+		// receipt is all there is. A receipt that never finished and has
+		// no job (purged, or lost) is not "applied": there is nothing to read.
+		status, ok := resultStatusWithoutJob(rec)
+		if !ok {
+			apierror.NotFound("Import result").WriteJSON(w)
+			return
+		}
 		rr := toReceiptResponse(rec)
-		writeJSON(w, http.StatusOK, FindingImportResponse{ReceiptID: rec.ID.String(), Status: string(ingestqueue.StatusApplied),
+		writeJSON(w, http.StatusOK, FindingImportResponse{ReceiptID: rec.ID.String(), Status: string(status),
 			Receipt: &rr, Files: []ImportFileResponse{}})
 		return
 	}
