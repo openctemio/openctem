@@ -597,7 +597,9 @@ weakening identity.
   only the `vuln` field of its stored tuple changes (lossless, like the asset
   merge rewrites `asset`). A free key re-keys the finding in place, its old
   key stays an alias; a key another live finding holds links the two as the
-  same issue instead of merging them.
+  same issue instead of merging them. The advisory finding then takes each
+  sighting its tool's report gives the CVE finding (never a status), so it is
+  not auto-resolved as fixed while the vulnerability is still reported.
 - **CWE** (`CWE-89`, `cwe-089`, `89`) is normalised for linking; it is never
   an identity input.
 
@@ -659,5 +661,5 @@ a pair whose signal no longer holds (the code moved) is released.
 |---|---|
 | Same-issue links (`sast_overlap`, `secret_value`), API, dashboard facts, finding page, `refingerprint -links` | implemented |
 | Identity explanation (recipe and field names, reporting tools, merged duplicates) | in progress (P0) |
-| Alias canonicalisation, multi-CVE SCA split, `vuln_alias` links | in progress (P0); the alias map fills once the feed publishes it |
+| Alias canonicalisation, multi-CVE SCA split, `vuln_alias` links, `refingerprint -vuln-aliases` | implemented on the platform; the alias map fills once the feed publishes it (collector change in the feed repository) |
 | CWE parent/child, SAST source-to-sink via data flow, code-to-image, host vs port, IaC policy equivalence, group severity/SLA/ticket offers, technique groups (§7.1) | planned |
