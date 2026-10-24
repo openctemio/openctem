@@ -165,7 +165,12 @@ const COLUMNS: ColumnDef<ActiveCVE>[] = [
   },
 ]
 
-export function ActiveCVEsTab() {
+export function ActiveCVEsTab({
+  leading,
+}: {
+  /** Controls the page puts first in the toolbar (which CVE list is shown). */
+  leading?: React.ReactNode
+} = {}) {
   // `cve_` params: this tab's filters never leak into the CVE catalog tab.
   const f = useVulnFilterParams('cve_')
   const panel = useFilterPanelOpen('openctem:active-cve-filters-open')
@@ -238,6 +243,7 @@ export function ActiveCVEsTab() {
 
   const toolbarStart = (
     <>
+      {leading}
       <FilterPanelToggle
         controlsId={PANEL_ID}
         activeCount={f.activeCount}
@@ -267,7 +273,7 @@ export function ActiveCVEsTab() {
     <TooltipProvider>
       <MetricStrip loading={statsLoading} items={metrics} />
 
-      <div className="mt-5">
+      <div>
         <FilterLayout
           panelId={PANEL_ID}
           label="Active CVE filters"

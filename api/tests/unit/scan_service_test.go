@@ -22,7 +22,6 @@ import (
 	"github.com/openctemio/openctem/api/pkg/domain/scannertemplate"
 	"github.com/openctemio/openctem/api/pkg/domain/sensor"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
-	"github.com/openctemio/openctem/api/pkg/domain/templatesource"
 	"github.com/openctemio/openctem/api/pkg/domain/tool"
 	"github.com/openctemio/openctem/api/pkg/logger"
 	"github.com/openctemio/openctem/api/pkg/pagination"
@@ -665,45 +664,6 @@ func (m *mockScannerTemplateRepo) GetUsage(_ context.Context, _ shared.ID) (*sca
 }
 
 // =============================================================================
-// Mock: templatesource.Repository
-// =============================================================================
-
-type mockTemplateSourceRepo struct{}
-
-func (m *mockTemplateSourceRepo) Create(_ context.Context, _ *templatesource.TemplateSource) error {
-	return nil
-}
-func (m *mockTemplateSourceRepo) GetByID(_ context.Context, _ shared.ID) (*templatesource.TemplateSource, error) {
-	return nil, nil
-}
-func (m *mockTemplateSourceRepo) GetByTenantAndID(_ context.Context, _, _ shared.ID) (*templatesource.TemplateSource, error) {
-	return nil, nil
-}
-func (m *mockTemplateSourceRepo) GetByTenantAndName(_ context.Context, _ shared.ID, _ string) (*templatesource.TemplateSource, error) {
-	return nil, nil
-}
-func (m *mockTemplateSourceRepo) List(_ context.Context, _ templatesource.ListInput) (*templatesource.ListOutput, error) {
-	return nil, nil
-}
-func (m *mockTemplateSourceRepo) ListByTenantAndTemplateType(_ context.Context, _ shared.ID, _ scannertemplate.TemplateType) ([]*templatesource.TemplateSource, error) {
-	return nil, nil
-}
-func (m *mockTemplateSourceRepo) ListEnabledForSync(_ context.Context, _ shared.ID) ([]*templatesource.TemplateSource, error) {
-	return nil, nil
-}
-func (m *mockTemplateSourceRepo) ListAllNeedingSync(_ context.Context) ([]*templatesource.TemplateSource, error) {
-	return nil, nil
-}
-func (m *mockTemplateSourceRepo) Update(_ context.Context, _ *templatesource.TemplateSource) error {
-	return nil
-}
-func (m *mockTemplateSourceRepo) Delete(_ context.Context, _ shared.ID) error { return nil }
-func (m *mockTemplateSourceRepo) UpdateSyncStatus(_ context.Context, _ *templatesource.TemplateSource) error {
-	return nil
-}
-func (m *mockTemplateSourceRepo) CountByTenant(_ context.Context, _ shared.ID) (int, error) {
-	return 0, nil
-}
 
 // =============================================================================
 // Mock: tool.Repository
@@ -794,12 +754,6 @@ func (m *mockToolRepo) addTool(name string, active bool) {
 // =============================================================================
 // Mock: TemplateSyncer
 // =============================================================================
-
-type mockTemplateSyncer struct{}
-
-func (m *mockTemplateSyncer) SyncSource(_ context.Context, _ *templatesource.TemplateSource) (*scanservice.TemplateSyncResult, error) {
-	return &scanservice.TemplateSyncResult{Success: true}, nil
-}
 
 // =============================================================================
 // Mock: SensorSelector
@@ -921,9 +875,7 @@ func newTestScanService(opts ...scanservice.ServiceOption) (*scanservice.Service
 		&mockStepRunRepo{},
 		deps.commandRepo,
 		&mockScannerTemplateRepo{},
-		&mockTemplateSourceRepo{},
 		deps.toolRepo,
-		&mockTemplateSyncer{},
 		deps.sensorSelector,
 		deps.secValidator,
 		log,

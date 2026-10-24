@@ -2,10 +2,16 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import Link from '@/components/link'
-import { Building, LayoutDashboard, Lock, Upload, UserCog } from 'lucide-react'
+import { Building, HardDrive, LayoutDashboard, Lock, Upload, UserCog } from 'lucide-react'
 import { toast } from 'sonner'
 import { Main } from '@/components/layout'
-import { DangerZone, DangerZoneItem, PageHeader, SettingsSaveBar } from '@/features/shared'
+import {
+  DangerZone,
+  DangerZoneItem,
+  PageHeader,
+  PageStack,
+  SettingsSaveBar,
+} from '@/features/shared'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
@@ -214,214 +220,225 @@ export function GeneralSettings() {
 
   return (
     <Main>
-      {header}
-      <Tabs
-        value={activeTab}
-        onValueChange={(v) => setTabParam(v === 'general' ? '' : v)}
-        className="mt-4"
-      >
-        <TabsList className="overflow-x-auto">
-          <TabsTrigger value="general">
-            <Building className="me-2 h-4 w-4" aria-hidden />
-            {t('org.general.tab.general', 'General')}
-          </TabsTrigger>
-          <TabsTrigger value="storage">
-            <Upload className="me-2 h-4 w-4" aria-hidden />
-            {t('org.general.tab.storage', 'File storage')}
-          </TabsTrigger>
-          {canSeeDashboardData && (
-            <TabsTrigger value="dashboard-data">
-              <LayoutDashboard className="me-2 h-4 w-4" aria-hidden />
-              {t('org.general.tab.dashboardData', 'Dashboard data')}
+      <PageStack>
+        {header}
+        <Tabs value={activeTab} onValueChange={(v) => setTabParam(v === 'general' ? '' : v)}>
+          <TabsList className="overflow-x-auto">
+            <TabsTrigger value="general">
+              <Building aria-hidden />
+              {t('org.general.tab.general', 'General')}
             </TabsTrigger>
-          )}
-        </TabsList>
+            <TabsTrigger value="storage">
+              <HardDrive aria-hidden />
+              {t('org.general.tab.storage', 'File storage')}
+            </TabsTrigger>
+            {canSeeDashboardData && (
+              <TabsTrigger value="dashboard-data">
+                <LayoutDashboard aria-hidden />
+                {t('org.general.tab.dashboardData', 'Dashboard data')}
+              </TabsTrigger>
+            )}
+          </TabsList>
 
-        <TabsContent value="general" className="mt-5 space-y-5">
-          <Card id="org-profile">
-            <CardHeader>
-              <CardTitle>{t('org.general.profile', 'Organization information')}</CardTitle>
-              <CardDescription>
-                {t('org.general.profileDesc', 'How your organization is named and recognised.')}
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              <div className="flex flex-col gap-8 lg:flex-row">
-                <div className="flex flex-col items-center gap-3 lg:items-start lg:border-e lg:pe-8">
-                  <Avatar className="h-24 w-24 ring-2 ring-border">
-                    <AvatarImage src={logoPreview} alt="" />
-                    <AvatarFallback className="bg-primary/10 text-3xl">
-                      {currentTenant?.name?.charAt(0) || 'O'}
-                    </AvatarFallback>
-                  </Avatar>
-                  {canUpdateTenant ? (
-                    <div className="flex flex-col items-center gap-1">
-                      <Button variant="outline" size="sm" asChild>
-                        <label className="cursor-pointer">
-                          <Upload className="h-4 w-4" aria-hidden />
-                          {t('org.general.logoUpload', 'Upload logo')}
-                          <input
-                            type="file"
-                            accept="image/png,image/jpeg,image/webp"
-                            className="sr-only"
-                            onChange={async (e) => {
-                              const file = e.target.files?.[0]
-                              e.target.value = ''
-                              if (!file) return
-                              try {
-                                setLogoDraft(await readLogo(file))
-                              } catch {
-                                toast.error(
-                                  t('org.general.logoUnreadable', 'That image could not be read')
-                                )
-                              }
-                            }}
-                          />
-                        </label>
-                      </Button>
-                      <p className="text-center text-xs text-muted-foreground">
-                        {t(
-                          'org.general.logoHint',
-                          'PNG, JPEG or WebP, shown at up to 200 × 200 px'
-                        )}
-                      </p>
-                      {logoDraft === undefined && (logoSrc || currentTenant?.logo_url) && (
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          className="h-7 text-xs text-destructive hover:bg-destructive/10 hover:text-destructive"
-                          onClick={() => setLogoDraft(null)}
-                        >
-                          {t('org.general.logoRemove', 'Remove logo')}
-                        </Button>
-                      )}
-                      {logoDraft !== undefined && (
-                        <p className="text-xs text-muted-foreground">
-                          {logoDraft === null
-                            ? t('org.general.logoWillRemove', 'The logo is removed when you save.')
-                            : t(
-                                'org.general.logoWillReplace',
-                                'The new logo is used when you save.'
-                              )}
+          <TabsContent value="general">
+            <PageStack>
+              <Card id="org-profile">
+                <CardHeader>
+                  <CardTitle>{t('org.general.profile', 'Organization information')}</CardTitle>
+                  <CardDescription>
+                    {t('org.general.profileDesc', 'How your organization is named and recognised.')}
+                  </CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <div className="flex flex-col gap-8 lg:flex-row">
+                    <div className="flex flex-col items-center gap-3 lg:items-start lg:border-e lg:pe-8">
+                      <Avatar className="h-24 w-24 ring-2 ring-border">
+                        <AvatarImage src={logoPreview} alt="" />
+                        <AvatarFallback className="bg-primary/10 text-3xl">
+                          {currentTenant?.name?.charAt(0) || 'O'}
+                        </AvatarFallback>
+                      </Avatar>
+                      {canUpdateTenant ? (
+                        <div className="flex flex-col items-center gap-1">
+                          <Button variant="outline" size="sm" asChild>
+                            <label className="cursor-pointer">
+                              <Upload className="h-4 w-4" aria-hidden />
+                              {t('org.general.logoUpload', 'Upload logo')}
+                              <input
+                                type="file"
+                                accept="image/png,image/jpeg,image/webp"
+                                className="sr-only"
+                                onChange={async (e) => {
+                                  const file = e.target.files?.[0]
+                                  e.target.value = ''
+                                  if (!file) return
+                                  try {
+                                    setLogoDraft(await readLogo(file))
+                                  } catch {
+                                    toast.error(
+                                      t(
+                                        'org.general.logoUnreadable',
+                                        'That image could not be read'
+                                      )
+                                    )
+                                  }
+                                }}
+                              />
+                            </label>
+                          </Button>
+                          <p className="text-center text-xs text-muted-foreground">
+                            {t(
+                              'org.general.logoHint',
+                              'PNG, JPEG or WebP, shown at up to 200 × 200 px'
+                            )}
+                          </p>
+                          {logoDraft === undefined && (logoSrc || currentTenant?.logo_url) && (
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="h-7 text-xs text-destructive hover:bg-destructive/10 hover:text-destructive" // label-ok: destructive text action, not a label
+                              onClick={() => setLogoDraft(null)}
+                            >
+                              {t('org.general.logoRemove', 'Remove logo')}
+                            </Button>
+                          )}
+                          {logoDraft !== undefined && (
+                            <p className="text-xs text-muted-foreground">
+                              {logoDraft === null
+                                ? t(
+                                    'org.general.logoWillRemove',
+                                    'The logo is removed when you save.'
+                                  )
+                                : t(
+                                    'org.general.logoWillReplace',
+                                    'The new logo is used when you save.'
+                                  )}
+                            </p>
+                          )}
+                        </div>
+                      ) : (
+                        <p className="text-center text-xs text-muted-foreground">
+                          {t('org.general.logoLocked', 'Only administrators can change the logo.')}
                         </p>
                       )}
                     </div>
-                  ) : (
-                    <p className="text-center text-xs text-muted-foreground">
-                      {t('org.general.logoLocked', 'Only administrators can change the logo.')}
-                    </p>
-                  )}
-                </div>
 
-                <div className="flex-1 space-y-4">
-                  <div className="grid gap-4 sm:grid-cols-2">
-                    <div className="space-y-2">
-                      <Label htmlFor="org-name">{t('org.general.name', 'Organization name')}</Label>
-                      <Input
-                        id="org-name"
-                        value={orgInfo.name}
-                        onChange={(e) => setOrgInfo((p) => ({ ...p, name: e.target.value }))}
-                        disabled={!canUpdateTenant}
-                        maxLength={100}
-                      />
-                    </div>
-                    <div className="space-y-2">
-                      <Label htmlFor="org-slug">{t('org.general.slug', 'URL slug')}</Label>
-                      <div className="flex">
-                        <span
-                          data-testid="slug-host-prefix"
-                          className="inline-flex items-center rounded-s-md border border-e-0 bg-muted px-3 text-sm text-muted-foreground"
-                        >
-                          {appHost}/
-                        </span>
-                        <Input
-                          id="org-slug"
-                          value={orgInfo.slug}
-                          onChange={(e) =>
-                            setOrgInfo((p) => ({
-                              ...p,
-                              slug: e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, ''),
-                            }))
-                          }
-                          className="rounded-s-none"
-                          disabled={!canUpdateTenant || !owner}
-                          aria-describedby="org-slug-help"
-                        />
+                    <div className="flex-1 space-y-4">
+                      <div className="grid gap-4 sm:grid-cols-2">
+                        <div className="space-y-2">
+                          <Label htmlFor="org-name">
+                            {t('org.general.name', 'Organization name')}
+                          </Label>
+                          <Input
+                            id="org-name"
+                            value={orgInfo.name}
+                            onChange={(e) => setOrgInfo((p) => ({ ...p, name: e.target.value }))}
+                            disabled={!canUpdateTenant}
+                            maxLength={100}
+                          />
+                        </div>
+                        <div className="space-y-2">
+                          <Label htmlFor="org-slug">{t('org.general.slug', 'URL slug')}</Label>
+                          <div className="flex">
+                            <span
+                              data-testid="slug-host-prefix"
+                              className="inline-flex items-center rounded-s-md border border-e-0 bg-muted px-3 text-sm text-muted-foreground"
+                            >
+                              {appHost}/
+                            </span>
+                            <Input
+                              id="org-slug"
+                              value={orgInfo.slug}
+                              onChange={(e) =>
+                                setOrgInfo((p) => ({
+                                  ...p,
+                                  slug: e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, ''),
+                                }))
+                              }
+                              className="rounded-s-none"
+                              disabled={!canUpdateTenant || !owner}
+                              aria-describedby="org-slug-help"
+                            />
+                          </div>
+                          <p
+                            id="org-slug-help"
+                            className="flex items-start gap-1 text-xs text-muted-foreground"
+                          >
+                            {!owner && <Lock className="mt-0.5 size-3 shrink-0" aria-hidden />}
+                            {owner
+                              ? t(
+                                  'org.general.slugHelpOwner',
+                                  'Lowercase letters, numbers and hyphens. Changing it breaks saved links, and it cannot change while single sign-on is configured.'
+                                )
+                              : t(
+                                  'org.general.slugHelpLocked',
+                                  'Only the owner can change the URL.'
+                                )}
+                          </p>
+                          <OrganizationRegion slug={currentTenant?.slug} />
+                        </div>
                       </div>
-                      <p
-                        id="org-slug-help"
-                        className="flex items-start gap-1 text-xs text-muted-foreground"
-                      >
-                        {!owner && <Lock className="mt-0.5 size-3 shrink-0" aria-hidden />}
-                        {owner
-                          ? t(
-                              'org.general.slugHelpOwner',
-                              'Lowercase letters, numbers and hyphens. Changing it breaks saved links, and it cannot change while single sign-on is configured.'
-                            )
-                          : t('org.general.slugHelpLocked', 'Only the owner can change the URL.')}
-                      </p>
-                      <OrganizationRegion slug={currentTenant?.slug} />
+                      <div className="grid gap-4 sm:grid-cols-2">
+                        <div className="space-y-2">
+                          <Label htmlFor="org-website">{t('org.general.website', 'Website')}</Label>
+                          <Input
+                            id="org-website"
+                            type="url"
+                            placeholder="https://example.com"
+                            value={general.website}
+                            onChange={(e) => setGeneral((g) => ({ ...g, website: e.target.value }))}
+                            disabled={!canUpdateTenant}
+                          />
+                        </div>
+                      </div>
                     </div>
                   </div>
-                  <div className="grid gap-4 sm:grid-cols-2">
-                    <div className="space-y-2">
-                      <Label htmlFor="org-website">{t('org.general.website', 'Website')}</Label>
-                      <Input
-                        id="org-website"
-                        type="url"
-                        placeholder="https://example.com"
-                        value={general.website}
-                        onChange={(e) => setGeneral((g) => ({ ...g, website: e.target.value }))}
-                        disabled={!canUpdateTenant}
-                      />
-                    </div>
-                  </div>
+                </CardContent>
+              </Card>
+
+              {owner && (
+                <div id="danger-zone">
+                  <DangerZone>
+                    <DangerZoneItem
+                      title={t('org.danger.transferTitle', 'Transfer ownership')}
+                      description={t(
+                        'org.danger.transferDesc',
+                        'Make another member the owner. You choose your new role; the new owner must accept. Open the member in Members and choose Transfer ownership.'
+                      )}
+                      action={
+                        <Button variant="outline" size="sm" asChild>
+                          <Link href="/settings/members">
+                            <UserCog className="h-4 w-4" aria-hidden />
+                            {t('org.danger.transferAction', 'Choose the new owner')}
+                          </Link>
+                        </Button>
+                      }
+                    />
+                    <DeleteOrganizationItem />
+                  </DangerZone>
                 </div>
-              </div>
-            </CardContent>
-          </Card>
+              )}
 
-          {owner && (
-            <div id="danger-zone">
-              <DangerZone>
-                <DangerZoneItem
-                  title={t('org.danger.transferTitle', 'Transfer ownership')}
-                  description={t(
-                    'org.danger.transferDesc',
-                    'Make another member the owner. You choose your new role; the new owner must accept. Open the member in Members and choose Transfer ownership.'
-                  )}
-                  action={
-                    <Button variant="outline" size="sm" asChild>
-                      <Link href="/settings/members">
-                        <UserCog className="h-4 w-4" aria-hidden />
-                        {t('org.danger.transferAction', 'Choose the new owner')}
-                      </Link>
-                    </Button>
-                  }
-                />
-                <DeleteOrganizationItem />
-              </DangerZone>
-            </div>
-          )}
-
-          <SettingsSaveBar
-            dirty={dirty}
-            saving={saving}
-            onSave={() => void handleSave()}
-            onDiscard={reset}
-          />
-        </TabsContent>
-
-        <TabsContent value="storage" className="mt-5 space-y-5">
-          <StorageConfigCard />
-        </TabsContent>
-
-        {canSeeDashboardData && (
-          <TabsContent value="dashboard-data" className="mt-5 space-y-5">
-            <DashboardDataCard />
+              <SettingsSaveBar
+                dirty={dirty}
+                saving={saving}
+                onSave={() => void handleSave()}
+                onDiscard={reset}
+              />
+            </PageStack>
           </TabsContent>
-        )}
-      </Tabs>
+
+          <TabsContent value="storage">
+            <StorageConfigCard />
+          </TabsContent>
+
+          {canSeeDashboardData && (
+            <TabsContent value="dashboard-data">
+              <DashboardDataCard />
+            </TabsContent>
+          )}
+        </Tabs>
+      </PageStack>
     </Main>
   )
 }

@@ -106,6 +106,10 @@ const (
 	ActionTypeTriggerScan  ActionType = "trigger_scan"
 	// AI Triage action
 	ActionTypeTriggerAITriage ActionType = "trigger_ai_triage"
+	// Requests a person decides (RFC-125 D9): an automation never closes
+	// risk itself.
+	ActionTypeRequestFalsePositive  ActionType = "request_false_positive"
+	ActionTypeRequestRiskAcceptance ActionType = "request_risk_acceptance"
 )
 
 // IsValid reports whether the platform executes this action type.

@@ -742,69 +742,52 @@ the billing page in the UI.
 > verification) and every verdict is audited; no token is ever written.
 > Pipelines follow the repository data scope like runs.
 
-#### Template sources and the secret store (`/api/v1/template-sources`, `/api/v1/secret-store`)
+#### Rule sources and the secret store (`/api/v1/content-sources`, `/api/v1/secret-store`)
 
 | Endpoint | Permission Required |
 |----------|---------------------|
-| `GET /api/v1/template-sources` · `/{id}` | `scans:sources:read` |
-| `POST /api/v1/template-sources` · `PUT /{id}` · `/{id}/enable` · `/disable` · `/sync` | `scans:sources:write` |
-| `DELETE /api/v1/template-sources/{id}` | `scans:sources:delete` |
+| `GET /api/v1/content-sources` · `/{id}` · `/{id}/snapshots` · `/{id}/snapshots/{snapshot_id}` | `scans:sources:read` |
+| `POST /api/v1/content-sources` · `PUT /{id}` · `PUT /{id}/credential` · `POST /{id}/webhook` · `POST /test` · `POST /{id}/test` | `scans:sources:write` + **step-up** |
+| `DELETE /{id}/credential` · `DELETE /{id}/webhook` · `POST /{id}/sync` | `scans:sources:write` |
+| `DELETE /api/v1/content-sources/{id}` | `scans:sources:delete` + **step-up** |
+| `POST /{id}/snapshots/{snapshot_id}/approve` (promote) · `POST /{id}/rollback` | `scans:sources:approve` + **step-up** |
+| `POST /{id}/snapshots/{snapshot_id}/reject` | `scans:sources:approve` |
+| `POST /hooks/content-sources/{id}` | public: the source's own webhook secret (constant-time compare); only queues a sync |
 | Secret store `GET` / `POST`,`PUT`,`POST /{id}/rotate` / `DELETE` | `scans:secret_store:read` / `:write` and owner/admin / `:delete`; every write also needs **step-up** |
+
+> **Rule sources** ([content-sources.md](content-sources.md)). Owners and
+> administrators hold every `scans:sources:*` permission (migration
+> `content_sources` adds `scans:sources:approve` to both); the built-in Member
+> and Viewer roles read only. Every route takes the tenant from the token:
+> another organization's source, and a hidden platform source, answer 404 for
+> every operation; an offered platform source is readable as a projection (no
+> URL, credential, CA, schedule, webhook or error text) and every change to it
+> answers 403. The fetch credential is write-only: encrypted with the
+> installation key and bound to the source id, the organization and the host;
+> changing the host clears it. Under the review policy, and for every candidate
+> that raises the tier, the member who last changed what the source fetches
+> cannot promote the candidate (four-eyes, 403 `FOUR_EYES`, audited as denied).
+> Template sources and their `credential_id` binding to the secret store are
+> removed.
 
 #### Organization-wide scan configuration
 
 Owner and administrator only, on top of the permission: `PUT /api/v1/scan-profiles/{id}/quality-gate`, `POST /api/v1/scan-profiles/{id}/set-default`, `PATCH /api/v1/tools/settings`, `PATCH /api/v1/tools/{id}/settings` (each changes what every scan of the organization runs with), and `DELETE /api/v1/secret-store/{id}`. A member whose role carries the write permission is refused with 403; the web console hides these controls from members.
 
-> Writing the credential store is owner/admin only: its one consumer, a template source, is owner/admin only, so a member could otherwise replace the credential an administrator's source authenticates with. The built-in Member role no longer holds `scans:secret_store:write` (migration `002905`).
+> Writing the credential store is owner/admin only, so a member cannot replace a credential an administrator's configuration authenticates with. The built-in Member role no longer holds `scans:secret_store:write` (migration `002905`).
 
 > **Secret store writes.** `PUT /secret-store/{id}` changes metadata only and
 > leaves absent fields unchanged (`description: ""` clears it, `expires_at: null`
 > clears the expiry; `expires_at` is RFC 3339 and must be in the future). The
 > secret is replaced only by `POST /secret-store/{id}/rotate` (same credential
 > type; `key_version` and `last_rotated_at` advance). Update, rotate (High),
-> delete (High) and decrypt (High) are audited with the acting user, or a named
-> system actor for a scheduled template sync. All lookups are by tenant and id.
+> delete (High) and decrypt (High) are audited with the acting user. All lookups are by tenant and id.
 
-> **A stored credential goes only where someone entitled to it pointed it.**
-> A sync decrypts the source's `credential_id` and sends it to the source's
-> URL (bearer/basic/API key, git token or SSH key, S3 keys). Members used to
-> hold `scans:sources:write` (removed by migration `000262`, see rule 10) and
-> still hold `scans:secret_store:write`; a custom role may carry both. The
-> route gates alone would then let its holder send any stored secret to a
-> server they run. `template.SourceService` therefore checks, on create and
-> update:
-> - **Binding** a credential (a new `credential_id`, or keeping one while the
->   destination changes) is allowed to tenant owners/admins and to the user who
->   stored that credential (`credentials.created_by`). Anyone else gets 403
->   `CREDENTIAL_BIND_FORBIDDEN`, and the attempt is audited as
->   `template_source.credential_attached` with result `denied`.
-> - **Re-pointing** a source that carries a credential (git URL, HTTP URL, or
->   S3 endpoint/region/bucket/role ARN) without re-binding it in the same request
->   **drops the credential**, audited as `template_source.credential_detached`
->   (`reason: destination changed`). An S3 source cannot exist without its
->   keys, so re-pointing one needs the owner/admin to re-bind.
-> - Every successful bind is audited as `template_source.credential_attached`
->   (severity high) with the credential id/name and the destination host.
->
-> **No credentials in the source configuration, https only.** The git, HTTP and
-> S3 configuration is stored as plain JSON and returned to anyone with
-> `scans:sources:read`, and the templates it fetches run on sensors. Create and
-> edit therefore refuse plain `http://` (git and HTTP sources), a URL with a
-> password or token (`https://user:token@host/...`), and HTTP headers that carry
-> a credential (`Authorization`, `Cookie`, `*token*`, `*key*`, `*secret*`,
-> `*auth*`): bind a credential instead. Rows stored before this rule keep
-> syncing and are masked in responses (URL password, credential header values).
-> Downloads stop at 50 MB (HTTP) and clones at 200 MB on disk or 20,000 files
-> (git), so a source cannot fill the API server's disk.
->
-> The secret store has no per-credential host allowlist; the binding check
-> above is the control. Sources bound before this check existed keep their
-> credential until they are next re-pointed.
->
-> Templates synced or uploaded are validated before use. For Nuclei, the
-> `code`, `javascript` and `headless` protocols are refused on the **parsed**
-> document (`execProtocolKey`), so JSON, flow-style YAML, escaped or
-> differently-cased keys cannot hide them.
+> Custom templates are validated before use. For Nuclei, the `code`,
+> `javascript` and `headless` protocols are refused on the **parsed** document
+> (`execProtocolKey`), so JSON, flow-style YAML, escaped or differently-cased
+> keys cannot hide them. Rule source snapshots are linted the same way
+> ([content packs](content-packs.md)).
 
 #### Scans and commands: secret-looking config values
 
@@ -2097,6 +2080,12 @@ longer be resolved (left the organization), is not rendered or sent
 | `POST /{id}/publish`, `POST /{id}/versions/{versionId}/rollback` | `automations:publish` | every step's permission; elevated risk: step-up; high risk: the version waits for a second publisher |
 | `POST /{id}/versions/{versionId}/approve` | `automations:publish` | step-up, not the publisher, the reviewed digest, every step's permission |
 | `PUT /{id}/mode` (simulate), `PUT /{id}` with `is_active`, `DELETE /{id}` | `automations:publish` | no step-up: pausing and switching to simulate narrow |
+| `POST /workflow-runs/{id}/approve` | `automations:publish` | a run paused at its change cap continues; the run's subject must be in the caller's scope |
+
+No automation step writes false positive, accepted, resolved or duplicate:
+`update_status` sets only confirmed or in progress, and the request actions
+create requests no single person may decide, whatever the organization's
+approval level (`approvalpolicy.Request.AutomationMade`).
 
 Risk classes: low (tags), elevated (status, assignment, tickets,
 notifications, AI triage), high (scans, false-positive and acceptance
@@ -2564,7 +2553,7 @@ deliberately.
     custom scanner template (nuclei especially) decides which hosts the sensor
     contacts and what it sends, so only owners and administrators author one:
     `scans:templates:write` (scanner templates) and `scans:sources:write`
-    (template sources, which pull templates from a URL) are owner/admin only;
+    (rule sources, which the platform syncs from a git repository) are owner/admin only;
     migration `000262` removed both from member. Members and viewers keep
     `scans:templates:read` / `scans:sources:read` and pick approved templates
     for a scan by id (`scanner_config.custom_template_ids`). `POST

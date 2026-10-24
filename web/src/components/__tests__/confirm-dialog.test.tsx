@@ -61,6 +61,23 @@ describe('ConfirmDialog', () => {
     expect(handleConfirm).toHaveBeenCalledTimes(1)
   })
 
+  it('focuses the typed field when it asks for text, so Enter on open does nothing', async () => {
+    const { handleConfirm, onOpenChange } = renderDialog({ typeToConfirm: 'prod-sensor' })
+    const input = screen.getByLabelText(/Type\s*prod-sensor\s*to confirm/)
+    await waitFor(() => expect(input).toHaveFocus())
+    await userEvent.keyboard('{Enter}')
+    expect(handleConfirm).not.toHaveBeenCalled()
+    expect(onOpenChange).not.toHaveBeenCalled()
+  })
+
+  it('turns off autocapitalise and autocomplete on the typed field (phone keyboards)', () => {
+    renderDialog({ typeToConfirm: 'prod-sensor' })
+    const input = screen.getByLabelText(/Type\s*prod-sensor\s*to confirm/)
+    expect(input).toHaveAttribute('autocapitalize', 'none')
+    expect(input).toHaveAttribute('autocomplete', 'off')
+    expect(input).toHaveAttribute('spellcheck', 'false')
+  })
+
   it('disables both buttons while a returned promise runs, so a second click does nothing', async () => {
     let finish: () => void = () => {}
     const handleConfirm = vi.fn(

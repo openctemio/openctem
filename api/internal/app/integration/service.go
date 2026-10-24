@@ -22,6 +22,7 @@ import (
 	integrationdom "github.com/openctemio/openctem/api/pkg/domain/integration"
 	"github.com/openctemio/openctem/api/pkg/domain/outbox"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	emailpkg "github.com/openctemio/openctem/api/pkg/email"
 	"github.com/openctemio/openctem/api/pkg/httpsec"
 	"github.com/openctemio/openctem/api/pkg/logger"
 )
@@ -1235,6 +1236,9 @@ func (s *IntegrationService) parseEmailCredentials(credentials string) (*notifie
 	if emailCreds.SMTPPort == 0 {
 		return nil, fmt.Errorf("SMTP port is required")
 	}
+	if !emailpkg.TenantPortAllowed(emailCreds.SMTPPort) {
+		return nil, emailpkg.ErrTenantPortNotAllowed
+	}
 	if emailCreds.FromEmail == "" {
 		return nil, fmt.Errorf("sender email is required")
 	}
@@ -1401,6 +1405,9 @@ func (s *IntegrationService) setEmailCredentials(intg *integrationdom.Integratio
 	if emailCreds.SMTPPort == 0 {
 		return fmt.Errorf("%w: SMTP port is required", shared.ErrValidation)
 	}
+	if !emailpkg.TenantPortAllowed(emailCreds.SMTPPort) {
+		return fmt.Errorf("%w: %w", shared.ErrValidation, emailpkg.ErrTenantPortNotAllowed)
+	}
 	if emailCreds.FromEmail == "" {
 		return fmt.Errorf("%w: sender email is required", shared.ErrValidation)
 	}
@@ -1466,6 +1473,9 @@ func (s *IntegrationService) updateEmailCredentials(intg *integrationdom.Integra
 
 	// SMTP Port
 	if emailCreds.SMTPPort != 0 {
+		if !emailpkg.TenantPortAllowed(emailCreds.SMTPPort) {
+			return fmt.Errorf("%w: %w", shared.ErrValidation, emailpkg.ErrTenantPortNotAllowed)
+		}
 		newMetadata["smtp_port"] = emailCreds.SMTPPort
 	} else if v, ok := existingMetadata["smtp_port"].(float64); ok {
 		newMetadata["smtp_port"] = int(v)

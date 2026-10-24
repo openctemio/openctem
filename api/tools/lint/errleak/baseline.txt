@@ -169,8 +169,6 @@ echo internal/infra/http/handler/sla_handler.go:SLAHandler.handleServiceError 2
 echo internal/infra/http/handler/support_access_handler.go:SupportAccessHandler.writeError 1
 echo internal/infra/http/handler/suppression_handler.go:SuppressionHandler.ApproveRule 1
 echo internal/infra/http/handler/suppression_handler.go:SuppressionHandler.handleServiceError 3
-echo internal/infra/http/handler/template_source_handler.go:TemplateSourceHandler.Create 2
-echo internal/infra/http/handler/template_source_handler.go:TemplateSourceHandler.Update 2
 echo internal/infra/http/handler/tenant_handler.go:TenantHandler.PreviewRiskScoringChanges 1
 echo internal/infra/http/handler/tenant_handler.go:TenantHandler.UpdateAssetLifecycleSettings 1
 echo internal/infra/http/handler/tenant_handler.go:TenantHandler.UpdateEmergingThreatSettings 1
@@ -274,7 +272,6 @@ wrap-err internal/app/sensor/content.go:ContentService.UpdatePolicy 1
 wrap-err internal/app/sensor/tool_settings.go:SensorService.CheckScanToolConfig 1
 wrap-err internal/app/sensor/tool_settings.go:SensorService.ToolSettingsLayers 3
 wrap-err internal/app/sensorgrant/service.go:Service.build 3
-wrap-err internal/app/template/source_service.go:SourceService.ForceSync 1
 wrap-err internal/app/tenant/service.go:TenantService.GetLicensePolicySettings 1
 wrap-err internal/app/ticketing/github_ticket.go:GitHubTicketService.CreateTicketFromFinding 1
 wrap-err internal/app/vex/import.go:ParseDocument 1

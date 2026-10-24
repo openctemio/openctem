@@ -193,6 +193,7 @@ export function AlertWebhookForm({ settings, canEdit, onSaved }: AlertWebhookFor
           'admin.alerts.confirmDesc',
           'The previous receiver is told first. Recorded in the admin audit log (never the address or secret) and sent to every administrator.'
         )}
+        confirmText={t('admin.alerts.confirmButton', 'Change alert receiver')}
         onConfirm={save}
       />
     </>

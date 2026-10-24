@@ -23,9 +23,9 @@ import {
   EmptyState,
   ErrorState,
   PageHeader,
+  PageStack,
   RunStatusBadge,
   SeverityBadge,
-  MetricStrip,
 } from '@/features/shared'
 import type { Severity } from '@/features/shared/types'
 import { RefreshButton } from '@/components/list-page-parts'
@@ -157,17 +157,6 @@ function HistoryList({ integrationId }: { integrationId: string }) {
   const entries = useMemo(() => data?.data ?? [], [data?.data])
   const total = data?.total ?? 0
 
-  // Delivery outcome of the events on this page (the API has no per-channel totals).
-  const pageStats = useMemo(() => {
-    const success = entries.filter((e) => e.send_results?.[0]?.status === 'success').length
-    const failed = entries.filter((e) => e.send_results?.[0]?.status === 'failed').length
-    return {
-      success,
-      failed,
-      rate: entries.length ? Math.round((success / entries.length) * 100) : 0,
-    }
-  }, [entries])
-
   const handleRefresh = useCallback(async () => {
     await invalidateNotificationEventsCache(integrationId)
     await mutate()
@@ -185,33 +174,7 @@ function HistoryList({ integrationId }: { integrationId: string }) {
   }
 
   return (
-    <div className="space-y-5">
-      {/* Success rate and failures cover the events on this page; the API has
-          no per-channel delivery totals. */}
-      <MetricStrip
-        loading={isLoading && !data}
-        items={[
-          {
-            key: 'total',
-            label: t('notificationChannels.history.metric.sent', 'Sent'),
-            value: total,
-          },
-          {
-            key: 'rate',
-            label: t('notificationChannels.history.metric.successRate', 'Success rate'),
-            value: `${pageStats.rate}%`,
-            hint: t('notificationChannels.history.metric.pageHint', 'Events on this page'),
-          },
-          {
-            key: 'failed',
-            label: t('notificationChannels.history.metric.failed', 'Failed'),
-            value: pageStats.failed,
-            tone: 'danger',
-            hint: t('notificationChannels.history.metric.pageHint', 'Events on this page'),
-          },
-        ]}
-      />
-
+    <>
       <DataTable
         columns={columns}
         data={entries}
@@ -230,7 +193,7 @@ function HistoryList({ integrationId }: { integrationId: string }) {
           'Send a test notification to see it here'
         )}
       />
-    </div>
+    </>
   )
 }
 
@@ -250,11 +213,11 @@ function HistoryContent() {
   const selectedId = pickedId || urlId || integrations[0]?.id || ''
 
   return (
-    <>
+    <PageStack>
       <Button
         variant="ghost"
         size="sm"
-        className="-ms-2 mb-2"
+        className="-ms-2"
         onClick={() => router.push('/settings/integrations/notifications')}
       >
         <ArrowLeft className="me-2 h-4 w-4" />
@@ -317,7 +280,7 @@ function HistoryContent() {
           )}
         />
       )}
-    </>
+    </PageStack>
   )
 }
 
