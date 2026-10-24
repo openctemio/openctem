@@ -9,7 +9,6 @@ import { Input } from '@/components/ui/input'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { DataTable, ErrorState, PageHeader, RelativeTime } from '@/features/shared'
 import { useTranslation } from '@/context/i18n-provider'
-import { useDebounce } from '@/hooks/use-debounce'
 import { useListParams } from '@/hooks/use-list-params'
 import {
   PLATFORM_USER_SEARCH_MIN,
@@ -54,7 +53,7 @@ export default function AdminUsersPage() {
   // Search, tab and page live in the URL, so a support ticket can link to them.
   const list = useListParams({ defaultPageSize: 25, filters: { state: 'all' } })
   const state: PlatformUserState = isState(list.filters.state) ? list.filters.state : 'all'
-  const q = useDebounce(list.q, 300).trim()
+  const q = list.searchTerm
   const tooShort = q.length > 0 && q.length < PLATFORM_USER_SEARCH_MIN
   const { data, error, isLoading, mutate } = usePlatformUsers(
     allowed && !tooShort ? q : '',

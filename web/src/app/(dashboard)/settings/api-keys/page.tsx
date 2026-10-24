@@ -22,7 +22,7 @@ import { ConfirmDialog } from '@/components/confirm-dialog'
 import { DataTableRowActions } from '@/features/shared/components/data-table-row-actions'
 import { useUrlFilter } from '@/hooks/use-url-param'
 import { useListParams } from '@/hooks/use-list-params'
-import { useDebounce } from '@/hooks/use-debounce'
+import { useSearchQuery } from '@/hooks/use-search-query'
 import { getErrorMessage } from '@/lib/api/error-handler'
 import { KeyRound, Plus, Ban, Trash2 } from 'lucide-react'
 import {
@@ -193,7 +193,7 @@ export default function APIKeysPage() {
   const { pagination, setPagination, setPage } = list
   const resetPage = useCallback(() => setPage(1), [setPage])
   const [searchParam, setSearchParam] = useUrlFilter('q', '')
-  const search = useDebounce(searchParam.trim(), 300)
+  const search = useSearchQuery(searchParam).term
   const { data, error, isLoading, mutate } = useApiKeys({
     page: pagination.pageIndex + 1,
     perPage: pagination.pageSize,

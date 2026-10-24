@@ -1,12 +1,11 @@
 'use client'
 
+import { SuppressionStatusBadge, SuppressionTypeBadge } from './suppression-badges'
 import { formatDistanceToNow } from 'date-fns'
 import { AlertTriangle, Check, Clock, Hash, Pencil, ShieldQuestion, Trash2, X } from 'lucide-react'
 import { toast } from 'sonner'
 
-import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { cn } from '@/lib/utils'
 import { copyToClipboard } from '@/lib/clipboard'
 import {
   DetailCallout,
@@ -21,13 +20,7 @@ import {
 import { useTranslation } from '@/context/i18n-provider'
 import { Permission, useHasPermission } from '@/lib/permissions'
 
-import {
-  SUPPRESSION_STATUS_BADGE,
-  SUPPRESSION_TYPE_BADGE,
-  suppressionStatusLabel,
-  suppressionTypeLabel,
-  type SuppressionRule,
-} from '../types'
+import type { SuppressionRule } from '../types'
 
 interface SuppressionDetailSheetProps {
   rule: SuppressionRule | null
@@ -115,18 +108,8 @@ export function SuppressionDetailSheet({
           title={rule.name}
           badges={
             <>
-              <Badge
-                variant="outline"
-                className={cn('text-xs', SUPPRESSION_STATUS_BADGE[rule.status])}
-              >
-                {suppressionStatusLabel(rule.status, t)}
-              </Badge>
-              <Badge
-                variant="outline"
-                className={cn('text-xs', SUPPRESSION_TYPE_BADGE[rule.suppression_type])}
-              >
-                {suppressionTypeLabel(rule.suppression_type, t)}
-              </Badge>
+              <SuppressionStatusBadge status={rule.status} />
+              <SuppressionTypeBadge type={rule.suppression_type} />
             </>
           }
           meta={[

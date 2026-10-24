@@ -51,6 +51,7 @@ import { AssetStatusBadge } from '@/features/asset-lifecycle'
 import { useAssetTypeRegistry } from '@/features/asset-types/api/use-asset-type-registry'
 import { CriticalityBadge, ExposureBadge } from '../classification-badges'
 import { AssetDetailSheet } from '../asset-detail-sheet'
+import { ScanConfirmDialog } from '../scan-confirm-dialog'
 import { getAsset, updateAsset } from '../../hooks'
 import { useAssetTags } from '../../hooks/use-asset-tags'
 import { isPlainLeftClick } from '../../lib/plain-click'
@@ -149,6 +150,8 @@ export function InventoryTable({
   onToggleTagFilter,
 }: InventoryTableProps) {
   const [selectedSnapshot, setSelectedAsset] = useState<Asset | null>(null)
+  // The repository a row's Scan was clicked on, until the user confirms it.
+  const [scanTarget, setScanTarget] = useState<Asset | null>(null)
   // The asset the drawer asked to delete: once the refreshed list no longer
   // holds it, the drawer closes instead of staying open on a deleted row.
   const [deleteRequestedId, setDeleteRequestedId] = useState<string | null>(null)
@@ -486,7 +489,10 @@ export function InventoryTable({
                   </Link>
                 </DropdownMenuItem>
                 {actions.map((a) => (
-                  <DropdownMenuItem key={a.id} onClick={() => void a.run(asset)}>
+                  <DropdownMenuItem
+                    key={a.id}
+                    onClick={() => (a.id === 'scan' ? setScanTarget(asset) : void a.run(asset))}
+                  >
                     <a.icon className="me-2 h-4 w-4" />
                     {a.label}
                   </DropdownMenuItem>
@@ -538,6 +544,19 @@ export function InventoryTable({
 
   return (
     <>
+      <ScanConfirmDialog
+        open={!!scanTarget}
+        onOpenChange={(open) => !open && setScanTarget(null)}
+        names={scanTarget ? [scanTarget.name] : []}
+        onConfirm={async () => {
+          const target = scanTarget
+          setScanTarget(null)
+          if (target)
+            await rowActionsFor(target, typeView, t)
+              .find((a) => a.id === 'scan')
+              ?.run(target)
+        }}
+      />
       <DataTable
         columns={columns}
         data={assets}
