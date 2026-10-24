@@ -1,6 +1,6 @@
 'use client'
 
-import { useId, useState } from 'react'
+import { useEffect, useId, useState } from 'react'
 import { cn } from '@/lib/utils'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -128,6 +128,11 @@ export function ConfirmDialog(props: ConfirmDialogProps) {
   const inputId = useId()
   const [typed, setTyped] = useState('')
   const [running, setRunning] = useState(false)
+  // Closed by the caller after the action (not by Cancel): forget what was
+  // typed, so the next open of this dialog starts empty.
+  useEffect(() => {
+    if (!actions.open) setTyped('')
+  }, [actions.open])
   const typedOk = !typeToConfirm || typedTextMatches(typed, typeToConfirm)
   const busy = !!isLoading || running
   const [typeBefore, typeAfter = ''] = t('confirm.typeToConfirm', 'Type {text} to confirm').split(
