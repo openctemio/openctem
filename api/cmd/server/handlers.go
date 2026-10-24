@@ -651,7 +651,7 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		// Scanning & ScanRuns
 		ScanProfile:         handler.NewScanProfileHandler(svc.ScanProfile, v, log),
 		ScannerTemplate:     handler.NewScannerTemplateHandler(svc.ScannerTemplate, v, log),
-		TemplateSource:      handler.NewTemplateSourceHandler(svc.TemplateSource, v, log),
+		ContentSource:       handler.NewContentSourceHandler(svc.ContentSource, log),
 		ContentPack:         handler.NewContentPackHandler(svc.ContentPacks, log),
 		PlatformContentPack: handler.NewPlatformContentPackHandler(svc.PlatformContentPacks, adminConsoleSvc, repos.AdminAuditLog, log),
 		ContentCatalog:      handler.NewContentCatalogHandler(svc.ContentCatalog, log),
@@ -861,7 +861,6 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 	handlers.Integration.SetAuditService(svc.Audit)
 	// Redelivery of an archived notification event to one channel (RFC-124).
 	handlers.Integration.SetDeliveryRedeliverer(svc.Outbox)
-	handlers.TemplateSource.SetAuditService(svc.Audit)
 	handlers.SLA.SetAuditService(svc.Audit)
 	handlers.AssignmentRule.SetAuditService(svc.Audit)
 	handlers.ScopeRule.SetAuditService(svc.Audit)
