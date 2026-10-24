@@ -36,6 +36,7 @@ import {
   campaignApi,
   useRemediationCampaigns,
 } from '../api/use-remediation-campaigns'
+import { useSearchQuery } from '@/hooks/use-search-query'
 
 const OPEN_STATES = ['open', 'in_progress', 'verifying', 'on_hold'] as const
 
@@ -69,6 +70,7 @@ export function AddTasksDialog({
   const { t } = useTranslation()
   const owners = useOwnerNames()
   const [search, setSearch] = useState('')
+  const searchTerm = useSearchQuery(search).term
   const [includeOther, setIncludeOther] = useState(false)
   const [picked, setPicked] = useState<Map<string, RemediationTask>>(new Map())
   const [busy, setBusy] = useState(false)
@@ -87,7 +89,7 @@ export function AddTasksDialog({
   const { data, isLoading } = useTasks(
     {
       states: [...OPEN_STATES],
-      search,
+      search: searchTerm,
       sort: 'updated',
       perPage: 50,
       noCampaign: !includeOther,

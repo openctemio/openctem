@@ -58,22 +58,25 @@ export function humanize(value: string): string {
   return text.charAt(0).toUpperCase() + text.slice(1)
 }
 
-export function OverviewSkeleton() {
+/** `stats={false}` for the pages that dropped the headline cards. */
+export function OverviewSkeleton({ stats = true }: { stats?: boolean }) {
   return (
     <div className="space-y-5">
-      <div className={OVERVIEW_STATS_GRID}>
-        {[1, 2, 3, 4].map((i) => (
-          <Card key={i}>
-            <CardHeader className="pb-2">
-              <Skeleton className="h-4 w-24" />
-            </CardHeader>
-            <CardContent>
-              <Skeleton className="mb-2 h-8 w-16" />
-              <Skeleton className="h-3 w-20" />
-            </CardContent>
-          </Card>
-        ))}
-      </div>
+      {stats && (
+        <div className={OVERVIEW_STATS_GRID}>
+          {[1, 2, 3, 4].map((i) => (
+            <Card key={i}>
+              <CardHeader className="pb-2">
+                <Skeleton className="h-4 w-24" />
+              </CardHeader>
+              <CardContent>
+                <Skeleton className="mb-2 h-8 w-16" />
+                <Skeleton className="h-3 w-20" />
+              </CardContent>
+            </Card>
+          ))}
+        </div>
+      )}
       <div className={OVERVIEW_CHARTS_GRID}>
         {[1, 2].map((i) => (
           <Card key={i}>

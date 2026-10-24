@@ -1,5 +1,8 @@
 'use client'
 
+import { Tag } from '@/components/ui/tag'
+import { StatusLozenge } from '@/components/ui/status-lozenge'
+import { DashedCircleGlyph } from '@/components/ui/status-glyphs'
 import { use, useState, useCallback, useEffect, useMemo, useRef } from 'react'
 import dynamic from 'next/dynamic'
 import { useRouter } from 'next/navigation'
@@ -19,6 +22,7 @@ import {
   AlertTriangle,
   Upload,
   Undo2,
+  Clock,
 } from 'lucide-react'
 import { toast } from 'sonner'
 
@@ -549,7 +553,7 @@ export default function WorkflowBuilderPage({ params }: PageProps) {
                 <ArrowLeft className="h-4 w-4" />
               </Button>
               {workflow.is_system_template ? (
-                <Cloud className="h-5 w-5 text-blue-500 shrink-0" />
+                <Cloud className="h-5 w-5 text-muted-foreground shrink-0" />
               ) : (
                 <Server className="h-5 w-5 text-muted-foreground shrink-0" />
               )}
@@ -566,9 +570,11 @@ export default function WorkflowBuilderPage({ params }: PageProps) {
             </div>
             <div className="flex items-center gap-2 shrink-0">
               {isSystemTemplate && (
-                <Badge className="bg-blue-500/15 text-blue-600 border-0 text-xs">
-                  {t('workflowStages.builder.systemTemplate')}
-                </Badge>
+                <Tag
+                  variant="plain"
+                  icon={Cloud}
+                  label={t('workflowStages.builder.systemTemplate')}
+                />
               )}
               {isSystemTemplate && canWriteWorkflows && (
                 <Button
@@ -598,16 +604,22 @@ export default function WorkflowBuilderPage({ params }: PageProps) {
                 </Badge>
               )}
               {hasDraft && !hasChanges && !isReadOnly && (
-                <Badge variant="outline" className="text-xs border-info text-info">
-                  {t('workflowStages.builder.draft')}
-                </Badge>
+                <StatusLozenge
+                  tone="triage"
+                  icon={DashedCircleGlyph}
+                  label={t('workflowStages.builder.draft')}
+                />
               )}
               {hasChanges && !isReadOnly && (
-                <Badge variant="outline" className="text-yellow-600 border-yellow-600 text-xs">
-                  {isSaving
-                    ? t('workflowStages.builder.saving')
-                    : t('workflowStages.builder.unsaved')}
-                </Badge>
+                <StatusLozenge
+                  tone="waiting"
+                  icon={Clock}
+                  label={
+                    isSaving
+                      ? t('workflowStages.builder.saving')
+                      : t('workflowStages.builder.unsaved')
+                  }
+                />
               )}
               {hasDraft && !isReadOnly && (
                 <Button

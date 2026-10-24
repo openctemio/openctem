@@ -95,7 +95,9 @@ type WatcherView struct {
 	AvatarURL string
 	Reason    participation.Reason
 	AddedBy   *shared.ID
-	Since     string
+	// AddedByName is shown as "Added by ..." (empty: nobody, or a former member).
+	AddedByName string
+	Since       string
 }
 
 // OwnerView is an asset owner shown as context.
@@ -108,6 +110,9 @@ type OwnerView struct {
 
 // Me is the caller's own subscription.
 type Me struct {
+	// UserID is the caller, so a client can tell its own row in the list
+	// without decoding its token.
+	UserID shared.ID
 	// State is "subscribed", "unsubscribed" or "" (no row).
 	State  participation.State
 	Reason participation.Reason
@@ -181,7 +186,7 @@ func (s *Service) Participants(ctx context.Context, tenantID shared.ID, item par
 		if out.NamesVisible {
 			out.Watchers = append(out.Watchers, WatcherView{
 				UserID: w.UserID, Name: w.Name, AvatarURL: w.AvatarURL, Reason: w.Reason,
-				AddedBy: w.AddedBy, Since: w.CreatedAt.UTC().Format("2006-01-02T15:04:05Z"),
+				AddedBy: w.AddedBy, AddedByName: w.AddedByName, Since: w.CreatedAt.UTC().Format("2006-01-02T15:04:05Z"),
 			})
 		}
 	}
@@ -195,12 +200,13 @@ func (s *Service) Participants(ctx context.Context, tenantID shared.ID, item par
 		}
 	}
 	if !caller.UserID.IsZero() {
+		out.Me.UserID = caller.UserID
 		mine, err := s.repo.Get(ctx, tenantID, item, caller.UserID)
 		if err != nil {
 			return nil, err
 		}
 		if mine != nil {
-			out.Me = Me{State: mine.State, Reason: mine.Reason}
+			out.Me.State, out.Me.Reason = mine.State, mine.Reason
 		}
 	}
 	return out, nil

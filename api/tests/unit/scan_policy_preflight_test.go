@@ -52,8 +52,8 @@ func newPolicyScanService(dir *fakeZoneDir, lister scanservice.AvailableSensorLi
 		opts = append(opts, scanservice.WithScanZones(dir, nil))
 	}
 	svc := scanservice.NewService(deps.scanRepo, deps.templateRepo, deps.assetGroupRepo, deps.runRepo,
-		deps.stepRepo, &mockStepRunRepo{}, deps.commandRepo, &mockScannerTemplateRepo{}, &mockTemplateSourceRepo{},
-		deps.toolRepo, &mockTemplateSyncer{}, deps.sensorSelector, deps.secValidator, logger.NewNop(), allowAllTargetChecks(opts...)...)
+		deps.stepRepo, &mockStepRunRepo{}, deps.commandRepo, &mockScannerTemplateRepo{},
+		deps.toolRepo, deps.sensorSelector, deps.secValidator, logger.NewNop(), allowAllTargetChecks(opts...)...)
 	deps.toolRepo.tools["nuclei"] = &tool.Tool{ID: shared.NewID(), Name: "nuclei", IsActive: true, SupportedTargets: []string{"url", "domain", "ip"}}
 	return svc, deps
 }

@@ -6,7 +6,7 @@ import { useTranslation } from '@/context/i18n-provider'
 import { useState, useCallback, useMemo, useEffect, useEffectEvent } from 'react'
 import type { ColumnDef } from '@tanstack/react-table'
 import { Main } from '@/components/layout'
-import { EmptyState, PageHeader, DataTable, BulkActionBar } from '@/features/shared'
+import { EmptyState, PageHeader, DataTable, BulkActionBar, PageStack } from '@/features/shared'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -34,7 +34,7 @@ import {
   Link2,
 } from 'lucide-react'
 import { toast } from 'sonner'
-import { useDebounce } from '@/hooks/use-debounce'
+import { useSearchQuery } from '@/hooks/use-search-query'
 import { useUrlFilter } from '@/hooks/use-url-param'
 import { useListParams } from '@/hooks/use-list-params'
 import { getErrorMessage } from '@/lib/api/error-handler'
@@ -94,7 +94,7 @@ export default function RelationshipSuggestionsPage() {
   const list = useListParams({ pageSizes: PAGE_SIZES, defaultPageSize: 20 })
   const { page, setPage } = list
   const [searchValue, setSearchValue] = useState(searchParam)
-  const debouncedSearch = useDebounce(searchValue, 300)
+  const debouncedSearch = useSearchQuery(searchValue).term
   // Only the debounced input triggers a URL write. The URL value is read as an
   // effect event (latest value, not a dependency), so a URL change such as Back
   // does not write the stale debounced text over it.
@@ -383,30 +383,28 @@ export default function RelationshipSuggestionsPage() {
 
   return (
     <Main>
-      <PageHeader title={t('assets.overview.title', 'Assets')}>
-        {canReview && (
-          <Button variant="outline" size="sm" onClick={handleGenerate} disabled={isGenerating}>
-            {isGenerating ? (
-              <RefreshCw className="me-2 h-4 w-4 animate-spin" />
-            ) : (
-              <Sparkles className="me-2 h-4 w-4" />
-            )}
-            Scan
-          </Button>
-        )}
-        {canReview && total > 0 && (
-          <Button size="sm" disabled={isApprovingAll} onClick={() => setConfirmAll(true)}>
-            <CheckCheck className="me-2 h-4 w-4" />
-            {t('assets.suggestions.approveAll', 'Approve all ({count})', { count: total })}
-          </Button>
-        )}
-      </PageHeader>
-      <AssetsSectionTabs />
-      <div className="mt-5">
+      <PageStack>
+        <PageHeader title={t('assets.overview.title', 'Assets')}>
+          {canReview && (
+            <Button variant="outline" size="sm" onClick={handleGenerate} disabled={isGenerating}>
+              {isGenerating ? (
+                <RefreshCw className="me-2 h-4 w-4 animate-spin" />
+              ) : (
+                <Sparkles className="me-2 h-4 w-4" />
+              )}
+              Scan
+            </Button>
+          )}
+          {canReview && total > 0 && (
+            <Button size="sm" disabled={isApprovingAll} onClick={() => setConfirmAll(true)}>
+              <CheckCheck className="me-2 h-4 w-4" />
+              {t('assets.suggestions.approveAll', 'Approve all ({count})', { count: total })}
+            </Button>
+          )}
+        </PageHeader>
+        <AssetsSectionTabs />
         <AttentionQueueHeader reason="relationships" count={isLoading ? undefined : total} />
-      </div>
 
-      <div className="mt-5">
         {error && !isLoading ? (
           <Alert variant="destructive">
             <AlertCircle className="h-4 w-4" />
@@ -451,65 +449,69 @@ export default function RelationshipSuggestionsPage() {
             emptyDescription="Try a different search term."
           />
         )}
-      </div>
 
-      <BulkActionBar
-        count={canReview ? selected.length : 0}
-        onClear={clearSelection}
-        noun="selected"
-      >
-        <Button
-          variant="ghost"
-          size="sm"
-          className="h-8"
-          disabled={isBatchApproving}
-          onClick={() => setConfirmSelected(true)}
+        <BulkActionBar
+          count={canReview ? selected.length : 0}
+          onClear={clearSelection}
+          noun="selected"
         >
-          <Check className="me-2 h-4 w-4" />
-          {t('assets.suggestions.approve', 'Approve')}
-        </Button>
-      </BulkActionBar>
-      <ConfirmDialog
-        open={confirmAll}
-        onOpenChange={setConfirmAll}
-        title={t('confirm.suggestions.approveAllTitle', 'Approve all {count} suggestions?', {
-          count: total,
-        })}
-        desc={t(
-          'confirm.suggestions.approveAllDesc',
-          'This creates {count} relationships between your assets, including suggestions on other pages and ones hidden by the search. You can remove a relationship afterwards from the asset it belongs to.',
-          { count: total }
-        )}
-        confirmText={t('confirm.suggestions.approveAllButton', 'Approve {count} suggestions', {
-          count: total,
-        })}
-        handleConfirm={async () => {
-          await handleApproveAll()
-          setConfirmAll(false)
-        }}
-      />
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-8"
+            disabled={isBatchApproving}
+            onClick={() => setConfirmSelected(true)}
+          >
+            <Check className="me-2 h-4 w-4" />
+            {t('assets.suggestions.approve', 'Approve')}
+          </Button>
+        </BulkActionBar>
+        <ConfirmDialog
+          open={confirmAll}
+          onOpenChange={setConfirmAll}
+          title={t('confirm.suggestions.approveAllTitle', 'Approve all {count} suggestions?', {
+            count: total,
+          })}
+          desc={t(
+            'confirm.suggestions.approveAllDesc',
+            'This creates {count} relationships between your assets, including suggestions on other pages and ones hidden by the search. You can remove a relationship afterwards from the asset it belongs to.',
+            { count: total }
+          )}
+          confirmText={t('confirm.suggestions.approveAllButton', 'Approve {count} suggestions', {
+            count: total,
+          })}
+          handleConfirm={async () => {
+            await handleApproveAll()
+            setConfirmAll(false)
+          }}
+        />
 
-      <ConfirmDialog
-        open={confirmSelected}
-        onOpenChange={setConfirmSelected}
-        title={t('confirm.suggestions.approveSelectedTitle', 'Approve {count} suggestions?', {
-          count: selected.length,
-        })}
-        desc={t(
-          'confirm.suggestions.approveSelectedDesc',
-          'This creates {count} relationships between your assets. You can remove a relationship afterwards from the asset it belongs to.',
-          { count: selected.length }
-        )}
-        confirmText={t('confirm.suggestions.approveSelectedButton', 'Approve {count} suggestions', {
-          count: selected.length,
-        })}
-        handleConfirm={async () => {
-          await handleApproveSelected()
-          setConfirmSelected(false)
-        }}
-      >
-        <ConfirmSample names={selectedLabels} total={selected.length} />
-      </ConfirmDialog>
+        <ConfirmDialog
+          open={confirmSelected}
+          onOpenChange={setConfirmSelected}
+          title={t('confirm.suggestions.approveSelectedTitle', 'Approve {count} suggestions?', {
+            count: selected.length,
+          })}
+          desc={t(
+            'confirm.suggestions.approveSelectedDesc',
+            'This creates {count} relationships between your assets. You can remove a relationship afterwards from the asset it belongs to.',
+            { count: selected.length }
+          )}
+          confirmText={t(
+            'confirm.suggestions.approveSelectedButton',
+            'Approve {count} suggestions',
+            {
+              count: selected.length,
+            }
+          )}
+          handleConfirm={async () => {
+            await handleApproveSelected()
+            setConfirmSelected(false)
+          }}
+        >
+          <ConfirmSample names={selectedLabels} total={selected.length} />
+        </ConfirmDialog>
+      </PageStack>
     </Main>
   )
 }

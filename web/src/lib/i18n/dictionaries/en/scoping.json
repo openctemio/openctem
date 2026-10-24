@@ -48,7 +48,7 @@
   "scoping.overview.openCycle": "Open cycle",
   "scoping.overview.startCycle": "Start a cycle",
   "scoping.overview.loadError": "the scoping summary",
-  "scoping.overview.feeds": "Feeds Discovery: {snapshot} · {exclusions} enforced on scans",
+  "scoping.overview.feeds": "Feeds Discovery: {snapshot}, {exclusions} enforced on scans",
   "scoping.overview.snapshotted": "{n, plural, one {# asset} other {# assets}} snapshotted",
   "scoping.overview.noSnapshot": "no scope snapshot yet",
   "scoping.cycles.nameRequired": "Enter a cycle name.",

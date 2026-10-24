@@ -818,7 +818,9 @@ func (p *FindingProcessor) processBatch(
 			p.logger.Info("backfilled finding branches", "count", n)
 		}
 		if err := p.repo.UpsertBranchOccurrences(ctx, tenantID, occurrences); err != nil {
-			p.logger.Warn("failed to record branch occurrences", "error", err, "count", len(occurrences))
+			p.logger.Error("failed to record branch occurrences", "error", err, "count", len(occurrences))
+			addError(output, fmt.Sprintf("record branch occurrences of %d findings failed: %v", len(occurrences), err))
+			output.BranchOccurrencesFailed = true
 		} else {
 			p.promoteBranchOnly(ctx, tenantID, occurrences)
 		}

@@ -125,9 +125,14 @@ describe('FleetHealthStrip', () => {
     expect(p.onToggleProtocolV1).toHaveBeenCalled()
   })
 
-  it('has no zone metric without zones, and the jobs metric shows the slots', () => {
+  it('has no zone metric without zones, and no inert jobs tile', () => {
     renderStrip({ summary: { ...summary, zones: null } })
     expect(screen.queryByText('Zone coverage')).toBeNull()
-    expect(screen.getByText('/ 23 slots')).toBeInTheDocument()
+    expect(screen.queryByText('/ 23 slots')).toBeNull()
+  })
+
+  it('never shows more than five tiles, each one a filter', () => {
+    renderStrip({ summary: { ...summary, protocolV1: 2, hasProtocolInfo: true } })
+    expect(screen.getAllByRole('button').length).toBeLessThanOrEqual(5)
   })
 })

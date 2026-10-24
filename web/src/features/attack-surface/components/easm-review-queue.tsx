@@ -25,7 +25,7 @@ import { Checkbox } from '@/components/ui/checkbox'
 import { Input } from '@/components/ui/input'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { DataTable, ErrorState, RelativeTime } from '@/features/shared'
-import { useDebounce } from '@/hooks/use-debounce'
+import { useSearchQuery } from '@/hooks/use-search-query'
 import { useListParams } from '@/hooks/use-list-params'
 import type { EASMConfirmScopeResult, EASMReviewItem } from '@/lib/api/generated'
 import { del } from '@/lib/api/client'
@@ -180,7 +180,7 @@ export function EASMReviewQueue() {
   const view = REVIEW_VIEWS.some((v) => v.id === tabParam) ? tabParam : REVIEW_VIEWS[0].id
   const setView = setTabParam
   const [searchInput, setSearchInput] = useUrlFilter('q', '')
-  const search = useDebounce(searchInput, 300)
+  const search = useSearchQuery(searchInput).term
   const { pagination, setPagination, setPage } = useListParams({ defaultPageSize: PAGE_SIZE })
   const [selected, setSelected] = useState<EASMReviewItem[]>([])
   const [resetKey, setResetKey] = useState(0)
