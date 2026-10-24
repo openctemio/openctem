@@ -3,10 +3,12 @@ package postgres
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"testing"
 	"time"
 
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/pkg/domain/suppression"
 )
 
 // A suppression is an exception, not a fix: when the rule stops applying
@@ -81,7 +83,7 @@ func TestSuppressionDelete_LiftsItsFindings_DB(t *testing.T) {
 	otherRule := seedSuppressionRule(ctx, t, db, other, user, "semgrep.sqli", nil)
 	otherFinding := seedSuppressedFinding(ctx, t, db, other, otherAsset, otherRule, "semgrep.sqli")
 
-	if err := repo.Delete(ctx, tenant, rule); err != nil {
+	if err := repo.Delete(ctx, tenant, rule, user, nil); err != nil {
 		t.Fatalf("delete: %v", err)
 	}
 
@@ -185,5 +187,40 @@ func TestSuppressionApprovers_CountAndOwner_DB(t *testing.T) {
 	}
 	if n, _ := repo.CountEligibleApprovers(ctx, tenant); n != 2 {
 		t.Fatalf("eligible approvers with an admin = %d, want 2", n)
+	}
+}
+
+// The "deleted" audit row is written in the delete's transaction and must
+// outlive the rule: it records who deleted it.
+func TestSuppressionDelete_AuditRowSurvivesTheRule_DB(t *testing.T) {
+	ctx := context.Background()
+	db := openGroupsDB(t)
+	repo := NewSuppressionRepository(&DB{DB: db})
+	tenant := seedTestTenant(ctx, t, db)
+	user := seedGroupsUser(ctx, t, db, "supp.audit")
+	rule := seedSuppressionRule(ctx, t, db, tenant, user, "semgrep.sqli", nil)
+
+	// Another tenant cannot delete it, and leaves no audit row behind.
+	other := seedTestTenant(ctx, t, db)
+	if err := repo.Delete(ctx, other, rule, user, nil); !errors.Is(err, suppression.ErrRuleNotFound) {
+		t.Fatalf("cross-tenant delete = %v, want ErrRuleNotFound", err)
+	}
+	var n int
+	if err := db.QueryRowContext(ctx, `SELECT count(*) FROM suppression_rule_audit WHERE action = 'deleted' AND details->>'rule_id' = $1`, rule.String()).Scan(&n); err != nil || n != 0 {
+		t.Fatalf("audit rows after refused delete = %d (%v), want 0", n, err)
+	}
+
+	if err := repo.Delete(ctx, tenant, rule, user, map[string]any{"name": "r1"}); err != nil {
+		t.Fatalf("delete: %v", err)
+	}
+	var actor sql.NullString
+	var ruleCol sql.NullString
+	var name string
+	if err := db.QueryRowContext(ctx, `SELECT actor_id::text, suppression_rule_id::text, details->>'name'
+		FROM suppression_rule_audit WHERE action = 'deleted' AND details->>'rule_id' = $1`, rule.String()).Scan(&actor, &ruleCol, &name); err != nil {
+		t.Fatalf("deleted audit row gone with the rule: %v", err)
+	}
+	if actor.String != user.String() || name != "r1" || ruleCol.Valid {
+		t.Fatalf("audit row actor=%q name=%q rule_col=%v, want actor %s, name r1, NULL rule", actor.String, name, ruleCol, user)
 	}
 }

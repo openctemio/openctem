@@ -12,6 +12,8 @@ import {
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import { ChevronDown, Loader2, Check, Lock } from 'lucide-react'
 import { FINDING_STATUS_CONFIG } from '../types'
+import { STATUS_TONE_CLASS, STATUS_TONE_TEXT } from '@/lib/status-colors'
+import { STATUS_GLYPHS } from './finding-status-badge'
 import type { FindingStatus } from '../types'
 import { useSWRConfig } from 'swr'
 import {
@@ -125,7 +127,7 @@ export function StatusSelect({
                 <Button
                   variant="outline"
                   size={size}
-                  className={`${size === 'sm' ? 'h-7 px-2 text-xs' : 'h-9 sm:h-8'} min-h-[32px] ${currentConfig.bgColor} ${currentConfig.textColor} border-0 hover:opacity-80`}
+                  className={`${size === 'sm' ? 'h-7 px-2 text-xs' : 'h-9 sm:h-8'} min-h-[32px] ${STATUS_TONE_CLASS[currentConfig.tone]} hover:opacity-80`}
                   disabled={disabled || loading}
                 >
                   {loading && <Loader2 className="me-1 h-3 w-3 animate-spin" />}
@@ -154,6 +156,7 @@ export function StatusSelect({
               const status = move.to
               const config = FINDING_STATUS_CONFIG[status]
               if (!config) return null
+              const GlyphIcon = STATUS_GLYPHS[config.icon]
               const sub = move.to_sub_status_id ? catalog.get(move.to_sub_status_id) : undefined
               // A sub-status move the catalog cannot name yet waits for it.
               if (move.to_sub_status_id && !sub) return null
@@ -183,8 +186,8 @@ export function StatusSelect({
                             )}
                           />
                         ) : (
-                          <div
-                            className={`h-2 w-2 shrink-0 rounded-full ${config.bgColor.replace('/20', '')}`}
+                          <GlyphIcon
+                            className={`size-3 shrink-0 ${STATUS_TONE_TEXT[config.tone]}`}
                           />
                         )}
                         <span className="min-w-0">

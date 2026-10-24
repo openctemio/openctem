@@ -20,6 +20,8 @@ import (
 	"github.com/go-chi/chi/v5"
 
 	"github.com/openctemio/openctem/api/internal/app/datascope"
+	"github.com/openctemio/openctem/api/internal/app/findingimport"
+	"github.com/openctemio/openctem/api/internal/app/ingestqueue"
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
 	"github.com/openctemio/openctem/api/pkg/apierror"
 	"github.com/openctemio/openctem/api/pkg/domain/ingestreceipt"
@@ -36,6 +38,9 @@ type IngestReceiptReader interface {
 	ActionCountsBySeverity(ctx context.Context, tenantID, receiptID shared.ID, scope *shared.DataScope) (map[string]map[string]int, error)
 	ListActions(ctx context.Context, tenantID, receiptID shared.ID, action ingestreceipt.Action, scope *shared.DataScope, p pagination.Pagination) ([]ingestreceipt.ActionRow, int64, error)
 	FindingActions(ctx context.Context, tenantID, findingID shared.ID, limit int) ([]ingestreceipt.FindingAction, error)
+	ItemCounts(ctx context.Context, tenantID, receiptID shared.ID, scope *shared.DataScope) (map[string]int, error)
+	ListItems(ctx context.Context, tenantID, receiptID shared.ID, disposition ingestreceipt.Disposition, scope *shared.DataScope,
+		p pagination.Pagination) ([]ingestreceipt.ItemRow, int64, error)
 }
 
 // maxFindingReceipts bounds the receipts listed for one finding.
@@ -46,7 +51,18 @@ type IngestReceiptHandler struct {
 	repo   IngestReceiptReader
 	scope  *datascope.Enforcer
 	logger *logger.Logger
+	// imports reads the per-file results of a committed upload the ingest
+	// worker imported (nil: the result read answers 404).
+	imports ImportResults
 }
+
+// ImportResults reads a committed upload's state (findingimport.Service).
+type ImportResults interface {
+	UploadResult(ctx context.Context, tenantID, receiptID shared.ID, wait time.Duration) (*findingimport.UploadState, error)
+}
+
+// SetImportResults wires the result read of committed uploads.
+func (h *IngestReceiptHandler) SetImportResults(r ImportResults) { h.imports = r }
 
 // NewIngestReceiptHandler creates the handler.
 func NewIngestReceiptHandler(repo IngestReceiptReader, scope *datascope.Enforcer, log *logger.Logger) *IngestReceiptHandler {
@@ -111,6 +127,10 @@ type ReceiptResponse struct {
 	// BySeverity (detail only) counts the actions per action and finding
 	// severity, over the findings the caller may see.
 	BySeverity map[string]map[string]int `json:"by_severity,omitempty"`
+	// Dispositions (detail only) counts the items that did not become
+	// findings per disposition (filtered, out_of_scope, rejected,
+	// quarantined), over the items the caller may see.
+	Dispositions map[string]int `json:"dispositions,omitempty"`
 }
 
 // ReceiptAssets counts the assets the source created and updated.
@@ -126,6 +146,28 @@ type ReceiptActionResponse struct {
 	Title     string    `json:"title"`
 	Severity  string    `json:"severity"`
 	At        time.Time `json:"at"`
+	// Policy decided a suppressed or held finding (suppression_rule), with
+	// the rule and the policy version it was decided under.
+	Policy        string  `json:"policy,omitempty"`
+	PolicyID      *string `json:"policy_id,omitempty"`
+	PolicyVersion *int64  `json:"policy_version,omitempty"`
+}
+
+// ReceiptItemResponse is one reported item a receipt did not turn into a
+// finding: its disposition, a fixed reason, the deciding policy and
+// version, and only an identity key, the asset, tool, title and severity.
+type ReceiptItemResponse struct {
+	Key           string    `json:"key"`
+	Disposition   string    `json:"disposition"`
+	ReasonCode    string    `json:"reason_code"`
+	AssetID       *string   `json:"asset_id,omitempty"`
+	Tool          string    `json:"tool,omitempty"`
+	Title         string    `json:"title,omitempty"`
+	Severity      string    `json:"severity,omitempty"`
+	Policy        string    `json:"policy,omitempty"`
+	PolicyID      *string   `json:"policy_id,omitempty"`
+	PolicyVersion int64     `json:"policy_version,omitempty"`
+	At            time.Time `json:"at"`
 }
 
 // FindingReceiptResponse is one receipt that acted on a finding.
@@ -359,8 +401,15 @@ func (h *IngestReceiptHandler) Get(w http.ResponseWriter, r *http.Request) {
 		apierror.InternalServerError("could not read the receipt").WriteJSON(w)
 		return
 	}
+	items, err := h.repo.ItemCounts(r.Context(), v.tenant, rec.ID, v.scope)
+	if err != nil {
+		h.logger.Error("receipts: item counts", "error", err)
+		apierror.InternalServerError("could not read the receipt").WriteJSON(w)
+		return
+	}
 	out := toReceiptResponse(rec)
 	out.BySeverity = by
+	out.Dispositions = items
 	writeJSON(w, http.StatusOK, out)
 }
 
@@ -386,7 +435,7 @@ func (h *IngestReceiptHandler) Actions(w http.ResponseWriter, r *http.Request) {
 	}
 	action := ingestreceipt.Action(r.URL.Query().Get("action"))
 	if action != "" && !action.IsValid() {
-		(&filterspec.Error{Details: []filterspec.Detail{{Param: "action", Reason: "must be created, still_detected, reopened or closed"}}}).APIError().WriteJSON(w)
+		(&filterspec.Error{Details: []filterspec.Detail{{Param: "action", Reason: "must be created, still_detected, reopened, closed, suppressed or held"}}}).APIError().WriteJSON(w)
 		return
 	}
 	v, rec, ok := h.loadVisible(w, r)
@@ -401,11 +450,73 @@ func (h *IngestReceiptHandler) Actions(w http.ResponseWriter, r *http.Request) {
 	}
 	data := make([]ReceiptActionResponse, 0, len(rows))
 	for _, row := range rows {
-		data = append(data, ReceiptActionResponse{FindingID: row.FindingID.String(), Action: string(row.Action),
-			Title: row.Title, Severity: row.Severity, At: row.At})
+		item := ReceiptActionResponse{FindingID: row.FindingID.String(), Action: string(row.Action),
+			Title: row.Title, Severity: row.Severity, At: row.At, Policy: row.Policy, PolicyVersion: row.PolicyVersion}
+		if row.PolicyID != nil {
+			id := row.PolicyID.String()
+			item.PolicyID = &id
+		}
+		data = append(data, item)
 	}
 	res := pagination.NewResult(data, total, p)
 	writeJSON(w, http.StatusOK, ListResponse[ReceiptActionResponse]{Data: res.Data, Total: res.Total, Page: res.Page,
+		PerPage: res.PerPage, TotalPages: res.TotalPages})
+}
+
+// receiptItemParams are the parameters GET /findings/imports/{id}/items accepts.
+var receiptItemParams = map[string]bool{"disposition": true, "page": true, "per_page": true}
+
+// Items handles GET /api/v1/findings/imports/{id}/items.
+//
+// @Summary      List the items a receipt did not turn into findings
+// @Description  The reported items a receipt filtered, found out of scope, rejected or quarantined, newest first, each with a fixed reason code and the policy (and its version) that decided it. Only an identity key, the asset, tool, title and severity are kept, never evidence. An item on an asset is listed when the asset is in the caller's data scope; an item with no asset only to a caller with unrestricted data access. Unknown parameters are refused (400 INVALID_FILTER); per_page is capped at 100.
+// @Tags         Findings
+// @Produce      json
+// @Param        id           path   string  true   "Receipt id"
+// @Param        disposition  query  string  false  "filtered, out_of_scope, rejected or quarantined"
+// @Param        page         query  int     false  "Page (from 1)"
+// @Param        per_page     query  int     false  "Page size (at most 100)"
+// @Success      200  {object}  ListResponse[ReceiptItemResponse]
+// @Failure      400  {object}  apierror.Error
+// @Failure      404  {object}  apierror.Error
+// @Security     BearerAuth
+// @Router       /findings/imports/{id}/items [get]
+func (h *IngestReceiptHandler) Items(w http.ResponseWriter, r *http.Request) {
+	p, ok := strictParams(w, r, receiptItemParams)
+	if !ok {
+		return
+	}
+	disp := ingestreceipt.Disposition(r.URL.Query().Get("disposition"))
+	if disp != "" && !disp.IsValid() {
+		(&filterspec.Error{Details: []filterspec.Detail{{Param: "disposition", Reason: "must be filtered, out_of_scope, rejected or quarantined"}}}).APIError().WriteJSON(w)
+		return
+	}
+	v, rec, ok := h.loadVisible(w, r)
+	if !ok {
+		return
+	}
+	rows, total, err := h.repo.ListItems(r.Context(), v.tenant, rec.ID, disp, v.scope, p)
+	if err != nil {
+		h.logger.Error("receipts: items", "error", err)
+		apierror.InternalServerError("could not read the receipt").WriteJSON(w)
+		return
+	}
+	data := make([]ReceiptItemResponse, 0, len(rows))
+	for _, row := range rows {
+		item := ReceiptItemResponse{Key: row.Key, Disposition: string(row.Disposition), ReasonCode: row.ReasonCode,
+			Tool: row.Tool, Title: row.Title, Severity: row.Severity, Policy: row.Policy, PolicyVersion: row.PolicyVersion, At: row.At}
+		if row.AssetID != nil {
+			id := row.AssetID.String()
+			item.AssetID = &id
+		}
+		if row.PolicyID != nil {
+			id := row.PolicyID.String()
+			item.PolicyID = &id
+		}
+		data = append(data, item)
+	}
+	res := pagination.NewResult(data, total, p)
+	writeJSON(w, http.StatusOK, ListResponse[ReceiptItemResponse]{Data: res.Data, Total: res.Total, Page: res.Page,
 		PerPage: res.PerPage, TotalPages: res.TotalPages})
 }
 
@@ -447,5 +558,77 @@ func (h *IngestReceiptHandler) FindingReceipts(w http.ResponseWriter, r *http.Re
 			Source: ReceiptSource{Kind: string(fa.SourceKind), Ref: fa.SourceRef}, Tool: fa.ToolName,
 			Action: string(fa.Action), At: fa.At})
 	}
+	writeJSON(w, http.StatusOK, out)
+}
+
+// resultStatusWithoutJob is the state to answer for an upload receipt that
+// has no queue job: only a receipt that itself finished (an import from
+// before uploads were queued) is answered, as applied or failed.
+func resultStatusWithoutJob(rec *ingestreceipt.Receipt) (ingestqueue.Status, bool) {
+	switch rec.Status {
+	case ingestreceipt.StatusCompleted:
+		return ingestqueue.StatusApplied, true
+	case ingestreceipt.StatusFailed:
+		return ingestqueue.StatusFailed, true
+	}
+	return "", false
+}
+
+// Result handles GET /api/v1/findings/imports/{id}/result.
+//
+// @Summary      Per-file results of a committed upload
+// @Description  A committed upload is imported by the ingest worker. This read answers its state (queued, processing, applied or failed with a fixed error_code) and, once applied, the per-file results the upload used to answer with, and its receipt. wait=N (seconds, at most 10) waits for the import to finish first. Visible to the same callers as the receipt (another member's upload is 404 without the organization view).
+// @Tags         Findings
+// @Produce      json
+// @Param        id    path   string  true   "Receipt id"
+// @Param        wait  query  int     false  "Seconds to wait for the import to finish (at most 10)"
+// @Success      200  {object}  FindingImportResponse
+// @Failure      400  {object}  apierror.Error
+// @Failure      404  {object}  apierror.Error
+// @Security     BearerAuth
+// @Router       /findings/imports/{id}/result [get]
+func (h *IngestReceiptHandler) Result(w http.ResponseWriter, r *http.Request) {
+	if _, ok := strictParams(w, r, map[string]bool{"wait": true}); !ok {
+		return
+	}
+	v, rec, ok := h.loadVisible(w, r)
+	if !ok {
+		return
+	}
+	if h.imports == nil || rec.SourceKind != ingestreceipt.SourceUpload {
+		apierror.NotFound("Import result").WriteJSON(w)
+		return
+	}
+	st, err := h.imports.UploadResult(r.Context(), v.tenant, rec.ID, ingestqueue.ClampWait(r.URL.Query().Get("wait")))
+	if errors.Is(err, shared.ErrNotFound) {
+		// An upload imported before uploads were queued has no job: its
+		// receipt is all there is. A receipt that never finished and has
+		// no job (purged, or lost) is not "applied": there is nothing to read.
+		status, ok := resultStatusWithoutJob(rec)
+		if !ok {
+			apierror.NotFound("Import result").WriteJSON(w)
+			return
+		}
+		rr := toReceiptResponse(rec)
+		writeJSON(w, http.StatusOK, FindingImportResponse{ReceiptID: rec.ID.String(), Status: string(status),
+			Receipt: &rr, Files: []ImportFileResponse{}})
+		return
+	}
+	if err != nil {
+		h.logger.Error("receipts: import result", "error", err)
+		apierror.InternalServerError("could not read the import").WriteJSON(w)
+		return
+	}
+	out := FindingImportResponse{ReceiptID: rec.ID.String(), Status: string(st.Status), ErrorCode: st.ErrorCode,
+		Files: make([]ImportFileResponse, 0, len(st.Files))}
+	for i := range st.Files {
+		out.Files = append(out.Files, toImportFileResponse(&st.Files[i]))
+	}
+	// The receipt as it stands after the wait.
+	if fresh, err := h.repo.Get(r.Context(), v.tenant, rec.ID); err == nil {
+		rec = fresh
+	}
+	rr := toReceiptResponse(rec)
+	out.Receipt = &rr
 	writeJSON(w, http.StatusOK, out)
 }

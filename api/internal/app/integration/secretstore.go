@@ -102,7 +102,17 @@ func (s *SecretStoreService) CreateCredential(ctx context.Context, input CreateC
 		ActorID:  input.UserID.String(),
 		// IP/UA would need to be passed in input or context
 	}
-	_ = s.auditService.LogCredentialCreated(ctx, actx, cred.ID.String(), cred.Name, string(cred.CredentialType))
+	if err := s.auditService.LogCredentialCreated(ctx, actx, cred.ID.String(), cred.Name, string(cred.CredentialType)); err != nil {
+		// Fail closed: a stored secret whose creation cannot be recorded is
+		// removed again.
+		s.logger.Error("audit event was not recorded; deleting the new credential", "action", "credential.created",
+			"resource_id", logger.SanitizeValue(cred.ID.String()), "error", logger.SanitizeError(err))
+		if derr := s.repo.DeleteByTenantAndID(ctx, input.TenantID, cred.ID); derr != nil {
+			s.logger.Error("could not delete an unaudited credential",
+				"resource_id", logger.SanitizeValue(cred.ID.String()), "error", logger.SanitizeError(derr))
+		}
+		return nil, auditapp.ErrNotRecorded
+	}
 
 	return cred, nil
 }

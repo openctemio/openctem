@@ -2,6 +2,7 @@ package postgres
 
 import (
 	"context"
+	"errors"
 	"testing"
 
 	"github.com/openctemio/openctem/api/pkg/domain/ingestreport"
@@ -46,8 +47,9 @@ func TestSecretNotAutoResolved_NonRepositoryCoverage(t *testing.T) {
 	plain := f.finding(t, f.host, "nuclei", earlier, nil)
 	secretType := f.secret(t, f.host, earlier, nil, true)
 	secretSource := f.secret(t, f.host, earlier, nil, false)
-	_, today := f.run(t, f.scan, "completed", f.host)
-	q := ingestreport.CoverageQuery{AssetIDs: []shared.ID{f.host}, ToolName: "nuclei", ProfileID: f.profile.String(), SeenScanIDs: []string{today}}
+	cmd, today := f.run(t, f.scan, "completed", f.host)
+	f.receipt(t, cmd)
+	q := ingestreport.CoverageQuery{AssetIDs: []shared.ID{f.host}, ToolName: "nuclei", ProfileID: f.profile.String(), SeenScanIDs: []string{today}, CommandID: cmd}
 
 	stale, open, err := repo.CoverageStaleFindings(ctx, f.tenant, q)
 	if err != nil {
@@ -72,7 +74,7 @@ func TestSecretNotAutoResolved_NonRepositoryCoverage(t *testing.T) {
 
 	// Another tenant's call marks and resolves nothing of this tenant.
 	other := seedTestTenant(ctx, t, f.db)
-	if got, err := repo.MarkCoverageSecretsNotObserved(ctx, other, q); err != nil || len(got) != 0 {
+	if got, err := repo.MarkCoverageSecretsNotObserved(ctx, other, q); (err != nil && !errors.Is(err, ingestreport.ErrReceiptIncomplete)) || len(got) != 0 {
 		t.Fatalf("cross-tenant mark = %v, %v", got, err)
 	}
 	if got, err := repo.markSecretsNotObserved(ctx, other, []shared.ID{secretType}, "x", "x", false); err != nil || len(got) != 0 {
@@ -115,8 +117,9 @@ func TestSecretNotAutoResolved_DefaultBranchScan(t *testing.T) {
 	secretType := f.secret(t, f.repoAsset, earlier, &branch, true)
 	secretSource := f.secret(t, f.repoAsset, earlier, &branch, false)
 	secretFeature := f.secret(t, f.repoAsset, earlier, &feature, true) // not on the default branch: untouched
-	_, today := f.run(t, f.scan, "completed", f.repoAsset)
-	q := ingestreport.CoverageQuery{AssetIDs: []shared.ID{f.repoAsset}, ToolName: "nuclei", ProfileID: f.profile.String(), SeenScanIDs: []string{today}}
+	cmd, today := f.run(t, f.scan, "completed", f.repoAsset)
+	f.receipt(t, cmd)
+	q := ingestreport.CoverageQuery{AssetIDs: []shared.ID{f.repoAsset}, ToolName: "nuclei", ProfileID: f.profile.String(), SeenScanIDs: []string{today}, CommandID: cmd}
 
 	stale, open, err := repo.RepoCoverageStaleFindings(ctx, f.tenant, q)
 	if err != nil {
@@ -129,7 +132,7 @@ func TestSecretNotAutoResolved_DefaultBranchScan(t *testing.T) {
 	if err != nil || len(resolved) != 1 || resolved[0] != plain {
 		t.Fatalf("resolve = %v, %v; want only the ordinary finding", resolved, err)
 	}
-	if got, err := repo.MarkRepoCoverageSecretsNotObserved(ctx, seedTestTenant(ctx, t, f.db), q); err != nil || len(got) != 0 {
+	if got, err := repo.MarkRepoCoverageSecretsNotObserved(ctx, seedTestTenant(ctx, t, f.db), q); (err != nil && !errors.Is(err, ingestreport.ErrReceiptIncomplete)) || len(got) != 0 {
 		t.Fatalf("cross-tenant mark = %v, %v", got, err)
 	}
 	marked, err := repo.MarkRepoCoverageSecretsNotObserved(ctx, f.tenant, q)

@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useCallback, useMemo } from 'react'
+import { useState, useCallback } from 'react'
 import { useNodesState, useEdgesState, type Edge } from '@xyflow/react'
 
 import { Main } from '@/components/layout'
@@ -11,8 +11,8 @@ import {
   DataTable,
   DataTableColumnHeader,
   EmptyState,
-  MetricStrip,
   PageHeader,
+  PageStack,
   RunStatusBadge,
   DetailHeader,
   DetailSection,
@@ -238,30 +238,6 @@ export default function WorkflowsPage() {
 
   // Create workflow mutation
   const { trigger: createWorkflow, isMutating: isCreating } = useCreateWorkflow()
-
-  // Compute stats from workflow data.
-  //
-  // IMPORTANT: `totalWorkflows` uses the API's `total` field (full dataset)
-  // instead of `items.length` (current page only). The previous version
-  // showed 50 workflows even when a tenant had 200, because per_page is 50.
-  //
-  // The other counts (active, triggered, successRate) are still derived
-  // from `items` because there's no /workflows/stats endpoint yet — they
-  // reflect the loaded page only. If a tenant ever crosses 50 workflows we
-  // should add a stats endpoint similar to /sensors/stats. For now this is
-  // documented in-line so the next person doesn't think it's a bug.
-  const workflowStats = useMemo(() => {
-    if (!workflowsData?.items) {
-      return { totalWorkflows: 0, active: 0, triggered: 0, successRate: 0 }
-    }
-    const items = workflowsData.items
-    const totalWorkflows = workflowsData.total
-    const active = items.filter((w) => w.is_active).length
-    const triggered = items.reduce((sum, w) => sum + w.total_runs, 0)
-    const successful = items.reduce((sum, w) => sum + w.successful_runs, 0)
-    const successRate = triggered > 0 ? Math.round((successful / triggered) * 100) : 0
-    return { totalWorkflows, active, triggered, successRate }
-  }, [workflowsData])
 
   // Back to the starter graph: one manual trigger, nothing else.
   const resetCanvas = useCallback(() => {
@@ -791,211 +767,189 @@ export default function WorkflowsPage() {
   return (
     <>
       <Main>
-        <PageHeader
-          title={t('automations.page.title', 'Automations')}
-          description={t(
-            'automations.page.description',
-            'When something happens, do something: notify, assign, open a ticket or run a saved scan.'
-          )}
-        >
-          <Can permission={Permission.AutomationsWrite} mode="disable">
-            <Button size="sm" onClick={() => setIsCreateDialogOpen(true)}>
-              <Plus className="me-2 h-4 w-4" />
-              {t('automations.page.newWorkflow', 'New workflow')}
-            </Button>
-          </Can>
-        </PageHeader>
-
-        <Tabs value={tab} onValueChange={setTab} className="mt-4">
-          <TabsList>
-            <TabsTrigger value="workflows">
-              {t('automations.tabs.workflows', 'Workflows')}
-            </TabsTrigger>
-            <TabsTrigger value="executions">
-              {t('automations.tabs.executions', 'Recent executions')}
-            </TabsTrigger>
-            <TabsTrigger value="builder">
-              {t('automations.tabs.builder', 'Visual builder')}
-            </TabsTrigger>
-          </TabsList>
-
-          <TabsContent value="workflows" className="mt-5 space-y-5">
-            {/* Counts other than the total cover the loaded page (per_page 50);
-                there is no /workflows/stats endpoint yet. */}
-            <MetricStrip
-              loading={workflowsLoading}
-              items={[
-                {
-                  key: 'total',
-                  label: t('automations.metrics.workflows', 'Workflows'),
-                  value: workflowStats.totalWorkflows,
-                },
-                {
-                  key: 'active',
-                  label: t('automations.metrics.active', 'Active'),
-                  value: workflowStats.active,
-                },
-                {
-                  key: 'runs',
-                  label: t('automations.metrics.totalRuns', 'Total runs'),
-                  value: workflowStats.triggered,
-                },
-                {
-                  key: 'success',
-                  label: t('automations.metrics.successRate', 'Success rate'),
-                  value: workflowStats.triggered > 0 ? `${workflowStats.successRate}%` : '—',
-                },
-              ]}
-            />
-            {workflowsLoading ? (
-              tableSkeleton
-            ) : workflowsError ? (
-              <Alert variant="destructive">
-                <AlertCircle className="h-4 w-4" />
-                <AlertTitle>
-                  {t('automations.error.loadTitle', 'Failed to load workflows')}
-                </AlertTitle>
-                <AlertDescription className="flex flex-wrap items-center gap-3">
-                  <span>
-                    {getErrorMessage(
-                      workflowsError,
-                      t('automations.error.tryAgain', 'Please try again.')
-                    )}
-                  </span>
-                  <Button variant="outline" size="sm" onClick={() => invalidateWorkflowsCache()}>
-                    <RefreshCw className="me-2 h-4 w-4" />
-                    {t('automations.error.retry', 'Retry')}
-                  </Button>
-                </AlertDescription>
-              </Alert>
-            ) : workflows.length === 0 ? (
-              <EmptyState
-                icon={WorkflowIcon}
-                title={t('automations.empty.title', 'No workflows yet')}
-                description={t(
-                  'automations.empty.description',
-                  'Create your first automation workflow.'
-                )}
-                action={
-                  <Can permission={Permission.AutomationsWrite} mode="disable">
-                    <Button size="sm" onClick={() => setIsCreateDialogOpen(true)}>
-                      <Plus className="me-2 h-4 w-4" />
-                      {t('automations.empty.create', 'Create workflow')}
-                    </Button>
-                  </Can>
-                }
-              />
-            ) : (
-              <DataTable
-                columns={workflowColumns}
-                data={workflows}
-                searchKey="name"
-                searchPlaceholder={t('automations.table.searchPlaceholder', 'Search workflows...')}
-                getRowId={(w) => w.id}
-                onRowClick={handleViewWorkflow}
-                emptyMessage={t('automations.table.noMatch', 'No workflows match')}
-              />
+        <PageStack>
+          <PageHeader
+            title={t('automations.page.title', 'Automations')}
+            description={t(
+              'automations.page.description',
+              'When something happens, do something: notify, assign, open a ticket or run a saved scan.'
             )}
-          </TabsContent>
+          >
+            <Can permission={Permission.AutomationsWrite} mode="disable">
+              <Button size="sm" onClick={() => setIsCreateDialogOpen(true)}>
+                <Plus className="me-2 h-4 w-4" />
+                {t('automations.page.newWorkflow', 'New workflow')}
+              </Button>
+            </Can>
+          </PageHeader>
 
-          <TabsContent value="executions" className="mt-5">
-            {runsLoading ? (
-              tableSkeleton
-            ) : runs.length === 0 ? (
-              <EmptyState
-                icon={Clock}
-                title={t('automations.executions.emptyTitle', 'No executions yet')}
-                description={t(
-                  'automations.executions.emptyDescription',
-                  'Run a workflow to see its execution history here.'
-                )}
-              />
-            ) : (
-              <DataTable
-                columns={runColumns}
-                data={runs}
-                showSearch={false}
-                showColumnToggle={false}
-                showPagination={false}
-                getRowId={(r) => r.id}
-                toolbarStart={
-                  <span className="text-sm text-muted-foreground">
-                    {t('automations.executions.latest', 'Latest {n} runs', { n: runs.length })}
-                  </span>
-                }
-              />
-            )}
-          </TabsContent>
+          <Tabs value={tab} onValueChange={setTab}>
+            <TabsList>
+              <TabsTrigger value="workflows">
+                {t('automations.tabs.workflows', 'Workflows')}
+              </TabsTrigger>
+              <TabsTrigger value="executions">
+                {t('automations.tabs.executions', 'Recent executions')}
+              </TabsTrigger>
+              <TabsTrigger value="builder">
+                {t('automations.tabs.builder', 'Visual builder')}
+              </TabsTrigger>
+            </TabsList>
 
-          <TabsContent value="builder" className="mt-5">
-            <Card>
-              <CardHeader>
-                <div className="flex items-center justify-between">
-                  <div>
-                    <CardTitle className="flex items-center gap-2">
-                      {t('automations.builder.title', 'Visual workflow builder')}
-                      {editingWorkflow && (
-                        <Badge variant="secondary" className="font-normal">
-                          {t('automations.builder.editing', 'Editing: {name}', {
-                            name: editingWorkflow.name,
-                          })}
-                        </Badge>
+            <TabsContent value="workflows">
+              {workflowsLoading ? (
+                tableSkeleton
+              ) : workflowsError ? (
+                <Alert variant="destructive">
+                  <AlertCircle className="h-4 w-4" />
+                  <AlertTitle>
+                    {t('automations.error.loadTitle', 'Failed to load workflows')}
+                  </AlertTitle>
+                  <AlertDescription className="flex flex-wrap items-center gap-3">
+                    <span>
+                      {getErrorMessage(
+                        workflowsError,
+                        t('automations.error.tryAgain', 'Please try again.')
                       )}
-                    </CardTitle>
-                    <CardDescription>
-                      {editingWorkflow
-                        ? t(
-                            'automations.builder.hintEditing',
-                            'Make changes and click Save to update the workflow'
-                          )
-                        : t(
-                            'automations.builder.hintNew',
-                            'Add steps after the trigger, connect them and set each one up'
-                          )}
-                    </CardDescription>
-                  </div>
-                  <div className="flex flex-wrap items-center gap-2">
-                    {editingWorkflow && (
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => {
-                          setEditingWorkflow(null)
-                          resetCanvas()
-                        }}
-                      >
-                        <XCircle className="me-2 h-4 w-4" />
-                        {t('automations.builder.clear', 'Clear')}
-                      </Button>
-                    )}
-                    <Button variant="outline" size="sm" onClick={resetCanvas}>
+                    </span>
+                    <Button variant="outline" size="sm" onClick={() => invalidateWorkflowsCache()}>
                       <RefreshCw className="me-2 h-4 w-4" />
-                      {t('automations.builder.reset', 'Reset')}
+                      {t('automations.error.retry', 'Retry')}
                     </Button>
-                    <Button size="sm" onClick={handleSaveWorkflow} disabled={isSaving}>
-                      <Save className="me-2 h-4 w-4" />
-                      {isSaving
-                        ? t('automations.builder.saving', 'Saving...')
-                        : editingWorkflow
-                          ? t('automations.builder.saveChanges', 'Save changes')
-                          : t('automations.builder.saveWorkflow', 'Save workflow')}
-                    </Button>
-                  </div>
-                </div>
-              </CardHeader>
-              <CardContent className="p-0">
-                <AutomationCanvas
-                  nodes={nodes}
-                  edges={edges}
-                  setNodes={setNodes}
-                  setEdges={setEdges}
-                  onNodesChange={onNodesChange}
-                  onEdgesChange={onEdgesChange}
+                  </AlertDescription>
+                </Alert>
+              ) : workflows.length === 0 ? (
+                <EmptyState
+                  icon={WorkflowIcon}
+                  title={t('automations.empty.title', 'No workflows yet')}
+                  description={t(
+                    'automations.empty.description',
+                    'Create your first automation workflow.'
+                  )}
+                  action={
+                    <Can permission={Permission.AutomationsWrite} mode="disable">
+                      <Button size="sm" onClick={() => setIsCreateDialogOpen(true)}>
+                        <Plus className="me-2 h-4 w-4" />
+                        {t('automations.empty.create', 'Create workflow')}
+                      </Button>
+                    </Can>
+                  }
                 />
-              </CardContent>
-            </Card>
-          </TabsContent>
-        </Tabs>
+              ) : (
+                <DataTable
+                  columns={workflowColumns}
+                  data={workflows}
+                  searchKey="name"
+                  searchPlaceholder={t(
+                    'automations.table.searchPlaceholder',
+                    'Search workflows...'
+                  )}
+                  getRowId={(w) => w.id}
+                  onRowClick={handleViewWorkflow}
+                  emptyMessage={t('automations.table.noMatch', 'No workflows match')}
+                />
+              )}
+            </TabsContent>
+
+            <TabsContent value="executions">
+              {runsLoading ? (
+                tableSkeleton
+              ) : runs.length === 0 ? (
+                <EmptyState
+                  icon={Clock}
+                  title={t('automations.executions.emptyTitle', 'No executions yet')}
+                  description={t(
+                    'automations.executions.emptyDescription',
+                    'Run a workflow to see its execution history here.'
+                  )}
+                />
+              ) : (
+                <DataTable
+                  columns={runColumns}
+                  data={runs}
+                  showSearch={false}
+                  showColumnToggle={false}
+                  showPagination={false}
+                  getRowId={(r) => r.id}
+                  toolbarStart={
+                    <span className="text-sm text-muted-foreground">
+                      {t('automations.executions.latest', 'Latest {n} runs', { n: runs.length })}
+                    </span>
+                  }
+                />
+              )}
+            </TabsContent>
+
+            <TabsContent value="builder">
+              <Card>
+                <CardHeader>
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <CardTitle className="flex items-center gap-2">
+                        {t('automations.builder.title', 'Visual workflow builder')}
+                        {editingWorkflow && (
+                          <Badge variant="secondary" className="font-normal">
+                            {t('automations.builder.editing', 'Editing: {name}', {
+                              name: editingWorkflow.name,
+                            })}
+                          </Badge>
+                        )}
+                      </CardTitle>
+                      <CardDescription>
+                        {editingWorkflow
+                          ? t(
+                              'automations.builder.hintEditing',
+                              'Make changes and click Save to update the workflow'
+                            )
+                          : t(
+                              'automations.builder.hintNew',
+                              'Add steps after the trigger, connect them and set each one up'
+                            )}
+                      </CardDescription>
+                    </div>
+                    <div className="flex flex-wrap items-center gap-2">
+                      {editingWorkflow && (
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => {
+                            setEditingWorkflow(null)
+                            resetCanvas()
+                          }}
+                        >
+                          <XCircle className="me-2 h-4 w-4" />
+                          {t('automations.builder.clear', 'Clear')}
+                        </Button>
+                      )}
+                      <Button variant="outline" size="sm" onClick={resetCanvas}>
+                        <RefreshCw className="me-2 h-4 w-4" />
+                        {t('automations.builder.reset', 'Reset')}
+                      </Button>
+                      <Button size="sm" onClick={handleSaveWorkflow} disabled={isSaving}>
+                        <Save className="me-2 h-4 w-4" />
+                        {isSaving
+                          ? t('automations.builder.saving', 'Saving...')
+                          : editingWorkflow
+                            ? t('automations.builder.saveChanges', 'Save changes')
+                            : t('automations.builder.saveWorkflow', 'Save workflow')}
+                      </Button>
+                    </div>
+                  </div>
+                </CardHeader>
+                <CardContent className="p-0">
+                  <AutomationCanvas
+                    nodes={nodes}
+                    edges={edges}
+                    setNodes={setNodes}
+                    setEdges={setEdges}
+                    onNodesChange={onNodesChange}
+                    onEdgesChange={onEdgesChange}
+                  />
+                </CardContent>
+              </Card>
+            </TabsContent>
+          </Tabs>
+        </PageStack>
         <ConfirmDialog
           open={pendingDelete !== null}
           onOpenChange={(open) => !open && !isDeleting && setPendingDelete(null)}

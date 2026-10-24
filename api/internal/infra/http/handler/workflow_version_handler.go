@@ -31,7 +31,7 @@ type WorkflowVersionResponse struct {
 	ApprovedAt      *string `json:"approved_at,omitempty"`
 	StepUpAt        *string `json:"step_up_at,omitempty"`
 	CreatedAt       string  `json:"created_at"`
-	// Definition is set only on GET /workflows/{id}/versions/{versionId}.
+	// Definition is set only on GET /workflows/{id}/versions/{version_id}.
 	Definition *automation.Definition `json:"definition,omitempty"`
 }
 
@@ -131,23 +131,23 @@ func (h *WorkflowHandler) ListVersions(w http.ResponseWriter, r *http.Request) {
 	_ = json.NewEncoder(w).Encode(map[string]any{"items": items})
 }
 
-// GetVersion handles GET /api/v1/workflows/{id}/versions/{versionId}.
+// GetVersion handles GET /api/v1/workflows/{id}/versions/{version_id}.
 // @Summary      Get an automation version
 // @Description  One version with its stored definition (nodes and edges).
 // @Tags         Automations
 // @Produce      json
 // @Param        id         path      string  true  "Automation ID"
-// @Param        versionId  path      string  true  "Version ID"
+// @Param        version_id  path      string  true  "Version ID"
 // @Success      200  {object}  WorkflowVersionResponse
 // @Failure      404  {object}  apierror.Error
 // @Security     BearerAuth
-// @Router       /workflows/{id}/versions/{versionId} [get]
+// @Router       /workflows/{id}/versions/{version_id} [get]
 func (h *WorkflowHandler) GetVersion(w http.ResponseWriter, r *http.Request) {
 	tenantID, workflowID, _, ok := workflowPathIDs(w, r)
 	if !ok {
 		return
 	}
-	versionID, err := shared.IDFromString(chi.URLParam(r, "versionId"))
+	versionID, err := shared.IDFromString(chi.URLParam(r, "version_id"))
 	if err != nil {
 		apierror.BadRequest("Invalid version ID").WriteJSON(w)
 		return
@@ -181,10 +181,9 @@ func (h *WorkflowHandler) Publish(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	if !h.requireWorkflowPermissions(w, r, tenantID, workflowID) {
-		return
-	}
-	res, err := h.service.Publish(r.Context(), automationsvc.PublishInput{TenantID: tenantID, UserID: userID, WorkflowID: workflowID})
+	res, err := h.service.Publish(r.Context(), automationsvc.PublishInput{
+		TenantID: tenantID, UserID: userID, WorkflowID: workflowID, Authorize: h.authorizeDefinition(r),
+	})
 	h.writePublishResult(w, r, tenantID, workflowID, res, err)
 }
 
@@ -231,27 +230,27 @@ type ApproveVersionRequest struct {
 	Digest string `json:"digest" validate:"required,len=64,hexadecimal"`
 }
 
-// ApproveVersion handles POST /api/v1/workflows/{id}/versions/{versionId}/approve.
+// ApproveVersion handles POST /api/v1/workflows/{id}/versions/{version_id}/approve.
 // @Summary      Approve a high-risk automation version
 // @Description  A second person with automations:publish, who re-authenticated recently and did not publish it, approves the version they reviewed (its digest). The version goes live; its publisher is the owner live runs act as. 403 SELF_APPROVAL for the publisher, 409 VERSION_CHANGED when the digest differs or the version no longer waits, 403 STEP_UP_REQUIRED without a recent sign-in.
 // @Tags         Automations
 // @Accept       json
 // @Produce      json
 // @Param        id         path      string                 true  "Automation ID"
-// @Param        versionId  path      string                 true  "Version ID"
+// @Param        version_id path      string                 true  "Version ID"
 // @Param        body       body      ApproveVersionRequest  true  "Reviewed digest"
 // @Success      200  {object}  WorkflowResponse
 // @Failure      403  {object}  apierror.Error
 // @Failure      404  {object}  apierror.Error
 // @Failure      409  {object}  apierror.Error
 // @Security     BearerAuth
-// @Router       /workflows/{id}/versions/{versionId}/approve [post]
+// @Router       /workflows/{id}/versions/{version_id}/approve [post]
 func (h *WorkflowHandler) ApproveVersion(w http.ResponseWriter, r *http.Request) {
 	tenantID, workflowID, userID, ok := workflowPathIDs(w, r)
 	if !ok {
 		return
 	}
-	versionID, err := shared.IDFromString(chi.URLParam(r, "versionId"))
+	versionID, err := shared.IDFromString(chi.URLParam(r, "version_id"))
 	if err != nil {
 		apierror.BadRequest("Invalid version ID").WriteJSON(w)
 		return
@@ -288,44 +287,47 @@ func (h *WorkflowHandler) ApproveVersion(w http.ResponseWriter, r *http.Request)
 	h.writeWorkflowDetail(w, r, tenantID, workflowID, http.StatusOK)
 }
 
-// Rollback handles POST /api/v1/workflows/{id}/versions/{versionId}/rollback:
+// Rollback handles POST /api/v1/workflows/{id}/versions/{version_id}/rollback:
 // the older version's definition is published again as a new version.
 // @Summary      Roll an automation back to a version
 // @Description  Publishes the older version's definition again as a new version.
 // @Tags         Automations
 // @Produce      json
 // @Param        id         path      string  true  "Automation ID"
-// @Param        versionId  path      string  true  "Version ID"
+// @Param        version_id  path      string  true  "Version ID"
 // @Success      200  {object}  WorkflowResponse
 // @Failure      403  {object}  apierror.Error
 // @Failure      404  {object}  apierror.Error
 // @Security     BearerAuth
-// @Router       /workflows/{id}/versions/{versionId}/rollback [post]
+// @Router       /workflows/{id}/versions/{version_id}/rollback [post]
 func (h *WorkflowHandler) Rollback(w http.ResponseWriter, r *http.Request) {
 	tenantID, workflowID, userID, ok := workflowPathIDs(w, r)
 	if !ok {
 		return
 	}
-	versionID, err := shared.IDFromString(chi.URLParam(r, "versionId"))
+	versionID, err := shared.IDFromString(chi.URLParam(r, "version_id"))
 	if err != nil {
 		apierror.BadRequest("Invalid version ID").WriteJSON(w)
 		return
 	}
-	old, err := h.service.GetVersion(r.Context(), tenantID, workflowID, versionID)
-	if err != nil {
-		h.handleServiceError(w, err)
-		return
-	}
-	// The caller needs the permission of every step the old version has.
-	cfgs := make([]*NodeConfigRequest, 0, len(old.Definition.Nodes))
-	for _, n := range old.Definition.Nodes {
-		cfgs = append(cfgs, &NodeConfigRequest{ActionType: string(n.Config.ActionType), NotificationType: string(n.Config.NotificationType)})
-	}
-	if !h.requireActionPermissions(w, r, cfgs...) {
-		return
-	}
-	res, err := h.service.Rollback(r.Context(), automationsvc.PublishInput{TenantID: tenantID, UserID: userID, WorkflowID: workflowID}, versionID)
+	res, err := h.service.Rollback(r.Context(), automationsvc.PublishInput{
+		TenantID: tenantID, UserID: userID, WorkflowID: workflowID, Authorize: h.authorizeDefinition(r),
+	}, versionID)
 	h.writePublishResult(w, r, tenantID, workflowID, res, err)
+}
+
+// authorizeDefinition is the publish permission check: the caller needs the
+// permission of every step of the definition the service is about to store.
+func (h *WorkflowHandler) authorizeDefinition(r *http.Request) func(automation.Definition) error {
+	return func(d automation.Definition) error {
+		perm, ok := authorizeActionConfigs(r.Context(), definitionConfigs(d)...)
+		if ok {
+			return nil
+		}
+		h.logger.Warn("workflow publish permission denied",
+			"user_id", middleware.GetUserID(r.Context()), "required_permission", string(perm))
+		return shared.NewDomainError("FORBIDDEN", "insufficient permission for a workflow action node; '"+string(perm)+"' is required", shared.ErrForbidden)
+	}
 }
 
 // SetWorkflowModeRequest is the body of PUT /workflows/{id}/mode.

@@ -75,9 +75,10 @@ func receiptSource(agt *sensor.Sensor, binding Binding, opts Options, report *ct
 	return ingestreceipt.Source{Kind: ingestreceipt.SourceSensor, Ref: ingestreceipt.ReportRef(sensorID, reportID)}
 }
 
-// recordReceipt adds what this ingest did to its receipt. Best-effort: the
-// findings are already stored, so a failure is logged and counted, and the
-// ingest stands.
+// recordReceipt adds what this ingest did to its receipt. The findings are
+// already stored, so a failure is logged, counted and flagged on the output
+// (ReceiptFailed): the ingest stands, but a command-bound segment is retried
+// (IngestV2Segment), because its receipt decides what the run did not report.
 func (s *Service) recordReceipt(ctx context.Context, agt *sensor.Sensor, tenantID shared.ID, binding Binding,
 	opts Options, report *ctis.Report, output *Output) {
 	if s.receipts == nil || output == nil {
@@ -94,6 +95,8 @@ func (s *Service) recordReceipt(ctx context.Context, agt *sensor.Sensor, tenantI
 		Created:       output.CreatedIDs,
 		Reopened:      output.ReopenedIDs,
 		StillDetected: output.SightedFingerprints,
+		Decided:       output.Decided,
+		Items:         output.Items,
 		At:            time.Now(),
 	}
 	if report != nil {
@@ -116,6 +119,7 @@ func (s *Service) recordReceipt(ctx context.Context, agt *sensor.Sensor, tenantI
 	}
 	id, err := s.receipts.Record(ctx, d)
 	if err != nil {
+		output.ReceiptFailed = true
 		metrics.IngestReceiptWriteFailures.WithLabelValues("ingest").Inc()
 		s.logger.Warn("ingest receipt not recorded", "tenant_id", tenantID.String(),
 			"source_kind", string(d.Source.Kind), "error", logger.SanitizeError(err))

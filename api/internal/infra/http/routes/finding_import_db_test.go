@@ -15,13 +15,20 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/go-chi/chi/v5"
+
 	"github.com/openctemio/openctem/api/internal/testdb"
 
+	"github.com/openctemio/openctem/api/internal/app/datascope"
 	"github.com/openctemio/openctem/api/internal/app/findingimport"
 	"github.com/openctemio/openctem/api/internal/app/ingest"
+	"github.com/openctemio/openctem/api/internal/app/ingestqueue"
+	"github.com/openctemio/openctem/api/internal/infra/controller"
 	"github.com/openctemio/openctem/api/internal/infra/http/handler"
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
 	"github.com/openctemio/openctem/api/internal/infra/postgres"
+	"github.com/openctemio/openctem/api/pkg/domain/ingestjob"
+	"github.com/openctemio/openctem/api/pkg/domain/ingestpayload"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/logger"
 )
@@ -51,7 +58,51 @@ func ctisImporterFixtures(t *testing.T) []string {
 
 type importHarness struct {
 	*v2Harness
-	h *handler.FindingImportHandler
+	h   *handler.FindingImportHandler
+	svc *findingimport.Service
+	// Committed uploads are applied by the ingest worker; the harness
+	// drains the queue itself and reads the result as a client does.
+	queue    *ingestqueue.Queue
+	jp       *ingest.JobProcessor
+	worker   *controller.IngestWorkerController
+	receipts *handler.IngestReceiptHandler
+	userID   string
+}
+
+// wire gives svc the harness's queue (resolve decides the uploader's scope
+// in the worker; nil is unrestricted) and makes it the worker's importer.
+func (ih *importHarness) wire(svc *findingimport.Service, resolve findingimport.ScopeResolver) {
+	if resolve == nil {
+		resolve = func(context.Context, shared.ID, findingimport.Caller) (ingest.ActorScope, ingest.ActorScope, error) {
+			return nil, nil, nil
+		}
+	}
+	svc.SetQueue(ih.queue, resolve, nil)
+	ih.jp.SetKind(ingestjob.KindFindingImport, ingest.KindFuncs{ProcessFn: svc.ProcessImportJob, DeadLetterFn: svc.DeadLetter})
+	ih.receipts.SetImportResults(svc)
+}
+
+// finish applies a stored upload and reads its result (202 stays the code).
+func (ih *importHarness) finish(t *testing.T, rec *httptest.ResponseRecorder, resp handler.FindingImportResponse) handler.FindingImportResponse {
+	t.Helper()
+	if rec.Code != http.StatusAccepted {
+		return resp
+	}
+	if _, err := ih.worker.Reconcile(context.Background()); err != nil {
+		t.Fatalf("drain: %v", err)
+	}
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/findings/imports/"+resp.ReceiptID+"/result", nil)
+	rctx := chi.NewRouteContext()
+	rctx.URLParams.Add("id", resp.ReceiptID)
+	ctx := context.WithValue(req.Context(), chi.RouteCtxKey, rctx)
+	ctx = context.WithValue(ctx, middleware.TenantIDKey, ih.tenantID)
+	w := httptest.NewRecorder()
+	ih.receipts.Result(w, req.WithContext(ctx))
+	var out handler.FindingImportResponse
+	if err := json.Unmarshal(w.Body.Bytes(), &out); err != nil || w.Code != http.StatusOK {
+		t.Fatalf("import result: %d %s", w.Code, w.Body.String())
+	}
+	return out
 }
 
 func newImportHarness(t *testing.T, mode ingest.VEXMode) *importHarness {
@@ -72,7 +123,33 @@ func newImportHarness(t *testing.T, mode ingest.VEXMode) *importHarness {
 	svc := findingimport.NewService(v2.ingest, postgres.NewFindingRepository(pdb), receipts, mode, logger.NewNop())
 	h := handler.NewFindingImportHandler(svc, nil, nil, logger.NewNop())
 	h.SetActorResolver(func(context.Context, shared.ID) (ingest.ActorScope, error) { return nil, nil })
-	return &importHarness{v2Harness: v2, h: h}
+	h.SetReceiptStores(receipts, postgres.NewIdempotencyKeyRepository(pdb))
+	sealer, err := ingestpayload.NewSealer(bytes.Repeat([]byte{9}, 32))
+	if err != nil {
+		t.Fatal(err)
+	}
+	jobs := postgres.NewIngestJobRepository(pdb)
+	ih := &importHarness{v2Harness: v2, h: h, svc: svc,
+		queue:  ingestqueue.New(jobs, postgres.NewIngestPayloadRepository(pdb), sealer),
+		jp:     ingest.NewJobProcessor(v2.ingest),
+		userID: shared.NewID().String(),
+	}
+	// The result read resolves its viewer: the harness reads as an owner.
+	ih.receipts = handler.NewIngestReceiptHandler(receipts, datascope.New(postgres.NewDataScopeRepository(pdb),
+		func(context.Context) datascope.Caller { return datascope.Caller{UserID: ih.userID, IsOwner: true} }, logger.NewNop()),
+		logger.NewNop())
+	ih.worker = controller.NewIngestWorkerController(jobs, ih.jp, &controller.IngestWorkerControllerConfig{MaxPerTick: 100})
+	if _, err := v2.db.ExecContext(context.Background(), `INSERT INTO users (id, email, name) VALUES ($1, $2, 'importer')`,
+		ih.userID, ih.userID+"@import.test"); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		_, _ = v2.db.ExecContext(context.Background(), `DELETE FROM ingest_jobs WHERE tenant_id = $1`, v2.tenantID)
+		_, _ = v2.db.ExecContext(context.Background(), `DELETE FROM ingest_payloads WHERE tenant_id = $1`, v2.tenantID)
+		_, _ = v2.db.ExecContext(context.Background(), `DELETE FROM users WHERE id = $1`, ih.userID)
+	})
+	ih.wire(svc, nil)
+	return ih
 }
 
 func (ih *importHarness) upload(t *testing.T, tenant, query, name string, data []byte, admin bool) (*httptest.ResponseRecorder, handler.FindingImportResponse) {
@@ -84,7 +161,11 @@ func (ih *importHarness) upload(t *testing.T, tenant, query, name string, data [
 	_ = mw.Close()
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/findings/imports"+query, &buf)
 	req.Header.Set("Content-Type", mw.FormDataContentType())
+	// Each call is its own upload: a key keeps two uploads of the same
+	// file (the tests repeat fixtures) from being one by their digest.
+	req.Header.Set("Idempotency-Key", shared.NewID().String())
 	ctx := context.WithValue(req.Context(), middleware.TenantIDKey, tenant)
+	ctx = context.WithValue(ctx, middleware.UserIDKey, ih.userID)
 	if admin {
 		ctx = context.WithValue(ctx, middleware.IsAdminKey, true)
 	}
@@ -92,7 +173,7 @@ func (ih *importHarness) upload(t *testing.T, tenant, query, name string, data [
 	ih.h.Import(rec, req.WithContext(ctx))
 	var resp handler.FindingImportResponse
 	_ = json.Unmarshal(rec.Body.Bytes(), &resp)
-	return rec, resp
+	return rec, ih.finish(t, rec, resp)
 }
 
 func (ih *importHarness) count(t *testing.T, q string, args ...any) int {
@@ -117,15 +198,20 @@ func TestFindingImport_RealFixtures_DB(t *testing.T) {
 				t.Fatal(err)
 			}
 			before := ih.count(t, `SELECT count(*) FROM findings WHERE tenant_id = $1`, ih.tenantID)
-			rec, resp := ih.upload(t, ih.tenantID, "?dry_run=true", filepath.Base(p), data, true)
+			// A CSV has no signature to detect: its format is named.
+			format := ""
+			if strings.HasSuffix(p, ".csv") {
+				format = "&format=" + filepath.Base(filepath.Dir(p))
+			}
+			rec, resp := ih.upload(t, ih.tenantID, "?dry_run=true"+format, filepath.Base(p), data, true)
 			if rec.Code != http.StatusOK || len(resp.Files) != 1 || resp.Files[0].Error != nil {
 				t.Fatalf("preview %d: %s", rec.Code, rec.Body.String())
 			}
 			if n := ih.count(t, `SELECT count(*) FROM findings WHERE tenant_id = $1`, ih.tenantID); n != before {
 				t.Fatalf("a preview wrote %d findings", n-before)
 			}
-			rec, resp = ih.upload(t, ih.tenantID, "", filepath.Base(p), data, true)
-			if rec.Code != http.StatusCreated || resp.Files[0].Error != nil {
+			rec, resp = ih.upload(t, ih.tenantID, strings.Replace(format, "&", "?", 1), filepath.Base(p), data, true)
+			if rec.Code != http.StatusAccepted || resp.Files[0].Error != nil {
 				t.Fatalf("import %d: %s", rec.Code, rec.Body.String())
 			}
 			f := resp.Files[0]
@@ -210,7 +296,7 @@ func TestFindingImport_VEXDocument_DB(t *testing.T) {
 
 	// Without findings:approve (not admin, no permission): stored, not closed.
 	rec, resp = ih.upload(t, ih.tenantID, "", "image.vex.json", doc, false)
-	if rec.Code != http.StatusCreated || resp.Files[0].VEX.Requested != 0 || resp.Files[0].VEX.Stored != 1 {
+	if rec.Code != http.StatusAccepted || resp.Files[0].VEX.Requested != 0 || resp.Files[0].VEX.Stored != 1 {
 		t.Fatalf("no-approve import: %s", rec.Body.String())
 	}
 	if s, v := status(web); s != "new" || v != "not_affected" {
@@ -218,7 +304,7 @@ func TestFindingImport_VEXDocument_DB(t *testing.T) {
 	}
 
 	rec, resp = ih.upload(t, ih.tenantID, "", "image.vex.json", doc, true)
-	if rec.Code != http.StatusCreated || resp.Files[0].VEX.Requested != 1 {
+	if rec.Code != http.StatusAccepted || resp.Files[0].VEX.Requested != 1 {
 		t.Fatalf("import: %s", rec.Body.String())
 	}
 	// Four-eyes: the upload requests a false positive; it does not set one.
@@ -261,7 +347,7 @@ func TestFindingImport_QualysPairInArchive_DB(t *testing.T) {
 	}
 	_ = zw.Close()
 	rec, resp := ih.upload(t, ih.tenantID, "", "qualys.zip", zbuf.Bytes(), true)
-	if rec.Code != http.StatusCreated || len(resp.Files) != 1 || resp.Files[0].Error != nil || resp.Files[0].Format != "qualys" {
+	if rec.Code != http.StatusAccepted || len(resp.Files) != 1 || resp.Files[0].Error != nil || resp.Files[0].Format != "qualys" {
 		t.Fatalf("%d: %s", rec.Code, rec.Body.String())
 	}
 	if resp.Files[0].Ingest == nil || resp.Files[0].Ingest.FindingsCreated == 0 {
@@ -307,12 +393,12 @@ func TestFindingImport_RecordsTheProducer_DB(t *testing.T) {
 		c = context.WithValue(c, middleware.IsAdminKey, true)
 		rec := httptest.NewRecorder()
 		ih.h.Import(rec, req.WithContext(c))
-		if want := map[bool]int{true: http.StatusOK, false: http.StatusCreated}[strings.Contains(query, "dry_run")]; rec.Code != want {
+		if want := map[bool]int{true: http.StatusOK, false: http.StatusAccepted}[strings.Contains(query, "dry_run")]; rec.Code != want {
 			t.Fatalf("%d: %s", rec.Code, rec.Body.String())
 		}
 		var resp handler.FindingImportResponse
 		_ = json.Unmarshal(rec.Body.Bytes(), &resp)
-		return resp
+		return ih.finish(t, rec, resp)
 	}
 
 	if resp := uploadAs("?dry_run=true"); resp.Files[0].ImportID != "" {

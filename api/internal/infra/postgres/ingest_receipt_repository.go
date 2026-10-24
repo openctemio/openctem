@@ -151,7 +151,7 @@ func recordCoverageDecision(ctx context.Context, tx *sql.Tx, d *ingestreceipt.De
 
 // resolveReceiptSource returns the receipt key of a source: a command in a
 // scan run counts toward the run's receipt.
-func resolveReceiptSource(ctx context.Context, tx *sql.Tx, tenantID shared.ID, s ingestreceipt.Source) (ingestreceipt.SourceKind, string, error) {
+func resolveReceiptSource(ctx context.Context, tx rowQuerier, tenantID shared.ID, s ingestreceipt.Source) (ingestreceipt.SourceKind, string, error) {
 	if s.CommandID == nil {
 		if !s.Kind.IsValid() || s.Ref == "" || len(s.Ref) > 128 {
 			return "", "", fmt.Errorf("%w: invalid receipt source", shared.ErrValidation)
@@ -179,6 +179,7 @@ func resolveReceiptSource(ctx context.Context, tx *sql.Tx, tenantID shared.ID, s
 // appliedActions are the counts the action rows of one delta added.
 type appliedActions struct {
 	created, reopened, closed, still int
+	decided, items                   int
 	rows                             int
 	truncated                        bool
 }
@@ -223,6 +224,11 @@ func insertReceiptActions(ctx context.Context, tx *sql.Tx, d *ingestreceipt.Delt
 		return n, nil
 	}
 	var err error
+	// Policy-decided new findings first: their row (with the policy) wins
+	// over the created row the same finding also has.
+	if out.decided, err = insertDecided(ctx, tx, d, receiptID, at, &remaining, &out); err != nil {
+		return out, err
+	}
 	if out.created, err = insert(ingestreceipt.ActionCreated, len(uniqueIDs(d.Created)), "f.id = ANY($5::uuid[])", idArray(d.Created)); err != nil {
 		return out, err
 	}
@@ -236,7 +242,118 @@ func insertReceiptActions(ctx context.Context, tx *sql.Tx, d *ingestreceipt.Delt
 	if out.still, err = insert(ingestreceipt.ActionStillDetected, len(fps), "f.fingerprint = ANY($5::text[])", pq.Array(fps)); err != nil {
 		return out, err
 	}
+	if out.items, err = insertItems(ctx, tx, d, receiptID, at, &remaining, &out); err != nil {
+		return out, err
+	}
 	return out, nil
+}
+
+// insertDecided writes the action rows of new findings a policy decided,
+// with the policy kind, rule and version, within the receipt's row cap.
+func insertDecided(ctx context.Context, tx *sql.Tx, d *ingestreceipt.Delta, receiptID shared.ID, at time.Time,
+	remaining *int, out *appliedActions) (int, error) {
+	if len(d.Decided) == 0 {
+		return 0, nil
+	}
+	rows := d.Decided
+	if len(rows) > max(*remaining, 0) {
+		rows, out.truncated = rows[:max(*remaining, 0)], true
+	}
+	n := 0
+	if len(rows) > 0 {
+		ids := make([]string, len(rows))
+		actions := make([]string, len(rows))
+		policies := make([]string, len(rows))
+		policyIDs := make([]sql.NullString, len(rows))
+		versions := make([]int64, len(rows))
+		for i, a := range rows {
+			ids[i], actions[i], policies[i], versions[i] = a.FindingID.String(), string(a.Action), a.Policy, a.PolicyVersion
+			if a.PolicyID != nil {
+				policyIDs[i] = sql.NullString{String: a.PolicyID.String(), Valid: true}
+			}
+		}
+		err := tx.QueryRowContext(ctx, `
+			WITH v AS (
+				SELECT * FROM unnest($3::uuid[], $4::text[], $5::text[], $6::uuid[], $7::bigint[])
+					AS t(finding_id, action, policy, policy_id, policy_version)
+			), ins AS (
+				INSERT INTO finding_ingest_actions (tenant_id, receipt_id, finding_id, action, created_at, policy, policy_id, policy_version)
+				SELECT f.tenant_id, $2, f.id, v.action, $8, NULLIF(v.policy, ''), v.policy_id, NULLIF(v.policy_version, 0)
+				FROM v JOIN findings f ON f.tenant_id = $1 AND f.id = v.finding_id
+				ON CONFLICT (receipt_id, finding_id) DO NOTHING
+				RETURNING 1
+			)
+			SELECT count(*) FROM ins`,
+			d.TenantID.String(), receiptID.String(), pq.Array(ids), pq.Array(actions), pq.Array(policies),
+			pq.Array(policyIDs), pq.Array(versions), at).Scan(&n)
+		if err != nil {
+			return 0, fmt.Errorf("record decided actions: %w", err)
+		}
+	}
+	*remaining -= n
+	out.rows += n
+	return n + len(d.Decided) - len(rows), nil
+}
+
+// maxItemTitle bounds the title kept for an item.
+const maxItemTitle = 200
+
+// insertItems writes the items the delta did not turn into findings
+// (filtered, out of scope, rejected, quarantined), within the row cap.
+// Only an identity key, the asset, tool, a cut title and the severity are
+// kept: no evidence.
+func insertItems(ctx context.Context, tx *sql.Tx, d *ingestreceipt.Delta, receiptID shared.ID, at time.Time,
+	remaining *int, out *appliedActions) (int, error) {
+	if len(d.Items) == 0 {
+		return 0, nil
+	}
+	rows := d.Items
+	if len(rows) > max(*remaining, 0) {
+		rows, out.truncated = rows[:max(*remaining, 0)], true
+	}
+	n := 0
+	if len(rows) > 0 {
+		var (
+			keys, disps, reasons, tools, titles, sevs, policies = make([]string, len(rows)), make([]string, len(rows)),
+				make([]string, len(rows)), make([]string, len(rows)), make([]string, len(rows)), make([]string, len(rows)), make([]string, len(rows))
+			assets, policyIDs = make([]sql.NullString, len(rows)), make([]sql.NullString, len(rows))
+			versions          = make([]int64, len(rows))
+		)
+		for i, it := range rows {
+			if !it.Disposition.IsValid() || it.Key == "" {
+				return 0, fmt.Errorf("%w: receipt item needs a key and a disposition", shared.ErrValidation)
+			}
+			keys[i], disps[i], reasons[i] = it.Key, string(it.Disposition), clip(it.ReasonCode, 32)
+			tools[i], titles[i], sevs[i], policies[i] = clip(it.Tool, 100), clip(it.Title, maxItemTitle), clip(it.Severity, 16), clip(it.Policy, 32)
+			versions[i] = it.PolicyVersion
+			if it.AssetID != nil {
+				assets[i] = sql.NullString{String: it.AssetID.String(), Valid: true}
+			}
+			if it.PolicyID != nil {
+				policyIDs[i] = sql.NullString{String: it.PolicyID.String(), Valid: true}
+			}
+		}
+		err := tx.QueryRowContext(ctx, `
+			WITH ins AS (
+				INSERT INTO ingest_receipt_items (tenant_id, receipt_id, item_key, disposition, reason_code, asset_id,
+					tool_name, title, severity, policy, policy_id, policy_version, created_at)
+				SELECT $1, $2, v.k, v.d, v.r, v.a, NULLIF(v.t, ''), NULLIF(v.ti, ''), NULLIF(v.s, ''), NULLIF(v.p, ''), v.pid,
+					NULLIF(v.ver, 0), $13
+				FROM unnest($3::text[], $4::text[], $5::text[], $6::uuid[], $7::text[], $8::text[], $9::text[], $10::text[],
+					$11::uuid[], $12::bigint[]) AS v(k, d, r, a, t, ti, s, p, pid, ver)
+				ON CONFLICT (receipt_id, item_key) DO NOTHING
+				RETURNING 1
+			)
+			SELECT count(*) FROM ins`,
+			d.TenantID.String(), receiptID.String(), pq.Array(keys), pq.Array(disps), pq.Array(reasons), pq.Array(assets),
+			pq.Array(tools), pq.Array(titles), pq.Array(sevs), pq.Array(policies), pq.Array(policyIDs), pq.Array(versions), at).Scan(&n)
+		if err != nil {
+			return 0, fmt.Errorf("record receipt items: %w", err)
+		}
+	}
+	*remaining -= n
+	out.rows += n
+	return n + len(d.Items) - len(rows), nil
 }
 
 // upsertIngestFact adds the delta to the day's dash_ingest_day row.
@@ -289,12 +406,27 @@ func (r *IngestReceiptRepository) CreateUpload(ctx context.Context, u *ingestrec
 	if u.ActorUserID != nil {
 		actor = u.ActorUserID.String()
 	}
+	status := u.Status
+	if status == "" {
+		status = ingestreceipt.StatusProcessing
+	}
 	_, err := r.db.ExecContext(ctx, `
 		INSERT INTO ingest_receipts (id, tenant_id, actor_user_id, source_kind, source_ref, format, filename_sha256, status)
-		VALUES ($1, $2, $3, 'upload', $6, NULLIF($4, ''), NULLIF($5, ''), 'processing')`,
-		u.ID.String(), u.TenantID.String(), actor, u.Format, u.FilenameSHA256, u.ID.String())
+		VALUES ($1, $2, $3, 'upload', $6, NULLIF($4, ''), NULLIF($5, ''), $7)`,
+		u.ID.String(), u.TenantID.String(), actor, u.Format, u.FilenameSHA256, u.ID.String(), status)
 	if err != nil {
 		return fmt.Errorf("create upload receipt: %w", err)
+	}
+	return nil
+}
+
+// MarkUploadProcessing moves a queued upload receipt to processing (the
+// ingest worker picked it up).
+func (r *IngestReceiptRepository) MarkUploadProcessing(ctx context.Context, tenantID, id shared.ID) error {
+	if _, err := r.db.ExecContext(ctx, `UPDATE ingest_receipts SET status = 'processing', updated_at = now()
+		WHERE tenant_id = $1 AND id = $2 AND source_kind = 'upload' AND status = 'queued'`,
+		tenantID.String(), id.String()); err != nil {
+		return fmt.Errorf("mark upload receipt processing: %w", err)
 	}
 	return nil
 }
@@ -415,7 +547,16 @@ func (r *IngestReceiptRepository) PurgeActionsForPlatform(ctx context.Context, b
 	if err != nil {
 		return 0, fmt.Errorf("purge receipt actions: %w", err)
 	}
-	return res.RowsAffected()
+	n, _ := res.RowsAffected()
+	// The items a receipt did not turn into findings follow the same rule.
+	res, err = r.db.ExecContext(ctx, `
+		DELETE FROM ingest_receipt_items
+		WHERE ctid IN (SELECT ctid FROM ingest_receipt_items WHERE created_at < $1 LIMIT $2)`, before, limit)
+	if err != nil {
+		return n, fmt.Errorf("purge receipt items: %w", err)
+	}
+	m, _ := res.RowsAffected()
+	return n + m, nil
 }
 
 // PurgeRunReceiptsForPlatform deletes up to limit receipts of runs (never uploads: an

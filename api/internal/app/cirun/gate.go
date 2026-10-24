@@ -28,6 +28,10 @@ type EvaluateInput struct {
 	Capabilities []cirun.CapabilityState
 	ClientIP     string
 	UserAgent    string
+
+	// uploadsNotApplied counts the run's uploads that failed for good
+	// (read from the ingest queue, never from the job).
+	uploadsNotApplied int
 }
 
 // Verdict is a gate verdict with its links.
@@ -101,6 +105,14 @@ func (s *Service) Evaluate(ctx context.Context, run *cirun.Run, in EvaluateInput
 			repoFile = "ignored"
 		}
 	}
+	// The run's uploads are applied by the ingest worker: wait (bounded) for
+	// them, so the verdict is never computed over part of the results. One
+	// that failed for good fails the run.
+	dead, err := s.waitForUploads(ctx, run)
+	if err != nil {
+		return nil, err
+	}
+	in.uploadsNotApplied = dead
 	// A report recorded while the verdict is computed would not be in it:
 	// SaveVerdict then refuses (ErrRunChanged) and the run is judged again
 	// with what it has now.
@@ -172,6 +184,7 @@ func (s *Service) judge(ctx context.Context, run *cirun.Run, in EvaluateInput, p
 		Policy:    policy, PolicySource: source, Findings: findings, NewFingerprints: cmp.newSet,
 		BaselineBranch: cmp.branch, BaselineKnown: cmp.known, BaselineSetAt: cmp.baselineAt, BaselineEstablished: cmp.established, BaselineDueAt: cmp.dueAt, ScanFailures: in.ScanFailures,
 		FailedCapabilities:  failedCaps,
+		UploadsNotApplied:   in.uploadsNotApplied,
 		FindingsOverCap:     overCap,
 		MissingCapabilities: missing,
 		DefaultBranch:       run.IsDefaultBranch,
@@ -188,6 +201,10 @@ func (s *Service) judge(ctx context.Context, run *cirun.Run, in EvaluateInput, p
 	if err := s.repo.SaveVerdict(ctx, run.TenantID, run.ID, gv.Verdict, detail, now, run.FindingsCount, capabilityNames(failedCaps)); err != nil {
 		if errors.Is(err, cirun.ErrRunChanged) {
 			return nil, err
+		}
+		if errors.Is(err, cirun.ErrRunUploadsPending) {
+			// An upload was accepted after the wait: judge once it is applied.
+			return nil, ErrUploadsPending
 		}
 		if errors.Is(err, cirun.ErrRunEvaluated) {
 			// Another job of the run was judged first.

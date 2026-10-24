@@ -46,6 +46,7 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          persist-credentials: false
           fetch-depth: 0
 
       # The denylist secrets are required on the main repository and fail
@@ -181,6 +182,7 @@ jobs:
       - name: actionlint
         # Release tarball pinned by SHA-256 (no curl | bash of a mutable script).
         env:
+          # tool-pin: rhysd/actionlint
           ACTIONLINT_VERSION: 1.7.7
           ACTIONLINT_SHA256: 023070a287cd8cccd71515fedc843f1985bf96c436b7effaecce67290e7e0757
         run: |
@@ -189,6 +191,21 @@ jobs:
           echo "${ACTIONLINT_SHA256}  actionlint.tgz" | sha256sum -c -
           tar -xzf actionlint.tgz actionlint
           ./actionlint -color
+      # Workflow security audit (template injection, unsafe triggers, credential
+      # persistence, unpinned or archived actions, over-broad permissions).
+      # Configuration and every suppression with its reason: .github/zizmor.yml.
+      - name: zizmor
+        env:
+          # tool-pin: zizmorcore/zizmor
+          ZIZMOR_VERSION: 1.31.1
+          ZIZMOR_SHA256: d185f726bdaf92df78273217dfdd24ebcd6b0ef48cf3ce776ff5762b6e138c99
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          curl -sSfL --retry 5 --retry-all-errors --retry-delay 5 -o zizmor.tgz \
+            "https://github.com/zizmorcore/zizmor/releases/download/v${ZIZMOR_VERSION}/zizmor-x86_64-unknown-linux-gnu.tar.gz"
+          echo "${ZIZMOR_SHA256}  zizmor.tgz" | sha256sum -c -
+          tar -xzf zizmor.tgz zizmor
+          ./zizmor --no-progress --format github .github
       - name: Actions are pinned to commit SHAs
         run: bash .github/scripts/check-action-pins.sh
       # Which jobs a change runs (api/web/docs routing shared by every workflow).
@@ -197,6 +214,9 @@ jobs:
       # Which base images the CI image mirror copies for the other repositories.
       - name: CI image mirror base list self-test
         run: bash .github/scripts/ci-image-bases.test.sh
+      # Which release the upgrade test starts from, and its refusals.
+      - name: Upgrade test self-test
+        run: bash .github/scripts/upgrade-test.test.sh
       # The CodeQL gate: new medium-or-higher alerts fail `CodeQL OK`.
       - name: CodeQL new-alert gate self-test
         run: bash .github/scripts/codeql-new-alerts.test.sh
@@ -215,6 +235,9 @@ jobs:
 
       - name: Platform depends on contracts only (no sensor module or SDK in api/ or web/)
         run: bash .github/scripts/check-platform-deps.sh
+
+      - name: Tool pin freshness self-test
+        run: bash .github/scripts/tool-pins.test.sh
 
   # New or upgraded dependencies a pull request brings in (Go modules, npm,
   # GitHub Actions) are checked against the GitHub Advisory Database. Fails on a

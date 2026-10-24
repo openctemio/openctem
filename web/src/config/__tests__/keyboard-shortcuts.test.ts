@@ -30,10 +30,6 @@ const HANDLERS: Record<string, [string, RegExp]> = {
     'features/findings/components/finding-detail-drawer.tsx',
     /\(e\.metaKey \|\| e\.ctrlKey\) && e\.key === 'Enter'/,
   ],
-  'toggle-comment': [
-    'features/findings/components/finding-detail-drawer.tsx',
-    /\(e\.metaKey \|\| e\.ctrlKey\) && e\.key === 'c' && !e\.shiftKey/,
-  ],
   'open-activity': [
     'features/activity/components/activity-trigger.tsx',
     /e\.key !== 'c' && e\.key !== 'C'[\s\S]*e\.metaKey \|\| e\.ctrlKey \|\| e\.altKey/,
@@ -45,6 +41,10 @@ const HANDLERS: Record<string, [string, RegExp]> = {
   'previous-finding': [
     'features/findings/hooks/use-drawer-navigation.ts',
     /e\.key !== 'j' && e\.key !== 'k'/,
+  ],
+  triage: [
+    'app/(dashboard)/findings/page.tsx',
+    /e\.key !== 't' \|\| e\.metaKey \|\| e\.ctrlKey \|\| e\.altKey/,
   ],
   'add-filter': [
     'features/findings/filters/add-filter-popover.tsx',

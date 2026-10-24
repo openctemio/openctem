@@ -202,6 +202,10 @@ func (m *mockEventRepo) GetByID(_ context.Context, _ outbox.ID) (*outbox.Event, 
 	return m.getByIDResult, m.getByIDErr
 }
 
+func (m *mockEventRepo) GetByTenantAndID(_ context.Context, _ shared.ID, _ outbox.ID) (*outbox.Event, error) {
+	return nil, outbox.ErrEventNotFound
+}
+
 func (m *mockEventRepo) Delete(_ context.Context, _ outbox.ID) error {
 	return m.deleteErr
 }

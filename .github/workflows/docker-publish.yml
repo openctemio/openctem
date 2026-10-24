@@ -118,6 +118,8 @@ jobs:
     runs-on: ${{ matrix.platform.runner }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       # openctem-web compiles against the generated contract files, which are
       # not committed. No cache: a release is built from this tag's sources only.
       - name: Generate the contract files
@@ -319,6 +321,8 @@ jobs:
         ports: ["6379:6379"]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
       - uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
         with:
@@ -453,6 +457,7 @@ jobs:
       - name: Sign the manifest list by digest
         env:
           REF: ${{ env.REGISTRY }}/${{ matrix.name }}:${{ needs.prepare.outputs.version }}
+          SBOM_FILE: sbom-${{ matrix.name }}-${{ needs.prepare.outputs.version }}.spdx.json
         run: |
           digest=$(crane digest "$REF")
           cosign sign --yes "${REF%:*}@${digest}"
@@ -473,16 +478,18 @@ jobs:
       - name: SBOM (SPDX JSON)
         env:
           REF: ${{ env.REGISTRY }}/${{ matrix.name }}:${{ needs.prepare.outputs.version }}
-        run: syft "$REF" -o spdx-json="sbom-${{ matrix.name }}-${{ needs.prepare.outputs.version }}.spdx.json"
+          SBOM_FILE: sbom-${{ matrix.name }}-${{ needs.prepare.outputs.version }}.spdx.json
+        run: syft "$REF" -o spdx-json="$SBOM_FILE"
       # The SBOM as a signed attestation on the image digest, so it can be
       # verified (cosign verify-attestation --type spdxjson) and not only downloaded.
       - name: Attest the SBOM
         env:
           REF: ${{ env.REGISTRY }}/${{ matrix.name }}:${{ needs.prepare.outputs.version }}
+          SBOM_FILE: sbom-${{ matrix.name }}-${{ needs.prepare.outputs.version }}.spdx.json
         run: |
           digest=$(crane digest "$REF")
           cosign attest --yes --type spdxjson \
-            --predicate "sbom-${{ matrix.name }}-${{ needs.prepare.outputs.version }}.spdx.json" "${REF%:*}@${digest}"
+            --predicate "$SBOM_FILE" "${REF%:*}@${digest}"
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         if: github.event_name == 'push'
         with:
@@ -494,8 +501,8 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          for _ in $(seq 1 30); do gh release view "${{ github.ref_name }}" -R "$GITHUB_REPOSITORY" >/dev/null 2>&1 && break; sleep 10; done
-          bash src/.github/scripts/release/gh-retry.sh release upload "${{ github.ref_name }}" -R "$GITHUB_REPOSITORY" --clobber sbom-*.spdx.json
+          for _ in $(seq 1 30); do gh release view "$GITHUB_REF_NAME" -R "$GITHUB_REPOSITORY" >/dev/null 2>&1 && break; sleep 10; done
+          bash src/.github/scripts/release/gh-retry.sh release upload "$GITHUB_REF_NAME" -R "$GITHUB_REPOSITORY" --clobber sbom-*.spdx.json
 
   mirror-to-dockerhub:
     name: Mirror ${{ matrix.image.name }} to Docker Hub

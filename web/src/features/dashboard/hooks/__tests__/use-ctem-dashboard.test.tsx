@@ -30,6 +30,13 @@ function wrapper({ children }: { children: ReactNode }) {
 describe('use-ctem-dashboard wiring', () => {
   beforeEach(() => mockGet.mockClear())
 
+  it('sends the selected period to the executive summary', async () => {
+    renderHook(() => useExecutiveSummary('t1', 365), { wrapper })
+    await waitFor(() =>
+      expect(mockGet).toHaveBeenCalledWith('/api/v1/dashboard/executive-summary?days=365')
+    )
+  })
+
   it('fetches risk-trend with the days window when tenant is present', async () => {
     renderHook(() => useRiskTrend('t1', 90), { wrapper })
     await waitFor(() =>

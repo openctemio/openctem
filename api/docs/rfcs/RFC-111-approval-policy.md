@@ -26,7 +26,8 @@ read on the server:
 The platform sets **floors**. The organization's policy can only **add** constraints above them; the
 platform default sits above the floor in one place (a critical acceptance needs two approvers) and an
 organization may relax that default down to the floor, 24 hours after the change. Four-eyes on an
-accepted risk is a floor: it can never be turned off. Every path (the finding drawer, `PATCH /status`,
+accepted risk is a floor for the policy table; since 2026-10-23 the organization's risk acceptance
+approval level (§15) is the one switch that can lower it for a person's own request. Every path (the finding drawer, `PATCH /status`,
 bulk status, the approvals inbox, a Jira status, a VEX statement, AI triage, a suppression rule, a task
 exception) goes through the same evaluator.
 
@@ -67,7 +68,9 @@ most needs more than accepting it elsewhere.
 | `dual` | two other people, distinct, at least one from the security pool | recent re-authentication, each |
 
 The **sole member** of an organization (exactly one active person) keeps the existing own-approval path
-(fresh authenticator code, reason, alerts), for false positives only: an accepted risk is always four-eyes and waits for a second member. It is the only way a person approves
+(fresh authenticator code, reason, alerts), for false positives, and for accepted risks only when the
+organization's risk acceptance level is `high_and_above` or `off` (§15; under `all` an accepted risk waits
+for a second member). It is the only way a person approves
 their own request, and it is not a tier: it is refused while a second active person exists, whether or not
 that person holds the approve permission (taking the permission from the others does not open it). This holds
 for suppression rules too. A rule that matches more open findings than the approval cap is refused as too
@@ -91,6 +94,8 @@ with the finding kinds (§7).
   (owner decision, 2026-10-15). The level is part of the policy: `all` gives `peer`, `high_and_above`
   gives `single` for a non-material finding, `off` gives `single`. A tier set for a false-positive class
   raises that further.
+- The accepted-risk floors bind the policy table; the organization's risk acceptance level (§15) gives
+  `single` to a person's own request on one finding the same way the false-positive level does.
 - A rule or a task exception decides many findings, including future ones for a rule: never `single`.
 - `single` is never available to a requester who owns the finding's asset (§4).
 
@@ -171,7 +176,7 @@ threshold), `exploit_validated`, `exposure_raised` (the asset became internet-ex
 
 | Decision | Floor | Organization option |
 |---|---|---|
-| accepted risk | **ends** when the tier computed now is above the decided tier, or the cap now ends before the decided end; any other signal raises a review flag (`material_change_accepted`) | `end_on_any_change`: any signal ends it |
+| accepted risk | **ends** when the tier computed now (under the risk acceptance level in force, §15) is above the decided tier, or the cap now ends before the decided end; any other signal raises a review flag (`material_change_accepted`) | `end_on_any_change`: any signal ends it |
 | false positive decided by one person (`single_person` or the sole member's) | review flag (`material_change_single_person`) | `revoke`: the false positive is withdrawn and the finding is open again |
 
 - **Ending** an acceptance is the expiry path with another reason: the finding returns to `confirmed`, a
@@ -222,7 +227,7 @@ A request always carries a structured code and a note:
 | `POST /api/v1/findings/{id}/approvals` | evaluated; the request stores tier, class and required approvals |
 | `POST /api/v1/approvals/{id}/approve` | a sign-off (needs step-up: a recent sign-in, see step-up-reauth.md); answers 200 with `approvals_collected` / `approvals_required`; applies on the last one |
 | `GET /api/v1/approvals` | each request carries tier, required and collected approvals, and `batch_id` |
-| `GET, PUT /api/v1/organization/settings/finding-approvals/` | `policy`, `pending_policy`, `pending_policy_at`, and the floors and defaults for the editor; `PUT` with `cancel_pending: true` drops every waiting lowering (level, second look, policy) and keeps the values in force |
+| `GET, PATCH /api/v1/organization/settings/finding-approvals/` | `policy`, `pending_policy`, `pending_policy_at`, `fp_approval`, `accept_approval` and their pending lowerings, and the floors and defaults for the editor; `PATCH` with `cancel_pending: true` drops every waiting lowering (level, second look, policy) and keeps the values in force |
 | `POST /api/v1/suppressions/rules` | `reason_code` required; approval evaluated |
 | task exception routes | §7 |
 
@@ -293,3 +298,54 @@ rules) is evaluated at approval only.
 Break-glass, delegation and escalation, chat approvals, an AI pre-check, fatigue signals, the exceptions
 register export, and moving exposure dispositions and scope or scan approvals onto the evaluator. Each can
 reuse the evaluator later.
+
+## 15. Amendment (2026-10-23): risk acceptance approval level
+
+Owner decision (2026-10-23): whether an accepted risk needs one or two people is chosen per organization,
+with the same three levels and the same guardrails as the false-positive level, in one "Approval policy"
+setting. This replaces "four-eyes on an accepted risk can never be turned off".
+
+**Levels** (`finding_approvals.accept_approval`, default `all`):
+
+| Level | Who decides an accepted risk on one finding |
+|---|---|
+| `all` (default; also unset or unknown) | a second person, by the policy table (§3.1) |
+| `high_and_above` | the requester alone unless the finding is material: critical or high, KEV, P0 or P1, EPSS at or above the threshold, a validated exploit, or a crown-jewel or internet-exposed asset (the false-positive classifier, `MaterialForFalsePositive`) |
+| `off` | the requester alone |
+
+**What stays mandatory** when one person decides: the requester holds `findings:approve`, has the finding in
+their data scope and does not own its asset; a closure reason code and a note; an end within the
+organization's cap (`AcceptanceEndWithin`); the request row marked `single_person`, the audit entry
+`finding_approval.single_person_decided`, a timeline entry with the level and the end; the decision in the
+next approvals digest of every other approver who can see the finding; and a review flag on a material change
+(database triggers for severity up, KEV added, new evidence; the material-change controller for priority,
+EPSS, exploit and exposure, which ends the acceptance when the tier needed now is above `single`).
+
+**Explicit tightening wins.** An organization cell above the platform default (for example
+`accepted.standard: security`) still applies under a relaxing level; a cell at or below the default does
+not. A cell can never be `single` for `accepted`: the level is the only switch.
+
+**No bypass.** Suppression rules (`rule_accepted`), group exceptions on remediation tasks, bulk status moves (by id or by filter),
+imports and requests made by automation (AI triage, VEX, ticket integrations: `ActorMade`) never decide
+alone, whatever the level. Only `POST /findings/{id}/approvals` by a person with the approve permission, in
+their own session, does: an API key or an MCP access token never decides alone.
+
+**Changing the level.** `PATCH /api/v1/organization/settings/finding-approvals` with `accept_approval`
+(owner or administrator, `settings:write`, recent re-authentication). A lower level takes effect 24 hours
+later (`pending_accept_approval`, `pending_accept_approval_at`); raising is immediate and cancels a waiting
+lowering; `cancel_pending` drops it. Every change is audited at high severity with the values before and
+after, and the approvers (every owner and administrator is one) are told of a lowering (every lowering in the
+change is named). Raising a level puts the standing decisions one person made that the new level gives to a
+second person under review (`material_change_single_person`, change `level_raised`); they stand until an
+approver looks again.
+
+**The sole member.** Under `high_and_above` or `off` the sole member of an organization can approve their own
+pending accepted risk with an authenticator code and a reason; the end is cut to the self-approval limit
+(`SoloAcceptanceLimit`: 7 days for P0 or KEV, 45 for P1, 90 otherwise). Under `all` it stays pending until a
+second member, as before. The sole member's acceptance never applies through the single-person path (nobody
+else would see it): under `off` too it waits for this self-approval. Membership and the level are checked again
+in the write transaction.
+
+Migration `003349_single_person_acceptance_review` extends the single-person review triggers to accepted
+risks and indexes the decisions one person made for the digest.
+

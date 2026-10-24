@@ -10,7 +10,7 @@
  *
  * Pattern matching:
  * - Exact match: '/settings/audit-log' matches only that path
- * - Wildcard: '/assets/*' matches '/assets/changes', '/assets/web', etc.
+ * - Wildcard: '/assets/*' matches '/assets/changes', '/assets/groups', etc.
  * - Double wildcard: '/settings/**' matches all nested paths
  *
  * Priority:
@@ -154,6 +154,11 @@ export const routePermissions: Record<string, RoutePermissionConfig> = {
     module: Module.AttackSurface,
   },
   // Typed attack-surface changes (RFC-080), narrowed to the data scope by the API.
+  // Web surface reads the assets module's web endpoints (RFC-056).
+  '/attack-surface/web': {
+    permission: Permission.AssetsRead,
+    module: Module.Assets,
+  },
   '/attack-surface/changes': {
     permission: Permission.AssetsRead,
     module: Module.AttackSurface,

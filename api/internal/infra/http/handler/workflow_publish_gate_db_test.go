@@ -98,7 +98,7 @@ func TestWorkflowPublishGate_DB(t *testing.T) {
 			t.Fatalf("before approval = mode %s pending %+v", d.Mode, d.PendingVersion)
 		}
 		approve := func(r *http.Request) (int, string) { return f.call(f.h.ApproveVersion, r) }
-		params := map[string]string{"id": wf, "versionId": pending.Version.ID}
+		params := map[string]string{"id": wf, "version_id": pending.Version.ID}
 		body := `{"digest":"` + pending.Version.Digest + `"}`
 		if s, b := approve(f.as(f.admin, http.MethodPost, body, params)); s != http.StatusForbidden || !strings.Contains(b, "SELF_APPROVAL") {
 			t.Fatalf("self-approval = %d %s, want 403 SELF_APPROVAL", s, b)
@@ -126,7 +126,7 @@ func TestWorkflowPublishGate_DB(t *testing.T) {
 		if s, b := approve(asAdmin2(http.MethodPost, body, params)); s != http.StatusConflict {
 			t.Fatalf("approving a replaced request = %d %s, want 409", s, b)
 		}
-		params2 := map[string]string{"id": wf, "versionId": second.Version.ID}
+		params2 := map[string]string{"id": wf, "version_id": second.Version.ID}
 		if s, b := approve(asAdmin2(http.MethodPost, `{"digest":"`+second.Version.Digest+`"}`, params2)); s != http.StatusOK {
 			t.Fatalf("second publisher approves = %d %s", s, b)
 		}
@@ -177,7 +177,7 @@ func TestWorkflowPublishGate_DraftEditWithdrawsRequest_DB(t *testing.T) {
 		return p
 	}
 	approve := func(wf string, p PublishPendingResponse) int {
-		r := f.as(f.admin, http.MethodPost, `{"digest":"`+p.Version.Digest+`"}`, map[string]string{"id": wf, "versionId": p.Version.ID})
+		r := f.as(f.admin, http.MethodPost, `{"digest":"`+p.Version.Digest+`"}`, map[string]string{"id": wf, "version_id": p.Version.ID})
 		r = r.WithContext(context.WithValue(r.Context(), middleware.UserIDKey, admin2))
 		s, _ := f.call(f.h.ApproveVersion, r)
 		return s
@@ -217,7 +217,7 @@ func TestWorkflowPublishGate_RollbackOnlyToLiveVersions_DB(t *testing.T) {
 		t.Fatalf("high-risk publish = %d %s", s, b)
 	}
 	f.exec(`UPDATE automation_versions SET status = 'retired' WHERE id = $1`, p.Version.ID)
-	s, b = f.call(f.h.Rollback, f.as(f.admin, http.MethodPost, `{}`, map[string]string{"id": wf, "versionId": p.Version.ID}))
+	s, b = f.call(f.h.Rollback, f.as(f.admin, http.MethodPost, `{}`, map[string]string{"id": wf, "version_id": p.Version.ID}))
 	if s != http.StatusBadRequest || !strings.Contains(b, "VERSION_NOT_PUBLISHED") {
 		t.Fatalf("rollback to a retired request = %d %s, want 400 VERSION_NOT_PUBLISHED", s, b)
 	}
