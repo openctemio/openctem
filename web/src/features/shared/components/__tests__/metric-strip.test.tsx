@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from 'vitest'
 import { render, screen, fireEvent } from '@testing-library/react'
-import { MetricStrip, smColumns } from '../metric-strip'
+import { MetricStrip, phoneSpan, smColumns } from '../metric-strip'
 
 describe('MetricStrip', () => {
   it('renders each label and a locale-formatted value', () => {
@@ -52,6 +52,20 @@ describe('MetricStrip', () => {
     const cols = [1, 2, 3, 4, 5, 6, 7, 8].map(smColumns)
     expect(cols).toEqual([1, 2, 3, 4, 3, 3, 4, 4])
     for (let n = 2; n <= 8; n++) expect(n % smColumns(n)).not.toBe(1)
+  })
+
+  it('fills every phone row in at most two rows, never a lone tile', () => {
+    const rows = (n: number) => Array.from({ length: n }, (_, i) => phoneSpan(n, i))
+    expect(rows(1)).toEqual([6])
+    expect(rows(2)).toEqual([3, 3])
+    expect(rows(3)).toEqual([2, 2, 2])
+    expect(rows(4)).toEqual([3, 3, 3, 3])
+    expect(rows(5)).toEqual([2, 2, 2, 3, 3])
+    for (let n = 1; n <= 5; n++) {
+      const total = rows(n).reduce((a, b) => a + b, 0)
+      expect(total % 6, `${n} tiles fill whole rows`).toBe(0)
+      expect(total / 6, `${n} tiles take at most two rows`).toBeLessThanOrEqual(2)
+    }
   })
 
   it('shows skeletons instead of values while loading', () => {
