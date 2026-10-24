@@ -11,9 +11,8 @@
 // they do, the right fix is a per-tenant allowlist, not loosening this
 // file.
 //
-// This package is the canonical SSRF guard. internal/infra/fetchers/
-// has an older duplicate with identical ranges; follow-up work should
-// consolidate that callsite onto this package.
+// This package is the canonical outbound-request guard; the rules it
+// enforces are described in docs/architecture/outbound-requests.md.
 package httpsec
 
 import (
@@ -24,6 +23,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"slices"
 	"strings"
 	"time"
 )
@@ -52,6 +52,7 @@ var hardBlockedIPRanges = []string{
 	"255.255.255.255/32", // Broadcast
 	"::1/128",            // IPv6 loopback
 	"::/128",             // IPv6 unspecified
+	"::/96",              // IPv4-compatible IPv6 (deprecated): ::7f00:1 embeds 127.0.0.1
 	"fe80::/10",          // IPv6 link-local
 	"ff00::/8",           // IPv6 multicast
 	"fec0::/10",          // IPv6 site-local (deprecated, still routed internally)
@@ -329,6 +330,38 @@ func isIPBlockedStrict(ip net.IP) bool {
 	return IsPrivateIP(ip)
 }
 
+// ErrBlockedDestination is the guard's refusal of a destination: the host is
+// a blocked alias, or one of its addresses is in a blocked range. The error
+// never names the resolved address: a caller-chosen host name that resolves
+// into the platform's own network would otherwise tell the caller which
+// internal names exist and where they point. Test with errors.Is.
+var ErrBlockedDestination = errors.New("host resolves to a blocked address")
+
+// ErrUnresolvable is the guard's answer for a host that has no usable
+// address. The resolver's own error is kept for errors.As (a *net.DNSError)
+// but not printed: its text names the platform's resolver.
+var ErrUnresolvable = errors.New("host does not resolve")
+
+// unresolvableError carries the resolver's error without printing it.
+type unresolvableError struct{ cause error }
+
+func (e *unresolvableError) Error() string { return ErrUnresolvable.Error() }
+
+func (e *unresolvableError) Unwrap() []error {
+	if e.cause == nil {
+		return []error{ErrUnresolvable}
+	}
+	return []error{ErrUnresolvable, e.cause}
+}
+
+func newUnresolvable(cause error) error { return &unresolvableError{cause: cause} }
+
+// isDangerousHost reports a blocked alias, in any letter case and with or
+// without the trailing dot of a fully qualified name.
+func isDangerousHost(host string) bool {
+	return slices.Contains(dangerousHosts, strings.TrimSuffix(strings.ToLower(strings.TrimSpace(host)), "."))
+}
+
 // resolveSafeIPsWith resolves host once and vets every answer with blocked.
 func resolveSafeIPsWith(ctx context.Context, resolver *net.Resolver, host string, blocked func(net.IP) bool) ([]net.IP, error) {
 	if host == "" {
@@ -337,31 +370,28 @@ func resolveSafeIPsWith(ctx context.Context, resolver *net.Resolver, host string
 	if h, _, err := net.SplitHostPort(host); err == nil {
 		host = h
 	}
-	lower := strings.ToLower(strings.TrimSpace(host))
-	for _, bad := range dangerousHosts {
-		if lower == bad {
-			return nil, fmt.Errorf("host %q is blocked", host)
-		}
+	if isDangerousHost(host) {
+		return nil, ErrBlockedDestination
 	}
 	if ip := net.ParseIP(host); ip != nil {
 		if blocked(ip) {
-			return nil, fmt.Errorf("host %s resolves to a blocked address", host)
+			return nil, ErrBlockedDestination
 		}
 		return []net.IP{ip}, nil
 	}
 	ips, err := resolver.LookupIPAddr(ctx, host)
 	if err != nil {
-		return nil, fmt.Errorf("dns lookup failed for %q: %w", host, err)
+		return nil, newUnresolvable(err)
 	}
 	safe := make([]net.IP, 0, len(ips))
 	for _, ip := range ips {
 		if blocked(ip.IP) {
-			return nil, fmt.Errorf("host %q resolves to blocked address %s", host, ip.IP)
+			return nil, ErrBlockedDestination
 		}
 		safe = append(safe, ip.IP)
 	}
 	if len(safe) == 0 {
-		return nil, fmt.Errorf("no resolved addresses for %q", host)
+		return nil, newUnresolvable(nil)
 	}
 	return safe, nil
 }
@@ -398,32 +428,15 @@ func ValidateURL(rawURL string) (*ValidationResult, error) {
 		return nil, fmt.Errorf("unsupported scheme: %s (only http/https allowed)", parsed.Scheme)
 	}
 
-	hostname := strings.ToLower(parsed.Hostname())
-	if hostname == "" {
+	if parsed.Hostname() == "" {
 		return nil, fmt.Errorf("URL has no host")
-	}
-	for _, blocked := range dangerousHosts {
-		if hostname == blocked {
-			return nil, fmt.Errorf("blocked hostname: %s", hostname)
-		}
 	}
 
 	lookupCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	addrs, err := net.DefaultResolver.LookupIPAddr(lookupCtx, parsed.Hostname())
+	validIPs, err := resolveSafeIPs(lookupCtx, net.DefaultResolver, parsed.Hostname())
 	if err != nil {
-		return nil, fmt.Errorf("DNS lookup failed for %s: %w", parsed.Hostname(), err)
-	}
-	validIPs := make([]net.IP, 0, len(addrs))
-	for _, a := range addrs {
-		ip := a.IP
-		if IsIPBlocked(ip) {
-			return nil, fmt.Errorf("blocked IP address: %s resolves to %s", parsed.Hostname(), ip.String())
-		}
-		validIPs = append(validIPs, ip)
-	}
-	if len(validIPs) == 0 {
-		return nil, fmt.Errorf("no valid IPs for %s", parsed.Hostname())
+		return nil, err
 	}
 	return &ValidationResult{URL: parsed, ResolvedIPs: validIPs}, nil
 }
@@ -526,9 +539,29 @@ func newSafeHTTPClient(timeout time.Duration, d guardedDialer) *http.Client {
 		IdleConnTimeout:       30 * time.Second,
 	}
 	return &http.Client{
-		Timeout:   timeout,
-		Transport: tr,
+		Timeout:       timeout,
+		Transport:     tr,
+		CheckRedirect: checkRedirect,
 	}
+}
+
+// maxRedirects bounds a redirect chain of a guarded client.
+const maxRedirects = 5
+
+// checkRedirect is the default redirect policy of every guarded client. Each
+// hop is dialed through the guard again, so a redirect cannot reach a blocked
+// address; this policy also refuses a hop from https to http, which would
+// send the request (and any credential the transport keeps for the same
+// host) in clear text, and bounds the chain. A client that must not follow
+// redirects at all replaces it.
+func checkRedirect(req *http.Request, via []*http.Request) error {
+	if len(via) >= maxRedirects {
+		return errors.New("stopped after too many redirects")
+	}
+	if len(via) > 0 && strings.EqualFold(via[len(via)-1].URL.Scheme, "https") && !strings.EqualFold(req.URL.Scheme, "https") {
+		return errors.New("redirect from https to http refused")
+	}
+	return nil
 }
 
 // SafeDialContext is the SSRF-guarded dial function behind SafeHTTPClient,
