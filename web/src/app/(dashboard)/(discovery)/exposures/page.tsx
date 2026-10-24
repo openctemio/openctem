@@ -191,6 +191,7 @@ export default function ExposuresPage() {
   // Selection is owned by the DataTable; we mirror it for the bulk-action bar
   // and bump the epoch to clear the table's own checkboxes.
   const [selectedIds, setSelectedIds] = useState<string[]>([])
+  const [selectedNames, setSelectedNames] = useState<string[]>([])
   const [selectionEpoch, setSelectionEpoch] = useState(0)
   const clearSelection = useCallback(() => {
     setSelectedIds([])
@@ -568,7 +569,10 @@ export default function ExposuresPage() {
                   onPaginationChange={setPagination}
                   pageSizeOptions={PAGE_SIZES}
                   onRowClick={setDetailExposure}
-                  onSelectionChange={(rows) => setSelectedIds(rows.map((e) => e.id))}
+                  onSelectionChange={(rows) => {
+                    setSelectedIds(rows.map((e) => e.id))
+                    setSelectedNames(rows.map((e) => e.title))
+                  }}
                   resetSelectionKey={selectionEpoch}
                   showSelectionCount={false}
                   emptyMessage={
@@ -584,6 +588,7 @@ export default function ExposuresPage() {
 
               <ExposureBulkActions
                 selectedIds={selectedIds}
+                selectedNames={selectedNames}
                 onClearSelection={clearSelection}
                 onBulkResolve={handleBulkResolve}
                 onBulkAccept={handleBulkAccept}

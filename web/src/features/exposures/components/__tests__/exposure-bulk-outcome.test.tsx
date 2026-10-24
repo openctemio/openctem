@@ -34,7 +34,7 @@ async function acceptWith(outcome: {
   )
   await userEvent.click(screen.getByRole('button', { name: /Accept risk/ }))
   await userEvent.type(await screen.findByRole('textbox'), 'reason')
-  const dialog = screen.getByRole('dialog')
+  const dialog = screen.getByRole('alertdialog')
   const buttons = Array.from(dialog.querySelectorAll('button'))
   await userEvent.click(buttons[buttons.length - 1])
 }

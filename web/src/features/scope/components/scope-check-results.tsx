@@ -34,6 +34,7 @@ import {
   useScopeAddMode,
 } from '../api/use-scope-api'
 import type { ApiScopeCheckResult, ApiScopeFix } from '../api/scope-api.types'
+import { ScopeActionConfirm } from './scope-action-confirm'
 import {
   scopeErrorMessage,
   scopeFixLabel,
@@ -100,6 +101,8 @@ export function ScopeFixButtons({ fixes, rule, onApplied, size = 'xs' }: ScopeFi
   const [draft, setDraft] = useState<ScopeEntryDraft | null>(null)
   const [verifyDomain, setVerifyDomain] = useState<string | null>(null)
   const [busy, setBusy] = useState<string | null>(null)
+  // Approve, activate and renew change what scans may reach, so they ask first.
+  const [pendingFix, setPendingFix] = useState<{ fix: ApiScopeFix; key: string } | null>(null)
   const hasRequest = fixes.some((f) => f.action === 'request_access')
   const { isRequest } = useScopeAddMode(hasRequest)
 
@@ -117,7 +120,7 @@ export function ScopeFixButtons({ fixes, rule, onApplied, size = 'xs' }: ScopeFi
       toast.success(done)
       onApplied?.()
     } catch (err) {
-      toast.error(scopeErrorMessage(t, err, 'The change was not saved.'))
+      toast.error(scopeErrorMessage(t, err, t('scope.fix.notSaved', 'The change was not saved.')))
     } finally {
       setBusy(null)
     }
@@ -140,24 +143,37 @@ export function ScopeFixButtons({ fixes, rule, onApplied, size = 'xs' }: ScopeFi
         })
         return
       case 'approve_entry':
-        if (fix.id) void run(key, () => approveScopeTarget(fix.id!), 'Approval recorded')
-        return
       case 'activate_entry':
-        if (fix.id) void run(key, () => setScopeTargetActive(fix.id!, true), 'Entry activated')
-        return
       case 'renew_entry':
-        if (fix.id)
-          void run(
-            key,
-            () => updateScopeTarget(fix.id!, { expires_in_days: fix.days ?? 7 }),
-            'Entry renewed'
-          )
+        if (fix.id) setPendingFix({ fix, key })
         return
       case 'verify_domain':
         setVerifyDomain(fix.domain ?? fix.pattern ?? null)
         return
     }
   }
+
+  const applyPending = async () => {
+    if (!pendingFix) return
+    const { fix, key } = pendingFix
+    const id = fix.id!
+    setPendingFix(null)
+    if (fix.action === 'approve_entry')
+      await run(key, () => approveScopeTarget(id), t('scope.fix.approved', 'Approval recorded'))
+    else if (fix.action === 'activate_entry')
+      await run(
+        key,
+        () => setScopeTargetActive(id, true),
+        t('scope.fix.activated', 'Entry activated')
+      )
+    else
+      await run(
+        key,
+        () => updateScopeTarget(id, { expires_in_days: fix.days ?? 7 }),
+        t('scope.fix.renewed', 'Entry renewed')
+      )
+  }
+  const pendingAction = pendingFix?.fix.action
 
   const btn = size === 'xs' ? 'h-7 px-2 text-xs' : undefined
 
@@ -203,6 +219,20 @@ export function ScopeFixButtons({ fixes, rule, onApplied, size = 'xs' }: ScopeFi
           )
         })}
       </div>
+      <ScopeActionConfirm
+        open={pendingFix !== null}
+        onOpenChange={(o) => !o && setPendingFix(null)}
+        kind={
+          pendingAction === 'approve_entry'
+            ? 'approve'
+            : pendingAction === 'activate_entry'
+              ? 'activate'
+              : 'renew'
+        }
+        pattern={pendingFix?.fix.pattern}
+        days={pendingFix?.fix.days}
+        onConfirm={applyPending}
+      />
       <ScopeEntryDialog
         open={draft !== null}
         draft={draft ?? undefined}

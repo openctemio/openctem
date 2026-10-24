@@ -123,6 +123,10 @@ const (
 	FailureClassTimeout FailureClass = "timeout"
 	// FailureClassCanceled: a person or the run deadline stopped it.
 	FailureClassCanceled FailureClass = "canceled"
+	// FailureClassPartial: the step completed, but not on everything it was
+	// given (hosts not fully covered, targets left unfinished). Its results
+	// are kept; running again covers the rest.
+	FailureClassPartial FailureClass = "partial"
 )
 
 // More step failure codes, recorded by the platform before or around
@@ -176,6 +180,10 @@ const (
 	// was left before its run's deadline than its tool needs to do anything
 	// useful; its targets are the run's unfinished targets (research/122).
 	FailureDeadlineTooClose = "DEADLINE_TOO_CLOSE"
+	// FailureCoverageGaps: the step completed with hosts its sensor could
+	// not fully cover, or targets it left unfinished. The step output
+	// carries the hosts and reasons (coverage_gaps) and the counts.
+	FailureCoverageGaps = "COVERAGE_GAPS"
 )
 
 var failureClasses = map[string]FailureClass{
@@ -212,6 +220,7 @@ var failureClasses = map[string]FailureClass{
 	FailureBatchFailed:         FailureClassTool,
 	FailureTimeout:             FailureClassTimeout,
 	FailureCanceled:            FailureClassCanceled,
+	FailureCoverageGaps:        FailureClassPartial,
 }
 
 // ClassOf returns the class of a step failure code. An unknown code is a

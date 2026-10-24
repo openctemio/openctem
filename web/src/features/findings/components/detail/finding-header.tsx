@@ -14,6 +14,7 @@
  */
 
 import { useState } from 'react'
+import { ConfirmDialog } from '@/components/confirm-dialog'
 import Link from '@/components/link'
 import { useRouter } from 'next/navigation'
 import {
@@ -66,6 +67,7 @@ export function FindingHeader({ finding, status, onTriageCompleted }: FindingHea
   const canCreateTicket = useCanCreateTicket()
   const [ticketOpen, setTicketOpen] = useState(false)
   const [duplicateOpen, setDuplicateOpen] = useState(false)
+  const [reverifyOpen, setReverifyOpen] = useState(false)
   // An inventory asset (not a free-text pentest target) the duplicate must share.
   const assetId = isHuman ? undefined : finding.assets[0]?.id
   const canMarkDuplicate =
@@ -79,6 +81,7 @@ export function FindingHeader({ finding, status, onTriageCompleted }: FindingHea
   )
 
   const reverify = async () => {
+    setReverifyOpen(false)
     try {
       await requestValidation()
       toast.success(t('findings.header.reverifyQueued', 'Re-verification queued'), {
@@ -169,7 +172,7 @@ export function FindingHeader({ finding, status, onTriageCompleted }: FindingHea
           <Button
             variant="outline"
             size="sm"
-            onClick={() => void reverify()}
+            onClick={() => setReverifyOpen(true)}
             disabled={reverifying}
             title={t(
               'findings.header.reverifyTitle',
@@ -227,6 +230,20 @@ export function FindingHeader({ finding, status, onTriageCompleted }: FindingHea
           </DropdownMenuContent>
         </DropdownMenu>
       </div>
+
+      <ConfirmDialog
+        open={reverifyOpen}
+        onOpenChange={setReverifyOpen}
+        title={t('findings.header.reverifyConfirmTitle', 'Re-verify "{title}" now?', {
+          title: finding.title,
+        })}
+        desc={t(
+          'findings.header.reverifyConfirmDesc',
+          "A safe check sends a request to the finding's target now. The result is recorded as evidence and never changes the status."
+        )}
+        confirmText={t('findings.header.reverifyConfirmButton', 'Run safe check')}
+        handleConfirm={reverify}
+      />
 
       {canMarkDuplicate && assetId && (
         <MarkDuplicateDialog

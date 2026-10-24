@@ -26,6 +26,7 @@
   "lookalikes.pageDescription": "Domains registered by others that imitate yours, found without contacting them.",
   "lookalikes.pageTitle": "Attack surface",
   "lookalikes.remove": "Stop watching {domain}",
+  "lookalikes.removeButton": "Stop watching",
   "lookalikes.removeDesc": "Its open lookalike exposures are resolved and its candidates are dropped.",
   "lookalikes.removeFailed": "Could not stop watching the domain",
   "lookalikes.removeTitle": "Stop watching {domain}?",
