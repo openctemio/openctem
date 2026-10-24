@@ -991,6 +991,12 @@ func (h *WorkflowHandler) GetRun(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	writeRunDetail(w, d)
+}
+
+// writeRunDetail writes a run read through GetRunForCaller (already redacted
+// for the caller's scope).
+func writeRunDetail(w http.ResponseWriter, d *automationsvc.RunDetail) {
 	resp := toWorkflowRunResponse(d.Run)
 	until := d.RetainedUntil.Format("2006-01-02T15:04:05Z07:00")
 	resp.RetainedUntil = &until
@@ -1098,7 +1104,7 @@ func (h *WorkflowHandler) CancelRun(w http.ResponseWriter, r *http.Request) {
 // @Tags         Automations
 // @Produce      json
 // @Param        id   path  string  true  "Run ID"
-// @Success      204
+// @Success      200  {object}  WorkflowRunResponse
 // @Failure      400  {object}  apierror.Error
 // @Failure      404  {object}  apierror.Error
 // @Security     BearerAuth
@@ -1125,7 +1131,14 @@ func (h *WorkflowHandler) ResumeRun(w http.ResponseWriter, r *http.Request) {
 		h.handleServiceError(w, err)
 		return
 	}
-	w.WriteHeader(http.StatusNoContent)
+	// The run comes back through the same scope-redacted read as GET, never
+	// the raw row.
+	d, err := h.service.GetRunForCaller(r.Context(), tenantUUID, userUUID, runUUID)
+	if err != nil {
+		h.handleServiceError(w, err)
+		return
+	}
+	writeRunDetail(w, d)
 }
 
 // --- Conversion Helpers ---
