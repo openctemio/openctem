@@ -744,7 +744,7 @@
   "findings.status.in_review": "In review",
   "findings.pentest.clientNotice": "Client access: you see the published findings of this campaign, read-only.",
   "findings.pentest.role.client": "Client",
-  "findings.pentest.role.clientHint": "Client — published findings, read-only",
+  "findings.pentest.role.clientHint": "Client: published findings, read-only",
   "findings.statusCategory.open": "Open",
   "findings.statusCategory.in_progress": "In progress",
   "findings.statusCategory.closed": "Closed",
