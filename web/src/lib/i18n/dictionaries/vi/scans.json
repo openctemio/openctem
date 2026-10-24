@@ -527,6 +527,7 @@
   "scans.runStatus.failed": "Thất bại",
   "scans.runStatus.timeout": "Quá thời gian",
   "scans.runStatus.canceled": "Đã hủy",
+  "scans.runStatus.paused": "Tạm dừng",
   "scans.runStatus.blocked": "Bị chặn",
   "scans.runs.noPermission": "Xem các lượt chạy quét cần quyền \"Xem quét\".",
   "scans.runs.colScan": "Quét",
