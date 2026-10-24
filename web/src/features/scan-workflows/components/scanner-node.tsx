@@ -342,11 +342,7 @@ function ScannerNodeComponent({ data, selected }: NodeProps<ScannerNode>) {
         )}
 
         {(data.warnings ?? []).map((msg) => (
-          <div
-            key={msg}
-            className="flex items-start gap-1.5 text-xs text-warning"
-            role="status"
-          >
+          <div key={msg} className="flex items-start gap-1.5 text-xs text-warning" role="status">
             <AlertTriangle className="mt-px h-3 w-3 shrink-0" />
             <span className="break-words">{msg}</span>
           </div>
@@ -354,11 +350,7 @@ function ScannerNodeComponent({ data, selected }: NodeProps<ScannerNode>) {
 
         {/* Graph check issues (from the API) */}
         {(data.issues ?? []).map((msg) => (
-          <div
-            key={msg}
-            className="flex items-start gap-1.5 text-xs text-destructive"
-            role="alert"
-          >
+          <div key={msg} className="flex items-start gap-1.5 text-xs text-destructive" role="alert">
             <AlertTriangle className="mt-px h-3 w-3 shrink-0" />
             <span className="break-words">{msg}</span>
           </div>
@@ -374,11 +366,7 @@ function ScannerNodeComponent({ data, selected }: NodeProps<ScannerNode>) {
           <div className="flex flex-wrap gap-1 items-center">
             <Link2 className="h-3 w-3 text-muted-foreground shrink-0" />
             {dependencyLabels.map((label, i) => (
-              <Badge
-                key={data.dependsOn?.[i] || i}
-                variant="outline"
-                className="text-xs px-1 py-0"
-              >
+              <Badge key={data.dependsOn?.[i] || i} variant="outline" className="text-xs px-1 py-0">
                 {label}
               </Badge>
             ))}
