@@ -423,7 +423,7 @@ function EditorDialog({ findingId, open, onOpenChange, initial }: RetestCheckEdi
                         value={h.name}
                         onChange={(e) => updateHeader(h.key, { name: e.target.value })}
                         className="min-w-0 flex-1 font-mono"
-                        placeholder="Accept"
+                        placeholder={t('findings.retestCheck.headerNamePlaceholder', 'Accept')}
                       />
                       <Input
                         aria-label={t('findings.retestCheck.headerValue', 'Header value')}

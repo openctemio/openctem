@@ -125,6 +125,7 @@ export type AuditAction =
   | 'finding.commented'
   | 'finding.bulk_updated'
   | 'finding.duplicate_marked'
+  | 'finding.issue_unlinked'
   | 'finding.bounty_report_changed'
   | 'finding.severity_changed'
   | 'finding.severity_requested'
@@ -330,6 +331,7 @@ const ACTION_LABEL_OVERRIDES: Record<string, string> = {
   'auth.failed': 'Authentication failed',
   'finding.bulk_updated': 'Findings bulk updated',
   'finding.duplicate_marked': 'Finding marked duplicate',
+  'finding.issue_unlinked': 'Finding taken out of a same-issue group',
   'finding.bounty_report_changed': 'Finding bug-bounty report changed',
   'finding.severity_changed': 'Finding severity changed',
   'finding.severity_requested': 'Finding severity change requested',

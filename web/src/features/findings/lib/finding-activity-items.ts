@@ -162,6 +162,10 @@ export function describeFindingEvent(a: Activity): EventText | null {
     }
     case 'duplicate_marked':
       return { icon: Copy, summary: 'marked it as a duplicate', detail: reason }
+    case 'issue_linked':
+      return { icon: Link2, summary: 'linked it as the same issue as another finding' }
+    case 'issue_unlinked':
+      return { icon: Link2, summary: 'took it out of a same-issue group' }
     case 'false_positive_marked':
       return { icon: XCircle, summary: 'marked it as a false positive', detail: reason }
     case 'evidence_added':

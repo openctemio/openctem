@@ -132,6 +132,7 @@ export function FindingProperties({
   const locked = isTriageLocked(finding.source, readOnly)
   // Re-scoring needs findings:severity, which a remediation owner may lack.
   const canRescore = useCanMutate('PATCH /api/v1/findings/{id}/severity')
+  const canAssign = useCanMutate('POST /api/v1/findings/{id}/assign')
   const asset = finding.assets[0]
   const crit = asset?.criticality
   const assetCaption = asset
@@ -172,7 +173,7 @@ export function FindingProperties({
   ) : (
     <AssigneeSelect
       findingId={finding.id}
-      disabled={locked}
+      disabled={locked || !canAssign}
       value={
         triage.assignee
           ? {
