@@ -42,6 +42,9 @@ type CreateWorkflowRequest struct {
 	Tags        []string            `json:"tags" validate:"max=10,dive,max=50"`
 	Nodes       []NodeRequest       `json:"nodes" validate:"min=1,max=50,dive"`
 	Edges       []CreateEdgeRequest `json:"edges" validate:"max=100,dive"`
+	// MaxChangesPerRun caps one live run's changes (0 or absent: 250; at
+	// most 1,000; above 250 the automation is high risk).
+	MaxChangesPerRun int `json:"max_changes_per_run" validate:"min=0,max=1000"`
 }
 
 // NodeRequest represents a node in the workflow request.
@@ -92,6 +95,8 @@ type WorkflowResponse struct {
 	// Mode: live runs execute the published version; simulate runs execute
 	// the draft and only record what they would do.
 	Mode string `json:"mode"`
+	// MaxChangesPerRun is the draft's change cap in force (250 by default).
+	MaxChangesPerRun int `json:"max_changes_per_run"`
 	// RiskClass is the class of the draft (low, elevated, high); set on the
 	// single-automation answers.
 	RiskClass string `json:"risk_class,omitempty"`
@@ -187,6 +192,7 @@ type WorkflowRunResponse struct {
 	Status         string            `json:"status"`
 	Mode           string            `json:"mode"`
 	VersionID      *string           `json:"version_id,omitempty"`
+	PauseReason    string            `json:"pause_reason,omitempty"`
 	StartedAt      *string           `json:"started_at,omitempty"`
 	CompletedAt    *string           `json:"completed_at,omitempty"`
 	TotalNodes     int               `json:"total_nodes"`
@@ -311,6 +317,8 @@ func (h *WorkflowHandler) CreateWorkflow(w http.ResponseWriter, r *http.Request)
 		Tags:        req.Tags,
 		Nodes:       nodes,
 		Edges:       edges,
+
+		MaxChangesPerRun: req.MaxChangesPerRun,
 	}
 
 	wf, err := h.service.CreateWorkflow(r.Context(), input)
@@ -402,6 +410,8 @@ type UpdateWorkflowRequest struct {
 	Description *string  `json:"description" validate:"omitempty,max=1000"`
 	Tags        []string `json:"tags" validate:"max=10,dive,max=50"`
 	IsActive    *bool    `json:"is_active"`
+	// MaxChangesPerRun sets the draft's change cap (0: 250; at most 1,000).
+	MaxChangesPerRun *int `json:"max_changes_per_run" validate:"omitempty,min=0,max=1000"`
 }
 
 // UpdateWorkflow handles PUT /api/v1/workflows/{id}
@@ -454,6 +464,8 @@ func (h *WorkflowHandler) UpdateWorkflow(w http.ResponseWriter, r *http.Request)
 		Description: req.Description,
 		Tags:        req.Tags,
 		IsActive:    req.IsActive,
+
+		MaxChangesPerRun: req.MaxChangesPerRun,
 	}
 
 	wf, err := h.service.UpdateWorkflow(r.Context(), input)
@@ -979,6 +991,12 @@ func (h *WorkflowHandler) GetRun(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	writeRunDetail(w, d)
+}
+
+// writeRunDetail writes a run read through GetRunForCaller (already redacted
+// for the caller's scope).
+func writeRunDetail(w http.ResponseWriter, d *automationsvc.RunDetail) {
 	resp := toWorkflowRunResponse(d.Run)
 	until := d.RetainedUntil.Format("2006-01-02T15:04:05Z07:00")
 	resp.RetainedUntil = &until
@@ -1080,6 +1098,49 @@ func (h *WorkflowHandler) CancelRun(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
+// ResumeRun handles POST /api/v1/workflow-runs/{id}/approve.
+// @Summary      Let a paused automation run continue
+// @Description  A live run that reached its change cap (status paused, pause_reason blast_radius) continues past the cap; its finished steps are kept. Only a paused run resumes.
+// @Tags         Automations
+// @Produce      json
+// @Param        id   path  string  true  "Run ID"
+// @Success      200  {object}  WorkflowRunResponse
+// @Failure      400  {object}  apierror.Error
+// @Failure      404  {object}  apierror.Error
+// @Security     BearerAuth
+// @Router       /workflow-runs/{id}/approve [post]
+func (h *WorkflowHandler) ResumeRun(w http.ResponseWriter, r *http.Request) {
+	tenantUUID, err := shared.IDFromString(middleware.GetTenantID(r.Context()))
+	if err != nil {
+		apierror.BadRequest("Invalid tenant ID").WriteJSON(w)
+		return
+	}
+	runUUID, err := shared.IDFromString(chi.URLParam(r, "id"))
+	if err != nil {
+		apierror.BadRequest("Invalid run ID").WriteJSON(w)
+		return
+	}
+	userUUID, _ := shared.IDFromString(middleware.GetUserID(r.Context()))
+	// A run about a subject outside the caller's scope is not theirs to
+	// continue (404, like one that does not exist).
+	if _, err := h.service.GetRunForCaller(r.Context(), tenantUUID, userUUID, runUUID); err != nil {
+		h.handleServiceError(w, err)
+		return
+	}
+	if err := h.service.ResumeRun(r.Context(), tenantUUID, userUUID, runUUID); err != nil {
+		h.handleServiceError(w, err)
+		return
+	}
+	// The run comes back through the same scope-redacted read as GET, never
+	// the raw row.
+	d, err := h.service.GetRunForCaller(r.Context(), tenantUUID, userUUID, runUUID)
+	if err != nil {
+		h.handleServiceError(w, err)
+		return
+	}
+	writeRunDetail(w, d)
+}
+
 // --- Conversion Helpers ---
 
 func toNodeConfig(req *NodeConfigRequest) automation.NodeConfig {
@@ -1106,13 +1167,15 @@ func toWorkflowResponse(wf *automation.Workflow) *WorkflowResponse {
 		IsActive:       wf.IsActive,
 		DisabledReason: wf.DisabledReason,
 		Mode:           string(wf.Mode),
-		Tags:           wf.Tags,
-		TotalRuns:      wf.TotalRuns,
-		SuccessfulRuns: wf.SuccessfulRuns,
-		FailedRuns:     wf.FailedRuns,
-		LastRunStatus:  wf.LastRunStatus,
-		CreatedAt:      wf.CreatedAt.Format("2006-01-02T15:04:05Z07:00"),
-		UpdatedAt:      wf.UpdatedAt.Format("2006-01-02T15:04:05Z07:00"),
+
+		MaxChangesPerRun: automation.EffectiveMaxChanges(wf.MaxChangesPerRun),
+		Tags:             wf.Tags,
+		TotalRuns:        wf.TotalRuns,
+		SuccessfulRuns:   wf.SuccessfulRuns,
+		FailedRuns:       wf.FailedRuns,
+		LastRunStatus:    wf.LastRunStatus,
+		CreatedAt:        wf.CreatedAt.Format("2006-01-02T15:04:05Z07:00"),
+		UpdatedAt:        wf.UpdatedAt.Format("2006-01-02T15:04:05Z07:00"),
 	}
 
 	if wf.LastRunID != nil {
@@ -1196,6 +1259,7 @@ func toWorkflowRunResponse(run *automation.Run) *WorkflowRunResponse {
 		Status:         string(run.Status),
 		Mode:           string(run.Mode),
 		VersionID:      idPtrString(run.VersionID),
+		PauseReason:    run.PauseReason,
 		TotalNodes:     run.TotalNodes,
 		CompletedNodes: run.CompletedNodes,
 		FailedNodes:    run.FailedNodes,
