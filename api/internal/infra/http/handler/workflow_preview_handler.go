@@ -180,7 +180,7 @@ func (h *WorkflowHandler) Preview(w http.ResponseWriter, r *http.Request) {
 	_ = json.NewEncoder(w).Encode(resp)
 }
 
-// Validate handles POST /api/v1/workflows/{id}/validate.
+// Validate handles POST /api/v1/workflows/{id}/verify.
 // @Summary      Validate an automation draft
 // @Description  Checks the draft (the body's nodes and edges, or the saved draft) statically: unsupported types, graph errors, conditions, required settings, integrations, permissions the caller lacks (the caller owns the automation once they publish it) and whether it ran in simulate since its last change. Problems block publishing; warnings do not. At most 10 calls per 10 seconds per user.
 // @Tags         Automations
@@ -192,7 +192,7 @@ func (h *WorkflowHandler) Preview(w http.ResponseWriter, r *http.Request) {
 // @Failure      404   {object}  apierror.Error
 // @Failure      429   {object}  apierror.Error
 // @Security     BearerAuth
-// @Router       /workflows/{id}/validate [post]
+// @Router       /workflows/{id}/verify [post]
 func (h *WorkflowHandler) Validate(w http.ResponseWriter, r *http.Request) {
 	in, _, ok := h.draftInput(w, r)
 	if !ok {
