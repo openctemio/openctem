@@ -86,7 +86,6 @@
   "ticketingIntegration.issueTypes.stock": "Default ({name})",
   "ticketingIntegration.issueTypes.title": "Issue types",
   "ticketingIntegration.issueTypes.useSuggestion": "Use {name}",
-  "ticketingIntegration.metrics.connections": "Connections",
   "ticketingIntegration.metrics.needsAttention": "Needs attention",
   "ticketingIntegration.page.description": "Connect ticketing systems to create and track remediation tickets automatically.",
   "ticketingIntegration.page.emptyDescription": "Connect a ticketing system to automatically create and track remediation tickets.",
