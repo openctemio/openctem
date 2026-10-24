@@ -298,7 +298,7 @@ export function GeneralSettings() {
                             <Button
                               variant="ghost"
                               size="sm"
-                              className="h-7 text-xs text-destructive hover:bg-destructive/10 hover:text-destructive"
+                              className="h-7 text-xs text-destructive hover:bg-destructive/10 hover:text-destructive" // label-ok: destructive text action, not a label
                               onClick={() => setLogoDraft(null)}
                             >
                               {t('org.general.logoRemove', 'Remove logo')}
