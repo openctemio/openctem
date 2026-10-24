@@ -35,6 +35,7 @@ import {
   DialogBody,
 } from '@/components/ui/dialog'
 import { ConfirmDialog } from '@/components/confirm-dialog'
+import { confirmName } from '@/lib/confirm-name'
 import {
   Select,
   SelectContent,
@@ -189,6 +190,8 @@ export default function PriorityRulesPage() {
   const [isDialogOpen, setIsDialogOpen] = useState(false)
   const [editingRule, setEditingRule] = useState<PriorityRule | null>(null)
   const [deletingRule, setDeletingRule] = useState<PriorityRule | null>(null)
+  // Switching a rule on reprioritizes findings across the organization: ask first.
+  const [activatingRule, setActivatingRule] = useState<PriorityRule | null>(null)
   const [form, setForm] = useState<FormState>(emptyForm)
   const [isSaving, setIsSaving] = useState(false)
   const [dryRunRule, setDryRunRule] = useState<DryRunRule | null>(null)
@@ -467,7 +470,9 @@ export default function PriorityRulesPage() {
               name: row.original.name,
             })}
             checked={row.original.is_active}
-            onCheckedChange={(checked) => toggleActive(row.original, checked)}
+            onCheckedChange={(checked) =>
+              checked ? setActivatingRule(row.original) : void toggleActive(row.original, false)
+            }
           />
         ),
       },
@@ -918,6 +923,21 @@ export default function PriorityRulesPage() {
       />
 
       <ConfirmDialog
+        open={!!activatingRule}
+        onOpenChange={(open) => !open && setActivatingRule(null)}
+        title={t('confirm.priorityRule.activateTitle', undefined, {
+          name: activatingRule?.name ?? '',
+        })}
+        desc={t('confirm.priorityRule.activateDesc')}
+        confirmText={t('confirm.priorityRule.activateBtn')}
+        handleConfirm={async () => {
+          const rule = activatingRule
+          setActivatingRule(null)
+          if (rule) await toggleActive(rule, true)
+        }}
+      />
+
+      <ConfirmDialog
         open={!!deletingRule}
         onOpenChange={(open) => !open && setDeletingRule(null)}
         title={t('confirm.priorityRule.deleteTitle', 'Delete the priority rule "{name}"?', {
@@ -927,8 +947,9 @@ export default function PriorityRulesPage() {
           'confirm.priorityRule.deleteDesc',
           'Findings it matched are no longer prioritized by it; the other rules still apply. This cannot be undone.'
         )}
-        confirmText={t('confirm.delete', 'Delete')}
+        confirmText={t('confirm.priorityRule.deleteBtn')}
         destructive
+        typeToConfirm={deletingRule ? confirmName(deletingRule.name, deletingRule.id) : undefined}
         handleConfirm={() => void handleDelete()}
       />
     </Main>

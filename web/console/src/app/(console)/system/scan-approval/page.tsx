@@ -3,7 +3,7 @@
 import { Main } from '@/components/layout'
 import { Skeleton } from '@/components/ui/skeleton'
 import { useTranslation } from '@/context/i18n-provider'
-import { ErrorState, PageHeader } from '@/features/shared'
+import { ErrorState, PageHeader, PageStack } from '@/features/shared'
 import { useAdmin } from '@console/features/admin-console/components/admin-console-shell'
 import {
   saveScanPolicyDefault,
@@ -24,14 +24,14 @@ export default function ScanApprovalPolicyPage() {
 
   return (
     <Main>
-      <PageHeader
-        title={t('admin.scanPolicy.pageTitle', 'Scan approval')}
-        description={t(
-          'admin.scanPolicy.pageDesc',
-          'Whether organizations choose their own scan approval, or the platform sets it.'
-        )}
-      />
-      <div className="mt-5">
+      <PageStack>
+        <PageHeader
+          title={t('admin.scanPolicy.pageTitle', 'Scan approval')}
+          description={t(
+            'admin.scanPolicy.pageDesc',
+            'Whether organizations choose their own scan approval, or the platform sets it.'
+          )}
+        />
         {error ? (
           <ErrorState
             title={t('admin.scanPolicy.errorTitle', 'the scan approval policy')}
@@ -60,7 +60,7 @@ export default function ScanApprovalPolicyPage() {
             }}
           />
         )}
-      </div>
+      </PageStack>
     </Main>
   )
 }
