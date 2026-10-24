@@ -200,7 +200,7 @@ type Repositories struct {
 	Scan             *postgres.ScanRepository
 	ScanSelector     *postgres.ScanSelectorRepository
 	ScannerTemplate  *postgres.ScannerTemplateRepository
-	TemplateSource   *postgres.TemplateSourceRepository
+	ContentSource    *postgres.ContentSourceRepository
 	SecretStore      *postgres.SecretStoreRepository
 
 	// ScanRuns
@@ -555,7 +555,7 @@ func newRepositories(db *postgres.DB) *Repositories {
 		Scan:             postgres.NewScanRepository(db),
 		ScanSelector:     postgres.NewScanSelectorRepository(db),
 		ScannerTemplate:  postgres.NewScannerTemplateRepository(db),
-		TemplateSource:   postgres.NewTemplateSourceRepository(db),
+		ContentSource:    postgres.NewContentSourceRepository(db),
 		SecretStore:      postgres.NewSecretStoreRepository(db),
 
 		// ScanRuns

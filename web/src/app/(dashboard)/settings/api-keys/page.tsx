@@ -1,5 +1,6 @@
 'use client'
 
+import { HealthStatus } from '@/components/ui/health-status'
 import { useCallback, useMemo, useState } from 'react'
 import type { ColumnDef } from '@tanstack/react-table'
 import { Main } from '@/components/layout'
@@ -11,17 +12,19 @@ import {
   RelativeTime,
   StackedCell,
   ErrorState,
+  PageStack,
 } from '@/features/shared'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Button } from '@/components/ui/button'
-import { Can, usePermissions, useCanMutate } from '@/lib/permissions'
+import { usePermissions, useCanMutate } from '@/lib/permissions'
 import { Input } from '@/components/ui/input'
 import { ConfirmDialog } from '@/components/confirm-dialog'
+import { DataTableRowActions } from '@/features/shared/components/data-table-row-actions'
 import { useUrlFilter } from '@/hooks/use-url-param'
 import { useListParams } from '@/hooks/use-list-params'
-import { useDebounce } from '@/hooks/use-debounce'
+import { useSearchQuery } from '@/hooks/use-search-query'
 import { getErrorMessage } from '@/lib/api/error-handler'
 import { KeyRound, Plus, Ban, Trash2 } from 'lucide-react'
 import {
@@ -49,24 +52,12 @@ function isActive(k: APIKey): boolean {
 function StatusBadge({ k }: { k: APIKey }) {
   const { t } = useTranslation()
   if (k.status === 'revoked' || k.revoked_at) {
-    return (
-      <Badge className="border-0 bg-destructive/10 text-destructive">
-        {t('settings.keys.status.revoked', 'Revoked')}
-      </Badge>
-    )
+    return <HealthStatus state="off" label={t('settings.keys.status.revoked', 'Revoked')} />
   }
   if (isExpired(k)) {
-    return (
-      <Badge className="border-0 bg-orange-500/10 text-orange-600 dark:text-orange-400">
-        {t('settings.keys.status.expired', 'Expired')}
-      </Badge>
-    )
+    return <HealthStatus state="down" label={t('settings.keys.status.expired', 'Expired')} />
   }
-  return (
-    <Badge className="border-0 bg-success/10 text-success">
-      {t('settings.keys.status.active', 'Active')}
-    </Badge>
-  )
+  return <HealthStatus state="ok" label={t('settings.keys.status.active', 'Active')} />
 }
 
 // ─────────────────────────────────────────────────────────
@@ -107,32 +98,29 @@ function KeyRowActions({ k, onChanged }: { k: APIKey; onChanged: () => void }) {
 
   return (
     <div className="flex justify-end gap-1">
-      {isActive(k) && (
-        <Can route="POST /api/v1/api-keys">
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={() => setRevokeOpen(true)}
-            disabled={revoking}
-            title={t('confirm.revoke', 'Revoke')}
-            aria-label={t('confirm.apiKey.revokeLabel', 'Revoke {name}', { name: k.name })}
-          >
-            <Ban className="h-4 w-4 text-warning" />
-          </Button>
-        </Can>
-      )}
-      <Can route="DELETE /api/v1/api-keys/{id}">
-        <Button
-          variant="ghost"
-          size="icon"
-          onClick={() => setDeleteOpen(true)}
-          title={t('confirm.delete', 'Delete')}
-          aria-label={t('confirm.apiKey.deleteLabel', 'Delete {name}', { name: k.name })}
-          className="text-destructive hover:text-destructive"
-        >
-          <Trash2 className="h-4 w-4" />
-        </Button>
-      </Can>
+      <DataTableRowActions
+        label={t('settings.apiKeys.actionsFor', 'Actions for {name}', { name: k.name })}
+        actions={[
+          ...(isActive(k)
+            ? [
+                {
+                  label: t('confirm.revoke', 'Revoke'),
+                  icon: Ban,
+                  route: 'POST /api/v1/api-keys/{id}/revoke' as const,
+                  onClick: () => setRevokeOpen(true),
+                },
+              ]
+            : []),
+          {
+            label: t('confirm.delete', 'Delete'),
+            icon: Trash2,
+            destructive: true,
+            separatorBefore: isActive(k),
+            route: 'DELETE /api/v1/api-keys/{id}' as const,
+            onClick: () => setDeleteOpen(true),
+          },
+        ]}
+      />
       <ConfirmDialog
         open={revokeOpen}
         onOpenChange={setRevokeOpen}
@@ -155,7 +143,11 @@ function KeyRowActions({ k, onChanged }: { k: APIKey; onChanged: () => void }) {
           'confirm.apiKey.deleteDesc',
           'Every client using this key loses access at once, and the key leaves the list. This cannot be undone.'
         )}
-        confirmText={deleting ? t('confirm.deleting', 'Deleting…') : t('confirm.delete', 'Delete')}
+        confirmText={
+          deleting
+            ? t('confirm.deleting', 'Deleting…')
+            : t('confirm.apiKey.deleteButton', 'Delete key')
+        }
         destructive
         isLoading={deleting}
         typeToConfirm={k.name}
@@ -172,13 +164,15 @@ function KeyRowActions({ k, onChanged }: { k: APIKey; onChanged: () => void }) {
 function LoadingSkeleton() {
   return (
     <Main>
-      <Skeleton className="mb-6 h-8 w-48" />
-      <div className="grid gap-4 md:grid-cols-4">
-        {Array.from({ length: 4 }).map((_, i) => (
-          <Skeleton key={i} className="h-24 rounded-lg" />
-        ))}
-      </div>
-      <Skeleton className="mt-6 h-64 rounded-lg" />
+      <PageStack>
+        <Skeleton className="h-8 w-48" />
+        <div className="grid gap-4 md:grid-cols-4">
+          {Array.from({ length: 4 }).map((_, i) => (
+            <Skeleton key={i} className="h-24 rounded-lg" />
+          ))}
+        </div>
+        <Skeleton className="h-64 rounded-lg" />
+      </PageStack>
     </Main>
   )
 }
@@ -191,7 +185,7 @@ export default function APIKeysPage() {
   const { pagination, setPagination, setPage } = list
   const resetPage = useCallback(() => setPage(1), [setPage])
   const [searchParam, setSearchParam] = useUrlFilter('q', '')
-  const search = useDebounce(searchParam.trim(), 300)
+  const search = useSearchQuery(searchParam).term
   const { data, error, isLoading, mutate } = useApiKeys({
     page: pagination.pageIndex + 1,
     perPage: pagination.pageSize,
@@ -299,108 +293,112 @@ export default function APIKeysPage() {
   if (error)
     return (
       <Main>
-        <PageHeader title={pageTitle} description={pageDesc} />
-        <ErrorState title={pageTitle} error={error} onRetry={() => void mutate()} />
+        <PageStack>
+          <PageHeader title={pageTitle} description={pageDesc} />
+          <ErrorState title={pageTitle} error={error} onRetry={() => void mutate()} />
+        </PageStack>
       </Main>
     )
 
   return (
     <Main>
-      <PageHeader title={pageTitle} description={pageDesc}>
-        {canGenerate && (
-          <Button size="sm" onClick={() => setGenOpen(true)}>
-            <Plus className="me-2 h-4 w-4" />
-            {t('settings.apiKeys.generate', 'Generate API key')}
-          </Button>
-        )}
-      </PageHeader>
-
-      <Card className="mt-6">
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <KeyRound className="h-5 w-5" />
-            {t('settings.apiKeys.cardTitle', 'API key management')}
-          </CardTitle>
-          <CardDescription>
-            {ownKeysOnly
-              ? t(
-                  'settings.apiKeys.cardDescOwn',
-                  'Your own keys. Owners and administrators see and manage every key in the organization.'
-                )
-              : t(
-                  'settings.apiKeys.cardDescAll',
-                  'Each key is scoped to specific permissions and can be set to expire automatically.'
-                )}
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          {total === 0 && !search ? (
-            <EmptyState
-              icon={KeyRound}
-              title={t('settings.apiKeys.emptyTitle', 'No API keys yet')}
-              description={
-                canGenerate
-                  ? t(
-                      'settings.apiKeys.emptyDescGenerate',
-                      'Generate a scoped key for programmatic access to the API.'
-                    )
-                  : t(
-                      'settings.apiKeys.emptyDescAsk',
-                      'Ask an owner or administrator if you need a key.'
-                    )
-              }
-              card={false}
-              action={
-                canGenerate ? (
-                  <Button size="sm" onClick={() => setGenOpen(true)}>
-                    <Plus className="me-2 h-4 w-4" />
-                    {t('settings.apiKeys.generate', 'Generate API key')}
-                  </Button>
-                ) : undefined
-              }
-            />
-          ) : (
-            <DataTable
-              columns={columns}
-              data={keys}
-              getRowId={(k) => k.id}
-              manualPagination
-              rowCount={total}
-              pagination={pagination}
-              onPaginationChange={setPagination}
-              pageSizeOptions={API_KEY_PAGE_SIZES}
-              paginationNoun={t('settings.apiKeys.noun', 'keys')}
-              showSearch={false}
-              toolbarStart={
-                <Input
-                  placeholder={t('settings.apiKeys.searchPlaceholder', 'Search API keys…')}
-                  value={searchParam}
-                  onChange={(e) => {
-                    setSearchParam(e.target.value)
-                    resetPage()
-                  }}
-                  className="h-9 max-w-sm"
-                  aria-label={t('settings.apiKeys.searchLabel', 'Search API keys')}
-                />
-              }
-              emptyMessage={t('settings.apiKeys.noKeys', 'No API keys')}
-              emptyDescription={t('settings.apiKeys.noMatch', 'No API keys match your search.')}
-            />
+      <PageStack>
+        <PageHeader title={pageTitle} description={pageDesc}>
+          {canGenerate && (
+            <Button size="sm" onClick={() => setGenOpen(true)}>
+              <Plus className="me-2 h-4 w-4" />
+              {t('settings.apiKeys.generate', 'Generate API key')}
+            </Button>
           )}
-        </CardContent>
-      </Card>
+        </PageHeader>
 
-      <GenerateKeyDialog
-        open={genOpen}
-        onOpenChange={setGenOpen}
-        onSubmit={(req) => createKey(req)}
-        isMutating={creating}
-        onCreated={(plaintext) => {
-          setNewKey(plaintext)
-          mutate()
-        }}
-      />
-      <RevealKeyDialog value={newKey} onClose={() => setNewKey('')} />
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <KeyRound className="h-5 w-5" />
+              {t('settings.apiKeys.cardTitle', 'API key management')}
+            </CardTitle>
+            <CardDescription>
+              {ownKeysOnly
+                ? t(
+                    'settings.apiKeys.cardDescOwn',
+                    'Your own keys. Owners and administrators see and manage every key in the organization.'
+                  )
+                : t(
+                    'settings.apiKeys.cardDescAll',
+                    'Each key is scoped to specific permissions and can be set to expire automatically.'
+                  )}
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            {total === 0 && !search ? (
+              <EmptyState
+                icon={KeyRound}
+                title={t('settings.apiKeys.emptyTitle', 'No API keys yet')}
+                description={
+                  canGenerate
+                    ? t(
+                        'settings.apiKeys.emptyDescGenerate',
+                        'Generate a scoped key for programmatic access to the API.'
+                      )
+                    : t(
+                        'settings.apiKeys.emptyDescAsk',
+                        'Ask an owner or administrator if you need a key.'
+                      )
+                }
+                card={false}
+                action={
+                  canGenerate ? (
+                    <Button size="sm" onClick={() => setGenOpen(true)}>
+                      <Plus className="me-2 h-4 w-4" />
+                      {t('settings.apiKeys.generate', 'Generate API key')}
+                    </Button>
+                  ) : undefined
+                }
+              />
+            ) : (
+              <DataTable
+                columns={columns}
+                data={keys}
+                getRowId={(k) => k.id}
+                manualPagination
+                rowCount={total}
+                pagination={pagination}
+                onPaginationChange={setPagination}
+                pageSizeOptions={API_KEY_PAGE_SIZES}
+                paginationNoun={t('settings.apiKeys.noun', 'keys')}
+                showSearch={false}
+                toolbarStart={
+                  <Input
+                    placeholder={t('settings.apiKeys.searchPlaceholder', 'Search API keys…')}
+                    value={searchParam}
+                    onChange={(e) => {
+                      setSearchParam(e.target.value)
+                      resetPage()
+                    }}
+                    className="h-9 max-w-sm"
+                    aria-label={t('settings.apiKeys.searchLabel', 'Search API keys')}
+                  />
+                }
+                emptyMessage={t('settings.apiKeys.noKeys', 'No API keys')}
+                emptyDescription={t('settings.apiKeys.noMatch', 'No API keys match your search.')}
+              />
+            )}
+          </CardContent>
+        </Card>
+
+        <GenerateKeyDialog
+          open={genOpen}
+          onOpenChange={setGenOpen}
+          onSubmit={(req) => createKey(req)}
+          isMutating={creating}
+          onCreated={(plaintext) => {
+            setNewKey(plaintext)
+            mutate()
+          }}
+        />
+        <RevealKeyDialog value={newKey} onClose={() => setNewKey('')} />
+      </PageStack>
     </Main>
   )
 }

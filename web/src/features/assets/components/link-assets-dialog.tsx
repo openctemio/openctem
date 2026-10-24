@@ -21,6 +21,7 @@ import { cn } from '@/lib/utils'
 import { useTranslation } from '@/context/i18n-provider'
 import { getErrorMessage } from '@/lib/api/error-handler'
 import { useAssets } from '../hooks/use-assets'
+import { useSearchQuery } from '@/hooks/use-search-query'
 
 export interface LinkAssetsDialogProps {
   open: boolean
@@ -59,14 +60,9 @@ export function LinkAssetsDialog({
 }: LinkAssetsDialogProps) {
   const { t } = useTranslation()
   const [search, setSearch] = useState('')
-  const [debouncedSearch, setDebouncedSearch] = useState('')
+  const debouncedSearch = useSearchQuery(search).term
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const [isSubmitting, setIsSubmitting] = useState(false)
-
-  useEffect(() => {
-    const timer = setTimeout(() => setDebouncedSearch(search), 400)
-    return () => clearTimeout(timer)
-  }, [search])
 
   // `skip` keeps SWR from firing while the dialog is closed.
   const { assets, isLoading } = useAssets({
@@ -81,7 +77,6 @@ export function LinkAssetsDialog({
   useEffect(() => {
     setSelected(new Set())
     setSearch('')
-    setDebouncedSearch('')
   }, [open, resetKey])
 
   const toggle = useCallback((assetId: string) => {

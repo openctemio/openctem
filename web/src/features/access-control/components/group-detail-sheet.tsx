@@ -299,12 +299,12 @@ export function GroupDetailSheet({ groupId, open, onOpenChange, onUpdate }: Grou
   const assetCount = group?.asset_count ?? assetsTotalCount ?? 0
 
   const tabs: DetailTab<GroupTab>[] = [
-    { value: 'overview', label: 'Overview' },
+    { value: 'overview', label: t('org.teamSheet.overview', 'Overview') },
     {
       value: 'members',
       label: (
         <>
-          Members
+          {t('org.teamSheet.members', 'Members')}
           <TabsCount value={memberCount} />
         </>
       ),
@@ -313,23 +313,25 @@ export function GroupDetailSheet({ groupId, open, onOpenChange, onUpdate }: Grou
       value: 'assets',
       label: (
         <>
-          Assets
+          {t('org.teamSheet.assets', 'Assets')}
           <TabsCount value={assetCount} />
         </>
       ),
     },
-    ...(canViewRoles ? [{ value: 'roles' as const, label: 'Roles' }] : []),
-    { value: 'scope-rules', label: 'Scope rules' },
+    ...(canViewRoles
+      ? [{ value: 'roles' as const, label: t('org.teamSheet.roles', 'Roles') }]
+      : []),
+    { value: 'scope-rules', label: t('org.teamSheet.scopeRules', 'Scope rules') },
   ]
 
   const menu: DetailMenuItem[] = group
     ? [
         {
-          label: 'Copy ID',
+          label: t('org.teamSheet.copyId', 'Copy ID'),
           icon: Hash,
           onSelect: () => {
             copyToClipboard(group.id)
-            toast.success('Team ID copied to clipboard')
+            toast.success(t('org.teamSheet.idCopied', 'Team ID copied to clipboard'))
           },
         },
       ]
@@ -521,6 +523,7 @@ export function GroupDetailSheet({ groupId, open, onOpenChange, onUpdate }: Grou
                 groupId={groupId}
                 canBind={canBindRole}
                 canUnbind={canUnbindRole}
+                memberCount={memberCount}
                 onChanged={onUpdate}
               />
             )}

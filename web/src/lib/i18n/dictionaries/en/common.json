@@ -150,5 +150,8 @@
   "common.bootstrap.retry": "Retry",
   "common.bootstrap.retrying": "Retrying…",
   "common.table.selectColumn": "Select",
-  "common.table.actionsColumn": "Actions"
+  "common.table.actionsColumn": "Actions",
+  "common.filter.all": "All",
+  "common.filter.clearNamed": "Clear {name}",
+  "common.tabs.more": "More"
 }

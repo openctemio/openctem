@@ -23,9 +23,9 @@ function sortBands(bands: SeverityCoverage[]): SeverityCoverage[] {
 }
 
 function pctColor(pct: number): string {
-  if (pct >= 80) return 'text-emerald-600 dark:text-emerald-400'
-  if (pct >= 40) return 'text-amber-600 dark:text-amber-400'
-  return 'text-red-600 dark:text-red-400'
+  if (pct >= 80) return 'text-success'
+  if (pct >= 40) return 'text-warning'
+  return 'text-destructive'
 }
 
 /**

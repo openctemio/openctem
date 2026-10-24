@@ -16,8 +16,9 @@ import Link from '@/components/link'
 import { Plus, Settings2, ShieldOff } from 'lucide-react'
 import { Main } from '@/components/layout'
 import { Button } from '@/components/ui/button'
-import { Tabs, TabsContent, TabsCount, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import {
+  FilterSelect,
+  ListToolbar,
   MetricStrip,
   GatedSectionTabs,
   PageHeader,
@@ -25,7 +26,7 @@ import {
   type MetricStripItem,
 } from '@/features/shared'
 import { SCOPE_SECTION_TABS } from '@/config/section-tabs'
-import { useDebounce } from '@/hooks/use-debounce'
+import { useSearchQuery } from '@/hooks/use-search-query'
 import { useUrlFilter } from '@/hooks/use-url-param'
 import { useListParams } from '@/hooks/use-list-params'
 import { Permission, useHasPermission } from '@/lib/permissions'
@@ -43,12 +44,10 @@ import { ScopeExclusionsTable } from '@/features/scope/components/scope-exclusio
 import { ScopeExclusionDialog } from '@/features/scope/components/scope-exclusion-dialog'
 import { ScopeApprovals, usePendingScopeChanges } from '@/features/scope/components/scope-approvals'
 import { ScopeOnboarding } from '@/features/scope/components/scope-onboarding'
-import { EASMDomainProofPanel } from '@/features/attack-surface/components/easm-domain-proof'
-import { EASMNetworkSeedsPanel } from '@/features/attack-surface/components/easm-network-seeds'
-import { useTenantModules } from '@/features/integrations/api/use-tenant-modules'
 import { useTranslation } from '@/context/i18n-provider'
 
-const TABS = ['in', 'out', 'approvals', 'proof', 'networks'] as const
+// Domain proof and Networks are their own pages (route tabs of Scope).
+const TABS = ['in', 'out', 'approvals'] as const
 type ScopeTab = (typeof TABS)[number]
 
 export default function ScopePage() {
@@ -59,12 +58,8 @@ export default function ScopePage() {
   const { settings, entriesNeedApproval, isRequest, canAdd } = useScopeAddMode()
 
   const [tabParam, setTabParam] = useUrlFilter('tab', 'in')
-  const { moduleIds } = useTenantModules()
-  const proofVisible = moduleIds.includes('attack_surface')
   const tabVisible = (name: string) =>
-    (TABS as readonly string[]).includes(name) &&
-    ((name !== 'proof' && name !== 'networks') || proofVisible) &&
-    (name !== 'approvals' || showApprovals)
+    (TABS as readonly string[]).includes(name) && (name !== 'approvals' || showApprovals)
 
   const [q, setQ] = useUrlFilter('q', '')
   const [kind, setKind] = useUrlFilter('kind', 'all')
@@ -72,7 +67,7 @@ export default function ScopePage() {
   const list = useListParams({ pageSizes: SCOPE_PAGE_SIZES, defaultPageSize: 20 })
   const { page, perPage, setPage } = list
   const [searchInput, setSearchInput] = useState(q)
-  const debounced = useDebounce(searchInput, 300)
+  const debounced = useSearchQuery(searchInput).term
   const commitSearch = useEffectEvent((next: string) => {
     if (next !== q) {
       setQ(next)
@@ -188,16 +183,40 @@ export default function ScopePage() {
             {t('scope.putOut', 'Put out of scope')}
           </Button>
         )
-      : tab === 'proof' || tab === 'networks'
-        ? null
-        : canAdd && (
-            <Button size="sm" onClick={() => setAddOpen(true)}>
-              <Plus className="h-4 w-4" />
-              {addLabel}
-            </Button>
-          )
+      : canAdd && (
+          <Button size="sm" onClick={() => setAddOpen(true)}>
+            <Plus className="h-4 w-4" />
+            {addLabel}
+          </Button>
+        )
 
   const query = { search: q, kind, status, page, perPage }
+
+  // Which list the page shows (entries, exclusions, changes waiting for
+  // approval): a token first in the list's toolbar, not a second tab row
+  // under the Scope tabs (research/249 R21). Counts are every row each list
+  // holds, whatever its status.
+  const listSelect = (
+    <FilterSelect<ScopeTab>
+      label={t('scope.show.label', 'Show')}
+      value={tab}
+      clearable={false}
+      options={[
+        { value: 'in', label: t('scope.tabs.entries', 'Entries'), count: inEntries?.total },
+        { value: 'out', label: t('scope.tabs.exclusions', 'Exclusions'), count: outRows?.total },
+        ...(showApprovals
+          ? [
+              {
+                value: 'approvals' as const,
+                label: t('scope.tabs.approvals', 'Approvals'),
+                count: pending,
+              },
+            ]
+          : []),
+      ]}
+      onChange={(v) => selectTab(v || 'in')}
+    />
+  )
 
   return (
     <Main>
@@ -224,83 +243,51 @@ export default function ScopePage() {
           items={metrics}
         />
 
-        <Tabs value={tab} onValueChange={selectTab}>
-          <div className="no-scrollbar -mx-4 overflow-x-auto px-4 sm:mx-0 sm:px-0">
-            <TabsList>
-              <TabsTrigger value="in">
-                {t('scope.tabs.entries', 'Entries')} <TabsCount value={inEntries?.total ?? '…'} />
-              </TabsTrigger>
-              <TabsTrigger value="out">
-                {t('scope.tabs.exclusions', 'Exclusions')}{' '}
-                <TabsCount value={outRows?.total ?? '…'} />
-              </TabsTrigger>
-              {showApprovals && (
-                <TabsTrigger value="approvals">
-                  {t('scope.tabs.approvals', 'Approvals')} <TabsCount value={pending} />
-                </TabsTrigger>
-              )}
-              {proofVisible && (
-                <TabsTrigger value="proof">{t('scope.tabs.proof', 'Domain proof')}</TabsTrigger>
-              )}
-              {proofVisible && (
-                <TabsTrigger value="networks">{t('networkSeeds.tab', 'Networks')}</TabsTrigger>
-              )}
-            </TabsList>
-          </div>
-
-          <TabsContent value="in">
-            <ScopeEntriesTable
-              query={query}
-              searchInput={searchInput}
-              onSearchInput={setSearchInput}
-              onKindChange={(v) => {
-                setKind(v)
-                setPage(1)
-              }}
-              onStatusChange={(v) => {
-                setStatus(v)
-                setPage(1)
-              }}
-              onPagination={onPagination}
-              emptyAction={
-                <ScopeOnboarding
-                  activeProof={settings?.active_proof}
-                  canAdd={canAdd}
-                  onAdd={() => setAddOpen(true)}
-                />
-              }
-            />
-          </TabsContent>
-          <TabsContent value="out">
-            <ScopeExclusionsTable
-              query={query}
-              searchInput={searchInput}
-              onSearchInput={setSearchInput}
-              onKindChange={(v) => {
-                setKind(v)
-                setPage(1)
-              }}
-              onStatusChange={(v) => {
-                setStatus(v)
-                setPage(1)
-              }}
-              onPagination={onPagination}
-            />
-          </TabsContent>
-          <TabsContent value="approvals">
+        {tab === 'in' ? (
+          <ScopeEntriesTable
+            leading={listSelect}
+            query={query}
+            searchInput={searchInput}
+            onSearchInput={setSearchInput}
+            onKindChange={(v) => {
+              setKind(v)
+              setPage(1)
+            }}
+            onStatusChange={(v) => {
+              setStatus(v)
+              setPage(1)
+            }}
+            onPagination={onPagination}
+            emptyAction={
+              <ScopeOnboarding
+                activeProof={settings?.active_proof}
+                canAdd={canAdd}
+                onAdd={() => setAddOpen(true)}
+              />
+            }
+          />
+        ) : tab === 'out' ? (
+          <ScopeExclusionsTable
+            leading={listSelect}
+            query={query}
+            searchInput={searchInput}
+            onSearchInput={setSearchInput}
+            onKindChange={(v) => {
+              setKind(v)
+              setPage(1)
+            }}
+            onStatusChange={(v) => {
+              setStatus(v)
+              setPage(1)
+            }}
+            onPagination={onPagination}
+          />
+        ) : (
+          <>
+            <ListToolbar start={listSelect} />
             <ScopeApprovals />
-          </TabsContent>
-          {proofVisible && (
-            <TabsContent value="proof">
-              <EASMDomainProofPanel />
-            </TabsContent>
-          )}
-          {proofVisible && (
-            <TabsContent value="networks">
-              <EASMNetworkSeedsPanel />
-            </TabsContent>
-          )}
-        </Tabs>
+          </>
+        )}
       </PageStack>
       <ScopeEntryDialog open={addOpen} onOpenChange={setAddOpen} onShowExisting={showExisting} />
       <ScopeExclusionDialog

@@ -224,7 +224,9 @@ func registerServiceAccountRoutes(
 	router.Group("/api/v1/service-accounts", func(r Router) {
 		r.GET("/", h.List, middleware.Require(permission.MembersRead))
 		r.POST("/", h.Create, middleware.Require(permission.ServiceAccountsManage))
-		r.DELETE("/{id}", h.Delete, middleware.Require(permission.ServiceAccountsManage))
+		// Deleting a service account ends every key it holds: a recent
+		// sign-in, as deleting one of its keys needs.
+		r.DELETE("/{id}", h.Delete, middleware.Require(permission.ServiceAccountsManage), requireStepUp())
 		// Its API keys: each action needs both the service-account and the API
 		// key permission; minting and deleting need a recent sign-in, as they do
 		// for your own keys.
