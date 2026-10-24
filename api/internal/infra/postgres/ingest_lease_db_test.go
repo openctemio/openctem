@@ -102,3 +102,69 @@ func TestIngestLease_RenewKeepsTheLease_DB(t *testing.T) {
 		t.Fatalf("Renew of a finished job = %v", err)
 	}
 }
+
+// Leases are stamped and judged with the database clock: a claim and a renewal
+// store the database's NOW(), and ReleaseStale compares against it, so the
+// app replica's clock cannot lengthen or shorten a lease.
+func TestIngestLease_UsesDatabaseClock_DB(t *testing.T) {
+	db := openSensorDB(t)
+	ctx := context.Background()
+	tenant := newIngestJobTestTenant(t, db)
+	repo := NewIngestJobRepository(&DB{DB: db})
+	j := enqueueRouted(t, repo, tenant, "lease-clock", ingestjob.LaneBulk, "")
+
+	claimed, err := repo.ClaimBatch(ctx, "w1", 100)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var mineJob *ingestjob.Job
+	for _, c := range claimed {
+		if c.ID() == j.ID() {
+			mineJob = c
+		}
+	}
+	if mineJob == nil {
+		t.Fatal("job not claimed")
+	}
+	// locked_at and updated_at are both the claim transaction's NOW().
+	var gap float64
+	if err := db.QueryRowContext(ctx, `SELECT EXTRACT(EPOCH FROM (locked_at - updated_at)) FROM ingest_jobs WHERE id = $1`, j.ID().String()).Scan(&gap); err != nil || gap != 0 {
+		t.Fatalf("locked_at - updated_at = %v, %v", gap, err)
+	}
+
+	// Pretend the lease is 10s old by the database clock.
+	if _, err := db.ExecContext(ctx, `UPDATE ingest_jobs SET locked_at = NOW() - interval '10 seconds' WHERE id = $1`, j.ID().String()); err != nil {
+		t.Fatal(err)
+	}
+	// A renewal restamps with the database clock (age back to ~0).
+	if err := repo.Renew(ctx, tenant, j.ID(), mineJob.Attempts()); err != nil {
+		t.Fatal(err)
+	}
+	var age float64
+	if err := db.QueryRowContext(ctx, `SELECT EXTRACT(EPOCH FROM (NOW() - locked_at)) FROM ingest_jobs WHERE id = $1`, j.ID().String()).Scan(&age); err != nil {
+		t.Fatal(err)
+	}
+	if age < 0 || age > 5 {
+		t.Fatalf("renewed lease age by the database clock = %vs", age)
+	}
+	if _, dead, err := repo.ReleaseStale(ctx, time.Minute); err != nil || len(mine(dead, tenant)) != 0 {
+		t.Fatalf("a fresh lease was released: %v %v", dead, err)
+	}
+	got, _ := repo.GetByID(ctx, tenant, j.ID())
+	if got.Status() != ingestjob.StatusProcessing {
+		t.Fatalf("status = %s, want processing", got.Status())
+	}
+
+	// A lease older than the window by the database clock is released, with a
+	// sub-minute window (the seconds survive the interval conversion).
+	if _, err := db.ExecContext(ctx, `UPDATE ingest_jobs SET locked_at = NOW() - interval '10 seconds' WHERE id = $1`, j.ID().String()); err != nil {
+		t.Fatal(err)
+	}
+	if n, _, err := repo.ReleaseStale(ctx, 5*time.Second); err != nil || n < 1 {
+		t.Fatalf("ReleaseStale = %d, %v", n, err)
+	}
+	got, _ = repo.GetByID(ctx, tenant, j.ID())
+	if got.Status() != ingestjob.StatusPending {
+		t.Fatalf("status = %s, want pending", got.Status())
+	}
+}
