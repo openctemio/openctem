@@ -29,9 +29,6 @@ type SyncOutcome struct {
 	// matches, and a sync request made after ClaimedAt is kept.
 	LeaseUntil time.Time
 	ClaimedAt  time.Time
-	// ConsumeAuthors clears the config authors the sync's snapshot recorded
-	// (when the configuration did not change after the claim).
-	ConsumeAuthors bool
 }
 
 // Repository stores sources and snapshots.
@@ -93,6 +90,8 @@ type Repository interface {
 	// snapshot (four-eyes).
 	Promote(ctx context.Context, tenantID, sourceID, snapshotID shared.ID, by *shared.ID, at time.Time, check func(*Source, *Snapshot) error) error
 	// PromoteUnscoped is Promote for the sync worker's automatic promotion.
+	// It reads the policy again under the lock and returns ErrPolicyChanged
+	// (marking the snapshot for review) when it is no longer auto.
 	PromoteUnscoped(ctx context.Context, sourceID, snapshotID shared.ID, at time.Time) error
 	// Rollback swaps current and previous of the tenant's own source.
 	Rollback(ctx context.Context, tenantID, sourceID shared.ID) (*Source, error)

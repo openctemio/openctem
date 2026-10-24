@@ -104,12 +104,14 @@ type Snapshot struct {
 	// ConfigAuthors are the members who changed the configuration this
 	// snapshot was synced from; none of them may approve its promotion.
 	ConfigAuthors []shared.ID
-	PromotedBy    *shared.ID
-	PromotedAt    *time.Time
-	RejectedBy    *shared.ID
-	RejectedAt    *time.Time
-	RejectReason  string
-	CreatedAt     time.Time
+	// ConfigAsOf is the claim time of the sync that made the snapshot.
+	ConfigAsOf   *time.Time
+	PromotedBy   *shared.ID
+	PromotedAt   *time.Time
+	RejectedBy   *shared.ID
+	RejectedAt   *time.Time
+	RejectReason string
+	CreatedAt    time.Time
 }
 
 // ComputeDiff compares a candidate's rules, tier and license with base (nil

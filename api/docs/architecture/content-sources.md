@@ -107,9 +107,15 @@ Promoting a candidate (`POST /{id}/snapshots/{snapshot_id}/approve`) needs
 `scans:sources:approve` and a recent sign-in. When the candidate needs review,
 no member who changed the configuration it was synced from can promote it:
 every snapshot records the members who changed what the source fetches (URL,
-ref, path, CA, credential or policy) since the previous synced snapshot
-(`config_authors`), and the member who last changed it (`config_changed_by`)
-is refused too, as is a caller without a user: **four-eyes**. So a second
+ref, path, CA, credential or policy) since the last review
+(`config_authors`; a sync never clears them, and every snapshot records the
+claim time of its sync as `config_as_of`), and the member who last changed it (`config_changed_by`)
+is refused too, as is a caller without a user: **four-eyes**. Only a manual
+promotion of a snapshot that needed review, by a member who is not one of its
+authors, clears the authors, and only for changes made up to that snapshot's
+`config_as_of`; automatic promotion never clears them, and reads the policy
+again under the source lock, so a switch to `review` during a sync stops it
+(the snapshot is then marked as needing review). So a second
 member's later, unrelated edit never frees the first to approve their own
 change. Switching the promotion policy from `review` to `auto` needs
 `scans:sources:approve`, not only `scans:sources:write`: turning review off
@@ -168,7 +174,8 @@ them itself, whatever the organization's limits:
   (`FETCH_BUSY`); the worker claims nothing until a slot is free and the due
   sources stay due.
 - **Free disk.** Before cloning, the free space of the temporary directory
-  must exceed the clone cap (200 MiB) plus 1 GiB; otherwise the fetch is
+  must exceed the clone cap (200 MiB) for this clone and for every clone in
+  flight in the process, plus 1 GiB (the space is reserved until the clone ends); otherwise the fetch is
   refused (`SERVER_DISK_LOW`, 503 for Test, a failed sync otherwise). A free
   space that cannot be read refuses too. A full disk stops the database.
 - **Storage.** A snapshot's bytes count inside the organization's 2 GiB pack
@@ -229,7 +236,7 @@ and `rolled_back` (high).
 | Malicious upstream commit | candidate with diff; tier escalation, license change, mass removal and duplicate ids stop automatic promotion; tier escalation forces four-eyes review |
 | Cross-organization access | tenant predicate on every statement; 404 for other organizations' and hidden sources; signing key from the source row; platform rows never written by an organization route |
 | Webhook abuse | per-source secret, constant-time compare, no content accepted, rate limits, one answer for every refusal |
-| Resource exhaustion | clone size cap, file and size limits, sync and lint timeouts, one sync per source at a time, limits per organization, at most 3 concurrent fetches per server process shared by Test and sync (Test answers 503 when full), no fetch when the clone disk would drop under 1 GiB free beyond the clone, snapshot bytes inside the 2 GiB pack quota, fair claim across organizations |
+| Resource exhaustion | clone size cap, file and size limits, sync and lint timeouts, one sync per source at a time, limits per organization, at most 3 concurrent fetches per server process shared by Test and sync (Test answers 503 when full, and one Test per organization at a time), no fetch when the clone disk would drop under 1 GiB free beyond the clone, snapshot bytes inside the 2 GiB pack quota, fair claim across organizations |
 
 ## Key files
 
