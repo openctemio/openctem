@@ -255,13 +255,20 @@ export function DedupReviewPage() {
         }
         desc={t(
           'confirm.dedup.mergeDesc',
-          '{names} are removed from the inventory and their findings move to {keep}. This cannot be undone.',
+          '{names} are removed from the inventory and their findings move to {keep}. The merge cannot be reversed from the console.',
           {
             names: pendingMerge?.merge_asset_names.join(', ') ?? '',
             keep: pendingMerge?.keep_asset_name ?? '',
           }
         )}
-        confirmText={t('confirm.dedup.merge', 'Merge')}
+        confirmText={
+          pendingMerge?.merge_asset_ids.length === 1
+            ? t('confirm.dedup.mergeButtonOne', 'Merge 1 asset')
+            : t('confirm.dedup.mergeButton', 'Merge {count} assets', {
+                count: pendingMerge?.merge_asset_ids.length ?? 0,
+              })
+        }
+        typeToConfirm={pendingMerge ? String(pendingMerge.merge_asset_ids.length) : undefined}
         isLoading={busyId !== null}
         handleConfirm={() => (pendingMerge ? act(pendingMerge.id, 'approve') : undefined)}
       />

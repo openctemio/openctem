@@ -146,6 +146,11 @@ checklist: the `web-change` skill in the repository root `.claude/skills/`.
 - Server Components for reads (default), Server Actions for mutations
 - SWR for client-side fetching, `mutate()` to invalidate after mutations
 - Always paginate list endpoints (`page` + `per_page` on most lists; check the endpoint)
+- Typed search (search boxes, pickers, filter-as-you-type) reaches a request only as
+  `useSearchQuery(input).term` (`src/hooks/use-search-query.ts`: 300 ms debounce, 2-char
+  minimum, IME composition, hidden tab, 429 Retry-After) or through `useListParams`
+  (`apiParams.q` / `searchTerm`). `search-query-guard.test.ts` fails on raw input state in a
+  request and on `useDebounce` for a search value.
 
 ### Validation
 
