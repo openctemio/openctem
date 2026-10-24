@@ -25,6 +25,7 @@ import { Badge } from '@/components/ui/badge'
 import { ConfirmDialog } from '@/components/confirm-dialog'
 import { Skeleton } from '@/components/ui/skeleton'
 import { toast } from 'sonner'
+import { safeText } from '@/lib/api/error-message'
 import { Can } from '@/lib/permissions'
 import {
   Plus,
@@ -129,7 +130,10 @@ export default function SCMConnectionsPage() {
           )
         } else {
           toast.error(
-            result.status_message || t('scmIntegration.toast.testFailed', 'Connection test failed')
+            safeText(
+              result.status_message,
+              t('scmIntegration.toast.testFailed', 'Connection test failed')
+            )
           )
         }
         await mutate()

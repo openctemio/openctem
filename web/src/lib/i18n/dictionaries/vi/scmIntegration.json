@@ -32,5 +32,6 @@
   "scmIntegration.toast.refreshed": "Đã làm mới các kết nối",
   "scmIntegration.toast.testError": "Không kiểm tra được kết nối",
   "scmIntegration.toast.testFailed": "Kiểm tra kết nối thất bại",
-  "scmIntegration.toast.testOk": "Kết nối \"{name}\" hoạt động bình thường"
+  "scmIntegration.toast.testOk": "Kết nối \"{name}\" hoạt động bình thường",
+  "scmIntegration.toast.testFailedNamed": "Không kết nối được tới {name}."
 }
