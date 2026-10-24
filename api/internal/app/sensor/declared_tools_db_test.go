@@ -15,8 +15,10 @@ import (
 	"slices"
 	"testing"
 
+	scanapp "github.com/openctemio/openctem/api/internal/app/scan"
 	sensorapp "github.com/openctemio/openctem/api/internal/app/sensor"
 	"github.com/openctemio/openctem/api/internal/infra/postgres"
+	"github.com/openctemio/openctem/api/pkg/domain/scanworkflow"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	tooldom "github.com/openctemio/openctem/api/pkg/domain/tool"
 	"github.com/openctemio/openctem/api/pkg/logger"
@@ -166,5 +168,77 @@ func TestDeclaredToolsAreBounded_DB(t *testing.T) {
 	tl, _ := tooldom.NewDeclaredTool(tenant, tooldom.Declaration{Name: "one-too-many", Digest: "sha256:x"})
 	if ok, err := tools.CreateDeclared(ctx, tl); err != nil || ok {
 		t.Fatalf("over the bound: %v %v", ok, err)
+	}
+}
+
+// declaredToolJSONWithParams is declaredToolJSON whose descriptor maps the
+// standard param max_duration_minutes of dast.web@1 to its key "minutes".
+func declaredToolJSONWithParams(t *testing.T, name string) string {
+	t.Helper()
+	desc := fmt.Sprintf(`{"apiVersion":"openctem.io/tool/v1","name":%q,"version":"1.0.0","description":"Checks web origins.",`+
+		`"class":"target-scan","tier":"T2",`+
+		`"implements":[{"capability":"dast.web@1","params":{"max_duration_minutes":{"key":"minutes"}}}],`+
+		`"consumes":["http_service"],"produces":["finding:misconfiguration"],`+
+		`"config":{"type":"object","additionalProperties":false,"properties":{"minutes":{"type":"integer","minimum":1,"maximum":60,"x-octm-scope":"scan"}}}}`,
+		name)
+	sum := sha256.Sum256([]byte(desc))
+	contract := map[string]any{
+		"api_version": "openctem.io/tool/v1", "digest": "sha256:" + hex.EncodeToString(sum[:]), "version": "1.0.0",
+		"class": "target-scan", "tier": "T2", "network": "targets", "consumes": []string{"http_service"},
+		"produces": []string{"finding:misconfiguration"}, "implements": []string{"dast.web@1"},
+		"origin": "adapter", "descriptor": json.RawMessage(desc),
+	}
+	b, err := json.Marshal(map[string]any{"name": name, "kind": "scanner", "version": "1.0.0", "installed": true,
+		"capabilities": []string{}, "contract": contract})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return string(b)
+}
+
+// A declared tool runs a capability step of its organization, through the
+// real catalog: its param mapping survives the metadata column, a step's
+// standard param reaches it under its own key, and another organization's
+// step never resolves to it.
+func TestDeclaredToolRunsACapabilityStep_DB(t *testing.T) {
+	h := newActivityHarness(t)
+	ctx := context.Background()
+	db := &postgres.DB{DB: h.db}
+	tools := postgres.NewToolRepository(db)
+	svc := sensorapp.NewSensorService(postgres.NewSensorRepository(db), nil, logger.NewNop())
+	svc.SetDeclaredTools(tools)
+
+	tenantA, tenantB := h.tenant(), h.tenant()
+	a, err := svc.GetSensor(ctx, tenantA.String(), h.sensor(tenantA).String())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := svc.RegisterManifest(ctx, a, []byte(`{"schema":1,"tools":[`+declaredToolJSONWithParams(t, "toyweb-cap")+`]}`)); err != nil {
+		t.Fatal(err)
+	}
+
+	step := func() *scanworkflow.Step {
+		return &scanworkflow.Step{ID: shared.NewID(), StepKey: "dast", Capabilities: []string{"dast.web"},
+			PreferTools: []string{"toyweb-cap"}, Config: map[string]any{"max_duration_minutes": 30}}
+	}
+	got, err := scanapp.ResolveStepTool(ctx, tools, tenantA, step())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Name != "toyweb-cap" || !got.Declared || got.Capability() != "dast.web@1" {
+		t.Fatalf("resolved %+v", got)
+	}
+	if cfg := got.WithTool(step()).Config; cfg["minutes"] != 30 || cfg["max_duration_minutes"] != nil {
+		t.Fatalf("config %v, want the standard param under the tool's key", cfg)
+	}
+
+	// Another organization: its step cannot resolve to A's tool.
+	if _, err := scanapp.ResolveStepTool(ctx, tools, tenantB, step()); err == nil {
+		t.Fatal("another organization's step resolved to A's declared tool")
+	}
+	// Switched off, the tool is not a candidate any more.
+	h.exec(`UPDATE tools SET is_active = false WHERE tenant_id = $1 AND name = 'toyweb-cap'`, tenantA.String())
+	if _, err := scanapp.ResolveStepTool(ctx, tools, tenantA, step()); err == nil {
+		t.Fatal("a switched-off declared tool was picked")
 	}
 }

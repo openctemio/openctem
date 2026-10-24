@@ -15,6 +15,7 @@ import {
   DataTableRowActions,
   MetricStrip,
   type MetricStripItem,
+  PageStack,
 } from '@/features/shared'
 import {
   AssetDetailSheet,
@@ -265,7 +266,6 @@ export default function CredentialsPage() {
       key: 'critical',
       label: t('credentials.metric.critical', 'Critical'),
       value: stats.critical,
-      tone: 'danger',
       onClick: () => setSeverityFilter(severityFilter === 'critical' ? '' : 'critical'),
       active: severityFilter === 'critical',
     },
@@ -583,29 +583,29 @@ export default function CredentialsPage() {
   return (
     <>
       <Main>
-        <PageHeader
-          title={t('credentials.page.title', 'Credential leaks')}
-          description={t(
-            'credentials.page.description',
-            'Leaked passwords, keys and tokens tied to your organisation, from breaches, code and the dark web.'
-          )}
-        >
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => setConfirmExport(true)}
-            disabled={!credentials.length || isExporting}
+        <PageStack>
+          <PageHeader
+            title={t('credentials.page.title', 'Credential leaks')}
+            description={t(
+              'credentials.page.description',
+              'Leaked passwords, keys and tokens tied to your organisation, from breaches, code and the dark web.'
+            )}
           >
-            <Download className="h-4 w-4 sm:me-2" />
-            <span className="sr-only sm:not-sr-only">
-              {t('credentials.export.label', 'Export')}
-            </span>
-          </Button>
-        </PageHeader>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setConfirmExport(true)}
+              disabled={!credentials.length || isExporting}
+            >
+              <Download className="h-4 w-4 sm:me-2" />
+              <span className="sr-only sm:not-sr-only">
+                {t('credentials.export.label', 'Export')}
+              </span>
+            </Button>
+          </PageHeader>
 
-        <MetricStrip className="mt-5" loading={statsLoading} items={metrics} />
+          <MetricStrip loading={statsLoading} items={metrics} />
 
-        <div className="mt-5">
           {viewMode === 'identity' ? (
             <CredentialIdentityGroups
               identities={identitiesResponse?.items ?? []}
@@ -675,7 +675,7 @@ export default function CredentialsPage() {
               emptyDescription={emptyDescription}
             />
           )}
-        </div>
+        </PageStack>
       </Main>
 
       <ConfirmDialog

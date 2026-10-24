@@ -6,7 +6,7 @@
   "threatModel.criticality.none": "none",
   "threatModel.description": "Attack techniques derived per crown jewel, mapped to MITRE ATT&CK and scored by coverage.",
   "threatModel.detail.allModels": "All models",
-  "threatModel.detail.generated": "Generated {date} · ATT&CK {version}",
+  "threatModel.detail.generated": "Generated {date}, ATT&CK {version}",
   "threatModel.detail.loading": "Loading threat model…",
   "threatModel.detail.needWrite": "You need assets:write to refresh",
   "threatModel.detail.refresh": "Refresh",

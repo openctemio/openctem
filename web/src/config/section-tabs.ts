@@ -5,9 +5,9 @@
  * shows ONE row per section (at most two nav levels: group, then item).
  */
 import {
-  AlertTriangle,
+  AppWindow,
+  Briefcase,
   Bug,
-  Building,
   Building2,
   ClipboardCheck,
   Copy,
@@ -22,6 +22,7 @@ import {
   GitBranch,
   Globe,
   History,
+  LayoutDashboard,
   Link2,
   ListChecks,
   Radar,
@@ -41,7 +42,7 @@ import { Permission } from '@/lib/permissions'
  * findings by type. URLs predate the tabs and are unchanged.
  */
 export const EXPOSURES_SECTION_TABS: readonly SectionTab[] = [
-  { label: 'Overview', href: '/exposures', icon: AlertTriangle },
+  { label: 'Overview', href: '/exposures', icon: LayoutDashboard },
   { label: 'Vulnerabilities', href: '/exposures/vulnerabilities', icon: Bug },
   // FileKey, not KeyRound: KeyRound reads as the separate Credential leaks
   // module (leaked accounts), while this tab is secrets committed to code.
@@ -109,7 +110,7 @@ export const BUSINESS_CONTEXT_SECTION_TABS: readonly SectionTab[] = [
   {
     label: 'Services',
     href: '/business-services',
-    icon: Building,
+    icon: Briefcase,
     module: 'business_services',
     permission: Permission.BusinessServicesRead,
   },
@@ -365,7 +366,7 @@ export const ATTACK_SURFACE_SECTION_TABS: readonly SectionTab[] = [
     // (research/242 D4). The data is the assets module's.
     label: 'Web surface',
     href: '/attack-surface/web',
-    icon: Globe,
+    icon: AppWindow,
     module: 'assets',
     permission: Permission.AssetsRead,
   },

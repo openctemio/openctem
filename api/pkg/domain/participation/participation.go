@@ -100,6 +100,10 @@ type Watcher struct {
 	Subscription
 	Name      string
 	AvatarURL string
+	// AddedByName is the display name of the person who added this watcher,
+	// empty when nobody did or when that person is no longer an active member
+	// of the tenant.
+	AddedByName string
 }
 
 // AssetOwner is a named user owner of the asset a finding is on.

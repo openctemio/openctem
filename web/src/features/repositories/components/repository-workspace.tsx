@@ -565,7 +565,7 @@ function transformToRepositoryView(asset: ApiAssetResponse): RepositoryView {
 
 import { cn, sanitizeExternalUrl } from '@/lib/utils'
 import { useModuleEnabled } from '@/features/integrations/api/use-tenant-modules'
-import { SEVERITY_DOT_COLORS } from '@/lib/severity-colors'
+import { SEVERITY_DOT_COLORS, SEVERITY_TEXT_COLORS } from '@/lib/severity-colors'
 import { copyToClipboard } from '@/lib/clipboard'
 import { Can, Permission } from '@/lib/permissions'
 import { getErrorMessage } from '@/lib/api/error-handler'
@@ -751,10 +751,12 @@ function OverviewTab({
         <Card>
           <CardHeader className="pb-2">
             <CardDescription className="flex items-center gap-2">
-              <AlertTriangle className="h-4 w-4 text-destructive" />
+              <AlertTriangle className="h-4 w-4 text-muted-foreground" />
               Critical/High
             </CardDescription>
-            <CardTitle className="text-3xl text-destructive">{criticalCount + highCount}</CardTitle>
+            <CardTitle className={cn('text-3xl', SEVERITY_TEXT_COLORS.critical)}>
+              {criticalCount + highCount}
+            </CardTitle>
           </CardHeader>
           <CardContent className="pt-0">
             <p className="text-xs text-muted-foreground">{findings.length} total findings</p>
@@ -764,13 +766,13 @@ function OverviewTab({
         <Card className={overdueFindingsCount > 0 ? 'border-destructive/50' : ''}>
           <CardHeader className="pb-2">
             <CardDescription className="flex items-center gap-2">
-              <Timer className="h-4 w-4 text-warning" />
+              <Timer className="h-4 w-4 text-muted-foreground" />
               SLA Overdue
             </CardDescription>
             <CardTitle
               className={cn(
                 'text-3xl',
-                overdueFindingsCount > 0 ? 'text-destructive' : 'text-success'
+                overdueFindingsCount > 0 ? 'text-destructive' : 'text-foreground'
               )}
             >
               {overdueFindingsCount}
@@ -784,11 +786,14 @@ function OverviewTab({
         <Card>
           <CardHeader className="pb-2">
             <CardDescription className="flex items-center gap-2">
-              <GitBranch className="h-4 w-4 text-info" />
+              <GitBranch className="h-4 w-4 text-muted-foreground" />
               Branches
             </CardDescription>
             <CardTitle
-              className={cn('text-3xl', neverScanned ? 'text-muted-foreground/50' : 'text-info')}
+              className={cn(
+                'text-3xl',
+                neverScanned ? 'text-muted-foreground/50' : 'text-foreground'
+              )}
             >
               {neverScanned ? '—' : branches.length}
             </CardTitle>
@@ -813,7 +818,7 @@ function OverviewTab({
                 'text-3xl',
                 !repository.components_summary?.total
                   ? 'text-muted-foreground/50'
-                  : 'text-muted-foreground'
+                  : 'text-foreground'
               )}
             >
               {repository.components_summary?.total ? repository.components_summary.total : '—'}
@@ -1302,9 +1307,9 @@ function BranchesTab({
                   <TableCell>
                     <div className="flex items-center gap-1">
                       {branch.findings_summary.by_severity.critical > 0 && (
-                        <Badge variant="destructive" className="h-5 px-1.5 text-xs">
+                        <SeverityBadge severity="critical" variant="soft">
                           {branch.findings_summary.by_severity.critical}C
-                        </Badge>
+                        </SeverityBadge>
                       )}
                       {branch.findings_summary.by_severity.high > 0 && (
                         <SeverityBadge severity="high" variant="soft">
@@ -1950,7 +1955,7 @@ function SettingsTab({ repository, onDelete }: { repository: Repository; onDelet
                 key={key}
                 className={cn(
                   'flex items-center gap-3 p-3 rounded-lg border',
-                  enabled ? 'bg-muted/30' : 'bg-muted/30'
+                  enabled ? 'bg-card' : 'bg-muted/30'
                 )}
               >
                 {enabled ? (

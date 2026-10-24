@@ -142,7 +142,8 @@ func (r *IngestJobRepository) ClaimBatch(ctx context.Context, workerID string, l
 	}
 	defer func() { _ = tx.Rollback() }()
 
-	now := time.Now()
+	// Lease and availability times come from the database clock (NOW()), as
+	// the controller leases do, so replica clock skew cannot shorten a lease.
 	candidateQuery := `
 		WITH running AS (
 			SELECT tenant_id, count(*) AS n FROM ingest_jobs WHERE status = 'processing' GROUP BY tenant_id
@@ -153,17 +154,17 @@ func (r *IngestJobRepository) ClaimBatch(ctx context.Context, workerID string, l
 				COALESCE(rt.n, 0) AS tenant_running
 			FROM ingest_jobs j
 			LEFT JOIN running rt ON rt.tenant_id = j.tenant_id
-			WHERE j.status = 'pending' AND j.available_at <= $1 AND j.attempts < j.max_attempts
+			WHERE j.status = 'pending' AND j.available_at <= NOW() AND j.attempts < j.max_attempts
 			  AND (j.scope_key IS NULL OR NOT EXISTS (
 				SELECT 1 FROM ingest_jobs p WHERE p.status = 'processing' AND p.scope_key = j.scope_key))
 		)
 		SELECT id FROM ranked
-		WHERE sn = 1 AND rn <= $3 - tenant_running
+		WHERE sn = 1 AND rn <= $2 - tenant_running
 		ORDER BY CASE WHEN lane = 0 AND tenant_running + rn > 1 THEN 1 ELSE lane END,
 			tenant_running + rn, lane, available_at
-		LIMIT $2`
+		LIMIT $1`
 
-	rows, err := tx.QueryContext(ctx, candidateQuery, now, limit, r.runningCap())
+	rows, err := tx.QueryContext(ctx, candidateQuery, limit, r.runningCap())
 	if err != nil {
 		return nil, fmt.Errorf("select claim candidates: %w", err)
 	}
@@ -190,13 +191,13 @@ func (r *IngestJobRepository) ClaimBatch(ctx context.Context, workerID string, l
 		job, err := scanIngestJobRow(tx.QueryRowContext(ctx, `
 			UPDATE ingest_jobs
 			SET status = 'processing', attempts = attempts + 1,
-				locked_by = $1, locked_at = $2, updated_at = $2
+				locked_by = $1, locked_at = NOW(), updated_at = NOW()
 			WHERE id = (
 				SELECT id FROM ingest_jobs
-				WHERE id = $3 AND status = 'pending' AND attempts < max_attempts
+				WHERE id = $2 AND status = 'pending' AND attempts < max_attempts
 				FOR UPDATE SKIP LOCKED
 			)
-			RETURNING `+ingestJobColumns, workerID, now, id))
+			RETURNING `+ingestJobColumns, workerID, id))
 		switch {
 		case err == nil:
 			jobs = append(jobs, job)
@@ -258,9 +259,9 @@ func (r *IngestJobRepository) Complete(ctx context.Context, id ingestjob.ID, att
 
 // Renew extends the lease of the attempt the worker is processing.
 func (r *IngestJobRepository) Renew(ctx context.Context, tenantID shared.ID, id ingestjob.ID, attempts int) error {
-	res, err := r.db.ExecContext(ctx, `UPDATE ingest_jobs SET locked_at = $3
-		WHERE id = $1 AND tenant_id = $4 AND status = 'processing' AND attempts = $2`,
-		id.String(), attempts, time.Now(), tenantID.String())
+	res, err := r.db.ExecContext(ctx, `UPDATE ingest_jobs SET locked_at = NOW()
+		WHERE id = $1 AND tenant_id = $3 AND status = 'processing' AND attempts = $2`,
+		id.String(), attempts, tenantID.String())
 	if err != nil {
 		return fmt.Errorf("renew ingest job lease: %w", err)
 	}
@@ -347,7 +348,6 @@ func (r *IngestJobRepository) CountPending(ctx context.Context) (int, error) {
 // pending; a job with no attempts left (its lease expiry was its last
 // attempt) is marked dead with apply_failed and returned in dead.
 func (r *IngestJobRepository) ReleaseStale(ctx context.Context, olderThan time.Duration) (int, []*ingestjob.Job, error) {
-	cutoff := time.Now().Add(-olderThan)
 	rows, err := r.db.QueryContext(ctx, `
 		UPDATE ingest_jobs j
 		SET status = CASE WHEN j.attempts >= j.max_attempts THEN 'dead' ELSE 'pending' END,
@@ -355,10 +355,10 @@ func (r *IngestJobRepository) ReleaseStale(ctx context.Context, olderThan time.D
 			error = CASE WHEN j.attempts >= j.max_attempts THEN 'the lease expired on the last attempt' ELSE j.error END,
 			locked_by = NULL, locked_at = NULL, updated_at = NOW()
 		WHERE j.id IN (
-			SELECT id FROM ingest_jobs WHERE status = 'processing' AND locked_at < $1
+			SELECT id FROM ingest_jobs WHERE status = 'processing' AND locked_at < NOW() - $1::float8 * interval '1 second'
 			FOR UPDATE SKIP LOCKED
 		)
-		RETURNING `+ingestJobColumns, cutoff, ingestjob.ErrorApplyFailed)
+		RETURNING `+ingestJobColumns, olderThan.Seconds(), ingestjob.ErrorApplyFailed)
 	if err != nil {
 		return 0, nil, fmt.Errorf("release stale ingest jobs: %w", err)
 	}

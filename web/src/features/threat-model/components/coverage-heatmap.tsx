@@ -1,5 +1,7 @@
 'use client'
 
+import { StatusLozenge } from '@/components/ui/status-lozenge'
+import { STATUS_TONE_CLASS } from '@/lib/status-colors'
 import { useTranslation } from '@/context/i18n-provider'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -147,10 +149,13 @@ function StatusLegend() {
       {THREAT_STATUS_ORDER.map((status) => {
         const style = THREAT_STATUS_STYLES[status]
         return (
-          <div key={status} className="flex items-center gap-1.5">
-            <span className={cn('h-3 w-3 rounded-sm', style.dotClass)} />
-            <span className="text-muted-foreground text-xs">{t(style.labelKey, status)}</span>
-          </div>
+          <StatusLozenge
+            key={status}
+            tone={style.tone}
+            icon={style.icon}
+            label={t(style.labelKey, status)}
+            value={status}
+          />
         )
       })}
     </div>
@@ -185,7 +190,7 @@ function TechniqueCell({ tech }: { tech: CoverageTechnique }) {
             data-status={tech.status}
             className={cn(
               'cursor-default rounded-sm border px-2 py-1.5 text-start transition-colors',
-              style.badgeClass
+              STATUS_TONE_CLASS[style.tone]
             )}
           >
             <p className="font-mono text-[10px] font-semibold leading-tight">{tech.technique_id}</p>
