@@ -10,6 +10,7 @@ import type { HealthState } from '@/lib/health-colors'
 import type { StatusTone } from '@/lib/status-colors'
 import { SeverityBadge } from '@/components/ui/severity-badge'
 import { useTranslation } from '@/context/i18n-provider'
+import { ScanConfirmDialog } from '@/features/assets/components/scan-confirm-dialog'
 import { deleteAssetSafely } from '@/features/assets/lib/safe-delete'
 import { AssetDeleteDialogShared } from '@/features/assets/components/asset-delete-dialog-shared'
 import { useState, useMemo, useCallback } from 'react'
@@ -731,14 +732,16 @@ function OverviewTab({
               )}
             </p>
             <p className="text-muted-foreground text-xs">
-              Run a scan to map its branches, build the SBOM (components), and enable per-branch
-              drift &amp; SLA tracking.
+              {t(
+                'assets.repository.runFirstScanHint',
+                'Run a scan to map its branches, build the SBOM (components), and enable per-branch drift and SLA tracking.'
+              )}
             </p>
           </div>
           {onScan && (
             <Button size="sm" onClick={onScan} className="shrink-0">
               <Play className="me-2 h-4 w-4" />
-              Run first scan
+              {t('assets.repository.runFirstScan', 'Run first scan')}
             </Button>
           )}
         </div>
@@ -1747,6 +1750,7 @@ function FindingsTab({
 
 // Settings Tab
 function SettingsTab({ repository, onDelete }: { repository: Repository; onDelete?: () => void }) {
+  const { t: tDanger } = useTranslation()
   const [autoScan, setAutoScan] = useState(repository.scan_settings?.auto_scan ?? false)
   const [scanOnPush, setScanOnPush] = useState(repository.scan_settings?.scan_on_push ?? false)
   const [scanOnPR, setScanOnPR] = useState(repository.scan_settings?.scan_on_pr ?? false)
@@ -1976,11 +1980,14 @@ function SettingsTab({ repository, onDelete }: { repository: Repository; onDelet
           </Can>
           <Can permission={Permission.AssetsDelete}>
             <DangerZoneItem
-              title="Delete repository"
-              description="Permanently delete this repository and all associated data."
+              title={tDanger('assets.repository.danger.deleteTitle', 'Delete repository')}
+              description={tDanger(
+                'assets.repository.danger.deleteDesc',
+                'Remove this repository from the inventory. It leaves its groups, owners and scope. A repository with findings is not deleted, so the finding history is kept.'
+              )}
               action={
                 <Button variant="destructive" size="sm" onClick={onDelete} disabled={!onDelete}>
-                  Delete
+                  {tDanger('assets.repository.danger.deleteButton', 'Delete repository')}
                 </Button>
               }
             />
@@ -2118,6 +2125,7 @@ export function RepositoryWorkspace({ repositoryId }: { repositoryId: string }) 
   const [isScanning, setIsScanning] = useState(false)
   const [isDeleting, setIsDeleting] = useState(false)
   const [showDeleteDialog, setShowDeleteDialog] = useState(false)
+  const [showScanDialog, setShowScanDialog] = useState(false)
 
   // Fetch repository data from API
   const {
@@ -2193,16 +2201,18 @@ export function RepositoryWorkspace({ repositoryId }: { repositoryId: string }) 
         body: JSON.stringify({ scanMode: 'full' }),
       })
       if (!response.ok) {
-        throw new Error('Failed to trigger scan')
+        throw new Error(t('assets.repository.scanFailed', 'Failed to start the scan'))
       }
-      toast.success('Scan initiated successfully')
+      toast.success(t('assets.repository.scanStarted', 'Scan started'))
       mutateRepo()
     } catch (error) {
-      toast.error(getErrorMessage(error, 'Failed to trigger scan'))
+      toast.error(
+        getErrorMessage(error, t('assets.repository.scanFailed', 'Failed to start the scan'))
+      )
     } finally {
       setIsScanning(false)
     }
-  }, [repository, mutateRepo])
+  }, [repository, mutateRepo, t])
 
   const handleDelete = useCallback(async () => {
     if (!repository) return
@@ -2341,13 +2351,15 @@ export function RepositoryWorkspace({ repositoryId }: { repositoryId: string }) 
                 )}
                 {isSyncing ? 'Syncing...' : 'Sync'}
               </Button>
-              <Button size="sm" onClick={handleScan} disabled={isScanning}>
+              <Button size="sm" onClick={() => setShowScanDialog(true)} disabled={isScanning}>
                 {isScanning ? (
                   <Loader2 className="me-2 h-4 w-4 animate-spin" />
                 ) : (
                   <Play className="me-2 h-4 w-4" />
                 )}
-                {isScanning ? 'Scanning...' : 'Scan Now'}
+                {isScanning
+                  ? t('assets.repository.scanning', 'Scanning...')
+                  : t('assets.repository.scanNow', 'Scan now')}
               </Button>
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
@@ -2378,11 +2390,21 @@ export function RepositoryWorkspace({ repositoryId }: { repositoryId: string }) 
                       onClick={() => setShowDeleteDialog(true)}
                     >
                       <Trash2 className="me-2 h-4 w-4" />
-                      Delete Repository
+                      {t('assets.repository.danger.deleteTitle', 'Delete repository')}
                     </DropdownMenuItem>
                   </Can>
                 </DropdownMenuContent>
               </DropdownMenu>
+
+              <ScanConfirmDialog
+                open={showScanDialog}
+                onOpenChange={setShowScanDialog}
+                names={[repository.name]}
+                onConfirm={async () => {
+                  setShowScanDialog(false)
+                  await handleScan()
+                }}
+              />
 
               <AssetDeleteDialogShared
                 open={showDeleteDialog}
@@ -2431,7 +2453,7 @@ export function RepositoryWorkspace({ repositoryId }: { repositoryId: string }) 
               branches={branches}
               findings={findings}
               activities={activities}
-              onScan={handleScan}
+              onScan={() => setShowScanDialog(true)}
             />
           </TabsContent>
 
