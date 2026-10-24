@@ -42,6 +42,7 @@ export function reasonKeyOf(reason: string | undefined): string {
     case 'no_relationship_data':
     case 'too_few_fixed':
     case 'legacy_tile':
+    case 'forbidden':
     case 'facts_building':
     case 'timeout':
     case 'empty':

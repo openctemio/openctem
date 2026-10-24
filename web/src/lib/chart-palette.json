@@ -10,9 +10,25 @@
     "dark": ["#d9365e", "#f07a2c", "#e8c14a", "#4f8ff0"],
     "info": {
       "light": "#6b7280",
-      "dark": "#94a3b8"
+      "dark": "#a9b4c4"
     },
     "darkBandWaiver": "Dark orange and yellow sit above the dark lightness band (a red-orange-yellow ramp cannot separate inside it). Severity is ordinal and is never shown by colour alone: every severity mark carries its label or keeps its fixed order, and every chart has a table view."
+  },
+  "priority": {
+    "keys": ["P0", "P1", "P2", "P3"],
+    "light": ["#3e0d78", "#5e0dbd", "#7945df", "#878e9a"],
+    "dark": ["#ded3fe", "#baa5ff", "#9a79f6", "#687284"],
+    "none": {
+      "light": "#7d8799",
+      "dark": "#63728a"
+    },
+    "$comment": "Ordinal: one violet ramp stepped by lightness (strongest contrast with the surface = most urgent), P3 neutral. Not prioritised is a hatch of the none colour, never a solid fill."
+  },
+  "level": {
+    "keys": ["critical", "high", "medium", "low"],
+    "light": ["#1f2e44", "#3e4d62", "#5f6d80", "#848e9d"],
+    "dark": ["#d6dfec", "#adbacd", "#8896ab", "#65748b"],
+    "$comment": "Ordinal levels that are not severity or priority (asset criticality, impact): a neutral ink ramp stepped by lightness."
   },
   "categorical": {
     "light": [

@@ -27,7 +27,10 @@
 'use client'
 
 import { memo } from 'react'
-import { Badge } from '@/components/ui/badge'
+import { Tag } from '@/components/ui/tag'
+import { Counter } from '@/components/ui/counter'
+import { capabilitySwatch } from '@/lib/capability-colors'
+import { useTranslation } from '@/context/i18n-provider'
 import { useCapabilityMetadata } from '@/lib/api'
 import { cn } from '@/lib/utils'
 import {
@@ -72,99 +75,6 @@ const ICON_MAP: Record<string, LucideIcon> = {
   spider: Search,
 }
 
-// Color class mappings for Tailwind - using specific color variants that are defined
-const COLOR_CLASSES: Record<string, { bg: string; text: string; border: string }> = {
-  // Standard colors
-  blue: {
-    bg: 'bg-blue-500/10',
-    text: 'text-blue-600 dark:text-blue-400',
-    border: 'border-blue-500/30',
-  },
-  purple: {
-    bg: 'bg-purple-500/10',
-    text: 'text-purple-600 dark:text-purple-400',
-    border: 'border-purple-500/30',
-  },
-  green: {
-    bg: 'bg-green-500/10',
-    text: 'text-green-600 dark:text-green-400',
-    border: 'border-green-500/30',
-  },
-  red: {
-    bg: 'bg-red-500/10',
-    text: 'text-red-600 dark:text-red-400',
-    border: 'border-red-500/30',
-  },
-  orange: {
-    bg: 'bg-orange-500/10',
-    text: 'text-orange-600 dark:text-orange-400',
-    border: 'border-orange-500/30',
-  },
-  cyan: {
-    bg: 'bg-cyan-500/10',
-    text: 'text-cyan-600 dark:text-cyan-400',
-    border: 'border-cyan-500/30',
-  },
-  amber: {
-    bg: 'bg-amber-500/10',
-    text: 'text-amber-600 dark:text-amber-400',
-    border: 'border-amber-500/30',
-  },
-  yellow: {
-    bg: 'bg-yellow-500/10',
-    text: 'text-yellow-600 dark:text-yellow-400',
-    border: 'border-yellow-500/30',
-  },
-  lime: {
-    bg: 'bg-lime-500/10',
-    text: 'text-lime-600 dark:text-lime-400',
-    border: 'border-lime-500/30',
-  },
-  teal: {
-    bg: 'bg-teal-500/10',
-    text: 'text-teal-600 dark:text-teal-400',
-    border: 'border-teal-500/30',
-  },
-  indigo: {
-    bg: 'bg-indigo-500/10',
-    text: 'text-indigo-600 dark:text-indigo-400',
-    border: 'border-indigo-500/30',
-  },
-  violet: {
-    bg: 'bg-violet-500/10',
-    text: 'text-violet-600 dark:text-violet-400',
-    border: 'border-violet-500/30',
-  },
-  fuchsia: {
-    bg: 'bg-fuchsia-500/10',
-    text: 'text-fuchsia-600 dark:text-fuchsia-400',
-    border: 'border-fuchsia-500/30',
-  },
-  pink: {
-    bg: 'bg-pink-500/10',
-    text: 'text-pink-600 dark:text-pink-400',
-    border: 'border-pink-500/30',
-  },
-  sky: {
-    bg: 'bg-sky-500/10',
-    text: 'text-sky-600 dark:text-sky-400',
-    border: 'border-sky-500/30',
-  },
-  slate: {
-    bg: 'bg-slate-500/10',
-    text: 'text-slate-600 dark:text-slate-400',
-    border: 'border-slate-500/30',
-  },
-  gray: {
-    bg: 'bg-gray-500/10',
-    text: 'text-gray-600 dark:text-gray-400',
-    border: 'border-gray-500/30',
-  },
-}
-
-// Default color for unknown capabilities
-const DEFAULT_COLOR = COLOR_CLASSES.gray
-
 interface CapabilityBadgeProps {
   /** The capability name (e.g., 'sast', 'sca', 'secrets') */
   name: string
@@ -188,31 +98,15 @@ function CapabilityBadgeComponent({
   const color = getColor(name)
   const iconName = getIcon(name)
 
-  // Get color classes
-  const colorClasses = COLOR_CLASSES[color] || DEFAULT_COLOR
-
-  // Get icon component
-  const IconComponent = showIcon ? ICON_MAP[iconName] || Zap : null
-
-  // Size-specific classes
-  const sizeClasses = size === 'sm' ? 'text-[9px] px-1 py-0' : 'text-xs px-2 py-0.5'
-  const iconSize = size === 'sm' ? 'h-2.5 w-2.5' : 'h-3 w-3'
+  const IconComponent = showIcon ? ICON_MAP[iconName] || Zap : undefined
 
   return (
-    <Badge
-      variant="outline"
-      className={cn(
-        'font-normal',
-        sizeClasses,
-        colorClasses.bg,
-        colorClasses.text,
-        colorClasses.border,
-        className
-      )}
-    >
-      {IconComponent && <IconComponent className={cn(iconSize, 'shrink-0')} />}
-      {displayName}
-    </Badge>
+    <Tag
+      label={displayName}
+      icon={IconComponent}
+      swatch={capabilitySwatch(color)}
+      className={cn(size === 'sm' && 'h-5', className)}
+    />
   )
 }
 
@@ -240,6 +134,7 @@ export function CapabilityBadgeList({
   /** Maximum number of visible badges (rest will show as "+N more") */
   maxVisible?: number
 }) {
+  const { t } = useTranslation()
   if (!capabilities || capabilities.length === 0) {
     return null
   }
@@ -253,16 +148,12 @@ export function CapabilityBadgeList({
         <CapabilityBadge key={cap} name={cap} showIcon={showIcon} size={size} />
       ))}
       {hiddenCount > 0 && (
-        <Badge
-          variant="outline"
-          className={cn(
-            'font-normal',
-            size === 'sm' ? 'text-[9px] px-1 py-0' : 'text-xs px-2 py-0.5',
-            'bg-muted/50 text-muted-foreground border-muted-foreground/30'
-          )}
-        >
-          +{hiddenCount} more
-        </Badge>
+        <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
+          <Counter value={hiddenCount} />
+          <span className="sr-only">
+            {t('labels.more', '+{count} more', { count: hiddenCount })}
+          </span>
+        </span>
       )}
     </div>
   )

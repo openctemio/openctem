@@ -17,11 +17,11 @@ func actionCfg(actionType string) *NodeConfigRequest {
 	return &NodeConfigRequest{ActionType: actionType}
 }
 
-// A member with only WorkflowsWrite must NOT be able to build a finding-mutating
+// A member with only AutomationsWrite must NOT be able to build a finding-mutating
 // or scan/pipeline action node — that is the privilege-escalation this gate
 // closes.
 func TestWorkflowActionAuthz_DeniesWithoutResourcePermission(t *testing.T) {
-	ctx := authzCtx(false, string(permission.WorkflowsWrite))
+	ctx := authzCtx(false, string(permission.AutomationsWrite))
 	cases := []struct {
 		action string
 		want   permission.Permission
@@ -49,7 +49,7 @@ func TestWorkflowActionAuthz_DeniesWithoutResourcePermission(t *testing.T) {
 // With the matching per-resource permission, the same nodes are allowed.
 func TestWorkflowActionAuthz_AllowsWithResourcePermission(t *testing.T) {
 	ctx := authzCtx(false,
-		string(permission.WorkflowsWrite),
+		string(permission.AutomationsWrite),
 		string(permission.FindingsWrite),
 		string(permission.ScansWrite),
 	)
@@ -70,7 +70,7 @@ func TestWorkflowActionAuthz_AdminBypass(t *testing.T) {
 // Trigger and condition nodes (and a nil config) need nothing beyond the
 // workflow permission.
 func TestWorkflowActionAuthz_NonGatedNodesIgnored(t *testing.T) {
-	ctx := authzCtx(false, string(permission.WorkflowsWrite))
+	ctx := authzCtx(false, string(permission.AutomationsWrite))
 	if _, ok := authorizeActionConfigs(ctx,
 		nil,
 		&NodeConfigRequest{TriggerType: "finding_created"},
@@ -85,7 +85,7 @@ func TestWorkflowActionAuthz_NonGatedNodesIgnored(t *testing.T) {
 // action type with no mapping (run_script) is refused to non-admins rather
 // than allowed.
 func TestWorkflowActionAuthz_OutboundNodesGated(t *testing.T) {
-	ctx := authzCtx(false, string(permission.WorkflowsWrite), string(permission.FindingsWrite))
+	ctx := authzCtx(false, string(permission.AutomationsWrite), string(permission.FindingsWrite))
 	cases := []struct {
 		name string
 		cfg  *NodeConfigRequest
@@ -111,7 +111,7 @@ func TestWorkflowActionAuthz_OutboundNodesGated(t *testing.T) {
 // The first missing permission short-circuits; a mixed graph is denied if ANY
 // action node exceeds the caller's grants.
 func TestWorkflowActionAuthz_MixedGraphDeniedOnFirstGap(t *testing.T) {
-	ctx := authzCtx(false, string(permission.WorkflowsWrite), string(permission.FindingsWrite))
+	ctx := authzCtx(false, string(permission.AutomationsWrite), string(permission.FindingsWrite))
 	// update_status OK (FindingsWrite), trigger_scan NOT OK (needs ScansWrite).
 	perm, ok := authorizeActionConfigs(ctx, actionCfg("update_status"), actionCfg("trigger_scan"))
 	if ok {
