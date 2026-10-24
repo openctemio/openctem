@@ -10,7 +10,7 @@ import { getE2EConfig } from '../helpers/env'
  *   1. /settings/integrations/saml redirected a tenant owner into the
  *      platform admin console's sign-in. SSO moved there (RFC-022): saml
  *      redirects to Authentication, which says so. Domain verification for
- *      attack-surface management lives in Scoping > Scope > Domain proof (the
+ *      attack-surface management lives in Scoping > Scope > Domain proof, at /scope/domain-proof (the
  *      old /settings/integrations/verified-domains URL has no redirect: moved
  *      pages get none).
  *   2. Members and viewers saw an enabled "Generate token" on the SCIM page,
@@ -29,12 +29,16 @@ test('SSO settings explain that the platform administrator configures SSO', asyn
 })
 
 test('domain proof opens in Scoping > Scope', async ({ page }) => {
-  // Domain verification for attack-surface management: the Domain proof tab.
-  await page.goto('/scope?tab=proof')
-  await expect(page.getByRole('tab', { name: /^Domain proof/, selected: true })).toBeVisible({
+  // Domain verification for attack-surface management: the Domain proof route tab.
+  await page.goto('/scope/domain-proof')
+  await expect(page.getByRole('heading', { name: 'Domain proof' })).toBeVisible({
     timeout: 30_000,
   })
-  expect(new URL(page.url()).pathname).toBe('/scope')
+  await expect(page.getByRole('link', { name: /^Domain proof/ })).toHaveAttribute(
+    'aria-current',
+    'page'
+  )
+  expect(new URL(page.url()).pathname).toBe('/scope/domain-proof')
 })
 
 base('SCIM tokens: no Generate token for a member or viewer', async ({ page }) => {
