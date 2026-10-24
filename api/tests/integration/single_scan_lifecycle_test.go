@@ -89,9 +89,7 @@ func newTriggerService(db *sql.DB) *scansvc.Service {
 		postgres.NewStepRunRepository(pg),
 		postgres.NewCommandRepository(pg),
 		nil, // scannerTemplateRepo
-		nil, // templateSourceRepo
 		postgres.NewToolRepository(pg),
-		nil, // templateSyncer
 		availableSensors{},
 		nil, // securityValidator
 		logger.New(logger.Config{Level: "error"}),

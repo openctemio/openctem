@@ -59,10 +59,23 @@ const (
 	// against it, and without it the installation's base floor (5 minutes)
 	// applies. The hosting plan or the operator raises it.
 	DashboardRefreshFloorMinutes Key = "dashboard_refresh_floor_minutes"
+	// ContentSources caps an organization's own rule sources (platform
+	// sources never count).
+	ContentSources Key = "content_sources"
+	// ContentStorageMB caps the MiB of the organization's rule source
+	// snapshots the platform holds.
+	ContentStorageMB Key = "content_storage_mb"
+	// ContentSyncFloorMinutes is a floor: the shortest sync interval of the
+	// organization's rule sources. The instance's own floor (5 minutes)
+	// always applies.
+	ContentSyncFloorMinutes Key = "content_sync_floor_minutes"
+	// ContentSnapshotMaxMB caps the size of one rule source snapshot. It is
+	// a per-item cap: nothing is counted against it.
+	ContentSnapshotMaxMB Key = "content_snapshot_max_mb"
 )
 
 // Keys lists every limit key in display order.
-var Keys = []Key{Seats, Assets, Sensors, APIKeys, CITrusts, InvitesPerDay, PlatformScansPerDay, PlatformScansConcurrent, Findings, LifecycleSubStatuses, LifecycleSchemes, StorageMB, OrgsPerUser, DashboardRefreshFloorMinutes}
+var Keys = []Key{Seats, Assets, Sensors, APIKeys, CITrusts, InvitesPerDay, PlatformScansPerDay, PlatformScansConcurrent, Findings, LifecycleSubStatuses, LifecycleSchemes, StorageMB, OrgsPerUser, DashboardRefreshFloorMinutes, ContentSources, ContentStorageMB, ContentSyncFloorMinutes, ContentSnapshotMaxMB}
 
 // IsValid reports whether k is a known key.
 func (k Key) IsValid() bool {
@@ -76,7 +89,12 @@ func (k Key) IsValid() bool {
 
 // IsFloor reports whether k is a floor (a minimum the organization must
 // respect) rather than a cap on what it adds: no usage is counted for it.
-func (k Key) IsFloor() bool { return k == DashboardRefreshFloorMinutes }
+func (k Key) IsFloor() bool { return k == DashboardRefreshFloorMinutes || k == ContentSyncFloorMinutes }
+
+// IsUncounted reports whether no usage is counted for k: a floor, or a cap
+// on the size of one item. Check refuses such a key; callers read it with
+// Limit and compare.
+func (k Key) IsUncounted() bool { return k.IsFloor() || k == ContentSnapshotMaxMB }
 
 // PerOrganization reports whether k can be set for one organization.
 func (k Key) PerOrganization() bool { return k.IsValid() && k != OrgsPerUser }

@@ -807,14 +807,6 @@ export const routePermissions: Record<string, RoutePermissionConfig> = {
     permission: Permission.ScannerTemplatesRead,
     module: Module.ScannerTemplates,
   },
-  '/settings/scanning/template-sources': {
-    permission: Permission.TemplateSourcesRead,
-    module: Module.TemplateSources,
-  },
-  '/settings/scanning/template-sources/**': {
-    permission: Permission.TemplateSourcesRead,
-    module: Module.TemplateSources,
-  },
 
   // Risk scoring config — its own module
   '/settings/risk-scoring': {
