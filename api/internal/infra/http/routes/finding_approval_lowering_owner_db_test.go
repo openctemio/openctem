@@ -23,6 +23,7 @@ func TestFindingApprovalSettings_LoweringIsOwnerOnly_DB(t *testing.T) {
 		"risk acceptance":      `{"accept_approval":"high_and_above"}`,
 		"policy relaxation":    `{"policy":{"tiers":{"accepted.critical":"security"}}}`,
 		"lowering with other":  `{"backup_contact_email":"a@example.com","fp_approval":"high_and_above"}`,
+		"backup contact":       `{"backup_contact_email":"a@example.com"}`,
 	} {
 		h.expect(admin, http.MethodPatch, url, body, http.StatusForbidden)
 	}
@@ -46,5 +47,43 @@ func TestFindingApprovalSettings_LoweringIsOwnerOnly_DB(t *testing.T) {
 	if got.FP != "all" || got.PendingFP != "" {
 		t.Fatalf("raising by an administrator: %+v", got)
 	}
-	h.expect(admin, http.MethodPatch, url, `{"fp_approval":"all","accept_approval":"all","backup_contact_email":"b@example.com"}`, http.StatusOK)
+	h.expect(admin, http.MethodPatch, url, `{"fp_approval":"all","accept_approval":"all"}`, http.StatusOK)
+}
+
+// The second-look share and the backup contact are owner-only to lower or
+// change; an administrator may raise the share, or send the contact as it is.
+func TestFindingApprovalSettings_SecondLookAndBackupContactOwnerOnly_DB(t *testing.T) {
+	h := newAcceptPolicyHarness(t, nil)
+	org := h.tenantWithFindings()
+	owner, admin := h.member(org, "owner"), h.member(org, "admin")
+	const url = "/api/v1/organization/settings/finding-approvals/"
+	var got struct {
+		SecondLook    int    `json:"second_look_percent"`
+		PendingSecond *int   `json:"pending_second_look_percent"`
+		BackupContact string `json:"backup_contact_email"`
+	}
+	read := func() {
+		t.Helper()
+		got.PendingSecond = nil
+		_ = json.Unmarshal([]byte(h.expect(owner, http.MethodGet, url, "", http.StatusOK)), &got)
+	}
+
+	h.expect(owner, http.MethodPatch, url, `{"second_look_percent":5,"backup_contact_email":"first@example.com"}`, http.StatusOK)
+	h.expect(admin, http.MethodPatch, url, `{"second_look_percent":2}`, http.StatusForbidden)
+	h.expect(admin, http.MethodPatch, url, `{"second_look_percent":0}`, http.StatusForbidden)
+	h.expect(admin, http.MethodPatch, url, `{"backup_contact_email":"attacker@example.com"}`, http.StatusForbidden)
+	h.expect(admin, http.MethodPatch, url, `{"backup_contact_email":""}`, http.StatusForbidden)
+	read()
+	if got.SecondLook != 5 || got.PendingSecond != nil || got.BackupContact != "first@example.com" {
+		t.Fatalf("a refused change left a trace: %+v", got)
+	}
+
+	// Raising the share, and sending the contact unchanged, are allowed.
+	h.expect(admin, http.MethodPatch, url, `{"second_look_percent":7,"backup_contact_email":"first@example.com"}`, http.StatusOK)
+	// The owner lowers the share (it waits) and changes the contact.
+	h.expect(owner, http.MethodPatch, url, `{"second_look_percent":1,"backup_contact_email":"second@example.com"}`, http.StatusOK)
+	read()
+	if got.PendingSecond == nil || *got.PendingSecond != 1 || got.BackupContact != "second@example.com" {
+		t.Fatalf("owner change: %+v", got)
+	}
 }

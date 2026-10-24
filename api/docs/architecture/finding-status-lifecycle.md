@@ -753,9 +753,14 @@ every other approver who can see the finding.
 
 Changing a level needs an owner or administrator with `settings:write` and a
 recent re-authentication (`PATCH /api/v1/organization/settings/finding-approvals`).
-Lowering a level, or relaxing the approval policy (which includes turning
-two-person approval off), is for the owner alone (403 for an administrator,
-nothing written); raising or tightening stays with owners and administrators.
+Lowering a level or the `second_look_percent` share, relaxing the approval
+policy (which includes turning two-person approval off), and changing the
+`backup_contact_email` are for the owner alone (403 for an administrator,
+nothing written); raising or tightening, and sending the backup contact
+unchanged, stay with owners and administrators. The backup contact is
+audited with before/after; the old address is not emailed on a change (no
+settings-change mail exists), the owner-only gate and the audit row are the
+control.
 Every change is audited at high severity with before/after,
 and the approvers (every owner and administrator is one) are told; a lower level
 takes effect 24 hours later (`pending_fp_approval_at`,
