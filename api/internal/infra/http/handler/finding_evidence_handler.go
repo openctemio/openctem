@@ -81,7 +81,7 @@ func (h *VulnerabilityHandler) AddFindingEvidence(w http.ResponseWriter, r *http
 			WithMetadata("evidence_id", evidence.ID).
 			WithMetadata("kind", evidence.Kind).
 			WithSeverity(auditdom.SeverityLow)
-		_ = h.auditService.LogEvent(r.Context(), h.buildAuditContext(r), event)
+		auditapp.RecordOrWarn(r.Context(), h.logger, h.auditService, h.buildAuditContext(r), event)
 	}
 
 	writeJSON(w, http.StatusCreated, evidence)
@@ -138,7 +138,7 @@ func (h *VulnerabilityHandler) DeleteFindingEvidence(w http.ResponseWriter, r *h
 			WithMessage("Evidence note removed from finding").
 			WithMetadata("evidence_id", noteID).
 			WithSeverity(auditdom.SeverityLow)
-		_ = h.auditService.LogEvent(r.Context(), h.buildAuditContext(r), event)
+		auditapp.RecordOrWarn(r.Context(), h.logger, h.auditService, h.buildAuditContext(r), event)
 	}
 
 	w.WriteHeader(http.StatusNoContent)
@@ -181,7 +181,7 @@ func (h *VulnerabilityHandler) AddRemediationStep(w http.ResponseWriter, r *http
 			WithMessage("Remediation step added to finding").
 			WithMetadata("step_count", len(steps)).
 			WithSeverity(auditdom.SeverityLow)
-		_ = h.auditService.LogEvent(r.Context(), h.buildAuditContext(r), event)
+		auditapp.RecordOrWarn(r.Context(), h.logger, h.auditService, h.buildAuditContext(r), event)
 	}
 
 	// MVP model is a plain []string with no per-step status — the note tells the

@@ -342,6 +342,8 @@ func (h *APIKeyHandler) handleServiceError(w http.ResponseWriter, err error) {
 		apierror.Conflict("API key name already exists").WriteJSON(w)
 	case errors.Is(err, apikey.ErrScopeNotHeld):
 		apierror.Forbidden("Cannot grant a scope you do not hold").WriteJSON(w)
+	case errors.Is(err, audit.ErrNotRecorded):
+		apierror.ServiceUnavailable("The key was not created: it could not be audited").WriteJSON(w)
 	case shared.IsValidation(err):
 		apierror.BadRequest(err.Error()).WriteJSON(w)
 	default:
