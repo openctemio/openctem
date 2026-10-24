@@ -97,7 +97,7 @@ func TestApplySuppressions_ActiveRuleSuppressesMatch(t *testing.T) {
 	f := buildSuppFinding(t, tenantID, assetID, "semgrep", "sql-injection", "fp-1")
 	findings := []*vulnerability.Finding{f}
 
-	decisions := p.applySuppressions(context.Background(), tenantID, findings)
+	decisions := p.applySuppressions(context.Background(), tenantID, findings, nil)
 
 	if len(decisions) != 1 {
 		t.Fatalf("expected 1 suppression decision, got %d", len(decisions))
@@ -138,7 +138,7 @@ func TestApplySuppressions_PendingOrExpiredRuleDoesNotSuppress(t *testing.T) {
 			p.SetSuppressionChecker(checker)
 
 			f := buildSuppFinding(t, tenantID, assetID, "semgrep", "sql-injection", "fp-1")
-			decisions := p.applySuppressions(context.Background(), tenantID, []*vulnerability.Finding{f})
+			decisions := p.applySuppressions(context.Background(), tenantID, []*vulnerability.Finding{f}, nil)
 
 			if len(decisions) != 0 {
 				t.Fatalf("expected no suppression, got %d", len(decisions))
@@ -165,7 +165,7 @@ func TestApplySuppressions_NonMatchingFinding_Untouched(t *testing.T) {
 
 	// Different tool → no match.
 	f := buildSuppFinding(t, tenantID, assetID, "trivy", "sql-injection", "fp-1")
-	decisions := p.applySuppressions(context.Background(), tenantID, []*vulnerability.Finding{f})
+	decisions := p.applySuppressions(context.Background(), tenantID, []*vulnerability.Finding{f}, nil)
 
 	if len(decisions) != 0 {
 		t.Fatalf("expected no suppression, got %d", len(decisions))
@@ -181,7 +181,7 @@ func TestApplySuppressions_NilChecker_NoOp(t *testing.T) {
 	p := NewFindingProcessor(&stubFindingRepository{}, nil, nil, logger.NewNop())
 
 	f := buildSuppFinding(t, tenantID, shared.NewID(), "semgrep", "sql-injection", "fp-1")
-	decisions := p.applySuppressions(context.Background(), tenantID, []*vulnerability.Finding{f})
+	decisions := p.applySuppressions(context.Background(), tenantID, []*vulnerability.Finding{f}, nil)
 
 	if decisions != nil {
 		t.Fatalf("expected nil decisions with no checker, got %v", decisions)
@@ -199,7 +199,7 @@ func TestApplySuppressions_ListError_SkipsGracefully(t *testing.T) {
 	p.SetSuppressionChecker(checker)
 
 	f := buildSuppFinding(t, tenantID, shared.NewID(), "semgrep", "sql-injection", "fp-1")
-	decisions := p.applySuppressions(context.Background(), tenantID, []*vulnerability.Finding{f})
+	decisions := p.applySuppressions(context.Background(), tenantID, []*vulnerability.Finding{f}, nil)
 
 	if len(decisions) != 0 {
 		t.Fatalf("expected no decisions on lookup error, got %d", len(decisions))
@@ -224,7 +224,7 @@ func TestApplySuppressions_DispositionByRuleType(t *testing.T) {
 		p := NewFindingProcessor(&stubFindingRepository{}, nil, nil, logger.NewNop())
 		p.SetSuppressionChecker(&stubSuppressionChecker{rules: []*suppression.Rule{suppression.ReconstituteRule(d)}})
 		f := buildSuppFinding(t, tenantID, shared.NewID(), "semgrep", "sql-injection", "fp-"+string(typ))
-		p.applySuppressions(context.Background(), tenantID, []*vulnerability.Finding{f})
+		p.applySuppressions(context.Background(), tenantID, []*vulnerability.Finding{f}, nil)
 		if f.Status() != want || f.Status() == vulnerability.FindingStatusResolved || f.ResolvedAt() == nil {
 			t.Errorf("%s rule: status %q (resolved_at %v), want %q with a closing time", typ, f.Status(), f.ResolvedAt(), want)
 		}
@@ -254,7 +254,7 @@ func TestApplySuppressions_DispositionSurvivesReopenPredicate(t *testing.T) {
 	p.SetSuppressionChecker(checker)
 
 	f := buildSuppFinding(t, tenantID, shared.NewID(), "semgrep", "sql-injection", "fp-1")
-	p.applySuppressions(context.Background(), tenantID, []*vulnerability.Finding{f})
+	p.applySuppressions(context.Background(), tenantID, []*vulnerability.Finding{f}, nil)
 
 	// A suppressed finding is in a disposition status, which re-ingest never
 	// reopens; its resolution note records the rule.
@@ -313,7 +313,7 @@ func TestApplySuppressions_ModuleOff_NoSuppression(t *testing.T) {
 	p.SetSuppressionModuleGuard(stubModuleGuard{disabled: map[string]bool{"suppressions": true}})
 
 	f := buildSuppFinding(t, tenantID, assetID, "semgrep", "sql-injection", "fp-1")
-	if d := p.applySuppressions(context.Background(), tenantID, []*vulnerability.Finding{f}); len(d) != 0 {
+	if d := p.applySuppressions(context.Background(), tenantID, []*vulnerability.Finding{f}, nil); len(d) != 0 {
 		t.Fatalf("module off: %d suppression decisions, want 0", len(d))
 	}
 	if f.Status().IsClosed() {
@@ -325,7 +325,7 @@ func TestApplySuppressions_ModuleOff_NoSuppression(t *testing.T) {
 
 	// Another module being off changes nothing.
 	p.SetSuppressionModuleGuard(stubModuleGuard{disabled: map[string]bool{"pentest": true}})
-	if d := p.applySuppressions(context.Background(), tenantID, []*vulnerability.Finding{f}); len(d) != 1 {
+	if d := p.applySuppressions(context.Background(), tenantID, []*vulnerability.Finding{f}, nil); len(d) != 1 {
 		t.Fatalf("module on: %d suppression decisions, want 1", len(d))
 	}
 }

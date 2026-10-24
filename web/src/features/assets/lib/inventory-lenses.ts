@@ -148,3 +148,26 @@ export function activeQuickView(search: URLSearchParams, counts: LensCounts): st
   if (types.length === other.size && types.every((t) => other.has(t))) return 'other'
   return undefined
 }
+
+/**
+ * The registry's name for a row's type: the alias for its sub-type when one
+ * exists ("HTTP Service" for service/http), else the core type's label. `type`
+ * is the i18n key segment (`assets.typeLabel.<type>`).
+ */
+export function typeKeyOf(
+  registry: AssetTypeRegistry | undefined,
+  stored: string,
+  sub?: string | null
+): { type: string; label: string } {
+  const types = registry?.types ?? []
+  if (sub) {
+    const alias = types.find((t) => t.alias_of?.type === stored && t.alias_of?.sub_type === sub)
+    if (alias?.type) return { type: alias.type, label: alias.label ?? alias.type }
+  }
+  const core = types.find((t) => t.type === stored && !t.alias_of)
+  const fallback = stored.replace(/_/g, ' ')
+  return {
+    type: stored,
+    label: core?.label ?? fallback.charAt(0).toUpperCase() + fallback.slice(1),
+  }
+}

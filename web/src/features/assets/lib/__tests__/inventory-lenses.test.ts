@@ -4,7 +4,7 @@
  * the caller's own (scoped) stats, with the view the URL shows.
  */
 import { describe, it, expect } from 'vitest'
-import { activeQuickView, assetQuickViews, lensCounts } from '../inventory-lenses'
+import { activeQuickView, assetQuickViews, lensCounts, typeKeyOf } from '../inventory-lenses'
 import type { AssetTypeRegistry } from '@/features/asset-types/lib/asset-registry'
 
 const REGISTRY = {
@@ -99,5 +99,17 @@ describe('assetQuickViews', () => {
     // A type picked by hand is a filter, not a view; an unknown lens is no view.
     expect(activeQuickView(q('types=subdomain'), counts)).toBeUndefined()
     expect(activeQuickView(q('lens=bogus'), counts)).toBeUndefined()
+  })
+})
+
+describe('typeKeyOf', () => {
+  it('names a row by its alias when the sub-type has one, else by its type', () => {
+    expect(typeKeyOf(REGISTRY, 'service', 'http')).toEqual({
+      type: 'http_service',
+      label: 'HTTP Service',
+    })
+    expect(typeKeyOf(REGISTRY, 'service', 'other')).toEqual({ type: 'service', label: 'Service' })
+    expect(typeKeyOf(REGISTRY, 'subdomain')).toEqual({ type: 'subdomain', label: 'Subdomain' })
+    expect(typeKeyOf(undefined, 'ip_address')).toEqual({ type: 'ip_address', label: 'Ip address' })
   })
 })

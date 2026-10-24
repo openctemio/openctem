@@ -1636,6 +1636,10 @@ func newFindingImportService(cfg *config.Config, repos *Repositories, svc *Servi
 		imp.SetQueue(svc.IngestQueue, findingimport.DataScopeResolver(svc.DataScope), audit)
 		// The worker re-reads the uploader's membership before importing.
 		imp.SetMembers(repos.Tenant)
+		// ... and the upload's API key and the findings:approve right.
+		if repos.APIKey != nil && svc.Role != nil {
+			imp.SetRights(repos.APIKey, svc.Role)
+		}
 	}
 	if svc.ImportMapping != nil {
 		imp.SetMappingResolver(svc.ImportMapping)

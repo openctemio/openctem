@@ -223,6 +223,7 @@ var assetMergeLeftAlone = map[string]string{
 	"asset_merge_log.merged_asset_id":            "the merge record itself",
 	"ctem_cycle_scope_snapshots.asset_id":        "historical snapshot of a closed scope",
 	"ingest_reports.touched_asset_ids":           "historical record of one report",
+	"ingest_receipt_items.asset_id":              "historical record of what one receipt did with an item; it names the asset as it was at ingest and is not part of the asset's live data",
 	"collector_assets.asset_id":                  "a collector source's authority covers only the asset it created: a merge never hands it the kept asset, so the merged asset's rows go with it",
 	"asset_technology_backfill_removed.asset_id": "audit record of a link the technology backfill deleted; it describes the asset as it was and is not part of the asset's live data",
 	"asset_wildcard_dns.asset_id":                "a merged name's wildcard-only mark goes with it; the kept name keeps its own and the next filtered resolution marks it again",

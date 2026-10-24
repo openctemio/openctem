@@ -382,6 +382,9 @@ type IngestConfig struct {
 	// Workers is how many ingest jobs one server processes at once
 	// (INGEST_WORKERS, default 4).
 	Workers int
+	// MaxJobDuration is the hard cap on one ingest job's processing, however
+	// long its lease is renewed (INGEST_MAX_JOB_DURATION, default 30m).
+	MaxJobDuration time.Duration
 	// MaxRunningPerTenant caps one tenant's processing jobs across servers
 	// (INGEST_MAX_RUNNING_PER_TENANT, default 2: half the workers of one
 	// server, so one tenant never holds them all).
@@ -1788,6 +1791,7 @@ func Load() (*Config, error) {
 			MaxPendingPerTenant:   getEnvInt("INGEST_MAX_PENDING_PER_TENANT", 100),
 			Workers:               getEnvInt("INGEST_WORKERS", 4),
 			MaxRunningPerTenant:   getEnvInt("INGEST_MAX_RUNNING_PER_TENANT", 2),
+			MaxJobDuration:        getEnvDuration("INGEST_MAX_JOB_DURATION", 30*time.Minute),
 			V2Results:             getEnvBool("SENSOR_PROTOCOL_V2_RESULTS", true),
 			V2BlindingRatio:       getEnvFloat("SENSOR_V2_BLINDING_RATIO", 0.5),
 			V2BlindingMinFindings: getEnvInt("SENSOR_V2_BLINDING_MIN_FINDINGS", 100),

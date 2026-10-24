@@ -227,6 +227,21 @@ organization moving and every scope consistent.
   payload that crashes or hangs the worker) makes the job dead with
   `apply_failed`; its owner is told (the import's receipt fails, the CI gate
   fails the run).
+- **Lease.** A processing job's lease (`locked_at`, five minutes) is renewed
+  every third of it while the worker runs, so a long import completes instead
+  of being released and cancelled on every attempt; `INGEST_MAX_JOB_DURATION`
+  (default 30 minutes) is the hard cap. `Complete`, `Fail` and the renewal
+  write only `WHERE status = 'processing' AND attempts = <claimed attempt>`:
+  a worker that lost its lease stops and writes nothing.
+- **Rights at apply time.** The worker re-reads the uploader before it
+  imports: a member who left, a revoked, expired or deleted API key, or a
+  demoted administrator is refused (`uploader_not_permitted`) or narrowed;
+  `findings:approve` recorded at accept is kept only while the person or the
+  key's scopes still hold it. Rights are never widened.
+- **Retries.** A tool export that is retried gives back the report slots its
+  failed attempt took, so the run's cap is not used twice. An unkeyed upload
+  whose duplicate lookup fails is answered `503`; the result of an upload with
+  no job is answered only when its receipt finished (else `404`).
 
 ## 6c. Queue hygiene
 
@@ -242,6 +257,63 @@ organization moving and every scope consistent.
   claim so the item can be accepted again; a claim older than 15 minutes (a
   crashed server) no longer blocks.
 
+## 6d. Dispositions
+
+Every reported item gets a disposition on its receipt, with the policy (and
+its version) that decided it:
+
+| Disposition | Stored as | Recorded in |
+|---|---|---|
+| `created`, `still_detected`, `reopened`, `closed` | a finding | `finding_ingest_actions` |
+| `suppressed` | a finding with a false positive or accepted status (an approved suppression rule) | `finding_ingest_actions`, with `policy = suppression_rule`, the rule id and the policy version |
+| `held` | a finding in the review sub-status (opt-in review gate; reserved until the gate ships) | `finding_ingest_actions` |
+| `out_of_scope` | no finding: the asset matches a scope exclusion (`scope_exclusion`) or is outside the uploader's scope (`uploader_scope`) | `ingest_receipt_items` |
+| `rejected` | no finding: no target asset (`validation`, `no_target_asset`) | `ingest_receipt_items` |
+| `quarantined` | no finding: the report waits in the sensor quarantine (`quarantine`, `no_command`) | `ingest_receipt_items` |
+| `filtered` | no finding: an ingest filter (reserved until filters ship) | `ingest_receipt_items` |
+
+An item row keeps an identity key (a hash), the asset, tool, a title cut to
+200 characters and the severity: never evidence or secrets. Action and item
+rows share the receipt's cap (50,000) and its 90-day retention. Items are
+listed by `GET /findings/imports/{id}/items` (an item on an asset when the
+asset is in the caller's scope; one without an asset only to an unrestricted
+caller); the receipt detail counts them per disposition (`dispositions`);
+the actions list carries `policy`, `policy_id`, `policy_version`.
+
+**Policy snapshot.** A trigger on `suppression_rules` and `scope_exclusions`
+bumps the tenant's `ingest_policy_versions` row on every write. Ingest reads
+the version (one row) before it writes anything and reuses its in-memory
+snapshot of the suppression rules while the version holds. If the snapshot
+cannot load, the ingest fails and the worker retries: ingest never proceeds
+without its policies (the suppression lookup used to fail open). A cached
+rule that expires stops matching on its own.
+
+**Side effects after commit.** The automations a new finding starts are
+stored as one `side_effects` ingest job per batch (at most 1,000 finding ids)
+after the batch's findings are committed, and the worker runs them from the
+job (retried; a finding starts an automation once, by its run key). They used
+to run in a goroutine that a restart lost. If the job cannot be stored, they
+run directly as before. The job is stored after the commit, not in the
+same transaction: a crash between the two still loses that batch's
+automations (a re-applied upload finds the findings existing, not new).
+The automation event journal, written in the merge transaction, will close
+that window and replace this outbox; it is not on develop yet.
+
+## 6e. Load targets
+
+`tests/integration/ingest_load_test.go` (`TestIngestLoad`, `INGEST_LOAD=1`)
+drives the real CI upload path: HTTP accept, sealed storage, the queue, 4
+workers and the ingest core, on a fresh, fully migrated Postgres. The nightly
+`Ingest load` workflow runs it; a missed target fails the job and the run
+summary carries the results table.
+
+| # | Scenario | Target |
+|---|---|---|
+| T1 | 50 concurrent uploads × 1,000 findings over 10 organizations, half of the findings already known | 0 refused or failed uploads; every finding stored; accept p95, job p95 and drain time reported |
+| T4 | an urgent (critical) report while 500 bulk jobs wait | applied within 15 s |
+| T3 | 20 runs upload the same 500 findings to one repository at once | 0 failed; one finding per fingerprint; every run records every sighting (no lost sighting) |
+| — | deadlocks | reported; none surfaces as a failed job (writes retry) |
+
 ## 7. API
 
 | Route | Gate | Notes |
@@ -252,7 +324,8 @@ organization moving and every scope consistent.
 | `GET /api/v1/ci/runs/{id}/results/{report_id}` | CI run token | state of the run's upload and, once applied, its counts and decided results; `wait` ≤ 10 s; another run's upload is 404 |
 | `GET /api/v1/findings/imports` | `findings:read` | list of receipts (§4); filters `source_kind`, `source_ref`; `page`, `per_page` ≤ 100; unknown parameter → 400 |
 | `GET /api/v1/findings/imports/{id}` | `findings:read` | one receipt, counts by severity of the visible actions |
-| `GET /api/v1/findings/imports/{id}/actions` | `findings:read` | the per-finding actions the caller may see; filter `action` |
+| `GET /api/v1/findings/imports/{id}/actions` | `findings:read` | the per-finding actions the caller may see, with the deciding policy; filter `action` (`created`, `still_detected`, `reopened`, `closed`, `suppressed`, `held`) |
+| `GET /api/v1/findings/imports/{id}/items` | `findings:read` | the items that did not become findings (§6d); filter `disposition` |
 | `GET /api/v1/findings/{id}/imports` | `findings:read` | the receipts that acted on one finding, newest first |
 
 ## 8. Threat model
@@ -281,3 +354,6 @@ organization moving and every scope consistent.
 6. Fairness and limits (§6b): lanes, one running job per scope, a running
    cap, workers on their own pool, fail-closed back-pressure, poison cap.
 7. Queue hygiene (§6c): queue retention; quarantine accepted after apply.
+8. Dispositions (§6d): per-item dispositions with the deciding policy and
+   version, versioned policy snapshots, durable side effects.
+9. Load harness in nightly CI (§6e).

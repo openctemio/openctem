@@ -2274,6 +2274,9 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 		ingBranch = postgres.NewBranchRepository(deps.IngestDB)
 	}
 	s.Ingest = ingest.NewService(ingAsset, ingFinding, ingVuln, ingComp, repos.Sensor, ingBranch, repos.Tenant, repos.Audit, log)
+	// Policies are applied from a per-tenant snapshot, reloaded when their
+	// version changes.
+	s.Ingest.SetPolicyVersions(repos.IngestPolicyVersions)
 	// DefectDojo co-existence sync (RFC-013): pull a tenant's DefectDojo findings
 	// and ingest them as CTIS (one-way; OpenCTEM is the system of record).
 	s.DefectDojoSync = defectdojo.NewSyncService(repos.Integration, s.Ingest, s.Encryptor, log)
@@ -2776,6 +2779,11 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// Wire workflow dispatcher to ingest service for automatic workflow triggering
 	// when new findings are created during ingestion
 	s.Ingest.SetFindingCreatedCallback(s.WorkflowDispatcher.DispatchFindingsCreated)
+	// Durable and batched: the automations of new findings run from the
+	// ingest queue after the batch is committed.
+	if repos.IngestJob != nil {
+		s.Ingest.SetSideEffectQueue(repos.IngestJob)
+	}
 
 	// Wire workflow dispatcher to the vulnerability service so a status change
 	// (e.g. a resolve) auto-dispatches a `finding_status_changed` workflow event
@@ -2828,6 +2836,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// Cross-rule correlation of DAST findings (research/134 section 12).
 	s.Ingest.SetCorrelationStore(repos.FindingCorrelation)
 	s.Ingest.SetIssueLinkStore(repos.FindingIssueLinks)
+	s.Ingest.SetVulnAliasResolver(repos.CVECorpus)
 
 	// Initialize access control services
 	s.Group = accesscontrol.NewGroupService(repos.Group, log,
