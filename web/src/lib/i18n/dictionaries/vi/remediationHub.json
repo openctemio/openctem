@@ -366,5 +366,6 @@
   "remediationHub.detail.openFinding": "Mở {title}",
   "remediationHub.crumb.label": "Bạn đến từ đâu",
   "remediationHub.crumb.tasks": "Tác vụ khắc phục",
-  "remediationHub.crumb.finding": "Phát hiện"
+  "remediationHub.crumb.finding": "Phát hiện",
+  "remediationHub.tasks.showLabel": "Hiển thị"
 }

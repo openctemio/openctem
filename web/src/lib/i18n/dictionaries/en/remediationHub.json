@@ -366,5 +366,6 @@
   "remediationHub.detail.openFinding": "Open {title}",
   "remediationHub.crumb.label": "Where you came from",
   "remediationHub.crumb.tasks": "Remediation tasks",
-  "remediationHub.crumb.finding": "Finding"
+  "remediationHub.crumb.finding": "Finding",
+  "remediationHub.tasks.showLabel": "Show"
 }
