@@ -13,6 +13,7 @@ import (
 	"github.com/openctemio/openctem/api/pkg/domain/sensor"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/domain/tool"
+	"github.com/openctemio/openctem/api/pkg/pagination"
 )
 
 // platformTools is a tool registry with the given active platform tools.
@@ -30,6 +31,10 @@ func (p platformTools) GetPlatformToolByName(_ context.Context, name string) (*t
 
 func (p platformTools) FindByCapabilities(context.Context, shared.ID, []string) (*tool.Tool, error) {
 	return nil, nil
+}
+
+func (p platformTools) ListTenantCustomTools(context.Context, shared.ID, tool.ToolFilter, pagination.Pagination) (pagination.Result[*tool.Tool], error) {
+	return pagination.Result[*tool.Tool]{}, nil
 }
 
 func decodePayload(t *testing.T, raw string) map[string]any {

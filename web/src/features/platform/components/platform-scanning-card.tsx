@@ -15,6 +15,8 @@ import { toast } from 'sonner'
 
 import Link from '@/components/link'
 import { Button } from '@/components/ui/button'
+import { HealthStatus } from '@/components/ui/health-status'
+import type { HealthState } from '@/lib/health-colors'
 import { useTranslation } from '@/context/i18n-provider'
 import { useScopeSettingsApi } from '@/features/scope'
 import { usePlatformScanning } from '@/lib/api/platform-hooks'
@@ -25,23 +27,11 @@ import { cn } from '@/lib/utils'
 /** Where the owner's opt-out switch lives (organization settings). */
 export const SHARED_SENSORS_OPT_OUT_HREF = '/settings/scanning/sensor-safety#shared-sensors'
 
-/** Theme tokens only: a tint and a dot per state; the word carries the meaning. */
-const STATUS: Record<PlatformScanningStatus, { key: string; pill: string; dot: string }> = {
-  available: {
-    key: 'sensors.shared.status.available',
-    pill: 'bg-success/15 text-success',
-    dot: 'bg-success',
-  },
-  busy: {
-    key: 'sensors.shared.status.busy',
-    pill: 'bg-warning/15 text-warning',
-    dot: 'bg-warning',
-  },
-  unavailable: {
-    key: 'sensors.shared.status.unavailable',
-    pill: 'bg-destructive/15 text-destructive',
-    dot: 'bg-destructive',
-  },
+/** Shared-sensor availability as the machine state it reports. */
+const STATUS: Record<PlatformScanningStatus, { key: string; state: HealthState }> = {
+  available: { key: 'sensors.shared.status.available', state: 'ok' },
+  busy: { key: 'sensors.shared.status.busy', state: 'warn' },
+  unavailable: { key: 'sensors.shared.status.unavailable', state: 'down' },
 }
 
 export function PlatformStatusPill({
@@ -53,19 +43,7 @@ export function PlatformStatusPill({
 }) {
   const { t } = useTranslation()
   const m = STATUS[status] ?? STATUS.unavailable
-  return (
-    <span
-      data-status={status}
-      className={cn(
-        'inline-flex shrink-0 items-center gap-1.5 rounded-full px-2 py-0.5 text-xs font-medium whitespace-nowrap',
-        m.pill,
-        className
-      )}
-    >
-      <span className={cn('h-1.5 w-1.5 rounded-full', m.dot)} aria-hidden />
-      {t(m.key)}
-    </span>
-  )
+  return <HealthStatus state={m.state} value={status} label={t(m.key)} className={className} />
 }
 
 /** How many tools are listed before "+N more". */
@@ -194,7 +172,7 @@ export function PlatformScanningCard({ className }: { className?: string }) {
         {proof && (
           <li>
             {t('sensors.shared.proofNeeded')}{' '}
-            <Link href="/scope?tab=proof" className="font-medium text-foreground underline">
+            <Link href="/scope/domain-proof" className="font-medium text-foreground underline">
               {t('sensors.shared.verifyDomain')}
             </Link>
           </li>

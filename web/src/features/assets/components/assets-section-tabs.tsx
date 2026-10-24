@@ -29,11 +29,5 @@ export function AssetsSectionTabs() {
       }),
     [t]
   )
-  return (
-    <GatedSectionTabs
-      tabs={tabs}
-      label={t('assets.tabs.aria', 'Assets sections')}
-      className="mt-4 mb-0"
-    />
-  )
+  return <GatedSectionTabs tabs={tabs} label={t('assets.tabs.aria', 'Assets sections')} />
 }

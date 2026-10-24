@@ -13,7 +13,7 @@ vi.mock('@/components/layout', () => ({
 const { default: ExposureChainsPage } = await import('../page')
 
 describe('exposure chains page layout', () => {
-  it('keeps the page gap above a load error', () => {
+  it('renders a load error inside the page stack', () => {
     state.current = {
       chains: undefined,
       error: new Error('boom'),
@@ -22,10 +22,11 @@ describe('exposure chains page layout', () => {
     }
     render(<ExposureChainsPage />)
     const alert = screen.getByRole('alert')
-    expect(alert.parentElement).toHaveClass('mt-5')
+    expect(alert.parentElement).toHaveAttribute('data-slot', 'page-stack')
+    expect(alert.parentElement?.querySelector('.mt-5')).toBeNull()
   })
 
-  it('keeps the page gap above the no-relationships state', () => {
+  it('renders the no-relationships state inside the page stack', () => {
     state.current = {
       chains: { summary: { hasRelationshipData: false }, chains: [] },
       error: undefined,
@@ -33,7 +34,10 @@ describe('exposure chains page layout', () => {
       mutate: vi.fn(),
     }
     const { container } = render(<ExposureChainsPage />)
-    expect(screen.getByText('No relationship data yet').closest('.mt-5')).not.toBeNull()
+    expect(
+      screen.getByText('No relationship data yet').closest('[data-slot="page-stack"]')
+    ).not.toBeNull()
+    expect(container.querySelector('.mt-5')).toBeNull()
     expect(container.textContent).not.toContain(' — ')
   })
 

@@ -20,6 +20,8 @@ import {
 } from 'lucide-react'
 
 import { Badge } from '@/components/ui/badge'
+import { HealthStatus } from '@/components/ui/health-status'
+import type { HealthState } from '@/lib/health-colors'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
@@ -792,12 +794,13 @@ function ConnectionAndIdentity({
 // Jobs tab
 // ---------------------------------------------------------------------------
 
-const JOB_STATUS_TONE: Record<string, string> = {
-  completed: 'bg-success/15 text-success',
-  failed: 'bg-destructive/15 text-destructive',
-  running: 'bg-info/15 text-info',
-  acknowledged: 'bg-info/15 text-info',
-  pending: 'bg-warning/15 text-warning',
+/** Machine-reported job status -> health state (research 247: queued/run/ok/down). */
+const JOB_STATUS_STATE: Record<string, HealthState> = {
+  completed: 'ok',
+  failed: 'down',
+  running: 'run',
+  acknowledged: 'run',
+  pending: 'queued',
 }
 
 function jobTitle(c: SensorCommand): string {
@@ -891,14 +894,11 @@ function SensorJobs({ sensor }: { sensor: Sensor }) {
               <li key={c.id} className="space-y-1 px-3 py-2.5 text-sm">
                 <div className="flex items-center justify-between gap-2">
                   <span className="truncate font-medium">{jobTitle(c)}</span>
-                  <span
-                    className={cn(
-                      'shrink-0 rounded-full px-2 py-0.5 text-xs font-medium',
-                      JOB_STATUS_TONE[c.status] ?? 'bg-muted text-muted-foreground'
-                    )}
-                  >
-                    {t(`sensors.detail.jobs.status.${c.status}`, c.status)}
-                  </span>
+                  <HealthStatus
+                    state={JOB_STATUS_STATE[c.status] ?? 'unknown'}
+                    value={c.status}
+                    label={t(`sensors.detail.jobs.status.${c.status}`, c.status)}
+                  />
                 </div>
                 {target && (
                   <p className="truncate font-mono text-meta text-muted-foreground">{target}</p>
