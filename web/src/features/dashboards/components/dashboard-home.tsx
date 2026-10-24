@@ -27,7 +27,7 @@ import {
 } from '@/components/ui/dropdown-menu'
 import { Skeleton } from '@/components/ui/skeleton'
 import { useTranslation } from '@/context/i18n-provider'
-import { PageHeader } from '@/features/shared'
+import { PageHeader, PageStack } from '@/features/shared'
 import { getErrorMessage } from '@/lib/api/error-handler'
 import { Permission, usePermissions } from '@/lib/permissions'
 import { cn } from '@/lib/utils'
@@ -328,7 +328,7 @@ export function DashboardHome() {
 
   return (
     <Main>
-      <div className="flex flex-col gap-4">
+      <PageStack>
         {/* Phone: the switcher fills row 1 beside icon-only Refresh and More;
             Customize and the schedule move into More. From 640px one toolbar
             row: switcher, Customize, schedule, Refresh now, More. */}
@@ -498,7 +498,6 @@ export function DashboardHome() {
                 >
                   {t('dashboards.actions.customize', 'Customize')}
                 </button>{' '}
-                ·{' '}
                 <Link href="/dashboards" className="font-medium text-foreground underline">
                   {t('dashboards.view.chooseAnother', 'Choose another')}
                 </Link>
@@ -551,7 +550,7 @@ export function DashboardHome() {
             />
           </>
         )}
-      </div>
+      </PageStack>
       <ConfirmDialog
         open={pendingOrgDefault !== null}
         onOpenChange={(open) => !open && setPendingOrgDefault(null)}

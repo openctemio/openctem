@@ -1,5 +1,6 @@
 'use client'
 
+import { IntegrationHealth } from '@/features/integrations/components/integration-health'
 import { useMemo, useState } from 'react'
 import { Main } from '@/components/layout'
 import type { ColumnDef } from '@tanstack/react-table'
@@ -73,10 +74,7 @@ import {
   useTestIntegrationApi,
   useDeleteIntegrationApi,
 } from '@/features/integrations/api/use-integrations-api'
-import type {
-  Integration,
-  IntegrationStatus,
-} from '@/features/integrations/types/integration.types'
+import type { Integration } from '@/features/integrations/types/integration.types'
 import { toast } from 'sonner'
 import { SEVERITY_LEVELS, type SeverityLevel } from '@/lib/severity'
 import { useSeverityLabel } from '@/hooks/use-scale-labels'
@@ -149,30 +147,7 @@ function StatusBadge({ integration }: { integration: Integration }) {
       </Badge>
     )
   }
-  const status: IntegrationStatus = integration.status
-  // Only a problem (error / expired) is coloured; other states stay neutral.
-  const config: Record<
-    IntegrationStatus,
-    { variant: 'default' | 'secondary' | 'destructive' | 'outline'; label: string }
-  > = {
-    connected: {
-      variant: 'default',
-      label: t('ticketingIntegration.status.connected', 'Connected'),
-    },
-    disconnected: {
-      variant: 'secondary',
-      label: t('ticketingIntegration.status.disconnected', 'Not connected'),
-    },
-    error: { variant: 'destructive', label: t('ticketingIntegration.status.error', 'Error') },
-    pending: { variant: 'outline', label: t('ticketingIntegration.status.pending', 'Pending') },
-    expired: { variant: 'destructive', label: t('ticketingIntegration.status.expired', 'Expired') },
-    disabled: {
-      variant: 'secondary',
-      label: t('ticketingIntegration.status.disabled', 'Disabled'),
-    },
-  }
-  const { variant, label } = config[status] ?? config.disconnected
-  return <Badge variant={variant}>{label}</Badge>
+  return <IntegrationHealth status={integration.status} />
 }
 
 // ─────────────────────────────────────────────────────────
