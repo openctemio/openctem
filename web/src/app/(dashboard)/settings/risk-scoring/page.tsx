@@ -523,21 +523,21 @@ export default function ScoringConfigurationPage() {
                   label="Exposure"
                   value={config.weights.exposure}
                   onChange={(v) => updateWeight('exposure', v)}
-                  color="#ef4444"
+                  color="#ef4444" // label-ok: slider track colour, matches the weight bar segment
                   tooltip="How much the asset's network exposure (public, private, isolated) affects its risk score"
                 />
                 <WeightSlider
                   label="Criticality"
                   value={config.weights.criticality}
                   onChange={(v) => updateWeight('criticality', v)}
-                  color="#f97316"
+                  color="#f97316" // label-ok: slider track colour, matches the weight bar segment
                   tooltip="How much the asset's business criticality level affects its risk score"
                 />
                 <WeightSlider
                   label="Findings"
                   value={config.weights.findings}
                   onChange={(v) => updateWeight('findings', v)}
-                  color="#eab308"
+                  color="#eab308" // label-ok: slider track colour, matches the weight bar segment
                   tooltip="How much vulnerability findings (count or severity-weighted) affect the risk score"
                 />
                 <WeightSlider
