@@ -178,13 +178,16 @@ jobs:
       # ahead, so two queued PRs with the same number cannot both land.
       # On pull_request "below the base max" is only a warning: the merge
       # queue renumbers a PR's migrations when it enqueues it. merge_group and
-      # push keep it an error; duplicates fail everywhere.
+      # push keep it an error; duplicates fail everywhere. A push to develop is
+      # compared with develop before the push (see the push branch below).
       - name: Migration Versions
         working-directory: .
         env:
           EVENT: ${{ github.event_name }}
           BASE_REF: ${{ github.base_ref }}
           MG_BASE: ${{ github.event.merge_group.base_sha }}
+          PUSH_REF: ${{ github.ref }}
+          PUSH_BEFORE: ${{ github.event.before }}
         run: |
           bash .github/scripts/check-migration-versions.test.sh >/dev/null
           bash .github/scripts/pr-migration-renumber.test.sh >/dev/null
@@ -194,7 +197,17 @@ jobs:
           case "$EVENT" in
             pull_request) MIGRATION_BELOW_BASE=warning bash .github/scripts/check-migration-versions.sh "origin/${BASE_REF}" ;;
             merge_group)  bash .github/scripts/check-migration-versions.sh "$MG_BASE" ;;
-            *)            bash .github/scripts/check-migration-versions.sh ;;
+            *)
+              # A push to develop that skipped the queue (a direct or admin
+              # merge) is checked against develop as it was before the push,
+              # so a migration numbered at or below develop's highest turns
+              # develop red at once instead of being skipped silently on
+              # databases that are already past it.
+              base=""
+              if [ "$PUSH_REF" = "refs/heads/develop" ] && git cat-file -e "${PUSH_BEFORE}^{commit}" 2>/dev/null; then
+                base="$PUSH_BEFORE"
+              fi
+              bash .github/scripts/check-migration-versions.sh $base ;;
           esac
 
       # PR only: a migration whose number develop has taken since is

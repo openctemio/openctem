@@ -64,6 +64,7 @@ const (
 	ReasonFailed         = "failed"
 	ReasonTimeout        = "timeout"
 	ReasonNoHistoryForBy = "previous_not_in_history"
+	ReasonForbidden      = "forbidden"
 )
 
 // Service computes widget results.
@@ -256,6 +257,7 @@ func (s *Service) PersonalData(ctx context.Context, c dashboardapp.Caller, id st
 	if err != nil {
 		return nil, err
 	}
+	maskForbidden(out, c)
 	return s.forViewer(ctx, out, c, scope.CampaignViewer)
 }
 
@@ -296,6 +298,7 @@ func (s *Service) Preview(ctx context.Context, c dashboardapp.Caller, widgetType
 	if err != nil {
 		return nil, err
 	}
+	maskForbidden(out, c)
 	out, err = s.forViewer(ctx, out, c, scope.CampaignViewer)
 	if err != nil {
 		return nil, err

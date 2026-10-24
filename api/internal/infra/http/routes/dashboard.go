@@ -9,8 +9,12 @@ import (
 // registerUserDashboardRoutes registers the dashboards API
 // (docs/architecture/dashboards.md).
 //
-// Personal dashboards live under /api/v1/me/*: self-scoped, so no permission
-// gate; every handler scopes to the caller's (tenant, user).
+// Personal dashboards live under /api/v1/me/*: the layout routes are
+// self-scoped (every handler scopes to the caller's tenant and user, so no
+// permission gate). The routes that compute figures (preview, data, refresh)
+// need dashboard:read, and each metric also needs the permission of what it
+// counts (widgets.Service), so a role never reads through a dashboard what
+// it cannot read directly.
 //
 // Organization dashboards live under /api/v1/organization/dashboards:
 // reading needs dashboards:org:view (the service also applies the
@@ -23,16 +27,17 @@ func registerUserDashboardRoutes(
 ) {
 	tenantMiddlewares := buildTokenTenantMiddlewares(authMiddleware, userSyncMiddleware)
 
+	read := middleware.Require(permission.DashboardRead)
 	router.Group("/api/v1/me/dashboards", func(r Router) {
 		r.GET("/", h.List)
 		r.POST("/", h.Create)
 		// Static catalog of typed widget metrics; no organization data.
 		r.GET("/widget-catalog", h.WidgetCatalog)
 		// One typed widget computed for the caller's own scope.
-		r.POST("/widget-preview", h.PreviewWidget)
+		r.POST("/widget-preview", h.PreviewWidget, read)
 		r.GET("/{id}", h.Get)
-		r.GET("/{id}/data", h.PersonalData)
-		r.POST("/{id}/refresh", h.RefreshPersonal)
+		r.GET("/{id}/data", h.PersonalData, read)
+		r.POST("/{id}/refresh", h.RefreshPersonal, read)
 		r.PUT("/{id}", h.Update)
 		r.DELETE("/{id}", h.Delete)
 		r.POST("/{id}/default", h.SetDefault)
