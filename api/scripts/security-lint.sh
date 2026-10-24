@@ -597,6 +597,83 @@ check_upstream_body_in_errors() {
 }
 
 # ---------------------------------------------------------------------------
+# Rule 10: outbound network primitives only through pkg/httpsec.
+#
+# Rule 1 catches the &http.Client{ literal. This rule catches every other way
+# to open a connection without the guard (docs/architecture/outbound-
+# requests.md): the package-level http helpers and default client/transport
+# (they dial anything and take a proxy from the environment), a bare
+# http.Transport or http.Client value, net/tls dialers, net/smtp's own dial,
+# a proxy from the environment, and go-git transports other than the guarded
+# http one. A new site either uses httpsec (SafeHTTPClient, SafeDialContext,
+# ResolveSafeHost) or joins the allow-list below with its reason.
+# ---------------------------------------------------------------------------
+check_outbound_primitives() {
+    local allow_sites=(
+        # The guard itself.
+        'api/pkg/httpsec/'
+        # Signer: a fixed local Unix socket from the server's environment.
+        'api/cmd/signer/main.go'
+        'api/internal/infra/signer/client.go'
+        # `server -healthcheck`: this process's own loopback listener.
+        'api/cmd/server/healthcheck.go'
+        # Scan-zone resolver: the recursive resolver the operator names in
+        # the server's environment (SCOPE_ZONE_RESOLVER).
+        'api/cmd/server/services.go'
+        # Admin audit sink: destination from the server's environment only.
+        'api/internal/infra/auditsink/sink.go'
+        # Sensor transport probe: the platform's own sensor endpoint.
+        'api/internal/infra/sensortransport/probe.go'
+        # Sensor relay connector: two destinations from the server's
+        # environment; no proxy, no redirects.
+        'api/internal/sensorrelay/connector.go'
+        # Sensor-side request signing transport (used by sensor clients that
+        # talk to the platform), not a platform outbound call.
+        'api/pkg/sensorsig/sensorsig.go'
+        # EASM DNS client: port 53 only, every server address checked with
+        # httpsec.IsIPBlocked before the dial.
+        'api/pkg/dnsprobe/client.go'
+        # SMTP: dials the address httpsec.ResolveSafeHost vetted (an IP
+        # literal), never a host name.
+        'api/pkg/email/email.go'
+        'api/internal/infra/notifier/email.go'
+        # Rule sources: installs the guarded http transport and removes the
+        # others.
+        'api/internal/infra/fetchers/git_snapshot.go'
+    )
+    local pattern='http\.(Get|Post|PostForm|Head)\(|http\.DefaultClient|http\.DefaultTransport|(^|[^&])http\.Client\{|new\(http\.Client\)|http\.Transport\{|net\.Dial(Timeout)?\(|net\.Dialer\{|tls\.Dial(WithDialer)?\(|tls\.Dialer\{|smtp\.(Dial|SendMail)\(|ProxyFromEnvironment|InstallProtocol\(|go-git/v5/plumbing/transport/(ssh|git|file)"'
+
+    local hits
+    hits="$(grep -RnE "$pattern" \
+        --include='*.go' \
+        --exclude='*_test.go' \
+        --exclude-dir='vendor' \
+        --exclude-dir='node_modules' \
+        --exclude-dir='.claude' \
+        api/ 2>/dev/null | grep -vE '^[^:]+:[0-9]+:[[:space:]]*//' || true)"
+
+    local filtered=""
+    while IFS= read -r line; do
+        [[ -z "$line" ]] && continue
+        local file="${line%%:*}"
+        local ok=0
+        for a in "${allow_sites[@]}"; do
+            if [[ "$file" == *"$a"* ]]; then ok=1; break; fi
+        done
+        if [[ "$ok" -eq 0 ]]; then
+            filtered+="$line"$'\n'
+        fi
+    done <<< "$hits"
+
+    if [[ -n "${filtered//[[:space:]]/}" ]]; then
+        say_fail "Rule 10: outbound network primitive outside pkg/httpsec — use httpsec.SafeHTTPClient / SafeDialContext / ResolveSafeHost, or add the site with its reason:"
+        printf '%s' "$filtered" | sed 's/^/       /'
+        return
+    fi
+    say_pass "Rule 10: outbound connections only through pkg/httpsec (api/; ${#allow_sites[@]} documented sites)"
+}
+
+# ---------------------------------------------------------------------------
 # Run
 # ---------------------------------------------------------------------------
 printf '== security-lint ==\n'
@@ -619,6 +696,7 @@ check_httpsec_drift
 check_client_ip_headers
 check_bounded_response_reads
 check_upstream_body_in_errors
+check_outbound_primitives
 printf '\n'
 if [[ $fail -ne 0 ]]; then
     printf '%sSecurity lint FAILED.%s Fix the rules above before merging.\n' "$RED" "$RST"
