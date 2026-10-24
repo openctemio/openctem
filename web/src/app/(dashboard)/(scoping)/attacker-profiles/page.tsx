@@ -47,6 +47,7 @@ import { profileTypeLabel } from '@/features/cycles/api'
 import { Can, Permission } from '@/lib/permissions'
 import { toast } from 'sonner'
 import { useTranslation } from '@/context/i18n-provider'
+import { confirmName } from '@/lib/confirm-name'
 
 interface AttackerProfile {
   id: string
@@ -517,8 +518,11 @@ export default function AttackerProfilesPage() {
           'confirm.attackerProfile.deleteDesc',
           'It is removed from every cycle that uses it. This cannot be undone.'
         )}
-        confirmText={t('confirm.delete', 'Delete')}
+        confirmText={t('confirm.attackerProfile.deleteButton', 'Delete attacker profile')}
         destructive
+        typeToConfirm={
+          deleteProfile ? confirmName(deleteProfile.name, deleteProfile.id) : undefined
+        }
         handleConfirm={handleDelete}
       />
     </>
