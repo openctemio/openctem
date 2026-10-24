@@ -20,7 +20,8 @@ import {
 import { copyToClipboard } from '@/lib/clipboard'
 import { cn } from '@/lib/utils'
 import { Can, Permission } from '@/lib/permissions'
-import { CRITICALITY_BADGE_SOFT } from '@/lib/criticality-colors'
+import { CriticalityBadge } from '@/features/assets/components/classification-badges'
+import type { Criticality } from '@/features/assets/types'
 import { CRITICALITY_LABELS } from '@/lib/criticality'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -86,8 +87,6 @@ import { IssuesChip } from '@/features/assets/components/service-cells'
 import { SEVERITY_LEVELS, normalizeSeverity, type SeverityLevel } from '@/lib/severity'
 import { useTranslation } from '@/context/i18n-provider'
 import { useAssetTypeRegistry } from '@/features/asset-types/api/use-asset-type-registry'
-
-const criticalityColors: Record<string, string> = CRITICALITY_BADGE_SOFT
 
 /** Most severe first when sorted descending. */
 const SEVERITY_RANK: Record<string, number> = { critical: 5, high: 4, medium: 3, low: 2, info: 1 }
@@ -704,9 +703,10 @@ function AssetGroupDetailContent({ params }: PageProps) {
                 {group.description || t('assetGroups.detail.noDescription', 'No description')}
               </span>
               <Badge variant="outline">{envLabel(group.environment)}</Badge>
-              <Badge variant="outline" className={criticalityColors[group.criticality]}>
-                {critLabel(group.criticality)}
-              </Badge>
+              <CriticalityBadge
+                criticality={group.criticality as Criticality}
+                showTooltip={false}
+              />
             </div>
           }
         >
@@ -971,9 +971,10 @@ function AssetGroupDetailContent({ params }: PageProps) {
                       <span className="text-muted-foreground">
                         {t('assetGroups.detail.info.criticality', 'Criticality')}
                       </span>
-                      <Badge variant="outline" className={criticalityColors[group.criticality]}>
-                        {critLabel(group.criticality)}
-                      </Badge>
+                      <CriticalityBadge
+                        criticality={group.criticality as Criticality}
+                        showTooltip={false}
+                      />
                     </div>
                     {group.businessUnit && (
                       <>

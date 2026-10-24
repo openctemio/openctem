@@ -13,9 +13,13 @@ import {
   ChevronsUpDown,
   Search,
   X,
+  UserCheck,
+  Eye,
+  Bell,
+  Scale,
+  type LucideIcon,
 } from 'lucide-react'
 import { toast } from 'sonner'
-import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import {
@@ -79,7 +83,8 @@ import {
 } from '../hooks/use-asset-owners'
 import type { AssetOwner, OwnershipType } from '../types'
 import { AssetAccessGrantsSection } from './asset-access-grants-section'
-import { OWNERSHIP_TYPE_LABELS, OWNERSHIP_TYPE_COLORS, OWNERSHIP_TYPE_DESCRIPTIONS } from '../types'
+import { OWNERSHIP_TYPE_LABELS, OWNERSHIP_TYPE_DESCRIPTIONS } from '../types'
+import { Tag } from '@/components/ui/tag'
 
 // ============================================
 // PICKER OPTION TYPE
@@ -110,14 +115,19 @@ interface AssetOwnersTabProps {
 }
 
 /** User vs group owner icon colour. */
-const OWNER_KIND_COLOR = { user: 'text-blue-500', group: 'text-purple-500' } // palette-ok: two distinct accents
+const OWNER_KIND_COLOR = { user: 'text-muted-foreground', group: 'text-muted-foreground' }
+
+const OWNERSHIP_TYPE_ICON: Record<OwnershipType, LucideIcon> = {
+  primary: UserCheck,
+  secondary: Users,
+  stakeholder: Eye,
+  informed: Bell,
+  regulatory: Scale,
+}
 
 function OwnershipBadge({ type }: { type: OwnershipType }) {
-  const colors = OWNERSHIP_TYPE_COLORS[type]
   return (
-    <Badge variant="outline" className={cn(colors.bg, colors.text, colors.border)}>
-      {OWNERSHIP_TYPE_LABELS[type]}
-    </Badge>
+    <Tag variant="plain" icon={OWNERSHIP_TYPE_ICON[type]} label={OWNERSHIP_TYPE_LABELS[type]} />
   )
 }
 
@@ -177,12 +187,7 @@ function OwnerCard({
   return (
     <div className="flex items-center justify-between rounded-lg border p-3">
       <div className="flex items-center gap-3">
-        <div
-          className={cn(
-            'flex h-9 w-9 items-center justify-center rounded-full',
-            isUser ? 'bg-blue-500/10 text-blue-600' : 'bg-purple-500/10 text-purple-600'
-          )}
-        >
+        <div className="flex h-9 w-9 items-center justify-center rounded-full bg-muted text-muted-foreground">
           {isUser ? <User className="h-4 w-4" /> : <Building2 className="h-4 w-4" />}
         </div>
         <div>
