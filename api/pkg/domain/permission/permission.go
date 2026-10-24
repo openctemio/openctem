@@ -171,10 +171,12 @@ const (
 	ScanProfilesWrite  Permission = "scans:profiles:write"
 	ScanProfilesDelete Permission = "scans:profiles:delete"
 
-	// Template source permissions (scans:sources:*)
-	TemplateSourcesRead   Permission = "scans:sources:read"
-	TemplateSourcesWrite  Permission = "scans:sources:write"
-	TemplateSourcesDelete Permission = "scans:sources:delete"
+	// Rule source permissions (scans:sources:*). Approve promotes, rejects
+	// and rolls back snapshots (docs/architecture/content-sources.md).
+	ContentSourcesRead    Permission = "scans:sources:read"
+	ContentSourcesWrite   Permission = "scans:sources:write"
+	ContentSourcesDelete  Permission = "scans:sources:delete"
+	ContentSourcesApprove Permission = "scans:sources:approve"
 
 	// Tool Registry permissions (scans:tools:*)
 	ToolsRead   Permission = "scans:tools:read"
@@ -504,7 +506,7 @@ func AllPermissions() []Permission {
 		// Scans module
 		ScansRead, ScansWrite, ScansDelete, ScansExecute, ScansApprove,
 		ScanProfilesRead, ScanProfilesWrite, ScanProfilesDelete,
-		TemplateSourcesRead, TemplateSourcesWrite, TemplateSourcesDelete,
+		ContentSourcesRead, ContentSourcesWrite, ContentSourcesDelete, ContentSourcesApprove,
 		ToolsRead, ToolsWrite, ToolsDelete,
 		TenantToolsRead, TenantToolsWrite,
 		ScannerTemplatesRead, ScannerTemplatesWrite, ScannerTemplatesDelete,

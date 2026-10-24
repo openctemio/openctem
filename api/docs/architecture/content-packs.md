@@ -67,6 +67,16 @@ Ingest stays in the API process, owner decision 2026-10-08. A separate process w
 
 Reading an archive back re-checks it against its digest. Tampered storage returns 500 and is never served.
 
+## Rule source snapshots
+
+A [rule source](content-sources.md) sync stores each snapshot as a pack of
+the organization (`source = git`, name = the source slug), signed with the same
+key and linted the same way. Only promoted snapshots are in the desired set
+sensors receive; candidates and rejected snapshots are left out. Snapshot packs
+do not count against the upload quotas below: the organization's
+`content_storage_mb` limit covers them, and collected snapshots delete their
+pack and, when no other pack uses it, the stored archive.
+
 ## Platform packs and channels
 
 Migration 001568 adds platform packs, which are kept apart from tenant packs:

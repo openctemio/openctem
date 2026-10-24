@@ -48,6 +48,7 @@ var permSeedMigrations = []string{
 	"service_accounts_manage_permission",      // service_accounts:manage
 	"permission_findings_retest_checks",       // findings:retest_checks:write
 	"sensor_proxy_pools",                      // sensors:egress:*
+	"content_sources",                         // scans:sources:approve
 }
 
 // permRenameMigrations rename permission ids in place (old id → new id) with

@@ -122,6 +122,25 @@ func (m *memRepo) Usage(_ context.Context, tid shared.ID) (int, int64, error) {
 	return n, b, nil
 }
 
+func (m *memRepo) DeleteSourcePack(_ context.Context, tid, id shared.ID) (string, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	p, ok := m.packs[id.String()]
+	if !ok || p.TenantID != tid || p.Source != dom.SourceGit {
+		return "", dom.ErrNotFound
+	}
+	delete(m.packs, id.String())
+	for _, o := range m.packs {
+		if o.TenantID == tid && o.Digest == p.Digest {
+			return "", nil
+		}
+	}
+	k := tid.String() + "|" + p.Digest
+	key := m.blobs[k].StorageKey
+	delete(m.blobs, k)
+	return key, nil
+}
+
 // memStore is a tenant-namespaced Storage.
 type memStore struct {
 	mu      sync.Mutex

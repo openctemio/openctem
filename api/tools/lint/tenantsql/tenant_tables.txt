@@ -87,6 +87,8 @@ content_installs
 content_pack_blobs
 content_packages
 content_packs
+content_source_snapshots
+content_sources
 control_tests
 credentials
 ct_monitor_state
@@ -258,7 +260,6 @@ storage_blob_deletions
 support_grants
 support_sessions
 suppression_rules
-template_sources
 tenant_ai_settings
 tenant_feature_denies
 tenant_identity_providers

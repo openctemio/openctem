@@ -174,7 +174,7 @@ var roleTemplates = []RoleTemplate{
 		Personas: []string{"Scanning operations engineer"},
 		Permissions: join(readCore, []Permission{
 			ScansRead, ScansWrite, ScansExecute, ScanProfilesRead, ScanProfilesWrite,
-			ScanWorkflowsRead, ScanWorkflowsWrite, ScannerTemplatesRead, TemplateSourcesRead,
+			ScanWorkflowsRead, ScanWorkflowsWrite, ScannerTemplatesRead, ContentSourcesRead,
 			ToolsRead, TenantToolsRead, ContentPacksRead,
 			SensorsRead, CommandsRead, ScanZonesRead, ScopeRead,
 		}),

@@ -240,16 +240,17 @@ var Registry = []Definition{
 		Jobs:   []string{"VEXStatementExpiryController"},
 	},
 	{
-		ID: ModuleTemplateSources, Slug: "template-sources", Name: "Template Sources",
-		Description: "Upstream git sources that templates are synced from",
+		ID: ModuleTemplateSources, Slug: "template-sources", Name: "Rule Sources",
+		Description: "Git repositories the platform syncs rules and templates from, with snapshots and promotion",
 		Icon:        "Database",
 		Category:    "settings", DisplayOrder: 11, Release: ReleaseStatusReleased,
 		UserFacing: true,
-		Permission: "scans:templates:read",
+		Permission: "scans:sources:read",
 		Depends: []Dependency{
 			{ModuleID: ModuleScannerTemplates, Type: DependencyHard, Reason: "sources feed the template catalogue"},
 		},
-		Routes: []string{"/api/v1/template-sources"},
+		Routes: []string{"/api/v1/content-sources"},
+		Jobs:   []string{"ContentSourceSyncController"},
 	},
 	{
 		ID: ModuleBranches, Slug: "branches", Name: "Branches",

@@ -1,0 +1,12 @@
+### Added: rule sources the platform syncs, with snapshots, promotion and rollback
+
+- Template sources become rule sources (`/api/v1/content-sources`, migration `003387_content_sources`). The platform is the only fetcher: a git repository over https (branch, tag or commit) is synced on a schedule (default hourly, floor 5 minutes), on Sync now, or from a webhook (`POST /hooks/content-sources/{id}`, secret per source), into an immutable, signed snapshot with its commit, file index, rule ids and a diff against the current snapshot.
+- New snapshots are candidates. Under the `auto` policy they are promoted when every check passes (no tier escalation, no license change, no mass removal, no duplicate rule ids); a candidate that raises the tier always needs review, and under review the member who last changed the source cannot promote it (four-eyes, new permission `scans:sources:approve`, owner and admin). Each source keeps a current and a previous snapshot; rollback swaps them.
+- Test fetches, lints and counts a configuration without saving. The fetch credential is write-only, encrypted and bound to the source and its host (a new host clears it); the git username is configurable and defaults by token type, so GitLab deploy tokens work. A CA bundle can be set per source.
+- Platform sources (no organization) are offered to organizations as a read-only projection without URL, credential, CA, schedule or error text.
+- New limit keys `content_sources`, `content_storage_mb`, `content_sync_floor_minutes`, `content_snapshot_max_mb` and features `content_sources.webhook`, `content_sources.review_policy`, `content_sources.private_git` (none applies by default).
+
+### Removed: template sources, lazy sync at scan trigger and synced template rows
+
+- `/api/v1/template-sources` is gone, and a scan no longer syncs sources when it starts. s3 and http sources, ssh git URLs and the `credential_id` binding to the secret store are removed.
+- **Upgrade note:** the migration carries existing https git sources over (nuclei and semgrep kinds) and drops the others; enter each carried-over source's credential again with `PUT /api/v1/content-sources/{id}/credential`. Templates a sync wrote stay in the template library as uploaded templates. The migration renames and drops tables: stop the API during the upgrade. Scans do not use snapshots yet; the console page follows.

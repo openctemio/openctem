@@ -303,6 +303,9 @@ var optionalServiceSetters = map[string]string{
 	"RetestCheck.SetClock":            "test seam: replaces the clock; production uses time.Now",
 	"OrgDeletion.SetClock":            "test seam: replaces the clock; production uses time.Now",
 	"SignupEvents.SetClock":           "test seam: replaces the clock; production uses time.Now",
+	"ContentSource.SetClock":          "test seam: replaces the clock; production uses time.Now",
+	"ContentSource.SetFetcher":        "test seam: replaces the git fetch and the private-host check; production uses the SSRF-guarded fetcher",
+	"ContentSource.SetCredential":     "request operation (stores a rule source's credential), called by the content source handler",
 
 	// Business operations named Set*, not collaborator seams.
 	"DeploymentRegion.Set":              "business operation (the console's one-time region setting), not a collaborator seam",
