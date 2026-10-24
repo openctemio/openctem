@@ -79,7 +79,9 @@ describe('API keys, service accounts, SCIM and trust settings in Vietnamese', ()
 
   it('SCIM page', () => {
     vi_(<ScimTokensPage />)
-    expect(screen.getByText('Tổng số token')).toBeInTheDocument()
+    // No strip of totals on a configuration inventory (research/244 §4): the
+    // list itself counts the tokens.
+    expect(screen.queryByText('Tổng số token')).toBeNull()
     expect(screen.getByText('Chưa có token SCIM')).toBeInTheDocument()
     expect(screen.queryByText('Total tokens')).toBeNull()
     expect(screen.queryByText('No SCIM tokens yet')).toBeNull()

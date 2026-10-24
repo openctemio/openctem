@@ -29,6 +29,8 @@ func serveWith(t *testing.T, mount func(router infrahttp.Router, auth Middleware
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			ctx := context.WithValue(r.Context(), middleware.UserIDKey, shared.NewID().String())
 			ctx = context.WithValue(ctx, middleware.TenantIDKey, shared.NewID().String())
+			// A signed-in session, so a step-up route can check its age.
+			ctx = context.WithValue(ctx, middleware.SessionIDKey, shared.NewID().String())
 			ctx = context.WithValue(ctx, middleware.IsAdminKey, admin)
 			ctx = context.WithValue(ctx, middleware.PermissionsKey, perms)
 			next.ServeHTTP(w, r.WithContext(ctx))
@@ -69,6 +71,10 @@ func TestOrganizationSecurityOverviewRouteIsAdminOnly(t *testing.T) {
 // GET /audit-logs/export has the gate of the list: audit:read.
 func TestAuditExportRouteNeedsAuditRead(t *testing.T) {
 	h := handler.NewAuditHandler(nil, nil, logger.NewNop())
+	// The export also needs step-up (TestStepUpRoutes_RequireRecentAuth);
+	// here every session has just authenticated, so only the permission
+	// gate decides.
+	withStepUpChecker(t, alwaysSteppedUp{})
 	mount := func(router infrahttp.Router, auth Middleware) { registerAuditRoutes(router, h, auth, nil) }
 	const path = "/api/v1/audit-logs/export"
 	if got := serveWith(t, mount, path, false, []string{"findings:read"}); got != http.StatusForbidden {

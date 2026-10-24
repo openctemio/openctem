@@ -45,6 +45,51 @@ func (r *ScanRunRepository) ListByTenantAndIDs(ctx context.Context, tenantID sha
 	return out, rows.Err()
 }
 
+// RecentByScans returns the latest limit runs of each scan in scanIDs that
+// belongs to tenantID, newest first, in one query (a LATERAL top-N per scan
+// on the scan_id index). Runs of another tenant are never read: both the
+// scan and the run must carry tenantID.
+func (r *ScanRunRepository) RecentByScans(ctx context.Context, tenantID shared.ID, scanIDs []shared.ID, limit int) (map[shared.ID][]scanrun.RecentRun, error) {
+	out := make(map[shared.ID][]scanrun.RecentRun, len(scanIDs))
+	if len(scanIDs) == 0 || limit <= 0 {
+		return out, nil
+	}
+	rows, err := r.db.QueryContext(ctx, `
+		SELECT s.id, x.id, x.status, COALESCE(x.refusal_code, ''), x.created_at
+		FROM unnest($2::uuid[]) AS s(id)
+		CROSS JOIN LATERAL (
+			SELECT id, status, refusal_code, created_at
+			FROM scan_runs
+			WHERE tenant_id = $1 AND scan_id = s.id
+			ORDER BY created_at DESC, id DESC
+			LIMIT $3
+		) x
+		ORDER BY s.id, x.created_at DESC, x.id DESC`,
+		tenantID.String(), pq.Array(uuidStrings(scanIDs)), limit)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list recent runs: %w", err)
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var scanID, runID, status, refusal string
+		var rr scanrun.RecentRun
+		if err := rows.Scan(&scanID, &runID, &status, &refusal, &rr.CreatedAt); err != nil {
+			return nil, fmt.Errorf("failed to scan recent run: %w", err)
+		}
+		sid, err := shared.IDFromString(scanID)
+		if err != nil {
+			return nil, fmt.Errorf("failed to parse scan id: %w", err)
+		}
+		if rr.ID, err = shared.IDFromString(runID); err != nil {
+			return nil, fmt.Errorf("failed to parse run id: %w", err)
+		}
+		rr.Status = scanrun.RunStatus(status)
+		rr.RefusalCode = refusal
+		out[sid] = append(out[sid], rr)
+	}
+	return out, rows.Err()
+}
+
 // TemplateNames returns the names of the templates in ids that tenantID may
 // use (its own and the system templates), in one query.
 func (r *ScanWorkflowRepository) TemplateNames(ctx context.Context, tenantID shared.ID, ids []shared.ID) (map[shared.ID]string, error) {
