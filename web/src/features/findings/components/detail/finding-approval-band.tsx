@@ -14,6 +14,7 @@ import { Hourglass, Loader2 } from 'lucide-react'
 import { toast } from 'sonner'
 import Link from '@/components/link'
 import { Button } from '@/components/ui/button'
+import { ConfirmDialog } from '@/components/confirm-dialog'
 import { useTranslation } from '@/context/i18n-provider'
 import { usePermissions } from '@/context/permission-provider'
 import { useDisplayUser } from '@/hooks/use-display-user'
@@ -66,6 +67,7 @@ function PendingRequest({
   const { t } = useTranslation()
   const { trigger: cancel, isMutating } = useCancelApproval(approval.id)
   const [error, setError] = useState(false)
+  const [cancelOpen, setCancelOpen] = useState(false)
   const mayCancel = canWrite && canCancelApproval(approval, currentUserId)
   const mayDecide = canApprove && !isOwnApproval(approval, currentUserId) && !approval.batch_id
   const cfg = FINDING_STATUS_CONFIG[approval.requested_status as FindingStatus]
@@ -73,6 +75,7 @@ function PendingRequest({
 
   const onCancel = async () => {
     setError(false)
+    setCancelOpen(false)
     try {
       await cancel()
       toast.success(t('findings.approvals.toast.canceled', 'Approval request canceled'))
@@ -102,13 +105,26 @@ function PendingRequest({
           {t('findings.approvalBand.reason', 'Reason:')} {approval.justification}
         </p>
       )}
+      <ConfirmDialog
+        open={cancelOpen}
+        onOpenChange={setCancelOpen}
+        title={t('confirm.findingApproval.cancelTitle', 'Cancel this approval request?')}
+        desc={t(
+          'confirm.findingApproval.cancelDesc',
+          'The request is withdrawn and the finding keeps its current status. You can send a new request afterwards.'
+        )}
+        cancelBtnText={t('confirm.findingApproval.keep', 'Keep request')}
+        confirmText={t('confirm.findingApproval.cancel', 'Cancel request')}
+        destructive
+        handleConfirm={onCancel}
+      />
       <div className="flex flex-wrap items-center gap-2 pt-1">
         {mayCancel && (
           <Button
             type="button"
             size="sm"
             variant="outline"
-            onClick={onCancel}
+            onClick={() => setCancelOpen(true)}
             disabled={isMutating}
             data-testid="finding-approval-cancel"
           >

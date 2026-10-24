@@ -255,7 +255,10 @@ describe('Proxies page', () => {
     const { toast } = await import('sonner')
     renderPanel()
     fireEvent.click(screen.getByRole('button', { name: 'Delete Segment A' }))
-    fireEvent.click(await screen.findByRole('button', { name: 'Delete' }))
+    const confirm = await screen.findByRole('button', { name: 'Delete pool' })
+    expect(confirm).toBeDisabled()
+    fireEvent.change(screen.getByRole('textbox'), { target: { value: 'Segment A' } })
+    fireEvent.click(confirm)
     await waitFor(() => expect(deletePool).toHaveBeenCalledWith('p2'))
     await waitFor(() =>
       expect(toast.error).toHaveBeenCalledWith(
