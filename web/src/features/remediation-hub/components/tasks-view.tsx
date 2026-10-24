@@ -52,6 +52,7 @@ import { CreateTaskFromQueryDialog } from './create-task-from-query-dialog'
 import { apiMessage } from './suggestions-inbox'
 import { DeadlinePill, TaskProgress, TaskStatePill } from './task-bits'
 import { VIEW_FILTERS, type TaskView } from './task-views'
+import { useSearchQuery } from '@/hooks/use-search-query'
 
 export type { TaskView }
 
@@ -76,11 +77,12 @@ export function TasksView({ defaultView = 'open' }: { defaultView?: TaskView }) 
   const view = (params.get('view') as TaskView) || defaultView
   const layout = params.get('layout') === 'board' ? 'board' : 'table'
   const [search, setSearch] = useState('')
+  const searchTerm = useSearchQuery(search).term
   const [sort, setSort] = useState<TaskListFilters['sort']>('deadline')
   const [pagination, setPagination] = useState({ pageIndex: 0, pageSize: 25 })
   const filters: TaskListFilters = {
     ...(VIEW_FILTERS[view] ?? VIEW_FILTERS.open),
-    search,
+    search: searchTerm,
     sort,
     page: layout === 'board' ? 1 : pagination.pageIndex + 1,
     perPage: layout === 'board' ? 100 : pagination.pageSize,

@@ -43,7 +43,7 @@ import {
   useFindingSourcesApi,
   groupFindingSourcesByCategory,
 } from '@/features/config/api/finding-source-api'
-import { useDebounce } from '@/hooks/use-debounce'
+import { useSearchQuery } from '@/hooks/use-search-query'
 import { toDisplayText } from '@/lib/untrusted-text'
 import type { ColumnDef, SortingState, VisibilityState } from '@tanstack/react-table'
 import { Main } from '@/components/layout'
@@ -597,7 +597,7 @@ function FindingsContent() {
   )
 
   // Debounce so typing doesn't fire a backend list request per keystroke.
-  const debouncedSearch = useDebounce(searchQuery, 300)
+  const debouncedSearch = useSearchQuery(searchQuery).term
   // Server-side pagination state. The list is fetched one page at a time from
   // the API (was: fetch first 100 + client-paginate, which capped the table at
   // 100 rows even when the tenant had thousands of findings).

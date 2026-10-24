@@ -45,6 +45,7 @@ import {
   invalidateRepositoriesCache,
 } from '@/features/repositories/hooks/use-repositories'
 import type { SCMProvider } from '@/features/assets/types/asset.types'
+import { useSearchQuery } from '@/hooks/use-search-query'
 
 // Helper to get scmOrganization from either Integration or SCMConnection
 function getScmOrganization(connection: Integration | SCMConnection): string | undefined {
@@ -81,6 +82,7 @@ export function SyncRepositoriesDialog({
   onSuccess,
 }: SyncRepositoriesDialogProps) {
   const [searchQuery, setSearchQuery] = useState('')
+  const searchTerm = useSearchQuery(searchQuery).term
   const [selectedRepos, setSelectedRepos] = useState<Set<string>>(new Set())
   const [page, setPage] = useState(1)
   const [isImporting, setIsImporting] = useState(false)
@@ -95,7 +97,7 @@ export function SyncRepositoriesDialog({
     mutate: refetch,
   } = useIntegrationRepositoriesApi(
     open ? connection.id : null,
-    { search: searchQuery, page, per_page: perPage },
+    { search: searchTerm, page, per_page: perPage },
     { revalidateOnFocus: false }
   )
 

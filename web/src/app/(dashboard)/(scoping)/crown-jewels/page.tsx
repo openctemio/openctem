@@ -85,7 +85,7 @@ import { Progress } from '@/components/ui/progress'
 import { cn } from '@/lib/utils'
 import { CRITICALITY_BADGE_SOFT, type CriticalityLevel } from '@/lib/criticality-colors'
 import { useTranslation } from '@/context/i18n-provider'
-import { useDebounce } from '@/hooks/use-debounce'
+import { useSearchQuery } from '@/hooks/use-search-query'
 import { getAssetTypeIcon } from '@/features/assets/lib/asset-type-icon'
 import { ASSET_TYPE_LABELS } from '@/features/assets/types/asset.types'
 import { formatDateOnly } from '@/lib/date-only'
@@ -160,7 +160,7 @@ export default function CrownJewelsPage() {
   // Asset search for the "designate" create dialog
   const [assetSearch, setAssetSearch] = useState('')
   const [selectedAssetId, setSelectedAssetId] = useState<string>('')
-  const debouncedAssetSearch = useDebounce(assetSearch, 300)
+  const debouncedAssetSearch = useSearchQuery(assetSearch).term
   const [isCreateOpen, setIsCreateOpen] = useState(false)
   // Only fetch candidates while the designate dialog is open.
   const { data: allAssets } = useAllAssets(debouncedAssetSearch, isCreateOpen)

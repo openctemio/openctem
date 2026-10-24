@@ -135,23 +135,6 @@ export const SUPPRESSION_STATUS_LABELS: Record<SuppressionStatus, string> = {
   expired: 'Expired',
 }
 
-/**
- * Status → badge classes. Keyed by suppression status (NOT severity), so this is
- * outside the severity-color governance guard's scope.
- */
-export const SUPPRESSION_STATUS_BADGE: Record<SuppressionStatus, string> = {
-  pending: 'border-warning/40 bg-warning/10 text-warning',
-  approved: 'border-success/30 bg-success/10 text-success',
-  rejected: 'border-destructive/30 bg-destructive/10 text-destructive',
-  expired: 'border-border bg-muted text-muted-foreground',
-}
-
-export const SUPPRESSION_TYPE_BADGE: Record<SuppressionType, string> = {
-  false_positive: 'bg-blue-500/15 text-blue-600 dark:text-blue-400 border-blue-500/30', // palette-ok: suppression-type accent lookup, no semantic token
-  accepted_risk: 'bg-purple-500/15 text-purple-600 dark:text-purple-400 border-purple-500/30', // palette-ok: suppression-type accent lookup
-  wont_fix: 'bg-slate-500/15 text-slate-600 dark:text-slate-400 border-slate-500/30', // palette-ok: suppression-type accent lookup
-}
-
 /** Short human summary of a rule's matching criteria for table/scope cells. */
 export function suppressionScopeSummary(rule: SuppressionRule, t: Translate = plain): string {
   const parts: string[] = []
