@@ -21,6 +21,7 @@ import (
 	infrahttp "github.com/openctemio/openctem/api/internal/infra/http"
 	"github.com/openctemio/openctem/api/internal/infra/http/handler"
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
+	"github.com/openctemio/openctem/api/pkg/domain/pentest"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/domain/tenant"
 	userdom "github.com/openctemio/openctem/api/pkg/domain/user"
@@ -201,6 +202,27 @@ var stepUpRoutes = []string{
 	// The finding approval settings: lowering the false-positive or risk
 	// acceptance level lets one person close risk.
 	"PATCH /api/v1/organization/settings/finding-approvals",
+	// Deletes that cannot be undone and end credentials or history, and the
+	// exports and reveals that put personal data or a secret in clear text
+	// (research/213 tier T3). Revoking a sensor stays without step-up: it
+	// only narrows access and is the fast path in an incident.
+	"DELETE /api/v1/sensors/{id}",
+	"DELETE /api/v1/service-accounts/{id}",
+	"GET /api/v1/audit-logs/export",
+	"POST /api/v1/scan-approvals/{id}/approve",
+	"POST /api/v1/pentest/campaigns/{id}/secrets/{id}/reveal",
+	"DELETE /api/v1/pentest/campaigns/{id}/secrets/{id}",
+}
+
+// leadCampaignRoles answers every campaign as existing with the caller as its
+// lead, so the campaign-scoped routes reach their own gates.
+type leadCampaignRoles struct{}
+
+func (leadCampaignRoles) GetUserRole(context.Context, string, string, string) (pentest.CampaignRole, error) {
+	return pentest.CampaignRoleLead, nil
+}
+func (leadCampaignRoles) CampaignExists(context.Context, string, string) (bool, error) {
+	return true, nil
 }
 
 func TestStepUpRoutes_RequireRecentAuth(t *testing.T) {
@@ -282,6 +304,9 @@ func TestStepUpRoutes_RequireRecentAuth(t *testing.T) {
 			scanH := &handler.ScanHandler{}
 			scanH.SetApprovals(&handler.ScanApprovalHandler{})
 			registerScanRoutes(router, scanH, auth, nil, nil)
+			registerServiceAccountRoutes(router, &handler.ServiceAccountHandler{}, auth, nil)
+			registerScanApprovalRoutes(router, &handler.ScanApprovalHandler{}, auth, nil)
+			registerPentestRoutes(router, &handler.PentestHandler{}, nil, auth, nil, leadCampaignRoles{}, chain())
 			mux := router.(interface{ Handler() http.Handler }).Handler()
 
 			for _, route := range stepUpRoutes {

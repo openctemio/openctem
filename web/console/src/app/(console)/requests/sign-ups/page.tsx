@@ -2,7 +2,7 @@
 
 import { Main } from '@/components/layout'
 import { Skeleton } from '@/components/ui/skeleton'
-import { ErrorState, PageHeader } from '@/features/shared'
+import { ErrorState, PageHeader, PageStack } from '@/features/shared'
 import { useTranslation } from '@/context/i18n-provider'
 import { useAdmin } from '@console/features/admin-console/components/admin-console-shell'
 import { SignupEventsPanel } from '@console/features/admin-console/components/signup-events-panel'
@@ -25,8 +25,11 @@ export default function SignupsPage() {
 
   return (
     <Main>
-      <PageHeader title={t('admin.signups.pageTitle')} description={t('admin.signups.pageDesc')} />
-      <div className="mt-5 space-y-8">
+      <PageStack>
+        <PageHeader
+          title={t('admin.signups.pageTitle')}
+          description={t('admin.signups.pageDesc')}
+        />
         <SignupEventsPanel />
         {alerts.error ? (
           <ErrorState
@@ -51,7 +54,7 @@ export default function SignupsPage() {
             }}
           />
         )}
-      </div>
+      </PageStack>
     </Main>
   )
 }
