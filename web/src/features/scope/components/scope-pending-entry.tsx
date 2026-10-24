@@ -41,6 +41,7 @@ import type { ApiScopeTarget } from '../api/scope-api.types'
 import { scopeErrorMessage } from '../lib/scope-codes'
 import { canApproveEntry, TIER_LABEL, wildcardApex } from '../lib/scope-entry'
 import { approversText, RemindButton } from './scope-approvals'
+import { ScopeActionConfirm } from './scope-action-confirm'
 import { ScopeSelfApproveDialog } from './scope-self-approve-dialog'
 
 const TIER_RANK: Record<string, number> = { t0: 0, t1: 1, t2: 2 }
@@ -102,6 +103,7 @@ export function ScopePendingEntry({
   const [busy, setBusy] = useState(false)
   const [selfApprove, setSelfApprove] = useState<ApiScopeTarget | null>(null)
   const [verify, setVerify] = useState<string | null>(null)
+  const [confirmApprove, setConfirmApprove] = useState(false)
 
   if (!entry || entry.status !== 'pending') return null
 
@@ -173,7 +175,7 @@ export function ScopePendingEntry({
                 size="sm"
                 className="h-7 px-2 text-xs"
                 disabled={busy}
-                onClick={() => void approve()}
+                onClick={() => setConfirmApprove(true)}
               >
                 {busy ? (
                   <Loader2 className="me-1 h-3 w-3 animate-spin" />
@@ -258,6 +260,17 @@ export function ScopePendingEntry({
           }}
         />
       )}
+      <ScopeActionConfirm
+        kind="approve"
+        pattern={entry.pattern}
+        open={confirmApprove}
+        onOpenChange={setConfirmApprove}
+        isLoading={busy}
+        onConfirm={async () => {
+          setConfirmApprove(false)
+          await approve()
+        }}
+      />
       <VerifyDomainDialog
         domain={verify}
         existing={proofRow}

@@ -5,7 +5,10 @@ import { Badge } from '@/components/ui/badge'
 import { useTranslation } from '@/context/i18n-provider'
 import { safeInternalHref } from '@/lib/safe-href'
 
-import { failureHelp, type CodeHelp } from '../lib/placement-help'
+import type { RunMapNode } from '@/lib/api/generated'
+import { TruncatedText } from '@/features/shared'
+
+import { failureHelp, gapReasonHelp, type CodeHelp } from '../lib/placement-help'
 
 /**
  * One code with what it means and where to fix it: the code (monospace, as
@@ -47,4 +50,71 @@ export function StepFailureHelp({ code, errorClass }: { code?: string; errorClas
   const { t } = useTranslation()
   if (!code) return null
   return <CodeHelpLine help={failureHelp(code, errorClass, t)} />
+}
+
+/**
+ * What a step did not do, from its structured outcome (never the English
+ * summary): hosts not fully covered with the reason for each, and the
+ * unfinished, unreachable and skipped counts. Hosts are scan targets,
+ * shown as plain text.
+ */
+export function StepOutcome({ outcome }: { outcome?: RunMapNode['outcome'] }) {
+  const { t } = useTranslation()
+  if (!outcome) return null
+  const gaps = outcome.coverage_gaps ?? []
+  const gapTotal = Math.max(outcome.coverage_gap_count ?? 0, gaps.length)
+  const counts: string[] = []
+  if (outcome.unfinished_target_count) {
+    counts.push(
+      t('scans.step.outcome.unfinished', undefined, { count: outcome.unfinished_target_count })
+    )
+  }
+  if (outcome.unreachable_target_count) {
+    counts.push(
+      t('scans.step.outcome.unreachable', undefined, { count: outcome.unreachable_target_count })
+    )
+  }
+  if (outcome.skipped_target_count) {
+    counts.push(t('scans.step.outcome.skipped', undefined, { count: outcome.skipped_target_count }))
+  }
+  if (gapTotal === 0 && counts.length === 0) return null
+  return (
+    <div className="space-y-1 text-xs" data-testid="step-outcome">
+      {gapTotal > 0 && (
+        <>
+          <p className="font-medium text-foreground">
+            {t('scans.step.outcome.gaps', undefined, { count: gapTotal })}
+          </p>
+          {gaps.length > 0 ? (
+            <ul className="space-y-1">
+              {gaps.map((g, i) => {
+                const r = gapReasonHelp(g.reason, t)
+                return (
+                  <li key={`${g.host}-${i}`} className="min-w-0">
+                    <div className="flex min-w-0 items-baseline gap-2">
+                      <TruncatedText value={g.host} className="min-w-0 font-mono" />
+                      <span className="shrink-0 text-foreground">{r.label}</span>
+                    </div>
+                    <p className="text-muted-foreground">{r.help}</p>
+                  </li>
+                )
+              })}
+            </ul>
+          ) : (
+            <p className="text-muted-foreground">{t('scans.step.outcome.seeTasks')}</p>
+          )}
+          {gapTotal > gaps.length && gaps.length > 0 && (
+            <p className="text-muted-foreground">
+              {t('scans.step.outcome.more', undefined, { count: gapTotal - gaps.length })}
+            </p>
+          )}
+        </>
+      )}
+      {counts.map((line) => (
+        <p key={line} className="text-muted-foreground">
+          {line}
+        </p>
+      ))}
+    </div>
+  )
 }

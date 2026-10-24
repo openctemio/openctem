@@ -79,11 +79,31 @@ const (
 	ReasonTemplateChanged  ReasonCode = "template_changed"
 	ReasonNoResult         ReasonCode = "no_result"
 	ReasonError            ReasonCode = "error"
+	// ReasonTemplateNotFound: the sensor's template set does not hold the
+	// finding's template.
+	ReasonTemplateNotFound ReasonCode = "template_not_found"
+	// ReasonExcludedByPolicy: the template is installed, but the sensor's
+	// safety policy never runs it for a re-check (a destructive, intrusive
+	// or brute-force class).
+	ReasonExcludedByPolicy ReasonCode = "excluded_by_policy"
+	// ReasonNoVerdict: the tool ended without judging the item (it stopped
+	// early or never reached the target).
+	ReasonNoVerdict ReasonCode = "no_verdict"
 	// ReasonCheckUncalibrated: a custom retest check did not match, but this
 	// version of the check never matched the finding, so the no-match does
 	// not prove a fix (docs/architecture/finding-retest-checks.md).
 	ReasonCheckUncalibrated ReasonCode = "check_uncalibrated"
 )
+
+// ToolUnable reports whether the code says the tool could not run the check
+// (a gap of the tool or its template set, not a finding about the target).
+func (c ReasonCode) ToolUnable() bool {
+	switch c {
+	case ReasonError, ReasonTemplateNotFound, ReasonExcludedByPolicy, ReasonNoVerdict:
+		return true
+	}
+	return false
+}
 
 // Verdict is a decided outcome with its reason code and a human reason.
 type Verdict struct {

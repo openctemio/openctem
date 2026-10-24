@@ -51,4 +51,15 @@ describe('DataTable name column', () => {
     const th = screen.getByRole('columnheader', { name: 'Name' })
     expect(th.className).toContain('min-w-[min(12rem,36vw)]')
   })
+
+  it('gives the same floor to a column marked primary that is not the first one', () => {
+    const cols: ColumnDef<Row>[] = [
+      { id: 'priority', header: 'Priority', cell: () => 'P1' },
+      { accessorKey: 'name', header: 'Title', meta: { primary: true } },
+    ]
+    render(<DataTable columns={cols} data={[{ id: '1', name: 'a' }]} />)
+    expect(screen.getByRole('columnheader', { name: 'Title' }).className).toContain(
+      'min-w-[min(12rem,36vw)]'
+    )
+  })
 })

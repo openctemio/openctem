@@ -30,6 +30,7 @@ import { assetDetailHref } from '@/features/findings/lib/asset-link'
 import { deleteVexStatement, useVexStatements, type VexStatement } from '../api/vex'
 import { useVexLabels } from './vex-labels'
 import { VexStatementDialog } from './vex-statement-dialog'
+import { confirmName } from '@/lib/confirm-name'
 
 const STATUS_VARIANT: Record<string, 'default' | 'secondary' | 'destructive' | 'outline'> = {
   not_affected: 'secondary',
@@ -230,13 +231,16 @@ export function VexStatementsPanel({ productId }: { productId: string }) {
       <ConfirmDialog
         open={deleting !== null}
         onOpenChange={(o) => !o && setDeleting(null)}
-        title={t('components.vex.deleteTitle', 'Delete this statement?')}
+        title={t('components.vex.deleteTitle', 'Delete the statement for {vuln}?', {
+          vuln: deleting?.vuln_id ?? '',
+        })}
         desc={t(
           'components.vex.deleteDesc',
           'Findings the statement closed reopen unless another statement covers them.'
         )}
-        confirmText={t('components.vex.deleteConfirm', 'Delete')}
+        confirmText={t('components.vex.deleteConfirm', 'Delete statement')}
         destructive
+        typeToConfirm={deleting ? confirmName(deleting.vuln_id, deleting.id) : undefined}
         isLoading={busy}
         handleConfirm={confirmDelete}
       />
