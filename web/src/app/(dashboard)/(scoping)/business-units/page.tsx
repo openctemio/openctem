@@ -71,7 +71,7 @@ import {
   CommandList,
 } from '@/components/ui/command'
 import { cn } from '@/lib/utils'
-import { ConfirmDialog, nameToConfirm } from '@/components/confirm-dialog'
+import { ConfirmDialog } from '@/components/confirm-dialog'
 import { TabsCount } from '@/components/ui/tabs'
 import { BusinessUnitAssets } from '@/features/business-units/components/business-unit-assets'
 import { toast } from 'sonner'
@@ -85,6 +85,7 @@ import { del } from '@/lib/api/client'
 import { CRITICALITY_BADGE_SOFT, CRITICALITY_DOT_COLORS } from '@/lib/criticality-colors'
 import { CRITICALITY_LABELS, RATED_CRITICALITY_LEVELS } from '@/lib/criticality'
 import { useTranslation } from '@/context/i18n-provider'
+import { confirmName } from '@/lib/confirm-name'
 
 const criticalityColors: Record<Criticality, string> = CRITICALITY_BADGE_SOFT
 
@@ -1185,7 +1186,7 @@ export default function BusinessUnitsPage() {
         }
         confirmText={t('confirm.businessUnit.deleteButton', 'Delete business unit')}
         destructive
-        typeToConfirm={deleteUnit ? nameToConfirm(deleteUnit.name, deleteUnit.id) : undefined}
+        typeToConfirm={deleteUnit ? confirmName(deleteUnit.name, deleteUnit.id) : undefined}
         handleConfirm={handleDelete}
       />
     </>

@@ -12,7 +12,7 @@ import { useId, useMemo, useState } from 'react'
 import { toast } from 'sonner'
 import { Download, FileSignature, Loader2, Upload } from 'lucide-react'
 import { Main } from '@/components/layout'
-import { ConfirmDialog, nameToConfirm } from '@/components/confirm-dialog'
+import { ConfirmDialog } from '@/components/confirm-dialog'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -41,6 +41,7 @@ import {
   useLetters,
   type AuthorizationLetter,
 } from '@/features/scope-letters'
+import { confirmName } from '@/lib/confirm-name'
 
 function errorText(err: unknown, fallback: string): string {
   return err instanceof ApiClientError ? err.message : fallback
@@ -331,7 +332,7 @@ export default function ScopeLettersPage() {
         )}
         confirmText={t('confirm.letter.revokeButton', 'Revoke letter')}
         typeToConfirm={
-          pendingRevoke ? nameToConfirm(pendingRevoke.title, pendingRevoke.id) : undefined
+          pendingRevoke ? confirmName(pendingRevoke.title, pendingRevoke.id) : undefined
         }
         isLoading={busy !== null}
         handleConfirm={() => (pendingRevoke ? revoke(pendingRevoke) : undefined)}

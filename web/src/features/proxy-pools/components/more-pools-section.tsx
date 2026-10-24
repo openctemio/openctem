@@ -4,7 +4,7 @@ import { useState } from 'react'
 import { Plus, Trash2, Waypoints } from 'lucide-react'
 import { toast } from 'sonner'
 
-import { ConfirmDialog, nameToConfirm } from '@/components/confirm-dialog'
+import { ConfirmDialog } from '@/components/confirm-dialog'
 import { Badge } from '@/components/ui/badge'
 import { Card, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { useTranslation } from '@/context/i18n-provider'
@@ -15,6 +15,7 @@ import { describeProxyError } from '../lib/errors'
 import type { ProxyPool } from '../types'
 import { EndpointTable } from './endpoint-table'
 import { PoolDialog } from './pool-dialog'
+import { confirmName } from '@/lib/confirm-name'
 
 interface MorePoolsSectionProps {
   pools: ProxyPool[]
@@ -150,7 +151,7 @@ export function MorePoolsSection({ pools, canWrite, canDelete }: MorePoolsSectio
         )}
         confirmText={t('proxyPools.deleteButton', 'Delete pool')}
         destructive
-        typeToConfirm={deleting ? nameToConfirm(deleting.name, deleting.id) : undefined}
+        typeToConfirm={deleting ? confirmName(deleting.name, deleting.id) : undefined}
         handleConfirm={() => {
           const target = deleting
           setDeleting(null)

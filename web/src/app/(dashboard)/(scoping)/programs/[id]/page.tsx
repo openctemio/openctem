@@ -10,7 +10,7 @@
 import { use, useState } from 'react'
 import { toast } from 'sonner'
 import { Main } from '@/components/layout'
-import { ConfirmDialog, nameToConfirm } from '@/components/confirm-dialog'
+import { ConfirmDialog } from '@/components/confirm-dialog'
 import { SafeExternalLink } from '@/components/safe-external-link'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -53,6 +53,7 @@ import {
   type ProgramDetail,
   type ProgramFormValues,
 } from '@/features/programs'
+import { confirmName } from '@/lib/confirm-name'
 
 function formFromProgram(p: ProgramDetail): ProgramFormValues {
   const lines = (inScope: boolean) =>
@@ -360,7 +361,7 @@ export default function ProgramPage({ params }: { params: Promise<{ id: string }
                 'Its scope entries stop authorizing scans until someone reactivates it and accepts the program terms again.'
               )
         }
-        typeToConfirm={pending === 'end' ? nameToConfirm(p.name, p.id) : undefined}
+        typeToConfirm={pending === 'end' ? confirmName(p.name, p.id) : undefined}
         confirmText={
           pending === 'end'
             ? t('confirm.program.end', 'End program')
