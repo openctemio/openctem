@@ -982,6 +982,10 @@ type Partial struct {
 	// blocked the scan; RFC-074); GapSummary is the step message.
 	Gaps       int
 	GapSummary string
+	// GapList are the hosts and reasons of a single command's gaps
+	// (cleaned, at most scanrun.MaxTaskCoverageGaps); a batched step keeps
+	// them on its tasks and records only the count.
+	GapList []scanrun.CoverageGap
 	// Unreached targets the sensor could not reach (no route, refused by a
 	// filter, timeout, name not resolving; RFC-089); UnreachedSummary is
 	// the step message.
@@ -1023,18 +1027,27 @@ const (
 	StepOutputUnreachable = "unreachable_target_count"
 	// StepOutputSkipped counts the targets the sensor's local policy skipped.
 	StepOutputSkipped = "skipped_target_count"
+	// StepOutputCoverageGapCount counts the hosts not fully covered, and
+	// StepOutputCoverageGaps lists them as {host, reason} (single-command
+	// steps; a batched step's tasks hold the lists).
+	StepOutputCoverageGapCount = "coverage_gap_count"
+	StepOutputCoverageGaps     = "coverage_gaps"
+	// StepOutputUnfinished counts the targets the step left unfinished.
+	StepOutputUnfinished = "unfinished_target_count"
 	// stepOutputUnreachableNote / stepOutputSkippedNote carry the summaries.
 	stepOutputUnreachableNote = "unreachable_summary"
 	stepOutputSkippedNote     = "skipped_summary"
 )
 
-// withNotes returns output with the skipped and unreachable counts (and
-// their summaries) of p added; output itself is not changed.
+// withNotes returns output with the step's outcome added: the skipped,
+// unreachable and unfinished counts, the coverage-gap count and the hosts
+// with their reasons. The console words them from these structured values;
+// the summaries stay for API clients. output itself is not changed.
 func (p Partial) withNotes(output map[string]any) map[string]any {
-	if p.Skipped == 0 && p.Unreached == 0 {
+	if p.Skipped == 0 && p.Unreached == 0 && p.Gaps == 0 && len(p.Unfinished) == 0 {
 		return output
 	}
-	out := make(map[string]any, len(output)+4)
+	out := make(map[string]any, len(output)+8)
 	maps.Copy(out, output)
 	if p.Unreached > 0 {
 		out[StepOutputUnreachable] = p.Unreached
@@ -1047,6 +1060,19 @@ func (p Partial) withNotes(output map[string]any) map[string]any {
 		if p.SkippedSummary != "" {
 			out[stepOutputSkippedNote] = p.SkippedSummary
 		}
+	}
+	if p.Gaps > 0 {
+		out[StepOutputCoverageGapCount] = p.Gaps
+		if len(p.GapList) > 0 {
+			list := make([]map[string]string, 0, len(p.GapList))
+			for _, g := range p.GapList {
+				list = append(list, map[string]string{"host": g.Host, "reason": g.Reason})
+			}
+			out[StepOutputCoverageGaps] = list
+		}
+	}
+	if n := len(p.Unfinished); n > 0 {
+		out[StepOutputUnfinished] = n
 	}
 	return out
 }
