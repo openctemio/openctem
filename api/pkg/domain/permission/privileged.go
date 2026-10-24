@@ -8,16 +8,18 @@ import (
 
 // Privileged permissions (decisions G1-G12 G3). A role is privileged when it has
 // full data access or carries one of these: whoever holds them can recruit
-// people, mint or hand out roles, read stored scan credentials, mint API keys
-// or reconfigure the organization. Binding a privileged role to a team, or
-// changing who is in a team that carries one, is for the owner only, with a
-// recent sign-in.
+// people, mint or hand out roles, read stored scan credentials, mint API keys,
+// reconfigure the organization, or decide where its integrations send data
+// and stored tokens (integrations:manage, integrations:scm:write). Binding a
+// privileged role to a team, or changing who is in a team that carries one,
+// is for the owner only, with a recent sign-in.
 var privilegedPermissions = []Permission{
 	MembersInvite, MembersWrite, ServiceAccountsManage,
 	GroupsWrite, GroupsMembers, GroupsAssets,
 	RolesWrite, RolesDelete, RolesAssign,
 	APIKeysWrite,
 	SecretStoreRead, SecretStoreWrite,
+	IntegrationsManage, SCMConnectionsWrite,
 	SettingsWrite,
 }
 
