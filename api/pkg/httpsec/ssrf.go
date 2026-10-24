@@ -541,20 +541,21 @@ func newSafeHTTPClient(timeout time.Duration, d guardedDialer) *http.Client {
 	return &http.Client{
 		Timeout:       timeout,
 		Transport:     tr,
-		CheckRedirect: checkRedirect,
+		CheckRedirect: CheckRedirect,
 	}
 }
 
 // maxRedirects bounds a redirect chain of a guarded client.
 const maxRedirects = 5
 
-// checkRedirect is the default redirect policy of every guarded client. Each
+// CheckRedirect is the default redirect policy of every guarded client. Each
 // hop is dialed through the guard again, so a redirect cannot reach a blocked
 // address; this policy also refuses a hop from https to http, which would
 // send the request (and any credential the transport keeps for the same
 // host) in clear text, and bounds the chain. A client that must not follow
-// redirects at all replaces it.
-func checkRedirect(req *http.Request, via []*http.Request) error {
+// redirects at all replaces it. A caller that installs its own callback calls
+// CheckRedirect first so it keeps both rules.
+func CheckRedirect(req *http.Request, via []*http.Request) error {
 	if len(via) >= maxRedirects {
 		return errors.New("stopped after too many redirects")
 	}

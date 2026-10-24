@@ -31,7 +31,7 @@ connection goes through.
 | Blocked names | `localhost` and the metadata aliases, in any case and with a trailing dot, before any lookup. |
 | Schemes | http and https only. Rule sources: https only, and go-git has no ssh, `git://` or `file://` transport registered. |
 | Proxies | No guarded client takes a proxy from the environment (`HTTP_PROXY`, `HTTPS_PROXY`): the check would then vet the proxy instead of the destination. |
-| Redirects | Each hop is dialed through the guard again. The default policy also refuses https to http and stops after 5 hops. Clients that carry a credential refuse redirects altogether. |
+| Redirects | Each hop is dialed through the guard again. The default policy also refuses https to http and stops after 5 hops. Clients that carry a credential either refuse redirects or follow only https hops through the guard (Jira, DefectDojo). |
 | Errors | A refusal says only that the destination is blocked (`ErrBlockedDestination`); a lookup failure says only that the host does not resolve (`ErrUnresolvable`). Neither names the resolved address or the platform's resolver, so a probe of chosen host names cannot map the internal network. |
 | Bodies | Responses are read through `httpsec.ReadLimited` or `httpsec.DecodeJSON` with a cap, and an upstream body is never copied into an error (security lint rules 8 and 9). |
 
