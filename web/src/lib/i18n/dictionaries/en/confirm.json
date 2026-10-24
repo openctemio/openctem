@@ -407,6 +407,9 @@
   "confirm.tool.deleteDesc": "It leaves the tool list and can no longer be chosen for scans. This cannot be undone.",
   "confirm.tool.deleteTitle": "Delete the tool {name}?",
   "confirm.typeToConfirm": "Type {text} to confirm",
+  "confirm.undo": "Undo",
+  "confirm.undoFailed": "Could not undo",
+  "confirm.undone": "Change undone",
   "confirm.unlink": "Unlink",
   "confirm.verifiedDomain.removeDesc": "It no longer gates SSO auto-join. You can add and verify it again later.",
   "confirm.verifiedDomain.removeTitle": "Remove the domain {domain}?",
@@ -497,8 +500,5 @@
   "confirm.suggestions.approveSelectedButton": "Approve {count} suggestions",
   "confirm.dedup.mergeButtonOne": "Merge 1 asset",
   "confirm.dedup.mergeButton": "Merge {count} assets",
-  "confirm.assetGroup.bulkDeleteButtonOne": "Delete 1 group",
-  "confirm.undo": "Undo",
-  "confirm.undone": "Change undone",
-  "confirm.undoFailed": "Could not undo"
+  "confirm.assetGroup.bulkDeleteButtonOne": "Delete 1 group"
 }
