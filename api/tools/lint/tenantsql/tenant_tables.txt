@@ -46,6 +46,7 @@ audit_log_chain
 audit_logs
 authorization_letters
 automation_runs
+automation_versions
 automations
 bounty_program_attestations
 bounty_program_channels
@@ -128,6 +129,8 @@ finding_fingerprints
 finding_group_assignments
 finding_ingest_actions
 finding_injection_points
+finding_issue_links
+finding_link_keys
 finding_priority_queue
 finding_rekey_runs
 finding_remediation_keys

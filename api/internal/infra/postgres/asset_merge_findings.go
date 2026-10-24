@@ -116,6 +116,12 @@ var findingMergeKeptRefs = map[string]string{
 	// the tombstone closes (duplicate) inside its task; the survivor keeps
 	// its own task, or is proposed for one.
 	"remediation_task_members.finding_id": "kept on the tombstone; the duplicate closes in its task, the survivor keeps its own",
+	// Link keys and same-issue links describe the finding they were derived
+	// from; tombstones are never link candidates, and the survivor's own are
+	// derived again on its next sighting or by the link backfill.
+	"finding_link_keys.finding_id":   "kept on the tombstone; tombstones are never link candidates",
+	"finding_issue_links.primary_id": "kept on the tombstone; re-derived for the survivor",
+	"finding_issue_links.member_id":  "kept on the tombstone; re-derived for the survivor",
 }
 
 // FindingMergeReferenceHandling returns "table.column" for every reference to

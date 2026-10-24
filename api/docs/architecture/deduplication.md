@@ -188,6 +188,63 @@ The API never sets `Snippet`, `LogicalLocation`, `TargetHost`, `TargetPath`,
 `Parameter` or `ImageTarget`, so the line-independent `sast-content` recipe and
 the `dast` / `container` recipes are unreachable from ingest.
 
+### Same issue across tools (links)
+
+Design: [RFC-043 §17](../rfcs/RFC-043-deduplication-and-identity.md#17-cross-tool-deduplication-amendment-2026-10-23).
+Findings that different tools (or rules) report for one issue, on a strong
+signal that is not an identity, are **linked**, not merged: they form a group
+shown on each finding ("Same issue in other tools") and counted once in the
+dashboard facts, while each keeps its own status, severity, SLA, ticket, task
+and approvals.
+
+| Rule | Linked when | Never linked |
+|---|---|---|
+| `sast_overlap` | same asset and repository path, different rule ids, overlapping line ranges, a shared CWE (`CWE-89`, `cwe-089` and `89` are one) | across assets (a monorepo split into two assets), the same rule, another CWE on the line, disjoint lines |
+| `secret_value` | the same per-tenant keyed hash of the raw secret, in another file or repository | a secret known only by its mask; another tenant. CI-hashed secrets link within one repository (the CI key is per repository) |
+
+How it runs:
+
+- **Keys.** After an ingest batch is stored (step 11 of
+  `FindingProcessor.processBatch`, `internal/app/ingest/issue_links.go`), the
+  batch's version-2 SAST and secret findings get their link keys
+  (`pkg/domain/issuelink.Keys`) in `finding_link_keys`: a hash of (asset,
+  path, CWE) with the line range per CWE, or a hash of the secret's keyed
+  hash. Keys are never returned by the API.
+- **Groups.** One indexed lookup finds the other holders of the batch's keys;
+  `issuelink.PlanLinks` decides the links. A group is a star around its
+  primary (the earliest-created finding when it formed); a finding joins the
+  group of the secret it shares, but a SAST group only by overlapping its
+  primary (line overlap is not transitive, so a wide range never chains two
+  separate issues into one group); two groups are never fused. Caps: a key
+  held by more than 200 findings links nothing, a group has at most 50
+  members. Derivation runs under a per-tenant transaction lock
+  (`FindingIssueLinkRepository`, `internal/infra/postgres/finding_issue_link_repository.go`).
+- **Release and unlink.** A link whose signal no longer holds (the code
+  moved) is released on the next sighting. `DELETE
+  /api/v1/findings/{id}/issue-links/{other}` (`findings:triage`, both
+  findings in the caller's data scope) ends a link as `unlinked`: the pair is
+  never linked again automatically; both timelines get `issue_unlinked` and
+  the audit log `finding.issue_unlinked`. A timeline entry names the other
+  finding only when both are on one asset: a link across repositories (one
+  secret in two) writes no `issue_linked` entry, and its unlink entries name
+  no id, so a viewer of one repository never learns that another holds the
+  same secret.
+- **Reading.** `GET /api/v1/findings/{id}/issue-links` (`findings:read`)
+  lists the members the caller may see, the primary first, with the rule and
+  the field names it compared; a member on an asset outside the caller's
+  scope is neither listed nor counted.
+- **Dashboard facts.** `dash_recompute_asset` (migration
+  `003366_finding_issue_links`) skips a linked member when another finding
+  of its group on the same asset, in the same state, is at least as severe
+  and as urgent (the primary first, then the earliest), so counting once
+  never hides a higher severity or priority. A link or unlink marks both
+  assets dirty.
+- **Finding merge.** Keys and links stay on the tombstone (tombstones are
+  never candidates); the survivor's are derived again on its next sighting.
+- **Existing findings.** `refingerprint -links [-tenant <id>] [-apply]`
+  derives keys and links of stored findings (dry run by default: counts what
+  it would link; idempotent).
+
 ### 1.1 The write path
 
 `FindingProcessor.processBatch` (`processor_findings.go:213-640`) is

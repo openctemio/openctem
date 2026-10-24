@@ -1155,5 +1155,5 @@ func (s *ModuleService) logPresetApplied(ctx context.Context, actx auditapp.Audi
 		WithSeverity(audit.SeverityMedium).
 		WithMetadata("preset_id", p.ID).
 		WithMetadata("preset_name", p.Name)
-	s.auditService.LogEvent(ctx, actx, event)
+	auditapp.RecordOrWarn(ctx, nil, s.auditService, actx, event)
 }
