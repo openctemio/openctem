@@ -57,6 +57,36 @@ describe('ScheduleCell', () => {
     await waitFor(() => expect(onToggle).toHaveBeenCalledWith('pause', c))
   })
 
+  it('turning it off needs no dialog', async () => {
+    const onToggle = vi.fn().mockResolvedValue(undefined)
+    render(<ScheduleCell config={config({})} onToggle={onToggle} />)
+    fireEvent.click(screen.getByRole('switch'))
+    expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument()
+    await waitFor(() => expect(onToggle).toHaveBeenCalledTimes(1))
+  })
+
+  it('turning it on asks first: the scan starts sending traffic', async () => {
+    const onToggle = vi.fn().mockResolvedValue(undefined)
+    const c = config({ status: 'paused', name: 'Nightly recon' })
+    render(<ScheduleCell config={c} onToggle={onToggle} />)
+    fireEvent.click(screen.getByRole('switch'))
+    const dialog = await screen.findByRole('alertdialog')
+    expect(dialog).toHaveTextContent('Turn on the schedule of "Nightly recon"?')
+    expect(onToggle).not.toHaveBeenCalled()
+    expect(screen.getByRole('switch', { hidden: true })).not.toBeChecked()
+    fireEvent.click(screen.getByRole('button', { name: 'Turn on schedule' }))
+    await waitFor(() => expect(onToggle).toHaveBeenCalledWith('activate', c))
+  })
+
+  it('cancelling the schedule-on question changes nothing', async () => {
+    const onToggle = vi.fn()
+    render(<ScheduleCell config={config({ status: 'paused' })} onToggle={onToggle} />)
+    fireEvent.click(screen.getByRole('switch'))
+    fireEvent.click(await screen.findByRole('button', { name: 'Cancel' }))
+    expect(onToggle).not.toHaveBeenCalled()
+    expect(screen.getByRole('switch', { hidden: true })).not.toBeChecked()
+  })
+
   it('a paused schedule reads off; a disabled scan locks the switch', () => {
     const { rerender } = render(
       <ScheduleCell config={config({ status: 'paused' })} onToggle={vi.fn()} />
