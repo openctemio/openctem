@@ -6,11 +6,11 @@ import (
 	"crypto/sha256"
 	"crypto/subtle"
 	"encoding/base64"
+	"encoding/binary"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
-	mrand "math/rand/v2"
 	"sync"
 	"time"
 
@@ -213,7 +213,16 @@ func (s *Service) HandleWebhook(ctx context.Context, id shared.ID, secret string
 
 // --- small helpers ------------------------------------------------------------
 
-func randomJitter() float64 { return mrand.Float64() } //nolint:gosec // schedule spread, not security
+// randomJitter returns a value in [0, 1) for schedule spread. It reads
+// crypto/rand so no weak generator is in the package; a failed read yields 0
+// (no spread), which is safe for scheduling.
+func randomJitter() float64 {
+	var b [8]byte
+	if _, err := rand.Read(b[:]); err != nil {
+		return 0
+	}
+	return float64(binary.BigEndian.Uint64(b[:])>>11) / (1 << 53)
+}
 
 // windowLimiter is a fixed-window counter per key, in process. It is an
 // instance safety limit (abuse brake), not an accounting limit.
