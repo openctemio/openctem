@@ -109,6 +109,7 @@
   "mcp.myConnections.empty": "When you connect an AI assistant to {product}, it appears here.",
   "mcp.myConnections.title": "Your AI applications",
   "mcp.orgClients.delete": "Delete",
+  "mcp.orgClients.deleteConfirm": "Delete application",
   "mcp.orgClients.deleteDesc": "Every connection made with it ends at once and it can no longer be authorized. This cannot be undone.",
   "mcp.orgClients.deleteFailed": "Could not delete the application",
   "mcp.orgClients.deleteTitle": "Delete the application {name}?",
@@ -215,6 +216,5 @@
   "mcp.unverified.label": "Allow unverified applications",
   "mcp.unverified.section": "Advanced: unverified applications",
   "mcp.unverified.turnedOff": "Only approved applications can be connected",
-  "mcp.unverified.turnedOn": "Unverified applications are allowed",
-  "mcp.orgClients.deleteConfirm": "Delete application"
+  "mcp.unverified.turnedOn": "Unverified applications are allowed"
 }

@@ -105,7 +105,10 @@
   "settings.pentest.templateForm.editTitle": "Sửa mẫu",
   "settings.pentest.templateForm.fillRequired": "Vui lòng điền đủ các trường bắt buộc",
   "settings.pentest.templateForm.impact": "Ảnh hưởng",
+  "settings.pentest.templateForm.keepEditing": "Tiếp tục chỉnh sửa",
   "settings.pentest.templateForm.leaveConfirm": "Bỏ thay đổi",
+  "settings.pentest.templateForm.leaveDesc": "Các thay đổi bạn đã làm sẽ mất, kể cả bản nháp lưu trên thiết bị này.",
+  "settings.pentest.templateForm.leaveTitle": "Bỏ mẫu này?",
   "settings.pentest.templateForm.loadFailed": "Không tải được mẫu",
   "settings.pentest.templateForm.name": "Tên mẫu",
   "settings.pentest.templateForm.namePlaceholder": "ví dụ: SQL injection ở form đăng nhập",
@@ -417,6 +420,7 @@
   "settings.anchor.sensor-safety.private-targets": "Mục tiêu nội bộ cần chính sách cục bộ của sensor",
   "settings.anchor.sensor-safety.opt-ins": "Callback ngoài băng và template tùy chỉnh",
   "settings.anchor.sensor-safety.tool-http": "User-Agent và TLS của công cụ quét",
+  "settings.apiKeys.actionsFor": "Thao tác cho {name}",
   "settings.anchor.sensor-safety.sensor-policies": "Danh tính sensor và ràng buộc khóa",
   "settings.anchor.sensor-safety.shared-sensors": "Sensor dùng chung",
   "settings.item.security-overview": "Tổng quan bảo mật",
@@ -721,6 +725,7 @@
   "settings.trust.updated": "Đã cập nhật quan hệ tin cậy",
   "settings.trust.updateFailed": "Không thể cập nhật quan hệ tin cậy",
   "settings.trust.edit.title": "Cài đặt tin cậy: {org}",
+  "settings.trust.endButton": "Chấm dứt tin cậy",
   "settings.trust.edit.description": "Thay đổi áp dụng cho các lần đăng nhập và lời mời mới của nhân sự thuộc tổ chức này.",
   "settings.trust.approved": "{org} giờ đã tin cậy tổ chức của bạn",
   "settings.trust.approveFailed": "Không thể phê duyệt quan hệ tin cậy",
@@ -913,10 +918,5 @@
   "settings.pentest.removeTypeRow": "Xóa loại chiến dịch, dòng {n}",
   "settings.pentest.methodNameAria": "Tên phương pháp luận, dòng {n}",
   "settings.pentest.methodKeyAria": "Khóa phương pháp luận, dòng {n}",
-  "settings.pentest.removeMethodologyRow": "Xóa phương pháp luận, dòng {n}",
-  "settings.pentest.templateForm.leaveTitle": "Bỏ mẫu này?",
-  "settings.pentest.templateForm.leaveDesc": "Các thay đổi bạn đã làm sẽ mất, kể cả bản nháp lưu trên thiết bị này.",
-  "settings.pentest.templateForm.keepEditing": "Tiếp tục chỉnh sửa",
-  "settings.trust.endButton": "Chấm dứt tin cậy",
-  "settings.apiKeys.actionsFor": "Thao tác cho {name}"
+  "settings.pentest.removeMethodologyRow": "Xóa phương pháp luận, dòng {n}"
 }

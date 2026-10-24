@@ -2,6 +2,10 @@
   "auditLog.needsFullData.title": "Cần quyền truy cập đầy đủ dữ liệu",
   "auditLog.needsFullData.description": "Nhật ký kiểm toán của tổ chức nêu tên tài sản và phát hiện, nên cần quyền truy cập đầy đủ dữ liệu. Hãy nhờ quản trị viên mở rộng quyền truy cập dữ liệu của bạn.",
   "auditLog.export.button": "Xuất",
+  "auditLog.export.confirmCsv": "Xuất CSV",
+  "auditLog.export.confirmDesc": "Tệp liệt kê các sự kiện khớp với bộ lọc hiện tại, mới nhất trước, kèm email và địa chỉ IP của thành viên. Hãy lưu ở nơi chỉ những người được phép xem mới đọc được. Bạn có thể được yêu cầu xác minh danh tính.",
+  "auditLog.export.confirmJsonl": "Xuất JSON lines",
+  "auditLog.export.confirmTitle": "Xuất nhật ký kiểm toán?",
   "auditLog.export.csv": "CSV",
   "auditLog.export.jsonl": "JSON lines",
   "auditLog.export.hint": "Xuất các sự kiện khớp với bộ lọc hiện tại, mới nhất trước.",
@@ -60,9 +64,5 @@
   "auditLog.detail.id": "ID",
   "auditLog.detail.changes": "Thay đổi",
   "auditLog.detail.metadata": "Siêu dữ liệu",
-  "auditLog.detail.request": "Yêu cầu",
-  "auditLog.export.confirmTitle": "Xuất nhật ký kiểm toán?",
-  "auditLog.export.confirmDesc": "Tệp liệt kê các sự kiện khớp với bộ lọc hiện tại, mới nhất trước, kèm email và địa chỉ IP của thành viên. Hãy lưu ở nơi chỉ những người được phép xem mới đọc được. Bạn có thể được yêu cầu xác minh danh tính.",
-  "auditLog.export.confirmCsv": "Xuất CSV",
-  "auditLog.export.confirmJsonl": "Xuất JSON lines"
+  "auditLog.detail.request": "Yêu cầu"
 }
