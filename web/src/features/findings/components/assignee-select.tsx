@@ -1,7 +1,7 @@
 'use client'
 
 import { useTranslation } from '@/context/i18n-provider'
-import { useState, useDeferredValue } from 'react'
+import { useState } from 'react'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import {
   Command,
@@ -18,6 +18,7 @@ import { ChevronDown, User, Loader2, Check, UserPlus } from 'lucide-react'
 import { useTenant } from '@/context/tenant-provider'
 import { useMembers } from '@/features/organization/api/use-members'
 import { useAssignableMembers } from '../api/use-assignable-members'
+import { useSearchQuery } from '@/hooks/use-search-query'
 
 // Max members to display in dropdown
 const MAX_DISPLAY_MEMBERS = 5
@@ -80,11 +81,11 @@ export function AssigneeSelect({
   const { currentTenant } = useTenant()
 
   // Debounce search to reduce API calls
-  const deferredSearch = useDeferredValue(search)
+  const deferredSearch = useSearchQuery(search).term
 
   // Lazy fetch: only load members when the popover is opened. One finding:
   // the server lists who can read it; bulk: the plain member list.
-  const isSearchActive = deferredSearch.trim().length > 0
+  const isSearchActive = deferredSearch.length > 0
   const scoped = Boolean(findingId)
   const {
     members: dropdownMembers,
@@ -98,11 +99,11 @@ export function AssigneeSelect({
     total: searchedTotal,
     isLoading: isSearching,
   } = useMembers(open && !scoped && isSearchActive ? currentTenant?.id : undefined, {
-    search: deferredSearch.trim(),
+    search: deferredSearch,
     limit: MAX_DISPLAY_MEMBERS,
   })
   const { members: assignable, isLoading: isLoadingAssignable } = useAssignableMembers(findingId, {
-    search: deferredSearch.trim(),
+    search: deferredSearch,
     limit: 20,
     enabled: open,
   })

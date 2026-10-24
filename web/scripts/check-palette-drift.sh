@@ -166,7 +166,9 @@ stripe_fail=$((stripe_fail || label_fail))
 #   (b) set 9-11px text on a badge, pill or rounded-full line;
 #   (c) use uppercase or font-mono on a <Badge> line (mono is for ids, CVEs, versions);
 #   (d) spin or pulse inside a status component (nothing spins or pulses);
-#   (e) declare a new *_COLORS / *_BADGE_* map outside lib/*-colors.ts.
+#   (e) declare a new *_COLORS / *_BADGE_* map outside lib/*-colors.ts;
+#   (f) put state text on its own tint (text-success on bg-success/10 fails AA);
+#   (g) hand-pick a hex colour (bg-[#…], style={{ color: '#…' }}, fill="#…").
 # Annotate a real exception with `label-ok: <reason>`.
 SYS_ALLOW='^(web/)?src/(components/ui/|lib/[a-z-]*-colors[.]ts$|styles/)|(__tests__/|[.]test[.]tsx?$)'
 SEMANTIC='(primary|secondary|accent|destructive|warning|success|info|muted|foreground|background|card|signal|brand|sev-[a-z]+|st-[a-z]+-[a-z]+|hl-[a-z]+|prio-[0-9])'
@@ -184,7 +186,11 @@ if [[ -n "$sys_all" ]]; then
   c_lines="$(printf '%s\n' "$sys_all" | grep -E '<Badge\b' | grep -E '\buppercase\b|\bfont-mono\b' | sed 's/^/(c) uppercase or mono on a label: /' || true)"
   d_lines="$(printf '%s\n' "$sys_all" | grep -iE '(status|health|pill|chip|badge|lozenge)' | grep -E 'animate-(spin|ping|pulse)|<Loader2' | sed 's/^/(d) spinning or pulsing status: /' || true)"
   e_lines="$(printf '%s\n' "$sys_all" | grep -E "${TAB}[[:space:]]*(export )?const [A-Z0-9_]*(_COLORS|_BADGE_[A-Z_]*)\b" | sed 's/^/(e) new colour map: /' || true)"
-  sys_lines="$(printf '%s\n%s\n%s\n%s\n%s\n' "$a_lines" "$b_lines" "$c_lines" "$d_lines" "$e_lines" | grep -v '^$' | tr '\t' ' ' | cut -c1-190 || true)"
+  # (f) state text on its own tint: text-success on bg-success/10 is 4.38:1 in light mode (below AA).
+  f_lines="$(printf '%s\n' "$sys_all" | grep -E '\bbg-(success|warning|destructive|info)/[0-9]+' | grep -E '\btext-(success|warning|destructive|info)\b' | sed 's/^/(f) state text on its own tint: /' || true)"
+  # (g) a hand-picked hex colour (arbitrary class or inline style / SVG attribute).
+  g_lines="$(printf '%s\n' "$sys_all" | grep -E "\b(bg|text|border|fill|stroke|ring|outline|from|to|via)-\[#[0-9a-fA-F]{3,8}\]|\b(color|background|backgroundColor|fill|stroke|borderColor)[[:space:]]*[:=][[:space:]]*[{]?['\"]#[0-9a-fA-F]{3,8}['\"]" | sed 's/^/(g) hand-picked hex colour: /' || true)"
+  sys_lines="$(printf '%s\n%s\n%s\n%s\n%s\n%s\n%s\n' "$a_lines" "$b_lines" "$c_lines" "$d_lines" "$e_lines" "$f_lines" "$g_lines" | grep -v '^$' | tr '\t' ' ' | cut -c1-190 || true)"
 fi
 sys_fail=0
 if [[ -n "$sys_lines" ]]; then
@@ -202,7 +208,9 @@ One label system: pick the primitive by meaning (src/components/ui).
   a supporting fact   <SignalChip>       a classification   <Tag>
 Labels are 12px or more, sentence case, sans (mono only for ids, CVEs and
 versions), and never spin or pulse. Colours live in lib/*-colors.ts and
-theme.css. If this really is none of those, say so on the line:
+theme.css; charts take seriesVar / seriesFill from lib/chart-palette.ts. State
+text never sits on its own tint (below AA), and no colour is a hand-picked hex
+(research/257 measures every family). If this really is none of those, say so on the line:
   // label-ok: <reason>
 
 EOF

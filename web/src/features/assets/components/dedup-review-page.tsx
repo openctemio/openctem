@@ -10,6 +10,7 @@ import {
   PageHeader,
   RelativeTime,
   StackedCell,
+  PageStack,
 } from '@/features/shared'
 import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -193,78 +194,84 @@ export function DedupReviewPage() {
 
   return (
     <Main>
-      <PageHeader title={t('assets.overview.title', 'Assets')} />
-      <AssetsSectionTabs />
-      <div className="mt-5">
+      <PageStack>
+        <PageHeader title={t('assets.overview.title', 'Assets')} />
+        <AssetsSectionTabs />
         <AttentionQueueHeader
           reason="duplicates"
           count={isLoading ? undefined : (data?.total ?? reviews.length)}
         />
-      </div>
-      <div className="mt-5" />
 
-      {isLoading ? (
-        <div className="space-y-3">
-          {Array.from({ length: 3 }).map((_, i) => (
-            <Skeleton key={i} className="h-16 w-full" />
-          ))}
-        </div>
-      ) : error ? (
-        <Card>
-          <CardContent className="py-10 text-center text-sm text-muted-foreground">
-            {t('assets.dedup.loadFailed', 'Failed to load duplicate reviews.')}
-          </CardContent>
-        </Card>
-      ) : reviews.length === 0 ? (
-        <EmptyState
-          icon={CopyCheck}
-          title={t('assets.dedup.empty', 'No duplicates to review')}
-          description={t(
-            'assets.dedup.emptyHint',
-            "The correlator hasn't flagged any assets as likely duplicates."
+        {isLoading ? (
+          <div className="space-y-3">
+            {Array.from({ length: 3 }).map((_, i) => (
+              <Skeleton key={i} className="h-16 w-full" />
+            ))}
+          </div>
+        ) : error ? (
+          <Card>
+            <CardContent className="py-10 text-center text-sm text-muted-foreground">
+              {t('assets.dedup.loadFailed', 'Failed to load duplicate reviews.')}
+            </CardContent>
+          </Card>
+        ) : reviews.length === 0 ? (
+          <EmptyState
+            icon={CopyCheck}
+            title={t('assets.dedup.empty', 'No duplicates to review')}
+            description={t(
+              'assets.dedup.emptyHint',
+              "The correlator hasn't flagged any assets as likely duplicates."
+            )}
+          />
+        ) : (
+          <DataTable
+            columns={columns}
+            data={reviews}
+            searchPlaceholder={t('assets.dedup.search', 'Search reviews...')}
+          />
+        )}
+
+        <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
+          <Check className="h-3 w-3" />
+          {t(
+            'assets.dedup.footnote',
+            'Merging preserves findings from all assets on the kept asset; rejecting leaves them separate.'
           )}
-        />
-      ) : (
-        <DataTable
-          columns={columns}
-          data={reviews}
-          searchPlaceholder={t('assets.dedup.search', 'Search reviews...')}
-        />
-      )}
-
-      <p className="mt-3 flex items-center gap-1.5 text-xs text-muted-foreground">
-        <Check className="h-3 w-3" />
-        {t(
-          'assets.dedup.footnote',
-          'Merging preserves findings from all assets on the kept asset; rejecting leaves them separate.'
-        )}
-      </p>
-      <ConfirmDialog
-        open={pendingMerge !== null}
-        onOpenChange={(o) => !o && setPendingMerge(null)}
-        destructive
-        title={
-          pendingMerge?.merge_asset_ids.length === 1
-            ? t('confirm.dedup.mergeTitleOne', 'Merge 1 asset into {keep}?', {
-                keep: pendingMerge?.keep_asset_name ?? '',
-              })
-            : t('confirm.dedup.mergeTitle', 'Merge {count} assets into {keep}?', {
-                count: pendingMerge?.merge_asset_ids.length ?? 0,
-                keep: pendingMerge?.keep_asset_name ?? '',
-              })
-        }
-        desc={t(
-          'confirm.dedup.mergeDesc',
-          '{names} are removed from the inventory and their findings move to {keep}. This cannot be undone.',
-          {
-            names: pendingMerge?.merge_asset_names.join(', ') ?? '',
-            keep: pendingMerge?.keep_asset_name ?? '',
+        </p>
+        <ConfirmDialog
+          open={pendingMerge !== null}
+          onOpenChange={(o) => !o && setPendingMerge(null)}
+          destructive
+          title={
+            pendingMerge?.merge_asset_ids.length === 1
+              ? t('confirm.dedup.mergeTitleOne', 'Merge 1 asset into {keep}?', {
+                  keep: pendingMerge?.keep_asset_name ?? '',
+                })
+              : t('confirm.dedup.mergeTitle', 'Merge {count} assets into {keep}?', {
+                  count: pendingMerge?.merge_asset_ids.length ?? 0,
+                  keep: pendingMerge?.keep_asset_name ?? '',
+                })
           }
-        )}
-        confirmText={t('confirm.dedup.merge', 'Merge')}
-        isLoading={busyId !== null}
-        handleConfirm={() => (pendingMerge ? act(pendingMerge.id, 'approve') : undefined)}
-      />
+          desc={t(
+            'confirm.dedup.mergeDesc',
+            '{names} are removed from the inventory and their findings move to {keep}. The merge cannot be reversed from the console.',
+            {
+              names: pendingMerge?.merge_asset_names.join(', ') ?? '',
+              keep: pendingMerge?.keep_asset_name ?? '',
+            }
+          )}
+          confirmText={
+            pendingMerge?.merge_asset_ids.length === 1
+              ? t('confirm.dedup.mergeButtonOne', 'Merge 1 asset')
+              : t('confirm.dedup.mergeButton', 'Merge {count} assets', {
+                  count: pendingMerge?.merge_asset_ids.length ?? 0,
+                })
+          }
+          typeToConfirm={pendingMerge ? String(pendingMerge.merge_asset_ids.length) : undefined}
+          isLoading={busyId !== null}
+          handleConfirm={() => (pendingMerge ? act(pendingMerge.id, 'approve') : undefined)}
+        />
+      </PageStack>
     </Main>
   )
 }

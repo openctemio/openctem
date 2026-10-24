@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"reflect"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -16,6 +17,7 @@ import (
 	"github.com/openctemio/openctem/api/pkg/domain/tool"
 	"github.com/openctemio/openctem/api/pkg/domain/toolbudget"
 	"github.com/openctemio/openctem/api/pkg/logger"
+	"github.com/openctemio/openctem/api/pkg/pagination"
 )
 
 // fakeToolLookup is a tool registry: platform tools by name and the
@@ -26,6 +28,10 @@ type fakeToolLookup struct {
 	capsErr  error
 	asked    []string
 	capsWith shared.ID
+	// custom are organization tools (declared or not), filtered by tenant.
+	custom    []*tool.Tool
+	listErr   error
+	listedFor []shared.ID
 }
 
 func (f *fakeToolLookup) GetPlatformToolByName(_ context.Context, name string) (*tool.Tool, error) {
@@ -39,6 +45,30 @@ func (f *fakeToolLookup) GetPlatformToolByName(_ context.Context, name string) (
 func (f *fakeToolLookup) FindByCapabilities(_ context.Context, tenantID shared.ID, _ []string) (*tool.Tool, error) {
 	f.capsWith = tenantID
 	return f.byCaps, f.capsErr
+}
+
+// ListTenantCustomTools returns the organization's own tools: the fake
+// filters by tenant like the repository, so a test that seeds another
+// organization's tool proves the planner never sees it.
+func (f *fakeToolLookup) ListTenantCustomTools(_ context.Context, tenantID shared.ID, filter tool.ToolFilter, _ pagination.Pagination) (pagination.Result[*tool.Tool], error) {
+	f.listedFor = append(f.listedFor, tenantID)
+	if f.listErr != nil {
+		return pagination.Result[*tool.Tool]{}, f.listErr
+	}
+	var out []*tool.Tool
+	for _, t := range f.custom {
+		if t.TenantID == nil || *t.TenantID != tenantID {
+			continue
+		}
+		if filter.IsActive != nil && t.IsActive != *filter.IsActive {
+			continue
+		}
+		if len(filter.Capabilities) > 0 && !slices.ContainsFunc(filter.Capabilities, func(c string) bool { return slices.Contains(t.Capabilities, c) }) {
+			continue
+		}
+		out = append(out, t)
+	}
+	return pagination.Result[*tool.Tool]{Data: out, Total: int64(len(out))}, nil
 }
 
 func activeTool(name string) *tool.Tool { return &tool.Tool{Name: name, IsActive: true} }

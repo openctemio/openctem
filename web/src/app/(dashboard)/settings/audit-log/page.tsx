@@ -62,7 +62,7 @@ import { humanizeIdentifier } from '@/lib/humanize-identifier'
 import { Permission, useHasPermission } from '@/lib/permissions'
 import { useTranslation } from '@/context/i18n-provider'
 import { ApiClientError } from '@/lib/api/error-handler'
-import { useDebounce } from '@/hooks/use-debounce'
+import { useSearchQuery } from '@/hooks/use-search-query'
 import { useUrlFilter } from '@/hooks/use-url-param'
 import { useListParams } from '@/hooks/use-list-params'
 
@@ -150,7 +150,7 @@ export default function AuditLogPage() {
   const { pagination, setPagination, setPage } = list
   const [selectedLog, setSelectedLog] = useState<AuditLog | null>(null)
 
-  const debouncedSearch = useDebounce(searchTerm, 300)
+  const debouncedSearch = useSearchQuery(searchTerm).term
 
   // `sort=field:dir` in the URL ↔ the table's sorting state.
   const sorting = useMemo<SortingState>(() => {

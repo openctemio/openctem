@@ -48,6 +48,7 @@
   "notificationChannels.outbox.count.failed": "{count} failed",
   "notificationChannels.outbox.count.pending": "{count} pending",
   "notificationChannels.outbox.count.processing": "{count} processing",
+  "notificationChannels.outbox.deadLetter": "dead letter",
   "notificationChannels.outbox.delete": "Delete",
   "notificationChannels.outbox.description": "Notifications waiting to be delivered, retried or given up on.",
   "notificationChannels.outbox.emptyFiltered": "No {status} entries in the queue",

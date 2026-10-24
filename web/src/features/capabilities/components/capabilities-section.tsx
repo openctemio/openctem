@@ -451,9 +451,9 @@ export function CapabilitiesSection() {
                     {t('confirm.capability.checkingUsage', 'Checking usage…')}
                   </div>
                 ) : selectedHasUsage ? (
-                  <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 p-3 space-y-2">
-                    <div className="flex items-center gap-2 font-medium text-amber-600 dark:text-amber-400">
-                      <AlertTriangle className="h-4 w-4" />
+                  <div className="rounded-lg border border-border bg-muted p-3 space-y-2">
+                    <div className="flex items-center gap-2 font-medium">
+                      <AlertTriangle className="h-4 w-4 text-warning" />
                       {t('confirm.capability.inUse', 'This capability is in use')}
                     </div>
                     <div className="flex flex-wrap gap-3 text-sm">
@@ -481,7 +481,7 @@ export function CapabilitiesSection() {
                     {/* Show affected items */}
                     {(selectedUsageStats.tool_names?.length ||
                       selectedUsageStats.sensor_names?.length) && (
-                      <div className="text-xs text-muted-foreground space-y-1 pt-1 border-t border-amber-500/20">
+                      <div className="text-xs text-muted-foreground space-y-1 pt-1 border-t border-border">
                         {selectedUsageStats.tool_names &&
                           selectedUsageStats.tool_names.length > 0 && (
                             <p>
@@ -503,7 +503,7 @@ export function CapabilitiesSection() {
                       </div>
                     )}
                     {/* Force delete checkbox */}
-                    <div className="flex items-center space-x-2 pt-2 border-t border-amber-500/20">
+                    <div className="flex items-center space-x-2 pt-2 border-t border-border">
                       <Checkbox
                         id="force-delete"
                         checked={forceDelete}
