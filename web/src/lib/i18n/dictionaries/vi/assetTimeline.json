@@ -77,5 +77,7 @@
   "assetTimeline.activity.notInternetFacing": "Không hướng ra Internet",
   "assetTimeline.activity.internetOnly": "Chỉ hướng ra Internet",
   "assetTimeline.activity.internetOnlyHint": "Tắt “Chỉ hướng ra Internet” để bao gồm tài sản nội bộ.",
-  "assetTimeline.activity.refresh": "Làm mới"
+  "assetTimeline.activity.refresh": "Làm mới",
+  "assetTimeline.activity.kind.short": "Loại",
+  "assetTimeline.activity.errorTitle": "thay đổi"
 }

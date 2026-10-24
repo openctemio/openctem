@@ -37,9 +37,7 @@ export const SAMPLE_RESPONSES = {
       in_stock: true,
       quantity: 42,
     },
-    images: [
-      { url: 'https://...', alt: 'Front view' },
-    ],
+    images: [{ url: 'https://...', alt: 'Front view' }],
     category: {
       id: 'c1',
       name: 'Electronics',
@@ -68,10 +66,7 @@ export const SAMPLE_RESPONSES = {
  * Basic JSON to TypeScript converter
  * NOTE: This is a simple helper. For complex types, use online tools or manually create
  */
-export function jsonToTypeScript(
-  json: unknown,
-  interfaceName: string = 'Generated'
-): string {
+export function jsonToTypeScript(json: unknown, interfaceName: string = 'Generated'): string {
   if (typeof json !== 'object' || json === null) {
     return `export type ${interfaceName} = ${typeof json}`
   }
@@ -99,13 +94,25 @@ function inferType(value: unknown): string {
     }
     const firstItem = value[0]
     if (typeof firstItem === 'object' && firstItem !== null) {
-      return 'Array<{\n    ' + Object.keys(firstItem).map(k => `${k}: ${inferType(firstItem[k as keyof typeof firstItem])}`).join('\n    ') + '\n  }>'
+      return (
+        'Array<{\n    ' +
+        Object.keys(firstItem)
+          .map((k) => `${k}: ${inferType(firstItem[k as keyof typeof firstItem])}`)
+          .join('\n    ') +
+        '\n  }>'
+      )
     }
     return `${typeof firstItem}[]`
   }
 
   if (typeof value === 'object') {
-    return '{\n    ' + Object.entries(value).map(([k, v]) => `${k}: ${inferType(v)}`).join('\n    ') + '\n  }'
+    return (
+      '{\n    ' +
+      Object.entries(value)
+        .map(([k, v]) => `${k}: ${inferType(v)}`)
+        .join('\n    ') +
+      '\n  }'
+    )
   }
 
   return typeof value
