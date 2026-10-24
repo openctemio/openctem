@@ -428,3 +428,22 @@ func TestListStates_KeepsEveryUnsubscribe_DB(t *testing.T) {
 		t.Fatalf("got %d subscribed, %d unsubscribed; want 110 and 150", len(sub), len(unsub))
 	}
 }
+
+// A regression (a scan sees a finding closed as fixed again) is told to the
+// assignee and to the watchers who can still read the finding, although no
+// person caused it; a watcher who stopped, or who has no scope, hears nothing.
+func TestFindingRegression_ReachesAssigneeAndWatchers_DB(t *testing.T) {
+	h := newFanoutHarness(t)
+	h.exec(`UPDATE findings SET assigned_to = $1 WHERE id = $2`, h.memberA.String(), h.findingA.String())
+	h.watch(h.scoped, "subscribed")
+	h.watch(h.memberFree, "subscribed") // no scope on the asset: hears nothing
+	h.watch(h.memberStrict, "unsubscribed")
+	h.exec(`INSERT INTO user_accessible_assets (user_id, tenant_id, asset_id, ownership_type) VALUES ($1, $2, $3, 'secondary')`,
+		h.memberStrict.String(), h.tenant.String(), h.assetA.String())
+
+	h.vuln.NotifyRegression(context.Background(), h.tenant, h.findingA, false, "Seen again by a scan (trivy).")
+	got := h.told("finding_status_change")
+	if len(got) != 2 || got[h.memberA.String()] != "assigned" || got[h.scoped.String()] != "watching" {
+		t.Fatalf("regression reached %v, want the assignee (assigned) and the scoped watcher (watching)", got)
+	}
+}
