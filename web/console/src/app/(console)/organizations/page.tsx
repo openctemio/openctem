@@ -14,7 +14,14 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { DataTable, ErrorState, PageHeader, RelativeTime, StackedCell } from '@/features/shared'
+import {
+  DataTable,
+  ErrorState,
+  PageHeader,
+  PageStack,
+  RelativeTime,
+  StackedCell,
+} from '@/features/shared'
 import { useTranslation } from '@/context/i18n-provider'
 import { useDebounce } from '@/hooks/use-debounce'
 import { useListParams } from '@/hooks/use-list-params'
@@ -117,18 +124,20 @@ export default function AdminOrganizationsPage() {
 
   return (
     <Main>
-      <PageHeader
-        title={t('admin.nav.organizations', 'Organizations')}
-        description={t(
-          'admin.org.listDescription',
-          'Every organization on this installation, with its owner, limits and single sign-on setup.'
-        )}
-      >
-        {adminCan(admin.role, 'ops_admin') && (
-          <CreateOrganizationDialog onCreated={(org) => router.push(`/organizations/${org.id}`)} />
-        )}
-      </PageHeader>
-      <div className="mt-5">
+      <PageStack>
+        <PageHeader
+          title={t('admin.nav.organizations', 'Organizations')}
+          description={t(
+            'admin.org.listDescription',
+            'Every organization on this installation, with its owner, limits and single sign-on setup.'
+          )}
+        >
+          {adminCan(admin.role, 'ops_admin') && (
+            <CreateOrganizationDialog
+              onCreated={(org) => router.push(`/organizations/${org.id}`)}
+            />
+          )}
+        </PageHeader>
         {error ? (
           <ErrorState
             title={t('admin.organizationsPage.organizations', 'organizations')}
@@ -192,7 +201,7 @@ export default function AdminOrganizationsPage() {
             }
           />
         )}
-      </div>
+      </PageStack>
     </Main>
   )
 }
