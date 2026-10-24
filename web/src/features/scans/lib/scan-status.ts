@@ -64,6 +64,8 @@ const REFUSAL_CODES = new Set([
   'NO_TARGETS',
   'NO_COMPATIBLE_TARGETS',
   'NO_SENSOR_AVAILABLE',
+  'NO_SENSOR_FOR_TOOL',
+  'NO_ZONE_COVERAGE',
   'SCAN_WINDOW_NEVER_OPENS',
   'SCAN_NOT_TRIGGERABLE',
   'WILDCARD_TARGET',
@@ -74,6 +76,43 @@ const REFUSAL_CODES = new Set([
   'MAX_CONCURRENT_RUNS',
   'RETEST_UNAVAILABLE',
 ])
+
+/**
+ * Where a person fixes what blocked a run, for the codes that have one place
+ * to go: the scope (unconfirmed or excluded targets), the sensors, the scan
+ * windows, the scanners. Other refusals are explained in the run itself.
+ */
+const REFUSAL_FIX: Record<string, { href: string; labelKey: string }> = {
+  ALL_TARGETS_UNCONFIRMED: { href: '/scope?tab=in', labelKey: 'scans.fix.scope' },
+  ALL_TARGETS_EXCLUDED: { href: '/scope?tab=out', labelKey: 'scans.fix.exclusions' },
+  NO_SENSOR_AVAILABLE: { href: '/sensors', labelKey: 'scans.fix.sensors' },
+  NO_SENSOR_FOR_TOOL: { href: '/sensors', labelKey: 'scans.fix.sensors' },
+  NO_ZONE_COVERAGE: { href: '/sensors', labelKey: 'scans.fix.sensors' },
+  SCAN_WINDOW_NEVER_OPENS: {
+    href: '/settings/scanning/scan-windows',
+    labelKey: 'scans.fix.windows',
+  },
+  TOOL_DISABLED: { href: '/settings/scanning/tools', labelKey: 'scans.fix.tools' },
+  TOOL_NOT_FOUND: { href: '/settings/scanning/tools', labelKey: 'scans.fix.tools' },
+}
+
+/**
+ * Why the latest run was blocked, in words a person can act on, and where to
+ * fix it: null unless the run is blocked. A code without a translation reads
+ * as "refused before it started" (the run has the details).
+ */
+export function blockedRunHint(
+  run: Pick<ScanLastRun, 'status' | 'refusal_code'> | null,
+  t: Translate = enTranslate
+): { text: string; fix: { href: string; label: string } | null } | null {
+  if (!run || run.status !== 'blocked') return null
+  const code = run.refusal_code ?? ''
+  const text = REFUSAL_CODES.has(code)
+    ? t(`scans.refusal.${code}`)
+    : t('scans.history.blockedGeneric')
+  const fix = REFUSAL_FIX[code]
+  return { text, fix: fix ? { href: fix.href, label: t(fix.labelKey) } : null }
+}
 
 /** One line on why a blocked or failed run ended, for hover text. */
 export function lastRunReason(
