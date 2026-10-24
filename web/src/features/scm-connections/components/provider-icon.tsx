@@ -68,10 +68,10 @@ export function ProviderIcon({ provider, className }: ProviderIconProps) {
 }
 
 export const SCM_PROVIDER_COLORS: Record<string, string> = {
-  github: 'bg-gray-900 text-white dark:bg-gray-100 dark:text-gray-900',
-  gitlab: 'bg-orange-600 text-white',
-  bitbucket: 'bg-blue-600 text-white',
-  azure_devops: 'bg-blue-500 text-white',
-  codecommit: 'bg-yellow-600 text-white',
-  local: 'bg-gray-500 text-white',
+  github: 'bg-muted text-foreground',
+  gitlab: 'bg-muted text-foreground',
+  bitbucket: 'bg-muted text-foreground',
+  azure_devops: 'bg-muted text-foreground',
+  codecommit: 'bg-muted text-foreground',
+  local: 'bg-muted text-foreground',
 }
