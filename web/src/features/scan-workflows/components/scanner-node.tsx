@@ -244,7 +244,7 @@ function ScannerNodeComponent({ data, selected }: NodeProps<ScannerNode>) {
       <div className="px-3 py-2 space-y-2">
         {/* Step Key (auto-generated) */}
         <div className="flex items-center gap-1.5">
-          <span className="text-[10px] text-muted-foreground w-12 shrink-0">
+          <span className="text-xs text-muted-foreground w-12 shrink-0">
             {t('workflowStages.node.key')}
           </span>
           <Input
@@ -253,7 +253,7 @@ function ScannerNodeComponent({ data, selected }: NodeProps<ScannerNode>) {
             readOnly={data.stepKeyLocked}
             aria-label={t('workflowStages.node.stepKeyAria')}
             title={data.stepKeyLocked ? t('workflowStages.node.keyLocked') : undefined}
-            className="h-5 px-1 text-[10px] font-mono border-dashed border-border bg-muted focus-visible:ring-0"
+            className="h-5 px-1 text-xs font-mono border-dashed border-border bg-muted focus-visible:ring-0"
             placeholder={t('workflowStages.node.keyPlaceholder')}
           />
         </div>
@@ -289,7 +289,7 @@ function ScannerNodeComponent({ data, selected }: NodeProps<ScannerNode>) {
 
         {/* Validation Warning */}
         {!isValid && validationMessage && (
-          <div className="flex items-center gap-1.5 text-[10px] text-destructive">
+          <div className="flex items-center gap-1.5 text-xs text-destructive">
             <AlertTriangle className="h-3 w-3 shrink-0" />
             <span>{validationMessage}</span>
           </div>
@@ -308,7 +308,7 @@ function ScannerNodeComponent({ data, selected }: NodeProps<ScannerNode>) {
             aria-label={t('workflowStages.node.timeoutAria')}
             className="h-6 px-1.5 text-xs flex-1 border-border"
           />
-          <Badge variant="secondary" className="text-[9px] px-1 py-0 shrink-0">
+          <Badge variant="secondary" className="text-xs px-1 py-0 shrink-0">
             {formatTimeout(localTimeout)}
           </Badge>
         </div>
@@ -316,10 +316,10 @@ function ScannerNodeComponent({ data, selected }: NodeProps<ScannerNode>) {
         {/* Capability contract: typed ports (what may be wired in and out) */}
         {data.capabilityName ? (
           <div className="space-y-1 rounded-md border border-dashed px-1.5 py-1">
-            <div className="flex items-center gap-1 text-[10px] font-medium">
+            <div className="flex items-center gap-1 text-xs font-medium">
               <span className="truncate">{data.capabilityName}</span>
               {data.capabilityTier && (
-                <Badge variant="outline" className="px-1 py-0 text-[9px]">
+                <Badge variant="outline" className="px-1 py-0 text-xs">
                   {data.capabilityTier}
                 </Badge>
               )}
@@ -337,14 +337,14 @@ function ScannerNodeComponent({ data, selected }: NodeProps<ScannerNode>) {
           </div>
         ) : (
           (data.tool || localCapabilities.length > 0) && (
-            <p className="text-[10px] text-muted-foreground">{t('workflowStages.node.noPorts')}</p>
+            <p className="text-xs text-muted-foreground">{t('workflowStages.node.noPorts')}</p>
           )
         )}
 
         {(data.warnings ?? []).map((msg) => (
           <div
             key={msg}
-            className="flex items-start gap-1.5 text-[10px] text-warning"
+            className="flex items-start gap-1.5 text-xs text-warning"
             role="status"
           >
             <AlertTriangle className="mt-px h-3 w-3 shrink-0" />
@@ -356,7 +356,7 @@ function ScannerNodeComponent({ data, selected }: NodeProps<ScannerNode>) {
         {(data.issues ?? []).map((msg) => (
           <div
             key={msg}
-            className="flex items-start gap-1.5 text-[10px] text-destructive"
+            className="flex items-start gap-1.5 text-xs text-destructive"
             role="alert"
           >
             <AlertTriangle className="mt-px h-3 w-3 shrink-0" />
@@ -377,7 +377,7 @@ function ScannerNodeComponent({ data, selected }: NodeProps<ScannerNode>) {
               <Badge
                 key={data.dependsOn?.[i] || i}
                 variant="outline"
-                className="text-[9px] px-1 py-0"
+                className="text-xs px-1 py-0"
               >
                 {label}
               </Badge>
@@ -390,7 +390,7 @@ function ScannerNodeComponent({ data, selected }: NodeProps<ScannerNode>) {
           <button
             type="button"
             onClick={() => setShowDescription(true)}
-            className="text-[10px] text-muted-foreground hover:text-foreground"
+            className="text-xs text-muted-foreground hover:text-foreground"
           >
             + {t('workflowStages.node.addDescription')}
           </button>
