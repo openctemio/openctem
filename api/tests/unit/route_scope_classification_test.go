@@ -175,6 +175,7 @@ var dataSurfaceRegistry = map[string]dataSurface{
 	"GET /api/v1/findings/imports":                        {classPartial, "receipt counts are organization-wide: only callers with the organization view (unrestricted scope or dashboards:org:view) list others' receipts; everyone else lists only their own uploads (RFC-122 §4)"},
 	"GET /api/v1/findings/imports/{id}":                   {classPartial, "organization-wide counts behind the organization view, else only the caller's own upload (404); by_severity counts only findings in the caller's scope (RFC-122 §4)"},
 	"GET /api/v1/findings/imports/{id}/result":            {classPartial, "visible as the receipt (organization view, else only the caller's own upload, 404); the per-file results of that upload (RFC-122)"},
+	"GET /api/v1/findings/imports/{id}/items":             {classScoped, "receipt visible as for the detail; items on an asset filtered by the caller's data scope, items without an asset only for unrestricted callers; no evidence (RFC-122)"},
 	"GET /api/v1/findings/imports/{id}/actions":           {classScoped, "receipt visible as for the detail; rows filtered by the caller's data scope and pentest visibility (RFC-122 §4)"},
 	"GET /api/v1/findings/{id}/imports":                   {classScoped, "datascope.AssertFinding first (404 out of scope); lists receipt ids, kinds and actions, no counts"},
 	"POST /api/v1/findings/$":                             {classScoped, "asset_id through AssertAssetRef (tenant + caller scope), branch bound to the asset (research 21b C1)"},

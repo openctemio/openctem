@@ -2,6 +2,7 @@ package postgres
 
 import (
 	"context"
+	"crypto/sha256"
 	"database/sql"
 	"errors"
 	"fmt"
@@ -770,4 +771,21 @@ func (r *IngestJobRepository) PurgeFinishedReportsForPlatform(ctx context.Contex
 		return 0, fmt.Errorf("purge ingest reports: %w", err)
 	}
 	return res.RowsAffected()
+}
+
+// EnqueueSideEffects stores the after-commit side effects of an ingest
+// batch as one job (kind side_effects, interactive lane: people wait on the
+// notifications and tickets they start).
+func (r *IngestJobRepository) EnqueueSideEffects(ctx context.Context, tenantID shared.ID, payload []byte) error {
+	id := shared.NewID()
+	sum := sha256.Sum256(append([]byte(id.String()), payload...))
+	_, err := r.db.ExecContext(ctx, `
+		INSERT INTO ingest_jobs (id, tenant_id, report_id, source_type, payload, payload_sha, status, attempts,
+			max_attempts, priority, available_at, created_at, updated_at, kind, lane)
+		VALUES ($1, $2, $3, 'side_effects', $4, $5, 'pending', 0, $6, 0, NOW(), NOW(), NOW(), 'side_effects', $7)`,
+		id.String(), tenantID.String(), "fx:"+id.String(), payload, sum[:], ingestjob.DefaultMaxAttempts, int(ingestjob.LaneInteractive))
+	if err != nil {
+		return fmt.Errorf("enqueue side effects: %w", err)
+	}
+	return nil
 }
