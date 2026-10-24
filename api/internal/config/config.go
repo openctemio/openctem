@@ -2067,6 +2067,12 @@ func (c *Config) validateBasic() error {
 		os.Getenv(httpsec.EnvAllowPrivate), os.Getenv(httpsec.EnvAllowPrivateCIDRs)); err != nil {
 		return err
 	}
+	// The opened ranges are reachable by every organization's integrations.
+	// Where anyone may create an organization, that hands the operator's
+	// private network to strangers, so the two settings are not combined.
+	if c.Auth.SignupMode == SignupModeOpen && strings.TrimSpace(os.Getenv(httpsec.EnvAllowPrivateCIDRs)) != "" {
+		return fmt.Errorf("%s opens private ranges to every organization's integrations and cannot be combined with SIGNUP_MODE=open, where anyone can create an organization; unset it, or use SIGNUP_MODE=disabled or domain", httpsec.EnvAllowPrivateCIDRs)
+	}
 	if c.Server.Port < 1 || c.Server.Port > 65535 {
 		return fmt.Errorf("invalid server port: %d", c.Server.Port)
 	}

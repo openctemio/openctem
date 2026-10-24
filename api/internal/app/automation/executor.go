@@ -249,7 +249,7 @@ func (e *WorkflowExecutor) ExecuteWithTenant(ctx context.Context, runID shared.I
 		return fmt.Errorf("access denied: run does not belong to tenant")
 	}
 
-	// Check if already running or completed
+	// Check if already running or completed (a resumed run is pending again)
 	if run.Status != automationdom.RunStatusPending {
 		return fmt.Errorf("run is not in pending state: %s", run.Status)
 	}
@@ -306,11 +306,22 @@ func (e *WorkflowExecutor) ExecuteWithTenant(ctx context.Context, runID shared.I
 		Context:           make(map[string]any),
 		CompletedNodeKeys: make(map[string]bool),
 		NodeRunsByKey:     make(map[string]*automationdom.NodeRun),
+		maxChanges:        automationdom.EffectiveMaxChanges(wf.MaxChangesPerRun),
+	}
+	if confirmed, _ := run.Context["change_cap_confirmed"].(bool); confirmed {
+		workflowExecCtx.capConfirmed = true
 	}
 
-	// Index node runs by key
+	// Index node runs by key. A resumed run keeps the steps it already
+	// finished: they are not run again and their outputs feed what follows.
 	for _, nr := range run.NodeRuns {
 		workflowExecCtx.NodeRunsByKey[nr.NodeKey] = nr
+		if nr.Status == automationdom.NodeRunStatusCompleted || nr.Status == automationdom.NodeRunStatusSkipped {
+			workflowExecCtx.CompletedNodeKeys[nr.NodeKey] = true
+			if nr.Output != nil {
+				workflowExecCtx.Context[fmt.Sprintf("node.%s.output", nr.NodeKey)] = nr.Output
+			}
+		}
 	}
 
 	// Execute the workflow graph
@@ -319,11 +330,17 @@ func (e *WorkflowExecutor) ExecuteWithTenant(ctx context.Context, runID shared.I
 	// Finalize the run
 	e.finalizeRun(context.Background(), workflowExecCtx, err) // Use background ctx for finalization
 
+	if errors.Is(err, errRunPaused) {
+		return nil // waiting for a publisher, not a failure
+	}
 	return err
 }
 
 // errRunCanceled stops an execution whose run was canceled.
 var errRunCanceled = errors.New("workflow run canceled")
+
+// errRunPaused stops an execution at its change cap (guardrails).
+var errRunPaused = errors.New("workflow run paused at its change cap")
 
 // runCanceled reports whether run was canceled since the executor loaded it,
 // reading it again by its own tenant. A read error does not stop the run.
@@ -348,7 +365,12 @@ type ExecutionContext struct {
 	NodeRunsByKey     map[string]*automationdom.NodeRun
 	// traces holds the trace a step set while it ran (keyed by node key).
 	traces map[string]automationdom.StepTrace
-	mu     sync.RWMutex
+	// changes counts the side effects of a live run; maxChanges is its cap
+	// and capConfirmed says a publisher let it go past the cap.
+	changes      int
+	maxChanges   int
+	capConfirmed bool
+	mu           sync.RWMutex
 }
 
 // setTrace records the trace of the step nodeKey.
@@ -409,8 +431,11 @@ func (e *WorkflowExecutor) executeGraph(ctx context.Context, execCtx *ExecutionC
 		return fmt.Errorf("workflow has no trigger nodes")
 	}
 
-	// Execute trigger nodes first
+	// Execute trigger nodes first (a resumed run already did)
 	for _, trigger := range triggerNodes {
+		if execCtx.IsNodeCompleted(trigger.NodeKey) {
+			continue
+		}
 		if err := e.executeNode(ctx, execCtx, trigger); err != nil {
 			// Trigger failures are fatal
 			return fmt.Errorf("trigger node %s failed: %w", trigger.NodeKey, err)
@@ -451,7 +476,7 @@ func (e *WorkflowExecutor) executeDownstream(ctx context.Context, execCtx *Execu
 			}
 
 			if err := e.executeNode(ctx, execCtx, node); err != nil {
-				if errors.Is(err, errRunCanceled) {
+				if errors.Is(err, errRunCanceled) || errors.Is(err, errRunPaused) {
 					return err
 				}
 				e.logger.Error("node execution failed", "node_key", logger.SanitizeValue(node.NodeKey), "error", logger.SanitizeError(err))
@@ -565,6 +590,12 @@ func (e *WorkflowExecutor) executeNode(ctx context.Context, execCtx *ExecutionCo
 	if e.runCanceled(ctx, execCtx.Run) {
 		return errRunCanceled
 	}
+	// A live run stops before the change past its cap, until a publisher
+	// lets it continue; the step stays pending.
+	sideEffect := node.NodeType == automationdom.NodeTypeAction || node.NodeType == automationdom.NodeTypeNotification
+	if sideEffect && execCtx.Run.Mode == automationdom.ModeLive && !execCtx.capConfirmed && execCtx.changes >= execCtx.maxChanges {
+		return errRunPaused
+	}
 
 	e.logger.Info("executing node", "node_key", node.NodeKey, "node_type", node.NodeType)
 
@@ -624,6 +655,9 @@ func (e *WorkflowExecutor) executeNode(ctx context.Context, execCtx *ExecutionCo
 			trace = automationdom.StepTrace{In: 1, Out: 1}
 		}
 		nodeRun.SetTrace(trace)
+		if sideEffect && execCtx.Run.Mode == automationdom.ModeLive {
+			execCtx.changes++
+		}
 		nodeRun.Complete(output)
 		execCtx.MarkNodeCompleted(node.NodeKey)
 		e.updateRunStats(execCtx, true)
@@ -935,6 +969,26 @@ func (e *WorkflowExecutor) finalizeRun(ctx context.Context, execCtx *ExecutionCo
 	// closed the steps; the executor writes nothing over it.
 	if errors.Is(execErr, errRunCanceled) {
 		e.logger.Info("workflow run canceled; stopped before its next step", "run_id", run.ID)
+		return
+	}
+
+	// At the change cap: the run waits for a publisher (POST
+	// /workflow-runs/{id}/approve); nothing is counted as finished.
+	if errors.Is(execErr, errRunPaused) {
+		run.Pause(automationdom.PauseReasonBlastRadius)
+		if err := e.runRepo.Update(ctx, run); err != nil {
+			e.logger.Error("failed to pause run", "run_id", run.ID, "error", err)
+			return
+		}
+		e.logger.Warn("automation run paused at its change cap", "run_id", run.ID, "changes", execCtx.changes, "cap", execCtx.maxChanges)
+		if e.auditService != nil {
+			auditapp.RecordOrWarn(ctx, e.logger, e.auditService, auditapp.AuditContext{TenantID: run.TenantID.String()},
+				auditapp.NewSuccessEvent(audit.ActionWorkflowRunPaused, audit.ResourceTypeWorkflowRun, run.ID.String()).
+					WithResourceName(execCtx.Workflow.Name).
+					WithMessage(fmt.Sprintf("Automation run paused after %d changes (its cap); a publisher may let it continue", execCtx.changes)).
+					WithMetadata("workflow_id", execCtx.Workflow.ID.String()).
+					WithMetadata("cap", execCtx.maxChanges))
+		}
 		return
 	}
 

@@ -47,7 +47,8 @@ func NodePermission(c automationdom.NodeConfig) (permission.Permission, bool) {
 	case automationdom.ActionTypeAssignUser, automationdom.ActionTypeUpdateStatus,
 		automationdom.ActionTypeAddTags, automationdom.ActionTypeRemoveTags,
 		automationdom.ActionTypeCreateTicket, automationdom.ActionTypeUpdateTicket,
-		automationdom.ActionTypeTriggerAITriage:
+		automationdom.ActionTypeTriggerAITriage,
+		automationdom.ActionTypeRequestFalsePositive, automationdom.ActionTypeRequestRiskAcceptance:
 		return permission.FindingsWrite, true
 	case automationdom.ActionTypeTriggerScan:
 		return permission.ScansWrite, true

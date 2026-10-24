@@ -40,6 +40,7 @@ import { useTranslation } from '@/context/i18n-provider'
 import { useTenant } from '@/context/tenant-provider'
 import { EmptyState, ErrorState } from '@/features/shared'
 import { getErrorMessage } from '@/lib/api/error-handler'
+import { UNDO_TOAST_MS } from '@/lib/undo-toast'
 import type { EASMSuggestionAddress, EASMSuggestionCard } from '@/lib/api/generated'
 import {
   createScopeTargetsBulk,
@@ -283,6 +284,7 @@ function AddressesCard({
           '{count} addresses marked not yours'
         ),
         {
+          duration: UNDO_TOAST_MS,
           action: {
             label: t('attackSurface.decide.undo', 'Undo'),
             onClick: () =>
