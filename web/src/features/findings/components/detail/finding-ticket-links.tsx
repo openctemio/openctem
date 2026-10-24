@@ -105,9 +105,9 @@ export function FindingTicketLinks({
   const holdText = (h: TicketHold) => {
     switch (h.reason) {
       case 'daily_cap':
-        return t('findings.ticketHolds.dailyCap', 'Not sent to Jira yet — today’s limit is reached')
+        return t('findings.ticketHolds.dailyCap', 'Not sent to Jira yet. Today’s limit is reached')
       case 'create_failed':
-        return t('findings.ticketHolds.createFailed', 'Not sent to Jira — the last attempt failed')
+        return t('findings.ticketHolds.createFailed', 'Not sent to Jira. The last attempt failed')
       default:
         return t(
           'findings.ticketHolds.belowThreshold',

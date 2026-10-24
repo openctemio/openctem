@@ -1,11 +1,11 @@
 'use client'
 
 /**
- * Retest section (RFC-039) — one component for the finding page rail and the
+ * Retest section (RFC-039), one component for the finding page rail and the
  * finding drawer, on the shared detail frame (DetailSection).
  *
  *   Retest                                   [Retest now]
- *   ● Verified fixed — awaiting confirmation · 3 min ago   View evidence
+ *   ● Verified fixed, awaiting confirmation, 3 min ago   View evidence
  *     https://h/admin answered 404 and the check did not match
  *   Earlier: Still present · 2 d ago, Unknown · 9 d ago
  *
@@ -26,6 +26,7 @@ import { toast } from 'sonner'
 import { Loader2, RefreshCw } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
+import { ConfirmDialog } from '@/components/confirm-dialog'
 import { DetailSection } from '@/features/shared/components/detail-sheet'
 import { RelativeTime } from '@/features/shared/components/relative-time'
 import { SEVERITY_BADGE_SOFT } from '@/lib/severity-colors'
@@ -96,20 +97,17 @@ export function retestMeta(rt: FindingRetest, t: Translate = englishOnly): Retes
     case 'confirmed_fixed':
       return rt.result_status === 'resolved'
         ? {
-            label: t('findings.retestPanel.fixedResolved', 'Fixed — verified and resolved'),
+            label: t('findings.retestPanel.fixedResolved', 'Fixed: verified and resolved'),
             className: SUCCESS_SOFT,
           }
         : {
-            label: t(
-              'findings.retestPanel.verifiedFixed',
-              'Verified fixed — awaiting confirmation'
-            ),
+            label: t('findings.retestPanel.verifiedFixed', 'Verified fixed, awaiting confirmation'),
             className: SUCCESS_SOFT,
           }
     case 'still_vulnerable':
       return rt.prior_status === 'resolved' && rt.result_status !== 'resolved'
         ? {
-            label: t('findings.retestPanel.regression', 'Regression — reopened'),
+            label: t('findings.retestPanel.regression', 'Regression: reopened'),
             className: SEVERITY_BADGE_SOFT.high,
           }
         : {
@@ -118,7 +116,7 @@ export function retestMeta(rt: FindingRetest, t: Translate = englishOnly): Retes
           }
     case 'not_reproduced':
       return {
-        label: t('findings.retestPanel.notReproduced', 'Not reproduced — not confirmed'),
+        label: t('findings.retestPanel.notReproduced', 'Not reproduced, not confirmed'),
         className: 'bg-muted text-muted-foreground',
       }
     default: {
@@ -201,6 +199,7 @@ export function FindingRetestSection({ finding, className }: FindingRetestSectio
   const list = data?.data ?? []
   const latest = list[0]
   const running = latest?.status === 'pending'
+  const [confirmOpen, setConfirmOpen] = useState(false)
 
   // When the running retest settles, the finding may have moved: refresh it
   // (status, resolution) and its activity trail.
@@ -225,6 +224,7 @@ export function FindingRetestSection({ finding, className }: FindingRetestSectio
   const canRetest = retestable && hasPermission('findings:verify')
 
   const retestNow = async () => {
+    setConfirmOpen(false)
     try {
       await trigger()
       toast.success(t('findings.retestPanel.started', 'Retest started'), {
@@ -256,7 +256,7 @@ export function FindingRetestSection({ finding, className }: FindingRetestSectio
             variant="outline"
             size="sm"
             className="h-7"
-            onClick={() => void retestNow()}
+            onClick={() => setConfirmOpen(true)}
             disabled={isMutating || running}
             title={t(
               'findings.retestPanel.rerunTitle',
@@ -273,6 +273,17 @@ export function FindingRetestSection({ finding, className }: FindingRetestSectio
         ) : undefined
       }
     >
+      <ConfirmDialog
+        open={confirmOpen}
+        onOpenChange={setConfirmOpen}
+        title={t('findings.retestPanel.confirmTitle', 'Retest this finding now?')}
+        desc={t(
+          'findings.retestPanel.confirmDesc',
+          "This sends scan traffic to the finding's target now. The result is added to the retest history, and a verified fix can move the finding."
+        )}
+        confirmText={t('findings.retestPanel.confirmButton', 'Send retest')}
+        handleConfirm={retestNow}
+      />
       {latest ? (
         <RetestLine retest={latest} findingId={finding.id} check={check} />
       ) : check ? (

@@ -1,6 +1,7 @@
 'use client'
 
-import { useCallback } from 'react'
+import { useCallback, useState } from 'react'
+import { ConfirmDialog } from '@/components/confirm-dialog'
 import { toast } from 'sonner'
 import { ShieldCheck, RefreshCw, Loader2, Eye, EyeOff, Unplug, type LucideIcon } from 'lucide-react'
 import { Button } from '@/components/ui/button'
@@ -191,7 +192,10 @@ export function ValidationEvidencePanel({ findingId }: ValidationEvidencePanelPr
   const { data: plan } = useFindingVerificationPlan(findingId)
   const safeCheck = planMethod(plan, 'safe_check')
 
+  const [confirmOpen, setConfirmOpen] = useState(false)
+
   const handleValidate = useCallback(async () => {
+    setConfirmOpen(false)
     try {
       await requestValidation()
       toast.success(t('findings.validationEvidence.requested', 'Validation requested'), {
@@ -229,7 +233,12 @@ export function ValidationEvidencePanel({ findingId }: ValidationEvidencePanelPr
           {evidence.length > 0 ? <Badge variant="secondary">{evidence.length}</Badge> : null}
         </div>
         {hasPermission('findings:verify') && safeCheck?.available ? (
-          <Button size="sm" variant="outline" onClick={handleValidate} disabled={isMutating}>
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => setConfirmOpen(true)}
+            disabled={isMutating}
+          >
             {isMutating ? (
               <Loader2 className="me-1.5 h-3.5 w-3.5 animate-spin" />
             ) : (
@@ -239,6 +248,21 @@ export function ValidationEvidencePanel({ findingId }: ValidationEvidencePanelPr
           </Button>
         ) : null}
       </div>
+
+      <ConfirmDialog
+        open={confirmOpen}
+        onOpenChange={setConfirmOpen}
+        title={t(
+          'findings.validationEvidence.confirmTitle',
+          "Check the reachability of this finding's target now?"
+        )}
+        desc={t(
+          'findings.validationEvidence.confirmDesc',
+          "A safe check sends a request to the target now. The result is added as evidence and does not change the finding's status."
+        )}
+        confirmText={t('findings.validationEvidence.confirmButton', 'Run safe check')}
+        handleConfirm={handleValidate}
+      />
 
       {isLoading ? (
         <p className="text-muted-foreground text-sm">

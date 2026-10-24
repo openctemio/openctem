@@ -169,7 +169,7 @@ import {
   type FindingRowAction,
 } from '@/features/findings/components/finding-row-menu'
 import { FindingPhoneCard } from '@/features/findings/components/finding-phone-card'
-import { AssigneeSelect } from '@/features/findings/components/assignee-select'
+import { AssigneeSelect, type AssigneeUser } from '@/features/findings/components/assignee-select'
 import {
   FindingGroupsTable,
   GROUP_BY_DIMENSIONS,
@@ -202,7 +202,8 @@ import {
   buildFindingsExportUrl,
   type FindingStatsFilters,
 } from '@/features/findings/api/use-findings-api'
-import { ConfirmDialog } from '@/components/confirm-dialog'
+import { ConfirmDialog, ConfirmSample } from '@/components/confirm-dialog'
+import { confirmName } from '@/lib/confirm-name'
 import type { ApiFinding, FindingApiFilters } from '@/features/findings/api/finding-api.types'
 import type { Finding, FindingStatus } from '@/features/findings'
 import type { Severity } from '@/features/shared/types'
@@ -514,6 +515,12 @@ function FindingsContent() {
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
   const [bulkResolveOpen, setBulkResolveOpen] = useState(false)
   const [bulkResolveNote, setBulkResolveNote] = useState('')
+  // A bulk status move or assignment waits here until the user confirms it.
+  const [bulkPending, setBulkPending] = useState<
+    | { kind: 'status'; status: 'confirmed' | 'in_progress' }
+    | { kind: 'assign'; user: AssigneeUser }
+    | null
+  >(null)
   const [findingToDelete, setFindingToDelete] = useState<Finding | null>(null)
   const [isDeleting, setIsDeleting] = useState(false)
   const [createDialogOpen, setCreateDialogOpen] = useState(false)
@@ -1079,6 +1086,55 @@ function FindingsContent() {
   }, [findingsResponse])
 
   const selectedCount = selectedFindingIds.length
+  const bulkPendingText = (() => {
+    const count = selectedFindingIds.length
+    if (!bulkPending) return { title: '', desc: '', button: '' }
+    if (bulkPending.kind === 'assign') {
+      const name = bulkPending.user.name
+      return {
+        title:
+          count === 1
+            ? t('confirm.finding.bulkAssignTitleOne', 'Assign 1 finding to {name}?', { name })
+            : t('confirm.finding.bulkAssignTitle', 'Assign {count} findings to {name}?', {
+                count,
+                name,
+              }),
+        desc: t(
+          'confirm.finding.bulkAssignDesc',
+          '{name} is notified and becomes the assignee. A finding that already has an assignee is reassigned, and a finding {name} cannot read is skipped.',
+          { name }
+        ),
+        button:
+          count === 1
+            ? t('confirm.finding.bulkAssignButtonOne', 'Assign 1 finding')
+            : t('confirm.finding.bulkAssignButton', 'Assign {count} findings', { count }),
+      }
+    }
+    const status =
+      bulkPending.status === 'confirmed'
+        ? t('findings.status.confirmed', 'Confirmed')
+        : t('findings.status.in_progress', 'In progress')
+    return {
+      title:
+        count === 1
+          ? t('confirm.finding.bulkStatusTitleOne', 'Mark 1 finding as {status}?', { status })
+          : t('confirm.finding.bulkStatusTitle', 'Mark {count} findings as {status}?', {
+              count,
+              status,
+            }),
+      desc: t(
+        'confirm.finding.bulkStatusDesc',
+        "The status change is recorded in each finding's activity. A finding that cannot move to this status is skipped and listed afterwards. You can change the status again later."
+      ),
+      button:
+        count === 1
+          ? t('confirm.finding.bulkStatusButtonOne', 'Mark 1 finding {status}', { status })
+          : t('confirm.finding.bulkStatusButton', 'Mark {count} findings {status}', {
+              count,
+              status,
+            }),
+    }
+  })()
   // Bulk actions need findings:bulk_update and the single-item permission of
   // each action (the API checks both); selection is offered only when at least
   // one bulk action is.
@@ -2608,7 +2664,7 @@ function FindingsContent() {
                   disabled={bulkBusy}
 
                   onChange={(user) => {
-                    if (user) void handleBulkAssign(user.id)
+                    if (user) setBulkPending({ kind: 'assign', user })
                   }}
                 />
               )}
@@ -2638,11 +2694,15 @@ function FindingsContent() {
                   </DropdownMenuTrigger>
 
                   <DropdownMenuContent side="top" align="center">
-                    <DropdownMenuItem onClick={() => void handleBulkStatusChange('confirmed')}>
+                    <DropdownMenuItem
+                      onClick={() => setBulkPending({ kind: 'status', status: 'confirmed' })}
+                    >
                       {t('findings.status.confirmed', 'Confirmed')}
                     </DropdownMenuItem>
 
-                    <DropdownMenuItem onClick={() => void handleBulkStatusChange('in_progress')}>
+                    <DropdownMenuItem
+                      onClick={() => setBulkPending({ kind: 'status', status: 'in_progress' })}
+                    >
                       {t('findings.status.in_progress', 'In progress')}
                     </DropdownMenuItem>
 
@@ -2770,6 +2830,30 @@ function FindingsContent() {
         }}
       />
 
+      {/* Bulk status move (confirmed, in progress) and bulk assignment. */}
+      <ConfirmDialog
+        open={bulkPending !== null}
+        onOpenChange={(open) => {
+          if (!open) setBulkPending(null)
+        }}
+        title={bulkPendingText.title}
+        desc={bulkPendingText.desc}
+        confirmText={bulkPendingText.button}
+        disabled={bulkBusy}
+        handleConfirm={async () => {
+          const pending = bulkPending
+          if (!pending) return
+          if (pending.kind === 'assign') await handleBulkAssign(pending.user.id)
+          else await handleBulkStatusChange(pending.status)
+          setBulkPending(null)
+        }}
+      >
+        <ConfirmSample
+          names={selectedFindings.map((f) => f.title)}
+          total={selectedFindingIds.length}
+        />
+      </ConfirmDialog>
+
       {/* Bulk resolve: closes every selected finding at once. */}
       <ConfirmDialog
         open={bulkResolveOpen}
@@ -2785,7 +2869,14 @@ function FindingsContent() {
           'confirm.finding.bulkResolveDesc',
           'The selected findings are closed as resolved and leave the open work queues and SLA tracking.'
         )}
-        confirmText={t('confirm.finding.resolve', 'Resolve')}
+        confirmText={
+          selectedFindingIds.length === 1
+            ? t('confirm.finding.resolveOne', 'Resolve 1 finding')
+            : t('confirm.finding.resolveMany', 'Resolve {count} findings', {
+                count: selectedFindingIds.length,
+              })
+        }
+        destructive
         disabled={!bulkResolveNote.trim() || bulkBusy}
         handleConfirm={async () => {
           if (await handleBulkStatusChange('resolved', bulkResolveNote.trim())) {
@@ -2794,6 +2885,10 @@ function FindingsContent() {
           }
         }}
       >
+        <ConfirmSample
+          names={selectedFindings.map((f) => f.title)}
+          total={selectedFindingIds.length}
+        />
         {/* A bulk resolve reads no verification checklist: it is attested and needs a note. */}
         <div className="space-y-2">
           <Label htmlFor="bulk-resolve-note">
@@ -2817,11 +2912,20 @@ function FindingsContent() {
       <ConfirmDialog
         open={deleteDialogOpen}
         onOpenChange={setDeleteDialogOpen}
-        title={t('confirm.finding.deleteTitle', 'Delete this finding?')}
+        title={
+          findingToDelete
+            ? t('confirm.finding.deleteTitleNamed', 'Delete the finding "{name}"?', {
+                name: findingToDelete.title,
+              })
+            : t('confirm.finding.deleteTitle', 'Delete this finding?')
+        }
         desc={t(
           'confirm.finding.deleteDesc',
           'The finding is permanently deleted with its comments, activity and evidence. This cannot be undone.'
         )}
+        typeToConfirm={
+          findingToDelete ? confirmName(findingToDelete.title, findingToDelete.id) : undefined
+        }
         confirmText={
           isDeleting ? (
             <>
@@ -2829,7 +2933,7 @@ function FindingsContent() {
               {t('confirm.deleting', 'Deleting…')}
             </>
           ) : (
-            t('confirm.delete', 'Delete')
+            t('confirm.finding.deleteButton', 'Delete finding')
           )
         }
         destructive
@@ -2846,8 +2950,10 @@ function FindingsContent() {
                   : findingToDelete.severity
                 ).toUpperCase(),
               })}
-              {findingToDelete.scanner && ` · ${findingToDelete.scanner}`}
             </p>
+            {findingToDelete.scanner && (
+              <p className="text-sm text-muted-foreground">{findingToDelete.scanner}</p>
+            )}
           </div>
         )}
       </ConfirmDialog>

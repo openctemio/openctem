@@ -225,5 +225,8 @@
   "findingApprovals.single.othersNoticeAccept": "A person with approval permission could accept this risk alone; your request waits for one of them.",
   "findingApprovals.single.submitAccept": "Accept the risk",
   "findingApprovals.single.appliedAccept": "Risk accepted until {date}. It is recorded with your name and reason.",
-  "findingApprovals.policy.tableTitle": "Approval tiers and approvers"
+  "findingApprovals.policy.tableTitle": "Approval tiers and approvers",
+  "findingApprovals.group.approveConfirmTitle": "Approve the exception for {count} findings?",
+  "findingApprovals.group.approveConfirmDescMore": "Your approval is recorded. The findings change status after {count} more approvals.",
+  "findingApprovals.group.approveConfirmDesc": "This is the last approval needed: every finding in the group changes to the requested status now."
 }
