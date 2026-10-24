@@ -145,7 +145,11 @@ export function MetricStrip({
                 </span>
               )}
               {item.hint && !loading && !error ? (
-                <span className="ms-1.5 text-xs text-muted-foreground">{item.hint}</span>
+                // A compact phone tile has no room for a caption: it moves to
+                // the tile's tooltip there.
+                <span className="ms-1.5 hidden text-xs text-muted-foreground sm:inline">
+                  {item.hint}
+                </span>
               ) : null}
             </dd>
             {item.detail && !loading && !error ? (
@@ -169,7 +173,7 @@ export function MetricStrip({
               key={item.key}
               href={href}
               aria-current={item.active ? 'page' : undefined}
-              title={item.description}
+              title={item.description ?? item.hint}
               data-slot="metric-tile"
               className={cn(cellClass, interactive)}
             >
@@ -184,7 +188,7 @@ export function MetricStrip({
               type="button"
               onClick={item.onClick}
               aria-pressed={item.active ?? false}
-              title={item.description}
+              title={item.description ?? item.hint}
               data-slot="metric-tile"
               className={cn(cellClass, interactive)}
             >
@@ -196,7 +200,7 @@ export function MetricStrip({
           <div
             key={item.key}
             className={cellClass}
-            title={item.description}
+            title={item.description ?? item.hint}
             data-slot="metric-tile"
           >
             {body}
