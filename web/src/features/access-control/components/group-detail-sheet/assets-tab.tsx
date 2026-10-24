@@ -1,3 +1,4 @@
+import { useTranslation } from '@/context/i18n-provider'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Skeleton } from '@/components/ui/skeleton'
@@ -44,6 +45,7 @@ export function AssetsTab({
   onBulkAddAssets,
   onRemoveAsset,
 }: AssetsTabProps) {
+  const { t } = useTranslation()
   const [searchQuery, setSearchQuery] = useState('')
 
   // Reset to first page when search query changes
@@ -153,7 +155,7 @@ export function AssetsTab({
                   <DataTableRowActions
                     actions={[
                       {
-                        label: 'Remove',
+                        label: t('org.teamAssets.remove', 'Remove'),
                         icon: Trash2,
                         destructive: true,
                         onClick: () => onRemoveAsset(item.asset_id, item.asset?.name || 'Asset'),

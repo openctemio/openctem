@@ -575,6 +575,13 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 			svc.VEX, log.With("controller", "vex-statement-expiry")))
 	}
 
+	// Rule sources: scheduled, requested and webhook syncs; snapshot collection.
+	if svc.ContentSource != nil {
+		svc.ContentSource.SetModuleGuard(svc.Module) // skip organizations with rule sources off
+		w.ControllerManager.Register(controller.NewContentSourceSyncController(
+			svc.ContentSource, log.With("controller", "content-source-sync")))
+	}
+
 	// Access requests: unconfirmed ones go after 24 h, decided ones after 90 days.
 	if svc.AccessRequest != nil {
 		w.ControllerManager.Register(controller.NewAccessRequestRetentionController(

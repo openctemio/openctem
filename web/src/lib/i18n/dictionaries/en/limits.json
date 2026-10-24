@@ -81,5 +81,9 @@
   "limits.usage.title": "Limits",
   "limits.accountPortal": "Manage your service account",
   "limits.key.storage_mb": "Storage (MiB)",
-  "limits.key.dashboard_refresh_floor_minutes": "Dashboard refresh floor (minutes)"
+  "limits.key.dashboard_refresh_floor_minutes": "Dashboard refresh floor (minutes)",
+  "limits.key.content_sources": "Rule sources",
+  "limits.key.content_storage_mb": "Rule snapshot storage (MiB)",
+  "limits.key.content_sync_floor_minutes": "Rule source sync floor (minutes)",
+  "limits.key.content_snapshot_max_mb": "Largest rule snapshot (MiB)"
 }
