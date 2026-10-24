@@ -262,7 +262,7 @@ func (h *ScopeHandler) GetSettings(w http.ResponseWriter, r *http.Request) {
 
 // UpdateSettings handles PUT /api/v1/scope/settings
 // @Summary      Change scope settings
-// @Description  Replace the organization's scope knobs. Needs attack_surface:scope:approve and a recent re-authentication (403 STEP_UP_REQUIRED). An organization with two or more administrators cannot go below one approval, and intrusive entries always need one. Audited; every administrator is notified.
+// @Description  Replace the organization's scope knobs. Needs attack_surface:scope:approve and a recent re-authentication (403 STEP_UP_REQUIRED). Lowering the widening approvals needs an owner (403 for an administrator). An organization with two or more administrators cannot go below one approval, and intrusive entries always need one. Audited; every administrator is notified.
 // @Tags         Scope
 // @Accept       json
 // @Produce      json
@@ -328,6 +328,22 @@ func (h *ScopeHandler) UpdateSettings(w http.ResponseWriter, r *http.Request) {
 			ss.CIScopeRequiresProof = before.CIScopeRequiresProof
 		}
 
+	}
+	// Raising the widening approvals stays with approvers; lowering them
+	// (an omitted value resets to the default, which can be lower too) is the
+	// owner's alone. Compared as the setting, whatever the administrator
+	// count is now, so a later change in headcount cannot hide a lowering.
+	if !middleware.IsOwner(ctx) {
+		before, err := h.settings.GetScopeSettings(ctx, tenantID)
+		if err != nil {
+			h.logger.Error("scope settings: read", "error", logger.SanitizeError(err))
+			apierror.InternalServerError("failed to read the settings").WriteJSON(w)
+			return
+		}
+		if ss.EffectiveApprovals(tenant.MaxScopeApprovals+1, false) < before.EffectiveApprovals(tenant.MaxScopeApprovals+1, false) {
+			apierror.Forbidden("Lowering the widening approvals requires an organization owner").WriteJSON(w)
+			return
+		}
 	}
 	actx := auditapp.AuditContext{
 		TenantID: tenantID, ActorID: middleware.GetUserID(ctx), ActorEmail: auditActorEmail(ctx),

@@ -164,7 +164,7 @@ export function SectionTabs({ tabs, className, label = 'Sections', counts }: Sec
     overflow: [],
   }))
 
-  const tabKey = tabs.map((tab) => tab.href).join('|')
+  const tabKey = JSON.stringify(tabs.map((tab) => tab.href))
   const countKey = counts ? JSON.stringify(counts) : ''
   React.useLayoutEffect(() => {
     const nav = navRef.current
