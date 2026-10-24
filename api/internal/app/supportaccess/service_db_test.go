@@ -398,3 +398,32 @@ func TestConsoleTenantAccessNotice_DB(t *testing.T) {
 		t.Fatalf("other organization: %d rows", n)
 	}
 }
+
+type downAuditor struct{}
+
+func (downAuditor) LogEvent(context.Context, auditapp.AuditContext, auditapp.AuditEvent) error {
+	return errors.New("audit store down")
+}
+
+// A grant of support access that cannot be audited is revoked at once and the
+// owner gets an error, not a grant.
+func TestSupportAccessGrant_AuditFailureRevokesIt_DB(t *testing.T) {
+	f := setup(t)
+	pdb := &postgres.DB{DB: f.db}
+	svc := supportaccess.NewService(postgres.NewSupportAccessRepository(pdb), postgres.NewSupportReadRepository(pdb),
+		postgres.NewAdminRepository(pdb), downAuditor{}, postgres.NewAuditLogRepository(pdb),
+		ownersOf{db: f.db}, names{}, f.mailer, logger.NewNop())
+	g, err := svc.CreateGrant(context.Background(), supportaccess.CreateGrantInput{
+		TenantID: f.tenant, GrantedBy: f.owner, GrantedByEmail: "owner@example.com", AdminEmail: f.support.Email(),
+		DurationHours: 4, Reason: "Customer ticket: P0 ranking question",
+	}, client)
+	if !errors.Is(err, dom.ErrAuditUnavailable) || g != nil {
+		t.Fatalf("grant=%v err=%v, want ErrAuditUnavailable and no grant", g, err)
+	}
+	if n := f.count(t, `SELECT count(*) FROM support_grants WHERE tenant_id = $1 AND revoked_at IS NULL`, f.tenant.String()); n != 0 {
+		t.Fatalf("live grants after a failed audit = %d, want 0", n)
+	}
+	if f.mailer.count() != 0 {
+		t.Fatal("owners were told about a grant that was withdrawn")
+	}
+}
