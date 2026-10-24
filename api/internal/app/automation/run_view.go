@@ -2,8 +2,9 @@ package automation
 
 // Reading runs follows the caller's data scope (RFC-125 D8): a run about a
 // finding or asset outside the caller's scope is not listed and answers 404,
-// and trace counts include only runs whose subject the caller may see. Runs
-// without a subject (a scan finished) are visible to every reader.
+// and trace counts include only runs whose subject the caller may see. A run
+// that lists several assets, or reports a finished scan, is redacted for a
+// reader who may not see all it names (run_redact.go).
 
 import (
 	"context"
@@ -101,7 +102,15 @@ func (s *WorkflowService) GetRunForCaller(ctx context.Context, tenantID, userID,
 			return nil, fmt.Errorf("list run deliveries: %w", err)
 		}
 	}
+	redacted, err := s.redactRunsForScope(ctx, tenantID, scope, []*automationdom.Run{run})
+	if err != nil {
+		return nil, err
+	}
 	for _, dl := range d.Deliveries {
+		if redacted[run.ID] {
+			dl.Payload = map[string]any{"redacted": redactedPayloadReason}
+			continue
+		}
 		raw, _ := dl.Payload["finding_id"].(string)
 		fid, err := shared.IDFromString(raw)
 		if err != nil || (run.SubjectID != nil && fid == *run.SubjectID) {
@@ -127,7 +136,14 @@ func (s *WorkflowService) ListRunsForCaller(ctx context.Context, userID shared.I
 		return pagination.Result[*automationdom.Run]{}, err
 	}
 	input.scope = scope
-	return s.ListRuns(ctx, input)
+	res, err := s.ListRuns(ctx, input)
+	if err != nil {
+		return res, err
+	}
+	if _, err := s.redactRunsForScope(ctx, input.TenantID, scope, res.Data); err != nil {
+		return pagination.Result[*automationdom.Run]{}, err
+	}
+	return res, nil
 }
 
 // TraceInput asks for an automation's trace.

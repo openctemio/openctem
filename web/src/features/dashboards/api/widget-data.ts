@@ -29,7 +29,7 @@ export interface WidgetValue {
   index: number
   widget_type: string
   state: WidgetState
-  /** Machine code: no_denominator, too_few_fixed, legacy_tile, facts_building, failed, timeout. */
+  /** Machine code: no_denominator, too_few_fixed, legacy_tile, forbidden, facts_building, failed, timeout. */
   reason?: string
   metric?: string
   shape?: ResultShape
