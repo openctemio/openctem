@@ -2222,5 +2222,6 @@
   "scans.fix.exclusions": "Xem loại trừ",
   "scans.fix.sensors": "Kiểm tra sensor",
   "scans.fix.windows": "Kiểm tra khung giờ quét",
-  "scans.fix.tools": "Kiểm tra công cụ quét"
+  "scans.fix.tools": "Kiểm tra công cụ quét",
+  "scans.ci.sectionLabel": "Mục"
 }

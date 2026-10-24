@@ -1410,7 +1410,7 @@ function FindingsContent() {
       },
       {
         accessorKey: 'title',
-        meta: { label: t('findings.columns.title', 'Title') },
+        meta: { label: t('findings.columns.title', 'Title'), primary: true },
         enableSorting: false,
         enableHiding: false,
         header: ({ column }) => (

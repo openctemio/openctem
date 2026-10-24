@@ -2222,5 +2222,6 @@
   "scans.fix.exclusions": "Review exclusions",
   "scans.fix.sensors": "Check sensors",
   "scans.fix.windows": "Check scan windows",
-  "scans.fix.tools": "Check scanners"
+  "scans.fix.tools": "Check scanners",
+  "scans.ci.sectionLabel": "Section"
 }
