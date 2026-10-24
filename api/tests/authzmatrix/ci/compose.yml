@@ -33,7 +33,7 @@ services:
   migrate:
     image: ${MIGRATE_IMAGE:-migrate/migrate:v4.18.1}
     volumes: ['../../../migrations:/migrations:ro']
-    command: ['-path=/migrations', '-database', 'postgres://openctem:${MATRIX_DB_PASSWORD}@postgres:5432/openctem?sslmode=disable', 'up']
+    command: ['-path=/migrations', '-database', '${MATRIX_MIGRATE_URL:?set MATRIX_MIGRATE_URL}', 'up']
     depends_on:
       postgres: { condition: service_healthy }
     restart: 'no'
