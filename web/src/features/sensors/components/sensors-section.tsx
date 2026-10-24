@@ -15,7 +15,11 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { ConfirmDialog } from '@/components/confirm-dialog'
+import {
+  ConfirmDialog,
+  ConfirmSample,
+  irreversibleTypeToConfirm,
+} from '@/components/confirm-dialog'
 import { useTranslation } from '@/context/i18n-provider'
 import { RefreshButton, TableSkeleton } from '@/components/list-page-parts'
 import { useUrlFilter, useUrlFilterList } from '@/hooks/use-url-param'
@@ -298,6 +302,11 @@ export function SensorsSection({
   // API data: the whole fleet (every page), refreshed every 15s.
   const { data: sensorsData, error, isLoading, mutate } = useAllSensors()
   const sensors: Sensor[] = useMemo(() => sensorsData?.items ?? [], [sensorsData?.items])
+  // The names behind the selected ids on screen, for the bulk delete sample.
+  const selectedNames = useMemo(() => {
+    const picked = new Set(selectedIds)
+    return sensors.filter((s) => picked.has(s.id)).map((s) => s.name)
+  }, [sensors, selectedIds])
   const [updatedAt, setUpdatedAt] = useState<number | null>(null)
   useEffect(() => {
     if (sensorsData) setUpdatedAt(Date.now())
@@ -852,12 +861,7 @@ export function SensorsSection({
           onClear={clearSelection}
           noun={t('sensors.list.selected')}
         >
-          <Button
-            variant="ghost"
-            size="sm"
-            className="text-destructive hover:text-destructive"
-            onClick={() => setBulkDeleteDialogOpen(true)}
-          >
+          <Button variant="destructive" size="sm" onClick={() => setBulkDeleteDialogOpen(true)}>
             <Trash2 className="h-4 w-4" />
             {t('confirm.delete', 'Delete')}
           </Button>
@@ -950,13 +954,19 @@ export function SensorsSection({
           'Their API keys stop working at once and they can no longer claim jobs or send results. Findings they reported stay. This cannot be undone.'
         )}
         confirmText={
-          isBulkDeleting ? t('confirm.deleting', 'Deleting…') : t('confirm.delete', 'Delete')
+          isBulkDeleting
+            ? t('confirm.deleting', 'Deleting…')
+            : selectedIds.length === 1
+              ? t('confirm.sensor.bulkDeleteBtnOne')
+              : t('confirm.sensor.bulkDeleteBtn', undefined, { count: selectedIds.length })
         }
         destructive
         isLoading={isBulkDeleting}
-        typeToConfirm={String(selectedIds.length)}
+        typeToConfirm={irreversibleTypeToConfirm(selectedNames)}
         handleConfirm={handleBulkDeleteConfirm}
-      />
+      >
+        <ConfirmSample names={selectedNames} total={selectedIds.length} />
+      </ConfirmDialog>
 
       {/* Disable: reversible, the sensor stops claiming jobs until enabled. */}
       <ConfirmDialog

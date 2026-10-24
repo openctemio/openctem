@@ -8,6 +8,7 @@ import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { ConfirmDialog } from '@/components/confirm-dialog'
+import { nameToTypeToConfirm } from '@/components/confirm-name'
 import { RefreshButton, TableSkeleton } from '@/components/list-page-parts'
 import { EmptyState, ErrorState, MetricStrip, type MetricStripItem } from '@/features/shared'
 import { useUrlFilter } from '@/hooks/use-url-param'
@@ -85,7 +86,7 @@ export function ScanZonesPanel({ createOpen, onCreateOpenChange }: ScanZonesPane
     setDeleteError(null)
     try {
       await deleteScanZone(deleteZone.id)
-      toast.success(`Zone "${deleteZone.name}" deleted`)
+      toast.success(t('scans.zones.toast.deleted', undefined, { name: deleteZone.name }))
       await invalidateScanZonesCache()
       setDeleteZone(null)
     } catch (err) {
@@ -230,9 +231,10 @@ export function ScanZonesPanel({ createOpen, onCreateOpenChange }: ScanZonesPane
           'confirm.scanZone.deleteDesc',
           'Its ranges stop routing scans: private targets in them are not scanned until another zone holds them. This cannot be undone.'
         )}
-        confirmText={t('confirm.delete', 'Delete')}
+        confirmText={t('confirm.scanZone.deleteBtn')}
         destructive
         isLoading={deleting}
+        typeToConfirm={deleteZone ? nameToTypeToConfirm(deleteZone.name, deleteZone.id) : undefined}
         handleConfirm={handleDelete}
       >
         {deleteError && (

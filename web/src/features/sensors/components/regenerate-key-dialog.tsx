@@ -1,11 +1,15 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useId, useState, useEffect } from 'react'
 import { Loader2, KeyRound, AlertTriangle } from 'lucide-react'
 import { toast } from 'sonner'
 import { getErrorMessage } from '@/lib/api/error-handler'
 
 import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
+import { typedTextMatches } from '@/components/confirm-dialog'
+import { nameToTypeToConfirm } from '@/components/confirm-name'
 import {
   Dialog,
   DialogContent,
@@ -42,12 +46,22 @@ export function RegenerateKeyDialog({
 }: RegenerateKeyDialogProps) {
   const { t } = useTranslation()
   const [apiKey, setApiKey] = useState<string | null>(null)
+  // Rotating cuts the sensor off at once: the sensor's name is retyped first.
+  const [typed, setTyped] = useState('')
+  const typedId = useId()
+  const expected = nameToTypeToConfirm(sensor.name, sensor.id)
+  const [typeBefore, typeAfter = ''] = t('confirm.typeToConfirm', 'Type {text} to confirm').split(
+    '{text}'
+  )
 
   const { trigger: regenerateKey, isMutating } = useRegenerateSensorKey()
 
   // Reset state when dialog opens
   useEffect(() => {
-    if (open) setApiKey(null)
+    if (open) {
+      setApiKey(null)
+      setTyped('')
+    }
   }, [open])
 
   const handleRegenerate = async () => {
@@ -144,13 +158,32 @@ export function RegenerateKeyDialog({
             {t('sensors.regenerate.currentKey')}{' '}
             <span className="font-mono">{sensor.api_key_prefix}…</span>
           </p>
+
+          <div className="space-y-2">
+            <Label htmlFor={typedId} className="block font-normal">
+              {typeBefore}
+              <span className="font-semibold break-all">{expected}</span>
+              {typeAfter}
+            </Label>
+            <Input
+              id={typedId}
+              value={typed}
+              onChange={(e) => setTyped(e.target.value)}
+              autoComplete="off"
+              spellCheck={false}
+            />
+          </div>
         </DialogBody>
 
         <DialogFooter>
           <Button type="button" variant="outline" onClick={handleClose} disabled={isMutating}>
             {t('common.cancel')}
           </Button>
-          <Button variant="destructive" onClick={handleRegenerate} disabled={isMutating}>
+          <Button
+            variant="destructive"
+            onClick={handleRegenerate}
+            disabled={isMutating || !typedTextMatches(typed, expected)}
+          >
             {isMutating && <Loader2 className="me-2 h-4 w-4 animate-spin" />}
             {t('sensors.regenerate.rotate')}
           </Button>

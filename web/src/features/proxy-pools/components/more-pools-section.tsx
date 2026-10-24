@@ -4,6 +4,7 @@ import { useState } from 'react'
 import { Plus, Trash2, Waypoints } from 'lucide-react'
 import { toast } from 'sonner'
 
+import { nameToTypeToConfirm } from '@/components/confirm-name'
 import { ConfirmDialog } from '@/components/confirm-dialog'
 import { Badge } from '@/components/ui/badge'
 import { Card, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
@@ -115,6 +116,7 @@ export function MorePoolsSection({ pools, canWrite, canDelete }: MorePoolsSectio
                     reason={canDelete ? inUse : noDelete}
                     variant="ghost"
                     size="sm"
+                    className="ms-3 text-destructive hover:text-destructive"
                     aria-label={t('proxyPools.deleteNamed', 'Delete {name}', { name: p.name })}
                     onClick={() => setDeleting(p)}
                   >
@@ -141,16 +143,11 @@ export function MorePoolsSection({ pools, canWrite, canDelete }: MorePoolsSectio
       <ConfirmDialog
         open={!!deleting}
         onOpenChange={(o) => !o && setDeleting(null)}
-        title={t('proxyPools.deleteTitle', 'Delete pool')}
-        desc={t(
-          'proxyPools.deleteDesc',
-          'Delete "{name}" and its proxies? Their stored credentials are erased.',
-          {
-            name: deleting?.name ?? '',
-          }
-        )}
-        confirmText={t('proxyPools.delete', 'Delete')}
+        title={t('confirm.proxyPool.deleteTitle', undefined, { name: deleting?.name ?? '' })}
+        desc={t('confirm.proxyPool.deleteDesc')}
+        confirmText={t('confirm.proxyPool.deleteBtn')}
         destructive
+        typeToConfirm={deleting ? nameToTypeToConfirm(deleting.name, deleting.id) : undefined}
         handleConfirm={() => {
           const target = deleting
           setDeleting(null)
