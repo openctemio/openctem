@@ -6,7 +6,7 @@ import (
 	"net/http"
 	"slices"
 	"strings"
-	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/openctemio/openctem/api/internal/config"
@@ -112,25 +112,22 @@ const revocationReadWindow = 2 * time.Minute
 
 // revocationOutage tracks one continuous failure of the revoked-session
 // lookup. The first failure starts the window; a successful lookup ends it.
+// The start is one atomic (unix nanoseconds, 0 = no outage), so the hot
+// success path takes no lock.
 type revocationOutage struct {
-	mu    sync.Mutex
-	since time.Time
+	since atomic.Int64
 }
 
 // allowRead reports whether a read may proceed at now during the outage.
 func (o *revocationOutage) allowRead(now time.Time) bool {
-	o.mu.Lock()
-	defer o.mu.Unlock()
-	if o.since.IsZero() {
-		o.since = now
-	}
-	return now.Sub(o.since) <= revocationReadWindow
+	o.since.CompareAndSwap(0, now.UnixNano())
+	return now.Sub(time.Unix(0, o.since.Load())) <= revocationReadWindow
 }
 
 func (o *revocationOutage) clear() {
-	o.mu.Lock()
-	o.since = time.Time{}
-	o.mu.Unlock()
+	if o.since.Load() != 0 {
+		o.since.Store(0)
+	}
 }
 
 // UnifiedAuth creates an authentication middleware that supports both local and OIDC authentication.

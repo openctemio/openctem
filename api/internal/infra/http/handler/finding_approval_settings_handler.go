@@ -300,7 +300,7 @@ type UpdateFindingApprovalSettingsRequest struct {
 // at high severity with the values before and after, and the organization's
 // approvers (every owner and administrator among them) are told.
 // @Summary      Change the finding approval settings
-// @Description  Partial update of the organization's finding approval settings, including the false-positive and risk acceptance approval levels (all, high_and_above, off). Lowering a level or relaxing the policy needs an owner (403 for an administrator) and takes effect 24 hours later; raising is immediate and open to administrators. Requires an owner or administrator with settings:write and a recent re-authentication; audited, owners, administrators and approvers told.
+// @Description  Partial update of the organization's finding approval settings, including the false-positive and risk acceptance approval levels (all, high_and_above, off). Lowering a level or the second-look share, relaxing the policy, or changing the backup contact needs an owner (403 for an administrator) and takes effect 24 hours later; raising is immediate and open to administrators. Requires an owner or administrator with settings:write and a recent re-authentication; audited, owners, administrators and approvers told.
 // @Tags         Findings
 // @Accept       json
 // @Produce      json
@@ -350,6 +350,11 @@ func (h *VulnerabilityHandler) UpdateFindingApprovalSettings(w http.ResponseWrit
 			}
 		}
 		if req.BackupContactEmail != nil {
+			// The backup contact receives the solo-decision escalations, so
+			// pointing it elsewhere is the owner's alone.
+			if !owner && *req.BackupContactEmail != s.BackupContactEmail {
+				return errApprovalLoweringOwnerOnly
+			}
 			s.BackupContactEmail = *req.BackupContactEmail
 		}
 		if req.FPApproval != nil {
@@ -369,6 +374,9 @@ func (h *VulnerabilityHandler) UpdateFindingApprovalSettings(w http.ResponseWrit
 			}
 		}
 		if req.SecondLookPercent != nil {
+			if !owner && *req.SecondLookPercent < s.EffectiveSecondLookPercent(now) {
+				return errApprovalLoweringOwnerOnly
+			}
 			if err := s.SetSecondLookPercent(*req.SecondLookPercent, time.Now()); err != nil {
 				return err
 			}
@@ -376,7 +384,7 @@ func (h *VulnerabilityHandler) UpdateFindingApprovalSettings(w http.ResponseWrit
 		return nil
 	}, configAuditContext(r))
 	if errors.Is(err, errApprovalLoweringOwnerOnly) {
-		apierror.Forbidden("Lowering an approval level or relaxing the approval policy requires an organization owner").WriteJSON(w)
+		apierror.Forbidden("Lowering an approval level or the second-look share, relaxing the approval policy, and changing the backup contact require an organization owner").WriteJSON(w)
 		return
 	}
 	if err != nil {
