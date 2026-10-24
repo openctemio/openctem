@@ -41,7 +41,7 @@ import {
 import type { MetricStripItem } from '@/features/shared'
 import { useUrlFilter, useUrlFilterList } from '@/hooks/use-url-param'
 import { useListParams } from '@/hooks/use-list-params'
-import { useDebounce } from '@/hooks/use-debounce'
+import { useSearchQuery } from '@/hooks/use-search-query'
 import { cn } from '@/lib/utils'
 import {
   Search,
@@ -171,7 +171,7 @@ export default function ExposuresPage() {
     ? (stateParam as StateTab)
     : 'needs_attention'
   const [searchQuery, setSearchQuery] = useUrlFilter('q', '')
-  const debouncedSearch = useDebounce(searchQuery, 300)
+  const debouncedSearch = useSearchQuery(searchQuery).term
   const [severityParam, setSeverityParam] = useUrlFilterList('severity')
   const selectedSeverities = useMemo(
     () =>

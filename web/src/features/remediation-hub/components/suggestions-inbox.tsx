@@ -50,6 +50,7 @@ import { SuggestionCard } from './suggestion-card'
 import { SuggestionPanel } from './suggestion-panel'
 import { ConfirmDialog, ConfirmSample } from '@/components/confirm-dialog'
 import { AcceptDialog, DismissDialog, SnoozeDialog } from './suggestion-dialogs'
+import { useSearchQuery } from '@/hooks/use-search-query'
 
 const PER_PAGE = 25
 
@@ -80,11 +81,12 @@ export function SuggestionsInbox() {
   const [kind, setKind] = useState<SuggestionKind | 'all'>('all')
   const [keyKind, setKeyKind] = useState<string>('all')
   const [search, setSearch] = useState('')
+  const searchTerm = useSearchQuery(search).term
   const [page, setPage] = useState(1)
   const { data, error, isLoading, mutate } = useSuggestions({
     kinds: kind === 'all' ? undefined : [kind],
     keyKind: keyKind === 'all' ? undefined : keyKind,
-    search,
+    search: searchTerm,
     page,
     perPage: PER_PAGE,
   })
