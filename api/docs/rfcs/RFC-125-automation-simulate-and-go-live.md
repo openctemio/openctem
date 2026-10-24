@@ -100,7 +100,7 @@ Both are rate limited per user.
 | Versions and mode (`automation_versions`) | stacked | In review |
 | Simulate engine, trace, deliveries, retention (`automation_run_trace`) | stacked | In review |
 | Preview and validate | stacked | In review |
-| Go-live gate and permissions | stacked | Designed |
+| Go-live gate and permissions (`automations_permissions`) | stacked | In review |
 | Request actions, status allow-list, change cap | stacked | Designed |
 | Canvas: simulate/live, preview, validate, trace | stacked | Designed |
 

@@ -31,7 +31,7 @@ var RolePermissions = map[tenant.Role][]Permission{
 		VulnerabilitiesRead,
 		CredentialsRead, CredentialsWrite, CredentialsReveal, EvidenceReveal,
 		RemediationRead, RemediationWrite,
-		WorkflowsRead, WorkflowsWrite,
+		AutomationsRead, AutomationsWrite, AutomationsPublish,
 		// Scans
 		ScansRead, ScansWrite, ScansDelete, ScansExecute, ScansApprove,
 		ScanProfilesRead, ScanProfilesWrite, ScanProfilesDelete,
@@ -113,7 +113,7 @@ var RolePermissions = map[tenant.Role][]Permission{
 		VulnerabilitiesRead,
 		CredentialsRead, CredentialsWrite, CredentialsReveal, EvidenceReveal,
 		RemediationRead, RemediationWrite,
-		WorkflowsRead, WorkflowsWrite,
+		AutomationsRead, AutomationsWrite, AutomationsPublish,
 		// Scans
 		ScansRead, ScansWrite, ScansDelete, ScansExecute, ScansApprove,
 		ScanProfilesRead, ScanProfilesWrite, ScanProfilesDelete,
@@ -199,7 +199,7 @@ var RolePermissions = map[tenant.Role][]Permission{
 		VulnerabilitiesRead,
 		CredentialsRead,
 		RemediationRead, RemediationWrite,
-		WorkflowsRead,
+		AutomationsRead,
 		// Scans (read + write, no delete)
 		ScansRead, ScansWrite, ScansExecute,
 		ScanProfilesRead, ScanProfilesWrite,
@@ -277,7 +277,7 @@ var RolePermissions = map[tenant.Role][]Permission{
 		VulnerabilitiesRead,
 		CredentialsRead,
 		RemediationRead,
-		WorkflowsRead,
+		AutomationsRead,
 		// Scans (read only)
 		ScansRead,
 		ScanProfilesRead,
