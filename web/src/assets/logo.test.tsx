@@ -18,7 +18,29 @@ describe('LogoFull', () => {
       expect(path.getAttribute('d')?.length ?? 0).toBeGreaterThan(200)
       expect(path.getAttribute('fill')).toBe('currentColor')
     }
-    expect(svg.getAttribute('viewBox')).toBe('0 0 304 92')
+    expect(svg.getAttribute('viewBox')).toBe('0 0 278 61')
+  })
+
+  it('sets the C as a capital: on the baseline, up to cap height, with overshoot', () => {
+    // Inter Bold at 56 units in this box: cap height y=4.7, baseline y=45.4.
+    // A round capital overshoots both lines by about 1.5 percent; it must
+    // never hang below the baseline the way the old scaled mark did.
+    const { container } = render(<LogoFull />)
+    const c = screen.getByTestId('wordmark-c')
+    // d = "M x y1 A r r 0 1 0 x y2"
+    const n = (c.getAttribute('d') ?? '').match(/-?\d+(\.\d+)?/g)!.map(Number)
+    const [y1, r, y2] = [n[1], n[2], n[8]]
+    const sw = Number(c.getAttribute('stroke-width'))
+    const cy = (y1 + y2) / 2
+    const outerTop = cy - r - sw / 2
+    const outerBottom = cy + r + sw / 2
+    expect(outerBottom).toBeGreaterThan(45.4)
+    expect(outerBottom).toBeLessThan(46.5)
+    expect(outerTop).toBeGreaterThan(3.5)
+    expect(outerTop).toBeLessThan(4.7)
+    // The marker sits in the C's opening at the C's vertical centre.
+    expect(Number(container.querySelector('circle')?.getAttribute('cy'))).toBeCloseTo(cy, 1)
+    expect(container.querySelector('[transform]')).toBeNull()
   })
 
   it('keeps the accent marker colour configurable', () => {

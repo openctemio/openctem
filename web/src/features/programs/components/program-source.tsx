@@ -22,6 +22,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
+import { ConfirmDialog } from '@/components/confirm-dialog'
 import { useTranslation } from '@/context/i18n-provider'
 import { ApiClientError } from '@/lib/api/error-handler'
 import type { Program, ProgramScopeSource } from '../api/programs-api.types'
@@ -60,6 +61,7 @@ export function ProgramSource({ program: p, canWrite, onChanged }: ProgramSource
   const [username, setUsername] = useState(p.sync?.username ?? '')
   const [token, setToken] = useState('')
   const [busy, setBusy] = useState(false)
+  const [confirmSync, setConfirmSync] = useState(false)
 
   const save = async () => {
     setBusy(true)
@@ -119,7 +121,12 @@ export function ProgramSource({ program: p, canWrite, onChanged }: ProgramSource
         {canWrite && p.status !== 'ended' && (
           <div className="flex flex-wrap gap-2">
             {synced && (
-              <Button variant="outline" size="sm" onClick={sync} disabled={busy}>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setConfirmSync(true)}
+                disabled={busy}
+              >
                 {busy ? (
                   <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                 ) : (
@@ -277,6 +284,23 @@ export function ProgramSource({ program: p, canWrite, onChanged }: ProgramSource
           </div>
         </div>
       )}
+      <ConfirmDialog
+        open={confirmSync}
+        onOpenChange={setConfirmSync}
+        title={t('confirm.programSource.syncTitle', 'Sync the scope of {name} now?', {
+          name: p.name,
+        })}
+        desc={t(
+          'confirm.programSource.syncDesc',
+          'The scope is read again from the source. Entries the source no longer lists are removed, and the program is paused if its terms changed. Findings and history stay.'
+        )}
+        confirmText={t('confirm.programSource.syncButton', 'Sync scope')}
+        isLoading={busy}
+        handleConfirm={async () => {
+          setConfirmSync(false)
+          await sync()
+        }}
+      />
     </section>
   )
 }

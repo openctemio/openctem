@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen, fireEvent, waitFor } from '@testing-library/react'
+import { render, screen, fireEvent, waitFor, within } from '@testing-library/react'
 import { FindingApprovalBand } from '../finding-approval-band'
 
 let approvals: unknown[] | undefined
@@ -75,6 +75,12 @@ describe('FindingApprovalBand', () => {
     expect(screen.getByText(/Requested by You/)).toBeInTheDocument()
     expect(screen.queryByTestId('finding-approval-decide-link')).toBeNull()
     fireEvent.click(screen.getByTestId('finding-approval-cancel'))
+    expect(cancel).not.toHaveBeenCalled()
+    fireEvent.click(
+      within(await screen.findByRole('alertdialog')).getByRole('button', {
+        name: 'Cancel request',
+      })
+    )
     await waitFor(() => expect(cancel).toHaveBeenCalledTimes(1))
     await waitFor(() => expect(mutate).toHaveBeenCalled())
   })

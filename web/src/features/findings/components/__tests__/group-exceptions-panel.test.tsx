@@ -6,7 +6,7 @@
  */
 
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen, waitFor } from '@testing-library/react'
+import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { toast } from 'sonner'
 import { ApiClientError } from '@/lib/api/error-handler'
@@ -105,6 +105,11 @@ describe('GroupExceptionSheet', () => {
     api.approve.mockResolvedValue({ ...pendingBatch, approvals_collected: 1 })
     const { onDecided } = renderSheet()
     await user.click(screen.getByRole('button', { name: 'Add my approval' }))
+    await user.click(
+      within(await screen.findByRole('alertdialog')).getByRole('button', {
+        name: 'Add my approval',
+      })
+    )
     await waitFor(() =>
       expect(toast.success).toHaveBeenCalledWith('Your approval is recorded', {
         description: '1 more approval(s) needed before the findings change.',
@@ -126,6 +131,11 @@ describe('GroupExceptionSheet', () => {
     })
     renderSheet()
     await user.click(screen.getByRole('button', { name: 'Approve 2 finding(s)' }))
+    await user.click(
+      within(await screen.findByRole('alertdialog')).getByRole('button', {
+        name: 'Approve 2 finding(s)',
+      })
+    )
     await waitFor(() =>
       expect(toast.success).toHaveBeenCalledWith('Group exception approved', {
         description:
@@ -141,6 +151,11 @@ describe('GroupExceptionSheet', () => {
     )
     renderSheet()
     await user.click(screen.getByRole('button', { name: 'Add my approval' }))
+    await user.click(
+      within(await screen.findByRole('alertdialog')).getByRole('button', {
+        name: 'Add my approval',
+      })
+    )
     await waitFor(() =>
       expect(toast.error).toHaveBeenCalledWith(
         "You own this finding's asset, so you cannot approve hiding its risk."
@@ -153,6 +168,11 @@ describe('GroupExceptionSheet', () => {
     api.approve.mockRejectedValue(new ApiClientError('gone', 'BATCH_NOT_PENDING', 409))
     renderSheet()
     await user.click(screen.getByRole('button', { name: 'Add my approval' }))
+    await user.click(
+      within(await screen.findByRole('alertdialog')).getByRole('button', {
+        name: 'Add my approval',
+      })
+    )
     await waitFor(() =>
       expect(toast.error).toHaveBeenCalledWith(
         'This group exception was already decided, canceled or expired.'
@@ -165,6 +185,11 @@ describe('GroupExceptionSheet', () => {
     api.approve.mockRejectedValue(new ApiClientError('step up', 'STEP_UP_REQUIRED', 403))
     renderSheet()
     await user.click(screen.getByRole('button', { name: 'Add my approval' }))
+    await user.click(
+      within(await screen.findByRole('alertdialog')).getByRole('button', {
+        name: 'Add my approval',
+      })
+    )
     await waitFor(() =>
       expect(toast.error).toHaveBeenCalledWith('Confirm your identity to approve this request.')
     )
