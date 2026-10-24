@@ -128,7 +128,10 @@
   "findingLifecycle.subStatus.actionFailed": "Thay đổi không thành công",
   "findingLifecycle.subStatus.actions": "Thao tác cho {name}",
   "findingLifecycle.subStatus.addTitle": "Thêm trạng thái con vào {status}",
+  "findingLifecycle.subStatus.archiveButton": "Lưu trữ trạng thái phụ",
+  "findingLifecycle.subStatus.archiveDesc": "Không thể chọn nó cho phát hiện nữa. Bạn có thể kích hoạt lại sau từ làn của nó.",
   "findingLifecycle.subStatus.archiveShort": "Lưu trữ",
+  "findingLifecycle.subStatus.archiveTitle": "Lưu trữ trạng thái phụ \"{name}\"?",
   "findingLifecycle.subStatus.archived": "Đã lưu trữ",
   "findingLifecycle.subStatus.archivedToast": "Đã lưu trữ trạng thái con",
   "findingLifecycle.subStatus.closureReason": "Lý do đóng",
@@ -188,8 +191,5 @@
   "findingLifecycle.versions.state.published": "Đang áp dụng",
   "findingLifecycle.versions.state.superseded": "Đã thay thế",
   "findingLifecycle.versions.title": "Lịch sử phiên bản",
-  "findingLifecycle.versions.version": "Phiên bản {version}",
-  "findingLifecycle.subStatus.archiveTitle": "Lưu trữ trạng thái phụ \"{name}\"?",
-  "findingLifecycle.subStatus.archiveDesc": "Không thể chọn nó cho phát hiện nữa. Bạn có thể kích hoạt lại sau từ làn của nó.",
-  "findingLifecycle.subStatus.archiveButton": "Lưu trữ trạng thái phụ"
+  "findingLifecycle.versions.version": "Phiên bản {version}"
 }

@@ -192,6 +192,9 @@
   "findingApprovals.group.memberCount": "{count} phát hiện",
   "findingApprovals.group.approveSign": "Thêm phê duyệt của tôi",
   "findingApprovals.group.approveAll": "Phê duyệt {count} phát hiện",
+  "findingApprovals.group.approveConfirmDesc": "Đây là lượt duyệt cuối cần thiết: mọi phát hiện trong nhóm chuyển sang trạng thái được yêu cầu ngay bây giờ.",
+  "findingApprovals.group.approveConfirmDescMore": "Việc duyệt của bạn được ghi lại. Các phát hiện đổi trạng thái sau {count} lượt duyệt nữa.",
+  "findingApprovals.group.approveConfirmTitle": "Duyệt ngoại lệ cho {count} phát hiện?",
   "findingApprovals.group.rejectTitle": "Từ chối ngoại lệ nhóm",
   "findingApprovals.group.rejectDesc": "Mọi phát hiện giữ nguyên trạng thái. Hãy nêu lý do; người yêu cầu sẽ thấy lý do này.",
   "findingApprovals.group.cancelTitle": "Hủy ngoại lệ nhóm này?",
@@ -225,8 +228,5 @@
   "findingApprovals.single.othersNoticeAccept": "Một người có quyền phê duyệt có thể tự chấp nhận rủi ro này; yêu cầu của bạn chờ một người như vậy.",
   "findingApprovals.single.submitAccept": "Chấp nhận rủi ro",
   "findingApprovals.single.appliedAccept": "Đã chấp nhận rủi ro đến {date}. Quyết định được ghi lại cùng tên và lý do của bạn.",
-  "findingApprovals.policy.tableTitle": "Cấp phê duyệt và người phê duyệt",
-  "findingApprovals.group.approveConfirmTitle": "Duyệt ngoại lệ cho {count} phát hiện?",
-  "findingApprovals.group.approveConfirmDescMore": "Việc duyệt của bạn được ghi lại. Các phát hiện đổi trạng thái sau {count} lượt duyệt nữa.",
-  "findingApprovals.group.approveConfirmDesc": "Đây là lượt duyệt cuối cần thiết: mọi phát hiện trong nhóm chuyển sang trạng thái được yêu cầu ngay bây giờ."
+  "findingApprovals.policy.tableTitle": "Cấp phê duyệt và người phê duyệt"
 }
