@@ -831,6 +831,8 @@ func registerWorkflowRoutes(
 		r.POST("/{id}/publish", h.Publish, middleware.Require(permission.WorkflowsWrite))
 		r.POST("/{id}/versions/{version_id}/rollback", h.Rollback, middleware.Require(permission.WorkflowsWrite))
 		r.PUT("/{id}/mode", h.SetMode, middleware.Require(permission.WorkflowsWrite))
+		// Per-step trace summed over runs the caller may see.
+		r.GET("/{id}/trace", h.GetTrace, middleware.Require(permission.WorkflowsRead))
 	}, tenantMiddlewares...)
 
 	// Workflow Run routes - direct access

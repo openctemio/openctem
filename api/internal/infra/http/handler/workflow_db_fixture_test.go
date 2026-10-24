@@ -42,6 +42,7 @@ type wfDB struct {
 	svc                       *automationsvc.WorkflowService
 	executor                  *automationsvc.WorkflowExecutor
 	versions                  *postgres.AutomationVersionRepository
+	deliveries                *postgres.AutomationDeliveryRepository
 	h                         *WorkflowHandler
 }
 
@@ -129,8 +130,11 @@ func newWFDB(t *testing.T, extraExecutorOpts ...automationsvc.WorkflowExecutorOp
 	wfRepo, nodeRepo := postgres.NewAutomationRepository(db), postgres.NewAutomationNodeRepository(db)
 	runRepo, nodeRunRepo := postgres.NewAutomationRunRepository(db), postgres.NewAutomationRunStepRepository(db)
 	f.versions = postgres.NewAutomationVersionRepository(db)
+	f.deliveries = postgres.NewAutomationDeliveryRepository(db)
 	opts := append([]automationsvc.WorkflowExecutorOption{
 		automationsvc.WithExecutorStepAuthorizer(authorizer), automationsvc.WithExecutorVersions(f.versions),
+		automationsvc.WithExecutorDeliveries(f.deliveries),
+		automationsvc.WithExecutorEvaluator(automationsvc.NewSimulateEvaluator(postgres.NewFindingRepository(db))),
 	}, extraExecutorOpts...)
 	f.executor = automationsvc.NewWorkflowExecutor(wfRepo, runRepo, nodeRunRepo, logger.NewNop(), opts...)
 	f.executor.RegisterActionHandler(automationdom.ActionTypeAddTags, automationsvc.NewFindingActionHandler(vuln, logger.NewNop()))
@@ -139,7 +143,8 @@ func newWFDB(t *testing.T, extraExecutorOpts ...automationsvc.WorkflowExecutorOp
 		logger.NewNop(),
 		automationsvc.WithWorkflowStepAuthorizer(authorizer),
 		automationsvc.WithWorkflowSubjectReaders(postgres.NewFindingRepository(db), postgres.NewAssetRepository(db)),
-		automationsvc.WithWorkflowVersions(f.versions))
+		automationsvc.WithWorkflowVersions(f.versions),
+		automationsvc.WithWorkflowRunReaders(enforcer, f.deliveries))
 	f.h = NewWorkflowHandler(f.svc, validator.New(), logger.NewNop())
 	return f
 }
