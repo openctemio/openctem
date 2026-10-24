@@ -421,24 +421,8 @@ func (s *Service) Update(ctx context.Context, a Actor, id shared.ID, in UpdateIn
 		}
 	}
 	oldPolicy := src.Policy
-	if in.Policy != nil {
-		if err := src.SetPolicy(dom.PromotionPolicy(*in.Policy)); err != nil {
-			return nil, err
-		}
-		if src.Policy == dom.PolicyReview && oldPolicy != dom.PolicyReview {
-			if err := s.requireFeature(ctx, a.TenantID, limits.FeatureContentReviewPolicy); err != nil {
-				return nil, err
-			}
-		}
-		// SECURITY: review exists so a second member approves what the
-		// source delivers. Turning it off lets the next sync promote on its
-		// own, so it takes the approval permission, not only write.
-		if oldPolicy == dom.PolicyReview && src.Policy != dom.PolicyReview && !a.CanApprove {
-			s.logAudit(ctx, a.Audit, src.TenantID, auditapp.NewDeniedEvent(auditdom.ActionContentSourcePolicyChanged,
-				auditdom.ResourceTypeContentSource, src.ID.String(), "weakening the promotion policy needs the approval permission").
-				WithResourceName(src.Slug).WithMetadata("from", string(oldPolicy)).WithMetadata("to", string(src.Policy)))
-			return nil, dom.ErrApprovalRequired
-		}
+	if err := s.applyPolicy(ctx, a, src, in.Policy); err != nil {
+		return nil, err
 	}
 	if in.SyncIntervalMin != nil && *in.SyncIntervalMin != src.SyncIntervalMin {
 		floor, err := s.syncFloor(ctx, a.TenantID)
@@ -480,6 +464,33 @@ func (s *Service) Update(ctx context.Context, a Actor, id shared.ID, in UpdateIn
 		s.logAudit(ctx, a.Audit, src.TenantID, ev)
 	}
 	return src, nil
+}
+
+// applyPolicy applies a promotion policy change: review needs its feature,
+// and turning review off needs the approval permission.
+func (s *Service) applyPolicy(ctx context.Context, a Actor, src *dom.Source, policy *string) error {
+	if policy == nil {
+		return nil
+	}
+	oldPolicy := src.Policy
+	if err := src.SetPolicy(dom.PromotionPolicy(*policy)); err != nil {
+		return err
+	}
+	if src.Policy == dom.PolicyReview && oldPolicy != dom.PolicyReview {
+		if err := s.requireFeature(ctx, a.TenantID, limits.FeatureContentReviewPolicy); err != nil {
+			return err
+		}
+	}
+	// SECURITY: review exists so a second member approves what the source
+	// delivers. Turning it off lets the next sync promote on its own, so it
+	// takes the approval permission, not only write.
+	if oldPolicy == dom.PolicyReview && src.Policy != dom.PolicyReview && !a.CanApprove {
+		s.logAudit(ctx, a.Audit, src.TenantID, auditapp.NewDeniedEvent(auditdom.ActionContentSourcePolicyChanged,
+			auditdom.ResourceTypeContentSource, src.ID.String(), "weakening the promotion policy needs the approval permission").
+			WithResourceName(src.Slug).WithMetadata("from", string(oldPolicy)).WithMetadata("to", string(src.Policy)))
+		return dom.ErrApprovalRequired
+	}
+	return nil
 }
 
 // applyFetchChanges applies the changes to what the source fetches (URL,

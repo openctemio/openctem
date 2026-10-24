@@ -230,6 +230,7 @@ UPDATE scanner_templates
    SET source_id = NULL, sync_source = 'manual', source_path = NULL, source_commit = NULL
  WHERE source_id IS NOT NULL OR sync_source <> 'manual';
 
+-- expand-contract-ok: contract step in the same release; the code that read template_sources is removed in this change and the upgrade stops the API (see the upgrade note)
 DROP TABLE template_sources;
 
 -- The template_sources module is now Rule Sources (configs/modules/template_sources.yaml).
