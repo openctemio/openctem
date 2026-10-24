@@ -2288,6 +2288,12 @@ func (s *SSOService) UpdateProvider(ctx context.Context, input UpdateProviderInp
 	return ip, nil
 }
 
+// sameIssuer compares two issuer URLs ignoring case and a trailing slash.
+func sameIssuer(a, b string) bool {
+	norm := func(s string) string { return strings.TrimRight(strings.ToLower(strings.TrimSpace(s)), "/") }
+	return norm(a) == norm(b)
+}
+
 // BuildProviderUpdate validates input and returns the tenant's identity
 // provider with the update applied, without storing it.
 func (s *SSOService) BuildProviderUpdate(ctx context.Context, input UpdateProviderInput) (*identityproviderdom.IdentityProvider, error) {
@@ -2328,6 +2334,19 @@ func (s *SSOService) BuildProviderUpdate(ctx context.Context, input UpdateProvid
 	if input.Scopes != nil {
 		if err := validateScopes(input.Scopes); err != nil {
 			return nil, err
+		}
+	}
+
+	// The client secret is sent to the issuer's token endpoint at every
+	// sign-in: pointing the provider at another issuer (or another Entra
+	// directory) needs the secret to be entered again, never inherited.
+	if ip.ClientSecretEncrypted() != "" && (input.ClientSecret == nil || *input.ClientSecret == "") {
+		moved := input.IssuerURL != nil && !sameIssuer(*input.IssuerURL, ip.IssuerURL())
+		if input.TenantIdentifier != nil && !strings.EqualFold(strings.TrimSpace(*input.TenantIdentifier), strings.TrimSpace(ip.TenantIdentifier())) {
+			moved = true
+		}
+		if moved {
+			return nil, fmt.Errorf("%w: changing the issuer requires entering the client secret again", shared.ErrValidation)
 		}
 	}
 

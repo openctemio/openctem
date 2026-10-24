@@ -266,6 +266,9 @@ type RunScopeReader interface {
 	// SubjectVisible reports whether subjectID (a finding or asset of the
 	// tenant) is inside scope.
 	SubjectVisible(ctx context.Context, tenantID, subjectID shared.ID, scope *shared.DataScope) (bool, error)
+	// VisibleAssets returns the ids among assetIDs that are assets of the
+	// tenant inside scope (one query for the whole list).
+	VisibleAssets(ctx context.Context, tenantID shared.ID, assetIDs []shared.ID, scope *shared.DataScope) (map[shared.ID]bool, error)
 	// AggregateTrace sums the steps of the automation's runs of mode since
 	// the time, over runs whose subject is in scope (at most the latest
 	// 5,000 runs).

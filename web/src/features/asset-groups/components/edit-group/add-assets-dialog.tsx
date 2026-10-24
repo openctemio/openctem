@@ -52,7 +52,7 @@ import {
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import type { Asset, AssetType } from '@/features/assets/types'
-import { ASSET_TYPE_LABELS, ASSET_TYPE_COLORS } from '@/features/assets/types'
+import { ASSET_TYPE_LABELS, ASSET_TYPE_TILE } from '@/features/assets/types'
 import { useActiveAssetTypes } from '@/features/asset-types/api/use-asset-type-api'
 import { useAssets } from '@/features/assets/hooks/use-assets'
 
@@ -350,10 +350,7 @@ export function AddAssetsDialog({
 
   // Render asset row (supports both Asset and GroupAssetMinimal)
   const renderAssetRow = (asset: Asset | GroupAssetMinimal, mode: 'available' | 'in-group') => {
-    const colors = ASSET_TYPE_COLORS[asset.type as AssetType] || {
-      bg: 'bg-gray-500/15',
-      text: 'text-gray-600',
-    }
+    const colors = ASSET_TYPE_TILE
     const isSelected = selectedAssetIds.includes(asset.id)
     const isBeingRemoved = removingAssetId === asset.id
 
@@ -653,10 +650,7 @@ export function AddAssetsDialog({
                 ) : (
                   <div className="space-y-1.5">
                     {newAssets.map((asset) => {
-                      const colors = ASSET_TYPE_COLORS[asset.type as AssetType] || {
-                        bg: 'bg-gray-500/15',
-                        text: 'text-gray-600',
-                      }
+                      const colors = ASSET_TYPE_TILE
 
                       return (
                         <div
@@ -709,10 +703,7 @@ export function AddAssetsDialog({
                       {} as Record<string, number>
                     )
                   ).map(([type, count]) => {
-                    const colors = ASSET_TYPE_COLORS[type as AssetType] || {
-                      bg: 'bg-gray-500/15',
-                      text: 'text-gray-600',
-                    }
+                    const colors = ASSET_TYPE_TILE
                     return (
                       <Badge key={type} variant="outline" className={cn('text-xs', colors.text)}>
                         {getAssetTypeName(type)}: {count}
