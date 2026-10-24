@@ -60,8 +60,17 @@ platform row (`tenant_id` NULL) never matches; only the visible reads add
 ## Sync
 
 The `content-source-sync` controller runs every minute on every API replica.
-It claims up to five due sources with `FOR UPDATE SKIP LOCKED` and a
-10-minute lease, so a source is synced by one replica at a time:
+It takes a fetch slot (see Resource limits), then claims **one** due source
+at a time with `FOR UPDATE SKIP LOCKED` and a 15-minute lease (three times
+the 5-minute sync bound), and syncs up to five sources per run, so a source is
+synced by one replica at a time and a later source of a batch is never leased
+before its turn. The outcome is saved only while the source's lease is still
+the claim's: a sync whose claim expired writes nothing. A Sync now, webhook or
+change made after the claim stays queued (the request is cleared only when it
+predates the claim). The claim is fair across organizations: the organization
+claimed or synced longest ago goes first and, within one, a requested sync
+before a scheduled one, so one organization's requests take one claim per
+round, not the whole run:
 
 - **Schedule**: every `sync_interval_minutes` (default 60, `0` turns it off), plus a jitter of up to a tenth of the interval (at most 5 minutes). The shortest interval is the installation's floor of 5 minutes, or the organization's limit `content_sync_floor_minutes` when higher.
 - **Sync now** (`POST /{id}/sync`) and a **webhook** call queue a sync for the next run.
@@ -96,20 +105,32 @@ A candidate is **not** promoted automatically when:
 
 Promoting a candidate (`POST /{id}/snapshots/{snapshot_id}/approve`) needs
 `scans:sources:approve` and a recent sign-in. When the candidate needs review,
-the member who last changed what the source fetches (URL, ref, path, CA,
-credential or policy, recorded as `config_changed_by`) cannot promote it, nor
-can a caller without a user: **four-eyes**. Promotion makes the candidate
+no member who changed the configuration it was synced from can promote it:
+every snapshot records the members who changed what the source fetches (URL,
+ref, path, CA, credential or policy) since the previous synced snapshot
+(`config_authors`), and the member who last changed it (`config_changed_by`)
+is refused too, as is a caller without a user: **four-eyes**. So a second
+member's later, unrelated edit never frees the first to approve their own
+change. Switching the promotion policy from `review` to `auto` needs
+`scans:sources:approve`, not only `scans:sources:write`: turning review off
+lets the next sync promote on its own. Promotion makes the candidate
 current, the current one previous, and supersedes the old previous.
 **Rollback** swaps current and previous. **Reject** closes a candidate.
 
-Only promoted snapshots are in the organization's desired content set for
-sensors; candidates and rejected snapshots are never delivered.
+Delivery is positive: a snapshot's pack is in the organization's desired
+content set for sensors only while that snapshot is its source's **current**
+one. Candidates (also those a newer commit superseded without anyone
+promoting them), rejected and collected snapshots, and orphan packs left by a
+failed sync or a failed cleanup are never delivered, whatever the state of the
+cleanup. A failed snapshot insert deletes its pack at once.
 
 ### Collection (mirror storage)
 
 Hourly, superseded and rejected snapshots older than a day that are neither
 current nor previous are deleted with their pack, and the stored archive when
-no other pack uses it.
+no other pack uses it. A pack whose delete failed stays undeliverable and is
+removed the next hour as an orphan (a snapshot pack no snapshot references,
+older than an hour).
 
 ## Credentials, CA and private hosts
 
@@ -117,7 +138,7 @@ no other pack uses it.
 - **Username by token type.** Without a username: a GitLab deploy token (`gldt-`) is refused (it needs the username it was created with), other GitLab tokens use `oauth2`, GitHub tokens `x-access-token`, anything else `oauth2`.
 - **Host change clears the credential**, so a stored token is only ever sent to the host it was entered for (audited as `content_source.credential_cleared`).
 - **CA per source**: an optional PEM bundle (certificates only), added to the system roots for this source's fetches only.
-- **SSRF guard.** Only https; the guarded transport resolves the host once and refuses loopback, link-local, metadata and private ranges at dial time. Private ranges are reachable only where the installation opened them (`OPENCTEM_HTTPSEC_ALLOW_PRIVATE_CIDRS`), and an organization source on such a host needs the `content_sources.private_git` feature. Cross-host redirects never carry the credential.
+- **SSRF guard.** Only https; the guarded transport resolves the host once and refuses loopback, link-local, metadata and private ranges at dial time. Private ranges are reachable only where the installation opened them (`OPENCTEM_HTTPSEC_ALLOW_PRIVATE_CIDRS`) and the organization has the `content_sources.private_git` feature, decided **per connection at dial time** (the fetch's context carries the organization's decision; an organization without the feature reaches public addresses only, even where the installation allow-list has ranges, so a host rebinding to a private address is refused). Keep-alives are off for these fetches, so a connection opened for one organization is never reused for another. Cross-host redirects never carry the credential.
 
 ## Webhook
 
@@ -137,14 +158,36 @@ optional overrides) run the real fetch, archive, lint and rule count and store
 nothing. The stored credential is used only while the host is unchanged. At
 most 10 calls an hour per source (or per organization for an unsaved one).
 
+## Resource limits
+
+Each fetch clones into the server's temporary directory, so the server bounds
+them itself, whatever the organization's limits:
+
+- **Concurrency.** At most 3 repository fetches run at once per API process,
+  shared by Test and the sync worker. Test over the cap answers 503
+  (`FETCH_BUSY`); the worker claims nothing until a slot is free and the due
+  sources stay due.
+- **Free disk.** Before cloning, the free space of the temporary directory
+  must exceed the clone cap (200 MiB) plus 1 GiB; otherwise the fetch is
+  refused (`SERVER_DISK_LOW`, 503 for Test, a failed sync otherwise). A free
+  space that cannot be read refuses too. A full disk stops the database.
+- **Storage.** A snapshot's bytes count inside the organization's 2 GiB pack
+  quota (shared with uploads), and `content_storage_mb` caps them separately.
+
 ## Limits and features
 
 Every limit and feature goes through the entitlement service ([limits](limits.md)):
 `content_sources` (create), `content_storage_mb` and `content_snapshot_max_mb`
 (sync; Test checks the per-item cap), the floor `content_sync_floor_minutes`
 (saving a schedule), and the features `content_sources.webhook`,
-`content_sources.review_policy` and `content_sources.private_git`. No limit
-applies by default. `content_sources` counts only sources the platform fetches
+`content_sources.review_policy` and `content_sources.private_git`. The core
+sets no plan values: a key with no row is unlimited, which is every
+self-hosted install by default. A hosted service caps organizations before its
+control plane writes their rows through the instance's self-service default
+limits (`SELF_SERVICE_START_LIMITS` or the console setting, see
+[limits](limits.md)): the four keys are valid there and are copied to each new
+self-service organization. The sync interval never goes below the
+installation's floor of 5 minutes, whatever the limits say. `content_sources` counts only sources the platform fetches
 (`mirror`, `proxy`), and the storage limits count only snapshots the platform
 holds; the number of rules is never limited. A lowered limit refuses additions only: existing sources
 are never deleted and keep their last promoted snapshot.
@@ -186,7 +229,7 @@ and `rolled_back` (high).
 | Malicious upstream commit | candidate with diff; tier escalation, license change, mass removal and duplicate ids stop automatic promotion; tier escalation forces four-eyes review |
 | Cross-organization access | tenant predicate on every statement; 404 for other organizations' and hidden sources; signing key from the source row; platform rows never written by an organization route |
 | Webhook abuse | per-source secret, constant-time compare, no content accepted, rate limits, one answer for every refusal |
-| Resource exhaustion | clone size cap, file and size limits, sync and lint timeouts, one sync per source at a time, limits per organization |
+| Resource exhaustion | clone size cap, file and size limits, sync and lint timeouts, one sync per source at a time, limits per organization, at most 3 concurrent fetches per server process shared by Test and sync (Test answers 503 when full), no fetch when the clone disk would drop under 1 GiB free beyond the clone, snapshot bytes inside the 2 GiB pack quota, fair claim across organizations |
 
 ## Key files
 
