@@ -39,7 +39,7 @@ import {
 import { GroupDetailSheet } from '@/features/access-control/components/group-detail-sheet'
 import { getErrorMessage } from '@/lib/api/error-handler'
 import { Can } from '@/lib/permissions'
-import { confirmNameFor } from '@/lib/confirm-name'
+import { confirmName } from '@/lib/confirm-name'
 import { ConfirmDialog } from '@/components/confirm-dialog'
 import { useTranslation } from '@/context/i18n-provider'
 
@@ -405,7 +405,7 @@ export function TeamsSection({ header }: SectionProps) {
         }
         isLoading={isDeleting}
         typeToConfirm={
-          groupToDelete ? confirmNameFor(groupToDelete.name, groupToDelete.id) : undefined
+          groupToDelete ? confirmName(groupToDelete.name, groupToDelete.id) : undefined
         }
         handleConfirm={handleDeleteGroup}
       />

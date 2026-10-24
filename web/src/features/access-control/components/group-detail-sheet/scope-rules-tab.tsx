@@ -52,7 +52,7 @@ import { Can } from '@/lib/permissions'
 import { useGroupChannel } from '@/hooks/use-websocket'
 import type { ScopeChangeEventData } from '@/lib/websocket/types'
 import { ScopeRuleDialog } from './scope-rule-dialog'
-import { confirmNameFor } from '@/lib/confirm-name'
+import { confirmName } from '@/lib/confirm-name'
 import { ConfirmDialog } from '@/components/confirm-dialog'
 import { useTranslation } from '@/context/i18n-provider'
 
@@ -374,7 +374,7 @@ export function ScopeRulesTab({ groupId }: ScopeRulesTabProps) {
         }
         isLoading={isDeleting}
         typeToConfirm={
-          deleteConfirm ? confirmNameFor(deleteConfirm.name, deleteConfirm.id) : undefined
+          deleteConfirm ? confirmName(deleteConfirm.name, deleteConfirm.id) : undefined
         }
         handleConfirm={handleDelete}
       />

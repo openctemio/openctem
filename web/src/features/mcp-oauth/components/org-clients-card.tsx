@@ -27,7 +27,7 @@ import {
   type McpOrgClient,
   useOrgClients,
 } from '../api/connections'
-import { confirmNameFor } from '@/lib/confirm-name'
+import { confirmName } from '@/lib/confirm-name'
 import { ConfirmDialog } from '@/components/confirm-dialog'
 import { useTranslation } from '@/context/i18n-provider'
 
@@ -226,7 +226,7 @@ export function OrgClientsCard({ canEdit }: OrgClientsCardProps) {
         confirmText={t('mcp.orgClients.deleteConfirm', 'Delete application')}
         isLoading={saving}
         typeToConfirm={
-          pendingDelete ? confirmNameFor(pendingDelete.name, pendingDelete.id) : undefined
+          pendingDelete ? confirmName(pendingDelete.name, pendingDelete.id) : undefined
         }
         handleConfirm={() => remove()}
       />

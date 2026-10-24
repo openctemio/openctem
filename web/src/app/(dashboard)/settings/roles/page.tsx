@@ -47,7 +47,7 @@ import {
   EditRoleSheet,
 } from '@/features/access-control'
 import { useUrlFilter } from '@/hooks/use-url-param'
-import { confirmNameFor } from '@/lib/confirm-name'
+import { confirmName } from '@/lib/confirm-name'
 import { ConfirmDialog } from '@/components/confirm-dialog'
 import { useTranslation } from '@/context/i18n-provider'
 import { RoleRiskBadge, RoleSummaryLine } from '@/features/access-control/components/role-risk'
@@ -488,9 +488,7 @@ export default function RolesPage() {
           </>
         }
         isLoading={isDeleting}
-        typeToConfirm={
-          roleToDelete ? confirmNameFor(roleToDelete.name, roleToDelete.id) : undefined
-        }
+        typeToConfirm={roleToDelete ? confirmName(roleToDelete.name, roleToDelete.id) : undefined}
         handleConfirm={handleDeleteRole}
       />
     </>
