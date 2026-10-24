@@ -197,6 +197,12 @@ func stringList(v any) ([]string, bool) {
 // not accept for the capability. A tool with any is not eligible for the
 // node: a value is never silently dropped.
 func UnsupportedParams(s Stage, tool string, config map[string]any) []string {
+	return UnsupportedParamsFor(s, catalogParams(s, tool), config)
+}
+
+// catalogParams is the catalog's param mapping of tool for the stage (nil:
+// the catalog does not list the tool).
+func catalogParams(s Stage, tool string) map[string]string {
 	tool = normalizeTool(tool)
 	var mapping map[string]string
 	for _, impl := range s.Implementations {
@@ -204,6 +210,13 @@ func UnsupportedParams(s Stage, tool string, config map[string]any) []string {
 			mapping = impl.Params
 		}
 	}
+	return mapping
+}
+
+// UnsupportedParamsFor is UnsupportedParams for a tool whose mapping (a
+// standard param to the config key it sets) comes from its descriptor
+// rather than the catalog: a tool an organization's sensor declares.
+func UnsupportedParamsFor(s Stage, mapping map[string]string, config map[string]any) []string {
 	var out []string
 	for _, key := range sortedKeys(config) {
 		if _, std := s.ParamByName(key); !std {
@@ -223,16 +236,16 @@ func UnsupportedParams(s Stage, tool string, config map[string]any) []string {
 // own name (the tool's own setting, as before capabilities); on a resolved
 // step the caller has checked UnsupportedParams, so there is none.
 func ToolConfig(s Stage, tool string, config map[string]any, pinned bool) map[string]any {
+	return ToolConfigFor(s, tool, catalogParams(s, tool), config, pinned)
+}
+
+// ToolConfigFor is ToolConfig for a tool whose param mapping comes from its
+// descriptor (UnsupportedParamsFor).
+func ToolConfigFor(s Stage, tool string, mapping map[string]string, config map[string]any, pinned bool) map[string]any {
 	if config == nil {
 		return nil
 	}
 	tool = normalizeTool(tool)
-	var mapping map[string]string
-	for _, impl := range s.Implementations {
-		if impl.Tool == tool {
-			mapping = impl.Params
-		}
-	}
 	out := map[string]any{}
 	for key, v := range config {
 		switch {

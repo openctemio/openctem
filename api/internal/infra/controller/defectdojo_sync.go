@@ -50,6 +50,9 @@ func NewDefectDojoSyncController(store IntegrationSyncStore, syncer TenantSyncer
 // Name implements Controller.
 func (c *DefectDojoSyncController) Name() string { return "defectdojo-sync-scheduler" }
 
+// Exclusive: one API replica at a time (controller lease). It pulls from an external instance and advances its schedule: two replicas would sync the same integration twice.
+func (c *DefectDojoSyncController) Exclusive() bool { return true }
+
 // Interval implements Controller.
 func (c *DefectDojoSyncController) Interval() time.Duration { return c.interval }
 

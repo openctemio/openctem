@@ -9,6 +9,7 @@ import { ArrowRight } from 'lucide-react'
 import { Main } from '@/components/layout'
 import {
   PageHeader,
+  PageStack,
   MetricStrip,
   DataTable,
   DataTableColumnHeader,
@@ -217,10 +218,10 @@ function MyWorkContent() {
   )
 
   const findingsPanel = (
-    <>
-      <MetricStrip className="mt-5" loading={isLoading} items={metrics} />
+    <PageStack>
+      <MetricStrip loading={isLoading} items={metrics} />
 
-      <div className="mt-5">
+      <div>
         {queueError ? (
           <ErrorState title={t('myWork.loadError')} onRetry={() => void retryQueue()} />
         ) : isLoading ? (
@@ -263,32 +264,32 @@ function MyWorkContent() {
           />
         )}
       </div>
-    </>
+    </PageStack>
   )
 
   return (
     <Main>
-      <PageHeader title={t('myWork.title')} description={t('myWork.description')} />
+      <PageStack>
+        <PageHeader title={t('myWork.title')} description={t('myWork.description')} />
 
-      {canSeeTasks ? (
-        <Tabs value={tab} onValueChange={setTab} className="mt-4">
-          <TabsList aria-label={t('myWork.tabs.label')}>
-            <TabsTrigger value="findings">{t('myWork.tabs.findings')}</TabsTrigger>
-            <TabsTrigger value="tasks">
-              {t('myWork.tabs.tasks')}
-              {taskCount ? <TabsCount value={taskCount} /> : null}
-            </TabsTrigger>
-          </TabsList>
-          <TabsContent value="findings">{findingsPanel}</TabsContent>
-          <TabsContent value="tasks">
-            <div className="mt-5">
+        {canSeeTasks ? (
+          <Tabs value={tab} onValueChange={setTab}>
+            <TabsList aria-label={t('myWork.tabs.label')}>
+              <TabsTrigger value="findings">{t('myWork.tabs.findings')}</TabsTrigger>
+              <TabsTrigger value="tasks">
+                {t('myWork.tabs.tasks')}
+                {taskCount ? <TabsCount value={taskCount} /> : null}
+              </TabsTrigger>
+            </TabsList>
+            <TabsContent value="findings">{findingsPanel}</TabsContent>
+            <TabsContent value="tasks">
               <MyTasksQueue />
-            </div>
-          </TabsContent>
-        </Tabs>
-      ) : (
-        findingsPanel
-      )}
+            </TabsContent>
+          </Tabs>
+        ) : (
+          findingsPanel
+        )}
+      </PageStack>
     </Main>
   )
 }

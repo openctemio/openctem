@@ -278,17 +278,20 @@ func (r *RepositoryExtensionRepository) GetByAssetIDs(ctx context.Context, asset
 
 // Helper methods
 
+// selectQuery counts each returned repository's findings with a scalar
+// subquery (an index range scan on findings.asset_id, run after LIMIT). A
+// derived table grouping every finding of every tenant cost a full findings
+// index scan on each call, and the asset list pays it once per page.
 func (r *RepositoryExtensionRepository) selectQuery() string {
 	return `
 		SELECT ar.asset_id, ar.repo_id, ar.full_name, ar.scm_organization, ar.clone_url, ar.web_url, ar.ssh_url,
 			   ar.default_branch, ar.visibility, ar.language, ar.languages, ar.topics,
 			   ar.stars, ar.forks, ar.watchers, ar.open_issues, ar.contributors_count, ar.size_kb,
-			   COALESCE(fc.finding_count, 0) as finding_count,
+			   (SELECT COUNT(*) FROM findings f WHERE f.asset_id = ar.asset_id) AS finding_count,
 			   ar.risk_score, ar.scan_enabled, ar.scan_schedule, ar.last_scanned_at,
 			   ar.branch_count, ar.protected_branch_count, ar.component_count, ar.vulnerable_component_count,
 			   ar.repo_created_at, ar.repo_updated_at, ar.repo_pushed_at
 		FROM asset_repositories ar
-		LEFT JOIN (SELECT asset_id, COUNT(*) as finding_count FROM findings GROUP BY asset_id) fc ON fc.asset_id = ar.asset_id
 	`
 }
 

@@ -146,6 +146,11 @@ func NewServer(cfg *config.Config, log *logger.Logger, opts ...ServerOption) *Se
 		log.Info("the platform admin console answers only to ADMIN_ALLOWED_CIDRS", "cidrs", cfg.AdminPlane.AllowedCIDRs)
 	}
 
+	if cfg.Server.WriteTimeoutBelowRequest() {
+		log.Warn("SERVER_WRITE_TIMEOUT is not above SERVER_REQUEST_TIMEOUT: slow requests will see a closed connection instead of the 503 timeout answer",
+			"write_timeout", cfg.Server.WriteTimeout, "request_timeout", cfg.Server.RequestTimeout)
+	}
+
 	s.httpServer = &http.Server{
 		Addr:         cfg.Server.Addr(),
 		Handler:      s.router.Handler(),

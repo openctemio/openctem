@@ -15,6 +15,7 @@ import { CheckCheck, ChevronDown, ChevronRight, ShieldCheck } from 'lucide-react
 import { toast } from 'sonner'
 import { StepUpDialog } from '@/components/security'
 import { Badge } from '@/components/ui/badge'
+import { ApprovalStatusLozenge } from '@/features/shared/components/approval-status-lozenge'
 import { Button } from '@/components/ui/button'
 import {
   Dialog,
@@ -149,8 +150,7 @@ function StatusBadge({ status }: { status: ScanApprovalRequest['status'] }) {
     superseded: t('scans.approval.statusSuperseded', 'Superseded'),
     canceled: t('scans.approval.statusCanceled', 'Withdrawn'),
   }
-  const variant = status === 'pending' ? 'secondary' : status === 'approved' ? 'default' : 'outline'
-  return <Badge variant={variant}>{label[status]}</Badge>
+  return <ApprovalStatusLozenge status={status} label={label[status]} />
 }
 
 export function ScanApprovalsInbox() {
