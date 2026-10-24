@@ -160,7 +160,14 @@ export function ConfirmDialog(props: ConfirmDialogProps) {
                   id={inputId}
                   value={typed}
                   onChange={(e) => setTyped(e.target.value)}
+                  onKeyDown={(e) => {
+                    // Enter in the typed field never fires the action.
+                    if (e.key === 'Enter') e.preventDefault()
+                  }}
                   autoComplete="off"
+                  // Phone keyboards capitalise the first letter, which breaks
+                  // the exact match.
+                  autoCapitalize="none"
                   spellCheck={false}
                 />
               </div>
