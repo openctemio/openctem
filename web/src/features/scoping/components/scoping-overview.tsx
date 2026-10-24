@@ -7,7 +7,7 @@ import { Main } from '@/components/layout'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Skeleton } from '@/components/ui/skeleton'
-import { ErrorState, PageHeader } from '@/features/shared'
+import { ErrorState, PageHeader, PageStack } from '@/features/shared'
 import { CycleStatusBadge } from '@/features/cycles/components/cycle-status-badge'
 import { Permission, useHasPermission, useNavItemAccess } from '@/lib/permissions'
 import { cn } from '@/lib/utils'
@@ -178,70 +178,70 @@ export function ScopingOverview() {
 
   return (
     <Main>
-      <PageHeader
-        title={t('scoping.overview.title', 'Scoping')}
-        description={t(
-          'scoping.overview.description',
-          'What the program protects this cycle, and whether that is written down.'
-        )}
-      >
-        {cyclesOn && !isLoading && data && (cycle || canStartCycle) && (
-          <Button asChild size="sm">
-            {cycle ? (
-              <Link href={`/cycles/${cycle.id}`}>
-                <RotateCcw className="me-2 h-4 w-4" />
-                {t('scoping.overview.openCycle', 'Open cycle')}
-              </Link>
-            ) : (
-              <Link href="/cycles">
-                <Plus className="me-2 h-4 w-4" />
-                {t('scoping.overview.startCycle', 'Start a cycle')}
-              </Link>
-            )}
-          </Button>
-        )}
-      </PageHeader>
+      <PageStack>
+        <PageHeader
+          title={t('scoping.overview.title', 'Scoping')}
+          description={t(
+            'scoping.overview.description',
+            'What the program protects this cycle, and whether that is written down.'
+          )}
+        >
+          {cyclesOn && !isLoading && data && (cycle || canStartCycle) && (
+            <Button asChild size="sm">
+              {cycle ? (
+                <Link href={`/cycles/${cycle.id}`}>
+                  <RotateCcw className="me-2 h-4 w-4" />
+                  {t('scoping.overview.openCycle', 'Open cycle')}
+                </Link>
+              ) : (
+                <Link href="/cycles">
+                  <Plus className="me-2 h-4 w-4" />
+                  {t('scoping.overview.startCycle', 'Start a cycle')}
+                </Link>
+              )}
+            </Button>
+          )}
+        </PageHeader>
 
-      {error ? (
-        <div className="mt-5">
+        {error ? (
           <ErrorState
             title={t('scoping.overview.loadError', 'the scoping summary')}
             error={error}
             onRetry={() => mutate()}
           />
-        </div>
-      ) : isLoading || !data ? (
-        <div className="mt-5 space-y-5">
-          <Skeleton className="h-32 w-full rounded-xl" />
-          <Skeleton className="h-96 w-full rounded-xl" />
-        </div>
-      ) : (
-        <div className="mt-5 space-y-5">
-          {cyclesOn && <CycleCard summary={data} />}
-          <ReadinessList rows={rows} />
-          <p className="text-sm text-muted-foreground">
-            {t(
-              'scoping.overview.feeds',
-              'Feeds Discovery: {snapshot} · {exclusions} enforced on scans',
-              {
-                snapshot:
-                  cycle && cycle.status !== 'planning'
-                    ? t(
-                        'scoping.overview.snapshotted',
-                        '{n, plural, one {# asset} other {# assets}} snapshotted',
-                        { n: cycle.scope_assets }
-                      )
-                    : t('scoping.overview.noSnapshot', 'no scope snapshot yet'),
-                exclusions: t(
-                  'scoping.overview.exclusions',
-                  '{n, plural, one {# exclusion} other {# exclusions}}',
-                  { n: data.boundary.exclusions }
-                ),
-              }
-            )}
-          </p>
-        </div>
-      )}
+        ) : isLoading || !data ? (
+          <PageStack>
+            <Skeleton className="h-32 w-full rounded-xl" />
+            <Skeleton className="h-96 w-full rounded-xl" />
+          </PageStack>
+        ) : (
+          <PageStack>
+            {cyclesOn && <CycleCard summary={data} />}
+            <ReadinessList rows={rows} />
+            <p className="text-sm text-muted-foreground">
+              {t(
+                'scoping.overview.feeds',
+                'Feeds Discovery: {snapshot}, {exclusions} enforced on scans',
+                {
+                  snapshot:
+                    cycle && cycle.status !== 'planning'
+                      ? t(
+                          'scoping.overview.snapshotted',
+                          '{n, plural, one {# asset} other {# assets}} snapshotted',
+                          { n: cycle.scope_assets }
+                        )
+                      : t('scoping.overview.noSnapshot', 'no scope snapshot yet'),
+                  exclusions: t(
+                    'scoping.overview.exclusions',
+                    '{n, plural, one {# exclusion} other {# exclusions}}',
+                    { n: data.boundary.exclusions }
+                  ),
+                }
+              )}
+            </p>
+          </PageStack>
+        )}
+      </PageStack>
     </Main>
   )
 }

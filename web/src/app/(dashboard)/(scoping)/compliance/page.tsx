@@ -5,6 +5,7 @@ import type { ColumnDef } from '@tanstack/react-table'
 import { Main } from '@/components/layout'
 import {
   PageHeader,
+  PageStack,
   MetricStrip,
   type MetricStripItem,
   DataTable,
@@ -186,18 +187,18 @@ function FrameworkCard({
       </CardHeader>
       <CardContent>
         <Progress value={score} className="mb-4" />
-        <dl className="grid grid-cols-4 gap-2 text-sm">
+        <p className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
           {counts.map((c) => (
-            <div key={c.label}>
-              <dd
-                className={`font-medium tabular-nums ${c.danger && c.value > 0 ? 'text-destructive' : ''}`}
+            <span key={c.label}>
+              <span
+                className={`font-medium tabular-nums ${c.danger && c.value > 0 ? 'text-destructive' : 'text-foreground'}`}
               >
                 {c.value}
-              </dd>
-              <dt className="text-xs text-muted-foreground">{c.label}</dt>
-            </div>
+              </span>{' '}
+              {c.label}
+            </span>
           ))}
-        </dl>
+        </p>
       </CardContent>
     </Card>
   )
@@ -360,15 +361,21 @@ export default function CompliancePage() {
   }
 
   const metrics: MetricStripItem[] = [
-    { key: 'frameworks', label: 'Frameworks', value: stats.totalFrameworks },
+    {
+      key: 'frameworks',
+      label: 'Frameworks',
+      value: stats.totalFrameworks,
+      href: '/compliance?tab=frameworks',
+      active: activeTab === 'frameworks',
+    },
     {
       key: 'controls',
       label: 'Controls',
       value: apiStats?.total_controls ?? stats.totalControls,
       hint: `${stats.byStatus.implemented} implemented`,
+      href: '/compliance?tab=controls',
+      active: activeTab === 'controls',
     },
-    { key: 'score', label: 'Avg compliance', value: `${stats.averageComplianceScore}%` },
-    { key: 'overdue', label: 'Overdue', value: stats.overdueControls, tone: 'danger' },
   ]
 
   const columns: ColumnDef<ControlRow>[] = [
@@ -458,83 +465,84 @@ export default function CompliancePage() {
   return (
     <>
       <Main>
-        <PageHeader
-          title="Compliance"
-          description="How far each compliance framework's controls are implemented."
-        >
-          <Button variant="outline" size="sm" onClick={handleExport}>
-            <Download className="h-4 w-4 sm:me-2" />
-            <span className="sr-only sm:not-sr-only">Export</span>
-          </Button>
-        </PageHeader>
+        <PageStack>
+          <PageHeader
+            title="Compliance"
+            description="How far each compliance framework's controls are implemented."
+          >
+            <Button variant="outline" size="sm" onClick={handleExport}>
+              <Download className="h-4 w-4 sm:me-2" />
+              <span className="sr-only sm:not-sr-only">Export</span>
+            </Button>
+          </PageHeader>
 
-        <Tabs
-          value={activeTab}
-          onValueChange={(v) => setTab(v === 'controls' ? 'controls' : 'frameworks')}
-          className="mt-4"
-        >
-          <TabsList>
-            <TabsTrigger value="frameworks">Frameworks</TabsTrigger>
-            <TabsTrigger value="controls">Controls</TabsTrigger>
-          </TabsList>
+          <Tabs
+            value={activeTab}
+            onValueChange={(v) => setTab(v === 'controls' ? 'controls' : 'frameworks')}
+          >
+            <TabsList>
+              <TabsTrigger value="frameworks">Frameworks</TabsTrigger>
+              <TabsTrigger value="controls">Controls</TabsTrigger>
+            </TabsList>
 
-          <MetricStrip className="mt-5" items={metrics} />
+            <MetricStrip items={metrics} />
 
-          <TabsContent value="frameworks" className="mt-5">
-            {loadingFrameworks ? (
-              <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-                {Array.from({ length: 2 }).map((_, i) => (
-                  <Skeleton key={i} className="h-48 rounded-xl" />
-                ))}
-              </div>
-            ) : frameworks.length === 0 ? (
-              <EmptyState
-                icon={Shield}
-                title="No frameworks yet"
-                description="Compliance frameworks appear here once they are configured."
-              />
-            ) : (
-              <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-                {frameworks.map((fw) => (
-                  <FrameworkCard
-                    key={fw.id}
-                    fw={fw}
-                    onOpen={(id) => {
-                      setSelectedFrameworkId(id)
-                      setTab('controls')
-                    }}
-                  />
-                ))}
-              </div>
-            )}
-          </TabsContent>
+            <TabsContent value="frameworks">
+              {loadingFrameworks ? (
+                <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                  {Array.from({ length: 2 }).map((_, i) => (
+                    <Skeleton key={i} className="h-48 rounded-xl" />
+                  ))}
+                </div>
+              ) : frameworks.length === 0 ? (
+                <EmptyState
+                  icon={Shield}
+                  title="No frameworks yet"
+                  description="Compliance frameworks appear here once they are configured."
+                />
+              ) : (
+                <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                  {frameworks.map((fw) => (
+                    <FrameworkCard
+                      key={fw.id}
+                      fw={fw}
+                      onOpen={(id) => {
+                        setSelectedFrameworkId(id)
+                        setTab('controls')
+                      }}
+                    />
+                  ))}
+                </div>
+              )}
+            </TabsContent>
 
-          <TabsContent value="controls" className="mt-5">
-            {loadingControls ? (
-              <div className="space-y-2">
-                {Array.from({ length: 5 }).map((_, i) => (
-                  <Skeleton key={i} className="h-12 w-full" />
-                ))}
-              </div>
-            ) : controlRows.length === 0 ? (
-              <EmptyState
-                icon={ClipboardCheck}
-                title="No controls"
-                description="This framework has no controls yet."
-              />
-            ) : (
-              <DataTable
-                columns={columns}
-                data={filteredRows}
-                searchPlaceholder="Search controls…"
-                toolbarEnd={filterSelects}
-                onRowClick={setViewRequirement}
-                emptyMessage="No controls match these filters"
-                emptyDescription="Try a different status."
-              />
-            )}
-          </TabsContent>
-        </Tabs>
+            <TabsContent value="controls">
+              {loadingControls ? (
+                <div className="space-y-2">
+                  {Array.from({ length: 5 }).map((_, i) => (
+                    <Skeleton key={i} className="h-12 w-full" />
+                  ))}
+                </div>
+              ) : controlRows.length === 0 ? (
+                <EmptyState
+                  icon={ClipboardCheck}
+                  title="No controls"
+                  description="This framework has no controls yet."
+                />
+              ) : (
+                <DataTable
+                  columns={columns}
+                  data={filteredRows}
+                  searchPlaceholder="Search controls…"
+                  toolbarEnd={filterSelects}
+                  onRowClick={setViewRequirement}
+                  emptyMessage="No controls match these filters"
+                  emptyDescription="Try a different status."
+                />
+              )}
+            </TabsContent>
+          </Tabs>
+        </PageStack>
       </Main>
 
       {/* View drawer (shared detail-drawer frame) */}
