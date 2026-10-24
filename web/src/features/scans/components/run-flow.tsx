@@ -1,5 +1,7 @@
 'use client'
 
+import { HealthStatus } from '@/components/ui/health-status'
+import type { HealthState } from '@/lib/health-colors'
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import {
   AlertTriangle,
@@ -44,14 +46,24 @@ import {
   type FlowTone,
 } from '../lib/run-flow'
 
+/** A step's tone as the machine state it reports (research 247). */
+const FLOW_HEALTH: Record<FlowTone, HealthState> = {
+  pending: 'queued',
+  waiting: 'queued',
+  running: 'run',
+  done: 'ok',
+  partial: 'warn',
+  failed: 'down',
+  skipped: 'off',
+}
+
 const TONE: Record<
   FlowTone,
-  { card: string; icon: string; badge: string; bar: string; edge: string; Icon: typeof Circle }
+  { card: string; icon: string; bar: string; edge: string; Icon: typeof Circle }
 > = {
   pending: {
     card: '',
     icon: 'text-muted-foreground',
-    badge: 'bg-muted text-muted-foreground',
     bar: 'bg-muted-foreground/40',
     edge: 'text-muted-foreground/50',
     Icon: Circle,
@@ -59,7 +71,6 @@ const TONE: Record<
   waiting: {
     card: '',
     icon: 'text-warning',
-    badge: 'bg-warning/10 text-warning',
     bar: 'bg-warning',
     edge: 'text-muted-foreground/50',
     Icon: Hourglass,
@@ -67,7 +78,6 @@ const TONE: Record<
   running: {
     card: '',
     icon: 'text-info motion-safe:animate-spin',
-    badge: 'bg-info/10 text-info',
     bar: 'bg-info',
     edge: 'text-info',
     Icon: Loader2,
@@ -75,7 +85,6 @@ const TONE: Record<
   done: {
     card: '',
     icon: 'text-success',
-    badge: 'bg-success/10 text-success',
     bar: 'bg-success',
     edge: 'text-success/70',
     Icon: CheckCircle2,
@@ -83,7 +92,6 @@ const TONE: Record<
   partial: {
     card: '',
     icon: 'text-warning',
-    badge: 'bg-warning/10 text-warning',
     bar: 'bg-warning',
     edge: 'text-warning/70',
     Icon: AlertTriangle,
@@ -91,7 +99,6 @@ const TONE: Record<
   failed: {
     card: '',
     icon: 'text-destructive',
-    badge: 'bg-destructive/10 text-destructive',
     bar: 'bg-destructive',
     edge: 'text-destructive/60',
     Icon: XCircle,
@@ -99,7 +106,6 @@ const TONE: Record<
   skipped: {
     card: 'opacity-80',
     icon: 'text-muted-foreground',
-    badge: 'bg-muted text-muted-foreground',
     bar: 'bg-muted-foreground/40',
     edge: 'text-muted-foreground/40',
     Icon: MinusCircle,
@@ -524,9 +530,7 @@ function StepCard({
         </span>
       </span>
       <span className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-muted-foreground">
-        <span className={cn('rounded px-1.5 py-px text-meta font-medium', style.badge)}>
-          {state}
-        </span>
+        <HealthStatus state={FLOW_HEALTH[tone]} label={state} value={node.state} />
         {node.tool ? <span className="font-mono">{node.tool}</span> : null}
         {duration ? (
           <span className="whitespace-nowrap tabular-nums">

@@ -119,14 +119,14 @@ const PROVIDER_CONFIG: Record<
   },
   email: {
     icon: Mail,
-    color: 'text-blue-600',
-    bgColor: 'bg-blue-100',
+    color: 'text-muted-foreground',
+    bgColor: 'bg-muted',
     credentialLabel: 'SMTP Password',
   },
   webhook: {
     icon: Webhook,
-    color: 'text-gray-600',
-    bgColor: 'bg-gray-100',
+    color: 'text-muted-foreground',
+    bgColor: 'bg-muted',
     credentialLabel: 'Webhook URL',
   },
 }

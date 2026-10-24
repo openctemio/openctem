@@ -26,7 +26,7 @@ import {
   type MetricStripItem,
 } from '@/features/shared'
 import { SCOPE_SECTION_TABS } from '@/config/section-tabs'
-import { useDebounce } from '@/hooks/use-debounce'
+import { useSearchQuery } from '@/hooks/use-search-query'
 import { useUrlFilter } from '@/hooks/use-url-param'
 import { useListParams } from '@/hooks/use-list-params'
 import { Permission, useHasPermission } from '@/lib/permissions'
@@ -67,7 +67,7 @@ export default function ScopePage() {
   const list = useListParams({ pageSizes: SCOPE_PAGE_SIZES, defaultPageSize: 20 })
   const { page, perPage, setPage } = list
   const [searchInput, setSearchInput] = useState(q)
-  const debounced = useDebounce(searchInput, 300)
+  const debounced = useSearchQuery(searchInput).term
   const commitSearch = useEffectEvent((next: string) => {
     if (next !== q) {
       setQ(next)

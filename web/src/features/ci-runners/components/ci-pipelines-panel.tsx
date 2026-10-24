@@ -30,7 +30,7 @@ import {
 import { ProviderIcon } from '@/features/scm-connections'
 import { useUrlFilter, useUrlFilterList } from '@/hooks/use-url-param'
 import { useListParams } from '@/hooks/use-list-params'
-import { useDebounce } from '@/hooks/use-debounce'
+import { useSearchQuery } from '@/hooks/use-search-query'
 import { cn } from '@/lib/utils'
 
 import { useCIPipelines } from '../api/use-ci'
@@ -142,7 +142,7 @@ export function CIPipelinesPanel() {
   // The box types at once; the request and the URL follow 300 ms later (each
   // request makes the server assess every pipeline of the tenant).
   const [searchText, setSearchText] = useState(q)
-  const debouncedSearch = useDebounce(searchText, 300)
+  const debouncedSearch = useSearchQuery(searchText).term
   const [statusParam, setStatusParam] = useUrlFilterList('pipeline_status')
   const [inactiveParam, setInactiveParam] = useUrlFilter('inactive', '')
   const [overridesParam, setOverridesParam] = useUrlFilter('overrides', '')
