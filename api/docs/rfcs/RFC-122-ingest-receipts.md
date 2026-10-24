@@ -284,6 +284,21 @@ automations (a re-applied upload finds the findings existing, not new).
 The automation event journal, written in the merge transaction, will close
 that window and replace this outbox; it is not on develop yet.
 
+## 6e. Load targets
+
+`tests/integration/ingest_load_test.go` (`TestIngestLoad`, `INGEST_LOAD=1`)
+drives the real CI upload path: HTTP accept, sealed storage, the queue, 4
+workers and the ingest core, on a fresh, fully migrated Postgres. The nightly
+`Ingest load` workflow runs it; a missed target fails the job and the run
+summary carries the results table.
+
+| # | Scenario | Target |
+|---|---|---|
+| T1 | 50 concurrent uploads × 1,000 findings over 10 organizations, half of the findings already known | 0 refused or failed uploads; every finding stored; accept p95, job p95 and drain time reported |
+| T4 | an urgent (critical) report while 500 bulk jobs wait | applied within 15 s |
+| T3 | 20 runs upload the same 500 findings to one repository at once | 0 failed; one finding per fingerprint; every run records every sighting (no lost sighting) |
+| — | deadlocks | reported; none surfaces as a failed job (writes retry) |
+
 ## 7. API
 
 | Route | Gate | Notes |
@@ -326,3 +341,4 @@ that window and replace this outbox; it is not on develop yet.
 7. Queue hygiene (§6c): queue retention; quarantine accepted after apply.
 8. Dispositions (§6d): per-item dispositions with the deciding policy and
    version, versioned policy snapshots, durable side effects.
+9. Load harness in nightly CI (§6e).
