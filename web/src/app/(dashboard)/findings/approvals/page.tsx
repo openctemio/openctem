@@ -12,7 +12,8 @@ import { DataTable } from '@/features/shared/components/data-table/data-table'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Tabs, TabsList, TabsTrigger, TabsContent, TabsCount } from '@/components/ui/tabs'
-import { SegmentedLens } from '@/features/shared/components/segmented-lens'
+import { FilterSelect } from '@/features/shared/components/filter-select'
+import { PageStack } from '@/features/shared/components/page-stack'
 import { RefreshButton, TableSkeleton } from '@/components/list-page-parts'
 import {
   DropdownMenu,
@@ -388,18 +389,19 @@ export default function ApprovalsPage() {
     await mutate()
   }
 
-  // The list toolbar: the status lens first, refresh at the end.
+  // The list toolbar: the status filter first, refresh at the end. The status
+  // is a filter of the rows (a filter token), not a second row of tabs; its
+  // counts are the finding requests' and are shown only on that view.
   const statusLens = (
-    <SegmentedLens<ApprovalLens>
-      label={t('findings.approvals.lens.label', 'Request status')}
-      value={lens}
-      onChange={changeLens}
-      options={APPROVAL_LENSES.map((value) => ({
+    <FilterSelect<Exclude<ApprovalLens, 'all'>>
+      label={t('findings.approvals.lens.status', 'Status')}
+      value={lens === 'all' ? '' : lens}
+      onChange={(next) => changeLens(next === '' ? 'all' : next)}
+      allCount={view === 'requests' ? counts.all : undefined}
+      options={APPROVAL_LENSES.filter((v) => v !== 'all').map((value) => ({
         value,
-        label:
-          value === 'all'
-            ? t('findings.approvals.tabAll', 'All')
-            : t(`findings.approvals.status.${value}`, APPROVAL_STATUS_LABELS[value]),
+        label: t(`findings.approvals.status.${value}`, APPROVAL_STATUS_LABELS[value]),
+        count: view === 'requests' ? counts[value] : undefined,
       }))}
     />
   )
@@ -679,129 +681,131 @@ export default function ApprovalsPage() {
   return (
     <>
       <Main>
-        <PageHeader
-          title={t('findings.approvals.title', 'Approval requests')}
-          description={
-            isInitialLoading
-              ? t('findings.approvals.loading', 'Loading approvals…')
-              : pendingTotal > 0
-                ? t('findings.approvals.summaryPending', '{count} waiting for a decision', {
-                    count: pendingTotal,
-                  })
-                : t('findings.approvals.summaryNone', 'Nothing is waiting for a decision')
-          }
-        />
+        <PageStack>
+          <PageHeader
+            title={t('findings.approvals.title', 'Approval requests')}
+            description={
+              isInitialLoading
+                ? t('findings.approvals.loading', 'Loading approvals…')
+                : pendingTotal > 0
+                  ? t('findings.approvals.summaryPending', '{count} waiting for a decision', {
+                      count: pendingTotal,
+                    })
+                  : t('findings.approvals.summaryNone', 'Nothing is waiting for a decision')
+            }
+          />
 
-        {/* The one tab row: the two kinds of request are different objects
+          {/* The one tab row: the two kinds of request are different objects
             with their own columns. Each tab counts only what waits for a
             decision, and shows nothing at zero. */}
-        <Tabs value={view} onValueChange={changeView} className="mt-6">
-          <TabsList aria-label={t('findingApprovals.group.viewLabel', 'Kind of request')}>
-            <TabsTrigger value="requests">
-              {t('findingApprovals.group.viewRequests', 'Finding requests')}
-              <TabsCount value={counts.pending || null} />
-            </TabsTrigger>
-            <TabsTrigger value="groups">
-              {t('findingApprovals.group.viewGroups', 'Group exceptions')}
-              <TabsCount value={pendingGroups?.total || null} />
-            </TabsTrigger>
-          </TabsList>
+          <Tabs value={view} onValueChange={changeView}>
+            <TabsList aria-label={t('findingApprovals.group.viewLabel', 'Kind of request')}>
+              <TabsTrigger value="requests">
+                {t('findingApprovals.group.viewRequests', 'Finding requests')}
+                <TabsCount value={counts.pending || null} />
+              </TabsTrigger>
+              <TabsTrigger value="groups">
+                {t('findingApprovals.group.viewGroups', 'Group exceptions')}
+                <TabsCount value={pendingGroups?.total || null} />
+              </TabsTrigger>
+            </TabsList>
 
-          {/* The tab panel: its id is what the tab triggers point at. */}
-          <TabsContent value={view} className="mt-4">
-            {isInitialLoading ? (
-              <TableSkeleton />
-            ) : view === 'requests' && error && !data ? (
-              // A failed read keeps the page, its tabs and the other view; the
-              // shared error state says what failed and offers Retry.
-              <ErrorState
-                title={t('findings.approvals.errorTitle', 'approval requests')}
-                error={error}
-                onRetry={() => void mutate()}
-              />
-            ) : view === 'groups' ? (
-              <GroupExceptionsPanel
-                status={lensStatus}
-                pagination={list.pagination}
-                onPaginationChange={list.setPagination}
-                currentUserId={currentUserId}
-                openId={openBatch}
-                onOpenChange={changeOpenBatch}
-                onDecided={mutate}
-                toolbarStart={statusLens}
-                toolbarEnd={refreshButton}
-              />
-            ) : (
-              <DataTable
-                columns={columns}
-                data={approvals}
-                manualPagination
-                pageCount={pageCount}
-                rowCount={data?.total ?? 0}
-                pagination={list.pagination}
-                onPaginationChange={list.setPagination}
-                getRowId={(row) => row.id}
-                mobileRow={(approval) => (
-                  <div className="grid gap-2 p-3" data-testid="approval-phone-card">
-                    <ApprovalFindingLink
-                      findingId={approval.finding_id}
-                      findingTitle={approval.finding_title}
-                    />
-                    <div className="flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground">
-                      <ApprovalStatusLozenge
-                        status={approval.status}
-                        label={t(
-                          `findings.approvals.status.${approval.status}`,
-                          APPROVAL_STATUS_LABELS[approval.status] ?? approval.status
-                        )}
+            {/* The tab panel: its id is what the tab triggers point at. */}
+            <TabsContent value={view}>
+              {isInitialLoading ? (
+                <TableSkeleton />
+              ) : view === 'requests' && error && !data ? (
+                // A failed read keeps the page, its tabs and the other view; the
+                // shared error state says what failed and offers Retry.
+                <ErrorState
+                  title={t('findings.approvals.errorTitle', 'approval requests')}
+                  error={error}
+                  onRetry={() => void mutate()}
+                />
+              ) : view === 'groups' ? (
+                <GroupExceptionsPanel
+                  status={lensStatus}
+                  pagination={list.pagination}
+                  onPaginationChange={list.setPagination}
+                  currentUserId={currentUserId}
+                  openId={openBatch}
+                  onOpenChange={changeOpenBatch}
+                  onDecided={mutate}
+                  toolbarStart={statusLens}
+                  toolbarEnd={refreshButton}
+                />
+              ) : (
+                <DataTable
+                  columns={columns}
+                  data={approvals}
+                  manualPagination
+                  pageCount={pageCount}
+                  rowCount={data?.total ?? 0}
+                  pagination={list.pagination}
+                  onPaginationChange={list.setPagination}
+                  getRowId={(row) => row.id}
+                  mobileRow={(approval) => (
+                    <div className="grid gap-2 p-3" data-testid="approval-phone-card">
+                      <ApprovalFindingLink
+                        findingId={approval.finding_id}
+                        findingTitle={approval.finding_title}
                       />
-                      <span>{getRequestedStatusLabel(t, approval.requested_status)}</span>
-                      <RequesterCell approval={approval} currentUserId={currentUserId} />
-                      {approval.decide_by && approval.status === 'pending' && (
-                        <span>
-                          {t('findings.approvals.col.decideBy', 'Decide by')}{' '}
-                          <RelativeTime value={approval.decide_by} locale={locale} />
-                        </span>
-                      )}
+                      <div className="flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground">
+                        <ApprovalStatusLozenge
+                          status={approval.status}
+                          label={t(
+                            `findings.approvals.status.${approval.status}`,
+                            APPROVAL_STATUS_LABELS[approval.status] ?? approval.status
+                          )}
+                        />
+                        <span>{getRequestedStatusLabel(t, approval.requested_status)}</span>
+                        <RequesterCell approval={approval} currentUserId={currentUserId} />
+                        {approval.decide_by && approval.status === 'pending' && (
+                          <span>
+                            {t('findings.approvals.col.decideBy', 'Decide by')}{' '}
+                            <RelativeTime value={approval.decide_by} locale={locale} />
+                          </span>
+                        )}
+                      </div>
+                      {actionsCell(approval)}
                     </div>
-                    {actionsCell(approval)}
-                  </div>
-                )}
-                showColumnToggle={false}
-                showSearch={false}
-                toolbarStart={statusLens}
-                toolbarEnd={refreshButton}
-                emptyMessage={
-                  lens === 'pending'
-                    ? t('findings.approvals.emptyPending', 'No pending requests')
-                    : t('findings.approvals.empty', 'No approval requests')
-                }
-                emptyDescription={
-                  lens === 'pending'
-                    ? t(
-                        'findings.approvals.emptyPendingDesc',
-                        'A false positive or risk acceptance that needs a second person appears here. Decided requests are under Approved, Rejected and All.'
-                      )
-                    : lens === 'all'
+                  )}
+                  showColumnToggle={false}
+                  showSearch={false}
+                  toolbarStart={statusLens}
+                  toolbarEnd={refreshButton}
+                  emptyMessage={
+                    lens === 'pending'
+                      ? t('findings.approvals.emptyPending', 'No pending requests')
+                      : t('findings.approvals.empty', 'No approval requests')
+                  }
+                  emptyDescription={
+                    lens === 'pending'
                       ? t(
-                          'findings.approvals.emptyAll',
-                          'There are no approval requests to review at this time.'
+                          'findings.approvals.emptyPendingDesc',
+                          'A false positive or risk acceptance that needs a second person appears here. To see decided requests, change the Status filter.'
                         )
-                      : t(
-                          'findings.approvals.emptyStatus',
-                          'No requests with the status {status}.',
-                          {
-                            status: t(
-                              `findings.approvals.status.${lens}`,
-                              APPROVAL_STATUS_LABELS[lens]
-                            ),
-                          }
-                        )
-                }
-              />
-            )}
-          </TabsContent>
-        </Tabs>
+                      : lens === 'all'
+                        ? t(
+                            'findings.approvals.emptyAll',
+                            'There are no approval requests to review at this time.'
+                          )
+                        : t(
+                            'findings.approvals.emptyStatus',
+                            'No requests with the status {status}.',
+                            {
+                              status: t(
+                                `findings.approvals.status.${lens}`,
+                                APPROVAL_STATUS_LABELS[lens]
+                              ),
+                            }
+                          )
+                  }
+                />
+              )}
+            </TabsContent>
+          </Tabs>
+        </PageStack>
       </Main>
 
       {/* Approve Confirmation Dialog */}

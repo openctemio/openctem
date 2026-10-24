@@ -57,6 +57,7 @@ var routeAuthzAllowlist = map[string]string{
 	"POST /api/v1/ci/runs/{id}/evaluate":               "CI run token (AuthenticateRun): the run's own verdict",
 	"POST /hooks/jira-integrations/{integration_id}":   "public: the URL names one Jira integration and its own secret (X-Hub-Signature, HMAC-SHA256 over the raw body) is the credential, verified before anything is parsed; replayed and stale deliveries refused; per-IP and per-integration limits",
 	"POST /hooks/github-integrations/{integration_id}": "public: the URL names one GitHub integration and its own secret (X-Hub-Signature-256, HMAC-SHA256 over the raw body) is the credential, verified before anything is parsed; replays refused by body hash and delivery id (store mandatory); events for repositories outside the integration's organization refused; per-IP and per-integration limits",
+	"POST /hooks/content-sources/{id}":                 "public: the URL names one rule source and its own webhook secret (header, SHA-256 compared in constant time) is the credential; the call carries no content and only queues a sync; every refusal is the same 401; per-IP, per-source and per-hour limits",
 	"POST /api/v1/hooks/github-app":                    "public: the GitHub App webhook secret (HMAC-SHA256 over the raw body) is the credential, verified before anything is read; per-IP limit; only installation status events change anything (RFC-077)",
 }
 

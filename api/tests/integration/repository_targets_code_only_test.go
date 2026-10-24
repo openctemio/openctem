@@ -40,7 +40,7 @@ func newRepoRouteService(t *testing.T) (*scansvc.Service, func(q string, args ..
 	svc := scansvc.NewService(
 		postgres.NewScanRepository(pg), postgres.NewScanWorkflowRepository(pg), postgres.NewAssetGroupRepository(pg),
 		postgres.NewScanRunRepository(pg), postgres.NewScanWorkflowStepRepository(pg), postgres.NewStepRunRepository(pg),
-		postgres.NewCommandRepository(pg), nil, nil, postgres.NewToolRepository(pg), nil, availableSensors{}, nil,
+		postgres.NewCommandRepository(pg), nil, postgres.NewToolRepository(pg), availableSensors{}, nil,
 		logger.New(logger.Config{Level: "error"}), allowAllTargetChecks()...,
 	)
 	exec := func(q string, args ...any) {

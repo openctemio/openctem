@@ -144,13 +144,18 @@ func (r *ContentPackRepository) List(ctx context.Context, tenantID shared.ID, f 
 	where := ` WHERE p.tenant_id = $1
 		AND ($2::text = '' OR p.kind = $2)
 		AND ($3::text = '' OR p.name = $3)
-		AND ($4::text = '' OR p.status = $4)`
-	args := []any{tenantID.String(), f.Kind, f.Name, string(f.Status)}
+		AND ($4::text = '' OR p.status = $4)
+		AND (NOT $5::boolean OR p.source <> 'git' OR EXISTS (
+			SELECT 1 FROM content_source_snapshots s
+			JOIN content_sources c ON c.id = s.source_id AND c.tenant_id = s.tenant_id
+			WHERE s.tenant_id = p.tenant_id AND s.content_pack_id = p.id
+			  AND c.current_snapshot_id = s.id))`
+	args := []any{tenantID.String(), f.Kind, f.Name, string(f.Status), f.Deliverable}
 	var total int
 	if err := r.db.QueryRowContext(ctx, `SELECT count(*) FROM content_packs p`+where, args...).Scan(&total); err != nil {
 		return nil, 0, fmt.Errorf("count content packs: %w", err)
 	}
-	rows, err := r.db.QueryContext(ctx, contentPackSelect+where+` ORDER BY p.created_at DESC, p.id DESC LIMIT $5 OFFSET $6`,
+	rows, err := r.db.QueryContext(ctx, contentPackSelect+where+` ORDER BY p.created_at DESC, p.id DESC LIMIT $6 OFFSET $7`,
 		append(args, limit, offset)...)
 	if err != nil {
 		return nil, 0, fmt.Errorf("list content packs: %w", err)
@@ -195,10 +200,40 @@ func (r *ContentPackRepository) Usage(ctx context.Context, tenantID shared.ID) (
 		bytes int64
 	)
 	if err := r.db.QueryRowContext(ctx, `
-		SELECT (SELECT count(*) FROM content_packs WHERE tenant_id = $1),
+		SELECT (SELECT count(*) FROM content_packs WHERE tenant_id = $1 AND source <> 'git'),
 		       (SELECT COALESCE(sum(size_bytes), 0) FROM content_pack_blobs WHERE tenant_id = $1)`,
 		tenantID.String()).Scan(&packs, &bytes); err != nil {
 		return 0, 0, fmt.Errorf("content pack usage: %w", err)
 	}
 	return packs, bytes, nil
+}
+
+// DeleteSourcePack deletes a snapshot pack no snapshot references, and its
+// blob when no other pack of the tenant uses the digest.
+func (r *ContentPackRepository) DeleteSourcePack(ctx context.Context, tenantID, id shared.ID) (string, error) {
+	var key string
+	err := r.db.Transaction(ctx, func(tx *sql.Tx) error {
+		var digest string
+		err := tx.QueryRowContext(ctx, `
+			DELETE FROM content_packs p
+			WHERE p.tenant_id = $1 AND p.id = $2 AND p.source = 'git'
+			  AND NOT EXISTS (SELECT 1 FROM content_source_snapshots s WHERE s.tenant_id = p.tenant_id AND s.content_pack_id = p.id)
+			RETURNING p.digest`, tenantID.String(), id.String()).Scan(&digest)
+		if errors.Is(err, sql.ErrNoRows) {
+			return contentpack.ErrNotFound
+		}
+		if err != nil {
+			return fmt.Errorf("delete content pack: %w", err)
+		}
+		err = tx.QueryRowContext(ctx, `
+			DELETE FROM content_pack_blobs b
+			WHERE b.tenant_id = $1 AND b.digest = $2
+			  AND NOT EXISTS (SELECT 1 FROM content_packs p WHERE p.tenant_id = b.tenant_id AND p.digest = b.digest)
+			RETURNING b.storage_key`, tenantID.String(), digest).Scan(&key)
+		if err != nil && !errors.Is(err, sql.ErrNoRows) {
+			return fmt.Errorf("delete content pack blob: %w", err)
+		}
+		return nil
+	})
+	return key, err
 }
