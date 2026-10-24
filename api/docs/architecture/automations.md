@@ -135,7 +135,7 @@ draft; both read only and need `findings:workflows:write`.
   would send. Nothing is stored or sent. One call per 10 seconds per user
   (429 `RATE_LIMITED`); a limit above 100 is a 400. A call without a person
   (an API key) is refused: samples follow a person's scope.
-- `POST /workflows/{id}/validate` returns `problems` (block publishing) and
+- `POST /workflows/{id}/verify` returns `problems` (block publishing) and
   `warnings`: `UNSUPPORTED_TYPE`, graph codes (`GRAPH_CYCLE`,
   `GRAPH_UNREACHABLE`, `GRAPH_EDGE`), `TRIGGER_CONFIG_INVALID`,
   `CONDITION_INVALID`, `CONDITION_UNKNOWN_FIELD` (warning), `CONFIG_MISSING`,
@@ -189,7 +189,7 @@ class is the highest of its steps.
   action or notification step is one change; default 250, at most 1,000; set
   on the automation, pinned by the version; above 250 the automation is high
   risk). The step past the cap does not start: the run becomes `paused`
-  (`pause_reason: blast_radius`) and `POST /workflow-runs/{id}/resume`
+  (`pause_reason: blast_radius`) and `POST /workflow-runs/{id}/approve`
   (`automations:publish`) lets it continue past the cap, keeping the steps it
   finished; cancel ends it.
 - Migration `automation_guardrails` switched off (and back to simulate) every

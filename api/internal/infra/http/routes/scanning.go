@@ -837,7 +837,7 @@ func registerWorkflowRoutes(
 		r.GET("/{id}/trace", h.GetTrace, middleware.Require(permission.AutomationsRead))
 		// Preview (in the caller's scope, nothing stored) and validate a draft.
 		r.POST("/{id}/preview", h.Preview, middleware.Require(permission.AutomationsWrite))
-		r.POST("/{id}/validate", h.Validate, middleware.Require(permission.AutomationsWrite))
+		r.POST("/{id}/verify", h.Validate, middleware.Require(permission.AutomationsWrite))
 	}, tenantMiddlewares...)
 
 	// Workflow Run routes - direct access
@@ -849,6 +849,6 @@ func registerWorkflowRoutes(
 		// Write operations
 		r.POST("/{id}/cancel", h.CancelRun, middleware.Require(permission.AutomationsWrite))
 		// A run paused at its change cap continues only on a publisher's word.
-		r.POST("/{id}/resume", h.ResumeRun, middleware.Require(permission.AutomationsPublish))
+		r.POST("/{id}/approve", h.ResumeRun, middleware.Require(permission.AutomationsPublish))
 	}, tenantMiddlewares...)
 }
