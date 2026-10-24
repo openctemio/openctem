@@ -1,5 +1,7 @@
 'use client'
 
+import { Tag } from '@/components/ui/tag'
+import { Counter } from '@/components/ui/counter'
 import { slaStateClass } from '@/lib/sla-colors'
 import { HealthStatus } from '@/components/ui/health-status'
 import { StatusLozenge } from '@/components/ui/status-lozenge'
@@ -58,7 +60,7 @@ import { AssetSlaPolicyCard } from '@/features/sla/components/sla-windows'
 import type { ActivityItem } from '@/features/activity/types'
 import { Input } from '@/components/ui/input'
 import { Switch } from '@/components/ui/switch'
-import { useDebounce } from '@/hooks/use-debounce'
+import { useSearchQuery } from '@/hooks/use-search-query'
 import { Skeleton } from '@/components/ui/skeleton'
 import { toast } from 'sonner'
 import {
@@ -156,15 +158,6 @@ const TRIAGE_STATUS_LABELS: Record<TriageStatus, string> = {
   needs_triage: 'Needs triage',
   triaged: 'Triaged',
   escalated: 'Escalated',
-}
-
-const SCM_PROVIDER_COLORS: Record<SCMProvider, string> = {
-  github: 'bg-gray-900 text-white',
-  gitlab: 'bg-orange-600 text-white',
-  bitbucket: 'bg-blue-600 text-white',
-  azure_devops: 'bg-blue-500 text-white',
-  codecommit: 'bg-yellow-600 text-white',
-  local: 'bg-gray-500 text-white',
 }
 
 // Branch detail type — maps from API Branch type
@@ -758,26 +751,26 @@ function OverviewTab({
         <Card>
           <CardHeader className="pb-2">
             <CardDescription className="flex items-center gap-2">
-              <AlertTriangle className="h-4 w-4 text-red-500" />
+              <AlertTriangle className="h-4 w-4 text-destructive" />
               Critical/High
             </CardDescription>
-            <CardTitle className="text-3xl text-red-500">{criticalCount + highCount}</CardTitle>
+            <CardTitle className="text-3xl text-destructive">{criticalCount + highCount}</CardTitle>
           </CardHeader>
           <CardContent className="pt-0">
             <p className="text-xs text-muted-foreground">{findings.length} total findings</p>
           </CardContent>
         </Card>
 
-        <Card className={overdueFindingsCount > 0 ? 'border-red-500/50' : ''}>
+        <Card className={overdueFindingsCount > 0 ? 'border-destructive/50' : ''}>
           <CardHeader className="pb-2">
             <CardDescription className="flex items-center gap-2">
-              <Timer className="h-4 w-4 text-orange-500" />
+              <Timer className="h-4 w-4 text-warning" />
               SLA Overdue
             </CardDescription>
             <CardTitle
               className={cn(
                 'text-3xl',
-                overdueFindingsCount > 0 ? 'text-red-500' : 'text-green-500'
+                overdueFindingsCount > 0 ? 'text-destructive' : 'text-success'
               )}
             >
               {overdueFindingsCount}
@@ -791,14 +784,11 @@ function OverviewTab({
         <Card>
           <CardHeader className="pb-2">
             <CardDescription className="flex items-center gap-2">
-              <GitBranch className="h-4 w-4 text-blue-500" />
+              <GitBranch className="h-4 w-4 text-info" />
               Branches
             </CardDescription>
             <CardTitle
-              className={cn(
-                'text-3xl',
-                neverScanned ? 'text-muted-foreground/50' : 'text-blue-500'
-              )}
+              className={cn('text-3xl', neverScanned ? 'text-muted-foreground/50' : 'text-info')}
             >
               {neverScanned ? '—' : branches.length}
             </CardTitle>
@@ -815,7 +805,7 @@ function OverviewTab({
         <Card>
           <CardHeader className="pb-2">
             <CardDescription className="flex items-center gap-2">
-              <Package className="h-4 w-4 text-purple-500" />
+              <Package className="h-4 w-4 text-muted-foreground" />
               Components
             </CardDescription>
             <CardTitle
@@ -823,7 +813,7 @@ function OverviewTab({
                 'text-3xl',
                 !repository.components_summary?.total
                   ? 'text-muted-foreground/50'
-                  : 'text-purple-500'
+                  : 'text-muted-foreground'
               )}
             >
               {repository.components_summary?.total ? repository.components_summary.total : '—'}
@@ -841,7 +831,7 @@ function OverviewTab({
         <Card>
           <CardHeader className="pb-2">
             <CardDescription className="flex items-center gap-2">
-              <Activity className="h-4 w-4 text-indigo-500" />
+              <Activity className="h-4 w-4 text-muted-foreground" />
               Risk Score
             </CardDescription>
           </CardHeader>
@@ -909,15 +899,15 @@ function OverviewTab({
                   </div>
                   <div className="flex gap-4 text-xs">
                     <span className="flex items-center gap-1">
-                      <span className="h-2 w-2 rounded-full bg-red-500" />
+                      <span className={cn('h-2 w-2 rounded-full', SEVERITY_DOT_COLORS.critical)} />
                       Critical: {defaultBranch.findings_summary.by_severity.critical}
                     </span>
                     <span className="flex items-center gap-1">
-                      <span className="h-2 w-2 rounded-full bg-orange-500" />
+                      <span className={cn('h-2 w-2 rounded-full', SEVERITY_DOT_COLORS.high)} />
                       High: {defaultBranch.findings_summary.by_severity.high}
                     </span>
                     <span className="flex items-center gap-1">
-                      <span className="h-2 w-2 rounded-full bg-yellow-500" />
+                      <span className={cn('h-2 w-2 rounded-full', SEVERITY_DOT_COLORS.medium)} />
                       Medium: {defaultBranch.findings_summary.by_severity.medium}
                     </span>
                   </div>
@@ -969,15 +959,15 @@ function OverviewTab({
                   </div>
                   <div className="flex flex-wrap gap-4 text-xs">
                     <span className="flex items-center gap-1">
-                      <span className="h-2 w-2 rounded-full bg-red-500" />
+                      <span className={cn('h-2 w-2 rounded-full', SEVERITY_DOT_COLORS.critical)} />
                       Critical: {sevCounts.critical}
                     </span>
                     <span className="flex items-center gap-1">
-                      <span className="h-2 w-2 rounded-full bg-orange-500" />
+                      <span className={cn('h-2 w-2 rounded-full', SEVERITY_DOT_COLORS.high)} />
                       High: {sevCounts.high}
                     </span>
                     <span className="flex items-center gap-1">
-                      <span className="h-2 w-2 rounded-full bg-yellow-500" />
+                      <span className={cn('h-2 w-2 rounded-full', SEVERITY_DOT_COLORS.medium)} />
                       Medium: {sevCounts.medium}
                     </span>
                   </div>
@@ -1039,7 +1029,7 @@ function OverviewTab({
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2 text-base">
-            <AlertTriangle className="h-4 w-4 text-red-500" />
+            <AlertTriangle className="h-4 w-4 text-destructive" />
             Critical & High Severity Findings
           </CardTitle>
           <CardDescription>Findings requiring immediate attention</CardDescription>
@@ -1087,7 +1077,7 @@ function OverviewTab({
               (f) => (f.severity === 'critical' || f.severity === 'high') && f.status !== 'resolved'
             ).length === 0 && (
               <div className="text-center py-8 text-muted-foreground">
-                <CheckCircle className="h-8 w-8 mx-auto mb-2 text-green-500" />
+                <CheckCircle className="h-8 w-8 mx-auto mb-2 text-success" />
                 <p>No critical or high severity findings!</p>
               </div>
             )}
@@ -1216,7 +1206,7 @@ function BranchesTab({
                   </span>
                 </div>
                 <div className="flex items-center gap-2">
-                  <Badge className="bg-green-500">{comparison.resolved_findings}</Badge>
+                  <Counter value={comparison.resolved_findings} />
                   <span>
                     Resolved (not in{' '}
                     <code className="text-xs bg-muted px-1 rounded">
@@ -1317,9 +1307,9 @@ function BranchesTab({
                         </Badge>
                       )}
                       {branch.findings_summary.by_severity.high > 0 && (
-                        <Badge className="h-5 px-1.5 text-xs bg-orange-500">
+                        <SeverityBadge severity="high" variant="soft">
                           {branch.findings_summary.by_severity.high}H
-                        </Badge>
+                        </SeverityBadge>
                       )}
                       <span className="text-sm text-muted-foreground ms-1">
                         ({branch.findings_summary.total} total)
@@ -1334,13 +1324,13 @@ function BranchesTab({
                         const diff = branch.findings_summary.total - defaultTotal
                         if (diff > 0)
                           return (
-                            <span className="flex items-center gap-1 text-sm text-red-500">
+                            <span className="flex items-center gap-1 text-sm text-destructive">
                               <TrendingUp className="h-3 w-3" />+{diff}
                             </span>
                           )
                         if (diff < 0)
                           return (
-                            <span className="flex items-center gap-1 text-sm text-green-500">
+                            <span className="flex items-center gap-1 text-sm text-success">
                               <TrendingDown className="h-3 w-3" />
                               {diff}
                             </span>
@@ -1419,7 +1409,7 @@ function FindingsTab({
 
   // Read filters from URL (shareable)
   const [searchInput, setSearchInput] = useState(searchParams.get('q') || '')
-  const debouncedSearch = useDebounce(searchInput, 300)
+  const debouncedSearch = useSearchQuery(searchInput).term
   const [severityFilter, setSeverityFilter] = useState<string>(
     searchParams.get('severity') || 'all'
   )
@@ -1960,11 +1950,11 @@ function SettingsTab({ repository, onDelete }: { repository: Repository; onDelet
                 key={key}
                 className={cn(
                   'flex items-center gap-3 p-3 rounded-lg border',
-                  enabled ? 'bg-green-500/5 border-green-500/20' : 'bg-muted/30'
+                  enabled ? 'bg-muted/30' : 'bg-muted/30'
                 )}
               >
                 {enabled ? (
-                  <CheckCircle className="h-5 w-5 text-green-500 shrink-0" />
+                  <CheckCircle className="h-5 w-5 text-success shrink-0" />
                 ) : (
                   <XCircle className="h-5 w-5 text-muted-foreground shrink-0" />
                 )}
@@ -2247,7 +2237,7 @@ export function RepositoryWorkspace({ repositoryId }: { repositoryId: string }) 
     return (
       <div className="flex h-screen items-center justify-center">
         <div className="text-center">
-          <AlertTriangle className="h-12 w-12 mx-auto mb-4 text-red-500" />
+          <AlertTriangle className="h-12 w-12 mx-auto mb-4 text-destructive" />
           <h2 className="text-xl font-semibold mb-2">Error Loading Repository</h2>
           <p className="text-muted-foreground mb-4">
             {repoError.message || 'Failed to load repository data. Please try again.'}
@@ -2300,12 +2290,7 @@ export function RepositoryWorkspace({ repositoryId }: { repositoryId: string }) 
               <div className="min-w-0">
                 <div className="mb-1 flex flex-wrap items-center gap-x-3 gap-y-1">
                   <h1 className="min-w-0 text-2xl font-bold break-words">{repository.name}</h1>
-                  <Badge
-                    variant="outline"
-                    className={cn(SCM_PROVIDER_COLORS[repository.scm_provider])}
-                  >
-                    {SCM_PROVIDER_LABELS[repository.scm_provider]}
-                  </Badge>
+                  <Tag variant="plain" label={SCM_PROVIDER_LABELS[repository.scm_provider]} />
                   <Badge variant={repository.status === 'active' ? 'default' : 'secondary'}>
                     {STATUS_LABELS[repository.status]}
                   </Badge>

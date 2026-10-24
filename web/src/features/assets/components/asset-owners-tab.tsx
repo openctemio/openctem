@@ -14,9 +14,13 @@ import {
   ChevronsUpDown,
   Search,
   X,
+  UserCheck,
+  Eye,
+  Bell,
+  Scale,
+  type LucideIcon,
 } from 'lucide-react'
 import { toast } from 'sonner'
-import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import {
@@ -59,7 +63,7 @@ import useSWR from 'swr'
 import { useTenant } from '@/context/tenant-provider'
 import { get } from '@/lib/api/client'
 import { getErrorMessage } from '@/lib/api/error-handler'
-import { useDebounce } from '@/hooks/use-debounce'
+import { useSearchQuery } from '@/hooks/use-search-query'
 import { useGroups } from '@/features/access-control/api/use-groups'
 import { useTranslation } from '@/context/i18n-provider'
 import { ErrorState } from '@/features/shared'
@@ -87,7 +91,8 @@ import {
 } from '../hooks/use-asset-owners'
 import type { AssetOwner, OwnershipType } from '../types'
 import { AssetAccessGrantsSection } from './asset-access-grants-section'
-import { OWNERSHIP_TYPE_LABELS, OWNERSHIP_TYPE_COLORS, OWNERSHIP_TYPE_DESCRIPTIONS } from '../types'
+import { OWNERSHIP_TYPE_LABELS, OWNERSHIP_TYPE_DESCRIPTIONS } from '../types'
+import { Tag } from '@/components/ui/tag'
 
 // ============================================
 // PICKER OPTION TYPE
@@ -118,14 +123,19 @@ interface AssetOwnersTabProps {
 }
 
 /** User vs group owner icon colour. */
-const OWNER_KIND_COLOR = { user: 'text-blue-500', group: 'text-purple-500' } // palette-ok: two distinct accents
+const OWNER_KIND_COLOR = { user: 'text-muted-foreground', group: 'text-muted-foreground' }
+
+const OWNERSHIP_TYPE_ICON: Record<OwnershipType, LucideIcon> = {
+  primary: UserCheck,
+  secondary: Users,
+  stakeholder: Eye,
+  informed: Bell,
+  regulatory: Scale,
+}
 
 function OwnershipBadge({ type }: { type: OwnershipType }) {
-  const colors = OWNERSHIP_TYPE_COLORS[type]
   return (
-    <Badge variant="outline" className={cn(colors.bg, colors.text, colors.border)}>
-      {OWNERSHIP_TYPE_LABELS[type]}
-    </Badge>
+    <Tag variant="plain" icon={OWNERSHIP_TYPE_ICON[type]} label={OWNERSHIP_TYPE_LABELS[type]} />
   )
 }
 
@@ -185,12 +195,7 @@ function OwnerCard({
   return (
     <div className="flex items-center justify-between rounded-lg border p-3">
       <div className="flex items-center gap-3">
-        <div
-          className={cn(
-            'flex h-9 w-9 items-center justify-center rounded-full',
-            isUser ? 'bg-blue-500/10 text-blue-600' : 'bg-purple-500/10 text-purple-600'
-          )}
-        >
+        <div className="flex h-9 w-9 items-center justify-center rounded-full bg-muted text-muted-foreground">
           {isUser ? <User className="h-4 w-4" /> : <Building2 className="h-4 w-4" />}
         </div>
         <div>
@@ -299,7 +304,7 @@ export function AssetOwnersTab({ assetId }: AssetOwnersTabProps) {
   // query parameter on /tenants/{slug}/members and /groups, so this scales
   // to tenants with thousands of members.
   const [searchValue, setSearchValue] = useState('')
-  const debouncedSearch = useDebounce(searchValue, 250)
+  const debouncedSearch = useSearchQuery(searchValue).term
 
   // Edit owner state
   const [editOwnershipType, setEditOwnershipType] = useState<OwnershipType>('primary')

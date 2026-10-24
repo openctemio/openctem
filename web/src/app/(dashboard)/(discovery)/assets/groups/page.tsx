@@ -70,14 +70,14 @@ import {
   useBulkAssetGroupOperations,
 } from '@/features/asset-groups'
 import { useAssets } from '@/features/assets'
-import { useDebounce } from '@/hooks/use-debounce'
+import { useSearchQuery } from '@/hooks/use-search-query'
 import type { AssetGroup, CreateAssetGroupInput } from '@/features/asset-groups/types'
 import type { Asset } from '@/features/assets/types'
 import { GroupAddAssetsDialog } from '@/features/asset-groups/components/group-add-assets-dialog'
 import type { AssetGroupApiFilters } from '@/features/asset-groups/api'
 import { copyToClipboard } from '@/lib/clipboard'
 import { Can, Permission } from '@/lib/permissions'
-import { CRITICALITY_BADGE_SOFT, CRITICALITY_DOT_COLORS } from '@/lib/criticality-colors'
+import { CriticalityBadge } from '@/features/assets/components/classification-badges'
 import {
   CRITICALITY_LABELS,
   RATED_CRITICALITY_LEVELS,
@@ -98,8 +98,6 @@ type Criticality = RatedCriticality
 
 const ENVIRONMENTS: Environment[] = ['production', 'staging', 'development', 'testing']
 const CRITICALITIES: readonly Criticality[] = RATED_CRITICALITY_LEVELS
-
-const CRITICALITY_BADGE: Record<string, string> = CRITICALITY_BADGE_SOFT
 
 const FILTERS_OPEN_KEY = 'openctem:asset-groups-filters-open'
 
@@ -222,7 +220,7 @@ export default function AssetGroupsPage() {
     (hasFindings !== null ? 1 : 0)
 
   // The search box writes the URL on every key; the request waits for a pause.
-  const debouncedSearch = useDebounce(searchQuery.trim(), 300)
+  const debouncedSearch = useSearchQuery(searchQuery).term
 
   // Build API filters
   const apiFilters = useMemo(() => {
@@ -272,7 +270,7 @@ export default function AssetGroupsPage() {
 
   // Get all assets for create dialog (lazy: only fetch when dialog is open)
   const [createSearch, setCreateSearch] = useState('')
-  const debouncedCreateSearch = useDebounce(createSearch.trim(), 300)
+  const debouncedCreateSearch = useSearchQuery(createSearch).term
   const { assets: foundAssets } = useAssets({
     search: debouncedCreateSearch || undefined,
     pageSize: 20,
@@ -466,12 +464,10 @@ export default function AssetGroupsPage() {
         />
       ),
       cell: ({ row }) => (
-        <Badge variant="outline" className={cn(CRITICALITY_BADGE[row.original.criticality])}>
-          {t(
-            `criticality.${row.original.criticality}`,
-            CRITICALITY_LABELS[row.original.criticality] ?? row.original.criticality
-          )}
-        </Badge>
+        <CriticalityBadge
+          criticality={row.original.criticality as Criticality}
+          showTooltip={false}
+        />
       ),
       filterFn: (row, id, value) => value.includes(row.getValue(id)),
     },
@@ -627,9 +623,6 @@ export default function AssetGroupsPage() {
           <FacetOption
             key={crit}
             label={t(`criticality.${crit}`, CRITICALITY_LABELS[crit])}
-            adornment={
-              <span className={cn('size-2 shrink-0 rounded-full', CRITICALITY_DOT_COLORS[crit])} />
-            }
             checked={criticalities.includes(crit)}
             onCheckedChange={(on) => toggleIn(setCritParam, crit, on)}
           />
@@ -837,7 +830,6 @@ export default function AssetGroupsPage() {
                     })
                   }
                 >
-                  <span className={cn('me-2 size-2 rounded-full', CRITICALITY_DOT_COLORS[crit])} />
                   {t(`criticality.${crit}`, CRITICALITY_LABELS[crit])}
                 </DropdownMenuItem>
               ))}

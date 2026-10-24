@@ -52,9 +52,10 @@ import {
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import type { Asset, AssetType } from '@/features/assets/types'
-import { ASSET_TYPE_LABELS, ASSET_TYPE_COLORS } from '@/features/assets/types'
+import { ASSET_TYPE_LABELS, ASSET_TYPE_TILE } from '@/features/assets/types'
 import { useActiveAssetTypes } from '@/features/asset-types/api/use-asset-type-api'
 import { useAssets } from '@/features/assets/hooks/use-assets'
+import { useSearchQuery } from '@/hooks/use-search-query'
 
 /**
  * Minimal asset interface that works with both Asset and GroupAsset types
@@ -134,7 +135,7 @@ export function AddAssetsDialog({
 
   // Search state
   const [searchInput, setSearchInput] = React.useState('')
-  const [searchQuery, setSearchQuery] = React.useState('')
+  const searchQuery = useSearchQuery(searchInput).term
   const [page, setPage] = React.useState(1)
   const [allLoadedAssets, setAllLoadedAssets] = React.useState<Asset[]>([])
 
@@ -161,17 +162,13 @@ export function AddAssetsDialog({
       : { page: 1, pageSize: 1 }
   )
 
-  // Debounce search input
-  React.useEffect(() => {
-    const timer = setTimeout(() => {
-      if (searchInput !== searchQuery) {
-        setSearchQuery(searchInput)
-        setPage(1)
-        setAllLoadedAssets([])
-      }
-    }, 300)
-    return () => clearTimeout(timer)
-  }, [searchInput, searchQuery])
+  // A new search starts over at its first page, once it is sent.
+  const [loadedFor, setLoadedFor] = React.useState(searchQuery)
+  if (loadedFor !== searchQuery) {
+    setLoadedFor(searchQuery)
+    setPage(1)
+    setAllLoadedAssets([])
+  }
 
   // Accumulate assets when data changes
   React.useEffect(() => {
@@ -282,7 +279,6 @@ export function AddAssetsDialog({
       setNewAssets([])
       setNewAssetName('')
       setSearchInput('')
-      setSearchQuery('')
       setPage(1)
       setAllLoadedAssets([])
       setRemovingAssetId(null)
@@ -350,10 +346,7 @@ export function AddAssetsDialog({
 
   // Render asset row (supports both Asset and GroupAssetMinimal)
   const renderAssetRow = (asset: Asset | GroupAssetMinimal, mode: 'available' | 'in-group') => {
-    const colors = ASSET_TYPE_COLORS[asset.type as AssetType] || {
-      bg: 'bg-gray-500/15',
-      text: 'text-gray-600',
-    }
+    const colors = ASSET_TYPE_TILE
     const isSelected = selectedAssetIds.includes(asset.id)
     const isBeingRemoved = removingAssetId === asset.id
 
@@ -653,10 +646,7 @@ export function AddAssetsDialog({
                 ) : (
                   <div className="space-y-1.5">
                     {newAssets.map((asset) => {
-                      const colors = ASSET_TYPE_COLORS[asset.type as AssetType] || {
-                        bg: 'bg-gray-500/15',
-                        text: 'text-gray-600',
-                      }
+                      const colors = ASSET_TYPE_TILE
 
                       return (
                         <div
@@ -709,10 +699,7 @@ export function AddAssetsDialog({
                       {} as Record<string, number>
                     )
                   ).map(([type, count]) => {
-                    const colors = ASSET_TYPE_COLORS[type as AssetType] || {
-                      bg: 'bg-gray-500/15',
-                      text: 'text-gray-600',
-                    }
+                    const colors = ASSET_TYPE_TILE
                     return (
                       <Badge key={type} variant="outline" className={cn('text-xs', colors.text)}>
                         {getAssetTypeName(type)}: {count}
