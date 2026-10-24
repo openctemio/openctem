@@ -316,7 +316,7 @@ cards.
 - **Run trace.** A row of Recent executions opens the run: per-step status,
   in/out and skipped counts, errors, the deliveries ("Never sent: simulate"
   in simulate) and "Kept until" from `retained_until`. A run paused at the
-  change cap offers Continue (`POST /workflow-runs/{id}/resume`) and Cancel.
+  change cap offers Continue (`POST /workflow-runs/{id}/approve`) and Cancel.
 
 The page hides or disables each control by the permission it needs
 (`automations:write` to edit, preview, validate and run by hand;
