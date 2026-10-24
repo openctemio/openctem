@@ -122,7 +122,9 @@ func registerScanApprovalRoutes(router Router, h *handler.ScanApprovalHandler, a
 	router.Group("/api/v1/scan-approvals", func(r Router) {
 		r.GET("/", h.List, middleware.Require(permission.ScansRead))
 		r.GET("/{id}", h.Get, middleware.Require(permission.ScansRead))
-		r.POST("/{id}/approve", h.Approve, middleware.Require(permission.ScansApprove))
+		// Approving lets the scan send traffic to its targets, as approving a
+		// scope target does: a recent sign-in.
+		r.POST("/{id}/approve", h.Approve, middleware.Require(permission.ScansApprove), requireStepUp())
 		r.POST("/{id}/reject", h.Reject, middleware.Require(permission.ScansApprove))
 		r.POST("/{id}/self-approve", h.SelfApprove, middleware.Require(permission.ScansApprove))
 		r.POST("/{id}/remind", h.Remind, middleware.Require(permission.ScansWrite))
