@@ -284,15 +284,13 @@ export default function BusinessImpactPage() {
                     >
                       <div className="min-w-0">
                         <p className="truncate text-sm font-medium">{asset.name}</p>
-                        <p className="text-xs text-muted-foreground capitalize">
-                          {t(
-                            'prioritization.businessImpact.crown.meta',
-                            '{type} · {count} findings',
-                            {
-                              type: asset.type,
+                        <p className="flex gap-3 text-xs text-muted-foreground">
+                          <span className="capitalize">{asset.type}</span>
+                          <span>
+                            {t('prioritization.businessImpact.crown.findings', '{count} findings', {
                               count: asset.finding_count ?? 0,
-                            }
-                          )}
+                            })}
+                          </span>
                         </p>
                       </div>
                       <RiskScoreBadge score={asset.risk_score ?? 0} size="sm" />
