@@ -332,7 +332,7 @@ function TokenActionsCell({
           allowed={canRevoke}
           reason={ownerOnlyReason}
           onClick={() => setRotateOpen(true)}
-          title={canRevoke ? tr('settings.scim.rotate.confirm', 'Rotate') : undefined}
+          title={canRevoke ? tr('settings.scim.rotate.confirm', 'Rotate token') : undefined}
           aria-label={tr('settings.scim.rotate.label', 'Rotate {name}', { name: t.name })}
         >
           <RefreshCw className="h-4 w-4" />
@@ -384,6 +384,7 @@ function TokenActionsCell({
             : tr('settings.scim.rotate.confirm', 'Rotate')
         }
         isLoading={rotating}
+        typeToConfirm={t.name}
         handleConfirm={() => void handleRotate()}
       />
     </div>

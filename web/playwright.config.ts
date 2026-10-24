@@ -62,9 +62,7 @@ export default defineConfig({
   forbidOnly: isCI,
   retries: isCI ? 1 : 0,
 
-  reporter: isCI
-    ? [['list'], ['blob'], ['github']]
-    : [['list'], ['html', { open: 'never' }]],
+  reporter: isCI ? [['list'], ['blob'], ['github']] : [['list'], ['html', { open: 'never' }]],
 
   use: {
     baseURL,
