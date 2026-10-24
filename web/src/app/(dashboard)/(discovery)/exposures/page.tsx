@@ -570,9 +570,9 @@ export default function ExposuresPage() {
                   pageSizeOptions={PAGE_SIZES}
                   onRowClick={setDetailExposure}
                   onSelectionChange={(rows) => {
- setSelectedIds(rows.map((e) => e.id))
- setSelectedNames(rows.map((e) => e.title))
- }}
+                    setSelectedIds(rows.map((e) => e.id))
+                    setSelectedNames(rows.map((e) => e.title))
+                  }}
                   resetSelectionKey={selectionEpoch}
                   showSelectionCount={false}
                   emptyMessage={
