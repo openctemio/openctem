@@ -179,6 +179,9 @@ type Service struct {
 	tempDir      string
 	// members re-reads the uploader's membership when the worker imports.
 	members MemberReader
+	// keys and perms re-check the upload's API key and findings:approve.
+	keys  KeyReader
+	perms PermissionReader
 	// mappings resolves the import mapping version a committed upload pinned.
 	mappings MappingResolver
 }

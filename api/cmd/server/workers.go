@@ -1359,8 +1359,10 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 				BatchSize:    5,
 				MaxPerTick:   50,
 				LeaseTimeout: 5 * time.Minute,
-				Workers:      cfg.Ingest.Workers,
-				Logger:       log.With("controller", "ingest-worker"),
+				// The lease is renewed while a job runs; this caps one job.
+				MaxJobDuration: cfg.Ingest.MaxJobDuration,
+				Workers:        cfg.Ingest.Workers,
+				Logger:         log.With("controller", "ingest-worker"),
 			},
 		))
 	}

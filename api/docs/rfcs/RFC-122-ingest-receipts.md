@@ -227,6 +227,21 @@ organization moving and every scope consistent.
   payload that crashes or hangs the worker) makes the job dead with
   `apply_failed`; its owner is told (the import's receipt fails, the CI gate
   fails the run).
+- **Lease.** A processing job's lease (`locked_at`, five minutes) is renewed
+  every third of it while the worker runs, so a long import completes instead
+  of being released and cancelled on every attempt; `INGEST_MAX_JOB_DURATION`
+  (default 30 minutes) is the hard cap. `Complete`, `Fail` and the renewal
+  write only `WHERE status = 'processing' AND attempts = <claimed attempt>`:
+  a worker that lost its lease stops and writes nothing.
+- **Rights at apply time.** The worker re-reads the uploader before it
+  imports: a member who left, a revoked, expired or deleted API key, or a
+  demoted administrator is refused (`uploader_not_permitted`) or narrowed;
+  `findings:approve` recorded at accept is kept only while the person or the
+  key's scopes still hold it. Rights are never widened.
+- **Retries.** A tool export that is retried gives back the report slots its
+  failed attempt took, so the run's cap is not used twice. An unkeyed upload
+  whose duplicate lookup fails is answered `503`; the result of an upload with
+  no job is answered only when its receipt finished (else `404`).
 
 ## 6c. Queue hygiene
 
