@@ -28,7 +28,7 @@ import {
 import { cn } from '@/lib/utils'
 import { useDebounce } from '@/hooks/use-debounce'
 import { getErrorMessage } from '@/lib/api/error-handler'
-import { ASSET_TYPE_COLORS, ASSET_TYPE_LABELS, useAssets } from '@/features/assets'
+import { ASSET_TYPE_TILE, ASSET_TYPE_LABELS, useAssets } from '@/features/assets'
 import type { Asset, AssetType } from '@/features/assets'
 import { fetchAllAssets } from '@/features/assets/hooks/use-assets'
 import { CRITICALITY_LABELS, type CriticalityLevel } from '@/lib/criticality'
@@ -262,9 +262,7 @@ export function AssetSource({ selected, onChange }: AssetSourceProps) {
             {rows.map((row, index) => {
               const asset = meta.get(row.id)
               const picked = selected[row.id] !== undefined
-              const colors = asset
-                ? (ASSET_TYPE_COLORS[asset.type] ?? { bg: 'bg-muted', text: 'text-foreground' })
-                : null
+              const colors = asset ? ASSET_TYPE_TILE : null
               return (
                 <li
                   key={row.id}

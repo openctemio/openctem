@@ -10,9 +10,15 @@
  * is never used for either scale.
  *
  * Every priority surface (badge, chip, chart series, legend, row marker) takes
- * its colour from here, which reads the --prio-* tokens in src/styles/theme.css
- * (checked at AA in both themes by src/styles/__tests__/contrast.test.ts). The
- * palette-drift gate refuses a hand-written priority colour outside this file.
+ * its colour from here, which reads the --prio-* tokens in src/styles/theme.css.
+ * The marks are one ramp (--viz-prio-*, source src/lib/chart-palette.json):
+ * each class is at least 0.10 OKLCH lightness from the next, so P0..P3 stay
+ * apart in a stacked bar and under every colour-vision deficiency; the P0 box
+ * fill and every box edge are the same steps, so a badge and a chart segment
+ * of one class are one colour (research/257; asserted by
+ * src/styles/__tests__/contrast.test.ts and scripts/check-palette.mjs). "Not
+ * prioritised" is a hatch, never a solid fill. The palette-drift gate refuses a
+ * hand-written priority colour outside this file.
  */
 export const PRIORITY_ORDER = ['P0', 'P1', 'P2', 'P3'] as const
 export type PriorityClass = (typeof PRIORITY_ORDER)[number]
@@ -32,6 +38,10 @@ export const PRIORITY_CHART_COLORS: Record<PriorityClass, string> = {
   P2: 'var(--prio-2)',
   P3: 'var(--prio-3)',
 }
+
+/** "Not prioritised" in a chart or legend: a hatch of the neutral step (CSS background). */
+export const PRIORITY_NONE_FILL =
+  'repeating-linear-gradient(135deg, var(--viz-prio-none) 0 1.5px, transparent 1.5px 4px)'
 
 /** Dot / swatch fill as a class. */
 export const PRIORITY_DOT_CLASS: Record<PriorityClass, string> = {
