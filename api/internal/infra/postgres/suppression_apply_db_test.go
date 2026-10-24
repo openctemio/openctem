@@ -242,7 +242,7 @@ func TestSuppressionApprove_AssetBoundAcceptedRisk_DB(t *testing.T) {
 	assertStatus(ctx, t, db, inProgress, "in_progress", "", "finding in progress")
 	assertStatus(ctx, t, db, prefixOnly, "new", "", "exact rule id")
 
-	if err := repo.Delete(ctx, tenant, rule.ID()); err != nil {
+	if err := repo.Delete(ctx, tenant, rule.ID(), requester, nil); err != nil {
 		t.Fatal(err)
 	}
 	assertStatus(ctx, t, db, hit, "new", "", "lifted after delete")

@@ -96,6 +96,7 @@ type FindingProcessor struct {
 	// correlations, when wired, re-derives cross-rule correlations of the
 	// batch's assets (correlation_findings.go).
 	correlations CorrelationStore
+	issueLinks   IssueLinkStore
 
 	// suppressionModules, when wired, turns ingest suppression off for a
 	// tenant whose suppressions module is disabled.
@@ -893,6 +894,15 @@ func (p *FindingProcessor) processBatch(
 			items[i] = correlationItem{fingerprint: validFindings[i].fingerprint, assetID: validFindings[i].assetID, finding: &validFindings[i].finding}
 		}
 		p.correlateFindings(ctx, tenantID, items, fingerprints)
+	}
+
+	// Step 11: same-issue links of the batch's SAST and secret findings.
+	if p.issueLinks != nil {
+		items := make([]correlationItem, len(validFindings))
+		for i := range validFindings {
+			items[i] = correlationItem{fingerprint: validFindings[i].fingerprint, assetID: validFindings[i].assetID, finding: &validFindings[i].finding}
+		}
+		p.linkIssues(ctx, tenantID, items)
 	}
 
 	return nil
