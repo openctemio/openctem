@@ -93,4 +93,14 @@ type Repository interface {
 	// DeleteSnapshotUnscoped deletes a collectable snapshot (never current or
 	// previous); deleted is false when it no longer qualifies.
 	DeleteSnapshotUnscoped(ctx context.Context, id shared.ID) (deleted bool, err error)
+	// ListOrphanPacksUnscoped returns rule source packs created before the
+	// given time that no snapshot references (a failed sync, or a collected
+	// snapshot whose pack could not be deleted).
+	ListOrphanPacksUnscoped(ctx context.Context, before time.Time, limit int) ([]OrphanPack, error)
+}
+
+// OrphanPack is a rule source pack no snapshot references.
+type OrphanPack struct {
+	TenantID shared.ID
+	PackID   shared.ID
 }

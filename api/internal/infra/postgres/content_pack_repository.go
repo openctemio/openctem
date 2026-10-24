@@ -145,9 +145,11 @@ func (r *ContentPackRepository) List(ctx context.Context, tenantID shared.ID, f 
 		AND ($2::text = '' OR p.kind = $2)
 		AND ($3::text = '' OR p.name = $3)
 		AND ($4::text = '' OR p.status = $4)
-		AND (NOT $5::boolean OR NOT EXISTS (
+		AND (NOT $5::boolean OR p.source <> 'git' OR EXISTS (
 			SELECT 1 FROM content_source_snapshots s
-			WHERE s.tenant_id = p.tenant_id AND s.content_pack_id = p.id AND s.state IN ('candidate', 'rejected')))`
+			JOIN content_sources c ON c.id = s.source_id AND c.tenant_id = s.tenant_id
+			WHERE s.tenant_id = p.tenant_id AND s.content_pack_id = p.id
+			  AND c.current_snapshot_id = s.id))`
 	args := []any{tenantID.String(), f.Kind, f.Name, string(f.Status), f.Deliverable}
 	var total int
 	if err := r.db.QueryRowContext(ctx, `SELECT count(*) FROM content_packs p`+where, args...).Scan(&total); err != nil {

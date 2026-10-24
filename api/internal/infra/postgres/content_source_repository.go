@@ -593,3 +593,28 @@ func (r *ContentSourceRepository) DeleteSnapshotUnscoped(ctx context.Context, id
 	n, _ := res.RowsAffected()
 	return n == 1, nil
 }
+
+// ListOrphanPacksUnscoped returns old rule source packs without a snapshot.
+func (r *ContentSourceRepository) ListOrphanPacksUnscoped(ctx context.Context, before time.Time, limit int) ([]cs.OrphanPack, error) {
+	rows, err := r.db.QueryContext(ctx, `
+		SELECT p.tenant_id, p.id FROM content_packs p
+		WHERE p.source = 'git' AND p.created_at < $1
+		  AND NOT EXISTS (SELECT 1 FROM content_source_snapshots s WHERE s.tenant_id = p.tenant_id AND s.content_pack_id = p.id)
+		ORDER BY p.created_at LIMIT $2`, before, limit)
+	if err != nil {
+		return nil, fmt.Errorf("list orphan rule source packs: %w", err)
+	}
+	defer rows.Close()
+	out := []cs.OrphanPack{}
+	for rows.Next() {
+		var tid, id string
+		if err := rows.Scan(&tid, &id); err != nil {
+			return nil, err
+		}
+		o := cs.OrphanPack{}
+		o.TenantID, _ = shared.IDFromString(tid)
+		o.PackID, _ = shared.IDFromString(id)
+		out = append(out, o)
+	}
+	return out, rows.Err()
+}

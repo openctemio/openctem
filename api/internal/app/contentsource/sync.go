@@ -311,6 +311,10 @@ func (s *Service) syncSource(ctx context.Context, src *dom.Source, actor *shared
 	sn.Diff = dom.ComputeDiff(base, rules, sn.Tier, sn.LicenseSPDX)
 	sn.Checks, sn.ReviewRequired = dom.EvaluatePromotion(src.Policy, base, sn, dup)
 	if err := s.repo.CreateSnapshot(ctx, sn); err != nil {
+		// The pack has no snapshot: delete it so no unapproved content stays
+		// stored (and it is never deliverable: only a current snapshot's
+		// pack is).
+		s.deletePack(ctx, tenantID, pack.ID, "failed sync")
 		return rep, err
 	}
 	if err := s.repo.SupersedeCandidatesUnscoped(ctx, src.ID, sn.ID); err != nil {
@@ -414,10 +418,26 @@ func truncate(s string, n int) string {
 	return s[:n]
 }
 
+// deletePack deletes a snapshot pack on a context that survives the sync's
+// own cancellation. A failure leaves an orphan that is never delivered and
+// that CollectGarbage removes later.
+func (s *Service) deletePack(ctx context.Context, tenantID, packID shared.ID, why string) {
+	dctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), time.Minute)
+	defer cancel()
+	if err := s.packs.DeleteSourcePack(dctx, tenantID, packID); err != nil && !errors.Is(err, cpdom.ErrNotFound) {
+		s.logger.Warn("failed to delete a rule source pack", "reason", why, "pack_id", packID.String(), "error", err)
+	}
+}
+
 // CollectGarbage deletes superseded and rejected snapshots older than a day
-// that are neither current nor previous, and their packs (mirror storage).
+// that are neither current nor previous, and their packs (mirror storage),
+// and then the orphan packs no snapshot references. Delivery never depends
+// on this cleanup: a pack is delivered only while it is its source's
+// current snapshot, so a pack whose delete fails stays undeliverable and is
+// retried as an orphan.
 func (s *Service) CollectGarbage(ctx context.Context) (int, error) {
-	list, err := s.repo.ListCollectableUnscoped(ctx, s.now().UTC().Add(-collectAfter), collectBatch)
+	cutoff := s.now().UTC().Add(-collectAfter)
+	list, err := s.repo.ListCollectableUnscoped(ctx, cutoff, collectBatch)
 	if err != nil {
 		return 0, err
 	}
@@ -432,10 +452,15 @@ func (s *Service) CollectGarbage(ctx context.Context) (int, error) {
 		}
 		n++
 		if sn.TenantID != nil && sn.ContentPackID != nil {
-			if err := s.packs.DeleteSourcePack(ctx, *sn.TenantID, *sn.ContentPackID); err != nil && !errors.Is(err, cpdom.ErrNotFound) {
-				s.logger.Warn("failed to delete a collected snapshot's pack", "snapshot_id", sn.ID.String(), "error", err)
-			}
+			s.deletePack(ctx, *sn.TenantID, *sn.ContentPackID, "collected snapshot")
 		}
+	}
+	orphans, err := s.repo.ListOrphanPacksUnscoped(ctx, s.now().UTC().Add(-time.Hour), collectBatch)
+	if err != nil {
+		return n, err
+	}
+	for _, o := range orphans {
+		s.deletePack(ctx, o.TenantID, o.PackID, "orphan")
 	}
 	return n, nil
 }

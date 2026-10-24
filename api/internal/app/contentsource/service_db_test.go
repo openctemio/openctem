@@ -178,6 +178,8 @@ type env struct {
 	db      *postgres.DB
 	repo    *postgres.ContentSourceRepository
 	svc     *app.Service
+	packs   *contentpackapp.Service
+	enc     app.Encryptor
 	git     *fakeGit
 	lim     *fakeLimits
 	private bool
@@ -224,10 +226,18 @@ func newEnv(t *testing.T) *env {
 	if err != nil {
 		t.Fatal(err)
 	}
-	e.svc = app.NewService(e.repo, packs, e.lim, enc, nil, log)
-	e.svc.SetFetcher(e.git.fetch, func(string) (bool, error) { return e.private, nil })
-	e.svc.SetClock(func() time.Time { return e.clock })
+	e.packs, e.enc = packs, enc
+	e.svc = e.service(e.repo, packs)
 	return e
+}
+
+// service builds a rule source service over repo and packs, wired like the
+// default one (tests wrap them to inject failures).
+func (e *env) service(repo dom.Repository, packs app.PackStore) *app.Service {
+	svc := app.NewService(repo, packs, e.lim, e.enc, nil, logger.NewNop())
+	svc.SetFetcher(e.git.fetch, func(string) (bool, error) { return e.private, nil })
+	svc.SetClock(func() time.Time { return e.clock })
+	return svc
 }
 
 func (e *env) actor(tid shared.ID, uid shared.ID) app.Actor {
@@ -250,11 +260,16 @@ func (e *env) create(t *testing.T, slug string, mut func(*app.CreateInput)) *dom
 // runSync makes src due and runs the worker once.
 func (e *env) runSync(t *testing.T, src *dom.Source) *dom.Source {
 	t.Helper()
+	return e.runSyncOn(t, e.svc, src)
+}
+
+func (e *env) runSyncOn(t *testing.T, svc *app.Service, src *dom.Source) *dom.Source {
+	t.Helper()
 	ctx := context.Background()
 	if err := e.repo.RequestSync(ctx, e.tenantA, src.ID, e.clock); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := e.svc.RunDue(ctx); err != nil {
+	if _, err := svc.RunDue(ctx); err != nil {
 		t.Fatal(err)
 	}
 	got, err := e.repo.Get(ctx, e.tenantA, src.ID)
@@ -325,11 +340,10 @@ func TestRuleSources_SyncPromoteRollback_DB(t *testing.T) {
 		t.Fatalf("rollback: %+v", rolled)
 	}
 
-	// Only promoted snapshots are deliverable to sensors.
-	deliver, _, err := contentpackapp.NewService(postgres.NewContentPackRepository(e.db), &memStore{objs: map[string][]byte{}}, nil, nil, logger.NewNop()).
-		List(ctx, contentpackapp.ListInput{TenantID: e.tenantA.String(), Status: "active", Deliverable: true})
-	if err != nil || len(deliver) != 2 {
-		t.Fatalf("deliverable packs: %d %v", len(deliver), err)
+	// Only the current snapshot's pack is deliverable to sensors.
+	deliver := e.deliverable(t)
+	if len(deliver) != 1 || deliver[0] != first.ContentPackID.String() {
+		t.Fatalf("deliverable packs after rollback: %v (want only the current snapshot's %s)", deliver, first.ContentPackID)
 	}
 }
 

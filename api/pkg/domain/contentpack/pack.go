@@ -226,8 +226,9 @@ type Filter struct {
 	Kind   string
 	Name   string
 	Status Status
-	// Deliverable leaves out packs of rule source snapshots that are not
-	// promoted (candidates, rejected): sensors never receive them.
+	// Deliverable keeps a rule source snapshot's pack only while that
+	// snapshot is its source's current one: candidates, rejected,
+	// superseded and orphaned packs are never delivered to sensors.
 	Deliverable bool
 }
 
