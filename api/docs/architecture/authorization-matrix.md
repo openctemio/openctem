@@ -2782,10 +2782,36 @@ These tests fail the build if the model erodes. Treat them as executable spec:
 | **Go permission registry ≡ DB seed** | `tests/unit/permission_catalog_sync_test.go` (AUTHZ-17) | Parses the seed migrations and asserts set-equality with `permission.AllPermissions()`. A permission added to code but not seeded (or vice-versa) → red. |
 | **No tenantless by-id statement on a tenant-scoped table** | `tools/lint/tenantsql` (D-11) | Folds the SQL each `internal/infra/postgres` function sends and fails on `WHERE id = $n` against a table with a `tenant_id` column when the statement has no tenant predicate, unless the method is named `...ForPlatform`/`...Unscoped` (never callable from an HTTP handler) or the shrink-only `allowlist.txt` records why. See `tools/lint/tenantsql/README.md`. |
 | **Every referenced permission exists** | `tests/unit/permission_references_exist_test.go` | Every value in `module.ModulePermissionMapping` (sidebar/bootstrap), every `permission.X` constant used in api Go code, and every value of the web `Permission` object (`web/src/lib/permissions/constants.ts`) is in `permission.AllPermissions()`. A reference to a permission no role can hold (which silently hides a module from every non-admin) → red. |
+| **Routes answer as their gates say, per principal and organization** | `tests/authzmatrix` (nightly `api-authz-matrix.yml`, `make -C api authz-matrix`) | Dynamic: seeds two organizations through the public API (owner, admin, member, viewer, custom roles, a data-scoped member, a group-derived role, a suspended member, API keys, a sensor, no credential) and sends every route as every principal, with its own and with the other organization's ids. A refusal where the gate admits, a pass where it refuses, a 2xx write with another organization's ids, or another organization's (or out-of-scope) ids in a response body fails the run, unless `testdata/allowlist.tsv` records why. Scenario tests cover the role-management API (ceilings, owner rules, invitations, API keys, four-eyes, step-up, how fast a grant or revocation applies). See [Authorization matrix suite](#authorization-matrix-suite). |
 
 Each module in `ModulePermissionMapping` names the permission its routes gate
 on, so the sidebar and the API agree (for example Attack Surface → `assets:read`,
 CTEM Cycles → `ctem:cycles:read`, Scan Pipelines → `scans:workflows:read`).
+
+## Authorization matrix suite
+
+`api/tests/authzmatrix` (build tag `authzmatrix`) checks the running API
+against the model above. `ci/run.sh` starts Postgres and Redis on 127.0.0.1
+(tmpfs), applies the migrations, builds and starts the API from the same tree,
+runs the suite and removes everything.
+
+- **Expected outcome** per route and principal comes from the route gates in the
+  source (`internal/authzdoc`), the API key rules (read-only, never a team role,
+  denied prefixes, scopes narrowed to the creator) and a short table of checks
+  handlers add after the gate. Routes with their own credential (sensor
+  protocol, SCIM, CI run tokens, webhooks, OAuth, invitations) and public
+  endpoints are not judged by the gate; their bodies are still checked.
+- **Cells**: reads with the organization's real ids (harvested from its list
+  routes), writes with fresh random ids and an empty body (a write that passes
+  its gate finds no row), then the same route with the other organization's ids
+  and, for data-scoped principals, with an asset or finding outside their scope.
+  Writes that would end the principal's own session or membership are covered
+  by the scenario tests with throw-away accounts instead.
+- **Allowlist** (`testdata/allowlist.tsv`): one line per reviewed exception, with
+  a reason. A confirmed issue is listed as `known:<report id>` and skipped until
+  its fix lands; the line carries no description.
+- **Report**: `MATRIX_REPORT=<file.json>` writes the cells (`-reads`, `-writes`)
+  and the scenario steps (`-scenarios`).
 
 ## How to … (recipes that stay inside the invariants)
 

@@ -1,0 +1,19 @@
+# Reviewed exceptions to the authorization matrix (api/tests/authzmatrix).
+# One per line, six TAB-separated columns:
+#   method  path-template  principal-glob  variant(own|cross|oos|*)  status  reason
+# status: "expected" (intended behaviour, explained in the reason) or
+#         "known:<report id>" (a confirmed issue, skipped until its fix lands;
+#         the reason names the report id only).
+# Globs use path.Match syntax ("*" matches within one segment; principal
+# names look like "Acme/viewer", "Globex/key-admin-broad").
+POST	/api/v1/tenants	*	own	expected	organizations are created by the platform administrator only (route is allowlisted as role-gated in the handler)
+GET	/api/v1/audit-logs/*	*/key-*	own	expected	the audit log needs full data access, which an API key never carries
+GET	/api/v1/audit-logs/resource/{type}/{id}	*/key-*	own	expected	the audit log needs full data access, which an API key never carries
+POST	/api/v1/ci/gate-policies	*	own	expected	an empty body asks for an organization-wide policy, which needs access to every repository (handler check)
+POST	/api/v1/findings/remediation-groups/{key}/resolve	*	own	expected	marking a fix applied needs findings:fix_apply in addition to the route gate (handler check)
+POST	/api/v1/relationships/suggestions/generate	*	own	expected	generating suggestions covers every asset, so a restricted data scope is refused (handler check)
+POST	/api/v1/vex-statements	*	own	expected	an empty body asks for a statement on every asset, which a restricted data scope is refused (handler check)
+POST	/api/v1/vex-statements/import	*	own	expected	an empty body asks for statements on every asset, which a restricted data scope is refused (handler check)
+GET	/api/v1/audit-logs	*/key-*	own	expected	the audit log needs full data access, which an API key never carries
+GET	/api/v1/audit-logs/user/{id}	*/key-*	own	expected	the audit log needs full data access, which an API key never carries
+POST	/api/v1/groups/{groupId}/scope-rules/reconcile	*	cross	expected	reconcile loads rules by the caller's tenant and the group id: another organization's group yields zero rules and changes nothing (same answer as an unknown id)
