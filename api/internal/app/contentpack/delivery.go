@@ -111,7 +111,7 @@ func (d *Delivery) compute(ctx context.Context, tenantID string) (map[string]loc
 	out := map[string]located{}
 	var revoked []string
 	if d.tenant != nil {
-		active, _, err := d.tenant.List(ctx, ListInput{TenantID: tenantID, Status: string(dom.StatusActive), Limit: maxDesiredPacks})
+		active, _, err := d.tenant.List(ctx, ListInput{TenantID: tenantID, Status: string(dom.StatusActive), Deliverable: true, Limit: maxDesiredPacks})
 		if err != nil {
 			return nil, nil, err
 		}

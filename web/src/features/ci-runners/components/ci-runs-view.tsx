@@ -19,7 +19,7 @@ import {
   ShieldCheck,
   Workflow,
 } from 'lucide-react'
-import { PageHeader, EmptyState, ErrorState, RelativeTime } from '@/features/shared'
+import { PageHeader, PageStack, EmptyState, ErrorState, RelativeTime } from '@/features/shared'
 import { dateFnsLocaleFor } from '@/features/shared/components/activity-timeline'
 import { useListParams } from '@/hooks/use-list-params'
 import { useUrlFilter } from '@/hooks/use-url-param'
@@ -178,7 +178,7 @@ export function CIRunsView({ embedded = false, toolbarStart }: CIRunsViewProps) 
   const totalPages = data?.total_pages ?? 1
 
   return (
-    <div className="space-y-4">
+    <PageStack>
       {!embedded && (
         <PageHeader
           title={t('scans.ci.runsTitle', 'CI runs')}
@@ -336,7 +336,7 @@ export function CIRunsView({ embedded = false, toolbarStart }: CIRunsViewProps) 
       )}
 
       <CIRunSheet id={selected} onClose={() => setSelected(null)} />
-    </div>
+    </PageStack>
   )
 }
 

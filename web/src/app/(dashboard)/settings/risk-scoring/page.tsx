@@ -11,6 +11,7 @@ import { PageHeader, PageStack } from '@/features/shared'
 import { useTenant } from '@/context/tenant-provider'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { Skeleton } from '@/components/ui/skeleton'
+import { ConfirmDialog } from '@/components/confirm-dialog'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -24,17 +25,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-  AlertDialogTrigger,
-} from '@/components/ui/alert-dialog'
 import { toast } from 'sonner'
 import { Save, RotateCcw, Info, ArrowUpDown, Loader2, AlertCircle } from 'lucide-react'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
@@ -227,6 +217,7 @@ export default function ScoringConfigurationPage() {
   const { updateRiskScoring, isUpdating } = useUpdateRiskScoring(tenantId)
   const { previewChanges, isPreviewing } = useRiskScoringPreview(tenantId)
   const { recalculate, isRecalculating } = useRecalculateRiskScores(tenantId)
+  const [confirmRecalc, setConfirmRecalc] = useState(false)
   const { presets } = useRiskScoringPresets(tenantId)
 
   const [config, setConfig] = useState<RiskScoringSettings | null>(null)
@@ -735,8 +726,14 @@ export default function ScoringConfigurationPage() {
                         'Risk = findings score × exposure % × criticality % × (1 − control reduction).'
                       )
                     : (config.score_composition_mode ?? 'multiply') === 'amplify_headroom'
-                      ? 'Highly-exposed critical assets no longer all pin at 100: the exposure boost fills the remaining range instead of overflowing. Improves ranking at the top.'
-                      : 'Exposure multiplier scales the whole score.'}
+                      ? t(
+                          'riskScore.model.amplifyHint',
+                          'Highly-exposed critical assets no longer all pin at 100. The exposure boost fills the remaining range instead of overflowing, which improves ranking at the top.'
+                        )
+                      : t(
+                          'riskScore.model.multiplyHint',
+                          'Exposure multiplier scales the whole score.'
+                        )}
                 </p>
               </div>
             </CardContent>
@@ -1151,11 +1148,13 @@ export default function ScoringConfigurationPage() {
             <div className="flex items-start justify-between gap-4">
               <div className="space-y-1">
                 <Label htmlFor="floor-unowned-toggle" className="text-sm font-medium">
-                  Floor unowned findings at P2
+                  {t('riskScore.floor.title', 'Floor unowned findings at P2')}
                 </Label>
                 <p className="text-muted-foreground max-w-prose text-xs">
-                  Findings on assets with no assigned owner can&apos;t be safely deprioritized —
-                  keep them at P2 minimum. Off by default.
+                  {t(
+                    'riskScore.floor.desc',
+                    "Findings on assets with no assigned owner can't be safely deprioritized, so keep them at P2 minimum. Off by default."
+                  )}
                 </p>
               </div>
               <Switch
@@ -1167,45 +1166,52 @@ export default function ScoringConfigurationPage() {
           </CardContent>
         </Card>
 
-        {/* Recalculate & How Scoring Works — side by side */}
+        {/* Recalculate and How Scoring Works, side by side */}
         <div className="grid gap-5 lg:grid-cols-2">
           <Card>
             <CardHeader>
-              <CardTitle>Recalculate scores</CardTitle>
+              <CardTitle>{t('riskScore.recalc.title', 'Recalculate scores')}</CardTitle>
               <CardDescription>
-                Apply current scoring configuration to all assets. This may take a moment for large
-                portfolios.
+                {t(
+                  'riskScore.recalc.desc',
+                  'Apply current scoring configuration to all assets. This may take a moment for large portfolios.'
+                )}
               </CardDescription>
             </CardHeader>
             <CardContent>
-              <AlertDialog>
-                <AlertDialogTrigger asChild>
-                  <Button variant="outline" size="sm" disabled={isRecalculating || isDirty}>
-                    {isRecalculating ? (
-                      <Loader2 className="h-4 w-4 animate-spin" />
-                    ) : (
-                      <ArrowUpDown className="h-4 w-4" />
-                    )}
-                    Recalculate all scores
-                  </Button>
-                </AlertDialogTrigger>
-                <AlertDialogContent>
-                  <AlertDialogHeader>
-                    <AlertDialogTitle>Recalculate risk scores</AlertDialogTitle>
-                    <AlertDialogDescription>
-                      This will recalculate risk scores for all assets using the current saved
-                      configuration. This operation cannot be undone.
-                    </AlertDialogDescription>
-                  </AlertDialogHeader>
-                  <AlertDialogFooter>
-                    <AlertDialogCancel>Cancel</AlertDialogCancel>
-                    <AlertDialogAction onClick={handleRecalculate}>Recalculate</AlertDialogAction>
-                  </AlertDialogFooter>
-                </AlertDialogContent>
-              </AlertDialog>
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={isRecalculating || isDirty}
+                onClick={() => setConfirmRecalc(true)}
+              >
+                {isRecalculating ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <ArrowUpDown className="h-4 w-4" />
+                )}
+                {t('riskScore.recalc.button', 'Recalculate all scores')}
+              </Button>
+              <ConfirmDialog
+                open={confirmRecalc}
+                onOpenChange={setConfirmRecalc}
+                title={t(
+                  'confirm.riskScore.recalcTitle',
+                  'Recalculate the risk score of every asset?'
+                )}
+                desc={t(
+                  'confirm.riskScore.recalcDesc',
+                  'Every asset is queued for a new score with the saved configuration. Scores, priorities and the order of findings change for the whole organization while it runs. Findings themselves are not changed.'
+                )}
+                confirmText={t('confirm.riskScore.recalcConfirm', 'Recalculate all scores')}
+                handleConfirm={async () => {
+                  setConfirmRecalc(false)
+                  await handleRecalculate()
+                }}
+              />
               {isDirty && (
                 <p className="text-muted-foreground mt-2 text-xs">
-                  Save changes before recalculating.
+                  {t('riskScore.recalc.saveFirst', 'Save changes before recalculating.')}
                 </p>
               )}
             </CardContent>
