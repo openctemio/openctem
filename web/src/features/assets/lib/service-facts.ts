@@ -410,6 +410,41 @@ export function recordedCertificate(
   )
 }
 
+/** The certificate keys a service reads from the certificate asset it serves. */
+const SERVED_CERT_KEYS = [
+  'not_after',
+  'issuer_org',
+  'issuer_cn',
+  'subject_cn',
+  'sans',
+  'is_expired',
+] as const
+
+/**
+ * The service as the reader should see it once the certificate it serves
+ * (the `serves_certificate` edge) is known. The probe records the certificate
+ * as its own asset and links it; the service itself carries only the
+ * fingerprint, so its facts alone say "not collected" for a certificate that
+ * was. The service's own keys always win, and a service that already holds a
+ * certificate is returned unchanged.
+ */
+export function withServedCertificate<T extends Pick<Asset, 'metadata'>>(
+  asset: T,
+  served: Pick<Asset, 'metadata'> | null | undefined
+): T {
+  if (!served || recordedCertificate(asset)) return asset
+  const cert = recordedCertificate(served)
+  if (!cert) return asset
+  const extra: Record<string, unknown> = {}
+  for (const k of SERVED_CERT_KEYS) {
+    const v = prop(served, k)
+    if (v !== undefined && v !== null) extra[k] = v
+  }
+  // A served certificate means the handshake happened.
+  if (prop(asset, 'has_tls') === undefined) extra.has_tls = true
+  return { ...asset, metadata: { ...extra, ...(asset.metadata ?? {}) } }
+}
+
 export function tlsFacts(asset: Pick<Asset, 'metadata'>, now: number = Date.now()): TlsFacts {
   const cert = recordedCertificate(asset, now)
   if (cert) return { kind: 'cert', cert }

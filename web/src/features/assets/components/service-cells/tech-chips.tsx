@@ -2,6 +2,7 @@ import type { ReactNode } from 'react'
 import { useTranslation } from '@/context/i18n-provider'
 import { formatTechnology, type Technology } from '../../lib/service-facts'
 import { FactChip } from './fact-chip'
+import { Tag } from '@/components/ui/tag'
 import { MoreChip } from './more-chip'
 
 export interface TechChipsProps {
@@ -38,10 +39,7 @@ export function TechChips({ technologies, max = 3, fallback = null }: TechChipsP
   return (
     <>
       {shown.map((t) => (
-        <FactChip key={formatTechnology(t)} title={formatTechnology(t)}>
-          <span className="truncate">{t.name}</span>
-          {t.version && <span className="text-muted-foreground tabular-nums">{t.version}</span>}
-        </FactChip>
+        <Tag key={formatTechnology(t)} label={formatTechnology(t)} />
       ))}
       <MoreChip
         label={t('assets.facts.technologies', 'technologies')}

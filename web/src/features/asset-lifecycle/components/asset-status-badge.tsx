@@ -1,9 +1,8 @@
 'use client'
 
-import { AlertTriangle, Archive, CheckCircle2, CircleSlash, Clock } from 'lucide-react'
-import { Badge } from '@/components/ui/badge'
+import { HealthStatus } from '@/components/ui/health-status'
+import type { HealthState } from '@/lib/health-colors'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
-import { cn } from '@/lib/utils'
 
 type AssetStatus = 'active' | 'stale' | 'inactive' | 'archived' | string
 
@@ -24,48 +23,35 @@ interface AssetStatusBadgeProps {
   className?: string
 }
 
-const STATUS_CONFIG: Record<
-  string,
-  {
-    label: string
-    Icon: React.ComponentType<{ className?: string }>
-    className: string
-    description: string
-  }
-> = {
+/** Lifecycle status -> health state (research/247): active is healthy, stale needs a look, the rest are off. */
+export const ASSET_LIFECYCLE_HEALTH: Record<string, HealthState> = {
+  active: 'ok',
+  stale: 'warn',
+  inactive: 'off',
+  archived: 'off',
+}
+
+const STATUS_CONFIG: Record<string, { label: string; description: string }> = {
   active: {
     label: 'Active',
-    Icon: CheckCircle2,
-    // Healthy is the normal state, so it is not coloured (style contract §6).
-    className: 'text-foreground',
     description: 'Asset was recently observed by a scanner or integration.',
   },
   stale: {
     label: 'Stale',
-    Icon: Clock,
-    className:
-      'border-amber-300 bg-amber-50 text-amber-800 dark:border-amber-900 dark:bg-amber-950/30 dark:text-amber-400',
     description: 'No source has re-observed this asset within the configured threshold.',
   },
   inactive: {
     label: 'Inactive',
-    Icon: CircleSlash,
-    className: 'text-muted-foreground',
     description: 'The asset has been stale long enough to be marked inactive.',
   },
   archived: {
     label: 'Archived',
-    Icon: Archive,
-    className: 'bg-muted text-muted-foreground',
     description: 'Archived — requires manual restore to return to active rotation.',
   },
 }
 
 const UNKNOWN_CONFIG = {
   label: 'Unknown',
-  Icon: AlertTriangle,
-  className:
-    'border-orange-300 bg-orange-50 text-orange-700 dark:border-orange-900 dark:bg-orange-950/30 dark:text-orange-400',
   description: 'Unrecognised status value.',
 }
 
@@ -76,7 +62,7 @@ export function AssetStatusBadge({
   className,
 }: AssetStatusBadgeProps) {
   const config = STATUS_CONFIG[status] ?? UNKNOWN_CONFIG
-  const Icon = config.Icon
+  const state = ASSET_LIFECYCLE_HEALTH[status] ?? 'unknown'
 
   const showDays =
     typeof daysSinceLastSeen === 'number' &&
@@ -88,12 +74,17 @@ export function AssetStatusBadge({
   return (
     <Tooltip>
       <TooltipTrigger asChild>
-        <Badge variant="outline" className={cn('gap-1.5 font-medium', config.className, className)}>
-          <Icon className="h-3 w-3" />
-          <span>{config.label}</span>
-          {showDays && <span className="opacity-75">· {daysSinceLastSeen}d</span>}
-          {snoozeActive && <span className="opacity-75">· snoozed</span>}
-        </Badge>
+        <span className="inline-flex">
+          <HealthStatus
+            state={state}
+            value={status}
+            label={config.label}
+            detail={[showDays ? `${daysSinceLastSeen}d` : '', snoozeActive ? 'snoozed' : ''].filter(
+              Boolean
+            )}
+            className={className}
+          />
+        </span>
       </TooltipTrigger>
       <TooltipContent side="top" className="max-w-xs text-xs">
         <p>{config.description}</p>

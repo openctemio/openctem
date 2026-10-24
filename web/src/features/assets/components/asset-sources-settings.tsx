@@ -39,6 +39,7 @@ import {
   type SourceRule,
 } from '../lib/attribute-sources'
 import { SourceRankList, useRuleLabel } from './source-rank-list'
+import { useSearchQuery } from '@/hooks/use-search-query'
 
 export interface AssetSourcesSettingsFormProps {
   settings: ReconciliationSettings
@@ -105,27 +106,25 @@ function AssetPicker({ onPick }: { onPick: (a: AssetHit | null) => void }) {
   const { t } = useTranslation()
   const [q, setQ] = useState('')
   const [hits, setHits] = useState<AssetHit[]>([])
+  const term = useSearchQuery(q).term
   useEffect(() => {
-    const term = q.trim()
-    if (term.length < 2) {
+    if (!term) {
       setHits([])
       return
     }
-    let live = true
-    const timer = setTimeout(() => {
-      get<{ data?: AssetHit[] }>(`/api/v1/assets?search=${encodeURIComponent(term)}&per_page=8`)
-        .then((res) => {
-          if (live) setHits(res?.data ?? [])
-        })
-        .catch(() => {
-          if (live) setHits([])
-        })
-    }, 250)
-    return () => {
-      live = false
-      clearTimeout(timer)
-    }
-  }, [q])
+    // A newer term cancels the request of the older one.
+    const ctrl = new AbortController()
+    get<{ data?: AssetHit[] }>(`/api/v1/assets?search=${encodeURIComponent(term)}&per_page=8`, {
+      signal: ctrl.signal,
+    })
+      .then((res) => {
+        if (!ctrl.signal.aborted) setHits(res?.data ?? [])
+      })
+      .catch(() => {
+        if (!ctrl.signal.aborted) setHits([])
+      })
+    return () => ctrl.abort()
+  }, [term])
   return (
     <div className="space-y-1">
       <Input

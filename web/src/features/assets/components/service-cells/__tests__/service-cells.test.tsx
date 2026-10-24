@@ -120,8 +120,8 @@ describe('OverflowChips', () => {
 describe('TechChips', () => {
   it('shows name and version', () => {
     render(<TechChips technologies={[{ name: 'jQuery', version: '3.3.1' }, { name: 'React' }]} />)
-    expect(screen.getByTitle('jQuery 3.3.1')).toBeInTheDocument()
-    expect(screen.getByTitle('React')).toBeInTheDocument()
+    expect(screen.getByText('jQuery 3.3.1')).toBeInTheDocument()
+    expect(screen.getByText('React')).toBeInTheDocument()
   })
 
   it('shows "none detected" (data) and hides "never fingerprinted" (unknown)', () => {
@@ -296,7 +296,7 @@ describe('cellsForType', () => {
   it('SurfaceFacts renders an http service and nothing for a repository', () => {
     const { container, rerender } = render(<SurfaceFacts asset={sensorHttpService} />)
     expect(screen.getByText('200')).toBeInTheDocument()
-    expect(screen.getByTitle('Nginx 1.25.3')).toBeInTheDocument()
+    expect(screen.getByText('Nginx 1.25.3')).toBeInTheDocument()
     expect(screen.getByText('443/https')).toBeInTheDocument()
     rerender(<SurfaceFacts asset={{ ...bareService, type: 'repository' } as Asset} />)
     expect(container).toBeEmptyDOMElement()

@@ -604,8 +604,11 @@ export function DataTable<TData, TValue>({
         PINNED_CELL_CLASS,
         pin.last && PINNED_START_EDGE_CLASS,
         // The pinned name column must leave room for the columns that scroll:
-        // cap it and let long names wrap instead of widening the pin.
-        pin.last && 'max-w-[min(26rem,38vw)] whitespace-normal'
+        // cap it and let long names wrap instead of widening the pin. It also
+        // keeps a floor: in an automatic table layout a truncating name has no
+        // minimum width, so ten other columns squeezed it to a few letters
+        // ("e2..."); with the floor the other columns scroll instead.
+        pin.last && 'min-w-[min(12rem,36vw)] max-w-[min(26rem,38vw)] whitespace-normal'
       ),
       style: { ...width, insetInlineStart: pin.start },
     }
@@ -675,6 +678,12 @@ export function DataTable<TData, TValue>({
     // `table` is the same instance for the component's lifetime (useReactTable
     // keeps it in state), so only a selection change re-runs this.
   }, [rowSelection, table])
+
+  // Rows the footer pages through: the server's count under manual pagination,
+  // else the rows left after client-side filtering.
+  const paginationTotal = manualPagination
+    ? (rowCount ?? data.length)
+    : table.getFilteredRowModel().rows.length
 
   return (
     <div className="space-y-4">
@@ -1113,8 +1122,10 @@ export function DataTable<TData, TValue>({
         </Table>
       </div>
 
-      {/* Pagination */}
-      {showPagination && !errorState && (
+      {/* Pagination. Hidden while there is no row to page through: an empty
+          list shows its empty state only, never "Showing 0 - 0 of 0" or
+          "Page 1 of 0". */}
+      {showPagination && !errorState && (isLoading || paginationTotal > 0) && (
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           {/* Row count info - centered on mobile. Under manual pagination the
               total is the server row count, not the current page's length. */}
@@ -1193,7 +1204,7 @@ export function DataTable<TData, TValue>({
               <span className="text-sm text-muted-foreground">
                 {t('common.table.pageOf', 'Page {page} of {pages}', {
                   page: table.getState().pagination.pageIndex + 1,
-                  pages: table.getPageCount(),
+                  pages: Math.max(1, table.getPageCount()),
                 })}
               </span>
 

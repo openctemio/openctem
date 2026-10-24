@@ -40,7 +40,10 @@ type WatcherResponse struct {
 	AvatarURL string  `json:"avatar_url,omitempty"`
 	Reason    string  `json:"reason"`
 	AddedBy   *string `json:"added_by,omitempty"`
-	Since     string  `json:"since"`
+	// AddedByName is the name of who added this watcher; empty when they took
+	// part themselves or the adder is no longer an active member.
+	AddedByName string `json:"added_by_name,omitempty"`
+	Since       string `json:"since"`
 }
 
 // ParticipantAssetOwnerResponse is the owner of the asset a finding is on (context only).
@@ -53,6 +56,8 @@ type ParticipantAssetOwnerResponse struct {
 
 // SubscriptionMeResponse is the caller's own subscription.
 type SubscriptionMeResponse struct {
+	// UserID is the caller (to find their own row in watchers).
+	UserID string `json:"user_id,omitempty"`
 	// State is subscribed, unsubscribed, or empty when the caller has no row.
 	State  string `json:"state"`
 	Reason string `json:"reason,omitempty"`
@@ -137,11 +142,11 @@ func toParticipantsResponse(p *participation.Participants) ParticipantsResponse 
 	out := ParticipantsResponse{
 		WatcherCount: p.WatcherCount, NamesVisible: p.NamesVisible,
 		Watchers: []WatcherResponse{}, AssetOwners: []ParticipantAssetOwnerResponse{},
-		Me: SubscriptionMeResponse{State: string(p.Me.State), Reason: string(p.Me.Reason)},
+		Me: SubscriptionMeResponse{UserID: optIDString(p.Me.UserID), State: string(p.Me.State), Reason: string(p.Me.Reason)},
 	}
 	for _, w := range p.Watchers {
 		out.Watchers = append(out.Watchers, WatcherResponse{UserID: w.UserID.String(), Name: w.Name, AvatarURL: w.AvatarURL,
-			Reason: string(w.Reason), AddedBy: optIDStr(w.AddedBy), Since: w.Since})
+			Reason: string(w.Reason), AddedBy: optIDStr(w.AddedBy), AddedByName: w.AddedByName, Since: w.Since})
 	}
 	for _, o := range p.AssetOwners {
 		out.AssetOwners = append(out.AssetOwners, ParticipantAssetOwnerResponse{UserID: o.UserID.String(), Name: o.Name, AvatarURL: o.AvatarURL, Type: o.Type})
@@ -354,4 +359,12 @@ func (h *ParticipationHandler) TaskAddWatchers(w http.ResponseWriter, r *http.Re
 // @Router       /remediation/tasks/{task_id}/watchers/{user_id} [delete]
 func (h *ParticipationHandler) TaskRemoveWatcher(w http.ResponseWriter, r *http.Request) {
 	h.removeWatcher(w, r, domain.ItemTask, permission.RemediationWrite)
+}
+
+// optIDString is the id as text, empty for the zero id.
+func optIDString(id shared.ID) string {
+	if id.IsZero() {
+		return ""
+	}
+	return id.String()
 }

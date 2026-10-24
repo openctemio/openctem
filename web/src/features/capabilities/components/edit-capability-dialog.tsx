@@ -1,5 +1,7 @@
 'use client'
 
+import { CAPABILITY_COLOR_CHOICES, capabilitySwatch } from '@/lib/capability-colors'
+import { TAG_SWATCH_CLASS } from '@/lib/tag-colors'
 import { useEffect, useState } from 'react'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
@@ -70,18 +72,10 @@ const ICON_OPTIONS = [
   { value: 'cpu', label: 'CPU' },
 ]
 
-const COLOR_OPTIONS = [
-  { value: 'blue', label: 'Blue' },
-  { value: 'purple', label: 'Purple' },
-  { value: 'green', label: 'Green' },
-  { value: 'red', label: 'Red' },
-  { value: 'orange', label: 'Orange' },
-  { value: 'cyan', label: 'Cyan' },
-  { value: 'yellow', label: 'Yellow' },
-  { value: 'indigo', label: 'Indigo' },
-  { value: 'teal', label: 'Teal' },
-  { value: 'amber', label: 'Amber' },
-]
+const COLOR_OPTIONS = CAPABILITY_COLOR_CHOICES.map((value) => ({
+  value,
+  label: value.charAt(0).toUpperCase() + value.slice(1),
+}))
 
 const CATEGORY_OPTIONS = [
   { value: 'security', label: 'Security' },
@@ -111,7 +105,7 @@ export function EditCapabilityDialog({
       display_name: capability.display_name,
       description: capability.description || '',
       icon: capability.icon || 'zap',
-      color: capability.color || 'blue',
+      color: capabilitySwatch(capability.color),
       category: capability.category,
     },
   })
@@ -122,7 +116,7 @@ export function EditCapabilityDialog({
       display_name: capability.display_name,
       description: capability.description || '',
       icon: capability.icon || 'zap',
-      color: capability.color || 'blue',
+      color: capabilitySwatch(capability.color),
       category: capability.category,
     })
   }, [capability, form])
@@ -259,7 +253,13 @@ export function EditCapabilityDialog({
                           <SelectContent>
                             {COLOR_OPTIONS.map((opt) => (
                               <SelectItem key={opt.value} value={opt.value}>
-                                {opt.label}
+                                <span className="inline-flex items-center gap-2">
+                                  <span
+                                    aria-hidden
+                                    className={`size-2 rounded-full ${TAG_SWATCH_CLASS[opt.value]}`}
+                                  />
+                                  {opt.label}
+                                </span>
                               </SelectItem>
                             ))}
                           </SelectContent>
