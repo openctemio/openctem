@@ -52,6 +52,7 @@ import { Can } from '@/lib/permissions'
 import { useGroupChannel } from '@/hooks/use-websocket'
 import type { ScopeChangeEventData } from '@/lib/websocket/types'
 import { ScopeRuleDialog } from './scope-rule-dialog'
+import { confirmNameFor } from '@/lib/confirm-name'
 import { ConfirmDialog } from '@/components/confirm-dialog'
 import { useTranslation } from '@/context/i18n-provider'
 
@@ -91,6 +92,7 @@ export function ScopeRulesTab({ groupId }: ScopeRulesTabProps) {
   const [dialogOpen, setDialogOpen] = useState(false)
   const [editingRule, setEditingRule] = useState<ScopeRule | null>(null)
   const [deleteConfirm, setDeleteConfirm] = useState<ScopeRule | null>(null)
+  const [confirmReconcile, setConfirmReconcile] = useState(false)
   const [previewingRule, setPreviewingRule] = useState<ScopeRule | null>(null)
 
   // Mutation hooks - always called with stable IDs (null-safe via SWR)
@@ -115,41 +117,47 @@ export function ScopeRulesTab({ groupId }: ScopeRulesTabProps) {
       if (!groupId) return
       try {
         await createScopeRule(data as CreateScopeRuleInput)
-        toast.success('Scope rule created')
+        toast.success(t('org.scopeRules.created', 'Scope rule created'))
         setDialogOpen(false)
         mutate()
       } catch (error) {
-        toast.error(getErrorMessage(error, 'Failed to create scope rule'))
+        toast.error(
+          getErrorMessage(error, t('org.scopeRules.createFailed', 'Failed to create scope rule'))
+        )
       }
     },
-    [groupId, createScopeRule, mutate]
+    [groupId, createScopeRule, mutate, t]
   )
 
   const handleUpdate = useCallback(
     async (data: CreateScopeRuleInput | UpdateScopeRuleInput) => {
       try {
         await updateScopeRule(data as UpdateScopeRuleInput)
-        toast.success('Scope rule updated')
+        toast.success(t('org.scopeRules.updated', 'Scope rule updated'))
         setEditingRule(null)
         mutate()
       } catch (error) {
-        toast.error(getErrorMessage(error, 'Failed to update scope rule'))
+        toast.error(
+          getErrorMessage(error, t('org.scopeRules.updateFailed', 'Failed to update scope rule'))
+        )
       }
     },
-    [updateScopeRule, mutate]
+    [updateScopeRule, mutate, t]
   )
 
   const handleDelete = useCallback(async () => {
     if (!deleteConfirm) return
     try {
       await deleteScopeRule()
-      toast.success('Scope rule deleted')
+      toast.success(t('org.scopeRules.deleted', 'Scope rule deleted'))
       setDeleteConfirm(null)
       mutate()
     } catch (error) {
-      toast.error(getErrorMessage(error, 'Failed to delete scope rule'))
+      toast.error(
+        getErrorMessage(error, t('org.scopeRules.deleteFailed', 'Failed to delete scope rule'))
+      )
     }
-  }, [deleteConfirm, deleteScopeRule, mutate])
+  }, [deleteConfirm, deleteScopeRule, mutate, t])
 
   const handlePreview = useCallback(
     async (rule: ScopeRule) => {
@@ -175,16 +183,23 @@ export function ScopeRulesTab({ groupId }: ScopeRulesTabProps) {
 
   const handleReconcile = useCallback(async () => {
     try {
+      setConfirmReconcile(false)
       const result = await reconcileGroup()
       const r = result as { rules_evaluated: number; assets_added: number; assets_removed: number }
       toast.success(
-        `Reconciled: ${r.rules_evaluated} rules evaluated, ${r.assets_added} assets added, ${r.assets_removed} removed`
+        t(
+          'org.scopeRules.reconciled',
+          'Reconciled: {rules} rules evaluated, {added} assets added, {removed} removed',
+          { rules: r.rules_evaluated, added: r.assets_added, removed: r.assets_removed }
+        )
       )
       mutate()
     } catch (error) {
-      toast.error(getErrorMessage(error, 'Failed to reconcile'))
+      toast.error(
+        getErrorMessage(error, t('org.scopeRules.reconcileFailed', 'Failed to reconcile'))
+      )
     }
-  }, [reconcileGroup, mutate])
+  }, [reconcileGroup, mutate, t])
 
   return (
     <div>
@@ -195,7 +210,7 @@ export function ScopeRulesTab({ groupId }: ScopeRulesTabProps) {
             <Button
               size="sm"
               variant="outline"
-              onClick={handleReconcile}
+              onClick={() => setConfirmReconcile(true)}
               disabled={isReconciling || scopeRules.length === 0}
             >
               {isReconciling ? (
@@ -203,7 +218,7 @@ export function ScopeRulesTab({ groupId }: ScopeRulesTabProps) {
               ) : (
                 <RefreshCw className="me-2 h-4 w-4" />
               )}
-              Reconcile
+              {t('org.scopeRules.reconcile', 'Reconcile')}
             </Button>
           </Can>
           <Can route="POST /api/v1/groups/{groupId}/scope-rules" mode="disable">
@@ -295,21 +310,21 @@ export function ScopeRulesTab({ groupId }: ScopeRulesTabProps) {
               </div>
               <div className="flex items-center gap-2 flex-shrink-0">
                 <DataTableRowActions
-                  label={`Actions for ${rule.name}`}
+                  label={t('org.scopeRules.actionsFor', 'Actions for {name}', { name: rule.name })}
                   actions={[
                     {
-                      label: 'Preview',
+                      label: t('org.scopeRules.preview', 'Preview'),
                       icon: Eye,
                       onClick: () => handlePreview(rule),
                     },
                     {
-                      label: 'Edit',
+                      label: t('org.scopeRules.edit', 'Edit'),
                       icon: Pencil,
                       route: 'PUT /api/v1/groups/{groupId}/scope-rules/{ruleId}',
                       onClick: () => setEditingRule(rule),
                     },
                     {
-                      label: 'Delete',
+                      label: t('org.scopeRules.delete', 'Delete'),
                       icon: Trash2,
                       destructive: true,
                       route: 'DELETE /api/v1/groups/{groupId}/scope-rules/{ruleId}',
@@ -353,10 +368,27 @@ export function ScopeRulesTab({ groupId }: ScopeRulesTabProps) {
           'Assets this rule assigned to the team automatically are removed from it, and the team loses access to them unless another grant covers them. This cannot be undone.'
         )}
         confirmText={
-          isDeleting ? t('confirm.deleting', 'Deleting…') : t('confirm.delete', 'Delete')
+          isDeleting
+            ? t('confirm.deleting', 'Deleting…')
+            : t('confirm.scopeRule.deleteButton', 'Delete scope rule')
         }
         isLoading={isDeleting}
+        typeToConfirm={
+          deleteConfirm ? confirmNameFor(deleteConfirm.name, deleteConfirm.id) : undefined
+        }
         handleConfirm={handleDelete}
+      />
+
+      <ConfirmDialog
+        open={confirmReconcile}
+        onOpenChange={setConfirmReconcile}
+        title={t('confirm.scopeRule.reconcileTitle', 'Reconcile the scope rules of this team?')}
+        desc={t(
+          'confirm.scopeRule.reconcileDesc',
+          'Every rule runs now. Assets that match are added to the team, and assets that no longer match are removed from it, with their access.'
+        )}
+        confirmText={t('confirm.scopeRule.reconcileButton', 'Reconcile now')}
+        handleConfirm={handleReconcile}
       />
 
       {/* Preview Dialog */}

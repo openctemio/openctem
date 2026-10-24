@@ -55,6 +55,7 @@ import {
 } from '../api/use-org-trusts'
 import { MAX_EXTERNAL_ACCESS_DAYS, formatShortDate } from '../lib/external-access'
 import { ConfirmDialog } from '@/components/confirm-dialog'
+import { confirmNameFor } from '@/lib/confirm-name'
 import { useTranslation } from '@/context/i18n-provider'
 
 const DEFAULT_SETTINGS: OrgTrustSettingsInput = {
@@ -317,7 +318,40 @@ function EditTrustDialog({
     setSettings(settingsOf(trust))
   }
 
+  // Settings that make the trust weaker ask first, each saying what changes.
+  const [confirmWeaker, setConfirmWeaker] = useState(false)
+  const weakened: string[] = []
+  if (trust) {
+    const was = settingsOf(trust)
+    const org = trust.organization
+    if (settings.max_role === 'member' && was.max_role === 'viewer')
+      weakened.push(
+        t('confirm.orgTrust.maxRole', 'People from {org} can now be members, not only viewers.', {
+          org,
+        })
+      )
+    if (settings.accept_home_sso && !was.accept_home_sso)
+      weakened.push(
+        t(
+          'confirm.orgTrust.homeSso',
+          "People from {org} sign in with their own organization's SSO, so {org} controls how they authenticate here.",
+          { org }
+        )
+      )
+    if (settings.allow_api_keys && !was.allow_api_keys)
+      weakened.push(
+        t('confirm.orgTrust.apiKeys', 'People from {org} can create API keys here.', { org })
+      )
+    if (!settings.require_mfa_evidence && was.require_mfa_evidence)
+      weakened.push(
+        t('confirm.orgTrust.mfaOff', 'People from {org} no longer need to show they used MFA.', {
+          org,
+        })
+      )
+  }
+
   const save = async () => {
+    setConfirmWeaker(false)
     if (!trust) return
     setBusy(true)
     try {
@@ -365,12 +399,40 @@ function EditTrustDialog({
           <Button type="button" variant="ghost" onClick={() => onOpenChange(false)}>
             {t('common.cancel', 'Cancel')}
           </Button>
-          <Button onClick={save} disabled={busy}>
+          <Button
+            onClick={() => (weakened.length > 0 ? setConfirmWeaker(true) : void save())}
+            disabled={busy}
+          >
             {busy && <Loader2 className="me-2 h-4 w-4 animate-spin" />}
             {t('common.save', 'Save')}
           </Button>
         </DialogFooter>
       </DialogContent>
+      <ConfirmDialog
+        open={confirmWeaker}
+        onOpenChange={setConfirmWeaker}
+        title={t('confirm.orgTrust.weakerTitle', 'Loosen the trust with {org}?', {
+          org: trust?.organization ?? '',
+        })}
+        desc={
+          <div className="space-y-2">
+            <ul className="list-disc space-y-1 ps-5">
+              {weakened.map((line) => (
+                <li key={line}>{line}</li>
+              ))}
+            </ul>
+            <p>
+              {t(
+                'confirm.orgTrust.weakerNote',
+                "You will be asked to verify it's you. You can tighten the trust again at any time."
+              )}
+            </p>
+          </div>
+        }
+        confirmText={t('confirm.orgTrust.weakerConfirm', 'Save weaker trust')}
+        destructive
+        handleConfirm={save}
+      />
     </Dialog>
   )
 }
@@ -528,14 +590,15 @@ function TrustRow({
           )}
           <Button
             size="sm"
-            variant="ghost"
-            className="text-destructive"
+            variant="outline"
+            className="text-destructive hover:text-destructive"
             onClick={() => onEnd(trust)}
             aria-label={t('settings.trust.endLabel', 'End trust with {org}', {
               org: trust.organization,
             })}
           >
-            <Trash2 className="size-4" />
+            <Trash2 className="me-1.5 size-4" />
+            {t('settings.trust.endButton', 'End trust')}
           </Button>
         </div>
       )}
@@ -708,6 +771,7 @@ export function TrustedOrganizations({ canRead, isOwner }: { canRead: boolean; i
           </>
         }
         isLoading={endBusy}
+        typeToConfirm={ending ? confirmNameFor(ending.organization, ending.id) : undefined}
         handleConfirm={() => end()}
       />
     </div>

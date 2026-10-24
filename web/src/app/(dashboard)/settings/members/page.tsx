@@ -483,7 +483,31 @@ function EditUserRolesDialog({
     }
   }, [open, userRoles, userRolesLoading])
 
+  // Widening access (a higher role in the organization, or custom roles added)
+  // asks first; narrowing saves at once.
+  const [confirmGrant, setConfirmGrant] = useState(false)
+  const teamRoleRank: Record<string, number> = { viewer: 0, member: 1, admin: 2, owner: 3 }
+  const teamRoleLabel = (r: string) =>
+    r === 'admin'
+      ? t('org.role.admin', 'Admin')
+      : r === 'viewer'
+        ? t('org.role.viewer', 'Viewer')
+        : r === 'owner'
+          ? t('org.role.owner', 'Owner')
+          : t('org.role.member', 'Member')
+  const promoted =
+    !!member && !teamRoleLocked && (teamRoleRank[teamRole] ?? 0) > (teamRoleRank[member.role] ?? 0)
+  const addedRoleNames = allRoles
+    .filter((r) => selectedRoleIds.includes(r.id) && !userRoles.some((u) => u.id === r.id))
+    .map((r) => r.name)
+  const widens = promoted || addedRoleNames.length > 0
+
   const handleSave = async () => {
+    if (widens && !confirmGrant) {
+      setConfirmGrant(true)
+      return
+    }
+    setConfirmGrant(false)
     try {
       if (member && !teamRoleLocked && teamRole !== member.role) {
         await updateRole({ role: teamRole })
@@ -581,6 +605,41 @@ function EditUserRolesDialog({
           </Button>
         </DialogFooter>
       </DialogContent>
+      <ConfirmDialog
+        open={confirmGrant}
+        onOpenChange={setConfirmGrant}
+        title={t('confirm.member.grantTitle', 'Give {name} more access?', {
+          name: member?.name || member?.email || '',
+        })}
+        desc={
+          <div className="space-y-2">
+            {promoted && member && (
+              <p>
+                {t(
+                  'confirm.member.grantRole',
+                  'Role in the organization: {from} to {to}. They can do everything that role allows, in every project they can reach.',
+                  { from: teamRoleLabel(member.role), to: teamRoleLabel(teamRole) }
+                )}
+              </p>
+            )}
+            {addedRoleNames.length > 0 && (
+              <p>
+                {t('confirm.member.grantCustom', 'Roles added: {roles}.', {
+                  roles: addedRoleNames.join(', '),
+                })}
+              </p>
+            )}
+            <p>
+              {t(
+                'confirm.member.grantNote',
+                'The change applies at once and is recorded in the audit log. You can remove the access again later.'
+              )}
+            </p>
+          </div>
+        }
+        confirmText={t('confirm.member.grantConfirm', 'Give access')}
+        handleConfirm={handleSave}
+      />
     </Dialog>
   )
 }
@@ -713,6 +772,7 @@ export default function UsersPage() {
   const [transferMember, setTransferMember] = useState<MemberWithUser | null>(null)
   const { transfer: pendingTransfer, mutate: mutateTransfer } = usePendingOwnershipTransfer()
   const [isErasing, setIsErasing] = useState(false)
+  const [reactivateMember, setReactivateMember] = useState<MemberWithUser | null>(null)
 
   // Track if sheet is fully closed (after animation completes)
   const [isSheetAnimating, setIsSheetAnimating] = useState(false)
@@ -974,31 +1034,10 @@ export default function UsersPage() {
                     )}
                     {member.status === 'suspended' ? (
                       <DropdownMenuItem
-                        onClick={async () => {
-                          if (!tenantSlug) return
-                          try {
-                            await fetcherWithOptions(
-                              tenantEndpoints.reactivateMember(tenantSlug, member.id),
-                              { method: 'POST' }
-                            )
-                            toast.success(
-                              member.suspended_reason === 'awaiting_approval'
-                                ? t('org.membersPage.approved', '{name} approved', {
-                                    name: member.name || member.email,
-                                  })
-                                : t('org.membersPage.reenabled', '{name} re-enabled', {
-                                    name: member.name || member.email,
-                                  })
-                            )
-                            refreshData()
-                          } catch (error) {
-                            toast.error(
-                              getErrorMessage(
-                                error,
-                                t('org.membersPage.reenableFailed', 'Failed to re-enable member')
-                              )
-                            )
-                          }
+                        onSelect={(e) => {
+                          // Restoring access asks first; onSelect lets the menu close.
+                          e.preventDefault()
+                          setReactivateMember(member)
                         }}
                       >
                         <CheckCircle className="me-2 h-4 w-4" />
@@ -1035,12 +1074,52 @@ export default function UsersPage() {
                   </Can>
                 </>
               )}
+              {!isOwnerRow && offboarded && caller.isOwner && (
+                <Can route="POST /api/v1/organization/members/{member_id}/erase">
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem
+                    variant="destructive"
+                    onSelect={(e) => {
+                      // Confirm first; onSelect lets the menu close cleanly.
+                      e.preventDefault()
+                      setEraseConfirmMember(member)
+                    }}
+                  >
+                    <Eraser className="me-2 h-4 w-4" />
+                    {t('org.membersPage.erasePersonalData', 'Erase personal data...')}
+                  </DropdownMenuItem>
+                </Can>
+              )}
             </DropdownMenuContent>
           </DropdownMenu>
         )
       },
     },
   ]
+
+  // Restores a disabled member (or approves one awaiting approval).
+  const handleReactivate = async (member: MemberWithUser) => {
+    if (!tenantSlug) return
+    try {
+      await fetcherWithOptions(tenantEndpoints.reactivateMember(tenantSlug, member.id), {
+        method: 'POST',
+      })
+      toast.success(
+        member.suspended_reason === 'awaiting_approval'
+          ? t('org.membersPage.approved', '{name} approved', { name: member.name || member.email })
+          : t('org.membersPage.reenabled', '{name} re-enabled', {
+              name: member.name || member.email,
+            })
+      )
+      refreshData()
+    } catch (error) {
+      toast.error(
+        getErrorMessage(error, t('org.membersPage.reenableFailed', 'Failed to re-enable member'))
+      )
+    } finally {
+      setReactivateMember(null)
+    }
+  }
 
   // Actions
   // Erase an offboarded person's name and email (owner only). Rows and
@@ -1735,6 +1814,31 @@ export default function UsersPage() {
           if (!open) setOffboardMember(null)
         }}
         onOffboarded={refreshData}
+      />
+
+      {/* Re-enable or approve a member: restores their access */}
+      <ConfirmDialog
+        open={!!reactivateMember}
+        onOpenChange={(open) => !open && setReactivateMember(null)}
+        title={
+          reactivateMember?.suspended_reason === 'awaiting_approval'
+            ? t('confirm.member.approveTitle', 'Approve {name}?', {
+                name: reactivateMember?.name || reactivateMember?.email || '',
+              })
+            : t('confirm.member.reenableTitle', 'Re-enable {name}?', {
+                name: reactivateMember?.name || reactivateMember?.email || '',
+              })
+        }
+        desc={t(
+          'confirm.member.reenableDesc',
+          'They can sign in again and use what their roles allow. Their schedules and scans resume.'
+        )}
+        confirmText={
+          reactivateMember?.suspended_reason === 'awaiting_approval'
+            ? t('confirm.member.approveConfirm', 'Approve member')
+            : t('confirm.member.reenableConfirm', 'Re-enable member')
+        }
+        handleConfirm={() => (reactivateMember ? handleReactivate(reactivateMember) : undefined)}
       />
 
       {/* Erase personal data confirmation (owner only, offboarded members) */}

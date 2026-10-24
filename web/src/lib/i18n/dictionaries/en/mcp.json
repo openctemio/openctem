@@ -215,5 +215,6 @@
   "mcp.unverified.label": "Allow unverified applications",
   "mcp.unverified.section": "Advanced: unverified applications",
   "mcp.unverified.turnedOff": "Only approved applications can be connected",
-  "mcp.unverified.turnedOn": "Unverified applications are allowed"
+  "mcp.unverified.turnedOn": "Unverified applications are allowed",
+  "mcp.orgClients.deleteConfirm": "Delete application"
 }

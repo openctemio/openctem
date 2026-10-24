@@ -60,5 +60,9 @@
   "auditLog.detail.id": "ID",
   "auditLog.detail.changes": "Thay đổi",
   "auditLog.detail.metadata": "Siêu dữ liệu",
-  "auditLog.detail.request": "Yêu cầu"
+  "auditLog.detail.request": "Yêu cầu",
+  "auditLog.export.confirmTitle": "Xuất nhật ký kiểm toán?",
+  "auditLog.export.confirmDesc": "Tệp liệt kê các sự kiện khớp với bộ lọc hiện tại, mới nhất trước, kèm email và địa chỉ IP của thành viên. Hãy lưu ở nơi chỉ những người được phép xem mới đọc được. Bạn có thể được yêu cầu xác minh danh tính.",
+  "auditLog.export.confirmCsv": "Xuất CSV",
+  "auditLog.export.confirmJsonl": "Xuất JSON lines"
 }
