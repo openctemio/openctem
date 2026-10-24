@@ -223,6 +223,7 @@
   "dashboards.reason.empty": "Nothing to show for this period and scope.",
   "dashboards.reason.facts_building": "Dashboard data is being built for the first time. Figures appear in a few minutes.",
   "dashboards.reason.failed": "These figures could not be computed.",
+  "dashboards.reason.forbidden": "Your role does not include permission to read this data.",
   "dashboards.reason.legacy_tile": "This earlier tile is not available on the new dashboard. Replace it with a widget from the gallery.",
   "dashboards.reason.no_crown_jewels": "Nothing to measure yet: no crown jewel is designated in this scope.",
   "dashboards.reason.no_denominator": "Nothing to measure yet: no open finding has an SLA in this scope.",
