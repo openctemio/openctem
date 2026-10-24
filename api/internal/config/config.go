@@ -1583,7 +1583,7 @@ func Load() (*Config, error) {
 			Host:                  getEnv("SERVER_HOST", "0.0.0.0"),
 			Port:                  getEnvInt("SERVER_PORT", 8080),
 			ReadTimeout:           getEnvDuration("SERVER_READ_TIMEOUT", 15*time.Second),
-			WriteTimeout:          getEnvDuration("SERVER_WRITE_TIMEOUT", 15*time.Second),
+			WriteTimeout:          getEnvDuration("SERVER_WRITE_TIMEOUT", defaultWriteTimeout(getEnvDuration("SERVER_REQUEST_TIMEOUT", 30*time.Second))),
 			RequestTimeout:        getEnvDuration("SERVER_REQUEST_TIMEOUT", 30*time.Second), // Per-request timeout
 			ShutdownTimeout:       getEnvDuration("SERVER_SHUTDOWN_TIMEOUT", 30*time.Second),
 			MaxBodySize:           getEnvInt64("SERVER_MAX_BODY_SIZE", 10<<20), // 10MB default
@@ -2066,6 +2066,12 @@ func (c *Config) validateBasic() error {
 	if err := httpsec.ValidatePrivateEgress(c.App.Env,
 		os.Getenv(httpsec.EnvAllowPrivate), os.Getenv(httpsec.EnvAllowPrivateCIDRs)); err != nil {
 		return err
+	}
+	// The opened ranges are reachable by every organization's integrations.
+	// Where anyone may create an organization, that hands the operator's
+	// private network to strangers, so the two settings are not combined.
+	if c.Auth.SignupMode == SignupModeOpen && strings.TrimSpace(os.Getenv(httpsec.EnvAllowPrivateCIDRs)) != "" {
+		return fmt.Errorf("%s opens private ranges to every organization's integrations and cannot be combined with SIGNUP_MODE=open, where anyone can create an organization; unset it, or use SIGNUP_MODE=disabled or domain", httpsec.EnvAllowPrivateCIDRs)
 	}
 	if c.Server.Port < 1 || c.Server.Port > 65535 {
 		return fmt.Errorf("invalid server port: %d", c.Server.Port)
@@ -2975,3 +2981,21 @@ func feedURLs(primary, mirrors string) []string {
 // deploymentRegionRE is the shape of DEPLOYMENT_REGION (the tenants.region
 // check in the database is the same).
 var deploymentRegionRE = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{0,31}$`)
+
+// writeTimeoutMargin is how long the connection stays writable after the
+// per-request timeout fires, so the 503 timeout body can still be sent.
+const writeTimeoutMargin = 5 * time.Second
+
+// defaultWriteTimeout is the HTTP write timeout used when SERVER_WRITE_TIMEOUT
+// is not set: the request timeout plus a margin. A write timeout at or below
+// the request timeout closes the connection before the timeout answer is
+// written, and the client sees EOF instead of a 503.
+func defaultWriteTimeout(request time.Duration) time.Duration {
+	return request + writeTimeoutMargin
+}
+
+// WriteTimeoutBelowRequest reports whether the write timeout would cut the
+// connection before the request timeout answer can be written.
+func (s ServerConfig) WriteTimeoutBelowRequest() bool {
+	return s.RequestTimeout > 0 && s.WriteTimeout > 0 && s.WriteTimeout <= s.RequestTimeout
+}

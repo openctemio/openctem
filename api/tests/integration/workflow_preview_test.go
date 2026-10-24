@@ -26,9 +26,9 @@ func TestWorkflowPreview(t *testing.T) {
 		postgres.NewScanWorkflowStepRepository(pg),
 		postgres.NewStepRunRepository(pg),
 		postgres.NewCommandRepository(pg),
-		nil, nil,
+		nil,
 		postgres.NewToolRepository(pg),
-		nil, nil, nil,
+		nil, nil,
 		logger.NewNop(),
 		allowAllTargetChecks()...,
 	)

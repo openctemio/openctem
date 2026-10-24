@@ -10,8 +10,9 @@ import { humanizeIdentifier } from '@/lib/humanize-identifier'
  * plain text), so every run reads the same everywhere and nothing spins. Each
  * state keeps its own icon, word and translation:
  * queued and pending wait for a sensor, running is a static half circle,
- * completed is ok, partial and timeout need attention, failed and blocked are
- * down, canceled is off.
+ * completed is ok, partial and timeout need attention, failed is down,
+ * blocked is a pause ring (nothing ran; a person has to change the scan or its
+ * scope, which is a decision, not a machine failure), canceled is off.
  */
 const RUN_STATE: Record<string, { state: HealthState; label: string }> = {
   queued: { state: 'queued', label: 'Queued' },
@@ -27,7 +28,7 @@ const RUN_STATE: Record<string, { state: HealthState; label: string }> = {
   paused: { state: 'warn', label: 'Paused' },
   // The trigger was refused before anything was dispatched (scope gate,
   // freeze window, no sensor, wildcard target...). Nothing ran.
-  blocked: { state: 'down', label: 'Blocked' },
+  blocked: { state: 'paused', label: 'Blocked' },
 }
 
 /**

@@ -109,6 +109,7 @@
   "mcp.myConnections.empty": "Khi bạn kết nối một trợ lý AI với {product}, nó sẽ xuất hiện ở đây.",
   "mcp.myConnections.title": "Ứng dụng AI của bạn",
   "mcp.orgClients.delete": "Xóa",
+  "mcp.orgClients.deleteConfirm": "Xóa ứng dụng",
   "mcp.orgClients.deleteDesc": "Mọi kết nối tạo bằng ứng dụng này sẽ chấm dứt ngay và nó không thể được cấp quyền nữa. Không thể hoàn tác.",
   "mcp.orgClients.deleteFailed": "Không xóa được ứng dụng",
   "mcp.orgClients.deleteTitle": "Xóa ứng dụng {name}?",

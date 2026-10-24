@@ -9,7 +9,6 @@ import {
   DataTableColumnHeader,
   DataTableRowActions,
   EmptyState,
-  MetricStrip,
 } from '@/features/shared'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -176,16 +175,6 @@ export function AssignmentRulesSection({ header }: SectionProps) {
 
     return data
   }, [assignmentRules, typeFilter, searchQuery, groupMap])
-
-  // Type counts
-  const typeCounts = useMemo(
-    () => ({
-      all: assignmentRules.length,
-      active: assignmentRules.filter((r) => r.is_active).length,
-      inactive: assignmentRules.filter((r) => !r.is_active).length,
-    }),
-    [assignmentRules]
-  )
 
   // Table columns
   const columns: ColumnDef<AssignmentRule>[] = [
@@ -417,7 +406,7 @@ export function AssignmentRulesSection({ header }: SectionProps) {
       )}
 
       {isError && !isLoading ? (
-        <Alert variant="destructive" className="mt-5">
+        <Alert variant="destructive">
           <AlertCircle className="h-4 w-4" />
           <AlertTitle>
             {t('org.assignmentRules.loadFailedTitle', 'Failed to load assignment rules')}
@@ -432,35 +421,7 @@ export function AssignmentRulesSection({ header }: SectionProps) {
         </Alert>
       ) : (
         <>
-          <MetricStrip
-            className="mt-5"
-            loading={isLoading}
-            items={[
-              {
-                key: 'all',
-                label: t('org.assignmentRules.metric.rules', 'Rules'),
-                value: typeCounts.all,
-                onClick: () => setTypeFilter('all'),
-                active: typeFilter === 'all',
-              },
-              {
-                key: 'active',
-                label: t('org.assignmentRules.status.active', 'Active'),
-                value: typeCounts.active,
-                onClick: () => setTypeFilter(typeFilter === 'active' ? 'all' : 'active'),
-                active: typeFilter === 'active',
-              },
-              {
-                key: 'inactive',
-                label: t('org.assignmentRules.status.inactive', 'Inactive'),
-                value: typeCounts.inactive,
-                onClick: () => setTypeFilter(typeFilter === 'inactive' ? 'all' : 'inactive'),
-                active: typeFilter === 'inactive',
-              },
-            ]}
-          />
-
-          <div className="mt-5">
+          <div>
             {isLoading ? (
               <div className="space-y-2">
                 <Skeleton className="h-9 w-full max-w-sm" />

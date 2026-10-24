@@ -736,54 +736,6 @@ export {
 export { scannerTemplateEndpoints } from './endpoints'
 
 // ============================================
-// TEMPLATE SOURCE HOOKS & TYPES
-// ============================================
-
-export {
-  // Template source hooks
-  useTemplateSources,
-  useTemplateSource,
-  useCreateTemplateSource,
-  useUpdateTemplateSource,
-  useDeleteTemplateSource,
-  useEnableTemplateSource,
-  useDisableTemplateSource,
-  useSyncTemplateSource,
-
-  // Cache utilities
-  templateSourceKeys,
-  invalidateTemplateSourcesCache,
-  templateSourceEndpoints,
-} from './template-source-hooks'
-
-export type {
-  TemplateSource,
-  SourceType,
-  SyncStatus,
-  GitSourceConfig,
-  S3SourceConfig,
-  HTTPSourceConfig,
-  TemplateSyncResult,
-  CreateTemplateSourceRequest,
-  UpdateTemplateSourceRequest,
-  TemplateSourceListFilters,
-  TemplateSourceListResponse,
-} from './template-source-types'
-
-export {
-  SOURCE_TYPES,
-  SYNC_STATUSES,
-  SOURCE_TYPE_DISPLAY_NAMES,
-  SOURCE_TYPE_DESCRIPTIONS,
-  SOURCE_TYPE_ICONS,
-  SYNC_STATUS_DISPLAY_NAMES,
-  SYNC_STATUS_COLORS,
-  sourceNeedsSync,
-  formatSyncTime,
-  getSourceDisplayUrl,
-} from './template-source-types'
-
-// ============================================
 // SECRET STORE HOOKS & TYPES
 // ============================================
 

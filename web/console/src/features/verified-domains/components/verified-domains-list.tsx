@@ -56,7 +56,7 @@ function DomainActions({
         toast.info(
           t(
             'admin.verifiedDomainsList.stillPendingTheTxtRecord',
-            'Still pending — the TXT record for {domain} was not found yet.',
+            'Still pending. The TXT record for {domain} was not found yet.',
             { domain: domain.domain }
           )
         )

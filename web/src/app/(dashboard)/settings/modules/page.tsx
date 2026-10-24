@@ -2,7 +2,8 @@
 
 import { useState, useCallback, useMemo } from 'react'
 import { Main } from '@/components/layout'
-import { MetricStrip, PageHeader, SettingsSaveBar } from '@/features/shared'
+import { useFormatList } from '@/lib/format-list'
+import { PageHeader, SettingsSaveBar, PageStack } from '@/features/shared'
 import { useTenant } from '@/context/tenant-provider'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
@@ -10,18 +11,7 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
 import { Switch } from '@/components/ui/switch'
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-  AlertDialogBody,
-} from '@/components/ui/alert-dialog'
-import { ConfirmDialog } from '@/components/confirm-dialog'
+import { ConfirmDialog, ConfirmSample } from '@/components/confirm-dialog'
 import {
   Lock,
   RotateCcw,
@@ -106,6 +96,7 @@ const PHASE_GROUPS: { key: string; label: string; categories: string[] }[] = [
 
 export default function ModuleManagementPage() {
   const { t } = useTranslation()
+  const formatList = useFormatList()
   const pageDescription = t(
     'settings.modules.pageDescription',
     'Pick the products your team runs and fine-tune individual features. Turning a module off hides it; its data is kept.'
@@ -114,7 +105,7 @@ export default function ModuleManagementPage() {
   const { currentTenant } = useTenant()
   const tenantId = currentTenant?.id
 
-  const { modules, summary, isLoading, error, mutate } = useTenantModules(tenantId)
+  const { modules, isLoading, error, mutate } = useTenantModules(tenantId)
   const { updateModules, isUpdating } = useUpdateTenantModules(tenantId)
   const { resetModules, isResetting } = useResetTenantModules(tenantId)
   const { edges: dependencyEdges } = useModuleDependencyGraph(tenantId)
@@ -130,6 +121,8 @@ export default function ModuleManagementPage() {
 
   const [pendingChanges, setPendingChanges] = useState<Record<string, boolean>>({})
   const [showResetDialog, setShowResetDialog] = useState(false)
+  // Turning modules off hides them for every member, so a save that does asks first.
+  const [confirmDisable, setConfirmDisable] = useState(false)
   const [coreExpanded, setCoreExpanded] = useState(false)
   // Fine-tune phase groups that the admin has collapsed (default: all collapsed;
   // the admin opens each phase as needed to reduce initial clutter).
@@ -160,7 +153,10 @@ export default function ModuleManagementPage() {
   // dep graph into display names from the tenant-modules response.
   const moduleNames = useMemo(() => {
     const map: Record<string, string> = {}
-    for (const m of modules) map[m.id] = m.name
+    for (const m of modules) {
+      map[m.id] = m.name
+      for (const sub of m.sub_modules ?? []) map[sub.id] = sub.name
+    }
     return map
   }, [modules])
 
@@ -294,8 +290,17 @@ export default function ModuleManagementPage() {
 
   const handleSave = useCallback(async () => {
     if (!isDirty) return
+    if (Object.values(pendingChanges).some((enabled) => !enabled)) {
+      setConfirmDisable(true)
+      return
+    }
     await runSave(pendingChanges)
   }, [isDirty, pendingChanges, runSave])
+
+  const handleConfirmDisable = useCallback(async () => {
+    setConfirmDisable(false)
+    await runSave(pendingChanges)
+  }, [pendingChanges, runSave])
 
   // Cascade resolver — when the backend blocks a toggle, the user can
   // click "Disable them too" (or "Enable required") to flip the
@@ -357,22 +362,24 @@ export default function ModuleManagementPage() {
   if (error && !modules.length) {
     return (
       <Main>
-        <PageHeader title={pageTitle} description={pageDescription} />
-        <Alert variant="destructive" className="mt-5">
-          <AlertCircle className="h-4 w-4" />
-          <AlertTitle>{t('settings.modules.loadFailed', 'Failed to load modules')}</AlertTitle>
-          <AlertDescription>
-            <p>
-              {getErrorMessage(
-                error,
-                t('settings.modules.requestFailed', 'The modules request failed.')
-              )}
-            </p>
-            <Button variant="outline" size="sm" className="mt-2" onClick={() => void mutate()}>
-              {t('common.retry', 'Retry')}
-            </Button>
-          </AlertDescription>
-        </Alert>
+        <PageStack>
+          <PageHeader title={pageTitle} description={pageDescription} />
+          <Alert variant="destructive">
+            <AlertCircle className="h-4 w-4" />
+            <AlertTitle>{t('settings.modules.loadFailed', 'Failed to load modules')}</AlertTitle>
+            <AlertDescription>
+              <p>
+                {getErrorMessage(
+                  error,
+                  t('settings.modules.requestFailed', 'The modules request failed.')
+                )}
+              </p>
+              <Button variant="outline" size="sm" className="mt-2" onClick={() => void mutate()}>
+                {t('common.retry', 'Retry')}
+              </Button>
+            </AlertDescription>
+          </Alert>
+        </PageStack>
       </Main>
     )
   }
@@ -380,213 +387,186 @@ export default function ModuleManagementPage() {
   if (isLoading) {
     return (
       <Main>
-        <PageHeader title={pageTitle} description={pageDescription} />
-        <Skeleton className="mt-5 h-[68px] w-full rounded-xl" />
-        <div className="mt-5 space-y-5">
-          {Array.from({ length: 3 }).map((_, i) => (
-            <Skeleton key={i} className="h-32 w-full rounded-xl" />
-          ))}
-        </div>
+        <PageStack>
+          <PageHeader title={pageTitle} description={pageDescription} />
+          <PageStack>
+            {Array.from({ length: 3 }).map((_, i) => (
+              <Skeleton key={i} className="h-32 w-full rounded-xl" />
+            ))}
+          </PageStack>
+        </PageStack>
       </Main>
     )
   }
 
   return (
     <Main>
-      <PageHeader title={pageTitle} description={pageDescription}>
-        <Can route="POST /api/v1/tenants/{tenant}/settings/modules/reset">
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => setShowResetDialog(true)}
-            disabled={isResetting}
-          >
-            <RotateCcw className="h-4 w-4" />
-            {t('settings.modules.removeMine', 'Remove my changes')}
-          </Button>
-        </Can>
-      </PageHeader>
-
-      {summary && (
-        <MetricStrip
-          className="mt-5"
-          items={[
-            {
-              key: 'total',
-              label: t('settings.modules.total', 'Total modules'),
-              value: summary.total,
-            },
-            {
-              key: 'enabled',
-              label: t('settings.modules.enabled', 'Enabled'),
-              value: summary.enabled + pendingEnabled - pendingDisabled,
-            },
-            {
-              key: 'disabled',
-              label: t('settings.modules.disabled', 'Disabled'),
-              value: summary.disabled - pendingEnabled + pendingDisabled,
-            },
-            {
-              key: 'core',
-              label: t('settings.modules.coreAlwaysOn', 'Core (always on)'),
-              value: summary.core,
-            },
-          ]}
-        />
-      )}
-
-      <div className="mt-5 space-y-5">
-        {/* Core Modules - Collapsed by default */}
-        {coreModules.length > 0 && (
-          <Card>
-            <CardHeader
-              className="cursor-pointer select-none py-3"
-              onClick={() => setCoreExpanded(!coreExpanded)}
+      <PageStack>
+        <PageHeader title={pageTitle} description={pageDescription}>
+          <Can route="POST /api/v1/tenants/{tenant}/settings/modules/reset">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setShowResetDialog(true)}
+              disabled={isResetting}
             >
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  {coreExpanded ? (
-                    <ChevronDown className="h-4 w-4 text-muted-foreground" />
-                  ) : (
-                    <ChevronRight className="h-4 w-4 text-muted-foreground" />
-                  )}
-                  <CardTitle className="text-base">
-                    {t('settings.modules.core', 'Core modules')}
-                  </CardTitle>
-                  <Badge variant="secondary" className="text-xs gap-1">
-                    <Lock className="h-3 w-3" />
-                    {t('settings.modules.alwaysOn', 'Always on')}
-                  </Badge>
-                  <Badge variant="outline" className="text-xs">
-                    {coreModules.length}
-                  </Badge>
-                </div>
-              </div>
-            </CardHeader>
-            {coreExpanded && (
-              <CardContent className="pt-0">
-                <div className="divide-y">
-                  {coreModules.map((mod) => (
-                    <ModuleRow
-                      key={mod.id}
-                      mod={mod}
-                      isEnabled={true}
-                      hasPendingChange={false}
-                      pendingChanges={pendingChanges}
-                      isUpdating={isUpdating}
-                      onToggle={toggleModule}
-                      requires={requires[mod.id]}
-                      requiredBy={requiredBy[mod.id]}
-                      moduleNames={moduleNames}
-                      readOnlyUntil={readOnlyModules?.[mod.id]}
-                    />
-                  ))}
-                </div>
-              </CardContent>
-            )}
-          </Card>
-        )}
+              <RotateCcw className="h-4 w-4" />
+              {t('settings.modules.removeMine', 'Remove my changes')}
+            </Button>
+          </Can>
+        </PageHeader>
 
-        {/* Fine-tune features — grouped by CTEM phase, collapsible. Layered on
-            top of the product selection as per-module overrides. */}
-        {featureModules.length > 0 && (
-          <Card>
-            <CardHeader className="py-3">
-              <div className="flex items-center gap-2">
-                <CardTitle className="text-base">
-                  {t('settings.modules.fineTune', 'Fine-tune features')}
-                </CardTitle>
-                <Badge variant="outline" className="text-xs">
-                  {featureModules.length}
-                </Badge>
-              </div>
-              <CardDescription>
-                {t(
-                  'settings.modules.fineTuneHint',
-                  'Individual feature toggles, grouped by CTEM phase and layered on top of your products. Turn anything on or off; dependencies are checked when you save.'
-                )}
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="pt-0 space-y-2.5">
-              {groupedFeatures.map((group) => {
-                const collapsed = collapsedPhases.has(group.key)
-                const enabledCount = group.mods.filter((m) => getEffectiveEnabled(m)).length
-                return (
-                  <div key={group.key} className="rounded-lg border">
-                    <button
-                      type="button"
-                      onClick={() => togglePhase(group.key)}
-                      aria-expanded={!collapsed}
-                      className="flex w-full items-center gap-2 rounded-lg px-3 py-2.5 text-start hover:bg-muted/40"
-                    >
-                      {collapsed ? (
-                        <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground" />
-                      ) : (
-                        <ChevronDown className="h-4 w-4 shrink-0 text-muted-foreground" />
-                      )}
-                      <span className="text-sm font-semibold">{group.label}</span>
-                      <span className="ms-auto text-xs tabular-nums text-muted-foreground">
-                        {t('settings.modules.phaseOn', '{enabled}/{total} on', {
-                          enabled: enabledCount,
-                          total: group.mods.length,
-                        })}
-                      </span>
-                    </button>
-                    {!collapsed && (
-                      <div className="divide-y border-t px-3">
-                        {group.mods.map((mod) => (
-                          <ModuleRow
-                            key={mod.id}
-                            mod={mod}
-                            isEnabled={getEffectiveEnabled(mod)}
-                            hasPendingChange={mod.id in pendingChanges}
-                            pendingChanges={pendingChanges}
-                            isUpdating={isUpdating}
-                            onToggle={toggleModule}
-                            requires={requires[mod.id]}
-                            requiredBy={requiredBy[mod.id]}
-                            moduleNames={moduleNames}
-                            readOnlyUntil={readOnlyModules?.[mod.id]}
-                          />
-                        ))}
-                      </div>
+        <PageStack>
+          {/* Core Modules - Collapsed by default */}
+          {coreModules.length > 0 && (
+            <Card>
+              <CardHeader
+                className="cursor-pointer select-none py-3"
+                onClick={() => setCoreExpanded(!coreExpanded)}
+              >
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    {coreExpanded ? (
+                      <ChevronDown className="h-4 w-4 text-muted-foreground" />
+                    ) : (
+                      <ChevronRight className="h-4 w-4 text-muted-foreground" />
                     )}
+                    <CardTitle className="text-base">
+                      {t('settings.modules.core', 'Core modules')}
+                    </CardTitle>
+                    <Badge variant="secondary" className="text-xs gap-1">
+                      <Lock className="h-3 w-3" />
+                      {t('settings.modules.alwaysOn', 'Always on')}
+                    </Badge>
+                    <Badge variant="outline" className="text-xs">
+                      {coreModules.length}
+                    </Badge>
                   </div>
-                )
-              })}
-            </CardContent>
-          </Card>
-        )}
-      </div>
+                </div>
+              </CardHeader>
+              {coreExpanded && (
+                <CardContent className="pt-0">
+                  <div className="divide-y">
+                    {coreModules.map((mod) => (
+                      <ModuleRow
+                        key={mod.id}
+                        mod={mod}
+                        isEnabled={true}
+                        hasPendingChange={false}
+                        pendingChanges={pendingChanges}
+                        isUpdating={isUpdating}
+                        onToggle={toggleModule}
+                        requires={requires[mod.id]}
+                        requiredBy={requiredBy[mod.id]}
+                        moduleNames={moduleNames}
+                        readOnlyUntil={readOnlyModules?.[mod.id]}
+                      />
+                    ))}
+                  </div>
+                </CardContent>
+              )}
+            </Card>
+          )}
 
-      {/* A long list of toggles: Save sits in the shared sticky bar, shown only
+          {/* Fine-tune features — grouped by CTEM phase, collapsible. Layered on
+            top of the product selection as per-module overrides. */}
+          {featureModules.length > 0 && (
+            <Card>
+              <CardHeader className="py-3">
+                <div className="flex items-center gap-2">
+                  <CardTitle className="text-base">
+                    {t('settings.modules.fineTune', 'Fine-tune features')}
+                  </CardTitle>
+                  <Badge variant="outline" className="text-xs">
+                    {featureModules.length}
+                  </Badge>
+                </div>
+                <CardDescription>
+                  {t(
+                    'settings.modules.fineTuneHint',
+                    'Individual feature toggles, grouped by CTEM phase and layered on top of your products. Turn anything on or off; dependencies are checked when you save.'
+                  )}
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="pt-0 space-y-2.5">
+                {groupedFeatures.map((group) => {
+                  const collapsed = collapsedPhases.has(group.key)
+                  const enabledCount = group.mods.filter((m) => getEffectiveEnabled(m)).length
+                  return (
+                    <div key={group.key} className="rounded-lg border">
+                      <button
+                        type="button"
+                        onClick={() => togglePhase(group.key)}
+                        aria-expanded={!collapsed}
+                        className="flex w-full items-center gap-2 rounded-lg px-3 py-2.5 text-start hover:bg-muted/40"
+                      >
+                        {collapsed ? (
+                          <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground" />
+                        ) : (
+                          <ChevronDown className="h-4 w-4 shrink-0 text-muted-foreground" />
+                        )}
+                        <span className="text-sm font-semibold">{group.label}</span>
+                        <span className="ms-auto text-xs tabular-nums text-muted-foreground">
+                          {t('settings.modules.phaseOn', '{enabled}/{total} on', {
+                            enabled: enabledCount,
+                            total: group.mods.length,
+                          })}
+                        </span>
+                      </button>
+                      {!collapsed && (
+                        <div className="divide-y border-t px-3">
+                          {group.mods.map((mod) => (
+                            <ModuleRow
+                              key={mod.id}
+                              mod={mod}
+                              isEnabled={getEffectiveEnabled(mod)}
+                              hasPendingChange={mod.id in pendingChanges}
+                              pendingChanges={pendingChanges}
+                              isUpdating={isUpdating}
+                              onToggle={toggleModule}
+                              requires={requires[mod.id]}
+                              requiredBy={requiredBy[mod.id]}
+                              moduleNames={moduleNames}
+                              readOnlyUntil={readOnlyModules?.[mod.id]}
+                            />
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  )
+                })}
+              </CardContent>
+            </Card>
+          )}
+        </PageStack>
+
+        {/* A long list of toggles: Save sits in the shared sticky bar, shown only
           while there are unsaved changes, and leaving asks first. */}
-      <Can route="PATCH /api/v1/tenants/{tenant}/settings/modules">
-        <SettingsSaveBar
-          dirty={isDirty}
-          saving={isUpdating}
-          onSave={() => void handleSave()}
-          onDiscard={handleDiscard}
-          summary={
-            [
-              pendingEnabled > 0 &&
-                t('settings.modules.toEnable', '{count} to enable', { count: pendingEnabled }),
-              pendingDisabled > 0 &&
-                t('settings.modules.toDisable', '{count} to disable', { count: pendingDisabled }),
-            ]
-              .filter(Boolean)
-              .join(' · ') || undefined
-          }
-        />
-      </Can>
+        <Can route="PATCH /api/v1/tenants/{tenant}/settings/modules">
+          <SettingsSaveBar
+            dirty={isDirty}
+            saving={isUpdating}
+            onSave={() => void handleSave()}
+            onDiscard={handleDiscard}
+            summary={
+              formatList([
+                pendingEnabled > 0 &&
+                  t('settings.modules.toEnable', '{count} to enable', { count: pendingEnabled }),
+                pendingDisabled > 0 &&
+                  t('settings.modules.toDisable', '{count} to disable', { count: pendingDisabled }),
+              ]) || undefined
+            }
+          />
+        </Can>
 
-      {/* Dependency-violation Dialog — shown when the backend rejects
+        {/* Dependency-violation Dialog — shown when the backend rejects
           a save because of the module graph. Lists the concrete modules
           the admin needs to flip before the proposed toggle will take. */}
-      <AlertDialog open={!!depConflict} onOpenChange={(open) => !open && setDepConflict(null)}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle className="flex items-center gap-2">
+        <ConfirmDialog
+          open={!!depConflict}
+          onOpenChange={(open) => !open && setDepConflict(null)}
+          title={
+            <span className="flex items-center gap-2">
               <AlertTriangle className="h-5 w-5 text-muted-foreground" />
               {depConflict?.action === 'disable'
                 ? t('settings.modules.cannotDisable', 'Cannot disable "{name}"', {
@@ -595,114 +575,129 @@ export default function ModuleManagementPage() {
                 : t('settings.modules.cannotEnable', 'Cannot enable "{name}"', {
                     name: depConflict?.module_name ?? '',
                   })}
-            </AlertDialogTitle>
-            {/* Short plain-text description for screen readers only —
-                the rich block-level content below renders outside the
-                <p> element to avoid invalid nested <p> hydration errors. */}
-            <AlertDialogDescription className="sr-only">
-              {depConflict?.action === 'disable'
-                ? t(
-                    'settings.modules.blockedSr',
-                    '{count} dependent modules block disabling {name}',
+            </span>
+          }
+          desc={
+            depConflict?.action === 'disable'
+              ? t(
+                  'settings.modules.blockedSr',
+                  '{count} dependent modules block disabling {name}',
+                  {
+                    count: depConflict.blockers?.length ?? 0,
+                    name: depConflict.module_name,
+                  }
+                )
+              : t('settings.modules.requiredSr', '{count} modules must be enabled before {name}', {
+                  count: depConflict?.required?.length ?? 0,
+                  name: depConflict?.module_name ?? '',
+                })
+          }
+          confirmText={
+            depConflict?.action === 'disable'
+              ? t(
+                  'settings.modules.disableAndRetry',
+                  'Disable {count} dependent modules and retry',
+                  {
+                    count: depConflict.blockers?.length ?? 0,
+                  }
+                )
+              : t('settings.modules.enableAndRetry', 'Enable {count} required modules and retry', {
+                  count: depConflict?.required?.length ?? 0,
+                })
+          }
+          destructive={depConflict?.action === 'disable'}
+          isLoading={isUpdating}
+          handleConfirm={handleCascadeResolve}
+        >
+          <div className="space-y-3 text-sm">
+            {depConflict?.action === 'disable' && (depConflict.blockers?.length ?? 0) > 0 && (
+              <div>
+                <div className="text-muted-foreground">
+                  {t(
+                    'settings.modules.blockedBody',
+                    '{count} modules depend on {name}. You can disable them all together, or cancel and handle them manually:',
                     { count: depConflict.blockers?.length ?? 0, name: depConflict.module_name }
-                  )
-                : t(
-                    'settings.modules.requiredSr',
-                    '{count} modules must be enabled before {name}',
-                    {
-                      count: depConflict?.required?.length ?? 0,
-                      name: depConflict?.module_name ?? '',
-                    }
                   )}
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogBody>
-            <div className="space-y-3 text-sm">
-              {depConflict?.action === 'disable' && (depConflict.blockers?.length ?? 0) > 0 && (
-                <div>
-                  <div className="text-muted-foreground">
-                    {t(
-                      'settings.modules.blockedBody',
-                      '{count} modules depend on {name}. You can disable them all together, or cancel and handle them manually:',
-                      { count: depConflict.blockers?.length ?? 0, name: depConflict.module_name }
-                    )}
-                  </div>
-                  <ul className="mt-2 space-y-1.5">
-                    {depConflict.blockers?.map((b) => (
-                      <li key={b.module_id} className="rounded-md border bg-muted/40 px-3 py-2">
-                        <div className="flex items-center justify-between gap-2">
-                          <div className="font-medium">{b.name}</div>
-                          <code className="text-xs text-muted-foreground">{b.module_id}</code>
-                        </div>
-                        <div className="mt-0.5 text-xs text-muted-foreground">{b.reason}</div>
-                      </li>
-                    ))}
-                  </ul>
                 </div>
-              )}
-              {depConflict?.action === 'enable' && (depConflict.required?.length ?? 0) > 0 && (
-                <div>
-                  <div className="text-muted-foreground">
-                    {t(
-                      'settings.modules.requiredBody',
-                      '{name} requires {count} other modules that are currently disabled. You can enable them all together, or cancel and handle them manually:',
-                      { count: depConflict.required?.length ?? 0, name: depConflict.module_name }
-                    )}
-                  </div>
-                  <ul className="mt-2 space-y-1.5">
-                    {depConflict.required?.map((r) => (
-                      <li key={r.module_id} className="rounded-md border bg-muted/40 px-3 py-2">
-                        <div className="flex items-center justify-between gap-2">
-                          <div className="font-medium">{r.name}</div>
-                          <code className="text-xs text-muted-foreground">{r.module_id}</code>
-                        </div>
-                        <div className="mt-0.5 text-xs text-muted-foreground">{r.reason}</div>
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              )}
-            </div>
-          </AlertDialogBody>
-          <AlertDialogFooter>
-            <AlertDialogCancel onClick={() => setDepConflict(null)}>
-              {t('common.cancel', 'Cancel')}
-            </AlertDialogCancel>
-            <AlertDialogAction onClick={handleCascadeResolve} disabled={isUpdating}>
-              {depConflict?.action === 'disable'
-                ? t(
-                    'settings.modules.disableAndRetry',
-                    'Disable {count} dependent modules and retry',
-                    {
-                      count: depConflict.blockers?.length ?? 0,
-                    }
-                  )
-                : t(
-                    'settings.modules.enableAndRetry',
-                    'Enable {count} required modules and retry',
-                    {
-                      count: depConflict?.required?.length ?? 0,
-                    }
+                <ul className="mt-2 space-y-1.5">
+                  {depConflict.blockers?.map((b) => (
+                    <li key={b.module_id} className="rounded-md border bg-muted/40 px-3 py-2">
+                      <div className="flex items-center justify-between gap-2">
+                        <div className="font-medium">{b.name}</div>
+                        <code className="text-xs text-muted-foreground">{b.module_id}</code>
+                      </div>
+                      <div className="mt-0.5 text-xs text-muted-foreground">{b.reason}</div>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+            {depConflict?.action === 'enable' && (depConflict.required?.length ?? 0) > 0 && (
+              <div>
+                <div className="text-muted-foreground">
+                  {t(
+                    'settings.modules.requiredBody',
+                    '{name} requires {count} other modules that are currently disabled. You can enable them all together, or cancel and handle them manually:',
+                    { count: depConflict.required?.length ?? 0, name: depConflict.module_name }
                   )}
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+                </div>
+                <ul className="mt-2 space-y-1.5">
+                  {depConflict.required?.map((r) => (
+                    <li key={r.module_id} className="rounded-md border bg-muted/40 px-3 py-2">
+                      <div className="flex items-center justify-between gap-2">
+                        <div className="font-medium">{r.name}</div>
+                        <code className="text-xs text-muted-foreground">{r.module_id}</code>
+                      </div>
+                      <div className="mt-0.5 text-xs text-muted-foreground">{r.reason}</div>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+          </div>
+        </ConfirmDialog>
 
-      {/* Reset Confirmation Dialog */}
-      <ConfirmDialog
-        open={showResetDialog}
-        onOpenChange={setShowResetDialog}
-        title={t('confirm.modules.resetTitle', 'Remove your module changes?')}
-        desc={t(
-          'confirm.modules.resetDesc',
-          'Every module you turned on or off by hand goes back to the default: every module available to this organization is on again. Your changes cannot be restored.'
-        )}
-        confirmText={t('confirm.modules.reset', 'Remove changes')}
-        destructive
-        isLoading={isResetting}
-        handleConfirm={() => void handleReset()}
-      />
+        {/* Disabling modules: names what goes away for every member. */}
+        <ConfirmDialog
+          open={confirmDisable}
+          onOpenChange={setConfirmDisable}
+          title={t('confirm.modules.disableTitle', 'Turn off {count} modules?', {
+            count: pendingDisabled,
+          })}
+          desc={t(
+            'confirm.modules.disableDesc',
+            'They disappear from the menu and their pages stop opening for every member of this organization. Their data is kept, and turning them on again brings it back.'
+          )}
+          confirmText={t('confirm.modules.disableConfirm', 'Turn off {count} modules', {
+            count: pendingDisabled,
+          })}
+          destructive
+          isLoading={isUpdating}
+          handleConfirm={handleConfirmDisable}
+        >
+          <ConfirmSample
+            names={Object.entries(pendingChanges)
+              .filter(([, enabled]) => !enabled)
+              .map(([id]) => moduleNames[id] ?? id)}
+            total={pendingDisabled}
+          />
+        </ConfirmDialog>
+
+        {/* Reset Confirmation Dialog */}
+        <ConfirmDialog
+          open={showResetDialog}
+          onOpenChange={setShowResetDialog}
+          title={t('confirm.modules.resetTitle', 'Remove your module changes?')}
+          desc={t(
+            'confirm.modules.resetDesc',
+            'Every module you turned on or off by hand goes back to the default: every module available to this organization is on again. Your changes cannot be restored.'
+          )}
+          confirmText={t('confirm.modules.reset', 'Remove changes')}
+          destructive
+          isLoading={isResetting}
+          handleConfirm={() => void handleReset()}
+        />
+      </PageStack>
     </Main>
   )
 }

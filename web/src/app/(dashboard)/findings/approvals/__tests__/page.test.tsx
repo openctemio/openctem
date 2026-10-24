@@ -446,27 +446,30 @@ describe('ApprovalsPage', () => {
     })
   })
 
-  describe('status lens', () => {
+  describe('status filter', () => {
     beforeEach(() => {
       mockHook({
         data: { data: mockApprovals, total: 3, page: 1, per_page: 20, status_counts: COUNTS },
       })
     })
 
-    it('sits in the list toolbar as one radio group with no counts', () => {
+    it('sits in the list toolbar as a Status filter token, not a row of tabs', () => {
       render(<ApprovalsPage />)
-      const group = within(screen.getByTestId('toolbar')).getByRole('radiogroup', {
-        name: 'Request status',
-      })
-      expect(
-        within(group)
-          .getAllByRole('radio')
-          .map((el) => el.textContent)
-      ).toEqual(['Pending', 'Approved', 'Rejected', 'All'])
-      expect(within(group).getByRole('radio', { name: 'Pending' })).toHaveAttribute(
-        'aria-checked',
-        'true'
-      )
+      const toolbar = screen.getByTestId('toolbar')
+      expect(within(toolbar).queryByRole('radiogroup')).not.toBeInTheDocument()
+      expect(within(toolbar).getByRole('button', { name: 'Status: Pending' })).toBeInTheDocument()
+    })
+
+    it('lists every status with its count in the token menu', async () => {
+      render(<ApprovalsPage />)
+      await userEvent.click(screen.getByRole('button', { name: 'Status: Pending' }))
+      const items = await screen.findAllByRole('menuitemradio')
+      expect(items.map((el) => el.textContent?.replace(/[\d,]+$/, ''))).toEqual([
+        'All',
+        'Pending',
+        'Approved',
+        'Rejected',
+      ])
     })
 
     it('opens on Pending and asks the server for pending requests', () => {
@@ -474,12 +477,14 @@ describe('ApprovalsPage', () => {
       expect(useApprovals).toHaveBeenLastCalledWith(1, 20, 'pending')
     })
 
-    it('writes the lens to the URL; Pending is the default and leaves it out', () => {
+    it('writes the status to the URL; Pending is the default and leaves it out', async () => {
       render(<ApprovalsPage />)
-      fireEvent.click(screen.getByRole('radio', { name: 'All' }))
+      // Clearing the token shows every status.
+      fireEvent.click(screen.getByRole('button', { name: 'Clear Status' }))
       expect(listState.setFilter).toHaveBeenCalledWith('status', 'all')
-      fireEvent.click(screen.getByRole('radio', { name: 'Pending' }))
-      expect(listState.setFilter).toHaveBeenCalledWith('status', '')
+      await userEvent.click(screen.getByRole('button', { name: 'Status: Pending' }))
+      await userEvent.click(await screen.findByRole('menuitemradio', { name: /^Rejected/ }))
+      expect(listState.setFilter).toHaveBeenCalledWith('status', 'rejected')
     })
 
     it('asks the server for every status under All', () => {
@@ -493,10 +498,7 @@ describe('ApprovalsPage', () => {
       listState.status = 'rejected'
       render(<ApprovalsPage />)
       expect(useApprovals).toHaveBeenLastCalledWith(1, 20, 'rejected')
-      expect(screen.getByRole('radio', { name: 'Rejected' })).toHaveAttribute(
-        'aria-checked',
-        'true'
-      )
+      expect(screen.getByRole('button', { name: 'Status: Rejected' })).toBeInTheDocument()
       listState.status = ''
     })
 
@@ -512,7 +514,7 @@ describe('ApprovalsPage', () => {
       render(<ApprovalsPage />)
       expect(screen.getByText('No pending requests')).toBeInTheDocument()
       expect(
-        screen.getByText(/Decided requests are under Approved, Rejected and All/)
+        screen.getByText(/To see decided requests, change the Status filter/)
       ).toBeInTheDocument()
     })
   })

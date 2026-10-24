@@ -30,7 +30,6 @@ export const API_BASE = {
   PROXY_POOLS: '/api/v1/proxy-pools',
   SCAN_PROFILES: '/api/v1/scan-profiles',
   SCANNER_TEMPLATES: '/api/v1/scanner-templates',
-  TEMPLATE_SOURCES: '/api/v1/template-sources',
   TOOLS: '/api/v1/tools',
   TOOL_CATEGORIES: '/api/v1/tool-categories',
   CAPABILITIES: '/api/v1/capabilities',

@@ -3,7 +3,7 @@
 import { useState } from 'react'
 import { toast } from 'sonner'
 import { ShieldCheck } from 'lucide-react'
-import { EmptyState, ErrorState } from '@/features/shared'
+import { EmptyState, ErrorState, PageStack } from '@/features/shared'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
@@ -183,10 +183,10 @@ export function SSOChangeApprovals({ canDecide }: { canDecide: boolean }) {
     )
   }
   return (
-    <div className="space-y-4">
+    <PageStack>
       {changes.map((c) => (
         <ChangeCard key={c.id} change={c} onDecided={() => void mutate()} />
       ))}
-    </div>
+    </PageStack>
   )
 }
