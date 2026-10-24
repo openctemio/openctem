@@ -2747,6 +2747,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 		automation.WithWorkflowSubjectReaders(repos.Finding, repos.Asset),
 		automation.WithWorkflowVersions(repos.WorkflowVersion),
 		automation.WithWorkflowRunReaders(s.DataScope, repos.WorkflowDelivery),
+		automation.WithWorkflowPreview(repos.WorkflowRun, automation.NewSimulateEvaluator(repos.Finding), repos.Integration),
 	)
 
 	// Initialize workflow event dispatcher for automatic workflow triggering

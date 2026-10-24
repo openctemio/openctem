@@ -99,7 +99,7 @@ Both are rate limited per user.
 | Catalog, removed types (`automations_removed_types`) | this RFC's first pull request | In review |
 | Versions and mode (`automation_versions`) | stacked | In review |
 | Simulate engine, trace, deliveries, retention (`automation_run_trace`) | stacked | In review |
-| Preview and validate | stacked | Designed |
+| Preview and validate | stacked | In review |
 | Go-live gate and permissions | stacked | Designed |
 | Request actions, status allow-list, change cap | stacked | Designed |
 | Canvas: simulate/live, preview, validate, trace | stacked | Designed |
