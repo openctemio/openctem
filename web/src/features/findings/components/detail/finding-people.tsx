@@ -12,6 +12,7 @@ import { useAuthStore } from '@/stores/auth-store'
 import { useCanMutate } from '@/lib/permissions'
 import { WatchersBlock } from '@/features/shared/components/watchers-block'
 import { useAssignableMembers } from '../../api/use-assignable-members'
+import { useSearchQuery } from '@/hooks/use-search-query'
 
 export interface FindingPeopleProps {
   findingId: string
@@ -27,8 +28,9 @@ export function FindingPeople({ findingId, assignee }: FindingPeopleProps) {
   const canManage = useCanMutate('POST /api/v1/findings/{id}/watchers')
   const [open, setOpen] = useState(false)
   const [search, setSearch] = useState('')
+  const searchTerm = useSearchQuery(search).term
   const { members, isLoading } = useAssignableMembers(findingId, {
-    search: search.trim(),
+    search: searchTerm,
     limit: 20,
     enabled: open && canManage,
   })

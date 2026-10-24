@@ -82,7 +82,7 @@ import {
 } from 'lucide-react'
 import { useUrlFilter } from '@/hooks/use-url-param'
 import { useListParams } from '@/hooks/use-list-params'
-import { useDebounce } from '@/hooks/use-debounce'
+import { useSearchQuery } from '@/hooks/use-search-query'
 import { useTenant } from '@/context/tenant-provider'
 import {
   useMembers,
@@ -610,7 +610,7 @@ export default function UsersPage() {
   const roleFilter: RoleFilter = roleFilters.some((f) => f.value === roleParam)
     ? (roleParam as RoleFilter)
     : 'all'
-  const debouncedSearch = useDebounce(searchQuery.trim(), 300)
+  const debouncedSearch = useSearchQuery(searchQuery).term
 
   // Paged, searched and filtered on the server. The list used to load one
   // capped page (100) and filter it in the browser, so every member past the

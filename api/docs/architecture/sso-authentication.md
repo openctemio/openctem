@@ -159,6 +159,14 @@ an identity provider, SSO enforcement and verified domains apply directly.
 Code: `internal/app/auth/sso_change.go`, `internal/infra/postgres/sso_change_repository.go`,
 `internal/infra/http/handler/sso_change_handler.go`.
 
+## Changing an identity provider's issuer
+
+The client secret is sent to the issuer's token endpoint at every sign-in, so
+an update that changes `issuer_url` (or the directory or organization in
+`tenant_identifier`) is refused unless it carries a new client secret. The
+check runs when the change is submitted and again when an approved change is
+applied.
+
 ## Configuration resolution (tenant → env fallback)
 
 `SSOService.resolveProvider(tenantID, provider)` returns the **effective**

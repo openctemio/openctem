@@ -198,7 +198,7 @@ func (s *Service) RefreshPersonal(ctx context.Context, c dashboardapp.Caller, id
 	if err != nil {
 		return nil, err
 	}
-	return s.forViewer(ctx, out, c, scope.CampaignViewer)
+	return s.personalForViewer(ctx, out, c, scope)
 }
 
 // RefreshOrg recomputes an organization dashboard the caller may read, within
