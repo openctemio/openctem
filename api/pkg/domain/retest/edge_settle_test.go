@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/openctemio/openctem/api/pkg/domain/evidence"
+	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
 )
 
 // answer is one exchange at url with the given status, headers and body.
@@ -33,8 +34,8 @@ func nm(items []evidence.Item) CheckResult {
 }
 
 var (
-	exposure = ExposureClass([]string{"exposure", "swagger", "api"})
-	rce      = ExposureClass([]string{"cve", "rce", "exposure"})
+	exposure = vulnerability.ExposureTemplateTags([]string{"exposure", "swagger", "api"})
+	rce      = vulnerability.ExposureTemplateTags([]string{"cve", "rce", "exposure"})
 )
 
 func TestEdgeBlockedIsNeverFixed(t *testing.T) {
@@ -60,10 +61,10 @@ func TestOriginDeniedExposureNeedsTwoSightings(t *testing.T) {
 	if v.Outcome != OutcomeConfirmedFixed || v.Code != ReasonAccessDenied || !strings.Contains(v.Reason, "access now denied by the server") {
 		t.Fatalf("two sightings = %s/%s (%s)", v.Outcome, v.Code, v.Reason)
 	}
-	// One retest plus the reach check that saw the host answer: fixed.
+	// The reachability probe is not a second sighting.
 	v = Decide(nm(origin403), probeUp, swaggerAt, Class{Exposure: exposure})
-	if v.Outcome != OutcomeConfirmedFixed {
-		t.Fatalf("retest plus reach = %s (%s)", v.Outcome, v.Reason)
+	if v.Outcome != OutcomeInconclusive {
+		t.Fatalf("one retest plus reach = %s (%s)", v.Outcome, v.Reason)
 	}
 	// One sighting, nothing else: inconclusive.
 	v = Decide(nm(origin403), probeDown, swaggerAt, Class{Exposure: exposure})
@@ -90,16 +91,16 @@ func TestOriginDeniedOtherClassStaysInconclusive(t *testing.T) {
 	}
 }
 
-func TestExposureClass(t *testing.T) {
+func TestExposureTemplateTags(t *testing.T) {
 	yes := [][]string{{"exposure"}, {"Swagger", "api"}, {"exposed-panel"}, {"config", "files"}, {"debug"}}
 	no := [][]string{nil, {"cve", "rce", "exposure"}, {"sqli"}, {"auth-bypass", "panel"}, {"tech"}}
 	for _, tags := range yes {
-		if !ExposureClass(tags) {
+		if !vulnerability.ExposureTemplateTags(tags) {
 			t.Errorf("%v should be exposure", tags)
 		}
 	}
 	for _, tags := range no {
-		if ExposureClass(tags) {
+		if vulnerability.ExposureTemplateTags(tags) {
 			t.Errorf("%v should not be exposure", tags)
 		}
 	}

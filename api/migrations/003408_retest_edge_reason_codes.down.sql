@@ -1,3 +1,4 @@
+ALTER TABLE findings DROP COLUMN IF EXISTS template_exposure;
 UPDATE finding_retests SET reason_code = 'blocked' WHERE reason_code = 'edge_blocked';
 UPDATE finding_retests SET reason_code = 'auth_changed' WHERE reason_code = 'access_denied';
 ALTER TABLE finding_retests DROP CONSTRAINT chk_finding_retests_reason_code;

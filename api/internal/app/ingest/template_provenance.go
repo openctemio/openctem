@@ -69,6 +69,9 @@ func findingTemplateProvenance(f *ctis.Finding, tool *ctis.Tool) vulnerability.T
 		}
 	}
 	p.TemplatesVersion, p.TemplatesDigest = reportTemplateRelease(tool)
+	// The template's own tags as the sensor reported them at this sighting
+	// (not the finding's tags, which a user can edit).
+	p.ExposureClass = vulnerability.ExposureTemplateTags(f.Tags)
 	// The organization's own rules: the sensor prefixes their ids and marks
 	// nuclei results (rule_source). The store links the template.
 	if rs, _ := f.Properties["rule_source"].(string); rs == vulnerability.RuleSourceTenant || strings.HasPrefix(f.RuleID, vulnerability.TenantRulePrefix) {

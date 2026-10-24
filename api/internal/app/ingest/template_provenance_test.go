@@ -36,6 +36,23 @@ func TestFindingTemplateProvenance(t *testing.T) {
 	}
 }
 
+// The exposure class comes from the template's tags as the sensor reported
+// them, and an attacking tag wins over an exposure tag.
+func TestFindingTemplateProvenance_ExposureClass(t *testing.T) {
+	d := "sha256:" + strings.Repeat("c", 64)
+	props := ctis.Properties{"template_digest": d}
+	if !findingTemplateProvenance(&ctis.Finding{Properties: props, Tags: []string{"exposure", "swagger"}}, nil).ExposureClass {
+		t.Error("an exposure template is not marked")
+	}
+	if findingTemplateProvenance(&ctis.Finding{Properties: props, Tags: []string{"exposure", "sqli"}}, nil).ExposureClass {
+		t.Error("an attacking template is marked exposure")
+	}
+	own := ctis.Properties{"template_digest": d, "rule_source": "tenant"}
+	if findingTemplateProvenance(&ctis.Finding{Properties: own, Tags: []string{"exposure"}}, nil).ExposureClass {
+		t.Error("an organization's own rule is marked exposure")
+	}
+}
+
 // The run's template release is one value across its reports, else unknown.
 func TestDecideRunCoverage_TemplatesDigest(t *testing.T) {
 	rel1 := "sha256:" + strings.Repeat("1", 64)
