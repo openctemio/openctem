@@ -127,13 +127,13 @@ func TestNewClient_GuardedRedirectPolicy(t *testing.T) {
 	if cr == nil {
 		t.Fatal("guarded client has no CheckRedirect")
 	}
-	httpsReq, _ := http.NewRequest(http.MethodGet, "https://dd.example.com/api/v2/findings/", nil)
-	httpReq, _ := http.NewRequest(http.MethodGet, "http://dd.example.com/api/v2/findings/", nil)
+	httpsReq, _ := http.NewRequestWithContext(context.Background(), http.MethodGet, "https://dd.example.com/api/v2/findings/", nil)
+	httpReq, _ := http.NewRequestWithContext(context.Background(), http.MethodGet, "http://dd.example.com/api/v2/findings/", nil)
 	httpReq.Header.Set("Authorization", "Token secret-tok")
 	if err := cr(httpReq, []*http.Request{httpsReq}); err == nil {
 		t.Fatal("https to http redirect must be refused")
 	}
-	ok, _ := http.NewRequest(http.MethodGet, "https://8.8.8.8/other", nil)
+	ok, _ := http.NewRequestWithContext(context.Background(), http.MethodGet, "https://8.8.8.8/other", nil)
 	if err := cr(ok, []*http.Request{httpsReq}); err != nil {
 		t.Fatalf("https to https redirect to a public host to a public IP should pass: %v", err)
 	}
