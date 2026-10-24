@@ -30,6 +30,7 @@ import { useListParams } from '@/hooks/use-list-params'
 import type { EASMConfirmScopeResult, EASMReviewItem } from '@/lib/api/generated'
 import { del } from '@/lib/api/client'
 import { getErrorMessage } from '@/lib/api/error-handler'
+import { UNDO_TOAST_MS } from '@/lib/undo-toast'
 import { invalidateScopeCache } from '@/features/scope/api/use-scope-api'
 import { usePermissions, Permission } from '@/lib/permissions'
 import { cn } from '@/lib/utils'
@@ -134,6 +135,7 @@ export function reportConfirmScope(
           count: added.length,
         }),
     {
+      duration: UNDO_TOAST_MS,
       action: !canUndo
         ? undefined
         : {

@@ -186,13 +186,14 @@ export function SamlConfigForm({
           <>
             {data && (
               <Button
-                variant="outline"
+                variant="destructive"
                 size="sm"
+                className="me-auto"
                 onClick={() => setRemoveOpen(true)}
                 disabled={isDeleting}
               >
                 <Trash2 className="me-2 h-4 w-4" />
-                {t('admin.samlConfigForm.remove', 'Remove')}
+                {t('admin.samlConfigForm.removeSaml', 'Remove SAML')}
               </Button>
             )}
             <Button variant="outline" size="sm" onClick={resetToSaved} disabled={!isDirty}>
@@ -434,9 +435,10 @@ export function SamlConfigForm({
         title={t('confirm.saml.removeTitle', 'Remove the SAML configuration?')}
         desc={t(
           'confirm.saml.removeDesc',
-          'People can no longer sign in through your identity provider. Make sure they have another way to sign in first. This cannot be undone.'
+          'People can no longer sign in through the identity provider. Make sure they have another way to sign in first. The stored certificate and settings are deleted; you can configure SAML again from scratch.'
         )}
-        confirmText={t('confirm.remove', 'Remove')}
+        confirmText={t('confirm.saml.removeButton', 'Remove SAML')}
+        typeToConfirm={tenantSlug || undefined}
         destructive
         isLoading={isDeleting}
         handleConfirm={() => void handleDelete()}

@@ -11,7 +11,7 @@ import { useCallback, useState } from 'react'
 import { useSWRConfig } from 'swr'
 import { Main } from '@/components/layout'
 import { Tabs, TabsContent, TabsCount, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import { PageHeader } from '@/features/shared'
+import { PageHeader, PageStack } from '@/features/shared'
 import {
   ApprovalSettings,
   CatalogTab,
@@ -45,14 +45,14 @@ export default function ContentCatalogPage() {
 
   return (
     <Main>
-      <PageHeader
-        title={t('settings.item.content', 'Content catalog')}
-        description={t(
-          'contentCatalog.pageDescription',
-          'Signed packages of rules, templates and other content. Installing one makes it available to the whole organization.'
-        )}
-      />
-      <div className="space-y-4">
+      <PageStack>
+        <PageHeader
+          title={t('settings.item.content', 'Content catalog')}
+          description={t(
+            'contentCatalog.pageDescription',
+            'Signed packages of rules, templates and other content. Installing one makes it available to the whole organization.'
+          )}
+        />
         <TrustBanner trust={trust.data} />
         <Tabs value={tab} onValueChange={setTab}>
           <TabsList>
@@ -81,8 +81,8 @@ export default function ContentCatalogPage() {
             <ApprovalSettings />
           </TabsContent>
         </Tabs>
-      </div>
-      <PackageSheet packageId={open} onClose={() => setOpen(null)} onChanged={refreshAll} />
+        <PackageSheet packageId={open} onClose={() => setOpen(null)} onChanged={refreshAll} />
+      </PageStack>
     </Main>
   )
 }

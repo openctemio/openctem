@@ -29,6 +29,7 @@ import {
   type CheckStatus,
   type OverviewCheck,
 } from '../lib/checks'
+import { PageStack } from '@/features/shared'
 
 const STATUS_ICON = {
   risk: { Icon: XCircle, className: 'text-destructive' },
@@ -145,7 +146,7 @@ export function SecurityOverview() {
   })
 
   return (
-    <div className="space-y-4">
+    <PageStack>
       <Card>
         <CardContent className="flex flex-col gap-4 pt-6 sm:flex-row sm:items-center">
           <div className="min-w-0 flex-1 space-y-2">
@@ -208,6 +209,6 @@ export function SecurityOverview() {
           </CardContent>
         </Card>
       ))}
-    </div>
+    </PageStack>
   )
 }

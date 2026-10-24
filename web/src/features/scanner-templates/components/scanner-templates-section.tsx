@@ -44,10 +44,9 @@ import {
   DataTableRowActions,
   EmptyState,
   ErrorState,
-  MetricStrip,
   PageHeader,
-  type MetricStripItem,
   type RowAction,
+  PageStack,
 } from '@/features/shared'
 
 import { Can, Permission } from '@/lib/permissions'
@@ -56,7 +55,6 @@ import {
   useDeleteScannerTemplate,
   useDeprecateScannerTemplate,
   approveScannerTemplate,
-  useTemplateUsage,
   invalidateScannerTemplatesCache,
 } from '@/lib/api/scanner-template-hooks'
 import type {
@@ -70,8 +68,6 @@ import {
   TEMPLATE_STATUS_DISPLAY_NAMES,
   TEMPLATE_TYPES,
   isManuallyUploadedTemplate,
-  getUsagePercentage,
-  formatStorageSize,
 } from '@/lib/api/scanner-template-types'
 import { getErrorMessage } from '@/lib/api/error-handler'
 import { useTranslation } from '@/context/i18n-provider'
@@ -132,23 +128,6 @@ function TemplateSourceBadge({ template }: { template: ScannerTemplate }) {
   )
 }
 
-/** A quota metric: the current count, "of max" as the hint, red once nearly full. */
-function quotaMetric(
-  key: string,
-  label: string,
-  current: number,
-  max: number,
-  format: (n: number) => string | number = (n) => n
-): MetricStripItem {
-  return {
-    key,
-    label,
-    value: format(current),
-    hint: `of ${format(max)}`,
-    tone: getUsagePercentage(current, max) >= 95 ? 'danger' : 'default',
-  }
-}
-
 export function ScannerTemplatesSection() {
   const { t } = useTranslation()
   // Dialog states
@@ -186,7 +165,6 @@ export function ScannerTemplatesSection() {
   )
 
   // Usage/quota data
-  const { data: usageData } = useTemplateUsage()
 
   // Mutations
   const { trigger: deleteTemplate, isMutating: isDeleting } = useDeleteScannerTemplate(
@@ -417,42 +395,6 @@ export function ScannerTemplatesSection() {
     [handleDownload, handleDeprecateClick, handleDeleteClick, handleApproveClick]
   )
 
-  const metrics: MetricStripItem[] = usageData
-    ? [
-        quotaMetric(
-          'total',
-          'Templates',
-          usageData.usage.total_templates,
-          usageData.quota.max_templates
-        ),
-        quotaMetric(
-          'nuclei',
-          'Nuclei',
-          usageData.usage.nuclei_templates,
-          usageData.quota.max_templates_nuclei
-        ),
-        quotaMetric(
-          'semgrep',
-          'Semgrep',
-          usageData.usage.semgrep_templates,
-          usageData.quota.max_templates_semgrep
-        ),
-        quotaMetric(
-          'betterleaks',
-          'Betterleaks',
-          usageData.usage.betterleaks_templates,
-          usageData.quota.max_templates_betterleaks
-        ),
-        quotaMetric(
-          'storage',
-          'Storage',
-          usageData.usage.total_storage_bytes,
-          usageData.quota.max_total_storage_bytes,
-          formatStorageSize
-        ),
-      ]
-    : []
-
   // Search and filters are applied by the API, so the table gets its own
   // server-backed search box instead of its built-in client filter.
   const toolbarStart = (
@@ -533,7 +475,7 @@ export function ScannerTemplatesSection() {
   }
 
   return (
-    <>
+    <PageStack>
       <PageHeader
         title={t('scans.templates.title', 'Scanner templates')}
         description={t(
@@ -549,9 +491,7 @@ export function ScannerTemplatesSection() {
         </Can>
       </PageHeader>
 
-      {metrics.length > 0 && <MetricStrip className="mt-5" items={metrics} />}
-
-      <div className="mt-5">{body}</div>
+      {body}
 
       {/* Dialogs */}
       <AddScannerTemplateDialog
@@ -601,6 +541,6 @@ export function ScannerTemplatesSection() {
         isLoading={isDeprecating}
         handleConfirm={handleDeprecateConfirm}
       />
-    </>
+    </PageStack>
   )
 }
