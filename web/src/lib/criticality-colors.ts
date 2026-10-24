@@ -15,7 +15,6 @@
 import type { CriticalityLevel } from '@/lib/criticality'
 import {
   SEVERITY_BADGE_SOFT,
-  SEVERITY_CHART_COLORS,
   SEVERITY_DOT_COLORS,
   SEVERITY_TEXT_COLORS,
 } from '@/lib/severity-colors'
@@ -52,11 +51,15 @@ export const CRITICALITY_DOT_COLORS: Record<CriticalityLevel, string> = {
   none: 'bg-muted-foreground',
 }
 
-/** Chart colors (CSS variables). */
+/**
+ * Chart colors (CSS variables): the neutral level ramp (--viz-lvl-*), stepped
+ * by lightness. Criticality is how important an asset is, not how bad a
+ * problem is, so it never takes a severity hue, and low is not "healthy" green.
+ */
 export const CRITICALITY_CHART_COLORS: Record<CriticalityLevel, string> = {
-  critical: SEVERITY_CHART_COLORS.critical,
-  high: SEVERITY_CHART_COLORS.high,
-  medium: SEVERITY_CHART_COLORS.medium,
-  low: 'var(--success)',
-  none: SEVERITY_CHART_COLORS.info,
+  critical: 'var(--viz-lvl-critical)',
+  high: 'var(--viz-lvl-high)',
+  medium: 'var(--viz-lvl-medium)',
+  low: 'var(--viz-lvl-low)',
+  none: 'var(--viz-prio-none)',
 }
