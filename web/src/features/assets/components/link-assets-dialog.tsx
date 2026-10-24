@@ -77,7 +77,6 @@ export function LinkAssetsDialog({
   useEffect(() => {
     setSelected(new Set())
     setSearch('')
-    setDebouncedSearch('')
   }, [open, resetKey])
 
   const toggle = useCallback((assetId: string) => {
