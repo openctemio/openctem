@@ -676,6 +676,12 @@ export function DataTable<TData, TValue>({
     // keeps it in state), so only a selection change re-runs this.
   }, [rowSelection, table])
 
+  // Rows the footer pages through: the server's count under manual pagination,
+  // else the rows left after client-side filtering.
+  const paginationTotal = manualPagination
+    ? (rowCount ?? data.length)
+    : table.getFilteredRowModel().rows.length
+
   return (
     <div className="space-y-4">
       {/* Toolbar: the shared ListToolbar row (order and wrapping rules live
@@ -1113,8 +1119,10 @@ export function DataTable<TData, TValue>({
         </Table>
       </div>
 
-      {/* Pagination */}
-      {showPagination && !errorState && (
+      {/* Pagination. Hidden while there is no row to page through: an empty
+          list shows its empty state only, never "Showing 0 - 0 of 0" or
+          "Page 1 of 0". */}
+      {showPagination && !errorState && (isLoading || paginationTotal > 0) && (
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           {/* Row count info - centered on mobile. Under manual pagination the
               total is the server row count, not the current page's length. */}
@@ -1193,7 +1201,7 @@ export function DataTable<TData, TValue>({
               <span className="text-sm text-muted-foreground">
                 {t('common.table.pageOf', 'Page {page} of {pages}', {
                   page: table.getState().pagination.pageIndex + 1,
-                  pages: table.getPageCount(),
+                  pages: Math.max(1, table.getPageCount()),
                 })}
               </span>
 
