@@ -1,9 +1,10 @@
 'use client'
 
-import { Badge } from '@/components/ui/badge'
+import { SeverityBadge } from '@/components/ui/severity-badge'
+import { HealthStatus } from '@/components/ui/health-status'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import { cn } from '@/lib/utils'
-import { Loader2 } from 'lucide-react'
+import { Clock } from 'lucide-react'
 import { getRiskLevel } from '../types'
 import { useRiskThresholds } from '@/context/risk-scoring-provider'
 import { useTranslation } from '@/context/i18n-provider'
@@ -39,11 +40,17 @@ interface RiskScoreBadgeProps {
 }
 
 const badgeSizeClasses = {
-  sm: 'text-xs px-1.5 py-0.5',
-  md: 'text-sm px-2 py-0.5',
-  lg: 'text-base px-2.5 py-1',
+  sm: 'text-xs',
+  md: 'text-sm',
+  lg: 'text-base',
 }
 
+/**
+ * A risk score: the glyph and text of its band (SeverityBadge score), never a
+ * solid fill. Freshness states are machine states: a never-scored asset is
+ * "unknown", a queued first score is "running", a queued rescore keeps the
+ * score with a clock and a hint.
+ */
 export function RiskScoreBadge({
   score,
   showScore = true,
@@ -58,44 +65,48 @@ export function RiskScoreBadge({
 
   if (state === 'calculating') {
     return (
-      <Badge
-        variant="outline"
-        className={cn('text-muted-foreground', badgeSizeClasses[size], className)}
+      <HealthStatus
+        state="run"
+        value="calculating"
+        label={t('riskScore.calculating', 'Calculating…')}
         title={t(
           'riskScore.calculatingHint',
           'Its inputs changed; the new score is being computed.'
         )}
-      >
-        <Loader2 className="mr-1 h-3 w-3 animate-spin" aria-hidden />
-        {t('riskScore.calculating', 'Calculating…')}
-      </Badge>
+        className={cn(badgeSizeClasses[size], className)}
+      />
     )
   }
 
   if (state === 'unscored') {
     return (
-      <Badge
-        variant="outline"
-        className={cn('text-muted-foreground', badgeSizeClasses[size], className)}
+      <HealthStatus
+        state="unknown"
+        value="unscored"
+        label={t('riskScore.notScored', 'Not yet scored')}
         title={t('riskScore.notScoredHint', "This asset's risk score has not been computed yet.")}
-      >
-        {t('riskScore.notScored', 'Not yet scored')}
-      </Badge>
+        className={cn(badgeSizeClasses[size], className)}
+      />
     )
   }
 
+  const badge = showScore ? (
+    <SeverityBadge score={score} showBand className={cn(badgeSizeClasses[size], className)} />
+  ) : (
+    <SeverityBadge score={score} className={cn(badgeSizeClasses[size], className)}>
+      {label}
+    </SeverityBadge>
+  )
+  if (state !== 'pending') return badge
   return (
-    <Badge
-      className={cn(level.color, level.textColor, badgeSizeClasses[size], className)}
-      title={
-        state === 'pending'
-          ? t('riskScore.calculatingHint', 'Its inputs changed; the new score is being computed.')
-          : undefined
-      }
+    <span
+      className="inline-flex items-center gap-1"
+      title={t('riskScore.calculatingHint', 'Its inputs changed; the new score is being computed.')}
+      data-state="pending"
     >
-      {state === 'pending' && <Loader2 className="mr-1 h-3 w-3 animate-spin" aria-hidden />}
-      {showScore ? `${score} - ${label}` : label}
-    </Badge>
+      {badge}
+      <Clock className="size-3 text-muted-foreground" aria-hidden />
+    </span>
   )
 }
 
