@@ -322,7 +322,7 @@ export default function ProgramPage({ params }: { params: Promise<{ id: string }
                     <TableCell className="font-mono text-xs break-all">
                       {e.pattern}
                       {portLimit(e.ports, e.protocol) && (
-                        <Badge variant="outline" className="ml-2 font-mono">
+                        <Badge variant="outline" className="ml-2">
                           {t('programs.targets.onlyPorts', 'only {ports}', {
                             ports: portLimit(e.ports, e.protocol),
                           })}
