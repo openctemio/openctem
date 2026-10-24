@@ -11,7 +11,6 @@ import * as React from 'react'
 import { ZoomIn, ZoomOut, Maximize2, Minimize2, RotateCcw, Link2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
-import { Badge } from '@/components/ui/badge'
 import { cn } from '@/lib/utils'
 import { useFullscreen } from '@/hooks/use-fullscreen'
 import type {
@@ -21,6 +20,8 @@ import type {
 } from '../../types'
 import { EXTENDED_ASSET_TYPE_LABELS } from '../../types'
 import type { AssetRelationship } from '../../types'
+import { Tag } from '@/components/ui/tag'
+import { severityVar } from '@/lib/chart-palette'
 import { useTranslation } from '@/context/i18n-provider'
 
 // ============================================
@@ -65,28 +66,8 @@ const NODE_LABEL_HEIGHT = 32
 // was not enough for the two-line text labels.
 const LAYOUT_PADDING = NODE_RADIUS + NODE_LABEL_HEIGHT + 12
 
-const ASSET_TYPE_COLORS: Record<string, string> = {
-  domain: '#3b82f6',
-  website: '#22c55e',
-  service: '#a855f7',
-  project: '#f97316',
-  repository: '#f97316', // @deprecated
-  cloud: '#06b6d4',
-  credential: '#ef4444',
-  host: '#64748b',
-  container: '#6366f1',
-  database: '#eab308',
-  mobile: '#ec4899',
-  api: '#10b981',
-  k8s_cluster: '#2563eb',
-  k8s_workload: '#60a5fa',
-  container_image: '#8b5cf6',
-  api_collection: '#14b8a6',
-  api_endpoint: '#2dd4bf',
-  network: '#6b7280',
-  load_balancer: '#f59e0b',
-  identity_provider: '#f43f5e',
-}
+// An asset type is a neutral classification (research/247): nodes share one ink colour.
+const NODE_COLOR = 'var(--muted-foreground)'
 
 // ============================================
 // Layout Algorithm
@@ -190,7 +171,7 @@ interface GraphNodeProps {
 }
 
 function GraphNode({ node, isCentral, onClick }: GraphNodeProps) {
-  const color = ASSET_TYPE_COLORS[node.type] || '#6b7280'
+  const color = NODE_COLOR
   const label = EXTENDED_ASSET_TYPE_LABELS[node.type] || node.type
 
   return (
@@ -208,21 +189,14 @@ function GraphNode({ node, isCentral, onClick }: GraphNodeProps) {
             {/* Node circle */}
             <circle
               r={isCentral ? NODE_RADIUS + 5 : NODE_RADIUS}
-              fill={`${color}20`}
+              fill="var(--muted)"
               stroke={color}
               strokeWidth={isCentral ? 3 : 2}
               className="transition-all hover:opacity-80"
             />
             {/* Icon placeholder */}
             <circle r={15} fill={color} />
-            <Link2
-              x={-8}
-              y={-8}
-              width={16}
-              height={16}
-              className="text-white"
-              style={{ color: 'white' }}
-            />
+            <Link2 x={-8} y={-8} width={16} height={16} style={{ color: 'var(--card)' }} />
             {/* Name label */}
             <text
               y={NODE_RADIUS + 15}
@@ -291,9 +265,9 @@ function GraphEdge({ edge, sourcePos, targetPos, onClick }: GraphEdgeProps) {
 
   // Arrow color based on impact
   const getEdgeColor = () => {
-    if (edge.impactWeight >= 8) return '#ef4444'
-    if (edge.impactWeight >= 5) return '#eab308'
-    return '#6b7280'
+    if (edge.impactWeight >= 8) return severityVar('critical')
+    if (edge.impactWeight >= 5) return severityVar('medium')
+    return 'var(--muted-foreground)'
   }
 
   const edgeColor = getEdgeColor()
@@ -324,8 +298,8 @@ function GraphEdge({ edge, sourcePos, targetPos, onClick }: GraphEdgeProps) {
         width={labelWidth}
         height={18}
         rx={9}
-        fill="#ffffff"
-        stroke="#e5e7eb"
+        fill="var(--card)"
+        stroke="var(--border)"
         strokeWidth={1}
       />
       {/* Label text — explicit fill for SVG; the className-based fill
@@ -335,7 +309,7 @@ function GraphEdge({ edge, sourcePos, targetPos, onClick }: GraphEdgeProps) {
         y={midY + 3}
         textAnchor="middle"
         fontSize={10}
-        fill="#475569"
+        fill="var(--muted-foreground)"
         style={{ pointerEvents: 'none' }}
       >
         {labelText}
@@ -517,14 +491,7 @@ export function RelationshipGraphView({
         {Array.from(new Set(graph.nodes.map((n) => n.type)))
           .slice(0, 4)
           .map((type) => (
-            <Badge
-              key={type}
-              variant="outline"
-              className="text-meta"
-              style={{ borderColor: ASSET_TYPE_COLORS[type] }}
-            >
-              {EXTENDED_ASSET_TYPE_LABELS[type]}
-            </Badge>
+            <Tag key={type} label={EXTENDED_ASSET_TYPE_LABELS[type] ?? type} />
           ))}
       </div>
 
@@ -559,7 +526,7 @@ export function RelationshipGraphView({
               refY="3.5"
               orient="auto"
             >
-              <polygon points="0 0, 10 3.5, 0 7" fill="#6b7280" />
+              <polygon points="0 0, 10 3.5, 0 7" fill="var(--muted-foreground)" />
             </marker>
           </defs>
 
