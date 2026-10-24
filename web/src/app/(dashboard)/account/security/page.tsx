@@ -8,6 +8,7 @@ import {
   useProfile,
   useSessions,
 } from '@/features/account'
+import { PageStack } from '@/features/shared'
 
 /**
  * My account → Security: password, two-factor authentication and the
@@ -18,7 +19,7 @@ export default function SecurityPage() {
   const { sessions, isLoading, mutate: mutateSessions } = useSessions()
 
   return (
-    <div className="grid gap-5">
+    <PageStack>
       <PasswordCard
         isLocalAccount={profile ? profile.auth_provider === 'local' : true}
         onChanged={() => mutateSessions()}
@@ -26,6 +27,6 @@ export default function SecurityPage() {
       <TwoFactorCard email={profile?.email} onOtherSessionsSignedOut={() => mutateSessions()} />
       <SessionsCard sessions={sessions} isLoading={isLoading} onChanged={() => mutateSessions()} />
       <DeleteAccountCard email={profile?.email} />
-    </div>
+    </PageStack>
   )
 }
