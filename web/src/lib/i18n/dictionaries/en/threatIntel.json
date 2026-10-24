@@ -133,5 +133,8 @@
   "threatIntel.landscape.epssCatalog": "EPSS",
   "threatIntel.landscape.epssCatalogValue": "{count} CVEs scored",
   "threatIntel.landscape.kevCatalog": "CISA KEV",
-  "threatIntel.landscape.kevCatalogValue": "{count} entries, {recent} added in the last 30 days, {ransomware} with known ransomware use"
+  "threatIntel.landscape.kevCatalogValue": "{count} entries, {recent} added in the last 30 days, {ransomware} with known ransomware use",
+  "threatIntel.sync.enableConfirmTitle": "Turn on {name} sync?",
+  "threatIntel.sync.enableConfirmDesc": "The {name} feed is downloaded on its schedule and its data is added to your threat intelligence. You can turn it off again at any time.",
+  "threatIntel.sync.enableConfirmButton": "Turn on sync"
 }
