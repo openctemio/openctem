@@ -307,12 +307,22 @@ How it runs:
 Many pipelines, sensors and tools upload at once, often the same findings (CI
 re-runs, matrix jobs). The batched writes are deadlock-safe:
 
-- **One lock order.** Every batched write takes its row locks in a stable order:
-  assets by `(tenant, name)` (`UpsertBatch`), new findings by fingerprint
-  (`CreateBatchWithResult`), existing findings by id (`EnrichBatchByFingerprints`
-  reads them `ORDER BY id FOR NO KEY UPDATE`, `UpdateScanIDBatchByFingerprints`
-  locks them the same way in a CTE). Concurrent writers of the same rows queue
-  instead of deadlocking.
+- **One lock order.** Every batched write takes its row locks in one stable order:
+  assets by `(tenant, name)` (`UpsertBatch`), and findings rows by fingerprint
+  in byte order (Go's string `<`, SQL `fingerprint COLLATE "C"`;
+  `finding_lock_order.go`). Fingerprint, because the upsert of new findings
+  (`CreateBatchWithResult`) can order only by what it has before the rows exist:
+  its `ON CONFLICT DO UPDATE` branch locks the rows another upload inserted first
+  in the order of its sorted `VALUES` list. Every other batched writer of findings
+  locks its rows in a CTE first (`SELECT ... ORDER BY fingerprint COLLATE "C"
+  FOR NO KEY UPDATE`) and then updates only rows it holds: enrichment, the
+  sighting update, auto-reopen, snippets, interop data, scanner output, branch
+  backfill, a person's bulk status move and the finding-priority pass (class and
+  version stamp). Branch occurrences are upserted in `(fingerprint, branch)`
+  order. A writer that locked by id or in report order deadlocked with the
+  upsert: Postgres aborted one of them (`40P01`) and the best-effort writers
+  dropped their rows with only a warning. Concurrent writers of the same rows
+  now queue instead.
 - **Enrichment under the lock.** `EnrichBatchByFingerprints` locks the stored rows,
   reads them, merges each sighting (`Finding.EnrichFrom`) and writes them in one
   transaction, so no writer can change a row between the read and the write. The
@@ -332,7 +342,13 @@ Measured with the research/241 harness (20 concurrent uploads of the same 500
 findings to one repository, 3 rounds): before, 7–30 deadlocks per round, 9–17 of
 20 uploads with errors, and 3,000 of 10,000 sightings recorded in one round.
 After, 0 deadlocks, 0 uploads with errors, and every sighting recorded
-(`tests/integration/ingest_concurrent_resighting_test.go`).
+(`tests/integration/ingest_concurrent_resighting_test.go`). The database's own
+deadlock counter stays at 0 with concurrent uploads, priority stamps and bulk
+status moves on the same findings (`tests/integration/ingest_lock_order_test.go`).
+
+A write of branch occurrences that still fails is reported in the upload's
+errors, and the occurrence sweep of that scan is skipped, so the findings it
+saw are never marked as gone from the branch.
 
 ## 2. Entity table
 
