@@ -51,6 +51,12 @@ type NodeRun struct {
 	// For condition nodes, which branch was taken
 	ConditionResult *bool
 
+	// Trace (trace.go): subjects that reached the step, that it acted on or
+	// would act on, and per reason those it left alone.
+	InCount  int
+	OutCount int
+	Skipped  map[string]int
+
 	// Timing
 	StartedAt   *time.Time
 	CompletedAt *time.Time
@@ -111,6 +117,11 @@ func (nr *NodeRun) Fail(errorMessage, errorCode string) {
 	nr.ErrorMessage = errorMessage
 	nr.ErrorCode = errorCode
 	nr.CompletedAt = &now
+}
+
+// SetTrace records the step's trace.
+func (nr *NodeRun) SetTrace(t StepTrace) {
+	nr.InCount, nr.OutCount, nr.Skipped = t.In, t.Out, t.Skipped
 }
 
 // Skip marks the node run as skipped.

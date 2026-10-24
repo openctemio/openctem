@@ -11,6 +11,8 @@ import (
 
 	"github.com/openctemio/openctem/api/pkg/domain/automation"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
+	"github.com/openctemio/openctem/api/pkg/filterspec"
 	"github.com/openctemio/openctem/api/pkg/pagination"
 )
 
@@ -95,7 +97,7 @@ func (r *AutomationRunRepository) List(ctx context.Context, filter automation.Ru
 
 	baseQuery := r.selectQuery()
 	countQuery := "SELECT COUNT(*) FROM automation_runs"
-	whereClause, args := r.buildWhereClause(filter)
+	whereClause, args := r.buildWhereClause(ctx, filter)
 
 	if whereClause != "" {
 		baseQuery += " WHERE " + whereClause
@@ -241,10 +243,7 @@ func (r *AutomationRunRepository) GetWithNodeRuns(ctx context.Context, id shared
 
 	// Load node runs
 	query := `
-		SELECT id, automation_run_id, node_id, node_key, node_type,
-		       status, error_message, error_code,
-		       input, output, condition_result,
-		       started_at, completed_at, created_at
+		SELECT ` + automationRunStepColumns + `
 		FROM automation_run_steps
 		WHERE automation_run_id = $1
 		ORDER BY created_at ASC
@@ -509,6 +508,140 @@ func (r *AutomationRunRepository) insertRun(ctx context.Context, tx *sql.Tx, run
 	return nil
 }
 
+// runSubjectScopeSQL keeps runs (table alias runs) whose subject is a
+// finding or an asset inside scope, or that have no subject. A finding
+// subject also follows the pentest member-visibility rule (runFindingVisibleSQL).
+// Placeholders start at first.
+func runSubjectScopeSQL(ctx context.Context, runs string, scope *shared.DataScope, first int) (string, []any) {
+	fCond, fArgs := filterspec.AssigneeScopeSQL("f.asset_id", "f.assigned_to", scope, first)
+	aCond, aArgs := filterspec.ScopeSQL("a.id", scope, first+len(fArgs))
+	cond := fmt.Sprintf(`(%[1]s.subject_id IS NULL
+		OR EXISTS (SELECT 1 FROM findings f WHERE f.tenant_id = %[1]s.tenant_id AND f.id = %[1]s.subject_id AND %[2]s AND %[4]s)
+		OR EXISTS (SELECT 1 FROM assets a WHERE a.tenant_id = %[1]s.tenant_id AND a.id = %[1]s.subject_id AND %[3]s))`,
+		runs, fCond, aCond, runFindingVisibleSQL(ctx, "f", runs+".tenant_id", scope))
+	return cond, append(fArgs, aArgs...)
+}
+
+// runFindingVisibleSQL is the findings list's pentest member-visibility rule
+// for a run subject read by a person (scope non-nil): an administrator (the
+// finding viewer the service recorded on ctx) sees every pentest finding of
+// the tenant; anyone else, and a read with no viewer recorded (fail closed),
+// only those of the campaigns they are a member of. The user is the typed
+// scope user, never request text.
+func runFindingVisibleSQL(ctx context.Context, alias, tenantExpr string, scope *shared.DataScope) string {
+	if v, ok := shared.FindingViewerOf(ctx); ok && v.Admin {
+		return sqlTrue
+	}
+	return vulnerability.FindingMemberVisibilitySQL(alias, tenantExpr, "'"+scope.UserID.String()+"'::uuid")
+}
+
+var _ automation.RunScopeReader = (*AutomationRunRepository)(nil)
+
+// SubjectVisible implements automation.RunScopeReader.
+func (r *AutomationRunRepository) SubjectVisible(ctx context.Context, tenantID, subjectID shared.ID, scope *shared.DataScope) (bool, error) {
+	fCond, fArgs := filterspec.AssigneeScopeSQL("f.asset_id", "f.assigned_to", scope, 3)
+	aCond, aArgs := filterspec.ScopeSQL("a.id", scope, 3+len(fArgs))
+	args := append([]any{tenantID.String(), subjectID.String()}, fArgs...)
+	args = append(args, aArgs...)
+	var ok bool
+	err := r.db.QueryRowContext(ctx, `SELECT
+		EXISTS (SELECT 1 FROM findings f WHERE f.tenant_id = $1 AND f.id = $2 AND `+fCond+` AND `+runFindingVisibleSQL(ctx, "f", "$1", scope)+`)
+		OR EXISTS (SELECT 1 FROM assets a WHERE a.tenant_id = $1 AND a.id = $2 AND `+aCond+`)`, args...).Scan(&ok)
+	if err != nil {
+		return false, fmt.Errorf("check run subject scope: %w", err)
+	}
+	return ok, nil
+}
+
+// AggregateTrace implements automation.RunScopeReader.
+func (r *AutomationRunRepository) AggregateTrace(ctx context.Context, tenantID, workflowID shared.ID, mode automation.Mode, since time.Time, scope *shared.DataScope) (*automation.TraceAggregate, error) {
+	args := []any{tenantID.String(), workflowID.String(), string(mode), since}
+	cond := "TRUE"
+	if scope != nil {
+		var scopeArgs []any
+		cond, scopeArgs = runSubjectScopeSQL(ctx, "ru", scope, len(args)+1)
+		args = append(args, scopeArgs...)
+	}
+	runsCTE := `WITH r AS (
+		SELECT ru.id FROM automation_runs ru
+		 WHERE ru.tenant_id = $1 AND ru.automation_id = $2 AND ru.mode = $3 AND ru.created_at >= $4 AND ` + cond + `
+		 ORDER BY ru.created_at DESC LIMIT 5000)`
+	out := &automation.TraceAggregate{DeliveriesByChannel: map[string]int{}}
+	if err := r.db.QueryRowContext(ctx, runsCTE+` SELECT count(*) FROM r`, args...).Scan(&out.Runs); err != nil {
+		return nil, fmt.Errorf("count trace runs: %w", err)
+	}
+	if err := r.traceSteps(ctx, runsCTE, args, out); err != nil {
+		return nil, err
+	}
+	if err := r.traceSkips(ctx, runsCTE, args, out); err != nil {
+		return nil, err
+	}
+	rows, err := r.db.QueryContext(ctx, runsCTE+`
+		SELECT d.channel, count(*) FROM automation_deliveries d JOIN r ON r.id = d.run_id
+		 WHERE d.tenant_id = $1 GROUP BY d.channel`, args...)
+	if err != nil {
+		return nil, fmt.Errorf("aggregate trace deliveries: %w", err)
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var ch string
+		var n int
+		if err := rows.Scan(&ch, &n); err != nil {
+			return nil, err
+		}
+		out.DeliveriesByChannel[ch] = n
+	}
+	return out, rows.Err()
+}
+
+func (r *AutomationRunRepository) traceSteps(ctx context.Context, runsCTE string, args []any, out *automation.TraceAggregate) error {
+	rows, err := r.db.QueryContext(ctx, runsCTE+`
+		SELECT s.node_key, COALESCE(sum(s.in_count), 0), COALESCE(sum(s.out_count), 0)
+		  FROM automation_run_steps s JOIN r ON r.id = s.automation_run_id
+		 GROUP BY s.node_key ORDER BY s.node_key`, args...)
+	if err != nil {
+		return fmt.Errorf("aggregate trace steps: %w", err)
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var a automation.StepAggregate
+		if err := rows.Scan(&a.NodeKey, &a.In, &a.Out); err != nil {
+			return err
+		}
+		out.Steps = append(out.Steps, a)
+	}
+	return rows.Err()
+}
+
+func (r *AutomationRunRepository) traceSkips(ctx context.Context, runsCTE string, args []any, out *automation.TraceAggregate) error {
+	rows, err := r.db.QueryContext(ctx, runsCTE+`
+		SELECT s.node_key, e.key, sum(e.value::int)
+		  FROM automation_run_steps s JOIN r ON r.id = s.automation_run_id, jsonb_each_text(s.skipped) e
+		 GROUP BY s.node_key, e.key`, args...)
+	if err != nil {
+		return fmt.Errorf("aggregate trace skips: %w", err)
+	}
+	defer rows.Close()
+	byKey := make(map[string]int, len(out.Steps))
+	for i, st := range out.Steps {
+		byKey[st.NodeKey] = i
+	}
+	for rows.Next() {
+		var key, reason string
+		var n int
+		if err := rows.Scan(&key, &reason, &n); err != nil {
+			return err
+		}
+		if i, ok := byKey[key]; ok {
+			if out.Steps[i].Skipped == nil {
+				out.Steps[i].Skipped = map[string]int{}
+			}
+			out.Steps[i].Skipped[reason] = n
+		}
+	}
+	return rows.Err()
+}
+
 // CountActiveDraftRuns implements automation.DraftRunCounter.
 func (r *AutomationRunRepository) CountActiveDraftRuns(ctx context.Context, tenantID, workflowID shared.ID) (int, error) {
 	var n int
@@ -537,7 +670,7 @@ func (r *AutomationRunRepository) selectQuery() string {
 	`
 }
 
-func (r *AutomationRunRepository) buildWhereClause(filter automation.RunFilter) (string, []any) {
+func (r *AutomationRunRepository) buildWhereClause(ctx context.Context, filter automation.RunFilter) (string, []any) {
 	var conditions []string
 	var args []any
 
@@ -574,6 +707,17 @@ func (r *AutomationRunRepository) buildWhereClause(filter automation.RunFilter) 
 	if filter.StartedTo != nil {
 		args = append(args, *filter.StartedTo)
 		conditions = append(conditions, fmt.Sprintf("started_at <= $%d", len(args)))
+	}
+
+	if filter.Mode != nil {
+		args = append(args, string(*filter.Mode))
+		conditions = append(conditions, fmt.Sprintf("mode = $%d", len(args)))
+	}
+
+	if filter.Scope != nil {
+		cond, scopeArgs := runSubjectScopeSQL(ctx, "automation_runs", filter.Scope, len(args)+1)
+		args = append(args, scopeArgs...)
+		conditions = append(conditions, cond)
 	}
 
 	if len(conditions) == 0 {
@@ -646,6 +790,26 @@ func scanAutomationRun(row interface{ Scan(dest ...any) error }) (*automation.Ru
 	return run, nil
 }
 
+// automationRunStepColumns is the column list every run step read selects,
+// in the order scanNodeRun reads it.
+const automationRunStepColumns = `id, automation_run_id, node_id, node_key, node_type,
+		       status, error_message, error_code,
+		       input, output, condition_result,
+		       started_at, completed_at, created_at,
+		       in_count, out_count, skipped`
+
+// skippedJSON is the stored form of a step's per-reason skipped counts.
+func skippedJSON(m map[string]int) []byte {
+	if len(m) == 0 {
+		return []byte("{}")
+	}
+	b, err := json.Marshal(m)
+	if err != nil {
+		return []byte("{}")
+	}
+	return b
+}
+
 // scanNodeRun scans a workflow node run from rows.
 func scanNodeRun(rows *sql.Rows) (*automation.NodeRun, error) {
 	nr := &automation.NodeRun{}
@@ -659,6 +823,7 @@ func scanNodeRun(rows *sql.Rows) (*automation.NodeRun, error) {
 		input           []byte
 		output          []byte
 		conditionResult sql.NullBool
+		skipped         []byte
 	)
 
 	var errorMessage sql.NullString
@@ -677,6 +842,9 @@ func scanNodeRun(rows *sql.Rows) (*automation.NodeRun, error) {
 		&nr.StartedAt,
 		&nr.CompletedAt,
 		&nr.CreatedAt,
+		&nr.InCount,
+		&nr.OutCount,
+		&skipped,
 	)
 
 	if err != nil {
@@ -701,6 +869,9 @@ func scanNodeRun(rows *sql.Rows) (*automation.NodeRun, error) {
 	}
 	if conditionResult.Valid {
 		nr.ConditionResult = &conditionResult.Bool
+	}
+	if len(skipped) > 0 {
+		_ = json.Unmarshal(skipped, &nr.Skipped)
 	}
 
 	return nr, nil

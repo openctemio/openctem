@@ -45,6 +45,7 @@ audit_chain_rebaselines
 audit_log_chain
 audit_logs
 authorization_letters
+automation_deliveries
 automation_runs
 automation_versions
 automations
