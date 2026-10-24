@@ -10,11 +10,13 @@ import (
 	"net"
 	"time"
 
+	"github.com/openctemio/openctem/api/internal/app/ingestqueue"
 	queryapp "github.com/openctemio/openctem/api/internal/app/query"
 	threatalertapp "github.com/openctemio/openctem/api/internal/app/threatalert"
 
 	signupeventapp "github.com/openctemio/openctem/api/internal/app/signupevent"
 
+	"github.com/openctemio/openctem/api/pkg/domain/ingestpayload"
 	remediationdom "github.com/openctemio/openctem/api/pkg/domain/remediation"
 	"github.com/openctemio/openctem/api/pkg/pagination"
 
@@ -90,6 +92,7 @@ import (
 	"github.com/openctemio/openctem/api/internal/app/exposure"
 	"github.com/openctemio/openctem/api/internal/app/exposurebridge"
 	findinglifecycleapp "github.com/openctemio/openctem/api/internal/app/findinglifecycle"
+	appimportmapping "github.com/openctemio/openctem/api/internal/app/importmapping"
 	"github.com/openctemio/openctem/api/internal/app/ingest"
 	"github.com/openctemio/openctem/api/internal/app/jira"
 	licapp "github.com/openctemio/openctem/api/internal/app/licensepolicy"
@@ -866,6 +869,8 @@ type Services struct {
 	TicketPolicy *jira.PolicyGate
 	// TicketMapping manages ticket field and status mapping profiles.
 	TicketMapping *appticketmap.Service
+	// ImportMapping manages the organization's import mappings (RFC-126).
+	ImportMapping *appimportmapping.Service
 
 	// GitHub Issues ticket provider (create-from-finding + link only)
 	GitHubTicket *ticketing.GitHubTicketService
@@ -891,6 +896,9 @@ type Services struct {
 	Encryptor crypto.Encryptor
 	// CredentialSecrets seals leaked-credential secrets (built on Encryptor).
 	CredentialSecrets *credential.SecretProtector
+	// IngestQueue stores CI results and file imports, sealed, for the
+	// ingest worker (RFC-122).
+	IngestQueue *ingestqueue.Queue
 
 	// JWT
 	JWTGenerator *jwt.Generator
@@ -1021,6 +1029,8 @@ type ServiceDeps struct {
 	DB          *sql.DB
 	Repos       *Repositories
 	RedisClient *redis.Client
+	// IngestDB is the ingest pool (DB_INGEST_MAX_CONNS); nil uses the API's.
+	IngestDB *postgres.DB
 }
 
 // NewServices initializes all services.
@@ -1041,6 +1051,12 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 		s.PlatformEmail = platformemail.NewService(repos.PlatformSetting, s.Encryptor, repos.AdminAuditLog, log)
 	}
 	s.initConsoleSettings(cfg, repos, log)
+	if s.IngestQueue, err = initIngestQueue(cfg, repos); err != nil {
+		return nil, err
+	}
+	// Back-pressure at accept: 429 past the tenant's queue limit, refused
+	// when the depth cannot be read.
+	s.IngestQueue.SetBackpressure(repos.IngestJob, cfg.Ingest.MaxPendingPerTenant)
 
 	// Initialize audit service first (used by others)
 	s.Audit = audit.NewAuditService(repos.Audit, log)
@@ -1280,10 +1296,12 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	s.Vulnerability.SetCommentReactionRepository(repos.CommentReaction)
 	s.Vulnerability.SetAuditService(s.Audit)                     // audits reaction moderation and duplicate marking
 	s.Vulnerability.SetDataFlowRepository(repos.DataFlow)        // Wire data flow loading
+	s.Vulnerability.SetIssueLinkStore(repos.FindingIssueLinks)   // same-issue groups
 	s.Vulnerability.SetApprovalRepository(repos.FindingApproval) // Wire approval workflow
 	s.Vulnerability.SetSeverityRequestRepository(repos.SeverityRequest)
 	s.Vulnerability.SetAccessControlRepository(repos.AccessControl)
-	s.Vulnerability.SetAssigneeChecker(repos.AccessControl) // an assignee must be an active member of the tenant (21b C2)
+	s.Vulnerability.SetAssigneeProfileReader(repos.AccessControl) // list rows carry the assignee name
+	s.Vulnerability.SetAssigneeChecker(repos.AccessControl)       // an assignee must be an active member of the tenant (21b C2)
 	s.Vulnerability.SetDataScope(s.DataScope)
 	s.Vulnerability.SetMemberSearcher(repos.Tenant)        // the assignee picker lists only members who can read the finding
 	s.Vulnerability.SetKEVChecker(repos.ThreatIntel.KEV()) // governed classification: does the new CVE keep KEV standing
@@ -1947,6 +1965,9 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// Ticket field and status mapping profiles: the editor reads the
 	// integration's own Jira site; previews load objects through the caller's
 	// data scope.
+	if repos.ImportMapping != nil {
+		s.ImportMapping = appimportmapping.NewService(repos.ImportMapping)
+	}
 	if repos.TicketMapping != nil {
 		objects := ticketMappingObjects{findings: repos.Finding, assets: repos.Asset, users: repos.User,
 			tasks: s.RemediationTask, taskRepo: repos.RemediationTask}
@@ -2245,7 +2266,17 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	})
 
 	// Initialize ingest service (unified ingestion engine)
-	s.Ingest = ingest.NewService(repos.Asset, repos.Finding, repos.Vulnerability, repos.Component, repos.Sensor, repos.Branch, repos.Tenant, repos.Audit, log)
+	// The heavy ingest writes run on the ingest pool when one is open.
+	ingAsset, ingFinding, ingVuln, ingComp, ingBranch := repos.Asset, repos.Finding, repos.Vulnerability, repos.Component, repos.Branch
+	if deps.IngestDB != nil {
+		ingAsset, ingFinding = postgres.NewAssetRepository(deps.IngestDB), postgres.NewFindingRepository(deps.IngestDB)
+		ingVuln, ingComp = postgres.NewVulnerabilityRepository(deps.IngestDB), postgres.NewComponentRepository(deps.IngestDB)
+		ingBranch = postgres.NewBranchRepository(deps.IngestDB)
+	}
+	s.Ingest = ingest.NewService(ingAsset, ingFinding, ingVuln, ingComp, repos.Sensor, ingBranch, repos.Tenant, repos.Audit, log)
+	// Policies are applied from a per-tenant snapshot, reloaded when their
+	// version changes.
+	s.Ingest.SetPolicyVersions(repos.IngestPolicyVersions)
 	// DefectDojo co-existence sync (RFC-013): pull a tenant's DefectDojo findings
 	// and ingest them as CTIS (one-way; OpenCTEM is the system of record).
 	s.DefectDojoSync = defectdojo.NewSyncService(repos.Integration, s.Ingest, s.Encryptor, log)
@@ -2308,6 +2339,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	s.VulnMatch.SetEnrichment(s.PriorityClassification, sla.NewApplier(s.SLA), repos.Asset)
 	s.VulnMatch.SetLinkReader(repos.Software)
 	s.VulnMatch.SetRemediationKeyApplier(remediationKeys)
+	s.VulnMatch.SetVEXApplier(s.VEX) // The organization's VEX statements cover matched findings too
 	// Emerging-threat alerts (RFC-117): matched findings are announced by
 	// their alert. The delivery sinks are wired with the workers.
 	if repos.ThreatAlert != nil {
@@ -2316,6 +2348,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 		s.ThreatAlerts = threatalertapp.NewService(repos.ThreatAlert, s.Audit, log)
 	}
 	s.Ingest.SetSoftwareChangeSink(s.VulnMatch)
+	s.SBOMImport.SetSoftwareChangeSink(s.VulnMatch)                  // An imported SBOM is matched in minutes
 	s.Ingest.SetRepositoryExtensionRepository(repos.RepoExt)         // Wire repository extension for auto web_url
 	s.Ingest.SetRelationshipRepository(repos.AssetRelationship)      // Wire subdomain-to-domain relationships
 	s.Ingest.SetAssetStateHistoryRepository(repos.AssetStateHistory) // Record appeared/recovered on discovery
@@ -2448,6 +2481,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 		WithTakeoverEvidence(repos.EASMDNS).
 		WithPlatformPolicy(s.ScopeGuardrails)
 	s.ActiveGate.SetWildcardDNS(repos.AssetWildcardDNS)
+	s.ActiveGate.SetCertificates(repos.AssetRelationship)
 	// RFC-065 §16.8: signed jobs for sensors that enforce scope limits carry
 	// the limits of port- and path-limited targets.
 	s.Command.SetScopeLimits(s.ActiveGate)
@@ -2669,6 +2703,14 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 		workflowPrincipalContext,
 	)
 
+	// Versions the migration backfilled carry a placeholder digest; store the
+	// canonical one (idempotent, a no-op once repaired).
+	if n, err := repos.WorkflowVersion.RepairBackfilledDigests(context.Background()); err != nil {
+		return nil, fmt.Errorf("repair automation version digests: %w", err)
+	} else if n > 0 {
+		log.Info("repaired automation version digests", "versions", n)
+	}
+
 	// Initialize workflow executor
 	workflowExecutor := automation.NewWorkflowExecutor(
 		repos.Workflow,
@@ -2738,6 +2780,11 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// Wire workflow dispatcher to ingest service for automatic workflow triggering
 	// when new findings are created during ingestion
 	s.Ingest.SetFindingCreatedCallback(s.WorkflowDispatcher.DispatchFindingsCreated)
+	// Durable and batched: the automations of new findings run from the
+	// ingest queue after the batch is committed.
+	if repos.IngestJob != nil {
+		s.Ingest.SetSideEffectQueue(repos.IngestJob)
+	}
 
 	// Wire workflow dispatcher to the vulnerability service so a status change
 	// (e.g. a resolve) auto-dispatches a `finding_status_changed` workflow event
@@ -2789,6 +2836,8 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	s.Ingest.SetSuppressionChecker(s.Suppression)
 	// Cross-rule correlation of DAST findings (research/134 section 12).
 	s.Ingest.SetCorrelationStore(repos.FindingCorrelation)
+	s.Ingest.SetIssueLinkStore(repos.FindingIssueLinks)
+	s.Ingest.SetVulnAliasResolver(repos.CVECorpus)
 
 	// Initialize access control services
 	s.Group = accesscontrol.NewGroupService(repos.Group, log,
@@ -3519,6 +3568,34 @@ func initContentSigner(cfg *config.Config, log *logger.Logger) *contentpackdom.S
 	}
 	log.Warn("no content signing key (APP_CONTENT_SIGNING_KEY / APP_ENCRYPTION_KEY); content pack uploads are refused")
 	return nil
+}
+
+// initIngestQueue builds the queue of CI results and file imports. Raw
+// reports are sealed under a key derived per tenant from APP_ENCRYPTION_KEY
+// (previous keys still open what they sealed).
+func initIngestQueue(cfg *config.Config, repos *Repositories) (*ingestqueue.Queue, error) {
+	if repos.IngestJob == nil || repos.IngestPayload == nil {
+		return nil, nil
+	}
+	current, err := crypto.ParseKey(cfg.Encryption.Key, cfg.Encryption.KeyFormat)
+	if err != nil {
+		return nil, fmt.Errorf("ingest queue key: %w", err)
+	}
+	previous := make([][]byte, 0, len(cfg.Encryption.PreviousKeys))
+	for i, k := range cfg.Encryption.PreviousKeys {
+		b, perr := crypto.ParseKey(k, "")
+		if perr != nil {
+			return nil, fmt.Errorf("APP_ENCRYPTION_KEY_PREVIOUS entry %d: %w", i+1, perr)
+		}
+		previous = append(previous, b)
+	}
+	sealer, err := ingestpayload.NewSealer(current, previous...)
+	if err != nil {
+		return nil, err
+	}
+	q := ingestqueue.New(repos.IngestJob, repos.IngestPayload, sealer)
+	repos.IngestJob.SetMaxRunningPerTenant(cfg.Ingest.MaxRunningPerTenant)
+	return q, nil
 }
 
 // initEncryptor initializes the credentials encryptor.

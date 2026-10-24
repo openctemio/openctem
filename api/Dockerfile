@@ -17,7 +17,7 @@ RUN apk add --no-cache git ca-certificates tzdata curl postgresql-client
 # hadolint ignore=DL3059
 RUN go install github.com/air-verse/air@v1.64.0 && \
     go install github.com/go-delve/delve/cmd/dlv@v1.24.2 && \
-    go install -tags 'postgres' github.com/golang-migrate/migrate/v4/cmd/migrate@v4.18.3
+    go install -tags 'postgres' github.com/golang-migrate/migrate/v4/cmd/migrate@v4.18.1
 
 # Copy entrypoint script
 COPY scripts/dev-entrypoint.sh /usr/local/bin/dev-entrypoint.sh

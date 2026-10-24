@@ -35,13 +35,21 @@ describe('WidgetFrame states', () => {
     expect(updated.getAttribute('title')).not.toBe('')
   })
 
-  it('stale keeps the figures, marks them stale and offers Refresh', () => {
+  it('stale keeps the figures and marks them stale; Refresh lives on the page, not the widget', () => {
     const onRetry = vi.fn()
     frame('stale', { asOf: new Date(Date.now() - 2 * 3_600_000).toISOString(), onRetry })
     expect(screen.getByText('figures-here')).toBeInTheDocument()
     expect(screen.getByText(/^Stale · 2 hr$/)).toBeInTheDocument()
-    fireEvent.click(screen.getByRole('button', { name: 'Refresh' }))
-    expect(onRetry).toHaveBeenCalled()
+    expect(screen.queryByRole('button', { name: 'Refresh' })).toBeNull()
+  })
+
+  it('a ready widget repeats the time only when it differs from the page time', () => {
+    const t = new Date(Date.now() - 5 * 60_000).toISOString()
+    const { unmount } = frame('ready', { asOf: t, pageAsOf: t })
+    expect(screen.queryByText(/^Updated/)).toBeNull()
+    unmount()
+    frame('ready', { asOf: t, pageAsOf: '2026-01-01T00:00:00Z' })
+    expect(screen.getByText(/^Updated/)).toBeInTheDocument()
   })
 
   it('no data yet explains and links the next step', () => {

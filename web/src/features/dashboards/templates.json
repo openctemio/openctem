@@ -55,29 +55,6 @@
         "h": 1,
         "config": {
           "v": 2,
-          "id": "w_ct3",
-          "data": {
-            "kind": "metric",
-            "metric": "crown_jewels.exposed",
-            "filter": {},
-            "time": {}
-          },
-          "viz": {
-            "type": "stat",
-            "options": {}
-          },
-          "target": {
-            "op": "<=",
-            "value": 0
-          }
-        }
-      },
-      {
-        "widget_type": "metric",
-        "w": 3,
-        "h": 1,
-        "config": {
-          "v": 2,
           "id": "w_ct4",
           "data": {
             "kind": "metric",
@@ -92,6 +69,32 @@
           "target": {
             "op": ">=",
             "value": 95
+          }
+        }
+      },
+      {
+        "widget_type": "metric",
+        "w": 3,
+        "h": 1,
+        "config": {
+          "v": 2,
+          "id": "w_ct9",
+          "data": {
+            "kind": "metric",
+            "metric": "fix.time_to_fix",
+            "filter": {},
+            "time": {
+              "range": "90d",
+              "compare": "previous_period"
+            }
+          },
+          "viz": {
+            "type": "stat",
+            "options": {}
+          },
+          "target": {
+            "op": "<=",
+            "value": 168
           }
         }
       },
@@ -116,19 +119,44 @@
       },
       {
         "widget_type": "metric",
-        "w": 6,
-        "h": 3,
+        "w": 3,
+        "h": 2,
         "config": {
           "v": 2,
-          "id": "w_ct6",
+          "id": "w_ct10",
           "data": {
             "kind": "metric",
-            "metric": "fix.next",
+            "metric": "coverage.discovery",
             "filter": {},
             "time": {}
           },
           "viz": {
-            "type": "list",
+            "type": "progress",
+            "options": {}
+          },
+          "target": {
+            "op": ">=",
+            "value": 90
+          }
+        }
+      },
+      {
+        "widget_type": "metric",
+        "w": 9,
+        "h": 2,
+        "config": {
+          "v": 2,
+          "id": "w_ct8",
+          "data": {
+            "kind": "metric",
+            "metric": "exposure.open_by_priority",
+            "filter": {},
+            "time": {
+              "range": "90d"
+            }
+          },
+          "viz": {
+            "type": "area",
             "options": {}
           }
         }
@@ -155,21 +183,60 @@
       },
       {
         "widget_type": "metric",
-        "w": 12,
+        "w": 6,
+        "h": 3,
+        "config": {
+          "v": 2,
+          "id": "w_ct6",
+          "data": {
+            "kind": "metric",
+            "metric": "fix.next",
+            "filter": {},
+            "time": {}
+          },
+          "viz": {
+            "type": "list",
+            "options": {}
+          }
+        }
+      },
+      {
+        "widget_type": "metric",
+        "w": 6,
         "h": 2,
         "config": {
           "v": 2,
-          "id": "w_ct8",
+          "id": "w_ct11",
           "data": {
             "kind": "metric",
-            "metric": "exposure.open_by_priority",
+            "metric": "flow.new_vs_fixed",
             "filter": {},
             "time": {
-              "range": "90d"
+              "range": "90d",
+              "bucket": "week"
             }
           },
           "viz": {
-            "type": "area",
+            "type": "diverging",
+            "options": {}
+          }
+        }
+      },
+      {
+        "widget_type": "metric",
+        "w": 6,
+        "h": 2,
+        "config": {
+          "v": 2,
+          "id": "w_ct12",
+          "data": {
+            "kind": "metric",
+            "metric": "findings.age_bands",
+            "filter": {},
+            "time": {}
+          },
+          "viz": {
+            "type": "heatmap",
             "options": {}
           }
         }
@@ -277,26 +344,30 @@
       },
       {
         "widget_type": "metric",
-        "w": 12,
+        "w": 3,
         "h": 2,
         "config": {
           "v": 2,
-          "id": "w_ov10",
+          "id": "w_ov11",
           "data": {
             "kind": "metric",
-            "metric": "ctem.loop",
+            "metric": "coverage.discovery",
             "filter": {},
             "time": {}
           },
           "viz": {
-            "type": "loop",
+            "type": "progress",
             "options": {}
+          },
+          "target": {
+            "op": ">=",
+            "value": 90
           }
         }
       },
       {
         "widget_type": "metric",
-        "w": 6,
+        "w": 9,
         "h": 2,
         "config": {
           "v": 2,
@@ -311,6 +382,25 @@
           },
           "viz": {
             "type": "area",
+            "options": {}
+          }
+        }
+      },
+      {
+        "widget_type": "metric",
+        "w": 12,
+        "h": 2,
+        "config": {
+          "v": 2,
+          "id": "w_ov10",
+          "data": {
+            "kind": "metric",
+            "metric": "ctem.loop",
+            "filter": {},
+            "time": {}
+          },
+          "viz": {
+            "type": "loop",
             "options": {}
           }
         }
@@ -340,6 +430,25 @@
       {
         "widget_type": "metric",
         "w": 6,
+        "h": 2,
+        "config": {
+          "v": 2,
+          "id": "w_ov9",
+          "data": {
+            "kind": "metric",
+            "metric": "findings.age_bands",
+            "filter": {},
+            "time": {}
+          },
+          "viz": {
+            "type": "heatmap",
+            "options": {}
+          }
+        }
+      },
+      {
+        "widget_type": "metric",
+        "w": 6,
         "h": 3,
         "config": {
           "v": 2,
@@ -362,34 +471,16 @@
         "h": 3,
         "config": {
           "v": 2,
-          "id": "w_ov8",
+          "id": "w_ov12",
           "data": {
             "kind": "metric",
-            "metric": "sla.at_risk",
+            "metric": "attack_paths.to_crown_jewels",
             "filter": {},
-            "time": {}
+            "time": {},
+            "limit": 5
           },
           "viz": {
-            "type": "list",
-            "options": {}
-          }
-        }
-      },
-      {
-        "widget_type": "metric",
-        "w": 12,
-        "h": 2,
-        "config": {
-          "v": 2,
-          "id": "w_ov9",
-          "data": {
-            "kind": "metric",
-            "metric": "findings.age_bands",
-            "filter": {},
-            "time": {}
-          },
-          "viz": {
-            "type": "heatmap",
+            "type": "paths",
             "options": {}
           }
         }

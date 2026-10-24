@@ -51,7 +51,7 @@ export function ScoreBreakdown({ breakdown }: { breakdown: PriorityScoreBreakdow
           value={breakdown.exposure}
         />
       </div>
-      <p className="text-muted-foreground text-[11px] leading-relaxed">
+      <p className="text-muted-foreground text-meta leading-relaxed">
         {t('findings.priorityCard.formula', '(Impact + Likelihood + Exposure)')}
         {reductionPct > 0
           ? t('findings.priorityCard.formulaControls', ' × (1 − {pct}% controls)', {

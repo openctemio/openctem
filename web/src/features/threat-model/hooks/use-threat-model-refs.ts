@@ -2,6 +2,7 @@
 
 import useSWR from 'swr'
 import { get } from '@/lib/api/client'
+import { useRegisterPages } from '@/lib/api/use-register-pages'
 import type { AttackerProfileLite } from '../types'
 
 /** Crown-jewel asset picked as a threat-model scope. */
@@ -19,10 +20,9 @@ interface AssetListResponse {
 
 /** Crown jewels = assets flagged is_crown_jewel; scope candidates for a model. */
 export function useCrownJewels() {
-  const { data, isLoading, error } = useSWR<AssetListResponse>(
-    '/api/v1/assets?is_crown_jewel=true&per_page=100',
-    get,
-    { revalidateOnFocus: false }
+  // The whole register (shares its cache key with the crown jewels page).
+  const { data, isLoading, error } = useRegisterPages<Record<string, unknown>>(
+    '/api/v1/assets?is_crown_jewel=true&per_page=100'
   )
   const crownJewels: CrownJewelAsset[] = (data?.data ?? []).map((a) => ({
     id: String(a.id),
@@ -31,11 +31,6 @@ export function useCrownJewels() {
     criticality: a.criticality as string | undefined,
   }))
   return { crownJewels, isLoading, error }
-}
-
-interface AttackerProfileListResponse {
-  data: AttackerProfileLite[]
-  total: number
 }
 
 /**
@@ -48,10 +43,8 @@ interface AttackerProfileListResponse {
  * threat rows fall back to the raw id.
  */
 export function useAttackerProfileMap(enabled: boolean = true) {
-  const { data, isLoading } = useSWR<AttackerProfileListResponse>(
-    enabled ? '/api/v1/attacker-profiles?per_page=100' : null,
-    get,
-    { revalidateOnFocus: false }
+  const { data, isLoading } = useRegisterPages<AttackerProfileLite>(
+    enabled ? '/api/v1/attacker-profiles?per_page=100' : null
   )
   const map = new Map<string, AttackerProfileLite>()
   for (const p of data?.data ?? []) map.set(p.id, p)

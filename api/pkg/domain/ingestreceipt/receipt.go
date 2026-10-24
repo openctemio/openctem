@@ -67,13 +67,103 @@ const (
 	ActionStillDetected Action = "still_detected"
 	ActionReopened      Action = "reopened"
 	ActionClosed        Action = "closed"
+	// ActionSuppressed: a new finding an approved suppression rule decided
+	// (stored as a finding with a false positive or accepted status).
+	ActionSuppressed Action = "suppressed"
+	// ActionHeld: a new finding held for review (the opt-in review gate).
+	ActionHeld Action = "held"
 )
 
 // AllActions lists the actions in the order a receipt records them: the
 // first action recorded for a finding wins, so a finding a run created is
-// not later counted as still detected by another batch of the same run.
+// not later counted as still detected by another batch of the same run, and
+// a suppressed new finding is not counted as created.
 func AllActions() []Action {
-	return []Action{ActionCreated, ActionReopened, ActionClosed, ActionStillDetected}
+	return []Action{ActionSuppressed, ActionHeld, ActionCreated, ActionReopened, ActionClosed, ActionStillDetected}
+}
+
+// Disposition is what a receipt did with an item it did not turn into a
+// finding.
+type Disposition string
+
+const (
+	// DispositionFiltered: an ingest filter dropped a low-value item.
+	DispositionFiltered Disposition = "filtered"
+	// DispositionOutOfScope: the item's asset is excluded, outside the
+	// binding or outside the uploader's scope.
+	DispositionOutOfScope Disposition = "out_of_scope"
+	// DispositionRejected: the item could not be stored (no asset, invalid).
+	DispositionRejected Disposition = "rejected"
+	// DispositionQuarantined: the whole report waits in the quarantine.
+	DispositionQuarantined Disposition = "quarantined"
+)
+
+// AllDispositions lists the item dispositions.
+func AllDispositions() []Disposition {
+	return []Disposition{DispositionFiltered, DispositionOutOfScope, DispositionRejected, DispositionQuarantined}
+}
+
+// IsValid reports whether d is a known disposition.
+func (d Disposition) IsValid() bool {
+	for _, v := range AllDispositions() {
+		if d == v {
+			return true
+		}
+	}
+	return false
+}
+
+// Policy kinds that decide an item.
+const (
+	PolicySuppressionRule = "suppression_rule"
+	PolicyScopeExclusion  = "scope_exclusion"
+	PolicyUploaderScope   = "uploader_scope"
+	PolicyBinding         = "binding"
+	PolicyValidation      = "validation"
+	PolicyQuarantine      = "quarantine"
+)
+
+// Reason codes of item dispositions (fixed values).
+const (
+	ReasonExcluded      = "excluded"
+	ReasonOutsideScope  = "outside_uploader_scope"
+	ReasonNoTargetAsset = "no_target_asset"
+	ReasonNoCommand     = "no_command"
+)
+
+// Item is one item a receipt did not turn into a finding. Key is a stable
+// identity hash of the item (never its content); no evidence is kept.
+type Item struct {
+	Key           string
+	Disposition   Disposition
+	ReasonCode    string
+	AssetID       *shared.ID
+	Tool          string
+	Title         string
+	Severity      string
+	Policy        string
+	PolicyID      *shared.ID
+	PolicyVersion int64
+}
+
+// PolicyAction is a new finding a policy decided (suppressed, held), with
+// the policy and its version.
+type PolicyAction struct {
+	FindingID     shared.ID
+	Action        Action
+	Policy        string
+	PolicyID      *shared.ID
+	PolicyVersion int64
+}
+
+// ItemKey is the identity hash of an item: tenant-independent, fixed width.
+func ItemKey(parts ...string) string {
+	h := sha256.New()
+	for _, p := range parts {
+		_, _ = h.Write([]byte(p))
+		_, _ = h.Write([]byte{0})
+	}
+	return hex.EncodeToString(h.Sum(nil)[:20])
 }
 
 // IsValid reports whether a is a known action.
@@ -94,6 +184,8 @@ const (
 
 // Status values.
 const (
+	// StatusQueued: an upload accepted and waiting for the ingest worker.
+	StatusQueued     = "queued"
 	StatusProcessing = "processing"
 	StatusCompleted  = "completed"
 	StatusFailed     = "failed"
@@ -206,6 +298,11 @@ type Delta struct {
 	// StillDetected are the stored fingerprints the source reported; the
 	// repository resolves them to the tenant's findings.
 	StillDetected []string
+	// Decided are new findings a policy decided (suppressed, held): they
+	// are recorded with that action and the policy instead of created.
+	Decided []PolicyAction
+	// Items are the reported items that did not become findings.
+	Items []Item
 
 	// Coverage is set ("full") only by a decision that proved coverage of
 	// an explicit scope; Untouched with it.
@@ -222,6 +319,7 @@ func (d *Delta) Empty() bool {
 	return d.Reports == 0 && d.Received == 0 && d.AssetsCreated == 0 && d.AssetsUpdated == 0 &&
 		d.Skipped == 0 && d.Failed == 0 && d.Suppressed == 0 && len(d.Created) == 0 &&
 		len(d.Reopened) == 0 && len(d.Closed) == 0 && len(d.StillDetected) == 0 &&
+		len(d.Decided) == 0 && len(d.Items) == 0 &&
 		d.Coverage == "" && d.Untouched == nil && len(d.Errors) == 0
 }
 
@@ -232,6 +330,9 @@ type Upload struct {
 	ActorUserID    *shared.ID
 	Format         string
 	FilenameSHA256 string
+	// Status is the receipt's first state: queued for an upload the ingest
+	// worker applies, processing (the default) otherwise.
+	Status string
 }
 
 // UploadResult is what an upload adds when it finishes, beyond what its
@@ -263,11 +364,20 @@ type Filter struct {
 
 // ActionRow is one finding a receipt acted on, as listed to a reader.
 type ActionRow struct {
-	FindingID shared.ID
-	Action    Action
-	Title     string
-	Severity  string
-	At        time.Time
+	FindingID     shared.ID
+	Action        Action
+	Title         string
+	Severity      string
+	At            time.Time
+	Policy        string
+	PolicyID      *shared.ID
+	PolicyVersion *int64
+}
+
+// ItemRow is one item a receipt did not turn into a finding, as listed.
+type ItemRow struct {
+	Item
+	At time.Time
 }
 
 // FindingAction is one receipt that acted on a finding, newest first.

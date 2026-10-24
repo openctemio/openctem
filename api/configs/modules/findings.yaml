@@ -34,6 +34,7 @@
     - CTEMIDRefreshController
     - IngestWorkerController
     - IngestReceiptRetentionController
+    - IngestQueueRetentionController
     - JobRecoveryController
     - RetestScheduler
     - ThreatIntelRefreshController

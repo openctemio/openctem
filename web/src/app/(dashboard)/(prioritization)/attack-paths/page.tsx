@@ -161,13 +161,17 @@ export default function AttackPathAnalysisPage() {
         <LoadingSkeleton />
       ) : error ? (
         // A failed read is not "no data": say we could not find out.
-        <ErrorState
-          title={t('prioritization.errorTitle.attackPaths', 'attack paths')}
-          error={error}
-          onRetry={() => void mutate()}
-        />
+        <div className="mt-5">
+          <ErrorState
+            title={t('prioritization.errorTitle.attackPaths', 'attack paths')}
+            error={error}
+            onRetry={() => void mutate()}
+          />
+        </div>
       ) : !hasData ? (
-        <NoRelationshipData />
+        <div className="mt-5">
+          <NoRelationshipData />
+        </div>
       ) : (
         <>
           {/* Stats Row */}
@@ -394,8 +398,8 @@ export default function AttackPathAnalysisPage() {
                   <p>
                     <strong className="text-foreground">
                       {t('prioritization.attackPaths.howReachableLead', 'Reachable from')}
-                    </strong>{' '}
-                    —{' '}
+                    </strong>
+                    {': '}
                     {t(
                       'prioritization.attackPaths.howReachable',
                       'traversal from every public asset following attack-path relationship types (runs_on, depends_on, exposes, stores_data_in, etc.)'
@@ -404,8 +408,8 @@ export default function AttackPathAnalysisPage() {
                   <p>
                     <strong className="text-foreground">
                       {t('prioritization.attackPaths.howScoreLead', 'Path score')}
-                    </strong>{' '}
-                    —{' '}
+                    </strong>
+                    {': '}
                     {t(
                       'prioritization.attackPaths.howScore',
                       "reachable entry points multiplied by the asset's risk score and criticality weight (critical=4x, high=3x, medium=2x, low=1x), boosted by open findings."

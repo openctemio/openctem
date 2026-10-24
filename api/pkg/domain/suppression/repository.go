@@ -19,7 +19,7 @@ type Repository interface {
 	// suppression it applied: each finding it hid (still in the disposition
 	// the suppression gave it) is re-linked to another active rule of the
 	// tenant that matches it, or reopened.
-	Delete(ctx context.Context, tenantID, id shared.ID) error
+	Delete(ctx context.Context, tenantID, id, deletedBy shared.ID, details map[string]any) error
 
 	// Approve persists the approved rule, records its "approved" audit entry
 	// (details plus the number of findings changed) and gives every open

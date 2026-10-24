@@ -170,7 +170,7 @@ describe('riskSignals', () => {
     const labels = s.map((x) => x.label)
     expect(labels).toEqual([
       'No known exploit',
-      'EPSS 0.87% · 57th percentile',
+      'EPSS 0.87%, 57th percentile',
       'Internet-facing',
       'Reachable from 1 entry point',
       'Critical asset',

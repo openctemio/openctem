@@ -53,7 +53,9 @@ import { AcceptDialog, DismissDialog, SnoozeDialog } from './suggestion-dialogs'
 const PER_PAGE = 25
 
 export function apiMessage(err: unknown, fallback: string): string {
-  if (err instanceof ApiClientError && err.message) return err.message
+  // A server fault carries no wording for the user ("internal error"): show
+  // the translated fallback. 4xx messages are the API's own explanation.
+  if (err instanceof ApiClientError && err.statusCode < 500 && err.message) return err.message
   return fallback
 }
 

@@ -6,7 +6,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Main } from '@/components/layout'
-import { PageHeader, EmptyState } from '@/features/shared'
+import { PageHeader, PageStack, EmptyState } from '@/features/shared'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { useUrlFilter } from '@/hooks/use-url-param'
 import { formatEpssPercentile, formatEpssScore, formatEpssTopPercent } from '@/lib/epss'
@@ -63,70 +63,74 @@ export default function ThreatIntelPage() {
 
   return (
     <Main>
-      <PageHeader title={t('threatIntel.title')} description={t('threatIntel.description')}>
-        <CompactSyncStatus statuses={syncStatuses} />
-        <Button variant="outline" size="sm" onClick={handleRefreshAll} disabled={isLoading}>
-          {isLoading ? (
-            <Loader2 className="h-4 w-4 animate-spin sm:me-2" />
-          ) : (
-            <RefreshCw className="h-4 w-4 sm:me-2" />
-          )}
-          <span className="sr-only sm:not-sr-only">{t('threatIntel.refresh')}</span>
-        </Button>
-      </PageHeader>
+      <PageStack>
+        <PageHeader title={t('threatIntel.title')} description={t('threatIntel.description')}>
+          <CompactSyncStatus statuses={syncStatuses} />
+          <Button variant="outline" size="sm" onClick={handleRefreshAll} disabled={isLoading}>
+            {isLoading ? (
+              <Loader2 className="h-4 w-4 animate-spin sm:me-2" />
+            ) : (
+              <RefreshCw className="h-4 w-4 sm:me-2" />
+            )}
+            <span className="sr-only sm:not-sr-only">{t('threatIntel.refresh')}</span>
+          </Button>
+        </PageHeader>
 
-      {/* The active tab lives in the URL (?tab=) so each view can be linked. */}
-      <Tabs value={activeTab} onValueChange={setTab} className="mt-4">
-        <TabsList>
-          <TabsTrigger value="overview">{t('threatIntel.tabs.overview')}</TabsTrigger>
-          <TabsTrigger value="actors">{t('threatIntel.tabs.actors')}</TabsTrigger>
-          <TabsTrigger value="lookup">{t('threatIntel.tabs.lookup')}</TabsTrigger>
-          <TabsTrigger value="sync">{t('threatIntel.tabs.sync')}</TabsTrigger>
-        </TabsList>
+        {/* The active tab lives in the URL (?tab=) so each view can be linked. */}
+        <Tabs value={activeTab} onValueChange={setTab}>
+          <TabsList>
+            <TabsTrigger value="overview">{t('threatIntel.tabs.overview')}</TabsTrigger>
+            <TabsTrigger value="actors">{t('threatIntel.tabs.actors')}</TabsTrigger>
+            <TabsTrigger value="lookup">{t('threatIntel.tabs.lookup')}</TabsTrigger>
+            <TabsTrigger value="sync">{t('threatIntel.tabs.sync')}</TabsTrigger>
+          </TabsList>
 
-        <TabsContent value="overview" className="mt-5 space-y-5">
-          <ThreatIntelOverview
-            epssStats={epssStats}
-            kevStats={kevStats}
-            lastSyncAt={lastSync}
-            isLoading={isLoading}
-          />
+          <TabsContent value="overview">
+            <PageStack>
+              <ThreatIntelOverview
+                epssStats={epssStats}
+                kevStats={kevStats}
+                lastSyncAt={lastSync}
+                isLoading={isLoading}
+              />
 
-          <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-            <InfoCard
-              title={t('threatIntel.info.epssTitle')}
-              icon={TrendingUp}
-              description={t('threatIntel.info.epssDescription')}
-              links={[
-                { label: t('threatIntel.info.epssLink'), url: 'https://www.first.org/epss/' },
-              ]}
-            />
-            <InfoCard
-              title={t('threatIntel.info.kevTitle')}
-              icon={AlertOctagon}
-              description={t('threatIntel.info.kevDescription')}
-              links={[
-                {
-                  label: t('threatIntel.info.kevLink'),
-                  url: 'https://www.cisa.gov/known-exploited-vulnerabilities-catalog',
-                },
-              ]}
-            />
-          </div>
-        </TabsContent>
+              <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                <InfoCard
+                  title={t('threatIntel.info.epssTitle')}
+                  icon={TrendingUp}
+                  description={t('threatIntel.info.epssDescription')}
+                  links={[
+                    { label: t('threatIntel.info.epssLink'), url: 'https://www.first.org/epss/' },
+                  ]}
+                />
+                <InfoCard
+                  title={t('threatIntel.info.kevTitle')}
+                  icon={AlertOctagon}
+                  description={t('threatIntel.info.kevDescription')}
+                  links={[
+                    {
+                      label: t('threatIntel.info.kevLink'),
+                      url: 'https://www.cisa.gov/known-exploited-vulnerabilities-catalog',
+                    },
+                  ]}
+                />
+              </div>
+            </PageStack>
+          </TabsContent>
 
-        <TabsContent value="actors" className="mt-5">
-          <ThreatActorsPanel />
-        </TabsContent>
+          <TabsContent value="actors">
+            <ThreatActorsPanel />
+          </TabsContent>
 
-        <TabsContent value="lookup" className="mt-5">
-          <CVELookup />
-        </TabsContent>
+          <TabsContent value="lookup">
+            <CVELookup />
+          </TabsContent>
 
-        <TabsContent value="sync" className="mt-5">
-          <SyncStatusManager statuses={syncStatuses} onRefresh={refresh} />
-        </TabsContent>
-      </Tabs>
+          <TabsContent value="sync">
+            <SyncStatusManager statuses={syncStatuses} onRefresh={refresh} />
+          </TabsContent>
+        </Tabs>
+      </PageStack>
     </Main>
   )
 }
@@ -204,7 +208,7 @@ function CVELookup() {
   }
 
   return (
-    <div className="space-y-5">
+    <PageStack>
       {/* Search Input */}
       <Card>
         <CardHeader>
@@ -403,6 +407,6 @@ function CVELookup() {
           )}
         </div>
       )}
-    </div>
+    </PageStack>
   )
 }

@@ -27,6 +27,8 @@ import { useTranslation } from '@/context/i18n-provider'
 import { ApiClientError } from '@/lib/api/error-handler'
 import { Permission, useHasPermission, usePermissions } from '@/lib/permissions'
 import { ErrorState, PageHeader } from '@/features/shared'
+import Link from '@/components/link'
+import { Skeleton } from '@/components/ui/skeleton'
 import {
   EMPTY_PROGRAM_FORM,
   FORBIDDEN_TECHNIQUES,
@@ -92,11 +94,22 @@ export default function ProgramPage({ params }: { params: Promise<{ id: string }
   if (error) {
     return (
       <Main>
-        <ErrorState title={t('programs.one', 'program')} error={error} />
+        <ErrorState title={t('programs.one', 'program')} error={error} onRetry={() => mutate()} />
+        <Button asChild variant="outline" size="sm" className="mt-4">
+          <Link href="/programs">{t('programs.back', 'Back to programs')}</Link>
+        </Button>
       </Main>
     )
   }
-  if (!p) return <Main />
+  if (!p) {
+    return (
+      <Main>
+        <Skeleton className="h-9 w-64" />
+        <Skeleton className="mt-5 h-24 w-full rounded-xl" />
+        <Skeleton className="mt-5 h-64 w-full" />
+      </Main>
+    )
+  }
   if (p.locked) {
     return (
       <Main>
@@ -208,7 +221,7 @@ export default function ProgramPage({ params }: { params: Promise<{ id: string }
               onDone={() => {
                 setReimport(false)
                 toast.success(t('programs.reimported', 'Scope re-imported'))
-                void mutate()
+                void refresh()
               }}
             />
           </section>

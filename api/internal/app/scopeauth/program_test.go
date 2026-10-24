@@ -134,3 +134,41 @@ func TestProgramExclusions_TenantScoped(t *testing.T) {
 		t.Error("no exclusion of this tenant: covered")
 	}
 }
+
+// OwnedName is an ownership signal: a domain root of the tenant or a
+// verified domain, never an address entry and never a bug-bounty program's
+// domain (another organization's), and it never authorizes a probe.
+func TestOwnedName(t *testing.T) {
+	f := newSources(t) // *.scoped.com, 198.51.100.0/24, github.com/org/*; verified Verified.com, scoped.com
+	f.targets = append(f.targets, programEntry(t, f.tenant, "*.acme.example"))
+	a, err := Load(context.Background(), f.tenant, f, f)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for name, want := range map[string]bool{
+		"scoped.com":              true,
+		"deep.app.scoped.com":     true,
+		"www.verified.com":        true,
+		"198.51.100.7":            false, // an address entry is no domain root
+		"www.acme.example":        false, // a program's domain
+		"evilscoped.com":          false,
+		"scoped.com.evil.example": false,
+		"github.com":              false,
+		"":                        false,
+	} {
+		if _, ok := a.OwnedName(name); ok != want {
+			t.Errorf("OwnedName(%q) = %v, want %v", name, ok, want)
+		}
+	}
+	if v, _ := a.OwnedName("www.verified.com"); v.Kind != KindVerifiedDomain || v.Proof != ProofVerified {
+		t.Errorf("verified via = %+v", v)
+	}
+	// Ownership is not authority: a verified domain alone covers nothing.
+	if _, ok := a.Covers("www.verified.com"); ok {
+		t.Error("a verified domain authorized a probe")
+	}
+	var none *Authority
+	if _, ok := none.OwnedName("scoped.com"); ok {
+		t.Error("a nil authority owns a name")
+	}
+}

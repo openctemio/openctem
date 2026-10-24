@@ -269,12 +269,52 @@ dependency, monitor only or none, so a card equals the list it opens), the
 unowned, high-risk and first-seen-this-week ones, and the names in the
 review queue.
 
-A lens is a filter too: `/assets?lens=code` (the pills above the list)
-asks the list and stats for `lenses=code`, which matches the stored
+A lens is a filter too: `/assets?lens=code` asks the list and stats for
+`lenses=code`, which matches the stored
 `asset_lens`. It is not a list of types: an alias stored under another
 type's name (a container registry is `storage`/`container_registry`)
 belongs to its own lens. An overview card links to its lens, and its
 high-risk count to `min_risk_score=70`, the threshold of the count.
+
+The lenses are the inventory's quick views: while `/assets` is open, the
+sidebar lists All assets, every lens that holds one of the caller's assets
+and "Other" (types outside every lens, `?types=`) under the Assets row, each
+with its count. The counts come from the same data-scoped `/assets/stats`
+response the list reads, so the sidebar adds no request and a count equals
+the list it opens. The list names the open view and its total in its first
+line. A type is a filter of the view (the Type facet, `?types=`), not a
+second row of pills. The list has no metric strip: its numbers are the
+quick-view counts and the facet counts.
+
+Filters are chips in one row under the toolbar: what the default list hides
+(names awaiting review and names marked not ours, with Show), then every
+active filter as "Field is value" with a remove button, then Add filter. Add
+filter lists the facet registry (`web/src/features/assets/lib/inventory-facets.ts`)
+by group, searchable, and a picked facet opens its own editor, which applies
+as you tick. Every URL filter has a chip, including the ones that are not
+facets (crown jewels, risk score, coverage, tags, date windows), so nothing
+narrows the list unseen. Below the `lg` breakpoint the same facets open in a
+sheet. The tag list and business unit names load only when something shows
+them.
+
+Rows are compact (one line) by default. The Name cell cuts a long name in
+the middle with a copy button; a certificate shows its `subject_cn` with the
+stored name below and its `sans`, issuer and expiry in the tooltip. The Type
+cell is the registry's label for the row's type or sub-type alias.
+
+## Needs attention
+
+Assets › Needs attention (`/assets/attention`) is the data-quality queue.
+Its reasons are route tabs: No owner (`has_owner=false`), Criticality not
+set (`criticalities=none`) and Not scanned (`coverage=uncovered`) list the
+inventory under that one filter, with the default attribution, the same
+table and the same bulk bar (set owner, set criticality, tags); each links to
+the same filter in the inventory. Relationships (`/assets/suggestions`,
+module `relationships`) and Possible duplicates (`/assets/duplicates`) are
+the other reasons and keep their URLs. Counts and rows come from the
+data-scoped asset list, so a reader sees only their own assets. Unplaced
+(assets in no hierarchy group) and the union view follow with the group
+hierarchy.
 
 ## Tag filter
 
