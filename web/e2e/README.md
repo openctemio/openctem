@@ -57,6 +57,7 @@ tests that cover the console's most user-visible flows.
 | `31-assets-quick-views.spec.ts`             | Sidebar quick views under Assets (lenses), no lens/type pills                      |
 | `31-page-rhythm.spec.ts`                    | Page block gaps are the spacing tokens; metric strip rules                         |
 | `32-assets-filters.spec.ts`                 | Asset Add filter, chips, no eager tag or business-unit load                        |
+| `34-scans-list-layout.spec.ts`              | Scan list at 390px and 1440px: no overlapping text, state on the title line        |
 
 Each spec is designed to:
 

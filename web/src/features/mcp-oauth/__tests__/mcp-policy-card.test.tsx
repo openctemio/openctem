@@ -66,6 +66,10 @@ describe('MCP policy card', () => {
     expect(comment).not.toBeChecked()
     fireEvent.click(comment)
     fireEvent.click(screen.getByRole('button', { name: 'Save policy' }))
+    // Adding a write scope widens the policy: it names what changes and asks.
+    expect(await screen.findByText('Give AI assistants more access?')).toBeInTheDocument()
+    expect(patch).not.toHaveBeenCalled()
+    fireEvent.click(screen.getByRole('button', { name: 'Save wider policy' }))
     await waitFor(() => expect(patch).toHaveBeenCalled())
     expect((patch.mock.calls[0][1] as { scopes: string[] }).scopes).toEqual([
       'mcp:findings.comment',

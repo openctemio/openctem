@@ -38,6 +38,13 @@ function Harness({ onViewRun }: { onViewRun?: (id: string) => void }) {
   )
 }
 
+// Every run now asks once ("Run scan"); a scan with a run in progress gets the
+// "already in progress" question instead.
+async function triggerAndConfirm() {
+  await userEvent.click(screen.getByRole('button', { name: 'Trigger' }))
+  await userEvent.click(await screen.findByRole('button', { name: 'Run scan' }))
+}
+
 describe('useScanTrigger', () => {
   beforeEach(() => {
     getMock.mockReset()
@@ -47,29 +54,40 @@ describe('useScanTrigger', () => {
     resetScanTriggerStateForTests()
   })
 
-  it('triggers at once when the scan has no run in progress', async () => {
+  it('asks once, naming the scan, and triggers only after Run scan', async () => {
     getMock.mockRejectedValue(notFound)
     postMock.mockResolvedValue({})
     render(<Harness />)
     await userEvent.click(screen.getByRole('button', { name: 'Trigger' }))
+    const dialog = await screen.findByRole('alertdialog')
+    expect(dialog).toHaveTextContent('Run "Nightly recon" now?')
+    expect(dialog).toHaveTextContent('sends scan traffic')
+    expect(postMock).not.toHaveBeenCalled()
+    await userEvent.click(screen.getByRole('button', { name: 'Run scan' }))
     expect(postMock).toHaveBeenCalledTimes(1)
     expect(postMock.mock.calls[0][0]).toBe('/api/v1/scans/s1/trigger')
-    expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument()
+  })
+
+  it('Cancel on the run question starts nothing and frees the button', async () => {
+    getMock.mockRejectedValue(notFound)
+    render(<Harness />)
+    await userEvent.click(screen.getByRole('button', { name: 'Trigger' }))
+    await userEvent.click(await screen.findByRole('button', { name: 'Cancel' }))
+    expect(postMock).not.toHaveBeenCalled()
+    expect(screen.getByTestId('busy')).toHaveTextContent('false')
   })
 
   it('ignores a second trigger while the first is in flight', async () => {
     getMock.mockResolvedValue({ id: 'r0', status: 'completed' })
-    let release: (v: unknown) => void = () => {}
-    postMock.mockReturnValue(new Promise((r) => (release = r)))
     const { result } = renderHook(() => useScanTrigger())
     await act(async () => {
       const first = result.current.trigger(scan)
       const second = result.current.trigger(scan)
-      await second
-      release({})
-      await first
+      await Promise.all([first, second])
     })
-    expect(postMock).toHaveBeenCalledTimes(1)
+    // Only the first call read the latest run; the second was dropped.
+    expect(getMock).toHaveBeenCalledTimes(1)
+    expect(postMock).not.toHaveBeenCalled()
   })
 
   it('asks before starting a second run while one is in progress', async () => {
@@ -118,7 +136,7 @@ describe('useScanTrigger', () => {
     postMock.mockResolvedValue({})
     vi.spyOn(console, 'warn').mockImplementation(() => {})
     render(<Harness />)
-    await userEvent.click(screen.getByRole('button', { name: 'Trigger' }))
+    await triggerAndConfirm()
     expect(postMock).toHaveBeenCalledTimes(1)
   })
 
@@ -138,7 +156,7 @@ describe('useScanTrigger', () => {
         },
       })
       render(<Harness />)
-      await userEvent.click(screen.getByRole('button', { name: 'Trigger' }))
+      await triggerAndConfirm()
       expect(postMock).toHaveBeenCalledTimes(1)
       expect(postMock.mock.calls[0][1]).toEqual({})
       const call = vi.mocked(toast.success).mock.calls.at(-1)
@@ -154,7 +172,7 @@ describe('useScanTrigger', () => {
         new ApiClientError('these targets can never be scanned', 'SCAN_WINDOW_NEVER_OPENS', 409)
       )
       render(<Harness />)
-      await userEvent.click(screen.getByRole('button', { name: 'Trigger' }))
+      await triggerAndConfirm()
       expect(postMock).toHaveBeenCalledTimes(1)
       expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument()
       const call = vi.mocked(toast.error).mock.calls.at(-1)
@@ -176,7 +194,7 @@ describe('useScanTrigger', () => {
     getMock.mockRejectedValue(notFound)
     postMock.mockRejectedValue(new ApiClientError('refused', code, 400))
     render(<Harness />)
-    await userEvent.click(screen.getByRole('button', { name: 'Trigger' }))
+    await triggerAndConfirm()
     const call = vi.mocked(toast.error).mock.calls.at(-1)
     expect(call?.[0]).toBe('refused')
     expect(String((call?.[1] as { description?: string })?.description)).toContain(fix)
@@ -187,7 +205,7 @@ describe('useScanTrigger', () => {
     getMock.mockRejectedValue(notFound)
     postMock.mockRejectedValue(new ApiClientError('nope', 'BAD_REQUEST', 400))
     render(<Harness />)
-    await userEvent.click(screen.getByRole('button', { name: 'Trigger' }))
+    await triggerAndConfirm()
     const call = vi.mocked(toast.error).mock.calls.at(-1)
     expect((call?.[1] as { description?: string })?.description).toBeUndefined()
   })
@@ -199,20 +217,25 @@ describe('useScanTrigger', () => {
     const onSettled = vi.fn()
     const onTriggered = vi.fn()
     function Settled() {
-      const { trigger } = useScanTrigger({ onSettled, onTriggered })
-      return <button onClick={() => void trigger(scan)}>Trigger</button>
+      const { trigger, dialog } = useScanTrigger({ onSettled, onTriggered })
+      return (
+        <>
+          <button onClick={() => void trigger(scan)}>Trigger</button>
+          {dialog}
+        </>
+      )
     }
     getMock.mockRejectedValue(notFound)
     postMock.mockRejectedValueOnce(
       new ApiClientError('No online sensor has nuclei', 'NO_SENSOR_FOR_TOOL', 400)
     )
     render(<Settled />)
-    await userEvent.click(screen.getByRole('button', { name: 'Trigger' }))
+    await triggerAndConfirm()
     expect(onSettled).toHaveBeenCalledWith(scan)
     expect(onTriggered).not.toHaveBeenCalled()
 
     postMock.mockResolvedValueOnce({})
-    await userEvent.click(screen.getByRole('button', { name: 'Trigger' }))
+    await triggerAndConfirm()
     expect(onSettled).toHaveBeenCalledTimes(2)
     expect(onTriggered).toHaveBeenCalledTimes(1)
   })

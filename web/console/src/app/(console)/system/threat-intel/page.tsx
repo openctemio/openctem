@@ -8,7 +8,7 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Switch } from '@/components/ui/switch'
-import { ErrorState, PageHeader, RelativeTime } from '@/features/shared'
+import { ErrorState, PageHeader, PageStack, RelativeTime } from '@/features/shared'
 import { TonePill } from '@/features/shared/components/tone-pill'
 import { useTranslation } from '@/context/i18n-provider'
 import { AdminApiError } from '@console/lib/admin-api/client'
@@ -58,28 +58,28 @@ export default function ThreatIntelFeedsPage() {
 
   return (
     <Main>
-      <PageHeader
-        title={t('admin.nav.threatIntel', 'Threat intelligence')}
-        description={t(
-          'admin.ti.description',
-          'Platform-wide feeds every organization uses to prioritize findings. They sync on a schedule; run one now after an outage.'
-        )}
-      >
-        {canWrite && (
-          <Button
-            size="sm"
-            variant="outline"
-            disabled={busy !== null}
-            onClick={() =>
-              act('all', () => syncThreatIntel('all'), t('admin.ti.synced', 'Sync finished.'))
-            }
-          >
-            <RefreshCw className="me-2 size-4" />
-            {t('admin.ti.syncAll', 'Sync all now')}
-          </Button>
-        )}
-      </PageHeader>
-      <div className="mt-5">
+      <PageStack>
+        <PageHeader
+          title={t('admin.nav.threatIntel', 'Threat intelligence')}
+          description={t(
+            'admin.ti.description',
+            'Platform-wide feeds every organization uses to prioritize findings. They sync on a schedule; run one now after an outage.'
+          )}
+        >
+          {canWrite && (
+            <Button
+              size="sm"
+              variant="outline"
+              disabled={busy !== null}
+              onClick={() =>
+                act('all', () => syncThreatIntel('all'), t('admin.ti.synced', 'Sync finished.'))
+              }
+            >
+              <RefreshCw className="me-2 size-4" />
+              {t('admin.ti.syncAll', 'Sync all now')}
+            </Button>
+          )}
+        </PageHeader>
         {error ? (
           <ErrorState
             title={t(
@@ -158,7 +158,7 @@ export default function ThreatIntelFeedsPage() {
             ))}
           </div>
         )}
-      </div>
+      </PageStack>
     </Main>
   )
 }

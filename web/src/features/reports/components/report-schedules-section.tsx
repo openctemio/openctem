@@ -68,6 +68,8 @@ export function ReportSchedulesSection() {
   const [pendingToggle, setPendingToggle] = useState<string | null>(null)
   const [deletingId, setDeletingId] = useState<string | null>(null)
   const [pendingDelete, setPendingDelete] = useState<ReportSchedule | null>(null)
+  // Resuming a schedule starts emailing its recipients again: ask first.
+  const [pendingResume, setPendingResume] = useState<ReportSchedule | null>(null)
 
   const handleToggle = useCallback(
     async (schedule: ReportSchedule) => {
@@ -191,7 +193,9 @@ export function ReportSchedulesSection() {
           <Switch
             checked={schedule.is_active}
             disabled={pendingToggle === schedule.id}
-            onCheckedChange={() => handleToggle(schedule)}
+            onCheckedChange={() =>
+              schedule.is_active ? void handleToggle(schedule) : setPendingResume(schedule)
+            }
             aria-label={
               schedule.is_active
                 ? t('reports.schedules.pauseLabel', 'Pause {name}', { name: schedule.name })
@@ -303,6 +307,22 @@ export function ReportSchedulesSection() {
           emptyMessage={t('reports.schedules.emptyMessage', 'No scheduled reports')}
         />
       )}
+      <ConfirmDialog
+        open={pendingResume !== null}
+        onOpenChange={(o) => !o && setPendingResume(null)}
+        title={t('confirm.reportSchedule.resumeTitle', undefined, {
+          name: pendingResume?.name ?? '',
+        })}
+        desc={t('confirm.reportSchedule.resumeDesc', undefined, {
+          count: pendingResume?.recipient_count ?? pendingResume?.recipients?.length ?? 0,
+        })}
+        confirmText={t('confirm.reportSchedule.resumeBtn')}
+        handleConfirm={async () => {
+          const schedule = pendingResume
+          setPendingResume(null)
+          if (schedule) await handleToggle(schedule)
+        }}
+      />
       <ConfirmDialog
         open={pendingDelete !== null}
         onOpenChange={(o) => !o && setPendingDelete(null)}

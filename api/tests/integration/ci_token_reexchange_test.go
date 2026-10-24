@@ -59,7 +59,7 @@ func TestCIToken_ReExchange(t *testing.T) {
 		}
 	}
 	code, over := exchange(r.tenant, tok, true)
-	if code != http.StatusUnauthorized || over["code"] != "CI_TOKEN_REPLAY_LIMIT" || !strings.Contains(over["message"].(string), run) {
+	if code != http.StatusUnauthorized || over["code"] != "CI_TOKEN_REPLAY_LIMIT" || detailRunID(over) != run {
 		t.Fatalf("past the bound: %d %v", code, over)
 	}
 	if r.auditCount(r.tenant, "ci_run.token_refused", "replay_limit") != 1 {
@@ -149,7 +149,7 @@ func TestCIToken_ReExchange(t *testing.T) {
 		t.Fatalf("evaluate: %d", resp.StatusCode)
 	}
 	code, closed := exchange(r.tenant, tok4, true)
-	if code != http.StatusUnauthorized || closed["code"] != "CI_TOKEN_REPLAY_RUN_CLOSED" || !strings.Contains(closed["message"].(string), g["run_id"].(string)) {
+	if code != http.StatusUnauthorized || closed["code"] != "CI_TOKEN_REPLAY_RUN_CLOSED" || detailRunID(closed) != g["run_id"].(string) {
 		t.Fatalf("re-exchange after the verdict: %d %v", code, closed)
 	}
 }
@@ -183,4 +183,12 @@ func TestCIToken_ReExchangeAfterLostCreation(t *testing.T) {
 	if runs != 1 {
 		t.Fatalf("%d runs, want 1", runs)
 	}
+}
+
+// detailRunID is the run id an exchange refusal carries in its details (the
+// public message holds no ids).
+func detailRunID(resp map[string]any) string {
+	d, _ := resp["details"].(map[string]any)
+	id, _ := d["run_id"].(string)
+	return id
 }

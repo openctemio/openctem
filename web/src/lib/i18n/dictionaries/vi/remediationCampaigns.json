@@ -145,5 +145,6 @@
   "remediationCampaigns.toast.saved": "Đã lưu chiến dịch",
   "remediationCampaigns.toast.started": "Đã bắt đầu chiến dịch",
   "remediationCampaigns.toast.taskRemoved": "Đã gỡ tác vụ khỏi chiến dịch",
-  "remediationCampaigns.toast.tasksAdded": "Đã thêm tác vụ vào chiến dịch"
+  "remediationCampaigns.toast.tasksAdded": "Đã thêm tác vụ vào chiến dịch",
+  "remediationCampaigns.statusLabel": "Trạng thái"
 }

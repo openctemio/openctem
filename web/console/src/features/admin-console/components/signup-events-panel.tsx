@@ -28,7 +28,7 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table'
-import { EmptyState, ErrorState, RelativeTime } from '@/features/shared'
+import { EmptyState, ErrorState, RelativeTime, PageStack } from '@/features/shared'
 import { useTranslation } from '@/context/i18n-provider'
 import {
   SIGNUP_EVENT_KINDS,
@@ -109,7 +109,7 @@ export function SignupEventsPanel() {
   const totalPages = data?.total_pages ?? 1
 
   return (
-    <div className="space-y-5">
+    <PageStack>
       <SignupSummary />
       <div className="flex flex-wrap items-center justify-between gap-3">
         <p className="text-sm text-muted-foreground">
@@ -221,6 +221,6 @@ export function SignupEventsPanel() {
         </>
       )}
       <p className="text-sm text-muted-foreground">{t('admin.signups.privacyNote')}</p>
-    </div>
+    </PageStack>
   )
 }
