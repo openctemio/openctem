@@ -1,9 +1,48 @@
 'use client'
 
+import Link from '@/components/link'
 import { RelativeTime, RunStatusBadge } from '@/features/shared'
 import { useTranslation } from '@/context/i18n-provider'
 import type { ScanLastRun } from '@/lib/api/scan-types'
-import { lastRunReason } from '../lib/scan-status'
+import { safeHref } from '@/lib/safe-href'
+import { cn } from '@/lib/utils'
+import { blockedRunHint, lastRunReason } from '../lib/scan-status'
+
+/**
+ * Why the latest run was blocked, visible (not only on hover, which a phone
+ * has not got), with a link to where it is fixed. Nothing for other states.
+ */
+export function BlockedRunHint({
+  run,
+  className,
+}: {
+  run: Pick<ScanLastRun, 'status' | 'refusal_code'> | null
+  className?: string
+}) {
+  const { t } = useTranslation()
+  const hint = blockedRunHint(run, t)
+  if (!hint) return null
+  return (
+    <p
+      data-slot="blocked-run-hint"
+      className={cn('min-w-0 break-words text-meta text-muted-foreground', className)}
+    >
+      {hint.text}
+      {hint.fix && (
+        <>
+          {' '}
+          <Link
+            href={safeHref(hint.fix.href) ?? '#'}
+            className="font-medium text-foreground underline underline-offset-2"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {hint.fix.label}
+          </Link>
+        </>
+      )}
+    </p>
+  )
+}
 
 /**
  * A scan's latest run: its real state (Running 42%, Completed, Partial,
@@ -14,9 +53,12 @@ import { lastRunReason } from '../lib/scan-status'
 export function LastRunCell({
   run,
   onOpen,
+  showHint = false,
 }: {
   run: ScanLastRun | null
   onOpen?: (runId: string) => void
+  /** Show why a blocked run was refused under it, with the fix link. */
+  showHint?: boolean
 }) {
   const { t } = useTranslation()
   if (!run) {
@@ -42,8 +84,17 @@ export function LastRunCell({
       <RelativeTime date={run.started_at ?? run.created_at} className="text-xs" />
     </span>
   )
-  if (!onOpen) return body
-  return (
+  const hint = showHint ? <BlockedRunHint run={run} className="mt-1 max-w-[16rem]" /> : null
+  if (!onOpen)
+    return hint ? (
+      <div className="min-w-0">
+        {body}
+        {hint}
+      </div>
+    ) : (
+      body
+    )
+  const button = (
     <button
       type="button"
       className="rounded-sm text-start focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
@@ -55,5 +106,13 @@ export function LastRunCell({
     >
       {body}
     </button>
+  )
+  return hint ? (
+    <div className="min-w-0">
+      {button}
+      {hint}
+    </div>
+  ) : (
+    button
   )
 }

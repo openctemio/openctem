@@ -16,7 +16,7 @@ import { Badge } from '@/components/ui/badge'
 import { Card, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Skeleton } from '@/components/ui/skeleton'
 import { useTranslation } from '@/context/i18n-provider'
-import { EmptyState, ErrorState, GatedButton, TonePill } from '@/features/shared'
+import { EmptyState, ErrorState, GatedButton, TonePill, PageStack } from '@/features/shared'
 import { getErrorMessage } from '@/lib/api/error-handler'
 import { Permission, usePermissions } from '@/lib/permissions'
 
@@ -49,7 +49,7 @@ export function ScanWindowsPanel() {
   )
 
   return (
-    <div className="space-y-8" data-testid="scan-windows-panel">
+    <PageStack data-testid="scan-windows-panel">
       <section aria-labelledby="policies-heading" className="space-y-3">
         <div className="flex flex-wrap items-end justify-between gap-2">
           <h2 id="policies-heading" className="text-base font-semibold">
@@ -193,6 +193,6 @@ export function ScanWindowsPanel() {
             )
         }}
       />
-    </div>
+    </PageStack>
   )
 }

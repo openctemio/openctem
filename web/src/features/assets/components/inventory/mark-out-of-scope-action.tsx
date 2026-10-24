@@ -33,6 +33,7 @@ import { Label } from '@/components/ui/label'
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group'
 import { useTranslation } from '@/context/i18n-provider'
 import { getErrorMessage } from '@/lib/api/error-handler'
+import { UNDO_TOAST_MS, undoToast } from '@/lib/undo-toast'
 import { Permission, useHasPermission } from '@/lib/permissions'
 import {
   createExclusions,
@@ -130,9 +131,10 @@ export function MarkOutOfScopeAction({ selected, onDone }: ActionProps) {
         : '',
     ]
       .filter(Boolean)
-      .join(' · ')
+      .join('. ')
     const show = res.refused > 0 && res.created === 0 ? toast.error : toast.success
     show(text, {
+      duration: UNDO_TOAST_MS,
       action:
         ids.length > 0
           ? {
@@ -156,29 +158,19 @@ export function MarkOutOfScopeAction({ selected, onDone }: ActionProps) {
     const ids = selected.map((a) => a.id)
     const res = await decideAttribution(ids, 'rejected')
     const decided = (res.decided ?? []).map((d) => d.asset_id)
-    toast.success(
-      t('assets.triage.reject.done', '{count} marked not ours', { count: decided.length }),
-      {
-        action:
-          decided.length > 0
-            ? {
-                label: t('assets.triage.undo', 'Undo'),
-                onClick: () => {
-                  decideAttribution(decided, 'automatic')
-                    .then(() => {
-                      toast.success(t('assets.triage.reject.undone', 'Decision undone'))
-                      onDone?.()
-                    })
-                    .catch((err) =>
-                      toast.error(
-                        getErrorMessage(err, t('assets.triage.undoFailed', 'Undo failed'))
-                      )
-                    )
-                },
-              }
-            : undefined,
-      }
-    )
+    const rejectMessage = t('assets.triage.reject.done', '{count} marked not ours', {
+      count: decided.length,
+    })
+    if (decided.length === 0) toast.success(rejectMessage)
+    else
+      undoToast({
+        message: rejectMessage,
+        t,
+        undo: () => decideAttribution(decided, 'automatic'),
+        undoneMessage: t('assets.triage.reject.undone', 'Decision undone'),
+        failedMessage: t('assets.triage.undoFailed', 'Undo failed'),
+        onUndone: onDone,
+      })
   }
 
   const submit = async () => {
@@ -396,20 +388,13 @@ export function ArchiveAssetsAction({ selected, onDone }: ActionProps) {
     setBusy(true)
     try {
       const res = await setAssetsStatus(ids, 'archived')
-      toast.success(t('assets.triage.archive.done', '{count} archived', { count: res.updated }), {
-        action: {
-          label: t('assets.triage.undo', 'Undo'),
-          onClick: () => {
-            setAssetsStatus(ids, 'active')
-              .then(() => {
-                toast.success(t('assets.triage.archive.undone', 'Restored'))
-                onDone?.()
-              })
-              .catch((err) =>
-                toast.error(getErrorMessage(err, t('assets.triage.undoFailed', 'Undo failed')))
-              )
-          },
-        },
+      undoToast({
+        message: t('assets.triage.archive.done', '{count} archived', { count: res.updated }),
+        t,
+        undo: () => setAssetsStatus(ids, 'active'),
+        undoneMessage: t('assets.triage.archive.undone', 'Restored'),
+        failedMessage: t('assets.triage.undoFailed', 'Undo failed'),
+        onUndone: onDone,
       })
       onDone?.()
     } catch (err) {

@@ -119,6 +119,7 @@ export function OrganizationPurgeAction({
           title={t('admin.org.deletion.purgeTitle', 'Delete {name} now?', { name: org.name })}
           destructive
           requireCode
+          typeToConfirm={org.name}
           confirmLabel={label}
           description={
             <p>

@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
+import { KeyValueList, PageStack } from '@/features/shared'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -79,10 +80,10 @@ export default function ProfilePage() {
   // Loading state
   if (isLoading) {
     return (
-      <div className="grid gap-6">
+      <PageStack>
         <Skeleton className="h-64 w-full" />
         <Skeleton className="h-48 w-full" />
-      </div>
+      </PageStack>
     )
   }
 
@@ -101,7 +102,7 @@ export default function ProfilePage() {
   }
 
   return (
-    <div className="grid gap-6">
+    <PageStack>
       {/* Profile Card */}
       <Card>
         <CardHeader>
@@ -211,41 +212,40 @@ export default function ProfilePage() {
           </CardDescription>
         </CardHeader>
         <CardContent>
-          <dl className="grid gap-4 sm:grid-cols-2">
-            <div>
-              <dt className="text-sm font-medium text-muted-foreground">
-                {t('account.info.userId', 'User ID')}
-              </dt>
-              <dd className="text-sm font-mono mt-1">{profile?.id || '-'}</dd>
-            </div>
-            <div>
-              <dt className="text-sm font-medium text-muted-foreground">
-                {t('account.info.authProvider', 'Sign-in method')}
-              </dt>
-              <dd className="text-sm mt-1">{identityProviderLabel(profile?.auth_provider)}</dd>
-            </div>
-            <div>
-              <dt className="text-sm font-medium text-muted-foreground">
-                {t('account.info.created', 'Created')}
-              </dt>
-              <dd className="text-sm mt-1">
-                {profile?.created_at ? new Date(profile.created_at).toLocaleDateString() : '-'}
-              </dd>
-            </div>
-            <div>
-              <dt className="text-sm font-medium text-muted-foreground">
-                {t('account.info.updated', 'Last updated')}
-              </dt>
-              <dd className="text-sm mt-1">
-                {profile?.updated_at ? new Date(profile.updated_at).toLocaleDateString() : '-'}
-              </dd>
-            </div>
-          </dl>
+          <KeyValueList
+            items={[
+              {
+                key: 'id',
+                label: t('account.info.userId', 'User ID'),
+                value: profile?.id || '-',
+                token: true,
+              },
+              {
+                key: 'provider',
+                label: t('account.info.authProvider', 'Sign-in method'),
+                value: identityProviderLabel(profile?.auth_provider),
+              },
+              {
+                key: 'created',
+                label: t('account.info.created', 'Created'),
+                value: profile?.created_at
+                  ? new Date(profile.created_at).toLocaleDateString()
+                  : '-',
+              },
+              {
+                key: 'updated',
+                label: t('account.info.updated', 'Last updated'),
+                value: profile?.updated_at
+                  ? new Date(profile.updated_at).toLocaleDateString()
+                  : '-',
+              },
+            ]}
+          />
         </CardContent>
       </Card>
 
       {/* Every member can leave; the only owner sees why they cannot. */}
       <LeaveOrganization />
-    </div>
+    </PageStack>
   )
 }

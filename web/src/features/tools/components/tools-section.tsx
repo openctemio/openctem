@@ -52,6 +52,7 @@ import {
   MetricStrip,
   PageHeader,
   type MetricStripItem,
+  PageStack,
 } from '@/features/shared'
 import { useTranslation } from '@/context/i18n-provider'
 
@@ -244,7 +245,6 @@ export function ToolsSection() {
     statusMetric('offline_only', 'warning'),
     statusMetric('no_sensor'),
     statusMetric('outdated', 'warning'),
-    statusMetric('disabled'),
     {
       key: 'updates',
       label: 'Updates available',
@@ -365,7 +365,7 @@ export function ToolsSection() {
   }
 
   return (
-    <>
+    <PageStack>
       <PageHeader
         title="Tools"
         description="The tools your sensors report, and whether a scan with each can run now. Add custom tools for your own scanners."
@@ -382,9 +382,9 @@ export function ToolsSection() {
         </Can>
       </PageHeader>
 
-      <MetricStrip className="mt-5" loading={isLoading} items={metrics} />
+      <MetricStrip loading={isLoading} items={metrics} />
 
-      <div className="mt-5">{body}</div>
+      {body}
 
       <AddToolDialog
         open={addDialogOpen}
@@ -423,6 +423,6 @@ export function ToolsSection() {
         isLoading={isDeleting}
         handleConfirm={handleDeleteConfirm}
       />
-    </>
+    </PageStack>
   )
 }

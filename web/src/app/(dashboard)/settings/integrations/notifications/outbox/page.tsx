@@ -23,7 +23,8 @@ import {
 import { toast } from 'sonner'
 
 import { Main } from '@/components/layout'
-import { ErrorState, DataTable, PageHeader } from '@/features/shared'
+import { ErrorState, DataTable, PageHeader, PageStack } from '@/features/shared'
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
 import {
   DropdownMenu,
@@ -75,11 +76,7 @@ function QueueHealthStatus({
 }) {
   const { t } = useTranslation()
   if (isLoading) {
-    return (
-      <div className="rounded-lg border bg-muted/30 p-4">
-        <Skeleton className="h-6 w-48" />
-      </div>
-    )
+    return <Skeleton className="h-16 w-full rounded-lg" />
   }
 
   const hasIssues = stats.failed > 0 || stats.dead > 0
@@ -88,22 +85,16 @@ function QueueHealthStatus({
 
   if (isHealthy) {
     return (
-      <div className="rounded-lg border bg-card p-4">
-        <div className="flex items-center gap-3">
-          <CheckCircle2 className={cn('h-5 w-5', HEALTH_ICON_CLASS.ok)} />
-          <div>
-            <p className="font-medium">
-              {t('notificationChannels.outbox.healthy', 'Queue is healthy')}
-            </p>
-            <p className="text-sm text-muted-foreground">
-              {t(
-                'notificationChannels.outbox.healthyDesc',
-                'All notifications are being delivered normally'
-              )}
-            </p>
-          </div>
-        </div>
-      </div>
+      <Alert>
+        <CheckCircle2 className={cn('h-4 w-4', HEALTH_ICON_CLASS.ok)} />
+        <AlertTitle>{t('notificationChannels.outbox.healthy', 'Queue is healthy')}</AlertTitle>
+        <AlertDescription>
+          {t(
+            'notificationChannels.outbox.healthyDesc',
+            'All notifications are being delivered normally'
+          )}
+        </AlertDescription>
+      </Alert>
     )
   }
 
@@ -127,40 +118,26 @@ function QueueHealthStatus({
     parts.push(t('notificationChannels.outbox.count.dead', '{count} dead', { count: stats.dead }))
 
   return (
-    <div className={cn('rounded-lg border bg-card p-4')}>
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          {hasIssues ? (
-            <AlertCircle className={cn('h-5 w-5', HEALTH_ICON_CLASS.warn)} />
-          ) : (
-            <Clock className={cn('h-5 w-5', HEALTH_ICON_CLASS.run)} />
-          )}
-          <div>
-            <p className="flex flex-wrap gap-x-3 font-medium">
-              {parts.map((part) => (
-                <span key={part}>{part}</span>
-              ))}
-            </p>
-            <p className="text-sm text-muted-foreground">
-              {hasIssues
-                ? t(
-                    'notificationChannels.outbox.needAttention',
-                    'Some notifications need attention'
-                  )
-                : t(
-                    'notificationChannels.outbox.processingDesc',
-                    'Notifications are being processed'
-                  )}
-            </p>
-          </div>
-        </div>
+    <Alert variant={hasIssues ? 'destructive' : 'default'}>
+      {hasIssues ? (
+        <AlertCircle className="h-4 w-4" />
+      ) : (
+        <Clock className={cn('h-4 w-4', HEALTH_ICON_CLASS.run)} />
+      )}
+      <AlertTitle>{parts.join(', ')}</AlertTitle>
+      <AlertDescription>
+        {hasIssues
+          ? t('notificationChannels.outbox.needAttention', 'Some notifications need attention')
+          : t('notificationChannels.outbox.processingDesc', 'Notifications are being processed')}
         {hasIssues && (
-          <Button variant="outline" size="sm" onClick={onViewFailed}>
-            {t('notificationChannels.outbox.viewIssues', 'View Issues')}
-          </Button>
+          <div className="mt-2">
+            <Button variant="outline" size="sm" onClick={onViewFailed}>
+              {t('notificationChannels.outbox.viewIssues', 'View Issues')}
+            </Button>
+          </div>
         )}
-      </div>
-    </div>
+      </AlertDescription>
+    </Alert>
   )
 }
 
@@ -458,122 +435,130 @@ export default function NotificationOutboxPage() {
   return (
     <>
       <Main>
-        {/* Header */}
-        <Button variant="ghost" size="sm" asChild className="-ms-2 mb-2">
-          <Link href="/settings/integrations/notifications">
-            <ArrowLeft className="me-2 h-4 w-4" />
-            {t('notificationChannels.outbox.back', 'Back to channels')}
-          </Link>
-        </Button>
-        <PageHeader
-          title={t('notificationChannels.outbox.title', 'Notification queue')}
-          description={t(
-            'notificationChannels.outbox.description',
-            'Notifications waiting to be delivered, retried or given up on.'
-          )}
-          className="mb-6"
-        >
-          <Button variant="outline" size="sm" onClick={handleRefresh}>
-            <RefreshCw className="me-2 h-4 w-4" />
-            {t('notificationChannels.outbox.refresh', 'Refresh')}
+        <PageStack>
+          {/* Header */}
+          <Button variant="ghost" size="sm" asChild className="-ms-2">
+            <Link href="/settings/integrations/notifications">
+              <ArrowLeft className="me-2 h-4 w-4" />
+              {t('notificationChannels.outbox.back', 'Back to channels')}
+            </Link>
           </Button>
-        </PageHeader>
+          <PageHeader
+            title={t('notificationChannels.outbox.title', 'Notification queue')}
+            description={t(
+              'notificationChannels.outbox.description',
+              'Notifications waiting to be delivered, retried or given up on.'
+            )}
+          >
+            <Button variant="outline" size="sm" onClick={handleRefresh}>
+              <RefreshCw className="me-2 h-4 w-4" />
+              {t('notificationChannels.outbox.refresh', 'Refresh')}
+            </Button>
+          </PageHeader>
 
-        {/* Queue Health Status */}
-        <QueueHealthStatus stats={stats} isLoading={statsLoading} onViewFailed={handleViewFailed} />
+          {/* Queue Health Status */}
+          <QueueHealthStatus
+            stats={stats}
+            isLoading={statsLoading}
+            onViewFailed={handleViewFailed}
+          />
 
-        {/* Only show entries section if there are actionable entries or user applied filter */}
-        {(hasActionableEntries || statusFilter !== 'all') && (
-          <>
-            <div className="mt-6">
-              <DataTable
-                columns={columns}
-                data={entries}
-                getRowId={(e) => e.id}
-                isLoading={entriesLoading}
-                showSearch={false}
-                toolbarStart={
-                  <Select
-                    value={statusFilter}
-                    onValueChange={(value) => {
-                      setStatusFilter(value as OutboxStatus | 'all')
-                      setPage(1)
-                    }}
-                  >
-                    <SelectTrigger
-                      className="h-9 w-[160px]"
-                      aria-label={t(
-                        'notificationChannels.outbox.filterByStatus',
-                        'Filter by status'
-                      )}
-                    >
-                      <SelectValue
-                        placeholder={t('notificationChannels.outbox.allStatuses', 'All statuses')}
-                      />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="all">
-                        {t('notificationChannels.outbox.allStatuses', 'All statuses')}
-                      </SelectItem>
-                      <SelectItem value="pending">{statusLabel('pending')}</SelectItem>
-                      <SelectItem value="processing">{statusLabel('processing')}</SelectItem>
-                      <SelectItem value="failed">{statusLabel('failed')}</SelectItem>
-                      <SelectItem value="dead">{statusLabel('dead')}</SelectItem>
-                    </SelectContent>
-                  </Select>
-                }
-                manualPagination
-                rowCount={entriesData?.total ?? 0}
-                pagination={pagination}
-                onPaginationChange={setPagination}
-                pageSize={pagination.pageSize}
-                emptyMessage={t('notificationChannels.outbox.emptyMessage', 'No entries found')}
-                emptyDescription={
-                  statusFilter !== 'all'
-                    ? t(
-                        'notificationChannels.outbox.emptyFiltered',
-                        'No {status} entries in the queue',
-                        {
-                          status: statusLabel(statusFilter).toLocaleLowerCase(locale),
-                        }
-                      )
-                    : t('notificationChannels.outbox.emptyQueue', 'The notification queue is empty')
-                }
-              />
-            </div>
-          </>
-        )}
-
-        {/* Delete Confirmation Dialog */}
-        <ConfirmDialog
-          open={deleteDialogOpen}
-          onOpenChange={setDeleteDialogOpen}
-          title={t('confirm.outbox.deleteTitle', 'Delete this notification entry?')}
-          desc={
+          {/* Only show entries section if there are actionable entries or user applied filter */}
+          {(hasActionableEntries || statusFilter !== 'all') && (
             <>
-              {t(
-                'confirm.outbox.deleteDesc',
-                'The entry leaves the outbox and is not sent or retried. This cannot be undone.'
-              )}
-              {selectedEntry && (
-                <span className="mt-2 block font-medium">{selectedEntry.title}</span>
-              )}
+              <div>
+                <DataTable
+                  columns={columns}
+                  data={entries}
+                  getRowId={(e) => e.id}
+                  isLoading={entriesLoading}
+                  showSearch={false}
+                  toolbarStart={
+                    <Select
+                      value={statusFilter}
+                      onValueChange={(value) => {
+                        setStatusFilter(value as OutboxStatus | 'all')
+                        setPage(1)
+                      }}
+                    >
+                      <SelectTrigger
+                        className="h-9 w-[160px]"
+                        aria-label={t(
+                          'notificationChannels.outbox.filterByStatus',
+                          'Filter by status'
+                        )}
+                      >
+                        <SelectValue
+                          placeholder={t('notificationChannels.outbox.allStatuses', 'All statuses')}
+                        />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="all">
+                          {t('notificationChannels.outbox.allStatuses', 'All statuses')}
+                        </SelectItem>
+                        <SelectItem value="pending">{statusLabel('pending')}</SelectItem>
+                        <SelectItem value="processing">{statusLabel('processing')}</SelectItem>
+                        <SelectItem value="failed">{statusLabel('failed')}</SelectItem>
+                        <SelectItem value="dead">{statusLabel('dead')}</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  }
+                  manualPagination
+                  rowCount={entriesData?.total ?? 0}
+                  pagination={pagination}
+                  onPaginationChange={setPagination}
+                  pageSize={pagination.pageSize}
+                  emptyMessage={t('notificationChannels.outbox.emptyMessage', 'No entries found')}
+                  emptyDescription={
+                    statusFilter !== 'all'
+                      ? t(
+                          'notificationChannels.outbox.emptyFiltered',
+                          'No {status} entries in the queue',
+                          {
+                            status: statusLabel(statusFilter).toLocaleLowerCase(locale),
+                          }
+                        )
+                      : t(
+                          'notificationChannels.outbox.emptyQueue',
+                          'The notification queue is empty'
+                        )
+                  }
+                />
+              </div>
             </>
-          }
-          confirmText={
-            isDeleting ? (
+          )}
+
+          {/* Delete Confirmation Dialog */}
+          <ConfirmDialog
+            open={deleteDialogOpen}
+            onOpenChange={setDeleteDialogOpen}
+            title={t('confirm.outbox.deleteTitle', 'Delete this notification entry?')}
+            desc={
               <>
-                <Loader2 className="me-2 h-4 w-4 animate-spin" />
-                {t('confirm.deleting', 'Deleting…')}
+                {t(
+                  'confirm.outbox.deleteDesc',
+                  'The entry leaves the outbox and is not sent or retried. This cannot be undone.'
+                )}
+                {selectedEntry && (
+                  <span className="mt-2 block font-medium">{selectedEntry.title}</span>
+                )}
               </>
-            ) : (
-              t('confirm.delete', 'Delete')
-            )
-          }
-          destructive
-          isLoading={isDeleting}
-          handleConfirm={() => void handleDeleteConfirm()}
-        />
+            }
+            confirmText={
+              isDeleting ? (
+                <>
+                  <Loader2 className="me-2 h-4 w-4 animate-spin" />
+                  {t('confirm.deleting', 'Deleting…')}
+                </>
+              ) : (
+                t('confirm.delete', 'Delete')
+              )
+            }
+            destructive
+            isLoading={isDeleting}
+            handleConfirm={() => void handleDeleteConfirm()}
+          />
+        </PageStack>
       </Main>
     </>
   )
