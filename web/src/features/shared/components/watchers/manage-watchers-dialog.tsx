@@ -10,7 +10,7 @@
  * (use-watcher-actions.ts); the toast stays clickable over this dialog.
  */
 
-import { useEffect, useMemo, useRef, useState, type RefObject } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type RefObject } from 'react'
 import { Bell, Plus } from 'lucide-react'
 import { useTranslation } from '@/context/i18n-provider'
 import { Button } from '@/components/ui/button'
@@ -82,6 +82,13 @@ export function ManageWatchersDialog({
   const listRef = useRef<HTMLUListElement>(null)
   const [query, setQuery] = useState('')
   const showAdd = canAdd && !!picker
+  // Hold the picker's open-change callback in a ref-stable form so the effect
+  // below re-runs only when the sheet opens or closes, not on every parent render.
+  const pickerRef = useRef(picker)
+  useEffect(() => {
+    pickerRef.current = picker
+  })
+  const onPickerOpenChange = useCallback((o: boolean) => pickerRef.current?.onOpenChange(o), [])
 
   const watching = participants.me.state === 'subscribed'
   // You first, then everyone else in the order they started watching.
@@ -95,10 +102,9 @@ export function ManageWatchersDialog({
 
   // Load candidates while the sheet is open; reset the search when it closes.
   useEffect(() => {
-    if (showAdd) picker?.onOpenChange(open)
+    if (showAdd) onPickerOpenChange?.(open)
     if (!open) setQuery('')
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- only on open/close
-  }, [open, showAdd])
+  }, [open, showAdd, onPickerOpenChange])
 
   const remove = async (w: Watcher) => {
     if (await onRemove(w)) listRef.current?.focus()
