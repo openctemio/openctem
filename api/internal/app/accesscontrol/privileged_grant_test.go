@@ -159,3 +159,21 @@ func TestAuthorizePrivilegedGrantApprove(t *testing.T) {
 		t.Errorf("approve role: want step-up, got %v", err)
 	}
 }
+
+// Roles that decide where integrations send data and stored tokens are
+// privileged: handing one to a user needs a recent sign-in.
+func TestAuthorizePrivilegedGrant_IntegrationWritePermissions(t *testing.T) {
+	tid, uid := roledom.NewID(), roledom.NewID()
+	actor := grantActor{id: "actor"}
+	svc := &RoleService{roleRepo: fakeHolderRepo{}, stepUp: stepUpGate{requester: "actor"}}
+	for _, p := range []string{"integrations:manage", "integrations:scm:write"} {
+		role := customRole(tid, []string{"integrations:read", p}, false)
+		if err := svc.authorizePrivilegedGrant(context.Background(), actor, tid, uid, []*roledom.Role{role}); !errors.Is(err, errStepUp) {
+			t.Errorf("%s: want step-up, got %v", p, err)
+		}
+	}
+	readOnly := customRole(tid, []string{"integrations:read"}, false)
+	if err := svc.authorizePrivilegedGrant(context.Background(), actor, tid, uid, []*roledom.Role{readOnly}); err != nil {
+		t.Errorf("read-only integrations role: want nil, got %v", err)
+	}
+}

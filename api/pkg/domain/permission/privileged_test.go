@@ -95,3 +95,29 @@ func TestGainsStepUpGrade(t *testing.T) {
 		}
 	}
 }
+
+// integrations:manage and integrations:scm:write decide where outbound data
+// and stored tokens go, so they are privileged: granting them needs a recent
+// sign-in, binding them to a team is the owner's, and an outside member holding
+// them is above member.
+func TestIntegrationWritePermissionsArePrivileged(t *testing.T) {
+	for _, p := range []permission.Permission{permission.IntegrationsManage, permission.SCMConnectionsWrite} {
+		perms := []string{string(p)}
+		if !permission.IsPrivilegedRole(perms, false) {
+			t.Errorf("a role with %s is not privileged", p)
+		}
+		// The built-in member role already holds scm:write (own connections),
+		// so only integrations:manage lifts an outside member above member.
+		if p == permission.IntegrationsManage && !permission.IsAboveMember(perms, false) {
+			t.Errorf("a role with %s is not above member", p)
+		}
+		if !permission.GainsStepUpGrade([]string{"assets:read"}, false, []string{"assets:read", string(p)}, false) {
+			t.Errorf("gaining %s does not need a step-up", p)
+		}
+	}
+	for _, p := range []permission.Permission{permission.IntegrationsRead, permission.SCMConnectionsRead} {
+		if permission.IsPrivilegedRole([]string{string(p)}, false) {
+			t.Errorf("a role with only %s is privileged", p)
+		}
+	}
+}
