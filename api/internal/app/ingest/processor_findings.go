@@ -97,6 +97,7 @@ type FindingProcessor struct {
 	// batch's assets (correlation_findings.go).
 	correlations CorrelationStore
 	issueLinks   IssueLinkStore
+	vulnAliases  VulnAliasResolver
 
 	// suppressionModules, when wired, turns ingest suppression off for a
 	// tenant whose suppressions module is disabled.
@@ -290,6 +291,9 @@ func (p *FindingProcessor) processBatch(
 		// legacy is the key the old ingest built from the report's own
 		// fingerprint (legacyClientFingerprint), "" when none.
 		legacy string
+		// aliasFormer is the version-2 key the finding had before its
+		// advisory ids were replaced by the CVE the feed aliases them to.
+		aliasFormer string
 	}
 
 	// Helper to create FailedFinding from findingMeta
@@ -336,9 +340,9 @@ func (p *FindingProcessor) processBatch(
 	}
 
 	for i, reported := range report.Findings {
-		// A network finding that names several CVEs is one finding per CVE
-		// (RFC-043 decision D3).
-		for _, ctisFinding := range splitMultiCVENetworkFinding(reported) {
+		// A network or SCA finding that names several CVEs is one finding
+		// per CVE (RFC-043 decisions D3, D20).
+		for _, ctisFinding := range splitMultiCVEFinding(reported) {
 			if output.ExcludedAssetRefs[ctisFinding.AssetRef] {
 				// Its asset matches a scope exclusion and was not added.
 				output.FindingsSkipped++
@@ -412,6 +416,11 @@ func (p *FindingProcessor) processBatch(
 		return nil
 	}
 
+	// Step 1a0: a finding that names only advisory ids is keyed on the CVE
+	// the signed feed ties them to (RFC-043 §17.2).
+	canonicalVulnIDsOf(ctx, p, candidates, func(fm *findingMeta) (shared.ID, *ctis.Finding) { return fm.assetID, &fm.finding },
+		func(fm *findingMeta, former string) { fm.aliasFormer = former })
+
 	// Step 1a: the version-2 identity, computed on the server (RFC-043 §4.2).
 	applyIdentityV2Of(p, tenantID, candidates, func(fm *findingMeta) (shared.ID, *ctis.Finding) { return fm.assetID, &fm.finding },
 		func(fm *findingMeta, k vulnerability.IdentityKey, formers []string) {
@@ -419,6 +428,9 @@ func (p *FindingProcessor) processBatch(
 			fm.fingerprint = k.Fingerprint()
 			fm.base = ""
 			fm.formers = formers
+			if fm.aliasFormer != "" && fm.aliasFormer != fm.fingerprint {
+				fm.formers = append(fm.formers, fm.aliasFormer)
+			}
 		})
 
 	// Step 1b: a network finding without a CVE used to be keyed without its
@@ -446,7 +458,7 @@ func (p *FindingProcessor) processBatch(
 	// A SAST finding stored under its line-anchored key takes its
 	// code-anchored key once a report carries the code (a producer that
 	// started sending the snippet or its hash), keeping its triage.
-	for i := range 2 {
+	for i := range 3 {
 		adoptFormerKeysOf(ctx, p, tenantID, candidates, func(fm findingMeta) adoptKeys {
 			ak := adoptKeys{identity: fm.identity, guard: adoptGuardOf(fm.assetID, &fm.finding, report)}
 			if i < len(fm.formers) {
@@ -904,6 +916,16 @@ func (p *FindingProcessor) processBatch(
 		}
 		p.linkIssues(ctx, tenantID, items)
 	}
+
+	// Step 12: a finding still stored under its advisory key while another
+	// holds the CVE key the feed gives it: the two are linked, not merged.
+	var collisions []AliasCollision
+	for i := range validFindings {
+		if f := validFindings[i].aliasFormer; f != "" && f != validFindings[i].fingerprint {
+			collisions = append(collisions, AliasCollision{Former: f, Canonical: validFindings[i].fingerprint})
+		}
+	}
+	p.linkAliasCollisions(ctx, tenantID, collisions)
 
 	return nil
 }
