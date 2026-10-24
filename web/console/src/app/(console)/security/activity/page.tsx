@@ -15,7 +15,7 @@ import {
 import { ErrorState, PageHeader } from '@/features/shared'
 import { useTranslation } from '@/context/i18n-provider'
 import { useCsvExport, type ExportFieldConfig } from '@/hooks/use-csv-export'
-import { useDebounce } from '@/hooks/use-debounce'
+import { useSearchQuery } from '@/hooks/use-search-query'
 import { useListParams } from '@/hooks/use-list-params'
 import {
   useAdminAuditLogs,
@@ -73,8 +73,8 @@ export default function AdminActivityPage() {
     list.filters.outcome === 'success' || list.filters.outcome === 'failure'
       ? list.filters.outcome
       : ''
-  const dAction = useDebounce(action, 300)
-  const dEmail = useDebounce(adminEmail, 300)
+  const dAction = useSearchQuery(action).term
+  const dEmail = useSearchQuery(adminEmail).term
   const { data, error, isLoading, mutate } = useAdminAuditLogs({
     page,
     action: dAction,

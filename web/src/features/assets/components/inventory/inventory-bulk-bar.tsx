@@ -35,6 +35,7 @@ import {
 import { usePermissions, Permission } from '@/lib/permissions'
 import { bulkDeleteAssetsSafely, reportBulkDelete } from '../../lib/safe-delete'
 import { bulkActionsFor } from '../../lib/type-actions'
+import { ScanConfirmDialog } from '../scan-confirm-dialog'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -69,7 +70,7 @@ import { BulkActionBar } from '@/features/shared'
 import { cn } from '@/lib/utils'
 import { get } from '@/lib/api/client'
 import { getErrorMessage } from '@/lib/api/error-handler'
-import { useDebounce } from '@/hooks/use-debounce'
+import { useSearchQuery } from '@/hooks/use-search-query'
 import { useTenant } from '@/context/tenant-provider'
 import { useGroups } from '@/features/access-control/api/use-groups'
 import { updateAsset } from '../../hooks/use-assets'
@@ -168,7 +169,7 @@ export function InventoryBulkBar({ selected, canWrite, onClear, onDone }: BulkBa
   const [ownershipType, setOwnershipType] = useState<OwnershipType>('primary')
   const [pickerOpen, setPickerOpen] = useState(false)
   const [pickerSearch, setPickerSearch] = useState('')
-  const debouncedSearch = useDebounce(pickerSearch, 250)
+  const debouncedSearch = useSearchQuery(pickerSearch).term
 
   const { currentTenant } = useTenant()
   const tenantSlug = currentTenant?.slug ?? null
@@ -179,6 +180,8 @@ export function InventoryBulkBar({ selected, canWrite, onClear, onDone }: BulkBa
   const typeActions = bulkActionsFor(selected, t).filter((a) => a.permissions.every((p) => can(p)))
   const [confirmDelete, setConfirmDelete] = useState(false)
   const [busy, setBusy] = useState(false)
+  // Scanning sends work to the scanners at once, so it asks first.
+  const [pendingScan, setPendingScan] = useState<(typeof typeActions)[number] | null>(null)
 
   const runTypeAction = async (action: (typeof typeActions)[number]) => {
     setBusy(true)
@@ -442,23 +445,25 @@ export function InventoryBulkBar({ selected, canWrite, onClear, onDone }: BulkBa
                 variant="ghost"
                 size="sm"
                 disabled={busy}
-                onClick={() => void runTypeAction(a)}
+                onClick={() => (a.id === 'scan' ? setPendingScan(a) : void runTypeAction(a))}
               >
                 <a.icon className="me-2 h-4 w-4" />
                 {a.label}
               </Button>
             ))}
             {canDelete && (
-              <Button
-                variant="ghost"
-                size="sm"
-                className="text-destructive"
-                disabled={busy}
-                onClick={() => setConfirmDelete(true)}
-              >
-                <Trash2 className="me-2 h-4 w-4" />
-                {t('assets.inv.delete', 'Delete')}
-              </Button>
+              <>
+                <span aria-hidden className="mx-1.5 h-5 w-px shrink-0 bg-border" />
+                <Button
+                  variant="destructive"
+                  size="sm"
+                  disabled={busy}
+                  onClick={() => setConfirmDelete(true)}
+                >
+                  <Trash2 className="me-2 h-4 w-4" />
+                  {t('assets.inv.deleteCount', 'Delete {count}', { count })}
+                </Button>
+              </>
             )}
           </>
         ) : (
@@ -467,6 +472,17 @@ export function InventoryBulkBar({ selected, canWrite, onClear, onDone }: BulkBa
           </span>
         )}
       </BulkActionBar>
+
+      <ScanConfirmDialog
+        open={!!pendingScan}
+        onOpenChange={(open) => !open && setPendingScan(null)}
+        names={pendingScan ? selected.filter(pendingScan.applies).map((a) => a.name) : []}
+        onConfirm={async () => {
+          const action = pendingScan
+          setPendingScan(null)
+          if (action) await runTypeAction(action)
+        }}
+      />
 
       <ConfirmDialog
         open={confirmDelete}
@@ -527,6 +543,7 @@ export function InventoryBulkBar({ selected, canWrite, onClear, onDone }: BulkBa
             </DialogDescription>
           </DialogHeader>
           <DialogBody>
+            <ConfirmSample names={selectedNames} total={count} />
             <div className="space-y-2">
               <Label>{t('assets.badge.criticality', 'Criticality')}</Label>
               <Select value={criticality} onValueChange={(v) => setCriticality(v as Criticality)}>
@@ -550,7 +567,7 @@ export function InventoryBulkBar({ selected, canWrite, onClear, onDone }: BulkBa
             <Button onClick={handleSetCriticality} disabled={submitting}>
               {submitting
                 ? t('assets.bulk.applying', 'Applying…')
-                : t('assets.bulk.apply', 'Apply')}
+                : t('assets.bulk.applyCount', 'Apply to {count} selected', { count })}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -595,7 +612,9 @@ export function InventoryBulkBar({ selected, canWrite, onClear, onDone }: BulkBa
               {t('common.cancel', 'Cancel')}
             </Button>
             <Button onClick={handleAddTag} disabled={submitting || !tag.trim()}>
-              {submitting ? t('assets.bulk.adding', 'Adding…') : t('assets.bulk.addTag', 'Add tag')}
+              {submitting
+                ? t('assets.bulk.adding', 'Adding…')
+                : t('assets.bulk.addTagCount', 'Add tag to {count} selected', { count })}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -657,7 +676,10 @@ export function InventoryBulkBar({ selected, canWrite, onClear, onDone }: BulkBa
             >
               {submitting
                 ? t('assets.bulkTags.removing', 'Removing…')
-                : t('assets.bulkTags.removeConfirm', 'Remove {n} tags', { n: tagsToRemove.length })}
+                : t('assets.bulkTags.removeConfirm', 'Remove {n} tags from {count} selected', {
+                    n: tagsToRemove.length,
+                    count,
+                  })}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -858,7 +880,7 @@ export function InventoryBulkBar({ selected, canWrite, onClear, onDone }: BulkBa
             <Button onClick={handleAssignOwner} disabled={submitting || !selectedOption}>
               {submitting
                 ? t('assets.bulk.assigning', 'Assigning…')
-                : t('assets.bulk.assignOwner', 'Assign owner')}
+                : t('assets.bulk.assignOwnerCount', 'Assign owner to {count} selected', { count })}
             </Button>
           </DialogFooter>
         </DialogContent>
