@@ -618,7 +618,7 @@ func AuditImport(ctx context.Context, audit Auditor, actx auditapp.AuditContext,
 		WithMetadata("vex_stored", vexStored).
 		WithMetadata("vex_requested", vexRequested).
 		WithMetadata("vex_would_close", vexWould)
-	_ = audit.LogEvent(ctx, actx, event)
+	auditapp.RecordOrWarn(ctx, nil, audit, actx, event)
 
 	if len(vexIDs) > 0 && !req.DryRun {
 		action := auditdom.ActionIngestVEXDryRun
@@ -635,6 +635,6 @@ func AuditImport(ctx context.Context, audit Auditor, actx auditapp.AuditContext,
 			WithMetadata("would_close", vexWould).
 			WithMetadata("finding_ids", vexIDs).
 			WithMetadata("finding_ids_truncated", vexRequested+vexWould > len(vexIDs))
-		_ = audit.LogEvent(ctx, actx, ve)
+		auditapp.RecordOrWarn(ctx, nil, audit, actx, ve)
 	}
 }

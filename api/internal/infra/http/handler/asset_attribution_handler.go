@@ -43,14 +43,15 @@ type ScopedAssetGetter interface {
 // AssetAttributionHandler serves why an asset is believed to be the tenant's
 // (RFC-036 §6.4).
 type AssetAttributionHandler struct {
-	attribution AttributionReader
-	assets      ScopedAssetGetter
-	audit       AttributionAuditor
-	activeGate  ActiveScanGate
-	scope       AssetScopeReader
-	effects     *easmapp.DecisionEffects
-	confirm     *easmapp.ConfirmScope
-	logger      *logger.Logger
+	attribution  AttributionReader
+	assets       ScopedAssetGetter
+	audit        AttributionAuditor
+	activeGate   ActiveScanGate
+	scope        AssetScopeReader
+	certificates CertificateStandingReader
+	effects      *easmapp.DecisionEffects
+	confirm      *easmapp.ConfirmScope
+	logger       *logger.Logger
 }
 
 // SetConfirmScope makes a person's confirmation add the asset's exact scope
@@ -77,6 +78,18 @@ type AssetScopeReader interface {
 
 // SetScopeReader fills scope_status and covered_by (RFC-054 §6.6).
 func (h *AssetAttributionHandler) SetScopeReader(s AssetScopeReader) { h.scope = s }
+
+// CertificateStandingReader answers the standing of certificate assets
+// (*easm.ActiveGate).
+type CertificateStandingReader interface {
+	CertificateStandings(ctx context.Context, tenantID shared.ID, ids []shared.ID) (map[string]easmapp.CertStanding, error)
+}
+
+// SetCertificateReader fills certificate on a certificate asset's
+// attribution (RFC-054 §19).
+func (h *AssetAttributionHandler) SetCertificateReader(c CertificateStandingReader) {
+	h.certificates = c
+}
 
 // SetAuditService records decisions in the audit log.
 func (h *AssetAttributionHandler) SetAuditService(a AttributionAuditor) { h.audit = a }
@@ -116,9 +129,14 @@ type AssetAttributionResponse struct {
 	// not_applicable. CoveredBy is the organization's scope target, seed or
 	// verified domain that covers it (RFC-054 §6.6). Removing the scope entry
 	// keeps the asset and its findings; active checks stop (out_of_scope).
-	ScopeStatus string                     `json:"scope_status,omitempty"`
-	CoveredBy   *scopeauth.Via             `json:"covered_by,omitempty"`
-	DecidedAt   *time.Time                 `json:"decided_at,omitempty"`
+	ScopeStatus string         `json:"scope_status,omitempty"`
+	CoveredBy   *scopeauth.Via `json:"covered_by,omitempty"`
+	DecidedAt   *time.Time     `json:"decided_at,omitempty"`
+	// Certificate: on a certificate asset, why it is or is not in scope
+	// (the endpoints that served it) and whether it is the organization's
+	// (a name in it under a domain root). Endpoints outside the caller's
+	// data scope are not named.
+	Certificate *easmapp.CertStanding      `json:"certificate,omitempty"`
 	Evidence    []AssetAttributionEvidence `json:"evidence"`
 	// Scope: on a confirmation, the exact scope entry it added (or why
 	// not); absent otherwise (research/117).
@@ -202,14 +220,79 @@ func (h *AssetAttributionHandler) applyActiveGate(ctx context.Context, tenantID 
 		resp.ActiveChecksBlockedBy = string(state)
 		resp.BlockedCode = scansvc.RefusalCodeForState(state)
 	}
+	h.applyCertificate(ctx, tenantID, assetID, resp)
 	if h.scope != nil {
 		status, via, err := h.scope.ScopeOfAsset(ctx, tenantID, assetID)
 		if err != nil {
 			h.logger.Warn("asset scope lookup failed", "error", logger.SanitizeError(err))
 			return
 		}
-		resp.ScopeStatus, resp.CoveredBy = status, via
+		resp.ScopeStatus, resp.CoveredBy = status, h.visibleVia(via, resp)
 	}
+}
+
+// visibleVia keeps an endpoint that served a certificate out of covered_by
+// unless the caller may see it: the endpoint named there is the one
+// applyCertificate already filtered. Without a filtered standing to copy
+// from, the endpoint stays unnamed.
+func (h *AssetAttributionHandler) visibleVia(via *scopeauth.Via, resp *AssetAttributionResponse) *scopeauth.Via {
+	if via == nil || via.Endpoint == "" {
+		return via
+	}
+	v := *via
+	v.Endpoint, v.Name = "", ""
+	if resp.Certificate != nil && resp.Certificate.ServedBy != nil && resp.Certificate.ServedBy.Endpoint == via.Endpoint {
+		v.Endpoint, v.Name = via.Endpoint, via.Name
+	}
+	return &v
+}
+
+// applyCertificate fills the certificate standing of a certificate asset.
+// The endpoints it names are the caller's to see: one outside the caller's
+// data scope is left unnamed (the counts stay).
+func (h *AssetAttributionHandler) applyCertificate(ctx context.Context, tenantID shared.ID, assetID string, resp *AssetAttributionResponse) {
+	if h.certificates == nil {
+		return
+	}
+	id, err := shared.IDFromString(assetID)
+	if err != nil {
+		return
+	}
+	got, err := h.certificates.CertificateStandings(ctx, tenantID, []shared.ID{id})
+	if err != nil {
+		h.logger.Warn("certificate standing lookup failed", "error", logger.SanitizeError(err))
+		return
+	}
+	st, ok := got[assetID]
+	if !ok {
+		return
+	}
+	userID, admin := middleware.GetUserID(ctx), middleware.IsAdmin(ctx)
+	seen := map[string]bool{}
+	visible := func(endpointID string) bool {
+		if v, ok := seen[endpointID]; ok {
+			return v
+		}
+		_, err := h.assets.GetAssetWithScope(ctx, tenantID.String(), endpointID, userID, admin)
+		seen[endpointID] = err == nil
+		return err == nil
+	}
+	eps := make([]easmapp.CertEndpoint, 0, len(st.Endpoints))
+	for _, e := range st.Endpoints {
+		if visible(e.AssetID) {
+			eps = append(eps, e)
+		}
+	}
+	st.Endpoints = eps
+	if st.ServedBy != nil && !visible(st.ServedBy.Endpoint) {
+		v := *st.ServedBy
+		v.Endpoint, v.Name = "", ""
+		st.ServedBy = &v
+	}
+	if st.HeldBy != nil && !visible(st.HeldBy.AssetID) {
+		st.HeldBy = &easmapp.CertEndpoint{State: st.HeldBy.State, Guardrail: st.HeldBy.Guardrail}
+	}
+	resp.Certificate = &st
 }
 
 // AssetAttributionDecisionRequest is a person's decision.
@@ -314,7 +397,7 @@ func (h *AssetAttributionHandler) Decide(w http.ResponseWriter, r *http.Request)
 			TenantID: tenant, ActorID: userID, ActorEmail: auditActorEmail(ctx),
 			ActorIP: getClientIP(r), UserAgent: r.UserAgent(), RequestID: middleware.GetRequestID(r.Context()),
 		}
-		_ = h.audit.LogEvent(ctx, actx, event)
+		auditapp.RecordOrWarn(ctx, h.logger, h.audit, actx, event)
 		auditConfirmEntries(ctx, h.audit, actx, added, "ownership_tab")
 	}
 	view, found, err := h.attribution.Get(ctx, tenantID, assetID)

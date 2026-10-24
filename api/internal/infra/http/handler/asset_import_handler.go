@@ -47,7 +47,7 @@ func (h *AssetImportHandler) auditImport(r *http.Request, source string, result 
 		UserAgent:  r.UserAgent(),
 		RequestID:  middleware.GetRequestID(r.Context()),
 	}
-	_ = h.auditService.LogEvent(r.Context(), actx, event)
+	auditapp.RecordOrWarn(r.Context(), h.logger, h.auditService, actx, event)
 }
 
 // NewAssetImportHandler creates a new AssetImportHandler.

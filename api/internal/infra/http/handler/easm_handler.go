@@ -227,7 +227,7 @@ func (h *EASMHandler) Decide(w http.ResponseWriter, r *http.Request) {
 			if req.Note != "" {
 				event = event.WithMetadata("note", logger.SanitizeValue(req.Note))
 			}
-			_ = h.audit.LogEvent(ctx, actx, event)
+			auditapp.RecordOrWarn(ctx, h.logger, h.audit, actx, event)
 		}
 	}
 	w.Header().Set("Content-Type", "application/json")

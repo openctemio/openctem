@@ -37,15 +37,18 @@ function toggle(list: string[] | undefined, value: string, on: boolean): string[
 export function InventoryTechnologiesFacet({
   filters,
   onChange,
+  defaultOpen = false,
 }: {
   filters: InventoryFilters
   onChange: (next: InventoryFilters) => void
+  /** Unfold it, and load its options (the Add filter editor). */
+  defaultOpen?: boolean
 }) {
   const { t } = useTranslation()
   const categoryLabel = useCategoryLabel()
   const [query, setQuery] = useState('')
   const [expanded, setExpanded] = useState(false)
-  const [open, setOpen] = useState(false)
+  const [open, setOpen] = useState(defaultOpen)
   const q = useDebounce(query.trim(), 250)
   const selectedTech = filters.technologies ?? []
   const selectedCats = filters.technologyCategories ?? []
@@ -62,7 +65,7 @@ export function InventoryTechnologiesFacet({
     <FacetSection
       title={t('assets.technologies.title', 'Technologies')}
       selectedCount={selectedTech.length + selectedCats.length}
-      defaultOpen={selectedTech.length + selectedCats.length > 0}
+      defaultOpen={defaultOpen || selectedTech.length + selectedCats.length > 0}
       onOpenChange={setOpen}
     >
       <FacetGroupLabel>{t('assets.technologies.filter.category', 'Category')}</FacetGroupLabel>
