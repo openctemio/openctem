@@ -1,10 +1,14 @@
 package routes
 
 import (
+	"net/http"
+	"time"
+
 	"github.com/openctemio/openctem/api/internal/infra/http/handler"
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
 	moduledom "github.com/openctemio/openctem/api/pkg/domain/module"
 	"github.com/openctemio/openctem/api/pkg/domain/permission"
+	"github.com/openctemio/openctem/api/pkg/logger"
 )
 
 // IngestMaxConcurrentPerTenant caps in-flight report-ingest requests per
@@ -671,34 +675,59 @@ func registerPlatformContentPackRoutes(
 	}, tenantMiddlewares...)
 }
 
-// registerTemplateSourceRoutes registers template source management endpoints.
-// Template sources are external sources (Git, S3, HTTP) for scanner templates.
-func registerTemplateSourceRoutes(
+// registerContentSourceRoutes registers rule sources
+// (docs/architecture/content-sources.md), gated by the template_sources
+// module. Changes to what the platform fetches, the credential, the webhook
+// and promotion need a recent sign-in: a source is code that sensors and CI
+// run. Promote, reject and roll back need scans:sources:approve.
+func registerContentSourceRoutes(
 	router Router,
-	h *handler.TemplateSourceHandler,
+	h *handler.ContentSourceHandler,
 	authMiddleware Middleware,
 	userSyncMiddleware Middleware,
 	moduleGate Middleware,
 ) {
-	// Build tenant middleware chain from JWT token, gated by the template_sources module.
 	tenantMiddlewares := append(buildTokenTenantMiddlewares(authMiddleware, userSyncMiddleware), moduleGate)
 
-	// Template Source routes - tenant from JWT token
-	router.Group("/api/v1/template-sources", func(r Router) {
-		// Read operations
-		r.GET("/", h.List, middleware.Require(permission.TemplateSourcesRead))
-		r.GET("/{id}", h.Get, middleware.Require(permission.TemplateSourcesRead))
-
-		// Write operations
-		r.POST("/", h.Create, middleware.Require(permission.TemplateSourcesWrite))
-		r.PUT("/{id}", h.Update, middleware.Require(permission.TemplateSourcesWrite))
-		r.POST("/{id}/enable", h.Enable, middleware.Require(permission.TemplateSourcesWrite))
-		r.POST("/{id}/disable", h.Disable, middleware.Require(permission.TemplateSourcesWrite))
-		r.POST("/{id}/sync", h.Sync, middleware.Require(permission.TemplateSourcesWrite))
-
-		// Delete operations
-		r.DELETE("/{id}", h.Delete, middleware.Require(permission.TemplateSourcesDelete))
+	router.Group("/api/v1/content-sources", func(r Router) {
+		r.GET("/", h.List, middleware.Require(permission.ContentSourcesRead))
+		r.POST("/", h.Create, middleware.Require(permission.ContentSourcesWrite), requireStepUp())
+		r.POST("/test", h.Test, middleware.Require(permission.ContentSourcesWrite), requireStepUp())
+		r.GET("/{id}", h.Get, middleware.Require(permission.ContentSourcesRead))
+		r.PUT("/{id}", h.Update, middleware.Require(permission.ContentSourcesWrite), requireStepUp())
+		r.DELETE("/{id}", h.Delete, middleware.Require(permission.ContentSourcesDelete), requireStepUp())
+		r.PUT("/{id}/credential", h.SetCredential, middleware.Require(permission.ContentSourcesWrite), requireStepUp())
+		r.DELETE("/{id}/credential", h.ClearCredential, middleware.Require(permission.ContentSourcesWrite))
+		r.POST("/{id}/webhook", h.RotateWebhook, middleware.Require(permission.ContentSourcesWrite), requireStepUp())
+		r.DELETE("/{id}/webhook", h.DisableWebhook, middleware.Require(permission.ContentSourcesWrite))
+		r.POST("/{id}/sync", h.Sync, middleware.Require(permission.ContentSourcesWrite))
+		r.POST("/{id}/test", h.TestExisting, middleware.Require(permission.ContentSourcesWrite), requireStepUp())
+		r.GET("/{id}/snapshots", h.ListSnapshots, middleware.Require(permission.ContentSourcesRead))
+		r.GET("/{id}/snapshots/{snapshot_id}", h.GetSnapshot, middleware.Require(permission.ContentSourcesRead))
+		r.POST("/{id}/snapshots/{snapshot_id}/approve", h.Promote, middleware.Require(permission.ContentSourcesApprove), requireStepUp())
+		r.POST("/{id}/snapshots/{snapshot_id}/reject", h.Reject, middleware.Require(permission.ContentSourcesApprove))
+		r.POST("/{id}/rollback", h.Rollback, middleware.Require(permission.ContentSourcesApprove), requireStepUp())
 	}, tenantMiddlewares...)
+}
+
+// Rule source webhook budgets: per client IP in front of the secret check,
+// and per source URL. The service also caps accepted calls per source.
+const (
+	contentSourceWebhookPerIPPerSecond     = 5
+	contentSourceWebhookPerIPBurst         = 50
+	contentSourceWebhookPerSourcePerSecond = 1
+	contentSourceWebhookPerSourceBurst     = 10
+)
+
+// registerContentSourceWebhookRoute registers the public rule source
+// webhook. The URL names one source; its own secret (header) is the
+// credential, compared in constant time; a call only queues a sync.
+func registerContentSourceWebhookRoute(router Router, h *handler.ContentSourceHandler, log *logger.Logger) {
+	perIP := middleware.NewTelemetryRateLimiter(contentSourceWebhookPerIPPerSecond, contentSourceWebhookPerIPBurst, time.Hour, log).
+		MiddlewareKeyed(middleware.ClientIPKey, "Too many webhook calls")
+	perSource := middleware.NewTelemetryRateLimiter(contentSourceWebhookPerSourcePerSecond, contentSourceWebhookPerSourceBurst, time.Hour, log).
+		MiddlewareKeyed(func(r *http.Request) string { return "content-source:" + r.URL.Path }, "Too many webhook calls")
+	router.POST("/hooks/content-sources/{id}", h.Webhook, perIP, perSource)
 }
 
 // registerSecretStoreRoutes registers secret store endpoints for template source authentication.

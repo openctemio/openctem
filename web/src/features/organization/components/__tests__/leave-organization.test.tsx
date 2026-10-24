@@ -1,5 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen } from '@testing-library/react'
+import { render, screen, within } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
+import { post } from '@/lib/api/client'
 
 const state = {
   owner: false,
@@ -47,5 +49,21 @@ describe('LeaveOrganization', () => {
     render(<LeaveOrganization />)
     expect(screen.getByRole('button', { name: /leave organization/i })).toBeDisabled()
     expect(screen.getByText(/transfer ownership to another member first/i)).toBeInTheDocument()
+  })
+
+  it('leaves only after typing the organization name', async () => {
+    vi.mocked(post).mockResolvedValue({})
+    const user = userEvent.setup()
+    render(<LeaveOrganization />)
+    await user.click(screen.getByRole('button', { name: /leave organization/i }))
+    const dialog = await screen.findByRole('alertdialog')
+    const confirm = within(dialog).getByRole('button', { name: /leave organization/i })
+    expect(confirm).toBeDisabled()
+    await user.click(confirm)
+    expect(post).not.toHaveBeenCalled()
+    await user.type(within(dialog).getByRole('textbox'), 'Acme')
+    expect(confirm).toBeEnabled()
+    await user.click(confirm)
+    expect(post).toHaveBeenCalled()
   })
 })

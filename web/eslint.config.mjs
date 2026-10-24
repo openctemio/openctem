@@ -1,6 +1,6 @@
-import { defineConfig, globalIgnores } from "eslint/config";
-import nextVitals from "eslint-config-next/core-web-vitals";
-import nextTs from "eslint-config-next/typescript";
+import { defineConfig, globalIgnores } from 'eslint/config'
+import nextVitals from 'eslint-config-next/core-web-vitals'
+import nextTs from 'eslint-config-next/typescript'
 
 const eslintConfig = defineConfig([
   ...nextVitals,
@@ -8,40 +8,40 @@ const eslintConfig = defineConfig([
   // Override default ignores of eslint-config-next.
   globalIgnores([
     // Default ignores of eslint-config-next:
-    ".next/**",
-    "out/**",
-    "build/**",
-    "next-env.d.ts",
+    '.next/**',
+    'out/**',
+    'build/**',
+    'next-env.d.ts',
     // Ignore coverage and sentry configs
-    "coverage/**",
-    "sentry-configs/**",
+    'coverage/**',
+    'sentry-configs/**',
     // Git worktrees and stale build dirs are whole extra checkouts of this
     // repo, so linting them reports every file two or three times. CI never
     // sees them (fresh checkout), but locally `npx eslint .` returned 42,786
     // results against 40 real ones — enough noise to bury the real ones, which
     // is exactly what happened while investigating the six errors this commit
     // fixes.
-    ".claude/**",
-    ".next.*/**",
-    "console/.next/**",
-    "console/next-env.d.ts",
+    '.claude/**',
+    '.next.*/**',
+    'console/.next/**',
+    'console/next-env.d.ts',
   ]),
   // The tenant app and the platform console are separate apps (RFC-022
   // revision 21): the tenant app never imports console code, and the console
   // never imports a tenant route (only shared components, hooks and libs).
   {
-    files: ["src/**/*.{ts,tsx}"],
+    files: ['src/**/*.{ts,tsx}'],
     // Tests may drive both apps (the cross-app CSRF gate test); they ship in
     // neither bundle.
-    ignores: ["**/*.test.ts", "**/*.test.tsx", "**/__tests__/**"],
+    ignores: ['**/*.test.ts', '**/*.test.tsx', '**/__tests__/**'],
     rules: {
-      "no-restricted-imports": [
-        "error",
+      'no-restricted-imports': [
+        'error',
         {
           patterns: [
             {
-              group: ["@console/*", "**/console/src/**"],
-              message: "The tenant app must not import platform console code (web/console).",
+              group: ['@console/*', '**/console/src/**'],
+              message: 'The tenant app must not import platform console code (web/console).',
             },
           ],
         },
@@ -49,15 +49,16 @@ const eslintConfig = defineConfig([
     },
   },
   {
-    files: ["console/src/**/*.{ts,tsx}"],
+    files: ['console/src/**/*.{ts,tsx}'],
     rules: {
-      "no-restricted-imports": [
-        "error",
+      'no-restricted-imports': [
+        'error',
         {
           patterns: [
             {
-              group: ["@/app/*", "!@/app/providers"],
-              message: "The console must not import tenant routes; move shared code out of src/app.",
+              group: ['@/app/*', '!@/app/providers'],
+              message:
+                'The console must not import tenant routes; move shared code out of src/app.',
             },
           ],
         },
@@ -68,20 +69,20 @@ const eslintConfig = defineConfig([
   {
     rules: {
       // Allow underscore-prefixed unused vars (intentional pattern for future use)
-      "@typescript-eslint/no-unused-vars": [
-        "warn",
+      '@typescript-eslint/no-unused-vars': [
+        'warn',
         {
-          argsIgnorePattern: "^_",
-          varsIgnorePattern: "^_",
-          caughtErrorsIgnorePattern: "^_",
+          argsIgnorePattern: '^_',
+          varsIgnorePattern: '^_',
+          caughtErrorsIgnorePattern: '^_',
         },
       ],
       // Allow setState in effects - common pattern for syncing with external state
       // (localStorage, cookies, server data). React Compiler handles this well.
-      "react-hooks/set-state-in-effect": "off",
+      'react-hooks/set-state-in-effect': 'off',
       // TanStack Table returns functions that can't be memoized - this is expected
       // The React Compiler handles this gracefully by skipping memoization
-      "react-hooks/incompatible-library": "off",
+      'react-hooks/incompatible-library': 'off',
     },
   },
   // Edit payloads must be able to clear a field. `x || undefined` turns a
@@ -94,20 +95,20 @@ const eslintConfig = defineConfig([
     // are migrated area by area (each needs its endpoint's clear semantics
     // checked first); source credentials join with their own fix.
     files: [
-      "src/app/(dashboard)/settings/**/*.{ts,tsx}",
-      "src/app/(dashboard)/account/**/*.{ts,tsx}",
-      "src/features/organization/**/*.{ts,tsx}",
-      "src/features/access-control/**/*.{ts,tsx}",
-      "src/features/integrations/**/*.{ts,tsx}",
-      "src/features/template-sources/**/*.{ts,tsx}",
-      "src/features/account/**/*.{ts,tsx}",
-      "src/features/notifications/**/*.{ts,tsx}",
-      "src/features/pentest/lib/**/*.{ts,tsx}",
+      'src/app/(dashboard)/settings/**/*.{ts,tsx}',
+      'src/app/(dashboard)/account/**/*.{ts,tsx}',
+      'src/features/organization/**/*.{ts,tsx}',
+      'src/features/access-control/**/*.{ts,tsx}',
+      'src/features/integrations/**/*.{ts,tsx}',
+      'src/features/template-sources/**/*.{ts,tsx}',
+      'src/features/account/**/*.{ts,tsx}',
+      'src/features/notifications/**/*.{ts,tsx}',
+      'src/features/pentest/lib/**/*.{ts,tsx}',
     ],
-    ignores: ["**/*.test.ts", "**/*.test.tsx", "**/__tests__/**"],
+    ignores: ['**/*.test.ts', '**/*.test.tsx', '**/__tests__/**'],
     rules: {
-      "no-restricted-syntax": [
-        "error",
+      'no-restricted-syntax': [
+        'error',
         {
           selector:
             "CallExpression[callee.name=/^(update|patch|put|edit)/] > ObjectExpression > Property > LogicalExpression[operator='||'][right.name='undefined']",
@@ -131,28 +132,28 @@ const eslintConfig = defineConfig([
   },
   // Allow <img> in image upload components (for user-uploaded content)
   {
-    files: ["**/image-upload.tsx", "**/image-upload.jsx"],
+    files: ['**/image-upload.tsx', '**/image-upload.jsx'],
     rules: {
-      "@next/next/no-img-element": "off",
+      '@next/next/no-img-element': 'off',
     },
   },
   // Allow `any` in test files (mocking often requires it)
   {
-    files: ["**/*.test.ts", "**/*.test.tsx", "**/*.spec.ts", "**/*.spec.tsx"],
+    files: ['**/*.test.ts', '**/*.test.tsx', '**/*.spec.ts', '**/*.spec.tsx'],
     rules: {
-      "@typescript-eslint/no-explicit-any": "off",
+      '@typescript-eslint/no-explicit-any': 'off',
     },
   },
   // Playwright e2e: `use` here is a fixture callback, not a React hook.
   // The react-hooks rule misfires on it, so we disable hooks linting for
   // this directory. These files never run in the React renderer.
   {
-    files: ["e2e/**/*.ts", "playwright.config.ts"],
+    files: ['e2e/**/*.ts', 'playwright.config.ts'],
     rules: {
-      "react-hooks/rules-of-hooks": "off",
-      "react-hooks/exhaustive-deps": "off",
+      'react-hooks/rules-of-hooks': 'off',
+      'react-hooks/exhaustive-deps': 'off',
     },
   },
-]);
+])
 
-export default eslintConfig;
+export default eslintConfig

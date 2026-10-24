@@ -145,5 +145,6 @@
   "remediationCampaigns.toast.saved": "Campaign saved",
   "remediationCampaigns.toast.started": "Campaign started",
   "remediationCampaigns.toast.taskRemoved": "Task removed from the campaign",
-  "remediationCampaigns.toast.tasksAdded": "Tasks added to the campaign"
+  "remediationCampaigns.toast.tasksAdded": "Tasks added to the campaign",
+  "remediationCampaigns.statusLabel": "Status"
 }

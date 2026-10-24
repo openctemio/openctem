@@ -61,10 +61,12 @@ describe('Scoping rows', () => {
     ])
   })
 
-  it('Scope carries Scope | Programs, gated like their routes (RFC-065)', () => {
+  it('Scope carries Scope | Domain proof | Networks | Programs | Letters, gated like their routes (RFC-065)', () => {
     expect(row('Scoping', 'Scope').sections).toBe(SCOPE_SECTION_TABS)
     expect(SCOPE_SECTION_TABS.map((t) => [t.label, t.href, t.permission])).toEqual([
       ['Scope', '/scope', 'attack_surface:scope:read'],
+      ['Domain proof', '/scope/domain-proof', 'attack_surface:scope:read'],
+      ['Networks', '/scope/networks', 'attack_surface:scope:read'],
       ['Programs', '/programs', 'attack_surface:programs:read'],
       ['Letters', '/scope/letters', 'attack_surface:scope:read'],
     ])
