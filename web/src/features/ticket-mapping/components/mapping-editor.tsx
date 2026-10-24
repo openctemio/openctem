@@ -303,8 +303,9 @@ export function MappingEditor({ id }: { id: string }) {
           title={profile.name}
           description={
             <span className="flex flex-wrap items-center gap-2">
+              <span>{profile.project_key}</span>
+              <span>{profile.issue_type || profile.issue_type_id}</span>
               <span>
-                {profile.project_key} · {profile.issue_type || profile.issue_type_id} ·{' '}
                 {profile.object_kind === 'task'
                   ? t('ticketMapping.kind.taskShort', 'Tasks')
                   : t('ticketMapping.kind.findingShort', 'Findings')}

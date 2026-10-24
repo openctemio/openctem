@@ -119,7 +119,11 @@ function QueueHealthStatus({
 
   return (
     <Alert variant={hasIssues ? 'destructive' : 'default'}>
-      {hasIssues ? <AlertCircle className="h-4 w-4" /> : <Clock className={cn('h-4 w-4', HEALTH_ICON_CLASS.run)} />}
+      {hasIssues ? (
+        <AlertCircle className="h-4 w-4" />
+      ) : (
+        <Clock className={cn('h-4 w-4', HEALTH_ICON_CLASS.run)} />
+      )}
       <AlertTitle>{parts.join(', ')}</AlertTitle>
       <AlertDescription>
         {hasIssues

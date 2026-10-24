@@ -77,7 +77,7 @@ export function ScanProfilesSection() {
     await invalidateScanProfilesCache()
     await mutate()
     toast.success(t('scans.profiles.refreshed'))
-  }, [mutate])
+  }, [mutate, t])
 
   const handleEditProfile = useCallback((profile: ScanProfile) => {
     setSelectedProfile(profile)
@@ -105,7 +105,7 @@ export function ScanProfilesSection() {
     } catch (err) {
       toast.error(getErrorMessage(err, t('scans.profiles.deleteFailed')))
     }
-  }, [selectedProfile, deleteProfile])
+  }, [selectedProfile, deleteProfile, t])
 
   const handleSetDefault = useCallback(
     async (profile: ScanProfile) => {
@@ -117,7 +117,7 @@ export function ScanProfilesSection() {
         toast.error(getErrorMessage(err, t('scans.profiles.defaultFailed')))
       }
     },
-    [setDefaultProfile]
+    [setDefaultProfile, t]
   )
 
   const columns = useMemo<ColumnDef<ScanProfile>[]>(
