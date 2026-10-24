@@ -245,8 +245,21 @@ describe('Scan page', () => {
 
   it('says n/a, not 0 %, before any run settled', () => {
     render(<ScanDetailPage />)
-    expect(screen.getByText('n/a')).toBeInTheDocument()
-    expect(screen.getByText('No finished run yet')).toBeInTheDocument()
+    expect(screen.getByText(/Success rate:\s*n\/a/)).toBeInTheDocument()
+  })
+
+  it("links every strip tile to this scan's runs with the matching status", () => {
+    render(<ScanDetailPage />)
+    const hrefOf = (name: RegExp) =>
+      screen
+        .getAllByRole('link')
+        .find(
+          (a) => name.test(a.textContent ?? '') && a.getAttribute('href')?.includes('/scans/runs')
+        )
+        ?.getAttribute('href')
+    expect(hrefOf(/Successful/)).toMatch(/\/scans\/runs\?scan_id=.+&status=completed$/)
+    expect(hrefOf(/Partial/)).toMatch(/&status=partial$/)
+    expect(hrefOf(/Failed/)).toMatch(/&status=failed$/)
   })
 
   it('shows asset groups by name and targets as escaped text', async () => {

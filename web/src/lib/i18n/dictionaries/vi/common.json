@@ -150,5 +150,8 @@
   "common.bootstrap.retry": "Thử lại",
   "common.bootstrap.retrying": "Đang thử lại…",
   "common.table.selectColumn": "Chọn",
-  "common.table.actionsColumn": "Thao tác"
+  "common.table.actionsColumn": "Thao tác",
+  "common.filter.all": "Tất cả",
+  "common.filter.clearNamed": "Bỏ lọc {name}",
+  "common.tabs.more": "Khác"
 }

@@ -10,6 +10,7 @@ import {
   GatedSectionTabs,
   MetricStrip,
   PageHeader,
+  PageStack,
   DetailHeader,
   DetailSheet,
   StackedCell,
@@ -467,315 +468,321 @@ export default function BusinessServicesPage() {
 
   return (
     <Main>
-      <PageHeader
-        title={t('businessContext.services.title', 'Business services')}
-        description={t(
-          'businessContext.services.description',
-          'Business services and their compliance, data handling and availability requirements.'
-        )}
-      >
-        <Can permission={Permission.BusinessServicesWrite}>
-          <Button size="sm" onClick={openCreate}>
-            <Plus className="me-2 h-4 w-4" />
-            {t('businessContext.services.new', 'New service')}
-          </Button>
-        </Can>
-      </PageHeader>
-      <GatedSectionTabs
-        tabs={BUSINESS_CONTEXT_SECTION_TABS}
-        label={t('businessContext.sectionsLabel', 'Business context sections')}
-        className="mt-4 mb-0"
-      />
+      <PageStack>
+        <PageHeader
+          title={t('businessContext.services.title', 'Business services')}
+          description={t(
+            'businessContext.services.description',
+            'Business services and their compliance, data handling and availability requirements.'
+          )}
+        >
+          <Can permission={Permission.BusinessServicesWrite}>
+            <Button size="sm" onClick={openCreate}>
+              <Plus className="me-2 h-4 w-4" />
+              {t('businessContext.services.new', 'New service')}
+            </Button>
+          </Can>
+        </PageHeader>
+        <GatedSectionTabs
+          tabs={BUSINESS_CONTEXT_SECTION_TABS}
+          label={t('businessContext.sectionsLabel', 'Business context sections')}
+        />
 
-      <MetricStrip className="mt-5" loading={isLoading} items={metrics} />
+        <MetricStrip loading={isLoading} items={metrics} />
 
-      {isLoading ? (
-        <div className="mt-5 space-y-2 rounded-xl border p-3">
-          {Array.from({ length: 6 }).map((_, i) => (
-            <Skeleton key={i} className="h-9 w-full" />
-          ))}
-        </div>
-      ) : error ? (
-        <div className="mt-5">
+        {isLoading ? (
+          <div className="space-y-2 rounded-xl border p-3">
+            {Array.from({ length: 6 }).map((_, i) => (
+              <Skeleton key={i} className="h-9 w-full" />
+            ))}
+          </div>
+        ) : error ? (
           <ErrorState
             title={t('scope.businessServices.loadError', 'business services')}
             error={error}
             onRetry={() => void mutate()}
           />
-        </div>
-      ) : (
-        <div className="mt-5">
-          <DataTable
-            columns={columns}
-            data={services}
-            searchPlaceholder={t(
-              'businessContext.services.search.placeholder',
-              'Search services...'
-            )}
-            onRowClick={(service) => setAssetsService(service)}
-            emptyMessage={
-              quick
-                ? t('businessContext.services.empty.noMatch', 'No services match this filter')
-                : t('businessContext.services.empty.none', 'No business services yet')
-            }
-            emptyDescription={
-              quick
-                ? t(
-                    'businessContext.services.empty.noMatchDesc',
-                    'Clear the filter to see every service.'
-                  )
-                : t('businessContext.services.empty.noneDesc', 'Create a service to get started.')
-            }
-          />
-        </div>
-      )}
-
-      <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
-        <DialogContent size="lg">
-          <DialogHeader>
-            <DialogTitle>
-              {editingService
-                ? t('businessContext.services.dialog.editTitle', 'Edit business service')
-                : t('businessContext.services.dialog.createTitle', 'New business service')}
-            </DialogTitle>
-            <DialogDescription>
-              {t(
-                'businessContext.services.dialog.desc',
-                'Define the business service and its compliance and data handling properties.'
+        ) : (
+          <div>
+            <DataTable
+              columns={columns}
+              data={services}
+              searchPlaceholder={t(
+                'businessContext.services.search.placeholder',
+                'Search services...'
               )}
-            </DialogDescription>
-          </DialogHeader>
-
-          <DialogBody>
-            <div className="grid gap-4 py-4">
-              <div className="grid gap-2">
-                <Label htmlFor="name">{t('businessContext.services.form.name', 'Name *')}</Label>
-                <Input
-                  id="name"
-                  value={form.name}
-                  onChange={(e) => setForm({ ...form, name: e.target.value })}
-                  placeholder={t(
-                    'businessContext.services.form.namePh',
-                    'e.g. Customer Payment Service'
-                  )}
-                />
-              </div>
-
-              <div className="grid gap-2">
-                <Label htmlFor="description">
-                  {t('businessContext.services.form.description', 'Description')}
-                </Label>
-                <Textarea
-                  id="description"
-                  value={form.description}
-                  onChange={(e) => setForm({ ...form, description: e.target.value })}
-                  placeholder={t(
-                    'businessContext.services.form.descriptionPh',
-                    'Briefly describe what this service does'
-                  )}
-                  rows={3}
-                />
-              </div>
-
-              <div className="grid gap-2">
-                <Label htmlFor="criticality">
-                  {t('businessContext.services.form.criticality', 'Criticality')}
-                </Label>
-                <Select
-                  value={form.criticality}
-                  onValueChange={(value) => setForm({ ...form, criticality: value as Criticality })}
-                >
-                  <SelectTrigger id="criticality">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {RATED_CRITICALITY_LEVELS.map((c) => (
-                      <SelectItem key={c} value={c}>
-                        {criticalityLabel(c)}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-
-              <div className="grid gap-2">
-                <Label>{t('businessContext.services.form.compliance', 'Compliance scope')}</Label>
-                <div className="flex flex-wrap gap-2">
-                  {COMPLIANCE_FRAMEWORKS.map((framework) => {
-                    const selected = form.compliance_scope.includes(framework)
-                    return (
-                      <Badge
-                        key={framework}
-                        variant={selected ? 'default' : 'outline'}
-                        className="cursor-pointer"
-                        onClick={() => toggleCompliance(framework)}
-                      >
-                        {framework}
-                      </Badge>
+              onRowClick={(service) => setAssetsService(service)}
+              emptyMessage={
+                quick
+                  ? t('businessContext.services.empty.noMatch', 'No services match this filter')
+                  : t('businessContext.services.empty.none', 'No business services yet')
+              }
+              emptyDescription={
+                quick
+                  ? t(
+                      'businessContext.services.empty.noMatchDesc',
+                      'Clear the filter to see every service.'
                     )
-                  })}
-                </div>
-              </div>
+                  : t('businessContext.services.empty.noneDesc', 'Create a service to get started.')
+              }
+            />
+          </div>
+        )}
 
-              <div className="grid gap-3 rounded-md border p-3">
-                <Label className="text-sm font-semibold">
-                  {t('businessContext.services.form.dataHandling', 'Data handling')}
-                </Label>
-                <div className="flex items-center justify-between">
-                  <Label htmlFor="handles_pii" className="font-normal">
-                    {t('businessContext.services.form.handlesPii', 'Handles PII')}
-                  </Label>
-                  <Switch
-                    id="handles_pii"
-                    checked={form.handles_pii}
-                    onCheckedChange={(checked) => setForm({ ...form, handles_pii: checked })}
-                  />
-                </div>
-                <div className="flex items-center justify-between">
-                  <Label htmlFor="handles_phi" className="font-normal">
-                    {t('businessContext.services.form.handlesPhi', 'Handles PHI')}
-                  </Label>
-                  <Switch
-                    id="handles_phi"
-                    checked={form.handles_phi}
-                    onCheckedChange={(checked) => setForm({ ...form, handles_phi: checked })}
-                  />
-                </div>
-                <div className="flex items-center justify-between">
-                  <Label htmlFor="handles_financial" className="font-normal">
-                    {t('businessContext.services.form.handlesFinancial', 'Handles financial data')}
-                  </Label>
-                  <Switch
-                    id="handles_financial"
-                    checked={form.handles_financial}
-                    onCheckedChange={(checked) => setForm({ ...form, handles_financial: checked })}
-                  />
-                </div>
-              </div>
+        <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
+          <DialogContent size="lg">
+            <DialogHeader>
+              <DialogTitle>
+                {editingService
+                  ? t('businessContext.services.dialog.editTitle', 'Edit business service')
+                  : t('businessContext.services.dialog.createTitle', 'New business service')}
+              </DialogTitle>
+              <DialogDescription>
+                {t(
+                  'businessContext.services.dialog.desc',
+                  'Define the business service and its compliance and data handling properties.'
+                )}
+              </DialogDescription>
+            </DialogHeader>
 
-              <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+            <DialogBody>
+              <div className="grid gap-4 py-4">
                 <div className="grid gap-2">
-                  <Label htmlFor="availability_target">
-                    {t('businessContext.services.form.availability', 'Availability (%)')}
-                  </Label>
+                  <Label htmlFor="name">{t('businessContext.services.form.name', 'Name *')}</Label>
                   <Input
-                    id="availability_target"
-                    type="number"
-                    step="0.01"
-                    value={form.availability_target}
-                    onChange={(e) => setForm({ ...form, availability_target: e.target.value })}
-                    placeholder="99.99"
-                  />
-                </div>
-                <div className="grid gap-2">
-                  <Label htmlFor="rpo_minutes">
-                    {t('businessContext.services.form.rpo', 'RPO (min)')}
-                  </Label>
-                  <Input
-                    id="rpo_minutes"
-                    type="number"
-                    value={form.rpo_minutes}
-                    onChange={(e) => setForm({ ...form, rpo_minutes: e.target.value })}
-                    placeholder="60"
-                  />
-                </div>
-                <div className="grid gap-2">
-                  <Label htmlFor="rto_minutes">
-                    {t('businessContext.services.form.rto', 'RTO (min)')}
-                  </Label>
-                  <Input
-                    id="rto_minutes"
-                    type="number"
-                    value={form.rto_minutes}
-                    onChange={(e) => setForm({ ...form, rto_minutes: e.target.value })}
-                    placeholder="120"
-                  />
-                </div>
-              </div>
-
-              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                <div className="grid gap-2">
-                  <Label htmlFor="owner_name">
-                    {t('businessContext.services.form.ownerName', 'Owner name')}
-                  </Label>
-                  <Input
-                    id="owner_name"
-                    value={form.owner_name}
-                    onChange={(e) => setForm({ ...form, owner_name: e.target.value })}
-                    placeholder={t('businessContext.services.form.ownerNamePh', 'Jane Doe')}
-                  />
-                </div>
-                <div className="grid gap-2">
-                  <Label htmlFor="owner_email">
-                    {t('businessContext.services.form.ownerEmail', 'Owner email')}
-                  </Label>
-                  <Input
-                    id="owner_email"
-                    type="email"
-                    value={form.owner_email}
-                    onChange={(e) => setForm({ ...form, owner_email: e.target.value })}
+                    id="name"
+                    value={form.name}
+                    onChange={(e) => setForm({ ...form, name: e.target.value })}
                     placeholder={t(
-                      'businessContext.services.form.ownerEmailPh',
-                      'jane@example.com'
+                      'businessContext.services.form.namePh',
+                      'e.g. Customer Payment Service'
                     )}
                   />
                 </div>
+
+                <div className="grid gap-2">
+                  <Label htmlFor="description">
+                    {t('businessContext.services.form.description', 'Description')}
+                  </Label>
+                  <Textarea
+                    id="description"
+                    value={form.description}
+                    onChange={(e) => setForm({ ...form, description: e.target.value })}
+                    placeholder={t(
+                      'businessContext.services.form.descriptionPh',
+                      'Briefly describe what this service does'
+                    )}
+                    rows={3}
+                  />
+                </div>
+
+                <div className="grid gap-2">
+                  <Label htmlFor="criticality">
+                    {t('businessContext.services.form.criticality', 'Criticality')}
+                  </Label>
+                  <Select
+                    value={form.criticality}
+                    onValueChange={(value) =>
+                      setForm({ ...form, criticality: value as Criticality })
+                    }
+                  >
+                    <SelectTrigger id="criticality">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {RATED_CRITICALITY_LEVELS.map((c) => (
+                        <SelectItem key={c} value={c}>
+                          {criticalityLabel(c)}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div className="grid gap-2">
+                  <Label>{t('businessContext.services.form.compliance', 'Compliance scope')}</Label>
+                  <div className="flex flex-wrap gap-2">
+                    {COMPLIANCE_FRAMEWORKS.map((framework) => {
+                      const selected = form.compliance_scope.includes(framework)
+                      return (
+                        <Badge
+                          key={framework}
+                          variant={selected ? 'default' : 'outline'}
+                          className="cursor-pointer"
+                          onClick={() => toggleCompliance(framework)}
+                        >
+                          {framework}
+                        </Badge>
+                      )
+                    })}
+                  </div>
+                </div>
+
+                <div className="grid gap-3 rounded-md border p-3">
+                  <Label className="text-sm font-semibold">
+                    {t('businessContext.services.form.dataHandling', 'Data handling')}
+                  </Label>
+                  <div className="flex items-center justify-between">
+                    <Label htmlFor="handles_pii" className="font-normal">
+                      {t('businessContext.services.form.handlesPii', 'Handles PII')}
+                    </Label>
+                    <Switch
+                      id="handles_pii"
+                      checked={form.handles_pii}
+                      onCheckedChange={(checked) => setForm({ ...form, handles_pii: checked })}
+                    />
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <Label htmlFor="handles_phi" className="font-normal">
+                      {t('businessContext.services.form.handlesPhi', 'Handles PHI')}
+                    </Label>
+                    <Switch
+                      id="handles_phi"
+                      checked={form.handles_phi}
+                      onCheckedChange={(checked) => setForm({ ...form, handles_phi: checked })}
+                    />
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <Label htmlFor="handles_financial" className="font-normal">
+                      {t(
+                        'businessContext.services.form.handlesFinancial',
+                        'Handles financial data'
+                      )}
+                    </Label>
+                    <Switch
+                      id="handles_financial"
+                      checked={form.handles_financial}
+                      onCheckedChange={(checked) =>
+                        setForm({ ...form, handles_financial: checked })
+                      }
+                    />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+                  <div className="grid gap-2">
+                    <Label htmlFor="availability_target">
+                      {t('businessContext.services.form.availability', 'Availability (%)')}
+                    </Label>
+                    <Input
+                      id="availability_target"
+                      type="number"
+                      step="0.01"
+                      value={form.availability_target}
+                      onChange={(e) => setForm({ ...form, availability_target: e.target.value })}
+                      placeholder="99.99"
+                    />
+                  </div>
+                  <div className="grid gap-2">
+                    <Label htmlFor="rpo_minutes">
+                      {t('businessContext.services.form.rpo', 'RPO (min)')}
+                    </Label>
+                    <Input
+                      id="rpo_minutes"
+                      type="number"
+                      value={form.rpo_minutes}
+                      onChange={(e) => setForm({ ...form, rpo_minutes: e.target.value })}
+                      placeholder="60"
+                    />
+                  </div>
+                  <div className="grid gap-2">
+                    <Label htmlFor="rto_minutes">
+                      {t('businessContext.services.form.rto', 'RTO (min)')}
+                    </Label>
+                    <Input
+                      id="rto_minutes"
+                      type="number"
+                      value={form.rto_minutes}
+                      onChange={(e) => setForm({ ...form, rto_minutes: e.target.value })}
+                      placeholder="120"
+                    />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                  <div className="grid gap-2">
+                    <Label htmlFor="owner_name">
+                      {t('businessContext.services.form.ownerName', 'Owner name')}
+                    </Label>
+                    <Input
+                      id="owner_name"
+                      value={form.owner_name}
+                      onChange={(e) => setForm({ ...form, owner_name: e.target.value })}
+                      placeholder={t('businessContext.services.form.ownerNamePh', 'Jane Doe')}
+                    />
+                  </div>
+                  <div className="grid gap-2">
+                    <Label htmlFor="owner_email">
+                      {t('businessContext.services.form.ownerEmail', 'Owner email')}
+                    </Label>
+                    <Input
+                      id="owner_email"
+                      type="email"
+                      value={form.owner_email}
+                      onChange={(e) => setForm({ ...form, owner_email: e.target.value })}
+                      placeholder={t(
+                        'businessContext.services.form.ownerEmailPh',
+                        'jane@example.com'
+                      )}
+                    />
+                  </div>
+                </div>
               </div>
-            </div>
-          </DialogBody>
+            </DialogBody>
 
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setIsDialogOpen(false)}>
-              {t('common.cancel', 'Cancel')}
-            </Button>
-            <Button onClick={handleSave} disabled={isSaving}>
-              {isSaving
-                ? t('businessContext.services.form.saving', 'Saving...')
-                : editingService
-                  ? t('businessContext.services.form.update', 'Update')
-                  : t('businessContext.services.form.create', 'Create')}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setIsDialogOpen(false)}>
+                {t('common.cancel', 'Cancel')}
+              </Button>
+              <Button onClick={handleSave} disabled={isSaving}>
+                {isSaving
+                  ? t('businessContext.services.form.saving', 'Saving...')
+                  : editingService
+                    ? t('businessContext.services.form.update', 'Update')
+                    : t('businessContext.services.form.create', 'Create')}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
 
-      {assetsService && (
-        <DetailSheet
-          open
-          onOpenChange={(open) => !open && setAssetsService(null)}
-          width="lg"
-          header={
-            <DetailHeader
-              title={assetsService.name}
-              meta={[
-                t(
-                  'businessContext.services.sheet.meta',
-                  'The assets this service runs on. A cycle scoped to the service covers them.'
-                ),
-              ]}
-              onClose={() => setAssetsService(null)}
-            />
-          }
-        >
-          <BusinessServiceAssets service={assetsService} onChanged={() => void mutate()} />
-        </DetailSheet>
-      )}
-
-      <ConfirmDialog
-        open={!!deletingService}
-        onOpenChange={(open) => !open && setDeletingService(null)}
-        title={t('confirm.businessService.deleteTitle', 'Delete the business service "{name}"?', {
-          name: deletingService?.name ?? '',
-        })}
-        desc={t(
-          'confirm.businessService.deleteDesc',
-          'Its asset links are removed, so those assets no longer take business context from it. The assets themselves stay. This cannot be undone.'
+        {assetsService && (
+          <DetailSheet
+            open
+            onOpenChange={(open) => !open && setAssetsService(null)}
+            width="lg"
+            header={
+              <DetailHeader
+                title={assetsService.name}
+                meta={[
+                  t(
+                    'businessContext.services.sheet.meta',
+                    'The assets this service runs on. A cycle scoped to the service covers them.'
+                  ),
+                ]}
+                onClose={() => setAssetsService(null)}
+              />
+            }
+          >
+            <BusinessServiceAssets service={assetsService} onChanged={() => void mutate()} />
+          </DetailSheet>
         )}
-        confirmText={t('confirm.delete', 'Delete')}
-        destructive
-        handleConfirm={handleDelete}
-      />
-      <CappedNotice loaded={allServices.length} total={data?.total ?? 0} />
+
+        <ConfirmDialog
+          open={!!deletingService}
+          onOpenChange={(open) => !open && setDeletingService(null)}
+          title={t('confirm.businessService.deleteTitle', 'Delete the business service "{name}"?', {
+            name: deletingService?.name ?? '',
+          })}
+          desc={t(
+            'confirm.businessService.deleteDesc',
+            'Its asset links are removed, so those assets no longer take business context from it. The assets themselves stay. This cannot be undone.'
+          )}
+          confirmText={t('confirm.delete', 'Delete')}
+          destructive
+          handleConfirm={handleDelete}
+        />
+        <CappedNotice loaded={allServices.length} total={data?.total ?? 0} />
+      </PageStack>
     </Main>
   )
 }
