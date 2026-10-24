@@ -15,6 +15,7 @@ import { Can, Permission } from '@/lib/permissions'
 import { useScanTrigger } from '../hooks/use-scan-trigger'
 import { hasSchedule, isManagedScan, scheduleOn } from '../lib/scan-status'
 import { enTranslate, type Translate } from '../lib/translate'
+import { ScheduleOnConfirm } from './schedule-on-confirm'
 
 /**
  * A scan's run and schedule controls, the same on the scan page and in the
@@ -39,6 +40,8 @@ export function ScanControls({
 }) {
   const { t } = useTranslation()
   const [busy, setBusy] = useState(false)
+  // The schedule-on / enable question (these start scans); off needs none.
+  const [askActivate, setAskActivate] = useState(false)
   const { trigger, isTriggering, dialog } = useScanTrigger({
     onViewRun,
     // Started or refused (a refusal is recorded as a blocked run): the
@@ -72,18 +75,23 @@ export function ScanControls({
 
   if (config.status === 'disabled') {
     return (
-      <Can permission={Permission.ScansWrite} mode="disable">
-        <Button
-          size="sm"
-          onClick={() =>
-            void setState('activate', t('scans.controls.enabled', undefined, { name: config.name }))
+      <>
+        <Can permission={Permission.ScansWrite} mode="disable">
+          <Button size="sm" onClick={() => setAskActivate(true)} disabled={busy}>
+            {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Power className="h-4 w-4" />}
+            {t('scans.controls.enable')}
+          </Button>
+        </Can>
+        <ScheduleOnConfirm
+          name={config.name}
+          kind="enable"
+          open={askActivate}
+          onOpenChange={setAskActivate}
+          onConfirm={() =>
+            setState('activate', t('scans.controls.enabled', undefined, { name: config.name }))
           }
-          disabled={busy}
-        >
-          {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Power className="h-4 w-4" />}
-          {t('scans.controls.enable')}
-        </Button>
-      </Can>
+        />
+      </>
     )
   }
 
@@ -107,12 +115,12 @@ export function ScanControls({
             size="sm"
             variant="outline"
             onClick={() =>
-              void setState(
-                on ? 'pause' : 'activate',
-                t(on ? 'scans.controls.scheduleOff' : 'scans.controls.scheduleOn', undefined, {
-                  name: config.name,
-                })
-              )
+              on
+                ? void setState(
+                    'pause',
+                    t('scans.controls.scheduleOff', undefined, { name: config.name })
+                  )
+                : setAskActivate(true)
             }
             disabled={busy || triggering}
           >
@@ -127,6 +135,14 @@ export function ScanControls({
           </Button>
         </Can>
       )}
+      <ScheduleOnConfirm
+        name={config.name}
+        open={askActivate}
+        onOpenChange={setAskActivate}
+        onConfirm={() =>
+          setState('activate', t('scans.controls.scheduleOn', undefined, { name: config.name }))
+        }
+      />
       {dialog}
     </>
   )

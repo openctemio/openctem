@@ -11,7 +11,9 @@
  *   ignored, across every button on the page (the in-flight set is shared);
  * - before posting, the scan's latest run is read; if it is still pending or
  *   running the user is asked whether to start another run, with the run's
- *   progress and a way to open it, instead of a silent duplicate.
+ *   progress and a way to open it, instead of a silent duplicate;
+ * - otherwise the user confirms once: a run sends scan traffic to the scan's
+ *   targets right away, so no button starts one with a single click.
  *
  * A second manual run stays allowed (owner decision D4 skips only scheduled
  * overlaps); this is a guard for people, not an authorization rule. The
@@ -117,6 +119,8 @@ export function useScanTrigger({ onTriggered, onSettled, onViewRun }: UseScanTri
   const { t } = useTranslation()
   const busy = useSyncExternalStore(subscribe, getSnapshot, () => '')
   const [pending, setPending] = useState<{ scan: TriggerableScan; run: ScanRun } | null>(null)
+  // The scan the user is being asked to run now (no run in progress).
+  const [confirming, setConfirming] = useState<TriggerableScan | null>(null)
   // A trigger the scope gate refused: each target, why, and the fixes
   // (TARGET_OUT_OF_SCOPE details, RFC-054 §6.5), as in the scan dialogs.
   const [refusal, setRefusal] = useState<{ scan: TriggerableScan; refused: ScopeRefusal[] } | null>(
@@ -166,20 +170,18 @@ export function useScanTrigger({ onTriggered, onSettled, onViewRun }: UseScanTri
     [onTriggered, onSettled, t]
   )
 
-  const trigger = useCallback(
-    async (scan: TriggerableScan) => {
-      if (inFlight.has(scan.id)) return
-      setInFlight(scan.id, true)
-      const active = await activeRunOf(scan.id)
-      if (active) {
-        // Stays in flight until the user answers.
-        setPending({ scan, run: active })
-        return
-      }
-      await fire(scan)
-    },
-    [fire]
-  )
+  const trigger = useCallback(async (scan: TriggerableScan) => {
+    if (inFlight.has(scan.id)) return
+    setInFlight(scan.id, true)
+    const active = await activeRunOf(scan.id)
+    if (active) {
+      // Stays in flight until the user answers.
+      setPending({ scan, run: active })
+      return
+    }
+    // Stays in flight until the user answers.
+    setConfirming(scan)
+  }, [])
 
   const isTriggering = useCallback((scanId: string) => busy.split(',').includes(scanId), [busy])
 
@@ -188,11 +190,30 @@ export function useScanTrigger({ onTriggered, onSettled, onViewRun }: UseScanTri
     setPending(null)
   }, [pending])
 
+  const dismissConfirm = useCallback(() => {
+    if (confirming) setInFlight(confirming.id, false)
+    setConfirming(null)
+  }, [confirming])
+
   const progress = pending ? runTaskProgress(pending.run.task_summary, t) : null
   const started = pending?.run.started_at || pending?.run.created_at
 
   const dialog = (
     <>
+      <ConfirmDialog
+        open={!!confirming}
+        onOpenChange={(open) => {
+          if (!open) dismissConfirm()
+        }}
+        title={t('confirm.scan.runNowTitle', undefined, { name: confirming?.name ?? '' })}
+        desc={t('confirm.scan.runNowDesc')}
+        confirmText={t('confirm.scan.runNowBtn')}
+        handleConfirm={() => {
+          const scan = confirming
+          setConfirming(null)
+          if (scan) void fire(scan)
+        }}
+      />
       <ConfirmDialog
         open={!!pending}
         onOpenChange={(open) => {
