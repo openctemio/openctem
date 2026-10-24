@@ -45,16 +45,19 @@ describe('AI applications block', () => {
     expect(setMcpClientBlocked).not.toHaveBeenCalled()
     const dialog = await screen.findByRole('alertdialog')
     expect(dialog).toHaveTextContent('Block Desk Assistant everywhere?')
-    await userEvent.click(within(dialog).getByRole('button', { name: 'Block' }))
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Block application' }))
     await waitFor(() => expect(setMcpClientBlocked).toHaveBeenCalledWith('c1', true))
   })
 
-  it('unblocking needs no confirmation', async () => {
+  it('unblocking everywhere asks first too (it lets the application back in)', async () => {
     vi.mocked(setMcpClientBlocked).mockClear()
     clients.list = [client(true)]
     render(<AiApplicationsPage />)
     await userEvent.click(screen.getByRole('button', { name: 'Unblock' }))
+    expect(setMcpClientBlocked).not.toHaveBeenCalled()
+    const dialog = await screen.findByRole('alertdialog')
+    expect(dialog).toHaveTextContent('Unblock Desk Assistant everywhere?')
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Unblock application' }))
     await waitFor(() => expect(setMcpClientBlocked).toHaveBeenCalledWith('c1', false))
-    expect(screen.queryByRole('alertdialog')).toBeNull()
   })
 })
