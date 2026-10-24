@@ -290,23 +290,23 @@ export default function AttackSimulationPage() {
           )}
         />
 
-      <ConfirmDialog
-        open={runTarget !== null}
-        onOpenChange={(open) => {
-          if (!open) setRunTarget(null)
-        }}
-        title={t('validation.simulation.confirmTitle', 'Run the simulation "{name}" now?', {
-          name: runTarget?.name ?? '',
-        })}
-        desc={t(
-          'validation.simulation.confirmDesc',
-          'This sends live safe-check traffic that imitates the technique to your environment now. Your security controls may raise alerts. The result is recorded on the simulation.'
-        )}
-        confirmText={t('validation.simulation.confirmButton', 'Run simulation')}
-        handleConfirm={async () => {
-          if (runTarget) await handleRun(runTarget.id)
-        }}
-      />
+        <ConfirmDialog
+          open={runTarget !== null}
+          onOpenChange={(open) => {
+            if (!open) setRunTarget(null)
+          }}
+          title={t('validation.simulation.confirmTitle', 'Run the simulation "{name}" now?', {
+            name: runTarget?.name ?? '',
+          })}
+          desc={t(
+            'validation.simulation.confirmDesc',
+            'This sends live safe-check traffic that imitates the technique to your environment now. Your security controls may raise alerts. The result is recorded on the simulation.'
+          )}
+          confirmText={t('validation.simulation.confirmButton', 'Run simulation')}
+          handleConfirm={async () => {
+            if (runTarget) await handleRun(runTarget.id)
+          }}
+        />
 
         <MetricStrip items={metrics} />
 
