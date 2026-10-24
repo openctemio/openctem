@@ -142,9 +142,7 @@ export function SensorJobSafetySettings() {
   )
   if (isLoading) return <SettingsLoading header={header} />
   if (isError)
-    return (
-      <SettingsLoadError header={header} message={error?.message} onRetry={() => void mutate()} />
-    )
+    return <SettingsLoadError header={header} error={error} onRetry={() => void mutate()} />
   const disabled = !canEdit
 
   return (

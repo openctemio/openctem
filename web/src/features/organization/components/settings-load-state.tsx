@@ -1,6 +1,7 @@
 'use client'
 
 import type { ReactNode } from 'react'
+import { describeApiError } from '@/lib/api/error-message'
 import { AlertCircle } from 'lucide-react'
 import { Main } from '@/components/layout'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
@@ -25,14 +26,16 @@ export function SettingsLoading({ header }: { header: ReactNode }) {
 /** A settings page whose settings could not be read: never shown as defaults. */
 export function SettingsLoadError({
   header,
-  message,
+  error,
   onRetry,
 }: {
   header: ReactNode
-  message?: string
+  /** The load error; shown through the shared mapper, never as raw text. */
+  error?: unknown
   onRetry: () => void
 }) {
   const { t } = useTranslation()
+  const message = error ? describeApiError(error, t, '').message : ''
   return (
     <Main>
       {header}

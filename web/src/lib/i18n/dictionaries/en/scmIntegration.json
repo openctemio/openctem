@@ -34,5 +34,6 @@
   "scmIntegration.toast.refreshed": "Connections refreshed",
   "scmIntegration.toast.testError": "Failed to test connection",
   "scmIntegration.toast.testFailed": "Connection test failed",
-  "scmIntegration.toast.testOk": "Connection \"{name}\" is working"
+  "scmIntegration.toast.testOk": "Connection \"{name}\" is working",
+  "scmIntegration.toast.testFailedNamed": "Could not connect to {name}."
 }
