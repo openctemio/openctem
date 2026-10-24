@@ -619,7 +619,7 @@ check_outbound_primitives() {
         'api/cmd/server/healthcheck.go'
         # Scan-zone resolver: the recursive resolver the operator names in
         # the server's environment (SCOPE_ZONE_RESOLVER).
-        'api/cmd/server/services.go'
+        'api/cmd/server/scope_zone_resolver.go'
         # Admin audit sink: destination from the server's environment only.
         'api/internal/infra/auditsink/sink.go'
         # Sensor transport probe: the platform's own sensor endpoint.
@@ -633,6 +633,8 @@ check_outbound_primitives() {
         # EASM DNS client: port 53 only, every server address checked with
         # httpsec.IsIPBlocked before the dial.
         'api/pkg/dnsprobe/client.go'
+        # ClamAV daemon: address from the server's environment (STORAGE_CLAMD_ADDRESS).
+        'api/internal/infra/malware/clamd.go'
         # SMTP: dials the address httpsec.ResolveSafeHost vetted (an IP
         # literal), never a host name.
         'api/pkg/email/email.go'
@@ -641,7 +643,14 @@ check_outbound_primitives() {
         # others.
         'api/internal/infra/fetchers/git_snapshot.go'
     )
-    local pattern='http\.(Get|Post|PostForm|Head)\(|http\.DefaultClient|http\.DefaultTransport|(^|[^&])http\.Client\{|new\(http\.Client\)|http\.Transport\{|net\.Dial(Timeout)?\(|net\.Dialer\{|tls\.Dial(WithDialer)?\(|tls\.Dialer\{|smtp\.(Dial|SendMail)\(|ProxyFromEnvironment|InstallProtocol\(|go-git/v5/plumbing/transport/(ssh|git|file)"'
+    local pattern='http\.(Get|Post|PostForm|Head)\(|http\.DefaultClient|http\.DefaultTransport|(^|[^&])http\.Client\{|new\(http\.Client\)|http\.Transport\{|net\.Dial(Timeout|TCP|UDP|IP|Unix)?\(|net\.Dialer\b|tls\.Dial(WithDialer)?\(|tls\.Dialer\b|httputil\.(NewSingleHostReverseProxy|ReverseProxy)\b|smtp\.(Dial|SendMail)\(|ProxyFromEnvironment|InstallProtocol\(|go-git/v5/plumbing/transport/(ssh|git|file)"'
+
+    # Fail closed: a run that scanned nothing (no SECLINT_ROOT and the script
+    # cd'd into api/, so "api/" does not exist) must not report a pass.
+    if [[ ! -d api ]] || [[ -z "$(find api -name '*.go' -not -name '*_test.go' -print -quit 2>/dev/null)" ]]; then
+        say_fail "Rule 10: no api/ Go sources under $ROOT — set SECLINT_ROOT to the workspace root"
+        return
+    fi
 
     local hits
     hits="$(grep -RnE "$pattern" \
