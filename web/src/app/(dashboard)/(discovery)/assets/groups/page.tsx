@@ -20,6 +20,7 @@ import {
   BulkActionBar,
   FilterPanelToggle,
   FilterSheet,
+  PageStack,
 } from '@/features/shared'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -571,22 +572,8 @@ export default function AssetGroupsPage() {
       key: 'critical',
       label: t('assetGroups.metric.critical', 'Critical groups'),
       value: stats.byCriticality?.critical ?? 0,
-      tone: 'danger',
       onClick: () => setCritParam(criticalOnly ? [] : ['critical']),
       active: criticalOnly,
-    },
-    {
-      key: 'assets',
-      label: t('assetGroups.metric.assetsInGroups', 'Assets in groups'),
-      value: stats.totalAssets,
-    },
-    {
-      key: 'risk',
-      label: t('assetGroups.metric.avgRisk', 'Average risk score'),
-      // One decimal: the raw average of integer scores can carry a long
-      // repeating fractional tail (e.g. 53.16666666666664).
-      value: Math.round((stats.averageRiskScore ?? 0) * 10) / 10,
-      hint: t('assetGroups.metric.outOf100', 'of 100'),
     },
   ]
 
@@ -723,141 +710,145 @@ export default function AssetGroupsPage() {
   return (
     <>
       <Main>
-        <PageHeader
-          title={t('assetGroups.title', 'Asset groups')}
-          description={t(
-            'assetGroups.description',
-            'Organize and monitor assets by logical group.'
-          )}
-        >
-          <Can permission={Permission.AssetGroupsWrite} mode="disable">
-            <Button size="sm" onClick={() => setIsCreateOpen(true)}>
-              <Plus className="me-2 h-4 w-4" />
-              {t('assetGroups.newGroup', 'New group')}
-            </Button>
-          </Can>
-        </PageHeader>
-        <AssetsSectionTabs />
-
-        <MetricStrip className="mt-5" loading={statsLoading} items={metrics} />
-
-        <div className="mt-5 flex items-start gap-5">
-          {filtersOpen && (
-            <aside
-              id="asset-group-filters"
-              aria-label={t('assetGroups.filtersLabel', 'Asset group filters')}
-              className="sticky top-4 hidden max-h-[calc(100svh-7.5rem)] w-64 shrink-0 flex-col rounded-xl border bg-card p-4 shadow-sm lg:flex"
-            >
-              <div className="flex min-h-0 flex-1 flex-col">{facetPanel}</div>
-            </aside>
-          )}
-
-          <div className="min-w-0 flex-1">
-            {isError && fetchedGroups.length === 0 ? (
-              <ErrorState
-                title={t('assetGroups.errorTitle', 'asset groups')}
-                error={listError}
-                onRetry={() => refreshData()}
-              />
-            ) : isLoading && fetchedGroups.length === 0 ? (
-              <div className="space-y-2 rounded-xl border p-3">
-                {Array.from({ length: 8 }).map((_, i) => (
-                  <Skeleton key={i} className="h-10 w-full" />
-                ))}
-              </div>
-            ) : (
-              <DataTable
-                columns={columns}
-                data={groups}
-                showSearch={false}
-                toolbarStart={toolbarStart}
-                toolbarEnd={toolbarEnd}
-                emptyMessage={t('assetGroups.empty.title', 'No asset groups found')}
-                emptyDescription={
-                  activeFilterCount > 0 || searchQuery
-                    ? t('assetGroups.empty.filtered', 'Try adjusting your search or filters')
-                    : t('assetGroups.empty.none', 'Create a group to organize your assets')
-                }
-                onRowClick={(group) => setViewGroup(group)}
-                getRowId={(group) => group.id}
-                onSelectionChange={(rows) => setSelectedIds(rows.map((g) => g.id))}
-                resetSelectionKey={selectionEpoch}
-                showSelectionCount={false}
-              />
+        <PageStack>
+          <PageHeader
+            title={t('assetGroups.title', 'Asset groups')}
+            description={t(
+              'assetGroups.description',
+              'Organize and monitor assets by logical group.'
             )}
-            {truncated && (
-              <p className="mt-2 text-xs text-muted-foreground">
-                {t(
-                  'assetGroups.truncated',
-                  'Showing the first {shown} of {total} groups. Search or filter to narrow the list.',
-                  {
-                    shown: cap,
-                    total: groupsTotal,
+          >
+            <Can permission={Permission.AssetGroupsWrite} mode="disable">
+              <Button size="sm" onClick={() => setIsCreateOpen(true)}>
+                <Plus className="me-2 h-4 w-4" />
+                {t('assetGroups.newGroup', 'New group')}
+              </Button>
+            </Can>
+          </PageHeader>
+          <AssetsSectionTabs />
+
+          <MetricStrip loading={statsLoading} items={metrics} />
+
+          <div className="flex items-start gap-5">
+            {filtersOpen && (
+              <aside
+                id="asset-group-filters"
+                aria-label={t('assetGroups.filtersLabel', 'Asset group filters')}
+                className="sticky top-4 hidden max-h-[calc(100svh-7.5rem)] w-64 shrink-0 flex-col rounded-xl border bg-card p-4 shadow-sm lg:flex"
+              >
+                <div className="flex min-h-0 flex-1 flex-col">{facetPanel}</div>
+              </aside>
+            )}
+
+            <div className="min-w-0 flex-1">
+              {isError && fetchedGroups.length === 0 ? (
+                <ErrorState
+                  title={t('assetGroups.errorTitle', 'asset groups')}
+                  error={listError}
+                  onRetry={() => refreshData()}
+                />
+              ) : isLoading && fetchedGroups.length === 0 ? (
+                <div className="space-y-2 rounded-xl border p-3">
+                  {Array.from({ length: 8 }).map((_, i) => (
+                    <Skeleton key={i} className="h-10 w-full" />
+                  ))}
+                </div>
+              ) : (
+                <DataTable
+                  columns={columns}
+                  data={groups}
+                  showSearch={false}
+                  toolbarStart={toolbarStart}
+                  toolbarEnd={toolbarEnd}
+                  emptyMessage={t('assetGroups.empty.title', 'No asset groups found')}
+                  emptyDescription={
+                    activeFilterCount > 0 || searchQuery
+                      ? t('assetGroups.empty.filtered', 'Try adjusting your search or filters')
+                      : t('assetGroups.empty.none', 'Create a group to organize your assets')
                   }
-                )}
-              </p>
-            )}
+                  onRowClick={(group) => setViewGroup(group)}
+                  getRowId={(group) => group.id}
+                  onSelectionChange={(rows) => setSelectedIds(rows.map((g) => g.id))}
+                  resetSelectionKey={selectionEpoch}
+                  showSelectionCount={false}
+                />
+              )}
+              {truncated && (
+                <p className="mt-2 text-xs text-muted-foreground">
+                  {t(
+                    'assetGroups.truncated',
+                    'Showing the first {shown} of {total} groups. Search or filter to narrow the list.',
+                    {
+                      shown: cap,
+                      total: groupsTotal,
+                    }
+                  )}
+                </p>
+              )}
+            </div>
           </div>
-        </div>
 
-        <BulkActionBar count={selectedIds.length} onClear={clearSelection} noun="selected">
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button variant="ghost" size="sm" className="h-8">
-                <Tags className="me-2 h-4 w-4" />
-                {t('assetGroups.bulk.criticality', 'Criticality')}
+          <BulkActionBar count={selectedIds.length} onClear={clearSelection} noun="selected">
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="ghost" size="sm" className="h-8">
+                  <Tags className="me-2 h-4 w-4" />
+                  {t('assetGroups.bulk.criticality', 'Criticality')}
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent>
+                {CRITICALITIES.map((crit) => (
+                  <DropdownMenuItem
+                    key={crit}
+                    onClick={() => handleBulkAction('change-criticality', crit)}
+                  >
+                    <span
+                      className={cn('me-2 size-2 rounded-full', CRITICALITY_DOT_COLORS[crit])}
+                    />
+                    {t(`criticality.${crit}`, CRITICALITY_LABELS[crit])}
+                  </DropdownMenuItem>
+                ))}
+              </DropdownMenuContent>
+            </DropdownMenu>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="ghost" size="sm" className="h-8">
+                  <SlidersHorizontal className="me-2 h-4 w-4" />
+                  {t('assetGroups.bulk.environment', 'Environment')}
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent>
+                {ENVIRONMENTS.map((env) => (
+                  <DropdownMenuItem
+                    key={env}
+                    onClick={() => handleBulkAction('change-environment', env)}
+                  >
+                    {t(`assetGroups.environment.${env}`, env)}
+                  </DropdownMenuItem>
+                ))}
+              </DropdownMenuContent>
+            </DropdownMenu>
+            <Can permission={Permission.AssetGroupsDelete}>
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-8 text-destructive hover:text-destructive"
+                onClick={() => setBulkDeleteConfirm(true)}
+              >
+                <Trash2 className="me-2 h-4 w-4" />
+                {t('assetGroups.action.delete', 'Delete')}
               </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent>
-              {CRITICALITIES.map((crit) => (
-                <DropdownMenuItem
-                  key={crit}
-                  onClick={() => handleBulkAction('change-criticality', crit)}
-                >
-                  <span className={cn('me-2 size-2 rounded-full', CRITICALITY_DOT_COLORS[crit])} />
-                  {t(`criticality.${crit}`, CRITICALITY_LABELS[crit])}
-                </DropdownMenuItem>
-              ))}
-            </DropdownMenuContent>
-          </DropdownMenu>
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button variant="ghost" size="sm" className="h-8">
-                <SlidersHorizontal className="me-2 h-4 w-4" />
-                {t('assetGroups.bulk.environment', 'Environment')}
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent>
-              {ENVIRONMENTS.map((env) => (
-                <DropdownMenuItem
-                  key={env}
-                  onClick={() => handleBulkAction('change-environment', env)}
-                >
-                  {t(`assetGroups.environment.${env}`, env)}
-                </DropdownMenuItem>
-              ))}
-            </DropdownMenuContent>
-          </DropdownMenu>
-          <Can permission={Permission.AssetGroupsDelete}>
-            <Button
-              variant="ghost"
-              size="sm"
-              className="h-8 text-destructive hover:text-destructive"
-              onClick={() => setBulkDeleteConfirm(true)}
-            >
-              <Trash2 className="me-2 h-4 w-4" />
-              {t('assetGroups.action.delete', 'Delete')}
-            </Button>
-          </Can>
-        </BulkActionBar>
+            </Can>
+          </BulkActionBar>
 
-        <FilterSheet
-          open={filterSheetOpen}
-          onOpenChange={setFilterSheetOpen}
-          title={t('assetGroups.filtersLabel', 'Asset group filters')}
-        >
-          {facetPanel}
-        </FilterSheet>
+          <FilterSheet
+            open={filterSheetOpen}
+            onOpenChange={setFilterSheetOpen}
+            title={t('assetGroups.filtersLabel', 'Asset group filters')}
+          >
+            {facetPanel}
+          </FilterSheet>
+        </PageStack>
       </Main>
 
       {/* Quick View Sheet */}
