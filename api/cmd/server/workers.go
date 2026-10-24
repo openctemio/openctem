@@ -373,6 +373,12 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 		w.ControllerManager.Register(ctl)
 	}
 
+	// Ingest queue (RFC-122): finished jobs and reports after 30 days,
+	// stored upload parts once nobody will open them.
+	if repos.IngestJob != nil {
+		w.ControllerManager.Register(controller.NewIngestQueueRetentionController(repos.IngestJob, 0))
+	}
+
 	// CI alerts (RFC-051 §10.6): missed schedules, lost coverage, failing
 	// default branches and outdated runners, once each while they hold; and
 	// findings only a stale CI pipeline reported become not observed.
