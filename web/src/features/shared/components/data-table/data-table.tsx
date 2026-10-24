@@ -1122,10 +1122,10 @@ export function DataTable<TData, TValue>({
         </Table>
       </div>
 
-      {/* Pagination. Hidden while there is no row to page through: an empty
-          list shows its empty state only, never "Showing 0 - 0 of 0" or
+      {/* Pagination. Hidden while there is no row to page through (an empty
+          list, or the first load): never "Showing 0 - 0 of 0" or
           "Page 1 of 0". */}
-      {showPagination && !errorState && (isLoading || paginationTotal > 0) && (
+      {showPagination && !errorState && paginationTotal > 0 && (
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           {/* Row count info - centered on mobile. Under manual pagination the
               total is the server row count, not the current page's length. */}

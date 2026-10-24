@@ -65,7 +65,7 @@ func newScanCommandFixture() *scanCommandFixture {
 	}
 	f.h = NewCommandHandler(command.NewService(f.repo, logger.NewNop()), validator.New(), logger.NewNop())
 	f.h.SetAuditService(auditapp.NewAuditService(f.audit, logger.NewNop()))
-	f.h.SetScanCommandGate(scanapp.NewService(nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil,
+	f.h.SetScanCommandGate(scanapp.NewService(nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil,
 		logger.NewNop(), scanapp.WithScopeExclusionFilter(excludeValues{"payroll.example.com": true})))
 	return f
 }

@@ -494,5 +494,8 @@
   "scope.entries.searchLabel": "Tìm mục phạm vi",
   "scope.entries.noMatch": "Không có mục nào khớp",
   "scope.entries.emptyTitle": "Chưa có gì trong phạm vi",
-  "scope.entries.emptyDescription": "Quét từ chối mọi mục tiêu internet không có mục nào bao phủ."
+  "scope.entries.emptyDescription": "Quét từ chối mọi mục tiêu internet không có mục nào bao phủ.",
+  "scope.proofPage.description": "Các tên miền tổ chức của bạn đã chứng minh quyền kiểm soát bằng bản ghi DNS. Chứng minh tự nó không cho phép quét; đây là điều kiện để dùng cảm biến của nền tảng và các kiểm tra xâm nhập.",
+  "scope.networksPage.description": "Các dải địa chỉ được công bố bởi số AS và tổ chức thuộc về bạn. Một mạng tự nó không cho phép quét; hãy thêm các dải của nó thành mục phạm vi.",
+  "scope.show.label": "Hiển thị"
 }

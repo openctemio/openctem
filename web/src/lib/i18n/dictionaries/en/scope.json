@@ -494,5 +494,8 @@
   "scope.entries.searchLabel": "Search scope entries",
   "scope.entries.noMatch": "No entries match",
   "scope.entries.emptyTitle": "Nothing is in scope yet",
-  "scope.entries.emptyDescription": "Scans refuse every internet target no entry covers."
+  "scope.entries.emptyDescription": "Scans refuse every internet target no entry covers.",
+  "scope.proofPage.description": "Domains your organization has proved it controls with a DNS record. Proof authorizes no scan by itself; it is what platform sensors and intrusive checks require.",
+  "scope.networksPage.description": "Address ranges announced by the AS numbers and organizations that are yours. A network authorizes no scan by itself; add its ranges as scope entries.",
+  "scope.show.label": "Show"
 }
