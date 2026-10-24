@@ -46,6 +46,7 @@ import type {
   CICoverageFilter,
   CIRepositoryCoverage,
 } from '../types'
+import { useSearchQuery } from '@/hooks/use-search-query'
 
 type TFn = ReturnType<typeof useTranslation>['t']
 
@@ -201,11 +202,12 @@ export function CICoverageView({ toolbarStart }: CICoverageViewProps) {
   const [filterParam, setFilterParam] = useUrlFilter('coverage', '')
   const filter: CICoverageFilter = isCoverageFilter(filterParam) ? filterParam : ''
   const [q, setQ] = useUrlFilter('q', '')
+  const searchTerm = useSearchQuery(q).term
   const { pagination, setPagination, setPage } = useListParams({ defaultPageSize: 20 })
   const [pending, setPending] = useState<string | null>(null)
   const { data, error, isLoading, mutate } = useCICoverage({
     filter,
-    search: q,
+    search: searchTerm,
     page: pagination.pageIndex + 1,
     perPage: pagination.pageSize,
   })

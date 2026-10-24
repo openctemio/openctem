@@ -30,7 +30,7 @@ import {
   StackedCell,
 } from '@/features/shared'
 import { TableSkeleton } from '@/components/list-page-parts'
-import { useDebounce } from '@/hooks/use-debounce'
+import { useSearchQuery } from '@/hooks/use-search-query'
 import { useListParams } from '@/hooks/use-list-params'
 import { Can, Permission } from '@/lib/permissions'
 import { useComponentsList, useComponentsSummary } from '../api/hooks'
@@ -92,7 +92,7 @@ export function ComponentsListView() {
     filters: { ...COMPONENT_FILTER_DEFAULTS },
   })
   const [search, setSearch] = useState(list.q)
-  const debouncedSearch = useDebounce(search, 300)
+  const debouncedSearch = useSearchQuery(search).term
   const { setSearch: setListSearch } = list
   useEffect(() => {
     if (debouncedSearch !== list.q) setListSearch(debouncedSearch)

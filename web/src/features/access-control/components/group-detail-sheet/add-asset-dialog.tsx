@@ -22,6 +22,7 @@ import {
 import { type AssetOwnershipType, type GroupAsset } from '@/features/access-control'
 import { useAssets } from '@/features/assets/hooks/use-assets'
 import { useState, useEffect } from 'react'
+import { useSearchQuery } from '@/hooks/use-search-query'
 
 interface AddAssetDialogProps {
   open: boolean
@@ -39,15 +40,7 @@ export function AddAssetDialog({
   existingAssets,
 }: AddAssetDialogProps) {
   const [search, setSearch] = useState('')
-  const [debouncedSearch, setDebouncedSearch] = useState('')
-
-  // Custom debounce implementation
-  useEffect(() => {
-    const timer = setTimeout(() => {
-      setDebouncedSearch(search)
-    }, 500)
-    return () => clearTimeout(timer)
-  }, [search])
+  const debouncedSearch = useSearchQuery(search).term
 
   const [selectedAssetId, setSelectedAssetId] = useState('')
   const [ownershipType, setOwnershipType] = useState<AssetOwnershipType>('secondary')
