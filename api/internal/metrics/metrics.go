@@ -123,33 +123,16 @@ var (
 	)
 )
 
-// Template sync metrics
+// Rule source sync metrics (docs/architecture/content-sources.md).
 var (
-	// TemplateSyncsTotal tracks total template sync operations
-	TemplateSyncsTotal = promauto.NewCounterVec(
+	// ContentSourceSyncsTotal counts rule source syncs by result: new
+	// (a candidate snapshot), unchanged, or failed.
+	ContentSourceSyncsTotal = promauto.NewCounterVec(
 		prometheus.CounterOpts{
-			Name: "template_syncs_total",
-			Help: "Total number of template sync operations by source type",
+			Name: "content_source_syncs_total",
+			Help: "Rule source syncs by result (new, unchanged, failed)",
 		},
-		[]string{"source_type"},
-	)
-
-	// TemplateSyncsSuccessTotal tracks successful template syncs
-	TemplateSyncsSuccessTotal = promauto.NewCounterVec(
-		prometheus.CounterOpts{
-			Name: "template_syncs_success_total",
-			Help: "Total number of successful template sync operations",
-		},
-		[]string{},
-	)
-
-	// TemplateSyncsFailedTotal tracks failed template syncs
-	TemplateSyncsFailedTotal = promauto.NewCounterVec(
-		prometheus.CounterOpts{
-			Name: "template_syncs_failed_total",
-			Help: "Total number of failed template sync operations",
-		},
-		[]string{},
+		[]string{"result"},
 	)
 )
 
