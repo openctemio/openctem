@@ -12,7 +12,7 @@ import { useId, useMemo, useState } from 'react'
 import { toast } from 'sonner'
 import { Download, FileSignature, Loader2, Upload } from 'lucide-react'
 import { Main } from '@/components/layout'
-import { ConfirmDialog } from '@/components/confirm-dialog'
+import { ConfirmDialog, nameToConfirm } from '@/components/confirm-dialog'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -302,7 +302,8 @@ export default function ScopeLettersPage() {
                         <Button
                           variant="ghost"
                           size="sm"
-                          className="text-destructive"
+                          // Set apart from Download so a tap meant for it cannot land here.
+                          className="ms-3 text-destructive"
                           disabled={busy === l.id}
                           onClick={() => setPendingRevoke(l)}
                         >
@@ -328,7 +329,10 @@ export default function ScopeLettersPage() {
           'confirm.letter.revokeDesc',
           'Scope entries that name this letter stop authorizing active scans at once. A revoked letter cannot be reinstated; upload a new letter instead.'
         )}
-        confirmText={t('confirm.revoke', 'Revoke')}
+        confirmText={t('confirm.letter.revokeButton', 'Revoke letter')}
+        typeToConfirm={
+          pendingRevoke ? nameToConfirm(pendingRevoke.title, pendingRevoke.id) : undefined
+        }
         isLoading={busy !== null}
         handleConfirm={() => (pendingRevoke ? revoke(pendingRevoke) : undefined)}
       />

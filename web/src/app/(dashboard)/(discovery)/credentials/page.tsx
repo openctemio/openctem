@@ -24,6 +24,7 @@ import {
   MetadataRow,
   SectionTitle,
 } from '@/features/assets'
+import { ConfirmDialog } from '@/components/confirm-dialog'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
@@ -419,6 +420,7 @@ export default function CredentialsPage() {
   // Export every leak matching the current filters (all pages), not just the
   // page on screen.
   const [isExporting, setIsExporting] = useState(false)
+  const [confirmExport, setConfirmExport] = useState(false)
   const handleExport = async () => {
     if (isExporting) return
     setIsExporting(true)
@@ -591,7 +593,7 @@ export default function CredentialsPage() {
           <Button
             variant="outline"
             size="sm"
-            onClick={handleExport}
+            onClick={() => setConfirmExport(true)}
             disabled={!credentials.length || isExporting}
           >
             <Download className="h-4 w-4 sm:me-2" />
@@ -675,6 +677,22 @@ export default function CredentialsPage() {
           )}
         </div>
       </Main>
+
+      <ConfirmDialog
+        open={confirmExport}
+        onOpenChange={setConfirmExport}
+        title={t('credentials.export.confirmTitle', 'Export the leaked credentials?')}
+        desc={t(
+          'credentials.export.confirmDesc',
+          'The CSV lists every leak that matches the current filters with usernames, sources and leak dates. It is personal data about leaked accounts and leaves the console unprotected, so store it as you would the leaks themselves.'
+        )}
+        confirmText={t('credentials.export.confirmButton', 'Export CSV')}
+        isLoading={isExporting}
+        handleConfirm={async () => {
+          setConfirmExport(false)
+          await handleExport()
+        }}
+      />
 
       {/* Detail Sheet */}
       <AssetDetailSheet

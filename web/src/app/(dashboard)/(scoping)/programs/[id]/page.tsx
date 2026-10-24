@@ -10,7 +10,7 @@
 import { use, useState } from 'react'
 import { toast } from 'sonner'
 import { Main } from '@/components/layout'
-import { ConfirmDialog } from '@/components/confirm-dialog'
+import { ConfirmDialog, nameToConfirm } from '@/components/confirm-dialog'
 import { SafeExternalLink } from '@/components/safe-external-link'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -167,6 +167,7 @@ export default function ProgramPage({ params }: { params: Promise<{ id: string }
                 {t('programs.suspend', 'Suspend')}
               </Button>
             )}
+            <span aria-hidden className="mx-1 h-6 w-px shrink-0 bg-border" />
             <Button variant="destructive" disabled={busy} onClick={() => setPending('end')}>
               {t('programs.end', 'End')}
             </Button>
@@ -359,6 +360,7 @@ export default function ProgramPage({ params }: { params: Promise<{ id: string }
                 'Its scope entries stop authorizing scans until someone reactivates it and accepts the program terms again.'
               )
         }
+        typeToConfirm={pending === 'end' ? nameToConfirm(p.name, p.id) : undefined}
         confirmText={
           pending === 'end'
             ? t('confirm.program.end', 'End program')

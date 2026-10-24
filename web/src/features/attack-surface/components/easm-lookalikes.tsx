@@ -14,7 +14,7 @@ import { useState } from 'react'
 import { Copy, Loader2, Plus, Settings2, Trash2 } from 'lucide-react'
 import { toast } from 'sonner'
 
-import { ConfirmDialog } from '@/components/confirm-dialog'
+import { ConfirmDialog, nameToConfirm } from '@/components/confirm-dialog'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
@@ -636,8 +636,9 @@ export function EASMLookalikes() {
           'lookalikes.removeDesc',
           'Its open lookalike exposures are resolved and its candidates are dropped.'
         )}
-        confirmText={t('confirm.remove', 'Remove')}
+        confirmText={t('lookalikes.removeButton', 'Stop watching')}
         destructive
+        typeToConfirm={removing ? nameToConfirm(removing.domain, removing.id ?? '') : undefined}
         handleConfirm={() => void remove()}
       />
     </div>

@@ -10,7 +10,7 @@ import { useState } from 'react'
 import { Pencil, Plus, ShieldCheck, Trash2 } from 'lucide-react'
 import { toast } from 'sonner'
 import Link from '@/components/link'
-import { ConfirmDialog } from '@/components/confirm-dialog'
+import { ConfirmDialog, nameToConfirm } from '@/components/confirm-dialog'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
@@ -230,13 +230,16 @@ export function VexStatementsPanel({ productId }: { productId: string }) {
       <ConfirmDialog
         open={deleting !== null}
         onOpenChange={(o) => !o && setDeleting(null)}
-        title={t('components.vex.deleteTitle', 'Delete this statement?')}
+        title={t('components.vex.deleteTitle', 'Delete the statement for {vuln}?', {
+          vuln: deleting?.vuln_id ?? '',
+        })}
         desc={t(
           'components.vex.deleteDesc',
           'Findings the statement closed reopen unless another statement covers them.'
         )}
-        confirmText={t('components.vex.deleteConfirm', 'Delete')}
+        confirmText={t('components.vex.deleteConfirm', 'Delete statement')}
         destructive
+        typeToConfirm={deleting ? nameToConfirm(deleting.vuln_id, deleting.id) : undefined}
         isLoading={busy}
         handleConfirm={confirmDelete}
       />

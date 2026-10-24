@@ -478,5 +478,21 @@
   "scope.entries.searchLabel": "Search scope entries",
   "scope.entries.noMatch": "No entries match",
   "scope.entries.emptyTitle": "Nothing is in scope yet",
-  "scope.entries.emptyDescription": "Scans refuse every internet target no entry covers."
+  "scope.entries.emptyDescription": "Scans refuse every internet target no entry covers.",
+  "scope.approvals.approvedOne": "1 change approved",
+  "scope.approvals.approvedMany": "{count} changes approved",
+  "scope.approvals.rejectedOne": "1 change rejected",
+  "scope.approvals.rejectedMany": "{count} changes rejected",
+  "scope.approvals.notSaved": "not saved",
+  "scope.approvals.selectEvery": "Select every change you may approve",
+  "scope.approvals.selectAll": "Select all you may approve ({count})",
+  "scope.approvals.approveSelected": "Approve selected ({count})",
+  "scope.approvals.listLabel": "Changes waiting for approval",
+  "scope.approvals.approve": "Approve",
+  "scope.approvals.reject": "Reject",
+  "scope.fix.notSaved": "The change was not saved.",
+  "scope.fix.approved": "Approval recorded",
+  "scope.fix.activated": "Entry activated",
+  "scope.fix.renewed": "Entry renewed",
+  "scope.fix.thisEntry": "this entry"
 }

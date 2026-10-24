@@ -47,7 +47,11 @@ describe('Authorization letters revoke', () => {
     expect(revokeLetter).not.toHaveBeenCalled()
     const dialog = await screen.findByRole('alertdialog')
     expect(dialog).toHaveTextContent('Revoke the letter "Q4 pentest authorization"?')
-    await userEvent.click(within(dialog).getByRole('button', { name: 'Revoke' }))
+    const confirm = within(dialog).getByRole('button', { name: 'Revoke letter' })
+    // A revoked letter cannot be reinstated, so its title is typed first.
+    expect(confirm).toBeDisabled()
+    await userEvent.type(within(dialog).getByRole('textbox'), 'Q4 pentest authorization')
+    await userEvent.click(confirm)
     await waitFor(() => expect(revokeLetter).toHaveBeenCalledWith('l1'))
   })
 })

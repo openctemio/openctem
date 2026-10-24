@@ -15,10 +15,10 @@
   "proxyPools.default.title": "Use proxies for scans",
   "proxyPools.default.toggle": "Use proxies for scans",
   "proxyPools.delete": "Delete",
-  "proxyPools.deleteDesc": "Delete \"{name}\" and its proxies? Their stored credentials are erased.",
+  "proxyPools.deleteDesc": "The pool and its proxies are deleted. Their stored credentials are erased.",
   "proxyPools.deleteInUse": "Sensors still use this pool. Set their network path to another pool, Direct or Inherit first.",
   "proxyPools.deleteNamed": "Delete {name}",
-  "proxyPools.deleteTitle": "Delete pool",
+  "proxyPools.deleteTitle": "Delete the pool \"{name}\"?",
   "proxyPools.dialog.description": "A pool is a list of proxies. Assign it to sensors on their pages: a sensor assigned a pool sends all its scan traffic through it, private targets included.",
   "proxyPools.dialog.editTitle": "Edit pool",
   "proxyPools.dialog.needsProxy": "Add at least one proxy before enabling the pool: scans fail closed when it has none.",
@@ -69,5 +69,6 @@
   "proxyPools.toast.poolSaved": "Pool saved",
   "proxyPools.toast.saveFailed": "Could not save the proxies",
   "proxyPools.toast.saved": "Proxies saved",
-  "proxyPools.toast.updateFailed": "Could not update the proxy"
+  "proxyPools.toast.updateFailed": "Could not update the proxy",
+  "proxyPools.deleteButton": "Delete pool"
 }

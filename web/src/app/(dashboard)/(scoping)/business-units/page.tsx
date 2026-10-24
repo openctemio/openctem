@@ -71,7 +71,7 @@ import {
   CommandList,
 } from '@/components/ui/command'
 import { cn } from '@/lib/utils'
-import { ConfirmDialog } from '@/components/confirm-dialog'
+import { ConfirmDialog, nameToConfirm } from '@/components/confirm-dialog'
 import { TabsCount } from '@/components/ui/tabs'
 import { BusinessUnitAssets } from '@/features/business-units/components/business-unit-assets'
 import { toast } from 'sonner'
@@ -1183,8 +1183,9 @@ export default function BusinessUnitsPage() {
             )}
           </>
         }
-        confirmText={t('confirm.delete', 'Delete')}
+        confirmText={t('confirm.businessUnit.deleteButton', 'Delete business unit')}
         destructive
+        typeToConfirm={deleteUnit ? nameToConfirm(deleteUnit.name, deleteUnit.id) : undefined}
         handleConfirm={handleDelete}
       />
     </>

@@ -4,7 +4,7 @@ import { useState } from 'react'
 import { Plus, Trash2, Waypoints } from 'lucide-react'
 import { toast } from 'sonner'
 
-import { ConfirmDialog } from '@/components/confirm-dialog'
+import { ConfirmDialog, nameToConfirm } from '@/components/confirm-dialog'
 import { Badge } from '@/components/ui/badge'
 import { Card, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { useTranslation } from '@/context/i18n-provider'
@@ -141,16 +141,16 @@ export function MorePoolsSection({ pools, canWrite, canDelete }: MorePoolsSectio
       <ConfirmDialog
         open={!!deleting}
         onOpenChange={(o) => !o && setDeleting(null)}
-        title={t('proxyPools.deleteTitle', 'Delete pool')}
+        title={t('proxyPools.deleteTitle', 'Delete the pool "{name}"?', {
+          name: deleting?.name ?? '',
+        })}
         desc={t(
           'proxyPools.deleteDesc',
-          'Delete "{name}" and its proxies? Their stored credentials are erased.',
-          {
-            name: deleting?.name ?? '',
-          }
+          'The pool and its proxies are deleted. Their stored credentials are erased.'
         )}
-        confirmText={t('proxyPools.delete', 'Delete')}
+        confirmText={t('proxyPools.deleteButton', 'Delete pool')}
         destructive
+        typeToConfirm={deleting ? nameToConfirm(deleting.name, deleting.id) : undefined}
         handleConfirm={() => {
           const target = deleting
           setDeleting(null)

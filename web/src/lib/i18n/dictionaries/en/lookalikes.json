@@ -58,5 +58,6 @@
   "lookalikes.web": "Has addresses",
   "lookalikes.maxInvalid": "Enter a whole number from 10 to 1000",
   "lookalikes.shownOf": "{shown} of {total}",
-  "lookalikes.loadMore": "Load more"
+  "lookalikes.loadMore": "Load more",
+  "lookalikes.removeButton": "Stop watching"
 }

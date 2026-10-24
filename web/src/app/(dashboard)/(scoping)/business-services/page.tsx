@@ -34,7 +34,7 @@ import {
   DialogTitle,
   DialogBody,
 } from '@/components/ui/dialog'
-import { ConfirmDialog } from '@/components/confirm-dialog'
+import { ConfirmDialog, nameToConfirm } from '@/components/confirm-dialog'
 import {
   Select,
   SelectContent,
@@ -771,8 +771,11 @@ export default function BusinessServicesPage() {
           'confirm.businessService.deleteDesc',
           'Its asset links are removed, so those assets no longer take business context from it. The assets themselves stay. This cannot be undone.'
         )}
-        confirmText={t('confirm.delete', 'Delete')}
+        confirmText={t('confirm.businessService.deleteButton', 'Delete business service')}
         destructive
+        typeToConfirm={
+          deletingService ? nameToConfirm(deletingService.name, deletingService.id) : undefined
+        }
         handleConfirm={handleDelete}
       />
       <CappedNotice loaded={allServices.length} total={data?.total ?? 0} />

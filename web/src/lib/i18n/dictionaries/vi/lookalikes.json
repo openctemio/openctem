@@ -58,5 +58,6 @@
   "lookalikes.web": "Có địa chỉ IP",
   "lookalikes.maxInvalid": "Nhập một số nguyên từ 10 đến 1000",
   "lookalikes.shownOf": "{shown} trên {total}",
-  "lookalikes.loadMore": "Tải thêm"
+  "lookalikes.loadMore": "Tải thêm",
+  "lookalikes.removeButton": "Ngừng theo dõi"
 }
