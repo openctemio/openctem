@@ -835,7 +835,7 @@ func registerWorkflowRoutes(
 		r.GET("/{id}/trace", h.GetTrace, middleware.Require(permission.WorkflowsRead))
 		// Preview (in the caller's scope, nothing stored) and validate a draft.
 		r.POST("/{id}/preview", h.Preview, middleware.Require(permission.WorkflowsWrite))
-		r.POST("/{id}/validate", h.Validate, middleware.Require(permission.WorkflowsWrite))
+		r.POST("/{id}/verify", h.Validate, middleware.Require(permission.WorkflowsWrite))
 	}, tenantMiddlewares...)
 
 	// Workflow Run routes - direct access
