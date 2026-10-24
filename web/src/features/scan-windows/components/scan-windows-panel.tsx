@@ -12,6 +12,7 @@ import { CalendarClock, Plus, Trash2 } from 'lucide-react'
 import { toast } from 'sonner'
 
 import { ConfirmDialog } from '@/components/confirm-dialog'
+import { nameToTypeToConfirm } from '@/components/confirm-name'
 import { Badge } from '@/components/ui/badge'
 import { Card, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Skeleton } from '@/components/ui/skeleton'
@@ -129,11 +130,13 @@ export function ScanWindowsPanel() {
                       >
                         {t('scanWindows.edit', 'Edit')}
                       </GatedButton>
+                      {/* Set apart from Edit: a mis-tap must not delete. */}
                       <GatedButton
                         allowed={canManage}
                         reason={noWrite}
                         variant="ghost"
                         size="sm"
+                        className="ms-3 text-destructive hover:text-destructive"
                         aria-label={t('scanWindows.deleteNamed', 'Delete {name}', {
                           name: p.name ?? '',
                         })}
@@ -164,16 +167,11 @@ export function ScanWindowsPanel() {
       <ConfirmDialog
         open={!!deleting}
         onOpenChange={(o) => !o && setDeleting(null)}
-        title={t('scanWindows.deleteTitle', 'Delete scan window policy')}
-        desc={t(
-          'scanWindows.deleteDesc',
-          'Delete "{name}"? Work it holds now is released at once.',
-          {
-            name: deleting?.name ?? '',
-          }
-        )}
-        confirmText={t('scanWindows.delete', 'Delete')}
+        title={t('confirm.scanWindow.deleteTitle', undefined, { name: deleting?.name ?? '' })}
+        desc={t('confirm.scanWindow.deleteDesc')}
+        confirmText={t('confirm.scanWindow.deleteBtn')}
         destructive
+        typeToConfirm={deleting ? nameToTypeToConfirm(deleting.name, deleting.id ?? '') : undefined}
         handleConfirm={() => {
           const target = deleting
           setDeleting(null)

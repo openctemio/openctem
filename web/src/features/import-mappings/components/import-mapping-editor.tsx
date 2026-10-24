@@ -12,6 +12,7 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { Switch } from '@/components/ui/switch'
 import { Tabs, TabsContent, TabsCount, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Textarea } from '@/components/ui/textarea'
+import { nameToTypeToConfirm } from '@/components/confirm-name'
 import { ConfirmDialog } from '@/components/confirm-dialog'
 import { ErrorState, PageHeader } from '@/features/shared'
 import { Can, Permission, usePermissions } from '@/lib/permissions'
@@ -414,7 +415,7 @@ export function ImportMappingEditor({ id }: { id?: string }) {
             <Button
               variant="ghost"
               size="sm"
-              className="text-destructive"
+              className="ms-4 text-destructive hover:text-destructive"
               onClick={() => setDeleteOpen(true)}
             >
               <Trash2 className="me-1 h-4 w-4" aria-hidden />
@@ -629,13 +630,11 @@ export function ImportMappingEditor({ id }: { id?: string }) {
           <ConfirmDialog
             open={deleteOpen}
             onOpenChange={setDeleteOpen}
-            title={t('importMappings.delete.title', 'Delete this mapping?')}
-            desc={t(
-              'importMappings.delete.description',
-              'Imports that name it stop working. Findings it imported stay as they are.'
-            )}
-            confirmText={t('importMappings.editor.delete', 'Delete')}
+            title={t('confirm.importMapping.deleteTitle', undefined, { name: mapping.name })}
+            desc={t('confirm.importMapping.deleteDesc')}
+            confirmText={t('confirm.importMapping.deleteBtn')}
             destructive
+            typeToConfirm={nameToTypeToConfirm(mapping.name, mapping.id)}
             handleConfirm={async () => {
               if (!id) return
               try {

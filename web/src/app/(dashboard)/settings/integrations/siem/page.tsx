@@ -18,6 +18,7 @@ import {
   DialogTitle,
   DialogBody,
 } from '@/components/ui/dialog'
+import { nameToTypeToConfirm } from '@/components/confirm-name'
 import { ConfirmDialog } from '@/components/confirm-dialog'
 import { toast } from 'sonner'
 import { csrfFetch, del } from '@/lib/api/client'
@@ -362,8 +363,11 @@ export default function SIEMIntegrationPage() {
           'confirm.siem.deleteDesc',
           'Events stop being forwarded to it at once and its settings are deleted. This cannot be undone.'
         )}
-        confirmText={t('confirm.delete', 'Delete')}
+        confirmText={t('confirm.siem.deleteBtn')}
         destructive
+        typeToConfirm={
+          deleteTarget ? nameToTypeToConfirm(deleteTarget.name, deleteTarget.id) : undefined
+        }
         isLoading={deleting}
         handleConfirm={() => void handleDelete()}
       />

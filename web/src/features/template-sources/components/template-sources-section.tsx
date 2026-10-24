@@ -23,6 +23,7 @@ import { getErrorMessage } from '@/lib/api/error-handler'
 
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
+import { nameToTypeToConfirm } from '@/components/confirm-name'
 import { ConfirmDialog } from '@/components/confirm-dialog'
 import { RefreshButton, TableSkeleton } from '@/components/list-page-parts'
 
@@ -247,27 +248,29 @@ export function TemplateSourcesSection() {
               <DataTableRowActions
                 actions={[
                   {
-                    label: 'Sync now',
+                    label: t('scans.templateSources.row.sync'),
                     icon: RefreshCw,
                     onClick: () => handleSync(source),
                     disabled: isSyncing || !source.is_enabled,
                     permission: Permission.TemplateSourcesWrite,
                   },
                   {
-                    label: source.is_enabled ? 'Disable' : 'Enable',
+                    label: source.is_enabled
+                      ? t('scans.templateSources.row.disable')
+                      : t('scans.templateSources.row.enable'),
                     icon: source.is_enabled ? Pause : Play,
                     onClick: () => handleToggleEnabled(source),
                     disabled: isEnabling || isDisabling,
                     permission: Permission.TemplateSourcesWrite,
                   },
                   {
-                    label: 'Edit',
+                    label: t('scans.templateSources.row.edit'),
                     icon: Pencil,
                     onClick: () => handleEditSource(source),
                     permission: Permission.TemplateSourcesWrite,
                   },
                   {
-                    label: 'Delete',
+                    label: t('scans.templateSources.row.delete'),
                     icon: Trash2,
                     onClick: () => handleDeleteClick(source),
                     destructive: true,
@@ -289,6 +292,7 @@ export function TemplateSourcesSection() {
       isSyncing,
       isEnabling,
       isDisabling,
+      t,
     ]
   )
 
@@ -369,9 +373,12 @@ export function TemplateSourcesSection() {
           'confirm.templateSource.deleteDesc',
           'Every template synced from it is removed too. This cannot be undone.'
         )}
-        confirmText={t('confirm.delete', 'Delete')}
+        confirmText={t('confirm.templateSource.deleteBtn')}
         destructive
         isLoading={isDeleting}
+        typeToConfirm={
+          selectedSource ? nameToTypeToConfirm(selectedSource.name, selectedSource.id) : undefined
+        }
         handleConfirm={handleDeleteConfirm}
       />
     </>

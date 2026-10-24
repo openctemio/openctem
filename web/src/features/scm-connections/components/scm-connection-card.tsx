@@ -26,6 +26,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
+import { nameToTypeToConfirm } from '@/components/confirm-name'
 import { ConfirmDialog } from '@/components/confirm-dialog'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import { cn, sanitizeExternalUrl } from '@/lib/utils'
@@ -204,11 +205,11 @@ export function SCMConnectionCard({
                 )}
                 <DropdownMenuSeparator />
                 <DropdownMenuItem
-                  className="text-red-500"
+                  className="text-destructive focus:text-destructive"
                   onClick={() => setDeleteDialogOpen(true)}
                 >
                   <Trash2 className="me-2 h-4 w-4" />
-                  Delete
+                  {t('confirm.delete', 'Delete')}
                 </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
@@ -277,8 +278,9 @@ export function SCMConnectionCard({
             )}
           </>
         }
-        confirmText={t('confirm.delete', 'Delete')}
+        confirmText={t('confirm.scm.deleteBtn')}
         destructive
+        typeToConfirm={nameToTypeToConfirm(connection.name, connection.id)}
         isLoading={isDeleting}
         handleConfirm={handleDelete}
       />

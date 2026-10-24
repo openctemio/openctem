@@ -20,6 +20,7 @@ import {
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import type { ColumnDef } from '@tanstack/react-table'
+import { nameToTypeToConfirm } from '@/components/confirm-name'
 import { ConfirmDialog } from '@/components/confirm-dialog'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
@@ -754,8 +755,13 @@ export default function NotificationIntegrationsPage() {
           'confirm.notificationChannel.deleteDesc',
           'Notifications stop going to this channel at once, and rules that send to it lose this destination. This cannot be undone.'
         )}
-        confirmText={t('confirm.delete', 'Delete')}
+        confirmText={t('confirm.notificationChannel.deleteBtn')}
         destructive
+        typeToConfirm={
+          selectedIntegration
+            ? nameToTypeToConfirm(selectedIntegration.name, selectedIntegration.id)
+            : undefined
+        }
         handleConfirm={() => void handleDelete()}
       />
     </>

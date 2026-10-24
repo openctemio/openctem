@@ -32,6 +32,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
+import { nameToTypeToConfirm } from '@/components/confirm-name'
 import { ConfirmDialog } from '@/components/confirm-dialog'
 import { ErrorState, PageHeader } from '@/features/shared'
 import { usePermissions, Permission } from '@/lib/permissions'
@@ -117,7 +118,19 @@ export function MappingEditor({ id }: { id: string }) {
   const [importOpen, setImportOpen] = useState(false)
   const [importText, setImportText] = useState('')
   const [deleteOpen, setDeleteOpen] = useState(false)
+  const [askDryRunOff, setAskDryRunOff] = useState(false)
   const [tab, setTab] = useState('fields')
+
+  const setDryRun = async (value: boolean) => {
+    try {
+      await mappingApi.setDryRun(id, value)
+      await mutate()
+    } catch (err) {
+      toast.error(
+        getErrorMessage(err, t('ticketMapping.editor.dryRunFailed', 'Could not change dry run'))
+      )
+    }
+  }
 
   useEffect(() => {
     if (base && !dirty) setSpec(normalizeSpec(base.spec))
@@ -401,26 +414,15 @@ export function MappingEditor({ id }: { id: string }) {
               <FlaskConical className="h-4 w-4 text-muted-foreground" aria-hidden />
               <Switch
                 checked={profile.dry_run}
-                onCheckedChange={async (v) => {
-                  try {
-                    await mappingApi.setDryRun(id, v)
-                    await mutate()
-                  } catch (err) {
-                    toast.error(
-                      getErrorMessage(
-                        err,
-                        t('ticketMapping.editor.dryRunFailed', 'Could not change dry run')
-                      )
-                    )
-                  }
-                }}
+                // Turning dry run off starts Jira writes: ask first. On is one click.
+                onCheckedChange={(v) => (v ? void setDryRun(true) : setAskDryRunOff(true))}
               />
               {t('ticketMapping.editor.dryRun', 'Dry run (log only)')}
             </label>
             <Button
               variant="ghost"
               size="sm"
-              className="text-destructive"
+              className="ms-4 text-destructive hover:text-destructive"
               onClick={() => setDeleteOpen(true)}
             >
               <Trash2 className="me-1 h-4 w-4" aria-hidden />
@@ -538,15 +540,24 @@ export function MappingEditor({ id }: { id: string }) {
       </Dialog>
 
       <ConfirmDialog
+        open={askDryRunOff}
+        onOpenChange={setAskDryRunOff}
+        title={t('confirm.ticketMapping.dryRunOffTitle', undefined, { name: profile.name })}
+        desc={t('confirm.ticketMapping.dryRunOffDesc')}
+        confirmText={t('confirm.ticketMapping.dryRunOffBtn')}
+        handleConfirm={async () => {
+          setAskDryRunOff(false)
+          await setDryRun(false)
+        }}
+      />
+      <ConfirmDialog
         open={deleteOpen}
         onOpenChange={setDeleteOpen}
-        title={t('ticketMapping.delete.title', 'Delete this mapping?')}
-        desc={t(
-          'ticketMapping.delete.description',
-          'Tickets for this destination go back to the built-in fields. Versions are deleted; the audit log keeps the history.'
-        )}
-        confirmText={t('ticketMapping.editor.delete', 'Delete')}
+        title={t('confirm.ticketMapping.deleteTitle', undefined, { name: profile.name })}
+        desc={t('confirm.ticketMapping.deleteDesc')}
+        confirmText={t('confirm.ticketMapping.deleteBtn')}
         destructive
+        typeToConfirm={nameToTypeToConfirm(profile.name, profile.id)}
         handleConfirm={async () => {
           try {
             await mappingApi.remove(id)

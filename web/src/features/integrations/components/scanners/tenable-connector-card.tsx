@@ -10,6 +10,7 @@ import { useState } from 'react'
 import { toast } from 'sonner'
 import { AlertTriangle, Pencil, RefreshCw, Trash2 } from 'lucide-react'
 
+import { nameToTypeToConfirm } from '@/components/confirm-name'
 import { ConfirmDialog } from '@/components/confirm-dialog'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -154,6 +155,7 @@ export function TenableConnectorCard({
               <Button
                 size="sm"
                 variant="outline"
+                className="ms-3 text-destructive hover:text-destructive"
                 onClick={() => setConfirmRemove(true)}
                 aria-label={t('tenableSc.card.remove', 'Remove connector')}
               >
@@ -241,8 +243,11 @@ export function TenableConnectorCard({
           'confirm.scannerIntegration.removeConnectorDesc',
           'Syncs and coverage through this connector stop. Findings already pulled are kept. This cannot be undone.'
         )}
-        confirmText={removing ? t('confirm.removing', 'Removing…') : t('confirm.remove', 'Remove')}
+        confirmText={
+          removing ? t('confirm.removing', 'Removing…') : t('confirm.scannerIntegration.removeBtn')
+        }
         destructive
+        typeToConfirm={nameToTypeToConfirm(integration.name, integration.id)}
         isLoading={removing}
         handleConfirm={() => void handleRemove()}
       />
