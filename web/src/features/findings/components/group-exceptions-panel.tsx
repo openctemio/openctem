@@ -257,6 +257,7 @@ export function GroupExceptionSheet({
   const [rejectOpen, setRejectOpen] = useState(false)
   const [reason, setReason] = useState('')
   const [cancelOpen, setCancelOpen] = useState(false)
+  const [approveOpen, setApproveOpen] = useState(false)
 
   const pending = batch?.status === 'pending'
   // The four-eyes rule: someone else decides your own request.
@@ -288,6 +289,7 @@ export function GroupExceptionSheet({
           description: appliedDescription(t, res),
         })
       }
+      setApproveOpen(false)
       await after()
     } catch (err) {
       const outcome = approveErrorOutcome(t, err)
@@ -494,7 +496,7 @@ export function GroupExceptionSheet({
                     <X className="me-2 h-4 w-4 text-destructive" aria-hidden />
                     {t('findings.approvals.action.reject', 'Reject')}
                   </Button>
-                  <Button onClick={() => void approve()} disabled={!!busy}>
+                  <Button onClick={() => setApproveOpen(true)} disabled={!!busy}>
                     {busy === 'approve' ? (
                       <Loader2 className="me-2 h-4 w-4 animate-spin" aria-hidden />
                     ) : (
@@ -552,6 +554,37 @@ export function GroupExceptionSheet({
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <ConfirmDialog
+        open={approveOpen}
+        onOpenChange={setApproveOpen}
+        title={t(
+          'findingApprovals.group.approveConfirmTitle',
+          'Approve the exception for {count} findings?',
+          { count: batch?.member_count ?? 0 }
+        )}
+        desc={
+          remaining > 1
+            ? t(
+                'findingApprovals.group.approveConfirmDescMore',
+                'Your approval is recorded. The findings change status after {count} more approvals.',
+                { count: remaining - 1 }
+              )
+            : t(
+                'findingApprovals.group.approveConfirmDesc',
+                'This is the last approval needed: every finding in the group changes to the requested status now.'
+              )
+        }
+        confirmText={
+          remaining > 1
+            ? t('findingApprovals.group.approveSign', 'Add my approval')
+            : t('findingApprovals.group.approveAll', 'Approve {count} finding(s)', {
+                count: batch?.member_count ?? 0,
+              })
+        }
+        isLoading={busy === 'approve'}
+        handleConfirm={approve}
+      />
 
       <ConfirmDialog
         open={cancelOpen}

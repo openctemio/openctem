@@ -8,7 +8,7 @@
  */
 
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen } from '@testing-library/react'
+import { render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { ValidationEvidencePanel } from '../validation-evidence-panel'
 
@@ -97,6 +97,9 @@ describe('ValidationEvidencePanel', () => {
     const user = userEvent.setup()
     render(<ValidationEvidencePanel findingId="f-1" />)
     await user.click(screen.getByRole('button', { name: /check reachability/i }))
+    expect(mockRequestValidation).not.toHaveBeenCalled()
+    const dialog = await screen.findByRole('alertdialog')
+    await user.click(within(dialog).getByRole('button', { name: 'Run safe check' }))
     expect(mockRequestValidation).toHaveBeenCalledTimes(1)
   })
 

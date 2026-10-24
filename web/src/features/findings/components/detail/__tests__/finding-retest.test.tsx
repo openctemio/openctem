@@ -7,7 +7,7 @@
  */
 
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen } from '@testing-library/react'
+import { render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { FindingRetestSection, retestMeta } from '../finding-retest'
 import type { FindingRetest } from '../../../api/use-finding-retests'
@@ -85,6 +85,11 @@ describe('FindingRetestSection', () => {
     render(<FindingRetestSection finding={nucleiFinding} />)
     expect(screen.getByText(/Not retested yet/i)).toBeInTheDocument()
     await userEvent.click(screen.getByRole('button', { name: /Retest now/i }))
+    // Traffic is sent only after the confirmation.
+    expect(mockTrigger).not.toHaveBeenCalled()
+    const dialog = await screen.findByRole('alertdialog')
+    expect(dialog).toHaveTextContent(/sends scan traffic/i)
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Send retest' }))
     expect(mockTrigger).toHaveBeenCalledTimes(1)
   })
 
@@ -95,6 +100,9 @@ describe('FindingRetestSection', () => {
       />
     )
     await userEvent.click(screen.getByRole('button', { name: /Retest now/i }))
+    await userEvent.click(
+      within(await screen.findByRole('alertdialog')).getByRole('button', { name: 'Send retest' })
+    )
     expect(mockTrigger).toHaveBeenCalledTimes(1)
   })
 
@@ -123,6 +131,9 @@ describe('FindingRetestSection', () => {
     expect(mockRetestsFor).toBe('f-3')
     expect(screen.getByText(/runs the custom check Reflected XSS on \/search/)).toBeInTheDocument()
     await userEvent.click(screen.getByRole('button', { name: /Retest now/i }))
+    await userEvent.click(
+      within(await screen.findByRole('alertdialog')).getByRole('button', { name: 'Send retest' })
+    )
     expect(mockTrigger).toHaveBeenCalledTimes(1)
   })
 
@@ -189,12 +200,12 @@ describe('retestMeta', () => {
   it('labels each outcome; only a confirmed fix reads as fixed', () => {
     expect(
       retestMeta(retest({ outcome: 'confirmed_fixed', result_status: 'confirmed' })).label
-    ).toBe('Verified fixed — awaiting confirmation')
+    ).toBe('Verified fixed, awaiting confirmation')
     expect(
       retestMeta(retest({ outcome: 'confirmed_fixed', result_status: 'resolved' })).label
-    ).toBe('Fixed — verified and resolved')
+    ).toBe('Fixed: verified and resolved')
     expect(retestMeta(retest({ outcome: 'not_reproduced' })).label).toBe(
-      'Not reproduced — not confirmed'
+      'Not reproduced, not confirmed'
     )
     expect(retestMeta(retest({ outcome: 'still_vulnerable' })).label).toBe('Still vulnerable')
     expect(
