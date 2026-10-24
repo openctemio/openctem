@@ -8,6 +8,7 @@
  * scope, approval policy, who may approve); the buttons only follow it.
  */
 
+import { ConfirmDialog } from '@/components/confirm-dialog'
 import { useState } from 'react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
@@ -39,6 +40,7 @@ export function SeverityProvenance({ finding, canRescore, onRestore }: SeverityP
   const currentUserId = useDisplayUser()?.id
   const [busy, setBusy] = useState(false)
   const [rejecting, setRejecting] = useState(false)
+  const [approveOpen, setApproveOpen] = useState(false)
   const [rejectReason, setRejectReason] = useState('')
   const override = finding.severityOverride
   const pending = finding.pendingSeverityRequest
@@ -61,6 +63,7 @@ export function SeverityProvenance({ finding, canRescore, onRestore }: SeverityP
             : t('findings.severityRequest.canceled', 'Severity request withdrawn')
       )
       setRejecting(false)
+      setApproveOpen(false)
       setRejectReason('')
     } catch (error) {
       toast.error(
@@ -73,6 +76,19 @@ export function SeverityProvenance({ finding, canRescore, onRestore }: SeverityP
 
   return (
     <div className="mt-1 space-y-1.5 text-xs">
+      <ConfirmDialog
+        open={approveOpen}
+        onOpenChange={setApproveOpen}
+        title={t('findings.severityRequest.approveTitle', 'Approve the change to {to}?', {
+          to: sevLabel(pending?.requested_severity),
+        })}
+        desc={t(
+          'findings.severityRequest.approveDesc',
+          "Your approval is recorded. When the last required approval is in, the finding's severity changes and its priority and SLA follow it."
+        )}
+        confirmText={t('findings.severityRequest.approveButton', 'Approve change')}
+        handleConfirm={() => decide('approve')}
+      />
       {override && (
         <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-muted-foreground">
           <Tooltip>
@@ -153,7 +169,7 @@ export function SeverityProvenance({ finding, canRescore, onRestore }: SeverityP
                 </Button>
               ) : (
                 <Can permission={Permission.FindingsApprove}>
-                  <Button size="sm" disabled={busy} onClick={() => void decide('approve')}>
+                  <Button size="sm" disabled={busy} onClick={() => setApproveOpen(true)}>
                     {t('findings.severityRequest.approve', 'Approve')}
                   </Button>
                   <Button

@@ -905,7 +905,7 @@ func (h *CommandHandler) triggerScanRunProgression(ctx context.Context, cmd *com
 	// hosts are not read as "no findings" (RFC-074).
 	gaps, gapsTotal := scanrundom.ParseCoverageGaps(result.Metadata.CoverageGaps, result.Metadata.CoverageGapsTotal)
 	partial := scanrun.Partial{Skipped: skippedTotal, SkippedSummary: skippedSummary,
-		Gaps: gapsTotal, GapSummary: scanrundom.CoverageGapSummary(gaps, gapsTotal)}
+		Gaps: gapsTotal, GapSummary: scanrundom.CoverageGapSummary(gaps, gapsTotal), GapList: gaps}
 	// Targets the sensor could not reach (RFC-089): none reached fails the
 	// step as unreachable, some unreached ends it partial. A result without
 	// a reach summary (an older sensor) keeps the outcome above.

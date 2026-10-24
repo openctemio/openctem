@@ -9,7 +9,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { useTranslation } from '@/context/i18n-provider'
 import { fetcher } from '@/lib/api/client'
 import { usePermissions, Permission } from '@/lib/permissions'
-import { ErrorState, PageStack, ReadOnlyNotice, SettingsSection } from '@/features/shared'
+import { ErrorState, ReadOnlyNotice, SettingsSection } from '@/features/shared'
 import { ORGANIZATION_LIMITS_URL } from '@/features/limits/api/use-organization-limits'
 import { useLifecycleSubStatuses } from '../../api/use-finding-lifecycles'
 import { planLimit, type PlanLimitRow } from '../../lib/lifecycle'
@@ -54,8 +54,10 @@ export function FindingLifecycleSettings() {
 
   const catalog = subs.data.data ?? []
 
+  // A fragment: the notice and the tabs are blocks of the page's PageStack,
+  // so the tabs sit 16px under the page header like every tab row.
   return (
-    <PageStack>
+    <>
       {!canWrite && (
         <ReadOnlyNotice
           reason={t(
@@ -121,6 +123,6 @@ export function FindingLifecycleSettings() {
           <LifecycleSchemes catalog={catalog} canWrite={canWrite} limit={schemeLimit} />
         </TabsContent>
       </Tabs>
-    </PageStack>
+    </>
   )
 }
