@@ -16,7 +16,6 @@
 export async function register() {
   // Instrumentation placeholder
   // Add monitoring, logging, or other initialization here
-
   // To enable Sentry, install @sentry/nextjs and uncomment below:
   /*
   if (process.env.NEXT_PUBLIC_SENTRY_DSN) {
