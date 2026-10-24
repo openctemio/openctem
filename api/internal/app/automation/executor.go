@@ -982,7 +982,7 @@ func (e *WorkflowExecutor) finalizeRun(ctx context.Context, execCtx *ExecutionCo
 		}
 		e.logger.Warn("automation run paused at its change cap", "run_id", run.ID, "changes", execCtx.changes, "cap", execCtx.maxChanges)
 		if e.auditService != nil {
-			_ = e.auditService.LogEvent(ctx, auditapp.AuditContext{TenantID: run.TenantID.String()},
+			auditapp.RecordOrWarn(ctx, e.logger, e.auditService, auditapp.AuditContext{TenantID: run.TenantID.String()},
 				auditapp.NewSuccessEvent(audit.ActionWorkflowRunPaused, audit.ResourceTypeWorkflowRun, run.ID.String()).
 					WithResourceName(execCtx.Workflow.Name).
 					WithMessage(fmt.Sprintf("Automation run paused after %d changes (its cap); a publisher may let it continue", execCtx.changes)).
