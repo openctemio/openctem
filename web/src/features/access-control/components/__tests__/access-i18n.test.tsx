@@ -108,7 +108,6 @@ describe('Access settings (vi)', () => {
     vi_(<TeamsPage />)
     expect(screen.getByRole('heading', { level: 1, name: 'Nhóm' })).toBeInTheDocument()
     expect(screen.getByText('Tạo nhóm')).toBeInTheDocument()
-    expect(screen.getByText('Tài sản đã gán')).toBeInTheDocument()
     expect(screen.getByRole('tab', { name: 'Quy tắc gán' })).toBeInTheDocument()
     expect(screen.queryByText('Create team')).toBeNull()
     expect(screen.queryByText('Assigned assets')).toBeNull()

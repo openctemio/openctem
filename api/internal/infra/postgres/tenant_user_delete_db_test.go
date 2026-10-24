@@ -331,6 +331,20 @@ var seedOverrides = map[string]func(s *schemaSeeder) map[string]any{
 	"content_packs": func(*schemaSeeder) map[string]any {
 		return map[string]any{"name": "seed", "version": "1", "kind": "wordlist", "tier": "T0", "status": "active", "source": "upload"}
 	},
+	// Rule sources: an organization's git source and a candidate snapshot.
+	"content_sources": func(*schemaSeeder) map[string]any {
+		return map[string]any{"scope": "tenant", "slug": "seed", "rule_namespace": "seed", "kind": "semgrep-rules", "origin": "git",
+			"url": "https://git.example.com/acme/rules.git", "ref": "main", "path": "", "archive_sha256": nil,
+			"availability": nil, "official": false, "promotion_policy": "auto", "storage_mode": "mirror",
+			"sync_interval_minutes": 60, "last_sync_status": "pending", "last_sync_report": nil,
+			"credential_encrypted": nil, "credential_updated_at": nil, "webhook_secret_hash": nil,
+			"ca_pem": nil, "current_snapshot_id": nil, "previous_snapshot_id": nil}
+	},
+	"content_source_snapshots": func(*schemaSeeder) map[string]any {
+		return map[string]any{"scope": "tenant", "digest": "sha256:" + strings.Repeat("ab", 32), "platform_pack_id": nil,
+			"tier": "T0", "state": "candidate", "size_bytes": "1", "file_count": "1", "file_index": "[]", "rules": "[]",
+			"lint": "{}", "diff": "{}", "checks": "{}", "signature": "{}"}
+	},
 	// Content catalog (RFC-099): an organization package with valid
 	// digests; a request that has no target (uninstall) and no decider yet
 	// (the decider must differ from the requester).

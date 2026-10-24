@@ -3,7 +3,7 @@
 import { Main } from '@/components/layout'
 import { useTranslation } from '@/context/i18n-provider'
 import { SecurityOverview } from '@/features/security-overview/components/security-overview'
-import { PageHeader } from '@/features/shared'
+import { PageHeader, PageStack } from '@/features/shared'
 
 /**
  * Settings › Security overview: a score and the checks behind it. Owners and
@@ -13,16 +13,16 @@ export default function SecurityOverviewPage() {
   const { t } = useTranslation()
   return (
     <Main>
-      <PageHeader
-        title={t('securityOverview.title', 'Security overview')}
-        description={t(
-          'securityOverview.description',
-          'How well this organization is protected, and what to fix first.'
-        )}
-      />
-      <div className="mt-5">
+      <PageStack>
+        <PageHeader
+          title={t('securityOverview.title', 'Security overview')}
+          description={t(
+            'securityOverview.description',
+            'How well this organization is protected, and what to fix first.'
+          )}
+        />
         <SecurityOverview />
-      </div>
+      </PageStack>
     </Main>
   )
 }

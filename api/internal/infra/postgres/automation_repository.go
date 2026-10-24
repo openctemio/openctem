@@ -31,9 +31,9 @@ func (r *AutomationRepository) Create(ctx context.Context, w *automation.Workflo
 		INSERT INTO automations (
 			id, tenant_id, name, description, is_active, tags,
 			total_runs, successful_runs, failed_runs,
-			created_by, created_at, updated_at, mode
+			created_by, created_at, updated_at, mode, max_changes_per_run
 		)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
 	`
 
 	_, err := r.db.ExecContext(ctx, query,
@@ -50,6 +50,7 @@ func (r *AutomationRepository) Create(ctx context.Context, w *automation.Workflo
 		w.CreatedAt,
 		w.UpdatedAt,
 		string(modeOrSimulate(w.Mode)),
+		w.MaxChangesPerRun,
 	)
 
 	if err != nil {
@@ -135,7 +136,7 @@ func (r *AutomationRepository) Update(ctx context.Context, w *automation.Workflo
 		SET name = $2, description = $3, is_active = $4, tags = $5,
 		    total_runs = $6, successful_runs = $7, failed_runs = $8,
 		    last_run_id = $9, last_run_at = $10, last_run_status = $11,
-		    updated_at = $12, disabled_reason = $13
+		    updated_at = $12, disabled_reason = $13, max_changes_per_run = $14
 		WHERE id = $1
 	`
 
@@ -153,6 +154,7 @@ func (r *AutomationRepository) Update(ctx context.Context, w *automation.Workflo
 		w.LastRunStatus,
 		w.UpdatedAt,
 		nullString(w.DisabledReason),
+		w.MaxChangesPerRun,
 	)
 
 	if err != nil {
@@ -277,14 +279,14 @@ const automationColumns = `id, tenant_id, name, description, is_active, tags,
 		       total_runs, successful_runs, failed_runs,
 		       last_run_id, last_run_at, last_run_status,
 		       created_by, created_at, updated_at, disabled_reason,
-		       mode, published_version_id`
+		       mode, published_version_id, max_changes_per_run`
 
 // automationColumnsW is automationColumns qualified with the alias w.
 const automationColumnsW = `w.id, w.tenant_id, w.name, w.description, w.is_active, w.tags,
 		       w.total_runs, w.successful_runs, w.failed_runs,
 		       w.last_run_id, w.last_run_at, w.last_run_status,
 		       w.created_by, w.created_at, w.updated_at, w.disabled_reason,
-		       w.mode, w.published_version_id`
+		       w.mode, w.published_version_id, w.max_changes_per_run`
 
 func (r *AutomationRepository) scanWorkflow(row *sql.Row) (*automation.Workflow, error) {
 	w, err := scanAutomation(row)
@@ -343,6 +345,7 @@ func scanAutomationWith(row interface{ Scan(dest ...any) error }, extra ...any) 
 		&disabledReason,
 		&mode,
 		&publishedVer,
+		&w.MaxChangesPerRun,
 	}
 	if err := row.Scan(append(dest, extra...)...); err != nil {
 		return nil, err

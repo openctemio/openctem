@@ -14,6 +14,7 @@ import {
   RelativeTime,
   StackedCell,
   type MetricStripItem,
+  PageStack,
 } from '@/features/shared'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -1296,99 +1297,118 @@ export default function TicketingIntegrationPage() {
     (c) => c.status === 'pending' || c.status === 'disconnected'
   ).length
 
+  // The strip filters the list: click a tile to show only those connections, again to clear.
+  const [group, setGroup] = useState<'connected' | 'attention' | 'pending' | null>(null)
+  const inGroup = (c: (typeof connections)[number], g: 'connected' | 'attention' | 'pending') => {
+    if (g === 'connected') return isSupported(c) && c.status === 'connected'
+    if (g === 'attention') return !isSupported(c) || c.status === 'error' || c.status === 'expired'
+    return isSupported(c) && (c.status === 'pending' || c.status === 'disconnected')
+  }
+  const visible = group ? connections.filter((c) => inGroup(c, group)) : connections
+  const tile = (g: 'connected' | 'attention' | 'pending') => ({
+    active: group === g,
+    onClick: () => setGroup(group === g ? null : g),
+  })
   const metrics: MetricStripItem[] = [
-    {
-      key: 'total',
-      label: t('ticketingIntegration.metrics.connections', 'Connections'),
-      value: connections.length,
-    },
     {
       key: 'connected',
       label: t('ticketingIntegration.status.connected', 'Connected'),
       value: connected,
+      ...tile('connected'),
     },
     {
       key: 'attention',
       label: t('ticketingIntegration.metrics.needsAttention', 'Needs attention'),
       value: needsAttention,
       tone: 'danger',
+      ...tile('attention'),
     },
-    { key: 'pending', label: t('ticketingIntegration.status.pending', 'Pending'), value: pending },
+    {
+      key: 'pending',
+      label: t('ticketingIntegration.status.pending', 'Pending'),
+      value: pending,
+      ...tile('pending'),
+    },
   ]
 
   return (
     <Main>
-      <PageHeader
-        title={t('ticketingIntegration.page.title', 'Ticketing')}
-        description={t(
-          'ticketingIntegration.page.description',
-          'Connect ticketing systems to create and track remediation tickets automatically.'
-        )}
-      >
-        <Can route="POST /api/v1/integrations">
-          <Button size="sm" onClick={() => setDialogOpen(true)}>
-            <Plus className="me-2 h-4 w-4" />
-            {t('ticketingIntegration.connect.title', 'Connect Jira')}
-          </Button>
-        </Can>
-      </PageHeader>
+      <PageStack>
+        <PageHeader
+          title={t('ticketingIntegration.page.title', 'Ticketing')}
+          description={t(
+            'ticketingIntegration.page.description',
+            'Connect ticketing systems to create and track remediation tickets automatically.'
+          )}
+        >
+          <Can route="POST /api/v1/integrations">
+            <Button size="sm" onClick={() => setDialogOpen(true)}>
+              <Plus className="me-2 h-4 w-4" />
+              {t('ticketingIntegration.connect.title', 'Connect Jira')}
+            </Button>
+          </Can>
+        </PageHeader>
 
-      {error ? (
-        <div className="mt-5">
-          <ErrorState
-            title={t('ticketingIntegration.page.errorTitle', 'ticketing connections')}
-            error={error}
-            onRetry={() => void reloadIntegrations()}
-          />
-        </div>
-      ) : (
-        <>
-          <MetricStrip className="mt-5" loading={isLoading} items={metrics} />
-
-          <div className="mt-5">
-            {isLoading ? (
-              <div className="space-y-3">
-                <Skeleton className="h-9 w-full max-w-sm" />
-                <Skeleton className="h-48 w-full" />
-              </div>
-            ) : connections.length === 0 ? (
-              <EmptyState
-                icon={Ticket}
-                title={t('ticketingIntegration.page.emptyTitle', 'No ticketing systems connected')}
-                description={t(
-                  'ticketingIntegration.page.emptyDescription',
-                  'Connect a ticketing system to automatically create and track remediation tickets.'
-                )}
-                action={
-                  <Can route="POST /api/v1/integrations">
-                    <Button size="sm" onClick={() => setDialogOpen(true)}>
-                      <Plus className="me-2 h-4 w-4" />
-                      {t('ticketingIntegration.connect.title', 'Connect Jira')}
-                    </Button>
-                  </Can>
-                }
-              />
-            ) : (
-              <DataTable
-                columns={columns}
-                data={connections}
-                getRowId={(c) => c.id}
-                searchPlaceholder={t(
-                  'ticketingIntegration.page.searchPlaceholder',
-                  'Search connections...'
-                )}
-                showSelectionCount={false}
-              />
-            )}
+        {error ? (
+          <div>
+            <ErrorState
+              title={t('ticketingIntegration.page.errorTitle', 'ticketing connections')}
+              error={error}
+              onRetry={() => void reloadIntegrations()}
+            />
           </div>
-        </>
-      )}
+        ) : (
+          <>
+            <MetricStrip loading={isLoading} items={metrics} />
 
-      <ConnectJiraDialog
-        open={dialogOpen}
-        onOpenChange={setDialogOpen}
-        onSuccess={() => reloadIntegrations()}
-      />
+            <div>
+              {isLoading ? (
+                <div className="space-y-3">
+                  <Skeleton className="h-9 w-full max-w-sm" />
+                  <Skeleton className="h-48 w-full" />
+                </div>
+              ) : connections.length === 0 ? (
+                <EmptyState
+                  icon={Ticket}
+                  title={t(
+                    'ticketingIntegration.page.emptyTitle',
+                    'No ticketing systems connected'
+                  )}
+                  description={t(
+                    'ticketingIntegration.page.emptyDescription',
+                    'Connect a ticketing system to automatically create and track remediation tickets.'
+                  )}
+                  action={
+                    <Can route="POST /api/v1/integrations">
+                      <Button size="sm" onClick={() => setDialogOpen(true)}>
+                        <Plus className="me-2 h-4 w-4" />
+                        {t('ticketingIntegration.connect.title', 'Connect Jira')}
+                      </Button>
+                    </Can>
+                  }
+                />
+              ) : (
+                <DataTable
+                  columns={columns}
+                  data={visible}
+                  getRowId={(c) => c.id}
+                  searchPlaceholder={t(
+                    'ticketingIntegration.page.searchPlaceholder',
+                    'Search connections...'
+                  )}
+                  showSelectionCount={false}
+                />
+              )}
+            </div>
+          </>
+        )}
+
+        <ConnectJiraDialog
+          open={dialogOpen}
+          onOpenChange={setDialogOpen}
+          onSuccess={() => reloadIntegrations()}
+        />
+      </PageStack>
     </Main>
   )
 }

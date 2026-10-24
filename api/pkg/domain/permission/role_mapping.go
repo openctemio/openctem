@@ -35,7 +35,7 @@ var RolePermissions = map[tenant.Role][]Permission{
 		// Scans
 		ScansRead, ScansWrite, ScansDelete, ScansExecute, ScansApprove,
 		ScanProfilesRead, ScanProfilesWrite, ScanProfilesDelete,
-		TemplateSourcesRead, TemplateSourcesWrite, TemplateSourcesDelete,
+		ContentSourcesRead, ContentSourcesWrite, ContentSourcesDelete, ContentSourcesApprove,
 		ToolsRead, ToolsWrite, ToolsDelete,
 		TenantToolsRead, TenantToolsWrite,
 		ScannerTemplatesRead, ScannerTemplatesWrite, ScannerTemplatesDelete,
@@ -117,7 +117,7 @@ var RolePermissions = map[tenant.Role][]Permission{
 		// Scans
 		ScansRead, ScansWrite, ScansDelete, ScansExecute, ScansApprove,
 		ScanProfilesRead, ScanProfilesWrite, ScanProfilesDelete,
-		TemplateSourcesRead, TemplateSourcesWrite, TemplateSourcesDelete,
+		ContentSourcesRead, ContentSourcesWrite, ContentSourcesDelete, ContentSourcesApprove,
 		ToolsRead, ToolsWrite, ToolsDelete,
 		TenantToolsRead, TenantToolsWrite,
 		ScannerTemplatesRead, ScannerTemplatesWrite, ScannerTemplatesDelete,
@@ -206,7 +206,7 @@ var RolePermissions = map[tenant.Role][]Permission{
 		// Template sources and scanner templates: read only. A custom
 		// template is code the sensors run, so writing one is owner/admin
 		// only (owner decision 2026-10-02, migration 000262).
-		TemplateSourcesRead,
+		ContentSourcesRead,
 		ToolsRead,
 		TenantToolsRead, TenantToolsWrite,
 		ScannerTemplatesRead,
@@ -281,7 +281,7 @@ var RolePermissions = map[tenant.Role][]Permission{
 		// Scans (read only)
 		ScansRead,
 		ScanProfilesRead,
-		TemplateSourcesRead,
+		ContentSourcesRead,
 		ToolsRead,
 		TenantToolsRead,
 		ScannerTemplatesRead,

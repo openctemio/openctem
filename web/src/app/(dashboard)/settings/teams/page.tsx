@@ -2,7 +2,7 @@
 
 import type { ReactNode } from 'react'
 import { Main } from '@/components/layout'
-import { PageHeader } from '@/features/shared'
+import { PageHeader, PageStack } from '@/features/shared'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { TeamsSection } from '@/features/access-control/components/teams-section'
 import { AssignmentRulesSection } from '@/features/access-control/components/assignment-rules-section'
@@ -43,7 +43,7 @@ export default function TeamsPage() {
         {actions}
       </PageHeader>
       {canSeeRules && (
-        <Tabs value={tab} onValueChange={setTab} className="mt-4">
+        <Tabs value={tab} onValueChange={setTab}>
           <TabsList>
             <TabsTrigger value="teams">{t('org.teamsPage.tabTeams', 'Teams')}</TabsTrigger>
             <TabsTrigger value="assignment-rules">
@@ -57,11 +57,13 @@ export default function TeamsPage() {
 
   return (
     <Main>
-      {tab === 'teams' ? (
-        <TeamsSection header={header} />
-      ) : (
-        <AssignmentRulesSection header={header} />
-      )}
+      <PageStack>
+        {tab === 'teams' ? (
+          <TeamsSection header={header} />
+        ) : (
+          <AssignmentRulesSection header={header} />
+        )}
+      </PageStack>
     </Main>
   )
 }

@@ -3,7 +3,7 @@
 import { Main } from '@/components/layout'
 import { Skeleton } from '@/components/ui/skeleton'
 import { useTranslation } from '@/context/i18n-provider'
-import { ErrorState, PageHeader } from '@/features/shared'
+import { ErrorState, PageHeader, PageStack } from '@/features/shared'
 import { useAdmin } from '@console/features/admin-console/components/admin-console-shell'
 import { useCaptchaSettings } from '@console/features/admin-console/api/use-platform-settings'
 import { CaptchaSettingsForm } from '@console/features/admin-console/components/captcha-settings-form'
@@ -16,14 +16,14 @@ export default function CaptchaSettingsPage() {
   const { data, error, isLoading, mutate } = useCaptchaSettings()
   return (
     <Main>
-      <PageHeader
-        title={t('admin.nav.captcha', 'CAPTCHA')}
-        description={t(
-          'admin.captcha.pageDescription',
-          'The check that stops automated sign-ups and password guessing.'
-        )}
-      />
-      <div className="mt-5">
+      <PageStack>
+        <PageHeader
+          title={t('admin.nav.captcha', 'CAPTCHA')}
+          description={t(
+            'admin.captcha.pageDescription',
+            'The check that stops automated sign-ups and password guessing.'
+          )}
+        />
         {error ? (
           <ErrorState
             title={t('admin.captcha.errorTitle', 'the CAPTCHA keys')}
@@ -39,7 +39,7 @@ export default function CaptchaSettingsPage() {
             onSaved={() => void mutate()}
           />
         )}
-      </div>
+      </PageStack>
     </Main>
   )
 }
