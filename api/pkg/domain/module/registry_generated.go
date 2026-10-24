@@ -524,7 +524,7 @@ var Registry = []Definition{
 			{ModuleID: ModuleIntegrations, Type: DependencySoft, Reason: "most workflow actions route through integrations (Jira, Slack)"},
 		},
 		Routes: []string{"/api/v1/workflows", "/api/v1/workflow-runs"},
-		Jobs:   []string{"AutomationRunReaper"},
+		Jobs:   []string{"AutomationRunReaper", "AutomationRunRetention"},
 	},
 	{
 		ID: ModuleReports, Slug: "reports", Name: "Reports",
