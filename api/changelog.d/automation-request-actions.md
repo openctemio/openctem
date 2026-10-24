@@ -5,4 +5,4 @@
 
 ### Added: change cap per automation run
 
-- A live run makes at most `max_changes_per_run` changes: 250 by default, at most 1,000, set on the automation and pinned by each version. A cap above 250 makes the automation high risk. At the cap the run pauses (`status: paused`, `pause_reason: blast_radius`) until a publisher lets it continue (`POST /api/v1/workflow-runs/{id}/resume`).
+- A live run makes at most `max_changes_per_run` changes: 250 by default, at most 1,000, set on the automation and pinned by each version. A cap above 250 makes the automation high risk. At the cap the run pauses (`status: paused`, `pause_reason: blast_radius`) until a publisher lets it continue (`POST /api/v1/workflow-runs/{id}/approve`).

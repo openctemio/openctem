@@ -55,7 +55,7 @@ func TestWorkflowRoutes_PublishNeedsPublishPermission(t *testing.T) {
 	for _, rt := range []struct{ method, path string }{
 		{http.MethodPut, wf + "/graph"},
 		{http.MethodPost, wf + "/preview"},
-		{http.MethodPost, wf + "/validate"},
+		{http.MethodPost, wf + "/verify"},
 		{http.MethodPost, wf + "/runs"},
 	} {
 		if code, body := serve(reader, rt.method, rt.path); code != http.StatusForbidden {
