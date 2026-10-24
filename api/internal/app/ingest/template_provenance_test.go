@@ -204,3 +204,18 @@ func TestEvaluateCommandCoverage_SecretsAreMarkedNotResolved(t *testing.T) {
 		t.Fatalf("dry run: mark calls %d resolved %v", repo3.calls, base3.resolved)
 	}
 }
+
+// An import that is not the result of a command the platform dispatched (API,
+// CTIS or CI upload) cannot set the exposure class, whatever tags it carries.
+func TestSightingProvenance_ExposureOnlyForCommandBoundResults(t *testing.T) {
+	f := &ctis.Finding{Properties: map[string]any{"template_digest": "sha256:" + strings.Repeat("a", 64)},
+		Tags: []string{"exposure", "swagger"}}
+	if !sightingProvenance(f, nil, &alterScope{commandBound: true}).ExposureClass {
+		t.Fatal("a command-bound result must keep the exposure class")
+	}
+	for name, sc := range map[string]*alterScope{"nil scope": nil, "unbound import": {}} {
+		if sightingProvenance(f, nil, sc).ExposureClass {
+			t.Errorf("%s set the exposure class", name)
+		}
+	}
+}

@@ -81,6 +81,18 @@ func findingTemplateProvenance(f *ctis.Finding, tool *ctis.Tool) vulnerability.T
 	return p.Sanitize()
 }
 
+// sightingProvenance is findingTemplateProvenance for a report received
+// under scope. Only a result of a command the platform dispatched may set the
+// exposure class: any other ingest (API, CTIS or CI upload) carries tags its
+// submitter chose, and the class decides when an access refusal proves a fix.
+func sightingProvenance(f *ctis.Finding, tool *ctis.Tool, scope *alterScope) vulnerability.TemplateProvenance {
+	p := findingTemplateProvenance(f, tool)
+	if scope == nil || !scope.commandBound {
+		p.ExposureClass = false
+	}
+	return p
+}
+
 // recordTemplateSightings stores the provenance of the findings a report
 // sighted (best effort: a failure is logged and the ingest goes on).
 // A finding without a template digest keeps its previous baseline.

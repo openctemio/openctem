@@ -119,10 +119,12 @@ func (r *FindingRepository) RuleProvenance(ctx context.Context, tenantID, findin
 func (r *FindingRepository) TemplateBaseline(ctx context.Context, tenantID, findingID shared.ID) (vulnerability.TemplateProvenance, error) {
 	var td, tp, tv, tsd sql.NullString
 	var ex sql.NullBool
+	var sighted sql.NullTime
 	err := r.db.QueryRowContext(ctx, `
-		SELECT template_digest, template_path, templates_version, templates_digest, template_exposure
+		SELECT template_digest, template_path, templates_version, templates_digest, template_exposure,
+		       GREATEST(last_seen_at, last_reopened_at)
 		FROM findings WHERE tenant_id = $1 AND id = $2`,
-		tenantID.String(), findingID.String()).Scan(&td, &tp, &tv, &tsd, &ex)
+		tenantID.String(), findingID.String()).Scan(&td, &tp, &tv, &tsd, &ex, &sighted)
 	if errors.Is(err, sql.ErrNoRows) {
 		return vulnerability.TemplateProvenance{}, shared.ErrNotFound
 	}
@@ -130,7 +132,7 @@ func (r *FindingRepository) TemplateBaseline(ctx context.Context, tenantID, find
 		return vulnerability.TemplateProvenance{}, fmt.Errorf("read template baseline: %w", err)
 	}
 	return vulnerability.TemplateProvenance{TemplateDigest: td.String, TemplatePath: tp.String,
-		TemplatesVersion: tv.String, TemplatesDigest: tsd.String, ExposureClass: ex.Bool}, nil
+		TemplatesVersion: tv.String, TemplatesDigest: tsd.String, ExposureClass: ex.Bool, SightedAt: sighted.Time}, nil
 }
 
 // TemplateDriftedFindings returns those of ids whose last sighting

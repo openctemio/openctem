@@ -495,6 +495,8 @@
   "findings.retestPanel.inconclusiveWhy.template_not_found": "check not installed on the sensor",
   "findings.retestPanel.inconclusiveWhy.excluded_by_policy": "check not allowed by the sensor policy",
   "findings.retestPanel.inconclusiveWhy.no_verdict": "the tool gave no verdict",
+  "findings.retestPanel.help.access_denied.text": "The server now refuses the exposed page (401 or 403) with no CDN or WAF in front. One refusal is not proof of a fix.",
+  "findings.retestPanel.help.access_denied.fix": "A second refusal at least an hour later, with no sighting of the finding in between, marks it fixed. Retest again after an hour, or verify it by hand.",
   "findings.retestPanel.help.error.text": "The tool could not run this check.",
   "findings.retestPanel.help.error.fix": "The finding is unchanged. Verify it by hand, or retest after the sensor is updated.",
   "findings.retestPanel.help.template_not_found.text": "The sensor's template set does not include this check, so it could not be run.",

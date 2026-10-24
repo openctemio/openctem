@@ -495,6 +495,8 @@
   "findings.retestPanel.inconclusiveWhy.template_not_found": "sensor chưa có mẫu kiểm tra này",
   "findings.retestPanel.inconclusiveWhy.excluded_by_policy": "chính sách của sensor không cho chạy phép kiểm tra này",
   "findings.retestPanel.inconclusiveWhy.no_verdict": "công cụ không đưa ra kết luận",
+  "findings.retestPanel.help.access_denied.text": "Máy chủ hiện từ chối trang bị lộ (401 hoặc 403) và không có CDN hay WAF đứng trước. Một lần từ chối chưa đủ để chứng minh đã khắc phục.",
+  "findings.retestPanel.help.access_denied.fix": "Lần từ chối thứ hai cách ít nhất một giờ, và lỗ hổng không bị phát hiện lại trong khoảng đó, sẽ đánh dấu đã khắc phục. Hãy kiểm tra lại sau một giờ hoặc xác minh thủ công.",
   "findings.retestPanel.help.error.text": "Công cụ không chạy được phép kiểm tra này.",
   "findings.retestPanel.help.error.fix": "Phát hiện được giữ nguyên. Hãy kiểm tra thủ công, hoặc kiểm tra lại sau khi cập nhật sensor.",
   "findings.retestPanel.help.template_not_found.text": "Bộ mẫu của sensor không có phép kiểm tra này nên không chạy được.",
