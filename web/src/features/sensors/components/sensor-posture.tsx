@@ -2,11 +2,11 @@
 
 import { ShieldAlert } from 'lucide-react'
 
-import { Badge } from '@/components/ui/badge'
+import { HealthStatus } from '@/components/ui/health-status'
+import type { HealthState } from '@/lib/health-colors'
 import { useTranslation } from '@/context/i18n-provider'
 import { DetailCallout, DetailField, DetailFieldGrid, DetailSection } from '@/features/shared'
 import type { Sensor } from '@/lib/api/sensor-types'
-import { cn } from '@/lib/utils'
 
 import {
   postureIssues,
@@ -16,19 +16,15 @@ import {
   type PostureValue,
 } from '../lib/posture'
 
-const TONE_CLASS = {
-  ok: 'border-success/40 bg-success/10 text-success',
-  warn: 'border-warning/40 bg-warning/10 text-warning',
-  muted: 'text-muted-foreground',
-} as const
+const TONE_STATE = {
+  ok: 'ok',
+  warn: 'warn',
+  muted: 'off',
+} as const satisfies Record<string, HealthState>
 
 function PostureBadge({ value }: { value: PostureValue }) {
   const { t } = useTranslation()
-  return (
-    <Badge variant="outline" className={cn(TONE_CLASS[value.tone])}>
-      {t(value.labelKey, value.label)}
-    </Badge>
-  )
+  return <HealthStatus state={TONE_STATE[value.tone]} label={t(value.labelKey, value.label)} />
 }
 
 /**

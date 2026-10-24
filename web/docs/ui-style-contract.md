@@ -14,36 +14,69 @@ kinds.
 Every page, top to bottom:
 
 1. **`<Main>`** — never a hand-rolled wrapper, never `overflow-*` overrides.
-2. **`<PageHeader title description>`** — the only `<h1>` on the page.
+2. **`<PageStack>`** holds every block of the page and owns every gap
+   between them: 16px from the page header to its tabs, 20px between any two
+   other blocks (header, tabs, banner, metric strip, list, card). Blocks carry
+   no vertical margin (`mt-*`, `mb-*`, `space-y-*` between blocks); the stack
+   zeroes any that remain. A block that renders `null` takes no gap; never wrap
+   an optional block in an empty `<div>`. A tab panel or a component that
+   renders several blocks returns its own `PageStack` (nested stacks keep the
+   rhythm). `check-page-anatomy.sh` refuses a component that renders a
+   `PageHeader` without a `PageStack`.
+3. **`<PageHeader title description>`** — the only `<h1>` on the page.
    - Title: short noun ("Findings", "Scan profiles"), sentence case.
    - Description: one sentence saying what the page is for.
    - Actions (children): at most **one primary** button (`size="sm"`) plus up
      to **two** `variant="outline"` buttons. Anything more goes into a `⋯`
      "More" dropdown. Icon-only buttons need `aria-label` and a tooltip.
-3. **Tabs** (only if the page has sub-views) — `<Tabs>` directly under the
-   header with `className="mt-4"`. The default underline style is the only tab
-   style: no `className` overrides that change its look (no grids, pills,
-   backgrounds). Put the active tab in the URL (`?tab=`).
-   - **Section tabs** — when the sub-views are separate routes (Remediation:
-     Tasks | Solution families; Exposures: Overview | Vulnerabilities | …), use
-     the shared `<SectionTabs>`, placed the same way: directly under the header
-     with `className="mt-4"` (its own `mb-5` spaces the content), or
-     `"mt-4 mb-0"` when the next block already carries `mt-5`. Define the list once in
-     `src/config/section-tabs.ts` and pass it as the sidebar item's `sections`:
-     the sidebar shows ONE row for the section (active on every tab's route), the
-     command palette lists each tab. Never a third sidebar level for them.
-4. **Sidebar**: the main sidebar collapses and its width can be resized
+4. **One tab row per page**, right under the header, no margins on it.
+   - **Section tabs** when the sub-views are routes: the shared
+     `<SectionTabs>` (or `<GatedSectionTabs>`), defined once in
+     `src/config/section-tabs.ts` and passed as the sidebar item's `sections`
+     (the sidebar shows ONE row for the section; the command palette lists
+     each tab; never a third sidebar level).
+   - **In-page tabs** (`<Tabs>`, underline style only, active tab in the URL)
+     on detail pages, drawers and dialogs, or on a page without section tabs.
+   - **Never a second tab row**, and never a segmented control under the tabs.
+     A second level takes the form of what it is: a filter of the same rows
+     is a filter token in the list toolbar (§3, list state); another view of
+     the same rows is `ViewSwitcher` at the toolbar end; a sub-page is a route
+     tab; work queues are a list of queues (Assets › Needs attention).
+   - **Tab icons** are optional. When a strip has them: every tab has one or
+     none does, each icon is a distinct lucide icon that says what the tab
+     holds (no sparkles, wands, robots or brains), drawn by the strip at 16px
+     with the default stroke in the tab's own text colour (muted, foreground
+     when active), never coloured, filled or emoji; the label is always shown.
+     Route tabs take the icon from `SectionTab.icon` only; in-page tab icons
+     carry no `className`. A strip that mixes icons and none draws no icons.
+   - **Tabs that do not fit** (a phone, a long section): `SectionTabs` drops
+     the icons first, then moves the last tabs into a "More" menu at the end
+     of the strip. The current tab is always one of the shown tabs; a label is
+     never cut at the edge and the strip never scrolls sideways. In-page
+     `<Tabs>` scroll with a fade on the hidden side and keep the active tab in
+     view.
+5. **Sidebar**: the main sidebar collapses and its width can be resized
    (persisted per user, between 13rem and 20rem). Its links are the same in
    every organization. Settings and the admin console keep their own rail.
-5. **Content blocks** separated by `mt-5` (or `space-y-5` / `gap-5`).
+
+Checked in a browser on every route at 1440px and 390px by
+`e2e/specs/31-page-rhythm.spec.ts` (gaps from bounding boxes, one tab row,
+tab icons, strip rules, chips, empty pagination, name column width).
 
 ## 2. Headline numbers
 
-- **List pages** (a table is the main content): one `<MetricStrip>` (2–6
-  metrics) under the header/tabs. A metric that maps to a filter gets
-  `onClick` + `active` and toggles that filter.
-- **Overview / dashboard pages**: `<StatsCard>` in a grid. One variant only:
-  label top-left, muted icon top-right, value, optional caption.
+- **One `<MetricStrip>`** per page, at most **5** tiles, and only where every
+  tile is a link to the list it counts (`href`, overview pages) or a one-click
+  filter of the list below (`onClick` + `active`, list pages). Never for facts
+  (use `KeyValueList`), configuration inventories, or inside a card.
+- States that are usually zero or rarely acted on (canceled, blocked, timed
+  out) are not tiles: they stay values of the list's status filter.
+- A zero is a muted `0`, never hidden; an error is `—` with the reason as the
+  tooltip; red or amber only for a positive count of a problem state.
+- No corner icons, no default trend arrows, no `StatsCard` tile walls.
+- **Phone**: compact tiles on a six-track grid, at most two rows (2 and 4
+  tiles in halves, 3 in thirds, 5 as three thirds over two halves), a long
+  label wraps to a second line; never a sideways scroll.
 - Never: pastel icon tiles, coloured card borders, coloured icons before the
   label, card-in-card stat grids.
 - A share of capacity (job slots in use, quota spent) is the shared `<Meter>`
@@ -102,8 +135,24 @@ Every page, top to bottom:
   "Unknown asset" on 404/403) and its X removes only its own parameter. Render
   the same chips in the page's loading skeleton, so they are there from the
   first frame. See `features/findings/components/finding-context-chips.tsx`.
+- **List state** (status, kind, direction of the rows: Pending / Approved /
+  Rejected, Active / Resolved) is a **filter**, never a tab row and never a
+  segmented control:
+  - on a list with the Add-filter registry (findings, assets) it is one of
+    its chips;
+  - elsewhere it is `<FilterSelect>` from `@/features/shared` at the start of
+    `toolbarStart`: a token that reads "Status: Pending", opens a menu of every
+    value with its count (counted in the viewer's scope), can be cleared to
+    all rows, and keeps its value in the URL (`useUrlFilter`, the page's
+    default value when the parameter is absent);
+  - common combinations are saved views or sidebar quick views;
+  - `ViewSwitcher` (or a segmented control) is only for the view mode of the
+    same rows (table, board, analytics) at the end of the toolbar.
 - Filters, search, sort, page and page size live in the URL
   (`useUrlFilter` / `useUrlFilterList`).
+- **An empty list shows its empty state only**: no "Showing 0 - 0 of 0", no
+  "Page 1 of 0". `DataTable` hides its footer at zero rows; a hand-built pager
+  does the same, and never shows a page count below 1.
 - Server-paginated tables pass `sorting`/`onSortingChange`; columns the API
   cannot sort set `enableSorting: false`.
 - The first column is the row's name; row actions are the last column with

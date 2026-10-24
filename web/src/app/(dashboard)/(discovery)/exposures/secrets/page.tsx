@@ -1,20 +1,12 @@
 'use client'
 
 import { Main } from '@/components/layout'
-import {
-  PageHeader,
-  StatsCard,
-  EmptyState,
-  ErrorState,
-  formatRiskScore,
-  getRiskLevel,
-} from '@/features/shared'
+import { PageHeader, PageStack, EmptyState, ErrorState } from '@/features/shared'
 import { useFindingTypeStats } from '@/features/exposures/hooks'
 import {
   ChartCard,
   OverviewSkeleton,
   OVERVIEW_CHARTS_GRID,
-  OVERVIEW_STATS_GRID,
   SeverityDonut,
   StatusBars,
   TypeBreakdownUnavailable,
@@ -24,7 +16,7 @@ import {
 import { SECRET_SOURCES } from '@/features/exposures/lib/type-sources'
 import { useTenant } from '@/context/tenant-provider'
 import { useTranslation } from '@/context/i18n-provider'
-import { Lock, AlertTriangle, Clock, Shield } from 'lucide-react'
+import { Lock } from 'lucide-react'
 
 export default function SecretsExposurePage() {
   const { t } = useTranslation()
@@ -38,24 +30,22 @@ export default function SecretsExposurePage() {
     mutate: retryTypeStats,
   } = useFindingTypeStats(tenantId, SECRET_SOURCES)
 
-  const criticalCount = typeStats.bySeverity.critical || 0
-  const openCount = typeStats.openCount
-
   return (
     <Main>
-      <PageHeader
-        title={t('exposures.secrets.title', 'Secrets')}
-        description={t(
-          'exposures.secrets.description',
-          'Secrets committed to your code (API keys, tokens, passwords), by severity and remediation status.'
-        )}
-      >
-        <ViewFindingsButton stats={typeStats} sources={SECRET_SOURCES} isLoading={isLoading} />
-      </PageHeader>
+      <PageStack>
+        <PageHeader
+          title={t('exposures.secrets.title', 'Secrets')}
+          description={t(
+            'exposures.secrets.description',
+            'Secrets committed to your code (API keys, tokens, passwords), by severity and remediation status.'
+          )}
+        >
+          <ViewFindingsButton stats={typeStats} sources={SECRET_SOURCES} isLoading={isLoading} />
+        </PageHeader>
 
-      <ExposuresTabs />
+        <ExposuresTabs />
 
-      <div className="mt-5">
+        {/* The list is the findings page; this one is the charts. */}
         {typeError ? (
           <ErrorState
             title={t('exposures.secrets.errorTitle', 'secret statistics')}
@@ -63,7 +53,7 @@ export default function SecretsExposurePage() {
             onRetry={() => retryTypeStats()}
           />
         ) : isLoading ? (
-          <OverviewSkeleton />
+          <OverviewSkeleton stats={false} />
         ) : typeStats.total === 0 ? (
           <EmptyState
             icon={Lock}
@@ -84,42 +74,7 @@ export default function SecretsExposurePage() {
             sources={SECRET_SOURCES}
           />
         ) : (
-          <div className="space-y-5">
-            <div className={OVERVIEW_STATS_GRID}>
-              <StatsCard
-                title={t('exposures.type.totalFindings', 'Total findings')}
-                value={typeStats.total}
-                icon={Lock}
-              />
-              <StatsCard
-                title={t('exposures.secrets.critical', 'Critical secrets')}
-                value={criticalCount}
-                valueClassName={criticalCount > 0 ? 'text-destructive' : undefined}
-                description={
-                  criticalCount > 0
-                    ? t('exposures.secrets.criticalAction', 'Rotate immediately')
-                    : t('exposures.secrets.criticalNone', 'No critical secrets')
-                }
-                icon={AlertTriangle}
-              />
-              <StatsCard
-                title={t('exposures.type.open', 'Open')}
-                value={openCount}
-                description={
-                  openCount > 0
-                    ? t('exposures.type.openAction', 'Awaiting remediation')
-                    : t('exposures.type.openNone', 'None open')
-                }
-                icon={Clock}
-              />
-              <StatsCard // anatomy-ok: existing type-page tile, only its neighbours changed
-                title={t('exposures.type.riskScore', 'Risk score')}
-                value={formatRiskScore(typeStats.riskScore)}
-                description={getRiskLevel(typeStats.riskScore).label}
-                icon={Shield}
-              />
-            </div>
-
+          <PageStack>
             <div className={OVERVIEW_CHARTS_GRID}>
               <ChartCard
                 title={t('exposures.type.severityDistribution', 'Severity distribution')}
@@ -141,9 +96,9 @@ export default function SecretsExposurePage() {
                 <StatusBars byStatus={typeStats.byStatus} />
               </ChartCard>
             </div>
-          </div>
+          </PageStack>
         )}
-      </div>
+      </PageStack>
     </Main>
   )
 }
