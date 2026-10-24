@@ -162,7 +162,7 @@ func TestNoLimitsByDefault(t *testing.T) {
 	svc := NewService(repo, nil, nil)
 	tid := shared.NewID()
 	for _, k := range limits.Keys {
-		if !k.PerOrganization() || k.IsFloor() {
+		if !k.PerOrganization() || k.IsUncounted() {
 			continue
 		}
 		if err := svc.Check(context.Background(), tid, k, 1); err != nil {
@@ -463,5 +463,27 @@ func TestApplies(t *testing.T) {
 	repo.denies = []limits.FeatureDeny{{TenantID: b, Feature: "pentest", Origin: limits.OriginOperator}}
 	if ok, _ := svc.Applies(context.Background(), b); !ok {
 		t.Fatal("a deny applies")
+	}
+}
+
+// The rule source keys are valid instance defaults for self-service
+// organizations, so a hosted service caps them before its control plane
+// writes the organization's own rows.
+func TestStartLimitsCoverRuleSources(t *testing.T) {
+	svc := NewService(&memRepo{}, nil, nil)
+	if err := svc.SetStartLimits(`{"content_sources":3,"content_storage_mb":200,"content_sync_floor_minutes":60,"content_snapshot_max_mb":16}`); err != nil {
+		t.Fatal(err)
+	}
+	d, _, err := svc.SelfServiceDefaults(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if d.Get(limits.ContentSources) != 3 || d.Get(limits.ContentStorageMB) != 200 ||
+		d.Get(limits.ContentSyncFloorMinutes) != 60 || d.Get(limits.ContentSnapshotMaxMB) != 16 {
+		t.Fatalf("defaults: %v", d)
+	}
+	rows := limits.Rows(shared.NewID(), limits.OriginOperator, limits.SelfServiceReason, d, time.Now())
+	if len(rows) != 4 {
+		t.Fatalf("an organization starts with one row per rule source key: %d", len(rows))
 	}
 }

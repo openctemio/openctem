@@ -29,6 +29,11 @@ describe('DataTable pagination on an empty list', () => {
     expect(screen.queryByText(/of 0/)).not.toBeInTheDocument()
   })
 
+  it('hides it during the first load too', () => {
+    render(<DataTable columns={columns} data={[]} isLoading manualPagination rowCount={0} />)
+    expect(screen.queryByText(/Showing 0/)).not.toBeInTheDocument()
+  })
+
   it('shows it, never "of 0", once there are rows', () => {
     render(<DataTable columns={columns} data={[{ id: '1', name: 'a' }]} />)
     expect(screen.getByText(/Showing 1 - 1 of 1/)).toBeInTheDocument()

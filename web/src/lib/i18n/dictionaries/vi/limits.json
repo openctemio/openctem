@@ -81,5 +81,9 @@
   "limits.usage.title": "Giới hạn",
   "limits.accountPortal": "Quản lý tài khoản dịch vụ",
   "limits.key.storage_mb": "Lưu trữ (MiB)",
-  "limits.key.dashboard_refresh_floor_minutes": "Chu kỳ làm mới bảng điều khiển tối thiểu (phút)"
+  "limits.key.dashboard_refresh_floor_minutes": "Chu kỳ làm mới bảng điều khiển tối thiểu (phút)",
+  "limits.key.content_sources": "Nguồn quy tắc",
+  "limits.key.content_storage_mb": "Dung lượng bản chụp quy tắc (MiB)",
+  "limits.key.content_sync_floor_minutes": "Chu kỳ đồng bộ nguồn quy tắc tối thiểu (phút)",
+  "limits.key.content_snapshot_max_mb": "Bản chụp quy tắc lớn nhất (MiB)"
 }
