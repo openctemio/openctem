@@ -19,7 +19,7 @@ Permissions are included in the access token and checked using `middleware.Requi
 of truth is `permission.AllPermissions()` in
 `pkg/domain/permission/permission.go`; `permission.IsValid()` /
 `ParsePermission()` validate against it. As of this writing it defines
-**166 permissions**, grouped by module. Rather than hand-mirror all 166 (which
+**167 permissions**, grouped by module. Rather than hand-mirror all 167 (which
 would drift), the table below lists the module groups and the count each
 contributes — derive the exact strings from `AllPermissions()`.
 
@@ -27,7 +27,8 @@ contributes — derive the exact strings from `AllPermissions()`.
 |--------------|-------|---------------------|
 | Core (dashboard, audit, settings) | 6 | `dashboard:read`, `dashboards:org:view`, `dashboards:org:manage`, `audit:read`, `settings:read/write` |
 | Assets | 11 | `assets:read/write/delete/import/export`, `asset_groups:*`, `components:*` |
-| Findings | 32 | `findings:read/write/delete/assign/triage/status/export/approve/fix_apply/verify`, `exposures:*`, `suppressions:*`, `vulnerabilities:*`, `credentials:*`, `remediation:*`, `workflows:*`, `policies:*` |
+| Findings | 31 | `findings:read/write/delete/assign/triage/status/export/approve/fix_apply/verify`, `exposures:*`, `suppressions:*`, `vulnerabilities:*`, `credentials:*`, `remediation:*`, `policies:*` |
+| Automations | 3 | `automations:read`, `automations:write` (drafts, preview, validate, manual runs), `automations:publish` (go live, approve, roll back, mode, on/off, delete; RFC-125) |
 | Scans | 23 | `scans:read/write/delete/execute`, `scans:windows:manage`, `scans:windows:override`, `scan_profiles:*`, `sources:*`, `tools:*`, `tenant_tools:*`, `scanner_templates:*`, `secret_store:*` |
 | Sensors | 17 | `sensors:read/write/delete`, `sensors:commands:read/write/delete`, `sensors:zones:read/write/delete`, `sensors:egress:read/write/delete` (proxy pools), `sensors:pair`, `sensors:approve`, `sensors:grant:narrow/widen`, `sensors:revoke` (RFC-052) |
 | Team | 20 | `team:*`, `members:*`, `groups:*`, `roles:*`, `assignment_rules:*` |
@@ -76,6 +77,24 @@ Team roles are used for team management operations:
   editor's recent re-authentication when the role has holders, and for a
   team-bound role it is also owner-only. Giving a user a custom role that
   carries such a permission needs the same step-up.
+- The privileged permissions (`permission.PrivilegedPermissions`) are member
+  invitation and writes, service accounts, team, role and API key writes,
+  secret store access, settings writes, and the two that decide where an
+  organization's integrations send data and stored tokens:
+  `integrations:manage` and `integrations:scm:write`. Both are held by the
+  owner and administrator roles; the built-in member role keeps
+  `integrations:scm:write` for its own connections, and a custom role that
+  carries either follows the rules above.
+- A stored integration secret never follows a changed destination. A
+  notification channel update that moves an email channel to another SMTP
+  host or port (or weakens its TLS mode) or a Splunk channel to another
+  `hec_url` host is refused with 400 unless it carries new credentials, which
+  replace the stored ones. A console identity provider update that changes the
+  issuer (or the Entra directory) is refused unless the client secret is
+  entered again, and a tenant storage configuration that changes the provider,
+  endpoint, bucket or region needs new keys. Webhook, Slack and Teams
+  channels hold the destination itself as the secret, and Telegram only ever
+  sends its token to the Telegram API, so neither can redirect a stored secret.
 
 ### One authority for the team role
 
@@ -345,7 +364,7 @@ and SBOM import write it.
 | `POST /api/v1/findings/bulk/assign` | `findings:bulk_update` **and** `findings:assign` |
 | `POST /api/v1/findings/{id}/approvals` (false-positive or accepted-risk request) | `findings:write`, the finding in the caller's data scope; decided at once (`single_person`) only when the organization's false-positive or risk acceptance level allows it **and** the caller holds `findings:approve` and does not own the asset; bulk, group, import and automation paths never decide alone |
 | `GET /api/v1/organization/settings/finding-approvals` | `findings:read` |
-| `PATCH /api/v1/organization/settings/finding-approvals` | owner or administrator **and** `settings:write` **and** step-up; a lower `fp_approval` or `accept_approval` level takes effect after 24 hours, raising at once; audited `finding_approval.settings_changed` (high), approvers told |
+| `PATCH /api/v1/organization/settings/finding-approvals` | owner or administrator **and** `settings:write` **and** step-up; a lower `fp_approval` or `accept_approval` level takes effect after 24 hours, raising at once; lowering a level or `second_look_percent`, relaxing the policy and changing `backup_contact_email` are **owner only** (403 for an administrator); audited `finding_approval.settings_changed` (high), approvers told |
 | `POST /api/v1/findings/{id}/verify` | `findings:verify` |
 
 > The finding **action** routes (status, triage, assign, bulk, verify) are gated on
@@ -827,15 +846,18 @@ Owner and administrator only, on top of the permission: `PUT /api/v1/scan-profil
 #### Dashboards (`/api/v1/me/dashboards`, `/api/v1/organization/dashboards`)
 
 Two kinds ([dashboards](dashboards.md)). Personal dashboards are the caller's
-own: `/me/*` is self-scoped (no permission gate) and every query filters on
-the caller's tenant and user, so another user's or tenant's dashboard is 404.
+own: the layout routes of `/me/*` are self-scoped (no permission gate) and every
+query filters on the caller's tenant and user, so another user's or tenant's
+dashboard is 404. The routes that compute figures need `dashboard:read`, and
+each metric needs the permission of what it counts.
 Organization dashboards belong to the organization.
 
 | Endpoint | Permission Required |
 |----------|---------------------|
 | `GET/POST /api/v1/me/dashboards`, `GET/PUT/DELETE /api/v1/me/dashboards/{id}`, `POST …/{id}/default`, `PUT …/{id}/schedule` | self (owner only) |
 | `POST /api/v1/me/dashboards/{id}/share` | self; recipients must be active members of the tenant; each gets a layout copy of their own (audited) |
-| `GET /api/v1/me/dashboards/{id}/data`, `POST …/{id}/refresh`, `POST /api/v1/me/dashboards/widget-preview`, `GET /api/v1/me/dashboards/widget-catalog` | self (owner only); figures follow the caller's own data scope and pentest campaign membership; Refresh now budgeted (1/min per person and dashboard, 30/h per organization) |
+| `GET /api/v1/me/dashboards/widget-catalog` | self (static catalog, no data) |
+| `GET /api/v1/me/dashboards/{id}/data`, `POST …/{id}/refresh`, `POST /api/v1/me/dashboards/widget-preview` | `dashboard:read`; self (owner only); a widget whose metric counts findings needs `findings:read`, one that counts assets needs `assets:read` (otherwise it is returned as unsupported with reason `forbidden` and no figure); figures follow the caller's own data scope and pentest campaign membership; Refresh now budgeted (1/min per person and dashboard, 30/h per organization) |
 | `GET /api/v1/organization/dashboards`, `GET …/{id}`, `GET …/{id}/data`, `POST …/{id}/refresh` | `dashboards:org:view` (or `dashboards:org:manage`); a viewer outside the dashboard's audience gets it left out of the list and 404 by id; managers see every one with its audience |
 | `POST /api/v1/me/dashboards` with `from_organization_dashboard_id` ("duplicate to mine") | `dashboards:org:view` + audience; copies the layout into a new personal dashboard of the caller |
 | `POST /api/v1/organization/dashboards`, `PUT/DELETE …/{id}`, `POST …/{id}/default`, `PUT …/order`, `PUT …/{id}/audience`, `PUT …/{id}/schedule` | `dashboards:org:manage` (owner and admin by default), audited |
@@ -981,6 +1003,14 @@ same tenant gates as any session tenant route ([RFC-045](../rfcs/RFC-045-websock
   caller outside the organization's IP allowlist (403 `IP_NOT_ALLOWED`), a
   password session in an SSO-enforced tenant and a revoked session are
   refused at the upgrade.
+- When the revoked-session lookup itself fails (the store is down), a session
+  that was signed out cannot be told from a live one. Every route behind the
+  unified authenticator then fails closed for writes (POST, PUT, PATCH,
+  DELETE answer 503 with `Retry-After`) at once, and for reads (including the
+  WebSocket upgrade) after a 2-minute window that starts at the first failure
+  and ends at the first successful lookup, so a short outage does not sign
+  everyone out. The permission-version check keeps its own, separate
+  behaviour (see Permission caching).
 - The browser always opens the socket on the UI's own origin: the gateway
   routes `/api/v1/ws` to the API, and the web server (`server-with-ws.mjs`,
   all-in-one image and Helm) or `next dev` forwards it with the `Cookie` and
@@ -1867,7 +1897,9 @@ a personal address, or be a work domain nobody has verified.
   - `MemberAccessExpiryController` suspends the membership within a minute
     (`suspended_reason = expired`), in that organization only;
   - `PATCH /api/v1/organization/members/{member_id}/access` (owner/admin,
-    `members:write`) sets a new end date and re-enables them;
+    `members:write`) sets a new end date and re-enables them; a change that
+    widens access (a later end, no end, or re-enabling) needs a recent sign-in
+    (step-up), shortening does not;
   - a plain reactivation is refused.
 - **API keys** follow the member: allowed unless an active trust with their
   home forbids keys, and never beyond the end of access.
@@ -2055,6 +2087,23 @@ counts only their in-scope assets and findings (none without a scope row; the
 trend window takes the same scope). A schedule with no recorded creator, or whose creator can no
 longer be resolved (left the organization), is not rendered or sent
 (`failed`).
+
+### Automations: who may edit, publish and approve (RFC-125)
+
+| Route | Permission | Also |
+|---|---|---|
+| `GET /workflows`, `/workflows/catalog`, `/workflows/{id}`, `/{id}/versions[/{versionId}]`, `/{id}/trace`, `GET /workflow-runs[/{id}]` | `automations:read` | runs and trace counts follow the caller's data scope (out of scope: 404, not counted) |
+| `POST /workflows`, `PUT /{id}` (name, description, tags), `PUT /{id}/graph`, nodes, edges, `POST /{id}/preview`, `POST /{id}/verify`, `POST /{id}/runs`, `POST /workflow-runs/{id}/cancel` | `automations:write` | building a step needs its own permission; preview samples only the caller's scope; a manual run acts as the caller |
+| `POST /{id}/publish`, `POST /{id}/versions/{versionId}/rollback` | `automations:publish` | every step's permission; elevated risk: step-up; high risk: the version waits for a second publisher |
+| `POST /{id}/versions/{versionId}/approve` | `automations:publish` | step-up, not the publisher, the reviewed digest, every step's permission |
+| `PUT /{id}/mode` (simulate), `PUT /{id}` with `is_active`, `DELETE /{id}` | `automations:publish` | no step-up: pausing and switching to simulate narrow |
+
+Risk classes: low (tags), elevated (status, assignment, tickets,
+notifications, AI triage), high (scans, false-positive and acceptance
+requests, chaining on, a change cap above the default). Migration
+`automations_permissions` renamed `findings:workflows:{read,write}` one to one
+and gave `automations:publish` to every role that held write, so nobody lost
+a power; owners and administrators hold all three.
 
 ### Automation runs act as one person
 

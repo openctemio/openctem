@@ -249,7 +249,9 @@ export function InventoryBusinessContextActions({
               {t('common.cancel', 'Cancel')}
             </Button>
             <Button onClick={apply} disabled={submitting || !targetId}>
-              {submitting ? t('assets.bulk.adding', 'Adding…') : t('assets.labels.addShort', 'Add')}
+              {submitting
+                ? t('assets.bulk.adding', 'Adding…')
+                : t('assets.bulk.addSelected', 'Add {count} selected', { count })}
             </Button>
           </DialogFooter>
         </DialogContent>

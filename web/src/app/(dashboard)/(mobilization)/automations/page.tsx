@@ -775,7 +775,7 @@ export default function WorkflowsPage() {
               'When something happens, do something: notify, assign, open a ticket or run a saved scan.'
             )}
           >
-            <Can permission={Permission.WorkflowsWrite} mode="disable">
+            <Can permission={Permission.AutomationsWrite} mode="disable">
               <Button size="sm" onClick={() => setIsCreateDialogOpen(true)}>
                 <Plus className="me-2 h-4 w-4" />
                 {t('automations.page.newWorkflow', 'New workflow')}
@@ -827,7 +827,7 @@ export default function WorkflowsPage() {
                     'Create your first automation workflow.'
                   )}
                   action={
-                    <Can permission={Permission.WorkflowsWrite} mode="disable">
+                    <Can permission={Permission.AutomationsWrite} mode="disable">
                       <Button size="sm" onClick={() => setIsCreateDialogOpen(true)}>
                         <Plus className="me-2 h-4 w-4" />
                         {t('automations.empty.create', 'Create workflow')}
@@ -1005,7 +1005,7 @@ export default function WorkflowsPage() {
                   actions={
                     <>
                       <WorkflowRunButton workflow={wf} size="sm" />
-                      <Can permission={Permission.WorkflowsWrite} mode="disable">
+                      <Can permission={Permission.AutomationsWrite} mode="disable">
                         <Button size="sm" variant="outline" onClick={() => handleEditInBuilder(wf)}>
                           <Pencil className="h-4 w-4" />
                           {t('automations.detail.edit', 'Edit')}

@@ -120,10 +120,10 @@ func TestWorkflowRunAuthz_DB(t *testing.T) {
 		return id
 	}
 	// editor: may edit automations but not change findings.
-	editorRole := customRole("wfa-editor", "findings:workflows:read", "findings:workflows:write", "findings:read")
+	editorRole := customRole("wfa-editor", "automations:read", "automations:write", "findings:read")
 	exec(`INSERT INTO user_roles (user_id, tenant_id, role_id) VALUES ($1, $2, $3)`, editor, tenantA, editorRole)
 	// operator: may change findings, scoped to one asset.
-	operatorRole := customRole("wfa-operator", "findings:workflows:read", "findings:workflows:write", "findings:read", "findings:write")
+	operatorRole := customRole("wfa-operator", "automations:read", "automations:write", "findings:read", "findings:write")
 	exec(`INSERT INTO user_roles (user_id, tenant_id, role_id) VALUES ($1, $2, $3)`, operator, tenantA, operatorRole)
 
 	assetIn, assetOut, assetB := shared.NewID().String(), shared.NewID().String(), shared.NewID().String()
@@ -171,6 +171,7 @@ func TestWorkflowRunAuthz_DB(t *testing.T) {
 		automationsvc.WithWorkflowStepAuthorizer(authorizer),
 		automationsvc.WithWorkflowSubjectReaders(postgres.NewFindingRepository(db), postgres.NewAssetRepository(db)),
 		automationsvc.WithWorkflowVersions(versionRepo))
+	svc.SetStepUpGate(&wfStepUp{fresh: map[string]bool{}})
 	h := NewWorkflowHandler(svc, validator.New(), logger.NewNop())
 
 	as := func(user, method, body string, params map[string]string) *http.Request {
