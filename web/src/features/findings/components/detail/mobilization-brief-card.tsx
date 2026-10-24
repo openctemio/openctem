@@ -278,7 +278,7 @@ function BriefItem({
 }) {
   return (
     <div>
-      <div className="text-muted-foreground mb-1 flex items-center gap-1.5 text-xs font-medium uppercase tracking-wide">
+      <div className="text-muted-foreground mb-1 flex items-center gap-1.5 text-xs font-medium">
         {icon}
         {label}
       </div>

@@ -128,6 +128,12 @@ as `new` with a `reopened` activity (`liftSuppressionsInTx`). This reverses
 what the approval and ingest applied, whichever of the two linked the finding.
 A finding someone has moved since is left alone.
 
+A delete writes the rule's `deleted` audit row (actor, rule id, name, status)
+in the same transaction as the delete, so a rule is never deleted without it.
+`suppression_rule_audit.suppression_rule_id` is `ON DELETE SET NULL` (the id is
+kept in `details.rule_id`), so the row outlives the rule. The tenant audit log
+also gets `suppression_rule.deleted`.
+
 ## Security
 
 - Tenant: every query carries the rule's `tenant_id`; the rule is loaded by

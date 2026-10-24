@@ -7,10 +7,13 @@ package integration
 // reference the draft's nodes. Down and up again work.
 
 import (
+	"context"
 	"encoding/json"
 	"testing"
 
+	"github.com/openctemio/openctem/api/internal/infra/postgres"
 	"github.com/openctemio/openctem/api/internal/testdb"
+	automationdom "github.com/openctemio/openctem/api/pkg/domain/automation"
 )
 
 func TestMigrationAutomationVersions(t *testing.T) {
@@ -100,6 +103,57 @@ func TestMigrationAutomationVersions(t *testing.T) {
 		t.Fatal("a second published version was stored")
 	}
 
+	// Backfilled rows carry a placeholder until the API stores the canonical
+	// digest; after the repair the stored digest equals Definition.Digest().
+	var placeholder int
+	if err := db.QueryRow(`SELECT count(*) FROM automation_versions WHERE digest = 'backfill'`).Scan(&placeholder); err != nil || placeholder != 2 {
+		t.Fatalf("backfill placeholders = %d (%v), want 2", placeholder, err)
+	}
+	repo := postgres.NewAutomationVersionRepository(&postgres.DB{DB: db})
+	if n, err := repo.RepairBackfilledDigests(context.Background()); err != nil || n != 2 {
+		t.Fatalf("repair = %d, %v, want 2", n, err)
+	}
+	if n, err := repo.RepairBackfilledDigests(context.Background()); err != nil || n != 0 {
+		t.Fatalf("second repair = %d, %v, want 0 (idempotent)", n, err)
+	}
+	rows, err := db.Query(`SELECT definition, digest FROM automation_versions WHERE version = 1`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer rows.Close()
+	checked := 0
+	for rows.Next() {
+		var raw []byte
+		var digest string
+		if err := rows.Scan(&raw, &digest); err != nil {
+			t.Fatal(err)
+		}
+		var d automationdom.Definition
+		if err := json.Unmarshal(raw, &d); err != nil {
+			t.Fatal(err)
+		}
+		if digest != d.Digest() || len(digest) != 64 {
+			t.Fatalf("stored digest %q != Definition.Digest() %q", digest, d.Digest())
+		}
+		checked++
+	}
+	if err := rows.Err(); err != nil {
+		t.Fatal(err)
+	}
+	if checked != 2 {
+		t.Fatalf("checked %d backfilled rows, want 2", checked)
+	}
+
 	testdb.Migrate(t, db, dir, v, v, true)
 	testdb.Migrate(t, db, dir, v, v, false)
+
+	// The checks added NOT VALID are validated by the next migration.
+	vv := testdb.MigrationVersion(t, dir, "automation_versions_validate")
+	testdb.Migrate(t, db, dir, vv, vv, false)
+	var unvalidated int
+	if err := db.QueryRow(`SELECT count(*) FROM pg_constraint WHERE conname IN ('chk_automations_mode', 'chk_automation_runs_mode') AND NOT convalidated`).Scan(&unvalidated); err != nil || unvalidated != 0 {
+		t.Fatalf("unvalidated mode checks = %d (%v)", unvalidated, err)
+	}
+	testdb.Migrate(t, db, dir, vv, vv, true)
+	testdb.Migrate(t, db, dir, vv, vv, false)
 }

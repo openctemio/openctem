@@ -1035,7 +1035,7 @@ func (e *WorkflowExecutor) finalizeRun(ctx context.Context, execCtx *ExecutionCo
 		e.logger.Warn("automation paused: its latest runs all failed",
 			"workflow_id", wf.ID, "workflow_name", wf.Name, "failed_runs", maxConsecutiveFailures)
 		if e.auditService != nil {
-			_ = e.auditService.LogEvent(ctx, auditapp.AuditContext{TenantID: run.TenantID.String()},
+			auditapp.RecordOrWarn(ctx, e.logger, e.auditService, auditapp.AuditContext{TenantID: run.TenantID.String()},
 				auditapp.NewSuccessEvent(audit.ActionWorkflowDeactivated, audit.ResourceTypeWorkflow, wf.ID.String()).
 					WithResourceName(wf.Name).
 					WithMessage(fmt.Sprintf("Automation '%s' paused by the platform: its last %d runs failed", wf.Name, maxConsecutiveFailures)).

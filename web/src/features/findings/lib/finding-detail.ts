@@ -281,7 +281,8 @@ export function toFindingDetail(api: ApiFinding): FindingDetail {
     assignee: api.assigned_to
       ? {
           id: api.assigned_to,
-          name: api.assigned_to_user?.name || api.assigned_to,
+          // Never the raw id as a name: an empty name reads "Assigned" in the UI.
+          name: api.assigned_to_user?.name || '',
           email: api.assigned_to_user?.email || '',
           role: 'analyst' as const,
         }

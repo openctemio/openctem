@@ -24,7 +24,7 @@ import { useTranslation } from '@/context/i18n-provider'
 import { ErrorState } from '@/features/shared/components/error-state'
 import { RelativeTime } from '@/features/shared/components/relative-time'
 import { PageHeader } from '@/features/shared/components/page-header'
-import { Main } from '@/components/layout'
+import { Main, useBreadcrumbTitle } from '@/components/layout'
 import { formatEpssScore } from '@/lib/epss'
 import { useEmergingThreat } from '../api'
 import type { EmergingThreatAsset, EmergingThreatDetail, EtsBreakdown } from '../types'
@@ -41,6 +41,7 @@ import {
 export function EmergingThreatDetailView({ id }: { id: string }) {
   const { t } = useTranslation()
   const { data, error, isLoading, mutate } = useEmergingThreat(id)
+  useBreadcrumbTitle(data?.vuln_id)
 
   return (
     <Main>

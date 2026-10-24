@@ -81,7 +81,7 @@ func TestWorkflowGuardrails_DB(t *testing.T) {
 		// publisher (the admin, who holds findings:approve).
 		f.stepUp.set(f.operator, true)
 		if s, b := f.call(f.h.ApproveVersion, f.as(f.operator, http.MethodPost, `{"digest":"`+pending.Version.Digest+`"}`,
-			map[string]string{"id": wf, "versionId": pending.Version.ID})); s != http.StatusOK {
+			map[string]string{"id": wf, "version_id": pending.Version.ID})); s != http.StatusOK {
 			t.Fatalf("approve = %d %s", s, b)
 		}
 		run := f.eventRun(wf, f.fIn)
@@ -172,7 +172,7 @@ func TestWorkflowGuardrails_RollbackAndCap_DB(t *testing.T) {
 	old := shared.NewID().String()
 	f.exec(`INSERT INTO automation_versions (id, tenant_id, automation_id, version, definition, digest, risk_class, status, published_by)
 		VALUES ($1, $2, $3, 1, $4::jsonb, $5, 'elevated', 'superseded', $6)`, old, f.tenantA, wf, def, strings.Repeat("a", 64), f.admin)
-	s, b := f.call(f.h.Rollback, f.as(f.admin, http.MethodPost, `{}`, map[string]string{"id": wf, "versionId": old}))
+	s, b := f.call(f.h.Rollback, f.as(f.admin, http.MethodPost, `{}`, map[string]string{"id": wf, "version_id": old}))
 	if s != http.StatusBadRequest || !strings.Contains(b, "AUTOMATION_STATUS_NOT_ALLOWED") {
 		t.Fatalf("rollback to a version that closes findings = %d %s, want 400 AUTOMATION_STATUS_NOT_ALLOWED", s, b)
 	}

@@ -18,10 +18,12 @@ import (
 	"github.com/openctemio/openctem/api/internal/metrics"
 	"github.com/openctemio/openctem/api/pkg/domain/audit"
 	"github.com/openctemio/openctem/api/pkg/domain/command"
+	"github.com/openctemio/openctem/api/pkg/domain/ingestreceipt"
 	"github.com/openctemio/openctem/api/pkg/domain/ingestreport"
 	"github.com/openctemio/openctem/api/pkg/domain/sensor"
 	"github.com/openctemio/openctem/api/pkg/domain/sensorresult"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/pkg/logger"
 	protov2 "github.com/openctemio/openctem/api/pkg/sensorproto/v2"
 )
 
@@ -305,6 +307,7 @@ func (s *Service) admitUnsolicited(ctx context.Context, agt *sensor.Sensor, tena
 		}
 		return false, err
 	}
+	s.recordQuarantined(ctx, agt, tenantID, sub.Report)
 	metrics.SensorUnsolicitedResultsTotal.WithLabelValues("quarantined").Inc()
 	s.logger.Info("unsolicited sensor report quarantined",
 		"sensor_id", agt.ID.String(), "sensor_type", string(sensorType), "tenant_id", tenantID.String(),
@@ -376,8 +379,9 @@ func (s *Service) GetQuarantined(ctx context.Context, tenantID, id shared.ID) (*
 // AcceptQuarantined applies a quarantined report as a person's decision: it
 // may change the existing assets it names and reopen findings, like a report
 // bound to a command, but it never auto-resolves anything (no command says
-// what was covered). The item is marked accepted first, so two concurrent
-// accepts apply it once.
+// what was covered). The item is claimed first, so two concurrent accepts
+// apply it once, and marked accepted only once the apply succeeded: a
+// failed apply leaves it pending, to be accepted again.
 func (s *Service) AcceptQuarantined(ctx context.Context, actx auditapp.AuditContext, tenantID, id, by shared.ID) (*Output, error) {
 	if s.results == nil {
 		return nil, ErrQuarantineUnavailable
@@ -393,7 +397,7 @@ func (s *Service) AcceptQuarantined(ctx context.Context, actx auditapp.AuditCont
 	if err := json.Unmarshal(item.Payload, &report); err != nil {
 		return nil, fmt.Errorf("%w: the stored report does not parse: %v", shared.ErrValidation, err) //nolint:errorlint // detail
 	}
-	if err := s.results.Review(ctx, tenantID, id, sensorresult.StatusAccepted, by); err != nil {
+	if err := s.results.ClaimForApply(ctx, tenantID, id); err != nil {
 		return nil, err
 	}
 
@@ -406,6 +410,14 @@ func (s *Service) AcceptQuarantined(ctx context.Context, actx auditapp.AuditCont
 		RequireAssetForFindings: true, NoCatalogWrites: true}
 	agt := &sensor.Sensor{ID: item.SensorID, TenantID: &tenantID, Type: sensor.SensorType(item.SensorType), Status: sensor.SensorStatusActive}
 	out, ingErr := s.Ingest(ctx, agt, Input{Report: &report, Options: opts})
+	if ingErr == nil {
+		if err := s.results.Review(context.WithoutCancel(ctx), tenantID, id, sensorresult.StatusAccepted, by); err != nil {
+			s.logger.Error("quarantined report applied but not marked accepted", "quarantine_id", id.String(), "error", err)
+			ingErr = err
+		}
+	} else if err := s.results.ReleaseApply(context.WithoutCancel(ctx), tenantID, id); err != nil {
+		s.logger.Warn("could not release the claim of a failed apply", "quarantine_id", id.String(), "error", err)
+	}
 
 	result := map[string]any{}
 	if out != nil {
@@ -567,4 +579,27 @@ func (s *Service) admitPush(ctx context.Context, sensorID, tenantID shared.ID, r
 		s.pushRefusals.ObservePushRefusal(ctx, tenantID, sensorID, route, reason)
 	}
 	return refusal
+}
+
+// recordQuarantined records, on the sensor report's receipt, each finding
+// of a quarantined report as quarantined (the quarantine policy decided;
+// nothing became a finding). Best effort: the report is safely stored.
+func (s *Service) recordQuarantined(ctx context.Context, agt *sensor.Sensor, tenantID shared.ID, report *ctis.Report) {
+	if s.receipts == nil || report == nil || len(report.Findings) == 0 {
+		return
+	}
+	out := &Output{}
+	for i := range report.Findings {
+		addItem(out, report, &report.Findings[i], ingestreceipt.DispositionQuarantined, ingestreceipt.ReasonNoCommand,
+			ingestreceipt.PolicyQuarantine, nil)
+	}
+	d := &ingestreceipt.Delta{TenantID: tenantID, Source: receiptSource(agt, Binding{Kind: BindingUnsolicited}, Options{}, report),
+		Received: len(report.Findings), Items: out.Items, At: time.Now()}
+	if report.Tool != nil {
+		d.Tool = report.Tool.Name
+	}
+	if _, err := s.receipts.Record(ctx, d); err != nil {
+		metrics.IngestReceiptWriteFailures.WithLabelValues("quarantine").Inc()
+		s.logger.Warn("quarantine receipt not recorded", "tenant_id", tenantID.String(), "error", logger.SanitizeError(err))
+	}
 }

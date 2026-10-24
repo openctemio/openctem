@@ -133,8 +133,14 @@ func (s *WorkflowService) authorizeManualRun(ctx context.Context, w *automationd
 	if s.authorizer == nil {
 		return shared.NewDomainError(ErrCodeRunNotAuthorized, "automation run authorization is not configured", shared.ErrForbidden)
 	}
+	// A live automation runs its published version, so that is the graph the
+	// caller's permissions are checked against (the draft may differ).
+	graph, _, _, err := s.runGraph(ctx, w)
+	if err != nil {
+		return err
+	}
 	checked := false
-	for _, n := range w.Nodes {
+	for _, n := range graph.Nodes {
 		perm, required := NodePermission(n.Config)
 		if !required {
 			continue

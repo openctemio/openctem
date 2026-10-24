@@ -53,7 +53,7 @@ describe('MaturityBreakdownCard', () => {
     expect(screen.getByText('30%')).toBeInTheDocument()
     expect(screen.getByText('25%')).toBeInTheDocument()
     // contribution rendered with a leading +
-    expect(screen.getByText('+24.0')).toBeInTheDocument()
+    expect(screen.getByText('+24')).toBeInTheDocument()
     expect(screen.getByText('+22.5')).toBeInTheDocument()
     // the transparent detail string is shown
     expect(screen.getByText('findings_resolved / findings_opened this cycle')).toBeInTheDocument()
@@ -65,9 +65,15 @@ describe('MaturityBreakdownCard', () => {
     expect(screen.getByText('0')).toBeInTheDocument()
   })
 
+  it('shows a dash for raw values and contributions on a single cycle', () => {
+    render(<MaturityBreakdownCard maturity={{ ...breakdown, cycles_analyzed: 1 }} />)
+    expect(screen.queryByText('+24')).toBeNull()
+    expect(screen.getAllByText('—').length).toBeGreaterThanOrEqual(4)
+  })
+
   it('scoreTone maps score bands to accents', () => {
-    expect(scoreTone(90)).toContain('emerald')
-    expect(scoreTone(60)).toContain('amber')
+    expect(scoreTone(90)).toBe('text-success')
+    expect(scoreTone(60)).toBe('text-warning')
     expect(scoreTone(20)).toBe('text-destructive')
   })
 })

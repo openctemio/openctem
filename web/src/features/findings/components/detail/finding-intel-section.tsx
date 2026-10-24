@@ -10,7 +10,10 @@
 
 import { ChevronRight, ExternalLink, Radar } from 'lucide-react'
 import { useTranslation } from '@/context/i18n-provider'
-import { formatEpssPercentile, formatEpssScore } from '@/lib/epss'
+import { formatEpssPercentile } from '@/lib/epss'
+import { EpssChip } from '@/components/ui/epss-chip'
+import { KevBadge } from '@/components/ui/kev-badge'
+import { isKevPastDue } from '../exploit-signals'
 import { safeHref } from '@/lib/safe-href'
 import {
   DetailField,
@@ -112,40 +115,55 @@ export function FindingIntelSection({ finding }: { finding: FindingDetail }) {
         )}
         {hasCve && (
           <DetailField label={t('findings.intel.kev', 'CISA KEV')}>
-            {finding.isInKev
-              ? [
-                  v.kevDateAdded
-                    ? t('findings.intel.kevSince', 'Known exploited since {date}', {
-                        date: date(v.kevDateAdded) ?? v.kevDateAdded,
-                      })
-                    : t('findings.intel.kevYes', 'Known exploited'),
-                  finding.kevDueDate
-                    ? t('findings.intel.kevDue', 'due {date}', {
-                        date: date(finding.kevDueDate) ?? finding.kevDueDate,
-                      })
-                    : null,
-                  v.kevRansomware ? t('findings.intel.kevRansomware', 'used in ransomware') : null,
-                ]
-                  .filter(Boolean)
-                  .join(' · ')
-              : t('findings.intel.kevNo', 'Not listed')}
+            {finding.isInKev ? (
+              <span className="inline-flex flex-wrap items-center gap-x-2 gap-y-1">
+                <KevBadge
+                  pastDue={isKevPastDue(finding.kevDueDate)}
+                  ransomware={!!v.kevRansomware}
+                />
+                <span>
+                  {[
+                    v.kevDateAdded
+                      ? t('findings.intel.kevSince', 'Known exploited since {date}', {
+                          date: date(v.kevDateAdded) ?? v.kevDateAdded,
+                        })
+                      : t('findings.intel.kevYes', 'Known exploited'),
+                    finding.kevDueDate
+                      ? t('findings.intel.kevDue', 'due {date}', {
+                          date: date(finding.kevDueDate) ?? finding.kevDueDate,
+                        })
+                      : null,
+                  ]
+                    .filter(Boolean)
+                    .join(' · ')}
+                </span>
+              </span>
+            ) : (
+              t('findings.intel.kevNo', 'Not listed')
+            )}
           </DetailField>
         )}
         {epss !== undefined && (
           <DetailField label={t('findings.intel.epss', 'EPSS')}>
-            {[
-              formatEpssScore(epss, epss < 0.1 ? 2 : 1),
-              typeof finding.epssPercentile === 'number'
-                ? t('findings.intel.percentile', '{percentile} percentile', {
-                    percentile: formatEpssPercentile(finding.epssPercentile, 0),
-                  })
-                : null,
-              v.epssDate
-                ? t('findings.intel.asOf', 'as of {date}', { date: date(v.epssDate) ?? v.epssDate })
-                : null,
-            ]
-              .filter(Boolean)
-              .join(' · ')}
+            <span className="inline-flex flex-wrap items-center gap-x-2 gap-y-1">
+              <EpssChip score={epss} threshold={0} digits={epss < 0.1 ? 2 : 1} />
+              <span>
+                {[
+                  typeof finding.epssPercentile === 'number'
+                    ? t('findings.intel.percentile', '{percentile} percentile', {
+                        percentile: formatEpssPercentile(finding.epssPercentile, 0),
+                      })
+                    : null,
+                  v.epssDate
+                    ? t('findings.intel.asOf', 'as of {date}', {
+                        date: date(v.epssDate) ?? v.epssDate,
+                      })
+                    : null,
+                ]
+                  .filter(Boolean)
+                  .join(' · ')}
+              </span>
+            </span>
           </DetailField>
         )}
         {(v.publishedAt || v.modifiedAt) && (

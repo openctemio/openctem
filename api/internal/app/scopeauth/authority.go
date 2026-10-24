@@ -54,8 +54,19 @@ type Roots interface {
 	VerifiedDomainNames(ctx context.Context, tenantID shared.ID) ([]string, error)
 }
 
-// KindScopeTarget is the one kind of authority: a scope entry.
+// KindScopeTarget is the kind of authority that authorizes probes: a scope
+// entry.
 const KindScopeTarget = "scope_target"
+
+// Kinds of evidence behind a certificate's standing. Neither authorizes a
+// probe: a certificate is judged by the endpoints that served it
+// (KindServedBy names the one a scope entry covers), and a name in it under
+// a domain root only says the certificate is the tenant's (KindSAN).
+const (
+	KindServedBy       = "served_by"
+	KindSAN            = "san"
+	KindVerifiedDomain = "verified_domain"
+)
 
 // Proof levels of the name (RFC-054 §8.1).
 const (
@@ -71,6 +82,11 @@ type Via struct {
 	ID      string `json:"id,omitempty"`
 	Pattern string `json:"pattern"`
 	Proof   string `json:"proof"`
+	// Endpoint and Name explain a certificate's standing: the asset id and
+	// name of the endpoint that served it (KindServedBy), or the name in
+	// the certificate (KindSAN).
+	Endpoint string `json:"endpoint,omitempty"`
+	Name     string `json:"name,omitempty"`
 }
 
 // Authority is one tenant's loaded authority. Build it with Load.
@@ -103,8 +119,17 @@ func Load(ctx context.Context, tenantID shared.ID, targets Targets, roots Roots)
 	if err != nil {
 		return nil, fmt.Errorf("list verified domains: %w", err)
 	}
-	a := &Authority{targets: ts}
-	if hasProgramEntry(ts) {
+	// An entry the platform guardrails refuse (a public suffix, the deny
+	// list, an oversized range) covers nothing, whatever is stored.
+	g := scopedom.DefaultGuardrails()
+	kept := make([]*scopedom.Target, 0, len(ts))
+	for _, t := range ts {
+		if t != nil && g.CheckPattern(t.TargetType(), t.Pattern()) == nil {
+			kept = append(kept, t)
+		}
+	}
+	a := &Authority{targets: kept}
+	if hasProgramEntry(kept) {
 		pe, ok := targets.(ProgramExclusions)
 		if !ok {
 			a.programsOff = true
@@ -263,6 +288,44 @@ func (a *Authority) Covers(name string) (Via, bool) {
 				return Via{Kind: KindScopeTarget, ID: t.ID().String(), Pattern: t.Pattern(), Proof: proof}, true
 			}
 		}
+	}
+	return Via{}, false
+}
+
+// nameEntryType reports whether t is the entry types that name a domain or host: the roots a
+// name in a certificate can sit under.
+func nameEntryType(t scopedom.TargetType) bool {
+	switch t {
+	case scopedom.TargetTypeDomain, scopedom.TargetTypeSubdomain, scopedom.TargetTypeEmailDomain, scopedom.TargetTypeHost:
+		return true
+	}
+	return false
+}
+
+// OwnedName reports whether name sits at or under a domain root of the
+// tenant: an in-effect domain, subdomain or host entry (bug-bounty program
+// entries are another organization's domains and never count; ports and
+// protocol limits do not matter for ownership), or a verified domain. It is
+// an ownership signal only. It never authorizes a probe: use Covers for
+// that.
+func (a *Authority) OwnedName(name string) (Via, bool) {
+	if a == nil {
+		return Via{}, false
+	}
+	h := Host(name)
+	if h == "" {
+		return Via{}, false
+	}
+	for _, t := range a.targets {
+		if t == nil || t.IsProgramEntry() || !nameEntryType(t.TargetType()) {
+			continue
+		}
+		if scopedom.MatchesPattern(t.TargetType(), t.Pattern(), h) {
+			return Via{Kind: KindScopeTarget, ID: t.ID().String(), Pattern: t.Pattern(), Proof: ProofAsserted, Name: h}, true
+		}
+	}
+	if root, ok := underAny(h, a.verified); ok {
+		return Via{Kind: KindVerifiedDomain, Pattern: root, Proof: ProofVerified, Name: h}, true
 	}
 	return Via{}, false
 }

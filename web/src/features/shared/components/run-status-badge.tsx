@@ -1,71 +1,33 @@
-import { Badge } from '@/components/ui/badge'
-import { cn } from '@/lib/utils'
-import {
-  Loader2,
-  CheckCircle2,
-  XCircle,
-  Clock,
-  Ban,
-  CircleDashed,
-  AlertTriangle,
-  ShieldAlert,
-  PauseCircle,
-  type LucideIcon,
-} from 'lucide-react'
+'use client'
+
+import { HealthStatus } from '@/components/ui/health-status'
+import { useTranslation } from '@/context/i18n-provider'
+import type { HealthState } from '@/lib/health-colors'
+import { humanizeIdentifier } from '@/lib/humanize-identifier'
 
 /**
- * Canonical badge for scan / workflow RUN status. Replaces the per-page
- * status maps that each rendered a different color set and vocabulary, and
- * the shared StatusBadge which was label-only and collapsed running→active and
- * timeout/canceled→failed. Distinguishes every state with icon + color + label,
- * and animates the running spinner so live runs read at a glance.
+ * Canonical label for scan / workflow RUN status: a HealthStatus (icon and
+ * plain text), so every run reads the same everywhere and nothing spins. Each
+ * state keeps its own icon, word and translation:
+ * queued and pending wait for a sensor, running is a static half circle,
+ * completed is ok, partial and timeout need attention, failed and blocked are
+ * down, canceled is off.
  */
-type RunStatusConfig = { label: string; icon: LucideIcon; className: string; spin?: boolean }
-
-const RUN_STATUS: Record<string, RunStatusConfig> = {
-  queued: { label: 'Queued', icon: CircleDashed, className: 'bg-muted text-muted-foreground' },
-  pending: {
-    label: 'Pending',
-    icon: Clock,
-    className: 'bg-warning/15 text-warning',
-  },
-  running: {
-    label: 'Running',
-    icon: Loader2,
-    className: 'bg-info/15 text-info',
-    spin: true,
-  },
-  completed: {
-    label: 'Completed',
-    icon: CheckCircle2,
-    className: 'bg-success/15 text-success',
-  },
+const RUN_STATE: Record<string, { state: HealthState; label: string }> = {
+  queued: { state: 'queued', label: 'Queued' },
+  pending: { state: 'queued', label: 'Pending' },
+  running: { state: 'run', label: 'Running' },
+  completed: { state: 'ok', label: 'Completed' },
   // Kept results but lost some work (a batch or a step failed).
-  partial: {
-    label: 'Partial',
-    icon: AlertTriangle,
-    className: 'bg-warning/15 text-warning',
-  },
-  failed: {
-    label: 'Failed',
-    icon: XCircle,
-    className: 'bg-destructive/15 text-destructive',
-  },
-  timeout: {
-    label: 'Timeout',
-    icon: AlertTriangle,
-    className: 'bg-warning/15 text-warning',
-  },
-  canceled: { label: 'Canceled', icon: Ban, className: 'bg-muted text-muted-foreground' },
+  partial: { state: 'warn', label: 'Partial' },
+  failed: { state: 'down', label: 'Failed' },
+  timeout: { state: 'warn', label: 'Timed out' },
+  canceled: { state: 'off', label: 'Canceled' },
   // Stopped part way and waiting for a person (an automation run at its change cap).
-  paused: { label: 'Paused', icon: PauseCircle, className: 'bg-warning/15 text-warning' },
+  paused: { state: 'warn', label: 'Paused' },
   // The trigger was refused before anything was dispatched (scope gate,
   // freeze window, no sensor, wildcard target...). Nothing ran.
-  blocked: {
-    label: 'Blocked',
-    icon: ShieldAlert,
-    className: 'bg-destructive/10 text-destructive',
-  },
+  blocked: { state: 'down', label: 'Blocked' },
 }
 
 /**
@@ -89,35 +51,37 @@ export function RunStatusBadge({
   label?: string
   /**
    * What the run did not scan because of the targets themselves ("3
-   * unreachable"), shown after the status ("Completed · 3 unreachable").
-   * It never changes the status.
+   * unreachable"), shown after the status. It never changes the status.
    */
   note?: string | null
 }) {
+  const { t } = useTranslation()
   // Normalize the two spellings the backends use.
   const key = status === 'cancelled' ? 'canceled' : status
-  const config = RUN_STATUS[key] ?? {
-    label: status ? status.charAt(0).toUpperCase() + status.slice(1) : 'Unknown',
-    icon: CircleDashed,
-    className: 'bg-muted text-muted-foreground',
-  }
-  const Icon = config.icon
+  const known = RUN_STATE[key]
   const live = key === 'running' || key === 'pending' || key === 'queued'
   const pct =
     live && typeof progress === 'number' && Number.isFinite(progress)
       ? Math.max(0, Math.min(100, Math.round(progress)))
       : null
-
+  const detail = [pct !== null ? `${pct}%` : null, note || null].filter(
+    (d): d is string => d !== null
+  )
   return (
-    <Badge
-      variant="outline"
+    <HealthStatus
+      state={known?.state ?? 'unknown'}
+      value={key}
+      label={
+        label ??
+        (known
+          ? t(`scans.runStatus.${key}`, known.label)
+          : status
+            ? humanizeIdentifier(status)
+            : t('labels.health.unknown', 'Unknown'))
+      }
+      detail={detail.length ? detail : undefined}
       title={title}
-      className={cn('gap-1 border-transparent font-medium', config.className, className)}
-    >
-      <Icon className={cn('h-3 w-3', config.spin && 'animate-spin motion-reduce:animate-none')} />
-      {label ?? config.label}
-      {pct !== null && <span className="tabular-nums">{pct}%</span>}
-      {note ? <span className="font-normal">· {note}</span> : null}
-    </Badge>
+      className={className}
+    />
   )
 }

@@ -58,7 +58,7 @@ RFC-003 (asset source priority) was withdrawn on 2026-10-05; see
 | [RFC-040](RFC-040-platform-sensor-mutual-distrust.md) | Mutual distrust between the platform and sensors | **Accepted** (2026-10-03; every recommendation in §9 approved). |
 | [RFC-041](RFC-041-api-path-design.md) | API path design, plane separation and a route style guard | **Accepted** (decisions D1–D12 approved 2026-10-03 as recommended, §8). |
 | [RFC-042](RFC-042-asset-inventory-v2.md) | Asset Inventory v2: services as rows, observations over time, one query language, labels, dynamic groups, policies and screenshots | **Accepted** (2026-10-03; decisions D1–D21, §12). |
-| [RFC-043](RFC-043-deduplication-and-identity.md) | Deduplication and identity | **Accepted — decisions D1–D15 approved** (2026-10-03; #892). |
+| [RFC-043](RFC-043-deduplication-and-identity.md) | Deduplication and identity | **Accepted — decisions D1–D25 approved** (D1–D15 2026-10-03, #892; D16–D25 2026-10-23, §17). |
 | [RFC-044](RFC-044-issue-definitions-and-findings.md) | Issue definitions and findings | **Accepted** (2026-10-03; decisions D1–D9 approved as recommended, §12; #895). |
 | [RFC-045](RFC-045-websocket-auth.md) | Real-time WebSocket authentication and session binding | **Implemented** (decisions 2026-10-03, §7; implemented by #934 and #950). |
 | [RFC-046](RFC-046-scans-redesign.md) | Scans redesign: Scan → Run → Task, engines, schedules and automations | **Accepted.** Product decisions D1–D13 accepted on 2026-10-02; backend decisions B1–B12 on 2026-10-03. |
@@ -132,8 +132,9 @@ RFC-003 (asset source priority) was withdrawn on 2026-10-05; see
 | [RFC-121](RFC-121-bug-bounty-reports.md) | Bug-bounty and disclosure reports as findings | Accepted (2026-10-22). |
 | [RFC-122](RFC-122-ingest-receipts.md) | Import and run receipts | Accepted (2026-10-22). |
 | [RFC-123](RFC-123-identity-providers-and-sign-in-policy.md) | Identity provider catalogue and sign-in policy | Accepted (2026-10-22). |
-| [RFC-124](RFC-124-outbound-webhooks.md) | Outbound webhooks: delivery per channel, typed events, signing and redelivery | Accepted (2026-10-22). |
+| [RFC-124](RFC-124-outbound-webhooks.md) | Outbound webhooks: delivery per channel, typed events, signing and redelivery | Implemented (2026-10-22): delivery per channel, typed payload, refused redirects, signing and redelivery |
 | [RFC-125](RFC-125-automation-simulate-and-go-live.md) | Automations: catalog, versions, simulate and the go-live gate | Accepted (2026-10-23). |
+| [RFC-126](RFC-126-import-mappings.md) | Import mappings | Accepted (2026-10-23). |
 <!-- END RFC INDEX -->
 
 > Status legend: **Proposed** = under review · **Phase N done** = that phase shipped to `develop` · **Implemented** = fully landed.

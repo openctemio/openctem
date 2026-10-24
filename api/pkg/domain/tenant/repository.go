@@ -208,6 +208,10 @@ type MemberSearchFilters struct {
 	Role string
 	// Kind filters on internal or external members (RFC-058); empty = any.
 	Kind string
+	// UserIDs restricts the list to these users (still only members of the
+	// tenant being listed). The people chip resolves the ids on the screen
+	// with it instead of paging the whole directory. Empty = any.
+	UserIDs []string
 }
 
 // Member status filter values for MemberSearchFilters.Status.

@@ -68,7 +68,7 @@ func (m *MockSuppressionRepository) FindByID(_ context.Context, tenantID, ruleID
 	return rule, nil
 }
 
-func (m *MockSuppressionRepository) Delete(_ context.Context, tenantID, ruleID shared.ID) error {
+func (m *MockSuppressionRepository) Delete(_ context.Context, tenantID, ruleID, _ shared.ID, _ map[string]any) error {
 	delete(m.rules, ruleID)
 	return nil
 }

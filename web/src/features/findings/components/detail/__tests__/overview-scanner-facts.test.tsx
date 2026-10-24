@@ -4,6 +4,19 @@ import type { FindingDetail } from '../../../types'
 
 vi.mock('@/features/ai-triage/api', () => ({ useTriageResult: () => ({ data: null }) }))
 vi.mock('@/lib/clipboard', () => ({ copyToClipboard: vi.fn(async () => true) }))
+// The identity section has its own test; here it reads nothing.
+vi.mock('../../../api/use-finding-issue-group', () => ({
+  useFindingIssueGroup: () => ({ members: [], mutate: vi.fn() }),
+  unlinkIssue: vi.fn(),
+}))
+vi.mock('../../../api/use-finding-identity', () => ({
+  useFindingIdentity: () => ({
+    identity: null,
+    isLoading: false,
+    error: undefined,
+    mutate: vi.fn(),
+  }),
+}))
 vi.mock('../../../api/use-finding-groups', () => ({
   useRelatedCVEs: (cve: string | null) => ({
     data: cve

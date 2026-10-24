@@ -45,7 +45,9 @@ audit_chain_rebaselines
 audit_log_chain
 audit_logs
 authorization_letters
+automation_deliveries
 automation_runs
+automation_versions
 automations
 bounty_program_attestations
 bounty_program_channels
@@ -128,6 +130,8 @@ finding_fingerprints
 finding_group_assignments
 finding_ingest_actions
 finding_injection_points
+finding_issue_links
+finding_link_keys
 finding_priority_queue
 finding_rekey_runs
 finding_remediation_keys
@@ -142,8 +146,13 @@ group_asset_scope_rules
 group_role_bindings
 groups
 idempotency_keys
+import_mapping_versions
+import_mappings
 ingest_jobs
+ingest_payloads
+ingest_policy_versions
 ingest_receipt_coverage
+ingest_receipt_items
 ingest_receipts
 ingest_reports
 instance_scan_zone_tenants

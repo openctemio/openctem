@@ -92,7 +92,7 @@ export function AssetIdentitySections({
               <li key={`${n.kind}:${n.name}`}>
                 <Badge variant="secondary" className="gap-1 font-normal">
                   <span className="font-mono text-xs">{n.name}</span>
-                  <span className="text-muted-foreground text-[10px]">
+                  <span className="text-muted-foreground text-meta">
                     {n.kind === 'alias'
                       ? t('assets.identity.formerName', 'former name')
                       : identifierKindLabel(n.kind)}
@@ -138,7 +138,7 @@ export function AssetIdentitySections({
                       <span className="text-xs font-medium">{identifierKindLabel(id.kind)}</span>
                       <Badge
                         variant={id.strong ? 'default' : 'outline'}
-                        className="h-4 px-1 text-[10px]"
+                        className="h-4 px-1 text-meta"
                       >
                         {id.strong
                           ? t('assets.identity.strong', 'Strong')

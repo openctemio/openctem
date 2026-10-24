@@ -83,13 +83,91 @@ export function lensCounts(
   return out
 }
 
-/** The lens a single selected type belongs to (typed mode keeps its lens pill lit). */
-export function lensOfType(
+/** The registry's lenses in order (the generated list until it has loaded). */
+export function inventoryLenses(
+  registry: AssetTypeRegistry | undefined
+): { id: AssetLens; label: string; description?: string }[] {
+  const served = (registry?.lenses ?? [])
+    .filter((l): l is typeof l & { id: AssetLens } => KNOWN_LENSES.has(l.id ?? ''))
+    .map((l) => ({ id: l.id, label: l.label ?? l.id, description: l.description }))
+  return served.length > 0 ? served : ASSET_LENSES.map((l) => ({ id: l.id, label: l.label }))
+}
+
+/** One built-in view of the inventory: a lens (or all assets, or "Other") with its count. */
+export interface AssetQuickView {
+  /** `all`, a lens id, or `other`. */
+  key: string
+  /** English label; the i18n key is `assets.lens.<key>` (`assets.quickView.all` for all). */
+  label: string
+  /** The list URL, with the list's own params (`?lens=` or `?types=`). */
+  href: string
+  count: number
+}
+
+/**
+ * The quick views listed under Assets in the sidebar: All assets, every lens
+ * that holds at least one asset, then "Other" for assets outside every lens.
+ * The counts are the caller's data-scoped stats (the same response the list
+ * page reads), so a count and the list it opens always agree.
+ */
+export function assetQuickViews(
   registry: AssetTypeRegistry | undefined,
-  type: string | undefined
-): AssetLens | undefined {
-  if (!type) return undefined
-  const def = registry?.types?.find((t) => t.type === type)
-  const lens = def?.lens as AssetLens | undefined
-  return lens && KNOWN_LENSES.has(lens) ? lens : undefined
+  total: number,
+  counts: LensCounts
+): AssetQuickView[] {
+  const views: AssetQuickView[] = [
+    { key: 'all', label: 'All assets', href: '/assets', count: total },
+  ]
+  for (const l of inventoryLenses(registry)) {
+    const n = counts.byLens[l.id] ?? 0
+    if (n > 0) views.push({ key: l.id, label: l.label, href: `/assets?lens=${l.id}`, count: n })
+  }
+  if (counts.other > 0) {
+    const types = encodeURIComponent(counts.otherTypes.join(','))
+    views.push({
+      key: 'other',
+      label: 'Other',
+      href: `/assets?types=${types}`,
+      count: counts.other,
+    })
+  }
+  return views
+}
+
+/**
+ * Which quick view the list URL shows: a lens, all assets (no lens and no
+ * type), "Other" (exactly the types outside every lens), or none (a type
+ * picked by hand, which is a filter, not a view).
+ */
+export function activeQuickView(search: URLSearchParams, counts: LensCounts): string | undefined {
+  const lens = search.get('lens')
+  if (lens) return KNOWN_LENSES.has(lens) ? lens : undefined
+  const types = (search.get('types') ?? '').split(',').filter(Boolean)
+  if (types.length === 0) return 'all'
+  const other = new Set(counts.otherTypes)
+  if (types.length === other.size && types.every((t) => other.has(t))) return 'other'
+  return undefined
+}
+
+/**
+ * The registry's name for a row's type: the alias for its sub-type when one
+ * exists ("HTTP Service" for service/http), else the core type's label. `type`
+ * is the i18n key segment (`assets.typeLabel.<type>`).
+ */
+export function typeKeyOf(
+  registry: AssetTypeRegistry | undefined,
+  stored: string,
+  sub?: string | null
+): { type: string; label: string } {
+  const types = registry?.types ?? []
+  if (sub) {
+    const alias = types.find((t) => t.alias_of?.type === stored && t.alias_of?.sub_type === sub)
+    if (alias?.type) return { type: alias.type, label: alias.label ?? alias.type }
+  }
+  const core = types.find((t) => t.type === stored && !t.alias_of)
+  const fallback = stored.replace(/_/g, ' ')
+  return {
+    type: stored,
+    label: core?.label ?? fallback.charAt(0).toUpperCase() + fallback.slice(1),
+  }
 }

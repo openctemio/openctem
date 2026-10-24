@@ -41,8 +41,14 @@ type PURL struct {
 }
 
 // lowerCaseTypes are the package URL types whose namespace and name are case
-// insensitive (the package URL specification lower-cases them).
-var lowerCaseTypes = map[string]bool{"npm": true, "pypi": true, "github": true, "bitbucket": true, "composer": true}
+// insensitive (the package URL specification lower-cases them). The finding
+// identity (vulnerability.CanonicalPURLIdentity) folds the same types, so a
+// package and the findings on it name it the same way; a test keeps the two
+// equal.
+var lowerCaseTypes = map[string]bool{
+	"alpm": true, "apk": true, "bitbucket": true, "composer": true, "deb": true,
+	"github": true, "hex": true, "npm": true, "pypi": true,
+}
 
 // ParsePURL parses and canonicalises a package URL. Percent-encoded segments
 // are decoded; the subpath is dropped; a PyPI name is lower-cased with "_"
@@ -164,6 +170,32 @@ func (p PURL) DistroQualifier() string {
 		}
 	}
 	return clip(strings.Join(parts, "/"), 64)
+}
+
+// DistroFromQualifier returns the distro of a version qualifier written by
+// DistroQualifier ("debian-12/amd64" -> "debian-12"). A one-part qualifier
+// is the distro unless it names an architecture (a package URL with an arch
+// and no distro).
+func DistroFromQualifier(q string) string {
+	q = strings.TrimSpace(q)
+	if q == "" {
+		return ""
+	}
+	if d, _, ok := strings.Cut(q, "/"); ok {
+		return strings.TrimSpace(d)
+	}
+	if knownArch[strings.ToLower(q)] {
+		return ""
+	}
+	return q
+}
+
+// knownArch are the architecture names OS package URLs carry in "arch".
+var knownArch = map[string]bool{
+	"all": true, "amd64": true, "x86_64": true, "x86": true, "i386": true, "i586": true, "i686": true,
+	"arm64": true, "aarch64": true, "armhf": true, "armel": true, "armv7": true, "armv7l": true, "armv7hl": true,
+	"ppc64": true, "ppc64le": true, "ppc64el": true, "s390x": true, "riscv64": true, "mips64el": true,
+	"noarch": true, "src": true, "x86_64_v2": true, "loongarch64": true,
 }
 
 // SchemeForType is the version scheme of a package URL type.

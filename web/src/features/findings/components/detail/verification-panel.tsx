@@ -31,6 +31,7 @@ import { usePermissions } from '@/context/permission-provider'
 import { useTranslation } from '@/context/i18n-provider'
 import { getErrorMessage } from '@/lib/api/error-handler'
 import { cn } from '@/lib/utils'
+import { SectionLoadError, isLoadFailure } from './section-load-error'
 import {
   findingVerificationKey,
   saveVerificationChecklist,
@@ -206,9 +207,19 @@ interface VerificationPanelProps {
 export function VerificationPanel({ findingId, className }: VerificationPanelProps) {
   const { t } = useTranslation()
   const { hasPermission } = usePermissions()
-  const { data: plan, error } = useFindingVerificationPlan(findingId)
+  const { data: plan, error, mutate } = useFindingVerificationPlan(findingId)
   const [open, setOpen] = useState(false)
 
+  // A refusal stays hidden (no oracle); a real failure must not read as "no verification".
+  if (isLoadFailure(error)) {
+    return (
+      <SectionLoadError
+        title={t('findings.verification.loadTitle', 'verification')}
+        onRetry={() => void mutate()}
+        className={className}
+      />
+    )
+  }
   if (error || !plan || plan.external_workflow) return null
   const isOpen = plan.methods.some((m) => m.reason !== 'finding_closed')
   if (!isOpen) return null

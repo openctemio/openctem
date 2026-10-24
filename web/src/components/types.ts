@@ -95,10 +95,10 @@ type NavLink = BaseNavItem & {
    */
   sections?: readonly NavSectionLink[]
   /**
-   * Lists the Findings quick views (with counts) under this row while the
-   * findings list is open.
+   * Lists the list's quick views (with counts) under this row while that
+   * list is open: the Findings views, or the asset inventory's lenses.
    */
-  quickViews?: boolean
+  quickViews?: 'findings' | 'assets'
 }
 
 // ✅ Nav item dạng collapsible có danh sách con
