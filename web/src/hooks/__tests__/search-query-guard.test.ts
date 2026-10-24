@@ -69,7 +69,8 @@ function inputStates(src: string): string[] {
 }
 
 function reachesRequest(src: string, state: string): boolean {
-  const s = state.replace(/[$]/g, '\\$')
+  // state is an identifier (captured as a word), so it needs no escaping
+  const s = state
   const inParams = new RegExp(
     `\\b(search|q|query|keyword|filter)\\s*:\\s*${s}\\b(?!\\s*[.?]\\s*(length|filter|map))`
   )
@@ -125,12 +126,12 @@ describe('typed search reaches the API through useSearchQuery', () => {
   })
 
   it('the guard catches a per-keystroke search', () => {
-    const bad = `
-      const [search, setSearch] = useState('')
-      const { data } = useAssets({ search, page: 1 })
-      <Input value={search} onChange={(e) => setSearch(e.target.value)} />
-      useSWR(\`/api/v1/users?search=\${search}\`)
-    `
+    const bad = [
+      "const [search, setSearch] = useState('')",
+      'const { data } = useAssets({ search, page: 1 })',
+      '<Input value={search} onChange={(e) => setSearch(e.target.value)} />',
+      'useSWR(`/api/v1/users?search=${search}`)',
+    ].join('\n')
     expect(inputStates(bad)).toEqual(['search'])
     expect(reachesRequest(bad.replace('{ search,', '{ search: search,'), 'search')).toBe(true)
     expect(reachesRequest(bad, 'search')).toBe(true)
