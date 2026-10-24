@@ -172,7 +172,7 @@ export function PlatformScanningCard({ className }: { className?: string }) {
         {proof && (
           <li>
             {t('sensors.shared.proofNeeded')}{' '}
-            <Link href="/scope?tab=proof" className="font-medium text-foreground underline">
+            <Link href="/scope/domain-proof" className="font-medium text-foreground underline">
               {t('sensors.shared.verifyDomain')}
             </Link>
           </li>

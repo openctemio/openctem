@@ -17,9 +17,10 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/com
 import { Badge } from '@/components/ui/badge'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Button } from '@/components/ui/button'
-import { Can, usePermissions, useCanMutate } from '@/lib/permissions'
+import { usePermissions, useCanMutate } from '@/lib/permissions'
 import { Input } from '@/components/ui/input'
 import { ConfirmDialog } from '@/components/confirm-dialog'
+import { DataTableRowActions } from '@/features/shared/components/data-table-row-actions'
 import { useUrlFilter } from '@/hooks/use-url-param'
 import { useListParams } from '@/hooks/use-list-params'
 import { useSearchQuery } from '@/hooks/use-search-query'
@@ -96,32 +97,29 @@ function KeyRowActions({ k, onChanged }: { k: APIKey; onChanged: () => void }) {
 
   return (
     <div className="flex justify-end gap-1">
-      {isActive(k) && (
-        <Can route="POST /api/v1/api-keys">
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={() => setRevokeOpen(true)}
-            disabled={revoking}
-            title={t('confirm.revoke', 'Revoke')}
-            aria-label={t('confirm.apiKey.revokeLabel', 'Revoke {name}', { name: k.name })}
-          >
-            <Ban className="h-4 w-4 text-warning" />
-          </Button>
-        </Can>
-      )}
-      <Can route="DELETE /api/v1/api-keys/{id}">
-        <Button
-          variant="ghost"
-          size="icon"
-          onClick={() => setDeleteOpen(true)}
-          title={t('confirm.delete', 'Delete')}
-          aria-label={t('confirm.apiKey.deleteLabel', 'Delete {name}', { name: k.name })}
-          className="text-destructive hover:text-destructive"
-        >
-          <Trash2 className="h-4 w-4" />
-        </Button>
-      </Can>
+      <DataTableRowActions
+        label={t('settings.apiKeys.actionsFor', 'Actions for {name}', { name: k.name })}
+        actions={[
+          ...(isActive(k)
+            ? [
+                {
+                  label: t('confirm.revoke', 'Revoke'),
+                  icon: Ban,
+                  route: 'POST /api/v1/api-keys/{id}/revoke' as const,
+                  onClick: () => setRevokeOpen(true),
+                },
+              ]
+            : []),
+          {
+            label: t('confirm.delete', 'Delete'),
+            icon: Trash2,
+            destructive: true,
+            separatorBefore: isActive(k),
+            route: 'DELETE /api/v1/api-keys/{id}' as const,
+            onClick: () => setDeleteOpen(true),
+          },
+        ]}
+      />
       <ConfirmDialog
         open={revokeOpen}
         onOpenChange={setRevokeOpen}
@@ -144,7 +142,11 @@ function KeyRowActions({ k, onChanged }: { k: APIKey; onChanged: () => void }) {
           'confirm.apiKey.deleteDesc',
           'Every client using this key loses access at once, and the key leaves the list. This cannot be undone.'
         )}
-        confirmText={deleting ? t('confirm.deleting', 'Deleting…') : t('confirm.delete', 'Delete')}
+        confirmText={
+          deleting
+            ? t('confirm.deleting', 'Deleting…')
+            : t('confirm.apiKey.deleteButton', 'Delete key')
+        }
         destructive
         isLoading={deleting}
         typeToConfirm={k.name}

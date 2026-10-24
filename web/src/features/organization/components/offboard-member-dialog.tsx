@@ -13,7 +13,9 @@ import { useMemo, useState } from 'react'
 import { Loader2, UserMinus } from 'lucide-react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { typedTextMatches } from '@/components/confirm-dialog'
 import {
   Dialog,
   DialogContent,
@@ -75,6 +77,8 @@ export function OffboardMemberDialog({
   const [draft, setDraft] = useState<OffboardPlanDraft>({})
   const [submitting, setSubmitting] = useState(false)
   const [serverMissing, setServerMissing] = useState<OffboardCategory[]>([])
+  // Offboarding cannot be undone, so the person's name is typed to confirm.
+  const [typed, setTyped] = useState('')
 
   const candidates = useMemo(
     () => (member ? reassignCandidates(members, member.user_id) : []),
@@ -89,6 +93,7 @@ export function OffboardMemberDialog({
     if (!next) {
       setDraft({})
       setServerMissing([])
+      setTyped('')
     }
     onOpenChange(next)
   }
@@ -112,6 +117,7 @@ export function OffboardMemberDialog({
         )
       )
       setDraft({})
+      setTyped('')
       onOpenChange(false)
       onOffboarded()
     } catch (error) {
@@ -121,7 +127,9 @@ export function OffboardMemberDialog({
         setServerMissing(conflict)
         void reloadReport()
       } else {
-        toast.error(getErrorMessage(error, 'Failed to offboard member'))
+        toast.error(
+          getErrorMessage(error, t('org.lifecycle.offboardFailed', 'Failed to offboard member'))
+        )
       }
     } finally {
       setSubmitting(false)
@@ -132,12 +140,14 @@ export function OffboardMemberDialog({
     <Dialog open={open} onOpenChange={close}>
       <DialogContent size="lg">
         <DialogHeader>
-          <DialogTitle>Offboard {name}?</DialogTitle>
+          <DialogTitle>
+            {t('org.lifecycle.offboardTitle', 'Offboard {name}?', { name })}
+          </DialogTitle>
           <DialogDescription>
-            Their access ends permanently: API keys are revoked and their access groups, grants,
-            pentest engagements and roles are removed. Their membership stays as a record so history
-            keeps their name; inviting them again later starts from zero. To pause access instead,
-            disable them.
+            {t(
+              'org.lifecycle.offboardDesc',
+              "Their access ends permanently: API keys are revoked and their access groups, grants, pentest engagements and roles are removed. Their membership stays as a record so history keeps their name; inviting them again later starts from zero. To pause access instead, disable them. You will be asked to verify it's you."
+            )}
           </DialogDescription>
         </DialogHeader>
 
@@ -146,7 +156,9 @@ export function OffboardMemberDialog({
 
           {report && required.length > 0 && (
             <div className="space-y-4 border-t pt-4" data-testid="offboard-reassignment">
-              <p className="text-sm font-medium">Hand their work to someone else</p>
+              <p className="text-sm font-medium">
+                {t('org.lifecycle.handOver', 'Hand their work to someone else')}
+              </p>
               {required.map((category) => {
                 const key = DRAFT_KEY[category]
                 const id = `offboard-${category}`
@@ -158,12 +170,14 @@ export function OffboardMemberDialog({
                       onValueChange={(v) => setDraft((d) => ({ ...d, [key]: v }))}
                     >
                       <SelectTrigger id={id} aria-label={OFFBOARD_CATEGORY_LABEL[category]}>
-                        <SelectValue placeholder="Choose a new owner" />
+                        <SelectValue
+                          placeholder={t('org.lifecycle.chooseOwner', 'Choose a new owner')}
+                        />
                       </SelectTrigger>
                       <SelectContent>
                         {category === 'findings' && (
                           <SelectItem value={FINDINGS_TO_QUEUE}>
-                            Return to the queue (unassigned)
+                            {t('org.lifecycle.returnToQueue', 'Return to the queue (unassigned)')}
                           </SelectItem>
                         )}
                         {candidates.map((c) => (
@@ -180,28 +194,52 @@ export function OffboardMemberDialog({
           )}
 
           {serverMissing.length > 0 && (
-            <DetailCallout tone="warning" title="Something still needs a new owner">
-              {serverMissing.map((c) => OFFBOARD_CATEGORY_LABEL[c]).join(', ')}. Their holdings
-              changed while this dialog was open; choose a new owner and try again.
+            <DetailCallout
+              tone="warning"
+              title={t('org.lifecycle.stillNeedsOwner', 'Something still needs a new owner')}
+            >
+              {t(
+                'org.lifecycle.holdingsChanged',
+                '{categories}. Their holdings changed while this dialog was open; choose a new owner and try again.',
+                { categories: serverMissing.map((c) => OFFBOARD_CATEGORY_LABEL[c]).join(', ') }
+              )}
             </DetailCallout>
           )}
+          <div className="grid gap-1.5 border-t pt-4">
+            <Label htmlFor="offboard-confirm" className="font-normal">
+              {t('org.lifecycle.typeName', 'Type {name} to confirm', { name })}
+            </Label>
+            <Input
+              id="offboard-confirm"
+              value={typed}
+              onChange={(e) => setTyped(e.target.value)}
+              autoComplete="off"
+              spellCheck={false}
+            />
+          </div>
         </DialogBody>
 
         <DialogFooter>
           <Button variant="outline" onClick={() => close(false)} disabled={submitting}>
-            Cancel
+            {t('common.cancel', 'Cancel')}
           </Button>
           <Button
             variant="destructive"
             onClick={() => void submit()}
-            disabled={submitting || isLoading || !report || missing.length > 0}
+            disabled={
+              submitting ||
+              isLoading ||
+              !report ||
+              missing.length > 0 ||
+              !typedTextMatches(typed, name)
+            }
           >
             {submitting ? (
               <Loader2 className="me-2 h-4 w-4 animate-spin" />
             ) : (
               <UserMinus className="me-2 h-4 w-4" />
             )}
-            Offboard
+            {t('org.lifecycle.offboardButton', 'Offboard {name}', { name })}
           </Button>
         </DialogFooter>
       </DialogContent>
