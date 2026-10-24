@@ -3,6 +3,7 @@ package handler
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"time"
 
@@ -12,6 +13,7 @@ import (
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
 	"github.com/openctemio/openctem/api/pkg/apierror"
 	"github.com/openctemio/openctem/api/pkg/domain/assetgroup"
+	auditdom "github.com/openctemio/openctem/api/pkg/domain/audit"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/logger"
 	"github.com/openctemio/openctem/api/pkg/validator"
@@ -19,6 +21,7 @@ import (
 
 // AssetGroupHandler handles asset group HTTP requests.
 type AssetGroupHandler struct {
+	configAuditor
 	service   *asset.AssetGroupService
 	validator *validator.Validator
 	logger    *logger.Logger
@@ -106,9 +109,13 @@ type BulkUpdateRequest struct {
 	} `json:"update"`
 }
 
+// maxBulkDeleteGroups caps one bulk delete: each id is a separate delete that
+// leaves its own audit entry.
+const maxBulkDeleteGroups = 100
+
 // BulkDeleteRequest represents bulk delete request.
 type BulkDeleteRequest struct {
-	GroupIDs []string `json:"group_ids" validate:"required,min=1,max=1000,dive,uuid"`
+	GroupIDs []string `json:"group_ids" validate:"required,min=1,max=100,dive,uuid"`
 }
 
 // AssetGroupStatsResponse represents stats response.
@@ -444,10 +451,13 @@ func (h *AssetGroupHandler) Delete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.service.DeleteAssetGroup(r.Context(), middleware.MustGetTenantID(r.Context()), id); err != nil {
+	name, err := h.service.DeleteAssetGroup(r.Context(), middleware.MustGetTenantID(r.Context()), id)
+	if err != nil {
 		h.handleServiceError(w, err)
 		return
 	}
+	h.recordDeleted(r, h.logger, auditdom.ActionAssetGroupDeleted, auditdom.ResourceTypeAssetGroup,
+		id.String(), name, "Asset group deleted")
 
 	w.WriteHeader(http.StatusNoContent)
 }
@@ -778,12 +788,21 @@ func (h *AssetGroupHandler) BulkDelete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if len(req.GroupIDs) > maxBulkDeleteGroups {
+		apierror.BadRequest(fmt.Sprintf("At most %d asset groups can be deleted at once", maxBulkDeleteGroups)).WriteJSON(w)
+		return
+	}
+
 	if err := h.validator.Validate(req); err != nil {
 		h.handleValidationError(w, err)
 		return
 	}
 
 	res := h.service.BulkDeleteAssetGroups(r.Context(), middleware.MustGetTenantID(r.Context()), req.GroupIDs)
+	for _, g := range res.Deleted {
+		h.recordDeleted(r, h.logger, auditdom.ActionAssetGroupDeleted, auditdom.ResourceTypeAssetGroup,
+			g.ID, g.Name, "Asset group deleted (bulk)")
+	}
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)

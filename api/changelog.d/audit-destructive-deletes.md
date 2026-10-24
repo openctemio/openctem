@@ -1,0 +1,4 @@
+### Security: destructive deletes now leave an audit-log entry
+
+- Deleting an asset group (single and bulk), a business unit, a business service, an attacker profile, a pentest finding template or an asset relationship, and approving a duplicate-asset merge (which deletes the merged assets), wrote no audit-log entry, so nobody could tell afterwards who removed an object. Each delete now records one entry per deleted object (`asset_group.deleted`, `business_unit.deleted`, `business_service.deleted`, `attacker_profile.deleted`, `pentest_template.deleted`, `asset_relationship.deleted`, and `asset.duplicate_merged` for each merged asset), with the actor, the tenant of the caller and the stored name of the object. A bulk delete records one entry for each group it deleted, none for an id that was refused. A refused or failed delete records nothing.
+- Bulk asset-group delete accepts at most 100 ids (it was 1000); a longer list is refused with 400.
