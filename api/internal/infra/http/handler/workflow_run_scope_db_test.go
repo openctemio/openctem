@@ -125,3 +125,51 @@ func TestWorkflowRunsReaderScope_ScanCompleted_DB(t *testing.T) {
 		t.Errorf("unrestricted reader should get the whole scan data: %s", b)
 	}
 }
+
+// Approving a paused run returns the run through the same scope-redacted
+// read as GET: a restricted reader who may approve gets no asset outside
+// their scope in the response.
+func TestWorkflowApproveRun_ReturnsRedactedRun_DB(t *testing.T) {
+	f := newWFDB(t)
+	nodes := `[{"node_key":"t","node_type":"trigger","name":"t","config":{"trigger_type":"asset_discovered"}},
+		{"node_key":"n","node_type":"notification","name":"n","config":{"notification_type":"email","notification_config":{"title":"x","body":"y"}}}]`
+	wf := f.create(nodes, `[{"source_node_key":"t","target_node_key":"n"}]`)
+	outName := "wfd-" + f.assetOut + ".example.com"
+	inName := "wfd-" + f.assetIn + ".example.com"
+	a := func(id string) map[string]any {
+		return map[string]any{"id": id, "name": "wfd-" + id + ".example.com", "type": "domain", "criticality": "high", "internet_facing": true}
+	}
+	run, err := f.svc.TriggerWorkflow(f.ctx, automationsvc.TriggerWorkflowInput{
+		TenantID: shared.MustIDFromString(f.tenantA), WorkflowID: shared.MustIDFromString(wf),
+		TriggerType: automationdom.TriggerTypeAssetDiscovered,
+		TriggerData: map[string]any{"event_type": "asset_discovered", "asset": a(f.assetIn),
+			"assets": []any{a(f.assetIn), a(f.assetOut)}, "asset_count": 2, "internet_facing_count": 2},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	pause := func() {
+		f.exec(`UPDATE automation_runs SET status = 'paused', pause_reason = 'blast_radius' WHERE id = $1`, run.ID.String())
+	}
+	approve := func(user string) (int, string) {
+		return f.call(f.h.ResumeRun, f.as(user, http.MethodPost, "", map[string]string{"id": run.ID.String()}))
+	}
+
+	pause()
+	s, b := approve(f.operator)
+	if s != http.StatusOK {
+		t.Fatalf("restricted approver: POST approve = %d %s, want 200 with the run", s, b)
+	}
+	if strings.Contains(b, outName) || strings.Contains(b, f.assetOut) {
+		t.Errorf("approve response names an asset outside the approver's scope: %s", b)
+	}
+	if !strings.Contains(b, inName) || !strings.Contains(b, run.ID.String()) {
+		t.Errorf("approve response lost the visible asset or the run id: %s", b)
+	}
+
+	pause()
+	s, b = approve(f.admin)
+	if s != http.StatusOK || !strings.Contains(b, outName) || !strings.Contains(b, `"asset_count":2`) {
+		t.Errorf("unrestricted approver should get the whole run: %d %s", s, b)
+	}
+}

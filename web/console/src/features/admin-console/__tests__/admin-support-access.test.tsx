@@ -125,7 +125,7 @@ describe('Console support access', () => {
       method: 'POST',
       body: { reason: 'Check TLS findings' },
     })
-    expect(frame).toHaveTextContent('Support session — read-only — ends')
+    expect(frame).toHaveTextContent('Support session, read-only, ends')
     expect(window.location.search).toContain('session=s1')
     expect(await within(frame).findByText('12')).toBeInTheDocument()
 

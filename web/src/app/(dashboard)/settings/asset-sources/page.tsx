@@ -5,7 +5,7 @@ import { Main } from '@/components/layout'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Skeleton } from '@/components/ui/skeleton'
 import { useTranslation } from '@/context/i18n-provider'
-import { ErrorState, PageHeader } from '@/features/shared'
+import { ErrorState, PageHeader, PageStack } from '@/features/shared'
 import {
   AssetSourcesSettingsForm,
   previewReconciliationSettings,
@@ -22,14 +22,14 @@ export default function AssetSourcesSettingsPage() {
 
   return (
     <Main>
-      <PageHeader
-        title={t('assetSources.title', 'Asset sources')}
-        description={t(
-          'assetSources.description',
-          'Assets hear from scans, imports, connectors, feeds and people. Choose which source decides each kind of value.'
-        )}
-      />
-      <div className="mt-5">
+      <PageStack>
+        <PageHeader
+          title={t('assetSources.title', 'Asset sources')}
+          description={t(
+            'assetSources.description',
+            'Assets hear from scans, imports, connectors, feeds and people. Choose which source decides each kind of value.'
+          )}
+        />
         {!canRead ? (
           <Alert variant="destructive">
             <AlertCircle className="h-4 w-4" />
@@ -60,7 +60,7 @@ export default function AssetSourcesSettingsPage() {
             onPreview={previewReconciliationSettings}
           />
         )}
-      </div>
+      </PageStack>
     </Main>
   )
 }

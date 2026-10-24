@@ -126,6 +126,10 @@ export interface ReasonConfirmDialogProps {
   /** Runs the save with the reason; a rejection is shown and keeps the dialog open. */
   onConfirm: (reason: string) => Promise<void>
   destructive?: boolean
+  /** The action's own name for the confirm button (never a bare "Confirm"). */
+  confirmText?: string
+  /** Text the operator must type first, for a change that can never be undone. */
+  typeToConfirm?: string
 }
 
 /**
@@ -168,6 +172,7 @@ export function ReasonConfirmDialog(p: ReasonConfirmDialogProps) {
       title={p.title}
       desc={p.desc}
       destructive={p.destructive}
+      typeToConfirm={p.typeToConfirm}
       disabled={reason.trim() === '' || reason.length > 500}
       isLoading={busy}
       handleConfirm={() => void confirm()}
@@ -178,7 +183,7 @@ export function ReasonConfirmDialog(p: ReasonConfirmDialogProps) {
             {t('admin.settings.saving', 'Saving')}
           </>
         ) : (
-          t('admin.settings.confirm', 'Confirm')
+          (p.confirmText ?? t('admin.settings.confirm', 'Confirm'))
         )
       }
     >
