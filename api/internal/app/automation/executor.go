@@ -973,7 +973,7 @@ func (e *WorkflowExecutor) finalizeRun(ctx context.Context, execCtx *ExecutionCo
 	}
 
 	// At the change cap: the run waits for a publisher (POST
-	// /workflow-runs/{id}/resume); nothing is counted as finished.
+	// /workflow-runs/{id}/approve); nothing is counted as finished.
 	if errors.Is(execErr, errRunPaused) {
 		run.Pause(automationdom.PauseReasonBlastRadius)
 		if err := e.runRepo.Update(ctx, run); err != nil {
