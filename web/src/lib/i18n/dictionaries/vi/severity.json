@@ -4,5 +4,6 @@
   "severity.medium": "Trung bình",
   "severity.low": "Thấp",
   "severity.info": "Thông tin",
-  "severity.informational": "Thông tin"
+  "severity.informational": "Thông tin",
+  "severity.unknown": "Không xác định"
 }

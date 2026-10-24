@@ -827,11 +827,11 @@ func registerWorkflowRoutes(
 		// Versions and mode: publishing makes the draft a version and the
 		// automation live; simulate is one call back.
 		r.GET("/{id}/versions", h.ListVersions, middleware.Require(permission.AutomationsRead))
-		r.GET("/{id}/versions/{versionId}", h.GetVersion, middleware.Require(permission.AutomationsRead))
+		r.GET("/{id}/versions/{version_id}", h.GetVersion, middleware.Require(permission.AutomationsRead))
 		// Going live is gated by the rule's risk (step-up, second approver).
 		r.POST("/{id}/publish", h.Publish, middleware.Require(permission.AutomationsPublish))
-		r.POST("/{id}/versions/{versionId}/approve", h.ApproveVersion, middleware.Require(permission.AutomationsPublish))
-		r.POST("/{id}/versions/{versionId}/rollback", h.Rollback, middleware.Require(permission.AutomationsPublish))
+		r.POST("/{id}/versions/{version_id}/approve", h.ApproveVersion, middleware.Require(permission.AutomationsPublish))
+		r.POST("/{id}/versions/{version_id}/rollback", h.Rollback, middleware.Require(permission.AutomationsPublish))
 		r.PUT("/{id}/mode", h.SetMode, middleware.Require(permission.AutomationsPublish))
 		// Per-step trace summed over runs the caller may see.
 		r.GET("/{id}/trace", h.GetTrace, middleware.Require(permission.AutomationsRead))

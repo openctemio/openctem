@@ -242,7 +242,13 @@ func (v *V2Receiver) Put(ctx context.Context, t V2Target, seq int, whole bool, b
 	}
 
 	if v.maxPending > 0 {
-		if n, err := v.queue.CountPendingByTenant(ctx, tenantID); err == nil && n >= v.maxPending {
+		// Fail closed: a depth that cannot be read refuses the segment (the
+		// sensor retries after the advised delay), it never waves it in.
+		n, err := v.queue.CountPendingByTenant(ctx, tenantID)
+		if err != nil {
+			return nil, problem(protov2.ProblemUnavailable)
+		}
+		if n >= v.maxPending {
 			return nil, problem(protov2.ProblemQueueFull)
 		}
 	}

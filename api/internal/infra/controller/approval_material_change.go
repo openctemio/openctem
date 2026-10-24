@@ -43,10 +43,16 @@ type MaterialChangeStore interface {
 	RevokeFalsePositive(ctx context.Context, d vulnerability.StandingDecision, signals []approvalpolicy.Signal, newDeadline *time.Time, now time.Time) (bool, error)
 }
 
-// ApprovalPolicySource answers an organization's approval policy in force
-// (*finding.VulnerabilityService).
+// ApprovalPolicySource answers an organization's approval policy and risk
+// acceptance level in force (*finding.VulnerabilityService).
 type ApprovalPolicySource interface {
-	EffectiveApprovalPolicy(ctx context.Context, tenantID shared.ID) (approvalpolicy.Policy, error)
+	EffectiveApprovalPolicy(ctx context.Context, tenantID shared.ID) (approvalpolicy.Policy, string, error)
+}
+
+// orgRules is an organization's approval policy and risk acceptance level.
+type orgRules struct {
+	policy      approvalpolicy.Policy
+	acceptLevel string
 }
 
 // MaterialChangeNotifier tells the requester and the approvers of a decision
@@ -100,7 +106,7 @@ func (c *ApprovalMaterialChangeController) Reconcile(ctx context.Context) (int, 
 		c.logger.Error("material change: list standing decisions", "error", err)
 		return 0, err
 	}
-	policies := map[shared.ID]approvalpolicy.Policy{}
+	policies := map[shared.ID]orgRules{}
 	acted := 0
 	for _, d := range decisions {
 		if c.check(ctx, policies, d) {
@@ -116,7 +122,7 @@ func (c *ApprovalMaterialChangeController) Reconcile(ctx context.Context) (int, 
 }
 
 // check looks at one standing decision; it reports whether it changed it.
-func (c *ApprovalMaterialChangeController) check(ctx context.Context, policies map[shared.ID]approvalpolicy.Policy, d vulnerability.StandingDecision) bool {
+func (c *ApprovalMaterialChangeController) check(ctx context.Context, policies map[shared.ID]orgRules, d vulnerability.StandingDecision) bool {
 	if d.Baseline == nil {
 		// A decision made before the check existed: today's facts are its
 		// baseline; no action.
@@ -125,27 +131,29 @@ func (c *ApprovalMaterialChangeController) check(ctx context.Context, policies m
 		}
 		return false
 	}
-	p, ok := policies[d.TenantID]
+	rules, ok := policies[d.TenantID]
 	if !ok {
-		var err error
-		if p, err = c.policies.EffectiveApprovalPolicy(ctx, d.TenantID); err != nil {
+		p, level, err := c.policies.EffectiveApprovalPolicy(ctx, d.TenantID)
+		if err != nil {
 			c.logger.Warn("material change: policy", "tenant_id", d.TenantID, "error", err)
 			return false
 		}
-		policies[d.TenantID] = p
+		rules = orgRules{policy: p, acceptLevel: level}
+		policies[d.TenantID] = rules
 	}
-	return c.apply(ctx, p, d)
+	return c.apply(ctx, rules, d)
 }
 
 // apply decides and writes one decision; it reports whether it changed it.
-func (c *ApprovalMaterialChangeController) apply(ctx context.Context, p approvalpolicy.Policy, d vulnerability.StandingDecision) bool {
+func (c *ApprovalMaterialChangeController) apply(ctx context.Context, rules orgRules, d vulnerability.StandingDecision) bool {
 	kind := approvalpolicy.KindFalsePositive
 	if d.Status == vulnerability.FindingStatusAccepted {
 		kind = approvalpolicy.KindAccepted
 	}
 	now := c.now().UTC()
-	ch := approvalpolicy.MaterialChange(p, approvalpolicy.Decision{
+	ch := approvalpolicy.MaterialChange(rules.policy, approvalpolicy.Decision{
 		Kind: kind, DecidedTier: approvalpolicy.Tier(d.Tier), Baseline: *d.Baseline, End: d.ExpiresAt,
+		AcceptLevel: rules.acceptLevel,
 	}, d.Current, now)
 
 	var (

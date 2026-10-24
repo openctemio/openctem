@@ -81,6 +81,10 @@ type Repository interface {
 	// the verdict, ErrRunReportCap when the slots are used up. A report is
 	// ingested only after its slot is reserved.
 	ReserveRunReport(ctx context.Context, tenantID, runID shared.ID) error
+	// ReleaseRunReports gives back n slots taken by an attempt that failed
+	// and will be retried (the first slot, taken at accept, stays). The count
+	// never drops below the accept slot.
+	ReleaseRunReports(ctx context.Context, tenantID, runID shared.ID, n int) error
 	// RecordRunReport adds the fingerprints a report sighted (capped at
 	// MaxRunFindings per run); ErrRunEvaluated once the run has its verdict.
 	// A report past the cap marks the run (RunFindingsOverCap).

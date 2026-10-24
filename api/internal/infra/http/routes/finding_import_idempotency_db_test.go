@@ -51,7 +51,10 @@ func (ih *importHarness) uploadKeyed(t *testing.T, user, key, name, doc string) 
 	ih.h.Import(rec, req.WithContext(c))
 	var resp handler.FindingImportResponse
 	_ = json.Unmarshal(rec.Body.Bytes(), &resp)
-	return rec, resp
+	if rec.Header().Get("Idempotent-Replayed") == "true" {
+		return rec, resp
+	}
+	return rec, ih.finish(t, rec, resp)
 }
 
 // Idempotency-Key on an upload: a retry of the same file (another multipart
@@ -79,12 +82,12 @@ func TestFindingImport_IdempotencyKey_DB(t *testing.T) {
 	}
 
 	rec, first := ih.uploadKeyed(t, userA, "ci-run-42", "full.nessus", receiptNessusFull)
-	if rec.Code != http.StatusCreated || first.Receipt == nil || first.Receipt.Counts.Created != 2 ||
+	if rec.Code != http.StatusAccepted || first.Receipt == nil || first.Receipt.Counts.Created != 2 ||
 		rec.Header().Get("Location") != "/api/v1/findings/imports/"+first.ReceiptID {
 		t.Fatalf("first upload %d %s (location %q)", rec.Code, rec.Body.String(), rec.Header().Get("Location"))
 	}
 	rec, again := ih.uploadKeyed(t, userA, "ci-run-42", "renamed.nessus", receiptNessusFull)
-	if rec.Code != http.StatusCreated || rec.Header().Get("Idempotent-Replayed") != "true" || again.ReceiptID != first.ReceiptID ||
+	if rec.Code != http.StatusAccepted || rec.Header().Get("Idempotent-Replayed") != "true" || again.ReceiptID != first.ReceiptID ||
 		rec.Header().Get("Location") != "/api/v1/findings/imports/"+first.ReceiptID {
 		t.Fatalf("retry %d %s", rec.Code, rec.Body.String())
 	}
@@ -100,7 +103,7 @@ func TestFindingImport_IdempotencyKey_DB(t *testing.T) {
 		t.Fatalf("key reused with another file: %d %s", rec.Code, rec.Body.String())
 	}
 	rec, other := ih.uploadKeyed(t, userB, "ci-run-42", "full.nessus", receiptNessusFull)
-	if rec.Code != http.StatusCreated || rec.Header().Get("Idempotent-Replayed") != "" || other.ReceiptID == first.ReceiptID {
+	if rec.Code != http.StatusAccepted || rec.Header().Get("Idempotent-Replayed") != "" || other.ReceiptID == first.ReceiptID {
 		t.Fatalf("another member's key replayed the first member's import: %d %s", rec.Code, rec.Body.String())
 	}
 	if rec, _ := ih.uploadKeyed(t, userA, "bad key", "full.nessus", receiptNessusFull); rec.Code != http.StatusBadRequest {
@@ -117,7 +120,7 @@ func TestFindingImport_IdempotencyKey_DB(t *testing.T) {
 		t.Fatalf("an upload was imported while the key store was down (%d receipts, had %d)", n, before)
 	}
 	// Without a key the store is not needed.
-	if rec, _ := ih.uploadKeyed(t, userA, "", "full.nessus", receiptNessusFull); rec.Code != http.StatusCreated {
+	if rec, _ := ih.uploadKeyed(t, userA, "", "full.nessus", receiptNessusFull); rec.Code != http.StatusAccepted {
 		t.Fatalf("upload without a key: %d", rec.Code)
 	}
 }

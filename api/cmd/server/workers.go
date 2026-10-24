@@ -46,6 +46,7 @@ import (
 	"github.com/openctemio/openctem/api/internal/infra/jobs"
 	"github.com/openctemio/openctem/api/internal/infra/postgres"
 	"github.com/openctemio/openctem/api/pkg/domain/durablejob"
+	"github.com/openctemio/openctem/api/pkg/domain/ingestjob"
 	integrationdom "github.com/openctemio/openctem/api/pkg/domain/integration"
 	sensordom "github.com/openctemio/openctem/api/pkg/domain/sensor"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
@@ -370,6 +371,12 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 			ctl.WithIdempotencyKeys(repos.IdempotencyKey)
 		}
 		w.ControllerManager.Register(ctl)
+	}
+
+	// Ingest queue (RFC-122): finished jobs and reports after 30 days,
+	// stored upload parts once nobody will open them.
+	if repos.IngestJob != nil {
+		w.ControllerManager.Register(controller.NewIngestQueueRetentionController(repos.IngestJob, 0))
 	}
 
 	// CI alerts (RFC-051 §10.6): missed schedules, lost coverage, failing
@@ -1337,6 +1344,15 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 					Ratio: cfg.Ingest.V2BlindingRatio, MinFindings: cfg.Ingest.V2BlindingMinFindings,
 				}, log))
 		}
+		// CI results and file imports accepted with 202 (RFC-122).
+		if ciSvc := newCIRunService(cfg, repos, svc, log); ciSvc != nil {
+			jobs.SetKind(ingestjob.KindCIResults, ingest.KindFuncs{ProcessFn: ciSvc.ProcessUploadJob, DeadLetterFn: ciSvc.DeadLetter})
+		}
+		if svc.WorkflowDispatcher != nil {
+			jobs.SetKind(ingestjob.KindSideEffects, ingest.NewSideEffectProcessor(repos.Finding, svc.WorkflowDispatcher.RunFindingsCreated))
+		}
+		imp := newFindingImportService(cfg, repos, svc, log)
+		jobs.SetKind(ingestjob.KindFindingImport, ingest.KindFuncs{ProcessFn: imp.ProcessImportJob, DeadLetterFn: imp.DeadLetter})
 		w.ControllerManager.Register(controller.NewIngestWorkerController(
 			repos.IngestJob,
 			jobs,
@@ -1345,7 +1361,10 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 				BatchSize:    5,
 				MaxPerTick:   50,
 				LeaseTimeout: 5 * time.Minute,
-				Logger:       log.With("controller", "ingest-worker"),
+				// The lease is renewed while a job runs; this caps one job.
+				MaxJobDuration: cfg.Ingest.MaxJobDuration,
+				Workers:        cfg.Ingest.Workers,
+				Logger:         log.With("controller", "ingest-worker"),
 			},
 		))
 	}

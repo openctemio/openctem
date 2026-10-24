@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"slices"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -26,8 +27,8 @@ const maxJSONSize = 64 * 1024 * 1024 // 64MB upper bound for marshaled JSON fiel
 type FindingRepository struct {
 	db *DB
 	limitChecks
-	// afterEnrichLoad, when set (tests only), runs between the enrichment's
-	// read and its write, to stand in for a concurrent writer.
+	// afterEnrichLoad, when set (tests only), runs before each enrichment
+	// attempt locks and reads its rows, to stand in for a concurrent writer.
 	afterEnrichLoad func(attempt int)
 }
 
@@ -203,7 +204,8 @@ var findingCreateSQL = `
 			fingerprint_version, identity_key,
 			` + findingTypeColumnsSQL + `,
 			` + findingNetworkColumnsSQL + `,
-			` + findingScannerColumnsSQL + `
+			` + findingScannerColumnsSQL + `,
+			` + findingIdentityColumnsSQL + `
 		)
 		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, $32, $33, $34,
 			$35, $36, $37, $38, $39, $40, $41, $42, $43, $44, $45, $46, $47, $48, $49, $50,
@@ -212,7 +214,8 @@ var findingCreateSQL = `
 			$83, $84, $85, $86, $87, $88,
 			$89, $90, $91, $92, $93, $94` + findingTypePlaceholders(95) +
 	findingNetworkPlaceholders(95+findingTypeColumnCount) +
-	findingScannerPlaceholders(95+findingTypeColumnCount+findingNetworkColumnCount) + `)
+	findingScannerPlaceholders(95+findingTypeColumnCount+findingNetworkColumnCount) +
+	findingIdentityPlaceholders(95+findingTypeColumnCount+findingNetworkColumnCount+findingScannerColumnCount) + `)
 	`
 
 // findingCreateArgs is the argument list for findingCreateSQL. metadata is
@@ -340,6 +343,7 @@ func findingCreateArgs(finding *vulnerability.Finding, metadata []byte) ([]any, 
 	args = append(args, findingTypeArgs(finding)...) // $95…
 	args = append(args, findingNetworkArgs(finding)...)
 	args = append(args, findingScannerArgs(finding)...)
+	args = append(args, findingIdentityArgs(finding)...)
 	return args, nil
 }
 
@@ -439,6 +443,22 @@ func (r *FindingRepository) CreateBatchWithResult(ctx context.Context, findings 
 		}
 	}
 
+	// Write in fingerprint order: concurrent uploads of overlapping findings
+	// then take the unique-index and row locks of the upsert in one order and
+	// queue instead of deadlocking. positions keeps each row's input index.
+	order := make([]int, len(findings))
+	for i := range order {
+		order[i] = i
+	}
+	sort.SliceStable(order, func(a, b int) bool { return findings[order[a]].Fingerprint() < findings[order[b]].Fingerprint() })
+	sortedFindings := make([]*vulnerability.Finding, len(findings))
+	sortedPositions := make([]int, len(findings))
+	for i, o := range order {
+		sortedFindings[i] = findings[o]
+		sortedPositions[i] = positions[o]
+	}
+	findings, positions = sortedFindings, sortedPositions
+
 	record := func(index int, finding *vulnerability.Finding, row upsertedRow) {
 		result.IDs[index] = row.id
 		result.Inserted[index] = row.inserted
@@ -461,8 +481,14 @@ func (r *FindingRepository) CreateBatchWithResult(ctx context.Context, findings 
 		}
 		chunk := findings[chunkStart:chunkEnd]
 
-		// Try to insert the entire chunk
-		rows, err := r.insertChunk(ctx, chunk)
+		// Try to insert the entire chunk; a deadlock or serialization
+		// failure runs it again rather than dropping to the per-row path.
+		var rows []upsertedRow
+		err := retryWriteConflict(ctx, func() error {
+			var chunkErr error
+			rows, chunkErr = r.insertChunk(ctx, chunk)
+			return chunkErr
+		})
 		if err == nil {
 			for i, finding := range chunk {
 				record(positions[chunkStart+i], finding, rows[i])
@@ -473,7 +499,12 @@ func (r *FindingRepository) CreateBatchWithResult(ctx context.Context, findings 
 		// Chunk failed - retry individually to identify bad findings
 		for i, finding := range chunk {
 			globalIndex := positions[chunkStart+i]
-			row, err := r.insertSingleFinding(ctx, finding)
+			var row upsertedRow
+			err := retryWriteConflict(ctx, func() error {
+				var rowErr error
+				row, rowErr = r.insertSingleFinding(ctx, finding)
+				return rowErr
+			})
 			if err != nil {
 				result.Skipped++
 				result.Errors[globalIndex] = err.Error()
@@ -723,7 +754,8 @@ func findingInsertColumnsSQL() string {
 			fingerprint_version, identity_key,
 			` + findingTypeColumnsSQL + `,
 			` + findingNetworkColumnsSQL + `,
-			` + findingScannerColumnsSQL + `
+			` + findingScannerColumnsSQL + `,
+			` + findingIdentityColumnsSQL + `
 		)`
 }
 
@@ -860,7 +892,7 @@ func findingUpsertConflictSQL() string {
 			tags = ` + findingTagsMergeSQL("findings.tags", "EXCLUDED.tags") + `,
 			-- Rule name: first non-empty one wins, as in EnrichFrom.
 			rule_name = COALESCE(NULLIF(findings.rule_name, ''), EXCLUDED.rule_name)` +
-		findingTypeConflictSQL() + findingNetworkConflictSQL() + findingScannerConflictSQL() + "\n\t"
+		findingTypeConflictSQL() + findingNetworkConflictSQL() + findingScannerConflictSQL() + findingIdentityConflictSQL() + "\n\t"
 }
 
 // findingTagsMergeSQL is the SQL expression merging a stored and an incoming
@@ -893,7 +925,7 @@ func (r *FindingRepository) execFindingInsert(ctx context.Context, stmt *sql.Stm
 
 // findingInsertColumnCount is the number of columns in the findings INSERT.
 // It MUST stay in sync with findingInsertColumnsSQL and findingInsertArgs.
-const findingInsertColumnCount = 94 + findingTypeColumnCount + findingNetworkColumnCount + findingScannerColumnCount
+const findingInsertColumnCount = 94 + findingTypeColumnCount + findingNetworkColumnCount + findingScannerColumnCount + findingIdentityColumnCount
 
 // findingInsertArgs returns the ordered argument list for a single findings
 // INSERT row. Shared by the single-row prepared-statement path and the
@@ -1028,7 +1060,7 @@ func findingInsertArgs(finding *vulnerability.Finding) ([]any, error) {
 		// Identity recipe version and tuple (RFC-043 §6).
 		finding.FingerprintVersion(),
 		nullJSON(finding.IdentityKey()),
-	}, append(append(findingTypeArgs(finding), findingNetworkArgs(finding)...), findingScannerArgs(finding)...)...), nil
+	}, append(append(append(findingTypeArgs(finding), findingNetworkArgs(finding)...), findingScannerArgs(finding)...), findingIdentityArgs(finding)...)...), nil
 }
 
 // PentestCampaignRole returns the user's role in a pentest campaign of the
@@ -2307,17 +2339,32 @@ func (r *FindingRepository) UpdateScanIDBatchByFingerprints(ctx context.Context,
 		return 0, nil
 	}
 
-	// Use ANY with array for better performance with large fingerprint lists
 	// Note: Status is intentionally NOT updated to preserve user-set values (false_positive, accepted, etc.)
+	// The rows are locked in id order first (the order every batched
+	// finding write locks in), so concurrent sightings of the same findings
+	// queue instead of deadlocking; a conflict that still happens runs the
+	// statement again.
 	query := `
-		UPDATE findings
+		WITH locked AS (
+			SELECT id FROM findings
+			WHERE tenant_id = $2 AND fingerprint = ANY($3)
+			ORDER BY id
+			FOR NO KEY UPDATE
+		)
+		UPDATE findings f
 		SET scan_id = $1, updated_at = NOW(), last_seen_at = NOW(), observation_state = 'present',
-			occurrence_count = occurrence_count + 1,
-			last_seen_tool = COALESCE(NULLIF($4, ''), last_seen_tool)
-		WHERE tenant_id = $2 AND fingerprint = ANY($3)
+			occurrence_count = f.occurrence_count + 1,
+			last_seen_tool = COALESCE(NULLIF($4, ''), f.last_seen_tool)
+		FROM locked l
+		WHERE f.id = l.id AND f.tenant_id = $2
 	`
 
-	result, err := r.db.ExecContext(ctx, query, scanID, tenantID.String(), pq.Array(fingerprints), toolName)
+	var result sql.Result
+	err := retryWriteConflict(ctx, func() error {
+		var execErr error
+		result, execErr = r.db.ExecContext(ctx, query, scanID, tenantID.String(), pq.Array(fingerprints), toolName)
+		return execErr
+	})
 	if err != nil {
 		return 0, fmt.Errorf("failed to update findings scan_id: %w", err)
 	}
@@ -3339,8 +3386,11 @@ var findingStatsSelect = `
 			COUNT(*) FILTER (WHERE severity = 'medium' AND ` + openLens + `) as open_medium,
 			COUNT(*) FILTER (WHERE severity = 'low' AND ` + openLens + `) as open_low,
 			COUNT(*) FILTER (WHERE severity IN ('info', 'none') AND ` + openLens + `) as open_info,
-			-- Fixes claimed by an owner, waiting for a verifier.
-			COUNT(*) FILTER (WHERE status = 'fix_applied') as awaiting_verification,
+			-- Fixes claimed by an owner, waiting for a verifier: the verification
+			-- queue. Pentest findings are verified in their own module (the
+			-- grouped queue and the verify actions leave them out), so they
+			-- are not counted here either.
+			COUNT(*) FILTER (WHERE status = 'fix_applied' AND source <> 'pentest') as awaiting_verification,
 			COUNT(*) FILTER (WHERE ` + vulnerability.FindingLensSQL(vulnerability.FindingLensOpen) + `) as state_open,
 			COUNT(*) FILTER (WHERE ` + vulnerability.FindingLensSQL(vulnerability.FindingLensFixed) + `) as state_fixed,
 			COUNT(*) FILTER (WHERE ` + vulnerability.FindingLensSQL(vulnerability.FindingLensDispositioned) + `) as state_dispositioned
@@ -4170,76 +4220,108 @@ var enrichColumnDefs = []enrichColumnDef{
 }
 
 // EnrichBatchByFingerprints enriches existing findings with new scan data using domain EnrichFrom() rules.
-// It loads existing findings by fingerprint, applies enrichment, and batch updates enrichable columns
-// using a chunked VALUES-based UPDATE (1 query per chunk instead of N individual UPDATEs).
-// Protected fields (status, resolution, assigned_to, etc.) are never modified.
-// Returns the count of enriched findings.
+// It locks the stored rows, merges each sighting into the row it read under
+// the lock and batch updates the enrichable columns with a chunked
+// VALUES-based UPDATE (1 query per chunk instead of N individual UPDATEs),
+// all in one transaction. Protected fields (status, resolution, assigned_to,
+// etc.) are never modified.
 //
-//nolint:cyclop // Enrichment batch update inherently has many columns to persist
+// Concurrent uploads of the same findings (CI re-runs, matrix jobs) used to
+// read the rows, merge outside any lock and write back with a row_version
+// check: every writer but one lost the race, the retries ran out, and the
+// rest of the batch fell back to a sighting-only update or failed with a
+// deadlock (the rows were locked in plan order). Locking the rows in id
+// order before the read makes concurrent writers queue on the same order:
+// none can change a row between this read and this write, and none can
+// deadlock with another enrichment. A deadlock or serialization failure that
+// still happens (another code path) rolls the transaction back and it runs
+// again (retryWriteConflict).
+//
+// Returns the count of enriched findings. On error the returned
+// *vulnerability.EnrichIncompleteError lists the fingerprints whose sighting
+// did not land, so the caller records only those.
 func (r *FindingRepository) EnrichBatchByFingerprints(ctx context.Context, tenantID shared.ID, newFindings []*vulnerability.Finding, scanID string) (int64, error) {
 	if len(newFindings) == 0 {
 		return 0, nil
 	}
 
-	// Collect fingerprints and build lookup map from new findings
 	fingerprints := make([]string, 0, len(newFindings))
 	newByFP := make(map[string]*vulnerability.Finding, len(newFindings))
 	for _, f := range newFindings {
 		fp := f.Fingerprint()
-		fingerprints = append(fingerprints, fp)
+		if _, dup := newByFP[fp]; !dup {
+			fingerprints = append(fingerprints, fp)
+		}
 		newByFP[fp] = f
 	}
 
-	// Load, merge and write; a row another writer changed between the read
-	// and the write is left alone by the row_version predicate, then read
-	// and merged again (bounded).
+	// The row_version predicate stays as a guard: a row that still moved
+	// between the locked read and the write (it cannot under the lock) is
+	// read and merged again (bounded).
 	var totalEnriched int64
 	pending := fingerprints
 	for attempt := 0; attempt < vulnerability.FindingWriteAttempts && len(pending) > 0; attempt++ {
-		existingByFP, err := r.GetByFingerprintsBatch(ctx, tenantID, pending)
-		if err != nil {
-			return totalEnriched, fmt.Errorf("failed to load existing findings for enrichment: %w", err)
-		}
 		if r.afterEnrichLoad != nil {
 			r.afterEnrichLoad(attempt)
 		}
-		written, lost, err := r.enrichOnce(ctx, existingByFP, newByFP)
-		totalEnriched += written
+		var (
+			written int64
+			lost    []string
+		)
+		err := retryWriteConflict(ctx, func() error {
+			var txErr error
+			written, lost, txErr = r.enrichOnce(ctx, tenantID, pending, newByFP)
+			return txErr
+		})
 		if err != nil {
-			return totalEnriched, err
+			return totalEnriched, &vulnerability.EnrichIncompleteError{Fingerprints: pending, Err: err}
 		}
+		totalEnriched += written
 		pending = lost
 	}
 	if len(pending) > 0 {
-		return totalEnriched, fmt.Errorf("enrich %d findings: %w", len(pending), vulnerability.ErrFindingConflict)
+		return totalEnriched, &vulnerability.EnrichIncompleteError{Fingerprints: pending,
+			Err: fmt.Errorf("enrich %d findings: %w", len(pending), vulnerability.ErrFindingConflict)}
 	}
 	return totalEnriched, nil
 }
 
-// enrichOnce merges each new sighting into the stored finding read with it
-// and writes the merged rows in one transaction. It returns how many rows
-// landed and the fingerprints whose row moved after it was read.
-func (r *FindingRepository) enrichOnce(ctx context.Context, existingByFP, newByFP map[string]*vulnerability.Finding) (int64, []string, error) {
-	allArgs := make([][]interface{}, 0, len(existingByFP))
-	fpByID := make(map[string]string, len(existingByFP))
-	for fp, existing := range existingByFP {
-		newData, ok := newByFP[fp]
-		if !ok {
-			continue
-		}
-		existing.EnrichFrom(newData)
-		args, argErr := collectEnrichArgs(existing)
-		if argErr != nil {
-			return 0, nil, fmt.Errorf("failed to collect enrich args for %s: %w", fp, argErr)
-		}
-		allArgs = append(allArgs, args)
-		fpByID[existing.ID().String()] = fp
-	}
-	if len(allArgs) == 0 {
-		return 0, nil, nil
-	}
+// enrichLockedSelectSQL reads the findings an enrichment merges into and
+// locks them in id order, the order every enrichment locks in.
+func (r *FindingRepository) enrichLockedSelectSQL() string {
+	return r.selectQueryForEnrichment() + `
+		WHERE tenant_id = $1 AND fingerprint = ANY($2)
+		ORDER BY id
+		FOR NO KEY UPDATE`
+}
 
-	// Batch UPDATE in transaction using chunked VALUES clause
+// loadLockedForEnrich reads the stored findings of the fingerprints under a
+// row lock taken in id order (enrichLockedSelectSQL).
+func (r *FindingRepository) loadLockedForEnrich(ctx context.Context, tx *sql.Tx, tenantID shared.ID, fingerprints []string) ([]*vulnerability.Finding, error) {
+	rows, err := tx.QueryContext(ctx, r.enrichLockedSelectSQL(), tenantID.String(), pq.Array(fingerprints))
+	if err != nil {
+		return nil, fmt.Errorf("failed to load existing findings for enrichment: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+	var existing []*vulnerability.Finding
+	for rows.Next() {
+		f, scanErr := r.scanFindingFromRows(rows)
+		if scanErr != nil {
+			return nil, fmt.Errorf("failed to scan finding: %w", scanErr)
+		}
+		existing = append(existing, f)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("error iterating findings: %w", err)
+	}
+	return existing, nil
+}
+
+// enrichOnce locks and reads the stored findings of the given fingerprints,
+// merges each new sighting into the row read with it and writes the merged
+// rows, in one transaction. It returns how many rows landed and the
+// fingerprints whose row moved after it was read.
+func (r *FindingRepository) enrichOnce(ctx context.Context, tenantID shared.ID, fingerprints []string, newByFP map[string]*vulnerability.Finding) (int64, []string, error) {
 	tx, err := r.db.BeginTx(ctx, nil)
 	if err != nil {
 		return 0, nil, fmt.Errorf("failed to begin enrichment transaction: %w", err)
@@ -4247,6 +4329,31 @@ func (r *FindingRepository) enrichOnce(ctx context.Context, existingByFP, newByF
 	defer func() { _ = tx.Rollback() }()
 	if err := setLocalStatementTimeout(ctx, tx, timeoutBatch); err != nil {
 		return 0, nil, err
+	}
+
+	// Rows come back in id order; the write keeps that order.
+	existing, err := r.loadLockedForEnrich(ctx, tx, tenantID, fingerprints)
+	if err != nil {
+		return 0, nil, err
+	}
+
+	allArgs := make([][]interface{}, 0, len(existing))
+	fpByID := make(map[string]string, len(existing))
+	for _, f := range existing {
+		newData, ok := newByFP[f.Fingerprint()]
+		if !ok {
+			continue
+		}
+		f.EnrichFrom(newData)
+		args, argErr := collectEnrichArgs(f)
+		if argErr != nil {
+			return 0, nil, fmt.Errorf("failed to collect enrich args for %s: %w", f.Fingerprint(), argErr)
+		}
+		allArgs = append(allArgs, args)
+		fpByID[f.ID().String()] = f.Fingerprint()
+	}
+	if len(allArgs) == 0 {
+		return 0, nil, nil
 	}
 
 	landed := make(map[string]bool, len(allArgs))
@@ -4284,6 +4391,7 @@ func (r *FindingRepository) enrichOnce(ctx context.Context, existingByFP, newByF
 			lost = append(lost, fp)
 		}
 	}
+	sort.Strings(lost)
 	return int64(len(landed)), lost, nil
 }
 

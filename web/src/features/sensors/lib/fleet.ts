@@ -148,7 +148,7 @@ export interface FleetSummary {
   jobSlots: number
   /** Zones with at least one sensor that can take jobs (when zones exist). */
   zones: { total: number; covered: number; uncovered: string[] } | null
-  /** Enabled sensors still on the deprecated protocol v1 (RFC-029). */
+  /** Sensors still on the deprecated protocol v1 (RFC-029): what the v1 filter shows. */
   protocolV1: number
   /** Whether any sensor reports protocol telemetry (the API sends it). */
   hasProtocolInfo: boolean
@@ -194,7 +194,7 @@ export function summarizeFleet(
       jobSlots += sensorCapacity(s).effective
     }
     if (s.protocol) hasProtocolInfo = true
-    if (isEnabled(state) && sensorProtocolOf(s) === 'v1') protocolV1++
+    if (sensorProtocolOf(s) === 'v1') protocolV1++
     if (isEnabled(state)) {
       const kinds = attentionKindsOf(s, channel, state)
       if (kinds.length) attention++

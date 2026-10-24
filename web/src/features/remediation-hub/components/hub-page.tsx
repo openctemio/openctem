@@ -4,7 +4,7 @@
 
 import type { ReactNode } from 'react'
 import { Main } from '@/components/layout'
-import { PageHeader, SectionTabs } from '@/features/shared'
+import { PageHeader, PageStack, SectionTabs } from '@/features/shared'
 import { REMEDIATION_SECTION_TABS } from '@/config/section-tabs'
 import { useTranslation } from '@/context/i18n-provider'
 import { usePermissions } from '@/context/permission-provider'
@@ -27,16 +27,17 @@ export function HubPage({
   const { data: stats } = useSuggestionStats(hasPermission(Permission.RemediationRead))
   return (
     <Main>
-      <PageHeader title={title} description={description}>
-        {actions}
-      </PageHeader>
-      <SectionTabs
-        tabs={REMEDIATION_SECTION_TABS}
-        className="mt-4"
-        label={t('remediationHub.tabsLabel')}
-        counts={{ '/remediation/suggestions': stats?.proposed }}
-      />
-      {children}
+      <PageStack>
+        <PageHeader title={title} description={description}>
+          {actions}
+        </PageHeader>
+        <SectionTabs
+          tabs={REMEDIATION_SECTION_TABS}
+          label={t('remediationHub.tabsLabel')}
+          counts={{ '/remediation/suggestions': stats?.proposed }}
+        />
+        {children}
+      </PageStack>
     </Main>
   )
 }

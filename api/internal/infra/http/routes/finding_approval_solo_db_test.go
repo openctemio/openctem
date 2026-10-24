@@ -104,8 +104,8 @@ func TestFindingApprovals_SoleOwnerSelfApproval_DB(t *testing.T) {
 	h.exec(`INSERT INTO tenant_members (user_id, tenant_id, role) VALUES ($1, $2, 'member')`, svcID, org)
 
 	// The backup contact (settings:write + step-up; audited).
-	h.expect(owner, http.MethodPut, "/api/v1/organization/settings/finding-approvals/", `{"backup_contact_email":"Advisor@Example.com"}`, http.StatusOK)
-	h.expect(owner, http.MethodPut, "/api/v1/organization/settings/finding-approvals/", `{"backup_contact_email":"not an email"}`, http.StatusBadRequest)
+	h.expect(owner, http.MethodPatch, "/api/v1/organization/settings/finding-approvals/", `{"backup_contact_email":"Advisor@Example.com"}`, http.StatusOK)
+	h.expect(owner, http.MethodPatch, "/api/v1/organization/settings/finding-approvals/", `{"backup_contact_email":"not an email"}`, http.StatusBadRequest)
 	if n := h.countRows(`SELECT COUNT(*) FROM audit_logs WHERE tenant_id = $1 AND action = 'finding_approval.settings_changed'`, org); n != 1 {
 		t.Fatalf("settings audit rows: %d", n)
 	}
@@ -150,7 +150,8 @@ func TestFindingApprovals_SoleOwnerSelfApproval_DB(t *testing.T) {
 	a2 := h.requestStatus(owner, fp2, "false_positive")
 	h.selfApprove(owner, a2, "111111", http.StatusForbidden)
 
-	// Risk acceptance is always four-eyes: a sole member cannot approve their
+	// Under the default risk acceptance level (all) an accepted risk is
+	// four-eyes: a sole member cannot approve their
 	// own accepted risk, even with a valid code. It stays pending, the refusal
 	// is audited, and the code is not spent (it still works for a false positive).
 	kev := h.newFinding(org, "high")
@@ -203,7 +204,7 @@ func TestFindingApprovals_SelfApprovalOnlyOwnRequest_DB(t *testing.T) {
 		t.Fatalf("refusal code: %v", out)
 	}
 	h.exec(`UPDATE tenant_members SET status = 'active' WHERE user_id = $1 AND tenant_id = $2`, member.id, org)
-	h.expect(member, http.MethodPut, "/api/v1/organization/settings/finding-approvals/", `{"backup_contact_email":"x@example.com"}`, http.StatusForbidden)
+	h.expect(member, http.MethodPatch, "/api/v1/organization/settings/finding-approvals/", `{"backup_contact_email":"x@example.com"}`, http.StatusForbidden)
 }
 
 // A member suspended or removed in the last 7 days keeps the sole owner from

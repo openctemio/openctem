@@ -273,7 +273,7 @@ func (r *RemediationTaskRepository) PrimaryHolders(ctx context.Context, tenantID
 		return nil, nil
 	}
 	rows, err := r.db.QueryContext(ctx, `
-		SELECT m.finding_id, COALESCE(f.title, ''), t.id, t.title, t.assignee_user_id, t.assignee_group_id
+		SELECT m.finding_id, `+FindingDisplayTitleSQL+`, t.id, t.title, t.assignee_user_id, t.assignee_group_id
 		FROM remediation_task_members m
 		JOIN remediation_tasks t ON t.tenant_id = m.tenant_id AND t.id = m.task_id
 		JOIN findings f ON f.tenant_id = m.tenant_id AND f.id = m.finding_id
@@ -412,7 +412,7 @@ func (r *RemediationTaskRepository) QueryPreviewStats(ctx context.Context, tenan
 		}); err != nil {
 		return nil, fmt.Errorf("preview owner breakdown: %w", err)
 	}
-	if err := collect(`SELECT f.id, f.title, f.severity, f.status, f.asset_id, COALESCE(a.name, ''), f.sla_deadline
+	if err := collect(`SELECT f.id, `+FindingDisplayTitleSQL+`, f.severity, f.status, f.asset_id, COALESCE(a.name, ''), f.sla_deadline
 		FROM findings f
 		LEFT JOIN assets a ON a.tenant_id = f.tenant_id AND a.id = f.asset_id
 		WHERE f.tenant_id = $1 AND f.id = ANY($2::uuid[])

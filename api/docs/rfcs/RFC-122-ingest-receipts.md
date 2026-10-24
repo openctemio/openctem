@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | Status | Accepted (2026-10-22). Built in steps; [ingest-receipts.md](../architecture/ingest-receipts.md) says what is shipped |
-| Scope | api (`pkg/domain/ingestreceipt`, `internal/app/ingest`, `internal/app/findingimport`, findings import routes, migrations), web (import page, scan run page, finding detail) |
+| Scope | api (`pkg/domain/ingestreceipt`, `pkg/domain/ingestpayload`, `internal/app/ingest`, `internal/app/ingestqueue`, `internal/app/findingimport`, `internal/app/cirun`, findings import and CI upload routes, migrations), web (import page, scan run page, finding detail) |
 | Architecture | [ingest-receipts.md](../architecture/ingest-receipts.md), [finding-import.md](../architecture/finding-import.md) |
 | Related | RFC-026 (sensor results ingest), RFC-040 (result binding), RFC-043 (deduplication), RFC-048 (list query contract), RFC-051 (CI runs), RFC-041 (API conventions) |
 
@@ -33,7 +33,8 @@ never closes anything.
 | D5 | A coverage decision of a command (`EvaluateCommandCoverage`) records what it closed and the open findings of the covered scope it neither saw nor closed (`untouched`) in `ingest_receipt_coverage`, one row per command, replaced when the decision is evaluated again. A receipt is `coverage = full` only through such a decision (or a full-coverage upload). |
 | D6 | `dash_ingest_day(tenant, day, source_kind, tool)` is upserted by the same writer in the same transaction: reports, received, created, still detected, reopened, closed, skipped, failed, suppressed. Kept 13 months. No partitions: one row per tenant, day, source kind and tool is small. |
 | D7 | Receipt errors are `{index, code}` with fixed codes (`store_failed`, `file_<kind>`); a report's own text never reaches a receipt. A sensor report without a command is keyed by a hash of the sensor and the report id, never by the id as sent. |
-| D8 | The writer is best-effort after the findings are stored: a failed receipt write is logged and counted (`openctem_ingest_receipt_write_failures_total`), the ingest stands. An upload's receipt, on the other hand, is created before anything is written: without it nothing is imported. |
+| D8 | The writer is best-effort after the findings are stored: a failed receipt write is logged and counted (`openctem_ingest_receipt_write_failures_total`), the ingest stands. An upload's receipt, on the other hand, is created before anything is written: without it nothing is imported. A segment of a command's run whose receipt write failed is retried, because that receipt decides absence (D14). |
+| D14 | Absence is decided from the receipt, not from `findings.scan_id`: a covered run closes an open finding of its scope only when the finding has no action row on the run's receipt. A concurrent run of the same tool overwrites `scan_id`, and a lost sighting write leaves an old one, so `scan_id` cannot prove that a finding was not reported. A missing or truncated receipt closes nothing (`receipt_incomplete`). |
 | D9 | Visibility (§4): receipts and their counts are organization-wide figures. |
 | D10 | Retention: action rows 90 days, run receipts 400 days, facts 400 days, one hourly job on one replica. Upload receipts stay: each is the producer record of what its upload wrote. |
 | D11 | `POST /findings/imports` replaces `POST /findings/import` (no alias: the route was only called by the web console). It answers `201` with `Location: /api/v1/findings/imports/{id}` and the receipt; a preview (`dry_run=true`) answers `200` and writes nothing. |
@@ -110,15 +111,221 @@ cannot see. So:
 - Fail closed: a store that cannot claim, read or finish the key refuses
   the request with 503 before any file is read for import.
 - Kept 24 hours; an hourly job deletes expired keys.
+- Without a key, the same files (same fingerprint) from the same principal
+  within 10 minutes are the same upload: the answer names the first
+  upload's receipt (`Idempotent-Replayed: true`). A CI run's upload is keyed
+  by the run and the SHA-256 of the body, so the same body sent to the run
+  again is always the same upload.
+
+## 6a. Accept fast, apply async
+
+CI results (`POST /api/v1/ci/runs/{id}/results`) and committed file imports
+(`POST /api/v1/findings/imports`) are no longer applied inside the request,
+where a large report ran into the request timeout and many concurrent
+uploads competed for the API's connections. The request stores the upload
+and answers **202**; the ingest worker applies it from the existing
+`ingest_jobs` queue (no new broker).
+
+- **Accept.** The tenant comes from the credential (run token, session, API
+  key). What is cheap is checked at once: a CTIS report from a CI run is
+  decoded with the bounded pre-check and must name only the run's
+  repository (400 otherwise); the run takes a report slot (409 after the
+  verdict or past the cap); an import's parameters, coverage declaration
+  and Idempotency-Key are checked as before. Tool exports and import files
+  are parsed by the worker. The raw bytes are stored in `ingest_payloads`,
+  one row per part, gzip-compressed and sealed with AES-256-GCM under a key
+  derived per tenant from `APP_ENCRYPTION_KEY` (HKDF; the additional data
+  binds each row to its tenant, job and part, so a row copied elsewhere does
+  not open; previous keys still open their rows during a rotation). Parts
+  are capped at 128 MiB each, 64 per upload. Then one job (`kind`
+  `ci_results` or `finding_import`, `source_ref` the run or the receipt) is
+  enqueued, idempotent by `(tenant, report id, digest)`.
+- **Answer.** CI: `202` with `upload_id` and `Location:
+  /api/v1/ci/runs/{id}/results/{report_id}`. Import: `202` with the receipt
+  id (receipt status `queued`) and `Location: /api/v1/findings/imports/{id}`.
+- **Apply.** The worker opens the parts, re-reads what the job needs at the
+  time it runs (the CI run; the uploader's data scope from the caller
+  recorded at accept, so a narrowed scope applies and a removed member is
+  refused), applies them exactly as the request did, stores the result on
+  the job (counts, the decided results a CI job may hide, an import's
+  per-file results), finishes the receipt, and deletes the parts and the
+  job's envelope. A failure a retry cannot fix (an unreadable file, a
+  report outside the run's repository, a run already judged, a part that
+  does not open) is dead at once with a fixed `error_code`; others retry
+  (2 s, 4 s, 8 s ... capped at a minute for uploads) and are dead after 5
+  attempts (`apply_failed`). A dead import marks its receipt `failed` with
+  that code; its parts are kept 7 days.
+- **Read.** `GET /api/v1/ci/runs/{id}/results/{report_id}?wait=N` (run
+  token) and `GET /api/v1/findings/imports/{id}/result?wait=N` answer
+  `queued`, `processing`, `applied` (with the result) or `failed` (with the
+  code); `wait` (at most 10 s, so the answer fits the server's write
+  timeout) long-polls. An upload of another run or tenant is 404; an
+  import's result is visible to whoever may read its receipt.
+- **CI gate.** `POST /ci/runs/{id}/evaluate` waits up to 10 s for the run's
+  uploads. Still pending: `503 INGEST_PENDING` with `Retry-After`, and the
+  runner asks again (one command for the pipeline). The verdict's save is
+  refused while any upload of the run is pending, so a verdict is never
+  computed over part of the results, even for an upload accepted during the
+  wait. An upload that failed for good fails the run (`upload_not_applied`).
+- A preview (`dry_run=true`) still runs in the request: it writes nothing.
+
+Threat model additions: the raw report is stored before secrets are masked,
+hence sealed per tenant, never served back, and deleted once applied; a
+hostile file is parsed only in the worker, with the importers' caps, and
+its failure surfaces as a fixed code (never its text); the uploader's rights
+are re-resolved when the job runs, never widened: the worker re-reads the
+uploader's membership (a member who left or was suspended meanwhile is
+refused with `uploader_not_permitted`, a demoted administrator imports with
+the member's data scope); the gate fails closed on a pending or failed
+upload. A job's stored report is deleted in the statement that records it
+completed (a crash before that re-applies the upload), and at once when it
+fails for good with a fixed code (only `apply_failed` keeps it, for a retry
+of the same upload).
+
+## 6b. Fairness and limits
+
+Many CI pipelines, sensors and people upload at once; the queue keeps every
+organization moving and every scope consistent.
+
+- **Lanes.** `ingest_jobs.lane`: 0 urgent (a CI report with a critical
+  finding or a CVE in the KEV catalogue, decided by the server from the
+  decoded report), 1 interactive (a person's import, a CI upload a gate
+  waits on), 2 bulk (sensor reports). The claim takes urgent first, then
+  interactive, then bulk; within a lane it is fair across organizations by
+  share: jobs an organization already has running count, so the one holding
+  fewer workers goes first (each one's next job before anyone's second),
+  then by age. A report cannot ask for a lane, but the server derives it
+  from what the report says, so an organization's urgent lane goes ahead of
+  others for one job at a time (its first, with nothing of it running);
+  further urgent jobs of that organization queue as interactive. Flooding
+  critical findings orders an organization's own work, never the whole
+  worker pool.
+- **One job per scope.** `ingest_jobs.scope_key` names the asset scope a job
+  writes: a CI run's repository, an organization's imports, a sensor
+  report's segments and commit. At most one job per key is processing: the
+  claim skips a scope with a running job and takes one job per scope per
+  batch, and the unique partial index `ux_ingest_jobs_scope_running` makes a
+  concurrent claim of the same scope by another worker fail (that job is
+  skipped). Twenty jobs of a CI matrix on one repository apply one after
+  another instead of deadlocking on the same rows.
+- **Running cap.** An organization has at most `INGEST_MAX_RUNNING_PER_TENANT`
+  (2, half the workers of one server) jobs processing across servers, so the
+  other organizations always have workers.
+- **Workers.** Each server runs `INGEST_WORKERS` (4) workers; each claims one
+  job at a time. The asset and finding writes go through their own pool
+  (`DB_INGEST_MAX_CONNS`, 8, all idle-kept), so a burst of uploads cannot
+  take the API's connections.
+- **Back-pressure.** At accept (CI, import, sensor segment), an organization
+  with `INGEST_MAX_PENDING_PER_TENANT` (100) unfinished jobs gets `429`
+  (`INGEST_QUEUE_FULL`; sensors `queue-full`) with a `Retry-After` from how
+  fast its jobs drained over the last 5 minutes (5 s to 5 min). A depth that
+  cannot be read refuses the upload with `503` and `Retry-After` (fail
+  closed); nothing is stored. An import is checked before its receipt is
+  written, so a refused one leaves no trace.
+- **Poison.** A job is claimed only while `attempts < max_attempts`
+  (attempts count at claim). A lease that expires on the last attempt (a
+  payload that crashes or hangs the worker) makes the job dead with
+  `apply_failed`; its owner is told (the import's receipt fails, the CI gate
+  fails the run).
+- **Lease.** A processing job's lease (`locked_at`, five minutes) is renewed
+  every third of it while the worker runs, so a long import completes instead
+  of being released and cancelled on every attempt; `INGEST_MAX_JOB_DURATION`
+  (default 30 minutes) is the hard cap. `Complete`, `Fail` and the renewal
+  write only `WHERE status = 'processing' AND attempts = <claimed attempt>`:
+  a worker that lost its lease stops and writes nothing.
+- **Rights at apply time.** The worker re-reads the uploader before it
+  imports: a member who left, a revoked, expired or deleted API key, or a
+  demoted administrator is refused (`uploader_not_permitted`) or narrowed;
+  `findings:approve` recorded at accept is kept only while the person or the
+  key's scopes still hold it. Rights are never widened.
+- **Retries.** A tool export that is retried gives back the report slots its
+  failed attempt took, so the run's cap is not used twice. An unkeyed upload
+  whose duplicate lookup fails is answered `503`; the result of an upload with
+  no job is answered only when its receipt finished (else `404`).
+
+## 6c. Queue hygiene
+
+- The hourly, single-replica `ingest-queue-retention` job deletes, in batches
+  of 5,000: stored upload parts as soon as nobody will open them (the job was
+  applied, the part expired — 7 days after a failure — or an upload staged it
+  and never got a job, after an hour); finished jobs (completed or dead) and
+  finished protocol v2 reports (with their jobs) after 30 days. Receipts keep
+  what each upload did (their own retention, §3).
+- A quarantined sensor report is marked accepted only once it was applied.
+  An accept first claims the item (`applying_at`, it stays pending): a second
+  accept or a discard meanwhile is refused (409); a failed apply drops the
+  claim so the item can be accepted again; a claim older than 15 minutes (a
+  crashed server) no longer blocks.
+
+## 6d. Dispositions
+
+Every reported item gets a disposition on its receipt, with the policy (and
+its version) that decided it:
+
+| Disposition | Stored as | Recorded in |
+|---|---|---|
+| `created`, `still_detected`, `reopened`, `closed` | a finding | `finding_ingest_actions` |
+| `suppressed` | a finding with a false positive or accepted status (an approved suppression rule) | `finding_ingest_actions`, with `policy = suppression_rule`, the rule id and the policy version |
+| `held` | a finding in the review sub-status (opt-in review gate; reserved until the gate ships) | `finding_ingest_actions` |
+| `out_of_scope` | no finding: the asset matches a scope exclusion (`scope_exclusion`) or is outside the uploader's scope (`uploader_scope`) | `ingest_receipt_items` |
+| `rejected` | no finding: no target asset (`validation`, `no_target_asset`) | `ingest_receipt_items` |
+| `quarantined` | no finding: the report waits in the sensor quarantine (`quarantine`, `no_command`) | `ingest_receipt_items` |
+| `filtered` | no finding: an ingest filter (reserved until filters ship) | `ingest_receipt_items` |
+
+An item row keeps an identity key (a hash), the asset, tool, a title cut to
+200 characters and the severity: never evidence or secrets. Action and item
+rows share the receipt's cap (50,000) and its 90-day retention. Items are
+listed by `GET /findings/imports/{id}/items` (an item on an asset when the
+asset is in the caller's scope; one without an asset only to an unrestricted
+caller); the receipt detail counts them per disposition (`dispositions`);
+the actions list carries `policy`, `policy_id`, `policy_version`.
+
+**Policy snapshot.** A trigger on `suppression_rules` and `scope_exclusions`
+bumps the tenant's `ingest_policy_versions` row on every write. Ingest reads
+the version (one row) before it writes anything and reuses its in-memory
+snapshot of the suppression rules while the version holds. If the snapshot
+cannot load, the ingest fails and the worker retries: ingest never proceeds
+without its policies (the suppression lookup used to fail open). A cached
+rule that expires stops matching on its own.
+
+**Side effects after commit.** The automations a new finding starts are
+stored as one `side_effects` ingest job per batch (at most 1,000 finding ids)
+after the batch's findings are committed, and the worker runs them from the
+job (retried; a finding starts an automation once, by its run key). They used
+to run in a goroutine that a restart lost. If the job cannot be stored, they
+run directly as before. The job is stored after the commit, not in the
+same transaction: a crash between the two still loses that batch's
+automations (a re-applied upload finds the findings existing, not new).
+The automation event journal, written in the merge transaction, will close
+that window and replace this outbox; it is not on develop yet.
+
+## 6e. Load targets
+
+`tests/integration/ingest_load_test.go` (`TestIngestLoad`, `INGEST_LOAD=1`)
+drives the real CI upload path: HTTP accept, sealed storage, the queue, 4
+workers and the ingest core, on a fresh, fully migrated Postgres. The nightly
+`Ingest load` workflow runs it; a missed target fails the job and the run
+summary carries the results table.
+
+| # | Scenario | Target |
+|---|---|---|
+| T1 | 50 concurrent uploads × 1,000 findings over 10 organizations, half of the findings already known | 0 refused or failed uploads; every finding stored; accept p95, job p95 and drain time reported |
+| T4 | an urgent (critical) report while 500 bulk jobs wait | applied within 15 s |
+| T3 | 20 runs upload the same 500 findings to one repository at once | 0 failed; one finding per fingerprint; every run records every sighting (no lost sighting) |
+| — | deadlocks | reported; none surfaces as a failed job (writes retry) |
 
 ## 7. API
 
 | Route | Gate | Notes |
 |---|---|---|
-| `POST /api/v1/findings/imports` | `findings:write` + `assets:write` + `assets:import` | multipart; `201` + `Location` + the receipt and the per-file results; `dry_run=true` previews (`200`) |
+| `POST /api/v1/findings/imports` | `findings:write` + `assets:write` + `assets:import` | multipart; `202` + `Location` (the receipt, status `queued`), applied by the ingest worker (§6a); `dry_run=true` previews in the request (`200`) |
+| `GET /api/v1/findings/imports/{id}/result` | `findings:read` | state of a committed upload (`queued`, `processing`, `applied`, `failed` + `error_code`), its per-file results and its receipt; `wait` ≤ 10 s; visible as the receipt |
+| `POST /api/v1/ci/runs/{id}/results` | CI run token | `202` + `upload_id` + `Location` (§6a); the same body to the run again is the same upload |
+| `GET /api/v1/ci/runs/{id}/results/{report_id}` | CI run token | state of the run's upload and, once applied, its counts and decided results; `wait` ≤ 10 s; another run's upload is 404 |
 | `GET /api/v1/findings/imports` | `findings:read` | list of receipts (§4); filters `source_kind`, `source_ref`; `page`, `per_page` ≤ 100; unknown parameter → 400 |
 | `GET /api/v1/findings/imports/{id}` | `findings:read` | one receipt, counts by severity of the visible actions |
-| `GET /api/v1/findings/imports/{id}/actions` | `findings:read` | the per-finding actions the caller may see; filter `action` |
+| `GET /api/v1/findings/imports/{id}/actions` | `findings:read` | the per-finding actions the caller may see, with the deciding policy; filter `action` (`created`, `still_detected`, `reopened`, `closed`, `suppressed`, `held`) |
+| `GET /api/v1/findings/imports/{id}/items` | `findings:read` | the items that did not become findings (§6d); filter `disposition` |
 | `GET /api/v1/findings/{id}/imports` | `findings:read` | the receipts that acted on one finding, newest first |
 
 ## 8. Threat model
@@ -141,3 +348,12 @@ cannot see. So:
 3. Full-coverage uploads (`coverage=full` with an explicit scope).
 4. Web: receipts on the import page and the scan run page, "last seen in"
    on the finding detail (en and vi).
+5. Accept fast, apply async (§6a): CI results and committed imports stored
+   sealed and applied by the ingest worker; the CI gate waits on the run's
+   uploads.
+6. Fairness and limits (§6b): lanes, one running job per scope, a running
+   cap, workers on their own pool, fail-closed back-pressure, poison cap.
+7. Queue hygiene (§6c): queue retention; quarantine accepted after apply.
+8. Dispositions (§6d): per-item dispositions with the deciding policy and
+   version, versioned policy snapshots, durable side effects.
+9. Load harness in nightly CI (§6e).
