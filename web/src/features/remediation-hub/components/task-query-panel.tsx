@@ -14,6 +14,7 @@ import { Loader2, PauseCircle, PlayCircle, RefreshCw } from 'lucide-react'
 import { useTranslation } from '@/context/i18n-provider'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
+import { ConfirmDialog } from '@/components/confirm-dialog'
 import {
   Dialog,
   DialogBody,
@@ -44,6 +45,7 @@ export function TaskQueryPanel({
   const { data: q, mutate } = useTaskQuery(taskId)
   const [rerun, setRerun] = useState<QueryRerunPreview | null>(null)
   const [rerunOpen, setRerunOpen] = useState(false)
+  const [resumeOpen, setResumeOpen] = useState(false)
   const [busy, setBusy] = useState<'preview' | 'add' | 'auto' | null>(null)
   const [error, setError] = useState<string | null>(null)
 
@@ -139,7 +141,7 @@ export function TaskQueryPanel({
             <Button
               size="sm"
               variant="outline"
-              onClick={() => void setPaused(false)}
+              onClick={() => setResumeOpen(true)}
               disabled={busy !== null}
             >
               <PlayCircle className="size-4" aria-hidden />
@@ -162,6 +164,22 @@ export function TaskQueryPanel({
           ` ${t('remediationQuery.task.capInfo', undefined, { cap: q.cap, total: q.total_added })}`}
         {lastRun && ` ${t('remediationQuery.task.lastRun', undefined, { when: lastRun })}`}
       </p>
+
+      <ConfirmDialog
+        open={resumeOpen}
+        onOpenChange={setResumeOpen}
+        title={t('remediationQuery.task.resumeConfirmTitle', 'Resume auto include?')}
+        desc={t(
+          'remediationQuery.task.resumeConfirmDesc',
+          'The task starts adding findings that match its query again, up to its cap of {cap}, without asking each time. Findings already in the task stay.',
+          { cap: q.cap }
+        )}
+        confirmText={t('remediationQuery.task.resumeConfirmButton', 'Resume auto include')}
+        handleConfirm={async () => {
+          await setPaused(false)
+          setResumeOpen(false)
+        }}
+      />
 
       <Dialog open={rerunOpen} onOpenChange={setRerunOpen}>
         <DialogContent size="md">

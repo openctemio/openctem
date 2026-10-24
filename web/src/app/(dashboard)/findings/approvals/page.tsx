@@ -19,6 +19,7 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { ConfirmDialog } from '@/components/confirm-dialog'
@@ -181,6 +182,7 @@ export default function ApprovalsPage() {
   const [approveDialogOpen, setApproveDialogOpen] = useState(false)
   const [rejectDialogOpen, setRejectDialogOpen] = useState(false)
   const [cancelDialogOpen, setCancelDialogOpen] = useState(false)
+  const [remindTarget, setRemindTarget] = useState<ApiApproval | null>(null)
   const [selectedApproval, setSelectedApproval] = useState<ApiApproval | null>(null)
   const [rejectionReason, setRejectionReason] = useState('')
   // Why the last reject failed, shown under the reason so nothing typed is lost.
@@ -502,11 +504,15 @@ export default function ApprovalsPage() {
                 )}
                 {mayCancel && (
                   <Can permission={Permission.FindingsWrite}>
-                    <DropdownMenuItem onClick={() => handleRemind(approval)}>
+                    <DropdownMenuItem onClick={() => setRemindTarget(approval)}>
                       <BellRing className="me-2 h-4 w-4" />
                       {t('findings.approvals.action.remind', 'Remind approvers')}
                     </DropdownMenuItem>
-                    <DropdownMenuItem onClick={() => handleCancelClick(approval)}>
+                    <DropdownMenuSeparator />
+                    <DropdownMenuItem
+                      className="text-destructive focus:text-destructive"
+                      onClick={() => handleCancelClick(approval)}
+                    >
                       <Ban className="me-2 h-4 w-4" />
                       {t('findings.approvals.action.cancel', 'Cancel request')}
                     </DropdownMenuItem>
@@ -523,7 +529,6 @@ export default function ApprovalsPage() {
       handleApproveClick,
       handleRejectClick,
       handleCancelClick,
-      handleRemind,
       currentUserId,
       selfApprovalAvailable,
       t,
@@ -940,6 +945,24 @@ export default function ApprovalsPage() {
         </DialogContent>
       </Dialog>
 
+      <ConfirmDialog
+        open={remindTarget !== null}
+        onOpenChange={(open) => {
+          if (!open) setRemindTarget(null)
+        }}
+        title={t('confirm.findingApproval.remindTitle', 'Remind the approvers?')}
+        desc={t(
+          'confirm.findingApproval.remindDesc',
+          'Every approver who has not decided yet gets a notification now. Approvers can be reminded once an hour.'
+        )}
+        confirmText={t('confirm.findingApproval.remindButton', 'Send reminder')}
+        handleConfirm={async () => {
+          const target = remindTarget
+          setRemindTarget(null)
+          if (target) await handleRemind(target)
+        }}
+      />
+
       {/* Cancel Confirmation Dialog */}
       <ConfirmDialog
         open={cancelDialogOpen}
@@ -947,7 +970,7 @@ export default function ApprovalsPage() {
         title={t('confirm.findingApproval.cancelTitle', 'Cancel this approval request?')}
         desc={t(
           'confirm.findingApproval.cancelDesc',
-          'The request is withdrawn and the finding keeps its current status. This cannot be undone; ask again if needed.'
+          'The request is withdrawn and the finding keeps its current status. You can send a new request afterwards.'
         )}
         cancelBtnText={t('confirm.findingApproval.keep', 'Keep request')}
         confirmText={
