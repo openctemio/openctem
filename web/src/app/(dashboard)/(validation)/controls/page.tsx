@@ -4,7 +4,13 @@ import { useMemo, useState } from 'react'
 import type { ColumnDef } from '@tanstack/react-table'
 import useSWR from 'swr'
 import { Main } from '@/components/layout'
-import { PageHeader, DataTable, DataTableColumnHeader, EmptyState } from '@/features/shared'
+import {
+  PageHeader,
+  PageStack,
+  DataTable,
+  DataTableColumnHeader,
+  EmptyState,
+} from '@/features/shared'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Input } from '@/components/ui/input'
@@ -357,22 +363,22 @@ export default function CompensatingControlsPage() {
   return (
     <>
       <Main>
-        <PageHeader
-          title={t('validation.controls.title', 'Compensating controls')}
-          description={t(
-            'validation.controls.description',
-            'Controls that hold down the priority of findings on the assets they protect.'
-          )}
-        >
-          <Can permission={Permission.CompensatingControlsWrite}>
-            <Button size="sm" onClick={() => setIsCreateOpen(true)}>
-              <Plus className="me-2 h-4 w-4" />
-              {t('validation.controls.new', 'New control')}
-            </Button>
-          </Can>
-        </PageHeader>
+        <PageStack>
+          <PageHeader
+            title={t('validation.controls.title', 'Compensating controls')}
+            description={t(
+              'validation.controls.description',
+              'Controls that hold down the priority of findings on the assets they protect.'
+            )}
+          >
+            <Can permission={Permission.CompensatingControlsWrite}>
+              <Button size="sm" onClick={() => setIsCreateOpen(true)}>
+                <Plus className="me-2 h-4 w-4" />
+                {t('validation.controls.new', 'New control')}
+              </Button>
+            </Can>
+          </PageHeader>
 
-        <div className="mt-5">
           {isLoading ? (
             <div className="space-y-2">
               {[1, 2, 3].map((i) => (
@@ -395,7 +401,7 @@ export default function CompensatingControlsPage() {
               searchPlaceholder={t('validation.controls.searchPlaceholder', 'Search controls…')}
             />
           )}
-        </div>
+        </PageStack>
       </Main>
 
       {/* Create Dialog */}

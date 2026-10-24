@@ -11,6 +11,7 @@ import useSWR from 'swr'
 import { Main } from '@/components/layout'
 import {
   PageHeader,
+  PageStack,
   DataTable,
   DataTableColumnHeader,
   DataTableRowActions,
@@ -596,42 +597,42 @@ export default function PriorityRulesPage() {
 
   return (
     <Main>
-      <PageHeader
-        title={t('prioritization.rules.title', 'Priority rules')}
-        description={t(
-          'prioritization.rules.description',
-          'Define rules that override the calculated finding priority based on conditions.'
-        )}
-      >
-        {/* The other lever: how the underlying risk score is weighted. */}
-        {canSeeRiskScoring && (
-          <Button variant="outline" size="sm" asChild>
-            <Link href="/settings/risk-scoring">
-              <Scale className="h-4 w-4" />
-              {t('prioritization.rules.tune', 'Tune risk scoring')}
-            </Link>
-          </Button>
-        )}
-        <Can permission={Permission.PriorityRulesWrite}>
-          <Button size="sm" onClick={openCreate}>
-            <Plus className="h-4 w-4" />
-            {t('prioritization.rules.create', 'Create rule')}
-          </Button>
-        </Can>
-      </PageHeader>
-
-      <Alert className="mt-5">
-        <Info className="h-4 w-4" />
-        <AlertTitle>{t('prioritization.rules.how.title', 'How evaluation works')}</AlertTitle>
-        <AlertDescription>
-          {t(
-            'prioritization.rules.how.body',
-            "Rules are evaluated from the highest evaluation order down (higher wins). The first active rule whose conditions all match sets the finding's priority class. Inactive rules are skipped."
+      <PageStack>
+        <PageHeader
+          title={t('prioritization.rules.title', 'Priority rules')}
+          description={t(
+            'prioritization.rules.description',
+            'Define rules that override the calculated finding priority based on conditions.'
           )}
-        </AlertDescription>
-      </Alert>
+        >
+          {/* The other lever: how the underlying risk score is weighted. */}
+          {canSeeRiskScoring && (
+            <Button variant="outline" size="sm" asChild>
+              <Link href="/settings/risk-scoring">
+                <Scale className="h-4 w-4" />
+                {t('prioritization.rules.tune', 'Tune risk scoring')}
+              </Link>
+            </Button>
+          )}
+          <Can permission={Permission.PriorityRulesWrite}>
+            <Button size="sm" onClick={openCreate}>
+              <Plus className="h-4 w-4" />
+              {t('prioritization.rules.create', 'Create rule')}
+            </Button>
+          </Can>
+        </PageHeader>
 
-      <div className="mt-5">
+        <Alert>
+          <Info className="h-4 w-4" />
+          <AlertTitle>{t('prioritization.rules.how.title', 'How evaluation works')}</AlertTitle>
+          <AlertDescription>
+            {t(
+              'prioritization.rules.how.body',
+              "Rules are evaluated from the highest evaluation order down (higher wins). The first active rule whose conditions all match sets the finding's priority class. Inactive rules are skipped."
+            )}
+          </AlertDescription>
+        </Alert>
+
         {error ? (
           <Alert variant="destructive">
             <AlertCircle className="h-4 w-4" />
@@ -667,7 +668,7 @@ export default function PriorityRulesPage() {
             )}
           />
         )}
-      </div>
+      </PageStack>
 
       <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
         <DialogContent size="lg">

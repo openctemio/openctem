@@ -196,8 +196,13 @@ type Output struct {
 	// covered run did not report, so a command-bound segment fails (and is
 	// retried) rather than leave its findings off the receipt.
 	ReceiptFailed bool `json:"-"`
-	AssetsCreated int  `json:"assets_created"`
-	AssetsUpdated int  `json:"assets_updated"`
+	// BranchOccurrencesFailed is set when this ingest could not record the
+	// branch occurrences of its findings. The occurrence sweep of the scanned
+	// branch is then skipped: it would mark the findings this scan did see as
+	// no longer on the branch.
+	BranchOccurrencesFailed bool `json:"-"`
+	AssetsCreated           int  `json:"assets_created"`
+	AssetsUpdated           int  `json:"assets_updated"`
 	// AssetsSkippedExcluded counts new assets not added because they match
 	// an active scope exclusion (RFC-042 F16).
 	AssetsSkippedExcluded int `json:"assets_skipped_excluded,omitempty"`

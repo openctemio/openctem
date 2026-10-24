@@ -6,7 +6,7 @@
   "threatModel.criticality.none": "không có",
   "threatModel.description": "Các kỹ thuật tấn công suy ra theo từng tài sản trọng yếu, ánh xạ sang MITRE ATT&CK và chấm điểm theo mức bao phủ.",
   "threatModel.detail.allModels": "Tất cả mô hình",
-  "threatModel.detail.generated": "Tạo lúc {date} · ATT&CK {version}",
+  "threatModel.detail.generated": "Tạo lúc {date}, ATT&CK {version}",
   "threatModel.detail.loading": "Đang tải mô hình mối đe dọa…",
   "threatModel.detail.needWrite": "Bạn cần quyền assets:write để làm mới",
   "threatModel.detail.refresh": "Làm mới",

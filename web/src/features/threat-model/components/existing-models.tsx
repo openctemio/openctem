@@ -1,5 +1,6 @@
 'use client'
 
+import { Tag } from '@/components/ui/tag'
 import { useTranslation } from '@/context/i18n-provider'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
@@ -61,12 +62,9 @@ export function ExistingModels({ models, selectedId, onOpen }: ExistingModelsPro
                     </div>
                     <div className="flex shrink-0 flex-col items-end gap-2 sm:flex-row sm:items-center">
                       {m.threats_open > 0 && (
-                        <Badge
-                          variant="outline"
-                          className="border-destructive/30 bg-destructive/10 text-destructive"
-                        >
-                          {t('threatModel.existing.open', '{n} open', { n: m.threats_open })}
-                        </Badge>
+                        <Tag
+                          label={t('threatModel.existing.open', '{n} open', { n: m.threats_open })}
+                        />
                       )}
                       <Badge variant="secondary">
                         {t(

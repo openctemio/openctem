@@ -1988,6 +1988,14 @@ func (r *FindingRepository) UpsertBranchOccurrences(ctx context.Context, tenantI
 	// (finding, branch) row twice, and the duplicate used to drop every
 	// occurrence of the report. The last sighting wins (latest commit).
 	items = dedupeLastWins(items, branchOccurrenceKey)
+	// Concurrent uploads of one repository upsert the same (finding, branch)
+	// rows: every writer takes them in one order, (fingerprint, branch) in
+	// byte order, matching the global lock order of findings rows
+	// (finding_lock_order.go), and the statement inserts in that order.
+	items = slices.Clone(items)
+	slices.SortStableFunc(items, func(a, b vulnerability.BranchOccurrenceUpsert) int {
+		return strings.Compare(branchOccurrenceKey(a), branchOccurrenceKey(b))
+	})
 
 	fingerprints := make([]string, len(items))
 	branchIDs := make([]string, len(items))
@@ -2015,6 +2023,7 @@ func (r *FindingRepository) UpsertBranchOccurrences(ctx context.Context, tenantI
 			AS inp(fingerprint, branch_id, scan_id, commit_sha)
 		JOIN findings f ON f.tenant_id = $1 AND f.fingerprint = inp.fingerprint
 		JOIN repository_branches b ON b.id = inp.branch_id
+		ORDER BY inp.fingerprint COLLATE "C", inp.branch_id::text COLLATE "C"
 		ON CONFLICT (finding_id, branch_id) DO UPDATE SET
 			last_seen_at = NOW(),
 			last_seen_scan_id = EXCLUDED.last_seen_scan_id,
@@ -2024,9 +2033,12 @@ func (r *FindingRepository) UpsertBranchOccurrences(ctx context.Context, tenantI
 			updated_at = NOW()
 	`
 
-	if _, err := r.db.ExecContext(ctx, query, tenantID.String(),
-		pq.Array(fingerprints), pq.Array(branchIDs), pq.Array(scanIDs), pq.Array(commits),
-	); err != nil {
+	err := retryWriteConflict(ctx, func() error {
+		_, execErr := r.db.ExecContext(ctx, query, tenantID.String(),
+			pq.Array(fingerprints), pq.Array(branchIDs), pq.Array(scanIDs), pq.Array(commits))
+		return execErr
+	})
+	if err != nil {
 		return fmt.Errorf("failed to upsert branch occurrences: %w", err)
 	}
 	return nil
@@ -2065,18 +2077,27 @@ func (r *FindingRepository) BackfillFindingBranches(ctx context.Context, tenantI
 		branchIDs[i] = it.BranchID.String()
 	}
 
-	const query = `
-		UPDATE findings f
-		SET branch_id = b.id, updated_at = NOW()
-		FROM unnest($2::text[], $3::uuid[]) AS inp(fingerprint, branch_id)
-		JOIN repository_branches b ON b.id = inp.branch_id
-		WHERE f.tenant_id = $1
+	// The rows to move are locked first in the global order
+	// (finding_lock_order.go); the update rechecks the same condition.
+	const moves = `f.tenant_id = $1
 			AND f.fingerprint = inp.fingerprint
 			AND b.repository_id = f.asset_id
-			AND (f.branch_id IS NULL OR (b.is_default AND f.branch_id <> b.id))
-	`
+			AND (f.branch_id IS NULL OR (b.is_default AND f.branch_id <> b.id))`
+	const input = `unnest($2::text[], $3::uuid[]) AS inp(fingerprint, branch_id)
+		JOIN repository_branches b ON b.id = inp.branch_id`
+	query := `
+		WITH ` + findingLockCTE("findings f, "+input, moves) + `
+		UPDATE findings f
+		SET branch_id = b.id, updated_at = NOW()
+		FROM locked l, ` + input + `
+		WHERE f.id = l.locked_id AND ` + moves
 
-	res, err := r.db.ExecContext(ctx, query, tenantID.String(), pq.Array(fingerprints), pq.Array(branchIDs))
+	var res sql.Result
+	err := retryWriteConflict(ctx, func() error {
+		var execErr error
+		res, execErr = r.db.ExecContext(ctx, query, tenantID.String(), pq.Array(fingerprints), pq.Array(branchIDs))
+		return execErr
+	})
 	if err != nil {
 		return 0, fmt.Errorf("failed to backfill finding branches: %w", err)
 	}
@@ -2242,7 +2263,12 @@ func (r *FindingRepository) updateStatusBatch(ctx context.Context, tenantID shar
 	if err != nil {
 		return nil, err
 	}
-	moved, err := r.db.queryStatusWriteIDs(ctx, ids, query+" RETURNING id", args...)
+	var moved []shared.ID
+	err = retryWriteConflict(ctx, func() error {
+		var txErr error
+		moved, txErr = r.db.queryStatusWriteIDs(ctx, ids, query+" RETURNING f.id", args...)
+		return txErr
+	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to update findings status: %w", err)
 	}
@@ -2283,11 +2309,18 @@ func statusWriteSQL(tenantID shared.ID, ids []shared.ID, status vulnerability.Fi
 
 	// Security: Include tenant_id in WHERE clause
 	// Security: Exclude pentest findings — they must be managed via the pentest module
+	// The rows are locked first in the global order of findings rows
+	// (finding_lock_order.go), so a bulk move never deadlocks with an ingest
+	// writing the same findings; the update rechecks the condition.
+	movable := fmt.Sprintf(`f.tenant_id = $1 AND f.source != 'pentest' AND f.status = ANY($7) AND f.id IN (%s)`,
+		strings.Join(placeholders, ", "))
 	query := fmt.Sprintf(`
-		UPDATE findings
+		WITH %s
+		UPDATE findings f
 		SET status = $2, resolution = $3, resolved_by = $4, closure_reason = $5, verification = $6%s, updated_at = NOW()
-		WHERE tenant_id = $1 AND source != 'pentest' AND status = ANY($7) AND id IN (%s)
-	`, resolvedClause, strings.Join(placeholders, ", "))
+		FROM locked l
+		WHERE f.id = l.locked_id AND %s
+	`, findingLockCTE("findings f", movable), resolvedClause, movable)
 
 	return query, args, nil
 }
@@ -2340,23 +2373,17 @@ func (r *FindingRepository) UpdateScanIDBatchByFingerprints(ctx context.Context,
 	}
 
 	// Note: Status is intentionally NOT updated to preserve user-set values (false_positive, accepted, etc.)
-	// The rows are locked in id order first (the order every batched
-	// finding write locks in), so concurrent sightings of the same findings
-	// queue instead of deadlocking; a conflict that still happens runs the
-	// statement again.
+	// The rows are locked first in the global order (finding_lock_order.go),
+	// so concurrent sightings of the same findings queue instead of
+	// deadlocking; a conflict that still happens runs the statement again.
 	query := `
-		WITH locked AS (
-			SELECT id FROM findings
-			WHERE tenant_id = $2 AND fingerprint = ANY($3)
-			ORDER BY id
-			FOR NO KEY UPDATE
-		)
+		WITH ` + findingLockCTE("findings f", "f.tenant_id = $2 AND f.fingerprint = ANY($3)") + `
 		UPDATE findings f
 		SET scan_id = $1, updated_at = NOW(), last_seen_at = NOW(), observation_state = 'present',
 			occurrence_count = f.occurrence_count + 1,
 			last_seen_tool = COALESCE(NULLIF($4, ''), f.last_seen_tool)
 		FROM locked l
-		WHERE f.id = l.id AND f.tenant_id = $2
+		WHERE f.id = l.locked_id AND f.tenant_id = $2
 	`
 
 	var result sql.Result
@@ -2392,6 +2419,9 @@ func (r *FindingRepository) UpdateSnippetBatchByFingerprints(ctx context.Context
 	for fp := range snippets {
 		fingerprints = append(fingerprints, fp)
 	}
+	// The global lock order of findings rows (finding_lock_order.go), across
+	// the batches and inside each.
+	sort.Strings(fingerprints)
 
 	for i := 0; i < len(fingerprints); i += batchSize {
 		end := i + batchSize
@@ -2402,7 +2432,7 @@ func (r *FindingRepository) UpdateSnippetBatchByFingerprints(ctx context.Context
 
 		// Build CASE statement for batch update
 		var caseBuilder strings.Builder
-		caseBuilder.WriteString("CASE fingerprint ")
+		caseBuilder.WriteString("CASE f.fingerprint ")
 		args := []interface{}{tenantID.String()}
 		argIdx := 2
 
@@ -2426,15 +2456,22 @@ func (r *FindingRepository) UpdateSnippetBatchByFingerprints(ctx context.Context
 		caseBuilder.WriteString("END")
 		args = append(args, pq.Array(validFingerprints))
 
+		const needsSnippet = `(f.snippet IS NULL OR f.snippet = '' OR f.snippet = 'requires login')`
 		query := fmt.Sprintf(`
-			UPDATE findings
+			WITH %s
+			UPDATE findings f
 			SET snippet = %s, updated_at = NOW()
-			WHERE tenant_id = $1
-			AND fingerprint = ANY($%d)
-			AND (snippet IS NULL OR snippet = '' OR snippet = 'requires login')
-		`, caseBuilder.String(), argIdx)
+			FROM locked l
+			WHERE f.id = l.locked_id AND f.tenant_id = $1 AND %s
+		`, findingLockCTE("findings f", fmt.Sprintf("f.tenant_id = $1 AND f.fingerprint = ANY($%d) AND %s", argIdx, needsSnippet)),
+			caseBuilder.String(), needsSnippet)
 
-		result, err := r.db.ExecContext(ctx, query, args...)
+		var result sql.Result
+		err := retryWriteConflict(ctx, func() error {
+			var execErr error
+			result, execErr = r.db.ExecContext(ctx, query, args...)
+			return execErr
+		})
 		if err != nil {
 			return totalUpdated, fmt.Errorf("failed to update snippets: %w", err)
 		}
@@ -3851,7 +3888,9 @@ func (r *FindingRepository) AutoReopenByFingerprintsBatch(ctx context.Context, t
 				-- resolved while the statement stands (it is withdrawn on edit,
 				-- delete or expiry, which reopens it).
 				AND NOT (status = 'resolved' AND verification = 'vex_statement' AND vex_statement_id IS NOT NULL)
-			FOR UPDATE
+			-- The global lock order of findings rows (finding_lock_order.go).
+			ORDER BY ` + findingLockOrderSQL + `
+			FOR NO KEY UPDATE
 		)
 		UPDATE findings f
 		SET status = 'confirmed',
@@ -3868,7 +3907,21 @@ func (r *FindingRepository) AutoReopenByFingerprintsBatch(ctx context.Context, t
 
 	// Each reopen writes its auto_reopened timeline entry in the same
 	// transaction (the scan behind it comes from the context's evidence).
-	err := r.db.withFindingTransition(ctx, findingTransition{
+	// A write conflict rolls the transaction back and runs it again.
+	err := retryWriteConflict(ctx, func() error {
+		clear(result)
+		return r.autoReopenTx(ctx, query, tenantID, fingerprints, result)
+	})
+	if err != nil {
+		return nil, err
+	}
+	return result, nil
+}
+
+// autoReopenTx runs the reopen of AutoReopenByFingerprintsBatch in one
+// transaction and records each reopened finding in result.
+func (r *FindingRepository) autoReopenTx(ctx context.Context, query string, tenantID shared.ID, fingerprints []string, result map[string]vulnerability.ReopenedFinding) error {
+	return r.db.withFindingTransition(ctx, findingTransition{
 		ActivityType: "auto_reopened", Source: "auto", Reason: "regression_detected_again", ActorType: "scanner",
 		ActorName: "system: scan detected it again",
 	}, func(tx *sql.Tx) error {
@@ -3913,10 +3966,6 @@ func (r *FindingRepository) AutoReopenByFingerprintsBatch(ctx context.Context, t
 
 		return rows.Err()
 	})
-	if err != nil {
-		return nil, err
-	}
-	return result, nil
 }
 
 // ExpireFeatureBranchFindings marks stale feature branch findings stale
@@ -4230,10 +4279,11 @@ var enrichColumnDefs = []enrichColumnDef{
 // read the rows, merge outside any lock and write back with a row_version
 // check: every writer but one lost the race, the retries ran out, and the
 // rest of the batch fell back to a sighting-only update or failed with a
-// deadlock (the rows were locked in plan order). Locking the rows in id
-// order before the read makes concurrent writers queue on the same order:
-// none can change a row between this read and this write, and none can
-// deadlock with another enrichment. A deadlock or serialization failure that
+// deadlock (the rows were locked in plan order). Locking the rows in the
+// global order (finding_lock_order.go) before the read makes concurrent
+// writers queue on the same order: none can change a row between this read
+// and this write, and none can deadlock with another enrichment, the upsert
+// of new findings or any other batched finding write. A deadlock or serialization failure that
 // still happens (another code path) rolls the transaction back and it runs
 // again (retryWriteConflict).
 //
@@ -4287,16 +4337,16 @@ func (r *FindingRepository) EnrichBatchByFingerprints(ctx context.Context, tenan
 }
 
 // enrichLockedSelectSQL reads the findings an enrichment merges into and
-// locks them in id order, the order every enrichment locks in.
+// locks them in the global order of findings rows (finding_lock_order.go).
 func (r *FindingRepository) enrichLockedSelectSQL() string {
 	return r.selectQueryForEnrichment() + `
 		WHERE tenant_id = $1 AND fingerprint = ANY($2)
-		ORDER BY id
+		ORDER BY ` + findingLockOrderSQL + `
 		FOR NO KEY UPDATE`
 }
 
 // loadLockedForEnrich reads the stored findings of the fingerprints under a
-// row lock taken in id order (enrichLockedSelectSQL).
+// row lock taken in the global order (enrichLockedSelectSQL).
 func (r *FindingRepository) loadLockedForEnrich(ctx context.Context, tx *sql.Tx, tenantID shared.ID, fingerprints []string) ([]*vulnerability.Finding, error) {
 	rows, err := tx.QueryContext(ctx, r.enrichLockedSelectSQL(), tenantID.String(), pq.Array(fingerprints))
 	if err != nil {
@@ -4331,7 +4381,7 @@ func (r *FindingRepository) enrichOnce(ctx context.Context, tenantID shared.ID, 
 		return 0, nil, err
 	}
 
-	// Rows come back in id order; the write keeps that order.
+	// Rows come back locked, in the global order; the write keeps that order.
 	existing, err := r.loadLockedForEnrich(ctx, tx, tenantID, fingerprints)
 	if err != nil {
 		return 0, nil, err

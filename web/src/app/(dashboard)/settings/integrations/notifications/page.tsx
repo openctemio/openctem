@@ -1,5 +1,6 @@
 'use client'
 
+import { IntegrationHealth } from '@/features/integrations/components/integration-health'
 import { useState, useMemo, useCallback } from 'react'
 import { csrfFetch, del } from '@/lib/api/client'
 import { useRouter } from 'next/navigation'
@@ -33,11 +34,7 @@ import {
   Send,
   Pencil,
   Trash2,
-  CheckCircle,
-  XCircle,
-  AlertCircle,
   Loader2,
-  Clock,
   MessageSquare,
   History,
   Inbox,
@@ -64,36 +61,6 @@ import { EditNotificationDialog } from '@/features/notifications/components/edit
 import { useTranslation } from '@/context/i18n-provider'
 
 // Only a problem (error) is coloured; the other states stay neutral.
-const STATUS_CONFIG: Record<
-  string,
-  {
-    label: string
-    variant: 'default' | 'secondary' | 'destructive' | 'outline'
-    icon: React.ReactNode
-  }
-> = {
-  connected: {
-    label: 'Connected',
-    variant: 'default',
-    icon: <CheckCircle className="h-3.5 w-3.5" />,
-  },
-  disconnected: {
-    label: 'Disconnected',
-    variant: 'secondary',
-    icon: <XCircle className="h-3.5 w-3.5" />,
-  },
-  error: {
-    label: 'Error',
-    variant: 'destructive',
-    icon: <AlertCircle className="h-3.5 w-3.5" />,
-  },
-  pending: {
-    label: 'Pending',
-    variant: 'outline',
-    icon: <Clock className="h-3.5 w-3.5" />,
-  },
-}
-
 const PROVIDER_LABELS: Record<string, string> = {
   slack: 'Slack',
   teams: 'Microsoft Teams',
@@ -349,14 +316,9 @@ export default function NotificationIntegrationsPage() {
         ),
         cell: ({ row }) => {
           const integration = row.original
-          const statusKey = STATUS_CONFIG[integration.status] ? integration.status : 'pending'
-          const statusConfig = STATUS_CONFIG[statusKey]
           return (
             <div className="space-y-1">
-              <Badge variant={statusConfig.variant} className="gap-1">
-                {statusConfig.icon}
-                {t(`notificationChannels.status.${statusKey}`, statusConfig.label)}
-              </Badge>
+              <IntegrationHealth status={integration.status} />
               {integration.status_message && integration.status === 'error' && (
                 <p
                   className="max-w-[250px] text-xs text-destructive"
