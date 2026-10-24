@@ -40,7 +40,7 @@ import { exportInventory } from '../../lib/inventory-export'
 import { useInventoryAssetForms } from './inventory-asset-forms'
 import { InventoryAddButton } from './inventory-add-button'
 import { Main } from '@/components/layout'
-import { PageHeader, EmptyState, FilterPanelToggle, FilterSheet } from '@/features/shared'
+import { PageHeader, EmptyState, FilterButton, FilterSheet } from '@/features/shared'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -78,9 +78,10 @@ import { InventoryBulkBar } from './inventory-bulk-bar'
 import { InventoryFacetPanel } from './inventory-facet-panel'
 import { InventoryTable } from './inventory-table'
 import { InventoryHiddenChip } from './inventory-hidden-chip'
+import { InventoryFilterBar } from './inventory-filter-bar'
+import { inventoryChips } from '../../lib/inventory-chips'
+import { propertyLabel as attributeLabel } from '@/features/asset-types/lib/property-schema'
 import { inventoryLenses, lensCounts } from '../../lib/inventory-lenses'
-
-const FILTERS_OPEN_KEY = 'openctem:assets-filters-open'
 
 /** Translate the inventory filter model into the useAssets query shape. */
 function toSearchFilters(f: InventoryFilters): AssetSearchFilters {
@@ -240,27 +241,6 @@ export function AllAssetsInventory({ viewSwitcher }: { viewSwitcher?: ReactNode 
     commitSearch(debouncedSearch)
   }, [debouncedSearch])
 
-  // Filter panel: closed by default so the table gets the width; the viewer's
-  // choice is remembered (a per-browser convenience, safe to lose).
-  const [filtersOpen, setFiltersOpenState] = useState(false)
-  useEffect(() => {
-    try {
-      if (window.localStorage.getItem(FILTERS_OPEN_KEY) === '1') setFiltersOpenState(true)
-    } catch {
-      // storage unavailable — stay closed
-    }
-  }, [])
-  const setFiltersOpen = useCallback((next: boolean | ((open: boolean) => boolean)) => {
-    setFiltersOpenState((prev) => {
-      const value = typeof next === 'function' ? next(prev) : next
-      try {
-        window.localStorage.setItem(FILTERS_OPEN_KEY, value ? '1' : '0')
-      } catch {
-        // best-effort
-      }
-      return value
-    })
-  }, [])
   const [filterSheetOpen, setFilterSheetOpen] = useState(false)
 
   // Data. The headline numbers come from the tenant-wide stats endpoint.
@@ -268,7 +248,13 @@ export function AllAssetsInventory({ viewSwitcher }: { viewSwitcher?: ReactNode 
   const { assets, total, isFirstLoad, isLoading, isError, error, mutate } =
     useAssetsKeepingPrevious(searchFilters)
   const { stats, isLoading: statsLoading, mutate: statsMutate } = useAssetStats()
-  const { data: buData } = useBusinessUnits()
+  // Business unit names label the Business unit facet and chip: asked for only
+  // once something shows them (a chip, the filter sheet or the filter picker).
+  const [facetsWanted, setFacetsWanted] = useState(false)
+  const { data: buData } = useBusinessUnits(
+    undefined,
+    facetsWanted || filterSheetOpen || Boolean(filters.businessUnitIds?.length)
+  )
 
   // Typed mode: the list is one type (and maybe one sub-type).
   const { registry } = useAssetTypeRegistry()
@@ -421,7 +407,7 @@ export function AllAssetsInventory({ viewSwitcher }: { viewSwitcher?: ReactNode 
     <InventoryFacetPanel
       groups={facetGroups}
       filters={filters}
-      stats={stats}
+      stats={scopeLabel ? typeStats : stats}
       onChange={setFilters}
       attributeFacets={attributeFacets}
       tagTypes={typeView ? [typeView.type] : undefined}
@@ -430,15 +416,26 @@ export function AllAssetsInventory({ viewSwitcher }: { viewSwitcher?: ReactNode 
     />
   )
 
+  // Phones and narrow windows: the facets open in a sheet. From `lg` up the
+  // filter row's Add filter does the same job without taking the table's width.
   const filterButtons = (
-    <FilterPanelToggle
-      open={filtersOpen}
-      onToggle={() => setFiltersOpen((o) => !o)}
-      onOpenSheet={() => setFilterSheetOpen(true)}
+    <FilterButton
+      className="lg:hidden"
+      onClick={() => setFilterSheetOpen(true)}
+      aria-haspopup="dialog"
       activeCount={activeCount}
-      controlsId="asset-filters"
     />
   )
+
+  const chips = inventoryChips(filters, {
+    groups: facetGroups,
+    t,
+    propertyLabel: attributeLabel,
+    formatDate: (iso) => {
+      const d = new Date(iso)
+      return Number.isNaN(d.getTime()) ? iso : d.toLocaleDateString()
+    },
+  })
 
   const searchBox = (
     <div className="relative min-w-0 flex-1 sm:max-w-sm">
@@ -510,30 +507,8 @@ export function AllAssetsInventory({ viewSwitcher }: { viewSwitcher?: ReactNode 
         )}
       </div>
 
-      <div className="mt-3 flex items-start">
-        {/* Always mounted so opening and closing can animate: the slot's width
-            (and the gap after it) eases between 0 and the card's width while
-            the card fades, and the table beside it resizes in step. The card
-            keeps its own width, so its contents never reflow mid-animation. */}
-        <div
-          inert={!filtersOpen}
-          className={cn(
-            'sticky top-4 hidden shrink-0 overflow-hidden transition-[width,margin-inline-end,opacity] duration-300 ease-in-out motion-reduce:transition-none lg:block',
-            filtersOpen ? 'me-5 w-64 opacity-100' : 'me-0 w-0 opacity-0'
-          )}
-        >
-          <aside
-            id="asset-filters"
-            aria-label={t('assets.inventoryPage.filters', 'Asset filters')}
-            // A self-contained floating card, as tall as the viewport and pinned
-            // while the page scrolls; long filter lists scroll inside it.
-            className="flex h-[calc(100svh-7.5rem)] w-64 flex-col rounded-xl border bg-card p-4 shadow-sm"
-          >
-            <div className="flex min-h-0 flex-1 flex-col">{facetPanel}</div>
-          </aside>
-        </div>
-
-        <div className="min-w-0 flex-1">
+      <div className="mt-3">
+        <div className="min-w-0">
           {isError ? (
             <Alert variant="destructive">
               <AlertTitle>
@@ -590,17 +565,37 @@ export function AllAssetsInventory({ viewSwitcher }: { viewSwitcher?: ReactNode 
                 </>
               }
               toolbarBelow={
-                !filters.attribution?.length ? (
-                  <InventoryHiddenChip
-                    onShowAll={() =>
-                      setFilters({
-                        ...filters,
-                        attribution: [...ATTRIBUTION_FILTER_VALUES],
-                        page: 1,
-                      })
-                    }
-                  />
-                ) : undefined
+                <InventoryFilterBar
+                  leading={
+                    !filters.attribution?.length ? (
+                      <InventoryHiddenChip
+                        onShowAll={() =>
+                          setFilters({
+                            ...filters,
+                            attribution: [...ATTRIBUTION_FILTER_VALUES],
+                            page: 1,
+                          })
+                        }
+                      />
+                    ) : undefined
+                  }
+                  chips={chips}
+                  groups={facetGroups}
+                  attributeFacets={attributeFacets}
+                  tagTypes={typeView ? [typeView.type] : undefined}
+                  filters={filters}
+                  stats={scopeLabel ? typeStats : stats}
+                  onChange={setFilters}
+                  onClearAll={clearAll}
+                  onPickerOpenChange={(open) => open && setFacetsWanted(true)}
+                  // The table (and this bar) only renders after the first load,
+                  // so the count is always known here.
+                  resultLabel={t(
+                    'assets.filters.results',
+                    '{count, plural, one {# asset} other {# assets}}',
+                    { count: total }
+                  )}
+                />
               }
               hasFilters={!isInventoryFilterEmpty(filters)}
               typeView={typeView}

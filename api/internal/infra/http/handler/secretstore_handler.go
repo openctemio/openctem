@@ -7,6 +7,8 @@ import (
 	"net/http"
 	"time"
 
+	auditapp "github.com/openctemio/openctem/api/internal/app/audit"
+
 	"github.com/go-chi/chi/v5"
 
 	"github.com/openctemio/openctem/api/internal/app/integration"
@@ -619,6 +621,10 @@ func (h *SecretStoreHandler) handleValidationError(w http.ResponseWriter, err er
 func (h *SecretStoreHandler) handleServiceError(w http.ResponseWriter, err error) {
 	h.logger.Error("service error", "error", err)
 
+	if errors.Is(err, auditapp.ErrNotRecorded) {
+		apierror.ServiceUnavailable("The credential was not stored: it could not be audited").WriteJSON(w)
+		return
+	}
 	if errors.Is(err, shared.ErrNotFound) {
 		apierror.NotFound("Credential not found").WriteJSON(w)
 		return

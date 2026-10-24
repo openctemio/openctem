@@ -41,9 +41,16 @@ interface InventoryTagsFacetProps {
   onChange: (next: InventoryFilters) => void
   /** Typed mode: only the tags of assets of these types. */
   types?: string[]
+  /** Unfold it (the Add filter editor). */
+  defaultOpen?: boolean
 }
 
-export function InventoryTagsFacet({ filters, onChange, types }: InventoryTagsFacetProps) {
+export function InventoryTagsFacet({
+  filters,
+  onChange,
+  types,
+  defaultOpen = false,
+}: InventoryTagsFacetProps) {
   const { t } = useTranslation()
   const [query, setQuery] = useState('')
   const [expanded, setExpanded] = useState(false)
@@ -88,7 +95,7 @@ export function InventoryTagsFacet({ filters, onChange, types }: InventoryTagsFa
     <FacetSection
       title={t('assets.tagFilter.title', 'Tags')}
       selectedCount={included.length + excluded.length}
-      defaultOpen={false}
+      defaultOpen={defaultOpen}
     >
       {included.length > 1 && (
         <MatchMode

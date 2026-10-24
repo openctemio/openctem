@@ -103,6 +103,8 @@ func (h *SupportAccessHandler) writeError(w http.ResponseWriter, err error, op s
 		apierror.BadRequest("No platform support administrator has this email").WriteJSON(w)
 	case errors.Is(err, supportaccess.ErrTooManyActiveGrant):
 		apierror.Conflict("This administrator already holds active access here; revoke it first").WriteJSON(w)
+	case errors.Is(err, supportaccess.ErrAuditUnavailable):
+		apierror.ServiceUnavailable("The grant was not created: it could not be audited").WriteJSON(w)
 	case shared.IsValidation(err):
 		apierror.BadRequest(sanitizeLogField(err.Error())).WriteJSON(w)
 	default:

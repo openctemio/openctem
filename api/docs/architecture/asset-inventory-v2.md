@@ -286,6 +286,17 @@ line. A type is a filter of the view (the Type facet, `?types=`), not a
 second row of pills. The list has no metric strip: its numbers are the
 quick-view counts and the facet counts.
 
+Filters are chips in one row under the toolbar: what the default list hides
+(names awaiting review and names marked not ours, with Show), then every
+active filter as "Field is value" with a remove button, then Add filter. Add
+filter lists the facet registry (`web/src/features/assets/lib/inventory-facets.ts`)
+by group, searchable, and a picked facet opens its own editor, which applies
+as you tick. Every URL filter has a chip, including the ones that are not
+facets (crown jewels, risk score, coverage, tags, date windows), so nothing
+narrows the list unseen. Below the `lg` breakpoint the same facets open in a
+sheet. The tag list and business unit names load only when something shows
+them.
+
 ## Needs attention
 
 Assets › Needs attention (`/assets/attention`) is the data-quality queue.
