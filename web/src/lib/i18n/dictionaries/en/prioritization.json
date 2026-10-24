@@ -187,5 +187,6 @@
   "prioritization.businessImpact.col.assets": "Assets",
   "prioritization.businessImpact.col.critical": "Critical findings",
   "prioritization.businessImpact.col.findings": "Findings",
-  "prioritization.businessImpact.col.risk": "Avg risk"
+  "prioritization.businessImpact.col.risk": "Avg risk",
+  "prioritization.businessImpact.crown.findings": "{count} findings"
 }

@@ -11,7 +11,7 @@
 import { List } from 'lucide-react'
 import { Main } from '@/components/layout'
 import { Button } from '@/components/ui/button'
-import { PageHeader } from '@/features/shared'
+import { PageHeader, PageStack } from '@/features/shared'
 import {
   AttackSurfaceSectionTabs,
   EASMDecidePanel,
@@ -35,15 +35,15 @@ export default function AttackSurfaceSuggestionsPage() {
   }
   return (
     <Main>
-      <PageHeader
-        title={t('attackSurface.title', 'Attack surface')}
-        description={t(
-          'attackSurface.suggestions.description',
-          'Decisions that still need a person. Confirming a name or address as yours adds its exact scope entry; addresses are never added because a name points at them.'
-        )}
-      />
-      <AttackSurfaceSectionTabs />
-      <div className="mt-5 space-y-5">
+      <PageStack>
+        <PageHeader
+          title={t('attackSurface.title', 'Attack surface')}
+          description={t(
+            'attackSurface.suggestions.description',
+            'Decisions that still need a person. Confirming a name or address as yours adds its exact scope entry; addresses are never added because a name points at them.'
+          )}
+        />
+        <AttackSurfaceSectionTabs />
         <EASMDecidePanel />
         {showAll ? (
           <section
@@ -66,7 +66,7 @@ export default function AttackSurfaceSuggestionsPage() {
             {t('attackSurface.suggestions.showAll', 'Show all items')}
           </Button>
         )}
-      </div>
+      </PageStack>
     </Main>
   )
 }

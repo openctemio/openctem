@@ -31,6 +31,7 @@ import {
   formatShortDate,
 } from '../lib/external-access'
 import type { PersonalAccountsPolicy, SSOException } from '../types/settings.types'
+import { useSearchQuery } from '@/hooks/use-search-query'
 
 /** i18n keys: org.personal.<value> (label) and org.personal.<value>Desc. */
 const POLICIES: { value: PersonalAccountsPolicy; label: string; description: string }[] = [
@@ -74,12 +75,13 @@ export function PersonalAccountsCard({
   const { t } = useTranslation()
   const [search, setSearch] = useState('')
   const [userId, setUserId] = useState('')
+  const searchTerm = useSearchQuery(search).term
   const [reason, setReason] = useState('')
   const [until, setUntil] = useState(dateInputDaysFromNow(30))
 
   const { members } = useMembers(ssoEnforced ? tenantSlug : undefined, {
     status: 'active',
-    search: search.trim() || undefined,
+    search: searchTerm || undefined,
     limit: 20,
   })
   const listed = useMemo(() => new Set(exceptions.map((e) => e.user_id)), [exceptions])

@@ -48,7 +48,7 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { cn } from '@/lib/utils'
 import { usePermissions, Permission } from '@/lib/permissions'
-import { useDebounce } from '@/hooks/use-debounce'
+import { useSearchQuery } from '@/hooks/use-search-query'
 import { useTranslation } from '@/context/i18n-provider'
 import { useTenant } from '@/context/tenant-provider'
 import { useLastVisit } from '../../hooks/use-last-visit'
@@ -223,7 +223,7 @@ export function AllAssetsInventory({ viewSwitcher }: { viewSwitcher?: ReactNode 
 
   // Local search input, debounced into the URL so we don't replace() per keystroke.
   const [searchInput, setSearchInput] = useState(filters.search ?? '')
-  const debouncedSearch = useDebounce(searchInput, 300)
+  const debouncedSearch = useSearchQuery(searchInput).term
   // Keep the box in sync when search is cleared elsewhere (clear-all, a metric).
   useEffect(() => {
     setSearchInput(filters.search ?? '')

@@ -196,8 +196,8 @@ export function ScanAssetsDialog({
             </p>
           )}
           {isOverCap && (
-            <div className="flex items-start gap-2 rounded-md border border-amber-500/30 bg-amber-500/10 p-3 text-xs text-amber-700 dark:text-amber-400">
-              <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+            <div className="flex items-start gap-2 rounded-md border border-warning/40 bg-warning/10 p-3 text-xs">
+              <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-warning" />
               <span>
                 {t('scans.assetsDialog.overCap', undefined, {
                   count: targets.length,
@@ -207,8 +207,8 @@ export function ScanAssetsDialog({
             </div>
           )}
           {isLargeSet && (
-            <div className="flex items-start gap-2 rounded-md border border-amber-500/30 bg-amber-500/10 p-3 text-xs text-amber-700 dark:text-amber-400">
-              <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+            <div className="flex items-start gap-2 rounded-md border border-warning/40 bg-warning/10 p-3 text-xs">
+              <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-warning" />
               <span>
                 {t('scans.assetsDialog.large', undefined, { count: cappedTargets.length })}
               </span>

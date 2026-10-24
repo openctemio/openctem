@@ -51,6 +51,7 @@ import {
 import { isWebSurfaceTab, type EndpointFilters, type WebSurfaceTab } from '../lib/web-surface-url'
 import { AuthPill, CatalogBadge, ExcludedBadge, MethodBadge, PathText } from './web-surface-badges'
 import { EndpointSheet } from './endpoint-sheet'
+import { useSearchQuery } from '@/hooks/use-search-query'
 
 const PAGE_SIZES = [20, 50, 100]
 
@@ -126,6 +127,7 @@ export function WebSurfaceView() {
   const tab: WebSurfaceTab = isWebSurfaceTab(tabParam) ? tabParam : 'origins'
 
   const [q, setQ] = useUrlFilter('q', '')
+  const searchTerm = useSearchQuery(q).term
   const [origin, setOrigin] = useUrlFilter('origin', '')
   const [pathHash, setPathHash] = useUrlFilter('path_hash', '')
   const [method, setMethod] = useUrlFilter('method', '')
@@ -139,7 +141,7 @@ export function WebSurfaceView() {
 
   const filters: EndpointFilters = useMemo(
     () => ({
-      q,
+      q: searchTerm,
       originAssetId: origin || undefined,
       pathHash: pathHash || undefined,
       method: method || undefined,
@@ -147,7 +149,7 @@ export function WebSurfaceView() {
       excludedOnly: excluded === 'true',
       sensitiveOnly: sensitive === 'true',
     }),
-    [q, origin, pathHash, method, kind, excluded, sensitive]
+    [searchTerm, origin, pathHash, method, kind, excluded, sensitive]
   )
 
   const stats = useWebEndpointStats(filters, canRead)

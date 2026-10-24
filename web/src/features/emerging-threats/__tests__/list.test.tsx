@@ -119,6 +119,24 @@ describe('EmergingThreatsList', () => {
     )
   })
 
+  it('the digest and listed tiles filter by level and the strip has five tiles', async () => {
+    renderList()
+    await screen.findByText('CVE-2026-1000')
+    expect(document.querySelectorAll('[data-slot="metric-strip"] > *')).toHaveLength(5)
+    await userEvent.click(screen.getByRole('button', { name: /Digest/ }))
+    await waitFor(() =>
+      expect(api.get).toHaveBeenCalledWith(
+        '/api/v1/emerging-threats?level=digest&state=open&page=1&per_page=25'
+      )
+    )
+    await userEvent.click(screen.getByRole('button', { name: /Listed/ }))
+    await waitFor(() =>
+      expect(api.get).toHaveBeenCalledWith(
+        '/api/v1/emerging-threats?level=listed&state=open&page=1&per_page=25'
+      )
+    )
+  })
+
   it('shows the API error', async () => {
     api.get.mockRejectedValue(new Error('boom'))
     renderList()
