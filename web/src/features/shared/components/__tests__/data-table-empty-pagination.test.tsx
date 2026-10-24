@@ -35,3 +35,15 @@ describe('DataTable pagination on an empty list', () => {
     expect(screen.getByText('Page 1 of 1')).toBeInTheDocument()
   })
 })
+
+describe('DataTable name column', () => {
+  it('keeps a minimum width on the pinned name column so other columns cannot squeeze it', () => {
+    const cols: ColumnDef<Row>[] = [
+      { accessorKey: 'name', header: 'Name' },
+      { id: 'actions', cell: () => null },
+    ]
+    render(<DataTable columns={cols} data={[{ id: '1', name: 'a' }]} />)
+    const th = screen.getByRole('columnheader', { name: 'Name' })
+    expect(th.className).toContain('min-w-[min(12rem,36vw)]')
+  })
+})

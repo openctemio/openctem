@@ -40,6 +40,7 @@ describe('PageStack', () => {
     )
     const stack = screen.getByTestId('stack')
     expect(stack.className).toContain('[&>[data-slot=page-header]+[data-slot=page-tabs]]:-mt-1!')
+    expect(stack.className).toContain('[&>[data-slot=page-header]+[data-slot=tabs]]:-mt-1!')
     const header = stack.firstElementChild as HTMLElement
     const tabs = screen.getByRole('navigation', { name: 'Scans sections' })
     expect(header).toHaveAttribute('data-slot', 'page-header')

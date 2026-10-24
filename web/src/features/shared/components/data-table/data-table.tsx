@@ -604,8 +604,11 @@ export function DataTable<TData, TValue>({
         PINNED_CELL_CLASS,
         pin.last && PINNED_START_EDGE_CLASS,
         // The pinned name column must leave room for the columns that scroll:
-        // cap it and let long names wrap instead of widening the pin.
-        pin.last && 'max-w-[min(26rem,38vw)] whitespace-normal'
+        // cap it and let long names wrap instead of widening the pin. It also
+        // keeps a floor: in an automatic table layout a truncating name has no
+        // minimum width, so ten other columns squeezed it to a few letters
+        // ("e2..."); with the floor the other columns scroll instead.
+        pin.last && 'min-w-[min(12rem,36vw)] max-w-[min(26rem,38vw)] whitespace-normal'
       ),
       style: { ...width, insetInlineStart: pin.start },
     }
