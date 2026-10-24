@@ -20,7 +20,7 @@ import {
   type LucideIcon,
 } from 'lucide-react'
 import { formatRelative, formatDateSafe } from '@/lib/format-date'
-import { EmptyState } from '@/features/shared'
+import { EmptyState, PageStack } from '@/features/shared'
 import { useAccountActivity } from '@/features/account'
 import {
   getActionCategory,
@@ -65,7 +65,7 @@ export default function ActivityPage() {
   const { activities, total, totalPages, isLoading } = useAccountActivity(user?.id, page, PER_PAGE)
 
   return (
-    <div className="grid gap-6">
+    <PageStack>
       {/* Header with Filter */}
       <Card>
         <CardHeader>
@@ -201,6 +201,6 @@ export default function ActivityPage() {
           </div>
         </CardContent>
       </Card>
-    </div>
+    </PageStack>
   )
 }

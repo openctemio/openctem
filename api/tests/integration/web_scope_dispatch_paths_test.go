@@ -57,8 +57,8 @@ func scanServiceOver(db *sql.DB, cmds commanddom.Repository) *scansvc.Service {
 	svc := scansvc.NewService(
 		postgres.NewScanRepository(pg), postgres.NewScanWorkflowRepository(pg), nil,
 		postgres.NewScanRunRepository(pg), postgres.NewScanWorkflowStepRepository(pg),
-		postgres.NewStepRunRepository(pg), cmds, nil, nil,
-		postgres.NewToolRepository(pg), nil, tenantSensors{}, nil,
+		postgres.NewStepRunRepository(pg), cmds, nil,
+		postgres.NewToolRepository(pg), tenantSensors{}, nil,
 		logger.New(logger.Config{Level: "error"}), allowAllTargetChecks()...,
 	)
 	svc.SetStepQueuer(scanrun.NewService(

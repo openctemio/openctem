@@ -105,6 +105,8 @@ interface ScopeExclusionsTableProps {
   onKindChange: (v: string) => void
   onStatusChange: (v: string) => void
   onPagination: (p: { pageIndex: number; pageSize: number }) => void
+  /** Controls the page puts first in the toolbar (which scope list is shown). */
+  leading?: React.ReactNode
 }
 
 export function ScopeExclusionsTable({
@@ -114,6 +116,7 @@ export function ScopeExclusionsTable({
   onKindChange,
   onStatusChange,
   onPagination,
+  leading,
 }: ScopeExclusionsTableProps) {
   const { t } = useTranslation()
   const canApproveExclusions = useHasPermission(Permission.ScopeExclusionsApprove)
@@ -372,6 +375,7 @@ export function ScopeExclusionsTable({
           showSearch={false}
           toolbarStart={
             <>
+              {leading}
               <div className="relative min-w-0 flex-1 sm:max-w-sm">
                 <SearchIcon className="pointer-events-none absolute start-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
                 <Input

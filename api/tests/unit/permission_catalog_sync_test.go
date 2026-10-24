@@ -49,6 +49,7 @@ var permSeedMigrations = []string{
 	"permission_findings_retest_checks",       // findings:retest_checks:write
 	"sensor_proxy_pools",                      // sensors:egress:*
 	"automations_permissions",                 // automations:publish (RFC-125)
+	"content_sources",                         // scans:sources:approve
 }
 
 // permRenameMigrations rename permission ids in place (old id → new id) with
