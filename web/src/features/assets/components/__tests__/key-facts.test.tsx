@@ -1,9 +1,14 @@
-import { describe, expect, it } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { fireEvent, render, screen, within } from '@testing-library/react'
 import { KeyFactsSection, factValue, hasKeyFacts } from '../key-facts'
 import { PropertiesSection } from '../asset-overview-sections'
 import { technologies } from '../../lib/service-facts'
 import type { Asset } from '../../types/asset.types'
+
+let servedCertificate: Asset | null = null
+vi.mock('../../hooks/use-served-certificate', () => ({
+  useServedCertificate: () => servedCertificate,
+}))
 
 function asset(type: string, metadata: Record<string, unknown>, subType?: string): Asset {
   return {
@@ -45,6 +50,37 @@ const SUBDOMAIN = {
     { name: 'React', category: 'js_library' },
   ],
 } as Asset
+
+describe('KeyFactsSection served certificate', () => {
+  const SERVICE = asset(
+    'service',
+    { port: 443, protocol: 'https', scheme: 'https', tls_fingerprint: 'ab:cd' },
+    'http'
+  )
+  const CERT = asset('certificate', {
+    subject_cn: 'shop.example.com',
+    sans: ['shop.example.com'],
+    issuer_org: 'Example CA',
+    not_after: new Date(Date.now() + 200 * 24 * 60 * 60 * 1000).toISOString(),
+  })
+
+  beforeEach(() => {
+    servedCertificate = null
+  })
+
+  it('reads the linked certificate instead of saying it was not collected', () => {
+    servedCertificate = CERT
+    render(<KeyFactsSection asset={SERVICE} />)
+    expect(screen.queryByText(/Not collected yet.*TLS/)).not.toBeInTheDocument()
+    expect(screen.getAllByText(/Example CA/).length).toBeGreaterThan(0)
+  })
+
+  it('still says so when no certificate is linked', () => {
+    const bare = asset('service', { port: 8443 }, 'http')
+    render(<KeyFactsSection asset={bare} />)
+    expect(screen.getByText(/Not collected yet/)).toHaveTextContent(/TLS/)
+  })
+})
 
 describe('KeyFactsSection', () => {
   it('a subdomain: resolves to (every address), CNAME, hosting, TLS, stack, DNS table', () => {

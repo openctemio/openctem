@@ -65,6 +65,19 @@ export function irreversibleTypeToConfirm(names: readonly string[]): string {
   return names.length === 1 && names[0] ? names[0] : String(names.length)
 }
 
+/** Names longer than this are not typed back; the short id is asked instead. */
+export const TYPE_TO_CONFIRM_MAX_NAME = 64
+
+/**
+ * The typeToConfirm value for one named item: its name, or a short id when
+ * the name is empty or too long to type.
+ */
+export function nameToConfirm(name: string | null | undefined, id: string): string {
+  const n = (name ?? '').trim()
+  if (n && n.length <= TYPE_TO_CONFIRM_MAX_NAME) return n
+  return id.slice(0, 8)
+}
+
 /** How many names ConfirmSample lists before "and N more". */
 export const CONFIRM_SAMPLE_SIZE = 5
 

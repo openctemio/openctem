@@ -56,7 +56,7 @@ import {
   Tag,
   Loader2,
 } from 'lucide-react'
-import { useDebounce } from '@/hooks/use-debounce'
+import { useSearchQuery } from '@/hooks/use-search-query'
 import { useListParams } from '@/hooks/use-list-params'
 import { Can, Permission } from '@/lib/permissions'
 import {
@@ -357,7 +357,7 @@ function ConfigurationsTab() {
   })
   const searchQuery = list.q
   const setSearchQuery = list.setSearch
-  const debouncedSearch = useDebounce(searchQuery, 300)
+  const debouncedSearch = useSearchQuery(searchQuery).term
   const statusFilter = list.filters.status as ConfigStatusFilter
   const setStatusFilter = (v: ConfigStatusFilter) => list.setFilter('status', v)
   const typeFilter = list.filters.type as ConfigTypeFilter
@@ -368,7 +368,7 @@ function ConfigurationsTab() {
   const setOriginFilter = (v: ConfigOriginFilter) => list.setFilter('origin', v)
   const tagFilter = list.filters.tag
   const setTagFilter = (v: string) => list.setFilter('tag', v)
-  const debouncedTag = useDebounce(tagFilter, 300)
+  const debouncedTag = useSearchQuery(tagFilter, { minChars: 1 }).term
   // One-off (quick) scans are hidden unless asked for.
   const oneOffParam = list.filters.one_off
   const setOneOffParam = (v: string) => list.setFilter('one_off', v)
