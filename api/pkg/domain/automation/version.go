@@ -84,13 +84,16 @@ type DefinitionEdge struct {
 type Definition struct {
 	Nodes []DefinitionNode `json:"nodes"`
 	Edges []DefinitionEdge `json:"edges"`
+	// MaxChangesPerRun is the change cap the version runs with (0: default).
+	MaxChangesPerRun int `json:"max_changes_per_run,omitempty"`
 }
 
 // DefinitionOf returns the definition of w's loaded graph, nodes ordered by
 // key and edges by their ends, so the same graph always gives the same
 // digest.
 func DefinitionOf(w *Workflow) Definition {
-	d := Definition{Nodes: make([]DefinitionNode, 0, len(w.Nodes)), Edges: make([]DefinitionEdge, 0, len(w.Edges))}
+	d := Definition{Nodes: make([]DefinitionNode, 0, len(w.Nodes)), Edges: make([]DefinitionEdge, 0, len(w.Edges)),
+		MaxChangesPerRun: w.MaxChangesPerRun}
 	for _, n := range w.Nodes {
 		if n == nil {
 			continue
@@ -138,7 +141,8 @@ func (d Definition) Digest() string {
 	canon := struct {
 		Nodes []node           `json:"nodes"`
 		Edges []DefinitionEdge `json:"edges"`
-	}{Edges: d.Edges}
+		Cap   int              `json:"cap,omitempty"`
+	}{Edges: d.Edges, Cap: d.MaxChangesPerRun}
 	for _, n := range d.Nodes {
 		canon.Nodes = append(canon.Nodes, node{NodeKey: n.NodeKey, NodeType: n.NodeType, Name: n.Name, Config: n.Config})
 	}
@@ -161,6 +165,7 @@ func (d Definition) Configs() []NodeConfig {
 // a version executes). Node ids are the ones the version stored.
 func (d Definition) Materialize(w *Workflow) *Workflow {
 	cp := *w
+	cp.MaxChangesPerRun = d.MaxChangesPerRun
 	cp.Nodes = make([]*Node, 0, len(d.Nodes))
 	cp.Edges = make([]*Edge, 0, len(d.Edges))
 	for _, n := range d.Nodes {

@@ -8,6 +8,7 @@ import {
   ErrorState,
   MetricStrip,
   PageHeader,
+  PageStack,
   RelativeTime,
   type MetricStripItem,
 } from '@/features/shared'
@@ -47,6 +48,7 @@ export default function AdminOverviewPage() {
           key: 'orgs',
           label: t('admin.overview.organizations', 'Organizations'),
           value: o.organizations.total,
+          href: '/organizations',
           hint: t('admin.overview.withoutOwner', '{count} without an owner', {
             count: o.organizations.without_owner,
           }),
@@ -54,6 +56,7 @@ export default function AdminOverviewPage() {
         },
         {
           key: 'sensors',
+          href: '/scanning/platform',
           label: t('admin.overview.platformSensors', 'Platform sensors online'),
           value:
             o.platform.platform_sensors.total > 0
@@ -63,46 +66,30 @@ export default function AdminOverviewPage() {
         },
         {
           key: 'failed',
+          href: '/security/activity',
           label: t('admin.overview.failedActions', 'Refused admin actions (24 h)'),
           value: o.security.failed_admin_actions_24h,
           tone: o.security.failed_admin_actions_24h > 0 ? 'danger' : 'default',
-        },
-        {
-          key: 'schema',
-          label: t('admin.overview.schema', 'Database schema'),
-          value: o.platform.schema_known ? o.platform.schema_version : '—',
-          hint:
-            o.platform.schema_shipped > 0
-              ? t('admin.overview.schemaShipped', 'This release ships {version}', {
-                  version: o.platform.schema_shipped,
-                })
-              : undefined,
-          tone:
-            o.platform.schema_dirty ||
-            (o.platform.schema_shipped > 0 &&
-              o.platform.schema_version !== o.platform.schema_shipped)
-              ? 'danger'
-              : 'default',
         },
       ]
     : []
 
   return (
     <Main>
-      <PageHeader
-        title={t('admin.nav.overview', 'Overview')}
-        description={t(
-          'admin.overview.description',
-          'What needs a platform administrator now, and the state of the installation.'
-        )}
-      >
-        {o && (
-          <span className="text-xs text-muted-foreground">
-            {t('admin.overview.updated', 'Updated')} <RelativeTime date={o.generated_at} />
-          </span>
-        )}
-      </PageHeader>
-      <div className="mt-5 space-y-6">
+      <PageStack>
+        <PageHeader
+          title={t('admin.nav.overview', 'Overview')}
+          description={t(
+            'admin.overview.description',
+            'What needs a platform administrator now, and the state of the installation.'
+          )}
+        >
+          {o && (
+            <span className="text-xs text-muted-foreground">
+              {t('admin.overview.updated', 'Updated')} <RelativeTime date={o.generated_at} />
+            </span>
+          )}
+        </PageHeader>
         {overview.error && !o ? (
           <ErrorState
             title={t('admin.overview.errorTitle', 'the overview')}
@@ -139,7 +126,7 @@ export default function AdminOverviewPage() {
             isLoading={activity.isLoading}
           />
         </section>
-      </div>
+      </PageStack>
     </Main>
   )
 }

@@ -27,6 +27,7 @@ import {
   DATE_FORMATS,
 } from '@/features/account'
 import type { UpdatePreferencesInput } from '@/features/account'
+import { PageStack } from '@/features/shared'
 
 const THEME_FALLBACK = { light: 'Light', dark: 'Dark', system: 'System' } as const
 
@@ -136,16 +137,16 @@ export default function PreferencesPage() {
   // Loading state
   if (isLoading) {
     return (
-      <div className="grid gap-6">
+      <PageStack>
         <Skeleton className="h-48 w-full" />
         <Skeleton className="h-48 w-full" />
         <Skeleton className="h-64 w-full" />
-      </div>
+      </PageStack>
     )
   }
 
   return (
-    <div className="grid gap-6">
+    <PageStack>
       {/* Appearance */}
       <Card>
         <CardHeader>
@@ -302,6 +303,6 @@ export default function PreferencesPage() {
             : t('account.preferences.save', 'Save preferences')}
         </Button>
       </div>
-    </div>
+    </PageStack>
   )
 }

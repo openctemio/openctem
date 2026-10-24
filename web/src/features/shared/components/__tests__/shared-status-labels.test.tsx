@@ -58,7 +58,7 @@ describe('RunStatusBadge is a HealthStatus', () => {
     ['timeout', 'warn', 'Timed out'],
     ['canceled', 'off', 'Canceled'],
     ['cancelled', 'off', 'Canceled'],
-    ['blocked', 'down', 'Blocked'],
+    ['blocked', 'paused', 'Blocked'],
   ]
   it.each(CASES)('%s is the %s state reading "%s", static', (status, state, word) => {
     const { container } = render(<RunStatusBadge status={status} />)

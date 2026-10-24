@@ -41,6 +41,41 @@ type runBatchReader interface {
 	ListByTenantAndIDs(ctx context.Context, tenantID shared.ID, ids []shared.ID) ([]*scanrun.Run, error)
 }
 
+// recentRunReader reads the latest runs of several scans for one tenant
+// (postgres.ScanRunRepository).
+type recentRunReader interface {
+	RecentByScans(ctx context.Context, tenantID shared.ID, scanIDs []shared.ID, limit int) (map[shared.ID][]scanrun.RecentRun, error)
+}
+
+// RecentRunsLimit is how many of a scan's latest runs the list shows (the
+// run dots and the success rate read the same window).
+const RecentRunsLimit = 10
+
+// RecentRuns returns the latest RecentRunsLimit runs of each scan, newest
+// first, keyed by scan id. Only scans of tenantID are asked for, and the
+// query is tenant-scoped too. Best-effort like LastRuns.
+func (s *Service) RecentRuns(ctx context.Context, tenantID shared.ID, scans []*scan.Scan) map[shared.ID][]scanrun.RecentRun {
+	reader, ok := s.runRepo.(recentRunReader)
+	if !ok {
+		return nil
+	}
+	ids := make([]shared.ID, 0, len(scans))
+	for _, sc := range scans {
+		if sc.TenantID == tenantID && sc.LastRunID != nil {
+			ids = append(ids, sc.ID)
+		}
+	}
+	if len(ids) == 0 {
+		return nil
+	}
+	out, err := reader.RecentByScans(ctx, tenantID, ids, RecentRunsLimit)
+	if err != nil {
+		s.logger.Warn("failed to read the scans' recent runs", "error", err)
+		return nil
+	}
+	return out
+}
+
 // templateNamer names templates a tenant may use
 // (postgres.ScanWorkflowRepository).
 type templateNamer interface {

@@ -34,7 +34,7 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table'
-import { EmptyState, ErrorState, RelativeTime } from '@/features/shared'
+import { EmptyState, ErrorState, RelativeTime, PageStack } from '@/features/shared'
 import { SetupLinkResult } from '@/features/shared/components/one-time-setup-link'
 import type { AccessRequest, ApproveAccessRequestResult } from '@/lib/api/generated'
 import { AdminApiError } from '@console/lib/admin-api/client'
@@ -236,7 +236,7 @@ export function AccessRequestsPanel({ canDecide }: { canDecide: boolean }) {
   const rows = data?.data ?? []
 
   return (
-    <div className="space-y-4">
+    <PageStack>
       <div className="flex items-center justify-between gap-3">
         <p className="text-sm text-muted-foreground">
           {data
@@ -391,6 +391,6 @@ export function AccessRequestsPanel({ canDecide }: { canDecide: boolean }) {
         handleConfirm={() => void reject()}
         confirmText={t('confirm.reject', 'Reject')}
       />
-    </div>
+    </PageStack>
   )
 }
