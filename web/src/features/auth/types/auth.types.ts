@@ -115,15 +115,6 @@ export type {
 } from '../schemas/auth.schema'
 
 // ============================================
-// RE-EXPORTS FROM ACTIONS
-// ============================================
-
-/**
- * Server action types
- */
-export type { HandleCallbackInput, RefreshTokenResult } from '../actions/auth-actions'
-
-// ============================================
 // COMPONENT PROP TYPES
 // ============================================
 

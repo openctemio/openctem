@@ -28,7 +28,7 @@ import {
 } from '@/components/ui/select'
 import { cn } from '@/lib/utils'
 import type { Asset, AssetType } from '@/features/assets/types'
-import { ASSET_TYPE_LABELS, ASSET_TYPE_COLORS } from '@/features/assets/types'
+import { ASSET_TYPE_LABELS, ASSET_TYPE_TILE } from '@/features/assets/types'
 import { useActiveAssetTypes } from '@/features/asset-types/api/use-asset-type-api'
 import type { CreateGroupFormData, NewAssetFormData } from './types'
 
@@ -283,10 +283,7 @@ export function AddAssetsStep({
               <div className="p-1.5 space-y-1">
                 {filteredAssets.map((asset) => {
                   const isSelected = data.selectedAssetIds.includes(asset.id)
-                  const colors = ASSET_TYPE_COLORS[asset.type] || {
-                    bg: 'bg-gray-500/15',
-                    text: 'text-gray-600',
-                  }
+                  const colors = ASSET_TYPE_TILE
 
                   return (
                     <div
@@ -401,10 +398,7 @@ export function AddAssetsStep({
             ) : (
               <div className="space-y-1.5">
                 {data.newAssets.map((asset) => {
-                  const colors = ASSET_TYPE_COLORS[asset.type] || {
-                    bg: 'bg-gray-500/15',
-                    text: 'text-gray-600',
-                  }
+                  const colors = ASSET_TYPE_TILE
 
                   return (
                     <div
@@ -458,10 +452,7 @@ export function AddAssetsStep({
                   {} as Record<AssetType, number>
                 )
               ).map(([type, count]) => {
-                const colors = ASSET_TYPE_COLORS[type as AssetType] || {
-                  bg: 'bg-gray-500/15',
-                  text: 'text-gray-600',
-                }
+                const colors = ASSET_TYPE_TILE
                 return (
                   <Badge key={type} variant="outline" className={cn('text-xs', colors.text)}>
                     {getAssetTypeName(type)}: {count}
