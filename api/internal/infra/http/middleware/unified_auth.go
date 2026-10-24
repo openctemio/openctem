@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"slices"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/openctemio/openctem/api/internal/config"
@@ -103,6 +104,32 @@ func extractTokenWithSource(r *http.Request, cookieName string) (string, bool) {
 	return "", false
 }
 
+// revocationReadWindow is how long reads continue after the revoked-session
+// lookup first fails; the access token lifetime (15 minutes) bounds the
+// exposure of a token whose session was revoked meanwhile, and this window
+// bounds it further.
+const revocationReadWindow = 2 * time.Minute
+
+// revocationOutage tracks one continuous failure of the revoked-session
+// lookup. The first failure starts the window; a successful lookup ends it.
+// The start is one atomic (unix nanoseconds, 0 = no outage), so the hot
+// success path takes no lock.
+type revocationOutage struct {
+	since atomic.Int64
+}
+
+// allowRead reports whether a read may proceed at now during the outage.
+func (o *revocationOutage) allowRead(now time.Time) bool {
+	o.since.CompareAndSwap(0, now.UnixNano())
+	return now.Sub(time.Unix(0, o.since.Load())) <= revocationReadWindow
+}
+
+func (o *revocationOutage) clear() {
+	if o.since.Load() != 0 {
+		o.since.Store(0)
+	}
+}
+
 // UnifiedAuth creates an authentication middleware that supports both local and OIDC authentication.
 // The middleware tries to validate tokens based on the configured auth provider:
 // - "local": Only validates local JWT tokens
@@ -113,6 +140,7 @@ func extractTokenWithSource(r *http.Request, cookieName string) (string, bool) {
 // 1. Authorization header (Bearer <token>)
 // 2. httpOnly cookie (auth_token) — used by WebSocket upgrade and cookie SPA
 func UnifiedAuth(cfg UnifiedAuthConfig) func(http.Handler) http.Handler {
+	outage := &revocationOutage{}
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			tokenString, fromCookie := extractTokenWithSource(r, cfg.CookieName)
@@ -157,12 +185,25 @@ func UnifiedAuth(cfg UnifiedAuthConfig) func(http.Handler) http.Handler {
 				if sid := GetSessionID(ctx); sid != "" {
 					revoked, rerr := cfg.RevokedSessions.IsSessionRevoked(ctx, sid)
 					if rerr != nil {
+						// The lookup is down, so a signed-out session cannot be
+						// told from a live one. Writes fail closed at once;
+						// reads continue for a short bounded window so a brief
+						// outage does not sign everyone out, then fail closed
+						// too until a lookup succeeds.
 						if cfg.Logger != nil {
-							cfg.Logger.Warn("session revocation check failed; allowing token until it expires", "error", rerr)
+							cfg.Logger.Warn("session revocation check failed", "error", rerr, "method", r.Method)
 						}
-					} else if revoked {
-						apierror.Unauthorized("Session has been revoked").WriteJSON(w)
-						return
+						if !isSafeMethod(r.Method) || !outage.allowRead(time.Now()) {
+							w.Header().Set("Retry-After", "5")
+							apierror.ServiceUnavailable("Session verification is temporarily unavailable").WriteJSON(w)
+							return
+						}
+					} else {
+						outage.clear()
+						if revoked {
+							apierror.Unauthorized("Session has been revoked").WriteJSON(w)
+							return
+						}
 					}
 				}
 			}

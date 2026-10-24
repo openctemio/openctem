@@ -1228,6 +1228,10 @@ func wireStepUpGate(handlers *routes.Handlers, svc *Services) {
 	if svc.Suppression != nil {
 		svc.Suppression.SetStepUpGate(gate)
 	}
+	if svc.Workflow != nil {
+		// Publishing elevated and high-risk automations (RFC-125 D6).
+		svc.Workflow.SetStepUpGate(gate)
+	}
 	if svc.Group != nil {
 		// Edits of the approval policy's security pool group.
 		svc.Group.SetStepUpGate(gate)

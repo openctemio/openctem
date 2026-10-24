@@ -510,7 +510,7 @@ export const sidebarData: SidebarData = {
           title: 'Automations',
           url: '/automations',
           icon: Zap,
-          permission: Permission.WorkflowsRead,
+          permission: Permission.AutomationsRead,
           module: 'workflows',
           keywords: ['workflow', 'playbook', 'rule'],
         },

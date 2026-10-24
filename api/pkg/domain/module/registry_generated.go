@@ -518,7 +518,7 @@ var Registry = []Definition{
 		Icon:        "GitPullRequest",
 		Category:    "mobilization", DisplayOrder: 43, Release: ReleaseStatusReleased,
 		UserFacing: true,
-		Permission: "findings:workflows:read",
+		Permission: "automations:read",
 		Depends: []Dependency{
 			{ModuleID: ModuleFindings, Type: DependencySoft, Reason: "finding-lifecycle triggers are a subset of workflow triggers"},
 			{ModuleID: ModuleIntegrations, Type: DependencySoft, Reason: "most workflow actions route through integrations (Jira, Slack)"},

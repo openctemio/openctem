@@ -11,6 +11,7 @@ import (
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
 	"github.com/openctemio/openctem/api/pkg/apierror"
 	"github.com/openctemio/openctem/api/pkg/domain/automation"
+	"github.com/openctemio/openctem/api/pkg/domain/permission"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/logger"
 	"github.com/openctemio/openctem/api/pkg/validator"
@@ -264,7 +265,7 @@ func (h *WorkflowHandler) CreateWorkflow(w http.ResponseWriter, r *http.Request)
 	userUUID, _ := shared.IDFromString(userID) // May be empty for service accounts
 
 	// AuthZ: a user may only build action nodes whose underlying mutation they
-	// are permitted to perform directly (WorkflowsWrite alone is not enough).
+	// are permitted to perform directly (AutomationsWrite alone is not enough).
 	actionCfgs := make([]*NodeConfigRequest, len(req.Nodes))
 	for i := range req.Nodes {
 		actionCfgs[i] = req.Nodes[i].Config
@@ -434,8 +435,13 @@ func (h *WorkflowHandler) UpdateWorkflow(w http.ResponseWriter, r *http.Request)
 
 	userUUID, _ := shared.IDFromString(userID)
 
-	// Switching a workflow on makes its steps run (as the caller, who
-	// becomes its owner): it needs the permission of every step.
+	// Switching an automation on or off is a publisher's decision
+	// (automations:publish); switching it on makes its steps run as the
+	// caller, who becomes its owner, so it needs every step's permission too.
+	if req.IsActive != nil && !middleware.HasPermission(r.Context(), string(permission.AutomationsPublish)) {
+		apierror.Forbidden("switching an automation on or off needs '" + string(permission.AutomationsPublish) + "'").WriteJSON(w)
+		return
+	}
 	if req.IsActive != nil && *req.IsActive && !h.requireWorkflowPermissions(w, r, tenantUUID, workflowUUID) {
 		return
 	}
@@ -1283,6 +1289,13 @@ func (h *WorkflowHandler) handleServiceError(w http.ResponseWriter, err error) {
 		apierror.NotFound("Workflow").WriteJSON(w)
 	case errors.Is(err, shared.ErrAlreadyExists):
 		apierror.Conflict("Workflow already exists").WriteJSON(w)
+	case errors.Is(err, shared.ErrConflict):
+		var de *shared.DomainError
+		if errors.As(err, &de) && de.Code != "" {
+			apierror.New(http.StatusConflict, apierror.Code(de.Code), de.Message).WriteJSON(w)
+			return
+		}
+		apierror.Conflict(err.Error()).WriteJSON(w)
 	case errors.Is(err, shared.ErrValidation):
 		// A domain error carries a stable code (WORKFLOW_GRAPH_CYCLE,
 		// UNSUPPORTED_WORKFLOW_FEATURE, ...) the client can act on.
@@ -1298,6 +1311,10 @@ func (h *WorkflowHandler) handleServiceError(w http.ResponseWriter, err error) {
 		var de *shared.DomainError
 		if errors.As(err, &de) && de.Code == automationsvc.ErrCodeRunNotAuthorized {
 			apierror.Forbidden(de.Message).WriteJSON(w)
+			return
+		}
+		if errors.As(err, &de) && de.Code != "" {
+			apierror.New(http.StatusForbidden, apierror.Code(de.Code), de.Message).WriteJSON(w)
 			return
 		}
 		apierror.Forbidden("").WriteJSON(w)

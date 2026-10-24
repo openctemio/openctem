@@ -1,4 +1,4 @@
--- Reverts 003387_content_sources: template_sources comes back with the
+-- Reverts 003403_content_sources: template_sources comes back with the
 -- organizations' git sources (without credentials, snapshots or platform
 -- sources); the content packs snapshots used stay in the pack store.
 

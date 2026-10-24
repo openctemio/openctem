@@ -53,7 +53,7 @@ export const MODULE_REGISTRY: readonly ModuleDefinition[] = [
   { id: 'compensating_controls', name: 'Compensating Controls', core: false, release: 'released', userFacing: true, permission: 'ctem:compensating_controls:read' },
   { id: 'remediation', name: 'Remediation', core: false, release: 'released', userFacing: true, permission: 'findings:remediation:read' },
   { id: 'suppressions', name: 'Suppressions', core: false, release: 'released', userFacing: false, permission: 'findings:suppressions:read' },
-  { id: 'workflows', name: 'Workflows', core: false, release: 'released', userFacing: true, permission: 'findings:workflows:read' },
+  { id: 'workflows', name: 'Workflows', core: false, release: 'released', userFacing: true, permission: 'automations:read' },
   { id: 'reports', name: 'Reports', core: false, release: 'released', userFacing: true, permission: 'reports:read' },
   { id: 'audit', name: 'Audit', core: true, release: 'released', userFacing: true, permission: 'audit:read' },
   { id: 'ctem_maturity', name: 'CTEM Maturity', core: false, release: 'released', userFacing: true, permission: 'dashboard:read' },

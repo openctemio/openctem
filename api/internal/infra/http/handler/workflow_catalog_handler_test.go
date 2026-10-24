@@ -16,7 +16,7 @@ import (
 func TestWorkflowCatalog_ListsRunnableTypesWithPermission(t *testing.T) {
 	h := &WorkflowHandler{logger: logger.NewNop()}
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/workflows/catalog", nil)
-	req = req.WithContext(authzCtx(false, string(permission.WorkflowsRead), string(permission.FindingsWrite)))
+	req = req.WithContext(authzCtx(false, string(permission.AutomationsRead), string(permission.FindingsWrite)))
 	rec := httptest.NewRecorder()
 	h.GetCatalog(rec, req)
 	if rec.Code != http.StatusOK {
