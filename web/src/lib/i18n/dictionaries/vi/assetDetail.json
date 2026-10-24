@@ -9,7 +9,7 @@
   "assetDetail.notFoundHint": "Tài sản có thể đã bị xóa hoặc bạn không có quyền truy cập.",
   "assetDetail.backToAssets": "Quay lại tài sản",
   "assetDetail.back": "Quay lại",
-  "assetDetail.subtitle": "Tài sản · {type}",
+  "assetDetail.subtitle": "Loại tài sản: {type}",
   "assetDetail.viewFindings": "Xem {count} phát hiện của tài sản này",
   "assetDetail.findings": "Phát hiện",
   "assetDetail.properties": "Thuộc tính",
