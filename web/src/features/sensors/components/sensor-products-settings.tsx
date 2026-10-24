@@ -37,7 +37,7 @@ import {
   TableRow,
 } from '@/components/ui/table'
 import { useTranslation } from '@/context/i18n-provider'
-import { EmptyState, ErrorState, PageHeader } from '@/features/shared'
+import { EmptyState, ErrorState, PageHeader, PageStack } from '@/features/shared'
 import { getErrorMessage } from '@/lib/api/error-handler'
 import {
   deleteCustomProduct,
@@ -219,7 +219,7 @@ export function SensorProductsSettings() {
   const notSet = t('sensors.customProducts.notSet')
 
   return (
-    <>
+    <PageStack>
       <PageHeader
         title={t('sensors.customProducts.title')}
         description={t('sensors.customProducts.description')}
@@ -231,120 +231,118 @@ export function SensorProductsSettings() {
           </Button>
         </Can>
       </PageHeader>
-      <div className="mt-5 space-y-4">
-        <Alert>
-          <Info className="h-4 w-4" />
-          <AlertDescription>{t('sensors.customProducts.note')}</AlertDescription>
-        </Alert>
-        {!canWrite && (
-          <p className="inline-flex items-center gap-1 text-sm text-muted-foreground">
-            <Lock className="h-3.5 w-3.5" aria-hidden />
-            {t('sensors.customProducts.readOnly')}
-          </p>
-        )}
-        {canWrite && suggestions.length > 0 && (
-          <div className="space-y-2" data-testid="custom-product-suggestions">
-            <p className="text-sm text-muted-foreground">{t('sensors.customProducts.suggest')}</p>
-            <div className="flex flex-wrap gap-2">
-              {suggestions.map((p) => (
-                <Button
-                  key={p}
-                  type="button"
-                  size="sm"
-                  variant="outline"
-                  onClick={() => setEditing({ product: p, latest: '', min: '', isNew: true })}
-                >
-                  <Plus className="size-3.5" aria-hidden="true" />
-                  {p}
-                </Button>
-              ))}
-            </div>
+      <Alert>
+        <Info className="h-4 w-4" />
+        <AlertDescription>{t('sensors.customProducts.note')}</AlertDescription>
+      </Alert>
+      {!canWrite && (
+        <p className="inline-flex items-center gap-1 text-sm text-muted-foreground">
+          <Lock className="h-3.5 w-3.5" aria-hidden />
+          {t('sensors.customProducts.readOnly')}
+        </p>
+      )}
+      {canWrite && suggestions.length > 0 && (
+        <div className="space-y-2" data-testid="custom-product-suggestions">
+          <p className="text-sm text-muted-foreground">{t('sensors.customProducts.suggest')}</p>
+          <div className="flex flex-wrap gap-2">
+            {suggestions.map((p) => (
+              <Button
+                key={p}
+                type="button"
+                size="sm"
+                variant="outline"
+                onClick={() => setEditing({ product: p, latest: '', min: '', isNew: true })}
+              >
+                <Plus className="size-3.5" aria-hidden="true" />
+                {p}
+              </Button>
+            ))}
           </div>
-        )}
-        {isLoading && <Skeleton className="h-40 w-full" />}
-        {error && !isLoading && (
-          <ErrorState
-            title={t('sensors.customProducts.loadError')}
-            error={error}
-            onRetry={() => void mutate()}
-          />
-        )}
-        {!isLoading && !error && items?.length === 0 && (
-          <EmptyState
-            icon={Package}
-            title={t('sensors.customProducts.emptyTitle')}
-            description={t('sensors.customProducts.empty')}
-          />
-        )}
-        {items && items.length > 0 && (
-          <div className="overflow-x-auto rounded-md border">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>{t('sensors.customProducts.product')}</TableHead>
-                  <TableHead>{t('sensors.customProducts.latest')}</TableHead>
-                  <TableHead>{t('sensors.customProducts.min')}</TableHead>
-                  <TableHead className="hidden sm:table-cell">
-                    {t('sensors.customProducts.updated')}
+        </div>
+      )}
+      {isLoading && <Skeleton className="h-40 w-full" />}
+      {error && !isLoading && (
+        <ErrorState
+          title={t('sensors.customProducts.loadError')}
+          error={error}
+          onRetry={() => void mutate()}
+        />
+      )}
+      {!isLoading && !error && items?.length === 0 && (
+        <EmptyState
+          icon={Package}
+          title={t('sensors.customProducts.emptyTitle')}
+          description={t('sensors.customProducts.empty')}
+        />
+      )}
+      {items && items.length > 0 && (
+        <div className="overflow-x-auto rounded-md border">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>{t('sensors.customProducts.product')}</TableHead>
+                <TableHead>{t('sensors.customProducts.latest')}</TableHead>
+                <TableHead>{t('sensors.customProducts.min')}</TableHead>
+                <TableHead className="hidden sm:table-cell">
+                  {t('sensors.customProducts.updated')}
+                </TableHead>
+                {canWrite && (
+                  <TableHead className="w-24">
+                    <span className="sr-only">{t('sensors.customProducts.actions')}</span>
                   </TableHead>
+                )}
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {items.map((i) => (
+                <TableRow key={i.product} data-testid={`custom-product-${i.product}`}>
+                  <TableCell className="font-mono text-sm">{i.product}</TableCell>
+                  <TableCell className="tabular-nums">{i.latest_version || notSet}</TableCell>
+                  <TableCell className="tabular-nums">{i.min_version || notSet}</TableCell>
+                  <TableCell className="hidden text-muted-foreground sm:table-cell">
+                    {exactTime(i.updated_at) ?? ''}
+                  </TableCell>
                   {canWrite && (
-                    <TableHead className="w-24">
-                      <span className="sr-only">{t('sensors.customProducts.actions')}</span>
-                    </TableHead>
+                    <TableCell>
+                      <div className="flex justify-end gap-1">
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon"
+                          aria-label={t('sensors.customProducts.edit', undefined, {
+                            product: i.product,
+                          })}
+                          onClick={() =>
+                            setEditing({
+                              product: i.product,
+                              latest: i.latest_version,
+                              min: i.min_version,
+                              isNew: false,
+                            })
+                          }
+                        >
+                          <Pencil className="size-4" aria-hidden="true" />
+                        </Button>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon"
+                          aria-label={t('sensors.customProducts.delete', undefined, {
+                            product: i.product,
+                          })}
+                          onClick={() => setRemoving(i)}
+                        >
+                          <Trash2 className="size-4" aria-hidden="true" />
+                        </Button>
+                      </div>
+                    </TableCell>
                   )}
                 </TableRow>
-              </TableHeader>
-              <TableBody>
-                {items.map((i) => (
-                  <TableRow key={i.product} data-testid={`custom-product-${i.product}`}>
-                    <TableCell className="font-mono text-sm">{i.product}</TableCell>
-                    <TableCell className="tabular-nums">{i.latest_version || notSet}</TableCell>
-                    <TableCell className="tabular-nums">{i.min_version || notSet}</TableCell>
-                    <TableCell className="hidden text-muted-foreground sm:table-cell">
-                      {exactTime(i.updated_at) ?? ''}
-                    </TableCell>
-                    {canWrite && (
-                      <TableCell>
-                        <div className="flex justify-end gap-1">
-                          <Button
-                            type="button"
-                            variant="ghost"
-                            size="icon"
-                            aria-label={t('sensors.customProducts.edit', undefined, {
-                              product: i.product,
-                            })}
-                            onClick={() =>
-                              setEditing({
-                                product: i.product,
-                                latest: i.latest_version,
-                                min: i.min_version,
-                                isNew: false,
-                              })
-                            }
-                          >
-                            <Pencil className="size-4" aria-hidden="true" />
-                          </Button>
-                          <Button
-                            type="button"
-                            variant="ghost"
-                            size="icon"
-                            aria-label={t('sensors.customProducts.delete', undefined, {
-                              product: i.product,
-                            })}
-                            onClick={() => setRemoving(i)}
-                          >
-                            <Trash2 className="size-4" aria-hidden="true" />
-                          </Button>
-                        </div>
-                      </TableCell>
-                    )}
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </div>
-        )}
-      </div>
+              ))}
+            </TableBody>
+          </Table>
+        </div>
+      )}
       {editing && (
         <ProductDialog
           key={`${editing.isNew}:${editing.product}`}
@@ -365,6 +363,6 @@ export function SensorProductsSettings() {
         isLoading={busy}
         handleConfirm={confirmRemove}
       />
-    </>
+    </PageStack>
   )
 }

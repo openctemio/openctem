@@ -35,7 +35,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Skeleton } from '@/components/ui/skeleton'
 import { useTranslation } from '@/context/i18n-provider'
-import { ErrorState, RelativeTime } from '@/features/shared'
+import { ErrorState, RelativeTime, PageStack } from '@/features/shared'
 import {
   generateRecoveryCodes,
   registerSecurityKey,
@@ -116,7 +116,7 @@ export function SecurityKeysPanel({
   const canAdd = data.webauthn_enabled && supported && keys.length < data.max_authenticators
 
   return (
-    <div className="space-y-4">
+    <PageStack>
       <PolicyState factors={data} />
 
       <Card>
@@ -297,7 +297,7 @@ export function SecurityKeysPanel({
         handleConfirm={() => void generate()}
       />
       <RecoveryCodesDialog codes={codes} onDone={() => setCodes(null)} />
-    </div>
+    </PageStack>
   )
 }
 
