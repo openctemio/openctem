@@ -36,7 +36,7 @@ import {
 } from '../lib/automation-graph'
 import {
   catalogEntriesFor,
-  removedTypeOf,
+  unlistedTypeOf,
   skippedEntries,
   type StepCount,
 } from '../lib/automation-lifecycle'
@@ -102,7 +102,7 @@ function AutomationNodeView({ data, type, selected }: NodeProps<AutomationNode>)
   const { t } = useTranslation()
   const { catalog, counts } = useContext(CanvasContext)
   const kind = asKind(type)
-  const removed = removedTypeOf(catalog, kind, data.config)
+  const removed = unlistedTypeOf(catalog, kind, data.config)
   const count = counts?.get(data.nodeKey)
   return (
     <div
@@ -202,7 +202,7 @@ function StepList({
     <ol className="space-y-2 p-3" aria-label={t('automations.canvas.stepsList', 'Steps')}>
       {steps.map(({ node, depth }) => {
         const kind = asKind(node.type)
-        const removed = removedTypeOf(catalog, kind, node.data.config)
+        const removed = unlistedTypeOf(catalog, kind, node.data.config)
         const count = counts?.get(node.data.nodeKey)
         return (
           <li key={node.id} style={{ marginInlineStart: `${Math.min(depth, 4) * 12}px` }}>

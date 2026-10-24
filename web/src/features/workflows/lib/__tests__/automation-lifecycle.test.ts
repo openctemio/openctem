@@ -8,7 +8,7 @@ import {
   countsFromSteps,
   problemsFromError,
   publishRequirements,
-  removedTypeOf,
+  unlistedTypeOf,
   skippedEntries,
 } from '../automation-lifecycle'
 
@@ -32,18 +32,18 @@ describe('catalog helpers', () => {
   })
 
   it('flags a stored type the catalog does not list, by id', () => {
-    expect(removedTypeOf(catalog, 'action', { action_type: 'http_request' })).toBe('http_request')
-    expect(removedTypeOf(catalog, 'trigger', { trigger_type: 'schedule' })).toBe('schedule')
-    expect(removedTypeOf(catalog, 'notification', { notification_type: 'pagerduty' })).toBe(
+    expect(unlistedTypeOf(catalog, 'action', { action_type: 'http_request' })).toBe('http_request')
+    expect(unlistedTypeOf(catalog, 'trigger', { trigger_type: 'schedule' })).toBe('schedule')
+    expect(unlistedTypeOf(catalog, 'notification', { notification_type: 'pagerduty' })).toBe(
       'pagerduty'
     )
     // A disallowed type is still a runnable type: not removed.
-    expect(removedTypeOf(catalog, 'action', { action_type: 'trigger_scan' })).toBeUndefined()
-    expect(removedTypeOf(catalog, 'condition', { condition_expr: 'x' })).toBeUndefined()
+    expect(unlistedTypeOf(catalog, 'action', { action_type: 'trigger_scan' })).toBeUndefined()
+    expect(unlistedTypeOf(catalog, 'condition', { condition_expr: 'x' })).toBeUndefined()
   })
 
   it('flags nothing before the catalog has loaded', () => {
-    expect(removedTypeOf(undefined, 'action', { action_type: 'http_request' })).toBeUndefined()
+    expect(unlistedTypeOf(undefined, 'action', { action_type: 'http_request' })).toBeUndefined()
   })
 })
 

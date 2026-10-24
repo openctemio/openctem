@@ -46,7 +46,7 @@ export function nodeTypeId(
  * The type id when a node uses a type the catalog does not list (removed or
  * unknown), else undefined. Nothing is flagged until the catalog has loaded.
  */
-export function removedTypeOf(
+export function unlistedTypeOf(
   catalog: WorkflowCatalog | undefined,
   kind: WorkflowNodeType | string | undefined,
   config: WorkflowNodeConfig | undefined

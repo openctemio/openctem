@@ -19,7 +19,7 @@ export function StepGlyph({ kind, className }: { kind: string; className?: strin
       aria-hidden
       data-glyph={kind}
       className={cn(
-        'inline-grid size-4 shrink-0 place-items-center border border-foreground/40 text-[9px] leading-none font-semibold text-muted-foreground',
+        'inline-grid size-5 shrink-0 place-items-center border border-foreground/40 text-xs leading-none font-semibold text-muted-foreground',
         g.shape,
         className
       )}

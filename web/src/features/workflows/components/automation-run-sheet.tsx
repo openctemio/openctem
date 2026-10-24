@@ -8,6 +8,7 @@ import { useTranslation } from '@/context/i18n-provider'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
+import { ConfirmDialog } from '@/components/confirm-dialog'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { DetailHeader, DetailSheet, RunStatusBadge } from '@/features/shared'
@@ -59,6 +60,7 @@ export function AutomationRunDetail({
   // Cancelling narrows, so it needs only the write permission; continuing needs publish.
   const canWrite = useHasPermission(Permission.AutomationsWrite)
   const [busy, setBusy] = useState<null | 'resume' | 'cancel'>(null)
+  const [confirmCancel, setConfirmCancel] = useState(false)
   const mode = run.mode ?? 'live'
   const rows = useMemo(() => traceRowsFromNodeRuns(run.node_runs, nodeName), [run, nodeName])
   const deliveries = run.deliveries ?? []
@@ -115,7 +117,7 @@ export function AutomationRunDetail({
               <Button
                 size="sm"
                 variant="outline"
-                onClick={() => act('cancel')}
+                onClick={() => setConfirmCancel(true)}
                 disabled={!canWrite || busy !== null}
               >
                 <XCircle className="h-4 w-4" />
@@ -148,6 +150,22 @@ export function AutomationRunDetail({
           </p>
         </TabsContent>
       </Tabs>
+      <ConfirmDialog
+        open={confirmCancel}
+        onOpenChange={(o) => !o && busy === null && setConfirmCancel(false)}
+        title={t('automations.run.cancelTitle', 'Cancel this run?')}
+        desc={t(
+          'automations.run.cancelDesc',
+          'The run stops here and its remaining steps do not happen. Changes already made stay.'
+        )}
+        confirmText={t('automations.run.cancelConfirm', 'Cancel this run')}
+        destructive
+        isLoading={busy === 'cancel'}
+        handleConfirm={async () => {
+          await act('cancel')
+          setConfirmCancel(false)
+        }}
+      />
     </div>
   )
 }

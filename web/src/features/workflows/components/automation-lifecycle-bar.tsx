@@ -49,7 +49,7 @@ import {
   type WorkflowValidateResponse,
 } from '@/lib/api/workflow-types'
 import { Permission, useHasPermission } from '@/lib/permissions'
-import { useUser } from '@/stores/auth-store'
+import { useDisplayUser } from '@/hooks/use-display-user'
 import { cn } from '@/lib/utils'
 import {
   approvalState,
@@ -183,7 +183,7 @@ export function AutomationLifecycleBar({
   const { t, locale } = useTranslation()
   const labels = useAutomationLabels()
   const person = usePersonName()
-  const me = useUser()
+  const me = useDisplayUser()
   const canWrite = useHasPermission(Permission.AutomationsWrite)
   const canPublish = useHasPermission(Permission.AutomationsPublish)
   const [limit, setLimit] = useState<number>(WORKFLOW_PREVIEW_LIMITS[0])

@@ -22,7 +22,7 @@ vi.mock('@/lib/permissions', async (orig) => ({
   useHasPermission: (p: string) =>
     p === 'automations:publish' ? perms.publish : p === 'automations:write' ? perms.write : false,
 }))
-vi.mock('@/stores/auth-store', () => ({ useUser: () => me }))
+vi.mock('@/hooks/use-display-user', () => ({ useDisplayUser: () => me }))
 vi.mock('@/lib/api/workflow-hooks', () => ({
   ...api,
   useWorkflowVersions: () => ({ data: { items: [] }, isLoading: false, mutate: vi.fn() }),
