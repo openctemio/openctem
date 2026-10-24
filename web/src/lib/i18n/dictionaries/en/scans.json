@@ -2148,5 +2148,6 @@
   "scans.workflows.ownerAll": "All workflows",
   "scans.workflows.ownerMine": "My workflows",
   "scans.workflows.ownerSystem": "System templates",
-  "scans.ci.tabsLabel": "CI/CD sections"
+  "scans.ci.tabsLabel": "CI/CD sections",
+  "scans.ci.sectionLabel": "Section"
 }

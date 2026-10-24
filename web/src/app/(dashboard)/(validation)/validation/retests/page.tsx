@@ -8,6 +8,9 @@ import { PentestRetestsSection } from '@/features/pentest/components/pentest-ret
  * Validation › Retest queue: every finding awaiting re-verification, across
  * campaigns (was /pentest/retests; 308 from there). A campaign's own queue is
  * the Retests tab of its page.
+ *
+ * anatomy-ok: inside a PageStack (PentestRetestsSection renders the header
+ * into its own PageStack).
  */
 export default function RetestQueuePage() {
   return (
