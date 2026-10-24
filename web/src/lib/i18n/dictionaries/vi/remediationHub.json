@@ -355,5 +355,16 @@
   "remediationHub.detail.openFinding": "Mở {title}",
   "remediationHub.crumb.label": "Bạn đến từ đâu",
   "remediationHub.crumb.tasks": "Tác vụ khắc phục",
-  "remediationHub.crumb.finding": "Phát hiện"
+  "remediationHub.crumb.finding": "Phát hiện",
+  "remediationHub.suggestions.confirmBulkTitle": "Chấp nhận {n} đề xuất?",
+  "remediationHub.suggestions.confirmOneTitle": "Chấp nhận \"{title}\"?",
+  "remediationHub.suggestions.confirmDesc": "Chấp nhận sẽ tạo các nhiệm vụ khắc phục và có thể chuyển phát hiện của chúng ra khỏi các nhiệm vụ khác. Bạn có thể chuyển phát hiện giữa các nhiệm vụ sau đó.",
+  "remediationHub.suggestions.confirmBulkButton": "Chấp nhận {n} đề xuất",
+  "remediationHub.suggestions.confirmOneButton": "Chấp nhận đề xuất",
+  "remediationHub.tasks.holdTitle": "Tạm dừng \"{title}\"?",
+  "remediationHub.tasks.resumeTitle": "Tiếp tục \"{title}\"?",
+  "remediationHub.tasks.holdDesc": "Nhiệm vụ hiển thị là Tạm dừng cho đến khi có người tiếp tục. Các phát hiện vẫn nằm trong nhiệm vụ.",
+  "remediationHub.tasks.resumeDesc": "Nhiệm vụ thoát khỏi Tạm dừng và trạng thái lại theo các phát hiện.",
+  "remediationHub.tasks.holdButton": "Tạm dừng nhiệm vụ",
+  "remediationHub.tasks.resumeButton": "Tiếp tục nhiệm vụ"
 }

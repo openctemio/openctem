@@ -27,6 +27,7 @@ import { useTranslation } from '@/context/i18n-provider'
 import { usePermissions } from '@/context/permission-provider'
 import { Permission } from '@/lib/permissions'
 import { Button } from '@/components/ui/button'
+import { ConfirmDialog } from '@/components/confirm-dialog'
 import { Input } from '@/components/ui/input'
 import {
   Select,
@@ -65,6 +66,11 @@ export function TasksView({ defaultView = 'open' }: { defaultView?: TaskView }) 
   // Creating a task from a query runs the query: findings read too.
   const canQueryCreate = canWrite && hasPermission(Permission.FindingsRead)
   const [queryOpen, setQueryOpen] = useState(false)
+  // A card dropped on On hold or back to work waits here for a confirmation.
+  const [pendingHold, setPendingHold] = useState<{
+    task: RemediationTask
+    hold: boolean
+  } | null>(null)
   const owners = useOwnerNames()
   const revalidate = useRevalidateHub()
   const view = (params.get('view') as TaskView) || defaultView
@@ -182,16 +188,24 @@ export function TasksView({ defaultView = 'open' }: { defaultView?: TaskView }) 
         toast.info(t('remediationHub.tasks.derivedOnly'))
         return
       }
-      try {
-        await hubApi.updateTask(task.id, { version: task.version, hold })
-        toast.success(hold ? t('remediationHub.toast.held') : t('remediationHub.toast.resumed'))
-        await Promise.all([mutate(), revalidate()])
-      } catch (err) {
-        toast.error(apiMessage(err, t('remediationHub.toast.failed')))
-      }
+      setPendingHold({ task, hold })
     },
-    [mutate, revalidate, t, tasks]
+    [t, tasks]
   )
+
+  const applyHold = useCallback(async () => {
+    if (!pendingHold) return
+    const { task, hold } = pendingHold
+    try {
+      await hubApi.updateTask(task.id, { version: task.version, hold })
+      toast.success(hold ? t('remediationHub.toast.held') : t('remediationHub.toast.resumed'))
+      setPendingHold(null)
+      await Promise.all([mutate(), revalidate()])
+    } catch (err) {
+      setPendingHold(null)
+      toast.error(apiMessage(err, t('remediationHub.toast.failed')))
+    }
+  }, [mutate, revalidate, pendingHold, t])
 
   const viewLabels: TaskView[] = ['open', 'mine', 'verifying', 'on_hold', 'closed', 'all']
 
@@ -320,6 +334,38 @@ export function TasksView({ defaultView = 'open' }: { defaultView?: TaskView }) 
           </div>
         </DndContext>
       )}
+      <ConfirmDialog
+        open={pendingHold !== null}
+        onOpenChange={(open) => {
+          if (!open) setPendingHold(null)
+        }}
+        title={
+          pendingHold?.hold
+            ? t('remediationHub.tasks.holdTitle', 'Put "{title}" on hold?', {
+                title: pendingHold.task.title,
+              })
+            : t('remediationHub.tasks.resumeTitle', 'Resume "{title}"?', {
+                title: pendingHold?.task.title ?? '',
+              })
+        }
+        desc={
+          pendingHold?.hold
+            ? t(
+                'remediationHub.tasks.holdDesc',
+                'The task shows as On hold until someone resumes it. Its findings stay in it.'
+              )
+            : t(
+                'remediationHub.tasks.resumeDesc',
+                'The task leaves On hold and its state follows its findings again.'
+              )
+        }
+        confirmText={
+          pendingHold?.hold
+            ? t('remediationHub.tasks.holdButton', 'Put task on hold')
+            : t('remediationHub.tasks.resumeButton', 'Resume task')
+        }
+        handleConfirm={applyHold}
+      />
     </div>
   )
 }

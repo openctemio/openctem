@@ -188,5 +188,8 @@
   "findingLifecycle.versions.state.published": "In force",
   "findingLifecycle.versions.state.superseded": "Superseded",
   "findingLifecycle.versions.title": "Version history",
-  "findingLifecycle.versions.version": "Version {version}"
+  "findingLifecycle.versions.version": "Version {version}",
+  "findingLifecycle.subStatus.archiveTitle": "Archive the sub-status \"{name}\"?",
+  "findingLifecycle.subStatus.archiveDesc": "It can no longer be picked for findings. You can reactivate it later from its lane.",
+  "findingLifecycle.subStatus.archiveButton": "Archive sub-status"
 }

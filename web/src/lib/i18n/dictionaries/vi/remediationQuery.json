@@ -93,5 +93,8 @@
   "remediationQuery.task.runsAs": "Chạy với tư cách {owner}.",
   "remediationQuery.task.state.active": "Đang tự động thêm",
   "remediationQuery.task.state.paused": "Tạm dừng",
-  "remediationQuery.task.state.suspended": "Tạm ngưng"
+  "remediationQuery.task.state.suspended": "Tạm ngưng",
+  "remediationQuery.task.resumeConfirmTitle": "Tiếp tục tự động thêm?",
+  "remediationQuery.task.resumeConfirmDesc": "Nhiệm vụ bắt đầu lại việc thêm các phát hiện khớp truy vấn, tối đa {cap}, mà không hỏi từng lần. Phát hiện đã có trong nhiệm vụ được giữ nguyên.",
+  "remediationQuery.task.resumeConfirmButton": "Tiếp tục tự động thêm"
 }

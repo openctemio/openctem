@@ -355,5 +355,16 @@
   "remediationHub.detail.openFinding": "Open {title}",
   "remediationHub.crumb.label": "Where you came from",
   "remediationHub.crumb.tasks": "Remediation tasks",
-  "remediationHub.crumb.finding": "Finding"
+  "remediationHub.crumb.finding": "Finding",
+  "remediationHub.suggestions.confirmBulkTitle": "Accept {n} suggestions?",
+  "remediationHub.suggestions.confirmOneTitle": "Accept \"{title}\"?",
+  "remediationHub.suggestions.confirmDesc": "Accepting creates the remediation tasks and may move their findings out of other tasks. You can move findings between tasks afterwards.",
+  "remediationHub.suggestions.confirmBulkButton": "Accept {n} suggestions",
+  "remediationHub.suggestions.confirmOneButton": "Accept suggestion",
+  "remediationHub.tasks.holdTitle": "Put \"{title}\" on hold?",
+  "remediationHub.tasks.resumeTitle": "Resume \"{title}\"?",
+  "remediationHub.tasks.holdDesc": "The task shows as On hold until someone resumes it. Its findings stay in it.",
+  "remediationHub.tasks.resumeDesc": "The task leaves On hold and its state follows its findings again.",
+  "remediationHub.tasks.holdButton": "Put task on hold",
+  "remediationHub.tasks.resumeButton": "Resume task"
 }
