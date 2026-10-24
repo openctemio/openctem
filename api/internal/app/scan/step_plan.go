@@ -27,6 +27,7 @@ import (
 	"github.com/openctemio/openctem/api/pkg/domain/stage"
 	"github.com/openctemio/openctem/api/pkg/domain/tool"
 	"github.com/openctemio/openctem/api/pkg/domain/toolbudget"
+	"github.com/openctemio/openctem/api/pkg/pagination"
 )
 
 // Error codes of the planner.
@@ -49,6 +50,12 @@ type StepTool struct {
 	// Candidates are the tools the step could run, in the order tried
 	// (the pin alone for a pinned step).
 	Candidates []string
+	// Declared: the tool is one the organization's sensors declare
+	// (tool.Tool.IsDeclared). The catalog does not list it, so its
+	// standard params map through its descriptor (params) and the step's
+	// command always names the capability (CommandPayload).
+	Declared bool
+	params   map[string]string
 }
 
 // Capability is the versioned capability the step runs ("scan.ports@1"),
@@ -64,6 +71,9 @@ func (t StepTool) Capability() string {
 type StepToolLookup interface {
 	GetPlatformToolByName(ctx context.Context, name string) (*tool.Tool, error)
 	FindByCapabilities(ctx context.Context, tenantID shared.ID, capabilities []string) (*tool.Tool, error)
+	// ListTenantCustomTools lists the organization's own tools (never
+	// another organization's, never a platform tool).
+	ListTenantCustomTools(ctx context.Context, tenantID shared.ID, filter tool.ToolFilter, page pagination.Pagination) (pagination.Result[*tool.Tool], error)
 }
 
 // ResolveStepTool decides the tool a step runs:
@@ -77,6 +87,15 @@ type StepToolLookup interface {
 //     has one, else the catalog order, the default first. A tool that does
 //     not take a param the step sets is skipped, never handed the step with
 //     that value dropped. None left is NO_MATCHING_TOOL, with the reasons;
+//   - after the catalog's implementations, the organization's declared
+//     tools (a tool its sensors report with a valid contract) that
+//     implement the stage's capability@major, by name; a step's
+//     prefer_tools may name them too. Their standard params map through
+//     their descriptor, and a param a tool does not take skips it the same
+//     way. They run at the tier the platform assigns them (an
+//     operator-installed tool is T2), so being picked grants nothing;
+//   - a pinned tool the catalog does not know runs its step's capability
+//     when it is a declared tool that implements it;
 //   - capabilities that name more than one stage are refused
 //     (STEP_CAPABILITY_AMBIGUOUS), never guessed;
 //   - capabilities the catalog does not know fall back to the tenant's
@@ -91,6 +110,15 @@ func ResolveStepTool(ctx context.Context, tools StepToolLookup, tenantID shared.
 	}
 	if name := strings.TrimSpace(step.Tool); name != "" {
 		st, ok := stage.ForStep(name, step.Capabilities)
+		if !ok && tools != nil {
+			dt, found, err := pinnedDeclaredTool(ctx, tools, tenantID, name, step.Capabilities)
+			if err != nil {
+				return StepTool{}, fmt.Errorf("step %s: %w", step.StepKey, err)
+			}
+			if found {
+				return dt, nil
+			}
+		}
 		return StepTool{Name: name, Pinned: true, Stage: st, HasStage: ok, Candidates: []string{name}}, nil
 	}
 	if len(step.Capabilities) == 0 {
@@ -104,9 +132,21 @@ func ResolveStepTool(ctx context.Context, tools StepToolLookup, tenantID shared.
 	st, err := stage.ForCapabilities(step.Capabilities)
 	switch {
 	case err == nil:
-		candidates := stepCandidates(st, step)
+		declared, derr := declaredImplementations(ctx, tools, tenantID, st)
+		if derr != nil {
+			return StepTool{}, fmt.Errorf("step %s: %w", step.StepKey, derr)
+		}
+		candidates := stepCandidates(st, step, declared)
 		var skipped []string
 		for _, name := range candidates {
+			if dt, ok := declared[name]; ok {
+				params, _ := dt.DeclaredImplements(st.ID())
+				if missing := stage.UnsupportedParamsFor(st, params, step.Config); len(missing) > 0 {
+					skipped = append(skipped, fmt.Sprintf("%s does not take %s", name, strings.Join(missing, ", ")))
+					continue
+				}
+				return StepTool{Name: dt.Name, Stage: st, HasStage: true, Candidates: candidates, Declared: true, params: params}, nil
+			}
 			if missing := stage.UnsupportedParams(st, name, step.Config); len(missing) > 0 {
 				skipped = append(skipped, fmt.Sprintf("%s does not take %s", name, strings.Join(missing, ", ")))
 				continue
@@ -149,20 +189,84 @@ func ResolveStepTool(ctx context.Context, tools StepToolLookup, tenantID shared.
 }
 
 // stepCandidates are the tools a capability step may run, in the order
-// tried: its prefer_tools (those that implement the capability) or the
-// catalog order, the default first.
-func stepCandidates(st stage.Stage, step *scanworkflow.Step) []string {
+// tried: its prefer_tools (those that implement the capability, catalog or
+// declared), or the catalog order, the default first, then the
+// organization's declared implementations by name.
+func stepCandidates(st stage.Stage, step *scanworkflow.Step, declared map[string]*tool.Tool) []string {
 	if len(step.PreferTools) == 0 {
-		return st.Tools()
+		out := st.Tools()
+		names := make([]string, 0, len(declared))
+		for name := range declared {
+			if !slices.Contains(out, name) {
+				names = append(names, name)
+			}
+		}
+		slices.Sort(names)
+		return append(out, names...)
 	}
 	out := make([]string, 0, len(step.PreferTools))
 	for _, t := range step.PreferTools {
 		t = strings.ToLower(strings.TrimSpace(t))
-		if st.Implements(t) && !slices.Contains(out, t) {
+		if _, ok := declared[t]; (ok || st.Implements(t)) && !slices.Contains(out, t) {
 			out = append(out, t)
 		}
 	}
 	return out
+}
+
+// maxDeclaredCandidates bounds the declared tools read for one step (an
+// organization holds at most tool.MaxDeclaredToolsPerTenant).
+const maxDeclaredCandidates = tool.MaxDeclaredToolsPerTenant
+
+// declaredImplementations are the organization's active declared tools
+// that implement the stage's capability@major, by name. Only that
+// organization's own tools are read, and a tool named like a catalog
+// implementation is left to the catalog path (its platform tool).
+func declaredImplementations(ctx context.Context, tools StepToolLookup, tenantID shared.ID, st stage.Stage) (map[string]*tool.Tool, error) {
+	if tools == nil || tenantID.IsZero() {
+		return nil, nil
+	}
+	active := true
+	res, err := tools.ListTenantCustomTools(ctx, tenantID,
+		tool.ToolFilter{Capabilities: []string{string(st.Key)}, IsActive: &active},
+		pagination.Pagination{Page: 1, PerPage: maxDeclaredCandidates})
+	if err != nil {
+		return nil, fmt.Errorf("list declared tools for %s: %w", st.ID(), err)
+	}
+	out := map[string]*tool.Tool{}
+	for _, t := range res.Data {
+		if t == nil || t.TenantID == nil || *t.TenantID != tenantID || !usableScanner(t) || st.Implements(t.Name) {
+			continue
+		}
+		if _, ok := t.DeclaredImplements(st.ID()); ok {
+			out[strings.ToLower(t.Name)] = t
+		}
+	}
+	return out, nil
+}
+
+// pinnedDeclaredTool resolves a pinned step whose tool the catalog does not
+// know: when it is one of the organization's declared tools and implements
+// the one stage its capabilities name, the step runs that capability.
+func pinnedDeclaredTool(ctx context.Context, tools StepToolLookup, tenantID shared.ID, name string, caps []string) (StepTool, bool, error) {
+	if len(caps) == 0 {
+		return StepTool{}, false, nil
+	}
+	st, err := stage.ForCapabilities(caps)
+	if err != nil {
+		// No single stage: the pin runs without a capability, as before.
+		return StepTool{}, false, nil //nolint:nilerr // not an error for a pinned step
+	}
+	declared, err := declaredImplementations(ctx, tools, tenantID, st)
+	if err != nil {
+		return StepTool{}, false, err
+	}
+	dt, ok := declared[strings.ToLower(name)]
+	if !ok {
+		return StepTool{}, false, nil
+	}
+	params, _ := dt.DeclaredImplements(st.ID())
+	return StepTool{Name: dt.Name, Pinned: true, Stage: st, HasStage: true, Candidates: []string{dt.Name}, Declared: true, params: params}, true, nil
 }
 
 // usableScanner reports whether a tool can run a dispatched scan step.
@@ -176,10 +280,29 @@ func usableScanner(t *tool.Tool) bool {
 func (t StepTool) WithTool(step *scanworkflow.Step) *scanworkflow.Step {
 	cp := *step
 	cp.Tool = t.Name
-	if t.HasStage {
+	switch {
+	case t.HasStage && t.Declared:
+		cp.Config = stage.ToolConfigFor(t.Stage, t.Name, t.params, step.Config, t.Pinned)
+	case t.HasStage:
 		cp.Config = stage.ToolConfig(t.Stage, t.Name, step.Config, t.Pinned)
 	}
 	return &cp
+}
+
+// CommandPayload is StepCommandPayload for the resolved tool. A declared
+// tool's command always names its capability (the catalog does not list
+// the tool, so StepCommandPayload cannot tell): the sensor then checks
+// that the tool implements it and checks its output against it, and the
+// platform's grant check applies the capability's tier floor.
+func (t StepTool) CommandPayload(run *scanrun.Run, step *scanworkflow.Step, stepRunID string, st *StepTargets) (map[string]any, error) {
+	payload, err := StepCommandPayload(run, step, t.Name, stepRunID, st)
+	if err != nil {
+		return nil, err
+	}
+	if t.Declared && t.HasStage {
+		payload[PayloadKeyCapability] = t.Stage.ID()
+	}
+	return payload, nil
 }
 
 // StepCommandPayload is the command payload of one workflow step, built the

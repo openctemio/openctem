@@ -64,6 +64,7 @@ import {
   DrillDownBreadcrumb,
   ErrorState,
   type MobileRowSelection,
+  PageStack,
 } from '@/features/shared'
 import { Input } from '@/components/ui/input'
 import { cn } from '@/lib/utils'
@@ -2347,334 +2348,341 @@ function FindingsContent() {
   return (
     <>
       <Main>
-        <PageHeader title={t('findings.page.title', 'Findings')} description={drillBreadcrumb}>
-          <Button variant="outline" size="sm" asChild>
-            <Link href="/findings/approvals">
-              <ClipboardList className="h-4 w-4 sm:me-2" />
-              <span className="sr-only sm:not-sr-only">
-                {t('findings.header.approvals', 'Approvals')}
-              </span>
-            </Link>
-          </Button>
-          {(canImport || hasPermission('findings:write')) && (
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button variant="outline" size="sm">
-                  <Plus className="h-4 w-4 sm:me-2" aria-hidden />
-                  <span className="sr-only sm:not-sr-only">{t('findings.header.add', 'Add')}</span>
-                  <ChevronDown className="ms-1 hidden h-3.5 w-3.5 sm:block" aria-hidden />
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end">
-                {hasPermission('findings:write') && (
-                  <DropdownMenuItem onSelect={() => setCreateDialogOpen(true)}>
-                    <Plus className="me-2 h-4 w-4" aria-hidden />
-                    {t('findings.header.addFinding', 'Add finding')}
-                  </DropdownMenuItem>
-                )}
-                {canImport && (
-                  <DropdownMenuItem onSelect={() => setImportDialogOpen(true)}>
-                    <FileUp className="me-2 h-4 w-4" aria-hidden />
-                    {t('findings.header.importResults', 'Import results')}
-                  </DropdownMenuItem>
-                )}
-              </DropdownMenuContent>
-            </DropdownMenu>
-          )}
-          {/* The one primary action of the page: deciding, for someone who may
+        <PageStack>
+          <PageHeader title={t('findings.page.title', 'Findings')} description={drillBreadcrumb}>
+            <Button variant="outline" size="sm" asChild>
+              <Link href="/findings/approvals">
+                <ClipboardList className="h-4 w-4 sm:me-2" />
+                <span className="sr-only sm:not-sr-only">
+                  {t('findings.header.approvals', 'Approvals')}
+                </span>
+              </Link>
+            </Button>
+            {(canImport || hasPermission('findings:write')) && (
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button variant="outline" size="sm">
+                    <Plus className="h-4 w-4 sm:me-2" aria-hidden />
+                    <span className="sr-only sm:not-sr-only">
+                      {t('findings.header.add', 'Add')}
+                    </span>
+                    <ChevronDown className="ms-1 hidden h-3.5 w-3.5 sm:block" aria-hidden />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end">
+                  {hasPermission('findings:write') && (
+                    <DropdownMenuItem onSelect={() => setCreateDialogOpen(true)}>
+                      <Plus className="me-2 h-4 w-4" aria-hidden />
+                      {t('findings.header.addFinding', 'Add finding')}
+                    </DropdownMenuItem>
+                  )}
+                  {canImport && (
+                    <DropdownMenuItem onSelect={() => setImportDialogOpen(true)}>
+                      <FileUp className="me-2 h-4 w-4" aria-hidden />
+                      {t('findings.header.importResults', 'Import results')}
+                    </DropdownMenuItem>
+                  )}
+                </DropdownMenuContent>
+              </DropdownMenu>
+            )}
+            {/* The one primary action of the page: deciding, for someone who may
               change a finding's status. With nothing to triage it stays, as a
               secondary button that opens the same view. */}
-          {canChangeStatusOne && (
-            <Button
-              size="sm"
-              variant={triageCount > 0 ? 'default' : 'outline'}
-              onClick={openTriage}
-              aria-keyshortcuts="t"
-            >
-              <ListChecks className="h-4 w-4 sm:me-2" aria-hidden />
-              <span className="sr-only sm:not-sr-only">
-                {triageCount > 0
-                  ? t('findings.header.triage', 'Triage')
-                  : t('findings.header.triageView', 'Triage view')}
-              </span>
-              {triageCount > 0 && (
-                <span className="ms-2 text-xs tabular-nums" data-testid="triage-count">
-                  {triageCount.toLocaleString()}
-                </span>
-              )}
-              <kbd
-                className="ms-2 hidden rounded border border-current/30 px-1 font-sans text-[10px] sm:inline"
-                aria-hidden
+            {canChangeStatusOne && (
+              <Button
+                size="sm"
+                variant={triageCount > 0 ? 'default' : 'outline'}
+                onClick={openTriage}
+                aria-keyshortcuts="t"
               >
-                t
-              </kbd>
-            </Button>
-          )}
-        </PageHeader>
+                <ListChecks className="h-4 w-4 sm:me-2" aria-hidden />
+                <span className="sr-only sm:not-sr-only">
+                  {triageCount > 0
+                    ? t('findings.header.triage', 'Triage')
+                    : t('findings.header.triageView', 'Triage view')}
+                </span>
+                {triageCount > 0 && (
+                  <span className="ms-2 text-xs tabular-nums" data-testid="triage-count">
+                    {triageCount.toLocaleString()}
+                  </span>
+                )}
+                <kbd
+                  className="ms-2 hidden rounded border border-current/30 px-1 font-sans text-xs sm:inline"
+                  aria-hidden
+                >
+                  t
+                </kbd>
+              </Button>
+            )}
+          </PageHeader>
 
-        <>
-          <div className="mt-5 flex items-start">
-            {/* Always mounted so opening and closing can animate: the slot's
+          <>
+            <div className="flex items-start">
+              {/* Always mounted so opening and closing can animate: the slot's
                 width (and the gap after it) eases between 0 and the card's
                 width while the card fades, and the table beside it resizes in
                 step. The card keeps its own width, so its contents never
                 reflow mid-animation. */}
-            <div
-              inert={!filtersOpen}
-              className={cn(
-                'sticky top-4 hidden shrink-0 overflow-hidden transition-[width,margin-inline-end,opacity] duration-300 ease-in-out motion-reduce:transition-none lg:block',
-                filtersOpen ? 'me-5 w-64 opacity-100' : 'me-0 w-0 opacity-0'
-              )}
-            >
-              <aside
-                id="finding-filters"
-                aria-label={t('findings.filters.title', 'Finding filters')}
-                // A self-contained floating card, as tall as the viewport and
-                // pinned while the page scrolls: its length no longer depends
-                // on the table's, and long filter lists scroll inside it.
-                className="flex h-[calc(100svh-7.5rem)] w-64 flex-col rounded-lg border bg-card p-4"
+              <div
+                inert={!filtersOpen}
+                className={cn(
+                  'sticky top-4 hidden shrink-0 overflow-hidden transition-[width,margin-inline-end,opacity] duration-300 ease-in-out motion-reduce:transition-none lg:block',
+                  filtersOpen ? 'me-5 w-64 opacity-100' : 'me-0 w-0 opacity-0'
+                )}
               >
-                {facetPanelScrollable}
-              </aside>
-            </div>
+                <aside
+                  id="finding-filters"
+                  aria-label={t('findings.filters.title', 'Finding filters')}
+                  // A self-contained floating card, as tall as the viewport and
+                  // pinned while the page scrolls: its length no longer depends
+                  // on the table's, and long filter lists scroll inside it.
+                  className="flex h-[calc(100svh-7.5rem)] w-64 flex-col rounded-lg border bg-card p-4"
+                >
+                  {facetPanelScrollable}
+                </aside>
+              </div>
 
-            <div className="min-w-0 flex-1 space-y-3">
-              {!urlSettled ? (
-                <Skeleton className="h-9 w-80 max-w-full" />
-              ) : !verifyView ? (
-                primaryRow
-              ) : null}
-              {!urlSettled ? (
-                // The render before the address bar holds this page's URL:
-                // nothing here is real yet, and nothing is fetched.
-                <FindingsTableSkeleton />
-              ) : verifyView ? (
-                <div className="space-y-3">
+              <div className="min-w-0 flex-1 space-y-3">
+                {!urlSettled ? (
+                  <Skeleton className="h-9 w-80 max-w-full" />
+                ) : !verifyView ? (
+                  primaryRow
+                ) : null}
+                {!urlSettled ? (
+                  // The render before the address bar holds this page's URL:
+                  // nothing here is real yet, and nothing is fetched.
+                  <FindingsTableSkeleton />
+                ) : verifyView ? (
+                  <div className="space-y-3">
+                    <FindingGroupsTable
+                      {...groupedProps}
+                      dimension="cve_id"
+                      query={verifyQueueQuery(apiFilters)}
+                      statuses="fix_applied"
+                      renderGroupActions={verifyActions}
+                      toolbarStart={
+                        <>
+                          <Button variant="ghost" size="sm" onClick={() => setViewParam('')}>
+                            <ArrowLeft className="me-2 h-4 w-4" />
+                            {t('findings.verify.all', 'All findings')}
+                          </Button>
+                          <span className="text-sm text-muted-foreground">
+                            {t('findings.verify.title', 'Fixes awaiting verification')}
+                          </span>
+                        </>
+                      }
+                      toolbarEnd={refreshButton}
+                      emptyMessage={
+                        verifyNoCveTotal > 0
+                          ? t(
+                              'findings.verify.noCveGroups',
+                              'No fixes awaiting verification by CVE'
+                            )
+                          : t('findings.verify.empty', 'No fixes awaiting verification')
+                      }
+                      emptyDescription={
+                        verifyNoCveTotal > 0
+                          ? t(
+                              'findings.verify.noCveGroupsHint',
+                              'The fixes below have no CVE: verify them one by one.'
+                            )
+                          : t(
+                              'findings.verify.emptyHint',
+                              'Fixes that owners mark as applied wait here for a verifier.'
+                            )
+                      }
+                    />
+                    <VerifyNoCveList
+                      query={verifyQueueNoCveQuery(apiFilters)}
+                      canVerify={canVerify}
+                      onOpen={(f) => handleRowClick(transformApiToUiFinding(f))}
+                      onDone={refreshAfterDrawerChange}
+                      onTotal={setVerifyNoCveTotal}
+                      reloadKey={groupsReloadKey}
+                    />
+                  </div>
+                ) : groupBy ? (
                   <FindingGroupsTable
                     {...groupedProps}
-                    dimension="cve_id"
-                    query={verifyQueueQuery(apiFilters)}
-                    statuses="fix_applied"
-                    renderGroupActions={verifyActions}
-                    toolbarStart={
-                      <>
-                        <Button variant="ghost" size="sm" onClick={() => setViewParam('')}>
-                          <ArrowLeft className="me-2 h-4 w-4" />
-                          {t('findings.verify.all', 'All findings')}
-                        </Button>
-                        <span className="text-sm text-muted-foreground">
-                          {t('findings.verify.title', 'Fixes awaiting verification')}
-                        </span>
-                      </>
+                    dimension={groupBy}
+                    query={apiFilters}
+                    renderGroupActions={groupActions}
+                    onViewGroup={viewableGroup ? viewGroup : undefined}
+                    onGroupsLoaded={(groups) =>
+                      setHasUnassignedGroup(groups.some((g) => g.group_key === 'unassigned'))
                     }
-                    toolbarEnd={refreshButton}
-                    emptyMessage={
-                      verifyNoCveTotal > 0
-                        ? t('findings.verify.noCveGroups', 'No fixes awaiting verification by CVE')
-                        : t('findings.verify.empty', 'No fixes awaiting verification')
-                    }
+                    toolbarStart={toolbarStart}
+                    toolbarBelow={filterBar}
+                    toolbarEnd={toolbarEnd}
                     emptyDescription={
-                      verifyNoCveTotal > 0
+                      activeCount > 0
                         ? t(
-                            'findings.verify.noCveGroupsHint',
-                            'The fixes below have no CVE: verify them one by one.'
+                            'findings.empty.tryRemoving',
+                            'Try removing a filter or clearing them all.'
                           )
-                        : t(
-                            'findings.verify.emptyHint',
-                            'Fixes that owners mark as applied wait here for a verifier.'
-                          )
-                    }
-                  />
-                  <VerifyNoCveList
-                    query={verifyQueueNoCveQuery(apiFilters)}
-                    canVerify={canVerify}
-                    onOpen={(f) => handleRowClick(transformApiToUiFinding(f))}
-                    onDone={refreshAfterDrawerChange}
-                    onTotal={setVerifyNoCveTotal}
-                    reloadKey={groupsReloadKey}
-                  />
-                </div>
-              ) : groupBy ? (
-                <FindingGroupsTable
-                  {...groupedProps}
-                  dimension={groupBy}
-                  query={apiFilters}
-                  renderGroupActions={groupActions}
-                  onViewGroup={viewableGroup ? viewGroup : undefined}
-                  onGroupsLoaded={(groups) =>
-                    setHasUnassignedGroup(groups.some((g) => g.group_key === 'unassigned'))
-                  }
-                  toolbarStart={toolbarStart}
-                  toolbarBelow={filterBar}
-                  toolbarEnd={toolbarEnd}
-                  emptyDescription={
-                    activeCount > 0
-                      ? t(
-                          'findings.empty.tryRemoving',
-                          'Try removing a filter or clearing them all.'
-                        )
-                      : undefined
-                  }
-                />
-              ) : !findingsResponse && findingsLoading ? (
-                <FindingsTableSkeleton contextChips={filterBar} />
-              ) : (
-                <>
-                  <div
-                    role={findingsValidating ? 'progressbar' : undefined}
-                    aria-label={
-                      findingsValidating
-                        ? t('findings.list.refreshing', 'Refreshing findings')
                         : undefined
                     }
-                    className="-mb-1 h-0.5 overflow-hidden rounded-full"
-                  >
-                    {findingsValidating && (
-                      <div className="h-full w-1/3 animate-pulse rounded-full bg-primary motion-reduce:animate-none" />
-                    )}
-                  </div>
-                  <DataTable
-                    columns={columns}
-                    data={findings}
-                    showSearch={false}
-                    toolbarStart={toolbarStart}
-                    toolbarEnd={toolbarEnd}
-                    toolbarBelow={filterBar}
-                    getRowId={(f) => f.id}
-                    manualPagination
-                    rowCount={total}
-                    pagination={pagination}
-                    onPaginationChange={setPagination}
-                    pageSizeOptions={PAGE_SIZES}
-                    sorting={sorting}
-                    onSortingChange={handleSortingChange}
-                    onSelectionChange={setSelectedFindings}
-                    resetSelectionKey={`${selectionEpoch}|${selectionScope}`}
-                    onRowClick={handleRowClick}
-                    mobileRow={mobileRow}
-                    columnVisibility={columnVisibility}
-                    onColumnVisibilityChange={onColumnVisibilityChange}
-                    density={savedId ? (urlDensity ?? viewDensity) : undefined}
-                    onDensityChange={savedId ? onDensityChange : undefined}
-                    showSelectionCount={false}
-                    emptyState={
-                      <FindingsEmptyState
-                        kind={emptyKind}
-                        hiddenCount={
-                          typeof hiddenByFilters === 'number' ? hiddenByFilters : undefined
-                        }
-                        stateLabel={t(lensLabelKey(lens), lens)}
-                        filterCount={activeCount}
-                        hasSearch={searchQuery.trim() !== ''}
-                        canImport={canImport}
-                        canSetUpScan={hasPermission(Permission.ScansRead)}
-                        canOpenIntegrations={hasPermission(Permission.IntegrationsRead)}
-                        onImport={() => setImportDialogOpen(true)}
-                        onClearFilters={clearAllFilters}
-                        onSearchAllStates={lens !== 'all' ? () => setLensParam('all') : undefined}
-                        denial={denialText}
-                      />
-                    }
-                    errorState={
-                      error && invalidFilterParams(error) ? (
-                        <InvalidFilterNotice
-                          params={invalidFilterParams(error) ?? []}
-                          onRemove={(names) => {
-                            const next = new URLSearchParams(window.location.search)
-                            for (const n of names) next.delete(n)
-                            next.delete('page')
-                            replaceUrlSearch(next)
-                          }}
-                        />
-                      ) : error && accessStateOf(error) !== 'no_access' ? (
-                        <ErrorState
-                          title={t('findings.list.errorTitle', 'findings')}
-                          error={error}
-                          onRetry={() => void mutateFindings()}
-                        />
-                      ) : undefined
-                    }
                   />
-                </>
-              )}
-            </div>
-          </div>
-
-          {canSelect && (
-            <BulkActionBar count={selectedCount} onClear={clearSelection}>
-              {canBulkAssign && (
-                <AssigneeSelect
-                  placeholder={t('findings.bulk.assignTo', 'Assign to…')}
-                  disabled={bulkBusy}
-
-                  onChange={(user) => {
-                    if (user) void handleBulkAssign(user.id)
-                  }}
-                />
-              )}
-
-              {canBulkRemediate && (
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => openRemediationFor(selectedFindings)}
-                >
-                  <Wrench className="me-2 h-4 w-4" />
-                  {t('remediationClaim.menu.bulk')}
-                </Button>
-              )}
-
-              {canBulkStatus && (
-                <DropdownMenu>
-                  <DropdownMenuTrigger asChild>
-                    <Button variant="ghost" size="sm" disabled={bulkBusy}>
-                      {bulkBusy ? (
-                        <Loader2 className="me-2 h-4 w-4 animate-spin" />
-                      ) : (
-                        <Flag className="me-2 h-4 w-4" />
+                ) : !findingsResponse && findingsLoading ? (
+                  <FindingsTableSkeleton contextChips={filterBar} />
+                ) : (
+                  <>
+                    <div
+                      role={findingsValidating ? 'progressbar' : undefined}
+                      aria-label={
+                        findingsValidating
+                          ? t('findings.list.refreshing', 'Refreshing findings')
+                          : undefined
+                      }
+                      className="-mb-1 h-0.5 overflow-hidden rounded-full"
+                    >
+                      {findingsValidating && (
+                        <div className="h-full w-1/3 animate-pulse rounded-full bg-primary motion-reduce:animate-none" />
                       )}
-                      {t('findings.bulk.status', 'Status')}
-                    </Button>
-                  </DropdownMenuTrigger>
+                    </div>
+                    <DataTable
+                      columns={columns}
+                      data={findings}
+                      showSearch={false}
+                      toolbarStart={toolbarStart}
+                      toolbarEnd={toolbarEnd}
+                      toolbarBelow={filterBar}
+                      getRowId={(f) => f.id}
+                      manualPagination
+                      rowCount={total}
+                      pagination={pagination}
+                      onPaginationChange={setPagination}
+                      pageSizeOptions={PAGE_SIZES}
+                      sorting={sorting}
+                      onSortingChange={handleSortingChange}
+                      onSelectionChange={setSelectedFindings}
+                      resetSelectionKey={`${selectionEpoch}|${selectionScope}`}
+                      onRowClick={handleRowClick}
+                      mobileRow={mobileRow}
+                      columnVisibility={columnVisibility}
+                      onColumnVisibilityChange={onColumnVisibilityChange}
+                      density={savedId ? (urlDensity ?? viewDensity) : undefined}
+                      onDensityChange={savedId ? onDensityChange : undefined}
+                      showSelectionCount={false}
+                      emptyState={
+                        <FindingsEmptyState
+                          kind={emptyKind}
+                          hiddenCount={
+                            typeof hiddenByFilters === 'number' ? hiddenByFilters : undefined
+                          }
+                          stateLabel={t(lensLabelKey(lens), lens)}
+                          filterCount={activeCount}
+                          hasSearch={searchQuery.trim() !== ''}
+                          canImport={canImport}
+                          canSetUpScan={hasPermission(Permission.ScansRead)}
+                          canOpenIntegrations={hasPermission(Permission.IntegrationsRead)}
+                          onImport={() => setImportDialogOpen(true)}
+                          onClearFilters={clearAllFilters}
+                          onSearchAllStates={lens !== 'all' ? () => setLensParam('all') : undefined}
+                          denial={denialText}
+                        />
+                      }
+                      errorState={
+                        error && invalidFilterParams(error) ? (
+                          <InvalidFilterNotice
+                            params={invalidFilterParams(error) ?? []}
+                            onRemove={(names) => {
+                              const next = new URLSearchParams(window.location.search)
+                              for (const n of names) next.delete(n)
+                              next.delete('page')
+                              replaceUrlSearch(next)
+                            }}
+                          />
+                        ) : error && accessStateOf(error) !== 'no_access' ? (
+                          <ErrorState
+                            title={t('findings.list.errorTitle', 'findings')}
+                            error={error}
+                            onRetry={() => void mutateFindings()}
+                          />
+                        ) : undefined
+                      }
+                    />
+                  </>
+                )}
+              </div>
+            </div>
 
-                  <DropdownMenuContent side="top" align="center">
-                    <DropdownMenuItem onClick={() => void handleBulkStatusChange('confirmed')}>
-                      {t('findings.status.confirmed', 'Confirmed')}
-                    </DropdownMenuItem>
+            {canSelect && (
+              <BulkActionBar count={selectedCount} onClear={clearSelection}>
+                {canBulkAssign && (
+                  <AssigneeSelect
+                    placeholder={t('findings.bulk.assignTo', 'Assign to…')}
+                    disabled={bulkBusy}
 
-                    <DropdownMenuItem onClick={() => void handleBulkStatusChange('in_progress')}>
-                      {t('findings.status.in_progress', 'In progress')}
-                    </DropdownMenuItem>
+                    onChange={(user) => {
+                      if (user) void handleBulkAssign(user.id)
+                    }}
+                  />
+                )}
 
-                    {/* Resolving needs findings:verify; the API refuses it otherwise. */}
-                    {hasPermission(Permission.FindingsVerify) && (
-                      <DropdownMenuItem onSelect={() => setBulkResolveOpen(true)}>
-                        {t('findings.status.resolved', 'Resolved')}
+                {canBulkRemediate && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => openRemediationFor(selectedFindings)}
+                  >
+                    <Wrench className="me-2 h-4 w-4" />
+                    {t('remediationClaim.menu.bulk')}
+                  </Button>
+                )}
+
+                {canBulkStatus && (
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <Button variant="ghost" size="sm" disabled={bulkBusy}>
+                        {bulkBusy ? (
+                          <Loader2 className="me-2 h-4 w-4 animate-spin" />
+                        ) : (
+                          <Flag className="me-2 h-4 w-4" />
+                        )}
+                        {t('findings.bulk.status', 'Status')}
+                      </Button>
+                    </DropdownMenuTrigger>
+
+                    <DropdownMenuContent side="top" align="center">
+                      <DropdownMenuItem onClick={() => void handleBulkStatusChange('confirmed')}>
+                        {t('findings.status.confirmed', 'Confirmed')}
                       </DropdownMenuItem>
-                    )}
 
-                    {/* false_positive requires the per-finding approval flow, so it is
+                      <DropdownMenuItem onClick={() => void handleBulkStatusChange('in_progress')}>
+                        {t('findings.status.in_progress', 'In progress')}
+                      </DropdownMenuItem>
+
+                      {/* Resolving needs findings:verify; the API refuses it otherwise. */}
+                      {hasPermission(Permission.FindingsVerify) && (
+                        <DropdownMenuItem onSelect={() => setBulkResolveOpen(true)}>
+                          {t('findings.status.resolved', 'Resolved')}
+                        </DropdownMenuItem>
+                      )}
+
+                      {/* false_positive requires the per-finding approval flow, so it is
 
                     intentionally not offered as a bulk action. */}
-                  </DropdownMenuContent>
-                </DropdownMenu>
-              )}
-            </BulkActionBar>
-          )}
-
-          <FilterSheet
-            open={filterSheetOpen}
-            onOpenChange={setFilterSheetOpen}
-            title={t('findings.filters.title', 'Finding filters')}
-            resultLabel={t(
-              'findings.filters.show',
-              'Show {count, plural, one {# finding} other {# findings}}',
-              { count: total }
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                )}
+              </BulkActionBar>
             )}
-          >
-            {facetPanel}
-          </FilterSheet>
-        </>
+
+            <FilterSheet
+              open={filterSheetOpen}
+              onOpenChange={setFilterSheetOpen}
+              title={t('findings.filters.title', 'Finding filters')}
+              resultLabel={t(
+                'findings.filters.show',
+                'Show {count, plural, one {# finding} other {# findings}}',
+                { count: total }
+              )}
+            >
+              {facetPanel}
+            </FilterSheet>
+          </>
+        </PageStack>
       </Main>
 
       {/* Mark Fixed Dialog */}
