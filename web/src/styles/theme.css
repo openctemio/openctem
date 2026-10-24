@@ -73,24 +73,26 @@
   /* Priority class (P0-P3): CTEM's decision, the only filled label in a row. Its
      own violet system (oklch hue about 293): never a severity hue, never the teal
      accent, never ink. P3 is neutral on purpose ("track"). --prio-N is the mark
-     (charts, dots; >= 3:1 on card, paper and raised, strictly falling contrast),
-     --prio-N-bg / -fg the box and its text (>= 4.5:1), --prio-N-border the edge. */
-  --prio-0: #5b21b6;
-  --prio-1: #7c3aed;
-  --prio-2: #8f6ee6;
-  --prio-3: #7d8799;
-  --prio-0-bg: #5b21b6;
+     (charts, dots, the P0 fill and every box edge), from the --viz-prio-* ramp:
+     each step >= 0.10 OKLCH lightness from the next, >= 3:1 on card, paper and
+     raised, P0 the strongest contrast (research/257). --prio-N-bg / -fg are the
+     box and its text (>= 4.5:1). Not prioritised is a hatch of --viz-prio-none. */
+  --prio-0: var(--viz-prio-0);
+  --prio-1: var(--viz-prio-1);
+  --prio-2: var(--viz-prio-2);
+  --prio-3: var(--viz-prio-3);
+  --prio-0-bg: var(--prio-0);
   --prio-0-fg: #ffffff;
-  --prio-0-border: #5b21b6;
+  --prio-0-border: var(--prio-0);
   --prio-1-bg: #ede9fe;
   --prio-1-fg: #4c1d95;
-  --prio-1-border: #8b5cf6;
+  --prio-1-border: var(--prio-1);
   --prio-2-bg: transparent;
   --prio-2-fg: #5b21b6;
-  --prio-2-border: #8b5cf6;
+  --prio-2-border: var(--prio-2);
   --prio-3-bg: transparent;
   --prio-3-fg: #525252;
-  --prio-3-border: #7d8799;
+  --prio-3-border: var(--prio-3);
 
   /* Workflow status by category (a lozenge tint, not one colour per status):
      triage (untouched, dashed edge), open, progress, resolved, accepted, closed
@@ -123,11 +125,13 @@
   --st-waiting-border: var(--st-accepted-border);
 
   /* Machine health icons (HealthStatus): the text stays --foreground. Each is
-     >= 3:1 on the card (WCAG 1.4.11); the idle grey is the neutral states. */
-  --hl-ok: var(--success);
+     >= 3:1 on the card (WCAG 1.4.11); the idle grey is the neutral states.
+     ok, warn and down sit apart in lightness, so they stay apart for red-green
+     colour blindness too; each state also has its own glyph. */
+  --hl-ok: #007835;
   --hl-run: var(--info);
-  --hl-warn: var(--warning);
-  --hl-down: var(--destructive);
+  --hl-warn: #bb7e05;
+  --hl-down: #c13616;
   --hl-idle: #7d8799;
 
   /* Counter: neutral pill, ink fill only for "waiting for you". */
@@ -145,7 +149,7 @@
   --tag-green: #16a34a;
   --tag-cyan: #0891b2;
   --tag-blue: #2563eb;
-  --tag-violet: #7c3aed;
+  --tag-violet: #ac47c2;
   --tag-pink: #db2777;
   --tag-grey: #6b7280;
 
@@ -168,6 +172,15 @@
   --viz-sev-medium: #e0a106;
   --viz-sev-low: #3b82f6;
   --viz-sev-info: #6b7280;
+  --viz-prio-0: #3e0d78;
+  --viz-prio-1: #5e0dbd;
+  --viz-prio-2: #7945df;
+  --viz-prio-3: #878e9a;
+  --viz-prio-none: #7d8799;
+  --viz-lvl-critical: #1f2e44;
+  --viz-lvl-high: #3e4d62;
+  --viz-lvl-medium: #5f6d80;
+  --viz-lvl-low: #848e9d;
   --viz-cat-1: #2a78d6;
   --viz-cat-2: #eb6834;
   --viz-cat-3: #7a4fd0;
@@ -237,22 +250,22 @@
   --sev-low-ink: #0a1628;
   --sev-info-ink: #0a1628;
 
-  --prio-0: #c4b5fd;
-  --prio-1: #a48af5;
-  --prio-2: #8064dc;
-  --prio-3: #63728a;
-  --prio-0-bg: #b39dfa;
+  --prio-0: var(--viz-prio-0);
+  --prio-1: var(--viz-prio-1);
+  --prio-2: var(--viz-prio-2);
+  --prio-3: var(--viz-prio-3);
+  --prio-0-bg: var(--prio-0);
   --prio-0-fg: #0a1628;
-  --prio-0-border: #b39dfa;
+  --prio-0-border: var(--prio-0);
   --prio-1-bg: #2a2150;
   --prio-1-fg: #ddd6fe;
-  --prio-1-border: #8b74e0;
+  --prio-1-border: var(--prio-1);
   --prio-2-bg: transparent;
   --prio-2-fg: #c4b5fd;
-  --prio-2-border: #8b74e0;
+  --prio-2-border: var(--prio-2);
   --prio-3-bg: transparent;
   --prio-3-fg: #a9b4c4;
-  --prio-3-border: #63728a;
+  --prio-3-border: var(--prio-3);
 
   --st-triage-bg: transparent;
   --st-triage-fg: #fafaf9;
@@ -278,11 +291,13 @@
   --st-waiting-border: var(--st-accepted-border);
 
   /* Machine health icons (HealthStatus): the text stays --foreground. Each is
-     >= 3:1 on the card (WCAG 1.4.11); the idle grey is the neutral states. */
-  --hl-ok: var(--success);
+     >= 3:1 on the card (WCAG 1.4.11); the idle grey is the neutral states.
+     ok, warn and down sit apart in lightness, so they stay apart for red-green
+     colour blindness too; each state also has its own glyph. */
+  --hl-ok: #46bc69;
   --hl-run: var(--info);
-  --hl-warn: var(--warning);
-  --hl-down: var(--destructive);
+  --hl-warn: #ffcb70;
+  --hl-down: #e54e3c;
   --hl-idle: #63728a;
 
   /* Counter: neutral pill, ink fill only for "waiting for you". */
@@ -300,7 +315,7 @@
   --tag-green: #4ade80;
   --tag-cyan: #22d3ee;
   --tag-blue: #60a5fa;
-  --tag-violet: #a78bfa;
+  --tag-violet: #d787e9;
   --tag-pink: #f472b6;
   --tag-grey: #94a3b8;
 
@@ -311,7 +326,16 @@
   --viz-sev-high: #f07a2c;
   --viz-sev-medium: #e8c14a;
   --viz-sev-low: #4f8ff0;
-  --viz-sev-info: #94a3b8;
+  --viz-sev-info: #a9b4c4;
+  --viz-prio-0: #ded3fe;
+  --viz-prio-1: #baa5ff;
+  --viz-prio-2: #9a79f6;
+  --viz-prio-3: #687284;
+  --viz-prio-none: #63728a;
+  --viz-lvl-critical: #d6dfec;
+  --viz-lvl-high: #adbacd;
+  --viz-lvl-medium: #8896ab;
+  --viz-lvl-low: #65748b;
   --viz-cat-1: #3987e5;
   --viz-cat-2: #d95926;
   --viz-cat-3: #9085e9;
@@ -509,6 +533,15 @@
   --color-viz-sev-medium: var(--viz-sev-medium);
   --color-viz-sev-low: var(--viz-sev-low);
   --color-viz-sev-info: var(--viz-sev-info);
+  --color-viz-prio-0: var(--viz-prio-0);
+  --color-viz-prio-1: var(--viz-prio-1);
+  --color-viz-prio-2: var(--viz-prio-2);
+  --color-viz-prio-3: var(--viz-prio-3);
+  --color-viz-prio-none: var(--viz-prio-none);
+  --color-viz-lvl-critical: var(--viz-lvl-critical);
+  --color-viz-lvl-high: var(--viz-lvl-high);
+  --color-viz-lvl-medium: var(--viz-lvl-medium);
+  --color-viz-lvl-low: var(--viz-lvl-low);
   --color-viz-cat-1: var(--viz-cat-1);
   --color-viz-cat-2: var(--viz-cat-2);
   --color-viz-cat-3: var(--viz-cat-3);
