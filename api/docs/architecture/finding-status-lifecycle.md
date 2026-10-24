@@ -752,8 +752,11 @@ daily approvals digest lists the decisions one person made in the last day to
 every other approver who can see the finding.
 
 Changing a level needs an owner or administrator with `settings:write` and a
-recent re-authentication (`PATCH /api/v1/organization/settings/finding-approvals`),
-is audited at high severity with before/after,
+recent re-authentication (`PATCH /api/v1/organization/settings/finding-approvals`).
+Lowering a level, or relaxing the approval policy (which includes turning
+two-person approval off), is for the owner alone (403 for an administrator,
+nothing written); raising or tightening stays with owners and administrators.
+Every change is audited at high severity with before/after,
 and the approvers (every owner and administrator is one) are told; a lower level
 takes effect 24 hours later (`pending_fp_approval_at`,
 `pending_accept_approval_at`), a higher one at once, and `cancel_pending` drops

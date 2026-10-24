@@ -76,6 +76,24 @@ Team roles are used for team management operations:
   editor's recent re-authentication when the role has holders, and for a
   team-bound role it is also owner-only. Giving a user a custom role that
   carries such a permission needs the same step-up.
+- The privileged permissions (`permission.PrivilegedPermissions`) are member
+  invitation and writes, service accounts, team, role and API key writes,
+  secret store access, settings writes, and the two that decide where an
+  organization's integrations send data and stored tokens:
+  `integrations:manage` and `integrations:scm:write`. Both are held by the
+  owner and administrator roles; the built-in member role keeps
+  `integrations:scm:write` for its own connections, and a custom role that
+  carries either follows the rules above.
+- A stored integration secret never follows a changed destination. A
+  notification channel update that moves an email channel to another SMTP
+  host or port (or weakens its TLS mode) or a Splunk channel to another
+  `hec_url` host is refused with 400 unless it carries new credentials, which
+  replace the stored ones. A console identity provider update that changes the
+  issuer (or the Entra directory) is refused unless the client secret is
+  entered again, and a tenant storage configuration that changes the provider,
+  endpoint, bucket or region needs new keys. Webhook, Slack and Teams
+  channels hold the destination itself as the secret, and Telegram only ever
+  sends its token to the Telegram API, so neither can redirect a stored secret.
 
 ### One authority for the team role
 
@@ -981,6 +999,14 @@ same tenant gates as any session tenant route ([RFC-045](../rfcs/RFC-045-websock
   caller outside the organization's IP allowlist (403 `IP_NOT_ALLOWED`), a
   password session in an SSO-enforced tenant and a revoked session are
   refused at the upgrade.
+- When the revoked-session lookup itself fails (the store is down), a session
+  that was signed out cannot be told from a live one. Every route behind the
+  unified authenticator then fails closed for writes (POST, PUT, PATCH,
+  DELETE answer 503 with `Retry-After`) at once, and for reads (including the
+  WebSocket upgrade) after a 2-minute window that starts at the first failure
+  and ends at the first successful lookup, so a short outage does not sign
+  everyone out. The permission-version check keeps its own, separate
+  behaviour (see Permission caching).
 - The browser always opens the socket on the UI's own origin: the gateway
   routes `/api/v1/ws` to the API, and the web server (`server-with-ws.mjs`,
   all-in-one image and Helm) or `next dev` forwards it with the `Cookie` and
@@ -1867,7 +1893,9 @@ a personal address, or be a work domain nobody has verified.
   - `MemberAccessExpiryController` suspends the membership within a minute
     (`suspended_reason = expired`), in that organization only;
   - `PATCH /api/v1/organization/members/{member_id}/access` (owner/admin,
-    `members:write`) sets a new end date and re-enables them;
+    `members:write`) sets a new end date and re-enables them; a change that
+    widens access (a later end, no end, or re-enabling) needs a recent sign-in
+    (step-up), shortening does not;
   - a plain reactivation is refused.
 - **API keys** follow the member: allowed unless an active trust with their
   home forbids keys, and never beyond the end of access.
