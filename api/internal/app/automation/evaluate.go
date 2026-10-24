@@ -79,7 +79,8 @@ func (s *SimulateEvaluator) Evaluate(ctx context.Context, in *EvalInput) (*Effec
 		return would(map[string]any{"would": string(c.ActionType), "scan_id": scanID}), nil
 	case automationdom.ActionTypeAddTags, automationdom.ActionTypeRemoveTags, automationdom.ActionTypeAssignUser,
 		automationdom.ActionTypeUpdateStatus, automationdom.ActionTypeCreateTicket, automationdom.ActionTypeUpdateTicket,
-		automationdom.ActionTypeTriggerAITriage:
+		automationdom.ActionTypeTriggerAITriage, automationdom.ActionTypeRequestFalsePositive,
+		automationdom.ActionTypeRequestRiskAcceptance:
 		return s.findingAction(ctx, in)
 	}
 	return nil, fmt.Errorf("action type %s cannot be simulated", c.ActionType)
@@ -129,10 +130,16 @@ func (s *SimulateEvaluator) findingAction(ctx context.Context, in *EvalInput) (*
 		base["user_id"] = user
 	case automationdom.ActionTypeUpdateStatus:
 		target, _ := c.ActionConfig["status"].(string)
+		if !automationdom.StatusTargetAllowed(target) {
+			return leftAlone(automationdom.SkipStatusNotAllowed, base), nil
+		}
 		if vulnerability.FindingStatus(target) == f.Status() {
 			return leftAlone(automationdom.SkipNoChange, base), nil
 		}
 		base["from"], base["to"] = string(f.Status()), target
+	case automationdom.ActionTypeRequestFalsePositive, automationdom.ActionTypeRequestRiskAcceptance:
+		// Only ever a request a person decides.
+		base["creates"] = "request"
 	case automationdom.ActionTypeCreateTicket:
 		eff := would(base)
 		eff.Delivery = ticketDelivery(c.ActionConfig, f)

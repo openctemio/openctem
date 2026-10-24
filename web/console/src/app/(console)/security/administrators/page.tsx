@@ -292,6 +292,7 @@ export default function AdministratorsPage() {
                           'Remove identity provider binding'
                         ),
                         onClick: () => setPending({ kind: 'unbind', admin: a }),
+                        destructive: true,
                       },
                     ]
                   : []),
@@ -302,6 +303,7 @@ export default function AdministratorsPage() {
                   ),
                   onClick: () => setPending({ kind: 'reset', admin: a }),
                   separatorBefore: true,
+                  destructive: true,
                 },
                 {
                   label: a.is_active
@@ -445,7 +447,10 @@ export default function AdministratorsPage() {
             isLoading={isLoading}
             showColumnToggle={false}
             showSelectionCount={false}
-            searchPlaceholder="Search administrators..."
+            searchPlaceholder={t(
+              'admin.securityAdministratorsPage.searchPlaceholder',
+              'Search administrators'
+            )}
             mobileCards
           />
         )}

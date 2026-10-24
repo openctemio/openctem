@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useId, useState } from 'react'
+import { useEffect, useId, useRef, useState } from 'react'
 import { cn } from '@/lib/utils'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -114,6 +114,7 @@ export function ConfirmDialog(props: ConfirmDialogProps) {
   const { t } = useTranslation()
   const inputId = useId()
   const [typed, setTyped] = useState('')
+  const inputRef = useRef<HTMLInputElement>(null)
   const [running, setRunning] = useState(false)
   // Closed by the caller after the action (not by Cancel): forget what was
   // typed, so the next open of this dialog starts empty.
@@ -144,7 +145,17 @@ export function ConfirmDialog(props: ConfirmDialogProps) {
         actions.onOpenChange(open)
       }}
     >
-      <AlertDialogContent className={cn(className)}>
+      <AlertDialogContent
+        className={cn(className)}
+        onOpenAutoFocus={(e) => {
+          // With typed confirmation the field gets focus (Enter in it does
+          // nothing); otherwise Cancel keeps it, so Enter on open cancels.
+          if (typeToConfirm && inputRef.current) {
+            e.preventDefault()
+            inputRef.current.focus()
+          }
+        }}
+      >
         <AlertDialogHeader className="text-start">
           <AlertDialogTitle>{title}</AlertDialogTitle>
           <AlertDialogDescription asChild>
@@ -162,10 +173,18 @@ export function ConfirmDialog(props: ConfirmDialogProps) {
                   {typeAfter}
                 </Label>
                 <Input
+                  ref={inputRef}
                   id={inputId}
                   value={typed}
                   onChange={(e) => setTyped(e.target.value)}
+                  onKeyDown={(e) => {
+                    // Enter in the typed field never fires the action.
+                    if (e.key === 'Enter') e.preventDefault()
+                  }}
                   autoComplete="off"
+                  // Phone keyboards capitalise the first letter, which breaks
+                  // the exact match.
+                  autoCapitalize="none"
                   spellCheck={false}
                 />
               </div>

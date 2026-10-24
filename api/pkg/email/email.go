@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"net"
 	"net/smtp"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -420,3 +421,20 @@ func TLSConfig(host string, skipVerify bool) *tls.Config {
 		InsecureSkipVerify: skipVerify, //nolint:gosec // G402: explicit operator opt-in for self-signed relays
 	}
 }
+
+// TenantSMTPPorts are the ports an organization's SMTP relay may use: SMTP
+// (25), submission with implicit TLS (465), submission (587) and the common
+// alternative submission port (2525). An organization chooses the relay host,
+// so any other port would let it point the platform's SMTP client at a
+// service that is not a mail relay (a datastore, an admin interface) on a
+// reachable host. The platform's own relay, set by the operator, is not
+// restricted.
+var TenantSMTPPorts = []int{25, 465, 587, 2525}
+
+// TenantPortAllowed reports whether an organization's SMTP relay may use port.
+func TenantPortAllowed(port int) bool {
+	return slices.Contains(TenantSMTPPorts, port)
+}
+
+// ErrTenantPortNotAllowed refuses an organization's relay on another port.
+var ErrTenantPortNotAllowed = errors.New("the SMTP port must be 25, 465, 587 or 2525")

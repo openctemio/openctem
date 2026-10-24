@@ -10,8 +10,8 @@ import { test, expect } from '../fixtures/authenticated-page'
  * - between any two other blocks of the stack: 20px.
  *
  * It also checks the metric strip rules where a page has one: at most five
- * tiles, every tile a link or a filter toggle, two columns and no sideways
- * scroll on a phone. Screenshots of each page and width are attached.
+ * tiles, every tile a link or a filter toggle, no sideways scroll, at most two
+ * rows on a phone. Screenshots of each page and width are attached.
  *
  * The bug this guards: /scans/runs drew its metric strip flush against the tab
  * underline because the 20px lived on a banner that renders nothing.
@@ -41,7 +41,7 @@ const WIDTHS = [1440, 390]
 type Rhythm = {
   stack: boolean
   pairs: { from: string; to: string; gap: number }[]
-  strip: { tiles: number; interactive: number; overflowX: boolean; columns: number } | null
+  strip: { tiles: number; interactive: number; overflowX: boolean; rows: number } | null
 }
 
 for (const route of ROUTES) {
@@ -91,7 +91,7 @@ for (const route of ROUTES) {
             tiles: tiles.length,
             interactive: tiles.filter((t) => t.matches('a[href], button')).length,
             overflowX: dl.scrollWidth > dl.clientWidth + 1,
-            columns: getComputedStyle(dl).gridTemplateColumns.split(' ').length,
+            rows: new Set(tiles.map((t) => Math.round(t.getBoundingClientRect().top))).size,
           }
         }
         return { stack: true, pairs, strip }
@@ -99,7 +99,11 @@ for (const route of ROUTES) {
 
       expect(r.pairs.length, 'the page has at least a header and one block').toBeGreaterThan(0)
       for (const p of r.pairs) {
-        const want = p.from === 'page-header' && p.to === 'page-tabs' ? TIGHT_GAP : PAGE_GAP
+        // Route tabs (page-tabs) and in-page tabs (tabs) both sit 16px under the header.
+        const want =
+          p.from === 'page-header' && (p.to === 'page-tabs' || p.to === 'tabs')
+            ? TIGHT_GAP
+            : PAGE_GAP
         expect(
           Math.abs(p.gap - want),
           `${p.from} -> ${p.to} gap is ${p.gap}px, want ${want}px`
@@ -112,7 +116,8 @@ for (const route of ROUTES) {
         expect(r.strip.tiles, 'at most five tiles').toBeLessThanOrEqual(5)
         expect(r.strip.interactive, 'every tile is a link or a filter toggle').toBe(r.strip.tiles)
         expect(r.strip.overflowX, 'the strip never scrolls sideways').toBe(false)
-        if (width < 640) expect(r.strip.columns, 'two columns on a phone').toBe(2)
+        // Phone: compact tiles, never more than two rows (#2963).
+        if (width < 640) expect(r.strip.rows, 'at most two rows on a phone').toBeLessThanOrEqual(2)
       }
 
       const pageOverflow = await page.evaluate(
