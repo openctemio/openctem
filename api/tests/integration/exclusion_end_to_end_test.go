@@ -36,8 +36,8 @@ func exclusionScanService(db *sql.DB, cmds commanddom.Repository) *scansvc.Servi
 	svc := scansvc.NewService(
 		postgres.NewScanRepository(pg), postgres.NewScanWorkflowRepository(pg), nil,
 		postgres.NewScanRunRepository(pg), postgres.NewScanWorkflowStepRepository(pg),
-		postgres.NewStepRunRepository(pg), cmds, nil, nil,
-		postgres.NewToolRepository(pg), nil, tenantSensors{}, nil,
+		postgres.NewStepRunRepository(pg), cmds, nil,
+		postgres.NewToolRepository(pg), tenantSensors{}, nil,
 		logger.New(logger.Config{Level: "error"}),
 		allowAllTargetChecks(scansvc.WithScopeExclusionFilter(scopeService(db)))...,
 	)

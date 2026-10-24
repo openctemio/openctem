@@ -10,18 +10,7 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
 import { Switch } from '@/components/ui/switch'
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-  AlertDialogBody,
-} from '@/components/ui/alert-dialog'
-import { ConfirmDialog } from '@/components/confirm-dialog'
+import { ConfirmDialog, ConfirmSample } from '@/components/confirm-dialog'
 import {
   Lock,
   RotateCcw,
@@ -130,6 +119,8 @@ export default function ModuleManagementPage() {
 
   const [pendingChanges, setPendingChanges] = useState<Record<string, boolean>>({})
   const [showResetDialog, setShowResetDialog] = useState(false)
+  // Turning modules off hides them for every member, so a save that does asks first.
+  const [confirmDisable, setConfirmDisable] = useState(false)
   const [coreExpanded, setCoreExpanded] = useState(false)
   // Fine-tune phase groups that the admin has collapsed (default: all collapsed;
   // the admin opens each phase as needed to reduce initial clutter).
@@ -160,7 +151,10 @@ export default function ModuleManagementPage() {
   // dep graph into display names from the tenant-modules response.
   const moduleNames = useMemo(() => {
     const map: Record<string, string> = {}
-    for (const m of modules) map[m.id] = m.name
+    for (const m of modules) {
+      map[m.id] = m.name
+      for (const sub of m.sub_modules ?? []) map[sub.id] = sub.name
+    }
     return map
   }, [modules])
 
@@ -294,8 +288,17 @@ export default function ModuleManagementPage() {
 
   const handleSave = useCallback(async () => {
     if (!isDirty) return
+    if (Object.values(pendingChanges).some((enabled) => !enabled)) {
+      setConfirmDisable(true)
+      return
+    }
     await runSave(pendingChanges)
   }, [isDirty, pendingChanges, runSave])
+
+  const handleConfirmDisable = useCallback(async () => {
+    setConfirmDisable(false)
+    await runSave(pendingChanges)
+  }, [pendingChanges, runSave])
 
   // Cascade resolver — when the backend blocks a toggle, the user can
   // click "Disable them too" (or "Enable required") to flip the
@@ -583,111 +586,118 @@ export default function ModuleManagementPage() {
       {/* Dependency-violation Dialog — shown when the backend rejects
           a save because of the module graph. Lists the concrete modules
           the admin needs to flip before the proposed toggle will take. */}
-      <AlertDialog open={!!depConflict} onOpenChange={(open) => !open && setDepConflict(null)}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle className="flex items-center gap-2">
-              <AlertTriangle className="h-5 w-5 text-muted-foreground" />
-              {depConflict?.action === 'disable'
-                ? t('settings.modules.cannotDisable', 'Cannot disable "{name}"', {
-                    name: depConflict.module_name,
-                  })
-                : t('settings.modules.cannotEnable', 'Cannot enable "{name}"', {
-                    name: depConflict?.module_name ?? '',
-                  })}
-            </AlertDialogTitle>
-            {/* Short plain-text description for screen readers only —
-                the rich block-level content below renders outside the
-                <p> element to avoid invalid nested <p> hydration errors. */}
-            <AlertDialogDescription className="sr-only">
-              {depConflict?.action === 'disable'
-                ? t(
-                    'settings.modules.blockedSr',
-                    '{count} dependent modules block disabling {name}',
-                    { count: depConflict.blockers?.length ?? 0, name: depConflict.module_name }
-                  )
-                : t(
-                    'settings.modules.requiredSr',
-                    '{count} modules must be enabled before {name}',
-                    {
-                      count: depConflict?.required?.length ?? 0,
-                      name: depConflict?.module_name ?? '',
-                    }
-                  )}
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogBody>
-            <div className="space-y-3 text-sm">
-              {depConflict?.action === 'disable' && (depConflict.blockers?.length ?? 0) > 0 && (
-                <div>
-                  <div className="text-muted-foreground">
-                    {t(
-                      'settings.modules.blockedBody',
-                      '{count} modules depend on {name}. You can disable them all together, or cancel and handle them manually:',
-                      { count: depConflict.blockers?.length ?? 0, name: depConflict.module_name }
-                    )}
-                  </div>
-                  <ul className="mt-2 space-y-1.5">
-                    {depConflict.blockers?.map((b) => (
-                      <li key={b.module_id} className="rounded-md border bg-muted/40 px-3 py-2">
-                        <div className="flex items-center justify-between gap-2">
-                          <div className="font-medium">{b.name}</div>
-                          <code className="text-xs text-muted-foreground">{b.module_id}</code>
-                        </div>
-                        <div className="mt-0.5 text-xs text-muted-foreground">{b.reason}</div>
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              )}
-              {depConflict?.action === 'enable' && (depConflict.required?.length ?? 0) > 0 && (
-                <div>
-                  <div className="text-muted-foreground">
-                    {t(
-                      'settings.modules.requiredBody',
-                      '{name} requires {count} other modules that are currently disabled. You can enable them all together, or cancel and handle them manually:',
-                      { count: depConflict.required?.length ?? 0, name: depConflict.module_name }
-                    )}
-                  </div>
-                  <ul className="mt-2 space-y-1.5">
-                    {depConflict.required?.map((r) => (
-                      <li key={r.module_id} className="rounded-md border bg-muted/40 px-3 py-2">
-                        <div className="flex items-center justify-between gap-2">
-                          <div className="font-medium">{r.name}</div>
-                          <code className="text-xs text-muted-foreground">{r.module_id}</code>
-                        </div>
-                        <div className="mt-0.5 text-xs text-muted-foreground">{r.reason}</div>
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              )}
+      <ConfirmDialog
+        open={!!depConflict}
+        onOpenChange={(open) => !open && setDepConflict(null)}
+        title={
+          <span className="flex items-center gap-2">
+            <AlertTriangle className="h-5 w-5 text-muted-foreground" />
+            {depConflict?.action === 'disable'
+              ? t('settings.modules.cannotDisable', 'Cannot disable "{name}"', {
+                  name: depConflict.module_name,
+                })
+              : t('settings.modules.cannotEnable', 'Cannot enable "{name}"', {
+                  name: depConflict?.module_name ?? '',
+                })}
+          </span>
+        }
+        desc={
+          depConflict?.action === 'disable'
+            ? t('settings.modules.blockedSr', '{count} dependent modules block disabling {name}', {
+                count: depConflict.blockers?.length ?? 0,
+                name: depConflict.module_name,
+              })
+            : t('settings.modules.requiredSr', '{count} modules must be enabled before {name}', {
+                count: depConflict?.required?.length ?? 0,
+                name: depConflict?.module_name ?? '',
+              })
+        }
+        confirmText={
+          depConflict?.action === 'disable'
+            ? t('settings.modules.disableAndRetry', 'Disable {count} dependent modules and retry', {
+                count: depConflict.blockers?.length ?? 0,
+              })
+            : t('settings.modules.enableAndRetry', 'Enable {count} required modules and retry', {
+                count: depConflict?.required?.length ?? 0,
+              })
+        }
+        destructive={depConflict?.action === 'disable'}
+        isLoading={isUpdating}
+        handleConfirm={handleCascadeResolve}
+      >
+        <div className="space-y-3 text-sm">
+          {depConflict?.action === 'disable' && (depConflict.blockers?.length ?? 0) > 0 && (
+            <div>
+              <div className="text-muted-foreground">
+                {t(
+                  'settings.modules.blockedBody',
+                  '{count} modules depend on {name}. You can disable them all together, or cancel and handle them manually:',
+                  { count: depConflict.blockers?.length ?? 0, name: depConflict.module_name }
+                )}
+              </div>
+              <ul className="mt-2 space-y-1.5">
+                {depConflict.blockers?.map((b) => (
+                  <li key={b.module_id} className="rounded-md border bg-muted/40 px-3 py-2">
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="font-medium">{b.name}</div>
+                      <code className="text-xs text-muted-foreground">{b.module_id}</code>
+                    </div>
+                    <div className="mt-0.5 text-xs text-muted-foreground">{b.reason}</div>
+                  </li>
+                ))}
+              </ul>
             </div>
-          </AlertDialogBody>
-          <AlertDialogFooter>
-            <AlertDialogCancel onClick={() => setDepConflict(null)}>
-              {t('common.cancel', 'Cancel')}
-            </AlertDialogCancel>
-            <AlertDialogAction onClick={handleCascadeResolve} disabled={isUpdating}>
-              {depConflict?.action === 'disable'
-                ? t(
-                    'settings.modules.disableAndRetry',
-                    'Disable {count} dependent modules and retry',
-                    {
-                      count: depConflict.blockers?.length ?? 0,
-                    }
-                  )
-                : t(
-                    'settings.modules.enableAndRetry',
-                    'Enable {count} required modules and retry',
-                    {
-                      count: depConflict?.required?.length ?? 0,
-                    }
-                  )}
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+          )}
+          {depConflict?.action === 'enable' && (depConflict.required?.length ?? 0) > 0 && (
+            <div>
+              <div className="text-muted-foreground">
+                {t(
+                  'settings.modules.requiredBody',
+                  '{name} requires {count} other modules that are currently disabled. You can enable them all together, or cancel and handle them manually:',
+                  { count: depConflict.required?.length ?? 0, name: depConflict.module_name }
+                )}
+              </div>
+              <ul className="mt-2 space-y-1.5">
+                {depConflict.required?.map((r) => (
+                  <li key={r.module_id} className="rounded-md border bg-muted/40 px-3 py-2">
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="font-medium">{r.name}</div>
+                      <code className="text-xs text-muted-foreground">{r.module_id}</code>
+                    </div>
+                    <div className="mt-0.5 text-xs text-muted-foreground">{r.reason}</div>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+        </div>
+      </ConfirmDialog>
+
+      {/* Disabling modules: names what goes away for every member. */}
+      <ConfirmDialog
+        open={confirmDisable}
+        onOpenChange={setConfirmDisable}
+        title={t('confirm.modules.disableTitle', 'Turn off {count} modules?', {
+          count: pendingDisabled,
+        })}
+        desc={t(
+          'confirm.modules.disableDesc',
+          'They disappear from the menu and their pages stop opening for every member of this organization. Their data is kept, and turning them on again brings it back.'
+        )}
+        confirmText={t('confirm.modules.disableConfirm', 'Turn off {count} modules', {
+          count: pendingDisabled,
+        })}
+        destructive
+        isLoading={isUpdating}
+        handleConfirm={handleConfirmDisable}
+      >
+        <ConfirmSample
+          names={Object.entries(pendingChanges)
+            .filter(([, enabled]) => !enabled)
+            .map(([id]) => moduleNames[id] ?? id)}
+          total={pendingDisabled}
+        />
+      </ConfirmDialog>
 
       {/* Reset Confirmation Dialog */}
       <ConfirmDialog

@@ -359,3 +359,52 @@ func TestTaskWatchers_DB(t *testing.T) {
 		t.Errorf("%d subscription rows left on a deleted task", n)
 	}
 }
+
+// The list names who added a watcher, so the person can see why they watch,
+// but only while that adder is still an active member of the tenant.
+func TestFindingWatchers_AddedByName_DB(t *testing.T) {
+	h := newWatchHarness(t)
+	base := "/api/v1/findings/" + h.findingA.String()
+	addedByName := func(out map[string]any, user shared.ID) (string, bool) {
+		ws, _ := out["watchers"].([]any)
+		for _, w := range ws {
+			m := w.(map[string]any)
+			if m["user_id"] == user.String() {
+				name, ok := m["added_by_name"].(string)
+				return name, ok
+			}
+		}
+		t.Fatalf("watcher %s not listed: %v", user, out["_raw"])
+		return "", false
+	}
+
+	// memberFull (named "member", full data) adds memberA.
+	if code, out := h.call(h.memberFull, false, watchAdminPerms, http.MethodPost, base+"/watchers",
+		map[string]any{"user_ids": []string{h.memberA.String()}}); code != http.StatusOK {
+		t.Fatalf("memberFull adds memberA: %d %v", code, out["_raw"])
+	}
+	// A person who took part themself has no adder.
+	h.svc.AutoWatch(context.Background(), h.tenant, participationdom.Item{Kind: participationdom.ItemFinding, ID: h.findingA}, h.owner, participationdom.ReasonCommented)
+
+	_, out := h.call(h.owner, true, watchAdminPerms, http.MethodGet, base+"/participants", nil)
+	if name, _ := addedByName(out, h.memberA); name != "member" {
+		t.Errorf("added_by_name = %q, want the adder's name %q", name, "member")
+	}
+	if name, ok := addedByName(out, h.owner); ok {
+		t.Errorf("a self-joined watcher has an adder name %q", name)
+	}
+	// The caller learns their own id, to find their row (never someone else's).
+	if me, _ := out["me"].(map[string]any); me["user_id"] != h.owner.String() {
+		t.Errorf("me.user_id = %v, want the caller %s", me["user_id"], h.owner)
+	}
+	if strings.Contains(out["_raw"].(string), "@ds.test") {
+		t.Errorf("the list discloses an email: %v", out["_raw"])
+	}
+
+	// The adder leaves the tenant: their name is no longer shown.
+	h.exec(`UPDATE tenant_members SET status = 'suspended' WHERE tenant_id = $1 AND user_id = $2`, h.tenant.String(), h.memberFull.String())
+	_, out = h.call(h.owner, true, watchAdminPerms, http.MethodGet, base+"/participants", nil)
+	if name, ok := addedByName(out, h.memberA); ok {
+		t.Errorf("a former member is still named as the adder: %q", name)
+	}
+}

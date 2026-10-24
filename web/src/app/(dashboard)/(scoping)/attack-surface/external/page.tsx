@@ -24,6 +24,7 @@ import {
   ErrorState,
   MetricStrip,
   PageHeader,
+  PageStack,
   RelativeTime,
   RiskScoreBadge,
   StackedCell,
@@ -70,7 +71,7 @@ import { useExposures } from '@/features/exposures/hooks'
 import { ScanAssetsDialog, type ScanCandidate } from '@/features/scans/components'
 import { useTenant } from '@/context/tenant-provider'
 import { useRiskThresholds } from '@/context/risk-scoring-provider'
-import { useDebounce } from '@/hooks/use-debounce'
+import { useSearchQuery } from '@/hooks/use-search-query'
 import { useUrlFilter } from '@/hooks/use-url-param'
 import { useListParams } from '@/hooks/use-list-params'
 import { exportToCsv } from '@/hooks/use-csv-export'
@@ -191,7 +192,7 @@ export default function ExternalSurfacePage() {
   const { pagination, setPagination, setPage } = list
 
   const [searchInput, setSearchInput] = useState(qParam)
-  const search = useDebounce(searchInput, 300)
+  const search = useSearchQuery(searchInput).term
   // Push the debounced search into the URL and back to page 1. The ref holds
   // the last value written, so the URL echoing it back (or a new setter
   // identity) never re-triggers the reset to page 1.
@@ -292,7 +293,7 @@ export default function ExternalSurfacePage() {
         : certsError
           ? t('attackSurface.external.metric.certsError', 'Could not be loaded')
           : t('attackSurface.external.metric.certsHint', 'Open, expired included'),
-      onClick: canReadExposures ? () => router.push(CERT_EXPOSURES_HREF) : undefined,
+      href: canReadExposures ? CERT_EXPOSURES_HREF : undefined,
     },
   ]
   const metricsLoading =
@@ -743,39 +744,39 @@ export default function ExternalSurfacePage() {
   return (
     <>
       <Main>
-        <PageHeader
-          title={t('attackSurface.external.title', 'External attack surface')}
-          description={t(
-            'attackSurface.external.description',
-            'Every internet-facing asset, riskiest first.'
-          )}
-        >
-          <Can permission={Permission.ScansExecute}>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => openScanDialog(assets)}
-              disabled={assets.length === 0}
-            >
-              <RefreshCw className="me-2 h-4 w-4" />
-              {t('attackSurface.external.scanPage', 'Scan this page')}
+        <PageStack>
+          <PageHeader
+            title={t('attackSurface.external.title', 'External attack surface')}
+            description={t(
+              'attackSurface.external.description',
+              'Every internet-facing asset, riskiest first.'
+            )}
+          >
+            <Can permission={Permission.ScansExecute}>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => openScanDialog(assets)}
+                disabled={assets.length === 0}
+              >
+                <RefreshCw className="me-2 h-4 w-4" />
+                {t('attackSurface.external.scanPage', 'Scan this page')}
+              </Button>
+            </Can>
+            <Button variant="outline" size="sm" onClick={() => void handleExport()}>
+              <Download className="me-2 h-4 w-4" />
+              {t('attackSurface.external.export', 'Export')}
             </Button>
-          </Can>
-          <Button variant="outline" size="sm" onClick={() => void handleExport()}>
-            <Download className="me-2 h-4 w-4" />
-            {t('attackSurface.external.export', 'Export')}
-          </Button>
-          <Can permission={Permission.AssetsWrite}>
-            <Button size="sm" onClick={() => setIsCreateOpen(true)}>
-              <Plus className="me-2 h-4 w-4" />
-              {t('attackSurface.external.addAsset', 'Add asset')}
-            </Button>
-          </Can>
-        </PageHeader>
+            <Can permission={Permission.AssetsWrite}>
+              <Button size="sm" onClick={() => setIsCreateOpen(true)}>
+                <Plus className="me-2 h-4 w-4" />
+                {t('attackSurface.external.addAsset', 'Add asset')}
+              </Button>
+            </Can>
+          </PageHeader>
 
-        <MetricStrip className="mt-5" loading={metricsLoading} items={metrics} />
+          <MetricStrip loading={metricsLoading} items={metrics} />
 
-        <div className="mt-5">
           {error && !isLoading ? (
             <ErrorState
               title={t('attackSurface.external.errorTitle', 'external assets')}
@@ -822,7 +823,7 @@ export default function ExternalSurfacePage() {
               }
             />
           )}
-        </div>
+        </PageStack>
       </Main>
 
       <Dialog open={isCreateOpen} onOpenChange={setIsCreateOpen}>

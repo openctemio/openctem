@@ -23,14 +23,14 @@ import {
   ErrorState,
   MetricStrip,
   RelativeTime,
-  SegmentedLens,
+  PageStack,
   StackedCell,
   type MetricStripItem,
 } from '@/features/shared'
 import { ProviderIcon } from '@/features/scm-connections'
 import { useUrlFilter, useUrlFilterList } from '@/hooks/use-url-param'
 import { useListParams } from '@/hooks/use-list-params'
-import { useDebounce } from '@/hooks/use-debounce'
+import { useSearchQuery } from '@/hooks/use-search-query'
 import { cn } from '@/lib/utils'
 
 import { useCIPipelines } from '../api/use-ci'
@@ -135,14 +135,14 @@ export function CIPipelinesPanel() {
   const { t } = useTranslation()
   const { can } = usePermissions()
   const canWrite = can(Permission.CIWrite)
-  const [viewParam, setView] = useUrlFilter('view', 'pipelines')
+  const [viewParam] = useUrlFilter('view', 'pipelines')
   const view: RunnerView =
     viewParam === 'runs' || viewParam === 'coverage' ? viewParam : 'pipelines'
   const [q, setQ] = useUrlFilter('q', '')
   // The box types at once; the request and the URL follow 300 ms later (each
   // request makes the server assess every pipeline of the tenant).
   const [searchText, setSearchText] = useState(q)
-  const debouncedSearch = useDebounce(searchText, 300)
+  const debouncedSearch = useSearchQuery(searchText).term
   const [statusParam, setStatusParam] = useUrlFilterList('pipeline_status')
   const [inactiveParam, setInactiveParam] = useUrlFilter('inactive', '')
   const [overridesParam, setOverridesParam] = useUrlFilter('overrides', '')
@@ -251,52 +251,17 @@ export function CIPipelinesPanel() {
     },
   ]
 
-  const lens = (
-    <SegmentedLens<RunnerView>
-      label={t('scans.ci.view.label', 'Runner view')}
-      value={view}
-      onChange={(v) => {
-        setView(v)
-        setPage(1)
-      }}
-      options={[
-        {
-          value: 'pipelines',
-          label: t('scans.ci.view.pipelines', 'Pipelines'),
-          description: t('scans.ci.view.pipelinesHint', 'One row per workflow file'),
-        },
-        {
-          value: 'runs',
-          label: t('scans.ci.view.runs', 'Runs'),
-          description: t('scans.ci.view.runsHint', 'Every run, newest first'),
-        },
-        {
-          value: 'coverage',
-          label: t('scans.ci.view.coverage', 'Coverage'),
-          description: t(
-            'scans.ci.view.coverageHint',
-            'Repositories by capability: which are not being looked at'
-          ),
-        },
-      ]}
-    />
-  )
-
   if (view === 'coverage') {
-    return <CICoverageView toolbarStart={lens} />
+    return <CICoverageView />
   }
 
   if (view === 'runs') {
-    return (
-      <div className="mt-5">
-        <CIRunsView embedded toolbarStart={lens} />
-      </div>
-    )
+    return <CIRunsView embedded />
   }
 
   const empty = !isLoading && !error && active + inactive === 0 && !q && !hasOverrides
   return (
-    <div className="mt-5 space-y-5">
+    <PageStack>
       {!empty && <MetricStrip loading={isLoading && !data} items={metrics} />}
       {error ? (
         <ErrorState
@@ -306,7 +271,6 @@ export function CIPipelinesPanel() {
         />
       ) : empty ? (
         <>
-          <div className="flex flex-wrap items-center gap-2">{lens}</div>
           <EmptyState
             icon={Workflow}
             title={
@@ -358,7 +322,6 @@ export function CIPipelinesPanel() {
           }
           toolbarStart={
             <>
-              {lens}
               <div className="relative min-w-0 flex-1 sm:max-w-xs">
                 <Search className="pointer-events-none absolute start-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
                 <Input
@@ -401,6 +364,6 @@ export function CIPipelinesPanel() {
         />
       )}
       <CIPipelineSheet id={openId || null} onClose={() => setOpenId('')} />
-    </div>
+    </PageStack>
   )
 }

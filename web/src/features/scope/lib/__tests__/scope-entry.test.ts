@@ -81,3 +81,18 @@ describe('approving', () => {
     expect(entryStatus({ status: 'expired' })).toBe('expired')
   })
 })
+
+describe('scope entry status tones', () => {
+  it('maps every entry status to its workflow tone', async () => {
+    const { SCOPE_ENTRY_STATUS_TONE } = await import('../scope-entry')
+    expect(
+      Object.fromEntries(Object.entries(SCOPE_ENTRY_STATUS_TONE).map(([k, v]) => [k, v.tone]))
+    ).toEqual({
+      active: 'resolved',
+      pending: 'waiting',
+      inactive: 'closed',
+      rejected: 'closed',
+      expired: 'closed',
+    })
+  })
+})

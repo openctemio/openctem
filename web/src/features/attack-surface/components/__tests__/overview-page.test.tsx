@@ -60,21 +60,20 @@ const { default: Page } = await import('@/app/(dashboard)/(scoping)/attack-surfa
 describe('attack surface overview', () => {
   it('tiles open their list with the attribution the stats count', () => {
     render(<Page />)
-    const total = screen.getByRole('link', { name: 'Total assets' })
+    const total = screen.getByRole('link', { name: /^Total assets/ })
     expect(total).toHaveAttribute('href', '/assets?attribution=attributed')
-    const facing = screen.getByRole('link', { name: 'Internet-facing assets' })
+    const facing = screen.getByRole('link', { name: /^Internet-facing assets/ })
     expect(facing).toHaveAttribute('href', '/assets?internet_facing=true&attribution=attributed')
-    expect(screen.getByRole('link', { name: 'Critical internet-facing assets' })).toHaveAttribute(
+    expect(screen.getByRole('link', { name: /^Critical internet-facing assets/ })).toHaveAttribute(
       'href',
       '/assets?internet_facing=true&criticalities=critical,high&attribution=attributed'
     )
   })
 
-  it('never nests the info button inside a link', () => {
+  it('never nests a button inside a tile link', () => {
     render(<Page />)
-    for (const b of screen.getAllByRole('button', { name: /is measured/i })) {
-      expect(b.closest('a')).toBeNull()
-    }
+    const tile = screen.getByRole('link', { name: /^Total assets/ })
+    expect(within(tile).queryByRole('button')).toBeNull()
   })
 
   it('rows link to the asset when the id is known and truncate long names', () => {

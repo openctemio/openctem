@@ -2,7 +2,7 @@
 
 import { Main } from '@/components/layout'
 import { Skeleton } from '@/components/ui/skeleton'
-import { ErrorState, PageHeader } from '@/features/shared'
+import { ErrorState, PageHeader, PageStack } from '@/features/shared'
 import { useAdmin } from '@console/features/admin-console/components/admin-console-shell'
 import { useSignupPolicy } from '@console/features/admin-console/api/use-signup-policy'
 import { SignupPolicyForm } from '@console/features/admin-console/components/signup-policy-form'
@@ -20,8 +20,8 @@ export default function SignupPolicyPage() {
 
   return (
     <Main>
-      <PageHeader title={t('admin.signup.pageTitle')} description={t('admin.signup.pageDesc')} />
-      <div className="mt-5">
+      <PageStack>
+        <PageHeader title={t('admin.signup.pageTitle')} description={t('admin.signup.pageDesc')} />
         {error ? (
           <ErrorState
             title={t('admin.signup.errorTitle')}
@@ -37,7 +37,7 @@ export default function SignupPolicyPage() {
             onSaved={() => void mutate()}
           />
         )}
-      </div>
+      </PageStack>
     </Main>
   )
 }

@@ -32,6 +32,9 @@ func NewSCMSyncController(syncer SCMSyncer, interval time.Duration, log *logger.
 // Name returns the controller name.
 func (c *SCMSyncController) Name() string { return "scm-sync" }
 
+// Exclusive: one API replica at a time (controller lease). It imports from the code hosts for every integration: two replicas would double the API calls and race the upserts.
+func (c *SCMSyncController) Exclusive() bool { return true }
+
 // Interval returns the configured sync interval.
 func (c *SCMSyncController) Interval() time.Duration { return c.interval }
 

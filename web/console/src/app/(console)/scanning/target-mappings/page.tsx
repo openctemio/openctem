@@ -22,6 +22,7 @@ import {
   ErrorState,
   MetricStrip,
   PageHeader,
+  PageStack,
   RelativeTime,
   StackedCell,
   type MetricStripItem,
@@ -142,10 +143,6 @@ export default function TargetMappingsPage() {
   }
 
   const s = stats.data
-  // A scanner declaring one of these target types matches no asset at all.
-  const unmappedTargets = s
-    ? TARGET_TYPE_OPTIONS.map((o) => o.value).filter((v) => !s.by_target_type[v])
-    : []
   // Filter choices: every accepted value plus any older value still stored, so
   // every row stays reachable through the filters.
   const targetFilterOptions = withStoredValues(
@@ -186,21 +183,6 @@ export default function TargetMappingsPage() {
       ),
       onClick: () => toggleStatus('inactive'),
       active: status === 'inactive',
-    },
-    {
-      key: 'targets',
-      label: t('admin.scanningTargetMappingsPage.targetTypesMapped', 'Target types mapped'),
-      value: s ? Object.keys(s.by_target_type).length : '—',
-      hint: unmappedTargets.length
-        ? t('admin.scanningTargetMappingsPage.unmapped', '{length} unmapped', {
-            length: unmappedTargets.length,
-          })
-        : undefined,
-    },
-    {
-      key: 'assets',
-      label: t('admin.scanningTargetMappingsPage.assetTypesCovered', 'Asset types covered'),
-      value: s ? Object.keys(s.by_asset_type).length : '—',
     },
   ]
 
@@ -328,16 +310,16 @@ export default function TargetMappingsPage() {
 
   return (
     <Main>
-      <PageHeader
-        title={t('admin.scanningTargetMappingsPage.targetMappings', 'Target mappings')}
-        description={t(
-          'admin.scanningTargetMappingsPage.whichAssetTypesEachScanner',
-          'Which asset types each scanner target type can scan. Scans skip assets that no active mapping covers.'
-        )}
-      >
-        {newButton}
-      </PageHeader>
-      <div className="mt-5 space-y-5">
+      <PageStack>
+        <PageHeader
+          title={t('admin.scanningTargetMappingsPage.targetMappings', 'Target mappings')}
+          description={t(
+            'admin.scanningTargetMappingsPage.whichAssetTypesEachScanner',
+            'Which asset types each scanner target type can scan. Scans skip assets that no active mapping covers.'
+          )}
+        >
+          {newButton}
+        </PageHeader>
         <MetricStrip items={metrics} loading={stats.isLoading} />
         {list.error ? (
           <ErrorState
@@ -450,64 +432,67 @@ export default function TargetMappingsPage() {
             }
           />
         )}
-      </div>
 
-      {dialog && (
-        <TargetMappingDialog
-          key={dialog.mapping?.id ?? 'new'}
-          open
-          onOpenChange={(open) => !open && setDialog(null)}
-          mapping={dialog.mapping}
-          defaultTargetType={targetType || undefined}
-          onSaved={refresh}
-        />
-      )}
+        {dialog && (
+          <TargetMappingDialog
+            key={dialog.mapping?.id ?? 'new'}
+            open
+            onOpenChange={(open) => !open && setDialog(null)}
+            mapping={dialog.mapping}
+            defaultTargetType={targetType || undefined}
+            onSaved={refresh}
+          />
+        )}
 
-      <ConfirmDialog
-        open={pending !== null}
-        onOpenChange={(open) => !open && setPending(null)}
-        title={
-          pending?.kind === 'delete'
-            ? t('confirm.targetMapping.deleteTitle', 'Delete the target mapping {pair}?', {
-                pair: pairLabel(pending.mapping),
-              })
-            : pending?.mapping.is_active
-              ? t(
-                  'confirm.targetMapping.deactivateTitle',
-                  'Deactivate the target mapping {pair}?',
-                  {
-                    pair: pairLabel(pending.mapping),
-                  }
-                )
-              : t('confirm.targetMapping.activateTitle', 'Activate the target mapping {pair}?', {
-                  pair: pending ? pairLabel(pending.mapping) : '',
+        <ConfirmDialog
+          open={pending !== null}
+          onOpenChange={(open) => !open && setPending(null)}
+          title={
+            pending?.kind === 'delete'
+              ? t('confirm.targetMapping.deleteTitle', 'Delete the target mapping {pair}?', {
+                  pair: pairLabel(pending.mapping),
                 })
-        }
-        desc={
-          pending?.kind === 'delete'
-            ? t(
-                'confirm.targetMapping.deleteDesc',
-                'Scanners that only reach {type} assets through it will skip them. To pause it instead, deactivate it.',
-                { type: getAssetTypeLabel(pending.mapping.asset_type) }
-              )
-            : pending?.mapping.is_active
+              : pending?.mapping.is_active
+                ? t(
+                    'confirm.targetMapping.deactivateTitle',
+                    'Deactivate the target mapping {pair}?',
+                    {
+                      pair: pairLabel(pending.mapping),
+                    }
+                  )
+                : t('confirm.targetMapping.activateTitle', 'Activate the target mapping {pair}?', {
+                    pair: pending ? pairLabel(pending.mapping) : '',
+                  })
+          }
+          desc={
+            pending?.kind === 'delete'
               ? t(
-                  'confirm.targetMapping.deactivateDesc',
-                  'It is kept but ignored: scanners that only reach these assets through it will skip them.'
+                  'confirm.targetMapping.deleteDesc',
+                  'Scanners that only reach {type} assets through it will skip them. To pause it instead, deactivate it.',
+                  { type: getAssetTypeLabel(pending.mapping.asset_type) }
                 )
-              : t('confirm.targetMapping.activateDesc', 'It is used again when scans are filtered.')
-        }
-        confirmText={
-          pending?.kind === 'delete'
-            ? t('confirm.delete', 'Delete')
-            : pending?.mapping.is_active
-              ? t('confirm.targetMapping.deactivate', 'Deactivate')
-              : t('confirm.targetMapping.activate', 'Activate')
-        }
-        destructive={pending?.kind === 'delete' || !!pending?.mapping.is_active}
-        isLoading={busy}
-        handleConfirm={() => void confirm()}
-      />
+              : pending?.mapping.is_active
+                ? t(
+                    'confirm.targetMapping.deactivateDesc',
+                    'It is kept but ignored: scanners that only reach these assets through it will skip them.'
+                  )
+                : t(
+                    'confirm.targetMapping.activateDesc',
+                    'It is used again when scans are filtered.'
+                  )
+          }
+          confirmText={
+            pending?.kind === 'delete'
+              ? t('confirm.delete', 'Delete')
+              : pending?.mapping.is_active
+                ? t('confirm.targetMapping.deactivate', 'Deactivate')
+                : t('confirm.targetMapping.activate', 'Activate')
+          }
+          destructive={pending?.kind === 'delete' || !!pending?.mapping.is_active}
+          isLoading={busy}
+          handleConfirm={() => void confirm()}
+        />
+      </PageStack>
     </Main>
   )
 }

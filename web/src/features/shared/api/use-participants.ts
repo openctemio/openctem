@@ -31,6 +31,8 @@ export interface Watcher {
   avatar_url?: string
   reason: WatcherReason
   added_by?: string
+  /** Who added this watcher; absent when they took part themselves or the adder left. */
+  added_by_name?: string
   since: string
 }
 
@@ -48,7 +50,8 @@ export interface Participants {
   names_visible: boolean
   watchers: Watcher[]
   asset_owners: AssetOwner[]
-  me: { state: '' | 'subscribed' | 'unsubscribed'; reason?: string }
+  /** The caller (`user_id`, to find their own row) and their own subscription. */
+  me: { user_id?: string; state: '' | 'subscribed' | 'unsubscribed'; reason?: string }
 }
 
 export function participantsBase(kind: WorkItemKind, id: string): string {
@@ -60,8 +63,17 @@ export function participantsKey(kind: WorkItemKind, id: string): string {
   return `${participantsBase(kind, id)}/participants`
 }
 
+export interface UseParticipantsOptions {
+  /** The toast when a write fails without a message from the API (translated by the caller). */
+  errorMessage?: string
+}
+
 /** A null id disables the request. */
-export function useParticipants(kind: WorkItemKind, id: string | null | undefined) {
+export function useParticipants(
+  kind: WorkItemKind,
+  id: string | null | undefined,
+  { errorMessage = 'Could not update watchers' }: UseParticipantsOptions = {}
+) {
   const { currentTenant } = useTenant()
   const [busy, setBusy] = useState(false)
   const key = currentTenant && id ? participantsKey(kind, id) : null
@@ -79,7 +91,7 @@ export function useParticipants(kind: WorkItemKind, id: string | null | undefine
       await mutate(await call(), { revalidate: false })
       return true
     } catch (error) {
-      handleApiError(error, { showToast: true, fallbackMessage: 'Could not update watchers' })
+      handleApiError(error, { showToast: true, fallbackMessage: errorMessage })
       return false
     } finally {
       setBusy(false)

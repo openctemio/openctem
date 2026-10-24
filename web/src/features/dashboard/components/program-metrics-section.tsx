@@ -275,7 +275,7 @@ export function ProgramMetricsSection({
   ]
 
   return (
-    <section className="mt-5 space-y-3">
+    <section className="space-y-3">
       <div>
         <h2 className="text-base font-semibold">{t(`${K}.title`, 'CTEM program metrics')}</h2>
         <p className="text-sm text-muted-foreground">
