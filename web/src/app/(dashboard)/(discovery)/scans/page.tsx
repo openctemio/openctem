@@ -34,7 +34,13 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
-import { bulkTypeToConfirm, ConfirmDialog } from '@/components/confirm-dialog'
+import {
+  ConfirmDialog,
+  ConfirmSample,
+  irreversibleTypeToConfirm,
+} from '@/components/confirm-dialog'
+import { nameToTypeToConfirm } from '@/components/confirm-name'
+import { ScheduleOnConfirm } from '@/features/scans/components/schedule-on-confirm'
 import { useTranslation } from '@/context/i18n-provider'
 import { toast } from 'sonner'
 import {
@@ -260,7 +266,12 @@ function ConfigActionsCell({ config, onAction, triggering = false }: ConfigActio
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
-        <Button variant="ghost" size="sm" className="h-8 w-8 p-0" aria-label="Row actions">
+        <Button
+          variant="ghost"
+          size="sm"
+          className="h-8 w-8 p-0"
+          aria-label={t('scans.row.actions')}
+        >
           <MoreHorizontal className="h-4 w-4" />
         </Button>
       </DropdownMenuTrigger>
@@ -268,14 +279,14 @@ function ConfigActionsCell({ config, onAction, triggering = false }: ConfigActio
         <DropdownMenuItem asChild>
           <Link href={`/scans/${config.id}`} className="flex items-center">
             <Eye className="me-2 h-4 w-4" />
-            View details
+            {t('scans.row.view')}
           </Link>
         </DropdownMenuItem>
         {!managed && (
           <Can permission={Permission.ScansWrite}>
             <DropdownMenuItem onClick={() => onAction('edit', config)}>
               <Pencil className="me-2 h-4 w-4" />
-              Edit
+              {t('scans.row.edit')}
             </DropdownMenuItem>
           </Can>
         )}
@@ -288,12 +299,12 @@ function ConfigActionsCell({ config, onAction, triggering = false }: ConfigActio
               ) : (
                 <Play className="me-2 h-4 w-4" />
               )}
-              {triggering ? 'Starting…' : 'Trigger scan'}
+              {triggering ? t('scans.row.starting') : t('scans.row.run')}
             </DropdownMenuItem>
           )}
           <DropdownMenuItem onClick={() => onAction('clone', config)}>
             <Copy className="me-2 h-4 w-4" />
-            {managed ? t('scans.managed.clone') : 'Clone'}
+            {managed ? t('scans.managed.clone') : t('scans.row.clone')}
           </DropdownMenuItem>
           {!managed && (config.status === 'active' || config.status === 'paused') && (
             <DropdownMenuSeparator />
@@ -301,13 +312,13 @@ function ConfigActionsCell({ config, onAction, triggering = false }: ConfigActio
           {!managed && config.status === 'active' && (
             <DropdownMenuItem onClick={() => onAction('pause', config)}>
               <Pause className="me-2 h-4 w-4" />
-              Pause
+              {t('scans.row.pause')}
             </DropdownMenuItem>
           )}
           {!managed && config.status === 'paused' && (
             <DropdownMenuItem onClick={() => onAction('activate', config)}>
               <Play className="me-2 h-4 w-4" />
-              Resume
+              {t('scans.row.resume')}
             </DropdownMenuItem>
           )}
         </Can>
@@ -319,7 +330,7 @@ function ConfigActionsCell({ config, onAction, triggering = false }: ConfigActio
               onClick={() => onAction('delete', config)}
             >
               <Trash2 className="me-2 h-4 w-4" />
-              Delete
+              {t('scans.row.delete')}
             </DropdownMenuItem>
           </Can>
         )}
@@ -376,6 +387,10 @@ function ConfigurationsTab() {
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false)
   const [bulkDeleteConfirmOpen, setBulkDeleteConfirmOpen] = useState(false)
   const [bulkDisableConfirmOpen, setBulkDisableConfirmOpen] = useState(false)
+  // Bulk Activate / Pause ask first (activate starts scans, pause is bulk).
+  const [bulkConfirm, setBulkConfirm] = useState<'activate' | 'pause' | null>(null)
+  // Resume from the row menu starts scheduled scans: ask first.
+  const [configToResume, setConfigToResume] = useState<ScanConfig | null>(null)
   const { t } = useTranslation()
   const [configToDelete, setConfigToDelete] = useState<ScanConfig | null>(null)
   const [isDeleting, setIsDeleting] = useState(false)
@@ -498,18 +513,27 @@ function ConfigurationsTab() {
   const getProgress = useCallback((config: ScanConfig) => scanSuccessRate(config) ?? -1, [])
 
   // The Schedule column's switch: pause turns the schedule off, resume on.
-  const handleToggle = useCallback(async (action: 'pause' | 'activate', config: ScanConfig) => {
-    const endpoint =
-      action === 'pause' ? scanEndpoints.pause(config.id) : scanEndpoints.activate(config.id)
-    try {
-      await post(endpoint, {})
-    } catch (error) {
-      toast.error(getErrorMessage(error, `Failed to change the schedule of "${config.name}"`))
-      throw error
-    }
-    toast.success(`Schedule of "${config.name}" turned ${action === 'pause' ? 'off' : 'on'}`)
-    await invalidateScanConfigsCache()
-  }, [])
+  const handleToggle = useCallback(
+    async (action: 'pause' | 'activate', config: ScanConfig) => {
+      const endpoint =
+        action === 'pause' ? scanEndpoints.pause(config.id) : scanEndpoints.activate(config.id)
+      try {
+        await post(endpoint, {})
+      } catch (error) {
+        toast.error(
+          getErrorMessage(error, t('scans.toast.scheduleFailed', undefined, { name: config.name }))
+        )
+        throw error
+      }
+      toast.success(
+        t(action === 'pause' ? 'scans.toast.scheduleOff' : 'scans.toast.scheduleOn', undefined, {
+          name: config.name,
+        })
+      )
+      await invalidateScanConfigsCache()
+    },
+    [t]
+  )
 
   const handleAction = useCallback(
     async (action: ConfigAction, config: ScanConfig) => {
@@ -534,8 +558,14 @@ function ConfigurationsTab() {
         return
       }
 
-      // Trigger asks first when a run is already in progress, and ignores a
-      // second click while the first is in flight (useScanTrigger).
+      // Resume turns the schedule on, which starts scans: ask first.
+      if (action === 'activate') {
+        setConfigToResume(config)
+        return
+      }
+
+      // Trigger asks first (and again when a run is already in progress) and
+      // ignores a second click while the first is in flight (useScanTrigger).
       if (action === 'trigger') {
         await triggerScan(config)
         return
@@ -545,22 +575,35 @@ function ConfigurationsTab() {
         switch (action) {
           case 'pause':
             await post(scanEndpoints.pause(config.id), {})
-            toast.success(`Scan "${config.name}" paused`)
-            break
-          case 'activate':
-            await post(scanEndpoints.activate(config.id), {})
-            toast.success(`Scan "${config.name}" activated`)
+            toast.success(t('scans.toast.paused', undefined, { name: config.name }))
             break
         }
         // Invalidate caches to refresh the list
         await invalidateScanConfigsCache()
       } catch (error) {
         console.error(`Failed to ${action} scan:`, error)
-        toast.error(getErrorMessage(error, `Failed to ${action} scan "${config.name}"`), {})
+        toast.error(
+          getErrorMessage(error, t('scans.toast.pauseFailed', undefined, { name: config.name }))
+        )
       }
     },
-    [triggerScan]
+    [triggerScan, t]
   )
+
+  // Confirmed Resume (row menu): the same call the schedule switch makes.
+  const confirmResume = useCallback(async () => {
+    const config = configToResume
+    if (!config) return
+    try {
+      await post(scanEndpoints.activate(config.id), {})
+      toast.success(t('scans.toast.activated', undefined, { name: config.name }))
+      await invalidateScanConfigsCache()
+    } catch (error) {
+      toast.error(
+        getErrorMessage(error, t('scans.toast.activateFailed', undefined, { name: config.name }))
+      )
+    }
+  }, [configToResume, t])
 
   const handleConfirmDelete = useCallback(async () => {
     if (!configToDelete) return
@@ -568,18 +611,34 @@ function ConfigurationsTab() {
     setIsDeleting(true)
     try {
       await del(scanEndpoints.delete(configToDelete.id))
-      toast.success(`Scan "${configToDelete.name}" deleted`)
+      toast.success(t('scans.toast.deleted', undefined, { name: configToDelete.name }))
       setSelectedConfig(null)
       await invalidateScanConfigsCache()
     } catch (error) {
       console.error('Failed to delete scan:', error)
-      toast.error(getErrorMessage(error, `Failed to delete scan "${configToDelete.name}"`))
+      toast.error(
+        getErrorMessage(
+          error,
+          t('scans.toast.deleteFailed', undefined, { name: configToDelete.name })
+        )
+      )
     } finally {
       setIsDeleting(false)
       setDeleteConfirmOpen(false)
       setConfigToDelete(null)
     }
-  }, [configToDelete])
+  }, [configToDelete, t])
+
+  // The names behind the selected ids that are on the current page, for the
+  // confirmation samples (the selection can include other pages).
+  const selectedNames = useMemo(() => {
+    const picked = new Set(selectedIds)
+    return configs.filter((c) => picked.has(c.id)).map((c) => c.name)
+  }, [configs, selectedIds])
+
+  // "<Verb> {count} scans" or its one-scan form (key + 'One').
+  const bulkCountText = (key: string) =>
+    selectedIds.length === 1 ? t(`${key}One`) : t(key, undefined, { count: selectedIds.length })
 
   // One runner for the four bulk operations: same guard, toast and cleanup.
   const runBulk = useCallback(
@@ -956,19 +1015,19 @@ function ConfigurationsTab() {
             variant="ghost"
             size="sm"
             disabled={isBulkOperating}
-            onClick={() => runBulk(bulkActivate, 'Failed to activate selected scans')}
+            onClick={() => setBulkConfirm('activate')}
           >
             <Play className="me-2 h-4 w-4" />
-            Activate
+            {t('scans.bulk.activate')}
           </Button>
           <Button
             variant="ghost"
             size="sm"
             disabled={isBulkOperating}
-            onClick={() => runBulk(bulkPause, 'Failed to pause selected scans')}
+            onClick={() => setBulkConfirm('pause')}
           >
             <Pause className="me-2 h-4 w-4" />
-            Pause
+            {t('scans.bulk.pause')}
           </Button>
           <Button
             variant="ghost"
@@ -977,14 +1036,13 @@ function ConfigurationsTab() {
             onClick={() => setBulkDisableConfirmOpen(true)}
           >
             <XCircle className="me-2 h-4 w-4" />
-            Disable
+            {t('scans.bulk.disable')}
           </Button>
         </Can>
         <Can permission={Permission.ScansDelete}>
           <Button
-            variant="ghost"
+            variant="destructive"
             size="sm"
-            className="text-destructive hover:text-destructive"
             disabled={isBulkOperating}
             onClick={() => setBulkDeleteConfirmOpen(true)}
           >
@@ -993,7 +1051,7 @@ function ConfigurationsTab() {
             ) : (
               <Trash2 className="me-2 h-4 w-4" />
             )}
-            Delete
+            {t('scans.bulk.delete')}
           </Button>
         </Can>
       </BulkActionBar>
@@ -1030,52 +1088,79 @@ function ConfigurationsTab() {
       <ConfirmDialog
         open={bulkDeleteConfirmOpen}
         onOpenChange={setBulkDeleteConfirmOpen}
-        title={
-          selectedIds.length === 1
-            ? t('confirm.scan.bulkDeleteTitleOne', 'Delete 1 scan?')
-            : t('confirm.scan.bulkDeleteTitle', 'Delete {count} scans?', {
-                count: selectedIds.length,
-              })
-        }
+        title={bulkCountText('confirm.scan.bulkDeleteTitle')}
         desc={t(
           'confirm.scan.bulkDeleteDesc',
           'The selected scans and their schedules are deleted. Past runs and findings stay. This cannot be undone.'
         )}
         confirmText={
-          isBulkDeleting ? t('confirm.deleting', 'Deleting…') : t('confirm.delete', 'Delete')
+          isBulkDeleting
+            ? t('confirm.deleting', 'Deleting…')
+            : bulkCountText('confirm.scan.bulkDeleteBtn')
         }
         destructive
         isLoading={isBulkDeleting}
-        typeToConfirm={bulkTypeToConfirm(selectedIds.length)}
+        typeToConfirm={irreversibleTypeToConfirm(selectedNames)}
         handleConfirm={async () => {
-          await runBulk(bulkDelete, 'Failed to delete selected scans')
+          await runBulk(bulkDelete, t('scans.bulk.deleteFailed'))
           setBulkDeleteConfirmOpen(false)
         }}
+      >
+        <ConfirmSample names={selectedNames} total={selectedIds.length} />
+      </ConfirmDialog>
+
+      {/* Bulk activate (starts scans) and bulk pause: the count and the names. */}
+      <ConfirmDialog
+        open={bulkConfirm !== null}
+        onOpenChange={(open) => !open && setBulkConfirm(null)}
+        title={bulkCountText(
+          bulkConfirm === 'pause' ? 'confirm.scan.bulkPauseTitle' : 'confirm.scan.bulkActivateTitle'
+        )}
+        desc={t(
+          bulkConfirm === 'pause' ? 'confirm.scan.bulkPauseDesc' : 'confirm.scan.bulkActivateDesc'
+        )}
+        confirmText={bulkCountText(
+          bulkConfirm === 'pause' ? 'confirm.scan.bulkPauseBtn' : 'confirm.scan.bulkActivateBtn'
+        )}
+        isLoading={isActivating || isPausing}
+        handleConfirm={async () => {
+          if (bulkConfirm === 'pause') {
+            await runBulk(bulkPause, t('scans.bulk.pauseFailed'))
+          } else {
+            await runBulk(bulkActivate, t('scans.bulk.activateFailed'))
+          }
+          setBulkConfirm(null)
+        }}
+      >
+        <ConfirmSample names={selectedNames} total={selectedIds.length} />
+      </ConfirmDialog>
+
+      <ScheduleOnConfirm
+        name={configToResume?.name ?? ''}
+        open={configToResume !== null}
+        onOpenChange={(open) => !open && setConfigToResume(null)}
+        onConfirm={confirmResume}
       />
 
       {/* Bulk disable: the selected scans stop running until activated again. */}
       <ConfirmDialog
         open={bulkDisableConfirmOpen}
         onOpenChange={setBulkDisableConfirmOpen}
-        title={
-          selectedIds.length === 1
-            ? t('confirm.scan.bulkDisableTitleOne', 'Disable 1 scan?')
-            : t('confirm.scan.bulkDisableTitle', 'Disable {count} scans?', {
-                count: selectedIds.length,
-              })
-        }
+        title={bulkCountText('confirm.scan.bulkDisableTitle')}
         desc={t(
           'confirm.scan.bulkDisableDesc',
           'The selected scans stop running on their schedules and cannot be started until you activate them again. Their history stays.'
         )}
-        confirmText={t('confirm.disable', 'Disable')}
+        confirmText={bulkCountText('confirm.scan.bulkDisableBtn')}
         destructive
         isLoading={isDisabling}
         handleConfirm={async () => {
-          await runBulk(bulkDisable, 'Failed to disable selected scans')
+          await runBulk(bulkDisable, t('scans.bulk.disableFailed'))
           setBulkDisableConfirmOpen(false)
         }}
-      />
+      >
+        <ConfirmSample names={selectedNames} total={selectedIds.length} />
+      </ConfirmDialog>
 
       {/* Delete Confirmation Dialog */}
       <ConfirmDialog
@@ -1088,11 +1173,12 @@ function ConfigurationsTab() {
           'confirm.scan.deleteDesc',
           'The scan and its schedule are deleted. Past runs and findings stay. This cannot be undone.'
         )}
-        confirmText={
-          isDeleting ? t('confirm.deleting', 'Deleting…') : t('confirm.delete', 'Delete')
-        }
+        confirmText={isDeleting ? t('confirm.deleting', 'Deleting…') : t('confirm.scan.deleteBtn')}
         destructive
         isLoading={isDeleting}
+        typeToConfirm={
+          configToDelete ? nameToTypeToConfirm(configToDelete.name, configToDelete.id) : undefined
+        }
         handleConfirm={handleConfirmDelete}
       />
 
