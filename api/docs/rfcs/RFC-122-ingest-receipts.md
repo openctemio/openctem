@@ -228,6 +228,20 @@ organization moving and every scope consistent.
   `apply_failed`; its owner is told (the import's receipt fails, the CI gate
   fails the run).
 
+## 6c. Queue hygiene
+
+- The hourly, single-replica `ingest-queue-retention` job deletes, in batches
+  of 5,000: stored upload parts as soon as nobody will open them (the job was
+  applied, the part expired — 7 days after a failure — or an upload staged it
+  and never got a job, after an hour); finished jobs (completed or dead) and
+  finished protocol v2 reports (with their jobs) after 30 days. Receipts keep
+  what each upload did (their own retention, §3).
+- A quarantined sensor report is marked accepted only once it was applied.
+  An accept first claims the item (`applying_at`, it stays pending): a second
+  accept or a discard meanwhile is refused (409); a failed apply drops the
+  claim so the item can be accepted again; a claim older than 15 minutes (a
+  crashed server) no longer blocks.
+
 ## 7. API
 
 | Route | Gate | Notes |
@@ -266,3 +280,4 @@ organization moving and every scope consistent.
    uploads.
 6. Fairness and limits (§6b): lanes, one running job per scope, a running
    cap, workers on their own pool, fail-closed back-pressure, poison cap.
+7. Queue hygiene (§6c): queue retention; quarantine accepted after apply.
