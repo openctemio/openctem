@@ -1563,7 +1563,8 @@ func newAssetAttributionHandler(repos *Repositories, svc *Services, log *logger.
 	h := handler.NewAssetAttributionHandler(repos.Attribution, svc.Asset, log)
 	if svc.ActiveGate != nil {
 		h.SetActiveGate(svc.ActiveGate)
-		h.SetScopeReader(svc.ActiveGate) // scope_status, covered_by (RFC-054 §6.6)
+		h.SetScopeReader(svc.ActiveGate)       // scope_status, covered_by (RFC-054 §6.6)
+		h.SetCertificateReader(svc.ActiveGate) // certificate standing (RFC-054 §19)
 	}
 	if svc.Audit != nil {
 		h.SetAuditService(svc.Audit)
@@ -1776,6 +1777,8 @@ func newCIRunService(cfg *config.Config, repos *Repositories, svc *Services, log
 	// Uploads are stored and applied by the ingest worker; VEX documents a
 	// run uploads are stored on the run repository's findings, never
 	// closing any (the run token is not a person with findings:approve).
+	// A CI upload with a KEV finding takes the urgent lane.
+	ciSvc.SetKEVChecker(repos.KEV)
 	if svc.ImportMapping != nil {
 		ciSvc.SetMappingResolver(svc.ImportMapping)
 	}

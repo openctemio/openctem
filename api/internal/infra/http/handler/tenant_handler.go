@@ -898,6 +898,8 @@ func (h *TenantHandler) Delete(w http.ResponseWriter, r *http.Request) {
 // the assignee and owner pickers need.
 //   - status: active | suspended (membership status); empty = any
 //   - role: owner | admin | member | viewer (effective system role); empty = any
+//   - user_ids: comma-separated user ids (at most 100); only those of them that
+//     are members of this organization are returned. Used by the people chip.
 //   - page: 1-based page (default 1)
 //   - per_page: page size (default 100, max 500)
 //   - status: active | suspended | offboarded | all. Default: active and
@@ -950,6 +952,11 @@ func (h *TenantHandler) ListMembers(w http.ResponseWriter, r *http.Request) {
 	}
 	limit, offset := paging.Limit(), paging.Offset()
 
+	userIDs, ok := parseMemberUserIDs(w, r.URL.Query().Get("user_ids"))
+	if !ok {
+		return
+	}
+
 	if includeUser {
 		// Always paginate when include=user. The legacy unpaginated
 		// path was a memory hazard for large tenants.
@@ -961,6 +968,7 @@ func (h *TenantHandler) ListMembers(w http.ResponseWriter, r *http.Request) {
 			Status:         statusFilter,
 			Role:           r.URL.Query().Get("role"),
 			Kind:           memberKindFilter(r.URL.Query().Get("kind")),
+			UserIDs:        userIDs,
 		}
 		result, err := h.service.SearchMembersWithUserInfo(r.Context(), tenantID.String(), filters)
 		if err != nil {
@@ -1016,7 +1024,7 @@ func (h *TenantHandler) ListMembers(w http.ResponseWriter, r *http.Request) {
 	// Basic member list. Paginated like the include=user path: it used to
 	// return every member of the organization in one response.
 	result, err := h.service.SearchMembersWithUserInfo(r.Context(), tenantID.String(),
-		tenant.MemberSearchFilters{Search: search, SearchNameOnly: !showDirectory, Limit: limit, Offset: offset, Status: statusFilter})
+		tenant.MemberSearchFilters{Search: search, SearchNameOnly: !showDirectory, Limit: limit, Offset: offset, Status: statusFilter, UserIDs: userIDs})
 	if err != nil {
 		h.handleServiceError(w, err)
 		return

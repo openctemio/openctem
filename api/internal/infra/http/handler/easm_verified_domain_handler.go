@@ -153,7 +153,7 @@ func (h *EASMVerifiedDomainHandler) auditEvent(r *http.Request, action auditdom.
 	if vd != nil {
 		ev = ev.WithMetadata("domain", vd.Domain()).WithMetadata("status", string(vd.Status()))
 	}
-	_ = h.audit.LogEvent(ctx, auditapp.AuditContext{
+	auditapp.RecordOrWarn(ctx, h.logger, h.audit, auditapp.AuditContext{
 		TenantID: middleware.MustGetTenantID(ctx), ActorID: middleware.GetUserID(ctx), ActorEmail: auditActorEmail(ctx),
 		ActorIP: getClientIP(r), UserAgent: r.UserAgent(), RequestID: middleware.GetRequestID(r.Context()),
 	}, ev)

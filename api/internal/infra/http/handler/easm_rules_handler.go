@@ -213,19 +213,19 @@ func (h *EASMHandler) auditRule(r *http.Request, in easmapp.RuleActionInput, res
 	}
 	reason := logger.SanitizeValue(in.Reason)
 	if t := res.Target; t != nil {
-		_ = h.audit.LogEvent(ctx, actx, auditapp.NewSuccessEvent(auditdom.ActionScopeTargetCreated, auditdom.ResourceTypeScopeTarget, t.ID().String()).
+		auditapp.RecordOrWarn(ctx, h.logger, h.audit, actx, auditapp.NewSuccessEvent(auditdom.ActionScopeTargetCreated, auditdom.ResourceTypeScopeTarget, t.ID().String()).
 			WithResourceName(t.Pattern()).WithMessage("Scope entry created from the review queue").
 			WithMetadata("via", "review_rule").WithMetadata("status", t.Status().String()).WithMetadata("reason", reason))
 	}
 	if e := res.Exclusion; e != nil {
-		_ = h.audit.LogEvent(ctx, actx, auditapp.NewSuccessEvent(auditdom.ActionScopeExclusionCreated, auditdom.ResourceTypeScopeExclusion, e.ID().String()).
+		auditapp.RecordOrWarn(ctx, h.logger, h.audit, actx, auditapp.NewSuccessEvent(auditdom.ActionScopeExclusionCreated, auditdom.ResourceTypeScopeExclusion, e.ID().String()).
 			WithResourceName(e.Pattern()).WithMessage("Scope exclusion requested from the review queue").
 			WithMetadata("via", "review_rule").WithMetadata("reason", reason))
 	}
 	if res.Decisions != nil {
 		auditConfirmEntries(ctx, h.audit, actx, res.Decisions.Scope, "review_rule")
 		for _, d := range res.Decisions.Decided {
-			_ = h.audit.LogEvent(ctx, actx, auditapp.NewSuccessEvent(auditdom.ActionAssetAttributionDecided, auditdom.ResourceTypeAsset, d.AssetID).
+			auditapp.RecordOrWarn(ctx, h.logger, h.audit, actx, auditapp.NewSuccessEvent(auditdom.ActionAssetAttributionDecided, auditdom.ResourceTypeAsset, d.AssetID).
 				WithMessage("Attribution set to "+d.To).WithMetadata("from", d.From).WithMetadata("to", d.To).
 				WithMetadata("via", "review_rule").WithMetadata("rule", logger.SanitizeValue(in.Pattern)).
 				WithSeverity(auditdom.SeverityMedium))

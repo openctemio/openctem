@@ -248,9 +248,10 @@ func (r *SensorResultRepository) Review(ctx context.Context, tenantID, id shared
 	}
 	res, err := r.db.ExecContext(ctx, `
 		UPDATE sensor_result_quarantine
-		SET status = $3, reviewed_by = $4, reviewed_at = NOW(),
+		SET status = $3, reviewed_by = $4, reviewed_at = NOW(), applying_at = NULL,
 		    payload = CASE WHEN $3 = 'discarded' THEN NULL ELSE payload END
-		WHERE tenant_id = $1 AND id = $2 AND status = 'pending'`,
+		WHERE tenant_id = $1 AND id = $2 AND status = 'pending'
+		  AND ($3 <> 'discarded' OR applying_at IS NULL OR applying_at < NOW() - interval '15 minutes')`,
 		tenantID.String(), id.String(), string(to), by.String())
 	if err != nil {
 		return fmt.Errorf("failed to review quarantined result: %w", err)
@@ -266,6 +267,10 @@ func (r *SensorResultRepository) Review(ctx context.Context, tenantID, id shared
 	}
 	if err != nil {
 		return fmt.Errorf("failed to read quarantined result: %w", err)
+	}
+	if status == string(sensorresult.StatusPending) {
+		// A discard while an accept applies the item.
+		return sensorresult.ErrBeingApplied
 	}
 	return sensorresult.ErrAlreadyReviewed
 }
@@ -289,4 +294,45 @@ func (r *SensorResultRepository) PurgeReviewed(ctx context.Context, before time.
 	}
 	n, _ := res.RowsAffected()
 	return int(n), nil
+}
+
+// applyClaimTTL is how long an apply claim blocks another accept (a server
+// that crashed while applying does not hold the item for ever).
+const applyClaimTTL = 15 * time.Minute
+
+// ClaimForApply marks a pending item as being applied.
+func (r *SensorResultRepository) ClaimForApply(ctx context.Context, tenantID, id shared.ID) error {
+	res, err := r.db.ExecContext(ctx, `
+		UPDATE sensor_result_quarantine SET applying_at = NOW()
+		WHERE tenant_id = $1 AND id = $2 AND status = 'pending'
+		  AND (applying_at IS NULL OR applying_at < NOW() - make_interval(secs => $3))`,
+		tenantID.String(), id.String(), applyClaimTTL.Seconds())
+	if err != nil {
+		return fmt.Errorf("failed to claim quarantined result: %w", err)
+	}
+	if n, _ := res.RowsAffected(); n == 1 {
+		return nil
+	}
+	var status string
+	err = r.db.QueryRowContext(ctx, `SELECT status FROM sensor_result_quarantine WHERE tenant_id = $1 AND id = $2`,
+		tenantID.String(), id.String()).Scan(&status)
+	if errors.Is(err, sql.ErrNoRows) {
+		return sensorresult.ErrNotFound
+	}
+	if err != nil {
+		return fmt.Errorf("failed to read quarantined result: %w", err)
+	}
+	if status != string(sensorresult.StatusPending) {
+		return sensorresult.ErrAlreadyReviewed
+	}
+	return sensorresult.ErrBeingApplied
+}
+
+// ReleaseApply drops the apply claim of a pending item.
+func (r *SensorResultRepository) ReleaseApply(ctx context.Context, tenantID, id shared.ID) error {
+	if _, err := r.db.ExecContext(ctx, `UPDATE sensor_result_quarantine SET applying_at = NULL
+		WHERE tenant_id = $1 AND id = $2 AND status = 'pending'`, tenantID.String(), id.String()); err != nil {
+		return fmt.Errorf("failed to release quarantined result: %w", err)
+	}
+	return nil
 }

@@ -343,7 +343,7 @@ func (h *EASMSettingsHandler) RunNow(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if h.audit != nil {
-		_ = h.audit.LogEvent(r.Context(), h.actx(r),
+		auditapp.RecordOrWarn(r.Context(), h.logger, h.audit, h.actx(r),
 			auditapp.NewSuccessEvent(auditdom.ActionEASMSweepRequested, auditdom.ResourceTypeTenant, tenantID.String()).
 				WithMessage("Attack-surface sweep requested").
 				WithMetadata("ct_included", ticket.CTIncluded).

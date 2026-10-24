@@ -98,6 +98,20 @@ describe('markdown preview: raw HTML', () => {
     }
   })
 
+  it('renders a remote image as a link and never as an <img>', () => {
+    const c = renderMarkdown(
+      '![x](https://tracker.example.net/p.gif)\n\n<img src="https://tracker.example.net/q.gif">'
+    )
+    expect(c.querySelector('.wmde-markdown img[src^="https://tracker"]')).toBeNull()
+    const hrefs = Array.from(c.querySelectorAll('.wmde-markdown a')).map((a) =>
+      a.getAttribute('href')
+    )
+    expect(hrefs).toContain('https://tracker.example.net/p.gif')
+    const link = c.querySelector('.wmde-markdown a[href="https://tracker.example.net/p.gif"]')
+    expect(link?.getAttribute('rel')).toBe('noopener noreferrer nofollow')
+    expect(link?.getAttribute('referrerpolicy')).toBe('no-referrer')
+  })
+
   it('does not let a raw id clobber a global name', () => {
     renderMarkdown('<img name="currentUser" id="currentUser" src="https://example.com/a.png">')
     expect(document.getElementById('currentUser')).toBeNull()

@@ -219,7 +219,7 @@ func (s *CapabilityService) CreateCapability(ctx context.Context, input CreateCa
 
 	// Audit log
 	if s.auditService != nil {
-		_ = s.auditService.LogEvent(ctx, input.AuditContext, auditapp.NewSuccessEvent(
+		auditapp.RecordOrWarn(ctx, s.logger, s.auditService, input.AuditContext, auditapp.NewSuccessEvent(
 			audit.ActionCapabilityCreated,
 			audit.ResourceTypeCapability,
 			c.ID.String(),
@@ -300,7 +300,7 @@ func (s *CapabilityService) UpdateCapability(ctx context.Context, input UpdateCa
 			changes = changes.Set("description", oldDescription, c.Description)
 		}
 
-		_ = s.auditService.LogEvent(ctx, input.AuditContext, auditapp.NewSuccessEvent(
+		auditapp.RecordOrWarn(ctx, s.logger, s.auditService, input.AuditContext, auditapp.NewSuccessEvent(
 			audit.ActionCapabilityUpdated,
 			audit.ResourceTypeCapability,
 			c.ID.String(),
@@ -401,7 +401,7 @@ func (s *CapabilityService) DeleteCapability(ctx context.Context, input DeleteCa
 
 	// Audit log
 	if s.auditService != nil {
-		_ = s.auditService.LogEvent(ctx, input.AuditContext, auditapp.NewSuccessEvent(
+		auditapp.RecordOrWarn(ctx, s.logger, s.auditService, input.AuditContext, auditapp.NewSuccessEvent(
 			audit.ActionCapabilityDeleted,
 			audit.ResourceTypeCapability,
 			input.CapabilityID,

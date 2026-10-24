@@ -1029,6 +1029,8 @@ type ServiceDeps struct {
 	DB          *sql.DB
 	Repos       *Repositories
 	RedisClient *redis.Client
+	// IngestDB is the ingest pool (DB_INGEST_MAX_CONNS); nil uses the API's.
+	IngestDB *postgres.DB
 }
 
 // NewServices initializes all services.
@@ -1052,6 +1054,9 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	if s.IngestQueue, err = initIngestQueue(cfg, repos); err != nil {
 		return nil, err
 	}
+	// Back-pressure at accept: 429 past the tenant's queue limit, refused
+	// when the depth cannot be read.
+	s.IngestQueue.SetBackpressure(repos.IngestJob, cfg.Ingest.MaxPendingPerTenant)
 
 	// Initialize audit service first (used by others)
 	s.Audit = audit.NewAuditService(repos.Audit, log)
@@ -1291,6 +1296,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	s.Vulnerability.SetCommentReactionRepository(repos.CommentReaction)
 	s.Vulnerability.SetAuditService(s.Audit)                     // audits reaction moderation and duplicate marking
 	s.Vulnerability.SetDataFlowRepository(repos.DataFlow)        // Wire data flow loading
+	s.Vulnerability.SetIssueLinkStore(repos.FindingIssueLinks)   // same-issue groups
 	s.Vulnerability.SetApprovalRepository(repos.FindingApproval) // Wire approval workflow
 	s.Vulnerability.SetSeverityRequestRepository(repos.SeverityRequest)
 	s.Vulnerability.SetAccessControlRepository(repos.AccessControl)
@@ -2260,7 +2266,14 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	})
 
 	// Initialize ingest service (unified ingestion engine)
-	s.Ingest = ingest.NewService(repos.Asset, repos.Finding, repos.Vulnerability, repos.Component, repos.Sensor, repos.Branch, repos.Tenant, repos.Audit, log)
+	// The heavy ingest writes run on the ingest pool when one is open.
+	ingAsset, ingFinding, ingVuln, ingComp, ingBranch := repos.Asset, repos.Finding, repos.Vulnerability, repos.Component, repos.Branch
+	if deps.IngestDB != nil {
+		ingAsset, ingFinding = postgres.NewAssetRepository(deps.IngestDB), postgres.NewFindingRepository(deps.IngestDB)
+		ingVuln, ingComp = postgres.NewVulnerabilityRepository(deps.IngestDB), postgres.NewComponentRepository(deps.IngestDB)
+		ingBranch = postgres.NewBranchRepository(deps.IngestDB)
+	}
+	s.Ingest = ingest.NewService(ingAsset, ingFinding, ingVuln, ingComp, repos.Sensor, ingBranch, repos.Tenant, repos.Audit, log)
 	// DefectDojo co-existence sync (RFC-013): pull a tenant's DefectDojo findings
 	// and ingest them as CTIS (one-way; OpenCTEM is the system of record).
 	s.DefectDojoSync = defectdojo.NewSyncService(repos.Integration, s.Ingest, s.Encryptor, log)
@@ -2465,6 +2478,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 		WithTakeoverEvidence(repos.EASMDNS).
 		WithPlatformPolicy(s.ScopeGuardrails)
 	s.ActiveGate.SetWildcardDNS(repos.AssetWildcardDNS)
+	s.ActiveGate.SetCertificates(repos.AssetRelationship)
 	// RFC-065 §16.8: signed jobs for sensors that enforce scope limits carry
 	// the limits of port- and path-limited targets.
 	s.Command.SetScopeLimits(s.ActiveGate)
@@ -2686,6 +2700,14 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 		workflowPrincipalContext,
 	)
 
+	// Versions the migration backfilled carry a placeholder digest; store the
+	// canonical one (idempotent, a no-op once repaired).
+	if n, err := repos.WorkflowVersion.RepairBackfilledDigests(context.Background()); err != nil {
+		return nil, fmt.Errorf("repair automation version digests: %w", err)
+	} else if n > 0 {
+		log.Info("repaired automation version digests", "versions", n)
+	}
+
 	// Initialize workflow executor
 	workflowExecutor := automation.NewWorkflowExecutor(
 		repos.Workflow,
@@ -2693,6 +2715,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 		repos.WorkflowNodeRun,
 		log, automation.WithExecutorDB(deps.DB), automation.WithExecutorOutboxService(s.Outbox), automation.WithExecutorIntegrationService(s.Integration), automation.WithExecutorAuditService(s.Audit),
 		automation.WithExecutorStepAuthorizer(workflowAuthorizer),
+		automation.WithExecutorVersions(repos.WorkflowVersion),
 	)
 
 	// Register all action handlers for the workflow executor. Use the AI-aware
@@ -2731,6 +2754,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 		log, automation.WithWorkflowAuditService(s.Audit), automation.WithWorkflowExecutor(workflowExecutor),
 		automation.WithWorkflowStepAuthorizer(workflowAuthorizer),
 		automation.WithWorkflowSubjectReaders(repos.Finding, repos.Asset),
+		automation.WithWorkflowVersions(repos.WorkflowVersion),
 	)
 
 	// Initialize workflow event dispatcher for automatic workflow triggering
@@ -2798,6 +2822,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	s.Ingest.SetSuppressionChecker(s.Suppression)
 	// Cross-rule correlation of DAST findings (research/134 section 12).
 	s.Ingest.SetCorrelationStore(repos.FindingCorrelation)
+	s.Ingest.SetIssueLinkStore(repos.FindingIssueLinks)
 
 	// Initialize access control services
 	s.Group = accesscontrol.NewGroupService(repos.Group, log,
@@ -3553,7 +3578,9 @@ func initIngestQueue(cfg *config.Config, repos *Repositories) (*ingestqueue.Queu
 	if err != nil {
 		return nil, err
 	}
-	return ingestqueue.New(repos.IngestJob, repos.IngestPayload, sealer), nil
+	q := ingestqueue.New(repos.IngestJob, repos.IngestPayload, sealer)
+	repos.IngestJob.SetMaxRunningPerTenant(cfg.Ingest.MaxRunningPerTenant)
+	return q, nil
 }
 
 // initEncryptor initializes the credentials encryptor.

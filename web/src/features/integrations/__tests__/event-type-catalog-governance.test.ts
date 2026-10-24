@@ -26,6 +26,9 @@ const SRC = join(__dirname, '..', '..', '..')
 
 /** Files that legitimately name event types: tests, and the hook's own docs. */
 const ALLOWED = new Set([
+  // Generated from the api spec: unrelated enums (asset freshness reasons,
+  // automation trigger types) can share a file with the channel field names.
+  'lib/api/generated/api.types.ts',
   'features/integrations/api/use-event-types.ts',
   'features/integrations/types/integration.types.ts',
 ])
