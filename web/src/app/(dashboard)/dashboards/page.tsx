@@ -245,11 +245,13 @@ function DashboardsList({ onEdit }: { onEdit: (id: string) => void }) {
                     ) : null}
                   </CardHeader>
                   <CardContent className="mt-auto flex items-center justify-between">
-                    <span className="text-xs text-muted-foreground">
-                      {t('dashboards.manage.summary', '{n} widgets · {cols} columns', {
-                        n: d.layout.length,
-                        cols: d.columns ?? 2,
-                      })}
+                    <span className="flex gap-3 text-xs text-muted-foreground">
+                      <span>
+                        {t('dashboards.manage.widgets', '{n} widgets', { n: d.layout.length })}
+                      </span>
+                      <span>
+                        {t('dashboards.manage.columns', '{cols} columns', { cols: d.columns ?? 2 })}
+                      </span>
                     </span>
                     <div className="flex gap-1">
                       <Button
