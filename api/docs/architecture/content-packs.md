@@ -71,11 +71,13 @@ Reading an archive back re-checks it against its digest. Tampered storage return
 
 A [rule source](content-sources.md) sync stores each snapshot as a pack of
 the organization (`source = git`, name = the source slug), signed with the same
-key and linted the same way. Only promoted snapshots are in the desired set
-sensors receive; candidates and rejected snapshots are left out. Snapshot packs
-do not count against the upload quotas below: the organization's
-`content_storage_mb` limit covers them, and collected snapshots delete their
-pack and, when no other pack uses it, the stored archive.
+key and linted the same way. A snapshot's pack is in the desired set
+sensors receive only while that snapshot is its source's current one;
+candidates, rejected, superseded and orphaned packs are left out. Snapshot
+bytes count inside the organization's storage quota below (not the pack
+count), and the organization's `content_storage_mb` limit caps them
+separately; collected snapshots delete their pack and, when no other pack uses
+it, the stored archive.
 
 ## Platform packs and channels
 
@@ -155,4 +157,4 @@ The routes are under `/api/v1/content-packs`, take the tenant from the JWT and a
 
 A pack of another organization returns 404. The owner and admin roles hold both permissions (migration 001384).
 
-Quotas: 500 packs and 2 GiB of stored archives per organization.
+Quotas: 500 uploaded packs and 2 GiB of stored archives per organization (rule source snapshot bytes count in the 2 GiB, snapshot packs not in the 500).

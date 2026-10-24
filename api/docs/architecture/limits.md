@@ -87,7 +87,7 @@ The limit is 5 seats; 7 are in use. Remove some, or ask your administrator for m
 | `orgs_per_user` | organizations one person owns, checked when they create one themselves; an instance setting (self-service defaults), never per organization |
 | `dashboard_refresh_floor_minutes` | a **floor**, not a cap: the shortest refresh cadence, in minutes, the organization's dashboards may use ([dashboards](dashboards.md)); nothing is counted against it; without it the installation's base floor of 5 minutes applies. A schedule shorter than the floor is refused when it is saved |
 | `content_sources` | the organization's own [rule sources](content-sources.md) that the platform fetches (storage `mirror` or `proxy`; platform sources and tenant-hosted sources never count); checked when a source is created. The number of rules is never limited |
-| `content_storage_mb` | MiB of the organization's rule source snapshots the platform holds (tenant-hosted sources hold none); checked when a sync stores a new snapshot (a refused sync keeps the last promoted snapshot running). Uploaded content packs keep their own 2 GiB quota |
+| `content_storage_mb` | MiB of the organization's rule source snapshots the platform holds (tenant-hosted sources hold none); checked when a sync stores a new snapshot (a refused sync keeps the last promoted snapshot running). Snapshot bytes also count inside the 2 GiB content pack byte quota that uploads share |
 | `content_sync_floor_minutes` | a **floor**: the shortest sync interval of the organization's rule sources; the installation's floor of 5 minutes always applies. A shorter schedule is refused when it is saved |
 | `content_snapshot_max_mb` | a **per-item cap**, nothing counted: the largest rule source snapshot, checked at sync and Test |
 
@@ -154,6 +154,16 @@ never hand out unlimited organizations by accident, so while sign-up is
 - the console setting wins over the environment value.
 
 An `admin_only` installation (the default) needs none of this.
+
+**Rule source keys.** `content_sources`, `content_storage_mb`,
+`content_sync_floor_minutes` and `content_snapshot_max_mb` are valid keys of
+the starting limits (for example `SELF_SERVICE_START_LIMITS='{"content_sources":5,"content_storage_mb":500,"content_sync_floor_minutes":60}'`),
+so a hosted service caps rule sources from the first minute, before its
+control plane writes the organization's own rows. The core itself ships no
+values: without a row (or a starting limit) a key is unlimited. Two safety
+floors apply on every installation: the shortest sync interval is 5 minutes,
+and rule source fetches are bounded per server process (see
+[rule sources](content-sources.md)).
 
 ## Enforcement
 
