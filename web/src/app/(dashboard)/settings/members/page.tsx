@@ -19,6 +19,7 @@ import {
   DetailSheet,
   DetailStat,
   DetailStatGrid,
+  PageStack,
 } from '@/features/shared'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -1338,151 +1339,152 @@ export default function UsersPage() {
   return (
     <MemberRolesContext.Provider value={memberRolesMap}>
       <Main>
-        <PageHeader
-          title={t('org.membersPage.title', 'Members')}
-          description={t(
-            'org.membersPage.description',
-            'People in this organization, their roles and pending invitations.'
-          )}
-        >
-          {/* Accounts are created by owners/admins (no self-registration);
+        <PageStack>
+          <PageHeader
+            title={t('org.membersPage.title', 'Members')}
+            description={t(
+              'org.membersPage.description',
+              'People in this organization, their roles and pending invitations.'
+            )}
+          >
+            {/* Accounts are created by owners/admins (no self-registration);
               inviting someone who already has an account stays available. */}
-          <Can route="POST /api/v1/tenants/{tenant}/invitations" mode="disable">
-            <Button size="sm" variant="outline" onClick={() => setInviteDialogOpen(true)}>
-              <Send className="me-2 h-4 w-4" />
-              {t('org.membersPage.inviteUser', 'Invite user')}
-            </Button>
-          </Can>
-          <Can route="POST /api/v1/tenants/{tenant}/users" mode="disable">
-            <Button size="sm" onClick={() => setAddUserOpen(true)}>
-              <UserPlus className="me-2 h-4 w-4" />
-              {t('org.membersPage.addUser', 'Add user')}
-            </Button>
-          </Can>
-        </PageHeader>
-
-        <JoinRequestsCard canManage={isAtLeast('admin')} onChanged={refreshData} />
-
-        <OwnershipTransferBanner
-          transfer={pendingTransfer}
-          onChanged={() => {
-            void mutateTransfer()
-            refreshData()
-          }}
-        />
-
-        {membersError && !membersLoading ? (
-          <Alert variant="destructive" className="mt-5">
-            <AlertCircle className="h-4 w-4" />
-            <AlertTitle>
-              {t('org.membersPage.loadFailedTitle', 'Failed to load members')}
-            </AlertTitle>
-            <AlertDescription>
-              <p>{t('org.membersPage.loadFailedBody', 'The member list could not be loaded.')}</p>
-              <Button variant="outline" size="sm" className="mt-2" onClick={refreshData}>
-                <RefreshCw className="me-2 h-4 w-4" />
-                {t('common.retry', 'Retry')}
+            <Can route="POST /api/v1/tenants/{tenant}/invitations" mode="disable">
+              <Button size="sm" variant="outline" onClick={() => setInviteDialogOpen(true)}>
+                <Send className="me-2 h-4 w-4" />
+                {t('org.membersPage.inviteUser', 'Invite user')}
               </Button>
-            </AlertDescription>
-          </Alert>
-        ) : (
-          <>
-            <MetricStrip
-              className="mt-5"
-              loading={membersLoading}
-              items={[
-                {
-                  key: 'current',
-                  label: t('org.membersPage.metric.members', 'Members'),
-                  value: statusCounts.current,
-                  onClick: () => setStatusFilter('current'),
-                  active: statusFilter === 'current',
-                },
-                {
-                  key: 'active',
-                  label: t('org.membersPage.filter.active', 'Active'),
-                  value: statusCounts.active,
-                  onClick: () => toggleStatus('active'),
-                  active: statusFilter === 'active',
-                },
-                {
-                  key: 'suspended',
-                  label: t('org.membersPage.filter.suspended', 'Disabled'),
-                  value: statusCounts.suspended,
-                  onClick: () => toggleStatus('suspended'),
-                  active: statusFilter === 'suspended',
-                },
-                {
-                  key: 'offboarded',
-                  label: t('org.membersPage.filter.offboarded', 'Offboarded'),
-                  value: statusCounts.offboarded,
-                  onClick: () => toggleStatus('offboarded'),
-                  active: statusFilter === 'offboarded',
-                },
-                {
-                  key: 'invites',
-                  label: t('org.membersPage.metric.pendingInvites', 'Pending invitations'),
-                  value: invitations.length,
-                  onClick: () =>
-                    document
-                      .getElementById('pending-invitations')
-                      ?.scrollIntoView({ behavior: 'smooth' }),
-                },
-              ]}
-            />
+            </Can>
+            <Can route="POST /api/v1/tenants/{tenant}/users" mode="disable">
+              <Button size="sm" onClick={() => setAddUserOpen(true)}>
+                <UserPlus className="me-2 h-4 w-4" />
+                {t('org.membersPage.addUser', 'Add user')}
+              </Button>
+            </Can>
+          </PageHeader>
 
-            <div className="mt-5">
-              {membersLoading ? (
-                <div className="space-y-2">
-                  <Skeleton className="h-9 w-full max-w-sm" />
-                  {Array.from({ length: 6 }).map((_, i) => (
-                    <Skeleton key={i} className="h-12 w-full" />
-                  ))}
-                </div>
-              ) : (
-                /*
+          <JoinRequestsCard canManage={isAtLeast('admin')} onChanged={refreshData} />
+
+          <OwnershipTransferBanner
+            transfer={pendingTransfer}
+            onChanged={() => {
+              void mutateTransfer()
+              refreshData()
+            }}
+          />
+
+          {membersError && !membersLoading ? (
+            <Alert variant="destructive">
+              <AlertCircle className="h-4 w-4" />
+              <AlertTitle>
+                {t('org.membersPage.loadFailedTitle', 'Failed to load members')}
+              </AlertTitle>
+              <AlertDescription>
+                <p>{t('org.membersPage.loadFailedBody', 'The member list could not be loaded.')}</p>
+                <Button variant="outline" size="sm" className="mt-2" onClick={refreshData}>
+                  <RefreshCw className="me-2 h-4 w-4" />
+                  {t('common.retry', 'Retry')}
+                </Button>
+              </AlertDescription>
+            </Alert>
+          ) : (
+            <>
+              <MetricStrip
+                loading={membersLoading}
+                items={[
+                  {
+                    key: 'current',
+                    label: t('org.membersPage.metric.members', 'Members'),
+                    value: statusCounts.current,
+                    onClick: () => setStatusFilter('current'),
+                    active: statusFilter === 'current',
+                  },
+                  {
+                    key: 'active',
+                    label: t('org.membersPage.filter.active', 'Active'),
+                    value: statusCounts.active,
+                    onClick: () => toggleStatus('active'),
+                    active: statusFilter === 'active',
+                  },
+                  {
+                    key: 'suspended',
+                    label: t('org.membersPage.filter.suspended', 'Disabled'),
+                    value: statusCounts.suspended,
+                    onClick: () => toggleStatus('suspended'),
+                    active: statusFilter === 'suspended',
+                  },
+                  {
+                    key: 'offboarded',
+                    label: t('org.membersPage.filter.offboarded', 'Offboarded'),
+                    value: statusCounts.offboarded,
+                    onClick: () => toggleStatus('offboarded'),
+                    active: statusFilter === 'offboarded',
+                  },
+                  {
+                    key: 'invites',
+                    label: t('org.membersPage.metric.pendingInvites', 'Pending invitations'),
+                    value: invitations.length,
+                    onClick: () =>
+                      document
+                        .getElementById('pending-invitations')
+                        ?.scrollIntoView({ behavior: 'smooth' }),
+                  },
+                ]}
+              />
+
+              <div>
+                {membersLoading ? (
+                  <div className="space-y-2">
+                    <Skeleton className="h-9 w-full max-w-sm" />
+                    {Array.from({ length: 6 }).map((_, i) => (
+                      <Skeleton key={i} className="h-12 w-full" />
+                    ))}
+                  </div>
+                ) : (
+                  /*
                   No selection column: the old bulk "Resend / Deactivate /
                   Delete" actions fired toasts without calling any API. Per-row
                   actions are the supported way to disable / offboard a member.
                 */
-                <DataTable
-                  columns={columns}
-                  data={members}
-                  getRowId={(m) => m.id}
-                  manualPagination
-                  rowCount={membersTotal}
-                  pagination={pagination}
-                  onPaginationChange={setPagination}
-                  pageSizeOptions={MEMBER_PAGE_SIZES}
-                  paginationNoun={t('org.membersPage.noun', 'members')}
-                  showSearch={false}
-                  showColumnToggle={false}
-                  toolbarStart={toolbarStart}
-                  onRowClick={(m) => setSelectedMember(m)}
-                  emptyMessage={t('org.membersPage.noMatch', 'No members match these filters')}
-                />
-              )}
-            </div>
+                  <DataTable
+                    columns={columns}
+                    data={members}
+                    getRowId={(m) => m.id}
+                    manualPagination
+                    rowCount={membersTotal}
+                    pagination={pagination}
+                    onPaginationChange={setPagination}
+                    pageSizeOptions={MEMBER_PAGE_SIZES}
+                    paginationNoun={t('org.membersPage.noun', 'members')}
+                    showSearch={false}
+                    showColumnToggle={false}
+                    toolbarStart={toolbarStart}
+                    onRowClick={(m) => setSelectedMember(m)}
+                    emptyMessage={t('org.membersPage.noMatch', 'No members match these filters')}
+                  />
+                )}
+              </div>
 
-            {/* Pending Invitations Section */}
-            {invitations.length > 0 && (
-              <section id="pending-invitations" className="mt-5 scroll-mt-4">
-                <h2 className="mb-3 text-base font-semibold">
-                  {t('org.membersPage.metric.pendingInvites', 'Pending invitations')}
-                </h2>
-                <DataTable
-                  columns={invitationColumns}
-                  data={invitations}
-                  getRowId={(inv) => inv.id}
-                  showSearch={false}
-                  showColumnToggle={false}
-                  showPagination={invitations.length > 10}
-                  emptyMessage={t('org.membersPage.noInvites', 'No pending invitations')}
-                />
-              </section>
-            )}
-          </>
-        )}
+              {/* Pending Invitations Section */}
+              {invitations.length > 0 && (
+                <section id="pending-invitations" className="scroll-mt-4">
+                  <h2 className="mb-3 text-base font-semibold">
+                    {t('org.membersPage.metric.pendingInvites', 'Pending invitations')}
+                  </h2>
+                  <DataTable
+                    columns={invitationColumns}
+                    data={invitations}
+                    getRowId={(inv) => inv.id}
+                    showSearch={false}
+                    showColumnToggle={false}
+                    showPagination={invitations.length > 10}
+                    emptyMessage={t('org.membersPage.noInvites', 'No pending invitations')}
+                  />
+                </section>
+              )}
+            </>
+          )}
+        </PageStack>
       </Main>
 
       {/* User Details Sheet */}

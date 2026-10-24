@@ -24,7 +24,7 @@ import {
 } from '@/components/ui/select'
 import { Switch } from '@/components/ui/switch'
 import { useTranslation } from '@/context/i18n-provider'
-import { SettingsSection } from '@/features/shared'
+import { SettingsSection, PageStack } from '@/features/shared'
 import { get } from '@/lib/api/client'
 import {
   ATTRIBUTE_LABEL,
@@ -322,7 +322,7 @@ export function AssetSourcesSettingsForm({
   }
 
   return (
-    <div className="space-y-8">
+    <PageStack>
       <SettingsSection
         title={t('assetSources.default.title', 'Default for all attributes')}
         description={t(
@@ -436,6 +436,6 @@ export function AssetSourcesSettingsForm({
           </p>
         </div>
       )}
-    </div>
+    </PageStack>
   )
 }

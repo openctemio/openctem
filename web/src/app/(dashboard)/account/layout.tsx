@@ -2,7 +2,7 @@
 
 import { usePathname } from 'next/navigation'
 import { Main } from '@/components/layout'
-import { PageHeader } from '@/features/shared'
+import { PageHeader, PageStack } from '@/features/shared'
 import { useTranslation } from '@/context/i18n-provider'
 import { activeSettingsItem } from '@/config/settings-nav'
 
@@ -19,15 +19,17 @@ export default function AccountLayout({ children }: { children: React.ReactNode 
 
   return (
     <Main>
-      <PageHeader
-        title={
-          item
-            ? t(`settings.item.${item.id}`, item.title)
-            : t('settings.group.account', 'My account')
-        }
-        description={item ? t(`settings.desc.${item.id}`, item.description) : undefined}
-      />
-      <div className="mt-5">{children}</div>
+      <PageStack>
+        <PageHeader
+          title={
+            item
+              ? t(`settings.item.${item.id}`, item.title)
+              : t('settings.group.account', 'My account')
+          }
+          description={item ? t(`settings.desc.${item.id}`, item.description) : undefined}
+        />
+        {children}
+      </PageStack>
     </Main>
   )
 }

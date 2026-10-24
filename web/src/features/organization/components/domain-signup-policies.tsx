@@ -28,6 +28,7 @@ import {
   type JoinPolicy,
   type JoinRole,
 } from '../api/use-domain-signup'
+import { PageStack } from '@/features/shared'
 
 interface Props {
   canRead: boolean
@@ -67,11 +68,11 @@ export function DomainSignupPolicies({ canRead, isOwner }: Props) {
     )
   }
   return (
-    <div className="space-y-4">
+    <PageStack>
       {sso.map((d) => (
         <DomainCard key={d.id} domain={d} isOwner={isOwner} onSaved={() => void mutate()} />
       ))}
-    </div>
+    </PageStack>
   )
 }
 
