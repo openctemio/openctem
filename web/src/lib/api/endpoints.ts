@@ -1663,7 +1663,7 @@ export const workflowEndpoints = {
   preview: (workflowId: string) => `/api/v1/workflows/${workflowId}/preview`,
 
   /** Static check of the draft graph. */
-  validate: (workflowId: string) => `/api/v1/workflows/${workflowId}/validate`,
+  validate: (workflowId: string) => `/api/v1/workflows/${workflowId}/verify`,
 
   /** Per-step counts over recorded runs. */
   trace: (workflowId: string, mode: 'simulate' | 'live' = 'simulate', days = 30) =>
@@ -1693,7 +1693,7 @@ export const workflowRunEndpoints = {
   cancel: (runId: string) => `/api/v1/workflow-runs/${runId}/cancel`,
 
   /** Continue a run paused at the change cap. */
-  resume: (runId: string) => `/api/v1/workflow-runs/${runId}/resume`,
+  resume: (runId: string) => `/api/v1/workflow-runs/${runId}/approve`,
 } as const
 
 // ============================================
