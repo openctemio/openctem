@@ -29,7 +29,6 @@ import {
   StackedCell,
 } from '@/features/shared'
 import { useTranslation } from '@/context/i18n-provider'
-import { useDebounce } from '@/hooks/use-debounce'
 import { useListParams } from '@/hooks/use-list-params'
 import {
   contentPackDownloadUrl,
@@ -71,7 +70,7 @@ export default function ContentPacksPage() {
   const { t } = useTranslation()
   const canWrite = adminCan(admin.role, 'super_admin')
   const list = useListParams({ defaultPageSize: 25, filters: { kind: '', status: '' } })
-  const name = useDebounce(list.q, 300)
+  const name = list.searchTerm
   const status =
     list.filters.status === 'active' || list.filters.status === 'revoked' ? list.filters.status : ''
   const packs = useContentPacks({

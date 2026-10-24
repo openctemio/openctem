@@ -22,7 +22,7 @@ import {
 import { EmptyState, RiskScoreBadge } from '@/features/shared'
 import { useAssets } from '@/features/assets/hooks/use-assets'
 import type { Asset } from '@/features/assets/types'
-import { useDebounce } from '@/hooks/use-debounce'
+import { useSearchQuery } from '@/hooks/use-search-query'
 import { useTranslation } from '@/context/i18n-provider'
 import { useAddAssetsToGroup, useGroupAssets } from '../hooks/use-asset-groups'
 import type { AssetGroup } from '../types'
@@ -40,7 +40,7 @@ export function GroupAddAssetsDialog({
   const { trigger: addAssets, isMutating } = useAddAssetsToGroup(group.id)
   const [selectedIds, setSelectedIds] = useState<string[]>([])
   const [search, setSearch] = useState('')
-  const debouncedSearch = useDebounce(search.trim(), 300)
+  const debouncedSearch = useSearchQuery(search).term
   // The server searches the whole inventory; the dialog never holds more than
   // one page of results, minus the assets already in the group.
   const {
