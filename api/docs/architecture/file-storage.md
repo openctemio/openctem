@@ -113,6 +113,9 @@ buckets are not touched.
 
 An administrator can store the organization's files in its own S3-compatible
 bucket with its own keys (encrypted at rest with `APP_ENCRYPTION_KEY`). The
+stored keys are kept on an edit only while the provider, endpoint, bucket and
+region are unchanged; a change to any of them must come with new keys and is
+refused without them (the settings page never shows the stored keys). The
 endpoint goes through the SSRF guard (no loopback, link-local or, unless the
 operator allows it, private addresses). When that bucket cannot be used
 (keys rejected, endpoint blocked, setting unreadable) uploads fail with 503

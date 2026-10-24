@@ -300,7 +300,7 @@ type UpdateFindingApprovalSettingsRequest struct {
 // at high severity with the values before and after, and the organization's
 // approvers (every owner and administrator among them) are told.
 // @Summary      Change the finding approval settings
-// @Description  Partial update of the organization's finding approval settings, including the false-positive and risk acceptance approval levels (all, high_and_above, off). Lowering a level takes effect 24 hours later; raising is immediate. Requires an owner or administrator with settings:write and a recent re-authentication; audited, owners, administrators and approvers told.
+// @Description  Partial update of the organization's finding approval settings, including the false-positive and risk acceptance approval levels (all, high_and_above, off). Lowering a level or relaxing the policy needs an owner (403 for an administrator) and takes effect 24 hours later; raising is immediate and open to administrators. Requires an owner or administrator with settings:write and a recent re-authentication; audited, owners, administrators and approvers told.
 // @Tags         Findings
 // @Accept       json
 // @Produce      json
@@ -331,25 +331,40 @@ func (h *VulnerabilityHandler) UpdateFindingApprovalSettings(w http.ResponseWrit
 			return
 		}
 	}
+	// Raising a level (or tightening the policy) stays with owners and
+	// administrators; lowering one, or relaxing the policy (which includes
+	// turning two-person approval off), is the owner's alone.
+	owner := middleware.IsOwner(r.Context())
 	before, after, err := h.approvalSettings.UpdateFindingApprovalSettings(r.Context(), tenantID, func(s *tenantdom.FindingApprovalSettings) error {
+		now := time.Now()
 		if req.CancelPending {
-			s.CancelPending(time.Now())
+			s.CancelPending(now)
 		}
 		if req.Policy != nil {
-			if _, err := s.SetPolicy(req.Policy.toPolicy(), time.Now()); err != nil {
+			relaxed, err := s.SetPolicy(req.Policy.toPolicy(), now)
+			if err != nil {
 				return err
+			}
+			if relaxed && !owner {
+				return errApprovalLoweringOwnerOnly
 			}
 		}
 		if req.BackupContactEmail != nil {
 			s.BackupContactEmail = *req.BackupContactEmail
 		}
 		if req.FPApproval != nil {
-			if err := s.SetFPApproval(*req.FPApproval, time.Now()); err != nil {
+			if !owner && lowersApprovalLevel(s.EffectiveFPApproval(now), *req.FPApproval) {
+				return errApprovalLoweringOwnerOnly
+			}
+			if err := s.SetFPApproval(*req.FPApproval, now); err != nil {
 				return err
 			}
 		}
 		if req.AcceptApproval != nil {
-			if err := s.SetAcceptApproval(*req.AcceptApproval, time.Now()); err != nil {
+			if !owner && lowersApprovalLevel(s.EffectiveAcceptApproval(now), *req.AcceptApproval) {
+				return errApprovalLoweringOwnerOnly
+			}
+			if err := s.SetAcceptApproval(*req.AcceptApproval, now); err != nil {
 				return err
 			}
 		}
@@ -360,6 +375,10 @@ func (h *VulnerabilityHandler) UpdateFindingApprovalSettings(w http.ResponseWrit
 		}
 		return nil
 	}, configAuditContext(r))
+	if errors.Is(err, errApprovalLoweringOwnerOnly) {
+		apierror.Forbidden("Lowering an approval level or relaxing the approval policy requires an organization owner").WriteJSON(w)
+		return
+	}
 	if err != nil {
 		h.handleServiceError(w, err, "finding approval settings")
 		return
@@ -379,21 +398,32 @@ func (h *VulnerabilityHandler) UpdateFindingApprovalSettings(w http.ResponseWrit
 	_ = json.NewEncoder(w).Encode(resp)
 }
 
+// errApprovalLoweringOwnerOnly marks a change that lowers an approval level
+// or relaxes the approval policy, made by someone who is not an owner.
+var errApprovalLoweringOwnerOnly = errors.New("lowering approval requires the owner")
+
+// lowersApprovalLevel reports whether choosing next while current is in
+// force lowers the level. An unknown value is not a lowering here (the
+// setter refuses it).
+func lowersApprovalLevel(current, next string) bool {
+	return tenantdom.FPApprovalLevelRank(next) < tenantdom.FPApprovalLevelRank(current)
+}
+
 // approvalSettingsChangeNotice is the body of the notice the approvers get
 // for a settings change: every lowering or relaxation that now waits is
 // named (one change never hides another), else a general line.
 func approvalSettingsChangeNotice(before, after FindingApprovalSettingsResponse) string {
 	var lines []string
 	if after.PendingFPApproval != "" && after.PendingFPApproval != before.PendingFPApproval {
-		lines = append(lines, fmt.Sprintf("An administrator lowered the false-positive approval level to %q. It takes effect at %s unless it is raised again before then.",
+		lines = append(lines, fmt.Sprintf("An owner lowered the false-positive approval level to %q. It takes effect at %s unless it is raised again before then.",
 			after.PendingFPApproval, *after.PendingFPApprovalAt))
 	}
 	if after.PendingAcceptApproval != "" && after.PendingAcceptApproval != before.PendingAcceptApproval {
-		lines = append(lines, fmt.Sprintf("An administrator lowered the risk acceptance approval level to %q. It takes effect at %s unless it is raised again before then.",
+		lines = append(lines, fmt.Sprintf("An owner lowered the risk acceptance approval level to %q. It takes effect at %s unless it is raised again before then.",
 			after.PendingAcceptApproval, *after.PendingAcceptApprovalAt))
 	}
 	if after.PendingPolicyAt != nil && (before.PendingPolicyAt == nil || *before.PendingPolicyAt != *after.PendingPolicyAt) {
-		lines = append(lines, fmt.Sprintf("An administrator relaxed the approval policy. The change takes effect at %s unless it is reverted before then; until then the stricter rules apply.",
+		lines = append(lines, fmt.Sprintf("An owner relaxed the approval policy. The change takes effect at %s unless it is reverted before then; until then the stricter rules apply.",
 			*after.PendingPolicyAt))
 	}
 	if len(lines) == 0 {
