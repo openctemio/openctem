@@ -65,7 +65,7 @@ describe('PlatformScanningCard', () => {
     render(<PlatformScanningCard />)
     expect(screen.getByRole('link', { name: 'Verify a domain' })).toHaveAttribute(
       'href',
-      '/scope?tab=proof'
+      '/scope/domain-proof'
     )
   })
 

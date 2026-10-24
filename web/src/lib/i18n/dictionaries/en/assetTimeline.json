@@ -77,5 +77,7 @@
   "assetTimeline.activity.notInternetFacing": "Not internet-facing",
   "assetTimeline.activity.internetOnly": "Internet-facing only",
   "assetTimeline.activity.internetOnlyHint": "Turn off “Internet-facing only” to include internal assets.",
-  "assetTimeline.activity.refresh": "Refresh"
+  "assetTimeline.activity.refresh": "Refresh",
+  "assetTimeline.activity.kind.short": "Kind",
+  "assetTimeline.activity.errorTitle": "changes"
 }

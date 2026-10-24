@@ -12,7 +12,8 @@ import {
   MetricStrip,
   PageHeader,
   RelativeTime,
-  SegmentedLens,
+  FilterSelect,
+  PageStack,
   StackedCell,
   type MetricStripItem,
 } from '@/features/shared'
@@ -21,7 +22,6 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { Skeleton } from '@/components/ui/skeleton'
 import { Switch } from '@/components/ui/switch'
 import {
   Select,
@@ -110,16 +110,6 @@ function usePaging(prefix: string) {
   )
   const reset = useCallback(() => setPageParam('1'), [setPageParam])
   return { pagination, setPagination, page, reset }
-}
-
-function TableSkeleton() {
-  return (
-    <div className="space-y-2">
-      {Array.from({ length: 8 }).map((_, i) => (
-        <Skeleton key={i} className="h-12 w-full" />
-      ))}
-    </div>
-  )
 }
 
 /**
@@ -223,6 +213,11 @@ export function WebSurfaceView() {
       value: num(s?.excluded_sensitive),
       tone: 'danger',
       hint: 'Sensitive paths behind an exclusion',
+      onClick: () => {
+        setSensitive('true')
+        setExcluded('true')
+        go('endpoints')
+      },
     },
   ]
 
@@ -496,19 +491,20 @@ export function WebSurfaceView() {
   if (!canRead) {
     return (
       <Main>
-        <PageHeader
-          title={t('attackSurface.title', 'Attack surface')}
-          description={t(
-            'attackSurface.web.shortDescription',
-            'Origins, endpoints and parameters.'
-          )}
-        />
-        <EmptyState
-          className="mt-5"
-          icon={ShieldX}
-          title="Access denied"
-          description="You don't have permission to view assets. Ask your administrator for access."
-        />
+        <PageStack>
+          <PageHeader
+            title={t('attackSurface.title', 'Attack surface')}
+            description={t(
+              'attackSurface.web.shortDescription',
+              'Origins, endpoints and parameters.'
+            )}
+          />
+          <EmptyState
+            icon={ShieldX}
+            title="Access denied"
+            description="You don't have permission to view assets. Ask your administrator for access."
+          />
+        </PageStack>
       </Main>
     )
   }
@@ -522,8 +518,30 @@ export function WebSurfaceView() {
           ? patterns
           : events
 
+  // Which rows the list shows (origins, endpoints, path patterns, changes):
+  // a token first in the toolbar, not a second row under the tabs
+  // (research/249 R21). Always one of them, so it cannot be cleared.
+  const viewSelect = (
+    <FilterSelect<WebSurfaceTab>
+      label={t('attackSurface.web.view.label', 'Show')}
+      value={tab}
+      clearable={false}
+      options={(Object.keys(TAB_LABEL) as WebSurfaceTab[]).map((k) => ({
+        value: k,
+        label: t(`attackSurface.web.view.${k}`, TAB_LABEL[k]),
+      }))}
+      onChange={(k) => go((k || 'origins') as WebSurfaceTab)}
+    />
+  )
+  const loadingRows = active.isLoading && active.rows.length === 0
+  const errorState =
+    active.error && !active.isLoading ? (
+      <ErrorState title="web surface" error={active.error} onRetry={() => active.mutate()} />
+    ) : undefined
+
   const toolbarStart = (
     <div className="flex flex-wrap items-center gap-2">
+      {viewSelect}
       {tab !== 'changes' && (
         <Input
           value={q}
@@ -615,107 +633,106 @@ export function WebSurfaceView() {
 
   return (
     <Main>
-      <PageHeader
-        title={t('attackSurface.title', 'Attack surface')}
-        description={t(
-          'attackSurface.web.description',
-          'What your web origins serve: endpoints, their parameters (names only), the same path across origins, and what changed.'
-        )}
-      />
-      <AttackSurfaceSectionTabs />
-      <MetricStrip className="mt-5" loading={stats.isLoading && !s} items={metrics} />
-      <SegmentedLens
-        className="mt-5"
-        label="Web surface view"
-        value={tab}
-        options={(Object.keys(TAB_LABEL) as WebSurfaceTab[]).map((k) => ({
-          value: k,
-          label: TAB_LABEL[k],
-        }))}
-        onChange={(k) => go(k)}
-      />
-      <div className="mt-4">
-        {active.error && !active.isLoading ? (
-          <ErrorState title="web surface" error={active.error} onRetry={() => active.mutate()} />
-        ) : active.isLoading && active.rows.length === 0 ? (
-          <TableSkeleton />
-        ) : tab === 'origins' ? (
-          <DataTable
-            columns={originColumns}
-            data={origins.rows}
-            getRowId={(o) => o.origin_asset_id ?? o.origin ?? ''}
-            showSearch={false}
-            showColumnToggle={false}
-            toolbarStart={toolbarStart}
-            manualPagination
-            rowCount={origins.total}
-            pagination={paging.pagination}
-            onPaginationChange={paging.setPagination}
-            pageSizeOptions={PAGE_SIZES}
-            emptyMessage="No web origins yet"
-            emptyDescription="Crawl a web service (a workflow with a web crawl step) to record what it serves."
-          />
-        ) : tab === 'endpoints' ? (
-          <DataTable
-            columns={endpointColumns}
-            data={endpoints.rows}
-            getRowId={(e) => e.id ?? ''}
-            onRowClick={(e) => setSelected(e.id ?? null)}
-            showSearch={false}
-            showColumnToggle={false}
-            toolbarStart={toolbarStart}
-            manualPagination
-            rowCount={endpoints.total}
-            pagination={paging.pagination}
-            onPaginationChange={paging.setPagination}
-            pageSizeOptions={PAGE_SIZES}
-            emptyMessage="No endpoints match"
-            emptyDescription="Clear a filter, or crawl the origin again."
-          />
-        ) : tab === 'patterns' ? (
-          <DataTable
-            columns={patternColumns}
-            data={patterns.rows}
-            getRowId={(p) => p.path_hash ?? ''}
-            showSearch={false}
-            showColumnToggle={false}
-            toolbarStart={toolbarStart}
-            manualPagination
-            rowCount={patterns.total}
-            pagination={paging.pagination}
-            onPaginationChange={paging.setPagination}
-            pageSizeOptions={PAGE_SIZES}
-            emptyMessage="No path patterns"
-            emptyDescription="Paths appear here once an origin is crawled; the same path on many origins is listed once."
-          />
-        ) : (
-          <DataTable
-            columns={eventColumns}
-            data={events.rows}
-            getRowId={(e) => e.id ?? ''}
-            onRowClick={(e) => setSelected(e.endpoint_id ?? null)}
-            showSearch={false}
-            showColumnToggle={false}
-            toolbarStart={toolbarStart}
-            manualPagination
-            rowCount={events.total}
-            pagination={paging.pagination}
-            onPaginationChange={paging.setPagination}
-            pageSizeOptions={PAGE_SIZES}
-            emptyMessage="No changes"
-            emptyDescription="New, gone and changed endpoints appear here after each crawl."
-          />
-        )}
-      </div>
-      <EndpointSheet
-        endpointId={selected}
-        onClose={() => setSelected(null)}
-        onChanged={() => void endpoints.mutate()}
-      />
-      <p className="mt-4 flex items-center gap-1.5 text-xs text-muted-foreground">
-        <Globe className="h-3.5 w-3.5" aria-hidden />
-        Paths are shown as text and never opened from here.
-      </p>
+      <PageStack>
+        <PageHeader
+          title={t('attackSurface.title', 'Attack surface')}
+          description={t(
+            'attackSurface.web.description',
+            'What your web origins serve: endpoints, their parameters (names only), the same path across origins, and what changed.'
+          )}
+        />
+        <AttackSurfaceSectionTabs />
+        <MetricStrip loading={stats.isLoading && !s} items={metrics} />
+        <div>
+          {tab === 'origins' ? (
+            <DataTable
+              columns={originColumns}
+              data={origins.rows}
+              getRowId={(o) => o.origin_asset_id ?? o.origin ?? ''}
+              showSearch={false}
+              showColumnToggle={false}
+              toolbarStart={toolbarStart}
+              isLoading={loadingRows}
+              errorState={errorState}
+              manualPagination
+              rowCount={origins.total}
+              pagination={paging.pagination}
+              onPaginationChange={paging.setPagination}
+              pageSizeOptions={PAGE_SIZES}
+              emptyMessage="No web origins yet"
+              emptyDescription="Crawl a web service (a workflow with a web crawl step) to record what it serves."
+            />
+          ) : tab === 'endpoints' ? (
+            <DataTable
+              columns={endpointColumns}
+              data={endpoints.rows}
+              getRowId={(e) => e.id ?? ''}
+              onRowClick={(e) => setSelected(e.id ?? null)}
+              showSearch={false}
+              showColumnToggle={false}
+              toolbarStart={toolbarStart}
+              isLoading={loadingRows}
+              errorState={errorState}
+              manualPagination
+              rowCount={endpoints.total}
+              pagination={paging.pagination}
+              onPaginationChange={paging.setPagination}
+              pageSizeOptions={PAGE_SIZES}
+              emptyMessage="No endpoints match"
+              emptyDescription="Clear a filter, or crawl the origin again."
+            />
+          ) : tab === 'patterns' ? (
+            <DataTable
+              columns={patternColumns}
+              data={patterns.rows}
+              getRowId={(p) => p.path_hash ?? ''}
+              showSearch={false}
+              showColumnToggle={false}
+              toolbarStart={toolbarStart}
+              isLoading={loadingRows}
+              errorState={errorState}
+              manualPagination
+              rowCount={patterns.total}
+              pagination={paging.pagination}
+              onPaginationChange={paging.setPagination}
+              pageSizeOptions={PAGE_SIZES}
+              emptyMessage="No path patterns"
+              emptyDescription="Paths appear here once an origin is crawled; the same path on many origins is listed once."
+            />
+          ) : (
+            <DataTable
+              columns={eventColumns}
+              data={events.rows}
+              getRowId={(e) => e.id ?? ''}
+              onRowClick={(e) => setSelected(e.endpoint_id ?? null)}
+              showSearch={false}
+              showColumnToggle={false}
+              toolbarStart={toolbarStart}
+              isLoading={loadingRows}
+              errorState={errorState}
+              manualPagination
+              rowCount={events.total}
+              pagination={paging.pagination}
+              onPaginationChange={paging.setPagination}
+              pageSizeOptions={PAGE_SIZES}
+              emptyMessage="No changes"
+              emptyDescription="New, gone and changed endpoints appear here after each crawl."
+            />
+          )}
+        </div>
+        <EndpointSheet
+          endpointId={selected}
+          onClose={() => setSelected(null)}
+          onChanged={() => void endpoints.mutate()}
+        />
+        <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
+          <Globe className="h-3.5 w-3.5" aria-hidden />
+          {t(
+            'attackSurface.web.pathsAsText',
+            'Paths are shown as text and never opened from here.'
+          )}
+        </p>
+      </PageStack>
     </Main>
   )
 }
