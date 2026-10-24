@@ -809,7 +809,7 @@ func (s *IntegrationService) TestIntegration(ctx context.Context, id string, ten
 
 	credentials, err := s.decryptCredentials(intg)
 	if err != nil {
-		intg.SetError(err.Error())
+		s.recordFailure(intg, err)
 		if updateErr := s.repo.Update(ctx, intg); updateErr != nil {
 			s.logger.Error("Failed to update integration after decrypt error", "error", updateErr)
 		}
@@ -825,7 +825,7 @@ func (s *IntegrationService) TestIntegration(ctx context.Context, id string, ten
 		AuthType:     scm.AuthType(intg.AuthType()),
 	})
 	if err != nil {
-		intg.SetError(fmt.Sprintf("Failed to create client: %v", err))
+		s.recordFailure(intg, err)
 		if updateErr := s.repo.Update(ctx, intg); updateErr != nil {
 			s.logger.Error("Failed to update integration after client error", "error", updateErr)
 		}
@@ -835,7 +835,7 @@ func (s *IntegrationService) TestIntegration(ctx context.Context, id string, ten
 	// Test the connection
 	result, err := client.TestConnection(ctx)
 	if err != nil {
-		intg.SetError(fmt.Sprintf("Connection test failed: %v", err))
+		s.recordFailure(intg, err)
 		if updateErr := s.repo.Update(ctx, intg); updateErr != nil {
 			s.logger.Error("Failed to update integration after test error", "error", updateErr)
 		}
@@ -860,7 +860,11 @@ func (s *IntegrationService) TestIntegration(ctx context.Context, id string, ten
 		stats.TotalRepositories = result.RepoCount
 		intg.SetStats(stats)
 	} else {
-		intg.SetError(result.Message)
+		cause := result.Cause
+		if cause == nil {
+			cause = errors.New(result.Message)
+		}
+		s.recordFailure(intg, cause)
 	}
 
 	if err := s.repo.Update(ctx, intg); err != nil {
@@ -882,8 +886,11 @@ type TestIntegrationCredentialsInput struct {
 
 // TestIntegrationCredentialsResult represents the result of testing credentials.
 type TestIntegrationCredentialsResult struct {
-	Success      bool
-	Message      string
+	Success bool
+	Message string
+	// Code is why a failed test failed (an INTEGRATION_* code); empty on
+	// success.
+	Code         string
 	RepoCount    int
 	Organization string
 	Username     string
@@ -923,19 +930,20 @@ func (s *IntegrationService) TestIntegrationCredentials(ctx context.Context, inp
 		AuthType:     scm.AuthType(input.AuthType),
 	})
 	if err != nil {
-		return &TestIntegrationCredentialsResult{
-			Success: false,
-			Message: fmt.Sprintf("Failed to create SCM client: %v", err),
-		}, nil
+		return s.credentialsTestFailure(provider, err), nil
 	}
 
 	// Test the connection
 	result, err := client.TestConnection(ctx)
 	if err != nil {
-		return &TestIntegrationCredentialsResult{
-			Success: false,
-			Message: fmt.Sprintf("Connection test failed: %v", err),
-		}, nil
+		return s.credentialsTestFailure(provider, err), nil
+	}
+	if !result.Success {
+		cause := result.Cause
+		if cause == nil {
+			cause = errors.New(result.Message)
+		}
+		return s.credentialsTestFailure(provider, cause), nil
 	}
 
 	// Extract organization name and username from result
@@ -955,6 +963,14 @@ func (s *IntegrationService) TestIntegrationCredentials(ctx context.Context, inp
 		Organization: orgName,
 		Username:     username,
 	}, nil
+}
+
+// credentialsTestFailure is the answer of a failed credentials test: a code
+// and a safe sentence; the cause goes to the log.
+func (s *IntegrationService) credentialsTestFailure(provider integrationdom.Provider, err error) *TestIntegrationCredentialsResult {
+	f := ClassifyConnFailure(err)
+	s.logger.Info("integration credentials test failed", "provider", provider.String(), "code", string(f.Code), "error", err)
+	return &TestIntegrationCredentialsResult{Success: false, Code: string(f.Code), Message: f.Message}
 }
 
 // IntegrationListReposInput represents the input for listing repositories from an SCM integration.
@@ -1053,7 +1069,7 @@ func (s *IntegrationService) ListSCMRepositories(ctx context.Context, input Inte
 		// the stored status (set at create/last successful test) goes stale and
 		// the connection looks healthy while every sync fails.
 		if errors.Is(err, scm.ErrAuthFailed) {
-			intg.SetError("Stored credentials are invalid or expired")
+			s.recordFailure(intg, err)
 			if updateErr := s.repo.Update(ctx, intg); updateErr != nil {
 				s.logger.Warn("failed to mark integration credentials invalid", "integration_id", intgID.String(), "error", updateErr)
 			}
@@ -1105,7 +1121,7 @@ func (s *IntegrationService) ListSCMRepositories(ctx context.Context, input Inte
 // configured APP_ENCRYPTION_KEY (a key mismatch, a corrupt value, or a legacy
 // plaintext row; cmd/encrypt-credentials encrypts those). It wraps
 // scm.ErrAuthFailed so the API answers "re-enter the credentials".
-var ErrCredentialsUnreadable = fmt.Errorf("%w: stored credentials cannot be decrypted with the configured key", scm.ErrAuthFailed)
+var ErrCredentialsUnreadable = fmt.Errorf("%w: %w", integrationdom.ErrCredentialsUnreadable, scm.ErrAuthFailed)
 
 // decryptCredentials decrypts the stored credentials of an integration. It
 // fails closed: a value that does not decrypt is never used as is, so a key
@@ -1731,11 +1747,22 @@ func (s *IntegrationService) getDefaultBaseURL(provider integrationdom.Provider)
 	}
 }
 
+// recordFailure stores why a connection failed as a code and a safe
+// sentence, and logs the cause (which may name the integration by id, hold an
+// upstream body or an internal address) with the integration's ids.
+func (s *IntegrationService) recordFailure(intg *integrationdom.Integration, err error) {
+	f := ClassifyConnFailure(err)
+	s.logger.Warn("integration connection failed",
+		"tenant_id", intg.TenantID().String(), "integration_id", intg.ID().String(),
+		"provider", intg.Provider().String(), "code", string(f.Code), "error", err)
+	intg.SetFailure(string(f.Code), f.Message)
+}
+
 // testTicketingIntegration checks a ticketing integration's credentials and
 // records the outcome as connected or error, with the reason.
 func (s *IntegrationService) testTicketingIntegration(ctx context.Context, intg *integrationdom.Integration) (*integrationdom.IntegrationWithSCM, error) {
 	if err := s.ticketingTester.TestTicketingConnection(ctx, intg); err != nil {
-		intg.SetError(fmt.Sprintf("Connection test failed: %v", err))
+		s.recordFailure(intg, err)
 	} else {
 		intg.SetConnected()
 	}
@@ -2416,7 +2443,7 @@ func (s *IntegrationService) TestNotificationIntegration(ctx context.Context, id
 	// Build notification client config
 	config, err := s.buildNotificationConfig(intg, notifExt)
 	if err != nil {
-		intg.SetError(fmt.Sprintf("Failed to build config: %v", err))
+		s.recordFailure(intg, err)
 		if updateErr := s.repo.Update(ctx, intg); updateErr != nil {
 			s.logger.Error("Failed to update integration after config error", "error", updateErr)
 		}
@@ -2426,7 +2453,7 @@ func (s *IntegrationService) TestNotificationIntegration(ctx context.Context, id
 	// Create notification client
 	client, err := s.notificationFactory.CreateClient(config)
 	if err != nil {
-		intg.SetError(fmt.Sprintf("Failed to create client: %v", err))
+		s.recordFailure(intg, err)
 		if updateErr := s.repo.Update(ctx, intg); updateErr != nil {
 			s.logger.Error("Failed to update integration after client error", "error", updateErr)
 		}
@@ -2438,7 +2465,7 @@ func (s *IntegrationService) TestNotificationIntegration(ctx context.Context, id
 	// They are only for verifying the connection works.
 	result, err := client.TestConnection(ctx)
 	if err != nil {
-		intg.SetError(fmt.Sprintf("Connection test failed: %v", err))
+		s.recordFailure(intg, err)
 		if updateErr := s.repo.Update(ctx, intg); updateErr != nil {
 			s.logger.Error("Failed to update integration after test error", "error", updateErr)
 		}
@@ -2449,7 +2476,11 @@ func (s *IntegrationService) TestNotificationIntegration(ctx context.Context, id
 	if result.Success {
 		intg.SetConnected()
 	} else {
-		intg.SetError(result.Error)
+		f := ClassifySendFailure(result.Error)
+		s.logger.Warn("integration connection test failed",
+			"tenant_id", intg.TenantID().String(), "integration_id", intg.ID().String(),
+			"provider", intg.Provider().String(), "code", string(f.Code), "error", result.Error)
+		intg.SetFailure(string(f.Code), f.Message)
 	}
 
 	if err := s.repo.Update(ctx, intg); err != nil {
