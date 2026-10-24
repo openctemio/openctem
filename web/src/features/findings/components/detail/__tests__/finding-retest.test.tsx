@@ -167,6 +167,39 @@ describe('FindingRetestSection', () => {
     expect(screen.getByText(/connection refused/i)).toBeInTheDocument()
   })
 
+  it('says what an inconclusive retest means and what to do, for each reason the tool gives', () => {
+    for (const [code, label, help] of [
+      [
+        'template_not_found',
+        'Inconclusive: check not installed on the sensor',
+        /template set does not include this check.*Update the sensor's templates/,
+      ],
+      [
+        'excluded_by_policy',
+        'Inconclusive: check not allowed by the sensor policy',
+        /safety policy never runs checks of its class.*Verify it by hand/,
+      ],
+      [
+        'no_verdict',
+        'Inconclusive: the tool gave no verdict',
+        /ended without a verdict.*Retest again/,
+      ],
+    ] as const) {
+      mockRetests = [
+        retest({
+          outcome: 'inconclusive',
+          reason_code: code,
+          reason: 'sensor detail',
+          result_status: 'confirmed',
+        }),
+      ]
+      const { unmount } = render(<FindingRetestSection finding={nucleiFinding} />)
+      expect(screen.getByText(label)).toBeInTheDocument()
+      expect(screen.getByText(help)).toBeInTheDocument()
+      unmount()
+    }
+  })
+
   it('disables Retest now while a retest is running', () => {
     mockRetests = [retest({ status: 'pending' })]
     render(<FindingRetestSection finding={nucleiFinding} />)
