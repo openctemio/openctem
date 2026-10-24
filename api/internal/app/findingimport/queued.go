@@ -18,6 +18,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"slices"
 	"time"
 
 	"github.com/openctemio/ctis"
@@ -28,10 +29,12 @@ import (
 	appimportmapping "github.com/openctemio/openctem/api/internal/app/importmapping"
 	"github.com/openctemio/openctem/api/internal/app/ingest"
 	"github.com/openctemio/openctem/api/internal/app/ingestqueue"
+	"github.com/openctemio/openctem/api/pkg/domain/apikey"
 	auditdom "github.com/openctemio/openctem/api/pkg/domain/audit"
 	"github.com/openctemio/openctem/api/pkg/domain/importmapping"
 	"github.com/openctemio/openctem/api/pkg/domain/ingestjob"
 	"github.com/openctemio/openctem/api/pkg/domain/ingestreceipt"
+	"github.com/openctemio/openctem/api/pkg/domain/permission"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/domain/tenant"
 	"github.com/openctemio/openctem/api/pkg/logger"
@@ -58,6 +61,9 @@ type Caller struct {
 	IsAdmin bool   `json:"is_admin,omitempty"`
 	IsOwner bool   `json:"is_owner,omitempty"`
 	APIKey  bool   `json:"api_key,omitempty"`
+	// APIKeyID is the key the upload was sent with (empty for a person's
+	// session); the worker re-reads it when the upload is imported.
+	APIKeyID string `json:"api_key_id,omitempty"`
 }
 
 // ScopeResolver resolves an uploader's data scope for importing (nil actor:
@@ -85,12 +91,33 @@ type MemberReader interface {
 // ever narrowed by it, never widened.
 func (s *Service) SetMembers(m MemberReader) { s.members = m }
 
+// KeyReader reads an API key of a tenant (apikey.Repository).
+type KeyReader interface {
+	GetByID(ctx context.Context, id, tenantID shared.ID) (*apikey.APIKey, error)
+}
+
+// PermissionReader tells whether a user holds a permission now
+// (accesscontrol.RoleService).
+type PermissionReader interface {
+	HasPermission(ctx context.Context, tenantID, userID, permission string) (bool, error)
+}
+
+// SetRights makes the worker re-check the upload's API key (revoked or
+// expired is refused) and the findings:approve right before it imports a
+// committed upload. Rights recorded at accept time are only narrowed.
+func (s *Service) SetRights(keys KeyReader, perms PermissionReader) {
+	s.keys, s.perms = keys, perms
+}
+
 // currentCaller narrows the uploader recorded at accept time to the
 // uploader's membership now: a member who left or was suspended meanwhile
 // is shared.ErrNotFound (the upload is refused), a demoted administrator or
 // owner imports with the member's data scope. Rights are never widened: a flag is kept only when both the record and
 // the current role grant it.
 func (s *Service) currentCaller(ctx context.Context, tenantID shared.ID, env *Envelope) error {
+	if err := s.currentKey(ctx, tenantID, env); err != nil {
+		return err
+	}
 	if s.members == nil || env.Caller.UserID == "" {
 		return nil
 	}
@@ -110,6 +137,46 @@ func (s *Service) currentCaller(ctx context.Context, tenantID shared.ID, env *En
 	}
 	env.Caller.IsOwner = env.Caller.IsOwner && m.IsOwner()
 	env.Caller.IsAdmin = env.Caller.IsAdmin && (m.IsOwner() || m.IsAdmin())
+	if env.CanApprove && s.perms != nil && env.Caller.APIKeyID == "" {
+		// A person's own session: administrators approve, others need the
+		// permission now.
+		if !(m.IsOwner() || m.IsAdmin()) {
+			ok, err := s.perms.HasPermission(ctx, tenantID.String(), uid.String(), permission.FindingsApprove.String())
+			if err != nil {
+				return fmt.Errorf("read the uploader's permissions: %w", err)
+			}
+			env.CanApprove = ok
+		}
+	}
+	return nil
+}
+
+// currentKey narrows an upload sent with an API key to the key now: a
+// revoked, expired or deleted key is refused (shared.ErrNotFound), and the
+// upload keeps findings:approve only while the key's scopes still hold it.
+// A key owned by a person is further narrowed by that person's membership
+// (currentCaller).
+func (s *Service) currentKey(ctx context.Context, tenantID shared.ID, env *Envelope) error {
+	if s.keys == nil || env.Caller.APIKeyID == "" {
+		return nil
+	}
+	kid, err := shared.IDFromString(env.Caller.APIKeyID)
+	if err != nil {
+		return fmt.Errorf("%w: invalid api key", shared.ErrNotFound)
+	}
+	key, err := s.keys.GetByID(ctx, kid, tenantID)
+	if errors.Is(err, shared.ErrNotFound) {
+		return err
+	}
+	if err != nil {
+		return fmt.Errorf("read the upload's api key: %w", err)
+	}
+	if key == nil || !key.IsActive() {
+		return fmt.Errorf("%w: the api key is no longer valid", shared.ErrNotFound)
+	}
+	if !slices.Contains(key.Scopes(), permission.FindingsApprove.String()) {
+		env.CanApprove = false
+	}
 	return nil
 }
 
@@ -244,8 +311,11 @@ func (s *Service) CommitUpload(ctx context.Context, tenantID shared.ID, actorUse
 	if !keyed {
 		prev, err := s.queue.Recent(ctx, tenantID, ingestjob.KindFindingImport, principal, digest, DigestWindow)
 		if err != nil {
+			// Not knowing whether this is a retry, nothing is stored: the
+			// client retries (503), it is not a server fault (500).
 			s.DiscardParts(context.WithoutCancel(ctx), tenantID, jobID)
-			return nil, err
+			s.logger.Warn("finding import: look up a previous upload", "tenant_id", tenantID.String(), "error", err)
+			return nil, fmt.Errorf("%w: %w", ErrQueueUnavailable, err)
 		}
 		if prev != nil {
 			if rid, perr := shared.IDFromString(prev.SourceRef()); perr == nil {

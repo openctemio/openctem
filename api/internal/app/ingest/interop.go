@@ -46,7 +46,9 @@ import (
 // fillFromInterop completes the normalized members of f from its CTIS 1.4
 // members, only where the producer left them empty:
 //
-//   - vulnerability.cve_id / cve_ids from vulnerability.ids of type cve;
+//   - vulnerability.cve_id / cve_ids from vulnerability.ids of type cve
+//     (with a cve_id already set, the other CVEs join cve_ids, so a
+//     multi-CVE network or SCA finding splits per CVE);
 //   - rule_id from native.vuln_id, else from the preferred non-CVE
 //     vulnerability id (GHSA, OSV, vendor) when there is no CVE.
 //
@@ -57,6 +59,20 @@ func fillFromInterop(f *ctis.Finding) {
 		return
 	}
 	v := f.Vulnerability
+	if v != nil && strings.TrimSpace(v.CVEID) != "" && len(v.IDs) > 0 {
+		// A finding that names a CVE keeps it as its key; the other CVEs
+		// among its typed ids join cve_ids, so a multi-CVE network or SCA
+		// finding splits per CVE (RFC-043 D3, D20).
+		var cves []string
+		for _, id := range ctis.VulnerabilityIDs(v) {
+			if id.Type == ctis.VulnerabilityIDCVE {
+				cves = append(cves, id.ID)
+			}
+		}
+		if len(cves) > 1 {
+			v.CVEIDs = cves
+		}
+	}
 	if v != nil && strings.TrimSpace(v.CVEID) == "" && len(v.CVEIDs) == 0 && len(v.IDs) > 0 {
 		var cves []string
 		for _, id := range ctis.VulnerabilityIDs(v) {

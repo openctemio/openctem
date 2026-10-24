@@ -325,12 +325,17 @@ func dastFormerURLKey(assetID shared.ID, f *ctis.Finding) string {
 	return k.Fingerprint()
 }
 
-// splitMultiCVENetworkFinding returns one finding per CVE for a network VA
-// finding that names several (decision D3), each with that single CVE, in
-// CVE order; or f alone. Two scanners then agree on the CVE they share, and
-// the lowest-CVE copy keeps the version-1 key the grouped finding had.
-func splitMultiCVENetworkFinding(f ctis.Finding) []ctis.Finding {
-	if _, _, ok := networkVACVEKey(&f); !ok || f.Vulnerability == nil {
+// splitMultiCVEFinding returns one finding per CVE for a network VA or SCA
+// finding that names several (decision D3, extended to SCA by D20: a
+// multi-CVE advisory such as a vendor id listing two CVEs), each with that
+// single CVE, in CVE order; or f alone. Two tools then agree on the CVE they
+// share, and the copy whose CVE is the one the finding was keyed on keeps
+// its key.
+func splitMultiCVEFinding(f ctis.Finding) []ctis.Finding {
+	if f.Vulnerability == nil {
+		return []ctis.Finding{f}
+	}
+	if _, _, ok := networkVACVEKey(&f); !ok && identityKind(&f) != vulnerability.IdentityKindSCA {
 		return []ctis.Finding{f}
 	}
 	seen := map[string]bool{}

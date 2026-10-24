@@ -120,9 +120,12 @@ type Service struct {
 	// §5.3). Without results every tenant behaves as in "warn" mode.
 	commands commandReader
 	// wildcardDNS keeps the names a filtered resolution did not report.
-	wildcardDNS  assetfreshness.WildcardDNSStore
-	results      sensorresult.Repository
-	resultLimits sensorresult.Limits
+	wildcardDNS assetfreshness.WildcardDNSStore
+	results     sensorresult.Repository
+	// policyVersions and policies: the versioned policy snapshots.
+	policyVersions PolicyVersionReader
+	policies       policyCache
+	resultLimits   sensorresult.Limits
 	// grants and pushRefusals enforce the sensor's push-ingest grant before
 	// the unsolicited policy (RFC-052 §5.3); nil: not enforced.
 	grants GrantReader
@@ -339,6 +342,12 @@ func (s *Service) SetSecretFingerprinter(fp *vulnerability.SecretFingerprinter) 
 // SetCorrelationStore wires cross-rule finding correlation (nil: off).
 func (s *Service) SetCorrelationStore(c CorrelationStore) { s.findingProcessor.SetCorrelationStore(c) }
 
+// SetVulnAliasResolver wires the feed's vulnerability id aliases into
+// keying (nil: off).
+func (s *Service) SetVulnAliasResolver(r VulnAliasResolver) {
+	s.findingProcessor.SetVulnAliasResolver(r)
+}
+
 // SetIssueLinkStore wires same-issue links between findings (nil: off).
 func (s *Service) SetIssueLinkStore(l IssueLinkStore) { s.findingProcessor.SetIssueLinkStore(l) }
 
@@ -396,6 +405,12 @@ func (s *Service) Ingest(ctx context.Context, agt *sensor.Sensor, input Input) (
 
 	// Validate report limits
 	if err := s.validator.ValidateReport(report); err != nil {
+		return nil, err
+	}
+	// The policies this ingest applies, before anything is written: no
+	// snapshot, no ingest (the caller retries).
+	policy, err := s.loadPolicySnapshot(ctx, tenantID)
+	if err != nil {
 		return nil, err
 	}
 	// SECURITY: mask a secret scanner's raw match wherever a finding
@@ -480,6 +495,7 @@ func (s *Service) Ingest(ctx context.Context, agt *sensor.Sensor, input Input) (
 		ReportID:          report.Metadata.ID,
 		Binding:           binding.String(),
 		UnsolicitedWarned: unsolicitedWarned,
+		policy:            policy,
 	}
 	// Web endpoints (and legacy discovered_url assets) go to the web surface
 	// sub-inventory under their origin asset, never one asset per URL.

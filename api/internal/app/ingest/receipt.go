@@ -95,6 +95,8 @@ func (s *Service) recordReceipt(ctx context.Context, agt *sensor.Sensor, tenantI
 		Created:       output.CreatedIDs,
 		Reopened:      output.ReopenedIDs,
 		StillDetected: output.SightedFingerprints,
+		Decided:       output.Decided,
+		Items:         output.Items,
 		At:            time.Now(),
 	}
 	if report != nil {
