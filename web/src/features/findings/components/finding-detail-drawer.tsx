@@ -64,6 +64,7 @@ import { FindingTaskBand } from '@/features/remediation-hub/components/finding-t
 import { FindingAssetName } from './detail/finding-asset-name'
 import { FindingProperties } from './detail/finding-properties'
 import { FindingProvenanceSection } from './detail/finding-provenance-section'
+import { FindingIssueGroupSection } from './detail/finding-issue-group-section'
 import { FindingIdentitySection } from './detail/finding-identity-section'
 import { FindingTypePanel } from './detail/finding-type-panel'
 import { FindingIntelSection } from './detail/finding-intel-section'
@@ -175,8 +176,8 @@ export function FindingDetailDrawer({
     [finding, onOpenChange, router, taskNav]
   )
 
-  // ⌘/Ctrl+Enter opens the full page; ⌘/Ctrl+C opens the activity panel on
-  // its comment box (unless text is selected: then it is a copy).
+  // ⌘/Ctrl+Enter opens the full page. The platform copy chord is left alone:
+  // the activity panel's own "C" key opens the comment box.
   useEffect(() => {
     if (!open) return
     const onKey = (e: KeyboardEvent) => {
@@ -184,16 +185,6 @@ export function FindingDetailDrawer({
       if ((e.metaKey || e.ctrlKey) && e.key === 'Enter' && el.tagName !== 'TEXTAREA') {
         e.preventDefault()
         openPage()
-      }
-      if ((e.metaKey || e.ctrlKey) && e.key === 'c' && !e.shiftKey) {
-        if (
-          el.tagName !== 'TEXTAREA' &&
-          el.tagName !== 'INPUT' &&
-          !window.getSelection()?.toString()
-        ) {
-          e.preventDefault()
-          activityRef.current?.open({ compose: true })
-        }
       }
     }
     document.addEventListener('keydown', onKey, true)
@@ -207,16 +198,22 @@ export function FindingDetailDrawer({
       label: t('findings.drawer.copyLink', 'Copy link'),
       icon: Link2,
       onSelect: () => {
-        void copyToClipboard(`${window.location.origin}/findings/${finding.id}`)
-        toast.success(t('findings.drawer.linkCopied', 'Link copied'))
+        void copyToClipboard(`${window.location.origin}/findings/${finding.id}`).then((ok) =>
+          ok
+            ? toast.success(t('findings.drawer.linkCopied', 'Link copied'))
+            : toast.error(t('findings.toast.copyFailed', 'Could not copy to the clipboard'))
+        )
       },
     },
     {
       label: t('findings.drawer.copyId', 'Copy finding ID'),
       icon: Copy,
       onSelect: () => {
-        void copyToClipboard(finding.id)
-        toast.success(t('findings.drawer.idCopied', 'Finding ID copied'))
+        void copyToClipboard(finding.id).then((ok) =>
+          ok
+            ? toast.success(t('findings.drawer.idCopied', 'Finding ID copied'))
+            : toast.error(t('findings.toast.copyFailed', 'Could not copy to the clipboard'))
+        )
       },
     },
     ...(canCreateTicket
@@ -350,6 +347,7 @@ export function FindingDetailDrawer({
               <FindingRetestSection finding={{ ...detail, status: triage.status }} />
               <FindingRetestCheckSection finding={detail} />
               <FindingTenableRescanSection finding={detail} />
+              <FindingIssueGroupSection findingId={detail.id} />
 
               {description.text && (
                 <DetailSection

@@ -7,8 +7,6 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/lib/pq"
-
 	"github.com/openctemio/openctem/api/pkg/domain/ingestjob"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 )
@@ -16,6 +14,8 @@ import (
 // IngestJobRepository implements ingestjob.Repository on PostgreSQL (RFC-005).
 type IngestJobRepository struct {
 	db *DB
+	// maxRunning caps a tenant's processing jobs (0: the default).
+	maxRunning int
 }
 
 // NewIngestJobRepository constructs an IngestJobRepository.
@@ -28,7 +28,7 @@ const ingestJobColumns = `
 	status, attempts, max_attempts, priority, result, error, locked_by, locked_at,
 	available_at, created_at, updated_at,
 	protocol, ingest_report_id, segment_seq, content_digest, media_type,
-	kind, source_ref, submitted_by, public_error`
+	kind, source_ref, submitted_by, public_error, lane, scope_key`
 
 // Enqueue inserts a pending job, or returns the existing one on idempotency
 // conflict (tenant_id, report_id, payload_sha).
@@ -36,9 +36,10 @@ func (r *IngestJobRepository) Enqueue(ctx context.Context, job *ingestjob.Job) (
 	query := `
 		INSERT INTO ingest_jobs (
 			id, tenant_id, sensor_id, report_id, source_type, payload, payload_sha,
-			status, attempts, max_attempts, priority, available_at, created_at, updated_at
+			status, attempts, max_attempts, priority, available_at, created_at, updated_at,
+			lane, scope_key
 		)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, NULLIF($16, ''))
 		ON CONFLICT (tenant_id, report_id, payload_sha) DO NOTHING
 		RETURNING ` + ingestJobColumns
 
@@ -57,6 +58,8 @@ func (r *IngestJobRepository) Enqueue(ctx context.Context, job *ingestjob.Job) (
 		job.AvailableAt(),
 		job.CreatedAt(),
 		job.UpdatedAt(),
+		int(job.Lane()),
+		job.ScopeKey(),
 	)
 
 	stored, err := scanIngestJobRow(row)
@@ -83,16 +86,47 @@ func (r *IngestJobRepository) getByIdempotencyKey(ctx context.Context, tenantID 
 	return scanIngestJobRow(row)
 }
 
+// DefaultMaxRunningPerTenant bounds a tenant's processing jobs when no cap
+// is configured.
+const DefaultMaxRunningPerTenant = 2
+
+// SetMaxRunningPerTenant caps how many jobs of one tenant are processing at
+// once (<= 0 keeps DefaultMaxRunningPerTenant).
+func (r *IngestJobRepository) SetMaxRunningPerTenant(n int) { r.maxRunning = n }
+
+func (r *IngestJobRepository) runningCap() int {
+	if r.maxRunning <= 0 {
+		return DefaultMaxRunningPerTenant
+	}
+	return r.maxRunning
+}
+
 // ClaimBatch claims up to limit due pending jobs for workerID, marking them
-// processing.
+// processing (docs/rfcs/RFC-122-ingest-receipts.md, "Fairness and limits").
 //
-// Claiming is per-tenant weighted-fair (RFC-005 §3.4): jobs are ranked
-// round-robin across tenants (each tenant's oldest due job before any tenant's
-// second), so a single tenant flooding the queue cannot starve others. Because
-// Postgres forbids FOR UPDATE alongside the window function used for ranking,
-// this is a two-phase claim: (1) pick fair candidate ids (no lock), then
-// (2) lock-and-claim that subset with FOR UPDATE SKIP LOCKED so concurrent
-// workers/replicas still claim disjoint sets without blocking.
+// Order: lane first (urgent, interactive, bulk), then round-robin across
+// tenants within a lane (each tenant's oldest due job before any tenant's
+// second), then age. The tenant's share counts its running jobs too
+// (tenant_running + rn): a tenant already holding workers comes after one
+// holding fewer, so a tenant with an older backlog cannot keep every freed
+// worker. The urgent lane goes ahead of other tenants for one job of a
+// tenant at a time (its first, with nothing of it running); further urgent
+// jobs of that tenant queue as interactive. The lane is derived from the
+// report, which the tenant writes, so it orders a tenant's own work but
+// cannot buy one tenant the whole worker pool. Guards:
+//   - attempts < max_attempts: a job whose attempts ran out is never claimed
+//     again (a payload that kills the worker, its lease expired);
+//   - one processing job per scope_key: a candidate whose scope has a
+//     running job is skipped, a batch takes at most one job per scope, and
+//     the unique partial index ux_ingest_jobs_scope_running makes a
+//     concurrent claim of the same scope by another worker fail, in which
+//     case that job is skipped;
+//   - a tenant has at most the running cap of jobs processing, so one
+//     tenant cannot hold every worker.
+//
+// Postgres forbids FOR UPDATE alongside window functions, so the claim is
+// two-phase: (1) pick fair candidate ids without locks, (2) claim each one
+// under FOR UPDATE SKIP LOCKED in its own savepoint.
 func (r *IngestJobRepository) ClaimBatch(ctx context.Context, workerID string, limit int) ([]*ingestjob.Job, error) {
 	if limit <= 0 {
 		limit = 10
@@ -108,21 +142,27 @@ func (r *IngestJobRepository) ClaimBatch(ctx context.Context, workerID string, l
 	defer func() { _ = tx.Rollback() }()
 
 	now := time.Now()
-
-	// Phase 1: fair candidate ranking. rn=1 is each tenant's oldest due job;
-	// ordering by rn first interleaves tenants round-robin.
 	candidateQuery := `
-		SELECT id FROM (
-			SELECT id,
-				ROW_NUMBER() OVER (PARTITION BY tenant_id ORDER BY priority DESC, available_at ASC) AS rn,
-				priority, available_at
-			FROM ingest_jobs
-			WHERE status = 'pending' AND available_at <= $1
-		) ranked
-		ORDER BY rn ASC, priority DESC, available_at ASC
+		WITH running AS (
+			SELECT tenant_id, count(*) AS n FROM ingest_jobs WHERE status = 'processing' GROUP BY tenant_id
+		), ranked AS (
+			SELECT j.id, j.lane, j.available_at,
+				ROW_NUMBER() OVER (PARTITION BY j.tenant_id ORDER BY j.lane, j.priority DESC, j.available_at) AS rn,
+				ROW_NUMBER() OVER (PARTITION BY COALESCE(j.scope_key, j.id::text) ORDER BY j.lane, j.available_at) AS sn,
+				COALESCE(rt.n, 0) AS tenant_running
+			FROM ingest_jobs j
+			LEFT JOIN running rt ON rt.tenant_id = j.tenant_id
+			WHERE j.status = 'pending' AND j.available_at <= $1 AND j.attempts < j.max_attempts
+			  AND (j.scope_key IS NULL OR NOT EXISTS (
+				SELECT 1 FROM ingest_jobs p WHERE p.status = 'processing' AND p.scope_key = j.scope_key))
+		)
+		SELECT id FROM ranked
+		WHERE sn = 1 AND rn <= $3 - tenant_running
+		ORDER BY CASE WHEN lane = 0 AND tenant_running + rn > 1 THEN 1 ELSE lane END,
+			tenant_running + rn, lane, available_at
 		LIMIT $2`
 
-	rows, err := tx.QueryContext(ctx, candidateQuery, now, limit)
+	rows, err := tx.QueryContext(ctx, candidateQuery, now, limit, r.runningCap())
 	if err != nil {
 		return nil, fmt.Errorf("select claim candidates: %w", err)
 	}
@@ -141,35 +181,39 @@ func (r *IngestJobRepository) ClaimBatch(ctx context.Context, workerID string, l
 	}
 	_ = rows.Close()
 
-	if len(ids) == 0 {
-		return nil, nil
+	jobs := make([]*ingestjob.Job, 0, len(ids))
+	for _, id := range ids {
+		if _, err := tx.ExecContext(ctx, `SAVEPOINT ingest_claim`); err != nil {
+			return nil, fmt.Errorf("claim savepoint: %w", err)
+		}
+		job, err := scanIngestJobRow(tx.QueryRowContext(ctx, `
+			UPDATE ingest_jobs
+			SET status = 'processing', attempts = attempts + 1,
+				locked_by = $1, locked_at = $2, updated_at = $2
+			WHERE id = (
+				SELECT id FROM ingest_jobs
+				WHERE id = $3 AND status = 'pending' AND attempts < max_attempts
+				FOR UPDATE SKIP LOCKED
+			)
+			RETURNING `+ingestJobColumns, workerID, now, id))
+		switch {
+		case err == nil:
+			jobs = append(jobs, job)
+		case errors.Is(err, sql.ErrNoRows):
+			// Claimed by another worker meanwhile.
+		case isUniqueViolation(err):
+			// Another worker started a job of the same scope meanwhile.
+			if _, rbErr := tx.ExecContext(ctx, `ROLLBACK TO SAVEPOINT ingest_claim`); rbErr != nil {
+				return nil, fmt.Errorf("claim rollback: %w", rbErr)
+			}
+			continue
+		default:
+			return nil, fmt.Errorf("claim ingest job: %w", err)
+		}
+		if _, err := tx.ExecContext(ctx, `RELEASE SAVEPOINT ingest_claim`); err != nil {
+			return nil, fmt.Errorf("claim release savepoint: %w", err)
+		}
 	}
-
-	// Phase 2: lock the candidate subset (still pending, not locked elsewhere)
-	// and claim it. The inner FOR UPDATE SKIP LOCKED keeps claims disjoint and
-	// non-blocking across workers/replicas.
-	updateQuery := `
-		UPDATE ingest_jobs
-		SET status = 'processing', attempts = attempts + 1,
-			locked_by = $1, locked_at = $2, updated_at = $2
-		WHERE id IN (
-			SELECT id FROM ingest_jobs
-			WHERE id = ANY($3) AND status = 'pending'
-			FOR UPDATE SKIP LOCKED
-		)
-		RETURNING ` + ingestJobColumns
-
-	updated, err := tx.QueryContext(ctx, updateQuery, workerID, now, pq.Array(ids))
-	if err != nil {
-		return nil, fmt.Errorf("lock claimed jobs: %w", err)
-	}
-	defer func() { _ = updated.Close() }()
-
-	jobs, err := scanIngestJobRows(updated)
-	if err != nil {
-		return nil, err
-	}
-
 	if err := tx.Commit(); err != nil {
 		return nil, fmt.Errorf("commit claim: %w", err)
 	}
@@ -270,19 +314,56 @@ func (r *IngestJobRepository) CountPending(ctx context.Context) (int, error) {
 	return n, nil
 }
 
-// ReleaseStale resets jobs stuck in processing past the lease back to pending.
-func (r *IngestJobRepository) ReleaseStale(ctx context.Context, olderThan time.Duration) (int, error) {
+// ReleaseStale resets jobs stuck in processing past the lease back to
+// pending; a job with no attempts left (its lease expiry was its last
+// attempt) is marked dead with apply_failed and returned in dead.
+func (r *IngestJobRepository) ReleaseStale(ctx context.Context, olderThan time.Duration) (int, []*ingestjob.Job, error) {
 	cutoff := time.Now().Add(-olderThan)
-	const query = `
-		UPDATE ingest_jobs
-		SET status = 'pending', locked_by = NULL, locked_at = NULL, updated_at = NOW()
-		WHERE status = 'processing' AND locked_at < $1`
-	res, err := r.db.ExecContext(ctx, query, cutoff)
+	rows, err := r.db.QueryContext(ctx, `
+		UPDATE ingest_jobs j
+		SET status = CASE WHEN j.attempts >= j.max_attempts THEN 'dead' ELSE 'pending' END,
+			public_error = CASE WHEN j.attempts >= j.max_attempts THEN $2 ELSE j.public_error END,
+			error = CASE WHEN j.attempts >= j.max_attempts THEN 'the lease expired on the last attempt' ELSE j.error END,
+			locked_by = NULL, locked_at = NULL, updated_at = NOW()
+		WHERE j.id IN (
+			SELECT id FROM ingest_jobs WHERE status = 'processing' AND locked_at < $1
+			FOR UPDATE SKIP LOCKED
+		)
+		RETURNING `+ingestJobColumns, cutoff, ingestjob.ErrorApplyFailed)
 	if err != nil {
-		return 0, fmt.Errorf("release stale ingest jobs: %w", err)
+		return 0, nil, fmt.Errorf("release stale ingest jobs: %w", err)
 	}
-	n, _ := res.RowsAffected()
-	return int(n), nil
+	defer func() { _ = rows.Close() }()
+	jobs, err := scanIngestJobRows(rows)
+	if err != nil {
+		return 0, nil, err
+	}
+	released := 0
+	var dead []*ingestjob.Job
+	for _, j := range jobs {
+		if j.Status() == ingestjob.StatusDead {
+			dead = append(dead, j)
+		} else {
+			released++
+		}
+	}
+	return released, dead, nil
+}
+
+// TenantDepth counts a tenant's unfinished jobs and the jobs it finished
+// since the given time (back-pressure at accept).
+func (r *IngestJobRepository) TenantDepth(ctx context.Context, tenantID shared.ID, finishedSince time.Time) (int, int, error) {
+	var unfinished, finished int
+	err := r.db.QueryRowContext(ctx, `
+		SELECT COUNT(*) FILTER (WHERE status IN ('pending', 'processing')),
+		       COUNT(*) FILTER (WHERE status = 'completed' AND updated_at >= $2)
+		FROM ingest_jobs
+		WHERE tenant_id = $1 AND (status IN ('pending', 'processing') OR updated_at >= $2)`,
+		tenantID.String(), finishedSince).Scan(&unfinished, &finished)
+	if err != nil {
+		return 0, 0, fmt.Errorf("ingest queue depth: %w", err)
+	}
+	return unfinished, finished, nil
 }
 
 // --- scanning ---
@@ -310,13 +391,15 @@ func scanIngestJobRow(s rowScanner) (*ingestjob.Job, error) {
 		kind                       string
 		sourceRef, submittedBy     sql.NullString
 		publicError                sql.NullString
+		lane                       int
+		scopeKey                   sql.NullString
 	)
 	if err := s.Scan(
 		&idStr, &tenantStr, &sensorStr, &reportID, &sourceType, &payload, &payloadSHA,
 		&statusStr, &attempts, &maxAttempts, &pri, &result, &lastError, &lockedBy, &lockedAt,
 		&availableAt, &createdAt, &updatedAt,
 		&protocol, &reportRef, &segmentSeq, &contentDigest, &mediaType,
-		&kind, &sourceRef, &submittedBy, &publicError,
+		&kind, &sourceRef, &submittedBy, &publicError, &lane, &scopeKey,
 	); err != nil {
 		return nil, err
 	}
@@ -349,6 +432,7 @@ func scanIngestJobRow(s rowScanner) (*ingestjob.Job, error) {
 		availableAt, createdAt, updatedAt,
 	)
 	job.SetUpload(ingestjob.Kind(kind), sourceRef.String, submittedBy.String, publicError.String)
+	job.Route(ingestjob.Lane(lane), scopeKey.String)
 	if protocol.Valid && protocol.Int64 == ingestjob.ProtocolV2 && reportRef.Valid {
 		ref, err := shared.IDFromString(reportRef.String)
 		if err != nil {
@@ -404,9 +488,9 @@ func (r *IngestJobRepository) EnqueueV2(ctx context.Context, job *ingestjob.Job)
 		INSERT INTO ingest_jobs (
 			id, tenant_id, sensor_id, report_id, source_type, payload, payload_sha,
 			status, attempts, max_attempts, priority, available_at, created_at, updated_at,
-			protocol, ingest_report_id, segment_seq, content_digest, media_type
+			protocol, ingest_report_id, segment_seq, content_digest, media_type, lane, scope_key
 		)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, NULLIF($21, ''))
 		` + conflict + `
 		RETURNING ` + ingestJobColumns
 	row := r.db.QueryRowContext(ctx, query,
@@ -415,6 +499,7 @@ func (r *IngestJobRepository) EnqueueV2(ctx context.Context, job *ingestjob.Job)
 		job.Status().String(), job.Attempts(), job.MaxAttempts(), job.Priority(),
 		job.AvailableAt(), job.CreatedAt(), job.UpdatedAt(),
 		ingestjob.ProtocolV2, seg.ReportRef.String(), seq, seg.ContentDigest, seg.MediaType,
+		int(job.Lane()), job.ScopeKey(),
 	)
 	stored, err := scanIngestJobRow(row)
 	if err == nil {
@@ -532,16 +617,16 @@ func (r *IngestJobRepository) EnqueueUpload(ctx context.Context, job *ingestjob.
 		INSERT INTO ingest_jobs (
 			id, tenant_id, report_id, source_type, payload, payload_sha,
 			status, attempts, max_attempts, priority, available_at, created_at, updated_at,
-			kind, source_ref, submitted_by
+			kind, source_ref, submitted_by, lane, scope_key
 		)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, NULLIF($15, ''), NULLIF($16, ''))
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, NULLIF($15, ''), NULLIF($16, ''), $17, NULLIF($18, ''))
 		ON CONFLICT (tenant_id, report_id, payload_sha) DO NOTHING
 		RETURNING ` + ingestJobColumns
 	row := r.db.QueryRowContext(ctx, query,
 		job.ID().String(), job.TenantID().String(), job.ReportID(), job.SourceType(),
 		job.Payload(), job.PayloadSHA(), job.Status().String(), job.Attempts(), job.MaxAttempts(),
 		job.Priority(), job.AvailableAt(), job.CreatedAt(), job.UpdatedAt(),
-		string(job.Kind()), job.SourceRef(), job.SubmittedBy(),
+		string(job.Kind()), job.SourceRef(), job.SubmittedBy(), int(job.Lane()), job.ScopeKey(),
 	)
 	stored, err := scanIngestJobRow(row)
 	if err == nil {
@@ -634,4 +719,55 @@ func (r *IngestJobRepository) BySource(ctx context.Context, tenantID shared.ID, 
 		return nil, fmt.Errorf("get upload job by source: %w", err)
 	}
 	return job, nil
+}
+
+// --- retention (RFC-122 "Queue hygiene") ---
+
+// PurgePayloadsForPlatform deletes stored upload parts nobody will open:
+// expired ones, those of a finished (completed) job, and those an upload
+// staged without ever getting a job (older than an hour). At most limit
+// rows. Platform-wide (the retention job).
+func (r *IngestJobRepository) PurgePayloadsForPlatform(ctx context.Context, now time.Time, limit int) (int64, error) {
+	res, err := r.db.ExecContext(ctx, `
+		DELETE FROM ingest_payloads WHERE (job_id, part) IN (
+			SELECT p.job_id, p.part FROM ingest_payloads p
+			LEFT JOIN ingest_jobs j ON j.id = p.job_id
+			WHERE p.expires_at < $1
+			   OR j.status = 'completed'
+			   OR (j.id IS NULL AND p.created_at < $1 - interval '1 hour')
+			LIMIT $2)`, now, limit)
+	if err != nil {
+		return 0, fmt.Errorf("purge ingest payloads: %w", err)
+	}
+	return res.RowsAffected()
+}
+
+// PurgeFinishedJobsForPlatform deletes finished jobs (completed or dead)
+// last updated before the cutoff that belong to no report (the jobs of a
+// report go with it). At most limit rows.
+func (r *IngestJobRepository) PurgeFinishedJobsForPlatform(ctx context.Context, before time.Time, limit int) (int64, error) {
+	res, err := r.db.ExecContext(ctx, `
+		DELETE FROM ingest_jobs WHERE id IN (
+			SELECT id FROM ingest_jobs
+			WHERE status IN ('completed', 'dead') AND updated_at < $1 AND ingest_report_id IS NULL
+			LIMIT $2)`, before, limit)
+	if err != nil {
+		return 0, fmt.Errorf("purge ingest jobs: %w", err)
+	}
+	return res.RowsAffected()
+}
+
+// PurgeFinishedReportsForPlatform deletes finished protocol v2 reports
+// (completed, failed, expired) last updated before the cutoff, with their
+// jobs (ON DELETE CASCADE). At most limit rows.
+func (r *IngestJobRepository) PurgeFinishedReportsForPlatform(ctx context.Context, before time.Time, limit int) (int64, error) {
+	res, err := r.db.ExecContext(ctx, `
+		DELETE FROM ingest_reports WHERE id IN (
+			SELECT id FROM ingest_reports
+			WHERE state IN ('completed', 'failed', 'expired') AND updated_at < $1
+			LIMIT $2)`, before, limit)
+	if err != nil {
+		return 0, fmt.Errorf("purge ingest reports: %w", err)
+	}
+	return res.RowsAffected()
 }

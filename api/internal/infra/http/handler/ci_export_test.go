@@ -4,12 +4,15 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	cirunapp "github.com/openctemio/openctem/api/internal/app/cirun"
+	"github.com/openctemio/openctem/api/internal/app/ingestqueue"
 	"github.com/openctemio/openctem/api/pkg/domain/cirun"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/logger"
@@ -80,12 +83,17 @@ func TestCIUpload_AcceptRefusals(t *testing.T) {
 		"report cap":       {cirun.ErrRunReportCap, http.StatusConflict},
 		"queue not wired":  {cirunapp.ErrUploadsUnavailable, http.StatusServiceUnavailable},
 		"store failed (5)": {context.DeadlineExceeded, http.StatusInternalServerError},
+		"queue full":       {&ingestqueue.ErrQueueFull{RetryAfter: 12 * time.Second}, http.StatusTooManyRequests},
+		"depth unknown":    {fmt.Errorf("%w: db down", ingestqueue.ErrDepthUnknown), http.StatusServiceUnavailable},
 	} {
 		t.Run(name, func(t *testing.T) {
 			svc := &fakeCIService{acceptErr: tc.err}
 			w := postRunResults(t, NewCIRunnerHandler(svc, logger.NewNop()), exportRun(), []byte(ddExport))
 			if w.Code != tc.want {
 				t.Fatalf("status %d, want %d: %s", w.Code, tc.want, w.Body.String())
+			}
+			if tc.want == http.StatusTooManyRequests && w.Header().Get("Retry-After") != "12" {
+				t.Fatalf("Retry-After %q, want 12", w.Header().Get("Retry-After"))
 			}
 		})
 	}

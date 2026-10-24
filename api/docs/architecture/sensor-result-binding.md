@@ -158,8 +158,8 @@ of pending payload per tenant; beyond that the report is refused (`422 RESULTS_Q
 |---|---|---|
 | `GET /api/v1/sensors/quarantined-results?status=&sensor_id=&page=&per_page=` | `sensors:read` | newest first, no payload |
 | `GET /api/v1/sensors/quarantined-results/{qid}` | `sensors:read` | with a preview: up to 100 assets and findings |
-| `POST /api/v1/sensors/quarantined-results/{qid}/approve` | `sensors:write` | applies it as a person's decision: may change the existing assets it names and reopen findings, never auto-resolves; once only (409 after) |
-| `POST /api/v1/sensors/quarantined-results/{qid}/reject` | `sensors:write` | drops the payload; once only |
+| `POST /api/v1/sensors/quarantined-results/{qid}/approve` | `sensors:write` | applies it as a person's decision: may change the existing assets it names and reopen findings, never auto-resolves; marked accepted only once the apply succeeded (a failed apply leaves it pending); once only: 409 after, and while another accept applies it |
+| `POST /api/v1/sensors/quarantined-results/{qid}/reject` | `sensors:write` | drops the payload; once only; 409 while an accept applies it |
 | `GET`/`PUT /api/v1/sensors/result-policy` | `sensors:read` / `sensors:write` | the mode and `allow_advisory_evidence` |
 
 Accept and discard are audited (`sensor.results_accepted`,

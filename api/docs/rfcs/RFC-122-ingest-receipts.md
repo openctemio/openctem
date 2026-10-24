@@ -182,6 +182,66 @@ completed (a crash before that re-applies the upload), and at once when it
 fails for good with a fixed code (only `apply_failed` keeps it, for a retry
 of the same upload).
 
+## 6b. Fairness and limits
+
+Many CI pipelines, sensors and people upload at once; the queue keeps every
+organization moving and every scope consistent.
+
+- **Lanes.** `ingest_jobs.lane`: 0 urgent (a CI report with a critical
+  finding or a CVE in the KEV catalogue, decided by the server from the
+  decoded report), 1 interactive (a person's import, a CI upload a gate
+  waits on), 2 bulk (sensor reports). The claim takes urgent first, then
+  interactive, then bulk; within a lane it is fair across organizations by
+  share: jobs an organization already has running count, so the one holding
+  fewer workers goes first (each one's next job before anyone's second),
+  then by age. A report cannot ask for a lane, but the server derives it
+  from what the report says, so an organization's urgent lane goes ahead of
+  others for one job at a time (its first, with nothing of it running);
+  further urgent jobs of that organization queue as interactive. Flooding
+  critical findings orders an organization's own work, never the whole
+  worker pool.
+- **One job per scope.** `ingest_jobs.scope_key` names the asset scope a job
+  writes: a CI run's repository, an organization's imports, a sensor
+  report's segments and commit. At most one job per key is processing: the
+  claim skips a scope with a running job and takes one job per scope per
+  batch, and the unique partial index `ux_ingest_jobs_scope_running` makes a
+  concurrent claim of the same scope by another worker fail (that job is
+  skipped). Twenty jobs of a CI matrix on one repository apply one after
+  another instead of deadlocking on the same rows.
+- **Running cap.** An organization has at most `INGEST_MAX_RUNNING_PER_TENANT`
+  (2, half the workers of one server) jobs processing across servers, so the
+  other organizations always have workers.
+- **Workers.** Each server runs `INGEST_WORKERS` (4) workers; each claims one
+  job at a time. The asset and finding writes go through their own pool
+  (`DB_INGEST_MAX_CONNS`, 8, all idle-kept), so a burst of uploads cannot
+  take the API's connections.
+- **Back-pressure.** At accept (CI, import, sensor segment), an organization
+  with `INGEST_MAX_PENDING_PER_TENANT` (100) unfinished jobs gets `429`
+  (`INGEST_QUEUE_FULL`; sensors `queue-full`) with a `Retry-After` from how
+  fast its jobs drained over the last 5 minutes (5 s to 5 min). A depth that
+  cannot be read refuses the upload with `503` and `Retry-After` (fail
+  closed); nothing is stored. An import is checked before its receipt is
+  written, so a refused one leaves no trace.
+- **Poison.** A job is claimed only while `attempts < max_attempts`
+  (attempts count at claim). A lease that expires on the last attempt (a
+  payload that crashes or hangs the worker) makes the job dead with
+  `apply_failed`; its owner is told (the import's receipt fails, the CI gate
+  fails the run).
+
+## 6c. Queue hygiene
+
+- The hourly, single-replica `ingest-queue-retention` job deletes, in batches
+  of 5,000: stored upload parts as soon as nobody will open them (the job was
+  applied, the part expired — 7 days after a failure — or an upload staged it
+  and never got a job, after an hour); finished jobs (completed or dead) and
+  finished protocol v2 reports (with their jobs) after 30 days. Receipts keep
+  what each upload did (their own retention, §3).
+- A quarantined sensor report is marked accepted only once it was applied.
+  An accept first claims the item (`applying_at`, it stays pending): a second
+  accept or a discard meanwhile is refused (409); a failed apply drops the
+  claim so the item can be accepted again; a claim older than 15 minutes (a
+  crashed server) no longer blocks.
+
 ## 7. API
 
 | Route | Gate | Notes |
@@ -218,3 +278,6 @@ of the same upload).
 5. Accept fast, apply async (§6a): CI results and committed imports stored
    sealed and applied by the ingest worker; the CI gate waits on the run's
    uploads.
+6. Fairness and limits (§6b): lanes, one running job per scope, a running
+   cap, workers on their own pool, fail-closed back-pressure, poison cap.
+7. Queue hygiene (§6c): queue retention; quarantine accepted after apply.
