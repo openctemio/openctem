@@ -398,7 +398,8 @@ func (s *Service) LedgerSnapshot(ctx context.Context, tenantID string) (jobsign.
 		if err != nil {
 			return snap, err
 		}
-		if e != nil && scopedom.ValidatePattern(t.TargetType(), t.Pattern()) == nil {
+		if e != nil && scopedom.ValidatePattern(t.TargetType(), t.Pattern()) == nil &&
+			scopedom.DefaultGuardrails().CheckPattern(t.TargetType(), t.Pattern()) == nil {
 			snap.Entries = append(snap.Entries, *e)
 		}
 	}

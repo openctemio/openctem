@@ -13,7 +13,22 @@ vi.mock('@/context/tenant-provider', () => ({
 vi.mock('@/context/permission-provider', () => ({
   usePermissionsSafe: () => ({ hasPermission: (p: string) => perms.includes(p) }),
 }))
+// The identity section has its own test; here it reads nothing.
+vi.mock('../../../api/use-finding-issue-group', () => ({
+  useFindingIssueGroup: () => ({ members: [], mutate: vi.fn() }),
+  unlinkIssue: vi.fn(),
+}))
+vi.mock('../../../api/use-finding-identity', () => ({
+  useFindingIdentity: () => ({
+    identity: null,
+    isLoading: false,
+    error: undefined,
+    mutate: vi.fn(),
+  }),
+}))
 vi.mock('../../../api/use-finding-groups', () => ({ useRelatedCVEs: () => ({ data: undefined }) }))
+// The "last seen in" line fetches receipts on its own (receipt-summary.test.tsx).
+vi.mock('../../receipt-summary', () => ({ FindingLastSeenIn: () => null }))
 
 const { OverviewTab } = await import('../overview-tab')
 

@@ -1,0 +1,63 @@
+name: PR Release-Note Labels
+
+# Labels a pull request by the paths and diffs it touches, so the release notes
+# can put its changelog fragment under an operator heading:
+#
+#   notes:migration              a migration is added or changed
+#   notes:destructive-migration  a migration drops, renames or truncates
+#   notes:identity               finding fingerprint/identity code or the CTIS module version
+#   notes:api-contract           an HTTP handler, a route or the sensor protocol
+#
+# The rules are in .github/scripts/pr-labels.py; the release train groups the
+# fragments by these labels (api/docs/development/ci-cd.md#release-note-labels).
+# Labels are only added, never removed: a person can add or remove one by hand.
+#
+# Safety, as in the security gate (security-gate.yml):
+# - `pull_request` only (no `pull_request_target`): a fork pull request gets a
+#   read-only token, so the job is skipped for forks and a maintainer labels it.
+# - The script comes from the BASE commit and reads the changed files through
+#   the API as data; no code from the pull request runs here.
+# - Not a required check: it adds labels and never fails a pull request because
+#   of what the files contain.
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  label:
+    name: Release-note labels
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      pull-requests: write # add labels (and create the four label names once)
+      issues: write # labels live on the issue side of a pull request
+    steps:
+      - name: Check out the labeler from the base commit
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.base.sha }}
+          persist-credentials: false
+          sparse-checkout: .github/scripts/pr-labels.py
+          sparse-checkout-cone-mode: false
+
+      - name: Label the pull request
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR: ${{ github.event.pull_request.number }}
+          REPO: ${{ github.repository }}
+        run: |
+          if [ ! -f .github/scripts/pr-labels.py ]; then
+            echo "::notice::the base commit has no pr-labels.py yet; nothing to do"
+            exit 0
+          fi
+          python3 .github/scripts/pr-labels.py --pr "$PR" --repo "$REPO" --apply

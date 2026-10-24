@@ -133,7 +133,7 @@ export type { HandleCallbackInput, RefreshTokenResult } from '../actions/auth-ac
 export interface LoginFormProps extends React.HTMLAttributes<HTMLFormElement> {
   /**
    * URL to redirect to after successful login
-   * @default '/dashboard'
+   * @default '/'
    */
   redirectTo?: string
 
@@ -150,7 +150,7 @@ export interface LoginFormProps extends React.HTMLAttributes<HTMLFormElement> {
 export interface RegisterFormProps extends React.HTMLAttributes<HTMLFormElement> {
   /**
    * URL to redirect to after successful registration
-   * @default '/dashboard'
+   * @default '/'
    */
   redirectTo?: string
 

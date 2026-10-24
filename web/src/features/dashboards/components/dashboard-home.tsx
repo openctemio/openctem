@@ -9,6 +9,7 @@
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useSearchParams } from 'next/navigation'
 import dynamic from 'next/dynamic'
 import { useSWRConfig } from 'swr'
 import { Copy, MoreHorizontal, Pencil, SlidersHorizontal, Star, Trash2, X } from 'lucide-react'
@@ -29,6 +30,7 @@ import { useTranslation } from '@/context/i18n-provider'
 import { PageHeader } from '@/features/shared'
 import { getErrorMessage } from '@/lib/api/error-handler'
 import { Permission, usePermissions } from '@/lib/permissions'
+import { cn } from '@/lib/utils'
 import {
   DASHBOARDS_KEY,
   createDashboard,
@@ -44,17 +46,27 @@ import {
 } from '../api/use-dashboards-api'
 import type { Dashboard, DashboardRefreshSchedule } from '../api/dashboards.types'
 import { dashboardDataKey, refreshDashboard, useDashboardData } from '../api/widget-data'
+import { uniqueDashboardName } from '../lib/unique-name'
 import { DEFAULT_TEMPLATE, templateByKey, templateLayout, templateNameKey } from '../templates'
 import { DASHBOARD_CHOICE_KEY, parseRef, pickLanding, refKey, type DashboardRef } from '../landing'
 import {
-  needsCtemHint,
-  readCtemHintDismissed,
-  withCtemLoop,
-  writeCtemHintDismissed,
-} from '../ctem-hint'
-import { DashboardFreshness } from './dashboard-freshness'
+  layoutHintFor,
+  readLayoutHintDismissed,
+  withTemplateWidgets,
+  writeLayoutHintDismissed,
+} from '../layout-hint'
+import { metricNameKey } from '../metrics'
+import {
+  DashboardFreshness,
+  RefreshButton,
+  ScheduleMenuItems,
+  ScheduleSelect,
+} from './dashboard-freshness'
 import { DashboardSwitcher } from './dashboard-switcher'
 import { DashboardView } from './dashboard-view'
+
+/** Menu rows are 44px tall on a phone (touch target), the kit default from 640px. */
+const ITEM = 'min-h-11 sm:min-h-8'
 
 export function DashboardSkeleton() {
   return (
@@ -83,6 +95,14 @@ function readChoice(): DashboardRef | null {
 function writeChoice(ref: DashboardRef) {
   try {
     window.localStorage.setItem(DASHBOARD_CHOICE_KEY, refKey(ref))
+  } catch {
+    // A per-viewer convenience only.
+  }
+}
+
+function clearChoice() {
+  try {
+    window.localStorage.removeItem(DASHBOARD_CHOICE_KEY)
   } catch {
     // A per-viewer convenience only.
   }
@@ -151,6 +171,15 @@ export function DashboardHome() {
     active &&
     (active.kind === 'personal' ? personal : (organization ?? [])).find((d) => d.id === active.id)
 
+  // `/?customize=1` (from the dashboards list) opens straight in customize mode.
+  const startCustomizing = useSearchParams()?.get('customize') === '1'
+  const customizeStarted = useRef(false)
+  useEffect(() => {
+    if (!startCustomizing || customizeStarted.current || !dashboard || !active) return
+    customizeStarted.current = true
+    if (active.kind === 'personal' || canOrgManage) setCustomizing(true)
+  }, [startCustomizing, dashboard, active, canOrgManage])
+
   const data = useDashboardData(active?.kind ?? 'personal', active?.id ?? null)
 
   const choose = useCallback((ref: DashboardRef) => {
@@ -159,53 +188,37 @@ export function DashboardHome() {
     writeChoice(ref)
   }, [])
 
-  // The one-time CTEM offer on an Overview copy made before the template
-  // carried the loop. Nothing changes until the viewer chooses.
+  // The offer on a personal copy of a template that has gained widgets since
+  // the copy was made. Nothing changes until the viewer chooses.
   const [hintDismissed, setHintDismissed] = useState(true)
-  useEffect(() => setHintDismissed(readCtemHintDismissed()), [])
+  useEffect(() => setHintDismissed(readLayoutHintDismissed()), [])
   const [hintBusy, setHintBusy] = useState(false)
-  const showCtemHint =
-    !hintDismissed &&
-    !seeded &&
-    active?.kind === 'personal' &&
-    needsCtemHint(dashboard ? { ...dashboard, kind: 'personal' } : undefined)
+  const layoutHint =
+    !hintDismissed && !seeded && active?.kind === 'personal'
+      ? layoutHintFor(dashboard ? { ...dashboard, kind: 'personal' } : undefined)
+      : null
   const dismissHint = () => {
-    writeCtemHintDismissed()
+    writeLayoutHintDismissed()
     setHintDismissed(true)
   }
-  const addCtemLoop = async () => {
-    if (!dashboard) return
+  const addTemplateWidgets = async () => {
+    if (!dashboard || !layoutHint) return
     setHintBusy(true)
     try {
       await updateDashboard(dashboard.id, {
         name: dashboard.name,
         description: dashboard.description,
         columns: dashboard.columns,
-        layout: withCtemLoop(dashboard.layout ?? []),
+        layout: withTemplateWidgets(
+          dashboard.layout ?? [],
+          templateByKey(layoutHint.template),
+          layoutHint.missing
+        ),
       })
       dismissHint()
       await Promise.all([revalidate(), data.mutate()])
-      toast.success(t('dashboards.ctemHint.added', 'The CTEM loop was added to this dashboard'))
-    } catch (e) {
-      toast.error(getErrorMessage(e))
-    } finally {
-      setHintBusy(false)
-    }
-  }
-  const switchToCtem = async () => {
-    setHintBusy(true)
-    try {
-      const tpl = templateByKey('ctem')
-      const d = await createDashboard({
-        name: t(templateNameKey(tpl.key), tpl.key),
-        columns: tpl.columns,
-        layout: templateLayout(tpl),
-      })
-      dismissHint()
-      await revalidate()
-      choose({ kind: 'personal', id: d.id })
       toast.success(
-        t('dashboards.ctemHint.switched', 'The CTEM dashboard was added; your Overview is kept')
+        t('dashboards.layoutHint.added', 'The new widgets were added to this dashboard')
       )
     } catch (e) {
       toast.error(getErrorMessage(e))
@@ -213,6 +226,47 @@ export function DashboardHome() {
       setHintBusy(false)
     }
   }
+  const switchToTemplate = async () => {
+    if (!layoutHint) return
+    setHintBusy(true)
+    try {
+      const tpl = templateByKey(layoutHint.template)
+      const name = t(templateNameKey(tpl.key), tpl.key)
+      // Names are unique per person: the copy the hint is shown on often has
+      // the template's own name.
+      const base = t('dashboards.layoutHint.copyName', '{name} (new layout)', { name })
+      const copyName = uniqueDashboardName(
+        name,
+        personal.map((d) => d.name),
+        base
+      )
+      const d = await createDashboard({
+        name: copyName,
+        columns: tpl.columns,
+        layout: templateLayout(tpl),
+      })
+      dismissHint()
+      await revalidate()
+      choose({ kind: 'personal', id: d.id })
+      toast.success(
+        t(
+          'dashboards.layoutHint.switched',
+          'The new {name} layout was added; your dashboard is kept',
+          {
+            name,
+          }
+        )
+      )
+    } catch (e) {
+      toast.error(getErrorMessage(e))
+    } finally {
+      setHintBusy(false)
+    }
+  }
+  const hintNames = layoutHint
+    ? layoutHint.missing.slice(0, 4).map((m) => t(metricNameKey(m), m))
+    : []
+  const hintMore = layoutHint ? layoutHint.missing.length - hintNames.length : 0
 
   const refresh = async () => {
     if (!active) return
@@ -226,11 +280,17 @@ export function DashboardHome() {
     await Promise.all([revalidate(), data.mutate()])
   }
 
-  const run = async (fn: () => Promise<unknown>, done: string) => {
+  // The new default shows in the switcher and menu: no success toast.
+  const setDefault = async (d: Dashboard, org: boolean) => {
     try {
-      await fn()
+      await (org ? setOrgDefaultDashboard(d.id) : setDefaultDashboard(d.id))
+      // A stored last choice outranks the default on the next visit, so the
+      // new personal default would never take effect.
+      if (!org) {
+        clearChoice()
+        setChosen(null)
+      }
       await revalidate()
-      toast.success(done)
     } catch (e) {
       toast.error(getErrorMessage(e))
     }
@@ -261,32 +321,45 @@ export function DashboardHome() {
 
   const isOrg = active?.kind === 'organization'
   const canSchedule = !!dashboard && (isOrg ? canOrgManage : true)
+  // An organization dashboard is edited only by those who may manage them.
+  const canCustomize = !!dashboard && (isOrg ? canOrgManage : true)
   const isDefault = dashboard ? (isOrg ? dashboard.is_org_default : dashboard.is_default) : false
 
   return (
     <Main>
       <div className="flex flex-col gap-4">
+        {/* Phone: the switcher fills row 1 beside icon-only Refresh and More;
+            Customize and the schedule move into More. From 640px one toolbar
+            row: switcher, Customize, schedule, Refresh now, More. */}
         <PageHeader
           title={dashboard?.name ?? t('dashboards.title', 'Dashboard')}
           description={
-            dashboard?.description ||
-            t(
-              'dashboards.description',
-              'How exposed you are, whether it is getting better, and what to do next.'
-            )
+            <span className="max-sm:hidden">
+              {dashboard?.description ||
+                t(
+                  'dashboards.description',
+                  'How exposed you are, whether it is getting better, and what to do next.'
+                )}
+            </span>
           }
+          actionsClassName="basis-full sm:basis-auto"
         >
-          <div className="flex items-center gap-2">
+          <div
+            className="flex w-full min-w-0 flex-nowrap items-center gap-2 sm:w-auto"
+            data-testid="dashboard-toolbar"
+          >
             <DashboardSwitcher
               personal={personal}
               organization={organization}
               active={active}
               onChoose={choose}
+              className="h-11 min-w-0 max-w-none flex-1 justify-start sm:h-8 sm:max-w-[16rem] sm:flex-none"
             />
-            {dashboard && !isOrg && (
+            {canCustomize && (
               <Button
                 variant="outline"
                 size="sm"
+                className="hidden sm:inline-flex"
                 onClick={() => setCustomizing(true)}
                 disabled={customizing}
               >
@@ -294,36 +367,47 @@ export function DashboardHome() {
                 {t('dashboards.actions.customize', 'Customize')}
               </Button>
             )}
+            {canSchedule && !customizing && (
+              <ScheduleSelect
+                schedule={dashboard?.refresh_schedule}
+                onSchedule={schedule}
+                className="hidden sm:flex"
+              />
+            )}
+            {dashboard && !customizing && <RefreshButton onRefresh={refresh} />}
             {dashboard && (
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
                   <Button
                     variant="outline"
                     size="icon"
-                    className="h-8 w-8"
+                    className="h-11 w-11 shrink-0 sm:h-8 sm:w-8"
                     aria-label={t('dashboards.actions.more', 'More dashboard actions')}
                   >
                     <MoreHorizontal className="h-4 w-4" aria-hidden />
                   </Button>
                 </DropdownMenuTrigger>
-                <DropdownMenuContent align="end" className="w-56">
+                <DropdownMenuContent align="end" className="w-64">
+                  {canCustomize && (
+                    <DropdownMenuItem
+                      className={cn(ITEM, 'sm:hidden')}
+                      onSelect={() => setCustomizing(true)}
+                      disabled={customizing}
+                    >
+                      <SlidersHorizontal className="me-2 h-4 w-4" aria-hidden />
+                      {t('dashboards.actions.customize', 'Customize')}
+                    </DropdownMenuItem>
+                  )}
                   {isOrg && (
-                    <DropdownMenuItem onSelect={() => duplicate(dashboard.id)}>
+                    <DropdownMenuItem className={ITEM} onSelect={() => duplicate(dashboard.id)}>
                       <Copy className="me-2 h-4 w-4" aria-hidden />
                       {t('dashboards.actions.duplicate', 'Duplicate to mine')}
                     </DropdownMenuItem>
                   )}
                   {!isDefault && (!isOrg || canOrgManage) && (
                     <DropdownMenuItem
-                      onSelect={() =>
-                        run(
-                          () =>
-                            isOrg
-                              ? setOrgDefaultDashboard(dashboard.id)
-                              : setDefaultDashboard(dashboard.id),
-                          t('dashboards.actions.defaultSet', 'Default dashboard set')
-                        )
-                      }
+                      className={ITEM}
+                      onSelect={() => setDefault(dashboard, isOrg)}
                     >
                       <Star className="me-2 h-4 w-4" aria-hidden />
                       {isOrg
@@ -331,17 +415,28 @@ export function DashboardHome() {
                         : t('dashboards.actions.setDefault', 'Set as my default')}
                     </DropdownMenuItem>
                   )}
-                  <DropdownMenuItem asChild>
-                    <Link href="/dashboards">
-                      <Pencil className="me-2 h-4 w-4" aria-hidden />
-                      {t('dashboards.actions.edit', 'Edit details')}
-                    </Link>
-                  </DropdownMenuItem>
+                  {(!isOrg || canOrgManage) && (
+                    <DropdownMenuItem className={ITEM} asChild>
+                      <Link href="/dashboards">
+                        <Pencil className="me-2 h-4 w-4" aria-hidden />
+                        {t('dashboards.actions.edit', 'Edit details')}
+                      </Link>
+                    </DropdownMenuItem>
+                  )}
+                  {canSchedule && !customizing && (
+                    <div className="sm:hidden">
+                      <DropdownMenuSeparator />
+                      <ScheduleMenuItems
+                        schedule={dashboard.refresh_schedule}
+                        onSchedule={schedule}
+                      />
+                    </div>
+                  )}
                   {!isOrg && (
                     <>
                       <DropdownMenuSeparator />
                       <DropdownMenuItem
-                        className="text-destructive focus:text-destructive"
+                        className={cn(ITEM, 'text-destructive focus:text-destructive')}
                         onSelect={() => setPendingDelete(dashboard)}
                       >
                         <Trash2 className="me-2 h-4 w-4" aria-hidden />
@@ -354,6 +449,9 @@ export function DashboardHome() {
             )}
           </div>
         </PageHeader>
+        {dashboard && active && !customizing && (
+          <DashboardFreshness kind={active.kind} data={data.data} />
+        )}
 
         {listsLoading ? (
           <DashboardSkeleton />
@@ -403,43 +501,44 @@ export function DashboardHome() {
                 </Link>
               </p>
             )}
-            {showCtemHint && (
+            {layoutHint && (
               <div
                 className="flex flex-wrap items-center gap-2 rounded-md border px-3 py-2 text-sm"
                 role="status"
-                data-testid="ctem-hint"
+                data-testid="layout-hint"
               >
-                <span className="min-w-0 flex-1 text-muted-foreground">
-                  {t(
-                    'dashboards.ctemHint.text',
-                    'The CTEM loop is back: see scoping, discovery, prioritization, validation and mobilization at a glance.'
-                  )}
+                <span className="min-w-0 flex-1 basis-60 text-muted-foreground">
+                  {t('dashboards.layoutHint.text', 'New on the {template} layout: {names}.', {
+                    template: t(templateNameKey(layoutHint.template), layoutHint.template),
+                    names:
+                      hintNames.join(', ') +
+                      (hintMore > 0
+                        ? ` ${t('dashboards.layoutHint.more', 'and {n} more', { n: hintMore })}`
+                        : ''),
+                  })}
                 </span>
-                <Button size="sm" variant="outline" disabled={hintBusy} onClick={addCtemLoop}>
-                  {t('dashboards.ctemHint.add', 'Add the CTEM loop')}
+                <Button
+                  size="sm"
+                  variant="outline"
+                  disabled={hintBusy}
+                  onClick={addTemplateWidgets}
+                >
+                  {t('dashboards.layoutHint.add', 'Add them to this dashboard')}
                 </Button>
-                <Button size="sm" variant="ghost" disabled={hintBusy} onClick={switchToCtem}>
-                  {t('dashboards.ctemHint.switch', 'Switch to the CTEM template')}
+                <Button size="sm" variant="ghost" disabled={hintBusy} onClick={switchToTemplate}>
+                  {t('dashboards.layoutHint.switch', 'Switch to the new layout')}
                 </Button>
                 <Button
                   size="icon"
                   variant="ghost"
                   className="h-8 w-8"
                   onClick={dismissHint}
-                  aria-label={t('dashboards.ctemHint.dismiss', 'Dismiss')}
+                  aria-label={t('dashboards.layoutHint.dismiss', 'Dismiss')}
                 >
                   <X className="h-4 w-4" aria-hidden />
                 </Button>
               </div>
             )}
-            <DashboardFreshness
-              kind={active.kind}
-              data={data.data}
-              schedule={dashboard.refresh_schedule}
-              canSchedule={canSchedule}
-              onRefresh={refresh}
-              onSchedule={schedule}
-            />
             <DashboardView
               dashboard={dashboard}
               data={data.data}
@@ -458,8 +557,8 @@ export function DashboardHome() {
           name: pendingDelete?.name ?? '',
         })}
         desc={t(
-          'confirm.dashboard.deleteDesc',
-          'The dashboard and its widget layout are deleted for everyone who can see it. Your data is not affected. This cannot be undone.'
+          'confirm.dashboard.deleteDescPersonal',
+          'Your dashboard and its layout are deleted. Copies you shared and your data are not affected. This cannot be undone.'
         )}
         confirmText={t('confirm.delete', 'Delete')}
         handleConfirm={() => (pendingDelete ? remove(pendingDelete) : undefined)}

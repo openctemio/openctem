@@ -13,11 +13,14 @@ import { useTenant } from '@/context/tenant-provider'
 import { decideSSOChange, useSSOChanges, type SSOChange } from '../api/use-sso-changes'
 import { useTranslation } from '@/context/i18n-provider'
 
-const kindLabel: Record<SSOChange['kind'], string> = {
-  saml_config: 'SAML configuration',
-  idp_create: 'New identity provider',
-  idp_update: 'Identity provider change',
-  domain_jit: 'New people on a domain',
+const kindLabel: Record<SSOChange['kind'], { key: string; fallback: string }> = {
+  saml_config: { key: 'settings.ssoApprovals.kind.samlConfig', fallback: 'SAML configuration' },
+  idp_create: { key: 'settings.ssoApprovals.kind.idpCreate', fallback: 'New identity provider' },
+  idp_update: {
+    key: 'settings.ssoApprovals.kind.idpUpdate',
+    fallback: 'Identity provider change',
+  },
+  domain_jit: { key: 'settings.ssoApprovals.kind.domainJit', fallback: 'New people on a domain' },
 }
 
 function ChangeCard({ change, onDecided }: { change: SSOChange; onDecided: () => void }) {
@@ -31,11 +34,20 @@ function ChangeCard({ change, onDecided }: { change: SSOChange; onDecided: () =>
     setBusy(true)
     try {
       await decideSSOChange(currentTenant.id, change.id, decision)
-      toast.success(decision === 'approve' ? 'SSO change applied' : 'SSO change rejected')
+      toast.success(
+        decision === 'approve'
+          ? t('settings.ssoApprovals.applied', 'SSO change applied')
+          : t('settings.ssoApprovals.rejected', 'SSO change rejected')
+      )
       setConfirm(null)
       onDecided()
     } catch (e) {
-      toast.error(getErrorMessage(e, 'Failed to decide the SSO change'))
+      toast.error(
+        getErrorMessage(
+          e,
+          t('settings.ssoApprovals.decideFailed', 'Failed to decide the SSO change')
+        )
+      )
     } finally {
       setBusy(false)
     }
@@ -44,11 +56,23 @@ function ChangeCard({ change, onDecided }: { change: SSOChange; onDecided: () =>
   return (
     <Card>
       <CardHeader>
-        <CardTitle className="text-base">{kindLabel[change.kind] ?? change.kind}</CardTitle>
+        <CardTitle className="text-base">
+          {kindLabel[change.kind]
+            ? t(kindLabel[change.kind].key, kindLabel[change.kind].fallback)
+            : change.kind}
+        </CardTitle>
         <CardDescription>
-          Proposed by {change.requested_by || 'a platform administrator'} on{' '}
-          {new Date(change.created_at).toLocaleString()}. Expires{' '}
-          {new Date(change.expires_at).toLocaleString()}.
+          {t(
+            'settings.ssoApprovals.proposedBy',
+            'Proposed by {who} on {created}. Expires {expires}.',
+            {
+              who:
+                change.requested_by ||
+                t('settings.ssoApprovals.platformAdmin', 'a platform administrator'),
+              created: new Date(change.created_at).toLocaleString(),
+              expires: new Date(change.expires_at).toLocaleString(),
+            }
+          )}
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-3">
@@ -56,7 +80,10 @@ function ChangeCard({ change, onDecided }: { change: SSOChange; onDecided: () =>
         {change.certificate_sha256 && (
           <div className="space-y-1">
             <p className="text-muted-foreground text-xs">
-              IdP signing certificate SHA-256 (compare with your identity provider)
+              {t(
+                'settings.ssoApprovals.certificate',
+                'IdP signing certificate SHA-256 (compare with your identity provider)'
+              )}
             </p>
             <code className="bg-muted block rounded px-2 py-1 text-xs break-all">
               {change.certificate_sha256}
@@ -65,7 +92,7 @@ function ChangeCard({ change, onDecided }: { change: SSOChange; onDecided: () =>
         )}
         <details>
           <summary className="text-muted-foreground cursor-pointer text-xs">
-            Proposed configuration
+            {t('settings.ssoApprovals.payload', 'Proposed configuration')}
           </summary>
           <pre className="bg-muted mt-2 max-h-64 overflow-auto rounded p-2 text-xs">
             {JSON.stringify(change.payload, null, 2)}
@@ -73,10 +100,10 @@ function ChangeCard({ change, onDecided }: { change: SSOChange; onDecided: () =>
         </details>
         <div className="flex gap-2">
           <Button size="sm" onClick={() => setConfirm('approve')} disabled={busy}>
-            Approve
+            {t('confirm.ssoChange.approve', 'Approve')}
           </Button>
           <Button size="sm" variant="outline" onClick={() => setConfirm('reject')} disabled={busy}>
-            Reject
+            {t('confirm.reject', 'Reject')}
           </Button>
         </div>
       </CardContent>
@@ -117,28 +144,41 @@ function ChangeCard({ change, onDecided }: { change: SSOChange; onDecided: () =>
  * approve/reject for the owner. None takes effect until an owner approves it.
  */
 export function SSOChangeApprovals({ canDecide }: { canDecide: boolean }) {
+  const { t } = useTranslation()
   const { data, error, isLoading, mutate } = useSSOChanges({ enabled: canDecide })
 
   if (!canDecide) {
     return (
       <EmptyState
         icon={ShieldCheck}
-        title="Owners only"
-        description="SSO changes proposed by the platform administrator are approved or rejected by an owner of this organization."
+        title={t('settings.ssoApprovals.ownersOnly', 'Owners only')}
+        description={t(
+          'settings.ssoApprovals.ownersOnlyDescription',
+          'SSO changes proposed by the platform administrator are approved or rejected by an owner of this organization.'
+        )}
       />
     )
   }
   if (isLoading) return <Skeleton className="h-40 w-full" />
   if (error) {
-    return <ErrorState title="SSO changes" error={error} onRetry={() => void mutate()} />
+    return (
+      <ErrorState
+        title={t('settings.ssoApprovals.errorTitle', 'SSO changes')}
+        error={error}
+        onRetry={() => void mutate()}
+      />
+    )
   }
   const changes = data?.changes ?? []
   if (changes.length === 0) {
     return (
       <EmptyState
         icon={ShieldCheck}
-        title="Nothing to approve"
-        description="There are no SSO changes waiting for your approval."
+        title={t('settings.ssoApprovals.emptyTitle', 'Nothing to approve')}
+        description={t(
+          'settings.ssoApprovals.emptyDescription',
+          'There are no SSO changes waiting for your approval.'
+        )}
       />
     )
   }

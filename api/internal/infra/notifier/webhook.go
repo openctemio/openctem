@@ -7,9 +7,13 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strconv"
 	"time"
 
+	"github.com/google/uuid"
+
 	"github.com/openctemio/openctem/api/pkg/httpsec"
+	"github.com/openctemio/openctem/api/pkg/webhooksig"
 )
 
 // TestEventType is the event type of a test delivery (and of a message
@@ -21,6 +25,7 @@ type WebhookClient struct {
 	product    string // brand name in test messages
 	webhookURL string
 	httpClient *http.Client
+	secrets    []string // signing secrets (pkg/webhooksig); none = unsigned
 }
 
 // NewWebhookClient creates a new generic webhook notification client.
@@ -41,10 +46,16 @@ func NewWebhookClient(config Config) (*WebhookClient, error) {
 	// SSRF-guarded, redirects refused (newHTTPClient); AllowLoopback is
 	// the unit-test path against httptest servers only.
 	hc := newHTTPClient(30*time.Second, config.AllowLoopback)
+	for _, sec := range config.SigningSecrets {
+		if _, err := webhooksig.ParseSecret(sec); err != nil {
+			return nil, fmt.Errorf("webhook signing secret: %w", err)
+		}
+	}
 	return &WebhookClient{
 		product:    config.productName(),
 		webhookURL: config.WebhookURL,
 		httpClient: hc,
+		secrets:    config.SigningSecrets,
 	}, nil
 }
 
@@ -100,6 +111,23 @@ func (c *WebhookClient) Send(ctx context.Context, msg Message) (*SendResult, err
 	}
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("User-Agent", "OpenCTEM-Notification/1.0")
+	// Standard Webhooks headers. webhook-id is the idempotency key (stable
+	// across retries and redeliveries of one event); a test delivery gets a
+	// fresh one. The signature covers the exact bytes sent.
+	msgID := msg.IdempotencyKey
+	if msgID == "" {
+		msgID = "msg_" + uuid.NewString()
+	}
+	req.Header.Set(webhooksig.HeaderID, msgID)
+	sentAt := time.Now()
+	req.Header.Set(webhooksig.HeaderTimestamp, strconv.FormatInt(sentAt.Unix(), 10))
+	if len(c.secrets) > 0 {
+		h, err := webhooksig.Headers(msgID, sentAt, payloadBytes, c.secrets...)
+		if err != nil {
+			return nil, fmt.Errorf("sign webhook: %w", err)
+		}
+		req.Header.Set(webhooksig.HeaderSignature, h[webhooksig.HeaderSignature])
+	}
 	// F-6: idempotency key for duplicate-delivery suppression.
 	// It is also in the JSON body (idempotency_key) for receivers that read
 	// the payload rather than the headers.

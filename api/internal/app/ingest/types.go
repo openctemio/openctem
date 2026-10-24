@@ -190,9 +190,14 @@ type Output struct {
 	ReportID string `json:"report_id"`
 	// ReceiptID is the receipt the ingest was recorded on ("" when the
 	// receipt could not be written; the ingest itself stands).
-	ReceiptID     string `json:"receipt_id,omitempty"`
-	AssetsCreated int    `json:"assets_created"`
-	AssetsUpdated int    `json:"assets_updated"`
+	ReceiptID string `json:"receipt_id,omitempty"`
+	// ReceiptFailed is set when receipts are on and this ingest could not
+	// be recorded on its receipt. The receipt's action rows decide what a
+	// covered run did not report, so a command-bound segment fails (and is
+	// retried) rather than leave its findings off the receipt.
+	ReceiptFailed bool `json:"-"`
+	AssetsCreated int  `json:"assets_created"`
+	AssetsUpdated int  `json:"assets_updated"`
 	// AssetsSkippedExcluded counts new assets not added because they match
 	// an active scope exclusion (RFC-042 F16).
 	AssetsSkippedExcluded int `json:"assets_skipped_excluded,omitempty"`
@@ -302,6 +307,15 @@ type Output struct {
 	// because they lie outside their command's addresses. Their findings
 	// are skipped, never attached to another asset of the report.
 	OutOfScopeAssetRefs map[string]bool `json:"-"`
+
+	// Decided are the new findings a policy decided (suppressed, held),
+	// and Items the reported items that did not become findings, with the
+	// policy and version that decided them: the receipt records both.
+	Decided []ingestreceipt.PolicyAction `json:"-"`
+	Items   []ingestreceipt.Item         `json:"-"`
+
+	// policy is the snapshot this ingest applies.
+	policy *PolicySnapshot
 }
 
 // FailedFinding contains details about a finding that failed during ingestion.

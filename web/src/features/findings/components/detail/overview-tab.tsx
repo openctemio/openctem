@@ -20,6 +20,7 @@
  * them.
  */
 
+import { FindingLastSeenIn } from '../receipt-summary'
 import { useCallback, useMemo, useState } from 'react'
 import Link from '@/components/link'
 import {
@@ -49,7 +50,9 @@ import { copyToClipboard } from '@/lib/clipboard'
 import { UntrustedTextBlock } from '@/features/shared/components/untrusted-text-block'
 import { useTriageResult } from '@/features/ai-triage/api'
 import { useRelatedCVEs } from '../../api/use-finding-groups'
-import { formatEpssPercentile, formatEpssScore } from '@/lib/epss'
+import { formatEpssPercentile } from '@/lib/epss'
+import { EpssChip } from '@/components/ui/epss-chip'
+import { KevBadge } from '@/components/ui/kev-badge'
 import { cn, sanitizeExternalUrl } from '@/lib/utils'
 import type { FindingDetail } from '../../types'
 import { FINDING_TYPE_CONFIG } from '../../types'
@@ -63,6 +66,8 @@ import { assetDetailHref, isLinkableAssetId } from '../../lib/asset-link'
 import { findingAssetTypeLabel } from '../../lib/finding-asset-type'
 import { HUMAN_SOURCES, findingDescription } from '../../lib/finding-detail'
 import { buildRepositoryCodeUrl } from '../../lib/repository-url'
+import { FindingIssueGroupSection } from './finding-issue-group-section'
+import { FindingIdentitySection } from './finding-identity-section'
 
 interface OverviewTabProps {
   finding: FindingDetail
@@ -83,7 +88,7 @@ function Mono({ children }: { children: React.ReactNode }) {
 }
 
 export function OverviewTab({ finding }: OverviewTabProps) {
-  const { t } = useTranslation()
+  const { t, locale } = useTranslation()
   const isHuman = HUMAN_SOURCES.has(finding.source)
 
   // Read from the AI triage endpoint, not from the first page of activities:
@@ -148,6 +153,8 @@ export function OverviewTab({ finding }: OverviewTabProps) {
       {(finding.filePath || finding.snippet || finding.contextSnippet) && (
         <CodeLocationSection finding={finding} />
       )}
+
+      <FindingIssueGroupSection findingId={finding.id} />
 
       {finding.scannerOutput && <ScannerOutputSection output={finding.scannerOutput} />}
 
@@ -236,6 +243,8 @@ export function OverviewTab({ finding }: OverviewTabProps) {
 
       <IdentifiersSection finding={finding} />
 
+      <FindingIdentitySection findingId={finding.id} />
+
       {!isHuman && (
         <DetailDisclosure summary={t('findings.overviewTab.moreDetails', 'More details')}>
           <div className="mt-3 space-y-4">
@@ -270,10 +279,15 @@ export function OverviewTab({ finding }: OverviewTabProps) {
                 ) : null}
               </DetailField>
               <DetailField label={t('findings.overviewTab.scan', 'Scan')}>
+                {/* The id of the report that carried this finding, not a run id;
+                    "Last seen in" below links the run. */}
                 {finding.scanId ? <Mono>{finding.scanId}</Mono> : null}
               </DetailField>
+              <DetailField label={t('findings.receipts.lastSeenIn', 'Last seen in')}>
+                <FindingLastSeenIn findingId={finding.id} />
+              </DetailField>
               <DetailField label={t('findings.overviewTab.recorded', 'Recorded')}>
-                {new Date(finding.createdAt).toLocaleString('en-US', {
+                {new Date(finding.createdAt).toLocaleString(locale, {
                   dateStyle: 'medium',
                   timeStyle: 'short',
                 })}
@@ -307,8 +321,8 @@ function CveLink({ id }: { id: string }) {
   )
 }
 
-function formatDay(iso: string): string {
-  return new Date(iso).toLocaleDateString('en-US', {
+function formatDay(iso: string, locale: string): string {
+  return new Date(iso).toLocaleDateString(locale, {
     month: 'short',
     day: 'numeric',
     year: 'numeric',
@@ -321,7 +335,7 @@ function formatDay(iso: string): string {
  * when the latest sighting wrote it. Collapsed by default.
  */
 function ScannerOutputSection({ output }: { output: NonNullable<FindingDetail['scannerOutput']> }) {
-  const { t } = useTranslation()
+  const { t, locale } = useTranslation()
   return (
     <DetailSection
       title={t('findings.overviewTab.scannerOutput', 'Scanner output')}
@@ -334,7 +348,7 @@ function ScannerOutputSection({ output }: { output: NonNullable<FindingDetail['s
             {' '}
             ·{' '}
             {t('findings.overviewTab.fromSighting', 'from the sighting of {date}', {
-              date: formatDay(output.updatedAt),
+              date: formatDay(output.updatedAt, locale),
             })}
           </>
         )}
@@ -353,7 +367,7 @@ function ScannerOutputSection({ output }: { output: NonNullable<FindingDetail['s
 }
 
 function IdentifiersSection({ finding }: { finding: FindingDetail }) {
-  const { t } = useTranslation()
+  const { t, locale } = useTranslation()
   const adv = finding.advisory
   const sf = finding.scannerFacts
   const cweNum = finding.cwe?.replace(/^CWE-/i, '')
@@ -403,8 +417,12 @@ function IdentifiersSection({ finding }: { finding: FindingDetail }) {
         </DetailField>
         <DetailField label="EPSS">
           {finding.epssScore !== undefined ? (
-            <span className="tabular-nums">
-              {formatEpssScore(finding.epssScore, finding.epssScore < 0.1 ? 2 : 1)}
+            <span className="inline-flex flex-wrap items-center gap-x-2 gap-y-1 tabular-nums">
+              <EpssChip
+                score={finding.epssScore}
+                threshold={0}
+                digits={finding.epssScore < 0.1 ? 2 : 1}
+              />
               {finding.epssPercentile !== undefined && (
                 <span className="text-muted-foreground">
                   {' '}
@@ -448,7 +466,7 @@ function IdentifiersSection({ finding }: { finding: FindingDetail }) {
           {port ? <Mono>{port}</Mono> : null}
         </DetailField>
         <DetailField label={t('findings.overviewTab.patchPublished', 'Patch published')}>
-          {sf?.patchPublishedAt ? formatDay(sf.patchPublishedAt) : null}
+          {sf?.patchPublishedAt ? formatDay(sf.patchPublishedAt, locale) : null}
         </DetailField>
         <DetailField
           label={
@@ -501,7 +519,7 @@ function IdentifiersSection({ finding }: { finding: FindingDetail }) {
         <DetailField label="OWASP">{finding.owasp}</DetailField>
         <DetailField label={t('findings.overviewTab.published', 'Published')}>
           {adv?.publishedAt
-            ? new Date(adv.publishedAt).toLocaleDateString('en-US', {
+            ? new Date(adv.publishedAt).toLocaleDateString(locale, {
                 month: 'short',
                 day: 'numeric',
                 year: 'numeric',
@@ -510,13 +528,17 @@ function IdentifiersSection({ finding }: { finding: FindingDetail }) {
         </DetailField>
         <DetailField label={t('findings.overviewTab.kev', 'CISA KEV')}>
           {adv?.kev ? (
-            <span className="font-medium text-destructive">
-              {t('findings.overviewTab.kevListed', 'Added {added} · due {due}', {
-                added: adv.kev.dateAdded.slice(0, 10),
-                due: adv.kev.dueDate.slice(0, 10),
-              })}
-              {adv.kev.ransomwareUse === 'Known' &&
-                ` · ${t('findings.overviewTab.kevRansomware', 'used by ransomware')}`}
+            <span className="inline-flex flex-wrap items-center gap-x-2 gap-y-1">
+              <KevBadge
+                pastDue={adv.kev.isPastDue}
+                ransomware={adv.kev.ransomwareUse === 'Known'}
+              />
+              <span>
+                {t('findings.overviewTab.kevListed', 'Added {added} · due {due}', {
+                  added: adv.kev.dateAdded.slice(0, 10),
+                  due: adv.kev.dueDate.slice(0, 10),
+                })}
+              </span>
             </span>
           ) : adv ? (
             t('findings.overviewTab.notListed', 'Not listed')
@@ -654,14 +676,14 @@ function AIFalsePositiveLikelihood({ data }: { data: AITriageSummaryData }) {
 
 /** The latest completed AI triage. */
 function AITriageSummary({ data }: { data: AITriageSummaryData }) {
-  const { t } = useTranslation()
+  const { t, locale } = useTranslation()
   return (
     <DetailSection
       title={t('findings.overviewTab.aiAnalysis', 'AI analysis')}
       icon={Bot}
       actions={
         <span className="text-xs text-muted-foreground">
-          {new Date(data.createdAt).toLocaleDateString('en-US', {
+          {new Date(data.createdAt).toLocaleDateString(locale, {
             month: 'short',
             day: 'numeric',
             hour: '2-digit',

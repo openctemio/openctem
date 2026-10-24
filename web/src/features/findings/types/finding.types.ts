@@ -7,8 +7,10 @@
 import type { FindingLocation } from '@/features/findings/lib/finding-location'
 
 import type { Severity } from '@/features/shared/types'
-import { SEVERITY_BADGE_SOFT, type SeverityLevel } from '@/lib/severity-colors'
+import { severityStyleParts } from '@/lib/severity-colors'
 import type { CriticalityLevel } from '@/lib/criticality'
+import type { PriorityClass } from '@/lib/priority-colors'
+import type { StatusTone } from '@/lib/status-colors'
 
 // ============================================
 // FINDING STATUS (Workflow-based)
@@ -38,82 +40,84 @@ export type FindingStatus =
 
 export type StatusCategory = 'open' | 'in_progress' | 'closed'
 
+export type StatusIconKey =
+  | 'dashed'
+  | 'ring-dot'
+  | 'half'
+  | 'three-quarter'
+  | 'check'
+  | 'slashed'
+  | 'eye'
+  | 'copy'
+  | 'shield-alert'
+
 export interface StatusConfig {
   /** English label; the localised one is `labelKey` in the i18n dictionaries. */
   label: string
   labelKey: string
-  color: string
-  bgColor: string
-  textColor: string
-  icon: string
+  /** Workflow category tint of the lozenge (see lib/status-colors.ts). */
+  tone: StatusTone
+  /** Progression icon key, rendered by FindingStatusBadge. */
+  icon: StatusIconKey
   category: StatusCategory
   requiresApproval?: boolean
   showExpiration?: boolean
 }
 
+/**
+ * Status colour follows the workflow category (`tone`), never one hue per
+ * status: severity hues belong to severity, priority has its own violet box,
+ * teal is the act-here accent.
+ */
 export const FINDING_STATUS_CONFIG: Record<FindingStatus, StatusConfig> = {
   new: {
     label: 'New',
     labelKey: 'findings.status.new',
-    color: 'border-blue-500/50',
-    bgColor: 'bg-blue-500/20',
-    textColor: 'text-blue-400',
-    icon: 'circle-dot',
+    tone: 'triage',
+    icon: 'dashed',
     category: 'open',
   },
   confirmed: {
     label: 'Confirmed',
     labelKey: 'findings.status.confirmed',
-    color: 'border-orange-500/50',
-    bgColor: 'bg-orange-500/20',
-    textColor: 'text-orange-400',
-    icon: 'check-circle',
+    tone: 'open',
+    icon: 'ring-dot',
     category: 'open',
   },
   in_progress: {
-    label: 'In Progress',
+    label: 'In progress',
     labelKey: 'findings.status.in_progress',
-    color: 'border-yellow-500/50',
-    bgColor: 'bg-yellow-500/20',
-    textColor: 'text-yellow-400',
-    icon: 'loader',
+    tone: 'progress',
+    icon: 'half',
     category: 'in_progress',
   },
   fix_applied: {
-    label: 'Fix Applied',
+    label: 'Fix applied',
     labelKey: 'findings.status.fix_applied',
-    color: 'border-yellow-600/50',
-    bgColor: 'bg-yellow-600/20',
-    textColor: 'text-yellow-500',
-    icon: 'wrench',
+    tone: 'progress',
+    icon: 'three-quarter',
     category: 'in_progress',
   },
   resolved: {
     label: 'Resolved',
     labelKey: 'findings.status.resolved',
-    color: 'border-emerald-500/50',
-    bgColor: 'bg-emerald-500/20',
-    textColor: 'text-emerald-400',
-    icon: 'check-square',
+    tone: 'resolved',
+    icon: 'check',
     category: 'closed',
   },
   false_positive: {
-    label: 'False Positive',
+    label: 'False positive',
     labelKey: 'findings.status.false_positive',
-    color: 'border-slate-500/50',
-    bgColor: 'bg-slate-500/20',
-    textColor: 'text-slate-400',
-    icon: 'x-circle',
+    tone: 'closed',
+    icon: 'slashed',
     category: 'closed',
     requiresApproval: true,
   },
   accepted: {
-    label: 'Risk Accepted',
+    label: 'Risk accepted',
     labelKey: 'findings.status.accepted',
-    color: 'border-amber-500/50',
-    bgColor: 'bg-amber-500/20',
-    textColor: 'text-amber-400',
-    icon: 'alert-triangle',
+    tone: 'accepted',
+    icon: 'shield-alert',
     category: 'closed',
     requiresApproval: true,
     showExpiration: true,
@@ -121,9 +125,7 @@ export const FINDING_STATUS_CONFIG: Record<FindingStatus, StatusConfig> = {
   duplicate: {
     label: 'Duplicate',
     labelKey: 'findings.status.duplicate',
-    color: 'border-slate-500/50',
-    bgColor: 'bg-slate-500/20',
-    textColor: 'text-slate-400',
+    tone: 'closed',
     icon: 'copy',
     category: 'closed',
   },
@@ -131,18 +133,14 @@ export const FINDING_STATUS_CONFIG: Record<FindingStatus, StatusConfig> = {
   draft: {
     label: 'Draft',
     labelKey: 'findings.status.draft',
-    color: 'border-gray-500/50',
-    bgColor: 'bg-gray-500/20',
-    textColor: 'text-gray-400',
-    icon: 'file-edit',
+    tone: 'triage',
+    icon: 'dashed',
     category: 'open',
   },
   in_review: {
-    label: 'In Review',
+    label: 'In review',
     labelKey: 'findings.status.in_review',
-    color: 'border-blue-500/50',
-    bgColor: 'bg-blue-500/20',
-    textColor: 'text-blue-400',
+    tone: 'triage',
     icon: 'eye',
     category: 'open',
   },
@@ -178,25 +176,7 @@ export function requiresApproval(status: FindingStatus): boolean {
 // SEVERITY
 // ============================================
 
-/**
- * Split a centralized soft-tint palette entry into the discrete color fields
- * this config exposes. Keeps colors sourced from `@/lib/severity-colors` so the
- * app stays visually consistent (and `low` stays canonical blue, not green).
- */
-function softSeverityStyles(level: SeverityLevel): {
-  color: string
-  bgColor: string
-  textColor: string
-} {
-  const tokens = SEVERITY_BADGE_SOFT[level].split(' ')
-  const pick = (...prefixes: string[]): string =>
-    tokens.filter((t) => prefixes.some((p) => t.startsWith(p))).join(' ')
-  return {
-    color: pick('border-', 'dark:border-'),
-    bgColor: pick('bg-', 'dark:bg-'),
-    textColor: pick('text-', 'dark:text-'),
-  }
-}
+const softSeverityStyles = severityStyleParts
 
 export const SEVERITY_CONFIG: Record<
   Severity,
@@ -223,46 +203,23 @@ export const SEVERITY_CONFIG: Record<
 // The remediation window of each class is the organization's SLA policy,
 // read from the API (features/sla PriorityClassSla); it is not kept here.
 
-export type PriorityClass = 'P0' | 'P1' | 'P2' | 'P3'
+export type { PriorityClass }
 
+/**
+ * Label and meaning of each class. Colour is not here: it is the one priority
+ * token set in `@/lib/priority-colors` (rendered by `PriorityBadge`).
+ */
 export const PRIORITY_CLASS_CONFIG: Record<
   PriorityClass,
   {
     label: string
     description: string
-    color: string
-    bgColor: string
-    textColor: string
   }
 > = {
-  P0: {
-    label: 'P0',
-    description: 'Immediate — actively exploited, reachable',
-    color: 'border-red-600/70',
-    bgColor: 'bg-red-600/20',
-    textColor: 'text-red-500',
-  },
-  P1: {
-    label: 'P1',
-    description: 'Urgent — high exploit probability, reachable',
-    color: 'border-orange-500/70',
-    bgColor: 'bg-orange-500/20',
-    textColor: 'text-orange-500',
-  },
-  P2: {
-    label: 'P2',
-    description: 'Scheduled — moderate risk or compensating controls',
-    color: 'border-yellow-500/70',
-    bgColor: 'bg-yellow-500/20',
-    textColor: 'text-yellow-500',
-  },
-  P3: {
-    label: 'P3',
-    description: 'Track — low risk, fix opportunistically',
-    color: 'border-slate-500/70',
-    bgColor: 'bg-slate-500/20',
-    textColor: 'text-slate-400',
-  },
+  P0: { label: 'P0', description: 'Immediate — actively exploited, reachable' },
+  P1: { label: 'P1', description: 'Urgent — high exploit probability, reachable' },
+  P2: { label: 'P2', description: 'Scheduled — moderate risk or compensating controls' },
+  P3: { label: 'P3', description: 'Track — low risk, fix opportunistically' },
 }
 
 // ============================================

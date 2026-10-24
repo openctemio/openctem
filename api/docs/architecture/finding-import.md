@@ -32,7 +32,7 @@ Multipart form:
 | `file` (up to 10) | An exported file or a ZIP of them |
 | `knowledge_base` | The Qualys KnowledgeBase XML; it must come **before** `file`, because the parser needs it first |
 | `?dry_run=true` | Preview: parse and count; nothing is written |
-| `?format=` | Force the format of a single file |
+| `?format=` | Force the format of a single file, or `mapping:<name or id>[@<version>]` to convert it through an organization's import mapping (always partial coverage; [import-mappings.md](import-mappings.md)) |
 | `?min_severity=` | Drop findings below `info`, `low`, `medium`, `high` or `critical` |
 | `?coverage=full&asset_id=…` | Declares the upload a complete scan of the named assets (1 to 100) by each file's tool: the open findings of that tool on them that the upload does not report are closed. Needs `findings:status`, `findings:bulk_update` and step-up; not with `min_severity`; every asset must be visible to the uploader ([ingest-receipts.md](ingest-receipts.md#full-coverage-uploads)) |
 | `Idempotency-Key` header | 1 to 128 printable ASCII characters: a retry of the same upload returns the first answer (below) |
@@ -41,7 +41,7 @@ The format is read from the content (`importer.IsZip`, `importer.Detect` on
 the first 64 KiB). The client's `Content-Type` and file name are never used
 for anything but a label.
 
-A ZIP is spooled to a private temporary file (removed after the request) and
+A ZIP is spooled to a private temporary file (removed once the file is read) and
 listed with `importer.OpenZip`: at most 50 files, 100 MiB per file, 400 MiB in
 all, a decompression ratio of 200, no path traversal, absolute paths, links,
 encrypted entries or nested archives. A KnowledgeBase in the archive is paired
@@ -49,16 +49,25 @@ with the archive's Qualys detection files.
 
 ## Response
 
-A committed upload answers **201** with `Location: /api/v1/findings/imports/{id}`
-and `receipt`: the upload's receipt ([ingest-receipts.md](ingest-receipts.md):
-created, updated (still detected), reactivated, closed, untouched, skipped,
-failed). A preview answers 200 and has no receipt. `files` has one entry per file: the detected format, the counts (records, assets,
+A committed upload is stored and imported by the ingest worker
+([RFC-122 §6a](../rfcs/RFC-122-ingest-receipts.md)): it answers **202** with
+`Location: /api/v1/findings/imports/{id}`, `receipt_id` and `status: queued` as
+soon as its parts are stored (sealed per tenant in `ingest_payloads`). The
+worker re-resolves the uploader's data scope from the caller recorded at
+accept, imports every file as below, finishes the receipt and deletes the
+stored parts. `GET /api/v1/findings/imports/{id}/result?wait=10` answers the
+state (`queued`, `processing`, `applied`, or `failed` with a fixed
+`error_code`) and, once applied, the per-file results below and `receipt`: the
+upload's receipt ([ingest-receipts.md](ingest-receipts.md): created, updated
+(still detected), reactivated, closed, untouched, skipped, failed). The same
+files from the same caller within 10 minutes, without an Idempotency-Key, are
+the same upload. A preview answers 200 in the request and has no receipt. `files` has one entry per file: the detected format, the counts (records, assets,
 findings by severity, components, VEX statements, skipped), the problems with
 their line and column, the source fields the format's spec does not list
 (up to 100), the VEX summary and, outside a preview, what ingest changed. A
-single file that cannot be read is the request's error (400, or 413 over a
-limit) with the same details; inside an archive each file reports its own
-error.
+single file that cannot be read is the preview's error (400, or 413 over a
+limit) with the same details; in a committed upload it is that file's error in
+the result; inside an archive each file reports its own error.
 
 ## Idempotency-Key
 

@@ -66,19 +66,19 @@ import { useTranslation } from '@/context/i18n-provider'
 
 type FilterType = 'all' | 'active' | 'inactive'
 
-const typeFilters: { value: FilterType; label: string }[] = [
-  { value: 'all', label: 'All statuses' },
-  { value: 'active', label: 'Active' },
-  { value: 'inactive', label: 'Inactive' },
+const typeFilters: { value: FilterType; key: string; en: string }[] = [
+  { value: 'all', key: 'org.assignmentRules.status.all', en: 'All statuses' },
+  { value: 'active', key: 'org.assignmentRules.status.active', en: 'Active' },
+  { value: 'inactive', key: 'org.assignmentRules.status.inactive', en: 'Inactive' },
 ]
 
 const CONDITION_LABELS: Record<string, string> = {
-  asset_type: 'Asset Type',
+  asset_type: 'Asset type',
   finding_severity: 'Severity',
-  finding_type: 'Finding Type',
+  finding_type: 'Finding type',
   finding_source: 'Source',
   asset_tags: 'Tags',
-  file_path_pattern: 'File Path',
+  file_path_pattern: 'File path',
 }
 
 const CONDITION_OPTIONS: Record<string, string[]> = {
@@ -113,6 +113,8 @@ interface SectionProps {
 /** The Assignment rules tab of /settings/teams (moved from its own page; content unchanged). */
 export function AssignmentRulesSection({ header }: SectionProps) {
   const { t } = useTranslation()
+  const conditionLabel = (key: string) =>
+    CONDITION_LABELS[key] ? t(`org.assignmentRules.cond.${key}`, CONDITION_LABELS[key]) : key
   // API Hooks
   const { assignmentRules, isLoading, isError, mutate: mutateRules } = useAssignmentRules()
   const { createAssignmentRule, isCreating } = useCreateAssignmentRule()
@@ -189,7 +191,9 @@ export function AssignmentRulesSection({ header }: SectionProps) {
   const columns: ColumnDef<AssignmentRule>[] = [
     {
       accessorKey: 'name',
-      header: ({ column }) => <DataTableColumnHeader column={column} title="Rule" />,
+      header: ({ column }) => (
+        <DataTableColumnHeader column={column} title={t('org.assignmentRules.col.rule', 'Rule')} />
+      ),
       cell: ({ row }) => {
         const isActive = row.original.is_active
         return (
@@ -197,7 +201,9 @@ export function AssignmentRulesSection({ header }: SectionProps) {
             <div className="flex items-center gap-2">
               <p className="font-medium">{row.original.name}</p>
               <Badge variant={isActive ? 'default' : 'secondary'} className="text-xs">
-                {isActive ? 'Active' : 'Inactive'}
+                {isActive
+                  ? t('org.assignmentRules.status.active', 'Active')
+                  : t('org.assignmentRules.status.inactive', 'Inactive')}
               </Badge>
             </div>
             {row.original.description && (
@@ -211,21 +217,30 @@ export function AssignmentRulesSection({ header }: SectionProps) {
     },
     {
       accessorKey: 'target_group_id',
-      header: 'Target team',
+      header: t('org.assignmentRules.col.targetTeam', 'Target team'),
       enableSorting: false,
       cell: ({ row }) => {
         const name = groupMap[row.original.target_group_id]
-        return <span className="text-sm">{name || 'Unknown team'}</span>
+        return (
+          <span className="text-sm">
+            {name || t('org.assignmentRules.unknownTeam', 'Unknown team')}
+          </span>
+        )
       },
     },
     {
       accessorKey: 'priority',
-      header: ({ column }) => <DataTableColumnHeader column={column} title="Priority" />,
+      header: ({ column }) => (
+        <DataTableColumnHeader
+          column={column}
+          title={t('org.assignmentRules.col.priority', 'Priority')}
+        />
+      ),
       cell: ({ row }) => <span className="text-sm tabular-nums">{row.original.priority}</span>,
     },
     {
       id: 'conditions',
-      header: 'Conditions',
+      header: t('org.assignmentRules.col.conditions', 'Conditions'),
       enableSorting: false,
       cell: ({ row }) => {
         const conditions = row.original.conditions || {}
@@ -233,14 +248,17 @@ export function AssignmentRulesSection({ header }: SectionProps) {
           ([, v]) => v !== undefined && v !== '' && (!Array.isArray(v) || v.length > 0)
         )
         if (entries.length === 0) {
-          return <span className="text-xs text-muted-foreground">No conditions</span>
+          return (
+            <span className="text-xs text-muted-foreground">
+              {t('org.assignmentRules.noConditions', 'No conditions')}
+            </span>
+          )
         }
         return (
           <div className="flex flex-wrap gap-1">
             {entries.map(([key, value]) => (
               <Badge key={key} variant="outline" className="text-xs">
-                {CONDITION_LABELS[key] || key}:{' '}
-                {Array.isArray(value) ? value.join(', ') : String(value)}
+                {conditionLabel(key)}: {Array.isArray(value) ? value.join(', ') : String(value)}
               </Badge>
             ))}
           </div>
@@ -249,7 +267,7 @@ export function AssignmentRulesSection({ header }: SectionProps) {
     },
     {
       accessorKey: 'created_at',
-      header: 'Created',
+      header: t('org.assignmentRules.col.created', 'Created'),
       cell: ({ row }) => (
         <span className="text-muted-foreground text-sm">{formatDate(row.original.created_at)}</span>
       ),
@@ -262,15 +280,19 @@ export function AssignmentRulesSection({ header }: SectionProps) {
         return (
           <DataTableRowActions
             actions={[
-              { label: 'View details', icon: Eye, onClick: () => setSelectedRuleId(rule.id) },
               {
-                label: 'Edit',
+                label: t('org.assignmentRules.viewDetails', 'View details'),
+                icon: Eye,
+                onClick: () => setSelectedRuleId(rule.id),
+              },
+              {
+                label: t('org.assignmentRules.edit', 'Edit'),
                 icon: Pencil,
                 route: 'PUT /api/v1/assignment-rules/{id}',
                 onClick: () => setSelectedRuleId(rule.id),
               },
               {
-                label: 'Test rule',
+                label: t('org.assignmentRules.testRule', 'Test rule'),
                 icon: Play,
                 route: 'POST /api/v1/assignment-rules/{id}/test',
                 onClick: async () => {
@@ -280,15 +302,24 @@ export function AssignmentRulesSection({ header }: SectionProps) {
                       { method: 'POST' }
                     )
                     if (result) {
-                      toast.success(`Rule matched ${result.matching_findings} finding(s)`)
+                      toast.success(
+                        t('org.assignmentRules.testMatched', 'Rule matched {count} finding(s)', {
+                          count: result.matching_findings,
+                        })
+                      )
                     }
                   } catch (error) {
-                    toast.error(getErrorMessage(error, 'Failed to test rule'))
+                    toast.error(
+                      getErrorMessage(
+                        error,
+                        t('org.assignmentRules.testFailed', 'Failed to test rule')
+                      )
+                    )
                   }
                 },
               },
               {
-                label: 'Delete',
+                label: t('org.assignmentRules.delete', 'Delete'),
                 icon: Trash2,
                 destructive: true,
                 separatorBefore: true,
@@ -309,11 +340,11 @@ export function AssignmentRulesSection({ header }: SectionProps) {
   // Actions
   const handleCreateRule = async () => {
     if (!createForm.name) {
-      toast.error('Please enter a rule name')
+      toast.error(t('org.assignmentRules.nameRequired', 'Enter a rule name'))
       return
     }
     if (!createForm.target_group_id) {
-      toast.error('Please select a target group')
+      toast.error(t('org.assignmentRules.teamRequired', 'Select a target team'))
       return
     }
 
@@ -331,12 +362,21 @@ export function AssignmentRulesSection({ header }: SectionProps) {
         target_group_id: createForm.target_group_id,
         conditions,
       })
-      toast.success(`Assignment rule "${createForm.name}" created successfully`)
+      toast.success(
+        t('org.assignmentRules.created', 'Assignment rule "{name}" created', {
+          name: createForm.name,
+        })
+      )
       setCreateDialogOpen(false)
       setCreateForm({ name: '', description: '', priority: 0, target_group_id: '', conditions: {} })
       refreshData()
     } catch (error) {
-      toast.error(getErrorMessage(error, 'Failed to create assignment rule'))
+      toast.error(
+        getErrorMessage(
+          error,
+          t('org.assignmentRules.createFailed', 'Failed to create assignment rule')
+        )
+      )
     }
   }
 
@@ -345,12 +385,21 @@ export function AssignmentRulesSection({ header }: SectionProps) {
 
     try {
       await deleteAssignmentRule()
-      toast.success(`Assignment rule "${ruleToDelete.name}" deleted successfully`)
+      toast.success(
+        t('org.assignmentRules.deleted', 'Assignment rule "{name}" deleted', {
+          name: ruleToDelete.name,
+        })
+      )
       setDeleteDialogOpen(false)
       setRuleToDelete(null)
       refreshData()
     } catch (error) {
-      toast.error(getErrorMessage(error, 'Failed to delete assignment rule'))
+      toast.error(
+        getErrorMessage(
+          error,
+          t('org.assignmentRules.deleteFailed', 'Failed to delete assignment rule')
+        )
+      )
     }
   }
 
@@ -361,7 +410,7 @@ export function AssignmentRulesSection({ header }: SectionProps) {
           <Can route="POST /api/v1/assignment-rules" mode="disable">
             <Button size="sm" onClick={() => setCreateDialogOpen(true)}>
               <Plus className="me-2 h-4 w-4" />
-              Create rule
+              {t('org.assignmentRules.createRule', 'Create rule')}
             </Button>
           </Can>
         </>
@@ -370,12 +419,14 @@ export function AssignmentRulesSection({ header }: SectionProps) {
       {isError && !isLoading ? (
         <Alert variant="destructive" className="mt-5">
           <AlertCircle className="h-4 w-4" />
-          <AlertTitle>Failed to load assignment rules</AlertTitle>
+          <AlertTitle>
+            {t('org.assignmentRules.loadFailedTitle', 'Failed to load assignment rules')}
+          </AlertTitle>
           <AlertDescription>
-            <p>The rule list could not be loaded.</p>
+            <p>{t('org.assignmentRules.loadFailedBody', 'The rule list could not be loaded.')}</p>
             <Button variant="outline" size="sm" className="mt-2" onClick={refreshData}>
               <RefreshCw className="me-2 h-4 w-4" />
-              Retry
+              {t('common.retry', 'Retry')}
             </Button>
           </AlertDescription>
         </Alert>
@@ -387,21 +438,21 @@ export function AssignmentRulesSection({ header }: SectionProps) {
             items={[
               {
                 key: 'all',
-                label: 'Rules',
+                label: t('org.assignmentRules.metric.rules', 'Rules'),
                 value: typeCounts.all,
                 onClick: () => setTypeFilter('all'),
                 active: typeFilter === 'all',
               },
               {
                 key: 'active',
-                label: 'Active',
+                label: t('org.assignmentRules.status.active', 'Active'),
                 value: typeCounts.active,
                 onClick: () => setTypeFilter(typeFilter === 'active' ? 'all' : 'active'),
                 active: typeFilter === 'active',
               },
               {
                 key: 'inactive',
-                label: 'Inactive',
+                label: t('org.assignmentRules.status.inactive', 'Inactive'),
                 value: typeCounts.inactive,
                 onClick: () => setTypeFilter(typeFilter === 'inactive' ? 'all' : 'inactive'),
                 active: typeFilter === 'inactive',
@@ -420,13 +471,16 @@ export function AssignmentRulesSection({ header }: SectionProps) {
             ) : assignmentRules.length === 0 ? (
               <EmptyState
                 icon={GitBranch}
-                title="No assignment rules yet"
-                description="Rules route new findings to teams automatically, in priority order."
+                title={t('org.assignmentRules.emptyTitle', 'No assignment rules yet')}
+                description={t(
+                  'org.assignmentRules.emptyBody',
+                  'Rules route new findings to teams automatically, in priority order.'
+                )}
                 action={
                   <Can route="POST /api/v1/assignment-rules">
                     <Button size="sm" onClick={() => setCreateDialogOpen(true)}>
                       <Plus className="me-2 h-4 w-4" />
-                      Create rule
+                      {t('org.assignmentRules.createRule', 'Create rule')}
                     </Button>
                   </Can>
                 }
@@ -444,31 +498,40 @@ export function AssignmentRulesSection({ header }: SectionProps) {
                     <div className="relative min-w-0 flex-1 sm:max-w-sm">
                       <SearchIcon className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
                       <Input
-                        placeholder="Search assignment rules..."
+                        placeholder={t(
+                          'org.assignmentRules.searchPlaceholder',
+                          'Search assignment rules...'
+                        )}
                         value={searchQuery}
                         onChange={(e) => setSearchQuery(e.target.value)}
                         className="ps-9"
-                        aria-label="Search assignment rules"
+                        aria-label={t('org.assignmentRules.searchLabel', 'Search assignment rules')}
                       />
                     </div>
                     <Select
                       value={typeFilter}
                       onValueChange={(v) => setTypeFilter(v as FilterType)}
                     >
-                      <SelectTrigger className="h-9 w-[140px]" aria-label="Status">
+                      <SelectTrigger
+                        className="h-9 w-[140px]"
+                        aria-label={t('org.assignmentRules.statusLabel', 'Filter by status')}
+                      >
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
                         {typeFilters.map((f) => (
                           <SelectItem key={f.value} value={f.value}>
-                            {f.label}
+                            {t(f.key, f.en)}
                           </SelectItem>
                         ))}
                       </SelectContent>
                     </Select>
                   </>
                 }
-                emptyMessage="No assignment rules match these filters"
+                emptyMessage={t(
+                  'org.assignmentRules.noMatch',
+                  'No assignment rules match these filters'
+                )}
               />
             )}
           </div>
@@ -488,29 +551,42 @@ export function AssignmentRulesSection({ header }: SectionProps) {
       <Dialog open={createDialogOpen} onOpenChange={setCreateDialogOpen}>
         <DialogContent size="lg">
           <DialogHeader>
-            <DialogTitle>Create assignment rule</DialogTitle>
+            <DialogTitle>
+              {t('org.assignmentRules.createTitle', 'Create assignment rule')}
+            </DialogTitle>
             <DialogDescription>
-              Create a rule to automatically assign assets to a group based on conditions.
+              {t(
+                'org.assignmentRules.createDesc',
+                'Create a rule to automatically assign assets to a team based on conditions.'
+              )}
             </DialogDescription>
           </DialogHeader>
 
           <DialogBody className="grid gap-4">
             <div className="space-y-4 py-4">
               <div className="space-y-2">
-                <Label htmlFor="rule-name">Name</Label>
+                <Label htmlFor="rule-name">{t('org.assignmentRules.name', 'Name')}</Label>
                 <Input
                   id="rule-name"
-                  placeholder="e.g., Critical assets to Security team"
+                  placeholder={t(
+                    'org.assignmentRules.namePlaceholder',
+                    'e.g., Critical assets to Security team'
+                  )}
                   value={createForm.name}
                   onChange={(e) => setCreateForm({ ...createForm, name: e.target.value })}
                 />
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="rule-description">Description (optional)</Label>
+                <Label htmlFor="rule-description">
+                  {t('org.assignmentRules.descLabel', 'Description (optional)')}
+                </Label>
                 <Textarea
                   id="rule-description"
-                  placeholder="Describe what this rule does..."
+                  placeholder={t(
+                    'org.assignmentRules.descPlaceholder',
+                    'Describe what this rule does...'
+                  )}
                   value={createForm.description}
                   onChange={(e) => setCreateForm({ ...createForm, description: e.target.value })}
                   rows={2}
@@ -518,7 +594,9 @@ export function AssignmentRulesSection({ header }: SectionProps) {
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="rule-priority">Priority</Label>
+                <Label htmlFor="rule-priority">
+                  {t('org.assignmentRules.priority', 'Priority')}
+                </Label>
                 <Input
                   id="rule-priority"
                   type="number"
@@ -527,17 +605,23 @@ export function AssignmentRulesSection({ header }: SectionProps) {
                     setCreateForm({ ...createForm, priority: parseInt(e.target.value) || 0 })
                   }
                 />
-                <p className="text-xs text-muted-foreground">Lower numbers have higher priority</p>
+                <p className="text-xs text-muted-foreground">
+                  {t('org.assignmentRules.priorityHint', 'Lower numbers have higher priority')}
+                </p>
               </div>
 
               <div className="space-y-2">
-                <Label>Target team</Label>
+                <Label htmlFor="rule-target-team">
+                  {t('org.assignmentRules.targetTeam', 'Target team')}
+                </Label>
                 <Select
                   value={createForm.target_group_id}
                   onValueChange={(v) => setCreateForm({ ...createForm, target_group_id: v })}
                 >
-                  <SelectTrigger>
-                    <SelectValue placeholder="Select a group" />
+                  <SelectTrigger id="rule-target-team">
+                    <SelectValue
+                      placeholder={t('org.assignmentRules.selectTeam', 'Select a team')}
+                    />
                   </SelectTrigger>
                   <SelectContent>
                     {groups.map((g) => (
@@ -552,18 +636,19 @@ export function AssignmentRulesSection({ header }: SectionProps) {
 
             {/* Conditions Builder */}
             <div className="space-y-3 py-2">
-              <Label>Conditions (optional)</Label>
+              <Label>{t('org.assignmentRules.conditionsLabel', 'Conditions (optional)')}</Label>
               <p className="text-xs text-muted-foreground">
-                Assets matching these conditions will be automatically assigned to the target group.
+                {t(
+                  'org.assignmentRules.conditionsHint',
+                  'Assets matching these conditions will be automatically assigned to the target team.'
+                )}
               </p>
               <div className="space-y-3">
                 {Object.entries(CONDITION_OPTIONS).map(([condKey, options]) => {
                   const selected = createForm.conditions[condKey] || []
                   return (
                     <div key={condKey} className="space-y-1.5">
-                      <Label className="text-xs font-medium">
-                        {CONDITION_LABELS[condKey] || condKey}
-                      </Label>
+                      <Label className="text-xs font-medium">{conditionLabel(condKey)}</Label>
                       <div className="flex flex-wrap gap-1.5">
                         {options.map((opt) => {
                           const isSelected = selected.includes(opt)
@@ -599,7 +684,7 @@ export function AssignmentRulesSection({ header }: SectionProps) {
 
           <DialogFooter>
             <Button variant="ghost" onClick={() => setCreateDialogOpen(false)}>
-              Cancel
+              {t('common.cancel', 'Cancel')}
             </Button>
             <Button
               onClick={handleCreateRule}
@@ -610,7 +695,7 @@ export function AssignmentRulesSection({ header }: SectionProps) {
               ) : (
                 <Plus className="me-2 h-4 w-4" />
               )}
-              Create rule
+              {t('org.assignmentRules.createRule', 'Create rule')}
             </Button>
           </DialogFooter>
         </DialogContent>
