@@ -21,10 +21,10 @@ import {
   FacetOption,
   FilterPanelToggle,
   FilterSheet,
+  MetaLine,
 } from '@/features/shared'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { Progress } from '@/components/ui/progress'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Skeleton } from '@/components/ui/skeleton'
 import {
@@ -73,7 +73,7 @@ import { getErrorMessage } from '@/lib/api/error-handler'
 import { scanEndpoints } from '@/lib/api/endpoints'
 // Note: useAssetGroups can be imported when CreateConfigDialog is implemented
 // import { useAssetGroups } from "@/lib/api/security-hooks";
-import { SCAN_TYPE_LABELS, SCHEDULE_TYPE_LABELS, SCHEDULE_TYPES } from '@/lib/api/scan-types'
+import { SCHEDULE_TYPE_LABELS, SCHEDULE_TYPES } from '@/lib/api/scan-types'
 import type {
   ScanConfig,
   ScanConfigStatus,
@@ -89,11 +89,12 @@ import {
 } from '@/features/scans/components/scans-section-tabs'
 import { ScanConfigDetailSheet } from '@/features/scans/components/scan-config-detail-sheet'
 import { LastRunCell } from '@/features/scans/components/last-run-cell'
+import { RunHistory } from '@/features/scans/components/run-history'
+import { ScanMobileCard } from '@/features/scans/components/scan-mobile-card'
 import { ScheduleCell } from '@/features/scans/components/schedule-cell'
 import { isManagedScan, lastRunOf, scanTypeLabel } from '@/features/scans/lib/scan-status'
 import { RunDetailSheet } from '@/features/scans/components/run-detail-sheet'
 import { useScanTrigger } from '@/features/scans/hooks/use-scan-trigger'
-import { scanSuccessRate } from '@/features/scans/lib/format'
 import {
   DEFAULT_SCAN_CONFIG_SORT,
   DEFAULT_SCAN_PAGE_SIZE,
@@ -506,12 +507,6 @@ function ConfigurationsTab() {
     clearSelection()
   }, [filters, clearSelection])
 
-  // Calculate progress for a config - memoized
-  // Success rate over FINISHED runs (succeeded + failed). total_runs also
-  // counts runs that are still going, so dividing by it understated the rate,
-  // and a scan with no finished run has no rate at all (not 0%).
-  const getProgress = useCallback((config: ScanConfig) => scanSuccessRate(config) ?? -1, [])
-
   // The Schedule column's switch: pause turns the schedule off, resume on.
   const handleToggle = useCallback(
     async (action: 'pause' | 'activate', config: ScanConfig) => {
@@ -673,14 +668,14 @@ function ConfigurationsTab() {
               (table.getIsSomePageRowsSelected() && 'indeterminate')
             }
             onCheckedChange={(value) => table.toggleAllPageRowsSelected(!!value)}
-            aria-label="Select all"
+            aria-label={t('common.selectAll')}
           />
         ),
         cell: ({ row }) => (
           <Checkbox
             checked={row.getIsSelected()}
             onCheckedChange={(value) => row.toggleSelected(!!value)}
-            aria-label="Select row"
+            aria-label={t('scans.card.select', undefined, { name: row.original.name })}
           />
         ),
         enableSorting: false,
@@ -688,14 +683,15 @@ function ConfigurationsTab() {
       },
       {
         accessorKey: 'name',
-        header: ({ column }) => <DataTableColumnHeader column={column} title="Name" />,
+        meta: { label: t('scans.col.name') },
+        header: ({ column }) => (
+          <DataTableColumnHeader column={column} title={t('scans.col.name')} />
+        ),
         cell: ({ row }) => (
           <div className="min-w-0">
             <div className="flex flex-wrap items-center gap-2">
               <p className="font-medium">{row.original.name}</p>
-              <ScanApprovalBadge
-                status={(row.original as { approval_status?: string }).approval_status}
-              />
+              <ScanApprovalBadge status={row.original.approval_status} />
             </div>
             {row.original.description && (
               <p className="max-w-[300px] truncate text-xs text-muted-foreground">
@@ -707,20 +703,25 @@ function ConfigurationsTab() {
       },
       {
         accessorKey: 'scan_type',
-        header: 'Type',
+        header: t('scans.col.type'),
         enableSorting: false,
         cell: ({ row }) => {
-          // What the scan runs: the workflow's name, or a single check's tool.
-          const { label, kind } = scanTypeLabel(row.original)
+          // What the scan runs (the workflow's name, or a single check's
+          // tool), then its kind and intensity as separate elements on a
+          // wrapping line: a long label or chip wraps, never overlaps.
+          const { label, kind } = scanTypeLabel(row.original, t)
           return (
-            <div className="flex min-w-0 flex-col">
-              <span className="max-w-[14rem] truncate text-sm" title={label}>
+            <div className="min-w-0 max-w-[16rem]">
+              <span className="block truncate text-sm" title={label}>
                 {label}
               </span>
-              <span className="flex items-center gap-1 text-xs text-muted-foreground">
-                {SCAN_TYPE_LABELS[kind]}
-                <IntensityBadge intensity={row.original.intensity} />
-              </span>
+              <MetaLine
+                className="mt-0.5 items-center gap-y-1"
+                items={[
+                  kind === 'workflow' ? t('scans.scanType.workflow') : t('scans.scanType.single'),
+                  <IntensityBadge key="intensity" intensity={row.original.intensity} />,
+                ]}
+              />
             </div>
           )
         },
@@ -729,69 +730,40 @@ function ConfigurationsTab() {
         // The real latest run, never the configuration's enabled flag.
         id: 'last_run_at',
         accessorKey: 'last_run_at',
-        header: ({ column }) => <DataTableColumnHeader column={column} title="Last run" />,
-        cell: ({ row }) => <LastRunCell run={lastRunOf(row.original)} onOpen={setOpenRunId} />,
+        meta: { label: t('scans.col.lastRun') },
+        header: ({ column }) => (
+          <DataTableColumnHeader column={column} title={t('scans.col.lastRun')} />
+        ),
+        cell: ({ row }) => (
+          <LastRunCell run={lastRunOf(row.original)} onOpen={setOpenRunId} showHint />
+        ),
       },
       {
-        id: 'success_rate',
-        accessorFn: (c) => getProgress(c),
-        header: t('scans.list.successRate'),
+        // The latest runs as glyphs and the success rate over them: partial
+        // runs (coverage gaps on the target side) count as successes, blocked
+        // and canceled runs are left out (lib/run-history.ts).
+        id: 'recent_runs',
+        header: t('scans.col.recentRuns'),
         enableSorting: false,
-        cell: ({ row }) => {
-          const rate = scanSuccessRate(row.original)
-          if (rate === null) return <span className="text-muted-foreground">-</span>
-          const settled =
-            row.original.successful_runs +
-            (row.original.partial_runs ?? 0) +
-            row.original.failed_runs
-          return (
-            <div
-              className="flex items-center gap-2"
-              title={t('scans.list.successTitle', undefined, {
-                ok: row.original.successful_runs,
-                total: settled,
-              })}
-            >
-              <Progress value={rate} className="h-2 w-20 shrink-0" />
-              <span className="w-10 shrink-0 text-xs tabular-nums text-muted-foreground">
-                {rate}%
-              </span>
-            </div>
-          )
-        },
+        cell: ({ row }) =>
+          row.original.total_runs > 0 ? (
+            <RunHistory runs={row.original.recent_runs} />
+          ) : (
+            <span className="text-muted-foreground">-</span>
+          ),
       },
       {
         accessorKey: 'total_runs',
-        header: ({ column }) => <DataTableColumnHeader column={column} title="Runs" />,
+        meta: { label: t('scans.col.runs') },
+        header: ({ column }) => (
+          <DataTableColumnHeader column={column} title={t('scans.col.runs')} />
+        ),
         cell: ({ row }) => <span className="text-sm tabular-nums">{row.original.total_runs}</span>,
-      },
-      {
-        id: 'results',
-        accessorFn: (c) => c.successful_runs,
-        header: 'Results',
-        enableSorting: false,
-        cell: ({ row }) => {
-          const config = row.original
-          if (config.total_runs === 0) return <span className="text-muted-foreground">-</span>
-          const blocked = config.blocked_runs ?? 0
-          return (
-            <span className="text-sm tabular-nums">
-              {config.successful_runs} passed
-              {(config.partial_runs ?? 0) > 0 && (
-                <span className="text-warning"> · {config.partial_runs} partial</span>
-              )}
-              {config.failed_runs > 0 && (
-                <span className="text-destructive"> · {config.failed_runs} failed</span>
-              )}
-              {blocked > 0 && <span className="text-destructive"> · {blocked} blocked</span>}
-            </span>
-          )
-        },
       },
       {
         // The schedule and its on/off switch; manual scans have neither.
         accessorKey: 'schedule_type',
-        header: 'Schedule',
+        header: t('scans.col.schedule'),
         enableSorting: false,
         cell: ({ row }) => <ScheduleCell config={row.original} onToggle={handleToggle} />,
       },
@@ -807,7 +779,7 @@ function ConfigurationsTab() {
         ),
       },
     ],
-    [getProgress, handleAction, handleToggle, isTriggering, t]
+    [handleAction, handleToggle, isTriggering, t]
   )
 
   const activeFiltersCount = [
@@ -991,18 +963,33 @@ function ConfigurationsTab() {
               onSortingChange={list.setSorting}
               getRowId={(c) => c.id}
               onRowClick={setSelectedConfig}
+              mobileRow={(config, selection) => (
+                <ScanMobileCard
+                  config={config}
+                  selection={selection}
+                  onOpen={setSelectedConfig}
+                  onOpenRun={setOpenRunId}
+                  actions={
+                    <ConfigActionsCell
+                      config={config}
+                      onAction={handleAction}
+                      triggering={isTriggering(config.id)}
+                    />
+                  }
+                />
+              )}
               onSelectionChange={(rows) => setSelectedIds(rows.map((c) => c.id))}
               resetSelectionKey={selectionEpoch}
               showSelectionCount={false}
               emptyMessage={
                 activeFiltersCount > 0 || searchQuery
-                  ? 'No configurations match these filters'
-                  : 'No scan configurations yet'
+                  ? t('scans.list.emptyFiltered')
+                  : t('scans.list.empty')
               }
               emptyDescription={
                 activeFiltersCount > 0 || searchQuery
-                  ? 'Try removing a filter or clearing the search.'
-                  : 'Create one with New scan to schedule recurring scans.'
+                  ? t('scans.list.emptyFilteredHint')
+                  : t('scans.list.emptyHint')
               }
             />
           )}

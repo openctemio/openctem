@@ -26,6 +26,10 @@ const ErrCodeUnsupportedWorkflowFeature = "UNSUPPORTED_WORKFLOW_FEATURE"
 // switched off because it holds a removed trigger, action or notification type.
 const DisabledReasonRemovedType = "uses_removed_type"
 
+// DisabledReasonStatusNotAllowed is automations.disabled_reason for an
+// automation switched off because it set a status automations may not set.
+const DisabledReasonStatusNotAllowed = "status_not_allowed"
+
 // UnsupportedFeature names the trigger, action or notification type in this
 // config that the platform does not have, as "trigger:<type>",
 // "action:<type>" or "notification:<type>". It returns "" when the config

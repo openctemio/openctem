@@ -2,14 +2,14 @@
 
 import { Main } from '@/components/layout'
 import { useTranslation } from '@/context/i18n-provider'
-import { PageHeader } from '@/features/shared'
+import { PageHeader, PageStack } from '@/features/shared'
 import { ScanWindowsBanner, ScanWindowsPanel } from '@/features/scan-windows'
 
 export default function ScanWindowsSettingsPage() {
   const { t } = useTranslation()
   return (
     <Main>
-      <div className="space-y-4">
+      <PageStack>
         <PageHeader
           title={t('settings.item.scan-windows', 'Scan windows')}
           description={t(
@@ -19,7 +19,7 @@ export default function ScanWindowsSettingsPage() {
         />
         <ScanWindowsBanner />
         <ScanWindowsPanel />
-      </div>
+      </PageStack>
     </Main>
   )
 }

@@ -113,11 +113,13 @@ export function PlatformUserActions({
   return (
     <>
       <div className="flex flex-wrap gap-2">
-        {ACTIONS.filter((a) => a.available(user)).map((a) => (
+        {/* A destructive action after routine ones is set apart from them. */}
+        {ACTIONS.filter((a) => a.available(user)).map((a, i, all) => (
           <Button
             key={a.action}
             size="sm"
             variant={a.destructive ? 'destructive' : 'outline'}
+            className={a.destructive && i > 0 && !all[i - 1].destructive ? 'ms-4' : undefined}
             disabled={unavailable}
             onClick={() => setOpen(a)}
           >
