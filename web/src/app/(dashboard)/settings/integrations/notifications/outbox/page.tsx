@@ -44,6 +44,7 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { getErrorMessage } from '@/lib/api/error-handler'
 import { Can } from '@/lib/permissions'
+import { HEALTH_ICON_CLASS } from '@/lib/health-colors'
 import { cn } from '@/lib/utils'
 
 import {
@@ -89,7 +90,7 @@ function QueueHealthStatus({
     return (
       <div className="rounded-lg border bg-card p-4">
         <div className="flex items-center gap-3">
-          <CheckCircle2 className="h-5 w-5 text-hl-ok" />
+          <CheckCircle2 className={cn('h-5 w-5', HEALTH_ICON_CLASS.ok)} />
           <div>
             <p className="font-medium">
               {t('notificationChannels.outbox.healthy', 'Queue is healthy')}
@@ -130,9 +131,9 @@ function QueueHealthStatus({
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-3">
           {hasIssues ? (
-            <AlertCircle className="h-5 w-5 text-hl-warn" />
+            <AlertCircle className={cn('h-5 w-5', HEALTH_ICON_CLASS.warn)} />
           ) : (
-            <Clock className="h-5 w-5 text-hl-run" />
+            <Clock className={cn('h-5 w-5', HEALTH_ICON_CLASS.run)} />
           )}
           <div>
             <p className="flex flex-wrap gap-x-3 font-medium">

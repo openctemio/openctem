@@ -66,7 +66,7 @@ function NotificationEventItem({ entry }: { entry: NotificationEventEntry }) {
 
         {/* Error message if failed */}
         {sendResult?.status === 'failed' && sendResult?.error && (
-          <div className="text-xs text-destructive bg-destructive/10 rounded px-2 py-1">
+          <div className="rounded border border-destructive/30 px-2 py-1 text-xs text-destructive">
             <span className="font-semibold">Error:</span> {sendResult.error}
           </div>
         )}
