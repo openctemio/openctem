@@ -1,5 +1,6 @@
 'use client'
 
+import { IntegrationHealth } from '@/features/integrations/components/integration-health'
 import { useState } from 'react'
 import {
   MoreHorizontal,
@@ -7,10 +8,7 @@ import {
   RefreshCw,
   ExternalLink,
   Loader2,
-  CheckCircle,
-  XCircle,
   Clock,
-  AlertCircle,
   Download,
   Settings,
 } from 'lucide-react'
@@ -98,38 +96,13 @@ export function SCMConnectionCard({
     }
   }
 
-  const statusConfig: Record<string, { icon: React.ReactNode; color: string; label: string }> = {
-    connected: {
-      icon: <CheckCircle className="h-3.5 w-3.5" />,
-      color: 'text-green-500',
-      label: 'Connected',
-    },
-    pending: {
-      icon: <AlertCircle className="h-3.5 w-3.5" />,
-      color: 'text-yellow-500',
-      label: 'Pending',
-    },
-    disconnected: {
-      icon: <XCircle className="h-3.5 w-3.5" />,
-      color: 'text-gray-400',
-      label: 'Disconnected',
-    },
-    error: {
-      icon: <XCircle className="h-3.5 w-3.5" />,
-      color: 'text-red-500',
-      label: 'Error',
-    },
-  }
-
-  const status = statusConfig[connection.status] || statusConfig.disconnected
-
   return (
     <>
       <Card
         className={cn(
           'transition-all cursor-pointer hover:border-primary/50',
           selected && 'border-primary ring-1 ring-primary',
-          connection.status === 'error' && 'border-red-500/30'
+          connection.status === 'error' && 'border-destructive/40'
         )}
         onClick={onSelect}
       >
@@ -205,7 +178,7 @@ export function SCMConnectionCard({
                 )}
                 <DropdownMenuSeparator />
                 <DropdownMenuItem
-                  className="text-destructive focus:text-destructive"
+                  className="text-destructive"
                   onClick={() => setDeleteDialogOpen(true)}
                 >
                   <Trash2 className="me-2 h-4 w-4" />
@@ -221,14 +194,11 @@ export function SCMConnectionCard({
               <TooltipProvider>
                 <Tooltip>
                   <TooltipTrigger asChild>
-                    <span className={cn('flex items-center gap-1', status.color)}>
-                      {status.icon}
-                      {status.label}
-                    </span>
+                    <IntegrationHealth status={connection.status} />
                   </TooltipTrigger>
                   {connection.status_message && connection.status === 'error' && (
                     <TooltipContent className="max-w-xs">
-                      <p className="text-red-400">{connection.status_message}</p>
+                      <p>{connection.status_message}</p>
                     </TooltipContent>
                   )}
                 </Tooltip>

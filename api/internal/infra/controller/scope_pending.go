@@ -31,6 +31,9 @@ func NewScopePendingController(svc ScopePendingSettler, interval time.Duration) 
 // Name implements Controller.
 func (c *ScopePendingController) Name() string { return "scope-pending-settle" }
 
+// Exclusive: one API replica at a time (controller lease). It settles pending scope entries and audits each: two replicas would audit and notify twice.
+func (c *ScopePendingController) Exclusive() bool { return true }
+
 // Interval implements Controller.
 func (c *ScopePendingController) Interval() time.Duration { return c.interval }
 
