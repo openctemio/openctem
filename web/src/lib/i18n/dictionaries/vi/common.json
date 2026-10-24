@@ -153,5 +153,6 @@
   "common.table.actionsColumn": "Thao tác",
   "common.filter.all": "Tất cả",
   "common.filter.clearNamed": "Bỏ lọc {name}",
-  "common.tabs.more": "Khác"
+  "common.tabs.more": "Khác",
+  "common.templateSourceSyncFailed": "Không đồng bộ được nguồn mẫu."
 }

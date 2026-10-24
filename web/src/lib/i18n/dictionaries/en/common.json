@@ -153,5 +153,6 @@
   "common.table.actionsColumn": "Actions",
   "common.filter.all": "All",
   "common.filter.clearNamed": "Clear {name}",
-  "common.tabs.more": "More"
+  "common.tabs.more": "More",
+  "common.templateSourceSyncFailed": "Could not sync the template source."
 }

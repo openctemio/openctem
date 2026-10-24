@@ -207,9 +207,7 @@ export function GeneralSettings() {
   )
   if (isLoading) return <SettingsLoading header={header} />
   if (isError)
-    return (
-      <SettingsLoadError header={header} message={error?.message} onRetry={() => void mutate()} />
-    )
+    return <SettingsLoadError header={header} error={error} onRetry={() => void mutate()} />
 
   const logoPreview =
     logoDraft === null ? undefined : safeImageSrc(logoDraft ?? (branding.logo_data || logoSrc))

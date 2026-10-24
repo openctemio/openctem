@@ -19,6 +19,7 @@ import {
   Clock,
 } from 'lucide-react'
 import { toast } from 'sonner'
+import { safeText } from '@/lib/api/error-message'
 import { getErrorMessage } from '@/lib/api/error-handler'
 
 import { Button } from '@/components/ui/button'
@@ -161,14 +162,19 @@ export function TemplateSourcesSection() {
         if (result?.status === 'success') {
           toast.success(`Synced ${result.templates_found} templates from "${source.name}"`)
         } else {
-          toast.error(result?.error || 'Sync failed')
+          toast.error(
+            safeText(
+              result?.error,
+              t('common.templateSourceSyncFailed', 'Could not sync the template source.')
+            )
+          )
         }
         await invalidateTemplateSourcesCache()
       } catch (err) {
         toast.error(getErrorMessage(err, 'Failed to sync source'))
       }
     },
-    [syncSource]
+    [syncSource, t]
   )
 
   const columns = useMemo<ColumnDef<TemplateSource>[]>(
