@@ -1,7 +1,14 @@
 import { readFileSync } from 'node:fs'
 import path from 'node:path'
 import { describe, expect, it } from 'vitest'
-import { ACCENT_BAND, contrast, deltaE, oklch } from '../../../scripts/check-palette.mjs'
+import {
+  ACCENT_BAND,
+  ORDINAL_MIN_DL,
+  contrast,
+  deltaE,
+  oklch,
+  worstCvd,
+} from '../../../scripts/check-palette.mjs'
 
 /**
  * Brand tokens in src/styles/theme.css: the brand values themselves, and
@@ -254,6 +261,97 @@ describe('brand tokens', () => {
         // Medium (yellow) cannot reach 3:1 on white and stay yellow; it always
         // carries its label, and every chart has a table view.
         if (!(mode === 'light' && s === 'medium')) pair(`--sev-${s}`, '--card', 3)
+      }
+    })
+  }
+
+  /*
+   * The label colour system (research/257): every family that must be told
+   * apart is measured here, so a token edit that makes two levels or two
+   * families look alike fails CI. Lightness is the channel that survives every
+   * colour-vision deficiency, so ordinal scales are stepped by it.
+   */
+  for (const [mode, t] of Object.entries(THEMES)) {
+    const L = (name: string) => (oklch(hex(t, name)) as number[])[0]
+    const de = (a: string, b: string) => deltaE(hex(t, a), hex(t, b))
+    const cvd = (a: string, b: string) => worstCvd(hex(t, a), hex(t, b))
+    const pair = (fg: string, bg: string, min: number) =>
+      expect(contrast(hex(t, fg), hex(t, bg)), `${mode}: ${fg} on ${bg}`).toBeGreaterThanOrEqual(
+        min
+      )
+
+    const ordinal: Record<string, string[]> = {
+      priority: PRIO.map((n) => `--prio-${n}`),
+      level: ['critical', 'high', 'medium', 'low'].map((k) => `--viz-lvl-${k}`),
+    }
+    for (const [family, steps] of Object.entries(ordinal)) {
+      it(`${mode}: ${family} steps by lightness, strongest first, apart for colour blindness`, () => {
+        const card = L('--card')
+        for (let i = 1; i < steps.length; i++) {
+          const a = steps[i - 1]
+          const b = steps[i]
+          const step = Math.abs(L(a) - card) - Math.abs(L(b) - card)
+          expect(step, `${a} -> ${b} lightness step`).toBeGreaterThanOrEqual(ORDINAL_MIN_DL)
+          expect(cvd(a, b), `${a} vs ${b} worst colour-vision delta E`).toBeGreaterThanOrEqual(8)
+          expect(de(a, b), `${a} vs ${b} delta E`).toBeGreaterThanOrEqual(10)
+        }
+        for (const s of steps) for (const bg of SURFACES) pair(s, bg, 3)
+      })
+    }
+
+    it(`${mode}: the priority box uses the chart steps (badge and chart agree)`, () => {
+      expect(hex(t, '--prio-0-bg')).toBe(hex(t, '--prio-0'))
+      for (const n of PRIO) expect(hex(t, `--prio-${n}-border`)).toBe(hex(t, `--prio-${n}`))
+      pair('--viz-prio-none', '--card', 3)
+    })
+
+    it(`${mode}: health ok, warn and down stay apart for colour blindness`, () => {
+      const states = ['--hl-ok', '--hl-warn', '--hl-down']
+      for (let i = 0; i < states.length; i++)
+        for (let j = i + 1; j < states.length; j++) {
+          expect(cvd(states[i], states[j]), `${states[i]} vs ${states[j]}`).toBeGreaterThanOrEqual(
+            7
+          )
+          expect(de(states[i], states[j]), `${states[i]} vs ${states[j]}`).toBeGreaterThanOrEqual(
+            15
+          )
+        }
+      // Running and ok differ by hue only; each has its own glyph.
+      expect(de('--hl-ok', '--hl-run')).toBeGreaterThanOrEqual(20)
+      expect(cvd('--hl-ok', '--hl-run')).toBeGreaterThanOrEqual(5)
+    })
+
+    it(`${mode}: families that share a row do not share a colour`, () => {
+      // A failed run next to a critical finding count; a warning next to High.
+      expect(de('--hl-down', '--sev-critical')).toBeGreaterThanOrEqual(7)
+      expect(de('--hl-warn', '--sev-high')).toBeGreaterThanOrEqual(10)
+      // Tags sit next to the priority box: the tag violet is not a priority step.
+      for (const n of PRIO) expect(de('--tag-violet', `--prio-${n}`)).toBeGreaterThanOrEqual(7)
+      // Criticality levels are ink, never a severity hue.
+      for (const k of ['critical', 'high', 'medium', 'low']) {
+        const [, chroma] = oklch(hex(t, `--viz-lvl-${k}`)) as number[]
+        expect(chroma, `--viz-lvl-${k} chroma`).toBeLessThan(0.06)
+      }
+    })
+
+    it(`${mode}: workflow status text tones are distinct from each other`, () => {
+      const tones = ['progress', 'resolved', 'accepted'].map((k) => `--st-${k}-fg`)
+      for (let i = 0; i < tones.length; i++)
+        for (let j = i + 1; j < tones.length; j++)
+          expect(de(tones[i], tones[j]), `${tones[i]} vs ${tones[j]}`).toBeGreaterThanOrEqual(15)
+    })
+
+    it(`${mode}: severity marks stay apart from their neighbours`, () => {
+      for (let i = 1; i < SEV.length; i++)
+        expect(de(`--sev-${SEV[i - 1]}`, `--sev-${SEV[i]}`)).toBeGreaterThanOrEqual(15)
+    })
+
+    it(`${mode}: the soft state pill (text on its own 10% tint) is below AA in light mode`, () => {
+      // Why state text never sits on its own 10% tint: use StatusLozenge or DueChip.
+      const r = (s: string) => contrast(hex(t, s), blend(hex(t, s), hex(t, '--card'), 0.1))
+      if (mode === 'light') {
+        expect(r('--success')).toBeLessThan(4.5)
+        expect(r('--warning')).toBeLessThan(4.5)
       }
     })
   }

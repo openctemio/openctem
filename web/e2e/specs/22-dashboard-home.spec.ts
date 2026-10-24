@@ -83,12 +83,24 @@ test('the dashboard editor is usable with the keyboard', async ({ page }) => {
 })
 
 test('a new user lands on the CTEM loop', async ({ page }) => {
+  test.setTimeout(240_000)
   // The e2e seed gives the user no dashboard: the first visit stores a
   // personal copy of the CTEM template, computed in their own scope.
   await page.goto('/')
   await expect(page.getByTestId('dashboard-freshness')).toBeVisible({ timeout: 45_000 })
   const loop = page.getByRole('list', { name: 'Stages' })
-  await expect(loop).toBeVisible()
+  // A new organization's first fact build runs in the background (the
+  // maintainer's reconcile tick, up to a minute or two) and the widgets say
+  // "No data yet" until it is done. Refresh now recomputes the figures from
+  // whatever the build has finished; a refresh too soon after the last one is
+  // refused, which only costs another round.
+  await expect(async () => {
+    if (!(await loop.isVisible())) {
+      const refresh = page.getByRole('button', { name: 'Refresh now' })
+      if (await refresh.isEnabled()) await refresh.click()
+    }
+    await expect(loop).toBeVisible({ timeout: 8_000 })
+  }).toPass({ timeout: 180_000, intervals: [2_000, 5_000, 10_000] })
   const stages = loop.getByRole('listitem')
   await expect(stages).toHaveCount(5)
   for (const name of ['Scoping', 'Discovery', 'Prioritize', 'Validate', 'Mobilize']) {
