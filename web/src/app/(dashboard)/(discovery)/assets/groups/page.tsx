@@ -50,7 +50,12 @@ import {
 } from '@/components/ui/dropdown-menu'
 import {} from '@/components/ui/dialog'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
-import { bulkTypeToConfirm, ConfirmDialog } from '@/components/confirm-dialog'
+import {
+  ConfirmDialog,
+  ConfirmSample,
+  irreversibleTypeToConfirm,
+  nameToConfirm,
+} from '@/components/confirm-dialog'
 import { Badge } from '@/components/ui/badge'
 import { toast } from 'sonner'
 import {
@@ -195,9 +200,17 @@ export default function AssetGroupsPage() {
 
   // Selection state. The table owns the checkboxes; bumping the epoch clears them.
   const [selectedIds, setSelectedIds] = useState<string[]>([])
+  const [selectedNames, setSelectedNames] = useState<string[]>([])
+  // A bulk criticality or environment change waits here for the user to confirm.
+  const [pendingBulk, setPendingBulk] = useState<{
+    action: 'change-criticality' | 'change-environment'
+    value: string
+    label: string
+  } | null>(null)
   const [selectionEpoch, setSelectionEpoch] = useState(0)
   const clearSelection = useCallback(() => {
     setSelectedIds([])
+    setSelectedNames([])
     setSelectionEpoch((n) => n + 1)
   }, [])
 
@@ -360,6 +373,7 @@ export default function AssetGroupsPage() {
     } catch {
       // Reported by the hook.
     } finally {
+      setPendingBulk(null)
       refreshData()
     }
   }
@@ -780,7 +794,10 @@ export default function AssetGroupsPage() {
                 }
                 onRowClick={(group) => setViewGroup(group)}
                 getRowId={(group) => group.id}
-                onSelectionChange={(rows) => setSelectedIds(rows.map((g) => g.id))}
+                onSelectionChange={(rows) => {
+                  setSelectedIds(rows.map((g) => g.id))
+                  setSelectedNames(rows.map((g) => g.name))
+                }}
                 resetSelectionKey={selectionEpoch}
                 showSelectionCount={false}
               />
@@ -812,7 +829,13 @@ export default function AssetGroupsPage() {
               {CRITICALITIES.map((crit) => (
                 <DropdownMenuItem
                   key={crit}
-                  onClick={() => handleBulkAction('change-criticality', crit)}
+                  onClick={() =>
+                    setPendingBulk({
+                      action: 'change-criticality',
+                      value: crit,
+                      label: t(`criticality.${crit}`, CRITICALITY_LABELS[crit]),
+                    })
+                  }
                 >
                   <span className={cn('me-2 size-2 rounded-full', CRITICALITY_DOT_COLORS[crit])} />
                   {t(`criticality.${crit}`, CRITICALITY_LABELS[crit])}
@@ -831,7 +854,13 @@ export default function AssetGroupsPage() {
               {ENVIRONMENTS.map((env) => (
                 <DropdownMenuItem
                   key={env}
-                  onClick={() => handleBulkAction('change-environment', env)}
+                  onClick={() =>
+                    setPendingBulk({
+                      action: 'change-environment',
+                      value: env,
+                      label: t(`assetGroups.environment.${env}`, env),
+                    })
+                  }
                 >
                   {t(`assetGroups.environment.${env}`, env)}
                 </DropdownMenuItem>
@@ -839,10 +868,11 @@ export default function AssetGroupsPage() {
             </DropdownMenuContent>
           </DropdownMenu>
           <Can permission={Permission.AssetGroupsDelete}>
+            <span aria-hidden className="mx-1.5 h-5 w-px shrink-0 bg-border" />
             <Button
-              variant="ghost"
+              variant="destructive"
               size="sm"
-              className="h-8 text-destructive hover:text-destructive"
+              className="h-8"
               onClick={() => setBulkDeleteConfirm(true)}
             >
               <Trash2 className="me-2 h-4 w-4" />
@@ -899,10 +929,11 @@ export default function AssetGroupsPage() {
         })}
         desc={t(
           'confirm.assetGroup.deleteDesc',
-          'The group is deleted and its assets leave it; scans and rules that target the group no longer cover them. The assets themselves are not deleted. This cannot be undone.'
+          'The group is deleted for good and its assets leave it; scans and rules that target the group no longer cover them. The assets themselves are kept.'
         )}
-        confirmText={t('confirm.delete', 'Delete')}
+        confirmText={t('confirm.assetGroup.deleteButton', 'Delete group')}
         destructive
+        typeToConfirm={deleteGroup ? nameToConfirm(deleteGroup.name, deleteGroup.id) : undefined}
         handleConfirm={handleDelete}
       />
 
@@ -919,13 +950,59 @@ export default function AssetGroupsPage() {
         }
         desc={t(
           'confirm.assetGroup.bulkDeleteDesc',
-          'The groups are deleted and their assets leave them; scans and rules that target these groups no longer cover them. The assets themselves are not deleted. This cannot be undone.'
+          'The groups are deleted for good and their assets leave them; scans and rules that target these groups no longer cover them. The assets themselves are kept.'
         )}
-        confirmText={t('confirm.delete', 'Delete')}
+        confirmText={
+          selectedIds.length === 1
+            ? t('confirm.assetGroup.bulkDeleteButtonOne', 'Delete 1 group')
+            : t('confirm.assetGroup.bulkDeleteButton', 'Delete {count} groups', {
+                count: selectedIds.length,
+              })
+        }
         destructive
-        typeToConfirm={bulkTypeToConfirm(selectedIds.length)}
+        typeToConfirm={irreversibleTypeToConfirm(selectedNames)}
         handleConfirm={handleBulkDelete}
-      />
+      >
+        <ConfirmSample names={selectedNames} total={selectedIds.length} />
+      </ConfirmDialog>
+
+      {/* Bulk criticality / environment */}
+      <ConfirmDialog
+        open={!!pendingBulk}
+        onOpenChange={(open) => !open && setPendingBulk(null)}
+        title={
+          pendingBulk?.action === 'change-criticality'
+            ? t(
+                'confirm.assetGroup.bulkCriticalityTitle',
+                'Set the criticality to {value} for {count} selected?',
+                { count: selectedIds.length, value: pendingBulk.label }
+              )
+            : t(
+                'confirm.assetGroup.bulkEnvironmentTitle',
+                'Set the environment to {value} for {count} selected?',
+                { count: selectedIds.length, value: pendingBulk?.label ?? '' }
+              )
+        }
+        desc={
+          pendingBulk?.action === 'change-criticality'
+            ? t(
+                'confirm.assetGroup.bulkCriticalityDesc',
+                "The value replaces each group's current criticality and can change how its findings are prioritised. You can set it back to the old value later."
+              )
+            : t(
+                'confirm.assetGroup.bulkEnvironmentDesc',
+                "The value replaces each group's current environment. You can set it back to the old value later."
+              )
+        }
+        confirmText={t('confirm.assetGroup.bulkApplyButton', 'Update {count} selected', {
+          count: selectedIds.length,
+        })}
+        handleConfirm={() => {
+          if (pendingBulk) return handleBulkAction(pendingBulk.action, pendingBulk.value)
+        }}
+      >
+        <ConfirmSample names={selectedNames} total={selectedIds.length} />
+      </ConfirmDialog>
 
       {/* Add Assets Dialog */}
       {addAssetsGroup && (
