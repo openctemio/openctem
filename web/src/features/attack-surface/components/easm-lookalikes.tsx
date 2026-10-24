@@ -14,7 +14,7 @@ import { useState } from 'react'
 import { Copy, Loader2, Plus, Settings2, Trash2 } from 'lucide-react'
 import { toast } from 'sonner'
 
-import { ConfirmDialog, nameToConfirm } from '@/components/confirm-dialog'
+import { ConfirmDialog } from '@/components/confirm-dialog'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
@@ -43,6 +43,7 @@ import {
   useLookalikeExposures,
   useLookalikeWatches,
 } from '../hooks/use-easm-lookalikes'
+import { confirmName } from '@/lib/confirm-name'
 
 /** Candidates one watch may check (the API's range). */
 const MAX_CANDIDATES_MIN = 10
@@ -638,7 +639,7 @@ export function EASMLookalikes() {
         )}
         confirmText={t('lookalikes.removeButton', 'Stop watching')}
         destructive
-        typeToConfirm={removing ? nameToConfirm(removing.domain, removing.id ?? '') : undefined}
+        typeToConfirm={removing ? confirmName(removing.domain, removing.id ?? '') : undefined}
         handleConfirm={() => void remove()}
       />
     </div>

@@ -36,7 +36,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { ConfirmDialog, nameToConfirm } from '@/components/confirm-dialog'
+import { ConfirmDialog } from '@/components/confirm-dialog'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Plus, Trash2, Lock, Target } from 'lucide-react'
 import { post, del } from '@/lib/api/client'
@@ -46,6 +46,7 @@ import { profileTypeLabel } from '@/features/cycles/api'
 import { Can, Permission } from '@/lib/permissions'
 import { toast } from 'sonner'
 import { useTranslation } from '@/context/i18n-provider'
+import { confirmName } from '@/lib/confirm-name'
 
 interface AttackerProfile {
   id: string
@@ -518,7 +519,7 @@ export default function AttackerProfilesPage() {
         confirmText={t('confirm.attackerProfile.deleteButton', 'Delete attacker profile')}
         destructive
         typeToConfirm={
-          deleteProfile ? nameToConfirm(deleteProfile.name, deleteProfile.id) : undefined
+          deleteProfile ? confirmName(deleteProfile.name, deleteProfile.id) : undefined
         }
         handleConfirm={handleDelete}
       />

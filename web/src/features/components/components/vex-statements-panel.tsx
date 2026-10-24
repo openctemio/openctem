@@ -10,7 +10,7 @@ import { useState } from 'react'
 import { Pencil, Plus, ShieldCheck, Trash2 } from 'lucide-react'
 import { toast } from 'sonner'
 import Link from '@/components/link'
-import { ConfirmDialog, nameToConfirm } from '@/components/confirm-dialog'
+import { ConfirmDialog } from '@/components/confirm-dialog'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
@@ -30,6 +30,7 @@ import { assetDetailHref } from '@/features/findings/lib/asset-link'
 import { deleteVexStatement, useVexStatements, type VexStatement } from '../api/vex'
 import { useVexLabels } from './vex-labels'
 import { VexStatementDialog } from './vex-statement-dialog'
+import { confirmName } from '@/lib/confirm-name'
 
 const STATUS_VARIANT: Record<string, 'default' | 'secondary' | 'destructive' | 'outline'> = {
   not_affected: 'secondary',
@@ -239,7 +240,7 @@ export function VexStatementsPanel({ productId }: { productId: string }) {
         )}
         confirmText={t('components.vex.deleteConfirm', 'Delete statement')}
         destructive
-        typeToConfirm={deleting ? nameToConfirm(deleting.vuln_id, deleting.id) : undefined}
+        typeToConfirm={deleting ? confirmName(deleting.vuln_id, deleting.id) : undefined}
         isLoading={busy}
         handleConfirm={confirmDelete}
       />

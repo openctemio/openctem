@@ -34,7 +34,7 @@ import {
   DialogTitle,
   DialogBody,
 } from '@/components/ui/dialog'
-import { ConfirmDialog, nameToConfirm } from '@/components/confirm-dialog'
+import { ConfirmDialog } from '@/components/confirm-dialog'
 import {
   Select,
   SelectContent,
@@ -57,6 +57,7 @@ import {
   type RatedCriticality,
 } from '@/lib/criticality'
 import { useTranslation } from '@/context/i18n-provider'
+import { confirmName } from '@/lib/confirm-name'
 
 type Criticality = RatedCriticality
 
@@ -774,7 +775,7 @@ export default function BusinessServicesPage() {
         confirmText={t('confirm.businessService.deleteButton', 'Delete business service')}
         destructive
         typeToConfirm={
-          deletingService ? nameToConfirm(deletingService.name, deletingService.id) : undefined
+          deletingService ? confirmName(deletingService.name, deletingService.id) : undefined
         }
         handleConfirm={handleDelete}
       />
