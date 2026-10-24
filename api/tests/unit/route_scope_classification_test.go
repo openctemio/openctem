@@ -234,7 +234,7 @@ var dataSurfaceRegistry = map[string]dataSurface{
 	"/api/v1/scan-workflows":                             {classGap, "L-06 (scan workflow reads)"},
 	"POST /api/v1/scan-workflows/verify":                 {classConfig, "draft graph check against the capability catalog; reads no asset or finding data"},
 	"/api/v1/scan-runs":                                  {classGap, "L-06 (run reads)"},
-	"/api/v1/workflow-runs":                              {classGap, "L-18 (trigger data)"},
+	"/api/v1/workflow-runs":                              {classScoped, "a run about a finding or asset outside the caller's data scope is not listed and answers 404 (automations.md, run reads follow the scope)"},
 	"/api/v1/iocs":                                       {classGap, "§1.3 IOC matches (L-18)"},
 	"/api/v1/suppressions":                               {classScoped, "an asset-bound rule needs its asset in the caller's scope to be read, edited, approved or deleted, and the list leaves out the others; an organization-wide rule needs full data access to create, edit, approve or delete"},
 	"GET /api/v1/suppressions/{id}/preview":              {classPartial, "organization-wide count of open findings an approval would close; the approval applies organization-wide, so only approvers (findings:suppressions:approve) see it (authorization-matrix.md)"},

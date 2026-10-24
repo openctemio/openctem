@@ -16,3 +16,4 @@
     - "/api/v1/workflow-runs"
   jobs:
     - AutomationRunReaper
+    - AutomationRunRetention

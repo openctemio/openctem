@@ -619,6 +619,17 @@ func (r *CIRunRepository) ReserveRunReport(ctx context.Context, tenantID, runID 
 	return cirun.ErrRunReportCap
 }
 
+// ReleaseRunReports gives back n report slots of a run (tenant-scoped); the
+// count never drops below 1, the slot taken when the upload was accepted.
+func (r *CIRunRepository) ReleaseRunReports(ctx context.Context, tenantID, runID shared.ID, n int) error {
+	if n <= 0 {
+		return nil
+	}
+	_, err := r.db.ExecContext(ctx, `UPDATE ci_runs SET reports_count = GREATEST(reports_count - $3, 1), updated_at = NOW()
+		WHERE tenant_id = $1 AND id = $2`, tenantID.String(), runID.String(), n)
+	return err
+}
+
 // RecordRunReport adds a report's sighted fingerprints to the run, up to
 // MaxRunFindings. The report's slot was reserved (ReserveRunReport).
 func (r *CIRunRepository) RecordRunReport(ctx context.Context, tenantID, runID shared.ID, fingerprints []string) error {

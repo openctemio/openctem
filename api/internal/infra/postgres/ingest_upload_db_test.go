@@ -62,7 +62,7 @@ func TestIngestUploadJobs_DB(t *testing.T) {
 
 	// Dead: out of the digest window, counted dead, requeued only while its
 	// stored report is there.
-	if err := repo.Fail(ctx, job.ID(), "boom", ingestjob.ErrorApplyFailed, time.Now(), true); err != nil {
+	if err := repo.Fail(ctx, job.ID(), processing(t, db, job.ID()), "boom", ingestjob.ErrorApplyFailed, time.Now(), true); err != nil {
 		t.Fatal(err)
 	}
 	if got, _ := repo.GetByID(ctx, tenant, job.ID()); got.PublicError() != ingestjob.ErrorApplyFailed {
@@ -109,10 +109,10 @@ func TestIngestUploadJobs_DB(t *testing.T) {
 	// A retry failure keeps the report; apply_failed (dead) keeps it for a
 	// requeue; a permanent failure with a fixed code deletes it with the
 	// failure (it never runs again), and only the failed job's own parts.
-	if err := repo.Fail(ctx, job.ID(), "transient", "", time.Now(), false); err != nil {
+	if err := repo.Fail(ctx, job.ID(), processing(t, db, job.ID()), "transient", "", time.Now(), false); err != nil {
 		t.Fatal(err)
 	}
-	if err := repo.Fail(ctx, job.ID(), "boom", ingestjob.ErrorApplyFailed, time.Now(), true); err != nil {
+	if err := repo.Fail(ctx, job.ID(), processing(t, db, job.ID()), "boom", ingestjob.ErrorApplyFailed, time.Now(), true); err != nil {
 		t.Fatal(err)
 	}
 	if got, _ := payloads.List(ctx, tenant, job.ID()); len(got) != 1 {
@@ -127,7 +127,7 @@ func TestIngestUploadJobs_DB(t *testing.T) {
 	if err := payloads.Put(ctx, permPart); err != nil {
 		t.Fatal(err)
 	}
-	if err := repo.Fail(ctx, perm.ID(), "unreadable", "unreadable", time.Now(), true); err != nil {
+	if err := repo.Fail(ctx, perm.ID(), processing(t, db, perm.ID()), "unreadable", "unreadable", time.Now(), true); err != nil {
 		t.Fatal(err)
 	}
 	if got, _ := payloads.List(ctx, tenant, perm.ID()); len(got) != 0 {
@@ -141,7 +141,7 @@ func TestIngestUploadJobs_DB(t *testing.T) {
 	}
 
 	// An applied upload keeps no envelope.
-	if err := repo.Complete(ctx, job.ID(), []byte(`{}`)); err != nil {
+	if err := repo.Complete(ctx, job.ID(), processing(t, db, job.ID()), []byte(`{}`)); err != nil {
 		t.Fatal(err)
 	}
 	if done, _ := repo.GetByID(ctx, tenant, job.ID()); string(done.Payload()) != "{}" {

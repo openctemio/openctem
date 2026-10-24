@@ -101,6 +101,7 @@ var sqlProfiles = map[string]SQLProfile{
 	"ApprovalMaterialChangeController":    SQLLight,
 	"AttachmentScanController":            SQLLight,
 	"AutomationRunReaper":                 SQLLight,
+	"AutomationRunRetention":              SQLBatched,
 	"CertMonitorController":               SQLLight,
 	"CIAlertsController":                  SQLLight,
 	"ContentSourceSyncController":         SQLLight,
