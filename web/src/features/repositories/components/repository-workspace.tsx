@@ -566,7 +566,6 @@ function transformToRepositoryView(asset: ApiAssetResponse): RepositoryView {
 import { cn, sanitizeExternalUrl } from '@/lib/utils'
 import { useModuleEnabled } from '@/features/integrations/api/use-tenant-modules'
 import { SEVERITY_DOT_COLORS, SEVERITY_TEXT_COLORS } from '@/lib/severity-colors'
-import { Tag } from '@/components/ui/tag'
 import { copyToClipboard } from '@/lib/clipboard'
 import { Can, Permission } from '@/lib/permissions'
 import { getErrorMessage } from '@/lib/api/error-handler'
