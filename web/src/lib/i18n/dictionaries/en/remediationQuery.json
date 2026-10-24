@@ -88,13 +88,13 @@
   "remediationQuery.task.rerunFailed": "The query could not be re-run.",
   "remediationQuery.task.rerunTitle": "Add new matches",
   "remediationQuery.task.resume": "Resume",
+  "remediationQuery.task.resumeConfirmButton": "Resume auto include",
+  "remediationQuery.task.resumeConfirmDesc": "The task starts adding findings that match its query again, up to its cap of {cap}, without asking each time. Findings already in the task stay.",
+  "remediationQuery.task.resumeConfirmTitle": "Resume auto include?",
   "remediationQuery.task.resumed": "Auto include resumed",
   "remediationQuery.task.roomLimit": "The task has room for {room} more findings; the rest are left out.",
   "remediationQuery.task.runsAs": "Runs as {owner}.",
   "remediationQuery.task.state.active": "Auto include on",
   "remediationQuery.task.state.paused": "Paused",
-  "remediationQuery.task.state.suspended": "Suspended",
-  "remediationQuery.task.resumeConfirmTitle": "Resume auto include?",
-  "remediationQuery.task.resumeConfirmDesc": "The task starts adding findings that match its query again, up to its cap of {cap}, without asking each time. Findings already in the task stay.",
-  "remediationQuery.task.resumeConfirmButton": "Resume auto include"
+  "remediationQuery.task.state.suspended": "Suspended"
 }

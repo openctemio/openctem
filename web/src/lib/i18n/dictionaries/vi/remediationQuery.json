@@ -88,13 +88,13 @@
   "remediationQuery.task.rerunFailed": "Không thể chạy lại truy vấn.",
   "remediationQuery.task.rerunTitle": "Thêm kết quả mới",
   "remediationQuery.task.resume": "Tiếp tục",
+  "remediationQuery.task.resumeConfirmButton": "Tiếp tục tự động thêm",
+  "remediationQuery.task.resumeConfirmDesc": "Nhiệm vụ bắt đầu lại việc thêm các phát hiện khớp truy vấn, tối đa {cap}, mà không hỏi từng lần. Phát hiện đã có trong nhiệm vụ được giữ nguyên.",
+  "remediationQuery.task.resumeConfirmTitle": "Tiếp tục tự động thêm?",
   "remediationQuery.task.resumed": "Đã tiếp tục tự động thêm",
   "remediationQuery.task.roomLimit": "Nhiệm vụ còn chỗ cho {room} phát hiện; phần còn lại bị bỏ qua.",
   "remediationQuery.task.runsAs": "Chạy với tư cách {owner}.",
   "remediationQuery.task.state.active": "Đang tự động thêm",
   "remediationQuery.task.state.paused": "Tạm dừng",
-  "remediationQuery.task.state.suspended": "Tạm ngưng",
-  "remediationQuery.task.resumeConfirmTitle": "Tiếp tục tự động thêm?",
-  "remediationQuery.task.resumeConfirmDesc": "Nhiệm vụ bắt đầu lại việc thêm các phát hiện khớp truy vấn, tối đa {cap}, mà không hỏi từng lần. Phát hiện đã có trong nhiệm vụ được giữ nguyên.",
-  "remediationQuery.task.resumeConfirmButton": "Tiếp tục tự động thêm"
+  "remediationQuery.task.state.suspended": "Tạm ngưng"
 }
