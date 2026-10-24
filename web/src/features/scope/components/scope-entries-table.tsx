@@ -12,6 +12,7 @@
  * are no longer required a leftover pending entry can be put in effect.
  */
 
+import { StatusLozenge } from '@/components/ui/status-lozenge'
 import { useState } from 'react'
 import type { ColumnDef } from '@tanstack/react-table'
 import { useRouter } from 'next/navigation'
@@ -40,13 +41,7 @@ import {
 import { Skeleton } from '@/components/ui/skeleton'
 import { ConfirmDialog } from '@/components/confirm-dialog'
 import { useTranslation } from '@/context/i18n-provider'
-import {
-  ActorChip,
-  DataTable,
-  DataTableRowActions,
-  TonePill,
-  type RowAction,
-} from '@/features/shared'
+import { ActorChip, DataTable, DataTableRowActions, type RowAction } from '@/features/shared'
 import { Permission, useHasPermission } from '@/lib/permissions'
 import {
   invalidateScopeCache,
@@ -117,6 +112,8 @@ interface ScopeEntriesTableProps {
   onPagination: (p: { pageIndex: number; pageSize: number }) => void
   /** Shown when nothing is in scope yet (onboarding). */
   emptyAction?: React.ReactNode
+  /** Controls the page puts first in the toolbar (which scope list is shown). */
+  leading?: React.ReactNode
 }
 
 export function ScopeEntriesTable({
@@ -127,6 +124,7 @@ export function ScopeEntriesTable({
   onStatusChange,
   onPagination,
   emptyAction,
+  leading,
 }: ScopeEntriesTableProps) {
   const { t } = useTranslation()
   const canApprove = useHasPermission(Permission.ScopeApprove)
@@ -317,13 +315,20 @@ export function ScopeEntriesTable({
         const e = row.original
         const st = entryStatus(e)
         return (
-          <TonePill
-            tone={SCOPE_ENTRY_STATUS_TONE[st]}
-            label={t(`scope.entry.status.${st}.label`, SCOPE_ENTRY_STATUS_LABEL[st])}
+          <span
+            className="inline-flex flex-wrap items-center gap-x-2 gap-y-1"
             title={t(`scope.entry.status.${st}.hint`, SCOPE_ENTRY_STATUS_HINT[st])}
-            detail={e.expires_at ? expiryText(e.expires_at) : undefined}
-            state={st}
-          />
+          >
+            <StatusLozenge
+              tone={SCOPE_ENTRY_STATUS_TONE[st].tone}
+              icon={SCOPE_ENTRY_STATUS_TONE[st].icon}
+              label={t(`scope.entry.status.${st}.label`, SCOPE_ENTRY_STATUS_LABEL[st])}
+              value={st}
+            />
+            {e.expires_at && (
+              <span className="text-xs text-muted-foreground">{expiryText(e.expires_at)}</span>
+            )}
+          </span>
         )
       },
     },
@@ -385,6 +390,7 @@ export function ScopeEntriesTable({
 
   const toolbarStart = (
     <>
+      {leading}
       <div className="relative min-w-0 flex-1 sm:max-w-sm">
         <SearchIcon className="pointer-events-none absolute start-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
         <Input

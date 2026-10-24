@@ -2147,5 +2147,6 @@
   "scans.workflows.ownerFilter": "Chủ sở hữu quy trình",
   "scans.workflows.ownerAll": "Tất cả quy trình",
   "scans.workflows.ownerMine": "Quy trình của tôi",
-  "scans.workflows.ownerSystem": "Mẫu hệ thống"
+  "scans.workflows.ownerSystem": "Mẫu hệ thống",
+  "scans.ci.tabsLabel": "Các mục CI/CD"
 }

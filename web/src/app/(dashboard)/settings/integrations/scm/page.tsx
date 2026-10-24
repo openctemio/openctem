@@ -1,5 +1,6 @@
 'use client'
 
+import { IntegrationHealth } from '@/features/integrations/components/integration-health'
 import { useState, useMemo, useCallback } from 'react'
 import type { ColumnDef } from '@tanstack/react-table'
 import { csrfFetch, del } from '@/lib/api/client'
@@ -31,13 +32,9 @@ import {
   Eye,
   Pencil,
   Trash2,
-  CheckCircle,
-  XCircle,
-  AlertCircle,
   Loader2,
   GitBranch,
   ExternalLink,
-  Clock,
 } from 'lucide-react'
 import {
   AddConnectionDialog,
@@ -54,36 +51,6 @@ import { getErrorMessage } from '@/lib/api/error-handler'
 import { useTranslation } from '@/context/i18n-provider'
 
 // Only a problem (error) is coloured; the other states stay neutral.
-const STATUS_CONFIG: Record<
-  string,
-  {
-    label: string
-    variant: 'default' | 'secondary' | 'destructive' | 'outline'
-    icon: React.ReactNode
-  }
-> = {
-  connected: {
-    label: 'Connected',
-    variant: 'default',
-    icon: <CheckCircle className="h-3.5 w-3.5" />,
-  },
-  disconnected: {
-    label: 'Disconnected',
-    variant: 'secondary',
-    icon: <XCircle className="h-3.5 w-3.5" />,
-  },
-  error: {
-    label: 'Error',
-    variant: 'destructive',
-    icon: <AlertCircle className="h-3.5 w-3.5" />,
-  },
-  pending: {
-    label: 'Pending',
-    variant: 'outline',
-    icon: <Clock className="h-3.5 w-3.5" />,
-  },
-}
-
 const PROVIDER_LABELS: Record<string, string> = {
   github: 'GitHub',
   gitlab: 'GitLab',
@@ -267,14 +234,9 @@ export default function SCMConnectionsPage() {
         ),
         cell: ({ row }) => {
           const connection = row.original
-          const statusKey = STATUS_CONFIG[connection.status] ? connection.status : 'pending'
-          const statusConfig = STATUS_CONFIG[statusKey]
           return (
             <>
-              <Badge variant={statusConfig.variant} className="gap-1">
-                {statusConfig.icon}
-                {t(`scmIntegration.status.${statusKey}`, statusConfig.label)}
-              </Badge>
+              <IntegrationHealth status={connection.status} />
               {connection.errorMessage && connection.status === 'error' && (
                 <p className="mt-1 max-w-[200px] truncate text-xs text-destructive">
                   {connection.errorMessage}

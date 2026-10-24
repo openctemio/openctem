@@ -18,6 +18,10 @@ export const LIMIT_KEYS = [
   'storage_mb',
   'orgs_per_user',
   'dashboard_refresh_floor_minutes',
+  'content_sources',
+  'content_storage_mb',
+  'content_sync_floor_minutes',
+  'content_snapshot_max_mb',
 ] as const
 export type LimitKey = (typeof LIMIT_KEYS)[number]
 
@@ -45,6 +49,10 @@ export const LIMIT_KEY_LABEL: Record<LimitKey, string> = {
   storage_mb: 'Storage (MiB)',
   orgs_per_user: 'Organizations per person',
   dashboard_refresh_floor_minutes: 'Dashboard refresh floor (minutes)',
+  content_sources: 'Rule sources',
+  content_storage_mb: 'Rule snapshot storage (MiB)',
+  content_sync_floor_minutes: 'Rule source sync floor (minutes)',
+  content_snapshot_max_mb: 'Largest rule snapshot (MiB)',
 }
 
 export function isLimitKey(k: string | undefined): k is LimitKey {
