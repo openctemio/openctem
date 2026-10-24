@@ -41,11 +41,6 @@ const (
 // they are reported but do not fail the suite until that fix is merged
 // (then the entry is removed). Values are local report ids only.
 var pendingFix = map[string]string{
-	"B-access-widen-stepup":   "254-B",
-	"B-fp-lower-owner-only":   "254-B",
-	"B-accept-lower-owner":    "254-B",
-	"B-integrations-manage":   "254-B",
-	"B-integrations-scm":      "254-B",
 	"B-notification-retarget": "254-B-01",
 }
 

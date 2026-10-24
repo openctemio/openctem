@@ -5,8 +5,10 @@ package authzmatrix
 import (
 	"bytes"
 	"context"
+	"crypto/rand"
 	"database/sql"
 	"encoding/base64"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"regexp"
@@ -30,7 +32,15 @@ import (
 // platform administrator and the first owners, and backdating an expiry).
 // All names are sample data: Acme, Globex, Initech and example.com.
 
-const seedPassword = "Matrix-Passw0rd!x"
+// seedPassword is generated per run (upper, lower, digit and symbol so it meets
+// the password policy); no credential lives in the source.
+var seedPassword = func() string {
+	b := make([]byte, 12)
+	if _, err := rand.Read(b); err != nil {
+		panic(err)
+	}
+	return "Mx1!" + hex.EncodeToString(b)
+}()
 
 // codePermissionsStale is the 409 code for a token issued before the
 // holder's grants changed (sign in again and retry).
