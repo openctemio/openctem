@@ -58,6 +58,13 @@ must_fail 'spinning status' '<Loader2 className="size-3 animate-spin" /> {status
 must_fail 'spinning health badge' '<RunBadge className="animate-spin" />'
 must_fail 'new colour map' 'const FOO_STATUS_COLORS = { a: "x" }'
 must_fail 'new badge map' 'export const FOO_BADGE_CLASS = {}'
+must_fail 'state text on its own tint' '<span className="rounded bg-success/10 text-success">On track</span>'
+must_fail 'warning soft pill in a map' "warning: 'border-warning/40 bg-warning/10 text-warning',"
+must_fail 'arbitrary hex class' '<div className="bg-[#7c3aed]" />'
+must_fail 'inline hex style' '<span style={{ color: "#ef4444" }} />'
+must_fail 'svg hex fill' '<rect fill="#3b82f6" />'
+must_pass 'token fill' '<rect fill="var(--viz-cat-1)" />'
+must_pass 'state icon colour alone' '<CheckCircle2 className="text-success" />'
 must_pass 'Badge without colour' '<Badge variant="outline">{count}</Badge>'
 must_pass 'plain 12px text on a pill' '<span className="rounded-full px-2 text-xs">x</span>'
 must_pass 'spinner on a button' '<Loader2 className="size-4 animate-spin" />'

@@ -81,10 +81,21 @@ type ExtendMemberAccessInput struct {
 // ErrAccessNotExternal refuses an access change on an internal member.
 var ErrAccessNotExternal = fmt.Errorf("%w: only members from outside the organization have an access end date", shared.ErrValidation)
 
+// widensAccessEnd reports whether moving the end of access from previous to
+// next gives the member more time: next is later, or there is no end where
+// there was one. Setting a first end (previous nil) shortens.
+func widensAccessEnd(previous, next *time.Time) bool {
+	if previous == nil {
+		return false
+	}
+	return next == nil || next.After(*previous)
+}
+
 // ExtendMemberAccess changes when an external member's access ends (at most
 // MaxExternalAccessDays from now; mandatory when no organization manages the
 // address). A membership suspended because its access expired is re-enabled.
-// Owner or administrator, through the members route.
+// Owner or administrator, through the members route; a change that widens
+// access (a later end, or re-enabling) needs a recent sign-in.
 func (s *TenantService) ExtendMemberAccess(ctx context.Context, membershipID string, in ExtendMemberAccessInput, actx auditapp.AuditContext) (*tenantdom.Membership, error) {
 	m, err := s.getOwnMembership(ctx, membershipID, actx.TenantID)
 	if err != nil {
@@ -99,10 +110,19 @@ func (s *TenantService) ExtendMemberAccess(ctx context.Context, membershipID str
 	now := time.Now().UTC()
 	class := tenantdom.Classification{Kind: tenantdom.MemberKindExternal, HomeTenantID: m.HomeTenantID(), Domain: m.HomeDomain()}
 	access := tenantdom.ExternalAccess{ExpiresAt: in.ExpiresAt, Reason: in.Reason}
+	previousEnd := m.ExpiresAt()
 	if err := m.Classify(class, access, now); err != nil {
 		return nil, err
 	}
 	wasExpired := m.IsSuspended() && m.SuspendedReason() == tenantdom.SuspendedReasonExpired
+	// Widening access (a later end, no end, or re-enabling a member whose
+	// access ended) needs a recent sign-in; shortening does not. Checked
+	// before anything is stored.
+	if wasExpired || widensAccessEnd(previousEnd, m.ExpiresAt()) {
+		if err := s.requireStepUp(ctx, actx.ActorID); err != nil {
+			return nil, err
+		}
+	}
 	switch {
 	case wasExpired:
 		if err := m.Reactivate(); err != nil {

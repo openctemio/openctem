@@ -48,7 +48,7 @@ beforeEach(() => deleteAsset.mockReset().mockResolvedValue(undefined))
 async function openDelete(selected: Asset[]) {
   const onDone = vi.fn()
   render(<InventoryBulkBar selected={selected} canWrite onClear={vi.fn()} onDone={onDone} />)
-  await userEvent.click(screen.getByRole('button', { name: 'Delete' }))
+  await userEvent.click(screen.getByRole('button', { name: `Delete ${selected.length}` }))
   return { dialog: await screen.findByRole('alertdialog'), onDone }
 }
 

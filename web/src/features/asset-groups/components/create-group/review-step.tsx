@@ -6,17 +6,9 @@
 
 'use client'
 
+import { HealthStatus } from '@/components/ui/health-status'
 import * as React from 'react'
-import {
-  FolderOpen,
-  Server,
-  Plus,
-  CheckCircle2,
-  AlertCircle,
-  Building2,
-  User,
-  Tags,
-} from 'lucide-react'
+import { FolderOpen, Server, Plus, AlertCircle, Building2, User, Tags } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Separator } from '@/components/ui/separator'
@@ -28,7 +20,7 @@ import {
   type RatedCriticality,
 } from '@/lib/criticality'
 import type { Asset, AssetType } from '@/features/assets/types'
-import { ASSET_TYPE_LABELS, ASSET_TYPE_COLORS } from '@/features/assets/types'
+import { ASSET_TYPE_LABELS, ASSET_TYPE_TILE } from '@/features/assets/types'
 import type { CreateGroupFormData } from './types'
 
 interface ReviewStepProps {
@@ -107,10 +99,7 @@ export function ReviewStep({ data, ungroupedAssets }: ReviewStepProps) {
           </p>
         </div>
         {warnings.length === 0 ? (
-          <Badge variant="default" className="bg-green-500">
-            <CheckCircle2 className="h-3 w-3 me-1" />
-            Ready to create
-          </Badge>
+          <HealthStatus state="ok" label="Ready to create" />
         ) : (
           <Badge variant="destructive">
             <AlertCircle className="h-3 w-3 me-1" />
@@ -224,7 +213,7 @@ export function ReviewStep({ data, ungroupedAssets }: ReviewStepProps) {
                     </div>
                     <div className="flex flex-wrap gap-1">
                       {selectedAssets.slice(0, 8).map((asset) => {
-                        const colors = ASSET_TYPE_COLORS[asset.type]
+                        const colors = ASSET_TYPE_TILE
                         return (
                           <Badge
                             key={asset.id}
@@ -257,7 +246,7 @@ export function ReviewStep({ data, ungroupedAssets }: ReviewStepProps) {
                     </div>
                     <div className="flex flex-wrap gap-1">
                       {data.newAssets.slice(0, 8).map((asset) => {
-                        const colors = ASSET_TYPE_COLORS[asset.type]
+                        const colors = ASSET_TYPE_TILE
                         return (
                           <Badge
                             key={asset.id}
@@ -284,7 +273,7 @@ export function ReviewStep({ data, ungroupedAssets }: ReviewStepProps) {
                     <p className="text-xs text-muted-foreground mb-2">Breakdown by type:</p>
                     <div className="grid grid-cols-2 gap-2">
                       {assetsByType.map(([type, counts]) => {
-                        const colors = ASSET_TYPE_COLORS[type as AssetType]
+                        const colors = ASSET_TYPE_TILE
                         const total = counts.existing + counts.new
                         return (
                           <div key={type} className="flex items-center justify-between text-sm">
@@ -304,7 +293,7 @@ export function ReviewStep({ data, ungroupedAssets }: ReviewStepProps) {
                             <span className="text-muted-foreground">
                               {total}
                               {counts.new > 0 && (
-                                <span className="text-xs ms-1 text-green-500">(+{counts.new})</span>
+                                <span className="text-xs ms-1 text-success">(+{counts.new})</span>
                               )}
                             </span>
                           </div>
