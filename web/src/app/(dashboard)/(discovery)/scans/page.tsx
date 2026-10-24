@@ -39,7 +39,7 @@ import {
   ConfirmSample,
   irreversibleTypeToConfirm,
 } from '@/components/confirm-dialog'
-import { nameToTypeToConfirm } from '@/components/confirm-name'
+import { confirmName } from '@/lib/confirm-name'
 import { ScheduleOnConfirm } from '@/features/scans/components/schedule-on-confirm'
 import { useTranslation } from '@/context/i18n-provider'
 import { toast } from 'sonner'
@@ -1177,7 +1177,7 @@ function ConfigurationsTab() {
         destructive
         isLoading={isDeleting}
         typeToConfirm={
-          configToDelete ? nameToTypeToConfirm(configToDelete.name, configToDelete.id) : undefined
+          configToDelete ? confirmName(configToDelete.name, configToDelete.id) : undefined
         }
         handleConfirm={handleConfirmDelete}
       />
