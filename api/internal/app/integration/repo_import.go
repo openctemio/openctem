@@ -159,35 +159,46 @@ func (s *IntegrationService) SyncAllConnectedSCMIntegrations(ctx context.Context
 	// token re-syncs and (via ListSCMRepositories' recovery edge) flips the
 	// status back to connected. Integrations the user deliberately disabled or
 	// disconnected are skipped in the loop below.
-	listed, err := s.repo.List(ctx, integrationdom.Filter{
-		Category: &category,
-		PerPage:  1000,
-	})
-	if err != nil {
-		return 0, fmt.Errorf("list SCM integrations: %w", err)
-	}
-
-	total := 0
-	for _, intg := range listed.Data {
-		switch intg.Status() {
-		case integrationdom.StatusConnected, integrationdom.StatusError, integrationdom.StatusExpired:
-			// retry these — a successful sync recovers an errored connection
-		default:
-			continue // disabled / disconnected / pending — leave alone
-		}
-		res, err := s.ImportSCMRepositories(ctx, ImportReposInput{
-			IntegrationID: intg.ID().String(),
-			TenantID:      intg.TenantID().String(),
+	// Page through every integration (oldest first, so a page does not shift
+	// when one is added mid-run) instead of reading only the first 1000.
+	const syncPageSize = 1000
+	total, seen := 0, 0
+	for page := 1; ; page++ {
+		listed, err := s.repo.List(ctx, integrationdom.Filter{
+			Category:  &category,
+			Page:      page,
+			PerPage:   syncPageSize,
+			SortBy:    "created_at",
+			SortOrder: "asc",
 		})
 		if err != nil {
-			s.logger.Warn("scheduled SCM sync failed for integration",
-				"integration_id", intg.ID().String(), "error", err)
-			continue
+			return total, fmt.Errorf("list SCM integrations: %w", err)
 		}
-		total += res.Created + res.Updated
+		seen += len(listed.Data)
+		for _, intg := range listed.Data {
+			switch intg.Status() {
+			case integrationdom.StatusConnected, integrationdom.StatusError, integrationdom.StatusExpired:
+				// retry these — a successful sync recovers an errored connection
+			default:
+				continue // disabled / disconnected / pending — leave alone
+			}
+			res, err := s.ImportSCMRepositories(ctx, ImportReposInput{
+				IntegrationID: intg.ID().String(),
+				TenantID:      intg.TenantID().String(),
+			})
+			if err != nil {
+				s.logger.Warn("scheduled SCM sync failed for integration",
+					"integration_id", intg.ID().String(), "error", err)
+				continue
+			}
+			total += res.Created + res.Updated
+		}
+		if len(listed.Data) == 0 || page >= listed.TotalPages {
+			break
+		}
 	}
 	s.logger.Info("scheduled SCM sync complete",
-		"integrations", len(listed.Data), "repos_synced", total)
+		"integrations", seen, "repos_synced", total)
 	return total, nil
 }
 

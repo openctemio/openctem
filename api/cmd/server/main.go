@@ -5,6 +5,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	nethttp "net/http"
 	"os"
 	"os/signal"
 	"strings"
@@ -566,9 +567,14 @@ func run() int {
 	// ==========================================================================
 	// Start Server
 	// ==========================================================================
+	// A listener that cannot start (port in use, bad TLS material) ends the
+	// process with a non-zero exit so the orchestrator restarts it, instead of
+	// leaving a replica that runs controllers but serves no HTTP.
+	serverFailed := make(chan error, 1)
 	go func() {
-		if err := server.Start(); err != nil {
+		if err := server.Start(); fatalListenerError(err) {
 			log.Error("server error", "error", err)
+			serverFailed <- err
 		}
 	}()
 	if handlers.SensorV3 != nil && servesTenant {
@@ -588,7 +594,12 @@ func run() int {
 	// ==========================================================================
 	quit := make(chan os.Signal, 1)
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
-	<-quit
+	exitCode := 0
+	select {
+	case <-quit:
+	case <-serverFailed:
+		exitCode = 1
+	}
 
 	log.Info("shutting down...")
 
@@ -628,7 +639,13 @@ func run() int {
 	}
 
 	log.Info("application stopped")
-	return 0
+	return exitCode
+}
+
+// fatalListenerError reports whether an error from the HTTP server's Start
+// means it is not serving: any error except a normal close.
+func fatalListenerError(err error) bool {
+	return err != nil && !errors.Is(err, nethttp.ErrServerClosed)
 }
 
 // =============================================================================
