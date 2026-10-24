@@ -1296,6 +1296,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	s.Vulnerability.SetCommentReactionRepository(repos.CommentReaction)
 	s.Vulnerability.SetAuditService(s.Audit)                     // audits reaction moderation and duplicate marking
 	s.Vulnerability.SetDataFlowRepository(repos.DataFlow)        // Wire data flow loading
+	s.Vulnerability.SetIssueLinkStore(repos.FindingIssueLinks)   // same-issue groups
 	s.Vulnerability.SetApprovalRepository(repos.FindingApproval) // Wire approval workflow
 	s.Vulnerability.SetSeverityRequestRepository(repos.SeverityRequest)
 	s.Vulnerability.SetAccessControlRepository(repos.AccessControl)
@@ -2826,6 +2827,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	s.Ingest.SetSuppressionChecker(s.Suppression)
 	// Cross-rule correlation of DAST findings (research/134 section 12).
 	s.Ingest.SetCorrelationStore(repos.FindingCorrelation)
+	s.Ingest.SetIssueLinkStore(repos.FindingIssueLinks)
 
 	// Initialize access control services
 	s.Group = accesscontrol.NewGroupService(repos.Group, log,
