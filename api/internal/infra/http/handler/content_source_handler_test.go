@@ -51,3 +51,24 @@ func TestContentSourceResponse_Projection(t *testing.T) {
 		t.Errorf("foreign source rendered in full: %s", raw)
 	}
 }
+
+// SECURITY: a platform snapshot's projection does not name the platform
+// administrators who synced, promoted or rejected it; an organization's own
+// snapshot does name its members.
+func TestContentSnapshotResponse_HidesPlatformAdmins(t *testing.T) {
+	admin, member := shared.NewID(), shared.NewID()
+	tenant := shared.NewID()
+	sn := &cs.Snapshot{ID: shared.NewID(), SourceID: shared.NewID(), Scope: cs.ScopePlatform, SyncedBy: &admin, PromotedBy: &admin, RejectedBy: &admin, State: cs.StatePromoted}
+	src := &cs.Source{ID: sn.SourceID, Scope: cs.ScopePlatform}
+	for _, in := range []*cs.Source{src, nil} {
+		raw, _ := json.Marshal(toContentSnapshotResponse(sn, in, true))
+		if strings.Contains(string(raw), admin.String()) {
+			t.Fatalf("platform snapshot names a platform administrator: %s", raw)
+		}
+	}
+	own := &cs.Snapshot{ID: shared.NewID(), SourceID: shared.NewID(), Scope: cs.ScopeTenant, TenantID: &tenant, SyncedBy: &member, PromotedBy: &member, State: cs.StatePromoted}
+	raw, _ := json.Marshal(toContentSnapshotResponse(own, &cs.Source{ID: own.SourceID, Scope: cs.ScopeTenant, TenantID: &tenant}, false))
+	if !strings.Contains(string(raw), member.String()) {
+		t.Fatalf("an organization's own snapshot lost its member ids: %s", raw)
+	}
+}
