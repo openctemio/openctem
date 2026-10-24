@@ -1785,5 +1785,16 @@
   "findings.epss.bandHint.low": "Đến 10%.",
   "findings.epss.chipHint": "Hiện trong danh sách từ 10%. Trang chi tiết luôn hiển thị.",
   "findings.epss.label": "EPSS",
-  "findings.columns.exploitSignals": "Tín hiệu khai thác"
+  "findings.columns.exploitSignals": "Tín hiệu khai thác",
+  "findings.aiTriage.status.pending": "Đang chờ",
+  "findings.aiTriage.status.processing": "Đang phân tích",
+  "findings.aiTriage.status.completed": "Hoàn tất",
+  "findings.aiTriage.status.failed": "Thất bại",
+  "findings.aiTriage.exploitability.high": "Cao",
+  "findings.aiTriage.exploitability.medium": "Trung bình",
+  "findings.aiTriage.exploitability.low": "Thấp",
+  "findings.aiTriage.exploitability.theoretical": "Lý thuyết",
+  "findings.aiTriage.effort.low": "Công sức thấp",
+  "findings.aiTriage.effort.medium": "Công sức trung bình",
+  "findings.aiTriage.effort.high": "Công sức cao"
 }

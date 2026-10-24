@@ -24,7 +24,6 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
-import { Badge } from '@/components/ui/badge'
 import { Progress } from '@/components/ui/progress'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Download, Eye, Pencil, ClipboardCheck, Shield } from 'lucide-react'
@@ -62,7 +61,16 @@ import {
 import { mutate as swrMutate } from 'swr'
 import { exportToCsv } from '@/hooks/use-csv-export'
 import { useUrlFilter } from '@/hooks/use-url-param'
-import { CRITICALITY_BADGE_SOFT } from '@/lib/criticality-colors'
+import { Tag } from '@/components/ui/tag'
+import { StatusLozenge } from '@/components/ui/status-lozenge'
+import {
+  CheckCircleGlyph,
+  HalfCircleGlyph,
+  RingDotGlyph,
+  SlashedCircleGlyph,
+  type StatusGlyph,
+} from '@/components/ui/status-glyphs'
+import type { StatusTone } from '@/lib/status-colors'
 
 // ── Local view types ──────────────────────────────────────────────────────────
 
@@ -110,32 +118,45 @@ const statusLabels: Record<ControlStatus, string> = {
   not_applicable: 'N/A',
 }
 
-// Theme tokens only: a missing control is the one state worth colouring.
+/**
+ * Control status on the shared workflow tones (research/247 section 4): not
+ * implemented is open work, partial is in progress, implemented is done and
+ * not applicable is closed.
+ */
+const CONTROL_STATUS_TONE: Record<ControlStatus, { tone: StatusTone; icon: StatusGlyph }> = {
+  not_implemented: { tone: 'open', icon: RingDotGlyph },
+  partial: { tone: 'progress', icon: HalfCircleGlyph },
+  implemented: { tone: 'resolved', icon: CheckCircleGlyph },
+  not_applicable: { tone: 'closed', icon: SlashedCircleGlyph },
+}
+
 function ControlStatusBadge({ status }: { status: ControlStatus }) {
-  const label = statusLabels[status] ?? status
-  if (status === 'implemented') return <Badge variant="secondary">{label}</Badge>
+  const cfg = CONTROL_STATUS_TONE[status] ?? CONTROL_STATUS_TONE.not_applicable
   return (
-    <Badge
-      variant="outline"
-      className={
-        status === 'not_implemented'
-          ? 'text-destructive'
-          : status === 'not_applicable'
-            ? 'text-muted-foreground'
-            : undefined
-      }
-    >
-      {label}
-    </Badge>
+    <StatusLozenge
+      tone={cfg.tone}
+      icon={cfg.icon}
+      value={status}
+      label={statusLabels[status] ?? status}
+    />
   )
 }
 
-// Priority shares the criticality scale's colours (critical/high/medium/low).
-function PriorityBadge({ priority }: { priority: Priority }) {
+/** Control priority is an ordinal classification, not a severity: a level tag. */
+const CONTROL_PRIORITY_LEVEL: Record<Priority, 1 | 2 | 3 | 4> = {
+  critical: 4,
+  high: 3,
+  medium: 2,
+  low: 1,
+}
+
+function ControlPriorityTag({ priority }: { priority: Priority }) {
   return (
-    <Badge variant="outline" className={`capitalize ${CRITICALITY_BADGE_SOFT[priority] ?? ''}`}>
-      {priority}
-    </Badge>
+    <Tag
+      variant="plain"
+      level={CONTROL_PRIORITY_LEVEL[priority] ?? 2}
+      label={<span className="capitalize">{priority}</span>}
+    />
   )
 }
 
@@ -388,7 +409,7 @@ export default function CompliancePage() {
     {
       accessorKey: 'frameworkName',
       header: 'Framework',
-      cell: ({ row }) => <Badge variant="outline">{row.original.frameworkName}</Badge>,
+      cell: ({ row }) => <Tag label={row.original.frameworkName} />,
     },
     {
       accessorKey: 'status',
@@ -398,7 +419,7 @@ export default function CompliancePage() {
     {
       accessorKey: 'priority',
       header: ({ column }) => <DataTableColumnHeader column={column} title="Priority" />,
-      cell: ({ row }) => <PriorityBadge priority={row.original.priority} />,
+      cell: ({ row }) => <ControlPriorityTag priority={row.original.priority} />,
     },
     {
       accessorKey: 'evidenceCount',
@@ -548,7 +569,7 @@ export default function CompliancePage() {
               badges={
                 <>
                   <ControlStatusBadge status={viewRequirement.status} />
-                  <PriorityBadge priority={viewRequirement.priority} />
+                  <ControlPriorityTag priority={viewRequirement.priority} />
                 </>
               }
               meta={[viewRequirement.frameworkName, viewRequirement.controlId]}

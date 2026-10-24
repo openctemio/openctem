@@ -1785,5 +1785,16 @@
   "findings.epss.bandHint.low": "Up to 10%.",
   "findings.epss.chipHint": "Shown in lists from 10%. The detail page always shows it.",
   "findings.epss.label": "EPSS",
-  "findings.columns.exploitSignals": "Exploit signals"
+  "findings.columns.exploitSignals": "Exploit signals",
+  "findings.aiTriage.status.pending": "Pending",
+  "findings.aiTriage.status.processing": "Analyzing",
+  "findings.aiTriage.status.completed": "Completed",
+  "findings.aiTriage.status.failed": "Failed",
+  "findings.aiTriage.exploitability.high": "High",
+  "findings.aiTriage.exploitability.medium": "Medium",
+  "findings.aiTriage.exploitability.low": "Low",
+  "findings.aiTriage.exploitability.theoretical": "Theoretical",
+  "findings.aiTriage.effort.low": "Low effort",
+  "findings.aiTriage.effort.medium": "Medium effort",
+  "findings.aiTriage.effort.high": "High effort"
 }
