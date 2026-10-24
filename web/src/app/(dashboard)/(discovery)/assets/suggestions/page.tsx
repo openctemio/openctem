@@ -6,7 +6,7 @@ import { useTranslation } from '@/context/i18n-provider'
 import { useState, useCallback, useMemo, useEffect, useEffectEvent } from 'react'
 import type { ColumnDef } from '@tanstack/react-table'
 import { Main } from '@/components/layout'
-import { EmptyState, PageHeader, DataTable, BulkActionBar } from '@/features/shared'
+import { EmptyState, PageHeader, DataTable, BulkActionBar, PageStack } from '@/features/shared'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -390,47 +390,45 @@ export default function RelationshipSuggestionsPage() {
 
   return (
     <Main>
-      <PageHeader title={t('assets.overview.title', 'Assets')}>
-        {canReview && (
-          <Button variant="outline" size="sm" onClick={handleGenerate} disabled={isGenerating}>
-            {isGenerating ? (
-              <RefreshCw className="me-2 h-4 w-4 animate-spin" />
-            ) : (
-              <Sparkles className="me-2 h-4 w-4" />
-            )}
-            Scan
-          </Button>
-        )}
-        {canReview && total > 0 && (
-          <AlertDialog>
-            <AlertDialogTrigger asChild>
-              <Button size="sm" disabled={isApprovingAll}>
-                <CheckCheck className="me-2 h-4 w-4" />
-                Approve all ({total})
-              </Button>
-            </AlertDialogTrigger>
-            <AlertDialogContent>
-              <AlertDialogHeader>
-                <AlertDialogTitle>Approve all {total} suggestions?</AlertDialogTitle>
-                <AlertDialogDescription>
-                  This will create {total} relationships between your assets. This action cannot be
-                  undone.
-                </AlertDialogDescription>
-              </AlertDialogHeader>
-              <AlertDialogFooter>
-                <AlertDialogCancel>Cancel</AlertDialogCancel>
-                <AlertDialogAction onClick={handleApproveAll}>Approve all</AlertDialogAction>
-              </AlertDialogFooter>
-            </AlertDialogContent>
-          </AlertDialog>
-        )}
-      </PageHeader>
-      <AssetsSectionTabs />
-      <div className="mt-5">
+      <PageStack>
+        <PageHeader title={t('assets.overview.title', 'Assets')}>
+          {canReview && (
+            <Button variant="outline" size="sm" onClick={handleGenerate} disabled={isGenerating}>
+              {isGenerating ? (
+                <RefreshCw className="me-2 h-4 w-4 animate-spin" />
+              ) : (
+                <Sparkles className="me-2 h-4 w-4" />
+              )}
+              Scan
+            </Button>
+          )}
+          {canReview && total > 0 && (
+            <AlertDialog>
+              <AlertDialogTrigger asChild>
+                <Button size="sm" disabled={isApprovingAll}>
+                  <CheckCheck className="me-2 h-4 w-4" />
+                  Approve all ({total})
+                </Button>
+              </AlertDialogTrigger>
+              <AlertDialogContent>
+                <AlertDialogHeader>
+                  <AlertDialogTitle>Approve all {total} suggestions?</AlertDialogTitle>
+                  <AlertDialogDescription>
+                    This will create {total} relationships between your assets. This action cannot
+                    be undone.
+                  </AlertDialogDescription>
+                </AlertDialogHeader>
+                <AlertDialogFooter>
+                  <AlertDialogCancel>Cancel</AlertDialogCancel>
+                  <AlertDialogAction onClick={handleApproveAll}>Approve all</AlertDialogAction>
+                </AlertDialogFooter>
+              </AlertDialogContent>
+            </AlertDialog>
+          )}
+        </PageHeader>
+        <AssetsSectionTabs />
         <AttentionQueueHeader reason="relationships" count={isLoading ? undefined : total} />
-      </div>
 
-      <div className="mt-5">
         {error && !isLoading ? (
           <Alert variant="destructive">
             <AlertCircle className="h-4 w-4" />
@@ -472,36 +470,36 @@ export default function RelationshipSuggestionsPage() {
             emptyDescription="Try a different search term."
           />
         )}
-      </div>
 
-      <BulkActionBar
-        count={canReview ? selected.length : 0}
-        onClear={clearSelection}
-        noun="selected"
-      >
-        <AlertDialog>
-          <AlertDialogTrigger asChild>
-            <Button variant="ghost" size="sm" className="h-8" disabled={isBatchApproving}>
-              <Check className="me-2 h-4 w-4" />
-              Approve
-            </Button>
-          </AlertDialogTrigger>
-          <AlertDialogContent>
-            <AlertDialogHeader>
-              <AlertDialogTitle>
-                Approve {selected.length} selected suggestion{selected.length > 1 ? 's' : ''}?
-              </AlertDialogTitle>
-              <AlertDialogDescription>
-                This will create {selected.length} relationships between your assets.
-              </AlertDialogDescription>
-            </AlertDialogHeader>
-            <AlertDialogFooter>
-              <AlertDialogCancel>Cancel</AlertDialogCancel>
-              <AlertDialogAction onClick={handleApproveSelected}>Approve</AlertDialogAction>
-            </AlertDialogFooter>
-          </AlertDialogContent>
-        </AlertDialog>
-      </BulkActionBar>
+        <BulkActionBar
+          count={canReview ? selected.length : 0}
+          onClear={clearSelection}
+          noun="selected"
+        >
+          <AlertDialog>
+            <AlertDialogTrigger asChild>
+              <Button variant="ghost" size="sm" className="h-8" disabled={isBatchApproving}>
+                <Check className="me-2 h-4 w-4" />
+                Approve
+              </Button>
+            </AlertDialogTrigger>
+            <AlertDialogContent>
+              <AlertDialogHeader>
+                <AlertDialogTitle>
+                  Approve {selected.length} selected suggestion{selected.length > 1 ? 's' : ''}?
+                </AlertDialogTitle>
+                <AlertDialogDescription>
+                  This will create {selected.length} relationships between your assets.
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogCancel>Cancel</AlertDialogCancel>
+                <AlertDialogAction onClick={handleApproveSelected}>Approve</AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
+        </BulkActionBar>
+      </PageStack>
     </Main>
   )
 }
