@@ -82,7 +82,11 @@ func (s *Service) fetchAndBuild(ctx context.Context, src *dom.Source, token stri
 	if err != nil {
 		return nil, nil, nil, false, syncErr("HOST_REFUSED", "%s", err.Error())
 	}
-	if private && tenantID != nil && !s.featureUsable(ctx, *tenantID, limits.FeatureContentPrivateGit) {
+	// SECURITY: private-range access is decided per organization, and again
+	// per connection at dial time (PrivateOK), so a host that resolves
+	// elsewhere when the connection is made is still judged by the feature.
+	privateOK := tenantID != nil && s.featureUsable(ctx, *tenantID, limits.FeatureContentPrivateGit)
+	if private && !privateOK {
 		return nil, nil, nil, false, &limits.ErrFeatureDenied{Feature: limits.FeatureContentPrivateGit}
 	}
 	lim := cpdom.DefaultLimits
@@ -91,8 +95,11 @@ func (s *Service) fetchAndBuild(ctx context.Context, src *dom.Source, token stri
 	lim.MaxUpload = lim.MaxTotal + int64(lim.MaxFiles)*1536 + 1<<20
 	snap, err := s.fetch(ctx, fetchers.GitRequest{
 		URL: src.URL, Ref: src.Ref, Path: src.Path, Username: src.AuthUsername, Token: token,
-		CABundle: []byte(src.CAPEM), MaxFiles: lim.MaxFiles, MaxFile: lim.MaxFileSize, MaxTotal: lim.MaxTotal,
+		CABundle: []byte(src.CAPEM), PrivateOK: privateOK, MaxFiles: lim.MaxFiles, MaxFile: lim.MaxFileSize, MaxTotal: lim.MaxTotal,
 	})
+	if errors.Is(err, fetchers.ErrLowDisk) {
+		return nil, nil, nil, false, dom.ErrLowDisk
+	}
 	if err != nil {
 		return nil, nil, nil, false, syncErr("FETCH_FAILED", "fetch failed: %s", err.Error())
 	}
@@ -223,6 +230,11 @@ func (s *Service) Test(ctx context.Context, a Actor, in TestInput) (*Report, err
 	if err := s.checkHost(ctx, a.TenantID, src.URL); err != nil {
 		return nil, err
 	}
+	release, ok := s.acquireFetch()
+	if !ok {
+		return nil, dom.ErrFetchBusy
+	}
+	defer release()
 	if !s.testLimit.allow(limitKey, now) {
 		return nil, dom.ErrRateLimited
 	}
@@ -356,12 +368,16 @@ func (s *Service) RunDue(ctx context.Context) (int, error) {
 		if err := ctx.Err(); err != nil {
 			return n, err
 		}
-		claimed, err := s.repo.ClaimDueUnscoped(ctx, s.now().UTC(), claimLease, 1)
-		if err != nil {
-			return n, err
-		}
-		if len(claimed) == 0 {
+		// A fetch slot first: without one nothing is claimed, the due
+		// sources stay due for the next run.
+		release, ok := s.acquireFetch()
+		if !ok {
 			return n, nil
+		}
+		claimed, err := s.repo.ClaimDueUnscoped(ctx, s.now().UTC(), claimLease, 1)
+		if err != nil || len(claimed) == 0 {
+			release()
+			return n, err
 		}
 		src := claimed[0]
 		n++
@@ -371,9 +387,11 @@ func (s *Service) RunDue(ctx context.Context) (int, error) {
 				Status: src.LastSyncStatus, Error: src.LastSyncError, At: now,
 				NextSyncAt: src.NextScheduled(now, s.jitter()), ClearRequest: true, KeepFailures: true,
 			})
+			release()
 			continue
 		}
 		s.runOne(ctx, src)
+		release()
 	}
 	return n, nil
 }

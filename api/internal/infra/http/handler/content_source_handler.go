@@ -325,6 +325,8 @@ func (h *ContentSourceHandler) handleError(w http.ResponseWriter, err error) {
 	case errors.Is(err, contentpack.ErrSigningKey):
 		apierror.New(http.StatusServiceUnavailable, apierror.Code("CONTENT_SIGNING_UNAVAILABLE"),
 			"Content signing is not configured on this platform").WriteJSON(w)
+	case errors.Is(err, cs.ErrUnavailable):
+		apierror.ServiceUnavailable(cleanErrorMessage(err, "Temporarily unavailable")).WriteJSON(w)
 	case errors.Is(err, cs.ErrTooManyRequests):
 		apierror.TooManyRequests("Too many requests for this rule source; try again later").WriteJSON(w)
 	case errors.Is(err, shared.ErrNotFound):

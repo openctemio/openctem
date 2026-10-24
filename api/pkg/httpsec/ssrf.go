@@ -201,6 +201,9 @@ type guardedDialer struct {
 	// ranges (loopback, link-local and cloud metadata, CGNAT, ...) stay
 	// blocked. Only PrivateAllowedHTTPClient sets it.
 	privateOK bool
+	// perRequest makes the private-range decision per connection from the
+	// dial context (see RequestPolicyHTTPClient).
+	perRequest bool
 	// dial connects to an already-vetted IP literal; it never resolves.
 	dial func(ctx context.Context, network, addr string) (net.Conn, error)
 }
@@ -312,6 +315,22 @@ func resolveSafeIPs(ctx context.Context, resolver *net.Resolver, host string) ([
 // resolveSafeIPsPolicy is resolveSafeIPs with the per-call private switch of
 // isIPBlocked.
 func resolveSafeIPsPolicy(ctx context.Context, resolver *net.Resolver, host string, privateOK bool) ([]net.IP, error) {
+	return resolveSafeIPsWith(ctx, resolver, host, func(ip net.IP) bool { return isIPBlocked(ip, privateOK) })
+}
+
+// isIPBlockedStrict blocks every private range as well as the hard-blocked
+// ones, whatever ranges the installation opened.
+func isIPBlockedStrict(ip net.IP) bool {
+	for _, cidr := range hardBlockedCIDRs {
+		if cidr.Contains(ip) {
+			return true
+		}
+	}
+	return IsPrivateIP(ip)
+}
+
+// resolveSafeIPsWith resolves host once and vets every answer with blocked.
+func resolveSafeIPsWith(ctx context.Context, resolver *net.Resolver, host string, blocked func(net.IP) bool) ([]net.IP, error) {
 	if host == "" {
 		return nil, fmt.Errorf("empty host")
 	}
@@ -319,13 +338,13 @@ func resolveSafeIPsPolicy(ctx context.Context, resolver *net.Resolver, host stri
 		host = h
 	}
 	lower := strings.ToLower(strings.TrimSpace(host))
-	for _, blocked := range dangerousHosts {
-		if lower == blocked {
+	for _, bad := range dangerousHosts {
+		if lower == bad {
 			return nil, fmt.Errorf("host %q is blocked", host)
 		}
 	}
 	if ip := net.ParseIP(host); ip != nil {
-		if isIPBlocked(ip, privateOK) {
+		if blocked(ip) {
 			return nil, fmt.Errorf("host %s resolves to a blocked address", host)
 		}
 		return []net.IP{ip}, nil
@@ -336,7 +355,7 @@ func resolveSafeIPsPolicy(ctx context.Context, resolver *net.Resolver, host stri
 	}
 	safe := make([]net.IP, 0, len(ips))
 	for _, ip := range ips {
-		if isIPBlocked(ip.IP, privateOK) {
+		if blocked(ip.IP) {
 			return nil, fmt.Errorf("host %q resolves to blocked address %s", host, ip.IP)
 		}
 		safe = append(safe, ip.IP)
@@ -452,6 +471,39 @@ func ValidateHostAllowPrivate(ctx context.Context, host string) error {
 	return err
 }
 
+type instancePrivateKey struct{}
+
+// WithInstancePrivate marks ctx so a RequestPolicyHTTPClient connection made
+// for it may reach the private ranges this installation opened (the
+// allow-list), as SafeHTTPClient does. Without the mark every private range
+// is refused.
+func WithInstancePrivate(ctx context.Context) context.Context {
+	return context.WithValue(ctx, instancePrivateKey{}, true)
+}
+
+func instancePrivateAllowed(ctx context.Context) bool {
+	v, _ := ctx.Value(instancePrivateKey{}).(bool)
+	return v
+}
+
+// RequestPolicyHTTPClient is SafeHTTPClient with the private-range decision
+// made per connection, at dial time, from the request's context: a context
+// marked with WithInstancePrivate may reach the installation's allowed
+// private ranges; any other context reaches public addresses only, even
+// where the installation allows private ranges. The decision is taken on the
+// same single resolution the dial uses, so DNS rebinding cannot change it.
+// Keep-alives are off, so a connection opened under one policy is never
+// reused for a request under another.
+func RequestPolicyHTTPClient(timeout time.Duration) *http.Client {
+	d := defaultDialer
+	d.perRequest = true
+	c := newSafeHTTPClient(timeout, d)
+	if tr, ok := c.Transport.(*http.Transport); ok {
+		tr.DisableKeepAlives = true
+	}
+	return c
+}
+
 // SafeHTTPClientWithHeaderTimeout is SafeHTTPClient for upstreams that take
 // longer than the default 15 s to start answering (crt.sh builds a large JSON
 // answer before sending headers). Same SSRF guard; only the wait for response
@@ -494,7 +546,12 @@ func (d guardedDialer) dialContext(ctx context.Context, network, addr string) (n
 	if err != nil {
 		return nil, err
 	}
-	ips, err := resolveSafeIPsPolicy(ctx, d.resolver, host, d.privateOK)
+	var ips []net.IP
+	if d.perRequest && !instancePrivateAllowed(ctx) {
+		ips, err = resolveSafeIPsWith(ctx, d.resolver, host, isIPBlockedStrict)
+	} else {
+		ips, err = resolveSafeIPsPolicy(ctx, d.resolver, host, d.privateOK)
+	}
 	if err != nil {
 		return nil, fmt.Errorf("ssrf guard: %w", err)
 	}
