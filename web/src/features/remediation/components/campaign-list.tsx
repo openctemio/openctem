@@ -34,6 +34,7 @@ import {
 } from '../api/use-remediation-campaigns'
 import { CampaignDue, CampaignTasksCell, FindingsProgress, useCampaignOwner } from './campaign-bits'
 import { CampaignFormDialog } from './campaign-form-dialog'
+import { useSearchQuery } from '@/hooks/use-search-query'
 
 type StatusFilter = CampaignStatus | 'all'
 
@@ -50,12 +51,13 @@ export function CampaignList() {
     ? (statusParam as StatusFilter)
     : 'all'
   const [search, setSearch] = useState('')
+  const searchTerm = useSearchQuery(search).term
   const [pagination, setPagination] = useState({ pageIndex: 0, pageSize: 25 })
   const [createOpen, setCreateOpen] = useState(false)
 
   const { data, error, isLoading, mutate } = useRemediationCampaigns({
     status: status === 'all' ? undefined : status,
-    search,
+    search: searchTerm,
     page: pagination.pageIndex + 1,
     perPage: pagination.pageSize,
   })

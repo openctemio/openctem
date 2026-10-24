@@ -42,7 +42,7 @@ import {
   SeverityBadge,
 } from '@/features/shared'
 import type { Severity } from '@/features/shared/types/common.types'
-import { useDebounce } from '@/hooks/use-debounce'
+import { useSearchQuery } from '@/hooks/use-search-query'
 import { SEVERITY_LEVELS } from '@/lib/severity'
 import { formatSupportTime } from '@/features/support-access/lib/format'
 
@@ -199,7 +199,7 @@ function FindingsTab({ session, onEnded }: { session: SupportSessionState; onEnd
   const [status, setStatus] = useState<string>('open')
   const [page, setPage] = useState(1)
   const [selected, setSelected] = useState<string | null>(null)
-  const debounced = useDebounce(search, 300)
+  const debounced = useSearchQuery(search).term
   const { data, error, isLoading } = useSupportFindings(session.id, {
     search: debounced,
     severity: severity === ALL ? undefined : severity,
@@ -405,7 +405,7 @@ function AssetsTab({ session, onEnded }: { session: SupportSessionState; onEnded
   const [status, setStatus] = useState<string>(ALL)
   const [page, setPage] = useState(1)
   const [selected, setSelected] = useState<string | null>(null)
-  const debounced = useDebounce(search, 300)
+  const debounced = useSearchQuery(search).term
   const { data, error, isLoading } = useSupportAssets(session.id, {
     search: debounced,
     status: status === ALL ? '' : status,

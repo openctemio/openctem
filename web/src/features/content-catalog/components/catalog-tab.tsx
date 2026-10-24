@@ -15,7 +15,6 @@ import {
 } from '@/components/ui/select'
 import { DataTable, ErrorState, StackedCell } from '@/features/shared'
 import { useTranslation } from '@/context/i18n-provider'
-import { useDebounce } from '@/hooks/use-debounce'
 import { useListParams } from '@/hooks/use-list-params'
 import { useContentPackages } from '../api'
 import { CONTENT_TYPES } from '../lib'
@@ -25,7 +24,7 @@ const ANY = 'any'
 export function CatalogTab({ onOpen }: { onOpen: (packageId: string) => void }) {
   const { t } = useTranslation()
   const list = useListParams({ defaultPageSize: 20, filters: { type: '', installed: '' } })
-  const q = useDebounce(list.q, 300)
+  const q = list.searchTerm
   const type = (CONTENT_TYPES as readonly string[]).includes(list.filters.type)
     ? list.filters.type
     : ''

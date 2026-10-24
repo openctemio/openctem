@@ -1,5 +1,6 @@
 'use client'
 
+import { HealthStatus } from '@/components/ui/health-status'
 import { useCallback, useMemo, useState } from 'react'
 import type { ColumnDef } from '@tanstack/react-table'
 import { Main } from '@/components/layout'
@@ -21,7 +22,7 @@ import { Input } from '@/components/ui/input'
 import { ConfirmDialog } from '@/components/confirm-dialog'
 import { useUrlFilter } from '@/hooks/use-url-param'
 import { useListParams } from '@/hooks/use-list-params'
-import { useDebounce } from '@/hooks/use-debounce'
+import { useSearchQuery } from '@/hooks/use-search-query'
 import { getErrorMessage } from '@/lib/api/error-handler'
 import { KeyRound, Plus, Ban, Trash2 } from 'lucide-react'
 import {
@@ -49,24 +50,12 @@ function isActive(k: APIKey): boolean {
 function StatusBadge({ k }: { k: APIKey }) {
   const { t } = useTranslation()
   if (k.status === 'revoked' || k.revoked_at) {
-    return (
-      <Badge className="border-0 bg-destructive/10 text-destructive">
-        {t('settings.keys.status.revoked', 'Revoked')}
-      </Badge>
-    )
+    return <HealthStatus state="off" label={t('settings.keys.status.revoked', 'Revoked')} />
   }
   if (isExpired(k)) {
-    return (
-      <Badge className="border-0 bg-orange-500/10 text-orange-600 dark:text-orange-400">
-        {t('settings.keys.status.expired', 'Expired')}
-      </Badge>
-    )
+    return <HealthStatus state="down" label={t('settings.keys.status.expired', 'Expired')} />
   }
-  return (
-    <Badge className="border-0 bg-success/10 text-success">
-      {t('settings.keys.status.active', 'Active')}
-    </Badge>
-  )
+  return <HealthStatus state="ok" label={t('settings.keys.status.active', 'Active')} />
 }
 
 // ─────────────────────────────────────────────────────────
@@ -191,7 +180,7 @@ export default function APIKeysPage() {
   const { pagination, setPagination, setPage } = list
   const resetPage = useCallback(() => setPage(1), [setPage])
   const [searchParam, setSearchParam] = useUrlFilter('q', '')
-  const search = useDebounce(searchParam.trim(), 300)
+  const search = useSearchQuery(searchParam).term
   const { data, error, isLoading, mutate } = useApiKeys({
     page: pagination.pageIndex + 1,
     perPage: pagination.pageSize,

@@ -1,0 +1,27 @@
+{
+  "_comment": "Most SQL statements one read may send (TestReadQueryBudget). Rewrite with -update-read-budgets and explain the change.",
+  "reads": {
+    "memberA /api/v1/asset-groups": 3,
+    "memberA /api/v1/assets/stats": 2,
+    "memberA /api/v1/assets?per_page=20": 3,
+    "memberA /api/v1/assets?per_page=20&search=host": 3,
+    "memberA /api/v1/attack-surface/stats": 11,
+    "memberA /api/v1/dashboard/stats": 6,
+    "memberA /api/v1/findings/stats": 3,
+    "memberA /api/v1/findings?per_page=20": 4,
+    "memberA /api/v1/findings?per_page=20&q=host": 4,
+    "memberA /api/v1/findings?per_page=20&severity=critical,high&sort=-severity": 4,
+    "memberA /api/v1/notifications/unread-count": 2,
+    "owner /api/v1/asset-groups": 3,
+    "owner /api/v1/assets/stats": 2,
+    "owner /api/v1/assets?per_page=20": 3,
+    "owner /api/v1/assets?per_page=20&search=host": 3,
+    "owner /api/v1/attack-surface/stats": 11,
+    "owner /api/v1/dashboard/stats": 5,
+    "owner /api/v1/findings/stats": 3,
+    "owner /api/v1/findings?per_page=20": 4,
+    "owner /api/v1/findings?per_page=20&q=host": 4,
+    "owner /api/v1/findings?per_page=20&severity=critical,high&sort=-severity": 4,
+    "owner /api/v1/notifications/unread-count": 2
+  }
+}
