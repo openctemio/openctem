@@ -27,7 +27,7 @@ import {
   TableRow,
 } from '@/components/ui/table'
 import { useTranslation } from '@/context/i18n-provider'
-import { EmptyState } from '@/features/shared'
+import { EmptyState, PageStack } from '@/features/shared'
 import { getErrorMessage } from '@/lib/api/error-handler'
 import type { SupportGrant } from '@/lib/api/generated'
 
@@ -108,7 +108,7 @@ export function SupportAccessSettings({
   }
 
   return (
-    <div className="space-y-6">
+    <PageStack>
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2 text-base">
@@ -330,6 +330,6 @@ export function SupportAccessSettings({
         isLoading={busy}
         handleConfirm={confirmRevoke}
       />
-    </div>
+    </PageStack>
   )
 }

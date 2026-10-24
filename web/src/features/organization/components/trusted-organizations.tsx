@@ -56,6 +56,7 @@ import {
 import { MAX_EXTERNAL_ACCESS_DAYS, formatShortDate } from '../lib/external-access'
 import { ConfirmDialog } from '@/components/confirm-dialog'
 import { useTranslation } from '@/context/i18n-provider'
+import { PageStack } from '@/features/shared'
 
 const DEFAULT_SETTINGS: OrgTrustSettingsInput = {
   max_role: 'member',
@@ -104,7 +105,7 @@ function TrustSettingsFields({
 }) {
   const { t } = useTranslation()
   return (
-    <div className="space-y-4">
+    <PageStack>
       <div className="space-y-2">
         <Label htmlFor="trust-max-role">{t('settings.trust.maxRole', 'Highest role')}</Label>
         <Select
@@ -203,7 +204,7 @@ function TrustSettingsFields({
           disabled={disabled}
         />
       </div>
-    </div>
+    </PageStack>
   )
 }
 

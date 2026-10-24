@@ -11,8 +11,7 @@ import {
   DataTableColumnHeader,
   ErrorState,
   GatedButton,
-  MetricStrip,
-  type MetricStripItem,
+  PageStack,
 } from '@/features/shared'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
@@ -245,7 +244,7 @@ function ScimEndpointCard() {
     }
   }
   return (
-    <Card className="mt-5">
+    <Card>
       <CardHeader>
         <CardTitle>{tr('settings.scim.endpoint.title', 'SCIM endpoint')}</CardTitle>
         <CardDescription>
@@ -408,11 +407,11 @@ function GenerateTokenButton({ canMint, onClick }: { canMint: boolean; onClick: 
 
 function LoadingSkeleton() {
   return (
-    <div className="mt-5 space-y-5">
+    <PageStack>
       <Skeleton className="h-16 w-full rounded-xl" />
       <Skeleton className="h-28 w-full rounded-xl" />
       <Skeleton className="h-64 w-full rounded-lg" />
-    </div>
+    </PageStack>
   )
 }
 
@@ -430,12 +429,6 @@ export default function ScimTokensPage() {
   const [newToken, setNewToken] = useState('')
 
   const tokens = useMemo(() => data?.tokens ?? [], [data])
-  const stats = useMemo(() => {
-    const active = tokens.filter(isActive).length
-    const expired = tokens.filter((t) => t.status === 'expired').length
-    return { total: tokens.length, active, expired, revoked: tokens.length - active - expired }
-  }, [tokens])
-
   const columns = useMemo<ColumnDef<ScimToken>[]>(
     () => [
       {
@@ -514,100 +507,83 @@ export default function ScimTokensPage() {
     [mutate, canMint, tr]
   )
 
-  const metrics: MetricStripItem[] = [
-    { key: 'total', label: tr('settings.scim.metric.total', 'Total tokens'), value: stats.total },
-    {
-      key: 'active',
-      label: tr('settings.scim.metric.active', 'Active tokens'),
-      value: stats.active,
-    },
-    {
-      key: 'expired',
-      label: tr('settings.scim.metric.expired', 'Expired tokens'),
-      value: stats.expired,
-    },
-    {
-      key: 'revoked',
-      label: tr('settings.scim.metric.revoked', 'Revoked tokens'),
-      value: stats.revoked,
-    },
-  ]
-
   return (
     <Main>
-      <PageHeader
-        title={tr('settings.scim.title', 'Directory sync (SCIM)')}
-        description={tr(
-          'settings.scim.description',
-          'Automate user provisioning and deprovisioning from your identity provider.'
-        )}
-      >
-        {canManage && <GenerateTokenButton canMint={canMint} onClick={() => setGenOpen(true)} />}
-      </PageHeader>
+      <PageStack>
+        <PageHeader
+          title={tr('settings.scim.title', 'Directory sync (SCIM)')}
+          description={tr(
+            'settings.scim.description',
+            'Automate user provisioning and deprovisioning from your identity provider.'
+          )}
+        >
+          {canManage && <GenerateTokenButton canMint={canMint} onClick={() => setGenOpen(true)} />}
+        </PageHeader>
 
-      {roleLoading ? (
-        <LoadingSkeleton />
-      ) : !canManage ? (
-        <div className="mt-5">
-          <EmptyState
-            icon={ShieldCheck}
-            title={tr('settings.scim.managed.title', "Managed by your team's owners and admins")}
-            description={tr(
-              'settings.scim.managed.description',
-              'SCIM tokens let your identity provider create and remove accounts in this team. Ask an owner or admin to set it up.'
-            )}
-          />
-        </div>
-      ) : isLoading ? (
-        <LoadingSkeleton />
-      ) : error ? (
-        // Don't render a failed read as "No SCIM tokens yet" with zeroed stats.
-        <div className="mt-5">
-          <ErrorState
-            title={tr('settings.scim.errorTitle', 'SCIM tokens')}
-            error={error}
-            onRetry={() => void mutate()}
-          />
-        </div>
-      ) : (
-        <>
-          <MetricStrip className="mt-5" items={metrics} />
-
-          <ScimEndpointCard />
-
-          <div className="mt-5">
-            {tokens.length === 0 ? (
-              <EmptyState
-                icon={KeyRound}
-                title={tr('settings.scim.emptyTitle', 'No SCIM tokens yet')}
-                description={tr(
-                  'settings.scim.emptyDescription',
-                  'Generate a token to connect your identity provider for automated user provisioning.'
-                )}
-                action={<GenerateTokenButton canMint={canMint} onClick={() => setGenOpen(true)} />}
-              />
-            ) : (
-              <DataTable
-                columns={columns}
-                data={tokens}
-                getRowId={(t) => t.id}
-                searchPlaceholder={tr('settings.scim.searchPlaceholder', 'Search tokens…')}
-                showSelectionCount={false}
-              />
-            )}
+        {roleLoading ? (
+          <LoadingSkeleton />
+        ) : !canManage ? (
+          <div>
+            <EmptyState
+              icon={ShieldCheck}
+              title={tr('settings.scim.managed.title', "Managed by your team's owners and admins")}
+              description={tr(
+                'settings.scim.managed.description',
+                'SCIM tokens let your identity provider create and remove accounts in this team. Ask an owner or admin to set it up.'
+              )}
+            />
           </div>
-        </>
-      )}
+        ) : isLoading ? (
+          <LoadingSkeleton />
+        ) : error ? (
+          // Don't render a failed read as "No SCIM tokens yet" with zeroed stats.
+          <div>
+            <ErrorState
+              title={tr('settings.scim.errorTitle', 'SCIM tokens')}
+              error={error}
+              onRetry={() => void mutate()}
+            />
+          </div>
+        ) : (
+          <>
+            <ScimEndpointCard />
 
-      <GenerateTokenDialog
-        open={genOpen}
-        onOpenChange={setGenOpen}
-        onCreated={(plaintext) => {
-          setNewToken(plaintext)
-          mutate()
-        }}
-      />
-      <RevealTokenDialog value={newToken} onClose={() => setNewToken('')} />
+            <div>
+              {tokens.length === 0 ? (
+                <EmptyState
+                  icon={KeyRound}
+                  title={tr('settings.scim.emptyTitle', 'No SCIM tokens yet')}
+                  description={tr(
+                    'settings.scim.emptyDescription',
+                    'Generate a token to connect your identity provider for automated user provisioning.'
+                  )}
+                  action={
+                    <GenerateTokenButton canMint={canMint} onClick={() => setGenOpen(true)} />
+                  }
+                />
+              ) : (
+                <DataTable
+                  columns={columns}
+                  data={tokens}
+                  getRowId={(t) => t.id}
+                  searchPlaceholder={tr('settings.scim.searchPlaceholder', 'Search tokens…')}
+                  showSelectionCount={false}
+                />
+              )}
+            </div>
+          </>
+        )}
+
+        <GenerateTokenDialog
+          open={genOpen}
+          onOpenChange={setGenOpen}
+          onCreated={(plaintext) => {
+            setNewToken(plaintext)
+            mutate()
+          }}
+        />
+        <RevealTokenDialog value={newToken} onClose={() => setNewToken('')} />
+      </PageStack>
     </Main>
   )
 }
