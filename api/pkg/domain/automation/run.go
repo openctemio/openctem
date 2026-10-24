@@ -15,12 +15,18 @@ const (
 	RunStatusCompleted RunStatus = "completed"
 	RunStatusFailed    RunStatus = "failed"
 	RunStatusCanceled  RunStatus = "canceled"
+	// RunStatusPaused: the run reached its change cap and waits for a
+	// publisher to let it continue (guardrails.go).
+	RunStatusPaused RunStatus = "paused"
 )
+
+// PauseReasonBlastRadius: the run reached its change cap.
+const PauseReasonBlastRadius = "blast_radius"
 
 // IsValid checks if the run status is valid.
 func (s RunStatus) IsValid() bool {
 	switch s {
-	case RunStatusPending, RunStatusRunning, RunStatusCompleted, RunStatusFailed, RunStatusCanceled:
+	case RunStatusPending, RunStatusRunning, RunStatusCompleted, RunStatusFailed, RunStatusCanceled, RunStatusPaused:
 		return true
 	}
 	return false
@@ -75,6 +81,14 @@ type Run struct {
 	// VersionID is the published version a live run executes; nil for a
 	// run of the draft (simulate).
 	VersionID *shared.ID
+	// PauseReason says why a paused run waits (PauseReasonBlastRadius).
+	PauseReason string
+}
+
+// Pause stops the run before its next step until someone lets it continue.
+func (r *Run) Pause(reason string) {
+	r.Status = RunStatusPaused
+	r.PauseReason = reason
 }
 
 // NewRun creates a new workflow run.

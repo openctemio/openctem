@@ -73,6 +73,13 @@ func (r *IntegrationSMTPResolver) extractSMTPConfig(intg *integration.Integratio
 	if p, ok := meta["smtp_port"].(float64); ok {
 		port = int(p)
 	}
+	// An organization's relay is used on a mail port only; a stored value
+	// from before the rule falls back to the platform's relay.
+	if !emaildom.TenantPortAllowed(port) {
+		r.logger.Warn("tenant SMTP relay port is not a mail port; using the platform relay",
+			"tenant_id", intg.TenantID().String(), "integration_id", intg.ID().String())
+		return nil
+	}
 
 	cfg := &emaildom.Config{
 		Host: host,

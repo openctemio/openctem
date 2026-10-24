@@ -188,7 +188,11 @@ describe('ScimTokensPage', () => {
     render(<ScimTokensPage />)
 
     await user.click(screen.getByRole('button', { name: /rotate okta prod/i }))
-    await user.click(await screen.findByRole('button', { name: /^rotate$/i }))
+    const confirm = await screen.findByRole('button', { name: /^rotate token$/i })
+    // The token's name must be typed first.
+    expect(confirm).toBeDisabled()
+    await user.type(screen.getByRole('textbox'), 'Okta prod')
+    await user.click(confirm)
 
     expect(mockRotate).toHaveBeenCalledWith('t1')
     expect(await screen.findByText('oct_scim_REPLACEMENT')).toBeInTheDocument()

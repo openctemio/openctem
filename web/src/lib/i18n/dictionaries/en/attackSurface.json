@@ -312,5 +312,11 @@
   "attackSurface.monitoring.howOften": "How often",
   "attackSurface.tab.webSurface": "Web surface",
   "attackSurface.web.description": "What your web origins serve: endpoints, their parameters (names only), the same path across origins, and what changed.",
-  "attackSurface.web.shortDescription": "Origins, endpoints and parameters."
+  "attackSurface.web.shortDescription": "Origins, endpoints and parameters.",
+  "attackSurface.web.view.label": "Show",
+  "attackSurface.web.view.origins": "Origins",
+  "attackSurface.web.view.endpoints": "Endpoints",
+  "attackSurface.web.view.patterns": "Path patterns",
+  "attackSurface.web.view.changes": "Changes",
+  "attackSurface.web.pathsAsText": "Paths are shown as text and never opened from here."
 }

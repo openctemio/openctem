@@ -335,6 +335,9 @@ type ScanDetailResponse struct {
 	// progress, completed, partial, failed, blocked with the reason, ...).
 	// Absent before the first run.
 	LastRun *ScanLastRunResponse `json:"last_run,omitempty"`
+	// RecentRuns are the scan's latest runs (at most 10), newest first: the
+	// list's run history and the window its success rate is read over.
+	RecentRuns []ScanRecentRunResponse `json:"recent_runs,omitempty"`
 	// ScanWorkflowName names the workflow a workflow scan runs.
 	ScanWorkflowName string  `json:"scan_workflow_name,omitempty"`
 	CreatedBy        *string `json:"created_by,omitempty"`
@@ -1322,6 +1325,31 @@ type ScanLastRunResponse struct {
 	TaskSummary  *RunTaskSummaryResponse `json:"task_summary,omitempty"`
 }
 
+// ScanRecentRunResponse is one of a scan's latest runs: its state, the
+// refusal code of a blocked one, and when it was created.
+type ScanRecentRunResponse struct {
+	ID          string `json:"id"`
+	Status      string `json:"status"`
+	RefusalCode string `json:"refusal_code,omitempty"`
+	CreatedAt   string `json:"created_at"`
+}
+
+func toScanRecentRunsResponse(runs []scanrun.RecentRun) []ScanRecentRunResponse {
+	if len(runs) == 0 {
+		return nil
+	}
+	out := make([]ScanRecentRunResponse, len(runs))
+	for i, r := range runs {
+		out[i] = ScanRecentRunResponse{
+			ID:          r.ID.String(),
+			Status:      string(r.Status),
+			RefusalCode: r.RefusalCode,
+			CreatedAt:   r.CreatedAt.Format(time.RFC3339),
+		}
+	}
+	return out
+}
+
 func toScanLastRunResponse(lr scansvc.LastRun) *ScanLastRunResponse {
 	r := lr.Run
 	if r == nil {
@@ -1350,14 +1378,15 @@ func toScanLastRunResponse(lr scansvc.LastRun) *ScanLastRunResponse {
 	return out
 }
 
-// enrichScanResponses adds each scan's latest run and workflow name: two
-// batch reads for the whole page, scoped to the caller's tenant.
+// enrichScanResponses adds each scan's latest run, recent runs and workflow
+// name: batch reads for the whole page, scoped to the caller's tenant.
 func (h *ScanHandler) enrichScanResponses(ctx context.Context, tenantID string, scans []*scan.Scan, items []*ScanDetailResponse) {
 	tid, err := shared.IDFromString(tenantID)
 	if err != nil || len(scans) == 0 {
 		return
 	}
 	lastRuns := h.service.LastRuns(ctx, tid, scans)
+	recent := h.service.RecentRuns(ctx, tid, scans)
 	names := h.service.ScanWorkflowNames(ctx, tid, scans)
 	approvals := h.approvals.latestStatuses(ctx, tid, scans)
 	for i, s := range scans {
@@ -1365,6 +1394,7 @@ func (h *ScanHandler) enrichScanResponses(ctx context.Context, tenantID string, 
 		if lr, ok := lastRuns[s.ID]; ok {
 			items[i].LastRun = toScanLastRunResponse(lr)
 		}
+		items[i].RecentRuns = toScanRecentRunsResponse(recent[s.ID])
 		if s.ScanWorkflowID != nil {
 			items[i].ScanWorkflowName = names[*s.ScanWorkflowID]
 		}

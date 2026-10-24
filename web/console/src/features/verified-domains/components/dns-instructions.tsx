@@ -61,7 +61,7 @@ export function DnsInstructions({
       <p className="text-muted-foreground text-xs">
         {t(
           'admin.dnsInstructions.instructions',
-          '1) Add this TXT record at your DNS provider. 2) Click Verify now. DNS changes can take a while to propagate — re-check if it is not picked up yet.'
+          '1) Add this TXT record at your DNS provider. 2) Click Verify now. DNS changes can take a while to propagate, so re-check if it is not picked up yet.'
         )}
       </p>
       <CopyField

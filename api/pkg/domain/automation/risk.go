@@ -54,6 +54,8 @@ func ActionRisk(t ActionType) RiskClass {
 		ActionTypeUpdateTicket, ActionTypeTriggerAITriage:
 		return RiskElevated
 	}
+	// trigger_scan, request_false_positive, request_risk_acceptance and
+	// anything unknown.
 	return RiskHigh
 }
 
@@ -77,9 +79,13 @@ func ConfigRisk(c NodeConfig) RiskClass {
 	return r
 }
 
-// Risk is the class of the definition: the highest class of its nodes.
+// Risk is the class of the definition: the highest class of its nodes; a
+// change cap above the default makes it high.
 func (d Definition) Risk() RiskClass {
 	r := RiskLow
+	if d.MaxChangesPerRun > DefaultMaxChangesPerRun {
+		r = RiskHigh
+	}
 	for _, n := range d.Nodes {
 		r = r.Max(ConfigRisk(n.Config))
 	}

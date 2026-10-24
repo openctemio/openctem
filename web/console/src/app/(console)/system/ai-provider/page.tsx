@@ -3,7 +3,7 @@
 import { Main } from '@/components/layout'
 import { Skeleton } from '@/components/ui/skeleton'
 import { useTranslation } from '@/context/i18n-provider'
-import { ErrorState, PageHeader } from '@/features/shared'
+import { ErrorState, PageHeader, PageStack } from '@/features/shared'
 import { useAdmin } from '@console/features/admin-console/components/admin-console-shell'
 import { usePlatformAI } from '@console/features/admin-console/api/use-platform-settings'
 import { PlatformAIForm } from '@console/features/admin-console/components/platform-ai-form'
@@ -16,14 +16,14 @@ export default function AIProviderSettingsPage() {
   const { data, error, isLoading, mutate } = usePlatformAI()
   return (
     <Main>
-      <PageHeader
-        title={t('admin.nav.aiProvider', 'AI provider')}
-        description={t(
-          'admin.ai.pageDescription',
-          'The AI provider organizations use when they do not bring their own key.'
-        )}
-      />
-      <div className="mt-5">
+      <PageStack>
+        <PageHeader
+          title={t('admin.nav.aiProvider', 'AI provider')}
+          description={t(
+            'admin.ai.pageDescription',
+            'The AI provider organizations use when they do not bring their own key.'
+          )}
+        />
         {error ? (
           <ErrorState
             title={t('admin.ai.errorTitle', 'the AI provider')}
@@ -39,7 +39,7 @@ export default function AIProviderSettingsPage() {
             onSaved={() => void mutate()}
           />
         )}
-      </div>
+      </PageStack>
     </Main>
   )
 }

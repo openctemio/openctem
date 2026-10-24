@@ -31,6 +31,7 @@ import {
   EmptyState,
   ErrorState,
   PageHeader,
+  PageStack,
 } from '@/features/shared'
 import { AddCredentialDialog } from './add-credential-dialog'
 import { EditCredentialDialog } from './edit-credential-dialog'
@@ -251,7 +252,7 @@ export function SecretStoreSection() {
   }
 
   return (
-    <>
+    <PageStack>
       <PageHeader
         title="Source credentials"
         description="Encrypted credentials that template sources use to authenticate (Git tokens, cloud keys and more)."
@@ -264,7 +265,7 @@ export function SecretStoreSection() {
         </Can>
       </PageHeader>
 
-      <div className="mt-5">{body}</div>
+      {body}
 
       {/* Dialogs */}
       <AddCredentialDialog
@@ -299,6 +300,6 @@ export function SecretStoreSection() {
         typeToConfirm={selectedCredential?.name}
         handleConfirm={handleDeleteConfirm}
       />
-    </>
+    </PageStack>
   )
 }

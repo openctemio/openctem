@@ -130,6 +130,10 @@ describe('Approved publishers', () => {
       target: { value: 'https://Desk.Example.net/oauth/client.json' },
     })
     fireEvent.click(screen.getByRole('button', { name: 'Approve' }))
+    // Approving lets every member connect its applications: it asks first.
+    expect(await screen.findByText('Approve desk.example.net as a publisher?')).toBeInTheDocument()
+    expect(patch).not.toHaveBeenCalled()
+    fireEvent.click(screen.getByRole('button', { name: 'Approve desk.example.net' }))
     await waitFor(() => expect(patch).toHaveBeenCalled())
     expect(patch.mock.calls[0][1]).toEqual({
       client_hosts: ['assistant.example.com', 'desk.example.net'],

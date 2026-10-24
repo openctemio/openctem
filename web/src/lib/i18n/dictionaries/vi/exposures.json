@@ -106,5 +106,12 @@
   "exposures.state.active": "Đang hoạt động",
   "exposures.state.resolved": "Đã khắc phục",
   "exposures.state.accepted": "Đã chấp nhận",
-  "exposures.state.false_positive": "Dương tính giả"
+  "exposures.state.false_positive": "Dương tính giả",
+  "exposures.view.list": "Dạng danh sách",
+  "exposures.view.analytics": "Dạng phân tích",
+  "exposures.vulnerabilities.cvesLabel": "CVE",
+  "exposures.vulnerabilities.cvesActive": "Ảnh hưởng tài sản của tôi",
+  "exposures.vulnerabilities.cvesCatalog": "Toàn bộ danh mục",
+  "exposures.vulnerabilities.summaryView": "Tổng quan",
+  "exposures.vulnerabilities.cvesView": "Danh sách CVE"
 }

@@ -112,7 +112,7 @@ lookup miss → allowed, so it can never block legitimate traffic. It is now wir
 to **26 route groups** in `routes/routes.go` — including pentest, compliance,
 attack-simulation, threat-intel, remediation, scan workflows, automations,
 attack-surface, exposures, suppressions, components, relationships, credentials,
-scanner-templates, template-sources, IOCs, control-testing, reports, and the CTEM
+scanner-templates, rule sources (content-sources), IOCs, control-testing, reports, and the CTEM
 groups (ctem-cycles, attacker-profiles, business-services, compensating-controls,
 priority-rules, scope-config). Groups with no module-ID mapping (e.g. validation)
 remain un-gateable. This turns the existing UI-only toggle into real per-tenant
