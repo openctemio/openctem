@@ -29,7 +29,7 @@ import type { FindingStatus } from '@/features/findings/types'
 import { Progress } from '@/components/ui/progress'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
-import { ConfirmDialog } from '@/components/confirm-dialog'
+import { ConfirmDialog, ConfirmSample, nameToConfirm } from '@/components/confirm-dialog'
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -189,6 +189,7 @@ function AssetGroupDetailContent({ params }: PageProps) {
   // The assets table owns its checkboxes; this mirrors the ticked ids for the
   // bulk remove, and bumping selectionEpoch clears the table's copy.
   const [selectedAssets, setSelectedAssets] = useState<string[]>([])
+  const [selectedAssetNames, setSelectedAssetNames] = useState<string[]>([])
   const [selectionEpoch, setSelectionEpoch] = useState(0)
 
   // Dialog State
@@ -1058,7 +1059,10 @@ function AssetGroupDetailContent({ params }: PageProps) {
               isLoading={assetsLoading}
               searchKey="name"
               searchPlaceholder={t('assetGroups.detail.searchAssets', 'Search assets…')}
-              onSelectionChange={(rows) => setSelectedAssets(rows.map((a) => a.id))}
+              onSelectionChange={(rows) => {
+                setSelectedAssets(rows.map((a) => a.id))
+                setSelectedAssetNames(rows.map((a) => a.name))
+              }}
               resetSelectionKey={selectionEpoch}
               showSelectionCount={false}
               onRowClick={(a) => router.push(groupMemberHref(a.id))}
@@ -1145,12 +1149,15 @@ function AssetGroupDetailContent({ params }: PageProps) {
         })}
         desc={t(
           'confirm.assetGroup.deleteDesc',
-          'The group is deleted and its assets leave it; scans and rules that target the group no longer cover them. The assets themselves are not deleted. This cannot be undone.'
+          'The group is deleted for good and its assets leave it; scans and rules that target the group no longer cover them. The assets themselves are kept.'
         )}
         confirmText={
-          isDeleting ? t('confirm.deleting', 'Deleting…') : t('confirm.delete', 'Delete')
+          isDeleting
+            ? t('confirm.deleting', 'Deleting…')
+            : t('confirm.assetGroup.deleteButton', 'Delete group')
         }
         destructive
+        typeToConfirm={nameToConfirm(group.name, group.id)}
         isLoading={isDeleting}
         handleConfirm={handleDelete}
       />
@@ -1174,12 +1181,18 @@ function AssetGroupDetailContent({ params }: PageProps) {
           'The selected assets leave the group, so scans and rules that target the group no longer cover them. The assets themselves are not deleted.'
         )}
         confirmText={
-          isRemovingAssets ? t('confirm.removing', 'Removing…') : t('confirm.remove', 'Remove')
+          isRemovingAssets
+            ? t('confirm.removing', 'Removing…')
+            : t('confirm.assetGroup.removeAssetsButton', 'Remove {count} from group', {
+                count: selectedAssets.length,
+              })
         }
         destructive
         isLoading={isRemovingAssets}
         handleConfirm={handleRemoveAssets}
-      />
+      >
+        <ConfirmSample names={selectedAssetNames} total={selectedAssets.length} />
+      </ConfirmDialog>
 
       {/* Add Assets Dialog */}
       <AddAssetsDialog

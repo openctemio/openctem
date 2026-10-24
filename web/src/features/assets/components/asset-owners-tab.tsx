@@ -9,6 +9,7 @@ import {
   Building2,
   User,
   Pencil,
+  MoreHorizontal,
   Check,
   ChevronsUpDown,
   Search,
@@ -43,6 +44,13 @@ import {
   CommandItem,
   CommandList,
 } from '@/components/ui/command'
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { Label } from '@/components/ui/label'
 import { cn } from '@/lib/utils'
@@ -212,23 +220,37 @@ function OwnerCard({
           )}
         </div>
       </div>
-      <div className="flex items-center gap-1">
-        {canEdit && (
-          <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => onEdit(owner)}>
-            <Pencil className="h-3.5 w-3.5" />
-          </Button>
-        )}
-        {canDelete && (
-          <Button
-            variant="ghost"
-            size="icon"
-            className="h-8 w-8 text-destructive hover:text-destructive"
-            onClick={() => onRemove(owner)}
-          >
-            <Trash2 className="h-3.5 w-3.5" />
-          </Button>
-        )}
-      </div>
+      {(canEdit || canDelete) && (
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-8 w-8"
+              aria-label={t('assets.ownersTab.actionsFor', 'Actions for {name}', {
+                name: name || t('assets.ownersTab.unknown', 'Unknown'),
+              })}
+            >
+              <MoreHorizontal className="h-4 w-4" />
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end">
+            {canEdit && (
+              <DropdownMenuItem onClick={() => onEdit(owner)}>
+                <Pencil className="me-2 h-4 w-4" />
+                {t('assets.ownersTab.edit', 'Edit')}
+              </DropdownMenuItem>
+            )}
+            {canEdit && canDelete && <DropdownMenuSeparator />}
+            {canDelete && (
+              <DropdownMenuItem className="text-destructive" onClick={() => onRemove(owner)}>
+                <Trash2 className="me-2 h-4 w-4" />
+                {t('assets.ownersTab.remove', 'Remove')}
+              </DropdownMenuItem>
+            )}
+          </DropdownMenuContent>
+        </DropdownMenu>
+      )}
     </div>
   )
 }
