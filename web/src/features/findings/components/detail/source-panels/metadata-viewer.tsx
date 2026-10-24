@@ -4,6 +4,7 @@ import { useState } from 'react'
 import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { ChevronDown, ChevronUp, Database } from 'lucide-react'
+import { useTranslation } from '@/context/i18n-provider'
 import { cn } from '@/lib/utils'
 
 interface MetadataViewerProps {
@@ -18,6 +19,7 @@ interface MetadataViewerProps {
  * Renders key-value pairs for primitive values and expandable JSON for nested objects.
  */
 export function MetadataViewer({ metadata, excludeKeys = [], className }: MetadataViewerProps) {
+  const { t } = useTranslation()
   const [expanded, setExpanded] = useState(false)
 
   // Filter out null/undefined/empty values and excluded keys
@@ -45,7 +47,9 @@ export function MetadataViewer({ metadata, excludeKeys = [], className }: Metada
         <div className="flex items-center justify-between mb-3">
           <div className="flex items-center gap-2">
             <Database className="h-4 w-4 text-muted-foreground" />
-            <span className="text-sm font-medium text-muted-foreground">Scanner Metadata</span>
+            <span className="text-sm font-medium text-muted-foreground">
+              {t('findings.metadata.title', 'Scanner metadata')}
+            </span>
           </div>
           {hasMore && (
             <Button
@@ -56,11 +60,12 @@ export function MetadataViewer({ metadata, excludeKeys = [], className }: Metada
             >
               {expanded ? (
                 <>
-                  <ChevronUp className="h-3 w-3 me-1" /> Collapse
+                  <ChevronUp className="h-3 w-3 me-1" /> {t('common.collapse', 'Collapse')}
                 </>
               ) : (
                 <>
-                  <ChevronDown className="h-3 w-3 me-1" /> Show all ({entries.length})
+                  <ChevronDown className="h-3 w-3 me-1" />{' '}
+                  {t('findings.metadata.showAll', 'Show all ({count})', { count: entries.length })}
                 </>
               )}
             </Button>

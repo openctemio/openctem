@@ -124,7 +124,7 @@ export function riskSignals(f: SignalInput, t: TFn = defaultT): RiskSignal[] {
       group: 'exploitation',
       label:
         typeof f.epssPercentile === 'number'
-          ? t('findings.signals.epssWithPercentile', 'EPSS {score} · {percentile} percentile', {
+          ? t('findings.signals.epssWithPercentile', 'EPSS {score}, {percentile} percentile', {
               score,
               percentile: formatEpssPercentile(f.epssPercentile, 0),
             })

@@ -317,6 +317,21 @@ Ownership-tab confirmation no longer authorizes alone). Runs that skip such
 targets say so in their warnings; `GET /assets/{id}/attribution` answers
 `active_checks_blocked_by: out_of_scope`.
 
+## Certificates (RFC-054 §19)
+
+A certificate asset is evidence, not a probe target, and its name is a fingerprint. The gate does not judge it
+by name. `ActiveGate.judgeCertificates` (`internal/app/easm/cert_standing.go`) reads the tenant's assets with
+a `serves_certificate` edge to it (`AssetRelationshipRepository.ServingEndpoints`, tenant-pinned on both ends)
+and runs `decide` on each endpoint. The certificate passes when any endpoint passes, shows the strongest
+refusal otherwise, and is not applicable (refused) when no endpoint is known. A person's non-confirmed
+decision on the certificate itself still refuses.
+
+Ownership (`Authority.OwnedName`) is separate: a SAN or CN under a domain, subdomain or host entry of the
+tenant, or a verified domain, marks the certificate `yours`; foreign names only on a covered endpoint make it
+`third_party`. It never authorizes a probe, and the inheritance is one-way (endpoint to certificate), so a
+certificate with any names on any address changes nothing for that address. `CertificateStandings` exposes
+the result; the attribution endpoint returns it as `certificate`.
+
 ## Unclassified assets (RFC-054 §16)
 
 An inventory asset no active entry covers and nobody excluded, rejected or

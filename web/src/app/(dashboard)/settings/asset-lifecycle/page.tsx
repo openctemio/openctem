@@ -49,7 +49,7 @@ export default function AssetLifecycleSettingsPage() {
               disabled={status.submitting || !currentTenant}
             >
               <PlayCircle className="h-4 w-4" />
-              Run dry-run
+              {t('settings.assetLifecycle.runDryRun', 'Run dry run')}
             </Button>
             <Button
               type="submit"
@@ -62,7 +62,7 @@ export default function AssetLifecycleSettingsPage() {
               ) : (
                 <Save className="h-4 w-4" />
               )}
-              Save changes
+              {t('settings.assetLifecycle.save', 'Save changes')}
             </Button>
           </>
         )}

@@ -46,7 +46,7 @@ base.describe('Access denied view', () => {
 
     // The skip link is the first stop and lands on the denied view.
     await page.keyboard.press('Tab')
-    await expect(page.getByRole('link', { name: 'Skip to Main' })).toBeFocused()
+    await expect(page.getByRole('link', { name: 'Skip to main content' })).toBeFocused()
   })
 })
 

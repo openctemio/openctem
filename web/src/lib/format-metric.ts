@@ -110,22 +110,35 @@ const RELATIVE_STEPS: Array<[Intl.RelativeTimeFormatUnit, number]> = [
 export function formatRelativeTime(
   date: string | Date | null | undefined,
   locale = 'en',
-  now: Date = new Date()
+  now: Date = new Date(),
+  /** `short` or `narrow` ("5m ago") for one-line meta text on narrow screens. */
+  style: Intl.RelativeTimeFormatStyle = 'long'
 ): string {
   const d = date == null ? null : typeof date === 'string' ? new Date(date) : date
   if (!d || Number.isNaN(d.getTime())) return '—'
   let value = (d.getTime() - now.getTime()) / 1000
   let rtf: Intl.RelativeTimeFormat
   try {
-    rtf = new Intl.RelativeTimeFormat(locale, { numeric: 'auto' })
+    rtf = new Intl.RelativeTimeFormat(locale, { numeric: 'auto', style })
   } catch {
-    rtf = new Intl.RelativeTimeFormat('en', { numeric: 'auto' })
+    rtf = new Intl.RelativeTimeFormat('en', { numeric: 'auto', style })
   }
   for (const [unit, size] of RELATIVE_STEPS) {
     if (Math.abs(value) < size) return rtf.format(Math.round(value), unit)
     value /= size
   }
   return rtf.format(Math.round(value), 'year')
+}
+
+/** A calendar date ("23 Oct 2026" / "23 thg 10, 2026") in the locale. Invalid dates are "—". */
+export function formatCalendarDate(date: string | Date | null | undefined, locale = 'en'): string {
+  const d = date == null ? null : typeof date === 'string' ? new Date(date) : date
+  if (!d || Number.isNaN(d.getTime())) return '—'
+  try {
+    return new Intl.DateTimeFormat(locale, { dateStyle: 'medium' }).format(d)
+  } catch {
+    return new Intl.DateTimeFormat('en', { dateStyle: 'medium' }).format(d)
+  }
 }
 
 /** The absolute date and time, for hover text next to a relative time. */

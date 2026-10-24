@@ -67,7 +67,7 @@ func (h *EASMNetworkSeedHandler) auditEvent(r *http.Request, action auditdom.Act
 	}
 	ctx := r.Context()
 	ev := auditapp.NewSuccessEvent(action, auditdom.ResourceTypeEASMNetworkSeed, id).WithResourceName(name).WithMessage(msg)
-	_ = h.audit.LogEvent(ctx, auditapp.AuditContext{
+	auditapp.RecordOrWarn(ctx, h.logger, h.audit, auditapp.AuditContext{
 		TenantID: middleware.MustGetTenantID(ctx), ActorID: middleware.GetUserID(ctx), ActorEmail: auditActorEmail(ctx),
 		ActorIP: getClientIP(r), UserAgent: r.UserAgent(), RequestID: middleware.GetRequestID(r.Context()),
 	}, ev)

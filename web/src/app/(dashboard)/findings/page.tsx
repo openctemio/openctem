@@ -9,8 +9,8 @@ import {
   type BulkFindingResult,
   type BulkSummary,
 } from '@/features/findings/lib/bulk-result'
-import { formatEpssScore } from '@/lib/epss'
-import { useState, useMemo, useCallback, useEffect, type ReactNode } from 'react'
+import { formatCalendarDate } from '@/lib/format-metric'
+import { useState, useMemo, useCallback, useEffect, useRef, type ReactNode } from 'react'
 import Link from '@/components/link'
 import {
   DEFAULT_FINDING_LENS,
@@ -45,7 +45,7 @@ import {
 } from '@/features/config/api/finding-source-api'
 import { useDebounce } from '@/hooks/use-debounce'
 import { toDisplayText } from '@/lib/untrusted-text'
-import type { ColumnDef, SortingState } from '@tanstack/react-table'
+import type { ColumnDef, SortingState, VisibilityState } from '@tanstack/react-table'
 import { Main } from '@/components/layout'
 import {
   PageHeader,
@@ -98,6 +98,7 @@ import {
 import {
   QUICK_VIEW_LABELS,
   knownQuickViews,
+  quickViewHref,
   quickViewIsActive,
   quickViewLabelKey,
   type QuickViewKey,
@@ -115,6 +116,18 @@ import {
 } from '@/features/findings/filters/contract'
 import { NON_FILTER_PARAMS, readFilters } from '@/features/findings/filters/model'
 import { useSavedViews } from '@/features/saved-views/api/use-saved-views'
+import {
+  columnsToSave,
+  defaultColumns,
+  normalizeColumns,
+  parseColumnsParam,
+  sameColumns,
+  serializeColumns,
+  visibilityOf,
+  visibleFrom,
+} from '@/features/findings/lib/list-columns'
+import { viewChanges } from '@/features/saved-views/lib/view-changes'
+import { viewFilters } from '@/features/findings/filters/model'
 import { findingsEmptyKind } from '@/features/findings/lib/empty-kind'
 import { downloadFindingsExport, exportTruncated } from '@/features/findings/api/export-findings'
 import { FindingsEmptyState } from '@/features/findings/components/findings-empty-state'
@@ -124,13 +137,13 @@ import {
   MoreHorizontal,
   UserPlus,
   Flag,
-  ExternalLink,
   Plus,
+  ListChecks,
+  ChevronDown,
   FileUp,
   Loader2,
   Route,
   ClipboardList,
-  AlertOctagon,
   Wrench,
   Search,
   ArrowLeft,
@@ -145,6 +158,7 @@ import {
   FINDING_STATUS_CONFIG,
   findingStatusesInCategory,
 } from '@/features/findings'
+import { ExploitSignals } from '@/features/findings/components/exploit-signals'
 import { PriorityClassBadge } from '@/features/findings/components/priority-class-badge'
 import { BranchOnlyBadge } from '@/features/findings/components/branch-only-badge'
 import { SlaStatusBadge } from '@/features/sla/components/sla-status-badge'
@@ -173,6 +187,12 @@ import { AddFindingsToTaskDialog } from '@/features/remediation-hub/components/a
 import { CreateTaskFromQueryDialog } from '@/features/remediation-hub/components/create-task-from-query-dialog'
 import { taskQueryApi } from '@/features/remediation-hub/api/use-task-query'
 import { VerifyGroupActions } from '@/features/findings/components/verify-group-actions'
+import { VerifyNoCveList } from '@/features/findings/components/verify-no-cve-list'
+import {
+  queueContextFilters,
+  verifyQueueQuery,
+  verifyQueueNoCveQuery,
+} from '@/features/findings/lib/verify-queue'
 import { type FindingGroup } from '@/features/findings/api/use-finding-groups'
 import {
   useFindingsApi,
@@ -206,13 +226,6 @@ import { Textarea } from '@/components/ui/textarea'
 // ============================================
 // Transform API Finding to UI Finding
 // ============================================
-
-/**
- * Columns hidden until the user turns them on in View: the scanner already
- * shows under the title, and the first-seen date is in the detail. Without
- * them, location, status and SLA fit at 1280px instead of scrolling away.
- */
-const DEFAULT_HIDDEN_COLUMNS = { source: false, createdAt: false }
 
 function transformApiToUiFinding(api: ApiFinding): Finding {
   // Build location string — different sources have different location semantics:
@@ -599,6 +612,8 @@ function FindingsContent() {
     ? (groupParam as GroupByDimension)
     : null
   const verifyView = viewParam === 'verify'
+  // How many queue findings have no CVE (the by-CVE groups do not hold them).
+  const [verifyNoCveTotal, setVerifyNoCveTotal] = useState(0)
   // A saved view (D15) lives in the same param as its id; the API applies its
   // filter, with any filter in the URL on top, as the viewer.
   const savedId = savedViewId(viewParam)
@@ -613,12 +628,8 @@ function FindingsContent() {
     if (view.group_by) q.set('group', view.group_by)
     replaceUrlSearch(q)
   }, [])
-  // The view is "modified" when filters in the URL sit on top of it.
-  const savedViewModified =
-    !!savedId &&
-    Array.from(searchParams.keys()).some(
-      (k) => !['view', 'group', 'page', 'per_page', 'tab', 'density'].includes(k)
-    )
+  const { views: savedViewList } = useSavedViews('findings', !!savedId)
+  const openView = savedViewList.find((v) => v.id === savedId)
 
   // asset_id and scan_id (a scan run's "View all findings") are read above.
   // A CVE group's "View": the list narrowed to that CVE (search does not match
@@ -672,7 +683,7 @@ function FindingsContent() {
       return value
     })
   }, [])
-  const { t } = useTranslation()
+  const { t, locale } = useTranslation()
   const severityLabel = useSeverityLabel()
   // "Hide informational": a saved per-browser view preference. It applies only
   // while no severity is picked; an explicit severity choice always wins.
@@ -744,11 +755,12 @@ function FindingsContent() {
     const grouped = groupFindingSourcesByCategory(sourceCatalog?.data ?? [])
     return Array.from(grouped.entries()).map(([code, group]) => ({
       code,
-      label: group.label,
+      // The catalog sends English category names; known codes are translated.
+      label: t(`findings.sourceCategory.${code}`, group.label),
       options: group.options,
       codes: group.options.map((o) => o.value),
     }))
-  }, [sourceCatalog?.data])
+  }, [sourceCatalog?.data, t])
 
   const toggleSource = useCallback(
     (code: string) => {
@@ -774,6 +786,52 @@ function FindingsContent() {
   // "All" who picks a filter with only 2 pages would sit on an empty page.
   // Keyed on the filter *values*, so the first render (reading a shared link
   // with ?page=3) is not reset — only a later filter change is.
+  // Columns and density are part of the view: the URL holds a choice only
+  // while it differs from what the open view (or the list's default) shows,
+  // and the saved view stores them.
+  const plainActive =
+    !savedId && quickViewIsActive(searchParams, { key: 'active', count: 0, params: 'state=open' })
+  const viewColumns = openView?.columns
+  const baselineColumns = useMemo(
+    () =>
+      viewColumns && viewColumns.length > 0
+        ? normalizeColumns(viewColumns)
+        : defaultColumns(plainActive),
+    [viewColumns, plainActive]
+  )
+  const columnsParam = useUrlParam('columns')
+  const shownColumns = useMemo(
+    () => parseColumnsParam(columnsParam) ?? baselineColumns,
+    [columnsParam, baselineColumns]
+  )
+  const columnVisibility = useMemo(() => visibilityOf(shownColumns), [shownColumns])
+  const onColumnVisibilityChange = useCallback(
+    (next: VisibilityState) => {
+      const list = visibleFrom(next)
+      const params = new URLSearchParams(window.location.search)
+      if (sameColumns(list, baselineColumns)) params.delete('columns')
+      else params.set('columns', serializeColumns(list))
+      replaceUrlSearch(params)
+    },
+    [baselineColumns]
+  )
+  const densityParam = useUrlParam('density')
+  const urlDensity =
+    densityParam === 'compact' || densityParam === 'comfortable' ? densityParam : undefined
+  const viewDensity =
+    openView?.density === 'compact' || openView?.density === 'comfortable'
+      ? openView.density
+      : undefined
+  const onDensityChange = useCallback(
+    (next: 'compact' | 'comfortable') => {
+      const params = new URLSearchParams(window.location.search)
+      if (next === viewDensity) params.delete('density')
+      else params.set('density', next)
+      replaceUrlSearch(params)
+    },
+    [viewDensity]
+  )
+
   // Filters in the URL that the page does not draw itself (an EPSS floor, a
   // port, a tag...). They go to the API as they are; the filter contract names
   // them, so it is loaded when the URL holds one, or when the picker opens.
@@ -959,17 +1017,8 @@ function FindingsContent() {
     (): FindingStatsFilters => ({
       state: 'all',
       exclude_statuses: HIDDEN_STATUSES,
-      asset_id: apiFilters.asset_id,
-      scan_id: apiFilters.scan_id,
-      cve_ids: apiFilters.cve_ids,
-      rule_id: apiFilters.rule_id,
-      families: apiFilters.families,
-      finding_types: apiFilters.finding_types,
-      component_id: apiFilters.component_id,
-      asset_owner_id: apiFilters.asset_owner_id,
-      asset_owner_unassigned: apiFilters.asset_owner_unassigned,
-      asset_group_id: apiFilters.asset_group_id,
-      asset_crown_jewel: apiFilters.asset_crown_jewel,
+      // The scope the verification queue shares with its count.
+      ...queueContextFilters(apiFilters),
     }),
     [HIDDEN_STATUSES, apiFilters]
   )
@@ -1044,8 +1093,8 @@ function FindingsContent() {
   const handleRefresh = async () => {
     // Each request once: the list, the stats and the sidebar counts. (A blanket
     // invalidation of every /findings key here sent all of them a second time.)
+    // The button spins while this runs; the list itself shows the result.
     await Promise.all([mutateFindings(), mutateStats()])
-    toast.success(t('findings.toast.refreshed', 'Findings refreshed'))
   }
 
   const openTaskFromFilters = useCallback(async () => {
@@ -1135,7 +1184,7 @@ function FindingsContent() {
         finding_ids: findingIds,
         user_id: userId.trim(),
       })
-      showBulkResult(summarizeBulkResult(result, findingIds.length, 'Assigned'))
+      showBulkResult(summarizeBulkResult(result, findingIds.length, 'assigned', t))
       clearSelection()
       mutateFindings()
     } catch (error) {
@@ -1183,7 +1232,7 @@ function FindingsContent() {
         status,
         resolution,
       })
-      showBulkResult(summarizeBulkResult(result, findingIds.length, 'Updated'))
+      showBulkResult(summarizeBulkResult(result, findingIds.length, 'updated', t))
       clearSelection()
       mutateFindings()
       mutateStats()
@@ -1278,12 +1327,20 @@ function FindingsContent() {
           openRemediationFor([finding])
           break
         case 'copy_id':
-          copyToClipboard(finding.id)
-          toast.success(t('findings.toast.idCopied', 'Finding ID copied to clipboard'))
+          // The menu closes, so a toast is the only place to say it worked;
+          // a refused clipboard says so instead of claiming success.
+          void copyToClipboard(finding.id).then((ok) =>
+            ok
+              ? toast.success(t('findings.toast.idCopied', 'Finding ID copied to clipboard'))
+              : toast.error(t('findings.toast.copyFailed', 'Could not copy to the clipboard'))
+          )
           break
         case 'copy_link':
-          copyToClipboard(`${window.location.origin}/findings/${finding.id}`)
-          toast.success(t('findings.toast.linkCopied', 'Link copied to clipboard'))
+          void copyToClipboard(`${window.location.origin}/findings/${finding.id}`).then((ok) =>
+            ok
+              ? toast.success(t('findings.toast.linkCopied', 'Link copied to clipboard'))
+              : toast.error(t('findings.toast.copyFailed', 'Could not copy to the clipboard'))
+          )
           break
         case 'delete':
           handleDeleteClick(finding)
@@ -1304,12 +1361,8 @@ function FindingsContent() {
     [handleRowClick, openRemediationFor, t]
   )
 
-  // Define columns for DataTable
-  // Priority is the RFC-004 P0–P3 class; it's only populated once the
-  // classifier has run. When nothing in view has one, we drop the column
-  // instead of rendering a full column of "—" (it returns once data exists).
-  const hasAnyPriority = useMemo(() => findings.some((f) => f.priorityClass), [findings])
-
+  // Define columns for DataTable. Finding and Priority are always shown (a
+  // list without its priority cannot be triaged); the rest follow the view.
   const columns: ColumnDef<Finding>[] = useMemo(() => {
     const cols: ColumnDef<Finding>[] = [
       {
@@ -1338,9 +1391,27 @@ function FindingsContent() {
         enableHiding: false,
       },
       {
+        accessorKey: 'priorityClass',
+        meta: { label: t('findings.columns.priority', 'Priority') },
+        enableHiding: false,
+        header: ({ column }) => (
+          <DataTableColumnHeader
+            column={column}
+            title={t('findings.columns.priority', 'Priority')}
+          />
+        ),
+        cell: ({ row }) => {
+          return <PriorityClassBadge priorityClass={row.original.priorityClass} showWord />
+        },
+        filterFn: (row, id, value) => {
+          return value.includes(row.getValue(id))
+        },
+      },
+      {
         accessorKey: 'title',
         meta: { label: t('findings.columns.title', 'Title') },
         enableSorting: false,
+        enableHiding: false,
         header: ({ column }) => (
           <DataTableColumnHeader column={column} title={t('findings.columns.title', 'Title')} />
         ),
@@ -1358,7 +1429,9 @@ function FindingsContent() {
               // The title leads the name, so a screen reader announces which
               // finding the button opens (it used to read "View finding
               // details" on every row).
-              aria-label={`${toDisplayText(row.getValue('title'), 300)}, view details`}
+              aria-label={t('findings.list.openRow', '{title}, view details', {
+                title: toDisplayText(row.getValue('title'), 300),
+              })}
               onClick={() => handleRowClick(row.original)}
               onKeyDown={(e) => {
                 if (e.key === 'Enter' || e.key === ' ') {
@@ -1373,51 +1446,12 @@ function FindingsContent() {
                   {toDisplayText(row.getValue('title'), 500)}
                 </p>
                 {row.original.branchOnly && <BranchOnlyBadge />}
-                {/* KEV — actively exploited; the single most urgent triage signal */}
-                {row.original.isInKev && (
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <span className="inline-flex shrink-0 items-center gap-0.5 rounded-full bg-red-600 px-1.5 py-0.5 text-[10px] font-semibold text-white">
-                        <AlertOctagon className="h-2.5 w-2.5" />
-                        {t('findings.list.kev', 'KEV')}
-                      </span>
-                    </TooltipTrigger>
-                    <TooltipContent side="top" className="max-w-xs text-xs">
-                      <p className="font-semibold">
-                        {t('findings.list.kevTitle', 'CISA Known Exploited Vulnerability')}
-                      </p>
-                      {row.original.kevDueDate && (
-                        <p>
-                          {t('findings.list.kevDue', 'Remediate by {date}', {
-                            date: new Date(row.original.kevDueDate).toLocaleDateString(),
-                          })}
-                        </p>
-                      )}
-                    </TooltipContent>
-                  </Tooltip>
-                )}
-                {typeof row.original.epssScore === 'number' && row.original.epssScore > 0 && (
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <span className="inline-flex shrink-0 items-center rounded-full bg-amber-500/15 px-1.5 py-0.5 text-[10px] font-medium text-amber-700 dark:text-amber-400">
-                        {t('findings.list.epss', 'EPSS {score}', {
-                          score: formatEpssScore(row.original.epssScore),
-                        })}
-                      </span>
-                    </TooltipTrigger>
-                    <TooltipContent side="top" className="max-w-xs text-xs">
-                      {t(
-                        'findings.list.epssHint',
-                        'Exploit Prediction Scoring System — estimated probability of exploitation in the next 30 days'
-                      )}
-                    </TooltipContent>
-                  </Tooltip>
-                )}
                 {hasDataFlow && (
                   <Tooltip>
                     <TooltipTrigger asChild>
-                      <span className="inline-flex items-center gap-0.5 rounded-full bg-blue-500/20 px-1.5 py-0.5 text-[10px] font-medium text-blue-400 shrink-0">
-                        <Route className="h-2.5 w-2.5" />
+                      <span className="inline-flex items-center gap-0.5 rounded-full bg-muted px-1.5 py-0.5 text-xs font-medium text-muted-foreground shrink-0">
+                        <Route className="h-3 w-3" aria-hidden />
+                        {t('findings.list.pathChip', 'Path')}
                       </span>
                     </TooltipTrigger>
                     <TooltipContent side="top" className="text-xs">
@@ -1452,22 +1486,33 @@ function FindingsContent() {
         },
       },
       {
-        accessorKey: 'priorityClass',
-        meta: { label: t('findings.columns.priority', 'Priority') },
+        accessorKey: 'status',
+        meta: { label: t('findings.columns.status', 'Status') },
         header: ({ column }) => (
-          <DataTableColumnHeader
-            column={column}
-            title={t('findings.columns.priority', 'Priority')}
-          />
+          <DataTableColumnHeader column={column} title={t('findings.columns.status', 'Status')} />
         ),
-        cell: ({ row }) => {
-          const pc = row.original.priorityClass
-          if (!pc) return <span className="text-muted-foreground text-xs">-</span>
-          return <PriorityClassBadge priorityClass={pc} />
-        },
+        cell: ({ row }) => (
+          <span className="inline-flex flex-wrap items-center gap-1">
+            <FindingStatusBadge status={row.getValue('status')} />
+            <FindingSubStatus subStatusId={row.original.subStatusId} />
+          </span>
+        ),
         filterFn: (row, id, value) => {
           return value.includes(row.getValue(id))
         },
+      },
+      {
+        id: 'signals',
+        meta: { label: t('findings.columns.exploitSignals', 'Exploit signals') },
+        enableSorting: false,
+        header: () => t('findings.columns.exploitSignals', 'Exploit signals'),
+        cell: ({ row }) => (
+          <ExploitSignals
+            isInKev={row.original.isInKev}
+            kevDueDate={row.original.kevDueDate}
+            epssScore={row.original.epssScore}
+          />
+        ),
       },
       {
         id: 'source',
@@ -1520,37 +1565,21 @@ function FindingsContent() {
               </div>
             )
           }
-          // No asset name and no location: show a compact link to the asset
-          // instead of the bare UUID, which reads as broken data.
+          // No asset name and no location: a plain "Unnamed asset" link to
+          // the asset (an id fragment meant nothing to people, and the
+          // external-link icon suggested another site).
           if (asset?.id) {
             return (
               <Link
-                href={`/assets/${asset.id}`}
+                href={`/assets/${encodeURIComponent(asset.id)}`}
                 title={asset.id}
-                className="text-muted-foreground hover:text-foreground inline-flex items-center gap-1 text-sm hover:underline"
+                className="text-muted-foreground hover:text-foreground text-sm hover:underline"
               >
-                <ExternalLink className="h-3 w-3 shrink-0" />
-                <span className="font-mono">{asset.id.slice(0, 8)}…</span>
+                {t('findings.list.unnamedAsset', 'Unnamed asset')}
               </Link>
             )
           }
           return <span className="text-muted-foreground text-sm">—</span>
-        },
-      },
-      {
-        accessorKey: 'status',
-        meta: { label: t('findings.columns.status', 'Status') },
-        header: ({ column }) => (
-          <DataTableColumnHeader column={column} title={t('findings.columns.status', 'Status')} />
-        ),
-        cell: ({ row }) => (
-          <span className="inline-flex flex-wrap items-center gap-1">
-            <FindingStatusBadge status={row.getValue('status')} />
-            <FindingSubStatus subStatusId={row.original.subStatusId} />
-          </span>
-        ),
-        filterFn: (row, id, value) => {
-          return value.includes(row.getValue(id))
         },
       },
       {
@@ -1585,7 +1614,7 @@ function FindingsContent() {
         ),
         cell: ({ row }) => (
           <span className="text-muted-foreground text-sm">
-            {new Date(row.getValue('createdAt')).toLocaleDateString()}
+            {formatCalendarDate(row.getValue('createdAt'), locale)}
           </span>
         ),
       },
@@ -1610,20 +1639,18 @@ function FindingsContent() {
     ]
     // No bulk action for this user: no selection checkboxes either.
     const shown = canSelect ? cols : cols.filter((c) => c.id !== 'select')
-    return hasAnyPriority
-      ? shown
-      : shown.filter((c) => !('accessorKey' in c) || c.accessorKey !== 'priorityClass')
+    return shown
   }, [
     handleRowAction,
     handleRowClick,
     hasPermission,
-    hasAnyPriority,
     canSelect,
     remediationEnabled,
     canCreateTicket,
     canAssignOne,
     canChangeStatusOne,
     t,
+    locale,
   ])
 
   // ---- Filter model shared by the facet panel, the chips and the metrics ----
@@ -1840,6 +1867,55 @@ function FindingsContent() {
         ? t('findings.view.all', 'All findings')
         : t('findings.view.custom', 'Custom view')
   const awaitingVerification = findingStats?.awaiting_verification ?? 0
+
+  // Triage: the findings still to be decided (status new). Until the focused
+  // triage mode lands, it opens the Needs triage view and then the first
+  // finding in the existing finding flow, with j / k to move on.
+  const needsTriageView = knownQuickViews(quickViewData?.views).find(
+    (v) => v.key === 'needs_triage'
+  )
+  const triageCount = needsTriageView?.count ?? 0
+  const [triagePending, setTriagePending] = useState(false)
+  const triageParams = needsTriageView?.params ?? 'status=new'
+  const openTriage = () => {
+    const href = quickViewHref(triageParams)
+    pushUrlSearch(new URLSearchParams(href.split('?')[1]))
+    setTriagePending(true)
+  }
+  // The key handler is installed once and calls the latest openTriage.
+  const openTriageRef = useRef(openTriage)
+  const canTriageRef = useRef(canChangeStatusOne)
+  useEffect(() => {
+    openTriageRef.current = openTriage
+    canTriageRef.current = canChangeStatusOne
+  })
+  const onTriageView = quickViewIsActive(searchParams, {
+    key: 'needs_triage',
+    count: triageCount,
+    params: triageParams,
+  })
+  useEffect(() => {
+    if (!triagePending || !onTriageView || findingsValidating || findingsLoading) return
+    setTriagePending(false)
+    if (findings.length > 0) handleRowClick(findings[0])
+  }, [triagePending, onTriageView, findingsValidating, findingsLoading, findings, handleRowClick])
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== 't' || e.metaKey || e.ctrlKey || e.altKey || e.defaultPrevented) return
+      const el = e.target as HTMLElement | null
+      if (
+        el?.closest?.(
+          'input, textarea, select, [contenteditable="true"], [role="combobox"], [role="listbox"], [role="menu"], [role="dialog"], [role="alertdialog"]'
+        )
+      )
+        return
+      if (!canTriageRef.current) return
+      e.preventDefault()
+      openTriageRef.current()
+    }
+    document.addEventListener('keydown', onKey)
+    return () => document.removeEventListener('keydown', onKey)
+  }, [])
   // Which kind of empty this is: from the organization's total (scope-only
   // stats), the filters the person set, the search, and a refused read.
   const emptyKind = findingsEmptyKind({
@@ -2022,8 +2098,6 @@ function FindingsContent() {
     <FindingContextChips {...contextFilterValues} onRemove={removeContextParam} />
   ) : undefined
 
-  const { views: savedViewList } = useSavedViews('findings', !!savedId)
-  const openView = savedViewList.find((v) => v.id === savedId)
   const filterBar = (
     <FilterBar
       search={searchParams}
@@ -2040,6 +2114,22 @@ function FindingsContent() {
     />
   )
 
+  // What differs from the open view: the unsaved-changes dot and its menu.
+  const changeList = useMemo(
+    () =>
+      openView
+        ? viewChanges({
+            view: openView,
+            search: searchParams,
+            viewFilters: viewFilters(openView.filter, filterContract).filters,
+            baselineColumns,
+            columns: shownColumns,
+            density: urlDensity,
+          })
+        : undefined,
+    [openView, searchParams, filterContract, baselineColumns, shownColumns, urlDensity]
+  )
+
   const toolbarStart = filterSearch
 
   // Second row (the table toolbar): which rows and how they show. Saved views
@@ -2050,8 +2140,11 @@ function FindingsContent() {
       <SavedViewsMenu
         page="findings"
         activeId={savedId}
-        modified={savedViewModified}
+        changes={changeList}
         groupBy={groupParam}
+        columns={columnsToSave(shownColumns)}
+        density={urlDensity ?? viewDensity}
+        onDiscard={() => openSavedView(openView ?? null)}
         onSelect={openSavedView}
       />
       {groupBySelect}
@@ -2096,7 +2189,14 @@ function FindingsContent() {
             className="h-8 shrink-0"
             onClick={() => setViewParam('verify')}
           >
-            {t('findings.view.awaitingVerification', 'Awaiting verification')}
+            {/* A short label on a narrow row, so the view title keeps its room
+                (at phone width the long one squeezed the title to nothing). */}
+            <span className="@md/actions:hidden">
+              {t('findings.view.awaitingVerificationShort', 'To verify')}
+            </span>
+            <span className="hidden @md/actions:inline">
+              {t('findings.view.awaitingVerification', 'Awaiting verification')}
+            </span>
             <span className="ms-2 tabular-nums text-muted-foreground">
               {awaitingVerification.toLocaleString()}
             </span>
@@ -2256,29 +2356,58 @@ function FindingsContent() {
               </span>
             </Link>
           </Button>
-          {canImport && (
-            <Button
-              variant="outline"
-              size="sm"
-              aria-label={t('findings.header.importResults', 'Import results')}
-              onClick={() => setImportDialogOpen(true)}
-            >
-              <FileUp className="h-4 w-4 sm:me-2" />
-              <span className="sr-only sm:not-sr-only">
-                {t('findings.header.importResults', 'Import results')}
-              </span>
-            </Button>
+          {(canImport || hasPermission('findings:write')) && (
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="outline" size="sm">
+                  <Plus className="h-4 w-4 sm:me-2" aria-hidden />
+                  <span className="sr-only sm:not-sr-only">{t('findings.header.add', 'Add')}</span>
+                  <ChevronDown className="ms-1 hidden h-3.5 w-3.5 sm:block" aria-hidden />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                {hasPermission('findings:write') && (
+                  <DropdownMenuItem onSelect={() => setCreateDialogOpen(true)}>
+                    <Plus className="me-2 h-4 w-4" aria-hidden />
+                    {t('findings.header.addFinding', 'Add finding')}
+                  </DropdownMenuItem>
+                )}
+                {canImport && (
+                  <DropdownMenuItem onSelect={() => setImportDialogOpen(true)}>
+                    <FileUp className="me-2 h-4 w-4" aria-hidden />
+                    {t('findings.header.importResults', 'Import results')}
+                  </DropdownMenuItem>
+                )}
+              </DropdownMenuContent>
+            </DropdownMenu>
           )}
-          {hasPermission('findings:write') && (
+          {/* The one primary action of the page: deciding, for someone who may
+              change a finding's status. With nothing to triage it stays, as a
+              secondary button that opens the same view. */}
+          {canChangeStatusOne && (
             <Button
               size="sm"
-              aria-label={t('findings.header.addFinding', 'Add finding')}
-              onClick={() => setCreateDialogOpen(true)}
+              variant={triageCount > 0 ? 'default' : 'outline'}
+              onClick={openTriage}
+              aria-keyshortcuts="t"
             >
-              <Plus className="h-4 w-4 sm:me-2" />
+              <ListChecks className="h-4 w-4 sm:me-2" aria-hidden />
               <span className="sr-only sm:not-sr-only">
-                {t('findings.header.addFinding', 'Add finding')}
+                {triageCount > 0
+                  ? t('findings.header.triage', 'Triage')
+                  : t('findings.header.triageView', 'Triage view')}
               </span>
+              {triageCount > 0 && (
+                <span className="ms-2 text-xs tabular-nums" data-testid="triage-count">
+                  {triageCount.toLocaleString()}
+                </span>
+              )}
+              <kbd
+                className="ms-2 hidden rounded border border-current/30 px-1 font-sans text-[10px] sm:inline"
+                aria-hidden
+              >
+                t
+              </kbd>
             </Button>
           )}
         </PageHeader>
@@ -2303,7 +2432,7 @@ function FindingsContent() {
                 // A self-contained floating card, as tall as the viewport and
                 // pinned while the page scrolls: its length no longer depends
                 // on the table's, and long filter lists scroll inside it.
-                className="flex h-[calc(100svh-7.5rem)] w-64 flex-col rounded-xl border bg-card p-4 shadow-sm"
+                className="flex h-[calc(100svh-7.5rem)] w-64 flex-col rounded-lg border bg-card p-4"
               >
                 {facetPanelScrollable}
               </aside>
@@ -2320,29 +2449,51 @@ function FindingsContent() {
                 // nothing here is real yet, and nothing is fetched.
                 <FindingsTableSkeleton />
               ) : verifyView ? (
-                <FindingGroupsTable
-                  {...groupedProps}
-                  dimension="cve_id"
-                  statuses="fix_applied"
-                  renderGroupActions={verifyActions}
-                  toolbarStart={
-                    <>
-                      <Button variant="ghost" size="sm" onClick={() => setViewParam('')}>
-                        <ArrowLeft className="me-2 h-4 w-4" />
-                        {t('findings.verify.all', 'All findings')}
-                      </Button>
-                      <span className="text-sm text-muted-foreground">
-                        {t('findings.verify.title', 'Fixes awaiting verification, by CVE')}
-                      </span>
-                    </>
-                  }
-                  toolbarEnd={refreshButton}
-                  emptyMessage={t('findings.verify.empty', 'No fixes awaiting verification')}
-                  emptyDescription={t(
-                    'findings.verify.emptyHint',
-                    'Fixes that owners mark as applied wait here for a verifier.'
-                  )}
-                />
+                <div className="space-y-3">
+                  <FindingGroupsTable
+                    {...groupedProps}
+                    dimension="cve_id"
+                    query={verifyQueueQuery(apiFilters)}
+                    statuses="fix_applied"
+                    renderGroupActions={verifyActions}
+                    toolbarStart={
+                      <>
+                        <Button variant="ghost" size="sm" onClick={() => setViewParam('')}>
+                          <ArrowLeft className="me-2 h-4 w-4" />
+                          {t('findings.verify.all', 'All findings')}
+                        </Button>
+                        <span className="text-sm text-muted-foreground">
+                          {t('findings.verify.title', 'Fixes awaiting verification')}
+                        </span>
+                      </>
+                    }
+                    toolbarEnd={refreshButton}
+                    emptyMessage={
+                      verifyNoCveTotal > 0
+                        ? t('findings.verify.noCveGroups', 'No fixes awaiting verification by CVE')
+                        : t('findings.verify.empty', 'No fixes awaiting verification')
+                    }
+                    emptyDescription={
+                      verifyNoCveTotal > 0
+                        ? t(
+                            'findings.verify.noCveGroupsHint',
+                            'The fixes below have no CVE: verify them one by one.'
+                          )
+                        : t(
+                            'findings.verify.emptyHint',
+                            'Fixes that owners mark as applied wait here for a verifier.'
+                          )
+                    }
+                  />
+                  <VerifyNoCveList
+                    query={verifyQueueNoCveQuery(apiFilters)}
+                    canVerify={canVerify}
+                    onOpen={(f) => handleRowClick(transformApiToUiFinding(f))}
+                    onDone={refreshAfterDrawerChange}
+                    onTotal={setVerifyNoCveTotal}
+                    reloadKey={groupsReloadKey}
+                  />
+                </div>
               ) : groupBy ? (
                 <FindingGroupsTable
                   {...groupedProps}
@@ -2401,7 +2552,10 @@ function FindingsContent() {
                     resetSelectionKey={`${selectionEpoch}|${selectionScope}`}
                     onRowClick={handleRowClick}
                     mobileRow={mobileRow}
-                    initialColumnVisibility={DEFAULT_HIDDEN_COLUMNS}
+                    columnVisibility={columnVisibility}
+                    onColumnVisibilityChange={onColumnVisibilityChange}
+                    density={savedId ? (urlDensity ?? viewDensity) : undefined}
+                    onDensityChange={savedId ? onDensityChange : undefined}
                     showSelectionCount={false}
                     emptyState={
                       <FindingsEmptyState
@@ -2489,7 +2643,7 @@ function FindingsContent() {
                     </DropdownMenuItem>
 
                     <DropdownMenuItem onClick={() => void handleBulkStatusChange('in_progress')}>
-                      {t('findings.status.in_progress', 'In Progress')}
+                      {t('findings.status.in_progress', 'In progress')}
                     </DropdownMenuItem>
 
                     {/* Resolving needs findings:verify; the API refuses it otherwise. */}

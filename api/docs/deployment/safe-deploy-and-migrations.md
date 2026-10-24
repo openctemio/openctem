@@ -298,3 +298,10 @@ the asset tenant foreign keys of 000920-000922 and the assignee scrub of
 - [Migrations (development)](../development/migrations.md) — authoring migrations
 - `scripts/migrate.sh`, `scripts/check-migrations.sh`, `scripts/squash-migrations.sh`
 - `cmd/server/schema_check.go` — the fail-fast schema check + `SKIP_SCHEMA_CHECK`
+
+## How CI checks an upgrade
+
+Every night and on every release branch, CI restores the previous release's schema with representative rows, applies
+the migrations of the commit about to ship and checks the version, the row counts of the key tables and that the API
+starts ([Upgrade test](../development/ci-cd.md#upgrade-test)). It does not replace your own rehearsal on a copy of
+your data: your database has shapes the seed does not.

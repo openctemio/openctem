@@ -1,13 +1,13 @@
 'use client'
 
 import { useState } from 'react'
-import { Check, Copy, MailCheck, ShieldAlert } from 'lucide-react'
+import { Check, Clock, Copy, MailCheck, ShieldAlert } from 'lucide-react'
 
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
-import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
+import { StatusLozenge } from '@/components/ui/status-lozenge'
+import { useTranslation } from '@/context/i18n-provider'
 import { copyToClipboard } from '@/lib/clipboard'
-import { cn } from '@/lib/utils'
 
 /**
  * What the API returns after creating an account for someone (or re-issuing
@@ -146,13 +146,21 @@ export function SetupLinkResult({ outcome, email }: { outcome: SetupLinkOutcome;
 
 /** "Pending setup": the account was created by an admin and has no password yet. */
 export function PendingSetupBadge({ className }: { className?: string }) {
+  const { t } = useTranslation()
   return (
-    <Badge
-      variant="outline"
-      className={cn('border-warning/40 bg-warning/15 text-warning', className)}
-      title="Account created by an administrator; the user has not set a password yet"
+    <span
+      title={t(
+        'labels.pendingSetup.hint',
+        'Account created by an administrator; the user has not set a password yet'
+      )}
+      className="inline-flex"
     >
-      Pending setup
-    </Badge>
+      <StatusLozenge
+        tone="waiting"
+        icon={Clock}
+        label={t('labels.pendingSetup.label', 'Pending setup')}
+        className={className}
+      />
+    </span>
   )
 }

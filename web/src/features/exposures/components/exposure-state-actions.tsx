@@ -1,6 +1,7 @@
 'use client'
 
 import { useState } from 'react'
+import type { BulkOutcome } from '../lib/bulk'
 import {
   Dialog,
   DialogContent,
@@ -299,9 +300,10 @@ export function ExposureQuickActions({
 interface ExposureBulkActionsProps {
   selectedIds: string[]
   onClearSelection: () => void
-  onBulkResolve: (ids: string[]) => Promise<void>
-  onBulkAccept: (ids: string[], reason: string) => Promise<void>
-  onBulkFalsePositive: (ids: string[], reason: string) => Promise<void>
+  /** Handlers never throw for a partial failure: they return what happened. */
+  onBulkResolve: (ids: string[]) => Promise<BulkOutcome | void>
+  onBulkAccept: (ids: string[], reason: string) => Promise<BulkOutcome | void>
+  onBulkFalsePositive: (ids: string[], reason: string) => Promise<BulkOutcome | void>
 }
 
 /**
@@ -325,15 +327,43 @@ export function ExposureBulkActions({
 
   if (count === 0) return null
 
+  // One place owns every bulk toast: items that went to pending approval get
+  // the approval notice and no success toast, failures say "x of N failed".
+  const report = (outcome: BulkOutcome | void, doneKey: string, doneDefault: string) => {
+    const o = outcome ?? { total: count, succeeded: count, pending: 0, failed: 0 }
+    const applied = o.succeeded - o.pending
+    if (applied > 0) toast.success(t(doneKey, doneDefault, { count: applied }))
+    if (o.pending > 0) {
+      toast.info(
+        t(
+          'exposures.disposition.bulkPending',
+          '{count} high or critical exposures wait for a second approver.',
+          { count: o.pending }
+        )
+      )
+    }
+    if (o.failed > 0) {
+      toast.error(
+        t('exposures.bulk.partialFailed', '{failed} of {total} failed.', {
+          failed: o.failed,
+          total: o.total,
+        })
+      )
+    }
+  }
+
   const handleBulkResolve = async () => {
     setIsProcessing(true)
     try {
-      await onBulkResolve(selectedIds)
-      toast.success(`${count} exposure(s) resolved`)
+      report(
+        await onBulkResolve(selectedIds),
+        'exposures.bulk.resolved',
+        '{count} exposures resolved.'
+      )
       setResolveOpen(false)
       onClearSelection()
     } catch (_error) {
-      toast.error('Failed to resolve exposures')
+      toast.error(t('exposures.bulk.resolveFailed', 'Could not resolve the exposures.'))
     } finally {
       setIsProcessing(false)
     }
@@ -341,24 +371,30 @@ export function ExposureBulkActions({
 
   const handleBulkActionSubmit = async () => {
     if (!reason.trim()) {
-      toast.error('Please provide a reason')
+      toast.error(t('exposures.bulk.reasonRequired', 'Enter a reason.'))
       return
     }
 
     setIsProcessing(true)
     try {
       if (bulkAction === 'accept') {
-        await onBulkAccept(selectedIds, reason)
-        toast.success(`${count} exposure(s) accepted`)
+        report(
+          await onBulkAccept(selectedIds, reason),
+          'exposures.bulk.accepted',
+          '{count} exposures accepted.'
+        )
       } else if (bulkAction === 'false_positive') {
-        await onBulkFalsePositive(selectedIds, reason)
-        toast.success(`${count} exposure(s) marked as false positive`)
+        report(
+          await onBulkFalsePositive(selectedIds, reason),
+          'exposures.bulk.falsePositive',
+          '{count} exposures marked as false positive.'
+        )
       }
       onClearSelection()
       setBulkAction(null)
       setReason('')
     } catch (_error) {
-      toast.error('Failed to update exposures')
+      toast.error(t('exposures.bulk.updateFailed', 'Could not update the exposures.'))
     } finally {
       setIsProcessing(false)
     }

@@ -331,6 +331,23 @@ func (d *WorkflowEventDispatcher) DispatchFindingsCreated(ctx context.Context, t
 	}()
 }
 
+// RunFindingsCreated starts the finding_created automations of new findings
+// now, in the caller (the ingest worker's side-effect job). It returns an
+// error when the automations could not be read, so the job is retried; a
+// retry never starts an automation twice for a finding (the run key).
+func (d *WorkflowEventDispatcher) RunFindingsCreated(ctx context.Context, tenantID shared.ID, findings []*vulnerability.Finding) error {
+	if len(findings) == 0 {
+		return nil
+	}
+	if _, err := d.findMatchingWorkflows(ctx, tenantID, automationdom.TriggerTypeFindingCreated); err != nil {
+		return fmt.Errorf("read the finding_created automations: %w", err)
+	}
+	for start := 0; start < len(findings); start += maxFindingsPerDispatch {
+		d.dispatchFindingsCreated(ctx, tenantID, findings[start:min(start+maxFindingsPerDispatch, len(findings))])
+	}
+	return nil
+}
+
 // dispatchFindingsCreated is the synchronous body of DispatchFindingsCreated.
 // It returns the number of runs started.
 func (d *WorkflowEventDispatcher) dispatchFindingsCreated(ctx context.Context, tenantID shared.ID, findings []*vulnerability.Finding) int {

@@ -5,6 +5,7 @@
  * API endpoint: /api/v1/audit-logs
  */
 
+import { SEVERITY_BADGE_SOFT } from '@/lib/severity-colors'
 import { humanizeIdentifier } from '@/lib/humanize-identifier'
 
 // ============================================
@@ -124,6 +125,7 @@ export type AuditAction =
   | 'finding.commented'
   | 'finding.bulk_updated'
   | 'finding.duplicate_marked'
+  | 'finding.issue_unlinked'
   | 'finding.bounty_report_changed'
   | 'finding.severity_changed'
   | 'finding.severity_requested'
@@ -329,6 +331,7 @@ const ACTION_LABEL_OVERRIDES: Record<string, string> = {
   'auth.failed': 'Authentication failed',
   'finding.bulk_updated': 'Findings bulk updated',
   'finding.duplicate_marked': 'Finding marked duplicate',
+  'finding.issue_unlinked': 'Finding taken out of a same-issue group',
   'finding.bounty_report_changed': 'Finding bug-bounty report changed',
   'finding.severity_changed': 'Finding severity changed',
   'finding.severity_requested': 'Finding severity change requested',
@@ -376,10 +379,10 @@ export function getActionLabel(action: AuditAction | string): string {
  */
 export function getSeverityColor(severity: AuditSeverity): string {
   const colors: Record<AuditSeverity, string> = {
-    low: 'bg-gray-500/10 text-gray-500',
-    medium: 'bg-blue-500/10 text-blue-500',
-    high: 'bg-amber-500/10 text-amber-500',
-    critical: 'bg-red-500/10 text-red-500',
+    low: SEVERITY_BADGE_SOFT.low,
+    medium: SEVERITY_BADGE_SOFT.medium,
+    high: SEVERITY_BADGE_SOFT.high,
+    critical: SEVERITY_BADGE_SOFT.critical,
   }
   return colors[severity] || colors.low
 }
@@ -389,9 +392,9 @@ export function getSeverityColor(severity: AuditSeverity): string {
  */
 export function getResultColor(result: AuditResult): string {
   const colors: Record<AuditResult, string> = {
-    success: 'bg-green-500/10 text-green-500',
-    failure: 'bg-red-500/10 text-red-500',
-    denied: 'bg-amber-500/10 text-amber-500',
+    success: 'bg-success/10 text-success',
+    failure: 'bg-destructive/10 text-destructive',
+    denied: 'bg-warning/10 text-warning',
   }
   return colors[result] || colors.success
 }

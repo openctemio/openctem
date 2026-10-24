@@ -10,7 +10,8 @@ import type { ThreatStatus } from '../types'
  *   theoretical → neutral / slate  (applicable technique, no evidence yet)
  */
 export interface ThreatStatusStyle {
-  label: string
+  /** i18n key of the status label. */
+  labelKey: string
   /** Badge class bundle (bg/text/border), matching severity-colors soft style. */
   badgeClass: string
   /** Solid dot color for compact rollups. */
@@ -19,27 +20,27 @@ export interface ThreatStatusStyle {
 
 export const THREAT_STATUS_STYLES: Record<ThreatStatus, ThreatStatusStyle> = {
   open: {
-    label: 'Open',
+    labelKey: 'threatModel.status.open',
     badgeClass: 'bg-red-500/10 text-red-600 border-red-500/20 dark:text-red-400',
     dotClass: 'bg-red-500',
   },
   mitigated: {
-    label: 'Mitigated',
+    labelKey: 'threatModel.status.mitigated',
     badgeClass: 'bg-green-500/10 text-green-600 border-green-500/20 dark:text-green-400',
     dotClass: 'bg-green-500',
   },
   covered: {
-    label: 'Covered',
+    labelKey: 'threatModel.status.covered',
     badgeClass: 'bg-blue-500/10 text-blue-600 border-blue-500/20 dark:text-blue-400',
     dotClass: 'bg-blue-500',
   },
   accepted: {
-    label: 'Accepted',
+    labelKey: 'threatModel.status.accepted',
     badgeClass: 'bg-muted text-muted-foreground border-border',
     dotClass: 'bg-muted-foreground',
   },
   theoretical: {
-    label: 'Theoretical',
+    labelKey: 'threatModel.status.theoretical',
     badgeClass: 'bg-slate-500/10 text-slate-600 border-slate-500/20 dark:text-slate-400',
     dotClass: 'bg-slate-400',
   },
@@ -75,7 +76,7 @@ export const THREAT_STATUS_ORDER: ThreatStatus[] = [
 export function getThreatStatusStyle(status: ThreatStatus): ThreatStatusStyle {
   return (
     THREAT_STATUS_STYLES[status] ?? {
-      label: status,
+      labelKey: `threatModel.status.${status}`,
       badgeClass: 'bg-muted text-muted-foreground border-border',
       dotClass: 'bg-muted-foreground',
     }

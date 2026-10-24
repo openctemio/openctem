@@ -1,8 +1,17 @@
 'use client'
 
 import { useMemo } from 'react'
+import dynamic from 'next/dynamic'
 import { Main } from '@/components/layout'
-import { PageHeader, StatsCard, EmptyState, formatRiskScore, getRiskLevel } from '@/features/shared'
+import {
+  PageHeader,
+  StatsCard,
+  EmptyState,
+  ErrorState,
+  formatRiskScore,
+  getRiskLevel,
+} from '@/features/shared'
+import { Skeleton } from '@/components/ui/skeleton'
 import { useDashboardStats } from '@/features/dashboard/hooks/use-dashboard-stats'
 import { useFindingTypeStats } from '@/features/exposures/hooks'
 import {
@@ -13,32 +22,38 @@ import {
   OVERVIEW_CHARTS_GRID,
   OVERVIEW_STATS_GRID,
   SeverityBars,
-  SeverityShareList,
   humanize,
   TypeBreakdownUnavailable,
   ExposuresTabs,
   ViewFindingsButton,
 } from '@/features/exposures/components'
+import { MISCONFIG_SOURCES } from '@/features/exposures/lib/type-sources'
 import { useTenant } from '@/context/tenant-provider'
-import type { FindingSource } from '@/lib/api/finding-types'
-import { Cell, Legend, Pie, PieChart, ResponsiveContainer, Tooltip } from '@/components/charts'
-import { Settings2, AlertTriangle, Server, Shield } from 'lucide-react'
+import { useTranslation } from '@/context/i18n-provider'
+import { Settings2, AlertTriangle, Clock, Shield } from 'lucide-react'
 
-const MISCONFIG_SOURCES: FindingSource[] = ['iac']
+const AssetTypePie = dynamic(() => import('@/features/exposures/components/asset-type-pie'), {
+  ssr: false,
+  loading: () => <Skeleton className="h-[300px] w-full" />,
+})
 
 export default function MisconfigurationsPage() {
+  const { t } = useTranslation()
   const { currentTenant } = useTenant()
   const tenantId = currentTenant?.id || null
-  // Org-wide context (asset coverage + asset-type mix) has no per-type variant.
+  // Org-wide asset-type mix has no per-type variant.
   const { stats, isLoading: dashboardLoading } = useDashboardStats(tenantId)
-  // Type-scoped finding stats: misconfigurations come from IaC scanning.
-  const { stats: typeStats, isLoading: typeLoading } = useFindingTypeStats(
-    tenantId,
-    MISCONFIG_SOURCES
-  )
+  // Type-scoped finding stats: misconfigurations come from IaC and cloud posture scanning.
+  const {
+    stats: typeStats,
+    isLoading: typeLoading,
+    error: typeError,
+    mutate: retryTypeStats,
+  } = useFindingTypeStats(tenantId, MISCONFIG_SOURCES)
   const isLoading = dashboardLoading || typeLoading
 
   const criticalCount = typeStats.bySeverity.critical || 0
+  const openCount = typeStats.openCount
 
   const assetTypeData = useMemo(
     () =>
@@ -56,8 +71,11 @@ export default function MisconfigurationsPage() {
   return (
     <Main>
       <PageHeader
-        title="Misconfigurations"
-        description="Infrastructure and application misconfigurations found by IaC scanning, by severity."
+        title={t('exposures.misconfigurations.title', 'Misconfigurations')}
+        description={t(
+          'exposures.misconfigurations.description',
+          'Infrastructure and cloud misconfigurations found by IaC and cloud posture scanning, by severity.'
+        )}
       >
         <ViewFindingsButton stats={typeStats} sources={MISCONFIG_SOURCES} isLoading={typeLoading} />
       </PageHeader>
@@ -65,42 +83,67 @@ export default function MisconfigurationsPage() {
       <ExposuresTabs />
 
       <div className="mt-5">
-        {isLoading ? (
+        {typeError ? (
+          <ErrorState
+            title={t('exposures.misconfigurations.errorTitle', 'misconfiguration statistics')}
+            error={typeError}
+            onRetry={() => retryTypeStats()}
+          />
+        ) : isLoading ? (
           <OverviewSkeleton />
         ) : typeStats.total === 0 ? (
           <EmptyState
             icon={Settings2}
-            title="No misconfigurations yet"
-            description="Run configuration scans to identify infrastructure and application misconfigurations."
+            title={t('exposures.misconfigurations.emptyTitle', 'No misconfigurations yet')}
+            description={t(
+              'exposures.misconfigurations.emptyDescription',
+              'Run IaC or cloud posture scans to identify infrastructure and cloud misconfigurations.'
+            )}
           />
         ) : !typeStats.scoped ? (
           <TypeBreakdownUnavailable
             icon={Settings2}
             total={typeStats.total}
-            noun={['misconfiguration', 'misconfigurations']}
+            noun={[
+              t('exposures.misconfigurations.nounOne', 'misconfiguration'),
+              t('exposures.misconfigurations.nounMany', 'misconfigurations'),
+            ]}
             sources={MISCONFIG_SOURCES}
           />
         ) : (
           <div className="space-y-5">
             <div className={OVERVIEW_STATS_GRID}>
-              <StatsCard title="Total findings" value={typeStats.total} icon={Settings2} />
               <StatsCard
-                title="Critical misconfigurations"
+                title={t('exposures.type.totalFindings', 'Total findings')}
+                value={typeStats.total}
+                icon={Settings2}
+              />
+              <StatsCard // anatomy-ok: existing type-page tile, only its neighbours changed
+                title={t('exposures.misconfigurations.critical', 'Critical misconfigurations')}
                 value={criticalCount}
                 valueClassName={criticalCount > 0 ? 'text-destructive' : undefined}
                 description={
-                  criticalCount > 0 ? 'Immediate remediation needed' : 'No critical issues'
+                  criticalCount > 0
+                    ? t(
+                        'exposures.misconfigurations.criticalAction',
+                        'Immediate remediation needed'
+                      )
+                    : t('exposures.misconfigurations.criticalNone', 'No critical issues')
                 }
                 icon={AlertTriangle}
               />
               <StatsCard
-                title="Asset coverage"
-                value={stats.assets.total}
-                description={`${Object.keys(stats.assets.byType).length} asset types monitored`}
-                icon={Server}
+                title={t('exposures.type.open', 'Open')}
+                value={openCount}
+                description={
+                  openCount > 0
+                    ? t('exposures.type.openAction', 'Awaiting remediation')
+                    : t('exposures.type.openNone', 'None open')
+                }
+                icon={Clock}
               />
               <StatsCard
-                title="Risk score"
+                title={t('exposures.type.riskScore', 'Risk score')}
                 value={formatRiskScore(typeStats.riskScore)}
                 description={getRiskLevel(typeStats.riskScore).label}
                 icon={Shield}
@@ -109,52 +152,32 @@ export default function MisconfigurationsPage() {
 
             <div className={OVERVIEW_CHARTS_GRID}>
               <ChartCard
-                title="Findings by severity"
-                description={`${typeStats.total.toLocaleString()} misconfigurations by severity`}
+                title={t('exposures.type.findingsBySeverity', 'Findings by severity')}
+                description={t(
+                  'exposures.misconfigurations.severityDescription',
+                  '{count} misconfigurations by severity',
+                  { count: typeStats.total.toLocaleString() }
+                )}
               >
                 <SeverityBars bySeverity={typeStats.bySeverity} />
               </ChartCard>
               <ChartCard
-                title="Assets by type"
-                description={`Your asset mix across ${stats.assets.total.toLocaleString()} assets`}
+                title={t('exposures.misconfigurations.assetsByType', 'Assets by type')}
+                description={t(
+                  'exposures.misconfigurations.assetsDescription',
+                  'Your asset mix across {count} assets',
+                  { count: stats.assets.total.toLocaleString() }
+                )}
               >
                 {assetTypeData.length > 0 ? (
-                  <ResponsiveContainer width="100%" height={300}>
-                    <PieChart>
-                      <Pie
-                        data={assetTypeData}
-                        cx="50%"
-                        cy="50%"
-                        innerRadius={60}
-                        outerRadius={100}
-                        paddingAngle={2}
-                        dataKey="value"
-                        label={({ name, value }) => `${name}: ${value}`}
-                      >
-                        {assetTypeData.map((entry) => (
-                          <Cell key={entry.name} fill={entry.color} />
-                        ))}
-                      </Pie>
-                      <Tooltip />
-                      <Legend />
-                    </PieChart>
-                  </ResponsiveContainer>
+                  <AssetTypePie data={assetTypeData} />
                 ) : (
-                  <ChartEmpty title="No asset type data yet" />
+                  <ChartEmpty
+                    title={t('exposures.misconfigurations.assetsEmpty', 'No asset type data yet')}
+                  />
                 )}
               </ChartCard>
             </div>
-
-            <ChartCard
-              title="Priority fixes"
-              description="Misconfigurations by severity, most urgent first"
-            >
-              <SeverityShareList
-                bySeverity={typeStats.bySeverity}
-                total={typeStats.total}
-                noun={['misconfiguration', 'misconfigurations']}
-              />
-            </ChartCard>
           </div>
         )}
       </div>

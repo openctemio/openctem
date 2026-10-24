@@ -1,5 +1,6 @@
 'use client'
 
+import { SEVERITY_PROGRESS_COLORS } from '@/lib/severity-colors'
 import { use, useState, useMemo, useCallback } from 'react'
 import NextLink from '@/components/link'
 import { useRouter } from 'next/navigation'
@@ -14,13 +15,17 @@ import {
   EmptyState,
   DataTable,
   DataTableColumnHeader,
+  ErrorState,
 } from '@/features/shared'
 import { copyToClipboard } from '@/lib/clipboard'
 import { cn } from '@/lib/utils'
 import { Can, Permission } from '@/lib/permissions'
 import { CRITICALITY_BADGE_SOFT } from '@/lib/criticality-colors'
+import { CRITICALITY_LABELS } from '@/lib/criticality'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
+import { FindingStatusBadge } from '@/features/findings/components/finding-status-badge'
+import type { FindingStatus } from '@/features/findings/types'
 import { Progress } from '@/components/ui/progress'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
@@ -84,24 +89,12 @@ import { useAssetTypeRegistry } from '@/features/asset-types/api/use-asset-type-
 
 const criticalityColors: Record<string, string> = CRITICALITY_BADGE_SOFT
 
-const environmentColors: Record<string, string> = {
-  production: 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-100',
-  staging: 'bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-100',
-  development: 'bg-purple-100 text-purple-800 dark:bg-purple-900 dark:text-purple-100',
-  testing: 'bg-gray-100 text-gray-800 dark:bg-gray-900 dark:text-gray-100',
-}
-
 /** Most severe first when sorted descending. */
 const SEVERITY_RANK: Record<string, number> = { critical: 5, high: 4, medium: 3, low: 2, info: 1 }
 
 const assetStatusClass: Record<string, string> = {
   active: 'border-success/30 bg-success/15 text-success',
   monitoring: 'border-info/30 bg-info/15 text-info',
-}
-
-const findingStatusClass: Record<string, string> = {
-  resolved: 'border-success/30 bg-success/15 text-success',
-  in_progress: 'border-info/30 bg-info/15 text-info',
 }
 
 const assetTypeIcons: Record<string, React.ReactNode> = {
@@ -122,14 +115,21 @@ interface PageProps {
   params: Promise<{ id: string }>
 }
 
-const GROUP_ASSET_EXPORT_FIELDS: ExportFieldConfig<GroupAsset>[] = [
-  { header: 'Name', accessor: (a) => a.name },
-  { header: 'Type', accessor: (a) => a.type },
-  { header: 'Status', accessor: (a) => a.status },
-  { header: 'Risk Score', accessor: (a) => a.riskScore ?? '' },
-  { header: 'Findings', accessor: (a) => a.findingCount ?? 0 },
-  { header: 'Last Seen', accessor: (a) => a.lastSeen ?? '' },
-]
+type Translate = ReturnType<typeof useTranslation>['t']
+
+function groupAssetExportFields(t: Translate): ExportFieldConfig<GroupAsset>[] {
+  return [
+    { header: t('assetGroups.csv.name', 'Name'), accessor: (a) => a.name },
+    { header: t('assetGroups.detail.csv.type', 'Type'), accessor: (a) => a.type },
+    { header: t('assetGroups.detail.csv.status', 'Status'), accessor: (a) => a.status },
+    { header: t('assetGroups.csv.riskScore', 'Risk score'), accessor: (a) => a.riskScore ?? '' },
+    { header: t('assetGroups.csv.findings', 'Findings'), accessor: (a) => a.findingCount ?? 0 },
+    {
+      header: t('assetGroups.detail.csv.lastSeen', 'Last seen'),
+      accessor: (a) => a.lastSeen ?? '',
+    },
+  ]
+}
 
 export default function AssetGroupDetailPage({ params }: PageProps) {
   return <AssetGroupDetailContent params={params} />
@@ -141,10 +141,25 @@ function AssetGroupDetailContent({ params }: PageProps) {
   const router = useRouter()
 
   // Data fetching with hooks
-  const { data: group, isLoading: groupLoading, mutate: refreshGroup } = useAssetGroup(id)
+  const {
+    data: group,
+    isLoading: groupLoading,
+    error: groupError,
+    mutate: refreshGroup,
+  } = useAssetGroup(id)
   useBreadcrumbTitle(group?.name)
-  const { data: assets, isLoading: assetsLoading, mutate: mutateAssets } = useGroupAssets(id)
-  const { data: findings, isLoading: findingsLoading } = useGroupFindings(id)
+  // One page of 100 (the API default is 20). A larger group is said to be
+  // partial wherever its rows are counted (see `partialNote`).
+  const {
+    data: assets,
+    isLoading: assetsLoading,
+    mutate: mutateAssets,
+  } = useGroupAssets(id, { per_page: 100 })
+  const {
+    data: findings,
+    total: findingsTotal,
+    isLoading: findingsLoading,
+  } = useGroupFindings(id, 1, 100)
 
   // Mutations
   const { trigger: updateGroup, isMutating: isUpdating } = useUpdateAssetGroup(id)
@@ -196,14 +211,22 @@ function AssetGroupDetailContent({ params }: PageProps) {
     },
     [registry]
   )
+  // Only the first page of members and findings is loaded. Every figure
+  // computed from the loaded rows (the Assets tab, the exports and the
+  // breakdowns) says so instead of presenting a partial set as the whole.
+  const assetsPartial = !!group && group.assetCount > safeAssets.length
+  const findingsPartial = findingsTotal > (findings?.length ?? 0)
+  const partialNote = (loaded: number, total: number) =>
+    t('assetGroups.detail.partial', 'Based on the first {loaded} of {total}', { loaded, total })
   const findingsHref = (severity?: string) =>
     `/findings?asset_group_id=${encodeURIComponent(id)}${severity ? `&severity=${severity}` : ''}`
 
+  const exportFields = useMemo(() => groupAssetExportFields(t), [t])
   // CSV export of the group's assets. Declared before any early return so the
   // hook order stays stable (rules-of-hooks).
   const { handleExport: exportAssetsCsv } = useCsvExport(
     safeAssets,
-    GROUP_ASSET_EXPORT_FIELDS,
+    exportFields,
     group ? `asset-group-${group.name}` : 'asset-group'
   )
 
@@ -241,20 +264,27 @@ function AssetGroupDetailContent({ params }: PageProps) {
               (table.getIsSomePageRowsSelected() && 'indeterminate')
             }
             onCheckedChange={(value) => table.toggleAllPageRowsSelected(!!value)}
-            aria-label="Select all"
+            aria-label={t('assetGroups.detail.selectAll', 'Select all')}
           />
         ),
         cell: ({ row }) => (
           <Checkbox
             checked={row.getIsSelected()}
             onCheckedChange={(value) => row.toggleSelected(!!value)}
-            aria-label={`Select ${row.original.name}`}
+            aria-label={t('assetGroups.detail.selectRow', 'Select {name}', {
+              name: row.original.name,
+            })}
           />
         ),
       },
       {
         accessorKey: 'name',
-        header: ({ column }) => <DataTableColumnHeader column={column} title="Asset" />,
+        header: ({ column }) => (
+          <DataTableColumnHeader
+            column={column}
+            title={t('assetGroups.detail.col.asset', 'Asset')}
+          />
+        ),
         cell: ({ row }) => (
           <div className="flex items-center gap-2">
             <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded bg-muted text-muted-foreground">
@@ -266,32 +296,48 @@ function AssetGroupDetailContent({ params }: PageProps) {
       },
       {
         accessorKey: 'type',
-        header: ({ column }) => <DataTableColumnHeader column={column} title="Type" />,
+        header: ({ column }) => (
+          <DataTableColumnHeader column={column} title={t('assetGroups.detail.col.type', 'Type')} />
+        ),
         cell: ({ row }) => <Badge variant="outline">{typeLabel(row.original.type)}</Badge>,
       },
       {
         accessorKey: 'status',
-        header: ({ column }) => <DataTableColumnHeader column={column} title="Status" />,
+        header: ({ column }) => (
+          <DataTableColumnHeader
+            column={column}
+            title={t('assetGroups.detail.col.status', 'Status')}
+          />
+        ),
         cell: ({ row }) => (
           <Badge
             variant="outline"
             className={cn(
-              'capitalize',
               assetStatusClass[row.original.status] ?? 'bg-muted text-muted-foreground'
             )}
           >
-            {row.original.status}
+            {t(`assets.status.${row.original.status}`, row.original.status.replace(/_/g, ' '))}
           </Badge>
         ),
       },
       {
         accessorKey: 'riskScore',
-        header: ({ column }) => <DataTableColumnHeader column={column} title="Risk score" />,
+        header: ({ column }) => (
+          <DataTableColumnHeader
+            column={column}
+            title={t('assetGroups.detail.col.riskScore', 'Risk score')}
+          />
+        ),
         cell: ({ row }) => <RiskScoreBadge score={row.original.riskScore} size="sm" />,
       },
       {
         accessorKey: 'findingCount',
-        header: ({ column }) => <DataTableColumnHeader column={column} title="Findings" />,
+        header: ({ column }) => (
+          <DataTableColumnHeader
+            column={column}
+            title={t('assetGroups.detail.col.findings', 'Findings')}
+          />
+        ),
         // The shared "N issues found" chip, linking to the asset's findings.
         cell: ({ row }) =>
           row.original.findingCount > 0 ? (
@@ -302,7 +348,12 @@ function AssetGroupDetailContent({ params }: PageProps) {
       },
       {
         accessorKey: 'lastSeen',
-        header: ({ column }) => <DataTableColumnHeader column={column} title="Last seen" />,
+        header: ({ column }) => (
+          <DataTableColumnHeader
+            column={column}
+            title={t('assetGroups.detail.col.lastSeen', 'Last seen')}
+          />
+        ),
         cell: ({ row }) => (
           <span className="text-muted-foreground">
             {new Date(row.original.lastSeen).toLocaleDateString()}
@@ -318,55 +369,71 @@ function AssetGroupDetailContent({ params }: PageProps) {
             size="icon"
             className="h-8 w-8"
             onClick={() => router.push(groupMemberHref(row.original.id))}
-            aria-label={`Open ${row.original.name}`}
-            title="View asset details"
+            aria-label={t('assetGroups.detail.openAsset', 'Open {name}', {
+              name: row.original.name,
+            })}
+            title={t('assetGroups.detail.viewAsset', 'View asset details')}
           >
             <ExternalLink className="h-4 w-4" />
           </Button>
         ),
       },
     ],
-    [router, typeLabel]
+    [router, typeLabel, t]
   )
 
   const findingColumns = useMemo<ColumnDef<GroupFinding>[]>(
     () => [
       {
         accessorKey: 'title',
-        header: ({ column }) => <DataTableColumnHeader column={column} title="Finding" />,
+        header: ({ column }) => (
+          <DataTableColumnHeader
+            column={column}
+            title={t('assetGroups.detail.col.finding', 'Finding')}
+          />
+        ),
         cell: ({ row }) => <span className="font-medium">{row.original.title}</span>,
       },
       {
         accessorKey: 'severity',
-        header: ({ column }) => <DataTableColumnHeader column={column} title="Severity" />,
+        header: ({ column }) => (
+          <DataTableColumnHeader
+            column={column}
+            title={t('assetGroups.detail.col.severity', 'Severity')}
+          />
+        ),
         sortingFn: (a, b) =>
           (SEVERITY_RANK[a.original.severity] ?? 0) - (SEVERITY_RANK[b.original.severity] ?? 0),
         cell: ({ row }) => <SeverityBadge severity={row.original.severity} />,
       },
       {
         accessorKey: 'status',
-        header: ({ column }) => <DataTableColumnHeader column={column} title="Status" />,
-        cell: ({ row }) => (
-          <Badge
-            variant="outline"
-            className={cn(
-              'capitalize',
-              findingStatusClass[row.original.status] ??
-                'border-warning/30 bg-warning/15 text-warning'
-            )}
-          >
-            {row.original.status.replace('_', ' ')}
-          </Badge>
+        header: ({ column }) => (
+          <DataTableColumnHeader
+            column={column}
+            title={t('assetGroups.detail.col.status', 'Status')}
+          />
         ),
+        cell: ({ row }) => <FindingStatusBadge status={row.original.status as FindingStatus} />,
       },
       {
         accessorKey: 'assetName',
-        header: ({ column }) => <DataTableColumnHeader column={column} title="Asset" />,
+        header: ({ column }) => (
+          <DataTableColumnHeader
+            column={column}
+            title={t('assetGroups.detail.col.asset', 'Asset')}
+          />
+        ),
         cell: ({ row }) => <span className="text-muted-foreground">{row.original.assetName}</span>,
       },
       {
         accessorKey: 'discoveredAt',
-        header: ({ column }) => <DataTableColumnHeader column={column} title="Discovered" />,
+        header: ({ column }) => (
+          <DataTableColumnHeader
+            column={column}
+            title={t('assetGroups.detail.col.discovered', 'Discovered')}
+          />
+        ),
         cell: ({ row }) => (
           <span className="text-muted-foreground">
             {new Date(row.original.discoveredAt).toLocaleDateString()}
@@ -382,15 +449,17 @@ function AssetGroupDetailContent({ params }: PageProps) {
             size="icon"
             className="h-8 w-8"
             onClick={() => router.push(`/findings/${row.original.id}`)}
-            aria-label={`Open ${row.original.title}`}
-            title="View finding details"
+            aria-label={t('assetGroups.detail.openAsset', 'Open {name}', {
+              name: row.original.title,
+            })}
+            title={t('assetGroups.detail.viewFinding', 'View finding details')}
           >
             <Eye className="h-4 w-4" />
           </Button>
         ),
       },
     ],
-    [router]
+    [router, t]
   )
 
   // Loading state with skeleton UI
@@ -462,6 +531,29 @@ function AssetGroupDetailContent({ params }: PageProps) {
     )
   }
 
+  // A failed request is not "not found": only a 404 says the group is gone.
+  const groupNotFound = (groupError as { statusCode?: number } | null)?.statusCode === 404
+  if (groupError && !groupNotFound) {
+    return (
+      <Main>
+        <Button
+          variant="ghost"
+          size="sm"
+          className="-ms-2 mb-2"
+          onClick={() => router.push('/assets/groups')}
+        >
+          <ArrowLeft className="me-2 h-4 w-4" />
+          {t('assetGroups.detail.back', 'Back to asset groups')}
+        </Button>
+        <ErrorState
+          title={t('assetGroups.detail.errorTitle', 'this asset group')}
+          error={groupError}
+          onRetry={() => refreshGroup()}
+        />
+      </Main>
+    )
+  }
+
   // Not found - early return after all hooks
   if (!group) {
     return (
@@ -469,13 +561,18 @@ function AssetGroupDetailContent({ params }: PageProps) {
         <Main>
           <div className="flex flex-col items-center justify-center py-20">
             <FolderKanban className="h-16 w-16 text-muted-foreground/50 mb-4" />
-            <h2 className="text-xl font-semibold mb-2">Group Not Found</h2>
+            <h2 className="text-xl font-semibold mb-2">
+              {t('assetGroups.detail.notFound', 'Group not found')}
+            </h2>
             <p className="text-muted-foreground mb-4">
-              The asset group you&apos;re looking for doesn&apos;t exist.
+              {t(
+                'assetGroups.detail.notFoundHint',
+                'The asset group does not exist or was deleted.'
+              )}
             </p>
             <Button onClick={() => router.push('/assets/groups')}>
               <ArrowLeft className="me-2 h-4 w-4" />
-              Back to Groups
+              {t('assetGroups.detail.backToGroups', 'Back to groups')}
             </Button>
           </div>
         </Main>
@@ -483,15 +580,19 @@ function AssetGroupDetailContent({ params }: PageProps) {
     )
   }
 
+  const envLabel = (env: string) => t(`assetGroups.environment.${env}`, env)
+  const critLabel = (crit: string) =>
+    t(`criticality.${crit}`, (CRITICALITY_LABELS as Record<string, string>)[crit] ?? crit)
+
   // Handlers
   const handleCopyId = () => {
     copyToClipboard(group.id)
-    toast.success('Group ID copied')
+    toast.success(t('assetGroups.idCopied', 'Group ID copied'))
   }
 
   const handleCopyLink = () => {
     copyToClipboard(window.location.href)
-    toast.success('Link copied to clipboard')
+    toast.success(t('assetGroups.linkCopied', 'Link copied'))
   }
 
   const handleEdit = () => {
@@ -567,7 +668,11 @@ function AssetGroupDetailContent({ params }: PageProps) {
       return
     }
     // JSON: export the group plus its assets.
-    const payload = { group, assets: safeAssets }
+    const payload = {
+      group,
+      assets: safeAssets,
+      ...(assetsPartial ? { partial: { loaded: safeAssets.length, total: group.assetCount } } : {}),
+    }
     const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' })
     const url = URL.createObjectURL(blob)
     const a = document.createElement('a')
@@ -575,7 +680,6 @@ function AssetGroupDetailContent({ params }: PageProps) {
     a.download = `asset-group-${group?.name ?? id}-${new Date().toISOString().slice(0, 10)}.json`
     a.click()
     URL.revokeObjectURL(url)
-    toast.success('Exported successfully')
   }
 
   return (
@@ -589,52 +693,56 @@ function AssetGroupDetailContent({ params }: PageProps) {
           onClick={() => router.push('/assets/groups')}
         >
           <ArrowLeft className="me-2 h-4 w-4" />
-          Back to asset groups
+          {t('assetGroups.detail.back', 'Back to asset groups')}
         </Button>
         <PageHeader
           title={group.name}
           className="mb-6"
           description={
             <div className="flex flex-wrap items-center gap-2">
-              <span>{group.description || 'No description'}</span>
-              <Badge variant="outline" className={environmentColors[group.environment]}>
-                {group.environment}
-              </Badge>
+              <span>
+                {group.description || t('assetGroups.detail.noDescription', 'No description')}
+              </span>
+              <Badge variant="outline">{envLabel(group.environment)}</Badge>
               <Badge variant="outline" className={criticalityColors[group.criticality]}>
-                {group.criticality}
+                {critLabel(group.criticality)}
               </Badge>
             </div>
           }
         >
           <Button variant="outline" size="sm" onClick={handleCopyId}>
             <Copy className="me-2 h-4 w-4" />
-            Copy ID
+            {t('assetGroups.detail.copyId', 'Copy ID')}
           </Button>
           <Can permission={Permission.AssetGroupsWrite}>
             <Button variant="outline" size="sm" onClick={handleEdit}>
               <Pencil className="me-2 h-4 w-4" />
-              Edit
+              {t('assetGroups.detail.edit', 'Edit')}
             </Button>
           </Can>
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <Button variant="outline" size="icon" aria-label="More actions">
+              <Button
+                variant="outline"
+                size="icon"
+                aria-label={t('assetGroups.detail.moreActions', 'More actions')}
+              >
                 <MoreHorizontal className="h-4 w-4" />
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">
               <DropdownMenuItem onClick={handleCopyLink}>
                 <Link className="me-2 h-4 w-4" />
-                Copy link
+                {t('assetGroups.detail.copyLink', 'Copy link')}
               </DropdownMenuItem>
               <DropdownMenuSeparator />
               <DropdownMenuItem onClick={() => handleExport('JSON')}>
                 <Download className="me-2 h-4 w-4" />
-                Export as JSON
+                {t('assetGroups.detail.exportJson', 'Export as JSON')}
               </DropdownMenuItem>
               <DropdownMenuItem onClick={() => handleExport('CSV')}>
                 <Download className="me-2 h-4 w-4" />
-                Export as CSV
+                {t('assetGroups.detail.exportCsv', 'Export as CSV')}
               </DropdownMenuItem>
               <Can permission={Permission.AssetGroupsDelete}>
                 <DropdownMenuSeparator />
@@ -643,7 +751,7 @@ function AssetGroupDetailContent({ params }: PageProps) {
                   onClick={() => setDeleteDialogOpen(true)}
                 >
                   <Trash2 className="me-2 h-4 w-4" />
-                  Delete group
+                  {t('assetGroups.detail.deleteGroup', 'Delete group')}
                 </DropdownMenuItem>
               </Can>
             </DropdownMenuContent>
@@ -652,11 +760,19 @@ function AssetGroupDetailContent({ params }: PageProps) {
 
         {/* Stats Cards */}
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
-          <StatsCard title="Total Assets" value={group.assetCount} />
-          <StatsCard title="Findings" value={group.findingCount} />
+          <StatsCard
+            title={t('assetGroups.detail.stat.assets', 'Total assets')}
+            value={group.assetCount}
+          />
+          <StatsCard
+            title={t('assetGroups.detail.stat.findings', 'Findings')}
+            value={group.findingCount}
+          />
           <Card>
             <CardHeader className="pb-2">
-              <CardDescription>Risk Score</CardDescription>
+              <CardDescription>
+                {t('assetGroups.detail.stat.riskScore', 'Risk score')}
+              </CardDescription>
               <div className="pt-1">
                 <RiskScoreBadge score={group.riskScore} size="lg" />
               </div>
@@ -664,7 +780,9 @@ function AssetGroupDetailContent({ params }: PageProps) {
           </Card>
           <Card>
             <CardHeader className="pb-2">
-              <CardDescription>Last Updated</CardDescription>
+              <CardDescription>
+                {t('assetGroups.detail.stat.lastUpdated', 'Last updated')}
+              </CardDescription>
               <CardTitle className="text-lg">
                 {new Date(group.updatedAt).toLocaleDateString()}
               </CardTitle>
@@ -675,12 +793,15 @@ function AssetGroupDetailContent({ params }: PageProps) {
         {/* Tabs */}
         <Tabs value={activeTab} onValueChange={handleTabChange}>
           <TabsList>
-            <TabsTrigger value="overview">Overview</TabsTrigger>
+            <TabsTrigger value="overview">
+              {t('assetGroups.detail.tab.overview', 'Overview')}
+            </TabsTrigger>
             <TabsTrigger value="assets">
-              Assets <TabsCount value={group.assetCount} />
+              {t('assetGroups.detail.tab.assets', 'Assets')} <TabsCount value={group.assetCount} />
             </TabsTrigger>
             <TabsTrigger value="findings">
-              Findings <TabsCount value={group.findingCount} />
+              {t('assetGroups.detail.tab.findings', 'Findings')}{' '}
+              <TabsCount value={group.findingCount} />
             </TabsTrigger>
           </TabsList>
 
@@ -694,12 +815,18 @@ function AssetGroupDetailContent({ params }: PageProps) {
                     {t('assets.groups.detail.typesTitle', 'Assets by type')}
                   </CardTitle>
                   <CardDescription>
-                    {t('assets.groups.detail.typesDesc', 'The group’s members by asset type')}
+                    {assetsPartial
+                      ? partialNote(safeAssets.length, group.assetCount)
+                      : t('assets.groups.detail.typesDesc', 'The group’s members by asset type')}
                   </CardDescription>
                 </CardHeader>
                 <CardContent>
                   {Object.keys(assetsByType).length === 0 ? (
-                    <EmptyState icon={Package} title="No assets in this group yet" card={false} />
+                    <EmptyState
+                      icon={Package}
+                      title={t('assetGroups.detail.noAssetsYet', 'No assets in this group yet')}
+                      card={false}
+                    />
                   ) : (
                     <div className="space-y-4">
                       {Object.entries(assetsByType).map(([type, count]) => (
@@ -712,7 +839,10 @@ function AssetGroupDetailContent({ params }: PageProps) {
                               <span className="text-sm font-medium">{typeLabel(type)}</span>
                               <span className="text-sm text-muted-foreground">{count}</span>
                             </div>
-                            <Progress value={(count / group.assetCount) * 100} className="h-2" />
+                            <Progress
+                              value={(count / Math.max(safeAssets.length, 1)) * 100}
+                              className="h-2"
+                            />
                           </div>
                         </div>
                       ))}
@@ -728,10 +858,12 @@ function AssetGroupDetailContent({ params }: PageProps) {
                     {t('assets.groups.detail.severityTitle', 'Open findings by severity')}
                   </CardTitle>
                   <CardDescription>
-                    {t(
-                      'assets.groups.detail.severityDesc',
-                      'The same findings as the group’s count; each row opens them'
-                    )}
+                    {findingsPartial
+                      ? partialNote(findings?.length ?? 0, findingsTotal)
+                      : t(
+                          'assets.groups.detail.severityDesc',
+                          'The same findings as the group’s count; each row opens them'
+                        )}
                   </CardDescription>
                 </CardHeader>
                 <CardContent>
@@ -760,8 +892,12 @@ function AssetGroupDetailContent({ params }: PageProps) {
               {/* Risk Score */}
               <Card>
                 <CardHeader>
-                  <CardTitle className="text-lg">Risk Assessment</CardTitle>
-                  <CardDescription>Overall group risk score</CardDescription>
+                  <CardTitle className="text-lg">
+                    {t('assetGroups.detail.riskAssessment', 'Risk assessment')}
+                  </CardTitle>
+                  <CardDescription>
+                    {t('assetGroups.detail.riskAssessmentDesc', 'Overall group risk score')}
+                  </CardDescription>
                 </CardHeader>
                 <CardContent>
                   <div className="flex items-center gap-4">
@@ -769,21 +905,22 @@ function AssetGroupDetailContent({ params }: PageProps) {
                     <div className="flex-1">
                       <Progress
                         value={group.riskScore}
-                        className={`h-3 ${
+                        className={cn(
+                          'h-3',
                           group.riskScore >= 80
-                            ? '[&>div]:bg-red-500'
+                            ? SEVERITY_PROGRESS_COLORS.critical
                             : group.riskScore >= 60
-                              ? '[&>div]:bg-orange-500'
+                              ? SEVERITY_PROGRESS_COLORS.high
                               : group.riskScore >= 40
-                                ? '[&>div]:bg-yellow-500'
-                                : '[&>div]:bg-green-500'
-                        }`}
+                                ? SEVERITY_PROGRESS_COLORS.medium
+                                : '[&>div]:bg-success'
+                        )}
                       />
                       <div className="flex justify-between mt-1 text-xs text-muted-foreground">
-                        <span>Low</span>
-                        <span>Medium</span>
-                        <span>High</span>
-                        <span>Critical</span>
+                        <span>{t('severity.low', 'Low')}</span>
+                        <span>{t('severity.medium', 'Medium')}</span>
+                        <span>{t('severity.high', 'High')}</span>
+                        <span>{t('severity.critical', 'Critical')}</span>
                       </div>
                     </div>
                   </div>
@@ -793,37 +930,49 @@ function AssetGroupDetailContent({ params }: PageProps) {
               {/* Group Info */}
               <Card>
                 <CardHeader>
-                  <CardTitle className="text-lg">Group Information</CardTitle>
-                  <CardDescription>Metadata and details</CardDescription>
+                  <CardTitle className="text-lg">
+                    {t('assetGroups.detail.info.title', 'Group information')}
+                  </CardTitle>
+                  <CardDescription>
+                    {t('assetGroups.detail.info.desc', 'Metadata and details')}
+                  </CardDescription>
                 </CardHeader>
                 <CardContent>
                   <div className="space-y-3 text-sm">
                     <div className="flex justify-between">
-                      <span className="text-muted-foreground">Group ID</span>
+                      <span className="text-muted-foreground">
+                        {t('assetGroups.detail.info.id', 'Group ID')}
+                      </span>
                       <span className="font-mono">{group.id}</span>
                     </div>
                     <Separator />
                     <div className="flex justify-between">
-                      <span className="text-muted-foreground">Created</span>
+                      <span className="text-muted-foreground">
+                        {t('assetGroups.detail.info.created', 'Created')}
+                      </span>
                       <span>{new Date(group.createdAt).toLocaleDateString()}</span>
                     </div>
                     <Separator />
                     <div className="flex justify-between">
-                      <span className="text-muted-foreground">Updated</span>
+                      <span className="text-muted-foreground">
+                        {t('assetGroups.detail.info.updated', 'Updated')}
+                      </span>
                       <span>{new Date(group.updatedAt).toLocaleDateString()}</span>
                     </div>
                     <Separator />
                     <div className="flex justify-between">
-                      <span className="text-muted-foreground">Environment</span>
-                      <Badge variant="outline" className={environmentColors[group.environment]}>
-                        {group.environment}
-                      </Badge>
+                      <span className="text-muted-foreground">
+                        {t('assetGroups.detail.info.environment', 'Environment')}
+                      </span>
+                      <Badge variant="outline">{envLabel(group.environment)}</Badge>
                     </div>
                     <Separator />
                     <div className="flex justify-between">
-                      <span className="text-muted-foreground">Criticality</span>
+                      <span className="text-muted-foreground">
+                        {t('assetGroups.detail.info.criticality', 'Criticality')}
+                      </span>
                       <Badge variant="outline" className={criticalityColors[group.criticality]}>
-                        {group.criticality}
+                        {critLabel(group.criticality)}
                       </Badge>
                     </div>
                     {group.businessUnit && (
@@ -832,7 +981,7 @@ function AssetGroupDetailContent({ params }: PageProps) {
                         <div className="flex justify-between items-center">
                           <span className="text-muted-foreground flex items-center gap-1">
                             <Building2 className="h-3 w-3" />
-                            Business Unit
+                            {t('assetGroups.detail.info.businessUnit', 'Business unit')}
                           </span>
                           <span>{group.businessUnit}</span>
                         </div>
@@ -848,7 +997,7 @@ function AssetGroupDetailContent({ params }: PageProps) {
                   <CardHeader>
                     <CardTitle className="text-lg flex items-center gap-2">
                       <User className="h-4 w-4" />
-                      Owner
+                      {t('assetGroups.detail.owner', 'Owner')}
                     </CardTitle>
                   </CardHeader>
                   <CardContent>
@@ -857,7 +1006,9 @@ function AssetGroupDetailContent({ params }: PageProps) {
                         <User className="h-5 w-5" />
                       </div>
                       <div>
-                        <p className="font-medium">{group.owner || 'Not assigned'}</p>
+                        <p className="font-medium">
+                          {group.owner || t('assetGroups.detail.notAssigned', 'Not assigned')}
+                        </p>
                         {group.ownerEmail && (
                           <p className="text-sm text-muted-foreground flex items-center gap-1">
                             <Mail className="h-3 w-3" />
@@ -876,7 +1027,7 @@ function AssetGroupDetailContent({ params }: PageProps) {
                   <CardHeader>
                     <CardTitle className="text-lg flex items-center gap-2">
                       <Tags className="h-4 w-4" />
-                      Tags
+                      {t('assetGroups.detail.tags', 'Tags')}
                     </CardTitle>
                   </CardHeader>
                   <CardContent>
@@ -895,13 +1046,18 @@ function AssetGroupDetailContent({ params }: PageProps) {
 
           {/* Assets Tab */}
           <TabsContent value="assets" className="mt-6">
+            {assetsPartial && (
+              <p className="mb-2 text-xs text-muted-foreground">
+                {partialNote(safeAssets.length, group.assetCount)}
+              </p>
+            )}
             <DataTable
               columns={assetColumns}
               data={safeAssets}
               getRowId={(a) => a.id}
               isLoading={assetsLoading}
               searchKey="name"
-              searchPlaceholder="Search assets…"
+              searchPlaceholder={t('assetGroups.detail.searchAssets', 'Search assets…')}
               onSelectionChange={(rows) => setSelectedAssets(rows.map((a) => a.id))}
               resetSelectionKey={selectionEpoch}
               showSelectionCount={false}
@@ -916,34 +1072,55 @@ function AssetGroupDetailContent({ params }: PageProps) {
                       onClick={() => setRemoveAssetsDialogOpen(true)}
                     >
                       <X className="me-2 h-4 w-4" />
-                      Remove {selectedAssets.length} from group
+                      {t('assetGroups.detail.removeSelected', 'Remove {count} from group', {
+                        count: selectedAssets.length,
+                      })}
                     </Button>
                   )}
                   <Button size="sm" className="h-9" onClick={() => setAddAssetsDialogOpen(true)}>
                     <Plus className="me-2 h-4 w-4" />
-                    Add assets
+                    {t('assetGroups.detail.addAssets', 'Add assets')}
                   </Button>
                 </>
               }
-              emptyMessage="No assets in this group"
-              emptyDescription="Add assets to this group to track and manage them together"
+              emptyMessage={t('assetGroups.detail.emptyAssets', 'No assets in this group')}
+              emptyDescription={t(
+                'assetGroups.detail.emptyAssetsHint',
+                'Add assets to this group to track and manage them together'
+              )}
             />
           </TabsContent>
 
           {/* Findings Tab */}
           <TabsContent value="findings" className="mt-6">
+            {findingsPartial && (
+              <p className="mb-2 text-xs text-muted-foreground">
+                {partialNote(findings?.length ?? 0, findingsTotal)}
+              </p>
+            )}
             <DataTable
               columns={findingColumns}
               data={safeFindings}
               getRowId={(f) => f.id}
               isLoading={findingsLoading}
-              searchPlaceholder="Search findings…"
+              searchPlaceholder={t('assetGroups.detail.searchFindings', 'Search findings…')}
               onRowClick={(f) => router.push(`/findings/${f.id}`)}
-              emptyMessage={group.findingCount > 0 ? 'Findings could not be loaded' : 'No findings'}
+              emptyMessage={
+                group.findingCount > 0
+                  ? t('assetGroups.detail.noOpenLoaded', 'No open findings in the loaded rows')
+                  : t('assetGroups.detail.emptyFindings', 'No findings')
+              }
               emptyDescription={
                 group.findingCount > 0
-                  ? `${group.findingCount} findings belong to this group but none were returned. Refresh the page to try again.`
-                  : 'No security findings have been discovered for assets in this group'
+                  ? t(
+                      'assetGroups.detail.noOpenLoadedHint',
+                      '{count} findings belong to this group; open the findings list to see them all.',
+                      { count: group.findingCount }
+                    )
+                  : t(
+                      'assetGroups.detail.emptyFindingsHint',
+                      'No security findings have been discovered for assets in this group'
+                    )
               }
             />
           </TabsContent>

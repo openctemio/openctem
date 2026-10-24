@@ -31,17 +31,83 @@ const automationVersionColumns = `id, tenant_id, automation_id, version, definit
 // Create stores v with the next number of its automation. The automation
 // must belong to v's tenant.
 func (r *AutomationVersionRepository) Create(ctx context.Context, v *automation.Version) error {
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback() }()
+	if err := insertAutomationVersion(ctx, tx, v); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
+// CreateAndPublish stores v (a pending version) and makes it the published
+// version in one transaction: a failure leaves neither a stray pending row
+// nor a half-switched automation.
+func (r *AutomationVersionRepository) CreateAndPublish(ctx context.Context, v *automation.Version, approvedBy *shared.ID, at time.Time) error {
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback() }()
+	if err := insertAutomationVersion(ctx, tx, v); err != nil {
+		return err
+	}
+	if err := publishAutomationVersion(ctx, tx, v.TenantID, v.AutomationID, v.ID, approvedBy, at); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
+// RepairBackfilledDigests computes the canonical digest of the versions the
+// migration backfilled (digest = 'backfill'), so their stored digest equals
+// Definition.Digest like every version published through the API.
+func (r *AutomationVersionRepository) RepairBackfilledDigests(ctx context.Context) (int, error) {
+	fixes, err := r.backfilledDigestFixes(ctx)
+	if err != nil {
+		return 0, err
+	}
+	for _, f := range fixes {
+		if _, err := r.db.ExecContext(ctx, `UPDATE automation_versions SET digest = $3 WHERE tenant_id = $1 AND id = $2 AND digest = $4`,
+			f.tenant, f.id, f.digest, automation.BackfillDigest); err != nil {
+			return 0, fmt.Errorf("store digest of version %s: %w", f.id, err)
+		}
+	}
+	return len(fixes), nil
+}
+
+type digestFix struct{ id, tenant, digest string }
+
+func (r *AutomationVersionRepository) backfilledDigestFixes(ctx context.Context) ([]digestFix, error) {
+	rows, err := r.db.QueryContext(ctx, `SELECT id, tenant_id, definition FROM automation_versions WHERE digest = $1`, automation.BackfillDigest)
+	if err != nil {
+		return nil, fmt.Errorf("list backfilled versions: %w", err)
+	}
+	defer rows.Close()
+	var fixes []digestFix
+	for rows.Next() {
+		var id, tenant string
+		var raw []byte
+		if err := rows.Scan(&id, &tenant, &raw); err != nil {
+			return nil, err
+		}
+		var d automation.Definition
+		if err := json.Unmarshal(raw, &d); err != nil {
+			return nil, fmt.Errorf("decode backfilled definition %s: %w", id, err)
+		}
+		fixes = append(fixes, digestFix{id, tenant, d.Digest()})
+	}
+	return fixes, rows.Err()
+}
+
+func insertAutomationVersion(ctx context.Context, tx *sql.Tx, v *automation.Version) error {
 	def, err := json.Marshal(v.Definition)
 	if err != nil {
 		return fmt.Errorf("marshal definition: %w", err)
 	}
 	// The number is max+1 under the automation's row lock, so two publishes
 	// never race to the same number.
-	tx, err := r.db.BeginTx(ctx, nil)
-	if err != nil {
-		return err
-	}
-	defer func() { _ = tx.Rollback() }()
 	var locked string
 	if err := tx.QueryRowContext(ctx, `SELECT id FROM automations WHERE tenant_id = $1 AND id = $2 FOR UPDATE`,
 		v.TenantID.String(), v.AutomationID.String()).Scan(&locked); err != nil {
@@ -62,7 +128,7 @@ func (r *AutomationVersionRepository) Create(ctx context.Context, v *automation.
 	if err != nil {
 		return fmt.Errorf("create automation version: %w", err)
 	}
-	return tx.Commit()
+	return nil
 }
 
 // GetByTenantAndID returns one version of the tenant.
@@ -106,7 +172,13 @@ func (r *AutomationVersionRepository) Publish(ctx context.Context, tenantID, aut
 		return err
 	}
 	defer func() { _ = tx.Rollback() }()
+	if err := publishAutomationVersion(ctx, tx, tenantID, automationID, versionID, approvedBy, at); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
 
+func publishAutomationVersion(ctx context.Context, tx *sql.Tx, tenantID, automationID, versionID shared.ID, approvedBy *shared.ID, at time.Time) error {
 	var status string
 	if err := tx.QueryRowContext(ctx, `SELECT v.status FROM automation_versions v
 		JOIN automations a ON a.id = v.automation_id AND a.tenant_id = v.tenant_id
@@ -119,7 +191,7 @@ func (r *AutomationVersionRepository) Publish(ctx context.Context, tenantID, aut
 	}
 	switch automation.VersionStatus(status) {
 	case automation.VersionPublished:
-		return tx.Commit() // already live
+		return nil // already live
 	case automation.VersionPendingApproval:
 	default:
 		return automation.ErrVersionNotPending
@@ -144,7 +216,7 @@ func (r *AutomationVersionRepository) Publish(ctx context.Context, tenantID, aut
 		WHERE tenant_id = $1 AND id = $2`, tenantID.String(), automationID.String(), versionID.String(), at); err != nil {
 		return fmt.Errorf("switch automation to live: %w", err)
 	}
-	return tx.Commit()
+	return nil
 }
 
 // RetirePending implements automation.VersionRepository.

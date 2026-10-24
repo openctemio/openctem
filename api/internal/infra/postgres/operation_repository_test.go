@@ -71,6 +71,7 @@ func TestOperationCreate_BudgetHoldsUnderConcurrency_DB(t *testing.T) {
 	var wg sync.WaitGroup
 	var mu sync.Mutex
 	created, refused := 0, 0
+	var winner shared.ID
 	for i := range people {
 		wg.Add(1)
 		go func(u shared.ID) {
@@ -81,6 +82,7 @@ func TestOperationCreate_BudgetHoldsUnderConcurrency_DB(t *testing.T) {
 			switch {
 			case err == nil:
 				created++
+				winner = u
 			case errors.Is(err, operation.ErrBudget):
 				refused++
 			default:
@@ -91,6 +93,15 @@ func TestOperationCreate_BudgetHoldsUnderConcurrency_DB(t *testing.T) {
 	wg.Wait()
 	if created != 1 || refused != people-1 {
 		t.Fatalf("created %d, refused %d; want 1 and %d", created, refused, people-1)
+	}
+	// Which person wins the race is not fixed, and a person with an operation
+	// still running is refused for that reason, not for the budget: the later
+	// steps use people other than the winner.
+	free := make([]shared.ID, 0, people)
+	for _, u := range users {
+		if u != winner {
+			free = append(free, u)
+		}
 	}
 	// A create that is still in flight (its row not committed yet) holds the
 	// budget: the next create waits for it and then sees its row.
@@ -103,12 +114,12 @@ func TestOperationCreate_BudgetHoldsUnderConcurrency_DB(t *testing.T) {
 		t.Fatal(err)
 	}
 	if _, err := inFlight.ExecContext(ctx, `INSERT INTO operations (tenant_id, created_by, kind, status, total)
-		VALUES ($1, $2, 'findings_bulk_status', 'succeeded', 3)`, tenant.String(), users[3].String()); err != nil {
+		VALUES ($1, $2, 'findings_bulk_status', 'succeeded', 3)`, tenant.String(), free[0].String()); err != nil {
 		t.Fatal(err)
 	}
 	waited := make(chan error, 1)
 	go func() {
-		_, _, err := repo.Create(ctx, &operation.Operation{TenantID: tenant, CreatedBy: users[4], Kind: operation.KindFindingsBulkStatus, Total: 2}, budget)
+		_, _, err := repo.Create(ctx, &operation.Operation{TenantID: tenant, CreatedBy: free[1], Kind: operation.KindFindingsBulkStatus, Total: 2}, budget)
 		waited <- err
 	}()
 	time.Sleep(300 * time.Millisecond)
@@ -120,10 +131,10 @@ func TestOperationCreate_BudgetHoldsUnderConcurrency_DB(t *testing.T) {
 	}
 
 	// What is left still fits: 1 more.
-	if _, _, err := repo.Create(ctx, &operation.Operation{TenantID: tenant, CreatedBy: users[1], Kind: operation.KindFindingsBulkStatus, Total: 1}, budget); err != nil {
+	if _, _, err := repo.Create(ctx, &operation.Operation{TenantID: tenant, CreatedBy: free[2], Kind: operation.KindFindingsBulkStatus, Total: 1}, budget); err != nil {
 		t.Fatalf("the rest of the budget: %v", err)
 	}
-	if _, _, err := repo.Create(ctx, &operation.Operation{TenantID: tenant, CreatedBy: users[2], Kind: operation.KindFindingsBulkStatus, Total: 1}, budget); !errors.Is(err, operation.ErrBudget) {
+	if _, _, err := repo.Create(ctx, &operation.Operation{TenantID: tenant, CreatedBy: free[3], Kind: operation.KindFindingsBulkStatus, Total: 1}, budget); !errors.Is(err, operation.ErrBudget) {
 		t.Fatalf("over the budget: %v, want ErrBudget", err)
 	}
 }
