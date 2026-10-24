@@ -58,15 +58,6 @@ export const SCM_CONNECTION_STATUS_LABELS: Record<SCMConnectionStatus, string> =
   error: 'Error',
 }
 
-export const SCM_CONNECTION_STATUS_COLORS: Record<
-  SCMConnectionStatus,
-  { bg: string; text: string }
-> = {
-  connected: { bg: 'bg-green-500/15', text: 'text-green-600' },
-  disconnected: { bg: 'bg-gray-500/15', text: 'text-gray-600' },
-  error: { bg: 'bg-red-500/15', text: 'text-red-600' },
-}
-
 /**
  * SCM Connection configuration
  */
@@ -113,14 +104,6 @@ export const SYNC_STATUS_LABELS: Record<SyncStatus, string> = {
   syncing: 'Syncing',
   error: 'Sync Error',
   disabled: 'Sync Disabled',
-}
-
-export const SYNC_STATUS_COLORS: Record<SyncStatus, { bg: string; text: string }> = {
-  synced: { bg: 'bg-green-500/15', text: 'text-green-600' },
-  pending: { bg: 'bg-yellow-500/15', text: 'text-yellow-600' },
-  syncing: { bg: 'bg-blue-500/15', text: 'text-blue-600' },
-  error: { bg: 'bg-red-500/15', text: 'text-red-600' },
-  disabled: { bg: 'bg-gray-500/15', text: 'text-gray-600' },
 }
 
 /**
