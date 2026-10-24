@@ -77,6 +77,24 @@ Team roles are used for team management operations:
   editor's recent re-authentication when the role has holders, and for a
   team-bound role it is also owner-only. Giving a user a custom role that
   carries such a permission needs the same step-up.
+- The privileged permissions (`permission.PrivilegedPermissions`) are member
+  invitation and writes, service accounts, team, role and API key writes,
+  secret store access, settings writes, and the two that decide where an
+  organization's integrations send data and stored tokens:
+  `integrations:manage` and `integrations:scm:write`. Both are held by the
+  owner and administrator roles; the built-in member role keeps
+  `integrations:scm:write` for its own connections, and a custom role that
+  carries either follows the rules above.
+- A stored integration secret never follows a changed destination. A
+  notification channel update that moves an email channel to another SMTP
+  host or port (or weakens its TLS mode) or a Splunk channel to another
+  `hec_url` host is refused with 400 unless it carries new credentials, which
+  replace the stored ones. A console identity provider update that changes the
+  issuer (or the Entra directory) is refused unless the client secret is
+  entered again, and a tenant storage configuration that changes the provider,
+  endpoint, bucket or region needs new keys. Webhook, Slack and Teams
+  channels hold the destination itself as the secret, and Telegram only ever
+  sends its token to the Telegram API, so neither can redirect a stored secret.
 
 ### One authority for the team role
 
@@ -346,7 +364,7 @@ and SBOM import write it.
 | `POST /api/v1/findings/bulk/assign` | `findings:bulk_update` **and** `findings:assign` |
 | `POST /api/v1/findings/{id}/approvals` (false-positive or accepted-risk request) | `findings:write`, the finding in the caller's data scope; decided at once (`single_person`) only when the organization's false-positive or risk acceptance level allows it **and** the caller holds `findings:approve` and does not own the asset; bulk, group, import and automation paths never decide alone |
 | `GET /api/v1/organization/settings/finding-approvals` | `findings:read` |
-| `PATCH /api/v1/organization/settings/finding-approvals` | owner or administrator **and** `settings:write` **and** step-up; a lower `fp_approval` or `accept_approval` level takes effect after 24 hours, raising at once; audited `finding_approval.settings_changed` (high), approvers told |
+| `PATCH /api/v1/organization/settings/finding-approvals` | owner or administrator **and** `settings:write` **and** step-up; a lower `fp_approval` or `accept_approval` level takes effect after 24 hours, raising at once; lowering a level or `second_look_percent`, relaxing the policy and changing `backup_contact_email` are **owner only** (403 for an administrator); audited `finding_approval.settings_changed` (high), approvers told |
 | `POST /api/v1/findings/{id}/verify` | `findings:verify` |
 
 > The finding **action** routes (status, triage, assign, bulk, verify) are gated on
@@ -828,15 +846,18 @@ Owner and administrator only, on top of the permission: `PUT /api/v1/scan-profil
 #### Dashboards (`/api/v1/me/dashboards`, `/api/v1/organization/dashboards`)
 
 Two kinds ([dashboards](dashboards.md)). Personal dashboards are the caller's
-own: `/me/*` is self-scoped (no permission gate) and every query filters on
-the caller's tenant and user, so another user's or tenant's dashboard is 404.
+own: the layout routes of `/me/*` are self-scoped (no permission gate) and every
+query filters on the caller's tenant and user, so another user's or tenant's
+dashboard is 404. The routes that compute figures need `dashboard:read`, and
+each metric needs the permission of what it counts.
 Organization dashboards belong to the organization.
 
 | Endpoint | Permission Required |
 |----------|---------------------|
 | `GET/POST /api/v1/me/dashboards`, `GET/PUT/DELETE /api/v1/me/dashboards/{id}`, `POST …/{id}/default`, `PUT …/{id}/schedule` | self (owner only) |
 | `POST /api/v1/me/dashboards/{id}/share` | self; recipients must be active members of the tenant; each gets a layout copy of their own (audited) |
-| `GET /api/v1/me/dashboards/{id}/data`, `POST …/{id}/refresh`, `POST /api/v1/me/dashboards/widget-preview`, `GET /api/v1/me/dashboards/widget-catalog` | self (owner only); figures follow the caller's own data scope and pentest campaign membership; Refresh now budgeted (1/min per person and dashboard, 30/h per organization) |
+| `GET /api/v1/me/dashboards/widget-catalog` | self (static catalog, no data) |
+| `GET /api/v1/me/dashboards/{id}/data`, `POST …/{id}/refresh`, `POST /api/v1/me/dashboards/widget-preview` | `dashboard:read`; self (owner only); a widget whose metric counts findings needs `findings:read`, one that counts assets needs `assets:read` (otherwise it is returned as unsupported with reason `forbidden` and no figure); figures follow the caller's own data scope and pentest campaign membership; Refresh now budgeted (1/min per person and dashboard, 30/h per organization) |
 | `GET /api/v1/organization/dashboards`, `GET …/{id}`, `GET …/{id}/data`, `POST …/{id}/refresh` | `dashboards:org:view` (or `dashboards:org:manage`); a viewer outside the dashboard's audience gets it left out of the list and 404 by id; managers see every one with its audience |
 | `POST /api/v1/me/dashboards` with `from_organization_dashboard_id` ("duplicate to mine") | `dashboards:org:view` + audience; copies the layout into a new personal dashboard of the caller |
 | `POST /api/v1/organization/dashboards`, `PUT/DELETE …/{id}`, `POST …/{id}/default`, `PUT …/order`, `PUT …/{id}/audience`, `PUT …/{id}/schedule` | `dashboards:org:manage` (owner and admin by default), audited |
@@ -982,6 +1003,14 @@ same tenant gates as any session tenant route ([RFC-045](../rfcs/RFC-045-websock
   caller outside the organization's IP allowlist (403 `IP_NOT_ALLOWED`), a
   password session in an SSO-enforced tenant and a revoked session are
   refused at the upgrade.
+- When the revoked-session lookup itself fails (the store is down), a session
+  that was signed out cannot be told from a live one. Every route behind the
+  unified authenticator then fails closed for writes (POST, PUT, PATCH,
+  DELETE answer 503 with `Retry-After`) at once, and for reads (including the
+  WebSocket upgrade) after a 2-minute window that starts at the first failure
+  and ends at the first successful lookup, so a short outage does not sign
+  everyone out. The permission-version check keeps its own, separate
+  behaviour (see Permission caching).
 - The browser always opens the socket on the UI's own origin: the gateway
   routes `/api/v1/ws` to the API, and the web server (`server-with-ws.mjs`,
   all-in-one image and Helm) or `next dev` forwards it with the `Cookie` and
@@ -1868,7 +1897,9 @@ a personal address, or be a work domain nobody has verified.
   - `MemberAccessExpiryController` suspends the membership within a minute
     (`suspended_reason = expired`), in that organization only;
   - `PATCH /api/v1/organization/members/{member_id}/access` (owner/admin,
-    `members:write`) sets a new end date and re-enables them;
+    `members:write`) sets a new end date and re-enables them; a change that
+    widens access (a later end, no end, or re-enabling) needs a recent sign-in
+    (step-up), shortening does not;
   - a plain reactivation is refused.
 - **API keys** follow the member: allowed unless an active trust with their
   home forbids keys, and never beyond the end of access.

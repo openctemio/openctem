@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 	"sync"
 	"time"
 
@@ -1430,6 +1431,10 @@ func (s *IntegrationService) updateEmailCredentials(intg *integrationdom.Integra
 		return errSMTPSkipVerify
 	}
 
+	// Legacy rows keep the relay inside the encrypted credentials; read it
+	// so a destination change is detected against the real stored value.
+	s.populateMetadataFromCredentials(intg)
+
 	// Get existing metadata to merge
 	existingMetadata := intg.Metadata()
 
@@ -1511,6 +1516,14 @@ func (s *IntegrationService) updateEmailCredentials(intg *integrationdom.Integra
 		return fmt.Errorf("%w: at least one recipient email is required", shared.ErrValidation)
 	}
 
+	// A new relay (host, port) or a weaker transport must not inherit the
+	// stored username/password: the next delivery would present them to it.
+	if err := requireCredentialsForDestinationChange(intg,
+		emailDestinationChanged(existingMetadata, newMetadata),
+		emailCreds.Username != "" || emailCreds.Password != ""); err != nil {
+		return err
+	}
+
 	intg.SetMetadata(newMetadata)
 
 	// Handle sensitive credentials - only update if provided
@@ -1531,6 +1544,35 @@ func (s *IntegrationService) updateEmailCredentials(intg *integrationdom.Integra
 	}
 
 	return nil
+}
+
+// emailDestinationChanged reports whether the SMTP relay moved (host or port)
+// or the transport got weaker (TLS or STARTTLS switched off).
+func emailDestinationChanged(old, updated map[string]any) bool {
+	oldHost, _ := old["smtp_host"].(string)
+	newHost, _ := updated["smtp_host"].(string)
+	if !strings.EqualFold(strings.TrimSpace(oldHost), strings.TrimSpace(newHost)) {
+		return true
+	}
+	if smtpPortOf(old) != smtpPortOf(updated) {
+		return true
+	}
+	for _, k := range []string{"use_tls", "use_starttls"} {
+		if getBoolFromMap(old, k) && !getBoolFromMap(updated, k) {
+			return true
+		}
+	}
+	return false
+}
+
+func smtpPortOf(m map[string]any) int {
+	switch v := m["smtp_port"].(type) {
+	case int:
+		return v
+	case float64:
+		return int(v)
+	}
+	return 0
 }
 
 // TelegramCredentials represents the JSON structure for Telegram credentials (full input from frontend).
@@ -2198,6 +2240,7 @@ func (s *IntegrationService) UpdateNotificationIntegration(ctx context.Context, 
 
 	// Handle credentials and metadata based on provider
 	provider := intg.Provider()
+	oldHecHost := hostOf(getStringFromMap(intg.Metadata(), "hec_url"))
 	if input.Credentials != nil {
 		if err := validateNotificationWebhookURL(provider, *input.Credentials); err != nil {
 			return nil, err
@@ -2268,6 +2311,14 @@ func (s *IntegrationService) UpdateNotificationIntegration(ctx context.Context, 
 		}
 		for k, v := range callerMeta {
 			merged[k] = v
+		}
+		// The HEC token is sent to hec_url: a new collector host needs a new token.
+		if provider == integrationdom.ProviderSplunk {
+			newHost := hostOf(getStringFromMap(merged, "hec_url"))
+			if err := requireCredentialsForDestinationChange(intg, newHost != oldHecHost,
+				input.Credentials != nil && *input.Credentials != ""); err != nil {
+				return nil, err
+			}
 		}
 		intg.SetMetadata(merged)
 	}
