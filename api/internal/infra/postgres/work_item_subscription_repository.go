@@ -95,15 +95,21 @@ func (r *WorkItemSubscriptionRepository) Get(ctx context.Context, tenantID share
 }
 
 // ListSubscribed returns the subscribed rows of the item with the person's
-// name and avatar (never the email), oldest first.
+// name and avatar (never the email) and the name of who added them, oldest
+// first.
 func (r *WorkItemSubscriptionRepository) ListSubscribed(ctx context.Context, tenantID shared.ID, item participation.Item) ([]participation.Watcher, error) {
 	col, err := itemColumn(item)
 	if err != nil {
 		return nil, err
 	}
-	rows, err := r.db.QueryContext(ctx, `SELECT `+wisColumns+`, COALESCE(u.name, ''), COALESCE(u.avatar_url, '')
+	// The adder's name only while they are an active member of this tenant:
+	// a former member's name is not kept on the list.
+	rows, err := r.db.QueryContext(ctx, `SELECT `+wisColumns+`, COALESCE(u.name, ''), COALESCE(u.avatar_url, ''),
+		COALESCE(a.name, '')
 		FROM work_item_subscriptions s
 		JOIN users u ON u.id = s.user_id
+		LEFT JOIN tenant_members am ON am.tenant_id = s.tenant_id AND am.user_id = s.added_by AND am.status = 'active'
+		LEFT JOIN users a ON a.id = am.user_id
 		WHERE s.tenant_id = $1 AND s.`+col+` = $2 AND s.state = 'subscribed'
 		ORDER BY s.created_at, s.id
 		LIMIT $3`, tenantID.String(), item.ID.String(), participation.MaxWatchersPerItem*2)
@@ -114,7 +120,7 @@ func (r *WorkItemSubscriptionRepository) ListSubscribed(ctx context.Context, ten
 	var out []participation.Watcher
 	for rows.Next() {
 		var w participation.Watcher
-		s, err := scanSubscription(rows, &w.Name, &w.AvatarURL)
+		s, err := scanSubscription(rows, &w.Name, &w.AvatarURL, &w.AddedByName)
 		if err != nil {
 			return nil, fmt.Errorf("scan subscription: %w", err)
 		}
