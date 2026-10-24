@@ -90,6 +90,7 @@ function formatDateTime(iso: string): string {
 }
 
 export function IOCsPanel() {
+  const { t } = useTranslation()
   const { can } = usePermissions()
   const canRead = can(Permission.ThreatIntelRead)
 
@@ -173,7 +174,7 @@ export function IOCsPanel() {
             actions={[
               { label: 'View details', icon: Eye, onClick: () => setSelectedId(row.original.id) },
               {
-                label: 'Delete',
+                label: t('confirm.ioc.menu', 'Deactivate'),
                 icon: Trash2,
                 destructive: true,
                 separatorBefore: true,
@@ -185,7 +186,7 @@ export function IOCsPanel() {
         ),
       },
     ],
-    []
+    [t]
   )
 
   if (!canRead) {
@@ -599,10 +600,15 @@ function DeleteIOCConfirm({
     setDeleting(true)
     try {
       await trigger()
-      toast.success('Indicator deleted')
+      toast.success(t('confirm.ioc.deactivated', 'Indicator deactivated'))
       onDeleted()
     } catch (err) {
-      toast.error(getErrorMessage(err, 'Failed to delete indicator'))
+      toast.error(
+        getErrorMessage(
+          err,
+          t('confirm.ioc.deactivateFailed', 'Failed to deactivate the indicator')
+        )
+      )
     } finally {
       setDeleting(false)
     }
@@ -612,14 +618,18 @@ function DeleteIOCConfirm({
     <ConfirmDialog
       open={!!ioc}
       onOpenChange={onOpenChange}
-      title={t('confirm.ioc.deleteTitle', 'Delete the indicator "{value}"?', {
+      title={t('confirm.ioc.deleteTitle', 'Deactivate the indicator "{value}"?', {
         value: ioc?.value ?? '',
       })}
       desc={t(
         'confirm.ioc.deleteDesc',
-        'It is deactivated and stops matching. Its match history is kept for the audit trail.'
+        'It stops matching new findings and assets. Its match history is kept for the audit trail.'
       )}
-      confirmText={deleting ? t('confirm.deleting', 'Deleting…') : t('confirm.delete', 'Delete')}
+      confirmText={
+        deleting
+          ? t('confirm.ioc.deactivating', 'Deactivating…')
+          : t('confirm.ioc.deactivateButton', 'Deactivate indicator')
+      }
       destructive
       handleConfirm={handleConfirm}
     />

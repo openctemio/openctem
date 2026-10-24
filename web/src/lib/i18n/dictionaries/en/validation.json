@@ -205,5 +205,9 @@
   "validation.attackCoverage.legend.partial": "Partially detected",
   "validation.attackCoverage.legend.detected": "Detected / prevented",
   "validation.attackCoverage.coveredTitle": "Covered techniques",
-  "validation.attackCoverage.coveredDesc": "Techniques with at least one finding or simulation result."
+  "validation.attackCoverage.coveredDesc": "Techniques with at least one finding or simulation result.",
+  "validation.simulation.confirmTitle": "Run the simulation \"{name}\" now?",
+  "validation.simulation.confirmDesc": "This sends live safe-check traffic that imitates the technique to your environment now. Your security controls may raise alerts. The result is recorded on the simulation.",
+  "validation.simulation.confirmButton": "Run simulation",
+  "validation.controls.moreAria": "More actions for {name}"
 }

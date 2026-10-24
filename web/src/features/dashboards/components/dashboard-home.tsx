@@ -128,6 +128,7 @@ export function DashboardHome() {
   const [chosen, setChosen] = useState<DashboardRef | null>(null)
   const [customizing, setCustomizing] = useState(false)
   const [pendingDelete, setPendingDelete] = useState<Dashboard | null>(null)
+  const [pendingOrgDefault, setPendingOrgDefault] = useState<Dashboard | null>(null)
 
   useEffect(() => {
     if (chosen === null) setChosen(readChoice())
@@ -407,7 +408,9 @@ export function DashboardHome() {
                   {!isDefault && (!isOrg || canOrgManage) && (
                     <DropdownMenuItem
                       className={ITEM}
-                      onSelect={() => setDefault(dashboard, isOrg)}
+                      onSelect={() =>
+                        isOrg ? setPendingOrgDefault(dashboard) : setDefault(dashboard, false)
+                      }
                     >
                       <Star className="me-2 h-4 w-4" aria-hidden />
                       {isOrg
@@ -550,6 +553,23 @@ export function DashboardHome() {
         )}
       </div>
       <ConfirmDialog
+        open={pendingOrgDefault !== null}
+        onOpenChange={(open) => !open && setPendingOrgDefault(null)}
+        title={t('confirm.dashboard.orgDefaultTitle', 'Make "{name}" the organization default?', {
+          name: pendingOrgDefault?.name ?? '',
+        })}
+        desc={t(
+          'confirm.dashboard.orgDefaultDesc',
+          'It becomes the dashboard people see first when they have not set a default of their own. You can pick another default at any time.'
+        )}
+        confirmText={t('confirm.dashboard.orgDefaultButton', 'Set as organization default')}
+        handleConfirm={async () => {
+          const target = pendingOrgDefault
+          setPendingOrgDefault(null)
+          if (target) await setDefault(target, true)
+        }}
+      />
+      <ConfirmDialog
         open={pendingDelete !== null}
         onOpenChange={(open) => !open && setPendingDelete(null)}
         destructive
@@ -558,9 +578,9 @@ export function DashboardHome() {
         })}
         desc={t(
           'confirm.dashboard.deleteDescPersonal',
-          'Your dashboard and its layout are deleted. Copies you shared and your data are not affected. This cannot be undone.'
+          'Your dashboard and its layout are deleted. Copies you shared and the data behind the widgets are not affected.'
         )}
-        confirmText={t('confirm.delete', 'Delete')}
+        confirmText={t('confirm.dashboard.deleteButton', 'Delete dashboard')}
         handleConfirm={() => (pendingDelete ? remove(pendingDelete) : undefined)}
       />
     </Main>

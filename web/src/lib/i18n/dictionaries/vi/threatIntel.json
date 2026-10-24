@@ -133,5 +133,8 @@
   "threatIntel.landscape.epssCatalog": "EPSS",
   "threatIntel.landscape.epssCatalogValue": "{count} CVE có điểm",
   "threatIntel.landscape.kevCatalog": "CISA KEV",
-  "threatIntel.landscape.kevCatalogValue": "{count} mục, {recent} được thêm trong 30 ngày qua, {ransomware} bị ransomware sử dụng"
+  "threatIntel.landscape.kevCatalogValue": "{count} mục, {recent} được thêm trong 30 ngày qua, {ransomware} bị ransomware sử dụng",
+  "threatIntel.sync.enableConfirmTitle": "Bật đồng bộ {name}?",
+  "threatIntel.sync.enableConfirmDesc": "Nguồn {name} được tải xuống theo lịch và dữ liệu của nó được thêm vào thông tin đe dọa của bạn. Bạn có thể tắt lại bất cứ lúc nào.",
+  "threatIntel.sync.enableConfirmButton": "Bật đồng bộ"
 }

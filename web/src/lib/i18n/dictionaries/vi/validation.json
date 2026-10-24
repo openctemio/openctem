@@ -205,5 +205,9 @@
   "validation.attackCoverage.legend.partial": "Phát hiện một phần",
   "validation.attackCoverage.legend.detected": "Đã phát hiện / ngăn chặn",
   "validation.attackCoverage.coveredTitle": "Kỹ thuật đã được phủ",
-  "validation.attackCoverage.coveredDesc": "Các kỹ thuật có ít nhất một phát hiện hoặc kết quả mô phỏng."
+  "validation.attackCoverage.coveredDesc": "Các kỹ thuật có ít nhất một phát hiện hoặc kết quả mô phỏng.",
+  "validation.simulation.confirmTitle": "Chạy mô phỏng \"{name}\" ngay?",
+  "validation.simulation.confirmDesc": "Thao tác này gửi lưu lượng kiểm tra an toàn mô phỏng kỹ thuật tấn công tới môi trường của bạn ngay bây giờ. Các biện pháp kiểm soát có thể phát cảnh báo. Kết quả được ghi vào mô phỏng.",
+  "validation.simulation.confirmButton": "Chạy mô phỏng",
+  "validation.controls.moreAria": "Thao tác khác cho {name}"
 }

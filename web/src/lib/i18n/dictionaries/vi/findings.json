@@ -744,7 +744,7 @@
   "findings.status.in_review": "Đang rà soát",
   "findings.pentest.clientNotice": "Quyền khách hàng: bạn xem các phát hiện đã công bố của chiến dịch này, chỉ đọc.",
   "findings.pentest.role.client": "Khách hàng",
-  "findings.pentest.role.clientHint": "Khách hàng — phát hiện đã công bố, chỉ đọc",
+  "findings.pentest.role.clientHint": "Khách hàng: phát hiện đã công bố, chỉ đọc",
   "findings.statusCategory.open": "Mở",
   "findings.statusCategory.in_progress": "Đang xử lý",
   "findings.statusCategory.closed": "Đã đóng",

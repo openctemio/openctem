@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useMemo } from 'react'
+import { useCallback, useMemo, useState } from 'react'
 import type { ColumnDef } from '@tanstack/react-table'
 import { Main } from '@/components/layout'
 import {
@@ -14,6 +14,7 @@ import {
 } from '@/features/shared'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
+import { ConfirmDialog } from '@/components/confirm-dialog'
 import { Progress } from '@/components/ui/progress'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Swords, Play } from 'lucide-react'
@@ -66,9 +67,11 @@ export default function AttackSimulationPage() {
   const { t } = useTranslation()
   const { data, isLoading, mutate } = useSimulations()
   const { trigger: runSimulation } = useRunSimulation()
+  const [runTarget, setRunTarget] = useState<Simulation | null>(null)
 
   const handleRun = useCallback(
     async (simId: string) => {
+      setRunTarget(null)
       try {
         const result = await runSimulation(simId)
         toast.success(
@@ -201,7 +204,7 @@ export default function AttackSimulationPage() {
             disabled={row.original.status !== 'active'}
             onClick={(e) => {
               e.stopPropagation()
-              handleRun(row.original.id)
+              setRunTarget(row.original)
             }}
           >
             <Play className="h-3.5 w-3.5" />
@@ -210,7 +213,7 @@ export default function AttackSimulationPage() {
         ),
       },
     ],
-    [handleRun, t]
+    [t]
   )
 
   if (isLoading) return <LoadingSkeleton />
@@ -254,6 +257,24 @@ export default function AttackSimulationPage() {
           'validation.simulation.description',
           'Run MITRE ATT&CK-mapped attack techniques to check that your controls catch them.'
         )}
+      />
+
+      <ConfirmDialog
+        open={runTarget !== null}
+        onOpenChange={(open) => {
+          if (!open) setRunTarget(null)
+        }}
+        title={t('validation.simulation.confirmTitle', 'Run the simulation "{name}" now?', {
+          name: runTarget?.name ?? '',
+        })}
+        desc={t(
+          'validation.simulation.confirmDesc',
+          'This sends live safe-check traffic that imitates the technique to your environment now. Your security controls may raise alerts. The result is recorded on the simulation.'
+        )}
+        confirmText={t('validation.simulation.confirmButton', 'Run simulation')}
+        handleConfirm={async () => {
+          if (runTarget) await handleRun(runTarget.id)
+        }}
       />
 
       <MetricStrip className="mt-5" items={metrics} />
