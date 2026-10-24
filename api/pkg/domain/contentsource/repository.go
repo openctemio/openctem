@@ -24,6 +24,14 @@ type SyncOutcome struct {
 	ClearRequest  bool
 	ResetFailures bool
 	KeepFailures  bool // neither reset nor count (a skipped sync)
+	// LeaseUntil and ClaimedAt are the claim the sync ran under (from the
+	// claimed source): the outcome is saved only while the lease still
+	// matches, and a sync request made after ClaimedAt is kept.
+	LeaseUntil time.Time
+	ClaimedAt  time.Time
+	// ConsumeAuthors clears the config authors the sync's snapshot recorded
+	// (when the configuration did not change after the claim).
+	ConsumeAuthors bool
 }
 
 // Repository stores sources and snapshots.
@@ -53,13 +61,17 @@ type Repository interface {
 
 	// ClaimDueUnscoped leases up to limit enabled tenant sources whose
 	// schedule is due or whose sync was requested, so one worker syncs each.
+	// It is fair across tenants: the tenant claimed or synced longest ago
+	// first, and within a tenant requested syncs first.
 	ClaimDueUnscoped(ctx context.Context, now time.Time, lease time.Duration, limit int) ([]*Source, error)
 	// GetUnscoped loads any source by id (worker and webhook only).
 	GetUnscoped(ctx context.Context, id shared.ID) (*Source, error)
 	// RequestSyncUnscoped queues a sync unless one was requested within
 	// minGap (webhook): queued is false then.
 	RequestSyncUnscoped(ctx context.Context, id shared.ID, at time.Time, minGap time.Duration) (queued bool, err error)
-	// SaveSyncUnscoped writes a sync's outcome and releases the lease.
+	// SaveSyncUnscoped writes a sync's outcome and releases the lease. It
+	// writes only while the source's lease is still the one in the outcome;
+	// otherwise ErrLeaseLost.
 	SaveSyncUnscoped(ctx context.Context, id shared.ID, o SyncOutcome) error
 
 	CreateSnapshot(ctx context.Context, sn *Snapshot) error

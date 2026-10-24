@@ -146,7 +146,8 @@ var (
 	ErrSlugTaken         = shared.NewDomainError("SLUG_TAKEN", "a rule source with this slug exists", shared.ErrAlreadyExists)
 	ErrNotCandidate      = shared.NewDomainError("NOT_CANDIDATE", "only a candidate snapshot can be promoted or rejected", shared.ErrConflict)
 	ErrNoPrevious        = shared.NewDomainError("NO_PREVIOUS", "the source has no previous snapshot to roll back to", shared.ErrConflict)
-	ErrFourEyes          = shared.NewDomainError("FOUR_EYES", "this snapshot needs review by a member other than the one who last changed the source", shared.ErrForbidden)
+	ErrFourEyes          = shared.NewDomainError("FOUR_EYES", "this snapshot needs review by a member who did not change the source configuration it came from", shared.ErrForbidden)
+	ErrLeaseLost         = shared.NewDomainError("LEASE_LOST", "the sync's claim expired or was taken over", shared.ErrConflict)
 	ErrSyncInProgress    = shared.NewDomainError("SYNC_IN_PROGRESS", "the source is being synced", shared.ErrConflict)
 	ErrUsernameRequired  = shared.NewDomainError("VALIDATION", "a deploy token needs its own username (shown when the token was created)", shared.ErrValidation)
 	ErrPlatformReadOnly  = shared.NewDomainError("FORBIDDEN", "platform rule sources are managed by the platform administrators", shared.ErrForbidden)
@@ -381,9 +382,19 @@ type Source struct {
 
 	ConfigChangedBy *shared.ID
 	ConfigChangedAt *time.Time
-	CreatedBy       *shared.ID
-	CreatedAt       time.Time
-	UpdatedAt       time.Time
+	// ConfigAuthors are the members who changed what the source fetches
+	// since its last synced snapshot (the snapshot records them).
+	ConfigAuthors []shared.ID
+	// LeaseUntil and ClaimedAt are set on a source claimed by the sync
+	// worker (ClaimDueUnscoped): the lease the claim holds and when it was
+	// taken. They are never persisted by Update.
+	LeaseUntil time.Time
+	ClaimedAt  time.Time
+	// configTouched: MarkConfigChanged ran since the source was loaded.
+	configTouched bool
+	CreatedBy     *shared.ID
+	CreatedAt     time.Time
+	UpdatedAt     time.Time
 }
 
 // GitConfig is what a git source fetches.
@@ -555,7 +566,13 @@ func (s *Source) HasCredential() bool { return s.CredentialEncrypted != "" }
 func (s *Source) MarkConfigChanged(by *shared.ID, now time.Time) {
 	s.ConfigChangedBy = by
 	s.ConfigChangedAt = &now
+	s.configTouched = true
 }
+
+// ConfigTouched reports whether the configuration was changed on this
+// value since it was loaded: only then does Update write who changed it,
+// so a stale copy never overwrites a newer author.
+func (s *Source) ConfigTouched() bool { return s.configTouched }
 
 // NextScheduled returns the next scheduled sync after a sync at now: the
 // interval plus a jitter of up to a tenth of it (at most 5 minutes), so

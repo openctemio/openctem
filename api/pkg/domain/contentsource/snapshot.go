@@ -101,12 +101,15 @@ type Snapshot struct {
 	ReviewRequired bool
 	State          SnapshotState
 	SyncedBy       *shared.ID
-	PromotedBy     *shared.ID
-	PromotedAt     *time.Time
-	RejectedBy     *shared.ID
-	RejectedAt     *time.Time
-	RejectReason   string
-	CreatedAt      time.Time
+	// ConfigAuthors are the members who changed the configuration this
+	// snapshot was synced from; none of them may approve its promotion.
+	ConfigAuthors []shared.ID
+	PromotedBy    *shared.ID
+	PromotedAt    *time.Time
+	RejectedBy    *shared.ID
+	RejectedAt    *time.Time
+	RejectReason  string
+	CreatedAt     time.Time
 }
 
 // ComputeDiff compares a candidate's rules, tier and license with base (nil
@@ -199,4 +202,15 @@ func EvaluatePromotion(policy PromotionPolicy, base *Snapshot, cand *Snapshot, d
 		blocked = append(blocked, CheckDuplicateRuleIDs)
 	}
 	return Checks{AutoPromote: len(blocked) == 0, Blocked: blocked}, review
+}
+
+// AuthoredBy reports whether the member changed the configuration the
+// snapshot was synced from.
+func (sn *Snapshot) AuthoredBy(user shared.ID) bool {
+	for _, a := range sn.ConfigAuthors {
+		if a.Equals(user) {
+			return true
+		}
+	}
+	return false
 }
