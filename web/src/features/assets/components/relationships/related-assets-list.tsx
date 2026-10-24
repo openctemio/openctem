@@ -26,6 +26,7 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
@@ -50,6 +51,7 @@ import {
 } from '../../hooks/use-related-assets'
 import { CriticalityBadge } from '../classification-badges'
 import type { Criticality } from '../../types'
+import { useSearchQuery } from '@/hooks/use-search-query'
 
 const PAGE_SIZE = 25
 /** Rows per group before "Show all" in the full view. */
@@ -329,18 +331,15 @@ function GroupPager({
 }) {
   const { t } = useTranslation()
   const [query, setQuery] = React.useState('')
-  const [debounced, setDebounced] = React.useState('')
+  const debounced = useSearchQuery(query).term
   const [page, setPage] = React.useState(0)
   // A new search starts at its first page; the initial (empty) query does
   // not reset a page the reader has already moved to.
-  React.useEffect(() => {
-    if (query === debounced) return
-    const id = setTimeout(() => {
-      setDebounced(query)
-      setPage(0)
-    }, 250)
-    return () => clearTimeout(id)
-  }, [query, debounced])
+  const [pageQuery, setPageQuery] = React.useState(debounced)
+  if (pageQuery !== debounced) {
+    setPageQuery(debounced)
+    setPage(0)
+  }
 
   const { groups, isLoading, error, mutate } = useRelatedAssets(assetId, {
     type: group.type,
@@ -519,6 +518,7 @@ function RelatedRow({
                 {t('assets.related.edit', 'Edit relationship')}
               </DropdownMenuItem>
             )}
+            {onRemove && onEdit && <DropdownMenuSeparator />}
             {onRemove && (
               <DropdownMenuItem className="text-destructive" onClick={() => onRemove(item)}>
                 {t('assets.related.remove', 'Remove relationship')}

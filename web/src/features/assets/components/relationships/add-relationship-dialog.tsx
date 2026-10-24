@@ -10,6 +10,7 @@
  * was the reason this dialog never got wired before.
  */
 
+import { ASSET_TYPE_TILE } from '../../types/asset.types'
 import * as React from 'react'
 import { useTranslation } from '@/context/i18n-provider'
 import { Link2, ArrowRight, AlertCircle, Loader2 } from 'lucide-react'
@@ -39,7 +40,7 @@ import {
 import { Badge } from '@/components/ui/badge'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Slider } from '@/components/ui/slider'
-import { useDebounce } from '@/hooks/use-debounce'
+import { useSearchQuery } from '@/hooks/use-search-query'
 import { cn } from '@/lib/utils'
 import type {
   RelationshipType,
@@ -119,33 +120,6 @@ function getMutexType(type: RelationshipType): RelationshipType | null {
 }
 
 // ============================================
-// Asset Type Colors
-// ============================================
-
-const ASSET_TYPE_COLORS: Record<string, { bg: string; text: string }> = {
-  domain: { bg: 'bg-blue-500/20', text: 'text-blue-500' },
-  website: { bg: 'bg-green-500/20', text: 'text-green-500' },
-  service: { bg: 'bg-purple-500/20', text: 'text-purple-500' },
-  project: { bg: 'bg-orange-500/20', text: 'text-orange-500' },
-  repository: { bg: 'bg-orange-500/20', text: 'text-orange-500' }, // @deprecated
-  cloud: { bg: 'bg-cyan-500/20', text: 'text-cyan-500' },
-  credential: { bg: 'bg-red-500/20', text: 'text-red-500' },
-  host: { bg: 'bg-slate-500/20', text: 'text-slate-500' },
-  container: { bg: 'bg-indigo-500/20', text: 'text-indigo-500' },
-  database: { bg: 'bg-yellow-500/20', text: 'text-yellow-500' },
-  mobile: { bg: 'bg-pink-500/20', text: 'text-pink-500' },
-  api: { bg: 'bg-emerald-500/20', text: 'text-emerald-500' },
-  k8s_cluster: { bg: 'bg-blue-600/20', text: 'text-blue-600' },
-  k8s_workload: { bg: 'bg-blue-400/20', text: 'text-blue-400' },
-  container_image: { bg: 'bg-violet-500/20', text: 'text-violet-500' },
-  api_collection: { bg: 'bg-teal-500/20', text: 'text-teal-500' },
-  api_endpoint: { bg: 'bg-teal-400/20', text: 'text-teal-400' },
-  network: { bg: 'bg-gray-500/20', text: 'text-gray-500' },
-  load_balancer: { bg: 'bg-amber-500/20', text: 'text-amber-500' },
-  identity_provider: { bg: 'bg-rose-500/20', text: 'text-rose-500' },
-}
-
-// ============================================
 // Asset Selector Item
 // ============================================
 
@@ -160,7 +134,7 @@ function AssetSelectorItem({
   onClick: () => void
   disabled?: boolean
 }) {
-  const colors = ASSET_TYPE_COLORS[asset.type] || { bg: 'bg-gray-500/20', text: 'text-gray-500' }
+  const colors = ASSET_TYPE_TILE
 
   return (
     <button
@@ -229,7 +203,7 @@ export function AddRelationshipDialog({
   // target when multi-selecting.
   const [isControlPlane, setIsControlPlane] = React.useState(false)
   const [searchQuery, setSearchQuery] = React.useState('')
-  const debouncedQuery = useDebounce(searchQuery, 250)
+  const debouncedQuery = useSearchQuery(searchQuery).term
 
   // Server-side search results
   const [searchResults, setSearchResults] = React.useState<AssetOption[]>([])
@@ -377,10 +351,7 @@ export function AddRelationshipDialog({
     onSubmit(items)
   }
 
-  const sourceColors = ASSET_TYPE_COLORS[sourceAsset.type] || {
-    bg: 'bg-gray-500/20',
-    text: 'text-gray-500',
-  }
+  const sourceColors = ASSET_TYPE_TILE
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>

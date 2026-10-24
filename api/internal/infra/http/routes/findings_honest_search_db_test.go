@@ -16,6 +16,8 @@ import (
 	"testing"
 
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
+	"github.com/openctemio/openctem/api/pkg/filterspec"
 )
 
 func TestFindingsSearch_FieldsAndScope(t *testing.T) {
@@ -96,11 +98,41 @@ func TestFindingsSearch_TrigramIndexesUsable(t *testing.T) {
 		"SELECT id FROM findings WHERE file_path ILIKE '%abcdef%'": "idx_findings_file_path_trgm",
 		"SELECT id FROM findings WHERE rule_id ILIKE '%abcdef%'":   "idx_findings_rule_id_trgm",
 		"SELECT id FROM assets WHERE name ILIKE '%abcdef%'":        "idx_assets_name_trgm",
+		"SELECT id FROM assets WHERE description ILIKE '%abcdef%'": "idx_assets_description_trgm",
+		// The audit log search box (audit_repository.go) matches this exact expression.
+		"SELECT id FROM audit_logs WHERE to_tsvector('english', COALESCE(message, '') || ' ' || COALESCE(resource_name, '') || ' ' || COALESCE(actor_email, '')) @@ plainto_tsquery('english', 'abcdef')": "idx_audit_logs_search_fts",
 	} {
 		plan := explainPlan(ctx, t, conn, query)
 		if !strings.Contains(plan, index) {
 			t.Errorf("%s does not use %s:\n%s", query, index, plan)
 		}
+	}
+}
+
+// The whole q predicate is one BitmapOr over its arms' indexes. Written as
+// "asset_id IN (SELECT ...)" the asset arm became a hashed SubPlan, which a
+// bitmap cannot OR with, so every search read all of the tenant's findings.
+func TestFindingsSearch_PredicateIsOneBitmapOr(t *testing.T) {
+	h := newGroupScopeHarness(t)
+	ctx := context.Background()
+	conn, err := h.db.Conn(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close()
+	if _, err := conn.ExecContext(ctx, "SET enable_seqscan = off"); err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _, _ = conn.ExecContext(ctx, "RESET enable_seqscan") }()
+	tenant := "'" + shared.NewID().String() + "'::uuid"
+	pred := strings.NewReplacer(filterspec.ArgToken, "'%abcdef%'", filterspec.UpperToken, "'ABCDEF'",
+		filterspec.TenantToken, tenant).Replace(vulnerability.FindingFields.Search.Template)
+	// Without the tenant filter (a tiny test table would rather walk the
+	// tenant index) the only plan without a seq scan is the BitmapOr, and it
+	// exists only when no arm is a SubPlan.
+	plan := explainPlan(ctx, t, conn, "SELECT count(*) FROM findings WHERE "+pred)
+	if !strings.Contains(plan, "BitmapOr") || strings.Contains(plan, "SubPlan") {
+		t.Errorf("findings q predicate is not one BitmapOr:\n%s", plan)
 	}
 }
 
