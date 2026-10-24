@@ -30,6 +30,19 @@ decides:
 | no match | none, target answered the probe | `not_reproduced` (`no_endpoint_proof`) | unchanged |
 | no match | none, target did not answer | `inconclusive` (`unreachable`) | unchanged |
 | error / no result / deadline passed | any | `inconclusive` (`error`, `no_result`) | unchanged |
+| tool: check not in the sensor's template set | any | `inconclusive` (`template_not_found`) | unchanged |
+| tool: check excluded by the sensor's safety policy | any | `inconclusive` (`excluded_by_policy`) | unchanged |
+| tool: ended without judging the item | any | `inconclusive` (`no_verdict`) | unchanged |
+
+A tool that retests gives an unverifiable item a reason code (sdk-go
+`tool.VerdictCode`: `template_not_found`, `excluded_by_policy`,
+`target_unreachable`, `egress_refused`, `no_verdict`). The platform maps it to
+the reason codes above (`target_unreachable` to `unreachable`, `egress_refused`
+to `blocked`), and the finding card shows what it means and what to do next
+(en and vi). The code only labels an inconclusive result: it never changes a
+verdict, and an unknown or missing code (an older sensor) is a plain `error`.
+A retest whose tool could not run the check (`error`, `template_not_found`,
+`excluded_by_policy`, `no_verdict`) settles its run as blocked, not failed.
 
 The endpoint is the finding's matched-at: scheme, host, port (default ports
 dropped), path and the parameter names (values are not compared: a token

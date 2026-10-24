@@ -79,6 +79,32 @@ const INCONCLUSIVE_TEXT: Record<string, string> = {
   template_changed: 'template changed',
   no_result: 'no result',
   error: 'error',
+  template_not_found: 'check not installed on the sensor',
+  excluded_by_policy: 'check not allowed by the sensor policy',
+  no_verdict: 'the tool gave no verdict',
+}
+
+/**
+ * What an inconclusive retest means and what to do next, for the reasons the
+ * tool gives (ids; translated at render). The finding is unchanged in each.
+ */
+const INCONCLUSIVE_HELP: Record<string, { text: string; fix: string }> = {
+  error: {
+    text: 'The tool could not run this check.',
+    fix: 'The finding is unchanged. Verify it by hand, or retest after the sensor is updated.',
+  },
+  template_not_found: {
+    text: "The sensor's template set does not include this check, so it could not be run.",
+    fix: "Update the sensor's templates (or the sensor itself), then retest. If the template was removed or renamed upstream, verify the finding by hand.",
+  },
+  excluded_by_policy: {
+    text: "The check is installed, but the sensor's safety policy never runs checks of its class (destructive, intrusive, brute-force or default-login) for a retest.",
+    fix: 'The finding is unchanged. Verify it by hand or in a planned test window.',
+  },
+  no_verdict: {
+    text: 'The tool ended without a verdict for this finding (it stopped early or never reached the target).',
+    fix: 'Retest again. If it repeats, check the sensor and the run log, and update the sensor.',
+  },
 }
 
 /**
@@ -411,6 +437,18 @@ function RetestLine({
       </div>
       {retest.reason && (
         <p className="text-xs text-muted-foreground">{toDisplayText(retest.reason, 600)}</p>
+      )}
+      {retest.outcome === 'inconclusive' && INCONCLUSIVE_HELP[retest.reason_code ?? ''] && (
+        <p className="text-xs text-muted-foreground" data-slot="retest-inconclusive-help">
+          {t(
+            `findings.retestPanel.help.${retest.reason_code}.text`,
+            INCONCLUSIVE_HELP[retest.reason_code ?? ''].text
+          )}{' '}
+          {t(
+            `findings.retestPanel.help.${retest.reason_code}.fix`,
+            INCONCLUSIVE_HELP[retest.reason_code ?? ''].fix
+          )}
+        </p>
       )}
       <RetestCheckProvenance retest={retest} check={check} />
       {manual && retest.notes && (
