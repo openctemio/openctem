@@ -12,7 +12,7 @@ import { CalendarClock, Plus, Trash2 } from 'lucide-react'
 import { toast } from 'sonner'
 
 import { ConfirmDialog } from '@/components/confirm-dialog'
-import { nameToTypeToConfirm } from '@/components/confirm-name'
+import { confirmName } from '@/lib/confirm-name'
 import { Badge } from '@/components/ui/badge'
 import { Card, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Skeleton } from '@/components/ui/skeleton'
@@ -171,7 +171,7 @@ export function ScanWindowsPanel() {
         desc={t('confirm.scanWindow.deleteDesc')}
         confirmText={t('confirm.scanWindow.deleteBtn')}
         destructive
-        typeToConfirm={deleting ? nameToTypeToConfirm(deleting.name, deleting.id ?? '') : undefined}
+        typeToConfirm={deleting ? confirmName(deleting.name, deleting.id ?? '') : undefined}
         handleConfirm={() => {
           const target = deleting
           setDeleting(null)

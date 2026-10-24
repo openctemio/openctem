@@ -23,7 +23,7 @@ import { getErrorMessage } from '@/lib/api/error-handler'
 
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
-import { nameToTypeToConfirm } from '@/components/confirm-name'
+import { confirmName } from '@/lib/confirm-name'
 import { ConfirmDialog } from '@/components/confirm-dialog'
 import { RefreshButton, TableSkeleton } from '@/components/list-page-parts'
 
@@ -377,7 +377,7 @@ export function TemplateSourcesSection() {
         destructive
         isLoading={isDeleting}
         typeToConfirm={
-          selectedSource ? nameToTypeToConfirm(selectedSource.name, selectedSource.id) : undefined
+          selectedSource ? confirmName(selectedSource.name, selectedSource.id) : undefined
         }
         handleConfirm={handleDeleteConfirm}
       />

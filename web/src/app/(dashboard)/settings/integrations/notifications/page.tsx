@@ -20,7 +20,7 @@ import {
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import type { ColumnDef } from '@tanstack/react-table'
-import { nameToTypeToConfirm } from '@/components/confirm-name'
+import { confirmName } from '@/lib/confirm-name'
 import { ConfirmDialog } from '@/components/confirm-dialog'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
@@ -759,7 +759,7 @@ export default function NotificationIntegrationsPage() {
         destructive
         typeToConfirm={
           selectedIntegration
-            ? nameToTypeToConfirm(selectedIntegration.name, selectedIntegration.id)
+            ? confirmName(selectedIntegration.name, selectedIntegration.id)
             : undefined
         }
         handleConfirm={() => void handleDelete()}

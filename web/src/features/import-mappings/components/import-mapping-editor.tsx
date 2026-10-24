@@ -12,7 +12,7 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { Switch } from '@/components/ui/switch'
 import { Tabs, TabsContent, TabsCount, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Textarea } from '@/components/ui/textarea'
-import { nameToTypeToConfirm } from '@/components/confirm-name'
+import { confirmName } from '@/lib/confirm-name'
 import { ConfirmDialog } from '@/components/confirm-dialog'
 import { ErrorState, PageHeader } from '@/features/shared'
 import { Can, Permission, usePermissions } from '@/lib/permissions'
@@ -634,7 +634,7 @@ export function ImportMappingEditor({ id }: { id?: string }) {
             desc={t('confirm.importMapping.deleteDesc')}
             confirmText={t('confirm.importMapping.deleteBtn')}
             destructive
-            typeToConfirm={nameToTypeToConfirm(mapping.name, mapping.id)}
+            typeToConfirm={confirmName(mapping.name, mapping.id)}
             handleConfirm={async () => {
               if (!id) return
               try {

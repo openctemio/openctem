@@ -49,7 +49,7 @@ import {
   Webhook,
   SlidersHorizontal,
 } from 'lucide-react'
-import { nameToTypeToConfirm } from '@/components/confirm-name'
+import { confirmName } from '@/lib/confirm-name'
 import { ConfirmDialog } from '@/components/confirm-dialog'
 import { Can } from '@/lib/permissions'
 import { getErrorMessage } from '@/lib/api/error-handler'
@@ -715,7 +715,7 @@ function TicketingRowActions({ integration }: { integration: Integration }) {
         )}
         confirmText={t('confirm.ticketing.deleteBtn')}
         destructive
-        typeToConfirm={nameToTypeToConfirm(integration.name, integration.id)}
+        typeToConfirm={confirmName(integration.name, integration.id)}
         isLoading={isDeleting}
         handleConfirm={() => void handleDelete()}
       />

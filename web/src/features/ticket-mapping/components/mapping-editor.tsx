@@ -32,7 +32,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
-import { nameToTypeToConfirm } from '@/components/confirm-name'
+import { confirmName } from '@/lib/confirm-name'
 import { ConfirmDialog } from '@/components/confirm-dialog'
 import { ErrorState, PageHeader } from '@/features/shared'
 import { usePermissions, Permission } from '@/lib/permissions'
@@ -557,7 +557,7 @@ export function MappingEditor({ id }: { id: string }) {
         desc={t('confirm.ticketMapping.deleteDesc')}
         confirmText={t('confirm.ticketMapping.deleteBtn')}
         destructive
-        typeToConfirm={nameToTypeToConfirm(profile.name, profile.id)}
+        typeToConfirm={confirmName(profile.name, profile.id)}
         handleConfirm={async () => {
           try {
             await mappingApi.remove(id)

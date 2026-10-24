@@ -20,7 +20,7 @@ import {
 } from '@/features/shared'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
-import { nameToTypeToConfirm } from '@/components/confirm-name'
+import { confirmName } from '@/lib/confirm-name'
 import { ConfirmDialog } from '@/components/confirm-dialog'
 import { Skeleton } from '@/components/ui/skeleton'
 import { toast } from 'sonner'
@@ -530,7 +530,7 @@ export default function SCMConnectionsPage() {
         destructive
         typeToConfirm={
           selectedConnection
-            ? nameToTypeToConfirm(selectedConnection.name, selectedConnection.id)
+            ? confirmName(selectedConnection.name, selectedConnection.id)
             : undefined
         }
         handleConfirm={() => void handleDelete()}

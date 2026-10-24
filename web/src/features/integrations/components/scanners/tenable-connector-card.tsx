@@ -10,7 +10,7 @@ import { useState } from 'react'
 import { toast } from 'sonner'
 import { AlertTriangle, Pencil, RefreshCw, Trash2 } from 'lucide-react'
 
-import { nameToTypeToConfirm } from '@/components/confirm-name'
+import { confirmName } from '@/lib/confirm-name'
 import { ConfirmDialog } from '@/components/confirm-dialog'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -247,7 +247,7 @@ export function TenableConnectorCard({
           removing ? t('confirm.removing', 'Removing…') : t('confirm.scannerIntegration.removeBtn')
         }
         destructive
-        typeToConfirm={nameToTypeToConfirm(integration.name, integration.id)}
+        typeToConfirm={confirmName(integration.name, integration.id)}
         isLoading={removing}
         handleConfirm={() => void handleRemove()}
       />
