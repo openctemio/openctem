@@ -70,7 +70,7 @@ import { useExposures } from '@/features/exposures/hooks'
 import { ScanAssetsDialog, type ScanCandidate } from '@/features/scans/components'
 import { useTenant } from '@/context/tenant-provider'
 import { useRiskThresholds } from '@/context/risk-scoring-provider'
-import { useDebounce } from '@/hooks/use-debounce'
+import { useSearchQuery } from '@/hooks/use-search-query'
 import { useUrlFilter } from '@/hooks/use-url-param'
 import { useListParams } from '@/hooks/use-list-params'
 import { exportToCsv } from '@/hooks/use-csv-export'
@@ -191,7 +191,7 @@ export default function ExternalSurfacePage() {
   const { pagination, setPagination, setPage } = list
 
   const [searchInput, setSearchInput] = useState(qParam)
-  const search = useDebounce(searchInput, 300)
+  const search = useSearchQuery(searchInput).term
   // Push the debounced search into the URL and back to page 1. The ref holds
   // the last value written, so the URL echoing it back (or a new setter
   // identity) never re-triggers the reset to page 1.
