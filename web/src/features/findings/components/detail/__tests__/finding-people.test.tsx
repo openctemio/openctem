@@ -5,9 +5,6 @@ import { FindingPeople } from '../finding-people'
 let canManage = false
 const blockProps = vi.fn()
 vi.mock('@/lib/permissions', () => ({ useCanMutate: () => canManage }))
-vi.mock('@/stores/auth-store', () => ({
-  useAuthStore: (sel: (s: { user: { id: string } }) => unknown) => sel({ user: { id: 'me' } }),
-}))
 vi.mock('@/context/i18n-provider', () => ({
   useTranslation: () => ({ t: (_k: string, fallback?: string) => fallback ?? _k }),
 }))
@@ -17,8 +14,8 @@ vi.mock('../../../api/use-assignable-members', () => ({
     return { members: [{ user_id: 'u1', name: 'Eligible', role: 'member' }], isLoading: false }
   },
 }))
-vi.mock('@/features/shared/components/watchers-block', () => ({
-  WatchersBlock: (p: Record<string, unknown>) => {
+vi.mock('@/features/shared/components/watchers/watchers-control', () => ({
+  WatchersControl: (p: Record<string, unknown>) => {
     blockProps({ block: p })
     return <div data-testid="watchers" />
   },
@@ -40,7 +37,6 @@ describe('FindingPeople', () => {
       itemId: 'f-1',
       canAdd: false,
       canRemoveOthers: false,
-      currentUserId: 'me',
     })
   })
 
