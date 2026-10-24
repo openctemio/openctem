@@ -2730,7 +2730,8 @@ type branchSighting struct {
 // offDefaultBranchFingerprints returns the fingerprints this report sighted on
 // a branch that is not its repository's default branch. The default is the
 // stored one (a report cannot re-point it, see maybeSetDefaultBranch); when
-// the repository has none yet, the report's own claim decides. A report
+// the repository has none yet (not found), the report's own claim decides; any
+// other lookup error treats the branch as off-default. A report
 // without branch information is not a branch sighting.
 func (p *FindingProcessor) offDefaultBranchFingerprints(ctx context.Context, report *ctis.Report, findings []branchSighting) map[string]bool {
 	if p.branchRepo == nil || report.Metadata.Branch == nil {
@@ -2745,10 +2746,18 @@ func (p *FindingProcessor) offDefaultBranchFingerprints(ctx context.Context, rep
 		v, ok := isOff[fm.assetID]
 		if !ok {
 			def, err := p.branchRepo.GetDefaultBranch(ctx, fm.assetID)
-			if err == nil && def != nil {
+			switch {
+			case err == nil && def != nil:
 				v = def.ID() != *fm.branchID
-			} else {
+			case err == nil || errors.Is(err, shared.ErrNotFound):
+				// No stored default yet: the report's claim decides.
 				v = !report.Metadata.Branch.IsDefaultBranch
+			default:
+				// The lookup failed: do not trust the report's claim (it is
+				// what a hostile upload would forge); treat the branch as
+				// off-default, which only withholds reopens.
+				p.logger.Warn("could not read the default branch; treating the sighted branch as off-default", "error", err)
+				v = true
 			}
 			isOff[fm.assetID] = v
 		}

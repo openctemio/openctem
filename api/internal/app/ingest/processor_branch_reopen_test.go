@@ -89,3 +89,19 @@ func TestRunWithoutBranchInfoIsNotABranchSighting(t *testing.T) {
 	report := &ctis.Report{}
 	assert.Empty(t, p.offDefaultBranchFingerprints(context.Background(), report, []branchSighting{{fingerprint: "fp", assetID: shared.NewID()}}))
 }
+
+// Only "not found" falls back to the report's claim; a failing lookup treats
+// the branch as off-default even when the report claims it is the default.
+func TestOffDefaultBranchFingerprints_LookupErrorIsOffDefault(t *testing.T) {
+	ctx := context.Background()
+	assetID := shared.NewID()
+	br := shared.NewID()
+	claimsDefault := &ctis.Report{Metadata: ctis.ReportMetadata{Branch: &ctis.BranchInfo{Name: "x", IsDefaultBranch: true}}}
+	sightings := []branchSighting{{fingerprint: "fp", assetID: assetID, branchID: &br}}
+	newP := func(err error) *FindingProcessor {
+		return &FindingProcessor{repo: &defaultResolvedRepo{}, branchRepo: &defaultBranchStubRepo{getErr: err}, logger: logger.NewNop()}
+	}
+
+	assert.True(t, newP(errors.New("db down")).offDefaultBranchFingerprints(ctx, claimsDefault, sightings)["fp"], "db error must be off-default")
+	assert.Empty(t, newP(shared.ErrNotFound).offDefaultBranchFingerprints(ctx, claimsDefault, sightings), "not found falls back to the claim")
+}
