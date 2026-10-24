@@ -288,5 +288,6 @@
   "dashboards.viz.table": "Bảng",
   "dashboards.widget.failed": "Không hiển thị được widget này",
   "dashboards.widget.legacy": "Ô cũ",
-  "dashboards.widget.note": "Ghi chú"
+  "dashboards.widget.note": "Ghi chú",
+  "dashboards.manage.widgets": "{n} tiện ích"
 }

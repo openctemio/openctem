@@ -7,7 +7,8 @@ import { cn } from '@/lib/utils'
  * `PageStack` and the stack owns every gap between them:
  *
  * - 20px (`gap-page`) between any two blocks;
- * - 16px (`page-tight`) from a `PageHeader` to the tab strip right under it.
+ * - 16px (`page-tight`) from a `PageHeader` to the tab strip right under it
+ *   (route `SectionTabs` or in-page `Tabs`).
  *
  * Blocks carry no vertical margin of their own; the stack zeroes any that a
  * child still has. The gap used to live on the block below (`mt-5`), so when
@@ -28,6 +29,8 @@ export function PageStack({ className, ...props }: ComponentProps<'div'>) {
         'flex min-w-0 flex-col gap-page',
         '[&>*]:my-0!',
         '[&>[data-slot=page-header]+[data-slot=page-tabs]]:-mt-1!',
+        // In-page tabs right under the header sit as close as route tabs.
+        '[&>[data-slot=page-header]+[data-slot=tabs]]:-mt-1!',
         '[&>[data-slot=tabs]]:gap-page',
         className
       )}
