@@ -297,6 +297,11 @@ narrows the list unseen. Below the `lg` breakpoint the same facets open in a
 sheet. The tag list and business unit names load only when something shows
 them.
 
+Rows are compact (one line) by default. The Name cell cuts a long name in
+the middle with a copy button; a certificate shows its `subject_cn` with the
+stored name below and its `sans`, issuer and expiry in the tooltip. The Type
+cell is the registry's label for the row's type or sub-type alias.
+
 ## Needs attention
 
 Assets › Needs attention (`/assets/attention`) is the data-quality queue.
