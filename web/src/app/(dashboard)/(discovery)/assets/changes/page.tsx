@@ -12,7 +12,8 @@ import {
   EmptyState,
   ErrorState,
   RelativeTime,
-  SegmentedLens,
+  FilterSelect,
+  PageStack,
   StackedCell,
 } from '@/features/shared'
 import { RecentAssetChanges } from '@/features/assets'
@@ -21,7 +22,6 @@ import { safeHref } from '@/lib/safe-href'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Label } from '@/components/ui/label'
-import { Skeleton } from '@/components/ui/skeleton'
 import { Switch } from '@/components/ui/switch'
 import {
   Select,
@@ -327,16 +327,17 @@ export default function AssetChangesPage() {
   if (!canRead) {
     return (
       <Main>
-        <PageHeader title={title} description={description} />
-        <EmptyState
-          className="mt-5"
-          icon={ShieldX}
-          title={t('assetTimeline.noAccessTitle', 'Access denied')}
-          description={t(
-            'assetTimeline.noAccess',
-            'You do not have permission to view assets. Ask your administrator for access.'
-          )}
-        />
+        <PageStack>
+          <PageHeader title={title} description={description} />
+          <EmptyState
+            icon={ShieldX}
+            title={t('assetTimeline.noAccessTitle', 'Access denied')}
+            description={t(
+              'assetTimeline.noAccess',
+              'You do not have permission to view assets. Ask your administrator for access.'
+            )}
+          />
+        </PageStack>
       </Main>
     )
   }
@@ -347,22 +348,62 @@ export default function AssetChangesPage() {
     void mutateCounts()
   }
 
-  const toolbarStart =
-    view === 'newly_exposed' ? undefined : (
-      <div className="flex items-center gap-2">
-        <Switch
-          id="internet-only"
-          checked={internetParam === 'true'}
-          onCheckedChange={(checked) => {
-            setInternetParam(checked ? 'true' : 'false')
-            setPage(1)
-          }}
-        />
-        <Label htmlFor="internet-only" className="cursor-pointer text-sm font-normal">
-          {t('assetTimeline.activity.internetOnly', 'Internet-facing only')}
-        </Label>
-      </div>
-    )
+  // The kind of change is a filter token, first in the toolbar, not a second
+  // row under the tabs (research/249 R21). One kind is always chosen: the
+  // kinds are different lists (Values is the value-change feed).
+  const kindSelect = (
+    <FilterSelect<ActivityKind>
+      label={t('assetTimeline.activity.kind.short', 'Kind')}
+      value={kind}
+      clearable={false}
+      options={kindOptions}
+      onChange={(next) => selectKind((next || 'appeared') as ActivityKind)}
+    />
+  )
+  const periodSelect = (
+    <Select
+      value={period.value}
+      onValueChange={(value) => {
+        setPeriodParam(value)
+        setPage(1)
+      }}
+    >
+      <SelectTrigger
+        className="h-9 w-[150px]"
+        aria-label={t('assetTimeline.activity.period.label', 'Period')}
+      >
+        <SelectValue />
+      </SelectTrigger>
+      <SelectContent>
+        {PERIODS.map((p) => (
+          <SelectItem key={p.value} value={p.value}>
+            {t(p.key, p.label)}
+          </SelectItem>
+        ))}
+      </SelectContent>
+    </Select>
+  )
+  const toolbarStart = (
+    <>
+      {kindSelect}
+      {periodSelect}
+      {view !== 'newly_exposed' && (
+        <div className="flex items-center gap-2">
+          <Switch
+            id="internet-only"
+            checked={internetParam === 'true'}
+            onCheckedChange={(checked) => {
+              setInternetParam(checked ? 'true' : 'false')
+              setPage(1)
+            }}
+          />
+          <Label htmlFor="internet-only" className="cursor-pointer text-sm font-normal">
+            {t('assetTimeline.activity.internetOnly', 'Internet-facing only')}
+          </Label>
+        </div>
+      )}
+    </>
+  )
 
   const refreshLabel = t('assetTimeline.activity.refresh', 'Refresh')
   const toolbarEnd = (
@@ -376,60 +417,27 @@ export default function AssetChangesPage() {
 
   return (
     <Main>
-      <PageHeader title={title} description={description}>
-        {!isValues && (
-          <Select
-            value={period.value}
-            onValueChange={(value) => {
-              setPeriodParam(value)
-              setPage(1)
-            }}
-          >
-            <SelectTrigger
-              className="h-9 w-[150px]"
-              aria-label={t('assetTimeline.activity.period.label', 'Period')}
-            >
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {PERIODS.map((p) => (
-                <SelectItem key={p.value} value={p.value}>
-                  {t(p.key, p.label)}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        )}
-      </PageHeader>
-      <AssetsSectionTabs />
+      <PageStack>
+        <PageHeader title={title} description={description} />
+        <AssetsSectionTabs />
 
-      {/* The kinds of activity, with their counts in the period (research/242 D2). */}
-      <div className="mt-5 -mx-1 overflow-x-auto px-1 pb-1">
-        <SegmentedLens
-          label={t('assetTimeline.activity.kind.label', 'Kind of change')}
-          value={kind}
-          options={kindOptions}
-          onChange={selectKind}
-          countNoun={t('assetTimeline.activity.countNoun', 'changes')}
-        />
-      </div>
-
-      <div className="mt-4">
         {isValues ? (
-          <RecentAssetChanges />
-        ) : error && !isLoading ? (
-          <ErrorState title="changes" error={error} onRetry={() => mutate()} />
-        ) : isLoading && changes.length === 0 ? (
-          <div className="space-y-2">
-            <Skeleton className="h-9 w-full max-w-sm" />
-            {Array.from({ length: 8 }).map((_, i) => (
-              <Skeleton key={i} className="h-12 w-full" />
-            ))}
-          </div>
+          <RecentAssetChanges leading={kindSelect} />
         ) : (
+          // The toolbar (kind, period) stays while the list loads or fails.
           <DataTable
             columns={columns}
             data={changes}
+            isLoading={isLoading && changes.length === 0}
+            errorState={
+              error && !isLoading ? (
+                <ErrorState
+                  title={t('assetTimeline.activity.errorTitle', 'changes')}
+                  error={error}
+                  onRetry={() => mutate()}
+                />
+              ) : undefined
+            }
             getRowId={(c) => c.id ?? `${c.asset_id}-${c.changed_at}`}
             showSearch={false}
             showColumnToggle={false}
@@ -454,7 +462,7 @@ export default function AssetChangesPage() {
             }
           />
         )}
-      </div>
+      </PageStack>
     </Main>
   )
 }

@@ -46,11 +46,11 @@ import (
 	"github.com/openctemio/openctem/api/internal/app/asset"
 	auditapp "github.com/openctemio/openctem/api/internal/app/audit"
 	commandapp "github.com/openctemio/openctem/api/internal/app/command"
+	contentsourceapp "github.com/openctemio/openctem/api/internal/app/contentsource"
 	scanapp "github.com/openctemio/openctem/api/internal/app/scan"
 	"github.com/openctemio/openctem/api/internal/app/scim"
 	scopeapp "github.com/openctemio/openctem/api/internal/app/scope"
 	sensorapp "github.com/openctemio/openctem/api/internal/app/sensor"
-	templateapp "github.com/openctemio/openctem/api/internal/app/template"
 	tenantapp "github.com/openctemio/openctem/api/internal/app/tenant"
 	"github.com/openctemio/openctem/api/internal/config"
 	infrahttp "github.com/openctemio/openctem/api/internal/infra/http"
@@ -120,7 +120,7 @@ func newAuthzPolicyHarness(t *testing.T) *authzPolicyHarness {
 	commandHandler := handler.NewCommandHandler(commandapp.NewService(postgres.NewCommandRepository(db), log,
 		commandapp.WithSensorLookup(postgres.NewSensorRepository(db))), v, log)
 	commandHandler.SetAuditService(auditSvc)
-	commandHandler.SetScanCommandGate(scanapp.NewService(nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, log,
+	commandHandler.SetScanCommandGate(scanapp.NewService(nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, log,
 		scanapp.WithScopeExclusionFilter(scopeapp.NewService(nil, postgres.NewScopeExclusionRepository(db), nil, log)),
 		scanapp.WithScanZones(postgres.NewScanZoneRepository(db), nil)))
 
@@ -133,8 +133,9 @@ func newAuthzPolicyHarness(t *testing.T) *authzPolicyHarness {
 		SCIMToken: handler.NewSCIMTokenHandler(scim.NewTokenService(postgres.NewScimTokenRepository(db), "authz-policy-pepper", log), log),
 		ScannerTemplate: handler.NewScannerTemplateHandler(
 			app.NewScannerTemplateService(postgres.NewScannerTemplateRepository(db), "authz-policy-template-signing-key-0123456789", log), v, log),
-		TemplateSource: handler.NewTemplateSourceHandler(templateapp.NewSourceService(postgres.NewTemplateSourceRepository(db), log), v, log),
-		Command:        commandHandler,
+		ContentSource: handler.NewContentSourceHandler(contentsourceapp.NewService(postgres.NewContentSourceRepository(db),
+			nil, nil, nil, auditSvc, log), log),
+		Command: commandHandler,
 		Scope: handler.NewScopeHandler(scopeapp.NewService(postgres.NewScopeTargetRepository(db),
 			postgres.NewScopeExclusionRepository(db),
 			postgres.NewAssetRepository(db), log), v, log),
@@ -518,9 +519,9 @@ http:
 	tmpl := func(name string) string {
 		return `{"name":"` + name + `","template_type":"nuclei","content":"` + content + `"}`
 	}
-	source := func(name string) string {
-		return `{"name":"` + name + `","source_type":"git","template_type":"nuclei",` +
-			`"git_config":{"url":"https://github.com/projectdiscovery/nuclei-templates.git","branch":"main"}}`
+	source := func(slug string) string {
+		return `{"slug":"` + slug + `","name":"` + slug + `","kind":"nuclei-templates",` +
+			`"url":"https://git.example.com/acme/rules.git","ref":"main"}`
 	}
 	inline := `{"type":"scan","payload":{"scanner":"nuclei","target":"https://example.test",` +
 		`"custom_templates":[{"name":"inline.yaml","template_type":"nuclei","content":"` + content + `"}]}}`
@@ -534,11 +535,12 @@ http:
 	}
 	templateID := created.ID
 	h.expect(owner, http.MethodPost, "/api/v1/scanner-templates", tmpl("owner-template"), http.StatusCreated)
-	created.ID = ""
-	if err := json.Unmarshal([]byte(h.expect(admin, http.MethodPost, "/api/v1/template-sources", source("admin-source"), http.StatusCreated)), &created); err != nil || created.ID == "" {
-		t.Fatalf("admin source create: id %q, err %v", created.ID, err)
-	}
-	sourceID := created.ID
+	// A rule source of the organization (created directly: the create route
+	// also needs a recent sign-in, which this harness does not mint).
+	sourceID := uuid.NewString()
+	h.exec(`INSERT INTO content_sources (id, scope, tenant_id, slug, rule_namespace, name, kind, origin, url, ref)
+		VALUES ($1, 'tenant', $2, 'admin-source', 'admin-source', 'admin-source', 'nuclei-templates', 'git', 'https://git.example.com/acme/rules.git', 'main')`,
+		sourceID, tid)
 	if code, body := h.do(admin, http.MethodPost, "/api/v1/commands", inline); code == http.StatusForbidden {
 		t.Fatalf("admin inline-template command refused: %s", body)
 	}
@@ -547,19 +549,20 @@ http:
 		// Reads stay.
 		h.expect(u, http.MethodGet, "/api/v1/scanner-templates", "", http.StatusOK)
 		h.expect(u, http.MethodGet, "/api/v1/scanner-templates/"+templateID, "", http.StatusOK)
-		h.expect(u, http.MethodGet, "/api/v1/template-sources", "", http.StatusOK)
-		h.expect(u, http.MethodGet, "/api/v1/template-sources/"+sourceID, "", http.StatusOK)
+		h.expect(u, http.MethodGet, "/api/v1/content-sources", "", http.StatusOK)
+		h.expect(u, http.MethodGet, "/api/v1/content-sources/"+sourceID, "", http.StatusOK)
 
 		// Writes are refused.
 		h.expect(u, http.MethodPost, "/api/v1/scanner-templates", tmpl("member-template"), http.StatusForbidden)
 		h.expect(u, http.MethodPut, "/api/v1/scanner-templates/"+templateID, `{"name":"renamed"}`, http.StatusForbidden)
 		h.expect(u, http.MethodPost, "/api/v1/scanner-templates/"+templateID+"/deprecate", "", http.StatusForbidden)
 		h.expect(u, http.MethodDelete, "/api/v1/scanner-templates/"+templateID, "", http.StatusForbidden)
-		h.expect(u, http.MethodPost, "/api/v1/template-sources", source("member-source"), http.StatusForbidden)
-		h.expect(u, http.MethodPut, "/api/v1/template-sources/"+sourceID, `{"name":"renamed"}`, http.StatusForbidden)
-		h.expect(u, http.MethodPost, "/api/v1/template-sources/"+sourceID+"/sync", "", http.StatusForbidden)
-		h.expect(u, http.MethodPost, "/api/v1/template-sources/"+sourceID+"/disable", "", http.StatusForbidden)
-		h.expect(u, http.MethodDelete, "/api/v1/template-sources/"+sourceID, "", http.StatusForbidden)
+		h.expect(u, http.MethodPost, "/api/v1/content-sources", source("member-source"), http.StatusForbidden)
+		h.expect(u, http.MethodPut, "/api/v1/content-sources/"+sourceID, `{"name":"renamed"}`, http.StatusForbidden)
+		h.expect(u, http.MethodPut, "/api/v1/content-sources/"+sourceID+"/credential", `{"token":"glpat-0123456789"}`, http.StatusForbidden)
+		h.expect(u, http.MethodPost, "/api/v1/content-sources/"+sourceID+"/sync", "", http.StatusForbidden)
+		h.expect(u, http.MethodPost, "/api/v1/content-sources/"+sourceID+"/rollback", "", http.StatusForbidden)
+		h.expect(u, http.MethodDelete, "/api/v1/content-sources/"+sourceID, "", http.StatusForbidden)
 	}
 
 	// A member still holds commands:write, but cannot carry a template in one.

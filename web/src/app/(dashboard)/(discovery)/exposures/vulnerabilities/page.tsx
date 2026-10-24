@@ -1,7 +1,14 @@
 'use client'
 
 import { Main } from '@/components/layout'
-import { PageHeader, StatsCard, EmptyState, ErrorState } from '@/features/shared'
+import {
+  PageHeader,
+  PageStack,
+  EmptyState,
+  ErrorState,
+  FilterSelect,
+  ViewSwitcher,
+} from '@/features/shared'
 import { useTranslation } from '@/context/i18n-provider'
 import { useDashboardStats } from '@/features/dashboard/hooks/use-dashboard-stats'
 import { useFindingTypeStats } from '@/features/exposures/hooks'
@@ -9,7 +16,6 @@ import {
   ChartCard,
   OverviewSkeleton,
   OVERVIEW_CHARTS_GRID,
-  OVERVIEW_STATS_GRID,
   SeverityDonut,
   SeverityTrend,
   StatusBars,
@@ -18,9 +24,8 @@ import {
   ViewFindingsButton,
 } from '@/features/exposures/components'
 import { useTenant } from '@/context/tenant-provider'
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { useUrlFilter } from '@/hooks/use-url-param'
-import { Bug, AlertTriangle, Clock, Shield, LayoutGrid, Database, ShieldAlert } from 'lucide-react'
+import { Bug, LayoutGrid, List } from 'lucide-react'
 import { ActiveCVEsTab, VulnerabilityCatalogTab } from '@/features/vulnerabilities'
 import { usePermissions, Permission } from '@/lib/permissions'
 import { VULNERABILITY_SOURCES } from '@/features/exposures/lib/type-sources'
@@ -76,49 +81,8 @@ function OverviewTab() {
       />
     )
 
-  const criticalCount = typeStats.bySeverity.critical || 0
-  const highCount = typeStats.bySeverity.high || 0
-  const openCount = typeStats.openCount
-
   return (
-    <div className="space-y-5">
-      <div className={OVERVIEW_STATS_GRID}>
-        <StatsCard
-          title={t('exposures.vulnerabilities.total', 'Total vulnerabilities')}
-          value={typeStats.total}
-          icon={Bug}
-        />
-        <StatsCard // anatomy-ok: existing type-page tile, only its neighbours changed
-          title={t('exposures.type.critical', 'Critical')}
-          value={criticalCount}
-          valueClassName={criticalCount > 0 ? 'text-destructive' : undefined}
-          description={
-            criticalCount > 0
-              ? t('exposures.vulnerabilities.criticalAction', 'Immediate action required')
-              : t('exposures.vulnerabilities.criticalNone', 'No critical issues')
-          }
-          icon={AlertTriangle}
-        />
-        <StatsCard
-          title={t('exposures.type.high', 'High')}
-          value={highCount}
-          description={t('exposures.type.shareOfTotal', '{percent}% of total', {
-            percent: ((highCount / typeStats.total) * 100).toFixed(0),
-          })}
-          icon={Shield}
-        />
-        <StatsCard
-          title={t('exposures.type.open', 'Open')}
-          value={openCount}
-          description={
-            openCount > 0
-              ? t('exposures.type.openAction', 'Awaiting remediation')
-              : t('exposures.type.openNone', 'None open')
-          }
-          icon={Clock}
-        />
-      </div>
-
+    <PageStack>
       <div className={OVERVIEW_CHARTS_GRID}>
         <ChartCard
           title={t('exposures.type.severityDistribution', 'Severity distribution')}
@@ -157,7 +121,7 @@ function OverviewTab() {
           )}
         />
       </ChartCard>
-    </div>
+    </PageStack>
   )
 }
 
@@ -180,62 +144,74 @@ export default function VulnerabilitiesPage() {
       ? tabParam
       : 'overview'
 
+  // Summary and the CVE lists are two views of one subject: a view switch in
+  // the header. Which CVEs the list shows (those affecting my assets, or the
+  // whole catalog) is a token first in the list's toolbar. No second tab row
+  // under the Exposures tabs (research/249 R21).
+  const showsCves = tab === 'active' || tab === 'catalog'
+  const cveList = (
+    <FilterSelect<'active' | 'catalog'>
+      label={t('exposures.vulnerabilities.cvesLabel', 'CVEs')}
+      value={tab === 'catalog' ? 'catalog' : 'active'}
+      clearable={false}
+      options={[
+        {
+          value: 'active',
+          label: t('exposures.vulnerabilities.cvesActive', 'Affecting my assets'),
+        },
+        { value: 'catalog', label: t('exposures.vulnerabilities.cvesCatalog', 'Whole catalog') },
+      ]}
+      onChange={(v) => setTab(v === 'catalog' ? 'catalog' : 'active')}
+    />
+  )
+
   return (
     <Main>
-      <PageHeader
-        title={t('exposures.vulnerabilities.title', 'Vulnerabilities')}
-        description={t(
-          'exposures.vulnerabilities.description',
-          'Vulnerability findings across your assets, the CVEs behind them, and the CVE catalog.'
-        )}
-      >
-        <ViewFindingsButton
-          stats={typeStats}
-          sources={VULNERABILITY_SOURCES}
-          isLoading={typeLoading}
-        />
-      </PageHeader>
-
-      <ExposuresTabs />
-
-      <Tabs value={tab} onValueChange={setTab} className="mt-4">
-        <TabsList>
-          <TabsTrigger value="overview" className="gap-2">
-            <LayoutGrid className="h-4 w-4" />
-            {/* "Summary", not "Overview": the Exposures section tabs above
-                already have an Overview (/exposures). */}
-            {t('exposures.vulnerabilities.summaryTab', 'Summary')}
-          </TabsTrigger>
-          {canReadCatalog && (
-            <TabsTrigger value="active" className="gap-2">
-              <ShieldAlert className="h-4 w-4" />
-              {t('exposures.vulnerabilities.activeTab', 'Active CVEs')}
-            </TabsTrigger>
+      <PageStack>
+        <PageHeader
+          title={t('exposures.vulnerabilities.title', 'Vulnerabilities')}
+          description={t(
+            'exposures.vulnerabilities.description',
+            'Vulnerability findings across your assets, the CVEs behind them, and the CVE catalog.'
           )}
-          {canReadCatalog && (
-            <TabsTrigger value="catalog" className="gap-2">
-              <Database className="h-4 w-4" />
-              {t('exposures.vulnerabilities.catalogTab', 'CVE catalog')}
-            </TabsTrigger>
-          )}
-        </TabsList>
+          viewSwitcher={
+            canReadCatalog ? (
+              <ViewSwitcher
+                options={[
+                  {
+                    value: 'summary',
+                    label: t('exposures.vulnerabilities.summaryView', 'Summary'),
+                    icon: LayoutGrid,
+                  },
+                  {
+                    value: 'cves',
+                    label: t('exposures.vulnerabilities.cvesView', 'CVE list'),
+                    icon: List,
+                  },
+                ]}
+                value={showsCves ? 'cves' : 'summary'}
+                onChange={(v) => setTab(v === 'cves' ? 'active' : '')}
+              />
+            ) : undefined
+          }
+        >
+          <ViewFindingsButton
+            stats={typeStats}
+            sources={VULNERABILITY_SOURCES}
+            isLoading={typeLoading}
+          />
+        </PageHeader>
 
-        <TabsContent value="overview" className="mt-5">
+        <ExposuresTabs />
+
+        {tab === 'catalog' ? (
+          <VulnerabilityCatalogTab leading={cveList} />
+        ) : tab === 'active' ? (
+          <ActiveCVEsTab leading={cveList} />
+        ) : (
           <OverviewTab />
-        </TabsContent>
-
-        {canReadCatalog && (
-          <TabsContent value="active" className="mt-5">
-            <ActiveCVEsTab />
-          </TabsContent>
         )}
-
-        {canReadCatalog && (
-          <TabsContent value="catalog" className="mt-5">
-            <VulnerabilityCatalogTab />
-          </TabsContent>
-        )}
-      </Tabs>
+      </PageStack>
     </Main>
   )
 }

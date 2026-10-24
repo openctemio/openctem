@@ -5,6 +5,7 @@ import { Check, Loader2, X } from 'lucide-react'
 import { toast } from 'sonner'
 
 import { Button } from '@/components/ui/button'
+import { ConfirmDialog } from '@/components/confirm-dialog'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import {
   Select,
@@ -40,6 +41,8 @@ export function JoinRequestsCard({
   const { requests, mutate } = useJoinRequests(canManage)
   const [roles, setRoles] = useState<Record<string, JoinRole>>({})
   const [busy, setBusy] = useState<string | null>(null)
+  // Approving gives a person access, so it asks first.
+  const [approving, setApproving] = useState<string | null>(null)
 
   if (!canManage || requests.length === 0) return null
 
@@ -81,8 +84,9 @@ export function JoinRequestsCard({
           >
             <div className="min-w-0">
               <p className="truncate font-medium">{r.name || r.email}</p>
-              <p className="truncate text-xs text-muted-foreground">
-                {r.email} · <RelativeTime date={r.requested_at} className="text-xs" />
+              <p className="flex flex-wrap items-center gap-x-3 text-xs text-muted-foreground">
+                <span className="truncate">{r.email}</span>
+                <RelativeTime date={r.requested_at} className="text-xs" />
               </p>
             </div>
             <div className="flex items-center gap-2">
@@ -98,32 +102,51 @@ export function JoinRequestsCard({
                   <SelectItem value="member">{t('settings.domains.role.member')}</SelectItem>
                 </SelectContent>
               </Select>
-              <Button
-                size="sm"
-                onClick={() => void decide(r.id, true)}
-                disabled={busy !== null}
-                aria-label={t('org.joinRequests.approve')}
-              >
+              <Button size="sm" onClick={() => setApproving(r.id)} disabled={busy !== null}>
                 {busy === r.id ? (
-                  <Loader2 className="h-4 w-4 animate-spin" />
+                  <Loader2 className="me-1.5 h-4 w-4 animate-spin" />
                 ) : (
-                  <Check className="h-4 w-4" />
+                  <Check className="me-1.5 h-4 w-4" />
                 )}
+                {t('org.joinRequests.approve')}
               </Button>
               <Button
                 size="sm"
                 variant="outline"
                 onClick={() => void decide(r.id, false)}
                 disabled={busy !== null}
-                aria-label={t('org.joinRequests.reject')}
               >
-                <X className="h-4 w-4" />
+                <X className="me-1.5 h-4 w-4" />
+                {t('org.joinRequests.reject')}
               </Button>
             </div>
           </div>
         ))}
         <p className="text-xs text-muted-foreground">{t('org.joinRequests.expiry')}</p>
       </CardContent>
+      {(() => {
+        const req = requests.find((r) => r.id === approving)
+        const role = req ? (roles[req.id] ?? req.requested_role) : 'viewer'
+        return (
+          <ConfirmDialog
+            open={!!req}
+            onOpenChange={(open) => !open && setApproving(null)}
+            title={t('confirm.joinRequest.title', 'Let {name} join?', {
+              name: req ? req.name || req.email : '',
+            })}
+            desc={t(
+              'confirm.joinRequest.desc',
+              '{email} becomes a member of this organization now, as {role}, and can see what that role allows. You can change the role or remove them later.',
+              { email: req?.email ?? '', role }
+            )}
+            confirmText={t('confirm.joinRequest.confirm', 'Approve request')}
+            handleConfirm={async () => {
+              if (req) await decide(req.id, true)
+              setApproving(null)
+            }}
+          />
+        )
+      })()}
     </Card>
   )
 }

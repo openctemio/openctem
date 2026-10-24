@@ -112,6 +112,8 @@ interface ScopeEntriesTableProps {
   onPagination: (p: { pageIndex: number; pageSize: number }) => void
   /** Shown when nothing is in scope yet (onboarding). */
   emptyAction?: React.ReactNode
+  /** Controls the page puts first in the toolbar (which scope list is shown). */
+  leading?: React.ReactNode
 }
 
 export function ScopeEntriesTable({
@@ -122,6 +124,7 @@ export function ScopeEntriesTable({
   onStatusChange,
   onPagination,
   emptyAction,
+  leading,
 }: ScopeEntriesTableProps) {
   const { t } = useTranslation()
   const canApprove = useHasPermission(Permission.ScopeApprove)
@@ -387,6 +390,7 @@ export function ScopeEntriesTable({
 
   const toolbarStart = (
     <>
+      {leading}
       <div className="relative min-w-0 flex-1 sm:max-w-sm">
         <SearchIcon className="pointer-events-none absolute start-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
         <Input
