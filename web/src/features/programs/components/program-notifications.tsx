@@ -258,7 +258,9 @@ export function ProgramNotifications({
       <ConfirmDialog
         open={detaching !== null}
         onOpenChange={(o) => !o && setDetaching(null)}
-        title={t('programs.notify.detachTitle', 'Detach this channel?')}
+        title={t('programs.notify.detachTitle', 'Detach {name} from this program?', {
+          name: detaching?.name ?? '',
+        })}
         desc={t(
           'programs.notify.detachDesc',
           'Events about this program private assets stop going to {name}.',
@@ -266,7 +268,7 @@ export function ProgramNotifications({
         )}
         destructive
         isLoading={busy}
-        confirmText={t('programs.notify.detach', 'Detach')}
+        confirmText={t('programs.notify.detach', 'Detach channel')}
         cancelBtnText={t('common.cancel', 'Cancel')}
         handleConfirm={confirmDetach}
       />
