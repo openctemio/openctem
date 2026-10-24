@@ -8,7 +8,7 @@
  * deciding source and why; "Why this value" opens where the value comes from.
  */
 
-import { useMemo, useState } from 'react'
+import { useMemo, useState, type ReactNode } from 'react'
 import { ArrowRight, History, Loader2, Repeat } from 'lucide-react'
 import Link from '@/components/link'
 import { Badge } from '@/components/ui/badge'
@@ -140,15 +140,19 @@ function Filters({
   filters,
   onChange,
   withTag,
+  leading,
 }: {
   filters: ChangeFilters
   onChange: (f: ChangeFilters) => void
   withTag: boolean
+  /** Controls the page puts first in the row (the Activity kind filter). */
+  leading?: ReactNode
 }) {
   const { t } = useTranslation()
   const l = useLabels()
   return (
     <div className="flex flex-wrap items-center gap-2">
+      {leading}
       <Select
         value={filters.attribute || ALL}
         onValueChange={(v) => onChange({ ...filters, attribute: v === ALL ? undefined : v })}
@@ -290,11 +294,11 @@ export function AssetTimeline({
 }
 
 /** The organization's recent asset changes (assets in the caller's scope). */
-export function RecentAssetChanges() {
+export function RecentAssetChanges({ leading }: { leading?: ReactNode } = {}) {
   const [filters, setFilters] = useState<ChangeFilters>({})
   return (
     <div className="space-y-3">
-      <Filters filters={filters} onChange={setFilters} withTag />
+      <Filters filters={filters} onChange={setFilters} withTag leading={leading} />
       <TimelineBody assetId={null} filters={filters} />
     </div>
   )
