@@ -478,5 +478,21 @@
   "scope.entries.searchLabel": "Tìm mục phạm vi",
   "scope.entries.noMatch": "Không có mục nào khớp",
   "scope.entries.emptyTitle": "Chưa có gì trong phạm vi",
-  "scope.entries.emptyDescription": "Quét từ chối mọi mục tiêu internet không có mục nào bao phủ."
+  "scope.entries.emptyDescription": "Quét từ chối mọi mục tiêu internet không có mục nào bao phủ.",
+  "scope.approvals.approvedOne": "Đã duyệt 1 thay đổi",
+  "scope.approvals.approvedMany": "Đã duyệt {count} thay đổi",
+  "scope.approvals.rejectedOne": "Đã từ chối 1 thay đổi",
+  "scope.approvals.rejectedMany": "Đã từ chối {count} thay đổi",
+  "scope.approvals.notSaved": "chưa được lưu",
+  "scope.approvals.selectEvery": "Chọn mọi thay đổi bạn có thể duyệt",
+  "scope.approvals.selectAll": "Chọn tất cả thay đổi bạn có thể duyệt ({count})",
+  "scope.approvals.approveSelected": "Duyệt các mục đã chọn ({count})",
+  "scope.approvals.listLabel": "Các thay đổi đang chờ duyệt",
+  "scope.approvals.approve": "Duyệt",
+  "scope.approvals.reject": "Từ chối",
+  "scope.fix.notSaved": "Thay đổi chưa được lưu.",
+  "scope.fix.approved": "Đã ghi nhận phê duyệt",
+  "scope.fix.activated": "Đã kích hoạt mục",
+  "scope.fix.renewed": "Đã gia hạn mục",
+  "scope.fix.thisEntry": "mục này"
 }

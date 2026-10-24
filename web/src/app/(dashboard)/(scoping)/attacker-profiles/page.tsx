@@ -36,7 +36,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { ConfirmDialog } from '@/components/confirm-dialog'
+import { ConfirmDialog, nameToConfirm } from '@/components/confirm-dialog'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Plus, Trash2, Lock, Target } from 'lucide-react'
 import { post, del } from '@/lib/api/client'
@@ -515,8 +515,11 @@ export default function AttackerProfilesPage() {
           'confirm.attackerProfile.deleteDesc',
           'It is removed from every cycle that uses it. This cannot be undone.'
         )}
-        confirmText={t('confirm.delete', 'Delete')}
+        confirmText={t('confirm.attackerProfile.deleteButton', 'Delete attacker profile')}
         destructive
+        typeToConfirm={
+          deleteProfile ? nameToConfirm(deleteProfile.name, deleteProfile.id) : undefined
+        }
         handleConfirm={handleDelete}
       />
     </>
