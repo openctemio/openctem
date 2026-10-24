@@ -7,7 +7,14 @@ import { toast } from 'sonner'
 import { Main } from '@/components/layout'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { DataTable, ErrorState, PageHeader, RelativeTime, StackedCell } from '@/features/shared'
+import {
+  DataTable,
+  ErrorState,
+  PageHeader,
+  PageStack,
+  RelativeTime,
+  StackedCell,
+} from '@/features/shared'
 import { useTranslation } from '@/context/i18n-provider'
 import {
   endAdminSession,
@@ -120,14 +127,14 @@ export default function AdminSessionsPage() {
 
   return (
     <Main>
-      <PageHeader
-        title={t('admin.nav.sessions', 'Sessions')}
-        description={t(
-          'admin.sessions.description',
-          'Every open console session. End one that should not be there: that administrator is signed out at once.'
-        )}
-      />
-      <div className="mt-5">
+      <PageStack>
+        <PageHeader
+          title={t('admin.nav.sessions', 'Sessions')}
+          description={t(
+            'admin.sessions.description',
+            'Every open console session. End one that should not be there: that administrator is signed out at once.'
+          )}
+        />
         {!isSuper ? (
           <RoleRequiredNotice needed="super_admin" variant="page" />
         ) : error ? (
@@ -149,31 +156,31 @@ export default function AdminSessionsPage() {
             emptyMessage={t('admin.sessions.empty', 'No open session')}
           />
         )}
-      </div>
-      {ending && (
-        <AdminConfirmDialog
-          open
-          onOpenChange={(open) => !open && setEnding(null)}
-          title={t('admin.sessions.endTitle', 'End this console session')}
-          description={
-            <p>
-              {t(
-                'admin.sessions.endWhat',
-                '{email} is signed out of the console at once (signed in from {ip}). The other administrators can see this in the audit log.',
-                { email: ending.admin_email, ip: ending.ip_address || '-' }
-              )}
-            </p>
-          }
-          confirmLabel={t('admin.sessions.endConfirm', 'End session')}
-          destructive
-          requireCode
-          onConfirm={async (proof) => {
-            await endAdminSession(ending.id, proof)
-            toast.success(t('admin.sessions.ended', 'Session ended.'))
-            void mutate()
-          }}
-        />
-      )}
+        {ending && (
+          <AdminConfirmDialog
+            open
+            onOpenChange={(open) => !open && setEnding(null)}
+            title={t('admin.sessions.endTitle', 'End this console session')}
+            description={
+              <p>
+                {t(
+                  'admin.sessions.endWhat',
+                  '{email} is signed out of the console at once (signed in from {ip}). The other administrators can see this in the audit log.',
+                  { email: ending.admin_email, ip: ending.ip_address || '-' }
+                )}
+              </p>
+            }
+            confirmLabel={t('admin.sessions.endConfirm', 'End session')}
+            destructive
+            requireCode
+            onConfirm={async (proof) => {
+              await endAdminSession(ending.id, proof)
+              toast.success(t('admin.sessions.ended', 'Session ended.'))
+              void mutate()
+            }}
+          />
+        )}
+      </PageStack>
     </Main>
   )
 }

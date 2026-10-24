@@ -3,7 +3,7 @@
 import { Main } from '@/components/layout'
 import { Skeleton } from '@/components/ui/skeleton'
 import { useTranslation } from '@/context/i18n-provider'
-import { ErrorState, PageHeader } from '@/features/shared'
+import { ErrorState, PageHeader, PageStack } from '@/features/shared'
 import { useAdmin } from '@console/features/admin-console/components/admin-console-shell'
 import { useVersionCheck } from '@console/features/admin-console/api/use-version-check'
 import { SoftwareUpdatesPanel } from '@console/features/admin-console/components/software-updates-panel'
@@ -21,14 +21,14 @@ export default function SoftwareUpdatesPage() {
 
   return (
     <Main>
-      <PageHeader
-        title={t('admin.nav.softwareUpdates', 'Software updates')}
-        description={t(
-          'admin.versionCheck.pageDescription',
-          'Newer releases and security advisories for this instance, from the signed release feed.'
-        )}
-      />
-      <div className="mt-5">
+      <PageStack>
+        <PageHeader
+          title={t('admin.nav.softwareUpdates', 'Software updates')}
+          description={t(
+            'admin.versionCheck.pageDescription',
+            'Newer releases and security advisories for this instance, from the signed release feed.'
+          )}
+        />
         {error ? (
           <ErrorState
             title={t('admin.versionCheck.errorSubject', 'the release information')}
@@ -44,7 +44,7 @@ export default function SoftwareUpdatesPage() {
             onChanged={() => void mutate()}
           />
         )}
-      </div>
+      </PageStack>
     </Main>
   )
 }
