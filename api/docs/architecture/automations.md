@@ -122,6 +122,28 @@ length): never a body, headers or a secret.
   deliveries 180 days; the `automation-run-retention` controller (every 6
   hours, one replica) deletes older finished runs in batches.
 
+### Preview and validate
+
+Both take the draft in the body (`nodes`, `edges`) or, without one, the saved
+draft; both read only and need `findings:workflows:write`.
+
+- `POST /workflows/{id}/preview {"limit": 1..100}` runs the draft against the
+  latest subjects of its trigger's kind (findings, or assets for
+  `asset_discovered`; a scan trigger has none) **that the caller may read**,
+  applies the trigger's filters, walks the graph in memory through the
+  simulate evaluator and returns per-step counts, the sample ids and what it
+  would send. Nothing is stored or sent. One call per 10 seconds per user
+  (429 `RATE_LIMITED`); a limit above 100 is a 400. A call without a person
+  (an API key) is refused: samples follow a person's scope.
+- `POST /workflows/{id}/verify` returns `problems` (block publishing) and
+  `warnings`: `UNSUPPORTED_TYPE`, graph codes (`GRAPH_CYCLE`,
+  `GRAPH_UNREACHABLE`, `GRAPH_EDGE`), `TRIGGER_CONFIG_INVALID`,
+  `CONDITION_INVALID`, `CONDITION_UNKNOWN_FIELD` (warning), `CONFIG_MISSING`,
+  `INTEGRATION_MISSING` (not set, or not an integration of this organization),
+  `OWNER_LACKS_PERMISSION` (the caller would own the automation once they
+  publish it) and `NO_SIMULATION_SINCE_EDIT` (warning). Ten calls per 10
+  seconds per user.
+
 Risk classes (`pkg/domain/automation/risk.go`): low (tags), elevated
 (status, assignment, tickets, notifications, AI triage), high (scans, and
 any automation that lets automation-caused events start it). The go-live
