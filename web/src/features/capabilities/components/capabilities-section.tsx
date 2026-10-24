@@ -53,7 +53,7 @@ import {
   invalidateCapabilitiesCache,
 } from '@/lib/api/capability-hooks'
 import type { Capability, CapabilityUsageStatsBatchResponse } from '@/lib/api/capability-types'
-import { EmptyState, ErrorState, PageHeader } from '@/features/shared'
+import { EmptyState, ErrorState, PageHeader, PageStack } from '@/features/shared'
 import { useTranslation } from '@/context/i18n-provider'
 
 type ViewMode = 'grid' | 'table'
@@ -354,7 +354,7 @@ export function CapabilitiesSection() {
   }
 
   return (
-    <>
+    <PageStack>
       <PageHeader
         title={t('scans.capabilities.title', 'Capabilities')}
         description={t(
@@ -383,7 +383,7 @@ export function CapabilitiesSection() {
         </Can>
       </PageHeader>
 
-      <Tabs value={mainTab} onValueChange={handleMainTabChange} className="mt-4">
+      <Tabs value={mainTab} onValueChange={handleMainTabChange}>
         <TabsList>
           <TabsTrigger value="platform">
             Platform
@@ -396,7 +396,7 @@ export function CapabilitiesSection() {
         </TabsList>
       </Tabs>
 
-      <div className="mt-5">{body}</div>
+      {body}
 
       {/* Dialogs */}
       <CreateCapabilityDialog
@@ -548,6 +548,6 @@ export function CapabilitiesSection() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
-    </>
+    </PageStack>
   )
 }

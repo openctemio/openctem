@@ -33,6 +33,7 @@ import {
   EmptyState,
   ErrorState,
   PageHeader,
+  PageStack,
 } from '@/features/shared'
 import { AddTemplateSourceDialog } from './add-template-source-dialog'
 import { EditTemplateSourceDialog } from './edit-template-source-dialog'
@@ -327,7 +328,7 @@ export function TemplateSourcesSection() {
   }
 
   return (
-    <>
+    <PageStack>
       <PageHeader
         title="Template sources"
         description="External Git, S3 and HTTP sources that custom scanner templates are synced from."
@@ -340,7 +341,7 @@ export function TemplateSourcesSection() {
         </Can>
       </PageHeader>
 
-      <div className="mt-5">{body}</div>
+      {body}
 
       {/* Dialogs */}
       <AddTemplateSourceDialog
@@ -374,6 +375,6 @@ export function TemplateSourcesSection() {
         isLoading={isDeleting}
         handleConfirm={handleDeleteConfirm}
       />
-    </>
+    </PageStack>
   )
 }

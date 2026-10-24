@@ -1,6 +1,6 @@
 'use client'
 
-import { useMemo } from 'react'
+import { useMemo, useState } from 'react'
 import Link from '@/components/link'
 import type { ColumnDef } from '@tanstack/react-table'
 import { Main } from '@/components/layout'
@@ -14,6 +14,7 @@ import {
   RelativeTime,
   StackedCell,
   type MetricStripItem,
+  PageStack,
 } from '@/features/shared'
 import { useTranslation } from '@/context/i18n-provider'
 import { Badge } from '@/components/ui/badge'
@@ -158,63 +159,79 @@ export default function IntegrationsPage() {
     (i) => i.status === 'pending' || i.status === 'disconnected'
   ).length
 
+  // The strip filters the list: one status group at a time, click again to clear.
+  const [statusGroup, setStatusGroup] = useState<'connected' | 'attention' | 'pending' | null>(null)
+  const inGroup = (i: Integration, g: 'connected' | 'attention' | 'pending') =>
+    g === 'connected'
+      ? i.status === 'connected'
+      : g === 'attention'
+        ? i.status === 'error' || i.status === 'expired'
+        : i.status === 'pending' || i.status === 'disconnected'
+  const visible = statusGroup ? integrations.filter((i) => inGroup(i, statusGroup)) : integrations
+
+  const toggle = (g: 'connected' | 'attention' | 'pending') => ({
+    active: statusGroup === g,
+    onClick: () => setStatusGroup(statusGroup === g ? null : g),
+  })
   const metrics: MetricStripItem[] = [
-    {
-      key: 'total',
-      label: t('integrationsHub.metrics.total', 'Total integrations'),
-      value: integrations.length,
-    },
     {
       key: 'connected',
       label: t('integrationsHub.metrics.connected', 'Connected'),
       value: connectedCount,
+      ...toggle('connected'),
     },
     {
       key: 'attention',
       label: t('integrationsHub.metrics.attention', 'Needs attention'),
       value: needsAttentionCount,
       tone: 'danger',
+      ...toggle('attention'),
     },
-    { key: 'pending', label: t('integrationsHub.metrics.pending', 'Pending'), value: pendingCount },
+    {
+      key: 'pending',
+      label: t('integrationsHub.metrics.pending', 'Pending'),
+      value: pendingCount,
+      ...toggle('pending'),
+    },
   ]
 
   return (
     <Main>
-      <PageHeader
-        title={t('integrationsHub.title', 'Integrations')}
-        description={t(
-          'integrationsHub.description',
-          'Connect third-party tools and services to your security workflows.'
-        )}
-      />
+      <PageStack>
+        <PageHeader
+          title={t('integrationsHub.title', 'Integrations')}
+          description={t(
+            'integrationsHub.description',
+            'Connect third-party tools and services to your security workflows.'
+          )}
+        />
 
-      {/* Categories — navigation to the pages that own each connect flow */}
-      <div className="mt-5 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        {integrationCategories.map((category) => (
-          <LinkCard
-            key={category.id}
-            href={category.href}
-            icon={category.icon}
-            title={t(`integrationsHub.categories.${category.id}.title`, category.title)}
-            description={t(
-              `integrationsHub.categories.${category.id}.description`,
-              category.description
-            )}
-            badge={category.badge ? t('integrationsHub.badge.soon', category.badge) : undefined}
-            aside={
-              category.id === 'scm' && scmConnections.length > 0 ? (
-                <Badge variant="secondary" className="tabular-nums">
-                  {scmConnectedCount}/{scmConnections.length}
-                </Badge>
-              ) : undefined
-            }
-          />
-        ))}
-      </div>
+        {/* Categories — navigation to the pages that own each connect flow */}
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          {integrationCategories.map((category) => (
+            <LinkCard
+              key={category.id}
+              href={category.href}
+              icon={category.icon}
+              title={t(`integrationsHub.categories.${category.id}.title`, category.title)}
+              description={t(
+                `integrationsHub.categories.${category.id}.description`,
+                category.description
+              )}
+              badge={category.badge ? t('integrationsHub.badge.soon', category.badge) : undefined}
+              aside={
+                category.id === 'scm' && scmConnections.length > 0 ? (
+                  <Badge variant="secondary" className="tabular-nums">
+                    {scmConnectedCount}/{scmConnections.length}
+                  </Badge>
+                ) : undefined
+              }
+            />
+          ))}
+        </div>
 
-      <MetricStrip className="mt-5" loading={isLoading} items={metrics} />
+        <MetricStrip loading={isLoading} items={metrics} />
 
-      <div className="mt-5">
         {error ? (
           <ErrorState
             title={t('integrationsHub.errorTitle', 'integrations')}
@@ -238,13 +255,13 @@ export default function IntegrationsPage() {
         ) : (
           <DataTable
             columns={columns}
-            data={integrations}
+            data={visible}
             getRowId={(i) => i.id}
             searchPlaceholder={t('integrationsHub.searchPlaceholder', 'Search integrations...')}
             showSelectionCount={false}
           />
         )}
-      </div>
+      </PageStack>
     </Main>
   )
 }
