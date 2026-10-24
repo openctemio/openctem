@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen } from '@testing-library/react'
+import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { RolesTab } from '../roles-tab'
 import { MembershipEndDialog, membershipEndISO } from '../membership-end'
@@ -12,6 +12,10 @@ globalThis.ResizeObserver ??= class {
   unobserve() {}
   disconnect() {}
 } as unknown as typeof ResizeObserver
+
+Element.prototype.scrollIntoView ??= () => {}
+Element.prototype.hasPointerCapture ??= () => false
+Element.prototype.releasePointerCapture ??= () => {}
 
 const bindGroupRole = vi.fn()
 const unbindGroupRole = vi.fn()
@@ -55,8 +59,22 @@ describe('RolesTab', () => {
     render(<RolesTab groupId="g1" canBind canUnbind />)
     await userEvent.click(screen.getByRole('button', { name: 'Remove role Auditor' }))
     expect(unbindGroupRole).not.toHaveBeenCalled()
-    await userEvent.click(screen.getByRole('button', { name: /^remove$/i }))
+    await userEvent.click(screen.getByRole('button', { name: /^remove role$/i }))
     expect(unbindGroupRole).toHaveBeenCalledWith('g1', 'r2')
+  })
+
+  it('adds a role to the team only after confirming who gets it', async () => {
+    bindGroupRole.mockResolvedValueOnce(undefined)
+    render(<RolesTab groupId="g1" canBind canUnbind memberCount={12} />)
+    await userEvent.click(screen.getByRole('combobox', { name: 'Role to add' }))
+    await userEvent.click(await screen.findByRole('option', { name: 'Analyst' }))
+    await userEvent.click(screen.getByRole('button', { name: /^add role$/i }))
+    const dialog = await screen.findByRole('alertdialog')
+    expect(dialog).toHaveTextContent('Add the role Analyst to the team?')
+    expect(dialog).toHaveTextContent('All 12 members')
+    expect(bindGroupRole).not.toHaveBeenCalled()
+    await userEvent.click(within(dialog).getByRole('button', { name: /^add role$/i }))
+    await waitFor(() => expect(bindGroupRole).toHaveBeenCalledWith('g1', 'r1'))
   })
 
   it('offers no controls to someone who may only read', () => {
