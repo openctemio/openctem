@@ -1106,7 +1106,7 @@ func (s *Service) finishRun(ctx context.Context, rt *retestdom.Retest, v retestd
 	// run the check, so its own addresses and paths are masked on the run
 	// (the run is shown on the Runs page, beside platform-run scans).
 	msg := sensordom.RedactPlatformText(evidence.RedactText(v.Reason))
-	if f, ok := s.runs.(unableRunFinisher); ok && v.Outcome == retestdom.OutcomeInconclusive && v.Code == retestdom.ReasonError {
+	if f, ok := s.runs.(unableRunFinisher); ok && v.Outcome == retestdom.OutcomeInconclusive && v.Code.ToolUnable() {
 		if err := f.FinishRetestRunUnable(ctx, rt.TenantID, *rt.RunID, msg, RunCodeToolUnable); err != nil {
 			s.logger.Warn("failed to settle the retest run", "retest_id", rt.ID.String(), "run_id", rt.RunID.String(), "error", err)
 		}
