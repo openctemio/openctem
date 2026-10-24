@@ -91,6 +91,7 @@ const REASONS = [
   'no_denominator',
   'too_few_fixed',
   'legacy_tile',
+  'forbidden',
   'facts_building',
   'timeout',
   'empty',

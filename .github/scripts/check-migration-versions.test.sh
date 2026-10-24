@@ -90,5 +90,20 @@ git -C "$d" branch base
 git -C "$d" rm -q api/migrations/000005_*; mig "$d" 000005 baseline; commit "$d" partial
 expect "baseline above an older migration fails" 1 "$d" base "Renumber it to 000006"
 
+# 10. A push to develop that skipped the queue: the base is develop before the
+# push, and the merge adds a migration below develop's highest (the #2818 case).
+d="$(repo)"; mig "$d" 000005 b; commit "$d" base
+git -C "$d" checkout -q -b feature; mig "$d" 000003 late; commit "$d" "feature"
+git -C "$d" checkout -q main; mig "$d" 000008 ahead; commit "$d" "develop moved on"
+git -C "$d" branch before-push
+git -C "$d" merge -q --no-ff -m "direct merge" feature
+expect "direct merge below develop's highest fails" 1 "$d" before-push "Renumber it to 000009"
+d="$(repo)"; mig "$d" 000005 b; commit "$d" base
+git -C "$d" checkout -q -b feature; mig "$d" 000009 ok; commit "$d" "feature"
+git -C "$d" checkout -q main; mig "$d" 000008 ahead; commit "$d" "develop moved on"
+git -C "$d" branch before-push
+git -C "$d" merge -q --no-ff -m "direct merge" feature
+expect "direct merge above develop's highest passes" 0 "$d" before-push
+
 echo "$pass passed, $failed failed"
 [[ "$failed" -eq 0 ]]
