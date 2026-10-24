@@ -39,9 +39,10 @@ test('a scan with a run in progress counts it and names who triggered it', async
     if (active.length === 0) continue
 
     // The "Runs" metric counts the in-progress runs (MetricStrip: a dt label
-    // and a dd holding the number and its hint).
+    // and a dd holding the number and its hint). A tile is a link, a filter
+    // button or a plain cell, so find it by its slot.
     const card = page
-      .locator('dl > div, dl > button')
+      .locator('[data-slot="metric-strip"] > [data-slot="metric-tile"]')
       .filter({ has: page.locator('dt', { hasText: /^Runs$/ }) })
     await expect(card).toContainText(`${active.length} in progress`)
     const totalText = await card.locator('dd span').first().innerText()
