@@ -11,7 +11,7 @@ import { ConfirmDialog } from '@/components/confirm-dialog'
 import { useTranslation } from '@/context/i18n-provider'
 import { Card, CardContent } from '@/components/ui/card'
 import { Skeleton } from '@/components/ui/skeleton'
-import { EmptyState, ErrorState, PageHeader } from '@/features/shared'
+import { EmptyState, ErrorState, PageHeader, PageStack } from '@/features/shared'
 import { useAdmin } from '@console/features/admin-console/components/admin-console-shell'
 import {
   setMcpClientBlocked,
@@ -68,14 +68,14 @@ export default function AiApplicationsPage() {
 
   return (
     <Main>
-      <PageHeader
-        title={t('admin.systemAiApplicationsPage.aiApplications', 'AI applications')}
-        description={t(
-          'admin.systemAiApplicationsPage.mcpClientsThatConnectTo',
-          'MCP clients that connect to this deployment, with their usage. Block one to stop it everywhere.'
-        )}
-      />
-      <div className="mt-5">
+      <PageStack>
+        <PageHeader
+          title={t('admin.systemAiApplicationsPage.aiApplications', 'AI applications')}
+          description={t(
+            'admin.systemAiApplicationsPage.mcpClientsThatConnectTo',
+            'MCP clients that connect to this deployment, with their usage. Block one to stop it everywhere.'
+          )}
+        />
         {error ? (
           <ErrorState
             title={t('admin.systemAiApplicationsPage.aiApplications', 'AI applications')}
@@ -141,8 +141,9 @@ export default function AiApplicationsPage() {
                         size="sm"
                         className="shrink-0"
                         disabled={busy === c.id}
-                        // Unblocking is safe at once; blocking cuts every organization off.
-                        onClick={() => (c.blocked ? void toggle(c) : setPendingBlock(c))}
+                        // Blocking cuts every organization off and unblocking lets the
+                        // application connect again everywhere, so both ask first.
+                        onClick={() => setPendingBlock(c)}
                       >
                         {busy === c.id ? (
                           <Loader2 className="mr-2 h-4 w-4 animate-spin" aria-hidden />
@@ -162,22 +163,39 @@ export default function AiApplicationsPage() {
             </CardContent>
           </Card>
         )}
-      </div>
-      <ConfirmDialog
-        open={pendingBlock !== null}
-        onOpenChange={(o) => !o && setPendingBlock(null)}
-        destructive
-        title={t('confirm.mcpClient.blockTitle', 'Block {name} everywhere?', {
-          name: pendingBlock?.name ?? '',
-        })}
-        desc={t(
-          'confirm.mcpClient.blockDesc',
-          'Every organization on this deployment loses the use of this application at once: its tokens stop working and it cannot be authorized again until you unblock it.'
-        )}
-        confirmText={t('confirm.mcpClient.block', 'Block')}
-        isLoading={busy !== null}
-        handleConfirm={() => (pendingBlock ? toggle(pendingBlock) : undefined)}
-      />
+        <ConfirmDialog
+          open={pendingBlock !== null}
+          onOpenChange={(o) => !o && setPendingBlock(null)}
+          destructive={!pendingBlock?.blocked}
+          title={
+            pendingBlock?.blocked
+              ? t('confirm.mcpClient.unblockTitle', 'Unblock {name} everywhere?', {
+                  name: pendingBlock.name,
+                })
+              : t('confirm.mcpClient.blockTitle', 'Block {name} everywhere?', {
+                  name: pendingBlock?.name ?? '',
+                })
+          }
+          desc={
+            pendingBlock?.blocked
+              ? t(
+                  'confirm.mcpClient.unblockDesc',
+                  'Every organization on this deployment can authorize this application again. Connections that were cut off are not restored; each member connects again.'
+                )
+              : t(
+                  'confirm.mcpClient.blockDesc',
+                  'Every organization on this deployment loses the use of this application at once: its tokens stop working and it cannot be authorized again until you unblock it.'
+                )
+          }
+          confirmText={
+            pendingBlock?.blocked
+              ? t('confirm.mcpClient.unblockButton', 'Unblock application')
+              : t('confirm.mcpClient.blockButton', 'Block application')
+          }
+          isLoading={busy !== null}
+          handleConfirm={() => (pendingBlock ? toggle(pendingBlock) : undefined)}
+        />
+      </PageStack>
     </Main>
   )
 }

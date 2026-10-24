@@ -132,7 +132,12 @@ offboarding without step-up and is removed.
 | `POST /api/v1/integrations/{id}/jira-webhook/secret/rotate`, `PUT …/{id}/jira-webhook/secret`, `POST …/{id}/github-webhook/secret/rotate` | Whoever holds the secret can forge inbound webhook events (issue sync, push events) for that integration. |
 | `POST /api/v1/integrations/{id}/signing-secret/rotate` | Whoever holds the outbound signing secret can forge deliveries the organization's receiver trusts (RFC-124). |
 | `PATCH /api/v1/attachments/storage-config` | Decides where evidence files are written and with which credentials. |
-| `POST /api/v1/sensors`, `POST /api/v1/sensors/{id}/regenerate-key` | Mints a persistent sensor key, a credential that outlives the session (the same reason as an API key). Revoking, disabling and deleting stay one click. |
+| `POST /api/v1/sensors`, `POST /api/v1/sensors/{id}/regenerate-key` | Mints a persistent sensor key, a credential that outlives the session (the same reason as an API key). Revoking and disabling stay one click. |
+| `DELETE /api/v1/sensors/{id}` | Removes the sensor and its history; it cannot be undone. Revoking (`POST …/{id}/revoke`) cuts a sensor off at once without step-up, so an incident never waits on it. |
+| `DELETE /api/v1/service-accounts/{id}` | Ends every API key the service account holds, as deleting one of its keys (`DELETE …/{id}/api-keys/{key_id}`) does. |
+| `GET /api/v1/audit-logs/export` | The file holds every member's email and IP address for the filtered period. Reading the log in the app stays a plain read. |
+| `POST /api/v1/scan-approvals/{id}/approve` | Lets a held scan send traffic to its targets, the same weight as approving a scope target. Reject and withdraw stay one click. |
+| `POST /api/v1/pentest/campaigns/{id}/secrets/{secret_id}/reveal`, `DELETE …/secrets/{secret_id}` | Shows a campaign test credential in clear text; deletes one for good (the same reason as the secret store and leaked credentials). |
 | `POST /api/v1/priority-rules`, `PUT`/`DELETE /api/v1/priority-rules/{id}` | A rule re-classes findings across the organization, down to the platform floors ([priority explainability](priority-explainability.md)). |
 | `POST /api/v1/approvals/{id}/approve`, `POST /api/v1/approvals/batches/{id}/approve`, `POST /api/v1/findings/{id}/severity-requests/{request_id}/approve` | Decisions that close or lower risk (false positive, accepted risk, severity change). Reject and cancel stay one click: they keep the finding as it is. |
 | `DELETE /api/v1/findings/{id}` | Removes a finding and its history. |

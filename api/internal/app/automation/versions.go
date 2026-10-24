@@ -259,6 +259,12 @@ func (s *WorkflowService) Rollback(ctx context.Context, in PublishInput, version
 	if err := target.ValidateSupported(); err != nil {
 		return nil, err
 	}
+	// An older version may predate a guardrail (an update_status target a
+	// person decides, a request without its reason): it is not published
+	// again as it was.
+	if err := validateNodeConfigs(old.Definition.Configs()...); err != nil {
+		return nil, err
+	}
 	if err := target.ValidateGraph(); err != nil {
 		return nil, err
 	}
