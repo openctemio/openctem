@@ -410,5 +410,8 @@
   "confirm.savedView.saveChanges": "Save changes",
   "confirm.savedView.saveAsNew": "Save as new view…",
   "confirm.savedView.discard": "Discard changes",
-  "confirm.savedView.updated": "Updated view \"{name}\""
+  "confirm.savedView.updated": "Updated view \"{name}\"",
+  "confirm.undo": "Undo",
+  "confirm.undone": "Change undone",
+  "confirm.undoFailed": "Could not undo"
 }

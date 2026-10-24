@@ -410,5 +410,8 @@
   "confirm.savedView.saveChanges": "Lưu thay đổi",
   "confirm.savedView.saveAsNew": "Lưu thành chế độ xem mới…",
   "confirm.savedView.discard": "Bỏ thay đổi",
-  "confirm.savedView.updated": "Đã cập nhật chế độ xem \"{name}\""
+  "confirm.savedView.updated": "Đã cập nhật chế độ xem \"{name}\"",
+  "confirm.undo": "Hoàn tác",
+  "confirm.undone": "Đã hoàn tác thay đổi",
+  "confirm.undoFailed": "Không thể hoàn tác"
 }

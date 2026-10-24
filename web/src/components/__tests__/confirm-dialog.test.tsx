@@ -60,6 +60,14 @@ describe('ConfirmDialog', () => {
     expect(handleConfirm).toHaveBeenCalledTimes(1)
   })
 
+  it('turns off autocapitalise and autocomplete on the typed field (phone keyboards)', () => {
+    renderDialog({ typeToConfirm: 'prod-sensor' })
+    const input = screen.getByLabelText(/Type\s*prod-sensor\s*to confirm/)
+    expect(input).toHaveAttribute('autocapitalize', 'none')
+    expect(input).toHaveAttribute('autocomplete', 'off')
+    expect(input).toHaveAttribute('spellcheck', 'false')
+  })
+
   it('disables both buttons while a returned promise runs, so a second click does nothing', async () => {
     let finish: () => void = () => {}
     const handleConfirm = vi.fn(
