@@ -23,7 +23,7 @@ import {
   SheetTitle,
 } from '@/components/ui/sheet'
 import { Skeleton } from '@/components/ui/skeleton'
-import { DataTable, ErrorState, PageHeader, RelativeTime } from '@/features/shared'
+import { DataTable, ErrorState, PageHeader, PageStack, RelativeTime } from '@/features/shared'
 import { useTranslation } from '@/context/i18n-provider'
 import { useDebounce } from '@/hooks/use-debounce'
 import { useListParams } from '@/hooks/use-list-params'
@@ -131,14 +131,14 @@ export default function ContentCatalogPage() {
   const tr = trust.data
   return (
     <Main>
-      <PageHeader
-        title={t('admin.nav.contentCatalog', 'Content catalog')}
-        description={t(
-          'admin.catalog.description',
-          'The signed catalog of rules, templates, sensors and other packages organizations install from.'
-        )}
-      />
-      <div className="mt-5 space-y-4">
+      <PageStack>
+        <PageHeader
+          title={t('admin.nav.contentCatalog', 'Content catalog')}
+          description={t(
+            'admin.catalog.description',
+            'The signed catalog of rules, templates, sensors and other packages organizations install from.'
+          )}
+        />
         {trust.error ? (
           <ErrorState
             title={t('admin.catalog.trustError', 'the catalog trust state')}
@@ -295,58 +295,58 @@ export default function ContentCatalogPage() {
             onPaginationChange={list.setPagination}
           />
         )}
-      </div>
 
-      <Sheet open={!!open} onOpenChange={(o) => !o && setOpen(null)}>
-        <SheetContent className="w-full sm:max-w-lg">
-          <SheetHeader>
-            <SheetTitle className="break-all font-mono text-base">{open}</SheetTitle>
-            <SheetDescription>
-              {t(
-                'admin.catalog.versionsDesc',
-                'Every version, newest first. Revoking one revokes every installation of it.'
-              )}
-            </SheetDescription>
-          </SheetHeader>
-          <div className="space-y-2 overflow-y-auto px-4 pb-4">
-            {versions.isLoading && <Skeleton className="h-24 w-full" />}
-            {versions.data?.versions.map((v) => (
-              <div
-                key={v.id}
-                className="flex items-center justify-between gap-2 rounded-md border p-3"
-              >
-                <div className="min-w-0">
-                  <p className="font-mono text-sm">{v.version}</p>
-                  <p className="text-xs text-muted-foreground">
-                    {v.revoked
-                      ? t('admin.catalog.revokedReason', 'Revoked: {reason}', {
-                          reason: v.revoke_reason || '—',
-                        })
-                      : v.signatures.join(' + ')}
-                  </p>
-                </div>
-                {canEdit && !v.revoked && open && (
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => setRevoke({ packageId: open, version: v.version })}
-                  >
-                    {t('admin.catalog.revoke', 'Revoke')}
-                  </Button>
+        <Sheet open={!!open} onOpenChange={(o) => !o && setOpen(null)}>
+          <SheetContent className="w-full sm:max-w-lg">
+            <SheetHeader>
+              <SheetTitle className="break-all font-mono text-base">{open}</SheetTitle>
+              <SheetDescription>
+                {t(
+                  'admin.catalog.versionsDesc',
+                  'Every version, newest first. Revoking one revokes every installation of it.'
                 )}
-              </div>
-            ))}
-          </div>
-        </SheetContent>
-      </Sheet>
+              </SheetDescription>
+            </SheetHeader>
+            <div className="space-y-2 overflow-y-auto px-4 pb-4">
+              {versions.isLoading && <Skeleton className="h-24 w-full" />}
+              {versions.data?.versions.map((v) => (
+                <div
+                  key={v.id}
+                  className="flex items-center justify-between gap-2 rounded-md border p-3"
+                >
+                  <div className="min-w-0">
+                    <p className="font-mono text-sm">{v.version}</p>
+                    <p className="text-xs text-muted-foreground">
+                      {v.revoked
+                        ? t('admin.catalog.revokedReason', 'Revoked: {reason}', {
+                            reason: v.revoke_reason || '—',
+                          })
+                        : v.signatures.join(' + ')}
+                    </p>
+                  </div>
+                  {canEdit && !v.revoked && open && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setRevoke({ packageId: open, version: v.version })}
+                    >
+                      {t('admin.catalog.revoke', 'Revoke')}
+                    </Button>
+                  )}
+                </div>
+              ))}
+            </div>
+          </SheetContent>
+        </Sheet>
 
-      <ImportBundleDialog open={importOpen} onOpenChange={setImportOpen} onDone={refresh} />
-      <PublishPackageDialog open={publishOpen} onOpenChange={setPublishOpen} onDone={refresh} />
-      <RevokeVersionDialog
-        target={revoke}
-        onOpenChange={(o) => !o && setRevoke(null)}
-        onDone={refresh}
-      />
+        <ImportBundleDialog open={importOpen} onOpenChange={setImportOpen} onDone={refresh} />
+        <PublishPackageDialog open={publishOpen} onOpenChange={setPublishOpen} onDone={refresh} />
+        <RevokeVersionDialog
+          target={revoke}
+          onOpenChange={(o) => !o && setRevoke(null)}
+          onDone={refresh}
+        />
+      </PageStack>
     </Main>
   )
 }
