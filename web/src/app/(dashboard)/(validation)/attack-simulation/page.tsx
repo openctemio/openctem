@@ -5,6 +5,7 @@ import type { ColumnDef } from '@tanstack/react-table'
 import { Main } from '@/components/layout'
 import {
   PageHeader,
+  PageStack,
   MetricStrip,
   type MetricStripItem,
   DataTable,
@@ -19,6 +20,7 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { Swords, Play } from 'lucide-react'
 import { toast } from 'sonner'
 import { useTranslation } from '@/context/i18n-provider'
+import { useUrlFilter } from '@/hooks/use-url-param'
 import { formatDateSafe } from '@/lib/format-date'
 import {
   useSimulations,
@@ -54,18 +56,41 @@ function StatusBadge({ status }: { status: string }) {
 function LoadingSkeleton() {
   return (
     <Main>
-      <Skeleton className="h-8 w-64" />
-      <Skeleton className="mt-2 h-4 w-96 max-w-full" />
-      <Skeleton className="mt-5 h-16 rounded-xl" />
-      <Skeleton className="mt-5 h-96 rounded-xl" />
+      <PageStack>
+        <Skeleton className="h-8 w-64" />
+        <Skeleton className="h-4 w-96 max-w-full" />
+        <Skeleton className="h-16 rounded-xl" />
+        <Skeleton className="h-96 rounded-xl" />
+      </PageStack>
     </Main>
   )
+}
+
+type SimulationView = 'all' | 'active' | 'caught' | 'bypassed'
+const SIMULATION_VIEWS: SimulationView[] = ['all', 'active', 'caught', 'bypassed']
+
+function matchesView(sim: Simulation, view: SimulationView): boolean {
+  switch (view) {
+    case 'active':
+      return sim.status === 'active'
+    case 'caught':
+      return sim.last_result === 'detected' || sim.last_result === 'prevented'
+    case 'bypassed':
+      return sim.last_result === 'bypassed'
+    default:
+      return true
+  }
 }
 
 export default function AttackSimulationPage() {
   const { t } = useTranslation()
   const { data, isLoading, mutate } = useSimulations()
   const { trigger: runSimulation } = useRunSimulation()
+  // The metric tiles filter the list; the value lives in the URL so a view can be linked.
+  const [viewParam, setView] = useUrlFilter('show', 'all')
+  const view: SimulationView = SIMULATION_VIEWS.includes(viewParam as SimulationView)
+    ? (viewParam as SimulationView)
+    : 'all'
 
   const handleRun = useCallback(
     async (simId: string) => {
@@ -94,9 +119,8 @@ export default function AttackSimulationPage() {
     ).length
     const failed = sims.filter((s) => s.last_result === 'bypassed').length
     const active = sims.filter((s) => s.status === 'active').length
-    const avgDetection = total > 0 ? sims.reduce((sum, s) => sum + s.detection_rate, 0) / total : 0
 
-    return { total, completed, failed, active, avgDetection }
+    return { total, completed, failed, active }
   }, [data])
 
   const columns = useMemo<ColumnDef<Simulation>[]>(
@@ -217,48 +241,54 @@ export default function AttackSimulationPage() {
 
   const simulations = data?.data ?? []
 
+  const visible = simulations.filter((sim) => matchesView(sim, view))
+  const toggle = (next: SimulationView) => setView(view === next ? 'all' : next)
+
   const metrics: MetricStripItem[] = [
     {
       key: 'total',
       label: t('validation.simulation.metric.total', 'Simulations'),
       value: stats.total,
+      onClick: () => setView('all'),
+      active: view === 'all',
     },
     {
       key: 'active',
       label: t('validation.simulation.metric.active', 'Active'),
       value: stats.active,
+      onClick: () => toggle('active'),
+      active: view === 'active',
     },
     {
       key: 'caught',
       label: t('validation.simulation.metric.caught', 'Detected or prevented'),
       value: stats.completed,
+      onClick: () => toggle('caught'),
+      active: view === 'caught',
     },
     {
       key: 'bypassed',
       label: t('validation.simulation.metric.bypassed', 'Bypassed'),
       value: stats.failed,
       tone: 'danger',
-    },
-    {
-      key: 'rate',
-      label: t('validation.simulation.metric.rate', 'Avg detection rate'),
-      value: `${Math.round(stats.avgDetection)}%`,
+      onClick: () => toggle('bypassed'),
+      active: view === 'bypassed',
     },
   ]
 
   return (
     <Main>
-      <PageHeader
-        title={t('validation.simulation.title', 'Attack simulation')}
-        description={t(
-          'validation.simulation.description',
-          'Run MITRE ATT&CK-mapped attack techniques to check that your controls catch them.'
-        )}
-      />
+      <PageStack>
+        <PageHeader
+          title={t('validation.simulation.title', 'Attack simulation')}
+          description={t(
+            'validation.simulation.description',
+            'Run MITRE ATT&CK-mapped attack techniques to check that your controls catch them.'
+          )}
+        />
 
-      <MetricStrip className="mt-5" items={metrics} />
+        <MetricStrip items={metrics} />
 
-      <div className="mt-5">
         {simulations.length === 0 ? (
           <EmptyState
             icon={Swords}
@@ -271,13 +301,13 @@ export default function AttackSimulationPage() {
         ) : (
           <DataTable
             columns={columns}
-            data={simulations}
+            data={visible}
             searchPlaceholder={t('validation.simulation.searchPlaceholder', 'Search simulations…')}
             emptyMessage={t('validation.simulation.noMatch', 'No simulations match')}
             emptyDescription={t('validation.simulation.noMatchDesc', 'Try a different search.')}
           />
         )}
-      </div>
+      </PageStack>
     </Main>
   )
 }
