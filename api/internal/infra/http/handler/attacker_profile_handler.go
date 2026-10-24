@@ -3,6 +3,7 @@ package handler
 import (
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"time"
 
@@ -11,6 +12,7 @@ import (
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
 	"github.com/openctemio/openctem/api/pkg/apierror"
 	"github.com/openctemio/openctem/api/pkg/domain/attackerprofile"
+	auditdom "github.com/openctemio/openctem/api/pkg/domain/audit"
 	"github.com/openctemio/openctem/api/pkg/logger"
 	"github.com/openctemio/openctem/api/pkg/pagination"
 )
@@ -23,6 +25,7 @@ const invalidProfileTypeMsg = "profile_type must be one of: external_unauth, ext
 // AttackerProfileHandler handles attacker profile CRUD endpoints.
 // Uses direct SQL queries for pragmatic speed (no DDD repo layer yet).
 type AttackerProfileHandler struct {
+	configAuditor
 	db     *sql.DB
 	logger *logger.Logger
 }
@@ -261,20 +264,23 @@ func (h *AttackerProfileHandler) Delete(w http.ResponseWriter, r *http.Request) 
 	tenantID := middleware.MustGetTenantID(r.Context())
 	id := chi.URLParam(r, "id")
 
-	res, err := h.db.ExecContext(r.Context(),
-		"DELETE FROM attacker_profiles WHERE tenant_id = $1 AND id = $2",
+	// RETURNING gives the stored name of the row this tenant owned.
+	var name string
+	err := h.db.QueryRowContext(r.Context(),
+		"DELETE FROM attacker_profiles WHERE tenant_id = $1 AND id = $2 RETURNING name",
 		tenantID, id,
-	)
+	).Scan(&name)
+	if errors.Is(err, sql.ErrNoRows) {
+		apierror.NotFound("attacker profile not found").WriteJSON(w)
+		return
+	}
 	if err != nil {
 		h.logger.Error("attacker profile delete", "error", err)
 		apierror.InternalServerError("internal error").WriteJSON(w)
 		return
 	}
-	n, _ := res.RowsAffected()
-	if n == 0 {
-		apierror.NotFound("attacker profile not found").WriteJSON(w)
-		return
-	}
+	h.recordDeleted(r, h.logger, auditdom.ActionAttackerProfileDeleted, auditdom.ResourceTypeAttackerProfile,
+		id, name, "Attacker profile deleted")
 	w.WriteHeader(http.StatusNoContent)
 }
 

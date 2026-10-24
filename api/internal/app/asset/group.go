@@ -376,21 +376,24 @@ func (s *AssetGroupService) UpdateAssetGroup(ctx context.Context, tenantIDStr st
 	return view, err
 }
 
-// DeleteAssetGroup deletes an asset group within the given tenant scope.
+// DeleteAssetGroup deletes an asset group within the given tenant scope and
+// returns the stored name of the deleted group (loaded in the tenant, for the
+// audit entry).
 // Security: tenantID required so the SQL DELETE is tenant-scoped (S-1 audit).
-func (s *AssetGroupService) DeleteAssetGroup(ctx context.Context, tenantIDStr string, id shared.ID) error {
+func (s *AssetGroupService) DeleteAssetGroup(ctx context.Context, tenantIDStr string, id shared.ID) (string, error) {
 	tenantID, err := shared.IDFromString(tenantIDStr)
 	if err != nil {
-		return fmt.Errorf("%w: invalid tenant id format", shared.ErrValidation)
+		return "", fmt.Errorf("%w: invalid tenant id format", shared.ErrValidation)
 	}
-	if _, _, err := s.writableGroup(ctx, tenantID, id); err != nil {
-		return err
+	group, _, err := s.writableGroup(ctx, tenantID, id)
+	if err != nil {
+		return "", err
 	}
 	if err := s.repo.Delete(ctx, tenantID, id); err != nil {
-		return err
+		return "", err
 	}
 	s.logger.Info("asset group deleted", "id", id, "tenant_id", tenantIDStr)
-	return nil
+	return group.Name(), nil
 }
 
 // ListAssetGroups lists asset groups with filtering and pagination.
@@ -728,12 +731,14 @@ func (s *AssetGroupService) BulkDeleteAssetGroups(ctx context.Context, tenantIDS
 			continue
 		}
 
-		if err := s.DeleteAssetGroup(ctx, tenantIDStr, id); err != nil {
+		name, err := s.DeleteAssetGroup(ctx, tenantIDStr, id)
+		if err != nil {
 			s.logger.Warn("bulk delete failed for group", "id", idStr, "error", err)
 			res.fail(idStr, err.Error())
 			continue
 		}
 		res.Succeeded++
+		res.Deleted = append(res.Deleted, DeletedGroup{ID: id.String(), Name: name})
 	}
 	return res
 }
@@ -746,6 +751,15 @@ type BulkGroupResult struct {
 	Succeeded int      `json:"succeeded"`
 	Failed    int      `json:"failed"`
 	Errors    []string `json:"errors,omitempty"`
+	// Deleted lists the groups a bulk delete removed (id and stored name),
+	// for the audit entries. Not part of any response.
+	Deleted []DeletedGroup `json:"-"`
+}
+
+// DeletedGroup is one asset group a delete removed.
+type DeletedGroup struct {
+	ID   string
+	Name string
 }
 
 func (r *BulkGroupResult) fail(id, msg string) {

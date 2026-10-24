@@ -80,6 +80,28 @@ of 500, without loading the result in memory.
 - Isolation: the repository refuses a filter without a tenant; system rows
   (no tenant) are never exported.
 
+## Audit entries for destructive deletes
+
+A delete that removes a tenant object records one audit entry per deleted
+object, after the delete succeeded: the actor, the caller's tenant (from the
+authenticated context), and the object's stored name (loaded in that tenant,
+never taken from the request). A refused or failed delete records nothing; a
+bulk delete records one entry per item it deleted.
+
+| Delete | Action | Resource type | Severity |
+|---|---|---|---|
+| Asset group (single and bulk) | `asset_group.deleted` | `asset_group` | medium |
+| Business unit | `business_unit.deleted` | `business_unit` | medium |
+| Business service | `business_service.deleted` | `business_service` | medium |
+| Attacker profile | `attacker_profile.deleted` | `attacker_profile` | medium |
+| Pentest finding template | `pentest_template.deleted` | `pentest_template` | medium |
+| Asset relationship (name is "source -> type -> target") | `asset_relationship.deleted` | `asset_relationship` | low |
+| Duplicate-asset merge approval, per merged asset (metadata: kept asset, review) | `asset.duplicate_merged` | `asset` | high |
+
+Template sources, finding comments and the other objects listed in the audit
+action catalog (`pkg/domain/audit`) were already audited. Bulk asset-group
+delete takes at most 100 ids.
+
 A link carries the setting's anchor (`#two-factor`), so the web opens the page
 at that setting and outlines it.
 

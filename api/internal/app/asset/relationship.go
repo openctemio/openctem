@@ -531,19 +531,31 @@ func (s *AssetRelationshipService) UpdateRelationship(ctx context.Context, tenan
 
 // DeleteRelationship removes a relationship.
 func (s *AssetRelationshipService) DeleteRelationship(ctx context.Context, tenantID, relationshipID string) error {
+	_, err := s.DeleteRelationshipDescribed(ctx, tenantID, relationshipID)
+	return err
+}
+
+// DeleteRelationshipDescribed deletes a relationship and returns a label of
+// the deleted one ("source name -> type -> target name", from the
+// relationship loaded in the caller's tenant) for the audit entry.
+func (s *AssetRelationshipService) DeleteRelationshipDescribed(ctx context.Context, tenantID, relationshipID string) (string, error) {
 	parsedTenantID, err := shared.IDFromString(tenantID)
 	if err != nil {
-		return fmt.Errorf("%w: invalid tenant ID", shared.ErrValidation)
+		return "", fmt.Errorf("%w: invalid tenant ID", shared.ErrValidation)
 	}
 	parsedID, err := shared.IDFromString(relationshipID)
 	if err != nil {
-		return shared.ErrNotFound
+		return "", shared.ErrNotFound
 	}
-	if _, err := s.getInScope(ctx, parsedTenantID, parsedID); err != nil {
-		return err
+	rel, err := s.getInScope(ctx, parsedTenantID, parsedID)
+	if err != nil {
+		return "", err
 	}
 
-	return s.relRepo.Delete(ctx, parsedTenantID, parsedID)
+	if err := s.relRepo.Delete(ctx, parsedTenantID, parsedID); err != nil {
+		return "", err
+	}
+	return fmt.Sprintf("%s -> %s -> %s", rel.SourceAssetName, rel.Type(), rel.TargetAssetName), nil
 }
 
 // ListAssetRelationships lists all relationships for an asset.
