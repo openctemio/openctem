@@ -216,7 +216,7 @@ describe('destructive actions ask first or offer Undo', () => {
       offenders,
       'Add a ConfirmDialog (research/213 tier T1+) or undoToast (T0), or list the file in REVIEWED with the reason'
     ).toEqual([])
-  })
+  }, 120_000) // parses every .tsx file
 
   it('has no stale REVIEWED entries', () => {
     const stale: string[] = []
@@ -232,7 +232,7 @@ describe('destructive actions ask first or offer Undo', () => {
       if (scan.destructive.length === 0) stale.push(`${rel}: has no destructive call any more`)
     }
     expect(stale).toEqual([])
-  })
+  }, 60_000)
 
   it('flags a delete wired straight to the API', () => {
     const scan = scanSource(

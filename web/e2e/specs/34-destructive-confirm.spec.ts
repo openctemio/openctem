@@ -9,19 +9,22 @@ import { test, expect } from '../fixtures/authenticated-page'
  * - the dialog fits the screen.
  *
  * Uses the seeded asset 10.20.30.40 and never confirms, so nothing changes.
+ * The phone list has no row menu, so the dialog is opened at desktop width
+ * and checked after the window shrinks to the phone width.
  */
 
 const ASSET = '10.20.30.40'
 
 for (const width of [390, 1440]) {
   test(`asset delete asks for the name and Enter does nothing (${width}px)`, async ({ page }) => {
-    await page.setViewportSize({ width, height: width < 640 ? 844 : 900 })
+    await page.setViewportSize({ width: 1440, height: 900 })
     await page.goto('/assets')
     const actions = page.getByRole('button', { name: `Actions for ${ASSET}` })
     await expect(actions).toBeVisible({ timeout: 30_000 })
     await actions.click()
     await page.getByRole('menuitem', { name: 'Delete', exact: true }).click()
 
+    await page.setViewportSize({ width, height: width < 640 ? 844 : 900 })
     const dialog = page.getByRole('alertdialog')
     await expect(dialog).toBeVisible()
     await expect(dialog).toContainText(ASSET)
@@ -48,6 +51,7 @@ for (const width of [390, 1440]) {
 
     await dialog.getByRole('button', { name: 'Cancel' }).click()
     await expect(dialog).toBeHidden()
+    await page.setViewportSize({ width: 1440, height: 900 })
     await expect(page.getByRole('button', { name: `Actions for ${ASSET}` })).toBeVisible()
   })
 }
