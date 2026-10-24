@@ -168,6 +168,23 @@ var sensitiveKeys = map[string]bool{
 	"installation": true, // GitHub App installation tokens
 }
 
+// shortSensitiveKeyLen is the length up to which a sensitive key matches only
+// as a whole segment of an attribute key, never as a substring.
+const shortSensitiveKeyLen = 3
+
+// hasKeySegment reports whether key, split at every character that is not a
+// letter or digit ("aes_iv", "user.dob", "x-jwt"), has a segment equal to want.
+func hasKeySegment(key, want string) bool {
+	for _, seg := range strings.FieldsFunc(key, func(r rune) bool {
+		return (r < 'a' || r > 'z') && (r < '0' || r > '9')
+	}) {
+		if seg == want {
+			return true
+		}
+	}
+	return false
+}
+
 // sanitizeAttr masks sensitive values in log attributes.
 func sanitizeAttr(_ []string, a slog.Attr) slog.Attr {
 	key := strings.ToLower(a.Key)
@@ -177,8 +194,17 @@ func sanitizeAttr(_ []string, a slog.Attr) slog.Attr {
 		return slog.String(a.Key, "[REDACTED]")
 	}
 
-	// Check for partial matches (e.g., "db_password", "jwt_secret")
+	// Check for partial matches (e.g., "db_password", "jwt_secret"). A key
+	// of three letters or fewer ("iv", "pwd", "dob", "jwt") matches only as a
+	// whole segment of the key: as a substring it hides ordinary fields
+	// ("diverged", "active", "archived", "live" all contain "iv").
 	for sensitive := range sensitiveKeys {
+		if len(sensitive) <= shortSensitiveKeyLen {
+			if hasKeySegment(key, sensitive) {
+				return slog.String(a.Key, "[REDACTED]")
+			}
+			continue
+		}
 		if strings.Contains(key, sensitive) {
 			return slog.String(a.Key, "[REDACTED]")
 		}
