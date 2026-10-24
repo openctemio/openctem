@@ -105,7 +105,10 @@
   "settings.pentest.templateForm.editTitle": "Edit template",
   "settings.pentest.templateForm.fillRequired": "Please fill in all required fields",
   "settings.pentest.templateForm.impact": "Impact",
+  "settings.pentest.templateForm.keepEditing": "Keep editing",
   "settings.pentest.templateForm.leaveConfirm": "Discard changes",
+  "settings.pentest.templateForm.leaveDesc": "The changes you made are lost, including the draft kept on this device.",
+  "settings.pentest.templateForm.leaveTitle": "Discard this template?",
   "settings.pentest.templateForm.loadFailed": "Failed to load template",
   "settings.pentest.templateForm.name": "Template name",
   "settings.pentest.templateForm.namePlaceholder": "e.g., SQL Injection in Login Form",
@@ -417,6 +420,7 @@
   "settings.anchor.sensor-safety.private-targets": "Private targets need a sensor-local policy",
   "settings.anchor.sensor-safety.opt-ins": "Out-of-band callbacks and custom templates",
   "settings.anchor.sensor-safety.tool-http": "User-Agent and TLS of scan tools",
+  "settings.apiKeys.actionsFor": "Actions for {name}",
   "settings.anchor.sensor-safety.sensor-policies": "Sensor identity and key binding",
   "settings.anchor.sensor-safety.shared-sensors": "Shared sensors",
   "settings.item.security-overview": "Security overview",
@@ -721,6 +725,7 @@
   "settings.trust.updated": "Trust updated",
   "settings.trust.updateFailed": "Could not update the trust",
   "settings.trust.edit.title": "Trust settings: {org}",
+  "settings.trust.endButton": "End trust",
   "settings.trust.edit.description": "Changes apply to new sign-ins and invitations of people from this organization.",
   "settings.trust.approved": "{org} now trusts your organization",
   "settings.trust.approveFailed": "Could not approve the trust",
@@ -913,10 +918,5 @@
   "settings.pentest.removeTypeRow": "Remove campaign type, row {n}",
   "settings.pentest.methodNameAria": "Methodology name, row {n}",
   "settings.pentest.methodKeyAria": "Methodology key, row {n}",
-  "settings.pentest.removeMethodologyRow": "Remove methodology, row {n}",
-  "settings.pentest.templateForm.leaveTitle": "Discard this template?",
-  "settings.pentest.templateForm.leaveDesc": "The changes you made are lost, including the draft kept on this device.",
-  "settings.pentest.templateForm.keepEditing": "Keep editing",
-  "settings.trust.endButton": "End trust",
-  "settings.apiKeys.actionsFor": "Actions for {name}"
+  "settings.pentest.removeMethodologyRow": "Remove methodology, row {n}"
 }
