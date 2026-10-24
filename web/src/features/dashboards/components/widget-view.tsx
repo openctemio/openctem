@@ -72,7 +72,8 @@ function Viz({
       )
     case 'category':
       if (viz === 'table') return <CategoryTable result={r} unit={unit} drill={drill} />
-      return <BarViz result={r} unit={unit} drill={drill} />
+      // Part-to-whole ("donut" in the catalog) is drawn as one stacked bar: no radial encodings.
+      return <BarViz result={r} unit={unit} drill={drill} stacked={viz === 'donut'} />
     case 'time_series':
       if (viz === 'table') return <TimeSeriesTable result={r} unit={unit} drill={drill} />
       if (viz === 'diverging') return <DivergingViz result={r} drill={drill} />
