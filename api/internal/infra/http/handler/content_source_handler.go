@@ -196,6 +196,11 @@ func toContentSnapshotResponse(sn *cs.Snapshot, src *cs.Source, full bool) Conte
 		PromotedAt: sn.PromotedAt, RejectedBy: csIDString(sn.RejectedBy), RejectedAt: sn.RejectedAt,
 		RejectReason: sn.RejectReason, CreatedAt: sn.CreatedAt,
 	}
+	// SECURITY: who synced, promoted or rejected a platform snapshot is a
+	// platform administrator; an organization is not told who.
+	if sn.Scope == cs.ScopePlatform || (src != nil && src.IsPlatform()) {
+		out.SyncedBy, out.PromotedBy, out.RejectedBy = "", "", ""
+	}
 	if src != nil {
 		out.Current = src.CurrentSnapshotID != nil && src.CurrentSnapshotID.Equals(sn.ID)
 		out.Previous = src.PreviousSnapshotID != nil && src.PreviousSnapshotID.Equals(sn.ID)
