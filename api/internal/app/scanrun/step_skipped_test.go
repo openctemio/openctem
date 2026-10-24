@@ -80,12 +80,21 @@ func TestStepBatchesSummary_Skipped(t *testing.T) {
 func TestStepCompletedWithCoverageGaps_Partial(t *testing.T) {
 	s, store, runs := batchedFixture(command.StepBatch{Total: 1})
 	summary := "Completed with 1 host(s) not fully covered: a.example.com (breaker_open)"
-	if err := s.OnStepCompletedPartial(context.Background(), runs.run.ID.String(), "a", 2, nil, Partial{Gaps: 1, GapSummary: summary}); err != nil {
+	gaps := []scanrun.CoverageGap{{Host: "a.example.com", Reason: scanrun.GapReasonBreakerOpen}}
+	if err := s.OnStepCompletedPartial(context.Background(), runs.run.ID.String(), "a", 2, nil, Partial{Gaps: 1, GapSummary: summary, GapList: gaps}); err != nil {
 		t.Fatal(err)
 	}
 	a := store.rows["a"]
 	if a.Status != scanrun.StepRunStatusPartial || a.FindingsCount != 2 || a.ErrorCode != scanrun.ErrCodeCoverageGaps || a.ErrorMessage != summary {
 		t.Fatalf("step %+v", a)
+	}
+	// The console words the outcome from structured values, not the summary.
+	if a.Output[StepOutputCoverageGapCount] != 1 {
+		t.Fatalf("gap count in output = %v", a.Output[StepOutputCoverageGapCount])
+	}
+	list, ok := a.Output[StepOutputCoverageGaps].([]map[string]string)
+	if !ok || len(list) != 1 || list[0]["host"] != "a.example.com" || list[0]["reason"] != scanrun.GapReasonBreakerOpen {
+		t.Fatalf("gap list in output = %#v", a.Output[StepOutputCoverageGaps])
 	}
 	if len(runs.statuses) != 1 || runs.statuses[0] != scanrun.RunStatusPartial {
 		t.Fatalf("run transitions = %v, want [partial]", runs.statuses)

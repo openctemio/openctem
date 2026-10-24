@@ -44,6 +44,7 @@ import {
 import { Textarea } from '@/components/ui/textarea'
 import { Skeleton } from '@/components/ui/skeleton'
 import { ConfirmDialog } from '@/components/confirm-dialog'
+import { confirmName } from '@/lib/confirm-name'
 import { cn } from '@/lib/utils'
 import { useUrlFilter } from '@/hooks/use-url-param'
 import { getErrorMessage } from '@/lib/api/error-handler'
@@ -426,6 +427,7 @@ export default function ExceptionsPage() {
                   </DropdownMenuItem>
                 </Can>
                 <Can permission={Permission.SuppressionsDelete}>
+                  <DropdownMenuSeparator />
                   <DropdownMenuItem className="text-destructive" onClick={() => openDelete(rule)}>
                     <Trash2 className="me-2 h-4 w-4" />
                     {t('exceptions.page.delete', 'Delete')}
@@ -679,8 +681,9 @@ export default function ExceptionsPage() {
         })}
         desc={t(
           'confirm.suppression.deleteDesc',
-          'Findings it suppressed are no longer suppressed by it. This cannot be undone.'
+          'Findings it suppressed are no longer suppressed by it and return to the open queues. The rule is removed for good.'
         )}
+        typeToConfirm={selectedRule ? confirmName(selectedRule.name, selectedRule.id) : undefined}
         destructive
         cancelBtnText={t('confirm.suppression.keep', 'Keep rule')}
         confirmText={
@@ -690,7 +693,7 @@ export default function ExceptionsPage() {
               {t('confirm.deleting', 'Deleting…')}
             </>
           ) : (
-            t('confirm.delete', 'Delete')
+            t('confirm.suppression.deleteButton', 'Delete rule')
           )
         }
         isLoading={isDeleting}

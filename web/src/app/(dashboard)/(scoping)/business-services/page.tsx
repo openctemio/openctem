@@ -58,6 +58,7 @@ import {
   type RatedCriticality,
 } from '@/lib/criticality'
 import { useTranslation } from '@/context/i18n-provider'
+import { confirmName } from '@/lib/confirm-name'
 
 type Criticality = RatedCriticality
 
@@ -777,7 +778,10 @@ export default function BusinessServicesPage() {
             'confirm.businessService.deleteDesc',
             'Its asset links are removed, so those assets no longer take business context from it. The assets themselves stay. This cannot be undone.'
           )}
-          confirmText={t('confirm.delete', 'Delete')}
+          confirmText={t('confirm.businessService.deleteButton', 'Delete business service')}
+          typeToConfirm={
+            deletingService ? confirmName(deletingService.name, deletingService.id) : undefined
+          }
           destructive
           handleConfirm={handleDelete}
         />
