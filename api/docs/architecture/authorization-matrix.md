@@ -2062,7 +2062,7 @@ longer be resolved (left the organization), is not rendered or sent
 | Route | Permission | Also |
 |---|---|---|
 | `GET /workflows`, `/workflows/catalog`, `/workflows/{id}`, `/{id}/versions[/{versionId}]`, `/{id}/trace`, `GET /workflow-runs[/{id}]` | `automations:read` | runs and trace counts follow the caller's data scope (out of scope: 404, not counted) |
-| `POST /workflows`, `PUT /{id}` (name, description, tags), `PUT /{id}/graph`, nodes, edges, `POST /{id}/preview`, `POST /{id}/validate`, `POST /{id}/runs`, `POST /workflow-runs/{id}/cancel` | `automations:write` | building a step needs its own permission; preview samples only the caller's scope; a manual run acts as the caller |
+| `POST /workflows`, `PUT /{id}` (name, description, tags), `PUT /{id}/graph`, nodes, edges, `POST /{id}/preview`, `POST /{id}/verify`, `POST /{id}/runs`, `POST /workflow-runs/{id}/cancel` | `automations:write` | building a step needs its own permission; preview samples only the caller's scope; a manual run acts as the caller |
 | `POST /{id}/publish`, `POST /{id}/versions/{versionId}/rollback` | `automations:publish` | every step's permission; elevated risk: step-up; high risk: the version waits for a second publisher |
 | `POST /{id}/versions/{versionId}/approve` | `automations:publish` | step-up, not the publisher, the reviewed digest, every step's permission |
 | `PUT /{id}/mode` (simulate), `PUT /{id}` with `is_active`, `DELETE /{id}` | `automations:publish` | no step-up: pausing and switching to simulate narrow |
