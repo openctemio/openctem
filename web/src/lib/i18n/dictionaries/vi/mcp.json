@@ -215,5 +215,6 @@
   "mcp.unverified.label": "Cho phép ứng dụng chưa xác minh",
   "mcp.unverified.section": "Nâng cao: ứng dụng chưa xác minh",
   "mcp.unverified.turnedOff": "Chỉ các ứng dụng đã phê duyệt mới kết nối được",
-  "mcp.unverified.turnedOn": "Đã cho phép ứng dụng chưa xác minh"
+  "mcp.unverified.turnedOn": "Đã cho phép ứng dụng chưa xác minh",
+  "mcp.orgClients.deleteConfirm": "Xóa ứng dụng"
 }
