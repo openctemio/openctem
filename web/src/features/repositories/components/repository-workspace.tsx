@@ -896,15 +896,15 @@ function OverviewTab({
                   </div>
                   <div className="flex gap-4 text-xs">
                     <span className="flex items-center gap-1">
-                      <span className="h-2 w-2 rounded-full bg-sev-critical" />
+                      <span className={cn('h-2 w-2 rounded-full', SEVERITY_DOT_COLORS.critical)} />
                       Critical: {defaultBranch.findings_summary.by_severity.critical}
                     </span>
                     <span className="flex items-center gap-1">
-                      <span className="h-2 w-2 rounded-full bg-sev-high" />
+                      <span className={cn('h-2 w-2 rounded-full', SEVERITY_DOT_COLORS.high)} />
                       High: {defaultBranch.findings_summary.by_severity.high}
                     </span>
                     <span className="flex items-center gap-1">
-                      <span className="h-2 w-2 rounded-full bg-sev-medium" />
+                      <span className={cn('h-2 w-2 rounded-full', SEVERITY_DOT_COLORS.medium)} />
                       Medium: {defaultBranch.findings_summary.by_severity.medium}
                     </span>
                   </div>
@@ -956,15 +956,15 @@ function OverviewTab({
                   </div>
                   <div className="flex flex-wrap gap-4 text-xs">
                     <span className="flex items-center gap-1">
-                      <span className="h-2 w-2 rounded-full bg-sev-critical" />
+                      <span className={cn('h-2 w-2 rounded-full', SEVERITY_DOT_COLORS.critical)} />
                       Critical: {sevCounts.critical}
                     </span>
                     <span className="flex items-center gap-1">
-                      <span className="h-2 w-2 rounded-full bg-sev-high" />
+                      <span className={cn('h-2 w-2 rounded-full', SEVERITY_DOT_COLORS.high)} />
                       High: {sevCounts.high}
                     </span>
                     <span className="flex items-center gap-1">
-                      <span className="h-2 w-2 rounded-full bg-sev-medium" />
+                      <span className={cn('h-2 w-2 rounded-full', SEVERITY_DOT_COLORS.medium)} />
                       Medium: {sevCounts.medium}
                     </span>
                   </div>
