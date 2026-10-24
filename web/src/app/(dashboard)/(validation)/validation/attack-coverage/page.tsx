@@ -8,6 +8,7 @@ import { CRITICALITY_DOT_COLORS } from '@/lib/criticality-colors'
 import { useUrlFilter } from '@/hooks/use-url-param'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
+import { SignalChip } from '@/components/ui/signal-chip'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
@@ -622,7 +623,7 @@ export default function MitreCoveragePage() {
                                 </Badge>
                               )}
                               {cell.bypassed > 0 && (
-                                <Badge variant="outline" className="text-destructive tabular-nums">
+                                <SignalChip tone="alert" alertText>
                                   {t(
                                     'validation.attackCoverage.badgeBypassed',
                                     '{count} bypassed',
@@ -630,7 +631,7 @@ export default function MitreCoveragePage() {
                                       count: cell.bypassed,
                                     }
                                   )}
-                                </Badge>
+                                </SignalChip>
                               )}
                             </>
                           )}
