@@ -245,8 +245,9 @@ type Repository interface {
 	List(ctx context.Context, tenantID shared.ID, f Filter, limit, offset int) ([]*Pack, int, error)
 	// Revoke revokes an active pack; ErrNotActive when it is revoked.
 	Revoke(ctx context.Context, tenantID, id shared.ID, by *shared.ID, reason string, at time.Time) error
-	// Usage is the tenant's uploaded pack count and stored bytes (rule
-	// source snapshots are counted by the content_storage_mb limit instead).
+	// Usage is the tenant's uploaded pack count and all its stored bytes
+	// (rule source snapshots count toward the byte quota, not the pack
+	// count; the content_storage_mb limit caps them separately).
 	Usage(ctx context.Context, tenantID shared.ID) (packs int, bytes int64, err error)
 	// DeleteSourcePack deletes a rule source snapshot's pack (never an
 	// upload) that no snapshot references any more, and its blob when no

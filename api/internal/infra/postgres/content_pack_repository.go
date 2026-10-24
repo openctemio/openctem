@@ -201,9 +201,7 @@ func (r *ContentPackRepository) Usage(ctx context.Context, tenantID shared.ID) (
 	)
 	if err := r.db.QueryRowContext(ctx, `
 		SELECT (SELECT count(*) FROM content_packs WHERE tenant_id = $1 AND source <> 'git'),
-		       (SELECT COALESCE(sum(b.size_bytes), 0) FROM content_pack_blobs b
-		         WHERE b.tenant_id = $1 AND NOT EXISTS (
-		           SELECT 1 FROM content_packs p WHERE p.tenant_id = b.tenant_id AND p.digest = b.digest AND p.source = 'git'))`,
+		       (SELECT COALESCE(sum(size_bytes), 0) FROM content_pack_blobs WHERE tenant_id = $1)`,
 		tenantID.String()).Scan(&packs, &bytes); err != nil {
 		return 0, 0, fmt.Errorf("content pack usage: %w", err)
 	}
