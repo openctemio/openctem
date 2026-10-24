@@ -64,7 +64,7 @@ describe('bulk remove tags', () => {
     // Most common first, with how many selected assets carry each.
     expect(within(dialog).getByText('2 of 3')).toBeInTheDocument()
     fireEvent.click(within(dialog).getByLabelText(/^pci/))
-    fireEvent.click(within(dialog).getByRole('button', { name: 'Remove 1 tags' }))
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Remove 1 tags from 3 selected' }))
     await waitFor(() => expect(onDone).toHaveBeenCalled())
     // Only asset a carries pci: one write, its other tag kept.
     expect(updateAsset).toHaveBeenCalledTimes(1)
