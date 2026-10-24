@@ -83,4 +83,31 @@ func TestPersonalDashboardFigures_NeedPermissions_DB(t *testing.T) {
 			}
 		}
 	})
+
+	t.Run("refresh now is masked the same way", func(t *testing.T) {
+		code, body := e.call(h.memberA, false, nil, http.MethodPost, "/api/v1/me/dashboards",
+			map[string]any{"name": "perm-refresh", "layout": []any{metricWidget("w_next", "fix.next", nil)}})
+		if code != http.StatusCreated {
+			t.Fatalf("create = %d %s", code, body)
+		}
+		var created struct {
+			ID string `json:"id"`
+		}
+		_ = json.Unmarshal([]byte(body), &created)
+		code, body = e.call(h.memberA, false, []string{"dashboard:read", "assets:read"}, http.MethodPost, "/api/v1/me/dashboards/"+created.ID+"/refresh", nil)
+		if code != http.StatusOK {
+			t.Fatalf("refresh = %d %s", code, body)
+		}
+		var got dataResp
+		if err := json.Unmarshal([]byte(body), &got); err != nil {
+			t.Fatal(err)
+		}
+		if len(got.Widgets) != 1 {
+			t.Fatalf("widgets = %d, want 1", len(got.Widgets))
+		}
+		w := got.Widgets[0]
+		if w.State != widgets.StateUnsupported || w.Reason != widgets.ReasonForbidden || w.Scalar != nil || w.Items != nil || strings.Contains(body, "asset_name") {
+			t.Errorf("refresh leaked figures without findings:read: %s", body)
+		}
+	})
 }

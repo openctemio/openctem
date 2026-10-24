@@ -257,8 +257,7 @@ func (s *Service) PersonalData(ctx context.Context, c dashboardapp.Caller, id st
 	if err != nil {
 		return nil, err
 	}
-	maskForbidden(out, c)
-	return s.forViewer(ctx, out, c, scope.CampaignViewer)
+	return s.personalForViewer(ctx, out, c, scope)
 }
 
 // OrgData returns every widget of an organization dashboard the caller may
@@ -298,8 +297,7 @@ func (s *Service) Preview(ctx context.Context, c dashboardapp.Caller, widgetType
 	if err != nil {
 		return nil, err
 	}
-	maskForbidden(out, c)
-	out, err = s.forViewer(ctx, out, c, scope.CampaignViewer)
+	out, err = s.personalForViewer(ctx, out, c, scope)
 	if err != nil {
 		return nil, err
 	}
@@ -356,6 +354,15 @@ func (s *Service) compute(ctx context.Context, tenantID, userID shared.ID, dashI
 		out.Widgets = append(out.Widgets, s.widget(ctx, i, w, builtAt != nil, scope))
 	}
 	return out, nil
+}
+
+// personalForViewer is the one exit of every personal read (data, refresh,
+// preview): widgets whose metric the caller may not read are masked first,
+// then forViewer applies the campaign rules. A new personal path returns
+// through here so it cannot skip the mask.
+func (s *Service) personalForViewer(ctx context.Context, d *DashboardData, c dashboardapp.Caller, scope dashboard.ReadScope) (*DashboardData, error) {
+	maskForbidden(d, c)
+	return s.forViewer(ctx, d, c, scope.CampaignViewer)
 }
 
 // forViewer prepares stored or computed figures for one viewer: list rows of
