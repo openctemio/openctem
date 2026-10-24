@@ -51,7 +51,7 @@ import { useSensorIdentityPolicy } from '@/lib/api/sensor-pairing-hooks'
 import type { Sensor, SensorRole, SensorState, SensorVersionStatus } from '@/lib/api/sensor-types'
 import { Tabs, TabsCount, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { PlatformScanningCard } from '@/features/platform'
-import { BulkActionBar, ErrorState, FilterSheet, PageHeader } from '@/features/shared'
+import { BulkActionBar, ErrorState, FilterSheet, PageHeader, PageStack } from '@/features/shared'
 import { useModuleEnabled } from '@/features/integrations/api/use-tenant-modules'
 import { CIPipelinesHint } from '@/features/ci-runners/components/ci-pipelines-hint'
 import { SensorsEmptyState } from './sensors-empty-state'
@@ -720,7 +720,7 @@ export function SensorsSection({
       : t('sensors.list.seconds', undefined, { count: s })
 
   return (
-    <>
+    <PageStack>
       <PageHeader title={title} description={description}>
         {zonesTab ? (
           <Can permission={Permission.ScanZonesWrite}>
@@ -758,7 +758,6 @@ export function SensorsSection({
         <Tabs
           value={zonesTab ? 'zones' : 'sensors'}
           onValueChange={(v) => setTabParam(v === 'zones' ? 'zones' : '')}
-          className="mt-4"
         >
           <TabsList>
             <TabsTrigger value="sensors">
@@ -776,13 +775,12 @@ export function SensorsSection({
       ) : (
         <>
           {/* The one way across to CI pipelines: a line, never their list. */}
-          {!fleetEmpty && <CIPipelinesHint className="mt-4" enabled={canReadCI} />}
+          {!fleetEmpty && <CIPipelinesHint enabled={canReadCI} />}
           {/* Where else scans can run: the platform's shared scanning, shown
               only when the organization may use it. */}
-          <PlatformScanningCard className="mt-4" />
+          <PlatformScanningCard />
           {!fleetEmpty && (
             <FleetHealthStrip
-              className="mt-5"
               loading={isLoading}
               summary={summary}
               channel={channel}
@@ -799,7 +797,7 @@ export function SensorsSection({
             />
           )}
 
-          <div className="mt-5 flex items-start">
+          <div className="flex items-start">
             {/* The facet panel, as on Findings: a floating card beside the
                 table from lg up, a sheet below. */}
             {!fleetEmpty && !error && (
@@ -1017,6 +1015,6 @@ export function SensorsSection({
           </Button>
         </p>
       </ConfirmDialog>
-    </>
+    </PageStack>
   )
 }

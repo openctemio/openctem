@@ -14,7 +14,6 @@ import (
 	"github.com/openctemio/openctem/api/pkg/domain/stage"
 
 	"github.com/openctemio/openctem/api/internal/app/scope"
-	"github.com/openctemio/openctem/api/internal/metrics"
 	"github.com/openctemio/openctem/api/pkg/domain/asset"
 	"github.com/openctemio/openctem/api/pkg/domain/assetgroup"
 	"github.com/openctemio/openctem/api/pkg/domain/audit"
@@ -965,14 +964,6 @@ func (s *Service) resolveCustomTemplates(ctx context.Context, sc *scan.Scan) ([]
 		ids = append(ids, id)
 	}
 
-	// Lazy sync: Check if any template sources need sync before fetching templates
-	if err := s.lazySyncTemplatesIfNeeded(ctx, sc.TenantID); err != nil {
-		// Log warning but continue - we can still use cached templates
-		s.logger.Warn("lazy sync failed, using cached templates",
-			"tenant_id", sc.TenantID.String(),
-			"error", err)
-	}
-
 	// Fetch templates from database, in the scan's organization only: an id
 	// of another organization's template is simply not found.
 	templates, err := s.scannerTemplateRepo.ListByIDs(ctx, sc.TenantID, ids)
@@ -1015,67 +1006,6 @@ func (s *Service) resolveCustomTemplates(ctx context.Context, sc *scan.Scan) ([]
 	}
 
 	return embedded, nil
-}
-
-// lazySyncTemplatesIfNeeded checks if any template sources need sync and syncs them.
-// This is called on-demand when a scan uses custom templates (lazy sync pattern).
-func (s *Service) lazySyncTemplatesIfNeeded(ctx context.Context, tenantID shared.ID) error {
-	if s.templateSourceRepo == nil || s.templateSyncer == nil {
-		return nil
-	}
-
-	// Get sources that need sync for this tenant
-	sources, err := s.templateSourceRepo.ListEnabledForSync(ctx, tenantID)
-	if err != nil {
-		return fmt.Errorf("failed to list sources needing sync: %w", err)
-	}
-
-	if len(sources) == 0 {
-		return nil
-	}
-
-	s.logger.Info("lazy syncing template sources",
-		"tenant_id", tenantID.String(),
-		"source_count", len(sources))
-
-	// Sync each source that needs it
-	var syncErrors []error
-	for _, source := range sources {
-		// Check if source needs sync (cache expired)
-		if !source.NeedsSync() {
-			continue
-		}
-
-		s.logger.Debug("syncing template source",
-			"source_id", source.ID.String(),
-			"source_name", source.Name,
-			"source_type", string(source.SourceType))
-
-		result, err := s.templateSyncer.SyncSource(ctx, source)
-		if err != nil {
-			syncErrors = append(syncErrors, fmt.Errorf("sync %s failed: %w", source.Name, err))
-			continue
-		}
-
-		// Record metrics
-		metrics.TemplateSyncsTotal.WithLabelValues(string(source.SourceType)).Inc()
-		if result.Success {
-			metrics.TemplateSyncsSuccessTotal.WithLabelValues().Inc()
-			s.logger.Info("template source synced",
-				"source_id", source.ID.String(),
-				"source_name", source.Name,
-				"templates_found", result.TemplatesFound,
-				"templates_added", result.TemplatesAdded)
-		} else {
-			metrics.TemplateSyncsFailedTotal.WithLabelValues().Inc()
-		}
-	}
-
-	if len(syncErrors) > 0 {
-		return fmt.Errorf("some syncs failed: %v", syncErrors)
-	}
-
-	return nil
 }
 
 const (

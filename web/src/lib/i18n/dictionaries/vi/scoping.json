@@ -48,7 +48,7 @@
   "scoping.overview.openCycle": "Mở chu kỳ",
   "scoping.overview.startCycle": "Bắt đầu một chu kỳ",
   "scoping.overview.loadError": "tổng quan phạm vi",
-  "scoping.overview.feeds": "Cấp cho Khám phá: {snapshot} · {exclusions} được áp dụng khi quét",
+  "scoping.overview.feeds": "Cấp cho Khám phá: {snapshot}, {exclusions} được áp dụng khi quét",
   "scoping.overview.snapshotted": "{n, plural, other {# tài sản}} đã chụp lại",
   "scoping.overview.noSnapshot": "chưa có bản chụp phạm vi",
   "scoping.cycles.nameRequired": "Hãy nhập tên chu kỳ.",

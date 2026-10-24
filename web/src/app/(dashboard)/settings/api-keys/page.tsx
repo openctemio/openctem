@@ -1,5 +1,6 @@
 'use client'
 
+import { HealthStatus } from '@/components/ui/health-status'
 import { useCallback, useMemo, useState } from 'react'
 import type { ColumnDef } from '@tanstack/react-table'
 import { Main } from '@/components/layout'
@@ -16,12 +17,13 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/com
 import { Badge } from '@/components/ui/badge'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Button } from '@/components/ui/button'
-import { Can, usePermissions, useCanMutate } from '@/lib/permissions'
+import { usePermissions, useCanMutate } from '@/lib/permissions'
 import { Input } from '@/components/ui/input'
 import { ConfirmDialog } from '@/components/confirm-dialog'
+import { DataTableRowActions } from '@/features/shared/components/data-table-row-actions'
 import { useUrlFilter } from '@/hooks/use-url-param'
 import { useListParams } from '@/hooks/use-list-params'
-import { useDebounce } from '@/hooks/use-debounce'
+import { useSearchQuery } from '@/hooks/use-search-query'
 import { getErrorMessage } from '@/lib/api/error-handler'
 import { KeyRound, Plus, Ban, Trash2 } from 'lucide-react'
 import {
@@ -49,24 +51,12 @@ function isActive(k: APIKey): boolean {
 function StatusBadge({ k }: { k: APIKey }) {
   const { t } = useTranslation()
   if (k.status === 'revoked' || k.revoked_at) {
-    return (
-      <Badge className="border-0 bg-destructive/10 text-destructive">
-        {t('settings.keys.status.revoked', 'Revoked')}
-      </Badge>
-    )
+    return <HealthStatus state="off" label={t('settings.keys.status.revoked', 'Revoked')} />
   }
   if (isExpired(k)) {
-    return (
-      <Badge className="border-0 bg-orange-500/10 text-orange-600 dark:text-orange-400">
-        {t('settings.keys.status.expired', 'Expired')}
-      </Badge>
-    )
+    return <HealthStatus state="down" label={t('settings.keys.status.expired', 'Expired')} />
   }
-  return (
-    <Badge className="border-0 bg-success/10 text-success">
-      {t('settings.keys.status.active', 'Active')}
-    </Badge>
-  )
+  return <HealthStatus state="ok" label={t('settings.keys.status.active', 'Active')} />
 }
 
 // ─────────────────────────────────────────────────────────
@@ -107,32 +97,29 @@ function KeyRowActions({ k, onChanged }: { k: APIKey; onChanged: () => void }) {
 
   return (
     <div className="flex justify-end gap-1">
-      {isActive(k) && (
-        <Can route="POST /api/v1/api-keys">
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={() => setRevokeOpen(true)}
-            disabled={revoking}
-            title={t('confirm.revoke', 'Revoke')}
-            aria-label={t('confirm.apiKey.revokeLabel', 'Revoke {name}', { name: k.name })}
-          >
-            <Ban className="h-4 w-4 text-warning" />
-          </Button>
-        </Can>
-      )}
-      <Can route="DELETE /api/v1/api-keys/{id}">
-        <Button
-          variant="ghost"
-          size="icon"
-          onClick={() => setDeleteOpen(true)}
-          title={t('confirm.delete', 'Delete')}
-          aria-label={t('confirm.apiKey.deleteLabel', 'Delete {name}', { name: k.name })}
-          className="text-destructive hover:text-destructive"
-        >
-          <Trash2 className="h-4 w-4" />
-        </Button>
-      </Can>
+      <DataTableRowActions
+        label={t('settings.apiKeys.actionsFor', 'Actions for {name}', { name: k.name })}
+        actions={[
+          ...(isActive(k)
+            ? [
+                {
+                  label: t('confirm.revoke', 'Revoke'),
+                  icon: Ban,
+                  route: 'POST /api/v1/api-keys/{id}/revoke' as const,
+                  onClick: () => setRevokeOpen(true),
+                },
+              ]
+            : []),
+          {
+            label: t('confirm.delete', 'Delete'),
+            icon: Trash2,
+            destructive: true,
+            separatorBefore: isActive(k),
+            route: 'DELETE /api/v1/api-keys/{id}' as const,
+            onClick: () => setDeleteOpen(true),
+          },
+        ]}
+      />
       <ConfirmDialog
         open={revokeOpen}
         onOpenChange={setRevokeOpen}
@@ -155,7 +142,11 @@ function KeyRowActions({ k, onChanged }: { k: APIKey; onChanged: () => void }) {
           'confirm.apiKey.deleteDesc',
           'Every client using this key loses access at once, and the key leaves the list. This cannot be undone.'
         )}
-        confirmText={deleting ? t('confirm.deleting', 'Deleting…') : t('confirm.delete', 'Delete')}
+        confirmText={
+          deleting
+            ? t('confirm.deleting', 'Deleting…')
+            : t('confirm.apiKey.deleteButton', 'Delete key')
+        }
         destructive
         isLoading={deleting}
         typeToConfirm={k.name}
@@ -191,7 +182,7 @@ export default function APIKeysPage() {
   const { pagination, setPagination, setPage } = list
   const resetPage = useCallback(() => setPage(1), [setPage])
   const [searchParam, setSearchParam] = useUrlFilter('q', '')
-  const search = useDebounce(searchParam.trim(), 300)
+  const search = useSearchQuery(searchParam).term
   const { data, error, isLoading, mutate } = useApiKeys({
     page: pagination.pageIndex + 1,
     perPage: pagination.pageSize,

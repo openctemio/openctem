@@ -1,11 +1,14 @@
 'use client'
 
 import { useMemo, useState } from 'react'
+import { useUrlFilter } from '@/hooks/use-url-param'
 import type { ColumnDef } from '@tanstack/react-table'
 import { Main } from '@/components/layout'
 import {
   PageHeader,
-  StatsCard,
+  PageStack,
+  MetricStrip,
+  type MetricStripItem,
   DataTable,
   DataTableColumnHeader,
   EmptyState,
@@ -37,7 +40,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { ShieldCheck, CheckCircle, XCircle, Plus, FlaskConical, Percent } from 'lucide-react'
+import { ShieldCheck, Plus, FlaskConical } from 'lucide-react'
 import {
   useControlTests,
   useControlTestStats,
@@ -767,14 +770,12 @@ function CreateControlTestDialog({ open, onOpenChange, onSuccess }: CreateContro
 function LoadingSkeleton() {
   return (
     <Main>
-      <Skeleton className="h-8 w-48" />
-      <Skeleton className="mt-2 h-4 w-96 max-w-full" />
-      <div className="mt-5 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        {Array.from({ length: 4 }).map((_, i) => (
-          <Skeleton key={i} className="h-28 rounded-xl" />
-        ))}
-      </div>
-      <Skeleton className="mt-5 h-96 rounded-xl" />
+      <PageStack>
+        <Skeleton className="h-8 w-48" />
+        <Skeleton className="h-4 w-96 max-w-full" />
+        <Skeleton className="h-16 rounded-xl" />
+        <Skeleton className="h-96 rounded-xl" />
+      </PageStack>
     </Main>
   )
 }
@@ -783,11 +784,21 @@ function LoadingSkeleton() {
 // Page
 // ─────────────────────────────────────────────────────────
 
+type ControlStatusFilter = 'all' | 'pass' | 'fail' | 'untested'
+const CONTROL_STATUS_FILTERS: ControlStatusFilter[] = ['all', 'pass', 'fail', 'untested']
+
 export default function ControlTestingPage() {
   const { t } = useTranslation()
   const mitreColumns = useMemo(() => getMitreColumns(t), [t])
   const controlColumns = useMemo(() => getControlColumns(t), [t])
   const [dialogOpen, setDialogOpen] = useState(false)
+  // The metric tiles filter the controls list; the value lives in the URL so a view can be linked.
+  const [statusParam, setStatusParam] = useUrlFilter('status', 'all')
+  const statusFilter: ControlStatusFilter = CONTROL_STATUS_FILTERS.includes(
+    statusParam as ControlStatusFilter
+  )
+    ? (statusParam as ControlStatusFilter)
+    : 'all'
 
   const { data: testsData, isLoading: testsLoading, mutate: reloadTests } = useControlTests()
   const { data: statsData, isLoading: statsLoading } = useControlTestStats()
@@ -845,123 +856,134 @@ export default function ControlTestingPage() {
   if (isLoading) return <LoadingSkeleton />
 
   const controlTests = testsData?.data ?? []
+  const visibleTests =
+    statusFilter === 'all' ? controlTests : controlTests.filter((c) => c.status === statusFilter)
   const frameworkStats = statsData ?? []
+  const toggleStatus = (next: ControlStatusFilter) =>
+    setStatusParam(statusFilter === next ? 'all' : next)
+
+  const metrics: MetricStripItem[] = [
+    {
+      key: 'controls',
+      label: t('validation.controlTesting.stat.controls', 'Controls'),
+      value: summaryStats.total,
+      onClick: () => setStatusParam('all'),
+      active: statusFilter === 'all',
+    },
+    {
+      key: 'passed',
+      label: t('validation.controlTesting.stat.passed', 'Passed'),
+      value: summaryStats.passed,
+      onClick: () => toggleStatus('pass'),
+      active: statusFilter === 'pass',
+    },
+    {
+      key: 'failed',
+      label: t('validation.controlTesting.stat.failed', 'Failed'),
+      value: summaryStats.failed,
+      tone: 'danger',
+      onClick: () => toggleStatus('fail'),
+      active: statusFilter === 'fail',
+    },
+    {
+      key: 'untested',
+      label: t('validation.controlTesting.stat.untested', 'Untested'),
+      value: summaryStats.untested,
+      onClick: () => toggleStatus('untested'),
+      active: statusFilter === 'untested',
+    },
+  ]
 
   return (
     <Main>
-      <PageHeader
-        title={t('validation.controlTesting.title', 'Control testing')}
-        description={t(
-          'validation.controlTesting.description',
-          'Track whether your security controls pass their tests, framework by framework.'
-        )}
-      >
-        <Button size="sm" onClick={() => setDialogOpen(true)}>
-          <Plus className="h-4 w-4 sm:me-2" />
-          <span className="sr-only sm:not-sr-only">
-            {t('validation.controlTesting.add', 'Add control test')}
-          </span>
-        </Button>
-      </PageHeader>
+      <PageStack>
+        <PageHeader
+          title={t('validation.controlTesting.title', 'Control testing')}
+          description={t(
+            'validation.controlTesting.description',
+            'Track whether your security controls pass their tests, framework by framework.'
+          )}
+        >
+          <Button size="sm" onClick={() => setDialogOpen(true)}>
+            <Plus className="h-4 w-4 sm:me-2" />
+            <span className="sr-only sm:not-sr-only">
+              {t('validation.controlTesting.add', 'Add control test')}
+            </span>
+          </Button>
+        </PageHeader>
 
-      <div className="mt-5 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        <StatsCard // anatomy-ok: existing tile; this change only translates its labels
-          title={t('validation.controlTesting.stat.controls', 'Controls')}
-          value={summaryStats.total}
-          icon={ShieldCheck}
-        />
-        <StatsCard // anatomy-ok: existing tile; this change only translates its labels
-          title={t('validation.controlTesting.stat.passed', 'Passed')}
-          value={summaryStats.passed}
-          icon={CheckCircle}
-        />
-        <StatsCard // anatomy-ok: existing tile; this change only translates its labels
-          title={t('validation.controlTesting.stat.failed', 'Failed')}
-          value={summaryStats.failed}
-          icon={XCircle}
-          valueClassName={summaryStats.failed > 0 ? 'text-destructive' : undefined}
-        />
-        <StatsCard // anatomy-ok: existing tile; this change only translates its labels
-          title={t('validation.controlTesting.stat.coverage', 'Coverage')}
-          value={summaryStats.coveragePct === null ? '—' : `${summaryStats.coveragePct}%`}
-          icon={Percent}
-          description={t('validation.controlTesting.untestedCount', '{count} untested', {
-            count: summaryStats.untested,
-          })}
-        />
-      </div>
+        <MetricStrip items={metrics} />
 
-      {/* Validation coverage KPI: how much exposure has been re-checked. */}
-      <div className="mt-5">
+        {/* Validation coverage KPI: how much exposure has been re-checked. */}
         <ValidationCoverageCard />
-      </div>
 
-      {frameworkStats.length > 0 && (
-        <div className="mt-5 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-          {frameworkStats.map((fw) => (
-            <FrameworkCard key={fw.framework} stats={fw} />
-          ))}
-        </div>
-      )}
-
-      {/* MITRE ATT&CK coverage from simulations — only when attack_simulation is enabled */}
-      {simulationEnabled && mitreCoverage.length > 0 && (
-        <section className="mt-5 space-y-3">
-          <div>
-            <h2 className="text-base font-semibold">
-              {t('validation.controlTesting.mitreTitle', 'MITRE ATT&CK coverage')}
-            </h2>
-            <p className="text-sm text-muted-foreground">
-              {t(
-                'validation.controlTesting.mitreDesc',
-                'Detection and prevention rates per technique, from simulations.'
-              )}
-            </p>
+        {frameworkStats.length > 0 && (
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+            {frameworkStats.map((fw) => (
+              <FrameworkCard key={fw.framework} stats={fw} />
+            ))}
           </div>
-          <DataTable
-            columns={mitreColumns}
-            data={mitreCoverage}
-            searchPlaceholder={t(
-              'validation.controlTesting.searchTechniques',
-              'Search techniques…'
-            )}
-          />
-        </section>
-      )}
-
-      <section className="mt-5 space-y-3">
-        <h2 className="text-base font-semibold">
-          {t('validation.controlTesting.controlsTitle', 'Security controls')}
-        </h2>
-        {controlTests.length === 0 ? (
-          <EmptyState
-            icon={ShieldCheck}
-            title={t('validation.controlTesting.emptyTitle', 'No control tests yet')}
-            description={t(
-              'validation.controlTesting.emptyDesc',
-              'Add control tests to track security control effectiveness across frameworks.'
-            )}
-            action={
-              <Button size="sm" onClick={() => setDialogOpen(true)}>
-                <Plus className="me-2 h-4 w-4" />
-                {t('validation.controlTesting.add', 'Add control test')}
-              </Button>
-            }
-          />
-        ) : (
-          <DataTable
-            columns={controlColumns}
-            data={controlTests}
-            searchPlaceholder={t('validation.controlTesting.searchControls', 'Search controls…')}
-          />
         )}
-      </section>
 
-      <CreateControlTestDialog
-        open={dialogOpen}
-        onOpenChange={setDialogOpen}
-        onSuccess={reloadTests}
-      />
+        {/* MITRE ATT&CK coverage from simulations — only when attack_simulation is enabled */}
+        {simulationEnabled && mitreCoverage.length > 0 && (
+          <section className="space-y-3">
+            <div>
+              <h2 className="text-base font-semibold">
+                {t('validation.controlTesting.mitreTitle', 'MITRE ATT&CK coverage')}
+              </h2>
+              <p className="text-sm text-muted-foreground">
+                {t(
+                  'validation.controlTesting.mitreDesc',
+                  'Detection and prevention rates per technique, from simulations.'
+                )}
+              </p>
+            </div>
+            <DataTable
+              columns={mitreColumns}
+              data={mitreCoverage}
+              searchPlaceholder={t(
+                'validation.controlTesting.searchTechniques',
+                'Search techniques…'
+              )}
+            />
+          </section>
+        )}
+
+        <section className="space-y-3">
+          <h2 className="text-base font-semibold">
+            {t('validation.controlTesting.controlsTitle', 'Security controls')}
+          </h2>
+          {controlTests.length === 0 ? (
+            <EmptyState
+              icon={ShieldCheck}
+              title={t('validation.controlTesting.emptyTitle', 'No control tests yet')}
+              description={t(
+                'validation.controlTesting.emptyDesc',
+                'Add control tests to track security control effectiveness across frameworks.'
+              )}
+              action={
+                <Button size="sm" onClick={() => setDialogOpen(true)}>
+                  <Plus className="me-2 h-4 w-4" />
+                  {t('validation.controlTesting.add', 'Add control test')}
+                </Button>
+              }
+            />
+          ) : (
+            <DataTable
+              columns={controlColumns}
+              data={visibleTests}
+              searchPlaceholder={t('validation.controlTesting.searchControls', 'Search controls…')}
+            />
+          )}
+        </section>
+
+        <CreateControlTestDialog
+          open={dialogOpen}
+          onOpenChange={setDialogOpen}
+          onSuccess={reloadTests}
+        />
+      </PageStack>
     </Main>
   )
 }

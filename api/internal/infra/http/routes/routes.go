@@ -152,7 +152,7 @@ type Handlers struct {
 	CIRunner            *handler.CIRunnerHandler
 	SCMApps             *handler.SCMAppHandler              // nil without a database
 	ScannerTemplate     *handler.ScannerTemplateHandler     // nil if not initialized (no database)
-	TemplateSource      *handler.TemplateSourceHandler      // nil if not initialized (no database)
+	ContentSource       *handler.ContentSourceHandler       // nil if not initialized (no database)
 	ContentPack         *handler.ContentPackHandler         // nil if not initialized (no database)
 	PlatformContentPack *handler.PlatformContentPackHandler // nil if not initialized (no database)
 	ContentCatalog      *handler.ContentCatalogHandler      // nil if not initialized (no database)
@@ -1073,8 +1073,9 @@ func Register(
 		registerPlatformContentPackRoutes(router, h.PlatformContentPack, authMiddleware, userSync, h.ModuleGate.RequireModule(moduledom.ModuleScannerTemplates))
 	}
 
-	if h.TemplateSource != nil {
-		registerTemplateSourceRoutes(router, h.TemplateSource, authMiddleware, userSync, h.ModuleGate.RequireModule(moduledom.ModuleTemplateSources))
+	if h.ContentSource != nil {
+		registerContentSourceRoutes(router, h.ContentSource, authMiddleware, userSync, h.ModuleGate.RequireModule(moduledom.ModuleTemplateSources))
+		registerContentSourceWebhookRoute(router, h.ContentSource, log)
 	}
 
 	// Secret Store routes (tenant from JWT token)

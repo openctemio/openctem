@@ -19,6 +19,7 @@ import {
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
+import { useTranslation } from '@/context/i18n-provider'
 import { getErrorMessage } from '@/lib/api/error-handler'
 
 import { updateMemberAccess } from '../api/use-members'
@@ -48,6 +49,7 @@ export function MemberAccessDialog({
   const [reason, setReason] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const { t } = useTranslation()
 
   const managed = !!member?.home_organization
   const min = dateInputDaysFromNow(1)
@@ -68,7 +70,12 @@ export function MemberAccessDialog({
     e.preventDefault()
     if (!member) return
     if (!date && !managed) {
-      setError('Choose when access ends: no organization manages this address.')
+      setError(
+        t(
+          'org.memberAccess.chooseDate',
+          'Choose when access ends: no organization manages this address.'
+        )
+      )
       return
     }
     setBusy(true)
@@ -78,11 +85,17 @@ export function MemberAccessDialog({
         expires_at: date ? endOfDayISO(date) : undefined,
         reason: reason.trim(),
       })
-      toast.success(`Access of ${member.name || member.email} updated`)
+      toast.success(
+        t('org.memberAccess.updated', 'Access of {name} updated', {
+          name: member.name || member.email,
+        })
+      )
       onSaved?.()
       onOpenChange(false)
     } catch (err) {
-      setError(getErrorMessage(err, 'Could not change the end of access'))
+      setError(
+        getErrorMessage(err, t('org.memberAccess.failed', 'Could not change the end of access'))
+      )
     } finally {
       setBusy(false)
     }
@@ -93,18 +106,29 @@ export function MemberAccessDialog({
       <DialogContent size="sm">
         <DialogForm onSubmit={submit}>
           <DialogHeader>
-            <DialogTitle>Change end of access</DialogTitle>
+            <DialogTitle>{t('org.memberAccess.title', 'Change end of access')}</DialogTitle>
             <DialogDescription>
-              {member?.name || member?.email} is from outside the organization.
+              {t('org.memberAccess.outside', '{name} is from outside the organization.', {
+                name: member?.name || member?.email || '',
+              })}{' '}
               {managed
-                ? ` ${member?.home_organization} manages the address; their access also ends when they leave it.`
-                : ' No organization manages the address, so their access must end.'}
+                ? t(
+                    'org.memberAccess.managed',
+                    '{org} manages the address; their access also ends when they leave it.',
+                    { org: member?.home_organization ?? '' }
+                  )
+                : t(
+                    'org.memberAccess.unmanaged',
+                    'No organization manages the address, so their access must end.'
+                  )}
             </DialogDescription>
           </DialogHeader>
           <DialogBody>
             <div className="space-y-4 py-4">
               <div className="space-y-2">
-                <Label htmlFor="member-access-end">Access ends</Label>
+                <Label htmlFor="member-access-end">
+                  {t('org.memberAccess.ends', 'Access ends')}
+                </Label>
                 <Input
                   id="member-access-end"
                   type="date"
@@ -116,12 +140,17 @@ export function MemberAccessDialog({
                   disabled={busy}
                 />
                 <p className="text-xs text-muted-foreground">
-                  At most {MAX_EXTERNAL_ACCESS_DAYS} days from today. A member whose access ended is
-                  enabled again.
+                  {t(
+                    'org.memberAccess.hint',
+                    'At most {days} days from today. A member whose access ended is enabled again.',
+                    { days: MAX_EXTERNAL_ACCESS_DAYS }
+                  )}
                 </p>
               </div>
               <div className="space-y-2">
-                <Label htmlFor="member-access-reason">Reason (optional)</Label>
+                <Label htmlFor="member-access-reason">
+                  {t('org.memberAccess.reason', 'Reason (optional)')}
+                </Label>
                 <Textarea
                   id="member-access-reason"
                   maxLength={500}
@@ -129,7 +158,10 @@ export function MemberAccessDialog({
                   value={reason}
                   onChange={(e) => setReason(e.target.value)}
                   disabled={busy}
-                  placeholder="Engagement extended to the end of the quarter"
+                  placeholder={t(
+                    'org.memberAccess.reasonPlaceholder',
+                    'Engagement extended to the end of the quarter'
+                  )}
                 />
               </div>
               {error && (
@@ -142,11 +174,11 @@ export function MemberAccessDialog({
           </DialogBody>
           <DialogFooter>
             <Button type="button" variant="ghost" onClick={() => onOpenChange(false)}>
-              Cancel
+              {t('common.cancel', 'Cancel')}
             </Button>
             <Button type="submit" disabled={busy}>
               {busy && <Loader2 className="me-2 h-4 w-4 animate-spin" />}
-              Save
+              {t('common.save', 'Save')}
             </Button>
           </DialogFooter>
         </DialogForm>
