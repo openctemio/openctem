@@ -2701,11 +2701,15 @@ function FindingsContent() {
                     </DropdownMenuTrigger>
 
                     <DropdownMenuContent side="top" align="center">
-                      <DropdownMenuItem onClick={() => setBulkPending({ kind: 'status', status: 'confirmed' })}>
+                      <DropdownMenuItem
+                        onClick={() => setBulkPending({ kind: 'status', status: 'confirmed' })}
+                      >
                         {t('findings.status.confirmed', 'Confirmed')}
                       </DropdownMenuItem>
 
-                      <DropdownMenuItem onClick={() => setBulkPending({ kind: 'status', status: 'in_progress' })}>
+                      <DropdownMenuItem
+                        onClick={() => setBulkPending({ kind: 'status', status: 'in_progress' })}
+                      >
                         {t('findings.status.in_progress', 'In progress')}
                       </DropdownMenuItem>
 
