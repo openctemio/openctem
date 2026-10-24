@@ -7,6 +7,7 @@ import type { ColumnDef } from '@tanstack/react-table'
 import { Main } from '@/components/layout'
 import {
   PageHeader,
+  PageStack,
   EmptyState,
   DataTable,
   DataTableColumnHeader,
@@ -208,99 +209,99 @@ export default function CtemCyclesPage() {
   return (
     <>
       <Main>
-        <PageHeader
-          title={t('scope.cycles.title', 'Cycles')}
-          description={t(
-            'scope.cycles.description',
-            'Plan and run CTEM cycles: the charter, the scope it freezes and the outcome it is judged by.'
-          )}
-        >
-          <Can permission={Permission.CTEMCyclesWrite}>
-            <Button size="sm" onClick={() => setIsCreateOpen(true)}>
-              <Plus className="me-2 h-4 w-4" />
-              {t('scoping.cycles.new', 'New cycle')}
-            </Button>
-          </Can>
-        </PageHeader>
+        <PageStack>
+          <PageHeader
+            title={t('scope.cycles.title', 'Cycles')}
+            description={t(
+              'scope.cycles.description',
+              'Plan and run CTEM cycles: the charter, the scope it freezes and the outcome it is judged by.'
+            )}
+          >
+            <Can permission={Permission.CTEMCyclesWrite}>
+              <Button size="sm" onClick={() => setIsCreateOpen(true)}>
+                <Plus className="me-2 h-4 w-4" />
+                {t('scoping.cycles.new', 'New cycle')}
+              </Button>
+            </Can>
+          </PageHeader>
 
-        <div className="mt-4">
           <CyclePolicyCard />
-        </div>
 
-        {/* CTEM operating rhythm: a lightweight, always-visible reminder of
+          {/* CTEM operating rhythm: a lightweight, always-visible reminder of
             the prescribed cadence. Checkpoints are anchored to real dates: the
             weekly/monthly ones to the calendar, the quarterly scope refresh to
             the active cycle's end date. No scheduler is implied. One strip with
             dividers rather than a card of cards. */}
-        <section aria-label={t('scoping.cycles.rhythm', 'Operating rhythm')} className="mt-5">
-          <div className="grid overflow-hidden rounded-xl border bg-card sm:grid-cols-3">
-            {CTEM_CADENCE.map((key) => {
-              let when = ''
-              if (key === 'weekly') when = formatDate(nextWeekday(1).toISOString(), locale)
-              else if (key === 'monthly')
-                when = formatDate(firstOfNextMonth().toISOString(), locale)
-              else if (key === 'quarterly')
-                when = activeCycle?.end_date ? formatDate(activeCycle.end_date, locale) : ''
-              return (
-                <div key={key} className="-ms-px -mt-px border-s border-t px-4 py-3">
-                  <div className="flex items-center justify-between gap-2">
-                    <span className="flex items-center gap-2 text-sm font-medium">
-                      <CalendarClock className="h-4 w-4 text-muted-foreground" />
-                      {t(`scoping.cycles.cadence.${key}.label`, key)}
-                    </span>
-                    {when && <span className="text-xs text-muted-foreground">{when}</span>}
+          <section aria-label={t('scoping.cycles.rhythm', 'Operating rhythm')}>
+            <div className="grid overflow-hidden rounded-xl border bg-card sm:grid-cols-3">
+              {CTEM_CADENCE.map((key) => {
+                let when = ''
+                if (key === 'weekly') when = formatDate(nextWeekday(1).toISOString(), locale)
+                else if (key === 'monthly')
+                  when = formatDate(firstOfNextMonth().toISOString(), locale)
+                else if (key === 'quarterly')
+                  when = activeCycle?.end_date ? formatDate(activeCycle.end_date, locale) : ''
+                return (
+                  <div key={key} className="-ms-px -mt-px border-s border-t px-4 py-3">
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="flex items-center gap-2 text-sm font-medium">
+                        <CalendarClock className="h-4 w-4 text-muted-foreground" />
+                        {t(`scoping.cycles.cadence.${key}.label`, key)}
+                      </span>
+                      {when && <span className="text-xs text-muted-foreground">{when}</span>}
+                    </div>
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      {t(`scoping.cycles.cadence.${key}.detail`, key)}
+                    </p>
                   </div>
-                  <p className="mt-1 text-xs text-muted-foreground">
-                    {t(`scoping.cycles.cadence.${key}.detail`, key)}
-                  </p>
-                </div>
-              )
-            })}
-          </div>
-          {!activeCycle && (
-            <p className="mt-2 text-xs text-muted-foreground">
-              {t(
-                'scoping.cycles.cadence.anchorHint',
-                'Activate a cycle to anchor the quarterly scope refresh to its end date.'
-              )}
-            </p>
-          )}
-        </section>
-
-        <div className="mt-5">
-          {isLoading ? (
-            <div className="space-y-2 rounded-xl border p-3">
-              {[1, 2, 3].map((i) => (
-                <Skeleton key={i} className="h-10 w-full" />
-              ))}
+                )
+              })}
             </div>
-          ) : loadError ? (
-            <ErrorState
-              title={t('scope.cycles.loadError', 'cycles')}
-              error={loadError}
-              onRetry={() => mutate()}
-            />
-          ) : cycles.length === 0 ? (
-            <EmptyState
-              icon={RefreshCw}
-              title={t('scope.cycles.emptyTitle', 'No cycles yet')}
-              description={t('scope.cycles.empty', 'Create a cycle to start.')}
-            />
-          ) : (
-            <DataTable
-              columns={columns}
-              data={cycles}
-              onRowClick={(cycle) => router.push(`/cycles/${cycle.id}`)}
-              searchPlaceholder={t('scoping.cycles.search', 'Search cycles')}
-              emptyMessage={t('scoping.cycles.noMatch', 'No cycles found')}
-              emptyDescription={t(
-                'scoping.cycles.noMatchHint',
-                'No cycles match the current search.'
-              )}
-            />
-          )}
-        </div>
-        <CappedNotice loaded={cycles.length} total={response?.total ?? 0} />
+            {!activeCycle && (
+              <p className="mt-2 text-xs text-muted-foreground">
+                {t(
+                  'scoping.cycles.cadence.anchorHint',
+                  'Activate a cycle to anchor the quarterly scope refresh to its end date.'
+                )}
+              </p>
+            )}
+          </section>
+
+          <div>
+            {isLoading ? (
+              <div className="space-y-2 rounded-xl border p-3">
+                {[1, 2, 3].map((i) => (
+                  <Skeleton key={i} className="h-10 w-full" />
+                ))}
+              </div>
+            ) : loadError ? (
+              <ErrorState
+                title={t('scope.cycles.loadError', 'cycles')}
+                error={loadError}
+                onRetry={() => mutate()}
+              />
+            ) : cycles.length === 0 ? (
+              <EmptyState
+                icon={RefreshCw}
+                title={t('scope.cycles.emptyTitle', 'No cycles yet')}
+                description={t('scope.cycles.empty', 'Create a cycle to start.')}
+              />
+            ) : (
+              <DataTable
+                columns={columns}
+                data={cycles}
+                onRowClick={(cycle) => router.push(`/cycles/${cycle.id}`)}
+                searchPlaceholder={t('scoping.cycles.search', 'Search cycles')}
+                emptyMessage={t('scoping.cycles.noMatch', 'No cycles found')}
+                emptyDescription={t(
+                  'scoping.cycles.noMatchHint',
+                  'No cycles match the current search.'
+                )}
+              />
+            )}
+          </div>
+          <CappedNotice loaded={cycles.length} total={response?.total ?? 0} />
+        </PageStack>
       </Main>
 
       <Dialog open={isCreateOpen} onOpenChange={setIsCreateOpen}>
