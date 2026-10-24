@@ -1182,7 +1182,7 @@ func (h *TenantHandler) SuspendMember(w http.ResponseWriter, r *http.Request) {
 
 // UpdateMemberAccess handles PATCH /api/v1/organization/members/{member_id}/access
 // @Summary Set when an external member's access ends
-// @Description For a member from outside the organization (RFC-058): sets the end date of their access (at most 365 days; required for someone no organization manages). A member suspended because their access ended is re-enabled.
+// @Description For a member from outside the organization (RFC-058): sets the end date of their access (at most 365 days; required for someone no organization manages). A member suspended because their access ended is re-enabled. A change that widens access (a later end, no end, re-enabling) needs a recent re-authentication.
 // @Tags Tenants
 // @Accept json
 // @Produce json

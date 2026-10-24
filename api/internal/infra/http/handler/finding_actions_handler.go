@@ -114,6 +114,7 @@ func (h *FindingActionsHandler) findingGroupsRoute() filterquery.Route {
 // @Param  priority_class  query  []string  false  "priority class: any of (comma list)"  collectionFormat(csv)  Enums(P0, P1, P2, P3)
 // @Param  priority_class_not  query  []string  false  "priority class: none of (comma list)"  collectionFormat(csv)  Enums(P0, P1, P2, P3)
 // @Param  cve_id  query  []string  false  "cve id: any of (comma list)"  collectionFormat(csv)
+// @Param  cve_id_null  query  boolean  false  "cve id is unset (true) or set (false)"
 // @Param  cve_id_not  query  []string  false  "cve id: none of (comma list)"  collectionFormat(csv)
 // @Param  family  query  []string  false  "family: any of (comma list)"  collectionFormat(csv)
 // @Param  family_not  query  []string  false  "family: none of (comma list)"  collectionFormat(csv)
@@ -282,6 +283,7 @@ func (h *FindingActionsHandler) ListFindingGroups(w http.ResponseWriter, r *http
 // @Param  priority_class  query  []string  false  "priority class: any of (comma list)"  collectionFormat(csv)  Enums(P0, P1, P2, P3)
 // @Param  priority_class_not  query  []string  false  "priority class: none of (comma list)"  collectionFormat(csv)  Enums(P0, P1, P2, P3)
 // @Param  cve_id  query  []string  false  "cve id: any of (comma list)"  collectionFormat(csv)
+// @Param  cve_id_null  query  boolean  false  "cve id is unset (true) or set (false)"
 // @Param  cve_id_not  query  []string  false  "cve id: none of (comma list)"  collectionFormat(csv)
 // @Param  family  query  []string  false  "family: any of (comma list)"  collectionFormat(csv)
 // @Param  family_not  query  []string  false  "family: none of (comma list)"  collectionFormat(csv)

@@ -20,7 +20,7 @@ import { get } from '@/lib/api/client'
 import { getErrorMessage } from '@/lib/api/error-handler'
 import { usePermissions, Permission } from '@/lib/permissions'
 import { useTenant } from '@/context/tenant-provider'
-import { useDebounce } from '@/hooks/use-debounce'
+import { useSearchQuery } from '@/hooks/use-search-query'
 import {
   useAssetAccessGrants,
   createAssetAccessGrant,
@@ -48,7 +48,7 @@ export function AssetAccessGrantsSection({ assetId }: { assetId: string }) {
 
   const [adding, setAdding] = useState(false)
   const [search, setSearch] = useState('')
-  const debouncedSearch = useDebounce(search, 250)
+  const debouncedSearch = useSearchQuery(search).term
   const [busy, setBusy] = useState(false)
   const [revokeTarget, setRevokeTarget] = useState<AssetAccessGrant | null>(null)
 
