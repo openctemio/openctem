@@ -235,6 +235,10 @@ type VersionRepository interface {
 	// live with published_version_id = versionID. approvedBy is the second
 	// person who approved it (nil when none was needed).
 	Publish(ctx context.Context, tenantID, automationID, versionID shared.ID, approvedBy *shared.ID, at time.Time) error
+	// RetirePending retires the automation's versions waiting for approval
+	// (a newer publish request replaces them; an approval never applies to
+	// a version that is not the latest request).
+	RetirePending(ctx context.Context, tenantID, automationID shared.ID) error
 	// CreateAndPublish does Create and Publish for a new pending version v in
 	// one transaction (a failure stores nothing).
 	CreateAndPublish(ctx context.Context, v *Version, approvedBy *shared.ID, at time.Time) error
@@ -246,6 +250,23 @@ type VersionRepository interface {
 // ErrVersionNotPending is returned when a version is no longer waiting for
 // approval (approved, retired or superseded meanwhile).
 var ErrVersionNotPending = shared.NewDomainError("VERSION_CHANGED", "this version is no longer waiting for approval", shared.ErrConflict)
+
+// Gate errors.
+var (
+	// ErrSelfApproval: the person who published a version cannot approve it.
+	ErrSelfApproval = shared.NewDomainError("SELF_APPROVAL", "a second person must approve this version; you published it", shared.ErrForbidden)
+	// ErrVersionDigestChanged: the approval names another digest than the
+	// version holds.
+	ErrVersionDigestChanged = shared.NewDomainError("VERSION_CHANGED", "this version is not the one you reviewed; reload it", shared.ErrConflict)
+)
+
+// NeedsStepUp reports whether publishing an automation of this class needs
+// a recent re-authentication (elevated and high).
+func (r RiskClass) NeedsStepUp() bool { return r == RiskElevated || r == RiskHigh }
+
+// NeedsSecondApprover reports whether a version of this class goes live only
+// once a second person with the publish permission approves it.
+func (r RiskClass) NeedsSecondApprover() bool { return r == RiskHigh }
 
 // String is for logs.
 func (v *Version) String() string {

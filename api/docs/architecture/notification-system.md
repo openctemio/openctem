@@ -436,6 +436,18 @@ the id in the delivery history) again to that integration only:
 
 ## Security
 
+### Credentials follow their destination
+
+A stored secret is never sent to a destination someone else just chose. An
+update (`PUT /integrations/{id}/notification`) that moves an email channel to
+another SMTP host or port, or switches TLS or STARTTLS off, or moves a Splunk
+channel to another `hec_url` host, is refused with 400 unless it carries new
+credentials; they replace the stored ones, and nothing is saved on a refusal.
+The test delivery that follows an update therefore only ever uses credentials
+entered for the destination it goes to. Webhook, Slack and Teams channels
+keep the destination itself as the secret, and Telegram sends its token only to
+the Telegram API. Destination changes are audited at high severity.
+
 ### Credentials Encryption
 
 All notification credentials are encrypted at rest using AES-256-GCM:
