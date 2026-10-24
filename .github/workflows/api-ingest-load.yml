@@ -1,0 +1,82 @@
+name: Ingest load
+
+# Nightly load test of the ingest pipeline (docs/rfcs/RFC-122-ingest-receipts.md,
+# "Load targets"): many concurrent CI uploads through the real accept path,
+# the queue and the workers, on a fresh Postgres. A missed target fails the
+# job; the results land in the run summary. Schedule + manual only, never on
+# pull requests. Schedules run from the default branch (main).
+
+on:
+  schedule:
+    - cron: '41 2 * * *'
+  workflow_dispatch:
+    inputs:
+      concurrency:
+        description: 'Concurrent uploads (T1)'
+        default: '50'
+      findings:
+        description: 'Findings per upload (T1)'
+        default: '1000'
+
+permissions:
+  contents: read
+  packages: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  load:
+    name: Ingest load (T1 concurrent uploads, T3 one repository, T4 urgent lane)
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      GOWORK: 'off'
+    defaults:
+      run:
+        working-directory: api
+    services:
+      postgres:
+        image: ghcr.io/openctemio/mirror/postgres:17-alpine
+        credentials:
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+        env:
+          POSTGRES_USER: openctem
+          # Job-scoped throwaway database: trust auth on the service network.
+          POSTGRES_HOST_AUTH_METHOD: trust
+          POSTGRES_DB: load_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: api/go.mod
+          cache: true
+          cache-dependency-path: api/go.sum
+      - name: Install golang-migrate
+        run: go install -tags 'postgres' github.com/golang-migrate/migrate/v4/cmd/migrate@v4.18.1
+      - name: Migrate a fresh database
+        run: migrate -path migrations -database "$DATABASE_URL" up
+        env:
+          DATABASE_URL: postgres://openctem@localhost:5432/load_test?sslmode=disable
+      - name: Run the load harness
+        run: go test ./tests/integration/ -run '^TestIngestLoad$' -count=1 -v -timeout 50m
+        env:
+          DATABASE_URL: postgres://openctem@localhost:5432/load_test?sslmode=disable
+          INGEST_LOAD: '1'
+          LOAD_CONC: ${{ inputs.concurrency || '50' }}
+          LOAD_FINDINGS: ${{ inputs.findings || '1000' }}
+          LOAD_BULK: '500'
+          LOAD_SAME: '20'
+          LOAD_WORKERS: '4'
+          LOAD_SUMMARY: ${{ github.step_summary }}
