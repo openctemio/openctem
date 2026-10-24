@@ -248,9 +248,17 @@ widget has `widget_type` `metric` or `note` and a `config` of this form
 
 | Route | Who | Numbers |
 |---|---|---|
-| `GET /api/v1/me/dashboards/{id}/data` | the dashboard's owner (another person's dashboard is 404) | the caller's own data scope |
+| `GET /api/v1/me/dashboards/{id}/data` | `dashboard:read` and the dashboard's owner (another person's dashboard is 404) | the caller's own data scope; per-metric permission applies (below) |
 | `GET /api/v1/organization/dashboards/{id}/data` | `dashboards:org:view` (403 without), inside the audience (404 outside) | the whole organization |
-| `POST /api/v1/me/dashboards/widget-preview` | any member | one spec, the caller's own data scope (400 when the spec would be refused on save) |
+| `POST /api/v1/me/dashboards/widget-preview` | `dashboard:read` | one spec, the caller's own data scope (400 when the spec would be refused on save) |
+
+A personal read also needs the permission of what a metric counts:
+`findings:read` for finding metrics, `assets:read` for asset metrics
+(`crown_jewels.exposed`, `coverage.discovery`, `attack_paths.to_crown_jewels`).
+A widget the caller may not read comes back `unsupported` with reason
+`forbidden` and no figure, also when the figures come from a stored snapshot.
+Organization dashboards are organization-wide by design and follow
+`dashboards:org:view`.
 
 Every widget of the layout gets a result: typed widgets, and the legacy
 tiles the facts can answer (`LegacySpec`); other legacy tiles answer
@@ -388,7 +396,7 @@ and `last_refresh_error`.
 
 | Route | Who | Effect |
 |---|---|---|
-| `POST /api/v1/me/dashboards/{id}/refresh` | the owner (404 for anyone else) | recompute and store now |
+| `POST /api/v1/me/dashboards/{id}/refresh` | `dashboard:read` and the owner (404 for anyone else) | recompute and store now |
 | `POST /api/v1/organization/dashboards/{id}/refresh` | `dashboards:org:view` inside the audience | recompute and store now |
 
 - **Refresh now budget**: once a minute per person and dashboard, 30 an hour
