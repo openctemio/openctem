@@ -41,6 +41,10 @@ import (
 type RefusedError struct {
 	Code    string
 	Message string
+	// RunID is the run the refusal concerns, when the caller's own token
+	// opened it. It is returned as a detail, never inside Message (public
+	// messages carry no ids).
+	RunID string
 }
 
 func (e *RefusedError) Error() string { return ErrExchangeRefused.Error() + ": " + e.Code }
@@ -99,24 +103,23 @@ func (s *Service) reuseToken(ctx context.Context, tenantID shared.ID, in Exchang
 	if rp == nil {
 		s.auditRefusal(ctx, tenantID, in, c, []*cirun.Refusal{{Code: "replay_limit",
 			Detail: fmt.Sprintf("this token was exchanged %d times, the most allowed", cirun.MaxTokenExchanges)}})
-		return nil, &RefusedError{Code: "replay_limit", Message: fmt.Sprintf(
-			"This CI token was already exchanged %d times (first at %s%s), the most allowed; rerun the job for a new token.",
-			cirun.MaxTokenExchanges, prior.FirstAt.UTC().Format(time.RFC3339), forRun(prior.RunID))}
+		return nil, &RefusedError{Code: "replay_limit", RunID: idString(prior.RunID), Message: fmt.Sprintf(
+			"This CI token was already exchanged %d times (first at %s), the most allowed; rerun the job for a new token.",
+			cirun.MaxTokenExchanges, prior.FirstAt.UTC().Format(time.RFC3339))}
 	}
 	if rid := strings.TrimSpace(in.RunID); rid != "" && rp.RunID != nil && rid != rp.RunID.String() {
 		s.auditRefusal(ctx, tenantID, in, c, []*cirun.Refusal{{Code: "run_mismatch",
 			Detail: "the token asked to continue another run than the one it opened"}})
-		return nil, &RefusedError{Code: "run_mismatch", Message: fmt.Sprintf(
-			"This CI token belongs to run %s; it cannot continue another run.", rp.RunID)}
+		return nil, &RefusedError{Code: "run_mismatch", RunID: rp.RunID.String(), Message: "This CI token belongs to another run (see details.run_id); it cannot continue the one it asked for."}
 	}
 	return rp, nil
 }
 
-func forRun(id *shared.ID) string {
+func idString(id *shared.ID) string {
 	if id == nil {
 		return ""
 	}
-	return ", run " + id.String()
+	return id.String()
 }
 
 // resumeRun issues a fresh upload token for the run a token already opened
@@ -135,9 +138,9 @@ func (s *Service) resumeRun(ctx context.Context, tenantID shared.ID, cfg *cirun.
 	if errors.Is(err, ErrExchangeRefused) {
 		s.auditRefusal(ctx, tenantID, in, c, []*cirun.Refusal{{Code: "replay_run_closed",
 			Detail: "the token's run no longer accepts results"}})
-		return nil, &RefusedError{Code: "replay_run_closed", Message: fmt.Sprintf(
-			"This CI token was exchanged at %s for run %s, which no longer accepts results (evaluated, ended or too old); rerun the job.",
-			prior.FirstAt.UTC().Format(time.RFC3339), runID)}
+		return nil, &RefusedError{Code: "replay_run_closed", RunID: runID.String(), Message: fmt.Sprintf(
+			"This CI token was exchanged at %s for a run that no longer accepts results (evaluated, ended or too old); rerun the job.",
+			prior.FirstAt.UTC().Format(time.RFC3339))}
 	}
 	return out, err
 }
