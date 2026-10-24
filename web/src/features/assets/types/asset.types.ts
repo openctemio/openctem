@@ -104,16 +104,6 @@ export const ASSET_SCOPE_DESCRIPTIONS: Record<AssetScope, string> = {
   shadow: 'Unknown or shadow IT assets',
 }
 
-export const ASSET_SCOPE_COLORS: Record<AssetScope, { bg: string; text: string; border: string }> =
-  {
-    internal: { bg: 'bg-blue-500/15', text: 'text-blue-600', border: 'border-blue-500/30' },
-    external: { bg: 'bg-purple-500/15', text: 'text-purple-600', border: 'border-purple-500/30' },
-    cloud: { bg: 'bg-cyan-500/15', text: 'text-cyan-600', border: 'border-cyan-500/30' },
-    partner: { bg: 'bg-amber-500/15', text: 'text-amber-600', border: 'border-amber-500/30' },
-    vendor: { bg: 'bg-orange-500/15', text: 'text-orange-600', border: 'border-orange-500/30' },
-    shadow: { bg: 'bg-slate-500/15', text: 'text-slate-600', border: 'border-slate-500/30' },
-  }
-
 /**
  * Exposure Level - Network accessibility perspective
  * Indicates how accessible the asset is from the internet
@@ -139,17 +129,6 @@ export const EXPOSURE_LEVEL_DESCRIPTIONS: Record<ExposureLevel, string> = {
   private: 'Only accessible from internal network',
   isolated: 'Air-gapped or highly restricted environment',
   unknown: 'Exposure level not yet determined',
-}
-
-export const EXPOSURE_LEVEL_COLORS: Record<
-  ExposureLevel,
-  { bg: string; text: string; border: string }
-> = {
-  public: { bg: 'bg-red-500/15', text: 'text-red-600', border: 'border-red-500/30' },
-  restricted: { bg: 'bg-yellow-500/15', text: 'text-yellow-600', border: 'border-yellow-500/30' },
-  private: { bg: 'bg-green-500/15', text: 'text-green-600', border: 'border-green-500/30' },
-  isolated: { bg: 'bg-emerald-500/15', text: 'text-emerald-600', border: 'border-emerald-500/30' },
-  unknown: { bg: 'bg-slate-500/15', text: 'text-slate-600', border: 'border-slate-500/30' },
 }
 
 export const ASSET_TYPE_LABELS: Record<AssetType, string> = {
@@ -205,6 +184,12 @@ export const ASSET_TYPE_LABELS: Record<AssetType, string> = {
   credential: 'Credential',
   mobile: 'Mobile App',
 }
+
+/**
+ * An asset type is a neutral classification (research/247): its icon and word
+ * identify it, never a hue. The icon tile of every asset picker uses this.
+ */
+export const ASSET_TYPE_TILE = { bg: 'bg-muted', text: 'text-muted-foreground' } as const
 
 export const ASSET_TYPE_ICONS: Record<AssetType, string> = {
   domain: 'Globe',
@@ -297,59 +282,6 @@ export const ASSET_TYPE_DESCRIPTIONS: Record<AssetType, string> = {
 /**
  * Asset type colors for UI badges and indicators
  */
-export const ASSET_TYPE_COLORS: Record<AssetType, { bg: string; text: string }> = {
-  // External Attack Surface
-  domain: { bg: 'bg-blue-500/15', text: 'text-blue-600' },
-  certificate: { bg: 'bg-green-500/15', text: 'text-green-600' },
-  ip_address: { bg: 'bg-purple-500/15', text: 'text-purple-600' },
-  // Applications
-  website: { bg: 'bg-cyan-500/15', text: 'text-cyan-600' },
-  api: { bg: 'bg-indigo-500/15', text: 'text-indigo-600' },
-  mobile_app: { bg: 'bg-pink-500/15', text: 'text-pink-600' },
-  application: { bg: 'bg-lime-500/15', text: 'text-lime-600' },
-  endpoint: { bg: 'bg-emerald-500/15', text: 'text-emerald-600' },
-  // Cloud
-  cloud_account: { bg: 'bg-sky-500/15', text: 'text-sky-600' },
-  compute: { bg: 'bg-orange-500/15', text: 'text-orange-600' },
-  storage: { bg: 'bg-amber-500/15', text: 'text-amber-600' },
-  serverless: { bg: 'bg-violet-500/15', text: 'text-violet-600' },
-  // Infrastructure
-  host: { bg: 'bg-slate-500/15', text: 'text-slate-600' },
-  container: { bg: 'bg-teal-500/15', text: 'text-teal-600' },
-  database: { bg: 'bg-emerald-500/15', text: 'text-emerald-600' },
-  network: { bg: 'bg-rose-500/15', text: 'text-rose-600' },
-  vpc: { bg: 'bg-violet-500/15', text: 'text-violet-600' },
-  subnet: { bg: 'bg-violet-500/15', text: 'text-violet-600' },
-  load_balancer: { bg: 'bg-rose-500/15', text: 'text-rose-600' },
-  firewall: { bg: 'bg-red-500/15', text: 'text-red-600' },
-  kubernetes_cluster: { bg: 'bg-blue-500/15', text: 'text-blue-600' },
-  kubernetes_namespace: { bg: 'bg-blue-500/15', text: 'text-blue-600' },
-  container_registry: { bg: 'bg-teal-500/15', text: 'text-teal-600' },
-  // Data
-  data_store: { bg: 'bg-emerald-500/15', text: 'text-emerald-600' },
-  s3_bucket: { bg: 'bg-amber-500/15', text: 'text-amber-600' },
-  // Identity
-  iam_user: { bg: 'bg-indigo-500/15', text: 'text-indigo-600' },
-  iam_role: { bg: 'bg-amber-500/15', text: 'text-amber-600' },
-  service_account: { bg: 'bg-teal-500/15', text: 'text-teal-600' },
-  // Code & CI/CD
-  repository: { bg: 'bg-fuchsia-500/15', text: 'text-fuchsia-600' },
-  // Recon
-  http_service: { bg: 'bg-cyan-500/15', text: 'text-cyan-600' },
-  open_port: { bg: 'bg-red-500/15', text: 'text-red-600' },
-  discovered_url: { bg: 'bg-emerald-500/15', text: 'text-emerald-600' },
-  // Discovery
-  subdomain: { bg: 'bg-blue-500/15', text: 'text-blue-600' },
-  web_application: { bg: 'bg-cyan-500/15', text: 'text-cyan-600' },
-  // Unclassified
-  unclassified: { bg: 'bg-gray-500/15', text: 'text-gray-600' },
-  kubernetes: { bg: 'bg-sky-500/15', text: 'text-sky-600' },
-  identity: { bg: 'bg-pink-500/15', text: 'text-pink-600' },
-  // Legacy types (deprecated)
-  service: { bg: 'bg-yellow-500/15', text: 'text-yellow-600' },
-  credential: { bg: 'bg-red-500/15', text: 'text-red-600' },
-  mobile: { bg: 'bg-pink-500/15', text: 'text-pink-600' },
-}
 
 /**
  * Asset Criticality Level: the business importance of the asset, with `none` =
@@ -386,9 +318,7 @@ export const IMPACT_RATING_OPTIONS: { value: ImpactRating; label: string }[] = [
   { value: 'high', label: 'High' },
 ]
 
-// CIA impact-rating badge colors live in the single-source palette at
-// src/lib/impact-colors.ts (IMPACT_RATING_BADGE_SOFT), peer to severity/
-// criticality colors.
+// CIA impact-rating levels live in src/lib/impact-colors.ts.
 
 /**
  * Cloud Provider type
@@ -693,15 +623,6 @@ export const REPO_VISIBILITY_LABELS: Record<RepoVisibility, string> = {
   public: 'Public',
   private: 'Private',
   internal: 'Internal',
-}
-
-export const REPO_VISIBILITY_COLORS: Record<
-  RepoVisibility,
-  { bg: string; text: string; border: string }
-> = {
-  public: { bg: 'bg-green-500/15', text: 'text-green-600', border: 'border-green-500/30' },
-  private: { bg: 'bg-amber-500/15', text: 'text-amber-600', border: 'border-amber-500/30' },
-  internal: { bg: 'bg-blue-500/15', text: 'text-blue-600', border: 'border-blue-500/30' },
 }
 
 /**
@@ -1067,17 +988,6 @@ export const OWNERSHIP_TYPE_DESCRIPTIONS: Record<OwnershipType, string> = {
   stakeholder: 'Has interest in the asset but does not operate it day-to-day.',
   informed: 'Notified about changes and incidents but takes no action.',
   regulatory: 'Compliance / audit owner — responsible for regulatory obligations.',
-}
-
-export const OWNERSHIP_TYPE_COLORS: Record<
-  OwnershipType,
-  { bg: string; text: string; border: string }
-> = {
-  primary: { bg: 'bg-blue-500/15', text: 'text-blue-600', border: 'border-blue-500/30' },
-  secondary: { bg: 'bg-slate-500/15', text: 'text-slate-600', border: 'border-slate-500/30' },
-  stakeholder: { bg: 'bg-purple-500/15', text: 'text-purple-600', border: 'border-purple-500/30' },
-  informed: { bg: 'bg-green-500/15', text: 'text-green-600', border: 'border-green-500/30' },
-  regulatory: { bg: 'bg-amber-500/15', text: 'text-amber-600', border: 'border-amber-500/30' },
 }
 
 /**

@@ -7,7 +7,7 @@
  * One y-axis only; every chart has a table view and a legend from two series.
  */
 
-import { useMemo } from 'react'
+import { useId, useMemo } from 'react'
 import { useRouter } from 'next/navigation'
 import {
   Area,
@@ -24,7 +24,7 @@ import {
   YAxis,
 } from '@/components/charts'
 import { useTranslation } from '@/context/i18n-provider'
-import { seriesVar } from '@/lib/chart-palette'
+import { NONE_VAR, seriesFill, seriesVar } from '@/lib/chart-palette'
 import { formatBucket, formatCount, formatMetric, type MetricUnit } from '@/lib/format-metric'
 import { safeInternalHref } from '@/lib/safe-href'
 import { TimeSeriesTable } from './table-viz'
@@ -58,9 +58,41 @@ export function toRows(result: TimeSeriesResult, sign: Record<string, number> = 
   return Array.from(byT.values()).sort((a, b) => String(a.t).localeCompare(String(b.t)))
 }
 
+/**
+ * Per series: its label, its colour (lines, strokes), the CSS background of its
+ * legend swatch and the SVG fill of its bars/areas. "none" (no value) is a
+ * hatch in both, so it never reads as one of the classes.
+ */
 function useSeriesMeta(result: TimeSeriesResult) {
   const label = useLabel()
-  return result.series.map((s, i) => ({ key: s.key, label: label(s), color: seriesVar(s.key, i) }))
+  const hatchId = `viz-hatch-${useId().replace(/[^a-zA-Z0-9_-]/g, '')}`
+  return {
+    hatchId,
+    meta: result.series.map((s, i) => ({
+      key: s.key,
+      label: label(s),
+      color: seriesVar(s.key, i),
+      swatch: seriesFill(s.key, i),
+      fill: s.key === 'none' ? `url(#${hatchId})` : seriesVar(s.key, i),
+    })),
+  }
+}
+
+/** The SVG hatch for "none", referenced by the fills above. */
+function hatchDefs(id: string) {
+  return (
+    <defs>
+      <pattern
+        id={id}
+        width={4}
+        height={4}
+        patternUnits="userSpaceOnUse"
+        patternTransform="rotate(45)"
+      >
+        <rect width={1.5} height={4} fill={NONE_VAR} />
+      </pattern>
+    </defs>
+  )
 }
 
 /** "Aug 7 to Oct 23. Latest: P0 20, P1 35, P2 42" — the accessible name of a series chart. */
@@ -105,7 +137,7 @@ export function ColumnViz({
 }: SeriesVizProps & { stacked?: boolean }) {
   const { locale } = useTranslation()
   const reduced = usePrefersReducedMotion()
-  const meta = useSeriesMeta(result)
+  const { meta, hatchId } = useSeriesMeta(result)
   const rows = useMemo(() => toRows(result), [result])
   const go = useDrillNavigate(drill)
   const motion = reduced ? { isAnimationActive: false } : {}
@@ -118,6 +150,7 @@ export function ColumnViz({
           <div className={PLOT_CLASS}>
             <ResponsiveContainer width="100%" height="100%">
               <BarChart data={rows} margin={{ top: 4, right: 4, bottom: 0, left: -12 }}>
+                {hatchDefs(hatchId)}
                 <CartesianGrid vertical={false} stroke="var(--border)" strokeDasharray="3 3" />
                 <XAxis
                   dataKey="t"
@@ -144,10 +177,10 @@ export function ColumnViz({
                     key={m.key}
                     dataKey={m.key}
                     name={m.label}
-                    fill={m.color}
+                    fill={m.fill}
                     stackId={stacked ? 'a' : undefined}
                     stroke="var(--card)"
-                    strokeWidth={1}
+                    strokeWidth={stacked ? 2 : 1}
                     radius={!stacked || i === meta.length - 1 ? [4, 4, 0, 0] : 0}
                     cursor={drill ? 'pointer' : undefined}
                     onClick={(d: { payload?: Row }) =>
@@ -159,7 +192,7 @@ export function ColumnViz({
               </BarChart>
             </ResponsiveContainer>
           </div>
-          <Legend entries={meta} />
+          <Legend entries={meta.map((m) => ({ ...m, color: m.swatch }))} />
         </div>
       }
       table={<TimeSeriesTable result={result} unit={unit} drill={drill} />}
@@ -176,7 +209,7 @@ export function AreaLineViz({
   const { locale } = useTranslation()
   const label = useLabel()
   const reduced = usePrefersReducedMotion()
-  const meta = useSeriesMeta(result)
+  const { meta, hatchId } = useSeriesMeta(result)
   const rows = useMemo(() => toRows(result), [result])
   const go = useDrillNavigate(drill)
   const motion = reduced ? { isAnimationActive: false } : {}
@@ -234,6 +267,7 @@ export function AreaLineViz({
             <ResponsiveContainer width="100%" height="100%">
               {mode === 'area' ? (
                 <AreaChart {...common}>
+                  {hatchDefs(hatchId)}
                   {axes}
                   {meta.map((m) => (
                     <Area
@@ -242,10 +276,10 @@ export function AreaLineViz({
                       name={m.label}
                       type="monotone"
                       stackId="a"
-                      stroke={m.color}
-                      strokeWidth={2}
-                      fill={m.color}
-                      fillOpacity={0.25}
+                      stroke="var(--card)"
+                      strokeWidth={1.5}
+                      fill={m.fill}
+                      fillOpacity={1}
                       {...motion}
                     />
                   ))}
@@ -270,7 +304,7 @@ export function AreaLineViz({
               )}
             </ResponsiveContainer>
           </div>
-          <Legend entries={meta} />
+          <Legend entries={meta.map((m) => ({ ...m, color: m.swatch }))} />
         </div>
       }
       table={<TimeSeriesTable result={result} unit={unit} drill={drill} />}
@@ -288,7 +322,7 @@ export function netOf(result: TimeSeriesResult): number {
 export function DivergingViz({ result, drill }: { result: TimeSeriesResult; drill?: DrillFn }) {
   const { t, locale } = useTranslation()
   const reduced = usePrefersReducedMotion()
-  const meta = useSeriesMeta(result)
+  const { meta, hatchId } = useSeriesMeta(result)
   const rows = useMemo(() => toRows(result, { fixed: -1 }), [result])
   const go = useDrillNavigate(drill)
   const motion = reduced ? { isAnimationActive: false } : {}
@@ -321,6 +355,7 @@ export function DivergingViz({ result, drill }: { result: TimeSeriesResult; dril
                 stackOffset="sign"
                 margin={{ top: 4, right: 4, bottom: 0, left: -12 }}
               >
+                {hatchDefs(hatchId)}
                 <CartesianGrid vertical={false} stroke="var(--border)" strokeDasharray="3 3" />
                 <XAxis
                   dataKey="t"
@@ -348,7 +383,7 @@ export function DivergingViz({ result, drill }: { result: TimeSeriesResult; dril
                     key={m.key}
                     dataKey={m.key}
                     name={m.label}
-                    fill={m.color}
+                    fill={m.fill}
                     stackId="flow"
                     radius={m.key === 'fixed' ? [0, 0, 4, 4] : [4, 4, 0, 0]}
                     cursor={drill ? 'pointer' : undefined}
@@ -361,7 +396,7 @@ export function DivergingViz({ result, drill }: { result: TimeSeriesResult; dril
               </BarChart>
             </ResponsiveContainer>
           </div>
-          <Legend entries={meta} />
+          <Legend entries={meta.map((m) => ({ ...m, color: m.swatch }))} />
         </div>
       }
       table={<TimeSeriesTable result={result} drill={drill} />}

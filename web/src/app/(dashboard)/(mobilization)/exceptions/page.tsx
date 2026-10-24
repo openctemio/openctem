@@ -57,11 +57,9 @@ import {
   SuppressionApprovePreview,
   SuppressionFormDialog,
   SuppressionDetailSheet,
-  SUPPRESSION_STATUS_BADGE,
-  SUPPRESSION_TYPE_BADGE,
+  SuppressionStatusBadge,
+  SuppressionTypeBadge,
   suppressionScopeSummary,
-  suppressionStatusLabel,
-  suppressionTypeLabel,
   type SuppressionRule,
   type SuppressionStatus,
 } from '@/features/exceptions'
@@ -69,9 +67,8 @@ import { useTranslation } from '@/context/i18n-provider'
 import { useAuthStore } from '@/stores/auth-store'
 import { SelfApproveDialog } from '@/features/shared/components/self-approve-dialog'
 
-// Approve action accent in the row menu. There is no success token, so the
-// palette-drift gate is told to allow it here.
-const MENU_APPROVE_ICON = 'text-emerald-500' // palette-ok: approve = success accent
+// Approve action accent in the row menu.
+const MENU_APPROVE_ICON = 'text-success'
 
 function relative(iso?: string | null): string {
   if (!iso) return '—'
@@ -330,11 +327,7 @@ export default function ExceptionsPage() {
         ),
         cell: ({ row }) => {
           const type = row.original.suppression_type
-          return (
-            <Badge variant="outline" className={cn('text-xs', SUPPRESSION_TYPE_BADGE[type])}>
-              {suppressionTypeLabel(type, t)}
-            </Badge>
-          )
+          return <SuppressionTypeBadge type={type} />
         },
         enableSorting: true,
       },
@@ -345,11 +338,7 @@ export default function ExceptionsPage() {
         ),
         cell: ({ row }) => {
           const s = row.original.status
-          return (
-            <Badge variant="outline" className={cn('text-xs', SUPPRESSION_STATUS_BADGE[s])}>
-              {suppressionStatusLabel(s, t)}
-            </Badge>
-          )
+          return <SuppressionStatusBadge status={s} />
         },
         enableSorting: true,
       },
