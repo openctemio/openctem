@@ -241,16 +241,66 @@ describe('Scans › Configurations', () => {
     expect(configCalls.at(-1)).toMatchObject({ origin: 'system' })
   })
 
-  it('labels the success rate through the dictionary', () => {
+  it('shows the recent runs and a success rate that does not count coverage gaps as failures', () => {
+    const at = '2026-10-20T10:00:00Z'
     configsResponse = {
-      data: [{ ...scan(1), successful_runs: 1, failed_runs: 1, total_runs: 2 }],
+      data: [
+        {
+          ...scan(1),
+          successful_runs: 1,
+          partial_runs: 2,
+          failed_runs: 1,
+          blocked_runs: 1,
+          total_runs: 5,
+          recent_runs: [
+            {
+              id: 'r5',
+              status: 'blocked',
+              refusal_code: 'ALL_TARGETS_UNCONFIRMED',
+              created_at: at,
+            },
+            { id: 'r4', status: 'partial', created_at: at },
+            { id: 'r3', status: 'partial', created_at: at },
+            { id: 'r2', status: 'failed', created_at: at },
+            { id: 'r1', status: 'completed', created_at: at },
+          ],
+        },
+      ],
       total: 1,
       page: 1,
       per_page: 25,
       total_pages: 1,
     }
     render(<ScansPage />)
-    expect(screen.getByRole('columnheader', { name: /Success rate/ })).toBeInTheDocument()
-    expect(screen.getByTitle('1 of 2 finished runs succeeded')).toBeInTheDocument()
+    expect(screen.getByRole('columnheader', { name: /Recent runs/ })).toBeInTheDocument()
+    // 1 completed + 2 partial of 4 that ran: 75%; the blocked run is not counted.
+    const history = screen.getByRole('img', { name: /Success rate 75%/ })
+    expect(history.getAttribute('aria-label')).toContain('Blocked before starting: 1, not counted')
+    expect(history.getAttribute('aria-label')).toContain('Completed with coverage gaps: 2')
+  })
+
+  it('has no success rate below three finished runs', () => {
+    configsResponse = {
+      data: [
+        {
+          ...scan(1),
+          successful_runs: 1,
+          failed_runs: 1,
+          total_runs: 2,
+          recent_runs: [
+            { id: 'r2', status: 'failed', created_at: '2026-10-20T10:00:00Z' },
+            { id: 'r1', status: 'completed', created_at: '2026-10-19T10:00:00Z' },
+          ],
+        },
+      ],
+      total: 1,
+      page: 1,
+      per_page: 25,
+      total_pages: 1,
+    }
+    render(<ScansPage />)
+    expect(
+      screen.getByRole('img', { name: /No success rate until 3 runs have finished/ })
+    ).toBeInTheDocument()
   })
 })

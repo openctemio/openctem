@@ -141,16 +141,16 @@ export function CITrustSettings({ embedded = false }: { embedded?: boolean } = {
             {t('scans.ci.feedback.tab', 'Pull request feedback')}
           </TabsTrigger>
         </TabsList>
-        <TabsContent value="trust" className="mt-4">
+        <TabsContent value="trust">
           <TrustConfigsSection canWrite={canWrite} />
         </TabsContent>
-        <TabsContent value="gate" className="mt-4">
+        <TabsContent value="gate">
           <GatePolicySection canWrite={can(Permission.CIPolicy)} />
         </TabsContent>
-        <TabsContent value="break-glass" className="mt-4">
+        <TabsContent value="break-glass">
           <OverridesSection canOverride={canOverride} />
         </TabsContent>
-        <TabsContent value="feedback" className="mt-4">
+        <TabsContent value="feedback">
           <CIPRFeedback canWrite={canWrite} />
         </TabsContent>
       </Tabs>

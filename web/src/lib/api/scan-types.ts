@@ -170,6 +170,10 @@ export interface ScanConfig {
   blocked_runs?: number
   /** The scan's latest run, with its real state (the list's "Last run" column). */
   last_run?: ScanLastRun
+  /** The latest approval request's status, when the scan needed one. */
+  approval_status?: string
+  /** The scan's latest runs (at most 10), newest first: the list's run history. */
+  recent_runs?: ScanRecentRun[]
   /** Name of the workflow a workflow scan runs. */
   scan_workflow_name?: string
   created_by?: string
@@ -190,6 +194,14 @@ export interface ScanConfig {
   managed_by?: 'coverage' | 'enrichment'
   created_at: string
   updated_at: string
+}
+
+/** One of a scan's latest runs (GET /scans `recent_runs`). */
+export interface ScanRecentRun {
+  id: string
+  status: string
+  refusal_code?: string
+  created_at: string
 }
 
 /** A scan's latest run as the scan list carries it (GET /scans). */

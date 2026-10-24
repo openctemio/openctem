@@ -38,6 +38,9 @@ type Workflow struct {
 	// PublishedVersionID is the version live runs execute (nil before the
 	// first publish).
 	PublishedVersionID *shared.ID
+	// MaxChangesPerRun caps the changes of one live run (0: the default;
+	// guardrails.go).
+	MaxChangesPerRun int
 
 	// Metadata
 	Tags []string

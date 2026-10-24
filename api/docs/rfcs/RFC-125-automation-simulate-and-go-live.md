@@ -101,7 +101,7 @@ Both are rate limited per user.
 | Simulate engine, trace, deliveries, retention (`automation_run_trace`) | stacked | In review |
 | Preview and validate | stacked | In review |
 | Go-live gate and permissions (`automations_permissions`) | stacked | In review |
-| Request actions, status allow-list, change cap | stacked | Designed |
+| Request actions, status allow-list, change cap (`automation_guardrails`) | stacked | In review |
 | Canvas: simulate/live, preview, validate, trace | stacked | Designed |
 
 Later (not in this RFC's scope): a durable event journal with retries, the

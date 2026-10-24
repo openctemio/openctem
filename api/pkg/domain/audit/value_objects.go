@@ -722,6 +722,8 @@ const (
 	ActionWorkflowRunCompleted     Action = "workflow_run.completed"
 	ActionWorkflowRunFailed        Action = "workflow_run.failed"
 	ActionWorkflowRunCanceled      Action = "workflow_run.canceled"
+	ActionWorkflowRunPaused        Action = "workflow_run.paused"
+	ActionWorkflowRunResumed       Action = "workflow_run.resumed"
 
 	// Rule actions
 	ActionRuleSourceCreated   Action = "rule_source.created"
@@ -910,6 +912,7 @@ func (a Action) IsValid() bool {
 		ActionWorkflowPublished, ActionWorkflowPublishRequested, ActionWorkflowVersionApproved,
 		ActionWorkflowRolledBack, ActionWorkflowModeChanged,
 		ActionWorkflowRunTriggered, ActionWorkflowRunCompleted, ActionWorkflowRunFailed, ActionWorkflowRunCanceled,
+		ActionWorkflowRunPaused, ActionWorkflowRunResumed,
 		ActionRuleSourceCreated, ActionRuleSourceUpdated, ActionRuleSourceDeleted,
 		ActionRuleOverrideCreated, ActionRuleOverrideUpdated, ActionRuleOverrideDeleted,
 		ActionIngestStarted, ActionIngestCompleted, ActionIngestFailed, ActionIngestPartialSuccess,

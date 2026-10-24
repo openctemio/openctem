@@ -15,7 +15,7 @@
 
 import { useState } from 'react'
 import { Main } from '@/components/layout'
-import { PageHeader, EmptyState } from '@/features/shared'
+import { PageHeader, EmptyState, PageStack } from '@/features/shared'
 import { Card, CardContent } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -151,13 +151,15 @@ export function PausedScannerCard({
 function LoadingSkeleton() {
   return (
     <Main>
-      <Skeleton className="mb-6 h-8 w-56" />
-      <Skeleton className="h-20 rounded-lg" />
-      <div className="mt-6 space-y-4">
-        {Array.from({ length: 2 }).map((_, i) => (
-          <Skeleton key={i} className="h-28 rounded-lg" />
-        ))}
-      </div>
+      <PageStack>
+        <Skeleton className="h-8 w-56" />
+        <Skeleton className="h-20 rounded-lg" />
+        <div className="space-y-4">
+          {Array.from({ length: 2 }).map((_, i) => (
+            <Skeleton key={i} className="h-28 rounded-lg" />
+          ))}
+        </div>
+      </PageStack>
     </Main>
   )
 }
@@ -185,68 +187,70 @@ export function ScannerImportsView() {
 
   return (
     <Main>
-      <PageHeader
-        title="Vulnerability scanners"
-        description="Import Nessus and Tenable scan exports as assets and findings"
-      >
-        <Can permission={IMPORT_PERMISSIONS} requireAll mode="hide">
-          <Button size="sm" onClick={() => setImportOpen(true)}>
-            <Upload className="me-2 h-4 w-4" />
-            Import .nessus
-          </Button>
-        </Can>
-      </PageHeader>
+      <PageStack>
+        <PageHeader
+          title="Vulnerability scanners"
+          description="Import Nessus and Tenable scan exports as assets and findings"
+        >
+          <Can permission={IMPORT_PERMISSIONS} requireAll mode="hide">
+            <Button size="sm" onClick={() => setImportOpen(true)}>
+              <Upload className="me-2 h-4 w-4" />
+              Import .nessus
+            </Button>
+          </Can>
+        </PageHeader>
 
-      <Alert className="mt-6">
-        <PauseCircle className="h-4 w-4" />
-        <AlertTitle>
-          {t('settings.scanners.pausedTitle', 'The live Tenable connector is paused')}
-        </AlertTitle>
-        <AlertDescription>
-          {t(
-            'settings.scanners.pausedBody',
-            'Connecting Nessus Pro or Tenable.sc is not available for now. Importing .nessus exports works.'
+        <Alert>
+          <PauseCircle className="h-4 w-4" />
+          <AlertTitle>
+            {t('settings.scanners.pausedTitle', 'The live Tenable connector is paused')}
+          </AlertTitle>
+          <AlertDescription>
+            {t(
+              'settings.scanners.pausedBody',
+              'Connecting Nessus Pro or Tenable.sc is not available for now. Importing .nessus exports works.'
+            )}
+          </AlertDescription>
+        </Alert>
+
+        <div>
+          {paused.length === 0 ? (
+            <EmptyState
+              icon={ShieldCheck}
+              title="Import scan results"
+              description="Upload a .nessus export: hosts become assets and vulnerabilities become findings."
+              action={
+                <Can permission={IMPORT_PERMISSIONS} requireAll mode="hide">
+                  <Button size="sm" onClick={() => setImportOpen(true)}>
+                    <Upload className="me-2 h-4 w-4" />
+                    Import .nessus
+                  </Button>
+                </Can>
+              }
+            />
+          ) : (
+            <>
+              <h2 className="mb-1 text-lg font-semibold">Paused connectors</h2>
+              <p className="text-muted-foreground mb-4 text-sm">
+                Created before the pause. They do not scan; remove them or keep them for when the
+                connector returns.
+              </p>
+              <div className="space-y-4">
+                {paused.map((s) => (
+                  <PausedScannerCard key={s.id} integration={s} onChanged={refresh} />
+                ))}
+              </div>
+            </>
           )}
-        </AlertDescription>
-      </Alert>
+        </div>
 
-      <div className="mt-6">
-        {paused.length === 0 ? (
-          <EmptyState
-            icon={ShieldCheck}
-            title="Import scan results"
-            description="Upload a .nessus export: hosts become assets and vulnerabilities become findings."
-            action={
-              <Can permission={IMPORT_PERMISSIONS} requireAll mode="hide">
-                <Button size="sm" onClick={() => setImportOpen(true)}>
-                  <Upload className="me-2 h-4 w-4" />
-                  Import .nessus
-                </Button>
-              </Can>
-            }
-          />
-        ) : (
-          <>
-            <h2 className="mb-1 text-lg font-semibold">Paused connectors</h2>
-            <p className="text-muted-foreground mb-4 text-sm">
-              Created before the pause. They do not scan; remove them or keep them for when the
-              connector returns.
-            </p>
-            <div className="space-y-4">
-              {paused.map((s) => (
-                <PausedScannerCard key={s.id} integration={s} onChanged={refresh} />
-              ))}
-            </div>
-          </>
-        )}
-      </div>
-
-      <ImportResultsDialog
-        open={importOpen}
-        onOpenChange={setImportOpen}
-        onImported={refresh}
-        minSeverity="low"
-      />
+        <ImportResultsDialog
+          open={importOpen}
+          onOpenChange={setImportOpen}
+          onImported={refresh}
+          minSeverity="low"
+        />
+      </PageStack>
     </Main>
   )
 }

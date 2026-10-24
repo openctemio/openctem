@@ -14,7 +14,9 @@ import {
   DialogForm,
   DialogBody,
 } from '@/components/ui/dialog'
+import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { typedTextMatches } from '@/components/confirm-dialog'
 import { Textarea } from '@/components/ui/textarea'
 import { useTranslation } from '@/context/i18n-provider'
 import { AdminApiError } from '@console/lib/admin-api/client'
@@ -64,6 +66,12 @@ export interface AdminConfirmDialogProps {
   children?: ReactNode
   /** False while the extra fields are not complete. */
   canSubmit?: boolean
+  /**
+   * For an action that cannot be undone: the confirm button stays disabled
+   * until this exact text (e.g. the organization's name) is typed. Matching
+   * ignores surrounding spaces and Unicode composition, as in ConfirmDialog.
+   */
+  typeToConfirm?: string
   onConfirm: (proof: AdminConfirmProof) => Promise<void>
 }
 
@@ -83,11 +91,14 @@ export function AdminConfirmDialog({
   requireCode,
   children,
   canSubmit = true,
+  typeToConfirm,
   onConfirm,
 }: AdminConfirmDialogProps) {
   const { t } = useTranslation()
   const reasonId = useId()
   const codeId = useId()
+  const typedId = useId()
+  const [typed, setTyped] = useState('')
   const [reason, setReason] = useState('')
   const [code, setCode] = useState('')
   const codeOptional = useStepUpCodeOptional()
@@ -96,17 +107,22 @@ export function AdminConfirmDialog({
 
   const reasonOk = reason.trim().length >= REASON_MIN && reason.trim().length <= REASON_MAX
   const codeOk = !requireCode || stepUpCodeReady(code, codeOptional)
+  const typedOk = !typeToConfirm || typedTextMatches(typed, typeToConfirm)
+  const [typeBefore, typeAfter = ''] = t('confirm.typeToConfirm', 'Type {text} to confirm').split(
+    '{text}'
+  )
 
   const reset = () => {
     setReason('')
     setCode('')
+    setTyped('')
     setError(null)
     setBusy(false)
   }
 
   const submit = async (e: FormEvent) => {
     e.preventDefault()
-    if (!reasonOk || !codeOk || !canSubmit) return
+    if (!reasonOk || !codeOk || !typedOk || !canSubmit) return
     setBusy(true)
     setError(null)
     try {
@@ -162,6 +178,28 @@ export function AdminConfirmDialog({
                 )}
               </p>
             </div>
+            {typeToConfirm && (
+              <div className="space-y-1.5">
+                <Label htmlFor={typedId} className="block font-normal">
+                  {typeBefore}
+                  <span className="font-semibold break-all">{typeToConfirm}</span>
+                  {typeAfter}
+                </Label>
+                <Input
+                  id={typedId}
+                  value={typed}
+                  onChange={(e) => setTyped(e.target.value)}
+                  onKeyDown={(e) => {
+                    // Enter in the typed field never submits the action.
+                    if (e.key === 'Enter') e.preventDefault()
+                  }}
+                  autoComplete="off"
+                  autoCapitalize="none"
+                  spellCheck={false}
+                  data-testid="admin-confirm-typed"
+                />
+              </div>
+            )}
             {requireCode && (
               <StepUpCodeField
                 id={codeId}
@@ -183,7 +221,7 @@ export function AdminConfirmDialog({
             <Button
               type="submit"
               variant={destructive ? 'destructive' : 'default'}
-              disabled={busy || !reasonOk || !codeOk || !canSubmit}
+              disabled={busy || !reasonOk || !codeOk || !typedOk || !canSubmit}
             >
               {busy && <Loader2 className="me-2 size-4 animate-spin" />}
               {confirmLabel}
