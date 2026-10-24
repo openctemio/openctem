@@ -246,6 +246,9 @@ const DENSITY_LABEL_KEYS: Record<TableDensity, [string, string]> = {
   comfortable: ['common.table.densityComfortable', 'Comfortable'],
 }
 
+/** The narrowest a row's name column may get: other columns scroll instead. */
+const NAME_COLUMN_FLOOR = 'min-w-[min(12rem,36vw)]'
+
 /** Fixed width of the selection column, so the pinned column after it knows its offset. */
 const SELECT_COL_WIDTH = 40
 
@@ -586,7 +589,7 @@ export function DataTable<TData, TValue>({
     if (selectColumn) pinned.set(selectColumn.id, { start: 0, last: false })
     pinned.set(firstDataColumn.id, { start: selectColumn ? SELECT_COL_WIDTH : 0, last: true })
   }
-  const pinnedProps = (columnId: string) => {
+  const pinnedPropsBase = (columnId: string) => {
     const isSelect = columnId === 'select'
     const width = isSelect
       ? { width: SELECT_COL_WIDTH, minWidth: SELECT_COL_WIDTH, maxWidth: SELECT_COL_WIDTH }
@@ -608,10 +611,20 @@ export function DataTable<TData, TValue>({
         // keeps a floor: in an automatic table layout a truncating name has no
         // minimum width, so ten other columns squeezed it to a few letters
         // ("e2..."); with the floor the other columns scroll instead.
-        pin.last && 'min-w-[min(12rem,36vw)] max-w-[min(26rem,38vw)] whitespace-normal'
+        pin.last && cn(NAME_COLUMN_FLOOR, 'max-w-[min(26rem,38vw)] whitespace-normal')
       ),
       style: { ...width, insetInlineStart: pin.start },
     }
+  }
+
+  // A column marked `meta: { primary: true }` (the row's name when it is not
+  // the first column, e.g. a finding title after its priority) gets the same
+  // floor as the pinned name column, so other columns cannot squeeze it.
+  const pinnedProps = (columnId: string) => {
+    const props = pinnedPropsBase(columnId)
+    const primary = (table.getColumn(columnId)?.columnDef.meta as { primary?: boolean } | undefined)
+      ?.primary
+    return primary ? { ...props, className: cn(props.className, NAME_COLUMN_FLOOR) } : props
   }
 
   // Re-measure when the rows, visible columns or container size change.

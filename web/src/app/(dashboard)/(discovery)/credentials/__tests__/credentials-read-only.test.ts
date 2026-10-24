@@ -18,7 +18,9 @@ describe('Credentials page is read-only', () => {
   it('has no Edit or Delete controls', () => {
     expect(source).not.toMatch(/label: 'Edit'/)
     expect(source).not.toMatch(/label: 'Delete'/)
-    expect(source).not.toMatch(/ConfirmDialog/)
+    // The only confirmation is the one before exporting the CSV.
+    expect(source).not.toMatch(/Delete credential/i)
+    expect(source).toMatch(/credentials\.export\.confirmTitle/)
     expect(source).not.toMatch(/Coming soon/i)
   })
 

@@ -128,6 +128,10 @@ describe('ScopePendingEntry', () => {
     const user = userEvent.setup()
     wrap(<ScopePendingEntry entryId="e1" />)
     await user.click(await screen.findByRole('button', { name: 'Approve the entry' }))
+    expect(api.post).not.toHaveBeenCalled()
+    await user.click(
+      within(await screen.findByRole('alertdialog')).getByRole('button', { name: 'Approve' })
+    )
     await waitFor(() =>
       expect(api.post).toHaveBeenCalledWith('/api/v1/scope/targets/e1/approve', {})
     )

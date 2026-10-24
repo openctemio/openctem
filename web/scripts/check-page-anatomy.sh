@@ -24,6 +24,14 @@
 #      tabs take them from SectionTab.icon.
 #   8. A second tab row: a file that renders route tabs and adds a TabsList.
 #
+# Whole tree (not only added lines), since the sweep that put every page on
+# the primitives (research/244 mobile-and-sweep):
+#   9. Every component that renders a PageHeader renders a PageStack, so no
+#      page hand-rolls the gaps between its blocks.
+#  10. An app page or layout that calls a client hook (useState, useEffect,
+#      useTranslation, useRouter, ...) starts with 'use client'. Without it
+#      the page renders on the server and crashes on every visit.
+#
 # Escape hatch for a real exception: `anatomy-ok: <reason>` on the line.
 set -euo pipefail
 
@@ -113,6 +121,32 @@ hits="$(printf '%s\n' "$added" | grep -E '<TabsList\b' | while IFS= read -r line
 done || true)"
 [[ -n "$hits" ]] && report "A second tab row under route tabs:" "$hits" \
   "One tab row per page (research/249 R21). A filter or state of the rows is a FilterSelect in the toolbar; another view is ViewSwitcher; a sub-page is a route tab."
+
+hits="$(grep -rlE '<PageHeader\b' src console/src --include='*.tsx' 2>/dev/null | grep -v '/__tests__/' | while IFS= read -r f; do
+  grep -qE '<PageStack\b' "$f" && continue
+  grep -E '<PageHeader\b' "$f" | grep -q 'anatomy-ok:' && continue
+  # A header handed to a component that owns the stack (a render prop, a
+  # section header) is marked once in the file.
+  grep -q 'anatomy-ok: inside a PageStack' "$f" && continue
+  printf '%s\n' "$f"
+done || true)"
+[[ -n "$hits" ]] && report "A page without a PageStack:" "$hits" \
+  "Put the page's blocks (PageHeader, tabs, banners, strip, list) in one PageStack (features/shared); it owns every gap: 16px header to tabs, 20px otherwise. Remove the mt-*/mb-*/space-y-* between blocks."
+
+hits="$(find src/app console/src/app \( -name page.tsx -o -name layout.tsx \) -not -path '*/__tests__/*' 2>/dev/null | while IFS= read -r f; do
+  first="$(awk '
+    /^[[:space:]]*$/ { next }
+    incomment { if ($0 ~ /\*\//) incomment = 0; next }
+    /^[[:space:]]*\/\// { next }
+    /^[[:space:]]*\/\*/ { if ($0 !~ /\*\//) incomment = 1; next }
+    { print; exit }' "$f")"
+  re="^[[:space:]]*['\"]use client['\"]"
+  [[ "$first" =~ $re ]] && continue
+  grep -qE '\buse(State|Effect|LayoutEffect|Memo|Callback|Ref|Reducer|Context|Translation|Router|Pathname|SearchParams|Params|Transition|Id|SyncExternalStore|EffectEvent)\(' "$f" &&
+    printf '%s\n' "$f"
+done || true)"
+[[ -n "$hits" ]] && report "A server page or layout that calls client hooks:" "$hits" \
+  "Start the file with 'use client' (comments may come first), or move the hooks into a client component."
 
 if [[ "$fail" = 0 ]]; then
   echo "check-page-anatomy: no new anatomy or type-scale drift."

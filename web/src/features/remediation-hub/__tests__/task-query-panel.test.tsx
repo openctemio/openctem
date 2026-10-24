@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { TaskQueryPanel } from '../components/task-query-panel'
 import type { TaskQuery } from '../api/use-task-query'
 
@@ -97,6 +97,12 @@ describe('TaskQueryPanel', () => {
     expect(screen.queryByRole('button', { name: 'Re-run query' })).toBeNull()
     api.setAuto.mockResolvedValue({ ...base })
     fireEvent.click(screen.getByRole('button', { name: 'Resume' }))
+    expect(api.setAuto).not.toHaveBeenCalled()
+    fireEvent.click(
+      within(await screen.findByRole('alertdialog')).getByRole('button', {
+        name: 'Resume auto include',
+      })
+    )
     await waitFor(() => expect(api.setAuto).toHaveBeenCalledWith('t-1', false, 4))
   })
 
