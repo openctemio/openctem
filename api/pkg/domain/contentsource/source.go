@@ -147,6 +147,7 @@ var (
 	ErrNotCandidate      = shared.NewDomainError("NOT_CANDIDATE", "only a candidate snapshot can be promoted or rejected", shared.ErrConflict)
 	ErrNoPrevious        = shared.NewDomainError("NO_PREVIOUS", "the source has no previous snapshot to roll back to", shared.ErrConflict)
 	ErrFourEyes          = shared.NewDomainError("FOUR_EYES", "this snapshot needs review by a member who did not change the source configuration it came from", shared.ErrForbidden)
+	ErrApprovalRequired  = shared.NewDomainError("APPROVAL_REQUIRED", "turning off review needs the permission to approve rule source snapshots", shared.ErrForbidden)
 	ErrLeaseLost         = shared.NewDomainError("LEASE_LOST", "the sync's claim expired or was taken over", shared.ErrConflict)
 	ErrSyncInProgress    = shared.NewDomainError("SYNC_IN_PROGRESS", "the source is being synced", shared.ErrConflict)
 	ErrUsernameRequired  = shared.NewDomainError("VALIDATION", "a deploy token needs its own username (shown when the token was created)", shared.ErrValidation)

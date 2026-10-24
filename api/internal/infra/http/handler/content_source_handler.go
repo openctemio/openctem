@@ -14,6 +14,7 @@ import (
 	"github.com/openctemio/openctem/api/pkg/apierror"
 	"github.com/openctemio/openctem/api/pkg/domain/contentpack"
 	cs "github.com/openctemio/openctem/api/pkg/domain/contentsource"
+	"github.com/openctemio/openctem/api/pkg/domain/permission"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/logger"
 )
@@ -283,7 +284,8 @@ func (h *ContentSourceHandler) actor(r *http.Request) (contentsourceapp.Actor, b
 	if err != nil || tid.IsZero() {
 		return contentsourceapp.Actor{}, false
 	}
-	a := contentsourceapp.Actor{TenantID: tid, Audit: configAuditContext(r)}
+	a := contentsourceapp.Actor{TenantID: tid, Audit: configAuditContext(r),
+		CanApprove: middleware.HasPermission(r.Context(), permission.ContentSourcesApprove.String())}
 	if uid := middleware.GetLocalUserID(r.Context()); !uid.IsZero() {
 		a.UserID = &uid
 	}
