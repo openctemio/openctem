@@ -33,6 +33,9 @@ func NewSAMLCertExpiryController(s SAMLCertExpirySweeper, interval time.Duration
 // Name returns the controller name.
 func (c *SAMLCertExpiryController) Name() string { return "saml-cert-expiry" }
 
+// Exclusive: one API replica at a time (controller lease). It sends the notice, then records it: two replicas would email the owners twice.
+func (c *SAMLCertExpiryController) Exclusive() bool { return true }
+
 // Interval returns the reconciliation interval.
 func (c *SAMLCertExpiryController) Interval() time.Duration { return c.interval }
 

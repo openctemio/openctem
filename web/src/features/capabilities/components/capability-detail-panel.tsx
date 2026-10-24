@@ -1,5 +1,7 @@
 'use client'
 
+import { capabilitySwatch } from '@/lib/capability-colors'
+import { TAG_SWATCH_CLASS } from '@/lib/tag-colors'
 import { memo } from 'react'
 import { Globe, Sparkles, Wrench, Bot, ExternalLink } from 'lucide-react'
 import Link from '@/components/link'
@@ -28,30 +30,6 @@ interface CapabilityDetailPanelProps {
   initialStats?: CapabilityUsageStats
   open: boolean
   onOpenChange: (open: boolean) => void
-}
-
-// Get color class from color name
-function getColorClass(color: string) {
-  const colorMap: Record<string, string> = {
-    blue: 'bg-blue-500/10 text-blue-500',
-    purple: 'bg-purple-500/10 text-purple-500',
-    green: 'bg-green-500/10 text-green-500',
-    red: 'bg-red-500/10 text-red-500',
-    orange: 'bg-orange-500/10 text-orange-500',
-    cyan: 'bg-cyan-500/10 text-cyan-500',
-    yellow: 'bg-yellow-500/10 text-yellow-500',
-    lime: 'bg-lime-500/10 text-lime-500',
-    teal: 'bg-teal-500/10 text-teal-500',
-    indigo: 'bg-indigo-500/10 text-indigo-500',
-    fuchsia: 'bg-fuchsia-500/10 text-fuchsia-500',
-    amber: 'bg-amber-500/10 text-amber-500',
-    violet: 'bg-violet-500/10 text-violet-500',
-    sky: 'bg-sky-500/10 text-sky-500',
-    slate: 'bg-slate-500/10 text-slate-500',
-    gray: 'bg-gray-500/10 text-gray-500',
-    emerald: 'bg-emerald-500/10 text-emerald-500',
-  }
-  return colorMap[color] || 'bg-primary/10 text-primary'
 }
 
 /** The names of the tools or sensors using a capability. */
@@ -103,8 +81,6 @@ export const CapabilityDetailPanel = memo(function CapabilityDetailPanel({
   const isLoadingNames = isLoading && !hasNames
 
   if (!capability) return null
-
-  const colorClass = getColorClass(capability.color)
 
   return (
     <DetailSheet
@@ -215,8 +191,11 @@ export const CapabilityDetailPanel = memo(function CapabilityDetailPanel({
               <DetailField label="Color">
                 <span className="inline-flex items-center gap-2 capitalize">
                   {/* The capability's own accent colour, chosen by its author. */}
-                  <span className={`h-3 w-3 rounded-full ${colorClass.split(' ')[0]}`} />
-                  {capability.color}
+                  <span
+                    aria-hidden
+                    className={`size-3 rounded-full ${TAG_SWATCH_CLASS[capabilitySwatch(capability.color)]}`}
+                  />
+                  {capabilitySwatch(capability.color)}
                 </span>
               </DetailField>
               <DetailField label="Icon">

@@ -2,7 +2,7 @@
 
 import type { ReactNode } from 'react'
 import { Main } from '@/components/layout'
-import { PageHeader } from '@/features/shared'
+import { PageHeader, PageStack } from '@/features/shared'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { ReportSchedulesSection, ExecutiveSummarySection } from '@/features/reports'
 import { PentestReportsSection } from '@/features/pentest/components/pentest-reports-section'
@@ -46,11 +46,7 @@ export default function ReportsPage() {
         {actions}
       </PageHeader>
       {showPentest && (
-        <Tabs
-          value={tab}
-          onValueChange={(v) => setTab(v === 'pentest' ? 'pentest' : '')}
-          className="mt-4"
-        >
+        <Tabs value={tab} onValueChange={(v) => setTab(v === 'pentest' ? 'pentest' : '')}>
           <TabsList>
             <TabsTrigger value="program">{t('reports.page.tabProgram', 'Program')}</TabsTrigger>
             <TabsTrigger value="pentest">{t('reports.page.tabPentest', 'Pentest')}</TabsTrigger>
@@ -65,13 +61,11 @@ export default function ReportsPage() {
       {tab === 'pentest' ? (
         <PentestReportsSection header={header} />
       ) : (
-        <>
+        <PageStack>
           {header(null)}
-          <div className="mt-5 space-y-5">
-            <ExecutiveSummarySection />
-            <ReportSchedulesSection />
-          </div>
-        </>
+          <ExecutiveSummarySection />
+          <ReportSchedulesSection />
+        </PageStack>
       )}
     </Main>
   )

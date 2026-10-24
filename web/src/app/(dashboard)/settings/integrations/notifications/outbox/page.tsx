@@ -1,5 +1,8 @@
 'use client'
 
+import { HealthStatus } from '@/components/ui/health-status'
+import { SeverityBadge } from '@/components/ui/severity-badge'
+import { OUTBOX_HEALTH } from '@/features/notifications/lib/outbox-health'
 import { useState } from 'react'
 import { useListParams } from '@/hooks/use-list-params'
 import type { ColumnDef } from '@tanstack/react-table'
@@ -10,13 +13,10 @@ import {
   RefreshCw,
   MoreHorizontal,
   Clock,
-  CheckCircle,
-  XCircle,
   Loader2,
   RotateCcw,
   Trash2,
   ExternalLink,
-  AlertTriangle,
   CheckCircle2,
   AlertCircle,
 } from 'lucide-react'
@@ -26,7 +26,6 @@ import { Main } from '@/components/layout'
 import { ErrorState, DataTable, PageHeader, PageStack } from '@/features/shared'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
-import { Badge } from '@/components/ui/badge'
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -46,6 +45,7 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { getErrorMessage } from '@/lib/api/error-handler'
 import { Can } from '@/lib/permissions'
+import { HEALTH_ICON_CLASS } from '@/lib/health-colors'
 import { cn } from '@/lib/utils'
 
 import {
@@ -59,21 +59,10 @@ import {
 import {
   type OutboxEntry,
   type OutboxStatus,
-  OUTBOX_STATUS_CONFIG,
-  OUTBOX_SEVERITY_CONFIG,
 } from '@/features/notifications/types/notification-outbox.types'
 import { safeHref } from '@/lib/safe-href'
 import { SafeExternalLink } from '@/components/safe-external-link'
 import { useTranslation } from '@/context/i18n-provider'
-
-// Status icon mapping
-const STATUS_ICONS: Record<OutboxStatus, React.ElementType> = {
-  pending: Clock,
-  processing: Loader2,
-  completed: CheckCircle,
-  failed: XCircle,
-  dead: AlertTriangle,
-}
 
 // Queue Health Status component
 function QueueHealthStatus({
@@ -97,7 +86,7 @@ function QueueHealthStatus({
   if (isHealthy) {
     return (
       <Alert>
-        <CheckCircle2 className="h-4 w-4" />
+        <CheckCircle2 className={cn('h-4 w-4', HEALTH_ICON_CLASS.ok)} />
         <AlertTitle>{t('notificationChannels.outbox.healthy', 'Queue is healthy')}</AlertTitle>
         <AlertDescription>
           {t(
@@ -130,7 +119,7 @@ function QueueHealthStatus({
 
   return (
     <Alert variant={hasIssues ? 'destructive' : 'default'}>
-      {hasIssues ? <AlertCircle className="h-4 w-4" /> : <Clock className="h-4 w-4" />}
+      {hasIssues ? <AlertCircle className="h-4 w-4" /> : <Clock className={cn('h-4 w-4', HEALTH_ICON_CLASS.run)} />}
       <AlertTitle>{parts.join(', ')}</AlertTitle>
       <AlertDescription>
         {hasIssues
@@ -151,10 +140,7 @@ function QueueHealthStatus({
 export default function NotificationOutboxPage() {
   const { t, locale } = useTranslation()
   const statusLabel = (s: string) =>
-    t(
-      `notificationChannels.outbox.status.${s}`,
-      OUTBOX_STATUS_CONFIG[s as OutboxStatus]?.label ?? s
-    )
+    t(`notificationChannels.outbox.status.${s}`, OUTBOX_HEALTH[s as OutboxStatus]?.label ?? s)
   // State
   // The list lives in the URL (one list convention): page, per_page, status.
   const list = useListParams({ defaultPageSize: 10, filters: { status: 'all' } })
@@ -305,11 +291,10 @@ export default function NotificationOutboxPage() {
       accessorKey: 'severity',
       header: t('notificationChannels.outbox.col.severity', 'Severity'),
       cell: ({ row }) => {
-        const severityConfig = OUTBOX_SEVERITY_CONFIG[row.original.severity]
         return (
-          <Badge variant="outline" className={`${severityConfig.bgColor} ${severityConfig.color}`}>
-            {t(`notificationChannels.severity.${row.original.severity}`, severityConfig.label)}
-          </Badge>
+          <SeverityBadge severity={row.original.severity}>
+            {t(`notificationChannels.severity.${row.original.severity}`)}
+          </SeverityBadge>
         )
       },
     },
@@ -318,25 +303,19 @@ export default function NotificationOutboxPage() {
       header: t('notificationChannels.outbox.col.status', 'Status'),
       cell: ({ row }) => {
         const entry = row.original
-        const StatusIcon = STATUS_ICONS[entry.status]
-        const statusConfig = OUTBOX_STATUS_CONFIG[entry.status]
+        const health = OUTBOX_HEALTH[entry.status]
         return (
           <>
-            <div className="flex items-center gap-2">
-              <StatusIcon
-                className={cn(
-                  'h-4 w-4',
-                  statusConfig.color,
-                  entry.status === 'processing' && 'animate-spin'
-                )}
-              />
-              <Badge
-                variant="outline"
-                className={`${statusConfig.bgColor} ${statusConfig.textColor}`}
-              >
-                {statusLabel(entry.status)}
-              </Badge>
-            </div>
+            <HealthStatus
+              state={health.state}
+              value={entry.status}
+              label={statusLabel(entry.status)}
+              detail={
+                entry.status === 'dead'
+                  ? t('notificationChannels.outbox.deadLetter', 'dead letter')
+                  : undefined
+              }
+            />
             {entry.last_error && (
               <Tooltip>
                 <TooltipTrigger asChild>

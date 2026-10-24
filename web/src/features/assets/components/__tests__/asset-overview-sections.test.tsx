@@ -79,7 +79,7 @@ function makeAsset(overrides: Partial<Asset> = {}): Asset {
 describe('RiskSummarySection', () => {
   it('shows the risk score, finding count and severity breakdown', () => {
     render(<RiskSummarySection asset={makeAsset()} />)
-    expect(screen.getByText(/^73 - /)).toBeInTheDocument()
+    expect(screen.getByText(/^73 High$/)).toBeInTheDocument()
     expect(screen.getByText('22')).toBeInTheDocument()
     expect(screen.getByText('16')).toBeInTheDocument() // high
     expect(screen.getByText('6')).toBeInTheDocument() // medium

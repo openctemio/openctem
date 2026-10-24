@@ -15,7 +15,7 @@ import { Checkbox } from '@/components/ui/checkbox'
 import { Input } from '@/components/ui/input'
 import { Skeleton } from '@/components/ui/skeleton'
 import { cn } from '@/lib/utils'
-import { useDebounce } from '@/hooks/use-debounce'
+import { useSearchQuery } from '@/hooks/use-search-query'
 import { useAssetGroups } from '@/features/asset-groups'
 
 /** Asset groups listed at once (the API's largest page). */
@@ -30,7 +30,7 @@ interface GroupSourceProps {
 export function GroupSource({ selected, onToggle }: GroupSourceProps) {
   const { t } = useTranslation()
   const [search, setSearch] = useState('')
-  const debounced = useDebounce(search, 300)
+  const debounced = useSearchQuery(search).term
   const { data, total, isLoading } = useAssetGroups({
     filters: {
       per_page: GROUP_PAGE_SIZE,

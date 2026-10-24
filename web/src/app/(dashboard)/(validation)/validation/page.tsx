@@ -11,6 +11,7 @@ import {
   LinkCard,
   MetricStrip,
   PageHeader,
+  PageStack,
   RelativeTime,
   SettingsSection,
   type MetricStripItem,
@@ -79,19 +80,17 @@ export default function ValidationOverviewPage() {
   ).length
 
   const byPriority = coverage?.by_priority ?? []
-  const p0p1Total = coverage?.p0_p1_total ?? 0
-  const p0p1Validated = coverage?.p0_p1_validated ?? 0
 
   const metrics: MetricStripItem[] = [
-    {
-      key: 'coverage',
-      label: 'P0/P1 validation coverage',
-      value: coverage?.by_priority ? pct(p0p1Validated, p0p1Total) : '–',
-    },
     ...(pentestOn
       ? [
-          { key: 'retests', label: 'Retests due', value: retestsDue },
-          { key: 'campaigns', label: 'Open campaigns', value: openCampaigns },
+          { key: 'retests', label: 'Retests due', value: retestsDue, href: '/validation/retests' },
+          {
+            key: 'campaigns',
+            label: 'Open campaigns',
+            value: openCampaigns,
+            href: '/pentest/campaigns',
+          },
         ]
       : []),
     ...(simOn
@@ -100,6 +99,7 @@ export default function ValidationOverviewPage() {
             key: 'sims',
             label: 'Simulations',
             value: simsData?.total ?? simsData?.data?.length ?? 0,
+            href: '/attack-simulation',
           },
         ]
       : []),
@@ -109,6 +109,7 @@ export default function ValidationOverviewPage() {
             key: 'controls',
             label: 'Control tests',
             value: testsData?.total ?? testsData?.data?.length ?? 0,
+            href: '/control-testing',
           },
         ]
       : []),
@@ -122,7 +123,7 @@ export default function ValidationOverviewPage() {
         key: `f-${f.id}`,
         when: f.updatedAt,
         what: f.title,
-        where: `Pentest · ${campaignName(f.campaignId)}`,
+        where: `Pentest: ${campaignName(f.campaignId)}`,
         href: campaignHref(f.campaignId, 'findings'),
       })
     }
@@ -142,7 +143,7 @@ export default function ValidationOverviewPage() {
         key: `c-${t.id}`,
         when: t.last_tested_at,
         what: t.name,
-        where: `Control testing · ${t.framework}`,
+        where: `Control testing: ${t.framework}`,
         href: '/control-testing',
       })
     }
@@ -194,96 +195,98 @@ export default function ValidationOverviewPage() {
 
   return (
     <Main>
-      <PageHeader
-        title="Validation"
-        description="Whether fixes and controls are proven, and what is waiting to be re-tested."
-      />
-      <MetricStrip className="mt-5" loading={loading} items={metrics} />
+      <PageStack>
+        <PageHeader
+          title="Validation"
+          description="Whether fixes and controls are proven, and what is waiting to be re-tested."
+        />
+        {metrics.length > 0 && <MetricStrip loading={loading} items={metrics} />}
 
-      <div className="mt-5 grid grid-cols-1 gap-5 lg:grid-cols-2">
-        <SettingsSection
-          title="Coverage by priority"
-          description="Closed findings with validation evidence (pentest, scripted or sensor)."
-        >
-          <Card className="py-0">
-            <CardContent className="p-4">
-              {coverageLoading ? (
-                <Skeleton className="h-24 w-full" />
-              ) : byPriority.length === 0 ? (
-                <p className="text-sm text-muted-foreground">No coverage data yet.</p>
-              ) : (
-                <ul className="space-y-3">
-                  {byPriority.map((row) => {
-                    const share = row.total > 0 ? (row.validated / row.total) * 100 : 0
-                    return (
-                      <li key={row.priority} className="space-y-1">
-                        <div className="flex items-center justify-between text-sm">
-                          <span className="font-medium">{row.priority}</span>
-                          <span className="text-muted-foreground tabular-nums">
-                            {row.validated} of {row.total} · {pct(row.validated, row.total)}
+        <div className="grid grid-cols-1 gap-5 lg:grid-cols-2">
+          <SettingsSection
+            title="Coverage by priority"
+            description="Closed findings with validation evidence (pentest, scripted or sensor)."
+          >
+            <Card className="py-0">
+              <CardContent className="p-4">
+                {coverageLoading ? (
+                  <Skeleton className="h-24 w-full" />
+                ) : byPriority.length === 0 ? (
+                  <p className="text-sm text-muted-foreground">No coverage data yet.</p>
+                ) : (
+                  <ul className="space-y-3">
+                    {byPriority.map((row) => {
+                      const share = row.total > 0 ? (row.validated / row.total) * 100 : 0
+                      return (
+                        <li key={row.priority} className="space-y-1">
+                          <div className="flex items-center justify-between text-sm">
+                            <span className="font-medium">{row.priority}</span>
+                            <span className="text-muted-foreground tabular-nums">
+                              {row.validated} of {row.total}, {pct(row.validated, row.total)}
+                            </span>
+                          </div>
+                          <div className="h-1.5 overflow-hidden rounded-full bg-muted">
+                            <div
+                              className="h-full rounded-full bg-primary"
+                              style={{ width: `${share}%` }}
+                            />
+                          </div>
+                        </li>
+                      )
+                    })}
+                  </ul>
+                )}
+              </CardContent>
+            </Card>
+          </SettingsSection>
+
+          <SettingsSection title="Recent activity" description="Latest across validation work.">
+            <Card className="py-0">
+              <CardContent className="p-0">
+                {activity.length === 0 ? (
+                  <EmptyState
+                    icon={ClipboardList}
+                    title="No validation activity yet"
+                    description="Pentest findings, simulation runs and control tests show up here."
+                  />
+                ) : (
+                  <ul className="divide-y">
+                    {activity.map((a) => (
+                      <li key={a.key}>
+                        <Link
+                          href={a.href}
+                          className="flex items-start justify-between gap-3 px-4 py-2.5 hover:bg-muted/50"
+                        >
+                          <span className="min-w-0">
+                            <span className="block truncate text-sm font-medium">{a.what}</span>
+                            <span className="block truncate text-xs text-muted-foreground">
+                              {a.where}
+                            </span>
                           </span>
-                        </div>
-                        <div className="h-1.5 overflow-hidden rounded-full bg-muted">
-                          <div
-                            className="h-full rounded-full bg-primary"
-                            style={{ width: `${share}%` }}
+                          <RelativeTime
+                            date={a.when}
+                            className="shrink-0 text-xs text-muted-foreground"
                           />
-                        </div>
+                        </Link>
                       </li>
-                    )
-                  })}
-                </ul>
-              )}
-            </CardContent>
-          </Card>
-        </SettingsSection>
+                    ))}
+                  </ul>
+                )}
+              </CardContent>
+            </Card>
+          </SettingsSection>
+        </div>
 
-        <SettingsSection title="Recent activity" description="Latest across validation work.">
-          <Card className="py-0">
-            <CardContent className="p-0">
-              {activity.length === 0 ? (
-                <EmptyState
-                  icon={ClipboardList}
-                  title="No validation activity yet"
-                  description="Pentest findings, simulation runs and control tests show up here."
-                />
-              ) : (
-                <ul className="divide-y">
-                  {activity.map((a) => (
-                    <li key={a.key}>
-                      <Link
-                        href={a.href}
-                        className="flex items-start justify-between gap-3 px-4 py-2.5 hover:bg-muted/50"
-                      >
-                        <span className="min-w-0">
-                          <span className="block truncate text-sm font-medium">{a.what}</span>
-                          <span className="block truncate text-xs text-muted-foreground">
-                            {a.where}
-                          </span>
-                        </span>
-                        <RelativeTime
-                          date={a.when}
-                          className="shrink-0 text-xs text-muted-foreground"
-                        />
-                      </Link>
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </CardContent>
-          </Card>
-        </SettingsSection>
-      </div>
-
-      {areas.length > 0 && (
-        <SettingsSection title="Validation areas" className="mt-5">
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
-            {areas.map((a) => (
-              <LinkCard key={a.href} {...a} />
-            ))}
-          </div>
-        </SettingsSection>
-      )}
+        {areas.length > 0 && (
+          <SettingsSection title="Validation areas">
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
+              {areas.map((a) => (
+                <LinkCard key={a.href} {...a} />
+              ))}
+            </div>
+          </SettingsSection>
+        )}
+      </PageStack>
     </Main>
   )
 }

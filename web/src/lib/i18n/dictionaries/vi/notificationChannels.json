@@ -48,6 +48,7 @@
   "notificationChannels.outbox.count.failed": "{count} thất bại",
   "notificationChannels.outbox.count.pending": "{count} đang chờ",
   "notificationChannels.outbox.count.processing": "{count} đang xử lý",
+  "notificationChannels.outbox.deadLetter": "thư chết",
   "notificationChannels.outbox.delete": "Xóa",
   "notificationChannels.outbox.description": "Thông báo đang chờ được gửi, thử lại hoặc bị bỏ.",
   "notificationChannels.outbox.emptyFiltered": "Không có mục {status} nào trong hàng đợi",
