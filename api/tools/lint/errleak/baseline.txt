@@ -204,9 +204,6 @@ raw-json internal/infra/http/handler/tenant_handler.go:writeToggleErrorJSON 1
 status internal/app/automation/executor.go:WorkflowExecutor.executeNode 1
 status internal/app/automation/executor.go:WorkflowExecutor.finalizeRun 1
 status internal/app/compliance/pentest.go:PentestService.CreateReport 1
-status internal/app/integration/service.go:IntegrationService.TestIntegration 3
-status internal/app/integration/service.go:IntegrationService.TestNotificationIntegration 3
-status internal/app/integration/service.go:IntegrationService.testTicketingIntegration 1
 status internal/app/outbox/service.go:Service.processOutboxEntry 2
 status internal/app/scan/connector.go:Service.triggerConnectorScan 1
 status internal/app/scan/trigger.go:Service.triggerSingleScan 1

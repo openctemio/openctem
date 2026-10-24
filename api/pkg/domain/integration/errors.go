@@ -30,6 +30,11 @@ var (
 	ErrProviderNotSupported = fmt.Errorf("%w: provider is not supported yet", shared.ErrValidation)
 
 	// Connection errors
-	ErrConnectionFailed   = fmt.Errorf("%w: connection test failed", shared.ErrValidation)
-	ErrCredentialsInvalid = fmt.Errorf("%w: credentials are invalid", shared.ErrValidation)
+	ErrConnectionFailed = fmt.Errorf("%w: connection test failed", shared.ErrValidation)
+	// ErrNoCredentials: the integration has no stored credentials.
+	ErrNoCredentials = fmt.Errorf("%w: the connection has no credentials", shared.ErrValidation)
+	// ErrCredentialsUnreadable: the stored credentials do not decrypt with
+	// the configured key (fail closed: never sent upstream).
+	ErrCredentialsUnreadable = fmt.Errorf("%w: the saved credentials cannot be read", shared.ErrValidation)
+	ErrCredentialsInvalid    = fmt.Errorf("%w: credentials are invalid", shared.ErrValidation)
 )
