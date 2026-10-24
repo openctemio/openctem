@@ -1,6 +1,6 @@
 'use client'
 
-import { useId, useState } from 'react'
+import { useId, useRef, useState } from 'react'
 import { cn } from '@/lib/utils'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -114,6 +114,7 @@ export function ConfirmDialog(props: ConfirmDialogProps) {
   const { t } = useTranslation()
   const inputId = useId()
   const [typed, setTyped] = useState('')
+  const inputRef = useRef<HTMLInputElement>(null)
   const [running, setRunning] = useState(false)
   const typedOk = !typeToConfirm || typedTextMatches(typed, typeToConfirm)
   const busy = !!isLoading || running
@@ -139,7 +140,17 @@ export function ConfirmDialog(props: ConfirmDialogProps) {
         actions.onOpenChange(open)
       }}
     >
-      <AlertDialogContent className={cn(className)}>
+      <AlertDialogContent
+        className={cn(className)}
+        onOpenAutoFocus={(e) => {
+          // With typed confirmation the field gets focus (Enter in it does
+          // nothing); otherwise Cancel keeps it, so Enter on open cancels.
+          if (typeToConfirm && inputRef.current) {
+            e.preventDefault()
+            inputRef.current.focus()
+          }
+        }}
+      >
         <AlertDialogHeader className="text-start">
           <AlertDialogTitle>{title}</AlertDialogTitle>
           <AlertDialogDescription asChild>
@@ -157,6 +168,7 @@ export function ConfirmDialog(props: ConfirmDialogProps) {
                   {typeAfter}
                 </Label>
                 <Input
+                  ref={inputRef}
                   id={inputId}
                   value={typed}
                   onChange={(e) => setTyped(e.target.value)}
