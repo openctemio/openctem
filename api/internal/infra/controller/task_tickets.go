@@ -48,6 +48,9 @@ func NewTaskTicketController(links taskLinksBehind, syncer taskIssueSyncer, inte
 // Name returns the controller name.
 func (c *TaskTicketController) Name() string { return "task-tickets" }
 
+// Exclusive: one API replica at a time (controller lease). It pushes to the tracker, then records the link: two replicas would open duplicate issues.
+func (c *TaskTicketController) Exclusive() bool { return true }
+
 // Interval returns how often the pass runs.
 func (c *TaskTicketController) Interval() time.Duration { return c.interval }
 

@@ -17,6 +17,7 @@ import (
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/domain/tool"
 	"github.com/openctemio/openctem/api/pkg/logger"
+	"github.com/openctemio/openctem/api/pkg/pagination"
 )
 
 // stubTools answers GetByName from a fixed set; every other method panics.
@@ -24,6 +25,11 @@ type stubTools struct {
 	tool.Repository
 	tools map[string]*tool.Tool
 	err   error
+}
+
+// ListTenantCustomTools: the stub organization declares no tools.
+func (s *stubTools) ListTenantCustomTools(context.Context, shared.ID, tool.ToolFilter, pagination.Pagination) (pagination.Result[*tool.Tool], error) {
+	return pagination.Result[*tool.Tool]{}, s.err
 }
 
 func (s *stubTools) GetByName(_ context.Context, _ shared.ID, name string) (*tool.Tool, error) {

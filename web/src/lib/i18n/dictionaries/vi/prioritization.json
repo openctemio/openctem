@@ -187,5 +187,6 @@
   "prioritization.businessImpact.col.assets": "Tài sản",
   "prioritization.businessImpact.col.critical": "Phát hiện nghiêm trọng",
   "prioritization.businessImpact.col.findings": "Phát hiện",
-  "prioritization.businessImpact.col.risk": "Rủi ro trung bình"
+  "prioritization.businessImpact.col.risk": "Rủi ro trung bình",
+  "prioritization.businessImpact.crown.findings": "{count} phát hiện"
 }

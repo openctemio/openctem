@@ -93,6 +93,7 @@ export function LeaveOrganization() {
         desc={t('org.leave.confirmDesc')}
         confirmText={t('org.leave.button')}
         isLoading={busy}
+        typeToConfirm={name ? name : undefined}
         handleConfirm={handleLeave}
       />
     </>

@@ -75,6 +75,7 @@ import {
 } from '@/lib/api/scanner-template-types'
 import { getErrorMessage } from '@/lib/api/error-handler'
 import { useTranslation } from '@/context/i18n-provider'
+import { useSearchQuery } from '@/hooks/use-search-query'
 
 function TemplateStatusBadge({ status }: { status: TemplateStatus }) {
   const IconMap: Record<TemplateStatus, React.ElementType> = {
@@ -160,6 +161,7 @@ export function ScannerTemplatesSection() {
 
   // Filter states
   const [searchQuery, setSearchQuery] = useUrlFilter('q', '')
+  const searchTerm = useSearchQuery(searchQuery).term
   const [typeParam, setTypeFilter] = useUrlFilter('type', 'all')
   const [statusParam, setStatusFilter] = useUrlFilter('status', 'all')
   const typeFilter = typeParam as TemplateType | 'all'
@@ -171,10 +173,10 @@ export function ScannerTemplatesSection() {
     () => ({
       template_type: typeFilter !== 'all' ? typeFilter : undefined,
       status: statusFilter !== 'all' ? statusFilter : undefined,
-      search: searchQuery || undefined,
+      search: searchTerm || undefined,
       per_page: 100,
     }),
-    [typeFilter, statusFilter, searchQuery]
+    [typeFilter, statusFilter, searchTerm]
   )
 
   const { data: templatesData, error, isLoading, mutate } = useScannerTemplates(filters)

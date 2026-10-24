@@ -7,8 +7,10 @@
  * audit log; owners are emailed on each grant, revoke, session start and end.
  */
 
+import { StatusLozenge } from '@/components/ui/status-lozenge'
+import { DashedCircleGlyph, SlashedCircleGlyph } from '@/components/ui/status-glyphs'
 import { useState } from 'react'
-import { AlertCircle, Eye, LifeBuoy, Plus, ShieldCheck } from 'lucide-react'
+import { AlertCircle, Clock, Eye, LifeBuoy, Plus, ShieldCheck } from 'lucide-react'
 import { toast } from 'sonner'
 
 import Link from '@/components/link'
@@ -51,19 +53,38 @@ function StatusBadge({ grant }: { grant: SupportGrant }) {
   const { t } = useTranslation()
   const s = statusOf(grant)
   if (s === 'active') {
+    // Amber: someone outside the organization currently has access.
     return (
-      <Badge variant="outline" className="border-warning/50 text-warning">
-        {t('supportAccess.status.active', 'Active')}
-      </Badge>
+      <StatusLozenge
+        tone="waiting"
+        icon={Clock}
+        value={s}
+        label={t('supportAccess.status.active', 'Active')}
+      />
     )
   }
-  if (s === 'revoked') {
-    return <Badge variant="secondary">{t('supportAccess.status.revoked', 'Revoked')}</Badge>
-  }
   if (s === 'scheduled') {
-    return <Badge variant="outline">{t('supportAccess.status.scheduled', 'Not started')}</Badge>
+    return (
+      <StatusLozenge
+        tone="triage"
+        icon={DashedCircleGlyph}
+        value={s}
+        label={t('supportAccess.status.scheduled', 'Not started')}
+      />
+    )
   }
-  return <Badge variant="secondary">{t('supportAccess.status.expired', 'Expired')}</Badge>
+  return (
+    <StatusLozenge
+      tone="closed"
+      icon={SlashedCircleGlyph}
+      value={s}
+      label={
+        s === 'revoked'
+          ? t('supportAccess.status.revoked', 'Revoked')
+          : t('supportAccess.status.expired', 'Expired')
+      }
+    />
+  )
 }
 
 export function SupportAccessSettings({

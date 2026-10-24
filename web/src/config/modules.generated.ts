@@ -28,7 +28,7 @@ export const MODULE_REGISTRY: readonly ModuleDefinition[] = [
   { id: 'scanner_templates', name: 'Scanner Templates', core: false, release: 'released', userFacing: true, permission: 'scans:templates:read' },
   { id: 'business_units', name: 'Business Units', core: false, release: 'released', userFacing: true, permission: 'assets:read' },
   { id: 'components', name: 'Components', core: false, release: 'released', userFacing: true, permission: 'assets:components:read' },
-  { id: 'template_sources', name: 'Template Sources', core: false, release: 'released', userFacing: true, permission: 'scans:templates:read' },
+  { id: 'template_sources', name: 'Rule Sources', core: false, release: 'released', userFacing: true, permission: 'scans:sources:read' },
   { id: 'branches', name: 'Branches', core: false, release: 'released', userFacing: false, permission: 'assets:read' },
   { id: 'crown_jewels', name: 'Crown Jewels', core: false, release: 'released', userFacing: true, permission: 'assets:read' },
   { id: 'scan_workflows', name: 'Scan Workflows', core: false, release: 'released', userFacing: true, permission: 'scans:workflows:read' },
