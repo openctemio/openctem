@@ -26,6 +26,7 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
@@ -519,6 +520,7 @@ function RelatedRow({
                 {t('assets.related.edit', 'Edit relationship')}
               </DropdownMenuItem>
             )}
+            {onRemove && onEdit && <DropdownMenuSeparator />}
             {onRemove && (
               <DropdownMenuItem className="text-destructive" onClick={() => onRemove(item)}>
                 {t('assets.related.remove', 'Remove relationship')}
