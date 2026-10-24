@@ -73,7 +73,7 @@ describe('ExecutiveSummaryPage', () => {
     expect(screen.getByText('Last 90 days')).toBeInTheDocument()
   })
 
-  it('does not repeat Critical MTTR in the by-severity card and sorts priorities P0 to P3', () => {
+  it('lists every severity in the by-severity card and sorts priorities P0 to P3', () => {
     mttr = {
       ...idle,
       data: {
@@ -88,7 +88,7 @@ describe('ExecutiveSummaryPage', () => {
       .getByText('MTTR by severity')
       .closest('[data-slot="card"], div.rounded-xl, div')!
     const sev = card.parentElement!.parentElement!
-    expect(sev.textContent).not.toMatch(/critical/i)
+    expect(sev.textContent).toMatch(/critical/i)
     const prio = screen.getByText('MTTR by priority class').closest('div')!.parentElement!
       .parentElement!
     const order = within(prio)
