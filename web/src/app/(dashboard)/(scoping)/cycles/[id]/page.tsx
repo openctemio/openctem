@@ -9,7 +9,13 @@
 import { Suspense, useState } from 'react'
 import { useParams } from 'next/navigation'
 import { Main, useBreadcrumbTitle } from '@/components/layout'
-import { ErrorState, MetricStrip, PageHeader, type MetricStripItem } from '@/features/shared'
+import {
+  ErrorState,
+  MetricStrip,
+  PageHeader,
+  PageStack,
+  type MetricStripItem,
+} from '@/features/shared'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Tabs, TabsContent, TabsCount, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { useUrlFilter } from '@/hooks/use-url-param'
@@ -47,23 +53,25 @@ function CycleDetail() {
   if (error) {
     return (
       <Main>
-        <PageHeader title={t('scoping.cycleDetail.title', 'Cycle')} />
-        <div className="mt-5">
+        <PageStack>
+          <PageHeader title={t('scoping.cycleDetail.title', 'Cycle')} />
           <ErrorState
             title={t('scoping.cycleDetail.loadError', 'this cycle')}
             error={error}
             onRetry={() => mutate()}
           />
-        </div>
+        </PageStack>
       </Main>
     )
   }
   if (isLoading || !cycle) {
     return (
       <Main>
-        <Skeleton className="h-9 w-64" />
-        <Skeleton className="mt-5 h-[68px] w-full rounded-xl" />
-        <Skeleton className="mt-5 h-64 w-full" />
+        <PageStack>
+          <Skeleton className="h-9 w-64" />
+          <Skeleton className="h-[68px] w-full rounded-xl" />
+          <Skeleton className="h-64 w-full" />
+        </PageStack>
       </Main>
     )
   }
@@ -121,56 +129,58 @@ function CycleDetail() {
   return (
     <>
       <Main>
-        <PageHeader
-          title={cycle.name}
-          description={
-            cycle.description ||
-            t('scoping.cycleDetail.description', 'A CTEM cycle: its charter, scope and outcome.')
-          }
-        >
-          <CycleStatusBadge status={cycle.status} />
-          <CycleLifecycleAction
-            cycle={cycle}
-            onDone={(updated, action) => {
-              void mutate(updated, { revalidate: true })
-              if (action === 'close') setTab('outcome')
-              if (action === 'activate') setTab('scope')
-            }}
-          />
-        </PageHeader>
+        <PageStack>
+          <PageHeader
+            title={cycle.name}
+            description={
+              cycle.description ||
+              t('scoping.cycleDetail.description', 'A CTEM cycle: its charter, scope and outcome.')
+            }
+          >
+            <CycleStatusBadge status={cycle.status} />
+            <CycleLifecycleAction
+              cycle={cycle}
+              onDone={(updated, action) => {
+                void mutate(updated, { revalidate: true })
+                if (action === 'close') setTab('outcome')
+                if (action === 'activate') setTab('scope')
+              }}
+            />
+          </PageHeader>
 
-        <MetricStrip className="mt-5" items={metrics} />
+          <MetricStrip items={metrics} />
 
-        <Tabs value={tab} onValueChange={setTab} className="mt-5">
-          <TabsList>
-            <TabsTrigger value="charter">
-              {t('scoping.cycleDetail.tab.charter', 'Charter')}
-            </TabsTrigger>
-            <TabsTrigger value="scope">
-              {t('scoping.cycleDetail.tab.scope', 'Scope')}{' '}
-              {frozen && <TabsCount value={scope?.length} />}
-            </TabsTrigger>
-            <TabsTrigger value="profiles">
-              {t('scoping.cycleDetail.tab.profiles', 'Attacker profiles')}{' '}
-              <TabsCount value={profileCount} />
-            </TabsTrigger>
-            <TabsTrigger value="outcome">
-              {t('scoping.cycleDetail.tab.outcome', 'Outcome')}
-            </TabsTrigger>
-          </TabsList>
-          <TabsContent value="charter" className="mt-5">
-            <CycleCharterTab cycle={cycle} onEdit={() => setCharterOpen(true)} />
-          </TabsContent>
-          <TabsContent value="scope" className="mt-5">
-            <CycleScopeTab cycle={cycle} />
-          </TabsContent>
-          <TabsContent value="profiles" className="mt-5">
-            <CycleProfilesTab cycle={cycle} />
-          </TabsContent>
-          <TabsContent value="outcome" className="mt-5">
-            <CycleOutcomeTab cycle={cycle} onSaved={() => void mutate()} />
-          </TabsContent>
-        </Tabs>
+          <Tabs value={tab} onValueChange={setTab}>
+            <TabsList>
+              <TabsTrigger value="charter">
+                {t('scoping.cycleDetail.tab.charter', 'Charter')}
+              </TabsTrigger>
+              <TabsTrigger value="scope">
+                {t('scoping.cycleDetail.tab.scope', 'Scope')}{' '}
+                {frozen && <TabsCount value={scope?.length} />}
+              </TabsTrigger>
+              <TabsTrigger value="profiles">
+                {t('scoping.cycleDetail.tab.profiles', 'Attacker profiles')}{' '}
+                <TabsCount value={profileCount} />
+              </TabsTrigger>
+              <TabsTrigger value="outcome">
+                {t('scoping.cycleDetail.tab.outcome', 'Outcome')}
+              </TabsTrigger>
+            </TabsList>
+            <TabsContent value="charter">
+              <CycleCharterTab cycle={cycle} onEdit={() => setCharterOpen(true)} />
+            </TabsContent>
+            <TabsContent value="scope">
+              <CycleScopeTab cycle={cycle} />
+            </TabsContent>
+            <TabsContent value="profiles">
+              <CycleProfilesTab cycle={cycle} />
+            </TabsContent>
+            <TabsContent value="outcome">
+              <CycleOutcomeTab cycle={cycle} onSaved={() => void mutate()} />
+            </TabsContent>
+          </Tabs>
+        </PageStack>
       </Main>
 
       <CharterEditorSheet

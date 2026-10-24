@@ -1,5 +1,6 @@
 'use client'
 
+import { HealthStatus } from '@/components/ui/health-status'
 import { useCallback, useMemo, useState } from 'react'
 import type { ColumnDef } from '@tanstack/react-table'
 import { Main } from '@/components/layout'
@@ -50,24 +51,12 @@ function isActive(k: APIKey): boolean {
 function StatusBadge({ k }: { k: APIKey }) {
   const { t } = useTranslation()
   if (k.status === 'revoked' || k.revoked_at) {
-    return (
-      <Badge className="border-0 bg-destructive/10 text-destructive">
-        {t('settings.keys.status.revoked', 'Revoked')}
-      </Badge>
-    )
+    return <HealthStatus state="off" label={t('settings.keys.status.revoked', 'Revoked')} />
   }
   if (isExpired(k)) {
-    return (
-      <Badge className="border-0 bg-orange-500/10 text-orange-600 dark:text-orange-400">
-        {t('settings.keys.status.expired', 'Expired')}
-      </Badge>
-    )
+    return <HealthStatus state="down" label={t('settings.keys.status.expired', 'Expired')} />
   }
-  return (
-    <Badge className="border-0 bg-success/10 text-success">
-      {t('settings.keys.status.active', 'Active')}
-    </Badge>
-  )
+  return <HealthStatus state="ok" label={t('settings.keys.status.active', 'Active')} />
 }
 
 // ─────────────────────────────────────────────────────────

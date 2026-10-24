@@ -1,8 +1,7 @@
 'use client'
 
-import { cn } from '@/lib/utils'
-import { Badge } from '@/components/ui/badge'
-import { Clock, Loader2, CheckCircle, XCircle } from 'lucide-react'
+import { HealthStatus } from '@/components/ui/health-status'
+import { useTranslation } from '@/context/i18n-provider'
 import type { TriageStatus } from '../types'
 import { TRIAGE_STATUS_CONFIG } from '../types'
 
@@ -11,27 +10,19 @@ interface TriageStatusBadgeProps {
   className?: string
 }
 
-const iconMap = {
-  clock: Clock,
-  loader: Loader2,
-  'check-circle': CheckCircle,
-  'x-circle': XCircle,
-} as const
-
+/** An AI triage job's status: the shared machine-state indicator. */
 export function TriageStatusBadge({ status, className }: TriageStatusBadgeProps) {
-  const config = TRIAGE_STATUS_CONFIG[status]
-  const Icon = iconMap[config.icon as keyof typeof iconMap]
-
+  const { t } = useTranslation()
+  const config = TRIAGE_STATUS_CONFIG[status] ?? {
+    label: String(status),
+    health: 'unknown' as const,
+  }
   return (
-    <Badge
-      variant="outline"
-      className={cn(config.bgColor, config.color, 'border-none gap-1.5', className)}
-    >
-      <Icon
-        className={cn('h-3.5 w-3.5', status === 'processing' && 'animate-spin')}
-        aria-hidden="true"
-      />
-      {config.label}
-    </Badge>
+    <HealthStatus
+      state={config.health}
+      label={t(`findings.aiTriage.status.${status}`, config.label)}
+      value={status}
+      className={className}
+    />
   )
 }

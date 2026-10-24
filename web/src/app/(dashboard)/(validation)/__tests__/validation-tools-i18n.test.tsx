@@ -121,12 +121,11 @@ describe('validation tools in Vietnamese', () => {
     expect(screen.queryByText('Never')).toBeNull()
   })
 
-  it('translates control testing and shows a dash when nothing is tested', () => {
+  it('translates control testing and filters its list by status', () => {
     inVi(<ControlTestingPage />)
     expect(screen.getByText('Kiểm thử biện pháp')).toBeTruthy()
     expect(screen.getByText('Biện pháp an ninh')).toBeTruthy()
-    expect(screen.getByText('Độ phủ')).toBeTruthy()
-    expect(screen.getAllByText('—').length).toBeGreaterThan(0)
+    expect(screen.getAllByText('Chưa kiểm thử').length).toBeGreaterThan(0)
     expect(screen.queryByText('Security controls')).toBeNull()
     expect(screen.queryByText('0%')).toBeNull()
   })
@@ -134,7 +133,7 @@ describe('validation tools in Vietnamese', () => {
   it('translates attack simulation', () => {
     inVi(<AttackSimulationPage />)
     expect(screen.getByText('Mô phỏng tấn công')).toBeTruthy()
-    expect(screen.getByText('Tỷ lệ phát hiện trung bình')).toBeTruthy()
+    expect(screen.getAllByText('Đang hoạt động').length).toBeGreaterThan(0)
     expect(screen.getAllByText('Vượt qua được').length).toBeGreaterThan(0)
     expect(screen.queryByText('Attack simulation')).toBeNull()
     expect(screen.queryByText('Never')).toBeNull()
