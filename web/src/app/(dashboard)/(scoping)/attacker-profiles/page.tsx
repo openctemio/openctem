@@ -10,6 +10,7 @@ import {
   EmptyState,
   GatedSectionTabs,
   PageHeader,
+  PageStack,
   ErrorState,
   CappedNotice,
 } from '@/features/shared'
@@ -294,57 +295,58 @@ export default function AttackerProfilesPage() {
   return (
     <>
       <Main>
-        <PageHeader
-          title={t('attackerProfiles.title', 'Attacker profiles')}
-          description={t(
-            'attackerProfiles.description',
-            'Threat actor profiles that exposure assessment and threat models reason about.'
-          )}
-        >
-          <Can permission={Permission.AttackerProfilesWrite}>
-            <Button size="sm" onClick={() => setIsCreateOpen(true)}>
-              <Plus className="me-2 h-4 w-4" />
-              {t('attackerProfiles.new', 'New profile')}
-            </Button>
-          </Can>
-        </PageHeader>
-        <GatedSectionTabs
-          tabs={THREAT_MODEL_SECTION_TABS}
-          label={t('threatModel.sections', 'Threat model sections')}
-          className="mt-4 mb-0"
-        />
+        <PageStack>
+          <PageHeader
+            title={t('attackerProfiles.title', 'Attacker profiles')}
+            description={t(
+              'attackerProfiles.description',
+              'Threat actor profiles that exposure assessment and threat models reason about.'
+            )}
+          >
+            <Can permission={Permission.AttackerProfilesWrite}>
+              <Button size="sm" onClick={() => setIsCreateOpen(true)}>
+                <Plus className="me-2 h-4 w-4" />
+                {t('attackerProfiles.new', 'New profile')}
+              </Button>
+            </Can>
+          </PageHeader>
+          <GatedSectionTabs
+            tabs={THREAT_MODEL_SECTION_TABS}
+            label={t('threatModel.sections', 'Threat model sections')}
+          />
 
-        <div className="mt-5">
-          {isLoading ? (
-            <div className="space-y-2 rounded-xl border p-3">
-              {[1, 2, 3].map((i) => (
-                <Skeleton key={i} className="h-10 w-full" />
-              ))}
-            </div>
-          ) : loadError ? (
-            <ErrorState
-              title={t('attackerProfiles.loadError', 'attacker profiles')}
-              error={loadError}
-              onRetry={() => mutate()}
-            />
-          ) : profiles.length === 0 ? (
-            <EmptyState
-              icon={Target}
-              title={t('attackerProfiles.emptyTitle', 'No attacker profiles yet')}
-              description={t(
-                'attackerProfiles.emptyDescription',
-                'Create a profile to get started.'
-              )}
-            />
-          ) : (
-            <DataTable
-              columns={columns}
-              data={profiles}
-              searchPlaceholder={t('attackerProfiles.search', 'Search profiles…')}
-            />
-          )}
-        </div>
-        <CappedNotice loaded={profiles.length} total={response?.total ?? 0} />
+          <div>
+            {isLoading ? (
+              <div className="space-y-2 rounded-xl border p-3">
+                {[1, 2, 3].map((i) => (
+                  <Skeleton key={i} className="h-10 w-full" />
+                ))}
+              </div>
+            ) : loadError ? (
+              <ErrorState
+                title={t('attackerProfiles.loadError', 'attacker profiles')}
+                error={loadError}
+                onRetry={() => mutate()}
+              />
+            ) : profiles.length === 0 ? (
+              <EmptyState
+                icon={Target}
+                title={t('attackerProfiles.emptyTitle', 'No attacker profiles yet')}
+                description={t(
+                  'attackerProfiles.emptyDescription',
+                  'Create a profile to get started.'
+                )}
+              />
+            ) : (
+              <DataTable
+                columns={columns}
+                data={profiles}
+                searchPlaceholder={t('attackerProfiles.search', 'Search profiles…')}
+              />
+            )}
+          </div>
+          <CappedNotice loaded={profiles.length} total={response?.total ?? 0} />
+        </PageStack>
       </Main>
 
       <Dialog open={isCreateOpen} onOpenChange={setIsCreateOpen}>

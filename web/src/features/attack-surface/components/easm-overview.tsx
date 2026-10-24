@@ -87,7 +87,7 @@ export function EASMOverview() {
 
   if (error) {
     return (
-      <div className="mt-5">
+      <div>
         <ErrorState
           title={t('easmReview.overview.errorTitle', 'the external attack surface')}
           error={error}
@@ -103,7 +103,7 @@ export function EASMOverview() {
   const risks = summary?.top_risks ?? []
 
   return (
-    <div className="mt-5 grid gap-5 lg:grid-cols-3">
+    <div className="grid gap-5 lg:grid-cols-3">
       <Card>
         <CardHeader>
           <CardTitle className="text-base">

@@ -3,6 +3,7 @@
 import { cn } from '@/lib/utils'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
+import { Tag } from '@/components/ui/tag'
 import { Progress } from '@/components/ui/progress'
 import { Separator } from '@/components/ui/separator'
 import { AlertTriangle, Shield, Target, FileWarning, Clock, Bot, XCircle } from 'lucide-react'
@@ -72,10 +73,10 @@ export function TriageResultCard({ result, className }: TriageResultCardProps) {
 
   if (result.status === 'failed') {
     return (
-      <Card className={cn('border-red-200', className)}>
+      <Card className={cn('border-destructive/40', className)}>
         <CardContent className="pt-6">
           <div className="flex flex-col items-center justify-center py-8 text-center">
-            <XCircle className="h-12 w-12 text-red-500 mb-4" />
+            <XCircle className="h-12 w-12 text-destructive mb-4" />
             <h3 className="text-lg font-medium mb-2">Triage Failed</h3>
             <p className="text-sm text-muted-foreground mb-4">
               {triageFailureMessage(t, result.errorCode)}
@@ -154,14 +155,15 @@ export function TriageResultCard({ result, className }: TriageResultCardProps) {
               Exploitability
             </div>
             {result.exploitability && (
-              <span
-                className={cn(
-                  'text-sm font-medium capitalize',
-                  EXPLOITABILITY_CONFIG[result.exploitability as Exploitability]?.color
+              <Tag
+                variant="plain"
+                level={EXPLOITABILITY_CONFIG[result.exploitability as Exploitability]?.level}
+                label={t(
+                  `findings.aiTriage.exploitability.${result.exploitability}`,
+                  EXPLOITABILITY_CONFIG[result.exploitability as Exploitability]?.label ??
+                    result.exploitability
                 )}
-              >
-                {result.exploitability}
-              </span>
+              />
             )}
           </div>
 
@@ -222,9 +224,13 @@ export function TriageResultCard({ result, className }: TriageResultCardProps) {
                   </div>
                   <div className="flex-1 space-y-1">
                     <p>{step.description}</p>
-                    <Badge variant="outline" className={EFFORT_CONFIG[step.effort]?.color}>
-                      {EFFORT_CONFIG[step.effort]?.label || step.effort}
-                    </Badge>
+                    <Tag
+                      level={EFFORT_CONFIG[step.effort]?.level}
+                      label={t(
+                        `findings.aiTriage.effort.${step.effort}`,
+                        EFFORT_CONFIG[step.effort]?.label || step.effort
+                      )}
+                    />
                   </div>
                 </div>
               ))}

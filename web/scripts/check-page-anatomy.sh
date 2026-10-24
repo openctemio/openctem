@@ -17,6 +17,12 @@
 #      smaller. Responsive variants (sm:text-base) are fine.
 #   5. A margin on a route tab strip (<SectionTabs className="mt-4 mb-0">):
 #      PageStack owns the gap above and below the tabs.
+#   6. A new SegmentedLens: the state of a list's rows is a filter token
+#      (FilterSelect, or the Add-filter chips); a view mode is ViewSwitcher.
+#   7. A tab icon with its own classes (<TabsTrigger> then <Icon className=..>):
+#      tab icons are drawn by the strip, 16px in the tab's text colour; route
+#      tabs take them from SectionTab.icon.
+#   8. A second tab row: a file that renders route tabs and adds a TabsList.
 #
 # Escape hatch for a real exception: `anatomy-ok: <reason>` on the line.
 set -euo pipefail
@@ -49,7 +55,6 @@ added="$(git diff -U0 "$merge_base"...HEAD -- 'src/*.tsx' \
 
 if [[ -z "$added" ]]; then
   echo "check-page-anatomy: no added component lines."
-  exit 0
 fi
 
 fail=0
@@ -84,6 +89,30 @@ done || true)"
 hits="$(printf '%s\n' "$added" | grep -E '<(Gated)?SectionTabs\b.*className="[^"]*\bm[tyb]-' || true)"
 [[ -n "$hits" ]] && report "Margin on a route tab strip:" "$hits" \
   "Put the page's blocks in a PageStack (features/shared); it owns the 16px under the header and the 20px under the tabs."
+
+hits="$(printf '%s\n' "$added" | grep -E '<SegmentedLens\b' || true)"
+[[ -n "$hits" ]] && report "New SegmentedLens:" "$hits" \
+  "A list's state (status, kind) is a filter token: FilterSelect (features/shared) at the start of the toolbar, value in the URL, counts in its menu. A view mode of the same rows is ViewSwitcher at the toolbar end."
+
+# Rule 7 needs the line after a <TabsTrigger> opening, within one file.
+hits="$(git diff -U0 "$merge_base"...HEAD -- 'src/*.tsx' | awk '
+  /^\+\+\+ b\//{f=substr($0,7); prev=""; next}
+  /^\+/{ line=substr($0,2)
+    if (line ~ /anatomy-ok:/) { prev=""; next }
+    if (line ~ /<TabsTrigger[^>]*>[[:space:]]*<[A-Z][A-Za-z0-9]*[^>]*className=/) print f ":" line
+    else if (prev ~ /<TabsTrigger/ && prev !~ /\/>/ && line ~ /^[[:space:]]*<[A-Z][A-Za-z0-9]*[[:space:]][^>]*className=/) print f ":" line
+    prev=line; next }
+  { prev="" }' | grep -v '/__tests__/' || true)"
+[[ -n "$hits" ]] && report "A tab icon with its own classes:" "$hits" \
+  "Tab icons are optional, all or none in a strip, 16px in the tab's text colour, never coloured. Give the icon no className; on route tabs set SectionTab.icon."
+
+hits="$(printf '%s\n' "$added" | grep -E '<TabsList\b' | while IFS= read -r line; do
+  f="${line%%:*}"
+  f="${f#web/}"
+  [[ -f "$f" ]] && grep -qE '<(Gated)?SectionTabs\b|SectionTabs\b' "$f" && printf '%s\n' "$line"
+done || true)"
+[[ -n "$hits" ]] && report "A second tab row under route tabs:" "$hits" \
+  "One tab row per page (research/249 R21). A filter or state of the rows is a FilterSelect in the toolbar; another view is ViewSwitcher; a sub-page is a route tab."
 
 if [[ "$fail" = 0 ]]; then
   echo "check-page-anatomy: no new anatomy or type-scale drift."

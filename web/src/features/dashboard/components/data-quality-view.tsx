@@ -17,7 +17,7 @@
 
 import { useMemo } from 'react'
 import { Main } from '@/components/layout'
-import { PageHeader, EmptyState, MetricStrip } from '@/features/shared'
+import { PageHeader, PageStack, EmptyState, MetricStrip } from '@/features/shared'
 import { useTenant } from '@/context/tenant-provider'
 import { usePermissions, Permission } from '@/lib/permissions'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
@@ -250,19 +250,20 @@ export function DataQualityView() {
   if (!canRead) {
     return (
       <Main>
-        <PageHeader title={t('insights.dataQuality.title', 'Data quality')} />
-        <EmptyState
-          className="mt-5"
-          icon={Lock}
-          title={t(
-            'insights.dataQuality.noAccessTitle',
-            'You don’t have access to data-quality metrics.'
-          )}
-          description={t(
-            'insights.dataQuality.noAccessDescription',
-            'Dashboard read permission is required to view the data-quality scorecard.'
-          )}
-        />
+        <PageStack>
+          <PageHeader title={t('insights.dataQuality.title', 'Data quality')} />
+          <EmptyState
+            icon={Lock}
+            title={t(
+              'insights.dataQuality.noAccessTitle',
+              'You don’t have access to data-quality metrics.'
+            )}
+            description={t(
+              'insights.dataQuality.noAccessDescription',
+              'Dashboard read permission is required to view the data-quality scorecard.'
+            )}
+          />
+        </PageStack>
       </Main>
     )
   }
@@ -272,15 +273,15 @@ export function DataQualityView() {
 
   return (
     <Main>
-      <PageHeader
-        title={t('insights.dataQuality.title', 'Data quality')}
-        description={t(
-          'insights.dataQuality.description',
-          'Whether the inventory is owned, evidenced and fresh enough to prioritise on.'
-        )}
-      />
+      <PageStack>
+        <PageHeader
+          title={t('insights.dataQuality.title', 'Data quality')}
+          description={t(
+            'insights.dataQuality.description',
+            'Whether the inventory is owned, evidenced and fresh enough to prioritise on.'
+          )}
+        />
 
-      <div className="mt-5">
         {isLoading ? (
           <ScorecardSkeleton />
         ) : !hasData && error ? (
@@ -302,8 +303,8 @@ export function DataQualityView() {
               ))}
             </section>
 
-            {/* Context counts — the denominators behind the rates above. */}
-            <section className="mt-5 space-y-3">
+            {/* Context counts: the denominators behind the rates above. */}
+            <section className="space-y-3">
               <div>
                 <h2 className="text-base font-semibold">
                   {t('insights.dataQuality.contextTitle', 'Inventory context')}
@@ -321,36 +322,41 @@ export function DataQualityView() {
                     key: 'assets',
                     label: t('insights.dataQuality.totalAssets', 'Total assets'),
                     value: q?.total_assets ?? 0,
+                    href: '/assets',
                   },
                   {
                     key: 'findings',
                     label: t('insights.dataQuality.totalFindings', 'Total findings'),
                     value: q?.total_findings ?? 0,
-                  },
-                  {
-                    key: 'dedup',
-                    label: t('insights.dataQuality.dedup', 'Dedup merges (of inventory)'),
-                    value: dedupPct ?? '—',
-                  },
-                  {
-                    key: 'last-seen',
-                    label: t(
-                      'insights.dataQuality.lastSeenExposed',
-                      'Median last-seen (internet-exposed)'
-                    ),
-                    value:
-                      q?.median_last_seen_days != null
-                        ? t('insights.programHealth.days', '{value}d', {
-                            value: formatCount(Number(q.median_last_seen_days.toFixed(1)), locale),
-                          })
-                        : '—',
+                    href: '/findings',
                   },
                 ]}
               />
+              <dl className="flex flex-wrap gap-x-6 gap-y-1 text-sm text-muted-foreground">
+                <div className="flex gap-1.5">
+                  <dt>{t('insights.dataQuality.dedup', 'Dedup merges (of inventory)')}</dt>
+                  <dd className="font-medium text-foreground tabular-nums">{dedupPct ?? '—'}</dd>
+                </div>
+                <div className="flex gap-1.5">
+                  <dt>
+                    {t(
+                      'insights.dataQuality.lastSeenExposed',
+                      'Median last-seen (internet-exposed)'
+                    )}
+                  </dt>
+                  <dd className="font-medium text-foreground tabular-nums">
+                    {q?.median_last_seen_days != null
+                      ? t('insights.programHealth.days', '{value}d', {
+                          value: formatCount(Number(q.median_last_seen_days.toFixed(1)), locale),
+                        })
+                      : '—'}
+                  </dd>
+                </div>
+              </dl>
             </section>
           </>
         )}
-      </div>
+      </PageStack>
     </Main>
   )
 }
