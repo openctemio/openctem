@@ -446,11 +446,21 @@ func (s *Service) SyncLedger(ctx context.Context) error {
 		}
 		metrics.SignerLedgerFeedTotal.WithLabelValues("sync", "applied").Inc()
 		if res.Diverged > 0 {
-			s.logger.Warn("scope in effect that the job signer's ledger does not hold (jobs for it are refused until it is approved again)",
-				"tenant_id", tenantID, "diverged", res.Diverged)
+			s.logger.Warn(divergedLedgerMessage(st.Mode), "tenant_id", tenantID, "diverged", res.Diverged, "ledger_mode", st.Mode)
 		}
 	}
 	return errors.Join(errs...)
+}
+
+// divergedLedgerMessage words the warning for scope the database has in
+// effect but the signer's ledger does not hold, by what the signer does with
+// jobs for it: in audit mode it signs them and logs each one, so nothing is
+// refused yet; in enforce mode it refuses them.
+func divergedLedgerMessage(mode string) string {
+	if mode == jobsign.LedgerAudit {
+		return "scope in effect that the job signer's ledger does not hold (audit mode: jobs for it are signed and logged; they will be refused under SIGNER_LEDGER=enforce until the scope is approved again)"
+	}
+	return "scope in effect that the job signer's ledger does not hold (jobs for it are refused until it is approved again)"
 }
 
 // letterBound bounds e (t's ledger form) by the letter t names, if any

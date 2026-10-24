@@ -35,10 +35,20 @@ Scan (definition) ──fires──▶ Run (one occurrence) ──is cut into─
 | `pending` | Created, no task claimed yet | no | — |
 | `running` | At least one task claimed or started | no | — |
 | `completed` | Every task completed. Targets that did not answer (`unreachable_target_count`) or that the sensor's local policy skipped (`skipped_target_count`) do not change the status: they are facts about the targets, recorded in the run context and shown as a note ("Completed · N unreachable") | yes | success |
-| `partial` | Some tasks completed, some failed, or the deadline passed with work done, or a sensor left coverage gaps or unfinished targets; results kept, unfinished targets recorded. Also when every step finished but zone routing left targets uncovered (`uncovered_targets`): the run did not scan everything it was asked to | yes | partial |
+| `partial` | Some tasks completed, some failed, or the deadline passed with work done, or a sensor left coverage gaps or unfinished targets; results kept, unfinished targets recorded. Also when every step finished but zone routing left targets uncovered (`uncovered_targets`): the run did not scan everything it was asked to | yes | success with coverage gaps |
 | `failed` | No task completed (all failed, or nobody claimed within 4 h scheduled / 1 h interactive), or a step tried more than one target and reached none (`TARGET_UNREACHABLE`: the sensor may be cut off). A single target that did not answer is `completed`, one unreachable | yes | failure |
 | `timeout` | Deadline passed and no task completed | yes | failure |
 | `canceled` | Stopped by a user with `scans:write` | yes | not counted in the success rate |
+| `blocked` | Refused before anything was dispatched (scope gate, unconfirmed targets, no sensor, scan window, scanner); `refusal_code` says why | yes | not counted in the success rate |
+
+**Success rate.** The share of counted runs that did their job: (completed +
+partial) / (completed + partial + failed + timeout). A partial run finished
+with coverage gaps; a host that did not answer is a fact about the target, not
+a scan failure, so it never lowers the rate. Blocked, canceled and live runs
+are not counted. Below three counted runs there is no rate ("-"). The scan
+list reads it over the scan's latest ten runs (`recent_runs` of `GET /scans`,
+newest first, tenant-scoped, one batch query per page); the scan page and the
+scan drawer read it over the scan's lifetime counters with the same rule.
 
 A terminal run never changes again, and neither does a terminal step run: a
 late or duplicate sensor result, a cancel racing a completion or the reaper
@@ -148,3 +158,7 @@ The Scans area separates the platform's own scans from people's:
 - A run a platform policy started is labelled "Automatic coverage" (or "Automatic enrichment") in the Trigger column, not "System".
 - A run's status badge carries the target note when it has one: "Completed · 3 unreachable", "· 2 skipped" (`unreachable_target_count`, `skipped_target_count` of the run response). The note never changes the status.
 - The success-rate labels of the list and the scan page come from the dictionary (en and vi).
+- The list's **Recent runs** column shows the latest ten runs as run-state glyphs (oldest to newest, the glyphs of the run status label) and the success rate over them; its tooltip and accessible name give the breakdown (completed, completed with coverage gaps, failed, blocked and canceled not counted).
+- A blocked latest run says why under its state, without hovering, with a link to where it is fixed: unconfirmed targets to the scope, excluded targets to the exclusions, no sensor to the sensors, a scan window, a disabled scanner. Other refusal codes read "Refused before it started" and the run has the details.
+- On a phone each scan is one card: the name and the latest run's state on the first line, then the type, the kind and the intensity as separate elements, then when it last ran, the run count and the recent runs. Every line wraps; no element can overflow into another.
+- Scan intensity uses the label system: passive and active are plain tags (icon and word, neutral ink), intrusive is a neutral signal chip. No hue, so it never reads as a severity or a run state.

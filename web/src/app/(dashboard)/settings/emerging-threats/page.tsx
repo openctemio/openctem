@@ -2,7 +2,7 @@
 
 import { AlertCircle } from 'lucide-react'
 import { Main } from '@/components/layout'
-import { ErrorState, PageHeader } from '@/features/shared'
+import { ErrorState, PageHeader, PageStack } from '@/features/shared'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { useTranslation } from '@/context/i18n-provider'
@@ -28,11 +28,11 @@ export default function EmergingThreatsSettingsPage() {
 
   return (
     <Main>
-      <PageHeader
-        title={t('emergingThreats.settings.title')}
-        description={t('emergingThreats.settings.description')}
-      />
-      <div className="mt-5">
+      <PageStack>
+        <PageHeader
+          title={t('emergingThreats.settings.title')}
+          description={t('emergingThreats.settings.description')}
+        />
         {!canManage ? (
           <Alert variant="destructive">
             <AlertCircle className="h-4 w-4" />
@@ -56,7 +56,7 @@ export default function EmergingThreatsSettingsPage() {
             onSaved={() => void mutate()}
           />
         )}
-      </div>
+      </PageStack>
     </Main>
   )
 }
