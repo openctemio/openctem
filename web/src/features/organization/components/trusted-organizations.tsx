@@ -55,7 +55,7 @@ import {
 } from '../api/use-org-trusts'
 import { MAX_EXTERNAL_ACCESS_DAYS, formatShortDate } from '../lib/external-access'
 import { ConfirmDialog } from '@/components/confirm-dialog'
-import { confirmNameFor } from '@/lib/confirm-name'
+import { confirmName } from '@/lib/confirm-name'
 import { useTranslation } from '@/context/i18n-provider'
 
 const DEFAULT_SETTINGS: OrgTrustSettingsInput = {
@@ -771,7 +771,7 @@ export function TrustedOrganizations({ canRead, isOwner }: { canRead: boolean; i
           </>
         }
         isLoading={endBusy}
-        typeToConfirm={ending ? confirmNameFor(ending.organization, ending.id) : undefined}
+        typeToConfirm={ending ? confirmName(ending.organization, ending.id) : undefined}
         handleConfirm={() => end()}
       />
     </div>
