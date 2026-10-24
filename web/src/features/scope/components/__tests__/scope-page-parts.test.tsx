@@ -136,6 +136,9 @@ describe('Approvals', () => {
     wrap(<ScopeApprovals />)
     await user.click(await screen.findByLabelText('Select every change you may approve'))
     await user.click(screen.getByRole('button', { name: /Approve selected \(2\)/ }))
+    expect(api.post).not.toHaveBeenCalled()
+    const dialog = await screen.findByRole('alertdialog')
+    await user.click(within(dialog).getByRole('button', { name: 'Approve 2 changes' }))
     await waitFor(() => {
       expect(api.post).toHaveBeenCalledWith('/api/v1/scope/targets/e1/approve', {})
       expect(api.post).toHaveBeenCalledWith('/api/v1/scope/exclusions/x1/approve', {})
