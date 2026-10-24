@@ -9,6 +9,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/lib/pq"
+
 	"github.com/openctemio/openctem/api/pkg/domain/automation"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
@@ -551,6 +553,35 @@ func (r *AutomationRunRepository) SubjectVisible(ctx context.Context, tenantID, 
 		return false, fmt.Errorf("check run subject scope: %w", err)
 	}
 	return ok, nil
+}
+
+// VisibleAssets implements automation.RunScopeReader.
+func (r *AutomationRunRepository) VisibleAssets(ctx context.Context, tenantID shared.ID, assetIDs []shared.ID, scope *shared.DataScope) (map[shared.ID]bool, error) {
+	out := make(map[shared.ID]bool, len(assetIDs))
+	if len(assetIDs) == 0 {
+		return out, nil
+	}
+	ids := make([]string, len(assetIDs))
+	for i, id := range assetIDs {
+		ids[i] = id.String()
+	}
+	aCond, aArgs := filterspec.ScopeSQL("a.id", scope, 3)
+	args := append([]any{tenantID.String(), pq.Array(ids)}, aArgs...)
+	rows, err := r.db.QueryContext(ctx, `SELECT a.id FROM assets a WHERE a.tenant_id = $1 AND a.id = ANY($2::uuid[]) AND `+aCond, args...)
+	if err != nil {
+		return nil, fmt.Errorf("check run asset scope: %w", err)
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var raw string
+		if err := rows.Scan(&raw); err != nil {
+			return nil, err
+		}
+		if id, err := shared.IDFromString(raw); err == nil {
+			out[id] = true
+		}
+	}
+	return out, rows.Err()
 }
 
 // AggregateTrace implements automation.RunScopeReader.
