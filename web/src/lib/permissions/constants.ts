@@ -177,6 +177,7 @@ export const Permission = {
   SourcesRead: 'scans:sources:read',
   SourcesWrite: 'scans:sources:write',
   SourcesDelete: 'scans:sources:delete',
+  SourcesApprove: 'scans:sources:approve',
 
   // Tools (scans:tools:*)
   ToolsRead: 'scans:tools:read',

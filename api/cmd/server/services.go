@@ -83,6 +83,7 @@ import (
 	"github.com/openctemio/openctem/api/internal/app/consolesetting"
 	catalogapp "github.com/openctemio/openctem/api/internal/app/contentcatalog"
 	contentpackapp "github.com/openctemio/openctem/api/internal/app/contentpack"
+	contentsourceapp "github.com/openctemio/openctem/api/internal/app/contentsource"
 	coverageapp "github.com/openctemio/openctem/api/internal/app/coverage"
 	ctemidapp "github.com/openctemio/openctem/api/internal/app/ctemid"
 	"github.com/openctemio/openctem/api/internal/app/deploymentregion"
@@ -730,9 +731,8 @@ type Services struct {
 	Scan            *scan.Service
 	ScanRun         *scanrun.Service
 	ScannerTemplate *app.ScannerTemplateService
-	TemplateSource  *template.SourceService
+	ContentSource   *contentsourceapp.Service
 	SecretStore     *integration.SecretStoreService
-	TemplateSyncer  *template.Syncer
 
 	// TemplateKeys signs custom templates for sensors; nil when no key is
 	// configured (see initTemplateKeyring).
@@ -2410,7 +2410,9 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 		s.ScannerTemplate.SetLedger(s.JobSigner, s.Scope)
 		s.Scope.SetLedgerTemplates(s.ScannerTemplate)
 	}
-	s.TemplateSource = template.NewSourceService(repos.TemplateSource, log)
+	// Rule sources: the platform alone fetches them; snapshots are signed
+	// content packs; credentials are sealed with the integration key.
+	s.ContentSource = contentsourceapp.NewService(repos.ContentSource, s.ContentPacks, s.Entitlement, s.Encryptor, s.Audit, log)
 
 	// A finding's custom retest check: content in the template library
 	// above, run by the retest service.
@@ -2438,21 +2440,6 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 		return nil, fmt.Errorf("failed to initialize secret store service: %w", err)
 	}
 
-	// Initialize template syncer for fetching templates from external sources
-	s.TemplateSyncer = template.NewSyncer(
-		repos.TemplateSource,
-		repos.ScannerTemplate,
-		s.SecretStore,
-		encryptionKey,
-		log,
-	)
-
-	// Wire up template syncer to source service for force sync API
-	s.TemplateSource.SetTemplateSyncer(s.TemplateSyncer)
-	// Binding a stored credential to a source is restricted to owners/admins
-	// and the credential's creator, and audited.
-	s.TemplateSource.SetCredentialGuard(s.SecretStore, s.Audit)
-
 	s.Tool = tool.NewService(repos.Tool, repos.TenantToolConfig, log)
 	// Tool availability: the catalog joined with the tools the sensors report.
 	s.Tool.SetAvailabilitySources(s.Sensor, repos.ScanZone, repos.SensorGrant)
@@ -2474,7 +2461,6 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// Create adapters for scan sub-package (clean architecture - each package defines its own interfaces)
 	scanAuditAdapter := app.NewScanAuditServiceAdapter(s.Audit)
 	scanSensorSelectorAdapter := app.NewScanSensorSelectorAdapter(s.SensorSelector, s.SharedSensorsAllowed)
-	templateScanAdapter := template.NewScanAdapter(s.TemplateSyncer)
 	scanSecurityValidatorAdapter := app.NewScanSecurityValidatorAdapter(securityValidator)
 
 	s.ActiveGate = easmapp.NewActiveGate(repos.Attribution, repos.Asset, s.Scope, repos.VerifiedNames).
@@ -2507,9 +2493,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 		repos.StepRun,
 		repos.Command,
 		repos.ScannerTemplate,
-		repos.TemplateSource,
 		repos.Tool,
-		templateScanAdapter,
 		scanSensorSelectorAdapter,
 		scanSecurityValidatorAdapter,
 		log,

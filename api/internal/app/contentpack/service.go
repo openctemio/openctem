@@ -137,7 +137,7 @@ func (s *Service) Upload(ctx context.Context, in UploadInput, actx auditapp.Audi
 		rep.SecretsAcknowledged = true
 	}
 
-	blob, err := s.storeBlob(ictx, tid, arc, used)
+	blob, err := s.storeBlob(ictx, tid, arc, MaxBytesPerTenant-used)
 	if err != nil {
 		return nil, err
 	}
@@ -176,8 +176,9 @@ func (s *Service) Upload(ctx context.Context, in UploadInput, actx auditapp.Audi
 	return p, nil
 }
 
-// storeBlob stores the canonical archive once per tenant and digest.
-func (s *Service) storeBlob(ctx context.Context, tid shared.ID, arc *dom.Archive, used int64) (*dom.Blob, error) {
+// storeBlob stores the canonical archive once per tenant and digest. room is
+// the bytes the tenant may still add (negative: no byte quota applies).
+func (s *Service) storeBlob(ctx context.Context, tid shared.ID, arc *dom.Archive, room int64) (*dom.Blob, error) {
 	b, err := s.repo.GetBlob(ctx, tid, arc.Digest)
 	if err == nil {
 		return b, nil
@@ -185,7 +186,7 @@ func (s *Service) storeBlob(ctx context.Context, tid shared.ID, arc *dom.Archive
 	if !errors.Is(err, dom.ErrNotFound) {
 		return nil, err
 	}
-	if used+arc.Size() > MaxBytesPerTenant {
+	if room >= 0 && arc.Size() > room {
 		return nil, fmt.Errorf("%w (%d bytes stored)", dom.ErrQuota, MaxBytesPerTenant)
 	}
 	name := strings.TrimPrefix(arc.Digest, "sha256:") + ".tar"
@@ -209,6 +210,73 @@ func (s *Service) storeBlob(ctx context.Context, tid shared.ID, arc *dom.Archive
 	return b, nil
 }
 
+// SnapshotInput is a rule source snapshot to store as a pack. The archive
+// is already canonical and linted by the caller (the rule source sync);
+// the pack is signed with the tenant's key, chosen from TenantID, which the
+// caller takes from the source row, never from a request.
+type SnapshotInput struct {
+	TenantID  shared.ID
+	Name      string
+	Version   string
+	Kind      string
+	Archive   *dom.Archive
+	Lint      dom.LintReport
+	SourceRef string
+	CreatedBy *shared.ID
+}
+
+// StoreSnapshot signs and stores a rule source snapshot as a pack. It is
+// not audited here (the rule source records the sync), and the byte quota of
+// uploads does not apply: the content_storage_mb limit covers snapshots.
+func (s *Service) StoreSnapshot(ctx context.Context, in SnapshotInput) (*dom.Pack, error) {
+	if s.signer == nil {
+		return nil, dom.ErrSigningKey
+	}
+	if in.TenantID.IsZero() || in.Archive == nil {
+		return nil, fmt.Errorf("%w: tenant and archive are required", shared.ErrValidation)
+	}
+	if err := errors.Join(dom.ValidateName(in.Name), dom.ValidateVersion(in.Version), dom.ValidateKind(in.Kind)); err != nil {
+		return nil, err
+	}
+	blob, err := s.storeBlob(ctx, in.TenantID, in.Archive, -1)
+	if err != nil {
+		return nil, err
+	}
+	now := s.now().UTC()
+	p := &dom.Pack{
+		ID: shared.NewID(), TenantID: in.TenantID, Name: in.Name, Version: in.Version, Kind: in.Kind,
+		Digest: in.Archive.Digest, SizeBytes: blob.SizeBytes, FileCount: blob.FileCount,
+		Tier: in.Lint.Tier, Status: dom.StatusActive, Source: dom.SourceGit, SourceRef: in.SourceRef,
+		Lint: in.Lint, CreatedBy: in.CreatedBy, CreatedAt: now,
+	}
+	p.Signature, err = s.signer.Sign(dom.Statement{
+		TenantID: in.TenantID.String(), PackID: p.ID.String(), Name: p.Name, Version: p.Version, Content: p.Kind,
+		Digest: p.Digest, Size: p.SizeBytes, Files: p.FileCount, Tier: p.Tier, CreatedAt: now,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("sign content pack: %w", err)
+	}
+	if err := s.repo.Create(ctx, p); err != nil {
+		return nil, err
+	}
+	return p, nil
+}
+
+// DeleteSourcePack removes a collected rule source snapshot's pack, and its
+// stored object when no other pack uses it.
+func (s *Service) DeleteSourcePack(ctx context.Context, tenantID, id shared.ID) error {
+	key, err := s.repo.DeleteSourcePack(ctx, tenantID, id)
+	if err != nil {
+		return err
+	}
+	if key != "" {
+		if err := s.store.Delete(ctx, tenantID.String(), key); err != nil {
+			s.logger.Warn("failed to delete a collected content pack object", "error", err)
+		}
+	}
+	return nil
+}
+
 // Get returns a pack of the tenant.
 func (s *Service) Get(ctx context.Context, tenantID, id string) (*dom.Pack, error) {
 	tid, pid, err := parseIDs(tenantID, id)
@@ -224,8 +292,10 @@ type ListInput struct {
 	Kind     string
 	Name     string
 	Status   string
-	Limit    int
-	Offset   int
+	// Deliverable leaves out unpromoted rule source snapshots.
+	Deliverable bool
+	Limit       int
+	Offset      int
 }
 
 // List returns a page of the tenant's packs and the total.
@@ -245,7 +315,7 @@ func (s *Service) List(ctx context.Context, in ListInput) ([]*dom.Pack, int, err
 	if in.Offset < 0 {
 		in.Offset = 0
 	}
-	return s.repo.List(ctx, tid, dom.Filter{Kind: in.Kind, Name: in.Name, Status: dom.Status(in.Status)}, in.Limit, in.Offset)
+	return s.repo.List(ctx, tid, dom.Filter{Kind: in.Kind, Name: in.Name, Status: dom.Status(in.Status), Deliverable: in.Deliverable}, in.Limit, in.Offset)
 }
 
 // Revoke revokes a pack: it stays listed, with who revoked it and why, and

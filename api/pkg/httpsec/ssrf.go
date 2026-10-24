@@ -240,6 +240,18 @@ func IsIPBlocked(ip net.IP) bool {
 	return isIPBlocked(ip, false)
 }
 
+// IsPrivateIP reports whether ip is in an RFC1918 or ULA range: reachable
+// only where the installation opened it, and a private destination for
+// features that are allowed per organization.
+func IsPrivateIP(ip net.IP) bool {
+	for _, cidr := range privateCIDRs {
+		if cidr.Contains(ip) {
+			return true
+		}
+	}
+	return false
+}
+
 // isIPBlocked is IsIPBlocked with a per-call private switch: when
 // privateOK is true every RFC1918 / ULA address is reachable (the
 // hard-blocked ranges never are).
