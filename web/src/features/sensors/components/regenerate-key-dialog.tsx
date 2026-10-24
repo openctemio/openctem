@@ -9,7 +9,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { typedTextMatches } from '@/components/confirm-dialog'
-import { nameToTypeToConfirm } from '@/components/confirm-name'
+import { confirmName } from '@/lib/confirm-name'
 import {
   Dialog,
   DialogContent,
@@ -49,7 +49,7 @@ export function RegenerateKeyDialog({
   // Rotating cuts the sensor off at once: the sensor's name is retyped first.
   const [typed, setTyped] = useState('')
   const typedId = useId()
-  const expected = nameToTypeToConfirm(sensor.name, sensor.id)
+  const expected = confirmName(sensor.name, sensor.id)
   const [typeBefore, typeAfter = ''] = t('confirm.typeToConfirm', 'Type {text} to confirm').split(
     '{text}'
   )

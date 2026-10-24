@@ -8,7 +8,7 @@ import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { ConfirmDialog } from '@/components/confirm-dialog'
-import { nameToTypeToConfirm } from '@/components/confirm-name'
+import { confirmName } from '@/lib/confirm-name'
 import { RefreshButton, TableSkeleton } from '@/components/list-page-parts'
 import { EmptyState, ErrorState, MetricStrip, type MetricStripItem } from '@/features/shared'
 import { useUrlFilter } from '@/hooks/use-url-param'
@@ -234,7 +234,7 @@ export function ScanZonesPanel({ createOpen, onCreateOpenChange }: ScanZonesPane
         confirmText={t('confirm.scanZone.deleteBtn')}
         destructive
         isLoading={deleting}
-        typeToConfirm={deleteZone ? nameToTypeToConfirm(deleteZone.name, deleteZone.id) : undefined}
+        typeToConfirm={deleteZone ? confirmName(deleteZone.name, deleteZone.id) : undefined}
         handleConfirm={handleDelete}
       >
         {deleteError && (

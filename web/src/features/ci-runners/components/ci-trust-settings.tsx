@@ -47,7 +47,7 @@ import { Switch } from '@/components/ui/switch'
 import { Textarea } from '@/components/ui/textarea'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { ConfirmDialog } from '@/components/confirm-dialog'
-import { nameToTypeToConfirm } from '@/components/confirm-name'
+import { confirmName } from '@/lib/confirm-name'
 import { useTranslation } from '@/context/i18n-provider'
 import { useBrand } from '@/context/brand-provider'
 import { formatLocalized } from '@/lib/format-date'
@@ -330,7 +330,7 @@ function TrustConfigsSection({ canWrite }: { canWrite: boolean }) {
         )}
         confirmText={t('confirm.ciTrust.deleteBtn')}
         destructive
-        typeToConfirm={deleting ? nameToTypeToConfirm(deleting.name, deleting.id ?? '') : undefined}
+        typeToConfirm={deleting ? confirmName(deleting.name, deleting.id ?? '') : undefined}
         handleConfirm={() => {
           const target = deleting
           setDeleting(null)
@@ -1084,7 +1084,7 @@ function GatePolicySection({ canWrite }: { canWrite: boolean }) {
         confirmText={t('confirm.gatePolicy.deleteBtn')}
         typeToConfirm={
           pendingDelete
-            ? nameToTypeToConfirm(policyScope(pendingDelete, t), pendingDelete.id ?? '')
+            ? confirmName(policyScope(pendingDelete, t), pendingDelete.id ?? '')
             : undefined
         }
         handleConfirm={async () => {

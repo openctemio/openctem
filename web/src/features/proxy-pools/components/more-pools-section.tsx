@@ -4,7 +4,7 @@ import { useState } from 'react'
 import { Plus, Trash2, Waypoints } from 'lucide-react'
 import { toast } from 'sonner'
 
-import { nameToTypeToConfirm } from '@/components/confirm-name'
+import { confirmName } from '@/lib/confirm-name'
 import { ConfirmDialog } from '@/components/confirm-dialog'
 import { Badge } from '@/components/ui/badge'
 import { Card, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
@@ -147,7 +147,7 @@ export function MorePoolsSection({ pools, canWrite, canDelete }: MorePoolsSectio
         desc={t('confirm.proxyPool.deleteDesc')}
         confirmText={t('confirm.proxyPool.deleteBtn')}
         destructive
-        typeToConfirm={deleting ? nameToTypeToConfirm(deleting.name, deleting.id) : undefined}
+        typeToConfirm={deleting ? confirmName(deleting.name, deleting.id) : undefined}
         handleConfirm={() => {
           const target = deleting
           setDeleting(null)

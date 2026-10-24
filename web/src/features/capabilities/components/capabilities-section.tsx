@@ -19,7 +19,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Tabs, TabsList, TabsTrigger, TabsCount } from '@/components/ui/tabs'
 import { ConfirmDialog } from '@/components/confirm-dialog'
-import { nameToTypeToConfirm } from '@/components/confirm-name'
+import { confirmName } from '@/lib/confirm-name'
 import {
   Select,
   SelectContent,
@@ -433,7 +433,7 @@ export function CapabilitiesSection() {
         }
         typeToConfirm={
           selectedCapability
-            ? nameToTypeToConfirm(selectedCapability.display_name, selectedCapability.id)
+            ? confirmName(selectedCapability.display_name, selectedCapability.id)
             : undefined
         }
         handleConfirm={handleDeleteConfirm}

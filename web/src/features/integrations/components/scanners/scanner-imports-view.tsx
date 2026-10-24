@@ -21,7 +21,7 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
-import { nameToTypeToConfirm } from '@/components/confirm-name'
+import { confirmName } from '@/lib/confirm-name'
 import { ConfirmDialog } from '@/components/confirm-dialog'
 import { Can, Permission } from '@/lib/permissions'
 import { Clock, PauseCircle, ShieldCheck, Trash2, Upload } from 'lucide-react'
@@ -136,7 +136,7 @@ export function PausedScannerCard({
           deleting ? t('confirm.removing', 'Removing…') : t('confirm.scannerIntegration.removeBtn')
         }
         destructive
-        typeToConfirm={nameToTypeToConfirm(integration.name, integration.id)}
+        typeToConfirm={confirmName(integration.name, integration.id)}
         isLoading={deleting}
         handleConfirm={() => void handleDelete()}
       />

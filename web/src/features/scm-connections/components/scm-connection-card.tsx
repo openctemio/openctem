@@ -26,7 +26,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
-import { nameToTypeToConfirm } from '@/components/confirm-name'
+import { confirmName } from '@/lib/confirm-name'
 import { ConfirmDialog } from '@/components/confirm-dialog'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import { cn, sanitizeExternalUrl } from '@/lib/utils'
@@ -280,7 +280,7 @@ export function SCMConnectionCard({
         }
         confirmText={t('confirm.scm.deleteBtn')}
         destructive
-        typeToConfirm={nameToTypeToConfirm(connection.name, connection.id)}
+        typeToConfirm={confirmName(connection.name, connection.id)}
         isLoading={isDeleting}
         handleConfirm={handleDelete}
       />
