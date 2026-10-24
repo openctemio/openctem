@@ -61,6 +61,9 @@ CREATE TABLE content_sources (
     consecutive_failures   integer NOT NULL DEFAULT 0 CHECK (consecutive_failures >= 0),
     config_changed_by      uuid REFERENCES users(id) ON DELETE SET NULL,
     config_changed_at      timestamptz,
+    -- Everyone who changed what the source fetches since its last synced
+    -- snapshot: copied to that snapshot, whose promotion they may not approve.
+    config_authors         uuid[] NOT NULL DEFAULT '{}',
     created_by             uuid REFERENCES users(id) ON DELETE SET NULL,
     created_at             timestamptz NOT NULL DEFAULT now(),
     updated_at             timestamptz NOT NULL DEFAULT now(),
@@ -138,6 +141,8 @@ CREATE TABLE content_source_snapshots (
     review_required   boolean NOT NULL DEFAULT false,
     state             varchar(16) NOT NULL DEFAULT 'candidate' CHECK (state IN ('candidate', 'promoted', 'superseded', 'rejected')),
     synced_by         uuid REFERENCES users(id) ON DELETE SET NULL,
+    -- Members who changed the configuration this snapshot was synced from.
+    config_authors    uuid[] NOT NULL DEFAULT '{}',
     promoted_by       uuid REFERENCES users(id) ON DELETE SET NULL,
     promoted_at       timestamptz,
     rejected_by       uuid REFERENCES users(id) ON DELETE SET NULL,
@@ -187,10 +192,16 @@ BEGIN
             USING ((tenant_id = (NULLIF(current_setting('app.current_tenant_id', true), ''))::uuid)
                 OR (current_setting('app.is_platform_admin', true) = 'true'))$p$, t || '_tenant_isolation', t);
         EXECUTE format('DROP POLICY IF EXISTS %I ON %I', t || '_platform_read', t);
-        EXECUTE format($p$CREATE POLICY %I ON %I FOR SELECT USING (tenant_id IS NULL)$p$, t || '_platform_read', t);
     END LOOP;
 END;
 $$;
+-- Platform rows are readable unless hidden (a hidden source is not offered:
+-- its address and credential columns stay out of an organization's reach).
+CREATE POLICY content_sources_platform_read ON content_sources FOR SELECT
+    USING (tenant_id IS NULL AND availability IS DISTINCT FROM 'hidden');
+CREATE POLICY content_source_snapshots_platform_read ON content_source_snapshots FOR SELECT
+    USING (tenant_id IS NULL AND EXISTS (
+        SELECT 1 FROM content_sources c WHERE c.id = source_id AND c.availability IS DISTINCT FROM 'hidden'));
 
 -- Carry over git sources over https for the kinds the platform lints.
 INSERT INTO content_sources (id, scope, tenant_id, slug, rule_namespace, name, description, kind, origin, url, ref, path,

@@ -188,6 +188,7 @@ type env struct {
 	tenantB shared.ID
 	user1   shared.ID
 	user2   shared.ID
+	user3   shared.ID
 	userB   shared.ID
 }
 
@@ -210,7 +211,7 @@ func newEnv(t *testing.T) *env {
 		exec(`INSERT INTO tenants (id, name, slug) VALUES ($1, 'rule sources', $2)`, id, "rs-"+id)
 		t.Cleanup(func() { _, _ = db.ExecContext(context.Background(), `DELETE FROM tenants WHERE id = $1`, id) })
 	}
-	for _, uid := range []*shared.ID{&e.user1, &e.user2, &e.userB} {
+	for _, uid := range []*shared.ID{&e.user1, &e.user2, &e.user3, &e.userB} {
 		*uid = shared.NewID()
 		id := uid.String()
 		exec(`INSERT INTO users (id, email, name) VALUES ($1, $2, 'rs')`, id, "rs-"+id+"@example.com")

@@ -28,10 +28,12 @@ const (
 	syncTimeout = 5 * time.Minute
 	// lintTimeout bounds the lint of one snapshot.
 	lintTimeout = 60 * time.Second
-	// claimBatch is how many sources one worker run syncs.
+	// claimBatch is how many sources one worker run syncs, one claim at a
+	// time.
 	claimBatch = 5
-	// claimLease outlives a sync, so a crashed worker's claim expires.
-	claimLease = 10 * time.Minute
+	// claimLease outlives one sync (syncTimeout bounds it) with a wide
+	// margin, so a crashed worker's claim expires but a live sync's does not.
+	claimLease = 3 * syncTimeout
 	// collectAfter keeps superseded and rejected snapshots this long.
 	collectAfter = 24 * time.Hour
 	collectBatch = 100
@@ -306,7 +308,7 @@ func (s *Service) syncSource(ctx context.Context, src *dom.Source, actor *shared
 		SizeBytes: pack.SizeBytes, FileCount: pack.FileCount, FileIndex: dom.FileIndexOf(arc.Files),
 		Rules: rules, RuleCount: len(rules), Tier: rep.Lint.Tier, Lint: rep.Lint, LicenseSPDX: rep.License,
 		ServiceUse: src.LicenseServiceUse && !dom.NoServiceLicenses[rep.License],
-		Signature:  pack.Signature, State: dom.StateCandidate, SyncedBy: actor, CreatedAt: s.now().UTC(),
+		Signature:  pack.Signature, State: dom.StateCandidate, SyncedBy: actor, ConfigAuthors: src.ConfigAuthors, CreatedAt: s.now().UTC(),
 	}
 	sn.Diff = dom.ComputeDiff(base, rules, sn.Tier, sn.LicenseSPDX)
 	sn.Checks, sn.ReviewRequired = dom.EvaluatePromotion(src.Policy, base, sn, dup)
@@ -344,19 +346,28 @@ func (s *Service) syncSource(ctx context.Context, src *dom.Source, actor *shared
 }
 
 // RunDue syncs the sources whose schedule is due or whose sync was
-// requested (the sync worker's reconcile). It returns how many it synced.
+// requested (the sync worker's reconcile): up to claimBatch, each claimed
+// on its own right before it runs, so the lease of a source never waits
+// behind another sync and the claim order stays fair across organizations.
+// It returns how many it synced.
 func (s *Service) RunDue(ctx context.Context) (int, error) {
-	claimed, err := s.repo.ClaimDueUnscoped(ctx, s.now().UTC(), claimLease, claimBatch)
-	if err != nil {
-		return 0, err
-	}
-	for i, src := range claimed {
+	n := 0
+	for n < claimBatch {
 		if err := ctx.Err(); err != nil {
-			return i, err // the rest of the claim expires with its lease
+			return n, err
 		}
+		claimed, err := s.repo.ClaimDueUnscoped(ctx, s.now().UTC(), claimLease, 1)
+		if err != nil {
+			return n, err
+		}
+		if len(claimed) == 0 {
+			return n, nil
+		}
+		src := claimed[0]
+		n++
 		if s.moduleOff(ctx, src) {
 			now := s.now().UTC()
-			_ = s.repo.SaveSyncUnscoped(ctx, src.ID, dom.SyncOutcome{
+			s.saveOutcome(ctx, src, dom.SyncOutcome{
 				Status: src.LastSyncStatus, Error: src.LastSyncError, At: now,
 				NextSyncAt: src.NextScheduled(now, s.jitter()), ClearRequest: true, KeepFailures: true,
 			})
@@ -364,7 +375,16 @@ func (s *Service) RunDue(ctx context.Context) (int, error) {
 		}
 		s.runOne(ctx, src)
 	}
-	return len(claimed), nil
+	return n, nil
+}
+
+// saveOutcome writes a sync's outcome under the claim the source was
+// taken with.
+func (s *Service) saveOutcome(ctx context.Context, src *dom.Source, out dom.SyncOutcome) {
+	out.LeaseUntil, out.ClaimedAt = src.LeaseUntil, src.ClaimedAt
+	if err := s.repo.SaveSyncUnscoped(ctx, src.ID, out); err != nil {
+		s.logger.Error("failed to save rule source sync outcome", "source_id", src.ID.String(), "error", err)
+	}
 }
 
 // moduleOff reports whether the source's organization turned the rule
@@ -384,7 +404,7 @@ func (s *Service) runOne(ctx context.Context, src *dom.Source) {
 		out.Commit = rep.Commit
 	}
 	if err == nil {
-		out.Status, out.ResetFailures = dom.SyncSuccess, true
+		out.Status, out.ResetFailures, out.ConsumeAuthors = dom.SyncSuccess, true, true
 		result := "new"
 		if rep != nil && rep.Unchanged {
 			result = "unchanged"
@@ -406,9 +426,7 @@ func (s *Service) runOne(ctx context.Context, src *dom.Source) {
 		}
 		s.logger.Warn("rule source sync failed", "source_id", src.ID.String(), "error", err)
 	}
-	if serr := s.repo.SaveSyncUnscoped(ctx, src.ID, out); serr != nil {
-		s.logger.Error("failed to save rule source sync outcome", "source_id", src.ID.String(), "error", serr)
-	}
+	s.saveOutcome(ctx, src, out)
 }
 
 func truncate(s string, n int) string {

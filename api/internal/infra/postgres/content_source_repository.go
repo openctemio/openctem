@@ -14,6 +14,8 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/lib/pq"
+
 	"github.com/openctemio/openctem/api/pkg/domain/contentpack"
 	cs "github.com/openctemio/openctem/api/pkg/domain/contentsource"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
@@ -38,7 +40,7 @@ const contentSourceColumns = `
 	next_sync_at, sync_requested_at, COALESCE(webhook_secret_hash, ''), webhook_secret_set_at, storage_mode,
 	COALESCE(availability, ''), official, enabled, current_snapshot_id, previous_snapshot_id,
 	last_sync_at, last_sync_status, COALESCE(last_sync_error, ''), COALESCE(last_sync_commit, ''), last_sync_report,
-	consecutive_failures, config_changed_by, config_changed_at, created_by, created_at, updated_at`
+	consecutive_failures, config_changed_by, config_changed_at, config_authors, sync_lease_until, created_by, created_at, updated_at`
 
 func scanContentSource(row interface{ Scan(...any) error }) (*cs.Source, error) {
 	var (
@@ -48,7 +50,8 @@ func scanContentSource(row interface{ Scan(...any) error }) (*cs.Source, error) 
 		tenantID, current, previous             sql.NullString
 		changedBy, createdBy                    sql.NullString
 		credAt, nextSync, requested, webhookAt  sql.NullTime
-		lastSync, changedAt                     sql.NullTime
+		lastSync, changedAt, leaseUntil         sql.NullTime
+		authors                                 pq.StringArray
 		report                                  []byte
 	)
 	if err := row.Scan(&id, &scope, &tenantID, &s.Slug, &s.RuleNamespace, &s.Name, &s.Description, &kind, &origin, &s.URL, &s.Ref, &s.Path,
@@ -57,7 +60,7 @@ func scanContentSource(row interface{ Scan(...any) error }) (*cs.Source, error) 
 		&nextSync, &requested, &s.WebhookSecretHash, &webhookAt, &s.StorageMode,
 		&availability, &s.Official, &s.Enabled, &current, &previous,
 		&lastSync, &status, &s.LastSyncError, &s.LastSyncCommit, &report,
-		&s.ConsecutiveFailures, &changedBy, &changedAt, &createdBy, &s.CreatedAt, &s.UpdatedAt); err != nil {
+		&s.ConsecutiveFailures, &changedBy, &changedAt, &authors, &leaseUntil, &createdBy, &s.CreatedAt, &s.UpdatedAt); err != nil {
 		return nil, err
 	}
 	s.ID, _ = shared.IDFromString(id)
@@ -69,7 +72,29 @@ func scanContentSource(row interface{ Scan(...any) error }) (*cs.Source, error) 
 	s.CredentialUpdatedAt, s.NextSyncAt, s.SyncRequestedAt = nullTimeValue(credAt), nullTimeValue(nextSync), nullTimeValue(requested)
 	s.WebhookSecretAt, s.LastSyncAt, s.ConfigChangedAt = nullTimeValue(webhookAt), nullTimeValue(lastSync), nullTimeValue(changedAt)
 	s.LastSyncReport = report
+	s.ConfigAuthors = idsOf(authors)
+	if leaseUntil.Valid {
+		s.LeaseUntil = leaseUntil.Time
+	}
 	return &s, nil
+}
+
+func idsOf(in []string) []shared.ID {
+	out := make([]shared.ID, 0, len(in))
+	for _, raw := range in {
+		if id, err := shared.IDFromString(raw); err == nil {
+			out = append(out, id)
+		}
+	}
+	return out
+}
+
+func idStrings(in []shared.ID) []string {
+	out := make([]string, 0, len(in))
+	for _, id := range in {
+		out = append(out, id.String())
+	}
+	return out
 }
 
 func scanContentSources(rows *sql.Rows) ([]*cs.Source, error) {
@@ -91,9 +116,9 @@ func (r *ContentSourceRepository) Create(ctx context.Context, s *cs.Source) erro
 		INSERT INTO content_sources (id, scope, tenant_id, slug, rule_namespace, name, description, kind, origin, url, ref, path,
 			auth_username, credential_encrypted, credential_hint, credential_updated_at, ca_pem, license_spdx,
 			license_service_use, promotion_policy, sync_interval_minutes, next_sync_at, storage_mode, availability,
-			official, enabled, config_changed_by, config_changed_at, created_by, created_at, updated_at)
+			official, enabled, config_changed_by, config_changed_at, config_authors, created_by, created_at, updated_at)
 		VALUES ($1, $2, $3, $4, $31, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21,
-			$22, $23, $24, $25, $26, $27, $28, $29, $30)`,
+			$22, $23, $24, $25, $26, $27, CASE WHEN $26::uuid IS NULL THEN '{}'::uuid[] ELSE ARRAY[$26::uuid] END, $28, $29, $30)`,
 		s.ID.String(), string(s.Scope), nullIDPtr(s.TenantID), s.Slug, s.Name, s.Description, string(s.Kind),
 		string(s.Origin), nullString(s.URL), nullString(s.Ref), s.Path,
 		nullString(s.AuthUsername), nullString(s.CredentialEncrypted), nullString(s.CredentialHint),
@@ -174,13 +199,17 @@ func (r *ContentSourceRepository) Update(ctx context.Context, s *cs.Source) erro
 			auth_username = $8, credential_encrypted = $9, credential_hint = $10, credential_updated_at = $11,
 			ca_pem = $12, license_spdx = $13, license_service_use = $14, promotion_policy = $15,
 			sync_interval_minutes = $16, next_sync_at = $17, webhook_secret_hash = $18, webhook_secret_set_at = $19,
-			enabled = $20, config_changed_by = $21, config_changed_at = $22
+			enabled = $20,
+			config_changed_by = CASE WHEN $23 THEN $21::uuid ELSE config_changed_by END,
+			config_authors = CASE WHEN $23 AND $21::uuid IS NOT NULL
+				THEN (SELECT array_agg(DISTINCT u) FROM unnest(config_authors || $21::uuid) u) ELSE config_authors END,
+			config_changed_at = CASE WHEN $23 THEN $22::timestamptz ELSE config_changed_at END
 		WHERE tenant_id = $1 AND id = $2`,
 		s.TenantID.String(), s.ID.String(), s.Name, s.Description, nullString(s.URL), nullString(s.Ref), s.Path,
 		nullString(s.AuthUsername), nullString(s.CredentialEncrypted), nullString(s.CredentialHint),
 		nullTime(s.CredentialUpdatedAt), nullString(s.CAPEM), nullString(s.LicenseSPDX), s.LicenseServiceUse,
 		string(s.Policy), s.SyncIntervalMin, nullTime(s.NextSyncAt), nullString(s.WebhookSecretHash),
-		nullTime(s.WebhookSecretAt), s.Enabled, nullIDPtr(s.ConfigChangedBy), nullTime(s.ConfigChangedAt))
+		nullTime(s.WebhookSecretAt), s.Enabled, nullIDPtr(s.ConfigChangedBy), nullTime(s.ConfigChangedAt), s.ConfigTouched())
 	if err != nil {
 		return fmt.Errorf("update rule source: %w", err)
 	}
@@ -217,29 +246,39 @@ func (r *ContentSourceRepository) RequestSync(ctx context.Context, tenantID, id 
 	return nil
 }
 
-// ClaimDueUnscoped leases due or requested tenant sources.
+// ClaimDueUnscoped leases due or requested tenant sources, fairly across
+// tenants: the tenant that was last claimed or synced longest ago goes
+// first (never-synced tenants first), and within a tenant a requested sync
+// (Sync now, webhook) goes before a scheduled one. A tenant with many
+// requests therefore takes one claim per round, not the whole batch.
 func (r *ContentSourceRepository) ClaimDueUnscoped(ctx context.Context, now time.Time, lease time.Duration, limit int) ([]*cs.Source, error) {
+	until := now.Add(lease).Truncate(time.Microsecond)
 	rows, err := r.db.QueryContext(ctx, `
 		WITH due AS (
-			SELECT id FROM content_sources
-			WHERE scope = 'tenant' AND enabled AND origin = 'git' AND storage_mode = 'mirror'
-			  AND (sync_lease_until IS NULL OR sync_lease_until < $1)
-			  AND (sync_requested_at IS NOT NULL
-			       OR (sync_interval_minutes > 0 AND next_sync_at IS NOT NULL AND next_sync_at <= $1))
-			ORDER BY sync_requested_at NULLS LAST, next_sync_at
+			SELECT c.id FROM content_sources c
+			WHERE c.scope = 'tenant' AND c.enabled AND c.origin = 'git' AND c.storage_mode = 'mirror'
+			  AND (c.sync_lease_until IS NULL OR c.sync_lease_until < $1)
+			  AND (c.sync_requested_at IS NOT NULL
+			       OR (c.sync_interval_minutes > 0 AND c.next_sync_at IS NOT NULL AND c.next_sync_at <= $1))
+			ORDER BY (SELECT max(GREATEST(x.last_sync_at, x.sync_lease_until - make_interval(secs => $4::float8)))
+			          FROM content_sources x WHERE x.tenant_id = c.tenant_id) NULLS FIRST,
+			         c.sync_requested_at NULLS LAST, c.next_sync_at, c.id
 			LIMIT $3
-			FOR UPDATE SKIP LOCKED
+			FOR UPDATE OF c SKIP LOCKED
 		)
 		UPDATE content_sources SET sync_lease_until = $2
 		WHERE id IN (SELECT id FROM due)
 		RETURNING `+contentSourceColumns,
-		now, now.Add(lease), limit)
+		now, until, limit, lease.Seconds())
 	if err != nil {
 		return nil, fmt.Errorf("claim rule sources: %w", err)
 	}
 	out, err := scanContentSources(rows)
 	if err != nil {
 		return nil, fmt.Errorf("claim rule sources: %w", err)
+	}
+	for _, src := range out {
+		src.ClaimedAt = now
 	}
 	return out, nil
 }
@@ -262,19 +301,27 @@ func (r *ContentSourceRepository) RequestSyncUnscoped(ctx context.Context, id sh
 	return n == 1, nil
 }
 
-// SaveSyncUnscoped writes a sync's outcome and releases the lease.
+// SaveSyncUnscoped writes a sync's outcome and releases the lease, only
+// while the source's lease is still the one the sync ran under. A sync or
+// change requested after the claim stays queued, and the config authors
+// are consumed only when the configuration did not change after the claim.
 func (r *ContentSourceRepository) SaveSyncUnscoped(ctx context.Context, id shared.ID, o cs.SyncOutcome) error {
-	_, err := r.db.ExecContext(ctx, `
+	res, err := r.db.ExecContext(ctx, `
 		UPDATE content_sources SET
 			last_sync_status = $2, last_sync_error = $3, last_sync_commit = COALESCE($4, last_sync_commit),
 			last_sync_report = $5, last_sync_at = $6, next_sync_at = $7, sync_lease_until = NULL,
-			sync_requested_at = CASE WHEN $8 THEN NULL ELSE sync_requested_at END,
-			consecutive_failures = CASE WHEN $9 THEN 0 WHEN $10 THEN consecutive_failures ELSE consecutive_failures + 1 END
-		WHERE id = $1`,
+			sync_requested_at = CASE WHEN $8 AND sync_requested_at <= $12 THEN NULL ELSE sync_requested_at END,
+			consecutive_failures = CASE WHEN $9 THEN 0 WHEN $10 THEN consecutive_failures ELSE consecutive_failures + 1 END,
+			config_authors = CASE WHEN $13 AND (config_changed_at IS NULL OR config_changed_at <= $12) THEN '{}'::uuid[] ELSE config_authors END
+		WHERE id = $1 AND sync_lease_until = $11`,
 		id.String(), string(o.Status), nullString(truncate(o.Error, 2000)), nullString(o.Commit), nullBytes(o.Report),
-		o.At, nullTime(o.NextSyncAt), o.ClearRequest, o.ResetFailures, o.KeepFailures)
+		o.At, nullTime(o.NextSyncAt), o.ClearRequest, o.ResetFailures, o.KeepFailures,
+		o.LeaseUntil.Truncate(time.Microsecond), o.ClaimedAt, o.ConsumeAuthors)
 	if err != nil {
 		return fmt.Errorf("save rule source sync: %w", err)
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return cs.ErrLeaseLost
 	}
 	return nil
 }
@@ -282,7 +329,7 @@ func (r *ContentSourceRepository) SaveSyncUnscoped(ctx context.Context, id share
 const contentSnapshotColumns = `
 	id, source_id, scope, tenant_id, upstream_revision, COALESCE(ref, ''), digest, content_pack_id, platform_pack_id,
 	size_bytes, file_count, file_index, rules, rule_count, tier, lint, COALESCE(license_spdx, ''), service_use, redistribution, signature,
-	diff, checks, review_required, state, synced_by, promoted_by, promoted_at, rejected_by, rejected_at,
+	diff, checks, review_required, state, synced_by, config_authors, promoted_by, promoted_at, rejected_by, rejected_at,
 	COALESCE(reject_reason, ''), created_at`
 
 func scanContentSnapshot(row interface{ Scan(...any) error }) (*cs.Snapshot, error) {
@@ -291,13 +338,14 @@ func scanContentSnapshot(row interface{ Scan(...any) error }) (*cs.Snapshot, err
 		id, sourceID, scope, tier, state     string
 		tenantID, packID, platformPackID     sql.NullString
 		syncedBy, promotedBy, rejectedBy     sql.NullString
+		authors                              pq.StringArray
 		promotedAt, rejectedAt               sql.NullTime
 		fileIndex, rules, lint, diff, checks []byte
 		redistribution                       sql.NullBool
 	)
 	if err := row.Scan(&id, &sourceID, &scope, &tenantID, &sn.UpstreamRevision, &sn.Ref, &sn.Digest, &packID, &platformPackID,
 		&sn.SizeBytes, &sn.FileCount, &fileIndex, &rules, &sn.RuleCount, &tier, &lint, &sn.LicenseSPDX, &sn.ServiceUse, &redistribution, &sn.Signature,
-		&diff, &checks, &sn.ReviewRequired, &state, &syncedBy, &promotedBy, &promotedAt, &rejectedBy, &rejectedAt,
+		&diff, &checks, &sn.ReviewRequired, &state, &syncedBy, &authors, &promotedBy, &promotedAt, &rejectedBy, &rejectedAt,
 		&sn.RejectReason, &sn.CreatedAt); err != nil {
 		return nil, err
 	}
@@ -307,6 +355,7 @@ func scanContentSnapshot(row interface{ Scan(...any) error }) (*cs.Snapshot, err
 	sn.Tier = contentpack.Tier(tier)
 	sn.TenantID, sn.ContentPackID, sn.PlatformPackID = parseNullID(tenantID), parseNullID(packID), parseNullID(platformPackID)
 	sn.SyncedBy, sn.PromotedBy, sn.RejectedBy = parseNullID(syncedBy), parseNullID(promotedBy), parseNullID(rejectedBy)
+	sn.ConfigAuthors = idsOf(authors)
 	sn.PromotedAt, sn.RejectedAt = nullTimeValue(promotedAt), nullTimeValue(rejectedAt)
 	sn.Redistribution = nullBoolValue(redistribution)
 	for _, d := range []struct {
@@ -346,12 +395,12 @@ func (r *ContentSourceRepository) CreateSnapshot(ctx context.Context, sn *cs.Sna
 	_, err = r.db.ExecContext(ctx, `
 		INSERT INTO content_source_snapshots (id, source_id, scope, tenant_id, upstream_revision, ref, digest,
 			content_pack_id, platform_pack_id, size_bytes, file_count, file_index, rules, rule_count, tier, lint,
-			license_spdx, signature, diff, checks, review_required, state, synced_by, created_at, service_use, redistribution)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26)`,
+			license_spdx, signature, diff, checks, review_required, state, synced_by, created_at, service_use, redistribution, config_authors)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27)`,
 		sn.ID.String(), sn.SourceID.String(), string(sn.Scope), nullIDPtr(sn.TenantID), sn.UpstreamRevision, nullString(sn.Ref),
 		sn.Digest, nullIDPtr(sn.ContentPackID), nullIDPtr(sn.PlatformPackID), sn.SizeBytes, sn.FileCount,
 		fileIndex, rules, sn.RuleCount, string(sn.Tier), lint, nullString(sn.LicenseSPDX), sn.Signature,
-		diff, checks, sn.ReviewRequired, string(sn.State), nullIDPtr(sn.SyncedBy), sn.CreatedAt, sn.ServiceUse, nullBoolPtr(sn.Redistribution))
+		diff, checks, sn.ReviewRequired, string(sn.State), nullIDPtr(sn.SyncedBy), sn.CreatedAt, sn.ServiceUse, nullBoolPtr(sn.Redistribution), pq.Array(idStrings(sn.ConfigAuthors)))
 	if err != nil {
 		if isUniqueViolation(err) {
 			return fmt.Errorf("%w: snapshot of this digest exists", shared.ErrConflict)

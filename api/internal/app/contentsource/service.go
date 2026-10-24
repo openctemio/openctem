@@ -536,8 +536,9 @@ func (s *Service) GetSnapshot(ctx context.Context, tenantID, sourceID, id shared
 }
 
 // Promote makes a candidate current. A snapshot that needs review cannot be
-// promoted by the member who last changed what the source fetches, nor by a
-// caller without a user (four-eyes).
+// promoted by a member who changed the configuration it was synced from
+// (the snapshot records them), nor by the member who last changed what the
+// source fetches, nor by a caller without a user (four-eyes).
 func (s *Service) Promote(ctx context.Context, a Actor, sourceID, snapshotID shared.ID) error {
 	src, err := s.ownSource(ctx, a.TenantID, sourceID)
 	if err != nil {
@@ -546,7 +547,8 @@ func (s *Service) Promote(ctx context.Context, a Actor, sourceID, snapshotID sha
 	var promoted *dom.Snapshot
 	err = s.repo.Promote(ctx, a.TenantID, sourceID, snapshotID, a.UserID, s.now().UTC(), func(locked *dom.Source, sn *dom.Snapshot) error {
 		if sn.ReviewRequired {
-			if a.UserID == nil || (locked.ConfigChangedBy != nil && locked.ConfigChangedBy.Equals(*a.UserID)) {
+			if a.UserID == nil || sn.AuthoredBy(*a.UserID) ||
+				(locked.ConfigChangedBy != nil && locked.ConfigChangedBy.Equals(*a.UserID)) {
 				return dom.ErrFourEyes
 			}
 		}
@@ -556,7 +558,7 @@ func (s *Service) Promote(ctx context.Context, a Actor, sourceID, snapshotID sha
 	if err != nil {
 		if errors.Is(err, dom.ErrFourEyes) {
 			s.logAudit(ctx, a.Audit, src.TenantID, auditapp.NewDeniedEvent(auditdom.ActionContentSourcePromoted,
-				auditdom.ResourceTypeContentSource, src.ID.String(), "four-eyes: the promoter last changed the source").
+				auditdom.ResourceTypeContentSource, src.ID.String(), "four-eyes: the promoter changed the source configuration").
 				WithResourceName(src.Slug).WithMetadata("snapshot_id", snapshotID.String()))
 		}
 		return err
