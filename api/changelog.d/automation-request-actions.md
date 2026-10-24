@@ -1,7 +1,7 @@
 ### Security: automations only request false positives and risk acceptances
 
 - New actions `request_false_positive` and `request_risk_acceptance` create a request on behalf of the automation's owner. A person always decides it. The approval policy never lets one person decide a request an automation made, even when the organization's approval level is `off`.
-- `update_status` may move a finding only to `confirmed` or `in_progress`. Other targets are refused on save (400 `AUTOMATION_STATUS_NOT_ALLOWED`) and at run time. Migration 003389 (`automation_guardrails`) switches off, and back to simulate, every automation whose draft or published version set another status (`disabled_reason = status_not_allowed`). No automation is deleted.
+- `update_status` may move a finding only to `confirmed` or `in_progress`. Other targets are refused on save (400 `AUTOMATION_STATUS_NOT_ALLOWED`) and at run time. Migration 003402 (`automation_guardrails`) switches off, and back to simulate, every automation whose draft or published version set another status (`disabled_reason = status_not_allowed`). No automation is deleted.
 
 ### Added: change cap per automation run
 
