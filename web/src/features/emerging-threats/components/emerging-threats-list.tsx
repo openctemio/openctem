@@ -6,7 +6,7 @@
  * rendered as plain text.
  */
 
-import { useEffect, useMemo, useState } from 'react'
+import { useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import type { ColumnDef } from '@tanstack/react-table'
 import { Siren } from 'lucide-react'
@@ -44,6 +44,7 @@ import {
   useDateLocale,
   useEventKindLabel,
 } from './bits'
+import { useSearchQuery } from '@/hooks/use-search-query'
 
 const ALL = 'all'
 
@@ -57,13 +58,15 @@ export function EmergingThreatsList() {
   const [tier, setTier] = useState<AlertTier | typeof ALL>(ALL)
   const [internetOnly, setInternetOnly] = useState(false)
   const [searchInput, setSearchInput] = useState('')
-  const [search, setSearch] = useState('')
+  const search = useSearchQuery(searchInput).term
   const [pagination, setPagination] = useState({ pageIndex: 0, pageSize: DEFAULT_PER_PAGE })
 
-  useEffect(() => {
-    const id = setTimeout(() => setSearch(searchInput), 300)
-    return () => clearTimeout(id)
-  }, [searchInput])
+  // A new search starts at the first page, once it is sent.
+  const [pageSearch, setPageSearch] = useState(search)
+  if (pageSearch !== search) {
+    setPageSearch(search)
+    setPagination((p) => ({ ...p, pageIndex: 0 }))
+  }
 
   const { data, error, isLoading, mutate } = useEmergingThreats({
     level: level === ALL ? undefined : level,
@@ -210,7 +213,6 @@ export function EmergingThreatsList() {
             placeholder={t('emergingThreats.filter.searchPlaceholder')}
             onChange={(e) => {
               setSearchInput(e.target.value)
-              resetPage()
             }}
           />
         </div>

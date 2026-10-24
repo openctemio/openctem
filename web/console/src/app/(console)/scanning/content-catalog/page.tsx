@@ -25,7 +25,6 @@ import {
 import { Skeleton } from '@/components/ui/skeleton'
 import { DataTable, ErrorState, PageHeader, RelativeTime } from '@/features/shared'
 import { useTranslation } from '@/context/i18n-provider'
-import { useDebounce } from '@/hooks/use-debounce'
 import { useListParams } from '@/hooks/use-list-params'
 import { TrustBanner } from '@/features/content-catalog/components/trust-banner'
 import { CONTENT_TYPES } from '@/features/content-catalog/lib'
@@ -58,7 +57,7 @@ export default function ContentCatalogPage() {
   const me = useAdmin()
   const canEdit = adminCan(me.role, 'super_admin')
   const list = useListParams({ defaultPageSize: 25, filters: { type: '' } })
-  const q = useDebounce(list.q, 300)
+  const q = list.searchTerm
   const trust = useCatalogTrust()
   const pkgs = useCatalogPackages(q, list.filters.type, list.page, list.perPage)
   const [importOpen, setImportOpen] = useState(false)

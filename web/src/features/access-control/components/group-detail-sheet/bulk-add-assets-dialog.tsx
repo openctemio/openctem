@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useMemo, useCallback, useEffect } from 'react'
+import { useState, useMemo, useCallback } from 'react'
 import { Button } from '@/components/ui/button'
 import { Label } from '@/components/ui/label'
 import { Badge } from '@/components/ui/badge'
@@ -32,6 +32,7 @@ import {
 } from '@/features/access-control'
 import { useAssets } from '@/features/assets/hooks/use-assets'
 import { getErrorMessage } from '@/lib/api/error-handler'
+import { useSearchQuery } from '@/hooks/use-search-query'
 
 interface BulkAddAssetsDialogProps {
   groupId: string | null
@@ -51,15 +52,9 @@ export function BulkAddAssetsDialog({
   const { bulkAssignAssets, isAssigning } = useBulkAssignAssets(open ? groupId : null)
 
   const [search, setSearch] = useState('')
-  const [debouncedSearch, setDebouncedSearch] = useState('')
+  const debouncedSearch = useSearchQuery(search).term
   const [selectedAssetIds, setSelectedAssetIds] = useState<Set<string>>(new Set())
   const [ownershipType, setOwnershipType] = useState<AssetOwnershipType>('secondary')
-
-  // Debounce search
-  useEffect(() => {
-    const timer = setTimeout(() => setDebouncedSearch(search), 500)
-    return () => clearTimeout(timer)
-  }, [search])
 
   const { assets, isLoading } = useAssets({
     search: debouncedSearch,

@@ -72,7 +72,7 @@ import { exportToCsv } from '@/hooks/use-csv-export'
 import { useUrlFilter } from '@/hooks/use-url-param'
 import { resetListPage, useListParams, DEFAULT_PAGE_SIZES } from '@/hooks/use-list-params'
 import { useTranslation } from '@/context/i18n-provider'
-import { useDebounce } from '@/hooks/use-debounce'
+import { useSearchQuery } from '@/hooks/use-search-query'
 import { Skeleton } from '@/components/ui/skeleton'
 import { cn } from '@/lib/utils'
 import { Permission, usePermissions } from '@/lib/permissions'
@@ -103,7 +103,7 @@ export default function CredentialsPage() {
   // Search is server-side (the list and identity endpoints both take it), so it
   // lives in the URL like the other filters and is debounced per keystroke.
   const [searchQuery, setSearchQueryRaw] = useUrlFilter('q', '')
-  const debouncedSearch = useDebounce(searchQuery, 300)
+  const debouncedSearch = useSearchQuery(searchQuery).term
   // A filter change returns to page 1.
   const setStatusFilter = (v: StatusFilter) => {
     setStatusFilterRaw(v)

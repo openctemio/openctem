@@ -5,7 +5,7 @@ import { Check, Search } from 'lucide-react'
 import { Input } from '@/components/ui/input'
 import { useTranslation } from '@/context/i18n-provider'
 import { useAssets } from '@/features/assets/hooks/use-assets'
-import { useDebounce } from '@/hooks/use-debounce'
+import { useSearchQuery } from '@/hooks/use-search-query'
 import { cn } from '@/lib/utils'
 
 export interface ChosenAsset {
@@ -25,7 +25,7 @@ export function AssetChooser({
 }) {
   const { t } = useTranslation()
   const [search, setSearch] = useState('')
-  const debounced = useDebounce(search, 300)
+  const debounced = useSearchQuery(search).term
   const { assets, isLoading } = useAssets({ search: debounced, pageSize: 20, skip: !enabled })
 
   return (
