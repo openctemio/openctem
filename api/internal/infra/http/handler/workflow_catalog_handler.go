@@ -19,6 +19,9 @@ type WorkflowCatalogEntry struct {
 	Type       string `json:"type"`
 	Permission string `json:"permission,omitempty"`
 	Allowed    bool   `json:"allowed"`
+	// RiskClass is what the type asks of the go-live gate: low, elevated
+	// (step-up) or high (step-up and a second publisher). Not set on triggers.
+	RiskClass string `json:"risk_class,omitempty"`
 }
 
 // WorkflowCatalogResponse lists every trigger, action and notification type
@@ -50,6 +53,7 @@ func (h *WorkflowHandler) GetCatalog(w http.ResponseWriter, r *http.Request) {
 			Type:       e.Type,
 			Permission: string(e.Permission),
 			Allowed:    e.Permission == "" || middleware.HasPermission(r.Context(), string(e.Permission)),
+			RiskClass:  string(e.RiskClass),
 		}
 		switch e.Kind {
 		case automationsvc.CatalogKindTrigger:
