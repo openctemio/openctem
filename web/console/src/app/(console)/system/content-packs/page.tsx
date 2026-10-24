@@ -40,6 +40,10 @@ import {
   useContentSigningKey,
 } from '@console/features/admin-console/api/use-content-packs'
 import { useAdmin } from '@console/features/admin-console/components/admin-console-shell'
+import {
+  TypedAdminConfirmDialog,
+  nameToType,
+} from '@console/features/admin-console/components/type-to-confirm-field'
 import { AdminConfirmDialog } from '@console/features/admin-console/components/admin-confirm-dialog'
 import {
   AddContentPackDialog,
@@ -420,7 +424,8 @@ export default function ContentPacksPage() {
       </DetailSheet>
 
       {revoking && (
-        <AdminConfirmDialog
+        <TypedAdminConfirmDialog
+          typeToConfirm={nameToType(revoking.name, revoking.version ?? revoking.id ?? 'revoke')}
           open
           onOpenChange={(o) => !o && setRevoking(null)}
           title={t('admin.cp.revokeTitle', 'Revoke {name} {version}', {
@@ -431,11 +436,11 @@ export default function ContentPacksPage() {
             <p>
               {t(
                 'admin.cp.revokeWhat',
-                'Sensors stop running this pack, and any channel that points at it is cleared. This cannot be undone.'
+                'Sensors stop running this pack and any channel that points at it is cleared. The pack stays listed as revoked and cannot be restored.'
               )}
             </p>
           }
-          confirmLabel={t('admin.cp.revoke', 'Revoke')}
+          confirmLabel={t('admin.cp.revokePack', 'Revoke pack')}
           destructive
           requireCode
           onConfirm={async (proof) => {

@@ -606,7 +606,7 @@ export function SupportSessionView({
           <ShieldAlert className="mt-0.5 size-5 shrink-0 text-warning" aria-hidden="true" />
           <div className="min-w-0">
             <p className="font-semibold break-words">
-              {t('admin.support.frame', 'Support session — read-only — ends {time}', {
+              {t('admin.support.frame', 'Support session, read-only, ends {time}', {
                 time: formatSupportTime(session.expiresAt, locale),
               })}
             </p>
