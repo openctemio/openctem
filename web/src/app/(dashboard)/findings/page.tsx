@@ -2407,7 +2407,7 @@ function FindingsContent() {
                   </span>
                 )}
                 <kbd
-                  className="ms-2 hidden rounded border border-current/30 px-1 font-sans text-[10px] sm:inline"
+                  className="ms-2 hidden rounded border border-current/30 px-1 font-sans text-xs sm:inline"
                   aria-hidden
                 >
                   t
