@@ -146,10 +146,30 @@ A scan workflow step is a **capability node**. It names a capability and picks i
 tool in one of three ways (`tool_selection` on the step response):
 
 - **auto** (no tool, no `prefer_tools`): any implementation of the capability,
-  in catalog order, with the default first;
+  in catalog order, with the default first, then the organization's declared
+  tools that implement it, by name (below);
 - **prefer** (`prefer_tools`, migration 001176): the listed tools, in that
-  order. Each must implement the capability;
+  order. Each must implement the capability (a catalog implementation or one
+  of the organization's declared tools);
 - **pin** (`tool`): that tool only (strict, G10).
+
+**Declared tools** (a tool an organization's sensor reports with a valid
+contract, `tool-contract.md` §6) are offered by capability like any
+implementation, with no platform change for a new tool:
+
+- A declared tool is a candidate for a node when it is active, a scanner, and
+  its descriptor implements the node's `capability@major`. Only the step's own
+  organization's tools are read (`ListTenantCustomTools`), and a declared tool
+  never takes a catalog implementation's name.
+- Its standard params map through its descriptor (`implements[].params`, kept
+  on the catalog row as `metadata.params`), with the same eligibility rule: a
+  param it does not take skips it with the reason.
+- Its command always names the capability (`StepTool.CommandPayload`), so the
+  sensor checks that the tool implements it and checks its output against the
+  capability, and the hop router chains it like a catalog implementation.
+- A pinned declared tool runs its step's capability the same way.
+- Being picked grants nothing: an operator-installed tool runs as T2 (its
+  contract's origin), so it needs a grant and scope that allow T2.
 
 A pin and a prefer list together are refused.
 
@@ -264,6 +284,8 @@ payload comes from one builder, `scan.StepCommandPayload`.
   does not know fall back to the tenant's tool lookup (tenant-scoped, platform
   tools first). Platform implementations are read with
   `GetPlatformToolByName`, never another tenant's tool of the same name.
+  After them come the organization's declared implementations (§1.2); a
+  failed lookup of those fails the step rather than reading as "none".
 - **Target kinds (RFC-088).** After the type gate, every target of a step
   goes only to a stage that takes its kind (`stage.AcceptsKind`): a name, an
   address, a network range, a URL or a service. A typed-in target is
