@@ -1,5 +1,8 @@
 'use client'
 
+import { HealthStatus } from '@/components/ui/health-status'
+import { SeverityBadge } from '@/components/ui/severity-badge'
+import { OUTBOX_HEALTH } from '@/features/notifications/lib/outbox-health'
 import { useState } from 'react'
 import { useListParams } from '@/hooks/use-list-params'
 import type { ColumnDef } from '@tanstack/react-table'
@@ -10,13 +13,10 @@ import {
   RefreshCw,
   MoreHorizontal,
   Clock,
-  CheckCircle,
-  XCircle,
   Loader2,
   RotateCcw,
   Trash2,
   ExternalLink,
-  AlertTriangle,
   CheckCircle2,
   AlertCircle,
 } from 'lucide-react'
@@ -25,7 +25,6 @@ import { toast } from 'sonner'
 import { Main } from '@/components/layout'
 import { ErrorState, DataTable, PageHeader } from '@/features/shared'
 import { Button } from '@/components/ui/button'
-import { Badge } from '@/components/ui/badge'
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -58,21 +57,10 @@ import {
 import {
   type OutboxEntry,
   type OutboxStatus,
-  OUTBOX_STATUS_CONFIG,
-  OUTBOX_SEVERITY_CONFIG,
 } from '@/features/notifications/types/notification-outbox.types'
 import { safeHref } from '@/lib/safe-href'
 import { SafeExternalLink } from '@/components/safe-external-link'
 import { useTranslation } from '@/context/i18n-provider'
-
-// Status icon mapping
-const STATUS_ICONS: Record<OutboxStatus, React.ElementType> = {
-  pending: Clock,
-  processing: Loader2,
-  completed: CheckCircle,
-  failed: XCircle,
-  dead: AlertTriangle,
-}
 
 // Queue Health Status component
 function QueueHealthStatus({
@@ -99,14 +87,14 @@ function QueueHealthStatus({
 
   if (isHealthy) {
     return (
-      <div className="rounded-lg border border-green-200 bg-green-50 p-4 dark:border-green-800 dark:bg-green-950/30">
+      <div className="rounded-lg border bg-card p-4">
         <div className="flex items-center gap-3">
-          <CheckCircle2 className="h-5 w-5 text-green-600 dark:text-green-400" />
+          <CheckCircle2 className="h-5 w-5 text-hl-ok" />
           <div>
-            <p className="font-medium text-success">
+            <p className="font-medium">
               {t('notificationChannels.outbox.healthy', 'Queue is healthy')}
             </p>
-            <p className="text-sm text-green-600 dark:text-green-400">
+            <p className="text-sm text-muted-foreground">
               {t(
                 'notificationChannels.outbox.healthyDesc',
                 'All notifications are being delivered normally'
@@ -138,40 +126,21 @@ function QueueHealthStatus({
     parts.push(t('notificationChannels.outbox.count.dead', '{count} dead', { count: stats.dead }))
 
   return (
-    <div
-      className={cn(
-        'rounded-lg border p-4',
-        hasIssues
-          ? 'border-amber-200 bg-amber-50 dark:border-amber-800 dark:bg-amber-950/30'
-          : 'border-blue-200 bg-blue-50 dark:border-blue-800 dark:bg-blue-950/30'
-      )}
-    >
+    <div className={cn('rounded-lg border bg-card p-4')}>
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-3">
           {hasIssues ? (
-            <AlertCircle className="h-5 w-5 text-amber-600 dark:text-amber-400" />
+            <AlertCircle className="h-5 w-5 text-hl-warn" />
           ) : (
-            <Clock className="h-5 w-5 text-blue-600 dark:text-blue-400" />
+            <Clock className="h-5 w-5 text-hl-run" />
           )}
           <div>
-            <p
-              className={cn(
-                'font-medium',
-                hasIssues
-                  ? 'text-amber-800 dark:text-amber-200'
-                  : 'text-blue-800 dark:text-blue-200'
-              )}
-            >
-              {parts.join(' · ')}
+            <p className="flex flex-wrap gap-x-3 font-medium">
+              {parts.map((part) => (
+                <span key={part}>{part}</span>
+              ))}
             </p>
-            <p
-              className={cn(
-                'text-sm',
-                hasIssues
-                  ? 'text-amber-600 dark:text-amber-400'
-                  : 'text-blue-600 dark:text-blue-400'
-              )}
-            >
+            <p className="text-sm text-muted-foreground">
               {hasIssues
                 ? t(
                     'notificationChannels.outbox.needAttention',
@@ -197,10 +166,7 @@ function QueueHealthStatus({
 export default function NotificationOutboxPage() {
   const { t, locale } = useTranslation()
   const statusLabel = (s: string) =>
-    t(
-      `notificationChannels.outbox.status.${s}`,
-      OUTBOX_STATUS_CONFIG[s as OutboxStatus]?.label ?? s
-    )
+    t(`notificationChannels.outbox.status.${s}`, OUTBOX_HEALTH[s as OutboxStatus]?.label ?? s)
   // State
   // The list lives in the URL (one list convention): page, per_page, status.
   const list = useListParams({ defaultPageSize: 10, filters: { status: 'all' } })
@@ -351,11 +317,10 @@ export default function NotificationOutboxPage() {
       accessorKey: 'severity',
       header: t('notificationChannels.outbox.col.severity', 'Severity'),
       cell: ({ row }) => {
-        const severityConfig = OUTBOX_SEVERITY_CONFIG[row.original.severity]
         return (
-          <Badge variant="outline" className={`${severityConfig.bgColor} ${severityConfig.color}`}>
-            {t(`notificationChannels.severity.${row.original.severity}`, severityConfig.label)}
-          </Badge>
+          <SeverityBadge severity={row.original.severity}>
+            {t(`notificationChannels.severity.${row.original.severity}`)}
+          </SeverityBadge>
         )
       },
     },
@@ -364,25 +329,19 @@ export default function NotificationOutboxPage() {
       header: t('notificationChannels.outbox.col.status', 'Status'),
       cell: ({ row }) => {
         const entry = row.original
-        const StatusIcon = STATUS_ICONS[entry.status]
-        const statusConfig = OUTBOX_STATUS_CONFIG[entry.status]
+        const health = OUTBOX_HEALTH[entry.status]
         return (
           <>
-            <div className="flex items-center gap-2">
-              <StatusIcon
-                className={cn(
-                  'h-4 w-4',
-                  statusConfig.color,
-                  entry.status === 'processing' && 'animate-spin'
-                )}
-              />
-              <Badge
-                variant="outline"
-                className={`${statusConfig.bgColor} ${statusConfig.textColor}`}
-              >
-                {statusLabel(entry.status)}
-              </Badge>
-            </div>
+            <HealthStatus
+              state={health.state}
+              value={entry.status}
+              label={statusLabel(entry.status)}
+              detail={
+                entry.status === 'dead'
+                  ? t('notificationChannels.outbox.deadLetter', 'dead letter')
+                  : undefined
+              }
+            />
             {entry.last_error && (
               <Tooltip>
                 <TooltipTrigger asChild>

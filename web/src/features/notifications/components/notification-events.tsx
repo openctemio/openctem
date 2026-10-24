@@ -1,19 +1,12 @@
 'use client'
 
 import { formatDistanceToNow } from 'date-fns'
-import {
-  CheckCircle2,
-  XCircle,
-  AlertCircle,
-  AlertTriangle,
-  Info,
-  ChevronDown,
-  ExternalLink,
-  RefreshCw,
-  MinusCircle,
-} from 'lucide-react'
+import { ChevronDown, ExternalLink, RefreshCw } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { Badge } from '@/components/ui/badge'
+import { HealthStatus } from '@/components/ui/health-status'
+import { SeverityBadge } from '@/components/ui/severity-badge'
+import type { HealthState } from '@/lib/health-colors'
 import { Button } from '@/components/ui/button'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
@@ -32,54 +25,10 @@ interface NotificationEventsProps {
   limit?: number
 }
 
-const STATUS_CONFIG: Record<
-  NotificationEventStatus,
-  { icon: typeof CheckCircle2; color: string; bgColor: string; label: string }
-> = {
-  completed: {
-    icon: CheckCircle2,
-    color: 'text-green-600 dark:text-green-400',
-    bgColor: 'bg-green-100 dark:bg-green-900/30',
-    label: 'Sent',
-  },
-  failed: {
-    icon: XCircle,
-    color: 'text-red-600 dark:text-red-400',
-    bgColor: 'bg-red-100 dark:bg-red-900/30',
-    label: 'Failed',
-  },
-  skipped: {
-    icon: MinusCircle,
-    color: 'text-gray-600 dark:text-gray-400',
-    bgColor: 'bg-gray-100 dark:bg-gray-900/30',
-    label: 'Skipped',
-  },
-}
-
-const SEVERITY_CONFIG: Record<
-  string,
-  { icon: typeof AlertCircle; color: string; bgColor: string }
-> = {
-  critical: {
-    icon: AlertCircle,
-    color: 'text-red-700 dark:text-red-400',
-    bgColor: 'bg-red-100 dark:bg-red-900/30',
-  },
-  high: {
-    icon: AlertTriangle,
-    color: 'text-orange-700 dark:text-orange-400',
-    bgColor: 'bg-orange-100 dark:bg-orange-900/30',
-  },
-  medium: {
-    icon: AlertTriangle,
-    color: 'text-yellow-700 dark:text-yellow-400',
-    bgColor: 'bg-yellow-100 dark:bg-yellow-900/30',
-  },
-  low: {
-    icon: Info,
-    color: 'text-blue-700 dark:text-blue-400',
-    bgColor: 'bg-blue-100 dark:bg-blue-900/30',
-  },
+const STATUS_HEALTH: Record<NotificationEventStatus, { state: HealthState; label: string }> = {
+  completed: { state: 'ok', label: 'Sent' },
+  failed: { state: 'down', label: 'Failed' },
+  skipped: { state: 'off', label: 'Skipped' },
 }
 
 function NotificationEventItem({ entry }: { entry: NotificationEventEntry }) {
@@ -95,36 +44,21 @@ function NotificationEventItem({ entry }: { entry: NotificationEventEntry }) {
         : entry.status
 
   const statusConfig =
-    STATUS_CONFIG[integrationStatus as NotificationEventStatus] || STATUS_CONFIG.completed
-  const severityConfig = SEVERITY_CONFIG[entry.severity] || SEVERITY_CONFIG.medium
-  const StatusIcon = statusConfig.icon
-  const SeverityIcon = severityConfig.icon
+    STATUS_HEALTH[integrationStatus as NotificationEventStatus] || STATUS_HEALTH.completed
 
   return (
     <div className="flex items-start gap-3 py-3 border-b last:border-b-0">
-      {/* Status Icon */}
-      <div className="flex-shrink-0 mt-0.5">
-        <StatusIcon className={cn('h-4 w-4', statusConfig.color)} />
-      </div>
-
       {/* Content */}
       <div className="flex-1 min-w-0 space-y-1">
         {/* Title, Severity and Status */}
         <div className="flex items-start gap-2">
           <span className="font-medium text-sm truncate flex-1">{entry.title}</span>
-          <Badge
-            variant="outline"
-            className={cn('text-xs flex-shrink-0', severityConfig.color, severityConfig.bgColor)}
-          >
-            <SeverityIcon className="h-3 w-3 me-1" />
-            {entry.severity}
-          </Badge>
-          <Badge
-            variant="outline"
-            className={cn('text-xs flex-shrink-0', statusConfig.color, statusConfig.bgColor)}
-          >
-            {statusConfig.label}
-          </Badge>
+          <SeverityBadge severity={entry.severity} className="flex-shrink-0" />
+          <HealthStatus
+            state={statusConfig.state}
+            value={integrationStatus}
+            label={statusConfig.label}
+          />
         </div>
 
         {/* Body preview */}
@@ -132,7 +66,7 @@ function NotificationEventItem({ entry }: { entry: NotificationEventEntry }) {
 
         {/* Error message if failed */}
         {sendResult?.status === 'failed' && sendResult?.error && (
-          <div className="text-xs text-red-600 dark:text-red-400 bg-red-100 dark:bg-red-900/30 rounded px-2 py-1">
+          <div className="text-xs text-destructive bg-destructive/10 rounded px-2 py-1">
             <span className="font-semibold">Error:</span> {sendResult.error}
           </div>
         )}
@@ -209,7 +143,9 @@ export function NotificationEvents({ integrationId, limit = 10 }: NotificationEv
           {isLoading ? (
             <div className="p-4 text-center text-sm text-muted-foreground">Loading...</div>
           ) : error ? (
-            <div className="p-4 text-center text-sm text-red-500">Failed to load notifications</div>
+            <div className="p-4 text-center text-sm text-destructive">
+              Failed to load notifications
+            </div>
           ) : history.length === 0 ? (
             <div className="p-4 text-center text-sm text-muted-foreground">
               No notifications sent yet
