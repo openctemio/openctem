@@ -31,6 +31,7 @@ import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { ConfirmDialog } from '@/components/confirm-dialog'
+import { nameToTypeToConfirm } from '@/components/confirm-name'
 import { useTranslation } from '@/context/i18n-provider'
 import {
   DangerZone,
@@ -822,11 +823,10 @@ export default function ScanDetailPage() {
             )}
           </>
         }
-        confirmText={
-          isDeleting ? t('confirm.deleting', 'Deleting…') : t('confirm.delete', 'Delete')
-        }
+        confirmText={isDeleting ? t('confirm.deleting', 'Deleting…') : t('confirm.scan.deleteBtn')}
         destructive
         isLoading={isDeleting}
+        typeToConfirm={nameToTypeToConfirm(config.name, config.id)}
         handleConfirm={handleDeleteConfig}
       />
       <ConfirmDialog
