@@ -5,10 +5,15 @@
  * stacked bar for proportion. Drawn with CSS (no chart library): values are
  * printed next to every bar, ordinal keys (severity, priority, age band) keep
  * their order, and past eight keys the rest folds into "Other".
+ *
+ * Stacked segments are separated by a 2px gap of the card itself (the track is
+ * transparent), so two neighbouring ramp steps never touch; the legend lists
+ * every key in segment order with its value and share (direct labels), and
+ * "none" is a hatch (research/257).
  */
 
 import { useTranslation } from '@/context/i18n-provider'
-import { CATEGORICAL_SLOTS, seriesVar } from '@/lib/chart-palette'
+import { CATEGORICAL_SLOTS, seriesFill } from '@/lib/chart-palette'
 import { formatMetric, formatPercent, type MetricUnit } from '@/lib/format-metric'
 import { CategoryTable } from './table-viz'
 import { ChartOrTable, DrillLink, foldOther, useLabel } from './viz-parts'
@@ -41,7 +46,7 @@ export function BarViz({ result, unit = 'count', stacked = false, drill }: BarVi
 
   const chart = stacked ? (
     <div className="flex flex-col gap-2">
-      <div className="flex h-4 w-full gap-0.5 overflow-hidden rounded-full bg-muted">
+      <div className="flex h-4 w-full gap-0.5 overflow-hidden rounded-sm">
         {rows
           .filter((r) => r.value > 0)
           .map((r) => {
@@ -53,10 +58,10 @@ export function BarViz({ result, unit = 'count', stacked = false, drill }: BarVi
                 to={drill?.({ key: r.key })}
                 label={text}
                 title={text}
-                className="h-full"
+                className="h-full min-w-1 hover:outline-2 hover:-outline-offset-2 hover:outline-foreground focus-visible:-outline-offset-2"
                 style={{
                   width: `${(r.value / (sum || 1)) * 100}%`,
-                  background: seriesVar(r.key, i),
+                  background: seriesFill(r.key, i),
                 }}
               />
             )
@@ -67,7 +72,7 @@ export function BarViz({ result, unit = 'count', stacked = false, drill }: BarVi
           <li key={r.key} className="inline-flex items-center gap-1.5">
             <span
               className="size-2.5 rounded-sm"
-              style={{ background: seriesVar(r.key, i) }}
+              style={{ background: seriesFill(r.key, i) }}
               aria-hidden
             />
             <span className="text-muted-foreground">{label(r)}</span>
@@ -94,7 +99,7 @@ export function BarViz({ result, unit = 'count', stacked = false, drill }: BarVi
                     style={{
                       width: `${(r.value / max) * 100}%`,
                       minWidth: r.value > 0 ? 2 : 0,
-                      background: seriesVar(r.key, i),
+                      background: seriesFill(r.key, i),
                     }}
                   />
                 </span>
