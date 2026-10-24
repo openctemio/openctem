@@ -94,7 +94,9 @@ export function childrenText(t: TFn, children: Record<string, number> | undefine
 export function reportConfirmScope(
   t: TFn,
   scope: EASMConfirmScopeResult | undefined,
-  onUndone?: () => void
+  onUndone?: () => void,
+  /** The caller may delete scope entries (the Undo calls DELETE /scope/targets). */
+  canUndo = true
 ) {
   if (!scope) return
   if (scope.skipped === 'needs_scope_write') {
@@ -132,28 +134,30 @@ export function reportConfirmScope(
           count: added.length,
         }),
     {
-      action: {
-        label: t('attackSurface.queue.undo', 'Undo'),
-        onClick: () => {
-          void (async () => {
-            try {
-              await Promise.all(
-                ids.map((id) => del<void>(`/api/v1/scope/targets/${encodeURIComponent(id)}`))
-              )
-              await invalidateScopeCache()
-              toast.success(t('attackSurface.queue.undone', 'Removed the scope entries again'))
-              onUndone?.()
-            } catch (e) {
-              toast.error(
-                getErrorMessage(
-                  e,
-                  t('attackSurface.queue.undoFailed', 'Could not remove the entries')
-                )
-              )
-            }
-          })()
-        },
-      },
+      action: !canUndo
+        ? undefined
+        : {
+            label: t('attackSurface.queue.undo', 'Undo'),
+            onClick: () => {
+              void (async () => {
+                try {
+                  await Promise.all(
+                    ids.map((id) => del<void>(`/api/v1/scope/targets/${encodeURIComponent(id)}`))
+                  )
+                  await invalidateScopeCache()
+                  toast.success(t('attackSurface.queue.undone', 'Removed the scope entries again'))
+                  onUndone?.()
+                } catch (e) {
+                  toast.error(
+                    getErrorMessage(
+                      e,
+                      t('attackSurface.queue.undoFailed', 'Could not remove the entries')
+                    )
+                  )
+                }
+              })()
+            },
+          },
     }
   )
 }
@@ -173,7 +177,7 @@ export function EASMReviewQueue() {
   const [tabParam, setTabParam] = useUrlFilter('tab', REVIEW_VIEWS[0].id)
   const view = REVIEW_VIEWS.some((v) => v.id === tabParam) ? tabParam : REVIEW_VIEWS[0].id
   const setView = setTabParam
-  const [searchInput, setSearchInput] = useState('')
+  const [searchInput, setSearchInput] = useUrlFilter('q', '')
   const search = useDebounce(searchInput, 300)
   const { pagination, setPagination, setPage } = useListParams({ defaultPageSize: PAGE_SIZE })
   const [selected, setSelected] = useState<EASMReviewItem[]>([])
@@ -225,7 +229,7 @@ export function EASMReviewQueue() {
             count: missed,
           })
         )
-      reportConfirmScope(t, res.scope, () => void mutate())
+      reportConfirmScope(t, res.scope, () => void mutate(), can(Permission.ScopeDelete))
       clearSelection()
       void mutate()
     } catch (e) {
@@ -488,6 +492,7 @@ export function EASMReviewQueue() {
         onSelectionChange={setSelected}
         resetSelectionKey={`${view}:${search}:${reason}:${pagination.pageIndex}:${resetKey}`}
         showSearch={false}
+        isLoading={isLoading}
         toolbarStart={
           <div className="flex w-full flex-wrap items-center gap-2">
             <div className="relative w-full max-w-sm">
@@ -535,21 +540,17 @@ export function EASMReviewQueue() {
           </div>
         }
         emptyMessage={
-          isLoading
-            ? t('attackSurface.queue.loading', 'Loading…')
-            : view === 'review'
-              ? t('attackSurface.queue.emptyReview', 'Nothing waits for a decision')
-              : t('attackSurface.queue.emptyRejected', 'No rejected assets')
+          view === 'review'
+            ? t('attackSurface.queue.emptyReview', 'Nothing waits for a decision')
+            : t('attackSurface.queue.emptyRejected', 'No rejected assets')
         }
         emptyDescription={
-          isLoading
-            ? undefined
-            : view === 'review'
-              ? t(
-                  'attackSurface.queue.emptyReviewDescription',
-                  'Every discovered name has a decision, or none has been found yet.'
-                )
-              : undefined
+          view === 'review'
+            ? t(
+                'attackSurface.queue.emptyReviewDescription',
+                'Every discovered name has a decision, or none has been found yet.'
+              )
+            : undefined
         }
       />
       <ScopeEntryDialog

@@ -72,6 +72,7 @@ export interface ExecutiveSummary {
   p0_open: number
   p0_resolved_period: number
   p1_open: number
+  p1_resolved_period?: number
   /** Live open P2 and P3 (with p0_open and p1_open: the current distribution). */
   p2_open?: number
   p3_open?: number
@@ -268,9 +269,13 @@ export function useProgramMetrics(tenantId: string | null, days = 90) {
   )
 }
 
-export function useExecutiveSummary(tenantId: string | null) {
+/**
+ * Executive summary over the trailing `days` window (the API default when
+ * omitted), so a page's period selector reaches every figure it shows.
+ */
+export function useExecutiveSummary(tenantId: string | null, days?: number) {
   return useSWR<ExecutiveSummary>(
-    useKey('/api/v1/dashboard/executive-summary', tenantId),
+    useKey(`/api/v1/dashboard/executive-summary${days ? `?days=${days}` : ''}`, tenantId),
     (url: string) => get<ExecutiveSummary>(url),
     config
   )
@@ -289,6 +294,23 @@ export function useMttrAnalytics(tenantId: string | null, days = MTTR_WINDOW_DAY
 }
 
 /** Data-quality scorecard (RFC-005 Gap 5) — owner coverage lives here. */
+export interface ProcessMetrics {
+  approval_avg_hours: number
+  approval_count: number
+  stale_assets: number
+  stale_assets_pct: number
+  findings_without_owner: number
+  avg_time_to_assign_hours: number
+}
+
+export function useProcessMetrics(tenantId: string | null, days = MTTR_WINDOW_DAYS) {
+  return useSWR<ProcessMetrics>(
+    useKey(`/api/v1/dashboard/process-metrics?days=${days}`, tenantId),
+    (url: string) => get<ProcessMetrics>(url),
+    config
+  )
+}
+
 export function useDataQuality(tenantId: string | null) {
   return useSWR<DataQualityScorecard>(
     useKey('/api/v1/dashboard/data-quality', tenantId),

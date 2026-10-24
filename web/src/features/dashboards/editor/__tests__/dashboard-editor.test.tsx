@@ -122,6 +122,50 @@ describe('DashboardEditor', () => {
     expect(onExit).toHaveBeenCalledWith(true)
   })
 
+  it('a widget header holds only the handle, the title, Configure and More; the rest is in the menu', async () => {
+    render(<DashboardEditor dashboard={dashboard} kind="personal" onExit={() => {}} />)
+    const chrome = screen.getAllByTestId('editor-chrome')[0]
+    // The title truncates and keeps its full name on hover.
+    expect(within(chrome).getByTitle('Open findings')).toHaveClass('truncate', 'min-w-0')
+    expect(chrome).toHaveClass('overflow-hidden', 'min-w-0')
+    // No row of move and resize buttons in the header.
+    for (const name of ['Move earlier', 'Move later', 'Narrower', 'Wider', 'Shorter', 'Taller'])
+      expect(within(chrome).queryByRole('button', { name })).toBeNull()
+    expect(
+      within(chrome).getByRole('button', { name: 'Configure Open findings' })
+    ).toBeInTheDocument()
+    // Duplicate and Remove show inline only on a wide widget (container query).
+    expect(within(chrome).getByRole('button', { name: 'Remove Open findings' })).toHaveClass(
+      'hidden',
+      '@[22rem]:inline-flex'
+    )
+    await userEvent.click(
+      within(chrome).getByRole('button', { name: 'More actions for Open findings' })
+    )
+    const menu = screen.getByRole('menu')
+    const items = within(menu).getAllByRole('menuitem')
+    expect(items.map((i) => i.textContent?.replace(/[←→↑↓⇧]|Del$|D$/g, '').trim())).toEqual([
+      'Move earlier',
+      'Move later',
+      'Narrower',
+      'Wider',
+      'Shorter',
+      'Taller',
+      'Duplicate',
+      'Remove',
+    ])
+    // Remove is last, after a separator, in the destructive colour.
+    expect(items.at(-1)).toHaveClass('text-destructive')
+    expect(items.at(-1)?.previousElementSibling).toHaveAttribute('role', 'separator')
+    expect(within(menu).getByRole('menuitem', { name: /Move earlier/ })).toHaveAttribute(
+      'data-disabled'
+    )
+    await userEvent.click(within(menu).getByRole('menuitem', { name: /Move later/ }))
+    expect(screen.getAllByTestId('editor-card')[1]).toHaveAccessibleName(
+      'Open findings, position 2 of 2'
+    )
+  })
+
   it('Ctrl+Z and Ctrl+Shift+Z undo and redo; Save is off without changes', () => {
     render(<DashboardEditor dashboard={dashboard} kind="personal" onExit={() => {}} />)
     expect(screen.getByRole('button', { name: 'Save' })).toBeDisabled()
@@ -167,5 +211,126 @@ describe('DashboardEditor', () => {
     expect(layout[2].config.data.metric).toBe('fix.next')
     expect(layout[2].config.viz.type).toBe('table')
     expect(api.update).not.toHaveBeenCalled()
+  })
+})
+
+describe('DashboardEditor guards and config panel', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    Element.prototype.scrollIntoView = vi.fn()
+    Element.prototype.hasPointerCapture = vi.fn(() => false)
+    preview.mockResolvedValue({
+      id: 'x',
+      index: 0,
+      widget_type: 'metric',
+      state: 'ready',
+      shape: 'scalar',
+      scalar: { value: 4 },
+    })
+  })
+
+  it('Cancel with unsaved changes asks before discarding; without changes it leaves at once', async () => {
+    const onExit = vi.fn()
+    render(<DashboardEditor dashboard={dashboard} kind="personal" onExit={onExit} />)
+    await userEvent.click(screen.getByRole('button', { name: 'Cancel' }))
+    expect(onExit).toHaveBeenCalledWith(false)
+    onExit.mockClear()
+    const card = screen.getAllByTestId('editor-card')[0]
+    act(() => card.focus())
+    fireEvent.keyDown(card, { key: 'ArrowRight' })
+    await userEvent.click(screen.getByRole('button', { name: 'Cancel' }))
+    expect(onExit).not.toHaveBeenCalled()
+    const dialog = await screen.findByRole('alertdialog')
+    expect(dialog).toHaveTextContent('Discard your changes?')
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Keep editing' }))
+    expect(onExit).not.toHaveBeenCalled()
+    await userEvent.click(screen.getByRole('button', { name: 'Cancel' }))
+    await userEvent.click(
+      within(await screen.findByRole('alertdialog')).getByRole('button', {
+        name: 'Discard changes',
+      })
+    )
+    expect(onExit).toHaveBeenCalledWith(false)
+  })
+
+  it('guards beforeunload only while there are unsaved changes', () => {
+    render(<DashboardEditor dashboard={dashboard} kind="personal" onExit={() => {}} />)
+    const fire = () => {
+      const e = new Event('beforeunload', { cancelable: true })
+      window.dispatchEvent(e)
+      return e.defaultPrevented
+    }
+    expect(fire()).toBe(false)
+    const card = screen.getAllByTestId('editor-card')[0]
+    act(() => card.focus())
+    fireEvent.keyDown(card, { key: 'ArrowRight' })
+    expect(fire()).toBe(true)
+  })
+
+  it('Undo in the remove toast puts the removed widget back even after another change', async () => {
+    const { toast } = await import('sonner')
+    render(<DashboardEditor dashboard={dashboard} kind="personal" onExit={() => {}} />)
+    const cards = screen.getAllByTestId('editor-card')
+    act(() => cards[0].focus())
+    fireEvent.keyDown(cards[0], { key: 'Delete' })
+    const toastArgs = (toast as unknown as ReturnType<typeof vi.fn>).mock.calls.at(-1) as [
+      string,
+      { action: { onClick: () => void } },
+    ]
+    // Another change after the removal: widen the remaining widget.
+    const left = screen.getAllByTestId('editor-card')[0]
+    act(() => left.focus())
+    fireEvent.keyDown(left, { key: 'ArrowRight', shiftKey: true })
+    act(() => toastArgs[1].action.onClick())
+    const names = screen.getAllByTestId('editor-card').map((c) => c.getAttribute('aria-label'))
+    expect(names).toHaveLength(2)
+    expect(names[0]).toMatch(/^Open findings/)
+    // The later widening is kept (a plain undo would have reverted it).
+    await userEvent.click(screen.getByRole('button', { name: 'Save' }))
+    await waitFor(() => expect(api.update).toHaveBeenCalled())
+    expect(savedLayout().map((w) => w.config.id)).toEqual(['w_a', 'w_b'])
+    expect(savedLayout()[1].w).toBe(6)
+  })
+
+  it('Configure on a widget with stored figures does not request a preview; a change does', async () => {
+    const value = {
+      id: 'v',
+      index: 0,
+      widget_type: 'metric',
+      state: 'ready',
+      shape: 'scalar',
+      metric: 'findings.open',
+      scalar: { value: 9 },
+    }
+    render(
+      <DashboardEditor
+        dashboard={dashboard}
+        kind="personal"
+        data={{ widgets: [value], computed_at: '2026-01-01T00:00:00Z' } as never}
+        onExit={() => {}}
+      />
+    )
+    await userEvent.click(screen.getByRole('button', { name: 'Configure Open findings' }))
+    const panel = await screen.findByRole('dialog', { name: 'Configure widget' })
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 700))
+    })
+    expect(preview).not.toHaveBeenCalled()
+    await userEvent.click(within(panel).getByRole('radio', { name: /Progress/ }))
+    await waitFor(() => expect(preview).toHaveBeenCalledTimes(1), { timeout: 2000 })
+  })
+
+  it('a target with no value disables Apply and shows the unit', async () => {
+    render(<DashboardEditor dashboard={dashboard} kind="personal" onExit={() => {}} />)
+    await userEvent.click(screen.getByRole('button', { name: 'Configure Open findings' }))
+    const panel = await screen.findByRole('dialog', { name: 'Configure widget' })
+    await userEvent.click(within(panel).getByRole('combobox', { name: 'Better when' }))
+    await userEvent.click(await screen.findByRole('option', { name: 'At most' }))
+    const input = within(panel).getByLabelText('Value')
+    expect(within(panel).getByText('items')).toBeInTheDocument()
+    await userEvent.clear(input)
+    expect(within(panel).getByRole('button', { name: 'Apply' })).toBeDisabled()
+    await userEvent.type(input, '5')
+    expect(within(panel).getByRole('button', { name: 'Apply' })).toBeEnabled()
   })
 })

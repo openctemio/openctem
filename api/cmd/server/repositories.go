@@ -112,6 +112,7 @@ type Repositories struct {
 	RemediationOwnerAccess    *postgres.RemediationOwnerAccessRepository
 	RemediationSuggestion     *postgres.RemediationSuggestionRepository
 	TicketMapping             *postgres.TicketMappingRepository
+	ImportMapping             *postgres.ImportMappingRepository
 	TicketCreatePolicy        *postgres.TicketCreatePolicyRepository
 	FindingRemediationKey     *postgres.FindingRemediationKeyRepository
 
@@ -159,6 +160,12 @@ type Repositories struct {
 	// command (RFC-040 §5.3).
 	SensorResult *postgres.SensorResultRepository
 	IngestJob    *postgres.IngestJobRepository
+	// IngestPayload holds the sealed raw reports of queued uploads.
+	IngestPayload *postgres.IngestPayloadRepository
+	// KEV answers whether CVE ids are in the KEV catalog (ingest lanes).
+	KEV *postgres.KEVLookup
+	// IngestPolicyVersions versions the policies ingest snapshots.
+	IngestPolicyVersions *postgres.IngestPolicyVersions
 	// IngestReport tracks sensor protocol v2 results reports (RFC-026).
 	IngestReport *postgres.IngestReportRepository
 
@@ -215,6 +222,8 @@ type Repositories struct {
 	Suppression *postgres.SuppressionRepository
 	// FindingCorrelation stores cross-rule finding correlations.
 	FindingCorrelation *postgres.FindingCorrelationRepository
+	// FindingIssueLinks stores same-issue links between findings.
+	FindingIssueLinks *postgres.FindingIssueLinkRepository
 
 	// Access Control
 	Group *postgres.GroupRepository
@@ -484,6 +493,7 @@ func newRepositories(db *postgres.DB) *Repositories {
 		RemediationOwnerAccess:    postgres.NewRemediationOwnerAccessRepository(db),
 		RemediationSuggestion:     postgres.NewRemediationSuggestionRepository(db),
 		TicketMapping:             postgres.NewTicketMappingRepository(db),
+		ImportMapping:             postgres.NewImportMappingRepository(db),
 		TicketCreatePolicy:        postgres.NewTicketCreatePolicyRepository(db),
 		FindingRemediationKey:     postgres.NewFindingRemediationKeyRepository(db),
 
@@ -515,6 +525,9 @@ func newRepositories(db *postgres.DB) *Repositories {
 		SensorContentPolicy:    postgres.NewSensorContentPolicyRepository(db),
 		SensorResult:           postgres.NewSensorResultRepository(db),
 		IngestJob:              postgres.NewIngestJobRepository(db),
+		IngestPayload:          postgres.NewIngestPayloadRepository(db),
+		KEV:                    postgres.NewKEVLookup(db),
+		IngestPolicyVersions:   postgres.NewIngestPolicyVersions(db),
 		IngestReport:           postgres.NewIngestReportRepository(db),
 
 		// Scan coverage rotation (RFC-007)
@@ -563,6 +576,7 @@ func newRepositories(db *postgres.DB) *Repositories {
 		// Suppressions
 		Suppression:        postgres.NewSuppressionRepository(db),
 		FindingCorrelation: postgres.NewFindingCorrelationRepository(db),
+		FindingIssueLinks:  postgres.NewFindingIssueLinkRepository(db),
 
 		// Access Control
 		Group:             postgres.NewGroupRepository(db),
@@ -650,7 +664,7 @@ func newRepositories(db *postgres.DB) *Repositories {
 		PriorityRule:  postgres.NewPriorityRuleRepository(db),
 		PriorityAudit: postgres.NewPriorityAuditRepository(db),
 
-		// B6 runtime loop — IOC catalogue + match log (migration 000156).
+		// B6 runtime loop — IOC catalog + match log (migration 000156).
 		IOC: postgres.NewIOCRepository(db),
 
 		// Validation evidence (CTEM Stage-4, migration 000178).

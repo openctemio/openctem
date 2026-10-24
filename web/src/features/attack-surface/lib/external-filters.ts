@@ -25,6 +25,9 @@ export function riskRange(
   }
 }
 
+/** The attribution population the attack-surface stats count. */
+export const STATS_ATTRIBUTION = 'attributed'
+
 export interface ExternalSurfaceView {
   search?: string
   type?: string // 'all' or an asset type
@@ -34,16 +37,19 @@ export interface ExternalSurfaceView {
 
 /**
  * Server filters for the external attack surface: every internet-facing
- * (exposure = public) asset. This is the same population the overview's
- * "Exposed assets" number counts, so the card and the list it opens agree.
+ * asset (exposure public or reported reachable, the API's one definition).
+ * This is the same population, with the same attribution, as the overview's
+ * "Internet-facing assets" tile and exposed list, so the numbers and the
+ * lists they open agree.
  */
 export function externalSurfaceFilters(
   view: ExternalSurfaceView,
   t: RiskLevelThresholds
 ): AssetSearchFilters {
-  // Approved assets only (research/22 P0-12): a name a person rejected, or
+  // Attributed assets only (research/22 P0-12): a name a person rejected, or
   // one still waiting for review, is not part of the organization's surface.
-  const f: AssetSearchFilters = { exposures: ['public'], attribution: ['approved'] }
+  // This is the population the attack-surface stats count.
+  const f: AssetSearchFilters = { isInternetFacing: true, attribution: [STATS_ATTRIBUTION] }
   if (view.search) f.search = view.search
   if (view.type && view.type !== 'all') f.types = [view.type as never]
   if (view.risk && view.risk !== 'all') Object.assign(f, riskRange(view.risk, t))

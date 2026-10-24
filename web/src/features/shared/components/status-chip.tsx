@@ -1,16 +1,16 @@
 'use client'
 
-import { Badge } from '@/components/ui/badge'
+import { StatusLozenge } from '@/components/ui/status-lozenge'
 import { useTranslation } from '@/context/i18n-provider'
 import { humanizeIdentifier } from '@/lib/humanize-identifier'
-import { STATUS_TONE_CLASS, type StatusDomain, statusEntry } from '@/lib/status-tones'
-import { cn } from '@/lib/utils'
+import { type StatusDomain, statusEntry } from '@/lib/status-tones'
+import { DashedCircleGlyph } from '@/components/ui/status-glyphs'
 
 /**
- * A status as a dot and its label, from the one status registry
- * (lib/status-tones.ts). The label carries the meaning, never the colour
- * alone. A value the registry does not know shows humanized, in the neutral
- * tone.
+ * A workflow status as a lozenge, from the one status registry
+ * (lib/status-tones.ts). The label and the progression icon carry the
+ * meaning, never the colour alone. A value the registry does not know shows
+ * humanized, as an untouched (triage) lozenge.
  */
 export function StatusChip({
   domain,
@@ -26,17 +26,15 @@ export function StatusChip({
 }) {
   const { t } = useTranslation()
   const entry = statusEntry(domain, value)
-  const tone = STATUS_TONE_CLASS[entry?.tone ?? 'neutral']
   return (
-    <Badge
-      variant="outline"
-      className={cn('gap-1.5 rounded-full border-transparent', tone.chip, className)}
-      title={title}
-      data-state={value}
-      data-tone={entry?.tone ?? 'neutral'}
-    >
-      <span aria-hidden className={cn('size-1.5 rounded-full', tone.dot)} />
-      {entry ? t(entry.labelKey) : humanizeIdentifier(value)}
-    </Badge>
+    <span title={title} className="inline-flex">
+      <StatusLozenge
+        tone={entry?.tone ?? 'triage'}
+        icon={entry?.icon ?? DashedCircleGlyph}
+        label={entry ? t(entry.labelKey) : humanizeIdentifier(value)}
+        value={value}
+        className={className}
+      />
+    </span>
   )
 }

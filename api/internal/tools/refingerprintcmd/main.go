@@ -49,6 +49,20 @@
 //	                                   (default) and output are counts only, per
 //	                                   tenant, with the number of rotation tasks
 //	                                   that group several affected findings
+//	refingerprint -links [-tenant <id>] [-apply]
+//	                                   derive same-issue links of stored SAST
+//	                                   and secret findings (link keys, then
+//	                                   groups); dry run reports what it would
+//	                                   link; idempotent, batched
+//	refingerprint -vuln-aliases [-tenant <id>] [-apply]
+//	                                   re-key stored SCA, network and DAST
+//	                                   findings whose key names an advisory id
+//	                                   (GHSA, OSV) that the feed now aliases to
+//	                                   a CVE: in place when the CVE key is free
+//	                                   (the old key stays an alias, triage
+//	                                   kept), else linked as the same issue as
+//	                                   the finding holding it (never merged);
+//	                                   dry run unless -apply
 //	refingerprint -correlate [-apply]  one-time cross-rule correlation of
 //	                                   existing DAST findings (injection points
 //	                                   from stored evidence); dry run reports
@@ -103,6 +117,8 @@ func Main() {
 	timeout := flag.Duration("timeout", 2*time.Hour, "overall time limit")
 	dastRepair := flag.Bool("dast-repair", false, "repair forked DAST findings instead of re-keying older versions")
 	correlate := flag.Bool("correlate", false, "correlate existing DAST findings across rules (research/134 section 12)")
+	links := flag.Bool("links", false, "derive same-issue links of stored SAST and secret findings")
+	vulnAliases := flag.Bool("vuln-aliases", false, "re-key stored findings whose advisory id the feed aliases to a CVE")
 	remediationKeys := flag.Bool("remediation-keys", false, "re-derive remediation group keys instead of re-keying identities")
 	clearLegacy := flag.Bool("clear-legacy-secret-fingerprints", false, "clear the unverifiable secret fingerprints written before the keyed fingerprint (the next sighting rewrites them)")
 	before := flag.String("before", "", "with -clear-legacy-secret-fingerprints: clear fingerprints of findings created before this RFC 3339 time (default: when the keyed fingerprint was introduced)")
@@ -145,6 +161,12 @@ func Main() {
 	}
 	if *correlate {
 		os.Exit(runCorrelate(ctx, sqlDB, *tenantFlag, *apply, *asJSON))
+	}
+	if *links {
+		os.Exit(runIssueLinks(ctx, sqlDB, *tenantFlag, *apply, *asJSON, *batch))
+	}
+	if *vulnAliases {
+		os.Exit(runVulnAliases(ctx, sqlDB, *tenantFlag, *apply, *asJSON, *batch))
 	}
 	if *dastRepair {
 		os.Exit(runDASTRepair(ctx, sqlDB, store, *tenantFlag, vulnerability.ParseFoldRules(*foldRules), *apply, *asJSON))

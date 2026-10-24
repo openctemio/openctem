@@ -76,6 +76,7 @@ func (p *FindingProcessor) applySuppressions(
 	ctx context.Context,
 	tenantID shared.ID,
 	newFindings []*vulnerability.Finding,
+	snap *PolicySnapshot,
 ) map[int]shared.ID {
 	if p.suppressionChecker == nil || len(newFindings) == 0 {
 		return nil
@@ -84,10 +85,19 @@ func (p *FindingProcessor) applySuppressions(
 		return nil
 	}
 
-	rules, err := p.suppressionChecker.ListActiveRules(ctx, tenantID)
-	if err != nil {
-		p.logger.Warn("failed to load active suppression rules; skipping suppression", "error", err)
-		return nil
+	// The rules come from the ingest's policy snapshot, loaded before
+	// anything was written (an unloadable snapshot fails the ingest, it
+	// never turns suppression off). A batch outside an ingest loads them
+	// here and fails closed the same way: no rules read, no batch.
+	var rules []*suppression.Rule
+	if snap != nil && snap.loaded {
+		rules = snap.Suppression
+	} else {
+		var err error
+		if rules, err = p.suppressionChecker.ListActiveRules(ctx, tenantID); err != nil {
+			p.logger.Warn("failed to load active suppression rules", "error", err)
+			return nil
+		}
 	}
 	if len(rules) == 0 {
 		return nil

@@ -606,6 +606,27 @@ func (h *SuppressionHandler) auditApproval(r *http.Request, result *suppression.
 	}
 }
 
+// auditRuleDeleted records the deletion in the tenant audit log. The
+// fail-closed row (who deleted it) is the rule's own audit trail, written in
+// the delete's transaction; this is the tenant-visible copy of it.
+func (h *SuppressionHandler) auditRuleDeleted(r *http.Request, ruleID string) {
+	if h.auditService == nil {
+		return
+	}
+	actx := auditapp.AuditContext{
+		TenantID:   middleware.GetTenantID(r.Context()),
+		ActorID:    middleware.GetUserID(r.Context()),
+		ActorEmail: auditActorEmail(r.Context()),
+		ActorIP:    getClientIP(r),
+		UserAgent:  r.UserAgent(),
+		RequestID:  middleware.GetRequestID(r.Context()),
+	}
+	event := auditapp.NewSuccessEvent(auditdom.ActionSuppressionRuleDeleted, auditdom.ResourceTypeSuppressionRule, ruleID).
+		WithMessage("Suppression rule deleted; the findings it hid were reopened unless another rule covers them").
+		WithSeverity(auditdom.SeverityForAction(auditdom.ActionSuppressionRuleDeleted))
+	auditapp.RecordOrWarn(r.Context(), h.logger, h.auditService, actx, event)
+}
+
 // MarkReviewed handles POST /api/v1/suppressions/{id}/reviewed: an approver
 // clears the review flag of a rule the platform gave an end it did not have.
 // The rule keeps its end. Audited with the flag before and after.
@@ -801,6 +822,7 @@ func (h *SuppressionHandler) DeleteRule(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
+	h.auditRuleDeleted(r, ruleID)
 	h.logger.Info("suppression rule deleted",
 		"rule_id", ruleID,
 		"deleted_by", userID,

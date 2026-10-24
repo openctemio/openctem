@@ -1,16 +1,25 @@
 'use client'
 
 /**
- * The dashboard's scope badge and freshness line: whose figures these are,
- * when they were computed, when the next scheduled refresh runs, Refresh now
- * (budgeted on the server) and the schedule picker for those who may change it.
+ * Dashboard freshness pieces, laid out by the `/` header:
+ * - `DashboardFreshness`: one muted meta line (whose figures, when computed,
+ *   next scheduled refresh) plus a status line only when the figures are
+ *   stale or still being built;
+ * - `RefreshButton`: Refresh now (budgeted on the server), icon-only on a
+ *   phone with the same accessible name;
+ * - `ScheduleSelect` (toolbar, from 640px) and `ScheduleMenuItems` (the
+ *   actions menu on a phone) for those who may change the schedule.
  */
 
-import { useState } from 'react'
-import { AlertTriangle, Building2, RefreshCw, User } from 'lucide-react'
+import { useEffect, useState } from 'react'
+import { AlertTriangle, Building2, Clock, RefreshCw, User } from 'lucide-react'
 import { toast } from 'sonner'
-import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
+import {
+  DropdownMenuLabel,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
+} from '@/components/ui/dropdown-menu'
 import {
   Select,
   SelectContent,
@@ -40,6 +49,18 @@ export const SCHEDULE_OPTIONS: readonly DashboardRefreshSchedule[] = [
 /** Select values cannot be empty: the organization default travels as "default". */
 const DEFAULT_VALUE = 'default'
 
+const toValue = (s: DashboardRefreshSchedule) => s || DEFAULT_VALUE
+const fromValue = (v: string) => (v === DEFAULT_VALUE ? '' : v) as DashboardRefreshSchedule
+
+function useScheduleLabel() {
+  const { t } = useTranslation()
+  return (s: DashboardRefreshSchedule) =>
+    s === ''
+      ? t('dashboards.schedule.default', 'Organization default')
+      : t(`dashboards.schedule.${s}`, s)
+}
+
+/** Whose figures these are: an icon and a short label, the full rule on hover or focus. */
 export function ScopeBadge({ data, kind }: { data?: DashboardData; kind: DashboardKind }) {
   const { t } = useTranslation()
   const org = (data?.scope ?? kind) === 'organization'
@@ -54,9 +75,8 @@ export function ScopeBadge({ data, kind }: { data?: DashboardData; kind: Dashboa
   return (
     <Tooltip>
       <TooltipTrigger asChild>
-        <Badge
-          variant="outline"
-          className="gap-1.5"
+        <span
+          className="inline-flex shrink-0 items-center gap-1 rounded-sm font-medium text-foreground/80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
           tabIndex={0}
           data-scope={org ? 'organization' : 'personal'}
         >
@@ -68,7 +88,7 @@ export function ScopeBadge({ data, kind }: { data?: DashboardData; kind: Dashboa
           {org
             ? t('dashboards.scope.organization', 'Organization-wide')
             : t('dashboards.scope.mine', 'Your scope')}
-        </Badge>
+        </span>
       </TooltipTrigger>
       <TooltipContent>{hint}</TooltipContent>
     </Tooltip>
@@ -78,36 +98,109 @@ export function ScopeBadge({ data, kind }: { data?: DashboardData; kind: Dashboa
 export interface DashboardFreshnessProps {
   kind: DashboardKind
   data?: DashboardData
-  /** The dashboard's own schedule (empty: organization default). */
-  schedule?: DashboardRefreshSchedule
-  /** Whether the viewer may change the schedule (owner, or org manager). */
-  canSchedule: boolean
-  onRefresh: () => Promise<unknown>
-  onSchedule: (schedule: DashboardRefreshSchedule) => Promise<unknown>
 }
 
-export function DashboardFreshness({
-  kind,
-  data,
-  schedule = '',
-  canSchedule,
-  onRefresh,
-  onSchedule,
-}: DashboardFreshnessProps) {
+/**
+ * "Your scope · Updated 2m ago · Next in 58m" on one line; the next refresh
+ * truncates first on a narrow screen (the full times are in the hover text), and a
+ * status line under it only when the figures are stale or still being built.
+ */
+/** Re-renders its component every minute so relative times keep ticking. */
+export function useMinuteTick(): number {
+  const [tick, setTick] = useState(0)
+  useEffect(() => {
+    const id = setInterval(() => setTick((n) => n + 1), 60_000)
+    return () => clearInterval(id)
+  }, [])
+  return tick
+}
+
+export function DashboardFreshness({ kind, data }: DashboardFreshnessProps) {
   const { t, locale } = useTranslation()
+  useMinuteTick()
+  const computed = data?.computed_at
+  const rel = (d: string) => formatRelativeTime(d, locale, new Date(), 'narrow')
+  const sep = (
+    <span aria-hidden className="shrink-0 px-1.5">
+      ·
+    </span>
+  )
+  return (
+    <div
+      className="flex flex-col gap-1 text-xs text-muted-foreground"
+      data-testid="dashboard-freshness"
+    >
+      <p className="flex min-w-0 items-center" data-testid="dashboard-meta">
+        <ScopeBadge data={data} kind={kind} />
+        {computed && (
+          <>
+            {sep}
+            <span className="shrink-0" title={formatAbsoluteTime(computed, locale)}>
+              {t('dashboards.freshness.updated', 'Updated {time}', { time: rel(computed) })}
+            </span>
+          </>
+        )}
+        {data?.next_refresh_at ? (
+          <>
+            {sep}
+            <span
+              className="min-w-0 truncate"
+              title={formatAbsoluteTime(data.next_refresh_at, locale)}
+            >
+              {t('dashboards.freshness.next', 'Next {time}', {
+                time: rel(data.next_refresh_at),
+              })}
+            </span>
+          </>
+        ) : (
+          data && (
+            <>
+              {sep}
+              <span className="min-w-0 truncate">
+                {t('dashboards.freshness.manual', 'Refreshed on request only')}
+              </span>
+            </>
+          )
+        )}
+      </p>
+      {data?.stale && (
+        <p className="flex items-start gap-1 text-warning" role="status">
+          <AlertTriangle className="mt-px h-3.5 w-3.5 shrink-0" aria-hidden />
+          {data.last_refresh_error
+            ? t(
+                'dashboards.freshness.failed',
+                'The last refresh failed; these are the last good figures.'
+              )
+            : t('dashboards.freshness.stale', 'These figures are older than their schedule.')}
+        </p>
+      )}
+      {data && !data.facts_built_at && (
+        <p role="status">
+          {t('dashboards.freshness.building', 'Dashboard data is being built for the first time.')}
+        </p>
+      )}
+    </div>
+  )
+}
+
+/**
+ * Refresh now. On a phone it is a 44px icon button whose accessible name is
+ * still "Refresh now"; from 640px the label shows. Spins while refreshing.
+ */
+export function RefreshButton({
+  onRefresh,
+  disabled,
+}: {
+  onRefresh: () => Promise<unknown>
+  disabled?: boolean
+}) {
+  const { t } = useTranslation()
   const [refreshing, setRefreshing] = useState(false)
-  const [saving, setSaving] = useState(false)
-
-  const scheduleLabel = (s: DashboardRefreshSchedule) =>
-    s === ''
-      ? t('dashboards.schedule.default', 'Organization default')
-      : t(`dashboards.schedule.${s}`, s)
-
   const refresh = async () => {
     setRefreshing(true)
     try {
+      // The Updated line changes: no toast for a change the viewer sees.
       await onRefresh()
-      toast.success(t('dashboards.refresh.done', 'Figures refreshed'))
     } catch (e) {
       if (e instanceof ApiClientError && e.statusCode === 429) {
         toast.info(
@@ -123,95 +216,97 @@ export function DashboardFreshness({
       setRefreshing(false)
     }
   }
+  return (
+    <Button
+      variant="outline"
+      size="sm"
+      className="h-11 w-11 shrink-0 px-0 sm:h-8 sm:w-auto sm:px-3"
+      onClick={refresh}
+      disabled={refreshing || disabled}
+      aria-busy={refreshing || undefined}
+      data-testid="dashboard-refresh"
+    >
+      <RefreshCw
+        className={cn('h-4 w-4 sm:me-1.5 sm:h-3.5 sm:w-3.5', refreshing && 'animate-spin')}
+        aria-hidden
+      />
+      <span className="sr-only sm:not-sr-only">{t('dashboards.refresh.now', 'Refresh now')}</span>
+    </Button>
+  )
+}
 
-  const changeSchedule = async (value: string) => {
-    const next = (value === DEFAULT_VALUE ? '' : value) as DashboardRefreshSchedule
+function useScheduleChange(onSchedule: (s: DashboardRefreshSchedule) => Promise<unknown>) {
+  const [saving, setSaving] = useState(false)
+  const change = async (value: string) => {
     setSaving(true)
     try {
-      await onSchedule(next)
-      toast.success(t('dashboards.schedule.saved', 'Refresh schedule saved'))
+      // The select shows the saved value: no success toast.
+      await onSchedule(fromValue(value))
     } catch (e) {
       toast.error(getErrorMessage(e))
     } finally {
       setSaving(false)
     }
   }
+  return { saving, change }
+}
 
-  const computed = data?.computed_at
+export interface ScheduleControlProps {
+  /** The dashboard's own schedule (empty: organization default). */
+  schedule?: DashboardRefreshSchedule
+  onSchedule: (schedule: DashboardRefreshSchedule) => Promise<unknown>
+  className?: string
+}
+
+/** The schedule picker in the toolbar (from 640px). */
+export function ScheduleSelect({ schedule = '', onSchedule, className }: ScheduleControlProps) {
+  const { t } = useTranslation()
+  const label = useScheduleLabel()
+  const { saving, change } = useScheduleChange(onSchedule)
   return (
-    <div
-      className="flex flex-wrap items-center gap-x-3 gap-y-2 text-xs text-muted-foreground"
-      data-testid="dashboard-freshness"
-    >
-      <ScopeBadge data={data} kind={kind} />
-      {computed && (
-        <span title={formatAbsoluteTime(computed, locale)}>
-          {t('dashboards.freshness.updated', 'Updated {time}', {
-            time: formatRelativeTime(computed, locale),
-          })}
-        </span>
-      )}
-      {data?.next_refresh_at ? (
-        <span title={formatAbsoluteTime(data.next_refresh_at, locale)}>
-          {t('dashboards.freshness.next', 'Next refresh {time}', {
-            time: formatRelativeTime(data.next_refresh_at, locale),
-          })}
-        </span>
-      ) : (
-        data && <span>{t('dashboards.freshness.manual', 'Refreshed on request only')}</span>
-      )}
-      {data?.stale && (
-        <span className="inline-flex items-center gap-1 text-warning" role="status">
-          <AlertTriangle className="h-3.5 w-3.5" aria-hidden />
-          {data.last_refresh_error
-            ? t(
-                'dashboards.freshness.failed',
-                'The last refresh failed; these are the last good figures.'
-              )
-            : t('dashboards.freshness.stale', 'These figures are older than their schedule.')}
-        </span>
-      )}
-      {data && !data.facts_built_at && (
-        <span role="status">
-          {t('dashboards.freshness.building', 'Dashboard data is being built for the first time.')}
-        </span>
-      )}
-      <span className="ms-auto flex items-center gap-2">
-        {canSchedule && (
-          <Select
-            value={schedule === '' ? DEFAULT_VALUE : schedule}
-            onValueChange={changeSchedule}
+    <Select value={toValue(schedule)} onValueChange={change} disabled={saving}>
+      <SelectTrigger
+        size="sm"
+        className={cn('w-auto gap-1.5', className)}
+        aria-label={t('dashboards.schedule.label', 'Refresh schedule')}
+      >
+        <Clock className="h-3.5 w-3.5 shrink-0 text-muted-foreground" aria-hidden />
+        <SelectValue />
+      </SelectTrigger>
+      <SelectContent>
+        {SCHEDULE_OPTIONS.map((s) => (
+          <SelectItem key={toValue(s)} value={toValue(s)}>
+            {label(s)}
+          </SelectItem>
+        ))}
+      </SelectContent>
+    </Select>
+  )
+}
+
+/** The same choice as radio items inside the dashboard's actions menu (phone). */
+export function ScheduleMenuItems({ schedule = '', onSchedule, className }: ScheduleControlProps) {
+  const { t } = useTranslation()
+  const label = useScheduleLabel()
+  const { saving, change } = useScheduleChange(onSchedule)
+  return (
+    <div className={className}>
+      <DropdownMenuLabel className="flex items-center gap-1.5 text-xs font-normal text-muted-foreground">
+        <Clock className="h-3.5 w-3.5" aria-hidden />
+        {t('dashboards.schedule.label', 'Refresh schedule')}
+      </DropdownMenuLabel>
+      <DropdownMenuRadioGroup value={toValue(schedule)} onValueChange={change}>
+        {SCHEDULE_OPTIONS.map((s) => (
+          <DropdownMenuRadioItem
+            key={toValue(s)}
+            value={toValue(s)}
             disabled={saving}
+            className="min-h-11 sm:min-h-8"
           >
-            <SelectTrigger
-              className="h-8 w-[11.5rem] text-xs"
-              aria-label={t('dashboards.schedule.label', 'Refresh schedule')}
-            >
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {SCHEDULE_OPTIONS.map((s) => (
-                <SelectItem key={s || DEFAULT_VALUE} value={s || DEFAULT_VALUE}>
-                  {scheduleLabel(s)}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        )}
-        <Button
-          variant="outline"
-          size="sm"
-          className="h-8"
-          onClick={refresh}
-          disabled={refreshing || !data}
-        >
-          <RefreshCw
-            className={cn('me-1.5 h-3.5 w-3.5', refreshing && 'animate-spin')}
-            aria-hidden
-          />
-          {t('dashboards.refresh.now', 'Refresh now')}
-        </Button>
-      </span>
+            {label(s)}
+          </DropdownMenuRadioItem>
+        ))}
+      </DropdownMenuRadioGroup>
     </div>
   )
 }

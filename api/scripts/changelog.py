@@ -21,8 +21,16 @@ Usage:
                                     file name per line) into CHANGELOG.md as
                                     "## HEADING", below every existing section,
                                     and delete them (one-off catch-up)
-  changelog.py release VERSION      fold the fragments into CHANGELOG.md under
+  changelog.py release VERSION [--labels F]
+                                    fold the fragments into CHANGELOG.md under
                                     "## VERSION (YYYY-MM-DD)" and delete them
+
+--labels F names a JSON file {"<fragment file>": ["notes:migration", ...]}
+(.github/scripts/release/fragment-labels.sh writes it from the labels of the
+pull requests that added the fragments). With it, an "Upgrade notes" block at
+the top of the section lists the fragments under the operator headings below,
+so a reader sees the migrations, destructive migrations, identity changes and
+API contract changes before the categories. Without it nothing changes.
 
 Fragment format (api/changelog.d/<short-slug>.md):
 
@@ -36,6 +44,7 @@ Security, Behaviour change, Removed, Deprecated, Added, Changed, Fixed.
 from __future__ import annotations
 
 import datetime as _dt
+import json
 import os
 import pathlib
 import re
@@ -58,6 +67,14 @@ CATEGORIES = [
 ]
 HEADING = re.compile(r"^### (?P<cat>[^:\n]+?)(?: \([^)]*\))?: (?P<title>\S.*)$")
 MARKER = re.compile(r"^(<{7}|>{7})( |$)|^\|{7}( |$)")
+# Pull-request labels (.github/scripts/pr-labels.py) that give a fragment an
+# operator heading, in the order the headings print.
+OPERATOR_HEADINGS = [
+    ("notes:destructive-migration", "Destructive migrations (read before upgrading)"),
+    ("notes:migration", "Database migrations"),
+    ("notes:identity", "Finding identity and fingerprint changes"),
+    ("notes:api-contract", "API contract changes"),
+]
 UNRELEASED = "## Unreleased"
 FRAGMENT_NOTE = (
     "Unreleased changes are kept one file per change in "
@@ -161,6 +178,40 @@ def assemble(paths: list[pathlib.Path] | None = None) -> str:
     return "\n".join(b for c in by_cat for b in by_cat[c])
 
 
+def read_labels(argv: list[str]) -> tuple[dict[str, list[str]] | None, list[str]]:
+    """Pull `--labels FILE` out of argv."""
+    if "--labels" not in argv:
+        return None, argv
+    i = argv.index("--labels")
+    if i + 1 >= len(argv):
+        raise SystemExit("--labels needs a file")
+    data = json.loads(pathlib.Path(argv[i + 1]).read_text(encoding="utf-8"))
+    if not isinstance(data, dict):
+        raise SystemExit("--labels file must be a JSON object {fragment: [labels]}")
+    return data, argv[:i] + argv[i + 2:]
+
+
+def operator_block(labels: dict[str, list[str]] | None, paths: list[pathlib.Path] | None = None) -> str:
+    """The Upgrade notes block: fragment section titles under operator headings."""
+    if not labels:
+        return ""
+    chosen = fragments() if paths is None else paths
+    lines: list[str] = []
+    for label, heading in OPERATOR_HEADINGS:
+        items: list[str] = []
+        for p in chosen:
+            if label not in labels.get(p.name, []):
+                continue
+            for cat, body in sections(p.read_text(encoding="utf-8")):
+                if cat:
+                    items.append(f"- {body.splitlines()[0][4:]} (`{p.name}`)")
+        if items:
+            lines += [f"#### {heading}", "", *items, ""]
+    if not lines:
+        return ""
+    return "\n".join(["### Upgrade notes", "", *lines]).rstrip() + "\n\n"
+
+
 def cmd_check(argv: list[str]) -> int:
     errors = validate() + conflict_markers()
     if entries_in_unreleased():
@@ -175,13 +226,15 @@ def cmd_check(argv: list[str]) -> int:
     return 1 if errors else 0
 
 
-def cmd_preview(_: list[str]) -> int:
+def cmd_preview(argv: list[str]) -> int:
+    labels, _ = read_labels(argv)
     print(UNRELEASED + "\n")
-    print(assemble() or "_No unreleased changes._\n")
+    print(operator_block(labels) + assemble() if fragments() else "_No unreleased changes._\n")
     return 0
 
 
 def cmd_release(argv: list[str]) -> int:
+    labels, argv = read_labels(argv)
     if not argv or not re.fullmatch(r"v\d+\.\d+\.\d+", argv[0]):
         print("usage: changelog.py release vX.Y.Z", file=sys.stderr)
         return 2
@@ -199,7 +252,7 @@ def cmd_release(argv: list[str]) -> int:
     m = re.search(r"(?m)^## ", rest)
     older = rest[m.start():] if m else ""
     date = _dt.date.today().isoformat()
-    body = assemble().rstrip() or "No notable changes."
+    body = (operator_block(labels) + assemble()).rstrip() or "No notable changes."
     CHANGELOG.write_text(
         f"{head}\n\n{FRAGMENT_NOTE}\n\n## {argv[0]} ({date})\n\n{body}\n\n{older}".rstrip() + "\n",
         encoding="utf-8",

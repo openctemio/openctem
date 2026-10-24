@@ -13,14 +13,19 @@ truth: this page describes them as of the merge-queue routing (#730, 2026-10-02)
 | Web CI (`web-ci.yml`) | PR / push to `main`, `develop`; merge queue | `API contract` (generates the contract files; for an API change compares them with the base and reports the difference), `API contract report` (the pull request comment), `Web checks` (type-check against the generated contract, ESLint, Prettier, palette drift) and `Web tests` (Vitest in three parallel shards); `next build` (push only) | **Web CI OK** |
 | CodeQL (`codeql.yml`) | PR / push; merge queue; weekly (Mon 00:00 UTC) | One matrix over the languages: Go (built inside `api/`) and JavaScript/TypeScript (`web/`), one category per language. PR and merge queue: only the changed language(s). Push to `develop`/`main` and weekly: both, so each branch keeps a fresh baseline per category | **CodeQL OK** |
 | All-in-one CI (`allinone-ci.yml`) | PR / push; merge queue | Builds `openctem-api`, `openctem-web` and the all-in-one `openctem` image exactly as a release does, smoke-tests them (arch, ELF, executes) and runs the all-in-one in both gateway modes against Postgres + Redis. Nothing is pushed. Merge queue and pushes only (see [Tiers](#tiers)). | **All-in-one OK** |
-| Repository Security (`repo-security.yml`) | PR / push; merge queue; weekly | Betterleaks (root `.betterleaks.toml`, `.gitleaksignore`): a PR or queued group scans only its own commits (`base..head`); a push to `develop`/`main` and the weekly run scan the full history. Customer identifiers: fixed strings from the `CUSTOMER_DENYLIST` repository secret (never committed; empty = skipped with a notice) and the live LAN range outside tests, over every tracked file, printing only file:line. Commit emails: a PR or queued group fails when one of its commits has an address from the `COMMIT_EMAIL_DENYLIST` repository secret (case-insensitive fixed strings such as a domain; never committed; empty = skipped with a notice) as author, committer or `Co-authored-by` trailer, printing only the commit and the field; outside contributors are covered by the CLA check. **Workflow Lint**: actionlint over the workflows, action pins, and the self-tests of the CI scripts (change routing, CodeQL alert gate, security gate and its CODEOWNERS mirror), plus the check that `api/` and `web/` depend on no sensor module or SDK. **Dependency Review** (PR only) | **Secret Scanning**, **Workflow Lint** |
+| Repository Security (`repo-security.yml`) | PR / push; merge queue; weekly | Betterleaks (root `.betterleaks.toml`, `.gitleaksignore`): a PR or queued group scans only its own commits (`base..head`); a push to `develop`/`main` and the weekly run scan the full history. Customer identifiers: fixed strings from the `CUSTOMER_DENYLIST` repository secret (never committed; empty = skipped with a notice) and the live LAN range outside tests, over every tracked file, printing only file:line. Commit emails: a PR or queued group fails when one of its commits has an address from the `COMMIT_EMAIL_DENYLIST` repository secret (case-insensitive fixed strings such as a domain; never committed; empty = skipped with a notice) as author, committer or `Co-authored-by` trailer, printing only the commit and the field; outside contributors are covered by the CLA check. **Workflow Lint**: actionlint and zizmor (pinned; suppressions are per line with a reason, inline or in `.github/zizmor.yml`, never per file) over the workflows, action pins, and the self-tests of the CI scripts (change routing, CodeQL alert gate, security gate and its CODEOWNERS mirror), plus the check that `api/` and `web/` depend on no sensor module or SDK. **Dependency Review** (PR only) | **Secret Scanning**, **Workflow Lint** |
 | Docs check (`docs-check.yml`) | PR / push to `main`, `develop`; merge queue | One job, **Docs check**: `scripts/docs_check.py` (Markdown is English, has no private addresses or internal host names, relative links and anchors resolve), the RFC index check, then `scripts/check_docs_links.py` checks every `docs.openctem.io` link in code (page and `#anchor`, against a checkout of `openctemio/docs` `main`) and every `github.com/openctemio/<repo>/blob\|tree/<ref>/<path>#anchor` link (this repository from the checkout, others fetched shallowly); tests are skipped, `docs-links: ignore` skips a line. Locally: `python3 scripts/check_docs_links.py --docs ../docs --fetch-other .` | **Docs check** |
 | API Security (`api-security.yml`) | PR / push (`paths:` api side, see below); weekly | One job for govulncheck + Trivy (fs) + license check; Semgrep; Snyk (only if `vars.ENABLE_SNYK == 'true'`), license check, image scan (only for `main` / weekly) | — |
 | Web Security (`web-security.yml`) | PR / push (`paths:` web side, see below); weekly | One job for npm audit + Trivy (fs) + ESLint security rules; Snyk (opt-in as above), image scan (only for `main` / weekly) | — |
 | API Fuzz (`api-fuzz.yml`) | Nightly (03:17 UTC), manual | 10 minutes of `FuzzStrictCTIS` (the protocol-v2 results decoder); uploads a crasher artifact on failure | — |
+| Ingest load (`api-ingest-load.yml`) | Nightly (02:41 UTC), manual | Fresh Postgres 17, all migrations, then `TestIngestLoad` (`INGEST_LOAD=1`): 50 concurrent CI uploads × 1,000 findings through the real accept path, queue and 4 workers; an urgent report behind 500 bulk jobs; 20 uploads of the same findings to one repository. A missed target fails the job; the results table is the run summary (RFC-122 §6e) | — |
 | Docker Publish (`docker-publish.yml`) | Tag `v*`, manual | Builds, smoke-tests, publishes, signs and SBOMs every image (see [Images](#images)); on a production release also the offline image bundle | — |
 | Release (`release.yml`) | Tag `v*`; dispatch on a tag | GitHub Release with the release archives (via Release archives), their SBOMs, the signed `checksums-sha256.txt`, build provenance, and the image pull lines | — |
 | Release archives (`release-dist.yml`) | Called by Release; PRs touching its inputs (`paths:`) | Builds the archives with `.github/scripts/release/build-dist.sh`; on a PR builds linux/amd64 only and runs `smoke-dist.sh` (versions, `-check-config` of the example settings, `systemd-analyze verify`/`security`, gateway Caddyfile, web/console health, the image kit's Dockerfiles), publishing nothing | — |
+| API PostgreSQL Compatibility (`api-pg-compat.yml`) | Nightly 02:17 UTC (default branch), push to `develop` touching migrations, the role script or `internal/infra/postgres/`, a PR that changes the workflow, manual | The least-privilege method (roles bootstrapped by a superuser, every migration applied as the migrator, the suite run as the app role) on PostgreSQL **16 and 18**, the three `pkgs` shards each; it fails if the server is not the major under test and if a DB test skipped. Not required (see [Supported PostgreSQL](#supported-postgresql)) | — |
+| Tool Pin Freshness (`tool-pins.yml`) | Mondays 02:00 UTC (from `main`), manual | Compares the inline tool pins in `.github/tool-pins.tsv` with the newest stable releases and opens, updates or closes one issue "Tool pins to bump" (see [Tool pin freshness](#tool-pin-freshness)); `issues: write` only, no pull request | — |
+| API Upgrade Test (`api-upgrade-test.yml`) | Nightly 03:30 UTC (default branch), push to `release/**`, a PR into `main`, manual (optionally from an older release) | Builds the previous release's database, loads representative rows, applies this tree's migrations and asserts the result (see [Upgrade test](#upgrade-test)). Not required; a failure on a release branch means do not merge the release PR | — |
+| PR Release-Note Labels (`pr-labels.yml`) | PR (opened, pushed, reopened); same-repository PRs only | Adds the `notes:*` labels by the files and diffs the PR changes (see [Release-note labels](#release-note-labels)); not required, never fails a PR | — |
 | Release Train (`release-train.yml`) | Manual (a maintainer presses Run) | Proposes the version from conventional commits, picks the newest develop commit with every required check green, builds `release/vX.Y.Z` (with one commit setting `versions.yaml` `platform.release` to `vX.Y.Z`), opens and queues the release PR (see [Releases](#releases)) | — |
 | Release Publish (`release-publish.yml`) | A `release/v*` PR merged into `main`; manual | Tags `vX.Y.Z` (only if `main`'s tree is the release branch's and its `versions.yaml` says `vX.Y.Z`), starts Docker Publish + Release, opens the develop and helm-charts follow-up PRs, closes the train issue | — |
 | API CI `Detect API changes` step "Changelog fragments" | PR, merge queue, push (also docs-only changes) | `api/scripts/changelog.py check`: fragment format, no entry under Unreleased in `api/CHANGELOG.md`, no committed merge-conflict marker | — |
@@ -296,6 +301,115 @@ the queue (no required check; the PR and the push scan the change).
   (`26`), the same major as `web/Dockerfile` (`node:26-alpine`). Node 25+ ships
   its own `localStorage`; `web/src/test/setup.ts` points Vitest back at jsdom's.
 
+### Supported PostgreSQL
+
+**PostgreSQL 16, 17 and 18 are supported; 17 is recommended.** The matrix:
+
+| Version | What CI runs | When |
+|---|---|---|
+| 17 | The whole suite (shards, `-race` in the queue), the least-privilege suite | every pull request and merge group |
+| 18 | Every migration plus the schema probes (`Migrations (PostgreSQL 18)` in API CI), and the DB-backed packages as the app role (`api-pg-compat.yml`) | full tier of API CI; nightly and on a push to `develop` that changes migrations |
+| 16 | The DB-backed packages as the app role (`api-pg-compat.yml`) | nightly and on a push to `develop` that changes migrations |
+
+16 and 18 run less often than 17 on purpose, to keep the cost of a pull request down; a failure there is found within a
+day, with the commit range in the run history. A migration that needs a newer major than 16 (new syntax, a catalog
+column) fails the 16 job: write it so 16 can run it, or raise the supported floor in the same pull request, in this section
+and in the install documentation. The images are pinned by digest in `.github/ci-images.txt` and mirrored; bump the
+digest in `api-ci.yml` (18) and `api-pg-compat.yml` (16 and 18) together with it.
+### Tool pin freshness
+
+Linters, scanners, signing tools and the like are pinned inline (a version in a
+workflow `env`, a Makefile variable, a Dockerfile `ARG`), where Dependabot does not
+look. `.github/tool-pins.tsv` lists each pin: the tool, its GitHub repository, whether
+upstream versions come from releases or tags, the highest major version we follow
+(`golangci-lint` stays on v1 on purpose, its v2 does not read our config), the file
+and a regular expression that captures the pinned version, and flags (`checksum`: a
+SHA-256 sits next to the pin and changes with it; `optional`: the pin may not exist
+yet). Add a row whenever you pin a new tool inline.
+
+The weekly **Tool Pin Freshness** workflow runs `.github/scripts/tool-pins.py`. It
+opens or updates one issue labelled `tool-pins` with a table of the tools that have a
+newer stable release (release candidates are ignored) and closes the issue when
+nothing is behind. It uses the `GITHUB_TOKEN` of the job with `contents: read` and
+`issues: write`, so it never opens a pull request: a person or an agent bumps the
+pins in one pull request and CI runs on it, which is why it needs no GitHub App. A
+pin the script cannot find fails the run instead of passing silently (a renamed
+variable would otherwise turn the check into a check of nothing). The Workflow Lint
+job runs `.github/scripts/tool-pins.test.sh`. Run it by hand with
+`GH_TOKEN=$(gh auth token) python3 .github/scripts/tool-pins.py`.
+### Upgrade test
+
+`api-upgrade-test.yml` runs `.github/scripts/upgrade-test.sh`, which does what an operator does on upgrade day,
+on a scratch PostgreSQL 17 database:
+
+0. before any database work, refuses a migration of this tree numbered at or below the previous release's highest
+   version that the release does not have: `migrate up` applies only versions above the current one, so an upgraded
+   install would skip it silently (`--check-order` runs only this step, without a database);
+1. bootstraps the roles and applies the **previous release's** migrations (read from its git tag with `git archive`)
+   as the non-superuser migrator, then checks `schema_migrations` says that release's highest version and not dirty;
+2. loads representative rows, `api/scripts/upgrade-test/seed.sql`: three tenants with members and a role grant,
+   75 assets, 240 findings in several statuses, sources and severities, a sensor per tenant and 150 audit rows;
+3. applies **this tree's** migrations as the migrator and re-runs the roles script, as the `db-roles` and `migrate`
+   services of the Compose stack do;
+4. asserts that the version is this tree's highest migration and not dirty, that `schema_migrations` has one row,
+   that no key table (`tenants`, `users`, `tenant_members`, `user_roles`, `assets`, `findings`, `sensors`,
+   `audit_logs`, `roles`, `permissions`) lost a row, that the app role still reads the data, and that the API built
+   from this tree starts against the upgraded database as the app role and answers `/health` and `/ready` with 200.
+
+The release to start from is the newest `vX.Y.Z` tag reachable from the commit, other than a tag on the commit itself;
+the workflow checks out every tag, and `--prev vX.Y.Z` (or the `prev` input of a manual run) picks another, for example
+the release before last. The seed file runs against the **previous** release's schema, so it uses only columns every
+released schema has (identifiers, NOT NULL columns without a default, a few stable optional ones): add a table or a
+column to it only after the release that introduced it is the oldest one you still upgrade from. A table the seed
+cannot fill (a constraint it does not know) is left out rather than faked.
+
+It runs nightly and on release branches, not on pull requests, because it builds the API (about two minutes) and a
+migration chain; a migration that fails only on a populated table, or only after the previous release's data, is found
+within a day, and always before a release PR merges. Run it locally with a scratch PostgreSQL that has the
+`postgres` superuser and trust authentication:
+
+```bash
+export SUPER_URL=postgres://postgres@localhost:5432/upgrade_test?sslmode=disable \
+  MIGRATOR_URL=postgres://openctem_migrator@localhost:5432/upgrade_test?sslmode=disable \
+  APP_ROLE_URL=postgres://openctem_app@localhost:5432/upgrade_test?sslmode=disable
+(cd api && go build -o /tmp/openctem-server ./cmd/server)
+bash .github/scripts/upgrade-test.sh --server-bin /tmp/openctem-server   # needs migrate, psql, Redis
+```
+
+The database must be empty; the script refuses one that already has a schema. Its tag selection and refusals are
+tested by `.github/scripts/upgrade-test.test.sh` in **Workflow Lint**.
+
+### Release-note labels
+
+`pr-labels.yml` runs `.github/scripts/pr-labels.py` on every same-repository pull request and
+adds these labels, so the release notes can show an operator what to read before upgrading:
+
+| Label | Added when the PR |
+|---|---|
+| `notes:migration` | adds or changes a `api/migrations/*.up.sql` |
+| `notes:destructive-migration` | adds a line to a migration that drops a table, column or schema, truncates, renames, or changes a column type (SQL comments are ignored; deleting a migration does not count) |
+| `notes:identity` | changes finding identity or fingerprint code (`api/pkg/domain/vulnerability/identity*.go`, `fingerprint*.go`, `secret_fingerprint*.go`, `api/internal/app/ingest/identity*.go`) or the `github.com/openctemio/ctis` version in `api/go.mod` (tests alone do not count) |
+| `notes:api-contract` | changes a file in `api/internal/infra/http/handler/` or `routes/`, or `api/pkg/sensorproto/` (tests do not count) |
+
+The labeler reads the changed files through the API as data and runs from the base commit, so
+no pull request code runs; a fork pull request gets a read-only token, is skipped, and a
+maintainer adds the labels by hand. Labels are only added, never removed: add one by hand when a
+rule misses a change, remove one by hand when it over-reports. The destructive label is
+informational; the `Migration Safety` check and the `allow-destructive-migration` label still
+decide whether a destructive migration may merge.
+
+The release train groups the changelog fragments by these labels. The plan job runs
+`.github/scripts/release/fragment-labels.py`, which finds the pull request that added each
+fragment and keeps its `notes:*` labels, and `api/scripts/changelog.py preview --labels FILE`
+prints an **Upgrade notes** block ahead of the categories: the section titles of the fragments
+under "Destructive migrations (read before upgrading)", "Database migrations", "Finding identity
+and fingerprint changes" and "API contract changes". The follow-up PR that folds the fragments
+into `api/CHANGELOG.md` does the same: `python3 .github/scripts/release/fragment-labels.py --out
+/tmp/labels.json` (with `GH_TOKEN` set), then `python3 api/scripts/changelog.py release vX.Y.Z
+--labels /tmp/labels.json`. A fragment whose pull request cannot be found is named on stderr and
+only lacks its heading. Without `--labels` the notes are unchanged. The tests are
+`.github/scripts/release/tests/test_release_note_sections.sh`, run by Release Tooling.
+
 ### CI image mirror
 
 Shared GitHub runner IPs exhaust the anonymous pull quotas of `public.ecr.aws`
@@ -353,7 +467,7 @@ GHCR, authenticated with the job's `GITHUB_TOKEN`:
   `GITHUB_TOKEN` is read-only as well.
 - **No `pull_request_target`.** PR workflows run with the PR's read-only token
   and no secrets for fork PRs; nothing checks out a PR head with a write token.
-- Downloaded tools are pinned by version and SHA-256 (betterleaks, actionlint).
+- Downloaded tools are pinned by version and SHA-256 (betterleaks, actionlint, zizmor).
 
 ### Generated contract files
 

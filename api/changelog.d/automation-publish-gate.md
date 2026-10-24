@@ -6,5 +6,5 @@
 
 ### Behaviour change: automation permissions renamed
 
-- Migration 003352 (`automations_permissions`) renames `findings:workflows:read` and `findings:workflows:write` to `automations:read` and `automations:write` in roles, role-template snapshots and API key scopes, with no aliases. It grants `automations:publish` to every role and API key that held write. The security-analyst and vulnerability-manager role templates move to version 3, whose only change is the rename.
+- Migration 003388 (`automations_permissions`) renames `findings:workflows:read` and `findings:workflows:write` to `automations:read` and `automations:write` in roles, role-template snapshots and API key scopes, with no aliases. It grants `automations:publish` to every role and API key that held write. The security-analyst and vulnerability-manager role templates move to version 3, whose only change is the rename.
 - **Upgrade note:** stop the old API before migrating, because it checks the old ids. API clients that request scopes by id must use the new ids.

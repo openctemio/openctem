@@ -70,6 +70,85 @@
   --sev-low-ink: #0a1628;
   --sev-info-ink: #ffffff;
 
+  /* Priority class (P0-P3): CTEM's decision, the only filled label in a row. Its
+     own violet system (oklch hue about 293): never a severity hue, never the teal
+     accent, never ink. P3 is neutral on purpose ("track"). --prio-N is the mark
+     (charts, dots; >= 3:1 on card, paper and raised, strictly falling contrast),
+     --prio-N-bg / -fg the box and its text (>= 4.5:1), --prio-N-border the edge. */
+  --prio-0: #5b21b6;
+  --prio-1: #7c3aed;
+  --prio-2: #8f6ee6;
+  --prio-3: #7d8799;
+  --prio-0-bg: #5b21b6;
+  --prio-0-fg: #ffffff;
+  --prio-0-border: #5b21b6;
+  --prio-1-bg: #ede9fe;
+  --prio-1-fg: #4c1d95;
+  --prio-1-border: #8b5cf6;
+  --prio-2-bg: transparent;
+  --prio-2-fg: #5b21b6;
+  --prio-2-border: #8b5cf6;
+  --prio-3-bg: transparent;
+  --prio-3-fg: #525252;
+  --prio-3-border: #7d8799;
+
+  /* Workflow status by category (a lozenge tint, not one colour per status):
+     triage (untouched, dashed edge), open, progress, resolved, accepted, closed
+     (not fixed). -fg on -bg and on the card >= 4.5:1. A transparent -bg sits on the card. */
+  --st-triage-bg: transparent;
+  --st-triage-fg: #0a1628;
+  --st-triage-border: #7d8799;
+  --st-open-bg: #eef0f3;
+  --st-open-fg: #0a1628;
+  --st-open-border: #eef0f3;
+  --st-progress-bg: #e8f0fd;
+  --st-progress-fg: #1d4fb0;
+  --st-progress-border: #e8f0fd;
+  --st-resolved-bg: #e7f6ec;
+  --st-resolved-fg: #15663a;
+  --st-resolved-border: #e7f6ec;
+  --st-accepted-bg: #fdf3e2;
+  --st-accepted-fg: #8a4b06;
+  --st-accepted-border: #fdf3e2;
+  --st-closed-bg: transparent;
+  --st-closed-fg: #525252;
+  --st-closed-border: var(--border-subtle);
+
+  /* The bolt of an exploit chip (KEV): the chip is neutral, only this icon is red. */
+  --sig-icon: var(--destructive);
+
+  /* Waiting on a person or decision: the accepted amber, told apart by its icon. */
+  --st-waiting-bg: var(--st-accepted-bg);
+  --st-waiting-fg: var(--st-accepted-fg);
+  --st-waiting-border: var(--st-accepted-border);
+
+  /* Machine health icons (HealthStatus): the text stays --foreground. Each is
+     >= 3:1 on the card (WCAG 1.4.11); the idle grey is the neutral states. */
+  --hl-ok: var(--success);
+  --hl-run: var(--info);
+  --hl-warn: var(--warning);
+  --hl-down: var(--destructive);
+  --hl-idle: #7d8799;
+
+  /* Counter: neutral pill, ink fill only for "waiting for you". */
+  --ctr-bg: #eef0f3;
+  --ctr-fg: #0a1628;
+  --ctr-em-bg: #0a1628;
+  --ctr-em-fg: #fafaf9;
+
+  /* The fixed palette of a user-chosen tag colour: an 8px dot, never a fill.
+     >= 3:1 on the card. Teal is not in the list (it is the act-here accent). */
+  --tag-red: #dc2626;
+  --tag-orange: #ea580c;
+  --tag-amber: #d97706;
+  --tag-yellow: #b58900;
+  --tag-green: #16a34a;
+  --tag-cyan: #0891b2;
+  --tag-blue: #2563eb;
+  --tag-violet: #7c3aed;
+  --tag-pink: #db2777;
+  --tag-grey: #6b7280;
+
   /* Elevation: overlays only. Motion. */
   --shadow-overlay: 0 8px 24px rgb(10 22 40 / 0.12), 0 1px 2px rgb(10 22 40 / 0.08);
   --dur-fast: 120ms;
@@ -158,6 +237,73 @@
   --sev-low-ink: #0a1628;
   --sev-info-ink: #0a1628;
 
+  --prio-0: #c4b5fd;
+  --prio-1: #a48af5;
+  --prio-2: #8064dc;
+  --prio-3: #63728a;
+  --prio-0-bg: #b39dfa;
+  --prio-0-fg: #0a1628;
+  --prio-0-border: #b39dfa;
+  --prio-1-bg: #2a2150;
+  --prio-1-fg: #ddd6fe;
+  --prio-1-border: #8b74e0;
+  --prio-2-bg: transparent;
+  --prio-2-fg: #c4b5fd;
+  --prio-2-border: #8b74e0;
+  --prio-3-bg: transparent;
+  --prio-3-fg: #a9b4c4;
+  --prio-3-border: #63728a;
+
+  --st-triage-bg: transparent;
+  --st-triage-fg: #fafaf9;
+  --st-triage-border: #63728a;
+  --st-open-bg: #1e2c45;
+  --st-open-fg: #fafaf9;
+  --st-open-border: #1e2c45;
+  --st-progress-bg: #13284a;
+  --st-progress-fg: #9cc2ff;
+  --st-progress-border: #13284a;
+  --st-resolved-bg: #0f2e22;
+  --st-resolved-fg: #7ee2a0;
+  --st-resolved-border: #0f2e22;
+  --st-accepted-bg: #33240c;
+  --st-accepted-fg: #f5c26b;
+  --st-accepted-border: #33240c;
+  --st-closed-bg: transparent;
+  --st-closed-fg: #a9b4c4;
+  --st-closed-border: var(--border-subtle);
+
+  --st-waiting-bg: var(--st-accepted-bg);
+  --st-waiting-fg: var(--st-accepted-fg);
+  --st-waiting-border: var(--st-accepted-border);
+
+  /* Machine health icons (HealthStatus): the text stays --foreground. Each is
+     >= 3:1 on the card (WCAG 1.4.11); the idle grey is the neutral states. */
+  --hl-ok: var(--success);
+  --hl-run: var(--info);
+  --hl-warn: var(--warning);
+  --hl-down: var(--destructive);
+  --hl-idle: #63728a;
+
+  /* Counter: neutral pill, ink fill only for "waiting for you". */
+  --ctr-bg: #1e2c45;
+  --ctr-fg: #fafaf9;
+  --ctr-em-bg: #fafaf9;
+  --ctr-em-fg: #0a1628;
+
+  /* The fixed palette of a user-chosen tag colour: an 8px dot, never a fill.
+     >= 3:1 on the card. Teal is not in the list (it is the act-here accent). */
+  --tag-red: #f87171;
+  --tag-orange: #fb923c;
+  --tag-amber: #f59e0b;
+  --tag-yellow: #facc15;
+  --tag-green: #4ade80;
+  --tag-cyan: #22d3ee;
+  --tag-blue: #60a5fa;
+  --tag-violet: #a78bfa;
+  --tag-pink: #f472b6;
+  --tag-grey: #94a3b8;
+
   --shadow-overlay: 0 12px 32px rgb(0 0 0 / 0.45), 0 1px 2px rgb(0 0 0 / 0.3);
 
   /* Dashboard chart palette (validated: scripts/check-palette.mjs, source src/lib/chart-palette.json). */
@@ -216,6 +362,36 @@
     'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono',
     monospace;
 
+  /* Type scale (research/244). One size and one line height per role; nothing
+     under 12px. Classes: text-title, text-section, text-body, text-meta,
+     text-data, text-kpi. The kit sizes map onto it (text-xs = meta,
+     text-sm = body); arbitrary sizes (text-[10px]) are refused by
+     scripts/check-page-anatomy.sh. A label is muted, never smaller than its
+     value, and a line of metadata uses one size. */
+  --text-title: 1.5rem; /* page title, 24px */
+  --text-title--line-height: 2rem;
+  --text-title--font-weight: 600;
+  --text-section: 1rem; /* section and drawer title, 16px */
+  --text-section--line-height: 1.5rem;
+  --text-section--font-weight: 600;
+  --text-body: 0.875rem; /* body, values, buttons, 14px */
+  --text-body--line-height: 1.25rem;
+  --text-meta: 0.75rem; /* labels, metadata, chips, 12px */
+  --text-meta--line-height: 1rem;
+  --text-data: 0.8125rem; /* ids, hashes, versions in mono, 13px */
+  --text-data--line-height: 1.25rem;
+  --text-kpi: 1.5rem; /* a metric strip value, 24px, tabular */
+  --text-kpi--line-height: 2rem;
+  --text-kpi--font-weight: 600;
+
+  /* Page rhythm (research/244). The gap between the blocks of a page
+     (header, tabs, banner, metric strip, list) is owned by <PageStack>, never
+     by a block's own margin: page = 20px between blocks, page-tight = 16px
+     from a header to its tabs and from a toolbar to its table. Classes:
+     gap-page, gap-page-tight. */
+  --spacing-page: 1.25rem;
+  --spacing-page-tight: 1rem;
+
   --radius-sm: calc(var(--radius) - 4px);
   --radius-md: calc(var(--radius) - 2px);
   --radius-lg: var(--radius);
@@ -263,6 +439,63 @@
   --color-sev-medium-ink: var(--sev-medium-ink);
   --color-sev-low-ink: var(--sev-low-ink);
   --color-sev-info-ink: var(--sev-info-ink);
+  --color-prio-0: var(--prio-0);
+  --color-prio-0-bg: var(--prio-0-bg);
+  --color-prio-0-fg: var(--prio-0-fg);
+  --color-prio-0-border: var(--prio-0-border);
+  --color-prio-1: var(--prio-1);
+  --color-prio-1-bg: var(--prio-1-bg);
+  --color-prio-1-fg: var(--prio-1-fg);
+  --color-prio-1-border: var(--prio-1-border);
+  --color-prio-2: var(--prio-2);
+  --color-prio-2-bg: var(--prio-2-bg);
+  --color-prio-2-fg: var(--prio-2-fg);
+  --color-prio-2-border: var(--prio-2-border);
+  --color-prio-3: var(--prio-3);
+  --color-prio-3-bg: var(--prio-3-bg);
+  --color-prio-3-fg: var(--prio-3-fg);
+  --color-prio-3-border: var(--prio-3-border);
+  --color-st-triage-bg: var(--st-triage-bg);
+  --color-st-triage-fg: var(--st-triage-fg);
+  --color-st-triage-border: var(--st-triage-border);
+  --color-st-open-bg: var(--st-open-bg);
+  --color-st-open-fg: var(--st-open-fg);
+  --color-st-open-border: var(--st-open-border);
+  --color-st-progress-bg: var(--st-progress-bg);
+  --color-st-progress-fg: var(--st-progress-fg);
+  --color-st-progress-border: var(--st-progress-border);
+  --color-st-resolved-bg: var(--st-resolved-bg);
+  --color-st-resolved-fg: var(--st-resolved-fg);
+  --color-st-resolved-border: var(--st-resolved-border);
+  --color-st-accepted-bg: var(--st-accepted-bg);
+  --color-st-accepted-fg: var(--st-accepted-fg);
+  --color-st-accepted-border: var(--st-accepted-border);
+  --color-st-closed-bg: var(--st-closed-bg);
+  --color-st-closed-fg: var(--st-closed-fg);
+  --color-st-closed-border: var(--st-closed-border);
+  --color-sig-icon: var(--sig-icon);
+  --color-st-waiting-bg: var(--st-waiting-bg);
+  --color-st-waiting-fg: var(--st-waiting-fg);
+  --color-st-waiting-border: var(--st-waiting-border);
+  --color-hl-ok: var(--hl-ok);
+  --color-hl-run: var(--hl-run);
+  --color-hl-warn: var(--hl-warn);
+  --color-hl-down: var(--hl-down);
+  --color-hl-idle: var(--hl-idle);
+  --color-ctr-bg: var(--ctr-bg);
+  --color-ctr-fg: var(--ctr-fg);
+  --color-ctr-em-bg: var(--ctr-em-bg);
+  --color-ctr-em-fg: var(--ctr-em-fg);
+  --color-tag-red: var(--tag-red);
+  --color-tag-orange: var(--tag-orange);
+  --color-tag-amber: var(--tag-amber);
+  --color-tag-yellow: var(--tag-yellow);
+  --color-tag-green: var(--tag-green);
+  --color-tag-cyan: var(--tag-cyan);
+  --color-tag-blue: var(--tag-blue);
+  --color-tag-violet: var(--tag-violet);
+  --color-tag-pink: var(--tag-pink);
+  --color-tag-grey: var(--tag-grey);
   --color-border: var(--border);
   --color-input: var(--input);
   --color-ring: var(--ring);

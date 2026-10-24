@@ -6,6 +6,7 @@
  * full list and its views live on /remediation/tasks.
  */
 
+import { formatCount } from '@/lib/format-metric'
 import { useMemo } from 'react'
 import { useRouter } from 'next/navigation'
 import type { ColumnDef } from '@tanstack/react-table'
@@ -31,7 +32,7 @@ export function useMyTaskCount(enabled: boolean): number | undefined {
 }
 
 export function MyTasksQueue() {
-  const { t } = useTranslation()
+  const { t, locale } = useTranslation()
   const router = useRouter()
   const { data, error, isLoading, mutate } = useTasks({
     states: MY_TASK_STATES,
@@ -115,7 +116,7 @@ export function MyTasksQueue() {
           {total > rows.length
             ? t('myWork.tasks.topOf', undefined, {
                 shown: rows.length,
-                total: total.toLocaleString(),
+                total: formatCount(total, locale),
               })
             : t('myWork.tasks.byDeadline')}
         </span>

@@ -64,13 +64,15 @@ func TestFillFromInterop(t *testing.T) {
 	assert.Equal(t, []string{"CVE-2024-6387"}, f.Vulnerability.CVEIDs)
 	assert.Equal(t, "201194", f.RuleID, "the rule comes from the native id")
 
-	// A finding that already names its CVE and rule keeps them.
+	// A finding that already names its CVE and rule keeps them; the other
+	// CVEs of its typed ids join cve_ids, so it splits per CVE (D3, D20)
+	// and the copy for its own CVE keeps its key.
 	g := nessusInteropFinding()
 	g.RuleID = "nessus-201194"
 	g.Vulnerability.CVEID = "CVE-2023-0001"
 	fillFromInterop(&g)
 	assert.Equal(t, "CVE-2023-0001", g.Vulnerability.CVEID)
-	assert.Nil(t, g.Vulnerability.CVEIDs)
+	assert.Equal(t, []string{"CVE-2023-0001", "CVE-2024-6387"}, g.Vulnerability.CVEIDs)
 	assert.Equal(t, "nessus-201194", g.RuleID)
 
 	// No CVE and no native id: the preferred other id is the rule.

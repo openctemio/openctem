@@ -175,6 +175,15 @@ func run() int {
 		defer closeWithLog(adminDB, "console database pool", log)
 		log.Info("console identity tables use their own database role", "role", cfg.Database.AdminUser)
 	}
+	// Ingest writes (assets, findings, components, branches) go through
+	// their own pool (DB_INGEST_MAX_CONNS): a burst of uploads cannot take
+	// the connections the API's requests need.
+	ingestDB, err := postgres.New(cfg.Database.IngestConfig())
+	if err != nil {
+		log.Error("failed to open the ingest database pool", "error", err)
+		return 1
+	}
+	defer closeWithLog(ingestDB, "ingest database pool", log)
 	if err := checkAppRoleConsoleTables(ctx, db.DB, cfg, log); err != nil {
 		log.Error("database role check failed: refusing to start", "error", err)
 		return 1
@@ -249,6 +258,7 @@ func run() int {
 		Log:         log,
 		DB:          db.DB,
 		Repos:       repos,
+		IngestDB:    ingestDB,
 		RedisClient: redisClient,
 	})
 	if err != nil {
