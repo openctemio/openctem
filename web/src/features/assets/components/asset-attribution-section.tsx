@@ -11,6 +11,7 @@
  */
 
 import { useState } from 'react'
+import Link from '@/components/link'
 import { Info, Loader2, ShieldCheck } from 'lucide-react'
 import { toast } from 'sonner'
 import { useTranslation } from '@/context/i18n-provider'
@@ -31,6 +32,7 @@ import {
   type AttributionT,
   decisionsFor,
   describeEvidence,
+  certificateStandingText,
   scanStanding,
   scopeStandingText,
   type AttributionDecision,
@@ -129,8 +131,11 @@ export function AssetAttributionSection({
     }
   }
 
-  const scope = attribution ? scopeStandingText(t, attribution) : null
-  const canAddScope = can(Permission.ScopeWrite) && !!assetName
+  // A certificate is never in scope by its fingerprint: one line says which
+  // endpoint puts it in scope or holds it, and there is nothing to add.
+  const cert = attribution?.certificate ? certificateStandingText(t, attribution.certificate) : null
+  const scope = attribution && !cert ? scopeStandingText(t, attribution) : null
+  const canAddScope = can(Permission.ScopeWrite) && !!assetName && assetType !== 'certificate'
 
   return (
     <DetailSection title={t('assets.attribution.title', 'Ownership and scope')} icon={ShieldCheck}>
@@ -163,6 +168,7 @@ export function AssetAttributionSection({
                   })}
                 </span>
               )}
+              {cert?.ownership && <span className="text-muted-foreground">{cert.ownership}</span>}
               {attribution.human_decided && attribution.decided_at && (
                 <span className="text-muted-foreground">
                   {t('assets.attribution.decided', 'Decided')}{' '}
@@ -180,15 +186,32 @@ export function AssetAttributionSection({
             </dd>
             <dt className="text-muted-foreground">{t('assets.attribution.scans', 'Scans')}</dt>
             <dd className="min-w-0 space-y-1">
+              {cert && (
+                <p className="text-foreground">
+                  {cert.text}
+                  {cert.endpointId && (
+                    <>
+                      {' '}
+                      <Link
+                        href={`/assets/${cert.endpointId}`}
+                        className="underline underline-offset-2"
+                      >
+                        {t('assets.certificate.openEndpoint', 'Open the endpoint')}
+                      </Link>
+                    </>
+                  )}
+                </p>
+              )}
               {scope && <p className={cn(scope.ok ? 'text-foreground' : '')}>{scope.text}</p>}
               {/* The ownership side of the answer; the scope line above already
                   says "no entry covers it" when that is the reason. */}
-              {!(
-                scope &&
-                ['unattributed', 'out_of_scope'].includes(
-                  attribution.active_checks_blocked_by ?? ''
-                )
-              ) && <p className="text-muted-foreground">{scanStanding(t, attribution)}</p>}
+              {!cert &&
+                !(
+                  scope &&
+                  ['unattributed', 'out_of_scope'].includes(
+                    attribution.active_checks_blocked_by ?? ''
+                  )
+                ) && <p className="text-muted-foreground">{scanStanding(t, attribution)}</p>}
               {scope && !scope.ok && scope.canAdd && canAddScope && (
                 <Button
                   size="sm"
