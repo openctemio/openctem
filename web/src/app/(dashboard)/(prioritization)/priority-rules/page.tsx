@@ -34,7 +34,7 @@ import {
   DialogBody,
 } from '@/components/ui/dialog'
 import { ConfirmDialog } from '@/components/confirm-dialog'
-import { nameToTypeToConfirm } from '@/components/confirm-name'
+import { confirmName } from '@/lib/confirm-name'
 import {
   Select,
   SelectContent,
@@ -948,9 +948,7 @@ export default function PriorityRulesPage() {
         )}
         confirmText={t('confirm.priorityRule.deleteBtn')}
         destructive
-        typeToConfirm={
-          deletingRule ? nameToTypeToConfirm(deletingRule.name, deletingRule.id) : undefined
-        }
+        typeToConfirm={deletingRule ? confirmName(deletingRule.name, deletingRule.id) : undefined}
         handleConfirm={() => void handleDelete()}
       />
     </Main>

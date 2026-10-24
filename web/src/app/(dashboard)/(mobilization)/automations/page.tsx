@@ -5,7 +5,7 @@ import { useNodesState, useEdgesState, type Edge } from '@xyflow/react'
 
 import { Main } from '@/components/layout'
 import { ConfirmDialog } from '@/components/confirm-dialog'
-import { nameToTypeToConfirm } from '@/components/confirm-name'
+import { confirmName } from '@/lib/confirm-name'
 import { useTranslation } from '@/context/i18n-provider'
 import type { ColumnDef } from '@tanstack/react-table'
 import {
@@ -998,7 +998,7 @@ export default function WorkflowsPage() {
           }
           isLoading={isDeleting}
           typeToConfirm={
-            pendingDelete ? nameToTypeToConfirm(pendingDelete.name, pendingDelete.id) : undefined
+            pendingDelete ? confirmName(pendingDelete.name, pendingDelete.id) : undefined
           }
           handleConfirm={() => (pendingDelete ? handleDeleteWorkflow(pendingDelete) : undefined)}
         />
