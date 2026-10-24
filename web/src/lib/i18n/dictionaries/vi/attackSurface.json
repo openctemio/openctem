@@ -312,5 +312,11 @@
   "attackSurface.monitoring.howOften": "Tần suất",
   "attackSurface.tab.webSurface": "Bề mặt web",
   "attackSurface.web.description": "Những gì các origin web của bạn phục vụ: điểm cuối, tham số (chỉ tên), cùng một đường dẫn trên nhiều origin và những gì đã thay đổi.",
-  "attackSurface.web.shortDescription": "Origin, điểm cuối và tham số."
+  "attackSurface.web.shortDescription": "Origin, điểm cuối và tham số.",
+  "attackSurface.web.view.label": "Hiển thị",
+  "attackSurface.web.view.origins": "Nguồn gốc web",
+  "attackSurface.web.view.endpoints": "Điểm cuối",
+  "attackSurface.web.view.patterns": "Mẫu đường dẫn",
+  "attackSurface.web.view.changes": "Thay đổi",
+  "attackSurface.web.pathsAsText": "Đường dẫn chỉ hiển thị dạng văn bản và không bao giờ được mở từ đây."
 }

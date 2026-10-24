@@ -19,6 +19,7 @@ import {
   EmptyState,
   ErrorState,
   MetricStrip,
+  PageStack,
   StackedCell,
   type MetricStripItem,
 } from '@/features/shared'
@@ -286,7 +287,7 @@ export function CICoverageView({ toolbarStart }: CICoverageViewProps) {
 
   const empty = !isLoading && !error && (s?.repositories ?? 0) === 0 && !q && !filter
   return (
-    <div className="mt-5 space-y-5">
+    <PageStack>
       {!empty && <MetricStrip loading={isLoading && !data} items={metrics} />}
       {data?.truncated && (
         <p className="text-sm text-muted-foreground">
@@ -301,7 +302,7 @@ export function CICoverageView({ toolbarStart }: CICoverageViewProps) {
         />
       ) : empty ? (
         <>
-          <div className="flex flex-wrap items-center gap-2">{toolbarStart}</div>
+          {toolbarStart && <div className="flex flex-wrap items-center gap-2">{toolbarStart}</div>}
           <EmptyState
             icon={ShieldQuestion}
             title={t('scans.ci.coverage.emptyTitle', 'No repositories in scope')}
@@ -378,6 +379,6 @@ export function CICoverageView({ toolbarStart }: CICoverageViewProps) {
           </ul>
         </section>
       )}
-    </div>
+    </PageStack>
   )
 }
