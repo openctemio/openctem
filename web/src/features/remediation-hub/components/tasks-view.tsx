@@ -36,7 +36,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { DataTable } from '@/features/shared'
+import { DataTable, FilterSelect, ListToolbar, PageStack, ViewSwitcher } from '@/features/shared'
 import { EmptyState } from '@/features/shared/components/empty-state'
 import { ErrorState } from '@/features/shared/components/error-state'
 import { cn } from '@/lib/utils'
@@ -212,74 +212,63 @@ export function TasksView({ defaultView = 'open' }: { defaultView?: TaskView }) 
   const viewLabels: TaskView[] = ['open', 'mine', 'verifying', 'on_hold', 'closed', 'all']
 
   return (
-    <div className="space-y-4">
-      <div className="flex flex-wrap items-center gap-2">
-        <div
-          role="tablist"
-          aria-label={t('remediationHub.tasks.views')}
-          className="flex flex-wrap gap-1"
-        >
-          {viewLabels.map((v) => (
-            <Button
-              key={v}
-              role="tab"
-              aria-selected={view === v}
-              size="sm"
-              variant={view === v ? 'secondary' : 'ghost'}
-              onClick={() => setParam('view', v)}
-            >
-              {t(`remediationHub.tasks.view.${v}`)}
-            </Button>
-          ))}
-        </div>
-        <div className="ms-auto flex flex-wrap items-center gap-2">
-          <Input
-            className="w-full sm:w-56"
-            placeholder={t('remediationHub.tasks.search')}
-            aria-label={t('remediationHub.tasks.search')}
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-          />
-          <Select value={sort} onValueChange={(v) => setSort(v as TaskListFilters['sort'])}>
-            <SelectTrigger className="w-40" aria-label={t('remediationHub.tasks.sort')}>
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {(['deadline', 'risk', 'updated', 'created'] as const).map((s) => (
-                <SelectItem key={s} value={s}>
-                  {t(`remediationHub.tasks.sortBy.${s}`)}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-          <div className="flex rounded-md border">
-            <Button
-              size="icon"
-              variant={layout === 'table' ? 'secondary' : 'ghost'}
-              aria-pressed={layout === 'table'}
-              aria-label={t('remediationHub.tasks.table')}
-              onClick={() => setParam('layout', 'table')}
-            >
-              <Table2 className="size-4" aria-hidden />
-            </Button>
-            <Button
-              size="icon"
-              variant={layout === 'board' ? 'secondary' : 'ghost'}
-              aria-pressed={layout === 'board'}
-              aria-label={t('remediationHub.tasks.board')}
-              onClick={() => setParam('layout', 'board')}
-            >
-              <LayoutGrid className="size-4" aria-hidden />
-            </Button>
-          </div>
-          {canQueryCreate && (
-            <Button size="sm" onClick={() => setQueryOpen(true)}>
-              <SquareCode className="size-4" aria-hidden />
-              {t('remediationQuery.create.entry')}
-            </Button>
-          )}
-        </div>
-      </div>
+    <PageStack>
+      {/* One toolbar row: which tasks (a filter token, not a second row of
+          tabs under the section tabs), search; then sort, the table/board
+          view switch and the create action at the end. */}
+      <ListToolbar
+        start={
+          <>
+            <FilterSelect<TaskView>
+              label={t('remediationHub.tasks.showLabel', 'Show')}
+              value={view}
+              clearable={false}
+              options={viewLabels.map((v) => ({
+                value: v,
+                label: t(`remediationHub.tasks.view.${v}`),
+              }))}
+              onChange={(v) => setParam('view', v || 'open')}
+            />
+            <Input
+              className="h-9 w-full sm:w-56"
+              placeholder={t('remediationHub.tasks.search')}
+              aria-label={t('remediationHub.tasks.search')}
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+            />
+          </>
+        }
+        end={
+          <>
+            <Select value={sort} onValueChange={(v) => setSort(v as TaskListFilters['sort'])}>
+              <SelectTrigger className="h-9 w-40" aria-label={t('remediationHub.tasks.sort')}>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {(['deadline', 'risk', 'updated', 'created'] as const).map((s) => (
+                  <SelectItem key={s} value={s}>
+                    {t(`remediationHub.tasks.sortBy.${s}`)}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <ViewSwitcher
+              options={[
+                { value: 'table', label: t('remediationHub.tasks.table'), icon: Table2 },
+                { value: 'board', label: t('remediationHub.tasks.board'), icon: LayoutGrid },
+              ]}
+              value={layout === 'board' ? 'board' : 'table'}
+              onChange={(v) => setParam('layout', v)}
+            />
+            {canQueryCreate && (
+              <Button size="sm" className="h-9" onClick={() => setQueryOpen(true)}>
+                <SquareCode className="size-4" aria-hidden />
+                {t('remediationQuery.create.entry')}
+              </Button>
+            )}
+          </>
+        }
+      />
       {canQueryCreate && <CreateTaskFromQueryDialog open={queryOpen} onOpenChange={setQueryOpen} />}
 
       {error ? (
@@ -368,7 +357,7 @@ export function TasksView({ defaultView = 'open' }: { defaultView?: TaskView }) 
         }
         handleConfirm={applyHold}
       />
-    </div>
+    </PageStack>
   )
 }
 

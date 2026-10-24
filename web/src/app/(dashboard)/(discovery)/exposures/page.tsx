@@ -6,7 +6,7 @@ import { useState, useCallback, useMemo } from 'react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { Tabs, TabsContent } from '@/components/ui/tabs'
 import { Badge } from '@/components/ui/badge'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Skeleton } from '@/components/ui/skeleton'
@@ -30,6 +30,8 @@ import {
   GatedButton,
   MetricStrip,
   PageHeader,
+  PageStack,
+  ViewSwitcher,
   SeverityBadge,
   DetailField,
   DetailFieldGrid,
@@ -57,6 +59,8 @@ import {
   ArrowRightLeft,
   ChevronDown,
   BarChart3,
+  ChartColumn,
+  List,
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { formatRelative } from '@/lib/format-date'
@@ -387,11 +391,6 @@ export default function ExposuresPage() {
       onClick: () => setView('resolved'),
       active: activeView === 'resolved',
     },
-    {
-      key: 'mttr',
-      label: 'Mean time to resolve',
-      value: stats?.mttr_hours ? `${stats.mttr_hours.toFixed(1)}h` : '—',
-    },
   ]
 
   const rangeStart = total === 0 ? 0 : pagination.pageIndex * pagination.pageSize + 1
@@ -503,115 +502,134 @@ export default function ExposuresPage() {
 
   return (
     <Main>
-      <PageHeader
-        title="Exposures"
-        description={t(
-          'exposures.page.description',
-          'Changes to your attack surface that need a decision. Resolve, accept or dismiss them.'
-        )}
-      />
-
-      <ExposuresTabs />
-
-      <Tabs value={tab} onValueChange={setTabParam} className="mt-4">
-        <TabsList>
-          <TabsTrigger value="list">All exposures</TabsTrigger>
-          <TabsTrigger value="analytics">Analytics</TabsTrigger>
-        </TabsList>
-
-        <TabsContent value="list" className="mt-5 space-y-5">
-          {statsError ? (
-            <ErrorState
-              title={t('exposures.stats.errorTitle', 'exposure statistics')}
-              error={statsError}
-              onRetry={() => refreshStats()}
-            />
-          ) : (
-            <MetricStrip loading={statsLoading} items={metrics} />
+      <PageStack>
+        <PageHeader
+          title="Exposures"
+          description={t(
+            'exposures.page.description',
+            'Changes to your attack surface that need a decision. Resolve, accept or dismiss them.'
           )}
-
-          {exposuresError ? (
-            <Alert variant="destructive">
-              <AlertTriangle className="h-4 w-4" />
-              <AlertTitle>Could not load exposures</AlertTitle>
-              <AlertDescription className="flex flex-wrap items-center gap-3">
-                The exposure list failed to load.
-                <Button variant="outline" size="sm" onClick={handleRefresh}>
-                  Retry
-                </Button>
-              </AlertDescription>
-            </Alert>
-          ) : exposuresLoading && exposures.length === 0 ? (
-            <ExposureTableSkeleton />
-          ) : (
-            <DataTable
-              columns={columns}
-              data={exposures}
-              showSearch={false}
-              toolbarStart={toolbarStart}
-              toolbarEnd={toolbarEnd}
-              getRowId={(e) => e.id}
-              manualPagination
-              rowCount={total}
-              pagination={pagination}
-              onPaginationChange={setPagination}
-              pageSizeOptions={PAGE_SIZES}
-              onRowClick={setDetailExposure}
-              onSelectionChange={(rows) => {
-                setSelectedIds(rows.map((e) => e.id))
-                setSelectedNames(rows.map((e) => e.title))
-              }}
-              resetSelectionKey={selectionEpoch}
-              showSelectionCount={false}
-              emptyMessage={hasActiveFilters ? 'No exposures match these filters' : 'No exposures'}
-              emptyDescription={
-                hasActiveFilters
-                  ? 'Try removing a filter or clearing them all.'
-                  : 'Your attack surface has no open exposure events.'
-              }
+          viewSwitcher={
+            // List and analytics are two views of the same events: a view
+            // switch, not a second row of tabs (research/249 R21).
+            <ViewSwitcher
+              options={[
+                { value: 'list', label: t('exposures.view.list', 'List view'), icon: List },
+                {
+                  value: 'analytics',
+                  label: t('exposures.view.analytics', 'Analytics view'),
+                  icon: ChartColumn,
+                },
+              ]}
+              value={tab}
+              onChange={(v) => setTabParam(v === 'analytics' ? 'analytics' : '')}
             />
-          )}
+          }
+        />
 
-          <ExposureBulkActions
-            selectedIds={selectedIds}
-            selectedNames={selectedNames}
-            onClearSelection={clearSelection}
-            onBulkResolve={handleBulkResolve}
-            onBulkAccept={handleBulkAccept}
-            onBulkFalsePositive={handleBulkFalsePositive}
-          />
-        </TabsContent>
+        <ExposuresTabs />
 
-        <TabsContent value="analytics" className="mt-5 space-y-5">
-          {statsError ? (
-            <ErrorState
-              title={t('exposures.stats.errorTitle', 'exposure statistics')}
-              error={statsError}
-              onRetry={() => refreshStats()}
-            />
-          ) : statsLoading ? (
-            <div className="grid gap-4 md:grid-cols-2">
-              <Skeleton className="h-64 w-full rounded-xl" />
-              <Skeleton className="h-64 w-full rounded-xl" />
-            </div>
-          ) : (
-            <>
-              <div className="grid gap-4 md:grid-cols-2">
-                <ExposureSeverityBreakdown bySeverity={stats.by_severity} />
-                <ExposureStateBreakdown byState={stats.by_state} />
-              </div>
-              <Card>
-                <CardHeader>
-                  <CardTitle>By event type</CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <EventTypeDistribution byEventType={stats.by_event_type} />
-                </CardContent>
-              </Card>
-            </>
-          )}
-        </TabsContent>
-      </Tabs>
+        <Tabs value={tab} onValueChange={setTabParam}>
+          <TabsContent value="list">
+            <PageStack>
+              {statsError ? (
+                <ErrorState
+                  title={t('exposures.stats.errorTitle', 'exposure statistics')}
+                  error={statsError}
+                  onRetry={() => refreshStats()}
+                />
+              ) : (
+                <MetricStrip loading={statsLoading} items={metrics} />
+              )}
+
+              {exposuresError ? (
+                <Alert variant="destructive">
+                  <AlertTriangle className="h-4 w-4" />
+                  <AlertTitle>Could not load exposures</AlertTitle>
+                  <AlertDescription className="flex flex-wrap items-center gap-3">
+                    The exposure list failed to load.
+                    <Button variant="outline" size="sm" onClick={handleRefresh}>
+                      Retry
+                    </Button>
+                  </AlertDescription>
+                </Alert>
+              ) : exposuresLoading && exposures.length === 0 ? (
+                <ExposureTableSkeleton />
+              ) : (
+                <DataTable
+                  columns={columns}
+                  data={exposures}
+                  showSearch={false}
+                  toolbarStart={toolbarStart}
+                  toolbarEnd={toolbarEnd}
+                  getRowId={(e) => e.id}
+                  manualPagination
+                  rowCount={total}
+                  pagination={pagination}
+                  onPaginationChange={setPagination}
+                  pageSizeOptions={PAGE_SIZES}
+                  onRowClick={setDetailExposure}
+                  onSelectionChange={(rows) => {
+ setSelectedIds(rows.map((e) => e.id))
+ setSelectedNames(rows.map((e) => e.title))
+ }}
+                  resetSelectionKey={selectionEpoch}
+                  showSelectionCount={false}
+                  emptyMessage={
+                    hasActiveFilters ? 'No exposures match these filters' : 'No exposures'
+                  }
+                  emptyDescription={
+                    hasActiveFilters
+                      ? 'Try removing a filter or clearing them all.'
+                      : 'Your attack surface has no open exposure events.'
+                  }
+                />
+              )}
+
+              <ExposureBulkActions
+                selectedIds={selectedIds}
+                selectedNames={selectedNames}
+                onClearSelection={clearSelection}
+                onBulkResolve={handleBulkResolve}
+                onBulkAccept={handleBulkAccept}
+                onBulkFalsePositive={handleBulkFalsePositive}
+              />
+            </PageStack>
+          </TabsContent>
+
+          <TabsContent value="analytics">
+            <PageStack>
+              {statsError ? (
+                <ErrorState
+                  title={t('exposures.stats.errorTitle', 'exposure statistics')}
+                  error={statsError}
+                  onRetry={() => refreshStats()}
+                />
+              ) : statsLoading ? (
+                <div className="grid gap-4 md:grid-cols-2">
+                  <Skeleton className="h-64 w-full rounded-xl" />
+                  <Skeleton className="h-64 w-full rounded-xl" />
+                </div>
+              ) : (
+                <>
+                  <div className="grid gap-4 md:grid-cols-2">
+                    <ExposureSeverityBreakdown bySeverity={stats.by_severity} />
+                    <ExposureStateBreakdown byState={stats.by_state} />
+                  </div>
+                  <Card>
+                    <CardHeader>
+                      <CardTitle>By event type</CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                      <EventTypeDistribution byEventType={stats.by_event_type} />
+                    </CardContent>
+                  </Card>
+                </>
+              )}
+            </PageStack>
+          </TabsContent>
+        </Tabs>
+      </PageStack>
 
       {/* Action Dialog */}
       <ExposureActionDialog
