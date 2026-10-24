@@ -11,7 +11,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { useRouter } from 'next/navigation'
 import { MetricStrip, formatRiskScore } from '@/features/shared'
 import { Can, Permission } from '@/lib/permissions'
 import { WidgetError } from '@/features/dashboard/components/widget-error'
@@ -27,7 +26,6 @@ import { useTranslation } from '@/context/i18n-provider'
 
 export function ExecutiveSummarySection() {
   const { t, locale } = useTranslation()
-  const router = useRouter()
   const [days, setDays] = useState<Period>('30')
   const [downloading, setDownloading] = useState(false)
   const { summary, error, isLoading, retry } = useExecutiveSummary(parseInt(days, 10))
@@ -103,18 +101,20 @@ export function ExecutiveSummarySection() {
               key: 'risk',
               label: t('reports.executive.risk', 'Risk score'),
               value: summary ? formatRiskScore(summary.risk_score_current) : '—',
+              href: DRILL.open,
             },
             {
               key: 'open',
               label: t('reports.executive.open', 'Open findings'),
               value: summary ? formatCount(summary.findings_total, locale) : '—',
+              href: DRILL.open,
             },
             {
               key: 'p0',
               label: t('reports.executive.p0', 'P0 open'),
               value: summary ? summary.p0_open : '—',
               tone: 'danger',
-              onClick: () => router.push(DRILL.p0Open),
+              href: DRILL.p0Open,
             },
             {
               key: 'sla',
@@ -122,6 +122,7 @@ export function ExecutiveSummarySection() {
               value: summary
                 ? formatPct(summary.sla_compliance_pct, { n: summary.findings_total, locale })
                 : '—',
+              href: DRILL.slaBreached,
             },
           ]}
         />
