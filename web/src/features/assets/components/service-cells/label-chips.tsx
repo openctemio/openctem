@@ -1,7 +1,8 @@
 'use client'
 
 import { Fragment, useId, useState, type FormEvent } from 'react'
-import { Loader2, Plus, Tag } from 'lucide-react'
+import { Loader2, Plus, Tag as TagIcon } from 'lucide-react'
+import { Tag } from '@/components/ui/tag'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
@@ -73,15 +74,13 @@ export function LabelChips({
     <div className={cn('flex min-w-0 flex-wrap items-center gap-1', className)}>
       {shown.map((l) => {
         const active = activeLabels?.includes(l) ?? false
-        const chip = (
-          <FactChip
-            tone={active ? 'info' : 'label'}
-            title={onLabelClick ? undefined : l}
-            className="max-w-[160px]"
-          >
-            <Tag aria-hidden="true" />
+        const chip = active ? (
+          <FactChip tone="info" className="max-w-[160px]">
+            <TagIcon aria-hidden="true" />
             <span className="truncate">{l}</span>
           </FactChip>
+        ) : (
+          <Tag icon={TagIcon} label={l} title={onLabelClick ? '' : l} className="max-w-[160px]" />
         )
         if (!onLabelClick) return <Fragment key={l}>{chip}</Fragment>
         return (
@@ -99,7 +98,7 @@ export function LabelChips({
               e.stopPropagation()
               onLabelClick(l)
             }}
-            className="max-w-[160px] rounded-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring [&>[data-slot=fact-chip]]:hover:bg-accent"
+            className="max-w-[160px] rounded-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring [&>[data-slot=fact-chip]]:hover:bg-accent [&>[data-slot=tag]]:hover:bg-accent"
           >
             {chip}
           </button>

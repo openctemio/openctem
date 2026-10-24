@@ -220,7 +220,7 @@ function StatBox({
   return (
     <div className="space-y-1 rounded-md border bg-card p-3">
       <p className="text-xs text-muted-foreground">{label}</p>
-      <p className={emphasize ? 'text-lg font-semibold text-amber-600' : 'text-lg font-medium'}>
+      <p className={emphasize ? 'text-lg font-semibold text-warning' : 'text-lg font-medium'}>
         {value}
       </p>
     </div>

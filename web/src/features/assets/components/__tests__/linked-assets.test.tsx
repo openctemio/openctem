@@ -222,7 +222,7 @@ describe('InventoryBusinessContextActions', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Add to unit' }))
     await userEvent.click(screen.getByRole('combobox', { name: /business unit/i }))
     await userEvent.click(await screen.findByRole('option', { name: 'Payments' }))
-    await userEvent.click(screen.getByRole('button', { name: 'Add' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Add 2 selected' }))
     await waitFor(() => expect(onDone).toHaveBeenCalled())
     expect(api.post).toHaveBeenCalledWith('/api/v1/business-units/bu1/assets', { asset_id: 'a1' })
     expect(api.post).toHaveBeenCalledWith('/api/v1/business-units/bu1/assets', { asset_id: 'a2' })
