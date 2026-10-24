@@ -534,7 +534,7 @@ func (s *Service) queueStepForExecutionWithSettings(ctx context.Context, run *sc
 	}
 	created := make([]*command.Command, 0, len(chunks))
 	for _, chunk := range chunks {
-		cmd, err := s.stepCommand(ctx, run, step, stepRun, chunk)
+		cmd, err := s.stepCommand(ctx, run, step, resolved, stepRun, chunk)
 		if err == nil {
 			// An active stage holds its hosts while a sensor runs the
 			// chunk, so no other sensor hits them at the same time; the
@@ -684,10 +684,10 @@ func targetWeight(t string, weighRanges bool) uint64 {
 // stepCommand builds one command of a step for the given chunk of its
 // targets, after the payload passed the security validator. Its web scope
 // is attached when the command is stored (command.CreateGuard).
-func (s *Service) stepCommand(ctx context.Context, run *scanrun.Run, step *scanworkflow.Step, stepRun *scanrun.StepRun,
+func (s *Service) stepCommand(ctx context.Context, run *scanrun.Run, step *scanworkflow.Step, resolved scanapp.StepTool, stepRun *scanrun.StepRun,
 	chunk *scanapp.StepTargets,
 ) (*command.Command, error) {
-	payload, err := scanapp.StepCommandPayload(run, step, step.Tool, stepRun.ID.String(), chunk)
+	payload, err := resolved.CommandPayload(run, step, stepRun.ID.String(), chunk)
 	if err != nil {
 		return nil, fmt.Errorf("step %s: %w", step.StepKey, err)
 	}

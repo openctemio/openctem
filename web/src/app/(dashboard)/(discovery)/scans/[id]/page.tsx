@@ -47,6 +47,7 @@ import {
   RunStatusBadge,
   TruncatedText,
   type MetricStripItem,
+  PageStack,
 } from '@/features/shared'
 import { RunDetailSheet } from '@/features/scans/components/run-detail-sheet'
 import { CloneScanDialog, EditScanDialog } from '@/features/scans/components'
@@ -421,14 +422,16 @@ export default function ScanDetailPage() {
     // happened and let the person retry.
     return (
       <Main>
-        <PageHeader title={t('scanDetail.error.title')} />
-        <div className="mt-5">
-          <ErrorState
-            title={t('scanDetail.error.title')}
-            error={error}
-            onRetry={() => void refetchConfig()}
-          />
-        </div>
+        <PageStack>
+          <PageHeader title={t('scanDetail.error.title')} />
+          <div>
+            <ErrorState
+              title={t('scanDetail.error.title')}
+              error={error}
+              onRetry={() => void refetchConfig()}
+            />
+          </div>
+        </PageStack>
       </Main>
     )
   }
@@ -436,16 +439,18 @@ export default function ScanDetailPage() {
   if (status === 404 || !config) {
     return (
       <Main>
-        <PageHeader title={t('scanDetail.notFound.title')} />
-        <div className="mt-5 flex flex-col items-start gap-4">
-          <p className="text-sm text-muted-foreground">{t('scanDetail.notFound.desc')}</p>
-          <Button asChild variant="outline" size="sm">
-            <Link href="/scans">
-              <ArrowLeft className="me-2 h-4 w-4" />
-              {t('scanDetail.notFound.back')}
-            </Link>
-          </Button>
-        </div>
+        <PageStack>
+          <PageHeader title={t('scanDetail.notFound.title')} />
+          <div className="flex flex-col items-start gap-4">
+            <p className="text-sm text-muted-foreground">{t('scanDetail.notFound.desc')}</p>
+            <Button asChild variant="outline" size="sm">
+              <Link href="/scans">
+                <ArrowLeft className="me-2 h-4 w-4" />
+                {t('scanDetail.notFound.back')}
+              </Link>
+            </Button>
+          </div>
+        </PageStack>
       </Main>
     )
   }
@@ -461,391 +466,389 @@ export default function ScanDetailPage() {
   // A platform policy owns the scan: read-only here, listed as System.
   const managed = isManagedScan(config)
 
+  // Every tile opens this scan's runs in the Runs list with the matching
+  // status filter. The success rate and the next run are not lists: the rate
+  // is derived from these counts, the next run is a fact in the header.
+  const runsHref = `/scans/runs?scan_id=${encodeURIComponent(scanId)}`
   const metrics: MetricStripItem[] = [
     {
       key: 'runs',
       label: t('scanDetail.metric.runs'),
       value: counts?.total ?? config.total_runs,
+      href: runsHref,
       hint:
         counts && counts.inProgress > 0
           ? t('scanDetail.metric.inProgress', '{count} in progress', { count: counts.inProgress })
           : undefined,
     },
     {
-      key: 'rate',
-      label: t('scans.list.successRate'),
-      // A rate needs a settled run: "n/a", never a red 0%.
-      value: rate === null ? t('scans.list.notAvailable') : `${rate}%`,
-      hint: rate === null ? t('scans.list.noFinishedRun') : undefined,
+      key: 'ok',
+      label: t('scanDetail.metric.successful'),
+      value: config.successful_runs,
+      href: `${runsHref}&status=completed`,
     },
-    { key: 'ok', label: t('scanDetail.metric.successful'), value: config.successful_runs },
     {
       key: 'partial',
       label: t('scanDetail.metric.partial'),
       value: config.partial_runs ?? 0,
       tone: 'warning',
+      href: `${runsHref}&status=partial`,
     },
     {
       key: 'failed',
       label: t('scanDetail.metric.failed'),
       value: config.failed_runs,
       tone: 'danger',
-    },
-    {
-      key: 'next',
-      label: t('scanDetail.metric.nextRun'),
-      value: config.next_run_at ? formatScanDate(config.next_run_at) : '-',
-      hint: managed
-        ? undefined
-        : config.status === 'paused' && config.next_run_at
-          ? t('scanDetail.metric.ifResumed')
-          : config.schedule_type === 'manual'
-            ? t('scanDetail.metric.manualOnly')
-            : undefined,
+      href: `${runsHref}&status=failed`,
     },
   ]
 
   return (
     <Main>
-      <PageHeader
-        title={config.name}
-        description={
-          <span className="flex flex-wrap items-center gap-2">
-            <LastRunCell run={lastRunOf(config)} onOpen={setOpenRunId} />
-            <span>{scanTypeLabel(config).label}</span>
-            <span aria-hidden="true">·</span>
-            {managed ? (
-              <>
-                <Badge variant="secondary">{t('scans.managed.system')}</Badge>
-                <span>{managedScanLabel(config, t)}</span>
-              </>
-            ) : (
-              <>
-                <span>{SCHEDULE_TYPE_LABELS[config.schedule_type]}</span>
-                <span aria-hidden="true">·</span>
-                <span>{scanStateLabel(config)}</span>
-              </>
-            )}
-            {activeRun && (
-              <Button
-                variant="link"
-                size="sm"
-                className="h-auto p-0"
-                onClick={() => setOpenRunId(activeRun.id)}
-              >
-                <RefreshCw className="me-1 h-3.5 w-3.5 animate-spin motion-reduce:animate-none" />
-                {t('scanDetail.run.inProgress')}
-              </Button>
-            )}
-          </span>
-        }
-      >
-        {/* Run now, schedule on/off, enable: the same controls as the scan
+      <PageStack>
+        <PageHeader
+          title={config.name}
+          description={
+            <span className="flex flex-wrap items-center gap-x-3 gap-y-1">
+              <LastRunCell run={lastRunOf(config)} onOpen={setOpenRunId} />
+              <span>{scanTypeLabel(config).label}</span>
+              {managed ? (
+                <>
+                  <Badge variant="secondary">{t('scans.managed.system')}</Badge>
+                  <span>{managedScanLabel(config, t)}</span>
+                </>
+              ) : (
+                <>
+                  <span>{SCHEDULE_TYPE_LABELS[config.schedule_type]}</span>
+                  <span>{scanStateLabel(config)}</span>
+                </>
+              )}
+              <span>
+                {t('scanDetail.metric.nextRun')}:{' '}
+                {config.next_run_at ? formatScanDate(config.next_run_at) : '-'}
+                {!managed && config.status === 'paused' && config.next_run_at
+                  ? ` (${t('scanDetail.metric.ifResumed')})`
+                  : !managed && config.schedule_type === 'manual'
+                    ? ` (${t('scanDetail.metric.manualOnly')})`
+                    : ''}
+              </span>
+              <span>
+                {t('scans.list.successRate')}:{' '}
+                {rate === null ? t('scans.list.notAvailable') : `${rate}%`}
+              </span>
+              {activeRun && (
+                <Button
+                  variant="link"
+                  size="sm"
+                  className="h-auto p-0"
+                  onClick={() => setOpenRunId(activeRun.id)}
+                >
+                  <RefreshCw className="me-1 h-3.5 w-3.5 animate-spin motion-reduce:animate-none" />
+                  {t('scanDetail.run.inProgress')}
+                </Button>
+              )}
+            </span>
+          }
+        >
+          {/* Run now, schedule on/off, enable: the same controls as the scan
             drawer, gated as the API gates them. */}
-        {!managed && (
-          <ScanControls
-            config={config}
-            onViewRun={setOpenRunId}
-            onChanged={() => void refetchAll()}
-          />
-        )}
-        <Can permission={Permission.ScansWrite}>
           {!managed && (
-            <Button variant="outline" onClick={() => setEditOpen(true)}>
-              <Pencil className="me-2 h-4 w-4" />
-              {t('scans.page.edit')}
-            </Button>
+            <ScanControls
+              config={config}
+              onViewRun={setOpenRunId}
+              onChanged={() => void refetchAll()}
+            />
           )}
-          <Button variant="outline" onClick={() => setCloneOpen(true)}>
-            <Copy className="me-2 h-4 w-4" />
-            {managed ? t('scans.managed.clone') : t('scans.page.clone')}
-          </Button>
-        </Can>
-      </PageHeader>
-
-      <EditScanDialog
-        scanConfig={config}
-        open={editOpen}
-        onOpenChange={setEditOpen}
-        onSuccess={() => void refetchConfig()}
-      />
-      <CloneScanDialog
-        scan={config}
-        open={cloneOpen}
-        onOpenChange={setCloneOpen}
-        onSuccess={(copy) => router.push(`/scans/${copy.id}`)}
-      />
-
-      <MetricStrip className="mt-5" items={metrics} />
-
-      {managed ? (
-        <div className="mt-5">
-          <ManagedScanBanner config={config} />
-        </div>
-      ) : (
-        <>
-          <div className="mt-5 empty:hidden">
-            <ScanOwnerBanner config={config} onChanged={() => void refetchConfig()} />
-          </div>
-
-          <div className="mt-5 empty:hidden">
-            <LivenessHint config={config} onChanged={() => void refetchConfig()} />
-          </div>
-
-          <div className="mt-5 empty:hidden">
-            <ScanApprovalPanel scanId={config.id} onRan={() => void refetchAll()} />
-          </div>
-        </>
-      )}
-
-      <Tabs value={tab} onValueChange={setTabParam} className="mt-5">
-        <TabsList>
-          <TabsTrigger value="runs">{t('scanDetail.tab.runs')}</TabsTrigger>
-          <TabsTrigger value="configuration">{t('scanDetail.tab.configuration')}</TabsTrigger>
-          <TabsTrigger value="details">{t('scanDetail.tab.details')}</TabsTrigger>
-        </TabsList>
-
-        <TabsContent value="runs" className="mt-5">
-          <DataTable
-            columns={runColumns}
-            data={runs}
-            getRowId={(run) => run.id}
-            isLoading={isLoadingRuns && !runsResponse}
-            showSearch={false}
-            onRowClick={(run) => setOpenRunId(run.id)}
-            manualPagination
-            rowCount={runsResponse?.total ?? 0}
-            pagination={runList.pagination}
-            onPaginationChange={runList.setPagination}
-            pageSize={runPerPage}
-            pageSizeOptions={RUN_PAGE_SIZES}
-            paginationNoun={t('scanDetail.runs.noun')}
-            emptyMessage={t('scanDetail.runs.emptyTitle')}
-            emptyDescription={t('scanDetail.runs.emptyDesc')}
-            toolbarEnd={
-              <Button variant="outline" size="sm" className="h-9" asChild>
-                <Link href={`/scans/runs?scan_id=${encodeURIComponent(scanId)}`}>
-                  {t('scanDetail.runs.viewAll')}
-                </Link>
+          <Can permission={Permission.ScansWrite}>
+            {!managed && (
+              <Button variant="outline" onClick={() => setEditOpen(true)}>
+                <Pencil className="me-2 h-4 w-4" />
+                {t('scans.page.edit')}
               </Button>
-            }
-          />
-        </TabsContent>
+            )}
+            <Button variant="outline" onClick={() => setCloneOpen(true)}>
+              <Copy className="me-2 h-4 w-4" />
+              {managed ? t('scans.managed.clone') : t('scans.page.clone')}
+            </Button>
+          </Can>
+        </PageHeader>
 
-        <TabsContent value="configuration" className="mt-5">
-          <DetailSections>
-            <DetailSection title={t('scanDetail.cfg.schedule')}>
-              <DetailFieldGrid>
-                <DetailField label={t('scanDetail.cfg.frequency')}>
-                  {SCHEDULE_TYPE_LABELS[config.schedule_type]}
-                </DetailField>
-                {config.schedule_time && (
-                  <DetailField label={t('scanDetail.cfg.time')}>{config.schedule_time}</DetailField>
-                )}
-                <DetailField label={t('scanDetail.cfg.timezone')}>
-                  {config.schedule_timezone}
-                </DetailField>
-                {config.next_run_at && (
-                  <DetailField label={t('scanDetail.cfg.nextRun')}>
-                    {formatScanDate(config.next_run_at)}
-                  </DetailField>
-                )}
-                {config.schedule_rrule && (
-                  <DetailField label={t('scanDetail.cfg.rule')} full>
-                    <code className="text-xs break-all">{config.schedule_rrule}</code>
-                  </DetailField>
-                )}
-              </DetailFieldGrid>
-              <div className="mt-4">
-                <SchedulePreview
-                  request={schedulePreviewRequestFromConfig(config)}
-                  paused={config.status !== 'active'}
-                />
-              </div>
-            </DetailSection>
-            <DetailSection title={t('scanDetail.cfg.execution')}>
-              <DetailFieldGrid>
-                <DetailField label={t('scanDetail.cfg.scanType')}>
-                  {SCAN_TYPE_LABELS[config.scan_type]}
-                </DetailField>
-                <DetailField label={<IntensityLabel />}>
-                  <IntensityBadge intensity={config.intensity} />
-                </DetailField>
-                <DetailField label={t('scanDetail.cfg.sensorPreference')}>
-                  {t(`scans.sensorPrefRun.${config.sensor_preference || 'auto'}.label`)}
-                </DetailField>
-                <DetailField label={t('scanDetail.cfg.targetsPerJob')}>
-                  {config.targets_per_job}
-                </DetailField>
-              </DetailFieldGrid>
-            </DetailSection>
-            {(groupIds.length > 0 || targets.length > 0) && (
-              <DetailSection title={t('scanDetail.cfg.assetGroupsTitle')}>
+        <EditScanDialog
+          scanConfig={config}
+          open={editOpen}
+          onOpenChange={setEditOpen}
+          onSuccess={() => void refetchConfig()}
+        />
+        <CloneScanDialog
+          scan={config}
+          open={cloneOpen}
+          onOpenChange={setCloneOpen}
+          onSuccess={(copy) => router.push(`/scans/${copy.id}`)}
+        />
+
+        <MetricStrip items={metrics} />
+
+        {managed ? (
+          <ManagedScanBanner config={config} />
+        ) : (
+          <>
+            <ScanOwnerBanner config={config} onChanged={() => void refetchConfig()} />
+            <LivenessHint config={config} onChanged={() => void refetchConfig()} />
+            <ScanApprovalPanel scanId={config.id} onRan={() => void refetchAll()} />
+          </>
+        )}
+
+        <Tabs value={tab} onValueChange={setTabParam}>
+          <TabsList>
+            <TabsTrigger value="runs">{t('scanDetail.tab.runs')}</TabsTrigger>
+            <TabsTrigger value="configuration">{t('scanDetail.tab.configuration')}</TabsTrigger>
+            <TabsTrigger value="details">{t('scanDetail.tab.details')}</TabsTrigger>
+          </TabsList>
+
+          <TabsContent value="runs">
+            <DataTable
+              columns={runColumns}
+              data={runs}
+              getRowId={(run) => run.id}
+              isLoading={isLoadingRuns && !runsResponse}
+              showSearch={false}
+              onRowClick={(run) => setOpenRunId(run.id)}
+              manualPagination
+              rowCount={runsResponse?.total ?? 0}
+              pagination={runList.pagination}
+              onPaginationChange={runList.setPagination}
+              pageSize={runPerPage}
+              pageSizeOptions={RUN_PAGE_SIZES}
+              paginationNoun={t('scanDetail.runs.noun')}
+              emptyMessage={t('scanDetail.runs.emptyTitle')}
+              emptyDescription={t('scanDetail.runs.emptyDesc')}
+              toolbarEnd={
+                <Button variant="outline" size="sm" className="h-9" asChild>
+                  <Link href={`/scans/runs?scan_id=${encodeURIComponent(scanId)}`}>
+                    {t('scanDetail.runs.viewAll')}
+                  </Link>
+                </Button>
+              }
+            />
+          </TabsContent>
+
+          <TabsContent value="configuration">
+            <DetailSections>
+              <DetailSection title={t('scanDetail.cfg.schedule')}>
                 <DetailFieldGrid>
-                  {groupIds.length > 0 && (
-                    <DetailField
-                      label={
-                        groupIds.length === 1
-                          ? t('scanDetail.asset.group')
-                          : t('scanDetail.asset.groups')
-                      }
-                      full
-                    >
-                      <span className="flex flex-wrap gap-1.5">
-                        {groupIds.map((id) => (
-                          <AssetGroupName key={id} id={id} />
-                        ))}
-                      </span>
+                  <DetailField label={t('scanDetail.cfg.frequency')}>
+                    {SCHEDULE_TYPE_LABELS[config.schedule_type]}
+                  </DetailField>
+                  {config.schedule_time && (
+                    <DetailField label={t('scanDetail.cfg.time')}>
+                      {config.schedule_time}
                     </DetailField>
                   )}
-                  {targets.length > 0 && (
-                    <DetailField
-                      label={t('scanDetail.cfg.directTargets', 'Direct targets ({count})', {
-                        count: targets.length,
-                      })}
-                      full
-                    >
-                      <TargetList targets={targets} />
+                  <DetailField label={t('scanDetail.cfg.timezone')}>
+                    {config.schedule_timezone}
+                  </DetailField>
+                  {config.next_run_at && (
+                    <DetailField label={t('scanDetail.cfg.nextRun')}>
+                      {formatScanDate(config.next_run_at)}
+                    </DetailField>
+                  )}
+                  {config.schedule_rrule && (
+                    <DetailField label={t('scanDetail.cfg.rule')} full>
+                      <code className="text-xs break-all">{config.schedule_rrule}</code>
+                    </DetailField>
+                  )}
+                </DetailFieldGrid>
+                <div className="mt-4">
+                  <SchedulePreview
+                    request={schedulePreviewRequestFromConfig(config)}
+                    paused={config.status !== 'active'}
+                  />
+                </div>
+              </DetailSection>
+              <DetailSection title={t('scanDetail.cfg.execution')}>
+                <DetailFieldGrid>
+                  <DetailField label={t('scanDetail.cfg.scanType')}>
+                    {SCAN_TYPE_LABELS[config.scan_type]}
+                  </DetailField>
+                  <DetailField label={<IntensityLabel />}>
+                    <IntensityBadge intensity={config.intensity} />
+                  </DetailField>
+                  <DetailField label={t('scanDetail.cfg.sensorPreference')}>
+                    {t(`scans.sensorPrefRun.${config.sensor_preference || 'auto'}.label`)}
+                  </DetailField>
+                  <DetailField label={t('scanDetail.cfg.targetsPerJob')}>
+                    {config.targets_per_job}
+                  </DetailField>
+                </DetailFieldGrid>
+              </DetailSection>
+              {(groupIds.length > 0 || targets.length > 0) && (
+                <DetailSection title={t('scanDetail.cfg.assetGroupsTitle')}>
+                  <DetailFieldGrid>
+                    {groupIds.length > 0 && (
+                      <DetailField
+                        label={
+                          groupIds.length === 1
+                            ? t('scanDetail.asset.group')
+                            : t('scanDetail.asset.groups')
+                        }
+                        full
+                      >
+                        <span className="flex flex-wrap gap-1.5">
+                          {groupIds.map((id) => (
+                            <AssetGroupName key={id} id={id} />
+                          ))}
+                        </span>
+                      </DetailField>
+                    )}
+                    {targets.length > 0 && (
+                      <DetailField
+                        label={t('scanDetail.cfg.directTargets', 'Direct targets ({count})', {
+                          count: targets.length,
+                        })}
+                        full
+                      >
+                        <TargetList targets={targets} />
+                      </DetailField>
+                    )}
+                  </DetailFieldGrid>
+                </DetailSection>
+              )}
+              {config.tags && config.tags.length > 0 && (
+                <DetailSection title={t('scanDetail.cfg.tags')} count={config.tags.length}>
+                  <div className="flex flex-wrap gap-1.5">
+                    {config.tags.map((tag) => (
+                      <Badge key={tag} variant="secondary" className="max-w-[16rem] gap-1">
+                        <Tag className="h-3 w-3 shrink-0" />
+                        <TruncatedText value={tag} label={t('scanDetail.cfg.tag')} />
+                      </Badge>
+                    ))}
+                  </div>
+                </DetailSection>
+              )}
+            </DetailSections>
+          </TabsContent>
+
+          <TabsContent value="details">
+            <DetailSections>
+              {config.description && (
+                <DetailSection title={t('scanDetail.details.description')}>
+                  <p
+                    dir="auto"
+                    className="text-sm leading-relaxed whitespace-pre-wrap text-muted-foreground [unicode-bidi:isolate]"
+                  >
+                    {config.description}
+                  </p>
+                </DetailSection>
+              )}
+              <DetailSection title={t('scanDetail.details.timeline')}>
+                <DetailFieldGrid>
+                  <DetailField label={t('scanDetail.details.created')}>
+                    {formatScanDate(config.created_at)}
+                  </DetailField>
+                  <DetailField label={t('scanDetail.details.lastRun')}>
+                    {config.last_run_at
+                      ? formatScanDate(config.last_run_at)
+                      : t('scanDetail.details.never')}
+                  </DetailField>
+                  <DetailField label={t('scanDetail.details.status')}>
+                    {SCAN_CONFIG_STATUS_LABELS[config.status]}
+                  </DetailField>
+                </DetailFieldGrid>
+              </DetailSection>
+              <DetailSection title={t('scanDetail.details.identity')}>
+                <DetailFieldGrid>
+                  <DetailField label={t('scanDetail.details.createdBy')}>
+                    {config.created_by_name || t('scanDetail.details.system')}
+                  </DetailField>
+                  <DetailField label={t('scanDetail.details.scanId')} full>
+                    <DetailCopyId id={config.id} label={t('scanDetail.details.scanId')} />
+                  </DetailField>
+                  {config.scan_workflow_id && (
+                    <DetailField label={t('scanDetail.details.workflow')} full>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <Can permission={Permission.ScanWorkflowsRead}>
+                          <Link
+                            href={`/scans/workflows/${encodeURIComponent(config.scan_workflow_id)}`}
+                            className="text-primary text-sm font-medium hover:underline"
+                          >
+                            {t('scanDetail.details.openWorkflow')}
+                          </Link>
+                        </Can>
+                        <DetailCopyId
+                          id={config.scan_workflow_id}
+                          label={t('scanDetail.details.workflowId')}
+                        />
+                      </div>
                     </DetailField>
                   )}
                 </DetailFieldGrid>
               </DetailSection>
-            )}
-            {config.tags && config.tags.length > 0 && (
-              <DetailSection title={t('scanDetail.cfg.tags')} count={config.tags.length}>
-                <div className="flex flex-wrap gap-1.5">
-                  {config.tags.map((tag) => (
-                    <Badge key={tag} variant="secondary" className="max-w-[16rem] gap-1">
-                      <Tag className="h-3 w-3 shrink-0" />
-                      <TruncatedText value={tag} label={t('scanDetail.cfg.tag')} />
-                    </Badge>
-                  ))}
-                </div>
-              </DetailSection>
-            )}
-          </DetailSections>
-        </TabsContent>
-
-        <TabsContent value="details" className="mt-5">
-          <DetailSections>
-            {config.description && (
-              <DetailSection title={t('scanDetail.details.description')}>
-                <p
-                  dir="auto"
-                  className="text-sm leading-relaxed whitespace-pre-wrap text-muted-foreground [unicode-bidi:isolate]"
-                >
-                  {config.description}
-                </p>
-              </DetailSection>
-            )}
-            <DetailSection title={t('scanDetail.details.timeline')}>
-              <DetailFieldGrid>
-                <DetailField label={t('scanDetail.details.created')}>
-                  {formatScanDate(config.created_at)}
-                </DetailField>
-                <DetailField label={t('scanDetail.details.lastRun')}>
-                  {config.last_run_at
-                    ? formatScanDate(config.last_run_at)
-                    : t('scanDetail.details.never')}
-                </DetailField>
-                <DetailField label={t('scanDetail.details.status')}>
-                  {SCAN_CONFIG_STATUS_LABELS[config.status]}
-                </DetailField>
-              </DetailFieldGrid>
-            </DetailSection>
-            <DetailSection title={t('scanDetail.details.identity')}>
-              <DetailFieldGrid>
-                <DetailField label={t('scanDetail.details.createdBy')}>
-                  {config.created_by_name || t('scanDetail.details.system')}
-                </DetailField>
-                <DetailField label={t('scanDetail.details.scanId')} full>
-                  <DetailCopyId id={config.id} label={t('scanDetail.details.scanId')} />
-                </DetailField>
-                {config.scan_workflow_id && (
-                  <DetailField label={t('scanDetail.details.workflow')} full>
-                    <div className="flex flex-wrap items-center gap-2">
-                      <Can permission={Permission.ScanWorkflowsRead}>
-                        <Link
-                          href={`/scans/workflows/${encodeURIComponent(config.scan_workflow_id)}`}
-                          className="text-primary text-sm font-medium hover:underline"
+              <Can permission={Permission.ScansDelete}>
+                {managed ? null : (
+                  <DangerZone>
+                    <DangerZoneItem
+                      title={t('scanDetail.danger.action')}
+                      description={t('scanDetail.danger.desc')}
+                      action={
+                        <Button
+                          variant="destructive"
+                          size="sm"
+                          onClick={() => setDeleteConfirmOpen(true)}
+                          disabled={isDeleting}
                         >
-                          {t('scanDetail.details.openWorkflow')}
-                        </Link>
-                      </Can>
-                      <DetailCopyId
-                        id={config.scan_workflow_id}
-                        label={t('scanDetail.details.workflowId')}
-                      />
-                    </div>
-                  </DetailField>
+                          <Trash2 className="me-2 h-4 w-4" />
+                          {t('scanDetail.danger.action')}
+                        </Button>
+                      }
+                    />
+                  </DangerZone>
                 )}
-              </DetailFieldGrid>
-            </DetailSection>
-            <Can permission={Permission.ScansDelete}>
-              {managed ? null : (
-                <DangerZone>
-                  <DangerZoneItem
-                    title={t('scanDetail.danger.action')}
-                    description={t('scanDetail.danger.desc')}
-                    action={
-                      <Button
-                        variant="destructive"
-                        size="sm"
-                        onClick={() => setDeleteConfirmOpen(true)}
-                        disabled={isDeleting}
-                      >
-                        <Trash2 className="me-2 h-4 w-4" />
-                        {t('scanDetail.danger.action')}
-                      </Button>
-                    }
-                  />
-                </DangerZone>
-              )}
-            </Can>
-          </DetailSections>
-        </TabsContent>
-      </Tabs>
+              </Can>
+            </DetailSections>
+          </TabsContent>
+        </Tabs>
 
-      <ConfirmDialog
-        open={deleteConfirmOpen}
-        onOpenChange={setDeleteConfirmOpen}
-        title={t('confirm.scan.deleteTitle', 'Delete scan "{name}"?', { name: config.name })}
-        desc={
-          <>
-            <span className="flex items-center gap-1.5 font-medium text-foreground">
-              <AlertTriangle className="h-4 w-4 text-destructive" aria-hidden="true" />
-              {config.name}
-            </span>
-            {t(
-              'confirm.scan.deleteDesc',
-              'The scan and its schedule are deleted. Past runs and findings stay. This cannot be undone.'
-            )}
-          </>
-        }
-        confirmText={
-          isDeleting ? t('confirm.deleting', 'Deleting…') : t('confirm.delete', 'Delete')
-        }
-        destructive
-        isLoading={isDeleting}
-        handleConfirm={handleDeleteConfig}
-      />
-      <ConfirmDialog
-        open={pendingStop !== null}
-        onOpenChange={(open) => !open && !stoppingRunId && setPendingStop(null)}
-        destructive
-        title={t('confirm.scan.cancelRunTitle', 'Cancel this run of "{name}"?', {
-          name: config.name,
-        })}
-        desc={t(
-          'confirm.scan.cancelRunDesc',
-          'No new tasks start and running tasks stop at their next heartbeat. Results already received stay. A canceled run cannot be resumed; start a new run instead.'
-        )}
-        cancelBtnText={t('confirm.keepRunning', 'Keep running')}
-        confirmText={t('confirm.scan.cancelRun', 'Cancel run')}
-        isLoading={stoppingRunId !== null}
-        handleConfirm={() => (pendingStop ? handleStopRun(pendingStop) : undefined)}
-      />
-      <RunDetailSheet runId={openRunId} onOpenChange={(o) => !o && setOpenRunId(null)} />
+        <ConfirmDialog
+          open={deleteConfirmOpen}
+          onOpenChange={setDeleteConfirmOpen}
+          title={t('confirm.scan.deleteTitle', 'Delete scan "{name}"?', { name: config.name })}
+          desc={
+            <>
+              <span className="flex items-center gap-1.5 font-medium text-foreground">
+                <AlertTriangle className="h-4 w-4 text-destructive" aria-hidden="true" />
+                {config.name}
+              </span>
+              {t(
+                'confirm.scan.deleteDesc',
+                'The scan and its schedule are deleted. Past runs and findings stay. This cannot be undone.'
+              )}
+            </>
+          }
+          confirmText={
+            isDeleting ? t('confirm.deleting', 'Deleting…') : t('confirm.delete', 'Delete')
+          }
+          destructive
+          isLoading={isDeleting}
+          handleConfirm={handleDeleteConfig}
+        />
+        <ConfirmDialog
+          open={pendingStop !== null}
+          onOpenChange={(open) => !open && !stoppingRunId && setPendingStop(null)}
+          destructive
+          title={t('confirm.scan.cancelRunTitle', 'Cancel this run of "{name}"?', {
+            name: config.name,
+          })}
+          desc={t(
+            'confirm.scan.cancelRunDesc',
+            'No new tasks start and running tasks stop at their next heartbeat. Results already received stay. A canceled run cannot be resumed; start a new run instead.'
+          )}
+          cancelBtnText={t('confirm.keepRunning', 'Keep running')}
+          confirmText={t('confirm.scan.cancelRun', 'Cancel run')}
+          isLoading={stoppingRunId !== null}
+          handleConfirm={() => (pendingStop ? handleStopRun(pendingStop) : undefined)}
+        />
+        <RunDetailSheet runId={openRunId} onOpenChange={(o) => !o && setOpenRunId(null)} />
+      </PageStack>
     </Main>
   )
 }

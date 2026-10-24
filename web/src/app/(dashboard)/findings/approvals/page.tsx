@@ -32,7 +32,6 @@ import {
   DialogBody,
 } from '@/components/ui/dialog'
 import { Textarea } from '@/components/ui/textarea'
-import { cn } from '@/lib/utils'
 import { toDisplayText } from '@/lib/untrusted-text'
 import { formatAbsoluteTime, formatRelativeTime } from '@/lib/format-metric'
 import { ErrorState } from '@/features/shared/components/error-state'
@@ -61,6 +60,8 @@ import {
   isOwnApproval,
 } from '@/features/findings/lib/approvals'
 import { useTranslation } from '@/context/i18n-provider'
+import { Tag } from '@/components/ui/tag'
+import { ApprovalStatusLozenge } from '@/features/shared/components/approval-status-lozenge'
 import { AIProposalBadge } from '@/features/findings/components/ai-proposal-badge'
 import { closureReasonLabel } from '@/features/findings/lib/closure'
 import { FindingSelfApproveDialog } from '@/features/findings/components/finding-self-approve-dialog'
@@ -72,14 +73,6 @@ import { useApprovalBatches } from '@/features/findings/api/use-approval-batches
 // ============================================
 // CONSTANTS
 // ============================================
-
-const APPROVAL_BADGE_STYLES: Record<ApprovalStatus, string> = {
-  pending: 'border-warning/40 text-warning',
-  approved: 'border-success/40 text-success',
-  rejected: 'border-destructive/40 text-destructive',
-  canceled: 'text-muted-foreground',
-  expired: 'text-muted-foreground',
-}
 
 /** English fallbacks; the localised label is findings.approvals.status.<status>. */
 const APPROVAL_STATUS_LABELS: Record<ApprovalStatus, string> = {
@@ -553,32 +546,30 @@ export default function ApprovalsPage() {
           const status = row.getValue('status') as ApprovalStatus
           return (
             <div className="flex flex-wrap items-center gap-1">
-              <Badge variant="outline" className={cn('text-xs', APPROVAL_BADGE_STYLES[status])}>
-                {t(`findings.approvals.status.${status}`, APPROVAL_STATUS_LABELS[status] ?? status)}
-              </Badge>
+              <ApprovalStatusLozenge
+                status={status}
+                label={t(
+                  `findings.approvals.status.${status}`,
+                  APPROVAL_STATUS_LABELS[status] ?? status
+                )}
+              />
               {row.original.self_approved && (
-                <Badge
-                  variant="outline"
-                  className="text-xs border-warning/40 text-warning"
+                <Tag
+                  label={t('findingApprovals.selfApprove.badge', 'Self-approved')}
                   title={t(
                     'findingApprovals.selfApprove.badgeTitle',
                     "Approved by its own requester, the organization's only member"
                   )}
-                >
-                  {t('findingApprovals.selfApprove.badge', 'Self-approved')}
-                </Badge>
+                />
               )}
               {row.original.single_person && (
-                <Badge
-                  variant="outline"
-                  className="text-xs border-info/40 text-info"
+                <Tag
+                  label={t('findingApprovals.single.badge', 'Single person')}
                   title={t(
                     'findingApprovals.single.badgeTitle',
                     "Decided by one person: the organization's false-positive level did not require a second"
                   )}
-                >
-                  {t('findingApprovals.single.badge', 'Single person')}
-                </Badge>
+                />
               )}
             </div>
           )
@@ -762,15 +753,13 @@ export default function ApprovalsPage() {
                       findingTitle={approval.finding_title}
                     />
                     <div className="flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground">
-                      <Badge
-                        variant="outline"
-                        className={cn('text-xs', APPROVAL_BADGE_STYLES[approval.status])}
-                      >
-                        {t(
+                      <ApprovalStatusLozenge
+                        status={approval.status}
+                        label={t(
                           `findings.approvals.status.${approval.status}`,
                           APPROVAL_STATUS_LABELS[approval.status] ?? approval.status
                         )}
-                      </Badge>
+                      />
                       <span>{getRequestedStatusLabel(t, approval.requested_status)}</span>
                       <RequesterCell approval={approval} currentUserId={currentUserId} />
                       {approval.decide_by && approval.status === 'pending' && (
