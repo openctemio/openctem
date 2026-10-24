@@ -73,6 +73,7 @@ type Service struct {
 
 	modules   ModuleGuard
 	syncing   sync.Map // source id -> struct{}: one sync per source per process
+	fetches   chan struct{}
 	testLimit *windowLimiter
 	hookLimit *windowLimiter
 }
@@ -87,6 +88,7 @@ func NewService(repo dom.Repository, packs PackStore, lim Limits, enc Encryptor,
 		jitter:    randomJitter,
 		fetch:     fetchers.SnapshotGit,
 		private:   fetchers.RemoteIsPrivate,
+		fetches:   make(chan struct{}, MaxConcurrentFetches),
 		testLimit: newWindowLimiter(TestCallsPerHour, time.Hour),
 		hookLimit: newWindowLimiter(WebhookCallsPerHour, time.Hour),
 	}
@@ -124,7 +126,25 @@ const (
 	TestCallsPerHour = 10
 	// WebhookCallsPerHour bounds accepted webhook calls per source.
 	WebhookCallsPerHour = 60
+	// MaxConcurrentFetches bounds the repository fetches (Test and sync)
+	// one server process runs at once: each clone lands on the server's
+	// disk and in its memory. A Test over the cap is refused with 503 and
+	// the sync worker waits for its next run.
+	MaxConcurrentFetches = 3
 )
+
+// SetMaxConcurrentFetches replaces the cap of concurrent fetches (tests).
+func (s *Service) SetMaxConcurrentFetches(n int) { s.fetches = make(chan struct{}, n) }
+
+// acquireFetch takes a fetch slot without waiting; release gives it back.
+func (s *Service) acquireFetch() (release func(), ok bool) {
+	select {
+	case s.fetches <- struct{}{}:
+		return func() { <-s.fetches }, true
+	default:
+		return nil, false
+	}
+}
 
 // Actor is the caller of an organization operation.
 type Actor struct {

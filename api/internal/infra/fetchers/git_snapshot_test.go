@@ -147,3 +147,25 @@ func TestSnapshotGit_RemoteGuard(t *testing.T) {
 		t.Error("loopback accepted as a remote")
 	}
 }
+
+// SECURITY: a server low on disk fetches nothing (a full disk stops the
+// database), and an unreadable free-space figure refuses too.
+func TestSnapshotGit_RefusesOnLowDisk(t *testing.T) {
+	allowLocal(t)
+	dir, _ := makeRepo(t, map[string]string{"a.yaml": "rules: []\n"}, nil)
+	prev := freeDiskBytes
+	t.Cleanup(func() { freeDiskBytes = prev })
+
+	freeDiskBytes = func(string) (uint64, error) { return uint64(MaxCloneBytes) + MinFreeDiskBytes - 1, nil }
+	if _, err := SnapshotGit(context.Background(), GitRequest{URL: dir, Ref: "main"}); !errors.Is(err, ErrLowDisk) {
+		t.Fatalf("low disk: %v", err)
+	}
+	freeDiskBytes = func(string) (uint64, error) { return 0, errors.New("statfs failed") }
+	if _, err := SnapshotGit(context.Background(), GitRequest{URL: dir, Ref: "main"}); err == nil {
+		t.Fatal("an unreadable free space must refuse")
+	}
+	freeDiskBytes = func(string) (uint64, error) { return uint64(MaxCloneBytes) + MinFreeDiskBytes, nil }
+	if _, err := SnapshotGit(context.Background(), GitRequest{URL: dir, Ref: "main"}); err != nil {
+		t.Fatalf("enough disk: %v", err)
+	}
+}

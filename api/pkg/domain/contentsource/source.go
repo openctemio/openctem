@@ -139,6 +139,10 @@ const (
 // ErrTooManyRequests is the base of rate-limit errors (HTTP 429).
 var ErrTooManyRequests = errors.New("too many requests")
 
+// ErrUnavailable is the base of errors that say the platform cannot do this
+// right now and the caller may retry later (HTTP 503).
+var ErrUnavailable = errors.New("temporarily unavailable")
+
 // Errors.
 var (
 	ErrNotFound          = fmt.Errorf("%w: rule source not found", shared.ErrNotFound)
@@ -153,6 +157,8 @@ var (
 	ErrUsernameRequired  = shared.NewDomainError("VALIDATION", "a deploy token needs its own username (shown when the token was created)", shared.ErrValidation)
 	ErrPlatformReadOnly  = shared.NewDomainError("FORBIDDEN", "platform rule sources are managed by the platform administrators", shared.ErrForbidden)
 	ErrDisabled          = shared.NewDomainError("SOURCE_DISABLED", "the source is disabled", shared.ErrConflict)
+	ErrFetchBusy         = shared.NewDomainError("FETCH_BUSY", "the platform is fetching other rule sources; try again in a minute", ErrUnavailable)
+	ErrLowDisk           = shared.NewDomainError("SERVER_DISK_LOW", "the platform is low on disk space and cannot fetch rule sources right now; try again later", ErrUnavailable)
 	ErrRateLimited       = shared.NewDomainError("RATE_LIMITED", "too many requests for this source; try again later", ErrTooManyRequests)
 	ErrUnsupportedOrigin = shared.NewDomainError("VALIDATION", "only git sources are supported", shared.ErrValidation)
 )

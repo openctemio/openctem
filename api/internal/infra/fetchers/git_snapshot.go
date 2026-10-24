@@ -29,13 +29,16 @@ import (
 const gitTimeout = 5 * time.Minute
 
 // init routes go-git's https transport through the SSRF-guarded client
-// whose dialer refuses internal and cloud-metadata addresses (the
-// installation's allowed private ranges excepted). The protocol registry is
-// process-global and not safe to change during a clone, so it is set once.
-// A per-source CA bundle is applied by go-git on a clone of this transport,
-// which keeps the guarded dialer.
+// whose dialer refuses internal and cloud-metadata addresses. Whether the
+// private ranges the installation allows are reachable is decided per
+// connection at dial time from the fetch's context (GitRequest.PrivateOK):
+// an organization without the private-network feature reaches public hosts
+// only, even where the installation opened private ranges. The protocol
+// registry is process-global and not safe to change during a clone, so it is
+// set once. A per-source CA bundle is applied by go-git on a clone of this
+// transport, which keeps the guarded dialer.
 func init() {
-	guarded := githttp.NewClient(httpsec.SafeHTTPClient(gitTimeout))
+	guarded := githttp.NewClient(httpsec.RequestPolicyHTTPClient(gitTimeout))
 	client.InstallProtocol("https", guarded)
 	client.InstallProtocol("http", guarded)
 }
@@ -50,6 +53,11 @@ var allowLocalRepos = false
 var (
 	MaxCloneBytes int64 = 200 << 20
 	cloneSizePoll       = 250 * time.Millisecond
+	// MinFreeDiskBytes is the free space that must remain on the clone
+	// directory's disk beyond one clone: a full disk stops the database.
+	MinFreeDiskBytes uint64 = 1 << 30
+	// freeDiskBytes reads the free space of a directory's disk (tests).
+	freeDiskBytes = diskFree
 )
 
 // Errors.
@@ -60,6 +68,7 @@ var (
 	ErrLFSPointer         = errors.New("the repository stores files in Git LFS, which rule sources do not support")
 	ErrTooManyFiles       = errors.New("the path holds more files than a rule source may")
 	ErrTooMuchContent     = errors.New("the path holds more content than a rule source may")
+	ErrLowDisk            = errors.New("the server is low on free disk space and does not fetch repositories right now")
 )
 
 // GitRequest is one snapshot fetch.
@@ -70,9 +79,14 @@ type GitRequest struct {
 	Username string
 	Token    string // "" for a public repository
 	CABundle []byte // extra trusted roots for this source only
-	MaxFiles int
-	MaxFile  int64 // bytes per file
-	MaxTotal int64 // bytes of all files
+	// PrivateOK lets the connection reach the private ranges the
+	// installation allows (the organization has the private-network
+	// feature). Otherwise only public addresses are reachable, decided at
+	// dial time.
+	PrivateOK bool
+	MaxFiles  int
+	MaxFile   int64 // bytes per file
+	MaxTotal  int64 // bytes of all files
 }
 
 // File is one fetched file, its path relative to Path.
@@ -107,11 +121,17 @@ func SnapshotGit(ctx context.Context, req GitRequest) (*GitSnapshot, error) {
 	if err := checkRemote(ctx, req.URL); err != nil {
 		return nil, err
 	}
+	if req.PrivateOK {
+		ctx = httpsec.WithInstancePrivate(ctx)
+	}
 	dir, err := os.MkdirTemp("", "rule-source-*")
 	if err != nil {
 		return nil, fmt.Errorf("create clone directory: %w", err)
 	}
 	defer func() { _ = os.RemoveAll(dir) }()
+	if err := checkFreeDisk(dir); err != nil {
+		return nil, err
+	}
 
 	repo, commit, err := cloneRef(ctx, dir, req)
 	if err != nil {
@@ -173,6 +193,20 @@ func SnapshotGit(ctx context.Context, req GitRequest) (*GitSnapshot, error) {
 		out.Files = append(out.Files, File{Path: name, Data: data})
 	}
 	return out, nil
+}
+
+// checkFreeDisk refuses a fetch when the clone directory's disk would be
+// left with less than MinFreeDiskBytes after a clone of MaxCloneBytes. It
+// fails closed when the free space cannot be read.
+func checkFreeDisk(dir string) error {
+	free, err := freeDiskBytes(dir)
+	if err != nil {
+		return fmt.Errorf("check free disk space: %w", err)
+	}
+	if free < uint64(MaxCloneBytes)+MinFreeDiskBytes { //nolint:gosec // MaxCloneBytes is positive
+		return ErrLowDisk
+	}
+	return nil
 }
 
 func readBlob(b *object.Blob) ([]byte, error) {
