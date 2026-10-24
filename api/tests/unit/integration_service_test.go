@@ -8,15 +8,19 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"net"
+	"regexp"
 	"strings"
 	"testing"
 	"time"
 
 	integrationapp "github.com/openctemio/openctem/api/internal/app/integration"
 	"github.com/openctemio/openctem/api/internal/app/tenablesc"
+	"github.com/openctemio/openctem/api/pkg/apierror"
 	"github.com/openctemio/openctem/api/pkg/crypto"
 	"github.com/openctemio/openctem/api/pkg/domain/integration"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/pkg/httpsec"
 	"github.com/openctemio/openctem/api/pkg/logger"
 )
 
@@ -2402,7 +2406,7 @@ func TestIntegration_StatusTransitions(t *testing.T) {
 	}
 
 	// Connected -> Error
-	intg.SetError("connection refused")
+	intg.SetFailure("INTEGRATION_UNREACHABLE", "connection refused")
 	if intg.Status() != integration.StatusError {
 		t.Errorf("expected error status, got %q", intg.Status())
 	}
@@ -2827,7 +2831,7 @@ func TestCreateIntegration_Jira_AutoTestMarksConnected(t *testing.T) {
 func TestCreateIntegration_Jira_FailedTestShowsError(t *testing.T) {
 	repo := newMockIntegrationRepo()
 	svc := newTestIntegrationService(repo, newMockSCMExtRepo(), nil)
-	svc.SetTicketingConnectionTester(&fakeTicketingTester{err: errors.New("jira authentication failed (status 401)")})
+	svc.SetTicketingConnectionTester(&fakeTicketingTester{err: fmt.Errorf("jira: %w", &httpsec.UpstreamStatusError{Provider: "jira", Status: 401})})
 
 	result, err := svc.CreateIntegration(context.Background(), jiraCreateInput(shared.NewID().String()))
 	if err != nil {
@@ -2836,8 +2840,56 @@ func TestCreateIntegration_Jira_FailedTestShowsError(t *testing.T) {
 	if result.Status() != integration.StatusError {
 		t.Fatalf("expected error status, got %q", result.Status())
 	}
-	if !strings.Contains(result.StatusMessage(), "401") {
-		t.Errorf("status message should carry the reason, got %q", result.StatusMessage())
+	if result.StatusCode() != string(apierror.CodeIntegrationAuthFailed) {
+		t.Errorf("status code should say why, got %q", result.StatusCode())
+	}
+}
+
+// The owner's report: "Connection test failed: integration <uuid> has no
+// credentials". The stored status is a code and a sentence with no id and no
+// lower error text, whatever the tester returned.
+func TestTestIntegration_FailureStoresCodeNotErrorText(t *testing.T) {
+	uuidRe := regexp.MustCompile(`[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}`)
+	cases := []struct {
+		name string
+		err  error
+		want apierror.Code
+	}{
+		{"no credentials", integration.ErrNoCredentials, apierror.CodeIntegrationNoCredentials},
+		{"unreadable", integration.ErrCredentialsUnreadable, apierror.CodeIntegrationCredentialsUnreadable},
+		{"forbidden", &httpsec.UpstreamStatusError{Provider: "jira", Status: 403}, apierror.CodeIntegrationForbidden},
+		{"dns", &net.DNSError{Err: "no such host", Name: "jira.internal", Server: "127.0.0.11:53"}, apierror.CodeIntegrationUnreachable},
+		{"blocked", errors.New("host \"10.0.0.5\" resolves to blocked address 10.0.0.5"), apierror.CodeIntegrationURLBlocked},
+		{"other", errors.New("integration 99999999-9999-4999-8999-999999999999: boom"), apierror.CodeIntegrationTestFailed},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			repo := newMockIntegrationRepo()
+			svc := newTestIntegrationService(repo, newMockSCMExtRepo(), nil)
+			svc.SetTicketingConnectionTester(&fakeTicketingTester{err: c.err})
+			tenantID, id := shared.NewID(), shared.NewID()
+			repo.integrations[id] = integration.NewIntegration(id, tenantID, "Jira SEC", integration.CategoryTicketing, integration.ProviderJira, integration.AuthTypeToken)
+
+			result, err := svc.TestIntegration(context.Background(), id.String(), tenantID.String())
+			if err != nil {
+				t.Fatalf("test: %v", err)
+			}
+			if result.Status() != integration.StatusError || result.StatusCode() != string(c.want) {
+				t.Fatalf("status %q code %q, want error %q", result.Status(), result.StatusCode(), c.want)
+			}
+			stored := repo.integrations[id]
+			for _, text := range []string{stored.StatusMessage(), stored.SyncError()} {
+				if uuidRe.MatchString(text) || strings.Contains(text, "jira.internal") || strings.Contains(text, "boom") {
+					t.Errorf("stored text leaks the cause: %q", text)
+				}
+			}
+			// A later success clears the code.
+			svc.SetTicketingConnectionTester(&fakeTicketingTester{})
+			ok, _ := svc.TestIntegration(context.Background(), id.String(), tenantID.String())
+			if ok.StatusCode() != "" || ok.StatusMessage() != "" {
+				t.Errorf("success must clear the failure, got %q %q", ok.StatusCode(), ok.StatusMessage())
+			}
+		})
 	}
 }
 

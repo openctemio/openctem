@@ -55,11 +55,11 @@ func (r *IntegrationRepository) createWithExecutor(ctx context.Context, exec exe
 	query := `
 		INSERT INTO integrations (
 			id, tenant_id, name, description, category, provider,
-			status, status_message, auth_type, base_url, credentials_encrypted,
+			status, status_message, status_code, auth_type, base_url, credentials_encrypted,
 			last_sync_at, next_sync_at, sync_interval_minutes, sync_error,
 			config, metadata, stats, created_at, updated_at, created_by
 		) VALUES (
-			$1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21
+			$1, $2, $3, $4, $5, $6, $7, $8, $22, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21
 		)
 	`
 
@@ -91,6 +91,7 @@ func (r *IntegrationRepository) createWithExecutor(ctx context.Context, exec exe
 		i.CreatedAt(),
 		i.UpdatedAt(),
 		createdBy,
+		i.StatusCode(),
 	)
 	if err != nil {
 		if isUniqueViolation(err) {
@@ -106,7 +107,7 @@ func (r *IntegrationRepository) createWithExecutor(ctx context.Context, exec exe
 func (r *IntegrationRepository) GetByID(ctx context.Context, id integration.ID) (*integration.Integration, error) {
 	query := `
 		SELECT id, tenant_id, name, description, category, provider,
-			   status, status_message, auth_type, base_url, credentials_encrypted,
+			   status, status_message, status_code, auth_type, base_url, credentials_encrypted,
 			   last_sync_at, next_sync_at, sync_interval_minutes, sync_error,
 			   config, metadata, stats, created_at, updated_at, created_by
 		FROM integrations
@@ -121,7 +122,7 @@ func (r *IntegrationRepository) GetByID(ctx context.Context, id integration.ID) 
 func (r *IntegrationRepository) GetByTenantAndName(ctx context.Context, tenantID integration.ID, name string) (*integration.Integration, error) {
 	query := `
 		SELECT id, tenant_id, name, description, category, provider,
-			   status, status_message, auth_type, base_url, credentials_encrypted,
+			   status, status_message, status_code, auth_type, base_url, credentials_encrypted,
 			   last_sync_at, next_sync_at, sync_interval_minutes, sync_error,
 			   config, metadata, stats, created_at, updated_at, created_by
 		FROM integrations
@@ -139,7 +140,7 @@ func (r *IntegrationRepository) GetByTenantAndName(ctx context.Context, tenantID
 func (r *IntegrationRepository) GetByTenantAndID(ctx context.Context, tenantID integration.ID, id integration.ID) (*integration.Integration, error) {
 	query := `
 		SELECT id, tenant_id, name, description, category, provider,
-			   status, status_message, auth_type, base_url, credentials_encrypted,
+			   status, status_message, status_code, auth_type, base_url, credentials_encrypted,
 			   last_sync_at, next_sync_at, sync_interval_minutes, sync_error,
 			   config, metadata, stats, created_at, updated_at, created_by
 		FROM integrations
@@ -182,7 +183,8 @@ func (r *IntegrationRepository) Update(ctx context.Context, i *integration.Integ
 			config = $12,
 			metadata = $13,
 			stats = $14,
-			updated_at = $15
+			updated_at = $15,
+			status_code = $17
 		WHERE id = $1 AND tenant_id = $16
 	`
 
@@ -203,6 +205,7 @@ func (r *IntegrationRepository) Update(ctx context.Context, i *integration.Integ
 		stats,
 		i.UpdatedAt(),
 		i.TenantID().String(),
+		i.StatusCode(),
 	)
 	if err != nil {
 		if isUniqueViolation(err) {
@@ -333,7 +336,7 @@ func (r *IntegrationRepository) List(ctx context.Context, filter integration.Fil
 
 	query := fmt.Sprintf(`
 		SELECT id, tenant_id, name, description, category, provider,
-			   status, status_message, auth_type, base_url, credentials_encrypted,
+			   status, status_message, status_code, auth_type, base_url, credentials_encrypted,
 			   last_sync_at, next_sync_at, sync_interval_minutes, sync_error,
 			   config, metadata, stats, created_at, updated_at, created_by
 		FROM integrations
@@ -413,7 +416,7 @@ func (r *IntegrationRepository) Count(ctx context.Context, filter integration.Fi
 func (r *IntegrationRepository) ListByTenant(ctx context.Context, tenantID integration.ID) ([]*integration.Integration, error) {
 	query := `
 		SELECT id, tenant_id, name, description, category, provider,
-			   status, status_message, auth_type, base_url, credentials_encrypted,
+			   status, status_message, status_code, auth_type, base_url, credentials_encrypted,
 			   last_sync_at, next_sync_at, sync_interval_minutes, sync_error,
 			   config, metadata, stats, created_at, updated_at, created_by
 		FROM integrations
@@ -447,7 +450,7 @@ func (r *IntegrationRepository) ListByTenant(ctx context.Context, tenantID integ
 func (r *IntegrationRepository) ListByCategory(ctx context.Context, tenantID integration.ID, category integration.Category) ([]*integration.Integration, error) {
 	query := `
 		SELECT id, tenant_id, name, description, category, provider,
-			   status, status_message, auth_type, base_url, credentials_encrypted,
+			   status, status_message, status_code, auth_type, base_url, credentials_encrypted,
 			   last_sync_at, next_sync_at, sync_interval_minutes, sync_error,
 			   config, metadata, stats, created_at, updated_at, created_by
 		FROM integrations
@@ -481,7 +484,7 @@ func (r *IntegrationRepository) ListByCategory(ctx context.Context, tenantID int
 func (r *IntegrationRepository) ListByProvider(ctx context.Context, tenantID integration.ID, provider integration.Provider) ([]*integration.Integration, error) {
 	query := `
 		SELECT id, tenant_id, name, description, category, provider,
-			   status, status_message, auth_type, base_url, credentials_encrypted,
+			   status, status_message, status_code, auth_type, base_url, credentials_encrypted,
 			   last_sync_at, next_sync_at, sync_interval_minutes, sync_error,
 			   config, metadata, stats, created_at, updated_at, created_by
 		FROM integrations
@@ -522,7 +525,7 @@ func (r *IntegrationRepository) ListDueForSync(ctx context.Context, provider int
 	}
 	query := `
 		SELECT id, tenant_id, name, description, category, provider,
-			   status, status_message, auth_type, base_url, credentials_encrypted,
+			   status, status_message, status_code, auth_type, base_url, credentials_encrypted,
 			   last_sync_at, next_sync_at, sync_interval_minutes, sync_error,
 			   config, metadata, stats, created_at, updated_at, created_by
 		FROM integrations
@@ -589,6 +592,7 @@ func (r *IntegrationRepository) scanIntegration(row *sql.Row) (*integration.Inte
 		provider             string
 		status               string
 		statusMessage        sql.NullString
+		statusCode           sql.NullString
 		authType             string
 		baseURL              sql.NullString
 		credentialsEncrypted sql.NullString
@@ -606,7 +610,7 @@ func (r *IntegrationRepository) scanIntegration(row *sql.Row) (*integration.Inte
 
 	err := row.Scan(
 		&id, &tenantID, &name, &description, &category, &provider,
-		&status, &statusMessage, &authType, &baseURL, &credentialsEncrypted,
+		&status, &statusMessage, &statusCode, &authType, &baseURL, &credentialsEncrypted,
 		&lastSyncAt, &nextSyncAt, &syncIntervalMinutes, &syncError,
 		&configJSON, &metadataJSON, &statsJSON, &createdAt, &updatedAt, &createdBy,
 	)
@@ -619,7 +623,7 @@ func (r *IntegrationRepository) scanIntegration(row *sql.Row) (*integration.Inte
 
 	return r.reconstructIntegration(
 		id, tenantID, name, description.String, category, provider,
-		status, statusMessage.String, authType, baseURL.String, credentialsEncrypted.String,
+		status, statusMessage.String, statusCode.String, authType, baseURL.String, credentialsEncrypted.String,
 		lastSyncAt, nextSyncAt, syncIntervalMinutes, syncError.String,
 		configJSON, metadataJSON, statsJSON, createdAt, updatedAt, createdBy,
 	)
@@ -636,6 +640,7 @@ func (r *IntegrationRepository) scanIntegrationRow(rows *sql.Rows) (*integration
 		provider             string
 		status               string
 		statusMessage        sql.NullString
+		statusCode           sql.NullString
 		authType             string
 		baseURL              sql.NullString
 		credentialsEncrypted sql.NullString
@@ -653,7 +658,7 @@ func (r *IntegrationRepository) scanIntegrationRow(rows *sql.Rows) (*integration
 
 	err := rows.Scan(
 		&id, &tenantID, &name, &description, &category, &provider,
-		&status, &statusMessage, &authType, &baseURL, &credentialsEncrypted,
+		&status, &statusMessage, &statusCode, &authType, &baseURL, &credentialsEncrypted,
 		&lastSyncAt, &nextSyncAt, &syncIntervalMinutes, &syncError,
 		&configJSON, &metadataJSON, &statsJSON, &createdAt, &updatedAt, &createdBy,
 	)
@@ -663,7 +668,7 @@ func (r *IntegrationRepository) scanIntegrationRow(rows *sql.Rows) (*integration
 
 	return r.reconstructIntegration(
 		id, tenantID, name, description.String, category, provider,
-		status, statusMessage.String, authType, baseURL.String, credentialsEncrypted.String,
+		status, statusMessage.String, statusCode.String, authType, baseURL.String, credentialsEncrypted.String,
 		lastSyncAt, nextSyncAt, syncIntervalMinutes, syncError.String,
 		configJSON, metadataJSON, statsJSON, createdAt, updatedAt, createdBy,
 	)
@@ -672,7 +677,7 @@ func (r *IntegrationRepository) scanIntegrationRow(rows *sql.Rows) (*integration
 // reconstructIntegration reconstructs an Integration from scanned values.
 func (r *IntegrationRepository) reconstructIntegration(
 	id, tenantID, name, description, category, provider string,
-	status, statusMessage, authType, baseURL, credentialsEncrypted string,
+	status, statusMessage, statusCode, authType, baseURL, credentialsEncrypted string,
 	lastSyncAt, nextSyncAt sql.NullTime, syncIntervalMinutes int, syncError string,
 	configJSON, metadataJSON, statsJSON []byte,
 	createdAt, updatedAt time.Time, createdBy sql.NullString,
@@ -719,7 +724,7 @@ func (r *IntegrationRepository) reconstructIntegration(
 	intgID, _ := shared.IDFromString(id)
 	intgTenantID, _ := shared.IDFromString(tenantID)
 
-	return integration.Reconstruct(
+	intg := integration.Reconstruct(
 		intgID,
 		intgTenantID,
 		name,
@@ -741,5 +746,7 @@ func (r *IntegrationRepository) reconstructIntegration(
 		createdAt,
 		updatedAt,
 		createdByID,
-	), nil
+	)
+	intg.RestoreStatusCode(statusCode)
+	return intg, nil
 }

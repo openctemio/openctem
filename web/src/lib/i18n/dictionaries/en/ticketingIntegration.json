@@ -102,5 +102,11 @@
   "ticketingIntegration.status.expired": "Expired",
   "ticketingIntegration.status.notSupported": "Not supported",
   "ticketingIntegration.status.pending": "Pending",
-  "ticketingIntegration.unsupportedNote": "This provider has no client yet, so this connection does nothing."
+  "ticketingIntegration.unsupportedNote": "This provider has no client yet, so this connection does nothing.",
+  "ticketingIntegration.token.action": "Update API token",
+  "ticketingIntegration.token.failed": "Could not save the API token.",
+  "ticketingIntegration.token.title": "API token for {name}",
+  "ticketingIntegration.token.description": "Enter the Atlassian account email and an API token. The connection is tested when you save.",
+  "ticketingIntegration.token.saving": "Saving and testing…",
+  "ticketingIntegration.token.save": "Save and test"
 }
