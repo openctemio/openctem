@@ -181,8 +181,8 @@ vars:
     component: api
     group: "HTTP server"
     type: duration
-    default: "15s"
-    description: "HTTP server write timeout."
+    default: "SERVER_REQUEST_TIMEOUT + 5s (35s)"
+    description: "HTTP server write timeout. Keep it above `SERVER_REQUEST_TIMEOUT`: at or below it the connection closes before the `503` timeout answer is written and the client sees EOF. The API logs a warning at startup when it is not."
   - name: SESSION_TIMEOUT_MINUTES
     component: api
     group: "HTTP server"

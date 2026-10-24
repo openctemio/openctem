@@ -230,9 +230,13 @@ func (r *CIRunRepository) MarkPipelineAudienceUpgraded(ctx context.Context, tena
 	return err
 }
 
-// TouchTrustConfig records the configuration's last use.
+// TouchTrustConfig records the configuration's last use. The row is shared by
+// every pipeline of a repository, so it is written at most once a minute: a
+// burst of token exchanges does not queue on one hot row.
 func (r *CIRunRepository) TouchTrustConfig(ctx context.Context, tenantID, id shared.ID, at time.Time) error {
-	_, err := r.db.ExecContext(ctx, `UPDATE ci_trust_configs SET last_used_at = $3 WHERE tenant_id = $1 AND id = $2`,
+	_, err := r.db.ExecContext(ctx, `UPDATE ci_trust_configs SET last_used_at = $3
+		WHERE tenant_id = $1 AND id = $2
+		  AND (last_used_at IS NULL OR last_used_at < $3::timestamptz - interval '1 minute')`,
 		tenantID.String(), id.String(), at)
 	return err
 }
