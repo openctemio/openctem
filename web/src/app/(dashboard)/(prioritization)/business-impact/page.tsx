@@ -6,8 +6,9 @@ import type { ColumnDef } from '@tanstack/react-table'
 import { Main } from '@/components/layout'
 import {
   PageHeader,
+  PageStack,
   EmptyState,
-  StatsCard,
+  MetricStrip,
   RiskScoreBadge,
   DataTable,
   DataTableColumnHeader,
@@ -15,7 +16,7 @@ import {
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Progress } from '@/components/ui/progress'
 import { Skeleton } from '@/components/ui/skeleton'
-import { Building2, BarChart3, AlertTriangle, Shield, Activity, Crown } from 'lucide-react'
+import { Building2, Crown } from 'lucide-react'
 import { useTenant } from '@/context/tenant-provider'
 import { useDashboardStats } from '@/features/dashboard/hooks/use-dashboard-stats'
 import { useAssetStats } from '@/features/assets/hooks/use-assets'
@@ -26,18 +27,6 @@ import {
 import { useCrownJewels } from '@/features/crown-jewels/api/use-crown-jewels'
 import { CRITICALITY_DOT_COLORS } from '@/lib/criticality-colors'
 import { ASSET_CRITICALITY_LEVELS, CRITICALITY_LABELS } from '@/lib/criticality'
-
-function StatsCardSkeleton() {
-  return (
-    <Card>
-      <CardContent className="space-y-2">
-        <Skeleton className="h-4 w-32" />
-        <Skeleton className="h-7 w-16" />
-        <Skeleton className="h-3 w-24" />
-      </CardContent>
-    </Card>
-  )
-}
 
 type TFn = ReturnType<typeof useTranslation>['t']
 
@@ -166,217 +155,203 @@ export default function BusinessImpactPage() {
 
   return (
     <Main>
-      <PageHeader
-        title={t('prioritization.businessImpact.title', 'Business impact')}
-        description={t(
-          'prioritization.businessImpact.description',
-          'Where vulnerabilities hit the business hardest, by asset criticality, crown jewel and business unit.'
-        )}
-      />
+      <PageStack>
+        <PageHeader
+          title={t('prioritization.businessImpact.title', 'Business impact')}
+          description={t(
+            'prioritization.businessImpact.description',
+            'Where vulnerabilities hit the business hardest, by asset criticality, crown jewel and business unit.'
+          )}
+        />
 
-      <div className="mt-5 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        {isLoading ? (
-          Array.from({ length: 4 }).map((_, i) => <StatsCardSkeleton key={i} />)
-        ) : (
-          <>
-            <StatsCard
-              title={t('prioritization.businessImpact.stat.assets', 'Assets')}
-              value={assetStats.total}
-              icon={Activity}
-              description={t(
-                'prioritization.businessImpact.stat.withFindings',
-                '{count} with findings',
-                { count: assetStats.withFindings }
-              )}
-            />
-            <StatsCard
-              title={t('prioritization.businessImpact.stat.critical', 'Critical findings')}
-              value={criticalFindings}
-              icon={AlertTriangle}
-              description={t(
-                'prioritization.businessImpact.stat.highSeverity',
-                '{count} high severity',
-                { count: highFindings }
-              )}
-              valueClassName={criticalFindings > 0 ? 'text-destructive' : undefined}
-            />
-            <StatsCard
-              title={t('prioritization.businessImpact.stat.criticalAssets', 'Critical assets')}
-              value={criticalAssets}
-              icon={Shield}
-              description={t(
+        <MetricStrip
+          loading={isLoading}
+          items={[
+            {
+              key: 'assets',
+              label: t('prioritization.businessImpact.stat.assets', 'Assets'),
+              value: assetStats.total,
+              hint: t('prioritization.businessImpact.stat.withFindings', '{count} with findings', {
+                count: assetStats.withFindings,
+              }),
+              href: '/assets',
+            },
+            {
+              key: 'critical',
+              label: t('prioritization.businessImpact.stat.critical', 'Critical findings'),
+              value: criticalFindings,
+              tone: 'danger',
+              hint: t('prioritization.businessImpact.stat.highSeverity', '{count} high severity', {
+                count: highFindings,
+              }),
+              href: '/findings?severity=critical',
+            },
+            {
+              key: 'criticalAssets',
+              label: t('prioritization.businessImpact.stat.criticalAssets', 'Critical assets'),
+              value: criticalAssets,
+              hint: t(
                 'prioritization.businessImpact.stat.highRisk',
                 '{count} high-risk (score ≥ 70)',
-                {
-                  count: assetStats.highRiskCount,
-                }
-              )}
-            />
-            <StatsCard
-              title={t('prioritization.businessImpact.stat.cvss', 'Average CVSS')}
-              value={stats.findings.averageCvss.toFixed(1)}
-              icon={BarChart3}
-              description={t('prioritization.businessImpact.stat.findings', '{count} findings', {
-                count: stats.findings.total,
-              })}
-            />
-          </>
-        )}
-      </div>
+                { count: assetStats.highRiskCount }
+              ),
+              href: '/assets?criticalities=critical',
+            },
+          ]}
+        />
 
-      <div className="mt-5 grid grid-cols-1 gap-5 lg:grid-cols-3">
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-base">
-              {t('prioritization.businessImpact.criticality.title', 'Asset criticality')}
-            </CardTitle>
-            <CardDescription>
-              {t(
-                'prioritization.businessImpact.criticality.description',
-                'How your assets spread across criticality levels.'
-              )}
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            {assetStatsLoading
-              ? Array.from({ length: 4 }).map((_, i) => (
-                  <div key={i} className="space-y-2">
-                    <Skeleton className="h-4 w-full" />
-                    <Skeleton className="h-2 w-full" />
-                  </div>
-                ))
-              : criticalityBreakdown.map(({ level, count, percentage }) => (
-                  <div key={level} className="space-y-2">
-                    <div className="flex items-center justify-between">
-                      <span className="flex items-center gap-2 text-sm font-medium">
-                        <span
-                          className={`size-2 shrink-0 rounded-full ${CRITICALITY_DOT_COLORS[level]}`}
-                        />
-                        {t(`criticality.${level}`, CRITICALITY_LABELS[level])}
-                      </span>
-                      <span className="text-sm font-semibold tabular-nums">
-                        {count}{' '}
-                        <span className="text-xs font-normal text-muted-foreground">
-                          ({percentage}%)
-                        </span>
-                      </span>
-                    </div>
-                    <Progress value={percentage} className="h-2" />
-                  </div>
-                ))}
-          </CardContent>
-        </Card>
-
-        <Card className="lg:col-span-2">
-          <CardHeader>
-            <CardTitle className="text-base">
-              {t('prioritization.businessImpact.crown.title', 'Crown jewels')}
-            </CardTitle>
-            <CardDescription>
-              {t(
-                'prioritization.businessImpact.crown.description',
-                'Highest-risk crown-jewel assets ({total} in total).',
-                {
-                  total: crownData?.total ?? 0,
-                }
-              )}
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            {crownLoading ? (
-              <div className="space-y-3">
-                {Array.from({ length: 5 }).map((_, i) => (
-                  <Skeleton key={i} className="h-10 w-full" />
-                ))}
-              </div>
-            ) : topCrownJewels.length === 0 ? (
-              <EmptyState
-                icon={Crown}
-                title={t('prioritization.businessImpact.crown.emptyTitle', 'No crown jewels yet')}
-                description={t(
-                  'prioritization.businessImpact.crown.emptyDescription',
-                  'Mark assets as crown jewels from the Crown jewels page.'
+        <div className="grid grid-cols-1 gap-5 lg:grid-cols-3">
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-base">
+                {t('prioritization.businessImpact.criticality.title', 'Asset criticality')}
+              </CardTitle>
+              <CardDescription>
+                {t(
+                  'prioritization.businessImpact.criticality.description',
+                  'How your assets spread across criticality levels.'
                 )}
-                card={false}
-              />
-            ) : (
-              <div className="divide-y">
-                {topCrownJewels.map((asset) => (
-                  <div
-                    key={asset.id}
-                    className="flex items-center justify-between gap-3 py-2.5 first:pt-0 last:pb-0"
-                  >
-                    <div className="min-w-0">
-                      <p className="truncate text-sm font-medium">{asset.name}</p>
-                      <p className="text-xs text-muted-foreground capitalize">
-                        {t(
-                          'prioritization.businessImpact.crown.meta',
-                          '{type} · {count} findings',
-                          {
-                            type: asset.type,
-                            count: asset.finding_count ?? 0,
-                          }
-                        )}
-                      </p>
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              {assetStatsLoading
+                ? Array.from({ length: 4 }).map((_, i) => (
+                    <div key={i} className="space-y-2">
+                      <Skeleton className="h-4 w-full" />
+                      <Skeleton className="h-2 w-full" />
                     </div>
-                    <RiskScoreBadge score={asset.risk_score ?? 0} size="sm" />
-                  </div>
-                ))}
-              </div>
-            )}
-          </CardContent>
-        </Card>
-      </div>
+                  ))
+                : criticalityBreakdown.map(({ level, count, percentage }) => (
+                    <div key={level} className="space-y-2">
+                      <div className="flex items-center justify-between">
+                        <span className="flex items-center gap-2 text-sm font-medium">
+                          <span
+                            className={`size-2 shrink-0 rounded-full ${CRITICALITY_DOT_COLORS[level]}`}
+                          />
+                          {t(`criticality.${level}`, CRITICALITY_LABELS[level])}
+                        </span>
+                        <span className="text-sm font-semibold tabular-nums">
+                          {count}{' '}
+                          <span className="text-xs font-normal text-muted-foreground">
+                            ({percentage}%)
+                          </span>
+                        </span>
+                      </div>
+                      <Progress value={percentage} className="h-2" />
+                    </div>
+                  ))}
+            </CardContent>
+          </Card>
 
-      <section className="mt-5 space-y-3">
-        <div>
-          <h2 className="text-base font-semibold">
-            {t('prioritization.businessImpact.units.title', 'Business units')}
-          </h2>
-          <p className="text-sm text-muted-foreground">
-            {t(
-              'prioritization.businessImpact.units.description',
-              'Risk by business area ({total} units), riskiest first.',
-              {
-                total: buData?.total ?? 0,
-              }
-            )}
-          </p>
+          <Card className="lg:col-span-2">
+            <CardHeader>
+              <CardTitle className="text-base">
+                {t('prioritization.businessImpact.crown.title', 'Crown jewels')}
+              </CardTitle>
+              <CardDescription>
+                {t(
+                  'prioritization.businessImpact.crown.description',
+                  'Highest-risk crown-jewel assets ({total} in total).',
+                  {
+                    total: crownData?.total ?? 0,
+                  }
+                )}
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              {crownLoading ? (
+                <div className="space-y-3">
+                  {Array.from({ length: 5 }).map((_, i) => (
+                    <Skeleton key={i} className="h-10 w-full" />
+                  ))}
+                </div>
+              ) : topCrownJewels.length === 0 ? (
+                <EmptyState
+                  icon={Crown}
+                  title={t('prioritization.businessImpact.crown.emptyTitle', 'No crown jewels yet')}
+                  description={t(
+                    'prioritization.businessImpact.crown.emptyDescription',
+                    'Mark assets as crown jewels from the Crown jewels page.'
+                  )}
+                  card={false}
+                />
+              ) : (
+                <div className="divide-y">
+                  {topCrownJewels.map((asset) => (
+                    <div
+                      key={asset.id}
+                      className="flex items-center justify-between gap-3 py-2.5 first:pt-0 last:pb-0"
+                    >
+                      <div className="min-w-0">
+                        <p className="truncate text-sm font-medium">{asset.name}</p>
+                        <p className="flex gap-3 text-xs text-muted-foreground">
+                          <span className="capitalize">{asset.type}</span>
+                          <span>
+                            {t('prioritization.businessImpact.crown.findings', '{count} findings', {
+                              count: asset.finding_count ?? 0,
+                            })}
+                          </span>
+                        </p>
+                      </div>
+                      <RiskScoreBadge score={asset.risk_score ?? 0} size="sm" />
+                    </div>
+                  ))}
+                </div>
+              )}
+            </CardContent>
+          </Card>
         </div>
-        {buLoading ? (
-          <div className="space-y-2">
-            {Array.from({ length: 4 }).map((_, i) => (
-              <Skeleton key={i} className="h-12 w-full" />
-            ))}
+
+        <section className="space-y-3">
+          <div>
+            <h2 className="text-base font-semibold">
+              {t('prioritization.businessImpact.units.title', 'Business units')}
+            </h2>
+            <p className="text-sm text-muted-foreground">
+              {t(
+                'prioritization.businessImpact.units.description',
+                'Risk by business area ({total} units), riskiest first.',
+                {
+                  total: buData?.total ?? 0,
+                }
+              )}
+            </p>
           </div>
-        ) : sortedUnits.length === 0 ? (
-          <EmptyState
-            icon={Building2}
-            title={t('prioritization.businessImpact.units.emptyTitle', 'No business units yet')}
-            description={t(
-              'prioritization.businessImpact.units.emptyDescription',
-              'Create business units from the Scoping section.'
-            )}
-          />
-        ) : (
-          <DataTable
-            columns={buColumns}
-            data={sortedUnits}
-            searchPlaceholder={t(
-              'prioritization.businessImpact.units.search',
-              'Search business units…'
-            )}
-            emptyMessage={t(
-              'prioritization.businessImpact.units.noMatch',
-              'No business units match'
-            )}
-            emptyDescription={t(
-              'prioritization.businessImpact.units.noMatchHint',
-              'Try a different search.'
-            )}
-          />
-        )}
-      </section>
+          {buLoading ? (
+            <div className="space-y-2">
+              {Array.from({ length: 4 }).map((_, i) => (
+                <Skeleton key={i} className="h-12 w-full" />
+              ))}
+            </div>
+          ) : sortedUnits.length === 0 ? (
+            <EmptyState
+              icon={Building2}
+              title={t('prioritization.businessImpact.units.emptyTitle', 'No business units yet')}
+              description={t(
+                'prioritization.businessImpact.units.emptyDescription',
+                'Create business units from the Scoping section.'
+              )}
+            />
+          ) : (
+            <DataTable
+              columns={buColumns}
+              data={sortedUnits}
+              searchPlaceholder={t(
+                'prioritization.businessImpact.units.search',
+                'Search business units…'
+              )}
+              emptyMessage={t(
+                'prioritization.businessImpact.units.noMatch',
+                'No business units match'
+              )}
+              emptyDescription={t(
+                'prioritization.businessImpact.units.noMatchHint',
+                'Try a different search.'
+              )}
+            />
+          )}
+        </section>
+      </PageStack>
     </Main>
   )
 }

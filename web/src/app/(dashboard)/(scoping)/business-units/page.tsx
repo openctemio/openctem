@@ -10,6 +10,7 @@ import {
   GatedSectionTabs,
   MetricStrip,
   PageHeader,
+  PageStack,
   RiskScoreBadge,
   DetailHeader,
   DetailSection,
@@ -345,13 +346,6 @@ export default function BusinessUnitsPage() {
     return {
       total: count,
       critical: businessUnits.filter((bu) => bu.criticality === 'critical').length,
-      totalAssets: businessUnits.reduce((acc, bu) => acc + bu.assetCount, 0),
-      // Guard against divide-by-zero on an empty tenant and missing per-unit
-      // fields (the API adapter doesn't always populate score fields) — both
-      // were rendering "NaN".
-      averageRiskScore: count
-        ? Math.round(businessUnits.reduce((acc, bu) => acc + (bu.riskScore ?? 0), 0) / count)
-        : 0,
     }
   }, [businessUnits])
 
@@ -639,17 +633,6 @@ export default function BusinessUnitsPage() {
       onClick: () => setFilterCriticality(criticalOnly ? 'all' : 'critical'),
       active: criticalOnly,
     },
-    {
-      key: 'assets',
-      label: t('businessContext.units.metric.assets', 'Assets'),
-      value: stats.totalAssets,
-    },
-    {
-      key: 'risk',
-      label: t('businessContext.units.metric.risk', 'Average risk score'),
-      value: stats.averageRiskScore,
-      hint: t('businessContext.units.metric.riskHint', 'of 100'),
-    },
   ]
 
   const formFields = (
@@ -784,136 +767,137 @@ export default function BusinessUnitsPage() {
   return (
     <>
       <Main>
-        <PageHeader
-          title={t('businessContext.units.title', 'Business units')}
-          description={t(
-            'businessContext.units.description',
-            'Your organizational structure, so security priorities follow the business.'
-          )}
-        >
-          <Can permission={Permission.AssetsWrite}>
-            <Button size="sm" onClick={() => setIsCreateOpen(true)}>
-              <Plus className="me-2 h-4 w-4" />
-              {t('businessContext.units.new', 'New business unit')}
-            </Button>
-          </Can>
-        </PageHeader>
-        <GatedSectionTabs
-          tabs={BUSINESS_CONTEXT_SECTION_TABS}
-          label={t('businessContext.sectionsLabel', 'Business context sections')}
-          className="mt-4 mb-0"
-        />
-
-        <MetricStrip className="mt-5" loading={isLoading} items={metrics} />
-
-        <div className="mt-5">
-          <DataTable
-            columns={columns}
-            data={filteredUnits}
-            showSearch={false}
-            isLoading={isLoading}
-            errorState={
-              loadError ? (
-                <ErrorState
-                  title={t('scope.businessUnits.loadError', 'business units')}
-                  error={loadError}
-                  onRetry={() => refreshList()}
-                />
-              ) : undefined
-            }
-            toolbarStart={
-              <>
-                <div className="relative min-w-0 flex-1 sm:max-w-xs">
-                  <Search className="pointer-events-none absolute start-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-                  <Input
-                    value={searchQuery}
-                    onChange={(e) => setSearchQuery(e.target.value)}
-                    placeholder={t(
-                      'businessContext.units.search.placeholder',
-                      'Search name or owner…'
-                    )}
-                    aria-label={t('businessContext.units.search.aria', 'Search business units')}
-                    className="h-9 ps-9"
-                  />
-                </div>
-                <Select value={filterCriticality} onValueChange={setFilterCriticality}>
-                  <SelectTrigger
-                    className="h-9 w-auto min-w-36"
-                    aria-label={t(
-                      'businessContext.units.filter.criticality.aria',
-                      'Filter by criticality'
-                    )}
-                  >
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">
-                      {t('businessContext.units.filter.criticality.all', 'All criticalities')}
-                    </SelectItem>
-                    {CRITICALITY_OPTIONS.map((level) => (
-                      <SelectItem key={level} value={level}>
-                        {criticalityLabel(level)}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-                <Select value={filterRiskTolerance} onValueChange={setFilterRiskTolerance}>
-                  <SelectTrigger
-                    className="h-9 w-auto min-w-36"
-                    aria-label={t(
-                      'businessContext.units.filter.tolerance.aria',
-                      'Filter by risk tolerance'
-                    )}
-                  >
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">
-                      {t('businessContext.units.filter.tolerance.all', 'All risk tolerances')}
-                    </SelectItem>
-                    {RISK_TOLERANCE_OPTIONS.map((level) => (
-                      <SelectItem key={level} value={level}>
-                        {t('businessContext.tolerance.option', '{level} tolerance', {
-                          level: toleranceLabel(level),
-                        })}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </>
-            }
-            toolbarEnd={
-              <Button
-                variant="outline"
-                size="sm"
-                className="h-9"
-                onClick={handleExport}
-                disabled={businessUnits.length === 0}
-              >
-                <Download className="h-4 w-4 md:me-2" />
-                <span className="sr-only md:not-sr-only">{t('common.export', 'Export')}</span>
+        <PageStack>
+          <PageHeader
+            title={t('businessContext.units.title', 'Business units')}
+            description={t(
+              'businessContext.units.description',
+              'Your organizational structure, so security priorities follow the business.'
+            )}
+          >
+            <Can permission={Permission.AssetsWrite}>
+              <Button size="sm" onClick={() => setIsCreateOpen(true)}>
+                <Plus className="me-2 h-4 w-4" />
+                {t('businessContext.units.new', 'New business unit')}
               </Button>
-            }
-            emptyMessage={
-              businessUnits.length === 0
-                ? t('businessContext.units.empty.none', 'No business units yet')
-                : t('businessContext.units.empty.noMatch', 'No business units match')
-            }
-            emptyDescription={
-              businessUnits.length === 0
-                ? t(
-                    'businessContext.units.empty.noneDesc',
-                    'Create a business unit to map assets to the organization.'
-                  )
-                : t(
-                    'businessContext.units.empty.noMatchDesc',
-                    'Try adjusting your search or filters.'
-                  )
-            }
-            onRowClick={(unit) => openView(unit)}
+            </Can>
+          </PageHeader>
+          <GatedSectionTabs
+            tabs={BUSINESS_CONTEXT_SECTION_TABS}
+            label={t('businessContext.sectionsLabel', 'Business context sections')}
           />
-        </div>
-        <CappedNotice loaded={(apiData?.data ?? []).length} total={apiData?.total ?? 0} />
+
+          <MetricStrip loading={isLoading} items={metrics} />
+
+          <div>
+            <DataTable
+              columns={columns}
+              data={filteredUnits}
+              showSearch={false}
+              isLoading={isLoading}
+              errorState={
+                loadError ? (
+                  <ErrorState
+                    title={t('scope.businessUnits.loadError', 'business units')}
+                    error={loadError}
+                    onRetry={() => refreshList()}
+                  />
+                ) : undefined
+              }
+              toolbarStart={
+                <>
+                  <div className="relative min-w-0 flex-1 sm:max-w-xs">
+                    <Search className="pointer-events-none absolute start-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                    <Input
+                      value={searchQuery}
+                      onChange={(e) => setSearchQuery(e.target.value)}
+                      placeholder={t(
+                        'businessContext.units.search.placeholder',
+                        'Search name or owner…'
+                      )}
+                      aria-label={t('businessContext.units.search.aria', 'Search business units')}
+                      className="h-9 ps-9"
+                    />
+                  </div>
+                  <Select value={filterCriticality} onValueChange={setFilterCriticality}>
+                    <SelectTrigger
+                      className="h-9 w-auto min-w-36"
+                      aria-label={t(
+                        'businessContext.units.filter.criticality.aria',
+                        'Filter by criticality'
+                      )}
+                    >
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">
+                        {t('businessContext.units.filter.criticality.all', 'All criticalities')}
+                      </SelectItem>
+                      {CRITICALITY_OPTIONS.map((level) => (
+                        <SelectItem key={level} value={level}>
+                          {criticalityLabel(level)}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <Select value={filterRiskTolerance} onValueChange={setFilterRiskTolerance}>
+                    <SelectTrigger
+                      className="h-9 w-auto min-w-36"
+                      aria-label={t(
+                        'businessContext.units.filter.tolerance.aria',
+                        'Filter by risk tolerance'
+                      )}
+                    >
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">
+                        {t('businessContext.units.filter.tolerance.all', 'All risk tolerances')}
+                      </SelectItem>
+                      {RISK_TOLERANCE_OPTIONS.map((level) => (
+                        <SelectItem key={level} value={level}>
+                          {t('businessContext.tolerance.option', '{level} tolerance', {
+                            level: toleranceLabel(level),
+                          })}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </>
+              }
+              toolbarEnd={
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="h-9"
+                  onClick={handleExport}
+                  disabled={businessUnits.length === 0}
+                >
+                  <Download className="h-4 w-4 md:me-2" />
+                  <span className="sr-only md:not-sr-only">{t('common.export', 'Export')}</span>
+                </Button>
+              }
+              emptyMessage={
+                businessUnits.length === 0
+                  ? t('businessContext.units.empty.none', 'No business units yet')
+                  : t('businessContext.units.empty.noMatch', 'No business units match')
+              }
+              emptyDescription={
+                businessUnits.length === 0
+                  ? t(
+                      'businessContext.units.empty.noneDesc',
+                      'Create a business unit to map assets to the organization.'
+                    )
+                  : t(
+                      'businessContext.units.empty.noMatchDesc',
+                      'Try adjusting your search or filters.'
+                    )
+              }
+              onRowClick={(unit) => openView(unit)}
+            />
+          </div>
+          <CappedNotice loaded={(apiData?.data ?? []).length} total={apiData?.total ?? 0} />
+        </PageStack>
       </Main>
 
       {/* Create Dialog */}

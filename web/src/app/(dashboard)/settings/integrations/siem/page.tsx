@@ -1,13 +1,13 @@
 'use client'
 
+import { IntegrationHealth } from '@/features/integrations/components/integration-health'
 import { useCallback, useMemo, useState } from 'react'
 import type { ColumnDef } from '@tanstack/react-table'
-import { Shield, Plus, Send, Trash2, Loader2, CheckCircle, XCircle } from 'lucide-react'
+import { Shield, Plus, Send, Trash2, Loader2 } from 'lucide-react'
 import { Main } from '@/components/layout'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { Badge } from '@/components/ui/badge'
 import { Skeleton } from '@/components/ui/skeleton'
 import {
   Dialog,
@@ -46,14 +46,7 @@ const META = (i: Integration, k: string): string => {
 }
 
 function StatusBadge({ status }: { status: string }) {
-  const { t } = useTranslation()
-  const ok = status === 'connected'
-  return (
-    <Badge variant={ok ? 'default' : 'secondary'} className="gap-1">
-      {ok ? <CheckCircle className="size-3" /> : <XCircle className="size-3" />}
-      {t(`siemIntegration.status.${status}`, status)}
-    </Badge>
-  )
+  return <IntegrationHealth status={status} />
 }
 
 export default function SIEMIntegrationPage() {
