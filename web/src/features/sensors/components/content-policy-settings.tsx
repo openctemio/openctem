@@ -14,7 +14,7 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { Switch } from '@/components/ui/switch'
 import { TagInput } from '@/components/ui/tag-input'
 import { useTranslation } from '@/context/i18n-provider'
-import { ErrorState, PageHeader, RelativeTime } from '@/features/shared'
+import { ErrorState, PageHeader, RelativeTime, PageStack } from '@/features/shared'
 import { DOCS } from '@/lib/docs-links'
 import { getErrorMessage } from '@/lib/api/error-handler'
 import { updateContentPolicy, useContentPolicy } from '@/lib/api/sensor-content-hooks'
@@ -229,7 +229,7 @@ export function ContentPolicySettings() {
   const [formKey, setFormKey] = useState(0)
 
   return (
-    <>
+    <PageStack>
       <PageHeader
         title={t('sensors.contentPolicy.page.title')}
         description={t('sensors.contentPolicy.page.description')}
@@ -242,62 +242,60 @@ export function ContentPolicySettings() {
         )}
       </PageHeader>
 
-      <div className="mt-5 space-y-5">
-        <Alert>
-          <Info className="h-4 w-4" />
-          <AlertDescription>
-            <p>
-              {t('sensors.contentPolicy.sourceNote')}{' '}
-              <a
-                href={docsHref(DOCS.scanning.scannerContent)}
-                target="_blank"
-                rel="noreferrer"
-                className="underline underline-offset-2"
-              >
-                {t('sensors.contentPolicy.docsLink')}
-              </a>
-            </p>
-          </AlertDescription>
-        </Alert>
-
-        {!canWrite && (
-          <p className="inline-flex items-center gap-1 text-sm text-muted-foreground">
-            <Lock className="h-3.5 w-3.5" aria-hidden />
-            {t('sensors.contentPolicy.needsAdmin')}
+      <Alert>
+        <Info className="h-4 w-4" />
+        <AlertDescription>
+          <p>
+            {t('sensors.contentPolicy.sourceNote')}{' '}
+            <a
+              href={docsHref(DOCS.scanning.scannerContent)}
+              target="_blank"
+              rel="noreferrer"
+              className="underline underline-offset-2"
+            >
+              {t('sensors.contentPolicy.docsLink')}
+            </a>
           </p>
-        )}
+        </AlertDescription>
+      </Alert>
 
-        {error ? (
-          <ErrorState
-            title={t('sensors.contentPolicy.errorTitle')}
-            error={error}
-            onRetry={() => mutate()}
+      {!canWrite && (
+        <p className="inline-flex items-center gap-1 text-sm text-muted-foreground">
+          <Lock className="h-3.5 w-3.5" aria-hidden />
+          {t('sensors.contentPolicy.needsAdmin')}
+        </p>
+      )}
+
+      {error ? (
+        <ErrorState
+          title={t('sensors.contentPolicy.errorTitle')}
+          error={error}
+          onRetry={() => mutate()}
+        />
+      ) : isLoading || !data ? (
+        <div className="space-y-5" aria-busy>
+          <Skeleton className="h-32 w-full" />
+          <Skeleton className="h-72 w-full" />
+        </div>
+      ) : (
+        <>
+          <PolicyForm
+            key={formKey}
+            data={data}
+            canWrite={canWrite}
+            onSaved={async () => {
+              await mutate()
+              setFormKey((k) => k + 1)
+            }}
           />
-        ) : isLoading || !data ? (
-          <div className="space-y-5" aria-busy>
-            <Skeleton className="h-32 w-full" />
-            <Skeleton className="h-72 w-full" />
-          </div>
-        ) : (
-          <>
-            <PolicyForm
-              key={formKey}
-              data={data}
-              canWrite={canWrite}
-              onSaved={async () => {
-                await mutate()
-                setFormKey((k) => k + 1)
-              }}
-            />
-            {data.updated_at && (
-              <p className="text-xs text-muted-foreground">
-                {t('sensors.contentPolicy.lastChanged')}{' '}
-                <RelativeTime date={data.updated_at} className="text-xs" />
-              </p>
-            )}
-          </>
-        )}
-      </div>
-    </>
+          {data.updated_at && (
+            <p className="text-xs text-muted-foreground">
+              {t('sensors.contentPolicy.lastChanged')}{' '}
+              <RelativeTime date={data.updated_at} className="text-xs" />
+            </p>
+          )}
+        </>
+      )}
+    </PageStack>
   )
 }
