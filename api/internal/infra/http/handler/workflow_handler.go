@@ -1092,7 +1092,7 @@ func (h *WorkflowHandler) CancelRun(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
-// ResumeRun handles POST /api/v1/workflow-runs/{id}/resume.
+// ResumeRun handles POST /api/v1/workflow-runs/{id}/approve.
 // @Summary      Let a paused automation run continue
 // @Description  A live run that reached its change cap (status paused, pause_reason blast_radius) continues past the cap; its finished steps are kept. Only a paused run resumes.
 // @Tags         Automations
@@ -1102,7 +1102,7 @@ func (h *WorkflowHandler) CancelRun(w http.ResponseWriter, r *http.Request) {
 // @Failure      400  {object}  apierror.Error
 // @Failure      404  {object}  apierror.Error
 // @Security     BearerAuth
-// @Router       /workflow-runs/{id}/resume [post]
+// @Router       /workflow-runs/{id}/approve [post]
 func (h *WorkflowHandler) ResumeRun(w http.ResponseWriter, r *http.Request) {
 	tenantUUID, err := shared.IDFromString(middleware.GetTenantID(r.Context()))
 	if err != nil {
