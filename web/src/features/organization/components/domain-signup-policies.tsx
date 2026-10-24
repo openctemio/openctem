@@ -17,6 +17,7 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { Switch } from '@/components/ui/switch'
+import { ConfirmDialog } from '@/components/confirm-dialog'
 import { useTranslation } from '@/context/i18n-provider'
 import { EmptyState } from '@/features/shared/components/empty-state'
 
@@ -99,6 +100,7 @@ function DomainCard({
   const id = useId()
   const [value, setValue] = useState<DomainSignupPolicyInput>(toInput(domain))
   const [busy, setBusy] = useState(false)
+  const [confirming, setConfirming] = useState(false)
   useEffect(() => setValue(toInput(domain)), [domain])
 
   const disabled = !isOwner || !domain.effective || busy
@@ -106,7 +108,49 @@ function DomainCard({
   const set = <K extends keyof DomainSignupPolicyInput>(k: K, v: DomainSignupPolicyInput[K]) =>
     setValue((cur) => ({ ...cur, [k]: v }))
 
+  // What this save makes weaker; each line says what becomes possible.
+  const before = toInput(domain)
+  const joinRank: Record<string, number> = { off: 0, approval: 1, auto: 2 }
+  const loosened: string[] = []
+  if (before.sso_required && !value.sso_required)
+    loosened.push(
+      t('confirm.domainPolicy.ssoOff', 'Accounts on {domain} can sign in without SSO again.', {
+        domain: domain.domain,
+      })
+    )
+  if (!before.discoverable && value.discoverable)
+    loosened.push(
+      t(
+        'confirm.domainPolicy.discoverable',
+        'People who sign up with an address on {domain} will see this organization.',
+        { domain: domain.domain }
+      )
+    )
+  if ((joinRank[value.join_policy] ?? 0) > (joinRank[before.join_policy] ?? 0))
+    loosened.push(
+      value.join_policy === 'auto'
+        ? t(
+            'confirm.domainPolicy.joinAuto',
+            'Anyone with an address on {domain} joins at once, as {role}.',
+            { domain: domain.domain, role: value.join_role }
+          )
+        : t(
+            'confirm.domainPolicy.joinApproval',
+            'Anyone with an address on {domain} can ask to join, as {role}.',
+            { domain: domain.domain, role: value.join_role }
+          )
+    )
+  if (before.block_new_workspaces && !value.block_new_workspaces)
+    loosened.push(
+      t(
+        'confirm.domainPolicy.workspacesOn',
+        'People on {domain} can create their own organizations again.',
+        { domain: domain.domain }
+      )
+    )
+
   const save = async () => {
+    setConfirming(false)
     setBusy(true)
     try {
       await saveDomainSignupPolicy(domain.id, value)
@@ -199,13 +243,42 @@ function DomainCard({
             {isOwner ? t('settings.domains.stepUpHint') : t('settings.domains.ownerOnly')}
           </p>
           {isOwner && (
-            <Button size="sm" onClick={() => void save()} disabled={!dirty || disabled}>
+            <Button
+              size="sm"
+              onClick={() => (loosened.length > 0 ? setConfirming(true) : void save())}
+              disabled={!dirty || disabled}
+            >
               {busy && <Loader2 className="me-1.5 h-4 w-4 animate-spin" />}
               {t('settings.domains.save')}
             </Button>
           )}
         </div>
       </CardContent>
+      <ConfirmDialog
+        open={confirming}
+        onOpenChange={setConfirming}
+        title={t('confirm.domainPolicy.title', 'Loosen the sign-up rules for {domain}?', {
+          domain: domain.domain,
+        })}
+        desc={
+          <div className="space-y-2">
+            <ul className="list-disc space-y-1 ps-5">
+              {loosened.map((line) => (
+                <li key={line}>{line}</li>
+              ))}
+            </ul>
+            <p>
+              {t(
+                'confirm.domainPolicy.note',
+                "You will be asked to verify it's you. You can tighten the rules again at any time."
+              )}
+            </p>
+          </div>
+        }
+        confirmText={t('confirm.domainPolicy.confirm', 'Save weaker rules')}
+        destructive
+        handleConfirm={save}
+      />
     </Card>
   )
 }
