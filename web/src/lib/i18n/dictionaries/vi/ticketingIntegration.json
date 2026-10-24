@@ -86,7 +86,6 @@
   "ticketingIntegration.issueTypes.stock": "Mặc định ({name})",
   "ticketingIntegration.issueTypes.title": "Loại issue",
   "ticketingIntegration.issueTypes.useSuggestion": "Dùng {name}",
-  "ticketingIntegration.metrics.connections": "Kết nối",
   "ticketingIntegration.metrics.needsAttention": "Cần chú ý",
   "ticketingIntegration.page.description": "Kết nối các hệ thống ticketing để tự động tạo và theo dõi ticket khắc phục.",
   "ticketingIntegration.page.emptyDescription": "Kết nối một hệ thống ticketing để tự động tạo và theo dõi ticket khắc phục.",

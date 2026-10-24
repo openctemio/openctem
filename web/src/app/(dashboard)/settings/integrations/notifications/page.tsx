@@ -16,6 +16,7 @@ import {
   RelativeTime,
   StackedCell,
   type RowAction,
+  PageStack,
 } from '@/features/shared'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -180,6 +181,12 @@ export default function NotificationIntegrationsPage() {
     // edit dialog would overwrite their HEC token with a webhook URL.
     return notificationChannelsOnly(integrationsData.data ?? [])
   }, [integrationsData])
+
+  const [statusFilter, setStatusFilter] = useState<'connected' | 'error' | null>(null)
+  const visible = useMemo(
+    () => (statusFilter ? integrations.filter((i) => i.status === statusFilter) : integrations),
+    [integrations, statusFilter]
+  )
 
   // Calculate stats
   const stats = useMemo(() => {
@@ -589,132 +596,134 @@ export default function NotificationIntegrationsPage() {
     ]
   )
 
+  // The strip filters the list: click a tile to show only those channels, again to clear.
   const metrics: MetricStripItem[] = [
-    {
-      key: 'total',
-      label: t('notificationChannels.metrics.channels', 'Channels'),
-      value: stats.total,
-    },
     {
       key: 'connected',
       label: t('notificationChannels.metrics.connected', 'Connected'),
       value: stats.connected,
+      active: statusFilter === 'connected',
+      onClick: () => setStatusFilter(statusFilter === 'connected' ? null : 'connected'),
     },
     {
       key: 'error',
       label: t('notificationChannels.metrics.errors', 'Errors'),
       value: stats.error,
       tone: 'danger',
+      active: statusFilter === 'error',
+      onClick: () => setStatusFilter(statusFilter === 'error' ? null : 'error'),
     },
   ]
 
   return (
     <>
       <Main>
-        <PageHeader
-          title={t('notificationChannels.page.title', 'Notification channels')}
-          description={t(
-            'notificationChannels.page.description',
-            'Send security alerts to Slack, Microsoft Teams, Telegram and custom webhooks.'
-          )}
-        >
-          <Can route="PUT /api/v1/integrations/{id}">
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => router.push('/settings/integrations/notifications/history')}
-            >
-              <History className="me-2 h-4 w-4" />
-              {t('notificationChannels.page.viewEvents', 'View events')}
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => router.push('/settings/integrations/notifications/outbox')}
-            >
-              <Inbox className="me-2 h-4 w-4" />
-              {t('notificationChannels.page.queue', 'Queue')}
-            </Button>
-          </Can>
-          <Can route="POST /api/v1/integrations/notifications">
-            <Button size="sm" onClick={() => setAddDialogOpen(true)}>
-              <Plus className="me-2 h-4 w-4" />
-              {t('notificationChannels.page.addChannel', 'Add channel')}
-            </Button>
-          </Can>
-        </PageHeader>
+        <PageStack>
+          <PageHeader
+            title={t('notificationChannels.page.title', 'Notification channels')}
+            description={t(
+              'notificationChannels.page.description',
+              'Send security alerts to Slack, Microsoft Teams, Telegram and custom webhooks.'
+            )}
+          >
+            <Can route="PUT /api/v1/integrations/{id}">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => router.push('/settings/integrations/notifications/history')}
+              >
+                <History className="me-2 h-4 w-4" />
+                {t('notificationChannels.page.viewEvents', 'View events')}
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => router.push('/settings/integrations/notifications/outbox')}
+              >
+                <Inbox className="me-2 h-4 w-4" />
+                {t('notificationChannels.page.queue', 'Queue')}
+              </Button>
+            </Can>
+            <Can route="POST /api/v1/integrations/notifications">
+              <Button size="sm" onClick={() => setAddDialogOpen(true)}>
+                <Plus className="me-2 h-4 w-4" />
+                {t('notificationChannels.page.addChannel', 'Add channel')}
+              </Button>
+            </Can>
+          </PageHeader>
 
-        {error ? (
-          <div className="mt-5">
-            <ErrorState
-              title={t('notificationChannels.page.errorTitle', 'notification channels')}
-              error={error}
-              onRetry={() => void mutate()}
-            />
-          </div>
-        ) : (
-          <>
-            <MetricStrip className="mt-5" loading={isLoading} items={metrics} />
-
-            <div className="mt-5">
-              {isLoading ? (
-                <div className="space-y-3">
-                  <Skeleton className="h-9 w-full max-w-sm" />
-                  <Skeleton className="h-48 w-full" />
-                </div>
-              ) : integrations.length === 0 ? (
-                <EmptyState
-                  icon={Bell}
-                  title={t('notificationChannels.page.emptyTitle', 'No notification channels')}
-                  description={t(
-                    'notificationChannels.page.emptyDescription',
-                    'Add Slack, Microsoft Teams, Telegram, or webhook integrations to receive security alerts.'
-                  )}
-                  action={
-                    <Can route="POST /api/v1/integrations/notifications">
-                      <Button size="sm" onClick={() => setAddDialogOpen(true)}>
-                        <Plus className="me-2 h-4 w-4" />
-                        {t('notificationChannels.page.addChannel', 'Add channel')}
-                      </Button>
-                    </Can>
-                  }
-                />
-              ) : (
-                <DataTable
-                  columns={columns}
-                  data={integrations}
-                  getRowId={(i) => i.id}
-                  searchPlaceholder={t(
-                    'notificationChannels.page.searchPlaceholder',
-                    'Search channels...'
-                  )}
-                  showSelectionCount={false}
-                  toolbarEnd={
-                    <Button
-                      variant="outline"
-                      size="icon"
-                      className="h-9 w-9"
-                      aria-label={t('notificationChannels.page.refresh', 'Refresh')}
-                      title={t('notificationChannels.page.refresh', 'Refresh')}
-                      onClick={handleRefresh}
-                      disabled={actionInProgress === 'refresh'}
-                    >
-                      {actionInProgress === 'refresh' ? (
-                        <Loader2 className="h-4 w-4 animate-spin" />
-                      ) : (
-                        <RefreshCw className="h-4 w-4" />
-                      )}
-                    </Button>
-                  }
-                  emptyMessage={t(
-                    'notificationChannels.page.noMatch',
-                    'No channels match your search'
-                  )}
-                />
-              )}
+          {error ? (
+            <div>
+              <ErrorState
+                title={t('notificationChannels.page.errorTitle', 'notification channels')}
+                error={error}
+                onRetry={() => void mutate()}
+              />
             </div>
-          </>
-        )}
+          ) : (
+            <>
+              <MetricStrip loading={isLoading} items={metrics} />
+
+              <div>
+                {isLoading ? (
+                  <div className="space-y-3">
+                    <Skeleton className="h-9 w-full max-w-sm" />
+                    <Skeleton className="h-48 w-full" />
+                  </div>
+                ) : integrations.length === 0 ? (
+                  <EmptyState
+                    icon={Bell}
+                    title={t('notificationChannels.page.emptyTitle', 'No notification channels')}
+                    description={t(
+                      'notificationChannels.page.emptyDescription',
+                      'Add Slack, Microsoft Teams, Telegram, or webhook integrations to receive security alerts.'
+                    )}
+                    action={
+                      <Can route="POST /api/v1/integrations/notifications">
+                        <Button size="sm" onClick={() => setAddDialogOpen(true)}>
+                          <Plus className="me-2 h-4 w-4" />
+                          {t('notificationChannels.page.addChannel', 'Add channel')}
+                        </Button>
+                      </Can>
+                    }
+                  />
+                ) : (
+                  <DataTable
+                    columns={columns}
+                    data={visible}
+                    getRowId={(i) => i.id}
+                    searchPlaceholder={t(
+                      'notificationChannels.page.searchPlaceholder',
+                      'Search channels...'
+                    )}
+                    showSelectionCount={false}
+                    toolbarEnd={
+                      <Button
+                        variant="outline"
+                        size="icon"
+                        className="h-9 w-9"
+                        aria-label={t('notificationChannels.page.refresh', 'Refresh')}
+                        title={t('notificationChannels.page.refresh', 'Refresh')}
+                        onClick={handleRefresh}
+                        disabled={actionInProgress === 'refresh'}
+                      >
+                        {actionInProgress === 'refresh' ? (
+                          <Loader2 className="h-4 w-4 animate-spin" />
+                        ) : (
+                          <RefreshCw className="h-4 w-4" />
+                        )}
+                      </Button>
+                    }
+                    emptyMessage={t(
+                      'notificationChannels.page.noMatch',
+                      'No channels match your search'
+                    )}
+                  />
+                )}
+              </div>
+            </>
+          )}
+        </PageStack>
       </Main>
 
       {/* Dialogs */}

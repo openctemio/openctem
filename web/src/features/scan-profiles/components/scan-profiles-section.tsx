@@ -26,6 +26,7 @@ import {
   ErrorState,
   PageHeader,
   type RowAction,
+  PageStack,
 } from '@/features/shared'
 import { AddScanProfileDialog } from './add-scan-profile-dialog'
 import { EditScanProfileDialog } from './edit-scan-profile-dialog'
@@ -294,12 +295,12 @@ export function ScanProfilesSection() {
   }
 
   return (
-    <>
+    <PageStack>
       <PageHeader title={t('scans.profiles.title')} description={t('scans.profiles.pageDesc')}>
         {addMenu}
       </PageHeader>
 
-      <div className="mt-5">{body}</div>
+      {body}
 
       {/* Dialogs */}
       <AddScanProfileDialog
@@ -344,6 +345,6 @@ export function ScanProfilesSection() {
         isLoading={isDeleting}
         handleConfirm={handleDeleteConfirm}
       />
-    </>
+    </PageStack>
   )
 }
