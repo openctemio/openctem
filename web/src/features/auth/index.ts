@@ -12,24 +12,6 @@
 export { LoginForm, RegisterForm, SignOutDialog, SignOutButton } from './components'
 
 // ============================================
-// HOOKS
-// ============================================
-
-export { useAuth } from './hooks'
-
-// ============================================
-// SERVER ACTIONS
-// ============================================
-
-export {
-  handleOAuthCallback,
-  refreshTokenAction,
-  getCurrentUser,
-  logoutAction,
-  isAuthenticated,
-} from './actions'
-
-// ============================================
 // CONSTANTS
 // ============================================
 
@@ -126,8 +108,6 @@ export type {
   AuthSuccessResponse,
   AuthErrorResponse,
   AuthResponse,
-  HandleCallbackInput,
-  RefreshTokenResult,
 
   // Component prop types
   LoginFormProps,

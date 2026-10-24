@@ -4,7 +4,6 @@
  * Centralized exports for all auth hooks
  */
 
-export { useAuth } from './use-auth'
 export {
   usePermissions,
   useUserPermissions,
