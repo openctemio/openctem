@@ -26,7 +26,7 @@ import {
 import { useTranslation } from '@/context/i18n-provider'
 import { ApiClientError } from '@/lib/api/error-handler'
 import { Permission, useHasPermission, usePermissions } from '@/lib/permissions'
-import { ErrorState, PageHeader } from '@/features/shared'
+import { ErrorState, PageHeader, PageStack } from '@/features/shared'
 import Link from '@/components/link'
 import { Skeleton } from '@/components/ui/skeleton'
 import {
@@ -94,30 +94,36 @@ export default function ProgramPage({ params }: { params: Promise<{ id: string }
   if (error) {
     return (
       <Main>
-        <ErrorState title={t('programs.one', 'program')} error={error} onRetry={() => mutate()} />
-        <Button asChild variant="outline" size="sm" className="mt-4">
-          <Link href="/programs">{t('programs.back', 'Back to programs')}</Link>
-        </Button>
+        <PageStack>
+          <ErrorState title={t('programs.one', 'program')} error={error} onRetry={() => mutate()} />
+          <Button asChild variant="outline" size="sm" className="self-start">
+            <Link href="/programs">{t('programs.back', 'Back to programs')}</Link>
+          </Button>
+        </PageStack>
       </Main>
     )
   }
   if (!p) {
     return (
       <Main>
-        <Skeleton className="h-9 w-64" />
-        <Skeleton className="mt-5 h-24 w-full rounded-xl" />
-        <Skeleton className="mt-5 h-64 w-full" />
+        <PageStack>
+          <Skeleton className="h-9 w-64" />
+          <Skeleton className="h-24 w-full rounded-xl" />
+          <Skeleton className="h-64 w-full" />
+        </PageStack>
       </Main>
     )
   }
   if (p.locked) {
     return (
       <Main>
-        <PageHeader title={p.name} description={p.platform || undefined} />
-        <ProgramLocked
-          program={p}
-          onAccepted={() => Promise.all([mutate(), invalidatePrograms()])}
-        />
+        <PageStack>
+          <PageHeader title={p.name} description={p.platform || undefined} />
+          <ProgramLocked
+            program={p}
+            onAccepted={() => Promise.all([mutate(), invalidatePrograms()])}
+          />
+        </PageStack>
       </Main>
     )
   }
@@ -144,235 +150,239 @@ export default function ProgramPage({ params }: { params: Promise<{ id: string }
 
   return (
     <Main>
-      <PageHeader
-        title={p.name}
-        description={
-          <span className="flex flex-wrap items-center gap-2">
-            <Badge variant={p.status === 'active' ? 'default' : 'secondary'}>
-              {t(`programs.status.${p.status}`, PROGRAM_STATUS_LABEL[p.status])}
-            </Badge>
-            <SafeExternalLink href={p.program_url} className="text-sm underline">
-              {p.program_url}
-            </SafeExternalLink>
-          </span>
-        }
-      >
-        {canWrite && p.status !== 'ended' && (
-          <>
-            <Button variant="outline" onClick={() => setReimport((x) => !x)} disabled={busy}>
-              {t('programs.reimport', 'Re-import scope')}
-            </Button>
-            {p.status === 'active' && (
-              <Button variant="outline" disabled={busy} onClick={() => setPending('suspend')}>
-                {t('programs.suspend', 'Suspend')}
+      <PageStack>
+        <PageHeader
+          title={p.name}
+          description={
+            <span className="flex flex-wrap items-center gap-2">
+              <Badge variant={p.status === 'active' ? 'default' : 'secondary'}>
+                {t(`programs.status.${p.status}`, PROGRAM_STATUS_LABEL[p.status])}
+              </Badge>
+              <SafeExternalLink href={p.program_url} className="text-sm underline">
+                {p.program_url}
+              </SafeExternalLink>
+            </span>
+          }
+        >
+          {canWrite && p.status !== 'ended' && (
+            <>
+              <Button variant="outline" onClick={() => setReimport((x) => !x)} disabled={busy}>
+                {t('programs.reimport', 'Re-import scope')}
               </Button>
-            )}
-            <Button variant="destructive" disabled={busy} onClick={() => setPending('end')}>
-              {t('programs.end', 'End')}
-            </Button>
-          </>
-        )}
-      </PageHeader>
+              {p.status === 'active' && (
+                <Button variant="outline" disabled={busy} onClick={() => setPending('suspend')}>
+                  {t('programs.suspend', 'Suspend')}
+                </Button>
+              )}
+              <Button variant="destructive" disabled={busy} onClick={() => setPending('end')}>
+                {t('programs.end', 'End')}
+              </Button>
+            </>
+          )}
+        </PageHeader>
 
-      <div className="space-y-6">
-        {(p.status === 'paused' || p.status === 'pending_attestation') && canWrite && (
-          <section className="space-y-3 rounded-md border p-4">
-            <p className="text-sm">
-              {p.status === 'pending_attestation'
-                ? t(
-                    'programs.acceptHint',
-                    'Only passive monitoring runs until someone accepts this program rules and scope (terms {hash}); its entries authorize no active scan until then.',
-                    { hash: shortHash(p.terms_sha256) }
+        <>
+          {(p.status === 'paused' || p.status === 'pending_attestation') && canWrite && (
+            <section className="space-y-3 rounded-md border p-4">
+              <p className="text-sm">
+                {p.status === 'pending_attestation'
+                  ? t(
+                      'programs.acceptHint',
+                      'Only passive monitoring runs until someone accepts this program rules and scope (terms {hash}); its entries authorize no active scan until then.',
+                      { hash: shortHash(p.terms_sha256) }
+                    )
+                  : t(
+                      'programs.reactivateHint',
+                      'Suspended: its entries authorize nothing. Reactivating accepts the program terms again (terms {hash}).',
+                      { hash: shortHash(p.terms_sha256) }
+                    )}
+              </p>
+              <label className="flex items-center gap-2 text-sm">
+                <Checkbox checked={reattest} onCheckedChange={(c) => setReattest(c === true)} />
+                {t('programs.reattest', 'I accept this program rules and scope again')}
+              </label>
+              <Button
+                disabled={busy || !reattest}
+                onClick={() =>
+                  act(
+                    () => reactivateProgram(p.id, p.terms_sha256),
+                    t('programs.reactivated', 'Program reactivated')
                   )
-                : t(
-                    'programs.reactivateHint',
-                    'Suspended: its entries authorize nothing. Reactivating accepts the program terms again (terms {hash}).',
-                    { hash: shortHash(p.terms_sha256) }
-                  )}
-            </p>
-            <label className="flex items-center gap-2 text-sm">
-              <Checkbox checked={reattest} onCheckedChange={(c) => setReattest(c === true)} />
-              {t('programs.reattest', 'I accept this program rules and scope again')}
-            </label>
-            <Button
-              disabled={busy || !reattest}
-              onClick={() =>
-                act(
-                  () => reactivateProgram(p.id, p.terms_sha256),
-                  t('programs.reactivated', 'Program reactivated')
-                )
-              }
-            >
-              {p.status === 'pending_attestation'
-                ? t('programs.acceptStart', 'Accept and start testing')
-                : t('programs.reactivate', 'Reactivate')}
-            </Button>
-          </section>
-        )}
+                }
+              >
+                {p.status === 'pending_attestation'
+                  ? t('programs.acceptStart', 'Accept and start testing')
+                  : t('programs.reactivate', 'Reactivate')}
+              </Button>
+            </section>
+          )}
 
-        {reimport && (
-          <section className="space-y-2">
-            <h3 className="text-base font-semibold">{t('programs.reimport', 'Re-import scope')}</h3>
-            <ProgramForm
-              existing
-              initial={formFromProgram(p)}
-              submitLabel={t('programs.reimportSubmit', 'Accept and re-import')}
-              onSubmit={(input) => reimportProgram(p.id, input)}
-              onDone={() => {
-                setReimport(false)
-                toast.success(t('programs.reimported', 'Scope re-imported'))
-                void refresh()
-              }}
-            />
-          </section>
-        )}
+          {reimport && (
+            <section className="space-y-2">
+              <h3 className="text-base font-semibold">
+                {t('programs.reimport', 'Re-import scope')}
+              </h3>
+              <ProgramForm
+                existing
+                initial={formFromProgram(p)}
+                submitLabel={t('programs.reimportSubmit', 'Accept and re-import')}
+                onSubmit={(input) => reimportProgram(p.id, input)}
+                onDone={() => {
+                  setReimport(false)
+                  toast.success(t('programs.reimported', 'Scope re-imported'))
+                  void refresh()
+                }}
+              />
+            </section>
+          )}
 
-        <section className="grid gap-2 text-sm sm:grid-cols-2">
-          <div>
-            <span className="text-muted-foreground">
-              {t('programs.attestation', 'Accepted terms')}:{' '}
-            </span>
-            <span className="font-mono">{shortHash(p.terms_sha256)}</span>
-            {p.accepted_at && (
+          <section className="grid gap-2 text-sm sm:grid-cols-2">
+            <div>
               <span className="text-muted-foreground">
-                {' '}
-                ({new Date(p.accepted_at).toLocaleString()})
+                {t('programs.attestation', 'Accepted terms')}:{' '}
               </span>
-            )}
-          </div>
-          <div>
-            <span className="text-muted-foreground">{t('programs.col.tier', 'Max tier')}: </span>
-            <span className="font-mono">{p.max_tier}</span>
-          </div>
-          <div>
-            <span className="text-muted-foreground">
-              {t('programs.form.rate', 'Rate limit (requests per second)')}:{' '}
-            </span>
-            {p.rules.rate_limit_rps || '-'}
-          </div>
-          <div>
-            <span className="text-muted-foreground">
-              {t('programs.form.ua', 'Required User-Agent')}:{' '}
-            </span>
-            <span className="font-mono">{p.rules.user_agent || '-'}</span>
-          </div>
-          <div className="sm:col-span-2">
-            <span className="text-muted-foreground">
-              {t('programs.windows', 'Testing windows')}:{' '}
-            </span>
-            {p.rules.testing_windows?.length ? (
-              <span className="font-mono text-xs">
-                {p.rules.testing_windows.map(formatWindow).join('; ')}
+              <span className="font-mono">{shortHash(p.terms_sha256)}</span>
+              {p.accepted_at && (
+                <span className="text-muted-foreground">
+                  {' '}
+                  ({new Date(p.accepted_at).toLocaleString()})
+                </span>
+              )}
+            </div>
+            <div>
+              <span className="text-muted-foreground">{t('programs.col.tier', 'Max tier')}: </span>
+              <span className="font-mono">{p.max_tier}</span>
+            </div>
+            <div>
+              <span className="text-muted-foreground">
+                {t('programs.form.rate', 'Rate limit (requests per second)')}:{' '}
               </span>
-            ) : (
-              t('programs.windowsAny', 'Any time')
-            )}
-          </div>
-          <div className="sm:col-span-2">
-            <span className="text-muted-foreground">
-              {t('programs.form.forbidden', 'The program forbids')}:{' '}
-            </span>
-            {FORBIDDEN_TECHNIQUES.filter((f) => forbidden.has(f.value))
-              .map((f) => t(`programs.forbidden.${f.value}`, f.label))
-              .join(', ') || '-'}
-          </div>
-        </section>
+              {p.rules.rate_limit_rps || '-'}
+            </div>
+            <div>
+              <span className="text-muted-foreground">
+                {t('programs.form.ua', 'Required User-Agent')}:{' '}
+              </span>
+              <span className="font-mono">{p.rules.user_agent || '-'}</span>
+            </div>
+            <div className="sm:col-span-2">
+              <span className="text-muted-foreground">
+                {t('programs.windows', 'Testing windows')}:{' '}
+              </span>
+              {p.rules.testing_windows?.length ? (
+                <span className="font-mono text-xs">
+                  {p.rules.testing_windows.map(formatWindow).join('; ')}
+                </span>
+              ) : (
+                t('programs.windowsAny', 'Any time')
+              )}
+            </div>
+            <div className="sm:col-span-2">
+              <span className="text-muted-foreground">
+                {t('programs.form.forbidden', 'The program forbids')}:{' '}
+              </span>
+              {FORBIDDEN_TECHNIQUES.filter((f) => forbidden.has(f.value))
+                .map((f) => t(`programs.forbidden.${f.value}`, f.label))
+                .join(', ') || '-'}
+            </div>
+          </section>
 
-        <ProgramPendingTerms program={p} canWrite={canWrite} onChanged={refresh} />
-        <ProgramSuggestions program={p} canWrite={canWrite} onChanged={refresh} />
+          <ProgramPendingTerms program={p} canWrite={canWrite} onChanged={refresh} />
+          <ProgramSuggestions program={p} canWrite={canWrite} onChanged={refresh} />
 
-        <ProgramSource program={p} canWrite={canWrite} onChanged={refresh} />
+          <ProgramSource program={p} canWrite={canWrite} onChanged={refresh} />
 
-        {p.items.some((i) => i.in_scope) && (
+          {p.items.some((i) => i.in_scope) && (
+            <section className="space-y-2">
+              <h3 className="text-base font-semibold">
+                {t('programs.targets.title', 'Program targets')}
+              </h3>
+              <ProgramTargetsTable items={p.items} />
+            </section>
+          )}
+          <ProgramNotifications
+            program={p}
+            canManage={canWrite && canManageIntegrations}
+            isOwner={isOwner()}
+          />
+
+          <section className="space-y-2">
+            <h3 className="text-base font-semibold">{t('programs.entries', 'Scope entries')}</h3>
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>{t('programs.preview.target', 'In scope')}</TableHead>
+                  <TableHead>{t('programs.preview.type', 'Type')}</TableHead>
+                  <TableHead>{t('programs.col.status', 'Status')}</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {p.entries.map((e) => (
+                  <TableRow key={e.id}>
+                    <TableCell className="font-mono text-xs break-all">
+                      {e.pattern}
+                      {portLimit(e.ports, e.protocol) && (
+                        <Badge variant="outline" className="ml-2 font-mono">
+                          {t('programs.targets.onlyPorts', 'only {ports}', {
+                            ports: portLimit(e.ports, e.protocol),
+                          })}
+                        </Badge>
+                      )}
+                    </TableCell>
+                    <TableCell className="text-muted-foreground text-xs">{e.target_type}</TableCell>
+                    <TableCell>
+                      <Badge variant={e.in_effect ? 'default' : 'secondary'}>
+                        {e.in_effect ? t('programs.inEffect', 'In effect') : e.status}
+                      </Badge>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </section>
+
           <section className="space-y-2">
             <h3 className="text-base font-semibold">
-              {t('programs.targets.title', 'Program targets')}
+              {t('programs.exclusions', 'Program exclusions')}
             </h3>
-            <ProgramTargetsTable items={p.items} />
+            <ProgramExclusionsTable exclusions={p.exclusions} />
           </section>
-        )}
-        <ProgramNotifications
-          program={p}
-          canManage={canWrite && canManageIntegrations}
-          isOwner={isOwner()}
+        </>
+        <ConfirmDialog
+          open={pending !== null}
+          onOpenChange={(open) => !open && setPending(null)}
+          destructive
+          title={
+            pending === 'end'
+              ? t('confirm.program.endTitle', 'End the program "{name}"?', { name: p.name })
+              : t('confirm.program.suspendTitle', 'Suspend the program "{name}"?', { name: p.name })
+          }
+          desc={
+            pending === 'end'
+              ? t(
+                  'confirm.program.endDesc',
+                  'Its scope entries stop authorizing scans at once and the program can no longer be changed or reactivated. Findings and history stay.'
+                )
+              : t(
+                  'confirm.program.suspendDesc',
+                  'Its scope entries stop authorizing scans until someone reactivates it and accepts the program terms again.'
+                )
+          }
+          confirmText={
+            pending === 'end'
+              ? t('confirm.program.end', 'End program')
+              : t('confirm.program.suspend', 'Suspend')
+          }
+          isLoading={busy}
+          handleConfirm={() =>
+            pending === 'end'
+              ? act(() => endProgram(p.id), t('programs.ended', 'Program ended'))
+              : pending === 'suspend'
+                ? act(() => suspendProgram(p.id), t('programs.suspended', 'Program suspended'))
+                : undefined
+          }
         />
-
-        <section className="space-y-2">
-          <h3 className="text-base font-semibold">{t('programs.entries', 'Scope entries')}</h3>
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>{t('programs.preview.target', 'In scope')}</TableHead>
-                <TableHead>{t('programs.preview.type', 'Type')}</TableHead>
-                <TableHead>{t('programs.col.status', 'Status')}</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {p.entries.map((e) => (
-                <TableRow key={e.id}>
-                  <TableCell className="font-mono text-xs break-all">
-                    {e.pattern}
-                    {portLimit(e.ports, e.protocol) && (
-                      <Badge variant="outline" className="ml-2 font-mono">
-                        {t('programs.targets.onlyPorts', 'only {ports}', {
-                          ports: portLimit(e.ports, e.protocol),
-                        })}
-                      </Badge>
-                    )}
-                  </TableCell>
-                  <TableCell className="text-muted-foreground text-xs">{e.target_type}</TableCell>
-                  <TableCell>
-                    <Badge variant={e.in_effect ? 'default' : 'secondary'}>
-                      {e.in_effect ? t('programs.inEffect', 'In effect') : e.status}
-                    </Badge>
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        </section>
-
-        <section className="space-y-2">
-          <h3 className="text-base font-semibold">
-            {t('programs.exclusions', 'Program exclusions')}
-          </h3>
-          <ProgramExclusionsTable exclusions={p.exclusions} />
-        </section>
-      </div>
-      <ConfirmDialog
-        open={pending !== null}
-        onOpenChange={(open) => !open && setPending(null)}
-        destructive
-        title={
-          pending === 'end'
-            ? t('confirm.program.endTitle', 'End the program "{name}"?', { name: p.name })
-            : t('confirm.program.suspendTitle', 'Suspend the program "{name}"?', { name: p.name })
-        }
-        desc={
-          pending === 'end'
-            ? t(
-                'confirm.program.endDesc',
-                'Its scope entries stop authorizing scans at once and the program can no longer be changed or reactivated. Findings and history stay.'
-              )
-            : t(
-                'confirm.program.suspendDesc',
-                'Its scope entries stop authorizing scans until someone reactivates it and accepts the program terms again.'
-              )
-        }
-        confirmText={
-          pending === 'end'
-            ? t('confirm.program.end', 'End program')
-            : t('confirm.program.suspend', 'Suspend')
-        }
-        isLoading={busy}
-        handleConfirm={() =>
-          pending === 'end'
-            ? act(() => endProgram(p.id), t('programs.ended', 'Program ended'))
-            : pending === 'suspend'
-              ? act(() => suspendProgram(p.id), t('programs.suspended', 'Program suspended'))
-              : undefined
-        }
-      />
+      </PageStack>
     </Main>
   )
 }
