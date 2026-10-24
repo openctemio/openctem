@@ -25,3 +25,16 @@ func TestSanitizeAttr_ShortKeysMatchWholeSegmentsOnly(t *testing.T) {
 		}
 	}
 }
+
+func TestSanitizeAttr_ShortKeysMatchCamelCaseSegments(t *testing.T) {
+	for _, k := range []string{"userPwd", "aesIV", "accessJwt", "userDob", "AES_IV"} {
+		if got := sanitizeAttr(nil, slog.String(k, "x")); got.Value.String() != "[REDACTED]" {
+			t.Errorf("%s: want redacted, got %q", k, got.Value.String())
+		}
+	}
+	for _, k := range []string{"active", "diverged", "archived", "live", "Derivation"} {
+		if got := sanitizeAttr(nil, slog.String(k, "x")); got.Value.String() == "[REDACTED]" {
+			t.Errorf("%s: redacted, want kept", k)
+		}
+	}
+}
