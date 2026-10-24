@@ -29,7 +29,7 @@ import type { FindingStatus } from '@/features/findings/types'
 import { Progress } from '@/components/ui/progress'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
-import { ConfirmDialog, ConfirmSample, nameToConfirm } from '@/components/confirm-dialog'
+import { ConfirmDialog, ConfirmSample } from '@/components/confirm-dialog'
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -86,6 +86,7 @@ import { IssuesChip } from '@/features/assets/components/service-cells'
 import { SEVERITY_LEVELS, normalizeSeverity, type SeverityLevel } from '@/lib/severity'
 import { useTranslation } from '@/context/i18n-provider'
 import { useAssetTypeRegistry } from '@/features/asset-types/api/use-asset-type-registry'
+import { confirmName } from '@/lib/confirm-name'
 
 const criticalityColors: Record<string, string> = CRITICALITY_BADGE_SOFT
 
@@ -1157,7 +1158,7 @@ function AssetGroupDetailContent({ params }: PageProps) {
             : t('confirm.assetGroup.deleteButton', 'Delete group')
         }
         destructive
-        typeToConfirm={nameToConfirm(group.name, group.id)}
+        typeToConfirm={confirmName(group.name, group.id)}
         isLoading={isDeleting}
         handleConfirm={handleDelete}
       />
