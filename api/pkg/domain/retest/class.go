@@ -7,6 +7,10 @@ import "time"
 // rate limiting does not last an hour.
 const MinDenialGap = time.Hour
 
+// MaxDenialAge is how old a prior origin refusal may be and still pair with a
+// new one.
+const MaxDenialAge = 14 * 24 * time.Hour
+
 // Class is what the settlement needs to know about a finding beyond one
 // attempt's evidence.
 type Class struct {

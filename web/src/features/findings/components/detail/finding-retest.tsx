@@ -107,6 +107,10 @@ const INCONCLUSIVE_HELP: Record<string, { text: string; fix: string }> = {
     text: 'A CDN or WAF answered in place of the service, so the check could not see the issue.',
     fix: 'Allow the scanner at the edge (see the edge protection guidance on the asset), then retest. The finding is unchanged.',
   },
+  access_denied: {
+    text: 'The server now refuses the exposed page (401 or 403) with no CDN or WAF in front. One refusal is not proof of a fix.',
+    fix: 'A second refusal at least an hour later, with no sighting of the finding in between, marks it fixed. Retest again after an hour, or verify it by hand.',
+  },
   no_verdict: {
     text: 'The tool ended without a verdict for this finding (it stopped early or never reached the target).',
     fix: 'Retest again. If it repeats, check the sensor and the run log, and update the sensor.',

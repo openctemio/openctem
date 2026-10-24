@@ -55,7 +55,10 @@ refuses the request has then removed what was exposed: that is a fix once
 seen twice, on two consecutive retests of the same check at least an hour
 apart, both answered by the origin (an edge-marked answer in between is not a
 refusal and resets the count; the reachability probe is not a second
-sighting). For every other class a refusal may only mean the check never
+sighting). The earlier refusal counts only when it is at most 14 days old and
+the finding was neither sighted nor reopened since it. Only a result of a
+command the platform dispatched sets the class: an API, CTIS or CI upload
+never does, whatever tags it carries. For every other class a refusal may only mean the check never
 reached the vulnerable code, so it stays inconclusive. The classification
 needs no new
 data from the sensor: the evidence it already reports carries the response.

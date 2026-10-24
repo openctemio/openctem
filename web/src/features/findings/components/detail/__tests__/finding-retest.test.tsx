@@ -286,6 +286,21 @@ describe('retestMeta', () => {
     expect(history.textContent).not.toContain('·')
   })
 
+  it('explains an origin access refusal on the latest retest', () => {
+    mockRetests = [
+      retest({
+        id: 'r-9',
+        outcome: 'inconclusive',
+        reason_code: 'access_denied',
+        reason: 'answered 403: access denied by the server',
+      }),
+    ]
+    render(<FindingRetestSection finding={nucleiFinding} />)
+    const help = document.querySelector('[data-slot="retest-inconclusive-help"]') as HTMLElement
+    expect(help.textContent).toMatch(/One refusal is not proof of a fix/)
+    expect(help.textContent).toMatch(/at least an hour later/)
+  })
+
   it("shows a pentest finding's manual retests with the tester's notes", () => {
     mockRetests = [
       retest({

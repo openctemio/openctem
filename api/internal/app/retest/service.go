@@ -792,7 +792,8 @@ func (s *Service) matchedAt(ctx context.Context, rt *retestdom.Retest) string {
 // the platform template that matched it is of the exposure class (from the
 // template tags the scanner recorded at the sighting, never the finding's
 // editable tags; a custom check never is) and whether its previous completed
-// retest, at least MinDenialGap ago, was an origin refusal of the same check.
+// retest, at least MinDenialGap and at most MaxDenialAge ago and after the finding's last
+// sighting or reopening, was an origin refusal of the same check.
 // Anything unreadable gives the careful answer.
 func (s *Service) settleClass(ctx context.Context, rt *retestdom.Retest) retestdom.Class {
 	var cls retestdom.Class
@@ -808,6 +809,7 @@ func (s *Service) settleClass(ctx context.Context, rt *retestdom.Retest) retestd
 		return cls
 	}
 	cls.Exposure = true
+	sightedAt := p.SightedAt
 	prev, err := s.store.ListByFinding(ctx, rt.TenantID, rt.FindingID, 5)
 	if err != nil {
 		return cls
@@ -818,7 +820,11 @@ func (s *Service) settleClass(ctx context.Context, rt *retestdom.Retest) retestd
 		}
 		cls.PriorAccessDenied = p.Outcome == retestdom.OutcomeInconclusive &&
 			p.ReasonCode == retestdom.ReasonAccessDenied && p.TemplateID == rt.TemplateID && p.Target == rt.Target &&
-			p.CompletedAt != nil && s.now().Sub(*p.CompletedAt) >= retestdom.MinDenialGap
+			p.CompletedAt != nil && s.now().Sub(*p.CompletedAt) >= retestdom.MinDenialGap &&
+			// A denial counts only when it is recent and the finding was not
+			// seen or reopened since: a sighting after it shows the page was
+			// reachable, so the refusal is no longer the first of a pair.
+			s.now().Sub(*p.CompletedAt) <= retestdom.MaxDenialAge && p.CompletedAt.After(sightedAt)
 		break
 	}
 	return cls
