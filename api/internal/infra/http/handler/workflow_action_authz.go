@@ -20,7 +20,7 @@ import (
 // Owners/admins bypass via middleware.HasPermission. nil configs and trigger
 // or condition nodes are ignored.
 //
-// Without this gate a user granted only WorkflowsWrite
+// Without this gate a user granted only AutomationsWrite
 // ("findings:workflows:write") could build a workflow whose nodes change
 // findings, start scans or send data out, which they were never granted (an
 // intra-tenant privilege escalation: permission matching is exact). The same
