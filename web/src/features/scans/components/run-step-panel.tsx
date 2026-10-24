@@ -11,9 +11,20 @@ import type { RunMapNode, RunStepOutputs, RunTask } from '@/lib/api/generated'
 import { toDisplayText } from '@/lib/untrusted-text'
 import { nodeBadgeLines, outputsByType, outputsDeltaLabel, stepTasks } from '../lib/run-map'
 import { RunTasksTable } from './run-tasks-table'
-import { StepFailureHelp } from './code-help'
+import { StepFailureHelp, StepOutcome } from './code-help'
+import { FAILURE_FIX, SENSOR_TEXT_CODES } from '../lib/placement-help'
 
 const PREVIEW_LIMIT = 20
+
+/**
+ * The step's own message is the sensor's or the tool's text: shown for the
+ * codes that carry it, and for a code this console does not know. A known
+ * code is explained by its help and the structured outcome instead of the
+ * English summary.
+ */
+function showSensorText(code: string | undefined): boolean {
+  return !code || SENSOR_TEXT_CODES.has(code) || !(code in FAILURE_FIX)
+}
 
 /** Map states whose reason is the step's error code. */
 const FAILED_STATES = new Set(['failed', 'partial', 'skipped', 'canceled'])
@@ -74,11 +85,17 @@ export function RunStepPanel({
         {counts.map((line) => (
           <p key={line}>{line}</p>
         ))}
-        {node.error_message ? (
-          <p className="whitespace-pre-wrap text-destructive">{node.error_message}</p>
-        ) : null}
         {node.reason && FAILED_STATES.has(node.state ?? '') ? (
           <StepFailureHelp code={node.reason} errorClass={node.error_class} />
+        ) : null}
+        <StepOutcome outcome={node.outcome} />
+        {node.error_message && showSensorText(node.reason) ? (
+          <div>
+            <p className="font-medium text-foreground">{t('scans.step.sensorMessage')}</p>
+            <p className="whitespace-pre-wrap text-destructive">
+              {toDisplayText(node.error_message)}
+            </p>
+          </div>
         ) : null}
       </div>
 
