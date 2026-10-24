@@ -880,5 +880,7 @@ func registerWorkflowRoutes(
 
 		// Write operations
 		r.POST("/{id}/cancel", h.CancelRun, middleware.Require(permission.AutomationsWrite))
+		// A run paused at its change cap continues only on a publisher's word.
+		r.POST("/{id}/approve", h.ResumeRun, middleware.Require(permission.AutomationsPublish))
 	}, tenantMiddlewares...)
 }
