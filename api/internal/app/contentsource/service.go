@@ -131,6 +131,10 @@ type Actor struct {
 	TenantID shared.ID
 	UserID   *shared.ID
 	Audit    auditapp.AuditContext
+	// CanApprove: the caller holds scans:sources:approve (set by the
+	// handler from the request's permissions). Weakening a source's review
+	// needs it.
+	CanApprove bool
 }
 
 func (s *Service) logAudit(ctx context.Context, actx auditapp.AuditContext, tenantID *shared.ID, ev auditapp.AuditEvent) {
@@ -405,6 +409,15 @@ func (s *Service) Update(ctx context.Context, a Actor, id shared.ID, in UpdateIn
 			if err := s.requireFeature(ctx, a.TenantID, limits.FeatureContentReviewPolicy); err != nil {
 				return nil, err
 			}
+		}
+		// SECURITY: review exists so a second member approves what the
+		// source delivers. Turning it off lets the next sync promote on its
+		// own, so it takes the approval permission, not only write.
+		if oldPolicy == dom.PolicyReview && src.Policy != dom.PolicyReview && !a.CanApprove {
+			s.logAudit(ctx, a.Audit, src.TenantID, auditapp.NewDeniedEvent(auditdom.ActionContentSourcePolicyChanged,
+				auditdom.ResourceTypeContentSource, src.ID.String(), "weakening the promotion policy needs the approval permission").
+				WithResourceName(src.Slug).WithMetadata("from", string(oldPolicy)).WithMetadata("to", string(src.Policy)))
+			return nil, dom.ErrApprovalRequired
 		}
 	}
 	if in.SyncIntervalMin != nil && *in.SyncIntervalMin != src.SyncIntervalMin {

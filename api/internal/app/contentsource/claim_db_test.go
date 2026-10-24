@@ -190,3 +190,35 @@ func TestRuleSources_ClaimIsRoundRobinPerTenant_DB(t *testing.T) {
 		t.Fatalf("claim order %v, want [a1 b a2 a3] (one source per tenant per round, requested first within a tenant)", order)
 	}
 }
+
+// SECURITY: turning review off takes the approval permission; write alone
+// cannot, or one member could switch review off and let the next sync
+// promote its own change.
+func TestRuleSources_WeakeningReviewNeedsApproval_DB(t *testing.T) {
+	e := newEnv(t)
+	ctx := context.Background()
+	src := e.create(t, "acme-weaken", func(in *app.CreateInput) { in.Policy = "review" })
+	auto := "auto"
+	writer := e.actor(e.tenantA, e.user2)
+	if _, err := e.svc.Update(ctx, writer, src.ID, app.UpdateInput{Policy: &auto}); !errors.Is(err, dom.ErrApprovalRequired) {
+		t.Fatalf("review to auto without the approval permission: %v", err)
+	}
+	if got, _ := e.repo.Get(ctx, e.tenantA, src.ID); got.Policy != dom.PolicyReview {
+		t.Fatalf("the refused change was stored: %s", got.Policy)
+	}
+	// Other edits by the writer are unaffected, and an approver may weaken.
+	desc := "x"
+	if _, err := e.svc.Update(ctx, writer, src.ID, app.UpdateInput{Description: &desc}); err != nil {
+		t.Fatal(err)
+	}
+	approver := writer
+	approver.CanApprove = true
+	if _, err := e.svc.Update(ctx, approver, src.ID, app.UpdateInput{Policy: &auto}); err != nil {
+		t.Fatalf("review to auto by an approver: %v", err)
+	}
+	// Raising to review is allowed with write.
+	review := "review"
+	if _, err := e.svc.Update(ctx, writer, src.ID, app.UpdateInput{Policy: &review}); err != nil {
+		t.Fatalf("auto to review: %v", err)
+	}
+}
