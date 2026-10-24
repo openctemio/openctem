@@ -54,8 +54,10 @@ export function FindingLifecycleSettings() {
 
   const catalog = subs.data.data ?? []
 
+  // A fragment: the notice and the tabs are blocks of the page's PageStack,
+  // so the tabs sit 16px under the page header like every tab row.
   return (
-    <div className="space-y-5">
+    <>
       {!canWrite && (
         <ReadOnlyNotice
           reason={t(
@@ -73,7 +75,7 @@ export function FindingLifecycleSettings() {
             {t('findingLifecycle.tabs.lifecycles', 'Lifecycles')}
           </TabsTrigger>
         </TabsList>
-        <TabsContent value="sub-statuses" className="mt-4">
+        <TabsContent value="sub-statuses">
           <SettingsSection
             title={t('findingLifecycle.subStatus.title', 'Sub-statuses')}
             description={
@@ -117,10 +119,10 @@ export function FindingLifecycleSettings() {
             />
           </SettingsSection>
         </TabsContent>
-        <TabsContent value="lifecycles" className="mt-4">
+        <TabsContent value="lifecycles">
           <LifecycleSchemes catalog={catalog} canWrite={canWrite} limit={schemeLimit} />
         </TabsContent>
       </Tabs>
-    </div>
+    </>
   )
 }

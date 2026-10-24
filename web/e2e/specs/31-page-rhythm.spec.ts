@@ -67,6 +67,17 @@ const EXCEPTIONS: Record<string, string> = {
   '/ci-cd/github-app/callback': 'finishes the GitHub App install, then leaves',
 }
 
+/**
+ * Detail and editor pages with their own header layout (DetailHeader, a
+ * full-width editor): the block rhythm is not checked there, every other rule
+ * is. Their text layout is covered by 30-drawer-text-layout.
+ */
+const OWN_LAYOUT = [
+  /^\/findings\/(?!approvals$)[^/]+$/,
+  /^\/remediation\/campaigns\/[^/]+$/,
+  /^\/pentest\/findings\/new$/,
+]
+
 const PAGE_GAP = 20
 const TIGHT_GAP = 16
 const NAME_MIN_1440 = 160
@@ -151,10 +162,10 @@ async function probe(page: Page): Promise<Probe> {
           .map((x) => (x.textContent ?? '').trim()),
       }
     })
-    const rowFilterSegmented = Array.from(main.querySelectorAll('[role="radiogroup"]'))
-      .filter(
-        (n) => shown(n) && !overlay(n) && !n.closest('form,[data-slot=card],[data-view-mode]')
-      )
+    // A SegmentedLens on a page (the control that used to filter rows); radio
+    // and toggle groups in forms and wizards are inputs, not row filters.
+    const rowFilterSegmented = Array.from(main.querySelectorAll('[data-testid="segmented-lens"]'))
+      .filter((n) => shown(n) && !overlay(n))
       .map((n) => n.getAttribute('aria-label') ?? '')
 
     const metricStrips = Array.from(main.querySelectorAll('[data-slot="metric-strip"]'))
@@ -218,9 +229,12 @@ async function checkAt(page: Page, route: string, width: number) {
   const r = await probe(page)
   const at = `${route} at ${width}px`
 
-  expect(r.stack, `${at}: the page's blocks sit in a PageStack`).toBe(true)
-  for (const p of r.pairs) {
-    const want = p.from === 'page-header' && p.to === 'page-tabs' ? TIGHT_GAP : PAGE_GAP
+  const ownLayout = OWN_LAYOUT.some((re) => re.test(route.split('?')[0]))
+  if (!ownLayout) expect(r.stack, `${at}: the page's blocks sit in a PageStack`).toBe(true)
+  for (const p of ownLayout ? [] : r.pairs) {
+    // Route tabs (page-tabs) and in-page tabs (tabs) both sit 16px under the header.
+    const want =
+      p.from === 'page-header' && (p.to === 'page-tabs' || p.to === 'tabs') ? TIGHT_GAP : PAGE_GAP
     expect
       .soft(Math.abs(p.gap - want), `${at}: ${p.from} -> ${p.to} is ${p.gap}px, want ${want}px`)
       .toBeLessThanOrEqual(1)
