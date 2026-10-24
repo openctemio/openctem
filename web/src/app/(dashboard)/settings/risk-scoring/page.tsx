@@ -544,7 +544,7 @@ export default function ScoringConfigurationPage() {
                   label="CTEM"
                   value={config.weights.ctem}
                   onChange={(v) => updateWeight('ctem', v)}
-                  color="#3b82f6"
+                  color="#3b82f6" // label-ok: slider track colour, matches the CTEM bar segment
                   tooltip="Continuous Threat Exposure Management bonus points for factors like PII exposure, internet accessibility, and compliance risk"
                 />
                 {!config.ctem_points.enabled && config.weights.ctem > 0 && (
@@ -735,7 +735,7 @@ export default function ScoringConfigurationPage() {
                         'Risk = findings score × exposure % × criticality % × (1 − control reduction).'
                       )
                     : (config.score_composition_mode ?? 'multiply') === 'amplify_headroom'
-                      ? 'Highly-exposed critical assets no longer all pin at 100 — the exposure boost fills the remaining range instead of overflowing. Improves ranking at the top.'
+                      ? 'Highly-exposed critical assets no longer all pin at 100: the exposure boost fills the remaining range instead of overflowing. Improves ranking at the top.'
                       : 'Exposure multiplier scales the whole score.'}
                 </p>
               </div>

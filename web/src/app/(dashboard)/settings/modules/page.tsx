@@ -2,6 +2,7 @@
 
 import { useState, useCallback, useMemo } from 'react'
 import { Main } from '@/components/layout'
+import { useFormatList } from '@/lib/format-list'
 import { PageHeader, SettingsSaveBar, PageStack } from '@/features/shared'
 import { useTenant } from '@/context/tenant-provider'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
@@ -106,6 +107,7 @@ const PHASE_GROUPS: { key: string; label: string; categories: string[] }[] = [
 
 export default function ModuleManagementPage() {
   const { t } = useTranslation()
+  const formatList = useFormatList()
   const pageDescription = t(
     'settings.modules.pageDescription',
     'Pick the products your team runs and fine-tune individual features. Turning a module off hides it; its data is kept.'
@@ -544,14 +546,12 @@ export default function ModuleManagementPage() {
             onSave={() => void handleSave()}
             onDiscard={handleDiscard}
             summary={
-              [
+              formatList([
                 pendingEnabled > 0 &&
                   t('settings.modules.toEnable', '{count} to enable', { count: pendingEnabled }),
                 pendingDisabled > 0 &&
                   t('settings.modules.toDisable', '{count} to disable', { count: pendingDisabled }),
-              ]
-                .filter(Boolean)
-                .join(' · ') || undefined
+              ]) || undefined
             }
           />
         </Can>
