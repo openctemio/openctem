@@ -18,6 +18,7 @@ import {
   DetailSection,
   DetailSections,
   DetailSheet,
+  PageStack,
 } from '@/features/shared'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -294,19 +295,20 @@ export default function AuditLogPage() {
   if (!hasAuditPermission) {
     return (
       <Main>
-        <PageHeader
-          title={t('auditLog.title', 'Audit log')}
-          description={t('auditLog.description', 'Activity history and security events.')}
-        />
-        <EmptyState
-          className="mt-5"
-          icon={ShieldX}
-          title={t('auditLog.denied.title', 'Access denied')}
-          description={t(
-            'auditLog.denied.description',
-            "You don't have permission to view audit logs. Ask your administrator for access."
-          )}
-        />
+        <PageStack>
+          <PageHeader
+            title={t('auditLog.title', 'Audit log')}
+            description={t('auditLog.description', 'Activity history and security events.')}
+          />
+          <EmptyState
+            icon={ShieldX}
+            title={t('auditLog.denied.title', 'Access denied')}
+            description={t(
+              'auditLog.denied.description',
+              "You don't have permission to view audit logs. Ask your administrator for access."
+            )}
+          />
+        </PageStack>
       </Main>
     )
   }
@@ -447,43 +449,33 @@ export default function AuditLogPage() {
   return (
     <>
       <Main>
-        <PageHeader
-          title={t('auditLog.title', 'Audit log')}
-          description={t('auditLog.description', 'Activity history and security events.')}
-        />
-
-        {!needsFullData && (
-          <MetricStrip
-            className="mt-5"
-            loading={statsLoading}
-            items={[
-              {
-                key: 'total',
-                label: t('auditLog.stat.total', 'Events (7 days)'),
-                value: stats?.total_logs ?? 0,
-              },
-              {
-                key: 'success',
-                label: t('auditLog.stat.success', 'Successful'),
-                value: stats?.logs_by_result?.success ?? 0,
-              },
-              {
-                key: 'failure',
-                label: t('auditLog.stat.failed', 'Failed'),
-                value: stats?.logs_by_result?.failure ?? 0,
-                tone: 'danger',
-              },
-              {
-                key: 'denied',
-                label: t('auditLog.stat.denied', 'Denied'),
-                value: stats?.logs_by_result?.denied ?? 0,
-                tone: 'danger',
-              },
-            ]}
+        <PageStack>
+          <PageHeader
+            title={t('auditLog.title', 'Audit log')}
+            description={t('auditLog.description', 'Activity history and security events.')}
           />
-        )}
 
-        <div className="mt-5">
+          {!needsFullData && (
+            <MetricStrip
+              loading={statsLoading}
+              items={(['failure', 'denied'] as const).map((r) => ({
+                key: r,
+                label:
+                  r === 'failure'
+                    ? t('auditLog.stat.failed', 'Failed')
+                    : t('auditLog.stat.denied', 'Denied'),
+                value: stats?.logs_by_result?.[r] ?? 0,
+                hint: t('auditLog.stat.window', 'last 7 days'),
+                tone: 'danger' as const,
+                active: resultFilter === r,
+                onClick: () => {
+                  setResultParam(resultFilter === r ? 'all' : r)
+                  setPage(1)
+                },
+              }))}
+            />
+          )}
+
           {needsFullData ? (
             <EmptyState
               icon={ShieldX}
@@ -541,7 +533,7 @@ export default function AuditLogPage() {
               }
             />
           )}
-        </div>
+        </PageStack>
       </Main>
 
       {/* Audit Log Detail Sheet */}
