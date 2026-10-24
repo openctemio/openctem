@@ -370,7 +370,7 @@ export default function ProgramPage({ params }: { params: Promise<{ id: string }
                   'Its scope entries stop authorizing scans until someone reactivates it and accepts the program terms again.'
                 )
           }
-        typeToConfirm={pending === 'end' ? confirmName(p.name, p.id) : undefined}
+          typeToConfirm={pending === 'end' ? confirmName(p.name, p.id) : undefined}
           confirmText={
             pending === 'end'
               ? t('confirm.program.end', 'End program')
