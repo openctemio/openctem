@@ -19,7 +19,6 @@ const ALLOWED = new Set([
   'stores/auth-store.ts',
   'hooks/use-display-user.ts',
   'features/auth/hooks/use-permissions.ts',
-  'features/auth/hooks/use-auth.ts',
   'lib/permissions/hooks.ts',
 ])
 

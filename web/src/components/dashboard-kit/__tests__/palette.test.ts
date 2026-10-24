@@ -6,9 +6,10 @@ import {
   accentBandHits,
   checkAll,
   validateCategorical,
+  validateOrdinal,
 } from '../../../../scripts/check-palette.mjs'
 import palette from '@/lib/chart-palette.json'
-import { categoricalVar, seriesVar } from '@/lib/chart-palette'
+import { categoricalVar, levelVar, seriesFill, seriesVar } from '@/lib/chart-palette'
 
 const WEB = path.resolve(__dirname, '../../../..')
 
@@ -40,5 +41,29 @@ describe('chart palettes', () => {
     expect(seriesVar('fixed', 0)).toBe('var(--viz-div-fixed)')
     expect(categoricalVar(0)).toBe('var(--viz-cat-1)')
     expect(categoricalVar(8)).toBe('var(--viz-cat-other)')
+  })
+
+  it('the previously shipped priority ramp fails the ordinal rule (the reason for the new one)', () => {
+    // P2 and P3 had the same lightness: one colour to a reader with tritanopia.
+    const old = validateOrdinal(['#5b21b6', '#7c3aed', '#8f6ee6', '#7d8799'], {
+      surface: '#ffffff',
+    })
+    expect(old.fails.join('\n')).toMatch(/lightness change/)
+    expect(validateOrdinal(palette.priority.light, { surface: '#ffffff' }).fails).toEqual([])
+    expect(
+      validateOrdinal(palette.priority.dark, { surface: palette.surfaces.dark }).fails
+    ).toEqual([])
+  })
+
+  it('"none" is a hatch and SLA states take the health colours, never a categorical slot', () => {
+    expect(seriesVar('none', 3)).toBe('var(--viz-prio-none)')
+    expect(seriesFill('none', 3)).toMatch(/^repeating-linear-gradient\(.*var\(--viz-prio-none\)/)
+    expect(seriesFill('P1', 1)).toBe('var(--prio-1)')
+    expect(seriesVar('breached', 0)).toBe('var(--hl-down)')
+    expect(seriesVar('warning', 1)).toBe('var(--hl-warn)')
+    expect(seriesVar('ok', 2)).toBe('var(--hl-ok)')
+    // Prototype names are ordinary keys.
+    expect(seriesVar('toString', 0)).toBe('var(--viz-cat-1)')
+    expect(levelVar('critical')).toBe('var(--viz-lvl-critical)')
   })
 })

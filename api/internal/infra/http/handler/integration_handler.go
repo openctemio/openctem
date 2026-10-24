@@ -1991,7 +1991,8 @@ func (h *IntegrationHandler) auditIntegrationUpdate(r *http.Request, id, name st
 	credsChanged := credentials != nil && *credentials != ""
 	severity := auditdom.SeverityMedium
 	for _, f := range auditapp.ChangedFields(changes) {
-		if f == "base_url" || strings.HasSuffix(f, ".base_url") || strings.HasSuffix(f, "url") {
+		if f == "base_url" || strings.HasSuffix(f, ".base_url") || strings.HasSuffix(f, "url") ||
+			strings.HasSuffix(f, "smtp_host") || strings.HasSuffix(f, "smtp_port") {
 			severity = auditdom.SeverityHigh
 		}
 	}

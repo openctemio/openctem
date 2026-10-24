@@ -430,7 +430,10 @@ the window. The approval rule (approver ≠ requester) stays.
 ### 6.3 Settings (S5)
 
 **`GET /settings`** (`scope:read`) and **`PUT /settings`** (`scope:approve`,
-**step-up**; every admin notified, audited):
+**step-up**; every admin notified, audited). Lowering `widening_approvals`
+(including omitting it, which resets to the default, when that is lower) is
+owner only: an administrator gets 403 and nothing is written; raising it stays
+with approvers:
 
 ```json
 {
