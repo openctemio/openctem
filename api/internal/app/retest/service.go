@@ -671,6 +671,7 @@ func (s *Service) Sweep(ctx context.Context, limit int) (int, error) {
 // passed), it decides and settles. Returns whether it settled.
 func (s *Service) trySettle(ctx context.Context, rt *retestdom.Retest, force bool) (bool, error) {
 	matchedAt := s.matchedAt(ctx, rt)
+	cls := s.settleClass(ctx, rt)
 	if rt.CheckID != nil {
 		// A custom check proves the endpoint it requests, not the one the
 		// finding was reported at.
@@ -687,7 +688,7 @@ func (s *Service) trySettle(ctx context.Context, rt *retestdom.Retest, force boo
 		case cmd == nil:
 			v = retestdom.Inconclusive(retestdom.ReasonNoResult, "no result from the tool's retest")
 		case cmd.Status == commanddom.CommandStatusCompleted:
-			tr = retestdom.DecideToolVerdict(cmd.Result, rt.FindingID.String(), matchedAt)
+			tr = retestdom.DecideToolVerdict(cmd.Result, rt.FindingID.String(), matchedAt, cls)
 			v = tr.Verdict
 		case done:
 			v = retestdom.Inconclusive(retestdom.ReasonError, "the tool's retest did not complete: "+
@@ -710,7 +711,7 @@ func (s *Service) trySettle(ctx context.Context, rt *retestdom.Retest, force boo
 	if !(checkDone && reachDone) && !force {
 		return false, nil
 	}
-	v := retestdom.Decide(check, reach, matchedAt)
+	v := retestdom.Decide(check, reach, matchedAt, cls)
 	if !(checkDone && reachDone) && v.Outcome == retestdom.OutcomeInconclusive && v.Code == retestdom.ReasonNoResult {
 		v.Reason = "no sensor result before the deadline"
 	}
@@ -785,6 +786,36 @@ func (s *Service) matchedAt(ctx context.Context, rt *retestdom.Retest) string {
 		return ""
 	}
 	return f.FilePath()
+}
+
+// settleClass is what the settlement needs to know about the finding: whether
+// its check is an exposure class (from the template tags recorded with the
+// finding; a custom check never is) and whether its previous completed
+// retest was an origin refusal of the same check. Anything unreadable gives
+// the careful answer (not exposure, no prior refusal).
+func (s *Service) settleClass(ctx context.Context, rt *retestdom.Retest) retestdom.Class {
+	var cls retestdom.Class
+	if rt.CheckID == nil {
+		if f, err := s.findings.GetByID(ctx, rt.TenantID, rt.FindingID); err == nil && f != nil {
+			cls.Exposure = retestdom.ExposureClass(f.Tags())
+		}
+	}
+	if !cls.Exposure {
+		return cls
+	}
+	prev, err := s.store.ListByFinding(ctx, rt.TenantID, rt.FindingID, 5)
+	if err != nil {
+		return cls
+	}
+	for _, p := range prev {
+		if p.ID == rt.ID || p.Status != retestdom.StatusCompleted {
+			continue
+		}
+		cls.PriorAccessDenied = p.Outcome == retestdom.OutcomeInconclusive &&
+			p.ReasonCode == retestdom.ReasonAccessDenied && p.TemplateID == rt.TemplateID && p.Target == rt.Target
+		break
+	}
+	return cls
 }
 
 // storeAttempt keeps what the re-run reported it sent and received.

@@ -1,10 +1,14 @@
 package retest
 
 import (
+	"encoding/base64"
+	"net/http"
 	"net/url"
 	"sort"
 	"strconv"
 	"strings"
+
+	"github.com/openctemio/sdk-go/pkg/edgeprotect"
 
 	"github.com/openctemio/openctem/api/pkg/domain/evidence"
 )
@@ -23,6 +27,10 @@ type Attempt struct {
 	Responded bool
 	// Status is the response status (0 without a response).
 	Status int
+	// Edge is what an edge protection (CDN or WAF) did with the request,
+	// read from the response's headers and body. Direct when no vendor
+	// marker is present: a bare 403 is the origin's own answer.
+	Edge edgeprotect.Verdict
 }
 
 // AnalyzeAttempt reads a re-run's evidence: the exchange at the finding's
@@ -52,8 +60,28 @@ func attemptOf(it *evidence.Item, matches bool) Attempt {
 	a := Attempt{Found: true, URL: it.HTTP.Request.URL, EndpointMatches: matches}
 	if r := it.HTTP.Response; r != nil && r.Status > 0 {
 		a.Responded, a.Status = true, r.Status
+		a.Edge = classifyEdge(r)
 	}
 	return a
+}
+
+// classifyEdge runs the edge detector over a recorded response. The body
+// is read as stored (text, or base64 decoded); a body that cannot be decoded
+// is classified on headers alone.
+func classifyEdge(r *evidence.HTTPResponse) edgeprotect.Verdict {
+	h := http.Header{}
+	for _, kv := range r.Headers {
+		h.Add(kv.Name, kv.Value)
+	}
+	body := []byte(r.Body)
+	if r.BodyEncoding == "base64" {
+		b, err := base64.StdEncoding.DecodeString(r.Body)
+		if err != nil {
+			b = nil
+		}
+		body = b
+	}
+	return edgeprotect.Classify(r.Status, h, "", body)
 }
 
 // endpointKey is a URL reduced to what identifies an endpoint: scheme, host,
@@ -105,7 +133,7 @@ func DisplayURL(raw string) string {
 // decideNotMatched turns a re-run that did not match into an outcome, from
 // what its evidence proves. reached says whether a separate reachability
 // probe (or the tool runtime) saw the target answer.
-func decideNotMatched(a Attempt, matchedAt string, reached bool, unreachableDetail string) Verdict {
+func decideNotMatched(a Attempt, matchedAt string, reached bool, unreachableDetail string, cls Class) Verdict {
 	if !a.Found {
 		if !reached {
 			return Verdict{Outcome: OutcomeInconclusive, Code: ReasonUnreachable,
@@ -123,10 +151,17 @@ func decideNotMatched(a Attempt, matchedAt string, reached bool, unreachableDeta
 	case !a.Responded:
 		return Verdict{Outcome: OutcomeInconclusive, Code: ReasonUnreachable,
 			Reason: "no HTTP response from " + shown}
-	case a.Status == 401 || a.Status == 407:
+	case a.Edge.State.Stops() || a.Edge.State == edgeprotect.RateLimited:
+		return Verdict{Outcome: OutcomeInconclusive, Code: ReasonEdgeBlocked,
+			Reason: shown + " answered " + strconv.Itoa(a.Status) + ": " + edgeLabel(a.Edge) +
+				" stopped the request before it reached the service, so the check could not see the issue. " +
+				"Allow the scanner at the edge, then retest"}
+	case a.Status == 401 || a.Status == 403:
+		return decideAccessDenied(a, shown, cls)
+	case a.Status == 407:
 		return Verdict{Outcome: OutcomeInconclusive, Code: ReasonAuthChanged,
 			Reason: shown + " answered " + strconv.Itoa(a.Status) + ": authentication is required now, so the check could not see the issue"}
-	case a.Status == 403 || a.Status == 429:
+	case a.Status == 429:
 		return Verdict{Outcome: OutcomeInconclusive, Code: ReasonBlocked,
 			Reason: shown + " answered " + strconv.Itoa(a.Status) + ": the request was blocked or rate limited"}
 	case a.Status >= 500:
@@ -135,4 +170,32 @@ func decideNotMatched(a Attempt, matchedAt string, reached bool, unreachableDeta
 	}
 	return Verdict{Outcome: OutcomeConfirmedFixed, Code: ReasonNotMatched,
 		Reason: shown + " answered " + strconv.Itoa(a.Status) + " and the check did not match"}
+}
+
+// edgeLabel names the edge that stopped a request.
+func edgeLabel(v edgeprotect.Verdict) string {
+	if v.Vendor == "" {
+		return "an edge protection (CDN or WAF)"
+	}
+	return "the " + strings.ReplaceAll(v.Vendor, "_", " ") + " edge protection"
+}
+
+// decideAccessDenied settles an origin 401 or 403 (no edge marker). For an
+// exposure class check (an exposed page, document or panel) the server now
+// refusing the request is the fix, once it is seen twice: on two retests in
+// a row, or on one retest while the reachability probe saw the host answer.
+// For any other class a refusal says nothing about the weakness, because the
+// check may simply have been refused before reaching the vulnerable code.
+func decideAccessDenied(a Attempt, shown string, cls Class) Verdict {
+	status := strconv.Itoa(a.Status)
+	if !cls.Exposure {
+		return Verdict{Outcome: OutcomeInconclusive, Code: ReasonAccessDenied,
+			Reason: shown + " answered " + status + ": access denied: cannot confirm the fix"}
+	}
+	if cls.PriorAccessDenied || cls.ReachConfirmed {
+		return Verdict{Outcome: OutcomeConfirmedFixed, Code: ReasonAccessDenied,
+			Reason: shown + " answered " + status + ": access now denied by the server"}
+	}
+	return Verdict{Outcome: OutcomeInconclusive, Code: ReasonAccessDenied,
+		Reason: shown + " answered " + status + ": access denied by the server; the next retest confirms the fix if it is denied again"}
 }

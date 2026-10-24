@@ -158,8 +158,9 @@ require (
 	github.com/go-pdf/fpdf v0.9.0
 	github.com/go-webauthn/webauthn v0.18.2
 	github.com/mattermost/xml-roundtrip-validator v0.1.0
-	github.com/openctemio/ctis v1.6.2-0.20261023081709-bc8bcc126940
+	github.com/openctemio/ctis v1.6.2
 	github.com/openctemio/ctis/transfer v0.1.0
+	github.com/openctemio/sdk-go v0.37.1-0.20261024154503-206bca19944e
 	github.com/pires/go-proxyproto v0.15.0
 	github.com/russellhaering/goxmldsig v1.6.0
 	github.com/santhosh-tekuri/jsonschema/v6 v6.0.3

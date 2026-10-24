@@ -379,11 +379,11 @@ func TestRetestDB_ConfirmedFixAwaitsAPersonUnlessAutoResolve(t *testing.T) {
 		t.Fatalf("path-doubled attempt = %+v, want inconclusive endpoint_mismatch", got)
 	}
 
-	// A blocked attempt is not a fix.
+	// A refused attempt is not a fix.
 	b := fx.newFinding(fx.newAsset("waf.example.com"), "confirmed", "exposed-admin-panel-3")
 	fx.exec(`UPDATE findings SET file_path = 'https://waf.example.com/admin' WHERE id = $1`, b.String())
-	if got = settle(b, "https://waf.example.com/admin", 403); got.ReasonCode != retestdom.ReasonBlocked {
-		t.Fatalf("403 attempt = %+v, want blocked", got)
+	if got = settle(b, "https://waf.example.com/admin", 403); got.ReasonCode != retestdom.ReasonAccessDenied {
+		t.Fatalf("403 attempt = %+v, want access_denied", got)
 	}
 
 	// With auto_resolve the confirmed fix resolves, by the requester.
@@ -744,5 +744,47 @@ func TestRetestDB_AvailabilityReasons(t *testing.T) {
 	}
 	if _, _, err := fx.service().Availability(ctx, shared.NewID(), nuclei); !errors.Is(err, shared.ErrNotFound) {
 		t.Fatalf("cross-tenant: err = %v, want not found", err)
+	}
+}
+
+// An exposed page the server now refuses (401 or 403, no edge marker) is a fix
+// only when seen on two retests in a row; the first is inconclusive. A
+// challenge page of an edge is never a fix. The reason codes are stored.
+func TestRetestDB_OriginAccessDeniedOfExposureNeedsTwoRetests(t *testing.T) {
+	fx := newFixture(t)
+	svc := fx.service()
+	const at = "https://shop.example.com/admin"
+	f := fx.newFinding(fx.asset, "confirmed", "swagger-api")
+	fx.exec(`UPDATE findings SET tags = ARRAY['exposure','swagger','api'] WHERE id = $1`, f.String())
+
+	settle := func(rt *retestdom.Retest, status int, headers []map[string]string, body string) *retestdom.Retest {
+		ex := map[string]any{"request": map[string]any{"method": "GET", "url": at},
+			"response": map[string]any{"status": status, "headers": headers, "body": body}}
+		res, _ := json.Marshal(map[string]any{"metadata": map[string]any{"outcome": "not_detected", "summary": "re-run",
+			"evidence": map[string]any{"evidence_items": []map[string]any{{"kind": "http_exchange", "http": ex}}}}})
+		fx.exec(`UPDATE commands SET status = 'completed', result = $2, completed_at = NOW() WHERE id = $1`, rt.CheckCommandID.String(), res)
+		fx.finish(rt.ReachCommandID, "not_detected", "connection refused")
+		svc.OnCommandFinished(context.Background(), fx.tenant, *rt.ReachCommandID)
+		return fx.retest(rt.ID)
+	}
+	origin := []map[string]string{{"name": "Server", "value": "nginx"}}
+
+	first := settle(fx.request(svc, f), 403, origin, "Forbidden")
+	if first.Outcome != retestdom.OutcomeInconclusive || first.ReasonCode != retestdom.ReasonAccessDenied {
+		t.Fatalf("first retest = %s/%s (%s)", first.Outcome, first.ReasonCode, first.Reason)
+	}
+	fx.exec(`UPDATE finding_retests SET created_at = NOW() - interval '1 hour' WHERE tenant_id = $1`, fx.tenant.String())
+	second := settle(fx.request(svc, f), 403, origin, "Forbidden")
+	if second.Outcome != retestdom.OutcomeConfirmedFixed || second.ReasonCode != retestdom.ReasonAccessDenied ||
+		!strings.Contains(second.Reason, "access now denied by the server") {
+		t.Fatalf("second retest = %s/%s (%s)", second.Outcome, second.ReasonCode, second.Reason)
+	}
+
+	g := fx.newFinding(fx.newAsset("edge.example.com"), "confirmed", "swagger-api")
+	fx.exec(`UPDATE findings SET tags = ARRAY['exposure','swagger'] WHERE id = $1`, g.String())
+	edge := settle(fx.request(svc, g), 403, []map[string]string{{"name": "Server", "value": "cloudflare"}},
+		"<title>Attention Required! | Cloudflare</title> Sorry, you have been blocked. Cloudflare Ray ID")
+	if edge.Outcome != retestdom.OutcomeInconclusive || edge.ReasonCode != retestdom.ReasonEdgeBlocked {
+		t.Fatalf("edge retest = %s/%s (%s)", edge.Outcome, edge.ReasonCode, edge.Reason)
 	}
 }
