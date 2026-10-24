@@ -17,7 +17,7 @@ import {
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { useSearch } from '@/context/search-provider'
 import { useTranslation } from '@/context/i18n-provider'
-import { useDebounce } from '@/hooks/use-debounce'
+import { useSearchQuery } from '@/hooks/use-search-query'
 import { commandFilter } from '@/lib/command-filter'
 import { adminFetcher } from '@console/lib/admin-api/client'
 import { visibleAdminNav } from '../lib/admin-nav-visibility'
@@ -42,7 +42,7 @@ export function AdminCommandMenu() {
   const { t } = useTranslation()
   const admin = useAdmin()
   const [query, setQuery] = React.useState('')
-  const q = useDebounce(query.trim(), 200)
+  const q = useSearchQuery(query).term
 
   const orgPath =
     open && q.length >= ORG_SEARCH_MIN

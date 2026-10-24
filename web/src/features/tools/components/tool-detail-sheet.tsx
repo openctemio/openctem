@@ -1,6 +1,7 @@
 'use client'
 
 import { Badge } from '@/components/ui/badge'
+import { SignalChip } from '@/components/ui/signal-chip'
 import { Button } from '@/components/ui/button'
 import {
   DetailCallout,
@@ -34,7 +35,7 @@ import {
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { copyToClipboard } from '@/lib/clipboard'
-import { cn, sanitizeExternalUrl } from '@/lib/utils'
+import { sanitizeExternalUrl } from '@/lib/utils'
 import { formatRelative } from '@/lib/format-date'
 import { useState } from 'react'
 import type { Tool, ToolAvailabilityItem } from '@/lib/api/tool-types'
@@ -42,7 +43,7 @@ import type { ToolCategory } from '@/lib/api/tool-category-types'
 import { INSTALL_METHOD_DISPLAY_NAMES } from '@/lib/api/tool-types'
 import { getCategoryNameById, getCategoryDisplayNameById } from '@/lib/api/tool-category-hooks'
 import { CapabilityBadge } from '@/components/capability-badge'
-import { ToolCategoryIcon, getCategoryBadgeColor } from './tool-category-icon'
+import { ToolCategoryIcon } from './tool-category-icon'
 import { ToolSensorList, ToolStatusBadge, ToolTrustBadge } from './tool-availability'
 import {
   sensorsLabel,
@@ -225,13 +226,7 @@ export function ToolDetailSheet({
                 </Badge>
               )}
               {item.update_available && (
-                <Badge
-                  variant="outline"
-                  className="gap-1 border-warning/40 bg-warning/10 text-xs text-warning"
-                >
-                  <ArrowUpCircle className="h-3 w-3" />
-                  Update available
-                </Badge>
+                <SignalChip icon={ArrowUpCircle}>Update available</SignalChip>
               )}
             </>
           }
@@ -295,10 +290,7 @@ export function ToolDetailSheet({
             <DetailSection title="Details" icon={Layers}>
               <DetailFieldGrid>
                 <DetailField label="Category">
-                  <Badge
-                    variant="outline"
-                    className={cn('text-xs', getCategoryBadgeColor(categoryName))}
-                  >
+                  <Badge variant="outline" className="text-xs">
                     <ToolCategoryIcon category={categoryName} className="me-1 h-3 w-3" />
                     {categoryDisplayName}
                   </Badge>

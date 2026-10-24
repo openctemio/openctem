@@ -122,13 +122,17 @@ func (h *dsHarness) dsAuth(next http.Handler) http.Handler {
 
 func passthrough(next http.Handler) http.Handler { return next }
 
+// dsOpenDB opens the harness database; the read query budget test swaps in a
+// statement-counting driver (sqlcount).
+var dsOpenDB = func(dsn string) (*sql.DB, error) { return sql.Open("postgres", dsn) } //nolint:gochecknoglobals // test seam
+
 func newDSHarness(t *testing.T) *dsHarness {
 	t.Helper()
 	dbURL := testdb.URL()
 	if dbURL == "" {
 		t.Skip("DATABASE_URL not set to a test database; skipping data-scope DB test")
 	}
-	sqldb, err := sql.Open("postgres", dbURL)
+	sqldb, err := dsOpenDB(dbURL)
 	if err != nil {
 		t.Skipf("open db: %v", err)
 	}

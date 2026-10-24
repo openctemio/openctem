@@ -18,6 +18,7 @@ import { toast } from 'sonner'
 
 import { Main } from '@/components/layout'
 import { PageHeader } from '@/features/shared/components/page-header'
+import { PageStack } from '@/features/shared/components/page-stack'
 import { MetricStrip, type MetricStripItem } from '@/features/shared/components/metric-strip'
 import { DataTable } from '@/features/shared/components/data-table/data-table'
 import { DataTableColumnHeader } from '@/features/shared/components/data-table/data-table-column-header'
@@ -57,11 +58,9 @@ import {
   SuppressionApprovePreview,
   SuppressionFormDialog,
   SuppressionDetailSheet,
-  SUPPRESSION_STATUS_BADGE,
-  SUPPRESSION_TYPE_BADGE,
+  SuppressionStatusBadge,
+  SuppressionTypeBadge,
   suppressionScopeSummary,
-  suppressionStatusLabel,
-  suppressionTypeLabel,
   type SuppressionRule,
   type SuppressionStatus,
 } from '@/features/exceptions'
@@ -69,9 +68,8 @@ import { useTranslation } from '@/context/i18n-provider'
 import { useAuthStore } from '@/stores/auth-store'
 import { SelfApproveDialog } from '@/features/shared/components/self-approve-dialog'
 
-// Approve action accent in the row menu. There is no success token, so the
-// palette-drift gate is told to allow it here.
-const MENU_APPROVE_ICON = 'text-emerald-500' // palette-ok: approve = success accent
+// Approve action accent in the row menu.
+const MENU_APPROVE_ICON = 'text-success'
 
 function relative(iso?: string | null): string {
   if (!iso) return '—'
@@ -311,7 +309,7 @@ export default function ExceptionsPage() {
             <p className="font-medium text-sm truncate">
               {row.original.name}
               {row.original.review_flagged_at && (
-                <Badge variant="outline" className="ms-2 align-middle text-[10px]">
+                <Badge variant="outline" className="ms-2 align-middle text-xs">
                   {t('exceptions.page.reviewBadge', 'Review')}
                 </Badge>
               )}
@@ -330,11 +328,7 @@ export default function ExceptionsPage() {
         ),
         cell: ({ row }) => {
           const type = row.original.suppression_type
-          return (
-            <Badge variant="outline" className={cn('text-xs', SUPPRESSION_TYPE_BADGE[type])}>
-              {suppressionTypeLabel(type, t)}
-            </Badge>
-          )
+          return <SuppressionTypeBadge type={type} />
         },
         enableSorting: true,
       },
@@ -345,11 +339,7 @@ export default function ExceptionsPage() {
         ),
         cell: ({ row }) => {
           const s = row.original.status
-          return (
-            <Badge variant="outline" className={cn('text-xs', SUPPRESSION_STATUS_BADGE[s])}>
-              {suppressionStatusLabel(s, t)}
-            </Badge>
-          )
+          return <SuppressionStatusBadge status={s} />
         },
         enableSorting: true,
       },
@@ -491,78 +481,80 @@ export default function ExceptionsPage() {
   return (
     <>
       <Main>
-        <PageHeader
-          title={t('exceptions.page.title', 'Exceptions')}
-          description={t(
-            'exceptions.page.description',
-            'Suppression rules that hide false positives and accepted risks, with an approval step.'
-          )}
-        >
-          <Can permission={Permission.SuppressionsWrite}>
-            <Button size="sm" onClick={openCreate}>
-              <Plus className="h-4 w-4 sm:me-2" />
-              <span className="sr-only sm:not-sr-only">
-                {t('exceptions.page.newRule', 'New rule')}
-              </span>
-            </Button>
-          </Can>
-        </PageHeader>
-
-        <MetricStrip className="mt-5" loading={isInitialLoading} items={metrics} />
-
-        <div className="mt-5">
-          {error && !isLoading ? (
-            <Alert variant="destructive">
-              <AlertCircle className="h-4 w-4" />
-              <AlertTitle>
-                {t('exceptions.page.loadError', 'Failed to load suppression rules')}
-              </AlertTitle>
-              <AlertDescription className="flex flex-wrap items-center gap-3">
-                <span>
-                  {error?.message ||
-                    t('exceptions.page.unexpectedError', 'An unexpected error occurred')}
+        <PageStack>
+          <PageHeader
+            title={t('exceptions.page.title', 'Exceptions')}
+            description={t(
+              'exceptions.page.description',
+              'Suppression rules that hide false positives and accepted risks, with an approval step.'
+            )}
+          >
+            <Can permission={Permission.SuppressionsWrite}>
+              <Button size="sm" onClick={openCreate}>
+                <Plus className="h-4 w-4 sm:me-2" />
+                <span className="sr-only sm:not-sr-only">
+                  {t('exceptions.page.newRule', 'New rule')}
                 </span>
-                <Button variant="outline" size="sm" onClick={() => mutate()}>
-                  <RefreshCw className="me-2 h-4 w-4" />
-                  {t('exceptions.page.retry', 'Retry')}
-                </Button>
-              </AlertDescription>
-            </Alert>
-          ) : isInitialLoading ? (
-            <TableSkeleton />
-          ) : (
-            <DataTable
-              columns={columns}
-              data={filteredRules}
-              searchPlaceholder={t('exceptions.page.search', 'Search by name...')}
-              searchKey="name"
-              showColumnToggle={false}
-              onRowClick={openDetail}
-              toolbarEnd={
-                <Button
-                  variant="outline"
-                  size="icon"
-                  className="h-9 w-9"
-                  onClick={handleRefresh}
-                  disabled={isLoading}
-                  aria-label={t('exceptions.page.refresh', 'Refresh')}
-                  title={t('exceptions.page.refresh', 'Refresh')}
-                >
-                  <RefreshCw className={cn('h-4 w-4', isLoading && 'animate-spin')} />
-                </Button>
-              }
-              emptyMessage={t('exceptions.page.empty', 'No suppression rules')}
-              emptyDescription={
-                activeTab === 'all'
-                  ? t(
-                      'exceptions.page.emptyAll',
-                      'Create a rule to suppress false positives or accepted risks.'
-                    )
-                  : t(`exceptions.page.empty.${activeTab}`, `No ${activeTab} suppression rules.`)
-              }
-            />
-          )}
-        </div>
+              </Button>
+            </Can>
+          </PageHeader>
+
+          <MetricStrip loading={isInitialLoading} items={metrics} />
+
+          <div>
+            {error && !isLoading ? (
+              <Alert variant="destructive">
+                <AlertCircle className="h-4 w-4" />
+                <AlertTitle>
+                  {t('exceptions.page.loadError', 'Failed to load suppression rules')}
+                </AlertTitle>
+                <AlertDescription className="flex flex-wrap items-center gap-3">
+                  <span>
+                    {error?.message ||
+                      t('exceptions.page.unexpectedError', 'An unexpected error occurred')}
+                  </span>
+                  <Button variant="outline" size="sm" onClick={() => mutate()}>
+                    <RefreshCw className="me-2 h-4 w-4" />
+                    {t('exceptions.page.retry', 'Retry')}
+                  </Button>
+                </AlertDescription>
+              </Alert>
+            ) : isInitialLoading ? (
+              <TableSkeleton />
+            ) : (
+              <DataTable
+                columns={columns}
+                data={filteredRules}
+                searchPlaceholder={t('exceptions.page.search', 'Search by name...')}
+                searchKey="name"
+                showColumnToggle={false}
+                onRowClick={openDetail}
+                toolbarEnd={
+                  <Button
+                    variant="outline"
+                    size="icon"
+                    className="h-9 w-9"
+                    onClick={handleRefresh}
+                    disabled={isLoading}
+                    aria-label={t('exceptions.page.refresh', 'Refresh')}
+                    title={t('exceptions.page.refresh', 'Refresh')}
+                  >
+                    <RefreshCw className={cn('h-4 w-4', isLoading && 'animate-spin')} />
+                  </Button>
+                }
+                emptyMessage={t('exceptions.page.empty', 'No suppression rules')}
+                emptyDescription={
+                  activeTab === 'all'
+                    ? t(
+                        'exceptions.page.emptyAll',
+                        'Create a rule to suppress false positives or accepted risks.'
+                      )
+                    : t(`exceptions.page.empty.${activeTab}`, `No ${activeTab} suppression rules.`)
+                }
+              />
+            )}
+          </div>
+        </PageStack>
       </Main>
 
       {/* Detail sheet */}
