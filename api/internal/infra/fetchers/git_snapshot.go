@@ -38,10 +38,18 @@ const gitTimeout = 5 * time.Minute
 // registry is process-global and not safe to change during a clone, so it is
 // set once. A per-source CA bundle is applied by go-git on a clone of this
 // transport, which keeps the guarded dialer.
+//
+// The other transports go-git registers by default are removed: ssh and
+// git:// dial with their own unguarded dialer, and file:// reads the API
+// server's disk. checkRemote already accepts https URLs only; with these
+// removed, a URL that reaches go-git some other way still has no transport.
 func init() {
 	guarded := githttp.NewClient(httpsec.RequestPolicyHTTPClient(gitTimeout))
 	client.InstallProtocol("https", guarded)
 	client.InstallProtocol("http", guarded)
+	for _, scheme := range []string{"ssh", "git", "file"} {
+		client.InstallProtocol(scheme, nil)
+	}
 }
 
 // allowLocalRepos lets tests clone from a local path. Production never sets

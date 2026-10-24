@@ -13,6 +13,9 @@ import (
 	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/object"
+	"github.com/go-git/go-git/v5/plumbing/transport"
+	"github.com/go-git/go-git/v5/plumbing/transport/client"
+	gitfile "github.com/go-git/go-git/v5/plumbing/transport/file"
 )
 
 var sig = &object.Signature{Name: "t", Email: "t@example.com", When: time.Unix(1700000000, 0)}
@@ -62,7 +65,12 @@ func allowLocal(t *testing.T) {
 	t.Helper()
 	prev := allowLocalRepos
 	allowLocalRepos = true
-	t.Cleanup(func() { allowLocalRepos = prev })
+	// Production removes the file transport; these tests clone a local path.
+	client.InstallProtocol("file", gitfile.DefaultClient)
+	t.Cleanup(func() {
+		allowLocalRepos = prev
+		client.InstallProtocol("file", nil)
+	})
 }
 
 func paths(s *GitSnapshot) string {
@@ -194,4 +202,26 @@ func TestReserveDisk_CountsClonesInFlight(t *testing.T) {
 	}
 	r2()
 	r3()
+}
+
+// TestGitTransports_OnlyGuardedHTTP: a rule source is fetched over the
+// guarded HTTP transport only. ssh and git:// would dial with their own
+// unguarded dialer and file:// would read the server disk, so none of them
+// is registered, whatever URL reaches go-git.
+func TestGitTransports_OnlyGuardedHTTP(t *testing.T) {
+	for _, raw := range []string{"ssh://git@example.com/r.git", "git://example.com/r.git", "file:///etc", "git@example.com:r.git", "/var/lib"} {
+		ep, err := transport.NewEndpoint(raw)
+		if err != nil {
+			t.Fatalf("%s: %v", raw, err)
+		}
+		if _, err := client.NewClient(ep); err == nil {
+			t.Errorf("%s: go-git has a transport for scheme %q", raw, ep.Protocol)
+		}
+	}
+	for _, raw := range []string{"https://example.com/r.git", "http://example.com/r.git"} {
+		ep, _ := transport.NewEndpoint(raw)
+		if _, err := client.NewClient(ep); err != nil {
+			t.Errorf("%s: %v", raw, err)
+		}
+	}
 }

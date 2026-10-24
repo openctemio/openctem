@@ -91,7 +91,9 @@ export function ProgramSuggestions({ program: p, canWrite, onChanged }: ProgramS
       {canWrite && (
         <Button disabled={busy || picked.length === 0} onClick={confirm}>
           {busy && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-          {t('programs.suggestions.confirm', 'Confirm selected targets')}
+          {t('programs.suggestions.confirm', 'Confirm {count} selected targets', {
+            count: picked.length,
+          })}
         </Button>
       )}
     </section>

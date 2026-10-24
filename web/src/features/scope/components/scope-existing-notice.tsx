@@ -26,6 +26,7 @@ import { Button } from '@/components/ui/button'
 import { useTranslation } from '@/context/i18n-provider'
 import { useDisplayUser } from '@/hooks/use-display-user'
 import { Permission, useHasPermission } from '@/lib/permissions'
+import { ScopeActionConfirm, type ScopeConfirmKind } from './scope-action-confirm'
 import {
   approveScopeTarget,
   decideScopeExclusion,
@@ -58,6 +59,13 @@ interface ScopeExistingNoticeProps {
   onShow?: (href: string) => void
 }
 
+type Action = {
+  key: string
+  label: string
+  fn: () => Promise<unknown>
+  confirm: ScopeConfirmKind
+}
+
 export function ScopeExistingNotice({ dup, pattern, onDone, onShow }: ScopeExistingNoticeProps) {
   const { t } = useTranslation()
   const user = useDisplayUser()
@@ -69,6 +77,7 @@ export function ScopeExistingNotice({ dup, pattern, onDone, onShow }: ScopeExist
   // The entry itself tells whether this user requested it (no self-approval).
   const { data: entry } = useScopeTargetApi(isEntry && dup.status === 'pending' ? dup.id : null)
   const [busy, setBusy] = useState(false)
+  const [pending, setPending] = useState<Action | null>(null)
 
   // Unknown (still loading) counts as Strict.
   const needsApproval = settings?.approval_policy?.entries_need_approval ?? true
@@ -92,7 +101,6 @@ export function ScopeExistingNotice({ dup, pattern, onDone, onShow }: ScopeExist
     }
   }
 
-  type Action = { key: string; label: string; fn: () => Promise<unknown> }
   const actions: Action[] = []
   const activate = () =>
     isEntry ? setScopeTargetActive(dup.id, true) : setScopeExclusionActive(dup.id, true)
@@ -101,6 +109,7 @@ export function ScopeExistingNotice({ dup, pattern, onDone, onShow }: ScopeExist
       key: 'effect',
       label: t('scope.existing.putInEffect', 'Put in effect'),
       fn: activate,
+      confirm: 'activate',
     })
   } else if (
     status === 'pending' &&
@@ -113,22 +122,30 @@ export function ScopeExistingNotice({ dup, pattern, onDone, onShow }: ScopeExist
       key: 'approve',
       label: t('scope.existing.approve', 'Approve'),
       fn: () => approveScopeTarget(dup.id),
+      confirm: 'approve',
     })
   } else if (status === 'pending' && !isEntry && canApproveExclusions) {
     actions.push({
       key: 'approve',
       label: t('scope.existing.approve', 'Approve'),
       fn: () => decideScopeExclusion(dup.id, true),
+      confirm: 'approve',
     })
   }
   if (status === 'inactive' && (isEntry ? canApprove || !needsApproval : canWrite)) {
-    actions.push({ key: 'activate', label: t('scope.existing.activate', 'Activate'), fn: activate })
+    actions.push({
+      key: 'activate',
+      label: t('scope.existing.activate', 'Activate'),
+      fn: activate,
+      confirm: 'activate',
+    })
   }
   if (status === 'expired' && isEntry && (canApprove || !needsApproval)) {
     actions.push({
       key: 'renew',
       label: t('scope.existing.renew', 'Renew for {n} days', { n: renewDays }),
       fn: () => updateScopeTarget(dup.id, { expires_in_days: renewDays }),
+      confirm: 'renew',
     })
   }
 
@@ -154,7 +171,7 @@ export function ScopeExistingNotice({ dup, pattern, onDone, onShow }: ScopeExist
             size="sm"
             className="h-7 px-2 text-xs"
             disabled={busy}
-            onClick={() => void run(a.fn)}
+            onClick={() => setPending(a)}
           >
             {busy && <Loader2 className="me-1 h-3 w-3 animate-spin" />}
             {a.label}
@@ -184,6 +201,19 @@ export function ScopeExistingNotice({ dup, pattern, onDone, onShow }: ScopeExist
           </Link>
         )}
       </div>
+      <ScopeActionConfirm
+        open={pending !== null}
+        onOpenChange={(o) => !o && setPending(null)}
+        kind={pending?.confirm ?? 'approve'}
+        pattern={pattern}
+        days={renewDays}
+        isLoading={busy}
+        onConfirm={async () => {
+          const action = pending
+          setPending(null)
+          if (action) await run(action.fn)
+        }}
+      />
     </div>
   )
 }

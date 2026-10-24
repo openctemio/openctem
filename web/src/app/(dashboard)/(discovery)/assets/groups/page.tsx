@@ -55,7 +55,6 @@ import {
   ConfirmDialog,
   ConfirmSample,
   irreversibleTypeToConfirm,
-  nameToConfirm,
 } from '@/components/confirm-dialog'
 import { Badge } from '@/components/ui/badge'
 import { toast } from 'sonner'
@@ -89,6 +88,7 @@ import { useCsvExport, type ExportFieldConfig } from '@/hooks/use-csv-export'
 import { useUrlFilter, useUrlFilterList } from '@/hooks/use-url-param'
 import { cn } from '@/lib/utils'
 import { useTranslation } from '@/context/i18n-provider'
+import { confirmName } from '@/lib/confirm-name'
 
 // ============================================
 // CONSTANTS
@@ -914,7 +914,7 @@ export default function AssetGroupsPage() {
         )}
         confirmText={t('confirm.assetGroup.deleteButton', 'Delete group')}
         destructive
-        typeToConfirm={deleteGroup ? nameToConfirm(deleteGroup.name, deleteGroup.id) : undefined}
+        typeToConfirm={deleteGroup ? confirmName(deleteGroup.name, deleteGroup.id) : undefined}
         handleConfirm={handleDelete}
       />
 
