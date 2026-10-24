@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import {
   durationUnit,
   formatBucket,
+  formatCalendarDate,
   formatCount,
   formatDelta,
   formatDuration,
@@ -53,5 +54,19 @@ describe('format-metric', () => {
   it('labels buckets in UTC', () => {
     expect(formatBucket('2026-10-05', 'day', 'en')).toBe('Oct 5')
     expect(formatBucket('2026-10-01', 'month', 'en')).toBe('Oct 2026')
+  })
+})
+
+describe('formatCalendarDate', () => {
+  it('formats a date in the locale, not the browser default', () => {
+    const iso = '2026-10-23T10:00:00Z'
+    expect(formatCalendarDate(iso, 'en')).toMatch(/Oct/)
+    expect(formatCalendarDate(iso, 'vi')).not.toMatch(/Oct/)
+    expect(formatCalendarDate(iso, 'vi')).toMatch(/2026/)
+  })
+
+  it('shows a dash for a missing or invalid date', () => {
+    expect(formatCalendarDate(undefined)).toBe('—')
+    expect(formatCalendarDate('not a date')).toBe('—')
   })
 })

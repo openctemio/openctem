@@ -78,7 +78,9 @@ func TestIngest_FindingStoresScannerDetails(t *testing.T) {
 		return out
 	}
 
-	// An SCA-style finding (package set, so not a network VA) naming 2 CVEs.
+	// An SCA-style finding (package set, so not a network VA) naming 2 CVEs
+	// is split into one finding per CVE (D20), each carrying the shared
+	// details and only its own CVE.
 	sca := ctis.Finding{Type: ctis.FindingTypeVulnerability, Severity: ctis.SeverityHigh,
 		Title: "log4j-core vulnerable", RuleID: "sca-log4j", Category: "Java\x00 Libraries",
 		Vulnerability: &ctis.VulnerabilityDetails{CVEID: "cve-2021-44228", CVEIDs: []string{"CVE-2021-44228", "CVE-2021-45046"},
@@ -86,30 +88,41 @@ func TestIngest_FindingStoresScannerDetails(t *testing.T) {
 		Properties: ctis.Properties{"patch_publication_date": "2021/12/10"}}
 	send(sca)
 	got := readWhere("rule_id = 'sca-log4j'")
-	if len(got) != 1 {
-		t.Fatalf("rows %d", len(got))
+	if len(got) != 2 {
+		t.Fatalf("rows %d, want one per CVE", len(got))
 	}
-	g := got[0]
-	if g.family.String != "Java Libraries" || g.cvssVersion.String != "3.1" || !g.exploit || g.vpr.Float64 != 9.4 ||
-		strings.Join(g.cves, ",") != "CVE-2021-44228,CVE-2021-45046" || !g.patch.Valid || g.patch.Time.Format("2006-01-02") != "2021-12-10" {
-		t.Fatalf("stored details: %+v", g)
+	for i, want := range []string{"CVE-2021-44228", "CVE-2021-45046"} {
+		g := got[i]
+		if g.family.String != "Java Libraries" || g.cvssVersion.String != "3.1" || !g.exploit || g.vpr.Float64 != 9.4 ||
+			strings.Join(g.cves, ",") != want || !g.patch.Valid || g.patch.Time.Format("2006-01-02") != "2021-12-10" {
+			t.Fatalf("stored details %d: %+v", i, g)
+		}
 	}
 
-	// Re-sighting: no exploit now (sticky), new VPR (latest wins), a third
-	// CVE (union), another family and patch date (first wins).
+	// Re-sighting: no exploit now (sticky), new VPR (latest wins), another
+	// family and patch date (first wins). The CVE it still names keeps its
+	// finding; the new CVE is a third finding with the new values.
 	again := sca
 	v := *sca.Vulnerability
 	v.ExploitAvailable = false
 	v.VPRScore = 6.1
+	v.CVEID = "CVE-2021-44228"
 	v.CVEIDs = []string{"CVE-2021-45105"}
 	again.Vulnerability = &v
 	again.Category = "Other"
 	again.Properties = ctis.Properties{"patch_publication_date": "2022-01-01"}
 	send(again)
-	g = readWhere("rule_id = 'sca-log4j'")[0]
+	got = readWhere("rule_id = 'sca-log4j'")
+	if len(got) != 3 {
+		t.Fatalf("rows after re-sighting %d, want 3", len(got))
+	}
+	g := got[0]
 	if g.family.String != "Java Libraries" || !g.exploit || g.vpr.Float64 != 6.1 ||
-		strings.Join(g.cves, ",") != "CVE-2021-44228,CVE-2021-45046,CVE-2021-45105" || g.patch.Time.Format("2006-01-02") != "2021-12-10" {
+		strings.Join(g.cves, ",") != "CVE-2021-44228" || g.patch.Time.Format("2006-01-02") != "2021-12-10" {
 		t.Fatalf("merged details: %+v", g)
+	}
+	if n := got[2]; strings.Join(n.cves, ",") != "CVE-2021-45105" || n.exploit || n.vpr.Float64 != 6.1 {
+		t.Fatalf("new CVE finding: %+v", n)
 	}
 
 	// A multi-CVE network plugin is split into one finding per CVE, each

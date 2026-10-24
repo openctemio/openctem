@@ -118,6 +118,23 @@ func (s *WorkflowService) GetWorkflowDetail(ctx context.Context, tenantID, workf
 	return d, nil
 }
 
+// PublishedDefinition returns the definition of the automation's published
+// version (empty when it has none).
+func (s *WorkflowService) PublishedDefinition(ctx context.Context, tenantID, workflowID shared.ID) (automationdom.Definition, error) {
+	w, err := s.workflowRepo.GetByTenantAndID(ctx, tenantID, workflowID)
+	if err != nil {
+		return automationdom.Definition{}, err
+	}
+	if w.PublishedVersionID == nil || s.versions == nil {
+		return automationdom.Definition{}, nil
+	}
+	v, err := s.versions.GetByTenantAndID(ctx, tenantID, *w.PublishedVersionID)
+	if err != nil {
+		return automationdom.Definition{}, fmt.Errorf("load the published version: %w", err)
+	}
+	return v.Definition, nil
+}
+
 // ListVersions lists an automation's versions, newest first.
 func (s *WorkflowService) ListVersions(ctx context.Context, tenantID, workflowID shared.ID) ([]*automationdom.Version, error) {
 	if _, err := s.workflowRepo.GetByTenantAndID(ctx, tenantID, workflowID); err != nil {
@@ -150,6 +167,12 @@ type PublishInput struct {
 	TenantID   shared.ID
 	UserID     shared.ID
 	WorkflowID shared.ID
+	// Authorize checks the caller may publish exactly this definition (the
+	// permission of every step). The service calls it on the definition it
+	// is about to store, not on a copy read earlier, so an edit between the
+	// check and the store cannot slip an unchecked step in. Required: a nil
+	// Authorize refuses the publish.
+	Authorize func(automationdom.Definition) error
 }
 
 // PublishResult is the outcome of a publish.
@@ -211,7 +234,7 @@ func (s *WorkflowService) Publish(ctx context.Context, in PublishInput) (*Publis
 	if len(res.Problems) > 0 {
 		return nil, &WorkflowInvalidError{Problems: res.Problems}
 	}
-	return s.publishDefinition(ctx, in.TenantID, in.UserID, w, audit.ActionWorkflowPublished, "published")
+	return s.publishDefinition(ctx, in, w, audit.ActionWorkflowPublished, "published")
 }
 
 // Rollback publishes an older version's definition again, as a new version
@@ -236,7 +259,10 @@ func (s *WorkflowService) Rollback(ctx context.Context, in PublishInput, version
 	if err := target.ValidateSupported(); err != nil {
 		return nil, err
 	}
-	return s.publishDefinition(ctx, in.TenantID, in.UserID, target, audit.ActionWorkflowRolledBack,
+	if err := target.ValidateGraph(); err != nil {
+		return nil, err
+	}
+	return s.publishDefinition(ctx, in, target, audit.ActionWorkflowRolledBack,
 		fmt.Sprintf("rolled back to version %d", old.Version))
 }
 
@@ -249,13 +275,21 @@ func (s *WorkflowService) requireStepUp(ctx context.Context, userID shared.ID) e
 	return s.stepUp.RequireRecentAuth(ctx, userID.String())
 }
 
-func (s *WorkflowService) publishDefinition(ctx context.Context, tenantID, userID shared.ID, w *automationdom.Workflow, action audit.Action, verb string) (*PublishResult, error) {
+func (s *WorkflowService) publishDefinition(ctx context.Context, in PublishInput, w *automationdom.Workflow, action audit.Action, verb string) (*PublishResult, error) {
+	tenantID, userID := in.TenantID, in.UserID
 	if userID.IsZero() {
 		// The publisher is the person live runs act as.
 		return nil, fmt.Errorf("%w: an automation is published by a person", shared.ErrForbidden)
 	}
 	v, err := automationdom.NewVersion(w, userID, automationdom.VersionPendingApproval)
 	if err != nil {
+		return nil, err
+	}
+	// The permission check runs on the definition that is stored below.
+	if in.Authorize == nil {
+		return nil, shared.NewDomainError("FORBIDDEN", "publishing needs a permission check", shared.ErrForbidden)
+	}
+	if err := in.Authorize(v.Definition); err != nil {
 		return nil, err
 	}
 	now := time.Now()
@@ -269,8 +303,10 @@ func (s *WorkflowService) publishDefinition(ctx context.Context, tenantID, userI
 	if err := s.versions.RetirePending(ctx, tenantID, w.ID); err != nil {
 		return nil, err
 	}
-	if err := s.versions.Create(ctx, v); err != nil {
-		return nil, err
+	if v.RiskClass.NeedsSecondApprover() {
+		if err := s.versions.Create(ctx, v); err != nil {
+			return nil, err
+		}
 	}
 	actx := auditapp.AuditContext{TenantID: tenantID.String(), ActorID: userID.String()}
 	event := func(a audit.Action, msg string) auditapp.AuditEvent {
@@ -285,7 +321,8 @@ func (s *WorkflowService) publishDefinition(ctx context.Context, tenantID, userI
 			fmt.Sprintf("Automation '%s' version %d (%s risk) waits for a second person to approve it", w.Name, v.Version, v.RiskClass)))
 		return &PublishResult{Version: v, Live: false}, nil
 	}
-	if err := s.versions.Publish(ctx, tenantID, w.ID, v.ID, nil, now); err != nil {
+	// One transaction: a failure leaves no pending row behind.
+	if err := s.versions.CreateAndPublish(ctx, v, nil, now); err != nil {
 		return nil, err
 	}
 	v.Status, v.PublishedAt = automationdom.VersionPublished, &now

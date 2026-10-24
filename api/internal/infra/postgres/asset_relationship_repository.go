@@ -571,3 +571,53 @@ func (r *AssetRelationshipRepository) ListAllEdges(ctx context.Context, tenantID
 }
 
 // Note: nullString is defined in helpers.go
+
+// maxServingEndpoints bounds the endpoints read per certificate.
+const maxServingEndpoints = 200
+
+// ServingEndpoints returns, per certificate id, the ids of the tenant's live
+// assets that have a serves_certificate relationship to it, by name (at most
+// maxServingEndpoints each). Both ends are filtered to the tenant, so an
+// edge can never carry another tenant's asset in or out; a certificate that
+// is itself the source of an edge is never an endpoint.
+func (r *AssetRelationshipRepository) ServingEndpoints(ctx context.Context, tenantID shared.ID, certificateIDs []shared.ID) (map[string][]shared.ID, error) {
+	out := make(map[string][]shared.ID, len(certificateIDs))
+	if len(certificateIDs) == 0 {
+		return out, nil
+	}
+	ids := make([]string, len(certificateIDs))
+	for i, id := range certificateIDs {
+		ids[i] = id.String()
+	}
+	rows, err := r.db.QueryContext(ctx, `
+		SELECT cert_id, endpoint_id FROM (
+			SELECT r.target_asset_id AS cert_id, r.source_asset_id AS endpoint_id,
+			       row_number() OVER (PARTITION BY r.target_asset_id ORDER BY s.name, s.id) AS n
+			  FROM asset_relationships r
+			  JOIN assets s ON s.id = r.source_asset_id AND s.tenant_id = r.tenant_id
+			                AND s.deleted_at IS NULL AND s.asset_type <> 'certificate'
+			  JOIN assets c ON c.id = r.target_asset_id AND c.tenant_id = r.tenant_id
+			                AND c.deleted_at IS NULL AND c.asset_type = 'certificate'
+			 WHERE r.tenant_id = $1
+			   AND r.relationship_type = 'serves_certificate'
+			   AND r.target_asset_id = ANY($2::uuid[])
+		) x WHERE n <= $3
+		ORDER BY cert_id, n`,
+		tenantID.String(), pq.Array(ids), maxServingEndpoints)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list certificate endpoints: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+	for rows.Next() {
+		var certID, endpointID string
+		if err := rows.Scan(&certID, &endpointID); err != nil {
+			return nil, fmt.Errorf("failed to scan certificate endpoint: %w", err)
+		}
+		eid, err := shared.IDFromString(endpointID)
+		if err != nil {
+			return nil, fmt.Errorf("invalid endpoint id: %w", err)
+		}
+		out[certID] = append(out[certID], eid)
+	}
+	return out, rows.Err()
+}

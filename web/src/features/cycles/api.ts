@@ -2,6 +2,7 @@
 
 import useSWR from 'swr'
 import { del, get, post } from '@/lib/api/client'
+import { useRegisterPages } from '@/lib/api/use-register-pages'
 import type { CtemCycle } from './types'
 
 /**
@@ -57,8 +58,15 @@ export const PROFILE_TYPE_LABELS: Record<string, string> = {
   custom: 'Custom',
 }
 
-export const profileTypeLabel = (t: string) =>
-  PROFILE_TYPE_LABELS[t] ?? t.replace(/_/g, ' ').replace(/^\w/, (c) => c.toUpperCase())
+/**
+ * The attacker-profile type in words. With `t` it comes from the catalog
+ * (attackerProfiles.type.<type>); the English map is the fallback.
+ */
+export const profileTypeLabel = (type: string, t?: (key: string, fallback?: string) => string) => {
+  const fallback =
+    PROFILE_TYPE_LABELS[type] ?? type.replace(/_/g, ' ').replace(/^\w/, (c) => c.toUpperCase())
+  return t ? t(`attackerProfiles.type.${type}`, fallback) : fallback
+}
 
 /** The attacker profiles the cycle assumes (GET /ctem-cycles/{id}/profiles). */
 export function useCycleProfiles(id: string | null) {
@@ -71,10 +79,8 @@ export function useCycleProfiles(id: string | null) {
 
 /** Every attacker profile of the tenant, for pickers. */
 export function useAttackerProfiles(enabled = true) {
-  return useSWR<{ data: AttackerProfile[] }>(
-    enabled ? '/api/v1/attacker-profiles?per_page=100' : null,
-    (url: string) => get<{ data: AttackerProfile[] }>(url),
-    { revalidateOnFocus: false }
+  return useRegisterPages<AttackerProfile>(
+    enabled ? '/api/v1/attacker-profiles?per_page=100' : null
   )
 }
 

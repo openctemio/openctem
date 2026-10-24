@@ -9,6 +9,7 @@ import (
 
 	"github.com/openctemio/openctem/api/internal/app/ingest"
 	"github.com/openctemio/openctem/api/pkg/domain/ingestreceipt"
+	"github.com/openctemio/openctem/api/pkg/domain/ingestreport"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/logger"
 )
@@ -20,12 +21,17 @@ type coverageFake struct {
 	open     int
 	resolved []shared.ID
 	recorded []ingestreceipt.Delta
+	// candErr is what ImportCoverageCandidates returns (a truncated receipt).
+	candErr error
 }
 
 func (c *coverageFake) CountTenantAssets(context.Context, shared.ID, []shared.ID) (int, error) {
 	return c.assets, nil
 }
 func (c *coverageFake) ImportCoverageCandidates(context.Context, shared.ID, []shared.ID, string, shared.ID) ([]shared.ID, int, error) {
+	if c.candErr != nil {
+		return nil, 0, c.candErr
+	}
 	return c.stale, c.open, nil
 }
 func (c *coverageFake) ResolveImportCoverage(_ context.Context, _ shared.ID, _, ids []shared.ID, _ string, _ shared.ID) ([]shared.ID, error) {
@@ -54,24 +60,30 @@ func TestCloseUncovered(t *testing.T) {
 		results  []FileResult
 		stale    int
 		open     int
+		candErr  error
 		complete bool
 		closed   int
 		note     string
 		coverage string
 	}{
-		{"complete", []FileResult{ok}, 1, 2, true, 1, "resolved", ingestreceipt.CoverageFull},
-		{"a failed file", []FileResult{ok, {Error: &FileError{Kind: KindMalformed}}}, 1, 2, true, 0, "incomplete", ingestreceipt.CoveragePartial},
-		{"a finding not stored", []FileResult{{Tool: "nessus", Ingest: &ingest.Output{FailedFindings: []ingest.FailedFinding{{}}}}}, 1, 2, true, 0, "incomplete", ingestreceipt.CoveragePartial},
-		{"blinding guard", []FileResult{ok}, 150, 160, true, 0, "held", ingestreceipt.CoverageFull},
-		{"request cut short", []FileResult{ok}, 1, 2, false, 0, "incomplete", ingestreceipt.CoveragePartial},
+		{"complete", []FileResult{ok}, 1, 2, nil, true, 1, "resolved", ingestreceipt.CoverageFull},
+		{"a failed file", []FileResult{ok, {Error: &FileError{Kind: KindMalformed}}}, 1, 2, nil, true, 0, "incomplete", ingestreceipt.CoveragePartial},
+		{"a finding not stored", []FileResult{{Tool: "nessus", Ingest: &ingest.Output{FailedFindings: []ingest.FailedFinding{{}}}}}, 1, 2, nil, true, 0, "incomplete", ingestreceipt.CoveragePartial},
+		{"blinding guard", []FileResult{ok}, 150, 160, nil, true, 0, "held", ingestreceipt.CoverageFull},
+		{"request cut short", []FileResult{ok}, 1, 2, nil, false, 0, "incomplete", ingestreceipt.CoveragePartial},
 		// A record the parser skipped (below min_severity, or unusable) may be
 		// a finding that is still there.
-		{"a skipped record", []FileResult{{Tool: "nessus", Ingest: &ingest.Output{}, Stats: importer.Stats{Skipped: 1}}}, 1, 2, true, 0, "incomplete", ingestreceipt.CoveragePartial},
-		{"a file naming no tool", []FileResult{{Ingest: &ingest.Output{}}}, 1, 2, true, 0, "incomplete", ingestreceipt.CoveragePartial},
+		{"a skipped record", []FileResult{{Tool: "nessus", Ingest: &ingest.Output{}, Stats: importer.Stats{Skipped: 1}}}, 1, 2, nil, true, 0, "incomplete", ingestreceipt.CoveragePartial},
+		// A file whose receipt write failed left its findings off the
+		// receipt that decides absence; a receipt past its action cap no
+		// longer lists everything the upload reported.
+		{"a receipt write failed", []FileResult{ok, {Tool: "nessus", Ingest: &ingest.Output{ReceiptFailed: true}}}, 1, 2, nil, true, 0, "incomplete", ingestreceipt.CoveragePartial},
+		{"a truncated receipt", []FileResult{ok}, 1, 2, ingestreport.ErrReceiptIncomplete, true, 0, "incomplete", ingestreceipt.CoveragePartial},
+		{"a file naming no tool", []FileResult{{Ingest: &ingest.Output{}}}, 1, 2, nil, true, 0, "incomplete", ingestreceipt.CoveragePartial},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			repo := &coverageFake{assets: 1, open: c.open}
+			repo := &coverageFake{assets: 1, open: c.open, candErr: c.candErr}
 			for range c.stale {
 				repo.stale = append(repo.stale, shared.NewID())
 			}
@@ -88,6 +100,22 @@ func TestCloseUncovered(t *testing.T) {
 				t.Fatalf("closed findings not recorded on the receipt: %+v", repo.recorded)
 			}
 		})
+	}
+}
+
+// An upload through an import mapping closes nothing, even when a caller
+// got coverage=full past the handler.
+func TestCloseUncoveredMappedNeverCloses(t *testing.T) {
+	repo := &coverageFake{assets: 1, open: 2, stale: []shared.ID{shared.NewID()}}
+	svc := NewService(&fakeIngester{}, repo, repo, ingest.SourceResolveDryRun, logger.NewNop())
+	req := coverageReq()
+	req.Mapping = resolvedCSV(t)
+	svc.FinishUpload(context.Background(), req, []FileResult{{Tool: "mapped:legacy-vm", Ingest: &ingest.Output{}}}, true)
+	if len(repo.resolved) != 0 || len(repo.finished) != 1 {
+		t.Fatalf("a mapped upload closed %d findings", len(repo.resolved))
+	}
+	if f := repo.finished[0]; f.Coverage != ingestreceipt.CoveragePartial {
+		t.Fatalf("receipt coverage %q", f.Coverage)
 	}
 }
 

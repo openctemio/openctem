@@ -133,9 +133,11 @@ func (r *FindingRepository) adopt(ctx context.Context, tenantID shared.ID, from,
 		return false, nil
 	}
 	args := append([]any{tenantID.String(), from, to, string(identityKey), version}, adoptGuardArgs(g)...)
+	args = append(args, identityKeyRecipeArgs(identityKey)...)
 	res, err := r.db.ExecContext(ctx, `
 		UPDATE findings
-		SET fingerprint = $3, fingerprint_version = $5, identity_key = $4::jsonb, updated_at = NOW()
+		SET fingerprint = $3, fingerprint_version = $5, identity_key = $4::jsonb, updated_at = NOW(),
+		    identity_algo = $11, identity_fields = $12
 		WHERE tenant_id = $1 AND fingerprint = $2
 		  AND fingerprint_version `+cmp+` $5
 		  AND status <> 'duplicate'
@@ -160,9 +162,11 @@ func (r *FindingRepository) AdoptClientKeyedFingerprint(ctx context.Context, ten
 	}
 	g.Strict = true
 	args := append([]any{tenantID.String(), from, to}, adoptGuardArgs(g)...)
+	// to is the server version-1 ingest key: its recipe is recorded with it.
+	args = append(args, vulnerability.IdentityAlgoIngestV1)
 	res, err := r.db.ExecContext(ctx, `
 		UPDATE findings
-		SET fingerprint = $3, updated_at = NOW()
+		SET fingerprint = $3, updated_at = NOW(), identity_algo = $9, identity_fields = NULL
 		WHERE tenant_id = $1 AND fingerprint = $2
 		  AND fingerprint_version <= 1
 		  AND status <> 'duplicate'

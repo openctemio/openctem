@@ -21,6 +21,7 @@ import { OneTimeSecretField } from '@/features/shared'
 import { useRegenerateSensorKey, invalidateSensorsCache } from '@/lib/api/sensor-hooks'
 import type { Sensor } from '@/lib/api/sensor-types'
 import { SensorInstallSnippets } from './sensor-install-snippets'
+import { useOneTimeKeyGuard } from './one-time-key-guard'
 
 interface RegenerateKeyDialogProps {
   open: boolean
@@ -78,36 +79,41 @@ export function RegenerateKeyDialog({
     }
   }
 
+  const guard = useOneTimeKeyGuard(!!apiKey, handleClose)
+
   if (apiKey) {
     return (
-      <Dialog open={open} onOpenChange={handleClose}>
-        <DialogContent size="lg">
-          <DialogHeader>
-            <DialogTitle>
-              {t('sensors.regenerate.newKeyTitle', undefined, { name: sensor.name })}
-            </DialogTitle>
-            <DialogDescription>{t('sensors.regenerate.newKeyBody')}</DialogDescription>
-          </DialogHeader>
+      <>
+        <Dialog open={open} onOpenChange={guard.requestClose}>
+          <DialogContent size="lg" {...guard.contentProps}>
+            <DialogHeader>
+              <DialogTitle>
+                {t('sensors.regenerate.newKeyTitle', undefined, { name: sensor.name })}
+              </DialogTitle>
+              <DialogDescription>{t('sensors.regenerate.newKeyBody')}</DialogDescription>
+            </DialogHeader>
 
-          <DialogBody>
-            <div className="min-w-0 space-y-4">
-              <OneTimeSecretField
-                label={t('sensors.regenerate.newKeyLabel')}
-                noun={t('sensors.regenerate.keyNoun')}
-                value={apiKey}
-              />
-              <div>
-                <p className="mb-2 text-sm font-medium">{t('sensors.regenerate.restart')}</p>
-                <SensorInstallSnippets sensorId={sensor.id} apiKey={apiKey} />
+            <DialogBody>
+              <div className="min-w-0 space-y-4">
+                <OneTimeSecretField
+                  label={t('sensors.regenerate.newKeyLabel')}
+                  noun={t('sensors.regenerate.keyNoun')}
+                  value={apiKey}
+                />
+                <div>
+                  <p className="mb-2 text-sm font-medium">{t('sensors.regenerate.restart')}</p>
+                  <SensorInstallSnippets sensorId={sensor.id} apiKey={apiKey} />
+                </div>
               </div>
-            </div>
-          </DialogBody>
+            </DialogBody>
 
-          <DialogFooter>
-            <Button onClick={handleClose}>{t('sensors.pair.done')}</Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+            <DialogFooter>
+              <Button onClick={handleClose}>{t('sensors.pair.done')}</Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+        {guard.confirm}
+      </>
     )
   }
 

@@ -51,6 +51,11 @@ const (
 	VersionRetired VersionStatus = "retired"
 )
 
+// BackfillDigest is the placeholder digest of a version the migration created
+// from an existing graph; RepairBackfilledDigests replaces it with the
+// canonical Definition.Digest.
+const BackfillDigest = "backfill"
+
 // ErrCodeNotPublished is the error code for a live automation without a
 // published version.
 const ErrCodeNotPublished = "WORKFLOW_NOT_PUBLISHED"
@@ -234,6 +239,12 @@ type VersionRepository interface {
 	// (a newer publish request replaces them; an approval never applies to
 	// a version that is not the latest request).
 	RetirePending(ctx context.Context, tenantID, automationID shared.ID) error
+	// CreateAndPublish does Create and Publish for a new pending version v in
+	// one transaction (a failure stores nothing).
+	CreateAndPublish(ctx context.Context, v *Version, approvedBy *shared.ID, at time.Time) error
+	// RepairBackfilledDigests sets the canonical digest on versions the
+	// migration backfilled and returns how many it fixed.
+	RepairBackfilledDigests(ctx context.Context) (int, error)
 }
 
 // ErrVersionNotPending is returned when a version is no longer waiting for

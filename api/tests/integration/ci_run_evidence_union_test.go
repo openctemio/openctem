@@ -40,7 +40,7 @@ func TestCIRunEvidenceUnion_GateRetryCannotPassOnNothing(t *testing.T) {
 	}
 	upload := func(run, tok string, fs ...ctis.Finding) {
 		t.Helper()
-		if resp, out := r.post("/api/v1/ci/runs/"+run+"/results", tok, ciReport(repoName, fs...)); resp.StatusCode != http.StatusCreated {
+		if resp, out := r.upload(run, tok, ciReport(repoName, fs...)); resp.StatusCode != http.StatusAccepted {
 			t.Fatalf("upload: %d %v", resp.StatusCode, out)
 		}
 	}
@@ -150,7 +150,7 @@ func TestCIRunEvidenceUnion_ReopenKeepsTheVerdict(t *testing.T) {
 	}
 	judge := func(run, tok string, fs ...ctis.Finding) map[string]any {
 		t.Helper()
-		if resp, out := r.post("/api/v1/ci/runs/"+run+"/results", tok, ciReport(repoName, fs...)); resp.StatusCode != http.StatusCreated {
+		if resp, out := r.upload(run, tok, ciReport(repoName, fs...)); resp.StatusCode != http.StatusAccepted {
 			t.Fatalf("upload: %d %v", resp.StatusCode, out)
 		}
 		_, v := r.post("/api/v1/ci/runs/"+run+"/evaluate", tok, map[string]int{"scan_failures": 0})
@@ -225,7 +225,7 @@ func TestCIRunEvidenceUnion_FailedCapabilityCarriedUntilItReports(t *testing.T) 
 		t.Helper()
 		rep := ciReport(repoName)
 		rep["report"].(ctis.Report).Tool.Name = tool
-		if resp, out := r.post("/api/v1/ci/runs/"+run+"/results", tok, rep); resp.StatusCode != http.StatusCreated {
+		if resp, out := r.upload(run, tok, rep); resp.StatusCode != http.StatusAccepted {
 			t.Fatalf("upload %s: %d %v", tool, resp.StatusCode, out)
 		}
 	}

@@ -1,7 +1,7 @@
 # OpenCTEM API
 
 [![Go Version](https://img.shields.io/badge/Go-1.26+-00ADD8?logo=go)](https://go.dev)
-[![PostgreSQL](https://img.shields.io/badge/PostgreSQL-17-4169E1?logo=postgresql)](https://www.postgresql.org)
+[![PostgreSQL](https://img.shields.io/badge/PostgreSQL-16--18-4169E1?logo=postgresql)](https://www.postgresql.org)
 [![Redis](https://img.shields.io/badge/Redis-7-DC382D?logo=redis)](https://redis.io)
 [![License: GPL-3.0](https://img.shields.io/badge/License-GPL--3.0-blue.svg)](LICENSE)
 
@@ -54,7 +54,7 @@ Backend API for the OpenCTEM Continuous Threat Exposure Management platform. Bui
 |-----------|------------|
 | Language | Go 1.26+ |
 | Router | Chi (net/http compatible) |
-| Database | PostgreSQL 17 |
+| Database | PostgreSQL 16, 17 or 18 (17 recommended) |
 | Cache/Queue | Redis 7 (Asynq) |
 | Auth | JWT (local) / OAuth2 / OIDC |
 | Metrics | Prometheus client_golang |
@@ -107,7 +107,7 @@ api/
 
 - Go 1.26+
 - Docker & Docker Compose
-- PostgreSQL 17 (or use Docker)
+- PostgreSQL 16, 17 or 18; 17 recommended (or use Docker, which ships 17)
 - Redis 7 (or use Docker)
 
 ### Development

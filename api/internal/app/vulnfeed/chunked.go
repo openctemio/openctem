@@ -84,6 +84,9 @@ func (im *Importer) WithChunks(store ChunkStore, t Transfer) *Importer {
 	if w, ok := store.(software.AliasWriter); ok {
 		im.aliases = w
 	}
+	if w, ok := store.(VulnIDAliasWriter); ok {
+		im.vulnIDs = w
+	}
 	return im
 }
 
@@ -328,6 +331,7 @@ func (im *Importer) runV2(ctx context.Context, cur state) (Result, error) {
 	res.Sequence = out.Sequence
 	if out.UpToDate {
 		im.syncAliases(ctx, f, out.Sequence, cur.KeySetVersion)
+		im.syncVulnIDs(ctx, f, out.Sequence, cur.KeySetVersion)
 		return res, nil
 	}
 	res.Ran, res.Kind, res.CVEs, res.Ranges = true, out.Kind, a.cves, a.ranges
@@ -338,6 +342,7 @@ func (im *Importer) runV2(ctx context.Context, cur state) (Result, error) {
 		return res, err
 	}
 	im.syncAliases(ctx, f, out.Sequence, a.keySetVersion)
+	im.syncVulnIDs(ctx, f, out.Sequence, a.keySetVersion)
 	return res, nil
 }
 

@@ -16,7 +16,7 @@ import {
   StackedCell,
   type MetricStripItem,
 } from '@/features/shared'
-import { AssetsSectionTabs } from '@/features/assets/components/assets-section-tabs'
+import { AttackSurfaceSectionTabs } from '@/features/attack-surface'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -32,6 +32,7 @@ import {
 } from '@/components/ui/select'
 import { useUrlFilter } from '@/hooks/use-url-param'
 import { Permission, useHasPermission } from '@/lib/permissions'
+import { useTranslation } from '@/context/i18n-provider'
 import type {
   WebEndpointEventResponse,
   WebEndpointResponse,
@@ -129,6 +130,7 @@ function TableSkeleton() {
  * recorded, never tested.
  */
 export function WebSurfaceView() {
+  const { t } = useTranslation()
   const canRead = useHasPermission(Permission.AssetsRead)
   const [tabParam, setTabParam] = useUrlFilter('tab', 'origins')
   const tab: WebSurfaceTab = isWebSurfaceTab(tabParam) ? tabParam : 'origins'
@@ -494,7 +496,13 @@ export function WebSurfaceView() {
   if (!canRead) {
     return (
       <Main>
-        <PageHeader title="Web surface" description="Origins, endpoints and parameters." />
+        <PageHeader
+          title={t('attackSurface.title', 'Attack surface')}
+          description={t(
+            'attackSurface.web.shortDescription',
+            'Origins, endpoints and parameters.'
+          )}
+        />
         <EmptyState
           className="mt-5"
           icon={ShieldX}
@@ -608,20 +616,23 @@ export function WebSurfaceView() {
   return (
     <Main>
       <PageHeader
-        title="Web surface"
-        description="What your web origins serve: endpoints, their parameters (names only), the same path across origins, and what changed."
+        title={t('attackSurface.title', 'Attack surface')}
+        description={t(
+          'attackSurface.web.description',
+          'What your web origins serve: endpoints, their parameters (names only), the same path across origins, and what changed.'
+        )}
       />
-      <AssetsSectionTabs />
+      <AttackSurfaceSectionTabs />
       <MetricStrip className="mt-5" loading={stats.isLoading && !s} items={metrics} />
       <SegmentedLens
         className="mt-5"
         label="Web surface view"
         value={tab}
-        options={(Object.keys(TAB_LABEL) as WebSurfaceTab[]).map((t) => ({
-          value: t,
-          label: TAB_LABEL[t],
+        options={(Object.keys(TAB_LABEL) as WebSurfaceTab[]).map((k) => ({
+          value: k,
+          label: TAB_LABEL[k],
         }))}
-        onChange={(t) => go(t)}
+        onChange={(k) => go(k)}
       />
       <div className="mt-4">
         {active.error && !active.isLoading ? (

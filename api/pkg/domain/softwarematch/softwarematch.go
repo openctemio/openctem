@@ -67,6 +67,11 @@ type Match struct {
 	Result         VersionVuln
 	ConditionMet   bool
 	CVE            CVEInfo
+	// Package is true for a package link (asset_software.source =
+	// 'package'); PURL is the linked version's package URL
+	// (software_versions.purl, with its version, without qualifiers).
+	Package bool
+	PURL    string
 }
 
 // CVEInfo is the corpus data a finding carries.
@@ -96,6 +101,15 @@ type MatcherFinding struct {
 	VersionID   *shared.ID
 	Location    string
 	CVERejected bool
+}
+
+// Rekey moves a matcher finding to a new identity key.
+type Rekey struct {
+	FindingID   shared.ID
+	From, To    string
+	Version     int
+	IdentityKey []byte
+	ComponentID shared.ID
 }
 
 // LinkState says what happened to the software a matcher finding was built
@@ -181,6 +195,11 @@ type Store interface {
 	LinkStates(ctx context.Context, tenantID shared.ID, keys []LinkKey, currentSince time.Time) (map[LinkKey]LinkInfo, error)
 	// CloseFindings closes open matcher-owned findings of the tenant.
 	CloseFindings(ctx context.Context, tenantID shared.ID, ids []shared.ID, kind CloseKind) ([]shared.ID, error)
+	// RekeyMatcherFinding moves one matcher-owned finding from the key From
+	// to the key To with its identity tuple and component, when the finding
+	// still has From and no finding of the tenant holds To. False when it
+	// did not move (another finding holds To, or the finding changed).
+	RekeyMatcherFinding(ctx context.Context, tenantID shared.ID, r Rekey) (bool, error)
 	// ReopenFindings reopens matcher-owned findings the matcher had closed.
 	ReopenFindings(ctx context.Context, tenantID shared.ID, ids []shared.ID) ([]shared.ID, error)
 	// EnsureDefinitions makes sure each CVE has its global catalog row and

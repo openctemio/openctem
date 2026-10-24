@@ -14,17 +14,12 @@ import { QuickScanDialog } from './quick-scan-dialog'
 /**
  * Scans · Runs · Workflows, the route tabs of Discovery > Scans. One table per
  * route, so every list keeps plain `page`, `per_page` and `sort` parameters.
- * Placed directly under the page's `PageHeader`; the next block carries `mt-5`.
+ * Placed directly under the page's `PageHeader` inside the page's `PageStack`,
+ * which owns the 16px above and the 20px below (research/244).
  */
 export function ScansSectionTabs() {
   const { t } = useTranslation()
-  return (
-    <GatedSectionTabs
-      tabs={SCANS_SECTION_TABS}
-      label={t('scans.header.sections')}
-      className="mt-4 mb-0"
-    />
-  )
+  return <GatedSectionTabs tabs={SCANS_SECTION_TABS} label={t('scans.header.sections')} />
 }
 
 /**

@@ -40,6 +40,16 @@ async function checkToolbar(page: Page, label: string) {
   const t = await toolbar.boundingBox()
   expect(p && t && p.y < t.y, `${label}: lens row above the search row`).toBeTruthy()
 
+  // The view title keeps readable room inside the primary row (at phone width
+  // the Awaiting verification button used to squeeze it to nothing).
+  const title = await page.getByTestId('findings-view-title').boundingBox()
+  const row = await primary.boundingBox()
+  expect(title && title.width >= 32, `${label}: the view title has room`).toBeTruthy()
+  expect(
+    title && row && title.x >= row.x - 1,
+    `${label}: the view title starts inside the row`
+  ).toBeTruthy()
+
   // Nothing sticks out of either row.
   for (const [name, row] of [
     ['primary', primary],

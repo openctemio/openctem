@@ -285,6 +285,22 @@ var seedOverrides = map[string]func(s *schemaSeeder) map[string]any{
 		}
 		return map[string]any{"primary_id": first["id"], "member_id": second}
 	},
+	// A same-issue link joins two different findings of the tenant.
+	"finding_issue_links": func(s *schemaSeeder) map[string]any {
+		first := s.rows["findings"]
+		var second string
+		if err := s.tx.QueryRowContext(s.ctx, `INSERT INTO findings (tenant_id, asset_id, source, tool_name, message, severity, fingerprint, status)
+			SELECT tenant_id, asset_id, source, tool_name, message, severity, $2, status FROM findings WHERE id = $1
+			RETURNING id`, first["id"], s.uniq()).Scan(&second); err != nil {
+			s.t.Fatalf("insert second finding: %v", err)
+		}
+		return map[string]any{"primary_id": first["id"], "member_id": second, "rule": "secret_value", "state": "active",
+			"ended_at": nil, "ended_by": nil}
+	},
+	// A link key is a hex SHA-256.
+	"finding_link_keys": func(s *schemaSeeder) map[string]any {
+		return map[string]any{"kind": "secret_value", "key": strings.Repeat("ab", 32), "start_line": nil, "end_line": nil}
+	},
 	"vex_statements": func(*schemaSeeder) map[string]any {
 		return map[string]any{"vuln_id": "CVE-2026-0001", "status": "affected", "origin": "manual",
 			"justification": nil, "versions": "{}", "version_range": nil}
@@ -329,6 +345,10 @@ var seedOverrides = map[string]func(s *schemaSeeder) map[string]any{
 	"ingest_receipts": func(s *schemaSeeder) map[string]any {
 		return map[string]any{"filename_sha256": strings.Repeat("ab", 32), "source_kind": "upload", "source_ref": s.uniq(),
 			"coverage": "partial", "status": "completed", "errors": "[]", "findings_untouched": nil}
+	},
+	// digest is a SHA-256 (CHECK: 32 bytes); part and size have range CHECKs.
+	"ingest_payloads": func(*schemaSeeder) map[string]any {
+		return map[string]any{"part": 0, "size_bytes": 1, "digest": strings.Repeat("d", 32), "sealed": "s", "key_id": "k"}
 	},
 	// key_hash is a hex SHA-256 (CHECK); a pending key has no answer yet.
 	"idempotency_keys": func(*schemaSeeder) map[string]any {
@@ -386,6 +406,10 @@ var seedOverrides = map[string]func(s *schemaSeeder) map[string]any{
 			"requested_exposure": "isolated", "requested_criticality": "low", "requested_crown_jewel": false,
 			"previous_exposure": "public", "previous_criticality": "high", "previous_crown_jewel": true,
 			"lowered_fields": "{exposure}"}
+	},
+	// An import mapping's name is a slug and its source a closed set (CHECKs; RFC-126).
+	"import_mappings": func(*schemaSeeder) map[string]any {
+		return map[string]any{"name": "probe-mapping", "source": "csv", "latest_version": 1}
 	},
 	"scan_window_overrides": func(*schemaSeeder) map[string]any {
 		return map[string]any{"reason": "incident rescan now", "starts_at": "2026-10-05T10:00:00Z", "ends_at": "2026-10-05T11:00:00Z"}

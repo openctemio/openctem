@@ -114,7 +114,7 @@ export function RunStepPanel({
                 </span>
                 <span className="text-muted-foreground">{(o.type ?? '').replace(/_/g, ' ')}</span>
                 {o.new ? (
-                  <Badge variant="secondary" className="px-1 py-0 text-[10px]">
+                  <Badge variant="secondary" className="px-1 py-0 text-meta">
                     {t('scans.step.new')}
                   </Badge>
                 ) : null}

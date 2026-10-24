@@ -4,7 +4,7 @@
  * without assets:read.
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen } from '@testing-library/react'
+import { render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { SWRConfig } from 'swr'
 import type { ReactNode } from 'react'
@@ -33,7 +33,7 @@ const page = {
       kind: 'dns_dangling',
       at: '2026-10-10T00:00:00Z',
       asset_name: 'old.example.com',
-      asset_id: 'a1',
+      asset_id: '0198f0e2-0000-7000-8000-0000000000a1',
       severity: 'medium',
       new: 'Dangling CNAME',
       exposure_id: 'x1',
@@ -43,7 +43,7 @@ const page = {
       kind: 'host_added',
       at: '2026-10-09T00:00:00Z',
       asset_name: 'new.example.com',
-      asset_id: 'a2',
+      asset_id: '0198f0e2-0000-7000-8000-0000000000a2',
     },
   ],
 }
@@ -63,7 +63,7 @@ describe('EASMChanges', () => {
     expect(screen.getByRole('button', { name: /Dangling DNS\s*1/ })).toBeInTheDocument()
     expect(screen.getByRole('link', { name: 'new.example.com' })).toHaveAttribute(
       'href',
-      '/assets/a2'
+      '/assets/0198f0e2-0000-7000-8000-0000000000a2'
     )
   })
 
@@ -94,5 +94,40 @@ describe('EASMChanges', () => {
     wrap(<EASMChanges />)
     expect(await screen.findByText('Access denied')).toBeInTheDocument()
     expect(api.get).not.toHaveBeenCalled()
+  })
+
+  it('shows an unknown kind as itself, neutral, never as a new exposure', async () => {
+    api.get.mockResolvedValue({
+      ...page,
+      items: [
+        {
+          id: 'u1',
+          kind: 'brand_new_kind',
+          at: '2026-10-10T00:00:00Z',
+          asset_name: 'x.example.com',
+        },
+      ],
+    })
+    wrap(<EASMChanges />)
+    await screen.findByText('x.example.com')
+    expect(screen.getByText('brand new kind')).toBeInTheDocument()
+    expect(within(screen.getByRole('list')).queryByText('New exposure')).not.toBeInTheDocument()
+  })
+
+  it('links the exposure title and uses the shared severity badge', async () => {
+    wrap(<EASMChanges />)
+    const link = await screen.findByRole('link', { name: 'Dangling CNAME' })
+    expect(link).toHaveAttribute('href', '/exposures?state=all&q=Dangling%20CNAME')
+    expect(screen.getByText('Medium')).toBeInTheDocument()
+  })
+
+  it('marks a selected kind without the primary button style, and has no duplicate description', async () => {
+    wrap(<EASMChanges />)
+    await screen.findByText('old.example.com')
+    const chip = screen.getByRole('button', { name: /Dangling DNS/ })
+    await userEvent.click(chip)
+    expect(chip).toHaveAttribute('aria-pressed', 'true')
+    expect(chip.className).not.toContain('bg-primary')
+    expect(screen.queryByText(/Only assets you can see are listed/)).not.toBeInTheDocument()
   })
 })

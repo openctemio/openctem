@@ -93,7 +93,7 @@ func newWFDB(t *testing.T, extraExecutorOpts ...automationsvc.WorkflowExecutorOp
 	}
 	f.editorRole = f.customRole("wfd-editor", wfReadPerm, wfWritePerm, "findings:read")
 	f.exec(`INSERT INTO user_roles (user_id, tenant_id, role_id) VALUES ($1, $2, $3)`, f.editor, f.tenantA, f.editorRole)
-	f.operatorRole = f.customRole("wfd-operator", wfReadPerm, wfWritePerm, "findings:read", "findings:write")
+	f.operatorRole = f.customRole("wfd-operator", wfReadPerm, wfWritePerm, wfPublishPerm, "findings:read", "findings:write")
 	f.exec(`INSERT INTO user_roles (user_id, tenant_id, role_id) VALUES ($1, $2, $3)`, f.operator, f.tenantA, f.operatorRole)
 
 	f.assetIn, f.assetOut, f.assetB = shared.NewID().String(), shared.NewID().String(), shared.NewID().String()
