@@ -43,6 +43,7 @@ import { claimConflicts } from '../lib/claim-conflicts'
 import { ClaimConflictStep } from './claim-conflict-step'
 import { apiMessage } from './suggestions-inbox'
 import { TaskStatePill } from './task-bits'
+import { useSearchQuery } from '@/hooks/use-search-query'
 
 export interface FindingRef {
   id: string
@@ -95,6 +96,7 @@ export function AddFindingsToTaskDialog({
   const [deadline, setDeadline] = useState('')
   const [campaign, setCampaign] = useState(NONE)
   const [search, setSearch] = useState('')
+  const searchTerm = useSearchQuery(search).term
   const [target, setTarget] = useState<RemediationTask | null>(null)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -125,7 +127,7 @@ export function AddFindingsToTaskDialog({
 
   const campaigns = useCampaignOptions(open)
   const { data: taskPage, isLoading: tasksLoading } = useTasks(
-    { states: [...OPEN_STATES], search, sort: 'updated', perPage: 20 },
+    { states: [...OPEN_STATES], search: searchTerm, sort: 'updated', perPage: 20 },
     open && mode === 'existing'
   )
   const titles = useMemo(() => new Map(findings.map((f) => [f.id, f.title])), [findings])

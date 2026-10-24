@@ -15,6 +15,7 @@ import { useCanMutate, Permission } from '@/lib/permissions'
 import { usePermissions } from '@/context/permission-provider'
 import { WatchersBlock } from '@/features/shared/components/watchers-block'
 import { useMembers } from '@/features/organization/api/use-members'
+import { useSearchQuery } from '@/hooks/use-search-query'
 
 export interface TaskPeopleProps {
   taskId: string
@@ -30,8 +31,9 @@ export function TaskPeople({ taskId, owner }: TaskPeopleProps) {
   const canManage = useCanMutate('POST /api/v1/remediation/tasks/{task_id}/watchers')
   const [open, setOpen] = useState(false)
   const [search, setSearch] = useState('')
+  const searchTerm = useSearchQuery(search).term
   const { members, isLoading } = useMembers(open && canManage ? currentTenant?.id : undefined, {
-    search: search.trim() || undefined,
+    search: searchTerm || undefined,
     limit: 20,
   })
 
