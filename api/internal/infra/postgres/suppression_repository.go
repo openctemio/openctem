@@ -139,8 +139,10 @@ func (r *SuppressionRepository) FindByID(ctx context.Context, tenantID, id share
 
 // Delete removes a suppression rule and lifts its suppressions in the same
 // transaction (finding_suppressions rows cascade with the rule, so the lift
-// must run first).
-func (r *SuppressionRepository) Delete(ctx context.Context, tenantID, id shared.ID) error {
+// must run first). The "deleted" audit row is written in the same transaction,
+// so a rule is never deleted without the row that says who deleted it, and the
+// row survives the delete (its rule id is set to NULL; details keep the id).
+func (r *SuppressionRepository) Delete(ctx context.Context, tenantID, id, deletedBy shared.ID, details map[string]any) error {
 	tx, err := r.db.BeginTx(ctx, nil)
 	if err != nil {
 		return fmt.Errorf("begin transaction: %w", err)
@@ -149,6 +151,25 @@ func (r *SuppressionRepository) Delete(ctx context.Context, tenantID, id shared.
 
 	if _, err := r.liftSuppressionsInTx(ctx, tx, tenantID, id, "suppression rule deleted"); err != nil {
 		return err
+	}
+
+	// The rule must be this tenant's: the audit row has no tenant column, so
+	// check before writing it.
+	var owned bool
+	if err := tx.QueryRowContext(ctx,
+		`SELECT EXISTS (SELECT 1 FROM suppression_rules WHERE tenant_id = $1 AND id = $2)`,
+		tenantID.String(), id.String()).Scan(&owned); err != nil {
+		return fmt.Errorf("failed to look up suppression rule: %w", err)
+	}
+	if !owned {
+		return suppression.ErrRuleNotFound
+	}
+	auditDetails := map[string]any{"rule_id": id.String()}
+	for k, v := range details {
+		auditDetails[k] = v
+	}
+	if err := r.recordAuditInTx(ctx, tx, id, "deleted", &deletedBy, auditDetails); err != nil {
+		return fmt.Errorf("record suppression rule deletion: %w", err)
 	}
 
 	query := `DELETE FROM suppression_rules WHERE tenant_id = $1 AND id = $2`

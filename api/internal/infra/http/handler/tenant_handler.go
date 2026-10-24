@@ -1024,7 +1024,7 @@ func (h *TenantHandler) ListMembers(w http.ResponseWriter, r *http.Request) {
 	// Basic member list. Paginated like the include=user path: it used to
 	// return every member of the organization in one response.
 	result, err := h.service.SearchMembersWithUserInfo(r.Context(), tenantID.String(),
-		tenant.MemberSearchFilters{Search: search, SearchNameOnly: !showDirectory, Limit: limit, Offset: offset, Status: statusFilter})
+		tenant.MemberSearchFilters{Search: search, SearchNameOnly: !showDirectory, Limit: limit, Offset: offset, Status: statusFilter, UserIDs: userIDs})
 	if err != nil {
 		h.handleServiceError(w, err)
 		return

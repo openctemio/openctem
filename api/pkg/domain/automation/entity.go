@@ -32,6 +32,13 @@ type Workflow struct {
 	// clears it.
 	DisabledReason string
 
+	// Mode: live runs execute the published version; simulate runs execute
+	// the draft and only record what they would do (version.go).
+	Mode Mode
+	// PublishedVersionID is the version live runs execute (nil before the
+	// first publish).
+	PublishedVersionID *shared.ID
+
 	// Metadata
 	Tags []string
 
@@ -66,6 +73,7 @@ func NewWorkflow(tenantID shared.ID, name, description string) (*Workflow, error
 		Name:        name,
 		Description: description,
 		IsActive:    true,
+		Mode:        ModeSimulate,
 		Tags:        []string{},
 		Nodes:       []*Node{},
 		Edges:       []*Edge{},
@@ -207,6 +215,7 @@ func (w *Workflow) Clone(newName string) *Workflow {
 		Name:        newName,
 		Description: w.Description,
 		IsActive:    true,
+		Mode:        ModeSimulate,
 		Tags:        make([]string, len(w.Tags)),
 		CreatedAt:   now,
 		UpdatedAt:   now,

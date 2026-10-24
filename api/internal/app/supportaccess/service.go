@@ -176,8 +176,15 @@ func (s *Service) CreateGrant(ctx context.Context, in CreateGrantInput, client C
 	if err := s.repo.CreateGrant(ctx, g); err != nil {
 		return nil, err
 	}
-	_ = s.tenantEvent(ctx, g.TenantID, in.GrantedBy.String(), in.GrantedByEmail, client,
-		auditdom.ActionSupportGrantCreated, g, "Support access granted to "+g.AdminEmail, nil)
+	// Fail closed: a grant of access to the organization's data that cannot be
+	// recorded is revoked at once and never reaches the support administrator.
+	if err := s.tenantEvent(ctx, g.TenantID, in.GrantedBy.String(), in.GrantedByEmail, client,
+		auditdom.ActionSupportGrantCreated, g, "Support access granted to "+g.AdminEmail, nil); err != nil {
+		if _, rerr := s.repo.RevokeGrant(ctx, g.TenantID, g.ID, in.GrantedBy, s.now()); rerr != nil {
+			s.log.Error("support access: revoke unaudited grant failed", "grant_id", g.ID.String(), "error", logger.SanitizeError(rerr))
+		}
+		return nil, dom.ErrAuditUnavailable
+	}
 	s.emailOwners(ctx, g.TenantID, "Support access was granted for your organization",
 		fmt.Sprintf("%s granted platform support (%s) read-only access to %s until %s. Reason: %s%s. "+
 			"Every access is recorded in the audit log. Revoke it at any time under Settings > Access > Support access.",
@@ -385,7 +392,7 @@ func (s *Service) tenantEvent(ctx context.Context, tenantID shared.ID, actorID, 
 		ActorIP: client.IP, UserAgent: client.UserAgent, RequestID: client.RequestID,
 	}, ev)
 	if err != nil {
-		s.log.Error("support access: tenant audit failed", "action", string(action), "error", err)
+		s.log.Error("support access: tenant audit failed", "action", string(action), "error", logger.SanitizeError(err))
 	}
 	return err
 }
@@ -405,7 +412,7 @@ func (s *Service) adminEvent(ctx context.Context, a *admin.AdminUser, action str
 		b = b.High()
 	}
 	if err := s.adminAudit.Create(ctx, b.Build()); err != nil {
-		s.log.Error("support access: admin audit failed", "action", action, "error", err)
+		s.log.Error("support access: admin audit failed", "action", action, "error", logger.SanitizeError(err))
 		return err
 	}
 	return nil

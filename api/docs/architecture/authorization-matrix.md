@@ -338,6 +338,7 @@ and SBOM import write it.
 | `PATCH /api/v1/findings/{id}/status` | `findings:status`; moving a finding **out of** an approved false positive or an accepted risk needs `findings:approve` as well (403 otherwise), on this route and on bulk status. A workflow, automation action or ticket webhook cannot move a finding out of a decided status at all (false positive, accepted risk, duplicate; a workflow also not out of resolved) |
 | `GET /api/v1/findings/{id}/duplicate-candidates` (suggestions for "mark duplicate", RFC-121) | `findings:triage`. The finding must be in the caller's tenant and data scope (else 404, also for another tenant's id); candidates are filtered with the findings-list scope rules (asset scope rows, private program assets, pentest member visibility), so neither the list nor `known_since` reveals a finding the caller cannot read. Nothing is merged |
 | `POST /api/v1/findings/{id}/duplicates` (mark the body's finding a duplicate of `{id}`, RFC-043) | `findings:triage`; refused with 409 (whatever the caller holds) when one finding is a false positive or risk acceptance and the other is not, or the two differ, because a merge writes no approval. Both findings must be in the caller's tenant and data scope (else 404) and on the same asset |
+| `GET /api/v1/findings/{id}/issue-links`, `DELETE /api/v1/findings/{id}/issue-links/{other}` (same-issue group, RFC-043 §17) | read: `findings:read`, the finding in the caller's data scope (else 404); members on assets outside the scope are neither listed nor counted. Unlink: `findings:triage`, both findings in the caller's tenant and data scope (else 404); never changes either finding's status |
 | `POST /api/v1/findings` with `bounty_report`, `PUT /api/v1/findings/{id}/bounty-report` (bug-bounty report fields, RFC-121) | `findings:write`; setting or changing `reward` or `disclosure` also needs `findings:triage` (403 `TRIAGE_PERMISSION_REQUIRED`, nothing written). Only `bug_bounty` findings; the finding (or the asset on create) must be in the caller's tenant and data scope (else 404); a second finding for the same intake and ref is 409. Audited with old and new values |
 | `POST /api/v1/findings/{id}/assign` · `/unassign` · `/actions/assign-to-owners` | `findings:assign` |
 | `POST /api/v1/findings/bulk/status` | `findings:bulk_update` **and** `findings:status` (the bulk permission widens the reach of a move; it does not replace the right to make it) |
@@ -2067,10 +2068,12 @@ person, its principal, and never as the system:
   entity by forging the event that names it. The caller must hold the
   permission of every step, and the subject must be in their data scope (a
   subject outside it answers 404, like one that does not exist);
-- an event run acts as the automation's owner (`workflows.created_by`, the
-  column the member lifecycle pauses and reassigns). Whoever creates,
-  switches on, or changes what an automation does (graph, node, edge)
-  becomes its owner.
+- an event run acts as the automation's owner (`automations.created_by`,
+  the column the member lifecycle pauses and reassigns). Whoever creates,
+  publishes or switches on an automation becomes its owner. Editing the
+  draft (graph, node, edge) does not: a draft only runs in simulate, and a
+  live automation runs its published version until someone publishes again
+  ([automations.md](automations.md), "Versions and mode").
 
 Before every action and notification step the principal is checked again,
 live (`workflow.PrincipalAuthorizer`): an active member with an active

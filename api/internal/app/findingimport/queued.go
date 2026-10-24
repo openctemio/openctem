@@ -43,6 +43,7 @@ type Queue interface {
 	Commit(ctx context.Context, job *ingestjob.Job, admit func() error) (*ingestjob.Job, bool, error)
 	Discard(ctx context.Context, tenantID, jobID shared.ID)
 	Recent(ctx context.Context, tenantID shared.ID, kind ingestjob.Kind, principal string, digest []byte, window time.Duration) (*ingestjob.Job, error)
+	Admit(ctx context.Context, tenantID shared.ID) error
 	Get(ctx context.Context, tenantID, id shared.ID, kind ingestjob.Kind) (*ingestjob.Job, error)
 	Wait(ctx context.Context, tenantID, id shared.ID, kind ingestjob.Kind, wait time.Duration) (*ingestjob.Job, error)
 	BySource(ctx context.Context, tenantID shared.ID, kind ingestjob.Kind, sourceRef string) (*ingestjob.Job, error)
@@ -204,6 +205,16 @@ type Accepted struct {
 	Replayed bool
 }
 
+// AdmitUpload runs the tenant's queue back-pressure before an upload's
+// parts are read and stored, so a tenant at its limit writes nothing
+// (CommitUpload checks again against the stored queue).
+func (s *Service) AdmitUpload(ctx context.Context, tenantID shared.ID) error {
+	if s.queue == nil {
+		return ErrQueueUnavailable
+	}
+	return s.queue.Admit(ctx, tenantID)
+}
+
 // StagePart stores one part of an upload that is still being received.
 func (s *Service) StagePart(ctx context.Context, tenantID, jobID shared.ID, part int, name string, body []byte) error {
 	if s.queue == nil {
@@ -243,6 +254,11 @@ func (s *Service) CommitUpload(ctx context.Context, tenantID shared.ID, actorUse
 			}
 		}
 	}
+	// Back-pressure before the receipt: a refused upload leaves no trace.
+	if err := s.queue.Admit(ctx, tenantID); err != nil {
+		s.DiscardParts(context.WithoutCancel(ctx), tenantID, jobID)
+		return nil, err
+	}
 	receiptID := shared.NewID()
 	receiptFormat := env.Format
 	if env.Mapping != nil {
@@ -262,6 +278,9 @@ func (s *Service) CommitUpload(ctx context.Context, tenantID shared.ID, actorUse
 	}
 	job := ingestjob.NewUploadJob(jobID, tenantID, ingestjob.KindFindingImport, receiptID.String(), principal,
 		"import:"+receiptID.String(), raw, digest)
+	// A person waits on it; the imports of a tenant are applied one at a
+	// time (an import may name any of its assets).
+	job.Route(ingestjob.LaneInteractive, ingestjob.ScopeKey(tenantID, "import"))
 	if _, _, err := s.queue.Commit(ctx, job, nil); err != nil {
 		s.failReceipt(context.WithoutCancel(ctx), tenantID, receiptID, ingestreceipt.ErrorStoreFailed)
 		return nil, err

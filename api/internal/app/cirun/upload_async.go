@@ -38,6 +38,7 @@ import (
 // UploadQueue is the ingest queue (ingestqueue.Queue).
 type UploadQueue interface {
 	StagePart(ctx context.Context, tenantID, jobID shared.ID, part int, name string, body []byte) error
+	Admit(ctx context.Context, tenantID shared.ID) error
 	Commit(ctx context.Context, job *ingestjob.Job, admit func() error) (*ingestjob.Job, bool, error)
 	Get(ctx context.Context, tenantID, id shared.ID, kind ingestjob.Kind) (*ingestjob.Job, error)
 	Wait(ctx context.Context, tenantID, id shared.ID, kind ingestjob.Kind, wait time.Duration) (*ingestjob.Job, error)
@@ -198,6 +199,8 @@ func (s *Service) AcceptUpload(ctx context.Context, run *cirun.Run, body []byte,
 	if run == nil {
 		return nil, cirun.ErrRunNotFound
 	}
+	// A tool export is converted by the worker; a gate waits on it.
+	lane := ingestjob.LaneInteractive
 	if pin != nil {
 		export = true
 	}
@@ -209,9 +212,15 @@ func (s *Service) AcceptUpload(ctx context.Context, run *cirun.Run, body []byte,
 		if err := ScopeReport(report, run); err != nil {
 			return nil, err
 		}
+		lane = s.uploadLane(ctx, report)
 	}
 	env, err := json.Marshal(uploadEnvelope{Export: export, Mapping: pin})
 	if err != nil {
+		return nil, err
+	}
+	// Back-pressure before anything is stored: a tenant at its queue limit
+	// writes no sealed body (Commit checks again against the stored queue).
+	if err := s.uploads.Admit(ctx, run.TenantID); err != nil {
 		return nil, err
 	}
 	keyed := body
@@ -221,6 +230,9 @@ func (s *Service) AcceptUpload(ctx context.Context, run *cirun.Run, body []byte,
 	digest := sha256.Sum256(keyed)
 	job := ingestjob.NewUploadJob(shared.NewID(), run.TenantID, ingestjob.KindCIResults, run.ID.String(),
 		uploadPrincipal(run.ID), "ci:"+run.ID.String(), env, digest[:])
+	// The uploads of one repository are applied one at a time: concurrent
+	// jobs of a CI matrix never write the same rows together.
+	job.Route(lane, ingestjob.ScopeKey(run.TenantID, "repo", run.RepositoryAssetID.String()))
 	if err := s.uploads.StagePart(ctx, run.TenantID, job.ID(), 0, "results", body); err != nil {
 		return nil, fmt.Errorf("store CI upload: %w", err)
 	}
