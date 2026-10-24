@@ -72,14 +72,14 @@ func scanContentSource(row interface{ Scan(...any) error }) (*cs.Source, error) 
 	s.CredentialUpdatedAt, s.NextSyncAt, s.SyncRequestedAt = nullTimeValue(credAt), nullTimeValue(nextSync), nullTimeValue(requested)
 	s.WebhookSecretAt, s.LastSyncAt, s.ConfigChangedAt = nullTimeValue(webhookAt), nullTimeValue(lastSync), nullTimeValue(changedAt)
 	s.LastSyncReport = report
-	s.ConfigAuthors = idsOf(authors)
+	s.ConfigAuthors = contentIDsOf(authors)
 	if leaseUntil.Valid {
 		s.LeaseUntil = leaseUntil.Time
 	}
 	return &s, nil
 }
 
-func idsOf(in []string) []shared.ID {
+func contentIDsOf(in []string) []shared.ID {
 	out := make([]shared.ID, 0, len(in))
 	for _, raw := range in {
 		if id, err := shared.IDFromString(raw); err == nil {
@@ -89,7 +89,7 @@ func idsOf(in []string) []shared.ID {
 	return out
 }
 
-func idStrings(in []shared.ID) []string {
+func contentIDStrings(in []shared.ID) []string {
 	out := make([]string, 0, len(in))
 	for _, id := range in {
 		out = append(out, id.String())
@@ -355,7 +355,7 @@ func scanContentSnapshot(row interface{ Scan(...any) error }) (*cs.Snapshot, err
 	sn.Tier = contentpack.Tier(tier)
 	sn.TenantID, sn.ContentPackID, sn.PlatformPackID = parseNullID(tenantID), parseNullID(packID), parseNullID(platformPackID)
 	sn.SyncedBy, sn.PromotedBy, sn.RejectedBy = parseNullID(syncedBy), parseNullID(promotedBy), parseNullID(rejectedBy)
-	sn.ConfigAuthors = idsOf(authors)
+	sn.ConfigAuthors = contentIDsOf(authors)
 	sn.PromotedAt, sn.RejectedAt = nullTimeValue(promotedAt), nullTimeValue(rejectedAt)
 	sn.Redistribution = nullBoolValue(redistribution)
 	for _, d := range []struct {
@@ -400,7 +400,7 @@ func (r *ContentSourceRepository) CreateSnapshot(ctx context.Context, sn *cs.Sna
 		sn.ID.String(), sn.SourceID.String(), string(sn.Scope), nullIDPtr(sn.TenantID), sn.UpstreamRevision, nullString(sn.Ref),
 		sn.Digest, nullIDPtr(sn.ContentPackID), nullIDPtr(sn.PlatformPackID), sn.SizeBytes, sn.FileCount,
 		fileIndex, rules, sn.RuleCount, string(sn.Tier), lint, nullString(sn.LicenseSPDX), sn.Signature,
-		diff, checks, sn.ReviewRequired, string(sn.State), nullIDPtr(sn.SyncedBy), sn.CreatedAt, sn.ServiceUse, nullBoolPtr(sn.Redistribution), pq.Array(idStrings(sn.ConfigAuthors)))
+		diff, checks, sn.ReviewRequired, string(sn.State), nullIDPtr(sn.SyncedBy), sn.CreatedAt, sn.ServiceUse, nullBoolPtr(sn.Redistribution), pq.Array(contentIDStrings(sn.ConfigAuthors)))
 	if err != nil {
 		if isUniqueViolation(err) {
 			return fmt.Errorf("%w: snapshot of this digest exists", shared.ErrConflict)
