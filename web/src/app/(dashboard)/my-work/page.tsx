@@ -135,6 +135,7 @@ function MyWorkContent() {
       },
       {
         accessorKey: 'title',
+        meta: { primary: true },
         enableSorting: false,
         header: ({ column }) => (
           <DataTableColumnHeader column={column} title={t('myWork.columns.finding')} />
