@@ -11,6 +11,7 @@ import {
   EmptyState,
   MetricStrip,
   type RowAction,
+  PageStack,
 } from '@/features/shared'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -297,134 +298,135 @@ export default function RolesPage() {
   return (
     <>
       <Main>
-        <PageHeader
-          title={t('org.rolesPage.title', 'Roles')}
-          description={t(
-            'org.rolesPage.description',
-            'Roles bundle permissions; a user can hold several roles.'
-          )}
-        >
-          <Can route="POST /api/v1/roles">
-            <Button size="sm" onClick={() => setCreateSheetOpen(true)}>
-              <Plus className="me-2 h-4 w-4" />
-              {t('org.rolesPage.createRole', 'Create role')}
-            </Button>
-          </Can>
-        </PageHeader>
-
-        {isError && !isLoading ? (
-          <Alert variant="destructive" className="mt-5">
-            <AlertCircle className="h-4 w-4" />
-            <AlertTitle>{t('org.rolesPage.loadFailedTitle', 'Failed to load roles')}</AlertTitle>
-            <AlertDescription>
-              <p>{t('org.rolesPage.loadFailedBody', 'The role list could not be loaded.')}</p>
-              <Button variant="outline" size="sm" className="mt-2" onClick={refreshData}>
-                <RefreshCw className="me-2 h-4 w-4" />
-                {t('common.retry', 'Retry')}
+        <PageStack>
+          <PageHeader
+            title={t('org.rolesPage.title', 'Roles')}
+            description={t(
+              'org.rolesPage.description',
+              'Roles bundle permissions; a user can hold several roles.'
+            )}
+          >
+            <Can route="POST /api/v1/roles">
+              <Button size="sm" onClick={() => setCreateSheetOpen(true)}>
+                <Plus className="me-2 h-4 w-4" />
+                {t('org.rolesPage.createRole', 'Create role')}
               </Button>
-            </AlertDescription>
-          </Alert>
-        ) : (
-          <>
-            <MetricStrip
-              className="mt-5"
-              loading={isLoading}
-              items={[
-                {
-                  key: 'all',
-                  label: t('org.rolesPage.metric.roles', 'Roles'),
-                  value: typeCounts.all,
-                  onClick: () => setTypeFilter('all'),
-                  active: typeFilter === 'all',
-                },
-                {
-                  key: 'system',
-                  label: t('org.rolesPage.metric.system', 'System roles'),
-                  value: typeCounts.system,
-                  onClick: () => toggleType('system'),
-                  active: typeFilter === 'system',
-                },
-                {
-                  key: 'custom',
-                  label: t('org.rolesPage.metric.custom', 'Custom roles'),
-                  value: typeCounts.custom,
-                  onClick: () => toggleType('custom'),
-                  active: typeFilter === 'custom',
-                },
-              ]}
-            />
+            </Can>
+          </PageHeader>
 
-            <div className="mt-5">
-              {isLoading ? (
-                <div className="space-y-2">
-                  <Skeleton className="h-9 w-full max-w-sm" />
-                  {Array.from({ length: 5 }).map((_, i) => (
-                    <Skeleton key={i} className="h-12 w-full" />
-                  ))}
-                </div>
-              ) : roles.length === 0 ? (
-                <EmptyState
-                  icon={Shield}
-                  title={t('org.rolesPage.emptyTitle', 'No roles yet')}
-                  description={t(
-                    'org.rolesPage.emptyBody',
-                    'Create a role to grant a set of permissions to users.'
-                  )}
-                  action={
-                    <Can route="POST /api/v1/roles">
-                      <Button size="sm" onClick={() => setCreateSheetOpen(true)}>
-                        <Plus className="me-2 h-4 w-4" />
-                        {t('org.rolesPage.createRole', 'Create role')}
-                      </Button>
-                    </Can>
-                  }
-                />
-              ) : (
-                <DataTable
-                  columns={columns}
-                  data={filteredData}
-                  getRowId={(r) => r.id}
-                  showSearch={false}
-                  showColumnToggle={false}
-                  onRowClick={(r) => setSelectedRole(r)}
-                  toolbarStart={
-                    <>
-                      <div className="relative min-w-0 flex-1 sm:max-w-sm">
-                        <SearchIcon className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-                        <Input
-                          placeholder={t('org.rolesPage.searchPlaceholder', 'Search roles...')}
-                          value={searchQuery}
-                          onChange={(e) => setSearchQuery(e.target.value)}
-                          className="ps-9"
-                          aria-label={t('org.rolesPage.searchLabel', 'Search roles')}
-                        />
-                      </div>
-                      <Select
-                        value={typeFilter}
-                        onValueChange={(v) => setTypeFilter(v as TypeFilter)}
-                      >
-                        <SelectTrigger
-                          className="h-9 w-[130px]"
-                          aria-label={t('org.rolesPage.typeLabel', 'Role type')}
+          {isError && !isLoading ? (
+            <Alert variant="destructive">
+              <AlertCircle className="h-4 w-4" />
+              <AlertTitle>{t('org.rolesPage.loadFailedTitle', 'Failed to load roles')}</AlertTitle>
+              <AlertDescription>
+                <p>{t('org.rolesPage.loadFailedBody', 'The role list could not be loaded.')}</p>
+                <Button variant="outline" size="sm" className="mt-2" onClick={refreshData}>
+                  <RefreshCw className="me-2 h-4 w-4" />
+                  {t('common.retry', 'Retry')}
+                </Button>
+              </AlertDescription>
+            </Alert>
+          ) : (
+            <>
+              <MetricStrip
+                loading={isLoading}
+                items={[
+                  {
+                    key: 'all',
+                    label: t('org.rolesPage.metric.roles', 'Roles'),
+                    value: typeCounts.all,
+                    onClick: () => setTypeFilter('all'),
+                    active: typeFilter === 'all',
+                  },
+                  {
+                    key: 'system',
+                    label: t('org.rolesPage.metric.system', 'System roles'),
+                    value: typeCounts.system,
+                    onClick: () => toggleType('system'),
+                    active: typeFilter === 'system',
+                  },
+                  {
+                    key: 'custom',
+                    label: t('org.rolesPage.metric.custom', 'Custom roles'),
+                    value: typeCounts.custom,
+                    onClick: () => toggleType('custom'),
+                    active: typeFilter === 'custom',
+                  },
+                ]}
+              />
+
+              <div>
+                {isLoading ? (
+                  <div className="space-y-2">
+                    <Skeleton className="h-9 w-full max-w-sm" />
+                    {Array.from({ length: 5 }).map((_, i) => (
+                      <Skeleton key={i} className="h-12 w-full" />
+                    ))}
+                  </div>
+                ) : roles.length === 0 ? (
+                  <EmptyState
+                    icon={Shield}
+                    title={t('org.rolesPage.emptyTitle', 'No roles yet')}
+                    description={t(
+                      'org.rolesPage.emptyBody',
+                      'Create a role to grant a set of permissions to users.'
+                    )}
+                    action={
+                      <Can route="POST /api/v1/roles">
+                        <Button size="sm" onClick={() => setCreateSheetOpen(true)}>
+                          <Plus className="me-2 h-4 w-4" />
+                          {t('org.rolesPage.createRole', 'Create role')}
+                        </Button>
+                      </Can>
+                    }
+                  />
+                ) : (
+                  <DataTable
+                    columns={columns}
+                    data={filteredData}
+                    getRowId={(r) => r.id}
+                    showSearch={false}
+                    showColumnToggle={false}
+                    onRowClick={(r) => setSelectedRole(r)}
+                    toolbarStart={
+                      <>
+                        <div className="relative min-w-0 flex-1 sm:max-w-sm">
+                          <SearchIcon className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                          <Input
+                            placeholder={t('org.rolesPage.searchPlaceholder', 'Search roles...')}
+                            value={searchQuery}
+                            onChange={(e) => setSearchQuery(e.target.value)}
+                            className="ps-9"
+                            aria-label={t('org.rolesPage.searchLabel', 'Search roles')}
+                          />
+                        </div>
+                        <Select
+                          value={typeFilter}
+                          onValueChange={(v) => setTypeFilter(v as TypeFilter)}
                         >
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {typeFilters.map((f) => (
-                            <SelectItem key={f.value} value={f.value}>
-                              {t(f.key, f.en)}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </>
-                  }
-                  emptyMessage={t('org.rolesPage.noMatch', 'No roles match these filters')}
-                />
-              )}
-            </div>
-          </>
-        )}
+                          <SelectTrigger
+                            className="h-9 w-[130px]"
+                            aria-label={t('org.rolesPage.typeLabel', 'Role type')}
+                          >
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {typeFilters.map((f) => (
+                              <SelectItem key={f.value} value={f.value}>
+                                {t(f.key, f.en)}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </>
+                    }
+                    emptyMessage={t('org.rolesPage.noMatch', 'No roles match these filters')}
+                  />
+                )}
+              </div>
+            </>
+          )}
+        </PageStack>
       </Main>
 
       {/* Create Role Sheet */}
