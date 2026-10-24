@@ -828,15 +828,18 @@ Owner and administrator only, on top of the permission: `PUT /api/v1/scan-profil
 #### Dashboards (`/api/v1/me/dashboards`, `/api/v1/organization/dashboards`)
 
 Two kinds ([dashboards](dashboards.md)). Personal dashboards are the caller's
-own: `/me/*` is self-scoped (no permission gate) and every query filters on
-the caller's tenant and user, so another user's or tenant's dashboard is 404.
+own: the layout routes of `/me/*` are self-scoped (no permission gate) and every
+query filters on the caller's tenant and user, so another user's or tenant's
+dashboard is 404. The routes that compute figures need `dashboard:read`, and
+each metric needs the permission of what it counts.
 Organization dashboards belong to the organization.
 
 | Endpoint | Permission Required |
 |----------|---------------------|
 | `GET/POST /api/v1/me/dashboards`, `GET/PUT/DELETE /api/v1/me/dashboards/{id}`, `POST …/{id}/default`, `PUT …/{id}/schedule` | self (owner only) |
 | `POST /api/v1/me/dashboards/{id}/share` | self; recipients must be active members of the tenant; each gets a layout copy of their own (audited) |
-| `GET /api/v1/me/dashboards/{id}/data`, `POST …/{id}/refresh`, `POST /api/v1/me/dashboards/widget-preview`, `GET /api/v1/me/dashboards/widget-catalog` | self (owner only); figures follow the caller's own data scope and pentest campaign membership; Refresh now budgeted (1/min per person and dashboard, 30/h per organization) |
+| `GET /api/v1/me/dashboards/widget-catalog` | self (static catalog, no data) |
+| `GET /api/v1/me/dashboards/{id}/data`, `POST …/{id}/refresh`, `POST /api/v1/me/dashboards/widget-preview` | `dashboard:read`; self (owner only); a widget whose metric counts findings needs `findings:read`, one that counts assets needs `assets:read` (otherwise it is returned as unsupported with reason `forbidden` and no figure); figures follow the caller's own data scope and pentest campaign membership; Refresh now budgeted (1/min per person and dashboard, 30/h per organization) |
 | `GET /api/v1/organization/dashboards`, `GET …/{id}`, `GET …/{id}/data`, `POST …/{id}/refresh` | `dashboards:org:view` (or `dashboards:org:manage`); a viewer outside the dashboard's audience gets it left out of the list and 404 by id; managers see every one with its audience |
 | `POST /api/v1/me/dashboards` with `from_organization_dashboard_id` ("duplicate to mine") | `dashboards:org:view` + audience; copies the layout into a new personal dashboard of the caller |
 | `POST /api/v1/organization/dashboards`, `PUT/DELETE …/{id}`, `POST …/{id}/default`, `PUT …/order`, `PUT …/{id}/audience`, `PUT …/{id}/schedule` | `dashboards:org:manage` (owner and admin by default), audited |
