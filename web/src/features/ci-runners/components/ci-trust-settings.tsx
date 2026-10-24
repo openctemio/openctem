@@ -47,6 +47,7 @@ import { Switch } from '@/components/ui/switch'
 import { Textarea } from '@/components/ui/textarea'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { ConfirmDialog } from '@/components/confirm-dialog'
+import { confirmName } from '@/lib/confirm-name'
 import { useTranslation } from '@/context/i18n-provider'
 import { useBrand } from '@/context/brand-provider'
 import { formatLocalized } from '@/lib/format-date'
@@ -253,6 +254,7 @@ function TrustConfigsSection({ canWrite }: { canWrite: boolean }) {
                   reason={t('scans.ci.noWrite', NO_WRITE)}
                   variant="ghost"
                   size="sm"
+                  className="ms-3 text-destructive hover:text-destructive"
                   aria-label={t('scans.ci.trust.deleteLabel', 'Delete {name}', {
                     name: c.name ?? '',
                   })}
@@ -326,8 +328,9 @@ function TrustConfigsSection({ canWrite }: { canWrite: boolean }) {
           'confirm.ciTrust.deleteDesc',
           'Pipelines it admits can no longer send results. Tokens already issued expire within 15 minutes. The repository scope entries it added are removed. This cannot be undone.'
         )}
-        confirmText={t('confirm.delete', 'Delete')}
+        confirmText={t('confirm.ciTrust.deleteBtn')}
         destructive
+        typeToConfirm={deleting ? confirmName(deleting.name, deleting.id ?? '') : undefined}
         handleConfirm={() => {
           const target = deleting
           setDeleting(null)
@@ -1030,6 +1033,7 @@ function GatePolicySection({ canWrite }: { canWrite: boolean }) {
                   reason={t('scans.ci.noWrite', NO_WRITE)}
                   variant="ghost"
                   size="sm"
+                  className="ms-3 text-destructive hover:text-destructive"
                   aria-label={t('confirm.gatePolicy.deleteLabel', 'Delete the policy for {scope}', {
                     scope: policyScope(p, t),
                   })}
@@ -1077,7 +1081,12 @@ function GatePolicySection({ canWrite }: { canWrite: boolean }) {
           'confirm.gatePolicy.deleteDesc',
           'Pipelines in this scope fall back to the organization policy from their next run. This cannot be undone.'
         )}
-        confirmText={t('confirm.delete', 'Delete')}
+        confirmText={t('confirm.gatePolicy.deleteBtn')}
+        typeToConfirm={
+          pendingDelete
+            ? confirmName(policyScope(pendingDelete, t), pendingDelete.id ?? '')
+            : undefined
+        }
         handleConfirm={async () => {
           if (!pendingDelete) return
           try {
