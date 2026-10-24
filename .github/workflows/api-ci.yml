@@ -207,7 +207,7 @@ jobs:
               if [ "$PUSH_REF" = "refs/heads/develop" ] && git cat-file -e "${PUSH_BEFORE}^{commit}" 2>/dev/null; then
                 base="$PUSH_BEFORE"
               fi
-              bash .github/scripts/check-migration-versions.sh $base ;;
+              bash .github/scripts/check-migration-versions.sh ${base:+"$base"} ;;
           esac
 
       # PR only: a migration whose number develop has taken since is
