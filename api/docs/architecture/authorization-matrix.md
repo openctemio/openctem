@@ -2066,7 +2066,7 @@ longer be resolved (left the organization), is not rendered or sent
 | `POST /{id}/publish`, `POST /{id}/versions/{versionId}/rollback` | `automations:publish` | every step's permission; elevated risk: step-up; high risk: the version waits for a second publisher |
 | `POST /{id}/versions/{versionId}/approve` | `automations:publish` | step-up, not the publisher, the reviewed digest, every step's permission |
 | `PUT /{id}/mode` (simulate), `PUT /{id}` with `is_active`, `DELETE /{id}` | `automations:publish` | no step-up: pausing and switching to simulate narrow |
-| `POST /workflow-runs/{id}/resume` | `automations:publish` | a run paused at its change cap continues; the run's subject must be in the caller's scope |
+| `POST /workflow-runs/{id}/approve` | `automations:publish` | a run paused at its change cap continues; the run's subject must be in the caller's scope |
 
 No automation step writes false positive, accepted, resolved or duplicate:
 `update_status` sets only confirmed or in progress, and the request actions

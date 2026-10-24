@@ -189,7 +189,7 @@ class is the highest of its steps.
   action or notification step is one change; default 250, at most 1,000; set
   on the automation, pinned by the version; above 250 the automation is high
   risk). The step past the cap does not start: the run becomes `paused`
-  (`pause_reason: blast_radius`) and `POST /workflow-runs/{id}/resume`
+  (`pause_reason: blast_radius`) and `POST /workflow-runs/{id}/approve`
   (`automations:publish`) lets it continue past the cap, keeping the steps it
   finished; cancel ends it.
 - Migration `automation_guardrails` switched off (and back to simulate) every
