@@ -106,11 +106,16 @@ describe('components list', () => {
     expect(listCalls.at(-1)).toMatchObject({ ecosystem: 'pypi' })
   })
 
-  it('applies a preset from the KPI strip', async () => {
+  it('applies a preset from the KPI strip, with no second row of presets', async () => {
     render(<ComponentsListView />)
-    await userEvent.click(screen.getAllByRole('radio', { name: /known exploited/i })[0])
+    // The tiles are the presets; no segmented control repeats them.
+    expect(screen.queryByRole('radiogroup')).not.toBeInTheDocument()
+    await userEvent.click(screen.getByRole('button', { name: /known exploited/i }))
     expect(new URLSearchParams(window.location.search).get('kev')).toBe('true')
-  })
+    // Packages clears the presets again.
+    await userEvent.click(screen.getByRole('button', { name: /packages/i }))
+    expect(new URLSearchParams(window.location.search).get('kev')).toBeNull()
+  }, 30_000)
 
   it('explains how to get data when the inventory is empty', () => {
     listResponse = { data: [], total: 0, page: 1, per_page: 25, total_pages: 0, facets: {} }
@@ -129,7 +134,7 @@ describe('components list', () => {
     expect(screen.getByText('No packages match these filters')).toBeTruthy()
   })
 
-  it('computes the tiles unfiltered and hides Outdated when there is no health data', async () => {
+  it('computes the tiles unfiltered and has no inert Outdated tile', async () => {
     window.history.replaceState(null, '', '/components?q=lodash&ecosystem=npm')
     render(<ComponentsListView />)
     expect(summaryCalls.at(-1)).toEqual({})

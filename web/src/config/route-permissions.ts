@@ -183,6 +183,16 @@ export const routePermissions: Record<string, RoutePermissionConfig> = {
     permission: Permission.ScopeRead,
     module: Module.ScopeConfig,
   },
+  // Domain proof and networks: route tabs of Scope; the panels need the
+  // attack surface module, as they did inside the Scope page.
+  '/scope/domain-proof': {
+    permission: Permission.ScopeRead,
+    module: Module.AttackSurface,
+  },
+  '/scope/networks': {
+    permission: Permission.ScopeRead,
+    module: Module.AttackSurface,
+  },
   // Letters of authorization (RFC-065 §13).
   '/scope/letters': {
     permission: Permission.ScopeRead,
