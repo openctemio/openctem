@@ -44,7 +44,6 @@ export function AttackSurfaceSectionTabs() {
     <GatedSectionTabs
       tabs={tabs}
       label={t('attackSurface.tab.label', 'Attack surface sections')}
-      className="mt-4 mb-0"
       counts={{ [REVIEW_HREF]: waiting }}
     />
   )

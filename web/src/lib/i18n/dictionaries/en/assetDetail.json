@@ -9,7 +9,7 @@
   "assetDetail.notFoundHint": "The asset may have been deleted or you may not have access.",
   "assetDetail.backToAssets": "Back to assets",
   "assetDetail.back": "Back",
-  "assetDetail.subtitle": "Asset · {type}",
+  "assetDetail.subtitle": "Asset type: {type}",
   "assetDetail.viewFindings": "View {count} findings for this asset",
   "assetDetail.findings": "Findings",
   "assetDetail.properties": "Properties",
