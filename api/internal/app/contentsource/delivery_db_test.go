@@ -116,7 +116,7 @@ func TestRuleSources_FailedSnapshotLeavesNoDeliverablePack_DB(t *testing.T) {
 
 	// The pack delete fails as well: an orphan stays, undeliverable.
 	e.clock = e.clock.Add(2 * time.Hour)
-	src = e.runSyncOn(t, e.service(broken, &failDeletePacks{PackStore: e.packs, fail: true}), src)
+	e.runSyncOn(t, e.service(broken, &failDeletePacks{PackStore: e.packs, fail: true}), src)
 	if e.gitPacks(t) != 1 || len(e.deliverable(t)) != 0 {
 		t.Fatalf("orphan: git packs %d, deliverable %v", e.gitPacks(t), e.deliverable(t))
 	}
