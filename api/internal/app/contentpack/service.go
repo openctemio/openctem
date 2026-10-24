@@ -292,7 +292,8 @@ type ListInput struct {
 	Kind     string
 	Name     string
 	Status   string
-	// Deliverable leaves out unpromoted rule source snapshots.
+	// Deliverable keeps a rule source snapshot's pack only while it is its
+	// source's current snapshot.
 	Deliverable bool
 	Limit       int
 	Offset      int
