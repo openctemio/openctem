@@ -154,17 +154,17 @@ func TestBypass_RedirectToInternal(t *testing.T) {
 // https to http and bounds the chain.
 func TestBypass_RedirectPolicy(t *testing.T) {
 	mk := func(raw string) *http.Request { u, _ := url.Parse(raw); return &http.Request{URL: u} }
-	if err := checkRedirect(mk("http://example.com/b"), []*http.Request{mk("https://example.com/a")}); err == nil {
+	if err := CheckRedirect(mk("http://example.com/b"), []*http.Request{mk("https://example.com/a")}); err == nil {
 		t.Error("https to http redirect was allowed")
 	}
-	if err := checkRedirect(mk("https://example.com/b"), []*http.Request{mk("http://example.com/a")}); err != nil {
+	if err := CheckRedirect(mk("https://example.com/b"), []*http.Request{mk("http://example.com/a")}); err != nil {
 		t.Errorf("http to https redirect refused: %v", err)
 	}
 	via := make([]*http.Request, maxRedirects)
 	for i := range via {
 		via[i] = mk("https://example.com/")
 	}
-	if err := checkRedirect(mk("https://example.com/next"), via); err == nil {
+	if err := CheckRedirect(mk("https://example.com/next"), via); err == nil {
 		t.Error("redirect chain is unbounded")
 	}
 	if SafeHTTPClient(time.Second).CheckRedirect == nil {
