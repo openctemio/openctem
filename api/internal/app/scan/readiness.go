@@ -207,7 +207,10 @@ func (s *Service) stepReadiness(ctx context.Context, tenantID shared.ID, step *s
 	case strings.TrimSpace(step.Tool) != "":
 		candidates = []string{strings.ToLower(strings.TrimSpace(step.Tool))}
 	case placed:
-		candidates = stepCandidates(st, step)
+		// The organization's declared implementations are candidates too; a
+		// failed lookup leaves only the catalog's (readiness is advisory).
+		declared, _ := declaredImplementations(ctx, s.toolRepo, tenantID, st)
+		candidates = stepCandidates(st, step, declared)
 	default:
 		if t, err := ResolveStepTool(ctx, s.toolRepo, tenantID, step); err == nil && t.Name != "" {
 			candidates = []string{t.Name}
