@@ -152,7 +152,7 @@ export default function AssetDetailPage() {
 
         <PageHeader
           title={asset.name}
-          description={t('assetDetail.subtitle', 'Asset · {type}', { type: typeLabel })}
+          description={t('assetDetail.subtitle', 'Asset type: {type}', { type: typeLabel })}
         />
 
         <div className="flex flex-wrap items-center gap-2">

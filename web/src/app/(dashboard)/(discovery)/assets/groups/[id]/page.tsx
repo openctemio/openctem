@@ -25,7 +25,6 @@ import { cn } from '@/lib/utils'
 import { Can, Permission } from '@/lib/permissions'
 import { CriticalityBadge } from '@/features/assets/components/classification-badges'
 import type { Criticality } from '@/features/assets/types'
-import { CRITICALITY_LABELS } from '@/lib/criticality'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { FindingStatusBadge } from '@/features/findings/components/finding-status-badge'
@@ -584,8 +583,6 @@ function AssetGroupDetailContent({ params }: PageProps) {
   }
 
   const envLabel = (env: string) => t(`assetGroups.environment.${env}`, env)
-  const critLabel = (crit: string) =>
-    t(`criticality.${crit}`, (CRITICALITY_LABELS as Record<string, string>)[crit] ?? crit)
 
   // Handlers
   const handleCopyId = () => {
