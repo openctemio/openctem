@@ -92,6 +92,11 @@ export function PlatformIdPForm({
   const [error, setError] = useState<string | null>(null)
   const [confirmDelete, setConfirmDelete] = useState(false)
   const [confirmRequire, setConfirmRequire] = useState(false)
+  const [confirmRequireOff, setConfirmRequireOff] = useState(false)
+  // Typed to remove: the provider's name, or its issuer, or a fixed word when neither is stored.
+  const removeName =
+    [idp.display_name, idp.issuer].find((v) => v && v.length <= 64) ??
+    t('admin.platformIdpForm.removeWord', 'remove')
 
   // Reset the editable copy to the server record only when that record actually
   // changes. The parent hands down a fresh `idp` reference on every SWR
@@ -111,6 +116,7 @@ export function PlatformIdPForm({
     setForm((f) => ({ ...f, [k]: v }))
 
   const turningOnRequire = form.requireIdP && form.enabled && !idp.require_idp
+  const turningOffRequire = idp.require_idp && !form.requireIdP
   const requireBlocked = !hasBreakGlass && !idp.require_idp
   const trustsIdPMFA = useMemo(
     () => parseList(form.trustedACR).length > 0 || parseList(form.trustedAMR).length > 0,
@@ -125,10 +131,16 @@ export function PlatformIdPForm({
       toast.success(t('admin.platformIdpForm.adminSignInSaved', 'Admin sign-in saved'))
       onSaved()
     } catch (e) {
-      setError(adminErrorMessage(e, 'Could not save the identity provider'))
+      setError(
+        adminErrorMessage(
+          e,
+          t('admin.platformIdpForm.saveFailed', 'Could not save the identity provider')
+        )
+      )
     } finally {
       setBusy(false)
       setConfirmRequire(false)
+      setConfirmRequireOff(false)
     }
   }
 
@@ -136,6 +148,10 @@ export function PlatformIdPForm({
     e.preventDefault()
     if (turningOnRequire) {
       setConfirmRequire(true)
+      return
+    }
+    if (turningOffRequire) {
+      setConfirmRequireOff(true)
       return
     }
     void save()
@@ -153,7 +169,12 @@ export function PlatformIdPForm({
       )
       onSaved()
     } catch (e) {
-      toast.error(adminErrorMessage(e, 'Could not remove the identity provider'))
+      toast.error(
+        adminErrorMessage(
+          e,
+          t('admin.platformIdpForm.removeFailed', 'Could not remove the identity provider')
+        )
+      )
     } finally {
       setBusy(false)
       setConfirmDelete(false)
@@ -434,11 +455,12 @@ export function PlatformIdPForm({
         {idp.configured && (
           <Button
             type="button"
-            variant="outline"
+            variant="destructive"
+            className="me-auto"
             disabled={busy}
             onClick={() => setConfirmDelete(true)}
           >
-            {t('admin.platformIdpForm.remove', 'Remove')}
+            {t('admin.platformIdpForm.removeProvider', 'Remove identity provider')}
           </Button>
         )}
         <Button type="submit" disabled={busy}>
@@ -455,10 +477,24 @@ export function PlatformIdPForm({
           'confirm.platformIdp.removeDesc',
           'Administrators sign in with their password and the console code again. Their IdP bindings are kept for the same issuer.'
         )}
-        confirmText={t('confirm.remove', 'Remove')}
+        confirmText={t('confirm.platformIdp.removeButton', 'Remove identity provider')}
+        typeToConfirm={removeName}
         destructive
         isLoading={busy}
         handleConfirm={() => void remove()}
+      />
+      <ConfirmDialog
+        open={confirmRequireOff}
+        onOpenChange={setConfirmRequireOff}
+        title={t('confirm.platformIdp.requireOffTitle', 'Stop requiring the identity provider?')}
+        desc={t(
+          'confirm.platformIdp.requireOffDesc',
+          'Administrators can use their password and the console code again, so a stolen password is enough to reach the sign-in step. The identity provider stays configured and administrators can still use it.'
+        )}
+        confirmText={t('confirm.platformIdp.requireOffButton', 'Stop requiring it')}
+        destructive
+        isLoading={busy}
+        handleConfirm={() => void save()}
       />
       <ConfirmDialog
         open={confirmRequire}

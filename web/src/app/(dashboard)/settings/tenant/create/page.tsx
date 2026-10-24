@@ -12,7 +12,7 @@ import { Loader2 } from 'lucide-react'
 
 import { Main } from '@/components/layout'
 import { useCanCreateOrganization } from '@/features/auth/hooks/use-can-create-organization'
-import { PageHeader } from '@/features/shared'
+import { PageHeader, PageStack } from '@/features/shared'
 import { CreateTeamForm, NoOrganizationNotice } from '@/features/tenant'
 import { useTranslation } from '@/context/i18n-provider'
 
@@ -23,17 +23,22 @@ export default function CreateTeamPage() {
   return (
     <>
       <Main>
-        <PageHeader title={t('settings.createTeam.title', 'Create team')} />
+        <PageStack>
+          <PageHeader title={t('settings.createTeam.title', 'Create team')} />
 
-        <div className="mt-6 flex justify-center">
-          {isLoading ? (
-            <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" aria-label="Loading" />
-          ) : canCreate ? (
-            <CreateTeamForm />
-          ) : (
-            <NoOrganizationNotice hasOtherTeams className="w-full max-w-lg" />
-          )}
-        </div>
+          <div className="flex justify-center">
+            {isLoading ? (
+              <Loader2
+                className="h-6 w-6 animate-spin text-muted-foreground"
+                aria-label="Loading"
+              />
+            ) : canCreate ? (
+              <CreateTeamForm />
+            ) : (
+              <NoOrganizationNotice hasOtherTeams className="w-full max-w-lg" />
+            )}
+          </div>
+        </PageStack>
       </Main>
     </>
   )

@@ -115,6 +115,8 @@ export function DeploymentRegionCard({ canEdit }: { canEdit: boolean }) {
         open={confirmOpen}
         onOpenChange={setConfirmOpen}
         destructive
+        typeToConfirm={value.trim()}
+        confirmText={t('admin.region.confirmButton', 'Set region')}
         title={t(
           'admin.region.confirmTitle',
           'Set the region to {region}? This cannot be undone.',
