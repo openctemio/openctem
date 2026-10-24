@@ -12,6 +12,7 @@ import {
   RelativeTime,
   StackedCell,
   ErrorState,
+  PageStack,
 } from '@/features/shared'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
@@ -163,13 +164,15 @@ function KeyRowActions({ k, onChanged }: { k: APIKey; onChanged: () => void }) {
 function LoadingSkeleton() {
   return (
     <Main>
-      <Skeleton className="mb-6 h-8 w-48" />
-      <div className="grid gap-4 md:grid-cols-4">
-        {Array.from({ length: 4 }).map((_, i) => (
-          <Skeleton key={i} className="h-24 rounded-lg" />
-        ))}
-      </div>
-      <Skeleton className="mt-6 h-64 rounded-lg" />
+      <PageStack>
+        <Skeleton className="h-8 w-48" />
+        <div className="grid gap-4 md:grid-cols-4">
+          {Array.from({ length: 4 }).map((_, i) => (
+            <Skeleton key={i} className="h-24 rounded-lg" />
+          ))}
+        </div>
+        <Skeleton className="h-64 rounded-lg" />
+      </PageStack>
     </Main>
   )
 }
@@ -290,108 +293,112 @@ export default function APIKeysPage() {
   if (error)
     return (
       <Main>
-        <PageHeader title={pageTitle} description={pageDesc} />
-        <ErrorState title={pageTitle} error={error} onRetry={() => void mutate()} />
+        <PageStack>
+          <PageHeader title={pageTitle} description={pageDesc} />
+          <ErrorState title={pageTitle} error={error} onRetry={() => void mutate()} />
+        </PageStack>
       </Main>
     )
 
   return (
     <Main>
-      <PageHeader title={pageTitle} description={pageDesc}>
-        {canGenerate && (
-          <Button size="sm" onClick={() => setGenOpen(true)}>
-            <Plus className="me-2 h-4 w-4" />
-            {t('settings.apiKeys.generate', 'Generate API key')}
-          </Button>
-        )}
-      </PageHeader>
-
-      <Card className="mt-6">
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <KeyRound className="h-5 w-5" />
-            {t('settings.apiKeys.cardTitle', 'API key management')}
-          </CardTitle>
-          <CardDescription>
-            {ownKeysOnly
-              ? t(
-                  'settings.apiKeys.cardDescOwn',
-                  'Your own keys. Owners and administrators see and manage every key in the organization.'
-                )
-              : t(
-                  'settings.apiKeys.cardDescAll',
-                  'Each key is scoped to specific permissions and can be set to expire automatically.'
-                )}
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          {total === 0 && !search ? (
-            <EmptyState
-              icon={KeyRound}
-              title={t('settings.apiKeys.emptyTitle', 'No API keys yet')}
-              description={
-                canGenerate
-                  ? t(
-                      'settings.apiKeys.emptyDescGenerate',
-                      'Generate a scoped key for programmatic access to the API.'
-                    )
-                  : t(
-                      'settings.apiKeys.emptyDescAsk',
-                      'Ask an owner or administrator if you need a key.'
-                    )
-              }
-              card={false}
-              action={
-                canGenerate ? (
-                  <Button size="sm" onClick={() => setGenOpen(true)}>
-                    <Plus className="me-2 h-4 w-4" />
-                    {t('settings.apiKeys.generate', 'Generate API key')}
-                  </Button>
-                ) : undefined
-              }
-            />
-          ) : (
-            <DataTable
-              columns={columns}
-              data={keys}
-              getRowId={(k) => k.id}
-              manualPagination
-              rowCount={total}
-              pagination={pagination}
-              onPaginationChange={setPagination}
-              pageSizeOptions={API_KEY_PAGE_SIZES}
-              paginationNoun={t('settings.apiKeys.noun', 'keys')}
-              showSearch={false}
-              toolbarStart={
-                <Input
-                  placeholder={t('settings.apiKeys.searchPlaceholder', 'Search API keys…')}
-                  value={searchParam}
-                  onChange={(e) => {
-                    setSearchParam(e.target.value)
-                    resetPage()
-                  }}
-                  className="h-9 max-w-sm"
-                  aria-label={t('settings.apiKeys.searchLabel', 'Search API keys')}
-                />
-              }
-              emptyMessage={t('settings.apiKeys.noKeys', 'No API keys')}
-              emptyDescription={t('settings.apiKeys.noMatch', 'No API keys match your search.')}
-            />
+      <PageStack>
+        <PageHeader title={pageTitle} description={pageDesc}>
+          {canGenerate && (
+            <Button size="sm" onClick={() => setGenOpen(true)}>
+              <Plus className="me-2 h-4 w-4" />
+              {t('settings.apiKeys.generate', 'Generate API key')}
+            </Button>
           )}
-        </CardContent>
-      </Card>
+        </PageHeader>
 
-      <GenerateKeyDialog
-        open={genOpen}
-        onOpenChange={setGenOpen}
-        onSubmit={(req) => createKey(req)}
-        isMutating={creating}
-        onCreated={(plaintext) => {
-          setNewKey(plaintext)
-          mutate()
-        }}
-      />
-      <RevealKeyDialog value={newKey} onClose={() => setNewKey('')} />
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <KeyRound className="h-5 w-5" />
+              {t('settings.apiKeys.cardTitle', 'API key management')}
+            </CardTitle>
+            <CardDescription>
+              {ownKeysOnly
+                ? t(
+                    'settings.apiKeys.cardDescOwn',
+                    'Your own keys. Owners and administrators see and manage every key in the organization.'
+                  )
+                : t(
+                    'settings.apiKeys.cardDescAll',
+                    'Each key is scoped to specific permissions and can be set to expire automatically.'
+                  )}
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            {total === 0 && !search ? (
+              <EmptyState
+                icon={KeyRound}
+                title={t('settings.apiKeys.emptyTitle', 'No API keys yet')}
+                description={
+                  canGenerate
+                    ? t(
+                        'settings.apiKeys.emptyDescGenerate',
+                        'Generate a scoped key for programmatic access to the API.'
+                      )
+                    : t(
+                        'settings.apiKeys.emptyDescAsk',
+                        'Ask an owner or administrator if you need a key.'
+                      )
+                }
+                card={false}
+                action={
+                  canGenerate ? (
+                    <Button size="sm" onClick={() => setGenOpen(true)}>
+                      <Plus className="me-2 h-4 w-4" />
+                      {t('settings.apiKeys.generate', 'Generate API key')}
+                    </Button>
+                  ) : undefined
+                }
+              />
+            ) : (
+              <DataTable
+                columns={columns}
+                data={keys}
+                getRowId={(k) => k.id}
+                manualPagination
+                rowCount={total}
+                pagination={pagination}
+                onPaginationChange={setPagination}
+                pageSizeOptions={API_KEY_PAGE_SIZES}
+                paginationNoun={t('settings.apiKeys.noun', 'keys')}
+                showSearch={false}
+                toolbarStart={
+                  <Input
+                    placeholder={t('settings.apiKeys.searchPlaceholder', 'Search API keys…')}
+                    value={searchParam}
+                    onChange={(e) => {
+                      setSearchParam(e.target.value)
+                      resetPage()
+                    }}
+                    className="h-9 max-w-sm"
+                    aria-label={t('settings.apiKeys.searchLabel', 'Search API keys')}
+                  />
+                }
+                emptyMessage={t('settings.apiKeys.noKeys', 'No API keys')}
+                emptyDescription={t('settings.apiKeys.noMatch', 'No API keys match your search.')}
+              />
+            )}
+          </CardContent>
+        </Card>
+
+        <GenerateKeyDialog
+          open={genOpen}
+          onOpenChange={setGenOpen}
+          onSubmit={(req) => createKey(req)}
+          isMutating={creating}
+          onCreated={(plaintext) => {
+            setNewKey(plaintext)
+            mutate()
+          }}
+        />
+        <RevealKeyDialog value={newKey} onClose={() => setNewKey('')} />
+      </PageStack>
     </Main>
   )
 }

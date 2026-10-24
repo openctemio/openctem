@@ -43,7 +43,7 @@ vi.mock('@/features/organization/api/use-tenant-modules', () => ({
 import ModulesPage from '../page'
 
 describe('modules page (vi)', () => {
-  it('translates headings, metrics and labels', () => {
+  it('translates headings and labels', () => {
     render(
       <I18nProvider locale="vi">
         <ModulesPage />
@@ -51,10 +51,10 @@ describe('modules page (vi)', () => {
     )
     expect(screen.getByText('Mô-đun lõi')).toBeInTheDocument()
     expect(screen.getByText('Tinh chỉnh tính năng')).toBeInTheDocument()
-    expect(screen.getByText('Tổng số mô-đun')).toBeInTheDocument()
     expect(screen.getByText('Xóa các thay đổi của tôi')).toBeInTheDocument()
     expect(screen.queryByText('Core modules')).not.toBeInTheDocument()
     expect(screen.queryByText('Fine-tune features')).not.toBeInTheDocument()
-    expect(screen.queryByText('Total modules')).not.toBeInTheDocument()
+    // The strip of totals is gone: the list shows the counts.
+    expect(screen.queryByText('Tổng số mô-đun')).not.toBeInTheDocument()
   })
 })
