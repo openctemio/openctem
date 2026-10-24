@@ -16,7 +16,6 @@ import {
 } from '@/components/ui/select'
 import { DataTable, ErrorState, PageHeader, RelativeTime, StackedCell } from '@/features/shared'
 import { useTranslation } from '@/context/i18n-provider'
-import { useDebounce } from '@/hooks/use-debounce'
 import { useListParams } from '@/hooks/use-list-params'
 import { useOrganizations } from '@console/features/admin-console/api/use-admin-organizations'
 import { useAdmin } from '@console/features/admin-console/components/admin-console-shell'
@@ -34,7 +33,7 @@ export default function AdminOrganizationsPage() {
   // The list lives in the URL (one list convention): page, per_page, q and
   // the filters, so the overview can link to "organizations without an owner".
   const list = useListParams({ defaultPageSize: 20, filters: { owner: '' } })
-  const debounced = useDebounce(list.q, 300)
+  const debounced = list.searchTerm
   const owner =
     list.filters.owner === 'none' || list.filters.owner === 'present' ? list.filters.owner : ''
   const filtered = Boolean(debounced || owner)

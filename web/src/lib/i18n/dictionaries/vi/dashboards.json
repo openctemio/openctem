@@ -223,6 +223,7 @@
   "dashboards.reason.empty": "Không có gì để hiển thị cho kỳ và phạm vi này.",
   "dashboards.reason.facts_building": "Dữ liệu bảng điều khiển đang được tạo lần đầu. Số liệu sẽ xuất hiện sau vài phút.",
   "dashboards.reason.failed": "Không tính được các số liệu này.",
+  "dashboards.reason.forbidden": "Vai trò của bạn không có quyền xem dữ liệu này.",
   "dashboards.reason.legacy_tile": "Ô cũ này không có trên bảng điều khiển mới. Hãy thay bằng một widget trong thư viện.",
   "dashboards.reason.no_crown_jewels": "Chưa có gì để đo: chưa chỉ định tài sản trọng yếu nào trong phạm vi này.",
   "dashboards.reason.no_denominator": "Chưa có gì để đo: không có finding đang mở nào có SLA trong phạm vi này.",

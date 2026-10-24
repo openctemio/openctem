@@ -1,3 +1,5 @@
+'use client'
+
 import { useCallback, useMemo } from 'react'
 import { useListParams } from '@/hooks/use-list-params'
 import Link from '@/components/link'

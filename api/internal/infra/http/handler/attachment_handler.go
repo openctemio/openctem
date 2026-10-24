@@ -8,6 +8,7 @@ import (
 	"io"
 	"mime"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -696,6 +697,15 @@ func (h *AttachmentHandler) UpdateStorageConfig(w http.ResponseWriter, r *http.R
 	writeJSON(w, http.StatusOK, map[string]any{"status": "saved", "provider": cfg.Provider})
 }
 
+// sameStorageLocation reports whether two configs point at the same
+// provider, endpoint, bucket and region (case and a trailing slash on the
+// endpoint do not count).
+func sameStorageLocation(a, b attachment.StorageConfig) bool {
+	norm := func(s string) string { return strings.TrimRight(strings.ToLower(strings.TrimSpace(s)), "/") }
+	return a.Provider == b.Provider && norm(a.Endpoint) == norm(b.Endpoint) &&
+		norm(a.Bucket) == norm(b.Bucket) && norm(a.Region) == norm(b.Region)
+}
+
 // tenantStorageConfigFromRequest turns a tenant admin's storage settings into
 // the config to persist. The tenant chooses the operator's storage ("local")
 // or its own S3/MinIO bucket; it can never choose a location on the API
@@ -709,7 +719,10 @@ func tenantStorageConfigFromRequest(req attachment.StorageConfig, existing *atta
 		}
 		return attachment.StorageConfig{Provider: attachment.ProviderLocal}, nil
 	}
-	if existing != nil && existing.Provider == req.Provider && req.AccessKey == "" && req.SecretKey == "" {
+	// The keys follow only an unchanged location: a new endpoint, bucket or
+	// region must come with its own keys, so stored keys are never presented
+	// to a destination someone else chose. Without keys the save is refused.
+	if existing != nil && sameStorageLocation(*existing, req) && req.AccessKey == "" && req.SecretKey == "" {
 		req.AccessKey, req.SecretKey = existing.AccessKey, existing.SecretKey
 	}
 	if err := req.ValidateTenantChoice(); err != nil {
