@@ -277,6 +277,25 @@ func (s *Service) coverageZoneGroup(ctx context.Context, tenantID shared.ID, tar
 	return run, deferred, first, nil
 }
 
+// specialUseSuffixes are the names reserved for local, private or
+// documentation use (RFC 6761, RFC 6762, RFC 8375, RFC 7686, RFC 6303 and
+// the private-use "internal"): never public, whatever the public suffix
+// list says. Such a name keeps zone routing.
+var specialUseSuffixes = []string{
+	"home.arpa", "in-addr.arpa", "ip6.arpa", "local", "localhost", "internal",
+	"test", "invalid", "onion", "example",
+}
+
+// specialUseName reports whether host is, or is under, a special-use name.
+func specialUseName(host string) bool {
+	for _, s := range specialUseSuffixes {
+		if host == s || strings.HasSuffix(host, "."+s) {
+			return true
+		}
+	}
+	return false
+}
+
 // publicName reports whether a routed target is a public name: a hostname
 // registrable under an ICANN public suffix whose platform resolution, if
 // any, has no private or denied address.
@@ -285,7 +304,10 @@ func publicName(rt scanzone.Route) bool {
 	if pt.IsAddr || pt.Host == "" || strings.HasPrefix(pt.Host, "*") {
 		return false
 	}
-	host := strings.TrimSuffix(pt.Host, ".")
+	host := strings.ToLower(strings.TrimSuffix(pt.Host, "."))
+	if specialUseName(host) {
+		return false
+	}
 	if _, icann := publicsuffix.PublicSuffix(host); !icann {
 		return false
 	}

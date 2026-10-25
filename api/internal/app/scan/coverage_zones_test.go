@@ -105,3 +105,23 @@ func TestZoneRoutingSkippedOnlyWithMarker(t *testing.T) {
 		t.Fatal("the marker does not skip zone routing")
 	}
 }
+
+// Special-use names are never public, even when they look registrable: they
+// keep zone routing. Real public names, including look-alikes whose label
+// merely contains a special-use word, stay public.
+func TestPublicName_SpecialUseNamesExcluded(t *testing.T) {
+	for _, h := range []string{
+		"printer.home.arpa", "home.arpa", "4.3.2.1.in-addr.arpa", "1.0.0.0.ip6.arpa",
+		"nas.local", "app.localhost", "localhost", "db.internal", "api.corp.internal",
+		"x.test", "bad.invalid", "abc.onion", "host.example", "Printer.HOME.ARPA.",
+	} {
+		if publicName(scanzone.Route{Target: h}) {
+			t.Errorf("%s counted as a public name", h)
+		}
+	}
+	for _, h := range []string{"www.example.com", "localnews.com", "internal.example.org", "mytest.io", "test.co.uk"} {
+		if !publicName(scanzone.Route{Target: h}) {
+			t.Errorf("%s not counted as a public name", h)
+		}
+	}
+}
