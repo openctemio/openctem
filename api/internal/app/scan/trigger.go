@@ -904,6 +904,7 @@ func (s *Service) scannerPayload(
 	if len(templates) > 0 {
 		payloadMap["custom_templates"] = templates
 	}
+	withRunDeadline(payloadMap, run)
 	return payloadMap
 }
 

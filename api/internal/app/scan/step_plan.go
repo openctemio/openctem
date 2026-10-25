@@ -19,6 +19,7 @@ import (
 	"fmt"
 	"slices"
 	"strings"
+	"time"
 
 	"github.com/openctemio/openctem/api/pkg/domain/scanrun"
 	"github.com/openctemio/openctem/api/pkg/domain/scanworkflow"
@@ -349,6 +350,7 @@ func StepCommandPayload(run *scanrun.Run, step *scanworkflow.Step, toolName, ste
 	// the platform calls the task stalled when no target finishes within
 	// the stall window.
 	payload[PayloadKeyBudget] = toolbudget.ForTask(toolName, payloadTargetCount(payload["targets"]))
+	withRunDeadline(payload, run)
 	if run.AssetID != nil {
 		payload["asset_id"] = run.AssetID.String()
 	}
@@ -383,6 +385,21 @@ func StepCommandPayload(run *scanrun.Run, step *scanworkflow.Step, toolName, ste
 // PayloadKeyBudget is the command payload key of the task's budget
 // (toolbudget.Task; sdk-go ScanCommandPayload.Budget).
 const PayloadKeyBudget = "budget"
+
+// PayloadKeyDeadline is the command payload key of the run's deadline
+// (sdk-go ScanCommandPayload.Deadline): when the platform settles the run
+// if it is still open. The sensor ends the job's time budget a margin
+// before it, so what the tool settled is reported before the run is
+// settled without it. It can only shorten a job on the sensor.
+const PayloadKeyDeadline = "deadline"
+
+// withRunDeadline puts the run's deadline in payload (nothing for a run
+// whose deadline is not fixed yet).
+func withRunDeadline(payload map[string]any, run *scanrun.Run) {
+	if run != nil && run.DeadlineAt != nil {
+		payload[PayloadKeyDeadline] = run.DeadlineAt.UTC().Format(time.RFC3339)
+	}
+}
 
 // payloadTargetCount is how many targets a payload's "targets" holds.
 func payloadTargetCount(v any) int {
