@@ -45,6 +45,14 @@ COMMENT_MARKER = "<!-- security-gate -->"
 # The gate comment records which security-sensitive diff the ack covers (see
 # sensitive_digest). Only the comment the workflow itself wrote counts.
 DIGEST_MARKER = re.compile(r"<!-- security-gate:ack-digest=([0-9a-f]{64}) -->")
+# ...and the head commit and base branch the ack was last confirmed on, so a
+# later head that only merged the base branch in can be checked with git (see
+# covered_by_merges).
+ACK_HEAD_MARKER = re.compile(r"<!-- security-gate:ack-head=([0-9a-f]{40}) base=(\S+) -->")
+# A migration's version prefix: the merge queue renumbers a pull request's
+# migrations above the base branch (same name, same content, new number), which
+# is not a change an ack has to see again.
+MIGRATION_VERSION = re.compile(r"(^|/)migrations/[0-9]+_(?=[^/]+$)")
 BOT_LOGIN = "github-actions[bot]"
 MAX_FILES = 3000  # GitHub's pull request file list stops here; from this many files on the gate diffs with git
 MAX_PATCH_LINES = 20000  # a larger single-file patch counts as "no diff sent", like the API does
@@ -262,6 +270,17 @@ def review(files: list[ChangedFile]) -> tuple[list[Finding], list[str]]:
     return findings, unreviewed
 
 
+def stable_path(path: str | None) -> str | None:
+    """The path without a migration's version number (renumbering keeps it)."""
+    return MIGRATION_VERSION.sub(r"\1migrations/#_", path) if path else path
+
+
+def sensitive_names(files: list[ChangedFile], config: dict[str, list[str]], findings: list[Finding]) -> set[str]:
+    """The files whose changes an ack covers."""
+    names = {f for fs in classify(files, config).values() for f in fs}
+    return names | {f.path for f in findings if f.severity in ("HIGH", "SENSITIVE")}
+
+
 def sensitive_digest(files: list[ChangedFile], config: dict[str, list[str]], findings: list[Finding]) -> str:
     """Fingerprint of what an ack approves: the pull request's own changed
     lines (added and removed, without context or hunk positions) in every file
@@ -270,14 +289,16 @@ def sensitive_digest(files: list[ChangedFile], config: dict[str, list[str]], fin
     lines, and the fingerprint stays; a commit that changes a sensitive line,
     adds a sensitive file or resolves a conflict inside one changes it. A file
     GitHub sent no patch for is represented by its head blob, which is
-    stricter (any change to that file counts)."""
-    names = {f for fs in classify(files, config).values() for f in fs}
-    names |= {f.path for f in findings if f.severity in ("HIGH", "SENSITIVE")}
+    stricter (any change to that file counts). A migration counts by name
+    without its version number, in version order, so renumbering a pull
+    request's migrations (same names, same order, same content) keeps the
+    digest and reordering them does not."""
+    names = sensitive_names(files, config, findings)
     h = hashlib.sha256()
     for f in sorted(files, key=lambda f: f.filename):
         if f.filename not in names:
             continue
-        h.update(f"file\0{f.filename}\0{f.previous_filename or ''}\0{f.status}\n".encode())
+        h.update(f"file\0{stable_path(f.filename)}\0{stable_path(f.previous_filename) or ''}\0{f.status}\n".encode())
         if f.patch is None:
             h.update(f"blob\0{f.sha}\n".encode())
             continue
@@ -385,18 +406,102 @@ def _git_out(gitdir: str, *args: str, env: dict[str, str] | None = None) -> byte
     return out
 
 
-def fetch_pr_commits(gitdir: str, repo: str, server: str, token: str, base_sha: str, head_sha: str) -> None:
-    """Fetch the base and head commits (history and trees, blobs on demand)
-    into the gate's own checkout. Nothing is checked out or run."""
+GATE_REMOTE = "security-gate"
+
+
+def git_auth_env(server: str, token: str) -> dict[str, str]:
+    """The token as an HTTP header for git, in the environment only (never in
+    the repository's config), so blobs git fetches on demand later are
+    authorised the same way."""
+    auth = base64.b64encode(f"x-access-token:{token}".encode()).decode()
+    return {"GIT_CONFIG_COUNT": "1", "GIT_CONFIG_KEY_0": f"http.{server}/.extraheader",
+            "GIT_CONFIG_VALUE_0": f"Authorization: Basic {auth}"}
+
+
+def fetch_pr_commits(gitdir: str, repo: str, server: str, token: str, base_sha: str, head_sha: str,
+                     *more: str) -> None:
+    """Fetch the base and head commits (and any `more`; history and trees,
+    blobs on demand from the gate's own promisor remote) into the gate's own
+    checkout. Nothing is checked out or run."""
     if not os.path.isdir(os.path.join(gitdir, ".git")):
         raise RuntimeError(f"{gitdir} is not a git checkout; cannot diff a pull request of {MAX_FILES}+ files")
-    auth = base64.b64encode(f"x-access-token:{token}".encode()).decode()
-    env = {"GIT_CONFIG_COUNT": "1", "GIT_CONFIG_KEY_0": f"http.{server}/.extraheader",
-           "GIT_CONFIG_VALUE_0": f"Authorization: Basic {auth}"}
+    env = git_auth_env(server, token)
+    url = f"{server}/{repo}.git"
+    remotes = _git_out(gitdir, "remote").decode().split()
+    if GATE_REMOTE not in remotes:
+        _git_out(gitdir, "remote", "add", GATE_REMOTE, url)
     args = ["fetch", "--no-tags", "--filter=blob:none", "--quiet"]
     if _git_out(gitdir, "rev-parse", "--is-shallow-repository").strip() == b"true":
         args.append("--unshallow")
-    _git_out(gitdir, *args, f"{server}/{repo}.git", head_sha, base_sha, env=env)
+    _git_out(gitdir, *args, GATE_REMOTE, head_sha, base_sha, *more, env=env)
+
+
+def _blobs(gitdir: str, treeish: str, paths: list[str], env: dict[str, str] | None = None) -> dict[str, str]:
+    """path -> blob id in treeish, for the given paths (absent paths left out)."""
+    if not paths:
+        return {}
+    out = _git_out(gitdir, "ls-tree", "-r", "-z", "--full-tree", treeish, "--", *paths, env=env)
+    blobs = {}
+    for rec in out.decode("utf-8", "surrogateescape").split("\0"):
+        if rec:
+            meta, path = rec.split("\t", 1)
+            blobs[path] = meta.split()[2]
+    return blobs
+
+
+def ack_head_matches(gitdir: str, base_sha: str, acked: str, config: dict[str, list[str]], recorded: str) -> bool:
+    """Does the recorded acknowledged head carry the recorded digest? Its diff
+    against the base (from the same merge base as when it was acknowledged)
+    must fingerprint to the digest the ack was recorded with, so a head marker
+    that does not describe the acknowledged diff is not used."""
+    try:
+        files = git_changed_files(gitdir, base_sha, acked, config)
+    except (RuntimeError, OSError):
+        return False
+    return sensitive_digest(files, config, review(files)[0]) == recorded
+
+
+def covered_by_merges(gitdir: str, acked: str, base_sha: str, head_sha: str, names: set[str],
+                      env: dict[str, str] | None = None) -> bool:
+    """Does `head` hold exactly the acknowledged security-sensitive content,
+    brought up to date with the base branch by clean merges only?
+
+    True when `acked` (the head the ack was confirmed on) is an ancestor of
+    `head`, and every sensitive file of the pull request is the same blob in
+    `head` as in a clean merge of `acked` with the newest base commit `head`
+    contains (git merge-tree). So merging the base branch in, also when the
+    base changed the same files, keeps the ack; a sensitive change in a
+    non-merge commit, a conflict resolved inside a sensitive file, or a
+    rebase/force-push does not. Migrations compare by name without their
+    version (stable_path), and the pull request's migrations must keep their
+    order. Every git error counts as not covered."""
+    try:
+        anc = _git(gitdir, "merge-base", "--is-ancestor", acked, head_sha, env=env)
+        anc.communicate()
+        if anc.returncode != 0:
+            return False
+        newest_base = _git_out(gitdir, "merge-base", head_sha, base_sha, env=env).decode().split()[0]
+        p = _git(gitdir, "merge-tree", "--write-tree", "--no-messages", acked, newest_base, env=env)
+        out, _ = p.communicate()
+        if p.returncode not in (0, 1):  # 1 = conflicts somewhere; a conflicted sensitive file differs below
+            return False
+        merged_tree = out.decode().split()[0]
+        plain = sorted(n for n in names if stable_path(n) == n)
+        if _blobs(gitdir, head_sha, plain, env) != _blobs(gitdir, merged_tree, plain, env):
+            return False
+        migrations = sorted(n for n in names if stable_path(n) != n)
+        if migrations:
+            dirs = sorted({n.rsplit("/", 1)[0] + "/" for n in migrations})
+            want = {stable_path(n) for n in migrations}
+
+            def by_name(treeish: str) -> list[tuple[str, str]]:
+                listed = _blobs(gitdir, treeish, dirs, env)
+                return [(stable_path(p), b) for p, b in sorted(listed.items()) if stable_path(p) in want]
+            if by_name(head_sha) != by_name(merged_tree):
+                return False
+        return True
+    except (RuntimeError, IndexError, OSError):
+        return False
 
 
 def git_changed_files(gitdir: str, base_sha: str, head_sha: str, config: dict[str, list[str]]) -> list[ChangedFile]:
@@ -528,6 +633,7 @@ class Result:
     ack_note: str = ""
     ack_dropped: bool = False
     ack_digest: str = ""  # the sensitive diff the ack covers, recorded in the comment
+    ack_head: tuple[str, str] | None = None  # (head sha, base branch) the ack was last confirmed on
 
     @property
     def high(self) -> list[Finding]:
@@ -607,6 +713,8 @@ def render(r: Result, repo: str, server: str) -> str:
             f"<sub>Path list: `.github/security-paths.yml` · [how the gate works]({GUIDE})</sub>"]
     if r.acked and r.ack_digest:
         out.append(f"<!-- security-gate:ack-digest={r.ack_digest} -->")
+        if r.ack_head:
+            out.append(f"<!-- security-gate:ack-head={r.ack_head[0]} base={r.ack_head[1]} -->")
     return "\n".join(out) + "\n"
 
 
@@ -651,29 +759,45 @@ def recorded_digest(comment: dict | None) -> str | None:
     return m.group(1) if m else None
 
 
+def recorded_head(comment: dict | None) -> tuple[str, str] | None:
+    m = ACK_HEAD_MARKER.search((comment or {}).get("body") or "")
+    return (m.group(1), m.group(2)) if m else None
+
+
 def settle_ack(gh: GitHub, event_name: str, event: dict, r: Result, digest: str, recorded: str | None,
                files: list[ChangedFile], config: dict[str, list[str]], labels: set[str],
-               can_write: bool) -> None:
+               can_write: bool, pr: dict | None = None, acked_head: tuple[str, str] | None = None,
+               merges_only=None) -> None:
     """Decide whether an existing `security-ack` still covers the pull request,
-    and which digest the comment records for it.
+    and which digest and head commit the comment records for it.
 
-    - This run is the `security-ack` label event: record the digest.
+    - This run is the `security-ack` label event: record the digest and head.
     - The comment holds a digest: the ack stands while the sensitive diff is
-      unchanged (pushes and base-branch merges that leave those lines alone),
-      and is removed (on a read-only run: ignored) once it differs.
+      unchanged (pushes and base-branch merges that leave those lines alone,
+      migration renumbering). When the digest differs but the comment also
+      records the acknowledged head on the same base branch, `merges_only`
+      (covered_by_merges) decides: a head that only merged the base branch in
+      keeps the ack. Otherwise the label is removed (on a read-only run:
+      ignored).
     - No digest yet, and a push: the earlier rule (does the push touch a
       sensitive file?); if it does not, record the digest.
     - Anything else keeps the label, as before, without recording a digest.
     """
     if ACK_LABEL not in labels:
         return
+    head_now = ((pr or {}).get("head", {}).get("sha", ""), (pr or {}).get("base", {}).get("ref", ""))
+    head_now = head_now if all(head_now) else None
     action = event.get("action")
     if event_name == "pull_request" and action == "labeled" and (event.get("label") or {}).get("name") == ACK_LABEL:
-        r.ack_digest = digest  # the maintainer acknowledged what is there now
+        r.ack_digest, r.ack_head = digest, head_now  # the maintainer acknowledged what is there now
         return
     if recorded is not None:
         if recorded == digest:
-            r.ack_digest = digest
+            r.ack_digest, r.ack_head = digest, head_now
+            return
+        if (acked_head and head_now and merges_only is not None and acked_head[1] == head_now[1]
+                and merges_only(acked_head[0])):
+            r.ack_digest, r.ack_head = digest, head_now
             return
     elif event_name == "pull_request" and action == "synchronize":
         if not push_touches_sensitive(gh, event, files, config):
@@ -760,8 +884,25 @@ def cmd_gate() -> int:
     r.findings, r.unreviewed = review(files)
     comment = gate_comment(gh, number) if r.sensitive or can_write else None
     if r.sensitive:
+        names = sensitive_names(files, config, r.findings)
+        recorded = recorded_digest(comment)
+
+        def merges_only(acked: str) -> bool:
+            # Only reached when the digest changed: fetch history (trees,
+            # blobs on demand) and compare with a clean merge of the acked head.
+            gitdir = os.environ.get("GATE_DIR", "base")
+            try:
+                fetch_pr_commits(gitdir, repo, server, token, pr["base"]["sha"], pr["head"]["sha"], acked)
+            except RuntimeError as e:
+                print(f"::warning::security-gate: cannot fetch the acknowledged head {acked}: {e}")
+                return False
+            if not ack_head_matches(gitdir, pr["base"]["sha"], acked, config, recorded or ""):
+                return False
+            return covered_by_merges(gitdir, acked, pr["base"]["sha"], pr["head"]["sha"], names,
+                                     git_auth_env(server, token))
         settle_ack(gh, event_name, event, r, sensitive_digest(files, config, r.findings),
-                   recorded_digest(comment), files, config, labels, can_write)
+                   recorded, files, config, labels, can_write,
+                   pr=pr, acked_head=recorded_head(comment), merges_only=merges_only)
         stale_note = r.ack_note
         r.acked, r.ack_note = ack_state(gh, number, labels, config["ackers"])
         if not r.acked and stale_note:
