@@ -276,8 +276,9 @@ class GateTest(unittest.TestCase):
     def routes(self, pr, files, events=(), runs=None):
         return {"pulls/7": pr, "pulls/7/files": files, "issues/7/events": list(events),
                 "issues/7/comments": [], "commits/" + "h" * 40 + "/check-runs": {"check_runs": []},
-                "actions/workflows/security-gate.yml/runs":
-                    {"workflow_runs": [self.gate_run("h" * 40)] if runs is None else runs}}
+                "actions/runs":
+                    {"workflow_runs": [self.gate_run("h" * 40)] if runs is None else runs},
+                "rules/branches/develop": []}
 
     SENSITIVE = [{"filename": "api/pkg/httpsec/ssrf.go", "status": "modified", "deletions": 1, "patch": patch("x := 1")}]
     PLAIN = [{"filename": "web/src/app/page.tsx", "status": "modified", "deletions": 0, "patch": patch("x")}]
@@ -321,7 +322,7 @@ class GateTest(unittest.TestCase):
     SYNC = {"action": "synchronize", "before": "a", "after": "h", "pull_request": {"number": 7}}
 
     def run_carried(self, covers, files=None, runs=None, events=None, comments=None,
-                    event_name="pull_request", event=None):
+                    event_name="pull_request", event=None, rules=None):
         """An ack given on commit a...a, the head is now h...h."""
         pr = self.pr(labels=("security-sensitive", "security-ack"))
         pr["base"]["sha"] = "b" * 40
@@ -329,6 +330,8 @@ class GateTest(unittest.TestCase):
                              runs=[self.gate_run("a" * 40)] if runs is None else runs)
         if comments is not None:
             routes["issues/7/comments"] = comments
+        if rules is not None:
+            routes["rules/branches/develop"] = rules
         asked = []
 
         def still_covers(gitdir, base_sha, acked, head_sha, config, env=None):
@@ -348,7 +351,8 @@ class GateTest(unittest.TestCase):
 
     def test_ack_label_event_passes_without_reading_runs(self):
         routes = self.routes(self.pr(labels=("security-ack",)), self.SENSITIVE, self.ACK_BY_OWNER)
-        del routes["actions/workflows/security-gate.yml/runs"]
+        del routes["actions/runs"]
+        del routes["rules/branches/develop"]
         event = {"action": "labeled", "label": {"name": "security-ack"}, "sender": {"login": "0xmanhnv"},
                  "pull_request": {"number": 7, "head": {"sha": "h" * 40}}}
         code, fake = self.run_gate("pull_request", event, routes)
@@ -438,6 +442,57 @@ class GateTest(unittest.TestCase):
         # A retarget before the label does not matter.
         events = [{"event": "base_ref_changed", "actor": {"login": "0xmanhnv"}}] + self.ACK_BY_OWNER
         self.assertEqual(self.run_carried(True, events=events, runs=[self.gate_run("h" * 40)])[0], 0)
+
+    PINNED = "refs/heads/develop"
+    RULESET = [{"type": "workflows", "parameters": {"workflows": [
+        {"path": ".github/workflows/security-gate.yml", "ref": "refs/heads/develop", "repository_id": 1}]}}]
+    GATE_EDIT = [{"filename": ".github/workflows/security-gate.yml", "status": "modified", "deletions": 1,
+                  "patch": patch("x")}]
+
+    def test_gate_editing_pr_trusts_only_the_ruleset_run(self):
+        # The PR's own security-gate.yml skipped the label's run; the acker's
+        # next action (adding ci:full) started a run of that edited file on an
+        # unreviewed head h. It must not name the acked commit.
+        h = "h" * 40
+        later = self.gate_run(h, at="2026-10-25T01:04:00Z")
+        code, fake, asked = self.run_carried(True, files=self.GATE_EDIT, runs=[later], rules=self.RULESET)
+        self.assertEqual((code, asked), (1, []))
+        self.assertIn(self.DROPPED, fake.writes)
+        # The run of the pinned workflow the ruleset started on the label does.
+        pinned = self.gate_run(h, path=f".github/workflows/security-gate.yml@{self.PINNED}")
+        code, fake, _ = self.run_carried(False, files=self.GATE_EDIT, runs=[later, pinned], rules=self.RULESET)
+        self.assertEqual(code, 0)
+        self.assertNotIn(self.DROPPED, fake.writes)
+        # A pinned run at another ref, or on an older head, does not.
+        other = self.gate_run(h, path=".github/workflows/security-gate.yml@refs/heads/feature/x")
+        self.assertEqual(self.run_carried(True, files=self.GATE_EDIT, runs=[other], rules=self.RULESET)[0], 1)
+        old = self.gate_run("a" * 40, path=f".github/workflows/security-gate.yml@{self.PINNED}")
+        self.assertEqual(self.run_carried(True, files=self.GATE_EDIT, runs=[old], rules=self.RULESET)[0], 1)
+
+    def test_gate_editing_pr_without_a_ruleset_is_flagged(self):
+        code, fake, _ = self.run_carried(True, files=self.GATE_EDIT, runs=[self.gate_run("h" * 40)])
+        self.assertEqual(code, 0)
+        body = [b["body"] for m, p, b in fake.writes if m == "POST" and p == "issues/7/comments"][0]
+        self.assertIn("no ruleset requires the gate workflow", body)
+        code, fake, _ = self.run_carried(True, runs=[self.gate_run("h" * 40)])  # not gate-touching: no flag
+        body = [b["body"] for m, p, b in fake.writes if m == "POST" and p == "issues/7/comments"][0]
+        self.assertNotIn("no ruleset requires", body)
+
+    def test_comment_shows_the_acknowledged_commit(self):
+        code, fake, _ = self.run_carried(True)
+        body = [b["body"] for m, p, b in fake.writes if m == "POST" and p == "issues/7/comments"][0]
+        self.assertIn(f"Acknowledged commit: `{'a' * 40}` (head now `{'h' * 40}`)", body)
+
+    def test_event_list_that_does_not_end_with_the_label_is_not_trusted(self):
+        # The label is on the PR, so the newest security-ack event must be `labeled`.
+        events = self.ACK_BY_OWNER + [{"event": "unlabeled", "label": {"name": "security-ack"},
+                                       "actor": {"login": "0xmanhnv"}}]
+        self.assertEqual(self.run_carried(True, events=events, runs=[self.gate_run("h" * 40)])[0], 1)
+
+    def test_too_many_events_fails_closed(self):
+        events = [{"event": "commented"}] * sg.MAX_EVENTS + self.ACK_BY_OWNER
+        with self.assertRaises(RuntimeError):
+            self.run_carried(True, events=events, runs=[self.gate_run("h" * 40)])
 
     def test_merge_group_with_an_uncovered_ack_blocks_without_writing(self):
         event = {"merge_group": {"head_ref": "refs/heads/gh-readonly-queue/develop/pr-7-abc123"}}
@@ -566,7 +621,7 @@ class LargePullRequestTest(unittest.TestCase):
                   "base": {"ref": "main", "sha": base}}
             routes = {"pulls/7": pr, "issues/7/events": list(events), "issues/7/comments": [],
                       "commits/" + head + "/check-runs": {"check_runs": []},  # no pulls/7/files route: the API list is not used
-                      "actions/workflows/security-gate.yml/runs": {"workflow_runs": [GateTest.gate_run(head)]}}
+                      "actions/runs": {"workflow_runs": [GateTest.gate_run(head)]}}
             fake = FakeGitHub(routes)
             evp = pathlib.Path(ev_dir, "event.json")
             evp.write_text(json.dumps({"pull_request": {"number": 7}}))
