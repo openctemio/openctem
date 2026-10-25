@@ -66,7 +66,7 @@ tests that cover the console's most user-visible flows.
 | `38-assets-vocabulary.spec.ts`              | Asset criticality vs risk wording, one-line phone card, open findings count             |
 | `39-assets-list-states.spec.ts`             | Asset search keeps typed keys, toolbar on error, last page, empty default list          |
 | `40-filter-chips-row-phone.spec.ts`         | Filter chips row at 390/375px: locked chip and chips never overlap, search on its line  |
-| `41-ctem-scope-to-inventory.spec.ts`        | Scope a domain, one asset per name, URL text never widens scope, exclusions             |
+| `44-ctem-scope-to-inventory.spec.ts`        | Scope a domain, one asset per name, URL text never widens scope, exclusions             |
 
 Each spec is designed to:
 
