@@ -133,6 +133,8 @@
   "tenableSc.error.minSeverity": "Mức độ nghiêm trọng tối thiểu phải từ 0 đến 4",
   "tenableSc.error.rotationNeedsAck": "Luân chuyển giấy phép cần xác nhận rằng điều khoản giấy phép Tenable của tổ chức này cho phép",
   "tenableSc.error.rotationWaitHours": "Thời gian chờ sau mỗi lô: từ 1 đến 72 giờ",
+  "tenableSc.imports.lastSync": "Đồng bộ gần nhất: {time}",
+  "tenableSc.imports.remove": "Gỡ {name}",
   "tenableSc.scanNow.failed": "Không thể bắt đầu quét bằng Tenable.sc",
   "tenableSc.scanNow.pickConnector": "Quét bằng bộ kết nối",
   "tenableSc.scanNow.started": "Đã bắt đầu quét bằng Tenable.sc",

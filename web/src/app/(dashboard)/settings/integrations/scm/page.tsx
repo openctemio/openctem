@@ -22,6 +22,7 @@ import {
 } from '@/features/shared'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
+import { confirmName } from '@/lib/confirm-name'
 import { ConfirmDialog } from '@/components/confirm-dialog'
 import { Skeleton } from '@/components/ui/skeleton'
 import { toast } from 'sonner'
@@ -491,8 +492,13 @@ export default function SCMConnectionsPage() {
           'confirm.scm.deleteDesc',
           'Imported repositories stay, but they can no longer be synced through this connection. This cannot be undone.'
         )}
-        confirmText={t('confirm.delete', 'Delete')}
+        confirmText={t('confirm.scm.deleteBtn')}
         destructive
+        typeToConfirm={
+          selectedConnection
+            ? confirmName(selectedConnection.name, selectedConnection.id)
+            : undefined
+        }
         handleConfirm={() => void handleDelete()}
       />
     </>

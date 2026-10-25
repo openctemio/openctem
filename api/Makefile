@@ -1,4 +1,4 @@
-.PHONY: all build run test test-db budgets-update lint clean docker-build docker-dev docker-prod docker-down migrate generate seed help seed-required docker-seed docker-seed-required db-setup db-setup-dev swagger contract swagger-check swagger-install env-docs
+.PHONY: all build run test test-db budgets-update lint clean docker-build docker-dev docker-prod docker-down migrate generate seed help seed-required docker-seed docker-seed-required db-setup db-setup-dev swagger contract swagger-check swagger-install env-docs authz-matrix
 
 # Variables
 APP_NAME := openctem
@@ -187,6 +187,12 @@ contract: swagger
 authz-docs:
 	@test -n "$(DIR)" || { echo "usage: make authz-docs DIR=<output dir> [FRONT_MATTER=1]" >&2; exit 2; }
 	@GOWORK=off go run ./cmd/gen-authz-docs -json "" -md "$(DIR)" $(if $(FRONT_MATTER),-front-matter,)
+
+## authz-matrix: Run the authorization regression suite (tests/authzmatrix)
+##               against a scratch stack it starts and removes (Docker needed;
+##               MATRIX_REPORT=<file.json> writes the report)
+authz-matrix:
+	@bash tests/authzmatrix/ci/run.sh
 
 ## swagger-check: Generate the spec, then fail if the annotations, the spec and
 ## the routes disagree. Compares SETS of operations, not bytes — see
