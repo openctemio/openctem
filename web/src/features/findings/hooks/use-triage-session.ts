@@ -7,7 +7,7 @@
  * Design: research/234 §5.2. The pure rules live in lib/triage-session.
  */
 
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { fetchTriageWindow, type TriageWindow } from '../api/triage-api'
 import {
   TRIAGE_LIST_PATH,
@@ -62,8 +62,10 @@ export function useTriageSession(query: string | null) {
   // passed over on the way forward, and shown (with its note) on the way back.
   const direction = useRef<TriageDirection>('forward')
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     sessionRef.current = session
+  }, [session])
+  useEffect(() => {
     if (session) writeSession(session)
   }, [session])
 
