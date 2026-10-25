@@ -147,6 +147,11 @@ func byID(t *testing.T, d dataResp, id string) widgets.WidgetValue {
 // listTotal is the findings list total for the same viewer and filter.
 func (e *widgetEnv) listTotal(t *testing.T, user shared.ID, admin bool, query string) int {
 	t.Helper()
+	// A dashboard link's informational=true is the findings page's "show
+	// informational" switch: the page then sends no informational filter. On
+	// the API the same param means informational only, so the page's request
+	// is the link without it.
+	query = strings.NewReplacer("&informational=true", "", "informational=true&", "", "informational=true", "").Replace(query)
 	code, body := e.call(user, admin, nil, http.MethodGet, "/api/v1/findings?per_page=1&"+query, nil)
 	if code != http.StatusOK {
 		t.Fatalf("list %s = %d %s", query, code, body)
