@@ -235,7 +235,7 @@ export function MyWorkPage() {
                 className={cn(
                   'inline-flex h-7 items-center gap-1.5 rounded-full border px-2.5 text-xs font-medium focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none',
                   dueSoon
-                    ? 'border-warning bg-warning/10 text-warning-foreground'
+                    ? 'border-warning bg-accent text-foreground'
                     : 'border-warning/60 text-foreground hover:bg-accent'
                 )}
               >
