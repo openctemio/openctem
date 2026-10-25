@@ -14,14 +14,13 @@ import {
 import { useTenantSettings } from '@/features/organization/api/use-tenant-settings'
 import { useTenant } from '@/context/tenant-provider'
 import { useTranslation } from '@/context/i18n-provider'
-import { usePermissions, Permission } from '@/lib/permissions'
+import { useCanMutate } from '@/lib/permissions'
 
 const FORM_ID = 'license-policy-form'
 
 export default function LicensePolicySettingsPage() {
   const { t } = useTranslation()
-  const { can } = usePermissions()
-  const canEdit = can(Permission.SettingsWrite)
+  const canEdit = useCanMutate('PUT /api/v1/organization/settings/license-policy')
   const { currentTenant } = useTenant()
   const { data, error, isLoading, mutate } = useLicensePolicy()
   // The section's ETag rides on the organization settings read.

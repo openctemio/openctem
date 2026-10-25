@@ -188,3 +188,34 @@ func TestStepUp_SlugRenameNeedsRecentAuth(t *testing.T) {
 		t.Fatalf("inside the window: %v", err)
 	}
 }
+
+// Opting back in to shared sensors lets the organization's scan jobs run on
+// platform-operated sensors: step-up. Opting out (the safer choice) does not ask.
+func TestStepUp_SharedSensorsOptInNeedsRecentAuth(t *testing.T) {
+	ctx := context.Background()
+	svc, _, tn, owner, gate := tenantWithOwner(t)
+	actx := audit.AuditContext{ActorID: owner.String(), TenantID: tn.ID().String()}
+	gate.err = nil
+
+	if _, err := svc.UpdateSharedSensorsSettings(ctx, tn.ID().String(), tenant.SharedSensorsSettings{OptOut: true}, actx); err != nil {
+		t.Fatalf("opt out: %v", err)
+	}
+	if len(gate.actors) != 0 {
+		t.Fatalf("opting out must not ask for step-up, asked for %v", gate.actors)
+	}
+
+	gate.err = middleware.ErrStepUpRequired
+	_, err := svc.UpdateSharedSensorsSettings(ctx, tn.ID().String(), tenant.SharedSensorsSettings{OptOut: false}, actx)
+	wantStepUp(t, "shared sensors opt-in", err)
+	if got, _ := svc.SharedSensorsOptedOut(ctx, tn.ID()); !got {
+		t.Fatal("the organization was opted back in without a recent authentication")
+	}
+
+	gate.err = nil
+	if _, err := svc.UpdateSharedSensorsSettings(ctx, tn.ID().String(), tenant.SharedSensorsSettings{OptOut: false}, actx); err != nil {
+		t.Fatalf("inside the window: %v", err)
+	}
+	if got, _ := svc.SharedSensorsOptedOut(ctx, tn.ID()); got {
+		t.Fatal("opt-in not saved")
+	}
+}
