@@ -434,6 +434,11 @@ type SettleInput struct {
 	SensorID   *shared.ID
 	ResolvedBy *shared.ID // stamped when the finding is resolved
 	TemplateID string
+	// CheckedAt is when the check's result was reported. A finding sighted
+	// after it (last_seen_at later) was seen again by a scan since the
+	// check ran, so a confirmed fix is not applied (SettleResult.Stale).
+	// Zero skips the test.
+	CheckedAt time.Time
 	// Decide maps the finding's current status to the status the outcome
 	// leads to. It runs inside the transaction, with the finding row locked.
 	Decide func(current vulnerability.FindingStatus) SettleDecision
@@ -449,7 +454,17 @@ type SettleResult struct {
 	Moved        bool
 	PriorStatus  vulnerability.FindingStatus
 	ResultStatus vulnerability.FindingStatus
+	// Stale: the outcome was confirmed_fixed but the finding was sighted
+	// after the check ran; it was recorded inconclusive and nothing moved.
+	Stale bool
 }
+
+// StaleFixReason is the reason of a fix that a later sighting overrides.
+const StaleFixReason = "the finding was sighted again after the check ran, so the check's no-match does not show it fixed; retest again"
+
+// StaleFixVerdict is the verdict recorded in place of a confirmed fix that a
+// later sighting overrides.
+func StaleFixVerdict() Verdict { return inconclusive(ReasonTemplateChanged, StaleFixReason) }
 
 // AutoTenant is a tenant with auto-retest on, as the scheduler lists it.
 type AutoTenant struct {
