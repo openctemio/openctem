@@ -1,6 +1,7 @@
 import type * as React from 'react'
 import type { LucideIcon } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { STATUS_TONE_CLASS } from '@/lib/status-colors'
 
 /**
  * How much attention a label needs, in one colour language (research/266):
@@ -16,10 +17,10 @@ export type Tone = 'danger' | 'caution' | 'ok' | 'info' | 'neutral' | 'quiet'
 /** Tint, text and edge per tone. Every text colour is AA on its tint and on the card. */
 export const TONE_CLASS: Record<Tone, string> = {
   danger: 'bg-tone-danger-bg text-tone-danger-fg border-tone-danger-border',
-  caution: 'bg-st-accepted-bg text-st-accepted-fg border-st-accepted-border',
-  ok: 'bg-st-resolved-bg text-st-resolved-fg border-st-resolved-border',
-  info: 'bg-st-progress-bg text-st-progress-fg border-st-progress-border',
-  neutral: 'bg-st-open-bg text-st-open-fg border-st-open-border',
+  caution: STATUS_TONE_CLASS.accepted,
+  ok: STATUS_TONE_CLASS.resolved,
+  info: STATUS_TONE_CLASS.progress,
+  neutral: STATUS_TONE_CLASS.open,
   quiet: 'bg-transparent text-muted-foreground border-border',
 }
 
