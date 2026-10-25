@@ -1004,7 +1004,7 @@
   "findings.page.title": "Phát hiện",
   "findings.pentest.clientNotice": "Quyền khách hàng: bạn xem các phát hiện đã công bố của chiến dịch này, chỉ đọc.",
   "findings.pentest.role.client": "Khách hàng",
-  "findings.pentest.role.clientHint": "Khách hàng — phát hiện đã công bố, chỉ đọc",
+  "findings.pentest.role.clientHint": "Khách hàng: phát hiện đã công bố, chỉ đọc",
   "findings.pentestTab.bugBounty": "Bug Bounty",
   "findings.pentestTab.businessImpact": "Tác động kinh doanh",
   "findings.pentestTab.evidence": "Bằng chứng",
