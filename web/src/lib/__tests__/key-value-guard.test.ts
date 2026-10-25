@@ -58,7 +58,6 @@ const NOT_YET_MIGRATED = new Set([
   'features/remediation-hub/components/task-people.tsx',
   'features/scans/components/new-scan/review-step.tsx',
   'features/scans/components/run-task-logs-dialog.tsx',
-  'features/scan-zones/components/zone-routing-preview.tsx',
   'features/security-overview/components/security-overview.tsx',
   'features/sensors/components/edit-sensor-dialog.tsx',
   'features/sensors/components/pair-sensor-dialog.tsx',
