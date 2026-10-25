@@ -44,3 +44,34 @@ func (r *FindingRepository) HumanResolvedFingerprints(ctx context.Context, tenan
 	}
 	return out, rows.Err()
 }
+
+// DefaultBranchResolvedFingerprints returns the fingerprints, among the given
+// ones, whose finding is closed as fixed and counts on the default branch (it
+// is not branch-only). A run on another branch must not reopen these: it
+// records a branch occurrence and leaves the status to a default-branch run.
+func (r *FindingRepository) DefaultBranchResolvedFingerprints(ctx context.Context, tenantID shared.ID, fingerprints []string) (map[string]bool, error) {
+	out := make(map[string]bool)
+	if len(fingerprints) == 0 {
+		return out, nil
+	}
+	rows, err := r.db.QueryContext(ctx, `
+		SELECT fingerprint
+		FROM findings
+		WHERE tenant_id = $1
+			AND fingerprint = ANY($2)
+			AND status IN `+regressionReopenFromSQL+`
+			AND NOT branch_only`,
+		tenantID.String(), pq.Array(fingerprints))
+	if err != nil {
+		return nil, fmt.Errorf("failed to find default-branch resolved findings: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+	for rows.Next() {
+		var fp string
+		if err := rows.Scan(&fp); err != nil {
+			return nil, fmt.Errorf("failed to scan default-branch resolved finding: %w", err)
+		}
+		out[fp] = true
+	}
+	return out, rows.Err()
+}

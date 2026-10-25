@@ -100,6 +100,14 @@ func TestResight_SameEvidenceAndProvenanceWriteNothing(t *testing.T) {
 	if out.String != "GET / HTTP/1.1 500" || ver.String != "v10.2.0" {
 		t.Fatalf("changed values not stored: %q %q", out.String, ver.String)
 	}
+	// The scanner's template class is stored and read back with the baseline.
+	prov[0].Provenance.ExposureClass = true
+	if n, err := repo.RecordTemplateSightings(ctx, tenant, prov); err != nil || n != 1 {
+		t.Fatalf("exposure class: n=%d err=%v", n, err)
+	}
+	if base, err := repo.TemplateBaseline(ctx, tenant, id); err != nil || !base.ExposureClass {
+		t.Fatalf("baseline exposure class = %+v err %v", base, err)
+	}
 	var untouched sql.NullString
 	if err := db.QueryRowContext(ctx, `SELECT scanner_output FROM findings WHERE id = $1`, otherID.String()).Scan(&untouched); err != nil {
 		t.Fatal(err)
