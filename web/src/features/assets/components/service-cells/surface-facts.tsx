@@ -16,8 +16,10 @@ import {
   serviceProtocol,
   serviceVersion,
   technologies,
+  formatTechnology,
   tlsFacts,
 } from '../../lib/service-facts'
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { cellsForType, type SurfaceCell } from './cells-for-type'
 import { ChipMono, ChipRow, FactChip } from './fact-chip'
 import { HttpStatusChip } from './http-status-chip'
@@ -246,4 +248,145 @@ export function SurfaceFactsDetail({ asset }: { asset: Asset }) {
 
 function RenderCell({ cell, asset, all }: { cell: SurfaceCell; asset: Asset; all: boolean }) {
   return <>{SPECS[cell].render(asset, all)}</>
+}
+
+/** One fact of the compact line, with the order it is shown in. */
+interface FactAtom {
+  key: string
+  rank: number
+  node: ReactNode
+}
+
+/** Status first, then the port, then what runs there, then where it lives. */
+const ATOM_RANK: Record<SurfaceCell, number> = {
+  status: 0,
+  port: 1,
+  ports: 1,
+  tech: 2,
+  product: 2,
+  cert: 3,
+  ip: 4,
+  dns: 4,
+  cname: 5,
+  tls: 6,
+  asn: 7,
+}
+
+function factAtoms(asset: Asset, cells: readonly SurfaceCell[]): FactAtom[] {
+  const out: FactAtom[] = []
+  const mono = (key: string, rank: number, v: string, label?: string) =>
+    out.push({
+      key,
+      rank,
+      node: (
+        <FactChip tone="muted">
+          {label && <span>{label}</span>}
+          <ChipMono>{v}</ChipMono>
+        </FactChip>
+      ),
+    })
+  for (const cell of cells) {
+    if (!SPECS[cell].known(asset)) continue
+    const rank = ATOM_RANK[cell]
+    switch (cell) {
+      case 'port': {
+        const port = servicePort(asset)
+        const proto = serviceProtocol(asset)
+        if (port !== null) mono('port', rank, proto ? `${port}/${proto}` : String(port))
+        break
+      }
+      case 'ports':
+        for (const p of openPorts(asset) ?? []) mono(`ports:${formatPort(p)}`, rank, formatPort(p))
+        break
+      case 'ip':
+        for (const ip of ipAddresses(asset)) mono(`ip:${ip}`, rank, ip, 'IP')
+        break
+      case 'cname':
+        for (const c of cnames(asset)) mono(`cname:${c}`, rank, c, 'CNAME')
+        break
+      case 'dns':
+        for (const ip of ipAddresses(asset)) mono(`ip:${ip}`, ATOM_RANK.ip, ip, 'IP')
+        for (const c of cnames(asset)) mono(`cname:${c}`, ATOM_RANK.cname, c, 'CNAME')
+        break
+      case 'tech':
+        for (const tech of technologies(asset) ?? [])
+          out.push({
+            key: `tech:${tech.name}`,
+            rank,
+            node: (
+              <FactChip tone="neutral">
+                <span className="max-w-[9rem] truncate">{formatTechnology(tech)}</span>
+              </FactChip>
+            ),
+          })
+        break
+      default:
+        out.push({ key: cell, rank, node: SPECS[cell].render(asset, false) })
+    }
+  }
+  // Stable: equal ranks keep the type's own order.
+  return out
+    .map((a, i) => ({ a, i }))
+    .sort((x, y) => x.a.rank - y.a.rank || x.i - y.i)
+    .map((x) => x.a)
+}
+
+/**
+ * The list's service facts on ONE line (research/266): the first `max` facts
+ * in a fixed order (status, port, what runs there, where it lives), then a
+ * "+N" button that opens every fact in a popover (click, tap or keyboard).
+ * The line never wraps, so every row has the same height, and no chip has
+ * its own native tooltip to cover its neighbours.
+ */
+export function SurfaceFactsLine({ asset, max = 3 }: { asset: Asset; max?: number }) {
+  const { t } = useTranslation()
+  const cells = cellsForType(asset.type, asset.subType)
+  if (!cells) return null
+  const atoms = factAtoms(asset, cells)
+  if (atoms.length === 0) return <EmptyCell />
+  const shown = atoms.slice(0, max)
+  const rest = atoms.length - shown.length
+  return (
+    <div
+      data-testid="surface-facts-line"
+      className="flex min-w-0 flex-nowrap items-center gap-1 overflow-hidden"
+    >
+      {shown.map((a) => (
+        // Status and port keep their full text; a long name (a technology,
+        // an IP) is what gets cut.
+        <span
+          key={a.key}
+          className={a.rank <= 1 ? 'inline-flex shrink-0' : 'inline-flex min-w-14 shrink'}
+        >
+          {a.node}
+        </span>
+      ))}
+      {rest > 0 && (
+        <Popover>
+          <PopoverTrigger asChild>
+            <button
+              type="button"
+              onClick={(e) => e.stopPropagation()}
+              aria-label={t('assets.facts.moreFacts', '{count} more facts', { count: rest })}
+              className="shrink-0 rounded-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring [&>[data-slot=fact-chip]]:hover:bg-accent"
+            >
+              <FactChip tone="muted" className="tabular-nums">
+                +{rest}
+              </FactChip>
+            </button>
+          </PopoverTrigger>
+          <PopoverContent
+            align="start"
+            className="w-[min(380px,calc(100vw-32px))] p-3"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <p className="mb-2 text-xs font-medium text-muted-foreground">
+              {t('assets.facts.title', 'Service facts')}
+            </p>
+            <SurfaceFactsDetail asset={asset} />
+          </PopoverContent>
+        </Popover>
+      )}
+    </div>
+  )
 }

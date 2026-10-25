@@ -87,7 +87,7 @@ failing closed, as in api#555).
    pre-zone platform/tenant rules.
 8. Every uncovered target is listed in the run's `dispatch_warnings` (with its
    reason) and `uncovered_targets`; `zone_routing` summarises the routing. If no
-   target is left, the trigger fails with `NO_ZONE_COVERAGE`. A run that leaves targets uncovered ends **`partial`**, never `completed`, even when every job succeeded (it fires only the `scan_completed` automations whose `status_filter` includes `partial`).
+   target is left, the trigger is refused and the refusal names each reason with its targets and the next step, grouped by kind (`uncovered_targets[].kind`: `unresolved`, `outside_zones`, `partly_covered`, `outside_selected_zone`, `zone_no_sensor`, `sensor_policy`, `deny_list`, `invalid`), with every target in `details.refused` (code `unresolved`, `zone_none`, `zone_no_sensor`, `deny_list`, `invalid_target`). When every target is a name that does not resolve in DNS the code is `NO_RESOLVING_TARGETS` and the message says only that (a fact about the names, no zone wording); otherwise `NO_ZONE_COVERAGE` (or `SENSOR_POLICY_REFUSED` when sensor policy is the only reason). The message never carries the scan's name or an id. A run that leaves targets uncovered ends **`partial`**, never `completed`, even when every job succeeded (it fires only the `scan_completed` automations whose `status_filter` includes `partial`).
 
 Each batch payload carries only its own targets: `targets`/`target`, a
 `scanner_config` whose `targets`/`target` keys are rewritten to the batch

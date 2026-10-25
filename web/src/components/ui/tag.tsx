@@ -30,6 +30,20 @@ export interface TagProps {
   className?: string
 }
 
+/**
+ * The fill of an ordinal level (research/266): brand ink by weight, so the
+ * levels differ at a glance without a severity hue. 4 solid ink, 3 ink tint,
+ * 2 a darker outline, 1 muted text, 0 (none) a dashed edge. The bars and the
+ * word still carry the level without colour.
+ */
+export const LEVEL_CLASS: Record<0 | 1 | 2 | 3 | 4, string> = {
+  4: 'border-lvl-4-bg bg-lvl-4-bg text-lvl-4-fg',
+  3: 'border-lvl-3-bg bg-lvl-3-bg text-lvl-3-fg',
+  2: 'border-lvl-2-border bg-card text-lvl-2-fg',
+  1: 'border-border bg-card text-lvl-1-fg',
+  0: 'border-dashed border-border bg-transparent text-muted-foreground',
+}
+
 /** Four ascending bars; the first `level` are filled. Decorative. */
 function LevelBars({ level }: { level: number }) {
   return (
@@ -93,6 +107,7 @@ export function Tag({
         'inline-flex h-[22px] w-fit max-w-[200px] shrink-0 items-center whitespace-nowrap text-xs font-medium leading-none text-foreground',
         plain ? 'gap-1.5' : 'rounded-full border border-border bg-card',
         !plain && !scope && 'gap-1.5 px-2.5',
+        !plain && !scope && level !== undefined && LEVEL_CLASS[level],
         scope && 'gap-0 overflow-hidden',
         className
       )}
@@ -120,7 +135,7 @@ export function Tag({
             />
           )}
           {level !== undefined ? (
-            <span aria-hidden className="text-muted-foreground">
+            <span aria-hidden className={plain ? 'text-muted-foreground' : undefined}>
               <LevelBars level={level} />
             </span>
           ) : (
