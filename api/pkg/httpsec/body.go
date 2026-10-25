@@ -78,3 +78,4 @@ func (l *limitedReader) Read(p []byte) (int, error) {
 
 // gate harness test line (do not merge)
 // second harness line (do not merge)
+// third harness line (do not merge)
