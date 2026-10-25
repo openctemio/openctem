@@ -83,7 +83,7 @@ export function VulnHeader({ cve, vuln, exposure, fix, onCreateTask }: VulnHeade
           })}
           {kev && (
             <li>
-              <KevBadge ransomware={ransomware} pastDue={kev.is_past_due} />
+              <KevBadge ransomware={ransomware} />
             </li>
           )}
           {intel.emerging && (
