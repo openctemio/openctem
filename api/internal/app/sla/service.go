@@ -62,6 +62,9 @@ type CreatePolicyInput struct {
 	P1Days *int
 	P2Days *int
 	P3Days *int
+	// KEVCapDays is the known exploited deadline cap in days, 0 = off. Nil =
+	// the default (DefaultKEVCapDays).
+	KEVCapDays *int
 }
 
 // CreateSLAPolicy creates a new SLA policy.
@@ -125,6 +128,11 @@ func (s *Service) CreateSLAPolicy(ctx context.Context, input CreatePolicyInput) 
 
 	if err := applyPriorityDays(policy, input.P0Days, input.P1Days, input.P2Days, input.P3Days); err != nil {
 		return nil, err
+	}
+	if input.KEVCapDays != nil {
+		if err := policy.UpdateKEVCapDays(*input.KEVCapDays); err != nil {
+			return nil, err
+		}
 	}
 
 	if err := s.repo.Create(ctx, policy); err != nil {
@@ -237,6 +245,8 @@ type UpdatePolicyInput struct {
 	P1Days *int
 	P2Days *int
 	P3Days *int
+	// KEVCapDays: the known exploited deadline cap, 0 = off; nil = unchanged.
+	KEVCapDays *int
 }
 
 // applyPriorityDays overlays the given P0..P3 windows (nil = keep the current
@@ -353,6 +363,11 @@ func (s *Service) UpdateSLAPolicy(ctx context.Context, policyID, tenantID string
 	}
 	if err := applyPriorityDays(policy, input.P0Days, input.P1Days, input.P2Days, input.P3Days); err != nil {
 		return nil, err
+	}
+	if input.KEVCapDays != nil {
+		if err := policy.UpdateKEVCapDays(*input.KEVCapDays); err != nil {
+			return nil, err
+		}
 	}
 
 	if input.WarningThresholdPct != nil {
@@ -481,12 +496,65 @@ func deadlineForPriority(policy *sladom.Policy, priorityClass string, severity v
 // DeadlineFunc computes a finding's SLA deadline from policies loaded once.
 type DeadlineFunc func(assetID, priorityClass string, severity vulnerability.Severity, detectedAt time.Time) (time.Time, error)
 
+// KEVCapFunc returns the known exploited deadline cap in days (0 = off) of
+// the policy that governs a finding on assetID ("" = no asset), from
+// policies loaded once.
+type KEVCapFunc func(assetID string) int
+
+// kevCapDays is a governing policy's known exploited deadline cap; with no
+// policy configured, the platform default.
+func kevCapDays(policy *sladom.Policy) int {
+	if policy == nil {
+		return sladom.DefaultKEVCapDays
+	}
+	return policy.KEVCapDays()
+}
+
 // SLADeadlineFunc loads the tenant's SLA policies with one query and returns
 // a function that resolves each finding's effective policy in memory, with
 // the same choice as CalculateSLADeadlineForPriority: for an asset, its own
 // active policy, else the active tenant default; without an asset, the active
 // tenant default. It lets a batch of N findings cost one query instead of N.
 func (s *Service) SLADeadlineFunc(ctx context.Context, tenantID string) (DeadlineFunc, error) {
+	deadline, _, err := s.SLABatchFuncs(ctx, tenantID)
+	return deadline, err
+}
+
+// SLABatchFuncs is SLADeadlineFunc plus the known exploited deadline cap of
+// the same effective policy, both from the one policy load.
+func (s *Service) SLABatchFuncs(ctx context.Context, tenantID string) (DeadlineFunc, KEVCapFunc, error) {
+	resolve, err := s.policyResolver(ctx, tenantID)
+	if err != nil {
+		return nil, nil, err
+	}
+	deadline := func(assetID, priorityClass string, severity vulnerability.Severity, detectedAt time.Time) (time.Time, error) {
+		return deadlineForPriority(resolve(assetID), priorityClass, severity, detectedAt)
+	}
+	kevCap := func(assetID string) int { return kevCapDays(resolve(assetID)) }
+	return deadline, kevCap, nil
+}
+
+// KEVCapDays returns the known exploited deadline cap (0 = off) of the policy
+// that governs a finding on assetID, with the same choice as
+// CalculateSLADeadlineForPriority. A policy that cannot be read gives the
+// platform default.
+func (s *Service) KEVCapDays(ctx context.Context, tenantID, assetID string) (int, error) {
+	var policy *sladom.Policy
+	var err error
+	if assetID != "" {
+		policy, err = s.GetAssetSLAPolicy(ctx, tenantID, assetID)
+	} else {
+		policy, err = s.GetTenantDefaultPolicy(ctx, tenantID)
+	}
+	if err != nil {
+		policy = nil
+	}
+	return kevCapDays(policy), nil
+}
+
+// policyResolver loads the tenant's policies once and returns the in-memory
+// choice of a finding's effective policy (nil = none configured).
+func (s *Service) policyResolver(ctx context.Context, tenantID string) (func(assetID string) *sladom.Policy, error) {
 	parsedID, err := shared.IDFromString(tenantID)
 	if err != nil {
 		return nil, fmt.Errorf("%w: invalid tenant id format", shared.ErrValidation)
@@ -517,15 +585,14 @@ func (s *Service) SLADeadlineFunc(ctx context.Context, tenantID string) (Deadlin
 			activeDefault = p
 		}
 	}
-	return func(assetID, priorityClass string, severity vulnerability.Severity, detectedAt time.Time) (time.Time, error) {
+	return func(assetID string) *sladom.Policy {
 		// An inactive default never governs, with or without an asset.
-		policy := activeDefault
 		if assetID != "" {
 			if p, ok := byAsset[assetID]; ok {
-				policy = p
+				return p
 			}
 		}
-		return deadlineForPriority(policy, priorityClass, severity, detectedAt)
+		return activeDefault
 	}, nil
 }
 
