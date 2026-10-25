@@ -27,6 +27,7 @@ export { LabelChips, labelError, MAX_TAGS_PER_ASSET, MAX_TAG_LENGTH } from './la
 export {
   SurfaceFacts,
   SurfaceFactsDetail,
+  SurfaceFactsLine,
   PortChip,
   OpenPortChips,
   ProductChip,
