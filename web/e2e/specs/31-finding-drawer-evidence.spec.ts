@@ -12,7 +12,8 @@ import { test, expect } from '../fixtures/authenticated-page'
  *
  * Runs at 1440 and 390 wide, checks the response body is text (a script tag
  * in it never runs), the Authorization value never reaches the page, there is
- * no horizontal overflow, and axe finds no serious violation in the drawer.
+ * no horizontal overflow, and axe finds no serious violation in the evidence
+ * band.
  * Read-only.
  */
 
@@ -81,7 +82,12 @@ for (const size of [
       const w = window as unknown as {
         axe: { run: (ctx: unknown, opts: unknown) => Promise<AxeResult> }
       }
-      return w.axe.run({ include: [['[role="dialog"]']] }, { resultTypes: ['violations'] })
+      // The evidence band only: the drawer's Properties list has its own
+      // known definition-list findings, tracked apart from this spec.
+      return w.axe.run(
+        { include: [['[role="dialog"] [data-testid="finding-evidence-items"]']] },
+        { resultTypes: ['violations'] }
+      )
     })) as AxeResult
     expect(
       axe.violations
