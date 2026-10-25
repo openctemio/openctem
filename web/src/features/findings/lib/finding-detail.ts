@@ -310,6 +310,7 @@ export function toFindingDetail(api: ApiFinding): FindingDetail {
     rank: api.rank,
     slaStatus: api.sla_status,
     slaDeadline: api.sla_deadline,
+    slaKevCapped: api.sla_kev_capped,
 
     // The finding's own copy first (classifier input), then the CVE record.
     epssScore: api.epss_score ?? v?.epss_score,
@@ -317,6 +318,7 @@ export function toFindingDetail(api: ApiFinding): FindingDetail {
     isInKev: api.is_in_kev || !!v?.cisa_kev,
     branchOnly: api.branch_only || false,
     kevDueDate: api.kev_due_date || v?.cisa_kev?.due_date,
+    kevRansomware: api.kev_ransomware,
 
     priorityClass: api.priority_class as PriorityClass | undefined,
     priorityClassReason: api.priority_class_reason,
