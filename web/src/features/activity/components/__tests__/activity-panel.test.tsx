@@ -126,7 +126,8 @@ describe('ActivityTrigger', () => {
   it('summarises the comments and the latest one as plain text', () => {
     renderActivity()
     const trigger = screen.getByRole('button', { name: /^Activity, 2 comments/ })
-    expect(trigger).toHaveTextContent('Activity·2 comments')
+    expect(trigger).toHaveTextContent('Activity2 comments')
+    expect(trigger.textContent).not.toMatch(/\u00b7/)
     // The latest comment, without markup and without the link target.
     expect(trigger).toHaveTextContent('Me Myself: Patch is in PR 12')
     expect(trigger.textContent).not.toContain('javascript')

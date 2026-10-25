@@ -72,7 +72,17 @@ type resolvedTargets struct {
 	// InternalOutsideZones counts internal-address targets left out because
 	// no scan zone of the tenant covers them (refuseInternalOutsideZones).
 	InternalOutsideZones int
-	Warnings             []string
+	// SkippedNames lists, per skip reason (Skip* constants), the targets
+	// the gate left out, for the skip groups (target_outcomes.go).
+	SkippedNames map[string][]string
+	// Inventory maps the names a selector or an asset group added (lower
+	// case) to their asset, as opposed to typed targets: an active scanner
+	// takes them only with proof that they resolve (resolve_evidence.go).
+	Inventory map[string]shared.ID
+	// NotResolving: the names an active scanner left out for lack of
+	// proof that they resolve (dropStaleRunNames).
+	NotResolving []string
+	Warnings     []string
 	// Expansion is what each dynamic selector added (RFC-068), and
 	// SelectorRoots the apexes of the wildcard selectors.
 	Expansion     []TargetExpansion
@@ -101,6 +111,7 @@ func (s *Service) resolveScanTargets(ctx context.Context, sc *scan.Scan) (*resol
 	var warnings []string
 	archived := 0
 	types := make(map[string]asset.TypeRef) // member name -> stored type
+	inventory := make(map[string]shared.ID) // lower-cased names a selector or group added
 	// A single-scanner run hands every target to one tool: members whose
 	// type it cannot scan are left out here. A workflow gates each step at
 	// its own dispatch (FilterStepTargets).
@@ -160,6 +171,7 @@ func (s *Service) resolveScanTargets(ctx context.Context, sc *scan.Scan) (*resol
 			name := names[len(names)-1]
 			assets[name] = DispatchAsset{IDs: []string{m.ID.String()}}
 			types[name] = m.Type
+			inventory[strings.ToLower(name)] = m.ID
 		}
 		alsoMatch(m.Name, m.MatchValues)
 	}
@@ -194,6 +206,7 @@ func (s *Service) resolveScanTargets(ctx context.Context, sc *scan.Scan) (*resol
 					name := names[len(names)-1]
 					assets[name] = DispatchAsset{IDs: []string{m.ID.String()}}
 					types[name] = m.Type
+					inventory[strings.ToLower(name)] = m.ID
 				}
 				alsoMatch(m.Name, m.MatchValues)
 			}
@@ -243,6 +256,7 @@ func (s *Service) resolveScanTargets(ctx context.Context, sc *scan.Scan) (*resol
 		Warnings:       warnings,
 		Expansion:      exp.Report,
 		SelectorRoots:  exp.Roots,
+		Inventory:      inventory,
 	}
 	out.Warnings = append(out.Warnings, splitWarnings(gated.Split)...)
 	if n := gate.total(); n > 0 {
@@ -307,12 +321,16 @@ func countRefusals(out *resolvedTargets, refused []RefusedTarget) error {
 		switch {
 		case r.Reason == ReasonOwnershipNotConfirmed:
 			out.Unconfirmed++
+			out.skipped(SkipNotConfirmed, r.Target)
 		case r.Reason == ReasonInternalOutsideZones && r.Code == scopedom.RefusalZoneNone:
 			out.InternalOutsideZones++
+			out.skipped(SkipInternalNoZone, r.Target)
 		case r.Code == scopedom.RefusalTierExceeds:
 			out.TierExceeded++
+			out.skipped(SkipTierExceeded, r.Target)
 		case r.Code == scopedom.RefusalOutOfDataScope, r.Code == scopedom.RefusalNotAnAsset, r.Code == scopedom.RefusalNoEntry:
 			out.OutOfScope++
+			out.skipped(SkipOutOfScope, r.Target)
 		case r.Reason == ReasonRangeDenied, r.Reason == ReasonRangeTooLarge:
 			out.Warnings = append(out.Warnings, fmt.Sprintf("range %s was skipped: %s", r.Target, r.Reason))
 		default:
@@ -320,6 +338,17 @@ func countRefusals(out *resolvedTargets, refused []RefusedTarget) error {
 		}
 	}
 	return nil
+}
+
+// skipped notes a target the gate left out, under its skip reason (at
+// most maxSkipSamples per reason are kept).
+func (r *resolvedTargets) skipped(reason, target string) {
+	if r.SkippedNames == nil {
+		r.SkippedNames = map[string][]string{}
+	}
+	if len(r.SkippedNames[reason]) < maxSkipSamples {
+		r.SkippedNames[reason] = append(r.SkippedNames[reason], target)
+	}
 }
 
 // applyTargetsToPayload writes the dispatch targets in the protocol-v1 shape

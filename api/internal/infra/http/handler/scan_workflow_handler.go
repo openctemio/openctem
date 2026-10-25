@@ -474,6 +474,11 @@ type RunDispatchResponse struct {
 	// an inventory-mode CIDR) added from the inventory when the run started
 	// (RFC-068).
 	TargetExpansion []RunTargetExpansion `json:"target_expansion,omitempty"`
+	// WillScan is how many targets the run dispatched; Skipped groups every
+	// other target by reason (docs/architecture/scan-targets.md, "Skipped
+	// targets"). Absent on runs started before the groups were recorded.
+	WillScan *int                `json:"will_scan,omitempty"`
+	Skipped  []scansvc.SkipGroup `json:"skipped,omitempty"`
 }
 
 // RunTargetExpansion is what one selector added to a run.
@@ -1551,7 +1556,7 @@ func toRunResponse(r *scanrundom.Run) *RunResponse {
 // the run context. Values round-trip through JSON so the same code reads a
 // freshly built context and one loaded from the database.
 func toRunDispatchResponse(runContext map[string]any) *RunDispatchResponse {
-	keys := []string{"resolved_target_count", "excluded_target_count", "excluded_targets", "dispatch_warnings", "uncovered_targets", "zone_routing", "sensor_routing", "target_expansion"}
+	keys := []string{"resolved_target_count", "excluded_target_count", "excluded_targets", "dispatch_warnings", "uncovered_targets", "zone_routing", "sensor_routing", "target_expansion", scansvc.RunContextKeySkipped}
 	present := map[string]any{}
 	for _, k := range keys {
 		if v, ok := runContext[k]; ok && v != nil {
@@ -1574,11 +1579,12 @@ func toRunDispatchResponse(runContext map[string]any) *RunDispatchResponse {
 		Routing   *RunZoneRouting      `json:"zone_routing"`
 		Sensor    string               `json:"sensor_routing"`
 		Expansion []RunTargetExpansion `json:"target_expansion"`
+		Skipped   []scansvc.SkipGroup  `json:"skipped_targets"`
 	}
 	if err := json.Unmarshal(raw, &in); err != nil {
 		return nil
 	}
-	return &RunDispatchResponse{
+	out := &RunDispatchResponse{
 		ResolvedTargets:  in.Resolved,
 		ExcludedTargets:  in.Excluded,
 		Excluded:         in.Detail,
@@ -1588,6 +1594,14 @@ func toRunDispatchResponse(runContext map[string]any) *RunDispatchResponse {
 		SensorRouting:    in.Sensor,
 		TargetExpansion:  in.Expansion,
 	}
+	if _, recorded := present[scansvc.RunContextKeySkipped]; recorded {
+		will := in.Resolved
+		if in.Routing != nil {
+			will -= in.Routing.UncoveredTargets
+		}
+		out.WillScan, out.Skipped = &will, in.Skipped
+	}
+	return out
 }
 
 // toFilteringResultResponse converts filtering result from context to response type.

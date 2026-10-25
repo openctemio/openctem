@@ -168,7 +168,7 @@ describe('SLA compliance page', () => {
       'Open findings': 161,
     }
     for (const [label, want] of Object.entries(expected)) {
-      const dt = await screen.findByText(label, { selector: 'dt' })
+      const dt = await screen.findByText(label, { selector: '[data-slot="metric-label"]' })
       const cell = dt.closest('button') as HTMLElement
       await waitFor(() => expect(within(cell).getByText(String(want))).toBeTruthy())
       fireEvent.click(cell)
@@ -206,7 +206,7 @@ describe('SLA compliance page', () => {
     failStats = true
     renderPage()
     expect(await screen.findByText(/Failed to load SLA compliance/)).toBeTruthy()
-    const dt = screen.getByText('Past due', { selector: 'dt' })
+    const dt = screen.getByText('Past due', { selector: '[data-slot="metric-label"]' })
     expect(within(dt.closest('button') as HTMLElement).queryByText('0')).toBeNull()
   })
 })
