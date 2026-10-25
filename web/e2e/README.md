@@ -65,7 +65,7 @@ tests that cover the console's most user-visible flows.
 | `37-pentest-template-editor.spec.ts`        | Finding-library template: create, then edit at 375px                                    |
 | `38-assets-vocabulary.spec.ts`              | Asset criticality vs risk wording, one-line phone card, open findings count             |
 | `39-assets-list-states.spec.ts`             | Asset search keeps typed keys, toolbar on error, last page, empty default list          |
-| `40-ctem-scope-to-inventory.spec.ts`        | Scope a domain, one asset per name, URL text never widens scope, exclusions             |
+| `41-ctem-scope-to-inventory.spec.ts`        | Scope a domain, one asset per name, URL text never widens scope, exclusions             |
 
 Each spec is designed to:
 
