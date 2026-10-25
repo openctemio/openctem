@@ -6,6 +6,9 @@ import type { Sensor } from '@/lib/api/sensor-types'
 
 import { SensorHealthChip } from './sensor-health-dot'
 
+// A sensor id, shown when the viewer cannot read the sensor's name.
+const SENSOR_ID_CLASS = 'font-mono text-xs' // label-ok: an id, mono by the label rules
+
 export interface ZoneShare {
   zone_id: string
   zone_name: string
@@ -69,7 +72,7 @@ export function ZoneShareTable({
                       return s ? (
                         <SensorHealthChip key={id} sensor={s} />
                       ) : (
-                        <Badge key={id} variant="outline" className="font-mono text-xs">
+                        <Badge key={id} variant="outline" className={SENSOR_ID_CLASS}>
                           {id.slice(0, 8)}
                         </Badge>
                       )

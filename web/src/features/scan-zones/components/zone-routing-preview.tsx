@@ -170,7 +170,7 @@ export function ZoneRoutingPreview({ request, removable, onRemove }: ZoneRouting
   const warnings = data.warnings.filter((w) => !isSkipWarning(w))
 
   return (
-    <div className="space-y-3" data-testid="zone-routing-preview">
+    <div className="min-w-0 space-y-3 [overflow-wrap:anywhere]" data-testid="zone-routing-preview">
       {data.windows && (
         <WindowWaits
           waitingCount={data.windows.waiting_count}
@@ -261,7 +261,7 @@ export function ScanRoutingSection({
   return (
     <section
       aria-labelledby="scan-routing-heading"
-      className="space-y-4 border-t px-4 py-4 sm:px-6"
+      className="min-w-0 space-y-4 border-t px-4 py-4 sm:px-6"
       data-testid="new-scan-routing"
     >
       <div>
