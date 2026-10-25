@@ -86,6 +86,9 @@ type RunMapNode struct {
 	// itself (never the English summary): hosts not fully covered with
 	// their reasons, and the unfinished, unreachable and skipped counts.
 	Outcome *RunMapOutcome `json:"outcome,omitempty"`
+	// Result is what a completed retest step concluded (inconclusive,
+	// still_exposed_elsewhere) with its reason code; the step succeeded.
+	Result *RunResult `json:"result,omitempty"`
 }
 
 // RunMapOutcome is a step's structured outcome.
@@ -372,6 +375,10 @@ func fillNodeFromStepRun(n *RunMapNode, sr *scanrundom.StepRun, platform bool) {
 		n.ErrorMessage = platformText(platform, sr.ErrorMessage)
 	}
 	n.Outcome = stepOutcome(sr.Output)
+	if kind, _ := sr.Output[scanrunapp.StepOutputResultKind].(string); kind != "" {
+		code, _ := sr.Output[scanrunapp.StepOutputResultCode].(string)
+		n.Result = &RunResult{Kind: kind, Code: code}
+	}
 	if sr.StartedAt != nil {
 		n.StartedAt = sr.StartedAt.Format("2006-01-02T15:04:05Z07:00")
 	}

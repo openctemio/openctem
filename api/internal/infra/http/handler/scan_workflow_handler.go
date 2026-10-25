@@ -231,6 +231,11 @@ type RunResponse struct {
 	// Subject names what a run that executes no scan workflow is about,
 	// e.g. {"finding_id", "retest_id"} for a retest.
 	Subject map[string]any `json:"subject,omitempty"`
+	// Result is what a completed run concluded when that is more than
+	// "done": a retest that was inconclusive or found the exposure at
+	// another path. The run is completed (the tool did its work); the
+	// console words the result from its code.
+	Result *RunResult `json:"result,omitempty"`
 	// ScanWorkflowVersion is the saved version of the scan workflow this run
 	// executes (settings and steps as the run started), SpecDigest its
 	// digest. Absent for runs without a workflow and runs from before
@@ -1431,6 +1436,29 @@ func toStepResponse(s *scanworkflow.Step) *StepResponse {
 	return resp
 }
 
+// RunResult is the conclusion of a completed run (retest outcomes).
+type RunResult struct {
+	// Kind is the outcome, e.g. inconclusive or still_exposed_elsewhere.
+	Kind string `json:"kind"`
+	// Code is the reason code in lower case, e.g. endpoint_mismatch.
+	Code string `json:"code,omitempty"`
+}
+
+// runResultOf reads a run's result from its context (written when a retest
+// run completes with a conclusion); nil when it has none.
+func runResultOf(ctx map[string]any) *RunResult {
+	m, ok := ctx[scanrun.RunContextResult].(map[string]any)
+	if !ok {
+		return nil
+	}
+	kind, _ := m["kind"].(string)
+	if kind == "" {
+		return nil
+	}
+	code, _ := m["code"].(string)
+	return &RunResult{Kind: kind, Code: code}
+}
+
 func toRunResponse(r *scanrundom.Run) *RunResponse {
 	resp := &RunResponse{
 		ID:             r.ID.String(),
@@ -1450,6 +1478,7 @@ func toRunResponse(r *scanrundom.Run) *RunResponse {
 		Kind:           string(r.KindOrDefault()),
 		Trigger:        ptrRunTrigger(runTrigger(r)),
 		Subject:        r.Subject,
+		Result:         runResultOf(r.Context),
 		CreatedAt:      r.CreatedAt.Format("2006-01-02T15:04:05Z07:00"),
 
 		ScanWorkflowVersion: r.ScanWorkflowVersion,

@@ -48,8 +48,8 @@
   "errors.UNPROCESSABLE_ENTITY": "Some values are not valid.",
   "errors.UPSTREAM_ERROR": "A service this depends on did not answer correctly. Try again later.",
   "errors.VALIDATION_FAILED": "Some values are not valid.",
-  "errors.reference": "Reference: {id}",
-  "errors.network": "Could not reach the server. Check your connection and try again.",
+  "errors.copyReference": "Copy reference",
   "errors.generic": "Could not complete this. Try again.",
-  "errors.copyReference": "Copy reference"
+  "errors.network": "Could not reach the server. Check your connection and try again.",
+  "errors.reference": "Reference: {id}"
 }

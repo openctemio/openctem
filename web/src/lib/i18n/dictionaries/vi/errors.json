@@ -48,8 +48,8 @@
   "errors.UNPROCESSABLE_ENTITY": "Một số giá trị không hợp lệ.",
   "errors.UPSTREAM_ERROR": "Một dịch vụ liên quan không phản hồi đúng. Thử lại sau.",
   "errors.VALIDATION_FAILED": "Một số giá trị không hợp lệ.",
-  "errors.reference": "Mã tham chiếu: {id}",
-  "errors.network": "Không kết nối được tới máy chủ. Kiểm tra kết nối mạng rồi thử lại.",
+  "errors.copyReference": "Sao chép mã tham chiếu",
   "errors.generic": "Không thực hiện được. Thử lại.",
-  "errors.copyReference": "Sao chép mã tham chiếu"
+  "errors.network": "Không kết nối được tới máy chủ. Kiểm tra kết nối mạng rồi thử lại.",
+  "errors.reference": "Mã tham chiếu: {id}"
 }

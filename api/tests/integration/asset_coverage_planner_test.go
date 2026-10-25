@@ -24,13 +24,16 @@ import (
 )
 
 type fakeStarter struct {
-	t       *testing.T
-	mu      sync.Mutex
-	calls   map[string][]string // capability -> targets
-	runs    map[string]shared.ID
-	refuse  map[string]string // target -> code
-	busy    map[string]bool
-	fail    map[string]error // capability -> refusal of the whole batch
+	t      *testing.T
+	mu     sync.Mutex
+	calls  map[string][]string // capability -> targets
+	runs   map[string]shared.ID
+	refuse map[string]string // target -> code
+	busy   map[string]bool
+	fail   map[string]error // capability -> refusal of the whole batch
+	// never: targets whose scan windows never open; a batch holding one is
+	// refused with the error that lists them.
+	never   map[string]bool
 	execRun func(id shared.ID)
 	// execTask records the run's one task (command) with its targets.
 	execTask func(id shared.ID, targets []string)
@@ -45,6 +48,15 @@ func (f *fakeStarter) StartCoverage(_ context.Context, in scanapp.CoverageInput)
 	f.calls[in.Capability] = append(f.calls[in.Capability], in.Targets...)
 	if err, ok := f.fail[in.Capability]; ok {
 		return nil, err
+	}
+	var bad []string
+	for _, t := range in.Targets {
+		if f.never[t] {
+			bad = append(bad, t)
+		}
+	}
+	if len(bad) > 0 {
+		return nil, fmt.Errorf("failed to trigger coverage: %w", &scanapp.NeverOpensError{Targets: bad})
 	}
 	res := &scanapp.CoverageResult{Tool: "tool-" + in.Capability}
 	for _, t := range in.Targets {
@@ -176,19 +188,23 @@ func TestAssetCoverage_PlannerDispatchesAndSettles(t *testing.T) {
 	}
 }
 
-// A refusal of the whole batch (here the trigger's zone coverage refusal)
-// blocks the batch's pairs with the code instead of leaving them due to be
-// retried every pass; any other error leaves them due.
-func TestAssetCoverage_WholeBatchRefusalBlocks(t *testing.T) {
+// A refusal of the whole batch that says the capability cannot run now
+// (here the trigger's zone coverage refusal) pauses the capability with its
+// readiness reason and retries it after RefusalRetry, instead of being
+// retried every pass; a refusal about the batch's targets blocks its pairs
+// with the code; any other error leaves them due.
+func TestAssetCoverage_WholeBatchRefusal(t *testing.T) {
 	g := newCovRig(t)
 	ctx := context.Background()
 	a := g.r.newTenant()
+	g.exec(`INSERT INTO scope_targets (tenant_id, target_type, pattern) VALUES ($1, 'domain', '*.batch.test')`, a.tenant)
 	name := g.asset(a, "nozone.batch.test", "subdomain", "", "")
 	addr := g.asset(a, "203.0.113.77", "ip_address", "", "")
 	f := &fakeStarter{t: t, calls: map[string][]string{}, runs: map[string]shared.ID{}, busy: map[string]bool{},
 		fail: map[string]error{
-			"resolve.dns": fmt.Errorf("failed to trigger coverage: %w", shared.NewDomainError("NO_ZONE_COVERAGE", "outside every zone", shared.ErrValidation)),
+			"resolve.dns": fmt.Errorf("failed to trigger coverage: %w", shared.NewDomainError("NO_SENSOR_AVAILABLE", "no sensor", shared.ErrValidation)),
 			"lookup.asn":  errors.New("connection reset"),
+			"scan.ports":  fmt.Errorf("failed to trigger coverage: %w", shared.NewDomainError("ALL_TARGETS_EXCLUDED", "every target is excluded", shared.ErrValidation)),
 		}}
 	f.execRun = func(shared.ID) {}
 	g.svc.EnablePlanning(g.repo, f, coverageapp.GovernanceSwitch{Modes: fixedMode{m: scangov.ModeOff}}, coverageapp.Config{})
@@ -197,8 +213,9 @@ func TestAssetCoverage_WholeBatchRefusalBlocks(t *testing.T) {
 	}
 	rows, _ := g.repo.ListForAsset(ctx, a.tenant, name)
 	for _, r := range rows {
-		if r.Capability == "resolve.dns" && (r.State != "blocked" || r.Reason != "no_zone_coverage" || r.NextDueAt == nil || !r.NextDueAt.After(time.Now().Add(time.Hour))) {
-			t.Errorf("refused batch pair = %+v, want blocked no_zone_coverage, rechecked later", r)
+		if r.Capability == "resolve.dns" && (r.State != "paused" || r.Reason != "no_eligible_sensor" || r.NextDueAt == nil ||
+			!r.NextDueAt.After(time.Now().Add(coverageapp.RefusalRetry-time.Minute))) {
+			t.Errorf("refused batch pair = %+v, want paused no_eligible_sensor, retried later", r)
 		}
 	}
 	rows, _ = g.repo.ListForAsset(ctx, a.tenant, addr)
@@ -206,8 +223,11 @@ func TestAssetCoverage_WholeBatchRefusalBlocks(t *testing.T) {
 		if r.Capability == "lookup.asn" && r.State != "due" {
 			t.Errorf("a database-style error must leave the pair due: %+v", r)
 		}
+		if r.Capability == "scan.ports" && (r.State != "blocked" || r.Reason != "all_targets_excluded") {
+			t.Errorf("a refusal about the targets must block the batch: %+v", r)
+		}
 	}
-	// The blocked pair is not offered again on the next pass.
+	// The paused capability is not tried again on the next pass.
 	n := len(f.calls["resolve.dns"])
 	if n != 1 {
 		t.Fatalf("resolve.dns attempts = %d, want 1", n)
@@ -216,7 +236,42 @@ func TestAssetCoverage_WholeBatchRefusalBlocks(t *testing.T) {
 		t.Fatal(err)
 	}
 	if len(f.calls["resolve.dns"]) != n {
-		t.Error("a blocked pair was retried on the next pass")
+		t.Error("a paused capability was retried on the next pass")
+	}
+}
+
+// One target whose scan windows never open must not stall the capability:
+// its pair is blocked, the other targets of the same batch run in the same
+// pass, and no pair of any capability is paused.
+func TestAssetCoverage_NeverOpensTargetDoesNotStallCapability(t *testing.T) {
+	g := newCovRig(t)
+	ctx := context.Background()
+	a := g.r.newTenant()
+	g.exec(`INSERT INTO scope_targets (tenant_id, target_type, pattern) VALUES ($1, 'domain', '*.never.test')`, a.tenant)
+	bad := g.asset(a, "closed.never.test", "subdomain", "", "")
+	good := g.asset(a, "open.never.test", "subdomain", "", "")
+	ip := g.asset(a, "203.0.113.31", "ip_address", "", "")
+	g.rel(a, bad, ip, "resolves_to")
+	g.rel(a, good, ip, "resolves_to")
+	f := &fakeStarter{t: t, calls: map[string][]string{}, runs: map[string]shared.ID{}, busy: map[string]bool{},
+		never: map[string]bool{"closed.never.test": true}}
+	f.execRun = func(shared.ID) {}
+	g.svc.EnablePlanning(g.repo, f, coverageapp.GovernanceSwitch{Modes: fixedMode{m: scangov.ModeOff}}, coverageapp.Config{})
+	if _, err := g.svc.RunTenant(ctx, a.tenant); err != nil {
+		t.Fatal(err)
+	}
+	if got := g.states(a, bad)["probe.http"]; got != "blocked:scan_window_never_opens" {
+		t.Errorf("never-open target probe.http = %q", got)
+	}
+	if got := g.states(a, good)["probe.http"]; got != "queued:" {
+		t.Errorf("other target probe.http = %q, want queued in the same pass", got)
+	}
+	for id, name := range map[shared.ID]string{bad: "bad", good: "good"} {
+		for cap, st := range g.states(a, id) {
+			if strings.HasPrefix(st, "paused") {
+				t.Errorf("%s %s = %q: a target-specific refusal must not pause a capability", name, cap, st)
+			}
+		}
 	}
 }
 

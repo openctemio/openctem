@@ -12,6 +12,7 @@ truth: this page describes them as of the merge-queue routing (#730, 2026-10-02)
 | API CI (`api-ci.yml`) | PR / push to `main`, `develop`; merge queue | `API static checks` (one job: migration safety, SQL schema drift, security gates, OpenAPI contract, gateway routing, go vet, staticcheck, golangci-lint), tests against Postgres + Redis, least-privilege suite, PostgreSQL 18 migrations, release binaries, Docker build; see [Tiers](#tiers) | **API CI OK** |
 | Web CI (`web-ci.yml`) | PR / push to `main`, `develop`; merge queue | `API contract` (generates the contract files; for an API change compares them with the base and reports the difference), `API contract report` (the pull request comment), `Web checks` (type-check against the generated contract, ESLint, Prettier, palette drift) and `Web tests` (Vitest in three parallel shards); `next build` (push only) | **Web CI OK** |
 | CodeQL (`codeql.yml`) | PR / push; merge queue; weekly (Mon 00:00 UTC) | One matrix over the languages: Go (built inside `api/`) and JavaScript/TypeScript (`web/`), one category per language. PR and merge queue: only the changed language(s). Push to `develop`/`main` and weekly: both, so each branch keeps a fresh baseline per category | **CodeQL OK** |
+| Web E2E (`web-e2e.yml`) | PR (with `run-e2e`, a changed suite, or the full tier) / push to `develop`; merge queue | Builds the API, web and admin images once, then runs the Playwright suite (`web/e2e`) in 4 shards, each against its own stack (Postgres, Redis, migrations, seeded tenant). The merge queue runs it whenever the queued PR changed `web/`, `api/` or a shared file, so a spec made stale by a layout change fails in the queue, not on `develop`. `Merge reports and list flaky tests` is for people and never fails the gate | **E2E OK** |
 | All-in-one CI (`allinone-ci.yml`) | PR / push; merge queue | Builds `openctem-api`, `openctem-web` and the all-in-one `openctem` image exactly as a release does, smoke-tests them (arch, ELF, executes) and runs the all-in-one in both gateway modes against Postgres + Redis. Nothing is pushed. Merge queue and pushes only (see [Tiers](#tiers)). | **All-in-one OK** |
 | Repository Security (`repo-security.yml`) | PR / push; merge queue; weekly | Betterleaks (root `.betterleaks.toml`, `.gitleaksignore`): a PR or queued group scans only its own commits (`base..head`); a push to `develop`/`main` and the weekly run scan the full history. Customer identifiers: fixed strings from the `CUSTOMER_DENYLIST` repository secret (never committed; empty = skipped with a notice) and the live LAN range outside tests, over every tracked file, printing only file:line. Commit emails: a PR or queued group fails when one of its commits has an address from the `COMMIT_EMAIL_DENYLIST` repository secret (case-insensitive fixed strings such as a domain; never committed; empty = skipped with a notice) as author, committer or `Co-authored-by` trailer, printing only the commit and the field; outside contributors are covered by the CLA check. **Workflow Lint**: actionlint and zizmor (pinned; suppressions are per line with a reason, inline or in `.github/zizmor.yml`, never per file) over the workflows, action pins, and the self-tests of the CI scripts (change routing, CodeQL alert gate, security gate and its CODEOWNERS mirror), plus the check that `api/` and `web/` depend on no sensor module or SDK. **Dependency Review** (PR only) | **Secret Scanning**, **Workflow Lint** |
 | Docs check (`docs-check.yml`) | PR / push to `main`, `develop`; merge queue | One job, **Docs check**: `scripts/docs_check.py` (Markdown is English, has no private addresses or internal host names, relative links and anchors resolve), the RFC index check, then `scripts/check_docs_links.py` checks every `docs.openctem.io` link in code (page and `#anchor`, against a checkout of `openctemio/docs` `main`) and every `github.com/openctemio/<repo>/blob\|tree/<ref>/<path>#anchor` link (this repository from the checkout, others fetched shallowly); tests are skipped, `docs-links: ignore` skips a line. Locally: `python3 scripts/check_docs_links.py --docs ../docs --fetch-other .` | **Docs check** |
@@ -40,14 +41,26 @@ Scheduled runs (weekly security, nightly fuzz) run from the default branch, `mai
 
 ### Required checks
 
-Branch protection on `main` and `develop` requires exactly these seven checks.
+Branch protection on `main` and `develop` requires exactly these eight checks.
 Merges go through the GitHub merge queue (see [Merge queue](#merge-queue)); the
 strict "branch must be up to date" rule is off, because the queue itself tests
 each PR on top of the current base:
 
-`API CI OK` · `Web CI OK` · `CodeQL OK` · `All-in-one OK` · `Secret Scanning` · `Workflow Lint` · `security-gate`
+- `API CI OK`
+- `Web CI OK`
+- `E2E OK`
+- `CodeQL OK`
+- `All-in-one OK`
+- `Secret Scanning`
+- `Workflow Lint`
+- `security-gate`
 
-The four `… OK` checks are aggregator jobs (`if: always()`): they pass when every
+`E2E OK` is required because the queue is the only place where a PR's specs
+meet every layout change merged before it: a spec a PR never touched can go
+stale against another PR's page change, and without the check that PR still
+merged and turned `develop` red.
+
+The five `… OK` checks are aggregator jobs (`if: always()`): they pass when every
 job they depend on passed **or was skipped**, and fail when any failed or was
 cancelled. The other jobs are not required individually; they reach the merge
 through their aggregator. API Security and Web Security are not required.
@@ -110,20 +123,78 @@ re-runs on the label and turns green; queue the pull request as usual. In the
 merge queue the gate runs again (`merge_group`), finds the pull request from the
 queue branch name and reads its labels and code-scanning alerts through the API.
 
-- The ack covers the pull request's security-sensitive lines. On the label
-  event the gate records a digest of them in its comment: every added and
-  removed line (no context, no line numbers) of each file that makes the pull
-  request sensitive, taken from the diff against the merge base. A later run
-  whose digest differs removes `security-ack`; one with the same digest keeps
-  it. So merging the base branch in, rebasing, or pushing changes to other
-  files keeps the ack, while changing a sensitive line, adding a sensitive file
-  or resolving a conflict inside one drops it. Ack again after reviewing the
-  new commits. Only the comment the workflow wrote counts (a digest in anyone
-  else's comment is ignored), and in the merge queue a digest that no longer
-  matches blocks the group. An ack given before the gate recorded digests
-  falls back to the earlier rule on its next push (a push that changes a
-  sensitive file, or any force-push, removes it), and records the digest when
-  it survives.
+- The ack covers the commit it was added on, and later commits that leave the
+  security-sensitive lines alone. The gate never stores or reads a decision in
+  its comment (any workflow on any branch of the repository writes as the same
+  `github-actions[bot]`, so a comment proves nothing). It reads only records
+  GitHub writes itself:
+  1. the newest `labeled` issue event for `security-ack`: who added it and
+     when (the actor must be listed under `ackers`);
+  2. the commit it was added on: the head of the run of this workflow that the
+     label started (the earliest `pull_request` run of `security-gate.yml` for
+     the pull request's branch, started by the same user within 10 minutes of
+     the label). GitHub creates runs with the event's actor and head commit; a
+     workflow token cannot. The gate comment shows this commit next to the
+     current head, so the acker can confirm what the label covers.
+  The issue-event list must be complete: its newest `security-ack` event must
+  be the `labeled` one (the label is on the pull request), and a list of 3000
+  events or more fails the check, since it may be cut off.
+  On the label event itself, or when that commit is still the head, the ack
+  stands. Otherwise the ack is carried over from an older commit, and the gate
+  fetches both commits (history and trees; blobs on demand) and recomputes
+  from git a digest of the security-sensitive lines of each, against the
+  current base: every added and removed line (no context, no line numbers) of
+  each file that makes the pull request sensitive, from the diff against the
+  merge base. Equal digests keep the ack, so merging the base branch in,
+  rebasing, or pushing changes to other files keeps it, while changing a
+  sensitive line, adding a sensitive file or resolving a conflict inside one
+  drops it. In the merge queue an ack that no longer covers the head blocks
+  the group (nothing is written there).
+- No carried-over ack, whatever the digest, when:
+  - the pull request changes `.github/workflows/**`, `.github/actions/**`,
+    `.github/security-paths.yml` or `.github/scripts/security_gate.py` (on
+    `pull_request` events GitHub runs the pull request's own workflow files,
+    which could act on the pull request): the ack covers only the exact commit
+    it was added on, so every push needs a new ack. Such a pull request also
+    decides through its own `security-gate.yml` which of its events start a
+    run: it could skip the label's run, so that a later action of the acker
+    (adding another label) starts the "earliest run" on an unreviewed commit.
+    So once a ruleset requires the gate workflow (below), only runs of that
+    pinned workflow (`security-gate.yml@refs/heads/develop`) can name the
+    acknowledged commit, read from GitHub's rules API for the base branch.
+    Until then the gate comment says that the pull request's own workflow
+    files decide what the check runs (they could also replace the gate
+    outright, so failing closed there would add no protection and would only
+    block every workflow change in the merge queue);
+  - the base branch changed after the label (a `base_ref_changed` issue event
+    after the `labeled` one, also without new commits: a retargeted stacked
+    pull request now carries its parent's changes);
+  - no gate run started by the label can be found (for example the run was
+    never created): the gate cannot tell which commit was acknowledged.
+- Migration renumbering keeps the ack: a migration counts in the digest by its
+  name without the version number, in version order, so the merge queue moving
+  a pull request's migrations above `develop` (same names, same order, same
+  content) changes nothing, while editing or reordering them does. The gate
+  does **not** check where the renumbered migrations now run relative to the
+  ones `develop` added meanwhile: a migration that depends on (or conflicts
+  with) a newer `develop` migration keeps the ack. That ordering is the
+  migration lint's and the reviewer's job.
+- Renaming a security-sensitive file after the ack always needs a new ack,
+  even when its content is unchanged: the digest is computed from git without
+  rename detection, so a rename reads as one file removed and another added.
+  (Only a migration's version prefix is exempt, as above.)
+- Base merges that change the diff keep the ack too. When `develop` changed
+  the same sensitive file, the pull request's own `+`/`-` lines can shift (a
+  removed line now reads differently, a hunk merged into `develop` by a stacked
+  parent disappears) and the digest differs although nobody touched the
+  change. Then the gate keeps the ack only if the acknowledged commit is an
+  ancestor of the new head (a rebase or force-push is acked again) and every
+  sensitive file of the pull request is the same blob in the new head as in a
+  clean `git merge-tree` of the acknowledged commit with the newest `develop`
+  commit the new head contains (migrations matched by name and order). A
+  sensitive change in any non-merge commit, or a conflict resolved inside a
+  sensitive file of a merge commit, fails this; plain files may change freely.
+  Every git or API error counts as "not covered" and removes the ack.
 - A HIGH diff finding is resolved by changing the line, or, for a reviewed false
   positive, by a comment on the same line:
   `security-review: allow <RULE-ID> <reason>` (visible in the diff and in git
@@ -148,9 +219,54 @@ on any API or git error and on a merge-queue branch it cannot parse. The API
 lists at most 3000 changed files, so a pull request of 3000 files or more (a
 release branch far ahead of `main`) is diffed with git instead: the gate fetches
 the base and head commits into its base checkout, never checks them out or runs
-anything from them, and evaluates the same rules and ack digest on that list. A pull request can still edit `security-gate.yml` itself, which is
-the residual risk of any check defined in the repository; such a change is
-`ci-release` sensitive and needs the ack like any other.
+anything from them, and evaluates the same rules and ack digest on that list. 
+
+**Pinning the required check to the real workflow.** Branch protection requires
+a check *named* `security-gate` from the GitHub Actions app. On `pull_request`
+events GitHub runs the workflow files of the pull request itself, so a pull
+request can rewrite `security-gate.yml` (or add any workflow with a job named
+`security-gate`) and report a green check under that name. The gate script
+cannot defend against this; GitHub can. An organization ruleset rule
+**Require workflows to pass before merging** runs
+`.github/workflows/security-gate.yml` from a fixed branch of this repository
+for every pull request into `develop` and `main`, whatever the pull request
+changes, and only that run satisfies the rule. Owner setup (organization
+owner; rulesets with required workflows are organization-level only):
+
+1. Wait until this hardened gate is on `develop` (the ruleset runs
+   `develop`'s copy of the workflow).
+2. Organization **Settings > Repository > Rulesets > New branch ruleset**:
+   name `security-gate required workflow`, enforcement **Active**, bypass
+   list **Repository admin** (the emergency override below), target
+   repositories `openctem`, target branches `develop` and `main`.
+3. Enable **Require workflows to pass before merging**, add workflow
+   repository `openctemio/openctem`, path `.github/workflows/security-gate.yml`,
+   ref `refs/heads/develop`. Save.
+
+   The same through the API:
+
+   ```sh
+   gh api -X POST orgs/openctemio/rulesets --input - <<'JSON'
+   {"name": "security-gate required workflow", "target": "branch", "enforcement": "active",
+    "conditions": {"ref_name": {"include": ["refs/heads/develop", "refs/heads/main"], "exclude": []},
+                   "repository_name": {"include": ["openctem"], "exclude": []}},
+    "bypass_actors": [{"actor_id": 5, "actor_type": "RepositoryRole", "bypass_mode": "always"}],
+    "rules": [{"type": "workflows", "parameters": {"do_not_enforce_on_create": false,
+      "workflows": [{"repository_id": 1150018630, "path": ".github/workflows/security-gate.yml",
+                     "ref": "refs/heads/develop"}]}}]}
+   JSON
+   ```
+4. Open a throwaway pull request that changes nothing sensitive and check
+   that the ruleset run appears and passes, also in the merge queue
+   (`merge_group` is in the workflow's triggers, which the ruleset needs).
+5. Then remove `security-gate` from the required status checks of `develop`
+   and `main` in branch protection: the name-only requirement adds nothing once
+   the workflow is required. Keep the workflow's own `on:` triggers: the gate
+   finds the commit an ack was given on through the runs the label starts.
+
+Until the ruleset exists, a pull request that edits `security-gate.yml` is the
+residual risk: it is `ci-release` sensitive, needs the ack on its exact head
+commit, and the reviewer must read the workflow change before acking.
 
 **Emergency override.** An administrator can merge a pull request whose gate is
 red with **Merge without waiting for requirements (bypass rules)** (or by
@@ -238,10 +354,10 @@ tags and scheduled runs are never cancelled.
    [Tiers](#tiers)) on that ref; CodeQL only reports `CodeQL OK`. `changed.sh`
    diffs `base_sha..head_sha`, so a queued web-only PR runs only web jobs, as it
    did on the PR.
-4. All six required checks report on every queue ref: the four `… OK`
+4. Every required check reports on every queue ref: the five `… OK`
    aggregators run with `if: always()` and pass when their jobs were skipped;
    Secret Scanning and Workflow Lint are unconditional jobs. Nothing stays Pending.
-5. When all six pass, the queue fast-forwards the base branch, and the `push` run
+5. When all of them pass, the queue fast-forwards the base branch, and the `push` run
    (path-scoped, plus CodeQL on both languages) refreshes the branch's baseline.
 6. A failure removes the PR from the queue; the groups behind it are rebuilt.
 
@@ -709,7 +825,7 @@ develop  integration branch; every PR targets develop
 
 1. Branch from `develop`, open the PR against `develop`. One PR may change both
    `api/` and `web/`.
-2. All six required checks green, then **Merge when ready** (merge queue).
+2. Every required check green, then **Merge when ready** (merge queue).
 3. Merge with a merge commit or squash, never "rebase and merge" for branches
    that contain merges.
 4. Release: **Release Train** builds `release/vX.Y.Z` from a green `develop`

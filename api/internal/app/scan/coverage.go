@@ -135,6 +135,9 @@ func (s *Service) StartCoverage(ctx context.Context, in CoverageInput) (*Coverag
 		TenantID:      in.TenantID.String(),
 		ScanID:        sc.ID.String(),
 		SkipIfRunning: true,
+		// A refusal pauses the capability (the planner maps it to a
+		// readiness reason); it never becomes a blocked run per batch.
+		NoBlockedRun: true,
 		// The run is the coverage policy's: no person is behind it.
 		TriggerType: scanworkflow.TriggerTypeSystem,
 		TriggeredBy: PolicyTriggerPrefix + string(scan.ManagedByCoverage),

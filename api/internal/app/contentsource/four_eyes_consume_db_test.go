@@ -139,7 +139,9 @@ func TestAutoPromotion_ReadsPolicyUnderLock_DB(t *testing.T) {
 func TestTest_OnePerOrganization_DB(t *testing.T) {
 	e := newEnv(t)
 	ctx := context.Background()
-	entered, unblock := make(chan struct{}), make(chan struct{})
+	// entered is buffered: the fetcher signals without blocking, so the signal
+	// must wait for the receive below that may not have started yet.
+	entered, unblock := make(chan struct{}, 1), make(chan struct{})
 	e.svc.SetFetcher(func(c context.Context, req fetchers.GitRequest) (*fetchers.GitSnapshot, error) {
 		select {
 		case entered <- struct{}{}:

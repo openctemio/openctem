@@ -53,6 +53,10 @@ type TriggerScanExecInput struct {
 	// running it by hand. Automatic triggers (schedule, retry, automations)
 	// still need the scan active. A disabled scan runs for nobody.
 	Interactive bool `json:"-"`
+	// NoBlockedRun: a refusal is returned to the caller without being
+	// recorded as a blocked run (continuous coverage pauses the capability
+	// with a readiness reason instead of writing a run per batch per pass).
+	NoBlockedRun bool `json:"-"`
 }
 
 // ErrScanRunInProgress is returned when a trigger with SkipIfRunning finds
@@ -145,7 +149,9 @@ func (s *Service) triggerAndRecord(ctx context.Context, sc *scan.Scan, input Tri
 		// A refusal becomes a blocked run with its reason; either way the
 		// scan's summary is recomputed from its runs (a run that failed
 		// while starting is one of them).
-		s.recordBlockedRun(ctx, sc, input, input.TriggerType, err)
+		if !input.NoBlockedRun {
+			s.recordBlockedRun(ctx, sc, input, input.TriggerType, err)
+		}
 		s.refreshRunSummary(ctx, sc)
 		return nil, err
 	}

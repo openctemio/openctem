@@ -20,8 +20,10 @@
   "lookalikes.enabled": "Giám sát {domain}",
   "lookalikes.errorTitle": "tên miền giả mạo",
   "lookalikes.falsePositive": "Không phải mối đe dọa",
+  "lookalikes.loadMore": "Tải thêm",
   "lookalikes.mail": "Nhận thư",
   "lookalikes.max": "Số ứng viên cần kiểm tra (10 đến 1000)",
+  "lookalikes.maxInvalid": "Nhập một số nguyên từ 10 đến 1000",
   "lookalikes.of": "Giả mạo {domain}",
   "lookalikes.pageDescription": "Các tên miền do người khác đăng ký để giả mạo tên miền của bạn, được phát hiện mà không cần liên hệ tới chúng.",
   "lookalikes.pageTitle": "Bề mặt tấn công",
@@ -38,6 +40,7 @@
   "lookalikes.save": "Lưu",
   "lookalikes.saveFailed": "Không lưu được cài đặt theo dõi",
   "lookalikes.saved": "Đã lưu cài đặt theo dõi",
+  "lookalikes.shownOf": "{shown} trên {total}",
   "lookalikes.state.accepted": "Của chúng tôi hoặc vô hại",
   "lookalikes.state.active": "Cần xem xét",
   "lookalikes.state.falsePositive": "Không phải mối đe dọa",
@@ -56,8 +59,5 @@
   "lookalikes.triageFailed": "Thay đổi chưa được lưu",
   "lookalikes.watchesDescription": "Các tên miền gốc của bạn (mục phạm vi tên miền vĩnh viễn hoặc tên miền đã xác minh) và các tên miền giả mạo của chúng. Việc kiểm tra là thụ động: tra cứu DNS và Certificate Transparency, hằng ngày với tên miền giả mạo đã đăng ký và hằng tuần với phần còn lại. Không liên hệ tới máy chủ của tên miền giả mạo nào.",
   "lookalikes.watchesTitle": "Tên miền đang theo dõi",
-  "lookalikes.web": "Có địa chỉ IP",
-  "lookalikes.maxInvalid": "Nhập một số nguyên từ 10 đến 1000",
-  "lookalikes.shownOf": "{shown} trên {total}",
-  "lookalikes.loadMore": "Tải thêm"
+  "lookalikes.web": "Có địa chỉ IP"
 }
