@@ -15,8 +15,12 @@ const putCalls = vi.hoisted(() => [] as string[])
 vi.mock('@/components/layout', () => ({
   Main: ({ children }: { children: React.ReactNode }) => <main>{children}</main>,
 }))
-vi.mock('@/features/workflows/components/automation-canvas', () => ({
-  AutomationCanvas: () => null,
+vi.mock('@/features/workflows/components/automation-workbench', () => ({
+  AutomationWorkbench: () => null,
+}))
+vi.mock('@/features/workflows/components/automation-run-sheet', () => ({
+  AutomationRunSheet: () => null,
+  useRunStatusLabel: () => (s: string) => s,
 }))
 vi.mock('@/hooks/use-url-param', () => ({
   useUrlFilter: (_k: string, fallback: string) => [fallback, vi.fn()],
@@ -24,6 +28,7 @@ vi.mock('@/hooks/use-url-param', () => ({
 vi.mock('@/lib/permissions', async (orig) => ({
   ...(await orig<typeof import('@/lib/permissions')>()),
   Can: ({ children }: { children: React.ReactNode }) => <>{children}</>,
+  useHasPermission: () => true,
 }))
 vi.mock('@/lib/api/workflow-hooks', () => ({
   useWorkflows: () => ({

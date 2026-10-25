@@ -255,9 +255,12 @@ type FailedPair struct {
 // Planner is the ledger as the planner needs it. Every method is scoped to
 // one tenant.
 type Planner interface {
-	// DueBatch returns up to limit due or failed pairs of a capability whose
-	// time has come, highest priority and oldest first, on active assets.
-	DueBatch(ctx context.Context, tenantID shared.ID, capability string, limit int) ([]DueTarget, error)
+	// DueBatch returns up to limit pairs of a capability whose time has
+	// come (due, failed after its back-off, covered past its cadence,
+	// blocked past its recheck), highest priority and oldest first, on
+	// active assets. When one of them is due now it also takes pairs due
+	// within lookahead; when none is due now it returns nothing.
+	DueBatch(ctx context.Context, tenantID shared.ID, capability string, limit int, lookahead time.Duration) ([]DueTarget, error)
 	// MarkQueued records that the pairs were handed to a run.
 	MarkQueued(ctx context.Context, tenantID shared.ID, capability string, assetIDs []shared.ID, runID shared.ID, tool string) error
 	// MarkBlocked records that the gate refused the pairs, with its code;
