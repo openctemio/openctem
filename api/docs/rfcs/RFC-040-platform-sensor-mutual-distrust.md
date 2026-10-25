@@ -1013,7 +1013,7 @@ Each is tracked in [architecture/sensor-platform-trust.md](../architecture/senso
    | `sensor_cross_tenant_attempts_total` | `route` |
    | `sensor_quota_refusals_total` | `kind` |
    | `sensor_results_outside_scope_total` | `kind` |
-   | `sensor_unsafe_posture` (gauge) | `kind`: policy_none, pin_none, network_unenforced, bearer_key |
+   | `sensor_unsafe_posture` (gauge) | `kind`: policy_none, network_unenforced, bearer_key (pin_none until §13) |
 
    Alerts:
 
@@ -1173,3 +1173,18 @@ design (nothing records which sensor created them). Protocol v1 reports
 Design and operation: [architecture/sensor-result-binding.md](../architecture/sensor-result-binding.md)
 ("Complete reports from a trusted collector").
 
+
+## 13. Amendment (2026-10-25): the system trust store is not "unhardened"
+
+The posture flags (§11.4, `sensor.DerivePosture`) no longer count
+`platform_pin: none` as a reason a sensor is unhardened. A sensor that checks
+the platform certificate against the system trust store is the normal state
+for a platform with a publicly trusted certificate (the hosted service): a
+pin would tie the sensor to one issuer, the install commands cannot offer a
+stable value for it, and requests are already signed by the sensor's own key
+and jobs by the platform's signer. Flagging every such install trained
+operators to ignore the tag. The reasons are now `policy_none`,
+`network_unenforced` and `bearer_key`; the posture block still shows the
+pin, and `SENSOR_CA_FINGERPRINT` stays available as optional hardening (for
+example behind a TLS-inspecting proxy). The metric
+`openctem_sensors_unhardened` loses the `pin_none` series.

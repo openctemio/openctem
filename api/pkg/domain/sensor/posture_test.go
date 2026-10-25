@@ -85,7 +85,13 @@ func TestDerivePosture(t *testing.T) {
 			[]string{UnhardenedPolicyNone, UnhardenedBearerKey}},
 		{"legacy", PostureInput{Seen: true, LocalPolicy: &LocalPolicyReport{State: LocalPolicyAbsent}, Posture: weak},
 			PostureLocalPolicyAbsentLegacy, PlatformPinNone, &f,
-			[]string{UnhardenedPolicyNone, UnhardenedPinNone, UnhardenedNetworkUnenforced, UnhardenedBearerKey}},
+			[]string{UnhardenedPolicyNone, UnhardenedNetworkUnenforced, UnhardenedBearerKey}},
+		// The system trust store is the normal state on a public
+		// certificate: reported, never a gap.
+		{"public certificate, otherwise hardened", PostureInput{Seen: true, KeyBound: true,
+			LocalPolicy: &LocalPolicyReport{State: LocalPolicyEnforced},
+			Posture:     &ManifestPosture{PlatformTLS: &PlatformTLSPosture{Pin: PlatformPinNone}, Sandbox: &SandboxPosture{Sandboxed: true, NetworkEnforced: true}}},
+			PostureLocalPolicyEnforced, PlatformPinNone, &tr, []string{}},
 		{"fails closed", PostureInput{Seen: true, KeyBound: true, LocalPolicy: &LocalPolicyReport{State: LocalPolicyAbsent, Required: true}},
 			PostureLocalPolicyAbsentRequired, PlatformPinUnknown, nil, []string{}},
 		{"hardened", PostureInput{Seen: true, KeyBound: true, LocalPolicy: &LocalPolicyReport{State: LocalPolicyEnforced, KillSwitch: true}, Posture: confined},

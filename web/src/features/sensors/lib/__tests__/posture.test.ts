@@ -23,24 +23,18 @@ const posture = (p: Partial<SensorPosture>): { posture: SensorPosture } => ({
 describe('postureIssues', () => {
   it('maps every reason to its fix, in the API order', () => {
     const issues = postureIssues(
-      posture({ unhardened: ['pin_none', 'policy_none', 'network_unenforced', 'bearer_key'] })
+      posture({ unhardened: ['policy_none', 'network_unenforced', 'bearer_key'] })
     )
-    expect(issues.map((i) => i.reason)).toEqual([
-      'pin_none',
-      'policy_none',
-      'network_unenforced',
-      'bearer_key',
-    ])
-    expect(issues[0].fix).toBe('Pin the platform CA with SENSOR_CA_FINGERPRINT.')
-    expect(issues[1].fix).toBe(
+    expect(issues.map((i) => i.reason)).toEqual(['policy_none', 'network_unenforced', 'bearer_key'])
+    expect(issues[0].fix).toBe(
       'Install a local policy (the Local policy tab of the install commands).'
     )
-    expect(issues[2].fix).toContain('SENSOR_SANDBOX_NETWORK=required and the seccomp profile')
+    expect(issues[1].fix).toContain('SENSOR_SANDBOX_NETWORK=required and the seccomp profile')
   })
 
   it('skips unknown and repeated reasons, and an API without the posture', () => {
     expect(
-      postureIssues(posture({ unhardened: ['from_the_future', 'pin_none', 'pin_none'] }))
+      postureIssues(posture({ unhardened: ['from_the_future', 'bearer_key', 'bearer_key'] }))
     ).toHaveLength(1)
     expect(postureIssues({})).toEqual([])
     expect(isUnhardened({})).toBe(false)
@@ -57,7 +51,8 @@ describe('posture values', () => {
     )
     expect(postureLocalPolicy(posture({ local_policy: 'absent_legacy' })).tone).toBe('warn')
     expect(postureLocalPolicy({}).label).toBe('Not reported')
-    expect(posturePlatformPin(posture({ platform_pin: 'none' })).tone).toBe('warn')
+    // The system trust store is the normal state on a public certificate.
+    expect(posturePlatformPin(posture({ platform_pin: 'none' })).tone).toBe('ok')
     expect(posturePlatformPin(posture({ platform_pin: 'ca_file' })).tone).toBe('ok')
     expect(posturePlatformPin(posture({ platform_pin: 'unknown' })).tone).toBe('muted')
     expect(postureNetwork(posture({ network_enforced: false })).label).toBe('Not confined')

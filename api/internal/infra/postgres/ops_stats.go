@@ -32,7 +32,7 @@ type OpsSnapshot struct {
 	Sensors []OpsSensorCount
 
 	// SensorsUnhardened counts active tenant sensors by unhardened reason
-	// (sensor.UnhardenedKinds: policy_none, pin_none, network_unenforced,
+	// (sensor.UnhardenedKinds: policy_none, network_unenforced,
 	// bearer_key). A sensor with several reasons counts under each.
 	SensorsUnhardened map[string]int64
 

@@ -373,8 +373,8 @@ type SensorPostureResponse struct {
 	// the sensor did not report its sandbox.
 	NetworkEnforced *bool `json:"network_enforced"`
 	// Unhardened lists why the sensor is flagged (never null): policy_none,
-	// pin_none, network_unenforced, bearer_key.
-	Unhardened []string `json:"unhardened" enums:"policy_none,pin_none,network_unenforced,bearer_key"`
+	// network_unenforced, bearer_key.
+	Unhardened []string `json:"unhardened" enums:"policy_none,network_unenforced,bearer_key"`
 }
 
 func postureResponse(a *sensor.Sensor) SensorPostureResponse {

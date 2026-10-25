@@ -142,7 +142,7 @@ Besides the Go runtime and process metrics:
 | `openctem_suppression_rule_hits_total` | applied_by (ingest, approval, other) | Findings decided by an approved suppression rule: new findings a rule matched as they arrived, and open findings it closed when approved. Counted once per finding; no tenant or rule label (the per-rule breakdown is the `finding_suppressions` table). A sudden rise from `ingest` is a noisy rule. |
 | `openctem_web_client_errors_total` | kind | Errors reported by browsers (when the web reporter is enabled). |
 | `openctem_sensors`, `openctem_sensors_config_health`, `openctem_sensors_sdk` | kind (platform, tenant), health / config_health / status | Active sensors, platform-wide counts. |
-| `openctem_sensors_unhardened` | kind (policy_none, pin_none, network_unenforced, bearer_key) | Active tenant sensors by unhardened reason (a sensor with several reasons counts under each). |
+| `openctem_sensors_unhardened` | kind (policy_none, network_unenforced, bearer_key) | Active tenant sensors by unhardened reason (a sensor with several reasons counts under each). |
 | `openctem_commands`, `openctem_command_oldest_pending_seconds` | state | Sensor command queue. |
 | `openctem_command_queue_depth` | stage (catalogue id, `none`, `other`), tool (platform tool, `_custom`, `none`), class (priority), wait (`ready`, `host_busy`, `scheduled`) | Pending, unexpired commands by lane-ish key and why they wait: `ready` waits for an eligible sensor with a free slot, `host_busy` for another command of its tenant on the same host, `scheduled` for its scan window. |
 | `openctem_command_queue_tenants`, `openctem_command_queue_top_tenant_pending` | | Tenants with pending commands, and the pending count of the busiest one (fairness without tenant identity). |
@@ -322,9 +322,6 @@ details:
   policies were required), or a sensor whose SDK reports none. The network
   owner installs one from the Local policy tab of the install commands
   (`SENSOR_LOCAL_POLICY`).
-- `pin_none`: the sensor's HTTPS client trusts the system trust store instead
-  of a pinned platform CA. Set `SENSOR_CA_FINGERPRINT` (shown in the install
-  commands).
 - `network_unenforced`: tools run without network confinement. Run the sensor
   with `SENSOR_SANDBOX_NETWORK=required` and the shipped seccomp profile.
 - `bearer_key`: the sensor authenticates with a bearer key instead of a
