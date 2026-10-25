@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/button'
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
 import { ToneChip } from '@/components/ui/tone-chip'
 import { useTranslation } from '@/context/i18n-provider'
+import { DetailStat, DetailStatGrid } from '@/features/shared/components/detail-sheet'
 import { ListSearch } from '@/features/shared/components/list-search'
 import { cn } from '@/lib/utils'
 
@@ -57,29 +58,28 @@ export function TargetOutcomes({
 
   return (
     <div className="space-y-3" data-testid="target-outcomes">
-      <dl className="flex flex-wrap gap-x-8 gap-y-2">
-        <div>
-          <dt className="text-xs text-muted-foreground">
-            {variant === 'run'
-              ? t('scans.targetOutcome.scanned')
-              : t('scans.targetOutcome.willScan')}
-          </dt>
-          <dd className="text-lg font-semibold tabular-nums" data-testid="outcome-will-scan">
-            {willScan.toLocaleString()}
-          </dd>
-        </div>
-        <div>
-          <dt className="text-xs text-muted-foreground">{t('scans.targetOutcome.skipped')}</dt>
-          <dd
-            className="flex items-center gap-1.5 text-lg font-semibold tabular-nums"
-            data-testid="outcome-skipped"
-            data-attention={attention || undefined}
-          >
-            {skipped.toLocaleString()}
-            {attention && <AlertTriangle className="h-4 w-4 text-warning" aria-hidden />}
-          </dd>
-        </div>
-      </dl>
+      <DetailStatGrid className="sm:max-w-sm">
+        <DetailStat
+          label={
+            variant === 'run' ? t('scans.targetOutcome.scanned') : t('scans.targetOutcome.willScan')
+          }
+          value={<span data-testid="outcome-will-scan">{willScan.toLocaleString()}</span>}
+        />
+        <DetailStat
+          label={t('scans.targetOutcome.skipped')}
+          tone={attention ? 'warning' : 'default'}
+          value={
+            <span
+              className="inline-flex items-center gap-1.5"
+              data-testid="outcome-skipped"
+              data-attention={attention || undefined}
+            >
+              {skipped.toLocaleString()}
+              {attention && <AlertTriangle className="h-4 w-4" aria-hidden />}
+            </span>
+          }
+        />
+      </DetailStatGrid>
 
       {groups.length === 0 ? (
         <p className="text-sm text-muted-foreground">
