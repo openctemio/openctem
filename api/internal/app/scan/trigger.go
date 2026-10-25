@@ -817,7 +817,7 @@ func (s *Service) createScannerCommand(ctx context.Context, sc *scan.Scan, run *
 	if err != nil {
 		return err
 	}
-	cmd.DispatchGate = scanDispatchGate(sc, run)
+	cmd.DispatchGate = scanDispatchGate(ctx, sc, run)
 	if stepRun != nil {
 		// The step settles with the last command carrying its id (a
 		// follow-up of unfinished targets included).

@@ -13,6 +13,7 @@ import (
 	"github.com/openctemio/openctem/api/pkg/domain/command"
 	"github.com/openctemio/openctem/api/pkg/domain/scan"
 	"github.com/openctemio/openctem/api/pkg/domain/scanzone"
+	scopedom "github.com/openctemio/openctem/api/pkg/domain/scope"
 	"github.com/openctemio/openctem/api/pkg/domain/sensor"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/validator"
@@ -125,16 +126,19 @@ func selectedZone(sc *scan.Scan, zones []*scanzone.Zone) (*scanzone.Zone, error)
 }
 
 // routeForScan routes a scan's targets: to the narrowest zone (Automatic), or
-// only into the scan's selected zone, whose ranges are always enforced.
+// only into the scan's selected zone, whose ranges are always enforced. A
+// single-scanner scan whose tool only looks names up (dnsx) keeps the names
+// that do not resolve (scopedom.JobShape.LookupOnly), as the claim does.
 func (s *Service) routeForScan(ctx context.Context, sc *scan.Scan, zones []*scanzone.Zone, targets []string) (*scanzone.Plan, error) {
 	sel, err := selectedZone(sc, zones)
 	if err != nil {
 		return nil, err
 	}
+	lookupOnly := sc.ScannerName != "" && scopedom.JobShape{Tool: sc.ScannerName}.LookupOnly()
 	if sel != nil {
-		return scanzone.NewRouter([]*scanzone.Zone{sel}, s.zoneResolver).Plan(ctx, targets).RestrictTo(sel), nil
+		return scanzone.NewRouter([]*scanzone.Zone{sel}, s.zoneResolver).LookupOnly(lookupOnly).Plan(ctx, targets).RestrictTo(sel), nil
 	}
-	return scanzone.NewRouter(zones, s.zoneResolver).Plan(ctx, targets), nil
+	return scanzone.NewRouter(zones, s.zoneResolver).LookupOnly(lookupOnly).Plan(ctx, targets), nil
 }
 
 // planZoneDispatch routes targets to zones, batches them, and picks the least
@@ -379,7 +383,7 @@ func (s *Service) createZoneCommands(ctx context.Context, sc *scan.Scan, run *sc
 		if stepRun != nil {
 			cmd.SetStepRunID(stepRun.ID) // the step finishes with its last batch
 		}
-		cmd.DispatchGate = scanDispatchGate(sc, run)
+		cmd.DispatchGate = scanDispatchGate(ctx, sc, run)
 		if b.Zone != nil {
 			cmd.SetScanZone(b.Zone.ID)
 			if b.SensorID != nil {
