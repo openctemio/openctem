@@ -42,7 +42,8 @@ for (const width of [1440, 390]) {
     const panel = page.getByTestId('enrollment-tokens')
     await expect(panel).toBeVisible({ timeout: 30_000 })
     await expect(panel.getByText('Enrollment tokens').first()).toBeVisible()
-    expect(await seriousAxeIn(page, 'main#content')).toEqual([])
+    // The panel itself (the page's tab strip is shared by every tab).
+    expect(await seriousAxeIn(page, '[data-testid=enrollment-tokens]')).toEqual([])
 
     await panel.getByRole('button', { name: 'Create token' }).click()
     const dialog = page.getByRole('dialog')
