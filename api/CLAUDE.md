@@ -907,8 +907,10 @@ no counts that go stale:
   `python3 scripts/rfc_index.py`; implementation PRs are listed in each RFC).
 - **Migrations:** the numbers are not contiguous (renumbering leaves gaps), so
   do not count them. The newest is
-  `ls migrations/*.up.sql | sort | tail -1`. A new migration takes the next
-  number above the highest on `develop` and in open PRs. Tests look a migration up by
+  `ls migrations/*.up.sql | sort | tail -1`. Never pick a number by hand:
+  `make migration-new name=<snake_case>` creates the pair above the highest
+  number on `develop` and in every open PR, and `make migration-renumber`
+  moves a branch's migrations up again when someone took the number. Tests look a migration up by
   name (`testdb.MigrationVersion`), never by number, so the merge queue can
   renumber it.
 
