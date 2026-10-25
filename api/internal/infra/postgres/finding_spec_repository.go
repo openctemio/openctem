@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"strconv"
 	"strings"
 
 	"github.com/lib/pq"
@@ -376,31 +377,24 @@ func (r *FindingRepository) IDsWhere(ctx context.Context, w *filterspec.Where, l
 // CountDuplicatesOfWhere counts, per finding id in ids, the findings marked
 // as its duplicates (duplicate_of) that match the compiled visibility filter
 // w: a duplicate the caller cannot read is not counted. Ids with none are
-// absent from the map. Uses idx_findings_duplicate_of.
+// absent from the map. One statement whatever the page size (an empty page
+// sends it too, so a read's statement count does not depend on its rows);
+// uses idx_findings_duplicate_of.
 func (r *FindingRepository) CountDuplicatesOfWhere(ctx context.Context, w *filterspec.Where, ids []shared.ID) (map[shared.ID]int, error) {
 	if err := checkFindingWhere(w); err != nil {
 		return nil, err
 	}
 	out := make(map[shared.ID]int, len(ids))
-	if len(ids) == 0 {
-		return out, nil
-	}
 	idStrs := make([]string, len(ids))
 	for i, id := range ids {
 		idStrs[i] = id.String()
 	}
 	args := append(append([]any{}, w.Args...), pq.Array(idStrs))
-	query := fmt.Sprintf(`SELECT duplicate_of, COUNT(*) FROM findings
-		WHERE %s AND duplicate_of = ANY($%d::uuid[])
-		GROUP BY duplicate_of`, w.SQL, w.NextArg)
-	tx, err := r.beginFindingRead(ctx)
+	query := "SELECT duplicate_of, COUNT(*) FROM findings WHERE " + w.SQL +
+		" AND duplicate_of = ANY($" + strconv.Itoa(w.NextArg) + "::uuid[]) GROUP BY duplicate_of"
+	rows, err := r.db.QueryContext(ctx, query, args...)
 	if err != nil {
-		return nil, err
-	}
-	defer func() { _ = tx.Rollback() }()
-	rows, err := tx.QueryContext(ctx, query, args...)
-	if err != nil {
-		return nil, findingTimeout(fmt.Errorf("failed to count duplicates: %w", err))
+		return nil, fmt.Errorf("failed to count duplicates: %w", err)
 	}
 	defer rows.Close()
 	for rows.Next() {
@@ -418,5 +412,5 @@ func (r *FindingRepository) CountDuplicatesOfWhere(ctx context.Context, w *filte
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("failed to iterate duplicate counts: %w", err)
 	}
-	return out, tx.Commit()
+	return out, nil
 }

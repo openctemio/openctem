@@ -13,7 +13,6 @@ import (
 	"github.com/openctemio/openctem/api/internal/infra/http/filterquery"
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
 	"github.com/openctemio/openctem/api/pkg/apierror"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
 	"github.com/openctemio/openctem/api/pkg/filterspec"
 )
@@ -91,7 +90,7 @@ func (h *VulnerabilityHandler) FindingFilterMeta(w http.ResponseWriter, r *http.
 // writeFindingList runs a decoded filter as the caller and writes the list
 // response (shared by GET /findings and POST /findings/search).
 func (h *VulnerabilityHandler) writeFindingList(w http.ResponseWriter, r *http.Request, spec *filterspec.Spec) {
-	result, err := h.service.ListFindingsBySpec(r.Context(), filterCaller(r), spec)
+	result, dupCounts, err := h.service.ListFindingsWithDuplicatesBySpec(r.Context(), filterCaller(r), spec)
 	if err != nil {
 		if writeFindingQueryTimeout(w, err) {
 			return
@@ -112,7 +111,9 @@ func (h *VulnerabilityHandler) writeFindingList(w http.ResponseWriter, r *http.R
 	h.enrichFindingsWithAssetInfo(r.Context(), middleware.MustGetTenantID(r.Context()), data)
 	h.enrichFindingsWithAssigneeInfo(r.Context(), middleware.MustGetTenantID(r.Context()), data)
 	h.enrichFindingsWithKEVRansomware(r.Context(), data)
-	h.enrichFindingsWithDuplicates(r, data)
+	for i, f := range result.Data {
+		data[i].DuplicatesMarked = dupCounts[f.ID()]
+	}
 
 	response := ListResponse[FindingResponse]{
 		Data:       data,
@@ -135,29 +136,4 @@ func writeFindingQueryTimeout(w http.ResponseWriter, err error) bool {
 	}
 	apierror.QueryTimeout("The findings query took too long; narrow the search or the filters").WriteJSON(w)
 	return true
-}
-
-// enrichFindingsWithDuplicates sets duplicates_marked on a page of findings:
-// the duplicates the caller can read. Best effort: a failure leaves the
-// field out and never fails the list.
-func (h *VulnerabilityHandler) enrichFindingsWithDuplicates(r *http.Request, data []FindingResponse) {
-	if len(data) == 0 {
-		return
-	}
-	ids := make([]shared.ID, 0, len(data))
-	for i := range data {
-		if id, err := shared.IDFromString(data[i].ID); err == nil {
-			ids = append(ids, id)
-		}
-	}
-	counts, err := h.service.CountVisibleDuplicates(r.Context(), filterCaller(r), ids)
-	if err != nil {
-		h.logger.Debug("failed to count duplicates", "count", len(ids), "error", err)
-		return
-	}
-	for i := range data {
-		if id, err := shared.IDFromString(data[i].ID); err == nil {
-			data[i].DuplicatesMarked = counts[id]
-		}
-	}
 }

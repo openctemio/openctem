@@ -3,6 +3,7 @@
 import { useTranslation } from '@/context/i18n-provider'
 import { cn } from '@/lib/utils'
 import { formatEpssScore, EPSS_PLACEHOLDER } from '@/lib/epss'
+import { SEVERITY_DOT_COLORS } from '@/lib/severity-colors'
 
 /** From this probability the bar takes the high-severity colour. */
 export const EPSS_BAR_HOT = 0.5
@@ -45,7 +46,7 @@ export function EpssBar({ score, className }: EpssBarProps) {
         className="bg-surface-sunken ring-border/60 h-1 w-11 shrink-0 overflow-hidden rounded-full ring-1 ring-inset"
       >
         <span
-          className={cn('block h-full', hot ? 'bg-sev-high' : 'bg-muted-foreground')}
+          className={cn('block h-full', hot ? SEVERITY_DOT_COLORS.high : 'bg-muted-foreground')}
           style={{ width: `${Math.round(value * 100)}%` }}
         />
       </span>
