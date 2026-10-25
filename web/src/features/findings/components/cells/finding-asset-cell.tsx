@@ -21,6 +21,8 @@ export function FindingAssetCell({ finding }: { finding: Finding }) {
     <AssetMarkers internetFacing={asset?.isInternetAccessible} crownJewel={asset?.isCrownJewel} />
   )
   if (loc && (loc.asset || loc.detail)) {
+    // One size per line: the place is smaller only under an asset name.
+    const placeSize = loc.asset ? 'text-xs' : 'text-sm' // anatomy-ok: one size, picked by the line above
     return (
       <div data-slot="finding-asset-cell" className="flex min-w-0 max-w-[240px] flex-col">
         {loc.asset && (
@@ -34,7 +36,7 @@ export function FindingAssetCell({ finding }: { finding: Finding }) {
             value={loc.detail}
             label={t('findings.list.location')}
             middle={30}
-            className={cn('font-mono text-muted-foreground', loc.asset ? 'text-xs' : 'text-sm')}
+            className={cn('font-mono text-muted-foreground', placeSize)}
           />
         )}
       </div>
