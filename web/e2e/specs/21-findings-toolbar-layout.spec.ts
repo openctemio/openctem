@@ -79,7 +79,7 @@ for (const width of WIDTHS) {
     await checkToolbar(page, `${width}px panel closed`)
 
     if (width >= 1024) {
-      const toggle = page.locator('[data-slot="filter-button"][aria-controls]').first()
+      const toggle = page.locator('[data-slot="filter-button"][aria-pressed]').first()
       if ((await toggle.getAttribute('aria-pressed')) !== 'true') await toggle.click()
       await expect(page.locator('#finding-filters')).toBeVisible()
       // Let the panel's width transition finish before measuring.
