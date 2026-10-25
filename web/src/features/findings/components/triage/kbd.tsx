@@ -18,7 +18,7 @@ export function Kbd({
     <kbd
       aria-hidden={decorative || undefined}
       className={cn(
-        'inline-flex min-w-5 items-center justify-center rounded border border-b-2 border-current/30 px-1 font-mono text-[11px] leading-4 font-medium',
+        'inline-flex min-w-5 items-center justify-center rounded border border-b-2 border-current/30 px-1 font-mono text-xs leading-4 font-medium',
         className
       )}
     >

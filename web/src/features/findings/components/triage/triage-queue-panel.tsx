@@ -63,7 +63,7 @@ export function TriageQueuePanel({
                 )}
               >
                 {outcome ? (
-                  <span className="font-mono text-[10px] font-semibold tracking-wide uppercase">
+                  <span className="font-mono text-xs font-semibold tracking-wide uppercase">
                     {t(OUTCOME_LABELS[outcome].key, OUTCOME_LABELS[outcome].fallback)}
                   </span>
                 ) : (

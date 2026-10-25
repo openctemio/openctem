@@ -54,7 +54,7 @@ function ActionButton({
         {hint && (
           <span
             className={cn(
-              'truncate text-[11px] font-normal',
+              'truncate text-xs font-normal',
               primary ? 'opacity-80' : 'text-muted-foreground'
             )}
           >

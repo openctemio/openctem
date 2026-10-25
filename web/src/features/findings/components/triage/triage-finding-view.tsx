@@ -146,7 +146,7 @@ export function TriageFindingView({
                 {toDisplayText(asset.name, 200)}
               </span>
               {asset.is_internet_accessible && (
-                <span className="rounded border px-1 font-mono text-[11px] font-semibold">
+                <span className="rounded border px-1 font-mono text-xs font-semibold">
                   {t('findings.triageMode.internet', 'NET')}
                 </span>
               )}
@@ -173,7 +173,7 @@ export function TriageFindingView({
                 </span>
               )}
               {finding.is_in_kev && (
-                <span className="rounded border px-1 font-mono text-[11px] font-semibold">
+                <span className="rounded border px-1 font-mono text-xs font-semibold">
                   {t('findings.triageMode.kev', 'KEV')}
                 </span>
               )}
