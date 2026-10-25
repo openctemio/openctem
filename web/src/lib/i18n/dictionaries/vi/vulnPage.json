@@ -125,7 +125,6 @@
   "vulnPage.where.col.owner": "Chủ sở hữu",
   "vulnPage.where.col.worst": "Cao nhất",
   "vulnPage.where.crown": "Trọng yếu",
-  "vulnPage.where.crownTitle": "Tài sản trọng yếu",
   "vulnPage.where.empty": "Không tài sản nào trong phạm vi của bạn có phát hiện của lỗ hổng này.",
   "vulnPage.where.emptyPage": "Trang này không có tài sản.",
   "vulnPage.where.internal": "Nội bộ",

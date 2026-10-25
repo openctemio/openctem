@@ -3,6 +3,7 @@
 import { Flame, ListChecks, Wrench } from 'lucide-react'
 import Link from '@/components/link'
 import { Badge } from '@/components/ui/badge'
+import { PageHeader } from '@/features/shared/components/page-header'
 import { Button } from '@/components/ui/button'
 import { KevBadge } from '@/components/ui/kev-badge'
 import { PriorityBadge } from '@/components/ui/priority-badge'
@@ -26,7 +27,7 @@ export interface VulnHeaderProps {
 /**
  * The page header: title, the CVE and its aliases with provenance, the
  * signal chips (KEV, emerging threat, worst priority, fix available) and the
- * actions. Every action works inside the caller's scope.
+ * actions. anatomy-ok: inside a PageStack (vulnerability-page.tsx renders it first). Every action works inside the caller's scope.
  */
 export function VulnHeader({ cve, vuln, exposure, fix, onCreateTask }: VulnHeaderProps) {
   const { t } = useTranslation()
@@ -36,14 +37,11 @@ export function VulnHeader({ cve, vuln, exposure, fix, onCreateTask }: VulnHeade
   const ransomware = kev?.ransomware_use?.toLowerCase() === 'known'
 
   return (
-    <header
-      data-slot="vuln-header"
-      className="flex flex-wrap items-start justify-between gap-x-4 gap-y-3"
-    >
-      <div className="min-w-0 flex-1 basis-80">
-        <h1 className="text-2xl font-bold tracking-tight text-balance">{title ?? cve}</h1>
+    <PageHeader
+      title={title ?? cve}
+      description={
         <ul
-          className="mt-2 flex flex-wrap items-center gap-1.5"
+          className="mt-1 flex flex-wrap items-center gap-1.5"
           aria-label={t('vulnPage.header.identifiers', 'Identifiers and signals')}
         >
           <li>
@@ -115,7 +113,8 @@ export function VulnHeader({ cve, vuln, exposure, fix, onCreateTask }: VulnHeade
             </li>
           )}
         </ul>
-      </div>
+      }
+    >
       <div className="flex flex-wrap items-center gap-2">
         <Button asChild variant="outline" size="sm">
           <Link href={cveFindingsHref(cve, { state: 'all' })}>
@@ -143,6 +142,6 @@ export function VulnHeader({ cve, vuln, exposure, fix, onCreateTask }: VulnHeade
           </Button>
         )}
       </div>
-    </header>
+    </PageHeader>
   )
 }

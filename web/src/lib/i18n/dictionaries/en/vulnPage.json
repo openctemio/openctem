@@ -125,7 +125,6 @@
   "vulnPage.where.col.owner": "Owner",
   "vulnPage.where.col.worst": "Worst",
   "vulnPage.where.crown": "Crown jewel",
-  "vulnPage.where.crownTitle": "Crown jewel",
   "vulnPage.where.empty": "No asset in your scope has a finding of this vulnerability.",
   "vulnPage.where.emptyPage": "No assets on this page.",
   "vulnPage.where.internal": "Internal",
