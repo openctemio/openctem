@@ -592,6 +592,10 @@ func (p *FindingProcessor) processBatch(
 		if report.Tool != nil {
 			scanner = report.Tool.Name
 		}
+		// A duplicate seen again is a sighting of the finding it was folded
+		// into: that one is not auto-resolved (marked seen here) and reopens
+		// below if it was closed. The duplicate itself is never reopened.
+		p.sightDuplicateTargets(ctx, tenantID, existingFingerprints, report.Metadata.ID, scanner)
 		// Each reopen writes its timeline entry with the scan behind it.
 		reopenCtx := vulnerability.WithTransitionEvidence(ctx, map[string]any{"scanner": scanner, "scan_id": report.Metadata.ID})
 		reopenedMap, err := p.repo.AutoReopenByFingerprintsBatch(reopenCtx, tenantID, existingFingerprints)
@@ -2712,6 +2716,25 @@ func addItem(output *Output, report *ctis.Report, f *ctis.Finding, disp ingestre
 		Disposition: disp, ReasonCode: reason, AssetID: assetID, Tool: tool, Title: f.Title,
 		Severity: string(f.Severity), Policy: policy, PolicyVersion: version,
 	})
+}
+
+// duplicateTargetMarker is the repository's way to mark what duplicates were
+// folded into as seen (optional: a repository without it has no such sightings).
+type duplicateTargetMarker interface {
+	MarkDuplicateTargetsSeen(ctx context.Context, tenantID shared.ID, fingerprints []string, scanID, tool string) (int64, error)
+}
+
+// sightDuplicateTargets records the scan as the latest sighting of the
+// findings that fingerprints (duplicates seen again) were folded into. Best
+// effort: a failure only means the target is not touched by this scan.
+func (p *FindingProcessor) sightDuplicateTargets(ctx context.Context, tenantID shared.ID, fingerprints []string, scanID, tool string) {
+	marker, ok := p.repo.(duplicateTargetMarker)
+	if !ok {
+		return
+	}
+	if _, err := marker.MarkDuplicateTargetsSeen(ctx, tenantID, fingerprints, scanID, tool); err != nil {
+		p.logger.Warn("duplicate targets not marked seen", "error", err)
+	}
 }
 
 // defaultBranchResolvedLookup finds which fingerprints belong to findings
