@@ -498,22 +498,22 @@ func appendUnique(xs []string, x string) []string {
 // scan workflow, so all of its routed targets must fall in one zone (or all be
 // unzoned public targets); the run is stamped with that zone and every step
 // command stays inside it.
-func (s *Service) routeWorkflowTargets(ctx context.Context, sc *scan.Scan, zones []*scanzone.Zone, targets []string, runContext map[string]any) ([]string, error) {
+func (s *Service) routeWorkflowTargets(ctx context.Context, sc *scan.Scan, zones []*scanzone.Zone, targets []string, runContext map[string]any) ([]string, *zonePlan, error) {
 	routing, err := s.routeForScan(ctx, sc, zones, targets)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	plan, kept, err := planWorkflowZone(sc, routing)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	if zid, ok := plan.Summary["zone_id"].(string); ok {
 		runContext[scanrun.RunContextKeyScanZoneID] = zid
 	}
 	if err := recordZonePlan(plan, runContext); err != nil {
-		return nil, err
+		return nil, nil, err
 	}
-	return kept, nil
+	return kept, plan, nil
 }
 
 // planWorkflowZone decides the one zone of a workflow run from its routing.
