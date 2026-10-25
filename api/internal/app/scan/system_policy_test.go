@@ -97,17 +97,17 @@ func TestScanDispatchGate_ManagedScanActsAsItsPolicy(t *testing.T) {
 	managed.ManagedBy, managed.ManagedKey = scan.ManagedByCoverage, "probe.http"
 	run := &scanrun.Run{TriggerType: scanworkflow.TriggerTypeSystem, TriggeredBy: PolicyTriggerPrefix + "coverage",
 		Context: map[string]any{RunContextKeySystemPolicy: "coverage"}}
-	g := scanDispatchGate(managed, run)
+	g := scanDispatchGate(context.Background(), managed, run)
 	assert.Equal(t, "coverage", g.SystemPolicy)
 	assert.Empty(t, g.Actor)
 
 	mine, _ := scan.NewScan(tenant, "Weekly", owner, scan.ScanTypeSingle)
 	mine.SetCreatedBy(owner)
 	require.NoError(t, mine.SetSingleScanner("httpx", nil, 1))
-	g = scanDispatchGate(mine, &scanrun.Run{TriggeredBy: trigger.String(), Context: map[string]any{}})
+	g = scanDispatchGate(context.Background(), mine, &scanrun.Run{TriggeredBy: trigger.String(), Context: map[string]any{}})
 	assert.Empty(t, g.SystemPolicy)
 	assert.Equal(t, trigger.String(), g.Actor)
-	g = scanDispatchGate(mine, &scanrun.Run{Context: map[string]any{}})
+	g = scanDispatchGate(context.Background(), mine, &scanrun.Run{Context: map[string]any{}})
 	assert.Equal(t, owner.String(), g.Actor)
 }
 
