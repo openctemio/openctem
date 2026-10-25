@@ -3,6 +3,14 @@ name: pr-checklist
 description: What a pull request in this repository needs before it is ready - verified build, pinned lint on new code, tests, changelog fragment, complete docs, wording rules, base branch, CI green and all review threads resolved. Use before committing, pushing or opening a PR.
 ---
 
+## Before every push: `make precheck` (repo root)
+- Run `make hooks` once per clone. Then `make precheck` before each push: it brings the branch up to date with
+  the branch its PR targets (merge if already pushed, rebase if not; i18n catalogs merge key by key), stops on
+  a conflict so you resolve it locally, warns about other open PRs touching the same files, then runs what
+  CI's lint and static gates run (API: gofmt, vet, staticcheck, golangci-lint on new code; web: prettier,
+  eslint, tsc, separator gate, sorted catalogs). The pre-push hook refuses a branch that is behind its base.
+- Several agents work at once: sync right before pushing, not only when the branch was created.
+
 ## Verify (from `api/` or `web/`)
 - API: `GOWORK=off go build ./... && GOWORK=off go vet ./...`; tests of the touched packages (integration
   tests against a scratch Postgres and Redis); `make lint-new` (golangci-lint pinned to v1.64.8 with
