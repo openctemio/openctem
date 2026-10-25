@@ -734,6 +734,14 @@ components:
             A single-use instance enrollment token (octe_…, docs/rfcs/RFC-100-shared-sensors.md §7):
             the request is approved as a shared sensor (no organization) once the nonce is revealed.
             Never with code or sensor_id. A malformed, unknown, expired or used token is 401.
+            With enrollment_scope "organization" it is an organization enrollment token instead
+            (docs/architecture/sensor-pairing.md, "Enrollment tokens"): the request joins the
+            token's organization with its presets, at trust level New, approved once the nonce is
+            revealed unless the token requires approval. Same 401 for every unusable token.
+        enrollment_scope:
+          type: string
+          enum: [organization]
+          description: "Only with enrollment_token: the token is an organization enrollment token. Absent: an instance token."
         host:
           type: object
           properties:

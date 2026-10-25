@@ -1,0 +1,9 @@
+### Added: organization enrollment tokens for sensor fleets
+
+- **Sensors → Enrollment tokens**: an administrator creates a token for unattended installs (Kubernetes, Terraform, many hosts) with an expiry (1 hour to 30 days), a use limit (1 to 1000 sensors), scan zones, grant profile, labels, optional allowed source addresses and an optional "approve each sensor". A sensor that starts pairing with it joins the organization through the same key-bound exchange, at trust level New, without a fingerprint compare unless approval is required; those wait under **Waiting for approval**.
+- The token is shown once and stored only as a keyed hash. The sensor reads it from `SENSOR_ENROLLMENT_TOKEN` or `SENSOR_ENROLLMENT_TOKEN_FILE` and sends it with `enrollment_scope: organization` (new optional field of the pairing start request), so an organization token is never taken for an instance token or the reverse. **Upgrade note:** needs a sensor built with the sdk-go release that reads `SENSOR_ENROLLMENT_TOKEN`; older sensors keep pairing interactively. Creating one needs `sensors:approve` and a recent re-authentication; revoking stops it at once. Every creation, enrollment, refusal and revocation is audited, and administrators are notified.
+- New routes under `/api/v1/sensor-pairings`: `enrollment-tokens` (list, create, revoke) and `pending`. Migration `003424_sensor_enrollment_tokens` (new table, one nullable column on `sensor_pairings`; no backfill).
+
+### Security: enrollment token threat model
+
+- A leaked token yields at most passive sensors (trust New) in the preset zones until it expires, runs out of uses or is revoked; uses are counted per sensor key under a row lock; a token whose creator is no longer an active member stops working; the tenant always comes from the token, never the sensor.

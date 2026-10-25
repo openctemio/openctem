@@ -439,7 +439,7 @@ export function PairingFingerprint({ sas }: { sas?: string }) {
   )
 }
 
-function PairingReview({
+export function PairingReview({
   view,
   code,
   onApproved,
