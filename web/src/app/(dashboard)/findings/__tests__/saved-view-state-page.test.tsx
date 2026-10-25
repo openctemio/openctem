@@ -325,6 +325,7 @@ describe('Findings Triage', () => {
     expect(stored.query).toBe('status=new')
     expect(stored.returnTo).toBe('/findings?severity=critical')
     expect(stored.fromList).toBe(true)
+    expect(stored.viewKey).toBe('needs_triage')
   })
 
   it('opens the Needs triage view when nothing waits', () => {

@@ -1945,7 +1945,11 @@ function FindingsContent() {
       pushUrlSearch(new URLSearchParams(quickViewHref(triageParams).split('?')[1]))
       return
     }
-    startTriageSession(triageParams, `${window.location.pathname}${window.location.search}`)
+    startTriageSession(
+      triageParams,
+      `${window.location.pathname}${window.location.search}`,
+      'needs_triage'
+    )
     router.push(triageHref(triageParams))
   }
   // The key handler is installed once and calls the latest openTriage.

@@ -390,6 +390,7 @@ describe('TriageMode', () => {
         query: 'status=new',
         returnTo: '/findings?severity=critical',
         fromList: false,
+        viewKey: 'needs_triage',
         items: [],
         index: 0,
         outcomes: {},
@@ -398,6 +399,8 @@ describe('TriageMode', () => {
       })
     )
     await ready()
+    // The queue is named after the view it was started from.
+    expect(screen.getByTestId('triage-top-bar')).toHaveTextContent('Needs triage')
     press('Escape')
     expect(routerPush).toHaveBeenCalledWith('/findings?severity=critical')
     expect(sessionStorage.getItem('openctem.findings.triage')).toBeNull()
