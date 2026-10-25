@@ -238,56 +238,12 @@ func enumeratePaths(nodes []asset.AssetNode, edges []asset.RelationshipEdge, tar
 		return nil, 0, false, false
 	}
 	public := func(id string) bool { return nodeByID[id].Exposure == string(asset.ExposurePublic) }
-	adj := make(map[string][]string, len(nodes))
-	radj := make(map[string][]string, len(nodes))
-	dup := make(map[[2]string]bool, len(edges))
-	for _, e := range edges {
-		if !attackPathRelationshipTypes[e.Type] || nodeByID[e.SourceAssetID] == nil || nodeByID[e.TargetAssetID] == nil {
-			continue
-		}
-		k := [2]string{e.SourceAssetID, e.TargetAssetID}
-		if dup[k] || k[0] == k[1] {
-			continue
-		}
-		dup[k] = true
-		adj[k[0]] = append(adj[k[0]], k[1])
-		radj[k[1]] = append(radj[k[1]], k[0])
-	}
-	for _, l := range adj {
-		sort.Strings(l)
-	}
-
-	// Distance of every node to the target (reverse BFS), for pruning.
-	dist := map[string]int{target: 0}
-	queue := []string{target}
-	for h := 0; h < len(queue); h++ {
-		cur := queue[h]
-		for _, p := range radj[cur] {
-			if _, done := dist[p]; !done {
-				dist[p] = dist[cur] + 1
-				queue = append(queue, p)
-			}
-		}
-	}
-	shortest := -1
-	var entries []string
-	for id, d := range dist {
-		if public(id) {
-			entries = append(entries, id)
-			if shortest < 0 || d < shortest {
-				shortest = d
-			}
-		}
-	}
+	adj, radj := attackAdjacency(nodeByID, edges)
+	dist := distancesTo(target, radj)
+	entries, shortest := entriesByDistance(dist, public)
 	if shortest < 0 {
 		return nil, 0, false, true
 	}
-	sort.Slice(entries, func(i, j int) bool {
-		if dist[entries[i]] != dist[entries[j]] {
-			return dist[entries[i]] < dist[entries[j]]
-		}
-		return entries[i] < entries[j]
-	})
 	limit := shortest + pathSlack
 	if limit > pathMaxEdges {
 		limit = pathMaxEdges
@@ -340,6 +296,69 @@ func enumeratePaths(nodes []asset.AssetNode, edges []asset.RelationshipEdge, tar
 	}
 	sort.SliceStable(routes, func(i, j int) bool { return len(routes[i].nodes) < len(routes[j].nodes) })
 	return routes, len(routes), capped, true
+}
+
+// attackAdjacency returns the forward and reverse adjacency over attack-path
+// relationships between live assets, without duplicates or self loops; the
+// forward lists are sorted so the enumeration is deterministic.
+func attackAdjacency(nodeByID map[string]*asset.AssetNode, edges []asset.RelationshipEdge) (adj, radj map[string][]string) {
+	adj = make(map[string][]string, len(nodeByID))
+	radj = make(map[string][]string, len(nodeByID))
+	dup := make(map[[2]string]bool, len(edges))
+	for _, e := range edges {
+		if !attackPathRelationshipTypes[e.Type] || nodeByID[e.SourceAssetID] == nil || nodeByID[e.TargetAssetID] == nil {
+			continue
+		}
+		k := [2]string{e.SourceAssetID, e.TargetAssetID}
+		if dup[k] || k[0] == k[1] {
+			continue
+		}
+		dup[k] = true
+		adj[k[0]] = append(adj[k[0]], k[1])
+		radj[k[1]] = append(radj[k[1]], k[0])
+	}
+	for _, l := range adj {
+		sort.Strings(l)
+	}
+	return adj, radj
+}
+
+// distancesTo returns the distance of every node to target (reverse BFS).
+func distancesTo(target string, radj map[string][]string) map[string]int {
+	dist := map[string]int{target: 0}
+	queue := []string{target}
+	for h := 0; h < len(queue); h++ {
+		cur := queue[h]
+		for _, p := range radj[cur] {
+			if _, done := dist[p]; !done {
+				dist[p] = dist[cur] + 1
+				queue = append(queue, p)
+			}
+		}
+	}
+	return dist
+}
+
+// entriesByDistance returns the public nodes that reach the target, nearest
+// first, and the shortest distance (-1 when none reaches it).
+func entriesByDistance(dist map[string]int, public func(string) bool) ([]string, int) {
+	shortest := -1
+	var entries []string
+	for id, d := range dist {
+		if public(id) {
+			entries = append(entries, id)
+			if shortest < 0 || d < shortest {
+				shortest = d
+			}
+		}
+	}
+	sort.Slice(entries, func(i, j int) bool {
+		if dist[entries[i]] != dist[entries[j]] {
+			return dist[entries[i]] < dist[entries[j]]
+		}
+		return entries[i] < entries[j]
+	})
+	return entries, shortest
 }
 
 // stepWeight returns the likelihood of the step onto an asset whose open
@@ -408,22 +427,7 @@ func assemblePathDetail(
 		}
 		k := fmt.Sprintf("n%d", len(keys))
 		keys[id] = k
-		n := PathNode{Key: k, Role: role}
-		if !visible[id] {
-			n.Hidden = true
-		} else {
-			a := nodeByID[id]
-			f := findings[id]
-			w, basis := weight(id)
-			n.AssetID, n.Name, n.AssetType = a.ID, a.Name, a.AssetType
-			n.Exposure, n.Criticality, n.IsCrownJewel = a.Exposure, a.Criticality, a.IsCrownJewel
-			n.OpenFindings, n.KEVFindings = f.OpenCount, f.KEVCount
-			n.Weight, n.Basis = &w, basis
-			if l := f.Lead; l != nil {
-				n.Finding = &PathFinding{ID: l.ID, Title: l.Title, CVEID: l.CVEID, Severity: l.Severity, EPSS: l.EPSS, KEV: l.KEV}
-			}
-		}
-		d.Nodes = append(d.Nodes, n)
+		d.Nodes = append(d.Nodes, pathNode(k, role, visible[id], nodeByID[id], findings[id]))
 		return k
 	}
 	d.Target = key(target, PathRoleTarget)
@@ -488,17 +492,43 @@ func assemblePathDetail(
 		d.Paths = append(d.Paths, ap)
 	}
 
+	d.ChokePoints = rankChokePoints(breaks, keys, func(id string) float64 {
+		w, _ := weight(id)
+		return w
+	})
+	return d
+}
+
+// pathNode is the response node of one asset: everything for a visible asset,
+// only the key and role for a hidden one.
+func pathNode(key, role string, visible bool, a *asset.AssetNode, f vulnerability.AssetPathFindings) PathNode {
+	n := PathNode{Key: key, Role: role}
+	if !visible {
+		n.Hidden = true
+		return n
+	}
+	w, basis := stepWeight(f)
+	n.AssetID, n.Name, n.AssetType = a.ID, a.Name, a.AssetType
+	n.Exposure, n.Criticality, n.IsCrownJewel = a.Exposure, a.Criticality, a.IsCrownJewel
+	n.OpenFindings, n.KEVFindings = f.OpenCount, f.KEVCount
+	n.Weight, n.Basis = &w, basis
+	if l := f.Lead; l != nil {
+		n.Finding = &PathFinding{ID: l.ID, Title: l.Title, CVEID: l.CVEID, Severity: l.Severity, EPSS: l.EPSS, KEV: l.KEV}
+	}
+	return n
+}
+
+// rankChokePoints orders the assets by the routes they cut, then by step
+// weight, then by key. breaks holds only visible assets with a lead finding.
+func rankChokePoints(breaks map[string]int, keys map[string]string, weight func(string) float64) []ChokePoint {
+	out := make([]ChokePoint, 0, len(breaks))
+	wByKey := make(map[string]float64, len(breaks))
 	for id, n := range breaks {
-		d.ChokePoints = append(d.ChokePoints, ChokePoint{Node: keys[id], Breaks: n})
+		out = append(out, ChokePoint{Node: keys[id], Breaks: n})
+		wByKey[keys[id]] = weight(id)
 	}
-	wByKey := map[string]float64{}
-	for id, k := range keys {
-		if visible[id] {
-			wByKey[k], _ = weight(id)
-		}
-	}
-	sort.Slice(d.ChokePoints, func(i, j int) bool {
-		a, b := d.ChokePoints[i], d.ChokePoints[j]
+	sort.Slice(out, func(i, j int) bool {
+		a, b := out[i], out[j]
 		if a.Breaks != b.Breaks {
 			return a.Breaks > b.Breaks
 		}
@@ -507,5 +537,5 @@ func assemblePathDetail(
 		}
 		return a.Node < b.Node
 	})
-	return d
+	return out
 }
