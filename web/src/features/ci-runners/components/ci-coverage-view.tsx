@@ -9,11 +9,10 @@
  */
 
 import { useState } from 'react'
-import { Search, ShieldQuestion } from 'lucide-react'
+import { ShieldQuestion } from 'lucide-react'
 import { toast } from 'sonner'
 import type { ColumnDef } from '@tanstack/react-table'
 import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
 import {
   DataTable,
   EmptyState,
@@ -328,24 +327,16 @@ export function CICoverageView({ toolbarStart }: CICoverageViewProps) {
           showSearch={false}
           paginationNoun={t('scans.ci.noun.repositories', 'repositories')}
           emptyMessage={t('scans.ci.coverage.noMatch', 'No repository matches')}
-          toolbarStart={
-            <>
-              {toolbarStart}
-              <div className="relative min-w-0 flex-1 sm:max-w-xs">
-                <Search className="pointer-events-none absolute start-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-                <Input
-                  placeholder={t('scans.ci.coverage.search', 'Search repository…')}
-                  aria-label={t('scans.ci.coverage.searchLabel', 'Search repositories')}
-                  value={q}
-                  onChange={(e) => {
-                    setQ(e.target.value)
-                    setPage(1)
-                  }}
-                  className="h-9 ps-9"
-                />
-              </div>
-            </>
-          }
+          search={{
+            value: q,
+            onChange: (v) => {
+              setQ(v)
+              setPage(1)
+            },
+            placeholder: t('scans.ci.coverage.search', 'Search repository…'),
+            label: t('scans.ci.coverage.searchLabel', 'Search repositories'),
+          }}
+          toolbarStart={toolbarStart}
         />
       )}
       {drifted.length > 0 && (

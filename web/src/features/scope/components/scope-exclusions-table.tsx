@@ -16,18 +16,8 @@
 import { useState } from 'react'
 import type { ColumnDef } from '@tanstack/react-table'
 import { useRouter } from 'next/navigation'
-import {
-  Ban,
-  FlaskConical,
-  Inbox,
-  Power,
-  PowerOff,
-  Route,
-  Search as SearchIcon,
-  Trash2,
-} from 'lucide-react'
+import { Ban, FlaskConical, Inbox, Power, PowerOff, Route, Trash2 } from 'lucide-react'
 import { toast } from 'sonner'
-import { Input } from '@/components/ui/input'
 import { Skeleton } from '@/components/ui/skeleton'
 import {
   Select,
@@ -373,19 +363,15 @@ export function ScopeExclusionsTable({
           data={rows}
           getRowId={(r) => r.id ?? r.pattern ?? ''}
           showSearch={false}
+          search={{
+            value: searchInput,
+            onChange: onSearchInput,
+            placeholder: t('scope.exclusion.search', 'Search exclusions…'),
+            label: t('scope.exclusion.searchLabel', 'Search exclusions'),
+          }}
           toolbarStart={
             <>
               {leading}
-              <div className="relative min-w-0 flex-1 sm:max-w-sm">
-                <SearchIcon className="pointer-events-none absolute start-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-                <Input
-                  placeholder={t('scope.exclusion.search', 'Search exclusions…')}
-                  aria-label={t('scope.exclusion.searchLabel', 'Search exclusions')}
-                  value={searchInput}
-                  onChange={(e) => onSearchInput(e.target.value)}
-                  className="h-9 ps-9"
-                />
-              </div>
               <ScopeTargetTypeSelect
                 value={kind ?? 'all'}
                 onValueChange={onKindChange}

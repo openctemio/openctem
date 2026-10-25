@@ -16,7 +16,6 @@ import { useTranslation } from '@/context/i18n-provider'
 import { usePermissions } from '@/context/permission-provider'
 import { Permission } from '@/lib/permissions'
 import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
 import { DataTable, FilterSelect, ListToolbar, PageStack } from '@/features/shared'
 import { useUrlFilter } from '@/hooks/use-url-param'
 import { EmptyState } from '@/features/shared/components/empty-state'
@@ -135,6 +134,14 @@ export function CampaignList() {
     >
       <PageStack>
         <ListToolbar
+          search={{
+            value: search,
+            onChange: (v) => {
+              setSearch(v)
+              setPagination((p) => ({ ...p, pageIndex: 0 }))
+            },
+            placeholder: t('remediationCampaigns.search'),
+          }}
           start={
             <>
               <FilterSelect<Exclude<StatusFilter, 'all'>>
@@ -148,16 +155,6 @@ export function CampaignList() {
                 }))}
                 onChange={(next) => {
                   setStatusParam(next)
-                  setPagination((p) => ({ ...p, pageIndex: 0 }))
-                }}
-              />
-              <Input
-                className="h-9 w-full sm:w-64"
-                placeholder={t('remediationCampaigns.search')}
-                aria-label={t('remediationCampaigns.search')}
-                value={search}
-                onChange={(e) => {
-                  setSearch(e.target.value)
                   setPagination((p) => ({ ...p, pageIndex: 0 }))
                 }}
               />

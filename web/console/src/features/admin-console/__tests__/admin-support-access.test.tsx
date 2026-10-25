@@ -137,7 +137,7 @@ describe('Console support access', () => {
 
     // The owner revokes: the next read is refused and the view closes.
     revoked = true
-    await user.type(screen.getByRole('textbox', { name: /search by name/i }), 'tls')
+    await user.type(screen.getByRole('searchbox', { name: /search by name/i }), 'tls')
     expect(await screen.findByTestId('support-access-ended')).toHaveTextContent('Access ended')
     expect(screen.queryByTestId('support-session-frame')).not.toBeInTheDocument()
     expect(window.location.search).not.toContain('session=')

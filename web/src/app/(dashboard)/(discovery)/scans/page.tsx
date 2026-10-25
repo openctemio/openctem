@@ -19,7 +19,6 @@ import {
   FacetPanel,
   FacetSection,
   FacetOption,
-  FilterPanelToggle,
   FilterSheet,
   MetaLine,
 } from '@/features/shared'
@@ -44,7 +43,6 @@ import { ScheduleOnConfirm } from '@/features/scans/components/schedule-on-confi
 import { useTranslation } from '@/context/i18n-provider'
 import { toast } from 'sonner'
 import {
-  Search,
   MoreHorizontal,
   Eye,
   Pause,
@@ -178,31 +176,6 @@ function usePersistentFiltersOpen(key: string): [boolean, (open: boolean) => voi
     [key]
   )
   return [open, setOpen]
-}
-
-function SearchBox({
-  value,
-  onChange,
-  placeholder,
-  label,
-}: {
-  value: string
-  onChange: (value: string) => void
-  placeholder: string
-  label: string
-}) {
-  return (
-    <div className="relative min-w-0 flex-1 sm:max-w-sm">
-      <Search className="pointer-events-none absolute start-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-      <Input
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        placeholder={placeholder}
-        aria-label={label}
-        className="h-9 ps-9"
-      />
-    </div>
-  )
 }
 
 /** Shaped like the DataTable it stands in for: toolbar, then rows. */
@@ -910,24 +883,6 @@ function ConfigurationsTab() {
     </FacetPanel>
   )
 
-  const toolbarStart = (
-    <>
-      <FilterPanelToggle
-        open={filtersOpen}
-        onToggle={() => setFiltersOpen(!filtersOpen)}
-        onOpenSheet={() => setFilterSheetOpen(true)}
-        activeCount={activeFiltersCount}
-        controlsId="scan-config-filters"
-      />
-      <SearchBox
-        value={searchQuery}
-        onChange={setSearchQuery}
-        placeholder={t('scans.configs.searchPlaceholder', 'Search configurations…')}
-        label={t('scans.configs.searchLabel', 'Search scan configurations')}
-      />
-    </>
-  )
-
   return (
     <>
       <MetricStrip loading={isLoadingStats} items={metrics} />
@@ -951,7 +906,19 @@ function ConfigurationsTab() {
               columns={columns}
               data={configs}
               showSearch={false}
-              toolbarStart={toolbarStart}
+              search={{
+                value: searchQuery,
+                onChange: setSearchQuery,
+                placeholder: t('scans.configs.searchPlaceholder', 'Search configurations…'),
+                label: t('scans.configs.searchLabel', 'Search scan configurations'),
+              }}
+              filterToggle={{
+                open: filtersOpen,
+                onToggle: () => setFiltersOpen(!filtersOpen),
+                onOpenSheet: () => setFilterSheetOpen(true),
+                activeCount: activeFiltersCount,
+                controlsId: 'scan-config-filters',
+              }}
               manualPagination
               rowCount={configsResponse?.total ?? 0}
               pagination={{ pageIndex: pageParam - 1, pageSize: perPage }}

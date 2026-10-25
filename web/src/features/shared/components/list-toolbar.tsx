@@ -3,6 +3,7 @@
 import * as React from 'react'
 import { cn } from '@/lib/utils'
 import { ListSearch, type ListSearchProps } from './list-search'
+import { FilterPanelToggle, type FilterPanelToggleProps } from './filter-button'
 
 /**
  * The one toolbar above a list (research/244 §2.4, research/267). `DataTable`
@@ -37,7 +38,12 @@ import { ListSearch, type ListSearchProps } from './list-search'
 export interface ListToolbarProps {
   /** The list's search box. */
   search?: ListSearchProps
-  /** Filter trigger (`FilterButton`, `FilterPanelToggle`), joined to the search. */
+  /**
+   * The list's facet panel: renders the one filter trigger (side panel from
+   * `lg`, sheet below), joined to the search.
+   */
+  filterToggle?: FilterPanelToggleProps
+  /** A filter trigger that opens a sheet or popover (`FilterButton`), when there is no panel. */
   filter?: React.ReactNode
   /** Filter tokens after the search: `FilterSelect`, at most two selects, a lens. */
   start?: React.ReactNode
@@ -98,7 +104,16 @@ function useListShortcuts(ref: React.RefObject<HTMLDivElement | null>) {
   }, [ref])
 }
 
-export function ListToolbar({ search, filter, start, end, below, className }: ListToolbarProps) {
+export function ListToolbar({
+  search,
+  filterToggle,
+  filter: filterProp,
+  start,
+  end,
+  below,
+  className,
+}: ListToolbarProps) {
+  const filter = filterToggle ? <FilterPanelToggle {...filterToggle} /> : filterProp
   const ref = React.useRef<HTMLDivElement>(null)
   useListShortcuts(ref)
 

@@ -52,7 +52,7 @@
   "auditLog.result.failure": "Thất bại",
   "auditLog.result.success": "Thành công",
   "auditLog.search.label": "Tìm trong nhật ký kiểm tra",
-  "auditLog.search.placeholder": "Tìm theo người thực hiện, hành động, tài nguyên...",
+  "auditLog.search.placeholder": "Tìm theo người thực hiện, hành động, tài nguyên…",
   "auditLog.severity.unknown": "Không xác định",
   "auditLog.stat.denied": "Bị từ chối",
   "auditLog.stat.failed": "Thất bại",

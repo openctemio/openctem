@@ -14,6 +14,7 @@ import {
   DataTableColumnHeader,
   DataTableRowActions,
   type RowAction,
+  type DataTableSearch,
 } from '@/features/shared'
 import type { Tool, ToolAvailabilityItem } from '@/lib/api/tool-types'
 import type { ToolCategory } from '@/lib/api/tool-category-types'
@@ -35,6 +36,7 @@ interface ToolTableProps {
   /** Switch the tool on or off for the organization; omitted without permission. */
   onToggleEnabled?: (item: ToolAvailabilityItem, enabled: boolean) => void
   /** Passed through to the DataTable toolbar (search, filters). */
+  search?: DataTableSearch
   toolbarStart?: React.ReactNode
   toolbarEnd?: React.ReactNode
   emptyMessage?: string
@@ -56,6 +58,7 @@ export function ToolTable({
   onEditTool,
   onDeleteTool,
   onToggleEnabled,
+  search,
   toolbarStart,
   toolbarEnd,
   emptyMessage = 'No tools match these filters',
@@ -262,6 +265,7 @@ export function ToolTable({
       getRowId={(i) => i.name}
       showSearch={false}
       onRowClick={onViewTool}
+      search={search}
       toolbarStart={toolbarStart}
       toolbarEnd={toolbarEnd}
       emptyMessage={emptyMessage}

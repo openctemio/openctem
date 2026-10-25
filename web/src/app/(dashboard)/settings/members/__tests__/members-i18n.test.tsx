@@ -102,7 +102,7 @@ describe('Members page (vi)', () => {
     expect(
       screen.getByRole('combobox', { name: 'Lọc theo vai trò thành viên' })
     ).toBeInTheDocument()
-    expect(screen.getByRole('textbox', { name: 'Tìm thành viên' })).toBeInTheDocument()
+    expect(screen.getByRole('searchbox', { name: 'Tìm thành viên' })).toBeInTheDocument()
     expect(screen.queryByText('Invite user')).toBeNull()
     expect(screen.queryByText('Last active')).toBeNull()
     expect(screen.queryByText(/of 1 users/)).toBeNull()

@@ -202,7 +202,7 @@ describe('RelatedAssetsList (full)', () => {
     )
     await userEvent.click(screen.getByRole('button', { name: 'Next' }))
     expect(await screen.findByText('26–50 of 220')).toBeInTheDocument()
-    await userEvent.type(screen.getByRole('textbox', { name: 'Search Runs on' }), 'node-1')
+    await userEvent.type(screen.getByRole('searchbox', { name: 'Search Runs on' }), 'node-1')
     await waitFor(() =>
       expect(api.get).toHaveBeenCalledWith(
         '/api/v1/assets/a1/relationships/groups?type=runs_on&direction=outgoing&q=node-1&limit=25'

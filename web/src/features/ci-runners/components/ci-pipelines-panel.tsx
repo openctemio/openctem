@@ -12,9 +12,8 @@
  */
 
 import { useEffect, useMemo, useState } from 'react'
-import { Search, Workflow } from 'lucide-react'
+import { Workflow } from 'lucide-react'
 import type { ColumnDef } from '@tanstack/react-table'
-import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Switch } from '@/components/ui/switch'
 import {
@@ -320,20 +319,12 @@ export function CIPipelinesPanel() {
                     'Inactive pipelines are hidden: turn on Show inactive.'
                   )
           }
-          toolbarStart={
-            <>
-              <div className="relative min-w-0 flex-1 sm:max-w-xs">
-                <Search className="pointer-events-none absolute start-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-                <Input
-                  placeholder={t('scans.ci.searchPipelines', 'Search repository or workflow…')}
-                  aria-label={t('scans.ci.searchPipelinesLabel', 'Search CI pipelines')}
-                  value={searchText}
-                  onChange={(e) => setSearchText(e.target.value)}
-                  className="h-9 ps-9"
-                />
-              </div>
-            </>
-          }
+          search={{
+            value: searchText,
+            onChange: setSearchText,
+            placeholder: t('scans.ci.searchPipelines', 'Search repository or workflow…'),
+            label: t('scans.ci.searchPipelinesLabel', 'Search CI pipelines'),
+          }}
           toolbarEnd={
             <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
               <div className="flex items-center gap-2">
