@@ -161,7 +161,7 @@ and `HTTPS_PROXY` is not used.
 
 | Feed | Offline path today | If absent |
 |---|---|---|
-| Vulnerability catalog (vulnfeed: CVE/NVD/OSV, emerging vulnerabilities) | signed bundles from `VULNFEED_BASE_URL`/`VULNFEED_MIRRORS` (a raw proxy) or files in `VULNFEED_BUNDLE_DIR`; needs `VULNFEED_ROOT_KEY_ID` and the source enabled | catalog and inventory matching go stale (status turns stale after 3 days) |
+| Vulnerability catalog (vulnfeed: CVE/NVD/OSV, emerging vulnerabilities) | signed bundles from `VULNFEED_BASE_URL`/`VULNFEED_MIRRORS` (a raw proxy) or files in `VULNFEED_BUNDLE_DIR`; verified against the pinned official root key id (`VULNFEED_ROOT_KEY_ID` overrides it); the source is on by default | catalog and inventory matching go stale (status turns stale after 3 days) |
 | Public program feed (programfeed) | `PROGRAMFEED_URL`/`PROGRAMFEED_MIRRORS`, or a bundle in `PROGRAMFEED_DIR` | no public program catalog |
 | Content catalog, content packs, scanner templates | admin import endpoints (content catalog needs `CONTENT_TRUST_ROOT_KEY_IDS`); template sources in internal git/S3 | |
 | Sensor scanner content (nuclei, trivy, opengrep) | sensor-side local mirror or directory | sensor health shows stale content |
