@@ -64,6 +64,13 @@ case "${1:-}" in
     echo "created $dir/${stem}.up.sql and .down.sql (develop ${dev:-0}, this branch ${mine:-0}, open PRs ${prs:-none})"
     ;;
   renumber)
+    # A branch behind develop would see develop's removed or squashed
+    # migrations as "added" and rename applied files: refuse until it is
+    # merged with develop.
+    git merge-base --is-ancestor origin/develop HEAD || {
+      echo "merge origin/develop into this branch first (git fetch origin develop && git merge origin/develop)" >&2
+      exit 1
+    }
     MIGRATION_TAKEN="$(taken_by_prs)" bash .github/scripts/pr-migration-renumber.sh origin/develop
     # Stage the renames; files whose references were rewritten show as
     # modified: review and stage them with the renames, then commit.
