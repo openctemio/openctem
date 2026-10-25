@@ -170,6 +170,7 @@ mcp_action_confirmations
 mcp_oauth_clients
 mcp_oauth_grants
 mcp_oauth_requests
+nav_pins
 notification_events
 notification_outbox
 notification_preferences

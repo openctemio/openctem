@@ -87,6 +87,7 @@ const REVIEWED = new Set([
   'components/layout/grouped-nav.tsx|SidebarLink|href={item.url}',
   'components/layout/nav-group.tsx|SidebarLink|href={item.url}',
   'components/layout/nav-group.tsx|SidebarLink|href={url}',
+  'components/layout/nav-pinned.tsx|SidebarLink|href={r.href}',
   'components/layout/top-nav.tsx|Link|href={href}',
   'components/layout/breadcrumb-nav.tsx|Link|href={item.path}',
   'components/layout/settings-sidebar-nav.tsx|SidebarLink|href={backHref}',

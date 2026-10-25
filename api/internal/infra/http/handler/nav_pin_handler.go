@@ -103,7 +103,7 @@ func (h *NavPinHandler) write(w http.ResponseWriter, c navpinapp.Caller, pins []
 func (h *NavPinHandler) writeErr(w http.ResponseWriter, err error) {
 	switch {
 	case errors.Is(err, shared.ErrValidation):
-		apierror.BadRequest(err.Error()).WriteJSON(w)
+		apierror.BadRequest("Pins must be in-app pages, findings quick views or saved views, each pinned once, at most 100").WriteJSON(w)
 	case errors.Is(err, shared.ErrForbidden):
 		apierror.Forbidden("Pinning a findings view needs findings:read").WriteJSON(w)
 	case errors.Is(err, shared.ErrNotFound):
