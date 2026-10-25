@@ -190,7 +190,7 @@ export function EASMDecidePanel({ compact = false }: { compact?: boolean }) {
             {t('attackSurface.decide.title', 'Waiting for your decision')}
           </h2>
           <Link href={EASM_SUGGESTIONS_HREF} className="text-sm text-primary hover:underline">
-            {t('attackSurface.decide.viewAll', 'All suggestions')}
+            {t('attackSurface.decide.viewAll', 'Open Review')}
           </Link>
         </div>
       )}
