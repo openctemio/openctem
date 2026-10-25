@@ -13,6 +13,7 @@
  * that found the issue. The old whole-asset "verification scan" is retired.
  */
 
+import { CveLink } from '@/features/vulnerabilities/components/cve-link'
 import { useState } from 'react'
 import { ConfirmDialog } from '@/components/confirm-dialog'
 import Link from '@/components/link'
@@ -128,16 +129,8 @@ export function FindingHeader({ finding, status, onTriageCompleted }: FindingHea
         )}
         {finding.branchOnly && <BranchOnlyBadge />}
         {finding.cve && (
-          <Badge variant="outline" asChild className="font-mono text-xs">
-            <a
-              href={`https://nvd.nist.gov/vuln/detail/${encodeURIComponent(finding.cve)}`}
-              target="_blank"
-              rel="noopener noreferrer"
-              aria-label={`${t('findings.header.cveOnNvd', '{cve} on NVD', { cve: finding.cve })} ${t('common.opensNewTab', '(opens in a new tab)')}`}
-            >
-              {finding.cve}
-              <ExternalLink className="h-3 w-3" aria-hidden />
-            </a>
+          <Badge variant="outline" className="text-xs">
+            <CveLink id={finding.cve} />
           </Badge>
         )}
         {duplicateOfHref && (

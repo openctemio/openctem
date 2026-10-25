@@ -28,6 +28,7 @@ export const DOCS = {
   },
   sensors: {
     install: 'https://docs.openctem.io/install/',
+    security: 'https://docs.openctem.io/sensors/security/',
     transportPlatform: 'https://docs.openctem.io/sensors/transport/#what-the-platform-offers',
   },
   pentest: {

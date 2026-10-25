@@ -59,14 +59,15 @@ tests that cover the console's most user-visible flows.
 | `32-assets-filters.spec.ts`                 | Asset Add filter, chips, no eager tag or business-unit load                             |
 | `33-ticketing-connection-errors.spec.ts`    | A failed ticketing connection is worded from its code, offers the fix, shows no id      |
 | `34-scans-list-layout.spec.ts`              | Scan list at 390px and 1440px: no overlapping text, state on the title line             |
-| `35-assets-row-anatomy.spec.ts`             | Asset rows: one height, type line, a time; axe; no h-scroll at 375px                    |
+| `35-assets-row-anatomy.spec.ts`             | Asset rows at 1920px: one height, type line, a time; axe; no h-scroll at 375px          |
 | `36-findings-triage-mode.spec.ts`           | Triage mode: keys-only session over ten findings, request budget, a11y, Exit            |
 | `36-list-toolbar.spec.ts`                   | One list toolbar: search first, joined filter trigger, `/` and Escape, phone width, axe |
 | `37-pentest-template-editor.spec.ts`        | Finding-library template: create, then edit at 375px                                    |
 | `38-assets-vocabulary.spec.ts`              | Asset criticality vs risk wording, one-line phone card, open findings count             |
 | `39-assets-list-states.spec.ts`             | Asset search keeps typed keys, toolbar on error, last page, empty default list          |
 | `40-filter-chips-row-phone.spec.ts`         | Filter chips row at 390/375px: locked chip and chips never overlap, search on its line  |
-| `41-new-scan-review-coverage.spec.ts`       | New Scan review: skipped targets by reason, neutral, searchable, 1440/390px, axe        |
+| `41-assets-service-facts.spec.ts`           | Asset service facts: whole chips and +N at 1280/1440/1920, no table side-scroll, axe    |
+| `43-new-scan-review-coverage.spec.ts`       | New Scan review: skipped targets by reason, neutral, searchable, 1440/390px, axe        |
 
 Each spec is designed to:
 
