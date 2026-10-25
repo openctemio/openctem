@@ -4,6 +4,7 @@ import useSWR from 'swr'
 import { ShieldCheck } from 'lucide-react'
 import Link from '@/components/link'
 import { Button } from '@/components/ui/button'
+import { Counter } from '@/components/ui/counter'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { useTranslation } from '@/context/i18n-provider'
 import { usePermissions } from '@/context/permission-provider'
@@ -51,11 +52,7 @@ export function HeaderApprovals() {
         <Button asChild variant="ghost" size="icon" className="relative size-8" aria-label={label}>
           <Link href="/my-work?tab=review" data-slot="header-approvals">
             <ShieldCheck className="size-4.5" aria-hidden />
-            {n > 0 && (
-              <span className="bg-signal text-signal-ink absolute -end-0.5 -top-0.5 min-w-4 rounded-full px-1 text-center text-[11px] leading-4 font-semibold tabular-nums">
-                {n > 99 ? '99+' : n}
-              </span>
-            )}
+            {n > 0 && <Counter value={n} emphasis className="absolute -end-1 -top-1" />}
           </Link>
         </Button>
       </TooltipTrigger>
