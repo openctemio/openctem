@@ -1,0 +1,6 @@
+#!/bin/sh
+# Monorepo pre-push (enabled by `make hooks`): refuses a branch that is behind
+# the branch its pull request targets, then runs the lint and static checks
+# CI gates on. It never changes the branch: `make precheck` syncs and checks.
+top=$(git rev-parse --show-toplevel)
+exec bash "$top/scripts/precheck.sh" --verify
