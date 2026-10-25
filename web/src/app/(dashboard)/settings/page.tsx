@@ -2,10 +2,8 @@
 
 import { useMemo, useState } from 'react'
 import Link from '@/components/link'
-import { Search } from 'lucide-react'
 import { Main } from '@/components/layout'
-import { Input } from '@/components/ui/input'
-import { PageHeader, SettingsSection, PageStack } from '@/features/shared'
+import { PageHeader, SettingsSection, PageStack, ListToolbar } from '@/features/shared'
 import { useTranslation } from '@/context/i18n-provider'
 import { useSettingsNav } from '@/hooks/use-settings-nav'
 import { searchSettings } from '@/config/settings-search'
@@ -45,27 +43,18 @@ export default function SettingsIndexPage() {
             'Your account, and how your organization is set up.'
           )}
         />
-        <div className="relative max-w-2xl">
-          <Search
-            aria-hidden
-            className="pointer-events-none absolute start-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground"
-          />
-          <Input
-            type="search"
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === 'Escape') setQuery('')
-            }}
-            placeholder={t(
+        <ListToolbar
+          search={{
+            value: query,
+            onChange: setQuery,
+            placeholder: t(
               'settings.search.placeholder',
               'Search settings: two-factor, IP allowlist, Slack…'
-            )}
-            aria-label={searchLabel}
-            aria-controls="settings-search-results"
-            className="h-10 ps-9"
-          />
-        </div>
+            ),
+            label: searchLabel,
+            inputProps: { 'aria-controls': 'settings-search-results' },
+          }}
+        />
 
         {searching ? (
           <div id="settings-search-results">

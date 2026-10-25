@@ -31,7 +31,7 @@ import {
 import { Button } from '@/components/ui/button'
 import { ListToolbar } from '../list-toolbar'
 import type { ListSearchProps } from '../list-search'
-import { FilterPanelToggle, type FilterPanelToggleProps } from '../filter-button'
+import type { FilterPanelToggleProps } from '../filter-button'
 import { Skeleton } from '@/components/ui/skeleton'
 import {
   DropdownMenu,
@@ -716,7 +716,7 @@ export function DataTable<TData, TValue>({
       {/* Toolbar: the shared ListToolbar row (order and wrapping rules live
           there). */}
       <ListToolbar
-        filter={filterToggle ? <FilterPanelToggle {...filterToggle} /> : undefined}
+        filterToggle={filterToggle}
         search={
           serverSearch ??
           (showSearch
@@ -807,7 +807,6 @@ export function DataTable<TData, TValue>({
           </>
         }
       />
-
 
       {phoneCards && (
         <div className="divide-y rounded-md border">

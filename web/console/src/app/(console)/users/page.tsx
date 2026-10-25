@@ -3,11 +3,16 @@
 import { useMemo } from 'react'
 import { useRouter } from 'next/navigation'
 import type { ColumnDef } from '@tanstack/react-table'
-import { Search } from 'lucide-react'
 import { Main } from '@/components/layout'
-import { Input } from '@/components/ui/input'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import { DataTable, ErrorState, PageHeader, PageStack, RelativeTime } from '@/features/shared'
+import {
+  DataTable,
+  ErrorState,
+  ListToolbar,
+  PageHeader,
+  PageStack,
+  RelativeTime,
+} from '@/features/shared'
 import { useTranslation } from '@/context/i18n-provider'
 import { useListParams } from '@/hooks/use-list-params'
 import {
@@ -119,32 +124,30 @@ export default function AdminUsersPage() {
           <RoleRequiredNotice needed="ops_admin" variant="page" />
         ) : (
           <>
-            <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-              <Tabs value={state} onValueChange={(v) => list.setFilter('state', v)}>
-                <TabsList className="h-auto flex-wrap">
-                  {PLATFORM_USER_STATES.map((s) => (
-                    <TabsTrigger key={s} value={s} className="gap-1.5">
-                      {t(`admin.users.state.${s}`, STATE_LABELS[s])}
-                      {data?.counts?.[s] !== undefined && (
-                        <span className="tabular-nums text-xs text-muted-foreground">
-                          {data.counts[s]}
-                        </span>
-                      )}
-                    </TabsTrigger>
-                  ))}
-                </TabsList>
-              </Tabs>
-              <div className="relative w-full lg:max-w-xs">
-                <Search className="absolute start-2.5 top-2.5 size-4 text-muted-foreground" />
-                <Input
-                  placeholder={t('admin.users.search', 'Email, name or user id...')}
-                  value={list.q}
-                  onChange={(e) => list.setSearch(e.target.value)}
-                  className="ps-8"
-                  aria-label={t('admin.users.searchLabel', 'Search accounts')}
-                />
-              </div>
-            </div>
+            <ListToolbar
+              search={{
+                value: list.q,
+                onChange: list.setSearch,
+                placeholder: t('admin.users.search', 'Search email, name or user id…'),
+                label: t('admin.users.searchLabel', 'Search accounts'),
+              }}
+              start={
+                <Tabs value={state} onValueChange={(v) => list.setFilter('state', v)}>
+                  <TabsList className="h-auto flex-wrap">
+                    {PLATFORM_USER_STATES.map((s) => (
+                      <TabsTrigger key={s} value={s} className="gap-1.5">
+                        {t(`admin.users.state.${s}`, STATE_LABELS[s])}
+                        {data?.counts?.[s] !== undefined && (
+                          <span className="tabular-nums text-xs text-muted-foreground">
+                            {data.counts[s]}
+                          </span>
+                        )}
+                      </TabsTrigger>
+                    ))}
+                  </TabsList>
+                </Tabs>
+              }
+            />
             {tooShort && (
               <p className="text-sm text-muted-foreground">
                 {t('admin.users.tooShort', 'Type at least 3 characters to search.')}

@@ -11,7 +11,7 @@
   "programs.catalog.follow": "Follow",
   "programs.catalog.hint": "Following a program creates its scope entries inactive: only passive monitoring runs until someone accepts its rules and scope on the program page. Scope changes from the feed reach the program; new targets wait for a new acceptance.",
   "programs.catalog.platformNotice": "Listed by {platform}: the data comes from that platform and stays subject to its terms.",
-  "programs.catalog.search": "Search public programs",
+  "programs.catalog.search": "Search public programs…",
   "programs.col.name": "Program",
   "programs.col.platform": "Platform",
   "programs.col.status": "Status",

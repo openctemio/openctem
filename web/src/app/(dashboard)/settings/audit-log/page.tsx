@@ -21,7 +21,6 @@ import {
   PageStack,
 } from '@/features/shared'
 import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
@@ -33,7 +32,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { Search as SearchIcon, RefreshCw, AlertCircle, ShieldX, Copy, Download } from 'lucide-react'
+import { RefreshCw, AlertCircle, ShieldX, Copy, Download } from 'lucide-react'
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -327,19 +326,6 @@ export default function AuditLogPage() {
 
   const toolbarStart = (
     <>
-      <div className="relative min-w-0 flex-1 sm:max-w-sm">
-        <SearchIcon className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-        <Input
-          placeholder={t('auditLog.search.placeholder', 'Search by actor, action, resource...')}
-          value={searchTerm}
-          onChange={(e) => {
-            setSearchTerm(e.target.value)
-            setPage(1)
-          }}
-          className="ps-9"
-          aria-label={t('auditLog.search.label', 'Search audit log')}
-        />
-      </div>
       <Select
         value={resultFilter ?? 'all'}
         onValueChange={(value) => {
@@ -511,6 +497,15 @@ export default function AuditLogPage() {
               data={logs}
               getRowId={(log) => log.id}
               showSearch={false}
+              search={{
+                value: searchTerm,
+                onChange: (v) => {
+                  setSearchTerm(v)
+                  setPage(1)
+                },
+                placeholder: t('auditLog.search.placeholder', 'Search by actor, action, resource…'),
+                label: t('auditLog.search.label', 'Search audit log'),
+              }}
               showColumnToggle={false}
               toolbarStart={toolbarStart}
               toolbarEnd={toolbarEnd}

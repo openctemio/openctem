@@ -11,6 +11,7 @@ import {
   DataTableColumnHeader,
   DataTableRowActions,
   type RowAction,
+  type DataTableSearch,
 } from '@/features/shared'
 import { useTranslation } from '@/context/i18n-provider'
 import { Permission, useHasPermission } from '@/lib/permissions'
@@ -29,6 +30,7 @@ interface ScanZoneTableProps {
   onEdit: (zone: ScanZone) => void
   onSensors: (zone: ScanZone) => void
   onDelete: (zone: ScanZone) => void
+  search?: DataTableSearch
   toolbarStart?: React.ReactNode
   toolbarEnd?: React.ReactNode
 }
@@ -107,6 +109,7 @@ export function ScanZoneTable({
   onEdit,
   onSensors,
   onDelete,
+  search,
   toolbarStart,
   toolbarEnd,
 }: ScanZoneTableProps) {
@@ -210,6 +213,7 @@ export function ScanZoneTable({
       getRowId={(z) => z.id}
       showSearch={false}
       showColumnToggle={false}
+      search={search}
       toolbarStart={toolbarStart}
       toolbarEnd={toolbarEnd}
       emptyMessage="No zones match this search"

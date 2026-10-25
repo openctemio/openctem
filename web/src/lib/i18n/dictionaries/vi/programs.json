@@ -11,7 +11,7 @@
   "programs.catalog.follow": "Theo dõi",
   "programs.catalog.hint": "Theo dõi một chương trình sẽ tạo các mục phạm vi ở trạng thái không hoạt động: chỉ giám sát thụ động cho đến khi có người chấp nhận quy định và phạm vi trên trang chương trình. Thay đổi phạm vi từ nguồn được cập nhật vào chương trình; mục tiêu mới chờ lần chấp nhận mới.",
   "programs.catalog.platformNotice": "Do {platform} liệt kê: dữ liệu đến từ nền tảng đó và tuân theo điều khoản của nền tảng đó.",
-  "programs.catalog.search": "Tìm chương trình công khai",
+  "programs.catalog.search": "Tìm chương trình công khai…",
   "programs.col.name": "Chương trình",
   "programs.col.platform": "Nền tảng",
   "programs.col.status": "Trạng thái",

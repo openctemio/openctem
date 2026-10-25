@@ -10,7 +10,12 @@ import { Pencil, Trash2, Globe, Sparkles, Wrench, Bot, Eye } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { DynamicIcon } from '@/components/dynamic-icon'
-import { DataTable, DataTableColumnHeader, DataTableRowActions } from '@/features/shared'
+import {
+  DataTable,
+  DataTableColumnHeader,
+  DataTableRowActions,
+  type DataTableSearch,
+} from '@/features/shared'
 
 import type { Capability, CapabilityUsageStatsBatchResponse } from '@/lib/api/capability-types'
 import { useToolAvailability } from '@/lib/api/tool-hooks'
@@ -25,6 +30,7 @@ interface CapabilityTableProps {
   onViewDetails?: (capability: Capability) => void
   readOnly?: boolean
   /** Passed through to the DataTable toolbar (search, filters, view toggle). */
+  search?: DataTableSearch
   toolbarStart?: React.ReactNode
   toolbarEnd?: React.ReactNode
 }
@@ -117,6 +123,7 @@ export function CapabilityTable({
   onDelete,
   onViewDetails,
   readOnly = false,
+  search,
   toolbarStart,
   toolbarEnd,
 }: CapabilityTableProps) {
@@ -249,6 +256,7 @@ export function CapabilityTable({
       columns={columns}
       data={capabilities}
       showSearch={false}
+      search={search}
       toolbarStart={toolbarStart}
       toolbarEnd={toolbarEnd}
       emptyMessage="No capabilities"

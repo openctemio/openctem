@@ -1326,7 +1326,7 @@
   "sensors.toolSettings.scanOverridable": "Lần quét có thể giảm",
   "sensors.toolSettings.searchEmpty": "Không có công cụ hoặc tùy chọn nào khớp với \"{query}\".",
   "sensors.toolSettings.searchLabel": "Tìm trong cài đặt công cụ",
-  "sensors.toolSettings.searchPlaceholder": "Tìm công cụ hoặc tùy chọn",
+  "sensors.toolSettings.searchPlaceholder": "Tìm công cụ hoặc tùy chọn…",
   "sensors.toolSettings.showEffective": "Xem giá trị hiệu lực",
   "sensors.toolSettings.source.default": "Mặc định của công cụ",
   "sensors.toolSettings.source.scan": "Lần quét",

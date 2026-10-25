@@ -14,7 +14,6 @@ import {
   PageStack,
 } from '@/features/shared'
 import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Skeleton } from '@/components/ui/skeleton'
@@ -27,17 +26,7 @@ import {
 } from '@/components/ui/select'
 import { toast } from 'sonner'
 import { Can } from '@/lib/permissions'
-import {
-  Plus,
-  Shield,
-  Trash2,
-  Search as SearchIcon,
-  Eye,
-  Pencil,
-  Loader2,
-  AlertCircle,
-  RefreshCw,
-} from 'lucide-react'
+import { Plus, Shield, Trash2, Eye, Pencil, Loader2, AlertCircle, RefreshCw } from 'lucide-react'
 import { useSWRConfig } from 'swr'
 import {
   useRoles,
@@ -386,20 +375,16 @@ export default function RolesPage() {
                     data={filteredData}
                     getRowId={(r) => r.id}
                     showSearch={false}
+                    search={{
+                      value: searchQuery,
+                      onChange: setSearchQuery,
+                      placeholder: t('org.rolesPage.searchPlaceholder', 'Search roles…'),
+                      label: t('org.rolesPage.searchLabel', 'Search roles'),
+                    }}
                     showColumnToggle={false}
                     onRowClick={(r) => setSelectedRole(r)}
                     toolbarStart={
                       <>
-                        <div className="relative min-w-0 flex-1 sm:max-w-sm">
-                          <SearchIcon className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-                          <Input
-                            placeholder={t('org.rolesPage.searchPlaceholder', 'Search roles...')}
-                            value={searchQuery}
-                            onChange={(e) => setSearchQuery(e.target.value)}
-                            className="ps-9"
-                            aria-label={t('org.rolesPage.searchLabel', 'Search roles')}
-                          />
-                        </div>
                         <Select
                           value={typeFilter}
                           onValueChange={(v) => setTypeFilter(v as TypeFilter)}

@@ -2,14 +2,13 @@
 
 import { useMemo, useState } from 'react'
 import type { ColumnDef } from '@tanstack/react-table'
-import { Copy, Download, Info, Search } from 'lucide-react'
+import { Copy, Download, Info } from 'lucide-react'
 import { toast } from 'sonner'
 import type { ContentChannelResponse, PlatformContentPackResponse } from '@/lib/api/generated'
 import { Main } from '@/components/layout'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { Input } from '@/components/ui/input'
 import {
   Select,
   SelectContent,
@@ -291,18 +290,13 @@ export default function ContentPacksPage() {
             rowCount={packs.data?.total ?? 0}
             pagination={list.pagination}
             onPaginationChange={list.setPagination}
+            search={{
+              value: list.q,
+              onChange: list.setSearch,
+              placeholder: t('admin.cp.searchName', 'Search pack name…'),
+            }}
             toolbarStart={
-              <div className="flex w-full flex-col gap-2 sm:flex-row">
-                <div className="relative w-full sm:max-w-xs">
-                  <Search className="absolute start-2.5 top-2.5 size-4 text-muted-foreground" />
-                  <Input
-                    value={list.q}
-                    onChange={(e) => list.setSearch(e.target.value)}
-                    placeholder={t('admin.cp.searchName', 'Pack name')}
-                    className="ps-8"
-                    aria-label={t('admin.cp.searchName', 'Pack name')}
-                  />
-                </div>
+              <>
                 <Select
                   value={list.filters.kind || ANY}
                   onValueChange={(v) => list.setFilter('kind', v === ANY ? '' : v)}
@@ -335,7 +329,7 @@ export default function ContentPacksPage() {
                     <SelectItem value="revoked">{t('admin.cp.revoked', 'Revoked')}</SelectItem>
                   </SelectContent>
                 </Select>
-              </div>
+              </>
             }
           />
         )}
