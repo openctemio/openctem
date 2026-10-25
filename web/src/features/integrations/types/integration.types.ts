@@ -154,6 +154,12 @@ export interface Integration {
   status: IntegrationStatus
   status_message?: string
   /**
+   * Why the last connection test failed (an INTEGRATION_* API code); the
+   * console words it from errors.<code>. status_message is the English
+   * fallback.
+   */
+  status_code?: string
+  /**
    * False when the backend has no client for this provider (e.g. a Linear or
    * Asana row created before the API began refusing them). Such an
    * integration never runs; show it as not supported.
@@ -284,6 +290,8 @@ export interface TestCredentialsRequest {
 export interface TestCredentialsResponse {
   success: boolean
   message: string
+  /** Why a failed test failed (INTEGRATION_* or VALIDATION_FAILED). */
+  code?: string
   repository_count?: number
   organization?: string
   username?: string

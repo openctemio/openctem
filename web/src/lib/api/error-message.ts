@@ -278,3 +278,15 @@ export function toastError(
 export function safeText(msg: unknown, fallback: string): string {
   return isSafeMessage(msg) ? msg : fallback
 }
+
+/**
+ * Words for an API code outside React (the page's language), else the safe
+ * server sentence, else the caller's sentence.
+ */
+export function codeText(
+  code: string | undefined,
+  serverMessage: unknown,
+  fallback: string
+): string {
+  return describeCode(code, documentTranslate())?.message ?? safeText(serverMessage, fallback)
+}
