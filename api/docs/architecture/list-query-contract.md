@@ -61,13 +61,19 @@ list's built-in views in display order, each with the caller's count and the
 
 | Key | `params` |
 |---|---|
-| `active` | `state=open` |
-| `needs_triage` | `status=new` |
-| `my_queue` | `state=open&related_to=me` |
-| `sla_breached` | `state=open&sla_status=overdue,exceeded` (the stats `sla_breached` rule) |
+| `active` | `state=open` (+ `&informational=false`, see below) |
+| `needs_triage` | `status=new&informational=false` |
+| `my_queue` | `state=open&related_to=me` (+ `&informational=false`) |
+| `sla_breached` | `state=open&sla_status=overdue,exceeded` (the stats `sla_breached` rule; + `&informational=false`) |
 | `pending_approval` | `pending_approval=true` |
 | `accepted_expiring` | `status=accepted&acceptance_expires_at_lte=P30D` |
 | `closed` | `state=closed` (fixed and dispositioned) |
+
+The work views (`active`, `my_queue`, `sla_breached`) leave informational
+findings out unless the caller's preference, else the organization's default,
+includes them; `needs_triage` always leaves them out, and the response's
+`include_informational` says which applied
+([findings-work-views.md](findings-work-views.md)).
 
 The definitions live in one place (`vulnerability.FindingQuickViews`). Each
 view's params are parsed with the strict registry and compiled with
