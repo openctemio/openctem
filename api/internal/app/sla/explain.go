@@ -27,6 +27,13 @@ type Explanation struct {
 	KEVCapDays int
 }
 
+// The bases of a deadline.
+const (
+	BasisPriority = "priority"
+	BasisSeverity = "severity"
+	BasisNone     = "none"
+)
+
 // ExplainDeadline explains the deadline of a finding with this asset (""
 // for none), priority class and severity.
 func (s *Service) ExplainDeadline(ctx context.Context, tenantID, assetID, priorityClass string, severity vulnerability.Severity) (*Explanation, error) {
@@ -57,27 +64,27 @@ func explain(eff *EffectivePolicy, priorityClass string, severity vulnerability.
 	if eff.PlatformDefault {
 		// Same windows as deadlineForPriority with no policy.
 		if severity.IsInformational() {
-			out.Basis = "none"
+			out.Basis = BasisNone
 			return out
 		}
 		if days := sladom.DefaultPriorityDays[priorityClass]; days > 0 {
-			out.Basis, out.Days = "priority", days
+			out.Basis, out.Days = BasisPriority, days
 			return out
 		}
-		out.Basis, out.Days = "severity", sladom.DefaultSLADays[severity.String()]
+		out.Basis, out.Days = BasisSeverity, sladom.DefaultSLADays[severity.String()]
 		return out
 	}
 	if severity.IsInformational() && !p.InformationalHasSLA() {
-		out.Basis = "none"
+		out.Basis = BasisNone
 		return out
 	}
 	if days := p.GetDaysForPriorityClass(priorityClass); days > 0 {
-		out.Basis, out.Days = "priority", days
+		out.Basis, out.Days = BasisPriority, days
 		return out
 	}
-	out.Basis, out.Days = "severity", p.GetDaysForSeverity(severity.String())
+	out.Basis, out.Days = BasisSeverity, p.GetDaysForSeverity(severity.String())
 	if out.Days <= 0 {
-		out.Basis, out.Days = "none", 0
+		out.Basis, out.Days = BasisNone, 0
 	}
 	return out
 }
