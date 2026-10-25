@@ -63,7 +63,7 @@ export function FilterChipsRow({
   const [fit, setFit] = React.useState(chips.length)
   const [tick, setTick] = React.useState(0)
   const keys = chips.map(keyOf)
-  const keySig = keys.join('|')
+  const keySig = JSON.stringify(keys)
 
   // Re-measure when the row changes size.
   React.useEffect(() => {
