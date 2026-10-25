@@ -289,10 +289,13 @@ jobs:
           E2E_API_BASE_URL: http://localhost:8080
           SHARD: ${{ matrix.shard }}
         run: |
+          # Quarantined flaky tests (.github/quarantine.yml) are skipped until their fix date.
+          q="$(python3 ../.github/scripts/quarantine.py pw-grep-invert)"
+          if [ -n "$q" ]; then echo "quarantined: $q"; fi
           if [ "$SHARD" = 0 ]; then
-            npx playwright test --grep 'request budget \(part'
+            npx playwright test --grep 'request budget \(part' ${q:+--grep-invert "$q"}
           else
-            npx playwright test --shard "$SHARD/4" --grep-invert 'request budget \(part'
+            npx playwright test --shard "$SHARD/4" --grep-invert "request budget \\(part${q:+|$q}"
           fi
 
       - name: Stack logs
