@@ -136,7 +136,7 @@ func render(reps []cirunapp.ScopePlanTenant) string {
 		refused := append([]string(nil), r.Refused...)
 		sort.Strings(refused)
 		for _, x := range refused {
-			fmt.Fprintf(&b, "  refused %s\n", x)
+			fmt.Fprintf(&b, "  refused %s\n", logger.SanitizeText(x)) // a trust's name is tenant input
 		}
 	}
 	fmt.Fprintf(&b, "total (dry run): tenants %d, trusts %d\n  managing scope %d: %s\n  if turned on %d: %s\n",

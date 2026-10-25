@@ -166,6 +166,7 @@ outbound-ssrf:
 ci-release:
   - .github/workflows/**
   - .github/actions/**
+  - .github/codeql/**
   - .github/scripts/**
   - .github/security-paths.yml
   - .github/CODEOWNERS
