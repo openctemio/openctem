@@ -104,19 +104,7 @@ jobs:
         with:
           languages: go
           build-mode: manual
-          # go/log-injection is replaced by our variant of it
-          # (.github/codeql/go-queries): the same sources, sanitizers and
-          # sinks, minus the key-value attributes of log/slog calls, which
-          # slog's handlers escape (pinned by pkg/logger/forging_test.go).
-          # It flagged those attributes even next to a CR/LF strip (1,082
-          # alerts dismissed by hand to date).
-          config: |
-            queries:
-              - uses: security-and-quality
-              - uses: ./.github/codeql/go-queries/LogInjectionUnstructured.ql
-            query-filters:
-              - exclude:
-                  id: go/log-injection
+          config-file: ./.github/codeql/codeql-config-go.yml # go/log-injection replaced, see the file
       - name: Build (go)
         if: matrix.language == 'go'
         working-directory: api
