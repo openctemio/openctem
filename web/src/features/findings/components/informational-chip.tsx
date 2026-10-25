@@ -17,8 +17,12 @@ interface InformationalChipProps {
   hidden: boolean
   /** The list shows them only because the person chose Show (the default hides them). */
   shownForView: boolean
-  /** How many are left out, when already known (the open quick view says). */
-  knownCount?: number
+  /**
+   * How many are left out when the open quick view already says; null while
+   * that is not known yet (no request until it is), undefined to count with
+   * one request (a list that is not exactly a quick view).
+   */
+  knownCount?: number | null
   /** Show or hide them for this view. */
   onChange: (hidden: boolean) => void
 }
@@ -50,7 +54,7 @@ export function InformationalChip({
     { ...filters, informational: true },
     hidden && knownCount === undefined
   )
-  const count = knownCount ?? fetched
+  const count = knownCount === null ? undefined : (knownCount ?? fetched)
 
   const saveAsDefault = async () => {
     try {

@@ -14,7 +14,7 @@ import {
 } from '@/components/ui/select'
 import { Separator } from '@/components/ui/separator'
 import { Skeleton } from '@/components/ui/skeleton'
-import { Palette, Globe, Clock, Calendar, Save, Loader2, RotateCcw, ListFilter } from 'lucide-react'
+import { Palette, Globe, Clock, Calendar, Save, Loader2, RotateCcw, Bug } from 'lucide-react'
 import { toast } from 'sonner'
 import { getErrorMessage } from '@/lib/api/error-handler'
 import { useTheme } from 'next-themes'
@@ -306,7 +306,7 @@ export default function PreferencesPage() {
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
-            <ListFilter className="h-5 w-5" />
+            <Bug className="h-5 w-5" />
             {t('account.preferences.findings', 'Findings')}
           </CardTitle>
           <CardDescription>

@@ -2182,7 +2182,15 @@ function FindingsContent() {
             filters={apiFilters}
             hidden={hideInfo}
             shownForView={informationalShownForView}
-            knownCount={debouncedSearch.trim() ? undefined : activeQuickView?.informational_hidden}
+            knownCount={
+              // Wait for the quick views: on a quick view they carry the count,
+              // so the default load sends no extra request.
+              !quickViewData
+                ? null
+                : debouncedSearch.trim()
+                  ? undefined
+                  : activeQuickView?.informational_hidden
+            }
             onChange={setHideInfo}
           />
         </>
