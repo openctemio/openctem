@@ -80,7 +80,7 @@ export function TriageQueuePanel({
                 <span
                   dir="auto"
                   className={cn(
-                    'truncate text-[13px] [unicode-bidi:isolate]',
+                    'truncate text-sm [unicode-bidi:isolate]',
                     outcome ? 'font-normal' : 'text-foreground'
                   )}
                 >
