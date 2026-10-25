@@ -24,3 +24,7 @@ func ScanZoneFromContext(runContext map[string]any) *shared.ID {
 // (RFC-071): "passive", "active" or "intrusive". Absent: no ceiling beyond
 // the dispatch gate (a workflow run started without a scan).
 const RunContextKeyIntensity = "intensity"
+
+// RunContextKeyDepth holds the depth a run started with ("passive",
+// "standard" or "deep"; scanworkflow.Depth). Absent: standard.
+const RunContextKeyDepth = "depth"
