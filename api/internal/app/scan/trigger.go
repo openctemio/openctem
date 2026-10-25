@@ -389,12 +389,14 @@ func (s *Service) triggerWorkflow(ctx context.Context, sc *scan.Scan, triggerTyp
 	if _, err := selectedZone(sc, zones); err != nil {
 		return nil, err // pinned to a deleted zone: fail closed
 	}
+	var wfPlan *zonePlan
 	if len(zones) > 0 {
 		// A workflow stays inside one zone; see routeWorkflowTargets.
-		if targets, err = s.routeWorkflowTargets(ctx, sc, zones, targets, runContext); err != nil {
+		if targets, wfPlan, err = s.routeWorkflowTargets(ctx, sc, zones, targets, runContext); err != nil {
 			return nil, err
 		}
 	}
+	recordSkipGroups(runContext, skipGroups(maxRunSkipSamples, nil, resolved, nil, wfPlan))
 	runZone, err := s.workflowRunZone(ctx, sc, targets, runContext)
 	if err != nil {
 		return nil, err
@@ -572,6 +574,7 @@ func (s *Service) triggerSingleScan(ctx context.Context, sc *scan.Scan, triggerT
 			return nil, err
 		}
 	}
+	recordSkipGroups(runContext, skipGroups(maxRunSkipSamples, nil, resolved, resolved.NotResolving, plan))
 
 	// Decide platform vs tenant sensors now, before any run or command
 	// exists: an explicit 'platform' preference that cannot be honored
