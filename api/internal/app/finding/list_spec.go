@@ -112,6 +112,31 @@ func (s *VulnerabilityService) ListFindingsBySpec(ctx context.Context, c FilterC
 	return repo.ListWhere(ctx, where, pagination.New(spec.Page, spec.PerPage))
 }
 
+// findingDuplicatesRepo counts the duplicates of a page of findings.
+type findingDuplicatesRepo interface {
+	CountDuplicatesOfWhere(ctx context.Context, w *filterspec.Where, ids []shared.ID) (map[shared.ID]int, error)
+}
+
+// CountVisibleDuplicates returns, per finding id, how many findings marked as
+// its duplicates the caller can read: the count is compiled as the caller
+// (tenant, data scope, private programs, pentest membership), so a duplicate
+// on an asset outside their scope is neither shown nor counted.
+func (s *VulnerabilityService) CountVisibleDuplicates(ctx context.Context, c FilterCaller, ids []shared.ID) (map[shared.ID]int, error) {
+	repo, ok := s.findingRepo.(findingDuplicatesRepo)
+	if !ok || len(ids) == 0 {
+		return map[shared.ID]int{}, nil
+	}
+	actor, err := s.FilterActor(ctx, c)
+	if err != nil {
+		return nil, err
+	}
+	where, err := filterspec.Compile(&filterspec.Spec{}, vulnerability.FindingFields, actor)
+	if err != nil {
+		return nil, err
+	}
+	return repo.CountDuplicatesOfWhere(ctx, where, ids)
+}
+
 // GetFindingStatsBySpec computes the findings stats for a decoded filter, as
 // the caller: the same compiled WHERE as ListFindingsBySpec, so the metric
 // strip and the table count the same rows.
