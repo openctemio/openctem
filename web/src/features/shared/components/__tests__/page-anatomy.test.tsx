@@ -55,11 +55,11 @@ describe('PageStack', () => {
 })
 
 describe('ListToolbar', () => {
-  it('renders start, search and end in that order, end pushed to the far side', () => {
+  it('renders search, filter tokens and end in that order, end pushed to the far side', () => {
     render(
       <ListToolbar
-        start={<button type="button">Filters</button>}
-        search={<input aria-label="Search" />}
+        search={{ value: '', onChange: () => {}, placeholder: 'Search…', label: 'Search' }}
+        start={<button type="button">Status</button>}
         end={<button type="button">View</button>}
       />
     )
@@ -68,12 +68,12 @@ describe('ListToolbar', () => {
     const order = [...bar.querySelectorAll('button, input')].map(
       (el) => el.textContent || el.getAttribute('aria-label')
     )
-    expect(order).toEqual(['Filters', 'Search', 'View'])
+    expect(order).toEqual(['Search', 'Status', 'View'])
     expect(screen.getByText('View').parentElement).toHaveClass('ms-auto')
   })
 
   it('renders no empty groups', () => {
-    render(<ListToolbar search={<input aria-label="Search" />} />)
+    render(<ListToolbar search={{ value: '', onChange: () => {}, placeholder: 'Search…' }} />)
     const bar = screen.getByTestId('data-table-toolbar')
     expect(bar.children).toHaveLength(1)
   })
