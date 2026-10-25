@@ -33,11 +33,13 @@ git fetch -q origin develop
 taken_by_prs() {
   local me
   me="$(git rev-parse --abbrev-ref HEAD)"
+  # Every open pull request, stacked ones too: a stacked PR targets its parent
+  # branch, not develop, and its own migrations would otherwise be missed.
   if ! command -v gh >/dev/null 2>&1 || ! gh auth status >/dev/null 2>&1; then
     echo "migration-number: gh is not available; open pull requests are not considered" >&2
     return 0
   fi
-  gh pr list -R "$repo" --state open --base develop --limit 200 --json headRefName,files \
+  gh pr list -R "$repo" --state open --limit 200 --json headRefName,files \
     --jq ".[] | select(.headRefName != \"$me\") | .files[].path" \
     | sed -nE "s#^${dir}/0*([0-9]+)_.*\\.up\\.sql\$#\\1#p" | sort -n | uniq | tr '\n' ' '
 }
