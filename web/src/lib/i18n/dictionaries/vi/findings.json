@@ -844,7 +844,7 @@
   "findings.list.epssHint": "Hệ thống chấm điểm dự đoán khai thác. Xác suất ước tính bị khai thác trong 30 ngày tới.",
   "findings.list.errorTitle": "phát hiện",
   "findings.list.kev": "KEV",
-  "findings.list.kevDue": "Khắc phục trước {date}",
+  "findings.list.kevDue": "Hạn của CISA cho cơ quan liên bang Mỹ: {date}",
   "findings.list.kevPastDue": "Quá hạn",
   "findings.list.kevRansomware": "Mã độc tống tiền",
   "findings.list.kevTitle": "Lỗ hổng bị khai thác đã biết của CISA",
