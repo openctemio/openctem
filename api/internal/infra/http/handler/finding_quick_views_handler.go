@@ -23,6 +23,10 @@ type FindingQuickViewResponse struct {
 	Count int64 `json:"count"`
 	// Params is the GET /findings query string that lists the view.
 	Params string `json:"params"`
+	// InformationalHidden, on a view whose params leave informational
+	// findings out (informational=false), is how many it leaves out: the
+	// total of the same params with informational=true.
+	InformationalHidden *int64 `json:"informational_hidden,omitempty"`
 }
 
 // FindingQuickViewsResponse is the response of GET /findings/quick-views.
@@ -72,7 +76,7 @@ func (h *VulnerabilityHandler) FindingQuickViews(w http.ResponseWriter, r *http.
 	}
 	resp := FindingQuickViewsResponse{Views: make([]FindingQuickViewResponse, len(views)), IncludeInformational: include, AsOf: time.Now().UTC()}
 	for i, v := range views {
-		resp.Views[i] = FindingQuickViewResponse{Key: v.Key, Count: v.Count, Params: v.Params}
+		resp.Views[i] = FindingQuickViewResponse{Key: v.Key, Count: v.Count, Params: v.Params, InformationalHidden: v.InformationalHidden}
 	}
 	w.Header().Set("Content-Type", "application/json")
 	w.Header().Set("Cache-Control", "private, max-age=60")
