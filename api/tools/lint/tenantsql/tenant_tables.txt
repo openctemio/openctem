@@ -13,6 +13,7 @@ asset_attribute_sources
 asset_attributions
 asset_change_events
 asset_coverage
+asset_coverage_alerts
 asset_dedup_review
 asset_enrichment_requests
 asset_groups
