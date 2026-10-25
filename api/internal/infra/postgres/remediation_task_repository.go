@@ -1025,10 +1025,18 @@ func (r *RemediationTaskRepository) StaleTasksForPlatform(ctx context.Context, l
 	rows, err := r.db.QueryContext(ctx, `
 		SELECT t.tenant_id, t.id FROM remediation_tasks t
 		WHERE t.state NOT IN ('canceled', 'archived')
-		  AND EXISTS (SELECT 1 FROM remediation_task_members tm
+		  AND (EXISTS (SELECT 1 FROM remediation_task_members tm
 		              JOIN findings f ON f.id = tm.finding_id AND f.tenant_id = tm.tenant_id
 		              WHERE tm.tenant_id = t.tenant_id AND tm.task_id = t.id AND tm.left_at IS NULL
 		                AND f.updated_at > t.recomputed_at)
+		   -- A deleted finding takes its member row with it (cascade) and changes
+		   -- no remaining finding, so a task whose stored member counts differ
+		   -- from its live member rows is stale too.
+		   OR (SELECT COUNT(*) FILTER (WHERE tm.role = 'primary') <> t.member_count
+		              OR COUNT(*) FILTER (WHERE tm.role = 'related') <> t.related_count
+		       FROM remediation_task_members tm
+		       JOIN findings f ON f.id = tm.finding_id AND f.tenant_id = tm.tenant_id
+		       WHERE tm.tenant_id = t.tenant_id AND tm.task_id = t.id AND tm.left_at IS NULL))
 		ORDER BY t.recomputed_at
 		LIMIT $1`, limit)
 	if err != nil {
@@ -1239,4 +1247,43 @@ func (r *RemediationTaskRepository) regressInTx(ctx context.Context, tx *sql.Tx,
 			TaskID: child.ID, Title: child.Title, Findings: len(reopened)})
 	}
 	return child.ID, nil
+}
+
+// ActiveTaskIDsOfFindings lists the live tasks (primary or related member)
+// holding any of the findings. The finding delete paths call it before the
+// delete, because the member rows cascade away with the findings.
+func (r *RemediationTaskRepository) ActiveTaskIDsOfFindings(ctx context.Context, tenantID shared.ID, findingIDs []shared.ID) ([]shared.ID, error) {
+	if len(findingIDs) == 0 {
+		return nil, nil
+	}
+	return r.taskIDs(ctx, `
+		SELECT DISTINCT tm.task_id FROM remediation_task_members tm
+		WHERE tm.tenant_id = $1 AND tm.finding_id = ANY($2::uuid[]) AND tm.left_at IS NULL`,
+		tenantID.String(), pq.Array(rtIDStrings(findingIDs)))
+}
+
+// ActiveTaskIDsOfAsset lists the live tasks holding any finding of the asset.
+func (r *RemediationTaskRepository) ActiveTaskIDsOfAsset(ctx context.Context, tenantID, assetID shared.ID) ([]shared.ID, error) {
+	return r.taskIDs(ctx, `
+		SELECT DISTINCT tm.task_id FROM remediation_task_members tm
+		JOIN findings f ON f.id = tm.finding_id AND f.tenant_id = tm.tenant_id
+		WHERE tm.tenant_id = $1 AND f.asset_id = $2 AND tm.left_at IS NULL`,
+		tenantID.String(), assetID.String())
+}
+
+func (r *RemediationTaskRepository) taskIDs(ctx context.Context, q string, args ...any) ([]shared.ID, error) {
+	rows, err := r.db.QueryContext(ctx, q, args...)
+	if err != nil {
+		return nil, fmt.Errorf("list tasks of findings: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+	var out []shared.ID
+	for rows.Next() {
+		var id shared.ID
+		if err := rows.Scan(&id); err != nil {
+			return nil, fmt.Errorf("list tasks of findings: %w", err)
+		}
+		out = append(out, id)
+	}
+	return out, rows.Err()
 }
