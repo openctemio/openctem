@@ -282,6 +282,8 @@ export interface ScanRun {
   kind?: ScanRunKind
   /** What a run without a workflow is about, e.g. { finding_id, retest_id }. */
   subject?: Record<string, unknown>
+  /** What a completed run concluded when that is more than "done" (retests). */
+  result?: { kind: string; code?: string }
   asset_id?: string
   scan_id?: string
   /** The run's scan, named by the server on list rows (empty when deleted). */
