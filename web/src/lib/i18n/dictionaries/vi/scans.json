@@ -1483,6 +1483,7 @@
   "scans.profiles.empty": "Chưa có hồ sơ quét",
   "scans.profiles.emptyDesc": "Tạo hồ sơ để định nghĩa quy tắc đạt/không đạt dùng lại cho kết quả quét.",
   "scans.profiles.errorTitle": "hồ sơ quét",
+  "scans.profiles.gate.adminOnly": "Chỉ chủ sở hữu hoặc quản trị viên mới có thể thay đổi quy tắc đạt/không đạt.",
   "scans.profiles.gate.enabled": "Áp dụng quy tắc đạt/không đạt",
   "scans.profiles.gate.enabledHelp": "Khi tắt, kết quả các lần quét dùng hồ sơ này không bao giờ bị đánh không đạt.",
   "scans.profiles.gate.failOnCritical": "Không đạt khi có bất kỳ phát hiện nghiêm trọng",

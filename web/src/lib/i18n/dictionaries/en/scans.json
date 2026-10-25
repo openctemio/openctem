@@ -1483,6 +1483,7 @@
   "scans.profiles.empty": "No scan profiles",
   "scans.profiles.emptyDesc": "Create a profile to define a reusable pass/fail rule for scan results.",
   "scans.profiles.errorTitle": "scan profiles",
+  "scans.profiles.gate.adminOnly": "Only an owner or admin can change the pass/fail rule.",
   "scans.profiles.gate.enabled": "Enforce a pass/fail rule",
   "scans.profiles.gate.enabledHelp": "When off, results of scans using this profile are never failed.",
   "scans.profiles.gate.failOnCritical": "Fail on any critical finding",
