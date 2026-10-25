@@ -168,6 +168,7 @@ ci-release:
   - .github/actions/**
   - .github/scripts/**
   - .github/security-paths.yml
+  - .github/quarantine.yml
   - .github/CODEOWNERS
   - .githooks/**
   - api/scripts/release-branch.sh
