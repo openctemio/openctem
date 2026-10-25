@@ -1,5 +1,7 @@
 {
   "integrationsHub.badge.soon": "Soon",
+  "integrationsHub.categories.import-mappings.description": "Turn CSV, JSON or XML exports into findings and assets",
+  "integrationsHub.categories.import-mappings.title": "Import mappings",
   "integrationsHub.categories.notifications.description": "Slack, Teams, Telegram, and webhook alerts",
   "integrationsHub.categories.notifications.title": "Notification channels",
   "integrationsHub.categories.scm.description": "Connect GitHub, GitLab, Bitbucket, or Azure DevOps",
@@ -37,7 +39,5 @@
   "integrationsHub.status.error": "Error",
   "integrationsHub.status.expired": "Expired",
   "integrationsHub.status.pending": "Pending",
-  "integrationsHub.title": "Integrations",
-  "integrationsHub.categories.import-mappings.title": "Import mappings",
-  "integrationsHub.categories.import-mappings.description": "Turn CSV, JSON or XML exports into findings and assets"
+  "integrationsHub.title": "Integrations"
 }

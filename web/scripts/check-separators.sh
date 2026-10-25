@@ -51,9 +51,10 @@ fi
 
 merge_base="$(git merge-base "$BASE_REF" HEAD)"
 
-# Added lines as "file:text", tests excluded.
+# Added lines as "file:text", tests excluded. A line that the same file also
+# loses is a moved line (the catalogs are re-sorted by key), not a new one.
 added="$(git diff -U0 "$merge_base"...HEAD -- 'src/*.tsx' 'src/*.ts' 'src/lib/i18n/dictionaries/*.json' \
-  | awk '/^\+\+\+ b\//{f=substr($0,7); next} /^\+/{print f ":" substr($0,2)}' \
+  | awk '/^\+\+\+ b\//{f=substr($0,7); next} /^-[^-]/{rm[f SUBSEP substr($0,2)]=1; next} /^\+/{n++; af[n]=f; at[n]=substr($0,2)} END{for(i=1;i<=n;i++) if(!((af[i] SUBSEP at[i]) in rm)) print af[i] ":" at[i]}' \
   | grep -v 'separator-ok:' | grep -v '/__tests__/' | grep -Ev '\.test\.tsx?:' || true)"
 
 if [[ -z "$added" ]]; then
