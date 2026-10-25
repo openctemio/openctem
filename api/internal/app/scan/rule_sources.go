@@ -80,8 +80,8 @@ func (s *Service) applyRuleSourcesAtTrigger(ctx context.Context, sc *scan.Scan) 
 		delete(cfg, "custom_template_ids")
 		sc.ScannerConfig = cfg
 	case rs == scannertemplate.RuleSourcesTenant && len(ids) == 0:
-		return "", shared.NewDomainError(codeRuleSourcesNoTemplates, fmt.Sprintf(
-			"This scan runs only the organization's templates (rule sources: tenant), but it names no custom template. Add templates to the scan or choose another rule source."), shared.ErrValidation)
+		return "", shared.NewDomainError(codeRuleSourcesNoTemplates,
+			"This scan runs only the organization's templates (rule sources: tenant), but it names no custom template. Add templates to the scan or choose another rule source.", shared.ErrValidation)
 	}
 	return rs, nil
 }
