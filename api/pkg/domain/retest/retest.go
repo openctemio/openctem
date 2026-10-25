@@ -91,8 +91,11 @@ const (
 	// finding's endpoint.
 	ReasonMatchedElsewhere ReasonCode = "matched_elsewhere"
 	ReasonTemplateChanged  ReasonCode = "template_changed"
-	ReasonNoResult         ReasonCode = "no_result"
-	ReasonError            ReasonCode = "error"
+	// ReasonSeenAfterCheck: a scan sighted the finding after the check ran,
+	// so the check's no-match cannot show it fixed.
+	ReasonSeenAfterCheck ReasonCode = "seen_after_check"
+	ReasonNoResult       ReasonCode = "no_result"
+	ReasonError          ReasonCode = "error"
 	// ReasonTemplateNotFound: the sensor's template set does not hold the
 	// finding's template.
 	ReasonTemplateNotFound ReasonCode = "template_not_found"
@@ -464,7 +467,7 @@ const StaleFixReason = "the finding was sighted again after the check ran, so th
 
 // StaleFixVerdict is the verdict recorded in place of a confirmed fix that a
 // later sighting overrides.
-func StaleFixVerdict() Verdict { return inconclusive(ReasonTemplateChanged, StaleFixReason) }
+func StaleFixVerdict() Verdict { return inconclusive(ReasonSeenAfterCheck, StaleFixReason) }
 
 // AutoTenant is a tenant with auto-retest on, as the scheduler lists it.
 type AutoTenant struct {

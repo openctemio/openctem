@@ -42,7 +42,7 @@ decides:
 | tool: check excluded by the sensor's safety policy | any | `inconclusive` (`excluded_by_policy`) | unchanged |
 | tool: ended without judging the item | any | `inconclusive` (`no_verdict`) | unchanged |
 
-**A sighting after the check.** A confirmed fix is applied only if no scan sighted the finding (`last_seen_at`) or reopened it after the check command completed; the settlement checks this under the finding's row lock. Otherwise the retest is recorded `inconclusive` (`template_changed`, "the finding was sighted again after the check ran") and the finding does not move.
+**A sighting after the check.** A confirmed fix is applied only if no scan sighted the finding (`last_seen_at`) or reopened it after the check command completed; the settlement checks this under the finding's row lock. Otherwise the retest is recorded `inconclusive` (`seen_after_check`, "the finding was sighted again after the check ran") and the finding does not move.
 
 **Edge answers and access denied.** The platform reads the recorded response
 (status, headers, body) with the edge detector of ctis (`edgeprotect`).
