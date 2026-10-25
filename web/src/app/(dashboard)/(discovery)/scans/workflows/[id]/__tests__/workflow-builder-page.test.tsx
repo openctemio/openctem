@@ -1,9 +1,9 @@
 import { Suspense } from 'react'
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen, waitFor } from '@testing-library/react'
+import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 
-import { get, post } from '@/lib/api/client'
+import { del, get, post } from '@/lib/api/client'
 
 import WorkflowBuilderPage from '../page'
 
@@ -127,5 +127,29 @@ describe('Workflow builder page', () => {
     await open()
     await screen.findByRole('heading', { name: 'Full recon' })
     expect(screen.queryByRole('button', { name: 'Clone' })).toBeNull()
+  })
+
+  it('Publish asks first and posts only after Publish workflow', async () => {
+    mockApi(workflow(), workflow({ version: 4, steps: [] }))
+    vi.mocked(post).mockResolvedValue({ version: 4 })
+    await open()
+    await userEvent.click(await screen.findByRole('button', { name: /^Publish$/ }))
+    const dialog = await screen.findByRole('alertdialog')
+    expect(dialog).toHaveTextContent('Publish the draft of "Full recon"?')
+    expect(vi.mocked(post)).not.toHaveBeenCalled()
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Publish draft' }))
+    await waitFor(() =>
+      expect(vi.mocked(post).mock.calls.some((c) => String(c[0]).endsWith('/publish'))).toBe(true)
+    )
+  })
+
+  it('Discard draft asks first; Cancel keeps it', async () => {
+    mockApi(workflow(), workflow({ version: 4, steps: [] }))
+    await open()
+    await userEvent.click(await screen.findByRole('button', { name: /Discard draft/ }))
+    const dialog = await screen.findByRole('alertdialog')
+    expect(dialog).toHaveTextContent('Discard the draft of "Full recon"?')
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Cancel' }))
+    expect(vi.mocked(del)).not.toHaveBeenCalled()
   })
 })
