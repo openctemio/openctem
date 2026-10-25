@@ -13,7 +13,7 @@ import {
   Settings,
 } from 'lucide-react'
 import { toast } from 'sonner'
-import { safeText } from '@/lib/api/error-message'
+import { connectionProblem } from '@/features/integrations/lib/connection-status'
 
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -89,12 +89,13 @@ export function SCMConnectionCard({
         toast.success(`Connection "${connection.name}" validated successfully`)
       } else if (result && result.status === 'error') {
         toast.error(
-          safeText(
-            result.status_message,
+          connectionProblem(
+            result,
+            t,
             t('scmIntegration.toast.testFailedNamed', 'Could not connect to {name}.', {
               name: connection.name,
             })
-          )
+          ).message
         )
       } else {
         toast.warning(`Connection "${connection.name}" status: ${result?.status || 'unknown'}`)
@@ -204,9 +205,23 @@ export function SCMConnectionCard({
                   <TooltipTrigger asChild>
                     <IntegrationHealth status={connection.status} />
                   </TooltipTrigger>
-                  {connection.status_message && connection.status === 'error' && (
+                  {connection.status === 'error' && (
                     <TooltipContent className="max-w-xs">
-                      <p>{connection.status_message}</p>
+                      <p>
+                        {
+                          connectionProblem(
+                            connection,
+                            t,
+                            t(
+                              'scmIntegration.toast.testFailedNamed',
+                              'Could not connect to {name}.',
+                              {
+                                name: connection.name,
+                              }
+                            )
+                          ).message
+                        }
+                      </p>
                     </TooltipContent>
                   )}
                 </Tooltip>

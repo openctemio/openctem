@@ -69,7 +69,7 @@ import {
 import { Input } from '@/components/ui/input'
 import { cn } from '@/lib/utils'
 import { SEVERITY_DOT_COLORS } from '@/lib/severity-colors'
-import { ACTIONABLE_SEVERITIES, SEVERITY_LEVELS, type SeverityLevel } from '@/lib/severity'
+import { SEVERITY_LEVELS, type SeverityLevel } from '@/lib/severity'
 import { useSeverityLabel } from '@/hooks/use-scale-labels'
 import { useTranslation } from '@/context/i18n-provider'
 import { Button } from '@/components/ui/button'
@@ -98,12 +98,17 @@ import {
 } from '@/features/findings/api/use-quick-views'
 import {
   QUICK_VIEW_LABELS,
+  INFORMATIONAL_PARAM,
+  defaultHidesInformational,
+  informationalHidden,
   knownQuickViews,
   quickViewHref,
   quickViewIsActive,
+  withInformational,
   quickViewLabelKey,
   type QuickViewKey,
 } from '@/features/findings/lib/quick-views'
+import { InformationalChip } from '@/features/findings/components/informational-chip'
 import {
   startSession as startTriageSession,
   triageHref,
@@ -116,6 +121,7 @@ import {
 } from '@/features/findings/filters/filter-bar'
 import {
   CONTEXT_FILTER_PARAMS,
+  FILTER_BAR_SKIP_PARAMS,
   OWNED_FILTER_PARAMS,
   useFindingFilterContract,
   withOwnedFields,
@@ -390,8 +396,6 @@ const GROUP_BY_LABEL_KEYS: Record<GroupByDimension, string> = {
   family: 'findings.groupBy.family',
 }
 const FILTERS_OPEN_KEY = 'openctem:findings-filters-open'
-/** Saved per browser: hide informational findings when no severity is picked. */
-const HIDE_INFO_KEY = 'openctem:findings-hide-info'
 // The status filter groups the one registry by category; every status appears
 // once. Pentest pre-publication states get their own group (hidden by default).
 const PRE_PUBLICATION: readonly string[] = FINDINGS_LIST_HIDDEN_STATUSES
@@ -699,27 +703,26 @@ function FindingsContent() {
   }, [])
   const { t, locale } = useTranslation()
   const severityLabel = useSeverityLabel()
-  // "Hide informational": a saved per-browser view preference. It applies only
-  // while no severity is picked; an explicit severity choice always wins.
-  const [hideInfo, setHideInfoState] = useState(false)
-  useEffect(() => {
-    try {
-      if (window.localStorage.getItem(HIDE_INFO_KEY) === '1') setHideInfoState(true)
-    } catch {
-      // storage unavailable — show everything
-    }
-  }, [])
-  const setHideInfo = useCallback((value: boolean) => {
-    setHideInfoState(value)
-    try {
-      window.localStorage.setItem(HIDE_INFO_KEY, value ? '1' : '0')
-    } catch {
-      // best-effort
-    }
-  }, [])
-  const effectiveSeverities = useMemo<FacetSeverity[]>(
-    () => (severities.length > 0 ? severities : hideInfo ? [...ACTIONABLE_SEVERITIES] : []),
-    [severities, hideInfo]
+  // The sidebar's quick views with their counts; they also say whether this
+  // person's work views show informational findings.
+  const { data: quickViewData } = useFindingQuickViews(urlSettled)
+  // Informational findings (info and none): the work views leave them out
+  // unless the person's preference or the organization's default includes
+  // them, the URL's `informational` overrides that for this view, and an
+  // explicit severity always wins (api/docs/architecture/findings-work-views.md).
+  const includeInformational = quickViewData?.include_informational ?? false
+  const hideInfo = !savedId && informationalHidden(searchParams, includeInformational)
+  const informationalShownForView =
+    !savedId &&
+    !hideInfo &&
+    searchParams.get(INFORMATIONAL_PARAM) === 'true' &&
+    defaultHidesInformational(searchParams, includeInformational)
+  const setHideInfo = useCallback(
+    (value: boolean) =>
+      replaceUrlSearch(
+        withInformational(new URLSearchParams(window.location.search), value, includeInformational)
+      ),
+    [includeInformational]
   )
   const [filterSheetOpen, setFilterSheetOpen] = useState(false)
   const [markFixedGroup, setMarkFixedGroup] = useState<FindingGroup | null>(null)
@@ -804,7 +807,12 @@ function FindingsContent() {
   // while it differs from what the open view (or the list's default) shows,
   // and the saved view stores them.
   const plainActive =
-    !savedId && quickViewIsActive(searchParams, { key: 'active', count: 0, params: 'state=open' })
+    !savedId &&
+    quickViewIsActive(withInformational(searchParams, true, false), {
+      key: 'active',
+      count: 0,
+      params: 'state=open',
+    })
   const viewColumns = openView?.columns
   const baselineColumns = useMemo(
     () =>
@@ -899,7 +907,8 @@ function FindingsContent() {
     groupParam,
     viewParam,
     lens,
-    effectiveSeverities.join(),
+    severities.join(),
+    hideInfo,
     statuses.join(),
     sourceFilter.join(),
     priorityClasses.join(),
@@ -956,7 +965,8 @@ function FindingsContent() {
     if (ownerUnassigned) filters.asset_owner_unassigned = true
     if (assetGroupParam) filters.asset_group_id = assetGroupParam
     if (crownJewelActive) filters.asset_crown_jewel = true
-    if (effectiveSeverities.length > 0) filters.severities = effectiveSeverities
+    if (severities.length > 0) filters.severities = severities
+    if (hideInfo) filters.informational = false
     if (savedId) filters.view = savedId
     if (!savedId || rawLens) filters.state = lens
     if (statuses.length > 0) {
@@ -998,7 +1008,8 @@ function FindingsContent() {
     ownerUnassigned,
     assetGroupParam,
     crownJewelActive,
-    effectiveSeverities,
+    severities,
+    hideInfo,
     statuses,
     sourceFilter,
     priorityClasses,
@@ -1059,7 +1070,6 @@ function FindingsContent() {
   } = useFindingStatsApi(overviewStatsFilters, { enabled: urlSettled, keepPreviousData: true })
   const statsFailed = !findingStats && !statsLoading
   // A change moves findings between views: the sidebar counts reload with the stats.
-  const { data: quickViewData } = useFindingQuickViews(urlSettled)
   const mutateStats = useCallback(
     () => Promise.all([mutateOverviewStats(), refreshFindingQuickViews()]),
     [mutateOverviewStats]
@@ -1795,7 +1805,7 @@ function FindingsContent() {
         label={t('findings.hideInformational', 'Hide informational')}
         description={t(
           'findings.hideInformational.hint',
-          'Hide info findings from the list. Saved on this browser.'
+          'Leave out info findings. The work views hide them by default; change it under Account, Preferences.'
         )}
         checked={hideInfo}
         onCheckedChange={setHideInfo}
@@ -1917,7 +1927,7 @@ function FindingsContent() {
   // The view this list is: a built-in quick view when the URL is exactly one,
   // a saved view, or a custom combination of filters.
   const activeQuickView = knownQuickViews(quickViewData?.views).find((v) =>
-    quickViewIsActive(searchParams, v)
+    quickViewIsActive(searchParams, v, includeInformational)
   )
   const viewTitle = activeQuickView
     ? t(
@@ -2165,10 +2175,29 @@ function FindingsContent() {
       pickerContract={loadedContract}
       contractLoading={contractLoading}
       contractFailed={!!contractError}
-      skip={CONTEXT_FILTER_PARAMS}
+      skip={FILTER_BAR_SKIP_PARAMS}
       viewFilter={openView?.filter}
       canReadAssets={hasPermission(Permission.AssetsRead)}
-      leading={contextChips}
+      leading={
+        <>
+          {contextChips}
+          <InformationalChip
+            filters={apiFilters}
+            hidden={hideInfo}
+            shownForView={informationalShownForView}
+            knownCount={
+              // Wait for the quick views: on a quick view they carry the count,
+              // so the default load sends no extra request.
+              !quickViewData
+                ? null
+                : debouncedSearch.trim()
+                  ? undefined
+                  : activeQuickView?.informational_hidden
+            }
+            onChange={setHideInfo}
+          />
+        </>
+      }
       onPickerOpenChange={setPickerOpen}
       onSearchChange={replaceUrlSearch}
     />

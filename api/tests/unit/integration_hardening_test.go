@@ -53,9 +53,9 @@ func TestIntegration_DisabledStaysDisabled(t *testing.T) {
 	if i.Status() != integration.StatusDisabled {
 		t.Fatalf("SetConnected re-enabled a disabled integration: %s", i.Status())
 	}
-	i.SetError("boom")
+	i.SetFailure("INTEGRATION_TEST_FAILED", "boom")
 	if i.Status() != integration.StatusDisabled || i.StatusMessage() != "boom" {
-		t.Fatalf("SetError: status %s message %q", i.Status(), i.StatusMessage())
+		t.Fatalf("SetFailure: status %s message %q", i.Status(), i.StatusMessage())
 	}
 	i.SetStatus(integration.StatusPending)
 	i.SetConnected()

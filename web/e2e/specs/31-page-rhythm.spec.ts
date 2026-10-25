@@ -72,11 +72,7 @@ const EXCEPTIONS: Record<string, string> = {
  * full-width editor): the block rhythm is not checked there, every other rule
  * is. Their text layout is covered by 30-drawer-text-layout.
  */
-const OWN_LAYOUT = [
-  /^\/findings\/(?!approvals$)[^/]+$/,
-  /^\/remediation\/campaigns\/[^/]+$/,
-  /^\/pentest\/findings\/new$/,
-]
+const OWN_LAYOUT = [/^\/findings\/(?!approvals$)[^/]+$/, /^\/remediation\/campaigns\/[^/]+$/]
 
 const PAGE_GAP = 20
 const TIGHT_GAP = 16

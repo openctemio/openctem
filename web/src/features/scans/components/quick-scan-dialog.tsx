@@ -37,7 +37,7 @@ import type { QuickScanResponse } from '@/lib/api/scan-workflow-types'
 import { invalidateScanConfigsCache, useSaveQuickScan } from '@/lib/api/scan-hooks'
 import { ScannerSelect } from './scanner-select'
 import { PasteSource } from './target-picker/paste-source'
-import { SelectionSummary } from './target-picker/selection-summary'
+import { SelectionSummary, type ScanReadiness } from './target-picker/selection-summary'
 import { QuickScanPreviewPanel } from './quick-scan-preview'
 import { parsePastedTargets } from '../lib/target-format'
 import { enTranslate, type Translate } from '../lib/translate'
@@ -85,6 +85,7 @@ export function QuickScanDialog({ open, onOpenChange, onSuccess }: QuickScanDial
   const [scannerName, setScannerName] = useState('')
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [refused, setRefused] = useState<ScopeRefusal[]>([])
+  const [readiness, setReadiness] = useState<ScanReadiness | null>(null)
   const [started, setStarted] = useState<QuickScanResponse | null>(null)
   const [saveName, setSaveName] = useState('')
   const [savedName, setSavedName] = useState<string | null>(null)
@@ -243,6 +244,7 @@ export function QuickScanDialog({ open, onOpenChange, onSuccess }: QuickScanDial
                   groupCount={0}
                   invalidCount={pasted.invalid.length}
                   scannerName={scannerName}
+                  onReadinessChange={setReadiness}
                   review={
                     <QuickScanPreviewPanel
                       targets={targetList}
@@ -267,7 +269,8 @@ export function QuickScanDialog({ open, onOpenChange, onSuccess }: QuickScanDial
                   isSubmitting ||
                   targetList.length === 0 ||
                   pasted.invalid.length > 0 ||
-                  !scannerName
+                  !scannerName ||
+                  readiness?.state === 'blocked'
                 }
               >
                 {isSubmitting ? (
