@@ -61,7 +61,9 @@ Each pass, per tenant, after reconciling:
    rechecked after 1 day, then 3 days, then 7 days and weekly from then on
    (consecutive target-side observations; jittered). The recheck runs the
    capability again; any success makes the pair covered and clears the
-   streak. A paused target-side pair never counts as "keeps failing".
+   streak. A paused target-side pair never counts as "keeps failing", but it
+   still applies: once it has had no success for twice the cadence it is a
+   gap, so a host that went dark shows in the gaps and their alert.
 2. **Plan**, when the organization has automatic coverage on (Scoping >
    Settings, `auto_coverage`; default on, except while the scan approval
    mode in force is Strict, until the organization turns it on): for
