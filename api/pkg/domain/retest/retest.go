@@ -246,7 +246,7 @@ func Decide(check, reach CheckResult, matchedAt string, cls ...Class) Verdict {
 	case checkDetected, checkNotDetected:
 		// A check that probes several paths reports each request: the
 		// finding's own endpoint decides, not whichever exchange came first.
-		if v, ok := DecideByRequests(check.Requests, matchedAt, firstClass(cls)); ok {
+		if v, ok := DecideByRequests(check.Requests, matchedAt, check.Evidence, firstClass(cls)); ok {
 			return v
 		}
 	}
