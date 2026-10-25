@@ -39,7 +39,7 @@ decides:
 | tool: ended without judging the item | any | `inconclusive` (`no_verdict`) | unchanged |
 
 **Edge answers and access denied.** The platform reads the recorded response
-(status, headers, body) with the edge detector of sdk-go (`pkg/edgeprotect`).
+(status, headers, body) with the edge detector of ctis (`edgeprotect`).
 A challenge or block page of a CDN or WAF says nothing about the service, so
 it is `edge_blocked` (the message names the vendor and asks to allow the
 scanner at the edge, see the edge-protection guidance) and is never a fix. A
