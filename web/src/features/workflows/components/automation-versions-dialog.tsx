@@ -5,6 +5,7 @@ import { RotateCcw } from 'lucide-react'
 import { toast } from 'sonner'
 
 import { useTranslation } from '@/context/i18n-provider'
+import { MetaLine } from '@/features/shared/components/text-layout'
 import { ConfirmDialog } from '@/components/confirm-dialog'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -117,20 +118,23 @@ export function AutomationVersionsDialog({
                         risk: labels.risk(v.risk_class),
                       })}
                     </span>
-                    <span className="w-full text-xs text-muted-foreground sm:w-auto sm:flex-1">
-                      {v.published_at
-                        ? t('automations.version.publishedBy', 'published by {who} on {date}', {
-                            who: person(v.published_by, v.published_by_name),
-                            date: formatDay(v.published_at, locale),
-                          })
-                        : t('automations.version.createdOn', 'created on {date}', {
-                            date: formatDay(v.created_at, locale),
-                          })}
-                      {v.approved_by &&
-                        ` · ${t('automations.version.approvedBy', 'approved by {who}', {
-                          who: person(v.approved_by, v.approved_by_name),
-                        })}`}
-                    </span>
+                    <MetaLine
+                      className="w-full sm:w-auto sm:flex-1"
+                      items={[
+                        v.published_at
+                          ? t('automations.version.publishedBy', 'published by {who} on {date}', {
+                              who: person(v.published_by, v.published_by_name),
+                              date: formatDay(v.published_at, locale),
+                            })
+                          : t('automations.version.createdOn', 'created on {date}', {
+                              date: formatDay(v.created_at, locale),
+                            }),
+                        v.approved_by &&
+                          t('automations.version.approvedBy', 'approved by {who}', {
+                            who: person(v.approved_by, v.approved_by_name),
+                          }),
+                      ]}
+                    />
                     {v.status === 'superseded' && (
                       <Button
                         size="sm"
