@@ -13,7 +13,7 @@
  * when only some can be scanned it says the rest are left out.
  */
 
-import { useEffect, useState, type ReactNode } from 'react'
+import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import { useTranslation } from '@/context/i18n-provider'
 import {
   AlertTriangle,
@@ -142,13 +142,19 @@ export function SelectionSummary({
   const over = targets.length > MAX_DIRECT_TARGETS
   const empty = targets.length === 0 && groupCount === 0
 
-  const readiness = check.available ? scanReadiness(targets, check.resultFor, groupCount) : UNKNOWN
-  const readinessKey = `${readiness.state}:${readiness.scannable}:${readiness.refused}:${readiness.unresolved.join(',')}`
+  // Keyed on the target text, not the array: callers may pass a new array on
+  // every render, and the dialog is told only when the answer changes.
+  const targetsKey = targets.join('\n')
+  const readiness = useMemo(
+    () =>
+      check.available
+        ? scanReadiness(targetsKey ? targetsKey.split('\n') : [], check.resultFor, groupCount)
+        : UNKNOWN,
+    [check.available, check.resultFor, targetsKey, groupCount]
+  )
   useEffect(() => {
     onReadinessChange?.(readiness)
-    // Told once per change of the answer, not on every render.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [readinessKey, onReadinessChange])
+  }, [readiness, onReadinessChange])
 
   const recheckDns = async () => {
     setRechecking(true)
