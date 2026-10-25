@@ -64,9 +64,9 @@ for (const width of [1440, 390]) {
     await expect(command).not.toContainText('SENSOR_API_KEY')
     await expect(panel.getByTestId('onboarding-status')).toContainText('Waiting for the sensor')
 
-    await panel.getByRole('tab', { name: 'Linux service' }).click()
+    await panel.getByRole('radio', { name: 'Linux service' }).click()
     await expect(command).toContainText('systemctl enable --now openctem-sensor')
-    await panel.getByRole('tab', { name: 'Kubernetes' }).click()
+    await panel.getByRole('radio', { name: 'Kubernetes' }).click()
     await expect(command).toContainText('kind: Deployment')
 
     const sideways = await page.evaluate(
@@ -85,5 +85,5 @@ test('pair interactively: the command has no code and the code entry follows', a
   const command = panel.locator('pre[data-format]').first()
   await expect(command).toContainText('docker run', { timeout: 15_000 })
   await expect(command).not.toContainText('SENSOR_PAIRING_CODE')
-  await expect(panel.getByLabel('Pairing code')).toBeVisible()
+  await expect(panel.getByRole('textbox', { name: 'Pairing code' })).toBeVisible()
 })

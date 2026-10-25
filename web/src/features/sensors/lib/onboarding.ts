@@ -87,7 +87,7 @@ export interface TroubleshootingItem {
 export const TROUBLESHOOTING: TroubleshootingItem[] = [
   {
     key: 'noCode',
-    lines: ['Pair this sensor in OpenCTEM'],
+    lines: ['Pair this sensor in'],
   },
   {
     key: 'expired',

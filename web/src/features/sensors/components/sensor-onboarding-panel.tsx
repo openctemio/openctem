@@ -23,7 +23,6 @@ import { Button } from '@/components/ui/button'
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group'
 import { Skeleton } from '@/components/ui/skeleton'
-import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { useTranslation } from '@/context/i18n-provider'
 import { useNow } from '@/hooks/use-now'
 import { useSensor } from '@/lib/api/sensor-hooks'
@@ -83,15 +82,26 @@ export function SensorOnboardingPanel({
   return (
     <div className={cn('space-y-6', className)} data-testid="sensor-onboarding">
       <PanelStep n={1} id={ids.where} title={t('sensors.onboard.where.title')}>
-        <Tabs value={platform} onValueChange={(v) => setPlatform(v as OnboardingPlatform)}>
-          <TabsList aria-labelledby={ids.where}>
-            {ONBOARDING_PLATFORMS.map((p) => (
-              <TabsTrigger key={p.key} value={p.key}>
-                {t(p.labelKey)}
-              </TabsTrigger>
-            ))}
-          </TabsList>
-        </Tabs>
+        <RadioGroup
+          value={platform}
+          onValueChange={(v) => setPlatform(v as OnboardingPlatform)}
+          aria-labelledby={ids.where}
+          className="grid grid-cols-2 gap-2 sm:grid-cols-4"
+        >
+          {ONBOARDING_PLATFORMS.map((p) => (
+            <label
+              key={p.key}
+              htmlFor={`${ids.where}-${p.key}`}
+              className={cn(
+                'flex cursor-pointer items-center gap-2 rounded-lg border px-3 py-2 text-sm font-medium transition-colors',
+                platform === p.key ? 'border-primary bg-primary/5' : 'hover:bg-muted/40'
+              )}
+            >
+              <RadioGroupItem id={`${ids.where}-${p.key}`} value={p.key} />
+              {t(p.labelKey)}
+            </label>
+          ))}
+        </RadioGroup>
       </PanelStep>
 
       <PanelStep n={2} id={ids.how} title={t('sensors.onboard.how.title')}>
