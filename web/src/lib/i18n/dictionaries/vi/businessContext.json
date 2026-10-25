@@ -48,7 +48,7 @@
   "businessContext.services.metric.pii": "Xử lý PII",
   "businessContext.services.metric.total": "Dịch vụ",
   "businessContext.services.new": "Thêm dịch vụ",
-  "businessContext.services.search.placeholder": "Tìm dịch vụ...",
+  "businessContext.services.search.placeholder": "Tìm dịch vụ…",
   "businessContext.services.sheet.meta": "Các tài sản mà dịch vụ này chạy trên đó. Chu kỳ có phạm vi là dịch vụ sẽ bao gồm chúng.",
   "businessContext.services.title": "Dịch vụ kinh doanh",
   "businessContext.services.toast.created": "Đã tạo dịch vụ kinh doanh.",

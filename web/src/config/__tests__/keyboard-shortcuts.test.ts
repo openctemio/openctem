@@ -50,6 +50,14 @@ const HANDLERS: Record<string, [string, RegExp]> = {
     'features/findings/filters/add-filter-popover.tsx',
     /e\.key !== 'f' \|\| e\.metaKey \|\| e\.ctrlKey \|\| e\.altKey/,
   ],
+  'focus-search': [
+    'features/shared/components/list-toolbar.tsx',
+    /e\.key !== '\/' && e\.key !== 'f'[\s\S]*if \(e\.key === '\/'\)[\s\S]*input\.focus\(\)/,
+  ],
+  'open-filters': [
+    'features/shared/components/list-toolbar.tsx',
+    /aria-keyshortcuts="f"\]:not[\s\S]*trigger\.click\(\)/,
+  ],
   'clear-selection': [
     'features/shared/components/bulk-action-bar.tsx',
     /e\.key === 'Escape' && !e\.defaultPrevented\) onClear\(\)/,

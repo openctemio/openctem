@@ -52,7 +52,7 @@
   "auditLog.result.failure": "Failure",
   "auditLog.result.success": "Success",
   "auditLog.search.label": "Search audit log",
-  "auditLog.search.placeholder": "Search by actor, action, resource...",
+  "auditLog.search.placeholder": "Search by actor, action, resource…",
   "auditLog.severity.unknown": "Unknown",
   "auditLog.stat.denied": "Denied",
   "auditLog.stat.failed": "Failed",

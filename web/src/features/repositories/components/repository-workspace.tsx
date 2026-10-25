@@ -25,6 +25,7 @@ import {
   EmptyState,
   DangerZone,
   DangerZoneItem,
+  ListToolbar,
 } from '@/features/shared'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -66,7 +67,6 @@ import { toast } from 'sonner'
 import {
   ArrowLeft,
   GitBranch,
-  Search as SearchIcon,
   MoreHorizontal,
   Eye,
   Trash2,
@@ -1409,6 +1409,7 @@ function FindingsTab({
   branches: BranchDetail[]
   branchFromUrl?: string
 }) {
+  const { t } = useTranslation()
   const router = useRouter()
   const searchParams = useSearchParams()
 
@@ -1518,105 +1519,107 @@ function FindingsTab({
                 {total}
               </Badge>
             </CardTitle>
-            <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar">
-              <div className="relative min-w-[140px]">
-                <SearchIcon className="absolute left-2 top-[7px] h-3.5 w-3.5 text-muted-foreground" />
-                <Input
-                  placeholder="Search..."
-                  value={searchInput}
-                  onChange={(e) => setSearchInput(e.target.value)}
-                  className="ps-7 h-7 text-xs w-[140px]"
-                />
-              </div>
-              <Select
-                value={severityFilter}
-                onValueChange={(v) => handleFilterChange(setSeverityFilter, 'severity', v)}
-              >
-                <SelectTrigger className="w-[110px] h-7 text-xs">
-                  <SelectValue placeholder="Severity" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All Severities</SelectItem>
-                  {SEVERITY_LEVELS.map((s) => (
-                    <SelectItem key={s} value={s}>
-                      {SEVERITY_LABELS[s]}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              <Select
-                value={statusFilter}
-                onValueChange={(v) => handleFilterChange(setStatusFilter, 'status', v)}
-              >
-                <SelectTrigger className="w-[110px] h-7 text-xs">
-                  <SelectValue placeholder="Status" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All Statuses</SelectItem>
-                  <SelectItem value="new">New</SelectItem>
-                  <SelectItem value="confirmed">Confirmed</SelectItem>
-                  <SelectItem value="in_progress">In Progress</SelectItem>
-                  <SelectItem value="fix_applied">Fix Applied</SelectItem>
-                  <SelectItem value="resolved">Resolved</SelectItem>
-                  <SelectItem value="false_positive">False Positive</SelectItem>
-                </SelectContent>
-              </Select>
-              <Select
-                value={scannerFilter}
-                onValueChange={(v) => handleFilterChange(setScannerFilter, 'scanner', v)}
-              >
-                <SelectTrigger className="w-[120px] h-8 text-xs">
-                  <SelectValue placeholder="Scanner" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All Scanners</SelectItem>
-                  <SelectItem value="sast">SAST</SelectItem>
-                  <SelectItem value="sca">SCA</SelectItem>
-                  <SelectItem value="secret">Secret</SelectItem>
-                  <SelectItem value="iac">IaC</SelectItem>
-                  <SelectItem value="container">Container</SelectItem>
-                </SelectContent>
-              </Select>
-              {branches.length > 0 && (
+          </div>
+          <ListToolbar
+            className="mt-3"
+            search={{
+              value: searchInput,
+              onChange: setSearchInput,
+              placeholder: t('assets.repository.findingsSearch.placeholder', 'Search findings…'),
+              label: t('assets.repository.findingsSearch.label', 'Search findings'),
+            }}
+            start={
+              <>
                 <Select
-                  value={branchFilter}
-                  onValueChange={(v) => handleFilterChange(setBranchFilter, 'branch', v)}
+                  value={severityFilter}
+                  onValueChange={(v) => handleFilterChange(setSeverityFilter, 'severity', v)}
                 >
-                  <SelectTrigger className="w-[160px] h-8 text-xs">
-                    <SelectValue placeholder="Branch" />
+                  <SelectTrigger className="w-[110px] h-9 text-xs">
+                    <SelectValue placeholder="Severity" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="all">All Branches</SelectItem>
-                    {branches.map((b) => (
-                      <SelectItem key={b.id} value={b.name}>
-                        <span className="flex items-center gap-1">
-                          <GitBranch className="h-3 w-3" />
-                          {b.name}
-                        </span>
+                    <SelectItem value="all">All Severities</SelectItem>
+                    {SEVERITY_LEVELS.map((s) => (
+                      <SelectItem key={s} value={s}>
+                        {SEVERITY_LABELS[s]}
                       </SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
-              )}
-              {branchFilter !== 'all' && (
                 <Select
-                  value={branchStatusFilter}
-                  onValueChange={(v) =>
-                    handleFilterChange(setBranchStatusFilter, 'branch_status', v)
-                  }
+                  value={statusFilter}
+                  onValueChange={(v) => handleFilterChange(setStatusFilter, 'status', v)}
                 >
-                  <SelectTrigger className="w-[130px] h-8 text-xs">
-                    <SelectValue placeholder="On branch" />
+                  <SelectTrigger className="w-[110px] h-9 text-xs">
+                    <SelectValue placeholder="Status" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="all">All on branch</SelectItem>
-                    <SelectItem value="open">Open on branch</SelectItem>
-                    <SelectItem value="fixed">Fixed on branch</SelectItem>
+                    <SelectItem value="all">All Statuses</SelectItem>
+                    <SelectItem value="new">New</SelectItem>
+                    <SelectItem value="confirmed">Confirmed</SelectItem>
+                    <SelectItem value="in_progress">In Progress</SelectItem>
+                    <SelectItem value="fix_applied">Fix Applied</SelectItem>
+                    <SelectItem value="resolved">Resolved</SelectItem>
+                    <SelectItem value="false_positive">False Positive</SelectItem>
                   </SelectContent>
                 </Select>
-              )}
-            </div>
-          </div>
+                <Select
+                  value={scannerFilter}
+                  onValueChange={(v) => handleFilterChange(setScannerFilter, 'scanner', v)}
+                >
+                  <SelectTrigger className="w-[120px] h-9 text-xs">
+                    <SelectValue placeholder="Scanner" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All Scanners</SelectItem>
+                    <SelectItem value="sast">SAST</SelectItem>
+                    <SelectItem value="sca">SCA</SelectItem>
+                    <SelectItem value="secret">Secret</SelectItem>
+                    <SelectItem value="iac">IaC</SelectItem>
+                    <SelectItem value="container">Container</SelectItem>
+                  </SelectContent>
+                </Select>
+                {branches.length > 0 && (
+                  <Select
+                    value={branchFilter}
+                    onValueChange={(v) => handleFilterChange(setBranchFilter, 'branch', v)}
+                  >
+                    <SelectTrigger className="w-[160px] h-9 text-xs">
+                      <SelectValue placeholder="Branch" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All Branches</SelectItem>
+                      {branches.map((b) => (
+                        <SelectItem key={b.id} value={b.name}>
+                          <span className="flex items-center gap-1">
+                            <GitBranch className="h-3 w-3" />
+                            {b.name}
+                          </span>
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                )}
+                {branchFilter !== 'all' && (
+                  <Select
+                    value={branchStatusFilter}
+                    onValueChange={(v) =>
+                      handleFilterChange(setBranchStatusFilter, 'branch_status', v)
+                    }
+                  >
+                    <SelectTrigger className="w-[130px] h-9 text-xs">
+                      <SelectValue placeholder="On branch" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All on branch</SelectItem>
+                      <SelectItem value="open">Open on branch</SelectItem>
+                      <SelectItem value="fixed">Fixed on branch</SelectItem>
+                    </SelectContent>
+                  </Select>
+                )}
+              </>
+            }
+          />
         </CardHeader>
         <CardContent>
           <div className="space-y-3">

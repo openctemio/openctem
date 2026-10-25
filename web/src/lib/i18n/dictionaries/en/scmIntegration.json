@@ -19,7 +19,7 @@
   "scmIntegration.page.noMatch": "No connections match your search",
   "scmIntegration.page.refresh": "Refresh",
   "scmIntegration.page.repositories": "Repositories",
-  "scmIntegration.page.searchPlaceholder": "Search connections...",
+  "scmIntegration.page.searchPlaceholder": "Search connections…",
   "scmIntegration.page.title": "SCM connections",
   "scmIntegration.repoCount": "{count} repos",
   "scmIntegration.status.connected": "Connected",

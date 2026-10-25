@@ -6,7 +6,7 @@ import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
+import { ResponsivePopover } from '@/features/shared/components/responsive-popover'
 import {
   Command,
   CommandEmpty,
@@ -134,8 +134,12 @@ export function AddFilterPopover({
   )
 
   return (
-    <Popover open={open} onOpenChange={setOpen}>
-      <PopoverTrigger asChild>
+    <ResponsivePopover
+      open={open}
+      onOpenChange={setOpen}
+      title={t('findings.filter.add', 'Add filter')}
+      className="w-80"
+      trigger={
         <Button
           variant="outline"
           size="sm"
@@ -145,74 +149,69 @@ export function AddFilterPopover({
           <Plus className="size-3" aria-hidden />
           {t('findings.filter.add', 'Add filter')}
           <kbd
-            className="ms-1 rounded border px-1 font-sans text-[10px] text-muted-foreground"
+            className="ms-1 hidden rounded border px-1 font-sans text-xs text-muted-foreground md:inline"
             aria-hidden
           >
             f
           </kbd>
         </Button>
-      </PopoverTrigger>
-      <PopoverContent
-        align="start"
-        className="w-80 p-0"
-        aria-label={t('findings.filter.add', 'Add filter')}
-      >
-        {picked ? (
-          <FieldEditor
-            key={picked.name}
-            field={picked}
-            labels={labels}
-            onBack={() => setPicked(null)}
-            onApply={(op, values) => {
-              onApply(picked, op, values)
-              setOpen(false)
-            }}
-          />
-        ) : (
-          <Command>
-            <CommandInput placeholder={t('findings.filter.searchFields', 'Search fields…')} />
-            <CommandList>
-              {contractLoading && !contract && (
-                <p className="px-3 py-4 text-sm text-muted-foreground" role="status">
-                  {t('findings.filter.loading', 'Loading filters…')}
-                </p>
-              )}
-              {contractFailed && !contract && (
-                <p className="px-3 py-4 text-sm text-destructive" role="alert">
-                  {t('findings.filter.loadFailed', 'The filters could not be loaded.')}
-                </p>
-              )}
-              {contract && (
-                <CommandEmpty>{t('findings.filter.noField', 'No matching field')}</CommandEmpty>
-              )}
-              {groups.map(({ group, fields }) => (
-                <CommandGroup key={group} heading={t(...GROUP_LABELS[group])}>
-                  {fields.map((f) => {
-                    const label = labels.fieldLabel(f.name)
-                    const locked = lockedFields?.has(f.name) ?? false
-                    return (
-                      <CommandItem
-                        key={f.name}
-                        value={`${label} ${f.name}`}
-                        disabled={locked}
-                        onSelect={() => setPicked(f)}
-                      >
-                        {label}
-                        {locked && (
-                          <span className="ms-auto text-xs text-muted-foreground">
-                            {t('findings.filter.setByView', 'Set by the saved view')}
-                          </span>
-                        )}
-                      </CommandItem>
-                    )
-                  })}
-                </CommandGroup>
-              ))}
-            </CommandList>
-          </Command>
-        )}
-      </PopoverContent>
-    </Popover>
+      }
+    >
+      {picked ? (
+        <FieldEditor
+          key={picked.name}
+          field={picked}
+          labels={labels}
+          onBack={() => setPicked(null)}
+          onApply={(op, values) => {
+            onApply(picked, op, values)
+            setOpen(false)
+          }}
+        />
+      ) : (
+        <Command>
+          <CommandInput placeholder={t('findings.filter.searchFields', 'Search fields…')} />
+          <CommandList>
+            {contractLoading && !contract && (
+              <p className="px-3 py-4 text-sm text-muted-foreground" role="status">
+                {t('findings.filter.loading', 'Loading filters…')}
+              </p>
+            )}
+            {contractFailed && !contract && (
+              <p className="px-3 py-4 text-sm text-destructive" role="alert">
+                {t('findings.filter.loadFailed', 'The filters could not be loaded.')}
+              </p>
+            )}
+            {contract && (
+              <CommandEmpty>{t('findings.filter.noField', 'No matching field')}</CommandEmpty>
+            )}
+            {groups.map(({ group, fields }) => (
+              <CommandGroup key={group} heading={t(...GROUP_LABELS[group])}>
+                {fields.map((f) => {
+                  const label = labels.fieldLabel(f.name)
+                  const locked = lockedFields?.has(f.name) ?? false
+                  return (
+                    <CommandItem
+                      key={f.name}
+                      value={`${label} ${f.name}`}
+                      disabled={locked}
+                      onSelect={() => setPicked(f)}
+                    >
+                      {label}
+                      {locked && (
+                        <span className="ms-auto text-xs text-muted-foreground">
+                          {t('findings.filter.setByView', 'Set by the saved view')}
+                        </span>
+                      )}
+                    </CommandItem>
+                  )
+                })}
+              </CommandGroup>
+            ))}
+          </CommandList>
+        </Command>
+      )}
+    </ResponsivePopover>
   )
 }
 

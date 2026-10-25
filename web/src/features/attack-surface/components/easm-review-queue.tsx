@@ -16,13 +16,12 @@ import { useMemo, useState } from 'react'
 import { useUrlFilter } from '@/hooks/use-url-param'
 import Link from '@/components/link'
 import type { ColumnDef } from '@tanstack/react-table'
-import { Ban, Check, Eye, Loader2, Network, Search as SearchIcon } from 'lucide-react'
+import { Ban, Check, Eye, Loader2, Network } from 'lucide-react'
 import { toast } from 'sonner'
 
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
-import { Input } from '@/components/ui/input'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { DataTable, ErrorState, RelativeTime } from '@/features/shared'
 import { useSearchQuery } from '@/hooks/use-search-query'
@@ -494,25 +493,17 @@ export function EASMReviewQueue() {
         onSelectionChange={setSelected}
         resetSelectionKey={`${view}:${search}:${reason}:${pagination.pageIndex}:${resetKey}`}
         showSearch={false}
+        search={{
+          value: searchInput,
+          onChange: (v) => {
+            setSearchInput(v)
+            setPage(1)
+          },
+          placeholder: t('attackSurface.queue.search', 'Search names…'),
+        }}
         isLoading={isLoading}
         toolbarStart={
-          <div className="flex w-full flex-wrap items-center gap-2">
-            <div className="relative w-full max-w-sm">
-              <SearchIcon
-                className="absolute start-2.5 top-2.5 h-4 w-4 text-muted-foreground"
-                aria-hidden
-              />
-              <Input
-                value={searchInput}
-                onChange={(e) => {
-                  setSearchInput(e.target.value)
-                  setPage(1)
-                }}
-                placeholder={t('attackSurface.queue.search', 'Search names')}
-                aria-label={t('attackSurface.queue.search', 'Search names')}
-                className="ps-8"
-              />
-            </div>
+          <>
             {view === 'review' && reasons.length > 0 && (
               <Select
                 value={reason ?? 'all'}
@@ -539,7 +530,7 @@ export function EASMReviewQueue() {
                 </SelectContent>
               </Select>
             )}
-          </div>
+          </>
         }
         emptyMessage={
           view === 'review'

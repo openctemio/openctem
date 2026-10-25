@@ -234,14 +234,14 @@ describe('Findings columns', () => {
     expect(headers()).not.toContain('Source')
   })
 
-  it('hiding a column through the View menu writes it to the URL; back to the default clears it', async () => {
+  it('hiding a column through the Display menu writes it to the URL; back to the default clears it', async () => {
     listState.rows = [row('1')]
     openAt('?status=new&state=all')
     render(<FindingsPage />)
-    await userEvent.click(screen.getByRole('button', { name: /table view/i }))
+    await userEvent.click(screen.getByRole('button', { name: /^display: density/i }))
     await userEvent.click(await screen.findByRole('menuitemcheckbox', { name: 'Severity' }))
     expect(params().get('columns')).toBe('asset,status,slaStatus')
-    await userEvent.click(screen.getByRole('button', { name: /table view/i }))
+    await userEvent.click(screen.getByRole('button', { name: /^display: density/i }))
     await userEvent.click(await screen.findByRole('menuitemcheckbox', { name: 'Severity' }))
     expect(params().has('columns')).toBe(false)
   })
@@ -344,7 +344,7 @@ describe('Findings Triage', () => {
     quickViewsState.views = [{ key: 'needs_triage', count: 3, params: 'status=new' }]
     openAt('')
     render(<FindingsPage />)
-    const search = screen.getByRole('textbox', { name: /search findings/i })
+    const search = screen.getByRole('searchbox', { name: /search findings/i })
     search.focus()
     fireEvent.keyDown(search, { key: 't' })
     expect(routerPush).not.toHaveBeenCalledWith('/findings/triage?status=new')

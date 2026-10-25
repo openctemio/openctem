@@ -3,14 +3,12 @@ import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import { Skeleton } from '@/components/ui/skeleton'
-import { Input } from '@/components/ui/input'
 import {
   Users,
   UserPlus,
   Trash2,
   Crown,
   User,
-  Search,
   ChevronLeft,
   ChevronRight,
   CalendarClock,
@@ -19,6 +17,7 @@ import { DataTableRowActions, EmptyState } from '@/features/shared'
 import { MemberRoleConfig, getInitials, type GroupMember } from '@/features/access-control'
 import { useState, useEffect } from 'react'
 import { daysUntil, formatShortDate } from '@/features/organization/lib/external-access'
+import { ListSearch } from '@/features/shared/components/list-search'
 
 interface MembersTabProps {
   members: GroupMember[]
@@ -82,15 +81,12 @@ export function MembersTab({
         )}
       </div>
 
-      <div className="relative mb-4">
-        <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-        <Input
-          placeholder="Search members..."
-          className="ps-9"
-          value={searchQuery}
-          onChange={(e) => setSearchQuery(e.target.value)}
-        />
-      </div>
+      <ListSearch
+        className="mb-4"
+        value={searchQuery}
+        onChange={setSearchQuery}
+        placeholder={t('org.teamMembers.search', 'Search members…')}
+      />
 
       {isLoading ? (
         <div className="space-y-3">

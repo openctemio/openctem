@@ -14,7 +14,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import type { ColumnDef } from '@tanstack/react-table'
-import { Download, Eye, Pencil, Plus, RefreshCw, Search as SearchIcon, Trash2 } from 'lucide-react'
+import { Download, Eye, Pencil, Plus, RefreshCw, Trash2 } from 'lucide-react'
 import { toast } from 'sonner'
 
 import { Main } from '@/components/layout'
@@ -594,17 +594,7 @@ export default function ExternalSurfacePage() {
     !!qParam || typeParam !== 'all' || riskParam !== 'all' || findingsParam !== 'all'
 
   const toolbarStart = (
-    <div className="flex flex-wrap items-center gap-2">
-      <div className="relative w-full sm:w-64">
-        <SearchIcon className="pointer-events-none absolute start-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-        <Input
-          placeholder={t('attackSurface.external.search', 'Search assets')}
-          aria-label={t('attackSurface.external.search', 'Search assets')}
-          className="h-9 ps-9"
-          value={searchInput}
-          onChange={(e) => setSearchInput(e.target.value)}
-        />
-      </div>
+    <>
       <Select
         value={typeParam}
         onValueChange={(v) => {
@@ -649,7 +639,7 @@ export default function ExternalSurfacePage() {
           ))}
         </SelectContent>
       </Select>
-    </div>
+    </>
   )
 
   const toolbarEnd = (
@@ -796,6 +786,11 @@ export default function ExternalSurfacePage() {
               data={assets}
               getRowId={(a) => a.id}
               showSearch={false}
+              search={{
+                value: searchInput,
+                onChange: setSearchInput,
+                placeholder: t('attackSurface.external.search', 'Search assets…'),
+              }}
               showColumnToggle={false}
               toolbarStart={toolbarStart}
               toolbarEnd={toolbarEnd}

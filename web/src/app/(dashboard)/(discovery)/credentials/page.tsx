@@ -27,7 +27,6 @@ import {
 } from '@/features/assets'
 import { ConfirmDialog } from '@/components/confirm-dialog'
 import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
 import {
   Select,
@@ -39,7 +38,6 @@ import {
 import { toast } from 'sonner'
 import {
   KeyRound,
-  Search as SearchIcon,
   Eye,
   Download,
   Shield,
@@ -48,7 +46,6 @@ import {
   Copy,
   User,
   Calendar,
-  X,
   Layers,
 } from 'lucide-react'
 import type { Asset } from '@/features/assets'
@@ -492,29 +489,12 @@ export default function CredentialsPage() {
 
   // Search + status apply to both views (both endpoints take them); the source
   // filter only applies to the list.
-  const searchInput = (
-    <div className="relative min-w-0 flex-1 sm:max-w-sm">
-      <SearchIcon className="absolute start-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-      <Input
-        placeholder={t('credentials.search.placeholder', 'Search credentials...')}
-        aria-label={t('credentials.search.aria', 'Search credentials')}
-        value={searchQuery}
-        onChange={(e) => setSearchQuery(e.target.value)}
-        className="ps-9 pe-9"
-      />
-      {searchQuery && (
-        <Button
-          variant="ghost"
-          size="sm"
-          className="absolute end-1 top-1/2 h-6 w-6 -translate-y-1/2 p-0"
-          onClick={() => setSearchQuery('')}
-          aria-label={t('credentials.search.clear', 'Clear search')}
-        >
-          <X className="h-4 w-4" />
-        </Button>
-      )}
-    </div>
-  )
+  const search = {
+    value: searchQuery,
+    onChange: setSearchQuery,
+    placeholder: t('credentials.search.placeholder', 'Search credentials…'),
+    label: t('credentials.search.aria', 'Search credentials'),
+  }
   const statusSelect = (
     <Select value={statusFilter} onValueChange={(v) => setStatusFilter(v as StatusFilter)}>
       <SelectTrigger
@@ -613,12 +593,8 @@ export default function CredentialsPage() {
               columns={columns}
               onRowClick={(c) => setSelectedCredential(c)}
               resetKey={`${debouncedSearch}|${statusFilter}`}
-              toolbarStart={
-                <>
-                  {searchInput}
-                  {statusSelect}
-                </>
-              }
+              search={search}
+              toolbarStart={statusSelect}
               toolbarEnd={groupSelect}
               emptyMessage={t('credentials.identity.emptyTitle', 'No identities found')}
               emptyDescription={
@@ -654,9 +630,9 @@ export default function CredentialsPage() {
               columns={columns}
               data={credentials}
               showSearch={false}
+              search={search}
               toolbarStart={
                 <>
-                  {searchInput}
                   {statusSelect}
                   {sourceSelect}
                 </>

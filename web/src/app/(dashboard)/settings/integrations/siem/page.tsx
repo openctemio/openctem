@@ -260,7 +260,7 @@ export default function SIEMIntegrationPage() {
             columns={columns}
             data={splunkIntegrations}
             getRowId={(i) => i.id}
-            searchPlaceholder={t('siemIntegration.searchPlaceholder', 'Search integrations...')}
+            searchPlaceholder={t('siemIntegration.searchPlaceholder', 'Search integrations…')}
             showSelectionCount={false}
           />
         )}

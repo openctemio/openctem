@@ -10,19 +10,14 @@
 
 import { formatEpssScore } from '@/lib/epss'
 import * as React from 'react'
+import { useTranslation } from '@/context/i18n-provider'
 import type { ColumnDef } from '@tanstack/react-table'
 import { AlertCircle, RefreshCw, Server, Zap } from 'lucide-react'
 import { KevBadge } from '@/components/ui/kev-badge'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
-import {
-  DataTable,
-  FilterPanelToggle,
-  MetricStrip,
-  SeverityBadge,
-  type MetricStripItem,
-} from '@/features/shared'
+import { DataTable, MetricStrip, SeverityBadge, type MetricStripItem } from '@/features/shared'
 import type { Severity } from '@/features/shared/types'
 import { FindingStatusBadge } from '@/features/findings/components/finding-status-badge'
 import type { FindingStatus } from '@/features/findings/types'
@@ -30,7 +25,6 @@ import { useActiveCVEs, useActiveCVEStats, type ActiveCVE, type ActiveCVEsFilter
 import { VulnerabilityDetailSheet } from './vulnerability-detail-sheet'
 import {
   FilterLayout,
-  FilterSearchBox,
   VULN_PAGE_SIZES,
   VulnerabilityFilters,
   useFilterPanelOpen,
@@ -171,6 +165,7 @@ export function ActiveCVEsTab({
   /** Controls the page puts first in the toolbar (which CVE list is shown). */
   leading?: React.ReactNode
 } = {}) {
+  const { t } = useTranslation()
   // `cve_` params: this tab's filters never leak into the CVE catalog tab.
   const f = useVulnFilterParams('cve_')
   const panel = useFilterPanelOpen('openctem:active-cve-filters-open')
@@ -241,24 +236,19 @@ export function ActiveCVEsTab({
   const hasFilters = f.activeCount > 0
   const isSearching = term !== ''
 
-  const toolbarStart = (
-    <>
-      {leading}
-      <FilterPanelToggle
-        controlsId={PANEL_ID}
-        activeCount={f.activeCount}
-        open={panel.open}
-        onToggle={panel.toggle}
-        onOpenSheet={() => panel.setSheetOpen(true)}
-      />
-      <FilterSearchBox
-        value={f.search}
-        onChange={f.setSearch}
-        placeholder="Search this page by CVE ID or title…"
-        label="Search active CVEs"
-      />
-    </>
-  )
+  const search = {
+    value: f.search,
+    onChange: f.setSearch,
+    placeholder: t('exposures.vulnSearch.placeholder', 'Search this page by CVE ID or title…'),
+    label: t('exposures.vulnSearch.activeLabel', 'Search active CVEs'),
+  }
+  const filterToggle = {
+    controlsId: PANEL_ID,
+    activeCount: f.activeCount,
+    open: panel.open,
+    onToggle: panel.toggle,
+    onOpenSheet: () => panel.setSheetOpen(true),
+  }
   const toolbarEnd = (
     <span className="hidden text-sm tabular-nums text-muted-foreground xl:inline">
       {isSearching
@@ -301,7 +291,9 @@ export function ActiveCVEsTab({
               columns={COLUMNS}
               data={visibleRows}
               showSearch={false}
-              toolbarStart={toolbarStart}
+              search={search}
+              filterToggle={filterToggle}
+              toolbarStart={leading}
               toolbarEnd={toolbarEnd}
               getRowId={(c) => c.vulnerability_id}
               manualPagination

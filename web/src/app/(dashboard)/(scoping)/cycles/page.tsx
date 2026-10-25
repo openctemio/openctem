@@ -291,7 +291,7 @@ export default function CtemCyclesPage() {
                 columns={columns}
                 data={cycles}
                 onRowClick={(cycle) => router.push(`/cycles/${cycle.id}`)}
-                searchPlaceholder={t('scoping.cycles.search', 'Search cycles')}
+                searchPlaceholder={t('scoping.cycles.search', 'Search cycles…')}
                 emptyMessage={t('scoping.cycles.noMatch', 'No cycles found')}
                 emptyDescription={t(
                   'scoping.cycles.noMatchHint',

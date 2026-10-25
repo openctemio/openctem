@@ -221,7 +221,7 @@
   "automations.switch.activate": "Bật quy trình",
   "automations.switch.deactivate": "Tắt quy trình",
   "automations.table.noMatch": "Không có quy trình phù hợp",
-  "automations.table.searchPlaceholder": "Tìm quy trình...",
+  "automations.table.searchPlaceholder": "Tìm quy trình…",
   "automations.tabs.builder": "Trình dựng trực quan",
   "automations.tabs.executions": "Lần chạy gần đây",
   "automations.tabs.workflows": "Quy trình",

@@ -28,7 +28,6 @@ import { usePermissions } from '@/context/permission-provider'
 import { Permission } from '@/lib/permissions'
 import { Button } from '@/components/ui/button'
 import { ConfirmDialog } from '@/components/confirm-dialog'
-import { Input } from '@/components/ui/input'
 import {
   Select,
   SelectContent,
@@ -217,6 +216,11 @@ export function TasksView({ defaultView = 'open' }: { defaultView?: TaskView }) 
           tabs under the section tabs), search; then sort, the table/board
           view switch and the create action at the end. */}
       <ListToolbar
+        search={{
+          value: search,
+          onChange: setSearch,
+          placeholder: t('remediationHub.tasks.search'),
+        }}
         start={
           <>
             <FilterSelect<TaskView>
@@ -228,13 +232,6 @@ export function TasksView({ defaultView = 'open' }: { defaultView?: TaskView }) 
                 label: t(`remediationHub.tasks.view.${v}`),
               }))}
               onChange={(v) => setParam('view', v || 'open')}
-            />
-            <Input
-              className="h-9 w-full sm:w-56"
-              placeholder={t('remediationHub.tasks.search')}
-              aria-label={t('remediationHub.tasks.search')}
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
             />
           </>
         }

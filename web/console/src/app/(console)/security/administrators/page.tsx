@@ -449,7 +449,7 @@ export default function AdministratorsPage() {
             showSelectionCount={false}
             searchPlaceholder={t(
               'admin.securityAdministratorsPage.searchPlaceholder',
-              'Search administrators'
+              'Search administrators…'
             )}
             mobileCards
           />

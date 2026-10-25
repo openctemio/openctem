@@ -58,7 +58,6 @@ import {
   FacetToggle,
   FacetGroupLabel,
   BulkActionBar,
-  FilterPanelToggle,
   FilterSheet,
   TruncatedText,
   DrillDownBreadcrumb,
@@ -66,7 +65,6 @@ import {
   type MobileRowSelection,
   PageStack,
 } from '@/features/shared'
-import { Input } from '@/components/ui/input'
 import { cn } from '@/lib/utils'
 import { SEVERITY_DOT_COLORS } from '@/lib/severity-colors'
 import { SEVERITY_LEVELS, type SeverityLevel } from '@/lib/severity'
@@ -157,7 +155,6 @@ import {
   Route,
   ClipboardList,
   Wrench,
-  Search,
   ArrowLeft,
   Layers,
   SquareCode,
@@ -346,11 +343,13 @@ function transformApiToUiFinding(api: ApiFinding): Finding {
     // SLA tracking
     slaStatus: api.sla_status,
     slaDeadline: api.sla_deadline,
+    slaKevCapped: api.sla_kev_capped,
     // Threat Intel Enrichment (RFC-004)
     epssScore: api.epss_score,
     epssPercentile: api.epss_percentile,
     isInKev: api.is_in_kev,
     kevDueDate: api.kev_due_date,
+    kevRansomware: api.kev_ransomware,
     // Priority Classification (RFC-004)
     priorityClass: api.priority_class,
     priorityClassReason: api.priority_class_reason,
@@ -1583,6 +1582,7 @@ function FindingsContent() {
           <ExploitSignals
             isInKev={row.original.isInKev}
             kevDueDate={row.original.kevDueDate}
+            kevRansomware={row.original.kevRansomware}
             epssScore={row.original.epssScore}
           />
         ),
@@ -1667,7 +1667,7 @@ function FindingsContent() {
           if (!status || status === 'not_applicable') {
             return <span className="text-muted-foreground text-sm">—</span>
           }
-          return (
+          const cell = (
             <div className="flex flex-col gap-0.5">
               <SlaStatusBadge status={status} />
               {row.original.slaDeadline && (
@@ -1676,6 +1676,20 @@ function FindingsContent() {
                 </span>
               )}
             </div>
+          )
+          if (!row.original.slaKevCapped) return cell
+          // The deadline came from the SLA policy's known exploited cap.
+          return (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <div data-slot="sla-kev-capped" tabIndex={0} className="w-fit">
+                  {cell}
+                </div>
+              </TooltipTrigger>
+              <TooltipContent side="top" className="max-w-xs text-xs">
+                {t('findings.properties.slaKevCapped', 'Shortened because it is in CISA KEV')}
+              </TooltipContent>
+            </Tooltip>
           )
         },
       },
@@ -1999,40 +2013,21 @@ function FindingsContent() {
   const hiddenByFilters = findingStats?.by_state?.[lens]
   const denialText = describePermissionDenied(errorDetails(error)) ?? undefined
 
-  const filterButtons = (
-    <FilterPanelToggle
-      open={filtersOpen}
-      onToggle={() => setFiltersOpen((o) => !o)}
-      onOpenSheet={() => setFilterSheetOpen(true)}
-      activeCount={activeCount}
-      controlsId="finding-filters"
-    />
-  )
+  // The facet panel's trigger, joined to the search by the shared toolbar.
+  const filterToggle = {
+    open: filtersOpen,
+    onToggle: () => setFiltersOpen((o) => !o),
+    onOpenSheet: () => setFilterSheetOpen(true),
+    activeCount,
+    controlsId: 'finding-filters',
+  }
 
-  // The filter button and the search box are one control: the button is
-  // joined to the start of the field, so they never separate when the row is
-  // tight, and the field takes all the width the row has left.
-  const filterSearch = (
-    <div
-      data-testid="findings-filter-search"
-      className="flex min-w-0 flex-1 items-center [&_[data-slot=filter-button]]:z-10 [&_[data-slot=filter-button]]:rounded-e-none"
-    >
-      {filterButtons}
-      <div className="relative -ms-px min-w-40 flex-1">
-        <Search className="pointer-events-none absolute start-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-        <Input
-          value={searchQuery}
-          onChange={(e) => setSearchQuery(e.target.value)}
-          placeholder={t(
-            'findings.toolbar.searchPlaceholder',
-            'Search title, CVE, rule or location…'
-          )}
-          aria-label={t('findings.toolbar.searchLabel', 'Search findings')}
-          className="h-9 rounded-s-none ps-9 focus-visible:z-20"
-        />
-      </div>
-    </div>
-  )
+  const search = {
+    value: searchQuery,
+    onChange: setSearchQuery,
+    placeholder: t('findings.toolbar.searchPlaceholder', 'Search title, CVE, rule or location…'),
+    label: t('findings.toolbar.searchLabel', 'Search findings'),
+  }
 
   const groupBySelect = (
     <Select
@@ -2168,6 +2163,22 @@ function FindingsContent() {
     <FindingContextChips {...contextFilterValues} onRemove={removeContextParam} />
   ) : undefined
 
+  // What differs from the open view: the unsaved-changes dot and its menu.
+  const changeList = useMemo(
+    () =>
+      openView
+        ? viewChanges({
+            view: openView,
+            search: searchParams,
+            viewFilters: viewFilters(openView.filter, filterContract).filters,
+            baselineColumns,
+            columns: shownColumns,
+            density: urlDensity,
+          })
+        : undefined,
+    [openView, searchParams, filterContract, baselineColumns, shownColumns, urlDensity]
+  )
+
   const filterBar = (
     <FilterBar
       search={searchParams}
@@ -2200,26 +2211,17 @@ function FindingsContent() {
       }
       onPickerOpenChange={setPickerOpen}
       onSearchChange={replaceUrlSearch}
+      viewChanged={!!openView && (changeList?.length ?? 0) > 0}
+      onResetToView={() => openSavedView(openView ?? null)}
+      resultLabel={
+        findingsLoading
+          ? undefined
+          : t('findings.filter.results', '{count, plural, one {# finding} other {# findings}}', {
+              count: total,
+            })
+      }
     />
   )
-
-  // What differs from the open view: the unsaved-changes dot and its menu.
-  const changeList = useMemo(
-    () =>
-      openView
-        ? viewChanges({
-            view: openView,
-            search: searchParams,
-            viewFilters: viewFilters(openView.filter, filterContract).filters,
-            baselineColumns,
-            columns: shownColumns,
-            density: urlDensity,
-          })
-        : undefined,
-    [openView, searchParams, filterContract, baselineColumns, shownColumns, urlDensity]
-  )
-
-  const toolbarStart = filterSearch
 
   // Second row (the table toolbar): which rows and how they show. Saved views
   // and Group sit beside the search they work with; the table's own View menu
@@ -2599,7 +2601,8 @@ function FindingsContent() {
                     onGroupsLoaded={(groups) =>
                       setHasUnassignedGroup(groups.some((g) => g.group_key === 'unassigned'))
                     }
-                    toolbarStart={toolbarStart}
+                    search={search}
+                    filterToggle={filterToggle}
                     toolbarBelow={filterBar}
                     toolbarEnd={toolbarEnd}
                     emptyDescription={
@@ -2632,7 +2635,8 @@ function FindingsContent() {
                       columns={columns}
                       data={findings}
                       showSearch={false}
-                      toolbarStart={toolbarStart}
+                      search={search}
+                      filterToggle={filterToggle}
                       toolbarEnd={toolbarEnd}
                       toolbarBelow={filterBar}
                       getRowId={(f) => f.id}

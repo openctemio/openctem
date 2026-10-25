@@ -21,6 +21,9 @@ describe('triage keys', () => {
     ['a', 'accept'],
     ['o', 'assign'],
     ['s', 'skip'],
+    ['m', 'task'],
+    ['r', 'retest'],
+    ['u', 'undo'],
     ['j', 'next'],
     ['k', 'prev'],
     ['e', 'evidence'],
@@ -80,9 +83,9 @@ describe('triage keys', () => {
 
   it('a closing picker (still mounted for its exit animation) no longer owns the keys', () => {
     const target = el('<div role="dialog" data-state="closed"><input data-pick /></div>')
-    expect(triageActionFor({ key: 's', target }, document)).toBe('skip')
+    expect(triageActionFor({ key: 'u', target }, document)).toBe('undo')
     const open = el('<div role="dialog" data-state="open"><input data-pick /></div>')
-    expect(triageActionFor({ key: 's', target: open }, document)).toBeNull()
+    expect(triageActionFor({ key: 'u', target: open }, document)).toBeNull()
   })
 
   it('does nothing while a dialog is open anywhere on the page', () => {

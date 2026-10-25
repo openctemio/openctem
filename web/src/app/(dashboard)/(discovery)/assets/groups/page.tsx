@@ -18,12 +18,10 @@ import {
   FacetSection,
   FacetOption,
   BulkActionBar,
-  FilterPanelToggle,
   FilterSheet,
   PageStack,
 } from '@/features/shared'
 import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Slider } from '@/components/ui/slider'
 import { Skeleton } from '@/components/ui/skeleton'
@@ -40,7 +38,6 @@ import {
   ExternalLink,
   SlidersHorizontal,
   Tags,
-  Search as SearchIcon,
   Package,
 } from 'lucide-react'
 import {
@@ -656,28 +653,6 @@ export default function AssetGroupsPage() {
     </FacetPanel>
   )
 
-  const toolbarStart = (
-    <>
-      <FilterPanelToggle
-        open={filtersOpen}
-        onToggle={toggleFiltersOpen}
-        onOpenSheet={() => setFilterSheetOpen(true)}
-        activeCount={activeFilterCount}
-        controlsId="asset-group-filters"
-      />
-      <div className="relative min-w-0 flex-1 sm:max-w-sm">
-        <SearchIcon className="pointer-events-none absolute start-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-        <Input
-          value={searchQuery}
-          onChange={(e) => setSearchQuery(e.target.value)}
-          placeholder={t('assetGroups.search.placeholder', 'Search name, description or tag…')}
-          aria-label={t('assetGroups.search.label', 'Search asset groups')}
-          className="h-9 ps-9"
-        />
-      </div>
-    </>
-  )
-
   const toolbarEnd = (
     <>
       <Tooltip>
@@ -765,7 +740,22 @@ export default function AssetGroupsPage() {
                   columns={columns}
                   data={groups}
                   showSearch={false}
-                  toolbarStart={toolbarStart}
+                  search={{
+                    value: searchQuery,
+                    onChange: setSearchQuery,
+                    placeholder: t(
+                      'assetGroups.search.placeholder',
+                      'Search name, description or tag…'
+                    ),
+                    label: t('assetGroups.search.label', 'Search asset groups'),
+                  }}
+                  filterToggle={{
+                    open: filtersOpen,
+                    onToggle: toggleFiltersOpen,
+                    onOpenSheet: () => setFilterSheetOpen(true),
+                    activeCount: activeFilterCount,
+                    controlsId: 'asset-group-filters',
+                  }}
                   toolbarEnd={toolbarEnd}
                   emptyMessage={t('assetGroups.empty.title', 'No asset groups found')}
                   emptyDescription={

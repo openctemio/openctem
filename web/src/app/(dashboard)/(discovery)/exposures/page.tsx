@@ -5,7 +5,6 @@ import { useTranslation } from '@/context/i18n-provider'
 import { useState, useCallback, useMemo } from 'react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
 import { Tabs, TabsContent } from '@/components/ui/tabs'
 import { Badge } from '@/components/ui/badge'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
@@ -46,7 +45,6 @@ import { useListParams } from '@/hooks/use-list-params'
 import { useSearchQuery } from '@/hooks/use-search-query'
 import { cn } from '@/lib/utils'
 import {
-  Search,
   RefreshCw,
   Download,
   Shield,
@@ -398,16 +396,6 @@ export default function ExposuresPage() {
 
   const toolbarStart = (
     <>
-      <div className="relative min-w-40 flex-1 sm:max-w-sm">
-        <Search className="pointer-events-none absolute start-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-        <Input
-          value={searchQuery}
-          onChange={(e) => handleSearch(e.target.value)}
-          placeholder="Search exposures…"
-          aria-label="Search exposures"
-          className="h-9 ps-9"
-        />
-      </div>
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
           <Button variant="outline" size="sm" className="h-9">
@@ -560,6 +548,12 @@ export default function ExposuresPage() {
                   columns={columns}
                   data={exposures}
                   showSearch={false}
+                  search={{
+                    value: searchQuery,
+                    onChange: handleSearch,
+                    placeholder: t('exposures.search.placeholder', 'Search exposures…'),
+                    label: t('exposures.search.label', 'Search exposures'),
+                  }}
                   toolbarStart={toolbarStart}
                   toolbarEnd={toolbarEnd}
                   getRowId={(e) => e.id}
