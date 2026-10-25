@@ -16,7 +16,7 @@
  * Design: research/234 §5.2 (D2).
  */
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { useUrlParams, useUrlSettled } from '@/hooks/use-url-param'
 import { toast } from 'sonner'
@@ -304,8 +304,10 @@ export function TriageMode() {
   )
 
   // One listener for the page's life; it calls the latest handler.
+  // Updated in the commit (not after paint): a key pressed right after the
+  // next finding appears must act on that finding.
   const onActionRef = useRef(onAction)
-  useEffect(() => {
+  useLayoutEffect(() => {
     onActionRef.current = onAction
   })
   useEffect(() => {
