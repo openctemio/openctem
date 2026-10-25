@@ -987,7 +987,7 @@ func TestRetestDB_SightingAfterCheckBlocksResolve(t *testing.T) {
 	// Sighted 5 minutes ago, after the check completed 10 minutes ago.
 	f, got = run("b.example.com", "5 minutes")
 	if st, _, _ := fx.findingState(f); got.Outcome != retestdom.OutcomeInconclusive || st != "confirmed" ||
-		!strings.Contains(got.Reason, "sighted again") {
+		got.ReasonCode != retestdom.ReasonSeenAfterCheck || !strings.Contains(got.Reason, "sighted again") {
 		t.Fatalf("sighted since = %s (%s), finding %s, want inconclusive and confirmed", got.Outcome, got.Reason, st)
 	}
 	var vo string
