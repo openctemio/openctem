@@ -42,7 +42,6 @@
   "assetGroups.detail.col.asset": "Asset",
   "assetGroups.detail.col.discovered": "Discovered",
   "assetGroups.detail.col.finding": "Finding",
-  "assetGroups.detail.col.findings": "Findings",
   "assetGroups.detail.col.lastSeen": "Last seen",
   "assetGroups.detail.col.riskScore": "Risk score",
   "assetGroups.detail.col.severity": "Severity",
