@@ -100,6 +100,7 @@ func (h *FindingActionsHandler) findingGroupsRoute() filterquery.Route {
 // @Param  vulnerability_id_not  query  []string  false  "vulnerability id: none of (comma list)"  collectionFormat(csv)
 // @Param  severity  query  []string  false  "severity: any of (comma list)"  collectionFormat(csv)  Enums(critical, high, medium, low, info, none)
 // @Param  severity_not  query  []string  false  "severity: none of (comma list)"  collectionFormat(csv)  Enums(critical, high, medium, low, info, none)
+// @Param  informational  query  boolean  false  "informational equals"
 // @Param  status  query  []string  false  "status: any of (comma list)"  collectionFormat(csv)  Enums(new, confirmed, in_progress, fix_applied, resolved, false_positive, accepted, duplicate, draft, in_review)
 // @Param  status_not  query  []string  false  "status: none of (comma list)"  collectionFormat(csv)  Enums(new, confirmed, in_progress, fix_applied, resolved, false_positive, accepted, duplicate, draft, in_review)
 // @Param  observation  query  []string  false  "observation: any of (comma list)"  collectionFormat(csv)  Enums(present, stale)
@@ -269,6 +270,7 @@ func (h *FindingActionsHandler) ListFindingGroups(w http.ResponseWriter, r *http
 // @Param  vulnerability_id_not  query  []string  false  "vulnerability id: none of (comma list)"  collectionFormat(csv)
 // @Param  severity  query  []string  false  "severity: any of (comma list)"  collectionFormat(csv)  Enums(critical, high, medium, low, info, none)
 // @Param  severity_not  query  []string  false  "severity: none of (comma list)"  collectionFormat(csv)  Enums(critical, high, medium, low, info, none)
+// @Param  informational  query  boolean  false  "informational equals"
 // @Param  status  query  []string  false  "status: any of (comma list)"  collectionFormat(csv)  Enums(new, confirmed, in_progress, fix_applied, resolved, false_positive, accepted, duplicate, draft, in_review)
 // @Param  status_not  query  []string  false  "status: none of (comma list)"  collectionFormat(csv)  Enums(new, confirmed, in_progress, fix_applied, resolved, false_positive, accepted, duplicate, draft, in_review)
 // @Param  observation  query  []string  false  "observation: any of (comma list)"  collectionFormat(csv)  Enums(present, stale)
