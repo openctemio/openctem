@@ -2,6 +2,7 @@ package scm
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -56,7 +57,8 @@ func (c *AzureClient) TestConnection(ctx context.Context) (*ConnectionTestResult
 	// Get authenticated user
 	user, err := c.GetUser(ctx)
 	if err != nil {
-		result.Message = fmt.Sprintf("Authentication failed: %v", err)
+		result.Message = authenticationFailed
+		result.Cause = errors.Join(ErrAuthFailed, err)
 		return result, nil
 	}
 	result.User = user
@@ -65,7 +67,8 @@ func (c *AzureClient) TestConnection(ctx context.Context) (*ConnectionTestResult
 	if c.config.Organization != "" {
 		org, err := c.getOrganization(ctx, c.config.Organization)
 		if err != nil {
-			result.Message = fmt.Sprintf("Cannot access organization '%s': %v", c.config.Organization, err)
+			result.Message = fmt.Sprintf("Cannot access organization '%s'", c.config.Organization)
+			result.Cause = errors.Join(ErrNotFound, err)
 			return result, nil
 		}
 		result.Organization = org
