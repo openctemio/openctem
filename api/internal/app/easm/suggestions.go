@@ -10,7 +10,9 @@ package easm
 //     shared hosting, a released cloud address), so a person decides. Shared
 //     and CDN addresses are listed apart and never offered; an address whose
 //     network we know nothing about is offered but marked unknown, never
-//     presented as safe.
+//     presented as safe. While the organization's unclassified-scans mode
+//     gives known, unshared addresses low-impact checks, only the unknown
+//     ones wait; the others are listed apart as already checked.
 //   - confirmed_out_of_scope: assets a person confirmed as the
 //     organization's that no active scope entry covers (confirmations made
 //     before a confirmation added its own entry).
@@ -32,6 +34,7 @@ import (
 	"github.com/openctemio/openctem/api/internal/app/datascope"
 	"github.com/openctemio/openctem/api/internal/app/scope"
 	"github.com/openctemio/openctem/api/pkg/domain/asset"
+	"github.com/openctemio/openctem/api/pkg/domain/attribution"
 	"github.com/openctemio/openctem/api/pkg/domain/easmseed"
 	scopedom "github.com/openctemio/openctem/api/pkg/domain/scope"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
@@ -120,11 +123,17 @@ type SuggestionCard struct {
 	// and the card comes back with the rest.
 	Truncated bool `json:"truncated"`
 	// addresses_behind_names only.
-	NamesCount          int                 `json:"names_count,omitempty"`
-	UnknownNetworkCount int                 `json:"unknown_network_count,omitempty"`
-	SharedCount         int                 `json:"shared_count,omitempty"`
-	Addresses           []SuggestionAddress `json:"addresses,omitempty"`
-	SharedAddresses     []SuggestionAddress `json:"shared_addresses,omitempty"`
+	NamesCount          int `json:"names_count,omitempty"`
+	UnknownNetworkCount int `json:"unknown_network_count,omitempty"`
+	SharedCount         int `json:"shared_count,omitempty"`
+	// CheckedCount: addresses that need no decision because the
+	// organization's unclassified-scans mode already gives them low-impact
+	// checks (a known network that is not shared); adding them is optional
+	// (a full scan). Listed in CheckedAddresses, never in Addresses.
+	CheckedCount     int                 `json:"checked_count,omitempty"`
+	Addresses        []SuggestionAddress `json:"addresses,omitempty"`
+	SharedAddresses  []SuggestionAddress `json:"shared_addresses,omitempty"`
+	CheckedAddresses []SuggestionAddress `json:"checked_addresses,omitempty"`
 	// PrefixRules: the organization's own prefixes holding offered
 	// addresses (Prefix), most addresses first.
 	PrefixRules []SuggestionPrefix `json:"prefix_rules,omitempty"`
@@ -135,9 +144,14 @@ type SuggestionCard struct {
 // SuggestionCards is the answer.
 type SuggestionCards struct {
 	Cards []SuggestionCard `json:"cards"`
-	// Total: the decisions waiting, one per card, the review-by-rule cards
-	// of names included (the Suggestions tab badge).
+	// Total: the decisions waiting (the Review tab and sidebar badge): one
+	// per card that offers something (Count > 0) plus NameRules. A card that
+	// only lists addresses needing no decision (shared, already checked) is
+	// returned for the page but never counted.
 	Total int `json:"total"`
+	// NameRules: the review-by-rule cards about names over the names that
+	// wait for a decision (DecisionStates), as the Review tab lists them.
+	NameRules int `json:"name_rules"`
 	// CanAdd: the caller may accept a card (scope write permission).
 	CanAdd bool `json:"can_add"`
 }
@@ -177,6 +191,40 @@ type SuggestionService struct {
 	// guardrails decide which seeded prefixes may be offered as rules; nil
 	// offers none.
 	guardrails *scopedom.Guardrails
+	// unclassified answers the organization's unclassified-scans mode; nil
+	// or unreadable means off (every offered address waits).
+	unclassified UnclassifiedPolicy
+}
+
+// DecisionStates are the attribution states that wait for a person: the
+// Review tab lists them and the badge counts them. Discovered names are in
+// the inventory already and need no decision.
+var DecisionStates = []attribution.State{attribution.StateNeedsReview, attribution.StateCandidate}
+
+// SetUnclassified lets the card tell addresses that already get low-impact
+// checks (RFC-054 §16) from those that wait for a decision.
+func (s *SuggestionService) SetUnclassified(p UnclassifiedPolicy) { s.unclassified = p }
+
+// checksUnclassified: the organization's mode gives unclassified assets
+// low-impact checks. Anything unreadable is off.
+func (s *SuggestionService) checksUnclassified(ctx context.Context, tenantID shared.ID) bool {
+	if s.unclassified == nil {
+		return false
+	}
+	m, err := s.unclassified(ctx, tenantID)
+	return err == nil && (m == unclassifiedLowImpact || m == unclassifiedFull)
+}
+
+// Finish sets NameRules and Total: one per card that offers something, plus
+// the name rules.
+func (c *SuggestionCards) Finish(nameRules int) {
+	c.NameRules = nameRules
+	c.Total = nameRules
+	for _, card := range c.Cards {
+		if card.Count > 0 {
+			c.Total++
+		}
+	}
 }
 
 // SetGuardrails lets the card offer the organization's own prefixes as
@@ -252,7 +300,9 @@ func (s *SuggestionService) addressCard(ctx context.Context, tenantID shared.ID,
 		}
 		seeds = &n
 	}
-	card := &SuggestionCard{Kind: CardAddressesBehindNames, Addresses: []SuggestionAddress{}, SharedAddresses: []SuggestionAddress{}}
+	checks := s.checksUnclassified(ctx, tenantID)
+	card := &SuggestionCard{Kind: CardAddressesBehindNames, Addresses: []SuggestionAddress{},
+		SharedAddresses: []SuggestionAddress{}, CheckedAddresses: []SuggestionAddress{}}
 	names := map[string]bool{}
 	for _, r := range rows {
 		if _, covered := cover[r.Address]; covered {
@@ -284,17 +334,23 @@ func (s *SuggestionService) addressCard(ctx context.Context, tenantID shared.ID,
 		if item.Shared == "" && seeds != nil {
 			item.Prefix = s.ownPrefix(*seeds, r.Address)
 		}
-		if item.Shared == "" {
-			for _, n := range all {
-				names[n] = true // names_count: the names behind the offered addresses
-			}
-		}
 		if item.Shared != "" {
 			card.SharedCount++
 			if len(card.SharedAddresses) < MaxSuggestionItems {
 				card.SharedAddresses = append(card.SharedAddresses, item)
 			}
 			continue
+		}
+		if checks && item.Network.Known {
+			// Already gets low-impact checks: no decision waits.
+			card.CheckedCount++
+			if len(card.CheckedAddresses) < MaxSuggestionItems {
+				card.CheckedAddresses = append(card.CheckedAddresses, item)
+			}
+			continue
+		}
+		for _, n := range all {
+			names[n] = true // names_count: the names behind the addresses that wait
 		}
 		if !item.Network.Known {
 			card.UnknownNetworkCount++
@@ -309,7 +365,7 @@ func (s *SuggestionService) addressCard(ctx context.Context, tenantID shared.ID,
 	card.NamesCount = len(names)
 	card.PrefixRules = prefixRules(card.Addresses)
 
-	if card.Count == 0 && card.SharedCount == 0 {
+	if card.Count == 0 && card.SharedCount == 0 && card.CheckedCount == 0 {
 		return nil, nil
 	}
 	return card, nil
