@@ -20,5 +20,7 @@
   "activity.listLabel": "Activity",
   "activity.loadMore": "Load more",
   "activity.repeated": "{count} times",
-  "activity.repeatedLast": "{count} times, the last at {time}"
+  "activity.repeatedLast": "{count} times, the last at {time}",
+  "activity.trigger.new": "{count} new",
+  "activity.trigger.title": "Activity"
 }

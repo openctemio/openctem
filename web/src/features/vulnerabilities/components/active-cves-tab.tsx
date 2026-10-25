@@ -8,6 +8,7 @@
 
 'use client'
 
+import { CveLink } from './cve-link'
 import { formatEpssScore } from '@/lib/epss'
 import * as React from 'react'
 import { useTranslation } from '@/context/i18n-provider'
@@ -66,7 +67,7 @@ const COLUMNS: ColumnDef<ActiveCVE>[] = [
       const c = row.original
       return (
         <div className="flex items-center gap-1.5 whitespace-nowrap">
-          <span className="font-mono text-sm font-medium">{c.cve_id}</span>
+          <CveLink id={c.cve_id} stopPropagation className="text-sm font-medium" />
           {c.in_cisa_kev && <KevBadge />}
           {c.exploit_available && (
             <Tooltip>
