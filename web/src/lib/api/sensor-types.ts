@@ -324,6 +324,8 @@ export interface Sensor {
    * `octs_` format; `rda_` keys are retired after enrollment ships.
    */
   legacy_key?: boolean
+  /** The last authenticated request with any of the sensor's keys; null until recorded. */
+  key_last_used_at?: string | null
   /** Process start, from the uptime the heartbeat reports. */
   started_at?: string | null
   uptime_seconds?: number | null
