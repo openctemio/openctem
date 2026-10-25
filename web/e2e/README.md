@@ -61,8 +61,8 @@ tests that cover the console's most user-visible flows.
 | `34-scans-list-layout.spec.ts`              | Scan list at 390px and 1440px: no overlapping text, state on the title line             |
 | `35-assets-row-anatomy.spec.ts`             | Asset rows: one height, type line, a time; axe; no h-scroll at 375px                    |
 | `36-findings-triage-mode.spec.ts`           | Triage mode: keys-only session over ten findings, request budget, a11y, Exit            |
-| `37-pentest-template-editor.spec.ts`        | Finding-library template: create, then edit at 375px                                    |
 | `36-list-toolbar.spec.ts`                   | One list toolbar: search first, joined filter trigger, `/` and Escape, phone width, axe |
+| `37-pentest-template-editor.spec.ts`        | Finding-library template: create, then edit at 375px                                    |
 
 Each spec is designed to:
 
