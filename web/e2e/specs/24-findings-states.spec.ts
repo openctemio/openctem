@@ -95,7 +95,10 @@ test.describe('Findings states', () => {
     })
     await page.goto('/findings?q=zz-nothing')
     await expect(page.getByText('No findings match')).toBeVisible({ timeout: 20_000 })
-    await page.getByTestId('findings-empty-state').getByRole('button', { name: 'Clear search' }).click()
+    await page
+      .getByTestId('findings-empty-state')
+      .getByRole('button', { name: 'Clear search' })
+      .click()
     await expect(page).not.toHaveURL(/q=zz-nothing/)
   })
 })
