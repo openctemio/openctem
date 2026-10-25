@@ -48,6 +48,12 @@ import { isTriageLocked } from '../../lib/finding-detail'
 import { firstReason } from '../../lib/transition-reasons'
 import { triageActionFor, type TriageAction } from '../../lib/triage-keys'
 import {
+  QUICK_VIEW_KEYS,
+  QUICK_VIEW_LABELS,
+  quickViewLabelKey,
+  type QuickViewKey,
+} from '../../lib/quick-views'
+import {
   TRIAGE_DEFAULT_QUERY,
   TRIAGE_LIST_PATH,
   changedElsewhere,
@@ -546,10 +552,13 @@ export function TriageMode() {
     return () => document.removeEventListener('keydown', onKey)
   }, [])
 
+  const viewKey = session?.viewKey
   const queueLabel =
-    query === TRIAGE_DEFAULT_QUERY
-      ? t('findings.quickView.needs_triage', 'Needs triage')
-      : t('findings.triageMode.thisView', 'Selected view')
+    viewKey && (QUICK_VIEW_KEYS as readonly string[]).includes(viewKey)
+      ? t(quickViewLabelKey(viewKey), QUICK_VIEW_LABELS[viewKey as QuickViewKey])
+      : query === TRIAGE_DEFAULT_QUERY
+        ? t('findings.quickView.needs_triage', 'Needs triage')
+        : t('findings.triageMode.thisView', 'Selected view')
   const progress = session ? progressOf(session) : null
   const done = !!session && session.exhausted && session.index >= session.items.length
 

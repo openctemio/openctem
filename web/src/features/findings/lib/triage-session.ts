@@ -25,6 +25,7 @@ export const TRIAGE_LIST_PATH = '/findings'
 
 const STORAGE_KEY = 'openctem.findings.triage'
 const ID_RE = /^[0-9a-f-]{8,64}$/i
+const VIEW_KEY_RE = /^[a-z_]{1,40}$/
 const PARAM_RE = /^[a-z][a-z0-9_]{0,63}$/
 /** Params that page the list; triage pages it itself. */
 const PAGING_PARAMS = new Set(['page', 'per_page', 'cursor'])
@@ -107,6 +108,8 @@ export interface TriageSession {
   returnTo: string
   /** Whether the person came here from that list (Exit then goes back in history). */
   fromList: boolean
+  /** The built-in view the queue is (its name in the top bar), when started from one. */
+  viewKey?: string
   items: TriageItem[]
   /** The finding shown, an index into items. */
   index: number
@@ -162,12 +165,18 @@ export function safeReturnPath(raw: unknown): string {
 }
 
 /** A new session for a query, before its first window. */
-export function newSession(query: string, returnTo: string, fromList: boolean): TriageSession {
+export function newSession(
+  query: string,
+  returnTo: string,
+  fromList: boolean,
+  viewKey?: string
+): TriageSession {
   return {
     v: 1,
     query: triageQuery(query),
     returnTo: safeReturnPath(returnTo),
     fromList,
+    ...(viewKey && VIEW_KEY_RE.test(viewKey) ? { viewKey } : {}),
     items: [],
     index: 0,
     outcomes: {},
@@ -230,6 +239,9 @@ export function parseSession(raw: string | null): TriageSession | null {
       query: triageQuery(s.query),
       returnTo: safeReturnPath(s.returnTo),
       fromList: s.fromList === true,
+      ...(typeof s.viewKey === 'string' && VIEW_KEY_RE.test(s.viewKey)
+        ? { viewKey: s.viewKey }
+        : {}),
       items,
       index,
       outcomes,
@@ -288,9 +300,10 @@ export function clearSession(store: StorageLike | null = storage()): void {
 export function startSession(
   query: string,
   returnTo: string,
+  viewKey?: string,
   store: StorageLike | null = storage()
 ) {
-  writeSession(newSession(query, returnTo, true), store)
+  writeSession(newSession(query, returnTo, true, viewKey), store)
 }
 
 /**
