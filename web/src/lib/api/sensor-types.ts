@@ -105,9 +105,31 @@ export interface SensorHealthReason {
     | 'config_check_failed'
     | 'config_check_warning'
     | 'config_report_stale'
+    | 'stopped_claiming'
     | (string & {})
   severity: 'warning' | 'critical'
   message: string
+}
+
+/**
+ * The sensor's local data as its latest heartbeats report it (protocol v2
+ * feature local_store): the watermark, whether it stopped claiming new jobs
+ * and why (untrusted text), bytes per class, the disk level, cleanup sweeps.
+ */
+export interface SensorLocalStore {
+  level: '' | 'ok' | 'high' | 'critical'
+  stop_claiming: boolean
+  reason?: string
+  bytes_by_class?: Record<string, number>
+  total_bytes: number
+  quota_bytes?: number
+  disk_level: '' | 'ok' | 'low' | 'critical' | 'unknown'
+  sweeps: number
+  last_sweep_at?: string
+  last_sweep_removed?: number
+  boot_reset?: boolean
+  tampered?: number
+  reported_at: string | null
 }
 
 /** The sensor's last reported outbox (results waiting to be delivered). */
@@ -334,6 +356,10 @@ export interface Sensor {
   error_count: number
   created_at: string
   updated_at: string
+  /** Its local store; null when it never reported one or the report is old. */
+  local_store?: SensorLocalStore | null
+  /** How it authenticates: an API key (bearer) or its own signing key. */
+  auth_kind?: 'bearer' | 'key_bound'
   /** Last reported outbox; null when the sensor never reported one. */
   outbox?: SensorOutbox | null
   /** Lost or stuck results in the last outbox snapshot. */

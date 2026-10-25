@@ -620,6 +620,40 @@ describe('SensorDetailSheet', () => {
     expect(key.textContent?.startsWith('\u2026')).toBe(false)
   })
 
+  it('a sensor that stopped claiming: the callout says why and the fix; Local storage shows it', async () => {
+    open({
+      sensor: {
+        ...healthy,
+        local_store: {
+          level: 'high',
+          stop_claiming: true,
+          reason: '9 % of the volume free, below 10 %',
+          bytes_by_class: { workspace: 50 * 1024 * 1024, outbox: 1024 * 1024 },
+          total_bytes: 51 * 1024 * 1024,
+          disk_level: 'low',
+          sweeps: 2,
+          reported_at: new Date().toISOString(),
+        },
+      },
+    })
+    const callout = screen.getByRole('region', { name: 'Health' })
+    expect(within(callout).getByText('Stopped claiming new jobs')).toBeInTheDocument()
+    expect(callout).toHaveTextContent(/Free disk space on the sensor host/)
+    // The sensor's own words stay behind the disclosure.
+    await userEvent.click(within(callout).getByText('Show the error'))
+    expect(callout).toHaveTextContent('9 % of the volume free, below 10 %')
+    const section = screen.getByRole('region', { name: 'Local storage' })
+    expect(section).toHaveTextContent('Stopped claiming new jobs')
+    expect(section).toHaveTextContent('Low on space')
+    expect(section).toHaveTextContent('Scan workspaces: 50 MB')
+  })
+
+  it('a key-bound sensor shows its signing key, not an API key prefix', () => {
+    open({ sensor: { ...sensor, auth_kind: 'key_bound', api_key_prefix: '' } })
+    const key = screen.getByText('API key').nextElementSibling as HTMLElement
+    expect(key).toHaveTextContent('Signing key (key-bound identity)')
+  })
+
   it('there is no Activity tab: the overview summary opens the activity panel', async () => {
     open()
     expect(screen.queryByRole('tab', { name: 'Activity' })).toBeNull()

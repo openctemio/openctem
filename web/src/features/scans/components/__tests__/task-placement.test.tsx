@@ -204,4 +204,39 @@ describe('a failed step explains its code', () => {
     )
     expect(document.querySelector('[data-code]')).toBeNull()
   })
+
+  // A sensor whose local storage is full stops claiming on its own; the
+  // waiting task names that instead of "None can take it".
+  it('names sensors that stopped claiming because their storage is full', async () => {
+    const t = enTranslate
+    expect(
+      placementSummary(
+        {
+          queued: true,
+          evaluated: 1,
+          eligible: 0,
+          blocking: [{ code: 'stopped_claiming', count: 1 }],
+        },
+        t
+      )
+    ).toMatch(/stopped claiming new jobs because their local storage is full: 1/)
+    getMock.mockResolvedValue({
+      queued: true,
+      evaluated: 1,
+      eligible: 0,
+      busy: 0,
+      job_reasons: [],
+      blocking: [{ code: 'stopped_claiming', count: 1 }],
+      sensors: [
+        { id: 's1', name: 'sensor-docker-01', eligible: false, reasons: ['stopped_claiming'] },
+      ],
+    })
+    fresh(<TaskPlacementPanel runId="r1" taskId="t1" />)
+    expect(await screen.findByText(/Free disk space on the sensor host/)).toBeInTheDocument()
+    // Per sensor: words, never the reason code.
+    await userEvent.click(screen.getByText(/sensor/i, { selector: 'summary' }))
+    const row = screen.getByText('sensor-docker-01').closest('li') as HTMLElement
+    expect(row).toHaveTextContent(/stopped claiming new jobs/)
+    expect(row.textContent).not.toContain('stopped_claiming')
+  })
 })
