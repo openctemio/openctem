@@ -178,11 +178,11 @@ func (s *Service) triggerLoadedScan(ctx context.Context, sc *scan.Scan, input Tr
 		var msg string
 		switch sc.Status {
 		case scan.StatusPaused:
-			msg = fmt.Sprintf("Scan '%s' is paused: its schedule is off and automatic runs are refused. Resume it, or run it by hand.", sc.Name)
+			msg = "This scan is paused: its schedule is off and automatic runs are refused. Resume it, or run it by hand."
 		case scan.StatusDisabled:
-			msg = fmt.Sprintf("Cannot trigger scan '%s' because it is disabled. Activate the scan first to trigger it.", sc.Name)
+			msg = "This scan is disabled. Activate it first to run it."
 		default:
-			msg = fmt.Sprintf("Cannot trigger scan '%s' (current status: %s). Only active scans can be triggered.", sc.Name, sc.Status)
+			msg = fmt.Sprintf("This scan cannot run while it is %s. Only active scans can run.", sc.Status)
 		}
 		return nil, shared.NewDomainError("SCAN_NOT_TRIGGERABLE", msg, shared.ErrValidation)
 	}
@@ -566,7 +566,7 @@ func (s *Service) triggerSingleScan(ctx context.Context, sc *scan.Scan, triggerT
 		if plan, err = s.planZoneDispatch(ctx, sc, zones, resolved.Targets); err != nil {
 			return nil, err
 		}
-		if err := recordZonePlan(sc, plan, runContext); err != nil {
+		if err := recordZonePlan(plan, runContext); err != nil {
 			return nil, err
 		}
 	}
@@ -1060,8 +1060,8 @@ func (s *Service) decideSensorRouting(ctx context.Context, sc *scan.Scan, target
 			if b.Zone != nil {
 				if sc.SensorPreference == scan.SensorPreferencePlatform {
 					return sensorRouting{}, shared.NewDomainError("PLATFORM_SENSOR_REFUSED", fmt.Sprintf(
-						"sensor_preference is 'platform', but target(s) of scan %q are inside scan zone %q and are scanned only by that zone's sensors; set sensor_preference to 'tenant' or 'auto'",
-						sc.Name, b.Zone.Name), shared.ErrValidation)
+						"sensor_preference is 'platform', but target(s) of this scan are inside scan zone %q and are scanned only by that zone's sensors; set sensor_preference to 'tenant' or 'auto'",
+						b.Zone.Name), shared.ErrValidation)
 				}
 				continue
 			}
@@ -1452,31 +1452,31 @@ func recordResolvedTargets(sc *scan.Scan, r *resolvedTargets, runContext map[str
 	}
 	if len(r.Targets) == 0 && r.Incompatible > 0 && r.Unconfirmed == 0 && r.Excluded == 0 {
 		return shared.NewDomainError(codeNoCompatibleTargets,
-			fmt.Sprintf("Scan %q has no target its scanner can scan: %s. Pick a scanner for these asset types or change the asset group.", sc.Name, r.IncompatibleReason),
+			fmt.Sprintf("This scan has no target its scanner can scan: %s. Pick a scanner for these asset types or change the asset group.", r.IncompatibleReason),
 			shared.ErrValidation)
 	}
 	if len(r.Targets) == 0 && r.TierExceeded > 0 && r.Unconfirmed == 0 && r.Excluded == 0 {
 		return shared.NewDomainError(codeTierExceeds,
-			fmt.Sprintf("No target of scan %q may be probed at this scanner's tier: the scope entries covering them allow less. Raise the entry's tier in Scoping > Scope, or use a less intrusive scanner.", sc.Name),
+			"No target of this scan may be probed at this scanner's tier: the scope entries covering them allow less. Raise the entry's tier in Scoping > Scope, or use a less intrusive scanner.",
 			shared.ErrValidation)
 	}
 	if len(r.Targets) == 0 && r.Unconfirmed > 0 && r.Excluded == 0 {
 		return shared.NewDomainError("ALL_TARGETS_UNCONFIRMED",
-			fmt.Sprintf("No target of scan %q is authorized for active scanning; nothing to scan. Confirm their ownership on each asset's Ownership tab, or cover them with a scope target in Scoping > Scope.", sc.Name),
+			"No target of this scan is authorized for active scanning; nothing to scan. Confirm their ownership on each asset's Ownership tab, or cover them with a scope target in Scoping > Scope.",
 			shared.ErrValidation)
 	}
 	if len(r.Targets) == 0 && r.InternalOutsideZones > 0 && r.Unconfirmed == 0 && r.Excluded == 0 {
 		return shared.NewDomainError("INTERNAL_TARGET_OUTSIDE_ZONES",
-			fmt.Sprintf("Scan %q has only internal address targets outside every scan zone; nothing to scan. Add the ranges to a scan zone in Settings > Scan zones.", sc.Name),
+			"This scan has only internal address targets outside every scan zone; nothing to scan. Add the ranges to a scan zone in Settings > Scan zones.",
 			shared.ErrValidation)
 	}
 	if len(r.Targets) == 0 && r.Excluded > 0 {
 		return shared.NewDomainError("ALL_TARGETS_EXCLUDED",
-			fmt.Sprintf("Every target of scan %q is excluded by scope; nothing to scan.", sc.Name),
+			"Every target of this scan is excluded by scope; nothing to scan.",
 			shared.ErrValidation)
 	}
 	if len(r.Targets) == 0 {
-		msg := fmt.Sprintf("Scan %q resolves to no targets: it has no direct targets and its asset group(s) have no assets. Add assets to the group or targets to the scan.", sc.Name)
+		msg := "This scan has no targets: it has no direct targets and its asset group(s) have no assets. Add assets to the group or targets to the scan."
 		if len(r.Warnings) > 0 {
 			msg += " (" + strings.Join(r.Warnings, "; ") + ")"
 		}

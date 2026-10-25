@@ -198,6 +198,19 @@ func registerSharedSensorsSettingsRoutes(router Router, h *handler.TenantHandler
 	}, buildTokenTenantMiddlewares(authMiddleware, userSyncMiddleware)...)
 }
 
+// registerFindingViewSettingsRoutes wires the organization's findings
+// work-view defaults (docs/architecture/findings-work-views.md) under the
+// token singleton /api/v1/organization. Owner/admin only; audited.
+func registerFindingViewSettingsRoutes(router Router, h *handler.TenantHandler, authMiddleware, userSyncMiddleware Middleware) {
+	if h == nil {
+		return
+	}
+	router.Group("/api/v1/organization/settings/finding-views", func(r Router) {
+		r.GET("/", h.GetFindingViewSettings, middleware.RequireAdmin(), middleware.Require(permission.SettingsRead))
+		r.PATCH("/", h.UpdateFindingViewSettings, middleware.RequireAdmin(), middleware.Require(permission.SettingsWrite))
+	}, buildTokenTenantMiddlewares(authMiddleware, userSyncMiddleware)...)
+}
+
 // registerFindingCorrelationSettingsRoutes wires the organization's
 // cross-rule correlation switches (research/134 section 12) under the token
 // singleton /api/v1/organization. Owner/admin only; audited.
