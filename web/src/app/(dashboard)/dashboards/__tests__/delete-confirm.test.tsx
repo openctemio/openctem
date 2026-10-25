@@ -35,7 +35,7 @@ describe('Dashboards list delete', () => {
     expect(deleteDashboard).not.toHaveBeenCalled()
     const dialog = await screen.findByRole('alertdialog')
     expect(dialog).toHaveTextContent('Delete dashboard "Ops wallboard"?')
-    await userEvent.click(within(dialog).getByRole('button', { name: 'Delete' }))
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Delete dashboard' }))
     await waitFor(() => expect(deleteDashboard).toHaveBeenCalledWith('d1'))
   })
 })
