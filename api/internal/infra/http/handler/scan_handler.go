@@ -1023,7 +1023,7 @@ func (h *ScanHandler) GetStats(w http.ResponseWriter, r *http.Request) {
 
 // SensorOptInImpact handles GET /api/v1/scans/sensor-opt-in-impact
 // @Summary      Scans affected by the sensor opt-ins
-// @Description  The organization's switches for out-of-band callbacks (interactsh) and custom templates in sensor jobs (both off unless an owner enabled them, research/25 D3), and the scans whose scanner_config asks for either (at most 100; truncated says more exist). While a switch is off, those scans run without interactsh or are refused (custom templates).
+// @Description  The organization's switches for out-of-band callbacks (interactsh) and custom templates in sensor jobs (both off unless an owner enabled them), and the scans whose scanner_config asks for either (at most 100; truncated says more exist). While a switch is off, those scans run without interactsh or are refused (custom templates).
 // @Tags         Scans
 // @Produce      json
 // @Success      200  {object}  scansvc.OptInImpact
@@ -1044,7 +1044,7 @@ func (h *ScanHandler) SensorOptInImpact(w http.ResponseWriter, r *http.Request) 
 // CoverageStatus handles GET /api/v1/scans/coverage
 // @Summary      Scan coverage status
 // @Description  License-aware rolling coverage summary for the tenant's scannable
-// @Description  estate (RFC-007): how much was scanned within the freshness window,
+// @Description  estate: how much was scanned within the freshness window,
 // @Description  what is stale or never scanned, and the critical-asset risk.
 // @Tags         Scans
 // @Produce      json

@@ -408,7 +408,7 @@ const DefaultBatchChunkSize = 100
 // was updated, and the persisted id (IDs). Created counts inserted rows only;
 // a row that hit an existing finding (a concurrent ingest won the race) counts
 // as Updated, and its in-memory finding is re-pointed at the persisted id so
-// no caller acts on an id that does not exist (RFC-043 B2).
+// no caller acts on an id that does not exist.
 func (r *FindingRepository) CreateBatchWithResult(ctx context.Context, findings []*vulnerability.Finding) (*vulnerability.BatchCreateResult, error) {
 	result := &vulnerability.BatchCreateResult{
 		Errors:   make(map[int]string),
@@ -796,7 +796,7 @@ func findingUpsertConflictSQL() string {
 			-- then moves source_severity only.
 			` + reportedSeveritySetSQL("findings.", "EXCLUDED.severity") + `,
 			scan_id = EXCLUDED.scan_id,
-			-- The tool of the sighting moves with scan_id (RFC-043 interim
+			-- The tool of the sighting moves with scan_id (interim
 			-- auto-resolve guard); tool_name stays the first reporter.
 			last_seen_tool = COALESCE(EXCLUDED.last_seen_tool, findings.last_seen_tool),
 			sensor_id = EXCLUDED.sensor_id,
@@ -806,7 +806,7 @@ func findingUpsertConflictSQL() string {
 			-- when two ingests race on a new fingerprint or one batch repeats
 			-- it (a normal re-sighting goes through EnrichBatchByFingerprints,
 			-- which merges metadata in Go). Overwriting dropped whatever the
-			-- first writer, or a user in the meantime, had stored (RFC-043 B2).
+			-- first writer, or a user in the meantime, had stored.
 			metadata = EXCLUDED.metadata || COALESCE(findings.metadata, '{}'::jsonb),
 			updated_at = EXCLUDED.updated_at,
 			last_seen_branch = EXCLUDED.last_seen_branch,
@@ -830,7 +830,7 @@ func findingUpsertConflictSQL() string {
 			attachments = EXCLUDED.attachments,
 			-- work_item_uris (ticket links) is never taken from the incoming
 			-- row: a scanner never knows the tickets, and EXCLUDED is always
-			-- empty, so assigning it erased the links (RFC-043 B2).
+			-- empty, so assigning it erased the links.
 			hosted_viewer_uri = EXCLUDED.hosted_viewer_uri,
 			exposure_vector = EXCLUDED.exposure_vector,
 			is_network_accessible = EXCLUDED.is_network_accessible,
@@ -1059,7 +1059,7 @@ func findingInsertArgs(finding *vulnerability.Finding) ([]any, error) {
 		// Rule name, left out with the tags: a nuclei template's or semgrep
 		// rule's name arrived only on a re-sighting.
 		nullString(finding.RuleName()),
-		// Tool of this sighting (RFC-043 interim auto-resolve guard).
+		// Tool of this sighting (interim auto-resolve guard).
 		nullString(finding.LastSeenTool()),
 		// Identity recipe version and tuple (RFC-043 §6).
 		finding.FingerprintVersion(),
@@ -3269,7 +3269,7 @@ func (r *FindingRepository) KEVCriticalCountsByAsset(ctx context.Context, tenant
 			-- still a live exposure and must stay on the attack path.
 			AND ` + vulnerability.OpenStatusSQL("status") + `
 			-- A version-based match below the likely threshold is a
-			-- potential vulnerability, not an attack-path hop (RFC-066 §4).
+			-- potential vulnerability, not an attack-path hop.
 			AND NOT (tool_name = 'version-match' AND COALESCE(last_seen_tool, tool_name) = 'version-match'
 				AND COALESCE(confidence, 0) < 80)
 		GROUP BY asset_id

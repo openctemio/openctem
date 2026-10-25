@@ -665,7 +665,7 @@ var templateErrorCodes = map[string]int{
 
 // ApproveForSensors handles POST /api/v1/scanner-templates/{id}/approve
 // @Summary      Approve a template version for sensors
-// @Description  Records the caller's approval of the template's current version. Once the organization's approval count is reached, the job signer records the version and sensors may run it (RFC-040 §11.5). The author of the version cannot approve it.
+// @Description  Records the caller's approval of the template's current version. Once the organization's approval count is reached, the job signer records the version and sensors may run it. The author of the version cannot approve it.
 // @Tags         Scanner Templates
 // @Produce      json
 // @Param        id   path      string  true  "Template ID"

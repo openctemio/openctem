@@ -94,7 +94,7 @@ type SelfApproveScopeTargetRequest struct {
 
 // SelfApproveTarget handles POST /api/v1/scope/targets/{id}/self-approve
 // @Summary      Approve your own scope entry (no other approver)
-// @Description  An owner puts their own pending scope entry into effect when no other member can approve it (RFC-054 §7). Needs attack_surface:scope:approve, the owner role, a fresh code from the caller's authenticator app (totp_code) and a reason. Refused with 403 SELF_APPROVAL_NOT_ALLOWED while another approver exists, SELF_APPROVAL_NEEDS_TOTP without an authenticator, SELF_APPROVAL_INVALID_CODE for a wrong or reused code. Audited at high severity; every administrator and the organization's channels are told.
+// @Description  An owner puts their own pending scope entry into effect when no other member can approve it. Needs attack_surface:scope:approve, the owner role, a fresh code from the caller's authenticator app (totp_code) and a reason. Refused with 403 SELF_APPROVAL_NOT_ALLOWED while another approver exists, SELF_APPROVAL_NEEDS_TOTP without an authenticator, SELF_APPROVAL_INVALID_CODE for a wrong or reused code. Audited at high severity; every administrator and the organization's channels are told.
 // @Tags         Scope
 // @Accept       json
 // @Produce      json
@@ -240,7 +240,7 @@ func (h *ScopeHandler) addAttestationStatus(r *http.Request, outs []*ScopeTarget
 
 // AttestTarget handles POST /api/v1/scope/targets/{id}/attest
 // @Summary      Keep an intrusive (t2) scope entry
-// @Description  Confirms that an active t2 entry should keep intrusive probes and starts its next attestation period (RFC-054 §12.5). Without a confirmation within 14 days of a request the entry falls back to t1. Needs attack_surface:scope:approve; one click (it widens nothing). Audited.
+// @Description  Confirms that an active t2 entry should keep intrusive probes and starts its next attestation period. Without a confirmation within 14 days of a request the entry falls back to t1. Needs attack_surface:scope:approve; one click (it widens nothing). Audited.
 // @Tags         Scope
 // @Produce      json
 // @Param        id   path      string  true  "Target ID"

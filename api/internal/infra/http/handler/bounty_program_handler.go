@@ -232,7 +232,7 @@ func planCounts(pv *bpapp.Preview) map[string]any {
 
 // List handles GET /api/v1/programs
 // @Summary      List programs
-// @Description  The bug-bounty programs the caller may see: every program for owners, admins and full-data roles; only the programs whose group has the caller otherwise (RFC-065).
+// @Description  The bug-bounty programs the caller may see: every program for owners, admins and full-data roles; only the programs whose group has the caller otherwise.
 // @Tags         Programs
 // @Produce      json
 // @Success      200  {object}  map[string][]ProgramResponse
@@ -557,7 +557,7 @@ type ProgramSyncResultResponse struct {
 
 // SetSource handles PUT /api/v1/programs/{id}/source
 // @Summary      Set program scope source
-// @Description  Where the program's scope comes from: paste, program_api (the researcher API of the platform that runs the program: handle, username and API token, encrypted and never returned) or program_file (an https scope file on the program's own domain). Needs a recent re-authentication. Audited (RFC-065).
+// @Description  Where the program's scope comes from: paste, program_api (the researcher API of the platform that runs the program: handle, username and API token, encrypted and never returned) or program_file (an https scope file on the program's own domain). Needs a recent re-authentication. Audited.
 // @Tags         Programs
 // @Accept       json
 // @Produce      json
