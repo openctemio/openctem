@@ -28,7 +28,7 @@ or use OpenCTEM, see [docs.openctem.io](https://docs.openctem.io)
 ## API
 
 - [REST API overview](api/README.md) and [reference notes](api/endpoints.md) (the spec is served at `/openapi.yaml`; see the reference notes for who can read it in production)
-- [API conventions](architecture/api-conventions.md), [dashboard metrics](architecture/dashboard-metrics.md), [list query contract](architecture/list-query-contract.md), [findings bulk by filter](architecture/findings-bulk-by-filter.md), [findings triage mode](architecture/findings-triage-mode.md), [operations](architecture/operations.md), [custom query language](architecture/query-language.md)
+- [API conventions](architecture/api-conventions.md), [dashboard metrics](architecture/dashboard-metrics.md), [list query contract](architecture/list-query-contract.md), [findings bulk by filter](architecture/findings-bulk-by-filter.md), [findings triage mode](architecture/findings-triage-mode.md), [My Work](architecture/my-work.md), [operations](architecture/operations.md), [custom query language](architecture/query-language.md)
 - [Tenant API keys](architecture/api-keys.md), [MCP server](architecture/mcp-server.md), [attack paths](architecture/attack-paths.md)
 - [Credential import](api/credential-import.md), [suppressions](api/suppressions.md)
 
