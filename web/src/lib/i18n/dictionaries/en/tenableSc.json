@@ -133,6 +133,8 @@
   "tenableSc.error.minSeverity": "Minimum severity must be 0 to 4",
   "tenableSc.error.rotationNeedsAck": "License rotation needs the confirmation that this organization's Tenable license terms allow it",
   "tenableSc.error.rotationWaitHours": "Wait after a batch: 1 to 72 hours",
+  "tenableSc.imports.lastSync": "Last sync: {time}",
+  "tenableSc.imports.remove": "Remove {name}",
   "tenableSc.scanNow.failed": "Could not start the Tenable.sc scan",
   "tenableSc.scanNow.pickConnector": "Scan with connector",
   "tenableSc.scanNow.started": "Tenable.sc scan started",

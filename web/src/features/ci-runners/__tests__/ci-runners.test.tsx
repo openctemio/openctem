@@ -41,6 +41,7 @@ let lastRunFilters: unknown
 let gatePolicies: unknown[] = []
 let overrides: unknown[] = []
 const mockDeletePolicy = vi.fn()
+const mockDeleteTrust = vi.fn()
 const mockSavePolicy = vi.fn()
 const mockRevokeOverride = vi.fn()
 
@@ -58,7 +59,7 @@ vi.mock('../api/use-ci', async (importOriginal) => ({
   useCISettings: () => ({ data: ciSettings, mutate: vi.fn() }),
   useSaveCISettings: () => ({ trigger: mockSaveSettings, isMutating: false }),
   useSaveTrustConfig: () => ({ trigger: mockSaveTrust, isMutating: false }),
-  useDeleteTrustConfig: () => ({ trigger: vi.fn(), isMutating: false }),
+  useDeleteTrustConfig: () => ({ trigger: mockDeleteTrust, isMutating: false }),
   usePreviewTrustConfig: () => ({ trigger: mockPreview, isMutating: false }),
   useGatePolicies: () => ({
     data: {
@@ -538,6 +539,7 @@ describe('CITrustSettings', () => {
     overrides = []
     mockSaveTrust.mockReset()
     mockDeletePolicy.mockReset()
+    mockDeleteTrust.mockReset()
     mockRevokeOverride.mockReset()
   })
 
@@ -592,8 +594,40 @@ describe('CITrustSettings', () => {
     expect(mockDeletePolicy).not.toHaveBeenCalled()
     const dialog = await screen.findByRole('alertdialog')
     expect(dialog).toHaveTextContent('Delete the gate policy for Repository repo-9?')
-    await userEvent.click(within(dialog).getByRole('button', { name: 'Delete' }))
+    const confirm = within(dialog).getByRole('button', { name: 'Delete gate policy' })
+    expect(confirm).toBeDisabled()
+    await userEvent.type(
+      within(dialog).getByLabelText(/Type Repository repo-9 to confirm/),
+      'Repository repo-9'
+    )
+    await userEvent.click(confirm)
     expect(mockDeletePolicy).toHaveBeenCalledWith({ id: 'gp1', reason: '' })
+  })
+
+  it('deleting a CI trust asks for its name first', async () => {
+    perms = ['scans:ci:read', 'scans:ci:write']
+    trust = [
+      {
+        id: 'old',
+        name: 'GitHub acme',
+        provider: 'github',
+        issuer: 'https://token.actions.githubusercontent.com',
+        audience: 'openctem:tenant:t-123',
+        enabled: true,
+        rules: { owners: ['acme'] },
+      },
+    ]
+    mockDeleteTrust.mockResolvedValue(undefined)
+    render(<CITrustSettings />)
+    await userEvent.click(screen.getByRole('button', { name: 'Delete GitHub acme' }))
+    expect(mockDeleteTrust).not.toHaveBeenCalled()
+    const dialog = await screen.findByRole('alertdialog')
+    expect(dialog).toHaveTextContent('Delete the CI trust "GitHub acme"?')
+    const confirm = within(dialog).getByRole('button', { name: 'Delete CI trust' })
+    expect(confirm).toBeDisabled()
+    await userEvent.type(within(dialog).getByRole('textbox'), 'GitHub acme')
+    await userEvent.click(confirm)
+    expect(mockDeleteTrust).toHaveBeenCalledWith('old')
   })
 
   it('revoking a break-glass override asks first', async () => {
