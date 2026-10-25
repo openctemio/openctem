@@ -20,7 +20,10 @@ export function useFitCount<T extends HTMLElement>(
   const widths = React.useRef(new Map<string, number>())
   const [fit, setFit] = React.useState(keys.length)
   const [tick, setTick] = React.useState(0)
+  // A new array with the same keys (every render) is the same list: the fold
+  // re-runs only when the keys themselves change.
   const signature = keys.join('\u0000')
+  const list = React.useMemo(() => (signature ? signature.split('\u0000') : []), [signature])
 
   React.useEffect(() => {
     const row = rowRef.current
@@ -55,21 +58,20 @@ export function useFitCount<T extends HTMLElement>(
       if (key && w > 0) widths.current.set(key, w)
     })
     const total = row.clientWidth
-    const unmeasured = keys.some((k) => !widths.current.has(k))
+    const unmeasured = list.some((k) => !widths.current.has(k))
     const next =
       total === 0 || unmeasured
-        ? keys.length
+        ? list.length
         : foldToFit(
             total,
-            keys.map((k) => widths.current.get(k) ?? 0),
+            list.map((k) => widths.current.get(k) ?? 0),
             gap,
             more
           )
     if (next !== fit) setFit(next)
-    // `signature` stands for `keys`; the fold settles because it only reads
-    // cached widths and the row's own width, which folding does not change.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [signature, tick, fit, gap, more])
+    // The fold settles: it only reads cached widths and the row's own width,
+    // which folding does not change.
+  }, [list, tick, fit, gap, more])
 
   return { rowRef, fit: Math.min(fit, keys.length) }
 }
