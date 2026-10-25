@@ -33,6 +33,21 @@ func (fakeKEVRepo) GetByCVEIDs(_ context.Context, _ []string) (map[string]findin
 	return map[string]finding.KEVData{}, nil
 }
 
+// kevCatalogOf is a KEV catalog holding exactly the given CVEs.
+type kevCatalogOf []string
+
+func (k kevCatalogOf) GetByCVEIDs(_ context.Context, ids []string) (map[string]finding.KEVData, error) {
+	out := map[string]finding.KEVData{}
+	for _, id := range ids {
+		for _, c := range k {
+			if id == c {
+				out[id] = finding.KEVData{}
+			}
+		}
+	}
+	return out, nil
+}
+
 type fakeRuleRepo struct{}
 
 func (fakeRuleRepo) ListActiveByTenant(_ context.Context, _ shared.ID) ([]*vulnerability.PriorityOverrideRule, error) {
