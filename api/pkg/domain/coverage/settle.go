@@ -8,6 +8,7 @@ package coverage
 import (
 	"encoding/json"
 	"strings"
+	"time"
 
 	"github.com/openctemio/ctis/outcome"
 )
@@ -101,7 +102,9 @@ func Verdicts(tasks []TaskResult, runUnfinished []string) map[string]Verdict {
 			}
 			continue
 		}
-		for _, o := range outcome.Normalize(outcomes, t.Targets) {
+		norm := outcome.Normalize(outcomes, t.Targets)
+		allTargetSide := uniformTargetSideFailure(norm)
+		for _, o := range norm {
 			switch o.State {
 			case outcome.Done:
 				if unreached[TargetKey(o.Target)] {
@@ -111,6 +114,19 @@ func Verdicts(tasks []TaskResult, runUnfinished []string) map[string]Verdict {
 				}
 				put(o.Target, Verdict{Kind: VerdictCovered, Outcome: OutcomeOK})
 			case outcome.Failed:
+				if allTargetSide {
+					// Every target of the task failed the same target-side
+					// way: that points at the sensor (no route, no egress),
+					// not at each target. Until a reach control probe can
+					// tell them apart, treat it as a sensor failure with the
+					// normal back-off instead of pausing every target.
+					msg := t.Error
+					if msg == "" {
+						msg = "every target of the task failed with " + string(o.Class) + "; treated as a sensor failure"
+					}
+					put(o.Target, Verdict{Kind: VerdictFailed, Outcome: OutcomeFailed, Error: msg})
+					continue
+				}
 				put(o.Target, Verdict{Kind: VerdictFailed, Outcome: string(o.Class), Error: t.Error})
 			case outcome.Skipped:
 				put(o.Target, Verdict{Kind: VerdictBlocked, Reason: string(o.Class)})
@@ -124,6 +140,22 @@ func Verdicts(tasks []TaskResult, runUnfinished []string) map[string]Verdict {
 		put(target, Verdict{Kind: VerdictFailed, Outcome: OutcomeUnfinished, Error: "the run did not finish this target"})
 	}
 	return out
+}
+
+// uniformTargetSideFailure reports whether a task with at least two targets
+// failed every one of them with the same target-side class (all timeouts,
+// or all unreachable). One target cannot be told from its sensor, so a lone
+// target keeps its own verdict.
+func uniformTargetSideFailure(norm []outcome.Target) bool {
+	if len(norm) < 2 {
+		return false
+	}
+	for _, o := range norm {
+		if o.State != outcome.Failed || o.Class != norm[0].Class || !IsTargetSide(string(o.Class)) {
+			return false
+		}
+	}
+	return true
 }
 
 // readResult returns a task result's per-target outcomes, the targets its
@@ -152,4 +184,41 @@ func readResult(raw json.RawMessage) ([]outcome.Target, map[string]bool, bool) {
 		return nil, unreached, false
 	}
 	return *r.Outcomes, unreached, true
+}
+
+// Target-side outcomes: the target did not answer (it is down, filtered or
+// gone), not a failure of the sensor, the tool or the platform. Such a pair
+// is not retried on the failure back-off: it is paused with the outcome as
+// its reason and rechecked on TargetSideRecheck's schedule; any success
+// makes it covered again. Every other failure keeps the back-off.
+var targetSideOutcomes = []string{string(outcome.Unreachable), string(outcome.Timeout)}
+
+// TargetSideOutcomes returns the outcomes that pause a pair for a recheck.
+func TargetSideOutcomes() []string { return append([]string(nil), targetSideOutcomes...) }
+
+// IsTargetSide reports whether a failure outcome is the target's.
+func IsTargetSide(outcome string) bool {
+	for _, o := range targetSideOutcomes {
+		if o == outcome {
+			return true
+		}
+	}
+	return false
+}
+
+// TargetSideRechecks is the recheck schedule of a pair whose target did not
+// answer: after the first observation 1 day, after the second 3 days, then
+// 7 days, and weekly from then on.
+var TargetSideRechecks = []time.Duration{24 * time.Hour, 3 * 24 * time.Hour, 7 * 24 * time.Hour}
+
+// TargetSideRecheck is when a pair is rechecked after its n-th consecutive
+// target-side observation (n >= 1).
+func TargetSideRecheck(n int) time.Duration {
+	if n < 1 {
+		n = 1
+	}
+	if n > len(TargetSideRechecks) {
+		n = len(TargetSideRechecks)
+	}
+	return TargetSideRechecks[n-1]
 }

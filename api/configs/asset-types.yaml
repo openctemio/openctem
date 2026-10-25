@@ -539,7 +539,7 @@ types:
       - { capability: resolve.dns, every: 1d }
       - { capability: dns.dangling, every: 1d }
       - { capability: scan.ports, every: 7d, requires: [resolves] }
-      - { capability: probe.http, every: 3d, requires: [resolves], expects: http_service }
+      - { capability: probe.http, every: 3d, requires: [resolves, web_port_or_unscanned], expects: http_service }
     exposure_default: public
     sections: [overview, attributes, dns, services, findings, relationships, owners, sources, history]
 

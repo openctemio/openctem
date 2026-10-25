@@ -17,6 +17,13 @@ const (
 	RequiresResolves = "resolves"
 	// RequiresWebPort: the open port is one of WebPorts.
 	RequiresWebPort = "web_port"
+	// RequiresWebPortOrUnscanned: a name is worth an HTTP probe: an
+	// address it resolves to has an open port in WebPorts, a web origin of
+	// the name was seen, or its ports are unknown (no port scan of the name
+	// or its addresses has succeeded and none of its addresses has an open
+	// port on record). A name whose port scan found no web port is not
+	// probed until one appears.
+	RequiresWebPortOrUnscanned = "web_port_or_unscanned"
 	// RequiresScopeEntry: an active scope entry covers the name.
 	RequiresScopeEntry = "scope_entry"
 )
@@ -289,6 +296,10 @@ type Planner interface {
 	// SettleFailed settles queued pairs of a run as failed, each with its
 	// outcome and error, due again after a back-off bounded by every.
 	SettleFailed(ctx context.Context, tenantID, runID shared.ID, capability string, failed []FailedPair, every time.Duration) (int, error)
+	// SettleTargetSide settles queued pairs of a run whose target did not
+	// answer: paused with the outcome as the reason, the streak counted and
+	// rechecked on the TargetSideRecheck schedule.
+	SettleTargetSide(ctx context.Context, tenantID, runID shared.ID, capability string, pairs []FailedPair) (int, error)
 	// QueuedTargets returns the queued pairs a run holds.
 	QueuedTargets(ctx context.Context, tenantID, runID shared.ID, capability string) ([]DueTarget, error)
 	// AttemptsSince counts the pairs of the tenant attempted since t (the
