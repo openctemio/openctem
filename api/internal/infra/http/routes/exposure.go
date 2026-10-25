@@ -205,6 +205,13 @@ func registerVulnerabilityRoutes(
 		r.GET("/active", h.ListActiveCVEs, tenantScopedMW...)
 		r.GET("/{id}/affected-assets", h.ListAffectedAssets, tenantScopedMW...)
 		r.GET("/cve/{cveId}/affected-assets", h.ListAffectedAssetsByCVE, tenantScopedMW...)
+		// The vulnerability page: finding counts as the caller (the findings
+		// list's own filter), so findings:read as well, under the heavy-read
+		// limiter like the findings stats.
+		pageMW := append(append([]Middleware{}, tenantScopedMW...),
+			middleware.Require(permission.FindingsRead), heavyReads.Middleware())
+		r.GET("/cve/{cveId}/exposure", h.GetCVEExposure, pageMW...)
+		r.GET("/cve/{cveId}/exposure/assets", h.ListCVEExposureAssets, pageMW...)
 
 		// There are no writes to the shared CVE catalog: one organization must
 		// not decide what every other one sees (405 for every tenant role).

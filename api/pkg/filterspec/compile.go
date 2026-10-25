@@ -67,6 +67,18 @@ func (a Actor) TenantID() shared.ID { return a.tenantID }
 // Restricted reports whether a data-scope predicate applies.
 func (a Actor) Restricted() bool { return a.scope != nil && !a.system }
 
+// AssetScopeSQL is the actor's data-scope predicate on assetExpr, with
+// placeholders from $first, for a query over another table than the
+// registry's (the software an asset runs, an alert's assets): the same
+// predicate Compile adds. It is "TRUE" with no args when no scope applies
+// (system work, or a caller the enforcer did not scope).
+func (a Actor) AssetScopeSQL(assetExpr string, first int) (string, []any) {
+	if a.system || a.scope == nil {
+		return "TRUE", nil
+	}
+	return ScopeSQL(assetExpr, a.scope, first)
+}
+
 // member reports whether the registry's member visibility rule applies:
 // every request caller that is not an administrator.
 func (a Actor) member() bool { return !a.system && !a.isAdmin }
