@@ -348,6 +348,12 @@ func (s *Service) approveEnrollment(ctx context.Context, p *sensordom.Pairing) e
 	if err != nil || t.TenantID != *p.TenantID {
 		return ErrNotFound
 	}
+	// A token revoked after the sensor started (before it revealed its
+	// nonce) approves nothing: revoking stops the token at once.
+	if t.RevokedAt != nil {
+		s.log.Warn("sensor enrollment refused at reveal: token revoked", "source_ip", p.SourceIP)
+		return ErrEnrollmentRefused
+	}
 	name := sanitizeName(firstNonEmpty(p.RequestedName, p.HostFacts.Name, p.HostFacts.Hostname))
 	if name == "" {
 		name = "sensor-" + p.Thumbprint[:8]

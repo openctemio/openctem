@@ -207,6 +207,24 @@ func TestEnrollmentToken_Refusals_DB(t *testing.T) {
 		t.Errorf("revoking twice: %v", err)
 	}
 
+	// Revoked after the sensor started, before it revealed: nothing is approved.
+	late := f.createToken(a, sensorpairing.CreateEnrollmentTokenInput{Name: "revoked-late"})
+	ls := newSensor(2)
+	if err := f.enroll(ls, late.Token, "203.0.113.51"); err != nil {
+		t.Fatalf("enroll before revoke: %v", err)
+	}
+	lid, _ := shared.IDFromString(late.ID)
+	if _, err := f.svc.RevokeEnrollmentToken(ctx, a, lid); err != nil {
+		t.Fatalf("revoke: %v", err)
+	}
+	lpid, _ := shared.IDFromString(ls.resp.PairingID)
+	if err := f.svc.Reveal(ctx, lpid, ls.thumb(), pairing.RevealRequest{SensorNonce: pairing.Encode(ls.nonce)}); !errors.Is(err, sensorpairing.ErrEnrollmentRefused) {
+		t.Errorf("reveal after revoke: %v, want the uniform refusal", err)
+	}
+	if st := f.status(ls); st.Status == pairing.StatusApproved || st.Identity != nil {
+		t.Errorf("a token revoked before the reveal approved the sensor: %+v", st)
+	}
+
 	expiring := f.createToken(a, sensorpairing.CreateEnrollmentTokenInput{Name: "expiring", TTL: time.Hour})
 	f.now = f.now.Add(2 * time.Hour)
 	refused("expired", expiring.Token, "203.0.113.50")
