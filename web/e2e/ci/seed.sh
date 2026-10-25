@@ -132,7 +132,7 @@ findings=$({
     printf '{"type":"vulnerability","title":"E2E finding %02d","severity":"%s","rule_id":"e2e-%02d","asset_ref":"a%d","description":"e2e"}\n' \
       "$i" "$([[ $((i % 3)) == 0 ]] && echo critical || echo medium)" "$i" "$((i % 2 + 1))"
   done
-  # Ten more for the triage mode spec (35-findings-triage-mode), which decides
+  # Ten more for the triage mode spec (36-findings-triage-mode), which decides
   # them: no other spec reads them.
   for i in $(seq 1 10); do
     printf '{"type":"vulnerability","title":"E2E triage %02d","severity":"high","rule_id":"e2e-tri-%02d","asset_ref":"a1","description":"e2e triage"}\n' \
