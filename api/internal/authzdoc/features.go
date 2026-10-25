@@ -35,7 +35,7 @@ var Features = []Feature{
 		Registers: []string{
 			"registerVulnerabilityRoutes", "registerFindingActivityRoutes", "registerFindingEvidenceItemRoutes",
 			"registerFindingImportRoutes", "registerImportMappingRoutes", "registerFindingRetestRoutes", "registerFindingRetestCheckRoutes", "registerFindingSourceRoutes", "registerFindingLifecycleRoutes", "registerVerificationChecklistRoutes",
-			"registerAITriageRoutes", "registerAttachmentRoutes", "registerSavedViewRoutes", "registerQueryRoutes",
+			"registerAITriageRoutes", "registerAttachmentRoutes", "registerSavedViewRoutes", "registerNavPinRoutes", "registerQueryRoutes",
 		},
 		Prefixes: []string{"/api/v1/verification-checklists"},
 	},
