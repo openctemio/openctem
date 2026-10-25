@@ -1,4 +1,4 @@
-.PHONY: all build run test test-db budgets-update lint clean docker-build docker-dev docker-prod docker-down migrate generate seed help seed-required docker-seed docker-seed-required db-setup db-setup-dev swagger contract swagger-check swagger-install env-docs authz-matrix
+.PHONY: all build run test test-db budgets-update lint clean docker-build docker-dev docker-prod docker-down migrate generate seed help seed-required docker-seed docker-seed-required db-setup db-setup-dev swagger contract swagger-check swagger-install env-docs authz-matrix migration-new migration-renumber
 
 # Variables
 APP_NAME := openctem
@@ -295,6 +295,14 @@ migrate-create:
 	fi
 	@echo "Creating migration $(name)..."
 	migrate create -ext sql -dir migrations -seq $(name)
+
+## migration-new: Create a migration numbered above develop and every open PR (usage: make migration-new name=x)
+migration-new:
+	@bash scripts/migration-number.sh new "$(name)"
+
+## migration-renumber: Move this branch's new migrations above develop and every open PR, staged
+migration-renumber:
+	@bash scripts/migration-number.sh renumber
 
 ## migrate-status: Show migration status
 migrate-status:
