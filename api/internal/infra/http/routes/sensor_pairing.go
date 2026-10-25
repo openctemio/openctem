@@ -65,6 +65,15 @@ func registerSensorPairingRoutes(router Router, h *handler.SensorPairingHandler,
 		r.GET("/expectations/{id}", h.GetExpectation, middleware.Require(permission.SensorsPair))
 		r.POST("/{id}/approve", h.Approve, middleware.Require(permission.SensorsApprove), userLimit)
 		r.POST("/{id}/reject", h.Deny, middleware.Require(permission.SensorsPair), userLimit)
+		// Sensors waiting for an administrator (token requires approval,
+		// or an expectation a sensor attached to).
+		r.GET("/pending", h.ListPendingPairings, middleware.Require(permission.SensorsPair))
+		// Organization enrollment tokens: a token is a pre-approval, so
+		// creating one needs sensors:approve and a recent re-authentication;
+		// revoking narrows and needs no step-up.
+		r.GET("/enrollment-tokens", h.ListEnrollmentTokens, middleware.Require(permission.SensorsRead))
+		r.POST("/enrollment-tokens", h.CreateEnrollmentToken, middleware.Require(permission.SensorsApprove), requireStepUp(), userLimit)
+		r.POST("/enrollment-tokens/{id}/revoke", h.RevokeEnrollmentToken, middleware.Require(permission.SensorsApprove), userLimit)
 	}, tenantMiddlewares...)
 }
 
