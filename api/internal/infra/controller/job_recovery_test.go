@@ -191,7 +191,7 @@ type stepFailure struct{ runID, stepKey, msg, code string }
 
 type recordingSteps struct{ got []stepFailure }
 
-func (s *recordingSteps) OnStepFailed(_ context.Context, runID, stepKey, msg, code string) error {
+func (s *recordingSteps) OnStepFailed(_ context.Context, _ shared.ID, runID, stepKey, msg, code string) error {
 	s.got = append(s.got, stepFailure{runID, stepKey, msg, code})
 	return nil
 }

@@ -91,7 +91,7 @@ func TestScanRun_FailedRunIsRecordedOnTheScan(t *testing.T) {
 	}
 	p := routingFromCommand(ctx, t, db, tenantID.String())
 
-	if err := pipeSvc.OnStepFailed(ctx, p.ScanRunID, p.StepKey, "scan target refused by guard", "COMMAND_FAILED"); err != nil {
+	if err := pipeSvc.OnStepFailed(ctx, tenantID, p.ScanRunID, p.StepKey, "scan target refused by guard", "COMMAND_FAILED"); err != nil {
 		t.Fatalf("OnStepFailed: %v", err)
 	}
 
@@ -218,7 +218,7 @@ func TestScanRun_LateResultDoesNotReviveACanceledRun(t *testing.T) {
 		t.Fatalf("CancelRun: %v", err)
 	}
 	// The sensor finishes anyway and reports.
-	if err := pipeSvc.OnStepCompleted(ctx, p.ScanRunID, p.StepKey, 1, nil); err != nil {
+	if err := pipeSvc.OnStepCompleted(ctx, tenantID, p.ScanRunID, p.StepKey, 1, nil); err != nil {
 		t.Fatalf("OnStepCompleted: %v", err)
 	}
 
@@ -250,7 +250,7 @@ func TestScanRun_LateFailureDoesNotOverwriteATimedOutRun(t *testing.T) {
 		`UPDATE scan_runs SET status = 'timeout', completed_at = NOW() WHERE id = $1`, run.ID.String()); err != nil {
 		t.Fatalf("mark run timed out: %v", err)
 	}
-	if err := pipeSvc.OnStepFailed(ctx, p.ScanRunID, p.StepKey, "late error", "COMMAND_FAILED"); err != nil {
+	if err := pipeSvc.OnStepFailed(ctx, tenantID, p.ScanRunID, p.StepKey, "late error", "COMMAND_FAILED"); err != nil {
 		t.Fatalf("OnStepFailed: %v", err)
 	}
 
