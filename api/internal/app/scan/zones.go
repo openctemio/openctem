@@ -120,8 +120,8 @@ func selectedZone(sc *scan.Scan, zones []*scanzone.Zone) (*scanzone.Zone, error)
 			return z, nil
 		}
 	}
-	return nil, shared.NewDomainError("SCAN_ZONE_NOT_FOUND", fmt.Sprintf(
-		"This scan is pinned to a scan zone that no longer exists; pick another zone or Automatic routing."), shared.ErrValidation)
+	return nil, shared.NewDomainError("SCAN_ZONE_NOT_FOUND",
+		"This scan is pinned to a scan zone that no longer exists; pick another zone or Automatic routing.", shared.ErrValidation)
 }
 
 // routeForScan routes a scan's targets: to the narrowest zone (Automatic), or
