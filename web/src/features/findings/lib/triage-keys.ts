@@ -39,6 +39,11 @@ const BY_KEY = new Map(TRIAGE_KEYS.map((k) => [k.key, k.action]))
 export const TRIAGE_IGNORE_SELECTOR =
   'input, textarea, select, button, a[href], [contenteditable="true"], [contenteditable=""], [role="combobox"], [role="listbox"], [role="option"], [role="menu"], [role="menuitem"], [role="dialog"], [role="alertdialog"]'
 
+const CLOSED_LAYER =
+  '[role="dialog"][data-state="closed"], [role="alertdialog"][data-state="closed"]'
+const OPEN_LAYER =
+  '[role="dialog"]:not([data-state="closed"]), [role="alertdialog"]:not([data-state="closed"])'
+
 /** Keys that still act while a button or link has focus (letters do not press it). */
 const ON_CONTROLS = new Set(['j', 'k', 'c', 'f', 'a', 'o', 's', 'e', '?', 'Escape'])
 
@@ -69,7 +74,10 @@ export function triageActionFor(
   if (e.metaKey || e.ctrlKey || e.altKey || e.repeat || e.defaultPrevented) return null
   const action = BY_KEY.get(e.key)
   if (!action) return null
-  const inside = closest(e.target, TRIAGE_IGNORE_SELECTOR)
+  // A picker or dialog that is closing (data-state="closed", still mounted
+  // for its exit animation) no longer owns the keys, even with focus inside.
+  const closing = closest(e.target, CLOSED_LAYER)
+  const inside = closing ? null : closest(e.target, TRIAGE_IGNORE_SELECTOR)
   if (inside) {
     // A button or link, including the closed trigger of a picker (focus
     // returns there after a pick), is not a place where letters are typed.
@@ -80,6 +88,6 @@ export function triageActionFor(
     // Enter on a button presses it; the letters still mean triage there.
     if (!plainControl || !ON_CONTROLS.has(e.key)) return null
   }
-  if (doc?.querySelector('[role="dialog"], [role="alertdialog"]')) return null
+  if (doc?.querySelector(OPEN_LAYER)) return null
   return action
 }
