@@ -43,6 +43,7 @@ import {
   useLookalikeExposures,
   useLookalikeWatches,
 } from '../hooks/use-easm-lookalikes'
+import { confirmName } from '@/lib/confirm-name'
 
 /** Candidates one watch may check (the API's range). */
 const MAX_CANDIDATES_MIN = 10
@@ -636,8 +637,9 @@ export function EASMLookalikes() {
           'lookalikes.removeDesc',
           'Its open lookalike exposures are resolved and its candidates are dropped.'
         )}
-        confirmText={t('confirm.remove', 'Remove')}
+        confirmText={t('lookalikes.removeButton', 'Stop watching')}
         destructive
+        typeToConfirm={removing ? confirmName(removing.domain, removing.id ?? '') : undefined}
         handleConfirm={() => void remove()}
       />
     </div>

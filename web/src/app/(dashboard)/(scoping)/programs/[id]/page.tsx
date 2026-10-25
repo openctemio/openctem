@@ -53,6 +53,7 @@ import {
   type ProgramDetail,
   type ProgramFormValues,
 } from '@/features/programs'
+import { confirmName } from '@/lib/confirm-name'
 
 function formFromProgram(p: ProgramDetail): ProgramFormValues {
   const lines = (inScope: boolean) =>
@@ -174,6 +175,7 @@ export default function ProgramPage({ params }: { params: Promise<{ id: string }
                   {t('programs.suspend', 'Suspend')}
                 </Button>
               )}
+              <span aria-hidden className="mx-1 h-6 w-px shrink-0 bg-border" />
               <Button variant="destructive" disabled={busy} onClick={() => setPending('end')}>
                 {t('programs.end', 'End')}
               </Button>
@@ -368,6 +370,7 @@ export default function ProgramPage({ params }: { params: Promise<{ id: string }
                   'Its scope entries stop authorizing scans until someone reactivates it and accepts the program terms again.'
                 )
           }
+          typeToConfirm={pending === 'end' ? confirmName(p.name, p.id) : undefined}
           confirmText={
             pending === 'end'
               ? t('confirm.program.end', 'End program')

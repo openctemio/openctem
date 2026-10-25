@@ -21,6 +21,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
+import { ConfirmDialog } from '@/components/confirm-dialog'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Badge } from '@/components/ui/badge'
@@ -85,6 +86,8 @@ export function JiraWebhookDialog({
   const { trigger: setSecret, isMutating: saving } = useSetJiraWebhookSecretApi(integration.id)
   const [shownSecret, setShownSecret] = useState('')
   const [entered, setEntered] = useState('')
+  // Replacing a secret that is set stops the old one at once: ask first.
+  const [askReplace, setAskReplace] = useState<'rotate' | 'save' | null>(null)
 
   const origin = typeof window === 'undefined' ? '' : window.location.origin
   const url = data ? absoluteWebhookUrl(data.webhook_url, origin) : ''
@@ -194,10 +197,10 @@ export function JiraWebhookDialog({
                   type="button"
                   variant="outline"
                   size="sm"
-                  onClick={() => void handleRotate()}
+                  onClick={() => (data.has_secret ? setAskReplace('rotate') : void handleRotate())}
                   disabled={rotating}
                 >
-                  <KeyRound className="mr-2 h-3.5 w-3.5" />
+                  <KeyRound className="me-2 h-3.5 w-3.5" />
                   {data.has_secret
                     ? t('settings.jiraWebhook.rotate', 'Generate a new secret')
                     : t('settings.jiraWebhook.generate', 'Generate a secret')}
@@ -222,7 +225,7 @@ export function JiraWebhookDialog({
                   />
                   <Button
                     type="button"
-                    onClick={() => void handleSave()}
+                    onClick={() => (data.has_secret ? setAskReplace('save') : void handleSave())}
                     disabled={!enteredValid || saving}
                   >
                     {t('settings.jiraWebhook.save', 'Save secret')}
@@ -238,6 +241,30 @@ export function JiraWebhookDialog({
           </Button>
         </DialogFooter>
       </DialogContent>
+      <ConfirmDialog
+        open={askReplace !== null}
+        onOpenChange={(next) => !next && setAskReplace(null)}
+        destructive
+        title={
+          askReplace === 'save'
+            ? t('confirm.jiraWebhook.saveTitle', undefined, { name: integration.name })
+            : t('confirm.jiraWebhook.rotateTitle', undefined, { name: integration.name })
+        }
+        desc={t(
+          askReplace === 'save' ? 'confirm.jiraWebhook.saveDesc' : 'confirm.jiraWebhook.rotateDesc'
+        )}
+        confirmText={
+          askReplace === 'save'
+            ? t('confirm.jiraWebhook.saveBtn')
+            : t('confirm.jiraWebhook.rotateBtn')
+        }
+        handleConfirm={async () => {
+          const action = askReplace
+          setAskReplace(null)
+          if (action === 'save') await handleSave()
+          else await handleRotate()
+        }}
+      />
     </Dialog>
   )
 }

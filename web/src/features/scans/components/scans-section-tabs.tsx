@@ -14,6 +14,9 @@ import { QuickScanDialog } from './quick-scan-dialog'
 /**
  * Scans · Runs · Workflows, the route tabs of Discovery > Scans. One table per
  * route, so every list keeps plain `page`, `per_page` and `sort` parameters.
+ * anatomy-ok: inside a PageStack (the Scans pages render this header and
+ * the strip as the first blocks of their own PageStack).
+ *
  * Placed directly under the page's `PageHeader` inside the page's `PageStack`,
  * which owns the 16px above and the 20px below (research/244).
  */

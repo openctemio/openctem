@@ -44,7 +44,12 @@ func NewClient(baseURL, token string, httpClient *http.Client) *Client {
 		// metadata ranges, and CheckRedirect re-validates every redirect
 		// target so a 30x cannot bounce the request onto an internal host.
 		httpClient = httpsec.SafeHTTPClient(30 * time.Second)
-		httpClient.CheckRedirect = func(req *http.Request, _ []*http.Request) error {
+		httpClient.CheckRedirect = func(req *http.Request, via []*http.Request) error {
+			// Default policy first: no https to http downgrade (the
+			// Authorization token would be resent in clear text) and a hop limit.
+			if err := httpsec.CheckRedirect(req, via); err != nil {
+				return err
+			}
 			if _, err := httpsec.ValidateURL(req.URL.String()); err != nil {
 				return fmt.Errorf("defectdojo: blocked redirect target: %w", err)
 			}

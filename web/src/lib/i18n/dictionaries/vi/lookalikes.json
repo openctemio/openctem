@@ -26,6 +26,7 @@
   "lookalikes.pageDescription": "Các tên miền do người khác đăng ký để giả mạo tên miền của bạn, được phát hiện mà không cần liên hệ tới chúng.",
   "lookalikes.pageTitle": "Bề mặt tấn công",
   "lookalikes.remove": "Ngừng theo dõi {domain}",
+  "lookalikes.removeButton": "Ngừng theo dõi",
   "lookalikes.removeDesc": "Các điểm phơi nhiễm giả mạo đang mở của nó sẽ được đóng và các ứng viên bị xóa.",
   "lookalikes.removeFailed": "Không ngừng theo dõi được tên miền",
   "lookalikes.removeTitle": "Ngừng theo dõi {domain}?",

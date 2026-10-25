@@ -177,10 +177,12 @@ function SavedCheck({ check, findingId }: { check: RetestCheck; findingId: strin
   const lastVerdict = (retests?.data as FindingRetestWithCheck[] | undefined)?.find(
     (r) => r.retest_check_id === check.id
   )
+  const [approveOpen, setApproveOpen] = useState(false)
   const canApprove =
     check.approval.required && !check.approval.approved && hasPermission(Permission.ScopeApprove)
 
   const onApprove = async () => {
+    setApproveOpen(false)
     try {
       await approve.trigger()
       toast.success(t('findings.retestCheck.approved', 'Retest check approved'))
@@ -217,13 +219,13 @@ function SavedCheck({ check, findingId }: { check: RetestCheck; findingId: strin
           {toDisplayText(check.template_name, 200) ||
             t('findings.retestCheck.unnamed', 'Unnamed check')}
         </span>
-        <span className="text-muted-foreground"> · {kindLabel}</span>
+        <span className="ms-2 text-muted-foreground">{kindLabel}</span>
         {check.template_digest && (
           <span
             className="ms-1 font-mono text-xs text-muted-foreground"
             title={check.template_digest}
           >
-            · {shortDigest(check.template_digest)}
+            {shortDigest(check.template_digest)}
           </span>
         )}
       </div>
@@ -256,7 +258,7 @@ function SavedCheck({ check, findingId }: { check: RetestCheck; findingId: strin
             variant="outline"
             size="sm"
             className="h-7"
-            onClick={() => void onApprove()}
+            onClick={() => setApproveOpen(true)}
             disabled={approve.isMutating}
           >
             {approve.isMutating && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
@@ -264,6 +266,21 @@ function SavedCheck({ check, findingId }: { check: RetestCheck; findingId: strin
           </Button>
         )}
       </div>
+      <ConfirmDialog
+        open={approveOpen}
+        onOpenChange={setApproveOpen}
+        title={t('findings.retestCheck.approveTitle', 'Approve the retest check "{name}"?', {
+          name:
+            toDisplayText(check.template_name, 120) ||
+            t('findings.retestCheck.unnamed', 'Unnamed check'),
+        })}
+        desc={t(
+          'findings.retestCheck.approveDesc',
+          'Once approved, a retest of this finding sends traffic to its target with this check. Approving records you as the approver.'
+        )}
+        confirmText={t('findings.retestCheck.approveButton', 'Approve check')}
+        handleConfirm={onApprove}
+      />
       {check.tier_reason && (
         <p className="text-xs text-muted-foreground">{toDisplayText(check.tier_reason, 300)}</p>
       )}
