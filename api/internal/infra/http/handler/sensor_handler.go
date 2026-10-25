@@ -52,9 +52,9 @@ type SensorHandler struct {
 	// contentPolicies supplies the tenant's scanner content policy for the
 	// content view and health (RFC-031); nil uses the platform default.
 	contentPolicies ContentPolicySource
-	// zones lists the tenant's scan zones, to prefill the sensor-local
-	// policy template with the sensor's ranges; nil leaves them out.
-	zones ZoneLister
+	// policyPrefill fills the sensor-local policy template: the sensor's
+	// zones, else the organization's scope; nil sources leave parts out.
+	policyPrefill *SensorPolicyPrefill
 	// grants serves the per-sensor grant routes (RFC-052 §5); nil: 404.
 	grants    *sensorgrant.Service
 	now       func() time.Time
@@ -68,10 +68,10 @@ type ZoneLister interface {
 	List(ctx context.Context, tenantID shared.ID) ([]*scanzone.Zone, error)
 }
 
-// SetZoneLister makes the install snippets prefill the sensor-local policy
-// with the ranges of the sensor's scan zones (RFC-040 §5.7).
-func (h *SensorHandler) SetZoneLister(z ZoneLister) {
-	h.zones = z
+// SetPolicyPrefill makes the install snippets prefill the sensor-local
+// policy with the sensor's scan zones, else the organization's scope.
+func (h *SensorHandler) SetPolicyPrefill(p *SensorPolicyPrefill) {
+	h.policyPrefill = p
 }
 
 // NewSensorHandler creates a new SensorHandler.
@@ -1534,13 +1534,9 @@ func (h *SensorHandler) GetConfigTemplates(w http.ResponseWriter, r *http.Reques
 
 		ReleaseIdentity: product.ReleaseIdentity,
 	}
-	if h.zones != nil && a.TenantID != nil {
-		// Best effort: without zones the policy template asks for ranges.
-		if zones, zerr := h.zones.List(r.Context(), *a.TenantID); zerr == nil {
-			data.Policy = sensorapp.PolicyFromZones(zones, a.ID)
-		} else {
-			h.logger.Warn("scan zones not read for the policy template", "error", logger.SanitizeError(zerr))
-		}
+	if a.TenantID != nil {
+		// Best effort: with nothing to prefill the template asks for targets.
+		data.Policy = h.policyPrefill.For(r.Context(), *a.TenantID, a.ID)
 	}
 	rendered, err := h.templateService.Render(data)
 	if err != nil {
