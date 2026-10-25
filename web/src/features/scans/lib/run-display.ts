@@ -243,3 +243,44 @@ export function runTargetNote(
   if (skipped > 0) parts.push(t('scans.outcome.skipped', undefined, { count: skipped }))
   return parts.length > 0 ? parts.join(' · ') : null
 }
+
+/** Reason codes of an inconclusive or exposed-elsewhere result with their own wording. */
+const RESULT_CODES = new Set([
+  'endpoint_mismatch',
+  'matched_elsewhere',
+  'no_endpoint_proof',
+  'unreachable',
+  'blocked',
+  'auth_changed',
+  'server_error',
+  'template_changed',
+  'no_result',
+  'error',
+  'template_not_found',
+  'excluded_by_policy',
+  'no_verdict',
+  'check_uncalibrated',
+])
+
+/**
+ * What a run's result means in plain words and what to do about it. A code
+ * this build has no wording for reads as the generic inconclusive text for
+ * its kind, never as the raw code.
+ */
+export function runResultHelp(
+  result: { kind?: string; code?: string },
+  t: Translate = enTranslate
+): { headline: string; text: string; fix: string } {
+  const exposed = result.kind === 'still_exposed_elsewhere'
+  const code = result.code && RESULT_CODES.has(result.code) ? result.code : ''
+  const base = code
+    ? `scans.result.${code}`
+    : exposed
+      ? 'scans.result.matched_elsewhere'
+      : 'scans.result.unknown'
+  return {
+    headline: exposed ? t('scans.result.exposedElsewhere') : t('scans.result.inconclusive'),
+    text: t(`${base}.text`),
+    fix: t(`${base}.fix`),
+  }
+}
