@@ -47,6 +47,8 @@ type findingEvent struct {
 	// forceAssignee tells the assignee even if they stopped watching (the
 	// assignment itself).
 	forceAssignee bool
+	// watchersToo tells the watchers although no person did it (a regression).
+	watchersToo bool
 	// actorWatches is why the actor starts watching ("" = they do not).
 	actorWatches participationdom.Reason
 	// assigneeWatches adds the assignee as a watcher (an assignment).
@@ -88,9 +90,10 @@ func (s *VulnerabilityService) notifyFinding(ctx context.Context, f *vulnerabili
 		return
 	}
 	pe := participation.Event{
-		Item:     participationdom.Item{Kind: participationdom.ItemFinding, ID: f.ID()},
-		Actor:    actor,
-		TeamOnly: ev.teamOnly,
+		Item:        participationdom.Item{Kind: participationdom.ItemFinding, ID: f.ID()},
+		Actor:       actor,
+		TeamOnly:    ev.teamOnly,
+		WatchersToo: ev.watchersToo,
 	}
 	if a := f.AssignedTo(); a != nil {
 		if ev.forceAssignee {
@@ -129,4 +132,26 @@ func (s *VulnerabilityService) notifyFinding(ctx context.Context, f *vulnerabili
 			s.logger.Warn("finding event: notify", "error", logger.SanitizeError(err), "type", ev.typ)
 		}
 	}
+}
+
+// NotifyRegression tells the assignee and the watchers that a finding closed
+// as fixed was detected again and reopened (*retest.ChangeAnnouncer). A fix
+// that a retest or a review had verified is worded as such. Who hears is
+// decided as for any finding event (data scope re-checked at send time).
+func (s *VulnerabilityService) NotifyRegression(ctx context.Context, tenantID, findingID shared.ID, verifiedFix bool, detail string) {
+	f, err := s.findingRepo.GetByID(ctx, tenantID, findingID)
+	if err != nil || f == nil {
+		return
+	}
+	title := "Regression: a fixed finding was detected again and reopened"
+	if verifiedFix {
+		title = "Verified fix regressed: a fixed and verified finding was detected again"
+	}
+	s.notifyFinding(ctx, f, findingEvent{
+		typ:         notificationdom.TypeFindingStatusChange,
+		title:       title,
+		body:        detail,
+		teamOnly:    isPentest(f),
+		watchersToo: true,
+	})
 }
