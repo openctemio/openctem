@@ -197,7 +197,7 @@ func (r *IntegrationNotificationExtensionRepository) ListIntegrationsWithNotific
 	query := `
 		SELECT
 			i.id, i.tenant_id, i.name, i.description, i.category, i.provider,
-			i.status, i.status_message, i.auth_type, i.base_url, i.credentials_encrypted,
+			i.status, i.status_message, i.status_code, i.auth_type, i.base_url, i.credentials_encrypted,
 			i.last_sync_at, i.next_sync_at, i.sync_interval_minutes, i.sync_error,
 			i.config, i.metadata, i.stats, i.created_at, i.updated_at, i.created_by,
 			COALESCE(n.enabled_severities, '["critical", "high"]'::jsonb),
@@ -324,6 +324,7 @@ func (r *IntegrationNotificationExtensionRepository) scanIntegrationWithNotifica
 		provider             string
 		status               string
 		statusMessage        sql.NullString
+		statusCode           sql.NullString
 		authType             string
 		baseURL              sql.NullString
 		credentialsEncrypted sql.NullString
@@ -348,7 +349,7 @@ func (r *IntegrationNotificationExtensionRepository) scanIntegrationWithNotifica
 	err := rows.Scan(
 		// Integration
 		&id, &tenantID, &name, &description, &category, &provider,
-		&status, &statusMessage, &authType, &baseURL, &credentialsEncrypted,
+		&status, &statusMessage, &statusCode, &authType, &baseURL, &credentialsEncrypted,
 		&lastSyncAt, &nextSyncAt, &syncIntervalMinutes, &syncError,
 		&configJSON, &metadataJSON, &statsJSON, &createdAt, &updatedAt, &createdBy,
 		// Notification extension
@@ -362,7 +363,7 @@ func (r *IntegrationNotificationExtensionRepository) scanIntegrationWithNotifica
 	// Reconstruct integration
 	intg, err := r.integrationRepo.reconstructIntegration(
 		id, tenantID, name, description.String, category, provider,
-		status, statusMessage.String, authType, baseURL.String, credentialsEncrypted.String,
+		status, statusMessage.String, statusCode.String, authType, baseURL.String, credentialsEncrypted.String,
 		lastSyncAt, nextSyncAt, syncIntervalMinutes, syncError.String,
 		configJSON, metadataJSON, statsJSON, createdAt, updatedAt, createdBy,
 	)
