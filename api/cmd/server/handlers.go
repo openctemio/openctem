@@ -3,6 +3,7 @@ package main
 import (
 	"os"
 
+	navpinapp "github.com/openctemio/openctem/api/internal/app/navpin"
 	queryapp "github.com/openctemio/openctem/api/internal/app/query"
 
 	"context"
@@ -574,6 +575,9 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		ReportSchedule:         newReportScheduleHandler(repos, svc, log),
 		UserDashboard:          handler.NewUserDashboardHandler(svc.UserDashboard, log).SetWidgetData(svc.DashboardWidgets),
 		SavedView:              handler.NewSavedViewHandler(svc.SavedView, log),
+		NavPin: handler.NewNavPinHandler(
+			navpinapp.NewService(repos.NavPin, svc.SavedView, svc.Vulnerability, log),
+			svc.Vulnerability, log),
 
 		// Vulnerabilities & Exposures
 		Vulnerability:    vulnHandler,

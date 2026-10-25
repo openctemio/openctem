@@ -28,6 +28,7 @@ import (
 	"github.com/openctemio/openctem/api/internal/app/datascope"
 	"github.com/openctemio/openctem/api/internal/app/finding"
 	appremediation "github.com/openctemio/openctem/api/internal/app/remediation"
+	navpinapp "github.com/openctemio/openctem/api/internal/app/navpin"
 	savedviewapp "github.com/openctemio/openctem/api/internal/app/savedview"
 	infrahttp "github.com/openctemio/openctem/api/internal/infra/http"
 	"github.com/openctemio/openctem/api/internal/infra/http/handler"
@@ -147,6 +148,8 @@ func newGroupScopeHarness(t *testing.T) *gsHarness {
 	registerVulnerabilityRoutes(router, vulnHandler,
 		actionsHandler, nil, handler.NewRemediationGroupHandler(remediationSvc), auth, nil)
 	registerSavedViewRoutes(router, handler.NewSavedViewHandler(viewSvc, log), auth, nil)
+	registerNavPinRoutes(router, handler.NewNavPinHandler(
+		navpinapp.NewService(postgres.NewNavPinRepository(db), viewSvc, vulnSvc, log), vulnSvc, log), auth, nil)
 	checklistHandler := handler.NewVerificationChecklistHandler(finding.NewVerificationChecklistService(ds.db, enforcer), log)
 	checklistHandler.SetAuditService(auditapp.NewAuditService(postgres.NewAuditRepository(db), log))
 	registerVerificationChecklistRoutes(router, checklistHandler, []Middleware{auth})
