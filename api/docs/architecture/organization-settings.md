@@ -116,7 +116,7 @@ Severity follows what the change does, not which endpoint it came through:
 | Change | Severity |
 |---|---|
 | security: 2FA requirement off, SSO enforcement off, IP allowlist emptied | Critical |
-| security: IP allowlist widened (an entry outside every previous range), allowed domains widened or removed, email verification `never`, private-target local policy off, session timeout longer | High |
+| security: IP allowlist widened (an entry outside every previous range), allowed domains widened or removed, email verification `never`, private-target local policy off | High |
 | security: any other change (tightening, neutral) | Medium |
 | organization slug renamed (SAML/SSO URLs depend on it) | High |
 | organization name, description, logo | Low |
@@ -172,10 +172,26 @@ decisions B5, B6). These are hidden in the web console, and
 
 - organization session timeout (until per-organization session policy is
   enforced; the stored value is no longer sent on save);
-- organization industry, timezone and default language;
+- organization industry and default language;
 - the second language picker on Preferences (the user menu picks the language);
+- the personal time zone, date format and time format on Preferences (saved
+  in the browser only; no date formatter read them). They come back when one
+  shared date formatter honours them;
 - the e-mail digest and desktop notifications (no sender yet);
 - the asset-lifecycle "manual reactivation grace".
+
+**Organization time zone** (`general.timezone`, Settings > General): the
+organization's clock. Emerging-threat quiet hours and the digest hour
+(`app/threatalert/planner.go`) and scan approval hours (`app/scangov`) use it;
+any IANA zone is accepted (the zone database is embedded in the binary).
+Dates on screen use the viewer's browser zone.
+
+**Precedence.** A value comes from the most specific layer that sets it:
+platform default (env or console), then organization, then user. A platform
+ceiling (env or console) bounds what an organization may choose, and an
+organization security floor (MFA, SSO, IP allowlist) cannot be loosened by a
+user. The time zone is split by purpose: the organization's for schedules,
+the viewer's for display.
 
 The `/settings/integrations/saml` and `/verified-domains` explainer pages
 redirect (308) to Authentication, which carries the same "SSO is configured by

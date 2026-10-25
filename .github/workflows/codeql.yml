@@ -104,7 +104,7 @@ jobs:
         with:
           languages: go
           build-mode: manual
-          queries: security-and-quality
+          config-file: ./.github/codeql/codeql-config-go.yml # go/log-injection replaced, see the file
       - name: Build (go)
         if: matrix.language == 'go'
         working-directory: api

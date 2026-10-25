@@ -179,22 +179,3 @@ export const SUPPORTED_LANGUAGES = [
   { value: 'ko', label: '한국어' },
   { value: 'zh', label: '中文' },
 ] as const
-
-export const SUPPORTED_TIMEZONES = [
-  { value: 'UTC', label: 'UTC' },
-  { value: 'Asia/Ho_Chi_Minh', label: 'Asia/Ho Chi Minh (UTC+7)' },
-  { value: 'Asia/Tokyo', label: 'Asia/Tokyo (UTC+9)' },
-  { value: 'Asia/Seoul', label: 'Asia/Seoul (UTC+9)' },
-  { value: 'Asia/Shanghai', label: 'Asia/Shanghai (UTC+8)' },
-  { value: 'Asia/Singapore', label: 'Asia/Singapore (UTC+8)' },
-  { value: 'America/New_York', label: 'America/New York (UTC-5)' },
-  { value: 'America/Los_Angeles', label: 'America/Los Angeles (UTC-8)' },
-  { value: 'Europe/London', label: 'Europe/London (UTC+0)' },
-  { value: 'Europe/Paris', label: 'Europe/Paris (UTC+1)' },
-] as const
-
-export const DATE_FORMATS = [
-  { value: 'DD/MM/YYYY', label: 'DD/MM/YYYY (31/12/2024)' },
-  { value: 'MM/DD/YYYY', label: 'MM/DD/YYYY (12/31/2024)' },
-  { value: 'YYYY-MM-DD', label: 'YYYY-MM-DD (2024-12-31)' },
-] as const
