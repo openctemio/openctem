@@ -122,6 +122,7 @@ func (h *FindingActionsHandler) findingGroupsRoute() filterquery.Route {
 // @Param  finding_type  query  []string  false  "finding type: any of (comma list)"  collectionFormat(csv)  Enums(vulnerability, secret, misconfiguration, compliance, web3, license)
 // @Param  finding_type_not  query  []string  false  "finding type: none of (comma list)"  collectionFormat(csv)  Enums(vulnerability, secret, misconfiguration, compliance, web3, license)
 // @Param  is_in_kev  query  boolean  false  "is in kev equals"
+// @Param  kev_ransomware  query  boolean  false  "kev ransomware equals"
 // @Param  is_reachable  query  boolean  false  "is reachable equals"
 // @Param  epss_score_gte  query  number  false  "epss score at least"
 // @Param  epss_score_lte  query  number  false  "epss score at most"
@@ -292,6 +293,7 @@ func (h *FindingActionsHandler) ListFindingGroups(w http.ResponseWriter, r *http
 // @Param  finding_type  query  []string  false  "finding type: any of (comma list)"  collectionFormat(csv)  Enums(vulnerability, secret, misconfiguration, compliance, web3, license)
 // @Param  finding_type_not  query  []string  false  "finding type: none of (comma list)"  collectionFormat(csv)  Enums(vulnerability, secret, misconfiguration, compliance, web3, license)
 // @Param  is_in_kev  query  boolean  false  "is in kev equals"
+// @Param  kev_ransomware  query  boolean  false  "kev ransomware equals"
 // @Param  is_reachable  query  boolean  false  "is reachable equals"
 // @Param  epss_score_gte  query  number  false  "epss score at least"
 // @Param  epss_score_lte  query  number  false  "epss score at most"
