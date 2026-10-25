@@ -62,6 +62,11 @@ const (
 	// OutcomeInconclusive: no conclusion; ReasonCode says why. The finding
 	// does not move.
 	OutcomeInconclusive Outcome = "inconclusive"
+	// OutcomeStillExposedElsewhere: the check no longer matches the finding's
+	// own endpoint (or never requested it) but matches at another path of
+	// the same target. Nothing is proven fixed and nothing is reopened: the
+	// finding stays as it is, and the other paths are named in the reason.
+	OutcomeStillExposedElsewhere Outcome = "still_exposed_elsewhere"
 )
 
 // ReasonCode classifies a retest's outcome.
@@ -82,6 +87,9 @@ const (
 	ReasonAuthChanged      ReasonCode = "auth_changed"
 	ReasonServerError      ReasonCode = "server_error"
 	ReasonEndpointMismatch ReasonCode = "endpoint_mismatch"
+	// ReasonMatchedElsewhere: the check matched at another path than the
+	// finding's endpoint.
+	ReasonMatchedElsewhere ReasonCode = "matched_elsewhere"
 	ReasonTemplateChanged  ReasonCode = "template_changed"
 	ReasonNoResult         ReasonCode = "no_result"
 	ReasonError            ReasonCode = "error"
@@ -116,6 +124,9 @@ type Verdict struct {
 	Outcome Outcome
 	Code    ReasonCode
 	Reason  string
+	// OtherPaths are the other URLs the check matched at (display form, a
+	// few), set with OutcomeStillExposedElsewhere.
+	OtherPaths []string
 }
 
 // inconclusive is a Verdict without a conclusion.
@@ -125,6 +136,12 @@ func inconclusive(code ReasonCode, reason string) Verdict {
 
 // Inconclusive is an inconclusive Verdict (for the service's own failures).
 func Inconclusive(code ReasonCode, reason string) Verdict { return inconclusive(code, reason) }
+
+// matchedSomewhere: the outcome says the check matched, at the finding's
+// endpoint or at another path.
+func (o Outcome) matchedSomewhere() bool {
+	return o == OutcomeStillVulnerable || o == OutcomeStillExposedElsewhere
+}
 
 // Conclusive reports whether the outcome says something about the finding.
 func (o Outcome) Conclusive() bool { return o == OutcomeConfirmedFixed || o == OutcomeStillVulnerable }
@@ -202,6 +219,8 @@ type CheckResult struct {
 	// Evidence is what the re-run reported it sent and received
 	// (evidence_items in the result), normalized but not masked.
 	Evidence []evidence.Item
+	// Requests is one line per request the re-run made (newer sensors).
+	Requests []RequestResult
 }
 
 const (
@@ -222,6 +241,14 @@ const (
 func Decide(check, reach CheckResult, matchedAt string, cls ...Class) Verdict {
 	if check.Missing {
 		return inconclusive(ReasonNoResult, "no result from the template re-run")
+	}
+	switch check.Outcome {
+	case checkDetected, checkNotDetected:
+		// A check that probes several paths reports each request: the
+		// finding's own endpoint decides, not whichever exchange came first.
+		if v, ok := DecideByRequests(check.Requests, matchedAt, firstClass(cls)); ok {
+			return v
+		}
 	}
 	switch check.Outcome {
 	case checkDetected:
