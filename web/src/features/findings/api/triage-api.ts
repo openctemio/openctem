@@ -87,3 +87,18 @@ export function writeFindingAssignee(
     ? post<ApiFinding>(`${base}/assign`, { user_id: userId }, ifMatchRowVersion(rowVersion))
     : post<ApiFinding>(`${base}/unassign`, {}, ifMatchRowVersion(rowVersion))
 }
+
+/** The finding as it is now (Undo writes on the current version, not the shown one). */
+export function fetchFinding(findingId: string): Promise<ApiFinding> {
+  return get<ApiFinding>(`/api/v1/findings/${encodeURIComponent(findingId)}`)
+}
+
+/** Withdraws a pending approval request (it stays on record as cancelled). */
+export function cancelApproval(approvalId: string): Promise<unknown> {
+  return post(`/api/v1/approvals/${encodeURIComponent(approvalId)}/cancel`, {})
+}
+
+/** "Retest now": a deterministic re-check of the finding's rule (findings:verify). */
+export function requestRetest(findingId: string): Promise<unknown> {
+  return post(`/api/v1/findings/${encodeURIComponent(findingId)}/retests`, {})
+}
