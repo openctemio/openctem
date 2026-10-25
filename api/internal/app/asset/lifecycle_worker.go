@@ -422,9 +422,12 @@ const maxTransitionsPerRun = 50_000
 //   - manual_status_override = false — respects operator control.
 //   - lifecycle_paused_until — NULL or past → not paused. Honor
 //     operator snooze (manual reactivation sets this to NOW+grace).
-//   - GREATEST(last_seen, updated_at) — manually edited assets
-//     count as "touched" even without scanner activity, so ops who
-//     fix an asset manually do not wake up to it flagged stale.
+//   - The clock is last_seen only. updated_at used to count too, but
+//     the table's trigger moves it on every write (risk rescores, the
+//     scoring version stamp, program links), so assets with open
+//     findings never went stale. A person who wants an unseen asset kept
+//     active reactivates it (lifecycle_paused_until) or sets a manual
+//     status.
 //   - COALESCE(..., created_at) — legacy rows with NULL last_seen
 //     fall back to created_at to avoid NULL-comparison pitfalls.
 //   - Grace period on discovered_at (COALESCE with created_at again
@@ -446,8 +449,7 @@ const lifecycleCandidateClauses = `
 	  AND manual_status_override = FALSE
 	  AND (lifecycle_paused_until IS NULL OR lifecycle_paused_until < NOW())
 	  AND COALESCE(discovered_at, created_at) < NOW() - make_interval(days => $3)
-	  AND GREATEST(COALESCE(last_seen, created_at), updated_at)
-	      < NOW() - make_interval(days => $2)
+	  AND COALESCE(last_seen, created_at) < NOW() - make_interval(days => $2)
 	  AND NOT (` + assetProvenanceSQL + ` = ANY($4::text[]))
 	  AND NOT (COALESCE(NULLIF(discovery_source, ''), 'manual') = ANY($4::text[]))
 `

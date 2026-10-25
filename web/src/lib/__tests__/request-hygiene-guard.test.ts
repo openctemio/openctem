@@ -48,7 +48,7 @@ const RAW_FETCH_EXEMPT_DIRS = ['lib/api/', 'app/api/', 'lib/admin-api/', 'consol
 /** Reviewed raw `fetch('/api/v1/…')` call sites, file → count. */
 const RAW_FETCH_BASELINE: Record<string, number> = {
   'context/tenant-provider.tsx': 1,
-  'features/pentest/components/attachment-upload.tsx': 2,
+  'features/pentest/components/attachment-upload.tsx': 1,
   'features/pentest/components/report-builder.tsx': 1,
   'features/scanner-templates/components/scanner-templates-section.tsx': 1,
   'features/tenant/components/create-team-form.tsx': 1,

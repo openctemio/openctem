@@ -86,7 +86,6 @@
   "attackSurface.external.allTypes": "All types",
   "attackSurface.external.cancel": "Cancel",
   "attackSurface.external.col.asset": "Asset",
-  "attackSurface.external.col.findings": "Findings",
   "attackSurface.external.col.labels": "Labels",
   "attackSurface.external.col.lastSeen": "Last seen",
   "attackSurface.external.col.risk": "Risk",
