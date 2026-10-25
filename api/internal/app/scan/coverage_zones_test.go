@@ -97,8 +97,8 @@ func TestZoneRoutingSkippedOnlyWithMarker(t *testing.T) {
 	if zoneRoutingSkipped(context.Background()) {
 		t.Fatal("a plain context skips zone routing")
 	}
-	//nolint:staticcheck // a foreign key of the same shape must not count
-	if zoneRoutingSkipped(context.WithValue(context.Background(), "zoneRoutingKey", true)) {
+	// A foreign key of the same shape must not count.
+	if zoneRoutingSkipped(context.WithValue(context.Background(), "zoneRoutingKey", true)) { //nolint:staticcheck // SA1029: the string key is the point of the test
 		t.Fatal("a string key skips zone routing")
 	}
 	if !zoneRoutingSkipped(withoutZoneRouting(context.Background())) {
