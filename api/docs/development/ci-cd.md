@@ -32,7 +32,8 @@ truth: this page describes them as of the merge-queue routing (#730, 2026-10-02)
 | Release Publish (`release-publish.yml`) | A `release/v*` PR merged into `main`; manual | Tags `vX.Y.Z` (only if `main`'s tree is the release branch's and its `versions.yaml` says `vX.Y.Z`), starts Docker Publish + Release, opens the develop and helm-charts follow-up PRs, closes the train issue | — |
 | API CI `Detect API changes` step "Changelog fragments" | PR, merge queue, push (also docs-only changes) | `api/scripts/changelog.py check`: fragment format, no entry under Unreleased in `api/CHANGELOG.md`, no committed merge-conflict marker | — |
 | Release Reminder (`release-reminder.yml`) | Mondays 01:00 UTC (train weeks only); manual | Opens/updates the issue "Release train vX.Y.Z" with the proposal and changelog preview | — |
-| Security Gate (`security-gate.yml`) | PR (opened, pushed, labelled, retargeted); merge queue | Classifies the PR against `.github/security-paths.yml` and reviews its diff; a security-sensitive PR passes only with the `security-ack` label and no open HIGH (see [Security gate](#security-gate)). The gate's unit tests and the CODEOWNERS mirror run in **Workflow Lint** (they run PR code; the gate job never does) | **security-gate** |
+| Security Gate (`security-gate.yml`) | PR (opened, pushed, reopened; labelled and retargeted through `security-gate-label.yml`); merge queue | Classifies the PR against `.github/security-paths.yml` and reviews its diff; a security-sensitive PR passes only with the `security-ack` label and no open HIGH (see [Security gate](#security-gate)). The gate's unit tests and the CODEOWNERS mirror run in **Workflow Lint** (they run PR code; the gate job never does) | **security-gate** |
+| Security Gate Label (`security-gate-label.yml`) | PR (`security-ack` added or removed, retargeted) | Re-runs the head's `security-gate` run, which the pinned gate workflow does not start on labels; decides nothing itself | |
 | CLA (`cla.yml`) | PR to any branch (opened, pushed, reopened); a PR comment that signs or says `recheck`; merge queue (passes) | Checks that every commit author has accepted the [Contributor License Agreement](../../../CONTRIBUTING.md#contributor-license-agreement); records new signatures in the private `openctemio/cla-signatures`. Runs in the base context and never checks out pull request code. In the merge queue it passes at once, so it can be required on pull requests. **CLA scope test** (`cla-test.yml`, when the workflow changes) tests who must sign against recorded commit lists | **cla** |
 | Release Tooling (`release-tooling.yml`) | PR / push touching `versions.yaml`, the release scripts or a versioned default | **Release scripts** (shellcheck + shell tests) and **Version consistency** (`sync-versions.sh --check`; on `release/vX.Y.Z` and on `main` right after it merges, `--release vX.Y.Z`: `platform.release` must be that version) | — |
 | CI image mirror (`ci-image-mirror.yml`) | Push to `develop` changing the list or the scripts; daily (04:23 UTC); manual | Copies the third-party images CI pulls, and the digest-pinned base images of the sensor's Dockerfiles, to `ghcr.io/openctemio/mirror` (see [CI image mirror](#ci-image-mirror)) | — |
@@ -119,9 +120,18 @@ library only):
 
 **Acknowledging (the maintainer's one click).** Read the gate comment and the
 diff of the listed files, then add the **`security-ack`** label. The gate
-re-runs on the label and turns green; queue the pull request as usual. In the
-merge queue the gate runs again (`merge_group`), finds the pull request from the
-queue branch name and reads its labels and code-scanning alerts through the API.
+runs again and turns green; queue the pull request as usual. The pinned gate
+workflow (see "Pinning the required check" below) starts only on opened,
+pushed and reopened, so the small `security-gate-label.yml` workflow re-runs
+the head's gate run when `security-ack` is added or removed or the pull request
+is retargeted: it waits for that run to finish and calls the re-run API (a
+re-run keeps the run's event and pinned workflow version, and the gate reads
+the labels again). It decides nothing: a missing re-run leaves the check red
+(re-run it by hand; fork pull requests always need that, their token is
+read-only), an extra one evaluates the same records again. In the merge queue
+the gate runs again (`merge_group`), finds the pull request from the queue
+branch name and reads its labels, the push log and code-scanning alerts
+through the API; nothing depends on a run started by the label.
 
 - The ack covers the commit it was added on, and later commits that leave the
   security-sensitive lines alone. The gate never stores or reads a decision in
@@ -130,12 +140,21 @@ queue branch name and reads its labels and code-scanning alerts through the API.
   GitHub writes itself:
   1. the newest `labeled` issue event for `security-ack`: who added it and
      when (the actor must be listed under `ackers`);
-  2. the commit it was added on: the head of the run of this workflow that the
-     label started (the earliest `pull_request` run of `security-gate.yml` for
-     the pull request's branch, started by the same user within 10 minutes of
-     the label). GitHub creates runs with the event's actor and head commit; a
-     workflow token cannot. The gate comment shows this commit next to the
-     current head, so the acker can confirm what the label covers.
+  2. the commit it was added on: the tip of the pull request's head branch at
+     the label's time, from the branch's push log (`GET
+     /repos/{head repository}/activity`, every push, force push, creation and
+     deletion of the branch with GitHub's own timestamp and new tip). Commit
+     author and committer dates are never read (the pusher writes them), and
+     neither are workflow runs or check suites (a pull request's workflows
+     decide which runs exist, and a workflow token can create check suites).
+     A pull request or its workflows can add to the push log only by really
+     moving the branch, which the log then records. If the branch moved 60
+     seconds or less before the label, the page the acker read may still have
+     shown the previous head: the gate cannot tell and fails closed (add the
+     label again). The whole log is read and ordered by time; a log longer
+     than 3000 entries, an API error or no entry before the label fails
+     closed. The gate comment shows this commit next to the current head, so
+     the acker can confirm what the label covers.
   The issue-event list must be complete: its newest `security-ack` event must
   be the `labeled` one (the label is on the pull request), and a list of 3000
   events or more fails the check, since it may be cut off.
@@ -155,22 +174,19 @@ queue branch name and reads its labels and code-scanning alerts through the API.
     `.github/security-paths.yml` or `.github/scripts/security_gate.py` (on
     `pull_request` events GitHub runs the pull request's own workflow files,
     which could act on the pull request): the ack covers only the exact commit
-    it was added on, so every push needs a new ack. Such a pull request also
-    decides through its own `security-gate.yml` which of its events start a
-    run: it could skip the label's run, so that a later action of the acker
-    (adding another label) starts the "earliest run" on an unreviewed commit.
-    So once a ruleset requires the gate workflow (below), only runs of that
-    pinned workflow (`security-gate.yml@refs/heads/develop`) can name the
-    acknowledged commit, read from GitHub's rules API for the base branch.
-    Until then the gate comment says that the pull request's own workflow
-    files decide what the check runs (they could also replace the gate
-    outright, so failing closed there would add no protection and would only
-    block every workflow change in the merge queue);
+    it was added on, so every push needs a new ack. Its own workflows cannot
+    move the acknowledged commit: they decide which runs exist, but the push
+    log, not a run, names that commit. Until a ruleset requires the gate
+    workflow (below; read from GitHub's rules API for the base branch) the
+    gate comment says that the pull request's own workflow files decide what
+    the check runs (they could replace the gate outright, so failing closed
+    there would add no protection and would only block every workflow change
+    in the merge queue);
   - the base branch changed after the label (a `base_ref_changed` issue event
     after the `labeled` one, also without new commits: a retargeted stacked
     pull request now carries its parent's changes);
-  - no gate run started by the label can be found (for example the run was
-    never created): the gate cannot tell which commit was acknowledged.
+  - the push log cannot name the commit (see above): the gate cannot tell
+    which commit was acknowledged.
 - Migration renumbering keeps the ack: a migration counts in the digest by its
   name without the version number, in version order, so the merge queue moving
   a pull request's migrations above `develop` (same names, same order, same
@@ -257,12 +273,15 @@ owner; rulesets with required workflows are organization-level only):
    JSON
    ```
 4. Open a throwaway pull request that changes nothing sensitive and check
-   that the ruleset run appears and passes, also in the merge queue
+   that the ruleset run appears and passes, also in the merge queue; on a
+   sensitive one, check that adding `security-ack` re-runs the check
+   (`Security Gate Label`) and that it turns green
    (`merge_group` is in the workflow's triggers, which the ruleset needs).
 5. Then remove `security-gate` from the required status checks of `develop`
    and `main` in branch protection: the name-only requirement adds nothing once
-   the workflow is required. Keep the workflow's own `on:` triggers: the gate
-   finds the commit an ack was given on through the runs the label starts.
+   the workflow is required. Keep `security-gate-label.yml`: the pinned run
+   never starts on a label, so without it an ack only takes effect on the next
+   push or a manual re-run.
 
 Until the ruleset exists, a pull request that edits `security-gate.yml` is the
 residual risk: it is `ci-release` sensitive, needs the ack on its exact head

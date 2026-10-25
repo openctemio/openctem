@@ -28,7 +28,7 @@ import { useTranslation } from '@/context/i18n-provider'
 import { RelativeTime } from '@/features/shared'
 import type { EASMSettings } from '@/lib/api/generated'
 import { getErrorMessage } from '@/lib/api/error-handler'
-import { usePermissions, Permission } from '@/lib/permissions'
+import { usePermissions, Permission, useCanMutate } from '@/lib/permissions'
 import {
   runEASMSweep,
   saveEASMSettings,
@@ -74,7 +74,8 @@ const PENDING_CHANGE: Record<Exclude<PendingKey, 'run'>, Partial<EASMSettingsInp
 export function EASMMonitoringCard() {
   const { t } = useTranslation()
   const { can } = usePermissions()
-  const canSettings = can(Permission.SettingsWrite)
+  // Owner or admin (the API gate): organization settings change by role.
+  const canSettings = useCanMutate('PUT /api/v1/easm/settings')
   const canRun = can(Permission.ScopeWrite)
   const { settings, isLoading, mutate, enabled } = useEASMSettings()
   const [busy, setBusy] = useState(false)
