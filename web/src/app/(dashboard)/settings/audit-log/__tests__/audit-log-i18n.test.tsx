@@ -53,7 +53,9 @@ describe('audit log page in Vietnamese', () => {
     expect(screen.getByRole('combobox', { name: 'Mức độ nghiêm trọng' })).toBeInTheDocument()
     expect(screen.getAllByText('7 ngày qua')).toHaveLength(2)
     expect(
-      screen.getByText('Thất bại', { selector: '[class*=badge], div, span' })
+      screen.getByText('Thất bại', {
+        selector: '[class*=badge], div, span:not([data-slot="metric-label"])',
+      })
     ).toBeInTheDocument()
     expect(screen.queryByText('Events (7 days)')).toBeNull()
     expect(screen.queryByText('Hide system')).toBeNull()

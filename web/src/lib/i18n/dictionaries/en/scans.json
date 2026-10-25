@@ -1130,6 +1130,7 @@
   "scans.failureClass.placement": "Placement",
   "scans.failureClass.policy": "Policy",
   "scans.failureClass.scope": "Scope",
+  "scans.failureClass.target": "Target",
   "scans.failureClass.timeout": "Timeout",
   "scans.failureClass.tool": "Tool",
   "scans.failureClass.transient": "Transient",

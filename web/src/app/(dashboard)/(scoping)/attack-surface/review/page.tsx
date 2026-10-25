@@ -1,7 +1,7 @@
 'use client'
 
 /**
- * Attack surface › Suggestions (research/117): the scope decisions that still
+ * Attack surface › Review (research/117, research/274): the scope decisions that still
  * need a person, one card each (addresses behind in-scope names, names found
  * outside every entry, confirmed assets no entry covers). Every row of the
  * attribution queue stays one click away ("Show all items") for audits and
@@ -40,7 +40,7 @@ export default function AttackSurfaceSuggestionsPage() {
           title={t('attackSurface.title', 'Attack surface')}
           description={t(
             'attackSurface.suggestions.description',
-            'Decisions that still need a person. Confirming a name or address as yours adds its exact scope entry; addresses are never added because a name points at them.'
+            'Names and addresses that need a person to decide whether they are yours. Nothing joins your scope until someone confirms it.'
           )}
         />
         <AttackSurfaceSectionTabs />

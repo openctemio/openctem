@@ -1,6 +1,6 @@
 /**
  * research/22 P0-12, research/117: the item list is reachable and the count is
- * honest. The "Not ours" tab is deep-linkable (?tab=rejected); the Suggestions
+ * honest. The "Not ours" state is deep-linkable (?tab=rejected); the Suggestions
  * tab and the sidebar badge count suggestion cards, not rows.
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
@@ -45,12 +45,13 @@ afterEach(() => {
 })
 
 describe('review queue reachability', () => {
-  it('opens the Not ours tab from ?tab=rejected', async () => {
+  it('opens the Not ours state from ?tab=rejected', async () => {
     window.history.replaceState(null, '', '/attack-surface/review?tab=rejected')
     render(<EASMReviewQueue />, { wrapper: swr })
     await waitFor(() => expect(api.get).toHaveBeenCalled())
     expect(queueCall()).toContain('states=rejected')
-    expect(screen.getByRole('tab', { name: 'Not ours' })).toHaveAttribute('data-state', 'active')
+    expect(screen.getByRole('button', { name: 'State: Not ours' })).toBeInTheDocument()
+    expect(screen.queryByRole('tablist')).not.toBeInTheDocument()
   })
 
   it('falls back to Awaiting a decision on an unknown tab', async () => {
