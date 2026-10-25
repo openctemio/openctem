@@ -21,9 +21,9 @@ export const GRANT_JOB_TYPES = [
 export const GATED_REMOTE_ACTIONS = ['update', 'rotate_key', 'diagnostics'] as const
 
 export const TIER_LABELS: Record<number, string> = {
-  0: 'T0 · passive',
-  1: 'T1 · active, non-intrusive',
-  2: 'T2 · intrusive',
+  0: 'T0: passive',
+  1: 'T1: active, non-intrusive',
+  2: 'T2: intrusive',
 }
 
 export const TARGET_NETWORK_LABELS: Record<string, string> = {
