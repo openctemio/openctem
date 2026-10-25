@@ -19,10 +19,12 @@ import { FilterPanelToggle, type FilterPanelToggleProps } from './filter-button'
  *   filter trigger and no search shows the trigger alone in that place.
  * - `start`: filter tokens that follow the search (`FilterSelect` "Status:
  *   Open", at most two selects on a list without "Add filter", a lens).
- * - `end`: saved views, group, export, refresh, then the View menu (density,
- *   columns), always last.
- * - `below`: the active filter chips and "Add filter", in their own full-width
- *   row 8px under the toolbar, so the toolbar keeps one height.
+ * - `end`: saved views, group, export, refresh, then the Display menu
+ *   (density, columns), always last.
+ * - `below`: the active filter chips, in their own full-width row 8px under
+ *   the toolbar, so the toolbar keeps one height. Pass a `FilterChipsRow`:
+ *   one line with a locked chip first, the chips (the rest folded into "+N
+ *   more"), Add filter and Clear right after them, the count at the end.
  *
  * Gaps are the toolbar's (8px between controls, 8px to the chips row); a slot
  * adds no margins of its own. The start group asks for at least 12rem; when it
@@ -47,9 +49,9 @@ export interface ListToolbarProps {
   filter?: React.ReactNode
   /** Filter tokens after the search: `FilterSelect`, at most two selects, a lens. */
   start?: React.ReactNode
-  /** Saved views, group, export, refresh, View menu. */
+  /** Saved views, group, export, refresh, Display menu. */
   end?: React.ReactNode
-  /** Active filter chips and "Add filter": a full-width row under the toolbar. */
+  /** The active filter chips (`FilterChipsRow`): a full-width row under the toolbar. */
   below?: React.ReactNode
   className?: string
 }

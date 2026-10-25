@@ -26,7 +26,7 @@
 import { AssetsSectionTabs } from '../assets-section-tabs'
 import { useCallback, useEffect, useEffectEvent, useMemo, useState, type ReactNode } from 'react'
 import { usePathname, useRouter, useSearchParams } from 'next/navigation'
-import { Download, Lock, RefreshCw, Search } from 'lucide-react'
+import { Download, Lock, RefreshCw } from 'lucide-react'
 import { toast } from 'sonner'
 import { useAssetTypeRegistry } from '@/features/asset-types/api/use-asset-type-registry'
 import {
@@ -43,7 +43,6 @@ import { Main } from '@/components/layout'
 import { PageHeader, PageStack, EmptyState, FilterButton, FilterSheet } from '@/features/shared'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { cn } from '@/lib/utils'
@@ -439,18 +438,12 @@ export function AllAssetsInventory({ viewSwitcher }: { viewSwitcher?: ReactNode 
     },
   })
 
-  const searchBox = (
-    <div className="relative min-w-0 flex-1 sm:max-w-sm">
-      <Search className="pointer-events-none absolute start-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-      <Input
-        value={searchInput}
-        onChange={(e) => setSearchInput(e.target.value)}
-        placeholder={t('assets.inventoryPage.search', 'Search name, description or alias…')}
-        aria-label={t('assets.inventoryPage.searchAria', 'Search assets')}
-        className="h-9 ps-9"
-      />
-    </div>
-  )
+  const search = {
+    value: searchInput,
+    onChange: setSearchInput,
+    placeholder: t('assets.inventoryPage.search', 'Search name, description or alias…'),
+    label: t('assets.inventoryPage.searchAria', 'Search assets'),
+  }
 
   const refreshButton = (
     <Tooltip>
@@ -551,12 +544,8 @@ export function AllAssetsInventory({ viewSwitcher }: { viewSwitcher?: ReactNode 
                 resetSelectionKey={selectionEpoch}
                 filterTags={filters.tags}
                 onToggleTagFilter={toggleTagFilter}
-                toolbarStart={
-                  <>
-                    {filterButtons}
-                    {searchBox}
-                  </>
-                }
+                search={search}
+                filter={filterButtons}
                 toolbarEnd={
                   <>
                     <InventoryViewsMenu
@@ -569,7 +558,7 @@ export function AllAssetsInventory({ viewSwitcher }: { viewSwitcher?: ReactNode 
                 }
                 toolbarBelow={
                   <InventoryFilterBar
-                    leading={
+                    locked={
                       !filters.attribution?.length ? (
                         <InventoryHiddenChip
                           onShowAll={() =>
