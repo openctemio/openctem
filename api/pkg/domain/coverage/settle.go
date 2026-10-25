@@ -11,6 +11,8 @@ import (
 	"time"
 
 	"github.com/openctemio/ctis/outcome"
+
+	"github.com/openctemio/openctem/api/pkg/domain/command"
 )
 
 // TaskResult is one task (command) of a run as settlement reads it.
@@ -66,7 +68,9 @@ func TargetKey(t string) string { return strings.ToLower(strings.TrimSpace(t)) }
 // without outcomes covers every target when it completed and fails every
 // target otherwise. Across tasks the best verdict wins (a follow-up that
 // finished a target overrides the task that left it unfinished). The run's
-// own unfinished targets fail unless a task covered them.
+// own unfinished targets fail unless a task covered them. A truncated task
+// (metadata.truncated: cut short by a deadline, disk or cap) covers nothing:
+// its done targets are unfinished, so a later complete task decides them.
 func Verdicts(tasks []TaskResult, runUnfinished []string) map[string]Verdict {
 	out := map[string]Verdict{}
 	put := func(target string, v Verdict) {
@@ -80,6 +84,25 @@ func Verdicts(tasks []TaskResult, runUnfinished []string) map[string]Verdict {
 	}
 	for _, t := range tasks {
 		outcomes, unreached, has := readResult(t.Result)
+		if t.Status == "completed" && command.ResultTruncated(t.Result) {
+			if has {
+				// A done outcome of a truncated task is withheld: the
+				// target reads as unfinished (Normalize), and a later
+				// complete task decides it.
+				outcomes = dropDone(outcomes)
+			} else {
+				for _, target := range t.Targets {
+					if unreached[TargetKey(target)] {
+						put(target, Verdict{Kind: VerdictFailed, Outcome: string(outcome.Unreachable),
+							Error: "the sensor reached no service on the target"})
+						continue
+					}
+					put(target, Verdict{Kind: VerdictFailed, Outcome: OutcomeUnfinished,
+						Error: "the result was cut short; no target of it is treated as covered"})
+				}
+				continue
+			}
+		}
 		if !has {
 			switch t.Status {
 			case "completed":
@@ -221,4 +244,15 @@ func TargetSideRecheck(n int) time.Duration {
 		n = len(TargetSideRechecks)
 	}
 	return TargetSideRechecks[n-1]
+}
+
+// dropDone removes the done outcomes, which a truncated task withholds.
+func dropDone(in []outcome.Target) []outcome.Target {
+	out := make([]outcome.Target, 0, len(in))
+	for _, o := range in {
+		if o.State != outcome.Done {
+			out = append(out, o)
+		}
+	}
+	return out
 }
