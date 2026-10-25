@@ -391,6 +391,8 @@
   "scope.refusal.message.zone_no_sensor": "The scan zone of this target has no sensors.",
   "scope.refusal.message.zone_none": "No scan zone covers this private target.",
   "scope.refusal.message.zone_sensor_mismatch": "The chosen sensor is not in this target's scan zone.",
+  "scope.refusalPanel.headingMany": "{count} targets may not be scanned",
+  "scope.refusalPanel.headingOne": "1 target may not be scanned",
   "scope.review.description": "Names discovery found that may be yours. Confirming records ownership; only a scope entry lets scans reach a name.",
   "scope.review.readOnly": "You can view these items. Deciding ownership needs permission to edit assets.",
   "scope.review.title": "Attack surface",

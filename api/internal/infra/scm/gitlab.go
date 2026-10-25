@@ -2,6 +2,7 @@ package scm
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -46,7 +47,8 @@ func (c *GitLabClient) TestConnection(ctx context.Context) (*ConnectionTestResul
 	// Get authenticated user
 	user, err := c.GetUser(ctx)
 	if err != nil {
-		result.Message = fmt.Sprintf("Authentication failed: %v", err)
+		result.Message = authenticationFailed
+		result.Cause = errors.Join(ErrAuthFailed, err)
 		return result, nil
 	}
 	result.User = user
@@ -107,7 +109,8 @@ func (c *GitLabClient) resolveGroupOrUserNamespace(ctx context.Context, result *
 	// If not found as group, try as a user namespace
 	userNS, userErr := c.getUserNamespace(ctx, c.config.Organization)
 	if userErr != nil {
-		result.Message = fmt.Sprintf("Cannot access group or user '%s': %v", c.config.Organization, err)
+		result.Message = fmt.Sprintf("Cannot access group or user '%s'", c.config.Organization)
+		result.Cause = errors.Join(ErrNotFound, err)
 		return err
 	}
 

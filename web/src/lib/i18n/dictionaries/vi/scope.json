@@ -391,6 +391,8 @@
   "scope.refusal.message.zone_no_sensor": "Vùng quét của mục tiêu này chưa có sensor nào.",
   "scope.refusal.message.zone_none": "Không có vùng quét nào bao phủ mục tiêu nội bộ này.",
   "scope.refusal.message.zone_sensor_mismatch": "Sensor đã chọn không thuộc vùng quét của mục tiêu này.",
+  "scope.refusalPanel.headingMany": "{count} mục tiêu có thể không được quét",
+  "scope.refusalPanel.headingOne": "1 mục tiêu có thể không được quét",
   "scope.review.description": "Các tên mà quá trình khám phá tìm thấy và có thể thuộc về bạn. Xác nhận chỉ ghi nhận quyền sở hữu; chỉ mục phạm vi mới cho phép quét tới một tên.",
   "scope.review.readOnly": "Bạn có thể xem các mục này. Quyết định quyền sở hữu cần quyền chỉnh sửa tài sản.",
   "scope.review.title": "Bề mặt tấn công",
