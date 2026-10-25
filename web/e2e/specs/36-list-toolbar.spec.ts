@@ -133,6 +133,9 @@ test.describe('Add filter on a phone', () => {
     await add.click()
     const sheet = page.locator('[data-slot="responsive-popover-sheet"]')
     await expect(sheet).toBeVisible()
+    // Let the slide-in finish before measuring.
+    await expect(sheet).toHaveAttribute('data-state', 'open')
+    await page.waitForTimeout(700)
     const field = sheet.locator('[data-slot="command-input"]')
     await expect(field).toBeFocused()
     expect(await field.getAttribute('inputmode')).toBe('search')

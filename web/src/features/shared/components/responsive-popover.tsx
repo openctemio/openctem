@@ -97,7 +97,7 @@ export function ResponsivePopover({
             // The search field stays pinned under the title while the list
             // scrolls; the list loses its desktop height cap.
             '[&_[data-slot=command-input-wrapper]]:sticky [&_[data-slot=command-input-wrapper]]:top-0 [&_[data-slot=command-input-wrapper]]:z-10 [&_[data-slot=command-input-wrapper]]:h-12 [&_[data-slot=command-input-wrapper]]:bg-background',
-            '[&_[data-slot=command]]:overflow-visible [&_[data-slot=command-list]]:max-h-none [&_[data-slot=command-list]]:overflow-visible',
+            '[&_[data-slot=command]]:h-auto [&_[data-slot=command]]:overflow-visible [&_[data-slot=command-list]]:max-h-none [&_[data-slot=command-list]]:overflow-visible',
             // Rows sized for a finger.
             '[&_[data-slot=command-item]]:min-h-11'
           )}
