@@ -8,7 +8,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/openctemio/sdk-go/pkg/edgeprotect"
+	"github.com/openctemio/ctis/edgeprotect"
 
 	"github.com/openctemio/openctem/api/pkg/domain/evidence"
 )
