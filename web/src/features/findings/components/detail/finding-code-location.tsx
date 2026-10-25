@@ -134,7 +134,7 @@ export function FindingCodeLocation({ location, compact, className }: FindingCod
     >
       <div className="space-y-2" data-testid="finding-code-location">
         {location.filePath && (
-          <p className="font-mono text-[13px] [overflow-wrap:anywhere]" dir="ltr">
+          <p className="font-mono text-sm [overflow-wrap:anywhere]" dir="ltr">
             {toDisplayText(location.filePath, 1000)}
             {lines && <span className="text-muted-foreground">:{lines}</span>}
           </p>
