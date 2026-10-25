@@ -848,7 +848,7 @@
   "org.teams.nameRequired": "Enter a team name",
   "org.teams.noMatch": "No teams match your search",
   "org.teams.noTeamNote": "Members who are in no team see no assets or findings until you add them to a team or grant them an asset. Owners, admins and roles with full data access see everything.",
-  "org.teams.searchPlaceholder": "Search teams...",
+  "org.teams.searchPlaceholder": "Search teams…",
   "org.teams.teamName": "Team name",
   "org.teams.teamNamePlaceholder": "e.g., Security team, DevOps",
   "org.teams.viewDetails": "View details",

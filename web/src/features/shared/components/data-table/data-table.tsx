@@ -453,7 +453,7 @@ export function DataTable<TData, TValue>({
 }: DataTableProps<TData, TValue>) {
   const { t } = useTranslation()
   // Defaults are translated here, not in the signature: they depend on the locale.
-  searchPlaceholder ??= t('common.table.search', 'Search...')
+  searchPlaceholder ??= t('common.table.search', 'Search…')
   emptyMessage ??= t('common.table.noResults', 'No results found')
   paginationNoun ??= t('common.table.resultsNoun', 'results')
   pageSizeLabel ??= t('common.table.rowsPerPage', 'Rows per page')

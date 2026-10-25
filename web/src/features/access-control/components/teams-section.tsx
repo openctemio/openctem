@@ -269,7 +269,7 @@ export function TeamsSection({ header }: SectionProps) {
                 columns={columns}
                 data={groups}
                 getRowId={(g) => g.id}
-                searchPlaceholder={t('org.teams.searchPlaceholder', 'Search teams...')}
+                searchPlaceholder={t('org.teams.searchPlaceholder', 'Search teams…')}
                 onRowClick={(g) => setSelectedGroupId(g.id)}
                 showColumnToggle={false}
                 emptyMessage={t('org.teams.noMatch', 'No teams match your search')}

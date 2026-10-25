@@ -510,7 +510,7 @@ export default function BusinessServicesPage() {
               data={services}
               searchPlaceholder={t(
                 'businessContext.services.search.placeholder',
-                'Search services...'
+                'Search services…'
               )}
               onRowClick={(service) => setAssetsService(service)}
               emptyMessage={

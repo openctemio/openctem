@@ -204,6 +204,39 @@ describe('one list toolbar', () => {
     expect(offenders).toEqual([])
   })
 
+  it('writes every list search placeholder as "Search <fields>…" (one ellipsis character)', () => {
+    const DICT = join(WEB, 'src', 'lib', 'i18n', 'dictionaries', 'en')
+    const cache = new Map<string, Record<string, string>>()
+    const en = (key: string): string | undefined => {
+      const ns = key.split('.')[0]
+      if (!cache.has(ns)) {
+        try {
+          cache.set(ns, JSON.parse(readFileSync(join(DICT, `${ns}.json`), 'utf8')))
+        } catch {
+          cache.set(ns, {})
+        }
+      }
+      return cache.get(ns)![key]
+    }
+    const offenders: string[] = []
+    const use = /(searchPlaceholder=\{t\(|placeholder:\s*t\()\s*'([\w.-]+)'(?:,\s*'([^']*)')?/g
+    for (const f of files) {
+      const r = rel(f)
+      if (RAW_SEARCH_ALLOWED[r]) continue
+      const src = readFileSync(f, 'utf8')
+      // Only `placeholder:` inside a search object (`search={{` / `const search`).
+      if (!/searchPlaceholder=|search=\{\{|const search\w* = \{|search: \{/.test(src)) continue
+      for (const m of src.matchAll(use)) {
+        const text = en(m[2]) ?? m[3]
+        if (text && !text.endsWith('…')) offenders.push(`${r}: ${m[2]} "${text}"`)
+      }
+      // A literal placeholder is not translated.
+      for (const m of src.matchAll(/searchPlaceholder="([^"]*)"/g))
+        offenders.push(`${r}: literal "${m[1]}"`)
+    }
+    expect(offenders).toEqual([])
+  })
+
   it('finds the files it checks', () => {
     const lists = files.filter((f) => /<DataTable[\s>]/.test(readFileSync(f, 'utf8')))
     expect(lists.length).toBeGreaterThan(80)

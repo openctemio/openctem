@@ -314,7 +314,7 @@ export function CycleScopeTab({ cycle }: { cycle: CtemCycle }) {
     <DataTable
       columns={scopeColumns}
       data={data}
-      searchPlaceholder={t('scoping.cycleTabs.scopeSearch', 'Search assets in scope')}
+      searchPlaceholder={t('scoping.cycleTabs.scopeSearch', 'Search assets in scope…')}
       emptyMessage={t('scoping.cycleTabs.scopeEmpty', 'Nothing was frozen into scope')}
       emptyDescription={t(
         'scoping.cycleTabs.scopeEmptyHint',

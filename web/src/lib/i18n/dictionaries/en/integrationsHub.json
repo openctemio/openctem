@@ -32,7 +32,7 @@
   "integrationsHub.metrics.attention": "Needs attention",
   "integrationsHub.metrics.connected": "Connected",
   "integrationsHub.metrics.pending": "Pending",
-  "integrationsHub.searchPlaceholder": "Search integrations...",
+  "integrationsHub.searchPlaceholder": "Search integrations…",
   "integrationsHub.status.connected": "Connected",
   "integrationsHub.status.disabled": "Disabled",
   "integrationsHub.status.disconnected": "Disconnected",

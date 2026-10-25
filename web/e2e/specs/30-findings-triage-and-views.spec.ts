@@ -29,7 +29,7 @@ test.describe('Findings triage and view state', () => {
   }) => {
     await page.setViewportSize({ width: 1440, height: 900 })
     await page.goto('/findings?status=new&state=all')
-    await page.getByRole('button', { name: /table view/i }).click()
+    await page.getByRole('button', { name: /^display: density/i }).click()
     await page.getByRole('menuitemcheckbox', { name: 'Severity' }).click()
     await expect(page).toHaveURL(/columns=/)
     await page.keyboard.press('Escape')

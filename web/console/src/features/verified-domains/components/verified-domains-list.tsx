@@ -278,7 +278,7 @@ export function VerifiedDomainsList({
       columns={columns}
       data={domains}
       getRowId={(d) => d.id}
-      searchPlaceholder="Search domains..."
+      searchPlaceholder={t('admin.verifiedDomainsList.search', 'Search domains…')}
       showSelectionCount={false}
     />
   )
