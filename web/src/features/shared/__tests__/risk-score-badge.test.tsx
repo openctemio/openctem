@@ -50,48 +50,29 @@ vi.mock('@/components/ui/tooltip', () => ({
 // ============================================
 
 describe('RiskScoreBadge', () => {
-  it('renders Critical label for score >= custom critical threshold (90)', async () => {
+  it.each([
+    [95, 'Critical'],
+    [75, 'High'],
+    [55, 'Medium'],
+    [35, 'Low'],
+    [15, 'Minimal'],
+    // Custom thresholds (critical_min=90): 85 is High, not Critical.
+    [85, 'High'],
+  ])('shows %s with its band %s in the name and tooltip, never as text', async (score, band) => {
     const { RiskScoreBadge } = await import('../components/risk-score-badge')
-    render(<RiskScoreBadge score={95} />)
-    expect(screen.getByText('95 Critical')).toBeInTheDocument()
+    const { container } = render(<RiskScoreBadge score={score} />)
+    const el = container.querySelector('[data-slot="severity-badge"]')!
+    // Criticality uses the same words; the visible text is the number only.
+    expect(el.textContent).toBe(String(score))
+    expect(el.getAttribute('aria-label')).toBe(`Risk ${score} of 100, ${band}`)
+    expect(el.getAttribute('title')).toBe(`Risk ${score} of 100, ${band}`)
   })
 
-  it('renders High label for score between custom high and critical thresholds', async () => {
+  it('names itself in the text when labelled (phone cards, headers)', async () => {
     const { RiskScoreBadge } = await import('../components/risk-score-badge')
-    render(<RiskScoreBadge score={75} />)
-    expect(screen.getByText('75 High')).toBeInTheDocument()
-  })
-
-  it('renders Medium label for score between custom medium and high thresholds', async () => {
-    const { RiskScoreBadge } = await import('../components/risk-score-badge')
-    render(<RiskScoreBadge score={55} />)
-    expect(screen.getByText('55 Medium')).toBeInTheDocument()
-  })
-
-  it('renders Low label for score between custom low and medium thresholds', async () => {
-    const { RiskScoreBadge } = await import('../components/risk-score-badge')
-    render(<RiskScoreBadge score={35} />)
-    expect(screen.getByText('35 Low')).toBeInTheDocument()
-  })
-
-  it('renders Minimal label for score below custom low threshold', async () => {
-    const { RiskScoreBadge } = await import('../components/risk-score-badge')
-    render(<RiskScoreBadge score={15} />)
-    expect(screen.getByText('15 Minimal')).toBeInTheDocument()
-  })
-
-  it('renders only label when showScore is false', async () => {
-    const { RiskScoreBadge } = await import('../components/risk-score-badge')
-    render(<RiskScoreBadge score={95} showScore={false} />)
-    expect(screen.getByText('Critical')).toBeInTheDocument()
-    expect(screen.queryByText('95')).not.toBeInTheDocument()
-  })
-
-  // With custom thresholds (critical=90), score 85 should be High, not Critical
-  it('respects custom thresholds — 85 is High with critical_min=90', async () => {
-    const { RiskScoreBadge } = await import('../components/risk-score-badge')
-    render(<RiskScoreBadge score={85} />)
-    expect(screen.getByText('85 High')).toBeInTheDocument()
+    const { container } = render(<RiskScoreBadge score={73} labelled />)
+    expect(container.textContent).toBe('Risk: 73')
+    expect(screen.queryByText(/High/)).not.toBeInTheDocument()
   })
 })
 
@@ -115,8 +96,9 @@ describe('RiskScoreGauge', () => {
 describe('RiskScoreBadge freshness', () => {
   it('shows 0 as no open risk, not Info', async () => {
     const { RiskScoreBadge } = await import('../components/risk-score-badge')
-    render(<RiskScoreBadge score={0} />)
-    expect(screen.getByText('0 No open risk')).toBeInTheDocument()
+    const { container } = render(<RiskScoreBadge score={0} />)
+    expect(container.textContent).toBe('No open risk')
+    expect(container.querySelector('[aria-label="Risk: No open risk"]')).not.toBeNull()
   })
 
   it('never shows a fake 0 for an asset that was never scored', async () => {
@@ -136,7 +118,7 @@ describe('RiskScoreBadge freshness', () => {
   it('keeps the score of a scored asset whose rescore is queued', async () => {
     const { RiskScoreBadge } = await import('../components/risk-score-badge')
     render(<RiskScoreBadge score={75} state="pending" />)
-    expect(screen.getByText('75 High')).toBeInTheDocument()
+    expect(screen.getByText('75')).toBeInTheDocument()
   })
 })
 
