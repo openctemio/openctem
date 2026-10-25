@@ -88,6 +88,7 @@ export const PLACEMENT_FIX: Record<string, FixTarget | null> = {
   private_needs_local_policy: 'sensors',
   opt_in_disabled: 'sensors',
   local_policy_refuses: 'sensors',
+  stopped_claiming: 'sensors',
   no_free_slot: null,
 }
 
