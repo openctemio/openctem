@@ -271,7 +271,24 @@ const pendingReadyPredicate = `commands.status = 'pending'
 		AND (commands.expires_at IS NULL OR commands.expires_at > NOW())
 		AND ` + tenantJobPredicate + `
 		AND ` + scheduledDuePredicate + `
+		AND ` + runOpenPredicate + `
 		AND ` + hostFreePredicate
+
+// runOpenPredicate keeps a command unless its scan run, in the command's
+// tenant, has already ended (completed, partial, failed, canceled, timeout,
+// blocked). Canceling or timing out a run cancels the commands that exist at
+// that moment, but a step transition that read the run as running just
+// before can still create the next step's commands afterwards: without this a
+// sensor claimed and scanned them for a run the user had stopped. A command
+// with no run, or naming no run of its tenant, is not affected (step results
+// are bound to the command's tenant on their own). The CASE guards the uuid
+// cast, so a run id that is not a UUID never fails the claim.
+const runOpenPredicate = `NOT EXISTS (
+			SELECT 1 FROM scan_runs ended_run
+			WHERE ended_run.tenant_id = commands.tenant_id
+			  AND ended_run.id = CASE WHEN commands.payload->>'scan_run_id' ~* '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
+			                          THEN (commands.payload->>'scan_run_id')::uuid END
+			  AND ended_run.status NOT IN ('pending', 'running'))`
 
 // tenantJobPredicate keeps a command that an organization's own sensor may
 // take: never one queued for shared sensors (is_platform_job). The routing
@@ -567,6 +584,7 @@ func (r *CommandRepository) ClaimForSensor(ctx context.Context, tenantID, comman
 		  AND ` + refusedByPredicate("$3") + `
 		  AND ` + featureClaimPredicate("$3") + `
 		  AND ` + scheduledDuePredicate + `
+		  AND ` + runOpenPredicate + `
 		  AND ` + hostFreePredicate + `
 	`
 	result, err := tx.ExecContext(ctx, query, commandID.String(), tenantID.String(), sensorID, r.leaseSeconds())

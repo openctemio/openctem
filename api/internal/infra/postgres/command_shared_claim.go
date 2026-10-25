@@ -52,6 +52,7 @@ var sharedClaimWhere = `commands.is_platform_job = TRUE
 		AND commands.scan_zone_id IS NULL
 		AND (commands.expires_at IS NULL OR commands.expires_at > NOW())
 		AND ` + scheduledDuePredicate + `
+		AND ` + runOpenPredicate + `
 		AND ` + hostFreePredicate + `
 		AND ` + refusedByPredicate("$1") + `
 		AND ` + sharedSensorGateSQL + `

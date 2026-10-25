@@ -193,6 +193,14 @@ function the sensor runtime admits work with, and travel with the chunk
 Chunks are cut from whole hosts, so the chunks of one step never conflict
 with each other ([scan stages](scan-stages.md)).
 
+Every claim path (poll, claim by id, batch claim, shared sensors) offers a
+command of a scan run unless that run, in the command's tenant, has
+ended (`runOpenPredicate`, `internal/infra/postgres/command_repository.go`).
+Canceling or timing out a run cancels the commands that exist at that
+moment; a step that finished just before can still create the next step's
+commands afterwards, and the predicate keeps a sensor from ever taking them.
+They expire unclaimed.
+
 Partial admission at claim time (`internal/app/command/host_split.go`): when
 a sensor has free scan slots the queue cannot fill, the claim looks at the
 pending scan commands of run steps it may take whose hosts are busy. A
