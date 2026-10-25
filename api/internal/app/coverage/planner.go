@@ -297,6 +297,39 @@ func (s *Service) pauseCapability(ctx context.Context, tenantID shared.ID, capab
 	return nil
 }
 
+// blockNeverOpens handles a refusal that lists targets whose scan windows
+// never open: it blocks those pairs and returns the pairs left to run.
+// handled is false when err is not that refusal or lists none of the batch's
+// targets, so the caller treats it as a refusal of the whole batch. One such
+// target must not stall the capability for the others.
+func (s *Service) blockNeverOpens(ctx context.Context, tenantID shared.ID, capability string, due []covdom.DueTarget, err error) (rest []covdom.DueTarget, handled bool, ferr error) {
+	var never *scanapp.NeverOpensError
+	if !errors.As(err, &never) {
+		return nil, false, nil
+	}
+	bad := make(map[string]bool, len(never.Targets))
+	for _, t := range never.Targets {
+		bad[strings.ToLower(strings.TrimSpace(t))] = true
+	}
+	blocked := map[shared.ID]string{}
+	for _, d := range due {
+		if bad[strings.ToLower(strings.TrimSpace(d.Target()))] {
+			blocked[d.AssetID] = strings.ToLower(scanapp.CodeWindowNeverOpens)
+			continue
+		}
+		rest = append(rest, d)
+	}
+	if len(blocked) == 0 {
+		return nil, false, nil
+	}
+	if merr := s.planner.MarkBlocked(ctx, tenantID, capability, blocked, BlockedRecheck); merr != nil {
+		return nil, false, merr
+	}
+	s.logger.Info("coverage targets never open, pairs blocked", "tenant_id", tenantID.String(),
+		"capability", logger.SanitizeValue(capability), "blocked", len(blocked), "remaining", len(rest))
+	return rest, true, nil
+}
+
 // startBatch starts one capability on a due batch and records the outcome
 // on its pairs. It returns how many pairs were queued.
 func (s *Service) startBatch(ctx context.Context, tenantID shared.ID, capability string, due []covdom.DueTarget) (int, error) {
@@ -323,35 +356,17 @@ func (s *Service) startBatch(ctx context.Context, tenantID shared.ID, capability
 		if reason := scanapp.CoverageReadinessForRefusal(err); reason != "" {
 			return 0, s.pauseCapability(ctx, tenantID, capability, reason, RefusalRetry)
 		}
-		// Targets whose scan windows never open: the error lists them, so
-		// block only those pairs and run the rest of the batch. One such
-		// target must not stall the capability for the others.
-		var never *scanapp.NeverOpensError
-		if errors.As(err, &never) {
-			bad := make(map[string]bool, len(never.Targets))
-			for _, t := range never.Targets {
-				bad[strings.ToLower(strings.TrimSpace(t))] = true
+		// Targets whose scan windows never open: block only those pairs
+		// and run the rest of the batch (see blockNeverOpens).
+		rest, handled, berr := s.blockNeverOpens(ctx, tenantID, capability, due, err)
+		if berr != nil {
+			return 0, berr
+		}
+		if handled {
+			if len(rest) == 0 {
+				return 0, nil
 			}
-			blocked := map[shared.ID]string{}
-			rest := make([]covdom.DueTarget, 0, len(due))
-			for _, d := range due {
-				if bad[strings.ToLower(strings.TrimSpace(d.Target()))] {
-					blocked[d.AssetID] = strings.ToLower(scanapp.CodeWindowNeverOpens)
-					continue
-				}
-				rest = append(rest, d)
-			}
-			if len(blocked) > 0 {
-				if err := s.planner.MarkBlocked(ctx, tenantID, capability, blocked, BlockedRecheck); err != nil {
-					return 0, err
-				}
-				s.logger.Info("coverage targets never open, pairs blocked", "tenant_id", tenantID.String(),
-					"capability", logger.SanitizeValue(capability), "blocked", len(blocked), "remaining", len(rest))
-				if len(rest) == 0 {
-					return 0, nil
-				}
-				return s.startBatch(ctx, tenantID, capability, rest)
-			}
+			return s.startBatch(ctx, tenantID, capability, rest)
 		}
 		// Any other refusal of the whole batch (about its targets) blocks
 		// the batch's pairs with the code and rechecks them later; retrying
