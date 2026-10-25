@@ -11,9 +11,10 @@ const search = { value: '' }
 const replace = vi.fn()
 const tasksResult: { data?: unknown; error?: unknown; isLoading?: boolean } = {}
 const useTasks = vi.fn((_f: unknown, _enabled?: boolean) => ({ ...tasksResult, mutate: vi.fn() }))
-const useFindingsApi = vi.fn((_f: unknown, _c?: unknown) => ({
+const useFindingQueue = vi.fn((_p?: string, _s?: string, _enabled?: boolean) => ({
   data: { data: [], total: 0 },
   isLoading: false,
+  mutate: vi.fn(),
 }))
 
 vi.mock('next/navigation', () => ({
@@ -27,10 +28,13 @@ vi.mock('@/context/permission-provider', () => ({
 vi.mock('@/features/remediation-hub/api/use-remediation-hub', () => ({
   useTasks: (f: unknown, enabled?: boolean) => useTasks(f, enabled),
 }))
-vi.mock('@/features/findings/api/use-findings-api', async (importOriginal) => ({
-  // The drill links are built with the real query builder.
-  ...(await importOriginal<typeof import('@/features/findings/api/use-findings-api')>()),
-  useFindingsApi: (f: unknown, c?: unknown) => useFindingsApi(f, c),
+vi.mock('@/context/tenant-provider', () => ({ useTenant: () => ({ currentTenant: { id: 't' } }) }))
+vi.mock('@/features/findings/api/use-quick-views', () => ({
+  useFindingQuickViews: () => ({ data: { views: [] }, mutate: vi.fn() }),
+}))
+vi.mock('@/features/my-work/api/use-my-work', () => ({
+  useFindingQueue: (p?: string, s?: string, e?: boolean) => useFindingQueue(p, s, e),
+  useApprovalQueue: () => ({ data: { data: [], total: 0 }, mutate: vi.fn() }),
 }))
 
 import MyWorkPage from '@/app/(dashboard)/my-work/page'
@@ -62,13 +66,16 @@ describe('My Work tasks tab', () => {
     tasksResult.error = undefined
     tasksResult.isLoading = false
     useTasks.mockClear()
-    useFindingsApi.mockClear()
+    useFindingQueue.mockClear()
   })
 
-  it('shows the findings queue by default with a Tasks tab', () => {
+  it('shows the findings queue by default with a My tasks tab', () => {
     render(<MyWorkPage />)
-    expect(screen.getByRole('tab', { name: /Tasks/ })).toBeInTheDocument()
-    expect(screen.getByRole('tab', { name: 'Findings' })).toHaveAttribute('aria-selected', 'true')
+    expect(screen.getByRole('tab', { name: /tasks/i })).toBeInTheDocument()
+    expect(screen.getByRole('tab', { name: /Assigned to me/ })).toHaveAttribute(
+      'aria-selected',
+      'true'
+    )
     expect(screen.queryByText('Upgrade django to 4.2.30')).not.toBeInTheDocument()
   })
 
@@ -92,8 +99,8 @@ describe('My Work tasks tab', () => {
       '/remediation/tasks?view=mine'
     )
     // The findings queries do not run while the Tasks tab is open.
-    for (const [, cfg] of useFindingsApi.mock.calls) {
-      expect(cfg).toMatchObject({ enabled: false })
+    for (const [, , enabled] of useFindingQueue.mock.calls) {
+      expect(enabled).toBe(false)
     }
   })
 
@@ -108,7 +115,7 @@ describe('My Work tasks tab', () => {
     perms.read = false
     search.value = 'tab=tasks'
     render(<MyWorkPage />)
-    expect(screen.queryByRole('tab', { name: /Tasks/ })).not.toBeInTheDocument()
+    expect(screen.queryByRole('tab', { name: /tasks/i })).not.toBeInTheDocument()
     for (const [, enabled] of useTasks.mock.calls) {
       expect(enabled).toBe(false)
     }

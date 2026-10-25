@@ -160,6 +160,8 @@
   "assets.bulk.criticalityDescMany": "Apply a criticality to {count} selected assets.",
   "assets.bulk.criticalityDescOne": "Apply a criticality to 1 selected asset.",
   "assets.bulk.criticalityFailed": "Failed to set criticality",
+  "assets.bulk.criticalityHeld": "{label} for {done} of {count}; {held} waiting for approval",
+  "assets.bulk.criticalityHeldFailed": "{label} for {done} of {count}; {held} waiting for approval; {failed} failed",
   "assets.bulk.criticalitySet": "Set criticality to {value}",
   "assets.bulk.deleteFailed": "Failed to delete",
   "assets.bulk.enterTag": "Enter a tag",

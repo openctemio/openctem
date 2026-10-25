@@ -107,6 +107,10 @@ func (s *Service) StartCoverage(ctx context.Context, in CoverageInput) (*Coverag
 		SkipZoneRouting: skipZones,
 		MaxTargets:      maxCoverageTargets,
 		Path:            "auto_coverage",
+		// What runs decides whether a name with no DNS answer may go
+		// (a lookup-only capability such as resolve.dns runs on it).
+		Tool:       tool,
+		Capability: in.Capability,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("coverage targets not checked, nothing dispatched: %w", err)

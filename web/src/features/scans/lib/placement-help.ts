@@ -54,6 +54,7 @@ export const FAILURE_FIX: Record<string, FixTarget | null> = {
   TARGET_UNREACHABLE: 'zones',
   DEADLINE_TOO_CLOSE: null,
   COVERAGE_GAPS: null,
+  NO_RESOLVING_TARGETS: null,
   // Retest reason codes (api pkg/domain/retest).
   UNREACHABLE: null,
   BLOCKED: 'sensors',
@@ -105,6 +106,7 @@ const CLASSES = new Set([
   'timeout',
   'canceled',
   'partial',
+  'target',
 ])
 
 /** What to show for one code: its meaning, the fix and where to apply it. */
