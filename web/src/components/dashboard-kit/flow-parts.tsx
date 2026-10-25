@@ -236,7 +236,10 @@ export function FlowTip({
         <p className="mb-2 text-xs leading-relaxed text-muted-foreground">{content.definition}</p>
       )}
       {content.link && href && (
-        <Link href={href} className="text-xs font-semibold text-signal-text hover:underline">
+        <Link
+          href={safeInternalHref(content.link.href) ?? '/'}
+          className="text-xs font-semibold text-signal-text hover:underline"
+        >
           {content.link.label}
         </Link>
       )}
@@ -267,7 +270,7 @@ export function FlowLink({
   }
   return (
     <Link
-      href={href}
+      href={safeInternalHref(to) ?? '/'}
       aria-label={label}
       className={cn('rounded-sm focus-visible:outline-2', className)}
       {...rest}
