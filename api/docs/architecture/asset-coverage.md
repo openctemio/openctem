@@ -58,8 +58,13 @@ Each pass, per tenant, after reconciling:
    Settings, `auto_coverage`; default on, except while the scan approval
    mode in force is Strict, until the organization turns it on): for
    each stage capability of the policy (never an intrusive one; platform
-   checks run on their own schedule), take up to 200 due pairs (priority,
-   then oldest), within the tenant's daily budget
+   checks run on their own schedule), take up to 200 pairs whose time has
+   come (priority, then oldest): `due`, `failed` after its back-off,
+   `covered` past its cadence, `blocked` past its recheck time. When one of
+   them is due now, the batch also takes pairs due within the next tenth of
+   the cadence (at most an hour), so one run carries them instead of several
+   one-target runs; when none is due now, nothing starts. All within the
+   tenant's daily budget
    (`ASSET_COVERAGE_DAILY_BUDGET`, default 5000 attempts per 24 h), and call
    `scan.Service.StartCoverage`: the targets pass the one dispatch gate as
    the system (scope entries only) at the capability's tier; refused targets
@@ -68,6 +73,14 @@ Each pass, per tenant, after reconciling:
    (tag `auto-coverage`) with the stage's default tool, and become `queued`.
    While that scan still has an active run the batch waits (one run per
    capability and tenant at a time: back-pressure).
+
+**Due times are spread.** A covered pair is due again after its cadence
+and a blocked pair after its 6 h recheck, each stretched by the pair's own
+fixed jitter of 0 to 10 % (from md5 of the asset id and capability, the
+same in Go and SQL), so pairs settled together drift apart and a restart
+does not re-align them. A new pair, or one whose precondition holds again,
+is due at once. A blocked pair whose precondition stops holding becomes
+`not_applicable` like any other.
 
 An open port is addressed as `host:port`; names and origins by name.
 With the loop on, automatic enrichment of new assets is off: the loop

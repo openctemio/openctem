@@ -186,6 +186,7 @@
   "dashboards.manage.title": "Bảng điều khiển",
   "dashboards.manage.useTemplate": "Dùng mẫu",
   "dashboards.manage.widgetCount": "{n} widget",
+  "dashboards.manage.widgets": "{n} tiện ích",
   "dashboards.manage.yours": "Bảng điều khiển của bạn",
   "dashboards.metric.attack_paths_to_crown_jewels.definition": "Tài sản trọng yếu trong phạm vi mà một điểm truy cập công khai có thể đến qua các quan hệ đã biết, hoặc chính là điểm truy cập, xếp theo điểm đường tấn công.",
   "dashboards.metric.attack_paths_to_crown_jewels.name": "Đường tấn công tới tài sản trọng yếu",
@@ -288,6 +289,5 @@
   "dashboards.viz.table": "Bảng",
   "dashboards.widget.failed": "Không hiển thị được widget này",
   "dashboards.widget.legacy": "Ô cũ",
-  "dashboards.widget.note": "Ghi chú",
-  "dashboards.manage.widgets": "{n} tiện ích"
+  "dashboards.widget.note": "Ghi chú"
 }
