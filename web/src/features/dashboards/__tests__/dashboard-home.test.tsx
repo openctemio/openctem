@@ -260,7 +260,9 @@ describe('DashboardHome', () => {
     await userEvent.click(screen.getByRole('button', { name: 'More dashboard actions' }))
     await userEvent.click(screen.getByRole('menuitem', { name: 'Delete' }))
     const dialog = await screen.findByRole('alertdialog')
-    expect(dialog).toHaveTextContent('Copies you shared and your data are not affected')
+    expect(dialog).toHaveTextContent(
+      'Copies you shared and the data behind the widgets are not affected'
+    )
     expect(dialog).not.toHaveTextContent('for everyone')
   })
 

@@ -30,7 +30,7 @@ func TestDecideToolVerdict(t *testing.T) {
 		{"top-level bare fixed", `{"retest":{"verdicts":[{"ref":"` + fid + `","verdict":"fixed"}]}}`, OutcomeNotReproduced, ReasonNoEndpointProof},
 		{"fixed with the endpoint's 404", v("fixed", `,"evidence":`+exchange(at, 404)), OutcomeConfirmedFixed, ReasonNotMatched},
 		{"fixed at another path", v("fixed", `,"evidence":`+exchange(at+"/admin", 404)), OutcomeInconclusive, ReasonEndpointMismatch},
-		{"fixed with a 403", v("fixed", `,"evidence":`+exchange(at, 403)), OutcomeInconclusive, ReasonBlocked},
+		{"fixed with a 403", v("fixed", `,"evidence":`+exchange(at, 403)), OutcomeInconclusive, ReasonAccessDenied},
 		{"fixed without a response", v("fixed", `,"evidence":`+exchange(at, 0)), OutcomeInconclusive, ReasonUnreachable},
 		{"unverifiable", v("unverifiable", `,"detail":"timeout"`), OutcomeInconclusive, ReasonError},
 		{"template not installed", v("unverifiable", `,"code":"template_not_found","detail":"the check is not installed"`), OutcomeInconclusive, ReasonTemplateNotFound},

@@ -7,7 +7,7 @@
  *   Retest                                   [Retest now]
  *   ● Verified fixed, awaiting confirmation, 3 min ago   View evidence
  *     https://h/admin answered 404 and the check did not match
- *   Earlier: Still present · 2 d ago, Unknown · 9 d ago
+ *   Earlier attempts: one line each, outcome chip, reason, time
  *
  * "Retest now" re-runs the check that produced the finding against the origin
  * of its matched-at URL. A verified fix (the endpoint answered and the check
@@ -73,6 +73,8 @@ const englishOnly: Translate = (_key, fallback, vars) =>
 const INCONCLUSIVE_TEXT: Record<string, string> = {
   unreachable: 'target unreachable',
   blocked: 'blocked',
+  edge_blocked: 'blocked by edge protection',
+  access_denied: 'access denied',
   auth_changed: 'authentication required',
   server_error: 'server error',
   endpoint_mismatch: 'another endpoint was checked',
@@ -100,6 +102,14 @@ const INCONCLUSIVE_HELP: Record<string, { text: string; fix: string }> = {
   excluded_by_policy: {
     text: "The check is installed, but the sensor's safety policy never runs checks of its class (destructive, intrusive, brute-force or default-login) for a retest.",
     fix: 'The finding is unchanged. Verify it by hand or in a planned test window.',
+  },
+  edge_blocked: {
+    text: 'A CDN or WAF answered in place of the service, so the check could not see the issue.',
+    fix: 'Allow the scanner at the edge (see the edge protection guidance on the asset), then retest. The finding is unchanged.',
+  },
+  access_denied: {
+    text: 'The server now refuses the exposed page (401 or 403) with no CDN or WAF in front. One refusal is not proof of a fix.',
+    fix: 'A second refusal at least an hour later, with no sighting of the finding in between, marks it fixed. Retest again after an hour, or verify it by hand.',
   },
   no_verdict: {
     text: 'The tool ended without a verdict for this finding (it stopped early or never reached the target).',
@@ -332,21 +342,41 @@ export function FindingRetestSection({ finding, className }: FindingRetestSectio
         </p>
       )}
       {list.length > 1 && (
-        <p className="text-xs text-muted-foreground">
-          {t('findings.retestPanel.earlier', 'Earlier:')}{' '}
-          {list.slice(1, 4).map((rt, i) => (
-            <span key={rt.id}>
-              {i > 0 && ', '}
-              {metaFor(rt, t).label} <RelativeTime date={rt.created_at} className="text-xs" />
-              {(rt as FindingRetestWithCheck).check_digest && (
-                <span className="font-mono" title={(rt as FindingRetestWithCheck).check_digest}>
-                  {' '}
-                  ({shortDigest((rt as FindingRetestWithCheck).check_digest)})
-                </span>
-              )}
-            </span>
-          ))}
-        </p>
+        <div className="space-y-1" data-slot="retest-history">
+          <p className="text-xs font-medium text-muted-foreground">
+            {t('findings.retestPanel.earlier', 'Earlier attempts')}
+          </p>
+          <ul className="space-y-1">
+            {list.slice(1, 6).map((rt) => {
+              const meta = metaFor(rt, t)
+              const digest = (rt as FindingRetestWithCheck).check_digest
+              return (
+                <li key={rt.id} className="flex min-w-0 items-center gap-2 text-xs">
+                  <Badge variant="secondary" className={cn('shrink-0 font-medium', meta.className)}>
+                    {meta.label}
+                  </Badge>
+                  {rt.reason && (
+                    <span
+                      className="min-w-0 flex-1 truncate text-muted-foreground"
+                      title={toDisplayText(rt.reason, 600)}
+                    >
+                      {toDisplayText(rt.reason, 160)}
+                    </span>
+                  )}
+                  {digest && (
+                    <span className="shrink-0 font-mono text-muted-foreground" title={digest}>
+                      {shortDigest(digest)}
+                    </span>
+                  )}
+                  <RelativeTime
+                    date={rt.completed_at ?? rt.created_at}
+                    className="ml-auto shrink-0 text-xs text-muted-foreground"
+                  />
+                </li>
+              )
+            })}
+          </ul>
+        </div>
       )}
     </DetailSection>
   )
@@ -411,7 +441,7 @@ function RetestLine({
         <RelativeTime date={retest.completed_at ?? retest.created_at} className="text-xs" />
         {retest.trigger === 'auto' && (
           <span className="text-xs text-muted-foreground">
-            · {t('findings.retestPanel.auto', 'auto')}
+            {t('findings.retestPanel.auto', 'auto')}
           </span>
         )}
         {retest.status === 'completed' && !manual && (

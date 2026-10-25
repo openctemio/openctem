@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, fireEvent, waitFor, within } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import TicketingIntegrationPage from '../page'
 
 /**
@@ -11,14 +12,16 @@ import TicketingIntegrationPage from '../page'
 
 const mockUseIntegrations = vi.fn()
 const mockCreate = vi.fn()
+const mockSync = vi.fn()
+const mockDelete = vi.fn()
 
 vi.mock('@/features/integrations/api/use-integrations-api', () => ({
   useIntegrationsApi: () => mockUseIntegrations(),
   useCreateIntegrationApi: () => ({ trigger: mockCreate, isMutating: false }),
-  useSyncIntegrationApi: () => ({ trigger: vi.fn(), isMutating: false }),
+  useSyncIntegrationApi: () => ({ trigger: mockSync, isMutating: false }),
   useUpdateIntegrationApi: () => ({ trigger: vi.fn(), isMutating: false }),
   useTestIntegrationApi: () => ({ trigger: vi.fn(), isMutating: false }),
-  useDeleteIntegrationApi: () => ({ trigger: vi.fn(), isMutating: false }),
+  useDeleteIntegrationApi: () => ({ trigger: mockDelete, isMutating: false }),
   useJiraProjectsApi: () => ({ data: undefined, error: undefined, isLoading: false }),
 }))
 vi.mock('@/features/integrations/components/routing-rules-dialog', () => ({
@@ -109,5 +112,34 @@ describe('TicketingIntegrationPage', () => {
 
     await waitFor(() => expect(mockCreate).toHaveBeenCalledTimes(1))
     expect(mockCreate.mock.calls[0][0]).toMatchObject({ provider: 'jira', category: 'ticketing' })
+  })
+
+  it('Sync now asks first: it creates and updates tickets in the tracker', async () => {
+    withRows([row({ id: 'jira', name: 'Security board', status: 'connected', supported: true })])
+    mockSync.mockResolvedValue({})
+    render(<TicketingIntegrationPage />)
+    const jiraRow = screen.getByText('Security board').closest('tr') as HTMLElement
+    await userEvent.click(within(jiraRow).getByRole('button', { name: 'Open row actions' }))
+    await userEvent.click(await screen.findByRole('menuitem', { name: 'Sync now' }))
+    const dialog = await screen.findByRole('alertdialog')
+    expect(dialog).toHaveTextContent('Sync "Security board" now?')
+    expect(mockSync).not.toHaveBeenCalled()
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Sync now' }))
+    await waitFor(() => expect(mockSync).toHaveBeenCalledTimes(1))
+  })
+
+  it('deleting a connection needs its name', async () => {
+    withRows([row({ id: 'jira', name: 'Security board', status: 'connected', supported: true })])
+    mockDelete.mockResolvedValue({})
+    render(<TicketingIntegrationPage />)
+    const jiraRow = screen.getByText('Security board').closest('tr') as HTMLElement
+    await userEvent.click(within(jiraRow).getByRole('button', { name: 'Open row actions' }))
+    await userEvent.click(await screen.findByRole('menuitem', { name: /Delete/ }))
+    const dialog = await screen.findByRole('alertdialog')
+    const confirm = within(dialog).getByRole('button', { name: 'Delete connection' })
+    expect(confirm).toBeDisabled()
+    fireEvent.change(within(dialog).getByRole('textbox'), { target: { value: 'Security board' } })
+    fireEvent.click(confirm)
+    await waitFor(() => expect(mockDelete).toHaveBeenCalledTimes(1))
   })
 })
