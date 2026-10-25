@@ -28,6 +28,15 @@ import type {
   UpdateNodeRequest,
   CreateEdgeRequest,
   TriggerWorkflowRequest,
+  WorkflowCatalog,
+  WorkflowVersionListResponse,
+  WorkflowTraceResponse,
+  WorkflowPreviewRequest,
+  WorkflowPreviewResponse,
+  WorkflowValidateResponse,
+  WorkflowPendingApprovalResponse,
+  AutomationMode,
+  CreateNodeRequest as GraphNode,
 } from './workflow-types'
 
 // ============================================
@@ -318,6 +327,113 @@ export function useCancelWorkflowRun(runId: string) {
       return post<void>(url, {})
     }
   )
+}
+
+// ============================================
+// CATALOG, VERSIONS, TRACE
+// ============================================
+
+/**
+ * The trigger, action and notification types the builder may offer, each
+ * with whether the caller holds its permission. The palette and pickers are
+ * built from this alone.
+ */
+export function useWorkflowCatalog(config?: SWRConfiguration) {
+  const { currentTenant } = useTenant()
+  return useSWR<WorkflowCatalog>(
+    currentTenant ? workflowEndpoints.catalog() : null,
+    (url: string) => get<WorkflowCatalog>(url),
+    { ...defaultConfig, dedupingInterval: 60_000, ...config }
+  )
+}
+
+/** Versions of an automation, newest first. */
+export function useWorkflowVersions(workflowId: string | null, config?: SWRConfiguration) {
+  const { currentTenant } = useTenant()
+  return useSWR<WorkflowVersionListResponse>(
+    currentTenant && workflowId ? workflowEndpoints.versions(workflowId) : null,
+    (url: string) => get<WorkflowVersionListResponse>(url),
+    { ...defaultConfig, ...config }
+  )
+}
+
+/** Per-step counts over the recorded runs of one mode. */
+export function useWorkflowTrace(
+  workflowId: string | null,
+  mode: AutomationMode = 'simulate',
+  config?: SWRConfiguration
+) {
+  const { currentTenant } = useTenant()
+  return useSWR<WorkflowTraceResponse>(
+    currentTenant && workflowId ? workflowEndpoints.trace(workflowId, mode) : null,
+    (url: string) => get<WorkflowTraceResponse>(url),
+    { ...defaultConfig, ...config }
+  )
+}
+
+// ============================================
+// LIFECYCLE CALLS
+// ============================================
+// Plain calls (not hooks) so a component can await them in order. post()
+// answers 403 STEP_UP_REQUIRED with the shared re-authentication dialog and
+// retries once; every other refusal is thrown as an ApiClientError.
+
+/** Publish the draft: the automation (live), or a version pending a second approver. */
+export function publishWorkflow(
+  workflowId: string
+): Promise<Workflow | WorkflowPendingApprovalResponse> {
+  return post<Workflow | WorkflowPendingApprovalResponse>(workflowEndpoints.publish(workflowId), {})
+}
+
+/** A second publisher approves a pending version; the digest binds what they saw. */
+export function approveWorkflowVersion(
+  workflowId: string,
+  versionId: string,
+  digest: string
+): Promise<Workflow> {
+  return post<Workflow>(workflowEndpoints.approveVersion(workflowId, versionId), { digest })
+}
+
+/** Republish an older version as a new version (same gate as its risk). */
+export function rollbackWorkflowVersion(
+  workflowId: string,
+  versionId: string
+): Promise<Workflow | WorkflowPendingApprovalResponse> {
+  return post<Workflow | WorkflowPendingApprovalResponse>(
+    workflowEndpoints.rollbackVersion(workflowId, versionId),
+    {}
+  )
+}
+
+/** Switch a live automation back to simulate (one click, no step-up). */
+export function setWorkflowSimulate(workflowId: string): Promise<Workflow> {
+  return put<Workflow>(workflowEndpoints.mode(workflowId), { mode: 'simulate' })
+}
+
+/** Run a draft on recent subjects the caller may read; nothing is stored. */
+export function previewWorkflow(
+  workflowId: string,
+  body: WorkflowPreviewRequest
+): Promise<WorkflowPreviewResponse> {
+  return post<WorkflowPreviewResponse>(workflowEndpoints.preview(workflowId), body)
+}
+
+/** Static check of a draft graph. */
+export function validateWorkflow(
+  workflowId: string,
+  graph?: { nodes: GraphNode[]; edges: CreateEdgeRequest[] }
+): Promise<WorkflowValidateResponse> {
+  return post<WorkflowValidateResponse>(workflowEndpoints.validate(workflowId), graph ?? {})
+}
+
+/** Continue a run paused at the change cap. */
+export function resumeWorkflowRun(runId: string): Promise<WorkflowRun> {
+  return post<WorkflowRun>(workflowRunEndpoints.resume(runId), {})
+}
+
+/** Cancel a pending, running or paused run. */
+export function cancelWorkflowRun(runId: string): Promise<void> {
+  return post<void>(workflowRunEndpoints.cancel(runId), {})
 }
 
 // ============================================

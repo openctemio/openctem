@@ -29,7 +29,11 @@ decides:
 | no match | answered 429 (no edge marker) | `inconclusive` (`blocked`) | unchanged |
 | no match | answered 407 | `inconclusive` (`auth_changed`) | unchanged |
 | no match | answered 5xx | `inconclusive` (`server_error`) | unchanged |
-| no match | request to another URL | `inconclusive` (`endpoint_mismatch`) | unchanged |
+| no match | request to another URL (a sensor that reports no per-request results) | `inconclusive` (`endpoint_mismatch`) | unchanged |
+| per-request results, the finding's endpoint matched | any | `still_vulnerable` (`matched`) | as above |
+| per-request results, the endpoint did not match, another path matched | any | `still_exposed_elsewhere` (`matched_elsewhere`) | unchanged (never closed, never reopened); the other paths are named in the reason and kept on the retest activity (`other_paths`) |
+| per-request results, nothing matched, the endpoint was not requested | any | `inconclusive` (`endpoint_mismatch`) | unchanged |
+| per-request results, nothing matched, the endpoint answered | its own answer | the rows above for a non-match (`confirmed_fixed`, `edge_blocked`, `access_denied`, `blocked`, `auth_changed`, `server_error`, `unreachable`); the line's edge state (`challenged`, `blocked`, `rate_limited`, from the sensor's edge detector) is `edge_blocked`, and an origin 401/403 follows the access-denied rules of the finding's class | as above |
 | no match | no response | `inconclusive` (`unreachable`) | unchanged |
 | no match | none, target answered the probe | `not_reproduced` (`no_endpoint_proof`) | unchanged |
 | no match | none, target did not answer | `inconclusive` (`unreachable`) | unchanged |
@@ -72,6 +76,28 @@ to `blocked`), and the finding card shows what it means and what to do next
 verdict, and an unknown or missing code (an older sensor) is a plain `error`.
 A retest whose tool could not run the check (`error`, `template_not_found`,
 `excluded_by_policy`, `no_verdict`) settles its run as blocked, not failed.
+
+**Checks that probe several paths.** A template such as swagger tries many
+paths and the tool keeps the exchange of only a few as evidence. Newer
+sensors report one line per request (`requests`: URL without query values,
+status, matched, failure class, CDN or WAF vendor and state; at most 64) in a
+tool verdict (sdk-go `tool.RequestResult`) and in the validate result's
+evidence. The platform then decides on the finding's own endpoint from those
+lines, not on whichever exchange was kept. The lines are untrusted: bounded,
+printable, and a verdict that says "still present" while no line matched is
+`inconclusive`, never a fix. An older sensor reports none, and the settlement
+reads the evidence as before. The platform does not open a finding for another
+matching path (ingest does that on the next scan); it names the path. A finding
+whose retest keeps ending `endpoint_mismatch` or `matched_elsewhere` can get a
+retest check pinned to the exact URL (HTTP assertion, see
+[finding retest checks](finding-retest-checks.md)); the console suggests it.
+
+A retest run whose tool ran to the end and ended `inconclusive` (any code but
+`no_result`, `unreachable` and the tool-unable codes) or `still_exposed_elsewhere`
+is a **completed** run with a result (`result.kind`, `result.code` on the run
+and its step, shown as "Completed, inconclusive"), not a failed one. A run
+fails only when the sensor returned nothing (`no_result`), the target did not
+answer (`unreachable`), or the platform could not settle it.
 
 The endpoint is the finding's matched-at: scheme, host, port (default ports
 dropped), path and the parameter names (values are not compared: a token
