@@ -128,6 +128,7 @@
   "remediationCampaigns.status.completed": "Completed",
   "remediationCampaigns.status.draft": "Draft",
   "remediationCampaigns.statusFilter": "Filter by status",
+  "remediationCampaigns.statusLabel": "Status",
   "remediationCampaigns.taskLink.named": "Campaign: {name}",
   "remediationCampaigns.taskLink.unnamed": "Open the campaign",
   "remediationCampaigns.tasks.count.one": "1 task",
@@ -145,6 +146,5 @@
   "remediationCampaigns.toast.saved": "Campaign saved",
   "remediationCampaigns.toast.started": "Campaign started",
   "remediationCampaigns.toast.taskRemoved": "Task removed from the campaign",
-  "remediationCampaigns.toast.tasksAdded": "Tasks added to the campaign",
-  "remediationCampaigns.statusLabel": "Status"
+  "remediationCampaigns.toast.tasksAdded": "Tasks added to the campaign"
 }

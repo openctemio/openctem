@@ -21,6 +21,13 @@ name: Security Gate
 # - Labels change on every `labeled` event and re-run the gate; the runs the
 #   gate's own label writes would trigger do not happen (GITHUB_TOKEN events
 #   start no workflows).
+# - The ack is read only from records GitHub writes (the `labeled` event and the
+#   run of this workflow it started), never from a comment: every workflow on
+#   every branch writes as the same bot.
+# - On `pull_request` GitHub runs THIS FILE from the pull request, so a pull
+#   request can rewrite it. The required check is pinned to this file on the
+#   default branch by an organization ruleset ("Require workflows to pass");
+#   without it, any job named `security-gate` satisfies branch protection.
 
 on:
   pull_request:
@@ -46,6 +53,7 @@ jobs:
       issues: write # labels live on the issue side of a pull request
       security-events: read # code-scanning alerts of the PR and the base
       checks: read # security check results on the head commit
+      actions: read # the gate run a `security-ack` label started names the acked commit
     steps:
       - name: Check out the gate from the base commit
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
