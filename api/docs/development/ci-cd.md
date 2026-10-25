@@ -357,8 +357,18 @@ tags and scheduled runs are never cancelled.
 4. Every required check reports on every queue ref: the five `… OK`
    aggregators run with `if: always()` and pass when their jobs were skipped;
    Secret Scanning and Workflow Lint are unconditional jobs. Nothing stays Pending.
-5. When all of them pass, the queue fast-forwards the base branch, and the `push` run
-   (path-scoped, plus CodeQL on both languages) refreshes the branch's baseline.
+5. When all of them pass, the queue fast-forwards the base branch to the commit it
+   tested, and the `push` run (path-scoped, plus CodeQL on both languages)
+   refreshes the branch's baseline. On `develop`, API CI, All-in-one CI and Web
+   E2E first ask `.github/scripts/queue-verified.sh` whether the merge queue
+   already passed this workflow on this exact commit (a `merge_group` run, same
+   workflow file, same SHA, conclusion success; only GitHub creates such runs).
+   If so they skip their test jobs: the queue ran the same workflow file on the
+   same tree. The push still keeps develop's caches current (`Go cache
+   (develop)` fills the Go cache when there is none for the current `go.sum`;
+   Web E2E still builds its images, which writes the layer cache). Any doubt
+   (no such run, an API error) runs the workflow in full. CodeQL, Web CI and
+   the security scans always run on push.
 6. A failure removes the PR from the queue; the groups behind it are rebuilt.
 
 ### Tiers
@@ -397,6 +407,14 @@ or push run that did not compute the full tier; in the queue `API CI OK` fails
 unless the race-enabled suite, the least-privilege suite, PostgreSQL 18 and the
 release binaries succeeded, and `All-in-one OK` fails unless the image build
 succeeded. Nothing reaches `develop`/`main` on the fast tier alone.
+
+Caches: GitHub lets a run restore caches of its own ref, of the default branch
+and, for a pull request, of its base branch. A merge-queue ref is none of
+these for `develop`, so it restores nothing, and what it writes no other run can
+read. API CI therefore neither restores nor saves the Go cache in the queue,
+and the Web E2E layer cache (`web/e2e/ci/docker-bake.hcl`) is written by pushes
+to `develop` only; pull requests read develop's. Before, queue and PR refs held
+about 7 of the 10 GB cache store and evicted develop's entries.
 
 Concurrency: a newer push to a PR cancels that PR's older run
 (`cancel-in-progress` only for `pull_request`). Merge-queue runs are never
