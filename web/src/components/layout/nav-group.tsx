@@ -39,6 +39,7 @@ import {
 } from '@/features/integrations/api/use-tenant-modules'
 import { useTranslation } from '@/context/i18n-provider'
 import { cn } from '@/lib/utils'
+import { NavCount } from './nav-count'
 import { subModuleStatus } from '@/lib/permissions/sub-modules'
 import { activeSubItemUrl, checkIsActive, sectionHasActiveRoute } from './nav-active'
 import { NavPendingHint, SidebarLink } from './sidebar-link'
@@ -273,8 +274,9 @@ export function NavBadge({
       </Badge>
     )
   }
-  return <Badge className="ms-auto shrink-0 rounded-full px-1 py-0 text-xs">{children}</Badge>
+  return <NavCount tone="action">{children}</NavCount>
 }
+
 
 /**
  * Get the appropriate badge based on releaseStatus
