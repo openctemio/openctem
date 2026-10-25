@@ -42,6 +42,7 @@ export const OWNED_FILTER_PARAMS: ReadonlySet<string> = new Set([
   'related_to',
   'pending_approval',
   'acceptance_expires_at_lte',
+  'informational',
 ])
 
 /** Params the context chips draw (an asset, a scan, a CVE group's "View"...). */
@@ -57,6 +58,15 @@ export const CONTEXT_FILTER_PARAMS: ReadonlySet<string> = new Set([
   'asset_owner_id_null',
   'asset_group_id',
   'asset_crown_jewel',
+])
+
+/**
+ * Params the filter bar does not draw as chips: the context chips, and
+ * `informational`, which has its own "Informational hidden" chip.
+ */
+export const FILTER_BAR_SKIP_PARAMS: ReadonlySet<string> = new Set([
+  ...CONTEXT_FILTER_PARAMS,
+  'informational',
 ])
 
 const IN_OPS = ['in', 'not_in'] as const
