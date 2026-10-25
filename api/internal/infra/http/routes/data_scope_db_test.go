@@ -193,6 +193,7 @@ func newDSHarness(t *testing.T) *dsHarness {
 
 	surfaceSvc := attack.NewSurfaceService(assetRepo, postgres.NewAssetRelationshipRepository(db), log)
 	surfaceSvc.SetFindingRiskCounter(findingRepo)
+	surfaceSvc.SetPathFindingReader(findingRepo)
 	surfaceSvc.SetDataScope(enforcer)
 
 	expSvc := exposure.NewExposureService(postgres.NewExposureRepository(db), postgres.NewExposureStateHistoryRepository(db), log)
@@ -603,6 +604,45 @@ func TestDataScope_IndirectLists_FilterForScopedMemberOnly(t *testing.T) {
 	_, o := h.do(h.owner, true, http.MethodGet, "/api/v1/notifications/unread-count", nil)
 	if !strings.Contains(a, `"count":1`) || !strings.Contains(o, `"count":2`) {
 		t.Errorf("unread counts: memberA %s (want 1), owner %s (want 2)", a, o)
+	}
+}
+
+// --- Attack paths to one asset ------------------------------------------------
+
+// The attack paths to an asset answer 404 for an asset outside the caller's
+// data scope or outside the tenant, and 200 with the asset for one in scope.
+func TestDataScope_AttackPathsToAsset(t *testing.T) {
+	h := newDSHarness(t)
+	path := func(id string) string { return "/api/v1/attack-surface/attack-paths/" + id }
+
+	status, body := h.do(h.memberA, false, http.MethodGet, path(h.assetB.String()), nil)
+	if status != http.StatusNotFound || strings.Contains(body, dsMarkerAssetB) {
+		t.Errorf("memberA GET out-of-scope target = %d, want 404 without its data (body %.200s)", status, body)
+	}
+	status, body = h.do(h.memberA, false, http.MethodGet, path(h.assetA.String()), nil)
+	if status != http.StatusOK || !strings.Contains(body, dsMarkerAssetA) || strings.Contains(body, dsMarkerAssetB) {
+		t.Errorf("memberA GET in-scope target = %d (body %.300s)", status, body)
+	}
+	status, body = h.do(h.owner, true, http.MethodGet, path(h.assetB.String()), nil)
+	if status != http.StatusOK || !strings.Contains(body, dsMarkerAssetB) {
+		t.Errorf("owner GET target = %d (body %.300s)", status, body)
+	}
+	// A member with no scope row sees nothing.
+	if status, _ := h.do(h.memberStrict, false, http.MethodGet, path(h.assetA.String()), nil); status != http.StatusNotFound {
+		t.Errorf("scopeless member GET target = %d, want 404", status)
+	}
+
+	// Another tenant's asset is 404, even for this tenant's owner.
+	other, foreign := shared.NewID(), shared.NewID()
+	h.exec(`INSERT INTO tenants (id, name, slug) VALUES ($1, $2, $2)`, other.String(), "ds-other-"+other.String())
+	h.t.Cleanup(func() {
+		_, _ = h.db.ExecContext(context.Background(), `DELETE FROM tenants WHERE id = $1`, other.String())
+	})
+	h.exec(`INSERT INTO assets (id, tenant_id, name, asset_type, exposure, criticality) VALUES ($1, $2, 'ds-foreign-asset', 'domain', 'public', 'high')`,
+		foreign.String(), other.String())
+	status, body = h.do(h.owner, true, http.MethodGet, path(foreign.String()), nil)
+	if status != http.StatusNotFound || strings.Contains(body, "ds-foreign-asset") {
+		t.Errorf("owner GET another tenant's asset = %d, want 404 (body %.200s)", status, body)
 	}
 }
 
