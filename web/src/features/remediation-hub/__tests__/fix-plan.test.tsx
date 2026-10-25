@@ -77,8 +77,8 @@ function ready() {
 }
 
 const value = (label: string) => {
-  const dt = screen.getByText(label, { selector: 'dt' })
-  return (dt.parentElement as HTMLElement).querySelector('dd')!.textContent
+  const dt = screen.getByText(label, { selector: '[data-slot="metric-label"]' })
+  return (dt.parentElement as HTMLElement).querySelector('[data-slot="metric-value"]')!.textContent
 }
 
 describe('fix plan', () => {
@@ -99,13 +99,15 @@ describe('fix plan', () => {
   it('every tile opens the list it counts, with the same filters', () => {
     render(<FixPlan />)
     const href = (label: string) =>
-      (screen.getByText(label, { selector: 'dt' }).closest('a') as HTMLAnchorElement).getAttribute(
-        'href'
-      )
+      (
+        screen
+          .getByText(label, { selector: '[data-slot="metric-label"]' })
+          .closest('a') as HTMLAnchorElement
+      ).getAttribute('href')
     expect(href('Open tasks')).toBe('/remediation/tasks?view=open')
     expect(href('Suggestions to review')).toBe('/remediation/suggestions')
     expect(href('My tasks')).toBe('/remediation/tasks?view=mine')
-    expect(screen.queryByText('Overdue', { selector: 'dt' })).toBeNull()
+    expect(screen.queryByText('Overdue', { selector: '[data-slot="metric-label"]' })).toBeNull()
     expect(taskCalls.find((f) => f.mine === true)?.states).toEqual(VIEW_FILTERS.mine.states)
     expect(taskCalls.find((f) => !f.mine)?.states).toEqual(VIEW_FILTERS.open.states)
   })

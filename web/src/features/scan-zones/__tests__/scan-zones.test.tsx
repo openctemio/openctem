@@ -144,13 +144,13 @@ describe('RunDispatchPanel', () => {
     const dispatch: RunDispatch = {
       resolved_targets: 555,
       excluded_targets: 0,
-      warnings: ['gone.example.com not scanned: does not resolve in DNS', 'other note'],
-      uncovered_targets: [{ target: 'gone.example.com', reason: 'does not resolve in DNS' }],
+      warnings: ['gone-name not scanned: does not resolve in DNS', 'other note'],
+      uncovered_targets: [{ target: 'gone-name', reason: 'does not resolve in DNS' }],
       zone_routing: { jobs: 13, unzoned_targets: 121, uncovered_targets: 434, zones: [] },
       sensor_routing: 'tenant',
       will_scan: 121,
       skipped: [
-        { reason: 'unresolved', tone: 'info', count: 434, targets: ['gone.example.com'] },
+        { reason: 'unresolved', tone: 'info', count: 434, targets: ['gone-name'] },
         { reason: 'zone_no_sensor', tone: 'warning', count: 1, targets: ['10.3.0.1'] },
       ],
     }
@@ -162,11 +162,11 @@ describe('RunDispatchPanel', () => {
     const unresolved = screen.getByText('Do not resolve in DNS').closest('li')!
     expect(unresolved).toHaveAttribute('data-tone', 'info')
     await userEvent.click(within(unresolved).getByRole('button'))
-    expect(within(unresolved).getByText('gone.example.com')).toBeInTheDocument()
+    expect(within(unresolved).getByText('gone-name')).toBeInTheDocument()
     expect(within(unresolved).getByText(/and 433 more not listed/)).toBeInTheDocument()
     const warnings = screen.getByTestId('run-warnings')
     expect(
-      within(warnings).queryByText((text) => text.includes('gone.example.com'))
+      within(warnings).queryByText((text) => text.includes('gone-name'))
     ).not.toBeInTheDocument()
     expect(within(warnings).getByText('other note')).toBeInTheDocument()
     // No zone took a share: no zone table and no zone wording.
