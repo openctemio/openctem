@@ -50,6 +50,7 @@
   "riskScore.model.noticeTitle": "Mô hình khả năng × tác động",
   "riskScore.name": "Rủi ro {score}/100, {band}",
   "riskScore.nameNone": "Rủi ro: {band}",
+  "riskScore.namePending": "{name}. Dữ liệu đầu vào đã thay đổi; điểm mới đang được tính.",
   "riskScore.notScored": "Chưa được chấm điểm",
   "riskScore.notScoredHint": "Điểm rủi ro của tài sản này chưa được tính.",
   "riskScore.recalc.button": "Tính lại mọi điểm",
