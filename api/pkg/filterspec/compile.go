@@ -377,6 +377,11 @@ func (c *compiler) leaf(l *Leaf) string {
 			c.fail(l, "unknown value")
 			return ""
 		}
+		if strings.Contains(tpl, UserToken) && (c.actor.system || c.actor.userID.IsZero()) {
+			// "related to me" has no meaning without a user.
+			c.fail(l, "unknown field")
+			return ""
+		}
 		return "(" + c.render(tpl, "") + ")"
 	}
 	if len(f.EnumExpand) > 0 {
