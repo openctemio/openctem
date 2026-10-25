@@ -23,16 +23,6 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { ConfirmDialog } from '@/components/confirm-dialog'
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-  DialogBody,
-} from '@/components/ui/dialog'
-import { Textarea } from '@/components/ui/textarea'
 import { toDisplayText } from '@/lib/untrusted-text'
 import { formatAbsoluteTime, formatRelativeTime } from '@/lib/format-metric'
 import { ErrorState } from '@/features/shared/components/error-state'
@@ -43,8 +33,6 @@ import { useDisplayUser } from '@/hooks/use-display-user'
 import { refreshPendingApprovalCount } from '@/hooks/use-dynamic-badges'
 import {
   useApprovals,
-  useApproveStatus,
-  useRejectApproval,
   useCancelApproval,
   remindApprovers,
 } from '@/features/findings/api/use-findings-api'
@@ -52,7 +40,6 @@ import type { ApiApproval, ApprovalStatus } from '@/features/findings/types'
 import { FINDING_STATUS_CONFIG, type FindingStatus } from '@/features/findings/types'
 import { FindingStatusBadge } from '@/features/findings/components/finding-status-badge'
 import { ApprovalFindingLink } from '@/features/findings/components/approval-finding-link'
-import { ApprovalFindingSummary } from '@/features/findings/components/approval-finding-summary'
 import { useListParams } from '@/hooks/use-list-params'
 import {
   approvalRequester,
@@ -64,9 +51,11 @@ import { useTranslation } from '@/context/i18n-provider'
 import { Tag } from '@/components/ui/tag'
 import { ApprovalStatusLozenge } from '@/features/shared/components/approval-status-lozenge'
 import { AIProposalBadge } from '@/features/findings/components/ai-proposal-badge'
-import { closureReasonLabel } from '@/features/findings/lib/closure'
 import { FindingSelfApproveDialog } from '@/features/findings/components/finding-self-approve-dialog'
-import { approveErrorOutcome, approveResultOutcome } from '@/features/findings/lib/approval-policy'
+import {
+  requestedStatusLabel,
+  useApprovalDecision,
+} from '@/features/findings/components/approval-decision'
 import { ApprovalTierCell } from '@/features/findings/components/approval-tier-cell'
 import { GroupExceptionsPanel } from '@/features/findings/components/group-exceptions-panel'
 import { useApprovalBatches } from '@/features/findings/api/use-approval-batches'
@@ -118,13 +107,6 @@ function RelativeTime({ value, locale }: { value: string; locale: string }) {
       {formatRelativeTime(value, locale)}
     </time>
   )
-}
-
-type Translate = ReturnType<typeof useTranslation>['t']
-
-function getRequestedStatusLabel(t: Translate, status: string): string {
-  const config = FINDING_STATUS_CONFIG[status as keyof typeof FINDING_STATUS_CONFIG]
-  return config ? t(config.labelKey, config.label) : status
 }
 
 function RequesterCell({
@@ -179,14 +161,9 @@ export default function ApprovalsPage() {
   const currentUserId = useDisplayUser()?.id
 
   // Action state
-  const [approveDialogOpen, setApproveDialogOpen] = useState(false)
-  const [rejectDialogOpen, setRejectDialogOpen] = useState(false)
   const [cancelDialogOpen, setCancelDialogOpen] = useState(false)
   const [remindTarget, setRemindTarget] = useState<ApiApproval | null>(null)
   const [selectedApproval, setSelectedApproval] = useState<ApiApproval | null>(null)
-  const [rejectionReason, setRejectionReason] = useState('')
-  // Why the last reject failed, shown under the reason so nothing typed is lost.
-  const [rejectError, setRejectError] = useState<string | null>(null)
   const [actionInProgress, setActionInProgress] = useState<string | null>(null)
   // The sole member's own approval (shown only when the API offers it).
   const [selfApproveTarget, setSelfApproveTarget] = useState<ApiApproval | null>(null)
@@ -207,13 +184,8 @@ export default function ApprovalsPage() {
     [mutateList, mutatePendingGroups]
   )
 
-  // Action hooks
-  const { trigger: triggerApprove, isMutating: isApproving } = useApproveStatus(
-    selectedApproval?.id ?? ''
-  )
-  const { trigger: triggerReject, isMutating: isRejecting } = useRejectApproval(
-    selectedApproval?.id ?? ''
-  )
+  // Approve and reject: the shared decision dialogs (also on My Work).
+  const decision = useApprovalDecision({ onDecided: mutate })
   const { trigger: triggerCancel, isMutating: isCancelling } = useCancelApproval(
     selectedApproval?.id ?? ''
   )
@@ -250,87 +222,12 @@ export default function ApprovalsPage() {
   // ACTION HANDLERS
   // ============================================
 
-  const handleApproveClick = useCallback((approval: ApiApproval) => {
-    setSelectedApproval(approval)
-    setApproveDialogOpen(true)
-  }, [])
-
-  const handleRejectClick = useCallback((approval: ApiApproval) => {
-    setSelectedApproval(approval)
-    setRejectionReason('')
-    setRejectError(null)
-    setRejectDialogOpen(true)
-  }, [])
+  const { openApprove: handleApproveClick, openReject: handleRejectClick } = decision
 
   const handleCancelClick = useCallback((approval: ApiApproval) => {
     setSelectedApproval(approval)
     setCancelDialogOpen(true)
   }, [])
-
-  const handleApproveConfirm = async () => {
-    if (!selectedApproval || actionInProgress) return
-    setActionInProgress(selectedApproval.id)
-    try {
-      // A re-authentication prompt (STEP_UP_REQUIRED) is answered by the API
-      // client, which retries once; a cancelled prompt ends up below.
-      const outcome = approveResultOutcome(await triggerApprove())
-      if (outcome.kind === 'recorded') {
-        toast.success(t('findings.approvals.toast.signed', 'Your approval is recorded'), {
-          description: t(
-            'findings.approvals.toast.signedDesc',
-            '{count} more approval(s) needed before the status changes.',
-            { count: outcome.remaining }
-          ),
-        })
-      } else {
-        toast.success(t('findings.approvals.toast.approved', 'Approval request approved'), {
-          description: t(
-            'findings.approvals.toast.approvedDesc',
-            'Finding status will be changed to {status}',
-            { status: getRequestedStatusLabel(t, selectedApproval.requested_status) }
-          ),
-        })
-      }
-      await mutate()
-    } catch (err) {
-      const outcome = approveErrorOutcome(t, err)
-      toast.error(
-        outcome.kind === 'refused'
-          ? outcome.message
-          : getErrorMessage(
-              err,
-              t('findings.approvals.toast.approveFailed', 'Failed to approve request')
-            )
-      )
-      if (outcome.kind === 'refused') await mutate()
-    } finally {
-      setActionInProgress(null)
-      setSelectedApproval(null)
-      setApproveDialogOpen(false)
-    }
-  }
-
-  const handleRejectConfirm = async () => {
-    if (!selectedApproval || actionInProgress || !rejectionReason.trim()) return
-    setActionInProgress(selectedApproval.id)
-    setRejectError(null)
-    try {
-      await triggerReject({ reason: rejectionReason.trim() })
-      toast.success(t('findings.approvals.toast.rejected', 'Approval request rejected'))
-      setRejectionReason('')
-      setSelectedApproval(null)
-      setRejectDialogOpen(false)
-      await mutate()
-    } catch (err) {
-      // The dialog stays open with the reason as typed: the approver fixes
-      // the cause (or retries) without writing it again.
-      setRejectError(
-        getErrorMessage(err, t('findings.approvals.toast.rejectFailed', 'Failed to reject request'))
-      )
-    } finally {
-      setActionInProgress(null)
-    }
-  }
 
   const handleCancelConfirm = async () => {
     if (!selectedApproval || actionInProgress) return
@@ -436,7 +333,7 @@ export default function ApprovalsPage() {
       // The four-eyes rule: someone else decides your own request.
       const own = isOwnApproval(approval, currentUserId)
       const mineSelf = selfApprovalAvailable && approval.requested_by === currentUserId
-      const busy = actionInProgress === approval.id
+      const busy = actionInProgress === approval.id || decision.busyId === approval.id
       return (
         <div className="flex items-center justify-end gap-1.5">
           {/* The decision is one click from the row; the dialog shows the
@@ -526,6 +423,7 @@ export default function ApprovalsPage() {
     },
     [
       actionInProgress,
+      decision.busyId,
       handleApproveClick,
       handleRejectClick,
       handleCancelClick,
@@ -600,7 +498,7 @@ export default function ApprovalsPage() {
             <FindingStatusBadge status={status as FindingStatus} />
           ) : (
             <Badge variant="outline" className="text-xs">
-              {getRequestedStatusLabel(t, status)}
+              {requestedStatusLabel(t, status)}
             </Badge>
           )
         },
@@ -764,7 +662,7 @@ export default function ApprovalsPage() {
                             APPROVAL_STATUS_LABELS[approval.status] ?? approval.status
                           )}
                         />
-                        <span>{getRequestedStatusLabel(t, approval.requested_status)}</span>
+                        <span>{requestedStatusLabel(t, approval.requested_status)}</span>
                         <RequesterCell approval={approval} currentUserId={currentUserId} />
                         {approval.decide_by && approval.status === 'pending' && (
                           <span>
@@ -814,136 +712,7 @@ export default function ApprovalsPage() {
         </PageStack>
       </Main>
 
-      {/* Approve Confirmation Dialog */}
-      <ConfirmDialog
-        open={approveDialogOpen}
-        onOpenChange={setApproveDialogOpen}
-        title={t('confirm.findingApproval.approveTitle', 'Approve this status change?')}
-        desc={
-          selectedApproval &&
-          (selectedApproval.approvals_required ?? 0) - (selectedApproval.approvals_collected ?? 0) >
-            1
-            ? t(
-                'confirm.findingApproval.approveDescMore',
-                'Your approval is recorded. The finding moves to the requested status once {count} more approval(s) are in.',
-                {
-                  count:
-                    (selectedApproval.approvals_required ?? 0) -
-                    (selectedApproval.approvals_collected ?? 0) -
-                    1,
-                }
-              )
-            : t(
-                'confirm.findingApproval.approveDesc',
-                'The finding moves to the requested status at once.'
-              )
-        }
-        confirmText={
-          isApproving ? (
-            <>
-              <Loader2 className="me-2 h-4 w-4 animate-spin" />
-              {t('confirm.suppression.approving', 'Approving…')}
-            </>
-          ) : (
-            t('confirm.suppression.approve', 'Approve')
-          )
-        }
-        isLoading={isApproving}
-        handleConfirm={handleApproveConfirm}
-      >
-        {selectedApproval && (
-          <div className="my-2 grid gap-3 rounded-lg border bg-muted/50 p-3">
-            <ApprovalFindingSummary
-              findingId={selectedApproval.finding_id}
-              findingTitle={selectedApproval.finding_title}
-              justification={selectedApproval.justification}
-            />
-            <p className="text-sm font-medium">
-              {t('findings.approvals.changeTo', 'Change to')}{' '}
-              <Badge variant="outline" className="ms-1 text-xs">
-                {getRequestedStatusLabel(t, selectedApproval.requested_status)}
-              </Badge>
-            </p>
-            {selectedApproval.closure_reason && (
-              <p className="text-sm">
-                {t('findings.approvalDialog.reasonLabel', 'Reason:')}{' '}
-                {closureReasonLabel(t, selectedApproval.closure_reason)}
-              </p>
-            )}
-            <AIProposalBadge approval={selectedApproval} withHint />
-          </div>
-        )}
-      </ConfirmDialog>
-
-      {/* Reject Dialog */}
-      <Dialog open={rejectDialogOpen} onOpenChange={setRejectDialogOpen}>
-        <DialogContent size="sm">
-          <DialogHeader>
-            <DialogTitle>{t('findings.approvals.rejectTitle', 'Reject request')}</DialogTitle>
-            <DialogDescription>
-              {t('findings.approvals.rejectDesc', 'Give a reason for rejecting this request.')}
-            </DialogDescription>
-          </DialogHeader>
-          <DialogBody className="grid gap-4">
-            {selectedApproval && (
-              <div className="grid gap-3 rounded-lg border bg-muted/50 p-3">
-                <ApprovalFindingSummary
-                  findingId={selectedApproval.finding_id}
-                  findingTitle={selectedApproval.finding_title}
-                  justification={selectedApproval.justification}
-                />
-                <p className="text-sm font-medium">
-                  {t('findings.approvals.requestedLabel', 'Requested:')}{' '}
-                  {getRequestedStatusLabel(t, selectedApproval.requested_status)}
-                </p>
-              </div>
-            )}
-            <div className="grid gap-2">
-              <Textarea
-                placeholder={t('findings.approvals.rejectPlaceholder', 'Reason for rejection…')}
-                value={rejectionReason}
-                onChange={(e) => setRejectionReason(e.target.value)}
-                rows={3}
-                maxLength={2000}
-                aria-label={t('findings.approvals.rejectPlaceholder', 'Reason for rejection…')}
-                aria-invalid={rejectError ? true : undefined}
-                aria-describedby={rejectError ? 'approval-reject-error' : undefined}
-              />
-              {rejectError && (
-                <p id="approval-reject-error" role="alert" className="text-sm text-destructive">
-                  {rejectError}
-                </p>
-              )}
-              <p className="text-xs text-muted-foreground text-end">
-                {rejectionReason.length}/2000
-              </p>
-            </div>
-          </DialogBody>
-          <DialogFooter>
-            <Button
-              variant="outline"
-              onClick={() => setRejectDialogOpen(false)}
-              disabled={isRejecting}
-            >
-              {t('findings.approvals.cancel', 'Cancel')}
-            </Button>
-            <Button
-              variant="destructive"
-              onClick={handleRejectConfirm}
-              disabled={isRejecting || !rejectionReason.trim()}
-            >
-              {isRejecting ? (
-                <>
-                  <Loader2 className="me-2 h-4 w-4 animate-spin" />
-                  {t('findings.approvals.rejecting', 'Rejecting…')}
-                </>
-              ) : (
-                t('findings.approvals.action.reject', 'Reject')
-              )}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      {decision.dialogs}
 
       <ConfirmDialog
         open={remindTarget !== null}

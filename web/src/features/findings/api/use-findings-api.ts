@@ -636,6 +636,8 @@ export interface ApprovalListResponse {
    * may approve their own pending requests with an authenticator code.
    */
   self_approval_available?: boolean
+  /** With `?queue=`: the pending count of each personal queue (My Work). */
+  queue_counts?: { review: number; requested: number }
 }
 
 /** The approved request after a sole member's own approval. */
