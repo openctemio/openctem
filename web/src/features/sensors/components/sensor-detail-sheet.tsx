@@ -72,6 +72,7 @@ import type { EntityActivityHandle } from '@/features/activity/components/entity
 import { requestSensorContentRefresh, SensorContentSection } from './sensor-content-section'
 import { SensorControlSection, hasHeartbeatHistory } from './sensor-control-section'
 import { SensorLocalPolicySection } from './sensor-local-policy-section'
+import { SensorLocalStoreSection } from './sensor-local-store-section'
 import { SENSOR_POSTURE_SECTION_ID, SensorPostureSection } from './sensor-posture'
 import { SensorGrantSection } from './sensor-grant-section'
 import { SensorNetworkPathSection } from '@/features/proxy-pools'
@@ -420,11 +421,13 @@ function SensorStats({
             label: t('sensors.detail.slotsInUse', 'Job slots in use'),
           }}
           caption={
-            takesJobs
-              ? t('sensors.detail.slotsFree', '{count} slots free', {
-                  count: Math.max(0, cap.effective - current),
-                })
-              : t('sensors.detail.notTakingJobs', 'Not taking jobs')
+            sensor.local_store?.stop_claiming
+              ? t('sensors.detail.stoppedClaiming', 'Stopped claiming: storage full')
+              : takesJobs
+                ? t('sensors.detail.slotsFree', '{count} slots free', {
+                    count: Math.max(0, cap.effective - current),
+                  })
+                : t('sensors.detail.notTakingJobs', 'Not taking jobs')
           }
         />
       )}
@@ -701,9 +704,14 @@ function ConnectionAndIdentity({
         )}
         <DetailField label={t('sensors.detail.f.apiKey', 'API key')}>
           <span className="flex flex-col gap-0.5">
-            {sensor.api_key_prefix && (
-              // The display prefix only, never key material.
-              <span className="font-mono text-xs">{sensor.api_key_prefix}…</span>
+            {sensor.auth_kind === 'key_bound' ? (
+              // Its own signing key: there is no API key to show.
+              <span>{t('sensors.detail.keyBound', 'Signing key (key-bound identity)')}</span>
+            ) : (
+              sensor.api_key_prefix && (
+                // The display prefix only, never key material.
+                <span className="font-mono text-xs">{sensor.api_key_prefix}…</span>
+              )
             )}
             <span className="text-meta [&>span]:text-meta">
               <SensorKeyCell sensor={sensor} now={now} />
@@ -1189,6 +1197,7 @@ export function SensorDetailSheet({
             {(!oneShot || sensorToolRows(sensor).length > 0) && (
               <ToolsAndCapacity sensor={sensor} now={now} thresholds={thresholds} />
             )}
+            {sensor.local_store && <SensorLocalStoreSection sensor={sensor} />}
             {(sensor.content?.length ?? 0) > 0 && (
               <SensorContentSection sensor={sensor} now={now} canManage={canWrite} />
             )}

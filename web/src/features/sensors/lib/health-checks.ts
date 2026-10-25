@@ -5,7 +5,7 @@ import { dispatchTools, hasReportedTools } from './capabilities'
 import { contentCheckSummary, msg } from './content'
 import { configHealthNeedsAttention } from './config-report'
 import { postureIssues } from './posture'
-import { formatDurationShort, keyExpiry, type Tr } from './format'
+import { formatBytes, formatDurationShort, keyExpiry, type Tr } from './format'
 import {
   isOneShotSensor,
   sensorState,
@@ -35,6 +35,7 @@ export interface HealthCheck {
   key:
     | 'heartbeat'
     | 'outbox'
+    | 'storage'
     | 'key'
     | 'version'
     | 'sdk'
@@ -123,6 +124,7 @@ export function sensorHealthChecks(
   const L = {
     heartbeat: msg(tr, 'sensors.checks.label.heartbeat', 'Heartbeat'),
     outbox: msg(tr, 'sensors.checks.label.outbox', 'Outbox'),
+    storage: msg(tr, 'sensors.checks.label.storage', 'Local storage'),
     key: msg(tr, 'sensors.checks.label.key', 'API key'),
     version: msg(tr, 'sensors.checks.label.version', 'Version'),
     sdk: msg(tr, 'sensors.checks.label.sdk', 'SDK'),
@@ -222,6 +224,13 @@ export function sensorHealthChecks(
       ),
       aside: uptime,
     })
+  }
+
+  // Local storage: a sensor whose store is full stops claiming jobs on its
+  // own, and its scans wait. Only when the sensor reports it.
+  const store = sensor.local_store
+  if (store && !oneShot) {
+    checks.push(storageCheck(store, L.storage, now, tr))
   }
 
   // Outbox (results waiting on the sensor)
@@ -586,4 +595,73 @@ export function sensorHealthChecks(
 function latestIsBuiltIn(sensor: Sensor, channel: ReleaseChannel): boolean {
   const id = sensorProductId(sensor)
   return channel.products?.find((p) => p.id === id)?.latest_source === 'built_in'
+}
+
+/** How full the store is: "1.2 GB of 2 GB" or "1.2 GB". */
+export function storeUsage(store: NonNullable<Sensor['local_store']>, tr?: Tr): string {
+  return store.quota_bytes
+    ? msg(tr, 'sensors.checks.storage.usedOf', '{used} of {quota}', {
+        used: formatBytes(store.total_bytes),
+        quota: formatBytes(store.quota_bytes),
+      })
+    : formatBytes(store.total_bytes)
+}
+
+/** Whether the disk under the sensor's data directory is the cause. */
+export function storeDiskLow(store: NonNullable<Sensor['local_store']>): boolean {
+  return store.disk_level === 'low' || store.disk_level === 'critical'
+}
+
+function storageCheck(
+  store: NonNullable<Sensor['local_store']>,
+  label: string,
+  now: number,
+  tr?: Tr
+): HealthCheck {
+  const aside = store.last_sweep_at
+    ? msg(tr, 'sensors.checks.storage.cleaned', 'cleaned {age}', {
+        age: age(store.last_sweep_at, now, tr),
+      })
+    : undefined
+  if (store.stop_claiming) {
+    return {
+      key: 'storage',
+      label,
+      status: 'critical',
+      text: storeDiskLow(store)
+        ? msg(
+            tr,
+            'sensors.checks.storage.stoppedDisk',
+            'The disk under its data directory is almost full, so it stopped claiming new jobs and its scans wait. Free disk space on the sensor host; it resumes on its own.'
+          )
+        : msg(
+            tr,
+            'sensors.checks.storage.stoppedStore',
+            'Its local storage is full ({usage}), so it stopped claiming new jobs and its scans wait. Free disk space on the sensor host or raise its store quota; it resumes on its own.',
+            { usage: storeUsage(store, tr) }
+          ),
+      aside,
+    }
+  }
+  if (store.level === 'high' || store.level === 'critical' || storeDiskLow(store)) {
+    return {
+      key: 'storage',
+      label,
+      status: 'warning',
+      text: msg(
+        tr,
+        'sensors.checks.storage.high',
+        'Almost full ({usage}). It stops claiming new jobs when it fills up.',
+        { usage: storeUsage(store, tr) }
+      ),
+      aside,
+    }
+  }
+  return {
+    key: 'storage',
+    label,
+    status: 'ok',
+    text: msg(tr, 'sensors.checks.storage.ok', '{usage} used', { usage: storeUsage(store, tr) }),
+    aside,
+  }
 }

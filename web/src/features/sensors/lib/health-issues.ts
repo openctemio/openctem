@@ -48,6 +48,10 @@ function checkTitle(check: HealthCheck, state: ReturnType<typeof sensorState>, t
       if (state === 'late') return m('late', 'Heartbeat late')
       if (state === 'stale') return m('stale', 'Heartbeat well overdue')
       return m('noHeartbeat', 'No heartbeat')
+    case 'storage':
+      return check.status === 'critical'
+        ? m('storageStopped', 'Stopped claiming new jobs')
+        : m('storageHigh', 'Local storage almost full')
     case 'outbox':
       return check.status === 'critical'
         ? m('outboxLost', 'Results lost')
@@ -186,13 +190,24 @@ export function sensorHealthIssues(
     }
     const lifecycle = check.key === 'heartbeat' && (state === 'disabled' || state === 'revoked')
     if (check.status !== 'warning' && check.status !== 'critical' && !lifecycle) continue
-    const error = check.key === 'error' ? check.text : undefined
+    // The sensor's own words for a full store, behind "Show the error".
+    const error =
+      check.key === 'error'
+        ? check.text
+        : check.key === 'storage'
+          ? sensor.local_store?.reason || undefined
+          : undefined
     issues.push({
       key: check.key,
       severity: lifecycle ? 'info' : check.status === 'critical' ? 'critical' : 'warning',
       title: checkTitle(check, state, tr),
-      text: error ? shortContentError(error) : check.text,
-      error: error && shortContentError(error) !== error ? error : undefined,
+      text: check.key === 'error' && error ? shortContentError(error) : check.text,
+      error:
+        check.key === 'storage'
+          ? error
+          : error && shortContentError(error) !== error
+            ? error
+            : undefined,
       since:
         check.key === 'heartbeat' && (state === 'late' || state === 'stale' || state === 'offline')
           ? (sensor.last_seen_at ?? null)

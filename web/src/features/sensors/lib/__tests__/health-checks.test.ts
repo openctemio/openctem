@@ -344,4 +344,52 @@ describe('sensorHealthChecks', () => {
     expect(c.posture).toMatchObject({ status: 'warning', text: 'No local policy' })
     expect(byKey(sensorHealthChecks(sensor({ config_health: 'ok' }), ctx)).setup).toBeUndefined()
   })
+
+  describe('local storage', () => {
+    const store = (over: Partial<NonNullable<Sensor['local_store']>> = {}) => ({
+      level: 'ok' as const,
+      stop_claiming: false,
+      total_bytes: 512 * 1024 * 1024,
+      quota_bytes: 2 * 1024 * 1024 * 1024,
+      disk_level: 'ok' as const,
+      sweeps: 3,
+      last_sweep_at: ago(120),
+      reported_at: ago(4),
+      ...over,
+    })
+
+    it('says nothing when the sensor does not report it', () => {
+      expect(byKey(sensorHealthChecks(sensor(), ctx)).storage).toBeUndefined()
+    })
+
+    it('ok: how full, and when it last cleaned up', () => {
+      expect(
+        byKey(sensorHealthChecks(sensor({ local_store: store() }), ctx)).storage
+      ).toMatchObject({ status: 'ok', text: '512 MB of 2.0 GB used', aside: 'cleaned 2m ago' })
+    })
+
+    it('stopped claiming because the disk is low: critical, with the fix', () => {
+      const c = byKey(
+        sensorHealthChecks(
+          sensor({ local_store: store({ stop_claiming: true, level: 'high', disk_level: 'low' }) }),
+          ctx
+        )
+      ).storage
+      expect(c.status).toBe('critical')
+      expect(c.text).toMatch(
+        /^The disk under its data directory is almost full, so it stopped claiming/
+      )
+      expect(c.text).toMatch(/Free disk space on the sensor host/)
+    })
+
+    it('stopped claiming because the store is over its quota names the usage', () => {
+      const c = byKey(
+        sensorHealthChecks(
+          sensor({ local_store: store({ stop_claiming: true, level: 'high' }) }),
+          ctx
+        )
+      ).storage
+      expect(c.text).toMatch(/Its local storage is full \(512 MB of 2.0 GB\)/)
+    })
+  })
 })

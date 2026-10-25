@@ -34,6 +34,10 @@ export function placementSummary(p: RunTaskPlacement, t: Translate): string {
   }
   if (eligible > 0) return t('scans.placement.someCan', undefined, { count: eligible, busy })
   if ((p.evaluated ?? 0) === 0) return t('scans.placement.noSensors')
+  // Sensors the platform would hand it to, which stopped claiming because
+  // their local storage is full: the usual cause of a silent wait.
+  const stopped = (p.blocking ?? []).find((b) => b.code === 'stopped_claiming')?.count ?? 0
+  if (stopped > 0) return t('scans.placement.stoppedClaiming', undefined, { count: stopped })
   return t('scans.placement.noneCan', undefined, { count: p.evaluated ?? 0 })
 }
 
@@ -208,7 +212,7 @@ export function TaskPlacementPanel({ runId, taskId }: { runId: string; taskId: s
                         ? s.busy
                           ? t('scans.placement.sensorBusy')
                           : t('scans.placement.sensorEligible')
-                        : (s.reasons ?? []).join(', ')}
+                        : (s.reasons ?? []).map((code) => placementHelp(code, t).text).join(' ')}
                     </span>
                   </li>
                 ))}
