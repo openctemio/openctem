@@ -10,7 +10,7 @@ const weak: SensorPosture = {
   local_policy: 'absent_legacy',
   platform_pin: 'none',
   network_enforced: false,
-  unhardened: ['policy_none', 'pin_none', 'network_unenforced'],
+  unhardened: ['policy_none', 'network_unenforced'],
 }
 const hardened: SensorPosture = {
   local_policy: 'enforced',
@@ -24,7 +24,7 @@ describe('SensorPostureTag', () => {
     const { container } = render(<SensorPostureTag sensor={{ posture: weak }} />)
     expect(screen.getByText('Unhardened')).toBeInTheDocument()
     const title = container.querySelector('[title]')?.getAttribute('title') ?? ''
-    expect(title).toContain('Pin the platform CA with SENSOR_CA_FINGERPRINT.')
+    expect(title).toContain('Install a local policy')
     expect(title).toContain('SENSOR_SANDBOX_NETWORK=required')
   })
 
@@ -58,11 +58,11 @@ describe('SensorPostureSection', () => {
     expect(screen.getByText('Security posture')).toBeInTheDocument()
     expect(screen.getByText('This sensor runs unhardened')).toBeInTheDocument()
     const fixes = screen.getByTestId('posture-fixes')
-    expect(fixes.querySelectorAll('li')).toHaveLength(4)
+    expect(fixes.querySelectorAll('li')).toHaveLength(3)
     expect(fixes).toHaveTextContent(
       'Install a local policy (the Local policy tab of the install commands).'
     )
-    expect(screen.getByText('System trust store only')).toBeInTheDocument()
+    expect(screen.getByText('System trust store')).toBeInTheDocument()
     expect(screen.getByText('Not confined')).toBeInTheDocument()
   })
 

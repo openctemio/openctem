@@ -44,15 +44,18 @@ const (
 )
 
 // Reasons a sensor is unhardened (SensorPosture.Unhardened), also the "kind"
-// label of openctem_sensors_unhardened. A closed set.
+// label of openctem_sensors_unhardened. A closed set of gaps that leave a
+// sensor exposed as installed. Checking the platform certificate against the
+// system trust store (PlatformPinNone) is not one: it is the normal state for
+// a platform with a publicly trusted certificate, whose CA a pin would tie to
+// one issuer; requests are signed by the sensor's own key and jobs by the
+// platform's signer. The posture still reports the pin, and pinning stays
+// optional hardening.
 const (
 	// UnhardenedPolicyNone: no local policy and none required (a legacy
 	// install), or a sensor that runs but never reported one (an SDK that
 	// ignores local policies).
 	UnhardenedPolicyNone = "policy_none"
-	// UnhardenedPinNone: the sensor's HTTPS client trusts the system trust
-	// store instead of a pinned platform CA.
-	UnhardenedPinNone = "pin_none"
 	// UnhardenedNetworkUnenforced: tools run without network confinement.
 	UnhardenedNetworkUnenforced = "network_unenforced"
 	// UnhardenedBearerKey: the sensor authenticates with a bearer key
@@ -62,7 +65,7 @@ const (
 
 // UnhardenedKinds are the unhardened reasons in display order.
 func UnhardenedKinds() []string {
-	return []string{UnhardenedPolicyNone, UnhardenedPinNone, UnhardenedNetworkUnenforced, UnhardenedBearerKey}
+	return []string{UnhardenedPolicyNone, UnhardenedNetworkUnenforced, UnhardenedBearerKey}
 }
 
 // ManifestPosture is the manifest member "posture".
@@ -168,9 +171,6 @@ func DerivePosture(in PostureInput) SensorPosture {
 	}
 	if out.LocalPolicy == PostureLocalPolicyAbsentLegacy || (out.LocalPolicy == PostureLocalPolicyUnknown && in.Seen) {
 		out.Unhardened = append(out.Unhardened, UnhardenedPolicyNone)
-	}
-	if out.PlatformPin == PlatformPinNone {
-		out.Unhardened = append(out.Unhardened, UnhardenedPinNone)
 	}
 	if out.NetworkEnforced != nil && !*out.NetworkEnforced {
 		out.Unhardened = append(out.Unhardened, UnhardenedNetworkUnenforced)

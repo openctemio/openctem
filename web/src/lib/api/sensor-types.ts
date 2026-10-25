@@ -856,8 +856,7 @@ export interface SensorLocalPolicySummary {
 }
 
 /** Why the platform flags a sensor as unhardened (api RFC-040 §11.4). */
-export type SensorUnhardenedReason =
-  'policy_none' | 'pin_none' | 'network_unenforced' | 'bearer_key'
+export type SensorUnhardenedReason = 'policy_none' | 'network_unenforced' | 'bearer_key'
 
 /**
  * A sensor's security posture as the API derives it from what the sensor

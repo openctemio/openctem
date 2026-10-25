@@ -601,7 +601,7 @@ describe('SensorDetailSheet', () => {
           local_policy: 'absent_legacy',
           platform_pin: 'none',
           network_enforced: null,
-          unhardened: ['policy_none', 'pin_none'],
+          unhardened: ['policy_none', 'bearer_key'],
         } as unknown as Sensor['posture'],
       },
     })

@@ -2237,21 +2237,23 @@ decisions Q3 revised, Q10, Q12, 2026-10-08).
   matching the sensor's), and `unhardened`, the reasons, in order:
   - `policy_none`: `absent_legacy`, or `unknown` for a sensor that has
     connected (an SDK that ignores local policies);
-  - `pin_none`: `platform_pin` is `none`;
   - `network_unenforced`: `network_enforced` is `false`;
   - `bearer_key`: the sensor authenticates with a bearer key instead of a
     key-bound identity (and has connected).
 
-  An unreported pin or sandbox is not flagged. `sensor.DerivePosture` is the
+  An unreported pin or sandbox is not flagged, and neither is
+  `platform_pin: none` (the system trust store): it is the normal state for a
+  publicly trusted certificate, requests are signed by the sensor's key and
+  jobs by the platform's signer, so a pin is optional hardening the posture
+  block shows but the tag does not count. `sensor.DerivePosture` is the
   one derivation, used by the API and the metric.
 - **Console.** An "Unhardened" warning tag on the Sensors list rows, the phone
   cards and the detail header (the title lists the fixes), and a Security
   posture block in the detail sheet with one fix per reason: install a local
-  policy (the Local policy tab of the install commands), pin the platform CA
-  with `SENSOR_CA_FINGERPRINT`, run with `SENSOR_SANDBOX_NETWORK=required` and
+  policy (the Local policy tab of the install commands), run with `SENSOR_SANDBOX_NETWORK=required` and
   the seccomp profile, pair again for a key-bound identity.
 - **Alert.** Gauge `openctem_sensors_unhardened{kind}` (`policy_none`,
-  `pin_none`, `network_unenforced`, `bearer_key`): active tenant sensors by
+  `network_unenforced`, `bearer_key`): active tenant sensors by
   reason, platform-wide, no tenant or sensor label. Alert `SensorsUnhardened`
   (warning, `for: 24h`); runbook in
   [operations/monitoring.md](../operations/monitoring.md#sensorsunhardened).

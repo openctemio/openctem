@@ -84,7 +84,7 @@ func TestSensorPosture_ListAndDetail_DB(t *testing.T) {
 	no, yes := false, true
 
 	w, s, c := detail(weak.id), detail(strong.id), detail(closed.id)
-	check("detail", w, "absent_legacy", "none", &no, "policy_none", "pin_none", "network_unenforced", "bearer_key")
+	check("detail", w, "absent_legacy", "none", &no, "policy_none", "network_unenforced", "bearer_key")
 	check("detail", s, "enforced", "fingerprint", &yes)
 	check("detail", c, "absent_required", "unknown", nil, "bearer_key")
 	if w.LocalPolicy.Required || !c.LocalPolicy.Required {
@@ -99,7 +99,7 @@ func TestSensorPosture_ListAndDetail_DB(t *testing.T) {
 	for _, r := range list.Items {
 		switch r.ID {
 		case weak.id:
-			check("list", r, "absent_legacy", "none", &no, "policy_none", "pin_none", "network_unenforced", "bearer_key")
+			check("list", r, "absent_legacy", "none", &no, "policy_none", "network_unenforced", "bearer_key")
 		case strong.id:
 			check("list", r, "enforced", "fingerprint", &yes)
 		case closed.id:

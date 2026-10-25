@@ -25,12 +25,6 @@ const ISSUES: Record<SensorUnhardenedReason, Omit<PostureIssue, 'reason'>> = {
     fixKey: 'sensors.posture.fix.policyNone',
     fix: 'Install a local policy (the Local policy tab of the install commands).',
   },
-  pin_none: {
-    labelKey: 'sensors.posture.issue.pinNone',
-    label: 'Platform CA not pinned',
-    fixKey: 'sensors.posture.fix.pinNone',
-    fix: 'Pin the platform CA with SENSOR_CA_FINGERPRINT.',
-  },
   network_unenforced: {
     labelKey: 'sensors.posture.issue.networkUnenforced',
     label: 'Tools not network-confined',
@@ -100,11 +94,8 @@ export function posturePlatformPin(sensor: Pick<Sensor, 'posture'>): PostureValu
     case 'ca_file':
       return { labelKey: 'sensors.posture.pin.caFile', label: 'Private CA file', tone: 'ok' }
     case 'none':
-      return {
-        labelKey: 'sensors.posture.pin.none',
-        label: 'System trust store only',
-        tone: 'warn',
-      }
+      // The normal state for a publicly trusted certificate: not a gap.
+      return { labelKey: 'sensors.posture.pin.none', label: 'System trust store', tone: 'ok' }
     default:
       return { labelKey: 'sensors.posture.notReported', label: 'Not reported', tone: 'muted' }
   }

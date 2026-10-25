@@ -148,11 +148,10 @@ func gather(t *testing.T, c prometheus.Collector, name string) map[string]float6
 func TestCollectorReportsUnhardenedSensors(t *testing.T) {
 	c := New(func(context.Context) (postgres.OpsSnapshot, error) { return snapshot(), nil }, Config{}, nil)
 	want := `
-# HELP openctem_sensors_unhardened Active tenant sensors by unhardened reason: no local policy (policy_none), platform CA not pinned (pin_none), tools without network confinement (network_unenforced), bearer key instead of a key-bound identity (bearer_key)
+# HELP openctem_sensors_unhardened Active tenant sensors by unhardened reason: no local policy (policy_none), tools without network confinement (network_unenforced), bearer key instead of a key-bound identity (bearer_key)
 # TYPE openctem_sensors_unhardened gauge
 openctem_sensors_unhardened{kind="bearer_key"} 5
 openctem_sensors_unhardened{kind="network_unenforced"} 0
-openctem_sensors_unhardened{kind="pin_none"} 0
 openctem_sensors_unhardened{kind="policy_none"} 2
 `
 	if err := testutil.CollectAndCompare(c, strings.NewReader(want), "openctem_sensors_unhardened"); err != nil {
