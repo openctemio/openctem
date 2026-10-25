@@ -18,7 +18,6 @@ import (
 	"github.com/go-chi/chi/v5"
 
 	scansvc "github.com/openctemio/openctem/api/internal/app/scan"
-	scanrunapp "github.com/openctemio/openctem/api/internal/app/scanrun"
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
 	"github.com/openctemio/openctem/api/pkg/apierror"
 	"github.com/openctemio/openctem/api/pkg/domain/scanprofile"
@@ -1448,7 +1447,7 @@ type RunResult struct {
 // runResultOf reads a run's result from its context (written when a retest
 // run completes with a conclusion); nil when it has none.
 func runResultOf(ctx map[string]any) *RunResult {
-	m, ok := ctx[scanrunapp.RunContextResult].(map[string]any)
+	m, ok := ctx[scanrun.RunContextResult].(map[string]any)
 	if !ok {
 		return nil
 	}
