@@ -123,11 +123,25 @@ func coveragePredicateSQL(p string) string {
 			OR COALESCE(jsonb_typeof(a.properties->'ip_addresses') = 'array'
 			            AND jsonb_array_length(a.properties->'ip_addresses') > 0, false))`
 	case coverage.RequiresWebPort:
-		ports := make([]string, len(coverage.WebPorts))
-		for i, n := range coverage.WebPorts {
-			ports[i] = "'" + strconv.Itoa(n) + "'"
-		}
-		return `COALESCE(a.properties->>'port', '') IN (` + strings.Join(ports, ", ") + `)`
+		return `COALESCE(a.properties->>'port', '') IN (` + webPortsSQL() + `)`
+	case coverage.RequiresWebPortOrUnscanned:
+		// The name's addresses: resolves_to edges (a port scan of the
+		// address links its open ports with exposes edges).
+		addrs := `SELECT rr.target_asset_id FROM asset_relationships rr
+			WHERE rr.tenant_id = a.tenant_id AND rr.source_asset_id = a.id AND rr.relationship_type = 'resolves_to'`
+		return `(EXISTS (SELECT 1 FROM asset_relationships rp
+			JOIN assets p ON p.tenant_id = rp.tenant_id AND p.id = rp.target_asset_id
+			WHERE rp.tenant_id = a.tenant_id AND rp.relationship_type = 'exposes' AND rp.source_asset_id IN (` + addrs + `)
+			  AND p.deleted_at IS NULL AND p.status = 'active'
+			  AND COALESCE(p.properties->>'port', '') IN (` + webPortsSQL() + `))
+		OR EXISTS (SELECT 1 FROM assets o
+			WHERE o.tenant_id = a.tenant_id AND o.name IN ('https://' || a.name, 'http://' || a.name)
+			  AND o.asset_type = 'service' AND o.sub_type = 'http' AND o.deleted_at IS NULL)
+		OR NOT (EXISTS (SELECT 1 FROM asset_coverage pc
+			WHERE pc.tenant_id = a.tenant_id AND pc.capability = 'scan.ports' AND pc.vantage = ''
+			  AND pc.last_success_at IS NOT NULL AND (pc.asset_id = a.id OR pc.asset_id IN (` + addrs + `)))
+		    OR EXISTS (SELECT 1 FROM asset_relationships rp
+			WHERE rp.tenant_id = a.tenant_id AND rp.relationship_type = 'exposes' AND rp.source_asset_id IN (` + addrs + `))))`
 	case coverage.RequiresScopeEntry:
 		return `EXISTS (SELECT 1 FROM scope_targets st
 			WHERE st.tenant_id = a.tenant_id AND st.status = 'active'
@@ -138,10 +152,19 @@ func coveragePredicateSQL(p string) string {
 	return "false"
 }
 
+// webPortsSQL is coverage.WebPorts as a list of quoted literals.
+func webPortsSQL() string {
+	ports := make([]string, len(coverage.WebPorts))
+	for i, n := range coverage.WebPorts {
+		ports[i] = "'" + strconv.Itoa(n) + "'"
+	}
+	return strings.Join(ports, ", ")
+}
+
 // rulePredicates are the reasons reconcile itself sets. Only those flip
 // back to due when the precondition holds again: a pair a capability found
 // not applicable (a DNS check on a name that is not registrable) stays so.
-var rulePredicates = []string{coverage.RequiresResolves, coverage.RequiresWebPort, coverage.RequiresScopeEntry}
+var rulePredicates = []string{coverage.RequiresResolves, coverage.RequiresWebPort, coverage.RequiresWebPortOrUnscanned, coverage.RequiresScopeEntry}
 
 // coverageRuleSQL returns the applicability and reason expressions of a rule.
 func coverageRuleSQL(rule coverage.Rule) (ok, reason string) {

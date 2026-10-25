@@ -58,7 +58,8 @@ tests that cover the console's most user-visible flows.
 | `31-page-rhythm.spec.ts`                    | Page block gaps are the spacing tokens; metric strip rules                         |
 | `32-assets-filters.spec.ts`                 | Asset Add filter, chips, no eager tag or business-unit load                        |
 | `34-scans-list-layout.spec.ts`              | Scan list at 390px and 1440px: no overlapping text, state on the title line        |
-| `35-findings-triage-mode.spec.ts`           | Triage mode: keys-only session over ten findings, request budget, a11y, Exit       |
+| `35-assets-row-anatomy.spec.ts`             | Asset rows: one height, type line, a time; axe; no h-scroll at 375px               |
+| `36-findings-triage-mode.spec.ts`           | Triage mode: keys-only session over ten findings, request budget, a11y, Exit       |
 
 Each spec is designed to:
 

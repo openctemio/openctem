@@ -278,9 +278,11 @@ func TestAssetCoverage_NeverOpensTargetDoesNotStallCapability(t *testing.T) {
 // A run step that ended with more tasks than chunks (a claim-time split and
 // a follow-up of an unfinished target) settles each pair from its own
 // target: done anywhere covers it (a follow-up finishing what an earlier
-// task left unfinished), a failure keeps its class, a skip blocks, a task
-// that failed whole fails its targets with its error, a target the sensor
-// called done but reported unreached fails, the run's own unfinished
+// task left unfinished), a failure keeps its class (a target-side one,
+// unreachable or timeout, pauses the pair for a recheck), a skip blocks, a
+// task that failed whole fails its targets with its error, a target the
+// sensor called done but reported unreached is paused as unreachable, the
+// run's own unfinished
 // targets fail, and a target no task carried fails as not dispatched.
 func TestAssetCoverage_SettlesPerTargetAcrossSplitTasks(t *testing.T) {
 	g := newCovRig(t)
@@ -342,7 +344,7 @@ func TestAssetCoverage_SettlesPerTargetAcrossSplitTasks(t *testing.T) {
 	want := map[string]string{
 		// probe.http expects a web origin; none exists here, so covered pairs
 		// are covered with no output.
-		"a": "covered/no_output", "b": "covered/no_output", "c": "failed/unreachable", "d": "failed/timeout",
+		"a": "covered/no_output", "b": "covered/no_output", "c": "paused/unreachable", "d": "paused/timeout",
 		"e": "blocked/", "f": "failed/failed", "g": "covered/no_output", "h": "failed/unfinished", "i": "failed/not_dispatched",
 	}
 	for n, w := range want {
