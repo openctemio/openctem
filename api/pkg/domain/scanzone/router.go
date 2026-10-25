@@ -42,6 +42,23 @@ type Router struct {
 	zones    []*Zone
 	def      *Zone
 	resolver Resolver
+	// lookupOnly routes a hostname with no DNS answer as a public target
+	// (LookupOnly).
+	lookupOnly bool
+}
+
+// LookupOnly makes the router place a hostname with no DNS answer as a
+// public target (the default zone, else unzoned) instead of leaving it
+// uncovered, for a job that only looks names up (DNS resolution, passive
+// enumeration: scopedom.JobShape.LookupOnly) and sends nothing to the
+// target hosts. Such a job exists to find out whether the name resolves.
+// The route keeps Unresolved set. Every other rule is unchanged: a name
+// that resolves is routed by its addresses (a private or denied answer
+// stays uncovered), and the sensor's egress guard still checks every
+// address before it connects anywhere.
+func (r *Router) LookupOnly(on bool) *Router {
+	r.lookupOnly = on
+	return r
 }
 
 // NewRouter builds a router over a tenant's zones. resolver may be nil, in
@@ -76,7 +93,8 @@ type Route struct {
 	// zone range holds it (as opposed to the deny list or failed DNS).
 	OutsideZones bool
 	// Unresolved is set when a hostname has no address from the platform's
-	// resolver: it cannot be placed in any zone, whatever its scope says.
+	// resolver: it cannot be placed in any zone, whatever its scope says,
+	// unless the router routes for a lookup-only job (Router.LookupOnly).
 	Unresolved bool
 	// Kind is why an uncovered target is not scanned (Kind* constants);
 	// empty when the target is routed.
@@ -188,7 +206,12 @@ func (r *Router) routeTarget(ctx context.Context, target string, pt Target) Rout
 	if len(addrs) == 0 {
 		// Said as a fact about the name: zones are not the reason, even
 		// though they are why an unresolved name cannot be placed.
-		rt.Unresolved, rt.Kind = true, KindUnresolved
+		rt.Unresolved = true
+		if r.lookupOnly {
+			r.routePublic(&rt)
+			return rt
+		}
+		rt.Kind = KindUnresolved
 		rt.Reason = "does not resolve in DNS; fix its DNS record, or scan its address"
 		return rt
 	}

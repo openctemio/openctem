@@ -113,7 +113,7 @@ describe('RiskSummarySection', () => {
         asset={makeAsset({ riskScored: true, riskScoredAt: new Date().toISOString() })}
       />
     )
-    expect(screen.getByText('Score updated')).toBeInTheDocument()
+    expect(screen.getByText('Score last changed')).toBeInTheDocument()
   })
 
   it('explains the score with its factors and the findings that drive it', async () => {

@@ -117,9 +117,13 @@ describe('copy link', () => {
     expect(toastError).not.toHaveBeenCalled()
   })
 
-  it('tells assistive tech that CVE and CWE links open a new tab', () => {
-    render(<FindingHeader finding={finding({ cve: 'CVE-2024-1', cwe: 'CWE-79' })} status="new" />)
-    expect(screen.getByRole('link', { name: /CVE-2024-1 on NVD.*new tab/i })).toBeInTheDocument()
+  it('opens the vulnerability page from the CVE chip and MITRE from the CWE chip', () => {
+    render(
+      <FindingHeader finding={finding({ cve: 'CVE-2024-1234', cwe: 'CWE-79' })} status="new" />
+    )
+    expect(
+      screen.getByRole('link', { name: 'Vulnerability page for CVE-2024-1234' })
+    ).toHaveAttribute('href', '/vulnerabilities/CVE-2024-1234')
     expect(screen.getByRole('link', { name: /CWE-79 on MITRE.*new tab/i })).toBeInTheDocument()
   })
 })

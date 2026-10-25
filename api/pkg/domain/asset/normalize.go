@@ -127,6 +127,10 @@ func isZeroWidth(r rune) bool {
 // normalizeDNSName normalizes domain and subdomain names.
 // DNS is case-insensitive per RFC 4343.
 func normalizeDNSName(name string) string {
+	// Names lifted out of URLs by passive sources can arrive percent-encoded
+	// ("%2Fwww.example.com", from ".../%2Fwww.example.com/..."): decode them
+	// first, so the encoded delimiter becomes a character trimmed below.
+	name = percentDecode(name)
 	// Strip protocol if accidentally included
 	name = stripProtocol(name)
 	// Strip port if accidentally included
@@ -136,9 +140,39 @@ func normalizeDNSName(name string) string {
 		name = name[:idx]
 	}
 	name = strings.ToLower(name)
-	name = strings.TrimRight(name, ".")
-	name = strings.TrimLeft(name, ".")
+	// What cannot start or end a host name (a leading "/" or quote left by
+	// the URL it was cut from, a trailing dot or comma) is trimmed. A
+	// wildcard "*." and a leading underscore label ("_dmarc") stay.
+	name = strings.TrimLeftFunc(name, func(r rune) bool { return !isHostStart(r) })
+	name = strings.TrimRightFunc(name, func(r rune) bool { return !isHostEnd(r) })
 	return name
+}
+
+// percentDecode decodes percent-escapes, at most twice (a doubly encoded
+// "%252F"), and keeps the input when it is not valid percent-encoding.
+func percentDecode(name string) string {
+	for range 2 {
+		if !strings.Contains(name, "%") {
+			return name
+		}
+		decoded, err := url.PathUnescape(name)
+		if err != nil {
+			return name
+		}
+		name = decoded
+	}
+	return name
+}
+
+// isHostStart reports whether r may start a host name: a letter or digit,
+// the "*" of a wildcard, or the "_" of a service label.
+func isHostStart(r rune) bool {
+	return r == '*' || r == '_' || unicode.IsLetter(r) || unicode.IsDigit(r)
+}
+
+// isHostEnd reports whether r may end a host name: a letter or digit.
+func isHostEnd(r rune) bool {
+	return unicode.IsLetter(r) || unicode.IsDigit(r)
 }
 
 // ─── Host Names ───────────────────────────────────────────────────────

@@ -45,6 +45,7 @@
   "lookalikes.state.active": "To review",
   "lookalikes.state.falsePositive": "Not a threat",
   "lookalikes.state.resolved": "Taken down",
+  "lookalikes.stateFilter": "State",
   "lookalikes.tab": "Lookalikes",
   "lookalikes.tech.bitflip": "Bit flip",
   "lookalikes.tech.homoglyph": "Look-alike characters",

@@ -26,7 +26,7 @@ import { OrgClientsCard } from '@/features/mcp-oauth/components/org-clients-card
 import { UnverifiedAppsCard } from '@/features/mcp-oauth/components/unverified-apps-card'
 import { PageHeader, PageStack } from '@/features/shared'
 import { useUrlFilter } from '@/hooks/use-url-param'
-import { Can, Permission, useHasPermission } from '@/lib/permissions'
+import { Can, Permission, useCanMutate, useHasPermission } from '@/lib/permissions'
 
 type TabId = 'connect' | 'applications' | 'connections' | 'policy'
 
@@ -44,7 +44,7 @@ export default function MCPSettingsPage() {
   const { currentTenant } = useTenant()
   const isOrgAdmin = currentTenant?.role === 'owner' || currentTenant?.role === 'admin'
   const canReadPolicy = useHasPermission(Permission.SettingsRead)
-  const canWritePolicy = useHasPermission(Permission.SettingsWrite)
+  const canWritePolicy = useCanMutate('PUT /api/v1/mcp-access/settings')
   const policy = useMcpPolicy(canReadPolicy)
   const requests = useAccessRequests(canReadPolicy)
   const orgConnections = useOrgConnections(isOrgAdmin)
