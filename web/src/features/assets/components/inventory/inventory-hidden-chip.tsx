@@ -10,7 +10,14 @@ import { LockedChip } from '@/features/shared/components/filter-chips-row'
  * removable attribution chip instead; this one is not dismissible, because it
  * states what the list leaves out.
  */
-export function InventoryHiddenChip({ onShowAll }: { onShowAll: () => void }) {
+export function InventoryHiddenChip({
+  count,
+  onShowAll,
+}: {
+  /** How many it hides, when known (the view has no other filter). */
+  count?: number
+  onShowAll: () => void
+}) {
   const { t } = useTranslation()
   return (
     <LockedChip
@@ -22,7 +29,13 @@ export function InventoryHiddenChip({ onShowAll }: { onShowAll: () => void }) {
       actionLabel={t('assets.hidden.show', 'Show')}
       onAction={onShowAll}
     >
-      {t('assets.hidden.chip', 'Hiding names awaiting review and not ours')}
+      {count !== undefined && count > 0
+        ? t(
+            'assets.hidden.chipCount',
+            '{count, plural, one {Hiding # name awaiting review or not ours} other {Hiding # names awaiting review or not ours}}',
+            { count }
+          )
+        : t('assets.hidden.chip', 'Hiding names awaiting review and not ours')}
     </LockedChip>
   )
 }

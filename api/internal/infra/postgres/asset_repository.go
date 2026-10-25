@@ -2534,9 +2534,13 @@ WITH filtered AS (
   %s
 ),
 finding_counts AS (
+  -- Open findings only (vulnerability.OpenStatusSQL): the same set as each
+  -- row's finding_count and the has_findings filter, so "N with findings"
+  -- and the findings total agree with the list.
   SELECT f.asset_id, COUNT(*)::bigint AS cnt
   FROM findings f
   WHERE f.asset_id IN (SELECT id FROM filtered) AND NOT f.branch_only
+    AND `+vulnerability.OpenStatusSQL("f.status")+`
   GROUP BY f.asset_id
 )
 SELECT category, key, value FROM (
