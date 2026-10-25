@@ -149,7 +149,7 @@ export function AddFilterPopover({
           <Plus className="size-3" aria-hidden />
           {t('findings.filter.add', 'Add filter')}
           <kbd
-            className="ms-1 hidden rounded border px-1 font-sans text-[10px] text-muted-foreground md:inline"
+            className="ms-1 hidden rounded border px-1 font-sans text-xs text-muted-foreground md:inline"
             aria-hidden
           >
             f
