@@ -283,13 +283,13 @@ func (r *IntegrationClientResolver) buildClient(intg *integration.Integration) (
 func (r *IntegrationClientResolver) resolveCredentials(intg *integration.Integration) (email, token string, err error) {
 	raw := intg.CredentialsEncrypted()
 	if raw == "" {
-		return "", "", fmt.Errorf("integration %s has no credentials", intg.ID())
+		return "", "", integration.ErrNoCredentials
 	}
 
 	dec, derr := r.decrypt(raw)
 	if derr != nil {
 		// Fail closed: never send an undecryptable value upstream.
-		return "", "", fmt.Errorf("integration %s: stored credentials cannot be decrypted with the configured key", intg.ID())
+		return "", "", integration.ErrCredentialsUnreadable
 	}
 	dec = strings.TrimSpace(dec)
 
