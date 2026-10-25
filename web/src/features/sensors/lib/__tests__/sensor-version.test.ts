@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest'
 import {
   compareSensorVersions,
   normalizeSensorVersion,
+  parsePseudoVersion,
   sensorVersionStatus,
 } from '../sensor-version'
 
@@ -59,4 +60,21 @@ describe('sensorVersionStatus', () => {
     expect(sensorVersionStatus({ version: '' }, 'v0.4.2')).toBe('unknown')
     expect(sensorVersionStatus({ version: 'dev' }, 'v0.4.2')).toBe('unknown')
   })
+})
+
+describe('parsePseudoVersion', () => {
+  it.each([
+    ['v0.37.1-0.20261025003926-6373f2417870', { base: 'v0.37.1', commit: '6373f24' }],
+    ['v1.2.0-rc.1.0.20261025003926-abcdefabcdef', { base: 'v1.2.0', commit: 'abcdefa' }],
+    ['v2.0.1-0.20261025003926-abcdefabcdef+incompatible', { base: 'v2.0.1', commit: 'abcdefa' }],
+  ])('splits %s', (raw, want) => {
+    expect(parsePseudoVersion(raw)).toEqual(want)
+  })
+
+  it.each(['v0.37.0', 'v0.37.0-rc.1', 'dev', '', null, undefined, 'v0.37.1-0.2026-xyz'])(
+    'leaves %s alone',
+    (raw) => {
+      expect(parsePseudoVersion(raw)).toBeNull()
+    }
+  )
 })

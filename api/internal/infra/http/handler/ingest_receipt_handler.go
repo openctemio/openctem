@@ -36,6 +36,7 @@ type IngestReceiptReader interface {
 	Get(ctx context.Context, tenantID, id shared.ID) (*ingestreceipt.Receipt, error)
 	List(ctx context.Context, tenantID shared.ID, f ingestreceipt.Filter, p pagination.Pagination) ([]*ingestreceipt.Receipt, int64, error)
 	ActionCountsBySeverity(ctx context.Context, tenantID, receiptID shared.ID, scope *shared.DataScope) (map[string]map[string]int, error)
+	Totals(ctx context.Context, tenantID shared.ID, f ingestreceipt.Filter) (ingestreceipt.Totals, error)
 	ListActions(ctx context.Context, tenantID, receiptID shared.ID, action ingestreceipt.Action, scope *shared.DataScope, p pagination.Pagination) ([]ingestreceipt.ActionRow, int64, error)
 	FindingActions(ctx context.Context, tenantID, findingID shared.ID, limit int) ([]ingestreceipt.FindingAction, error)
 	ItemCounts(ctx context.Context, tenantID, receiptID shared.ID, scope *shared.DataScope) (map[string]int, error)
@@ -248,7 +249,32 @@ func (v viewer) visible(rec *ingestreceipt.Receipt) bool {
 }
 
 // receiptListParams are the parameters GET /findings/imports accepts.
-var receiptListParams = map[string]bool{"source_kind": true, "source_ref": true, "page": true, "per_page": true}
+var receiptListParams = map[string]bool{"source_kind": true, "source_ref": true, "origin": true, "tool": true, "since": true,
+	"page": true, "per_page": true}
+
+// ReceiptTotals sums every receipt of the filter (not only the page): the
+// figures a dashboard shows for the same filter.
+type ReceiptTotals struct {
+	Receipts   int64 `json:"receipts"`
+	Received   int64 `json:"received"`
+	Created    int64 `json:"created"`
+	Updated    int64 `json:"updated"`
+	Reopened   int64 `json:"reactivated"`
+	Closed     int64 `json:"closed"`
+	Skipped    int64 `json:"skipped"`
+	Failed     int64 `json:"failed"`
+	Suppressed int64 `json:"suppressed"`
+}
+
+// ReceiptListResponse is a page of receipts and the totals of the filter.
+type ReceiptListResponse struct {
+	Data       []ReceiptResponse `json:"data"`
+	Total      int64             `json:"total"`
+	Page       int               `json:"page"`
+	PerPage    int               `json:"per_page"`
+	TotalPages int               `json:"total_pages"`
+	Totals     ReceiptTotals     `json:"totals"`
+}
 
 // receiptActionParams are the parameters GET /findings/imports/{id}/actions accepts.
 var receiptActionParams = map[string]bool{"action": true, "page": true, "per_page": true}
@@ -297,14 +323,17 @@ func (h *IngestReceiptHandler) writeViewerError(w http.ResponseWriter, err error
 // List handles GET /api/v1/findings/imports.
 //
 // @Summary      List import and run receipts
-// @Description  Receipts of uploads and sensor runs, newest first: what each did to the organization's findings (created, updated = still detected, reactivated, closed, untouched, skipped, failed). A caller without the organization view (unrestricted data scope or dashboards:org:view) sees only the uploads they made. Unknown parameters are refused (400 INVALID_FILTER); per_page is capped at 100.
+// @Description  Receipts of uploads and sensor runs, newest first: what each did to the organization's findings (created, updated = still detected, reactivated, closed, untouched, skipped, failed), and the totals of every receipt the filter keeps (the figures the dashboards show for the same filter). A caller without the organization view (unrestricted data scope or dashboards:org:view) sees only the uploads they made. Unknown parameters are refused (400 INVALID_FILTER); per_page is capped at 100.
 // @Tags         Findings
 // @Produce      json
 // @Param        source_kind  query  string  false  "upload, scan_run, command, ci_run, connector or sensor"
 // @Param        source_ref   query  string  false  "The run, command or connector run id (an upload's receipt id)"
+// @Param        origin       query  string  false  "Source group: sensor, import, connector or ci"
+// @Param        tool         query  string  false  "Tool name (unknown: the receipts that named none)"
+// @Param        since        query  string  false  "Receipts with activity at or after this RFC 3339 time"
 // @Param        page         query  int     false  "Page (from 1)"
 // @Param        per_page     query  int     false  "Page size (at most 100)"
-// @Success      200  {object}  ListResponse[ReceiptResponse]
+// @Success      200  {object}  ReceiptListResponse
 // @Failure      400  {object}  apierror.Error
 // @Security     BearerAuth
 // @Router       /findings/imports [get]
@@ -313,19 +342,13 @@ func (h *IngestReceiptHandler) List(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+	f, ok := receiptFilter(w, r)
+	if !ok {
+		return
+	}
 	v, err := h.viewerOf(r)
 	if err != nil {
 		h.writeViewerError(w, err)
-		return
-	}
-	q := r.URL.Query()
-	f := ingestreceipt.Filter{SourceKind: ingestreceipt.SourceKind(q.Get("source_kind")), SourceRef: q.Get("source_ref")}
-	if f.SourceKind != "" && !f.SourceKind.IsValid() {
-		(&filterspec.Error{Details: []filterspec.Detail{{Param: "source_kind", Reason: "must be upload, scan_run, command, ci_run, connector or sensor"}}}).APIError().WriteJSON(w)
-		return
-	}
-	if len(f.SourceRef) > 128 {
-		(&filterspec.Error{Details: []filterspec.Detail{{Param: "source_ref", Reason: "at most 128 characters"}}}).APIError().WriteJSON(w)
 		return
 	}
 	if !v.orgView {
@@ -340,14 +363,59 @@ func (h *IngestReceiptHandler) List(w http.ResponseWriter, r *http.Request) {
 		apierror.InternalServerError("could not read receipts").WriteJSON(w)
 		return
 	}
+	sum, err := h.repo.Totals(r.Context(), v.tenant, f)
+	if err != nil {
+		h.logger.Error("receipts: totals", "error", err)
+		apierror.InternalServerError("could not read receipts").WriteJSON(w)
+		return
+	}
 	data := make([]ReceiptResponse, 0, len(recs))
 	for _, rec := range recs {
 		data = append(data, toReceiptResponse(rec))
 	}
 	res := pagination.NewResult(data, total, p)
-	writeJSON(w, http.StatusOK, ListResponse[ReceiptResponse]{Data: res.Data, Total: res.Total, Page: res.Page,
-		PerPage: res.PerPage, TotalPages: res.TotalPages})
+	writeJSON(w, http.StatusOK, ReceiptListResponse{Data: res.Data, Total: res.Total, Page: res.Page,
+		PerPage: res.PerPage, TotalPages: res.TotalPages, Totals: ReceiptTotals{Receipts: sum.Receipts,
+			Received: sum.Received, Created: sum.Created, Updated: sum.StillDetected, Reopened: sum.Reopened,
+			Closed: sum.Closed, Skipped: sum.Skipped, Failed: sum.Failed, Suppressed: sum.Suppressed}})
 }
+
+// receiptFilter parses the list filters, refusing a malformed one with 400
+// INVALID_FILTER (a value that cannot be read never widens the result).
+func receiptFilter(w http.ResponseWriter, r *http.Request) (ingestreceipt.Filter, bool) {
+	q := r.URL.Query()
+	f := ingestreceipt.Filter{SourceKind: ingestreceipt.SourceKind(q.Get("source_kind")), SourceRef: q.Get("source_ref"),
+		Origin: q.Get("origin"), Tool: q.Get("tool")}
+	var details []filterspec.Detail
+	if f.SourceKind != "" && !f.SourceKind.IsValid() {
+		details = append(details, filterspec.Detail{Param: "source_kind", Reason: "must be upload, scan_run, command, ci_run, connector or sensor"})
+	}
+	if len(f.SourceRef) > 128 {
+		details = append(details, filterspec.Detail{Param: "source_ref", Reason: "at most 128 characters"})
+	}
+	if f.Origin != "" && !ingestreceipt.IsOrigin(f.Origin) {
+		details = append(details, filterspec.Detail{Param: "origin", Reason: "must be sensor, import, connector or ci"})
+	}
+	if len(f.Tool) > maxReceiptTool {
+		details = append(details, filterspec.Detail{Param: "tool", Reason: "at most 100 characters"})
+	}
+	if s := q.Get("since"); s != "" {
+		t, err := time.Parse(time.RFC3339, s)
+		if err != nil {
+			details = append(details, filterspec.Detail{Param: "since", Reason: "must be an RFC 3339 time"})
+		} else {
+			f.Since = &t
+		}
+	}
+	if len(details) > 0 {
+		(&filterspec.Error{Details: details}).APIError().WriteJSON(w)
+		return f, false
+	}
+	return f, true
+}
+
+// maxReceiptTool is the width of a receipt's tool name.
+const maxReceiptTool = 100
 
 // loadVisible reads the receipt named in the path if the viewer may see it.
 func (h *IngestReceiptHandler) loadVisible(w http.ResponseWriter, r *http.Request) (viewer, *ingestreceipt.Receipt, bool) {

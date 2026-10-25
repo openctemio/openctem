@@ -54,3 +54,29 @@ A queue needs a signed-in person: an API key or a platform caller gets 400.
   teammate's finding outside the caller's data scope stays hidden, an ended
   group membership and an inactive group do not count, and a group of another
   tenant reaches nothing.
+
+## Console
+
+`web/src/features/my-work/` (page `app/(dashboard)/my-work`):
+
+- One tab per queue with its count; a tab the caller cannot use is left out
+  (Awaiting my review without `findings:approve`, My tasks without
+  remediation read). The tab is in the URL (`?tab=`); `?due=72h` turns on the
+  Due soon chip of Assigned to me.
+- Finding queues list the quick view's own `params` (nearest SLA first on
+  Assigned to me); View all opens the same list on Findings; Triage these and
+  the header's Triage button open triage mode on the view (Triage needs
+  `findings:status`).
+- The SLA cell is the shared `SlaDueChip` (also on Findings): the status, the
+  time left or past due (hours under two days), and a marker when the policy's
+  KEV cap set the deadline.
+- Awaiting my review decides in place through the shared approval decision
+  dialogs (`useApprovalDecision`, also on the approvals inbox): Approve asks
+  for a recent sign-in, Reject asks for a reason. Keys while a row has focus:
+  `j`/`k` move, Enter opens the finding, `a` approves, `r` rejects.
+- Requested by me can remind the approvers or withdraw a request.
+- An empty queue names one next step (findings due in 72 hours, triage, your
+  own findings) and a secondary link.
+- A hard load sends at most six API requests (the session bootstrap, the
+  support-access banner, the quick views, one approval queue page, the task
+  count, the open tab's rows).

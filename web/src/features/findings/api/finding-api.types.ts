@@ -363,6 +363,7 @@ export interface ApiFinding {
   sla_status?: string // on_track | warning | overdue | exceeded | not_applicable
   sla_deadline?: string // ISO timestamp of the remediation deadline (nullable)
   sla_kev_capped?: boolean // the deadline was shortened by the policy's known exploited (KEV) cap
+  acceptance_expires_at?: string // when an accepted risk ends and the finding reopens (accepted only)
 
   // Threat Intel Enrichment (RFC-004)
   epss_score?: number // 0.0-1.0 exploitation probability
@@ -731,6 +732,8 @@ export interface FindingApiFilters {
    *  assignee, owns the asset, or is a member of an assigned group. Sent as
    *  `assigned_to_me=true`. Backs the My Work view. */
   assigned_to_me?: boolean
+  /** `my_team`: findings assigned to the caller's groups or their members (My Work). */
+  related_to?: 'my_team'
   /** SLA status filter — sent as `sla_status` (comma-separated). Backend accepts
    *  on_track | warning | overdue | exceeded | not_applicable. */
   sla_statuses?: string[]

@@ -1,5 +1,7 @@
 'use client'
 
+import { CveLink } from '@/features/vulnerabilities/components/cve-link'
+import { MetaLine } from '@/features/shared/components/text-layout'
 import { evaluateFindingTransitions } from '@/features/findings/api/use-finding-transitions'
 import { summarizeDryRun } from '@/features/findings/lib/transition-reasons'
 import { FindingSubStatus } from '@/features/findings/components/lifecycle/finding-sub-status'
@@ -45,7 +47,6 @@ import {
 } from '@/features/config/api/finding-source-api'
 import { useSearchQuery } from '@/hooks/use-search-query'
 import { toDisplayText } from '@/lib/untrusted-text'
-import { MetaLine } from '@/features/shared/components/text-layout'
 import type { ColumnDef, SortingState, VisibilityState } from '@tanstack/react-table'
 import { Main } from '@/components/layout'
 import {
@@ -173,9 +174,8 @@ import { DuplicatesChip } from '@/features/findings/components/cells/duplicates-
 import { findingRowTone } from '@/features/findings/lib/row-tone'
 import { PriorityClassBadge } from '@/features/findings/components/priority-class-badge'
 import { BranchOnlyBadge } from '@/features/findings/components/branch-only-badge'
-import { SlaStatusBadge } from '@/features/sla/components/sla-status-badge'
 import { SLA_STATUS_LABELS, type SLAStatus } from '@/features/repositories/types/repository.types'
-import { formatDueRelative } from '@/features/sla/lib/sla'
+import { SlaDueChip } from '@/features/sla/components/sla-due-chip'
 import {
   FindingRowMenu,
   type FindingRowAction,
@@ -577,6 +577,8 @@ function FindingsContent() {
   // with the CTEM signals; the backend resolves the user from the token.
   const [relatedToFilter, setRelatedToFilter] = useUrlFilter('related_to', '')
   const mineActive = relatedToFilter === 'me'
+  // My Work's My team (related_to=my_team): findings held by the caller's groups.
+  const teamActive = relatedToFilter === 'my_team'
   const setMineFilter = useCallback(
     (on: string) => setRelatedToFilter(on === 'true' ? 'me' : ''),
     [setRelatedToFilter]
@@ -918,6 +920,7 @@ function FindingsContent() {
     reachableActive,
     branchOnlyActive,
     mineActive,
+    teamActive,
     slaFilter.join(),
     pendingApprovalParam,
     acceptanceExpiresParam,
@@ -993,6 +996,7 @@ function FindingsContent() {
     if (reachableActive) filters.is_reachable = true
     if (branchOnlyActive) filters.branch_only = true
     if (mineActive) filters.assigned_to_me = true
+    if (teamActive) filters.related_to = 'my_team'
     if (slaFilter.length > 0) filters.sla_statuses = slaFilter
     if (pendingApprovalFilter !== undefined) filters.pending_approval = pendingApprovalFilter
     if (Object.keys(extraParams).length > 0) filters.extra = extraParams
@@ -1019,6 +1023,7 @@ function FindingsContent() {
     reachableActive,
     branchOnlyActive,
     mineActive,
+    teamActive,
     slaFilter,
     pendingApprovalFilter,
     acceptanceExpiresParam,
@@ -1536,15 +1541,13 @@ function FindingsContent() {
                   </Tooltip>
                 )}
               </div>
-              {(row.original.cve || row.original.scanner) && (
-                <MetaLine
-                  className="flex-nowrap overflow-hidden whitespace-nowrap"
-                  items={[
-                    row.original.cve && <span className="font-mono">{row.original.cve}</span>,
-                    row.original.scanner,
-                  ]}
-                />
-              )}
+              <MetaLine
+                className="flex-nowrap overflow-hidden whitespace-nowrap"
+                items={[
+                  row.original.cve && <CveLink id={row.original.cve} stopPropagation />,
+                  row.original.scanner,
+                ]}
+              />
             </div>
           )
         },
@@ -1624,36 +1627,13 @@ function FindingsContent() {
         header: ({ column }) => (
           <DataTableColumnHeader column={column} title={t('findings.columns.sla', 'Due / SLA')} />
         ),
-        cell: ({ row }) => {
-          const status = row.original.slaStatus
-          if (!status || status === 'not_applicable') {
-            return <span className="text-muted-foreground text-sm">—</span>
-          }
-          const cell = (
-            <div className="flex flex-col gap-0.5">
-              <SlaStatusBadge status={status} />
-              {row.original.slaDeadline && (
-                <span className="text-muted-foreground text-xs tabular-nums">
-                  {formatDueRelative(row.original.slaDeadline)}
-                </span>
-              )}
-            </div>
-          )
-          if (!row.original.slaKevCapped) return cell
-          // The deadline came from the SLA policy's known exploited cap.
-          return (
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <div data-slot="sla-kev-capped" tabIndex={0} className="w-fit">
-                  {cell}
-                </div>
-              </TooltipTrigger>
-              <TooltipContent side="top" className="max-w-xs text-xs">
-                {t('findings.properties.slaKevCapped', 'Shortened because it is in CISA KEV')}
-              </TooltipContent>
-            </Tooltip>
-          )
-        },
+        cell: ({ row }) => (
+          <SlaDueChip
+            status={row.original.slaStatus}
+            deadline={row.original.slaDeadline}
+            kevCapped={row.original.slaKevCapped}
+          />
+        ),
       },
       {
         accessorKey: 'createdAt',
@@ -1738,6 +1718,7 @@ function FindingsContent() {
 
   const activeCount =
     Number(mineActive) +
+    Number(teamActive) +
     severities.length +
     statuses.length +
     priorityClasses.length +

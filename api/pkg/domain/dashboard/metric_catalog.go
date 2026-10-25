@@ -28,6 +28,13 @@ const (
 	// ShapePaths is the attack paths that reach crown jewels: a reachable
 	// count and the top paths.
 	ShapePaths Shape = "paths"
+	// ShapeFlow is the exposure flow: sources, the received to actionable
+	// funnel, actionable by priority class, the five stages and the
+	// outcomes, each figure with the list it counts.
+	ShapeFlow Shape = "flow"
+	// ShapeIntake is what each source sent and what ingest did with it:
+	// per-source receipts, health, the noise breakdown and false positives.
+	ShapeIntake Shape = "intake"
 )
 
 // VizType is how a widget result is drawn.
@@ -49,6 +56,8 @@ const (
 	VizNote      VizType = "note"
 	VizLoop      VizType = "loop"
 	VizPaths     VizType = "paths"
+	VizFlow      VizType = "flow"
+	VizIntake    VizType = "intake"
 )
 
 // vizByShape lists the visualizations valid for each result shape; the first
@@ -63,6 +72,8 @@ var vizByShape = map[Shape][]VizType{
 	ShapeItems:      {VizList, VizTable},
 	ShapeStages:     {VizLoop, VizTable},
 	ShapePaths:      {VizPaths, VizTable},
+	ShapeFlow:       {VizFlow, VizTable},
+	ShapeIntake:     {VizIntake, VizTable},
 }
 
 // Dimension is a fact column a widget may filter or group by.
@@ -118,6 +129,12 @@ const (
 	MetricKindStages MetricKind = "stages"
 	// MetricKindPaths is the attack paths that reach a crown jewel in scope.
 	MetricKindPaths MetricKind = "paths"
+	// MetricKindExposureFlow is the exposure flow of the read's scope, with
+	// the organization's intake when the read is the organization's.
+	MetricKindExposureFlow MetricKind = "exposure_flow"
+	// MetricKindIntake is the organization's intake: receipts per source in
+	// the window (organization reads only).
+	MetricKindIntake MetricKind = "intake"
 )
 
 // Metric is one catalog entry.
@@ -189,6 +206,11 @@ var catalog = []Metric{
 	{ID: "ctem.loop", Group: "ctem", Kind: MetricKindStages, Polarity: PolarityNeutral},
 	// Attack paths ending at a crown jewel in scope, entry point in scope.
 	{ID: "attack_paths.to_crown_jewels", Group: "ctem", Kind: MetricKindPaths, Polarity: PolarityLowerBetter},
+	// Sources, received to actionable, actionable by class, the five stages
+	// and the outcomes, in one figure set for the window.
+	{ID: "exposure.flow", Group: "ctem", Kind: MetricKindExposureFlow, Polarity: PolarityNeutral, Timed: true},
+	// What each source sent in the window and what ingest did with it.
+	{ID: "ingest.intake", Group: "ctem", Kind: MetricKindIntake, Polarity: PolarityNeutral, Timed: true},
 }
 
 var catalogByID = func() map[string]Metric {
@@ -234,6 +256,10 @@ func (m Metric) ShapeFor(groupBy []Dimension) Shape {
 		return ShapeStages
 	case MetricKindPaths:
 		return ShapePaths
+	case MetricKindExposureFlow:
+		return ShapeFlow
+	case MetricKindIntake:
+		return ShapeIntake
 	default: // count
 		switch len(groupBy) {
 		case 0:
@@ -276,6 +302,16 @@ func (m Metric) Current() bool {
 		return true
 	}
 	return false
+}
+
+// Comparable reports a metric that can show a previous period. The exposure
+// flow and the intake read one window with no previous figure.
+func (m Metric) Comparable() bool {
+	switch m.Kind {
+	case MetricKindExposureFlow, MetricKindIntake:
+		return false
+	}
+	return !m.Current()
 }
 
 // EffectiveGroupBy is the widget's group-by, or the metric default.
