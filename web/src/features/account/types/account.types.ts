@@ -99,6 +99,8 @@ export interface SessionListResponse {
 export interface UserPreferences {
   theme: 'light' | 'dark' | 'system'
   language: string
+  /** Server-stored; absent from an older API (read as default). */
+  findings_informational?: FindingsInformationalPreference
   timezone: string
   date_format: string
   time_format: '12h' | '24h'
@@ -109,12 +111,16 @@ export interface UserPreferences {
   desktop_notifications?: boolean
 }
 
+/** Whether the findings work views show informational findings: default = the organization's. */
+export type FindingsInformationalPreference = 'default' | 'include' | 'exclude'
+
 export interface UpdatePreferencesInput {
   theme?: 'light' | 'dark' | 'system'
   language?: string
   timezone?: string
   date_format?: string
   time_format?: '12h' | '24h'
+  findings_informational?: FindingsInformationalPreference
 }
 
 // ============================================

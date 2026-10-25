@@ -4,8 +4,8 @@
 #
 #   - an organization and its owner (bootstrap-admin), who signs in
 #   - assets of two types, two sensors, a CTIS report with 15 findings
-#     (enough for the findings picker to scroll), a scan with a run in
-#     progress, a remediation task
+#     (enough for the findings picker to scroll) and 10 for the triage
+#     spec, a scan with a run in progress, a remediation task
 #
 # Requires: docker (also runs psql from PSQL_IMAGE, default postgres:17-alpine), curl, jq. Env: ADMIN_IMAGE (api/Dockerfile.admin-cli),
 # E2E_OWNER_PASSWORD and E2E_DATABASE_URL (web/e2e/ci/make-env.sh),
@@ -127,10 +127,18 @@ code=$(curl -sS -o "$WORK/body" -w '%{http_code}' -X POST "$API/api/v2/sensor/he
   -d '{"status":"online","scanners":["nuclei"],"tools":[{"name":"nuclei","kind":"scanner","installed":true}]}')
 [[ "$code" =~ ^2 ]] || { log "heartbeat -> $code: $(head -c 300 "$WORK/body")"; exit 1; }
 
-findings=$(for i in $(seq 1 15); do
-  printf '{"type":"vulnerability","title":"E2E finding %02d","severity":"%s","rule_id":"e2e-%02d","asset_ref":"a%d","description":"e2e"}\n' \
-    "$i" "$([[ $((i % 3)) == 0 ]] && echo critical || echo medium)" "$i" "$((i % 2 + 1))"
-done | jq -s .)
+findings=$({
+  for i in $(seq 1 15); do
+    printf '{"type":"vulnerability","title":"E2E finding %02d","severity":"%s","rule_id":"e2e-%02d","asset_ref":"a%d","description":"e2e"}\n' \
+      "$i" "$([[ $((i % 3)) == 0 ]] && echo critical || echo medium)" "$i" "$((i % 2 + 1))"
+  done
+  # Ten more for the triage mode spec (36-findings-triage-mode), which decides
+  # them: no other spec reads them.
+  for i in $(seq 1 10); do
+    printf '{"type":"vulnerability","title":"E2E triage %02d","severity":"high","rule_id":"e2e-tri-%02d","asset_ref":"a1","description":"e2e triage"}\n' \
+      "$i" "$i"
+  done
+} | jq -s .)
 # Protocol v1 is gone: the report goes to the v2 results resource (one PUT
 # is a whole report), its id a lower-case UUID that metadata.id repeats.
 REPORT_ID=$(cat /proc/sys/kernel/random/uuid 2>/dev/null || uuidgen | tr 'A-Z' 'a-z')
@@ -161,10 +169,11 @@ call POST /api/v1/remediation/campaigns '{"name":"E2E remediation campaign","des
 for _ in $(seq 1 30); do
   call GET "/api/v1/findings?per_page=50"
   n=$(jq -r '[.data[]? | select(.title|startswith("E2E finding"))] | length' <<<"$BODY")
-  [[ "$n" -ge 15 ]] && break
+  nt=$(jq -r '[.data[]? | select(.title|startswith("E2E triage"))] | length' <<<"$BODY")
+  [[ "$n" -ge 15 && "$nt" -ge 10 ]] && break
   sleep 1
 done
-[[ "$n" -ge 15 ]] || { log "only $n of 15 findings visible"; exit 1; }
+[[ "$n" -ge 15 && "$nt" -ge 10 ]] || { log "only $n of 15 findings and $nt of 10 triage findings visible"; exit 1; }
 
 log "a member (E2E_LIMITED_*)"
 # The member-or-viewer checks in 09, 11 and 12 skip without one.
