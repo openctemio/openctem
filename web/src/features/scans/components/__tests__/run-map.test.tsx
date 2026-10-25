@@ -122,7 +122,7 @@ describe('RunMap', () => {
     expect(stepButton('Probe')).toHaveAttribute('aria-pressed', 'true')
     const panel = await screen.findByRole('region', { name: 'Step Probe' })
     expect(within(panel).getAllByText('Waiting for a sensor').length).toBeGreaterThan(0)
-    expect(within(panel).getByText('Nothing produced yet.')).toBeInTheDocument()
+    expect(within(panel).getByText('This step produced no assets.')).toBeInTheDocument()
     expect(within(panel).getAllByText('httpx').length).toBeGreaterThan(0)
     expect(within(panel).queryAllByText('subfinder')).toHaveLength(0)
 

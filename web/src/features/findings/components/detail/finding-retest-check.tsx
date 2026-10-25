@@ -60,8 +60,34 @@ export const TEMPLATE_LIBRARY_HREF = '/settings/scanning/templates'
 
 const SUCCESS_SOFT = 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400' // palette-ok: success accent — the theme has no semantic "success" token
 
+/** Reasons a retest ran the check but could not settle the finding's own endpoint. */
+const PIN_HINT_CODES = new Set(['endpoint_mismatch', 'matched_elsewhere'])
+
+/**
+ * The finding's own endpoint from its metadata (endpoint, url or matched_at):
+ * the display URL and its path (with query) for a check pinned to it. Empty
+ * when the finding has none.
+ */
+export function findingEndpoint(
+  metadata: Record<string, unknown> | undefined
+): { url: string; path: string } | null {
+  for (const k of ['endpoint', 'url', 'matched_at']) {
+    const v = metadata?.[k]
+    if (typeof v !== 'string' || !v.trim()) continue
+    const raw = v.trim()
+    try {
+      const u = new URL(raw)
+      if (u.protocol !== 'http:' && u.protocol !== 'https:') continue
+      return { url: raw, path: `${u.pathname}${u.search}` || '/' }
+    } catch {
+      if (raw.startsWith('/')) return { url: raw, path: raw }
+    }
+  }
+  return null
+}
+
 interface FindingRetestCheckSectionProps {
-  finding: { id: string }
+  finding: { id: string; metadata?: Record<string, unknown> }
   className?: string
 }
 
@@ -72,7 +98,14 @@ export function FindingRetestCheckSection({ finding, className }: FindingRetestC
   const { data, error, isLoading, mutate } = useFindingRetestCheck(finding.id)
   const [editing, setEditing] = useState(false)
   const [removing, setRemoving] = useState(false)
+  // Opened from the hint: a new HTTP assertion pinned to the finding's URL
+  // (saving it replaces the finding's current check).
+  const [pinning, setPinning] = useState(false)
   const remove = useRemoveRetestCheck(finding.id)
+  const { data: retests } = useFindingRetests(finding.id)
+  const latestCode = retests?.data?.[0]?.reason_code ?? ''
+  const showPinHint = PIN_HINT_CODES.has(latestCode)
+  const endpoint = findingEndpoint(finding.metadata)
 
   if (isLoading) return null
   if (error) {
@@ -145,12 +178,48 @@ export function FindingRetestCheckSection({ finding, className }: FindingRetestC
           )}
         </p>
       )}
+      {showPinHint && (
+        <div
+          className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground"
+          data-slot="retest-check-pin-hint"
+        >
+          <p className="min-w-0 break-words">
+            {endpoint
+              ? t(
+                  'findings.retestCheck.pinHint',
+                  'This template probes several paths. Add an HTTP assertion check pinned to {url}.',
+                  { url: toDisplayText(endpoint.url, 300) }
+                )
+              : t(
+                  'findings.retestCheck.pinHintNoUrl',
+                  "This template probes several paths. Add an HTTP assertion check pinned to this finding's exact URL."
+                )}
+          </p>
+          {canWrite && (
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-7"
+              onClick={() => {
+                setPinning(true)
+                setEditing(true)
+              }}
+            >
+              {t('findings.retestCheck.pinAction', 'Add a pinned check')}
+            </Button>
+          )}
+        </div>
+      )}
       <HowChecksWork />
       <RetestCheckEditorDialog
         findingId={finding.id}
         open={editing}
-        onOpenChange={setEditing}
-        initial={check}
+        onOpenChange={(o) => {
+          setEditing(o)
+          if (!o) setPinning(false)
+        }}
+        initial={pinning ? null : check}
+        suggestedPath={endpoint?.path}
       />
       <ConfirmDialog
         open={removing}
