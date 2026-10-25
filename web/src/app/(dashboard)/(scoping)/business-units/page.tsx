@@ -86,6 +86,7 @@ import { del } from '@/lib/api/client'
 import { CRITICALITY_BADGE_SOFT, CRITICALITY_DOT_COLORS } from '@/lib/criticality-colors'
 import { CRITICALITY_LABELS, RATED_CRITICALITY_LEVELS } from '@/lib/criticality'
 import { useTranslation } from '@/context/i18n-provider'
+import { confirmName } from '@/lib/confirm-name'
 
 const criticalityColors: Record<Criticality, string> = CRITICALITY_BADGE_SOFT
 
@@ -1167,8 +1168,9 @@ export default function BusinessUnitsPage() {
             )}
           </>
         }
-        confirmText={t('confirm.delete', 'Delete')}
+        confirmText={t('confirm.businessUnit.deleteButton', 'Delete business unit')}
         destructive
+        typeToConfirm={deleteUnit ? confirmName(deleteUnit.name, deleteUnit.id) : undefined}
         handleConfirm={handleDelete}
       />
     </>

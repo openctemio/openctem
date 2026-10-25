@@ -1,0 +1,39 @@
+# Scratch stack for the authorization matrix (api/tests/authzmatrix):
+# Postgres and Redis on 127.0.0.1 only, data in tmpfs, migrations applied.
+# The API itself runs as a host binary started by run.sh, so the suite can
+# also bootstrap organizations in the same database.
+#
+# No credential is written here: run.sh generates random passwords per run.
+# Always run with an explicit project name (run.sh uses authzmatrix-<port>).
+services:
+  postgres:
+    image: ${PG_IMAGE:-postgres:17-alpine}
+    environment:
+      POSTGRES_USER: openctem
+      POSTGRES_PASSWORD: ${MATRIX_DB_PASSWORD:?set MATRIX_DB_PASSWORD}
+      POSTGRES_DB: openctem
+    ports: ['127.0.0.1:${MATRIX_DB_PORT:?set MATRIX_DB_PORT}:5432']
+    tmpfs: [/var/lib/postgresql/data]
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U openctem -d openctem']
+      interval: 2s
+      retries: 30
+
+  redis:
+    image: ${REDIS_IMAGE:-redis:7-alpine}
+    command: ['redis-server', '--requirepass', '${MATRIX_REDIS_PASSWORD:?set MATRIX_REDIS_PASSWORD}']
+    environment:
+      REDISCLI_AUTH: ${MATRIX_REDIS_PASSWORD:?set MATRIX_REDIS_PASSWORD}
+    ports: ['127.0.0.1:${MATRIX_REDIS_PORT:?set MATRIX_REDIS_PORT}:6379']
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 2s
+      retries: 30
+
+  migrate:
+    image: ${MIGRATE_IMAGE:-migrate/migrate:v4.18.1}
+    volumes: ['../../../migrations:/migrations:ro']
+    command: ['-path=/migrations', '-database', '${MATRIX_MIGRATE_URL:?set MATRIX_MIGRATE_URL}', 'up']
+    depends_on:
+      postgres: { condition: service_healthy }
+    restart: 'no'

@@ -5,6 +5,7 @@ import { Clock, Check, X, Loader2, ShieldCheck } from 'lucide-react'
 import { toast } from 'sonner'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
+import { ConfirmDialog } from '@/components/confirm-dialog'
 import { useTranslation } from '@/context/i18n-provider'
 import { getErrorMessage } from '@/lib/api/error-handler'
 import type { ExposureEvent } from '@/lib/api/exposure-types'
@@ -64,6 +65,7 @@ export function PendingDispositionPanel({ exposure, onChanged }: PendingDisposit
   const userId = useAuthStore((s) => s.user?.id)
   const [busy, setBusy] = useState<'approve' | 'reject' | null>(null)
   const [selfOpen, setSelfOpen] = useState(false)
+  const [confirm, setConfirm] = useState<'approve' | 'reject' | null>(null)
   const pending = exposure.pending_disposition
   if (!pending) return null
 
@@ -97,6 +99,7 @@ export function PendingDispositionPanel({ exposure, onChanged }: PendingDisposit
         await markExposureFalsePositive(exposure.id)
       }
       toast.success(t('exposures.disposition.approved', 'Approved'))
+      setConfirm(null)
       onChanged?.()
     } catch (error) {
       toast.error(
@@ -116,6 +119,7 @@ export function PendingDispositionPanel({ exposure, onChanged }: PendingDisposit
           ? t('exposures.disposition.canceled', 'Request canceled')
           : t('exposures.disposition.rejected', 'Request rejected')
       )
+      setConfirm(null)
       onChanged?.()
     } catch (error) {
       toast.error(
@@ -159,7 +163,7 @@ export function PendingDispositionPanel({ exposure, onChanged }: PendingDisposit
       {canApprove && (
         <div className="mt-3 flex flex-wrap gap-2">
           {!mine && (
-            <Button size="sm" onClick={approve} disabled={busy !== null}>
+            <Button size="sm" onClick={() => setConfirm('approve')} disabled={busy !== null}>
               {busy === 'approve' ? (
                 <Loader2 className="h-4 w-4 animate-spin" />
               ) : (
@@ -174,7 +178,12 @@ export function PendingDispositionPanel({ exposure, onChanged }: PendingDisposit
               {t('exposures.disposition.selfApprove', 'Approve my own request')}
             </Button>
           )}
-          <Button size="sm" variant="outline" onClick={reject} disabled={busy !== null}>
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => setConfirm('reject')}
+            disabled={busy !== null}
+          >
             {busy === 'reject' ? (
               <Loader2 className="h-4 w-4 animate-spin" />
             ) : (
@@ -186,6 +195,57 @@ export function PendingDispositionPanel({ exposure, onChanged }: PendingDisposit
           </Button>
         </div>
       )}
+      <ConfirmDialog
+        open={confirm !== null}
+        onOpenChange={(open) => {
+          if (!open) setConfirm(null)
+        }}
+        title={
+          confirm === 'approve'
+            ? pending.requested_state === 'accepted'
+              ? t(
+                  'exposures.disposition.approveAcceptTitle',
+                  'Approve accepting the risk of "{title}"?',
+                  {
+                    title: exposure.title,
+                  }
+                )
+              : t(
+                  'exposures.disposition.approveFpTitle',
+                  'Approve marking "{title}" as a false positive?',
+                  {
+                    title: exposure.title,
+                  }
+                )
+            : mine
+              ? t('exposures.disposition.cancelTitle', 'Cancel your request for "{title}"?', {
+                  title: exposure.title,
+                })
+              : t('exposures.disposition.rejectTitle', 'Reject the request for "{title}"?', {
+                  title: exposure.title,
+                })
+        }
+        desc={
+          confirm === 'approve'
+            ? t(
+                'exposures.disposition.approveDesc',
+                'The exposure leaves the active list. You can reactivate it later.'
+              )
+            : t(
+                'exposures.disposition.rejectDesc',
+                'The exposure stays open and the request is closed. The requester can ask again.'
+              )
+        }
+        confirmText={
+          confirm === 'approve'
+            ? t('exposures.disposition.approveButton', 'Approve request')
+            : mine
+              ? t('exposures.disposition.cancelButton', 'Cancel request')
+              : t('exposures.disposition.rejectButton', 'Reject request')
+        }
+        destructive={confirm === 'reject'}
+        handleConfirm={() => (confirm === 'approve' ? approve() : reject())}
+      />
       {canSelfApprove && (
         <SelfApproveDialog
           open={selfOpen}

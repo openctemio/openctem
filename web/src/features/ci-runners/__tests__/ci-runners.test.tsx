@@ -41,6 +41,7 @@ let lastRunFilters: unknown
 let gatePolicies: unknown[] = []
 let overrides: unknown[] = []
 const mockDeletePolicy = vi.fn()
+const mockDeleteTrust = vi.fn()
 const mockSavePolicy = vi.fn()
 const mockRevokeOverride = vi.fn()
 
@@ -58,7 +59,7 @@ vi.mock('../api/use-ci', async (importOriginal) => ({
   useCISettings: () => ({ data: ciSettings, mutate: vi.fn() }),
   useSaveCISettings: () => ({ trigger: mockSaveSettings, isMutating: false }),
   useSaveTrustConfig: () => ({ trigger: mockSaveTrust, isMutating: false }),
-  useDeleteTrustConfig: () => ({ trigger: vi.fn(), isMutating: false }),
+  useDeleteTrustConfig: () => ({ trigger: mockDeleteTrust, isMutating: false }),
   usePreviewTrustConfig: () => ({ trigger: mockPreview, isMutating: false }),
   useGatePolicies: () => ({
     data: {
@@ -111,6 +112,12 @@ const failingRun = {
   findings_count: 3,
   actor: 'octocat',
   created_at: '2026-10-05T10:00:00Z',
+}
+
+/** Picks a CI setup section from its filter token (one tab row per page). */
+async function pickSection(name: string | RegExp) {
+  await userEvent.click(screen.getByRole('button', { name: /^Section:/ }))
+  await userEvent.click(await screen.findByRole('menuitemradio', { name }))
 }
 
 describe('lib', () => {
@@ -514,11 +521,10 @@ describe('CITrustSettings sections', () => {
   it('opens the section the URL names and keeps the chosen one in the URL', async () => {
     window.history.replaceState({}, '', '/?section=gate')
     render(<CITrustSettings />)
-    expect(screen.getByRole('tab', { name: 'Gate policy' })).toHaveAttribute(
-      'aria-selected',
-      'true'
-    )
-    await userEvent.click(screen.getByRole('tab', { name: 'Pull request feedback' }))
+    // The section is a token in a toolbar, not a second row of tabs.
+    expect(screen.queryByRole('tablist')).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Section: Gate policy' })).toBeInTheDocument()
+    await pickSection('Pull request feedback')
     expect(window.location.search).toContain('section=feedback')
     window.history.replaceState({}, '', '/?section=bogus')
   })
@@ -533,6 +539,7 @@ describe('CITrustSettings', () => {
     overrides = []
     mockSaveTrust.mockReset()
     mockDeletePolicy.mockReset()
+    mockDeleteTrust.mockReset()
     mockRevokeOverride.mockReset()
   })
 
@@ -550,7 +557,7 @@ describe('CITrustSettings', () => {
     mockSavePolicy.mockReset()
     mockSavePolicy.mockResolvedValue(undefined)
     render(<CITrustSettings />)
-    await userEvent.click(screen.getByRole('tab', { name: /gate policy/i }))
+    await pickSection(/gate policy/i)
     expect(
       screen.getByText('Vulnerabilities without a fix: listed, not blocking (KEV still fails)')
     ).toBeInTheDocument()
@@ -580,15 +587,47 @@ describe('CITrustSettings', () => {
     gatePolicies = [{ id: 'gp1', scope_type: 'repository', scope_id: 'repo-9', mode: 'enforce' }]
     mockDeletePolicy.mockResolvedValue(undefined)
     render(<CITrustSettings />)
-    await userEvent.click(screen.getByRole('tab', { name: /gate policy/i }))
+    await pickSection(/gate policy/i)
     await userEvent.click(
       screen.getByRole('button', { name: 'Delete the policy for Repository repo-9' })
     )
     expect(mockDeletePolicy).not.toHaveBeenCalled()
     const dialog = await screen.findByRole('alertdialog')
     expect(dialog).toHaveTextContent('Delete the gate policy for Repository repo-9?')
-    await userEvent.click(within(dialog).getByRole('button', { name: 'Delete' }))
+    const confirm = within(dialog).getByRole('button', { name: 'Delete gate policy' })
+    expect(confirm).toBeDisabled()
+    await userEvent.type(
+      within(dialog).getByLabelText(/Type Repository repo-9 to confirm/),
+      'Repository repo-9'
+    )
+    await userEvent.click(confirm)
     expect(mockDeletePolicy).toHaveBeenCalledWith({ id: 'gp1', reason: '' })
+  })
+
+  it('deleting a CI trust asks for its name first', async () => {
+    perms = ['scans:ci:read', 'scans:ci:write']
+    trust = [
+      {
+        id: 'old',
+        name: 'GitHub acme',
+        provider: 'github',
+        issuer: 'https://token.actions.githubusercontent.com',
+        audience: 'openctem:tenant:t-123',
+        enabled: true,
+        rules: { owners: ['acme'] },
+      },
+    ]
+    mockDeleteTrust.mockResolvedValue(undefined)
+    render(<CITrustSettings />)
+    await userEvent.click(screen.getByRole('button', { name: 'Delete GitHub acme' }))
+    expect(mockDeleteTrust).not.toHaveBeenCalled()
+    const dialog = await screen.findByRole('alertdialog')
+    expect(dialog).toHaveTextContent('Delete the CI trust "GitHub acme"?')
+    const confirm = within(dialog).getByRole('button', { name: 'Delete CI trust' })
+    expect(confirm).toBeDisabled()
+    await userEvent.type(within(dialog).getByRole('textbox'), 'GitHub acme')
+    await userEvent.click(confirm)
+    expect(mockDeleteTrust).toHaveBeenCalledWith('old')
   })
 
   it('revoking a break-glass override asks first', async () => {
@@ -605,7 +644,7 @@ describe('CITrustSettings', () => {
     ]
     mockRevokeOverride.mockResolvedValue(undefined)
     render(<CITrustSettings />)
-    await userEvent.click(screen.getByRole('tab', { name: /break-glass/i }))
+    await pickSection(/break-glass/i)
     await userEvent.click(screen.getByRole('button', { name: 'Revoke' }))
     expect(mockRevokeOverride).not.toHaveBeenCalled()
     const dialog = await screen.findByRole('alertdialog')
@@ -642,8 +681,12 @@ describe('CITrustSettings', () => {
     perms = ['scans:ci:read']
     render(<CITrustSettings />)
     expect(screen.getByRole('button', { name: /add trust/i })).toBeDisabled()
-    await userEvent.click(screen.getByRole('tab', { name: /break-glass/i }))
-    expect(screen.getByRole('button', { name: /break-glass/i })).toBeDisabled()
+    await pickSection(/break-glass/i)
+    // The section token reads "Section: Break-glass" too; the action is the other button.
+    const action = screen
+      .getAllByRole('button', { name: /break-glass/i })
+      .find((b) => !/^Section:/.test(b.getAttribute('aria-label') ?? ''))
+    expect(action).toBeDisabled()
   })
 
   it('refuses a configuration that names no owner or repository', async () => {

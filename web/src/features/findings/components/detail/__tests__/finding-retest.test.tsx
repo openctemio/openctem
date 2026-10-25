@@ -7,7 +7,7 @@
  */
 
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen } from '@testing-library/react'
+import { render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { FindingRetestSection, retestMeta } from '../finding-retest'
 import type { FindingRetest } from '../../../api/use-finding-retests'
@@ -85,6 +85,11 @@ describe('FindingRetestSection', () => {
     render(<FindingRetestSection finding={nucleiFinding} />)
     expect(screen.getByText(/Not retested yet/i)).toBeInTheDocument()
     await userEvent.click(screen.getByRole('button', { name: /Retest now/i }))
+    // Traffic is sent only after the confirmation.
+    expect(mockTrigger).not.toHaveBeenCalled()
+    const dialog = await screen.findByRole('alertdialog')
+    expect(dialog).toHaveTextContent(/sends scan traffic/i)
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Send retest' }))
     expect(mockTrigger).toHaveBeenCalledTimes(1)
   })
 
@@ -95,6 +100,9 @@ describe('FindingRetestSection', () => {
       />
     )
     await userEvent.click(screen.getByRole('button', { name: /Retest now/i }))
+    await userEvent.click(
+      within(await screen.findByRole('alertdialog')).getByRole('button', { name: 'Send retest' })
+    )
     expect(mockTrigger).toHaveBeenCalledTimes(1)
   })
 
@@ -123,6 +131,9 @@ describe('FindingRetestSection', () => {
     expect(mockRetestsFor).toBe('f-3')
     expect(screen.getByText(/runs the custom check Reflected XSS on \/search/)).toBeInTheDocument()
     await userEvent.click(screen.getByRole('button', { name: /Retest now/i }))
+    await userEvent.click(
+      within(await screen.findByRole('alertdialog')).getByRole('button', { name: 'Send retest' })
+    )
     expect(mockTrigger).toHaveBeenCalledTimes(1)
   })
 
@@ -154,6 +165,39 @@ describe('FindingRetestSection', () => {
     render(<FindingRetestSection finding={nucleiFinding} />)
     expect(screen.getByText('Inconclusive: target unreachable')).toBeInTheDocument()
     expect(screen.getByText(/connection refused/i)).toBeInTheDocument()
+  })
+
+  it('says what an inconclusive retest means and what to do, for each reason the tool gives', () => {
+    for (const [code, label, help] of [
+      [
+        'template_not_found',
+        'Inconclusive: check not installed on the sensor',
+        /template set does not include this check.*Update the sensor's templates/,
+      ],
+      [
+        'excluded_by_policy',
+        'Inconclusive: check not allowed by the sensor policy',
+        /safety policy never runs checks of its class.*Verify it by hand/,
+      ],
+      [
+        'no_verdict',
+        'Inconclusive: the tool gave no verdict',
+        /ended without a verdict.*Retest again/,
+      ],
+    ] as const) {
+      mockRetests = [
+        retest({
+          outcome: 'inconclusive',
+          reason_code: code,
+          reason: 'sensor detail',
+          result_status: 'confirmed',
+        }),
+      ]
+      const { unmount } = render(<FindingRetestSection finding={nucleiFinding} />)
+      expect(screen.getByText(label)).toBeInTheDocument()
+      expect(screen.getByText(help)).toBeInTheDocument()
+      unmount()
+    }
   })
 
   it('disables Retest now while a retest is running', () => {
@@ -189,12 +233,12 @@ describe('retestMeta', () => {
   it('labels each outcome; only a confirmed fix reads as fixed', () => {
     expect(
       retestMeta(retest({ outcome: 'confirmed_fixed', result_status: 'confirmed' })).label
-    ).toBe('Verified fixed — awaiting confirmation')
+    ).toBe('Verified fixed, awaiting confirmation')
     expect(
       retestMeta(retest({ outcome: 'confirmed_fixed', result_status: 'resolved' })).label
-    ).toBe('Fixed — verified and resolved')
+    ).toBe('Fixed: verified and resolved')
     expect(retestMeta(retest({ outcome: 'not_reproduced' })).label).toBe(
-      'Not reproduced — not confirmed'
+      'Not reproduced, not confirmed'
     )
     expect(retestMeta(retest({ outcome: 'still_vulnerable' })).label).toBe('Still vulnerable')
     expect(
@@ -214,6 +258,47 @@ describe('retestMeta', () => {
     )
     expect(retestMeta(retest({ outcome: 'inconclusive' })).label).toBe('Inconclusive')
     expect(retestMeta(retest({ status: 'pending' })).label).toBe('Retest running')
+  })
+
+  it('lists earlier attempts one line each, with chip, reason and no separators', () => {
+    mockRetests = [
+      retest({
+        id: 'r-3',
+        outcome: 'inconclusive',
+        reason_code: 'access_denied',
+        reason: 'answered 403: access denied by the server',
+      }),
+      retest({
+        id: 'r-2',
+        outcome: 'inconclusive',
+        reason_code: 'edge_blocked',
+        reason: 'answered 403: the cloudflare edge protection stopped the request',
+      }),
+      retest({ id: 'r-1', outcome: 'still_vulnerable', reason: 'matched again' }),
+    ]
+    render(<FindingRetestSection finding={nucleiFinding} />)
+    const history = document.querySelector('[data-slot="retest-history"]') as HTMLElement
+    const rows = within(history).getAllByRole('listitem')
+    expect(rows).toHaveLength(2)
+    expect(within(rows[0]).getByText('Inconclusive: blocked by edge protection')).toBeTruthy()
+    expect(within(rows[0]).getByText(/cloudflare edge protection/)).toBeTruthy()
+    expect(within(rows[1]).getByText('Still vulnerable')).toBeTruthy()
+    expect(history.textContent).not.toContain('·')
+  })
+
+  it('explains an origin access refusal on the latest retest', () => {
+    mockRetests = [
+      retest({
+        id: 'r-9',
+        outcome: 'inconclusive',
+        reason_code: 'access_denied',
+        reason: 'answered 403: access denied by the server',
+      }),
+    ]
+    render(<FindingRetestSection finding={nucleiFinding} />)
+    const help = document.querySelector('[data-slot="retest-inconclusive-help"]') as HTMLElement
+    expect(help.textContent).toMatch(/One refusal is not proof of a fix/)
+    expect(help.textContent).toMatch(/at least an hour later/)
   })
 
   it("shows a pentest finding's manual retests with the tester's notes", () => {

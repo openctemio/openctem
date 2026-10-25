@@ -6,6 +6,8 @@ import (
 	"strings"
 	"unicode"
 	"unicode/utf8"
+
+	"github.com/openctemio/openctem/api/pkg/logger"
 )
 
 // The message of an error response is English fallback text for a person.
@@ -120,7 +122,7 @@ func (e *Error) publicMessage(requestID string) string {
 	msg, changed := SafeMessage(e.Code, e.Status, e.Message)
 	if changed && IsTechnical(e.Message) {
 		slog.Default().Warn("apierror: technical text kept out of an error response",
-			"code", string(e.Code), "status", e.Status, "request_id", requestID, "original", e.Message)
+			"code", string(e.Code), "status", e.Status, "request_id", logger.SanitizeValue(requestID), "original", logger.RedactedText(e.Message))
 	}
 	return msg
 }

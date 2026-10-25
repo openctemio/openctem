@@ -331,7 +331,10 @@ jobs:
         working-directory: web
         run: |
           mkdir -p blobs
-          find all-blobs -name '*.zip' -exec cp {} blobs/ \;
+          # Only the blob reports: test-results/ rides in the same artifact and
+          # holds the trace.zip of every failed attempt (a test that passed on
+          # its retry), which are not blob reports and break the merge.
+          find all-blobs -path '*/blob-report/*' -name '*.zip' -exec cp {} blobs/ \;
           if ! ls blobs/*.zip >/dev/null 2>&1; then echo "no blob reports (a shard failed before the tests ran)"; exit 0; fi
           npx playwright merge-reports --reporter html ./blobs
           npx playwright merge-reports --reporter json ./blobs > report.json
