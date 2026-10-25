@@ -31,7 +31,7 @@ test.describe('Findings filters', () => {
 
   test('the f key opens Add filter, not while typing in search', async ({ page }) => {
     await page.goto('/findings')
-    const search = page.getByRole('textbox', { name: /search findings/i })
+    const search = page.getByRole('searchbox', { name: /search findings/i })
     await search.click()
     await page.keyboard.type('f')
     await expect(page.getByRole('dialog', { name: /add filter/i })).toHaveCount(0)

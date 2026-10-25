@@ -11,7 +11,6 @@ import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Checkbox } from '@/components/ui/checkbox'
-import { Input } from '@/components/ui/input'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { ConfirmDialog, ConfirmSample } from '@/components/confirm-dialog'
@@ -28,7 +27,6 @@ import {
   Check,
   CheckCheck,
   RefreshCw,
-  Search,
   Sparkles,
   X,
   Link2,
@@ -368,19 +366,6 @@ export default function RelationshipSuggestionsPage() {
     return canReview ? all : all.filter((c) => c.id !== 'select' && c.id !== 'actions')
   }, [canReview, editingType, handleApprove, handleDismiss, handleUpdateType, isMutating])
 
-  const searchBox = (
-    <div className="relative min-w-0 flex-1 sm:max-w-sm">
-      <Search className="pointer-events-none absolute start-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-      <Input
-        placeholder="Search by asset name…"
-        aria-label="Search suggestions"
-        value={searchValue}
-        onChange={(e) => setSearchValue(e.target.value)}
-        className="h-9 ps-9"
-      />
-    </div>
-  )
-
   return (
     <Main>
       <PageStack>
@@ -432,7 +417,12 @@ export default function RelationshipSuggestionsPage() {
             columns={columns}
             data={suggestions}
             showSearch={false}
-            toolbarStart={searchBox}
+            search={{
+              value: searchValue,
+              onChange: setSearchValue,
+              placeholder: t('assets.suggestions.search.placeholder', 'Search by asset name…'),
+              label: t('assets.suggestions.search.label', 'Search suggestions'),
+            }}
             getRowId={(s) => s.id}
             manualPagination
             rowCount={total}

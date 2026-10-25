@@ -7,7 +7,6 @@ import {
   Plus,
   FileCode2,
   Loader2,
-  Search,
   Trash2,
   Download,
   CheckCircle,
@@ -24,7 +23,6 @@ import { toast } from 'sonner'
 
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
-import { Input } from '@/components/ui/input'
 import { ConfirmDialog } from '@/components/confirm-dialog'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import {
@@ -408,16 +406,6 @@ export function ScannerTemplatesSection() {
   // server-backed search box instead of its built-in client filter.
   const toolbarStart = (
     <>
-      <div className="relative min-w-0 flex-1 sm:max-w-sm">
-        <Search className="pointer-events-none absolute start-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-        <Input
-          placeholder="Search templates…"
-          aria-label="Search templates"
-          value={searchQuery}
-          onChange={(e) => setSearchQuery(e.target.value)}
-          className="h-9 ps-9"
-        />
-      </div>
       <Select value={typeFilter} onValueChange={setTypeFilter}>
         <SelectTrigger className="h-9 w-[140px]" aria-label="Template type">
           <SelectValue placeholder="All types" />
@@ -476,6 +464,12 @@ export function ScannerTemplatesSection() {
         data={templates}
         getRowId={(t) => t.id}
         showSearch={false}
+        search={{
+          value: searchQuery,
+          onChange: setSearchQuery,
+          placeholder: t('scans.templates.search.placeholder', 'Search templates…'),
+          label: t('scans.templates.search.label', 'Search templates'),
+        }}
         toolbarStart={toolbarStart}
         toolbarEnd={<RefreshButton onClick={handleRefresh} loading={isLoading} />}
         emptyMessage={isLoading ? 'Loading templates…' : 'No templates match these filters'}

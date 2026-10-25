@@ -48,7 +48,13 @@ import type { TypeView } from '@/features/asset-types/lib/type-view'
 import { propertyLabel } from '@/features/asset-types/lib/property-schema'
 import { rowActionsFor } from '../../lib/type-actions'
 import { AttributeCell } from './attribute-cell'
-import { DataTable, DataTableColumnHeader, RiskScoreBadge, riskScoreState } from '@/features/shared'
+import {
+  DataTable,
+  DataTableColumnHeader,
+  RiskScoreBadge,
+  riskScoreState,
+  type DataTableSearch,
+} from '@/features/shared'
 import { AssetStatusBadge } from '@/features/asset-lifecycle'
 import { useAssetTypeRegistry } from '@/features/asset-types/api/use-asset-type-registry'
 import { CriticalityBadge, ExposureBadge } from '../classification-badges'
@@ -106,6 +112,10 @@ interface InventoryTableProps {
   onSortChange: (sort: string | undefined) => void
   onSelectionChange: (assets: Asset[]) => void
   resetSelectionKey: number
+  /** The list's search box (the toolbar draws it). */
+  search?: DataTableSearch
+  /** The phone filter-sheet trigger, joined to the search. */
+  filter?: ReactNode
   toolbarStart?: ReactNode
   toolbarEnd?: ReactNode
   /** A full-width row under the toolbar: the filter chips. */
@@ -138,6 +148,8 @@ export function InventoryTable({
   onSortChange,
   onSelectionChange,
   resetSelectionKey,
+  search,
+  filter,
   toolbarStart,
   toolbarEnd,
   toolbarBelow,
@@ -593,6 +605,8 @@ export function InventoryTable({
         columns={columns}
         data={assets}
         showSearch={false}
+        search={search}
+        filter={filter}
         toolbarStart={toolbarStart}
         toolbarEnd={toolbarEnd}
         toolbarBelow={toolbarBelow}

@@ -510,7 +510,7 @@ export default function ScanWorkflowsPage() {
               columns={workflowColumns}
               data={visibleWorkflows}
               searchKey="name"
-              searchPlaceholder="Search workflows..."
+              searchPlaceholder={t('scans.workflows.search', 'Search workflows…')}
               getRowId={(p) => p.id}
               onRowClick={handleOpenWorkflowDetail}
               toolbarStart={ownerFilter}

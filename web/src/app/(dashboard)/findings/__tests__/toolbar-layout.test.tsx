@@ -154,9 +154,10 @@ describe('Findings toolbar layout', () => {
   it('joins the filter button and the search field into one control in row 2', () => {
     renderAt()
     const toolbar = screen.getByTestId('data-table-toolbar')
-    const group = screen.getByTestId('findings-filter-search')
-    expect(toolbar.contains(group)).toBe(true)
-    const search = screen.getByRole('textbox', { name: 'Search findings' })
+    // The shared ListSearch joins the trigger to the field.
+    const group = toolbar.querySelector('[data-slot="list-search"]') as HTMLElement
+    expect(group).not.toBeNull()
+    const search = screen.getByRole('searchbox', { name: 'Search findings' })
     expect(group.contains(search)).toBe(true)
     const filters = group.querySelectorAll('[data-slot="filter-button"]')
     expect(filters.length).toBeGreaterThan(0)
@@ -164,7 +165,7 @@ describe('Findings toolbar layout', () => {
     // One control: the group does not wrap, so the field cannot drop under the
     // button, and the field keeps a usable minimum width.
     expect(group.className).not.toMatch(/flex-wrap/)
-    expect(search.parentElement?.className).toMatch(/min-w-40/)
+    expect(group.className).toMatch(/min-w-48/)
     // Group and View come after the search, in the same row.
     const groupBy = within(toolbar).getByRole('combobox', { name: 'Group findings' })
     expect(follows(search, groupBy)).toBe(true)
@@ -182,6 +183,6 @@ describe('Findings toolbar layout', () => {
     expect(within(primary).getByTestId('findings-view-title')).toBeInTheDocument()
     expect(within(primary).queryByRole('button', { name: 'Export' })).toBeNull()
     const toolbar = screen.getByTestId('data-table-toolbar')
-    expect(within(toolbar).getByRole('textbox', { name: 'Search findings' })).toBeInTheDocument()
+    expect(within(toolbar).getByRole('searchbox', { name: 'Search findings' })).toBeInTheDocument()
   })
 })

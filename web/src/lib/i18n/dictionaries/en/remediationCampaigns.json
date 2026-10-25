@@ -122,7 +122,7 @@
   "remediationCampaigns.progress.label": "{closed} of {total} findings closed",
   "remediationCampaigns.progress.none": "No findings yet",
   "remediationCampaigns.progress.short": "{closed} of {total}",
-  "remediationCampaigns.search": "Search campaigns",
+  "remediationCampaigns.search": "Search campaigns…",
   "remediationCampaigns.status.active": "Active",
   "remediationCampaigns.status.canceled": "Canceled",
   "remediationCampaigns.status.completed": "Completed",

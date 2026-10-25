@@ -22,46 +22,47 @@ tests that cover the console's most user-visible flows.
 
 ## Specs
 
-| Spec file (`specs/`)                        | What it covers                                                                     |
-| ------------------------------------------- | ---------------------------------------------------------------------------------- |
-| `01-login-and-invitation.spec.ts`           | Login form rejection, successful login, invitation preview                         |
-| `02-asset-relationship-multiselect.spec.ts` | Asset list, relationships tab, multi-select picker                                 |
-| `03-tag-crud.spec.ts`                       | Add and remove tags from an asset                                                  |
-| `04-findings-asset-filter.spec.ts`          | `?assetId=` filter on /findings                                                    |
-| `05-owner-picker.spec.ts`                   | Asset owner picker open + search                                                   |
-| `07-finding-drawer-writes-once.spec.ts`     | Finding drawer saves each change once                                              |
-| `07-sensor-row-actions.spec.ts`             | Sensor list row actions                                                            |
-| `08-finding-detail-header.spec.ts`          | Finding detail page header                                                         |
-| `09-landmarks-and-names.spec.ts`            | Page landmarks and accessible names                                                |
-| `10-scan-detail-runs.spec.ts`               | Scan detail and its runs                                                           |
-| `11-settings-access.spec.ts`                | Settings pages respect permissions                                                 |
-| `12-settings-reachability.spec.ts`          | Every settings page is reachable                                                   |
-| `13-validation-reachability.spec.ts`        | Validation pages are reachable                                                     |
-| `14-remediation-campaigns.spec.ts`          | Remediation campaign list and detail                                               |
-| `15-route-protection.spec.ts`               | Signed-out redirects and public routes                                             |
-| `16-dialog-layout.spec.ts`                  | Dialog header and actions stay put while the body scrolls                          |
-| `18-pentest-finding-editor.spec.ts`         | Pentest finding: evidence, publish, closed campaign, edit at 375px                 |
-| `19-scan-lifecycle.spec.ts`                 | Scan create, edit (name, targets, duration), run, run view                         |
-| `20-sensor-tool-settings-drawer.spec.ts`    | Expanded tool settings stay reachable in the sensor drawer                         |
-| `21-remediation-task-from-findings.spec.ts` | Create a task from findings, open it, hold and resume it                           |
-| `23-findings-selection.spec.ts`             | Findings list selection resets; phone card checkbox and menu                       |
-| `24-findings-states.spec.ts`                | Findings list: inline error, no access, nothing yet, no match                      |
-| `25-findings-quick-views.spec.ts`           | Sidebar quick views under Findings, counts, links                                  |
-| `26-findings-filters.spec.ts`               | Add filter, chips, unknown filter, pass-through filters                            |
-| `27-dashboard-header-phone.spec.ts`         | Dashboard header: one toolbar row at 390px and at 1440px                           |
-| `28-dashboard-edit-chrome.spec.ts`          | Dashboard edit mode: widget headers fit at 1440px and 390px                        |
-| `29-dashboard-add-widget-sheet.spec.ts`     | Add a widget sheet: nothing past its edges, one-row tabs                           |
-| `30-drawer-text-layout.spec.ts`             | Drawers: no word broken over two lines, one size per meta line, nothing under 12px |
-| `30-finding-detail-requests.spec.ts`        | Finding page: one read per resource, no connector list for other tools             |
-| `30-findings-triage-and-views.spec.ts`      | Triage button opens triage mode, always-on Priority, columns in the URL            |
-| `31-assets-quick-views.spec.ts`             | Sidebar quick views under Assets (lenses), no lens/type pills                      |
-| `31-page-rhythm.spec.ts`                    | Page block gaps are the spacing tokens; metric strip rules                         |
-| `32-assets-filters.spec.ts`                 | Asset Add filter, chips, no eager tag or business-unit load                        |
-| `33-ticketing-connection-errors.spec.ts`    | A failed ticketing connection is worded from its code, offers the fix, shows no id |
-| `34-scans-list-layout.spec.ts`              | Scan list at 390px and 1440px: no overlapping text, state on the title line        |
-| `35-assets-row-anatomy.spec.ts`             | Asset rows: one height, type line, a time; axe; no h-scroll at 375px               |
-| `36-findings-triage-mode.spec.ts`           | Triage mode: keys-only session over ten findings, request budget, a11y, Exit       |
-| `37-pentest-template-editor.spec.ts`        | Finding-library template: create, then edit at 375px                               |
+| Spec file (`specs/`)                        | What it covers                                                                          |
+| ------------------------------------------- | --------------------------------------------------------------------------------------- |
+| `01-login-and-invitation.spec.ts`           | Login form rejection, successful login, invitation preview                              |
+| `02-asset-relationship-multiselect.spec.ts` | Asset list, relationships tab, multi-select picker                                      |
+| `03-tag-crud.spec.ts`                       | Add and remove tags from an asset                                                       |
+| `04-findings-asset-filter.spec.ts`          | `?assetId=` filter on /findings                                                         |
+| `05-owner-picker.spec.ts`                   | Asset owner picker open + search                                                        |
+| `07-finding-drawer-writes-once.spec.ts`     | Finding drawer saves each change once                                                   |
+| `07-sensor-row-actions.spec.ts`             | Sensor list row actions                                                                 |
+| `08-finding-detail-header.spec.ts`          | Finding detail page header                                                              |
+| `09-landmarks-and-names.spec.ts`            | Page landmarks and accessible names                                                     |
+| `10-scan-detail-runs.spec.ts`               | Scan detail and its runs                                                                |
+| `11-settings-access.spec.ts`                | Settings pages respect permissions                                                      |
+| `12-settings-reachability.spec.ts`          | Every settings page is reachable                                                        |
+| `13-validation-reachability.spec.ts`        | Validation pages are reachable                                                          |
+| `14-remediation-campaigns.spec.ts`          | Remediation campaign list and detail                                                    |
+| `15-route-protection.spec.ts`               | Signed-out redirects and public routes                                                  |
+| `16-dialog-layout.spec.ts`                  | Dialog header and actions stay put while the body scrolls                               |
+| `18-pentest-finding-editor.spec.ts`         | Pentest finding: evidence, publish, closed campaign, edit at 375px                      |
+| `19-scan-lifecycle.spec.ts`                 | Scan create, edit (name, targets, duration), run, run view                              |
+| `20-sensor-tool-settings-drawer.spec.ts`    | Expanded tool settings stay reachable in the sensor drawer                              |
+| `21-remediation-task-from-findings.spec.ts` | Create a task from findings, open it, hold and resume it                                |
+| `23-findings-selection.spec.ts`             | Findings list selection resets; phone card checkbox and menu                            |
+| `24-findings-states.spec.ts`                | Findings list: inline error, no access, nothing yet, no match                           |
+| `25-findings-quick-views.spec.ts`           | Sidebar quick views under Findings, counts, links                                       |
+| `26-findings-filters.spec.ts`               | Add filter, chips, unknown filter, pass-through filters                                 |
+| `27-dashboard-header-phone.spec.ts`         | Dashboard header: one toolbar row at 390px and at 1440px                                |
+| `28-dashboard-edit-chrome.spec.ts`          | Dashboard edit mode: widget headers fit at 1440px and 390px                             |
+| `29-dashboard-add-widget-sheet.spec.ts`     | Add a widget sheet: nothing past its edges, one-row tabs                                |
+| `30-drawer-text-layout.spec.ts`             | Drawers: no word broken over two lines, one size per meta line, nothing under 12px      |
+| `30-finding-detail-requests.spec.ts`        | Finding page: one read per resource, no connector list for other tools                  |
+| `30-findings-triage-and-views.spec.ts`      | Triage button opens triage mode, always-on Priority, columns in the URL                 |
+| `31-assets-quick-views.spec.ts`             | Sidebar quick views under Assets (lenses), no lens/type pills                           |
+| `31-page-rhythm.spec.ts`                    | Page block gaps are the spacing tokens; metric strip rules                              |
+| `32-assets-filters.spec.ts`                 | Asset Add filter, chips, no eager tag or business-unit load                             |
+| `33-ticketing-connection-errors.spec.ts`    | A failed ticketing connection is worded from its code, offers the fix, shows no id      |
+| `34-scans-list-layout.spec.ts`              | Scan list at 390px and 1440px: no overlapping text, state on the title line             |
+| `35-assets-row-anatomy.spec.ts`             | Asset rows: one height, type line, a time; axe; no h-scroll at 375px                    |
+| `36-findings-triage-mode.spec.ts`           | Triage mode: keys-only session over ten findings, request budget, a11y, Exit            |
+| `36-list-toolbar.spec.ts`                   | One list toolbar: search first, joined filter trigger, `/` and Escape, phone width, axe |
+| `37-pentest-template-editor.spec.ts`        | Finding-library template: create, then edit at 375px                                    |
 
 Each spec is designed to:
 

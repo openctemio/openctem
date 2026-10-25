@@ -29,7 +29,7 @@ test.describe('Findings states', () => {
     })
     // The page chrome stays.
     await expect(page.getByRole('heading', { name: 'Findings', level: 1 })).toBeVisible()
-    await expect(page.getByRole('textbox', { name: /search findings/i })).toBeVisible()
+    await expect(page.getByRole('searchbox', { name: /search findings/i })).toBeVisible()
     await expect(page.getByRole('button', { name: /copy request id/i })).toBeVisible()
     await expect(page.getByRole('button', { name: /retry/i })).toBeVisible()
     // One message, not an inline error plus a toast.
@@ -95,7 +95,10 @@ test.describe('Findings states', () => {
     })
     await page.goto('/findings?q=zz-nothing')
     await expect(page.getByText('No findings match')).toBeVisible({ timeout: 20_000 })
-    await page.getByRole('button', { name: 'Clear search' }).click()
+    await page
+      .getByTestId('findings-empty-state')
+      .getByRole('button', { name: 'Clear search' })
+      .click()
     await expect(page).not.toHaveURL(/q=zz-nothing/)
   })
 })

@@ -97,7 +97,7 @@
   "exceptions.page.reviewBadge": "Review",
   "exceptions.page.reviewFailed": "Could not mark the rule as reviewed",
   "exceptions.page.reviewed": "Marked as reviewed",
-  "exceptions.page.search": "Search by name...",
+  "exceptions.page.search": "Search by name…",
   "exceptions.page.title": "Exceptions",
   "exceptions.page.unexpectedError": "An unexpected error occurred",
   "exceptions.scope.any": "Any finding",

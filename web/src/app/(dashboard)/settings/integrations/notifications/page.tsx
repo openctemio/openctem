@@ -657,7 +657,7 @@ export default function NotificationIntegrationsPage() {
                     getRowId={(i) => i.id}
                     searchPlaceholder={t(
                       'notificationChannels.page.searchPlaceholder',
-                      'Search channels...'
+                      'Search channels…'
                     )}
                     showSelectionCount={false}
                     toolbarEnd={

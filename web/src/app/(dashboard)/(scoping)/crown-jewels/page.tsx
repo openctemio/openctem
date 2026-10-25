@@ -41,7 +41,6 @@ import { Badge } from '@/components/ui/badge'
 import {
   Plus,
   Download,
-  Search,
   Eye,
   Pencil,
   Trash2,
@@ -561,6 +560,12 @@ export default function CrownJewelsPage() {
               columns={columns}
               data={filteredJewels}
               showSearch={false}
+              search={{
+                value: searchQuery,
+                onChange: setSearchQuery,
+                placeholder: t('crownJewels.search.placeholder', 'Search name or owner…'),
+                label: t('crownJewels.search.aria', 'Search crown jewels'),
+              }}
               isLoading={isLoading}
               errorState={
                 loadError ? (
@@ -573,16 +578,6 @@ export default function CrownJewelsPage() {
               }
               toolbarStart={
                 <>
-                  <div className="relative min-w-0 flex-1 sm:max-w-xs">
-                    <Search className="pointer-events-none absolute start-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-                    <Input
-                      value={searchQuery}
-                      onChange={(e) => setSearchQuery(e.target.value)}
-                      placeholder={t('crownJewels.search.placeholder', 'Search name or owner…')}
-                      aria-label={t('crownJewels.search.aria', 'Search crown jewels')}
-                      className="h-9 ps-9"
-                    />
-                  </div>
                   <Select value={filterExposure} onValueChange={setFilterExposure}>
                     <SelectTrigger
                       className="h-9 w-auto min-w-36"

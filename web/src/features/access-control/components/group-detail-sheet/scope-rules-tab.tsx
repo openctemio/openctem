@@ -4,7 +4,6 @@ import { useState, useCallback, useRef } from 'react'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Skeleton } from '@/components/ui/skeleton'
-import { Input } from '@/components/ui/input'
 import {
   Dialog,
   DialogContent,
@@ -24,7 +23,6 @@ import {
   Tag,
   Layers,
   Zap,
-  Search,
   AlertCircle,
 } from 'lucide-react'
 import { DataTableRowActions, EmptyState } from '@/features/shared'
@@ -55,6 +53,7 @@ import { ScopeRuleDialog } from './scope-rule-dialog'
 import { confirmName } from '@/lib/confirm-name'
 import { ConfirmDialog } from '@/components/confirm-dialog'
 import { useTranslation } from '@/context/i18n-provider'
+import { ListSearch } from '@/features/shared/components/list-search'
 
 interface ScopeRulesTabProps {
   groupId: string | null
@@ -231,15 +230,12 @@ export function ScopeRulesTab({ groupId }: ScopeRulesTabProps) {
       </div>
 
       {scopeRules.length > 3 && (
-        <div className="relative mb-4">
-          <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-          <Input
-            placeholder="Search rules..."
-            className="ps-9"
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-          />
-        </div>
+        <ListSearch
+          className="mb-4"
+          value={searchQuery}
+          onChange={setSearchQuery}
+          placeholder={t('org.scopeRules.search', 'Search rules…')}
+        />
       )}
 
       {isLoading ? (

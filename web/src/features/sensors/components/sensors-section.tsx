@@ -1,13 +1,12 @@
 'use client'
 
 import { useState, useMemo, useCallback, useEffect } from 'react'
-import { Plus, Loader2, Search, Download, Trash2, Layers } from 'lucide-react'
+import { Plus, Loader2, Download, Trash2, Layers } from 'lucide-react'
 import { toast } from 'sonner'
 
 import { ScanZonesPanel } from '@/features/scan-zones'
 import { getErrorMessage } from '@/lib/api/error-handler'
 import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
 import {
   Select,
   SelectContent,
@@ -624,18 +623,15 @@ export function SensorsSection({
     />
   )
 
-  const toolbarStart = (
+  const search = {
+    value: searchQuery,
+    onChange: setSearchQuery,
+    placeholder: t('sensors.list.search.placeholder'),
+    label: t('sensors.list.search.label'),
+  }
+
+  const toolbarEnd = (
     <>
-      <div className="relative min-w-0 flex-1 sm:max-w-sm">
-        <Search className="pointer-events-none absolute start-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-        <Input
-          placeholder={t('sensors.list.search.placeholder')}
-          aria-label={t('sensors.list.search.label')}
-          value={searchQuery}
-          onChange={(e) => setSearchQuery(e.target.value)}
-          className="h-9 ps-9"
-        />
-      </div>
       <Select value={groupBy} onValueChange={(v) => setGroupParam(v === 'none' ? '' : v)}>
         <SelectTrigger
           className="h-9 w-auto gap-2 sm:min-w-36"
@@ -653,11 +649,6 @@ export function SensorsSection({
           <SelectItem value="version">{t(GROUP_LABELS.version)}</SelectItem>
         </SelectContent>
       </Select>
-    </>
-  )
-
-  const toolbarEnd = (
-    <>
       <LiveIndicator updatedAt={updatedAt} now={now} />
       <FleetContentRefreshButton sensors={scopedSensors} onDone={handleRefresh} />
       <RefreshButton onClick={handleRefresh} loading={isLoading} />
@@ -716,7 +707,7 @@ export function SensorsSection({
           activeCount: filterCount,
           controlsId: 'sensor-filters',
         }}
-        toolbarStart={toolbarStart}
+        search={search}
         toolbarEnd={toolbarEnd}
       />
     )

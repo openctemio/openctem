@@ -22,7 +22,6 @@ import {
   PageStack,
 } from '@/features/shared'
 import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
 import { Label } from '@/components/ui/label'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
@@ -66,7 +65,6 @@ import {
   Trash2,
   Send,
   Ban,
-  Search as SearchIcon,
   Eye,
   Pencil,
   Copy,
@@ -1357,16 +1355,6 @@ export default function UsersPage() {
 
   const toolbarStart = (
     <>
-      <div className="relative min-w-0 flex-1 sm:max-w-sm">
-        <SearchIcon className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-        <Input
-          placeholder={t('org.membersPage.searchPlaceholder', 'Search members...')}
-          value={searchQuery}
-          onChange={(e) => setSearchQuery(e.target.value)}
-          className="ps-9"
-          aria-label={t('org.membersPage.searchLabel', 'Search members')}
-        />
-      </div>
       <Select value={statusFilter} onValueChange={(v) => setStatusFilter(v)}>
         <SelectTrigger
           className="h-9 w-[140px]"
@@ -1536,6 +1524,12 @@ export default function UsersPage() {
                     pageSizeOptions={MEMBER_PAGE_SIZES}
                     paginationNoun={t('org.membersPage.noun', 'members')}
                     showSearch={false}
+                    search={{
+                      value: searchQuery,
+                      onChange: setSearchQuery,
+                      placeholder: t('org.membersPage.searchPlaceholder', 'Search members…'),
+                      label: t('org.membersPage.searchLabel', 'Search members'),
+                    }}
                     showColumnToggle={false}
                     toolbarStart={toolbarStart}
                     onRowClick={(m) => setSelectedMember(m)}

@@ -1,12 +1,11 @@
 'use client'
 
 import { useCallback, useMemo, useState } from 'react'
-import { AlertCircle, AlertTriangle, Network, Plus, Search } from 'lucide-react'
+import { AlertCircle, AlertTriangle, Network, Plus } from 'lucide-react'
 import { toast } from 'sonner'
 
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
 import { ConfirmDialog } from '@/components/confirm-dialog'
 import { confirmName } from '@/lib/confirm-name'
 import { RefreshButton, TableSkeleton } from '@/components/list-page-parts'
@@ -153,18 +152,12 @@ export function ScanZonesPanel({ createOpen, onCreateOpenChange }: ScanZonesPane
           setDeleteError(null)
           setDeleteZone(z)
         }}
-        toolbarStart={
-          <div className="relative min-w-0 flex-1 sm:max-w-sm">
-            <Search className="pointer-events-none absolute start-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-            <Input
-              placeholder="Search name or range…"
-              aria-label="Search scan zones"
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              className="h-9 ps-9"
-            />
-          </div>
-        }
+        search={{
+          value: search,
+          onChange: setSearch,
+          placeholder: t('scans.zones.search.placeholder', 'Search name or range…'),
+          label: t('scans.zones.search.label', 'Search scan zones'),
+        }}
         toolbarEnd={<RefreshButton onClick={refresh} loading={isLoading} />}
       />
     )

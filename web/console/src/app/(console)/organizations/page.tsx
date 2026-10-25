@@ -3,10 +3,8 @@
 import { useMemo } from 'react'
 import { useRouter } from 'next/navigation'
 import type { ColumnDef } from '@tanstack/react-table'
-import { Search } from 'lucide-react'
 import { Main } from '@/components/layout'
 import { Badge } from '@/components/ui/badge'
-import { Input } from '@/components/ui/input'
 import {
   Select,
   SelectContent,
@@ -164,18 +162,14 @@ export default function AdminOrganizationsPage() {
             rowCount={data?.total ?? 0}
             pagination={list.pagination}
             onPaginationChange={list.setPagination}
+            search={{
+              value: list.q,
+              onChange: list.setSearch,
+              placeholder: t('admin.org.search', 'Search name or slug…'),
+              label: t('admin.org.searchLabel', 'Search organizations'),
+            }}
             toolbarStart={
-              <div className="flex w-full flex-col gap-2 sm:flex-row">
-                <div className="relative w-full sm:max-w-xs">
-                  <Search className="absolute start-2.5 top-2.5 size-4 text-muted-foreground" />
-                  <Input
-                    placeholder={t('admin.org.search', 'Search name or slug...')}
-                    value={list.q}
-                    onChange={(e) => list.setSearch(e.target.value)}
-                    className="ps-8"
-                    aria-label={t('admin.org.searchLabel', 'Search organizations')}
-                  />
-                </div>
+              <>
                 <Select
                   value={owner || ANY}
                   onValueChange={(v) => list.setFilter('owner', v === ANY ? '' : v)}
@@ -196,7 +190,7 @@ export default function AdminOrganizationsPage() {
                     </SelectItem>
                   </SelectContent>
                 </Select>
-              </div>
+              </>
             }
           />
         )}
