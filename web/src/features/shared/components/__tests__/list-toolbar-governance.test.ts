@@ -237,6 +237,16 @@ describe('one list toolbar', () => {
     expect(offenders).toEqual([])
   })
 
+  it('opens every Add filter through ResponsivePopover (a bottom sheet on a phone)', () => {
+    const offenders = files
+      .filter((f) => {
+        const src = readFileSync(f, 'utf8')
+        return /\.filters?\.add'/.test(src) && /<PopoverContent[\s>]/.test(src)
+      })
+      .map(rel)
+    expect(offenders).toEqual([])
+  })
+
   it('finds the files it checks', () => {
     const lists = files.filter((f) => /<DataTable[\s>]/.test(readFileSync(f, 'utf8')))
     expect(lists.length).toBeGreaterThan(80)
