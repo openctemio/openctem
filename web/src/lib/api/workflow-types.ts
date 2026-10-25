@@ -21,121 +21,40 @@ export const WORKFLOW_NODE_TYPE_LABELS: Record<WorkflowNodeType, string> = {
 }
 
 // ============================================
-// TRIGGER TYPES
+// STEP TYPES (from the catalog)
 // ============================================
 
 /**
- * Trigger types a picker may offer: the ones the platform actually fires.
- *
- * `schedule`, `finding_age`, `finding_updated` and `webhook` are NOT here:
- * nothing fires them (no scheduler, age sweep, finding update hook or inbound
- * webhook route), so the API
- * refuses to create, edit or activate a workflow that uses them (400). They
- * stay in {@link WORKFLOW_UNSUPPORTED_TRIGGER_TYPES} so stored workflows still
- * render, flagged.
+ * Trigger, action and notification types are plain strings: the builder
+ * offers only what GET /workflows/catalog returns, and a stored node of a
+ * type the catalog no longer lists renders as a removed type. The web keeps
+ * no list of its own.
  */
-export const WORKFLOW_TRIGGER_TYPES = [
-  'manual',
-  'finding_created',
-  'asset_discovered',
-  'scan_completed',
-  'finding_status_changed',
-] as const
+export type WorkflowTriggerType = string
+export type WorkflowActionType = string
+export type WorkflowNotificationType = string
 
-/** Stored-only trigger types: readable, never offered, refused by the API. */
-export const WORKFLOW_UNSUPPORTED_TRIGGER_TYPES = [
-  'schedule',
-  'finding_age',
-  'finding_updated',
-  'webhook',
-] as const
+/** How risky a step (or the whole rule) is; it decides what going live needs. */
+export type AutomationRiskClass = 'low' | 'elevated' | 'high'
 
-export type WorkflowTriggerType =
-  (typeof WORKFLOW_TRIGGER_TYPES)[number] | (typeof WORKFLOW_UNSUPPORTED_TRIGGER_TYPES)[number]
-
-export const WORKFLOW_TRIGGER_LABELS: Record<WorkflowTriggerType, string> = {
-  manual: 'Manual',
-  schedule: 'Scheduled',
-  finding_created: 'Finding Created',
-  finding_updated: 'Finding Updated',
-  finding_age: 'Finding Age',
-  asset_discovered: 'Asset Discovered',
-  scan_completed: 'Scan Completed',
-  webhook: 'Webhook',
-  finding_status_changed: 'Finding Status Changed',
+/** One type the builder may offer (GET /workflows/catalog). */
+export interface WorkflowCatalogEntry {
+  type: string
+  /** The permission the automation owner needs for this step; triggers carry none. */
+  permission?: string
+  /** Whether the caller holds that permission. */
+  allowed: boolean
+  risk_class?: AutomationRiskClass
 }
 
-// ============================================
-// ACTION TYPES
-// ============================================
-
-/**
- * Action types a picker may offer: the ones the platform actually executes.
- *
- * `assign_team` and `update_priority` are NOT here: they have no backing
- * service and fail every run, `run_script` is disabled (no sandbox), and
- * `trigger_pipeline` is refused by design (it ran a scan workflow outside any
- * scan; an automation runs a saved scan through `trigger_scan`), so the API
- * refuses them (400). They stay in
- * {@link WORKFLOW_UNSUPPORTED_ACTION_TYPES} so stored workflows still render.
- */
-export const WORKFLOW_ACTION_TYPES = [
-  'assign_user',
-  'update_status',
-  'add_tags',
-  'remove_tags',
-  'create_ticket',
-  'update_ticket',
-  'trigger_scan',
-  'http_request',
-] as const
-
-/** Stored-only action types: readable, never offered, refused by the API. */
-export const WORKFLOW_UNSUPPORTED_ACTION_TYPES = [
-  'assign_team',
-  'update_priority',
-  'run_script',
-  'trigger_pipeline',
-] as const
-
-export type WorkflowActionType =
-  (typeof WORKFLOW_ACTION_TYPES)[number] | (typeof WORKFLOW_UNSUPPORTED_ACTION_TYPES)[number]
-
-export const WORKFLOW_ACTION_LABELS: Record<WorkflowActionType, string> = {
-  assign_user: 'Assign User',
-  assign_team: 'Assign Team',
-  update_priority: 'Update Priority',
-  update_status: 'Update Status',
-  add_tags: 'Add Tags',
-  remove_tags: 'Remove Tags',
-  create_ticket: 'Create Ticket',
-  update_ticket: 'Update Ticket',
-  trigger_pipeline: 'Trigger Pipeline',
-  trigger_scan: 'Trigger Scan',
-  http_request: 'HTTP Request',
-  run_script: 'Run Script',
+export interface WorkflowCatalog {
+  triggers: WorkflowCatalogEntry[]
+  actions: WorkflowCatalogEntry[]
+  notifications: WorkflowCatalogEntry[]
 }
 
-// ============================================
-// NOTIFICATION TYPES
-// ============================================
-
-export const WORKFLOW_NOTIFICATION_TYPES = [
-  'slack',
-  'email',
-  'teams',
-  'webhook',
-  'pagerduty',
-] as const
-export type WorkflowNotificationType = (typeof WORKFLOW_NOTIFICATION_TYPES)[number]
-
-export const WORKFLOW_NOTIFICATION_LABELS: Record<WorkflowNotificationType, string> = {
-  slack: 'Slack',
-  email: 'Email',
-  teams: 'Microsoft Teams',
-  webhook: 'Webhook',
-  pagerduty: 'PagerDuty',
-}
+/** Status targets an update_status action may set; closing goes through a request. */
+export const AUTOMATION_STATUS_TARGETS = ['confirmed', 'in_progress'] as const
 
 // ============================================
 // RUN STATUS TYPES
@@ -146,17 +65,13 @@ export const WORKFLOW_RUN_STATUSES = [
   'running',
   'completed',
   'failed',
-  'cancelled',
+  'canceled',
+  'paused',
 ] as const
 export type WorkflowRunStatus = (typeof WORKFLOW_RUN_STATUSES)[number]
 
-export const WORKFLOW_RUN_STATUS_LABELS: Record<WorkflowRunStatus, string> = {
-  pending: 'Pending',
-  running: 'Running',
-  completed: 'Completed',
-  failed: 'Failed',
-  cancelled: 'Cancelled',
-}
+/** Simulate records what a rule would do; live does it. */
+export type AutomationMode = 'simulate' | 'live'
 
 // ============================================
 // NODE RUN STATUS TYPES
@@ -192,19 +107,6 @@ export interface FindingCreatedTriggerConfig {
 }
 
 /**
- * Configuration for finding_updated trigger.
- * Filters which finding updates should trigger this workflow.
- */
-export interface FindingUpdatedTriggerConfig {
-  /** Filter by status changes */
-  status_filter?: string[]
-  /** Filter by which fields changed */
-  field_filter?: string[]
-  /** Filter by finding source codes */
-  source_filter?: string[]
-}
-
-/**
  * Configuration for asset_discovered trigger.
  */
 export interface AssetDiscoveredTriggerConfig {
@@ -223,16 +125,6 @@ export interface ScanCompletedTriggerConfig {
   status_filter?: Array<'completed' | 'partial' | 'failed' | 'timeout' | 'canceled'>
 }
 
-/**
- * Configuration for webhook trigger.
- */
-export interface WebhookTriggerConfig {
-  /** Webhook secret for verification */
-  secret?: string
-  /** Custom webhook path */
-  path?: string
-}
-
 // ============================================
 // NODE CONFIG
 // ============================================
@@ -242,10 +134,8 @@ export interface WorkflowNodeConfig {
   trigger_type?: WorkflowTriggerType
   trigger_config?:
     | FindingCreatedTriggerConfig
-    | FindingUpdatedTriggerConfig
     | AssetDiscoveredTriggerConfig
     | ScanCompletedTriggerConfig
-    | WebhookTriggerConfig
     | Record<string, unknown>
 
   // Condition config
@@ -318,6 +208,71 @@ export interface Workflow {
    * graph is loaded; such a workflow cannot be activated or saved as is.
    */
   unsupported_features?: string[]
+  /** Simulate records what the rule would do; live does it. New rules start in simulate. */
+  mode?: AutomationMode
+  /** Why the platform switched the automation off. */
+  disabled_reason?: 'uses_removed_type' | null
+  /** Risk class of the current draft. */
+  risk_class?: AutomationRiskClass
+  /** The draft differs from the published version. */
+  draft_changed?: boolean
+  published_version?: WorkflowPublishedVersion | null
+  /** A high-risk version waiting for a second publisher. */
+  pending_version?: WorkflowPendingVersion | null
+  /** A run pauses after this many changes; above the default the rule is high risk. */
+  max_changes_per_run?: number
+}
+
+export interface WorkflowPublishedVersion {
+  id: string
+  version: number
+  digest: string
+  risk_class: AutomationRiskClass
+  published_by?: string | null
+  /** Display name of the publisher, when the API sends it. */
+  published_by_name?: string
+  published_at: string
+  approved_by?: string | null
+  approved_by_name?: string | null
+  approved_at?: string | null
+}
+
+export interface WorkflowPendingVersion {
+  id: string
+  version: number
+  digest: string
+  risk_class: AutomationRiskClass
+  published_by?: string | null
+  published_by_name?: string
+  created_at: string
+}
+
+export type WorkflowVersionStatus = 'published' | 'pending_approval' | 'superseded' | 'retired'
+
+export interface WorkflowVersion {
+  id: string
+  version: number
+  digest: string
+  risk_class: AutomationRiskClass
+  status: WorkflowVersionStatus
+  published_by?: string | null
+  published_by_name?: string | null
+  published_at?: string | null
+  approved_by?: string | null
+  approved_by_name?: string | null
+  approved_at?: string | null
+  step_up_at?: string | null
+  created_at: string
+}
+
+export interface WorkflowVersionListResponse {
+  items: WorkflowVersion[]
+}
+
+/** POST /workflows/{id}/publish answers 202 with this for a high-risk rule. */
+export interface WorkflowPendingApprovalResponse {
+  status: 'pending_approval'
+  version: WorkflowVersion
 }
 
 // ============================================
@@ -337,6 +292,10 @@ export interface NodeRun {
   completed_at?: string
   error_message?: string
   error_code?: string
+  in_count?: number
+  out_count?: number
+  /** Subjects the step left alone, by reason ("refused:status_not_allowed": 1). */
+  skipped?: Record<string, number>
 }
 
 // ============================================
@@ -359,6 +318,84 @@ export interface WorkflowRun {
   error_message?: string
   node_runs?: NodeRun[]
   created_at: string
+  mode?: AutomationMode
+  version_id?: string | null
+  /** Why a paused run stopped: the change cap was reached. */
+  pause_reason?: 'blast_radius' | null
+  /** When the run and its trace are deleted. */
+  retained_until?: string
+  deliveries?: WorkflowDelivery[]
+}
+
+// ============================================
+// DELIVERIES, TRACE, PREVIEW, VALIDATE
+// ============================================
+
+export interface WorkflowDelivery {
+  id: string
+  node_key: string
+  channel: string
+  target: string
+  mode: AutomationMode
+  status: 'simulated' | 'sent' | 'failed' | 'held'
+  attempts: number
+  payload?: { title?: string; severity?: string; subject_id?: string } & Record<string, unknown>
+  external_ref?: string | null
+  created_at: string
+}
+
+/** Counts of one step over a preview or recorded runs. */
+export interface WorkflowStepTrace {
+  node_key: string
+  in: number
+  out: number
+  skipped?: Record<string, number>
+}
+
+/** GET /workflows/{id}/trace */
+export interface WorkflowTraceResponse {
+  mode: AutomationMode
+  days: number
+  runs: number
+  steps: WorkflowStepTrace[]
+  deliveries_by_channel?: Record<string, number>
+}
+
+export const WORKFLOW_PREVIEW_LIMITS = [20, 50, 100] as const
+
+export interface WorkflowPreviewRequest {
+  limit: number
+  nodes?: CreateNodeRequest[]
+  edges?: CreateEdgeRequest[]
+}
+
+/** One message a preview would send (never sent). */
+export interface WorkflowPreviewDelivery {
+  node_key: string
+  subject_id?: string
+  channel: string
+  target: string
+  payload?: { title?: string; severity?: string; subject_id?: string } & Record<string, unknown>
+}
+
+/** POST /workflows/{id}/preview: the trace shape, nothing stored. */
+export interface WorkflowPreviewResponse {
+  subjects: number
+  sample_ids?: string[]
+  steps: WorkflowStepTrace[]
+  /** Would-sends: a preview never sends anything. */
+  deliveries?: WorkflowPreviewDelivery[]
+}
+
+export interface WorkflowValidationIssue {
+  code: string
+  node_key?: string
+  message: string
+}
+
+export interface WorkflowValidateResponse {
+  problems: WorkflowValidationIssue[]
+  warnings: WorkflowValidationIssue[]
 }
 
 // ============================================
@@ -436,6 +473,7 @@ export interface WorkflowListFilters {
 export interface WorkflowRunListFilters {
   workflow_id?: string
   status?: WorkflowRunStatus
+  mode?: AutomationMode
   page?: number
   per_page?: number
 }
@@ -472,46 +510,4 @@ export interface WorkflowStats {
   failed_runs: number
   pending_runs: number
   running_runs: number
-}
-
-// ============================================
-// UNSUPPORTED FEATURES
-// ============================================
-
-const UNSUPPORTED_TRIGGERS: ReadonlySet<string> = new Set(WORKFLOW_UNSUPPORTED_TRIGGER_TYPES)
-const UNSUPPORTED_ACTIONS: ReadonlySet<string> = new Set(WORKFLOW_UNSUPPORTED_ACTION_TYPES)
-
-/**
- * The unsupported trigger/action types a workflow uses ("trigger:schedule",
- * "action:assign_team"). Prefers the API's `unsupported_features`; falls back
- * to reading the loaded nodes, so a row without the field still flags.
- */
-export function getUnsupportedWorkflowFeatures(
-  workflow: Pick<Workflow, 'unsupported_features' | 'nodes'>
-): string[] {
-  if (workflow.unsupported_features && workflow.unsupported_features.length > 0) {
-    return workflow.unsupported_features
-  }
-  const found: string[] = []
-  for (const node of workflow.nodes ?? []) {
-    const trigger = node.config?.trigger_type
-    const action = node.config?.action_type
-    let feature = ''
-    if (trigger && UNSUPPORTED_TRIGGERS.has(trigger)) feature = `trigger:${trigger}`
-    else if (action && UNSUPPORTED_ACTIONS.has(action)) feature = `action:${action}`
-    if (feature && !found.includes(feature)) found.push(feature)
-  }
-  return found
-}
-
-/** "action:assign_team" -> "Assign Team action". Unknown values pass through. */
-export function formatUnsupportedWorkflowFeature(feature: string): string {
-  const [kind, type = ''] = feature.split(':', 2)
-  if (kind === 'trigger' && type in WORKFLOW_TRIGGER_LABELS) {
-    return `${WORKFLOW_TRIGGER_LABELS[type as WorkflowTriggerType]} trigger`
-  }
-  if (kind === 'action' && type in WORKFLOW_ACTION_LABELS) {
-    return `${WORKFLOW_ACTION_LABELS[type as WorkflowActionType]} action`
-  }
-  return feature
 }

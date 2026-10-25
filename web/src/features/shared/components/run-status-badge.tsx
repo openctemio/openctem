@@ -24,6 +24,8 @@ const RUN_STATE: Record<string, { state: HealthState; label: string }> = {
   failed: { state: 'down', label: 'Failed' },
   timeout: { state: 'warn', label: 'Timed out' },
   canceled: { state: 'off', label: 'Canceled' },
+  // Stopped part way and waiting for a person (an automation run at its change cap).
+  paused: { state: 'warn', label: 'Paused' },
   // The trigger was refused before anything was dispatched (scope gate,
   // freeze window, no sensor, wildcard target...). Nothing ran.
   blocked: { state: 'paused', label: 'Blocked' },
