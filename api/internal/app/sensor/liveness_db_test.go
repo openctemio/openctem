@@ -230,8 +230,10 @@ func TestLiveness_CheckpointBatch_DB(t *testing.T) {
 	slots := &sensordom.LoadReport{Capacity: &sensordom.ReportedCapacity{SlotsTotal: 4, SlotsFree: 1}}
 	rows := []sensordom.LivenessCheckpoint{
 		{TenantID: &tid, SensorID: a, SeenAt: seen, DueAt: seen.Add(30 * time.Second), Interval: 30 * time.Second,
-			Load: sensordom.LivenessLoad{CPUPercent: 42, Load: slots}},
-		{TenantID: &other, SensorID: b, SeenAt: seen, DueAt: seen, Interval: time.Minute},     // wrong tenant
+			Load: sensordom.LivenessLoad{CPUPercent: 42, Load: slots,
+				LocalStore: &sensordom.LocalStoreReport{Level: sensordom.LocalStoreLevelOK, TotalBytes: 4096}}},
+		{TenantID: &other, SensorID: b, SeenAt: seen, DueAt: seen, Interval: time.Minute,
+			Load: sensordom.LivenessLoad{LocalStore: &sensordom.LocalStoreReport{StopClaiming: true}}}, // wrong tenant
 		{TenantID: &tid, SensorID: revoked, SeenAt: seen, DueAt: seen, Interval: time.Minute}, // revoked
 	}
 	// Padding far past 65,535 bind parameters if each value were one.
@@ -254,6 +256,22 @@ func TestLiveness_CheckpointBatch_DB(t *testing.T) {
 	}
 	if cpu != 42 || !due.Valid || !due.Time.Equal(seen.Add(30*time.Second)) || !capa.Valid {
 		t.Fatalf("checkpoint row: cpu %v due %v capacity %v", cpu, due, capa)
+	}
+	// The local store report goes with the checkpoint, stamped with its time;
+	// the other tenant's row got nothing.
+	var storeBytes sql.NullInt64
+	var storeAt sql.NullTime
+	if err := h.db.QueryRowContext(ctx, `SELECT (reported_local_store->>'total_bytes')::bigint, local_store_reported_at
+		FROM sensors WHERE id = $1`, a.String()).Scan(&storeBytes, &storeAt); err != nil {
+		t.Fatal(err)
+	}
+	if storeBytes.Int64 != 4096 || !storeAt.Valid || !storeAt.Time.Equal(seen) {
+		t.Fatalf("checkpoint local store: %v at %v", storeBytes, storeAt)
+	}
+	var foreign sql.NullString
+	if err := h.db.QueryRowContext(ctx, `SELECT reported_local_store::text FROM sensors WHERE id = $1`, b.String()).
+		Scan(&foreign); err != nil || foreign.Valid {
+		t.Fatalf("a checkpoint naming another tenant wrote the local store: %v %v", foreign, err)
 	}
 	// An older checkpoint (another replica flushing late) changes nothing.
 	older := rows[0]
