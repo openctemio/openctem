@@ -322,7 +322,7 @@ summary carries the results table.
 | `GET /api/v1/findings/imports/{id}/result` | `findings:read` | state of a committed upload (`queued`, `processing`, `applied`, `failed` + `error_code`), its per-file results and its receipt; `wait` ≤ 10 s; visible as the receipt |
 | `POST /api/v1/ci/runs/{id}/results` | CI run token | `202` + `upload_id` + `Location` (§6a); the same body to the run again is the same upload |
 | `GET /api/v1/ci/runs/{id}/results/{report_id}` | CI run token | state of the run's upload and, once applied, its counts and decided results; `wait` ≤ 10 s; another run's upload is 404 |
-| `GET /api/v1/findings/imports` | `findings:read` | list of receipts (§4); filters `source_kind`, `source_ref`; `page`, `per_page` ≤ 100; unknown parameter → 400 |
+| `GET /api/v1/findings/imports` | `findings:read` | list of receipts (§4) and the totals of the filter; filters `source_kind`, `source_ref`, `origin`, `tool`, `since`; `page`, `per_page` ≤ 100; unknown or malformed parameter → 400 |
 | `GET /api/v1/findings/imports/{id}` | `findings:read` | one receipt, counts by severity of the visible actions |
 | `GET /api/v1/findings/imports/{id}/actions` | `findings:read` | the per-finding actions the caller may see, with the deciding policy; filter `action` (`created`, `still_detected`, `reopened`, `closed`, `suppressed`, `held`) |
 | `GET /api/v1/findings/imports/{id}/items` | `findings:read` | the items that did not become findings (§6d); filter `disposition` |
