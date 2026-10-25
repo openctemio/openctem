@@ -102,7 +102,9 @@ Rows are written by:
 The **finding-priority** worker (`internal/app/reclassify`, every 10 s) claims
 up to 200 assets per pass, at most 50 of one tenant, so one tenant's large
 backlog cannot starve the others. For each asset it lists the **open**
-findings only, re-reads EPSS and KEV from the trusted catalogs, classifies
+findings only, re-reads EPSS and KEV from the trusted catalogs (the KEV flag
+follows the catalog both ways: a CVE that left it, or a finding whose CVE
+changed, loses the flag; a failed lookup keeps the stored flag), classifies
 them, recomputes the SLA deadline, writes the findings that changed and stamps
 every computed finding with the version. A failed tenant pass is queued again.
 
