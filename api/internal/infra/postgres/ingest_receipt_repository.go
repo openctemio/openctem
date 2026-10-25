@@ -34,7 +34,7 @@ var _ ingestreceipt.Repository = (*IngestReceiptRepository)(nil)
 const maxToolName = 100
 
 // unknownTool is the fact key of an ingest that named no tool.
-const unknownTool = "unknown"
+const unknownTool = ingestreceipt.UnknownTool
 
 // Record applies a delta in one transaction: the receipt (created on first
 // use, its row locked by the upsert so concurrent batches of one run

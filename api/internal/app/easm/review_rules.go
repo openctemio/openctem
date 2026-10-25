@@ -223,13 +223,16 @@ func ipPattern(a netip.Addr) string {
 	return p.String()
 }
 
+// MaxRuleSuggestions bounds the suggested rules of one answer.
+const MaxRuleSuggestions = 50
+
 // Suggest groups the caller's pending items into candidate rules.
 func (s *RuleService) Suggest(ctx context.Context, tenantID shared.ID, states []attribution.State, limit int) (*RuleSuggestions, error) {
 	if err := s.ready(); err != nil {
 		return nil, err
 	}
-	if limit <= 0 || limit > 50 {
-		limit = 50
+	if limit <= 0 || limit > MaxRuleSuggestions {
+		limit = MaxRuleSuggestions
 	}
 	items, err := s.pending(ctx, tenantID, states)
 	if err != nil {
