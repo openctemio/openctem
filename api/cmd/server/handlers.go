@@ -374,6 +374,9 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 	}
 	vulnHandler.SetComponentService(svc.Component)
 	vulnHandler.SetSavedViews(svc.SavedView)
+	if svc.SLA != nil && repos.FindingSLARestart != nil {
+		vulnHandler.SetSLABasis(svc.SLA, repos.FindingSLARestart)
+	}
 	if svc.BulkGuard != nil {
 		vulnHandler.SetBulkGuard(svc.BulkGuard)
 	}

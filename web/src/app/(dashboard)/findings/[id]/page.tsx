@@ -62,6 +62,7 @@ import {
   VerificationPanel,
 } from '@/features/findings/components/detail'
 import { FromTaskCrumb } from '@/features/remediation-hub/components/from-task-crumb'
+import { FindingListCrumb } from '@/features/findings/components/detail/finding-list-crumb'
 import { FindingTaskBand } from '@/features/remediation-hub/components/finding-task-band'
 import { isLoadFailure } from '@/features/findings/components/detail/section-load-error'
 import { PentestDetailsTab } from '@/features/findings/components/detail/pentest-details-tab'
@@ -246,6 +247,7 @@ export default function FindingDetailPage() {
   return (
     <Main>
       <FromTaskCrumb />
+      <FindingListCrumb findingId={finding.id} />
       <div className="grid gap-x-8 gap-y-5 lg:grid-cols-[minmax(0,1fr)_19rem] lg:grid-rows-[auto_auto_auto_1fr]">
         <div className="min-w-0 lg:col-start-1">
           <FindingHeader
