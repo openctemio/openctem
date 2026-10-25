@@ -12,7 +12,9 @@ const HINTS: Record<string, string> = {
   ZONE_IN_USE:
     'Scans or jobs still use this zone. Wait for its queued and running jobs to finish, or move the scans to another zone, then delete it.',
   NO_ZONE_COVERAGE:
-    'No target can be scanned: each is outside every scan zone or in a zone without sensors. Add the ranges to a zone, or assign a sensor.',
+    'No target can be scanned. The message above names each reason and its targets: add private ranges to a scan zone, assign a sensor to the zone, or fix the DNS record of a name that does not resolve.',
+  NO_RESOLVING_TARGETS:
+    'No target name resolves in DNS. Fix the DNS records, or scan the addresses instead.',
   ZONE_SPLIT_REQUIRED:
     'A workflow runs in one zone. Split the targets into one scan per zone, or pick a zone.',
   TOO_MANY_JOBS: 'The scan would create more than 1000 jobs. Raise targets per job or split it.',

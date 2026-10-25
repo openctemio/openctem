@@ -704,6 +704,7 @@ func Register(
 	registerCycleSettingsRoutes(router, h.Tenant, authMiddleware, userSync)
 	registerSharedSensorsSettingsRoutes(router, h.Tenant, authMiddleware, userSync)
 	registerFindingCorrelationSettingsRoutes(router, h.Tenant, authMiddleware, userSync)
+	registerFindingViewSettingsRoutes(router, h.Tenant, authMiddleware, userSync)
 	registerOrganizationMemberRoutes(router, h.LocalAuth, h.Tenant, authMiddleware, userSync)
 	registerOrganizationTrustRoutes(router, h.OrgTrust, authMiddleware, userSync)
 	registerOrganizationSupportAccessRoutes(router, h.SupportAccess, authMiddleware, userSync)

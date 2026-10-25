@@ -1302,6 +1302,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	s.Vulnerability.SetAssigneeProfileReader(repos.AccessControl) // list rows carry the assignee name
 	s.Vulnerability.SetAssigneeChecker(repos.AccessControl)       // an assignee must be an active member of the tenant (21b C2)
 	s.Vulnerability.SetDataScope(s.DataScope)
+	s.Vulnerability.SetFindingViewSettings(s.Tenant)       // the organization's work-view defaults
 	s.Vulnerability.SetMemberSearcher(repos.Tenant)        // the assignee picker lists only members who can read the finding
 	s.Vulnerability.SetKEVChecker(repos.ThreatIntel.KEV()) // governed classification: does the new CVE keep KEV standing
 	s.Vulnerability.SetAssetRefChecker(s.DataScope)        // POST /findings asset_id: tenant + caller scope

@@ -2481,6 +2481,70 @@ func (h *TenantHandler) UpdateFindingCorrelationSettings(w http.ResponseWriter, 
 	_ = json.NewEncoder(w).Encode(fc)
 }
 
+// FindingViewSettingsRequest changes the findings work-view defaults;
+// absent = unchanged.
+type FindingViewSettingsRequest struct {
+	IncludeInformational *bool `json:"include_informational"`
+}
+
+// GetFindingViewSettings handles GET /api/v1/organization/settings/finding-views
+//
+//	@Summary	Findings work-view defaults
+//	@Tags		Tenants
+//	@Produce	json
+//	@Security	BearerAuth
+//	@Success	200	{object}	tenant.FindingViewSettings
+//	@Router		/organization/settings/finding-views [get]
+func (h *TenantHandler) GetFindingViewSettings(w http.ResponseWriter, r *http.Request) {
+	tenantID, err := shared.IDFromString(middleware.GetTenantID(r.Context()))
+	if err != nil || tenantID.IsZero() {
+		apierror.BadRequest("Tenant context required").WriteJSON(w)
+		return
+	}
+	fv, err := h.service.GetFindingViewSettings(r.Context(), tenantID.String())
+	if err != nil {
+		h.handleServiceError(w, err)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(fv)
+}
+
+// UpdateFindingViewSettings handles PATCH /api/v1/organization/settings/finding-views
+//
+//	@Summary		Change the findings work-view defaults
+//	@Description	Whether the work views (Active, My queue, SLA breached) show informational findings for members who have not chosen for themselves. Needs triage leaves them out either way. Audited.
+//	@Tags			Tenants
+//	@Accept			json
+//	@Produce		json
+//	@Security		BearerAuth
+//	@Param			request	body		FindingViewSettingsRequest	true	"Defaults"
+//	@Success		200		{object}	tenant.FindingViewSettings
+//	@Router			/organization/settings/finding-views [patch]
+func (h *TenantHandler) UpdateFindingViewSettings(w http.ResponseWriter, r *http.Request) {
+	tenantID, err := shared.IDFromString(middleware.GetTenantID(r.Context()))
+	if err != nil || tenantID.IsZero() {
+		apierror.BadRequest("Tenant context required").WriteJSON(w)
+		return
+	}
+	var req FindingViewSettingsRequest
+	dec := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4<<10))
+	dec.DisallowUnknownFields()
+	if err := dec.Decode(&req); err != nil {
+		apierror.BadRequest("Invalid request body").WriteJSON(w)
+		return
+	}
+	fv, err := h.service.UpdateFindingViewSettings(settingsWriteCtx(r), tenantID.String(),
+		tenantapp.UpdateFindingViewSettingsInput{IncludeInformational: req.IncludeInformational},
+		h.buildAuditContext(r))
+	if err != nil {
+		h.handleServiceError(w, err)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(fv)
+}
+
 // GetPentestSettings handles GET /api/v1/tenants/{tenant}/settings/pentest
 func (h *TenantHandler) GetPentestSettings(w http.ResponseWriter, r *http.Request) {
 	tenantID := middleware.GetTeamID(r.Context())
