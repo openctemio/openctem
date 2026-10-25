@@ -3,6 +3,7 @@ package coverage
 import (
 	"encoding/json"
 	"testing"
+	"time"
 )
 
 // The sensor's per-target outcomes are read against each task's own
@@ -60,6 +61,21 @@ func TestVerdicts_UnreachedTargetIsNotCovered(t *testing.T) {
 		}
 		if v["b"].Kind != VerdictFailed || v["b"].Outcome != "unreachable" {
 			t.Errorf("%s: b = %+v, want failed unreachable", name, v["b"])
+		}
+	}
+}
+
+func TestTargetSide(t *testing.T) {
+	for o, want := range map[string]bool{"unreachable": true, "timeout": true, "tool_error": false, "egress_refused": false,
+		"failed": false, "unfinished": false, "not_dispatched": false, "stalled": false} {
+		if IsTargetSide(o) != want {
+			t.Errorf("IsTargetSide(%q) = %v", o, !want)
+		}
+	}
+	day := 24 * time.Hour
+	for n, want := range map[int]time.Duration{0: day, 1: day, 2: 3 * day, 3: 7 * day, 4: 7 * day, 50: 7 * day} {
+		if got := TargetSideRecheck(n); got != want {
+			t.Errorf("TargetSideRecheck(%d) = %v, want %v", n, got, want)
 		}
 	}
 }

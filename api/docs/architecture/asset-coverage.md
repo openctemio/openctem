@@ -7,7 +7,7 @@ uncovered is visible. Three parts:
 
 | Part | Where |
 |---|---|
-| **Policy**: per type, the capabilities it needs, how often, the facts that must hold (`resolves`, `web_port`, `scope_entry`) and the type a run must produce | `configs/asset-types.yaml` (`coverage:`), read with `coverage.Rules()` / `coverage.RulesFor()` |
+| **Policy**: per type, the capabilities it needs, how often, the facts that must hold (`resolves`, `web_port`, `web_port_or_unscanned`, `scope_entry`) and the type a run must produce | `configs/asset-types.yaml` (`coverage:`), read with `coverage.Rules()` / `coverage.RulesFor()` |
 | **Ledger**: one row per asset, capability and vantage: state, reason, last attempt and success, outcome, next due | table `asset_coverage`, `internal/infra/postgres/asset_coverage_repository.go` |
 | **Loop**: the `asset-coverage` controller (one replica, every `ASSET_COVERAGE_INTERVAL`) | `internal/app/coverage` |
 
@@ -54,7 +54,14 @@ Each pass, per tenant, after reconciling:
    (including a connector's) fail as `unfinished`; a target no task carried
    fails as `not_dispatched` with the run's error. Failed pairs are due
    again after 1 h doubled per failure (at most the cadence, at most a day);
-   a run not finished after a day fails its pairs as `stalled`.
+   a run not finished after a day fails its pairs as `stalled`. A
+   **target-side** outcome (`unreachable`, `timeout`: the target did not
+   answer, not a sensor, tool or platform failure) is an observation, not a
+   failure: the pair is `paused` with the outcome as its reason and
+   rechecked after 1 day, then 3 days, then 7 days and weekly from then on
+   (consecutive target-side observations; jittered). The recheck runs the
+   capability again; any success makes the pair covered and clears the
+   streak. A paused target-side pair never counts as "keeps failing".
 2. **Plan**, when the organization has automatic coverage on (Scoping >
    Settings, `auto_coverage`; default on, except while the scan approval
    mode in force is Strict, until the organization turns it on): for
@@ -111,6 +118,15 @@ same in Go and SQL), so pairs settled together drift apart and a restart
 does not re-align them. A new pair, or one whose precondition holds again,
 is due at once. A blocked or paused pair whose precondition stops holding
 becomes `not_applicable` like any other.
+
+**HTTP probe on names.** A subdomain is probed only when it resolves and
+is worth a probe (`web_port_or_unscanned`): an address it resolves to has
+an active open port in the web port set, a web origin of the name
+(`https://<name>` or `http://<name>`) was seen, or its ports are still
+unknown (no port scan of the name or its addresses has succeeded and none
+of its addresses has an open port on record). A name whose port scan found
+no web port is `not_applicable` until one appears; reconcile then makes it
+due again.
 
 An open port is addressed as `host:port`; names and origins by name.
 With the loop on, automatic enrichment of new assets is off: the loop

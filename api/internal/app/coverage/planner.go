@@ -132,7 +132,7 @@ func (s *Service) settleRun(ctx context.Context, tenantID shared.ID, rs covdom.R
 		verdicts = covdom.Verdicts(tasks, rs.Unfinished)
 	}
 	var covered []shared.ID
-	var failed []covdom.FailedPair
+	var failed, targetSide []covdom.FailedPair
 	blocked := map[shared.ID]string{}
 	for _, d := range queued {
 		v, ok := verdicts[covdom.TargetKey(d.Target())]
@@ -155,7 +155,14 @@ func (s *Service) settleRun(ctx context.Context, tenantID shared.ID, rs covdom.R
 			if msg == "" {
 				msg = rs.Error
 			}
-			failed = append(failed, covdom.FailedPair{AssetID: d.AssetID, Outcome: v.Outcome, Error: msg})
+			fp := covdom.FailedPair{AssetID: d.AssetID, Outcome: v.Outcome, Error: msg}
+			if covdom.IsTargetSide(v.Outcome) {
+				// The target did not answer: an observation, rechecked on a
+				// widening schedule, not a failure retried every few hours.
+				targetSide = append(targetSide, fp)
+				continue
+			}
+			failed = append(failed, fp)
 		}
 	}
 	n, err := s.planner.SettleCovered(ctx, tenantID, rs.RunID, rs.Capability, covered, rule.Every, rule.Expects == "http_service")
@@ -163,6 +170,11 @@ func (s *Service) settleRun(ctx context.Context, tenantID shared.ID, rs covdom.R
 		return n, err
 	}
 	k, err := s.planner.SettleFailed(ctx, tenantID, rs.RunID, rs.Capability, failed, rule.Every)
+	n += k
+	if err != nil {
+		return n, err
+	}
+	k, err = s.planner.SettleTargetSide(ctx, tenantID, rs.RunID, rs.Capability, targetSide)
 	n += k
 	if err != nil {
 		return n, err
