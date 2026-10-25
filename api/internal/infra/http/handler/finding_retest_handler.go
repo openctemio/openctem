@@ -60,7 +60,9 @@ type FindingRetestResponse struct {
 	Status       string `json:"status"`
 	// Outcome: confirmed_fixed (the endpoint answered and the check did not
 	// match), not_reproduced (no match, endpoint not proven checked),
-	// still_vulnerable, inconclusive (reason_code says why).
+	// still_vulnerable, still_exposed_elsewhere (the finding's own endpoint did
+	// not match but another path did; the reason names it), inconclusive
+	// (reason_code says why).
 	Outcome      string `json:"outcome,omitempty"`
 	ReasonCode   string `json:"reason_code,omitempty"`
 	Reason       string `json:"reason,omitempty"`
@@ -149,7 +151,7 @@ func manualRetestResponse(rt *pentest.Retest) FindingRetestResponse {
 
 // Request handles POST /api/v1/findings/{id}/retests.
 // @Summary      Retest a finding now
-// @Description  Re-runs the check that produced the finding against the origin of its matched-at URL (RFC-039, RFC-057). Applied asynchronously: confirmed_fixed (the re-run reached the finding's endpoint, got an answer that is not a block, an auth failure or a server error, and did not match) moves the finding to validated_fixed, or resolves it when the tenant enabled retest.auto_resolve; still_vulnerable keeps it (or reopens a resolved one); not_reproduced and inconclusive change nothing. The attempt's request and response are kept as finding evidence. Requires findings:verify; out-of-scope findings are 404.
+// @Description  Re-runs the check that produced the finding against the origin of its matched-at URL (RFC-039, RFC-057). Applied asynchronously: confirmed_fixed (the re-run reached the finding's endpoint, got an answer that is not a block, an auth failure or a server error, and did not match) moves the finding to validated_fixed, or resolves it when the tenant enabled retest.auto_resolve; still_vulnerable keeps it (or reopens a resolved one); not_reproduced, still_exposed_elsewhere and inconclusive change nothing. The attempt's request and response are kept as finding evidence. Requires findings:verify; out-of-scope findings are 404.
 // @Tags         Findings
 // @Produce      json
 // @Param        id   path      string  true  "Finding ID"

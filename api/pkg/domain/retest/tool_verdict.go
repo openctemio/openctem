@@ -40,6 +40,7 @@ type toolVerdict struct {
 	Code           string          `json:"code"`
 	Evidence       json.RawMessage `json:"evidence"`
 	TemplateDigest string          `json:"template_digest"`
+	Requests       json.RawMessage `json:"requests"`
 }
 
 type toolRetestResult struct {
@@ -99,11 +100,24 @@ func DecideToolVerdict(raw json.RawMessage, findingID, matchedAt string, cls ...
 		}
 		detail := evidence.RedactText(CleanDetail(v.Detail))
 		switch strings.ToLower(strings.TrimSpace(v.Verdict)) {
-		case VerdictStillPresent:
+		case VerdictStillPresent, VerdictFixed:
+			// Per-request results (a check that probes several paths) say
+			// what the finding's own endpoint did.
+			if rv, ok := DecideByRequests(DecodeRequests(v.Requests), matchedAt, firstClass(cls)); ok {
+				if strings.EqualFold(strings.TrimSpace(v.Verdict), VerdictStillPresent) && !rv.Outcome.matchedSomewhere() {
+					// A tool that says it saw the issue while no request
+					// line matched contradicts itself: never a fix.
+					rv = inconclusive(ReasonError, "the tool reported a match, but none of its requests matched")
+				}
+				out.Verdict = rv
+				break
+			}
+			if strings.EqualFold(strings.TrimSpace(v.Verdict), VerdictFixed) {
+				out.Verdict = decideNotMatched(AnalyzeAttempt(normalized(out.Evidence), matchedAt), matchedAt, true, "", firstClass(cls))
+				break
+			}
 			out.Verdict = Verdict{Outcome: OutcomeStillVulnerable, Code: ReasonMatched,
 				Reason: nonEmpty(detail, "the tool's check found the issue again")}
-		case VerdictFixed:
-			out.Verdict = decideNotMatched(AnalyzeAttempt(normalized(out.Evidence), matchedAt), matchedAt, true, "", firstClass(cls))
 		case VerdictUnverifiable:
 			// The tool could not run the check (template not available,
 			// tool error, target not connectable): a gap of the tool, not
