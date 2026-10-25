@@ -20,6 +20,8 @@
  * them.
  */
 
+import { CveLink } from '@/features/vulnerabilities/components/cve-link'
+import { isCveId } from '@/features/vulnerabilities/lib/vuln-page'
 import { FindingLastSeenIn } from '../receipt-summary'
 import { useCallback, useMemo, useState } from 'react'
 import Link from '@/components/link'
@@ -303,24 +305,6 @@ export function OverviewTab({ finding }: OverviewTabProps) {
   )
 }
 
-const CVE_RE = /^CVE-\d{4}-\d{4,}$/
-
-/** A CVE id as an NVD link, or as text when it is not a well-formed CVE id. */
-function CveLink({ id }: { id: string }) {
-  if (!CVE_RE.test(id)) return <Mono>{id}</Mono>
-  return (
-    <a
-      href={`https://nvd.nist.gov/vuln/detail/${encodeURIComponent(id)}`}
-      target="_blank"
-      rel="noopener noreferrer"
-      className="inline-flex items-center gap-1 font-mono text-[13px] text-primary hover:underline"
-    >
-      {id}
-      <ExternalLink className="h-3 w-3" aria-hidden />
-    </a>
-  )
-}
-
 function formatDay(iso: string, locale: string): string {
   return new Date(iso).toLocaleDateString(locale, {
     month: 'short',
@@ -374,7 +358,7 @@ function IdentifiersSection({ finding }: { finding: FindingDetail }) {
   const allCves = Array.from(
     new Set([...(finding.cve ? [finding.cve] : []), ...(sf?.cveIds ?? [])])
   )
-  const primaryCve = finding.cve && CVE_RE.test(finding.cve) ? finding.cve : null
+  const primaryCve = finding.cve && isCveId(finding.cve) ? finding.cve : null
   const { data: related } = useRelatedCVEs(primaryCve)
   const relatedCves = (related?.related_cves ?? []).filter((r) => !allCves.includes(r.cve_id))
   const v3 =

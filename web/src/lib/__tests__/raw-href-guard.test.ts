@@ -46,9 +46,15 @@ const SAFE_CALLS = new Set([
   // with the asset id and fixed statuses in the query.
   'assetFindingsHref',
   'campaignHref',
+  // features/vulnerabilities/lib/vuln-page.ts: `/findings?cve_id=…` with the
+  // filters as URLSearchParams values.
+  'cveFindingsHref',
   'findingsHrefForSources',
   'mitreTechniqueUrl',
   'registerHref',
+  // features/vulnerabilities/api/use-cve-exposure.ts: `/vulnerabilities/` with
+  // the id URI-encoded.
+  'vulnerabilityHref',
 ])
 
 /** Components that encode their own href. */
