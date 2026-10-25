@@ -165,7 +165,9 @@ describe('RunDispatchPanel', () => {
     expect(within(unresolved).getByText('gone.example.com')).toBeInTheDocument()
     expect(within(unresolved).getByText(/and 433 more not listed/)).toBeInTheDocument()
     const warnings = screen.getByTestId('run-warnings')
-    expect(within(warnings).queryByText(/gone\.example\.com/)).not.toBeInTheDocument()
+    expect(
+      within(warnings).queryByText((text) => text.includes('gone.example.com'))
+    ).not.toBeInTheDocument()
     expect(within(warnings).getByText('other note')).toBeInTheDocument()
     // No zone took a share: no zone table and no zone wording.
     expect(screen.queryByTestId('zone-share-table')).not.toBeInTheDocument()
