@@ -12,6 +12,7 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import { ArrowLeft, Plus, X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
+import { FilterChipsRow } from '@/features/shared/components/filter-chips-row'
 import {
   Command,
   CommandEmpty,
@@ -272,7 +273,7 @@ export function InventoryFilterChip({
 
 export function InventoryFilterBar({
   chips,
-  leading,
+  locked,
   groups,
   attributeFacets = [],
   tagTypes,
@@ -284,8 +285,8 @@ export function InventoryFilterBar({
   resultLabel,
 }: {
   chips: InventoryChip[]
-  /** Drawn first (the hiding chip). */
-  leading?: ReactNode
+  /** What the default list hides (a `LockedChip`), first in the row. */
+  locked?: ReactNode
   groups: FacetGroup[]
   attributeFacets?: AttributeFacet[]
   tagTypes?: string[]
@@ -298,34 +299,35 @@ export function InventoryFilterBar({
   const { t } = useTranslation()
   const fields = useFilterFields(groups, attributeFacets, tagTypes)
   return (
-    <div data-testid="inventory-filter-bar" className="flex min-w-0 flex-wrap items-center gap-2">
-      {leading}
-      {chips.map((c) => (
+    <FilterChipsRow
+      data-testid="inventory-filter-bar"
+      leading={locked}
+      chips={chips.map((c) => (
         <InventoryFilterChip key={c.key} chip={c} onRemove={() => onChange(c.clear(filters))} />
       ))}
-      <AddFilter
-        className="hidden lg:inline-flex"
-        fields={fields}
-        filters={filters}
-        stats={stats}
-        onChange={onChange}
-        onOpenChange={onPickerOpenChange}
-      />
-      {chips.length > 1 && (
-        <Button
-          variant="ghost"
-          size="sm"
-          className="h-7 px-2 text-xs text-muted-foreground"
-          onClick={onClearAll}
-        >
-          {t('assets.filters.clearAll', 'Clear filters')}
-        </Button>
-      )}
-      {resultLabel && (
-        <span className="ms-auto text-xs tabular-nums text-muted-foreground" role="status">
-          {resultLabel}
-        </span>
-      )}
-    </div>
+      trailing={
+        <>
+          <AddFilter
+            className="hidden lg:inline-flex"
+            fields={fields}
+            filters={filters}
+            stats={stats}
+            onChange={onChange}
+            onOpenChange={onPickerOpenChange}
+          />
+          {chips.length > 1 && (
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-7 px-2 text-xs text-muted-foreground"
+              onClick={onClearAll}
+            >
+              {t('assets.filters.clearAll', 'Clear filters')}
+            </Button>
+          )}
+        </>
+      }
+      end={resultLabel ? <span role="status">{resultLabel}</span> : undefined}
+    />
   )
 }

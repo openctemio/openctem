@@ -121,8 +121,6 @@ const RAW_SEARCH_ALLOWED: Record<string, string> = {
     'field lookup inside the mapping editor',
   'src/app/(dashboard)/findings/page.tsx':
     'deferred: migrates after the findings triage and hide-informational work lands',
-  'src/features/assets/components/inventory/all-assets-inventory.tsx':
-    'deferred: migrates with the assets page redesign (research/266)',
 }
 
 /** Files that may render `FilterPanelToggle` / `FilterButton` themselves. file -> reason. */
@@ -131,8 +129,6 @@ const TRIGGER_ALLOWED: Record<string, string> = {
   'src/features/shared/components/list-toolbar.tsx': 'renders filterToggle',
   'src/app/(dashboard)/findings/page.tsx':
     'deferred: migrates after the findings triage and hide-informational work lands',
-  'src/features/assets/components/inventory/all-assets-inventory.tsx':
-    'deferred: migrates with the assets page redesign (research/266)',
 }
 
 /** Each `<Input ...>` element's props, up to its end. */

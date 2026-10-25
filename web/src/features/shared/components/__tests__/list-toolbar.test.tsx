@@ -5,7 +5,7 @@ import userEvent from '@testing-library/user-event'
 import { ListToolbar } from '../list-toolbar'
 import { ListSearch } from '../list-search'
 import { FilterButton, FilterPanelToggle } from '../filter-button'
-import { OverflowChips } from '../overflow-chips'
+import { FilterChipsRow, LockedChip } from '../filter-chips-row'
 import { useSearchQuery, SEARCH_DEBOUNCE_MS } from '@/hooks/use-search-query'
 
 // Radix Tooltip measures its content; jsdom has no ResizeObserver.
@@ -212,34 +212,75 @@ describe('keyboard', () => {
   })
 })
 
-describe('OverflowChips', () => {
-  const chips = (n: number) => Array.from({ length: n }, (_, i) => <li key={i}>chip {i + 1}</li>)
+describe('FilterChipsRow', () => {
+  const chips = (n: number) =>
+    Array.from({ length: n }, (_, i) => <span key={`c${i}`}>chip {i + 1}</span>)
 
-  it('shows every chip up to the cap', () => {
-    render(<OverflowChips max={3}>{chips(3)}</OverflowChips>)
-    expect(screen.getAllByRole('listitem')).toHaveLength(3)
-    expect(screen.queryByRole('button')).toBeNull()
+  /** Give the row and every chip a width (jsdom does not lay out). */
+  function layout(rowWidth: number, chipWidth: number) {
+    vi.spyOn(HTMLElement.prototype, 'clientWidth', 'get').mockImplementation(function (
+      this: HTMLElement
+    ) {
+      return this.dataset.slot === 'filter-chips-row' ? rowWidth : 0
+    })
+    vi.spyOn(HTMLElement.prototype, 'offsetWidth', 'get').mockImplementation(function (
+      this: HTMLElement
+    ) {
+      return this.dataset.chipKey ? chipWidth : 0
+    })
+  }
+  afterEach(() => vi.restoreAllMocks())
+
+  it('keeps one line with fixed places: locked chip, chips, trailing, count at the end', () => {
+    render(
+      <FilterChipsRow
+        leading={<LockedChip>Hiding names not ours</LockedChip>}
+        chips={chips(2)}
+        trailing={<button type="button">Add filter</button>}
+        end={<span>361 assets</span>}
+      />
+    )
+    const row = document.querySelector('[data-slot="filter-chips-row"]') as HTMLElement
+    expect(row).toHaveClass('flex-nowrap', 'overflow-hidden')
+    expect(row.textContent).toBe('Hiding names not ourschip 1chip 2Add filter361 assets')
+    expect(screen.getByText('361 assets').parentElement).toHaveClass('ms-auto', 'shrink-0')
+    expect(screen.getByRole('list', { name: 'Active filters' }).children).toHaveLength(2)
   })
 
-  it('folds the rest behind "+N" and expands and folds again', async () => {
+  it('shows every chip when they fit (or nothing can be measured)', () => {
+    render(<FilterChipsRow chips={chips(5)} />)
+    expect(screen.getAllByRole('listitem')).toHaveLength(5)
+    expect(screen.queryByRole('button', { name: /more/ })).toBeNull()
+  })
+
+  it('folds the chips that do not fit into "+N more", listed and still usable in a popover', async () => {
+    layout(400, 100)
+    const user = userEvent.setup()
+    render(<FilterChipsRow chips={chips(6)} />)
+    // 400 - 88 (room for "+N more") leaves room for 2 chips of 100 + gap.
+    expect(screen.getByRole('list', { name: 'Active filters' }).children).toHaveLength(2)
+    const more = screen.getByRole('button', { name: '+4 more' })
+    await user.click(more)
+    const extra = await screen.findByRole('list', { name: 'More filters' })
+    expect(extra.children).toHaveLength(4)
+    expect(extra).toHaveTextContent('chip 6')
+  })
+})
+
+describe('LockedChip', () => {
+  it('is a quiet, non-removable chip with a lock and an optional action', async () => {
+    const onShow = vi.fn()
     const user = userEvent.setup()
     render(
-      <OverflowChips max={3} label="Filters">
-        {chips(5)}
-      </OverflowChips>
+      <LockedChip actionLabel="Show" onAction={onShow}>
+        Hiding names awaiting review
+      </LockedChip>
     )
-    expect(screen.getByRole('list', { name: 'Filters' })).toBeInTheDocument()
-    expect(screen.queryByText('chip 4')).toBeNull()
-    const more = screen.getByRole('button', { name: 'Show 2 more filters' })
-    expect(more).toHaveTextContent('+2')
-    await user.click(more)
-    expect(screen.getByText('chip 5')).toBeInTheDocument()
-    await user.click(screen.getByRole('button', { name: 'Show fewer' }))
-    expect(screen.queryByText('chip 5')).toBeNull()
-  })
-
-  it('renders nothing without chips', () => {
-    const { container } = render(<OverflowChips>{[]}</OverflowChips>)
-    expect(container).toBeEmptyDOMElement()
+    const chip = document.querySelector('[data-slot="locked-chip"]') as HTMLElement
+    expect(chip).toHaveClass('border-dashed', 'text-muted-foreground')
+    expect(chip.querySelector('svg.lucide-lock')).not.toBeNull()
+    expect(screen.queryByRole('button', { name: /remove/i })).toBeNull()
+    await user.click(screen.getByRole('button', { name: 'Show' }))
+    expect(onShow).toHaveBeenCalledOnce()
   })
 })

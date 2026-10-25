@@ -152,6 +152,8 @@ interface DataTableProps<TData, TValue> {
    * the toolbar. Pass this rather than drawing a filter button in `toolbarStart`.
    */
   filterToggle?: FilterPanelToggleProps
+  /** A filter trigger that opens a sheet (`FilterButton`) on a list with no side panel. */
+  filter?: React.ReactNode
   /**
    * Filter tokens after the search box: `FilterSelect`, at most two selects,
    * a lens. Never a search box (pass `search`).
@@ -429,6 +431,7 @@ export function DataTable<TData, TValue>({
   sorting: sortingProp,
   onSortingChange,
   filterToggle,
+  filter,
   toolbarStart,
   toolbarEnd,
   toolbarBelow,
@@ -717,6 +720,7 @@ export function DataTable<TData, TValue>({
           there). */}
       <ListToolbar
         filterToggle={filterToggle}
+        filter={filter}
         search={
           serverSearch ??
           (showSearch
@@ -747,19 +751,20 @@ export function DataTable<TData, TValue>({
               </span>
             )}
 
-            {/* View menu: row density (every table, D14) and, when the table
-              allows it, which columns show. */}
+            {/* Display menu: row density (every table, D14) and, when the
+              table allows it, which columns show. Named "Display" so it is
+              never confused with saved "Views". */}
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <Button
                   variant="outline"
                   size="sm"
                   className={cn('h-9', phoneCards && 'hidden')}
-                  aria-label={t('common.table.viewMenu', 'Table view: density and columns')}
+                  aria-label={t('common.table.displayMenu', 'Display: density and columns')}
                 >
                   <SlidersHorizontal className="h-4 w-4 @xl/toolbar:me-2" />
                   <span className="sr-only @xl/toolbar:not-sr-only">
-                    {t('common.table.view', 'View')}
+                    {t('common.table.display', 'Display')}
                   </span>
                 </Button>
               </DropdownMenuTrigger>

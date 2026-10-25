@@ -4,7 +4,6 @@ import * as React from 'react'
 import { X, type LucideIcon } from 'lucide-react'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { cn } from '@/lib/utils'
-import { OverflowChips } from './overflow-chips'
 import { useTranslation } from '@/context/i18n-provider'
 import { toDisplayText } from '@/lib/untrusted-text'
 
@@ -144,17 +143,19 @@ export function ContextFilterChips({ chips, onRemove, className }: ContextFilter
   const { t } = useTranslation()
   if (chips.length === 0) return null
   return (
-    // Never wider than the row; chips wrap among themselves on a phone instead
-    // of squeezing labels to nothing or scrolling sideways, and past six the
-    // rest fold behind "+N".
-    <OverflowChips
-      label={t('common.contextFilters.label', 'Context filters')}
-      className={className}
+    <ul
+      aria-label={t('common.contextFilters.label', 'Context filters')}
       data-testid="context-filter-chips"
+      className={cn(
+        // Never wider than the row; chips wrap among themselves on a phone
+        // instead of squeezing labels to nothing or scrolling sideways.
+        'flex min-w-0 max-w-full flex-wrap items-center gap-1.5',
+        className
+      )}
     >
       {chips.map((chip) => (
         <Chip key={chip.param} chip={chip} onRemove={onRemove} />
       ))}
-    </OverflowChips>
+    </ul>
   )
 }
