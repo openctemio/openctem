@@ -95,6 +95,12 @@ Every active filter is a chip, then **Add filter** (shortcut `f`). Code: `src/fe
   the API refuses one (a 400 `INVALID_FILTER` naming the param) the list says "This link has a filter we do not
   know" and offers to remove it, instead of a failed load.
 - Chip text is escaped, isolated text; a value from a link never becomes markup.
+- The row is the shared `FilterChipsRow`: the quiet locked chip for what the list leaves out (informational
+  findings, drawn with the shared `LockedChip`) first, the chips (the ones that do not fit fold into "+N
+  more"), Add filter, then the count at the end. Nothing in the row shrinks under its content. When the locked
+  chip, Add filter, the count and "+N more" do not fit on one line (a phone), the locked chip takes a line of
+  its own above the rest. On a phone the search box takes the toolbar's first line and the saved views and
+  group buttons sit under it.
 
 ## Request budget
 
