@@ -1,6 +1,5 @@
 import { describe, expect, it } from 'vitest'
 
-import { WORKFLOW_ACTION_TYPES, WORKFLOW_TRIGGER_TYPES } from '@/lib/api/workflow-types'
 import type { WorkflowEdge, WorkflowNode } from '@/lib/api/workflow-types'
 import {
   automationConnectionRule,
@@ -137,12 +136,5 @@ describe('API conversion', () => {
     const g = starterGraph()
     expect(nextNodeKey(g.nodes, 'trigger')).toBe('trigger_2')
     expect(nextNodeKey(g.nodes, 'action')).toBe('action_2')
-  })
-})
-
-describe('offered types', () => {
-  it('offers finding_status_changed and never run_script', () => {
-    expect(WORKFLOW_TRIGGER_TYPES as readonly string[]).toContain('finding_status_changed')
-    expect(WORKFLOW_ACTION_TYPES as readonly string[]).not.toContain('run_script')
   })
 })

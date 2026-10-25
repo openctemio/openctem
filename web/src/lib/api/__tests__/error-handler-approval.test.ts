@@ -32,7 +32,7 @@ describe('APPROVAL_REQUIRED', () => {
   it('a plain FORBIDDEN keeps the generic permission message', () => {
     handleApiError(new ApiClientError('Access denied', 'FORBIDDEN', 403))
     expect(toast.error).toHaveBeenCalledWith('Error', {
-      description: 'You do not have permission to access this resource',
+      description: 'You do not have permission to do this.',
     })
   })
 })

@@ -244,3 +244,41 @@ func TestRouter_ServiceNamesRouteByHost(t *testing.T) {
 		t.Fatalf("ParseTarget = %+v", pt)
 	}
 }
+
+// Every uncovered target carries the kind of its reason, and a name that does
+// not resolve is told as a DNS fact, never in zone wording.
+func TestRouter_UncoveredKinds(t *testing.T) {
+	dc := mustZone(t, "dc", false, "10.1.0.0/16")
+	other := mustZone(t, "lab", false, "10.9.0.0/16")
+	res := fakeResolver{"internal.example.com": {"192.168.5.5"}, "meta.example.com": {"169.254.169.254"}}
+	r := NewRouter([]*Zone{dc, other}, res)
+
+	cases := map[string]string{
+		"go.example.com":       KindUnresolved,
+		"192.168.1.1":          KindOutsideZones,
+		"internal.example.com": KindOutsideZones,
+		"127.0.0.1":            KindDenyList,
+		"meta.example.com":     KindDenyList,
+		"10.0.0.0/8":           KindPartlyCovered,
+	}
+	for target, want := range cases {
+		got := r.Route(context.Background(), target)
+		if got.Zone != nil || got.Unzoned || got.Kind != want {
+			t.Errorf("%s: zone=%v unzoned=%v kind=%q, want uncovered %q", target, got.Zone, got.Unzoned, got.Kind, want)
+		}
+	}
+	unres := r.Route(context.Background(), "go.example.com")
+	if strings.Contains(strings.ToLower(unres.Reason), "zone") || !strings.Contains(unres.Reason, "does not resolve in DNS") {
+		t.Errorf("unresolved reason = %q, want a DNS fact without zone wording", unres.Reason)
+	}
+
+	plan := r.Plan(context.Background(), []string{"go.example.com", "192.168.1.1"})
+	if len(plan.Uncovered) != 2 || plan.Uncovered[0].Kind != KindUnresolved || plan.Uncovered[1].Kind != KindOutsideZones {
+		t.Errorf("plan uncovered = %+v", plan.Uncovered)
+	}
+
+	sel := NewRouter([]*Zone{dc}, res).Plan(context.Background(), []string{"8.8.8.8", "go.example.com"}).RestrictTo(dc)
+	if len(sel.Uncovered) != 2 || sel.Uncovered[0].Kind != KindOutsideSelected || sel.Uncovered[1].Kind != KindUnresolved {
+		t.Errorf("restricted uncovered = %+v", sel.Uncovered)
+	}
+}

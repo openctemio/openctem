@@ -1,0 +1,6 @@
+# Message catalogs merge key by key (web/scripts/i18n-json.mjs; enabled by
+# `make hooks` or `npm ci` in web/). The catalog index merges as a union of
+# lines: two branches adding a namespace each keep both imports.
+web/src/lib/i18n/dictionaries/en/*.json merge=i18n-json
+web/src/lib/i18n/dictionaries/vi/*.json merge=i18n-json
+web/src/lib/i18n/dictionaries/index.ts merge=union

@@ -13,6 +13,7 @@ import {
   Settings,
 } from 'lucide-react'
 import { toast } from 'sonner'
+import { safeText } from '@/lib/api/error-message'
 
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -87,7 +88,14 @@ export function SCMConnectionCard({
       if (result && result.status === 'connected') {
         toast.success(`Connection "${connection.name}" validated successfully`)
       } else if (result && result.status === 'error') {
-        toast.error(result.status_message || `Connection "${connection.name}" test failed`)
+        toast.error(
+          safeText(
+            result.status_message,
+            t('scmIntegration.toast.testFailedNamed', 'Could not connect to {name}.', {
+              name: connection.name,
+            })
+          )
+        )
       } else {
         toast.warning(`Connection "${connection.name}" status: ${result?.status || 'unknown'}`)
       }

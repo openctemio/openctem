@@ -1,5 +1,6 @@
 {
-  "activity.listLabel": "Activity",
+  "activity.emptyFiltered": "Nothing of this kind yet",
+  "activity.emptyFilteredHint": "Clear the filters to see everything.",
   "activity.filterLabel": "Filter activity",
   "activity.item.actions": "Comment actions",
   "activity.item.addReaction": "Add reaction",
@@ -16,9 +17,8 @@
   "activity.item.retry": "Retry",
   "activity.item.save": "Save",
   "activity.item.sending": "Sending…",
+  "activity.listLabel": "Activity",
   "activity.loadMore": "Load more",
   "activity.repeated": "{count} times",
-  "activity.repeatedLast": "{count} times, the last at {time}",
-  "activity.emptyFiltered": "Nothing of this kind yet",
-  "activity.emptyFilteredHint": "Clear the filters to see everything."
+  "activity.repeatedLast": "{count} times, the last at {time}"
 }

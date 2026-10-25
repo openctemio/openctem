@@ -24,6 +24,11 @@
 #     in its current order, to base max + 1, + 2, ... (same digit width), and
 #     references to the old file stems outside api/migrations are rewritten.
 # A migration baseline (NNNNNN_baseline, RFC-053) is left alone.
+# MIGRATION_TAKEN="3402 3405 ...": versions other open pull requests add (above
+# the base, so the base cannot show them). An added version in that list also
+# counts as a clash, and new versions start above the highest of them, so two
+# renumbered pull requests never take the same number
+# (api/scripts/migration-number.sh fills it from the open pull requests).
 # Nothing is committed or pushed; every change is printed as a warning.
 # merge_group and push never call this: there, check-migration-versions.sh
 # fails a clash, which is what guards develop.
@@ -69,21 +74,27 @@ while read -r v name raw; do
   own+=("$v $name $raw")
 done <<<"$added"
 
-# 2. Clashes: at or below the base max, or a version two added migrations share.
+# 2. Clashes: at or below the base max, a version two added migrations share,
+# or a version another open pull request takes (MIGRATION_TAKEN).
 lowest="$(find "$dir" -maxdepth 1 -type f -name '*.sql' | versions | awk 'NR == 1 {print $1}')"
+taken=" " taken_max=0
+for t in ${MIGRATION_TAKEN:-}; do
+  t=$((10#$t)); taken+="$t "
+  (( t > taken_max )) && taken_max=$t
+done
 need=0 seen=" "
 for e in "${own[@]}"; do
   read -r v name raw <<<"$e"
   if [[ "$name" == baseline && "$v" == "$lowest" ]]; then continue; fi
-  if (( v <= base_max )) || [[ "$seen" == *" $v "* ]]; then need=1; fi
+  if (( v <= base_max )) || [[ "$seen" == *" $v "* || "$taken" == *" $v "* ]]; then need=1; fi
   seen+="$v "
 done
 if (( ! need )); then
-  echo "pr-migration-renumber: no clash with the base (highest ${base_max})"
+  echo "pr-migration-renumber: no clash with the base (highest ${base_max}) or another open pull request"
   exit 0
 fi
 
-next=$base_max
+next=$(( base_max > taken_max ? base_max : taken_max ))
 for e in "${own[@]}"; do
   read -r v name raw <<<"$e"
   if [[ "$name" == baseline && "$v" == "$lowest" ]]; then continue; fi

@@ -3584,8 +3584,10 @@ func (r *FindingRepository) buildWhereClause(filter vulnerability.FindingFilter)
 	}
 
 	if len(filter.Severities) > 0 {
-		placeholders := make([]string, len(filter.Severities))
-		for i, sev := range filter.Severities {
+		// info also matches none (vulnerability.ExpandSeverityFilter).
+		sevs := vulnerability.ExpandSeverityFilter(filter.Severities)
+		placeholders := make([]string, len(sevs))
+		for i, sev := range sevs {
 			placeholders[i] = fmt.Sprintf("$%d", argIndex)
 			args = append(args, sev.String())
 			argIndex++
@@ -3871,12 +3873,47 @@ func (r *FindingRepository) AutoReopenByFingerprintsBatch(ctx context.Context, t
 		return result, nil
 	}
 
-	query := `
+	// Each reopen writes its auto_reopened timeline entry in the same
+	// transaction (the scan behind it comes from the context's evidence).
+	// A write conflict rolls the transaction back and runs it again.
+	err := retryWriteConflict(ctx, func() error {
+		clear(result)
+		return r.autoReopenTx(ctx, autoReopenQuery, tenantID, fingerprints, result)
+	})
+	if err != nil {
+		return nil, err
+	}
+	return result, nil
+}
+
+// everTriagedSQL is true for a finding someone worked on: it has an assignee,
+// or its timeline shows a move to confirmed, in_progress or fix_applied. A
+// finding no one touched reopens as new; a triaged one as confirmed (it keeps
+// the triage decision that it is real).
+const everTriagedSQL = `(assigned_to IS NOT NULL OR EXISTS (
+			SELECT 1 FROM finding_activities fa
+			WHERE fa.tenant_id = findings.tenant_id AND fa.finding_id = findings.id
+				AND fa.changes->>'new_status' IN ('confirmed', 'in_progress', 'fix_applied')))`
+
+var (
+	// The reopen target "new" is a platform move only for a resolved finding;
+	// checked against the lifecycle when the package loads.
+	_ = platformFromSQL(vulnerability.FindingStatusNew, vulnerability.FindingStatusResolved)
+
+	// $1 tenant, $2 fingerprints, $3 the flap window in seconds. A duplicate
+	// reported again reopens the finding it was folded into (same asset),
+	// never the duplicate itself (its status is not resolved).
+	autoReopenQuery = `
 		WITH prev AS (
-			SELECT id, status, resolution, closure_reason, verification, resolved_by, resolved_at
+			SELECT id, status, resolution, closure_reason, verification, resolved_by, resolved_at,
+				finding_reopen_class(findings, $3::double precision) AS reopen_class,
+				CASE WHEN ` + everTriagedSQL + ` THEN 'confirmed' ELSE 'new' END AS reopen_to
 			FROM findings
 			WHERE tenant_id = $1
-				AND fingerprint = ANY($2)
+				AND (fingerprint = ANY($2)
+					OR id IN (SELECT d.duplicate_of FROM findings d
+						WHERE d.tenant_id = $1 AND d.fingerprint = ANY($2) AND d.status = 'duplicate'
+							AND d.duplicate_of IS NOT NULL AND d.asset_id = findings.asset_id))
 				AND status IN ` + regressionReopenFromSQL + `
 				-- Status decides: only a resolved row reopens (dispositions are
 				-- other statuses). The free-text resolution note is not read.
@@ -3893,7 +3930,7 @@ func (r *FindingRepository) AutoReopenByFingerprintsBatch(ctx context.Context, t
 			FOR NO KEY UPDATE
 		)
 		UPDATE findings f
-		SET status = 'confirmed',
+		SET status = prev.reopen_to,
 			resolution = NULL,
 			closure_reason = NULL,
 			verification = NULL,
@@ -3902,30 +3939,61 @@ func (r *FindingRepository) AutoReopenByFingerprintsBatch(ctx context.Context, t
 			updated_at = NOW()
 		FROM prev
 		WHERE f.id = prev.id
-		RETURNING f.id, f.fingerprint, prev.status, prev.resolution, prev.closure_reason, prev.verification, prev.resolved_by, prev.resolved_at
+		RETURNING f.id, f.fingerprint, prev.status, prev.resolution, prev.closure_reason, prev.verification, prev.resolved_by, prev.resolved_at, prev.reopen_to, prev.reopen_class
 	`
 
-	// Each reopen writes its auto_reopened timeline entry in the same
-	// transaction (the scan behind it comes from the context's evidence).
-	// A write conflict rolls the transaction back and runs it again.
+	// What the timeline says per class of reopen.
+	autoReopenTransition = findingTransition{
+		ActivityType: "auto_reopened", Source: "auto", ActorType: "scanner", ActorName: "system: scan detected it again",
+		SeenAgainWindowSecs: vulnerability.SeenAgainWindow.Seconds(),
+		ReasonByReopenClass: map[string]string{
+			string(vulnerability.ReopenVerifiedRegression): "regression_detected_again",
+			string(vulnerability.ReopenRegression):         "regression_detected_again",
+			string(vulnerability.ReopenSeenAgain):          "seen_again",
+		},
+		MessageByReopenClass: map[string]string{
+			string(vulnerability.ReopenVerifiedRegression): "Seen again after a verified fix: the fix did not hold",
+			string(vulnerability.ReopenRegression):         "Seen again after it was closed as fixed",
+			string(vulnerability.ReopenSeenAgain):          "Seen again shortly after an automatic close: not counted as a regression",
+		},
+	}
+)
+
+// MarkDuplicateTargetsSeen records the scan as the latest sighting of the
+// findings that the given fingerprints (duplicates a scan reported again) were
+// folded into, on the same asset, so the target is not auto-resolved while its
+// duplicate is still reported. A duplicate is never touched. Tenant-scoped.
+func (r *FindingRepository) MarkDuplicateTargetsSeen(ctx context.Context, tenantID shared.ID, fingerprints []string, scanID, toolName string) (int64, error) {
+	if len(fingerprints) == 0 {
+		return 0, nil
+	}
+	query := `
+		WITH ` + findingLockCTE("findings f", `f.tenant_id = $2 AND f.status <> 'duplicate'
+				AND f.id IN (SELECT d.duplicate_of FROM findings d
+					WHERE d.tenant_id = $2 AND d.fingerprint = ANY($3) AND d.status = 'duplicate'
+						AND d.duplicate_of IS NOT NULL AND d.asset_id = f.asset_id)`) + `
+		UPDATE findings f
+		SET scan_id = $1, updated_at = NOW(), last_seen_at = NOW(), observation_state = 'present',
+			last_seen_tool = COALESCE(NULLIF($4, ''), f.last_seen_tool)
+		FROM locked l
+		WHERE f.id = l.locked_id AND f.tenant_id = $2`
+	var res sql.Result
 	err := retryWriteConflict(ctx, func() error {
-		clear(result)
-		return r.autoReopenTx(ctx, query, tenantID, fingerprints, result)
+		var execErr error
+		res, execErr = r.db.ExecContext(ctx, query, scanID, tenantID.String(), pq.Array(fingerprints), toolName)
+		return execErr
 	})
 	if err != nil {
-		return nil, err
+		return 0, fmt.Errorf("mark duplicate targets seen: %w", err)
 	}
-	return result, nil
+	return res.RowsAffected()
 }
 
 // autoReopenTx runs the reopen of AutoReopenByFingerprintsBatch in one
 // transaction and records each reopened finding in result.
 func (r *FindingRepository) autoReopenTx(ctx context.Context, query string, tenantID shared.ID, fingerprints []string, result map[string]vulnerability.ReopenedFinding) error {
-	return r.db.withFindingTransition(ctx, findingTransition{
-		ActivityType: "auto_reopened", Source: "auto", Reason: "regression_detected_again", ActorType: "scanner",
-		ActorName: "system: scan detected it again",
-	}, func(tx *sql.Tx) error {
-		rows, err := tx.QueryContext(ctx, query, tenantID.String(), pq.Array(fingerprints))
+	return r.db.withFindingTransition(ctx, autoReopenTransition, func(tx *sql.Tx) error {
+		rows, err := tx.QueryContext(ctx, query, tenantID.String(), pq.Array(fingerprints), vulnerability.SeenAgainWindow.Seconds())
 		if err != nil {
 			return fmt.Errorf("failed to batch auto-reopen findings: %w", err)
 		}
@@ -3933,11 +4001,11 @@ func (r *FindingRepository) autoReopenTx(ctx context.Context, query string, tena
 
 		for rows.Next() {
 			var (
-				idStr, fp, prevStatus                       string
+				idStr, fp, prevStatus, reopenTo, class      string
 				resolution, reason, verified, resolvedByStr sql.NullString
 				resolvedAt                                  sql.NullTime
 			)
-			if err := rows.Scan(&idStr, &fp, &prevStatus, &resolution, &reason, &verified, &resolvedByStr, &resolvedAt); err != nil {
+			if err := rows.Scan(&idStr, &fp, &prevStatus, &resolution, &reason, &verified, &resolvedByStr, &resolvedAt, &reopenTo, &class); err != nil {
 				return fmt.Errorf("failed to scan reopened finding: %w", err)
 			}
 			id, err := shared.IDFromString(idStr)
@@ -3945,6 +4013,8 @@ func (r *FindingRepository) autoReopenTx(ctx context.Context, query string, tena
 				continue
 			}
 			rf := vulnerability.ReopenedFinding{
+				Class:                 vulnerability.ReopenClass(class),
+				ReopenedTo:            vulnerability.FindingStatus(reopenTo),
 				ID:                    id,
 				Fingerprint:           fp,
 				PreviousStatus:        vulnerability.FindingStatus(prevStatus),

@@ -272,6 +272,12 @@ jobs:
       - name: Security Gates (raw membership role guard)
         run: go test ./tools/lint/rawrole/... -count=1
 
+      # No new err.Error(), lower error text or entity id in a response
+      # message, stored status or audit message (shrink-only baseline;
+      # docs/architecture/error-responses.md).
+      - name: Security Gates (error message leak guard)
+        run: go test ./tools/lint/errleak/... -count=1
+
       - name: Security Gates (sensor vocabulary guard)
         run: go test ./tools/lint/sensorvocab/... -count=1
 

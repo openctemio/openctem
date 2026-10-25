@@ -78,8 +78,8 @@ func TestAutoReopenBatch_MitigatedStaysResolved(t *testing.T) {
 		t.Errorf("mitigated finding's SLA clock restarted (last_reopened_at set)")
 	}
 	for _, id := range []shared.ID{fixedID, dupID} {
-		if got := statusOf(ctx, t, db, id); got != "confirmed" {
-			t.Errorf("fixed finding status = %s, want confirmed", got)
+		if got := statusOf(ctx, t, db, id); got != "new" {
+			t.Errorf("fixed finding status = %s, want new (never triaged)", got)
 		}
 		if reg, n := mitRegressionState(ctx, t, db, id); !reg || n != 1 {
 			t.Errorf("fixed reopen not a regression: %v %d", reg, n)
@@ -108,8 +108,8 @@ func TestAutoReopenBatch_TenantIsolationSameFingerprint(t *testing.T) {
 	if _, err := repo.AutoReopenByFingerprintsBatch(ctx, tenantA, []string{fp}); err != nil {
 		t.Fatalf("AutoReopenByFingerprintsBatch: %v", err)
 	}
-	if got := statusOf(ctx, t, db, idA); got != "confirmed" {
-		t.Errorf("tenant A status = %s, want confirmed", got)
+	if got := statusOf(ctx, t, db, idA); got != "new" {
+		t.Errorf("tenant A status = %s, want new (never triaged)", got)
 	}
 	if got := statusOf(ctx, t, db, idB); got != "resolved" {
 		t.Errorf("tenant B status = %s, want resolved (untouched)", got)

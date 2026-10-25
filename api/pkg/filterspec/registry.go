@@ -156,6 +156,10 @@ type Field struct {
 	EnumTemplates map[string]string
 	// Enum is the allowed set for TypeEnum.
 	Enum []string
+	// EnumExpand, for a TypeEnum field, maps a value to the other stored
+	// values it also matches (eq, ne, in, not_in): one reporting bucket kept
+	// as several stored values. Constants only, never input.
+	EnumExpand map[string][]string
 	// EnumRetired maps a value that was retired from Enum to the error
 	// that says what replaces it (a constant, never input).
 	EnumRetired map[string]string
