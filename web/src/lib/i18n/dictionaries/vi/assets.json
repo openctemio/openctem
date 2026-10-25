@@ -160,6 +160,8 @@
   "assets.bulk.criticalityDescMany": "Áp dụng mức độ quan trọng cho {count} tài sản đã chọn.",
   "assets.bulk.criticalityDescOne": "Áp dụng mức độ quan trọng cho 1 tài sản đã chọn.",
   "assets.bulk.criticalityFailed": "Không đặt được mức độ quan trọng",
+  "assets.bulk.criticalityHeld": "{label} cho {done}/{count} tài sản; {held} đang chờ phê duyệt",
+  "assets.bulk.criticalityHeldFailed": "{label} cho {done}/{count} tài sản; {held} đang chờ phê duyệt; {failed} thất bại",
   "assets.bulk.criticalitySet": "Đã đặt mức độ quan trọng thành {value}",
   "assets.bulk.deleteFailed": "Không xóa được",
   "assets.bulk.enterTag": "Hãy nhập một thẻ",
