@@ -844,7 +844,7 @@
   "findings.list.epssHint": "Exploit Prediction Scoring System. Estimated chance of exploitation in the next 30 days.",
   "findings.list.errorTitle": "findings",
   "findings.list.kev": "KEV",
-  "findings.list.kevDue": "Remediate by {date}",
+  "findings.list.kevDue": "CISA deadline for US federal agencies: {date}",
   "findings.list.kevPastDue": "Past due",
   "findings.list.kevRansomware": "Ransomware",
   "findings.list.kevTitle": "CISA Known Exploited Vulnerability",
