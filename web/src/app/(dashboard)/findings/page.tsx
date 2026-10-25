@@ -1,6 +1,7 @@
 'use client'
 
 import { CveLink } from '@/features/vulnerabilities/components/cve-link'
+import { MetaLine } from '@/features/shared/components/text-layout'
 import { evaluateFindingTransitions } from '@/features/findings/api/use-finding-transitions'
 import { summarizeDryRun } from '@/features/findings/lib/transition-reasons'
 import { FindingSubStatus } from '@/features/findings/components/lifecycle/finding-sub-status'
@@ -1533,12 +1534,12 @@ function FindingsContent() {
                   </Tooltip>
                 )}
               </div>
-              {(row.original.cve || row.original.scanner) && (
-                <p className="flex min-w-0 gap-2 text-muted-foreground text-xs">
-                  {row.original.cve && <CveLink id={row.original.cve} stopPropagation />}
-                  {row.original.scanner && <span className="truncate">{row.original.scanner}</span>}
-                </p>
-              )}
+              <MetaLine
+                items={[
+                  row.original.cve && <CveLink id={row.original.cve} stopPropagation />,
+                  row.original.scanner,
+                ]}
+              />
             </div>
           )
         },
@@ -2277,7 +2278,7 @@ function FindingsContent() {
           <Button
             variant="outline"
             size="sm"
-            className="h-8 shrink-0"
+            className="h-9 shrink-0"
             onClick={() => setViewParam('verify')}
           >
             {/* A short label on a narrow row, so the view title keeps its room
@@ -2442,7 +2443,7 @@ function FindingsContent() {
           <PageHeader title={t('findings.page.title', 'Findings')} description={drillBreadcrumb}>
             <Button variant="outline" size="sm" asChild>
               <Link href="/findings/approvals">
-                <ClipboardList className="h-4 w-4 sm:me-2" />
+                <ClipboardList className="h-4 w-4 sm:me-2" aria-hidden />
                 <span className="sr-only sm:not-sr-only">
                   {t('findings.header.approvals', 'Approvals')}
                 </span>
@@ -2484,9 +2485,20 @@ function FindingsContent() {
                 variant={triageCount > 0 ? 'default' : 'outline'}
                 onClick={openTriage}
                 aria-keyshortcuts="t"
+                aria-label={
+                  triageCount > 0
+                    ? t(
+                        'findings.header.triageCount',
+                        '{count, plural, one {Triage, # finding to triage} other {Triage, # findings to triage}}',
+                        { count: triageCount }
+                      )
+                    : undefined
+                }
               >
-                <ListChecks className="h-4 w-4 sm:me-2" aria-hidden />
-                <span className="sr-only sm:not-sr-only">
+                <ListChecks className="h-4 w-4 me-2" aria-hidden />
+                {/* The page's primary action keeps its word on a phone, so the
+                    count beside it reads as the number to triage. */}
+                <span>
                   {triageCount > 0
                     ? t('findings.header.triage', 'Triage')
                     : t('findings.header.triageView', 'Triage view')}
