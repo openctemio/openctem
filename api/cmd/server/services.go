@@ -2603,6 +2603,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 		notifier = s.Outbox
 	}
 	changeAnnouncer := retestapp.NewChangeAnnouncer(repos.Finding, ticketCommenter, notifier, log)
+	changeAnnouncer.SetPeopleNotifier(s.Vulnerability)
 	s.Retest.SetRegressionSLA(regressionSLA)
 	s.Retest.SetAnnouncer(changeAnnouncer)
 	s.Ingest.SetRegressionHandler(retestapp.NewScanRegressions(regressionSLA, changeAnnouncer, log))
