@@ -68,9 +68,12 @@ func TestCoverageReadiness_EachReason(t *testing.T) {
 			covdom.ReadyToolNotAllowed},
 		"no sensor at all":         {&sensordom.ToolAvailability{Status: sensordom.ToolNoSensor}, nil, covdom.ReadyNoEligibleSensor},
 		"sensors without the tool": {&sensordom.ToolAvailability{Status: sensordom.ToolNoSensor}, map[string]bool{"other": true}, covdom.ReadyToolMissing},
-		// Availability says ready, but the trigger's sensor check finds no
-		// online sensor with the tool (it went offline in between).
-		"ready but none online": {&sensordom.ToolAvailability{Status: sensordom.ToolReady, SensorsTotal: 1, SensorsOnline: 1}, map[string]bool{"other": true},
+		// Availability says an online sensor has the tool but the trigger's
+		// check finds none with free capacity: the sensor is busy, the run
+		// queues for it, so the capability stays ready (not sensor_offline).
+		"online but full": {&sensordom.ToolAvailability{Status: sensordom.ToolReady, SensorsTotal: 1, SensorsOnline: 1}, map[string]bool{"other": true}, ""},
+		// Sensors exist for the tool but none is online.
+		"known but none online": {&sensordom.ToolAvailability{Status: sensordom.ToolReady, SensorsTotal: 1}, map[string]bool{"other": true},
 			covdom.ReadySensorOffline},
 		// No availability answer (tool not in the catalog): the sensor check
 		// alone decides.
@@ -142,14 +145,14 @@ func TestCoverageReadinessForRefusal(t *testing.T) {
 		"tool excluded":          {tu(string(sensordom.ToolNoSensor), 2), covdom.ReadyToolNotAllowed},
 		"tool on no sensor":      {tu(string(sensordom.ToolNoSensor), 0), covdom.ReadyToolMissing},
 		"no sensor available":    {de("NO_SENSOR_AVAILABLE"), covdom.ReadyNoEligibleSensor},
-		"no zone coverage":       {de("NO_ZONE_COVERAGE"), covdom.ReadyNoEligibleSensor},
-		"shared sensors refused": {de(codePlatformRefused), covdom.ReadyNoEligibleSensor},
+				"shared sensors refused": {de(codePlatformRefused), covdom.ReadyNoEligibleSensor},
 		"sensor policy":          {de(codeSensorPolicyRefused), covdom.ReadyToolNotAllowed},
 		"tool disabled":          {de("TOOL_DISABLED"), covdom.ReadyPolicyDisabled},
 		"approval":               {de("SCAN_APPROVAL_REQUIRED"), covdom.ReadyPolicyDisabled},
-		"window never opens":     {de(CodeWindowNeverOpens), covdom.ReadyPolicyDisabled},
 		"scan paused":            {de("SCAN_NOT_TRIGGERABLE"), covdom.ReadyPolicyDisabled},
 		// About the batch's targets: handled per batch, not a readiness.
+		"no zone coverage": {de("NO_ZONE_COVERAGE"), ""},
+		"window never opens": {de(CodeWindowNeverOpens), ""},
 		"targets excluded": {de("ALL_TARGETS_EXCLUDED"), ""},
 		"no targets":       {de("NO_TARGETS"), ""},
 		"not a refusal":    {errors.New("connection reset"), ""},

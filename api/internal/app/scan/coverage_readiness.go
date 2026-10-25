@@ -82,6 +82,12 @@ func (s *Service) toolReadiness(ctx context.Context, tenantID shared.ID, tool st
 	// the tool.
 	if s.sensorSelector != nil {
 		if a := s.sensorSelector.CheckSensorAvailability(ctx, tenantID, tool, false); a != nil && !a.Available {
+			// The selector counts only sensors with free capacity. A
+			// tenant sensor that is online but full is busy, not offline:
+			// the run queues for it, so the capability stays ready.
+			if ta != nil && ta.SensorsOnline > 0 {
+				return ""
+			}
 			if ta != nil && ta.SensorsTotal > 0 {
 				return covdom.ReadySensorOffline
 			}
@@ -102,9 +108,11 @@ func (s *Service) tenantHasOnlineSensor(ctx context.Context, tenantID shared.ID)
 // CoverageReadinessForRefusal maps a trigger refusal of a whole coverage
 // batch to the readiness reason it means: the refusals that say the
 // capability cannot run for the tenant now (no sensor, a tool no sensor may
-// run, no zone that can place it, an organization policy). It returns ""
-// for anything else (a refusal about the batch's targets, or an error that
-// is not a refusal), which the planner handles per batch.
+// run, an organization policy). It returns "" for anything else: a refusal
+// about the batch's targets (targets that never open under the scan
+// windows, targets in no scan zone, excluded targets) or an error that is
+// not a refusal. One bad target must not stall the capability, so the
+// planner handles those per batch.
 func CoverageReadinessForRefusal(err error) string {
 	var tu *ToolUnavailableError
 	if errors.As(err, &tu) {
@@ -124,13 +132,13 @@ func CoverageReadinessForRefusal(err error) string {
 	switch de.Code {
 	case CodeNoSensorForTool:
 		return covdom.ReadyToolMissing
-	case "NO_SENSOR_AVAILABLE", "NO_ZONE_COVERAGE", codePlatformRefused:
+	case "NO_SENSOR_AVAILABLE", codePlatformRefused:
 		return covdom.ReadyNoEligibleSensor
 	case codeSensorPolicyRefused:
 		return covdom.ReadyToolNotAllowed
 	case "TOOL_NOT_SCANNER", codeNoMatchingTool:
 		return covdom.ReadyToolMissing
-	case "TOOL_DISABLED", codeSensorOptInDisabled, "SCAN_NOT_TRIGGERABLE", CodeWindowNeverOpens, codeTierExceeds,
+	case "TOOL_DISABLED", codeSensorOptInDisabled, "SCAN_NOT_TRIGGERABLE", codeTierExceeds,
 		"SCAN_MANAGED_BY_POLICY", "PROGRAM_RULES_UNAVAILABLE":
 		return covdom.ReadyPolicyDisabled
 	}
