@@ -30,6 +30,8 @@ import {
   DetailDisclosure,
   DetailSection,
   DetailSections,
+  KeyValueList,
+  MetaLine,
   RelativeTime,
   UntrustedTextBlock,
 } from '@/features/shared'
@@ -150,16 +152,16 @@ function CheckBody({
       {observed.length > 0 && (
         <div className="space-y-1">
           <p className="text-xs font-medium">{t('sensors.setup.observed', 'What we saw')}</p>
-          <dl className="grid grid-cols-[minmax(0,8rem)_minmax(0,1fr)] gap-x-3 gap-y-0.5 text-xs">
-            {observed.map((o, i) => (
-              <div key={`${o.label}:${i}`} className="contents">
-                <dt className="truncate text-muted-foreground">{toDisplayText(o.label, 64)}</dt>
-                <dd className="min-w-0 font-mono break-all" dir="ltr">
-                  {toDisplayText(o.value, 512)}
-                </dd>
-              </div>
-            ))}
-          </dl>
+          <KeyValueList
+            size="meta"
+            dir="ltr"
+            items={observed.map((o, i) => ({
+              key: `${o.label}:${i}`,
+              label: toDisplayText(o.label, 64),
+              value: toDisplayText(o.value, 512),
+              token: true,
+            }))}
+          />
         </div>
       )}
       {c.summary && (
@@ -217,7 +219,7 @@ function CheckRow({ check: c, runtimeKind }: { check: SensorConfigCheck; runtime
             {toDisplayText(c.known ? c.title : c.id, 200)}
           </span>
           {c.known && (
-            <span className="font-mono text-[11px] text-muted-foreground" dir="ltr">
+            <span className="font-mono text-meta text-muted-foreground" dir="ltr">
               {toDisplayText(c.id, 96)}
             </span>
           )}
@@ -332,11 +334,13 @@ export function ConfigCheckList({ report }: { report: SensorConfigReport }) {
             <RelativeTime date={report.observed_at} />
           </span>
         )}
-        <span className="text-xs text-muted-foreground tabular-nums" data-slot="config-counts">
-          {parts
-            .map((p) => t(`sensors.setup.count.${p.status}`, COUNT_FALLBACK[p.status], { n: p.n }))
-            .join(' · ')}
-        </span>
+        <MetaLine
+          data-testid="config-counts"
+          className="tabular-nums"
+          items={parts.map((p) =>
+            t(`sensors.setup.count.${p.status}`, COUNT_FALLBACK[p.status], { n: p.n })
+          )}
+        />
       </div>
 
       {report.state === 'derived' && (
@@ -401,9 +405,9 @@ export function ConfigCheckList({ report }: { report: SensorConfigReport }) {
 
 const COUNT_FALLBACK: Record<SensorConfigCheckStatus, string> = {
   pass: '{n} passed',
-  warn: '{n} warnings',
+  warn: '{n} with warnings',
   fail: '{n} failed',
-  error: '{n} errors',
+  error: '{n} with errors',
   skip: '{n} skipped',
 }
 
