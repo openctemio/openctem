@@ -263,6 +263,7 @@ export type FieldGroup = (typeof FIELD_GROUPS)[number]
 const GROUP_OF: Record<string, FieldGroup> = {
   epss_score: 'exploitation',
   is_in_kev: 'exploitation',
+  kev_ransomware: 'exploitation',
   exploit_available: 'exploitation',
   is_reachable: 'exploitation',
   asset_tag: 'asset',
