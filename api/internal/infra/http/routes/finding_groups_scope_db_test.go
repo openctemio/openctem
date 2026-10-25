@@ -137,6 +137,8 @@ func newGroupScopeHarness(t *testing.T) *gsHarness {
 	viewSvc.SetAuditService(auditapp.NewAuditService(postgres.NewAuditRepository(db), log))
 	h.views = viewSvc
 	vulnHandler := handler.NewVulnerabilityHandler(vulnSvc, validator.New(), log)
+	intel := postgres.NewThreatIntelRepository(db)
+	vulnHandler.SetIntelFeeds(intel.EPSS(), intel.KEV())
 	vulnHandler.SetSavedViews(viewSvc)
 	actionsHandler := handler.NewFindingActionsHandler(actionsSvc, log)
 	actionsHandler.SetSavedViews(viewSvc)
