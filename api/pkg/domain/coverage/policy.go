@@ -317,6 +317,10 @@ type CapabilityHealth struct {
 	// OK and NoOutput: pairs settled in the last 24 h with and without the
 	// expected output.
 	OK, NoOutput int
+	// Paused: pairs paused for a readiness reason; PausedReason is that
+	// reason (the planner keeps one per capability).
+	Paused       int
+	PausedReason string
 }
 
 // Alert kinds.
@@ -354,7 +358,8 @@ type HealthReader interface {
 	// Health returns one entry per capability of the tenant's ledger;
 	// cadence gives the cadence of each capability (a missing one is a day).
 	Health(ctx context.Context, tenantID shared.ID, cadence map[string]time.Duration) ([]CapabilityHealth, error)
-	// ClaimAlert claims the right to send one alert key for ttl (at most
-	// once per ttl across replicas and restarts).
-	ClaimAlert(ctx context.Context, key string, ttl time.Duration) (bool, error)
+	// AlertStates returns the tenant's stored alert states.
+	AlertStates(ctx context.Context, tenantID shared.ID) ([]AlertState, error)
+	// SaveAlertStates upserts alert states of the tenant.
+	SaveAlertStates(ctx context.Context, tenantID shared.ID, states []AlertState) error
 }
