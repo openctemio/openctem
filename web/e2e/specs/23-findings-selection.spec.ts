@@ -20,7 +20,7 @@ test.describe('Findings selection', () => {
     await box.check()
     await expect(bulkBar(page)).toBeVisible()
 
-    await page.getByRole('textbox', { name: /search findings/i }).fill('zz-no-such-finding')
+    await page.getByRole('searchbox', { name: /search findings/i }).fill('zz-no-such-finding')
     await expect(bulkBar(page)).toBeHidden({ timeout: 10_000 })
   })
 

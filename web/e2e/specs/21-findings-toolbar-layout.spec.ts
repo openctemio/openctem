@@ -24,7 +24,7 @@ async function checkToolbar(page: Page, label: string) {
   await expect(primary).toBeVisible()
   await expect(toolbar).toBeVisible()
 
-  const search = toolbar.getByRole('textbox', { name: /search findings/i })
+  const search = toolbar.getByRole('searchbox', { name: /search findings/i })
   const filter = toolbar.locator('[data-slot="filter-button"]:visible').first()
   const s = await search.boundingBox()
   const f = await filter.boundingBox()
