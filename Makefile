@@ -11,8 +11,10 @@ setup: hooks ## Install dependencies for both components, then generate the cont
 	cd web && npm ci
 	$(MAKE) generate
 
-hooks: ## Use the repository's git hooks (.githooks)
+hooks: ## Use the repository's git hooks (.githooks) and merge drivers (.gitattributes)
 	git config core.hooksPath .githooks
+	git config merge.i18n-json.name "i18n catalogs, merged key by key"
+	git config merge.i18n-json.driver "node web/scripts/i18n-json.mjs merge %O %A %B %P"
 
 # The contract files are generated, never committed (pull requests cannot
 # conflict on them): the OpenAPI spec, the route manifest and the web route

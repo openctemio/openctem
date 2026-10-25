@@ -49,6 +49,29 @@ EXISTS`, constraints guarded by a `pg_constraint` lookup, `ON CONFLICT DO
 NOTHING`), with a no-op down. `002894_repair_skipped_migrations` is the
 reference.
 
+### Picking a number
+
+Numbers stay sequential; nobody picks one by hand.
+
+- `make -C api migration-new name=<snake_name>` creates the up/down pair one
+  above the highest version on `develop`, in this branch and in every open
+  pull request against `develop` (read with `gh`; without it only `develop`
+  and the branch count).
+- `make -C api migration-renumber` moves the branch's own new migrations above
+  all of those, in their order, rewriting references to the old file names
+  outside `api/migrations/`, and stages the renames.
+- Pull request CI renumbers its runner copy on a clash
+  (`.github/scripts/pr-migration-renumber.sh`), so a stale number never fails
+  a pull request's tests; the merge queue's "Migration Versions" check fails a
+  number at or below `develop`'s highest, and the queue tooling renumbers the
+  branch before it enqueues it. Tests find migrations by name
+  (`testdb.MigrationVersion`), so renumbering never touches a test.
+
+Timestamp versions were considered and not adopted: golang-migrate skips any
+version below a database's current one, so a timestamp from an older branch
+that merges after a newer one would be skipped exactly like a low sequential
+number, and the queue would still have to renumber it.
+
 ### Indexes
 
 Every index is maintained on every write to its table, so no table may carry
