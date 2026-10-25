@@ -63,7 +63,6 @@ export function FilterChipsRow({
   const [fit, setFit] = React.useState(chips.length)
   const [tick, setTick] = React.useState(0)
   const keys = chips.map(keyOf)
-  const keySig = JSON.stringify(keys)
 
   // Re-measure when the row changes size.
   React.useEffect(() => {
@@ -112,8 +111,9 @@ export function FilterChipsRow({
       }
     }
     if (next !== fit) setFit(next)
-    // keySig and tick are the triggers; fit is read, not a dependency loop.
-  }, [keySig, tick, fit, chips.length]) // eslint-disable-line react-hooks/exhaustive-deps
+    // Runs after every render that changes the chips (a new array each
+    // render); it only sets state when the fitting count changes, so it settles.
+  }, [keys, tick, fit, chips.length])
 
   const shown = chips.slice(0, fit)
   const hidden = chips.slice(fit)
