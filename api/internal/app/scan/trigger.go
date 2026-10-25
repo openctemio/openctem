@@ -562,7 +562,9 @@ func (s *Service) triggerSingleScan(ctx context.Context, sc *scan.Scan, triggerT
 		return nil, err // pinned to a deleted zone: fail closed
 	}
 	var plan *zonePlan
-	if len(zones) > 0 && s.toolReachesNetwork(ctx, sc.TenantID, sc.ScannerName) {
+	// A passive coverage run of public names (coverageZoneGroup) is not
+	// zone-routed: it sends no traffic to its targets.
+	if len(zones) > 0 && !zoneRoutingSkipped(ctx) && s.toolReachesNetwork(ctx, sc.TenantID, sc.ScannerName) {
 		if plan, err = s.planZoneDispatch(ctx, sc, zones, resolved.Targets); err != nil {
 			return nil, err
 		}

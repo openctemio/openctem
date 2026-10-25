@@ -119,6 +119,20 @@ does not re-align them. A new pair, or one whose precondition holds again,
 is due at once. A blocked or paused pair whose precondition stops holding
 becomes `not_applicable` like any other.
 
+**Passive capabilities and zones.** A passive capability (`resolve.dns`,
+`lookup.rdap`, `lookup.asn`, `discover.subdomains`) sends no traffic to
+its target. For an organization with scan zones, its public names skip
+zone routing in the gate and at the trigger. A public name is registrable
+under an ICANN public suffix, and none of the addresses it resolves to from
+the platform is private or denied. So a public name that stopped resolving
+is no longer refused `unresolved` or `zone_none`; its DNS re-check runs.
+Internal names (a private answer, a non-public suffix) and addresses keep
+zone routing. One run carries either public names or routed targets: the
+group of the batch's oldest target runs, and the other group stays due for
+the next batch. Only the coverage run's own trigger can skip zone routing
+(an unexported context marker), and every other gate check still applies.
+Without zones, or for an active capability, nothing changes.
+
 **HTTP probe on names.** A subdomain is probed only when it resolves and
 is worth a probe (`web_port_or_unscanned`): an address it resolves to has
 an active open port in the web port set, a web origin of the name
