@@ -509,9 +509,12 @@ func describeAssignment(a *pooldom.Assignment) string {
 
 // Effective is the pool a sensor's scan jobs use now, and which target
 // addresses it carries; nil when the sensor scans directly. A sensor's own
-// assignment wins over the organization default; a disabled pool is not
-// used (its sensors scan directly); the default carries public targets
-// only.
+// assignment wins over the organization default; the default carries
+// public targets only. A disabled default is off (its sensors scan
+// directly: that is the organization's "use proxies" switch). A disabled
+// pool a sensor is assigned to is still its path, with no endpoint: its
+// jobs fail closed and never go direct, until the pool is enabled or the
+// sensor gets another path (Direct is chosen explicitly).
 func (s *Service) Effective(ctx context.Context, tenantID, sensorID shared.ID) (*pooldom.Pool, string, error) {
 	a, err := s.repo.GetAssignment(ctx, tenantID, sensorID)
 	if err != nil {
@@ -522,7 +525,7 @@ func (s *Service) Effective(ctx context.Context, tenantID, sensorID shared.ID) (
 			return nil, "", nil
 		}
 		p, err := s.repo.GetPool(ctx, tenantID, *a.PoolID)
-		if err != nil || !p.Enabled {
+		if err != nil {
 			return nil, "", err
 		}
 		return p, pooldom.AppliesAll, nil
@@ -569,6 +572,10 @@ func (s *Service) CredentialsFor(ctx context.Context, tenantID, sensorID shared.
 		return nil, pooldom.ErrPoolNotFound
 	}
 	out := []Credential{}
+	if !p.Enabled {
+		// A disabled pool carries nothing (BuildJobEgress lists no endpoint).
+		return out, nil
+	}
 	now := s.now()
 	for _, e := range p.Endpoints {
 		if !e.HasCredentials() || !e.Enabled || !e.Health.Eligible(now) {
