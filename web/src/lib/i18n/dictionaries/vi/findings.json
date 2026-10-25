@@ -711,6 +711,7 @@
   "findings.header.reverifyQueuedDesc": "Kết quả được ghi lại làm bằng chứng. Kiểm tra khả năng tiếp cận không bao giờ thay đổi trạng thái; hãy dùng Kiểm tra lại để xác nhận bản sửa.",
   "findings.header.reverifyTitle": "Chạy lại một kiểm tra an toàn để xác nhận phát hiện vẫn còn tồn tại",
   "findings.header.triage": "Phân loại",
+  "findings.header.triageCount": "{count, plural, other {Phân loại, # phát hiện cần phân loại}}",
   "findings.header.triageView": "Chế độ xem phân loại",
   "findings.hideInformational": "Ẩn mức thông tin",
   "findings.hideInformational.hint": "Bỏ qua các phát hiện mức thông tin. Các chế độ xem công việc ẩn chúng theo mặc định; thay đổi trong Tài khoản, Tùy chọn.",
