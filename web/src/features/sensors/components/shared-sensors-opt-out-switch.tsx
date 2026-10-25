@@ -4,6 +4,7 @@ import { useState } from 'react'
 import useSWR from 'swr'
 import { toast } from 'sonner'
 
+import { ConfirmDialog } from '@/components/confirm-dialog'
 import { Label } from '@/components/ui/label'
 import { Switch } from '@/components/ui/switch'
 import { useTranslation } from '@/context/i18n-provider'
@@ -36,6 +37,8 @@ export function SharedSensorsOptOutSwitch() {
     { revalidateOnFocus: false, shouldRetryOnError: false }
   )
   const [saving, setSaving] = useState(false)
+  // Opting back in sends scans (and their targets) to shared sensors: ask first.
+  const [askLoosen, setAskLoosen] = useState(false)
 
   if (!canRead) return null
 
@@ -57,20 +60,36 @@ export function SharedSensorsOptOutSwitch() {
   }
 
   return (
-    <div className="flex items-center justify-between gap-4" data-testid="shared-sensors-opt-out">
-      <div className="space-y-0.5">
-        <Label htmlFor={ID}>{t('sensors.sharedOptOut.label')}</Label>
-        <p className="text-sm text-muted-foreground" id={`${ID}-desc`}>
-          {isOwner() ? t('sensors.sharedOptOut.description') : t('sensors.sharedOptOut.ownerOnly')}
-        </p>
+    <>
+      <div className="flex items-center justify-between gap-4" data-testid="shared-sensors-opt-out">
+        <div className="space-y-0.5">
+          <Label htmlFor={ID}>{t('sensors.sharedOptOut.label')}</Label>
+          <p className="text-sm text-muted-foreground" id={`${ID}-desc`}>
+            {isOwner()
+              ? t('sensors.sharedOptOut.description')
+              : t('sensors.sharedOptOut.ownerOnly')}
+          </p>
+        </div>
+        <Switch
+          id={ID}
+          aria-describedby={`${ID}-desc`}
+          checked={data?.opt_out ?? false}
+          onCheckedChange={(c) => (c ? void onChange(true) : setAskLoosen(true))}
+          disabled={!data || isLoading || saving || !isOwner()}
+        />
       </div>
-      <Switch
-        id={ID}
-        aria-describedby={`${ID}-desc`}
-        checked={data?.opt_out ?? false}
-        onCheckedChange={(c) => void onChange(c)}
-        disabled={!data || isLoading || saving || !isOwner()}
+      <ConfirmDialog
+        open={askLoosen}
+        onOpenChange={setAskLoosen}
+        destructive
+        title={t('confirm.sharedSensors.title')}
+        desc={t('confirm.sharedSensors.desc')}
+        confirmText={t('confirm.sharedSensors.btn')}
+        handleConfirm={async () => {
+          setAskLoosen(false)
+          await onChange(false)
+        }}
       />
-    </div>
+    </>
   )
 }
