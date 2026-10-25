@@ -62,8 +62,10 @@ jobs:
     permissions:
       contents: read
       pull-requests: read # the `ci:full` label (changed.sh reads it live)
+      actions: read # queue-verified.sh reads the merge queue's runs of this commit
     outputs:
-      api: ${{ steps.f.outputs.api }}
+      api: ${{ steps.f.outputs.api == 'true' && steps.queue.outputs.verified != 'true' }}
+      verified: ${{ steps.queue.outputs.verified }}
       full: ${{ steps.f.outputs.full }}
       migrations: ${{ steps.f.outputs.migrations }}
       test_matrix: ${{ steps.tier.outputs.test_matrix }}
@@ -82,6 +84,18 @@ jobs:
           PR_NUMBER: ${{ github.event.pull_request.number }}
           PR_LABELS: ${{ toJSON(github.event.pull_request.labels.*.name) }}
         run: bash .github/scripts/changed.sh
+      # A push to develop of a commit the merge queue already passed with this
+      # workflow skips the jobs below (.github/scripts/queue-verified.sh).
+      - id: queue
+        working-directory: .
+        env:
+          EVENT: ${{ github.event_name }}
+          REF: ${{ github.ref }}
+          SHA: ${{ github.sha }}
+          WORKFLOW_REF: ${{ github.workflow_ref }}
+          REPO: ${{ github.repository }}
+          GH_TOKEN: ${{ github.token }}
+        run: bash .github/scripts/queue-verified.sh
 
       # The shards of `Tests (Postgres + Redis)` for this tier. Full: 8 shards
       # with -race. Fast: 6 shards without it (same tests, about half the
@@ -139,7 +153,9 @@ jobs:
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: api/go.mod
-          cache: true
+          # A merge-queue ref can neither read develop's cache nor share what
+          # it writes, so it neither restores nor saves one.
+          cache: ${{ github.event_name != 'merge_group' }}
           cache-dependency-path: api/go.sum
 
       # The analysis caches of golangci-lint, and the installed staticcheck
@@ -417,7 +433,9 @@ jobs:
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: api/go.mod
-          cache: true
+          # A merge-queue ref can neither read develop's cache nor share what
+          # it writes, so it neither restores nor saves one.
+          cache: ${{ github.event_name != 'merge_group' }}
           cache-dependency-path: api/go.sum
 
       # The spec is generated, not committed; the contract tests read it.
@@ -542,7 +560,9 @@ jobs:
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: api/go.mod
-          cache: true
+          # A merge-queue ref can neither read develop's cache nor share what
+          # it writes, so it neither restores nor saves one.
+          cache: ${{ github.event_name != 'merge_group' }}
           cache-dependency-path: api/go.sum
 
       # The spec is generated, not committed; the contract tests read it.
@@ -642,7 +662,9 @@ jobs:
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: api/go.mod
-          cache: true
+          # A merge-queue ref can neither read develop's cache nor share what
+          # it writes, so it neither restores nor saves one.
+          cache: ${{ github.event_name != 'merge_group' }}
           cache-dependency-path: api/go.sum
 
       - name: Install golang-migrate
@@ -655,6 +677,31 @@ jobs:
         env:
           OPENCTEM_TEST_DB_REQUIRED: "1"
         run: go test -count=1 -run 'TestCheckSensorRename' ./internal/infra/postgres/
+
+  # A push to develop whose jobs were skipped (the merge queue passed this
+  # commit) still keeps develop's Go cache current: pull requests restore it,
+  # and setup-go writes it only when no cache for this go.sum exists yet.
+  warm-cache:
+    name: Go cache (develop)
+    needs: changes
+    if: needs.changes.outputs.verified == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - id: go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: api/go.mod
+          # A merge-queue ref can neither read develop's cache nor share what
+          # it writes, so it neither restores nor saves one.
+          cache: ${{ github.event_name != 'merge_group' }}
+          cache-dependency-path: api/go.sum
+      - name: Fill the cache (only when there was none for this go.sum)
+        if: steps.go.outputs.cache-hit != 'true'
+        run: go build ./... && go vet ./...
 
   # Merge queue and pushes only: the release-style static binaries (the former
   # separate `Build` job).
@@ -673,7 +720,9 @@ jobs:
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: api/go.mod
-          cache: true
+          # A merge-queue ref can neither read develop's cache nor share what
+          # it writes, so it neither restores nor saves one.
+          cache: ${{ github.event_name != 'merge_group' }}
           cache-dependency-path: api/go.sum
 
       - name: Build release binaries (linux/amd64, static)
