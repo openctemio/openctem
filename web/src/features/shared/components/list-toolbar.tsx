@@ -24,14 +24,17 @@ import { FilterPanelToggle, type FilterPanelToggleProps } from './filter-button'
  * - `below`: the active filter chips, in their own full-width row 8px under
  *   the toolbar, so the toolbar keeps one height. Pass a `FilterChipsRow`:
  *   one line with a locked chip first, the chips (the rest folded into "+N
- *   more"), Add filter and Clear right after them, the count at the end.
+ *   more"), Add filter and Clear right after them, the count at the end. On a
+ *   phone the locked chip takes a line of its own above the rest.
  *
  * Gaps are the toolbar's (8px between controls, 8px to the chips row); a slot
  * adds no margins of its own. The start group asks for at least 12rem; when it
  * and the end group do not fit on one line the whole end group moves to its
- * own line, so the search box is never squeezed under a lone button. The row is
- * a size container: controls switch their labels to icons by the toolbar's own
- * width (`@xl/toolbar:`).
+ * own line, so the search box is never squeezed under a lone button. Below
+ * 28rem of toolbar width (a phone) the start group always takes the whole
+ * first line, so the end buttons never cut the search placeholder short. The
+ * row is a size container: controls switch their labels to icons by the
+ * toolbar's own width (`@xl/toolbar:`).
  *
  * Keyboard (the first toolbar on the page answers): `/` focuses the search;
  * `f` opens the filters (the filter trigger) on a list without "Add filter",
@@ -132,7 +135,7 @@ export function ListToolbar({
         // button spills over the search box beside it. It wraps instead.
         <div
           data-slot="list-toolbar-start"
-          className="flex flex-[1_1_12rem] flex-wrap items-center gap-2"
+          className="flex flex-[1_1_12rem] flex-wrap items-center gap-2 @max-md/toolbar:basis-full"
         >
           {lead}
           {start}

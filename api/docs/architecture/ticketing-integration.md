@@ -215,7 +215,9 @@ alike:
   (`tlp_above_tracker_limit`). The limit is the pentest setting
   `ticket_max_tlp` (`PATCH /api/v1/tenants/{tenant}/settings/pentest`, owner
   or admin with `settings:write`, audited): `clear`, `green`, `amber`
-  (default) or `amber_strict`; `red` is refused. A stored value the gate
+  (default) or `amber_strict`; `red` is refused. Raising the limit (or
+  turning off authorization before testing) needs step-up re-authentication,
+  is audited high and tells every owner and administrator. A stored value the gate
   cannot read fails closed (`clear`), and a read error refuses the request.
 - A refused create answers 403 with code `TICKET_EGRESS_REFUSED` and
   `details.reason` (`pentest_campaign_route_only`, `pentest_without_campaign`,

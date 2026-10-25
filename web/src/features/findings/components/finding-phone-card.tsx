@@ -11,6 +11,7 @@ import { FindingSubStatus } from '@/features/findings/components/lifecycle/findi
 import { ExploitSignals } from '@/features/findings/components/exploit-signals'
 import { PriorityClassBadge } from '@/features/findings/components/priority-class-badge'
 import { BranchOnlyBadge } from '@/features/findings/components/branch-only-badge'
+import { MetaLine } from '@/features/shared/components/text-layout'
 import { useTranslation } from '@/context/i18n-provider'
 import { toDisplayText } from '@/lib/untrusted-text'
 import { middleEllipsis } from '@/lib/middle-ellipsis'
@@ -64,11 +65,10 @@ export function FindingPhoneCard({ finding: f, selection, onOpen, menu }: Findin
             {title}
           </p>
           {(f.cve || f.scanner) && (
-            <p className="mt-0.5 truncate text-xs text-muted-foreground">
-              {f.cve && <span className="font-mono">{f.cve}</span>}
-              {f.cve && f.scanner && ' · '}
-              {f.scanner}
-            </p>
+            <MetaLine
+              className="mt-0.5"
+              items={[f.cve && <span className="font-mono">{f.cve}</span>, f.scanner]}
+            />
           )}
           {f.location?.asset && (
             <p dir="auto" className="mt-0.5 truncate text-xs [unicode-bidi:isolate]">

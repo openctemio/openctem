@@ -207,7 +207,7 @@ widget has `widget_type` `metric` or `note` and a `config` of this form
   | `intel.kev_open` | scalar, preset KEV | as above | F1 |
   | `findings.age_bands` | matrix severity × age band | as above | F1 |
   | `sla.within` | ratio | none | F1 |
-  | `coverage.discovery` | ratio: ledger-tracked assets in scope with a successful discovery run in the coverage window (blocked or failed runs never count); nothing tracked is not measured; opens the uncovered assets | none | coverage ledger + `assets` |
+  | `coverage.discovery` | ratio: ledger-tracked assets in scope whose every applicable capability succeeded in the coverage window (a failed, timed-out, paused or never-run capability leaves the asset uncovered; scope-blocked rows and the platform DNS checks are not required); nothing tracked is not measured; opens the uncovered assets | none | coverage ledger + `assets` |
   | `exposure.open_by_priority` | time series by priority (P0-P2) | priority or severity | F1 + F2 |
   | `flow.new_vs_fixed` | time series of flows | none | F2 |
   | `fix.time_to_fix` | duration (1: category) | priority or severity | F2 |
@@ -306,7 +306,7 @@ computed for the read's scope and stored in the snapshot.
 | Stage of `ctem.loop` | Figure | Second figure | Opens | Not measured when |
 |---|---|---|---|---|
 | Scoping | crown jewels in scope (`assets.is_crown_jewel`) | crown jewels with an open P0/P1 finding | `/assets?is_crown_jewel=true&program_assets=exclude` | never (0 designated is "designate crown jewels") |
-| Discovery | % of assets the coverage ledger tracks (`asset_coverage`, a capability that applies) with a successful run of any capability in the last 30 days | assets not covered | `/assets?coverage=uncovered&program_assets=exclude` | the ledger tracks no asset in scope |
+| Discovery | % of assets the coverage ledger tracks (`asset_coverage`, a capability that applies) where every applicable capability succeeded in the last 30 days (scope-blocked rows and the platform DNS checks are not required) | assets not covered | `/assets?coverage=uncovered&program_assets=exclude` | the ledger tracks no asset in scope |
 | Prioritize | open P0 findings (F1) | open KEV findings (F1) | the findings list of the same filter | never |
 | Validate | % of open findings with validation evidence (the Validation overview's coverage) | retests completed in the last 30 days | `/validation` | no open finding in scope |
 | Mobilize | % of open findings with an SLA that is not breached (F1) | breached findings | the breached findings list | no open finding has an SLA |
