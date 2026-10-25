@@ -180,7 +180,8 @@ that it resolves (RFC-088 A5; `scan.Service.DropStaleNames`):
 A run, and the routing preview of the New Scan review, group every target
 they do not dispatch by reason (`internal/app/scan/target_outcomes.go`):
 `skipped` in `POST /scan-zones/preview` (with `will_scan` and
-`skipped_total`) and `skipped_targets` in the run context. One group per
+`skipped_total`), `skipped_targets` in the run context and `dispatch.skipped` (with
+`dispatch.will_scan`) on `GET /scan-runs/{id}`. One group per
 reason, largest first, with the full count and at most 200 names (25 in a
 run record):
 

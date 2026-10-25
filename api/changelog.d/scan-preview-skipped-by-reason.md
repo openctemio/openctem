@@ -6,7 +6,7 @@
 ### Added: skipped targets grouped by reason in the routing preview and the run
 
 - `POST /scan-zones/preview` returns `will_scan`, `skipped_total` and `skipped` (one group per reason with a count, a tone and up to 200 names) and a `kind` on each skipped target. It accepts `target_options`, applies the resolve-before-active rule like the trigger, and runs in the caller's act scope.
-- A run records the same groups in its context (`skipped_targets`, up to 25 names per reason).
+- A run records the same groups in its context (`skipped_targets`, up to 25 names per reason); `GET /scan-runs/{id}` returns them in `dispatch.skipped` with `dispatch.will_scan`.
 
 ### Security: the routing preview no longer counts names outside the caller's data scope
 

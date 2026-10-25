@@ -172,12 +172,8 @@ func skipTotal(groups []SkipGroup) int {
 }
 
 // recordSkipGroups stores a run's skip groups (bounded samples) for its
-// Dispatch card.
+// Dispatch card; an empty list says nothing was skipped.
 func recordSkipGroups(runContext map[string]any, groups []SkipGroup) {
-	if len(groups) == 0 {
-		delete(runContext, RunContextKeySkipped)
-		return
-	}
 	out := make([]SkipGroup, len(groups))
 	for i, g := range groups {
 		g.Targets = g.Targets[:min(len(g.Targets), maxRunSkipSamples)]

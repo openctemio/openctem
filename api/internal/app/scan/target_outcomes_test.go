@@ -74,8 +74,8 @@ func TestSkipGroups_Bounded(t *testing.T) {
 		t.Fatal("recording trimmed the caller's groups")
 	}
 	recordSkipGroups(rc, nil)
-	if _, ok := rc[RunContextKeySkipped]; ok {
-		t.Fatal("empty groups left a stale record")
+	if g, ok := rc[RunContextKeySkipped].([]SkipGroup); !ok || len(g) != 0 {
+		t.Fatalf("nothing skipped = %v, want an empty list", rc[RunContextKeySkipped])
 	}
 }
 
