@@ -338,7 +338,11 @@ export function FindingDetailDrawer({
             {!taskNav && <FindingTaskBand findingId={detail.id} />}
             <FindingFixCard finding={detail} compact onOpenPlan={() => openPage('remediation')} />
             <DetailSections>
-              <FindingTypePanel finding={detail} onOpenTrace={() => openPage('attack-path')} />
+              <FindingTypePanel
+                finding={detail}
+                onOpenTrace={() => openPage('attack-path')}
+                onOpenEvidence={() => openPage('evidence')}
+              />
               <FindingProperties finding={detail} triage={triage} hideTriage />
               <FindingIntelSection finding={detail} />
               <FindingProvenanceSection finding={detail} />
