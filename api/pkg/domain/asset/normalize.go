@@ -345,7 +345,7 @@ func normalizeRepoName(name string) string {
 	name = strings.TrimPrefix(name, "https://")
 	name = strings.TrimPrefix(name, "http://")
 
-	// ssh://[user@]host[:port]/org/repo → host/org/repo
+	// An ssh URL with an optional user and port names the host and path only.
 	if strings.HasPrefix(name, "ssh://") {
 		name = strings.TrimPrefix(name, "ssh://")
 		slash := strings.Index(name, "/")
