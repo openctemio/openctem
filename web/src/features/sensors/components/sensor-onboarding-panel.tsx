@@ -462,11 +462,11 @@ function Troubleshooting() {
         <ChevronDown className="h-4 w-4 shrink-0" aria-hidden />
       </CollapsibleTrigger>
       <CollapsibleContent className="border-t">
-        <dl className="divide-y">
+        <ul className="divide-y">
           {TROUBLESHOOTING.map((item) => (
-            <div key={item.key} className="space-y-1.5 px-3 py-3 text-sm">
-              <dt className="font-medium">{t(`sensors.onboard.trouble.${item.key}.title`)}</dt>
-              <dd className="space-y-1.5">
+            <li key={item.key} className="space-y-1.5 px-3 py-3 text-sm">
+              <h4 className="font-medium">{t(`sensors.onboard.trouble.${item.key}.title`)}</h4>
+              <div className="space-y-1.5">
                 <span className="block text-xs text-muted-foreground">
                   {t('sensors.onboard.trouble.logSays')}
                 </span>
@@ -488,10 +488,10 @@ function Troubleshooting() {
                     {health}
                   </code>
                 )}
-              </dd>
-            </div>
+              </div>
+            </li>
           ))}
-        </dl>
+        </ul>
       </CollapsibleContent>
     </Collapsible>
   )
