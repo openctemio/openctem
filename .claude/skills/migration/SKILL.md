@@ -5,8 +5,10 @@ description: Rules for writing a database migration in api/migrations - numberin
 
 Full reference: `api/docs/development/migrations.md`.
 
-1. **Number:** `NNNNNN_<snake_name>.{up,down}.sql`, above the highest on `develop` and in open PRs (use the
-   band you were given, if any). Numbers have gaps; never count files. In the merge queue the "Migration
+1. **Number:** `NNNNNN_<snake_name>.{up,down}.sql`, created with `make -C api migration-new name=<snake_name>`
+   (one above the highest on `develop`, this branch and every open PR). Never pick or change a number by hand:
+   `make -C api migration-renumber` moves your migrations up when someone took the number. Numbers have gaps;
+   never count files. In the merge queue the "Migration
    Versions" CI step fails a duplicate or a version not above the base's highest (the base includes queued
    groups). On a PR that is only a warning: if `develop` overtakes you, PR CI renumbers the runner's copy of
    your migrations above the base for that run (`.github/scripts/pr-migration-renumber.sh`), and the merge

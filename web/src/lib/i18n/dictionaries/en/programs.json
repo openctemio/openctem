@@ -2,6 +2,7 @@
   "programs.acceptHint": "Only passive monitoring runs until someone accepts this program rules and scope (terms {hash}); its entries authorize no active scan until then.",
   "programs.acceptStart": "Accept and start testing",
   "programs.attestation": "Accepted terms",
+  "programs.back": "Back to programs",
   "programs.catalog.bounty": "Bounty",
   "programs.catalog.counts": "{in} in scope, {out} out of scope; from {source}, {date}",
   "programs.catalog.countsSuggested": "{in} in scope, {suggested} suggested, {out} out of scope; from {source}, {date}",
@@ -202,6 +203,5 @@
   "programs.visibility.publicHint": "Program members and everyone who sees the whole organization.",
   "programs.visibility.title": "Who can see this program",
   "programs.windows": "Testing windows",
-  "programs.windowsAny": "Any time",
-  "programs.back": "Back to programs"
+  "programs.windowsAny": "Any time"
 }

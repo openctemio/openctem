@@ -128,6 +128,7 @@
   "remediationCampaigns.status.completed": "Hoàn tất",
   "remediationCampaigns.status.draft": "Nháp",
   "remediationCampaigns.statusFilter": "Lọc theo trạng thái",
+  "remediationCampaigns.statusLabel": "Trạng thái",
   "remediationCampaigns.taskLink.named": "Chiến dịch: {name}",
   "remediationCampaigns.taskLink.unnamed": "Mở chiến dịch",
   "remediationCampaigns.tasks.count.one": "1 tác vụ",
@@ -145,6 +146,5 @@
   "remediationCampaigns.toast.saved": "Đã lưu chiến dịch",
   "remediationCampaigns.toast.started": "Đã bắt đầu chiến dịch",
   "remediationCampaigns.toast.taskRemoved": "Đã gỡ tác vụ khỏi chiến dịch",
-  "remediationCampaigns.toast.tasksAdded": "Đã thêm tác vụ vào chiến dịch",
-  "remediationCampaigns.statusLabel": "Trạng thái"
+  "remediationCampaigns.toast.tasksAdded": "Đã thêm tác vụ vào chiến dịch"
 }

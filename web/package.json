@@ -34,7 +34,7 @@
     "e2e:report": "playwright show-report",
     "generate-secret": "npx tsx scripts/generate-secret.ts",
     "generate:api-types": "bash scripts/generate-api-types.sh",
-    "prepare": "cd .. && git config core.hooksPath .githooks 2>/dev/null || true"
+    "prepare": "cd .. && git config core.hooksPath .githooks 2>/dev/null && git config merge.i18n-json.driver 'node web/scripts/i18n-json.mjs merge %O %A %B %P' 2>/dev/null || true"
   },
   "lint-staged": {
     "*.{ts,tsx}": [

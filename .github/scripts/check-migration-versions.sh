@@ -84,7 +84,7 @@ if [[ -n "$base" ]]; then
     fi
     if (( v <= base_max )); then
       next=$((base_max + 1))
-      msg="$dir/${raw}_${name} is version $v, but the base already has migrations up to $base_max. golang-migrate would silently skip it on every database already at $base_max. Renumber it to $(printf '%0*d' "${#raw}" "$next")."
+      msg="$dir/${raw}_${name} is version $v, but the base already has migrations up to $base_max. golang-migrate would silently skip it on every database already at $base_max. Renumber it to $(printf '%0*d' "${#raw}" "$next") or above: make -C api migration-renumber, then commit."
       if [[ "$below_base" == warning ]]; then
         warn "$msg (The merge queue renumbers it when it enqueues this PR.)"
       else

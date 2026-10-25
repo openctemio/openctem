@@ -1,5 +1,6 @@
 {
-  "activity.listLabel": "Hoạt động",
+  "activity.emptyFiltered": "Chưa có hoạt động loại này",
+  "activity.emptyFilteredHint": "Bỏ bộ lọc để xem tất cả.",
   "activity.filterLabel": "Lọc hoạt động",
   "activity.item.actions": "Thao tác bình luận",
   "activity.item.addReaction": "Thêm biểu cảm",
@@ -16,9 +17,8 @@
   "activity.item.retry": "Thử lại",
   "activity.item.save": "Lưu",
   "activity.item.sending": "Đang gửi…",
+  "activity.listLabel": "Hoạt động",
   "activity.loadMore": "Tải thêm",
   "activity.repeated": "{count} lần",
-  "activity.repeatedLast": "{count} lần, lần cuối lúc {time}",
-  "activity.emptyFiltered": "Chưa có hoạt động loại này",
-  "activity.emptyFilteredHint": "Bỏ bộ lọc để xem tất cả."
+  "activity.repeatedLast": "{count} lần, lần cuối lúc {time}"
 }
