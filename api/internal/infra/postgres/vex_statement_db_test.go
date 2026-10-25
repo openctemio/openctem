@@ -241,7 +241,7 @@ func TestVEXStatements_DB(t *testing.T) {
 		t.Fatalf("sticky: %d %v", n, err)
 	}
 	f.wantStatus(f4, "resolved", "vex_statement")
-	reopened, err := NewFindingRepository(&DB{DB: f.db}).AutoReopenByFingerprintsBatch(ctx, f.tenant, []string{"fp-" + f4.String()})
+	reopened, err := NewFindingRepository(&DB{DB: f.db}).AutoReopenByFingerprintsBatch(ctx, f.tenant, []string{"fp-" + f4.String()}, time.Now())
 	if err != nil || len(reopened) != 0 {
 		t.Fatalf("regression reopen must skip a vex_fixed finding: %v %v", reopened, err)
 	}
