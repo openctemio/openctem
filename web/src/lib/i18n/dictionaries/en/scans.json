@@ -527,6 +527,7 @@
   "scans.runStatus.failed": "Failed",
   "scans.runStatus.timeout": "Timed out",
   "scans.runStatus.canceled": "Canceled",
+  "scans.runStatus.paused": "Paused",
   "scans.runStatus.blocked": "Blocked",
   "scans.runs.noPermission": "Viewing scan runs needs the \"View scans\" permission.",
   "scans.runs.colScan": "Scan",
