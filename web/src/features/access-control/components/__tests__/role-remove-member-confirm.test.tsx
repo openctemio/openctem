@@ -5,10 +5,12 @@ import userEvent from '@testing-library/user-event'
 import { RoleDetailSheet } from '../role-detail-sheet'
 import type { Role } from '@/features/access-control'
 
-const csrfFetch = vi.hoisted(() => vi.fn())
+// The shared client (step-up dialog and retry).
+const api = vi.hoisted(() => ({ del: vi.fn(), patch: vi.fn() }))
 vi.mock('@/lib/api/client', async (orig) => ({
   ...(await orig<typeof import('@/lib/api/client')>()),
-  csrfFetch,
+  del: api.del,
+  patch: api.patch,
 }))
 vi.mock('@/features/access-control', async (orig) => ({
   ...(await orig<typeof import('@/features/access-control')>()),
@@ -60,25 +62,23 @@ const role = {
 
 describe('Role detail: remove a member', () => {
   it('asks first and names the member and the role', async () => {
-    csrfFetch.mockResolvedValue(new Response(null, { status: 204 }))
+    api.del.mockResolvedValue(undefined)
     render(<RoleDetailSheet role={role} open onOpenChange={vi.fn()} />)
     await userEvent.click(screen.getByRole('tab', { name: /Members/ }))
     await userEvent.click(screen.getByRole('button', { name: /Actions for Lan Tran/ }))
     await userEvent.click(await screen.findByRole('menuitem', { name: /Remove from role/ }))
-    expect(csrfFetch).not.toHaveBeenCalled()
+    expect(api.del).not.toHaveBeenCalled()
     const dialog = await screen.findByRole('alertdialog')
     expect(dialog).toHaveTextContent('Remove Lan Tran from the role Analyst?')
     await userEvent.click(within(dialog).getByRole('button', { name: 'Remove' }))
-    await waitFor(() =>
-      expect(csrfFetch).toHaveBeenCalledWith('/api/v1/users/u1/roles/r1', { method: 'DELETE' })
-    )
+    await waitFor(() => expect(api.del).toHaveBeenCalledWith('/api/v1/users/u1/roles/r1'))
   })
 
   // A team role is the member's role: it changes through the membership
   // (PATCH), never through /users/{id}/roles.
   it('changes a team role through the membership, not the roles API', async () => {
-    csrfFetch.mockReset()
-    csrfFetch.mockResolvedValue(new Response(null, { status: 200 }))
+    api.del.mockReset()
+    api.patch.mockResolvedValue(undefined)
     const admin = { ...role, name: 'Admin', slug: 'admin', is_system: true } as unknown as Role
     render(<RoleDetailSheet role={admin} open onOpenChange={vi.fn()} />)
     await userEvent.click(screen.getByRole('tab', { name: /Members/ }))
@@ -88,15 +88,11 @@ describe('Role detail: remove a member', () => {
     const dialog = await screen.findByRole('alertdialog')
     await userEvent.click(within(dialog).getByRole('button', { name: 'Change' }))
     await waitFor(() =>
-      expect(csrfFetch).toHaveBeenCalledWith('/api/v1/tenants/acme/members/mem1', {
-        method: 'PATCH',
-        body: JSON.stringify({ role: 'member' }),
+      expect(api.patch).toHaveBeenCalledWith('/api/v1/tenants/acme/members/mem1', {
+        role: 'member',
       })
     )
-    expect(csrfFetch).not.toHaveBeenCalledWith(
-      expect.stringContaining('/users/'),
-      expect.anything()
-    )
+    expect(api.del).not.toHaveBeenCalled()
   })
 
   it('offers no way to remove the owner role', async () => {

@@ -2,7 +2,7 @@
 
 import { useState, useMemo, useCallback } from 'react'
 import Link from '@/components/link'
-import { csrfFetch } from '@/lib/api/client'
+import { del, patch } from '@/lib/api/client'
 import { tenantEndpoints } from '@/lib/api/endpoints'
 import { useTenant } from '@/context/tenant-provider'
 import { useMembers } from '@/features/organization'
@@ -218,7 +218,9 @@ export function RoleDetailSheet({
 
       setRemovingMemberId(member.id)
       try {
-        let response: Response
+        // Through the shared client: a change that needs a recent sign-in
+        // (making or unmaking an administrator) opens the step-up dialog and
+        // is retried, instead of failing with a bare 403.
         if (isTeamRole) {
           // A team role changes through the membership, not the roles API.
           const membership = tenantMembers.find((m) => m.user_id === member.user_id)
@@ -227,22 +229,11 @@ export function RoleDetailSheet({
               t('org.roles.teamRoleUnavailable', 'This team role cannot be changed here')
             )
           }
-          response = await csrfFetch(
-            tenantEndpoints.updateMember(currentTenant.slug, membership.id),
-            {
-              method: 'PATCH',
-              body: JSON.stringify({ role: demoteTo }),
-            }
-          )
-        } else {
-          response = await csrfFetch(`/api/v1/users/${member.user_id}/roles/${role.id}`, {
-            method: 'DELETE',
+          await patch(tenantEndpoints.updateMember(currentTenant.slug, membership.id), {
+            role: demoteTo,
           })
-        }
-
-        if (!response.ok) {
-          const error = await response.json().catch(() => null)
-          throw new Error(error?.message || `HTTP ${response.status}`)
+        } else {
+          await del(`/api/v1/users/${member.user_id}/roles/${role.id}`)
         }
 
         toast.success(
