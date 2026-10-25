@@ -119,16 +119,12 @@ const RAW_SEARCH_ALLOWED: Record<string, string> = {
   'src/features/shared/components/watchers/manage-watchers-dialog.tsx': 'member picker in a dialog',
   'src/features/ticket-mapping/components/field-mapper.tsx':
     'field lookup inside the mapping editor',
-  'src/app/(dashboard)/findings/page.tsx':
-    'deferred: migrates after the findings triage and hide-informational work lands',
 }
 
 /** Files that may render `FilterPanelToggle` / `FilterButton` themselves. file -> reason. */
 const TRIGGER_ALLOWED: Record<string, string> = {
   'src/features/shared/components/filter-button.tsx': 'defines it',
   'src/features/shared/components/list-toolbar.tsx': 'renders filterToggle',
-  'src/app/(dashboard)/findings/page.tsx':
-    'deferred: migrates after the findings triage and hide-informational work lands',
 }
 
 /** Each `<Input ...>` element's props, up to its end. */
@@ -197,8 +193,6 @@ describe('one list toolbar', () => {
   it('leaves joining the trigger to the search to ListSearch', () => {
     const offenders = files
       .filter((f) => rel(f) !== 'src/features/shared/components/list-search.tsx')
-      // Deferred pages keep their own join until they move onto ListSearch.
-      .filter((f) => !RAW_SEARCH_ALLOWED[rel(f)]?.startsWith('deferred'))
       .filter((f) => /\[data-slot=filter-button\]\]:rounded-e-none/.test(readFileSync(f, 'utf8')))
       .map(rel)
     expect(offenders).toEqual([])
