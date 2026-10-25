@@ -63,6 +63,34 @@ beforeEach(() => {
 })
 
 describe('TicketingIntegrationPage', () => {
+  it('words a failed connection from its code and never shows the id or the raw error', () => {
+    const id = '99999999-9999-4999-8999-999999999999'
+    withRows([
+      row({
+        id,
+        name: 'Jira SEC',
+        status: 'error',
+        supported: true,
+        status_code: 'INTEGRATION_NO_CREDENTIALS',
+        status_message: `Connection test failed: integration ${id} has no credentials`,
+      }),
+      row({
+        id: 'old',
+        name: 'Old row',
+        status: 'error',
+        supported: true,
+        status_message: `Connection test failed: integration ${id} has no credentials`,
+      }),
+    ])
+    const { container } = render(<TicketingIntegrationPage />)
+    expect(
+      screen.getByText('This connection has no API token. Add one to use it.')
+    ).toBeInTheDocument()
+    // An older row without a code: its stored text is not safe, so the generic sentence.
+    expect(screen.getByText('Old row could not connect')).toBeInTheDocument()
+    expect(container.textContent).not.toContain(id)
+  })
+
   it('shows a Linear row from before as not supported', () => {
     withRows([
       row({ id: 'lin', name: 'Old Linear', provider: 'linear', supported: false }),
