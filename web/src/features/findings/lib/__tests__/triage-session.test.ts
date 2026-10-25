@@ -88,9 +88,10 @@ describe('safeReturnPath (no open redirect)', () => {
 describe('session storage', () => {
   it('round-trips a session for the same query only', () => {
     const store = memoryStore()
-    startSession('status=new', '/findings?severity=high', store)
+    startSession('status=new', '/findings?severity=high', 'needs_triage', store)
     const s = readSession('status=new', store)
     expect(s).toMatchObject({
+      viewKey: 'needs_triage',
       query: 'status=new',
       returnTo: '/findings?severity=high',
       fromList: true,
