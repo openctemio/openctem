@@ -216,3 +216,56 @@ func TestSuggestionCards_EvidenceAndOwnPrefix(t *testing.T) {
 		}
 	}
 }
+
+// While unclassified assets get low-impact checks, a known, unshared address
+// needs no decision: it is listed apart and the card counts only the
+// unknown ones. A card that offers nothing is not a decision.
+func TestSuggestionCards_UnclassifiedChecksAndTotal(t *testing.T) {
+	store := &fakeSuggestionStore{addrs: []AddressBehindNames{
+		addr("198.51.100.20", nil, "u.acme.example"),                                                 // unknown network: waits
+		addr("198.51.100.21", map[string]any{"asn": "AS64500", "asn_org": "Acme"}, "k.acme.example"), // known: checked
+		addr("104.16.2.2", nil, "e.acme.example"),                                                    // edge: shared
+	}}
+	cover := coverSet{"u.acme.example": true, "k.acme.example": true, "e.acme.example": true}
+	org := func(context.Context, shared.ID) (string, error) { return "Acme", nil }
+	for _, tc := range []struct {
+		mode               string
+		count, checked, sh int
+	}{
+		{"low_impact", 1, 1, 1},
+		{"full", 1, 1, 1},
+		{"off", 2, 0, 1},
+		{"garbage", 2, 0, 1},
+	} {
+		svc := NewSuggestionService(store, cover, nil, org, nil)
+		mode := tc.mode
+		svc.SetUnclassified(func(context.Context, shared.ID) (string, error) { return mode, nil })
+		out, err := svc.Cards(context.Background(), shared.NewID(), true)
+		if err != nil {
+			t.Fatal(err)
+		}
+		c := out.Cards[0]
+		if c.Count != tc.count || c.CheckedCount != tc.checked || len(c.CheckedAddresses) != tc.checked || c.SharedCount != tc.sh {
+			t.Errorf("%s: count %d checked %d shared %d", tc.mode, c.Count, c.CheckedCount, c.SharedCount)
+		}
+		if tc.checked == 1 && c.CheckedAddresses[0].Address != "198.51.100.21" {
+			t.Errorf("%s: checked %v", tc.mode, c.CheckedAddresses)
+		}
+		out.Finish(2)
+		if out.Total != 3 || out.NameRules != 2 {
+			t.Errorf("%s: total %d name rules %d", tc.mode, out.Total, out.NameRules)
+		}
+	}
+
+	// Only shared addresses: the card comes back for the page, the badge
+	// counts nothing.
+	only := &fakeSuggestionStore{addrs: []AddressBehindNames{addr("104.16.3.3", nil, "e.acme.example")}}
+	out, err := NewSuggestionService(only, cover, nil, org, nil).Cards(context.Background(), shared.NewID(), true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	out.Finish(0)
+	if len(out.Cards) != 1 || out.Cards[0].Count != 0 || out.Total != 0 {
+		t.Fatalf("shared-only %+v", out)
+	}
+}
