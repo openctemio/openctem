@@ -14,7 +14,7 @@ import {
 } from '@/components/ui/select'
 import { Separator } from '@/components/ui/separator'
 import { Skeleton } from '@/components/ui/skeleton'
-import { Palette, Globe, Clock, Calendar, Save, Loader2, RotateCcw } from 'lucide-react'
+import { Palette, Globe, Clock, Calendar, Save, Loader2, RotateCcw, ListFilter } from 'lucide-react'
 import { toast } from 'sonner'
 import { getErrorMessage } from '@/lib/api/error-handler'
 import { useTheme } from 'next-themes'
@@ -26,10 +26,20 @@ import {
   SUPPORTED_TIMEZONES,
   DATE_FORMATS,
 } from '@/features/account'
-import type { UpdatePreferencesInput } from '@/features/account'
+import type { FindingsInformationalPreference, UpdatePreferencesInput } from '@/features/account'
+import { refreshFindingQuickViews } from '@/features/findings/api/use-quick-views'
 import { PageStack } from '@/features/shared'
 
 const THEME_FALLBACK = { light: 'Light', dark: 'Dark', system: 'System' } as const
+
+const INFORMATIONAL_CHOICES: ReadonlyArray<{
+  value: FindingsInformationalPreference
+  fallback: string
+}> = [
+  { value: 'default', fallback: "Organization's default" },
+  { value: 'exclude', fallback: 'Hide informational findings' },
+  { value: 'include', fallback: 'Show informational findings' },
+]
 
 export default function PreferencesPage() {
   const { t } = useTranslation()
@@ -44,6 +54,7 @@ export default function PreferencesPage() {
     timezone: 'UTC',
     date_format: 'DD/MM/YYYY',
     time_format: '24h',
+    findings_informational: 'default',
   })
   const [hasChanges, setHasChanges] = useState(false)
 
@@ -62,6 +73,7 @@ export default function PreferencesPage() {
         timezone: local.timezone || 'UTC',
         date_format: local.date_format || 'DD/MM/YYYY',
         time_format: local.time_format || '24h',
+        findings_informational: preferences.findings_informational || 'default',
       })
       setHasChanges(false)
     }
@@ -105,7 +117,10 @@ export default function PreferencesPage() {
       await updatePreferences({
         theme: formData.theme,
         language: formData.language,
+        findings_informational: formData.findings_informational,
       })
+      // The findings work views follow the new choice.
+      void refreshFindingQuickViews()
       // Re-read the preferences from the server rather than caching the PUT
       // response: an older API returned the whole user object there, which
       // reset this form to its defaults (23a B4).
@@ -127,6 +142,7 @@ export default function PreferencesPage() {
       timezone: 'UTC',
       date_format: 'DD/MM/YYYY',
       time_format: '24h',
+      findings_informational: 'default',
     }
     setFormData(defaults)
     setTheme('system')
@@ -282,6 +298,52 @@ export default function PreferencesPage() {
                 </SelectContent>
               </Select>
             </div>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Findings */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <ListFilter className="h-5 w-5" />
+            {t('account.preferences.findings', 'Findings')}
+          </CardTitle>
+          <CardDescription>
+            {t(
+              'account.preferences.findingsDescription',
+              'How your findings work views (Active, My queue, SLA breached) open'
+            )}
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="space-y-2 sm:max-w-sm">
+            <Label htmlFor="findings-informational">
+              {t('account.preferences.findingsInformational', 'Informational findings')}
+            </Label>
+            <Select
+              value={formData.findings_informational}
+              onValueChange={(value) =>
+                handleChange('findings_informational', value as FindingsInformationalPreference)
+              }
+            >
+              <SelectTrigger id="findings-informational">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {INFORMATIONAL_CHOICES.map((c) => (
+                  <SelectItem key={c.value} value={c.value}>
+                    {t(`account.preferences.findingsInformational.${c.value}`, c.fallback)}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <p className="text-xs text-muted-foreground">
+              {t(
+                'account.preferences.findingsInformationalHint',
+                'Needs triage never lists them. All findings and an Informational severity filter always do.'
+              )}
+            </p>
           </div>
         </CardContent>
       </Card>
