@@ -205,7 +205,8 @@ var findingCreateSQL = `
 			` + findingTypeColumnsSQL + `,
 			` + findingNetworkColumnsSQL + `,
 			` + findingScannerColumnsSQL + `,
-			` + findingIdentityColumnsSQL + `
+			` + findingIdentityColumnsSQL + `,
+			` + findingSLAKEVColumnsSQL + `
 		)
 		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, $32, $33, $34,
 			$35, $36, $37, $38, $39, $40, $41, $42, $43, $44, $45, $46, $47, $48, $49, $50,
@@ -215,7 +216,8 @@ var findingCreateSQL = `
 			$89, $90, $91, $92, $93, $94` + findingTypePlaceholders(95) +
 	findingNetworkPlaceholders(95+findingTypeColumnCount) +
 	findingScannerPlaceholders(95+findingTypeColumnCount+findingNetworkColumnCount) +
-	findingIdentityPlaceholders(95+findingTypeColumnCount+findingNetworkColumnCount+findingScannerColumnCount) + `)
+	findingIdentityPlaceholders(95+findingTypeColumnCount+findingNetworkColumnCount+findingScannerColumnCount) +
+	findingSLAKEVPlaceholders(95+findingTypeColumnCount+findingNetworkColumnCount+findingScannerColumnCount+findingIdentityColumnCount) + `)
 	`
 
 // findingCreateArgs is the argument list for findingCreateSQL. metadata is
@@ -344,6 +346,7 @@ func findingCreateArgs(finding *vulnerability.Finding, metadata []byte) ([]any, 
 	args = append(args, findingNetworkArgs(finding)...)
 	args = append(args, findingScannerArgs(finding)...)
 	args = append(args, findingIdentityArgs(finding)...)
+	args = append(args, findingSLAKEVArgs(finding)...)
 	return args, nil
 }
 
@@ -755,7 +758,8 @@ func findingInsertColumnsSQL() string {
 			` + findingTypeColumnsSQL + `,
 			` + findingNetworkColumnsSQL + `,
 			` + findingScannerColumnsSQL + `,
-			` + findingIdentityColumnsSQL + `
+			` + findingIdentityColumnsSQL + `,
+			` + findingSLAKEVColumnsSQL + `
 		)`
 }
 
@@ -892,7 +896,7 @@ func findingUpsertConflictSQL() string {
 			tags = ` + findingTagsMergeSQL("findings.tags", "EXCLUDED.tags") + `,
 			-- Rule name: first non-empty one wins, as in EnrichFrom.
 			rule_name = COALESCE(NULLIF(findings.rule_name, ''), EXCLUDED.rule_name)` +
-		findingTypeConflictSQL() + findingNetworkConflictSQL() + findingScannerConflictSQL() + findingIdentityConflictSQL() + "\n\t"
+		findingTypeConflictSQL() + findingNetworkConflictSQL() + findingScannerConflictSQL() + findingIdentityConflictSQL() + findingSLAKEVConflictSQL() + "\n\t"
 }
 
 // findingTagsMergeSQL is the SQL expression merging a stored and an incoming
@@ -925,7 +929,7 @@ func (r *FindingRepository) execFindingInsert(ctx context.Context, stmt *sql.Stm
 
 // findingInsertColumnCount is the number of columns in the findings INSERT.
 // It MUST stay in sync with findingInsertColumnsSQL and findingInsertArgs.
-const findingInsertColumnCount = 94 + findingTypeColumnCount + findingNetworkColumnCount + findingScannerColumnCount + findingIdentityColumnCount
+const findingInsertColumnCount = 94 + findingTypeColumnCount + findingNetworkColumnCount + findingScannerColumnCount + findingIdentityColumnCount + findingSLAKEVColumnCount
 
 // findingInsertArgs returns the ordered argument list for a single findings
 // INSERT row. Shared by the single-row prepared-statement path and the
@@ -1060,7 +1064,7 @@ func findingInsertArgs(finding *vulnerability.Finding) ([]any, error) {
 		// Identity recipe version and tuple (RFC-043 §6).
 		finding.FingerprintVersion(),
 		nullJSON(finding.IdentityKey()),
-	}, append(append(append(findingTypeArgs(finding), findingNetworkArgs(finding)...), findingScannerArgs(finding)...), findingIdentityArgs(finding)...)...), nil
+	}, append(append(append(append(findingTypeArgs(finding), findingNetworkArgs(finding)...), findingScannerArgs(finding)...), findingIdentityArgs(finding)...), findingSLAKEVArgs(finding)...)...), nil
 }
 
 // PentestCampaignRole returns the user's role in a pentest campaign of the
@@ -1219,6 +1223,11 @@ func (r *FindingRepository) Update(ctx context.Context, finding *vulnerability.F
 	args = append(args, nullID(finding.SubStatusID()))
 	query = strings.Replace(query, "\n\t\tWHERE id = $1 AND tenant_id = $20",
 		fmt.Sprintf(",\n\t\t\tsub_status_id = $%d\n\t\tWHERE id = $1 AND tenant_id = $20", len(args)), 1)
+	// The known exploited cap flag travels with the deadline (the guard
+	// trigger keeps both when it refuses a later deadline).
+	args = append(args, finding.SLAKEVCapped())
+	query = strings.Replace(query, "\n\t\tWHERE id = $1 AND tenant_id = $20",
+		fmt.Sprintf(",\n\t\t\tsla_kev_capped = $%d\n\t\tWHERE id = $1 AND tenant_id = $20", len(args)), 1)
 	if !strings.Contains(query, "sub_status_id = $") {
 		return errors.New("finding update: the sub-status column was not bound")
 	}
@@ -2569,7 +2578,7 @@ func (r *FindingRepository) selectQuery() string {
 			` + findingNetworkColumnsSQL + `,
 			` + findingScannerColumnsSQL + `,
 			` + findingSeverityColumnsSQL + `,
-			branch_only, row_version,
+			branch_only, row_version, sla_kev_capped,
 			EXISTS(SELECT 1 FROM finding_data_flows df WHERE df.finding_id = findings.id) AS has_data_flow
 		FROM findings
 	`
@@ -2706,6 +2715,8 @@ func (r *FindingRepository) doScan(scan func(dest ...any) error) (*vulnerability
 		ingestChannel sql.NullString
 		// Branch-only mark (migration 001138)
 		branchOnly bool
+		// The deadline came from the known exploited cap.
+		slaKEVCapped bool
 		// Data flow flag
 		hasDataFlow bool
 	)
@@ -2745,7 +2756,7 @@ func (r *FindingRepository) doScan(scan func(dest ...any) error) (*vulnerability
 	dests = append(dests, scanCols.dests()...)
 	var rowVersion int64
 	dests = append(dests, sevCols.dests()...)
-	dests = append(dests, &branchOnly, &rowVersion, &hasDataFlow)
+	dests = append(dests, &branchOnly, &rowVersion, &slaKEVCapped, &hasDataFlow)
 	if err := scan(dests...); err != nil {
 		return nil, err
 	}
@@ -2794,6 +2805,7 @@ func (r *FindingRepository) doScan(scan func(dest ...any) error) (*vulnerability
 	f.RestoreScannerDetails(scanCols.details())
 	f.RestoreSeverityProvenance(sevCols.provenance())
 	f.RestoreBranchOnly(branchOnly)
+	f.RestoreSLAKEVCapped(slaKEVCapped)
 	f.RestoreRowVersion(rowVersion)
 	return f, nil
 }
@@ -4233,7 +4245,7 @@ func (r *FindingRepository) selectQueryForEnrichment() string {
 			` + findingNetworkColumnsSQL + `,
 			` + findingScannerColumnsSQL + `,
 			` + findingSeverityColumnsSQL + `,
-			branch_only, row_version,
+			branch_only, row_version, sla_kev_capped,
 			FALSE AS has_data_flow
 		FROM findings
 	`

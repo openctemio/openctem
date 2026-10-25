@@ -141,6 +141,25 @@ func TestSLAChangeSeverity_LongerWindowIsHigh(t *testing.T) {
 	if got := slaChangeSeverity(before, renamed); got != auditdom.SeverityMedium {
 		t.Fatalf("rename: %s, want medium", got)
 	}
+	// The known exploited cap: longer or off loosens deadlines (high);
+	// shorter tightens them (medium).
+	capped := before
+	capped.KEVCapDays = 14
+	capOff := capped
+	capOff.KEVCapDays = 0
+	if got := slaChangeSeverity(capped, capOff); got != auditdom.SeverityHigh {
+		t.Fatalf("KEV cap turned off: %s, want high", got)
+	}
+	capLonger := capped
+	capLonger.KEVCapDays = 30
+	if got := slaChangeSeverity(capped, capLonger); got != auditdom.SeverityHigh {
+		t.Fatalf("KEV cap longer: %s, want high", got)
+	}
+	capShorter := capped
+	capShorter.KEVCapDays = 7
+	if got := slaChangeSeverity(capped, capShorter); got != auditdom.SeverityMedium {
+		t.Fatalf("KEV cap shorter: %s, want medium", got)
+	}
 }
 
 func TestIntegrationAuditView_DropsVolatileFields(t *testing.T) {

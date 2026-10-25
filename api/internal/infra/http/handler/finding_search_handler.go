@@ -110,6 +110,7 @@ func (h *VulnerabilityHandler) writeFindingList(w http.ResponseWriter, r *http.R
 	// Show the asset name instead of an opaque UUID.
 	h.enrichFindingsWithAssetInfo(r.Context(), middleware.MustGetTenantID(r.Context()), data)
 	h.enrichFindingsWithAssigneeInfo(r.Context(), middleware.MustGetTenantID(r.Context()), data)
+	h.enrichFindingsWithKEVRansomware(r.Context(), data)
 
 	response := ListResponse[FindingResponse]{
 		Data:       data,

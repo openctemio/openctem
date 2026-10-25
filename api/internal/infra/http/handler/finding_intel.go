@@ -46,6 +46,54 @@ func (h *VulnerabilityHandler) SetIntelFeeds(epss EPSSFeed, kev KEVFeed) {
 
 const intelDateFormat = "2006-01-02"
 
+// kevBatchFeed is the optional batch read of the KEV catalog (one query per
+// list page).
+type kevBatchFeed interface {
+	GetByCVEIDs(ctx context.Context, cveIDs []string) ([]*threatintel.KEVEntry, error)
+}
+
+// enrichFindingsWithKEVRansomware sets kev_ransomware on a list page: one
+// query on the global KEV catalog for the CVEs of the page's KEV findings
+// (none when the page has no KEV finding). The CVE ids come from findings
+// the caller may read; the catalog holds public data only. A failed read
+// leaves the flag unset.
+func (h *VulnerabilityHandler) enrichFindingsWithKEVRansomware(ctx context.Context, data []FindingResponse) {
+	feed, ok := h.kevFeed.(kevBatchFeed)
+	if !ok {
+		return
+	}
+	seen := make(map[string]struct{})
+	cves := make([]string, 0)
+	for i := range data {
+		if !data[i].IsInKEV || data[i].CVEID == "" {
+			continue
+		}
+		if _, dup := seen[data[i].CVEID]; dup {
+			continue
+		}
+		seen[data[i].CVEID] = struct{}{}
+		cves = append(cves, data[i].CVEID)
+	}
+	if len(cves) == 0 {
+		return
+	}
+	entries, err := feed.GetByCVEIDs(ctx, cves)
+	if err != nil {
+		return
+	}
+	ransomware := make(map[string]bool, len(entries))
+	for _, e := range entries {
+		if e != nil && e.HasRansomwareUse() {
+			ransomware[e.CVEID()] = true
+		}
+	}
+	for i := range data {
+		if data[i].IsInKEV && ransomware[data[i].CVEID] {
+			data[i].KEVRansomware = true
+		}
+	}
+}
+
 // enrichFindingWithIntel fills resp.Intel; it is left nil when there is
 // nothing to say.
 func (h *VulnerabilityHandler) enrichFindingWithIntel(ctx context.Context, f *vulnerability.Finding, resp *FindingResponse) {
@@ -68,6 +116,7 @@ func (h *VulnerabilityHandler) enrichFindingWithIntel(ctx context.Context, f *vu
 					in.KEVDateAdded = k.DateAdded().UTC().Format(intelDateFormat)
 				}
 				in.KEVRansomware = k.HasRansomwareUse()
+				resp.KEVRansomware = in.KEVRansomware
 			}
 		}
 	}

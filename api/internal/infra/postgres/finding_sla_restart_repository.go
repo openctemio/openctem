@@ -99,7 +99,7 @@ func (r *FindingSLARestartRepository) RestartSLA(ctx context.Context, tenantID s
 			return err
 		}
 		res, err := tx.ExecContext(ctx, `
-			UPDATE findings SET sla_deadline = $3, sla_status = 'on_track', sla_started_at = NOW(), updated_at = NOW()
+			UPDATE findings SET sla_deadline = $3, sla_status = 'on_track', sla_kev_capped = false, sla_started_at = NOW(), updated_at = NOW()
 			WHERE tenant_id = $1 AND id = $2 AND status = ANY($4)
 			  AND (sla_started_at IS NULL OR last_reopened_at IS NULL OR sla_started_at < last_reopened_at)`,
 			tenantID.String(), rs.FindingID.String(), rs.Deadline, pq.Array(openStatusesForSLA))
