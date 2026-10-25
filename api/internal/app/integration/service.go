@@ -969,7 +969,10 @@ func (s *IntegrationService) TestIntegrationCredentials(ctx context.Context, inp
 // and a safe sentence; the cause goes to the log.
 func (s *IntegrationService) credentialsTestFailure(provider integrationdom.Provider, err error) *TestIntegrationCredentialsResult {
 	f := ClassifyConnFailure(err)
-	s.logger.Info("integration credentials test failed", "provider", provider.String(), "code", string(f.Code), "error", err)
+	// The cause can quote the remote server's answer: redact secrets and strip
+	// CR/LF at the log site so it cannot forge a log line.
+	cause := strings.ReplaceAll(strings.ReplaceAll(logger.RedactedText(err.Error()), "\n", " "), "\r", " ")
+	s.logger.Info("integration credentials test failed", "provider", provider.String(), "code", string(f.Code), "error", cause)
 	return &TestIntegrationCredentialsResult{Success: false, Code: string(f.Code), Message: f.Message}
 }
 
