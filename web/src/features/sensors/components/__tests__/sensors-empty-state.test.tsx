@@ -4,6 +4,24 @@ import userEvent from '@testing-library/user-event'
 
 import { SensorsEmptyState } from '../sensors-empty-state'
 
+vi.mock('../sensor-onboarding-panel', () => ({
+  SensorOnboardingPanel: ({
+    canInstallWithKey,
+    onInstallWithKey,
+  }: {
+    canInstallWithKey?: boolean
+    onInstallWithKey?: () => void
+  }) => (
+    <div data-testid="onboarding-panel">
+      {canInstallWithKey && (
+        <button type="button" onClick={onInstallWithKey}>
+          key
+        </button>
+      )}
+    </div>
+  ),
+}))
+
 vi.mock('next/link', () => ({
   default: ({ href, children, ...rest }: { href: string; children: React.ReactNode }) => (
     <a href={href} {...rest}>
@@ -16,24 +34,19 @@ const base = {
   canPair: true,
   canInstallWithKey: true,
   canReadCI: true,
-  onPair: vi.fn(),
   onInstall: vi.fn(),
 }
 
 describe('SensorsEmptyState', () => {
-  it('explains what a sensor is, with pairing first and a key install second', async () => {
-    const onPair = vi.fn()
+  it('explains what a sensor is and shows the Add sensor panel inline', async () => {
     const onInstall = vi.fn()
-    render(<SensorsEmptyState {...base} onPair={onPair} onInstall={onInstall} />)
+    render(<SensorsEmptyState {...base} onInstall={onInstall} />)
     expect(screen.getByRole('heading', { name: 'Run your first sensor' })).toBeInTheDocument()
     expect(screen.getByText(/small service you run inside your network/i)).toBeInTheDocument()
     expect(screen.getByText('Scanner')).toBeInTheDocument()
     expect(screen.getByText('Collector')).toBeInTheDocument()
-    const buttons = screen.getAllByRole('button')
-    expect(buttons.map((b) => b.textContent)).toEqual(['Pair a sensor', 'Install with an API key'])
-    await userEvent.click(buttons[0])
-    expect(onPair).toHaveBeenCalled()
-    await userEvent.click(buttons[1])
+    expect(screen.getByTestId('onboarding-panel')).toBeInTheDocument()
+    await userEvent.click(screen.getByRole('button', { name: 'key' }))
     expect(onInstall).toHaveBeenCalled()
   })
 
@@ -48,10 +61,12 @@ describe('SensorsEmptyState', () => {
     expect(screen.queryByRole('link', { name: /ci\/cd/i })).not.toBeInTheDocument()
   })
 
-  it('offers only pairing where the organization allows no bearer keys', () => {
-    render(<SensorsEmptyState {...base} canInstallWithKey={false} />)
-    expect(screen.getByRole('button', { name: 'Pair a sensor' })).toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: /api key/i })).not.toBeInTheDocument()
+  it('offers the key install alone to a caller who may not pair', async () => {
+    const onInstall = vi.fn()
+    render(<SensorsEmptyState {...base} canPair={false} onInstall={onInstall} />)
+    expect(screen.queryByTestId('onboarding-panel')).not.toBeInTheDocument()
+    await userEvent.click(screen.getByRole('button', { name: 'Install with an API key' }))
+    expect(onInstall).toHaveBeenCalled()
   })
 
   it('tells a reader without either permission who can add one', () => {
