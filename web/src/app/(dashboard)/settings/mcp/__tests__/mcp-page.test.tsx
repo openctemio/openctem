@@ -22,6 +22,7 @@ vi.mock('@/lib/permissions', () => ({
     SettingsWrite: 'settings:write',
   },
   useHasPermission: (p: string) => perms.has(p),
+  useCanMutate: () => perms.has('settings:write'),
 }))
 vi.mock('@/context/tenant-provider', () => ({
   useTenant: () => ({ currentTenant: { id: 't1', name: 'Acme', slug: 'acme', role } }),
