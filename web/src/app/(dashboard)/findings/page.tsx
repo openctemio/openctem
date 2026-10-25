@@ -105,6 +105,11 @@ import {
   type QuickViewKey,
 } from '@/features/findings/lib/quick-views'
 import {
+  startSession as startTriageSession,
+  triageHref,
+} from '@/features/findings/lib/triage-session'
+import { useRouter } from 'next/navigation'
+import {
   FilterBar,
   InvalidFilterNotice,
   invalidFilterParams,
@@ -483,6 +488,7 @@ export default function FindingsPage() {
 }
 
 function FindingsContent() {
+  const router = useRouter()
   const searchParams = useUrlParams()
   // False for the one render a client-side navigation makes before the address
   // bar holds this page's URL: every URL param read then is the previous
@@ -1925,19 +1931,22 @@ function FindingsContent() {
         : t('findings.view.custom', 'Custom view')
   const awaitingVerification = findingStats?.awaiting_verification ?? 0
 
-  // Triage: the findings still to be decided (status new). Until the focused
-  // triage mode lands, it opens the Needs triage view and then the first
-  // finding in the existing finding flow, with j / k to move on.
+  // Triage: the findings still to be decided (status new), in triage mode
+  // (/findings/triage, research/234 §5.2). The session remembers this list,
+  // so Exit comes back to it with its filters. With nothing to triage the
+  // button opens the Needs triage view instead.
   const needsTriageView = knownQuickViews(quickViewData?.views).find(
     (v) => v.key === 'needs_triage'
   )
   const triageCount = needsTriageView?.count ?? 0
-  const [triagePending, setTriagePending] = useState(false)
   const triageParams = needsTriageView?.params ?? 'status=new'
   const openTriage = () => {
-    const href = quickViewHref(triageParams)
-    pushUrlSearch(new URLSearchParams(href.split('?')[1]))
-    setTriagePending(true)
+    if (triageCount === 0) {
+      pushUrlSearch(new URLSearchParams(quickViewHref(triageParams).split('?')[1]))
+      return
+    }
+    startTriageSession(triageParams, `${window.location.pathname}${window.location.search}`)
+    router.push(triageHref(triageParams))
   }
   // The key handler is installed once and calls the latest openTriage.
   const openTriageRef = useRef(openTriage)
@@ -1946,16 +1955,6 @@ function FindingsContent() {
     openTriageRef.current = openTriage
     canTriageRef.current = canChangeStatusOne
   })
-  const onTriageView = quickViewIsActive(searchParams, {
-    key: 'needs_triage',
-    count: triageCount,
-    params: triageParams,
-  })
-  useEffect(() => {
-    if (!triagePending || !onTriageView || findingsValidating || findingsLoading) return
-    setTriagePending(false)
-    if (findings.length > 0) handleRowClick(findings[0])
-  }, [triagePending, onTriageView, findingsValidating, findingsLoading, findings, handleRowClick])
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== 't' || e.metaKey || e.ctrlKey || e.altKey || e.defaultPrevented) return
