@@ -55,10 +55,24 @@ pkgs() { # <i> <n>
 
 declare -A LISTED=()
 tests_of() { # <pkg>: its top-level tests, sorted (listed once per run)
+  # Read from the source, not `go test -list`: listing compiles the test
+  # binary (without -race, so the shard compiled it twice) and cost each shard
+  # about 90 seconds. A top-level test is a file-level `func TestX(`; a name
+  # from a file a build tag leaves out only makes -run match nothing more.
+  # `check` proves every test `go test -list` reports is in this list.
+  local dir
   if [ -z "${LISTED[$1]+x}" ]; then
-    LISTED[$1]="$(go test -list '.*' "$1" | grep -E '^(Test|Example|Fuzz)' | LC_ALL=C sort || true)"
+    dir=".${1#"$MOD"}"
+    LISTED[$1]="$(grep -hoE '^func (Test|Example|Fuzz)[A-Za-z0-9_]*\(' "$dir"/*_test.go 2>/dev/null \
+      | sed -E 's/^func //; s/\($//' | grep -vx 'TestMain' | LC_ALL=C sort -u || true)"
   fi
   printf '%s\n' "${LISTED[$1]}" | grep -v '^$' || true
+}
+
+compiled_tests_of() { # <pkg>: what `go test -list` reports (compiles the package)
+  local out
+  out="$(go test -list '.*' "$1")" || { echo "go test -list $1 failed" >&2; return 1; }
+  printf '%s\n' "$out" | grep -E '^(Test|Example|Fuzz)' | LC_ALL=C sort || true
 }
 
 prefetch() { # fill both lists in this shell, so the subshells below reuse them
@@ -86,7 +100,7 @@ plan() { # <i> <n>
 }
 
 check() { # <n>...
-  local n i p k got want
+  local n i p k got want missing compiled
   prefetch
   for n in "$@"; do
     want="$(other_pkgs)"
@@ -96,6 +110,11 @@ check() { # <n>...
       p=${SPLIT[$k]}
       want="$(tests_of "$p")"
       [ -n "$want" ] || { echo "$p has no tests; drop it from SPLIT" >&2; exit 1; }
+      if [ "$n" = "$1" ]; then # once: the source list holds every compiled test
+        compiled="$(compiled_tests_of "$p")" || exit 1
+        missing="$(LC_ALL=C comm -23 <(printf '%s\n' "$compiled") <(printf '%s\n' "$want"))"
+        [ -z "$missing" ] || { echo "$p: tests not found in the source list (go-shard.sh tests_of):" >&2; echo "$missing" >&2; exit 1; }
+      fi
       got="$(for ((i = 0; i < n; i++)); do slice "$p" "$k" "$i" "$n"; done | LC_ALL=C sort)"
       [ "$got" = "$want" ] || { echo "$n shards: the tests of $p are not covered exactly once" >&2; exit 1; }
     done
