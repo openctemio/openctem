@@ -3,6 +3,7 @@
 import { useId, useState } from 'react'
 import { AlertTriangle, CheckCircle2, Loader2, RefreshCw, ShieldAlert } from 'lucide-react'
 import { toast } from 'sonner'
+import { safeText } from '@/lib/api/error-message'
 import { ConfirmDialog } from '@/components/confirm-dialog'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -160,7 +161,15 @@ export function OrganizationAuditChainPanel({
       } else {
         void mutate()
       }
-      toast.error(e.message)
+      toast.error(
+        safeText(
+          e.message,
+          t(
+            'admin.organizationAuditChainPanel.couldNotRebaselineTheAudit',
+            'Could not rebaseline the audit chain'
+          )
+        )
+      )
     } finally {
       setBusy(false)
     }

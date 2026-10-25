@@ -108,8 +108,11 @@ func newCCHarness(t *testing.T) *ccHarness {
 	}
 	h.tenantA, h.tenantB = shared.NewID(), shared.NewID()
 	h.userA1, h.userA2, h.userB = shared.NewID(), shared.NewID(), shared.NewID()
+	// A slug with no dashed UUID in it: the error envelope cuts UUIDs out of
+	// messages, and a real slug is a name, so the namespace the 422 tells the
+	// publisher to use stays readable.
 	for _, tn := range []shared.ID{h.tenantA, h.tenantB} {
-		h.exec(`INSERT INTO tenants (id, name, slug) VALUES ($1, $2, $2)`, tn.String(), "cc-"+tn.String())
+		h.exec(`INSERT INTO tenants (id, name, slug) VALUES ($1, $2, $2)`, tn.String(), "cc-"+strings.ReplaceAll(tn.String(), "-", ""))
 	}
 	for u, tn := range map[shared.ID]shared.ID{h.userA1: h.tenantA, h.userA2: h.tenantA, h.userB: h.tenantB} {
 		role := "member"

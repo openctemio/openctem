@@ -24,9 +24,20 @@ const RUN_STATE: Record<string, { state: HealthState; label: string }> = {
   failed: { state: 'down', label: 'Failed' },
   timeout: { state: 'warn', label: 'Timed out' },
   canceled: { state: 'off', label: 'Canceled' },
+  // Stopped part way and waiting for a person (an automation run at its change cap).
+  paused: { state: 'warn', label: 'Paused' },
   // The trigger was refused before anything was dispatched (scope gate,
   // freeze window, no sensor, wildcard target...). Nothing ran.
   blocked: { state: 'paused', label: 'Blocked' },
+}
+
+/** A completed run with a conclusion: amber, in words. */
+const RESULT_LABEL = {
+  inconclusive: { i18n: 'scans.runStatus.completedInconclusive', label: 'Completed, inconclusive' },
+  still_exposed_elsewhere: {
+    i18n: 'scans.runStatus.completedExposedElsewhere',
+    label: 'Completed, exposed at another path',
+  },
 }
 
 /**
@@ -41,6 +52,7 @@ export function RunStatusBadge({
   title,
   label,
   note,
+  result,
 }: {
   status: string
   className?: string
@@ -53,11 +65,23 @@ export function RunStatusBadge({
    * unreachable"), shown after the status. It never changes the status.
    */
   note?: string | null
+  /**
+   * What a completed run concluded when that is more than "done" (a retest
+   * that was inconclusive, or found the exposure at another path). The run
+   * did its work, so it is amber and never Failed.
+   */
+  result?: { kind?: string; code?: string } | null
 }) {
   const { t } = useTranslation()
   // Normalize the two spellings the backends use.
   const key = status === 'cancelled' ? 'canceled' : status
-  const known = RUN_STATE[key]
+  const resultKey =
+    key === 'completed' && result
+      ? RESULT_LABEL[(result.kind ?? '') as keyof typeof RESULT_LABEL]
+      : undefined
+  const known = resultKey
+    ? { state: 'warn' as HealthState, label: resultKey.label }
+    : RUN_STATE[key]
   const live = key === 'running' || key === 'pending' || key === 'queued'
   const pct =
     live && typeof progress === 'number' && Number.isFinite(progress)
@@ -72,11 +96,13 @@ export function RunStatusBadge({
       value={key}
       label={
         label ??
-        (known
-          ? t(`scans.runStatus.${key}`, known.label)
-          : status
-            ? humanizeIdentifier(status)
-            : t('labels.health.unknown', 'Unknown'))
+        (resultKey
+          ? t(resultKey.i18n, resultKey.label)
+          : known
+            ? t(`scans.runStatus.${key}`, known.label)
+            : status
+              ? humanizeIdentifier(status)
+              : t('labels.health.unknown', 'Unknown'))
       }
       detail={detail.length ? detail : undefined}
       title={title}

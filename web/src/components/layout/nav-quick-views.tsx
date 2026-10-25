@@ -8,6 +8,7 @@ import {
 } from '@/components/ui/sidebar'
 import { cn } from '@/lib/utils'
 import { safeHref } from '@/lib/safe-href'
+import { NavCount } from './nav-count'
 import { SidebarLink } from './sidebar-link'
 
 /** One built-in view of a list, as the sidebar lists it under the list's row. */
@@ -65,14 +66,7 @@ export function NavQuickViewList({
                 {v.label}
               </span>
               {v.count > 0 && (
-                <span
-                  className={cn(
-                    'ms-auto shrink-0 text-xs tabular-nums',
-                    v.danger ? 'font-medium text-destructive' : 'text-muted-foreground'
-                  )}
-                >
-                  {v.count.toLocaleString()}
-                </span>
+                <NavCount tone={v.danger ? 'danger' : 'muted'}>{v.count.toLocaleString()}</NavCount>
               )}
             </SidebarLink>
           </SidebarMenuSubButton>
