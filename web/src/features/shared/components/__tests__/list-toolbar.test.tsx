@@ -54,12 +54,7 @@ describe('ListToolbar slots', () => {
     render(<Search filter={<FilterButton activeCount={2} />} />)
     const bar = screen.getByTestId('data-table-toolbar')
     expect(bar).toHaveAttribute('data-slot', 'list-toolbar')
-    expect(names(bar)).toEqual([
-      'Filters (2 active)',
-      'Search sensors',
-      'Status: Online',
-      'View',
-    ])
+    expect(names(bar)).toEqual(['Filters (2 active)', 'Search sensors', 'Status: Online', 'View'])
     expect(screen.getByText('View').parentElement).toHaveClass('ms-auto')
   })
 
@@ -156,9 +151,7 @@ describe('keyboard', () => {
     render(
       <>
         <Search />
-        <ListToolbar
-          search={{ value: '', onChange: () => {}, placeholder: 'Search other…' }}
-        />
+        <ListToolbar search={{ value: '', onChange: () => {}, placeholder: 'Search other…' }} />
       </>
     )
     fireEvent.keyDown(document.body, { key: '/' })
@@ -220,8 +213,7 @@ describe('keyboard', () => {
 })
 
 describe('OverflowChips', () => {
-  const chips = (n: number) =>
-    Array.from({ length: n }, (_, i) => <li key={i}>chip {i + 1}</li>)
+  const chips = (n: number) => Array.from({ length: n }, (_, i) => <li key={i}>chip {i + 1}</li>)
 
   it('shows every chip up to the cap', () => {
     render(<OverflowChips max={3}>{chips(3)}</OverflowChips>)

@@ -33,7 +33,9 @@ const PAGES = [
 
 async function openToolbar(page: Page, route: string): Promise<boolean> {
   await page.goto(route)
-  const box = page.locator('main [data-slot="list-toolbar"] [data-slot="list-search-input"]').first()
+  const box = page
+    .locator('main [data-slot="list-toolbar"] [data-slot="list-search-input"]')
+    .first()
   return box
     .waitFor({ state: 'visible', timeout: 45_000 })
     .then(() => true)
@@ -62,7 +64,9 @@ for (const width of [1440, 390] as const) {
 
       // 2. the trigger touches the field.
       if (p.filter) {
-        const trigger = toolbar.locator('[data-slot="list-search"] [data-slot="filter-button"]:visible')
+        const trigger = toolbar.locator(
+          '[data-slot="list-search"] [data-slot="filter-button"]:visible'
+        )
         const tb = (await trigger.boundingBox())!
         expect(Math.abs(sb.x - (tb.x + tb.width))).toBeLessThanOrEqual(1)
         expect(Math.abs(sb.y - tb.y)).toBeLessThanOrEqual(1)
