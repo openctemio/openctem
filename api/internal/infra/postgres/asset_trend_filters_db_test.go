@@ -89,3 +89,66 @@ func TestAsset_TrendFilters(t *testing.T) {
 		t.Errorf("sorted list = %d rows, want 3", len(res.Data))
 	}
 }
+
+// TestAsset_SortByLevel runs the criticality and exposure sorts against the
+// real List query: by level, not alphabetically. Skipped unless DATABASE_URL
+// is set.
+func TestAsset_SortByLevel(t *testing.T) {
+	dbURL := testdb.URL()
+	if dbURL == "" {
+		t.Skip("DATABASE_URL not set; skipping DB execution check")
+	}
+	db, err := sql.Open("postgres", dbURL)
+	if err != nil {
+		t.Fatalf("open db: %v", err)
+	}
+	defer func() { _ = db.Close() }()
+	ctx := context.Background()
+	if err := db.PingContext(ctx); err != nil {
+		t.Skipf("cannot reach DATABASE_URL: %v", err)
+	}
+
+	repo := NewAssetRepository(&DB{DB: db})
+	tenant := seedTestTenant(ctx, t, db).String()
+	other := seedTestTenant(ctx, t, db).String()
+	insert := func(tenantID, name, criticality, exposure string) {
+		t.Helper()
+		mustExec(t, db,
+			`INSERT INTO assets (id, tenant_id, name, asset_type, criticality, exposure, created_at, updated_at)
+			 VALUES ($1,$2,$3,'domain',$4,$5,now(),now())`,
+			shared.NewID().String(), tenantID, name+".sort.example", criticality, exposure)
+	}
+	insert(tenant, "m", "medium", "private")
+	insert(tenant, "l", "low", "isolated")
+	insert(tenant, "c", "critical", "public")
+	insert(tenant, "h", "high", "restricted")
+	// Another organisation's asset never appears, whatever the sort.
+	insert(other, "x", "critical", "public")
+
+	names := func(sort string) []string {
+		t.Helper()
+		opts := asset.NewListOptions().WithSort(pagination.NewSortOption(asset.AllowedSortFields()).Parse(sort))
+		res, err := repo.List(ctx, asset.NewFilter().WithTenantID(tenant), opts, pagination.New(1, 10))
+		if err != nil {
+			t.Fatalf("list sorted by %s: %v", sort, err)
+		}
+		out := make([]string, 0, len(res.Data))
+		for _, a := range res.Data {
+			out = append(out, a.Name()[:1])
+		}
+		return out
+	}
+	want := []string{"c", "h", "m", "l"}
+	for _, sort := range []string{"-criticality", "-exposure"} {
+		got := names(sort)
+		if len(got) != len(want) {
+			t.Fatalf("%s: %v, want %v (own tenant only)", sort, got, want)
+		}
+		for i := range want {
+			if got[i] != want[i] {
+				t.Errorf("%s: %v, want %v", sort, got, want)
+				break
+			}
+		}
+	}
+}
