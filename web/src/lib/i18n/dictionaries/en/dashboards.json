@@ -186,6 +186,7 @@
   "dashboards.manage.title": "Dashboards",
   "dashboards.manage.useTemplate": "Use template",
   "dashboards.manage.widgetCount": "{n, plural, one {# widget} other {# widgets}}",
+  "dashboards.manage.widgets": "{n} widgets",
   "dashboards.manage.yours": "Your dashboards",
   "dashboards.metric.attack_paths_to_crown_jewels.definition": "Crown jewels in scope that a public entry point reaches through known relationships, or that are entry points themselves, ranked by path score.",
   "dashboards.metric.attack_paths_to_crown_jewels.name": "Attack paths to crown jewels",
@@ -288,6 +289,5 @@
   "dashboards.viz.table": "Table",
   "dashboards.widget.failed": "This widget could not be shown",
   "dashboards.widget.legacy": "Earlier tile",
-  "dashboards.widget.note": "Note",
-  "dashboards.manage.widgets": "{n} widgets"
+  "dashboards.widget.note": "Note"
 }
