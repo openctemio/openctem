@@ -332,9 +332,20 @@ an update means unchanged):
   found (the hop router reads only those). A step left with nothing it can
   take settles with no inputs. Without the setting, a dependent of a failed,
   skipped or timed-out step is skipped (unchanged).
-- `delta_gating`: heavy chained stages take only assets new, changed or due
-  since the previous run of the same scan. The setting is stored and served
-  now; the gate itself lands separately.
+- `delta_gating`: heavy chained stages (`stage.Heavy`: `vuln.templates`,
+  `crawl.web`, `capture.screenshot`, `detect.services`) take only the
+  derived targets that are not done since the previous completed or partial
+  run of the same scan (`PreviousRun`). A target is done when its asset was
+  first seen before that run started, has no `asset_change_events` row
+  since, and either that run planned it for the same step key and the step
+  completed within the stage's max age (7 days), or the coverage ledger has
+  it `covered` for the capability and not due. A partial, failed or skipped
+  baseline step is never done, so truncated work is redone. Done targets are
+  recorded `unchanged` in `scan_run_targets`; a heavy stage left with none
+  settles at once with "nothing new since the last run: N unchanged" and no
+  command. No previous run, or a baseline the store cannot read, gates
+  nothing (gating only saves work). Seeds are never gated. Every read is
+  scoped to the run's tenant, and run targets carry composite tenant keys.
 
 **Versions.** A run pins its workflow's version: the run policy is part of
 the version's spec (left out when empty, so the digest of a workflow without

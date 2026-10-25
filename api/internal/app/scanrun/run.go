@@ -548,7 +548,7 @@ func (s *Service) queueStepForExecutionWithSettings(ctx context.Context, run *sc
 
 	// The hop router: seeds, plus what the predecessors produced that passes
 	// the per-hop gate; recorded once per (run, stage).
-	planned, err := s.planStage(ctx, run, step, resolved, preds, stepTargets)
+	planned, err := s.planStage(ctx, run, step, resolved, preds, stepTargets, settings.DeltaGating)
 	if err != nil {
 		return fmt.Errorf("step %s: %w", step.StepKey, err)
 	}
