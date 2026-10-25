@@ -99,7 +99,7 @@ func (s *Service) applyOptInsAtTrigger(ctx context.Context, sc *scan.Scan) (stri
 		return "", err
 	}
 	if asksTemplates && !o.AllowCustomTemplates {
-		return "", optInDisabledError(fmt.Sprintf("Scan %q uses custom templates, which", sc.Name))
+		return "", optInDisabledError("This scan uses custom templates, which")
 	}
 	if asksInteractsh && !o.AllowInteractsh {
 		cfg := maps.Clone(sc.ScannerConfig)
