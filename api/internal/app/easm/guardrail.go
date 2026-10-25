@@ -80,6 +80,12 @@ func (g *ActiveGate) SetUnclassified(policy UnclassifiedPolicy, names GuardrailN
 	g.resolving = names
 }
 
+// UnclassifiedMode is the tenant's unclassified-scans mode as the gate
+// applies it (off, low_impact or full; anything unreadable is off).
+func (g *ActiveGate) UnclassifiedMode(ctx context.Context, tenantID shared.ID) (string, error) {
+	return g.unclassifiedMode(ctx, tenantID), nil
+}
+
 // unclassifiedMode is the tenant's mode; anything unreadable is off.
 func (g *ActiveGate) unclassifiedMode(ctx context.Context, tenantID shared.ID) string {
 	if g.unclassified == nil {
