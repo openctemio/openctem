@@ -52,7 +52,7 @@ from dataclasses import dataclass, field
 
 GUIDE = "https://github.com/openctemio/openctem/blob/develop/api/docs/development/ci-cd.md#security-gate"
 SENSITIVE_LABEL = "security-sensitive"
-ACK_LABEL = "security-ack"
+ACK_LABEL = "gate-test-ack"
 COMMENT_MARKER = "<!-- security-gate -->"
 # Which commit an ack was given on comes only from data GitHub itself writes:
 # the `labeled` issue event (actor, server time) and the head branch's push log
