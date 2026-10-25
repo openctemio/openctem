@@ -150,6 +150,7 @@
   "common.table.view": "Hiển thị",
   "common.table.viewMenu": "Chế độ xem bảng: mật độ và cột",
   "common.tabs.more": "Khác",
+  "common.templateSourceSyncFailed": "Không đồng bộ được nguồn mẫu.",
   "common.unexpectedError": "Đã xảy ra lỗi không mong muốn",
   "common.unsafeLink": "Liên kết không được mở: URL dùng giao thức không được phép",
   "common.viewSwitcher.label": "Chế độ xem",
