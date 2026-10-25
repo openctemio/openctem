@@ -891,7 +891,7 @@ func (p *FindingProcessor) processBatch(
 	// finding's status, and a baseline only narrows what later proves a fix.
 	sightings := make([]vulnerability.TemplateSighting, 0, len(validFindings))
 	for _, fm := range validFindings {
-		if prov := findingTemplateProvenance(&fm.finding, report.Tool); !prov.Empty() {
+		if prov := sightingProvenance(&fm.finding, report.Tool, scope); !prov.Empty() {
 			sightings = append(sightings, vulnerability.TemplateSighting{Fingerprint: fm.fingerprint, Provenance: prov})
 		}
 	}
