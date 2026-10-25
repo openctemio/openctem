@@ -116,6 +116,7 @@ export function MorePoolsSection({ pools, canWrite, canDelete }: MorePoolsSectio
                     reason={canDelete ? inUse : noDelete}
                     variant="ghost"
                     size="sm"
+                    className="ms-3 text-destructive hover:text-destructive"
                     aria-label={t('proxyPools.deleteNamed', 'Delete {name}', { name: p.name })}
                     onClick={() => setDeleting(p)}
                   >
