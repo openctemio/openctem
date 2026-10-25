@@ -145,7 +145,7 @@ findings=$({
     type: "vulnerability", title: "E2E evidence 01", severity: "low",
     rule_id: "e2e-evidence-01", asset_ref: "a1", description: "e2e evidence",
     evidence_items: [
-      { kind: "http_exchange", version: "1",
+      { kind: "http_exchange",
         http: {
           request: { method: "GET", url: "https://e2e-web.example.com/wp-admin/js/theme.js",
             http_version: "HTTP/1.1",
@@ -156,7 +156,7 @@ findings=$({
                        { name: "Server", value: "e2e" } ],
             body: "<html><script>window.__pwned=1</script> e2e theme preview wp-version 7.1.0</html>" } },
         match: [ { location: "response", part: "body", start: 69, end: 74, matcher: "version" } ] },
-      { kind: "curl", version: "1",
+      { kind: "curl",
         text: "curl -X GET -H \"Authorization: Bearer e2e-not-a-real-token-0001\" https://e2e-web.example.com/wp-admin/js/theme.js" }
     ]
   }'
