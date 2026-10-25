@@ -102,7 +102,9 @@ func Verdicts(tasks []TaskResult, runUnfinished []string) map[string]Verdict {
 			}
 			continue
 		}
-		for _, o := range outcome.Normalize(outcomes, t.Targets) {
+		norm := outcome.Normalize(outcomes, t.Targets)
+		allTargetSide := uniformTargetSideFailure(norm)
+		for _, o := range norm {
 			switch o.State {
 			case outcome.Done:
 				if unreached[TargetKey(o.Target)] {
@@ -112,6 +114,19 @@ func Verdicts(tasks []TaskResult, runUnfinished []string) map[string]Verdict {
 				}
 				put(o.Target, Verdict{Kind: VerdictCovered, Outcome: OutcomeOK})
 			case outcome.Failed:
+				if allTargetSide {
+					// Every target of the task failed the same target-side
+					// way: that points at the sensor (no route, no egress),
+					// not at each target. Until a reach control probe can
+					// tell them apart, treat it as a sensor failure with the
+					// normal back-off instead of pausing every target.
+					msg := t.Error
+					if msg == "" {
+						msg = "every target of the task failed with " + string(o.Class) + "; treated as a sensor failure"
+					}
+					put(o.Target, Verdict{Kind: VerdictFailed, Outcome: OutcomeFailed, Error: msg})
+					continue
+				}
 				put(o.Target, Verdict{Kind: VerdictFailed, Outcome: string(o.Class), Error: t.Error})
 			case outcome.Skipped:
 				put(o.Target, Verdict{Kind: VerdictBlocked, Reason: string(o.Class)})
@@ -125,6 +140,22 @@ func Verdicts(tasks []TaskResult, runUnfinished []string) map[string]Verdict {
 		put(target, Verdict{Kind: VerdictFailed, Outcome: OutcomeUnfinished, Error: "the run did not finish this target"})
 	}
 	return out
+}
+
+// uniformTargetSideFailure reports whether a task with at least two targets
+// failed every one of them with the same target-side class (all timeouts,
+// or all unreachable). One target cannot be told from its sensor, so a lone
+// target keeps its own verdict.
+func uniformTargetSideFailure(norm []outcome.Target) bool {
+	if len(norm) < 2 {
+		return false
+	}
+	for _, o := range norm {
+		if o.State != outcome.Failed || o.Class != norm[0].Class || !IsTargetSide(string(o.Class)) {
+			return false
+		}
+	}
+	return true
 }
 
 // readResult returns a task result's per-target outcomes, the targets its
