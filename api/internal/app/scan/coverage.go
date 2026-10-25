@@ -13,9 +13,12 @@ import (
 	"fmt"
 	"strings"
 
+	"golang.org/x/net/publicsuffix"
+
 	"github.com/openctemio/openctem/api/pkg/domain/audit"
 	"github.com/openctemio/openctem/api/pkg/domain/scan"
 	"github.com/openctemio/openctem/api/pkg/domain/scanworkflow"
+	"github.com/openctemio/openctem/api/pkg/domain/scanzone"
 	scopedom "github.com/openctemio/openctem/api/pkg/domain/scope"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/domain/stage"
@@ -49,6 +52,10 @@ type CoverageResult struct {
 	Kept  []string
 	// Refused are the targets the gate refused, with its code.
 	Refused []RefusedTarget
+	// Deferred are targets left for a later batch (neither run nor
+	// refused): a passive batch runs its public names and its routed
+	// names in separate runs.
+	Deferred []string
 }
 
 // ErrCoverageBusy: the capability's previous coverage run is still active;
@@ -78,9 +85,17 @@ func (s *Service) StartCoverage(ctx context.Context, in CoverageInput) (*Coverag
 	if passive {
 		tier, intensity = scopedom.TierPassive, scan.IntensityPassive
 	}
+	targets, deferred, skipZones, err := s.coverageZoneGroup(ctx, in.TenantID, in.Targets, passive)
+	if err != nil {
+		return nil, err
+	}
+	if skipZones {
+		// Only this function's own trigger below reads the marker.
+		ctx = withoutZoneRouting(ctx)
+	}
 	gated, err := s.ResolveDispatchTargets(ctx, DispatchTargetsInput{
 		TenantID: in.TenantID,
-		Targets:  in.Targets,
+		Targets:  targets,
 		// The policy's explicit system authority: scope entries and the
 		// tier, never a member's act scope (and never "no actor").
 		SystemPolicy: string(scan.ManagedByCoverage),
@@ -88,13 +103,15 @@ func (s *Service) StartCoverage(ctx context.Context, in CoverageInput) (*Coverag
 		Tier:         &tier,
 		// Zone routing here: a target no zone can place is refused on its
 		// own (zone_none, zone_no_sensor), so the rest of the batch runs.
-		MaxTargets: maxCoverageTargets,
-		Path:       "auto_coverage",
+		// A passive batch of public names skips it (coverageZoneGroup).
+		SkipZoneRouting: skipZones,
+		MaxTargets:      maxCoverageTargets,
+		Path:            "auto_coverage",
 	})
 	if err != nil {
 		return nil, fmt.Errorf("coverage targets not checked, nothing dispatched: %w", err)
 	}
-	res := &CoverageResult{Tool: tool, Refused: gated.Refused}
+	res := &CoverageResult{Tool: tool, Refused: gated.Refused, Deferred: deferred}
 	allowed := make(map[string]bool, len(gated.Allowed))
 	for _, t := range gated.Allowed {
 		allowed[strings.ToLower(t)] = true
@@ -102,7 +119,7 @@ func (s *Service) StartCoverage(ctx context.Context, in CoverageInput) (*Coverag
 	for _, t := range gated.Excluded {
 		res.Refused = append(res.Refused, RefusedTarget{Target: t, Code: "excluded", Reason: "excluded"})
 	}
-	for _, t := range in.Targets {
+	for _, t := range targets {
 		if allowed[strings.ToLower(strings.TrimSpace(t))] {
 			res.Kept = append(res.Kept, strings.TrimSpace(t))
 		}
@@ -205,4 +222,80 @@ func (s *Service) coverageScan(ctx context.Context, tenantID shared.ID, capabili
 func stageTool(capability string) string {
 	st, _ := stage.Lookup(stage.Key(capability))
 	return st.DefaultTool()
+}
+
+// zoneRoutingKey marks a context whose coverage trigger skips zone routing.
+// It is unexported: only StartCoverage sets it, for a passive batch of
+// public names, and no request can.
+type zoneRoutingKey struct{}
+
+func withoutZoneRouting(ctx context.Context) context.Context {
+	return context.WithValue(ctx, zoneRoutingKey{}, true)
+}
+
+func zoneRoutingSkipped(ctx context.Context) bool {
+	v, _ := ctx.Value(zoneRoutingKey{}).(bool)
+	return v
+}
+
+// coverageZoneGroup picks the targets of one coverage run. A passive
+// capability (a DNS resolution, a registration or network owner lookup,
+// subdomain discovery from passive sources) sends no traffic to the target,
+// so a public name needs no zone: routing it would refuse exactly the names
+// that stopped resolving, whose DNS re-check is the point. A name is public
+// when it is registrable under an ICANN public suffix and none of the
+// addresses it resolves to from the platform is private or denied; an
+// internal name keeps zone routing (its resolver is inside the zone), and
+// so does every address. Without zones, or for an active capability,
+// nothing changes. One run is either public names (zone routing skipped)
+// or routed targets: the group of the batch's first (oldest) target runs
+// now, the other is deferred to a later batch.
+func (s *Service) coverageZoneGroup(ctx context.Context, tenantID shared.ID, targets []string, passive bool) (run, deferred []string, skipZones bool, err error) {
+	if !passive {
+		return targets, nil, false, nil
+	}
+	zones, err := s.loadZones(ctx, tenantID)
+	if err != nil {
+		return nil, nil, false, err
+	}
+	if len(zones) == 0 {
+		return targets, nil, false, nil
+	}
+	plan := scanzone.NewRouter(zones, s.zoneResolver).Plan(ctx, targets)
+	public := make([]bool, len(targets))
+	for i, rt := range plan.Routes {
+		public[i] = publicName(rt)
+	}
+	first := len(targets) > 0 && public[0]
+	for i, t := range targets {
+		if public[i] == first {
+			run = append(run, t)
+		} else {
+			deferred = append(deferred, t)
+		}
+	}
+	return run, deferred, first, nil
+}
+
+// publicName reports whether a routed target is a public name: a hostname
+// registrable under an ICANN public suffix whose platform resolution, if
+// any, has no private or denied address.
+func publicName(rt scanzone.Route) bool {
+	pt := scanzone.ParseTarget(rt.Target)
+	if pt.IsAddr || pt.Host == "" || strings.HasPrefix(pt.Host, "*") {
+		return false
+	}
+	host := strings.TrimSuffix(pt.Host, ".")
+	if _, icann := publicsuffix.PublicSuffix(host); !icann {
+		return false
+	}
+	if _, err := publicsuffix.EffectiveTLDPlusOne(host); err != nil {
+		return false
+	}
+	for _, a := range rt.Addrs {
+		if scanzone.IsPrivate(a) || scanzone.IsDenied(a) {
+			return false
+		}
+	}
+	return !rt.OutsideZones
 }

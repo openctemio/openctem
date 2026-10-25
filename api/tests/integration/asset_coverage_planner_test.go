@@ -29,6 +29,7 @@ type fakeStarter struct {
 	calls   map[string][]string // capability -> targets
 	runs    map[string]shared.ID
 	refuse  map[string]string // target -> code
+	later   map[string]bool   // targets deferred to a later batch
 	busy    map[string]bool
 	fail    map[string]error // capability -> refusal of the whole batch
 	execRun func(id shared.ID)
@@ -50,6 +51,10 @@ func (f *fakeStarter) StartCoverage(_ context.Context, in scanapp.CoverageInput)
 	for _, t := range in.Targets {
 		if code, ok := f.refuse[t]; ok {
 			res.Refused = append(res.Refused, scanapp.RefusedTarget{Target: t, Code: code})
+			continue
+		}
+		if f.later[t] {
+			res.Deferred = append(res.Deferred, t)
 			continue
 		}
 		res.Kept = append(res.Kept, t)
