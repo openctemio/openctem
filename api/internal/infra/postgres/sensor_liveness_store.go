@@ -99,6 +99,7 @@ func (r *SensorRepository) CheckpointLiveness(ctx context.Context, rows []sensor
 			make([]float64, 0, n), make([]float64, 0, n), make([]float64, 0, n), make([]float64, 0, n)
 		res, capa, queue, outbox, control = make([]sql.NullString, 0, n), make([]sql.NullString, 0, n),
 			make([]sql.NullString, 0, n), make([]sql.NullString, 0, n), make([]sql.NullString, 0, n)
+		store = make([]sql.NullString, 0, n)
 	)
 	for _, c := range rows {
 		ids = append(ids, c.SensorID.String())
@@ -155,6 +156,11 @@ func (r *SensorRepository) CheckpointLiveness(ctx context.Context, rows []sensor
 			}
 		}
 		outbox, control = append(outbox, ob), append(control, ct)
+		st, err := livenessJSON(l.LocalStore)
+		if err != nil {
+			return 0, fmt.Errorf("checkpoint: %w", err)
+		}
+		store = append(store, st)
 	}
 	result, err := r.db.ExecContext(ctx, `
 		UPDATE sensors s
@@ -175,19 +181,23 @@ func (r *SensorRepository) CheckpointLiveness(ctx context.Context, rows []sensor
 		    outbox_reported_at = CASE WHEN v.outbox IS NULL THEN s.outbox_reported_at ELSE v.seen END,
 		    reported_control = COALESCE(v.control::jsonb, s.reported_control),
 		    control_reported_at = CASE WHEN v.control IS NULL THEN s.control_reported_at ELSE v.seen END,
+		    reported_local_store = COALESCE(v.store::jsonb, s.reported_local_store),
+		    local_store_reported_at = CASE WHEN v.store IS NULL THEN s.local_store_reported_at ELSE v.seen END,
 		    api_key_last_used_at = GREATEST(s.api_key_last_used_at, v.used),
 		    updated_at = NOW()
 		FROM unnest($1::uuid[], $2::uuid[], $3::timestamptz[], $4::timestamptz[], $5::int[],
 		            $6::float8[], $7::float8[], $8::float8[], $9::float8[], $10::float8[], $11::float8[], $12::float8[],
-		            $13::text[], $14::text[], $15::text[], $16::text[], $17::text[], $18::timestamptz[])
-		     AS v(id, tenant, seen, due, iv, cpu, mem, dr, dw, nr, nt, score, res, capa, queue, outbox, control, used)
+		            $13::text[], $14::text[], $15::text[], $16::text[], $17::text[], $18::timestamptz[],
+		            $19::text[])
+		     AS v(id, tenant, seen, due, iv, cpu, mem, dr, dw, nr, nt, score, res, capa, queue, outbox, control, used, store)
 		WHERE s.id = v.id
 		  AND s.tenant_id IS NOT DISTINCT FROM v.tenant
 		  AND s.status = 'active'
 		  AND (s.last_seen_at IS NULL OR s.last_seen_at < v.seen)`,
 		pq.Array(ids), pq.Array(tenants), pq.Array(seen), pq.Array(due), pq.Array(ivs),
 		pq.Array(cpu), pq.Array(mem), pq.Array(dr), pq.Array(dw), pq.Array(nr), pq.Array(nt), pq.Array(score),
-		pq.Array(res), pq.Array(capa), pq.Array(queue), pq.Array(outbox), pq.Array(control), pq.Array(used))
+		pq.Array(res), pq.Array(capa), pq.Array(queue), pq.Array(outbox), pq.Array(control), pq.Array(used),
+		pq.Array(store))
 	if err != nil {
 		return 0, fmt.Errorf("failed to checkpoint sensor liveness: %w", err)
 	}
