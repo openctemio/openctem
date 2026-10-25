@@ -14,11 +14,9 @@ import {
   Users,
   Store,
   HelpCircle,
-  Eye,
   EyeOff,
   Lock,
   Shield,
-  AlertCircle,
   Network,
 } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
@@ -26,6 +24,8 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/comp
 import { cn } from '@/lib/utils'
 import { useTranslation } from '@/context/i18n-provider'
 import { Tag } from '@/components/ui/tag'
+import { ToneChip, type Tone } from '@/components/ui/tone-chip'
+import type { LucideIcon } from 'lucide-react'
 import { IMPACT_RATING_LEVEL } from '@/lib/impact-colors'
 import type { AssetScope, ExposureLevel, Criticality, ImpactRating } from '../types'
 import {
@@ -58,13 +58,22 @@ const SCOPE_ICONS: Record<AssetScope, React.ElementType> = {
   shadow: HelpCircle,
 }
 
-// Exposure icons
-const EXPOSURE_ICONS: Record<ExposureLevel, React.ElementType> = {
-  public: Eye,
+// Exposure: how reachable the asset is, in the attention tones (research/266).
+// Public is the one that needs a look; unknown has a dashed edge.
+const EXPOSURE_ICONS: Record<ExposureLevel, LucideIcon> = {
+  public: Globe,
   restricted: Lock,
   private: EyeOff,
   isolated: Shield,
-  unknown: AlertCircle,
+  unknown: HelpCircle,
+}
+
+export const EXPOSURE_TONE: Record<ExposureLevel, Tone> = {
+  public: 'caution',
+  restricted: 'neutral',
+  private: 'quiet',
+  isolated: 'quiet',
+  unknown: 'quiet',
 }
 
 /** Criticality as a Tag level: Critical is bold with four bars, none has no bars. */
@@ -153,11 +162,17 @@ export function ExposureBadge({
   const prefix = labelled ? t('assets.badge.exposure', 'Exposure') : null
 
   const badge = (
-    <Badge variant="outline" className={cn(NEUTRAL_BADGE, sizeClass(size), className)}>
-      {showIcon && <Icon className={cn(NEUTRAL_ICON, size === 'sm' ? 'h-3 w-3' : 'h-3.5 w-3.5')} />}
-      {prefix && <span className="font-normal opacity-75">{prefix}:</span>}
-      {label}
-    </Badge>
+    <span className="inline-flex" data-slot="exposure-badge" data-exposure={exposure}>
+      <ToneChip
+        tone={EXPOSURE_TONE[exposure] ?? 'quiet'}
+        icon={showIcon ? Icon : undefined}
+        dashed={exposure === 'unknown'}
+        value={exposure}
+        label={prefix ? `${prefix}: ${label}` : label}
+        title={showTooltip ? undefined : label}
+        className={cn(size === 'sm' && 'h-5', className)}
+      />
+    </span>
   )
 
   if (!showTooltip) return badge

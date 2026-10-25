@@ -128,8 +128,10 @@ type CoverageRule struct {
 	EverySeconds int `json:"every_seconds"`
 	// Requires are predicates over stored facts that must hold for the
 	// rule to apply: "resolves" (the name has an address), "web_port" (an
-	// open port in the web port set), "scope_entry" (an active scope entry
-	// covers the asset).
+	// open port in the web port set), "web_port_or_unscanned" (a web port
+	// or web origin was seen on the name, or no port scan has finished on
+	// it or its addresses yet), "scope_entry" (an active scope entry covers
+	// the asset).
 	Requires []string `json:"requires,omitempty"`
 	// Expects names the type a successful run must produce for the asset
 	// ("" = no output is expected): the output check of the coverage gap

@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"regexp"
+	"strings"
 	"testing"
 
 	scansvc "github.com/openctemio/openctem/api/internal/app/scan"
@@ -127,5 +129,47 @@ func TestScanHandler_ApprovalRefusalKeepsItsCode(t *testing.T) {
 	code, msg := errorBody(t, rec)
 	if rec.Code != http.StatusForbidden || code == "SOMETHING_INTERNAL" || msg == "secret detail" {
 		t.Errorf("other forbidden: status=%d code=%q message=%q, want a plain 403", rec.Code, code, msg)
+	}
+}
+
+// A trigger with nothing to scan reaches the client with the real reasons,
+// the per-target refusals, and no scan name or id: the quick scan's name
+// ("Quick Scan - <time>-<hex>") never appears in what the user reads.
+func TestScanHandler_NothingToScanCarriesReasonsAndNoIDs(t *testing.T) {
+	h := &ScanHandler{logger: logger.NewNop()}
+	err := fmt.Errorf("failed to trigger scan: %w", scansvc.NothingToScanError([]scanzone.Uncovered{
+		{Target: "go.example.com", Reason: "does not resolve in DNS", Kind: scanzone.KindUnresolved},
+	}))
+	rec := httptest.NewRecorder()
+	h.handleServiceError(rec, err)
+	var b struct {
+		Code    string `json:"code"`
+		Message string `json:"message"`
+		Details struct {
+			Refused []struct {
+				Target string `json:"target"`
+				Code   string `json:"code"`
+			} `json:"refused"`
+		} `json:"details"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &b); err != nil {
+		t.Fatalf("body %q: %v", rec.Body.String(), err)
+	}
+	if rec.Code != http.StatusBadRequest || b.Code != scansvc.CodeNoResolvingTargets {
+		t.Fatalf("status=%d code=%q, want 400 %s", rec.Code, b.Code, scansvc.CodeNoResolvingTargets)
+	}
+	if b.Message != "Nothing to scan: go.example.com does not resolve in DNS. Next: fix the DNS record, or scan the address instead." {
+		t.Errorf("message = %q", b.Message)
+	}
+	if len(b.Details.Refused) != 1 || b.Details.Refused[0].Code != "unresolved" || b.Details.Refused[0].Target != "go.example.com" {
+		t.Errorf("details = %+v", b.Details)
+	}
+	for _, leak := range []string{"Quick Scan", "scan \"", "zone"} {
+		if strings.Contains(rec.Body.String(), leak) {
+			t.Errorf("body carries %q: %s", leak, rec.Body.String())
+		}
+	}
+	if regexp.MustCompile(`[0-9a-f]{8}-[0-9a-f]{4}-`).MatchString(b.Message) {
+		t.Errorf("message carries a UUID: %q", b.Message)
 	}
 }

@@ -397,17 +397,28 @@ func (o ListOptions) WithSort(sort *pagination.SortOption) ListOptions {
 	return o
 }
 
-// AllowedSortFields returns the allowed sort fields for assets.
+// CriticalityRankSQL orders criticality by level (critical highest), not by
+// spelling: the column is text, so a plain ORDER BY put "low" above
+// "medium". Unknown values rank with none.
+const CriticalityRankSQL = "CASE criticality WHEN 'critical' THEN 4 WHEN 'high' THEN 3 " +
+	"WHEN 'medium' THEN 2 WHEN 'low' THEN 1 ELSE 0 END"
+
+// ExposureRankSQL orders exposure by reach (public highest), not by spelling.
+const ExposureRankSQL = "CASE exposure WHEN 'public' THEN 4 WHEN 'restricted' THEN 3 " +
+	"WHEN 'private' THEN 2 WHEN 'isolated' THEN 1 ELSE 0 END"
+
+// AllowedSortFields returns the allowed sort fields for assets. Values are
+// trusted SQL expressions; the client only picks a key.
 func AllowedSortFields() map[string]string {
 	return map[string]string{
 		"name":          "name",
 		"created_at":    "created_at",
 		"updated_at":    "updated_at",
-		"criticality":   "criticality",
+		"criticality":   CriticalityRankSQL,
 		"status":        "status",
 		"type":          "asset_type",
 		"scope":         "scope",
-		"exposure":      "exposure",
+		"exposure":      ExposureRankSQL,
 		"risk_score":    "risk_score",
 		"finding_count": "finding_count",
 		"first_seen":    "first_seen",

@@ -1510,7 +1510,8 @@ vars:
     component: api
     group: "Discovery feeds and background jobs"
     type: string
-    description: "Pinned root key id of the vulnerability bundles. Unset: no bundle is imported."
+    default: "official root"
+    description: "Pinned root key id of the vulnerability bundles. Defaults to the root of the official openctemio/vulnfeed releases; set it only for a private collector."
   - name: GITHUB_APP_ID
     component: api
     group: "Integrations"

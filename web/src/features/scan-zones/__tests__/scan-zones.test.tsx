@@ -216,7 +216,7 @@ describe('helpers', () => {
 
   it('explains trigger refusals', () => {
     const err = new ApiClientError('No target...', 'NO_ZONE_COVERAGE', 400)
-    expect(triggerErrorHint(err)).toMatch(/outside every scan zone/)
+    expect(triggerErrorHint(err)).toMatch(/private ranges to a scan zone/)
     expect(describeScanZoneError(err, 'x').status).toBe(400)
     expect(triggerErrorHint(new Error('x'))).toBeUndefined()
     // research/25: refusals from the sensor policy pre-check and the opt-ins.
