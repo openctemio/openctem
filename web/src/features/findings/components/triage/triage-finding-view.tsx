@@ -60,9 +60,12 @@ export function TriageFindingView({
   finding,
   showEvidence,
   note,
+  advisory,
 }: {
   finding: ApiFinding
   showEvidence: boolean
+  /** The AI suggestion card, under the evidence. */
+  advisory?: React.ReactNode
   /** A notice about this finding (changed by someone else, pending approval). */
   note?: React.ReactNode
 }) {
@@ -253,6 +256,7 @@ export function TriageFindingView({
             </p>
           ))}
       </section>
+      {advisory}
     </article>
   )
 }

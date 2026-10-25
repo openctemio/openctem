@@ -13,7 +13,10 @@ export type TriageAction =
   | 'falsePositive'
   | 'accept'
   | 'assign'
+  | 'task'
+  | 'retest'
   | 'skip'
+  | 'undo'
   | 'evidence'
   | 'openPage'
   | 'help'
@@ -24,7 +27,10 @@ export const TRIAGE_KEYS: ReadonlyArray<{ action: TriageAction; key: string; lab
   { action: 'falsePositive', key: 'f', label: 'f' },
   { action: 'accept', key: 'a', label: 'a' },
   { action: 'assign', key: 'o', label: 'o' },
+  { action: 'task', key: 'm', label: 'm' },
+  { action: 'retest', key: 'r', label: 'r' },
   { action: 'skip', key: 's', label: 's' },
+  { action: 'undo', key: 'u', label: 'u' },
   { action: 'next', key: 'j', label: 'j' },
   { action: 'prev', key: 'k', label: 'k' },
   { action: 'evidence', key: 'e', label: 'e' },
@@ -45,7 +51,7 @@ const OPEN_LAYER =
   '[role="dialog"]:not([data-state="closed"]), [role="alertdialog"]:not([data-state="closed"])'
 
 /** Keys that still act while a button or link has focus (letters do not press it). */
-const ON_CONTROLS = new Set(['j', 'k', 'c', 'f', 'a', 'o', 's', 'e', '?', 'Escape'])
+const ON_CONTROLS = new Set(['j', 'k', 'c', 'f', 'a', 'o', 'm', 'r', 's', 'u', 'e', '?', 'Escape'])
 
 export interface TriageKeyEvent {
   key: string

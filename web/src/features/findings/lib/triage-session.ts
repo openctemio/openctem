@@ -37,9 +37,43 @@ export type TriageOutcome =
   | 'accept_requested'
   | 'accept_applied'
   | 'assigned'
+  | 'tasked'
+  | 'retest_requested'
   | 'skipped'
   /** Someone else changed it after the queue loaded: passed over. */
   | 'changed'
+
+const OUTCOMES: ReadonlySet<string> = new Set([
+  'confirmed',
+  'fp_requested',
+  'fp_applied',
+  'accept_requested',
+  'accept_applied',
+  'assigned',
+  'tasked',
+  'retest_requested',
+  'skipped',
+  'changed',
+])
+
+/** The most decisions Undo can walk back. */
+export const TRIAGE_UNDO_DEPTH = 10
+
+/**
+ * What Undo needs to walk one decision back: the finding, what was done,
+ * and what it was before. Undo always goes through the inverse request
+ * (its own permission check on the server), never a client-side reset.
+ */
+export interface TriageUndo {
+  id: string
+  outcome: TriageOutcome
+  /** The status before a status decision. */
+  previousStatus?: FindingStatus
+  /** The assignee before an assignment (null: nobody). */
+  previousAssigneeId?: string | null
+  /** The approval request a false positive or acceptance request created. */
+  approvalId?: string
+}
 
 /** Outcomes that count as a decision in the progress line. */
 const DECIDED: ReadonlySet<TriageOutcome> = new Set([
@@ -47,6 +81,8 @@ const DECIDED: ReadonlySet<TriageOutcome> = new Set([
   'fp_applied',
   'accept_applied',
   'assigned',
+  'tasked',
+  'retest_requested',
 ])
 /** Outcomes that wait for a second person. */
 const SENT_FOR_APPROVAL: ReadonlySet<TriageOutcome> = new Set(['fp_requested', 'accept_requested'])
@@ -75,6 +111,8 @@ export interface TriageSession {
   /** The finding shown, an index into items. */
   index: number
   outcomes: Record<string, TriageOutcome>
+  /** The last decisions, newest last, at most TRIAGE_UNDO_DEPTH. */
+  undo: TriageUndo[]
   /** Findings in the queue as last counted by the server, plus those seen. */
   total: number
   /** No more findings to read from the server. */
@@ -133,6 +171,7 @@ export function newSession(query: string, returnTo: string, fromList: boolean): 
     items: [],
     index: 0,
     outcomes: {},
+    undo: [],
     total: 0,
     exhausted: false,
   }
@@ -144,6 +183,35 @@ function isItem(x: unknown): x is TriageItem {
   return typeof it.id === 'string' && ID_RE.test(it.id) && typeof it.title === 'string'
 }
 
+function isUndo(x: unknown): x is TriageUndo {
+  if (!x || typeof x !== 'object') return false
+  const u = x as Record<string, unknown>
+  return (
+    typeof u.id === 'string' &&
+    ID_RE.test(u.id) &&
+    typeof u.outcome === 'string' &&
+    OUTCOMES.has(u.outcome) &&
+    (u.previousStatus === undefined ||
+      (typeof u.previousStatus === 'string' && /^[a-z_]{1,32}$/.test(u.previousStatus))) &&
+    (u.approvalId === undefined ||
+      (typeof u.approvalId === 'string' && ID_RE.test(u.approvalId))) &&
+    (u.previousAssigneeId === undefined ||
+      u.previousAssigneeId === null ||
+      (typeof u.previousAssigneeId === 'string' && ID_RE.test(u.previousAssigneeId)))
+  )
+}
+
+/** Records a decision for Undo, keeping the newest TRIAGE_UNDO_DEPTH. */
+export function pushUndo(s: TriageSession, entry: TriageUndo): TriageSession {
+  return { ...s, undo: [...s.undo, entry].slice(-TRIAGE_UNDO_DEPTH) }
+}
+
+/** Takes the newest decision off the Undo stack. */
+export function popUndo(s: TriageSession): { session: TriageSession; entry?: TriageUndo } {
+  if (s.undo.length === 0) return { session: s }
+  return { session: { ...s, undo: s.undo.slice(0, -1) }, entry: s.undo[s.undo.length - 1] }
+}
+
 /** Parses a stored session; anything malformed reads as no session. */
 export function parseSession(raw: string | null): TriageSession | null {
   if (!raw) return null
@@ -153,7 +221,8 @@ export function parseSession(raw: string | null): TriageSession | null {
     const items = s.items.filter(isItem).slice(0, TRIAGE_MAX_ITEMS)
     const outcomes: Record<string, TriageOutcome> = {}
     for (const [id, o] of Object.entries(s.outcomes ?? {})) {
-      if (ID_RE.test(id) && typeof o === 'string') outcomes[id] = o as TriageOutcome
+      if (ID_RE.test(id) && typeof o === 'string' && OUTCOMES.has(o))
+        outcomes[id] = o as TriageOutcome
     }
     const index = Number.isInteger(s.index) ? Math.min(Math.max(0, s.index!), items.length) : 0
     return {
@@ -166,6 +235,7 @@ export function parseSession(raw: string | null): TriageSession | null {
       outcomes,
       total: Number.isFinite(s.total) ? Math.max(items.length, s.total!) : items.length,
       exhausted: s.exhausted === true,
+      undo: (Array.isArray(s.undo) ? s.undo : []).filter(isUndo).slice(-TRIAGE_UNDO_DEPTH),
     }
   } catch {
     return null
