@@ -343,7 +343,11 @@ jobs:
           cp "$RUNNER_TEMP/contract/api-route-permissions.json" "$RUNNER_TEMP/contract/authz-matrix.json" web/src/config/
           (cd web && npm run generate:api-types)
 
+      # A Vitest worker (jsdom + v8 coverage) ran out of its default heap and
+      # failed a shard; 4 GB per worker fits the hosted runner's 16 GB.
       - name: Run tests (shard ${{ matrix.shard }}/3)
+        env:
+          NODE_OPTIONS: --max-old-space-size=4096
         run: npm test -- --run --coverage --passWithNoTests --shard=${{ matrix.shard }}/3
 
       - name: Upload coverage
