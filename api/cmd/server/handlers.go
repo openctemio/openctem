@@ -1511,6 +1511,9 @@ func newEASMHandler(repos *Repositories, svc *Services, log *logger.Logger) *han
 		// The organization's own prefixes are offered only when the platform
 		// guardrails accept them as entries.
 		suggestions.SetGuardrails(svc.ScopeGuardrails)
+		// Addresses the unclassified-scans mode already checks need no
+		// decision: the same mode the active gate reads.
+		suggestions.SetUnclassified(svc.ActiveGate.UnclassifiedMode)
 		h.SetSuggestions(suggestions)
 	}
 	// Review by rule (RFC-054 §6.7): rules are scope entries and exclusions.

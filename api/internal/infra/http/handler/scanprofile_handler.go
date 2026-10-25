@@ -226,14 +226,15 @@ func (h *ScanProfileHandler) Create(w http.ResponseWriter, r *http.Request) {
 	userID := middleware.GetUserID(r.Context())
 
 	input := scan.CreateScanProfileInput{
-		TenantID:    tenantID,
-		UserID:      userID,
-		Name:        req.Name,
-		Description: req.Description,
-		Tags:        req.Tags,
-		IsDefault:   req.IsDefault,
-		QualityGate: toQualityGateDomain(req.QualityGate),
-		RuleSources: req.RuleSources,
+		TenantID:      tenantID,
+		UserID:        userID,
+		Name:          req.Name,
+		Description:   req.Description,
+		Tags:          req.Tags,
+		IsDefault:     req.IsDefault,
+		QualityGate:   toQualityGateDomain(req.QualityGate),
+		RuleSources:   req.RuleSources,
+		CallerIsAdmin: middleware.IsAdmin(r.Context()),
 	}
 
 	profile, err := h.service.CreateScanProfile(r.Context(), input)
@@ -410,13 +411,14 @@ func (h *ScanProfileHandler) Update(w http.ResponseWriter, r *http.Request) {
 	}
 
 	input := scan.UpdateScanProfileInput{
-		TenantID:    tenantID,
-		ProfileID:   profileID,
-		Name:        req.Name,
-		Description: req.Description,
-		Tags:        req.Tags,
-		QualityGate: toQualityGateDomain(req.QualityGate),
-		RuleSources: req.RuleSources,
+		TenantID:      tenantID,
+		ProfileID:     profileID,
+		Name:          req.Name,
+		Description:   req.Description,
+		Tags:          req.Tags,
+		QualityGate:   toQualityGateDomain(req.QualityGate),
+		RuleSources:   req.RuleSources,
+		CallerIsAdmin: middleware.IsAdmin(r.Context()),
 	}
 
 	profile, err := h.service.UpdateScanProfile(r.Context(), input)
@@ -762,7 +764,14 @@ func (h *ScanProfileHandler) handleServiceError(w http.ResponseWriter, err error
 	case errors.Is(err, shared.ErrUnauthorized):
 		apierror.Unauthorized("").WriteJSON(w)
 	case errors.Is(err, shared.ErrForbidden):
-		apierror.Forbidden("System profiles cannot be modified").WriteJSON(w)
+		// The domain says why (a system profile, another organization, or a
+		// change only an owner or admin may make).
+		msg := "System profiles cannot be modified"
+		var de *shared.DomainError
+		if errors.As(err, &de) && de.Message != "" {
+			msg = de.Message
+		}
+		apierror.Forbidden(msg).WriteJSON(w)
 	default:
 		h.logger.Error("service error", "error", err)
 		apierror.InternalError(err).WriteJSON(w)

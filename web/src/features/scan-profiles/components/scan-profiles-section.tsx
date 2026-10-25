@@ -192,12 +192,17 @@ export function ScanProfilesSection() {
                         },
                       ] satisfies RowAction[])
                     : []),
-                  {
-                    label: t('scans.profiles.edit'),
-                    icon: Pencil,
-                    onClick: () => handleEditProfile(profile),
-                    permission: Permission.ScanProfilesWrite,
-                  },
+                  // The default profile is organization-wide: owner or admin edits it.
+                  ...(!profile.is_default || canSetDefault
+                    ? ([
+                        {
+                          label: t('scans.profiles.edit'),
+                          icon: Pencil,
+                          onClick: () => handleEditProfile(profile),
+                          permission: Permission.ScanProfilesWrite,
+                        },
+                      ] satisfies RowAction[])
+                    : []),
                   {
                     label: t('scans.profiles.clone'),
                     icon: Copy,
