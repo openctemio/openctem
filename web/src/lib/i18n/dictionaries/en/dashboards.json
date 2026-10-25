@@ -212,7 +212,7 @@
   "dashboards.metric.fix_time_to_fix.name": "Time to fix",
   "dashboards.metric.flow_new_vs_fixed.definition": "Findings first detected and findings fixed in each period. Fixing more than you find shrinks exposure.",
   "dashboards.metric.flow_new_vs_fixed.name": "New vs fixed",
-  "dashboards.metric.ingest_intake.definition": "What each source sent in the period and what OpenCTEM did with it: new or reopened, merged into findings that exist, suppressed by an approved rule, or not stored. Organization figures, from the import and run receipts; each figure opens those receipts.",
+  "dashboards.metric.ingest_intake.definition": "What each source sent in the period and what {product} did with it: new or reopened, merged into findings that exist, suppressed by an approved rule, or not stored. Organization figures, from the import and run receipts; each figure opens those receipts.",
   "dashboards.metric.ingest_intake.name": "Intake and noise reduction",
   "dashboards.metric.intel_kev_open.definition": "Open findings whose vulnerability is in the known exploited vulnerabilities catalog (KEV).",
   "dashboards.metric.intel_kev_open.name": "KEV on your assets",

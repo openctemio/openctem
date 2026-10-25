@@ -212,7 +212,7 @@
   "dashboards.metric.fix_time_to_fix.name": "Thời gian khắc phục",
   "dashboards.metric.flow_new_vs_fixed.definition": "Số finding phát hiện lần đầu và số finding được khắc phục trong mỗi kỳ. Khắc phục nhiều hơn phát hiện thì phơi nhiễm giảm.",
   "dashboards.metric.flow_new_vs_fixed.name": "Mới so với đã khắc phục",
-  "dashboards.metric.ingest_intake.definition": "Mỗi nguồn đã gửi gì trong kỳ và OpenCTEM đã xử lý ra sao: mới hoặc mở lại, gộp vào phát hiện đã có, bị loại bởi quy tắc đã duyệt, hoặc không lưu. Số liệu toàn tổ chức, lấy từ biên nhận nhập và lượt chạy; mỗi số liệu mở các biên nhận đó.",
+  "dashboards.metric.ingest_intake.definition": "Mỗi nguồn đã gửi gì trong kỳ và {product} đã xử lý ra sao: mới hoặc mở lại, gộp vào phát hiện đã có, bị loại bởi quy tắc đã duyệt, hoặc không lưu. Số liệu toàn tổ chức, lấy từ biên nhận nhập và lượt chạy; mỗi số liệu mở các biên nhận đó.",
   "dashboards.metric.ingest_intake.name": "Tiếp nhận và giảm nhiễu",
   "dashboards.metric.intel_kev_open.definition": "Các finding đang mở có lỗ hổng nằm trong danh mục lỗ hổng đã bị khai thác (KEV).",
   "dashboards.metric.intel_kev_open.name": "KEV trên tài sản của bạn",
