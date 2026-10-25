@@ -56,6 +56,20 @@ describe('InformationalChip', () => {
     expect(screen.getByTestId('informational-chip')).toHaveTextContent('Informational hidden (3)')
   })
 
+  it('sends no request while the quick views are still loading', () => {
+    render(
+      <InformationalChip
+        filters={{}}
+        hidden
+        shownForView={false}
+        knownCount={null}
+        onChange={vi.fn()}
+      />
+    )
+    expect(countState.enabled).toBe(false)
+    expect(screen.getByTestId('informational-chip')).toHaveTextContent('Informational hidden')
+  })
+
   it('shows nothing when nothing is left out', () => {
     countState.total = 0
     const { container } = render(
