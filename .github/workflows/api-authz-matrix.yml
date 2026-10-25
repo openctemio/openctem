@@ -1,0 +1,63 @@
+name: API Authorization Matrix
+
+# Nightly authorization regression suite (api/tests/authzmatrix): seeds two
+# organizations with one principal per role kind through the public API on a
+# scratch stack (Postgres and Redis from api/tests/authzmatrix/ci/compose.yml,
+# the API built from this commit), sends every route as every principal with
+# its own and with the other organization's ids, and runs the role-management
+# scenarios. Expected outcomes come from the route gates in the source
+# (internal/authzdoc); reviewed exceptions live in testdata/allowlist.tsv.
+#
+# Schedule + manual only, never on pull requests: it takes several minutes
+# and needs no secrets. Schedules run from the default branch.
+
+on:
+  schedule:
+    - cron: '11 2 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  # The scratch stack pulls the CI image mirror (ghcr.io/openctemio/mirror).
+  packages: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  matrix:
+    name: Authorization matrix
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      GOWORK: 'off'
+      PG_IMAGE: ghcr.io/openctemio/mirror/postgres:17-alpine
+      REDIS_IMAGE: ghcr.io/openctemio/mirror/redis:7-alpine
+      MIGRATE_IMAGE: ghcr.io/openctemio/mirror/migrate:v4.18.1
+      MATRIX_REPORT: ${{ github.workspace }}/authz-matrix/report.json
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Registry login (GHCR mirror)
+        uses: ./.github/actions/registry-login
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: api/go.mod
+          cache: true
+          cache-dependency-path: api/go.sum
+      - name: Run the matrix
+        run: |
+          mkdir -p "$(dirname "$MATRIX_REPORT")"
+          make -C api authz-matrix
+      - name: Upload the report
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: authz-matrix-report
+          path: authz-matrix/
+          retention-days: 7
+          if-no-files-found: ignore
