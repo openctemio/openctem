@@ -243,7 +243,7 @@ func (r *AssetCoverageRepository) reconcileBatch(ctx context.Context, tenantID s
 			FROM cand c
 			WHERE s.tenant_id = $1 AND s.asset_id = c.id AND s.capability = $4::text AND s.vantage = ''
 			  AND ((c.ok AND s.state = 'not_applicable' AND s.reason = ANY($6::text[])) OR
-			       (NOT c.ok AND s.state IN ('due', 'failed', 'covered')))
+			       (NOT c.ok AND s.state IN ('due', 'failed', 'covered', 'blocked')))
 			RETURNING 1
 		)
 		SELECT (SELECT count(*) FROM ins), (SELECT count(*) FROM upd),

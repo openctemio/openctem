@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strconv"
 	"time"
 
 	"github.com/lib/pq"
@@ -27,40 +28,76 @@ func coverageIDStrings(ids []shared.ID) []string {
 	return out
 }
 
-// DueBatch returns due or failed pairs of a capability whose time has come.
-func (r *AssetCoverageRepository) DueBatch(ctx context.Context, tenantID shared.ID, capability string, limit int) ([]coverage.DueTarget, error) {
+// JitterSQL is coverage.JitterFraction of the row "c" in SQL: the first 32
+// bits of md5("<asset id>|<capability>") as a fraction of 2^32, in [0, 1).
+const JitterSQL = `(('x' || substr(md5(c.asset_id::text || '|' || c.capability), 1, 8))::bit(32)::bigint / 4294967296.0)`
+
+// jitteredIntervalSQL is now() + secs × (1 + spread × jitter), secs being a
+// parameter placeholder.
+func jitteredIntervalSQL(secs string) string {
+	return `now() + make_interval(secs => (` + secs + `::float8 * (1 + ` + strconv.FormatFloat(coverage.JitterSpread, 'f', -1, 64) +
+		` * ` + JitterSQL + `))::float8)`
+}
+
+// plannableStatesSQL are the states the planner picks once next_due_at has
+// passed: due and failed (after the back-off), covered (the cadence has
+// elapsed) and blocked (the gate's refusal is rechecked; scope may have
+// changed). The partial index idx_asset_coverage_plannable covers them.
+const plannableStatesSQL = `('due', 'failed', 'covered', 'blocked')`
+
+// DueBatch returns the pairs of a capability whose time has come: due,
+// failed, covered past its cadence and blocked past its recheck. When at
+// least one is due now, pairs due within lookahead are taken as well (one
+// run instead of several one-target runs); when none is due now, nothing.
+func (r *AssetCoverageRepository) DueBatch(ctx context.Context, tenantID shared.ID, capability string, limit int, lookahead time.Duration) ([]coverage.DueTarget, error) {
 	if limit <= 0 {
 		return nil, nil
 	}
+	if lookahead < 0 {
+		lookahead = 0
+	}
 	rows, err := r.db.QueryContext(ctx, `
-		SELECT a.id, a.name, a.asset_type, COALESCE(a.sub_type, ''), c.fail_streak
+		SELECT a.id, a.name, a.asset_type, COALESCE(a.sub_type, ''), c.fail_streak,
+		       (c.next_due_at IS NULL OR c.next_due_at <= now())
 		FROM asset_coverage c
 		JOIN assets a ON a.tenant_id = c.tenant_id AND a.id = c.asset_id
 		WHERE c.tenant_id = $1 AND c.capability = $2 AND c.vantage = ''
-		  AND c.state IN ('due', 'failed') AND (c.next_due_at IS NULL OR c.next_due_at <= now())
+		  AND c.state IN `+plannableStatesSQL+`
+		  AND (c.next_due_at IS NULL OR c.next_due_at <= now() + make_interval(secs => $4))
 		  AND a.deleted_at IS NULL AND a.status = 'active'
 		ORDER BY c.priority DESC, c.next_due_at ASC NULLS FIRST, a.id
-		LIMIT $3`, tenantID.String(), capability, limit)
+		LIMIT $3`, tenantID.String(), capability, limit, lookahead.Seconds())
 	if err != nil {
 		return nil, fmt.Errorf("list due coverage: %w", err)
 	}
 	defer func() { _ = rows.Close() }()
-	var out []coverage.DueTarget
+	var (
+		out    []coverage.DueTarget
+		anyDue bool
+	)
 	for rows.Next() {
 		var (
 			d       coverage.DueTarget
 			id, typ string
+			dueNow  bool
 		)
-		if err := rows.Scan(&id, &d.Name, &typ, &d.SubType, &d.FailStreak); err != nil {
+		if err := rows.Scan(&id, &d.Name, &typ, &d.SubType, &d.FailStreak, &dueNow); err != nil {
 			return nil, err
 		}
 		if d.AssetID, err = shared.IDFromString(id); err != nil {
 			continue
 		}
+		anyDue = anyDue || dueNow
 		d.Type = asset.AssetType(typ)
 		out = append(out, d)
 	}
-	return out, rows.Err()
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	if !anyDue {
+		return nil, nil
+	}
+	return out, nil
 }
 
 // MarkQueued records that the pairs were handed to a run.
@@ -79,7 +116,8 @@ func (r *AssetCoverageRepository) MarkQueued(ctx context.Context, tenantID share
 	return nil
 }
 
-// MarkBlocked records the gate's refusal of each pair.
+// MarkBlocked records the gate's refusal of each pair; the planner offers
+// it again after recheck (stretched by the pair's jitter).
 func (r *AssetCoverageRepository) MarkBlocked(ctx context.Context, tenantID shared.ID, capability string, reasons map[shared.ID]string, recheck time.Duration) error {
 	if len(reasons) == 0 {
 		return nil
@@ -92,7 +130,7 @@ func (r *AssetCoverageRepository) MarkBlocked(ctx context.Context, tenantID shar
 	}
 	_, err := r.db.ExecContext(ctx, `
 		UPDATE asset_coverage c SET state = 'blocked', reason = w.code,
-		       next_due_at = now() + make_interval(secs => $5), updated_at = now()
+		       next_due_at = `+jitteredIntervalSQL("$5")+`, updated_at = now()
 		FROM unnest($3::uuid[], $4::text[]) AS w(asset_id, code)
 		WHERE c.tenant_id = $1 AND c.capability = $2 AND c.vantage = '' AND c.asset_id = w.asset_id`,
 		tenantID.String(), capability, pq.Array(ids), pq.Array(codes), recheck.Seconds())
@@ -174,17 +212,18 @@ const expectsHTTPServiceSQL = `EXISTS (
 	              OR (split_part(a.name, ':', 2) = '80' AND o.name LIKE 'http://%')))))
 	  ))`
 
-const settleCoveredSQL = `
+var settleCoveredSQL = `
 	UPDATE asset_coverage c SET state = 'covered', reason = '',
 	       last_outcome = CASE WHEN $5 AND NOT ` + expectsHTTPServiceSQL + ` THEN '` + coverage.OutcomeNoOutput + `' ELSE '` + coverage.OutcomeOK + `' END,
 	       last_error = '', last_success_at = now(), fail_streak = 0,
-	       next_due_at = now() + make_interval(secs => $4), updated_at = now()
+	       next_due_at = ` + jitteredIntervalSQL("$4") + `, updated_at = now()
 	FROM assets a
 	WHERE c.tenant_id = $1 AND c.last_run_id = $2 AND c.capability = $3 AND c.vantage = '' AND c.state = 'queued'
 	  AND c.asset_id = ANY($6::uuid[])
 	  AND a.tenant_id = c.tenant_id AND a.id = c.asset_id`
 
-// SettleCovered settles queued pairs of a run as covered.
+// SettleCovered settles queued pairs of a run as covered; each is due again
+// after the cadence stretched by its jitter.
 func (r *AssetCoverageRepository) SettleCovered(ctx context.Context, tenantID, runID shared.ID, capability string, assetIDs []shared.ID, every time.Duration, expectsOrigin bool) (int, error) {
 	if len(assetIDs) == 0 {
 		return 0, nil
