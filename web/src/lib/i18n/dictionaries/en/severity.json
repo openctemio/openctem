@@ -1,9 +1,9 @@
 {
   "severity.critical": "Critical",
   "severity.high": "High",
-  "severity.medium": "Medium",
-  "severity.low": "Low",
   "severity.info": "Info",
   "severity.informational": "Informational",
+  "severity.low": "Low",
+  "severity.medium": "Medium",
   "severity.unknown": "Unknown"
 }

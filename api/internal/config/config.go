@@ -1139,6 +1139,12 @@ type SensorTransportV3Config struct {
 	MTLSTrustedProxies []string
 }
 
+// VulnFeedOfficialRootKeyID is the root key id of the official vulnerability
+// bundles (openctemio/vulnfeed keys/root-keyid.txt, first key ceremony
+// 2026-10-25). Pinned so the import works with no setup; VULNFEED_ROOT_KEY_ID
+// overrides it for a private collector.
+const VulnFeedOfficialRootKeyID = "SHA256:cb881872776e9b00fa699ccdc809af71243728279083f7bcdf6dd171e5a246c2"
+
 // SensorConfig holds sensor management configuration.
 type SensorConfig struct {
 	// HeartbeatTimeout is the duration after which a sensor is marked as inactive
@@ -1158,7 +1164,8 @@ type SensorConfig struct {
 	CTEMIDFeedURL string
 
 	// Vulnerability bundles (RFC-066 §5.5): the pinned root key id
-	// (VULNFEED_ROOT_KEY_ID; empty = no import), the release base URL
+	// (VULNFEED_ROOT_KEY_ID; defaults to VulnFeedOfficialRootKeyID, the root
+	// of the official openctemio/vulnfeed releases), the release base URL
 	// (VULNFEED_BASE_URL) and, for air-gapped platforms, a local directory
 	// holding a release's files (VULNFEED_BUNDLE_DIR). VulnFeedMirrors
 	// (VULNFEED_MIRRORS, comma separated, https) are tried after the
@@ -1738,7 +1745,7 @@ func Load() (*Config, error) {
 			HeartbeatTimeout:                  getEnvDuration("WORKER_HEARTBEAT_TIMEOUT", 5*time.Minute),
 			SCMSyncInterval:                   getEnvDuration("SCM_SYNC_INTERVAL", 0),
 			CTEMIDFeedURL:                     getEnv("CTEM_ID_FEED_URL", "https://ctem.org/source.json"),
-			VulnFeedRootKeyID:                 getEnv("VULNFEED_ROOT_KEY_ID", ""),
+			VulnFeedRootKeyID:                 getEnv("VULNFEED_ROOT_KEY_ID", VulnFeedOfficialRootKeyID),
 			VulnFeedBaseURL:                   getEnv("VULNFEED_BASE_URL", "https://github.com/openctemio/vulnfeed/releases"),
 			VulnFeedBundleDir:                 getEnv("VULNFEED_BUNDLE_DIR", ""),
 			VulnFeedMirrors:                   feedURLs("", getEnv("VULNFEED_MIRRORS", "")),

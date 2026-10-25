@@ -6,15 +6,15 @@
       "transactions": 1
     },
     "reimport_finding_gone": {
-      "statements": 24,
+      "statements": 25,
       "transactions": 3
     },
     "reimport_finding_new": {
-      "statements": 28,
+      "statements": 29,
       "transactions": 3
     },
     "reimport_unchanged": {
-      "statements": 24,
+      "statements": 25,
       "transactions": 3
     }
   }
