@@ -31,7 +31,7 @@ func (r *DashboardWidgetRepository) Outcomes(ctx context.Context, scope dashboar
 		COUNT(*) FILTER (WHERE f.status = 'resolved' AND f.resolved_at >= ` + sinceArg + `),
 		COUNT(*) FILTER (WHERE f.status = 'accepted' AND f.resolved_at >= ` + sinceArg + `),
 		COUNT(*) FILTER (WHERE f.status = 'false_positive' AND f.resolved_at >= ` + sinceArg + `)
-		FROM findings f WHERE f.status IN ('in_progress', 'resolved', 'accepted', 'false_positive') AND ` + where
+		FROM findings f WHERE (f.status = 'in_progress' OR f.resolved_at >= ` + sinceArg + `) AND ` + where
 	qctx, cancel := context.WithTimeout(ctx, widgetQueryTimeout)
 	defer cancel()
 	var out dashboard.OutcomeCounts
