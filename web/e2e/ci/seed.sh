@@ -93,6 +93,24 @@ call POST /api/v1/assets '{"name":"10.20.30.40","type":"ip_address","criticality
 # gate): a scope target covering the e2e domain lets the seed scan run.
 call POST /api/v1/scope/targets '{"target_type":"domain","pattern":"e2e-web.example.com","description":"e2e scope"}'
 
+log "http services with service facts"
+# 41-assets-service-facts: one service with more facts than a list cell holds
+# (status, port, two addresses, a CNAME, an edge provider, TLS and four
+# technologies), one with few. Technologies have no write endpoint (scanners
+# report them), so the seed inserts them.
+call POST /api/v1/assets '{"name":"https://e2e-edge.example.com","type":"http_service","criticality":"medium","properties":{"status_code":301,"port":443,"protocol":"https","scheme":"https","has_tls":true,"ip_addresses":["162.159.140.229","172.66.0.227"],"cname_target":"e2e-edge.example.com.cdn.cloudflare.net","cdn":"Cloudflare"}}'
+EDGE_ID=$(jq -r .id <<<"$BODY")
+call POST /api/v1/assets '{"name":"https://e2e-app.example.com","type":"http_service","criticality":"low","properties":{"status_code":200,"port":443,"protocol":"https","scheme":"https","has_tls":true}}'
+docker run --rm -i --network "$NETWORK" -e PGCONNECT_TIMEOUT=10 "${PSQL_IMAGE:-postgres:17-alpine}" \
+  psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -qtA -v asset="$EDGE_ID" >/dev/null <<'SQL'
+INSERT INTO asset_technologies (tenant_id, asset_id, name_key, name, version, category, first_seen, last_seen)
+SELECT a.tenant_id, a.id, t.k, t.n, t.v, t.c, now(), now()
+  FROM assets a,
+       (VALUES ('nginx', 'nginx', '1.25.3', 'web_server'), ('react', 'React', '18.3.1', 'js_library'),
+               ('cloudflare', 'Cloudflare', '', 'cdn'), ('hsts', 'HSTS', '', 'security_header')) AS t(k, n, v, c)
+ WHERE a.id = :'asset';
+SQL
+
 log "sensors and a CTIS report"
 # The seed pushes its report from a worker sensor without a command. A new
 # tenant holds such reports for review (RFC-040 §5.3, mode "quarantine");
