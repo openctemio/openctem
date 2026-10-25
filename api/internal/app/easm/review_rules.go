@@ -333,7 +333,15 @@ func (s *RuleService) group(ctx context.Context, tenantID shared.ID, items []Rev
 // groupAddress puts an address under its /24 or /48, or lists it on its own
 // when it is shared provider space.
 func (s *RuleService) groupAddress(g *grouping, it ReviewItem, addr netip.Addr, props map[string]any) {
-	if shared, who := sharedAddress(props); shared {
+	shared, who := sharedAddress(props)
+	if !shared {
+		// A published edge range is shared space even before enrichment
+		// has recorded the address's network: never offer its /24.
+		if provider := edgeRangeProvider(addr.Unmap().String()); provider != "" {
+			shared, who = true, provider
+		}
+	}
+	if shared {
 		g.individual = append(g.individual, IndividualItem{AssetID: it.AssetID, Name: it.Name, SharedIP: true,
 			Reason: "shared or CDN provider address (" + who + "): accept one by one"})
 		return
