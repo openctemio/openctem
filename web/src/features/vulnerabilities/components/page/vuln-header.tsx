@@ -47,7 +47,10 @@ export function VulnHeader({ cve, vuln, exposure, fix, onCreateTask }: VulnHeade
           aria-label={t('vulnPage.header.identifiers', 'Identifiers and signals')}
         >
           <li>
-            <Badge variant="outline" className="font-mono text-xs font-semibold">
+            <Badge
+              variant="outline"
+              className="font-mono text-xs font-semibold" // label-ok: a CVE id is an identifier
+            >
               {cve}
             </Badge>
           </li>
