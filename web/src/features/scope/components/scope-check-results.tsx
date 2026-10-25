@@ -360,8 +360,8 @@ export function ScopeRefusalPanel({ refused, onApplied, className }: ScopeRefusa
     >
       <p className="text-sm font-medium">
         {refused.length === 1
-          ? '1 target may not be scanned'
-          : `${refused.length} targets may not be scanned`}
+          ? t('scope.refusalPanel.headingOne')
+          : t('scope.refusalPanel.headingMany', undefined, { count: refused.length })}
       </p>
       <p className="text-xs text-muted-foreground">{t('scope.error.TARGET_OUT_OF_SCOPE')}</p>
       <ScopeCheckList results={refused} onApplied={onApplied} className="mt-2" />
