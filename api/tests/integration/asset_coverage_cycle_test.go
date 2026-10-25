@@ -26,6 +26,12 @@ type cycleRig struct {
 	f *fakeStarter
 }
 
+// scope gives tn an active scope entry (without one the readiness check
+// pauses every capability as no_scope).
+func (g *cycleRig) scope(tn v2Tenant) {
+	g.exec(`INSERT INTO scope_targets (tenant_id, target_type, pattern) VALUES ($1, 'domain', '*.test')`, tn.tenant)
+}
+
 func newCycleRig(t *testing.T) *cycleRig {
 	g := &cycleRig{covRig: newCovRig(t)}
 	g.f = &fakeStarter{t: t, calls: map[string][]string{}, runs: map[string]shared.ID{},
@@ -98,6 +104,7 @@ func (g *cycleRig) dueIn(tn v2Tenant, id shared.ID, capability string, d time.Du
 func TestAssetCoverageCycle_CoveredIsPlannedAgainAfterItsCadence(t *testing.T) {
 	g := newCycleRig(t)
 	a := g.r.newTenant()
+	g.scope(a)
 	name := g.asset(a, "www.cycle.test", "subdomain", "", "")
 
 	// New pair: due at once.
@@ -149,6 +156,7 @@ func TestAssetCoverageCycle_CoveredIsPlannedAgainAfterItsCadence(t *testing.T) {
 func TestAssetCoverageCycle_BlockedIsRecheckedAfterItsRecheckTime(t *testing.T) {
 	g := newCycleRig(t)
 	a := g.r.newTenant()
+	g.scope(a)
 	name := g.asset(a, "blocked.cycle.test", "subdomain", "", "")
 	g.f.refuse["blocked.cycle.test"] = "no_entry"
 
@@ -182,6 +190,7 @@ func TestAssetCoverageCycle_BlockedIsRecheckedAfterItsRecheckTime(t *testing.T) 
 func TestAssetCoverageCycle_BlockedFollowsPreconditions(t *testing.T) {
 	g := newCycleRig(t)
 	a := g.r.newTenant()
+	g.scope(a)
 	name := g.asset(a, "pre.cycle.test", "subdomain", "", `{"dns_records": [{"type": "A", "value": "203.0.113.50"}]}`)
 	g.f.refuse["pre.cycle.test"] = "guardrailed"
 	g.pass(a)
@@ -200,6 +209,7 @@ func TestAssetCoverageCycle_BlockedFollowsPreconditions(t *testing.T) {
 func TestAssetCoverageCycle_CoalescesPairsDueSoon(t *testing.T) {
 	g := newCycleRig(t)
 	a := g.r.newTenant()
+	g.scope(a)
 	one := g.asset(a, "one.cycle.test", "subdomain", "", "")
 	two := g.asset(a, "two.cycle.test", "subdomain", "", "")
 	three := g.asset(a, "three.cycle.test", "subdomain", "", "")
@@ -226,7 +236,9 @@ func TestAssetCoverageCycle_CoalescesPairsDueSoon(t *testing.T) {
 func TestAssetCoverageCycle_TenantScoped(t *testing.T) {
 	g := newCycleRig(t)
 	a := g.r.newTenant()
+	g.scope(a)
 	b := g.r.newTenant()
+	g.scope(b)
 	g.asset(a, "a.iso.test", "subdomain", "", "")
 	bName := g.asset(b, "b.iso.test", "subdomain", "", "")
 	got := g.pass(a)["resolve.dns"]

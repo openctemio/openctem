@@ -1266,6 +1266,10 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 			svc.AssetCoverage.EnablePlanning(repos.AssetCoverage, svc.Scan,
 				coverageapp.GovernanceSwitch{Modes: svc.ScanPolicy, Settings: svc.Tenant},
 				coverageapp.Config{DailyBudget: cfg.Worker.AssetCoverageDailyBudget})
+			// Readiness: a capability with no sensor or tool that could run
+			// it gets no run; its pairs pause with the reason and resume by
+			// themselves.
+			svc.AssetCoverage.EnableReadiness(svc.Scan)
 			// Gaps, output drops and repeated failures alert the tenant's
 			// administrators (in-app and integrations) at most once a day.
 			svc.AssetCoverage.EnableAlerts(repos.AssetCoverage, repos.MemberLifecycle, svc.Notification, svc.Outbox)

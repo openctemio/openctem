@@ -176,19 +176,23 @@ func TestAssetCoverage_PlannerDispatchesAndSettles(t *testing.T) {
 	}
 }
 
-// A refusal of the whole batch (here the trigger's zone coverage refusal)
-// blocks the batch's pairs with the code instead of leaving them due to be
-// retried every pass; any other error leaves them due.
-func TestAssetCoverage_WholeBatchRefusalBlocks(t *testing.T) {
+// A refusal of the whole batch that says the capability cannot run now
+// (here the trigger's zone coverage refusal) pauses the capability with its
+// readiness reason and retries it after RefusalRetry, instead of being
+// retried every pass; a refusal about the batch's targets blocks its pairs
+// with the code; any other error leaves them due.
+func TestAssetCoverage_WholeBatchRefusal(t *testing.T) {
 	g := newCovRig(t)
 	ctx := context.Background()
 	a := g.r.newTenant()
+	g.exec(`INSERT INTO scope_targets (tenant_id, target_type, pattern) VALUES ($1, 'domain', '*.batch.test')`, a.tenant)
 	name := g.asset(a, "nozone.batch.test", "subdomain", "", "")
 	addr := g.asset(a, "203.0.113.77", "ip_address", "", "")
 	f := &fakeStarter{t: t, calls: map[string][]string{}, runs: map[string]shared.ID{}, busy: map[string]bool{},
 		fail: map[string]error{
 			"resolve.dns": fmt.Errorf("failed to trigger coverage: %w", shared.NewDomainError("NO_ZONE_COVERAGE", "outside every zone", shared.ErrValidation)),
 			"lookup.asn":  errors.New("connection reset"),
+			"scan.ports":  fmt.Errorf("failed to trigger coverage: %w", shared.NewDomainError("ALL_TARGETS_EXCLUDED", "every target is excluded", shared.ErrValidation)),
 		}}
 	f.execRun = func(shared.ID) {}
 	g.svc.EnablePlanning(g.repo, f, coverageapp.GovernanceSwitch{Modes: fixedMode{m: scangov.ModeOff}}, coverageapp.Config{})
@@ -197,8 +201,9 @@ func TestAssetCoverage_WholeBatchRefusalBlocks(t *testing.T) {
 	}
 	rows, _ := g.repo.ListForAsset(ctx, a.tenant, name)
 	for _, r := range rows {
-		if r.Capability == "resolve.dns" && (r.State != "blocked" || r.Reason != "no_zone_coverage" || r.NextDueAt == nil || !r.NextDueAt.After(time.Now().Add(time.Hour))) {
-			t.Errorf("refused batch pair = %+v, want blocked no_zone_coverage, rechecked later", r)
+		if r.Capability == "resolve.dns" && (r.State != "paused" || r.Reason != "no_eligible_sensor" || r.NextDueAt == nil ||
+			!r.NextDueAt.After(time.Now().Add(coverageapp.RefusalRetry-time.Minute))) {
+			t.Errorf("refused batch pair = %+v, want paused no_eligible_sensor, retried later", r)
 		}
 	}
 	rows, _ = g.repo.ListForAsset(ctx, a.tenant, addr)
@@ -206,8 +211,11 @@ func TestAssetCoverage_WholeBatchRefusalBlocks(t *testing.T) {
 		if r.Capability == "lookup.asn" && r.State != "due" {
 			t.Errorf("a database-style error must leave the pair due: %+v", r)
 		}
+		if r.Capability == "scan.ports" && (r.State != "blocked" || r.Reason != "all_targets_excluded") {
+			t.Errorf("a refusal about the targets must block the batch: %+v", r)
+		}
 	}
-	// The blocked pair is not offered again on the next pass.
+	// The paused capability is not tried again on the next pass.
 	n := len(f.calls["resolve.dns"])
 	if n != 1 {
 		t.Fatalf("resolve.dns attempts = %d, want 1", n)
@@ -216,7 +224,7 @@ func TestAssetCoverage_WholeBatchRefusalBlocks(t *testing.T) {
 		t.Fatal(err)
 	}
 	if len(f.calls["resolve.dns"]) != n {
-		t.Error("a blocked pair was retried on the next pass")
+		t.Error("a paused capability was retried on the next pass")
 	}
 }
 

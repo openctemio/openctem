@@ -14,8 +14,9 @@ uncovered is visible. Three parts:
 ## States
 
 `due` → `queued` → `covered` | `failed`; `blocked` (scope gate, guardrail,
-placement or budget; the reason names which; never a gap), `paused` (window,
-hold, switch), `not_applicable` (a precondition does not hold; the reason
+placement or budget; the reason names which; never a gap), `paused` (the
+capability cannot run for the organization now, with a readiness reason; a
+window, hold or switch), `not_applicable` (a precondition does not hold; the reason
 names it). A pair is a **gap** when it applies and has gone without a success
 for more than twice its cadence.
 
@@ -74,13 +75,42 @@ Each pass, per tenant, after reconciling:
    While that scan still has an active run the batch waits (one run per
    capability and tenant at a time: back-pressure).
 
+**Readiness before runs.** Before a capability's batch becomes a run, the
+planner asks once per pass whether the capability could run for the
+organization at all. The first failing check is the reason:
+
+| Reason | Check |
+|---|---|
+| `policy_disabled` | the capability's default tool is switched off for the organization; or the trigger refused for an organization policy (scan approval, a window that never opens, the managed scan paused) |
+| `no_scope` | the organization has no active, unexpired scope entry (the gate would refuse every target) |
+| `tool_missing` | no sensor of the organization reports the tool |
+| `tool_not_allowed` | sensors report the tool, but their grant or local policy does not allow it |
+| `sensor_offline` | sensors with the tool exist and none takes work now |
+| `sensor_outdated` | every online sensor with the tool reports a version below the catalog's minimum |
+| `no_eligible_sensor` | no online sensor of the organization at all, or no zone that can place the run |
+| `credentials_missing`, `quota_exhausted` | reserved (no capability declares a credential yet; coverage runs need an organization sensor) |
+
+When a capability is not ready: no run, no blocked run, no gate call. Its
+pairs whose time has come are paused with the reason in one statement, and
+a pair already paused for another readiness reason takes the new one (a
+pair paused for the same reason is not written again). On the first pass
+where the capability is ready, its paused pairs become due and run in that
+pass. A refusal of the whole batch by the trigger that means the same thing
+(a sensor went offline between the check and the trigger) pauses the
+capability with the mapped reason and retries after 30 minutes; any other
+refusal of the whole batch (about its targets) blocks the batch's pairs
+with the code. Coverage triggers never record blocked runs. The checks read
+only the organization's own catalog, sensors and scope entries; a reason
+never names another organization's sensor. Readiness only narrows: a ready
+capability still passes every trigger and claim-time check.
+
 **Due times are spread.** A covered pair is due again after its cadence
 and a blocked pair after its 6 h recheck, each stretched by the pair's own
 fixed jitter of 0 to 10 % (from md5 of the asset id and capability, the
 same in Go and SQL), so pairs settled together drift apart and a restart
 does not re-align them. A new pair, or one whose precondition holds again,
-is due at once. A blocked pair whose precondition stops holding becomes
-`not_applicable` like any other.
+is due at once. A blocked or paused pair whose precondition stops holding
+becomes `not_applicable` like any other.
 
 An open port is addressed as `host:port`; names and origins by name.
 With the loop on, automatic enrichment of new assets is off: the loop
