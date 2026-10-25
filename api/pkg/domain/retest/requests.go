@@ -88,7 +88,7 @@ func (r RequestResult) edgeStops() bool {
 //     rules for a non-match (a fix only when it answered and was not an
 //     edge block, an auth failure or a server error); a re-run that never
 //     requested it is inconclusive.
-func DecideByRequests(reqs []RequestResult, matchedAt string) (Verdict, bool) {
+func DecideByRequests(reqs []RequestResult, matchedAt string, cls ...Class) (Verdict, bool) {
 	want, wantOK := endpointKey(matchedAt)
 	if len(reqs) == 0 || !wantOK {
 		return Verdict{}, false
@@ -137,7 +137,7 @@ func DecideByRequests(reqs []RequestResult, matchedAt string) (Verdict, bool) {
 			Reason: DisplayURL(r.URL) + " was answered by " + vendor + " (" + r.EdgeState + "): the request never reached the service"}, true
 	}
 	a := Attempt{Found: true, URL: r.URL, EndpointMatches: true, Responded: answered, Status: r.Status}
-	return decideNotMatched(a, matchedAt, true, ""), true
+	return decideNotMatched(a, matchedAt, true, "", firstClass(cls)), true
 }
 
 // answeredBest is the original endpoint's request that got an HTTP answer

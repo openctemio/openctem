@@ -73,11 +73,17 @@ const (
 type ReasonCode string
 
 const (
-	ReasonMatched          ReasonCode = "matched"
-	ReasonNotMatched       ReasonCode = "not_matched"
-	ReasonNoEndpointProof  ReasonCode = "no_endpoint_proof"
-	ReasonUnreachable      ReasonCode = "unreachable"
-	ReasonBlocked          ReasonCode = "blocked"
+	ReasonMatched         ReasonCode = "matched"
+	ReasonNotMatched      ReasonCode = "not_matched"
+	ReasonNoEndpointProof ReasonCode = "no_endpoint_proof"
+	ReasonUnreachable     ReasonCode = "unreachable"
+	ReasonBlocked         ReasonCode = "blocked"
+	// ReasonEdgeBlocked: a CDN or WAF answered in place of the service
+	// (challenge or block page): nothing is known about the service.
+	ReasonEdgeBlocked ReasonCode = "edge_blocked"
+	// ReasonAccessDenied: the service itself answered 401 or 403. For an
+	// exposure check seen twice that is the fix; otherwise inconclusive.
+	ReasonAccessDenied     ReasonCode = "access_denied"
 	ReasonAuthChanged      ReasonCode = "auth_changed"
 	ReasonServerError      ReasonCode = "server_error"
 	ReasonEndpointMismatch ReasonCode = "endpoint_mismatch"
@@ -232,7 +238,7 @@ const (
 // target it is inconclusive. nuclei prints nothing and exits 0 when a host
 // does not answer, and a template run with the wrong input never requests the
 // endpoint, so a bare "not detected" proves nothing.
-func Decide(check, reach CheckResult, matchedAt string) Verdict {
+func Decide(check, reach CheckResult, matchedAt string, cls ...Class) Verdict {
 	if check.Missing {
 		return inconclusive(ReasonNoResult, "no result from the template re-run")
 	}
@@ -240,7 +246,7 @@ func Decide(check, reach CheckResult, matchedAt string) Verdict {
 	case checkDetected, checkNotDetected:
 		// A check that probes several paths reports each request: the
 		// finding's own endpoint decides, not whichever exchange came first.
-		if v, ok := DecideByRequests(check.Requests, matchedAt); ok {
+		if v, ok := DecideByRequests(check.Requests, matchedAt, firstClass(cls)); ok {
 			return v
 		}
 	}
@@ -254,7 +260,7 @@ func Decide(check, reach CheckResult, matchedAt string) Verdict {
 		if !reach.Missing {
 			detail = nonEmpty(evidence.RedactText(reach.Summary), "the reachability probe did not connect")
 		}
-		return decideNotMatched(AnalyzeAttempt(check.Evidence, matchedAt), matchedAt, reached, detail)
+		return decideNotMatched(AnalyzeAttempt(check.Evidence, matchedAt), matchedAt, reached, detail, firstClass(cls))
 	default:
 		return inconclusive(ReasonError, nonEmpty(evidence.RedactText(check.Summary), "the template re-run was inconclusive"))
 	}
