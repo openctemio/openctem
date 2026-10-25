@@ -465,3 +465,20 @@ func TestValidateJSON(t *testing.T) {
 		})
 	}
 }
+
+// An SRV record (type SRV, value "priority weight port target") is a valid
+// DNS record of a domain; an unknown type is not.
+func TestPropertiesValidator_SRVDNSRecord(t *testing.T) {
+	v := NewPropertiesValidator()
+	props := func(typ string) map[string]any {
+		return map[string]any{"domain": map[string]any{"dns_records": []any{
+			map[string]any{"type": typ, "name": "_sip._tcp.example.com", "value": "10 60 5060 sip.vendor.test."},
+		}}}
+	}
+	if errs := v.ValidateProperties("domain", props("SRV")); len(errs) != 0 {
+		t.Errorf("SRV record refused: %v", errs)
+	}
+	if errs := v.ValidateProperties("domain", props("NOPE")); len(errs) == 0 {
+		t.Error("an unknown record type was accepted")
+	}
+}
