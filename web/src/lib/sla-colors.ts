@@ -8,7 +8,8 @@
 export type SlaState = 'on_track' | 'warning' | 'overdue' | 'exceeded' | 'not_applicable'
 
 export const SLA_STATE_CLASS: Record<SlaState, string> = {
-  on_track: 'border-success/30 bg-success/10 text-success',
+  // A 5% tint: the success text on a 10% tint was 4.4:1, under WCAG AA.
+  on_track: 'border-success/30 bg-success/5 text-success',
   warning: 'border-warning/40 bg-warning/10 text-warning',
   overdue: 'border-destructive/30 bg-destructive/10 text-destructive',
   exceeded: 'border-destructive/50 bg-destructive/15 text-destructive font-semibold',

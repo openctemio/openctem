@@ -2,9 +2,12 @@ import { describe, expect, it } from 'vitest'
 import {
   QUICK_VIEW_KEYS,
   QUICK_VIEW_LABELS,
+  defaultHidesInformational,
+  informationalHidden,
   knownQuickViews,
   quickViewHref,
   quickViewIsActive,
+  withInformational,
   type QuickView,
 } from '../quick-views'
 import { en, vi } from '@/lib/i18n/dictionaries'
@@ -83,6 +86,64 @@ describe('quickViewIsActive', () => {
 
   it('accepts URLSearchParams', () => {
     expect(quickViewIsActive(new URLSearchParams('state=closed'), CLOSED)).toBe(true)
+  })
+})
+
+describe('informational findings in the work views', () => {
+  // What the API sends when the caller leaves them out (the default).
+  const ACTIVE_HIDDEN = view('active', 'state=open&informational=false')
+  const TRIAGE_HIDDEN = view('needs_triage', 'status=new&informational=false')
+
+  it('follows the API rule when the URL does not say', () => {
+    expect(defaultHidesInformational('', false)).toBe(true)
+    expect(defaultHidesInformational('', true)).toBe(false)
+    expect(defaultHidesInformational('state=open&related_to=me', false)).toBe(true)
+    // Needs triage leaves them out whatever the preference.
+    expect(defaultHidesInformational('status=new&state=all', true)).toBe(true)
+    // Other lenses, an explicit severity and a saved view never hide them.
+    expect(defaultHidesInformational('state=closed', false)).toBe(false)
+    expect(defaultHidesInformational('state=all', false)).toBe(false)
+    expect(defaultHidesInformational('severity=info', false)).toBe(false)
+    expect(defaultHidesInformational('view=abc', false)).toBe(false)
+  })
+
+  it('reads an explicit choice first, but a severity pick always shows them', () => {
+    expect(informationalHidden('informational=true', false)).toBe(false)
+    expect(informationalHidden('state=all&informational=false', false)).toBe(true)
+    expect(informationalHidden('severity=info&informational=false', false)).toBe(false)
+  })
+
+  it('keeps the param only where it differs from the default', () => {
+    expect(withInformational(new URLSearchParams('state=open'), true, false).toString()).toBe(
+      'state=open'
+    )
+    expect(withInformational(new URLSearchParams('state=open'), false, false).toString()).toBe(
+      'state=open&informational=true'
+    )
+    expect(
+      withInformational(
+        new URLSearchParams('state=open&informational=true'),
+        true,
+        false
+      ).toString()
+    ).toBe('state=open')
+    expect(withInformational(new URLSearchParams('state=all'), true, false).toString()).toBe(
+      'state=all&informational=false'
+    )
+  })
+
+  it('links the plain view and still matches the plain list', () => {
+    expect(quickViewHref(ACTIVE_HIDDEN.params)).toBe('/findings?state=open')
+    expect(quickViewHref(TRIAGE_HIDDEN.params, true)).toBe('/findings?status=new&state=all')
+    expect(quickViewIsActive('', ACTIVE_HIDDEN)).toBe(true)
+    expect(quickViewIsActive('status=new&state=all', TRIAGE_HIDDEN, true)).toBe(true)
+  })
+
+  it('a list showing them is not the view that hides them, and the reverse', () => {
+    expect(quickViewIsActive('informational=true', ACTIVE_HIDDEN)).toBe(false)
+    // A member who includes them: the API sends plain params.
+    expect(quickViewIsActive('', ACTIVE, true)).toBe(true)
+    expect(quickViewIsActive('informational=false', ACTIVE, true)).toBe(false)
   })
 })
 

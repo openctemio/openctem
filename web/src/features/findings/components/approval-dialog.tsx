@@ -27,7 +27,7 @@ import { getErrorMessage } from '@/lib/api/error-handler'
 import { useFindingApprovalPolicy, useRequestApproval } from '../api/use-findings-api'
 import { ApprovalEvaluationBanner } from './approval-evaluation-banner'
 import { FINDING_STATUS_CONFIG } from '../types'
-import type { FindingStatus } from '../types'
+import type { ApiApproval, FindingStatus } from '../types'
 import { PERSON_CLOSURE_REASONS, closureReasonLabel } from '../lib/closure'
 
 /** Days an accepted risk lasts unless the requester picks another date. */
@@ -53,8 +53,12 @@ interface ApprovalDialogProps {
    * stops there and the default end never passes it.
    */
   maxAcceptanceDays?: number
-  /** Called after an approval request is submitted successfully (e.g. to refresh lists/history) */
-  onSuccess?: () => void | Promise<void>
+  /**
+   * Called after an approval request is submitted successfully (e.g. to
+   * refresh lists/history), with the API's answer: a pending request, or an
+   * approved one (`single_person`) when the person decided alone.
+   */
+  onSuccess?: (result?: ApiApproval & { single_person?: boolean }) => void | Promise<void>
 }
 
 export function ApprovalDialog({
@@ -190,7 +194,7 @@ export function ApprovalDialog({
       setExpiresAt(acceptanceDate(defaultDays))
       setStep('input')
       onOpenChange(false)
-      await onSuccess?.()
+      await onSuccess?.(result as (ApiApproval & { single_person?: boolean }) | undefined)
     } catch (error) {
       toast.error(
         getErrorMessage(
