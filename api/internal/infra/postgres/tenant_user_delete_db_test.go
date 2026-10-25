@@ -425,6 +425,12 @@ var seedOverrides = map[string]func(s *schemaSeeder) map[string]any{
 	"import_mappings": func(*schemaSeeder) map[string]any {
 		return map[string]any{"name": "probe-mapping", "source": "csv", "latest_version": 1}
 	},
+	// An enrollment token lives at most 30 days and allows 1 to 1000 uses
+	// (CHECKs).
+	"sensor_enrollment_tokens": func(*schemaSeeder) map[string]any {
+		return map[string]any{"name": "probe-token", "max_uses": 1, "use_count": 0, "labels": "{}",
+			"created_at": "2026-10-05T10:00:00Z", "expires_at": "2026-10-06T10:00:00Z"}
+	},
 	"scan_window_overrides": func(*schemaSeeder) map[string]any {
 		return map[string]any{"reason": "incident rescan now", "starts_at": "2026-10-05T10:00:00Z", "ends_at": "2026-10-05T11:00:00Z"}
 	},
