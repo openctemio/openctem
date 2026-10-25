@@ -105,6 +105,10 @@ export default function WorkflowBuilderPage({ params }: PageProps) {
   // A saved draft differs from what runs; publishing makes it what runs.
   const [hasDraft, setHasDraft] = useState(false)
   const [isPublishing, setIsPublishing] = useState(false)
+  // Publishing changes what every scan using this workflow runs, and a discard
+  // loses the saved draft: both ask first.
+  const [askPublish, setAskPublish] = useState(false)
+  const [askDiscardDraft, setAskDiscardDraft] = useState(false)
   // Bumped by every edit, so a save that finishes after a newer edit does
   // not mark the newer edit as saved.
   const editSeq = useRef(0)
@@ -625,7 +629,7 @@ export default function WorkflowBuilderPage({ params }: PageProps) {
                 <Button
                   size="sm"
                   variant="ghost"
-                  onClick={handleDiscardDraft}
+                  onClick={() => setAskDiscardDraft(true)}
                   title={t('workflowStages.builder.discardDraftTitle')}
                 >
                   <Undo2 className="me-2 h-4 w-4" />
@@ -650,7 +654,7 @@ export default function WorkflowBuilderPage({ params }: PageProps) {
               {!isReadOnly && (
                 <Button
                   size="sm"
-                  onClick={handlePublish}
+                  onClick={() => setAskPublish(true)}
                   disabled={!canPublish || isPublishing}
                   title={
                     blockingIssues > 0
@@ -735,6 +739,30 @@ export default function WorkflowBuilderPage({ params }: PageProps) {
           </div>
         </div>
       </Main>
+
+      <ConfirmDialog
+        open={askPublish}
+        onOpenChange={setAskPublish}
+        title={t('confirm.workflow.publishTitle', undefined, { name: workflow?.name ?? '' })}
+        desc={t('confirm.workflow.publishDesc')}
+        confirmText={t('confirm.workflow.publishBtn')}
+        handleConfirm={async () => {
+          setAskPublish(false)
+          await handlePublish()
+        }}
+      />
+      <ConfirmDialog
+        open={askDiscardDraft}
+        onOpenChange={setAskDiscardDraft}
+        destructive
+        title={t('confirm.workflow.discardDraftTitle', undefined, { name: workflow?.name ?? '' })}
+        desc={t('confirm.workflow.discardDraftDesc')}
+        confirmText={t('confirm.workflow.discardDraftBtn')}
+        handleConfirm={async () => {
+          setAskDiscardDraft(false)
+          await handleDiscardDraft()
+        }}
+      />
 
       {/* Delete Confirmation Dialog */}
       <ConfirmDialog
