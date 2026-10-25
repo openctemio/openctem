@@ -33,7 +33,7 @@ decides:
 | per-request results, the finding's endpoint matched | any | `still_vulnerable` (`matched`) | as above |
 | per-request results, the endpoint did not match, another path matched | any | `still_exposed_elsewhere` (`matched_elsewhere`) | unchanged (never closed, never reopened); the other paths are named in the reason and kept on the retest activity (`other_paths`) |
 | per-request results, nothing matched, the endpoint was not requested | any | `inconclusive` (`endpoint_mismatch`) | unchanged |
-| per-request results, nothing matched, the endpoint answered | its own answer | the rows above for a non-match (`confirmed_fixed`, `blocked`, `auth_changed`, `server_error`, `unreachable`); an answer from a CDN or WAF that stops the request is `blocked` | as above |
+| per-request results, nothing matched, the endpoint answered | its own answer | the rows above for a non-match (`confirmed_fixed`, `edge_blocked`, `access_denied`, `blocked`, `auth_changed`, `server_error`, `unreachable`); the line's edge state (`challenged`, `blocked`, `rate_limited`, from the sensor's edge detector) is `edge_blocked`, and an origin 401/403 follows the access-denied rules of the finding's class | as above |
 | no match | no response | `inconclusive` (`unreachable`) | unchanged |
 | no match | none, target answered the probe | `not_reproduced` (`no_endpoint_proof`) | unchanged |
 | no match | none, target did not answer | `inconclusive` (`unreachable`) | unchanged |

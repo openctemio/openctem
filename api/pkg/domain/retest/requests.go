@@ -5,6 +5,8 @@ import (
 	"strconv"
 	"strings"
 	"unicode"
+
+	"github.com/openctemio/ctis/edgeprotect"
 )
 
 // RequestResult is what one request of a re-run saw, as the sensor reports it
@@ -64,14 +66,16 @@ func DecodeRequests(raw json.RawMessage) []RequestResult {
 	return out
 }
 
-// edgeStops: the answer was an edge challenge, block or throttle, which says
-// nothing about the service behind it.
-func (r RequestResult) edgeStops() bool {
-	switch r.EdgeState {
-	case "challenged", "blocked", "rate_limited":
-		return true
+// edge is the line's edge marker as the edge detector's verdict: Direct
+// (no marker) unless the sensor named a known state. An edge that stopped the
+// request settles as an edge block, never a fix (decideNotMatched), the same
+// as an edge marker read from a recorded exchange.
+func (r RequestResult) edge() edgeprotect.Verdict {
+	switch st := edgeprotect.State(r.EdgeState); st {
+	case edgeprotect.Fronted, edgeprotect.Challenged, edgeprotect.Blocked, edgeprotect.RateLimited:
+		return edgeprotect.Verdict{Vendor: r.EdgeVendor, State: st}
 	}
-	return false
+	return edgeprotect.Verdict{State: edgeprotect.Direct}
 }
 
 // DecideByRequests judges a re-run by what the finding's own endpoint did,
@@ -131,12 +135,10 @@ func DecideByRequests(reqs []RequestResult, matchedAt string, cls ...Class) (Ver
 	if !answered {
 		r = orig[0]
 	}
-	if answered && r.edgeStops() {
-		vendor := nonEmpty(r.EdgeVendor, "a CDN or WAF")
-		return Verdict{Outcome: OutcomeInconclusive, Code: ReasonBlocked,
-			Reason: DisplayURL(r.URL) + " was answered by " + vendor + " (" + r.EdgeState + "): the request never reached the service"}, true
-	}
 	a := Attempt{Found: true, URL: r.URL, EndpointMatches: true, Responded: answered, Status: r.Status}
+	if answered {
+		a.Edge = r.edge()
+	}
 	return decideNotMatched(a, matchedAt, true, "", firstClass(cls)), true
 }
 
