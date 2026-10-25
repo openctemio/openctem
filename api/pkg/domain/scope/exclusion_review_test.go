@@ -71,3 +71,36 @@ func TestExclusion_ReviewByMode(t *testing.T) {
 		t.Fatal("review: an extension kept the approval")
 	}
 }
+
+func TestNewExclusionRefusesPatternsThatCanNeverMatch(t *testing.T) {
+	bad := []struct {
+		typ     ExclusionType
+		pattern string
+	}{
+		{ExclusionTypeIPRange, "10.0.0.9-10.0.0.1"},
+		{ExclusionTypeCIDR, "10.0.0.0/33"},
+		{ExclusionTypeIPAddress, "10.0.0"},
+		{ExclusionTypeDomain, "https://admin.example.com"},
+		{ExclusionTypeSubdomain, "a b.example.com"},
+	}
+	for _, c := range bad {
+		if _, err := NewExclusion(shared.NewID(), c.typ, c.pattern, "typo", nil, "u"); err == nil {
+			t.Errorf("%s %q accepted", c.typ, c.pattern)
+		}
+	}
+	good := []struct {
+		typ     ExclusionType
+		pattern string
+	}{
+		{ExclusionTypeIPRange, "10.0.0.1-10.0.0.9"},
+		{ExclusionTypeCIDR, "10.0.0.0/24"},
+		{ExclusionTypeIPAddress, "10.0.0.1"},
+		{ExclusionTypeDomain, "admin.example.com"},
+		{ExclusionTypeSubdomain, "*.example.com"},
+	}
+	for _, c := range good {
+		if _, err := NewExclusion(shared.NewID(), c.typ, c.pattern, "ok", nil, "u"); err != nil {
+			t.Errorf("%s %q refused: %v", c.typ, c.pattern, err)
+		}
+	}
+}
