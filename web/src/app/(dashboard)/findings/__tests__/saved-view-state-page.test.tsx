@@ -344,7 +344,7 @@ describe('Findings Triage', () => {
     quickViewsState.views = [{ key: 'needs_triage', count: 3, params: 'status=new' }]
     openAt('')
     render(<FindingsPage />)
-    const search = screen.getByRole('textbox', { name: /search findings/i })
+    const search = screen.getByRole('searchbox', { name: /search findings/i })
     search.focus()
     fireEvent.keyDown(search, { key: 't' })
     expect(routerPush).not.toHaveBeenCalledWith('/findings/triage?status=new')
