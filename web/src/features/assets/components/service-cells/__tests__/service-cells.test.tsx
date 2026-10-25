@@ -12,7 +12,8 @@ import {
 import {
   EmptyCell,
   HttpStatusChip,
-  IssuesChip,
+  OpenFindingsCell,
+  OpenFindingsLink,
   LabelChips,
   NotCollectedNote,
   OpenPortChips,
@@ -64,10 +65,10 @@ describe('HttpStatusChip', () => {
   })
 })
 
-describe('IssuesChip', () => {
-  it("links to the asset's open findings, within the API's 10-status cap", () => {
-    render(<IssuesChip assetId="a/1" count={4} />)
-    const link = screen.getByRole('link', { name: /4 issues found/ })
+describe('OpenFindingsLink', () => {
+  it("says N open findings and links to the asset's open findings, within the 10-status cap", () => {
+    render(<OpenFindingsLink assetId="a/1" count={4} />)
+    const link = screen.getByRole('link', { name: '4 open findings' })
     const href = new URL(link.getAttribute('href') ?? '', 'http://x')
     expect(href.pathname).toBe('/findings')
     expect(href.searchParams.get('asset_id')).toBe('a/1')
@@ -75,11 +76,31 @@ describe('IssuesChip', () => {
     expect(statuses).toEqual([...FINDINGS_OPEN_STATUSES])
     expect(statuses.length).toBeLessThanOrEqual(10)
     expect(statuses).not.toContain('resolved')
+    expect(statuses).not.toContain('false_positive')
+    // The count covers every severity; the open list hides informational by default.
+    expect(href.searchParams.get('informational')).toBe('true')
+  })
+
+  it('uses the singular for one', () => {
+    render(<OpenFindingsLink assetId="a" count={1} />)
+    expect(screen.getByRole('link', { name: '1 open finding' })).toBeInTheDocument()
+  })
+
+  it('compact shows the number and keeps the full accessible name', () => {
+    render(<OpenFindingsLink assetId="a" count={12} compact />)
+    const link = screen.getByRole('link', { name: '12 open findings' })
+    expect(link.textContent).toBe('12')
   })
 
   it('renders nothing at zero', () => {
-    const { container } = render(<IssuesChip assetId="a" count={0} />)
+    const { container } = render(<OpenFindingsLink assetId="a" count={0} />)
     expect(container).toBeEmptyDOMElement()
+  })
+
+  it('the column cell shows a muted 0 without a link', () => {
+    render(<OpenFindingsCell assetId="a" count={0} />)
+    expect(screen.getByText('0')).toBeInTheDocument()
+    expect(screen.queryByRole('link')).not.toBeInTheDocument()
   })
 })
 

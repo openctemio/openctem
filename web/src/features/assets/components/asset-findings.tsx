@@ -27,6 +27,7 @@ import { SEVERITY_BADGE_SOFT, SEVERITY_TEXT_COLORS } from '@/lib/severity-colors
 import { SEVERITY_LEVELS, normalizeSeverity } from '@/lib/severity'
 
 import type { Asset, AssetFinding } from '../types/asset.types'
+import { assetFindingsHref } from './service-cells/open-findings-link'
 import type { FindingStatus } from '@/features/findings/types'
 import { useFindingsApi } from '@/features/findings/api/use-findings-api'
 import type { ApiFinding } from '@/features/findings/api/finding-api.types'
@@ -275,9 +276,10 @@ export function AssetFindings({
       {/* View All Link */}
       <DetailSheetFooter>
         <Button asChild variant="outline" className="w-full">
-          <Link href={`/findings?asset_id=${assetId}`}>
+          {/* The same open set as the count, so the list it opens shows that number. */}
+          <Link href={assetFindingsHref(assetId)}>
             <FileWarning className="me-2 h-4 w-4" />
-            {t('assets.findings.viewAll', 'View all findings ({count})', {
+            {t('assets.findings.viewOpen', 'View {count} open findings', {
               count: findingCount ?? response?.total ?? findings.length,
             })}
             <ChevronRight className="ms-2 h-4 w-4" />

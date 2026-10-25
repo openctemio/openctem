@@ -22,14 +22,18 @@ export interface SeverityBadgeProps {
   severity?: string | null | undefined
   /**
    * A 0-100 risk score instead of a severity: the glyph of its band (from the
-   * organization's thresholds), the number as the text, and the band word with
-   * `showBand`. Minimal and no-risk scores use the info ring.
+   * organization's thresholds) and the number as the text. The band word is
+   * never shown next to the number: "High" is also a criticality word, and two
+   * "High" labels on one row read as one dimension (research/271). Risk is
+   * rendered through RiskScoreBadge, which names it.
    */
   score?: number | null
-  /** With `score`: add the band word after the number ("92 Critical"). */
-  showBand?: boolean
   /** Override the label (a count, "Informational"). */
   children?: React.ReactNode
+  /** Override the accessible name (RiskScoreBadge names the dimension). */
+  'aria-label'?: string
+  /** A native tooltip. */
+  title?: string
   /**
    * `inline` (default): a shape mark and coloured text, no pill: table and list
    * rows. `soft`: the tinted pill with a dot, for counts and summary tiles.
@@ -47,10 +51,11 @@ export interface SeverityBadgeProps {
 export function SeverityBadge({
   severity,
   score,
-  showBand,
   children,
   variant = 'inline',
   className,
+  'aria-label': ariaLabel,
+  title,
 }: SeverityBadgeProps) {
   const { t } = useTranslation()
   const thresholds = useRiskThresholds()
@@ -65,13 +70,13 @@ export function SeverityBadge({
       : null
   const bandWord = band ? t(`riskScore.level.${band.key}`, band.label) : null
   const label = hasScore
-    ? `${Number.isInteger(score) ? score : score.toFixed(1)}${showBand ? ` ${bandWord}` : ''}`
+    ? `${Number.isInteger(score) ? score : score.toFixed(1)}`
     : level
       ? t(SEVERITY_LABEL_KEYS[level], SEVERITY_LABELS[level])
       : t('severity.unknown', 'Unknown')
-  const aria = hasScore
-    ? `${Number.isInteger(score) ? score : score.toFixed(1)}, ${bandWord}`
-    : undefined
+  const aria =
+    ariaLabel ??
+    (hasScore ? `${Number.isInteger(score) ? score : score.toFixed(1)}, ${bandWord}` : undefined)
   if (variant === 'inline') {
     return (
       <span
@@ -80,6 +85,7 @@ export function SeverityBadge({
         data-variant="inline"
         data-score={hasScore ? score : undefined}
         aria-label={aria}
+        title={title}
         className={cn(
           'inline-flex w-fit shrink-0 items-center gap-1 whitespace-nowrap text-xs font-medium',
           level ? SEVERITY_TEXT_COLORS[level] : 'text-muted-foreground',
@@ -98,6 +104,7 @@ export function SeverityBadge({
       data-variant="soft"
       data-score={hasScore ? score : undefined}
       aria-label={aria}
+      title={title}
       className={cn(
         'inline-flex w-fit shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full border px-2 py-0.5 text-xs font-medium',
         level ? SEVERITY_BADGE_SOFT[level] : 'border-border bg-muted text-muted-foreground',

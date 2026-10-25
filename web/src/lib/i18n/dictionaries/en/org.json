@@ -213,6 +213,8 @@
   "org.general.tab.dashboardData": "Dashboard data",
   "org.general.tab.general": "General",
   "org.general.tab.storage": "File storage",
+  "org.general.timezone": "Time zone",
+  "org.general.timezoneHelp": "The organization clock: alert quiet hours, the daily digest and scan approval hours use it.",
   "org.general.title": "General",
   "org.general.website": "Website",
   "org.id": "Organization ID",

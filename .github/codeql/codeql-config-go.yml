@@ -1,0 +1,14 @@
+# CodeQL configuration for Go (.github/workflows/codeql.yml).
+#
+# go/log-injection is replaced by our variant of it (go-queries/): the same
+# sources, sanitizers and sinks, minus the key-value attributes of log/slog
+# calls, which slog's handlers escape (pinned by
+# api/pkg/logger/forging_test.go). The standard query flagged those
+# attributes even next to a CR/LF strip (1,082 alerts dismissed by hand).
+name: openctem-go
+queries:
+  - uses: security-and-quality
+  - uses: ./.github/codeql/go-queries/LogInjectionUnstructured.ql
+query-filters:
+  - exclude:
+      id: go/log-injection

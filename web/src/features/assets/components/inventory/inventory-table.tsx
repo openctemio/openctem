@@ -70,7 +70,8 @@ import { Permission, usePermissions } from '@/lib/permissions'
 import type { Asset } from '../../types/asset.types'
 import { SORT_FIELDS, sortToSorting, sortingToSort } from '../../lib/inventory-url'
 import {
-  IssuesChip,
+  OpenFindingsCell,
+  OpenFindingsLink,
   LabelChips,
   SurfaceFactsLine,
   cellsForType,
@@ -112,6 +113,10 @@ interface InventoryTableProps {
   onSortChange: (sort: string | undefined) => void
   onSelectionChange: (assets: Asset[]) => void
   resetSelectionKey: number
+  /** Replaces the "nothing here" block (which kind of empty, the next action). */
+  emptyState?: ReactNode
+  /** Shown in place of the rows when the read failed; the toolbar stays. */
+  errorState?: ReactNode
   /** The list's search box (the toolbar draws it). */
   search?: DataTableSearch
   /** The phone filter-sheet trigger, joined to the search. */
@@ -148,6 +153,8 @@ export function InventoryTable({
   onSortChange,
   onSelectionChange,
   resetSelectionKey,
+  emptyState,
+  errorState,
   search,
   filter,
   toolbarStart,
@@ -394,15 +401,12 @@ export function InventoryTable({
         header: ({ column }) => (
           <DataTableColumnHeader
             column={column}
-            title={t('assets.sheet.tab.findings', 'Findings')}
+            title={t('assets.col.openFindings', 'Open findings')}
           />
         ),
-        cell: ({ row }) =>
-          row.original.findingCount > 0 ? (
-            <IssuesChip assetId={row.original.id} count={row.original.findingCount} />
-          ) : (
-            <span className="text-muted-foreground tabular-nums">0</span>
-          ),
+        cell: ({ row }) => (
+          <OpenFindingsCell assetId={row.original.id} count={row.original.findingCount} />
+        ),
       },
       {
         id: 'owner',
@@ -607,6 +611,8 @@ export function InventoryTable({
         showSearch={false}
         search={search}
         filter={filter}
+        emptyState={emptyState}
+        errorState={errorState}
         toolbarStart={toolbarStart}
         toolbarEnd={toolbarEnd}
         toolbarBelow={toolbarBelow}
@@ -632,11 +638,18 @@ export function InventoryTable({
           const typeKey = typeKeyOf(registry, a.type, a.subType)
           const typeLabel = t(`assets.typeLabel.${typeKey.type}`, typeKey.label)
           const context = a.groupName || a.description
-          // A card shows the facts row only when it has something known in it.
-          const hasFacts = a.findingCount > 0 || hasSurfaceFacts(a)
-          // The card opens the drawer (a stretched button); the chip row sits
-          // above it so its links and "+N" tooltips are not nested inside a
-          // button.
+          const riskState = riskScoreState(a)
+          // A real score sits at the card's right edge under the word "Risk",
+          // where a phone list keeps its key number; a missing score ("Not
+          // yet scored", "Calculating…") names itself in the meta line.
+          const scored = riskState === 'scored' || riskState === 'pending'
+          // The card (research/271): name, then type and context, then ONE
+          // meta line. A phone card has no column headers, so criticality
+          // names itself ("Criticality: High") and the risk number sits under
+          // "Risk"; the band word is the risk's colour and tooltip, never a
+          // second "High". The whole card opens the drawer (a stretched
+          // button); the meta line sits above it so the findings link is not
+          // nested in a button, and lets other taps through.
           return (
             <div className="relative px-3 py-3 transition-colors hover:bg-muted/50">
               <button
@@ -654,33 +667,48 @@ export function InventoryTable({
                     <span className="shrink-0">{typeLabel}</span>
                     {context && <span className="min-w-0 truncate">{context}</span>}
                   </p>
-                  <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
-                    <CriticalityBadge criticality={a.criticality} size="sm" showTooltip={false} />
-                    {/* Scope standing only when a scan may not reach it (research/124). */}
-                    {a.triage && !a.triage.scanAllowed && <ScopeTriageBadge triage={a.triage} />}
-                    {/* Most assets are active; say so only when one is not. */}
-                    {a.status !== 'active' && (
-                      <AssetStatusBadge
-                        status={a.status}
-                        daysSinceLastSeen={daysSinceISO(a.lastSeen)}
-                        snoozedUntil={a.lifecyclePausedUntil}
-                      />
-                    )}
-                    {(a.riskScore > 0 || riskScoreState(a) !== 'scored') && (
-                      <RiskScoreBadge score={a.riskScore} state={riskScoreState(a)} size="sm" />
-                    )}
-                  </div>
                 </div>
+                {scored && a.riskScore > 0 && (
+                  <div data-slot="asset-card-risk" className="flex shrink-0 flex-col items-end">
+                    <span className="text-xs leading-4 text-muted-foreground">
+                      {t('components.col.risk', 'Risk')}
+                    </span>
+                    <RiskScoreBadge
+                      score={a.riskScore}
+                      state={riskState}
+                      size="md"
+                      className="font-semibold"
+                    />
+                  </div>
+                )}
                 <ChevronRight className="mt-1 h-4 w-4 shrink-0 text-muted-foreground" />
               </button>
-              {hasFacts && (
-                <div className="relative z-10 mt-1.5 flex min-w-0 flex-col items-start gap-1 ps-7">
-                  {a.findingCount > 0 && <IssuesChip assetId={a.id} count={a.findingCount} />}
-                  {hasSurfaceFacts(a) && (
-                    <div className="w-full min-w-0">
-                      <SurfaceFactsLine asset={a} max={2} />
-                    </div>
-                  )}
+              <div
+                data-slot="asset-card-meta"
+                className="pointer-events-none relative z-10 mt-1.5 flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1 ps-7 [&_a]:pointer-events-auto [&_button]:pointer-events-auto"
+              >
+                <CriticalityBadge
+                  criticality={a.criticality}
+                  size="sm"
+                  showTooltip={false}
+                  labelled
+                />
+                <OpenFindingsLink assetId={a.id} count={a.findingCount} />
+                {!scored && <RiskScoreBadge score={a.riskScore} state={riskState} size="sm" />}
+                {/* Scope standing only when a scan may not reach it (research/124). */}
+                {a.triage && !a.triage.scanAllowed && <ScopeTriageBadge triage={a.triage} />}
+                {/* Most assets are active; say so only when one is not. */}
+                {a.status !== 'active' && (
+                  <AssetStatusBadge
+                    status={a.status}
+                    daysSinceLastSeen={daysSinceISO(a.lastSeen)}
+                    snoozedUntil={a.lifecyclePausedUntil}
+                  />
+                )}
+              </div>
+              {hasSurfaceFacts(a) && (
+                <div className="pointer-events-none relative z-10 mt-1.5 min-w-0 ps-7 [&_a]:pointer-events-auto [&_button]:pointer-events-auto">
+                  <SurfaceFactsLine asset={a} max={2} />
                 </div>
               )}
             </div>

@@ -154,10 +154,10 @@ export const settingsNav: SettingsNavGroup[] = [
       {
         id: 'preferences',
         title: 'Preferences',
-        description: 'Theme, language, time zone and date format.',
+        description: 'Theme and how your findings lists open.',
         url: '/account/preferences',
         icon: Settings2,
-        keywords: ['theme', 'dark mode', 'language', 'timezone'],
+        keywords: ['theme', 'dark mode', 'informational findings'],
       },
       {
         id: 'my-notifications',
@@ -211,6 +211,11 @@ export const settingsNav: SettingsNavGroup[] = [
             id: 'org-profile',
             title: 'Organization name and URL',
             keywords: ['name', 'slug', 'logo', 'website'],
+          },
+          {
+            id: 'org-timezone-setting',
+            title: 'Organization time zone',
+            keywords: ['timezone', 'time zone', 'quiet hours', 'digest hour', 'clock'],
           },
           {
             id: 'danger-zone',
@@ -347,7 +352,7 @@ export const settingsNav: SettingsNavGroup[] = [
         description: 'Whether findings may be sent to an AI provider for triage.',
         url: '/settings/ai',
         icon: Sparkles,
-        permission: Permission.SettingsRead,
+        permission: Permission.TeamUpdate,
         module: 'ai_triage',
         keywords: ['ai', 'llm', 'triage', 'consent', 'opt in', 'provider', 'data', 'privacy'],
         anchors: [{ id: 'ai-triage', title: 'AI triage', keywords: ['turn on', 'enable'] }],
