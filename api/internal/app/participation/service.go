@@ -342,6 +342,10 @@ type Event struct {
 	// Forced are told even if they stopped watching: the new assignee on an
 	// assignment.
 	Forced []shared.ID
+	// WatchersToo tells the watchers about an event no person caused, for the
+	// few platform events that matter to everyone following the item (a fix
+	// that did not hold).
+	WatchersToo bool
 	// TeamOnly: the event shows team-only content (a team comment on a pentest
 	// finding), which pentest campaign clients never see.
 	TeamOnly bool
@@ -397,7 +401,7 @@ func (s *Service) Recipients(ctx context.Context, tenantID shared.ID, ev Event) 
 	for _, id := range ev.Direct {
 		add(id, "assigned")
 	}
-	if ev.Actor != nil {
+	if ev.Actor != nil || ev.WatchersToo {
 		for _, id := range subscribed {
 			add(id, "watching")
 		}
