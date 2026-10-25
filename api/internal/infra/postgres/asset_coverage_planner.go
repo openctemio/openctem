@@ -489,6 +489,11 @@ func (r *AssetCoverageRepository) AttemptsSince(ctx context.Context, tenantID sh
 var _ coverage.Planner = (*AssetCoverageRepository)(nil)
 
 // Health returns one entry per capability of the tenant's ledger.
+//
+// A pair paused because the target stopped answering (unreachable, timeout)
+// still applies: once its last success is older than twice the cadence it
+// is a gap, so a host that went dark shows up in the gaps and their alert.
+// Pairs paused for readiness (no capable sensor) are counted as Paused.
 func (r *AssetCoverageRepository) Health(ctx context.Context, tenantID shared.ID, cadence map[string]time.Duration) ([]coverage.CapabilityHealth, error) {
 	caps := make([]string, 0, len(cadence))
 	secs := make([]float64, 0, len(cadence))
@@ -498,8 +503,10 @@ func (r *AssetCoverageRepository) Health(ctx context.Context, tenantID shared.ID
 	}
 	rows, err := r.db.QueryContext(ctx, `
 		SELECT c.capability,
-		       count(*) FILTER (WHERE c.state NOT IN ('blocked', 'paused', 'not_applicable')),
-		       count(*) FILTER (WHERE c.state NOT IN ('blocked', 'paused', 'not_applicable')
+		       count(*) FILTER (WHERE c.state NOT IN ('blocked', 'not_applicable')
+		                          AND NOT (c.state = 'paused' AND c.reason = ANY($5::text[]))),
+		       count(*) FILTER (WHERE c.state NOT IN ('blocked', 'not_applicable')
+		                          AND NOT (c.state = 'paused' AND c.reason = ANY($5::text[]))
 		                          AND COALESCE(c.last_success_at, c.created_at) < now() - make_interval(secs => 2 * COALESCE(p.every, 86400))),
 		       count(*) FILTER (WHERE c.state = 'failed' AND c.fail_streak >= $4),
 		       count(*) FILTER (WHERE c.last_outcome = 'ok' AND c.last_success_at > now() - interval '24 hours'),
