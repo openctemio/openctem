@@ -141,11 +141,16 @@ func DecideByRequests(reqs []RequestResult, matchedAt string, items []evidence.I
 	if answered {
 		a.Edge = r.edge()
 	}
-	// The recorded exchange at the endpoint is classified by the platform
-	// too: request lines from sensors that do not name an edge state would
-	// otherwise hide a CDN or WAF block. A block is never a pass.
-	if ev := AnalyzeAttempt(items, matchedAt); ev.Found && ev.EndpointMatches && ev.Responded && blocksCheck(ev.Edge) && !blocksCheck(a.Edge) {
-		a = ev
+	// The recorded exchange at the endpoint is read by the platform too:
+	// request lines from sensors that do not name an edge state would
+	// otherwise hide a CDN or WAF block (a block is never a pass), and the
+	// lines carry no redirect target.
+	if ev := AnalyzeAttempt(items, matchedAt); ev.Found && ev.EndpointMatches && ev.Responded {
+		if blocksCheck(ev.Edge) && !blocksCheck(a.Edge) {
+			a = ev
+		} else if a.Location == "" && ev.Status == a.Status {
+			a.Location = ev.Location
+		}
 	}
 	return decideNotMatched(a, matchedAt, true, "", firstClass(cls)), true
 }
