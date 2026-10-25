@@ -59,6 +59,11 @@ interface ApprovalDialogProps {
    * approved one (`single_person`) when the person decided alone.
    */
   onSuccess?: (result?: ApiApproval & { single_person?: boolean }) => void | Promise<void>
+  /**
+   * A note to start from (triage's AI suggestion). Only fills the form: the
+   * person still picks the reason, edits the note and sends the request.
+   */
+  initialJustification?: string
 }
 
 export function ApprovalDialog({
@@ -68,6 +73,7 @@ export function ApprovalDialog({
   onOpenChange,
   onSuccess,
   maxAcceptanceDays,
+  initialJustification,
 }: ApprovalDialogProps) {
   const { t } = useTranslation()
   // How a request of this status would be decided now: the tier and why, who
@@ -85,7 +91,7 @@ export function ApprovalDialog({
   const capDays = policyCap > 0 ? Math.min(propCap, policyCap) : propCap
   const defaultDays = Math.min(DEFAULT_ACCEPTANCE_DAYS, capDays)
   const minNote = Math.max(0, evaluation?.min_note_length ?? 0)
-  const [justification, setJustification] = useState('')
+  const [justification, setJustification] = useState(initialJustification ?? '')
   // Why the finding is not a risk to fix: a VEX-aligned code the server
   // requires and stores as the closure reason.
   const [reason, setReason] = useState('')

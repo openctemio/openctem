@@ -9,6 +9,8 @@ import {
   newSession,
   nextUndecided,
   parseSession,
+  popUndo,
+  pushUndo,
   progress,
   readSession,
   safeReturnPath,
@@ -228,5 +230,33 @@ describe('changedElsewhere', () => {
         undefined
       )
     ).toBe(false)
+  })
+})
+
+describe('undo stack', () => {
+  it('keeps the newest ten and pops the newest first', () => {
+    let s = newSession('status=new', '/findings', true)
+    for (let n = 1; n <= 12; n++) s = pushUndo(s, { id: id(n), outcome: 'skipped' })
+    expect(s.undo).toHaveLength(10)
+    expect(s.undo[0].id).toBe(id(3))
+    const { session, entry } = popUndo(s)
+    expect(entry?.id).toBe(id(12))
+    expect(session.undo).toHaveLength(9)
+    expect(popUndo(newSession('status=new', '/findings', true)).entry).toBeUndefined()
+  })
+  it('a stored stack keeps only well-formed entries', () => {
+    const raw = JSON.stringify({
+      v: 1,
+      query: 'status=new',
+      items: [],
+      undo: [
+        { id: id(1), outcome: 'fp_requested', approvalId: id(9) },
+        { id: id(2), outcome: 'deleted' },
+        { id: id(3), outcome: 'fp_requested', approvalId: '../x' },
+        { id: id(4), outcome: 'confirmed', previousStatus: 'new; drop' },
+        { id: id(5), outcome: 'assigned', previousAssigneeId: null },
+      ],
+    })
+    expect(parseSession(raw)!.undo.map((u) => u.id)).toEqual([id(1), id(5)])
   })
 })

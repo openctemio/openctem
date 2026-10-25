@@ -51,21 +51,49 @@ vi.mock('../../../api/use-finding-evidence-items', () => ({
   useFindingEvidenceItems: () => ({ data: undefined, isLoading: false }),
 }))
 vi.mock('../../../api/use-quick-views', () => ({ refreshFindingQuickViews: vi.fn() }))
+vi.mock('@/features/integrations/api/use-tenant-modules', () => ({ useModuleEnabled: () => true }))
+const aiResult: { current: unknown } = { current: undefined }
+vi.mock('@/features/ai-triage/api', () => ({
+  useTriageResult: () => ({ data: aiResult.current }),
+}))
+vi.mock('@/features/remediation-hub/components/add-findings-to-task-dialog', () => ({
+  AddFindingsToTaskDialog: ({
+    onDone,
+    onOpenChange,
+  }: {
+    onDone: () => void
+    onOpenChange: (o: boolean) => void
+  }) => (
+    <div role="dialog" aria-label="add to task">
+      <button
+        onClick={() => {
+          onDone()
+          onOpenChange(false)
+        }}
+      >
+        add
+      </button>
+    </div>
+  ),
+}))
 vi.mock('../../approval-dialog', () => ({
   ApprovalDialog: ({
     targetStatus,
     onSuccess,
     onOpenChange,
+    initialJustification,
   }: {
     targetStatus: string
-    onSuccess: (r: { single_person?: boolean }) => void
+    onSuccess: (r: { single_person?: boolean; id?: string }) => void
     onOpenChange: (o: boolean) => void
+    initialJustification?: string
   }) => (
     <div role="dialog" aria-label={`request ${targetStatus}`}>
+      <p data-testid="prefill">{initialJustification ?? ''}</p>
       <button
         onClick={() => {
           onOpenChange(false)
-          onSuccess({ single_person: false })
+          onSuccess({ single_person: false, id: '00000000-0000-4000-8000-0000000000aa' })
         }}
       >
         send request
@@ -86,6 +114,7 @@ const reload = vi.fn()
 vi.mock('../../../api/use-findings-api', async () => {
   const React = await import('react')
   return {
+    findingDetailKey: (findingId: string) => `/api/v1/findings/${findingId}`,
     useFindingApi: (findingId: string | null) => {
       React.useEffect(() => {
         if (findingId) detailReads.push(findingId)
@@ -106,7 +135,12 @@ const fetchTriageWindow = vi.fn()
 const fetchTransitions = vi.fn()
 const writeFindingStatus = vi.fn()
 const writeFindingAssignee = vi.fn()
+const cancelApproval = vi.fn()
+const requestRetest = vi.fn()
 vi.mock('../../../api/triage-api', () => ({
+  fetchFinding: async (fid: string) => findings.get(fid),
+  cancelApproval: (...a: unknown[]) => cancelApproval(...a),
+  requestRetest: (...a: unknown[]) => requestRetest(...a),
   fetchTriageWindow: (...a: unknown[]) => fetchTriageWindow(...a),
   fetchTransitions: (...a: unknown[]) => fetchTransitions(...a),
   writeFindingStatus: (...a: unknown[]) => writeFindingStatus(...a),
@@ -128,6 +162,7 @@ function api(n: number, extra: Partial<ApiFinding> = {}): ApiFinding {
     created_at: '2026-10-01T00:00:00Z',
     updated_at: '2026-10-01T00:00:00Z',
     tool_name: 'nuclei',
+    rule_id: `rule-${n}`,
     ...extra,
   } as ApiFinding
 }
@@ -158,6 +193,8 @@ beforeEach(() => {
     'PATCH /api/v1/findings/{id}/status',
     'POST /api/v1/findings/{id}/approvals',
     'POST /api/v1/findings/{id}/assign',
+    'POST /api/v1/remediation/tasks',
+    'POST /api/v1/findings/{id}/retests',
   ])
     allowed.add(k)
   window.history.replaceState(null, '', '/findings/triage?status=new')
@@ -175,6 +212,9 @@ beforeEach(() => {
     return findings.get(fid)
   })
   writeFindingAssignee.mockResolvedValue({})
+  cancelApproval.mockResolvedValue({})
+  requestRetest.mockResolvedValue({})
+  aiResult.current = undefined
 })
 
 afterEach(() => cleanup())
@@ -373,5 +413,103 @@ describe('TriageMode', () => {
     render(<TriageMode />)
     await screen.findByRole('heading', { name: 'Finding 2' })
     expect(fetchTriageWindow).toHaveBeenCalledTimes(1)
+  })
+})
+
+describe('TriageMode decisions, part 2', () => {
+  it('m adds to a task and moves on', async () => {
+    seed(2)
+    await ready()
+    press('m')
+    fireEvent.click(await screen.findByRole('button', { name: 'add' }))
+    await screen.findByRole('heading', { name: 'Finding 2' })
+    expect(screen.getByTestId('triage-counts')).toHaveTextContent('1 decided')
+  })
+
+  it('r requests a retest and moves on; without findings:verify it does nothing', async () => {
+    seed(3)
+    await ready()
+    press('r')
+    await screen.findByRole('heading', { name: 'Finding 2' })
+    expect(requestRetest).toHaveBeenCalledWith(id(1))
+    allowed.delete('POST /api/v1/findings/{id}/retests')
+    cleanup()
+    sessionStorage.clear()
+    await ready()
+    press('r')
+    expect(requestRetest).toHaveBeenCalledTimes(1)
+  })
+
+  it('u cancels a sent request (never deletes it) and shows the finding again', async () => {
+    seed(2)
+    await ready()
+    press('f')
+    fireEvent.click(await screen.findByRole('button', { name: 'send request' }))
+    await screen.findByRole('heading', { name: 'Finding 2' })
+    press('u')
+    await screen.findByRole('heading', { name: 'Finding 1' })
+    expect(cancelApproval).toHaveBeenCalledWith('00000000-0000-4000-8000-0000000000aa')
+    expect(screen.getByTestId('triage-counts')).toHaveTextContent('0 sent for approval')
+  })
+
+  it('u gives an assignment back to the previous assignee on the current version', async () => {
+    seed(2)
+    await ready()
+    press('o')
+    await screen.findByRole('heading', { name: 'Finding 2' })
+    findings.set(id(1), { ...findings.get(id(1))!, row_version: 7 })
+    press('u')
+    await screen.findByRole('heading', { name: 'Finding 1' })
+    expect(writeFindingAssignee).toHaveBeenLastCalledWith(id(1), null, 7)
+  })
+
+  it('u on a confirm the lifecycle cannot reverse says so and writes nothing', async () => {
+    seed(2)
+    await ready()
+    press('c')
+    await screen.findByRole('heading', { name: 'Finding 2' })
+    writeFindingStatus.mockClear()
+    press('u')
+    const { toast } = await import('sonner')
+    await waitFor(() => expect(toast.error).toHaveBeenCalled())
+    expect(writeFindingStatus).not.toHaveBeenCalled()
+    await waitFor(() => expect(screen.getByRole('button', { name: /^Undo last/ })).toBeDisabled())
+  })
+
+  it('u keeps at most ten decisions', async () => {
+    seed(12)
+    await ready()
+    for (let i = 1; i <= 11; i++) {
+      press('s')
+      await screen.findByRole('heading', { name: `Finding ${i + 1}` })
+    }
+    expect(screen.getByRole('button', { name: /^Undo last/ })).toHaveTextContent('10 to undo')
+  })
+
+  it('Exit after decisions shows the receipt first', async () => {
+    seed(2)
+    await ready()
+    press('c')
+    await screen.findByRole('heading', { name: 'Finding 2' })
+    press('Escape')
+    expect(await screen.findByTestId('triage-receipt')).toHaveTextContent('Finding 1')
+    expect(routerPush).not.toHaveBeenCalled()
+    fireEvent.click(screen.getByRole('button', { name: 'Back to the list' }))
+    expect(routerPush).toHaveBeenCalledWith('/findings')
+  })
+
+  it('the AI suggestion only fills the request form', async () => {
+    seed(2)
+    aiResult.current = {
+      status: 'completed',
+      summary: 'Probably a test fixture.',
+      falsePositiveLikelihood: 0.9,
+      falsePositiveReason: 'Test host only.',
+    }
+    await ready()
+    fireEvent.click(screen.getByRole('button', { name: 'Apply suggestion' }))
+    await screen.findByRole('dialog', { name: 'request false_positive' })
+    expect(screen.getByTestId('prefill')).toHaveTextContent('Test host only.')
+    expect(writeFindingStatus).not.toHaveBeenCalled()
   })
 })

@@ -18,9 +18,12 @@ import {
   newSession,
   nextUndecided,
   readSession,
+  popUndo,
+  pushUndo,
   setOutcome,
   writeSession,
   type TriageOutcome,
+  type TriageUndo,
   type TriageSession,
 } from '../lib/triage-session'
 
@@ -33,6 +36,8 @@ const STILL_MATCHING: ReadonlySet<TriageOutcome> = new Set([
   'assigned',
   'fp_requested',
   'accept_requested',
+  'tasked',
+  'retest_requested',
 ])
 
 /**
@@ -134,15 +139,52 @@ export function useTriageSession(query: string | null) {
     setSession((s) => (s && s.index > 0 ? moveTo(s, s.index - 1) : s))
   }, [])
 
-  /** Records what happened to a finding and moves on to the next undecided one. */
-  const decide = useCallback((id: string, outcome: TriageOutcome) => {
+  /**
+   * Records what happened to a finding and moves on to the next undecided
+   * one. A decision Undo can walk back carries its undo entry.
+   */
+  const decide = useCallback((id: string, outcome: TriageOutcome, undo?: TriageUndo) => {
     direction.current = 'forward'
     setSession((s) => {
       if (!s) return s
-      const withOutcome = setOutcome(s, id, outcome)
+      let withOutcome = setOutcome(s, id, outcome)
+      if (undo) withOutcome = pushUndo(withOutcome, undo)
       const from = withOutcome.items.findIndex((it) => it.id === id)
       const after = nextUndecided(withOutcome, from < 0 ? withOutcome.index : from)
       return moveTo(withOutcome, after < 0 ? withOutcome.items.length : after)
+    })
+  }, [])
+
+  /** The newest decision Undo would walk back, if any. */
+  const lastUndo = useCallback((): TriageUndo | undefined => {
+    const s = sessionRef.current
+    return s?.undo[s.undo.length - 1]
+  }, [])
+
+  /**
+   * After the inverse request succeeded (or for a decision that wrote
+   * nothing): takes the entry off the stack, clears the outcome and shows
+   * that finding again.
+   */
+  const reverted = useCallback((entry: TriageUndo) => {
+    direction.current = 'back'
+    setSession((s) => {
+      if (!s) return s
+      const top = s.undo[s.undo.length - 1]
+      if (!top || top.id !== entry.id || top.outcome !== entry.outcome) return s
+      const popped = setOutcome(popUndo(s).session, entry.id, null)
+      const index = popped.items.findIndex((it) => it.id === entry.id)
+      return index < 0 ? popped : moveTo(popped, index)
+    })
+  }, [])
+
+  /** Takes a decision off the Undo stack without changing its outcome (it has no inverse). */
+  const dropUndo = useCallback((entry: TriageUndo) => {
+    setSession((s) => {
+      const top = s?.undo[s.undo.length - 1]
+      return s && top && top.id === entry.id && top.outcome === entry.outcome
+        ? popUndo(s).session
+        : s
     })
   }, [])
 
@@ -161,6 +203,9 @@ export function useTriageSession(query: string | null) {
     prev,
     go,
     decide,
+    lastUndo,
+    reverted,
+    dropUndo,
     retry,
   }
 }
