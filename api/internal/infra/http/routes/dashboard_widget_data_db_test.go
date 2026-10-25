@@ -204,7 +204,7 @@ func TestDashboardWidgetData_PersonalScopeParity_DB(t *testing.T) {
 			if got := e.listTotal(t, tc.user, tc.admin, "state=open"); int64(got) != tc.open {
 				t.Errorf("parity: widget %d, findings list %d", tc.open, got)
 			}
-			if open.Drill != "/findings?state=open" {
+			if open.Drill != "/findings?informational=true&state=open" {
 				t.Errorf("drill = %q", open.Drill)
 			}
 			p0 := byID(t, out, "w_p0")
