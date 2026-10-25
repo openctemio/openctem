@@ -27,10 +27,24 @@ async function openKeyScreen(onOpenChange: (o: boolean) => void) {
   const user = userEvent.setup()
   render(<RegenerateKeyDialog open onOpenChange={onOpenChange} sensor={sensor} />)
   const confirmBtn = await screen.findByRole('button', { name: /rotate/i })
+  await user.type(screen.getByRole('textbox'), 'sensor-01')
   await user.click(confirmBtn)
   await screen.findByText('New API key')
   return user
 }
+
+describe('RegenerateKeyDialog confirmation', () => {
+  it('keeps Rotate disabled until the sensor name is typed', async () => {
+    const user = userEvent.setup()
+    render(<RegenerateKeyDialog open onOpenChange={vi.fn()} sensor={sensor} />)
+    const rotate = await screen.findByRole('button', { name: /rotate/i })
+    expect(rotate).toBeDisabled()
+    await user.type(screen.getByRole('textbox'), 'sensor-0')
+    expect(rotate).toBeDisabled()
+    await user.type(screen.getByRole('textbox'), '1')
+    expect(rotate).toBeEnabled()
+  })
+})
 
 describe('RegenerateKeyDialog one-time key', () => {
   it('does not close on an outside click while the key is shown', async () => {

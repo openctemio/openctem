@@ -145,17 +145,17 @@ func TestCoverageReadinessForRefusal(t *testing.T) {
 		"tool excluded":          {tu(string(sensordom.ToolNoSensor), 2), covdom.ReadyToolNotAllowed},
 		"tool on no sensor":      {tu(string(sensordom.ToolNoSensor), 0), covdom.ReadyToolMissing},
 		"no sensor available":    {de("NO_SENSOR_AVAILABLE"), covdom.ReadyNoEligibleSensor},
-				"shared sensors refused": {de(codePlatformRefused), covdom.ReadyNoEligibleSensor},
+		"shared sensors refused": {de(codePlatformRefused), covdom.ReadyNoEligibleSensor},
 		"sensor policy":          {de(codeSensorPolicyRefused), covdom.ReadyToolNotAllowed},
 		"tool disabled":          {de("TOOL_DISABLED"), covdom.ReadyPolicyDisabled},
 		"approval":               {de("SCAN_APPROVAL_REQUIRED"), covdom.ReadyPolicyDisabled},
 		"scan paused":            {de("SCAN_NOT_TRIGGERABLE"), covdom.ReadyPolicyDisabled},
 		// About the batch's targets: handled per batch, not a readiness.
-		"no zone coverage": {de("NO_ZONE_COVERAGE"), ""},
+		"no zone coverage":   {de("NO_ZONE_COVERAGE"), ""},
 		"window never opens": {de(CodeWindowNeverOpens), ""},
-		"targets excluded": {de("ALL_TARGETS_EXCLUDED"), ""},
-		"no targets":       {de("NO_TARGETS"), ""},
-		"not a refusal":    {errors.New("connection reset"), ""},
+		"targets excluded":   {de("ALL_TARGETS_EXCLUDED"), ""},
+		"no targets":         {de("NO_TARGETS"), ""},
+		"not a refusal":      {errors.New("connection reset"), ""},
 	} {
 		if got := CoverageReadinessForRefusal(c.err); got != c.want {
 			t.Errorf("%s: %q, want %q", name, got, c.want)
