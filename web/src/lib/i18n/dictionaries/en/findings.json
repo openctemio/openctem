@@ -488,7 +488,7 @@
   "findings.retestPanel.inconclusiveWhy.access_denied": "access denied",
   "findings.retestPanel.inconclusiveWhy.auth_changed": "authentication required",
   "findings.retestPanel.inconclusiveWhy.server_error": "server error",
-  "findings.retestPanel.inconclusiveWhy.endpoint_mismatch": "another endpoint was checked",
+  "findings.retestPanel.inconclusiveWhy.endpoint_mismatch": "the check did not request this finding's endpoint",
   "findings.retestPanel.inconclusiveWhy.template_changed": "template changed",
   "findings.retestPanel.inconclusiveWhy.no_result": "no result",
   "findings.retestPanel.inconclusiveWhy.error": "the tool could not run the check",
@@ -1863,5 +1863,16 @@
   "findings.aiTriage.exploitability.theoretical": "Theoretical",
   "findings.aiTriage.effort.low": "Low effort",
   "findings.aiTriage.effort.medium": "Medium effort",
-  "findings.aiTriage.effort.high": "High effort"
+  "findings.aiTriage.effort.high": "High effort",
+  "findings.retestPanel.stillExposedElsewhere": "Still exposed at another path",
+  "findings.retestPanel.inconclusiveWhy.no_endpoint_proof": "no proof the finding's endpoint was requested",
+  "findings.retestPanel.help.endpoint_mismatch.text": "The check ran but did not request this finding's own endpoint, so it proves nothing about it.",
+  "findings.retestPanel.help.endpoint_mismatch.fix": "The finding is unchanged. Add a retest check pinned to the exact URL of the finding.",
+  "findings.retestPanel.help.no_endpoint_proof.text": "The check ran, but nothing shows it requested this finding's endpoint, so a missing match proves nothing.",
+  "findings.retestPanel.help.no_endpoint_proof.fix": "The finding is unchanged. Add a retest check pinned to the exact URL of the finding.",
+  "findings.retestPanel.help.matched_elsewhere.text": "The finding's own endpoint no longer matches, but the check matched at another path of the same target.",
+  "findings.retestPanel.help.matched_elsewhere.fix": "The finding stays open as it is. The reason lists the other paths; consider reporting them as their own finding.",
+  "findings.retestCheck.pinHint": "This template probes several paths. Add an HTTP assertion check pinned to {url}.",
+  "findings.retestCheck.pinHintNoUrl": "This template probes several paths. Add an HTTP assertion check pinned to this finding's exact URL.",
+  "findings.retestCheck.pinAction": "Add a pinned check"
 }

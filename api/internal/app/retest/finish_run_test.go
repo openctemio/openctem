@@ -12,6 +12,8 @@ import (
 type recordedFinish struct {
 	called, unable, succeeded bool
 	code                      string
+	// kind is the result a completed run carries ("" for none).
+	kind string
 }
 
 type fakeRuns struct{ got recordedFinish }
@@ -22,6 +24,11 @@ func (f *fakeRuns) StartRetestRun(context.Context, *retestdom.Retest) (shared.ID
 
 func (f *fakeRuns) FinishRetestRun(_ context.Context, _, _ shared.ID, succeeded bool, _, code string) error {
 	f.got = recordedFinish{called: true, succeeded: succeeded, code: code}
+	return nil
+}
+
+func (f *fakeRuns) FinishRetestRunResult(_ context.Context, _, _ shared.ID, kind, code string) error {
+	f.got = recordedFinish{called: true, succeeded: true, code: code, kind: kind}
 	return nil
 }
 
@@ -44,6 +51,16 @@ func TestFinishRunToolUnableBlocksTheRun(t *testing.T) {
 			recordedFinish{called: true, unable: true, code: RunCodeToolUnable}},
 		{"target unreachable", retestdom.Inconclusive(retestdom.ReasonUnreachable, "no answer"),
 			recordedFinish{called: true, code: "UNREACHABLE"}},
+		// The tool ran to the end and the verdict proves nothing: the run
+		// completed, with the result, never Failed.
+		{"another endpoint was checked", retestdom.Inconclusive(retestdom.ReasonEndpointMismatch, "the check did not request the endpoint"),
+			recordedFinish{called: true, succeeded: true, code: "endpoint_mismatch", kind: "inconclusive"}},
+		{"blocked at the edge", retestdom.Inconclusive(retestdom.ReasonBlocked, "blocked"),
+			recordedFinish{called: true, succeeded: true, code: "blocked", kind: "inconclusive"}},
+		{"sensor returned nothing", retestdom.Inconclusive(retestdom.ReasonNoResult, "no result"),
+			recordedFinish{called: true, code: "NO_RESULT"}},
+		{"exposed at another path", retestdom.Verdict{Outcome: retestdom.OutcomeStillExposedElsewhere, Code: retestdom.ReasonMatchedElsewhere, Reason: "elsewhere"},
+			recordedFinish{called: true, succeeded: true, code: "matched_elsewhere", kind: "still_exposed_elsewhere"}},
 		{"answer", retestdom.Verdict{Outcome: retestdom.OutcomeStillVulnerable, Code: retestdom.ReasonMatched, Reason: "matched"},
 			recordedFinish{called: true, succeeded: true, code: "MATCHED"}},
 	}

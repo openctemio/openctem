@@ -57,7 +57,7 @@ func seedRegressionFinding(ctx context.Context, t *testing.T, db *sql.DB, tenant
 	_, err := db.ExecContext(ctx,
 		`INSERT INTO findings (id, tenant_id, asset_id, title, source, tool_name, message,
 		                       fingerprint, severity, status, resolution, resolved_at)
-		 VALUES ($1, $2, $3, $4, 'sast', 'probe-tool', $5, $6, 'high', $7, 'auto_fixed', NOW())`,
+		 VALUES ($1, $2, $3, $4, 'sast', 'probe-tool', $5, $6, 'high', $7, 'auto_fixed', NOW() - INTERVAL '10 days')`,
 		id.String(), tenantID.String(), assetID.String(),
 		label, label, "fp-"+id.String(), status)
 	if err != nil {
