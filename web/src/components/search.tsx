@@ -43,7 +43,7 @@ export function Search({ className = '', placeholder }: SearchProps) {
         size={16}
       />
       <span className="ms-4 hidden truncate sm:inline">{label}</span>
-      <kbd className="bg-muted group-hover:bg-accent pointer-events-none absolute end-[0.3rem] top-[0.3rem] hidden h-5 items-center gap-1 rounded border px-1.5 font-mono text-[11px] font-medium opacity-100 select-none sm:flex">
+      <kbd className="bg-muted group-hover:bg-accent pointer-events-none absolute end-[0.3rem] top-[0.3rem] hidden h-5 items-center gap-1 rounded border px-1.5 font-mono text-xs font-medium opacity-100 select-none sm:flex">
         {mac ? <span className="text-xs">⌘</span> : <span>Ctrl</span>}K
       </kbd>
     </Button>

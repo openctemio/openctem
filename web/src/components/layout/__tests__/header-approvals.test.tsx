@@ -36,6 +36,6 @@ describe('HeaderApprovals', () => {
     expect(swr).toHaveBeenLastCalledWith(REVIEW_QUEUE_URL)
     const link = screen.getByRole('link', { name: 'Awaiting your decision: 4' })
     expect(link.getAttribute('href')).toBe('/my-work?tab=review')
-    expect(link.textContent).toContain('4')
+    expect(link.querySelector('[data-slot="counter"]')?.textContent).toBe('4')
   })
 })
