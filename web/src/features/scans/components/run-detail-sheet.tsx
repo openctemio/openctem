@@ -173,7 +173,11 @@ export function RunDetailSheet({ runId, onOpenChange }: RunDetailSheetProps) {
             badges={
               run ? (
                 <>
-                  <RunStatusBadge status={run.status} note={runTargetNote(run, t)} />
+                  <RunStatusBadge
+                    status={run.status}
+                    note={runTargetNote(run, t)}
+                    result={run.result}
+                  />
                   <IntensityBadge intensity={run.intensity} />
                 </>
               ) : undefined
@@ -272,6 +276,7 @@ export function RunDetailSheet({ runId, onOpenChange }: RunDetailSheetProps) {
                     refreshInterval={runRefreshInterval(run)}
                     tasks={run.tasks}
                     tasksTruncated={run.tasks_truncated}
+                    runKind={run.kind}
                   />
                 </DetailSection>
               )}

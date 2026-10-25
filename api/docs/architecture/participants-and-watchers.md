@@ -49,7 +49,8 @@ Comments, status changes (a fix claim is one) and assignments go through one pat
 
 1. The people the event is for by role (the assignee; the new assignee on an assignment, even if
    they had stopped watching) plus, when a **person** caused it, the watchers. A scanner, the system,
-   an integration or an AI never adds watchers to the audience.
+   an integration or an AI never adds watchers to the audience. One exception: a regression (a fix
+   that did not hold, `NotifyRegression`) is told to the watchers too (`Event.WatchersToo`).
 2. Minus the actor.
 3. Minus whoever has an `unsubscribed` row (except the new assignee on an assignment).
 4. Then only people who are, right now, active members who can read the finding (data scope, or the
