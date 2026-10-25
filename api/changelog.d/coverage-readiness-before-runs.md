@@ -1,0 +1,5 @@
+### Fixed: continuous coverage no longer creates runs that can never run
+
+- Before a coverage batch becomes a run, the planner checks whether the capability could run for the organization at all: a scope entry exists, the tool is switched on, a sensor of the organization has it and may run it, a sensor is online and up to date. When it could not, no run and no blocked run is created; the capability's due pairs are paused with one reason (`policy_disabled`, `no_scope`, `tool_missing`, `tool_not_allowed`, `sensor_offline`, `sensor_outdated`, `no_eligible_sensor`; `credentials_missing` and `quota_exhausted` are reserved) and resume by themselves on the first pass where it is ready.
+- Before, an organization with no sensor, a sensor briefly offline, or no zone that could place the run got one blocked run per batch per pass, and every pair of the batch stayed blocked. A trigger refusal of a whole coverage batch that means the capability cannot run now is no longer recorded as a blocked run; it pauses the capability and retries after 30 minutes.
+- The asset coverage section shows the readiness reasons in English and Vietnamese.

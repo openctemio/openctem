@@ -5,6 +5,7 @@ import { toast } from 'sonner'
 import { CheckCircle, Eye, Play } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { ConfirmDialog } from '@/components/confirm-dialog'
+import { confirmName } from '@/lib/confirm-name'
 import { Can, Permission } from '@/lib/permissions'
 import { getErrorMessage } from '@/lib/api/error-handler'
 import { useTranslation } from '@/context/i18n-provider'
@@ -90,6 +91,9 @@ export function CycleLifecycleAction({
           </>
         }
         confirmText={label}
+        // Activating freezes the scope and closing is final: type the cycle's name.
+        typeToConfirm={action === 'review' ? undefined : confirmName(cycle.name, cycle.id)}
+        destructive={action === 'close'}
         handleConfirm={run}
       />
     </>
