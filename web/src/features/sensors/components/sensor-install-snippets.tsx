@@ -33,7 +33,7 @@ export interface SensorTemplates {
   compose?: string
   kubernetes?: string
   helm?: string
-  /** The sensor-local policy template (api RFC-040 §5.7), prefilled with the zones' ranges. */
+  /** The sensor-local policy template, prefilled with the zones' ranges, else the organization's scope. */
   policy?: string
   image?: string
   /** The sensor product the snippets install ("" for a collector). */

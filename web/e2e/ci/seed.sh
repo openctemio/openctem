@@ -121,10 +121,11 @@ call POST /api/v1/sensors '{"name":"e2e-sensor-b","type":"worker","execution_mod
 # accepts a report only from a tool the sensor has reported (sensors.tools was
 # dropped, #1254), and dispatch counts only reported tools too (#824). Nothing
 # claims the scan's job below, so its run stays in progress for
-# 10-scan-detail-runs.
+# 10-scan-detail-runs. It reports no local policy while requiring one, so its
+# drawer offers the suggested policy (41-sensor-policy-suggestion).
 code=$(curl -sS -o "$WORK/body" -w '%{http_code}' -X POST "$API/api/v2/sensor/heartbeat" \
   -H "Authorization: Bearer $KEY" -H 'Content-Type: application/json' \
-  -d '{"status":"online","scanners":["nuclei"],"tools":[{"name":"nuclei","kind":"scanner","installed":true}]}')
+  -d '{"status":"online","scanners":["nuclei"],"tools":[{"name":"nuclei","kind":"scanner","installed":true}],"local_policy":{"state":"absent","required":true}}')
 [[ "$code" =~ ^2 ]] || { log "heartbeat -> $code: $(head -c 300 "$WORK/body")"; exit 1; }
 
 findings=$({
