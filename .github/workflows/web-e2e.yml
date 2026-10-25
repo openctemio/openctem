@@ -67,12 +67,18 @@ jobs:
     permissions:
       contents: read
       pull-requests: read # the `ci:full` label (changed.sh reads it live)
+      actions: read # queue-verified.sh reads the merge queue's runs of this commit
     outputs:
       web: ${{ steps.f.outputs.web }}
       api: ${{ steps.f.outputs.api }}
       suite: ${{ steps.suite.outputs.changed }}
       http: ${{ steps.http.outputs.changed }}
       run: ${{ steps.decide.outputs.run }}
+      # The shards run unless this is a push to develop of a commit the merge
+      # queue already passed with this workflow; that push still builds the
+      # images, to keep develop's layer cache current for pull requests.
+      shards: ${{ steps.decide.outputs.run == 'true' && steps.queue.outputs.verified != 'true' }}
+      verified: ${{ steps.queue.outputs.verified }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -147,6 +153,15 @@ jobs:
           esac
           echo "run=$run" >> "$GITHUB_OUTPUT"
           echo "suite runs: $run"
+      - id: queue
+        env:
+          EVENT: ${{ github.event_name }}
+          REF: ${{ github.ref }}
+          SHA: ${{ github.sha }}
+          WORKFLOW_REF: ${{ github.workflow_ref }}
+          REPO: ${{ github.repository }}
+          GH_TOKEN: ${{ github.token }}
+        run: bash .github/scripts/queue-verified.sh
 
   build:
     name: Build e2e images
@@ -178,9 +193,14 @@ jobs:
           dockerhub-token: ${{ secrets.DOCKERHUB_TOKEN }}
 
       # The three images build in parallel (web/e2e/ci/docker-bake.hcl) with
-      # the GitHub Actions layer cache.
+      # the GitHub Actions layer cache. Only a push to develop writes the
+      # cache: pull requests read develop's, while a cache written from a pull
+      # request or a merge-queue ref is readable by that ref alone and only
+      # pushed develop's caches out of the 10 GB store.
       - name: Build images
         uses: docker/bake-action@59cb1203cd42bcefd40a1b6d73b589e48c86040e # v7.5.0
+        env:
+          CACHE_WRITE: ${{ github.event_name == 'push' && github.ref == 'refs/heads/develop' }}
         with:
           source: .
           files: web/e2e/ci/docker-bake.hcl
@@ -200,7 +220,7 @@ jobs:
   e2e:
     name: Playwright e2e (${{ matrix.shard == 0 && 'request budget' || format('shard {0}/4', matrix.shard) }})
     needs: [changes, build]
-    if: needs.changes.outputs.run == 'true'
+    if: needs.changes.outputs.shards == 'true'
     runs-on: ubuntu-latest
     # Stack start, install and a quarter of the tests; no image build here.
     timeout-minutes: 25
@@ -383,6 +403,7 @@ jobs:
         env:
           NEEDS: ${{ toJSON(needs) }}
           RUN: ${{ needs.changes.outputs.run }}
+          VERIFIED: ${{ needs.changes.outputs.verified }}
         run: |
           echo "$NEEDS" | jq -r 'to_entries[] | "\(.key): \(.value.result)"'
           if echo "$NEEDS" | jq -e 'to_entries | map(.value.result) | any(. == "failure" or . == "cancelled")' >/dev/null; then
@@ -391,7 +412,9 @@ jobs:
           if [ "$(echo "$NEEDS" | jq -r '.changes.result')" != success ]; then
             echo "::error::the change detection did not succeed"; exit 1
           fi
-          if [ "$RUN" = true ]; then
+          if [ "$RUN" = true ] && [ "$VERIFIED" = true ]; then
+            echo "the merge queue already passed this commit; the images were built for the layer cache"
+          elif [ "$RUN" = true ]; then
             for j in build e2e; do
               r="$(echo "$NEEDS" | jq -r --arg j "$j" '.[$j].result')"
               if [ "$r" != success ]; then echo "::error::$j must run and pass, got: $r"; exit 1; fi
