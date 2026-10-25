@@ -1,6 +1,10 @@
 {
   "notificationTypes.asset_discovered.description": "Khi phát hiện tài sản mới trong môi trường của bạn",
   "notificationTypes.asset_discovered.name": "Phát hiện tài sản",
+  "notificationTypes.autoWatch.description": "Khi bạn bình luận, đổi trạng thái, báo đã sửa hoặc được giao việc, bạn bắt đầu theo dõi mục đó. Việc ngừng theo dõi một mục luôn được giữ nguyên.",
+  "notificationTypes.autoWatch.label": "Theo dõi những gì tôi tham gia",
+  "notificationTypes.autoWatch.subtitle": "Các phát hiện và tác vụ bạn tham gia có thể được theo dõi giúp bạn.",
+  "notificationTypes.autoWatch.title": "Theo dõi",
   "notificationTypes.finding_approval.description": "Khi một yêu cầu dương tính giả hoặc chấp nhận rủi ro chờ bạn quyết định",
   "notificationTypes.finding_approval.name": "Yêu cầu phê duyệt",
   "notificationTypes.finding_approval_digest.description": "Bản tóm tắt hằng ngày các yêu cầu đang chờ bạn (tắt mục này cũng dừng email)",
@@ -36,9 +40,5 @@
   "notificationTypes.subtitle": "Bật hoặc tắt từng loại thông báo.",
   "notificationTypes.system_alert.description": "Các thông báo quan trọng ở cấp hệ thống",
   "notificationTypes.system_alert.name": "Cảnh báo hệ thống",
-  "notificationTypes.title": "Loại thông báo",
-  "notificationTypes.autoWatch.title": "Theo dõi",
-  "notificationTypes.autoWatch.subtitle": "Các phát hiện và tác vụ bạn tham gia có thể được theo dõi giúp bạn.",
-  "notificationTypes.autoWatch.label": "Theo dõi những gì tôi tham gia",
-  "notificationTypes.autoWatch.description": "Khi bạn bình luận, đổi trạng thái, báo đã sửa hoặc được giao việc, bạn bắt đầu theo dõi mục đó. Việc ngừng theo dõi một mục luôn được giữ nguyên."
+  "notificationTypes.title": "Loại thông báo"
 }
