@@ -21,15 +21,12 @@
  */
 
 import { FindingLastSeenIn } from '../receipt-summary'
-import { useCallback, useMemo, useState } from 'react'
+import { useMemo } from 'react'
 import Link from '@/components/link'
 import {
   ArrowUpRight,
   Bot,
-  Check,
-  Copy,
   ExternalLink,
-  FileCode2,
   FileText,
   Fingerprint,
   Terminal,
@@ -46,7 +43,6 @@ import {
   DetailSection,
   DetailSections,
 } from '@/features/shared/components/detail-sheet'
-import { copyToClipboard } from '@/lib/clipboard'
 import { UntrustedTextBlock } from '@/features/shared/components/untrusted-text-block'
 import { useTriageResult } from '@/features/ai-triage/api'
 import { useRelatedCVEs } from '../../api/use-finding-groups'
@@ -56,7 +52,6 @@ import { KevBadge } from '@/components/ui/kev-badge'
 import { cn, sanitizeExternalUrl } from '@/lib/utils'
 import type { FindingDetail } from '../../types'
 import { FINDING_TYPE_CONFIG } from '../../types'
-import { CodeHighlighter } from './code-highlighter'
 import { MetadataViewer } from './source-panels/metadata-viewer'
 import { SourceDataSection } from './source-data-section'
 import { VersionMatchPanel } from '@/features/vuln-matching/components/version-match-panel'
@@ -65,7 +60,7 @@ import { findingTypeSections } from './finding-type-details'
 import { assetDetailHref, isLinkableAssetId } from '../../lib/asset-link'
 import { findingAssetTypeLabel } from '../../lib/finding-asset-type'
 import { HUMAN_SOURCES, findingDescription } from '../../lib/finding-detail'
-import { buildRepositoryCodeUrl } from '../../lib/repository-url'
+import { FindingCodeLocation, codeLocationOf } from './finding-code-location'
 import { FindingIssueGroupSection } from './finding-issue-group-section'
 import { FindingIdentitySection } from './finding-identity-section'
 
@@ -151,7 +146,7 @@ export function OverviewTab({ finding }: OverviewTabProps) {
       {findingTypeSections(finding)}
 
       {(finding.filePath || finding.snippet || finding.contextSnippet) && (
-        <CodeLocationSection finding={finding} />
+        <FindingCodeLocation location={codeLocationOf(finding)} />
       )}
 
       <FindingIssueGroupSection findingId={finding.id} />
@@ -569,105 +564,6 @@ function IdentifiersSection({ finding }: { finding: FindingDetail }) {
 }
 
 /** File, lines and the code around them. */
-function CodeLocationSection({ finding }: { finding: FindingDetail }) {
-  const { t } = useTranslation()
-  const [copied, setCopied] = useState(false)
-  const code = finding.contextSnippet || finding.snippet
-  const startLine = finding.contextSnippet ? finding.contextStartLine || 1 : finding.startLine || 1
-  const lines =
-    finding.startLine !== undefined && finding.startLine > 0
-      ? `${finding.startLine}${finding.endLine && finding.endLine !== finding.startLine ? `–${finding.endLine}` : ''}`
-      : ''
-  const repoUrl = buildRepositoryCodeUrl({
-    repositoryUrl: finding.repositoryUrl || finding.assets[0]?.url,
-    filePath: finding.filePath,
-    startLine: finding.startLine,
-    endLine: finding.endLine,
-    branch: finding.branch,
-    commitSha: finding.commitSha,
-  })
-
-  const copy = useCallback(async () => {
-    if (code && (await copyToClipboard(code))) {
-      setCopied(true)
-      setTimeout(() => setCopied(false), 1500)
-    }
-  }, [code])
-
-  return (
-    <DetailSection
-      title={t('findings.overviewTab.codeLocation', 'Code location')}
-      icon={FileCode2}
-      actions={
-        repoUrl ? (
-          <a
-            href={sanitizeExternalUrl(repoUrl)}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="inline-flex items-center gap-1 text-xs text-primary hover:underline"
-          >
-            {t('findings.overviewTab.viewInRepo', 'View in repository')}
-            <ExternalLink className="h-3 w-3" aria-hidden />
-          </a>
-        ) : undefined
-      }
-    >
-      {finding.filePath && (
-        <p className="font-mono text-[13px] break-all">
-          {finding.filePath}
-          {lines && <span className="text-muted-foreground">:{lines}</span>}
-        </p>
-      )}
-      {(finding.branch || finding.commitSha) && (
-        <p className="text-xs text-muted-foreground">
-          {finding.branch && (
-            <>
-              {t('findings.overviewTab.branch', 'Branch')}{' '}
-              <span className="font-mono">{finding.branch}</span>
-            </>
-          )}
-          {finding.branch && finding.commitSha && ' · '}
-          {finding.commitSha && (
-            <>
-              {t('findings.overviewTab.commit', 'Commit')}{' '}
-              <span className="font-mono">{finding.commitSha.slice(0, 10)}</span>
-            </>
-          )}
-        </p>
-      )}
-      {code && (
-        <div className="overflow-hidden rounded-lg border bg-muted/30">
-          <div className="flex items-center justify-between border-b bg-muted/50 px-3 py-1.5">
-            <span className="text-xs text-muted-foreground">
-              {finding.contextSnippet
-                ? t('findings.overviewTab.snippetCtx', 'Snippet with context')
-                : t('findings.overviewTab.snippet', 'Snippet')}
-            </span>
-            <button
-              type="button"
-              onClick={() => void copy()}
-              className="rounded-sm p-1 text-muted-foreground hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
-              aria-label={t('findings.overviewTab.copyCode', 'Copy code')}
-            >
-              {copied ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
-            </button>
-          </div>
-          <div className="overflow-x-auto p-3">
-            <CodeHighlighter
-              code={code}
-              filePath={finding.filePath}
-              className="bg-transparent"
-              showLineNumbers
-              startLine={startLine}
-              highlightLine={finding.startLine}
-            />
-          </div>
-        </div>
-      )}
-    </DetailSection>
-  )
-}
-
 /** How likely the model thinks the finding is a false positive (a suggestion). */
 function AIFalsePositiveLikelihood({ data }: { data: AITriageSummaryData }) {
   if (data.falsePositiveLikelihood === undefined) return null
