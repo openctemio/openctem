@@ -1004,7 +1004,7 @@
   "findings.page.title": "Findings",
   "findings.pentest.clientNotice": "Client access: you see the published findings of this campaign, read-only.",
   "findings.pentest.role.client": "Client",
-  "findings.pentest.role.clientHint": "Client — published findings, read-only",
+  "findings.pentest.role.clientHint": "Client: published findings, read-only",
   "findings.pentestTab.bugBounty": "Bug Bounty",
   "findings.pentestTab.businessImpact": "Business Impact",
   "findings.pentestTab.evidence": "Evidence",
