@@ -311,6 +311,7 @@ export function toFindingDetail(api: ApiFinding): FindingDetail {
     slaStatus: api.sla_status,
     slaDeadline: api.sla_deadline,
     slaKevCapped: api.sla_kev_capped,
+    slaBasis: api.sla_basis,
 
     // The finding's own copy first (classifier input), then the CVE record.
     epssScore: api.epss_score ?? v?.epss_score,
