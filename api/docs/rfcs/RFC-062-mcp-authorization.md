@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| Status | Accepted, implemented (PRs 1–8 of §14 shipped; the organization policy has the TLP limit for AI applications since 2026-10-12) (owner 2026-10-08: "the most secure, modern and best design of auth for MCP"; decisions MA1–MA25 delegated) |
+| Status | Accepted, implemented (PRs 1–9 of §14 shipped; the organization policy has the TLP limit for AI applications since 2026-10-12) (owner 2026-10-08: "the most secure, modern and best design of auth for MCP"; decisions MA1–MA25 delegated) |
 | Authors | Platform team |
 | Related | RFC-016 (MCP server), RFC-022 (admin console), RFC-041 (API planes), RFC-050 (asset access model), RFC-057 (evidence never leaves through prompts) |
 | Specification | MCP 2026-07-28 (Authorization, Authorization Server Discovery, Client Registration, Security Considerations, Streamable HTTP, Elicitation, Multi Round-Trip Requests) |
@@ -158,6 +158,7 @@ approved before (the page says so); `prompt=none` returns `consent_required`.
 | `mcp:pentest.read` | `pentest:campaigns:read`, `pentest:findings:read`, `pentest:retests:read`, `pentest:templates:read` | pentest campaigns, findings, retests, templates, report prompts |
 | `mcp:findings.comment` (write) | `findings:comment` | add a comment, confirmed per call (§10) |
 | `mcp:findings.propose` (write) | `findings:write` | propose a false positive or an accepted risk (§10a) |
+| `mcp:pentest.draft` (write) | `pentest:findings:write` | save a pentest finding as a draft (§10a) |
 
 On every request:
 
@@ -283,6 +284,21 @@ person's name**, with `requested_via` set to the AI application's name:
 - the activity records `source = mcp`; the tool call is audited with the
   grant and client.
 
+The second proposal tool is `draft_pentest_finding` (`mcp:pentest.draft` →
+`pentest:findings:write`): a pentester's AI copilot saves a finding (title,
+severity, description, affected asset or targets, steps, request/response
+pairs, CVSS vector, CWE, OWASP category, impact, remediation, references)
+in a campaign. Campaign membership, the TLP limit and the campaign's AI
+switch are checked first; the campaign phase and role rule for adding a
+finding is the service's, with the person as actor (never as an
+administrator). The finding is always a **draft** (never visible to the
+client), its `source_metadata.drafted_via` names the application and is kept
+on every edit, and `ApplyPentestTransition` refuses its creator confirming
+it: another campaign member (a reviewer or the lead) confirms it. A finding
+with the same title in the campaign answers `conflict`. Hidden characters in
+any text field are refused; request/response pairs are capped (10 pairs,
+bodies 32,000 characters).
+
 Threats this answers: content the agent reads (finding text, scanner output,
 target responses) steering it to hide a real risk. The agent can at most
 file a request that a different person reads, marked as written by an AI.
@@ -354,6 +370,7 @@ file a request that a different person reads, marked as written by an AI.
 | 6 | DPoP |
 | 7 | Write-tool confirmation with the first write tool (`add_finding_comment`); URL-mode elicitation follows the protocol upgrade |
 | 8 | Proposal tools with `propose_finding_status` (§10a) |
+| 9 | `draft_pentest_finding` and peer review of AI drafts (§10a) |
 
 Each PR carries tests for cross-tenant use, scope escalation, token replay,
 redirect URI tampering, refresh reuse and consent bypass, and is checked with a

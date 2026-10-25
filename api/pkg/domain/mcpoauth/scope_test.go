@@ -96,7 +96,10 @@ func TestScopesFor(t *testing.T) {
 	if got := ScopesFor(string(permission.FindingsWrite)); len(got) != 1 || got[0] != ScopeFindingsPropose || !IsWrite(got[0]) {
 		t.Fatalf("ScopesFor(findings:write) = %v, want the proposal write scope only", got)
 	}
-	for _, p := range []permission.Permission{permission.FindingsSeverity} {
+	if got := ScopesFor(string(permission.PentestFindingsWrite)); len(got) != 1 || got[0] != ScopePentestDraft || !IsWrite(got[0]) {
+		t.Fatalf("ScopesFor(pentest:findings:write) = %v, want the draft write scope only", got)
+	}
+	for _, p := range []permission.Permission{permission.FindingsSeverity, permission.PentestFindingsDelete} {
 		if got := ScopesFor(string(p)); len(got) != 0 {
 			t.Fatalf("ScopesFor(%s) = %v, want none", p, got)
 		}
