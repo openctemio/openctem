@@ -17,6 +17,11 @@ if printf '%s\n' "$staged" | grep -q '^web/'; then
   fi
 fi
 
+# Message catalogs stay key-sorted (web/scripts/i18n-json.mjs; Node only).
+if printf '%s\n' "$staged" | grep -q '^web/src/lib/i18n/dictionaries/.*\.json$'; then
+  node "$top/web/scripts/i18n-json.mjs" sort --check || exit 1
+fi
+
 gofiles=$(printf '%s\n' "$staged" | grep '^api/.*\.go$' || true)
 if [ -n "$gofiles" ]; then
   # shellcheck disable=SC2086
