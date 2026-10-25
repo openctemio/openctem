@@ -77,7 +77,8 @@ const INCONCLUSIVE_TEXT: Record<string, string> = {
   access_denied: 'access denied',
   auth_changed: 'authentication required',
   server_error: 'server error',
-  endpoint_mismatch: 'another endpoint was checked',
+  endpoint_mismatch: "the check did not request this finding's endpoint",
+  no_endpoint_proof: "no proof the finding's endpoint was requested",
   template_changed: 'template changed',
   no_result: 'no result',
   error: 'error',
@@ -91,6 +92,18 @@ const INCONCLUSIVE_TEXT: Record<string, string> = {
  * tool gives (ids; translated at render). The finding is unchanged in each.
  */
 const INCONCLUSIVE_HELP: Record<string, { text: string; fix: string }> = {
+  endpoint_mismatch: {
+    text: "The check ran but did not request this finding's own endpoint, so it proves nothing about it.",
+    fix: 'The finding is unchanged. Add a retest check pinned to the exact URL of the finding.',
+  },
+  no_endpoint_proof: {
+    text: "The check ran, but nothing shows it requested this finding's endpoint, so a missing match proves nothing.",
+    fix: 'The finding is unchanged. Add a retest check pinned to the exact URL of the finding.',
+  },
+  matched_elsewhere: {
+    text: "The finding's own endpoint no longer matches, but the check matched at another path of the same target.",
+    fix: 'The finding stays open as it is. The reason lists the other paths; consider reporting them as their own finding.',
+  },
   error: {
     text: 'The tool could not run this check.',
     fix: 'The finding is unchanged. Verify it by hand, or retest after the sensor is updated.',
@@ -150,6 +163,11 @@ export function retestMeta(rt: FindingRetest, t: Translate = englishOnly): Retes
             label: t('findings.retestPanel.stillVulnerable', 'Still vulnerable'),
             className: SEVERITY_BADGE_SOFT.medium,
           }
+    case 'still_exposed_elsewhere':
+      return {
+        label: t('findings.retestPanel.stillExposedElsewhere', 'Still exposed at another path'),
+        className: SEVERITY_BADGE_SOFT.medium,
+      }
     case 'not_reproduced':
       return {
         label: t('findings.retestPanel.notReproduced', 'Not reproduced, not confirmed'),
@@ -468,18 +486,19 @@ function RetestLine({
       {retest.reason && (
         <p className="text-xs text-muted-foreground">{toDisplayText(retest.reason, 600)}</p>
       )}
-      {retest.outcome === 'inconclusive' && INCONCLUSIVE_HELP[retest.reason_code ?? ''] && (
-        <p className="text-xs text-muted-foreground" data-slot="retest-inconclusive-help">
-          {t(
-            `findings.retestPanel.help.${retest.reason_code}.text`,
-            INCONCLUSIVE_HELP[retest.reason_code ?? ''].text
-          )}{' '}
-          {t(
-            `findings.retestPanel.help.${retest.reason_code}.fix`,
-            INCONCLUSIVE_HELP[retest.reason_code ?? ''].fix
-          )}
-        </p>
-      )}
+      {(retest.outcome === 'inconclusive' || retest.outcome === 'still_exposed_elsewhere') &&
+        INCONCLUSIVE_HELP[retest.reason_code ?? ''] && (
+          <p className="text-xs text-muted-foreground" data-slot="retest-inconclusive-help">
+            {t(
+              `findings.retestPanel.help.${retest.reason_code}.text`,
+              INCONCLUSIVE_HELP[retest.reason_code ?? ''].text
+            )}{' '}
+            {t(
+              `findings.retestPanel.help.${retest.reason_code}.fix`,
+              INCONCLUSIVE_HELP[retest.reason_code ?? ''].fix
+            )}
+          </p>
+        )}
       <RetestCheckProvenance retest={retest} check={check} />
       {manual && retest.notes && (
         <p className="text-xs text-muted-foreground whitespace-pre-line">

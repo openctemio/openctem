@@ -11,6 +11,7 @@
 import { useTranslation } from '@/context/i18n-provider'
 import { useState } from 'react'
 import { toast } from 'sonner'
+import { safeText } from '@/lib/api/error-message'
 import { AlertTriangle, FileUp, Loader2 } from 'lucide-react'
 
 import { Badge } from '@/components/ui/badge'
@@ -121,7 +122,10 @@ export function ImportResultsDialog({
           ),
         })
       } else if (e instanceof FindingImportError) {
-        setError({ message: e.message, file: e.file })
+        setError({
+          message: safeText(e.message, t('findings.importResults.failed', 'The import failed')),
+          file: e.file,
+        })
       } else {
         setError({ message: t('findings.importResults.failed', 'The import failed') })
       }

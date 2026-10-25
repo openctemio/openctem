@@ -15,6 +15,7 @@ import Link from '@/components/link'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { KeyRound, Loader2, LogIn } from 'lucide-react'
 import { toast } from 'sonner'
+import { safeText } from '@/lib/api/error-message'
 
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
@@ -267,7 +268,7 @@ export function LoginForm({
       toast.error(t('auth.login.captchaRequired'))
     } else {
       setSignInFailed(true)
-      toast.error(result.error || t('auth.login.failed', 'Sign-in failed'))
+      toast.error(safeText(result.error, t('auth.login.failed', 'Sign-in failed')))
     }
   }
 

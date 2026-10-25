@@ -21,6 +21,7 @@ import { zodResolver } from '@hookform/resolvers/zod'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { Loader2, UserPlus } from 'lucide-react'
 import { toast } from 'sonner'
+import { safeText } from '@/lib/api/error-message'
 
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
@@ -205,7 +206,7 @@ export function RegisterForm({
       } else if (result.code === 'CAPTCHA_FAILED') {
         toast.error(t('auth.captcha.failed', 'Complete the security check and try again.'))
       } else {
-        toast.error(result.error || t('auth.register.failed', 'Registration failed'))
+        toast.error(safeText(result.error, t('auth.register.failed', 'Registration failed')))
       }
     })
   }
