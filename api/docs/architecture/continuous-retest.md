@@ -186,17 +186,51 @@ ordering: until the scans redesign P1 lands).
 ## Regression reopen from scans
 
 Independently of retests, ingest reopens every re-detected finding that was
-closed as fixed — by a scan or by a person: `AutoReopenByFingerprintsBatch` locks the rows, reopens
-them to `confirmed` and returns what it cleared. The `auto_reopened` activity
-keeps `previous_status`, `previous_resolution`, `previous_closure_reason`, `previous_verification`,
+closed as fixed (a scan or a person closed it) on the **same record**, never a
+second row: `AutoReopenByFingerprintsBatch` locks the rows, reopens them and
+returns what it cleared. The `auto_reopened` activity keeps `previous_status`,
+`previous_resolution`, `previous_closure_reason`, `previous_verification`,
 `previous_resolved_by`, `previous_resolved_at`, `scanner` and `scan_id`, so the
-person who resolved it is never lost. Deliberate dispositions are never
-reopened.
+person who resolved it is never lost. Deliberate dispositions (false positive,
+accepted risk within its end, duplicate) and a close recorded as mitigated are
+never reopened by detection; an accepted risk whose end passed returns to
+`confirmed` through the expiry, not as a regression.
+
+What a re-detection of a closed finding is, in the order it is decided
+(`reopenClassSQL`, `vulnerability.ReopenClass`):
+
+| Class | When | Counts as a regression | Timeline wording |
+|---|---|---|---|
+| `verified_regression` | the close was verified (`verification` `retest` or `security_review`) | yes, announced as "Verified fix regressed" | "Seen again after a verified fix: the fix did not hold" |
+| `seen_again` | an automatic close (no person), unverified, younger than `SeenAgainWindow` (7 days): the finding flaps between found and not found | no: no `is_regression`, no `reopen_count`, no new SLA clock, no announcement | "Seen again shortly after an automatic close: not counted as a regression" (reason `seen_again`) |
+| `regression` | everything else: a person's close, or an automatic close that lasted the window | yes | "Seen again after it was closed as fixed" |
+
+- **Reopen target (D8).** A finding that was ever triaged (it has an assignee, or its
+  timeline shows a move to `confirmed`, `in_progress` or `fix_applied`) reopens as `confirmed`;
+  one nobody touched reopens as `new`. A retest that still matches reopens to `confirmed`.
+- **Counters and clock (D3).** A regression sets `is_regression`, adds one to `reopen_count`,
+  sets `last_reopened_at`, and starts a new SLA clock (`sla_started_at`); `first_detected_at`
+  is kept, so the age of the finding is unchanged. The trigger `mark_finding_regression` skips
+  a person's move (`openctem.person_move`, so Undo is not a regression) and a flap
+  (`openctem.seen_again`).
+- **Not a coverage proof, no close.** A partial scan, a run that did not complete cleanly, or the
+  full scan of another tool never auto-resolves a finding, so the next sighting is a plain
+  sighting.
+- **A duplicate seen again** is a sighting of the finding it was folded into (`duplicate_of`,
+  same asset): that finding is marked seen in the scan (it is not auto-resolved) and reopens if it
+  was closed; the duplicate itself stays a duplicate.
+- **Remediation tasks.** A finding of a `done` or `closed_unverified` task that reopens is moved
+  into a new task `Regression: <title>` at the next recompute
+  ([remediation-tasks.md](remediation-tasks.md)); the closed task keeps its state and history.
+- **Identity.** A finding keeps its record across a scan only while its fingerprint matches
+  ([deduplication.md](deduplication.md)): a SAST result that carries its code survives a moved line,
+  a result with only a line, or a renamed rule or template id, is a new finding and the old one
+  closes by the usual rules.
 
 ## Phase 2: what follows a status change (decisions D2–D4)
 
 - **Fresh SLA on a regression (D2).** A finding closed as fixed that a scan or
-  a retest sees again gets a new SLA deadline computed by the tenant's policy
+  a retest sees again (a regression, not a flap) gets a new SLA deadline computed by the tenant's policy
   (priority class, then severity) from the reopen, `sla_status = on_track`, and
   an `sla_restarted` activity with the reason, the trigger (`scan`/`retest`) and
   the previous deadline (`sla.RegressionRestarter`,
@@ -207,7 +241,10 @@ reopened.
   Jira issue — only when the tenant enabled outbound sync on its Jira
   integration (`jira.SyncService.CommentOnFinding`). Platform-written text only,
   free text capped at 300 characters, at most 50 announcements per scan
-  (`retest.ChangeAnnouncer`, `retest.ScanRegressions`).
+  (`retest.ChangeAnnouncer`, `retest.ScanRegressions`). A regression is also told
+  in the app to the finding's assignee and to its watchers who can still read it
+  (`VulnerabilityService.NotifyRegression`, a `finding_status_change` notice;
+  see [participants-and-watchers.md](participants-and-watchers.md)).
 - **Honest `/validate` (D3).** See [validation-engine.md](validation-engine.md):
   a safe-check never moves a finding; a nuclei miss without proof the target
   answered is unknown.

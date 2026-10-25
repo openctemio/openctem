@@ -36,7 +36,8 @@ func openReopenDB(t *testing.T) *sql.DB {
 }
 
 // seedClosedFinding inserts a finding in the given status with the given
-// resolution, and returns its id and fingerprint.
+// resolution, closed ten days ago (past the flap window), and returns its id
+// and fingerprint.
 func seedClosedFinding(ctx context.Context, t *testing.T, db *sql.DB, tenantID, assetID shared.ID, status, resolution string) (shared.ID, string) {
 	t.Helper()
 	id := shared.NewID()
@@ -51,7 +52,7 @@ func seedClosedFinding(ctx context.Context, t *testing.T, db *sql.DB, tenantID, 
 	_, err := db.ExecContext(ctx,
 		`INSERT INTO findings (id, tenant_id, asset_id, title, source, tool_name, message,
 		                       fingerprint, severity, status, resolution, resolved_at)
-		 VALUES ($1,$2,$3,$4,'sast','probe-tool',$5,$6,'high',$7,$8,NOW())`,
+		 VALUES ($1,$2,$3,$4,'sast','probe-tool',$5,$6,'high',$7,$8,NOW() - INTERVAL '10 days')`,
 		id.String(), tenantID.String(), assetID.String(), label, label, fp, status, res)
 	if err != nil {
 		t.Fatalf("seed finding (status=%s resolution=%s): %v", status, resolution, err)
@@ -105,18 +106,18 @@ func TestAutoReopenBatch_HumanResolvedReopens_DeliberateDispositionsDoNot(t *tes
 		}
 	}
 
-	// Confirm persisted status: reopened → confirmed; dispositions unchanged.
-	if got := statusOf(ctx, t, db, humanID); got != "confirmed" {
-		t.Errorf("human-resolved finding status = %s, want confirmed", got)
+	// Confirm persisted status: reopened → new (never triaged); dispositions unchanged.
+	if got := statusOf(ctx, t, db, humanID); got != "new" {
+		t.Errorf("human-resolved finding status = %s, want new (never triaged)", got)
 	}
-	if got := statusOf(ctx, t, db, autoID); got != "confirmed" {
-		t.Errorf("auto_fixed finding status = %s, want confirmed", got)
+	if got := statusOf(ctx, t, db, autoID); got != "new" {
+		t.Errorf("auto_fixed finding status = %s, want new (never triaged)", got)
 	}
-	if got := statusOf(ctx, t, db, verifiedID); got != "confirmed" {
-		t.Errorf("verified finding status = %s, want confirmed", got)
+	if got := statusOf(ctx, t, db, verifiedID); got != "new" {
+		t.Errorf("verified finding status = %s, want new (never triaged)", got)
 	}
-	if got := statusOf(ctx, t, db, nullResID); got != "confirmed" {
-		t.Errorf("null-resolution finding status = %s, want confirmed", got)
+	if got := statusOf(ctx, t, db, nullResID); got != "new" {
+		t.Errorf("null-resolution finding status = %s, want new (never triaged)", got)
 	}
 	if got := statusOf(ctx, t, db, fpDispoID); got != "false_positive" {
 		t.Errorf("false_positive finding status = %s, want false_positive (unchanged)", got)
