@@ -114,6 +114,7 @@ each of 1 000 tenants 12 ms, one asset's explanation 0.05 ms.
 | P0-7 | Managed scans: coverage and enrichment scans are identified by `(managed_by, managed_key)`, never by name ([managed scans](../architecture/managed-scans.md)) | PR |
 | P0-8 | Coverage and enrichment runs are attributed to a named system policy with explicit authority, and queue below a person's work ([system actors](../architecture/system-actors.md)) | PR |
 | P0-9 | Covered pairs are planned again after their cadence and blocked pairs after their recheck time; jittered due times; batches take pairs due soon ([asset coverage](../architecture/asset-coverage.md)) | PR |
+| P0-10 | Readiness before runs: a capability that cannot run for the organization (no scope, no sensor, tool missing or not allowed, sensor offline or outdated, policy) gets no run; its pairs pause with the reason and resume by themselves; coverage never records blocked runs ([asset coverage](../architecture/asset-coverage.md)) | PR |
 | P1 | Tenant and plan policy, priority, budgets, windows, outcome classes for throttling, coverage KPI | designed |
 | P2 | Information-gathering sources, vantage rows, authenticated web coverage, targeted re-checks, ledger history | designed |
 | P3 | Planner emits work-pool items; workflows plan from the ledger | designed |

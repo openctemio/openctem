@@ -261,6 +261,17 @@ type Planner interface {
 	// active assets. When one of them is due now it also takes pairs due
 	// within lookahead; when none is due now it returns nothing.
 	DueBatch(ctx context.Context, tenantID shared.ID, capability string, limit int, lookahead time.Duration) ([]DueTarget, error)
+	// HasScopeEntries reports whether the tenant has an active scope entry.
+	HasScopeEntries(ctx context.Context, tenantID shared.ID) (bool, error)
+	// PausedForReadiness returns, per capability, the readiness reason its
+	// paused pairs carry.
+	PausedForReadiness(ctx context.Context, tenantID shared.ID) (map[string]string, error)
+	// PauseForReadiness pauses the capability's pairs whose time has come
+	// with a readiness reason; they may resume after retryAfter.
+	PauseForReadiness(ctx context.Context, tenantID shared.ID, capability, reason string, retryAfter time.Duration) (int, error)
+	// ResumeFromReadiness makes pairs paused for a readiness reason due
+	// again once their retry time has passed.
+	ResumeFromReadiness(ctx context.Context, tenantID shared.ID, capability string) (int, error)
 	// MarkQueued records that the pairs were handed to a run.
 	MarkQueued(ctx context.Context, tenantID shared.ID, capability string, assetIDs []shared.ID, runID shared.ID, tool string) error
 	// MarkBlocked records that the gate refused the pairs, with its code;
