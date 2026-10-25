@@ -281,7 +281,7 @@ func (s *Service) previewPlan(ctx context.Context, sc *scan.Scan, zones []*scanz
 		return &zonePlan{Uncovered: routing.Uncovered, Routing: routing, Warnings: uncoveredWarnings(routing.Uncovered)}, nil
 	}
 	if len(targets) > 0 {
-		if err := recordZonePlan(sc, plan, map[string]any{}); err != nil && out.Error == nil {
+		if err := recordZonePlan(plan, map[string]any{}); err != nil && out.Error == nil {
 			out.Error = previewError(err)
 		}
 	}

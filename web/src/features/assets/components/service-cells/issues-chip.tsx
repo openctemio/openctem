@@ -2,6 +2,7 @@ import Link from '@/components/link'
 import { useTranslation } from '@/context/i18n-provider'
 import { ShieldAlert } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { TONE_CLASS } from '@/components/ui/tone-chip'
 import { FINDINGS_OPEN_STATUSES } from '@/features/findings/lib/list-defaults'
 import { factChipBase } from './fact-chip'
 
@@ -48,7 +49,9 @@ export function IssuesChip({ assetId, count, className }: IssuesChipProps) {
       )}
       className={cn(
         factChipBase,
-        'border-transparent bg-warning/15 font-medium text-warning tabular-nums hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+        // The caution tone (research/266): AA on its tint; the /15 warning tint was not.
+        TONE_CLASS.caution,
+        'font-medium tabular-nums hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
         className
       )}
     >

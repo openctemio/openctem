@@ -26,8 +26,10 @@ import {
   Pencil,
   Trash2,
   User,
+  UserX,
   Users,
 } from 'lucide-react'
+import { formatLocalized, formatRelative } from '@/lib/format-date'
 import { toast } from 'sonner'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Button } from '@/components/ui/button'
@@ -70,7 +72,7 @@ import { SORT_FIELDS, sortToSorting, sortingToSort } from '../../lib/inventory-u
 import {
   IssuesChip,
   LabelChips,
-  SurfaceFacts,
+  SurfaceFactsLine,
   cellsForType,
   hasSurfaceFacts,
   surfaceCellsCovered,
@@ -175,7 +177,7 @@ export function InventoryTable({
     if (!inList && deleteRequestedId === selectedSnapshot.id) return null
     return inList ?? selectedSnapshot
   }, [selectedSnapshot, assets, deleteRequestedId])
-  const { t } = useTranslation()
+  const { t, locale } = useTranslation()
   const { can } = usePermissions()
   const canWriteAssets = can(Permission.AssetsWrite)
   const canDeleteAssets = can(Permission.AssetsDelete)
@@ -258,6 +260,16 @@ export function InventoryTable({
         cell: ({ row }) => (
           <AssetNameCell
             asset={row.original}
+            // Every-type list: the type under the name (research/266), so the
+            // Type column is off by default and the name keeps its width.
+            subtitle={
+              typeView
+                ? undefined
+                : (() => {
+                    const key = typeKeyOf(registry, row.original.type, row.original.subType)
+                    return t(`assets.typeLabel.${key.type}`, key.label)
+                  })()
+            }
             href={assetDetailHref(row.original.id)}
             onOpen={(e) => {
               // Plain click opens the drawer; ctrl/cmd/middle-click follow the link.
@@ -276,6 +288,21 @@ export function InventoryTable({
         ),
         cell: ({ row }) => <AttributeCell asset={row.original} attribute={attribute} />,
       })),
+      {
+        id: 'risk',
+        accessorKey: 'riskScore',
+        enableSorting: sortable('risk'),
+        header: ({ column }) => (
+          <DataTableColumnHeader column={column} title={t('components.col.risk', 'Risk')} />
+        ),
+        cell: ({ row }) => (
+          <RiskScoreBadge
+            score={row.original.riskScore}
+            state={riskScoreState(row.original)}
+            size="sm"
+          />
+        ),
+      },
       {
         id: 'type',
         accessorKey: 'type',
@@ -324,9 +351,13 @@ export function InventoryTable({
         header: ({ column }) => (
           <DataTableColumnHeader column={column} title={t('assets.facts.title', 'Service facts')} />
         ),
+        // One line (research/266): status, port, what runs there, then "+N"
+        // opening every fact, so rows keep one height.
         cell: ({ row }) =>
           cellsForType(row.original.type, row.original.subType) ? (
-            <SurfaceFacts asset={row.original} className="max-w-[380px]" />
+            <div className="w-[19.5rem] max-w-[19.5rem]">
+              <SurfaceFactsLine asset={row.original} />
+            </div>
           ) : (
             <span className="text-muted-foreground">—</span>
           ),
@@ -357,6 +388,23 @@ export function InventoryTable({
         ),
       },
       {
+        id: 'findings',
+        accessorKey: 'findingCount',
+        enableSorting: sortable('findings'),
+        header: ({ column }) => (
+          <DataTableColumnHeader
+            column={column}
+            title={t('assets.sheet.tab.findings', 'Findings')}
+          />
+        ),
+        cell: ({ row }) =>
+          row.original.findingCount > 0 ? (
+            <IssuesChip assetId={row.original.id} count={row.original.findingCount} />
+          ) : (
+            <span className="text-muted-foreground tabular-nums">0</span>
+          ),
+      },
+      {
         id: 'owner',
         enableSorting: false,
         header: ({ column }) => (
@@ -376,44 +424,14 @@ export function InventoryTable({
           if (row.original.ownerRef) {
             return <span className="truncate text-sm">{row.original.ownerRef}</span>
           }
+          // A gap, not a value: muted, dashed icon (Needs attention lists them).
           return (
-            <span className="text-sm text-muted-foreground">
-              {t('assets.views.unowned', 'Unowned')}
+            <span className="inline-flex items-center gap-1.5 whitespace-nowrap text-sm text-muted-foreground">
+              <UserX className="h-3.5 w-3.5 shrink-0" aria-hidden />
+              {t('assets.inv.noOwner', 'No owner')}
             </span>
           )
         },
-      },
-      {
-        id: 'risk',
-        accessorKey: 'riskScore',
-        enableSorting: sortable('risk'),
-        header: ({ column }) => (
-          <DataTableColumnHeader column={column} title={t('components.col.risk', 'Risk')} />
-        ),
-        cell: ({ row }) => (
-          <RiskScoreBadge
-            score={row.original.riskScore}
-            state={riskScoreState(row.original)}
-            size="sm"
-          />
-        ),
-      },
-      {
-        id: 'findings',
-        accessorKey: 'findingCount',
-        enableSorting: sortable('findings'),
-        header: ({ column }) => (
-          <DataTableColumnHeader
-            column={column}
-            title={t('assets.sheet.tab.findings', 'Findings')}
-          />
-        ),
-        cell: ({ row }) =>
-          row.original.findingCount > 0 ? (
-            <IssuesChip assetId={row.original.id} count={row.original.findingCount} />
-          ) : (
-            <span className="text-muted-foreground tabular-nums">0</span>
-          ),
       },
       {
         id: 'last_seen',
@@ -425,12 +443,25 @@ export function InventoryTable({
             title={t('components.col.lastSeen', 'Last seen')}
           />
         ),
+        // The time it was last seen (the column's name); the lifecycle state
+        // only when it is not active, since nearly every row is.
         cell: ({ row }) => (
-          <AssetStatusBadge
-            status={row.original.status}
-            daysSinceLastSeen={daysSinceISO(row.original.lastSeen)}
-            snoozedUntil={row.original.lifecyclePausedUntil}
-          />
+          <span className="inline-flex items-center gap-2 whitespace-nowrap">
+            <time
+              dateTime={row.original.lastSeen || undefined}
+              title={formatLocalized(row.original.lastSeen, locale, { time: true })}
+              className="text-sm tabular-nums text-muted-foreground"
+            >
+              {formatRelative(row.original.lastSeen, '—', locale)}
+            </time>
+            {row.original.status !== 'active' && (
+              <AssetStatusBadge
+                status={row.original.status}
+                daysSinceLastSeen={daysSinceISO(row.original.lastSeen)}
+                snoozedUntil={row.original.lifecyclePausedUntil}
+              />
+            )}
+          </span>
         ),
       },
       {
@@ -550,6 +581,7 @@ export function InventoryTable({
     onEditAsset,
     onDeleteAsset,
     t,
+    locale,
     filterTags,
     onToggleTagFilter,
   ])
@@ -594,7 +626,8 @@ export function InventoryTable({
         // Single-line rows (research/242 D9) until the viewer picks a density.
         defaultDensity="compact"
         // Labels are a working column, not a reading one: on under Columns.
-        initialColumnVisibility={{ tags: false }}
+        // The type is the name's second line, so its own column is off too.
+        initialColumnVisibility={{ tags: false, type: false }}
         mobileRow={(a) => {
           const typeKey = typeKeyOf(registry, a.type, a.subType)
           const typeLabel = t(`assets.typeLabel.${typeKey.type}`, typeKey.label)
@@ -617,9 +650,9 @@ export function InventoryTable({
                 />
                 <div className="min-w-0 flex-1">
                   <p className="line-clamp-2 break-all text-sm font-medium">{a.name}</p>
-                  <p className="mt-0.5 truncate text-xs text-muted-foreground">
-                    {typeLabel}
-                    {context && ` · ${context}`}
+                  <p className="mt-0.5 flex min-w-0 gap-2 text-xs text-muted-foreground">
+                    <span className="shrink-0">{typeLabel}</span>
+                    {context && <span className="min-w-0 truncate">{context}</span>}
                   </p>
                   <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
                     <CriticalityBadge criticality={a.criticality} size="sm" showTooltip={false} />
@@ -641,18 +674,26 @@ export function InventoryTable({
                 <ChevronRight className="mt-1 h-4 w-4 shrink-0 text-muted-foreground" />
               </button>
               {hasFacts && (
-                <div className="relative z-10 mt-1.5 flex flex-wrap items-center gap-1 ps-7">
-                  <IssuesChip assetId={a.id} count={a.findingCount} />
-                  <SurfaceFacts asset={a} empty={null} />
+                <div className="relative z-10 mt-1.5 flex min-w-0 flex-col items-start gap-1 ps-7">
+                  {a.findingCount > 0 && <IssuesChip assetId={a.id} count={a.findingCount} />}
+                  {hasSurfaceFacts(a) && (
+                    <div className="w-full min-w-0">
+                      <SurfaceFactsLine asset={a} max={2} />
+                    </div>
+                  )}
                 </div>
               )}
             </div>
           )
         }}
-        emptyMessage={emptyMessage ?? 'No assets match these filters'}
+        emptyMessage={
+          emptyMessage ?? t('assets.inv.emptyFiltered', 'No assets match these filters')
+        }
         emptyDescription={
           emptyDescription ??
-          (hasFilters ? 'Try removing a filter or clearing them all.' : 'No assets yet.')
+          (hasFilters
+            ? t('assets.inv.emptyFilteredHint', 'Try removing a filter or clearing them all.')
+            : t('assets.inv.emptyNone', 'No assets yet.'))
         }
       />
 

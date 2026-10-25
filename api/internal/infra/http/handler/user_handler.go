@@ -68,6 +68,10 @@ type PreferencesDTO struct {
 	Theme         string `json:"theme,omitempty"`
 	Language      string `json:"language,omitempty"`
 	Notifications bool   `json:"notifications"`
+	// FindingsInformational is whether the findings work views show
+	// informational findings: default (the organization's default),
+	// include or exclude.
+	FindingsInformational string `json:"findings_informational" enums:"default,include,exclude"`
 }
 
 // UpdateProfileRequest represents the request to update a user profile.
@@ -82,6 +86,8 @@ type UpdatePreferencesRequest struct {
 	Theme         *string `json:"theme" validate:"omitempty,oneof=light dark system"`
 	Language      *string `json:"language" validate:"omitempty,oneof=en vi"`
 	Notifications *bool   `json:"notifications"`
+	// FindingsInformational: default, include or exclude; absent = unchanged.
+	FindingsInformational *string `json:"findings_informational" validate:"omitempty,oneof=default include exclude"`
 }
 
 // toUserResponse converts a domain user to API response.
@@ -247,9 +253,10 @@ func (h *UserHandler) UpdatePreferences(w http.ResponseWriter, r *http.Request) 
 	// Build preferences from current + updates
 	currentPrefs := localUser.Preferences()
 	newPrefs := user.Preferences{
-		Theme:         currentPrefs.Theme,
-		Language:      currentPrefs.Language,
-		Notifications: currentPrefs.Notifications,
+		Theme:                        currentPrefs.Theme,
+		Language:                     currentPrefs.Language,
+		Notifications:                currentPrefs.Notifications,
+		FindingsIncludeInformational: currentPrefs.FindingsIncludeInformational,
 	}
 
 	if req.Theme != nil {
@@ -260,6 +267,9 @@ func (h *UserHandler) UpdatePreferences(w http.ResponseWriter, r *http.Request) 
 	}
 	if req.Notifications != nil {
 		newPrefs.Notifications = *req.Notifications
+	}
+	if req.FindingsInformational != nil {
+		newPrefs = newPrefs.WithFindingsInformational(*req.FindingsInformational)
 	}
 
 	updatedUser, err := h.service.UpdatePreferences(r.Context(), localUser.ID().String(), newPrefs)
@@ -281,9 +291,10 @@ func (h *UserHandler) UpdatePreferences(w http.ResponseWriter, r *http.Request) 
 // GET and PUT /users/me/preferences.
 func toPreferencesDTO(p user.Preferences) PreferencesDTO {
 	return PreferencesDTO{
-		Theme:         p.Theme,
-		Language:      p.Language,
-		Notifications: p.Notifications,
+		Theme:                 p.Theme,
+		Language:              p.Language,
+		Notifications:         p.Notifications,
+		FindingsInformational: p.FindingsInformational(),
 	}
 }
 

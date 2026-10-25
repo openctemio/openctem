@@ -60,12 +60,11 @@ export function HttpStatusChip({ status, chain = [], fallback = null }: HttpStat
   if (status === null) return <>{fallback}</>
   const reason = httpReason(status)
   const codes = [...chain, status].join(', ')
-  const title =
-    chain.length > 0
-      ? `Redirect chain: ${[...chain, status].join(' → ')}`
-      : `HTTP ${status}${reason ? ` ${reason}` : ''}`
+  // Only a redirect chain needs a tooltip: the chip already reads "200 OK",
+  // and a tooltip on every status chip covered the chips beside it.
+  const title = chain.length > 0 ? `Redirect chain: ${[...chain, status].join(' → ')}` : undefined
   return (
-    <FactChip tone={httpStatusTone(status)} title={title} aria-label={title}>
+    <FactChip tone={httpStatusTone(status)} title={title} data-status={status}>
       <ChipMono>{codes}</ChipMono>
       {reason && <span>{reason}</span>}
     </FactChip>

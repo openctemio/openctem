@@ -121,7 +121,7 @@ func (s *Service) dropStaleRunNames(ctx context.Context, sc *scanpkg.Scan, r *re
 		len(stale), int(freshdom.ResolveTTL.Hours()/24), stale[0]))
 	if len(kept) == 0 {
 		return shared.NewDomainError(CodeNoResolvingTargets,
-			fmt.Sprintf("No target of scan %q has resolved in the last %d days; their DNS is being checked again. Run it later, or scan addresses.", sc.Name, int(freshdom.ResolveTTL.Hours()/24)),
+			fmt.Sprintf("No target of this scan has resolved in DNS in the last %d days; their DNS is being checked again. Run it later, or scan addresses.", int(freshdom.ResolveTTL.Hours()/24)),
 			shared.ErrValidation)
 	}
 	r.Targets = kept

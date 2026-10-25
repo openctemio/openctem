@@ -1579,6 +1579,7 @@
   "scans.refusal.ALL_TARGETS_UNCONFIRMED": "No target is authorized for active scanning",
   "scans.refusal.MAX_CONCURRENT_RUNS": "Too many runs at once",
   "scans.refusal.NO_COMPATIBLE_TARGETS": "No target this scanner can scan",
+  "scans.refusal.NO_RESOLVING_TARGETS": "No target name resolves in DNS",
   "scans.refusal.NO_SENSOR_AVAILABLE": "No sensor online",
   "scans.refusal.NO_SENSOR_FOR_TOOL": "No sensor can run this scanner",
   "scans.refusal.NO_TARGETS": "No targets",

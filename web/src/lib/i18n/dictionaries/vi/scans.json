@@ -1579,6 +1579,7 @@
   "scans.refusal.ALL_TARGETS_UNCONFIRMED": "Không có đích nào được phép quét chủ động",
   "scans.refusal.MAX_CONCURRENT_RUNS": "Có quá nhiều lượt chạy cùng lúc",
   "scans.refusal.NO_COMPATIBLE_TARGETS": "Không có đích nào mà trình quét này quét được",
+  "scans.refusal.NO_RESOLVING_TARGETS": "Không tên mục tiêu nào phân giải được trong DNS",
   "scans.refusal.NO_SENSOR_AVAILABLE": "Không có sensor trực tuyến",
   "scans.refusal.NO_SENSOR_FOR_TOOL": "Không sensor nào chạy được công cụ quét này",
   "scans.refusal.NO_TARGETS": "Không có đích quét",
