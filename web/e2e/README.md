@@ -63,6 +63,7 @@ tests that cover the console's most user-visible flows.
 | `36-findings-triage-mode.spec.ts`           | Triage mode: keys-only session over ten findings, request budget, a11y, Exit            |
 | `36-list-toolbar.spec.ts`                   | One list toolbar: search first, joined filter trigger, `/` and Escape, phone width, axe |
 | `37-pentest-template-editor.spec.ts`        | Finding-library template: create, then edit at 375px                                    |
+| `39-assets-list-states.spec.ts`             | Asset search keeps typed keys, toolbar on error, last page, empty default list          |
 
 Each spec is designed to:
 

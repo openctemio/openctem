@@ -112,6 +112,10 @@ interface InventoryTableProps {
   onSortChange: (sort: string | undefined) => void
   onSelectionChange: (assets: Asset[]) => void
   resetSelectionKey: number
+  /** Replaces the "nothing here" block (which kind of empty, the next action). */
+  emptyState?: ReactNode
+  /** Shown in place of the rows when the read failed; the toolbar stays. */
+  errorState?: ReactNode
   /** The list's search box (the toolbar draws it). */
   search?: DataTableSearch
   /** The phone filter-sheet trigger, joined to the search. */
@@ -148,6 +152,8 @@ export function InventoryTable({
   onSortChange,
   onSelectionChange,
   resetSelectionKey,
+  emptyState,
+  errorState,
   search,
   filter,
   toolbarStart,
@@ -607,6 +613,8 @@ export function InventoryTable({
         showSearch={false}
         search={search}
         filter={filter}
+        emptyState={emptyState}
+        errorState={errorState}
         toolbarStart={toolbarStart}
         toolbarEnd={toolbarEnd}
         toolbarBelow={toolbarBelow}
