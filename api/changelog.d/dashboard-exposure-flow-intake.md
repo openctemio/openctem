@@ -1,0 +1,5 @@
+### Added: exposure flow and intake dashboard metrics
+
+- `exposure.flow`: one figure set for a window: actionable findings by priority class, open findings by severity, past SLA, in progress, fixed, accepted and false positive in the window, the five CTEM stages and, for an organization read, the intake. Every figure carries the list it counts and equals it for the same viewer.
+- `ingest.intake`: what each source (source group and tool) sent in the window from its receipts, its latest receipt, its usual interval and health (failed, stale, ok), the noise split (new or reopened, merged, suppressed, not stored, summing to received) and the false positives of the window. Receipts are organization figures: a personal read with a data scope gets no intake (`organization_only`), never organization volumes.
+- `GET /api/v1/findings/imports` takes `origin`, `tool` and `since`, and returns the `totals` of every receipt the filter keeps, so a dashboard source figure equals the receipt list it opens.
