@@ -13,6 +13,12 @@ files or more, whose API file list is cut off, through `git diff` of the two
 fetched commits, which are never checked out), and the workflow runs this
 script and the path list from the base commit. It fails closed: any API or git
 error or an unknown merge-queue ref fails the check.
+An ack is trusted only through records GitHub writes itself (the `labeled`
+issue event and the workflow run it started); the gate comment is output only,
+because any workflow on any branch of the repository writes as the same bot.
+The workflow file itself comes from the pull request on `pull_request` events,
+so the required check must be pinned to the default branch's workflow file
+(a "require workflows" ruleset); see the guide.
 Labels and the review comment are written only when the token can write (same
 repository pull requests); fork pull requests get the verdict in the job
 summary and the check result.
@@ -27,6 +33,7 @@ Only the Python standard library is used.
 from __future__ import annotations
 
 import base64
+import datetime
 import hashlib
 import json
 import os
@@ -35,6 +42,7 @@ import re
 import subprocess
 import sys
 import urllib.error
+import urllib.parse
 import urllib.request
 from dataclasses import dataclass, field
 
@@ -42,13 +50,17 @@ GUIDE = "https://github.com/openctemio/openctem/blob/develop/api/docs/developmen
 SENSITIVE_LABEL = "security-sensitive"
 ACK_LABEL = "security-ack"
 COMMENT_MARKER = "<!-- security-gate -->"
-# The gate comment records which security-sensitive diff the ack covers (see
-# sensitive_digest). Only the comment the workflow itself wrote counts.
-DIGEST_MARKER = re.compile(r"<!-- security-gate:ack-digest=([0-9a-f]{64}) -->")
-# ...and the head commit and base branch the ack was last confirmed on, so a
-# later head that only merged the base branch in can be checked with git (see
-# covered_by_merges).
-ACK_HEAD_MARKER = re.compile(r"<!-- security-gate:ack-head=([0-9a-f]{40}) base=(\S+) -->")
+# Which commit an ack was given on comes only from data GitHub itself writes:
+# the `labeled` issue event (actor, time) and the gate workflow run that event
+# started (head commit). Comments are never trusted: any workflow on any branch
+# of the repository runs as github-actions[bot] and could write one.
+GATE_WORKFLOW = "security-gate.yml"  # .github/workflows/<this>; override with GATE_WORKFLOW_FILE
+ACK_RUN_WINDOW = 600  # seconds after the label event within which its gate run must start
+# A pull request that changes any of these gets no carried-over ack: its own
+# workflow runs (pull_request events run the PR's workflow files) could act on
+# the pull request, so the ack covers only the exact commit it was given on.
+ACK_PINNED_PATHS = (".github/workflows/**", ".github/actions/**", ".github/security-paths.yml",
+                    ".github/scripts/security_gate.py")
 # A migration's version prefix: the merge queue renumbers a pull request's
 # migrations above the base branch (same name, same content, new number), which
 # is not a change an ack has to see again.
@@ -373,7 +385,7 @@ class GitHub:
             data, link = self.request("GET", url, ok404=ok404)
             if data is None:
                 return out
-            out += data if isinstance(data, list) else data.get("check_runs", [])
+            out += data if isinstance(data, list) else data.get("check_runs", data.get("workflow_runs", []))
             m = re.search(r'<([^>]+)>;\s*rel="next"', link)
             url = m.group(1) if m else None
         return out
@@ -449,16 +461,30 @@ def _blobs(gitdir: str, treeish: str, paths: list[str], env: dict[str, str] | No
     return blobs
 
 
-def ack_head_matches(gitdir: str, base_sha: str, acked: str, config: dict[str, list[str]], recorded: str) -> bool:
-    """Does the recorded acknowledged head carry the recorded digest? Its diff
-    against the base (from the same merge base as when it was acknowledged)
-    must fingerprint to the digest the ack was recorded with, so a head marker
-    that does not describe the acknowledged diff is not used."""
+def git_digest(gitdir: str, base_sha: str, head_sha: str, config: dict[str, list[str]],
+               env: dict[str, str] | None = None) -> tuple[str, set[str]]:
+    """sensitive_digest of base...head computed from git (never from a
+    recorded value), and the sensitive file names of that diff."""
+    files = git_changed_files(gitdir, base_sha, head_sha, config, env)
+    findings = review(files)[0]
+    return sensitive_digest(files, config, findings), sensitive_names(files, config, findings)
+
+
+def ack_still_covers(gitdir: str, base_sha: str, acked: str, head_sha: str, config: dict[str, list[str]],
+                     env: dict[str, str] | None = None) -> bool:
+    """Does an ack given on `acked` still cover `head`? Both digests are
+    recomputed from git against the same base: equal digests (the
+    security-sensitive lines did not change) keep it, and so does a head that
+    only merged the base branch into `acked` (covered_by_merges). Every git
+    error counts as not covered."""
     try:
-        files = git_changed_files(gitdir, base_sha, acked, config)
-    except (RuntimeError, OSError):
+        acked_digest, _ = git_digest(gitdir, base_sha, acked, config, env)
+        head_digest, names = git_digest(gitdir, base_sha, head_sha, config, env)
+    except (RuntimeError, ValueError, IndexError, OSError):
         return False
-    return sensitive_digest(files, config, review(files)[0]) == recorded
+    if acked_digest == head_digest:
+        return True
+    return covered_by_merges(gitdir, acked, base_sha, head_sha, names, env)
 
 
 def covered_by_merges(gitdir: str, acked: str, base_sha: str, head_sha: str, names: set[str],
@@ -504,7 +530,8 @@ def covered_by_merges(gitdir: str, acked: str, base_sha: str, head_sha: str, nam
         return False
 
 
-def git_changed_files(gitdir: str, base_sha: str, head_sha: str, config: dict[str, list[str]]) -> list[ChangedFile]:
+def git_changed_files(gitdir: str, base_sha: str, head_sha: str, config: dict[str, list[str]],
+                      env: dict[str, str] | None = None) -> list[ChangedFile]:
     """The changed-file list of base...head from git, shaped like the API's:
     the same file set GitHub shows (the diff against the merge base, renames
     as a delete plus an add), with a patch (hunks only, like the API) for every
@@ -512,8 +539,8 @@ def git_changed_files(gitdir: str, base_sha: str, head_sha: str, config: dict[st
     nothing reads it."""
     rng = f"{base_sha}...{head_sha}"
     common = ("diff", "--no-renames", "--no-ext-diff", "--no-textconv", "-z")
-    raw = _git_out(gitdir, *common, "--raw", "--no-abbrev", rng).decode("utf-8", "surrogateescape").split("\0")
-    stat = _git_out(gitdir, *common, "--numstat", rng).decode("utf-8", "surrogateescape").split("\0")
+    raw = _git_out(gitdir, *common, "--raw", "--no-abbrev", rng, env=env).decode("utf-8", "surrogateescape").split("\0")
+    stat = _git_out(gitdir, *common, "--numstat", rng, env=env).decode("utf-8", "surrogateescape").split("\0")
     entries = []  # (status, blob sha, path)
     for meta, path in zip(raw[0::2], raw[1::2]):
         fields = meta.lstrip(":").split()
@@ -532,7 +559,8 @@ def git_changed_files(gitdir: str, base_sha: str, head_sha: str, config: dict[st
         files.append(probe)
         wanted.append(added != "-" and (any(r.path.search(path) for r in RULES) or bool(classify([probe], config))))
     # One streamed full diff; sections come in the same order as the raw list.
-    proc = _git(gitdir, "diff", "--no-renames", "--no-ext-diff", "--no-textconv", "-U3", rng, stderr=subprocess.DEVNULL)
+    proc = _git(gitdir, "diff", "--no-renames", "--no-ext-diff", "--no-textconv", "-U3", rng, env=env,
+                stderr=subprocess.DEVNULL)
     section = -1
     in_hunk = False
     patches: dict[int, list[str]] = {}
@@ -565,18 +593,109 @@ def git_changed_files(gitdir: str, base_sha: str, head_sha: str, config: dict[st
     return files
 
 
-def ack_state(gh: GitHub, number: int, labels: set[str], ackers: list[str]) -> tuple[bool, str]:
-    if ACK_LABEL not in labels:
-        return False, f"no `{ACK_LABEL}` label"
-    events = gh.paginate(f"issues/{number}/events")
+def last_ack_event(gh: GitHub, number: int) -> dict | None:
+    """The newest `labeled` issue event for `security-ack` (GitHub writes
+    these; the actor is whoever added the label), as a copy with
+    `retargeted_after` set when the pull request's base branch changed later."""
     last = None
-    for e in events:
+    for e in gh.paginate(f"issues/{number}/events"):
         if e.get("event") == "labeled" and (e.get("label") or {}).get("name") == ACK_LABEL:
-            last = e
+            last = dict(e, retargeted_after=False)
+        elif e.get("event") == "base_ref_changed" and last is not None:
+            last["retargeted_after"] = True
+    return last
+
+
+def ack_state(gh: GitHub, number: int, labels: set[str], ackers: list[str]) -> tuple[bool, str, dict | None]:
+    if ACK_LABEL not in labels:
+        return False, f"no `{ACK_LABEL}` label", None
+    last = last_ack_event(gh, number)
     actor = ((last or {}).get("actor") or {}).get("login", "")
-    if actor.lower() in {a.lower() for a in ackers}:
-        return True, f"`{ACK_LABEL}` added by {actor}"
-    return False, f"`{ACK_LABEL}` was added by {actor or 'an unknown user'}, who is not listed under `ackers`"
+    if actor and actor.lower() in {a.lower() for a in ackers}:
+        return True, f"`{ACK_LABEL}` added by {actor}", last
+    return False, f"`{ACK_LABEL}` was added by {actor or 'an unknown user'}, who is not listed under `ackers`", None
+
+
+def _ts(value: str) -> datetime.datetime:
+    return datetime.datetime.fromisoformat(value.replace("Z", "+00:00"))
+
+
+def acked_head(gh: GitHub, pr: dict, ack_event: dict) -> str | None:
+    """The head commit the acker labelled: the head of the gate workflow run
+    their `labeled` event started. Runs are created by GitHub with the event's
+    actor and head, so nothing a workflow token writes can move this. Picks
+    the earliest run of the gate workflow for this pull request's branch,
+    started by the same user within ACK_RUN_WINDOW seconds of the label. None
+    when no such run exists (the ack then covers nothing carried over)."""
+    actor = ((ack_event.get("actor") or {}).get("login") or "").lower()
+    at = ack_event.get("created_at")
+    if not actor or not at:
+        return None
+    t = _ts(at)
+    lo = t.strftime("%Y-%m-%dT%H:%M:%SZ")
+    hi = (t + datetime.timedelta(seconds=ACK_RUN_WINDOW)).strftime("%Y-%m-%dT%H:%M:%SZ")
+    workflow = os.environ.get("GATE_WORKFLOW_FILE", GATE_WORKFLOW)
+    branch = urllib.parse.quote(pr["head"]["ref"], safe="")
+    runs = gh.paginate(f"actions/workflows/{workflow}/runs?event=pull_request&branch={branch}&created={lo}..{hi}")
+    head_repo = (pr["head"].get("repo") or {}).get("full_name")
+    best = None
+    for run in runs:
+        if (run.get("event") != "pull_request"
+                or ((run.get("actor") or {}).get("login") or "").lower() != actor
+                or (run.get("head_repository") or {}).get("full_name") != head_repo
+                or (run.get("path") or "").split("@", 1)[0] != f".github/workflows/{workflow}"
+                or not run.get("head_sha") or not run.get("created_at")):
+            continue
+        created = _ts(run["created_at"])
+        if not (t <= created <= t + datetime.timedelta(seconds=ACK_RUN_WINDOW)):
+            continue
+        if best is None or created < best[0]:
+            best = (created, run["head_sha"])
+    return best[1] if best else None
+
+
+def touches_gate(files: list[ChangedFile]) -> list[str]:
+    """Files of the pull request under ACK_PINNED_PATHS (either name of a rename)."""
+    pats = [glob_to_regex(g) for g in ACK_PINNED_PATHS]
+    return sorted({f.filename for f in files
+                   for name in (f.filename, f.previous_filename) if name and any(p.match(name) for p in pats)})
+
+
+def carry_reason(event_name: str, event: dict, pr: dict, files: list[ChangedFile], ack_event: dict,
+                 find_head, still_covers) -> str:
+    """Why a valid `security-ack` no longer covers this head ("" = it does).
+
+    - This run is the acker's own label event on the current head: covered.
+    - The base branch changed after the label (a retargeted stacked pull
+      request now carries its parent's changes): not covered.
+    - The commit the ack was given on (acked_head, from GitHub's own records)
+      is the current head: covered.
+    - Otherwise the ack is carried over from an older commit. Never for a pull
+      request that changes workflows, actions, the path list or the gate
+      script. Otherwise `still_covers(acked)` (ack_still_covers, digests
+      recomputed from git) decides.
+    """
+    head = pr["head"]["sha"]
+    actor = ((ack_event.get("actor") or {}).get("login") or "").lower()
+    if (event_name == "pull_request" and event.get("action") == "labeled"
+            and (event.get("label") or {}).get("name") == ACK_LABEL
+            and ((event.get("sender") or {}).get("login") or "").lower() == actor
+            and ((event.get("pull_request") or {}).get("head") or {}).get("sha") == head):
+        return ""
+    if ack_event.get("retargeted_after"):
+        return f"the base branch changed after `{ACK_LABEL}` was added; a maintainer adds it again"
+    acked = find_head()
+    if acked == head:
+        return ""
+    if acked is None:
+        return f"cannot tell which commit `{ACK_LABEL}` was given on; a maintainer adds it again"
+    pinned = touches_gate(files)
+    if pinned:
+        return (f"this pull request changes the gate or a workflow ({', '.join(f'`{f}`' for f in pinned[:3])}), "
+                f"so `{ACK_LABEL}` covers only the exact commit it was added on; a maintainer adds it again")
+    if not still_covers(acked):
+        return f"the security-sensitive lines changed after `{ACK_LABEL}` was added; a maintainer adds it again"
+    return ""
 
 
 def new_code_scanning_alerts(gh: GitHub, number: int, base_ref: str,
@@ -632,8 +751,6 @@ class Result:
     acked: bool = False
     ack_note: str = ""
     ack_dropped: bool = False
-    ack_digest: str = ""  # the sensitive diff the ack covers, recorded in the comment
-    ack_head: tuple[str, str] | None = None  # (head sha, base branch) the ack was last confirmed on
 
     @property
     def high(self) -> list[Finding]:
@@ -667,8 +784,8 @@ def render(r: Result, repo: str, server: str) -> str:
         out.append("This pull request no longer changes a security-sensitive path.")
         return "\n".join(out) + "\n"
     if r.ack_dropped:
-        out += [f"New commits changed the security-sensitive lines of this pull request, so the previous "
-                f"`{ACK_LABEL}` was removed. Merging the base branch alone keeps it.", ""]
+        out += [f"The previous `{ACK_LABEL}` was removed: {r.ack_note}. Merging the base branch alone "
+                "keeps it, unless the pull request changes workflows or the gate.", ""]
     out += ["### Why this is security-sensitive", ""]
     for cat, files in sorted(r.hits.items()):
         shown = ", ".join(f"`{f}`" for f in files[:8]) + (f" and {len(files) - 8} more" if len(files) > 8 else "")
@@ -711,10 +828,6 @@ def render(r: Result, repo: str, server: str) -> str:
             f"A maintainer reviews the change and adds the **`{ACK_LABEL}`** label. The gate re-runs on the label. "
             f"Status: {r.ack_note}.", "",
             f"<sub>Path list: `.github/security-paths.yml` · [how the gate works]({GUIDE})</sub>"]
-    if r.acked and r.ack_digest:
-        out.append(f"<!-- security-gate:ack-digest={r.ack_digest} -->")
-        if r.ack_head:
-            out.append(f"<!-- security-gate:ack-head={r.ack_head[0]} base={r.ack_head[1]} -->")
     return "\n".join(out) + "\n"
 
 
@@ -736,82 +849,6 @@ def merge_group_pr(head_ref: str) -> int:
     return int(m.group(1))
 
 
-def push_touches_sensitive(gh: GitHub, event: dict, files: list[ChangedFile],
-                           config: dict[str, list[str]]) -> bool:
-    """For an ack without a recorded digest (given before the gate stored
-    one): does this push change a sensitive file of the PR? A force-push, a
-    rebase or a truncated comparison counts as yes."""
-    before, after = event.get("before"), event.get("after")
-    sensitive_here = {f for fs in classify(files, config).values() for f in fs}
-    if not sensitive_here:
-        return False
-    cmp_ = gh.get(f"compare/{before}...{after}", ok404=True) if before and after else None
-    if cmp_ is None or cmp_.get("status") not in ("ahead", "identical") or len(cmp_.get("files", [])) >= 300:
-        return True  # force-push or rebase: the acknowledged commits are gone
-    pushed = [ChangedFile(f["filename"], f.get("status", "modified"), int(f.get("deletions", 0)),
-                          None, f.get("previous_filename")) for f in cmp_.get("files", [])]
-    changed = {f for fs in classify(pushed, config).values() for f in fs}
-    return bool(changed & sensitive_here)
-
-
-def recorded_digest(comment: dict | None) -> str | None:
-    m = DIGEST_MARKER.search((comment or {}).get("body") or "")
-    return m.group(1) if m else None
-
-
-def recorded_head(comment: dict | None) -> tuple[str, str] | None:
-    m = ACK_HEAD_MARKER.search((comment or {}).get("body") or "")
-    return (m.group(1), m.group(2)) if m else None
-
-
-def settle_ack(gh: GitHub, event_name: str, event: dict, r: Result, digest: str, recorded: str | None,
-               files: list[ChangedFile], config: dict[str, list[str]], labels: set[str],
-               can_write: bool, pr: dict | None = None, acked_head: tuple[str, str] | None = None,
-               merges_only=None) -> None:
-    """Decide whether an existing `security-ack` still covers the pull request,
-    and which digest and head commit the comment records for it.
-
-    - This run is the `security-ack` label event: record the digest and head.
-    - The comment holds a digest: the ack stands while the sensitive diff is
-      unchanged (pushes and base-branch merges that leave those lines alone,
-      migration renumbering). When the digest differs but the comment also
-      records the acknowledged head on the same base branch, `merges_only`
-      (covered_by_merges) decides: a head that only merged the base branch in
-      keeps the ack. Otherwise the label is removed (on a read-only run:
-      ignored).
-    - No digest yet, and a push: the earlier rule (does the push touch a
-      sensitive file?); if it does not, record the digest.
-    - Anything else keeps the label, as before, without recording a digest.
-    """
-    if ACK_LABEL not in labels:
-        return
-    head_now = ((pr or {}).get("head", {}).get("sha", ""), (pr or {}).get("base", {}).get("ref", ""))
-    head_now = head_now if all(head_now) else None
-    action = event.get("action")
-    if event_name == "pull_request" and action == "labeled" and (event.get("label") or {}).get("name") == ACK_LABEL:
-        r.ack_digest, r.ack_head = digest, head_now  # the maintainer acknowledged what is there now
-        return
-    if recorded is not None:
-        if recorded == digest:
-            r.ack_digest, r.ack_head = digest, head_now
-            return
-        if (acked_head and head_now and merges_only is not None and acked_head[1] == head_now[1]
-                and merges_only(acked_head[0])):
-            r.ack_digest, r.ack_head = digest, head_now
-            return
-    elif event_name == "pull_request" and action == "synchronize":
-        if not push_touches_sensitive(gh, event, files, config):
-            r.ack_digest = digest
-            return
-    else:
-        return
-    if can_write:
-        gh.request("DELETE", f"issues/{r.number}/labels/{ACK_LABEL}", ok404=True)
-        r.ack_dropped = True
-    labels.discard(ACK_LABEL)
-    r.ack_note = f"the security-sensitive lines changed after `{ACK_LABEL}` was added; a maintainer adds it again"
-
-
 RELEASE_HEAD = re.compile(r"^release/v\d")
 
 
@@ -831,8 +868,8 @@ def release_files(gh: GitHub, pr: dict) -> list[ChangedFile] | None:
 
 
 def gate_comment(gh: GitHub, number: int) -> dict | None:
-    """The gate's own comment: it carries the marker and the workflow token
-    wrote it, so a comment someone else posts cannot plant a digest."""
+    """The gate's comment, updated in place. Display only: nothing in it is
+    ever read back as a decision (any workflow token can write as the bot)."""
     for c in gh.paginate(f"issues/{number}/comments"):
         if COMMENT_MARKER in (c.get("body") or "") and (c.get("user") or {}).get("login") == BOT_LOGIN:
             return c
@@ -884,29 +921,25 @@ def cmd_gate() -> int:
     r.findings, r.unreviewed = review(files)
     comment = gate_comment(gh, number) if r.sensitive or can_write else None
     if r.sensitive:
-        names = sensitive_names(files, config, r.findings)
-        recorded = recorded_digest(comment)
-
-        def merges_only(acked: str) -> bool:
-            # Only reached when the digest changed: fetch history (trees,
-            # blobs on demand) and compare with a clean merge of the acked head.
-            gitdir = os.environ.get("GATE_DIR", "base")
-            try:
-                fetch_pr_commits(gitdir, repo, server, token, pr["base"]["sha"], pr["head"]["sha"], acked)
-            except RuntimeError as e:
-                print(f"::warning::security-gate: cannot fetch the acknowledged head {acked}: {e}")
-                return False
-            if not ack_head_matches(gitdir, pr["base"]["sha"], acked, config, recorded or ""):
-                return False
-            return covered_by_merges(gitdir, acked, pr["base"]["sha"], pr["head"]["sha"], names,
-                                     git_auth_env(server, token))
-        settle_ack(gh, event_name, event, r, sensitive_digest(files, config, r.findings),
-                   recorded, files, config, labels, can_write,
-                   pr=pr, acked_head=recorded_head(comment), merges_only=merges_only)
-        stale_note = r.ack_note
-        r.acked, r.ack_note = ack_state(gh, number, labels, config["ackers"])
-        if not r.acked and stale_note:
-            r.ack_note = stale_note
+        r.acked, r.ack_note, ack_event = ack_state(gh, number, labels, config["ackers"])
+        if r.acked:
+            def still_covers(acked: str) -> bool:
+                gitdir = os.environ.get("GATE_DIR", "base")
+                try:
+                    fetch_pr_commits(gitdir, repo, server, token, pr["base"]["sha"], pr["head"]["sha"], acked)
+                except RuntimeError as e:
+                    print(f"::warning::security-gate: cannot fetch the acknowledged head {acked}: {e}")
+                    return False
+                return ack_still_covers(gitdir, pr["base"]["sha"], acked, pr["head"]["sha"], config,
+                                        git_auth_env(server, token))
+            reason = carry_reason(event_name, event, pr, files, ack_event,
+                                  lambda: acked_head(gh, pr, ack_event), still_covers)
+            if reason:
+                if can_write:
+                    gh.request("DELETE", f"issues/{number}/labels/{ACK_LABEL}", ok404=True)
+                    r.ack_dropped = True
+                labels.discard(ACK_LABEL)
+                r.acked, r.ack_note = False, reason
         r.alerts, r.alerts_note = new_code_scanning_alerts(gh, number, pr["base"]["ref"], analysis_ref)
         r.checks = security_checks(gh, pr["head"]["sha"])
 

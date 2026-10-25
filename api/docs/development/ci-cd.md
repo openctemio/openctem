@@ -110,47 +110,63 @@ re-runs on the label and turns green; queue the pull request as usual. In the
 merge queue the gate runs again (`merge_group`), finds the pull request from the
 queue branch name and reads its labels and code-scanning alerts through the API.
 
-- The ack covers the pull request's security-sensitive lines. On the label
-  event the gate records a digest of them in its comment: every added and
-  removed line (no context, no line numbers) of each file that makes the pull
-  request sensitive, taken from the diff against the merge base. A later run
-  whose digest differs removes `security-ack`; one with the same digest keeps
-  it. So merging the base branch in, rebasing, or pushing changes to other
-  files keeps the ack, while changing a sensitive line, adding a sensitive file
-  or resolving a conflict inside one drops it. Ack again after reviewing the
-  new commits. Only the comment the workflow wrote counts (a digest in anyone
-  else's comment is ignored), and in the merge queue a digest that no longer
-  matches blocks the group. An ack given before the gate recorded digests
-  falls back to the earlier rule on its next push (a push that changes a
-  sensitive file, or any force-push, removes it), and records the digest when
-  it survives.
+- The ack covers the commit it was added on, and later commits that leave the
+  security-sensitive lines alone. The gate never stores or reads a decision in
+  its comment (any workflow on any branch of the repository writes as the same
+  `github-actions[bot]`, so a comment proves nothing). It reads only records
+  GitHub writes itself:
+  1. the newest `labeled` issue event for `security-ack`: who added it and
+     when (the actor must be listed under `ackers`);
+  2. the commit it was added on: the head of the run of this workflow that the
+     label started (the earliest `pull_request` run of `security-gate.yml` for
+     the pull request's branch, started by the same user within 10 minutes of
+     the label). GitHub creates runs with the event's actor and head commit; a
+     workflow token cannot.
+  On the label event itself, or when that commit is still the head, the ack
+  stands. Otherwise the ack is carried over from an older commit, and the gate
+  fetches both commits (history and trees; blobs on demand) and recomputes
+  from git a digest of the security-sensitive lines of each, against the
+  current base: every added and removed line (no context, no line numbers) of
+  each file that makes the pull request sensitive, from the diff against the
+  merge base. Equal digests keep the ack, so merging the base branch in,
+  rebasing, or pushing changes to other files keeps it, while changing a
+  sensitive line, adding a sensitive file or resolving a conflict inside one
+  drops it. In the merge queue an ack that no longer covers the head blocks
+  the group (nothing is written there).
+- No carried-over ack, whatever the digest, when:
+  - the pull request changes `.github/workflows/**`, `.github/actions/**`,
+    `.github/security-paths.yml` or `.github/scripts/security_gate.py` (on
+    `pull_request` events GitHub runs the pull request's own workflow files,
+    which could act on the pull request): the ack covers only the exact commit
+    it was added on, so every push needs a new ack;
+  - the base branch changed after the label (a retargeted stacked pull request
+    now carries its parent's changes);
+  - no gate run started by the label can be found (for example the run was
+    never created): the gate cannot tell which commit was acknowledged.
 - Migration renumbering keeps the ack: a migration counts in the digest by its
   name without the version number, in version order, so the merge queue moving
   a pull request's migrations above `develop` (same names, same order, same
-  content) changes nothing, while editing or reordering them does.
+  content) changes nothing, while editing or reordering them does. The gate
+  does **not** check where the renumbered migrations now run relative to the
+  ones `develop` added meanwhile: a migration that depends on (or conflicts
+  with) a newer `develop` migration keeps the ack. That ordering is the
+  migration lint's and the reviewer's job.
+- Renaming a security-sensitive file after the ack always needs a new ack,
+  even when its content is unchanged: the digest is computed from git without
+  rename detection, so a rename reads as one file removed and another added.
+  (Only a migration's version prefix is exempt, as above.)
 - Base merges that change the diff keep the ack too. When `develop` changed
   the same sensitive file, the pull request's own `+`/`-` lines can shift (a
   removed line now reads differently, a hunk merged into `develop` by a stacked
   parent disappears) and the digest differs although nobody touched the
-  change. So the comment also records the head commit and base branch the ack
-  was last confirmed on (`ack-head`), moved forward on every run that keeps the
-  ack. When the digest differs, the gate fetches the history (trees, blobs on
-  demand) and keeps the ack only if all of these hold:
-  1. the base branch is the one recorded (a retargeted pull request is acked
-     again);
-  2. the recorded head's own diff still fingerprints to the recorded digest;
-  3. the recorded head is an ancestor of the new head (a rebase or force-push
-     is acked again);
-  4. every sensitive file of the pull request is the same blob in the new head
-     as in a clean `git merge-tree` of the recorded head with the newest
-     `develop` commit the new head contains (migrations matched by name and
-     order).
-  A sensitive change in any non-merge commit, or a conflict resolved inside a
-  sensitive file of a merge commit, makes 4 fail; plain files may change
-  freely. Every git or API error counts as "not covered" and removes the ack.
-  Like the digest, the markers count only in the comment the workflow wrote;
-  a repository writer could edit that comment, which is the same trust as the
-  label itself.
+  change. Then the gate keeps the ack only if the acknowledged commit is an
+  ancestor of the new head (a rebase or force-push is acked again) and every
+  sensitive file of the pull request is the same blob in the new head as in a
+  clean `git merge-tree` of the acknowledged commit with the newest `develop`
+  commit the new head contains (migrations matched by name and order). A
+  sensitive change in any non-merge commit, or a conflict resolved inside a
+  sensitive file of a merge commit, fails this; plain files may change freely.
+  Every git or API error counts as "not covered" and removes the ack.
 - A HIGH diff finding is resolved by changing the line, or, for a reviewed false
   positive, by a comment on the same line:
   `security-review: allow <RULE-ID> <reason>` (visible in the diff and in git
@@ -175,9 +191,54 @@ on any API or git error and on a merge-queue branch it cannot parse. The API
 lists at most 3000 changed files, so a pull request of 3000 files or more (a
 release branch far ahead of `main`) is diffed with git instead: the gate fetches
 the base and head commits into its base checkout, never checks them out or runs
-anything from them, and evaluates the same rules and ack digest on that list. A pull request can still edit `security-gate.yml` itself, which is
-the residual risk of any check defined in the repository; such a change is
-`ci-release` sensitive and needs the ack like any other.
+anything from them, and evaluates the same rules and ack digest on that list. 
+
+**Pinning the required check to the real workflow.** Branch protection requires
+a check *named* `security-gate` from the GitHub Actions app. On `pull_request`
+events GitHub runs the workflow files of the pull request itself, so a pull
+request can rewrite `security-gate.yml` (or add any workflow with a job named
+`security-gate`) and report a green check under that name. The gate script
+cannot defend against this; GitHub can. An organization ruleset rule
+**Require workflows to pass before merging** runs
+`.github/workflows/security-gate.yml` from a fixed branch of this repository
+for every pull request into `develop` and `main`, whatever the pull request
+changes, and only that run satisfies the rule. Owner setup (organization
+owner; rulesets with required workflows are organization-level only):
+
+1. Wait until this hardened gate is on `develop` (the ruleset runs
+   `develop`'s copy of the workflow).
+2. Organization **Settings > Repository > Rulesets > New branch ruleset**:
+   name `security-gate required workflow`, enforcement **Active**, bypass
+   list **Repository admin** (the emergency override below), target
+   repositories `openctem`, target branches `develop` and `main`.
+3. Enable **Require workflows to pass before merging**, add workflow
+   repository `openctemio/openctem`, path `.github/workflows/security-gate.yml`,
+   ref `refs/heads/develop`. Save.
+
+   The same through the API:
+
+   ```sh
+   gh api -X POST orgs/openctemio/rulesets --input - <<'JSON'
+   {"name": "security-gate required workflow", "target": "branch", "enforcement": "active",
+    "conditions": {"ref_name": {"include": ["refs/heads/develop", "refs/heads/main"], "exclude": []},
+                   "repository_name": {"include": ["openctem"], "exclude": []}},
+    "bypass_actors": [{"actor_id": 5, "actor_type": "RepositoryRole", "bypass_mode": "always"}],
+    "rules": [{"type": "workflows", "parameters": {"do_not_enforce_on_create": false,
+      "workflows": [{"repository_id": 1150018630, "path": ".github/workflows/security-gate.yml",
+                     "ref": "refs/heads/develop"}]}}]}
+   JSON
+   ```
+4. Open a throwaway pull request that changes nothing sensitive and check
+   that the ruleset run appears and passes, also in the merge queue
+   (`merge_group` is in the workflow's triggers, which the ruleset needs).
+5. Then remove `security-gate` from the required status checks of `develop`
+   and `main` in branch protection: the name-only requirement adds nothing once
+   the workflow is required. Keep the workflow's own `on:` triggers: the gate
+   finds the commit an ack was given on through the runs the label starts.
+
+Until the ruleset exists, a pull request that edits `security-gate.yml` is the
+residual risk: it is `ci-release` sensitive, needs the ack on its exact head
+commit, and the reviewer must read the workflow change before acking.
 
 **Emergency override.** An administrator can merge a pull request whose gate is
 red with **Merge without waiting for requirements (bypass rules)** (or by
