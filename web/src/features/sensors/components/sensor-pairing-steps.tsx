@@ -25,6 +25,7 @@ import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { KeyValueList } from '@/features/shared/components/text-layout'
 import {
   Select,
   SelectContent,
@@ -168,16 +169,6 @@ export function EnterCodePanel({
 // Review and approve
 // ---------------------------------------------------------------------------
 
-function FactRow({ label, value }: { label: string; value?: string }) {
-  if (!value) return null
-  return (
-    <div className="grid grid-cols-[9rem_1fr] gap-2 text-sm">
-      <dt className="text-muted-foreground">{label}</dt>
-      <dd className="min-w-0 break-all font-mono">{value}</dd>
-    </div>
-  )
-}
-
 export function PairingFingerprint({ sas }: { sas?: string }) {
   const { t } = useTranslation()
   const parts = splitSas(sas)
@@ -244,20 +235,29 @@ export function PairingReview({
         </div>
       )}
 
-      <dl className="space-y-1.5">
-        <FactRow label={t('sensors.pair.fact.hostname')} value={facts.hostname} />
-        <FactRow
-          label={t('sensors.pair.fact.system')}
-          value={[facts.os, facts.arch].filter(Boolean).join(' / ') || undefined}
-        />
-        <FactRow label={t('sensors.pair.fact.version')} value={facts.sensor_version} />
-        <FactRow label={t('sensors.pair.fact.requestedFrom')} value={view.source_ip} />
-        <FactRow label={t('sensors.pair.fact.keyFingerprint')} value={view.key_fingerprint} />
-        <FactRow
-          label={t('sensors.pair.fact.expiresIn')}
-          value={left > 0 ? formatCountdown(left) : t('sensors.pair.fact.expired')}
-        />
-      </dl>
+      <KeyValueList
+        items={[
+          { key: 'hostname', label: t('sensors.pair.fact.hostname'), value: facts.hostname },
+          {
+            key: 'system',
+            label: t('sensors.pair.fact.system'),
+            value: [facts.os, facts.arch].filter(Boolean).join(' / '),
+          },
+          { key: 'version', label: t('sensors.pair.fact.version'), value: facts.sensor_version },
+          { key: 'from', label: t('sensors.pair.fact.requestedFrom'), value: view.source_ip },
+          {
+            key: 'key',
+            label: t('sensors.pair.fact.keyFingerprint'),
+            value: view.key_fingerprint,
+            token: true,
+          },
+          {
+            key: 'expires',
+            label: t('sensors.pair.fact.expiresIn'),
+            value: left > 0 ? formatCountdown(left) : t('sensors.pair.fact.expired'),
+          },
+        ].filter((i) => !!i.value)}
+      />
       <p className="text-xs text-muted-foreground">{t('sensors.pair.factsNote')}</p>
 
       {ready ? (
