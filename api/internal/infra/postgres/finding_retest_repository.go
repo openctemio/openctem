@@ -282,7 +282,7 @@ func (r *FindingRetestRepository) Settle(ctx context.Context, in retest.SettleIn
 		}
 
 		if !findingGone {
-			changes := make(map[string]any, len(in.Activity)+3)
+			changes := make(map[string]any)
 			for k, v := range in.Activity {
 				changes[k] = v
 			}
