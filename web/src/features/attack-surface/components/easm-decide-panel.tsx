@@ -292,6 +292,8 @@ function AddressesCard({
   const note = (
     <NoDecisionNote
       sharedCount={sharedCount}
+      providerCount={card.provider_count ?? 0}
+      providers={(card.providers ?? []).map((p) => p.provider ?? '').filter(Boolean)}
       checkedCount={checkedCount}
       shared={shared}
       checked={checked}
@@ -477,11 +479,17 @@ function AddressesCard({
  */
 function NoDecisionNote({
   sharedCount,
+  providerCount,
+  providers,
   checkedCount,
   shared,
   checked,
 }: {
   sharedCount: number
+  /** Shared addresses of a CDN, hosting or cloud-shared provider. */
+  providerCount: number
+  /** Those providers, most addresses first. */
+  providers: string[]
   checkedCount: number
   shared: EASMSuggestionAddress[]
   checked: EASMSuggestionAddress[]
@@ -492,14 +500,35 @@ function NoDecisionNote({
   return (
     <div className="space-y-2 text-sm text-muted-foreground" data-testid="decide-no-decision">
       <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
-        {sharedCount > 0 && (
+        {providerCount > 0 && (
+          <span>
+            {providers.length === 1
+              ? plural(
+                  t,
+                  'attackSurface.decide.noDecision.provider',
+                  providerCount,
+                  '1 address your names resolve to belongs to {provider} and needs no decision.',
+                  '{count} addresses your names resolve to belong to {provider} and need no decision.',
+                  { provider: providers[0] }
+                )
+              : plural(
+                  t,
+                  'attackSurface.decide.noDecision.providers',
+                  providerCount,
+                  '1 address your names resolve to belongs to a CDN or hosting provider ({providers}) and needs no decision.',
+                  '{count} addresses your names resolve to belong to CDN or hosting providers ({providers}) and need no decision.',
+                  { providers: providers.slice(0, 3).join(', ') }
+                )}
+          </span>
+        )}
+        {sharedCount - providerCount > 0 && (
           <span>
             {plural(
               t,
-              'attackSurface.decide.noDecision.shared',
-              sharedCount,
-              '1 address your names resolve to belongs to a CDN or hosting provider and needs no decision.',
-              '{count} addresses your names resolve to belong to CDN or hosting providers and need no decision.'
+              'attackSurface.decide.noDecision.otherShared',
+              sharedCount - providerCount,
+              '1 more is shared with other organizations and is not offered.',
+              '{count} more are shared with other organizations and are not offered.'
             )}
           </span>
         )}
