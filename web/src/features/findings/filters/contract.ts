@@ -85,7 +85,7 @@ export const OWNED_FIELDS: FieldContract[] = [
   { name: 'is_in_kev', type: 'boolean', ops: ['eq'] },
   { name: 'is_reachable', type: 'boolean', ops: ['eq'] },
   { name: 'branch_only', type: 'boolean', ops: ['eq'] },
-  { name: 'related_to', type: 'enum', ops: ['eq'], enum: ['me'] },
+  { name: 'related_to', type: 'enum', ops: ['eq'], enum: ['me', 'my_team'] },
   { name: 'pending_approval', type: 'boolean', ops: ['eq'] },
   { name: 'acceptance_expires_at', type: 'date-time', ops: [...RANGE_OPS] },
 ]

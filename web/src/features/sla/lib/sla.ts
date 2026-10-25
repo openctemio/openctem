@@ -69,12 +69,26 @@ export function daysUntil(deadline?: string | null): number | null {
   return Math.round(ms / 86_400_000)
 }
 
-/** Human-friendly "3d left" / "2d overdue" / "due today". */
-export function formatDueRelative(deadline?: string | null): string {
-  const days = daysUntil(deadline)
-  if (days === null) return '—'
-  if (days === 0) return 'Due today'
-  return days > 0 ? `${days}d left` : `${Math.abs(days)}d overdue`
+/**
+ * The time left to an SLA deadline, or past it: whole hours under two days
+ * (a deadline this close is counted in hours), whole days beyond. Null when
+ * the deadline is missing or invalid.
+ */
+export interface SlaCountdown {
+  overdue: boolean
+  unit: 'hours' | 'days'
+  count: number
+}
+
+export function slaCountdown(deadline?: string | null, now = Date.now()): SlaCountdown | null {
+  if (!deadline) return null
+  const at = new Date(deadline).getTime()
+  if (isNaN(at)) return null
+  const ms = at - now
+  const overdue = ms < 0
+  const hours = Math.abs(ms) / 3_600_000
+  if (hours < 48) return { overdue, unit: 'hours', count: Math.max(1, Math.floor(hours)) }
+  return { overdue, unit: 'days', count: Math.floor(hours / 24) }
 }
 
 export interface AgingBucket {

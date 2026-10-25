@@ -14,7 +14,7 @@ const api = vi.hoisted(() => ({ get: vi.fn() }))
 vi.mock('@/lib/api/client', () => api)
 vi.mock('@/lib/permissions', async (orig) => {
   const actual = await orig<typeof import('@/lib/permissions')>()
-  return { ...actual, usePermissions: () => ({ can: () => true }) }
+  return { ...actual, usePermissions: () => ({ can: () => true }), useCanMutate: () => true }
 })
 
 const wrap = (ui: ReactNode) =>
