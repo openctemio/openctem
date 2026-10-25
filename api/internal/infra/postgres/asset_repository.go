@@ -184,7 +184,8 @@ func (r *AssetRepository) GetDisplayInfoByIDs(ctx context.Context, tenantID shar
 	}
 
 	rows, err := r.db.QueryContext(ctx,
-		`SELECT id, name, asset_type FROM assets WHERE deleted_at IS NULL AND tenant_id = $1 AND id = ANY($2::uuid[])`,
+		`SELECT a.id, a.name, a.asset_type, COALESCE(a.is_crown_jewel, false), `+asset.InternetFacingSQL("a")+`
+		 FROM assets a WHERE a.deleted_at IS NULL AND a.tenant_id = $1 AND a.id = ANY($2::uuid[])`,
 		tenantID.String(), pq.Array(idStrs))
 	if err != nil {
 		return nil, fmt.Errorf("failed to batch get asset display info: %w", err)
@@ -194,15 +195,16 @@ func (r *AssetRepository) GetDisplayInfoByIDs(ctx context.Context, tenantID shar
 	for rows.Next() {
 		var (
 			idStr, name, assetType string
+			crown, internet        bool
 		)
-		if err := rows.Scan(&idStr, &name, &assetType); err != nil {
+		if err := rows.Scan(&idStr, &name, &assetType, &crown, &internet); err != nil {
 			return nil, fmt.Errorf("failed to scan asset display info: %w", err)
 		}
 		id, err := shared.IDFromString(idStr)
 		if err != nil {
 			return nil, fmt.Errorf("invalid asset id %q: %w", idStr, err)
 		}
-		result[id] = asset.DisplayInfo{ID: id, Name: name, Type: asset.AssetType(assetType)}
+		result[id] = asset.DisplayInfo{ID: id, Name: name, Type: asset.AssetType(assetType), CrownJewel: crown, InternetFacing: internet}
 	}
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("failed to iterate asset display info: %w", err)

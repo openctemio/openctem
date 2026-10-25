@@ -240,7 +240,10 @@ export interface ApiFinding {
     /** Single-finding response only. */
     criticality?: string
     exposure?: string
+    /** Internet-facing (list rows and the single finding). */
     is_internet_accessible?: boolean
+    /** Crown jewel (list rows and the single finding). */
+    is_crown_jewel?: boolean
   }
   branch_id?: string
   component_id?: string
@@ -353,6 +356,8 @@ export interface ApiFinding {
   kind?: string // fail/pass/warning/note
   occurrence_count?: number // number of occurrences
   duplicate_count?: number // number of duplicates
+  /** Findings marked as duplicates of this one that the caller can read (list rows). */
+  duplicates_marked?: number
   duplicate_of?: string // the finding this one was folded into (status duplicate)
   comments_count?: number // number of comments
   sla_status?: string // on_track | warning | overdue | exceeded | not_applicable

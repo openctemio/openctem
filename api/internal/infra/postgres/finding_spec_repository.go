@@ -372,3 +372,51 @@ func (r *FindingRepository) IDsWhere(ctx context.Context, w *filterspec.Where, l
 	}
 	return out, tx.Commit()
 }
+
+// CountDuplicatesOfWhere counts, per finding id in ids, the findings marked
+// as its duplicates (duplicate_of) that match the compiled visibility filter
+// w: a duplicate the caller cannot read is not counted. Ids with none are
+// absent from the map. Uses idx_findings_duplicate_of.
+func (r *FindingRepository) CountDuplicatesOfWhere(ctx context.Context, w *filterspec.Where, ids []shared.ID) (map[shared.ID]int, error) {
+	if err := checkFindingWhere(w); err != nil {
+		return nil, err
+	}
+	out := make(map[shared.ID]int, len(ids))
+	if len(ids) == 0 {
+		return out, nil
+	}
+	idStrs := make([]string, len(ids))
+	for i, id := range ids {
+		idStrs[i] = id.String()
+	}
+	args := append(append([]any{}, w.Args...), pq.Array(idStrs))
+	query := fmt.Sprintf(`SELECT duplicate_of, COUNT(*) FROM findings
+		WHERE %s AND duplicate_of = ANY($%d::uuid[])
+		GROUP BY duplicate_of`, w.SQL, w.NextArg)
+	tx, err := r.beginFindingRead(ctx)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = tx.Rollback() }()
+	rows, err := tx.QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, findingTimeout(fmt.Errorf("failed to count duplicates: %w", err))
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var idStr string
+		var n int
+		if err := rows.Scan(&idStr, &n); err != nil {
+			return nil, fmt.Errorf("failed to scan duplicate count: %w", err)
+		}
+		id, err := shared.IDFromString(idStr)
+		if err != nil {
+			return nil, fmt.Errorf("invalid finding id %q: %w", idStr, err)
+		}
+		out[id] = n
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("failed to iterate duplicate counts: %w", err)
+	}
+	return out, tx.Commit()
+}
