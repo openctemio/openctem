@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/openctemio/openctem/api/pkg/domain/scope/ipset"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 )
 
@@ -264,10 +263,6 @@ func NewExclusion(
 		return nil, ErrReasonRequired
 	}
 
-	if err := validateExclusionPattern(exclusionType, pattern); err != nil {
-		return nil, err
-	}
-
 	now := time.Now()
 	return &Exclusion{
 		id:            shared.NewID(),
@@ -281,23 +276,6 @@ func NewExclusion(
 		createdAt:     now,
 		updatedAt:     now,
 	}, nil
-}
-
-// validateExclusionPattern refuses a pattern the matcher could never match,
-// so a typo is an error instead of a rule that silently excludes nothing:
-// an address, range or CIDR must parse the way the dispatcher parses it (a
-// reversed range or a /33 does not), and a domain or subdomain is a name,
-// not a URL.
-func validateExclusionPattern(t ExclusionType, pattern string) error {
-	switch t {
-	case ExclusionTypeIPAddress, ExclusionTypeIPRange, ExclusionTypeCIDR:
-		if _, ok := ipset.Parse(pattern); !ok {
-			return fmt.Errorf("%w: not an address, first-last range or CIDR block", ErrInvalidPattern)
-		}
-	case ExclusionTypeDomain, ExclusionTypeSubdomain:
-		return ValidatePattern(TargetTypeDomain, pattern)
-	}
-	return nil
 }
 
 // ReconstituteExclusion creates an Exclusion from persistence data.
