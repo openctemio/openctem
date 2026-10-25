@@ -93,6 +93,7 @@ export function FindingPhoneCard({ finding: f, selection, onOpen, menu }: Findin
               variant="compact"
               isInKev={f.isInKev}
               kevDueDate={f.kevDueDate}
+              kevRansomware={f.kevRansomware}
               epssScore={f.epssScore}
             />
           </div>
