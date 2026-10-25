@@ -211,16 +211,20 @@ export function CriticalityBadge({
   const { t } = useTranslation()
   const label = t(`criticality.${criticality}`, CRITICALITY_LABELS[criticality])
   const description = t(`criticality.${criticality}.hint`, CRITICALITY_DESCRIPTIONS[criticality])
-  const prefix = labelled ? t('assets.badge.criticality', 'Criticality') : null
+  // The tooltip and the accessible name always say what the word measures:
+  // "High" is also a risk band word (research/271).
+  const noun = t('assets.badge.criticality', 'Criticality')
+  const named = `${noun}: ${label}`
 
   // An ordinal classification, not a severity: four bars and the word. The
   // icon prop is kept for callers; the bars are the glyph.
   const badge = (
     <span className="inline-flex" data-slot="criticality-badge" data-criticality={criticality}>
+      {!labelled && <span className="sr-only">{noun}: </span>}
       <Tag
         level={CRITICALITY_LEVEL[criticality]}
-        label={prefix ? `${prefix}: ${label}` : label}
-        title={showTooltip ? undefined : label}
+        label={labelled ? named : label}
+        title={showTooltip ? undefined : named}
         className={cn(size === 'sm' && 'h-5', className)}
       />
     </span>
@@ -233,7 +237,7 @@ export function CriticalityBadge({
       <Tooltip delayDuration={200}>
         <TooltipTrigger asChild>{badge}</TooltipTrigger>
         <TooltipContent side="top" className="max-w-[200px]">
-          <p className="font-medium">{label}</p>
+          <p className="font-medium">{named}</p>
           <p className="text-xs text-muted-foreground">{description}</p>
         </TooltipContent>
       </Tooltip>
