@@ -199,7 +199,7 @@ var dataSurfaceRegistry = map[string]dataSurface{
 	"/api/v1/threat-models":                               {classScoped, "threat model scope (L-10)"},
 	"/api/v1/vulnerabilities/{id}/affected-assets":        {classScoped, "affected assets filtered"},
 	"/api/v1/vulnerabilities/cve/{cveId}/affected-assets": {classScoped, "affected assets filtered"},
-	"/api/v1/vulnerabilities/cve/{cveId}/exposure":        {classScoped, "the findings list's compiled filter; software and alert reads scoped by asset"},
+	"/api/v1/vulnerability-exposures/":                    {classScoped, "the findings list's compiled filter; software and alert reads scoped by asset"},
 	"/api/v1/notifications":                               {classScoped, "per-recipient scope on finding and asset notices"},
 	"/api/v1/ws":                                          {classScoped, "finding and triage channels need the finding in scope"},
 	"/api/v1/mcp":                                         {classScoped, "each tool runs as the key's user (API keys never get full data)"},
@@ -319,17 +319,17 @@ func TestEveryRouteHasADataScopeClass(t *testing.T) {
 // The longest match wins, so an exception inside a module overrides it.
 func TestDataSurfaceLookup_LongestPrefixWins(t *testing.T) {
 	cases := map[string]dataScopeClass{
-		"GET /api/v1/vulnerabilities/":                            classSystem,
-		"GET /api/v1/vulnerabilities/active":                      classScoped,
-		"GET /api/v1/vulnerabilities/{id}/affected-assets":        classScoped,
-		"GET /api/v1/vulnerabilities/cve/{cveId}/exposure/assets": classScoped,
-		"GET /api/v1/groups/{groupId}/assets":                     classScoped,
-		"POST /api/v1/groups/{groupId}/assets":                    classConfig,
-		"GET /api/v1/compliance/findings/{findingId}/controls":    classScoped,
-		"GET /api/v1/compliance/frameworks/":                      classConfig,
-		"POST /api/v1/findings/":                                  classScoped,
-		"POST /api/v1/findings/search":                            classScoped,
-		"GET /api/v1/findings/{id}/identity":                      classScoped,
+		"GET /api/v1/vulnerabilities/":                         classSystem,
+		"GET /api/v1/vulnerabilities/active":                   classScoped,
+		"GET /api/v1/vulnerabilities/{id}/affected-assets":     classScoped,
+		"GET /api/v1/vulnerability-exposures/{vuln_id}/assets": classScoped,
+		"GET /api/v1/groups/{groupId}/assets":                  classScoped,
+		"POST /api/v1/groups/{groupId}/assets":                 classConfig,
+		"GET /api/v1/compliance/findings/{findingId}/controls": classScoped,
+		"GET /api/v1/compliance/frameworks/":                   classConfig,
+		"POST /api/v1/findings/":                               classScoped,
+		"POST /api/v1/findings/search":                         classScoped,
+		"GET /api/v1/findings/{id}/identity":                   classScoped,
 	}
 	// An exact key classifies only its own path.
 	if key, _, _ := lookupDataSurface("POST", "/api/v1/findings/search"); key == "POST /api/v1/findings/$" {
