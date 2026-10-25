@@ -75,3 +75,5 @@ func (l *limitedReader) Read(p []byte) (int, error) {
 	l.n -= int64(n)
 	return n, err
 }
+
+// gate harness test line (do not merge)
