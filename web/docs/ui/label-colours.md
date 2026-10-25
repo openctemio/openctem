@@ -11,15 +11,16 @@ The numbers below are asserted in CI by `src/styles/__tests__/contrast.test.ts` 
 
 ## How each kind of value is encoded
 
-| Kind                                                           | Encoding                                                                       | Tokens                                           | Rendered by                                            |
-| -------------------------------------------------------------- | ------------------------------------------------------------------------------ | ------------------------------------------------ | ------------------------------------------------------ |
-| Ordinal decision: priority P0-P3                               | one violet ramp stepped by lightness; P3 neutral; "not prioritised" is a hatch | `--viz-prio-0..3`, `--viz-prio-none`, `--prio-*` | `PriorityBadge`, charts via `seriesVar` / `seriesFill` |
-| Ordinal level that is not a problem: asset criticality, impact | a neutral ink ramp stepped by lightness                                        | `--viz-lvl-critical..low`                        | `Tag` levels, `CRITICALITY_CHART_COLORS`, `levelVar`   |
-| How bad: severity                                              | the five severity hues; marks and AA text                                      | `--viz-sev-*`, `--sev-*`, `--sev-*-text`         | `SeverityBadge`, `severityVar`                         |
-| A work item's state                                            | a lozenge tint per category plus an icon                                       | `--st-*`                                         | `StatusLozenge`                                        |
-| A machine's state (runs, sensors, sync, SLA in charts)         | an icon colour plus the word; ok, warn and down apart in lightness             | `--hl-*`                                         | `HealthStatus`; SLA chart series                       |
-| A user-chosen colour                                           | an 8px dot from 10 names                                                       | `--tag-*`                                        | `Tag` swatch                                           |
-| Categories with no order                                       | 8 fixed slots, never cycled, then "Other"                                      | `--viz-cat-*`                                    | `categoricalVar`                                       |
+| Kind                                                                                  | Encoding                                                                                               | Tokens                                           | Rendered by                                                          |
+| ------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------ | ------------------------------------------------ | -------------------------------------------------------------------- |
+| Ordinal decision: priority P0-P3                                                      | one violet ramp stepped by lightness; P3 neutral; "not prioritised" is a hatch                         | `--viz-prio-0..3`, `--viz-prio-none`, `--prio-*` | `PriorityBadge`, charts via `seriesVar` / `seriesFill`               |
+| Ordinal level that is not a problem: asset criticality, impact                        | brand ink by weight in badges (solid, tint, outline, muted, dashed none); a neutral ink ramp in charts | `--lvl-*`, `--viz-lvl-critical..low`             | `Tag` levels (`LEVEL_CLASS`), `CRITICALITY_CHART_COLORS`, `levelVar` |
+| How much attention a scanned value needs: exposure, scope standing, HTTP status class | a tint per tone (danger, caution, ok, info, neutral, quiet) plus the family icon and the word          | `--tone-danger-*`, `--st-*`                      | `ToneChip` (`TONE_CLASS`), `FactChip` status tones                   |
+| How bad: severity                                                                     | the five severity hues; marks and AA text                                                              | `--viz-sev-*`, `--sev-*`, `--sev-*-text`         | `SeverityBadge`, `severityVar`                                       |
+| A work item's state                                                                   | a lozenge tint per category plus an icon                                                               | `--st-*`                                         | `StatusLozenge`                                                      |
+| A machine's state (runs, sensors, sync, SLA in charts)                                | an icon colour plus the word; ok, warn and down apart in lightness                                     | `--hl-*`                                         | `HealthStatus`; SLA chart series                                     |
+| A user-chosen colour                                                                  | an 8px dot from 10 names                                                                               | `--tag-*`                                        | `Tag` swatch                                                         |
+| Categories with no order                                                              | 8 fixed slots, never cycled, then "Other"                                                              | `--viz-cat-*`                                    | `categoricalVar`                                                     |
 
 ## Priority
 
@@ -67,6 +68,16 @@ The numbers below are asserted in CI by `src/styles/__tests__/contrast.test.ts` 
 | health warn vs severity high                                      | 10                            |
 | tag violet vs any priority step                                   | 7                             |
 | health ok, warn, down (each pair, worst colour-vision deficiency) | 7                             |
+
+### Attention tones on asset lists
+
+Exposure (Public is caution, Restricted neutral, Private and Isolated quiet, Unknown quiet and
+dashed), scope standing (In scope ok, Not in scope and Guardrail hold caution, Excluded neutral,
+deny list danger) and HTTP status (2xx ok, 3xx info, 401/403 caution, other 4xx and 5xx danger)
+share one set of tones, so the same colour means the same amount of attention in every column. The
+icon tells the families apart and the word is always shown. Text on each tint is AA in both themes
+(`contrast.test.ts`). Criticality keeps brand ink (a level, not a problem) and risk keeps the
+severity hues.
 
 State text never sits on its own 10% tint (`text-success` on `bg-success/10` is 4.38:1 in light
 mode); use `StatusLozenge`, `HealthStatus` or `DueChip`.

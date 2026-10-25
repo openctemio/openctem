@@ -1,13 +1,12 @@
 import * as React from 'react'
 import { cn } from '@/lib/utils'
-import { STATUS_TONE_CLASS } from '@/lib/status-colors'
+import { TONE_CLASS } from '@/components/ui/tone-chip'
 
 /**
  * The one chip every service cell is built from. Theme tokens only, so each
- * tone has its dark-mode value (ui-style-contract §6). The status tones read
- * the workflow tones of lib/status-colors.ts (all AA), never a /15 tint:
- * success is the resolved tone, info the in-progress tone, warning the waiting
- * tone. A failure is red text on the plain chip.
+ * tone has its dark-mode value (ui-style-contract §6). The status tones are
+ * the attention tones of ToneChip (all AA on their tint, research/266):
+ * success is ok, info is info, warning is caution, destructive is danger.
  *
  * - `neutral`: a recorded value (a technology, a label);
  * - `muted`: context (IP, CNAME, "+N") and known negatives ("No TLS");
@@ -24,10 +23,11 @@ const TONES: Record<FactChipTone, string> = {
   neutral: 'border-border bg-card text-foreground',
   muted: 'border-border bg-card text-muted-foreground',
   label: 'border-transparent bg-secondary text-secondary-foreground',
-  success: STATUS_TONE_CLASS.resolved,
-  info: STATUS_TONE_CLASS.progress,
-  warning: STATUS_TONE_CLASS.waiting,
-  destructive: 'border-border bg-card text-destructive',
+  // The attention tones of ToneChip (research/266): one colour language.
+  success: TONE_CLASS.ok,
+  info: TONE_CLASS.info,
+  warning: TONE_CLASS.caution,
+  destructive: TONE_CLASS.danger,
 }
 
 export const factChipBase =
