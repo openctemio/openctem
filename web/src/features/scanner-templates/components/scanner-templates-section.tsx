@@ -219,19 +219,28 @@ export function ScannerTemplatesSection() {
 
   // Approving a version for sensors: once the organization's approval count
   // is reached, the job signer records it and sensors may run it.
-  const handleApproveClick = useCallback(async (template: ScannerTemplate) => {
+  // Approving lets every sensor of the organization run the template (the
+  // server asks for a recent sign-in), so it is confirmed first.
+  const [approveTarget, setApproveTarget] = useState<ScannerTemplate | null>(null)
+  const handleApproveClick = useCallback((template: ScannerTemplate) => {
+    setApproveTarget(template)
+  }, [])
+  const handleApproveConfirm = useCallback(async () => {
+    const template = approveTarget
+    setApproveTarget(null)
+    if (!template) return
     try {
       const updated = await approveScannerTemplate(template.id)
       toast.success(
         updated?.sensor_approval?.approved
-          ? `"${template.name}" is approved for sensors`
-          : `Approval recorded for "${template.name}"`
+          ? t('scans.templates.approved', undefined, { name: template.name })
+          : t('scans.templates.approvalRecorded', undefined, { name: template.name })
       )
       await invalidateScannerTemplatesCache()
     } catch (err) {
-      toast.error(getErrorMessage(err, 'Failed to approve template'))
+      toast.error(getErrorMessage(err, t('scans.templates.approveFailed')))
     }
-  }, [])
+  }, [approveTarget, t])
 
   const handleDownload = useCallback(async (template: ScannerTemplate) => {
     try {
@@ -352,7 +361,7 @@ export function ScannerTemplatesSection() {
             <DataTableRowActions
               actions={[
                 {
-                  label: 'Download',
+                  label: t('scans.templates.row.download'),
                   icon: Download,
                   onClick: () => handleDownload(template),
                 },
@@ -361,7 +370,7 @@ export function ScannerTemplatesSection() {
                 !template.sensor_approval.approved
                   ? ([
                       {
-                        label: 'Approve for sensors',
+                        label: t('scans.templates.row.approve'),
                         icon: ShieldCheck,
                         onClick: () => handleApproveClick(template),
                         permission: Permission.ScopeApprove,
@@ -371,7 +380,7 @@ export function ScannerTemplatesSection() {
                 ...(template.status === 'active'
                   ? ([
                       {
-                        label: 'Deprecate',
+                        label: t('scans.templates.row.deprecate'),
                         icon: Archive,
                         onClick: () => handleDeprecateClick(template),
                         permission: Permission.ScannerTemplatesWrite,
@@ -379,7 +388,7 @@ export function ScannerTemplatesSection() {
                     ] satisfies RowAction[])
                   : []),
                 {
-                  label: 'Delete',
+                  label: t('scans.templates.row.delete'),
                   icon: Trash2,
                   onClick: () => handleDeleteClick(template),
                   destructive: true,
@@ -392,7 +401,7 @@ export function ScannerTemplatesSection() {
         },
       },
     ],
-    [handleDownload, handleDeprecateClick, handleDeleteClick, handleApproveClick]
+    [handleDownload, handleDeprecateClick, handleDeleteClick, handleApproveClick, t]
   )
 
   // Search and filters are applied by the API, so the table gets its own
@@ -498,6 +507,17 @@ export function ScannerTemplatesSection() {
         open={addDialogOpen}
         onOpenChange={setAddDialogOpen}
         onSuccess={handleRefresh}
+      />
+
+      <ConfirmDialog
+        open={approveTarget !== null}
+        onOpenChange={(open) => !open && setApproveTarget(null)}
+        title={t('confirm.scannerTemplate.approveTitle', undefined, {
+          name: approveTarget?.name ?? '',
+        })}
+        desc={t('confirm.scannerTemplate.approveDesc')}
+        confirmText={t('confirm.scannerTemplate.approveBtn')}
+        handleConfirm={handleApproveConfirm}
       />
 
       {/* Delete Confirmation */}

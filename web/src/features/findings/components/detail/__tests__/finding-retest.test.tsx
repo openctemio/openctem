@@ -260,6 +260,47 @@ describe('retestMeta', () => {
     expect(retestMeta(retest({ status: 'pending' })).label).toBe('Retest running')
   })
 
+  it('lists earlier attempts one line each, with chip, reason and no separators', () => {
+    mockRetests = [
+      retest({
+        id: 'r-3',
+        outcome: 'inconclusive',
+        reason_code: 'access_denied',
+        reason: 'answered 403: access denied by the server',
+      }),
+      retest({
+        id: 'r-2',
+        outcome: 'inconclusive',
+        reason_code: 'edge_blocked',
+        reason: 'answered 403: the cloudflare edge protection stopped the request',
+      }),
+      retest({ id: 'r-1', outcome: 'still_vulnerable', reason: 'matched again' }),
+    ]
+    render(<FindingRetestSection finding={nucleiFinding} />)
+    const history = document.querySelector('[data-slot="retest-history"]') as HTMLElement
+    const rows = within(history).getAllByRole('listitem')
+    expect(rows).toHaveLength(2)
+    expect(within(rows[0]).getByText('Inconclusive: blocked by edge protection')).toBeTruthy()
+    expect(within(rows[0]).getByText(/cloudflare edge protection/)).toBeTruthy()
+    expect(within(rows[1]).getByText('Still vulnerable')).toBeTruthy()
+    expect(history.textContent).not.toContain('·')
+  })
+
+  it('explains an origin access refusal on the latest retest', () => {
+    mockRetests = [
+      retest({
+        id: 'r-9',
+        outcome: 'inconclusive',
+        reason_code: 'access_denied',
+        reason: 'answered 403: access denied by the server',
+      }),
+    ]
+    render(<FindingRetestSection finding={nucleiFinding} />)
+    const help = document.querySelector('[data-slot="retest-inconclusive-help"]') as HTMLElement
+    expect(help.textContent).toMatch(/One refusal is not proof of a fix/)
+    expect(help.textContent).toMatch(/at least an hour later/)
+  })
+
   it("shows a pentest finding's manual retests with the tester's notes", () => {
     mockRetests = [
       retest({
