@@ -20,6 +20,9 @@ import { getDictionary, translate, type TranslateVars } from '@/lib/i18n'
 import { ApiClientError, APPROVAL_REQUIRED_CODE, isReadOnlyModuleError } from './error-handler'
 import { describePermissionDenied } from './permission-denied'
 
+// Joins regex alternatives; not a text separator.
+const REGEX_ALTERNATION = '|'
+
 export type Translate = (key: string, fallback?: string, vars?: TranslateVars) => string
 
 /** What to show for one failure. */
@@ -80,7 +83,7 @@ const TECHNICAL = new RegExp(
     '<html',
     '<!doctype',
     '\\{"[a-z_]+"\\s*:',
-  ].join('|'),
+  ].join(REGEX_ALTERNATION),
   'i'
 )
 
