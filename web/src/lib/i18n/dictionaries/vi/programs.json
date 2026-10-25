@@ -2,6 +2,7 @@
   "programs.acceptHint": "Chỉ giám sát thụ động cho đến khi có người chấp nhận quy định và phạm vi của chương trình (điều khoản {hash}); trước đó các mục không cho phép quét chủ động.",
   "programs.acceptStart": "Chấp nhận và bắt đầu kiểm thử",
   "programs.attestation": "Điều khoản đã chấp nhận",
+  "programs.back": "Quay lại chương trình",
   "programs.catalog.bounty": "Có thưởng",
   "programs.catalog.counts": "{in} trong phạm vi, {out} ngoài phạm vi; từ {source}, {date}",
   "programs.catalog.countsSuggested": "{in} trong phạm vi, {suggested} được gợi ý, {out} ngoài phạm vi; từ {source}, {date}",
@@ -202,6 +203,5 @@
   "programs.visibility.publicHint": "Thành viên chương trình và mọi người được xem toàn bộ tổ chức.",
   "programs.visibility.title": "Ai được xem chương trình này",
   "programs.windows": "Khung giờ kiểm thử",
-  "programs.windowsAny": "Bất cứ lúc nào",
-  "programs.back": "Quay lại chương trình"
+  "programs.windowsAny": "Bất cứ lúc nào"
 }

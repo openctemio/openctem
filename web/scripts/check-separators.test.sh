@@ -57,6 +57,15 @@ must_pass 'comma list' $A "const s = parts.join(', ')"
 must_pass 'colon label' $D '  "a.b": "Immediate: actively exploited",'
 must_pass 'test file' src/__tests__/a.tsx "expect(text).toBe('a · b')"
 
+# A line only moved within its file (catalog re-sort) is not an added separator.
+old='  "a.b": "Immediate — actively exploited",'
+printf '%s\n%s\n' "$old" '  "z.z": "z",' > "$t/$D"
+git -C "$t" commit -q -am seed
+git -C "$t" checkout -q -b moved
+printf '%s\n%s\n' '  "z.z": "z",' "$old" > "$t/$D"
+git -C "$t" commit -q -am move
+(cd "$t" && bash "$here/check-separators.sh" change >/dev/null 2>&1) || { echo "FAIL rejected: moved line"; fail=1; }
+
 find "$t" -delete
 [ $fail = 0 ] && echo ok
 exit $fail
