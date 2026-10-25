@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
+import { codeText } from '@/lib/api/error-message'
 import { csrfFetch } from '@/lib/api/client'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
@@ -146,7 +147,7 @@ export function AddConnectionDialog({ open, onOpenChange, onSuccess }: AddConnec
         })
       } else {
         setTestStatus('error')
-        setTestError(data.message || 'Connection test failed')
+        setTestError(codeText(data.code, data.message, 'Connection test failed'))
       }
     } catch (error) {
       setTestStatus('error')

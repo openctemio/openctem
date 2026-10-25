@@ -50,11 +50,13 @@ import {
   Trash2,
   Webhook,
   SlidersHorizontal,
+  KeyRound,
 } from 'lucide-react'
 import { confirmName } from '@/lib/confirm-name'
 import { ConfirmDialog } from '@/components/confirm-dialog'
 import { Can } from '@/lib/permissions'
 import { getErrorMessage } from '@/lib/api/error-handler'
+import { connectionProblem } from '@/features/integrations/lib/connection-status'
 import { RoutingRulesDialog } from '@/features/integrations/components/routing-rules-dialog'
 import { JiraWebhookDialog } from '@/features/integrations/components/jira-webhook-dialog'
 import { TicketCreatePolicyDialog } from '@/features/integrations/components/ticket-create-policy-dialog'
@@ -581,6 +583,7 @@ function TicketingRowActions({ integration }: { integration: Integration }) {
   const [webhookOpen, setWebhookOpen] = useState(false)
   const [policyOpen, setPolicyOpen] = useState(false)
   const [deleteOpen, setDeleteOpen] = useState(false)
+  const [tokenOpen, setTokenOpen] = useState(false)
 
   const { trigger: syncNow, isMutating: isSyncing } = useSyncIntegrationApi(integration.id)
   // A sync creates and updates tickets in the tracker: ask first.
@@ -589,6 +592,17 @@ function TicketingRowActions({ integration }: { integration: Integration }) {
   const { trigger: deleteNow, isMutating: isDeleting } = useDeleteIntegrationApi(integration.id)
 
   const supported = isSupported(integration)
+  // The fix a failed test calls for ("Add API token"), first in the menu.
+  const problem =
+    integration.status === 'error'
+      ? connectionProblem(
+          integration,
+          t,
+          t('ticketingIntegration.actions.couldNotConnect', '{name} could not connect', {
+            name: integration.name,
+          })
+        )
+      : undefined
 
   // A connection is only used once a test has marked it connected, so a
   // pending or failed one needs a way to be (re)tested.
@@ -603,10 +617,13 @@ function TicketingRowActions({ integration }: { integration: Integration }) {
         )
       } else {
         toast.error(
-          result?.status_message ||
+          connectionProblem(
+            result ?? undefined,
+            t,
             t('ticketingIntegration.actions.couldNotConnect', '{name} could not connect', {
               name: integration.name,
             })
+          ).message
         )
       }
       await revalidateIntegrations()
@@ -713,6 +730,18 @@ function TicketingRowActions({ integration }: { integration: Integration }) {
     <>
       <DataTableRowActions
         actions={[
+          ...(integration.provider === 'jira'
+            ? [
+                {
+                  label:
+                    problem?.actionLabel ??
+                    t('ticketingIntegration.token.action', 'Update API token'),
+                  icon: KeyRound,
+                  onClick: () => setTokenOpen(true),
+                  route: 'PUT /api/v1/integrations/{id}' as const,
+                },
+              ]
+            : []),
           ...(integration.status !== 'connected'
             ? [
                 {
@@ -779,6 +808,13 @@ function TicketingRowActions({ integration }: { integration: Integration }) {
           revalidated `integration` prop every time it opens (otherwise the
           always-mounted form keeps stale values after a save) — and so the two
           dialogs never build their config payload from a stale prop. */}
+      {integration.provider === 'jira' && tokenOpen && (
+        <UpdateJiraTokenDialog
+          integration={integration}
+          open={tokenOpen}
+          onOpenChange={setTokenOpen}
+        />
+      )}
       {integration.provider === 'jira' && configOpen && (
         <ConfigureTicketingDialog
           integration={integration}
@@ -823,7 +859,19 @@ function useColumns(): ColumnDef<Integration>[] {
             primary={row.original.name}
             secondary={
               isSupported(row.original)
-                ? row.original.description || row.original.status_message
+                ? row.original.status === 'error'
+                  ? connectionProblem(
+                      row.original,
+                      t,
+                      t(
+                        'ticketingIntegration.actions.couldNotConnect',
+                        '{name} could not connect',
+                        {
+                          name: row.original.name,
+                        }
+                      )
+                    ).message
+                  : row.original.description
                 : t(
                     'ticketingIntegration.unsupportedNote',
                     'This provider has no client yet, so this connection does nothing.'
@@ -949,11 +997,15 @@ function ConnectJiraDialog({ open, onOpenChange, onSuccess }: ConnectJiraDialogP
         toast.success(t('ticketingIntegration.connect.connected', '{name} connected', { name }))
       } else {
         toast.error(
-          created?.status_message
+          created?.status_code || created?.status_message
             ? t(
                 'ticketingIntegration.connect.savedNotConnectedWithReason',
                 '{name} was saved but could not connect: {reason}',
-                { name, reason: created.status_message }
+                {
+                  name,
+                  reason: connectionProblem(created, t, t('errors.INTEGRATION_TEST_FAILED'))
+                    .message,
+                }
               )
             : t(
                 'ticketingIntegration.connect.savedNotConnected',
@@ -1095,6 +1147,131 @@ function ConnectJiraDialog({ open, onOpenChange, onSuccess }: ConnectJiraDialogP
               {isMutating
                 ? t('ticketingIntegration.connect.connecting', 'Connecting...')
                 : t('ticketingIntegration.connect.connect', 'Connect')}
+            </Button>
+          </DialogFooter>
+        </DialogForm>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
+/**
+ * Enter the Jira account email and API token again, then test: the fix for a
+ * connection without credentials, with unreadable ones, or with ones the
+ * service refused. The token is sent once, encrypted at rest, never shown.
+ */
+function UpdateJiraTokenDialog({
+  integration,
+  open,
+  onOpenChange,
+}: {
+  integration: Integration
+  open: boolean
+  onOpenChange: (open: boolean) => void
+}) {
+  const { t } = useTranslation()
+  const [email, setEmail] = useState('')
+  const [apiToken, setApiToken] = useState('')
+  const { trigger: update, isMutating: isSaving } = useUpdateIntegrationApi(integration.id)
+  const { trigger: testNow, isMutating: isTesting } = useTestIntegrationApi(integration.id)
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault()
+    if (!email.trim() || !apiToken.trim()) return
+    try {
+      await update({
+        credentials: JSON.stringify({ email: email.trim(), api_token: apiToken.trim() }),
+      })
+      const result = await testNow()
+      if (result?.status === 'connected') {
+        toast.success(
+          t('ticketingIntegration.actions.connected', '{name} is connected', {
+            name: integration.name,
+          })
+        )
+        onOpenChange(false)
+      } else {
+        toast.error(
+          connectionProblem(
+            result ?? undefined,
+            t,
+            t('ticketingIntegration.actions.couldNotConnect', '{name} could not connect', {
+              name: integration.name,
+            })
+          ).message
+        )
+      }
+      await revalidateIntegrations()
+    } catch (err) {
+      toast.error(
+        getErrorMessage(
+          err,
+          t('ticketingIntegration.token.failed', 'Could not save the API token.')
+        )
+      )
+    }
+  }
+
+  const busy = isSaving || isTesting
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent size="sm">
+        <DialogHeader>
+          <DialogTitle>
+            {t('ticketingIntegration.token.title', 'API token for {name}', {
+              name: integration.name,
+            })}
+          </DialogTitle>
+          <DialogDescription>
+            {t(
+              'ticketingIntegration.token.description',
+              'Enter the Atlassian account email and an API token. The connection is tested when you save.'
+            )}
+          </DialogDescription>
+        </DialogHeader>
+        <DialogForm onSubmit={handleSubmit}>
+          <DialogBody className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="token-email">
+                {t('ticketingIntegration.connect.email', 'Atlassian account email')}
+              </Label>
+              <Input
+                id="token-email"
+                type="email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                autoComplete="off"
+                required
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="token-value">
+                {t('ticketingIntegration.connect.apiToken', 'API token')}
+              </Label>
+              <Input
+                id="token-value"
+                type="password"
+                value={apiToken}
+                onChange={(e) => setApiToken(e.target.value)}
+                autoComplete="off"
+                required
+              />
+              <p className="text-muted-foreground text-xs">
+                {t(
+                  'ticketingIntegration.connect.tokenHint',
+                  'Generate from Atlassian account settings under Security.'
+                )}
+              </p>
+            </div>
+          </DialogBody>
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
+              {t('ticketingIntegration.common.cancel', 'Cancel')}
+            </Button>
+            <Button type="submit" disabled={busy || !email.trim() || !apiToken.trim()}>
+              {busy
+                ? t('ticketingIntegration.token.saving', 'Saving and testing…')
+                : t('ticketingIntegration.token.save', 'Save and test')}
             </Button>
           </DialogFooter>
         </DialogForm>
