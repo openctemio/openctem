@@ -503,13 +503,15 @@ func (r *AssetCoverageRepository) Health(ctx context.Context, tenantID shared.ID
 		                          AND COALESCE(c.last_success_at, c.created_at) < now() - make_interval(secs => 2 * COALESCE(p.every, 86400))),
 		       count(*) FILTER (WHERE c.state = 'failed' AND c.fail_streak >= $4),
 		       count(*) FILTER (WHERE c.last_outcome = 'ok' AND c.last_success_at > now() - interval '24 hours'),
-		       count(*) FILTER (WHERE c.last_outcome = 'no_output' AND c.last_success_at > now() - interval '24 hours')
+		       count(*) FILTER (WHERE c.last_outcome = 'no_output' AND c.last_success_at > now() - interval '24 hours'),
+		       count(*) FILTER (WHERE c.state = 'paused' AND c.reason = ANY($5::text[])),
+		       COALESCE(min(c.reason) FILTER (WHERE c.state = 'paused' AND c.reason = ANY($5::text[])), '')
 		FROM asset_coverage c
 		LEFT JOIN unnest($2::text[], $3::float8[]) AS p(cap, every) ON p.cap = c.capability
 		WHERE c.tenant_id = $1 AND c.vantage = ''
 		GROUP BY c.capability
 		ORDER BY c.capability`,
-		tenantID.String(), pq.Array(caps), pq.Array(secs), coverage.FailingStreak)
+		tenantID.String(), pq.Array(caps), pq.Array(secs), coverage.FailingStreak, pq.Array(coverage.ReadinessReasons()))
 	if err != nil {
 		return nil, fmt.Errorf("coverage health: %w", err)
 	}
@@ -517,7 +519,7 @@ func (r *AssetCoverageRepository) Health(ctx context.Context, tenantID shared.ID
 	var out []coverage.CapabilityHealth
 	for rows.Next() {
 		var h coverage.CapabilityHealth
-		if err := rows.Scan(&h.Capability, &h.Applicable, &h.Gaps, &h.Failing, &h.OK, &h.NoOutput); err != nil {
+		if err := rows.Scan(&h.Capability, &h.Applicable, &h.Gaps, &h.Failing, &h.OK, &h.NoOutput, &h.Paused, &h.PausedReason); err != nil {
 			return nil, err
 		}
 		out = append(out, h)
@@ -525,11 +527,74 @@ func (r *AssetCoverageRepository) Health(ctx context.Context, tenantID shared.ID
 	return out, rows.Err()
 }
 
-// ClaimAlert claims an alert key for ttl through the controller lease
-// table: a second claim before it expires fails, on any replica.
-func (r *AssetCoverageRepository) ClaimAlert(ctx context.Context, key string, ttl time.Duration) (bool, error) {
-	_, ok, err := NewControllerLeaseRepository(r.db).TryAcquire(ctx, "coverage-alert:"+key, LeaseHolderID(), ttl)
-	return ok, err
+// AlertStates returns the tenant's stored coverage alert states.
+func (r *AssetCoverageRepository) AlertStates(ctx context.Context, tenantID shared.ID) ([]coverage.AlertState, error) {
+	rows, err := r.db.QueryContext(ctx, `
+		SELECT capability, kind, reason, active, sent_count, last_count, sent_at, cleared_at
+		FROM asset_coverage_alerts WHERE tenant_id = $1`, tenantID.String())
+	if err != nil {
+		return nil, fmt.Errorf("list coverage alert states: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+	var out []coverage.AlertState
+	for rows.Next() {
+		var (
+			st            coverage.AlertState
+			sent, cleared sql.NullTime
+		)
+		if err := rows.Scan(&st.Capability, &st.Kind, &st.Reason, &st.Active, &st.SentCount, &st.LastCount, &sent, &cleared); err != nil {
+			return nil, err
+		}
+		st.SentAt, st.ClearedAt = coverageTime(sent), coverageTime(cleared)
+		out = append(out, st)
+	}
+	return out, rows.Err()
+}
+
+// SaveAlertStates upserts coverage alert states of the tenant.
+func (r *AssetCoverageRepository) SaveAlertStates(ctx context.Context, tenantID shared.ID, states []coverage.AlertState) error {
+	if len(states) == 0 {
+		return nil
+	}
+	n := len(states)
+	caps, kinds, reasons := make([]string, n), make([]string, n), make([]string, n)
+	active := make([]bool, n)
+	sent, last := make([]int64, n), make([]int64, n)
+	sentAt, clearedAt := make([]*time.Time, n), make([]*time.Time, n)
+	for i, st := range states {
+		caps[i] = coverage.Clip(st.Capability, coverage.MaxCodeLen)
+		kinds[i] = coverage.Clip(st.Kind, 32)
+		reasons[i] = coverage.Clip(st.Reason, coverage.MaxCodeLen)
+		active[i], sent[i], last[i] = st.Active, int64(st.SentCount), int64(st.LastCount)
+		sentAt[i], clearedAt[i] = st.SentAt, st.ClearedAt
+	}
+	_, err := r.db.ExecContext(ctx, `
+		INSERT INTO asset_coverage_alerts (tenant_id, capability, kind, reason, active, sent_count, last_count, sent_at, cleared_at, updated_at)
+		SELECT $1, w.capability, w.kind, w.reason, w.active, w.sent, w.last,
+		       NULLIF(w.sent_at, '')::timestamptz, NULLIF(w.cleared_at, '')::timestamptz, now()
+		FROM unnest($2::text[], $3::text[], $4::text[], $5::bool[], $6::bigint[], $7::bigint[], $8::text[], $9::text[])
+		     AS w(capability, kind, reason, active, sent, last, sent_at, cleared_at)
+		ON CONFLICT (tenant_id, capability, kind, reason) DO UPDATE SET
+		    active = EXCLUDED.active, sent_count = EXCLUDED.sent_count, last_count = EXCLUDED.last_count,
+		    sent_at = EXCLUDED.sent_at, cleared_at = EXCLUDED.cleared_at, updated_at = now()`,
+		tenantID.String(), pq.Array(caps), pq.Array(kinds), pq.Array(reasons), pq.Array(active),
+		pq.Array(sent), pq.Array(last), pq.Array(timeArray(sentAt)), pq.Array(timeArray(clearedAt)))
+	if err != nil {
+		return fmt.Errorf("save coverage alert states: %w", err)
+	}
+	return nil
+}
+
+// timeArray turns optional times into RFC 3339 text ("" for a missing
+// time, read back as NULL).
+func timeArray(ts []*time.Time) []string {
+	out := make([]string, len(ts))
+	for i, t := range ts {
+		if t != nil {
+			out[i] = t.UTC().Format(time.RFC3339Nano)
+		}
+	}
+	return out
 }
 
 var _ coverage.HealthReader = (*AssetCoverageRepository)(nil)
