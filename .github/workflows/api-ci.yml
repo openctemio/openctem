@@ -9,7 +9,7 @@ name: API CI
 # Two tiers (`changes` decides; the `full` output of .github/scripts/changed.sh):
 #   fast            pull_request. `API static checks` (one job: every short gate
 #                   and the linters as steps) + `Tests (Postgres + Redis)`: the
-#                   whole suite against real Postgres and Redis in 2 + 2 shards
+#                   whole suite against real Postgres and Redis in 6 shards
 #                   without the race detector, so the tenant-isolation and other
 #                   DB-backed tests fail on the PR, not first in the merge queue
 #                   (owner decision D-30). `Tests (least-privilege DB role)` and
@@ -17,7 +17,7 @@ name: API CI
 #                   a migration or the role script. PR runs are cancelled by a
 #                   newer push to the same PR (concurrency below).
 #   full            merge_group, push, and a PR with the `ci:full` label or a
-#                   changed CI definition. The suite in 4 + 4 shards with -race,
+#                   changed CI definition. The suite in 8 shards with -race,
 #                   the least-privilege suite (D-6), PostgreSQL 18, plus
 #                   `Release Binaries` (not on a PR), and on main the Docker build.
 # `API CI OK` refuses a merge_group or push run that was not the full tier, so
@@ -83,18 +83,18 @@ jobs:
           PR_LABELS: ${{ toJSON(github.event.pull_request.labels.*.name) }}
         run: bash .github/scripts/changed.sh
 
-      # The shards of `Tests (Postgres + Redis)` for this tier. Full: 4 + 4
-      # shards with -race. Fast: 2 + 2 shards without it (same tests, about half
-      # the runner time; the race detector runs in the queue and on push).
-      # `API static checks` proves both splits cover every test exactly once.
+      # The shards of `Tests (Postgres + Redis)` for this tier. Full: 8 shards
+      # with -race. Fast: 6 shards without it (same tests, about half the
+      # runner time; the race detector runs in the queue and on push).
+      # `API static checks` proves every split covers every test exactly once.
       - id: tier
         working-directory: .
         env:
           FULL: ${{ steps.f.outputs.full }}
         run: |
-          if [ "$FULL" = true ]; then n=4 race=true; else n=2 race=false; fi
+          if [ "$FULL" = true ]; then n=8 race=true; else n=6 race=false; fi
           m="$(jq -nc --argjson n "$n" --argjson race "$race" \
-            '[range($n) | {kind: "unit", shard: ., total: $n, race: $race}] + [range($n) | {kind: "pkgs", shard: ., total: $n, race: $race}]')"
+            '[range($n) | {shard: ., total: $n, race: $race}]')"
           echo "test_matrix=$m" | tee -a "$GITHUB_OUTPUT"
 
       # Runs on every PR, also a docs-only one that skips the jobs below.
@@ -327,14 +327,12 @@ jobs:
           done
           rm .env
 
-      # The shards of the two DB-backed jobs below cover every package and
-      # every top-level test of tests/unit exactly once.
-      # 4 + 4: full tier, 2 + 2: fast tier, 3 + 3: least-privilege.
+      # The shards of the DB-backed jobs cover every package and every
+      # top-level test of a split package exactly once. 8: full tier,
+      # 6: fast tier and least-privilege, 3: api-pg-compat.yml.
       - name: Test shards cover every test
         run: |
-          bash ../.github/scripts/go-shard.sh check 4 4
-          bash ../.github/scripts/go-shard.sh check 2 2
-          bash ../.github/scripts/go-shard.sh check 3 3
+          bash ../.github/scripts/go-shard.sh check 8 6 3
 
       # vet, staticcheck and golangci-lint: steps of this job (one runner, one
       # checkout, one setup-go) rather than a job of their own. The test shards
@@ -358,14 +356,15 @@ jobs:
 
   # Every event (PRs included): the whole suite against real Postgres and
   # Redis, so the DB-backed tests run too. The shard list comes from `changes`
-  # (fast tier 2 + 2 without -race, full tier 4 + 4 with -race).
+  # (fast tier 6 shards without -race, full tier 8 with -race).
   test:
     name: Tests (Postgres + Redis)
     needs: changes
     if: needs.changes.outputs.api == 'true'
     runs-on: ubuntu-latest
     # The suite is split into parallel shards (.github/scripts/go-shard.sh:
-    # tests/unit alone is most of the run time, so it has its own shards).
+    # the few packages that hold most of the run time are split by test name
+    # over every shard, the rest go whole to one shard each).
     # `Static checks` proves the shards together cover every test once.
     strategy:
       fail-fast: false
@@ -438,12 +437,11 @@ jobs:
       # OPENCTEM_TEST_DB_REQUIRED: testdb fails instead of skipping when the
       # database is missing or unreachable. -json feeds the skip check below;
       # the jq filter prints the same log that -v would.
-      - name: Run tests (${{ matrix.kind }} shard ${{ matrix.shard }}/${{ matrix.total }})
+      - name: Run tests (shard ${{ matrix.shard }}/${{ matrix.total }})
         # shell: bash means -o pipefail. Without it a failing go test is hidden
         # by the pipe into tee/jq and the step goes green.
         shell: bash
         env:
-          KIND: ${{ matrix.kind }}
           SHARD: ${{ matrix.shard }}
           TOTAL: ${{ matrix.total }}
           WITH_RACE: ${{ matrix.race }}
@@ -456,21 +454,10 @@ jobs:
           REDIS_HOST: localhost
           REDIS_PORT: 6379
         run: |
-          if [ "$KIND" = unit ]; then
-            run="$(bash ../.github/scripts/go-shard.sh unit "$SHARD" "$TOTAL")"
-            set -- -run "$run" ./tests/unit
-          else
-            mapfile -t pk < <(bash ../.github/scripts/go-shard.sh pkgs "$SHARD" "$TOTAL")
-            set -- "${pk[@]}"
-          fi
           race_flag=()
           if [ "$WITH_RACE" = true ]; then race_flag=(-race); fi
-          go test -json "${race_flag[@]}" -timeout 20m -coverprofile=coverage.out -covermode=atomic "$@" \
-            | tee test.json \
-            | jq -Rrj '. as $l | (try fromjson catch null) as $e
-                | if $e == null then $l + "\n"
-                  elif ($e.Action == "output" or $e.Action == "build-output") then $e.Output
-                  else empty end'
+          bash ../.github/scripts/go-shard-run.sh "$SHARD" "$TOTAL" test.json \
+            "${race_flag[@]}" -timeout 20m -coverprofile=coverage.out -covermode=atomic
 
       # A test that skips itself on a failed ping (t.Skipf) would otherwise let
       # this job go green without running its DB checks.
@@ -483,7 +470,7 @@ jobs:
         with:
           files: ./api/coverage.out
           flags: api
-          name: api-${{ matrix.kind }}-${{ matrix.shard }}-of-${{ matrix.total }}
+          name: api-${{ matrix.shard }}-of-${{ matrix.total }}
           fail_ci_if_error: false
 
   # D-6: the API connects as a least-privilege role (docs/deployment/database-roles.md).
@@ -501,13 +488,8 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        include:
-          - { kind: unit, shard: 0, total: 3 }
-          - { kind: unit, shard: 1, total: 3 }
-          - { kind: unit, shard: 2, total: 3 }
-          - { kind: pkgs, shard: 0, total: 3 }
-          - { kind: pkgs, shard: 1, total: 3 }
-          - { kind: pkgs, shard: 2, total: 3 }
+        shard: [0, 1, 2, 3, 4, 5]
+        total: [6]
     services:
       postgres:
         image: ghcr.io/openctemio/mirror/postgres:17-alpine
@@ -586,10 +568,9 @@ jobs:
       # missing database fails the job instead of passing silently. The two
       # tests that need CREATEDB (a superuser) skip here by design and run in
       # Tests (Postgres + Redis).
-      - name: Run the DB-backed suite as the app role (${{ matrix.kind }} shard ${{ matrix.shard }}/${{ matrix.total }})
+      - name: Run the DB-backed suite as the app role (shard ${{ matrix.shard }}/${{ matrix.total }})
         shell: bash # -o pipefail: the pipe into tee/jq must not hide a failure
         env:
-          KIND: ${{ matrix.kind }}
           SHARD: ${{ matrix.shard }}
           TOTAL: ${{ matrix.total }}
           OPENCTEM_TEST_DB_REQUIRED: "1"
@@ -604,19 +585,7 @@ jobs:
           REDIS_HOST: localhost
           REDIS_PORT: 6379
         run: |
-          if [ "$KIND" = unit ]; then
-            run="$(bash ../.github/scripts/go-shard.sh unit "$SHARD" "$TOTAL")"
-            set -- -run "$run" ./tests/unit
-          else
-            mapfile -t pk < <(bash ../.github/scripts/go-shard.sh pkgs "$SHARD" "$TOTAL")
-            set -- "${pk[@]}"
-          fi
-          go test -json -timeout 30m "$@" \
-            | tee lp-test.json \
-            | jq -Rrj '. as $l | (try fromjson catch null) as $e
-                | if $e == null then $l + "\n"
-                  elif ($e.Action == "output" or $e.Action == "build-output") then $e.Output
-                  else empty end'
+          bash ../.github/scripts/go-shard-run.sh "$SHARD" "$TOTAL" lp-test.json -timeout 30m
 
       - name: No DB-backed test was skipped
         if: ${{ !cancelled() }}
