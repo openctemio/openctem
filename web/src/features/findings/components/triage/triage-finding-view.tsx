@@ -98,6 +98,7 @@ export function TriageFindingView({
         <ExploitSignals
           isInKev={finding.is_in_kev}
           kevDueDate={finding.kev_due_date}
+          kevRansomware={finding.kev_ransomware}
           epssScore={finding.epss_score}
         />
         {finding.cve_id && (

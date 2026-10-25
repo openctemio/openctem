@@ -346,11 +346,13 @@ function transformApiToUiFinding(api: ApiFinding): Finding {
     // SLA tracking
     slaStatus: api.sla_status,
     slaDeadline: api.sla_deadline,
+    slaKevCapped: api.sla_kev_capped,
     // Threat Intel Enrichment (RFC-004)
     epssScore: api.epss_score,
     epssPercentile: api.epss_percentile,
     isInKev: api.is_in_kev,
     kevDueDate: api.kev_due_date,
+    kevRansomware: api.kev_ransomware,
     // Priority Classification (RFC-004)
     priorityClass: api.priority_class,
     priorityClassReason: api.priority_class_reason,
@@ -1583,6 +1585,7 @@ function FindingsContent() {
           <ExploitSignals
             isInKev={row.original.isInKev}
             kevDueDate={row.original.kevDueDate}
+            kevRansomware={row.original.kevRansomware}
             epssScore={row.original.epssScore}
           />
         ),
@@ -1667,7 +1670,7 @@ function FindingsContent() {
           if (!status || status === 'not_applicable') {
             return <span className="text-muted-foreground text-sm">—</span>
           }
-          return (
+          const cell = (
             <div className="flex flex-col gap-0.5">
               <SlaStatusBadge status={status} />
               {row.original.slaDeadline && (
@@ -1676,6 +1679,20 @@ function FindingsContent() {
                 </span>
               )}
             </div>
+          )
+          if (!row.original.slaKevCapped) return cell
+          // The deadline came from the SLA policy's known exploited cap.
+          return (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <div data-slot="sla-kev-capped" tabIndex={0} className="w-fit">
+                  {cell}
+                </div>
+              </TooltipTrigger>
+              <TooltipContent side="top" className="max-w-xs text-xs">
+                {t('findings.properties.slaKevCapped', 'Shortened because it is in CISA KEV')}
+              </TooltipContent>
+            </Tooltip>
           )
         },
       },

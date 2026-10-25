@@ -357,12 +357,14 @@ export interface ApiFinding {
   comments_count?: number // number of comments
   sla_status?: string // on_track | warning | overdue | exceeded | not_applicable
   sla_deadline?: string // ISO timestamp of the remediation deadline (nullable)
+  sla_kev_capped?: boolean // the deadline was shortened by the policy's known exploited (KEV) cap
 
   // Threat Intel Enrichment (RFC-004)
   epss_score?: number // 0.0-1.0 exploitation probability
   epss_percentile?: number // 0.0-100.0
   is_in_kev?: boolean // CISA Known Exploited Vulnerabilities
   kev_due_date?: string // CISA remediation deadline
+  kev_ransomware?: boolean // CISA: used in known ransomware campaigns
 
   // Priority Classification (RFC-004)
   priority_class?: 'P0' | 'P1' | 'P2' | 'P3'

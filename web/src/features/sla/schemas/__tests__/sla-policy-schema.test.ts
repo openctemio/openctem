@@ -32,6 +32,15 @@ describe('slaPolicySchema', () => {
     expect(form.escalation_enabled).toBe(true)
   })
 
+  it('known exploited cap: the API value, 14 when absent, 0..365 accepted', () => {
+    expect(valid.kev_cap_days).toBe(14)
+    expect(newSlaPolicyForm({ ...apiWindows, kev_cap_days: 7 }).kev_cap_days).toBe(7)
+    expect(slaPolicySchema.safeParse({ ...valid, kev_cap_days: 0 }).success).toBe(true)
+    expect(slaPolicySchema.safeParse({ ...valid, kev_cap_days: 365 }).success).toBe(true)
+    expect(slaPolicySchema.safeParse({ ...valid, kev_cap_days: -1 }).success).toBe(false)
+    expect(slaPolicySchema.safeParse({ ...valid, kev_cap_days: 366 }).success).toBe(false)
+  })
+
   it('refuses a P0 window longer than P1', () => {
     const r = slaPolicySchema.safeParse({ ...valid, p0_days: 10, p1_days: 5 })
     expect(r.success).toBe(false)

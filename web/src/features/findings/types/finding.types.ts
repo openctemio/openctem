@@ -722,12 +722,16 @@ export interface Finding {
   rank?: number // priority score
   slaStatus?: string // on_track | warning | overdue | exceeded | not_applicable
   slaDeadline?: string // ISO timestamp of the remediation deadline (nullable)
+  /** The deadline was shortened by the SLA policy's known exploited (KEV) cap. */
+  slaKevCapped?: boolean
 
   // Threat Intel Enrichment (RFC-004)
   epssScore?: number
   epssPercentile?: number
   isInKev?: boolean
   kevDueDate?: string
+  /** CISA marks the KEV entry as used in known ransomware campaigns. */
+  kevRansomware?: boolean
 
   // Priority Classification (RFC-004)
   priorityClass?: PriorityClass

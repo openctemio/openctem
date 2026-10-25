@@ -15,6 +15,7 @@ const form: SlaPolicyFormData = {
   medium_days: 30,
   low_days: 90,
   info_days: 0,
+  kev_cap_days: 14,
   warning_threshold_pct: 80,
   escalation_enabled: true,
 }
@@ -25,5 +26,9 @@ describe('buildSlaPolicyPayload', () => {
   })
   it('edit never sends is_default', () => {
     expect('is_default' in buildSlaPolicyPayload(form, true)).toBe(false)
+  })
+  it('sends the known exploited cap, 0 (off) included', () => {
+    expect(buildSlaPolicyPayload(form, true).kev_cap_days).toBe(14)
+    expect(buildSlaPolicyPayload({ ...form, kev_cap_days: 0 }, false).kev_cap_days).toBe(0)
   })
 })
