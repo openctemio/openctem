@@ -254,3 +254,28 @@ func TestAssetCoverageCycle_TenantScoped(t *testing.T) {
 		t.Fatalf("tenant a's pass wrote tenant b's ledger: %+v", rows)
 	}
 }
+
+// A target the run starter defers (a passive batch runs public names and
+// routed names separately) stays due and goes out with a later batch.
+func TestAssetCoverageCycle_DeferredTargetStaysDue(t *testing.T) {
+	g := newCycleRig(t)
+	a := g.r.newTenant()
+	g.scope(a)
+	g.asset(a, "public.cycle.test", "subdomain", "", "")
+	internal := g.asset(a, "internal.cycle.test", "subdomain", "", "")
+	g.f.later = map[string]bool{"internal.cycle.test": true}
+	if got := g.pass(a)["resolve.dns"]; len(got) != 2 {
+		t.Fatalf("first batch offered %v", got)
+	}
+	if r := g.row(a, internal, "resolve.dns"); r.State != covdom.StateDue {
+		t.Fatalf("deferred pair = %s, want due", r.State)
+	}
+	g.complete("resolve.dns")
+	g.f.later = nil
+	if got := g.pass(a)["resolve.dns"]; strings.Join(got, ",") != "internal.cycle.test" {
+		t.Fatalf("next batch = %v", got)
+	}
+	if r := g.row(a, internal, "resolve.dns"); r.State != covdom.StateQueued {
+		t.Fatalf("deferred pair after its batch = %s", r.State)
+	}
+}

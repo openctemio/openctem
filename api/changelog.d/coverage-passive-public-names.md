@@ -1,0 +1,3 @@
+### Fixed: DNS re-checks of coverage run for names that stopped resolving
+
+- In an organization with scan zones, passive coverage (DNS resolution, registration and network owner lookups, passive subdomain discovery) routed every name through the zones. A name that no longer resolved was refused `unresolved` or `zone_none`, so its DNS re-check never ran and the name was never confirmed gone. Public names (registrable under a public suffix, with no private answer) now skip zone routing for passive capabilities: these send no traffic to the target. Internal names and addresses keep zone routing. Organizations without zones and active capabilities are unchanged.
