@@ -525,9 +525,17 @@ func payloadTargets(payload json.RawMessage) []string {
 	if len(payload) == 0 {
 		return nil
 	}
-	var p struct {
+	// The targets at the top level and in "context" (the run context a
+	// step carries, which narrowPayload narrows too): a job that names its
+	// targets only in the context is checked like any other, never handed
+	// out unchecked.
+	type targetFields struct {
 		Targets []any `json:"targets"`
 		Target  any   `json:"target"`
+	}
+	var p struct {
+		targetFields
+		Context *targetFields `json:"context"`
 	}
 	if json.Unmarshal(payload, &p) != nil {
 		return nil
@@ -553,6 +561,12 @@ func payloadTargets(payload json.RawMessage) []string {
 		add(t)
 	}
 	add(p.Target)
+	if p.Context != nil {
+		for _, t := range p.Context.Targets {
+			add(t)
+		}
+		add(p.Context.Target)
+	}
 	return out
 }
 
