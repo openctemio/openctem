@@ -153,6 +153,38 @@ describe('FindingRetestSection', () => {
     expect(screen.getByText('(sha256:abcdef123456)')).toBeInTheDocument()
   })
 
+  it('shows still exposed at another path as its own amber outcome with its help', () => {
+    mockRetests = [
+      retest({
+        outcome: 'still_exposed_elsewhere',
+        reason_code: 'matched_elsewhere',
+        reason: 'matched at /a and /b',
+        result_status: 'confirmed',
+      }),
+    ]
+    render(<FindingRetestSection finding={nucleiFinding} />)
+    const chip = screen.getByText('Still exposed at another path')
+    expect(chip.className).toMatch(/sev-medium/)
+    expect(screen.getByText(/matched at \/a and \/b/)).toBeInTheDocument()
+    expect(screen.getByText(/matched at another path of the same target/)).toBeInTheDocument()
+    expect(screen.queryByText(/Inconclusive/)).toBeNull()
+  })
+
+  it('words an endpoint mismatch in plain language', () => {
+    mockRetests = [
+      retest({
+        outcome: 'inconclusive',
+        reason_code: 'endpoint_mismatch',
+        result_status: 'confirmed',
+      }),
+    ]
+    render(<FindingRetestSection finding={nucleiFinding} />)
+    expect(
+      screen.getByText("Inconclusive: the check did not request this finding's endpoint")
+    ).toBeInTheDocument()
+    expect(screen.getByText(/pinned to the exact URL of the finding/)).toBeInTheDocument()
+  })
+
   it('shows an unreachable target as inconclusive, with the reason', () => {
     mockRetests = [
       retest({
@@ -252,7 +284,7 @@ describe('retestMeta', () => {
     ).toMatch(/Regression/)
     expect(
       retestMeta(retest({ outcome: 'inconclusive', reason_code: 'endpoint_mismatch' })).label
-    ).toBe('Inconclusive: another endpoint was checked')
+    ).toBe("Inconclusive: the check did not request this finding's endpoint")
     expect(retestMeta(retest({ outcome: 'inconclusive', reason_code: 'blocked' })).label).toBe(
       'Inconclusive: blocked'
     )

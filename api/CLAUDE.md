@@ -669,6 +669,10 @@ apierror.Unauthorized("Invalid or expired token").WriteJSON(w)
 h.logger.Warn("token validation failed", "reason", err.Error())
 ```
 
+New errors use a registered code: `apierror.FromCode(apierror.CodeX).WithParams(apierror.Params{"name": n})`.
+Never put `err.Error()`, a lower error's text or an entity id into a message, a stored status or an
+audit message; `tools/lint/errleak` fails CI on a new one (`docs/architecture/error-responses.md`).
+
 | BAD Message | Attack Vector |
 |-------------|---------------|
 | "token has expired" | Attacker knows token was once valid |

@@ -184,3 +184,24 @@ func TestRunMap_StepOutcomeFromOutput(t *testing.T) {
 		t.Fatal("no output, no outcome")
 	}
 }
+
+// A retest that concluded "inconclusive" is a completed run and a succeeded
+// step carrying the result code, never a failed one with an error code.
+func TestRunMap_InconclusiveRetestIsSucceededWithResult(t *testing.T) {
+	sr := mapStepRun("retest", 1, scanrundom.StepRunStatusCompleted)
+	sr.Output = map[string]any{scanrunapp.StepOutputResultKind: "inconclusive", scanrunapp.StepOutputResultCode: "endpoint_mismatch"}
+	run := &scanrundom.Run{ID: shared.NewID(), Status: scanrundom.RunStatusCompleted, StepRuns: []*scanrundom.StepRun{sr},
+		Context: map[string]any{scanrunapp.RunContextResult: map[string]any{"kind": "inconclusive", "code": "endpoint_mismatch"}}}
+	got := toRunMapResponse(&scanrunapp.RunMap{Run: run})
+	n := got.Nodes[0]
+	if n.State != mapStateSucceeded || n.Reason != "" || n.ErrorClass != "" || n.Result == nil || n.Result.Code != "endpoint_mismatch" || n.Result.Kind != "inconclusive" {
+		t.Fatalf("node = %+v", n)
+	}
+	resp := toRunResponse(run)
+	if resp.Status != "completed" || resp.Result == nil || resp.Result.Kind != "inconclusive" {
+		t.Fatalf("run = %+v", resp)
+	}
+	if toRunResponse(&scanrundom.Run{ID: shared.NewID()}).Result != nil {
+		t.Fatal("a run without a result must not report one")
+	}
+}

@@ -103,10 +103,10 @@ func TestContentCatalogPrivate_DB(t *testing.T) {
 		PlatformPacks: contentpackapp.NewPlatformService(postgres.NewPlatformContentPackRepository(pg), store, signer, log),
 		Signer:        signer,
 		Slug: func(_ context.Context, id shared.ID) (string, error) {
-			return "cc-" + id.String(), nil
+			return "cc-" + strings.ReplaceAll(id.String(), "-", ""), nil
 		},
 	})
-	slugA := "cc-" + h.tenantA.String()
+	slugA := "cc-" + strings.ReplaceAll(h.tenantA.String(), "-", "")
 	perms := append([]string{permission.ContentPublish.String()}, ccAllPerms...)
 	art := wordlistArchive(t, "admin\nroot\n")
 	idA := slugA + "/words"
