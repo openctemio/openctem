@@ -119,11 +119,13 @@ func checkRunPolicyParams(step *scanworkflow.Step, st stage.Stage) error {
 		if !ok || len(o.Params) == 0 {
 			continue
 		}
-		if err := stage.ValidateStandardParams(st, o.Params); err != nil {
-			return fmt.Errorf("%w: step '%s': run_policy.depths.%s.params: %w", shared.ErrValidation, step.StepKey, d, err)
+		if key, ok := stage.InvalidStandardParam(st, o.Params); !ok {
+			return fmt.Errorf("%w: step '%s': run_policy.depths.%s.params: %q is not a valid standard param of %s",
+				shared.ErrValidation, step.StepKey, d, key, st.Name)
 		}
-		if err := stage.ValidateParams(st, step.RunPolicy.ConfigAt(step.Config, d), step.Tool); err != nil {
-			return fmt.Errorf("%w: step '%s' at %s depth: %w", shared.ErrValidation, step.StepKey, d, err)
+		if stage.ValidateParams(st, step.RunPolicy.ConfigAt(step.Config, d), step.Tool) != nil {
+			return fmt.Errorf("%w: step '%s': its settings at %s depth are not valid for %s",
+				shared.ErrValidation, step.StepKey, d, st.Name)
 		}
 	}
 	return nil
