@@ -3,7 +3,6 @@
   "assetDetail.backToAssets": "Quay lại tài sản",
   "assetDetail.description": "Mô tả",
   "assetDetail.errorTitle": "chi tiết tài sản",
-  "assetDetail.findings": "Phát hiện",
   "assetDetail.findingsEmpty": "Không có phát hiện đang mở",
   "assetDetail.findingsEmptyHint": "Tài sản này không có phát hiện bảo mật nào đang mở.",
   "assetDetail.findingsErrorTitle": "phát hiện",
@@ -25,6 +24,5 @@
   "assetDetail.subtitle": "Loại tài sản: {type}",
   "assetDetail.tags": "Thẻ",
   "assetDetail.title": "Tài sản",
-  "assetDetail.type": "Loại",
-  "assetDetail.viewFindings": "Xem {count} phát hiện của tài sản này"
+  "assetDetail.type": "Loại"
 }

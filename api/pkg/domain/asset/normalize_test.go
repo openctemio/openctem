@@ -25,6 +25,12 @@ func TestNormalizeName_Idempotent(t *testing.T) {
 		{"192.168.1.0/24", AssetTypeNetwork, ""},
 		{"s3://my-bucket", AssetTypeStorage, "s3_bucket"},
 		{"com.Company.App", AssetTypeMobileApp, ""},
+		{"github.com/org/repo.git/", AssetTypeRepository, ""},
+		{"ssh://git@github.com:22/org/repo.git", AssetTypeRepository, ""},
+		{"postgres://admin:S3cr@t!@db.example.com:5432/app", AssetTypeDatabase, ""},
+		{"mysql://db1.example.com/app?user=svc@corp.example", AssetTypeDatabase, ""},
+		{"[2001:DB8::1]:443", AssetTypeHost, ""},
+		{"https://Example.com./login", AssetTypeApplication, ""},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

@@ -36,6 +36,15 @@ describe('planGeneralSave', () => {
     expect(plan.branding?.logo_data).toBeNull()
   })
 
+  it('a new organization time zone is saved with the general section', () => {
+    const plan = planGeneralSave({
+      ...base,
+      generalForm: { ...base.generalForm, timezone: 'America/Argentina/Buenos_Aires' },
+    })
+    expect(plan.general?.timezone).toBe('America/Argentina/Buenos_Aires')
+    expect(plan.orgChanges).toBeNull()
+  })
+
   it('profile and general changes are planned independently of the logo', () => {
     const plan = planGeneralSave({
       ...base,
@@ -57,5 +66,17 @@ describe('organization settings page', () => {
     expect(src).toMatch(/planGeneralSave\(/)
     expect(src).not.toMatch(/toast\.success\('Logo updated'\)/)
     expect(src).not.toMatch(/toast\.success\('Logo removed'\)/)
+  })
+})
+
+describe('organization time zone (research 273 D8)', () => {
+  const src = readFileSync(
+    join(__dirname, '..', '..', 'components', 'general-settings.tsx'),
+    'utf8'
+  )
+  it('General renders the shared time zone picker bound to general.timezone', () => {
+    expect(src).toContain('<TimezoneSelect')
+    expect(src).toContain('id="org-timezone"')
+    expect(src).toMatch(/setGeneral\(\(g\) => \(\{ \.\.\.g, timezone: zone \}\)\)/)
   })
 })

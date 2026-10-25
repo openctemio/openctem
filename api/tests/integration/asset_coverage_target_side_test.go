@@ -186,3 +186,42 @@ func TestAssetCoverage_SensorSideFailureKeepsBackoff(t *testing.T) {
 		t.Fatalf("target-side after a sensor failure = %s streak %d, want paused streak 1", r.State, r.FailStreak)
 	}
 }
+
+// A host that stopped answering stays visible: once its pair has had no
+// success for twice the cadence it counts as applicable and as a gap (the
+// input of the gap alert), instead of dropping out of every count.
+func TestAssetCoverage_TargetSidePausedIsAGap(t *testing.T) {
+	g := newCycleRig(t)
+	a := g.r.newTenant()
+	g.scope(a)
+	name := g.asset(a, "dark.tside.test", "subdomain", "", "")
+	day := 24 * time.Hour
+	g.pass(a)
+	g.finishUnreachable("resolve.dns", "dark.tside.test")
+	g.pass(a)
+	if r := g.row(a, name, "resolve.dns"); r.State != covdom.StatePaused || r.Reason != "unreachable" {
+		t.Fatalf("pair = %s:%s, want paused:unreachable", r.State, r.Reason)
+	}
+	health := func() covdom.CapabilityHealth {
+		t.Helper()
+		hs, err := g.repo.Health(context.Background(), a.tenant, map[string]time.Duration{"resolve.dns": day})
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, h := range hs {
+			if h.Capability == "resolve.dns" {
+				return h
+			}
+		}
+		t.Fatal("no resolve.dns health")
+		return covdom.CapabilityHealth{}
+	}
+	if h := health(); h.Applicable != 1 || h.Gaps != 0 || h.Paused != 0 {
+		t.Fatalf("fresh dark host: %+v, want applicable 1, no gap yet, not readiness-paused", h)
+	}
+	g.exec(`UPDATE asset_coverage SET last_success_at = now() - interval '3 days', created_at = now() - interval '3 days'
+		WHERE tenant_id = $1 AND asset_id = $2 AND capability = 'resolve.dns'`, a.tenant.String(), name.String())
+	if h := health(); h.Applicable != 1 || h.Gaps != 1 || h.Failing != 0 {
+		t.Fatalf("host dark for 3 days: %+v, want applicable 1, gap 1, not failing", h)
+	}
+}
