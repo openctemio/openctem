@@ -1,7 +1,8 @@
 'use client'
 
 import { useState } from 'react'
-import { ChevronLeft, ChevronRight, Server } from 'lucide-react'
+import { ChevronLeft, ChevronRight, Crown, Globe, Server } from 'lucide-react'
+import { SignalChip } from '@/components/ui/signal-chip'
 import Link from '@/components/link'
 import { Button } from '@/components/ui/button'
 import {
@@ -32,18 +33,6 @@ import type { CveExposureAsset } from '../../types/exposure'
 import { cveFindingsHref } from '../../lib/vuln-page'
 
 const PER_PAGE = 10
-
-/** A small text marker for an exposure fact (crown jewel, internet-facing). */
-function Marker({ children, title }: { children: React.ReactNode; title: string }) {
-  return (
-    <span
-      title={title}
-      className="rounded border px-1.5 py-0.5 text-[11px] font-medium leading-none text-foreground"
-    >
-      {children}
-    </span>
-  )
-}
 
 /**
  * "Where": the assets with a finding of the CVE in the caller's scope, with
@@ -196,14 +185,15 @@ function AssetRow({ cve, asset }: { cve: string; asset: CveExposureAsset }) {
       <TableCell>
         <span className="flex flex-wrap items-center gap-1">
           {asset.crown_jewel && (
-            <Marker title={t('vulnPage.where.crownTitle', 'Crown jewel')}>
-              {t('vulnPage.where.crown', 'Crown jewel')}
-            </Marker>
+            <SignalChip icon={Crown}>{t('vulnPage.where.crown', 'Crown jewel')}</SignalChip>
           )}
           {asset.internet_facing && (
-            <Marker title={t('vulnPage.where.netTitle', 'Reachable from the internet')}>
+            <SignalChip
+              icon={Globe}
+              title={t('vulnPage.where.netTitle', 'Reachable from the internet')}
+            >
               {t('vulnPage.where.net', 'Internet')}
-            </Marker>
+            </SignalChip>
           )}
           {!asset.crown_jewel && !asset.internet_facing && (
             <span className="text-xs text-muted-foreground">
