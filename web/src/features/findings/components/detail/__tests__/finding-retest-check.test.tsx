@@ -10,7 +10,7 @@
  */
 
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen, waitFor } from '@testing-library/react'
+import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { FindingRetestCheckSection } from '../finding-retest-check'
 import { RetestCheckProvenance } from '../finding-retest'
@@ -224,6 +224,10 @@ describe('FindingRetestCheckSection', () => {
     const user = userEvent.setup()
     render(<FindingRetestCheckSection finding={finding} />)
     await user.click(screen.getByRole('button', { name: 'Approve' }))
+    expect(mockApprove).not.toHaveBeenCalled()
+    await user.click(
+      within(await screen.findByRole('alertdialog')).getByRole('button', { name: 'Approve check' })
+    )
     await waitFor(() =>
       expect(mockToastError).toHaveBeenCalledWith(
         'You cannot approve this version of the check',

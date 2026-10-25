@@ -69,6 +69,9 @@ func findingTemplateProvenance(f *ctis.Finding, tool *ctis.Tool) vulnerability.T
 		}
 	}
 	p.TemplatesVersion, p.TemplatesDigest = reportTemplateRelease(tool)
+	// The template's own tags as the sensor reported them at this sighting
+	// (not the finding's tags, which a user can edit).
+	p.ExposureClass = vulnerability.ExposureTemplateTags(f.Tags)
 	// The organization's own rules: the sensor prefixes their ids and marks
 	// nuclei results (rule_source). The store links the template.
 	if rs, _ := f.Properties["rule_source"].(string); rs == vulnerability.RuleSourceTenant || strings.HasPrefix(f.RuleID, vulnerability.TenantRulePrefix) {
@@ -76,6 +79,18 @@ func findingTemplateProvenance(f *ctis.Finding, tool *ctis.Tool) vulnerability.T
 		p.RuleID = f.RuleID
 	}
 	return p.Sanitize()
+}
+
+// sightingProvenance is findingTemplateProvenance for a report received
+// under scope. Only a result of a command the platform dispatched may set the
+// exposure class: any other ingest (API, CTIS or CI upload) carries tags its
+// submitter chose, and the class decides when an access refusal proves a fix.
+func sightingProvenance(f *ctis.Finding, tool *ctis.Tool, scope *alterScope) vulnerability.TemplateProvenance {
+	p := findingTemplateProvenance(f, tool)
+	if scope == nil || !scope.commandBound {
+		p.ExposureClass = false
+	}
+	return p
 }
 
 // recordTemplateSightings stores the provenance of the findings a report

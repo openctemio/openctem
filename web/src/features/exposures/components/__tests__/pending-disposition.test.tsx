@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen } from '@testing-library/react'
+import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import type { ExposureEvent } from '@/lib/api/exposure-types'
 
@@ -60,7 +60,12 @@ describe('PendingDispositionPanel', () => {
     )
     expect(screen.getByText('Waiting for a second approver')).toBeInTheDocument()
     await userEvent.click(screen.getByRole('button', { name: /Approve/ }))
-    expect(markExposureFalsePositive).toHaveBeenCalledWith('exp-1')
+    // Nothing changes until the confirmation.
+    expect(markExposureFalsePositive).not.toHaveBeenCalled()
+    const dialog = await screen.findByRole('alertdialog')
+    expect(dialog).toHaveTextContent('Approve marking "Open port" as a false positive?')
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Approve request' }))
+    await waitFor(() => expect(markExposureFalsePositive).toHaveBeenCalledWith('exp-1'))
     expect(acceptExposure).not.toHaveBeenCalled()
     expect(onChanged).toHaveBeenCalled()
   })
@@ -70,7 +75,10 @@ describe('PendingDispositionPanel', () => {
     expect(screen.queryByRole('button', { name: /Approve/ })).toBeNull()
     expect(screen.getByText('A different approver must confirm your request.')).toBeInTheDocument()
     await userEvent.click(screen.getByRole('button', { name: /Cancel request/ }))
-    expect(rejectExposureDisposition).toHaveBeenCalledWith('exp-1')
+    expect(rejectExposureDisposition).not.toHaveBeenCalled()
+    const dialog = await screen.findByRole('alertdialog')
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Cancel request' }))
+    await waitFor(() => expect(rejectExposureDisposition).toHaveBeenCalledWith('exp-1'))
   })
 
   it('shows no actions without approval rights and renders the reason as text', () => {

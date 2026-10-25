@@ -118,3 +118,30 @@ func TestClient_FetchThenConvert(t *testing.T) {
 		t.Error("converted finding missing dedup fingerprint")
 	}
 }
+
+// A guarded client must not follow an https to http redirect (the API token
+// would be resent in clear text) and must stop after the default hop limit.
+func TestNewClient_GuardedRedirectPolicy(t *testing.T) {
+	c := NewClient("https://dd.example.com", "secret-tok", nil)
+	cr := c.http.CheckRedirect
+	if cr == nil {
+		t.Fatal("guarded client has no CheckRedirect")
+	}
+	httpsReq, _ := http.NewRequestWithContext(context.Background(), http.MethodGet, "https://dd.example.com/api/v2/findings/", nil)
+	httpReq, _ := http.NewRequestWithContext(context.Background(), http.MethodGet, "http://dd.example.com/api/v2/findings/", nil)
+	httpReq.Header.Set("Authorization", "Token secret-tok")
+	if err := cr(httpReq, []*http.Request{httpsReq}); err == nil {
+		t.Fatal("https to http redirect must be refused")
+	}
+	ok, _ := http.NewRequestWithContext(context.Background(), http.MethodGet, "https://8.8.8.8/other", nil)
+	if err := cr(ok, []*http.Request{httpsReq}); err != nil {
+		t.Fatalf("https to https redirect to a public host to a public IP should pass: %v", err)
+	}
+	via := make([]*http.Request, 10)
+	for i := range via {
+		via[i] = httpsReq
+	}
+	if err := cr(ok, via); err == nil {
+		t.Fatal("redirect chain must be bounded")
+	}
+}

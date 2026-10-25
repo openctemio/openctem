@@ -52,6 +52,7 @@ import {
   SlidersHorizontal,
   KeyRound,
 } from 'lucide-react'
+import { confirmName } from '@/lib/confirm-name'
 import { ConfirmDialog } from '@/components/confirm-dialog'
 import { Can } from '@/lib/permissions'
 import { getErrorMessage } from '@/lib/api/error-handler'
@@ -585,6 +586,8 @@ function TicketingRowActions({ integration }: { integration: Integration }) {
   const [tokenOpen, setTokenOpen] = useState(false)
 
   const { trigger: syncNow, isMutating: isSyncing } = useSyncIntegrationApi(integration.id)
+  // A sync creates and updates tickets in the tracker: ask first.
+  const [syncOpen, setSyncOpen] = useState(false)
   const { trigger: testNow, isMutating: isTesting } = useTestIntegrationApi(integration.id)
   const { trigger: deleteNow, isMutating: isDeleting } = useDeleteIntegrationApi(integration.id)
 
@@ -681,21 +684,35 @@ function TicketingRowActions({ integration }: { integration: Integration }) {
     supported && integration.provider === 'jira' && integration.status === 'connected'
 
   const confirmDelete = (
-    <ConfirmDialog
-      open={deleteOpen}
-      onOpenChange={setDeleteOpen}
-      title={t('confirm.ticketing.deleteTitle', 'Delete the ticketing connection "{name}"?', {
-        name: integration.name,
-      })}
-      desc={t(
-        'confirm.ticketing.deleteDesc',
-        'Its settings are deleted and findings no longer sync with it. Tickets already in the tracker are not deleted. This cannot be undone.'
-      )}
-      confirmText={t('confirm.delete', 'Delete')}
-      destructive
-      isLoading={isDeleting}
-      handleConfirm={() => void handleDelete()}
-    />
+    <>
+      <ConfirmDialog
+        open={syncOpen}
+        onOpenChange={setSyncOpen}
+        title={t('confirm.ticketing.syncTitle', undefined, { name: integration.name })}
+        desc={t('confirm.ticketing.syncDesc')}
+        confirmText={t('confirm.ticketing.syncBtn')}
+        handleConfirm={async () => {
+          setSyncOpen(false)
+          await handleSync()
+        }}
+      />
+      <ConfirmDialog
+        open={deleteOpen}
+        onOpenChange={setDeleteOpen}
+        title={t('confirm.ticketing.deleteTitle', 'Delete the ticketing connection "{name}"?', {
+          name: integration.name,
+        })}
+        desc={t(
+          'confirm.ticketing.deleteDesc',
+          'Its settings are deleted and findings no longer sync with it. Tickets already in the tracker are not deleted. This cannot be undone.'
+        )}
+        confirmText={t('confirm.ticketing.deleteBtn')}
+        destructive
+        typeToConfirm={confirmName(integration.name, integration.id)}
+        isLoading={isDeleting}
+        handleConfirm={() => void handleDelete()}
+      />
+    </>
   )
 
   // No client exists for this provider: nothing to sync, test or configure.
@@ -745,7 +762,7 @@ function TicketingRowActions({ integration }: { integration: Integration }) {
                     ? t('ticketingIntegration.actions.syncing', 'Syncing…')
                     : t('ticketingIntegration.actions.syncNow', 'Sync now'),
                   icon: RefreshCw,
-                  onClick: () => void handleSync(),
+                  onClick: () => setSyncOpen(true),
                   disabled: isSyncing,
                   route: 'POST /api/v1/integrations/{id}/sync' as const,
                 },

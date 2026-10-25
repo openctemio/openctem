@@ -671,6 +671,7 @@ func (s *Service) Sweep(ctx context.Context, limit int) (int, error) {
 // passed), it decides and settles. Returns whether it settled.
 func (s *Service) trySettle(ctx context.Context, rt *retestdom.Retest, force bool) (bool, error) {
 	matchedAt := s.matchedAt(ctx, rt)
+	cls := s.settleClass(ctx, rt)
 	if rt.CheckID != nil {
 		// A custom check proves the endpoint it requests, not the one the
 		// finding was reported at.
@@ -687,7 +688,7 @@ func (s *Service) trySettle(ctx context.Context, rt *retestdom.Retest, force boo
 		case cmd == nil:
 			v = retestdom.Inconclusive(retestdom.ReasonNoResult, "no result from the tool's retest")
 		case cmd.Status == commanddom.CommandStatusCompleted:
-			tr = retestdom.DecideToolVerdict(cmd.Result, rt.FindingID.String(), matchedAt)
+			tr = retestdom.DecideToolVerdict(cmd.Result, rt.FindingID.String(), matchedAt, cls)
 			v = tr.Verdict
 		case done:
 			v = retestdom.Inconclusive(retestdom.ReasonError, "the tool's retest did not complete: "+
@@ -710,7 +711,7 @@ func (s *Service) trySettle(ctx context.Context, rt *retestdom.Retest, force boo
 	if !(checkDone && reachDone) && !force {
 		return false, nil
 	}
-	v := retestdom.Decide(check, reach, matchedAt)
+	v := retestdom.Decide(check, reach, matchedAt, cls)
 	if !(checkDone && reachDone) && v.Outcome == retestdom.OutcomeInconclusive && v.Code == retestdom.ReasonNoResult {
 		v.Reason = "no sensor result before the deadline"
 	}
@@ -785,6 +786,48 @@ func (s *Service) matchedAt(ctx context.Context, rt *retestdom.Retest) string {
 		return ""
 	}
 	return f.FilePath()
+}
+
+// settleClass is what the settlement needs to know about the finding: whether
+// the platform template that matched it is of the exposure class (from the
+// template tags the scanner recorded at the sighting, never the finding's
+// editable tags; a custom check never is) and whether its previous completed
+// retest, at least MinDenialGap and at most MaxDenialAge ago and after the finding's last
+// sighting or reopening, was an origin refusal of the same check.
+// Anything unreadable gives the careful answer.
+func (s *Service) settleClass(ctx context.Context, rt *retestdom.Retest) retestdom.Class {
+	var cls retestdom.Class
+	if rt.CheckID != nil {
+		return cls
+	}
+	store, ok := s.findings.(vulnerability.TemplateProvenanceStore)
+	if !ok {
+		return cls
+	}
+	p, err := store.TemplateBaseline(ctx, rt.TenantID, rt.FindingID)
+	if err != nil || !p.ExposureClass {
+		return cls
+	}
+	cls.Exposure = true
+	sightedAt := p.SightedAt
+	prev, err := s.store.ListByFinding(ctx, rt.TenantID, rt.FindingID, 5)
+	if err != nil {
+		return cls
+	}
+	for _, p := range prev {
+		if p.ID == rt.ID || p.Status != retestdom.StatusCompleted {
+			continue
+		}
+		cls.PriorAccessDenied = p.Outcome == retestdom.OutcomeInconclusive &&
+			p.ReasonCode == retestdom.ReasonAccessDenied && p.TemplateID == rt.TemplateID && p.Target == rt.Target &&
+			p.CompletedAt != nil && s.now().Sub(*p.CompletedAt) >= retestdom.MinDenialGap &&
+			// A denial counts only when it is recent and the finding was not
+			// seen or reopened since: a sighting after it shows the page was
+			// reachable, so the refusal is no longer the first of a pair.
+			s.now().Sub(*p.CompletedAt) <= retestdom.MaxDenialAge && p.CompletedAt.After(sightedAt)
+		break
+	}
+	return cls
 }
 
 // storeAttempt keeps what the re-run reported it sent and received.
@@ -1106,7 +1149,7 @@ func (s *Service) finishRun(ctx context.Context, rt *retestdom.Retest, v retestd
 	// run the check, so its own addresses and paths are masked on the run
 	// (the run is shown on the Runs page, beside platform-run scans).
 	msg := sensordom.RedactPlatformText(evidence.RedactText(v.Reason))
-	if f, ok := s.runs.(unableRunFinisher); ok && v.Outcome == retestdom.OutcomeInconclusive && v.Code == retestdom.ReasonError {
+	if f, ok := s.runs.(unableRunFinisher); ok && v.Outcome == retestdom.OutcomeInconclusive && v.Code.ToolUnable() {
 		if err := f.FinishRetestRunUnable(ctx, rt.TenantID, *rt.RunID, msg, RunCodeToolUnable); err != nil {
 			s.logger.Warn("failed to settle the retest run", "retest_id", rt.ID.String(), "run_id", rt.RunID.String(), "error", err)
 		}

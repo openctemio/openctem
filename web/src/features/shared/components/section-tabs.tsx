@@ -206,7 +206,7 @@ export function SectionTabs({ tabs, className, label = 'Sections', counts }: Sec
 
   return (
     // data-slot: a `PageStack` places the strip (16px under the page header,
-    // 20px above the next block) and drops the legacy mb-5.
+    // 20px above the next block); the strip has no margin of its own.
     <nav
       ref={navRef}
       aria-label={label}
@@ -214,7 +214,6 @@ export function SectionTabs({ tabs, className, label = 'Sections', counts }: Sec
       data-icons={fit.icons ? 'true' : 'false'}
       className={cn(
         'relative flex h-10 w-full max-w-full items-stretch justify-start gap-6 overflow-hidden border-b text-muted-foreground',
-        'mb-5',
         className
       )}
     >

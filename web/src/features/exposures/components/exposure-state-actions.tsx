@@ -12,7 +12,7 @@ import {
   DialogBody,
 } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
-import { ConfirmDialog } from '@/components/confirm-dialog'
+import { ConfirmDialog, ConfirmSample } from '@/components/confirm-dialog'
 import { useTranslation } from '@/context/i18n-provider'
 import { Textarea } from '@/components/ui/textarea'
 import { Label } from '@/components/ui/label'
@@ -53,7 +53,9 @@ interface ExposureActionDialogProps {
   onSuccess?: () => void
 }
 
-const actionConfig: Record<
+type Translate = ReturnType<typeof useTranslation>['t']
+
+function getActionConfig(t: Translate): Record<
   ActionType,
   {
     title: string
@@ -64,45 +66,57 @@ const actionConfig: Record<
     successMessage: string
     requireReason: boolean
   }
-> = {
-  resolve: {
-    title: 'Resolve exposure',
-    description: 'Mark this exposure as resolved. This indicates the issue has been fixed.',
-    icon: ShieldCheck,
-    buttonText: 'Mark resolved',
-    buttonVariant: 'default',
-    successMessage: 'Exposure marked as resolved',
-    requireReason: false,
-  },
-  accept: {
-    title: 'Accept risk',
-    description:
-      'Accept the risk associated with this exposure. Use this when the exposure is a known acceptable risk.',
-    icon: AlertTriangle,
-    buttonText: 'Accept risk',
-    buttonVariant: 'secondary',
-    successMessage: 'Risk accepted',
-    requireReason: true,
-  },
-  false_positive: {
-    title: 'Mark as false positive',
-    description:
-      'Mark this exposure as a false positive. Use this when the detection was incorrect.',
-    icon: ShieldX,
-    buttonText: 'Mark false positive',
-    buttonVariant: 'outline',
-    successMessage: 'Marked as false positive',
-    requireReason: true,
-  },
-  reactivate: {
-    title: 'Reactivate exposure',
-    description: 'Reactivate this exposure. This will return it to active status for remediation.',
-    icon: RefreshCw,
-    buttonText: 'Reactivate',
-    buttonVariant: 'default',
-    successMessage: 'Exposure reactivated',
-    requireReason: false,
-  },
+> {
+  return {
+    resolve: {
+      title: t('exposures.action.resolveTitle', 'Resolve exposure'),
+      description: t(
+        'exposures.action.resolveDesc',
+        'Mark this exposure as resolved. This indicates the issue has been fixed.'
+      ),
+      icon: ShieldCheck,
+      buttonText: t('exposures.action.resolveButton', 'Mark resolved'),
+      buttonVariant: 'default',
+      successMessage: t('exposures.action.resolveDone', 'Exposure marked as resolved'),
+      requireReason: false,
+    },
+    accept: {
+      title: t('exposures.action.acceptTitle', 'Accept risk'),
+      description: t(
+        'exposures.action.acceptDesc',
+        'The exposure leaves the active list while the risk is accepted. Use this for a known acceptable risk. The reason is recorded in the audit log.'
+      ),
+      icon: AlertTriangle,
+      buttonText: t('exposures.action.acceptButton', 'Accept risk'),
+      buttonVariant: 'secondary',
+      successMessage: t('exposures.action.acceptDone', 'Risk accepted'),
+      requireReason: true,
+    },
+    false_positive: {
+      title: t('exposures.action.fpTitle', 'Mark as false positive'),
+      description: t(
+        'exposures.action.fpDesc',
+        'The exposure leaves the active list because the detection was wrong. The reason is recorded in the audit log.'
+      ),
+      icon: ShieldX,
+      buttonText: t('exposures.action.fpButton', 'Mark false positive'),
+      buttonVariant: 'outline',
+      successMessage: t('exposures.action.fpDone', 'Marked as false positive'),
+      requireReason: true,
+    },
+    reactivate: {
+      title: t('exposures.action.reactivateTitle', 'Reactivate exposure'),
+      description: t(
+        'exposures.action.reactivateDesc',
+        'Reactivate this exposure. This will return it to active status for remediation.'
+      ),
+      icon: RefreshCw,
+      buttonText: t('exposures.action.reactivateButton', 'Reactivate'),
+      buttonVariant: 'default',
+      successMessage: t('exposures.action.reactivateDone', 'Exposure reactivated'),
+      requireReason: false,
+    },
+  }
 }
 
 /**
@@ -121,12 +135,12 @@ export function ExposureActionDialog({
 
   if (!actionType || !exposure) return null
 
-  const config = actionConfig[actionType]
+  const config = getActionConfig(t)[actionType]
   const Icon = config.icon
 
   const handleSubmit = async () => {
     if (config.requireReason && !reason.trim()) {
-      toast.error('Please provide a reason')
+      toast.error(t('exposures.action.reasonNeeded', 'Please provide a reason'))
       return
     }
 
@@ -165,7 +179,9 @@ export function ExposureActionDialog({
       setReason('')
       onSuccess?.()
     } catch (error) {
-      toast.error(getErrorMessage(error, `Failed to ${actionType.replace('_', ' ')} exposure`))
+      toast.error(
+        getErrorMessage(error, t('exposures.action.failed', 'Could not update the exposure'))
+      )
       console.error(error)
     } finally {
       setIsSubmitting(false)
@@ -190,20 +206,25 @@ export function ExposureActionDialog({
             <div className="rounded-lg border p-3 bg-muted/50">
               <p className="text-sm font-medium">{exposure.title}</p>
               <p className="text-xs text-muted-foreground mt-1">
-                {exposure.description || 'No description'}
+                {exposure.description || t('exposures.action.noDescription', 'No description')}
               </p>
             </div>
 
             {(config.requireReason || actionType !== 'reactivate') && (
               <div className="space-y-2">
                 <Label htmlFor="reason">
-                  Reason {config.requireReason ? '(required)' : '(optional)'}
+                  {config.requireReason
+                    ? t('exposures.action.reasonRequired', 'Reason (required)')
+                    : t('exposures.action.reasonOptional', 'Reason (optional)')}
                 </Label>
                 <Textarea
                   id="reason"
                   value={reason}
                   onChange={(e) => setReason(e.target.value)}
-                  placeholder={`Why are you ${actionType === 'resolve' ? 'resolving' : actionType === 'accept' ? 'accepting' : actionType === 'false_positive' ? 'marking as false positive' : 'reactivating'} this exposure?`}
+                  placeholder={t(
+                    `exposures.action.reasonPlaceholder.${actionType}`,
+                    'Why are you changing this exposure?'
+                  )}
                   rows={3}
                 />
               </div>
@@ -213,7 +234,7 @@ export function ExposureActionDialog({
 
         <DialogFooter>
           <Button variant="outline" onClick={() => onOpenChange(false)} disabled={isSubmitting}>
-            Cancel
+            {t('common.cancel', 'Cancel')}
           </Button>
           <Button
             variant={config.buttonVariant}
@@ -245,6 +266,7 @@ export function ExposureQuickActions({
 }: ExposureQuickActionsProps) {
   const [actionType, setActionType] = useState<ActionType | null>(null)
   const canApprove = useCanApproveExposures()
+  const { t } = useTranslation()
 
   const isActive = exposure.state === 'active'
 
@@ -255,7 +277,7 @@ export function ExposureQuickActions({
           <>
             <Button size="sm" variant="outline" onClick={() => setActionType('resolve')}>
               <Check className="me-1 h-4 w-4" />
-              Resolve
+              {t('exposures.quick.resolve', 'Resolve')}
             </Button>
             <GatedButton
               size="sm"
@@ -265,7 +287,7 @@ export function ExposureQuickActions({
               onClick={() => setActionType('accept')}
             >
               <AlertTriangle className="me-1 h-4 w-4" />
-              Accept
+              {t('exposures.quick.accept', 'Accept')}
             </GatedButton>
             <GatedButton
               size="sm"
@@ -275,13 +297,13 @@ export function ExposureQuickActions({
               onClick={() => setActionType('false_positive')}
             >
               <X className="me-1 h-4 w-4" />
-              False positive
+              {t('exposures.quick.falsePositive', 'False positive')}
             </GatedButton>
           </>
         ) : (
           <Button size="sm" variant="outline" onClick={() => setActionType('reactivate')}>
             <RefreshCw className="me-1 h-4 w-4" />
-            Reactivate
+            {t('exposures.quick.reactivate', 'Reactivate')}
           </Button>
         )}
       </div>
@@ -304,6 +326,8 @@ interface ExposureBulkActionsProps {
   onBulkResolve: (ids: string[]) => Promise<BulkOutcome | void>
   onBulkAccept: (ids: string[], reason: string) => Promise<BulkOutcome | void>
   onBulkFalsePositive: (ids: string[], reason: string) => Promise<BulkOutcome | void>
+  /** Titles of the selected exposures, listed in the confirmation. */
+  selectedNames?: string[]
 }
 
 /**
@@ -315,6 +339,7 @@ export function ExposureBulkActions({
   onBulkResolve,
   onBulkAccept,
   onBulkFalsePositive,
+  selectedNames = [],
 }: ExposureBulkActionsProps) {
   const [isProcessing, setIsProcessing] = useState(false)
   const [bulkAction, setBulkAction] = useState<'accept' | 'false_positive' | null>(null)
@@ -402,7 +427,11 @@ export function ExposureBulkActions({
 
   return (
     <>
-      <BulkActionBar count={count} onClear={onClearSelection} noun="exposures selected">
+      <BulkActionBar
+        count={count}
+        onClear={onClearSelection}
+        noun={t('exposures.bulk.noun', 'exposures selected')}
+      >
         <Button
           size="sm"
           variant="ghost"
@@ -414,7 +443,7 @@ export function ExposureBulkActions({
           ) : (
             <Check className="me-2 h-4 w-4" />
           )}
-          Resolve
+          {t('exposures.quick.resolve', 'Resolve')}
         </Button>
         <GatedButton
           size="sm"
@@ -425,7 +454,7 @@ export function ExposureBulkActions({
           disabled={isProcessing}
         >
           <AlertTriangle className="me-2 h-4 w-4" />
-          Accept risk
+          {t('exposures.action.acceptButton', 'Accept risk')}
         </GatedButton>
         <GatedButton
           size="sm"
@@ -436,46 +465,60 @@ export function ExposureBulkActions({
           disabled={isProcessing}
         >
           <X className="me-2 h-4 w-4" />
-          False positive
+          {t('exposures.quick.falsePositive', 'False positive')}
         </GatedButton>
       </BulkActionBar>
 
-      <Dialog open={bulkAction !== null} onOpenChange={(open) => !open && setBulkAction(null)}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>
-              {bulkAction === 'accept' ? 'Accept risk for ' : 'Mark as false positive: '}
-              {count} exposure(s)
-            </DialogTitle>
-            <DialogDescription>
-              Please provide a reason for this bulk action. This will be recorded in the audit log.
-            </DialogDescription>
-          </DialogHeader>
-
-          <DialogBody>
-            <div className="space-y-2 py-4">
-              <Label htmlFor="bulk-reason">Reason (required)</Label>
-              <Textarea
-                id="bulk-reason"
-                value={reason}
-                onChange={(e) => setReason(e.target.value)}
-                placeholder="Provide a reason for this bulk action..."
-                rows={3}
-              />
-            </div>
-          </DialogBody>
-
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setBulkAction(null)}>
-              Cancel
-            </Button>
-            <Button onClick={handleBulkActionSubmit} disabled={!reason.trim() || isProcessing}>
-              {isProcessing && <Loader2 className="me-2 h-4 w-4 animate-spin" />}
-              Confirm
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <ConfirmDialog
+        open={bulkAction !== null}
+        onOpenChange={(open) => {
+          if (!open && !isProcessing) {
+            setBulkAction(null)
+            setReason('')
+          }
+        }}
+        title={
+          bulkAction === 'accept'
+            ? t('exposures.bulk.acceptTitle', 'Accept the risk of {count} exposures?', { count })
+            : t('exposures.bulk.fpTitle', 'Mark {count} exposures as false positive?', { count })
+        }
+        desc={
+          bulkAction === 'accept'
+            ? t(
+                'exposures.bulk.acceptDesc',
+                'The exposures leave the active list. High and critical ones wait for a second approver. The reason is recorded in the audit log.'
+              )
+            : t(
+                'exposures.bulk.fpDesc',
+                'The exposures leave the active list. High and critical ones wait for a second approver. The reason is recorded in the audit log.'
+              )
+        }
+        confirmText={
+          bulkAction === 'accept'
+            ? t('exposures.bulk.acceptButton', 'Accept risk for {count} exposures', { count })
+            : t('exposures.bulk.fpButton', 'Mark {count} as false positive', { count })
+        }
+        disabled={!reason.trim()}
+        isLoading={isProcessing}
+        handleConfirm={handleBulkActionSubmit}
+      >
+        <ConfirmSample names={selectedNames} total={count} />
+        <div className="space-y-2">
+          <Label htmlFor="bulk-reason">
+            {t('exposures.action.reasonRequired', 'Reason (required)')}
+          </Label>
+          <Textarea
+            id="bulk-reason"
+            value={reason}
+            onChange={(e) => setReason(e.target.value)}
+            placeholder={t(
+              'exposures.bulk.reasonPlaceholder',
+              'Why are you changing these exposures?'
+            )}
+            rows={3}
+          />
+        </div>
+      </ConfirmDialog>
 
       <ConfirmDialog
         open={resolveOpen}
@@ -489,10 +532,16 @@ export function ExposureBulkActions({
           'confirm.exposure.bulkResolveDesc',
           'The selected exposures are marked resolved and leave the active list. Reactivate one from its row if it is still present.'
         )}
-        confirmText={t('confirm.exposure.resolve', 'Resolve')}
+        confirmText={
+          count === 1
+            ? t('confirm.exposure.resolveOne', 'Resolve 1 exposure')
+            : t('confirm.exposure.resolveMany', 'Resolve {count} exposures', { count })
+        }
         isLoading={isProcessing}
         handleConfirm={handleBulkResolve}
-      />
+      >
+        <ConfirmSample names={selectedNames} total={count} />
+      </ConfirmDialog>
     </>
   )
 }
