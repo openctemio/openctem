@@ -316,6 +316,14 @@ func (h *CommandHandler) Create(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// The step routing keys bind a command to a scan run's step: its result
+	// settles that step and dispatches the next ones. Only the platform sets
+	// them when it plans a run; a caller-created command never carries them.
+	if payloadCarriesStepRouting(req.Payload) {
+		apierror.BadRequest("scan_run_id, scan_run_step_id and step_key are set by the platform, not in a command").WriteJSON(w)
+		return
+	}
+
 	// A "scan" command may embed custom scanner-template content that the sensor
 	// writes to disk and executes. The sensor only validates template name/size,
 	// NOT content, so a CommandsWrite user could smuggle a malicious template
@@ -472,6 +480,28 @@ func (h *CommandHandler) gateScanCommand(w http.ResponseWriter, r *http.Request,
 		return nil, false
 	}
 	return gated, true
+}
+
+// stepRoutingKeys are the payload keys that bind a command to a scan run's
+// step (scanrun.StepCommandPayload).
+var stepRoutingKeys = []string{"scan_run_id", "scan_run_step_id", "step_key"}
+
+// payloadCarriesStepRouting reports whether a command payload names a scan
+// run step. A payload that is not a JSON object carries none.
+func payloadCarriesStepRouting(payload json.RawMessage) bool {
+	if len(payload) == 0 {
+		return false
+	}
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(payload, &fields); err != nil {
+		return false
+	}
+	for _, k := range stepRoutingKeys {
+		if _, ok := fields[k]; ok {
+			return true
+		}
+	}
+	return false
 }
 
 // validateInlineScanTemplates rejects a scan command that embeds custom scanner
@@ -845,7 +875,7 @@ func (h *CommandHandler) triggerScanRunStarted(ctx context.Context, cmd *command
 	if err := json.Unmarshal(cmd.Payload, &payload); err != nil || !payload.IsRoutable() {
 		return
 	}
-	if err := h.scanRunService.OnStepStarted(ctx, payload.ScanRunID, payload.StepKey, *cmd.SensorID, cmd.ID); err != nil {
+	if err := h.scanRunService.OnStepStarted(ctx, cmd.TenantID, payload.ScanRunID, payload.StepKey, *cmd.SensorID, cmd.ID); err != nil {
 		h.logger.Warn("failed to mark scan workflow step started",
 			"scan_run_id", payload.ScanRunID,
 			"step_key", payload.StepKey,
@@ -923,7 +953,7 @@ func (h *CommandHandler) triggerScanRunProgression(ctx context.Context, cmd *com
 		bgCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		defer cancel()
 
-		if err := h.scanRunService.OnStepCompletedPartial(bgCtx, payload.ScanRunID, payload.StepKey, result.FindingsCount, result.Output, partial); err != nil {
+		if err := h.scanRunService.OnStepCompletedPartial(bgCtx, cmd.TenantID, payload.ScanRunID, payload.StepKey, result.FindingsCount, result.Output, partial); err != nil {
 			h.logger.Error("failed to trigger pipeline progression",
 				"scan_run_id", payload.ScanRunID,
 				"step_key", payload.StepKey,
@@ -980,7 +1010,7 @@ func (h *CommandHandler) triggerScanRunFailed(ctx context.Context, cmd *commandd
 		bgCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		defer cancel()
 
-		if err := h.scanRunService.OnStepFailed(bgCtx, payload.ScanRunID, payload.StepKey, errorMessage, errorCode); err != nil {
+		if err := h.scanRunService.OnStepFailed(bgCtx, cmd.TenantID, payload.ScanRunID, payload.StepKey, errorMessage, errorCode); err != nil {
 			h.logger.Error("failed to trigger pipeline failure",
 				"scan_run_id", payload.ScanRunID,
 				"step_key", payload.StepKey,

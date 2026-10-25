@@ -21,7 +21,7 @@ func TestDuplicateCompletion_IgnoredForFinishedStep(t *testing.T) {
 	store.rows["a"] = a
 	run.GetStepRun("a").FindingsCount = 2
 
-	if err := s.OnStepCompleted(context.Background(), run.ID.String(), "a", 7, nil); err != nil {
+	if err := s.OnStepCompleted(context.Background(), run.TenantID, run.ID.String(), "a", 7, nil); err != nil {
 		t.Fatal(err)
 	}
 	if got := store.rows["a"]; got.Status != scanrun.StepRunStatusCompleted || got.FindingsCount != 2 {
@@ -37,7 +37,7 @@ func TestLateFailure_IgnoredForCompletedStep(t *testing.T) {
 		map[string]scanrun.StepRunStatus{"a": scanrun.StepRunStatusCompleted, "b": scanrun.StepRunStatusRunning},
 		nil)
 
-	if err := s.OnStepFailed(context.Background(), run.ID.String(), "a", "late failure", "COMMAND_FAILED"); err != nil {
+	if err := s.OnStepFailed(context.Background(), run.TenantID, run.ID.String(), "a", "late failure", "COMMAND_FAILED"); err != nil {
 		t.Fatal(err)
 	}
 	if got := store.rows["a"]; got.Status != scanrun.StepRunStatusCompleted {
@@ -55,7 +55,7 @@ func TestRunningStepCompletion_StillSettlesRun(t *testing.T) {
 		map[string]scanrun.StepRunStatus{"a": scanrun.StepRunStatusRunning},
 		nil)
 
-	if err := s.OnStepCompleted(context.Background(), run.ID.String(), "a", 1, nil); err != nil {
+	if err := s.OnStepCompleted(context.Background(), run.TenantID, run.ID.String(), "a", 1, nil); err != nil {
 		t.Fatal(err)
 	}
 	if got := store.rows["a"]; got.Status != scanrun.StepRunStatusCompleted {
