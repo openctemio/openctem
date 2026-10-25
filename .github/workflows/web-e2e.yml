@@ -331,7 +331,10 @@ jobs:
         working-directory: web
         run: |
           mkdir -p blobs
-          find all-blobs -name '*.zip' -exec cp {} blobs/ \;
+          # Only the shards' blob reports: a failed or retried test also leaves
+          # a trace.zip under test-results/, which is not a blob report and
+          # makes merge-reports fail.
+          find all-blobs -path '*/blob-report/*.zip' -exec cp {} blobs/ \;
           if ! ls blobs/*.zip >/dev/null 2>&1; then echo "no blob reports (a shard failed before the tests ran)"; exit 0; fi
           npx playwright merge-reports --reporter html ./blobs
           npx playwright merge-reports --reporter json ./blobs > report.json
@@ -356,10 +359,13 @@ jobs:
           retention-days: 7
 
   # The check to require. Always reports (see the header).
+  # It does not wait for `report`: the merged HTML report and the flaky list
+  # are for people, so a report failure never fails the check and the queue
+  # does not wait the extra minute for it.
   e2e-ok:
     name: E2E OK
     if: always()
-    needs: [changes, build, e2e, report]
+    needs: [changes, build, e2e]
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
