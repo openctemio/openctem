@@ -142,14 +142,16 @@ func TestCICoverageAndAlerts(t *testing.T) {
 		t.Fatal("another tenant retired the pipeline")
 	}
 	_, closed, err := r.svc.RetirePipeline(ctx, r.tenant, pipes[0].ID, "the workflow was removed from the repo", cirunapp.Actor{Email: "admin@acme.test"})
-	if err != nil || len(closed) != 1 {
+	// The only finding is a secret: retiring the pipeline must not close it
+	// (a pipeline that stops reporting a secret has not rotated it).
+	if err != nil || len(closed) != 0 {
 		t.Fatalf("retire: %v %v", closed, err)
 	}
 	var why string
 	_ = r.db.QueryRowContext(ctx, `SELECT status, COALESCE(resolution, '') FROM findings WHERE tenant_id = $1 AND title = 'AWS key'`,
 		r.tenant.String()).Scan(&st, &why)
-	if st != "resolved" || why != "source_retired" {
-		t.Fatalf("retired-source finding = %s/%s", st, why)
+	if st == "resolved" || why == "source_retired" {
+		t.Fatalf("a secret finding was closed by pipeline retirement: %s/%s", st, why)
 	}
 	if r.auditCount(r.tenant, "ci_pipeline.retired", "workflow was removed") != 1 {
 		t.Fatal("retirement not audited")

@@ -24,17 +24,17 @@ import (
 )
 
 type fakeStarter struct {
-	t       *testing.T
-	mu      sync.Mutex
-	calls   map[string][]string // capability -> targets
-	runs    map[string]shared.ID
-	refuse  map[string]string // target -> code
-	later   map[string]bool   // targets deferred to a later batch
-	busy    map[string]bool
-	fail    map[string]error // capability -> refusal of the whole batch
+	t      *testing.T
+	mu     sync.Mutex
+	calls  map[string][]string // capability -> targets
+	runs   map[string]shared.ID
+	refuse map[string]string // target -> code
+	later  map[string]bool   // targets deferred to a later batch
+	busy   map[string]bool
+	fail   map[string]error // capability -> refusal of the whole batch
 	// never: targets whose scan windows never open; a batch holding one is
 	// refused with the error that lists them.
-	never map[string]bool
+	never   map[string]bool
 	execRun func(id shared.ID)
 	// execTask records the run's one task (command) with its targets.
 	execTask func(id shared.ID, targets []string)

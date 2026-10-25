@@ -36,6 +36,7 @@ func (r *FindingRepository) RecordTemplateSightings(ctx context.Context, tenantI
 	n := len(sightings)
 	fps, tds, tps, tvs, tsds := make([]string, 0, n), make([]string, 0, n), make([]string, 0, n), make([]string, 0, n), make([]string, 0, n)
 	rss, rids := make([]string, 0, n), make([]string, 0, n)
+	exs := make([]bool, 0, n)
 	for _, s := range sightings {
 		p := s.Provenance.Sanitize()
 		if p.Empty() || s.Fingerprint == "" {
@@ -48,6 +49,7 @@ func (r *FindingRepository) RecordTemplateSightings(ctx context.Context, tenantI
 		tsds = append(tsds, p.TemplatesDigest)
 		rss = append(rss, p.RuleSource)
 		rids = append(rids, p.RuleID)
+		exs = append(exs, p.ExposureClass)
 	}
 	if len(fps) == 0 {
 		return 0, nil
@@ -61,10 +63,11 @@ func (r *FindingRepository) RecordTemplateSightings(ctx context.Context, tenantI
 		    template_seen_at = NOW(),
 		    rule_source = CASE WHEN v.rs = 'tenant' OR st.id IS NOT NULL THEN 'tenant'
 		                       WHEN v.td <> '' THEN 'platform' END,
+		    template_exposure = (v.ex AND st.id IS NULL AND v.rs <> 'tenant' AND v.td <> ''),
 		    custom_template_id = st.id,
 		    custom_template_version = st.version
-		FROM unnest($2::text[], $3::text[], $4::text[], $5::text[], $6::text[], $7::text[], $8::text[])
-		       AS v(fp, td, tp, tv, tsd, rs, rid)
+		FROM unnest($2::text[], $3::text[], $4::text[], $5::text[], $6::text[], $7::text[], $8::text[], $9::boolean[])
+		       AS v(fp, td, tp, tv, tsd, rs, rid, ex)
 		LEFT JOIN LATERAL (
 			SELECT t.id, t.version
 			FROM scanner_templates t
@@ -77,13 +80,14 @@ func (r *FindingRepository) RecordTemplateSightings(ctx context.Context, tenantI
 		) st ON TRUE
 		WHERE f.tenant_id = $1 AND f.fingerprint = v.fp
 		  AND (f.template_digest, f.template_path, f.templates_version, f.templates_digest,
-		       f.rule_source, f.custom_template_id, f.custom_template_version)
+		       f.rule_source, f.custom_template_id, f.custom_template_version, COALESCE(f.template_exposure, false))
 		      IS DISTINCT FROM
 		      (NULLIF(v.td, ''), NULLIF(v.tp, ''), NULLIF(v.tv, ''), NULLIF(v.tsd, ''),
 		       CASE WHEN v.rs = 'tenant' OR st.id IS NOT NULL THEN 'tenant'
-		                       WHEN v.td <> '' THEN 'platform' END, st.id, st.version)`,
+		                       WHEN v.td <> '' THEN 'platform' END, st.id, st.version,
+		       (v.ex AND st.id IS NULL AND v.rs <> 'tenant' AND v.td <> ''))`,
 		tenantID.String(), pq.Array(fps), pq.Array(tds), pq.Array(tps), pq.Array(tvs), pq.Array(tsds),
-		pq.Array(rss), pq.Array(rids))
+		pq.Array(rss), pq.Array(rids), pq.Array(exs))
 	if err != nil {
 		return 0, fmt.Errorf("record template sightings: %w", err)
 	}
@@ -114,10 +118,13 @@ func (r *FindingRepository) RuleProvenance(ctx context.Context, tenantID, findin
 // TemplateBaseline returns the provenance of the finding's last sighting.
 func (r *FindingRepository) TemplateBaseline(ctx context.Context, tenantID, findingID shared.ID) (vulnerability.TemplateProvenance, error) {
 	var td, tp, tv, tsd sql.NullString
+	var ex sql.NullBool
+	var sighted sql.NullTime
 	err := r.db.QueryRowContext(ctx, `
-		SELECT template_digest, template_path, templates_version, templates_digest
+		SELECT template_digest, template_path, templates_version, templates_digest, template_exposure,
+		       GREATEST(last_seen_at, last_reopened_at)
 		FROM findings WHERE tenant_id = $1 AND id = $2`,
-		tenantID.String(), findingID.String()).Scan(&td, &tp, &tv, &tsd)
+		tenantID.String(), findingID.String()).Scan(&td, &tp, &tv, &tsd, &ex, &sighted)
 	if errors.Is(err, sql.ErrNoRows) {
 		return vulnerability.TemplateProvenance{}, shared.ErrNotFound
 	}
@@ -125,7 +132,7 @@ func (r *FindingRepository) TemplateBaseline(ctx context.Context, tenantID, find
 		return vulnerability.TemplateProvenance{}, fmt.Errorf("read template baseline: %w", err)
 	}
 	return vulnerability.TemplateProvenance{TemplateDigest: td.String, TemplatePath: tp.String,
-		TemplatesVersion: tv.String, TemplatesDigest: tsd.String}, nil
+		TemplatesVersion: tv.String, TemplatesDigest: tsd.String, ExposureClass: ex.Bool, SightedAt: sighted.Time}, nil
 }
 
 // TemplateDriftedFindings returns those of ids whose last sighting

@@ -21,6 +21,7 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
+import { confirmName } from '@/lib/confirm-name'
 import { ConfirmDialog } from '@/components/confirm-dialog'
 import { Can, Permission } from '@/lib/permissions'
 import { Clock, PauseCircle, ShieldCheck, Trash2, Upload } from 'lucide-react'
@@ -100,7 +101,9 @@ export function PausedScannerCard({
             {integration.last_sync_at && (
               <span className="text-muted-foreground flex items-center gap-1 text-xs">
                 <Clock className="h-3 w-3" />
-                Last sync: {new Date(integration.last_sync_at).toLocaleString()}
+                {t('tenableSc.imports.lastSync', undefined, {
+                  time: new Date(integration.last_sync_at).toLocaleString(),
+                })}
               </span>
             )}
           </div>
@@ -109,8 +112,8 @@ export function PausedScannerCard({
               variant="ghost"
               size="icon"
               onClick={() => setDeleteOpen(true)}
-              title="Remove"
-              aria-label={`Remove ${integration.name}`}
+              title={t('tenableSc.imports.remove', undefined, { name: integration.name })}
+              aria-label={t('tenableSc.imports.remove', undefined, { name: integration.name })}
               className="shrink-0 text-destructive hover:text-destructive/80"
             >
               <Trash2 className="h-4 w-4" />
@@ -129,8 +132,11 @@ export function PausedScannerCard({
           'confirm.scannerIntegration.removeDesc',
           'Its imports stop and its settings are deleted. Findings already ingested are kept. This cannot be undone.'
         )}
-        confirmText={deleting ? t('confirm.removing', 'Removing…') : t('confirm.remove', 'Remove')}
+        confirmText={
+          deleting ? t('confirm.removing', 'Removing…') : t('confirm.scannerIntegration.removeBtn')
+        }
         destructive
+        typeToConfirm={confirmName(integration.name, integration.id)}
         isLoading={deleting}
         handleConfirm={() => void handleDelete()}
       />
