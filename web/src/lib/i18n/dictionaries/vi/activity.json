@@ -20,5 +20,7 @@
   "activity.listLabel": "Hoạt động",
   "activity.loadMore": "Tải thêm",
   "activity.repeated": "{count} lần",
-  "activity.repeatedLast": "{count} lần, lần cuối lúc {time}"
+  "activity.repeatedLast": "{count} lần, lần cuối lúc {time}",
+  "activity.trigger.new": "{count} mới",
+  "activity.trigger.title": "Hoạt động"
 }

@@ -41,6 +41,15 @@ func (s *Service) SetResolveEvidence(r freshdom.NameEvidenceReader, refresh Stal
 // whose freshest evidence is within freshdom.ResolveTTL. It returns the
 // names it left out. A failed read is returned (fail closed).
 func (s *Service) DropStaleNames(ctx context.Context, tenantID shared.ID, targets []string) (kept, stale []string, err error) {
+	return s.dropNamesWithoutEvidence(ctx, tenantID, targets, nil)
+}
+
+// dropNamesWithoutEvidence is DropStaleNames where the names in
+// requireProof (lower case: the names a selector or an asset group added,
+// with their asset) are also left out when the platform holds no evidence
+// for them at all, and their enrichment is requested. A typed name without
+// evidence is still handed on.
+func (s *Service) dropNamesWithoutEvidence(ctx context.Context, tenantID shared.ID, targets []string, requireProof map[string]shared.ID) (kept, stale []string, err error) {
 	if s.resolveEvidence == nil || len(targets) == 0 {
 		return targets, nil, nil
 	}
@@ -79,6 +88,16 @@ func (s *Service) DropStaleNames(ctx context.Context, tenantID shared.ID, target
 			refresh = append(refresh, ids[n]...)
 		}
 	}
+	// No evidence at all: never seen resolving. Its enrichment is asked
+	// for, and the resolve.dns coverage of the asset checks it too.
+	for _, n := range names {
+		if id, need := requireProof[n]; need {
+			if _, known := freshest[n]; !known {
+				staleSet[n] = true
+				refresh = append(refresh, id)
+			}
+		}
+	}
 	if len(staleSet) == 0 {
 		return targets, nil, nil
 	}
@@ -107,21 +126,31 @@ const CodeNoResolvingTargets = "NO_RESOLVING_TARGETS"
 
 // dropStaleRunNames applies DropStaleNames to a single-scanner run's
 // targets, records how many it left out, and refuses a run left with none.
+//
+// The names a selector or an asset group added need proof that they
+// resolve, unless the scan's target options include names that do not
+// (TargetOptions.IncludeUnresolved): a wildcard over passive discovery
+// holds many historical names with no DNS answer.
 func (s *Service) dropStaleRunNames(ctx context.Context, sc *scanpkg.Scan, r *resolvedTargets, runContext map[string]any) error {
-	kept, stale, err := s.DropStaleNames(ctx, sc.TenantID, r.Targets)
+	var requireProof map[string]shared.ID
+	if !sc.TargetOptions.IncludeUnresolved {
+		requireProof = r.Inventory
+	}
+	kept, stale, err := s.dropNamesWithoutEvidence(ctx, sc.TenantID, r.Targets, requireProof)
 	if err != nil {
 		return err
 	}
+	r.NotResolving = stale
 	if len(stale) == 0 {
 		return nil
 	}
 	runContext[RunContextKeyNotResolving] = len(stale)
 	r.Warnings = append(r.Warnings, fmt.Sprintf(
-		"%d name(s) left out: none resolved in the last %d days (for example %s); their DNS is being checked again",
+		"%d name(s) left out: no proof they resolved in DNS in the last %d days (for example %s); their DNS is checked again by coverage",
 		len(stale), int(freshdom.ResolveTTL.Hours()/24), stale[0]))
 	if len(kept) == 0 {
 		return shared.NewDomainError(CodeNoResolvingTargets,
-			fmt.Sprintf("No target of this scan has resolved in DNS in the last %d days; their DNS is being checked again. Run it later, or scan addresses.", int(freshdom.ResolveTTL.Hours()/24)),
+			fmt.Sprintf("No target of this scan has resolved in DNS in the last %d days; their DNS is checked again by coverage. Run it later, scan addresses, or include names that do not resolve in the scan's target options.", int(freshdom.ResolveTTL.Hours()/24)),
 			shared.ErrValidation)
 	}
 	r.Targets = kept

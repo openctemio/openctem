@@ -39,11 +39,13 @@ export interface FactChipProps extends React.HTMLAttributes<HTMLSpanElement> {
 
 export function FactChip({ tone = 'neutral', className, ...props }: FactChipProps) {
   return (
+    // `data-slot` after the spread: a tooltip trigger wrapping the chip
+    // (asChild) passes its own slot, and the chip must stay a fact chip.
     <span
-      data-slot="fact-chip"
       data-tone={tone}
       className={cn(factChipBase, TONES[tone], className)}
       {...props}
+      data-slot="fact-chip"
     />
   )
 }

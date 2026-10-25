@@ -40,6 +40,7 @@ export function buildFindingsQuery(filters: FindingApiFilters): URLSearchParams 
   if (filters.is_reachable) params.set('is_reachable', 'true')
   if (filters.branch_only) params.set('branch_only', 'true')
   if (filters.assigned_to_me) params.set('related_to', 'me')
+  else if (filters.related_to) params.set('related_to', filters.related_to)
   if (filters.sla_statuses?.length) params.set('sla_status', filters.sla_statuses.join(','))
   if (filters.sla_deadline_gt) params.set('sla_deadline_gt', filters.sla_deadline_gt)
   if (filters.sla_deadline_lte) params.set('sla_deadline_lte', filters.sla_deadline_lte)

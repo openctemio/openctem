@@ -462,7 +462,7 @@ func registerEASMSettingsRoutes(
 	// panics when the same path is mounted twice.
 	router.Group("/api/v1/easm/settings", func(r Router) {
 		r.GET("/", h.Get, middleware.Require(permission.SettingsRead))
-		r.PUT("/", h.Update, middleware.Require(permission.SettingsWrite))
+		r.PUT("/", h.Update, middleware.Require(permission.SettingsWrite), middleware.RequireAdmin())
 	}, tenantMiddlewares...)
 	router.Group("/api/v1/easm/sweeps", func(r Router) {
 		r.POST("/", h.RunNow, middleware.Require(permission.ScopeWrite))

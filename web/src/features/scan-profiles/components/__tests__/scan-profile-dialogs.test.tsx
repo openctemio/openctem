@@ -10,6 +10,13 @@ vi.mock('@/lib/api/scan-profile-hooks', () => ({
   invalidateScanProfilesCache: vi.fn(),
 }))
 
+// Owner or admin unless a test says otherwise (the API route gates).
+const role = vi.hoisted(() => ({ admin: true }))
+vi.mock('@/lib/permissions', async (orig) => ({
+  ...(await orig<typeof import('@/lib/permissions')>()),
+  useCanMutate: () => role.admin,
+}))
+
 import { AddScanProfileDialog } from '../add-scan-profile-dialog'
 import { EditScanProfileDialog } from '../edit-scan-profile-dialog'
 import { gateSummary } from '../../gate-summary'
@@ -68,6 +75,37 @@ describe('scan profile dialogs', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Save changes' }))
     await waitFor(() => expect(updateProfile).toHaveBeenCalled())
     expect(updateProfile.mock.calls[0][0]).toMatchObject({ rule_sources: 'tenant' })
+  })
+
+  it('a member cannot change the pass/fail rule or create the default profile', async () => {
+    role.admin = false
+    try {
+      const profile = {
+        id: 'p',
+        name: 'Mine',
+        is_system: false,
+        quality_gate: { ...createDefaultQualityGate(), enabled: true, fail_on_critical: true },
+      } as unknown as ScanProfile
+      const { unmount } = render(
+        <EditScanProfileDialog open onOpenChange={vi.fn()} profile={profile} />
+      )
+      expect(
+        screen.getByText('Only an owner or admin can change the pass/fail rule.')
+      ).toBeInTheDocument()
+      for (const sw of screen.getAllByRole('switch')) expect(sw).toBeDisabled()
+      unmount()
+
+      createProfile.mockClear()
+      createProfile.mockResolvedValue({})
+      render(<AddScanProfileDialog open onOpenChange={vi.fn()} />)
+      expect(screen.queryByText('Use this profile for new scans that do not choose one')).toBeNull()
+      await userEvent.type(screen.getAllByRole('textbox')[0], 'Lax')
+      await userEvent.click(screen.getByRole('button', { name: /^Create/ }))
+      await waitFor(() => expect(createProfile).toHaveBeenCalled())
+      expect(createProfile.mock.calls[0][0]).toMatchObject({ is_default: false })
+    } finally {
+      role.admin = true
+    }
   })
 
   it('summarizes the rule', () => {

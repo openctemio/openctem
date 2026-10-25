@@ -34,15 +34,18 @@ func ProbeTier(tool string) scopedom.Tier {
 // the claim-time re-check: the scanner's tier, the run actor's act scope (the
 // person who triggered it, else the scan's owner), and the loose ownership
 // rule of a passive or takeover-only probe. It never asks more than the
-// trigger checked (resolveScanTargets).
-func scanDispatchGate(sc *scan.Scan, run *scanrun.Run) *command.DispatchGate {
+// trigger checked (resolveScanTargets): a run the trigger did not route over
+// the scan zones (a passive coverage run of public names) is not routed at
+// the claim either.
+func scanDispatchGate(ctx context.Context, sc *scan.Scan, run *scanrun.Run) *command.DispatchGate {
 	tier := ProbeTier(sc.ScannerName)
 	g := &command.DispatchGate{
 		Tier:     int(tier),
 		Passive:  tier <= scopedom.TierPassive || IsTakeoverOnlyProbe(sc.ScannerName, sc.ScannerConfig),
 		ActScope: true,
 		// The claim refuses the job above the scan's intensity (RFC-071).
-		Intensity: string(sc.EffectiveIntensity()),
+		Intensity:     string(sc.EffectiveIntensity()),
+		NoZoneRouting: zoneRoutingSkipped(ctx),
 	}
 	// A managed scan's runs act with their policy's system authority and
 	// have no actor.
