@@ -64,10 +64,9 @@ export function FindingPhoneCard({ finding: f, selection, onOpen, menu }: Findin
             {title}
           </p>
           {(f.cve || f.scanner) && (
-            <p className="mt-0.5 truncate text-xs text-muted-foreground">
-              {f.cve && <span className="font-mono">{f.cve}</span>}
-              {f.cve && f.scanner && ' · '}
-              {f.scanner}
+            <p className="mt-0.5 flex min-w-0 gap-2 text-xs text-muted-foreground">
+              {f.cve && <span className="shrink-0 font-mono">{f.cve}</span>}
+              {f.scanner && <span className="truncate">{f.scanner}</span>}
             </p>
           )}
           {f.location?.asset && (

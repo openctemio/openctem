@@ -4,7 +4,7 @@
 #
 #   - an organization and its owner (bootstrap-admin), who signs in
 #   - assets of two types, two sensors, a CTIS report with 15 findings
-#     (enough for the findings picker to scroll) and 10 for the triage
+#     (enough for the findings picker to scroll; three name CVE-2099-0101) and 10 for the triage
 #     spec, a scan with a run in progress, a remediation task
 #
 # Requires: docker (also runs psql from PSQL_IMAGE, default postgres:17-alpine), curl, jq. Env: ADMIN_IMAGE (api/Dockerfile.admin-cli),
@@ -129,8 +129,11 @@ code=$(curl -sS -o "$WORK/body" -w '%{http_code}' -X POST "$API/api/v2/sensor/he
 
 findings=$({
   for i in $(seq 1 15); do
-    printf '{"type":"vulnerability","title":"E2E finding %02d","severity":"%s","rule_id":"e2e-%02d","asset_ref":"a%d","description":"e2e"}\n' \
-      "$i" "$([[ $((i % 3)) == 0 ]] && echo critical || echo medium)" "$i" "$((i % 2 + 1))"
+    # The first three name one CVE: the vulnerability page spec (40) opens it.
+    cve=''
+    [[ $i -le 3 ]] && cve=',"vulnerability":{"cve_id":"CVE-2099-0101"}'
+    printf '{"type":"vulnerability","title":"E2E finding %02d","severity":"%s","rule_id":"e2e-%02d","asset_ref":"a%d","description":"e2e"%s}\n' \
+      "$i" "$([[ $((i % 3)) == 0 ]] && echo critical || echo medium)" "$i" "$((i % 2 + 1))" "$cve"
   done
   # Ten more for the triage mode spec (36-findings-triage-mode), which decides
   # them: no other spec reads them.

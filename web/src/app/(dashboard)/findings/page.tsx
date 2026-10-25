@@ -1,5 +1,6 @@
 'use client'
 
+import { CveLink } from '@/features/vulnerabilities/components/cve-link'
 import { evaluateFindingTransitions } from '@/features/findings/api/use-finding-transitions'
 import { summarizeDryRun } from '@/features/findings/lib/transition-reasons'
 import { FindingSubStatus } from '@/features/findings/components/lifecycle/finding-sub-status'
@@ -1533,10 +1534,9 @@ function FindingsContent() {
                 )}
               </div>
               {(row.original.cve || row.original.scanner) && (
-                <p className="text-muted-foreground truncate text-xs">
-                  {row.original.cve && <span className="font-mono">{row.original.cve}</span>}
-                  {row.original.cve && row.original.scanner && ' · '}
-                  {row.original.scanner}
+                <p className="flex min-w-0 gap-2 text-muted-foreground text-xs">
+                  {row.original.cve && <CveLink id={row.original.cve} stopPropagation />}
+                  {row.original.scanner && <span className="truncate">{row.original.scanner}</span>}
                 </p>
               )}
             </div>
