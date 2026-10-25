@@ -135,7 +135,7 @@ export function Tag({
             />
           )}
           {level !== undefined ? (
-            <span aria-hidden className={plain || scope ? 'text-muted-foreground' : undefined}>
+            <span aria-hidden className={plain ? 'text-muted-foreground' : undefined}>
               <LevelBars level={level} />
             </span>
           ) : (
