@@ -96,6 +96,57 @@ func (r *FindingApprovalRepository) PolicyFacts(ctx context.Context, tenantID, f
 	return pf, nil
 }
 
+// ApprovalFindingFacts reads the policy facts and asset name of many
+// findings of one tenant in one query (My Work's approval rows). A finding
+// of another tenant, or one that no longer exists, has no entry.
+func (r *FindingApprovalRepository) ApprovalFindingFacts(ctx context.Context, tenantID shared.ID, findingIDs []shared.ID) (map[shared.ID]finding.ApprovalFindingFacts, error) {
+	out := make(map[shared.ID]finding.ApprovalFindingFacts, len(findingIDs))
+	if len(findingIDs) == 0 {
+		return out, nil
+	}
+	ids := make([]string, 0, len(findingIDs))
+	for _, id := range findingIDs {
+		ids = append(ids, id.String())
+	}
+	rows, err := r.db.QueryContext(ctx, `
+		SELECT f.id::text, f.severity, COALESCE(f.priority_class, ''), COALESCE(f.is_in_kev, false), f.epss_score::float8,
+		       COALESCE(f.validation_outcome = 'reproducible', false),
+		       COALESCE(a.is_crown_jewel, false), COALESCE(`+asset.InternetFacingSQL("a")+`, false),
+		       COALESCE(a.name, '')
+		FROM findings f
+		LEFT JOIN assets a ON a.tenant_id = f.tenant_id AND a.id = f.asset_id
+		WHERE f.tenant_id = $1 AND f.id = ANY($2::uuid[])`,
+		tenantID.String(), pq.Array(ids))
+	if err != nil {
+		return nil, fmt.Errorf("read approval finding facts: %w", err)
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var (
+			id   string
+			ff   finding.ApprovalFindingFacts
+			epss sql.NullFloat64
+		)
+		if err := rows.Scan(&id, &ff.Facts.Severity, &ff.Facts.PriorityClass, &ff.Facts.KEV, &epss,
+			&ff.Facts.ExploitValidated, &ff.Facts.CrownJewel, &ff.Facts.InternetExposed, &ff.AssetName); err != nil {
+			return nil, fmt.Errorf("scan approval finding facts: %w", err)
+		}
+		if epss.Valid {
+			v := epss.Float64
+			ff.Facts.EPSS = &v
+		}
+		fid, err := shared.IDFromString(id)
+		if err != nil {
+			continue
+		}
+		out[fid] = ff
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("read approval finding facts: %w", err)
+	}
+	return out, nil
+}
+
 // GroupMemberIDs lists the members of a group of the tenant (none for a
 // group of another tenant) who joined it at or before addedBefore and whose
 // membership has not ended. A member who joined later is left out: the

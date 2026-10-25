@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"strconv"
+	"time"
 )
 
 // Problem types (RFC 9457) of the v2 results resource, RFC-026 §3.8. The type
@@ -89,6 +90,12 @@ const (
 	// foreign pairing request.
 	ProblemPairingNotFound ProblemType = "pairing-not-found"
 
+	// ProblemClockSkew: a signature that verifies but whose time lies
+	// outside the accepted window, so the sensor's clock or the server's
+	// is wrong (ServerTime, ClockOffsetSeconds). Given only for a request
+	// signed by the key it names; every other refusal is unauthenticated.
+	ProblemClockSkew ProblemType = "clock-skew"
+
 	// Config report (ProblemTypeBaseSensor).
 	ProblemConfigReportInvalid ProblemType = "config-report-invalid"
 )
@@ -156,6 +163,7 @@ var problemDefs = map[ProblemType]problemDef{
 
 	ProblemManifestInvalid:           {http.StatusUnprocessableEntity, "Manifest invalid", "The manifest is not a JSON object with a schema member of the documented shape.", false, ProblemTypeBaseSensor},
 	ProblemManifestNotFound:          {http.StatusNotFound, "Manifest not found", "This sensor has no registered manifest; PUT it first.", false, ProblemTypeBaseSensor},
+	ProblemClockSkew:                 {http.StatusUnauthorized, "Clock skew", "The request signature was made outside the accepted time window: the sensor's clock or the server's clock is wrong. Synchronize both with NTP; clock_offset_seconds is the signature time minus server_time.", false, ProblemTypeBaseSensor},
 	ProblemPairingNotFound:           {http.StatusNotFound, "Pairing not found", "No open pairing request with this id is bound to this key.", false, ProblemTypeBaseSensor},
 	ProblemManifestSchemaUnsupported: {http.StatusUnprocessableEntity, "Manifest schema unsupported", "The manifest's schema version is not one this server reads; send schema 1.", false, ProblemTypeBaseSensor},
 
@@ -209,8 +217,13 @@ type Problem struct {
 	Limit  *int64      `json:"limit,omitempty"`
 	// State is the command's current state on an invalid-transition problem
 	// (RFC-029 §4.4), so a sensor can drop a canceled or expired command.
-	State     string `json:"state,omitempty"`
-	Retryable bool   `json:"retryable"`
+	State string `json:"state,omitempty"`
+	// ServerTime and ClockOffsetSeconds are set on a clock-skew problem:
+	// the server's clock, and the signature time minus it (positive when
+	// the signer's clock is ahead).
+	ServerTime         *time.Time `json:"server_time,omitempty"`
+	ClockOffsetSeconds *int64     `json:"clock_offset_seconds,omitempty"`
+	Retryable          bool       `json:"retryable"`
 
 	ptype  ProblemType
 	accept string
@@ -247,6 +260,15 @@ func (p *Problem) WithLimit(n int64) *Problem {
 // WithState sets the "state" extension member of an invalid-transition.
 func (p *Problem) WithState(state string) *Problem {
 	p.State = state
+	return p
+}
+
+// WithClock sets the clock-skew members: the server's time (whole seconds,
+// UTC) and the signer's offset from it.
+func (p *Problem) WithClock(now time.Time, offset time.Duration) *Problem {
+	t := now.UTC().Truncate(time.Second)
+	secs := int64(offset / time.Second)
+	p.ServerTime, p.ClockOffsetSeconds = &t, &secs
 	return p
 }
 

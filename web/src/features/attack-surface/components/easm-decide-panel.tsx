@@ -12,9 +12,10 @@
  * address shows what was seen on it (open ports, other names); the
  * organization's own prefix is offered as one rule; "Not ours" records a
  * rejection (never suggested or scanned again); "Not now" hides the card on
- * the overview for 30 days or until it shows something new. While
- * unclassified assets get low-impact checks (RFC-054 §16), only addresses
- * whose network is unknown wait for a decision.
+ * the overview for 30 days or until it shows something new. The server
+ * splits the addresses: those that wait for a decision, those the
+ * unclassified-scans mode already checks (RFC-054 §16) and shared ones; only
+ * a card that offers something is a decision (and counts in the badge).
  */
 
 import { useState } from 'react'
@@ -42,11 +43,7 @@ import { EmptyState, ErrorState } from '@/features/shared'
 import { getErrorMessage } from '@/lib/api/error-handler'
 import { UNDO_TOAST_MS } from '@/lib/undo-toast'
 import type { EASMSuggestionAddress, EASMSuggestionCard } from '@/lib/api/generated'
-import {
-  createScopeTargetsBulk,
-  invalidateScopeCache,
-  useScopeSettingsApi,
-} from '@/features/scope/api/use-scope-api'
+import { createScopeTargetsBulk, invalidateScopeCache } from '@/features/scope/api/use-scope-api'
 import { decideAttribution } from '@/features/assets/api/triage-api'
 import { Permission, useHasPermission } from '@/lib/permissions'
 import { reportBulkResult } from '@/features/scope/components/add-to-scope-action'
@@ -126,20 +123,6 @@ export function addressNetworkText(t: TFn, a: EASMSuggestionAddress): string {
   return [n.asn, n.org].filter(Boolean).join(' ')
 }
 
-/**
- * The organization's unclassified-scans mode in force (RFC-054 §16): with
- * low_impact or full, an address whose network is known and not shared
- * already gets checks without an entry, so only unknown networks wait for a
- * decision. Anything else (off, Strict, an older API) keeps every address
- * waiting.
- */
-function useUnclassifiedScanning(): boolean {
-  const { data } = useScopeSettingsApi()
-  const mode = (data as { unclassified_scans_effective?: string } | undefined)
-    ?.unclassified_scans_effective
-  return mode === 'low_impact' || mode === 'full'
-}
-
 export function EASMDecidePanel({ compact = false }: { compact?: boolean }) {
   const { t } = useTranslation()
   const { currentTenant } = useTenant()
@@ -167,12 +150,15 @@ export function EASMDecidePanel({ compact = false }: { compact?: boolean }) {
     return compact ? null : <Skeleton className="h-28 w-full rounded-xl" />
   }
 
-  // "Not now" hides a card from the overview for 30 days (or until it shows
-  // something new), for this viewer; the Suggestions tab lists every card.
-  const shown = (cards?.cards ?? []).filter((c) => !compact || !snoozed(tenantId, c))
-  // The tab badge also counts the name-rule cards, which only the Suggestions
-  // tab lists: when they are all that waits, say so in one line.
-  const ruleCount = Math.max(0, (cards?.total ?? 0) - (cards?.cards?.length ?? 0))
+  // A card that offers nothing (only shared or already checked addresses)
+  // is not a decision: the overview leaves it out, the Review tab shows it as
+  // a quiet line. "Not now" hides a card from the overview for 30 days (or
+  // until it shows something new), for this viewer.
+  const all = cards?.cards ?? []
+  const shown = compact ? all.filter((c) => (c.count ?? 0) > 0 && !snoozed(tenantId, c)) : all
+  // The name-rule cards only the Review tab lists: when they are all that
+  // waits, the overview says so in one line.
+  const ruleCount = cards?.name_rules ?? 0
   if (compact && shown.length === 0) {
     if (ruleCount === 0) return null
     return (
@@ -208,6 +194,16 @@ export function EASMDecidePanel({ compact = false }: { compact?: boolean }) {
           </Link>
         </div>
       )}
+      {!compact && (cards?.total ?? 0) === 0 && (
+        <EmptyState
+          icon={Crosshair}
+          title={t('attackSurface.decide.emptyTitle', 'Nothing to decide')}
+          description={t(
+            'attackSurface.decide.emptyDescription',
+            'Every address your names resolve to and every asset you confirmed is in scope, or nothing has been found yet.'
+          )}
+        />
+      )}
       {shown.map((c) =>
         c.kind === 'addresses_behind_names' ? (
           <AddressesCard
@@ -228,16 +224,6 @@ export function EASMDecidePanel({ compact = false }: { compact?: boolean }) {
       {!compact && (
         <EASMRuleSuggestions namesOnly onApplied={() => void refreshEASMSuggestions()} />
       )}
-      {!compact && shown.length === 0 && (cards?.total ?? 0) === 0 && (
-        <EmptyState
-          icon={Crosshair}
-          title={t('attackSurface.decide.emptyTitle', 'Nothing to decide')}
-          description={t(
-            'attackSurface.decide.emptyDescription',
-            'Every address your names resolve to and every asset you confirmed is in scope, or nothing has been found yet.'
-          )}
-        />
-      )}
     </section>
   )
 }
@@ -253,22 +239,21 @@ function AddressesCard({
 }) {
   const { t } = useTranslation()
   const canDecide = useHasPermission(Permission.AssetsWrite)
-  const scanning = useUnclassifiedScanning()
   const [open, setOpen] = useState(false)
   const [confirming, setConfirming] = useState<ScopeItem[] | null>(null)
   const [rejecting, setRejecting] = useState(false)
-  const offered = card.addresses ?? []
+  // The server splits them: waiting for a decision, already checked by the
+  // unclassified-scans mode, and shared (never offered).
+  const waiting = card.addresses ?? []
+  const checked = card.checked_addresses ?? []
   const shared = card.shared_addresses ?? []
-  // Waiting for a decision: every offered address, or only the unknown
-  // networks while unclassified assets already get checks.
-  const waiting = scanning ? offered.filter((a) => !a.network?.known) : offered
-  const checked = scanning ? offered.filter((a) => a.network?.known) : []
-  const count = waiting.length
+  const count = card.count ?? 0
   const sharedCount = card.shared_count ?? 0
+  const checkedCount = card.checked_count ?? 0
   const prefixes = card.prefix_rules ?? []
   const toItems = (as: EASMSuggestionAddress[]): ScopeItem[] =>
     as.map((a) => ({ target_type: 'ip_address', pattern: a.address ?? '' }))
-  const reasonNames = Array.from(new Set(offered.flatMap((a) => a.resolved_from ?? []))).slice(0, 5)
+  const reasonNames = Array.from(new Set(waiting.flatMap((a) => a.resolved_from ?? []))).slice(0, 5)
 
   const notOurs = async () => {
     const ids = waiting.map((a) => a.asset_id ?? '').filter(Boolean)
@@ -304,206 +289,278 @@ function AddressesCard({
     }
   }
 
+  const note = (
+    <NoDecisionNote
+      sharedCount={sharedCount}
+      checkedCount={checkedCount}
+      shared={shared}
+      checked={checked}
+    />
+  )
+  if (count === 0) return note
   return (
-    <Card data-testid="decide-card-addresses">
-      <CardHeader className="pb-3">
-        <CardTitle className="flex items-center gap-2 text-base">
-          <Network className="h-4 w-4 text-muted-foreground" aria-hidden />
-          {count > 0
-            ? plural(
-                t,
-                'attackSurface.decide.addresses.title',
-                count,
-                '1 address your in-scope names resolve to',
-                '{count} addresses your in-scope names resolve to'
-              )
-            : t(
-                'attackSurface.decide.addresses.titleShared',
-                'Addresses your in-scope names resolve to'
-              )}
-        </CardTitle>
-        <CardDescription>
-          {t(
-            'attackSurface.decide.addresses.value',
-            'Add them to scan every port of these addresses. Today only the names are scanned, so a service that answers on the address without a name is missed.'
-          )}{' '}
-          {t(
-            'attackSurface.decide.addresses.caution',
-            'A name never makes an address yours: it may be shared, or released and now used by someone else. Add only addresses you know are yours.'
-          )}
-        </CardDescription>
-      </CardHeader>
-      <CardContent className="space-y-3">
-        <div className="flex flex-wrap gap-2 text-xs">
-          {waiting.some((a) => !a.network?.known) && (
-            <Badge
-              variant="outline"
-              className="h-auto gap-1 whitespace-normal border-warning/40 text-start text-warning"
-            >
-              <AlertTriangle className="h-3 w-3" aria-hidden />
-              {plural(
-                t,
-                'attackSurface.decide.addresses.unknown',
-                waiting.filter((a) => !a.network?.known).length,
-                'Network unknown for 1: check it is yours',
-                'Network unknown for {count}: check they are yours'
-              )}
-            </Badge>
-          )}
-          {sharedCount > 0 && (
-            <Badge variant="outline" className="h-auto whitespace-normal text-start">
-              {plural(
-                t,
-                'attackSurface.decide.addresses.shared',
-                sharedCount,
-                '1 shared or CDN address not offered',
-                '{count} shared or CDN addresses not offered'
-              )}
-            </Badge>
-          )}
-          {card.truncated && (
-            <Badge variant="outline" className="h-auto whitespace-normal text-start">
-              {t('attackSurface.decide.truncated', 'More after these: the card comes back')}
-            </Badge>
-          )}
-        </div>
-        <div className="flex flex-wrap items-center gap-2">
-          {canAdd && count > 0 && (
-            <Button size="sm" onClick={() => setConfirming(toItems(waiting))}>
-              {plural(
-                t,
-                'attackSurface.decide.add',
-                count,
-                'Add 1 to scope',
-                'Add {count} to scope'
-              )}
-            </Button>
-          )}
-          {canDecide && count > 0 && (
-            <Button size="sm" variant="outline" onClick={() => setRejecting(true)}>
-              {t('attackSurface.decide.notOurs', 'Not ours')}
-            </Button>
-          )}
-          {onSnooze && (
-            <Button size="sm" variant="outline" onClick={onSnooze}>
-              {t('attackSurface.decide.notNow', 'Not now')}
-            </Button>
-          )}
-          <Button size="sm" variant="ghost" onClick={() => setOpen((o) => !o)} aria-expanded={open}>
-            {open ? (
-              <ChevronUp className="h-4 w-4" aria-hidden />
-            ) : (
-              <ChevronDown className="h-4 w-4" aria-hidden />
+    <>
+      <Card data-testid="decide-card-addresses">
+        <CardHeader className="pb-3">
+          <CardTitle className="flex items-center gap-2 text-base">
+            <Network className="h-4 w-4 text-muted-foreground" aria-hidden />
+            {plural(
+              t,
+              'attackSurface.decide.addresses.title',
+              count,
+              '1 address your in-scope names resolve to',
+              '{count} addresses your in-scope names resolve to'
             )}
-            {open
-              ? t('attackSurface.decide.hideList', 'Hide list')
-              : t('attackSurface.decide.viewList', 'View list')}
-          </Button>
-        </div>
-        {!canAdd && count > 0 && (
-          <p className="text-xs text-muted-foreground">
+          </CardTitle>
+          <CardDescription>
             {t(
-              'attackSurface.decide.needsScopeWrite',
-              'Adding to scope needs permission to edit scope.'
+              'attackSurface.decide.addresses.value',
+              'Add them to scan every port of these addresses. Today only the names are scanned, so a service that answers on the address without a name is missed.'
+            )}{' '}
+            {t(
+              'attackSurface.decide.addresses.caution',
+              'A name never makes an address yours: it may be shared, or released and now used by someone else. Add only addresses you know are yours.'
             )}
-          </p>
-        )}
-        {prefixes.length > 0 && (
-          <div className="space-y-1" data-testid="decide-prefix-rules">
-            <p className="text-sm font-medium">
-              {t('attackSurface.decide.prefixHeading', 'Your own network')}
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          <div className="flex flex-wrap gap-2 text-xs">
+            {waiting.some((a) => !a.network?.known) && (
+              <Badge
+                variant="outline"
+                className="h-auto gap-1 whitespace-normal border-warning/40 text-start text-warning"
+              >
+                <AlertTriangle className="h-3 w-3" aria-hidden />
+                {plural(
+                  t,
+                  'attackSurface.decide.addresses.unknown',
+                  waiting.filter((a) => !a.network?.known).length,
+                  'Network unknown for 1: check it is yours',
+                  'Network unknown for {count}: check they are yours'
+                )}
+              </Badge>
+            )}
+            {card.truncated && (
+              <Badge variant="outline" className="h-auto whitespace-normal text-start">
+                {t('attackSurface.decide.truncated', 'More after these: the card comes back')}
+              </Badge>
+            )}
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            {canAdd && count > 0 && (
+              <Button size="sm" onClick={() => setConfirming(toItems(waiting))}>
+                {plural(
+                  t,
+                  'attackSurface.decide.add',
+                  count,
+                  'Add 1 to scope',
+                  'Add {count} to scope'
+                )}
+              </Button>
+            )}
+            {canDecide && count > 0 && (
+              <Button size="sm" variant="outline" onClick={() => setRejecting(true)}>
+                {t('attackSurface.decide.notOurs', 'Not ours')}
+              </Button>
+            )}
+            {onSnooze && (
+              <Button size="sm" variant="outline" onClick={onSnooze}>
+                {t('attackSurface.decide.notNow', 'Not now')}
+              </Button>
+            )}
+            <Button
+              size="sm"
+              variant="ghost"
+              onClick={() => setOpen((o) => !o)}
+              aria-expanded={open}
+            >
+              {open ? (
+                <ChevronUp className="h-4 w-4" aria-hidden />
+              ) : (
+                <ChevronDown className="h-4 w-4" aria-hidden />
+              )}
+              {open
+                ? t('attackSurface.decide.hideList', 'Hide list')
+                : t('attackSurface.decide.viewList', 'View list')}
+            </Button>
+          </div>
+          {!canAdd && count > 0 && (
+            <p className="text-xs text-muted-foreground">
+              {t(
+                'attackSurface.decide.needsScopeWrite',
+                'Adding to scope needs permission to edit scope.'
+              )}
             </p>
-            <ul className="divide-y rounded-md border text-sm">
-              {prefixes.map((p) => (
-                <li
-                  key={p.prefix}
-                  className="flex flex-col gap-1 px-3 py-2 sm:flex-row sm:items-center sm:gap-3"
-                >
-                  <code className="shrink-0 font-mono text-xs">{p.prefix}</code>
-                  <span className="min-w-0 flex-1 text-xs text-muted-foreground">
-                    {plural(
-                      t,
-                      'attackSurface.decide.prefixHolds',
-                      p.addresses ?? 0,
-                      'Announced by your seeded network; holds 1 of these addresses',
-                      'Announced by your seeded network; holds {count} of these addresses'
+          )}
+          {prefixes.length > 0 && (
+            <div className="space-y-1" data-testid="decide-prefix-rules">
+              <p className="text-sm font-medium">
+                {t('attackSurface.decide.prefixHeading', 'Your own network')}
+              </p>
+              <ul className="divide-y rounded-md border text-sm">
+                {prefixes.map((p) => (
+                  <li
+                    key={p.prefix}
+                    className="flex flex-col gap-1 px-3 py-2 sm:flex-row sm:items-center sm:gap-3"
+                  >
+                    <code className="shrink-0 font-mono text-xs">{p.prefix}</code>
+                    <span className="min-w-0 flex-1 text-xs text-muted-foreground">
+                      {plural(
+                        t,
+                        'attackSurface.decide.prefixHolds',
+                        p.addresses ?? 0,
+                        'Announced by your seeded network; holds 1 of these addresses',
+                        'Announced by your seeded network; holds {count} of these addresses'
+                      )}
+                    </span>
+                    {canAdd && (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() =>
+                          setConfirming([{ target_type: 'cidr', pattern: p.prefix ?? '' }])
+                        }
+                      >
+                        {t('attackSurface.decide.addPrefix', 'Add {prefix}', {
+                          prefix: p.prefix ?? '',
+                        })}
+                      </Button>
                     )}
-                  </span>
-                  {canAdd && (
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      onClick={() =>
-                        setConfirming([{ target_type: 'cidr', pattern: p.prefix ?? '' }])
-                      }
-                    >
-                      {t('attackSurface.decide.addPrefix', 'Add {prefix}', {
-                        prefix: p.prefix ?? '',
-                      })}
-                    </Button>
-                  )}
-                </li>
-              ))}
-            </ul>
-          </div>
-        )}
-        {open && (
-          <div className="space-y-3">
-            {waiting.length > 0 && <AddressList addresses={waiting} />}
-            {checked.length > 0 && (
-              <div className="space-y-1">
-                <p className="text-sm font-medium">
-                  {t(
-                    'attackSurface.decide.checkedHeading',
-                    'Already get low-impact checks (add to scope for a full scan)'
-                  )}
-                </p>
-                <AddressList addresses={checked} />
-              </div>
-            )}
-            {shared.length > 0 && (
-              <div className="space-y-1">
-                <p className="text-sm font-medium">
-                  {t('attackSurface.decide.sharedHeading', 'Shared, not offered')}
-                </p>
-                <AddressList addresses={shared} />
-              </div>
-            )}
-          </div>
-        )}
-      </CardContent>
-      <AcceptDialog
-        open={confirming !== null}
-        onOpenChange={(o) => !o && setConfirming(null)}
-        items={confirming ?? []}
-        reason={t(
-          'attackSurface.decide.addresses.reason',
-          'Addresses behind in-scope names: {names}',
-          { names: reasonNames.join(', ') }
-        )}
-      />
-      <ConfirmDialog
-        open={rejecting}
-        onOpenChange={setRejecting}
-        title={plural(
-          t,
-          'attackSurface.decide.notOursTitle',
-          count,
-          'Mark 1 address as not yours?',
-          'Mark {count} addresses as not yours?'
-        )}
-        desc={t(
-          'attackSurface.decide.notOursDesc',
-          'They are never scanned or suggested again, until someone undoes it on the asset.'
-        )}
-        confirmText={t('attackSurface.decide.notOurs', 'Not ours')}
-        handleConfirm={() => void notOurs()}
-      />
-    </Card>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+          {open && (
+            <div className="space-y-3">
+              {waiting.length > 0 && <AddressList addresses={waiting} />}
+            </div>
+          )}
+        </CardContent>
+        <AcceptDialog
+          open={confirming !== null}
+          onOpenChange={(o) => !o && setConfirming(null)}
+          items={confirming ?? []}
+          reason={t(
+            'attackSurface.decide.addresses.reason',
+            'Addresses behind in-scope names: {names}',
+            { names: reasonNames.join(', ') }
+          )}
+        />
+        <ConfirmDialog
+          open={rejecting}
+          onOpenChange={setRejecting}
+          title={plural(
+            t,
+            'attackSurface.decide.notOursTitle',
+            count,
+            'Mark 1 address as not yours?',
+            'Mark {count} addresses as not yours?'
+          )}
+          desc={t(
+            'attackSurface.decide.notOursDesc',
+            'They are never scanned or suggested again, until someone undoes it on the asset.'
+          )}
+          confirmText={t('attackSurface.decide.notOurs', 'Not ours')}
+          handleConfirm={() => void notOurs()}
+        />
+      </Card>
+      {note}
+    </>
   )
 }
 
-function AddressList({ addresses }: { addresses: EASMSuggestionAddress[] }) {
+/**
+ * Addresses that need no decision, as one quiet line: shared ones (CDN,
+ * hosting, cloud front ends; their open ports are the provider's, so none
+ * are shown) and ones the unclassified-scans mode already checks.
+ */
+function NoDecisionNote({
+  sharedCount,
+  checkedCount,
+  shared,
+  checked,
+}: {
+  sharedCount: number
+  checkedCount: number
+  shared: EASMSuggestionAddress[]
+  checked: EASMSuggestionAddress[]
+}) {
+  const { t } = useTranslation()
+  const [open, setOpen] = useState(false)
+  if (sharedCount === 0 && checkedCount === 0) return null
+  return (
+    <div className="space-y-2 text-sm text-muted-foreground" data-testid="decide-no-decision">
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+        {sharedCount > 0 && (
+          <span>
+            {plural(
+              t,
+              'attackSurface.decide.noDecision.shared',
+              sharedCount,
+              '1 address your names resolve to belongs to a CDN or hosting provider and needs no decision.',
+              '{count} addresses your names resolve to belong to CDN or hosting providers and need no decision.'
+            )}
+          </span>
+        )}
+        {checkedCount > 0 && (
+          <span>
+            {plural(
+              t,
+              'attackSurface.decide.noDecision.checked',
+              checkedCount,
+              '1 address already gets low-impact checks.',
+              '{count} addresses already get low-impact checks.'
+            )}
+          </span>
+        )}
+        <Button
+          size="sm"
+          variant="link"
+          className="h-auto p-0"
+          onClick={() => setOpen((o) => !o)}
+          aria-expanded={open}
+        >
+          {open
+            ? t('attackSurface.decide.hideList', 'Hide list')
+            : t('attackSurface.decide.viewList', 'View list')}
+        </Button>
+      </div>
+      {open && (
+        <div className="space-y-3">
+          {checked.length > 0 && (
+            <div className="space-y-1">
+              <p className="text-sm font-medium text-foreground">
+                {t(
+                  'attackSurface.decide.checkedHeading',
+                  'Already get low-impact checks (add to scope for a full scan)'
+                )}
+              </p>
+              <AddressList addresses={checked} />
+            </div>
+          )}
+          {shared.length > 0 && (
+            <div className="space-y-1">
+              <p className="text-sm font-medium text-foreground">
+                {t('attackSurface.decide.sharedHeadingProvider', 'Provider addresses')}
+              </p>
+              <AddressList addresses={shared} showPorts={false} />
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
+
+function AddressList({
+  addresses,
+  showPorts = true,
+}: {
+  addresses: EASMSuggestionAddress[]
+  /** Shared addresses never show ports: they are the provider's. */
+  showPorts?: boolean
+}) {
   const { t } = useTranslation()
   return (
     <ul className="divide-y rounded-md border text-sm" data-testid="decide-address-list">
@@ -526,17 +583,18 @@ function AddressList({ addresses }: { addresses: EASMSuggestionAddress[] }) {
               {addressNetworkText(t, a)}
             </span>
           </div>
-          {((a.ports ?? []).length > 0 || (a.other_names ?? []).length > 0) && (
+          {showPorts && (a.ports ?? []).length > 0 && (
             <p className="text-xs text-muted-foreground">
-              {(a.ports ?? []).length > 0 &&
-                t('attackSurface.decide.seenPorts', 'Open ports seen: {ports}', {
-                  ports: (a.ports ?? []).join(', '),
-                })}
-              {(a.ports ?? []).length > 0 && (a.other_names ?? []).length > 0 && ' · '}
-              {(a.other_names ?? []).length > 0 &&
-                t('attackSurface.decide.otherNames', 'Also named {names} (not in scope)', {
-                  names: (a.other_names ?? []).join(', '),
-                })}
+              {t('attackSurface.decide.seenPorts', 'Open ports seen: {ports}', {
+                ports: (a.ports ?? []).join(', '),
+              })}
+            </p>
+          )}
+          {(a.other_names ?? []).length > 0 && (
+            <p className="text-xs text-muted-foreground">
+              {t('attackSurface.decide.otherNames', 'Also named {names} (not in scope)', {
+                names: (a.other_names ?? []).join(', '),
+              })}
             </p>
           )}
         </li>

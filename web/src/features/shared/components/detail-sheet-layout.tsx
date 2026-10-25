@@ -66,6 +66,7 @@ import { useTranslation } from '@/context/i18n-provider'
 import { useIsMobile } from '@/hooks/use-mobile'
 import { useUrlFilter } from '@/hooks/use-url-param'
 import { cn } from '@/lib/utils'
+import { MetaLine } from './text-layout'
 
 type IconType = React.ElementType
 
@@ -150,6 +151,14 @@ function keepControlsFromDragging(e: React.PointerEvent) {
 // "View all" through <DetailSheetFooter>, which portals into it.
 const FooterTargetContext = React.createContext<{ node: HTMLElement; pad: string } | null>(null)
 
+/**
+ * The id of the drawer body, which is the tab panel: DetailTabs points each
+ * tab's aria-controls at it (the drawer renders one panel for the active tab,
+ * not a Radix TabsContent per tab, so Radix's own aria-controls would name an
+ * element that does not exist).
+ */
+const DetailPanelIdContext = React.createContext<string | null>(null)
+
 export interface DetailSheetFooterProps {
   children: React.ReactNode
   className?: string
@@ -196,6 +205,7 @@ export function DetailSheet({
   // and becomes the other.
   const isPhone = useIsMobile()
   const pad = isPhone ? 'px-4' : 'px-5'
+  const panelId = React.useId()
 
   // The body is ours to reset and the caller's to manage: hand the node to both.
   const scrollRef = React.useRef<HTMLDivElement | null>(null)
@@ -264,10 +274,13 @@ export function DetailSheet({
     <FooterTargetContext.Provider value={footerValue}>
       <div className={cn('shrink-0 border-b', isPhone ? 'pt-2' : 'pt-4', pad, !tabs && 'pb-4')}>
         {header}
-        {tabs}
+        <DetailPanelIdContext.Provider value={panel ? panelId : null}>
+          {tabs}
+        </DetailPanelIdContext.Provider>
       </div>
       <div
         ref={setBodyRef}
+        id={panelId}
         data-slot="detail-sheet-body"
         onScroll={onBodyScroll}
         className={cn(
@@ -340,6 +353,18 @@ export function DetailSheet({
 // DetailHeader — who, its state, what it is, and what you can do
 // ============================================================================
 
+/**
+ * Scroll the drawer body (not the frame) so that `el` is at its top. Use it
+ * instead of `scrollIntoView`, which also scrolls the drawer frame on a phone
+ * and leaves a blank band under the body.
+ */
+export function scrollDetailBodyTo(el: HTMLElement | null) {
+  const body = el?.closest<HTMLElement>('[data-slot="detail-sheet-body"]')
+  if (!el || !body) return
+  const top = el.getBoundingClientRect().top - body.getBoundingClientRect().top + body.scrollTop
+  body.scrollTo({ top: Math.max(0, top - 8), behavior: 'smooth' })
+}
+
 export interface DetailMenuItem {
   label: string
   icon?: IconType
@@ -358,7 +383,7 @@ export interface DetailHeaderProps {
   title: React.ReactNode
   /** State and tags right after the title (status pill, "Platform", …). */
   badges?: React.ReactNode
-  /** What it is and where: short parts joined with " · " under the title. */
+  /** What it is and where: short parts on one wrapping line under the title (MetaLine, no glyph). */
   meta?: React.ReactNode[]
   /**
    * The row under the title: at most one primary and one outline button
@@ -410,13 +435,11 @@ export function DetailHeader({
             {badges}
           </div>
           {parts.length > 0 ? (
-            <SheetDescription className="mt-1 truncate text-xs text-muted-foreground tabular-nums">
-              {parts.map((p, i) => (
-                <React.Fragment key={i}>
-                  {i > 0 && ' · '}
-                  {p}
-                </React.Fragment>
-              ))}
+            // Separated by space, not a glyph, and wrapping instead of cut
+            // off: on a phone the last part (often the address) stays visible.
+            // text-meta here too: the description's own text-sm would win.
+            <SheetDescription asChild className="text-meta">
+              <MetaLine items={parts} className="mt-1 tabular-nums" />
             </SheetDescription>
           ) : (
             // Radix wants a description; keep it for screen readers only.
@@ -525,6 +548,7 @@ export function DetailTabs<T extends string>({
   className,
 }: DetailTabsProps<T>) {
   const { t } = useTranslation()
+  const panelId = React.useContext(DetailPanelIdContext)
   const stripRef = React.useRef<HTMLDivElement>(null)
   const measureRef = React.useRef<HTMLDivElement>(null)
   const fit = useTabsThatFit(stripRef, measureRef, tabs.length)
@@ -546,12 +570,20 @@ export function DetailTabs<T extends string>({
       onValueChange={(v) => onValueChange(v as T)}
       className={cn('relative mt-3', className)}
     >
-      <TabsList ref={stripRef}>
-        {shown.map((tab) => (
-          <TabsTrigger key={tab.value} value={tab.value}>
-            {tab.label}
-          </TabsTrigger>
-        ))}
+      {/* The "More" menu button sits beside the tab list, not in it: a
+          tablist holds only tabs. The row carries the strip's underline. */}
+      <div ref={stripRef} className="flex h-10 w-full max-w-full items-stretch gap-6 border-b">
+        <TabsList className="h-auto w-auto min-w-0 flex-1 border-b-0">
+          {shown.map((tab) => (
+            <TabsTrigger
+              key={tab.value}
+              value={tab.value}
+              {...(panelId ? { 'aria-controls': panelId } : {})}
+            >
+              {tab.label}
+            </TabsTrigger>
+          ))}
+        </TabsList>
         {overflow.length > 0 && (
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
@@ -569,7 +601,7 @@ export function DetailTabs<T extends string>({
             </DropdownMenuContent>
           </DropdownMenu>
         )}
-      </TabsList>
+      </div>
       {/* Every label at its natural width, out of sight, so the strip knows
           how many fit whatever is currently shown. */}
       <div

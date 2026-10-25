@@ -17,7 +17,7 @@
 
 import * as React from 'react'
 import { useRouter, useParams } from 'next/navigation'
-import Link from '@/components/link'
+import { OpenFindingsLink } from '@/features/assets/components/service-cells'
 import { ArrowLeft, Lock } from 'lucide-react'
 import { Main, useBreadcrumbTitle } from '@/components/layout'
 import { Button } from '@/components/ui/button'
@@ -40,7 +40,6 @@ import { getAssetTypeLabel } from '@/features/assets/lib/asset-type-icon'
 import { AssetStatusBadge } from '@/features/asset-lifecycle'
 import { AssetScanWindowCard } from '@/features/scan-windows'
 import { AssetWebEvidenceCard } from '@/features/attack-surface'
-import { cn } from '@/lib/utils'
 import { useTranslation } from '@/context/i18n-provider'
 import { useTenant } from '@/context/tenant-provider'
 import { usePermissions, Permission } from '@/lib/permissions'
@@ -161,20 +160,16 @@ export default function AssetDetailPage() {
             exposure={asset.exposure}
             criticality={asset.criticality}
             size="md"
+            labelled
           />
-          <RiskScoreBadge score={asset.riskScore} state={riskScoreState(asset)} />
-          <Link
-            href={`/findings?asset_id=${assetId}`}
-            className={cn(
-              'text-sm font-medium hover:underline',
-              asset.findingCount > 0 ? 'text-destructive' : 'text-muted-foreground'
-            )}
-            aria-label={t('assetDetail.viewFindings', 'View {count} findings for this asset', {
-              count: asset.findingCount,
-            })}
-          >
-            {t('assetDetail.findings', 'Findings')}: {asset.findingCount}
-          </Link>
+          <RiskScoreBadge score={asset.riskScore} state={riskScoreState(asset)} labelled />
+          {asset.findingCount > 0 ? (
+            <OpenFindingsLink assetId={assetId} count={asset.findingCount} className="text-sm" />
+          ) : (
+            <span className="text-sm text-muted-foreground">
+              {t('assets.overview2.noOpenShort', 'No open findings')}
+            </span>
+          )}
         </div>
 
         <Card>

@@ -214,6 +214,17 @@ func registerVulnerabilityRoutes(
 	// Build tenant middleware chain from JWT token (used by /findings group below)
 	tenantMiddlewares := buildTokenTenantMiddlewares(authMiddleware, userSyncMiddleware)
 
+	// The vulnerability page (docs/architecture/vulnerability-page.md): one
+	// exposure answer per vulnerability, addressed by its CVE or an advisory
+	// id the signed feed aliases to one. Finding counts run as the caller
+	// (the findings list's own filter), so findings:read as well, under the
+	// heavy-read limiter like the findings stats.
+	router.Group("/api/v1/vulnerability-exposures", func(r Router) {
+		pageMW := []Middleware{middleware.RequireAll(permission.VulnerabilitiesRead, permission.FindingsRead), heavyReads.Middleware()}
+		r.GET("/{vuln_id}", h.GetCVEExposure, pageMW...)
+		r.GET("/{vuln_id}/assets", h.ListCVEExposureAssets, pageMW...)
+	}, tenantMiddlewares...)
+
 	// Finding routes - tenant from JWT token
 	router.Group("/api/v1/findings", func(r Router) {
 		// Read operations

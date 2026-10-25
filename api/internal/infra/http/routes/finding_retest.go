@@ -77,7 +77,7 @@ func registerLicensePolicySettingsRoutes(router Router, h *handler.TenantHandler
 	}
 	router.Group("/api/v1/organization/settings/license-policy", func(r Router) {
 		r.GET("/", h.GetLicensePolicySettings, middleware.Require(permission.SettingsRead))
-		r.PUT("/", h.UpdateLicensePolicySettings, middleware.Require(permission.SettingsWrite))
+		r.PUT("/", h.UpdateLicensePolicySettings, middleware.Require(permission.SettingsWrite), middleware.RequireAdmin())
 	}, buildTokenTenantMiddlewares(authMiddleware, userSyncMiddleware)...)
 }
 

@@ -16,6 +16,7 @@ vi.mock('@/lib/permissions', async (orig) => {
   const actual = await orig<typeof import('@/lib/permissions')>()
   return {
     ...actual,
+    useCanMutate: (key: string) => (key === 'PUT /api/v1/easm/settings' ? perms.settings : true),
     usePermissions: () => ({
       can: (p: string) =>
         p === actual.Permission.SettingsWrite

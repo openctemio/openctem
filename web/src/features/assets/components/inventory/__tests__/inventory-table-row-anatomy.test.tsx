@@ -95,14 +95,16 @@ describe('InventoryTable row anatomy (research/266)', () => {
     expect(screen.queryByRole('columnheader', { name: /^Type/ })).toBeNull()
   })
 
-  it('service facts are one line: status, port, top technology, then +N', () => {
+  it('service facts are one line: status code, port, technologies, then +N', () => {
     renderTable([http])
     const line = within(row('priority-portal')).getByTestId('surface-facts-line')
     expect(line.className).toContain('flex-nowrap')
     const chips = [...line.querySelectorAll('[data-slot="fact-chip"]')].map((c) => c.textContent)
     expect(chips.slice(0, 3)).toEqual(['200OK', '443/https', 'nginx'])
-    // 4 more technologies, the IP and TLS sit behind "+6".
-    expect(within(line).getByRole('button', { name: '6 more facts' })).toHaveTextContent('+6')
+    // Without layout (jsdom) the line shows its cap of four; 3 more
+    // technologies, the IP and TLS sit behind "+5". The measured fold is
+    // tested in surface-facts-line.test.tsx.
+    expect(within(line).getByRole('button', { name: '5 more facts' })).toHaveTextContent('+5')
   })
 
   it('an asset with no owner reads a muted "No owner"', () => {

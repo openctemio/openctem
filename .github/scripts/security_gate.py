@@ -14,17 +14,21 @@ fetched commits, which are never checked out), and the workflow runs this
 script and the path list from the base commit. It fails closed: any API or git
 error or an unknown merge-queue ref fails the check.
 An ack is trusted only through records GitHub writes itself (the `labeled`
-issue event and the workflow run it started); the gate comment is output only,
-because any workflow on any branch of the repository writes as the same bot.
-The workflow file itself comes from the pull request on `pull_request` events,
-so the required check must be pinned to the default branch's workflow file
-(a "require workflows" ruleset); see the guide.
+issue event, and the branch push log for which commit was the head at that
+moment); the gate comment is output only, because any workflow on any branch
+of the repository writes as the same bot. The workflow file itself comes from
+the pull request on `pull_request` events, so the required check must be
+pinned to the default branch's workflow file (a "require workflows" ruleset);
+see the guide. Such a pinned run starts only on opened/synchronize/reopened,
+not on a label, so the `rerun` command (security-gate-label.yml) re-runs it
+when the label changes; the decision never depends on that run existing.
 Labels and the review comment are written only when the token can write (same
 repository pull requests); fork pull requests get the verdict in the job
 summary and the check result.
 
 Commands:
   gate                     evaluate the pull request named by the GitHub event
+  rerun                    on a label event: re-run the gate run of the pull request's head
   codeowners --check       fail if CODEOWNERS' security block is out of date
   codeowners --write       rewrite CODEOWNERS' security block
 Only the Python standard library is used.
@@ -51,12 +55,22 @@ SENSITIVE_LABEL = "security-sensitive"
 ACK_LABEL = "security-ack"
 COMMENT_MARKER = "<!-- security-gate -->"
 # Which commit an ack was given on comes only from data GitHub itself writes:
-# the `labeled` issue event (actor, time) and the gate workflow run that event
-# started (head commit). Comments are never trusted: any workflow on any branch
-# of the repository runs as github-actions[bot] and could write one.
+# the `labeled` issue event (actor, server time) and the head branch's push log
+# (the repository activity API: every push, force push, creation and deletion
+# of the branch with its server time and new tip). Never from commit dates
+# (author and committer dates are whatever the pusher wrote), never from
+# comments or check suites (any workflow token can write those).
 GATE_WORKFLOW = "security-gate.yml"  # .github/workflows/<this>; override with GATE_WORKFLOW_FILE
 MAX_EVENTS = 3000  # an issue-event list this long may be cut off: the gate fails closed
-ACK_RUN_WINDOW = 600  # seconds after the label event within which its gate run must start
+# A push this many seconds or less before the label may not have reached the
+# pull request page the acker was looking at: the gate cannot tell which of the
+# two heads was acknowledged and fails closed.
+ACK_SETTLE = 60
+MAX_ACTIVITY_PAGES = 30  # 3000 branch activities; a longer push log fails closed
+ZERO_SHA = "0" * 40
+SHA = re.compile(r"^[0-9a-f]{40}$")
+RERUN_WAIT = 600  # seconds the `rerun` command waits for the head's gate run to finish
+RERUN_POLL = 15
 # A pull request that changes any of these gets no carried-over ack: its own
 # workflow runs (pull_request events run the PR's workflow files) could act on
 # the pull request, so the ack covers only the exact commit it was given on.
@@ -628,49 +642,49 @@ def _ts(value: str) -> datetime.datetime:
     return datetime.datetime.fromisoformat(value.replace("Z", "+00:00"))
 
 
-def acked_head(gh: GitHub, pr: dict, ack_event: dict, trusted_ref: str | None = None) -> str | None:
-    """The head commit the acker labelled: the head of the gate workflow run
-    their `labeled` event started. Runs are created by GitHub with the event's
-    actor and head, so nothing a workflow token writes can move this. Picks
-    the earliest `pull_request` run of the gate workflow for this pull
-    request's branch, started by the same user within ACK_RUN_WINDOW seconds
-    of the label. With `trusted_ref`, only runs of the workflow file at that
-    ref count (the run a "require workflows" ruleset starts, path
-    `...security-gate.yml@<ref>`): a pull request that edits the gate
-    workflow decides which of its own events start runs, so it could suppress
-    the label's run and let a later action of the acker name an unreviewed
-    head. None when no such run exists (fail closed)."""
-    actor = ((ack_event.get("actor") or {}).get("login") or "").lower()
+def acked_head(gh: GitHub, pr: dict, ack_event: dict) -> str | None:
+    """The head commit the acker labelled: the tip of the pull request's head
+    branch at the time of the `labeled` event, read from the branch's push log
+    (GET /repos/{head repo}/activity). GitHub writes each entry on the push
+    with its own clock; a pull request, its workflows or a workflow token can
+    add entries only by really moving the branch, which the log then records
+    truthfully. None (fail closed) when:
+    - the log has no entry at or before the label, or is longer than
+      MAX_ACTIVITY_PAGES pages (it is sorted by time here, whatever order the
+      API returns);
+    - the branch moved within ACK_SETTLE seconds before the label (the page the
+      acker saw may still have shown the previous head);
+    - the entry at the label is a deletion, or the API call fails."""
     at = ack_event.get("created_at")
-    if not actor or not at:
+    head_repo = (pr["head"].get("repo") or {}).get("full_name")
+    if not at or not head_repo or not pr["head"].get("ref"):
         return None
     t = _ts(at)
-    end = t + datetime.timedelta(seconds=ACK_RUN_WINDOW)
-    span = f"{t.strftime('%Y-%m-%dT%H:%M:%SZ')}..{end.strftime('%Y-%m-%dT%H:%M:%SZ')}"
-    workflow = f".github/workflows/{os.environ.get('GATE_WORKFLOW_FILE', GATE_WORKFLOW)}"
-    branch = urllib.parse.quote(pr["head"]["ref"], safe="")
-    # Repository-wide list: a ruleset's runs need not sit under this file's workflow id.
-    runs = gh.paginate(f"actions/runs?event=pull_request&branch={branch}&created={span}")
-    head_repo = (pr["head"].get("repo") or {}).get("full_name")
-    best = None
-    for run in runs:
-        path, _, ref = (run.get("path") or "").partition("@")
-        if trusted_ref is not None:
-            if ref != trusted_ref or not (path == workflow or path.endswith("/" + workflow)):
-                continue
-        elif path != workflow and not (ref and path.endswith("/" + workflow)):
-            continue
-        if (run.get("event") != "pull_request"
-                or ((run.get("actor") or {}).get("login") or "").lower() != actor
-                or (run.get("head_repository") or {}).get("full_name") != head_repo
-                or not run.get("head_sha") or not run.get("created_at")):
-            continue
-        created = _ts(run["created_at"])
-        if not (t <= created <= end):
-            continue
-        if best is None or created < best[0]:
-            best = (created, run["head_sha"])
-    return best[1] if best else None
+    settled = t - datetime.timedelta(seconds=ACK_SETTLE)
+    ref = "refs/heads/" + pr["head"]["ref"]
+    url: str | None = (f"{gh.api}/repos/{head_repo}/activity?ref={urllib.parse.quote(ref, safe='')}"
+                       "&direction=desc&per_page=100")
+    log: list[tuple[datetime.datetime, int, str]] = []
+    try:
+        for _ in range(MAX_ACTIVITY_PAGES):
+            data, link = gh.request("GET", url)
+            for item in data or []:
+                if item.get("ref") == ref and item.get("timestamp"):
+                    log.append((_ts(item["timestamp"]), int(item.get("id") or 0), (item.get("after") or "").lower()))
+            m = re.search(r'<([^>]+)>;\s*rel="next"', link or "")
+            url = m.group(1) if m else None
+            if url is None:
+                break
+        else:
+            return None  # longer than MAX_ACTIVITY_PAGES pages: it may be cut off
+    except (RuntimeError, ValueError, TypeError) as e:
+        print(f"::warning::security-gate: cannot read the push log of {head_repo} {ref}: {e}")
+        return None
+    before = sorted(e for e in log if e[0] <= t)  # time order whatever order the API used
+    if not before or before[-1][0] > settled:
+        return None  # nothing at the label, or the branch moved moments before it
+    after = before[-1][2]
+    return after if SHA.match(after) and after != ZERO_SHA else None
 
 
 def required_gate_ref(gh: GitHub, pr: dict) -> str | None:
@@ -697,20 +711,21 @@ def touches_gate(files: list[ChangedFile]) -> list[str]:
 
 
 def carry_reason(event_name: str, event: dict, pr: dict, files: list[ChangedFile], ack_event: dict,
-                 find_head, still_covers, gate_ref=lambda: None) -> tuple[str, str | None]:
+                 find_head, still_covers) -> tuple[str, str | None]:
     """Why a valid `security-ack` no longer covers this head ("" = it does),
     and the commit the ack was given on (None when unknown).
 
     - This run is the acker's own label event on the current head: covered.
+      (Only without a ruleset: a required workflow does not run on labels.)
     - The base branch changed after the label (a retargeted stacked pull
       request now carries its parent's changes): not covered.
+    - The commit the ack was given on (find_head(): acked_head, from the
+      branch push log) is unknown: not covered.
+    - It is the head: covered.
     - A pull request that changes workflows, actions, the path list or the
-      gate script: the ack covers only the exact commit it was added on, and
-      when a ruleset requires the gate workflow (`gate_ref()`), only the run
-      of that pinned workflow can name that commit (find_head(ref)).
-    - Otherwise the commit the ack was given on (acked_head) is the head:
-      covered; an older commit: `still_covers(acked)` (ack_still_covers,
-      digests recomputed from git) decides.
+      gate script: the ack covers only the exact commit it was added on.
+    - Otherwise `still_covers(acked)` (ack_still_covers, digests recomputed
+      from git) decides.
     """
     head = pr["head"]["sha"]
     actor = ((ack_event.get("actor") or {}).get("login") or "").lower()
@@ -722,7 +737,7 @@ def carry_reason(event_name: str, event: dict, pr: dict, files: list[ChangedFile
     if ack_event.get("retargeted_after"):
         return f"the base branch changed after `{ACK_LABEL}` was added; a maintainer adds it again", None
     pinned = touches_gate(files)
-    acked = find_head(gate_ref() if pinned else None)
+    acked = find_head()
     if acked is None:
         return f"cannot tell which commit `{ACK_LABEL}` was given on; a maintainer adds it again", None
     if acked == head:
@@ -866,7 +881,7 @@ def render(r: Result, repo: str, server: str) -> str:
             state = c.get("conclusion") or c.get("status")
             out.append(f"- {c['name']}: {state}")
     out += ["", "### Acknowledge", "",
-            f"A maintainer reviews the change and adds the **`{ACK_LABEL}`** label. The gate re-runs on the label. "
+            f"A maintainer reviews the change and adds the **`{ACK_LABEL}`** label. The gate runs again on the label. "
             f"Status: {r.ack_note}.", ""]
     if r.ack_commit:
         out += [f"Acknowledged commit: `{r.ack_commit}` (head now `{r.head_sha}`).", ""]
@@ -982,8 +997,7 @@ def cmd_gate() -> int:
                 return ack_still_covers(gitdir, pr["base"]["sha"], acked, pr["head"]["sha"], config,
                                         git_auth_env(server, token))
             reason, r.ack_commit = carry_reason(event_name, event, pr, files, ack_event,
-                                                lambda ref: acked_head(gh, pr, ack_event, ref), still_covers,
-                                                lambda: gate_ref)
+                                                lambda: acked_head(gh, pr, ack_event), still_covers)
             if reason:
                 if can_write:
                     gh.request("DELETE", f"issues/{number}/labels/{ACK_LABEL}", ok404=True)
@@ -1014,6 +1028,77 @@ def cmd_gate() -> int:
     return 0 if r.passed else 1
 
 
+def rerun_wanted(event_name: str, event: dict, repo: str) -> str:
+    """Why the `rerun` command does nothing for this event ("" = re-run)."""
+    if event_name != "pull_request":
+        return f"unsupported event {event_name}"
+    action = event.get("action")
+    if action in ("labeled", "unlabeled"):
+        if (event.get("label") or {}).get("name") != ACK_LABEL:
+            return f"the label is not `{ACK_LABEL}`"
+    elif action != "edited" or "base" not in (event.get("changes") or {}):
+        return f"`{action}` does not change the ack"
+    head_repo = (((event.get("pull_request") or {}).get("head") or {}).get("repo") or {}).get("full_name")
+    if head_repo != repo:
+        return "a fork pull request has a read-only token; a maintainer re-runs the gate by hand"
+    return ""
+
+
+def cmd_rerun(sleep=None, now=None) -> int:
+    """After a `security-ack` label change (or a retarget), make the head's
+    gate run evaluate again. A "require workflows" ruleset starts its pinned
+    gate run only on opened/synchronize/reopened, so without this the run
+    that read the labels before the change stays the check result.
+
+    Re-runs the newest gate workflow run of the pull request's current head
+    (a re-run keeps its event and workflow version and the script reads the
+    labels again), after waiting for it to finish; nothing when that run
+    started after this job was created, since it then read the labels after
+    the change. The decision stays in the gate: this command only asks for
+    an evaluation, so a missing or extra re-run never changes a verdict."""
+    import time
+    sleep = sleep or time.sleep
+    now = now or (lambda: datetime.datetime.now(datetime.timezone.utc))
+    repo, token = env("GITHUB_REPOSITORY"), env("GITHUB_TOKEN")
+    event_name = env("GITHUB_EVENT_NAME")
+    event = json.loads(pathlib.Path(env("GITHUB_EVENT_PATH")).read_text())
+    why_not = rerun_wanted(event_name, event, repo)
+    if why_not:
+        print(f"security-gate rerun: nothing to do: {why_not}")
+        return 0
+    gh = GitHub(repo, token, os.environ.get("GITHUB_API_URL", "https://api.github.com"))
+    number = int(event["pull_request"]["number"])
+    own = gh.get(f"actions/runs/{int(env('GITHUB_RUN_ID'))}")
+    anchor = _ts(own["created_at"])  # GitHub's clock, after the label event
+    workflow = f".github/workflows/{os.environ.get('GATE_WORKFLOW_FILE', GATE_WORKFLOW)}"
+    deadline = now() + datetime.timedelta(seconds=RERUN_WAIT)
+    while True:
+        pr = gh.get(f"pulls/{number}")
+        if pr.get("state") != "open":
+            print("security-gate rerun: the pull request is closed")
+            return 0
+        head = pr["head"]["sha"]
+        runs = [r for r in gh.paginate(f"actions/runs?event=pull_request&head_sha={head}")
+                if (r.get("path") or "").partition("@")[0] == workflow
+                and r.get("event") == "pull_request" and r.get("head_sha") == head
+                and (r.get("head_repository") or {}).get("full_name") == repo]
+        if runs:
+            newest = max(runs, key=lambda r: (_ts(r["created_at"]), int(r["id"])))
+            started = _ts(newest.get("run_started_at") or newest["created_at"])
+            if started >= anchor:
+                print(f"security-gate rerun: run {newest['id']} started after the change; nothing to do")
+                return 0
+            if newest.get("status") == "completed":
+                gh.request("POST", f"actions/runs/{int(newest['id'])}/rerun")
+                print(f"security-gate rerun: re-running gate run {newest['id']} for {head}")
+                return 0
+        if now() >= deadline:
+            print(f"::error::security-gate rerun: no finished gate run for {head} within {RERUN_WAIT}s; "
+                  "re-run the security-gate check by hand")
+            return 1
+        sleep(RERUN_POLL)
+
+
 def cmd_codeowners(argv: list[str]) -> int:
     root = pathlib.Path(os.environ.get("REPO_ROOT", "."))
     config = load_config((root / ".github/security-paths.yml").read_text())
@@ -1034,6 +1119,8 @@ def main(argv: list[str]) -> int:
     try:
         if argv[:1] == ["gate"]:
             return cmd_gate()
+        if argv[:1] == ["rerun"]:
+            return cmd_rerun()
         if argv[:1] == ["codeowners"]:
             return cmd_codeowners(argv[1:])
     except (RuntimeError, ValueError, KeyError) as e:
