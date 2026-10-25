@@ -1,6 +1,6 @@
 'use client'
 
-import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react'
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react'
 import {
   Background,
   Controls,
@@ -400,14 +400,20 @@ export function AutomationCanvas({
 
   const focusKey = focusRequest?.nodeKey
   const focusSeq = focusRequest?.seq
+  // The latest graph, read (not subscribed to) when a request arrives: only a
+  // new request moves the selection, not every graph edit.
+  const nodesRef = useRef(nodes)
+  const setNodesRef = useRef(setNodes)
+  useEffect(() => {
+    nodesRef.current = nodes
+    setNodesRef.current = setNodes
+  }, [nodes, setNodes])
   useEffect(() => {
     if (!focusKey) return
-    const target = nodes.find((n) => n.data.nodeKey === focusKey)
+    const target = nodesRef.current.find((n) => n.data.nodeKey === focusKey)
     if (!target) return
     setSelectedId(target.id)
-    setNodes((nds) => nds.map((n) => ({ ...n, selected: n.id === target.id })))
-    // Only a new request moves the selection, not every graph edit.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    setNodesRef.current((nds) => nds.map((n) => ({ ...n, selected: n.id === target.id })))
   }, [focusKey, focusSeq])
 
   const { isValidConnection, lastRefusal } = useMemo(

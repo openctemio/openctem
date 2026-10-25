@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { Edge, OnEdgesChange, OnNodesChange } from '@xyflow/react'
 import { X } from 'lucide-react'
 
@@ -60,10 +60,14 @@ export function AutomationWorkbench({
   // reading as unsaved edits.
   const draftJson = useMemo(() => JSON.stringify(draft), [draft])
   const [baseline, setBaseline] = useState<string | null>(null)
+  // The latest draft, read (not subscribed to) when an automation loads: only
+  // a newly loaded or saved automation resets the baseline, not every edit.
+  const draftJsonRef = useRef(draftJson)
   useEffect(() => {
-    setBaseline(workflow ? draftJson : null)
-    // Only a newly loaded or saved automation resets the baseline.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    draftJsonRef.current = draftJson
+  }, [draftJson])
+  useEffect(() => {
+    setBaseline(workflow ? draftJsonRef.current : null)
   }, [workflow])
   const dirty = baseline !== null && baseline !== draftJson
 
