@@ -509,7 +509,7 @@ func (r *AssetRepository) selectQuery() string {
 			   a.impact_confidentiality, a.impact_integrity, a.impact_availability,
 			   a.is_crown_jewel,
 			   a.risk_scored_at,
-			   EXISTS (SELECT 1 FROM asset_risk_queue q WHERE q.asset_id = a.id) AS risk_score_pending
+			   EXISTS (SELECT 1 FROM asset_risk_queue q WHERE q.asset_id = a.id AND q.enqueued_at <= now()) AS risk_score_pending
 		FROM assets a
 		-- LATERAL correlates the finding aggregate to each selected asset (and its
 		-- tenant), so it runs indexed per-row via idx_findings_tenant_asset_status
@@ -2534,9 +2534,13 @@ WITH filtered AS (
   %s
 ),
 finding_counts AS (
+  -- Open findings only (vulnerability.OpenStatusSQL): the same set as each
+  -- row's finding_count and the has_findings filter, so "N with findings"
+  -- and the findings total agree with the list.
   SELECT f.asset_id, COUNT(*)::bigint AS cnt
   FROM findings f
   WHERE f.asset_id IN (SELECT id FROM filtered) AND NOT f.branch_only
+    AND `+vulnerability.OpenStatusSQL("f.status")+`
   GROUP BY f.asset_id
 )
 SELECT category, key, value FROM (

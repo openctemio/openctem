@@ -2368,6 +2368,13 @@ func (s *TenantService) UpdatePentestSettings(ctx context.Context, tenantID stri
 		if input.Methodologies != nil {
 			ps.Methodologies = input.Methodologies
 		}
+		// Letting more sensitive findings reach trackers, or starting
+		// campaigns without a recorded authorization, loosens the policy.
+		if pentestLoosened(before, ps) {
+			if err := s.requireStepUp(ctx, actx.ActorID); err != nil {
+				return err
+			}
+		}
 		return t.UpdatePentestSettings(ps)
 	})
 	if err != nil {
@@ -2377,13 +2384,39 @@ func (s *TenantService) UpdatePentestSettings(ctx context.Context, tenantID stri
 	s.logger.Info("pentest settings updated", "tenant_id", tenantID)
 
 	actx.TenantID = tenantID
+	after := t.TypedSettings().Pentest
 	event := auditapp.NewSuccessEvent(audit.ActionTenantSettingsUpdated, audit.ResourceTypeTenant, tenantID).
-		WithChanges(auditapp.DiffChanges(before, t.TypedSettings().Pentest)).
+		WithChanges(auditapp.DiffChanges(before, after)).
 		WithMessage("Pentest settings updated")
+	if pentestLoosened(before, after) {
+		event = event.WithSeverity(audit.SeverityHigh)
+		s.notifyPolicyLoosened(ctx, tenantID, actx, "Pentest policy loosened",
+			"the pentest settings (tracker TLP limit or authorization before testing)", "/settings/pentest")
+	}
 	s.logAudit(ctx, actx, event)
 
 	result := t.TypedSettings()
 	return &result, nil
+}
+
+// ticketTLPRank orders the tracker TLP limits from most to least restrictive
+// ("" is the default, amber).
+func ticketTLPRank(v string) int {
+	if v == "" {
+		v = "amber"
+	}
+	// TicketMaxTLPValues runs clear, green, amber, amber_strict: a later
+	// value lets more sensitive findings reach a tracker.
+	return slices.Index(tenantdom.TicketMaxTLPValues, v)
+}
+
+// pentestLoosened reports a change that lets more sensitive findings leave
+// to trackers, or campaigns start without a recorded authorization.
+func pentestLoosened(before, after tenantdom.PentestSettings) bool {
+	if before.RequireAuthorizationBeforeStart && !after.RequireAuthorizationBeforeStart {
+		return true
+	}
+	return ticketTLPRank(after.TicketMaxTLP) > ticketTLPRank(before.TicketMaxTLP)
 }
 
 // UpdateFindingCorrelationSettingsInput: nil = unchanged.
@@ -2594,6 +2627,13 @@ func (s *TenantService) UpdateRetestSettings(
 	var before tenantdom.RetestSettings
 	t, err := s.writeSettingsSection(ctx, tenantID, tenantdom.SectionRetest, func(t *tenantdom.Tenant) error {
 		before = t.TypedSettings().Retest
+		// Auto-resolve closes findings without a person: turning it on needs
+		// a recent sign-in.
+		if rs.AutoResolve && !before.AutoResolve {
+			if err := s.requireStepUp(ctx, actx.ActorID); err != nil {
+				return err
+			}
+		}
 		return t.UpdateRetestSettings(rs)
 	})
 	if err != nil {
@@ -2612,6 +2652,11 @@ func (s *TenantService) UpdateRetestSettings(
 		WithMetadata("daily_cap_after", rs.DailyCap).
 		WithMetadata("auto_resolve_before", before.AutoResolve).
 		WithMetadata("auto_resolve_after", rs.AutoResolve)
+	if rs.AutoResolve && !before.AutoResolve {
+		event = event.WithSeverity(audit.SeverityHigh)
+		s.notifyPolicyLoosened(ctx, tenantID, actx, "Auto-resolve turned on",
+			"auto-retest now closes findings without a person", "/findings")
+	}
 	s.logAudit(ctx, actx, event)
 
 	out := t.TypedSettings().Retest
@@ -3044,4 +3089,24 @@ func (s *TenantService) UpdateEASMSettings(
 	s.logAudit(ctx, actx, event)
 	out := t.TypedSettings().EASM
 	return &out, nil
+}
+
+// notifyPolicyLoosened tells every owner and administrator, in-app, that a
+// policy outside the security section was loosened, and by whom. Best effort.
+func (s *TenantService) notifyPolicyLoosened(ctx context.Context, tenantID string, actx auditapp.AuditContext, title, what, url string) {
+	tid, err := shared.IDFromString(tenantID)
+	if err != nil {
+		return
+	}
+	who := "An administrator"
+	if actx.ActorID != "" && s.userInfoProvider != nil {
+		if uid, err := shared.IDFromString(actx.ActorID); err == nil {
+			if name, err := s.userInfoProvider.GetUserNameByID(ctx, uid); err == nil && name != "" {
+				who = name
+			}
+		}
+	}
+	s.notifyAdminsAbout(ctx, tid, adminNotice{
+		Type: notificationdom.TypeSystemAlert, ResourceType: "tenant_settings", URL: url,
+	}, title, fmt.Sprintf("%s changed %s.", who, what), notificationdom.SeverityHigh)
 }

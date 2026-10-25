@@ -776,3 +776,75 @@ func TestScopeRecheck_ContextOnlyTargetsAreChecked(t *testing.T) {
 		t.Fatalf("a context-only job with no target left was handed out: %s", got.Payload)
 	}
 }
+
+// A job whose every target is refused only because its names stopped
+// resolving did not see a scope change: it ends as NO_RESOLVING_TARGETS on
+// every hand-out path (a fact about the targets), never SCOPE_CHANGED.
+func TestScopeRecheck_AllUnresolvedIsNoResolvingTargets(t *testing.T) {
+	for _, path := range handOutPaths {
+		t.Run(path.name, func(t *testing.T) {
+			f := newRecheckFixture()
+			for _, n := range []string{"a.example.com", "b.example.com", "c.example.com"} {
+				f.gate.refused[n] = scopedom.RefusalUnresolved
+			}
+			c := f.repo.add(f.tenant, commanddom.CommandTypeScan, stepPayload, &commanddom.DispatchGate{Tier: 1})
+			got, err := path.run(f, c)
+			if got != nil {
+				t.Fatalf("a job with no target left was handed out: %s", got.Payload)
+			}
+			if path.name == "claim by id" {
+				if !errors.Is(err, command.ErrNoResolvingTargets) || errors.Is(err, command.ErrScopeChanged) ||
+					!errors.Is(err, command.ErrCommandClaimed) {
+					t.Fatalf("claim by id: %v, want ErrNoResolvingTargets (read as claimed)", err)
+				}
+			} else if err != nil {
+				t.Fatal(err)
+			}
+			stored := f.repo.commands[c.ID.String()]
+			if stored.Status != commanddom.CommandStatusFailed || !strings.HasPrefix(stored.ErrorMessage, "NO_RESOLVING_TARGETS: ") ||
+				strings.Contains(stored.ErrorMessage, "scope") {
+				t.Fatalf("stored %s %q", stored.Status, stored.ErrorMessage)
+			}
+			f.steps.wait(t)
+			if f.steps.count() != 1 || !strings.Contains(f.steps.calls[0], "|NO_RESOLVING_TARGETS|") {
+				t.Fatalf("step failures %v", f.steps.calls)
+			}
+		})
+	}
+}
+
+// SCOPE_CHANGED stays the outcome as soon as one refusal is about the
+// scope, even when the other names merely stopped resolving.
+func TestScopeRecheck_RealScopeChangeStaysScopeChanged(t *testing.T) {
+	f := newRecheckFixture()
+	f.gate.refused["a.example.com"] = scopedom.RefusalUnresolved
+	f.gate.refused["b.example.com"] = scopedom.RefusalUnresolved
+	f.gate.excluded["c.example.com"] = true
+	c := f.repo.add(f.tenant, commanddom.CommandTypeScan, stepPayload, &commanddom.DispatchGate{Tier: 1})
+	if _, err := f.svc.Acknowledge(context.Background(), f.tenant.String(), f.sensor.String(), c.ID.String()); !errors.Is(err, command.ErrScopeChanged) {
+		t.Fatalf("claim by id: %v, want ErrScopeChanged", err)
+	}
+	stored := f.repo.commands[c.ID.String()]
+	if !strings.HasPrefix(stored.ErrorMessage, "SCOPE_CHANGED: ") || !strings.Contains(stored.ErrorMessage, "c.example.com (excluded)") {
+		t.Fatalf("stored %q", stored.ErrorMessage)
+	}
+}
+
+// The claim gates a lookup-only job with its tool, so the dispatch gate's
+// rule for names with no DNS answer sees what runs (dnsx), and a job
+// dispatched without zone routing is re-checked without it.
+func TestScopeRecheck_PassesTheLookupJobAndZoneRecord(t *testing.T) {
+	f := newRecheckFixture()
+	f.repo.add(f.tenant, commanddom.CommandTypeScan, `{"scanner":"dnsx","targets":["gone.example.com"]}`,
+		&commanddom.DispatchGate{Tier: 0, Passive: true, ActScope: true, SystemPolicy: "coverage", NoZoneRouting: true})
+	if _, err := f.svc.Poll(context.Background(), command.PollInput{TenantID: f.tenant.String(), SensorID: f.sensor.String(), Limit: 10}); err != nil {
+		t.Fatal(err)
+	}
+	if f.gate.callCount() != 1 {
+		t.Fatalf("gate calls = %d", f.gate.callCount())
+	}
+	in := f.gate.calls[0]
+	if in.Job == nil || in.Job.Tool != "dnsx" || !in.Job.LookupOnly() || !in.SkipZoneRouting {
+		t.Fatalf("gate input job %+v skip zones %v", in.Job, in.SkipZoneRouting)
+	}
+}

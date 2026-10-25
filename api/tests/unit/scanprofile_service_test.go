@@ -367,7 +367,7 @@ func TestCreateScanProfile_IsDefault(t *testing.T) {
 	input := scan.CreateScanProfileInput{
 		TenantID:  tenantID.String(),
 		Name:      "New Default",
-		IsDefault: true,
+		IsDefault: true, CallerIsAdmin: true,
 	}
 
 	result, err := svc.CreateScanProfile(context.Background(), input)
@@ -391,7 +391,7 @@ func TestCreateScanProfile_IsDefault_ClearError(t *testing.T) {
 	input := scan.CreateScanProfileInput{
 		TenantID:  tenantID.String(),
 		Name:      "Default",
-		IsDefault: true,
+		IsDefault: true, CallerIsAdmin: true,
 	}
 
 	_, err := svc.CreateScanProfile(context.Background(), input)
@@ -803,9 +803,10 @@ func TestUpdateScanProfile_WithQualityGate(t *testing.T) {
 	}
 
 	input := scan.UpdateScanProfileInput{
-		TenantID:    tenantID.String(),
-		ProfileID:   profile.ID.String(),
-		QualityGate: qg,
+		TenantID:      tenantID.String(),
+		ProfileID:     profile.ID.String(),
+		QualityGate:   qg,
+		CallerIsAdmin: true,
 	}
 
 	result, err := svc.UpdateScanProfile(context.Background(), input)
@@ -1726,5 +1727,94 @@ func TestEvaluateQualityGate_CountsReflectedInResult(t *testing.T) {
 	}
 	if result.Counts.Total != 15 {
 		t.Errorf("expected Total 15, got %d", result.Counts.Total)
+	}
+}
+
+// A member (not owner or admin) cannot loosen a quality gate through the
+// general update route, cannot edit the organization's default profile and
+// cannot create a profile as the default: all three are organization-wide.
+func TestUpdateScanProfile_MemberCannotChangeQualityGate(t *testing.T) {
+	svc, repo := newTestScanProfileService()
+	tenantID := shared.NewID()
+	profile := makeScanProfileInRepo(repo, tenantID, "CI gate")
+	profile.QualityGate = scanprofile.QualityGate{Enabled: true, FailOnCritical: true}
+
+	_, err := svc.UpdateScanProfile(context.Background(), scan.UpdateScanProfileInput{
+		TenantID:    tenantID.String(),
+		ProfileID:   profile.ID.String(),
+		QualityGate: &scanprofile.QualityGate{Enabled: false},
+	})
+	if !errors.Is(err, shared.ErrForbidden) {
+		t.Fatalf("member gate change: want forbidden, got %v", err)
+	}
+	if !repo.profiles[profile.ID.String()].QualityGate.Enabled {
+		t.Fatal("the gate was changed")
+	}
+}
+
+func TestUpdateScanProfile_MemberUnchangedGateAllowed(t *testing.T) {
+	svc, repo := newTestScanProfileService()
+	tenantID := shared.NewID()
+	profile := makeScanProfileInRepo(repo, tenantID, "Mine")
+	gate := profile.QualityGate
+
+	res, err := svc.UpdateScanProfile(context.Background(), scan.UpdateScanProfileInput{
+		TenantID:    tenantID.String(),
+		ProfileID:   profile.ID.String(),
+		Name:        "Mine renamed",
+		QualityGate: &gate,
+	})
+	if err != nil {
+		t.Fatalf("member edit with the gate sent back unchanged: %v", err)
+	}
+	if res.Name != "Mine renamed" {
+		t.Fatalf("name not saved: %q", res.Name)
+	}
+}
+
+func TestUpdateScanProfile_MemberCannotEditDefaultProfile(t *testing.T) {
+	svc, repo := newTestScanProfileService()
+	tenantID := shared.NewID()
+	profile := makeScanProfileInRepo(repo, tenantID, "Org default")
+	profile.SetAsDefault()
+
+	_, err := svc.UpdateScanProfile(context.Background(), scan.UpdateScanProfileInput{
+		TenantID:  tenantID.String(),
+		ProfileID: profile.ID.String(),
+		Name:      "Renamed by member",
+	})
+	if !errors.Is(err, shared.ErrForbidden) {
+		t.Fatalf("member edit of default: want forbidden, got %v", err)
+	}
+
+	if _, err := svc.UpdateScanProfile(context.Background(), scan.UpdateScanProfileInput{
+		TenantID:      tenantID.String(),
+		ProfileID:     profile.ID.String(),
+		Name:          "Renamed by admin",
+		CallerIsAdmin: true,
+	}); err != nil {
+		t.Fatalf("admin edit of default: %v", err)
+	}
+}
+
+func TestCreateScanProfile_MemberCannotCreateDefault(t *testing.T) {
+	svc, repo := newTestScanProfileService()
+	tenantID := shared.NewID()
+	existing := makeScanProfileInRepo(repo, tenantID, "Org default")
+	existing.SetAsDefault()
+
+	_, err := svc.CreateScanProfile(context.Background(), scan.CreateScanProfileInput{
+		TenantID:  tenantID.String(),
+		Name:      "Lax",
+		IsDefault: true,
+	})
+	if !errors.Is(err, shared.ErrForbidden) {
+		t.Fatalf("member create as default: want forbidden, got %v", err)
+	}
+	if !repo.profiles[existing.ID.String()].IsDefault {
+		t.Fatal("the existing default was cleared")
+	}
+	if len(repo.profiles) != 1 {
+		t.Fatalf("a profile was created: %d", len(repo.profiles))
 	}
 }
