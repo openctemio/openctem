@@ -112,3 +112,5 @@ image `ghcr.io/openctemio/openctem`. Install and operate it with the guides at
 ## License
 
 GNU General Public License v3.0 (GPL-3.0). See [LICENSE](LICENSE).
+
+Harness line (do not merge).
