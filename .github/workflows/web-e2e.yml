@@ -26,8 +26,11 @@ name: Web E2E
 # How it stays fast
 #   build    the three images are built once per run (bake, GitHub Actions layer
 #            cache) and handed to the shards as one artifact, so no shard builds.
-#   shards   Playwright runs as a matrix of 4 (`--shard i/4`), each against its
-#            own stack, fail-fast off so every shard reports; 25 minute cap each.
+#   shards   Playwright runs as a matrix of 4 (`--shard i/4`) plus one job for
+#            the every-page request budget check (`request budget (part`, about
+#            5 minutes on its own, which the position-based sharding used to
+#            pile onto shard 1), each against its own stack, fail-fast off so
+#            every job reports; 25 minute cap each.
 #   caches   npm (setup-node) and the Chromium download (keyed by the Playwright
 #            version).
 #   retries  1, in CI only (web/playwright.config.ts). A test that fails then
@@ -195,7 +198,7 @@ jobs:
           retention-days: 1
 
   e2e:
-    name: Playwright e2e (shard ${{ matrix.shard }}/4)
+    name: Playwright e2e (${{ matrix.shard == 0 && 'request budget' || format('shard {0}/4', matrix.shard) }})
     needs: [changes, build]
     if: needs.changes.outputs.run == 'true'
     runs-on: ubuntu-latest
@@ -205,7 +208,8 @@ jobs:
       # Every shard reports, so one red shard does not hide another.
       fail-fast: false
       matrix:
-        shard: [1, 2, 3, 4]
+        # 0 = the request budget check alone; 1-4 = the rest of the suite.
+        shard: [1, 2, 3, 4, 0]
     env:
       API_IMAGE: local/openctem-api:e2e
       WEB_IMAGE: local/openctem-web:e2e
@@ -283,7 +287,13 @@ jobs:
           CI: 'true'
           E2E_BASE_URL: http://localhost:3000
           E2E_API_BASE_URL: http://localhost:8080
-        run: npx playwright test --shard "${{ matrix.shard }}/4"
+          SHARD: ${{ matrix.shard }}
+        run: |
+          if [ "$SHARD" = 0 ]; then
+            npx playwright test --grep 'request budget \(part'
+          else
+            npx playwright test --shard "$SHARD/4" --grep-invert 'request budget \(part'
+          fi
 
       - name: Stack logs
         if: failure()
