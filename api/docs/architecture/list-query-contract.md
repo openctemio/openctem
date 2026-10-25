@@ -71,8 +71,9 @@ list's built-in views in display order, each with the caller's count and the
 
 The work views (`active`, `my_queue`, `sla_breached`) leave informational
 findings out unless the caller's preference, else the organization's default,
-includes them; `needs_triage` always leaves them out, and the response's
-`include_informational` says which applied
+includes them; `needs_triage` always leaves them out, the response's
+`include_informational` says which applied, and such a view carries
+`informational_hidden` (how many it leaves out)
 ([findings-work-views.md](findings-work-views.md)).
 
 The definitions live in one place (`vulnerability.FindingQuickViews`). Each

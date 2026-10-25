@@ -52,14 +52,18 @@ Who decides, first match wins:
 3. Otherwise informational findings are left out.
 
 `GET /findings/quick-views` returns the resolved choice as
-`include_informational`. A failed read of the organization default falls back
+`include_informational`, and each view that leaves informational findings out
+carries `informational_hidden`: how many it leaves out (the same params with
+`informational=true`, counted in the same statement). A failed read of the organization default falls back
 to leaving them out (it shapes a view, never access) and is logged.
 
 ## Console
 
 The findings page never hides silently: while the open list leaves
 informational findings out, the filter bar shows "Informational hidden (N)"
-with a Show action. Show applies to the current view only and offers to save
+with a Show action. N comes from the quick view's `informational_hidden` when
+the list is exactly that view, else from one count request with the list's
+filter and `informational=true`. Show applies to the current view only and offers to save
 the choice as the member's preference. The "Hide informational" switch in the
 filter panel reflects the same state.
 

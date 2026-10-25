@@ -5,4 +5,4 @@
 ### Behaviour change: the findings work views leave informational findings out by default
 
 - The quick views Active, My queue and SLA breached now add `informational=false` unless the member's preference (`findings_informational` in `PUT /api/v1/users/me/preferences`) or the organization's default (`PATCH /api/v1/organization/settings/finding-views`, owner or administrator, audited) includes them. Needs triage always leaves them out. All findings, Closed and API calls without the filter are unchanged.
-- New list filter `informational=true|false`. `GET /findings/quick-views` returns the resolved choice as `include_informational`.
+- New list filter `informational=true|false`. `GET /findings/quick-views` returns the resolved choice as `include_informational`, and `informational_hidden` (how many it leaves out) on each view that hides them.

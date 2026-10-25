@@ -13,6 +13,7 @@ import (
 	"io"
 	"net/http"
 	"slices"
+	"strings"
 	"testing"
 
 	"github.com/openctemio/openctem/api/internal/app/finding"
@@ -79,7 +80,12 @@ func (h *gsHarness) quickViewsAs(t *testing.T, c flCaller, pref string) (map[str
 		t.Fatalf("%s quick-views = %d: %.300s", c.name, resp.StatusCode, body)
 	}
 	var out struct {
-		qvResponse
+		Views []struct {
+			Key                 string `json:"key"`
+			Count               int64  `json:"count"`
+			Params              string `json:"params"`
+			InformationalHidden *int64 `json:"informational_hidden"`
+		} `json:"views"`
 		IncludeInformational bool `json:"include_informational"`
 	}
 	if err := json.Unmarshal(body, &out); err != nil {
@@ -91,6 +97,21 @@ func (h *gsHarness) quickViewsAs(t *testing.T, c flCaller, pref string) (map[str
 		// The count is the total of the list the params open.
 		if _, total, _ := h.listIDs(t, c, v.Params); total != v.Count {
 			t.Errorf("%s pref=%q %s count = %d, GET /findings?%s total = %d", c.name, pref, v.Key, v.Count, v.Params, total)
+		}
+		// A view that leaves informational findings out says how many: the
+		// total of the same params with informational=true.
+		hides := strings.Contains(v.Params, "informational=false")
+		if hides != (v.InformationalHidden != nil) {
+			t.Errorf("%s %s params %q informational_hidden = %v", c.name, v.Key, v.Params, v.InformationalHidden)
+		}
+		if hides && v.InformationalHidden != nil {
+			shown := strings.Replace(v.Params, "informational=false", "informational=true", 1)
+			if _, n, _ := h.listIDs(t, c, shown); n != *v.InformationalHidden {
+				t.Errorf("%s %s informational_hidden = %d, GET /findings?%s total = %d", c.name, v.Key, *v.InformationalHidden, shown, n)
+			}
+			if v.Key == "active" {
+				counts["active_hidden"] = *v.InformationalHidden
+			}
 		}
 	}
 	return counts, params, out.IncludeInformational
@@ -179,6 +200,9 @@ func TestFindingQuickViewsInformational(t *testing.T) {
 			t.Errorf("%s include: include_informational=%v active params %q", c.name, include, params["active"])
 		}
 		// Three open informational findings: info new, none new, none confirmed.
+		if hidden["active_hidden"] != 3 {
+			t.Errorf("%s active informational_hidden = %d, want 3", c.name, hidden["active_hidden"])
+		}
 		if shown["active"]-hidden["active"] != 3 {
 			t.Errorf("%s active shown %d - hidden %d, want 3", c.name, shown["active"], hidden["active"])
 		}

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"net/url"
+	"strings"
 
 	"github.com/openctemio/openctem/api/internal/app/audit"
 	"github.com/openctemio/openctem/api/internal/app/datascope"
@@ -308,6 +309,10 @@ type QuickViewCount struct {
 	Key    string
 	Params string
 	Count  int64
+	// InformationalHidden, for a view that leaves informational findings
+	// out, is how many it leaves out (the same params with
+	// informational=true); nil for the other views.
+	InformationalHidden *int64
 }
 
 // FindingViewSettingsReader reads the organization's findings work-view
@@ -358,15 +363,36 @@ func (s *VulnerabilityService) CountQuickViews(ctx context.Context, c FilterCall
 		return nil, err
 	}
 	views := vulnerability.FindingQuickViews(includeInformational)
-	facets := make([]*filterspec.Spec, len(views))
-	for i, v := range views {
-		q, perr := url.ParseQuery(v.Params)
+	parse := func(key, params string) (*filterspec.Spec, error) {
+		q, perr := url.ParseQuery(params)
 		if perr != nil {
-			return nil, fmt.Errorf("quick view %s: %w", v.Key, perr)
+			return nil, fmt.Errorf("quick view %s: %w", key, perr)
 		}
-		if facets[i], perr = filterspec.ParseValues(q, vulnerability.FindingFields, filterspec.Options{Unknown: filterspec.UnknownStrict}); perr != nil {
-			return nil, fmt.Errorf("quick view %s: %w", v.Key, perr)
+		spec, perr := filterspec.ParseValues(q, vulnerability.FindingFields, filterspec.Options{Unknown: filterspec.UnknownStrict})
+		if perr != nil {
+			return nil, fmt.Errorf("quick view %s: %w", key, perr)
 		}
+		return spec, nil
+	}
+	facets := make([]*filterspec.Spec, len(views), 2*len(views))
+	// hiddenAt[i] is the facet that counts what view i leaves out (-1: none).
+	hiddenAt := make([]int, len(views))
+	for i, v := range views {
+		if facets[i], err = parse(v.Key, v.Params); err != nil {
+			return nil, err
+		}
+		hiddenAt[i] = -1
+	}
+	for i, v := range views {
+		if !strings.Contains(v.Params, vulnerability.ExcludeInformationalParam) {
+			continue
+		}
+		hidden, perr := parse(v.Key, strings.Replace(v.Params, vulnerability.ExcludeInformationalParam, "informational=true", 1))
+		if perr != nil {
+			return nil, perr
+		}
+		hiddenAt[i] = len(facets)
+		facets = append(facets, hidden)
 	}
 	where, preds, err := filterspec.CompileFacets(vulnerability.WithBranchOnlyDefault(&filterspec.Spec{}), facets, vulnerability.FindingFields, actor)
 	if err != nil {
@@ -379,6 +405,10 @@ func (s *VulnerabilityService) CountQuickViews(ctx context.Context, c FilterCall
 	out := make([]QuickViewCount, len(views))
 	for i, v := range views {
 		out[i] = QuickViewCount{Key: v.Key, Params: v.Params, Count: counts[i]}
+		if j := hiddenAt[i]; j >= 0 {
+			n := counts[j]
+			out[i].InformationalHidden = &n
+		}
 	}
 	return out, nil
 }
