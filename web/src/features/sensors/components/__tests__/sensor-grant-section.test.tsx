@@ -111,7 +111,20 @@ describe('SensorGrantSection', () => {
     expect(row('Zones')).toHaveTextContent('dmz')
     expect(row('Job types')).toHaveTextContent('scan, validate')
     expect(row('Target scope')).toHaveTextContent('Any')
-    expect(row('Tier ceiling')).toHaveTextContent('T0 · passive while New')
+    expect(row('Tier ceiling')).toHaveTextContent('T0: passive while New')
+  })
+
+  it('words the remote actions: pause and drain always, the rest as granted', () => {
+    render(<SensorGrantSection sensorId="s1" />)
+    expect(row('Remote actions')).toHaveTextContent('Pause and drain: always allowed')
+    expect(row('Remote actions')).toHaveTextContent('Nothing else')
+    expect(row('Remote actions').textContent).not.toMatch(/rotate_key|\u00b7/)
+  })
+
+  it('names granted remote actions in words, never as identifiers', () => {
+    api.grant = grant({ remote_actions: ['rotate_key', 'diagnostics'] })
+    render(<SensorGrantSection sensorId="s1" />)
+    expect(row('Remote actions')).toHaveTextContent(/Also allowed: key rotation.*diagnostics/)
   })
 
   it('flags a legacy broad grant', () => {

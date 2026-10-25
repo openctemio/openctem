@@ -14,6 +14,7 @@ import (
 	scanzoneapp "github.com/openctemio/openctem/api/internal/app/scanzone"
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
 	"github.com/openctemio/openctem/api/pkg/apierror"
+	"github.com/openctemio/openctem/api/pkg/domain/scan"
 	"github.com/openctemio/openctem/api/pkg/domain/scanzone"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/logger"
@@ -47,6 +48,9 @@ type ScanZonePreviewRequest struct {
 	ScannerName   string   `json:"scanner_name"`
 	TargetsPerJob int      `json:"targets_per_job"`
 	ScanZoneID    *string  `json:"scan_zone_id"`
+	// TargetOptions: how the scan's runs resolve its selectors (omitted:
+	// the defaults).
+	TargetOptions *scan.TargetOptions `json:"target_options,omitempty"`
 	// ScanWorkflowID is accepted so a client can send its whole draft; a workflow
 	// is routed the same whatever its steps, so it does not change the result.
 	ScanWorkflowID *string `json:"scan_workflow_id,omitempty"`
@@ -386,6 +390,7 @@ func (h *ScanZoneHandler) Preview(w http.ResponseWriter, r *http.Request) {
 	}
 	in := scanapp.ZoneRoutingPreviewInput{
 		TenantID:      middleware.GetTenantID(r.Context()),
+		UserID:        middleware.GetUserID(r.Context()),
 		Targets:       req.Targets,
 		AssetGroupIDs: req.AssetGroupIDs,
 		ScanType:      req.ScanType,
@@ -394,6 +399,9 @@ func (h *ScanZoneHandler) Preview(w http.ResponseWriter, r *http.Request) {
 	}
 	if req.ScanZoneID != nil {
 		in.ScanZoneID = *req.ScanZoneID
+	}
+	if req.TargetOptions != nil {
+		in.TargetOptions = *req.TargetOptions
 	}
 	out, err := h.preview.PreviewZoneRouting(r.Context(), in)
 	if err != nil {

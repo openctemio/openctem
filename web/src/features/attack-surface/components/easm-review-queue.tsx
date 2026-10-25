@@ -22,8 +22,7 @@ import { toast } from 'sonner'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
-import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import { DataTable, ErrorState, RelativeTime } from '@/features/shared'
+import { DataTable, ErrorState, FilterSelect, RelativeTime } from '@/features/shared'
 import { useSearchQuery } from '@/hooks/use-search-query'
 import { useListParams } from '@/hooks/use-list-params'
 import type { EASMConfirmScopeResult, EASMReviewItem } from '@/lib/api/generated'
@@ -57,7 +56,11 @@ import {
 } from '@/components/ui/select'
 import { useTranslation } from '@/context/i18n-provider'
 
-/** The queue views: what is waiting, and what was rejected (for undo). */
+/**
+ * The queue views: what is waiting, and what was rejected (for undo). A
+ * State filter at the start of the toolbar (research/249 R21), never a tab
+ * row; `?tab=rejected` keeps old links working.
+ */
 export const REVIEW_VIEWS: { id: string; label: string; states: AttributionState[] }[] = [
   { id: 'review', label: 'Awaiting a decision', states: ['needs_review', 'candidate'] },
   { id: 'rejected', label: 'Not ours', states: ['rejected'] },
@@ -177,7 +180,13 @@ export function EASMReviewQueue() {
   // The tab is in the URL (?tab=rejected) so a view can be linked to.
   const [tabParam, setTabParam] = useUrlFilter('tab', REVIEW_VIEWS[0].id)
   const view = REVIEW_VIEWS.some((v) => v.id === tabParam) ? tabParam : REVIEW_VIEWS[0].id
-  const setView = setTabParam
+  // The Review page opens this list for ?all=1, ?tab= or ?reason=: going
+  // back to the default state clears ?tab=, so the list keeps itself open.
+  const [, setAllParam] = useUrlFilter('all', '0')
+  const setView = (v: string) => {
+    setAllParam('1')
+    setTabParam(v)
+  }
   const [searchInput, setSearchInput] = useUrlFilter('q', '')
   const search = useSearchQuery(searchInput).term
   const { pagination, setPagination, setPage } = useListParams({ defaultPageSize: PAGE_SIZE })
@@ -422,23 +431,6 @@ export function EASMReviewQueue() {
 
   return (
     <div className="space-y-4">
-      <Tabs
-        value={view}
-        onValueChange={(v) => {
-          setView(v)
-          setPage(1)
-          clearSelection()
-        }}
-      >
-        <TabsList>
-          {REVIEW_VIEWS.map((v) => (
-            <TabsTrigger key={v.id} value={v.id}>
-              {t(`attackSurface.queue.view.${v.id}`, v.label)}
-            </TabsTrigger>
-          ))}
-        </TabsList>
-      </Tabs>
-
       {canDecide && selected.length > 0 && (
         <div
           role="toolbar"
@@ -504,6 +496,27 @@ export function EASMReviewQueue() {
         isLoading={isLoading}
         toolbarStart={
           <>
+            <FilterSelect
+              label={t('attackSurface.queue.stateFilter', 'State')}
+              clearable={false}
+              value={view}
+              options={REVIEW_VIEWS.map((v) => ({
+                value: v.id,
+                label: t(`attackSurface.queue.view.${v.id}`, v.label),
+                count:
+                  v.id === 'review'
+                    ? summary
+                      ? (summary.attribution?.needs_review ?? 0) +
+                        (summary.attribution?.candidate ?? 0)
+                      : undefined
+                    : summary?.attribution?.rejected,
+              }))}
+              onChange={(v) => {
+                setView(v || REVIEW_VIEWS[0].id)
+                setPage(1)
+                clearSelection()
+              }}
+            />
             {view === 'review' && reasons.length > 0 && (
               <Select
                 value={reason ?? 'all'}

@@ -43,3 +43,18 @@ export const STATUS_TONE_TEXT: Record<StatusTone, string> = {
   accepted: 'text-st-accepted-fg',
   closed: 'text-st-closed-fg',
 }
+
+/**
+ * Solid fill of a tone, for a segment of a stacked status bar or its legend
+ * swatch (the tone's text colour as a background, so it holds AA against the
+ * card in both themes). The segment's text label is always beside it.
+ */
+export const STATUS_TONE_FILL: Record<StatusTone, string> = {
+  triage: 'bg-st-triage-border',
+  open: 'bg-st-open-fg',
+  progress: 'bg-st-progress-fg',
+  waiting: 'bg-st-waiting-fg',
+  resolved: 'bg-st-resolved-fg',
+  accepted: 'bg-st-accepted-fg',
+  closed: 'bg-st-closed-fg',
+}

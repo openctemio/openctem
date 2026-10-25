@@ -15,7 +15,7 @@ import {
 } from '@/components/ui/select'
 import { Skeleton } from '@/components/ui/skeleton'
 import { useTranslation } from '@/context/i18n-provider'
-import { DetailCallout, DetailSection } from '@/features/shared'
+import { DetailCallout, DetailDisclosure, DetailSection } from '@/features/shared'
 import { Permission, useHasPermission } from '@/lib/permissions'
 
 import {
@@ -229,13 +229,19 @@ export function SensorNetworkPathSection({
           </DetailCallout>
         )}
         <p className="text-xs text-muted-foreground">
-          <span>
+          {t('proxyPools.sensor.summary', "The proxy pool that carries this sensor's scans.")}
+        </p>
+        <DetailDisclosure
+          summary={t('proxyPools.sensor.howItWorks', 'How network paths work')}
+          className="text-xs"
+        >
+          <p className="mt-1 text-muted-foreground">
             {t(
               'proxyPools.sensor.help',
               "A pool chosen here carries all of this sensor's scan and validation traffic. The organization default only carries public targets. A sensor without proxy support (a recent version with network confinement) receives no scan or validation jobs while a pool applies to it. Traffic never falls back to a direct connection: while the chosen pool is disabled, this sensor's scans fail."
             )}
-          </span>
-        </p>
+          </p>
+        </DetailDisclosure>
       </div>
       <ConfirmDialog
         open={confirmDirect}

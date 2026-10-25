@@ -87,7 +87,10 @@ describe('credentials page', () => {
     listState.data = { items: [item('low')], total: 1 }
     render(<CredentialsPage />)
     expect(screen.getByText('Low')).toBeInTheDocument()
-    expect(screen.queryByText('Critical', { selector: 'span' })).not.toBeInTheDocument()
+    // "Critical" is only the metric strip's label, never a severity badge on the row.
+    expect(
+      screen.queryByText('Critical', { selector: 'span:not([data-slot="metric-label"])' })
+    ).not.toBeInTheDocument()
     expect(screen.queryByText('Classification')).not.toBeInTheDocument()
     expect(screen.getByText('Discovered')).toBeInTheDocument()
     expect(screen.getByText(new Date('2020-05-01').toLocaleDateString('en'))).toBeInTheDocument()
