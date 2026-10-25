@@ -88,6 +88,8 @@ export function ListSearch({
           placeholder={placeholder}
           aria-label={label ?? placeholder}
           aria-keyshortcuts="/"
+          inputMode="search"
+          enterKeyHint="search"
           className={cn(
             // The native clear control is replaced by ours (one look in every browser).
             'h-9 ps-9 pe-9 focus-visible:z-20 [&::-webkit-search-cancel-button]:appearance-none',

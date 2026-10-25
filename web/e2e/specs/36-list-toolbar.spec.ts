@@ -110,3 +110,55 @@ for (const width of [1440, 390] as const) {
     })
   }
 }
+
+/**
+ * Add filter on a phone (owner report, iPhone Safari): an anchored popover
+ * with a search field broke when the keyboard opened. Below `md` it is a
+ * bottom sheet: full width, the field focused and inside the screen, the list
+ * scrolling inside the sheet, and still so once the keyboard takes half the
+ * screen (simulated by shrinking the viewport). Escape returns focus to Add
+ * filter.
+ */
+test.describe('Add filter on a phone', () => {
+  test.use({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true })
+
+  test('opens as a bottom sheet that the keyboard never covers', async ({ page }) => {
+    await page.goto('/findings')
+    const add = page.getByRole('button', { name: /^Add filter/ })
+    const shown = await add
+      .waitFor({ state: 'visible', timeout: 45_000 })
+      .then(() => true)
+      .catch(() => false)
+    test.skip(!shown, 'no Add filter on /findings here')
+    await add.click()
+    const sheet = page.locator('[data-slot="responsive-popover-sheet"]')
+    await expect(sheet).toBeVisible()
+    const field = sheet.locator('[data-slot="command-input"]')
+    await expect(field).toBeFocused()
+    expect(await field.getAttribute('inputmode')).toBe('search')
+    expect(await field.evaluate((el) => getComputedStyle(el).fontSize)).toBe('16px')
+
+    const inView = async (vh: number) => {
+      const s = (await sheet.boundingBox())!
+      const f = (await field.boundingBox())!
+      expect(Math.round(s.x)).toBe(0)
+      expect(Math.round(s.width)).toBe(390)
+      expect(s.y + s.height).toBeLessThanOrEqual(vh + 1)
+      expect(f.y).toBeGreaterThanOrEqual(s.y)
+      expect(f.y + f.height).toBeLessThanOrEqual(vh)
+    }
+    await inView(844)
+    // The keyboard takes the lower half: the visual viewport shrinks.
+    await page.setViewportSize({ width: 390, height: 450 })
+    await page.waitForTimeout(400)
+    await inView(450)
+    // The list scrolls inside the sheet, the field stays put.
+    const before = (await field.boundingBox())!.y
+    await sheet.locator('[data-slot="sheet-body"]').evaluate((el) => el.scrollBy(0, 400))
+    expect(Math.abs((await field.boundingBox())!.y - before)).toBeLessThanOrEqual(1)
+
+    await page.keyboard.press('Escape')
+    await expect(sheet).toBeHidden()
+    await expect(add).toBeFocused()
+  })
+})

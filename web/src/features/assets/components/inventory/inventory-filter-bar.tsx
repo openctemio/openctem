@@ -21,7 +21,7 @@ import {
   CommandItem,
   CommandList,
 } from '@/components/ui/command'
-import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
+import { ResponsivePopover } from '@/features/shared/components/responsive-popover'
 import { useTranslation } from '@/context/i18n-provider'
 import { toDisplayText } from '@/lib/untrusted-text'
 import type { AssetStatsData } from '../../hooks/use-assets'
@@ -171,8 +171,12 @@ function AddFilter({
   }, [fields])
 
   return (
-    <Popover open={open} onOpenChange={setOpen}>
-      <PopoverTrigger asChild>
+    <ResponsivePopover
+      open={open}
+      onOpenChange={setOpen}
+      title={t('assets.filters.add', 'Add filter')}
+      className="w-80"
+      trigger={
         <Button
           variant="outline"
           size="sm"
@@ -188,55 +192,50 @@ function AddFilter({
             f
           </kbd>
         </Button>
-      </PopoverTrigger>
-      <PopoverContent
-        align="start"
-        className="w-80 p-0"
-        aria-label={t('assets.filters.add', 'Add filter')}
-      >
-        {picked ? (
-          <div className="flex max-h-[min(28rem,70svh)] flex-col">
-            <div className="flex items-center gap-1 border-b px-1 py-1">
-              <Button
-                variant="ghost"
-                size="sm"
-                className="h-7 gap-1 px-2 text-xs"
-                onClick={() => setPicked(null)}
-              >
-                <ArrowLeft className="size-3.5" aria-hidden />
-                {t('assets.filters.back', 'All filters')}
-              </Button>
-              <Button size="sm" className="ms-auto h-7 px-3 text-xs" onClick={() => setOpen(false)}>
-                {t('assets.filters.done', 'Done')}
-              </Button>
-            </div>
-            <div className="min-h-0 overflow-y-auto px-3 pb-2">
-              {picked.editor({ filters, stats, onChange })}
-            </div>
+      }
+    >
+      {picked ? (
+        <div className="flex max-h-[min(28rem,70svh)] flex-col">
+          <div className="flex items-center gap-1 border-b px-1 py-1">
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-7 gap-1 px-2 text-xs"
+              onClick={() => setPicked(null)}
+            >
+              <ArrowLeft className="size-3.5" aria-hidden />
+              {t('assets.filters.back', 'All filters')}
+            </Button>
+            <Button size="sm" className="ms-auto h-7 px-3 text-xs" onClick={() => setOpen(false)}>
+              {t('assets.filters.done', 'Done')}
+            </Button>
           </div>
-        ) : (
-          <Command>
-            <CommandInput placeholder={t('assets.filters.search', 'Search filters…')} />
-            <CommandList>
-              <CommandEmpty>{t('assets.filters.noField', 'No matching filter')}</CommandEmpty>
-              {byGroup.map(([group, items]) => (
-                <CommandGroup key={group} heading={group}>
-                  {items.map((f) => (
-                    <CommandItem
-                      key={f.id}
-                      value={`${f.label} ${f.id}`}
-                      onSelect={() => setPicked(f)}
-                    >
-                      {f.label}
-                    </CommandItem>
-                  ))}
-                </CommandGroup>
-              ))}
-            </CommandList>
-          </Command>
-        )}
-      </PopoverContent>
-    </Popover>
+          <div className="min-h-0 overflow-y-auto px-3 pb-2">
+            {picked.editor({ filters, stats, onChange })}
+          </div>
+        </div>
+      ) : (
+        <Command>
+          <CommandInput placeholder={t('assets.filters.search', 'Search filters…')} />
+          <CommandList>
+            <CommandEmpty>{t('assets.filters.noField', 'No matching filter')}</CommandEmpty>
+            {byGroup.map(([group, items]) => (
+              <CommandGroup key={group} heading={group}>
+                {items.map((f) => (
+                  <CommandItem
+                    key={f.id}
+                    value={`${f.label} ${f.id}`}
+                    onSelect={() => setPicked(f)}
+                  >
+                    {f.label}
+                  </CommandItem>
+                ))}
+              </CommandGroup>
+            ))}
+          </CommandList>
+        </Command>
+      )}
+    </ResponsivePopover>
   )
 }
 
