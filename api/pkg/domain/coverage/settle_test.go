@@ -79,3 +79,30 @@ func TestTargetSide(t *testing.T) {
 		}
 	}
 }
+
+// A task whose every target failed the same target-side way points at the
+// sensor, not at the targets: the verdicts are plain failures (back-off),
+// not target-side pauses. A lone target, or a mixed task, keeps its class.
+func TestVerdicts_UniformTargetSideFailureIsSensorFailure(t *testing.T) {
+	task := func(targets []string, outcomes string) []TaskResult {
+		return []TaskResult{{Status: "completed", Targets: targets, Result: json.RawMessage(`{"target_outcomes": ` + outcomes + `}`)}}
+	}
+	all := task([]string{"a", "b"}, `[{"target":"a","state":"failed","class":"timeout"},{"target":"b","state":"failed","class":"timeout"}]`)
+	for k, v := range Verdicts(all, nil) {
+		if v.Kind != VerdictFailed || v.Outcome != OutcomeFailed || IsTargetSide(v.Outcome) {
+			t.Errorf("all timeouts, %s = %+v, want a sensor failure", k, v)
+		}
+	}
+	mixed := task([]string{"a", "b"}, `[{"target":"a","state":"failed","class":"timeout"},{"target":"b","state":"done"}]`)
+	if v := Verdicts(mixed, nil)["a"]; v.Outcome != "timeout" || !IsTargetSide(v.Outcome) {
+		t.Errorf("one timeout among answers = %+v, want target-side", v)
+	}
+	lone := task([]string{"a"}, `[{"target":"a","state":"failed","class":"timeout"}]`)
+	if v := Verdicts(lone, nil)["a"]; v.Outcome != "timeout" {
+		t.Errorf("lone timeout = %+v, want target-side", v)
+	}
+	differing := task([]string{"a", "b"}, `[{"target":"a","state":"failed","class":"timeout"},{"target":"b","state":"failed","class":"unreachable"}]`)
+	if v := Verdicts(differing, nil)["a"]; v.Outcome != "timeout" {
+		t.Errorf("different classes = %+v, want each its own", v)
+	}
+}
