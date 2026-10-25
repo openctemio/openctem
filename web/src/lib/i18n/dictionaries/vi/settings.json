@@ -466,6 +466,7 @@
   "settings.pentest.form.mitreSearch": "Tìm kỹ thuật (ví dụ: T1190, phishing)…",
   "settings.pentest.form.mitreSearchInput": "Tìm kỹ thuật hoặc mã…",
   "settings.pentest.form.mitreSelect": "Chọn kỹ thuật MITRE ATT&CK",
+  "settings.pentest.form.mitreTactic": "Chiến thuật: {name}",
   "settings.pentest.form.noAsset": "Không có tài sản",
   "settings.pentest.form.noAssets": "Tổ chức chưa có tài sản nào. Hãy tạo tài sản ở trang Tài sản trước.",
   "settings.pentest.form.none": "Không có",
