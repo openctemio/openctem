@@ -927,3 +927,101 @@ func TestRetestDB_StaleAccessDeniedDoesNotPair(t *testing.T) {
 		}
 	}
 }
+
+// finishAt completes a command with a result and a completion time.
+func (fx *fixture) finishAt(cmd *shared.ID, res map[string]any, ago string) {
+	fx.t.Helper()
+	b, _ := json.Marshal(res)
+	fx.exec(`UPDATE commands SET status = 'completed', result = $2, completed_at = NOW() - $3::interval WHERE id = $1`, cmd.String(), b, ago)
+}
+
+// A CDN block recorded in the evidence is an edge block even when the sensor
+// sends request lines without an edge state: it is never a fix.
+func TestRetestDB_EdgeBlockInEvidenceIsNotHiddenByRequestLines(t *testing.T) {
+	fx := newFixture(t)
+	svc := fx.service()
+	fx.autoResolve(true)
+	const at = "https://shop.example.com/admin"
+	f := fx.newFinding(fx.asset, "confirmed", "swagger-api")
+	rt := fx.request(svc, f)
+	ex := map[string]any{"request": map[string]any{"method": "GET", "url": at},
+		"response": map[string]any{"status": 403, "headers": []map[string]string{{"name": "Server", "value": "cloudflare"}, {"name": "cf-mitigated", "value": "challenge"}},
+			"body": "<title>Attention Required! | Cloudflare</title> Sorry, you have been blocked. Cloudflare Ray ID"}}
+	fx.finishAt(rt.CheckCommandID, map[string]any{"metadata": map[string]any{"outcome": "not_detected", "summary": "re-run",
+		"evidence": map[string]any{"evidence_items": []map[string]any{{"kind": "http_exchange", "http": ex}},
+			"requests": []map[string]any{{"url": at, "status": 403}}}}}, "0 seconds")
+	fx.finish(rt.ReachCommandID, "detected", "target answered")
+	svc.OnCommandFinished(context.Background(), fx.tenant, *rt.ReachCommandID)
+	got := fx.retest(rt.ID)
+	if got.Outcome != retestdom.OutcomeInconclusive || got.ReasonCode != retestdom.ReasonEdgeBlocked {
+		t.Fatalf("retest = %s/%s (%s), want inconclusive edge_blocked", got.Outcome, got.ReasonCode, got.Reason)
+	}
+	if status, _, _ := fx.findingState(f); status != "confirmed" {
+		t.Errorf("finding = %s, want confirmed", status)
+	}
+}
+
+// A scan that sighted the finding after the check ran outranks the check's
+// no-match: the fix is recorded inconclusive and the finding is not resolved.
+func TestRetestDB_SightingAfterCheckBlocksResolve(t *testing.T) {
+	fx := newFixture(t)
+	svc := fx.service()
+	fx.autoResolve(true)
+	run := func(host, sighted string) (shared.ID, *retestdom.Retest) {
+		f := fx.newFinding(fx.newAsset(host), "confirmed", "swagger-api")
+		rt := fx.request(svc, f)
+		fx.finishAt(rt.CheckCommandID, map[string]any{"metadata": map[string]any{"outcome": "not_detected", "summary": "re-run",
+			"evidence": map[string]any{"evidence_items": attemptItems("https://shop.example.com/admin", 404)}}}, "10 minutes")
+		if sighted != "" {
+			fx.exec(`UPDATE findings SET last_seen_at = NOW() - $2::interval WHERE id = $1`, f.String(), sighted)
+		}
+		fx.finish(rt.ReachCommandID, "detected", "target answered")
+		svc.OnCommandFinished(context.Background(), fx.tenant, *rt.ReachCommandID)
+		return f, fx.retest(rt.ID)
+	}
+	// Control: no sighting since the check: it resolves.
+	f, got := run("a.example.com", "20 minutes")
+	if st, _, _ := fx.findingState(f); got.Outcome != retestdom.OutcomeConfirmedFixed || st != "resolved" {
+		t.Fatalf("control = %s, finding %s", got.Outcome, st)
+	}
+	// Sighted 5 minutes ago, after the check completed 10 minutes ago.
+	f, got = run("b.example.com", "5 minutes")
+	if st, _, _ := fx.findingState(f); got.Outcome != retestdom.OutcomeInconclusive || st != "confirmed" ||
+		!strings.Contains(got.Reason, "sighted again") {
+		t.Fatalf("sighted since = %s (%s), finding %s, want inconclusive and confirmed", got.Outcome, got.Reason, st)
+	}
+	var vo string
+	if err := fx.db.QueryRow(`SELECT COALESCE(validation_outcome, '') FROM findings WHERE id = $1`, f.String()).Scan(&vo); err != nil || vo != "" {
+		t.Errorf("validation_outcome = %q (%v), want none", vo, err)
+	}
+}
+
+// The two origin refusals are an hour apart by when the checks ran, not by
+// when the second was settled: a late settlement does not widen the gap.
+func TestRetestDB_DenialGapIsMeasuredAtCheckTime(t *testing.T) {
+	fx := newFixture(t)
+	svc := fx.service()
+	origin := []map[string]string{{"name": "Server", "value": "nginx"}}
+	ex := map[string]any{"request": map[string]any{"method": "GET", "url": "https://shop.example.com/admin"},
+		"response": map[string]any{"status": 403, "headers": origin, "body": "Forbidden"}}
+	result := map[string]any{"metadata": map[string]any{"outcome": "not_detected", "summary": "re-run",
+		"evidence": map[string]any{"evidence_items": []map[string]any{{"kind": "http_exchange", "http": ex}}}}}
+	settle := func(f shared.ID, checkAgo string) *retestdom.Retest {
+		rt := fx.request(svc, f)
+		fx.finishAt(rt.CheckCommandID, result, checkAgo)
+		fx.finish(rt.ReachCommandID, "detected", "target is still reachable")
+		svc.OnCommandFinished(context.Background(), fx.tenant, *rt.ReachCommandID)
+		return fx.retest(rt.ID)
+	}
+	f := fx.newFinding(fx.asset, "confirmed", "swagger-api")
+	fx.exec(`UPDATE findings SET template_exposure = true WHERE id = $1`, f.String())
+	settle(f, "0 seconds")
+	// The first retest completed 90 minutes ago; the second check ran 30
+	// minutes after it and is settled only now.
+	fx.exec(`UPDATE finding_retests SET created_at = created_at - interval '95 minutes', completed_at = NOW() - interval '90 minutes'
+		WHERE tenant_id = $1 AND finding_id = $2`, fx.tenant.String(), f.String())
+	fx.exec(`UPDATE findings SET last_seen_at = NOW() - interval '2 hours', last_reopened_at = NULL WHERE id = $1`, f.String())
+	if got := settle(f, "60 minutes"); got.Outcome != retestdom.OutcomeInconclusive {
+		t.Fatalf("checks 30 minutes apart closed the finding: %s (%s)", got.Outcome, got.Reason)
+	}
+}
