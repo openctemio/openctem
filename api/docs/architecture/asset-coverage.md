@@ -119,6 +119,20 @@ does not re-align them. A new pair, or one whose precondition holds again,
 is due at once. A blocked or paused pair whose precondition stops holding
 becomes `not_applicable` like any other.
 
+**Passive capabilities and zones.** A passive capability (`resolve.dns`,
+`lookup.rdap`, `lookup.asn`, `discover.subdomains`) sends no traffic to
+its target. For an organization with scan zones, its public names skip
+zone routing in the gate and at the trigger. A public name is registrable
+under an ICANN public suffix, and none of the addresses it resolves to from
+the platform is private or denied. So a public name that stopped resolving
+is no longer refused `unresolved` or `zone_none`; its DNS re-check runs.
+Internal names (a private answer, a non-public suffix, a special-use name such as home.arpa, local, localhost, internal, test, invalid, onion or example) and addresses keep
+zone routing. One run carries either public names or routed targets: the
+group of the batch's oldest target runs, and the other group stays due for
+the next batch. Only the coverage run's own trigger can skip zone routing
+(an unexported context marker), and every other gate check still applies.
+Without zones, or for an active capability, nothing changes.
+
 **HTTP probe on names.** A subdomain is probed only when it resolves and
 is worth a probe (`web_port_or_unscanned`): an address it resolves to has
 an active open port in the web port set, a web origin of the name
@@ -144,14 +158,26 @@ and without the expected output. It raises:
 |---|---|
 | `gap` | any gap |
 | `output_drop` | no expected output over at least 20 settled inputs in 24 h (a broken or blocked tool) |
-| `failing` | a pair failed 3 or more times in a row |
+| `failing` | a pair failed 3 or more times in a row (not for platform checks `dns.*`: a single asset's answer is shown on that asset) |
+| `readiness` | pairs are paused for a readiness reason (the reason is part of the key) |
 
-Each alert goes to the tenant's active administrators in-app
-(`coverage_gap`) and to its integrations (event `coverage_gap`, default-on
-for new integrations, not severity-filtered), at most once per tenant,
-capability and kind every 20 h (claimed in `controller_leases`, so restarts
-and replicas do not repeat it). The operator sees fleet-wide aggregates with
-no tenant label: `openctem_asset_coverage_gap_pairs{capability}` and
+Alerts are sent **on change**, never on a timer. Each key (capability,
+kind, reason) has a row in `asset_coverage_alerts` (tenant-scoped): an alert
+goes out when its condition appears, or when its count doubles or halves
+since it was last sent. A condition that clears and comes back within a day
+comes back silently. Several changes in one pass go out as one digest, at
+most one digest per tenant per day; changes held by that limit stay
+pending and go out with the next digest. Each message names the action and
+links to where it is taken: the scope page for `no_scope`, the sensors page
+for a sensor reason, Settings > Scanning > Tools for a tool or policy
+reason, the assets for gaps. The message goes to the tenant's active
+administrators in-app (`coverage_gap`) and to its integrations (event
+`coverage_gap`, default-on for new integrations, not severity-filtered).
+It carries counts and capability names only, never a host name. The state
+is written before the message is sent, so restarts and replicas do not
+repeat it, and a send that fails is logged, not retried every pass. The
+operator sees fleet-wide aggregates with no tenant label:
+`openctem_asset_coverage_gap_pairs{capability}` and
 `openctem_asset_coverage_alerts_total{kind,capability}`.
 
 ## Other writers
