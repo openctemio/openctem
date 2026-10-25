@@ -1146,7 +1146,12 @@ export function SensorDetailSheet({
             {sensor.posture && <SensorPostureSection sensor={sensor} />}
             {sensor.local_policy && <SensorLocalPolicySection sensor={sensor} />}
             <SensorGrantSection sensorId={sensor.id} sensorType={sensor.type} />
-            {!oneShot && <SensorNetworkPathSection sensorId={sensor.id} />}
+            {!oneShot && (
+              <SensorNetworkPathSection
+                sensorId={sensor.id}
+                capabilities={sensor.reported?.capabilities ?? null}
+              />
+            )}
             <SensorRecentActivity ref={activityRef} sensorId={sensor.id} sensorName={sensor.name} />
             <ConnectionAndIdentity
               sensor={sensor}
