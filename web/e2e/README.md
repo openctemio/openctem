@@ -53,11 +53,12 @@ tests that cover the console's most user-visible flows.
 | `29-dashboard-add-widget-sheet.spec.ts`     | Add a widget sheet: nothing past its edges, one-row tabs                           |
 | `30-drawer-text-layout.spec.ts`             | Drawers: no word broken over two lines, one size per meta line, nothing under 12px |
 | `30-finding-detail-requests.spec.ts`        | Finding page: one read per resource, no connector list for other tools             |
-| `30-findings-triage-and-views.spec.ts`      | Triage button, always-on Priority, columns in the URL                              |
+| `30-findings-triage-and-views.spec.ts`      | Triage button opens triage mode, always-on Priority, columns in the URL            |
 | `31-assets-quick-views.spec.ts`             | Sidebar quick views under Assets (lenses), no lens/type pills                      |
 | `31-page-rhythm.spec.ts`                    | Page block gaps are the spacing tokens; metric strip rules                         |
 | `32-assets-filters.spec.ts`                 | Asset Add filter, chips, no eager tag or business-unit load                        |
 | `34-scans-list-layout.spec.ts`              | Scan list at 390px and 1440px: no overlapping text, state on the title line        |
+| `35-findings-triage-mode.spec.ts`           | Triage mode: keys-only session over ten findings, request budget, a11y, Exit       |
 
 Each spec is designed to:
 
