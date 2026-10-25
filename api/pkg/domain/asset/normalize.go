@@ -290,7 +290,7 @@ func normalizeURL(name string) string {
 	}
 
 	scheme := strings.ToLower(u.Scheme)
-	host := strings.ToLower(u.Host)
+	host := urlHostCanonical(u)
 
 	// Strip default ports
 	if (scheme == "https" && strings.HasSuffix(host, ":443")) ||
@@ -307,6 +307,25 @@ func normalizeURL(name string) string {
 	}
 	// Original had no scheme — return without scheme
 	return host + path
+}
+
+// urlHostCanonical is a URL's host[:port] lower-cased, without the DNS root
+// dot ("example.com." is "example.com") and with an IP address in its
+// canonical form ("[2001:DB8:0::1]" is "[2001:db8::1]"), so one origin gets
+// one name.
+func urlHostCanonical(u *url.URL) string {
+	host := strings.TrimSuffix(strings.ToLower(u.Hostname()), ".")
+	if ip := net.ParseIP(host); ip != nil {
+		if v4 := ip.To4(); v4 != nil {
+			host = v4.String()
+		} else {
+			host = "[" + ip.String() + "]"
+		}
+	}
+	if port := u.Port(); port != "" {
+		return host + ":" + port
+	}
+	return host
 }
 
 // normalizeDiscoveredURL is like normalizeURL but strips query params and fragments.
@@ -326,6 +345,23 @@ func normalizeRepoName(name string) string {
 	name = strings.TrimPrefix(name, "https://")
 	name = strings.TrimPrefix(name, "http://")
 
+	// ssh://[user@]host[:port]/org/repo → host/org/repo
+	if strings.HasPrefix(name, "ssh://") {
+		name = strings.TrimPrefix(name, "ssh://")
+		slash := strings.Index(name, "/")
+		if slash < 0 {
+			slash = len(name)
+		}
+		authority, rest := name[:slash], name[slash:]
+		if at := strings.LastIndex(authority, "@"); at >= 0 {
+			authority = authority[at+1:]
+		}
+		if colon := strings.LastIndex(authority, ":"); colon > 0 {
+			authority = authority[:colon]
+		}
+		name = authority + rest
+	}
+
 	// Handle SSH format: git@github.com:org/repo → github.com/org/repo
 	if strings.HasPrefix(name, "git@") {
 		name = strings.TrimPrefix(name, "git@")
@@ -334,10 +370,10 @@ func normalizeRepoName(name string) string {
 		}
 	}
 
-	// Strip .git suffix
+	// Strip trailing slashes, then the .git suffix, then slashes again, so
+	// "org/repo.git/" and "org/repo/" both end as "org/repo" in one pass.
+	name = strings.TrimRight(name, "/")
 	name = strings.TrimSuffix(name, ".git")
-
-	// Strip trailing slash
 	name = strings.TrimRight(name, "/")
 
 	// Strip Azure DevOps _git segment
@@ -400,17 +436,18 @@ func normalizeDatabaseName(name string) string {
 			break
 		}
 	}
-	// Strip credentials (user:pass@)
-	if atIdx := strings.Index(name, "@"); atIdx > 0 {
-		name = name[atIdx+1:]
-	}
-	// Lowercase
-	name = strings.ToLower(name)
-	// Strip query params
-	if qIdx := strings.Index(name, "?"); qIdx > 0 {
+	// Strip query params and fragment first: an "@" in them
+	// ("?user=svc@corp.example") is not the end of the credentials.
+	if qIdx := strings.IndexAny(name, "?#"); qIdx >= 0 {
 		name = name[:qIdx]
 	}
-	return name
+	// Strip credentials (user:pass@). The host follows the LAST "@": a
+	// password may itself contain "@", and no part of it may stay in the
+	// asset name.
+	if atIdx := strings.LastIndex(name, "@"); atIdx >= 0 {
+		name = name[atIdx+1:]
+	}
+	return strings.ToLower(name)
 }
 
 // ─── Network Names ────────────────────────────────────────────────────
@@ -467,6 +504,13 @@ func stripProtocol(name string) string {
 
 // stripPort removes :port from the end of a hostname.
 func stripPort(name string) string {
+	// A bracketed IPv6 address, with or without a port: "[2001:db8::1]:443".
+	if strings.HasPrefix(name, "[") {
+		if host, _, err := net.SplitHostPort(name); err == nil {
+			return host
+		}
+		return strings.TrimSuffix(strings.TrimPrefix(name, "["), "]")
+	}
 	// Don't strip from IPv6 addresses
 	if strings.Count(name, ":") > 1 {
 		return name
