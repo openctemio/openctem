@@ -147,9 +147,9 @@ func (v policyVerdict) reason(where string) string {
 }
 
 // policyRefusedError refuses a trigger that no sensor would accept.
-func policyRefusedError(sc *scan.Scan, reasons []string) error {
+func policyRefusedError(reasons []string) error {
 	return shared.NewDomainError(codeSensorPolicyRefused, fmt.Sprintf(
-		"No sensor can run scan %q: %s", sc.Name, strings.Join(reasons, "; ")), shared.ErrValidation)
+		"No sensor can run this scan: %s", strings.Join(reasons, "; ")), shared.ErrValidation)
 }
 
 // preflightUnzoned checks the targets that go to the tenant's sensors
@@ -196,7 +196,7 @@ func (s *Service) applyUnzonedPreflight(ctx context.Context, sc *scan.Scan, plan
 		return err
 	}
 	if plan == nil {
-		return policyRefusedError(sc, []string{reason})
+		return policyRefusedError([]string{reason})
 	}
 	kept := plan.Batches[:0:0]
 	for _, b := range plan.Batches {
@@ -205,7 +205,7 @@ func (s *Service) applyUnzonedPreflight(ctx context.Context, sc *scan.Scan, plan
 		}
 	}
 	if len(kept) == 0 {
-		return policyRefusedError(sc, append(plan.PolicyRefused, reason))
+		return policyRefusedError(append(plan.PolicyRefused, reason))
 	}
 	plan.Batches = kept
 	warning := fmt.Sprintf("%d target(s) outside every scan zone are not scanned: %s", len(targets), reason)
