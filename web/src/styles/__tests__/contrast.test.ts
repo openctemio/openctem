@@ -205,6 +205,24 @@ describe('brand tokens', () => {
         expect(hex(t, `--st-waiting-${part}`)).toBe(hex(t, `--st-accepted-${part}`))
     })
 
+    it(`${mode}: the danger tone is AA on its tint and on the card (research/266)`, () => {
+      pair('--tone-danger-fg', '--tone-danger-bg', 4.5)
+      pair('--tone-danger-fg', '--card', 4.5)
+      pair('--tone-danger-fg', '--background', 4.5)
+    })
+
+    it(`${mode}: ordinal levels: AA text, visible outline, fills far apart (research/266)`, () => {
+      pair('--lvl-4-fg', '--lvl-4-bg', 7)
+      pair('--lvl-3-fg', '--lvl-3-bg', 7)
+      pair('--lvl-2-fg', '--card', 7)
+      pair('--lvl-1-fg', '--card', 4.5)
+      pair('--lvl-2-border', '--card', 3)
+      // Solid, tint and the card (outline) step at least 0.10 OKLCH L apart.
+      const L = (name: string) => (oklch(hex(t, name)) as number[])[0]
+      expect(Math.abs(L('--lvl-4-bg') - L('--lvl-3-bg'))).toBeGreaterThanOrEqual(0.1)
+      expect(Math.abs(L('--lvl-3-bg') - L('--card'))).toBeGreaterThanOrEqual(0.1)
+    })
+
     it(`${mode}: health icons are 3:1 on every surface and text stays foreground`, () => {
       for (const h of HEALTH) for (const bg of SURFACES) pair(`--hl-${h}`, bg, 3)
       for (const bg of SURFACES) pair('--foreground', bg, 7)
