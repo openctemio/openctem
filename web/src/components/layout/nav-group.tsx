@@ -277,7 +277,6 @@ export function NavBadge({
   return <NavCount tone="action">{children}</NavCount>
 }
 
-
 /**
  * Get the appropriate badge based on releaseStatus
  */
