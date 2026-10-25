@@ -150,6 +150,7 @@
   "common.table.view": "View",
   "common.table.viewMenu": "Table view: density and columns",
   "common.tabs.more": "More",
+  "common.templateSourceSyncFailed": "Could not sync the template source.",
   "common.unexpectedError": "An unexpected error occurred",
   "common.unsafeLink": "Link not opened: the URL uses a scheme that is not allowed",
   "common.viewSwitcher.label": "View",

@@ -12,6 +12,7 @@ truth: this page describes them as of the merge-queue routing (#730, 2026-10-02)
 | API CI (`api-ci.yml`) | PR / push to `main`, `develop`; merge queue | `API static checks` (one job: migration safety, SQL schema drift, security gates, OpenAPI contract, gateway routing, go vet, staticcheck, golangci-lint), tests against Postgres + Redis, least-privilege suite, PostgreSQL 18 migrations, release binaries, Docker build; see [Tiers](#tiers) | **API CI OK** |
 | Web CI (`web-ci.yml`) | PR / push to `main`, `develop`; merge queue | `API contract` (generates the contract files; for an API change compares them with the base and reports the difference), `API contract report` (the pull request comment), `Web checks` (type-check against the generated contract, ESLint, Prettier, palette drift) and `Web tests` (Vitest in three parallel shards); `next build` (push only) | **Web CI OK** |
 | CodeQL (`codeql.yml`) | PR / push; merge queue; weekly (Mon 00:00 UTC) | One matrix over the languages: Go (built inside `api/`) and JavaScript/TypeScript (`web/`), one category per language. PR and merge queue: only the changed language(s). Push to `develop`/`main` and weekly: both, so each branch keeps a fresh baseline per category | **CodeQL OK** |
+| Web E2E (`web-e2e.yml`) | PR (with `run-e2e`, a changed suite, or the full tier) / push to `develop`; merge queue | Builds the API, web and admin images once, then runs the Playwright suite (`web/e2e`) in 4 shards, each against its own stack (Postgres, Redis, migrations, seeded tenant). The merge queue runs it whenever the queued PR changed `web/`, `api/` or a shared file, so a spec made stale by a layout change fails in the queue, not on `develop`. `Merge reports and list flaky tests` is for people and never fails the gate | **E2E OK** |
 | All-in-one CI (`allinone-ci.yml`) | PR / push; merge queue | Builds `openctem-api`, `openctem-web` and the all-in-one `openctem` image exactly as a release does, smoke-tests them (arch, ELF, executes) and runs the all-in-one in both gateway modes against Postgres + Redis. Nothing is pushed. Merge queue and pushes only (see [Tiers](#tiers)). | **All-in-one OK** |
 | Repository Security (`repo-security.yml`) | PR / push; merge queue; weekly | Betterleaks (root `.betterleaks.toml`, `.gitleaksignore`): a PR or queued group scans only its own commits (`base..head`); a push to `develop`/`main` and the weekly run scan the full history. Customer identifiers: fixed strings from the `CUSTOMER_DENYLIST` repository secret (never committed; empty = skipped with a notice) and the live LAN range outside tests, over every tracked file, printing only file:line. Commit emails: a PR or queued group fails when one of its commits has an address from the `COMMIT_EMAIL_DENYLIST` repository secret (case-insensitive fixed strings such as a domain; never committed; empty = skipped with a notice) as author, committer or `Co-authored-by` trailer, printing only the commit and the field; outside contributors are covered by the CLA check. **Workflow Lint**: actionlint and zizmor (pinned; suppressions are per line with a reason, inline or in `.github/zizmor.yml`, never per file) over the workflows, action pins, and the self-tests of the CI scripts (change routing, CodeQL alert gate, security gate and its CODEOWNERS mirror), plus the check that `api/` and `web/` depend on no sensor module or SDK. **Dependency Review** (PR only) | **Secret Scanning**, **Workflow Lint** |
 | Docs check (`docs-check.yml`) | PR / push to `main`, `develop`; merge queue | One job, **Docs check**: `scripts/docs_check.py` (Markdown is English, has no private addresses or internal host names, relative links and anchors resolve), the RFC index check, then `scripts/check_docs_links.py` checks every `docs.openctem.io` link in code (page and `#anchor`, against a checkout of `openctemio/docs` `main`) and every `github.com/openctemio/<repo>/blob\|tree/<ref>/<path>#anchor` link (this repository from the checkout, others fetched shallowly); tests are skipped, `docs-links: ignore` skips a line. Locally: `python3 scripts/check_docs_links.py --docs ../docs --fetch-other .` | **Docs check** |
@@ -40,14 +41,26 @@ Scheduled runs (weekly security, nightly fuzz) run from the default branch, `mai
 
 ### Required checks
 
-Branch protection on `main` and `develop` requires exactly these seven checks.
+Branch protection on `main` and `develop` requires exactly these eight checks.
 Merges go through the GitHub merge queue (see [Merge queue](#merge-queue)); the
 strict "branch must be up to date" rule is off, because the queue itself tests
 each PR on top of the current base:
 
-`API CI OK` · `Web CI OK` · `CodeQL OK` · `All-in-one OK` · `Secret Scanning` · `Workflow Lint` · `security-gate`
+- `API CI OK`
+- `Web CI OK`
+- `E2E OK`
+- `CodeQL OK`
+- `All-in-one OK`
+- `Secret Scanning`
+- `Workflow Lint`
+- `security-gate`
 
-The four `… OK` checks are aggregator jobs (`if: always()`): they pass when every
+`E2E OK` is required because the queue is the only place where a PR's specs
+meet every layout change merged before it: a spec a PR never touched can go
+stale against another PR's page change, and without the check that PR still
+merged and turned `develop` red.
+
+The five `… OK` checks are aggregator jobs (`if: always()`): they pass when every
 job they depend on passed **or was skipped**, and fail when any failed or was
 cancelled. The other jobs are not required individually; they reach the merge
 through their aggregator. API Security and Web Security are not required.
@@ -341,10 +354,10 @@ tags and scheduled runs are never cancelled.
    [Tiers](#tiers)) on that ref; CodeQL only reports `CodeQL OK`. `changed.sh`
    diffs `base_sha..head_sha`, so a queued web-only PR runs only web jobs, as it
    did on the PR.
-4. All six required checks report on every queue ref: the four `… OK`
+4. Every required check reports on every queue ref: the five `… OK`
    aggregators run with `if: always()` and pass when their jobs were skipped;
    Secret Scanning and Workflow Lint are unconditional jobs. Nothing stays Pending.
-5. When all six pass, the queue fast-forwards the base branch, and the `push` run
+5. When all of them pass, the queue fast-forwards the base branch, and the `push` run
    (path-scoped, plus CodeQL on both languages) refreshes the branch's baseline.
 6. A failure removes the PR from the queue; the groups behind it are rebuilt.
 
@@ -812,7 +825,7 @@ develop  integration branch; every PR targets develop
 
 1. Branch from `develop`, open the PR against `develop`. One PR may change both
    `api/` and `web/`.
-2. All six required checks green, then **Merge when ready** (merge queue).
+2. Every required check green, then **Merge when ready** (merge queue).
 3. Merge with a merge commit or squash, never "rebase and merge" for branches
    that contain merges.
 4. Release: **Release Train** builds `release/vX.Y.Z` from a green `develop`
