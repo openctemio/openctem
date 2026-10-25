@@ -745,6 +745,8 @@ export interface FindingApiFilters {
   extra?: Record<string, string>
   /** An approval request for the finding is pending (or, with false, is not). Sent as `pending_approval`. */
   pending_approval?: boolean
+  /** Informational findings (info and none) only, or (false) none of them. Sent as `informational`. */
+  informational?: boolean
   /** Accepted risks that lapse by then (`P30D` = 30 days ahead). Sent as `acceptance_expires_at_lte`. */
   acceptance_expires_at_lte?: string
   /** The state lens: open | fixed | dispositioned | closed | all (research 24, C2). Sent as `state`. */
