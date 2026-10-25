@@ -164,7 +164,7 @@ func (s *VulnerabilityService) SelfApproveSolo(ctx context.Context, in SelfAppro
 		return nil, fmt.Errorf("%w: the requested acceptance end has passed; submit a new request", shared.ErrValidation)
 	case a.RequestedBy.IsZero() || a.RequestedBy != uid:
 		return nil, vulnerability.ErrSoloApprovalNotAllowed
-	case a.IsAgentRequest():
+	case a.IsAIApplicationRequest():
 		// An AI application's proposal is never decided by the person it
 		// acted for, not even alone: they reject it and act themselves.
 		return nil, vulnerability.ErrSoloApprovalNotAllowed
