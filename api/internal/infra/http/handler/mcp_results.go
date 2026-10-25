@@ -46,6 +46,7 @@ const (
 	mcpErrUnavailable      = "unavailable"
 	mcpErrInternal         = "internal_error"
 	mcpErrResultTooLarge   = "result_too_large"
+	mcpErrConflict         = "conflict"
 )
 
 // mcpNotFoundMessage is the one answer for an item that does not exist and
@@ -80,6 +81,8 @@ func classifyMCPError(err error) mcpError {
 		return mcpError{Code: mcpErrNotFound, Message: mcpNotFoundMessage}
 	case errors.Is(err, shared.ErrForbidden):
 		return mcpError{Code: mcpErrForbidden, Message: domainMessage(err, "your campaign role does not allow this")}
+	case errors.Is(err, shared.ErrConflict):
+		return mcpError{Code: mcpErrConflict, Message: domainMessage(err, "the item changed or already has a pending request; read it again")}
 	case errors.Is(err, shared.ErrValidation), errors.Is(err, shared.ErrInvalidInput):
 		return mcpError{Code: mcpErrInvalidArgument, Message: domainMessage(err, "invalid arguments")}
 	case errors.Is(err, context.DeadlineExceeded), errors.Is(err, context.Canceled):
@@ -93,13 +96,13 @@ func classifyMCPError(err error) mcpError {
 // campaign_id must be ..." gives "campaign_id must be ...").
 func domainMessage(err error, fallback string) string {
 	msg := err.Error()
-	for _, prefix := range []string{shared.ErrValidation.Error() + ": ", shared.ErrForbidden.Error() + ": ", shared.ErrInvalidInput.Error() + ": "} {
+	for _, prefix := range []string{shared.ErrValidation.Error() + ": ", shared.ErrForbidden.Error() + ": ", shared.ErrInvalidInput.Error() + ": ", shared.ErrConflict.Error() + ": "} {
 		if i := strings.LastIndex(msg, prefix); i >= 0 {
 			msg = msg[i+len(prefix):]
 		}
 	}
 	msg = strings.TrimSpace(msg)
-	if msg == "" || msg == shared.ErrValidation.Error() || msg == shared.ErrForbidden.Error() {
+	if msg == "" || msg == shared.ErrValidation.Error() || msg == shared.ErrForbidden.Error() || msg == shared.ErrConflict.Error() {
 		return fallback
 	}
 	return msg
