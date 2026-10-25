@@ -2,9 +2,9 @@
  * Governance: a server-paged DataTable (`manualPagination`) says what its
  * search box does. The built-in search box filters the rows already loaded, so
  * on a server-paged list it searches one page and silently hides matches on the
- * others (the approvals page shipped that way). Such a table passes
- * `showSearch={false}` and puts a server search (the list's `q`) in
- * `toolbarStart`, or passes `showSearch` explicitly after review.
+ * others (the approvals page shipped that way). Such a table passes its server
+ * search (the list's `q`) as `search`, or passes `showSearch={false}` (no
+ * search) or `showSearch` explicitly after review.
  */
 import { describe, it, expect } from 'vitest'
 import { readFileSync, readdirSync, statSync } from 'node:fs'
@@ -46,7 +46,11 @@ describe('server-paged DataTable search', () => {
     const offenders: string[] = []
     for (const file of tsxFiles(SRC)) {
       for (const { line, props } of dataTableBlocks(readFileSync(file, 'utf8'))) {
-        if (props.includes('manualPagination') && !props.includes('showSearch')) {
+        if (
+          props.includes('manualPagination') &&
+          !props.includes('showSearch') &&
+          !/\bsearch=\{/.test(props)
+        ) {
           offenders.push(`${relative(SRC, file)}:${line}`)
         }
       }

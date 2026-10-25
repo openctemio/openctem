@@ -1,7 +1,7 @@
 'use client'
 
 import * as React from 'react'
-import { ListFilter, PanelLeftClose } from 'lucide-react'
+import { ListFilter } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { cn } from '@/lib/utils'
@@ -25,6 +25,9 @@ const COUNT_BADGE_CLASS =
 const ACTIVE_CLASS =
   'border-primary/50 bg-primary/10 text-primary hover:bg-primary/15 hover:text-primary dark:border-primary/50 dark:bg-primary/15 dark:hover:bg-primary/25'
 
+/** Pressed look while the inline panel it controls is open. */
+const PRESSED_CLASS = 'bg-accent text-accent-foreground'
+
 export interface FilterButtonProps extends Omit<
   React.ComponentProps<typeof Button>,
   'children' | 'variant' | 'size' | 'asChild' | 'ref'
@@ -33,7 +36,8 @@ export interface FilterButtonProps extends Omit<
   activeCount?: number
   /**
    * Set when the button toggles an inline panel: whether that panel is open.
-   * The icon becomes "close panel" and the button reports `aria-pressed`.
+   * The button reports `aria-pressed` and looks pressed; the icon stays the
+   * filter lines on every list (one trigger, one icon).
    * Leave undefined when the button opens a sheet, popover or dialog.
    */
   panelOpen?: boolean
@@ -55,7 +59,6 @@ export const FilterButton = React.forwardRef<HTMLButtonElement, FilterButtonProp
     const tooltip = panelOpen
       ? t('common.filterButton.hide', 'Hide {label}', { label: label.toLowerCase() })
       : label
-    const Icon = panelOpen ? PanelLeftClose : ListFilter
 
     return (
       <Tooltip>
@@ -69,10 +72,15 @@ export const FilterButton = React.forwardRef<HTMLButtonElement, FilterButtonProp
             aria-pressed={panelOpen}
             data-slot="filter-button"
             data-active={active ? '' : undefined}
-            className={cn('relative size-9 shrink-0', active && ACTIVE_CLASS, className)}
+            className={cn(
+              'relative size-9 shrink-0',
+              panelOpen && PRESSED_CLASS,
+              active && ACTIVE_CLASS,
+              className
+            )}
             {...props}
           >
-            <Icon className="size-4" aria-hidden="true" />
+            <ListFilter className="size-4" aria-hidden="true" />
             {active && (
               // The count is read out through the button's accessible name.
               <span data-slot="filter-count" aria-hidden="true" className={COUNT_BADGE_CLASS}>
