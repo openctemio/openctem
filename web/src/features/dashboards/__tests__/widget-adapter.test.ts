@@ -253,3 +253,106 @@ describe('CTEM shapes', () => {
     expect(withRow.result.rows[0].href).toBe('/assets/a%2F1')
   })
 })
+
+describe('exposure flow and intake', () => {
+  const src = (tool: string, drill: string) => ({
+    origin: 'sensor' as const,
+    tool,
+    receipts: 2,
+    received: 10,
+    created: 3,
+    still_detected: 6,
+    reopened: 0,
+    closed: 0,
+    suppressed: 1,
+    not_stored: 1,
+    last_at: '2026-10-25T10:00:00Z',
+    last_status: 'completed',
+    last_receipt_id: 'r1',
+    health: 'ok' as const,
+    drill,
+  })
+  const intake = {
+    since: '2026-09-26T00:00:00Z',
+    sources: [src('nuclei', '/findings/imports?origin=sensor&tool=nuclei'), src('x', 'javascript:alert(1)')],
+    totals: { ...src('', '/findings/imports'), origin: '' as const, last_at: '0001-01-01T00:00:00Z' },
+    noise: { received: 20, new: 4, merged: 12, suppressed: 2, not_stored: 2 },
+    failing: 0,
+    stale: 0,
+    drill: '/findings/imports?since=2026-09-26T00:00:00Z',
+    false_positive: { value: 3, drill: '/findings?status=false_positive' },
+  }
+  const fig = (value: number, drill: string) => ({ value, drill })
+
+  it('maps the flow, keeping only same-origin lists', () => {
+    const v: WidgetValue = {
+      ...base,
+      shape: 'flow',
+      metric: 'exposure.flow',
+      flow: {
+        since: '2026-09-26T00:00:00Z',
+        intake,
+        actionable: fig(9, '/findings?state=open&priority_class=P0,P1,P2,P3'),
+        classes: [{ key: 'P0', value: 9, drill: '//evil.example/x' }],
+        open: fig(12, '/findings?state=open'),
+        severity: [{ key: 'high', value: 12, drill: '/findings?state=open&severity=high' }],
+        past_sla: fig(1, '/findings?state=open&sla_status=overdue'),
+        in_progress: fig(2, '/findings?status=in_progress'),
+        fixed: fig(3, '/findings?status=resolved'),
+        accepted: fig(0, '/findings?status=accepted'),
+        false_positive: fig(3, '/findings?status=false_positive'),
+        stages: null,
+      },
+    }
+    const m = widgetModel(v, spec('exposure.flow'), false)
+    expect(m.state).toBe('ready')
+    if (m.result?.shape !== 'flow') throw new Error('not flow')
+    expect(m.result.actionable).toEqual({ key: undefined, value: 9, drill: '/findings?state=open&priority_class=P0,P1,P2,P3' })
+    expect(m.result.classes[0].drill).toBeNull()
+    expect(m.result.intake?.sources.map((s) => s.drill)).toEqual(['/findings/imports?origin=sensor&tool=nuclei', null])
+    // A zero time is "never", not year 1.
+    expect(m.result.intake?.totals.last_at).toBeNull()
+    expect(m.result.stages).toBeNull()
+  })
+
+  it('a personal flow carries the reason instead of sources', () => {
+    const v: WidgetValue = {
+      ...base,
+      shape: 'flow',
+      flow: {
+        since: '2026-09-26T00:00:00Z',
+        intake_reason: 'organization_only',
+        actionable: fig(0, '/findings'),
+        classes: [],
+        open: fig(0, '/findings'),
+        severity: [],
+        past_sla: fig(0, '/findings'),
+        in_progress: fig(0, '/findings'),
+        fixed: fig(0, '/findings'),
+        accepted: fig(0, '/findings'),
+        false_positive: fig(0, '/findings'),
+        stages: null,
+      },
+    }
+    const m = widgetModel(v, spec('exposure.flow'), false)
+    if (m.result?.shape !== 'flow') throw new Error('not flow')
+    expect(m.result.intake).toBeNull()
+    expect(m.result.intake_reason_key).toBe('dashboards.reason.organization_only')
+  })
+
+  it('maps the intake; organization-only and no receipts are named reasons', () => {
+    const m = widgetModel({ ...base, shape: 'intake', metric: 'ingest.intake', intake }, spec('ingest.intake'), false)
+    if (m.result?.shape !== 'intake') throw new Error('not intake')
+    expect(m.result.intake.noise.received).toBe(20)
+    expect(m.result.intake.false_positive.drill).toBe('/findings?status=false_positive')
+    expect(reasonKeyOf('organization_only')).toBe('dashboards.reason.organization_only')
+    expect(reasonKeyOf('no_receipts')).toBe('dashboards.reason.no_receipts')
+    const personal = widgetModel(
+      { ...base, state: 'not_measured', reason: 'organization_only', shape: 'intake' },
+      spec('ingest.intake'),
+      false
+    )
+    expect(personal.state).toBe('not_measured')
+    expect(personal.reasonKey).toBe('dashboards.reason.organization_only')
+  })
+})

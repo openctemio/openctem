@@ -82,13 +82,14 @@ test('the dashboard editor is usable with the keyboard', async ({ page }) => {
   await expect(page.getByTestId('dashboard-freshness')).toBeVisible()
 })
 
-test('a new user lands on the CTEM loop', async ({ page }) => {
+test('a new user lands on the exposure flow and its CTEM stages', async ({ page }) => {
   test.setTimeout(240_000)
   // The e2e seed gives the user no dashboard: the first visit stores a
   // personal copy of the CTEM template, computed in their own scope.
   await page.goto('/')
   await expect(page.getByTestId('dashboard-freshness')).toBeVisible({ timeout: 45_000 })
-  const loop = page.getByRole('list', { name: 'Stages' })
+  // The five stages are part of the exposure flow at the top of the template.
+  const loop = page.getByRole('list', { name: 'CTEM stage health' })
   // A new organization's first fact build runs in the background (the
   // maintainer's reconcile tick, up to a minute or two) and the widgets say
   // "No data yet" until it is done. Refresh now recomputes the figures from

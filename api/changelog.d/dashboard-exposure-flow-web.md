@@ -1,0 +1,5 @@
+### Added: exposure flow hero and intake panel on the dashboard
+
+- The CTEM and Overview templates open with the exposure flow: sources with their health, received to new or reopened to actionable, a labelled ring of actionable findings by priority class, the five CTEM stages and the outcomes. Hover, keyboard focus or a first tap lights a figure and its path and opens a tooltip with its definition and list; every number opens the list it counts. The CTEM template ends with the intake and noise reduction panel (sources wired into one summary, the noise bar, false positives, per-source table).
+- New page `/findings/imports`: the import and run receipts a dashboard intake figure opens, filtered by source, tool and period, with the totals of the filter.
+- Existing personal copies of these templates are offered the new widgets (layout hint version 3); nothing changes until the person chooses.
