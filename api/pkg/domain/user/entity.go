@@ -36,6 +36,44 @@ type Preferences struct {
 	Theme         string `json:"theme,omitempty"`         // "light", "dark", "system"
 	Language      string `json:"language,omitempty"`      // "en", "vi"
 	Notifications bool   `json:"notifications,omitempty"` // Enable notifications
+	// FindingsIncludeInformational is the member's own choice for the
+	// findings work views: nil = the organization's default.
+	FindingsIncludeInformational *bool `json:"findings_include_informational,omitempty"`
+}
+
+// Values of the findings_informational preference in the API.
+const (
+	FindingsInformationalDefault = "default"
+	FindingsInformationalInclude = "include"
+	FindingsInformationalExclude = "exclude"
+)
+
+// FindingsInformational returns the work-view choice as its API value.
+func (p Preferences) FindingsInformational() string {
+	switch {
+	case p.FindingsIncludeInformational == nil:
+		return FindingsInformationalDefault
+	case *p.FindingsIncludeInformational:
+		return FindingsInformationalInclude
+	default:
+		return FindingsInformationalExclude
+	}
+}
+
+// WithFindingsInformational returns p with the work-view choice set from its
+// API value (default, include or exclude; anything else is default).
+func (p Preferences) WithFindingsInformational(v string) Preferences {
+	switch v {
+	case FindingsInformationalInclude:
+		b := true
+		p.FindingsIncludeInformational = &b
+	case FindingsInformationalExclude:
+		b := false
+		p.FindingsIncludeInformational = &b
+	default:
+		p.FindingsIncludeInformational = nil
+	}
+	return p
 }
 
 // AuthProvider represents the authentication provider for a user.

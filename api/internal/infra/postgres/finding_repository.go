@@ -3584,8 +3584,10 @@ func (r *FindingRepository) buildWhereClause(filter vulnerability.FindingFilter)
 	}
 
 	if len(filter.Severities) > 0 {
-		placeholders := make([]string, len(filter.Severities))
-		for i, sev := range filter.Severities {
+		// info also matches none (vulnerability.ExpandSeverityFilter).
+		sevs := vulnerability.ExpandSeverityFilter(filter.Severities)
+		placeholders := make([]string, len(sevs))
+		for i, sev := range sevs {
 			placeholders[i] = fmt.Sprintf("$%d", argIndex)
 			args = append(args, sev.String())
 			argIndex++

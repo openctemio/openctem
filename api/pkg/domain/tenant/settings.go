@@ -59,6 +59,8 @@ type Settings struct {
 	Dashboards DashboardSettings `json:"dashboards,omitempty"`
 	// EmergingThreats is the emerging-threat alert policy (RFC-117).
 	EmergingThreats EmergingThreatSettings `json:"emerging_threats,omitempty"`
+	// FindingViews are the findings work-view defaults.
+	FindingViews FindingViewSettings `json:"finding_views,omitempty"`
 }
 
 // FindingCorrelationSettings are the per-organization kill switches of

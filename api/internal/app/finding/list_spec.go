@@ -10,6 +10,7 @@ import (
 	"github.com/openctemio/openctem/api/internal/app/datascope"
 	auditdom "github.com/openctemio/openctem/api/pkg/domain/audit"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	tenantdom "github.com/openctemio/openctem/api/pkg/domain/tenant"
 	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
 	"github.com/openctemio/openctem/api/pkg/filterspec"
 	"github.com/openctemio/openctem/api/pkg/pagination"
@@ -309,13 +310,45 @@ type QuickViewCount struct {
 	Count  int64
 }
 
+// FindingViewSettingsReader reads the organization's findings work-view
+// defaults (*tenant.TenantService).
+type FindingViewSettingsReader interface {
+	GetFindingViewSettings(ctx context.Context, tenantID string) (*tenantdom.FindingViewSettings, error)
+}
+
+// SetFindingViewSettings wires the organization defaults of the work views
+// (nil: informational findings are left out unless the member chose).
+func (s *VulnerabilityService) SetFindingViewSettings(r FindingViewSettingsReader) {
+	s.findingViewSettings = r
+}
+
+// IncludeInformational resolves whether the caller's work views show
+// informational findings: their own choice (memberChoice, nil = none), else
+// the organization's default, else no. A failed settings read falls back to
+// no (the default) and is logged: it only shapes a view, never access.
+func (s *VulnerabilityService) IncludeInformational(ctx context.Context, tenantID string, memberChoice *bool) bool {
+	if memberChoice != nil {
+		return *memberChoice
+	}
+	if s.findingViewSettings == nil {
+		return false
+	}
+	fv, err := s.findingViewSettings.GetFindingViewSettings(ctx, tenantID)
+	if err != nil {
+		s.logger.Warn("read finding view settings", "tenant_id", tenantID, "error", err)
+		return false
+	}
+	return fv != nil && fv.IncludeInformational
+}
+
 // CountQuickViews counts every built-in quick view (vulnerability
 // FindingQuickViews) for the caller, in one statement: each view's params
 // are parsed with the strict findings registry and compiled as facets over
 // the caller's scoped WHERE (the list's own default branch rule), so a
 // count equals the total GET /findings?<params> returns to the same caller.
-// It fails closed like every filtered read.
-func (s *VulnerabilityService) CountQuickViews(ctx context.Context, c FilterCaller) ([]QuickViewCount, error) {
+// includeInformational shapes the work views (IncludeInformational). It
+// fails closed like every filtered read.
+func (s *VulnerabilityService) CountQuickViews(ctx context.Context, c FilterCaller, includeInformational bool) ([]QuickViewCount, error) {
 	repo, ok := s.findingRepo.(findingFacetRepo)
 	if !ok {
 		return nil, errNoFindingWhereRepo
@@ -324,7 +357,7 @@ func (s *VulnerabilityService) CountQuickViews(ctx context.Context, c FilterCall
 	if err != nil {
 		return nil, err
 	}
-	views := vulnerability.FindingQuickViews()
+	views := vulnerability.FindingQuickViews(includeInformational)
 	facets := make([]*filterspec.Spec, len(views))
 	for i, v := range views {
 		q, perr := url.ParseQuery(v.Params)
