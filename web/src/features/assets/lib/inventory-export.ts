@@ -22,8 +22,10 @@ export function inventoryExportFields(view: TypeView | null): ExportFieldConfig<
     { header: 'Exposure', accessor: (a) => a.exposure },
     { header: 'Status', accessor: (a) => a.status },
     { header: 'Owner', accessor: (a) => a.primaryOwner?.name ?? a.ownerRef ?? '' },
-    { header: 'Risk score', accessor: (a) => a.riskScore },
-    { header: 'Findings', accessor: (a) => a.findingCount },
+    // Empty for an asset never scored: its stored 0 is not a real score.
+    { header: 'Risk score', accessor: (a) => (a.riskScored === false ? '' : a.riskScore) },
+    // The same open set the list shows (research/271).
+    { header: 'Open findings', accessor: (a) => a.findingCount },
     { header: 'Last seen', accessor: (a) => a.lastSeen },
     { header: 'Labels', accessor: (a) => (a.tags ?? []).join('; ') },
   ]

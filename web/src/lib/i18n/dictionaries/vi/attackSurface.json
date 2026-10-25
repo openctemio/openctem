@@ -86,7 +86,6 @@
   "attackSurface.external.allTypes": "Mọi loại",
   "attackSurface.external.cancel": "Hủy",
   "attackSurface.external.col.asset": "Tài sản",
-  "attackSurface.external.col.findings": "Phát hiện",
   "attackSurface.external.col.labels": "Nhãn",
   "attackSurface.external.col.lastSeen": "Thấy lần cuối",
   "attackSurface.external.col.risk": "Rủi ro",
