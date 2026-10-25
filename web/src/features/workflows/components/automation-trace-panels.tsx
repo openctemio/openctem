@@ -3,6 +3,7 @@
 import { CircleAlert, OctagonX } from 'lucide-react'
 
 import { useTranslation } from '@/context/i18n-provider'
+import { MetaLine } from '@/features/shared/components/text-layout'
 import { Badge } from '@/components/ui/badge'
 import type {
   AutomationMode,
@@ -263,9 +264,13 @@ export function StepTrace({ rows }: { rows: TraceRow[] }) {
               <span className="font-medium break-words">{r.name}</span>
               <span className="text-xs text-muted-foreground">{statusLabel(r.status)}</span>
             </div>
-            <div className="tabular-nums">
-              {t('automations.trace.inOut', '{in} in · {out} out', { in: r.in, out: r.out })}
-            </div>
+            <MetaLine
+              className="tabular-nums"
+              items={[
+                t('automations.trace.inCount', '{n} in', { n: r.in }),
+                t('automations.trace.outCount', '{n} out', { n: r.out }),
+              ]}
+            />
             {reasons(r) && <div className="text-muted-foreground">{reasons(r)}</div>}
             {r.error && <div className="text-destructive">{r.error}</div>}
           </li>
