@@ -43,8 +43,8 @@ func TestAutoReopenBatch_RegressionKeepsPreviousResolverInActivity(t *testing.T)
 	if err != nil {
 		t.Fatalf("AutoReopenByFingerprintsBatch: %v", err)
 	}
-	if got := statusOf(ctx, t, db, humanID); got != "confirmed" {
-		t.Errorf("human-resolved finding status = %s, want confirmed", got)
+	if got := statusOf(ctx, t, db, humanID); got != "new" {
+		t.Errorf("human-resolved finding status = %s, want new (never triaged)", got)
 	}
 
 	rf, ok := reopened[humanFP]
