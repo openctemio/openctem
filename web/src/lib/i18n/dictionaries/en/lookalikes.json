@@ -20,8 +20,10 @@
   "lookalikes.enabled": "Monitor {domain}",
   "lookalikes.errorTitle": "lookalike domains",
   "lookalikes.falsePositive": "Not a threat",
+  "lookalikes.loadMore": "Load more",
   "lookalikes.mail": "Receives mail",
   "lookalikes.max": "Candidates to check (10 to 1000)",
+  "lookalikes.maxInvalid": "Enter a whole number from 10 to 1000",
   "lookalikes.of": "Lookalike of {domain}",
   "lookalikes.pageDescription": "Domains registered by others that imitate yours, found without contacting them.",
   "lookalikes.pageTitle": "Attack surface",
@@ -38,6 +40,7 @@
   "lookalikes.save": "Save",
   "lookalikes.saveFailed": "Could not save the watch",
   "lookalikes.saved": "Watch saved",
+  "lookalikes.shownOf": "{shown} of {total}",
   "lookalikes.state.accepted": "Ours or benign",
   "lookalikes.state.active": "To review",
   "lookalikes.state.falsePositive": "Not a threat",
@@ -56,8 +59,5 @@
   "lookalikes.triageFailed": "The change was not saved",
   "lookalikes.watchesDescription": "Your root domains (a permanent domain scope entry or a verified domain) and their lookalikes. Checks are passive: DNS lookups and Certificate Transparency, daily for registered lookalikes and weekly for the rest. No lookalike host is contacted.",
   "lookalikes.watchesTitle": "Watched domains",
-  "lookalikes.web": "Has addresses",
-  "lookalikes.maxInvalid": "Enter a whole number from 10 to 1000",
-  "lookalikes.shownOf": "{shown} of {total}",
-  "lookalikes.loadMore": "Load more"
+  "lookalikes.web": "Has addresses"
 }

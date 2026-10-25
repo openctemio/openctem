@@ -1,12 +1,12 @@
 {
   "criticality.critical": "Critical",
-  "criticality.high": "High",
-  "criticality.medium": "Medium",
-  "criticality.low": "Low",
-  "criticality.none": "Not rated",
   "criticality.critical.hint": "Mission-critical asset essential to business operations",
+  "criticality.high": "High",
   "criticality.high.hint": "Important asset with significant business impact",
-  "criticality.medium.hint": "Standard asset with moderate business impact",
+  "criticality.low": "Low",
   "criticality.low.hint": "Non-critical asset with minimal business impact",
+  "criticality.medium": "Medium",
+  "criticality.medium.hint": "Standard asset with moderate business impact",
+  "criticality.none": "Not rated",
   "criticality.none.hint": "Not rated yet: risk is scored as for a medium asset until it is rated"
 }

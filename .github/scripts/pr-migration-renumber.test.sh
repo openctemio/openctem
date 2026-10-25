@@ -71,5 +71,17 @@ rc=0; out="$(cd "$d" && bash "$script" deadbeef 2>&1)" || rc=$?
 ok=0; [[ "$rc" -eq 0 && "$out" == *"::notice::"* ]] || ok=1
 check "an unavailable base is a notice" $ok "$out"
 
+# 7. Another open PR took the number above the base: move above it too.
+d="$(repo)"; mig "$d" 000001 a; commit "$d" base; pr "$d"; mig "$d" 000002 mine; mig "$d" 000003 mine2; commit "$d" pr
+merge "$d"; out="$(cd "$d" && MIGRATION_TAKEN="000002 7" bash "$script" 2>&1)"
+ok=0; [[ -e "$d/api/migrations/000008_mine.up.sql" && -e "$d/api/migrations/000009_mine2.up.sql" ]] || ok=1
+check "a version another open PR takes moves above every taken one" $ok "$out"
+
+# 8. Taken versions that do not clash change nothing.
+d="$(repo)"; mig "$d" 000001 a; commit "$d" base; pr "$d"; mig "$d" 000005 mine; commit "$d" pr
+merge "$d"; out="$(cd "$d" && MIGRATION_TAKEN="2 3" bash "$script" 2>&1)"
+ok=0; [[ -e "$d/api/migrations/000005_mine.up.sql" && "$out" == *"no clash"* ]] || ok=1
+check "taken versions that do not clash leave the tree alone" $ok "$out"
+
 echo "passed: $pass, failed: $failed"
 (( failed == 0 ))
