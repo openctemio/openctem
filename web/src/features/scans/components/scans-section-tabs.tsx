@@ -8,7 +8,7 @@ import { Button } from '@/components/ui/button'
 import { SCANS_SECTION_TABS } from '@/config/section-tabs'
 import { GatedSectionTabs, PageHeader } from '@/features/shared'
 import { Can, Permission } from '@/lib/permissions'
-import { usePermissions } from '@/context/permission-provider'
+import { usePermissions } from '@/lib/permissions/hooks'
 import { useOpenForm } from '@/hooks/use-open-form'
 import { NewScanDialog } from './new-scan/new-scan-dialog'
 import { QuickScanDialog } from './quick-scan-dialog'
@@ -45,9 +45,9 @@ export function ScanCreateActions() {
   const { t } = useTranslation()
   const [dialogOpen, setDialogOpen] = useState(false)
   const [quickScanOpen, setQuickScanOpen] = useState(false)
-  const { hasPermission } = usePermissions()
+  const { can } = usePermissions()
   const openNewScan = useCallback(() => setDialogOpen(true), [])
-  useOpenForm('scan', hasPermission(Permission.ScansWrite), openNewScan)
+  useOpenForm('scan', can(Permission.ScansWrite), openNewScan)
   return (
     <>
       <NewScanDialog open={dialogOpen} onOpenChange={setDialogOpen} />
