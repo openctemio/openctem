@@ -1326,7 +1326,7 @@
   "sensors.toolSettings.scanOverridable": "A scan can lower it",
   "sensors.toolSettings.searchEmpty": "No tool or option matches \"{query}\".",
   "sensors.toolSettings.searchLabel": "Search tool settings",
-  "sensors.toolSettings.searchPlaceholder": "Search tools or options",
+  "sensors.toolSettings.searchPlaceholder": "Search tools or options…",
   "sensors.toolSettings.showEffective": "Show effective values",
   "sensors.toolSettings.source.default": "Tool default",
   "sensors.toolSettings.source.scan": "Scan",

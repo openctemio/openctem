@@ -14,6 +14,12 @@ export interface TriageDecisionState {
   canConfirm: boolean
   canRequest: boolean
   canAssign: boolean
+  /** Remediation module on and the task permission. */
+  canTask: boolean
+  /** findings:verify and a finding a tool can re-check. */
+  canRetest: boolean
+  /** Decisions Undo can walk back in this session. */
+  undoCount: number
   busy: boolean
 }
 
@@ -141,11 +147,35 @@ export function TriageDecisionPanel({
           </div>
         </div>
         <ActionButton
+          action="task"
+          keyLabel="m"
+          label={t('findings.triageMode.action.task', 'Add to task')}
+          onAction={onAction}
+          disabled={locked || !state.canTask || state.busy}
+        />
+        <ActionButton
+          action="retest"
+          keyLabel="r"
+          label={t('findings.triageMode.action.retest', 'Retest')}
+          onAction={onAction}
+          disabled={locked || !state.canRetest || state.busy}
+        />
+        <ActionButton
           action="skip"
           keyLabel="s"
           label={t('findings.triageMode.action.skip', 'Skip')}
           onAction={onAction}
           disabled={state.busy}
+        />
+        <ActionButton
+          action="undo"
+          keyLabel="u"
+          label={t('findings.triageMode.action.undo', 'Undo last')}
+          hint={t('findings.triageMode.action.undoHint', '{count} to undo', {
+            count: state.undoCount,
+          })}
+          onAction={onAction}
+          disabled={state.undoCount === 0 || state.busy}
         />
         <ActionButton
           action="evidence"

@@ -128,7 +128,7 @@ describe('PropertiesSection', () => {
       Array.from({ length: 9 }, (_, i) => [`custom_key_${i}`, `value ${i}`])
     )
     render(<PropertiesSection properties={{ ...properties, waf: 'unknown' }} />)
-    const search = screen.getByRole('textbox', { name: 'Search properties' })
+    const search = screen.getByRole('searchbox', { name: /^Search properties/ })
     fireEvent.change(search, { target: { value: 'waf' } })
     expect(screen.getByText('WAF')).toBeInTheDocument()
     expect(screen.queryByText('Custom key 1')).not.toBeInTheDocument()

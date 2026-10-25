@@ -420,7 +420,7 @@ export default function SCMConnectionsPage() {
                     getRowId={(c) => c.id}
                     searchPlaceholder={t(
                       'scmIntegration.page.searchPlaceholder',
-                      'Search connections...'
+                      'Search connections…'
                     )}
                     showSelectionCount={false}
                     toolbarEnd={

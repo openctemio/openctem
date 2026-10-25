@@ -18,7 +18,6 @@ import { useTranslation } from '@/context/i18n-provider'
 import { usePermissions } from '@/context/permission-provider'
 import { Permission } from '@/lib/permissions'
 import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
 import {
   Select,
   SelectContent,
@@ -29,6 +28,7 @@ import {
 import { Skeleton } from '@/components/ui/skeleton'
 import { EmptyState } from '@/features/shared/components/empty-state'
 import { ErrorState } from '@/features/shared/components/error-state'
+import { ListToolbar } from '@/features/shared/components/list-toolbar'
 import { ApiClientError } from '@/lib/api/error-handler'
 import type {
   DismissReason,
@@ -357,75 +357,79 @@ export function SuggestionsInbox() {
 
   return (
     <div className="space-y-4">
-      <div className="flex flex-wrap items-center gap-2">
-        <Input
-          className="w-full sm:w-64"
-          placeholder={t('remediationHub.suggestions.search')}
-          aria-label={t('remediationHub.suggestions.search')}
-          value={search}
-          onChange={(e) => {
-            setSearch(e.target.value)
+      <ListToolbar
+        search={{
+          value: search,
+          onChange: (v) => {
+            setSearch(v)
             setPage(1)
-          }}
-        />
-        <Select
-          value={kind}
-          onValueChange={(v) => {
-            setKind(v as SuggestionKind | 'all')
-            setPage(1)
-          }}
-        >
-          <SelectTrigger
-            className="w-full sm:w-44"
-            aria-label={t('remediationHub.suggestions.kindFilter')}
-          >
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">{t('remediationHub.suggestions.allKinds')}</SelectItem>
-            {(['new_group', 'join', 'task_route'] as const).map((k) => (
-              <SelectItem key={k} value={k}>
-                {t(`remediationHub.kind.${k}`)}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-        <Select
-          value={keyKind}
-          onValueChange={(v) => {
-            setKeyKind(v)
-            setPage(1)
-          }}
-        >
-          <SelectTrigger
-            className="w-full sm:w-44"
-            aria-label={t('remediationHub.suggestions.keyKindFilter')}
-          >
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">{t('remediationHub.suggestions.allFixes')}</SelectItem>
-            {['upgrade', 'rotate', 'sol'].map((k) => (
-              <SelectItem key={k} value={k}>
-                {t(`remediationHub.keyKind.${k}`)}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-        <div className="ms-auto flex flex-wrap items-center gap-2">
-          {canWrite && selected.size > 0 && (
-            <Button onClick={() => setConfirmAccept('bulk')} disabled={busy}>
-              {t('remediationHub.suggestions.acceptSelected', undefined, { n: selected.size })}
-            </Button>
-          )}
-          {canWrite && (
-            <Button variant="outline" onClick={runNow}>
-              <RefreshCw className="size-4" aria-hidden />
-              {t('remediationHub.suggestions.runNow')}
-            </Button>
-          )}
-        </div>
-      </div>
+          },
+          placeholder: t('remediationHub.suggestions.search'),
+        }}
+        start={
+          <>
+            <Select
+              value={kind}
+              onValueChange={(v) => {
+                setKind(v as SuggestionKind | 'all')
+                setPage(1)
+              }}
+            >
+              <SelectTrigger
+                className="h-9 w-auto min-w-36"
+                aria-label={t('remediationHub.suggestions.kindFilter')}
+              >
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">{t('remediationHub.suggestions.allKinds')}</SelectItem>
+                {(['new_group', 'join', 'task_route'] as const).map((k) => (
+                  <SelectItem key={k} value={k}>
+                    {t(`remediationHub.kind.${k}`)}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <Select
+              value={keyKind}
+              onValueChange={(v) => {
+                setKeyKind(v)
+                setPage(1)
+              }}
+            >
+              <SelectTrigger
+                className="h-9 w-auto min-w-36"
+                aria-label={t('remediationHub.suggestions.keyKindFilter')}
+              >
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">{t('remediationHub.suggestions.allFixes')}</SelectItem>
+                {['upgrade', 'rotate', 'sol'].map((k) => (
+                  <SelectItem key={k} value={k}>
+                    {t(`remediationHub.keyKind.${k}`)}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </>
+        }
+        end={
+          <>
+            {canWrite && selected.size > 0 && (
+              <Button onClick={() => setConfirmAccept('bulk')} disabled={busy}>
+                {t('remediationHub.suggestions.acceptSelected', undefined, { n: selected.size })}
+              </Button>
+            )}
+            {canWrite && (
+              <Button variant="outline" onClick={runNow}>
+                <RefreshCw className="size-4" aria-hidden />
+                {t('remediationHub.suggestions.runNow')}
+              </Button>
+            )}
+          </>
+        }
+      />
       <p className="text-muted-foreground text-xs" aria-live="polite">
         {t(canWrite ? 'remediationHub.suggestions.keys' : 'remediationHub.suggestions.keysOwner')}
       </p>

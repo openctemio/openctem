@@ -20,7 +20,6 @@ import {
 import { AttackSurfaceSectionTabs } from '@/features/attack-surface'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Switch } from '@/components/ui/switch'
 import {
@@ -541,21 +540,21 @@ export function WebSurfaceView() {
       <ErrorState title="web surface" error={active.error} onRetry={() => active.mutate()} />
     ) : undefined
 
+  const search =
+    tab !== 'changes'
+      ? {
+          value: q,
+          onChange: (v: string) => {
+            setQ(v)
+            paging.reset()
+          },
+          placeholder: t('attackSurface.web.search.placeholder', 'Search paths…'),
+        }
+      : undefined
+
   const toolbarStart = (
     <div className="flex flex-wrap items-center gap-2">
       {viewSelect}
-      {tab !== 'changes' && (
-        <Input
-          value={q}
-          onChange={(e) => {
-            setQ(e.target.value)
-            paging.reset()
-          }}
-          placeholder="Search paths"
-          aria-label="Search paths"
-          className="h-9 w-[220px]"
-        />
-      )}
       {tab === 'endpoints' && (
         <>
           <Select value={method || 'all'} onValueChange={(v) => setMethod(v === 'all' ? '' : v)}>
@@ -652,6 +651,7 @@ export function WebSurfaceView() {
               data={origins.rows}
               getRowId={(o) => o.origin_asset_id ?? o.origin ?? ''}
               showSearch={false}
+              search={search}
               showColumnToggle={false}
               toolbarStart={toolbarStart}
               isLoading={loadingRows}
@@ -671,6 +671,7 @@ export function WebSurfaceView() {
               getRowId={(e) => e.id ?? ''}
               onRowClick={(e) => setSelected(e.id ?? null)}
               showSearch={false}
+              search={search}
               showColumnToggle={false}
               toolbarStart={toolbarStart}
               isLoading={loadingRows}
@@ -689,6 +690,7 @@ export function WebSurfaceView() {
               data={patterns.rows}
               getRowId={(p) => p.path_hash ?? ''}
               showSearch={false}
+              search={search}
               showColumnToggle={false}
               toolbarStart={toolbarStart}
               isLoading={loadingRows}
@@ -708,6 +710,7 @@ export function WebSurfaceView() {
               getRowId={(e) => e.id ?? ''}
               onRowClick={(e) => setSelected(e.endpoint_id ?? null)}
               showSearch={false}
+              search={search}
               showColumnToggle={false}
               toolbarStart={toolbarStart}
               isLoading={loadingRows}

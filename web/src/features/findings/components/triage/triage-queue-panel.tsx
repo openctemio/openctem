@@ -19,6 +19,8 @@ export const OUTCOME_LABELS: Record<TriageOutcome, { key: string; fallback: stri
   },
   accept_applied: { key: 'findings.triageMode.outcome.acceptApplied', fallback: 'Accepted' },
   assigned: { key: 'findings.triageMode.outcome.assigned', fallback: 'Assigned' },
+  tasked: { key: 'findings.triageMode.outcome.tasked', fallback: 'Added to a task' },
+  retest_requested: { key: 'findings.triageMode.outcome.retest', fallback: 'Retest requested' },
   skipped: { key: 'findings.triageMode.outcome.skipped', fallback: 'Skipped' },
   changed: { key: 'findings.triageMode.outcome.changed', fallback: 'Changed by someone else' },
 }

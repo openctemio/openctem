@@ -91,7 +91,7 @@
   "ticketingIntegration.page.emptyDescription": "Connect a ticketing system to automatically create and track remediation tickets.",
   "ticketingIntegration.page.emptyTitle": "No ticketing systems connected",
   "ticketingIntegration.page.errorTitle": "ticketing connections",
-  "ticketingIntegration.page.searchPlaceholder": "Search connections...",
+  "ticketingIntegration.page.searchPlaceholder": "Search connections…",
   "ticketingIntegration.page.title": "Ticketing",
   "ticketingIntegration.provider.custom": "Custom",
   "ticketingIntegration.status.connected": "Connected",

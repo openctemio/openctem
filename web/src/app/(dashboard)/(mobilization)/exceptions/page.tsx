@@ -527,7 +527,7 @@ export default function ExceptionsPage() {
               <DataTable
                 columns={columns}
                 data={filteredRules}
-                searchPlaceholder={t('exceptions.page.search', 'Search by name...')}
+                searchPlaceholder={t('exceptions.page.search', 'Search by name…')}
                 searchKey="name"
                 showColumnToggle={false}
                 onRowClick={openDetail}

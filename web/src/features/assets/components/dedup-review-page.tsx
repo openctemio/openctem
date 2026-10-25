@@ -227,7 +227,7 @@ export function DedupReviewPage() {
           <DataTable
             columns={columns}
             data={reviews}
-            searchPlaceholder={t('assets.dedup.search', 'Search reviews...')}
+            searchPlaceholder={t('assets.dedup.search', 'Search reviews…')}
           />
         )}
 

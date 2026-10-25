@@ -30,8 +30,8 @@ import {
 } from '@/components/ui/table'
 import { Button } from '@/components/ui/button'
 import { ListToolbar } from '../list-toolbar'
-import { FilterPanelToggle, type FilterPanelToggleProps } from '../filter-button'
-import { Input } from '@/components/ui/input'
+import type { ListSearchProps } from '../list-search'
+import type { FilterPanelToggleProps } from '../filter-button'
 import { Skeleton } from '@/components/ui/skeleton'
 import {
   DropdownMenu,
@@ -55,9 +55,7 @@ import {
   ChevronRight,
   ChevronsLeft,
   ChevronsRight,
-  Search,
   SlidersHorizontal,
-  X,
   Inbox,
 } from 'lucide-react'
 import {
@@ -80,11 +78,21 @@ export interface MobileRowSelection {
   onSelectedChange: (selected: boolean) => void
 }
 
+/** A server-side search box (`DataTable`'s `search`). */
+export type DataTableSearch = Omit<ListSearchProps, 'filter' | 'className'>
+
 interface DataTableProps<TData, TValue> {
   columns: ColumnDef<TData, TValue>[]
   data: TData[]
   searchKey?: string
   searchPlaceholder?: string
+  /**
+   * A server-side search: the box shows `value` and reports typing through
+   * `onChange`; the page sends the term through `useListParams` /
+   * `useSearchQuery`. Replaces the built-in search (which only filters the rows
+   * already loaded). Never draw a search box in `toolbarStart`.
+   */
+  search?: DataTableSearch
   showColumnToggle?: boolean
   showPagination?: boolean
   showSearch?: boolean
@@ -144,7 +152,12 @@ interface DataTableProps<TData, TValue> {
    * the toolbar. Pass this rather than drawing a filter button in `toolbarStart`.
    */
   filterToggle?: FilterPanelToggleProps
-  /** Rendered at the start of the toolbar, after the filter toggle (e.g. search). */
+  /** A filter trigger that opens a sheet (`FilterButton`) on a list with no side panel. */
+  filter?: React.ReactNode
+  /**
+   * Filter tokens after the search box: `FilterSelect`, at most two selects,
+   * a lens. Never a search box (pass `search`).
+   */
   toolbarStart?: React.ReactNode
   /** Rendered at the end of the toolbar, before the column toggle. */
   toolbarEnd?: React.ReactNode
@@ -397,6 +410,7 @@ export function DataTable<TData, TValue>({
   data,
   searchKey,
   searchPlaceholder,
+  search: serverSearch,
   showColumnToggle = true,
   showPagination = true,
   showSearch = true,
@@ -417,6 +431,7 @@ export function DataTable<TData, TValue>({
   sorting: sortingProp,
   onSortingChange,
   filterToggle,
+  filter,
   toolbarStart,
   toolbarEnd,
   toolbarBelow,
@@ -438,7 +453,7 @@ export function DataTable<TData, TValue>({
 }: DataTableProps<TData, TValue>) {
   const { t } = useTranslation()
   // Defaults are translated here, not in the signature: they depend on the locale.
-  searchPlaceholder ??= t('common.table.search', 'Search...')
+  searchPlaceholder ??= t('common.table.search', 'Search…')
   emptyMessage ??= t('common.table.noResults', 'No results found')
   paginationNoun ??= t('common.table.resultsNoun', 'results')
   pageSizeLabel ??= t('common.table.rowsPerPage', 'Rows per page')
@@ -489,7 +504,8 @@ export function DataTable<TData, TValue>({
   const [globalFilter, setGlobalFilter] = React.useState('')
   // "Try adjusting your search" only makes sense while one is applied: an
   // empty list with no search or filter says just what is empty.
-  const filterActive = Boolean(globalFilter) || columnFilters.length > 0
+  const filterActive =
+    Boolean(globalFilter) || Boolean(serverSearch?.value) || columnFilters.length > 0
   const emptyHint =
     emptyDescription ??
     (filterActive
@@ -703,59 +719,25 @@ export function DataTable<TData, TValue>({
       {/* Toolbar: the shared ListToolbar row (order and wrapping rules live
           there). */}
       <ListToolbar
-        start={
-          toolbarStart ? (
-            <>
-              {filterToggle && <FilterPanelToggle {...filterToggle} />}
-              {toolbarStart}
-            </>
-          ) : undefined
-        }
+        filterToggle={filterToggle}
+        filter={filter}
         search={
-          <>
-            {!toolbarStart && filterToggle && <FilterPanelToggle {...filterToggle} />}
-            {/* Search */}
-            {showSearch && (
-              <div className="relative min-w-36 flex-1 sm:max-w-sm">
-                <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-                <Input
-                  placeholder={searchPlaceholder}
-                  value={
-                    searchKey
-                      ? ((table.getColumn(searchKey)?.getFilterValue() as string) ?? '')
-                      : globalFilter
-                  }
-                  onChange={(event) => {
-                    if (searchKey) {
-                      table.getColumn(searchKey)?.setFilterValue(event.target.value)
-                    } else {
-                      setGlobalFilter(event.target.value)
-                    }
-                  }}
-                  className="ps-9 pe-9"
-                />
-                {Boolean(
-                  searchKey ? table.getColumn(searchKey)?.getFilterValue() : globalFilter
-                ) && (
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className="absolute right-1 top-1/2 h-6 w-6 -translate-y-1/2 p-0"
-                    onClick={() => {
-                      if (searchKey) {
-                        table.getColumn(searchKey)?.setFilterValue('')
-                      } else {
-                        setGlobalFilter('')
-                      }
-                    }}
-                  >
-                    <X className="h-3 w-3" />
-                  </Button>
-                )}
-              </div>
-            )}
-          </>
+          serverSearch ??
+          (showSearch
+            ? {
+                value: searchKey
+                  ? ((table.getColumn(searchKey)?.getFilterValue() as string) ?? '')
+                  : globalFilter,
+                onChange: (value: string) => {
+                  if (searchKey) table.getColumn(searchKey)?.setFilterValue(value)
+                  else setGlobalFilter(value)
+                },
+                placeholder: searchPlaceholder,
+              }
+            : undefined)
         }
+        start={toolbarStart}
+        below={toolbarBelow}
         end={
           <>
             {toolbarEnd}
@@ -769,19 +751,20 @@ export function DataTable<TData, TValue>({
               </span>
             )}
 
-            {/* View menu: row density (every table, D14) and, when the table
-              allows it, which columns show. */}
+            {/* Display menu: row density (every table, D14) and, when the
+              table allows it, which columns show. Named "Display" so it is
+              never confused with saved "Views". */}
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <Button
                   variant="outline"
                   size="sm"
                   className={cn('h-9', phoneCards && 'hidden')}
-                  aria-label={t('common.table.viewMenu', 'Table view: density and columns')}
+                  aria-label={t('common.table.displayMenu', 'Display: density and columns')}
                 >
                   <SlidersHorizontal className="h-4 w-4 @xl/toolbar:me-2" />
                   <span className="sr-only @xl/toolbar:not-sr-only">
-                    {t('common.table.view', 'View')}
+                    {t('common.table.display', 'Display')}
                   </span>
                 </Button>
               </DropdownMenuTrigger>
@@ -829,18 +812,6 @@ export function DataTable<TData, TValue>({
           </>
         }
       />
-
-      {/* Active context filters: their own full-width row under the toolbar
-          (8px below it), so the toolbar row keeps one height and its end
-          controls never shift when a chip comes or goes. */}
-      {toolbarBelow ? (
-        <div
-          data-testid="data-table-toolbar-below"
-          className="-mt-2 flex min-w-0 flex-wrap items-center gap-2"
-        >
-          {toolbarBelow}
-        </div>
-      ) : null}
 
       {phoneCards && (
         <div className="divide-y rounded-md border">

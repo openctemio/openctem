@@ -122,7 +122,7 @@
   "remediationCampaigns.progress.label": "{closed} trên {total} phát hiện đã đóng",
   "remediationCampaigns.progress.none": "Chưa có phát hiện",
   "remediationCampaigns.progress.short": "{closed} / {total}",
-  "remediationCampaigns.search": "Tìm chiến dịch",
+  "remediationCampaigns.search": "Tìm chiến dịch…",
   "remediationCampaigns.status.active": "Đang chạy",
   "remediationCampaigns.status.canceled": "Đã hủy",
   "remediationCampaigns.status.completed": "Hoàn tất",

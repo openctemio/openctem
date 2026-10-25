@@ -60,9 +60,12 @@ export function TriageFindingView({
   finding,
   showEvidence,
   note,
+  advisory,
 }: {
   finding: ApiFinding
   showEvidence: boolean
+  /** The AI suggestion card, under the evidence. */
+  advisory?: React.ReactNode
   /** A notice about this finding (changed by someone else, pending approval). */
   note?: React.ReactNode
 }) {
@@ -98,6 +101,7 @@ export function TriageFindingView({
         <ExploitSignals
           isInKev={finding.is_in_kev}
           kevDueDate={finding.kev_due_date}
+          kevRansomware={finding.kev_ransomware}
           epssScore={finding.epss_score}
         />
         {finding.cve_id && (
@@ -253,6 +257,7 @@ export function TriageFindingView({
             </p>
           ))}
       </section>
+      {advisory}
     </article>
   )
 }

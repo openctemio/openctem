@@ -48,7 +48,7 @@
   "businessContext.services.metric.pii": "Handle PII",
   "businessContext.services.metric.total": "Services",
   "businessContext.services.new": "New service",
-  "businessContext.services.search.placeholder": "Search services...",
+  "businessContext.services.search.placeholder": "Search services…",
   "businessContext.services.sheet.meta": "The assets this service runs on. A cycle scoped to the service covers them.",
   "businessContext.services.title": "Business services",
   "businessContext.services.toast.created": "Business service created.",

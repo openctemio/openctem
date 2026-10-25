@@ -12,8 +12,6 @@ import {
   MoreHorizontal,
   Check,
   ChevronsUpDown,
-  Search,
-  X,
   UserCheck,
   Eye,
   Bell,
@@ -22,7 +20,6 @@ import {
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
 import {
   Select,
   SelectContent,
@@ -66,7 +63,7 @@ import { getErrorMessage } from '@/lib/api/error-handler'
 import { useSearchQuery } from '@/hooks/use-search-query'
 import { useGroups } from '@/features/access-control/api/use-groups'
 import { useTranslation } from '@/context/i18n-provider'
-import { ErrorState } from '@/features/shared'
+import { ErrorState, ListToolbar } from '@/features/shared'
 
 // Backend response shape for GET /tenants/{slug}/members?include=user
 // (defined inline because the typed lib hook doesn't support include param yet)
@@ -602,28 +599,16 @@ export function AssetOwnersTab({ assetId }: AssetOwnersTabProps) {
           */}
           {owners.length > SEARCH_THRESHOLD && (
             <div className="space-y-1">
-              <div className="relative">
-                <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
-                <Input
-                  value={ownerSearch}
-                  onChange={(e) => setOwnerSearch(e.target.value)}
-                  placeholder={t(
+              <ListToolbar
+                search={{
+                  value: ownerSearch,
+                  onChange: setOwnerSearch,
+                  placeholder: t(
                     'assets.ownersTab.search',
                     'Search owners by name, email, or group…'
-                  )}
-                  className="ps-8 h-8 text-sm"
-                />
-                {ownerSearch && (
-                  <button
-                    type="button"
-                    onClick={() => setOwnerSearch('')}
-                    className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
-                    aria-label={t('assets.ownersTab.clearSearch', 'Clear search')}
-                  >
-                    <X className="h-3.5 w-3.5" />
-                  </button>
-                )}
-              </div>
+                  ),
+                }}
+              />
               {ownerSearch && (
                 <p className="text-xs text-muted-foreground">
                   {t('assets.ownersTab.showing', 'Showing {shown} of {total}', {

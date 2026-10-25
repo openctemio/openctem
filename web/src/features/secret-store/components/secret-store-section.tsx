@@ -244,7 +244,7 @@ export function SecretStoreSection() {
         columns={columns}
         data={credentials}
         getRowId={(c) => c.id}
-        searchPlaceholder="Search credentials…"
+        searchPlaceholder={t('scans.credentials.search', 'Search credentials…')}
         toolbarEnd={<RefreshButton onClick={handleRefresh} loading={isLoading} />}
         emptyMessage="No credentials match your search"
       />

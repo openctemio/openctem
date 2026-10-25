@@ -22,12 +22,14 @@ import {
   type IOCMatch,
   type IOCType,
 } from '../api/use-iocs-api'
+import { useTranslation } from '@/context/i18n-provider'
 
 // Detections view — the tenant-wide Detect/Respond feed. Each row is a runtime
 // detection (from an EDR/XDR/SIEM forwarder via /telemetry-events) that matched
 // a known indicator; `reopened` shows whether it auto-reopened the source
 // finding. Backed by GET /api/v1/iocs/matches.
 export function DetectionsPanel() {
+  const { t } = useTranslation()
   const { data, isLoading, error, mutate } = useRecentDetections(100)
   const rows = useMemo(() => data?.items ?? [], [data])
 
@@ -122,7 +124,11 @@ export function DetectionsPanel() {
           description="Detections appear here when a collector sensor forwards a runtime event that matches an indicator in your catalogue."
         />
       ) : (
-        <DataTable columns={columns} data={rows} searchPlaceholder="Search detections…" />
+        <DataTable
+          columns={columns}
+          data={rows}
+          searchPlaceholder={t('threatIntel.detections.search', 'Search detections…')}
+        />
       )}
     </PageStack>
   )

@@ -43,6 +43,11 @@ export interface SlaPolicy {
   p1_days: number
   p2_days: number
   p3_days: number
+  /**
+   * Known exploited (CISA KEV) deadline cap in days: a KEV finding is due at
+   * most this long after it is first seen as known exploited. 0 = off.
+   */
+  kev_cap_days?: number
   warning_threshold_pct: number
   escalation_enabled: boolean
   is_active: boolean
@@ -76,6 +81,8 @@ export interface CreateSlaPolicyInput {
   p1_days?: number
   p2_days?: number
   p3_days?: number
+  /** Known exploited deadline cap, 0..365 (0 = off); omitted = 14. */
+  kev_cap_days?: number
   warning_threshold_pct: number
   escalation_enabled?: boolean
   /** Optional per-asset override; omit for a tenant-level policy. */

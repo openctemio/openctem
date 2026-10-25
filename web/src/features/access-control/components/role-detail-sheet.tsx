@@ -11,7 +11,6 @@ import { ConfirmDialog } from '@/components/confirm-dialog'
 import { RoleRiskBadge, RoleSummaryLine } from './role-risk'
 import { RoleTemplateUpdate } from './role-template-update'
 import { useTranslation } from '@/context/i18n-provider'
-import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
@@ -65,6 +64,7 @@ import {
 import { AddMemberToRoleDialog } from './add-member-to-role-dialog'
 import { RoleCapabilities } from './role-capabilities'
 import { isAdminBypassRole } from '../lib/authz-reference'
+import { ListSearch } from '@/features/shared/components/list-search'
 
 interface RoleDetailSheetProps {
   role: Role | null
@@ -505,16 +505,12 @@ export function RoleDetailSheet({
                 </>
               }
             >
-              <div className="relative">
-                <Search className="absolute start-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-                <Input
-                  aria-label={t('org.roleDetail.searchPermLabel', 'Search permissions')}
-                  placeholder={t('org.roleDetail.searchPermPlaceholder', 'Search permissions...')}
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  className="ps-9"
-                />
-              </div>
+              <ListSearch
+                value={searchQuery}
+                onChange={setSearchQuery}
+                placeholder={t('org.roleDetail.searchPermPlaceholder', 'Search permissions…')}
+                label={t('org.roleDetail.searchPermLabel', 'Search permissions')}
+              />
               <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
                 <span>{t('org.roleDetail.types', 'Types:')}</span>
                 {(['read', 'write', 'delete'] as const).map((kind) => {
@@ -648,16 +644,12 @@ export function RoleDetailSheet({
                 </Link>
               </p>
             )}
-            <div className="relative">
-              <Search className="absolute start-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-              <Input
-                aria-label={t('org.roleDetail.searchMembersLabel', 'Search members')}
-                placeholder={t('org.roleDetail.searchMembersPlaceholder', 'Search members...')}
-                value={memberSearchQuery}
-                onChange={(e) => setMemberSearchQuery(e.target.value)}
-                className="ps-9"
-              />
-            </div>
+            <ListSearch
+              value={memberSearchQuery}
+              onChange={setMemberSearchQuery}
+              placeholder={t('org.roleDetail.searchMembersPlaceholder', 'Search members…')}
+              label={t('org.roleDetail.searchMembersLabel', 'Search members')}
+            />
 
             {isLoadingMembers ? (
               <div className="space-y-2" aria-hidden>

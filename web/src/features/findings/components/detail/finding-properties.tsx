@@ -63,10 +63,13 @@ export function SlaDue({
   deadline,
   status,
   closed,
+  kevCapped,
 }: {
   deadline?: string
   status?: string
   closed?: boolean
+  /** The SLA policy's known exploited (KEV) cap shortened the deadline. */
+  kevCapped?: boolean
 }) {
   const { t, locale } = useTranslation()
   if (!deadline)
@@ -99,6 +102,11 @@ export function SlaDue({
           )}
         >
           {rel}
+        </span>
+      )}
+      {kevCapped && (
+        <span data-slot="sla-kev-capped" className="block text-xs text-muted-foreground">
+          {t('findings.properties.slaKevCapped', 'Shortened because it is in CISA KEV')}
         </span>
       )}
     </span>
@@ -250,7 +258,12 @@ export function FindingProperties({
         </Row>
       )}
       <Row label={t('findings.properties.slaDue', 'SLA due')}>
-        <SlaDue deadline={finding.slaDeadline} status={finding.slaStatus} closed={closed} />
+        <SlaDue
+          deadline={finding.slaDeadline}
+          status={finding.slaStatus}
+          closed={closed}
+          kevCapped={finding.slaKevCapped}
+        />
       </Row>
       <FindingPeople findingId={finding.id} assignee={assigneeNode} />
 

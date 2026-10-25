@@ -119,15 +119,42 @@ test('a keys-only triage session decides ten findings', async ({ page }) => {
 
   // What each finding got, by title.
   // `a` on a new finding: the lifecycle refuses acceptance before confirmation,
-  // so no request opens and the finding is then confirmed.
-  const plan = ['c', 'c', 'f', 'c', 's', 'a-then-c', 'o', 'c', 'c', 'c'] as const
-  const decided: Record<string, (typeof plan)[number]> = {}
+  // so no request opens and the finding is then confirmed. `u` walks the
+  // previous decision back (the request is cancelled, the assignment
+  // returned) and shows that finding again, which is then decided again.
+  const plan = [
+    'c',
+    'c',
+    'f',
+    'u',
+    'f',
+    'c',
+    's',
+    'a-then-c',
+    'o',
+    'u',
+    'o',
+    'c',
+    'c',
+    'c',
+  ] as const
+  type Step = (typeof plan)[number]
+  const decided: Record<string, Step> = {}
+  const undone = new Set<string>()
   const perNext: number[] = []
+  let lastTitle = ''
   for (let i = 0; i < plan.length; i++) {
     const current = (await title(page).textContent())?.trim() ?? ''
     expect(current).toMatch(/E2E triage/)
-    decided[current] = plan[i]
     const k = plan[i]
+    if (k === 'u') {
+      await key(page, 'u')
+      await expect(title(page)).toHaveText(lastTitle, { timeout: 15_000 })
+      undone.add(lastTitle)
+      continue
+    }
+    decided[current] = k
+    lastTitle = current
     // The reads moving on makes: the next finding, and a window now and then.
     const reads: string[] = []
     const onRequest = (req: Request) => {
@@ -140,8 +167,13 @@ test('a keys-only triage session decides ten findings', async ({ page }) => {
       await key(page, k)
       await fillRequest(page)
     } else if (k === 'a-then-c') {
+      // Wait for the lifecycle's answer to `a` before the next key.
+      const refused = page.waitForResponse((r) => r.url().endsWith('/transitions'))
       await key(page, 'a')
-      await expect(page.locator('[data-sonner-toast]').first()).toBeVisible()
+      await refused
+      await expect(
+        page.getByRole('region', { name: 'Decision' }).getByRole('button', { name: /^Confirm/ })
+      ).toBeEnabled()
       await expect(page.getByRole('dialog')).toHaveCount(0)
       await expect(title(page)).toHaveText(current)
       await key(page, 'c')
@@ -182,6 +214,13 @@ test('a keys-only triage session decides ten findings', async ({ page }) => {
         rows.map((r) => r.requested_status),
         findingTitle
       ).toContain('false_positive')
+      // The undone request is canceled, not deleted.
+      if (undone.has(findingTitle)) {
+        expect(
+          rows.map((r) => (r as { status?: string }).status),
+          findingTitle
+        ).toContain('canceled')
+      }
     }
   }
 

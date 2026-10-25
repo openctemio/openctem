@@ -43,7 +43,6 @@ import {
   ChevronRight,
   ChevronsUpDown,
   Check,
-  Search,
   Link2,
 } from 'lucide-react'
 import {
@@ -794,6 +793,12 @@ export default function BusinessUnitsPage() {
               columns={columns}
               data={filteredUnits}
               showSearch={false}
+              search={{
+                value: searchQuery,
+                onChange: setSearchQuery,
+                placeholder: t('businessContext.units.search.placeholder', 'Search name or owner…'),
+                label: t('businessContext.units.search.aria', 'Search business units'),
+              }}
               isLoading={isLoading}
               errorState={
                 loadError ? (
@@ -806,19 +811,6 @@ export default function BusinessUnitsPage() {
               }
               toolbarStart={
                 <>
-                  <div className="relative min-w-0 flex-1 sm:max-w-xs">
-                    <Search className="pointer-events-none absolute start-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-                    <Input
-                      value={searchQuery}
-                      onChange={(e) => setSearchQuery(e.target.value)}
-                      placeholder={t(
-                        'businessContext.units.search.placeholder',
-                        'Search name or owner…'
-                      )}
-                      aria-label={t('businessContext.units.search.aria', 'Search business units')}
-                      className="h-9 ps-9"
-                    />
-                  </div>
                   <Select value={filterCriticality} onValueChange={setFilterCriticality}>
                     <SelectTrigger
                       className="h-9 w-auto min-w-36"
