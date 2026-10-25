@@ -258,7 +258,7 @@ export function CIPRFeedback({ canWrite }: { canWrite: boolean }) {
                 'Runs no longer post checks or comments there. The app stays installed on GitHub until someone removes it there.'
               )
         }
-        confirmText={t('confirm.delete', 'Delete')}
+        confirmText={t('scans.ci.feedback.stopBtn', 'Stop posting')}
         handleConfirm={async () => {
           const target = pending
           setPending(null)

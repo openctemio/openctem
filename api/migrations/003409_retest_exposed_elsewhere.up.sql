@@ -1,3 +1,4 @@
+-- expand-contract-ok: widening varchar(16) to varchar(32) is metadata-only (no rewrite, old pods keep working); the new value only adds an allowed outcome
 -- A retest of a check that probes several paths can find that the finding's
 -- own endpoint no longer matches while another path of the target does:
 -- outcome still_exposed_elsewhere, reason matched_elsewhere. Widens the two

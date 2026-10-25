@@ -8,8 +8,6 @@ import (
 	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
 )
 
-const swaggerAt = "https://api.example.com/webjars/swagger-ui/index.html"
-
 func rq(url string, status int, matched bool) RequestResult {
 	return RequestResult{URL: url, Status: status, Matched: matched}
 }
@@ -35,9 +33,9 @@ func TestDecideByRequests(t *testing.T) {
 		{"original not requested, nothing matched: inconclusive",
 			[]RequestResult{rq(other, 404, false), rq("https://api.example.com/v2/api-docs", 404, false)}, OutcomeInconclusive, ReasonEndpointMismatch, "did not request"},
 		{"original no answer: unreachable", []RequestResult{{URL: swaggerAt, Error: "timeout"}}, OutcomeInconclusive, ReasonUnreachable, ""},
-		{"original 403 from the origin: blocked (usual rule)", []RequestResult{rq(swaggerAt, 403, false)}, OutcomeInconclusive, ReasonBlocked, ""},
+		{"original 403 from the origin: access denied, never a fix without the exposure class", []RequestResult{rq(swaggerAt, 403, false)}, OutcomeInconclusive, ReasonAccessDenied, ""},
 		{"original 503: server error (usual rule)", []RequestResult{rq(swaggerAt, 503, false)}, OutcomeInconclusive, ReasonServerError, ""},
-		{"original 401: auth changed (usual rule)", []RequestResult{rq(swaggerAt, 401, false)}, OutcomeInconclusive, ReasonAuthChanged, ""},
+		{"original 401: access denied (usual rule)", []RequestResult{rq(swaggerAt, 401, false)}, OutcomeInconclusive, ReasonAccessDenied, ""},
 		{"original answered by an edge challenge on a 200: never a fix",
 			[]RequestResult{{URL: swaggerAt, Status: 200, EdgeVendor: "cloudflare", EdgeState: "challenged"}}, OutcomeInconclusive, ReasonBlocked, "cloudflare"},
 		{"the same path with another query value is the original",
@@ -59,6 +57,36 @@ func TestDecideByRequests(t *testing.T) {
 			}
 			if v.Outcome == OutcomeStillExposedElsewhere && len(v.OtherPaths) == 0 {
 				t.Error("other paths not named")
+			}
+		})
+	}
+}
+
+// The origin-refusal trust rule applies to the finding's own endpoint of a
+// multi-path check: a refusal closes only an exposure-class finding, and only
+// once a previous retest was refused too. A match at another path never closes.
+func TestDecideByRequestsOriginRefusalNeedsClass(t *testing.T) {
+	other := "https://api.example.com/developers/documentation"
+	refused := []RequestResult{rq(other, 404, false), rq(swaggerAt, 403, false)}
+	cases := []struct {
+		name string
+		reqs []RequestResult
+		cls  Class
+		want Outcome
+	}{
+		{"exposure, first refusal", refused, Class{Exposure: true}, OutcomeInconclusive},
+		{"exposure, second refusal", refused, Class{Exposure: true, PriorAccessDenied: true}, OutcomeConfirmedFixed},
+		{"not exposure, second refusal", refused, Class{PriorAccessDenied: true}, OutcomeInconclusive},
+		{"exposure, second refusal, but another path matched",
+			[]RequestResult{rq(other, 200, true), rq(swaggerAt, 403, false)}, Class{Exposure: true, PriorAccessDenied: true}, OutcomeStillExposedElsewhere},
+		{"exposure, second refusal, edge marker on the answer",
+			[]RequestResult{{URL: swaggerAt, Status: 403, EdgeVendor: "cloudflare", EdgeState: "blocked"}}, Class{Exposure: true, PriorAccessDenied: true}, OutcomeInconclusive},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			v, ok := DecideByRequests(c.reqs, swaggerAt, c.cls)
+			if !ok || v.Outcome != c.want {
+				t.Fatalf("got %s/%s ok=%v, want %s", v.Outcome, v.Code, ok, c.want)
 			}
 		})
 	}

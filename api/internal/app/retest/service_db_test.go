@@ -379,11 +379,11 @@ func TestRetestDB_ConfirmedFixAwaitsAPersonUnlessAutoResolve(t *testing.T) {
 		t.Fatalf("path-doubled attempt = %+v, want inconclusive endpoint_mismatch", got)
 	}
 
-	// A blocked attempt is not a fix.
+	// A refused attempt is not a fix.
 	b := fx.newFinding(fx.newAsset("waf.example.com"), "confirmed", "exposed-admin-panel-3")
 	fx.exec(`UPDATE findings SET file_path = 'https://waf.example.com/admin' WHERE id = $1`, b.String())
-	if got = settle(b, "https://waf.example.com/admin", 403); got.ReasonCode != retestdom.ReasonBlocked {
-		t.Fatalf("403 attempt = %+v, want blocked", got)
+	if got = settle(b, "https://waf.example.com/admin", 403); got.ReasonCode != retestdom.ReasonAccessDenied {
+		t.Fatalf("403 attempt = %+v, want access_denied", got)
 	}
 
 	// With auto_resolve the confirmed fix resolves, by the requester.
@@ -807,5 +807,123 @@ func TestRetestDB_MultiPathTemplateSettlesOnTheOriginalEndpoint(t *testing.T) {
 	got, _ = run("not_detected", 200, nil)
 	if got.Outcome != retestdom.OutcomeInconclusive || got.ReasonCode != retestdom.ReasonEndpointMismatch {
 		t.Fatalf("older sensor: %s/%s", got.Outcome, got.ReasonCode)
+	}
+}
+
+// An exposed page the server now refuses (401 or 403, no edge marker) is a fix
+// only when seen on two retests at least an hour apart; the first is
+// inconclusive. The class comes from the template tags the scanner recorded,
+// never from the finding's editable tags. An edge answer resets the count.
+func TestRetestDB_OriginAccessDeniedOfExposureNeedsTwoRetests(t *testing.T) {
+	fx := newFixture(t)
+	svc := fx.service()
+	const at = "https://shop.example.com/admin"
+	origin := []map[string]string{{"name": "Server", "value": "nginx"}}
+	cloudflare := []map[string]string{{"name": "Server", "value": "cloudflare"}}
+	const cfBody = "<title>Attention Required! | Cloudflare</title> Sorry, you have been blocked. Cloudflare Ray ID"
+
+	settle := func(f shared.ID, status int, headers []map[string]string, body string) *retestdom.Retest {
+		rt := fx.request(svc, f)
+		ex := map[string]any{"request": map[string]any{"method": "GET", "url": at},
+			"response": map[string]any{"status": status, "headers": headers, "body": body}}
+		res, _ := json.Marshal(map[string]any{"metadata": map[string]any{"outcome": "not_detected", "summary": "re-run",
+			"evidence": map[string]any{"evidence_items": []map[string]any{{"kind": "http_exchange", "http": ex}}}}})
+		fx.exec(`UPDATE commands SET status = 'completed', result = $2, completed_at = NOW() WHERE id = $1`, rt.CheckCommandID.String(), res)
+		fx.finish(rt.ReachCommandID, "detected", "target is still reachable")
+		svc.OnCommandFinished(context.Background(), fx.tenant, *rt.ReachCommandID)
+		return fx.retest(rt.ID)
+	}
+	age := func(f shared.ID, d string) {
+		fx.exec(`UPDATE finding_retests SET created_at = created_at - $3::interval, completed_at = completed_at - $3::interval
+			WHERE tenant_id = $1 AND finding_id = $2`, fx.tenant.String(), f.String(), d)
+		fx.exec(`UPDATE findings SET last_seen_at = last_seen_at - $3::interval, last_reopened_at = last_reopened_at - $3::interval
+			WHERE tenant_id = $1 AND id = $2`, fx.tenant.String(), f.String(), d)
+	}
+	exposure := func(f shared.ID) {
+		fx.exec(`UPDATE findings SET template_exposure = true WHERE id = $1`, f.String())
+	}
+
+	// The scanner's template class: two answers an hour apart close it.
+	f := fx.newFinding(fx.asset, "confirmed", "swagger-api")
+	exposure(f)
+	if first := settle(f, 403, origin, "Forbidden"); first.Outcome != retestdom.OutcomeInconclusive || first.ReasonCode != retestdom.ReasonAccessDenied {
+		t.Fatalf("first retest = %s/%s (%s)", first.Outcome, first.ReasonCode, first.Reason)
+	}
+	age(f, "2 hours")
+	second := settle(f, 403, origin, "Forbidden")
+	if second.Outcome != retestdom.OutcomeConfirmedFixed || second.ReasonCode != retestdom.ReasonAccessDenied ||
+		!strings.Contains(second.Reason, "access now denied by the server") {
+		t.Fatalf("second retest = %s/%s (%s)", second.Outcome, second.ReasonCode, second.Reason)
+	}
+
+	// A user-added tag does not make a finding an exposure class.
+	u := fx.newFinding(fx.newAsset("tags.example.com"), "confirmed", "some-rce")
+	fx.exec(`UPDATE findings SET tags = ARRAY['exposure','swagger'] WHERE id = $1`, u.String())
+	settle(u, 403, origin, "Forbidden")
+	age(u, "2 hours")
+	if got := settle(u, 403, origin, "Forbidden"); got.Outcome != retestdom.OutcomeInconclusive {
+		t.Fatalf("user tag closed the finding: %s (%s)", got.Outcome, got.Reason)
+	}
+
+	// Two answers less than an hour apart do not close it.
+	q := fx.newFinding(fx.newAsset("quick.example.com"), "confirmed", "swagger-api")
+	exposure(q)
+	settle(q, 403, origin, "Forbidden")
+	age(q, "20 minutes")
+	if got := settle(q, 403, origin, "Forbidden"); got.Outcome != retestdom.OutcomeInconclusive {
+		t.Fatalf("answers 20 minutes apart closed the finding: %s (%s)", got.Outcome, got.Reason)
+	}
+
+	// An edge-marked answer in between resets the count.
+	e := fx.newFinding(fx.newAsset("edge.example.com"), "confirmed", "swagger-api")
+	exposure(e)
+	settle(e, 403, origin, "Forbidden")
+	age(e, "3 hours")
+	if got := settle(e, 403, cloudflare, cfBody); got.Outcome != retestdom.OutcomeInconclusive || got.ReasonCode != retestdom.ReasonEdgeBlocked {
+		t.Fatalf("edge answer = %s/%s (%s)", got.Outcome, got.ReasonCode, got.Reason)
+	}
+	age(e, "3 hours")
+	if got := settle(e, 403, origin, "Forbidden"); got.Outcome != retestdom.OutcomeInconclusive {
+		t.Fatalf("an origin answer after an edge answer closed the finding: %s (%s)", got.Outcome, got.Reason)
+	}
+}
+
+// A prior refusal pairs with a new one only while it is recent (14 days) and
+// the finding was not seen or reopened since: a sighting after it shows the
+// page was reachable.
+func TestRetestDB_StaleAccessDeniedDoesNotPair(t *testing.T) {
+	fx := newFixture(t)
+	svc := fx.service()
+	origin := []map[string]string{{"name": "Server", "value": "nginx"}}
+	settle := func(f shared.ID) *retestdom.Retest {
+		rt := fx.request(svc, f)
+		ex := map[string]any{"request": map[string]any{"method": "GET", "url": "https://shop.example.com/admin"},
+			"response": map[string]any{"status": 403, "headers": origin, "body": "Forbidden"}}
+		res, _ := json.Marshal(map[string]any{"metadata": map[string]any{"outcome": "not_detected", "summary": "re-run",
+			"evidence": map[string]any{"evidence_items": []map[string]any{{"kind": "http_exchange", "http": ex}}}}})
+		fx.exec(`UPDATE commands SET status = 'completed', result = $2, completed_at = NOW() WHERE id = $1`, rt.CheckCommandID.String(), res)
+		fx.finish(rt.ReachCommandID, "detected", "target is still reachable")
+		svc.OnCommandFinished(context.Background(), fx.tenant, *rt.ReachCommandID)
+		return fx.retest(rt.ID)
+	}
+	age := func(f shared.ID, d string) {
+		fx.exec(`UPDATE finding_retests SET created_at = created_at - $3::interval, completed_at = completed_at - $3::interval
+			WHERE tenant_id = $1 AND finding_id = $2`, fx.tenant.String(), f.String(), d)
+		fx.exec(`UPDATE findings SET last_seen_at = last_seen_at - $3::interval, last_reopened_at = last_reopened_at - $3::interval
+			WHERE tenant_id = $1 AND id = $2`, fx.tenant.String(), f.String(), d)
+	}
+	for name, c := range map[string]struct{ ageBy, sql string }{
+		"sighted after the denial":  {"2 hours", `UPDATE findings SET last_seen_at = NOW() WHERE id = $1`},
+		"reopened after the denial": {"2 hours", `UPDATE findings SET last_reopened_at = NOW() WHERE id = $1`},
+		"denial older than 14 days": {"15 days", `SELECT $1::text`},
+	} {
+		f := fx.newFinding(fx.newAsset(strings.ReplaceAll(name, " ", "-")+".example.com"), "confirmed", "swagger-api")
+		fx.exec(`UPDATE findings SET template_exposure = true WHERE id = $1`, f.String())
+		settle(f)
+		age(f, c.ageBy)
+		fx.exec(c.sql, f.String())
+		if got := settle(f); got.Outcome != retestdom.OutcomeInconclusive {
+			t.Errorf("%s: closed the finding: %s (%s)", name, got.Outcome, got.Reason)
+		}
 	}
 }
