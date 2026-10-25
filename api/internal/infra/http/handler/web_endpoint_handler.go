@@ -168,7 +168,7 @@ func (h *WebEndpointHandler) writeList(w http.ResponseWriter, r *http.Request, s
 // List handles GET /api/v1/web-endpoints
 // @Summary      List web endpoints
 // @Description  The endpoints (method + path template) web origins serve, across the tenant's origin assets the
-// @Description  caller may see. Filters follow the list query contract (RFC-048). Values are scan output: render as text.
+// @Description  caller may see. Filters follow the list query contract. Values are scan output: render as text.
 // @Tags         Web Surface
 // @Produce      json
 // @Security     BearerAuth

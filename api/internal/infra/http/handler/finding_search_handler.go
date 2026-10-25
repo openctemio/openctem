@@ -43,7 +43,7 @@ type FindingSearchPage struct {
 
 // SearchFindings handles POST /api/v1/findings/search
 // @Summary      Search findings with a filter document
-// @Description  Lists findings selected by a FilterDocument (RFC-048): all/any/not groups with field/op/value
+// @Description  Lists findings selected by a FilterDocument: all/any/not groups with field/op/value
 // @Description  leaves, for OR, nesting and id lists of up to 500. Same fields, permission, scope and
 // @Description  response as GET /findings. Limits: 50 leaves, depth 3, 32 KB body. A bad document is 400
 // @Description  INVALID_FILTER with the JSON path of each problem. Read-only.
@@ -68,7 +68,7 @@ func (h *VulnerabilityHandler) SearchFindings(w http.ResponseWriter, r *http.Req
 
 // FindingFilterMeta handles GET /api/v1/meta/filters/findings
 // @Summary      Findings filter contract
-// @Description  The machine-readable filter contract of the findings list (RFC-048): fields, types, operators,
+// @Description  The machine-readable filter contract of the findings list: fields, types, operators,
 // @Description  flat param names, enums, sortability, old param aliases and limits, plus the FilterDocument
 // @Description  JSON Schema. Fields the caller may not use are left out.
 // @Tags         Findings

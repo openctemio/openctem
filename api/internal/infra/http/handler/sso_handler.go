@@ -303,7 +303,7 @@ type CreateProviderRequest struct {
 // CreateProvider creates a new identity provider configuration.
 // POST /api/v1/settings/identity-providers
 // @Summary Create an identity provider for an organization
-// @Description Platform admin console (RFC-022): runs against the organization in the path. When the organization has an owner, the provider is stored as a pending change (202, SSOChangeResponse) and is created only after an owner approves it; an organization without an owner yet gets it created directly (201).
+// @Description Platform admin console: runs against the organization in the path. When the organization has an owner, the provider is stored as a pending change (202, SSOChangeResponse) and is created only after an owner approves it; an organization without an owner yet gets it created directly (201).
 // @Tags Admin Organization SSO
 // @Produce json
 // @Param tenantId path string true "Organization ID"
@@ -385,7 +385,7 @@ func (h *SSOHandler) writeProviderCreated(w http.ResponseWriter, r *http.Request
 // ListProviders lists all identity provider configurations for the tenant.
 // GET /api/v1/settings/identity-providers
 // @Summary List an organization's identity providers
-// @Description Platform admin console (RFC-022): runs against the organization in the path.
+// @Description Platform admin console: runs against the organization in the path.
 // @Tags Admin Organization SSO
 // @Produce json
 // @Param tenantId path string true "Organization ID"
@@ -414,7 +414,7 @@ func (h *SSOHandler) ListProviders(w http.ResponseWriter, r *http.Request) {
 // GetProvider retrieves a single identity provider configuration.
 // GET /api/v1/settings/identity-providers/{id}
 // @Summary Get an organization's identity provider
-// @Description Platform admin console (RFC-022): runs against the organization in the path.
+// @Description Platform admin console: runs against the organization in the path.
 // @Tags Admin Organization SSO
 // @Produce json
 // @Param tenantId path string true "Organization ID"
@@ -457,7 +457,7 @@ type UpdateProviderRequest struct {
 // UpdateProvider updates an identity provider configuration.
 // PUT /api/v1/settings/identity-providers/{id}
 // @Summary Update an organization's identity provider
-// @Description Platform admin console (RFC-022): runs against the organization in the path. When the organization has an owner, the update is stored as a pending change (202, SSOChangeResponse) and is applied only after an owner approves it; an organization without an owner yet gets it applied directly (200).
+// @Description Platform admin console: runs against the organization in the path. When the organization has an owner, the update is stored as a pending change (202, SSOChangeResponse) and is applied only after an owner approves it; an organization without an owner yet gets it applied directly (200).
 // @Tags Admin Organization SSO
 // @Produce json
 // @Param tenantId path string true "Organization ID"
@@ -530,7 +530,7 @@ func (h *SSOHandler) UpdateProvider(w http.ResponseWriter, r *http.Request) {
 // DeleteProvider deletes an identity provider configuration.
 // DELETE /api/v1/settings/identity-providers/{id}
 // @Summary Delete an organization's identity provider
-// @Description Platform admin console (RFC-022): runs against the organization in the path.
+// @Description Platform admin console: runs against the organization in the path.
 // @Tags Admin Organization SSO
 // @Produce json
 // @Param tenantId path string true "Organization ID"

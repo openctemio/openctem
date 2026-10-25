@@ -61,7 +61,7 @@ func (h *MCPClientsHandler) caller(r *http.Request) (tenantID, userID shared.ID,
 
 // List serves GET /api/v1/mcp-access/clients.
 // @Summary      List the organization's registered AI applications
-// @Description  MCP clients the organization registered in advance: their client id (not a secret; clients prove themselves with PKCE) and the exact redirect URIs they may use (RFC-062).
+// @Description  MCP clients the organization registered in advance: their client id (not a secret; clients prove themselves with PKCE) and the exact redirect URIs they may use.
 // @Tags         MCP
 // @Produce      json
 // @Security     BearerAuth

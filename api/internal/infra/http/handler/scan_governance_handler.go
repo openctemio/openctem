@@ -78,7 +78,7 @@ func (h *ScanGovernanceHandler) tenantID(w http.ResponseWriter, r *http.Request)
 
 // Get handles GET /api/v1/organization/settings/scan-governance.
 // @Summary      Scan approval settings
-// @Description  The organization's scan approval (RFC-073): the mode in force (off by default, on, strict) and who set it, the owner's own choice, the platform policy, the approval rules and the presets. Needs scans:read.
+// @Description  The organization's scan approval: the mode in force (off by default, on, strict) and who set it, the owner's own choice, the platform policy, the approval rules and the presets. Needs scans:read.
 // @Tags         Scans
 // @Produce      json
 // @Success      200  {object}  ScanGovernanceResponse

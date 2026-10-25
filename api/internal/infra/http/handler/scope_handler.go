@@ -271,7 +271,7 @@ type ScopeEntryPreviewResponse struct {
 
 // PreviewTarget handles POST /api/v1/scope/targets/preview
 // @Summary      Preview a scope entry
-// @Description  What adding a permanent scope entry would do: the discovered names waiting for review it would confirm (RFC-054 §4.3), counted over the caller's data scope. Exclusions, tombstones, rejected names and a person's decision still win. Nothing is written.
+// @Description  What adding a permanent scope entry would do: the discovered names waiting for review it would confirm, counted over the caller's data scope. Exclusions, tombstones, rejected names and a person's decision still win. Nothing is written.
 // @Tags         Scope
 // @Accept       json
 // @Produce      json
@@ -839,7 +839,7 @@ func (h *ScopeHandler) ListTargets(w http.ResponseWriter, r *http.Request) {
 
 // CreateTarget handles POST /api/v1/scope/targets
 // @Summary      Create scope target
-// @Description  Create a scope entry (RFC-054, RFC-073 §6). Under the Off and On scan approval modes any caller with attack_surface:scope:write needs a recent re-authentication (403 STEP_UP_REQUIRED) and the entry is active at once. Under Strict, with attack_surface:scope:approve it needs a recent re-authentication and is active at once or pending the organization's approvals; without it, it is a pending request for a one-off entry of one name or address, with a reason
+// @Description  Create a scope entry. Under the Off and On scan approval modes any caller with attack_surface:scope:write needs a recent re-authentication (403 STEP_UP_REQUIRED) and the entry is active at once. Under Strict, with attack_surface:scope:approve it needs a recent re-authentication and is active at once or pending the organization's approvals; without it, it is a pending request for a one-off entry of one name or address, with a reason
 // @Tags         Scope
 // @Accept       json
 // @Produce      json
@@ -953,7 +953,7 @@ func (h *ScopeHandler) GetTarget(w http.ResponseWriter, r *http.Request) {
 
 // UpdateTarget handles PUT /api/v1/scope/targets/{id}
 // @Summary      Update scope target
-// @Description  Update a scope entry. A later or removed expiry, or a higher tier, widens it: that needs a recent re-authentication (403 STEP_UP_REQUIRED), and under Strict attack_surface:scope:approve; it sends the entry back to pending when the organization requires approvals (RFC-054, RFC-073 §6)
+// @Description  Update a scope entry. A later or removed expiry, or a higher tier, widens it: that needs a recent re-authentication (403 STEP_UP_REQUIRED), and under Strict attack_surface:scope:approve; it sends the entry back to pending when the organization requires approvals
 // @Tags         Scope
 // @Accept       json
 // @Produce      json
@@ -1623,7 +1623,7 @@ type CheckScopeResponse struct {
 
 // CheckScope handles POST /api/v1/scope/check
 // @Summary      Dry run of the active-probe gate
-// @Description  For each target and inventory asset, what a scan by the caller would do now (RFC-054 §6.4), at the given tier or the tier of scanner_name (default safe active): allowed with what authorizes it, or refused with a code, the caller's own rule that refused it and the fixes the caller may take. Runs the act scope, the target validator, exclusions, ownership and scope authority, the platform guardrails, zones and the proof requirement; dispatches, logs and audits nothing. An asset is checked by its name; one outside the caller's data scope, or not the organization's, answers out_of_data_scope with its id only. At most 200 targets and assets together.
+// @Description  For each target and inventory asset, what a scan by the caller would do now, at the given tier or the tier of scanner_name (default safe active): allowed with what authorizes it, or refused with a code, the caller's own rule that refused it and the fixes the caller may take. Runs the act scope, the target validator, exclusions, ownership and scope authority, the platform guardrails, zones and the proof requirement; dispatches, logs and audits nothing. An asset is checked by its name; one outside the caller's data scope, or not the organization's, answers out_of_data_scope with its id only. At most 200 targets and assets together.
 // @Tags         Scope
 // @Accept       json
 // @Produce      json
