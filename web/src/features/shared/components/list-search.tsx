@@ -61,8 +61,7 @@ export function ListSearch({
         // wider than 28rem, so the field sits at the same place and size on
         // every list and the end group keeps its room.
         'flex min-w-48 flex-[1_1_16rem] items-center sm:max-w-md',
-        filter &&
-          '[&_[data-slot=filter-button]]:z-10 [&_[data-slot=filter-button]]:rounded-e-none',
+        filter && '[&_[data-slot=filter-button]]:z-10 [&_[data-slot=filter-button]]:rounded-e-none',
         className
       )}
     >
