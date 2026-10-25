@@ -126,7 +126,7 @@ zone routing in the gate and at the trigger. A public name is registrable
 under an ICANN public suffix, and none of the addresses it resolves to from
 the platform is private or denied. So a public name that stopped resolving
 is no longer refused `unresolved` or `zone_none`; its DNS re-check runs.
-Internal names (a private answer, a non-public suffix) and addresses keep
+Internal names (a private answer, a non-public suffix, a special-use name such as home.arpa, local, localhost, internal, test, invalid, onion or example) and addresses keep
 zone routing. One run carries either public names or routed targets: the
 group of the batch's oldest target runs, and the other group stays due for
 the next batch. Only the coverage run's own trigger can skip zone routing

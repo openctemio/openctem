@@ -296,8 +296,11 @@ type Planner interface {
 	// SettleFailed settles queued pairs of a run as failed, each with its
 	// outcome and error, due again after a back-off bounded by every.
 	SettleFailed(ctx context.Context, tenantID, runID shared.ID, capability string, failed []FailedPair, every time.Duration) (int, error)
-	// QueuedTargets returns the queued pairs a run holds.
+	// SettleTargetSide settles queued pairs of a run whose target did not
+	// answer: paused with the outcome as the reason, the streak counted and
+	// rechecked on the TargetSideRecheck schedule.
 	SettleTargetSide(ctx context.Context, tenantID, runID shared.ID, capability string, pairs []FailedPair) (int, error)
+	// QueuedTargets returns the queued pairs a run holds.
 	QueuedTargets(ctx context.Context, tenantID, runID shared.ID, capability string) ([]DueTarget, error)
 	// AttemptsSince counts the pairs of the tenant attempted since t (the
 	// daily budget).
