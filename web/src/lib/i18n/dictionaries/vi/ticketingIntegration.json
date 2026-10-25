@@ -101,5 +101,11 @@
   "ticketingIntegration.status.expired": "Hết hạn",
   "ticketingIntegration.status.notSupported": "Không được hỗ trợ",
   "ticketingIntegration.status.pending": "Đang chờ",
+  "ticketingIntegration.token.action": "Cập nhật API token",
+  "ticketingIntegration.token.description": "Nhập email tài khoản Atlassian và API token. Kết nối được kiểm tra khi bạn lưu.",
+  "ticketingIntegration.token.failed": "Không lưu được API token.",
+  "ticketingIntegration.token.save": "Lưu và kiểm tra",
+  "ticketingIntegration.token.saving": "Đang lưu và kiểm tra…",
+  "ticketingIntegration.token.title": "API token cho {name}",
   "ticketingIntegration.unsupportedNote": "Nhà cung cấp này chưa có client, nên kết nối này không làm gì."
 }
