@@ -293,15 +293,34 @@ export function InventoryBulkBar({ selected, canWrite, onClear, onDone }: BulkBa
   const handleSetCriticality = async () => {
     setSubmitting(true)
     try {
-      const failed = await runBulk(selected, (a) =>
-        updateAsset(a.id, fullUpdate(a, { criticality }))
-      )
-      reportResult(
-        t('assets.bulk.criticalitySet', 'Set criticality to {value}', {
-          value: CRITICALITY_LABELS[criticality],
-        }),
-        failed
-      )
+      // A lowered criticality that drops an open P0/P1 is held for a second
+      // person's approval (202 with the request): it is not "set".
+      let held = 0
+      const failed = await runBulk(selected, async (a) => {
+        const saved = await updateAsset(a.id, fullUpdate(a, { criticality }))
+        if (saved?.pendingRiskRequest) held++
+      })
+      const label = t('assets.bulk.criticalitySet', 'Set criticality to {value}', {
+        value: CRITICALITY_LABELS[criticality],
+      })
+      if (held > 0) {
+        const vars = { label, done: count - failed - held, count, held, failed }
+        toast.warning(
+          failed > 0
+            ? t(
+                'assets.bulk.criticalityHeldFailed',
+                '{label} for {done} of {count}; {held} waiting for approval; {failed} failed',
+                vars
+              )
+            : t(
+                'assets.bulk.criticalityHeld',
+                '{label} for {done} of {count}; {held} waiting for approval',
+                vars
+              )
+        )
+      } else {
+        reportResult(label, failed)
+      }
       if (failed < count) {
         closeDialog()
         onDone()
