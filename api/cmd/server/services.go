@@ -1314,8 +1314,9 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// Note: WebSocket broadcaster is wired later after WebSocketHub is initialized
 
 	// Wire activity service dependencies
-	s.Vulnerability.SetActivityService(s.FindingActivity) // Wire activity tracking
-	s.Vulnerability.SetUserRepository(repos.User)         // Wire user lookup for activity records
+	s.Vulnerability.SetActivityService(s.FindingActivity)    // Wire activity tracking
+	s.Vulnerability.SetTaskRecomputer(repos.RemediationTask) // a delete re-derives the tasks that held the findings
+	s.Vulnerability.SetUserRepository(repos.User)            // Wire user lookup for activity records
 
 	// Note: AITriage is wired to VulnerabilityService later after AITriage initialization
 
