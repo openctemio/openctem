@@ -96,7 +96,8 @@ in `GET /scan-runs/{id}/stages`.
 
 `scans.target_options` (migration 001640), `pkg/domain/scan/target_options.go`:
 `cidr_mode` (`sweep` default, `inventory`), `seen_within_days` (0–365),
-`include_stale`. Set on create and update (`target_options` in the body;
+`include_stale`, `new_since_last_run`, `include_unresolved` (see "Resolve
+before active"). Set on create and update (`target_options` in the body;
 omitted on update = unchanged), exported and imported, copied by clone.
 
 ### CIDR mode and live hosts first (RFC-088)
@@ -142,9 +143,16 @@ that it resolves (RFC-088 A5; `scan.Service.DropStaleNames`):
 - **Older than 7 days** (`assetfreshness.ResolveTTL`): the name is left out
   (`not_resolving`) and its enrichment is requested (reason `stale`), so the
   next run knows whether it resolves again.
-- **No evidence at all** (a name typed in and never resolved): it is handed
-  on. The sensor resolves it and reports it back as `unresolvable` when it
-  does not resolve.
+- **No evidence at all**, a name a selector (`*.example.com`) or an asset
+  group added: it is left out (`not_resolving`) too. Passive discovery
+  keeps historical names (certificate logs, subdomain sources) that no
+  longer have a DNS answer; the asset's `resolve.dns` coverage checks them,
+  and the name is taken again once a DNS answer or a tool reached it. The
+  scan's `target_options.include_unresolved` hands these names on anyway
+  (for sensors that resolve names the platform cannot).
+- **No evidence at all**, a name typed in: it is handed on. The sensor
+  resolves it and reports it back as `unresolvable` when it does not
+  resolve.
 - Passive stages (DNS resolution, discovery) still take stale names: that
   is how they get fresh evidence. Names a stage of the same run found are
   fresh by construction.
@@ -166,6 +174,33 @@ that it resolves (RFC-088 A5; `scan.Service.DropStaleNames`):
   run with the filter off proves nothing and changes no mark. A name that
   stopped resolving at all is marked too; it has nothing to probe, and the
   mark clears when it resolves again.
+
+## Skipped targets
+
+A run, and the routing preview of the New Scan review, group every target
+they do not dispatch by reason (`internal/app/scan/target_outcomes.go`):
+`skipped` in `POST /scan-zones/preview` (with `will_scan` and
+`skipped_total`) and `skipped_targets` in the run context. One group per
+reason, largest first, with the full count and at most 200 names (25 in a
+run record):
+
+| Reason | Tone | Source |
+|---|---|---|
+| `unresolved` | info | zone routing: no DNS answer from the platform |
+| `not_resolving` | info | resolve before active (above) |
+| `excluded` | info | a scope exclusion rule |
+| `archived`, `incompatible_type` | info | asset-group members (count only) |
+| `out_of_scope` | warning | the caller's act scope, or no scope entry |
+| `ownership_unconfirmed`, `tier_exceeded`, `internal_outside_zones` | warning | the target gate |
+| `outside_zones`, `partly_covered`, `outside_selected_zone`, `deny_list`, `zone_no_sensor`, `sensor_policy` | warning | zone routing and planning |
+| `invalid` | warning | scan creation's target validation |
+
+`info` is an expected outcome of the inventory; `warning` asks for a fix.
+Neither is a failure: the console shows neither in red. The preview runs
+as the caller (their act scope), drops the inventory names outside the
+caller's data scope before counting (`hideOutOfDataScopeKey`), applies the
+scan's `target_options` and the resolve-before-active rule exactly as the
+trigger does, and creates nothing.
 
 ## Preview
 

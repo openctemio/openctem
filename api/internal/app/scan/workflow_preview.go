@@ -31,6 +31,7 @@ const maxWorkflowPreviewSamples = 20
 // WorkflowPreviewInput is a workflow and the targets a scan would run it on.
 type WorkflowPreviewInput struct {
 	TenantID       string
+	UserID         string // the caller: the preview runs in their act scope
 	ScanWorkflowID string
 	Targets        []string
 	AssetGroupIDs  []string
@@ -98,6 +99,7 @@ func (s *Service) PreviewWorkflow(ctx context.Context, in WorkflowPreviewInput) 
 
 	targets, err := s.PreviewZoneRouting(ctx, ZoneRoutingPreviewInput{
 		TenantID:      in.TenantID,
+		UserID:        in.UserID,
 		Targets:       in.Targets,
 		AssetGroupIDs: in.AssetGroupIDs,
 		ScanType:      "workflow",
