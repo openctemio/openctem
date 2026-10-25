@@ -45,6 +45,8 @@ for (const size of [
     test.skip(!id, 'The seeded "E2E evidence 01" finding is missing')
 
     await page.setViewportSize({ width: size.width, height: size.height })
+    // The page reads the hash once, on load: leave first so this is a load.
+    await page.goto('about:blank')
     await page.goto(`/findings#finding=${id}`)
     const drawer = page.getByRole('dialog')
     await expect(drawer).toBeVisible()
