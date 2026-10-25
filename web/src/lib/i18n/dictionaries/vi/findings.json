@@ -486,7 +486,7 @@
   "findings.retestPanel.inconclusiveWhy.blocked": "bị chặn",
   "findings.retestPanel.inconclusiveWhy.auth_changed": "yêu cầu xác thực",
   "findings.retestPanel.inconclusiveWhy.server_error": "lỗi máy chủ",
-  "findings.retestPanel.inconclusiveWhy.endpoint_mismatch": "đã kiểm tra một endpoint khác",
+  "findings.retestPanel.inconclusiveWhy.endpoint_mismatch": "kiểm tra không gọi endpoint của phát hiện này",
   "findings.retestPanel.inconclusiveWhy.template_changed": "mẫu đã thay đổi",
   "findings.retestPanel.inconclusiveWhy.no_result": "không có kết quả",
   "findings.retestPanel.inconclusiveWhy.error": "công cụ không chạy được phép kiểm tra",
@@ -1857,5 +1857,16 @@
   "findings.aiTriage.exploitability.theoretical": "Lý thuyết",
   "findings.aiTriage.effort.low": "Công sức thấp",
   "findings.aiTriage.effort.medium": "Công sức trung bình",
-  "findings.aiTriage.effort.high": "Công sức cao"
+  "findings.aiTriage.effort.high": "Công sức cao",
+  "findings.retestPanel.stillExposedElsewhere": "Vẫn lộ ở đường dẫn khác",
+  "findings.retestPanel.inconclusiveWhy.no_endpoint_proof": "không có bằng chứng endpoint của phát hiện đã được gọi",
+  "findings.retestPanel.help.endpoint_mismatch.text": "Kiểm tra đã chạy nhưng không gọi đúng endpoint của phát hiện này, nên không chứng minh được gì về nó.",
+  "findings.retestPanel.help.endpoint_mismatch.fix": "Phát hiện giữ nguyên. Thêm một kiểm tra retest gắn đúng URL của phát hiện.",
+  "findings.retestPanel.help.no_endpoint_proof.text": "Kiểm tra đã chạy, nhưng không có bằng chứng nó gọi endpoint của phát hiện, nên việc không khớp không chứng minh được gì.",
+  "findings.retestPanel.help.no_endpoint_proof.fix": "Phát hiện giữ nguyên. Thêm một kiểm tra retest gắn đúng URL của phát hiện.",
+  "findings.retestPanel.help.matched_elsewhere.text": "Endpoint của phát hiện không còn khớp, nhưng kiểm tra khớp ở một đường dẫn khác của cùng mục tiêu.",
+  "findings.retestPanel.help.matched_elsewhere.fix": "Phát hiện vẫn mở như cũ. Lý do liệt kê các đường dẫn khác; hãy cân nhắc báo cáo chúng thành phát hiện riêng.",
+  "findings.retestCheck.pinHint": "Template này kiểm tra nhiều đường dẫn. Thêm một kiểm tra khẳng định HTTP gắn với {url}.",
+  "findings.retestCheck.pinHintNoUrl": "Template này kiểm tra nhiều đường dẫn. Thêm một kiểm tra khẳng định HTTP gắn với đúng URL của phát hiện này.",
+  "findings.retestCheck.pinAction": "Thêm kiểm tra gắn URL"
 }
