@@ -60,7 +60,10 @@ for (const size of [
     // Hostile body is text: the tag shows, nothing runs.
     await expect(item).toContainText('<script>window.__pwned=1</script>')
     expect(await page.evaluate(() => (window as { __pwned?: number }).__pwned)).toBeUndefined()
-    // The credential arrives masked (a chip), never as its value.
+    // Headers are folded in the drawer; the credential inside arrives masked
+    // (a chip), never as its value.
+    await expect(item.getByTestId('evidence-secret').first()).toBeHidden()
+    await item.getByTestId('evidence-headers').first().locator('summary').click()
     await expect(item.getByTestId('evidence-secret').first()).toBeVisible()
     expect(await page.content()).not.toContain(TOKEN)
 
