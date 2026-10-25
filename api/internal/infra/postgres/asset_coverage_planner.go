@@ -10,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/lib/pq"
@@ -39,6 +40,19 @@ func jitteredIntervalSQL(secs string) string {
 		` * ` + JitterSQL + `))::float8)`
 }
 
+// plannableSQL is the condition on the row "c" of a pair the planner may
+// pick once next_due_at has passed: a plannable state, or paused for a
+// target-side outcome (its recheck).
+var plannableSQL = `(c.state IN ` + plannableStatesSQL + ` OR (c.state = 'paused' AND c.reason IN (` + quotedList(coverage.TargetSideOutcomes()) + `)))`
+
+func quotedList(vals []string) string {
+	q := make([]string, len(vals))
+	for i, v := range vals {
+		q[i] = pq.QuoteLiteral(v)
+	}
+	return strings.Join(q, ", ")
+}
+
 // plannableStatesSQL are the states the planner picks once next_due_at has
 // passed: due and failed (after the back-off), covered (the cadence has
 // elapsed) and blocked (the gate's refusal is rechecked; scope may have
@@ -46,7 +60,8 @@ func jitteredIntervalSQL(secs string) string {
 const plannableStatesSQL = `('due', 'failed', 'covered', 'blocked')`
 
 // DueBatch returns the pairs of a capability whose time has come: due,
-// failed, covered past its cadence and blocked past its recheck. When at
+// failed, covered past its cadence, blocked past its recheck and paused for
+// a target-side outcome past its recheck. When at
 // least one is due now, pairs due within lookahead are taken as well (one
 // run instead of several one-target runs); when none is due now, nothing.
 func (r *AssetCoverageRepository) DueBatch(ctx context.Context, tenantID shared.ID, capability string, limit int, lookahead time.Duration) ([]coverage.DueTarget, error) {
@@ -62,7 +77,7 @@ func (r *AssetCoverageRepository) DueBatch(ctx context.Context, tenantID shared.
 		FROM asset_coverage c
 		JOIN assets a ON a.tenant_id = c.tenant_id AND a.id = c.asset_id
 		WHERE c.tenant_id = $1 AND c.capability = $2 AND c.vantage = ''
-		  AND c.state IN `+plannableStatesSQL+`
+		  AND `+plannableSQL+`
 		  AND (c.next_due_at IS NULL OR c.next_due_at <= now() + make_interval(secs => $4))
 		  AND a.deleted_at IS NULL AND a.status = 'active'
 		ORDER BY c.priority DESC, c.next_due_at ASC NULLS FIRST, a.id
@@ -352,6 +367,50 @@ func (r *AssetCoverageRepository) SettleFailed(ctx context.Context, tenantID, ru
 	return int(n), nil
 }
 
+// targetSideStreakSQL is the pair's consecutive target-side observations
+// including this one: the streak goes on when the previous outcome was
+// target-side too, else it starts at 1.
+var targetSideStreakSQL = `(CASE WHEN c.last_outcome IN (` + quotedList(coverage.TargetSideOutcomes()) + `)
+	THEN least(c.fail_streak + 1, 32767) ELSE 1 END)`
+
+// SettleTargetSide settles queued pairs of a run whose target did not
+// answer: paused with the outcome as the reason, the streak counted, and
+// rechecked on coverage.TargetSideRecheck's schedule (1 day, 3 days, then
+// weekly), stretched by the pair's jitter.
+func (r *AssetCoverageRepository) SettleTargetSide(ctx context.Context, tenantID, runID shared.ID, capability string, pairs []coverage.FailedPair) (int, error) {
+	if len(pairs) == 0 {
+		return 0, nil
+	}
+	ids := make([]string, len(pairs))
+	outcomes := make([]string, len(pairs))
+	errs := make([]string, len(pairs))
+	for i, f := range pairs {
+		ids[i] = f.AssetID.String()
+		outcomes[i] = coverage.Clip(f.Outcome, coverage.MaxCodeLen)
+		errs[i] = coverage.Clip(f.Error, coverage.MaxErrorLen)
+	}
+	sched := make([]float64, len(coverage.TargetSideRechecks))
+	for i, d := range coverage.TargetSideRechecks {
+		sched[i] = d.Seconds()
+	}
+	// $7: the schedule in seconds; the n-th consecutive observation takes
+	// entry min(n, len) (1-based).
+	res, err := r.db.ExecContext(ctx, `
+		UPDATE asset_coverage c SET state = 'paused', reason = w.outcome,
+		       last_outcome = w.outcome, last_error = w.err, fail_streak = `+targetSideStreakSQL+`,
+		       next_due_at = `+jitteredIntervalSQL(`($7::float8[])[least(`+targetSideStreakSQL+`, cardinality($7::float8[]))]`)+`,
+		       updated_at = now()
+		FROM unnest($4::uuid[], $5::text[], $6::text[]) AS w(asset_id, outcome, err)
+		WHERE c.tenant_id = $1 AND c.last_run_id = $2 AND c.capability = $3 AND c.vantage = '' AND c.state = 'queued'
+		  AND c.asset_id = w.asset_id`,
+		tenantID.String(), runID.String(), capability, pq.Array(ids), pq.Array(outcomes), pq.Array(errs), pq.Array(sched))
+	if err != nil {
+		return 0, fmt.Errorf("settle target-side coverage: %w", err)
+	}
+	n, _ := res.RowsAffected()
+	return int(n), nil
+}
+
 // RunTasks returns every task of a run: the commands of its steps (splits
 // and follow-ups carry the same step) and the commands that name the run.
 func (r *AssetCoverageRepository) RunTasks(ctx context.Context, tenantID, runID shared.ID) ([]coverage.TaskResult, error) {
@@ -442,7 +501,7 @@ func (r *AssetCoverageRepository) Health(ctx context.Context, tenantID shared.ID
 		       count(*) FILTER (WHERE c.state NOT IN ('blocked', 'paused', 'not_applicable')),
 		       count(*) FILTER (WHERE c.state NOT IN ('blocked', 'paused', 'not_applicable')
 		                          AND COALESCE(c.last_success_at, c.created_at) < now() - make_interval(secs => 2 * COALESCE(p.every, 86400))),
-		       count(*) FILTER (WHERE c.fail_streak >= $4),
+		       count(*) FILTER (WHERE c.state = 'failed' AND c.fail_streak >= $4),
 		       count(*) FILTER (WHERE c.last_outcome = 'ok' AND c.last_success_at > now() - interval '24 hours'),
 		       count(*) FILTER (WHERE c.last_outcome = 'no_output' AND c.last_success_at > now() - interval '24 hours')
 		FROM asset_coverage c

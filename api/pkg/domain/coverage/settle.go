@@ -8,6 +8,7 @@ package coverage
 import (
 	"encoding/json"
 	"strings"
+	"time"
 
 	"github.com/openctemio/ctis/outcome"
 )
@@ -152,4 +153,41 @@ func readResult(raw json.RawMessage) ([]outcome.Target, map[string]bool, bool) {
 		return nil, unreached, false
 	}
 	return *r.Outcomes, unreached, true
+}
+
+// Target-side outcomes: the target did not answer (it is down, filtered or
+// gone), not a failure of the sensor, the tool or the platform. Such a pair
+// is not retried on the failure back-off: it is paused with the outcome as
+// its reason and rechecked on TargetSideRecheck's schedule; any success
+// makes it covered again. Every other failure keeps the back-off.
+var targetSideOutcomes = []string{string(outcome.Unreachable), string(outcome.Timeout)}
+
+// TargetSideOutcomes returns the outcomes that pause a pair for a recheck.
+func TargetSideOutcomes() []string { return append([]string(nil), targetSideOutcomes...) }
+
+// IsTargetSide reports whether a failure outcome is the target's.
+func IsTargetSide(outcome string) bool {
+	for _, o := range targetSideOutcomes {
+		if o == outcome {
+			return true
+		}
+	}
+	return false
+}
+
+// TargetSideRechecks is the recheck schedule of a pair whose target did not
+// answer: after the first observation 1 day, after the second 3 days, then
+// 7 days, and weekly from then on.
+var TargetSideRechecks = []time.Duration{24 * time.Hour, 3 * 24 * time.Hour, 7 * 24 * time.Hour}
+
+// TargetSideRecheck is when a pair is rechecked after its n-th consecutive
+// target-side observation (n >= 1).
+func TargetSideRecheck(n int) time.Duration {
+	if n < 1 {
+		n = 1
+	}
+	if n > len(TargetSideRechecks) {
+		n = len(TargetSideRechecks)
+	}
+	return TargetSideRechecks[n-1]
 }
