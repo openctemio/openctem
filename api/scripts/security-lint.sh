@@ -136,6 +136,12 @@ check_http_client() {
         # CONNECTOR_API_URL on the private network, which SafeHTTPClient
         # refuses; it uses no proxy and follows no redirects.
         'api/internal/sensorrelay/connector.go'
+        # Authorization-matrix test harness: drives a disposable test stack
+        # started by the suite itself on loopback (never a tenant or request
+        # URL), which SafeHTTPClient refuses by design. Test-only package
+        # (api/tests/authzmatrix), never linked into a shipped binary.
+        'api/tests/authzmatrix/client.go'
+        'api/tests/authzmatrix/console.go'
     )
 
     local hits
@@ -506,6 +512,12 @@ check_client_ip_headers() {
         # usually a log collector on a private network, which SafeHTTPClient
         # refuses. https only, TLS 1.2+, no redirects.
         'api/internal/infra/auditsink/sink.go'
+        # Authorization-matrix test harness: only SETS X-Forwarded-For on the
+        # requests it sends to its own disposable test stack, to give each
+        # simulated user a distinct client identity for the rate limiter.
+        # Nothing is read from a client request; test-only package.
+        'api/tests/authzmatrix/client.go'
+        'api/tests/authzmatrix/console.go'
     )
 
     local hits

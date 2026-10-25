@@ -235,9 +235,25 @@ func TestCICoverageRepository(t *testing.T) {
 	if _, _, err := repo.RetirePipeline(ctx, other, pA.ID, nil, "not mine at all", now); !errors.Is(err, shared.ErrNotFound) {
 		t.Fatalf("cross-tenant retire: %v", err)
 	}
+	// A leaked secret only this pipeline reported: not seen is not rotated,
+	// so retiring the pipeline must leave it open.
+	secretID := finding(tenant, repoA, "fp-secret-a", "sast", lastA)
+	if _, err := db.ExecContext(ctx, `UPDATE findings SET finding_type = 'secret' WHERE id = $1`, secretID.String()); err != nil {
+		t.Fatal(err)
+	}
+	var runA string
+	if err := db.QueryRowContext(ctx, `SELECT id FROM ci_runs WHERE tenant_id = $1 AND pipeline_id = $2 LIMIT 1`, tenant.String(), pA.ID.String()).Scan(&runA); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.ExecContext(ctx, `INSERT INTO ci_run_findings (tenant_id, run_id, fingerprint) VALUES ($1, $2, 'fp-secret-a')`, tenant.String(), runA); err != nil {
+		t.Fatal(err)
+	}
 	_, closed, err := repo.RetirePipeline(ctx, tenant, pA.ID, nil, "workflow deleted from the repository", now)
 	if err != nil || len(closed) != 1 || closed[0] != onlyA {
 		t.Fatalf("retire = %v %v", closed, err)
+	}
+	if st, _ := status(secretID); st != "new" {
+		t.Fatalf("retiring the pipeline changed a secret finding to %s; a secret stays open until rotated", st)
 	}
 	if st, _ := status(onlyA); st != "resolved" {
 		t.Fatalf("retired-source finding = %s", st)

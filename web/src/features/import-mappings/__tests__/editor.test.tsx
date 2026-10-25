@@ -4,7 +4,7 @@
  * permission gating of every write (the API stays the authority).
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { render, screen, waitFor } from '@testing-library/react'
+import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import type { ReactNode } from 'react'
 import { ApiClientError } from '@/lib/api/error-handler'
@@ -12,6 +12,7 @@ import type { ImportMappingDetail } from '../types/import-mapping.types'
 
 let perms = new Set<string>()
 const createVersion = vi.fn()
+const removeMapping = vi.fn()
 const replace = vi.fn()
 const push = vi.fn()
 const mutate = vi.fn()
@@ -94,6 +95,7 @@ vi.mock('../api/import-mappings-api', async (importOriginal) => {
     importMappingsApi: {
       ...real.importMappingsApi,
       createVersion: (...a: unknown[]) => createVersion(...a),
+      remove: (...a: unknown[]) => removeMapping(...a),
     },
   }
 })
@@ -154,6 +156,27 @@ describe('identity change confirmation', () => {
       expect(screen.queryByText('Change how findings are identified?')).toBeNull()
     )
     expect(createVersion).toHaveBeenCalledTimes(1)
+  })
+})
+
+describe('delete confirmation', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    perms = new Set(['integrations:read', 'integrations:manage'])
+  })
+
+  it('deletes only after the mapping name is typed', async () => {
+    removeMapping.mockResolvedValue(undefined)
+    const user = userEvent.setup()
+    render(<ImportMappingEditor id="m1" />)
+    await user.click(screen.getByRole('button', { name: /Delete/ }))
+    const dialog = await screen.findByRole('alertdialog')
+    expect(dialog).toHaveTextContent('Delete the mapping "vendor-csv"?')
+    const confirm = within(dialog).getByRole('button', { name: 'Delete mapping' })
+    expect(confirm).toBeDisabled()
+    await user.type(within(dialog).getByRole('textbox'), 'vendor-csv')
+    await user.click(confirm)
+    await waitFor(() => expect(removeMapping).toHaveBeenCalledWith('m1'))
   })
 })
 
