@@ -128,7 +128,9 @@ export function FilterPanelToggle({
         className="hidden lg:inline-flex"
         panelOpen={open}
         onClick={onToggle}
-        aria-controls={controlsId}
+        // Only while the panel is in the page: an id that points at nothing is
+        // an invalid ARIA reference.
+        aria-controls={open ? controlsId : undefined}
         activeCount={activeCount}
         label={label}
       />
