@@ -100,6 +100,83 @@ func (r *AssetCoverageRepository) DueBatch(ctx context.Context, tenantID shared.
 	return out, nil
 }
 
+// HasScopeEntries reports whether the tenant has an active, unexpired
+// scope entry of any type (without one the gate refuses every target of a
+// coverage run).
+func (r *AssetCoverageRepository) HasScopeEntries(ctx context.Context, tenantID shared.ID) (bool, error) {
+	var ok bool
+	err := r.db.QueryRowContext(ctx, `SELECT EXISTS (SELECT 1 FROM scope_targets
+		WHERE tenant_id = $1 AND status = 'active' AND (expires_at IS NULL OR expires_at > now()))`, tenantID.String()).Scan(&ok)
+	if err != nil {
+		return false, fmt.Errorf("read scope entries: %w", err)
+	}
+	return ok, nil
+}
+
+// PausedForReadiness returns, per capability, the readiness reason of its
+// paused pairs (one reason per capability; the planner keeps them equal).
+func (r *AssetCoverageRepository) PausedForReadiness(ctx context.Context, tenantID shared.ID) (map[string]string, error) {
+	rows, err := r.db.QueryContext(ctx, `
+		SELECT capability, min(reason) FROM asset_coverage
+		WHERE tenant_id = $1 AND vantage = '' AND state = 'paused' AND reason = ANY($2::text[])
+		GROUP BY capability`, tenantID.String(), pq.Array(coverage.ReadinessReasons()))
+	if err != nil {
+		return nil, fmt.Errorf("list paused coverage: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+	out := map[string]string{}
+	for rows.Next() {
+		var c, reason string
+		if err := rows.Scan(&c, &reason); err != nil {
+			return nil, err
+		}
+		out[c] = reason
+	}
+	return out, rows.Err()
+}
+
+// PauseForReadiness pauses the capability's pairs whose time has come with
+// the readiness reason, and moves pairs paused for another readiness
+// reason to this one; they may resume after retryAfter. Pairs already
+// paused for this reason are not written again (no churn every pass).
+func (r *AssetCoverageRepository) PauseForReadiness(ctx context.Context, tenantID shared.ID, capability, reason string, retryAfter time.Duration) (int, error) {
+	if !coverage.IsReadinessReason(reason) {
+		return 0, fmt.Errorf("%w: %q is not a readiness reason", shared.ErrValidation, reason)
+	}
+	if retryAfter < 0 {
+		retryAfter = 0
+	}
+	res, err := r.db.ExecContext(ctx, `
+		UPDATE asset_coverage c SET state = 'paused', reason = $3,
+		       next_due_at = now() + make_interval(secs => $5), updated_at = now()
+		WHERE c.tenant_id = $1 AND c.capability = $2 AND c.vantage = ''
+		  AND ((c.state IN `+plannableStatesSQL+` AND (c.next_due_at IS NULL OR c.next_due_at <= now()))
+		       OR (c.state = 'paused' AND c.reason = ANY($4::text[]) AND c.reason <> $3))`,
+		tenantID.String(), capability, reason, pq.Array(coverage.ReadinessReasons()), retryAfter.Seconds())
+	if err != nil {
+		return 0, fmt.Errorf("pause coverage: %w", err)
+	}
+	n, _ := res.RowsAffected()
+	return int(n), nil
+}
+
+// ResumeFromReadiness makes the capability's pairs paused for a readiness
+// reason due now, once their retry time has passed (the batch size and the
+// one active run per capability bound the burst).
+func (r *AssetCoverageRepository) ResumeFromReadiness(ctx context.Context, tenantID shared.ID, capability string) (int, error) {
+	res, err := r.db.ExecContext(ctx, `
+		UPDATE asset_coverage c SET state = 'due', reason = '', next_due_at = now(), updated_at = now()
+		WHERE c.tenant_id = $1 AND c.capability = $2 AND c.vantage = ''
+		  AND c.state = 'paused' AND c.reason = ANY($3::text[])
+		  AND (c.next_due_at IS NULL OR c.next_due_at <= now())`,
+		tenantID.String(), capability, pq.Array(coverage.ReadinessReasons()))
+	if err != nil {
+		return 0, fmt.Errorf("resume coverage: %w", err)
+	}
+	n, _ := res.RowsAffected()
+	return int(n), nil
+}
+
 // MarkQueued records that the pairs were handed to a run.
 func (r *AssetCoverageRepository) MarkQueued(ctx context.Context, tenantID shared.ID, capability string, assetIDs []shared.ID, runID shared.ID, tool string) error {
 	if len(assetIDs) == 0 {

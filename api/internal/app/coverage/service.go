@@ -21,6 +21,7 @@ type Service struct {
 	rules        []covdom.Rule
 	planner      covdom.Planner
 	starter      RunStarter
+	readiness    ReadinessChecker
 	tenantSwitch TenantSwitch
 	cfg          Config
 	alerts       *alerting
