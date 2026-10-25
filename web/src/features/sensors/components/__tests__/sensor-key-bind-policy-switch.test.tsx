@@ -70,4 +70,17 @@ describe('SensorKeyBindPolicySwitch', () => {
     expect(sw).not.toBeChecked()
     expect(sw).toBeDisabled()
   })
+
+  it('allowing self-binding again asks first, then saves', async () => {
+    perms.granted = new Set(['sensors:read', 'sensors:grant:widen'])
+    api.policy = { bearer_keys_allowed: false, key_bind_requires_approval: true }
+    api.set.mockResolvedValue({ bearer_keys_allowed: false, key_bind_requires_approval: false })
+    const user = userEvent.setup()
+    render(<SensorKeyBindPolicySwitch />)
+    await user.click(screen.getByRole('switch', { name: 'sensors.keyBindPolicy.label' }))
+    await screen.findByRole('alertdialog')
+    expect(api.set).not.toHaveBeenCalled()
+    await user.click(screen.getByRole('button', { name: 'confirm.sensorKeyBind.btn' }))
+    await waitFor(() => expect(api.set).toHaveBeenCalledWith({ key_bind_requires_approval: false }))
+  })
 })
