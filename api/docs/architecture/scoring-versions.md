@@ -145,6 +145,11 @@ automatic recomputes only tighten:
 | finding closed | kept as it was when closed |
 | analyst severity downgrade the approval policy allowed | `first_detected_at + SLA(new class)` when that is later: the one explicit extension, never counted from now ([severity override](finding-severity-override.md)) |
 
+A tenant with no SLA policy gets the platform default windows. A policy that
+cannot be read (a database error) is not "no policy": the computation fails
+for that finding and the next pass retries, because a default deadline or KEV
+cap written on a transient error would stick (deadlines only tighten).
+
 ### The default SLA policy
 
 Making a policy the tenant default re-scores every open finding and, because
