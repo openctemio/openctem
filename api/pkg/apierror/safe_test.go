@@ -217,3 +217,18 @@ func TestPublicMessage_LogsRedactedOriginal(t *testing.T) {
 		t.Fatalf("secret reached the log: %q", log)
 	}
 }
+
+// A message that quotes user input must not forge a second log line.
+func TestPublicMessage_LogHasNoLineBreaks(t *testing.T) {
+	var buf strings.Builder
+	prev := slog.Default()
+	slog.SetDefault(slog.New(slog.NewTextHandler(&buf, nil)))
+	defer slog.SetDefault(prev)
+
+	e := &Error{Code: CodeInternalError, Status: 500, Message: "pq: invalid input\nlevel=ERROR msg=forged\r\nsql: bad"}
+	_ = e.publicMessage("req-2")
+	log := strings.TrimSuffix(buf.String(), "\n")
+	if log == "" || strings.ContainsAny(log, "\r\n") {
+		t.Fatalf("log must be exactly one line: %q", log)
+	}
+}

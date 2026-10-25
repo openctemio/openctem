@@ -121,8 +121,11 @@ func SafeMessage(code Code, status int, msg string) (string, bool) {
 func (e *Error) publicMessage(requestID string) string {
 	msg, changed := SafeMessage(e.Code, e.Status, e.Message)
 	if changed && IsTechnical(e.Message) {
+		// Redact secrets, then strip CR/LF at the log site itself so a
+		// message that quotes user input cannot forge a log line.
+		original := strings.ReplaceAll(strings.ReplaceAll(logger.RedactedText(e.Message), "\n", " "), "\r", " ")
 		slog.Default().Warn("apierror: technical text kept out of an error response",
-			"code", string(e.Code), "status", e.Status, "request_id", logger.SanitizeValue(requestID), "original", logger.RedactedText(e.Message))
+			"code", string(e.Code), "status", e.Status, "request_id", logger.SanitizeValue(requestID), "original", original)
 	}
 	return msg
 }

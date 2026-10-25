@@ -218,7 +218,7 @@ func (s *Service) plan(ctx context.Context, tenantID shared.ID) (int, error) {
 		if left <= 0 {
 			break
 		}
-		due, err := s.planner.DueBatch(ctx, tenantID, capability, min(s.cfg.Batch, left))
+		due, err := s.planner.DueBatch(ctx, tenantID, capability, min(s.cfg.Batch, left), covdom.Lookahead(s.ruleOf(capability).Every))
 		if err != nil {
 			return total, err
 		}
