@@ -4,7 +4,7 @@
  * The rich service cells (status with redirect chain, IP / CNAME, technology,
  * TLS …) describe the external surface only. Repositories, cloud, k8s,
  * identities, databases and the other types keep their own typed cells;
- * the label chips and the "issues found" chip apply to every type and are
+ * the label chips and the "open findings" link apply to every type and are
  * not listed here.
  *
  * This map is the seam for the asset-type registry (RFC-042, in design):

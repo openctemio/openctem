@@ -63,6 +63,7 @@ tests that cover the console's most user-visible flows.
 | `36-findings-triage-mode.spec.ts`           | Triage mode: keys-only session over ten findings, request budget, a11y, Exit            |
 | `36-list-toolbar.spec.ts`                   | One list toolbar: search first, joined filter trigger, `/` and Escape, phone width, axe |
 | `37-pentest-template-editor.spec.ts`        | Finding-library template: create, then edit at 375px                                    |
+| `38-assets-vocabulary.spec.ts`              | Asset criticality vs risk wording, one-line phone card, open findings count             |
 | `39-assets-list-states.spec.ts`             | Asset search keeps typed keys, toolbar on error, last page, empty default list          |
 
 Each spec is designed to:
@@ -139,8 +140,13 @@ check only that page with `E2E_BUDGET_ROUTES=/ npx playwright test
 e2e/specs/16-request-budget.spec.ts` (comma-separated routes); CI always
 checks every page.
 
-By default the suite uses Chromium only. To add Firefox / WebKit,
-uncomment the relevant `projects:` entries in `playwright.config.ts`.
+By default the suite uses Chromium only. Tests tagged `@phone` also run on
+WebKit with an iPhone 13 viewport when `E2E_WEBKIT=1` is set (install it
+once with `npx playwright install --with-deps webkit`):
+
+```bash
+E2E_WEBKIT=1 npx playwright test --project=webkit-mobile --workers=1
+```
 
 ## Layout
 

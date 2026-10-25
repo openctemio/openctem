@@ -357,8 +357,18 @@ tags and scheduled runs are never cancelled.
 4. Every required check reports on every queue ref: the five `… OK`
    aggregators run with `if: always()` and pass when their jobs were skipped;
    Secret Scanning and Workflow Lint are unconditional jobs. Nothing stays Pending.
-5. When all of them pass, the queue fast-forwards the base branch, and the `push` run
-   (path-scoped, plus CodeQL on both languages) refreshes the branch's baseline.
+5. When all of them pass, the queue fast-forwards the base branch to the commit it
+   tested, and the `push` run (path-scoped, plus CodeQL on both languages)
+   refreshes the branch's baseline. On `develop`, API CI, All-in-one CI and Web
+   E2E first ask `.github/scripts/queue-verified.sh` whether the merge queue
+   already passed this workflow on this exact commit (a `merge_group` run, same
+   workflow file, same SHA, conclusion success; only GitHub creates such runs).
+   If so they skip their test jobs: the queue ran the same workflow file on the
+   same tree. The push still keeps develop's caches current (`Go cache
+   (develop)` fills the Go cache when there is none for the current `go.sum`;
+   Web E2E still builds its images, which writes the layer cache). Any doubt
+   (no such run, an API error) runs the workflow in full. CodeQL, Web CI and
+   the security scans always run on push.
 6. A failure removes the PR from the queue; the groups behind it are rebuilt.
 
 ### Tiers
@@ -371,8 +381,8 @@ and a fork PR would run code on the host.
 
 | Tier | Events | API CI | Web CI | All-in-one CI | Web E2E | CodeQL |
 |------|--------|--------|--------|---------------|---------|--------|
-| Fast | `pull_request` | `API static checks` (gates + vet, staticcheck, golangci-lint) + `Tests (Postgres + Redis)`: the whole suite against Postgres and Redis in 2 + 2 shards **without** `-race`, so isolation tests fail on the PR (decision D-30). `Tests (least-privilege DB role)` and `Migrations (PostgreSQL 18)` only when `migrations` | `Web checks`, `Web tests` | build skipped | only with `run-e2e`, or when `web/e2e/` changed | changed language(s) |
-| Full | `merge_group`, push to `develop`/`main`, a PR with `ci:full` or a changed CI definition | the suite in 4 + 4 shards **with** `-race`, the least-privilege suite, PostgreSQL 18, `Release Binaries` (not on a PR); Docker build on `main` | `Web checks`, `Web tests`; `next build` on push | images built and smoke-tested | Playwright in 4 shards (`web/` or `api/` changed) | queue: none (the PR head was analysed); push: both |
+| Fast | `pull_request` | `API static checks` (gates + vet, staticcheck, golangci-lint) + `Tests (Postgres + Redis)`: the whole suite against Postgres and Redis in 6 shards **without** `-race`, so isolation tests fail on the PR (decision D-30). `Tests (least-privilege DB role)` and `Migrations (PostgreSQL 18)` only when `migrations` | `Web checks`, `Web tests` | build skipped | only with `run-e2e`, or when `web/e2e/` changed | changed language(s) |
+| Full | `merge_group`, push to `develop`/`main`, a PR with `ci:full` or a changed CI definition | the suite in 8 shards **with** `-race`, the least-privilege suite, PostgreSQL 18, `Release Binaries` (not on a PR); Docker build on `main` | `Web checks`, `Web tests`; `next build` on push | images built and smoke-tested | Playwright in 4 shards (`web/` or `api/` changed) | queue: none (the PR head was analysed); push: both |
 
 **Forcing the full tier on a PR:** add the `ci:full` label, then re-run all jobs
 of the workflow run (or push). Use it for a risky change to concurrency, SQL
@@ -397,6 +407,14 @@ or push run that did not compute the full tier; in the queue `API CI OK` fails
 unless the race-enabled suite, the least-privilege suite, PostgreSQL 18 and the
 release binaries succeeded, and `All-in-one OK` fails unless the image build
 succeeded. Nothing reaches `develop`/`main` on the fast tier alone.
+
+Caches: GitHub lets a run restore caches of its own ref, of the default branch
+and, for a pull request, of its base branch. A merge-queue ref is none of
+these for `develop`, so it restores nothing, and what it writes no other run can
+read. API CI therefore neither restores nor saves the Go cache in the queue,
+and the Web E2E layer cache (`web/e2e/ci/docker-bake.hcl`) is written by pushes
+to `develop` only; pull requests read develop's. Before, queue and PR refs held
+about 7 of the 10 GB cache store and evicted develop's entries.
 
 Concurrency: a newer push to a PR cancels that PR's older run
 (`cancel-in-progress` only for `pull_request`). Merge-queue runs are never
@@ -666,9 +684,9 @@ files stale, so run `make generate-docker` (or `scripts/generate-in-docker.sh
 | Security Gates | `api/scripts/security-lint.sh` (checks out `sensor` and `sdk-go` alongside), tenant-scope analyzer, sensor vocabulary guard. |
 | OpenAPI Contract | See above. |
 | Gateway Routing | `api/deploy/gateway/smoke-test.sh` (every plane's routing against stub upstreams) + renders the production compose files. That `planes.caddy` matches the plane table is a unit test (`routes/plane` `TestGatewayPlanesFile`). |
-| Test shards | `.github/scripts/go-shard.sh check` proves the test shards below cover every package and every top-level test of `tests/unit` exactly once. |
+| Test shards | `.github/scripts/go-shard.sh check` proves the test shards below (8, 6 and 3) cover every package and every top-level test of a split package exactly once. |
 | Lint (steps of `API static checks`; the golangci-lint cache and the staticcheck binary are cached) | `go vet`, staticcheck, and golangci-lint v1.64.8 on **new** code only (PRs: `make lint-new` with `--new-from-rev` against `.github/scripts/effective-base.sh`). `make -C api lint-ci` runs the same locally. |
-| Tests (Postgres + Redis) | PRs (when `api/` or shared files change), merge queue and pushes. `go test -timeout 20m` against Postgres 17 + Redis 7 service containers. Full tier: `-race`, eight parallel shards (four of `tests/unit`, which is most of the run time, and four groups of the other packages; `.github/scripts/go-shard.sh`). Fast tier (PR): no `-race`, 2 + 2 shards. Both splits run the same tests, each with `OPENCTEM_TEST_DB_REQUIRED=1` so `internal/testdb` fails instead of skipping, then `.github/scripts/check-db-test-skips.sh` fails the job if any test skipped itself for a missing or unreachable database. |
+| Tests (Postgres + Redis) | PRs (when `api/` or shared files change), merge queue and pushes. `go test -timeout 20m` against Postgres 17 + Redis 7 service containers. Full tier: `-race`, eight parallel shards; fast tier (PR): no `-race`, six. The four packages that hold most of the run time and run their tests one after another (`tests/unit`, `tests/integration`, `internal/infra/http/routes`, `internal/infra/postgres`) are split by top-level test name over every shard, each slice in its own `go test` process so it keeps the database to itself; every other package goes whole to one shard (`.github/scripts/go-shard.sh`, run by `go-shard-run.sh`). Before, `tests/integration` alone held one shard for about 16 minutes while the others finished in 7 to 14. Both splits run the same tests, each with `OPENCTEM_TEST_DB_REQUIRED=1` so `internal/testdb` fails instead of skipping, then `.github/scripts/check-db-test-skips.sh` fails the job if any test skipped itself for a missing or unreachable database. |
 | Tests (least-privilege DB role) | Sharded the same way (3 + 3 shards). Full tier, and on a PR that changes `api/migrations/` or `api/deploy/postgres/` (when `api/` or shared files change). Bootstraps a fresh database with `api/deploy/postgres/least-privilege-roles.sql`, applies every migration as `openctem_migrator`, then runs the DB-backed suite as `openctem_app` (DML only). It fails if a migration needs a superuser or the API needs more than DML. See `api/docs/deployment/database-roles.md`. |
 | Migrations (PostgreSQL 18) | Same tiers as the least-privilege suite. Applies every migration to a fresh PostgreSQL 18 database (the next major; the suites above run on 17), then runs the schema probes that read the catalog (`TestCheckSensorRename`). PostgreSQL 18 records each column's NOT NULL as a `pg_constraint` row (`contype = 'n'`), so a migration or probe that reads `pg_constraint` must filter on `contype`. The image comes from the CI mirror, or its upstream with the same digest until the mirror has it. |
 | Release Binaries | Merge queue and pushes. Builds and uploads static linux/amd64 `cmd/server` and `cmd/bootstrap-admin` binaries. |

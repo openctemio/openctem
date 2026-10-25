@@ -329,9 +329,12 @@ describe('SeverityBadge score', () => {
     expect(el.getAttribute('aria-label')).toBe(`${score}, ${band}`)
     expect(el.querySelector('svg')).toBeTruthy()
   })
-  it('showBand adds the band word', () => {
-    const { container } = render(<SeverityBadge score={92} showBand />)
-    expect(container.textContent).toBe('92 Critical')
+  it('takes the accessible name and tooltip from its caller', () => {
+    const { container } = render(<SeverityBadge score={92} aria-label="Risk 92" title="Risk 92" />)
+    const el = container.firstElementChild as HTMLElement
+    expect(el.textContent).toBe('92')
+    expect(el.getAttribute('aria-label')).toBe('Risk 92')
+    expect(el.getAttribute('title')).toBe('Risk 92')
   })
   it('keeps the severity form unchanged', () => {
     const { container } = render(<SeverityBadge severity="high" />)
