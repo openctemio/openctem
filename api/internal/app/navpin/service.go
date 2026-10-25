@@ -6,6 +6,7 @@ package navpin
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/url"
 
@@ -99,7 +100,7 @@ func (s *Service) List(ctx context.Context, c Caller) ([]PinView, error) {
 func (s *Service) Replace(ctx context.Context, c Caller, pins []navpin.Pin) ([]PinView, error) {
 	qv := quickViews(c.IncludeInformational)
 	if err := navpin.Validate(pins, func(k string) bool { _, ok := qv[k]; return ok }); err != nil {
-		return nil, fmt.Errorf("%w: %w", shared.ErrValidation, err)
+		return nil, errors.Join(shared.ErrValidation, err)
 	}
 	var visible map[string]bool // loaded once, when a saved view is pinned
 	for _, p := range pins {
