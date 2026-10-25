@@ -40,7 +40,7 @@ tests that cover the console's most user-visible flows.
 | `14-remediation-campaigns.spec.ts`          | Remediation campaign list and detail                                               |
 | `15-route-protection.spec.ts`               | Signed-out redirects and public routes                                             |
 | `16-dialog-layout.spec.ts`                  | Dialog header and actions stay put while the body scrolls                          |
-| `18-pentest-finding-editor.spec.ts`         | New pentest finding: evidence, publish, closed campaign                            |
+| `18-pentest-finding-editor.spec.ts`         | Pentest finding: evidence, publish, closed campaign, edit at 375px                 |
 | `19-scan-lifecycle.spec.ts`                 | Scan create, edit (name, targets, duration), run, run view                         |
 | `20-sensor-tool-settings-drawer.spec.ts`    | Expanded tool settings stay reachable in the sensor drawer                         |
 | `21-remediation-task-from-findings.spec.ts` | Create a task from findings, open it, hold and resume it                           |
@@ -58,6 +58,7 @@ tests that cover the console's most user-visible flows.
 | `31-page-rhythm.spec.ts`                    | Page block gaps are the spacing tokens; metric strip rules                         |
 | `32-assets-filters.spec.ts`                 | Asset Add filter, chips, no eager tag or business-unit load                        |
 | `34-scans-list-layout.spec.ts`              | Scan list at 390px and 1440px: no overlapping text, state on the title line        |
+| `35-pentest-template-editor.spec.ts`        | Finding-library template: create, then edit at 375px                               |
 
 Each spec is designed to:
 
