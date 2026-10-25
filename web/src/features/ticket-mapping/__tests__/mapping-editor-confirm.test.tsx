@@ -18,6 +18,38 @@ const api = vi.hoisted(() => ({
   setDryRun: vi.fn(),
   remove: vi.fn(),
   push: vi.fn(),
+  // The editor syncs its draft from `data` in an effect, so the mock must return the
+  // same object while nothing changed (a fresh object per render loops forever).
+  cache: new Map<boolean, unknown>(),
+  result(): unknown {
+    if (!api.cache.has(api.dryRun)) {
+      api.cache.set(api.dryRun, {
+        data: {
+          profile: {
+            id: 'mp1',
+            integration_id: 'i1',
+            object_kind: 'finding',
+            project_id: 'p',
+            project_key: 'SEC',
+            issue_type_id: '1',
+            issue_type: 'Task',
+            name: 'Security tasks',
+            published_version: 1,
+            draft_version: 0,
+            dry_run: api.dryRun,
+            drifted: false,
+            created_at: '',
+            updated_at: '',
+          },
+          published: { version: 1, spec: {} },
+        },
+        error: undefined,
+        isLoading: false,
+        mutate: async () => undefined,
+      })
+    }
+    return api.cache.get(api.dryRun)
+  },
 }))
 
 vi.mock('next/navigation', () => ({ useRouter: () => ({ push: api.push, replace: vi.fn() }) }))
@@ -46,30 +78,7 @@ vi.mock('../api/use-ticket-mapping-api', () => ({
   invalidateMappings: vi.fn(async () => undefined),
   useMappingCatalog: () => ({ data: { attributes: [] } }),
   useProjectMeta: () => ({ data: undefined, isLoading: false, mutate: vi.fn() }),
-  useMappingProfile: () => ({
-    data: {
-      profile: {
-        id: 'mp1',
-        integration_id: 'i1',
-        object_kind: 'finding',
-        project_id: 'p',
-        project_key: 'SEC',
-        issue_type_id: '1',
-        issue_type: 'Task',
-        name: 'Security tasks',
-        published_version: 1,
-        draft_version: 0,
-        dry_run: api.dryRun,
-        drifted: false,
-        created_at: '',
-        updated_at: '',
-      },
-      published: { version: 1, spec: {} },
-    },
-    error: undefined,
-    isLoading: false,
-    mutate: vi.fn(async () => undefined),
-  }),
+  useMappingProfile: () => api.result(),
   mappingApi: {
     setDryRun: (...a: unknown[]) => api.setDryRun(...a),
     remove: (...a: unknown[]) => api.remove(...a),
