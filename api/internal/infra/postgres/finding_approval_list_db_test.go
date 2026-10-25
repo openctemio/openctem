@@ -135,6 +135,34 @@ func TestFindingApprovalRepository_List(t *testing.T) {
 		}
 	})
 
+	t.Run("review queue: in-scope pending only, counted the same way", func(t *testing.T) {
+		scope := &shared.DataScope{TenantID: tenant, UserID: userID}
+		filter := vulnerability.ApprovalFilter{Queue: vulnerability.ApprovalQueueReview, CallerID: &userID, CallerCanApprove: true}
+		res, err := repo.List(ctx, tenant, filter, page, scope)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if res.Total != 1 || len(res.Data) != 1 || res.Data[0].FindingID != inFinding {
+			t.Fatalf("scoped review: total=%d data=%+v, want the in-scope pending request only", res.Total, res.Data)
+		}
+		if res.QueueCounts[vulnerability.ApprovalQueueReview] != 1 || res.QueueCounts[vulnerability.ApprovalQueueRequested] != 0 {
+			t.Fatalf("scoped queue counts leak out-of-scope requests: %v", res.QueueCounts)
+		}
+		// Without the approve permission nothing waits for this person.
+		filter.CallerCanApprove = false
+		res, err = repo.List(ctx, tenant, filter, page, scope)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if res.Total != 0 || res.QueueCounts[vulnerability.ApprovalQueueReview] != 0 {
+			t.Fatalf("review without approve: total=%d counts=%v", res.Total, res.QueueCounts)
+		}
+		// A queue without the caller is refused, never widened.
+		if _, err := repo.List(ctx, tenant, vulnerability.ApprovalFilter{Queue: vulnerability.ApprovalQueueReview}, page, scope); err == nil {
+			t.Fatal("a queue without a caller must be refused")
+		}
+	})
+
 	t.Run("a scope row in another tenant grants nothing here", func(t *testing.T) {
 		scope := &shared.DataScope{TenantID: other, UserID: userID}
 		res, err := repo.List(ctx, other, vulnerability.ApprovalFilter{}, page, scope)

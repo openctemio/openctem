@@ -43,7 +43,7 @@ var findingExportExcluded = map[string]string{
 	"cvss_v2_vector": "detail", "cvss_v3_vector": "detail", "owasp_ids": "detail", "tags": "detail",
 	"resolution": "detail", "closure_reason": "detail", "verification": "detail", "max_acceptance_days": "detail",
 	"is_triaged": "derived", "assigned_at": "detail", "verified_at": "detail",
-	"sla_kev_capped": "detail (SLA reason)", "kev_ransomware": "detail (KEV catalog lookup per list page)",
+	"sla_kev_capped": "detail (SLA reason)", "acceptance_expires_at": "detail (My Work)", "kev_ransomware": "detail (KEV catalog lookup per list page)",
 	"first_detected_branch": "detail", "first_detected_commit": "detail", "last_seen_branch": "detail",
 	"last_seen_commit": "detail", "duplicate_count": "detail", "comments_count": "detail",
 	"confidence": "detail", "impact": "detail", "likelihood": "detail", "vulnerability_class": "detail",

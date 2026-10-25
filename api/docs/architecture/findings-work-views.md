@@ -27,8 +27,8 @@ left out by default and how a severity filter treats the two stored values.
 
 ## Work views
 
-The work views are the quick views a person works from: Active, My queue and
-SLA breached. They leave informational findings out by default: their `params`
+The work views are the quick views a person works from: Active, My queue,
+SLA breached, and My Work's My team and Due soon (`my_team`, `my_due_soon`). They leave informational findings out by default: their `params`
 carry `informational=false`. Needs triage always does, whatever the
 preference: an informational finding has no SLA and is P3, so it never waits
 for triage. All findings, Closed, Pending approval, Accepted expiring, an
