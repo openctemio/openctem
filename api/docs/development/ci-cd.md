@@ -121,7 +121,11 @@ queue branch name and reads its labels and code-scanning alerts through the API.
      label started (the earliest `pull_request` run of `security-gate.yml` for
      the pull request's branch, started by the same user within 10 minutes of
      the label). GitHub creates runs with the event's actor and head commit; a
-     workflow token cannot.
+     workflow token cannot. The gate comment shows this commit next to the
+     current head, so the acker can confirm what the label covers.
+  The issue-event list must be complete: its newest `security-ack` event must
+  be the `labeled` one (the label is on the pull request), and a list of 3000
+  events or more fails the check, since it may be cut off.
   On the label event itself, or when that commit is still the head, the ack
   stands. Otherwise the ack is carried over from an older commit, and the gate
   fetches both commits (history and trees; blobs on demand) and recomputes
@@ -138,9 +142,20 @@ queue branch name and reads its labels and code-scanning alerts through the API.
     `.github/security-paths.yml` or `.github/scripts/security_gate.py` (on
     `pull_request` events GitHub runs the pull request's own workflow files,
     which could act on the pull request): the ack covers only the exact commit
-    it was added on, so every push needs a new ack;
-  - the base branch changed after the label (a retargeted stacked pull request
-    now carries its parent's changes);
+    it was added on, so every push needs a new ack. Such a pull request also
+    decides through its own `security-gate.yml` which of its events start a
+    run: it could skip the label's run, so that a later action of the acker
+    (adding another label) starts the "earliest run" on an unreviewed commit.
+    So once a ruleset requires the gate workflow (below), only runs of that
+    pinned workflow (`security-gate.yml@refs/heads/develop`) can name the
+    acknowledged commit, read from GitHub's rules API for the base branch.
+    Until then the gate comment says that the pull request's own workflow
+    files decide what the check runs (they could also replace the gate
+    outright, so failing closed there would add no protection and would only
+    block every workflow change in the merge queue);
+  - the base branch changed after the label (a `base_ref_changed` issue event
+    after the `labeled` one, also without new commits: a retargeted stacked
+    pull request now carries its parent's changes);
   - no gate run started by the label can be found (for example the run was
     never created): the gate cannot tell which commit was acknowledged.
 - Migration renumbering keeps the ack: a migration counts in the digest by its

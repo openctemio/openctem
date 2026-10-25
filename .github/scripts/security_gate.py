@@ -55,6 +55,7 @@ COMMENT_MARKER = "<!-- security-gate -->"
 # started (head commit). Comments are never trusted: any workflow on any branch
 # of the repository runs as github-actions[bot] and could write one.
 GATE_WORKFLOW = "security-gate.yml"  # .github/workflows/<this>; override with GATE_WORKFLOW_FILE
+MAX_EVENTS = 3000  # an issue-event list this long may be cut off: the gate fails closed
 ACK_RUN_WINDOW = 600  # seconds after the label event within which its gate run must start
 # A pull request that changes any of these gets no carried-over ack: its own
 # workflow runs (pull_request events run the PR's workflow files) could act on
@@ -597,12 +598,19 @@ def last_ack_event(gh: GitHub, number: int) -> dict | None:
     """The newest `labeled` issue event for `security-ack` (GitHub writes
     these; the actor is whoever added the label), as a copy with
     `retargeted_after` set when the pull request's base branch changed later."""
-    last = None
-    for e in gh.paginate(f"issues/{number}/events"):
+    events = gh.paginate(f"issues/{number}/events")
+    if len(events) >= MAX_EVENTS:
+        raise RuntimeError(f"pull request has {len(events)}+ issue events; the list may be cut off (fail closed)")
+    last, newest = None, None
+    for e in events:
+        if e.get("event") in ("labeled", "unlabeled") and (e.get("label") or {}).get("name") == ACK_LABEL:
+            newest = e.get("event")
         if e.get("event") == "labeled" and (e.get("label") or {}).get("name") == ACK_LABEL:
             last = dict(e, retargeted_after=False)
         elif e.get("event") == "base_ref_changed" and last is not None:
             last["retargeted_after"] = True
+    if newest != "labeled":
+        return None  # the label is on the pull request, so a complete list ends with its `labeled` event
     return last
 
 
@@ -620,38 +628,65 @@ def _ts(value: str) -> datetime.datetime:
     return datetime.datetime.fromisoformat(value.replace("Z", "+00:00"))
 
 
-def acked_head(gh: GitHub, pr: dict, ack_event: dict) -> str | None:
+def acked_head(gh: GitHub, pr: dict, ack_event: dict, trusted_ref: str | None = None) -> str | None:
     """The head commit the acker labelled: the head of the gate workflow run
     their `labeled` event started. Runs are created by GitHub with the event's
     actor and head, so nothing a workflow token writes can move this. Picks
-    the earliest run of the gate workflow for this pull request's branch,
-    started by the same user within ACK_RUN_WINDOW seconds of the label. None
-    when no such run exists (the ack then covers nothing carried over)."""
+    the earliest `pull_request` run of the gate workflow for this pull
+    request's branch, started by the same user within ACK_RUN_WINDOW seconds
+    of the label. With `trusted_ref`, only runs of the workflow file at that
+    ref count (the run a "require workflows" ruleset starts, path
+    `...security-gate.yml@<ref>`): a pull request that edits the gate
+    workflow decides which of its own events start runs, so it could suppress
+    the label's run and let a later action of the acker name an unreviewed
+    head. None when no such run exists (fail closed)."""
     actor = ((ack_event.get("actor") or {}).get("login") or "").lower()
     at = ack_event.get("created_at")
     if not actor or not at:
         return None
     t = _ts(at)
-    lo = t.strftime("%Y-%m-%dT%H:%M:%SZ")
-    hi = (t + datetime.timedelta(seconds=ACK_RUN_WINDOW)).strftime("%Y-%m-%dT%H:%M:%SZ")
-    workflow = os.environ.get("GATE_WORKFLOW_FILE", GATE_WORKFLOW)
+    end = t + datetime.timedelta(seconds=ACK_RUN_WINDOW)
+    span = f"{t.strftime('%Y-%m-%dT%H:%M:%SZ')}..{end.strftime('%Y-%m-%dT%H:%M:%SZ')}"
+    workflow = f".github/workflows/{os.environ.get('GATE_WORKFLOW_FILE', GATE_WORKFLOW)}"
     branch = urllib.parse.quote(pr["head"]["ref"], safe="")
-    runs = gh.paginate(f"actions/workflows/{workflow}/runs?event=pull_request&branch={branch}&created={lo}..{hi}")
+    # Repository-wide list: a ruleset's runs need not sit under this file's workflow id.
+    runs = gh.paginate(f"actions/runs?event=pull_request&branch={branch}&created={span}")
     head_repo = (pr["head"].get("repo") or {}).get("full_name")
     best = None
     for run in runs:
+        path, _, ref = (run.get("path") or "").partition("@")
+        if trusted_ref is not None:
+            if ref != trusted_ref or not (path == workflow or path.endswith("/" + workflow)):
+                continue
+        elif path != workflow and not (ref and path.endswith("/" + workflow)):
+            continue
         if (run.get("event") != "pull_request"
                 or ((run.get("actor") or {}).get("login") or "").lower() != actor
                 or (run.get("head_repository") or {}).get("full_name") != head_repo
-                or (run.get("path") or "").split("@", 1)[0] != f".github/workflows/{workflow}"
                 or not run.get("head_sha") or not run.get("created_at")):
             continue
         created = _ts(run["created_at"])
-        if not (t <= created <= t + datetime.timedelta(seconds=ACK_RUN_WINDOW)):
+        if not (t <= created <= end):
             continue
         if best is None or created < best[0]:
             best = (created, run["head_sha"])
     return best[1] if best else None
+
+
+def required_gate_ref(gh: GitHub, pr: dict) -> str | None:
+    """The ref of the gate workflow a "require workflows" ruleset runs for the
+    pull request's base branch (e.g. refs/heads/develop), or None when no
+    active ruleset requires it. Read from GitHub's rules API."""
+    workflow = f".github/workflows/{os.environ.get('GATE_WORKFLOW_FILE', GATE_WORKFLOW)}"
+    repo_id = ((pr.get("base") or {}).get("repo") or {}).get("id")
+    base = urllib.parse.quote(pr["base"]["ref"], safe="")
+    for rule in gh.paginate(f"rules/branches/{base}"):
+        if rule.get("type") != "workflows":
+            continue
+        for w in (rule.get("parameters") or {}).get("workflows", []):
+            if w.get("path") == workflow and w.get("ref") and (repo_id is None or w.get("repository_id") == repo_id):
+                return w["ref"]
+    return None
 
 
 def touches_gate(files: list[ChangedFile]) -> list[str]:
@@ -662,18 +697,20 @@ def touches_gate(files: list[ChangedFile]) -> list[str]:
 
 
 def carry_reason(event_name: str, event: dict, pr: dict, files: list[ChangedFile], ack_event: dict,
-                 find_head, still_covers) -> str:
-    """Why a valid `security-ack` no longer covers this head ("" = it does).
+                 find_head, still_covers, gate_ref=lambda: None) -> tuple[str, str | None]:
+    """Why a valid `security-ack` no longer covers this head ("" = it does),
+    and the commit the ack was given on (None when unknown).
 
     - This run is the acker's own label event on the current head: covered.
     - The base branch changed after the label (a retargeted stacked pull
       request now carries its parent's changes): not covered.
-    - The commit the ack was given on (acked_head, from GitHub's own records)
-      is the current head: covered.
-    - Otherwise the ack is carried over from an older commit. Never for a pull
-      request that changes workflows, actions, the path list or the gate
-      script. Otherwise `still_covers(acked)` (ack_still_covers, digests
-      recomputed from git) decides.
+    - A pull request that changes workflows, actions, the path list or the
+      gate script: the ack covers only the exact commit it was added on, and
+      when a ruleset requires the gate workflow (`gate_ref()`), only the run
+      of that pinned workflow can name that commit (find_head(ref)).
+    - Otherwise the commit the ack was given on (acked_head) is the head:
+      covered; an older commit: `still_covers(acked)` (ack_still_covers,
+      digests recomputed from git) decides.
     """
     head = pr["head"]["sha"]
     actor = ((ack_event.get("actor") or {}).get("login") or "").lower()
@@ -681,21 +718,22 @@ def carry_reason(event_name: str, event: dict, pr: dict, files: list[ChangedFile
             and (event.get("label") or {}).get("name") == ACK_LABEL
             and ((event.get("sender") or {}).get("login") or "").lower() == actor
             and ((event.get("pull_request") or {}).get("head") or {}).get("sha") == head):
-        return ""
+        return "", head
     if ack_event.get("retargeted_after"):
-        return f"the base branch changed after `{ACK_LABEL}` was added; a maintainer adds it again"
-    acked = find_head()
-    if acked == head:
-        return ""
-    if acked is None:
-        return f"cannot tell which commit `{ACK_LABEL}` was given on; a maintainer adds it again"
+        return f"the base branch changed after `{ACK_LABEL}` was added; a maintainer adds it again", None
     pinned = touches_gate(files)
+    acked = find_head(gate_ref() if pinned else None)
+    if acked is None:
+        return f"cannot tell which commit `{ACK_LABEL}` was given on; a maintainer adds it again", None
+    if acked == head:
+        return "", acked
     if pinned:
         return (f"this pull request changes the gate or a workflow ({', '.join(f'`{f}`' for f in pinned[:3])}), "
-                f"so `{ACK_LABEL}` covers only the exact commit it was added on; a maintainer adds it again")
+                f"so `{ACK_LABEL}` covers only the exact commit it was added on; a maintainer adds it again"), acked
     if not still_covers(acked):
-        return f"the security-sensitive lines changed after `{ACK_LABEL}` was added; a maintainer adds it again"
-    return ""
+        return (f"the security-sensitive lines changed after `{ACK_LABEL}` was added; "
+                "a maintainer adds it again"), acked
+    return "", acked
 
 
 def new_code_scanning_alerts(gh: GitHub, number: int, base_ref: str,
@@ -751,6 +789,9 @@ class Result:
     acked: bool = False
     ack_note: str = ""
     ack_dropped: bool = False
+    ack_commit: str | None = None
+    head_sha: str = ""
+    gate_unpinned: bool = False  # touches the gate and no ruleset pins the gate workflow  # the commit the ack was given on, shown so the acker can confirm it
 
     @property
     def high(self) -> list[Finding]:
@@ -826,8 +867,14 @@ def render(r: Result, repo: str, server: str) -> str:
             out.append(f"- {c['name']}: {state}")
     out += ["", "### Acknowledge", "",
             f"A maintainer reviews the change and adds the **`{ACK_LABEL}`** label. The gate re-runs on the label. "
-            f"Status: {r.ack_note}.", "",
-            f"<sub>Path list: `.github/security-paths.yml` · [how the gate works]({GUIDE})</sub>"]
+            f"Status: {r.ack_note}.", ""]
+    if r.ack_commit:
+        out += [f"Acknowledged commit: `{r.ack_commit}` (head now `{r.head_sha}`).", ""]
+    if r.gate_unpinned:
+        out += ["This pull request changes workflows or the gate, and no ruleset requires the gate workflow "
+                "from a fixed branch yet: its own workflow files decide what this check runs. Read the workflow "
+                "changes before adding the label.", ""]
+    out += [f"<sub>Path list: `.github/security-paths.yml` · [how the gate works]({GUIDE})</sub>"]
     return "\n".join(out) + "\n"
 
 
@@ -916,11 +963,13 @@ def cmd_gate() -> int:
     # Writes need a same-repository head and a pull_request event: fork tokens are read-only.
     can_write = event_name == "pull_request" and same_repo
 
-    r = Result(number)
+    r = Result(number, head_sha=pr["head"]["sha"])
     r.hits = classify(files, config)
     r.findings, r.unreviewed = review(files)
     comment = gate_comment(gh, number) if r.sensitive or can_write else None
     if r.sensitive:
+        gate_ref = required_gate_ref(gh, pr) if touches_gate(files) else None
+        r.gate_unpinned = bool(touches_gate(files)) and gate_ref is None
         r.acked, r.ack_note, ack_event = ack_state(gh, number, labels, config["ackers"])
         if r.acked:
             def still_covers(acked: str) -> bool:
@@ -932,8 +981,9 @@ def cmd_gate() -> int:
                     return False
                 return ack_still_covers(gitdir, pr["base"]["sha"], acked, pr["head"]["sha"], config,
                                         git_auth_env(server, token))
-            reason = carry_reason(event_name, event, pr, files, ack_event,
-                                  lambda: acked_head(gh, pr, ack_event), still_covers)
+            reason, r.ack_commit = carry_reason(event_name, event, pr, files, ack_event,
+                                                lambda ref: acked_head(gh, pr, ack_event, ref), still_covers,
+                                                lambda: gate_ref)
             if reason:
                 if can_write:
                     gh.request("DELETE", f"issues/{number}/labels/{ACK_LABEL}", ok404=True)
