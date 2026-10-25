@@ -432,6 +432,11 @@ export const routePermissions: Record<string, RoutePermissionConfig> = {
     permission: Permission.PentestRead,
     module: Module.Pentest,
   },
+  // Report templates: every API call needs pentest:reports:write (viewers lack it).
+  '/settings/pentest/report-templates': {
+    permission: Permission.PentestReportsWrite,
+    module: Module.Pentest,
+  },
   '/settings/pentest/templates/new': {
     permission: Permission.PentestTemplatesWrite,
     module: Module.Pentest,
@@ -756,9 +761,11 @@ export const routePermissions: Record<string, RoutePermissionConfig> = {
     permission: Permission.ApiKeysRead,
   },
   // AI triage consent: owners and administrators read and change it (api
-  // RequireTeamAdmin + settings:read / settings:write).
+  // RequireAdmin + settings:read / settings:write). team:update stands for
+  // the admin role, as on the other admin-only settings pages; settings:read
+  // alone (members, viewers) reached the page and got a 403.
   '/settings/ai': {
-    permission: Permission.SettingsRead,
+    permission: Permission.TeamUpdate,
     module: Module.AITriage,
   },
   // MCP access is issued as API keys (oct_ keys).
