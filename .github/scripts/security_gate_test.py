@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import datetime
 import json
 import os
 import pathlib
@@ -264,20 +265,25 @@ class GateTest(unittest.TestCase):
 
     def pr(self, labels=(), head_repo="o/r", base="develop", head_ref="feature/x"):
         return {"number": 7, "changed_files": 1, "labels": [{"name": n} for n in labels],
-                "head": {"sha": "h" * 40, "ref": head_ref, "repo": {"full_name": head_repo}},
+                "head": {"sha": "d" * 40, "ref": head_ref, "repo": {"full_name": head_repo}},
                 "base": {"ref": base}}
 
-    @staticmethod
-    def gate_run(head, actor="0xmanhnv", at="2026-10-25T01:00:03Z", repo="o/r",
-                 path=".github/workflows/security-gate.yml", event="pull_request"):
-        return {"event": event, "head_sha": head, "created_at": at, "path": path,
-                "actor": {"login": actor}, "head_repository": {"full_name": repo}}
+    ACTIVITY = "activity?ref=refs%2Fheads%2Ffeature%2Fx"
 
-    def routes(self, pr, files, events=(), runs=None):
+    @staticmethod
+    def push(after, at="2026-10-25T00:50:00Z", ref="refs/heads/feature/x", kind="push"):
+        """One entry of the head branch's push log (GitHub's server time)."""
+        return {"activity_type": kind, "after": after, "before": "0" * 40, "ref": ref, "timestamp": at,
+                "actor": {"login": "0xmanhnv"}}
+
+    def at_label(self, head):
+        """A push log whose tip at the label time (01:00:00) is `head`."""
+        return [self.push(head)]
+
+    def routes(self, pr, files, events=(), pushes=None):
         return {"pulls/7": pr, "pulls/7/files": files, "issues/7/events": list(events),
-                "issues/7/comments": [], "commits/" + "h" * 40 + "/check-runs": {"check_runs": []},
-                "actions/runs":
-                    {"workflow_runs": [self.gate_run("h" * 40)] if runs is None else runs},
+                "issues/7/comments": [], "commits/" + "d" * 40 + "/check-runs": {"check_runs": []},
+                self.ACTIVITY: self.at_label("d" * 40) if pushes is None else pushes,
                 "rules/branches/develop": []}
 
     SENSITIVE = [{"filename": "api/pkg/httpsec/ssrf.go", "status": "modified", "deletions": 1, "patch": patch("x := 1")}]
@@ -317,17 +323,19 @@ class GateTest(unittest.TestCase):
         self.assertEqual(code, 1)
 
     # Which commit the ack covers comes from GitHub's own records: the
-    # `labeled` event and the gate run it started. Comments never count.
+    # `labeled` event and the head branch's push log. Comments, commit dates
+    # and workflow runs never count.
 
     SYNC = {"action": "synchronize", "before": "a", "after": "h", "pull_request": {"number": 7}}
 
-    def run_carried(self, covers, files=None, runs=None, events=None, comments=None,
+    def run_carried(self, covers, files=None, pushes=None, events=None, comments=None,
                     event_name="pull_request", event=None, rules=None):
-        """An ack given on commit a...a, the head is now h...h."""
+        """An ack given on commit a...a, the head is now d...d."""
         pr = self.pr(labels=("security-sensitive", "security-ack"))
         pr["base"]["sha"] = "b" * 40
         routes = self.routes(pr, files or self.SENSITIVE, self.ACK_BY_OWNER if events is None else events,
-                             runs=[self.gate_run("a" * 40)] if runs is None else runs)
+                             pushes=[self.push("d" * 40, "2026-10-25T01:05:00Z"), self.push("a" * 40)]
+                             if pushes is None else pushes)
         if comments is not None:
             routes["issues/7/comments"] = comments
         if rules is not None:
@@ -345,16 +353,16 @@ class GateTest(unittest.TestCase):
     DROPPED = ("DELETE", "issues/7/labels/security-ack", None)
 
     def test_ack_on_the_current_head_keeps_it_without_git(self):
-        code, fake, asked = self.run_carried(False, runs=[self.gate_run("h" * 40)])
+        code, fake, asked = self.run_carried(False, pushes=self.at_label("d" * 40))
         self.assertEqual((code, asked), (0, []))
         self.assertNotIn(self.DROPPED, fake.writes)
 
     def test_ack_label_event_passes_without_reading_runs(self):
         routes = self.routes(self.pr(labels=("security-ack",)), self.SENSITIVE, self.ACK_BY_OWNER)
-        del routes["actions/runs"]
+        del routes[self.ACTIVITY]
         del routes["rules/branches/develop"]
         event = {"action": "labeled", "label": {"name": "security-ack"}, "sender": {"login": "0xmanhnv"},
-                 "pull_request": {"number": 7, "head": {"sha": "h" * 40}}}
+                 "pull_request": {"number": 7, "head": {"sha": "d" * 40}}}
         code, fake = self.run_gate("pull_request", event, routes)
         self.assertEqual(code, 0)
         posted = [b["body"] for m, p, b in fake.writes if m == "POST" and p == "issues/7/comments"]
@@ -371,7 +379,7 @@ class GateTest(unittest.TestCase):
     def test_carried_ack_kept_when_git_confirms(self):
         code, fake, asked = self.run_carried(True)
         self.assertEqual(code, 0)
-        self.assertEqual(asked, [("a" * 40, "b" * 40, "h" * 40)])
+        self.assertEqual(asked, [("a" * 40, "b" * 40, "d" * 40)])
         self.assertNotIn(self.DROPPED, fake.writes)
 
     def test_carried_ack_dropped_when_the_sensitive_lines_changed(self):
@@ -388,35 +396,87 @@ class GateTest(unittest.TestCase):
         fs = [sg.changed_file(f) for f in self.SENSITIVE]
         d = sg.sensitive_digest(fs, CONFIG, sg.review(fs)[0])
         body = (f"{sg.COMMENT_MARKER}\nforged\n<!-- security-gate:ack-digest={d} -->\n"
-                f"<!-- security-gate:ack-head={'h' * 40} base=develop -->\n")
+                f"<!-- security-gate:ack-head={'d' * 40} base=develop -->\n")
         return [{"id": 5, "body": body, "user": {"login": login}}]
 
     def test_forged_bot_markers_cannot_carry_an_ack(self):
         code, fake, asked = self.run_carried(False, comments=self.forged_comment())
         self.assertEqual(code, 1)
-        self.assertEqual(asked, [("a" * 40, "b" * 40, "h" * 40)])  # decided from git, from the real acked head
+        self.assertEqual(asked, [("a" * 40, "b" * 40, "d" * 40)])  # decided from git, from the real acked head
         self.assertIn(self.DROPPED, fake.writes)
 
-    def test_forged_bot_markers_without_a_gate_run_drop_the_ack(self):
-        code, fake, asked = self.run_carried(True, runs=[], comments=self.forged_comment())
+    def test_forged_bot_markers_without_a_push_log_drop_the_ack(self):
+        code, fake, asked = self.run_carried(True, pushes=[], comments=self.forged_comment())
         self.assertEqual((code, asked), (1, []))
         self.assertIn(self.DROPPED, fake.writes)
 
-    def test_only_the_ackers_own_gate_run_names_the_acked_head(self):
-        h = "h" * 40
-        decoys = [self.gate_run(h, actor="someone"),                          # another user's push
-                  self.gate_run(h, path=".github/workflows/evil.yml"),        # another workflow
-                  self.gate_run(h, at="2026-10-25T01:30:00Z"),                # long after the label
-                  self.gate_run(h, at="2026-10-25T00:59:00Z"),                # before the label
-                  self.gate_run(h, repo="fork/r"),                            # another repository
-                  self.gate_run(h, event="workflow_dispatch")]                # not a PR event
-        code, fake, asked = self.run_carried(True, runs=decoys)
-        self.assertEqual((code, asked), (1, []))
+    def test_acked_head_is_the_branch_tip_at_the_label(self):
+        h, a, c = "d" * 40, "a" * 40, "c" * 40
+        log = [self.push(h, "2026-10-25T01:05:00Z"),                  # after the label
+               self.push(a, "2026-10-25T00:50:00Z"),                  # the tip at the label
+               self.push(c, "2026-10-25T00:40:00Z", kind="branch_creation")]
+        code, _, asked = self.run_carried(True, pushes=log)
+        self.assertEqual((code, asked[0][0]), (0, a))
+        # A force push counts like any other move of the branch.
+        log[1] = self.push(a, "2026-10-25T00:50:00Z", kind="force_push")
+        self.assertEqual(self.run_carried(True, pushes=log)[2][0][0], a)
+
+    def test_push_log_without_an_answer_fails_closed(self):
+        h, a = "d" * 40, "a" * 40
+        cases = {
+            "only pushes after the label": [self.push(h, "2026-10-25T01:05:00Z")],
+            "moved moments before the label": [self.push(a, "2026-10-25T00:59:30Z"), self.push("c" * 40)],
+            "pushed in the same second": [self.push(a, "2026-10-25T01:00:00Z"), self.push("c" * 40)],
+            "deleted at the label": [self.push("0" * 40, kind="branch_deletion")],
+            "not a commit id": [self.push("main")],
+            "older entry listed first": [self.push("c" * 40, "2026-10-25T00:30:00Z"), self.push(a, "2026-10-25T00:59:50Z")],
+            "another branch only": [self.push(a, ref="refs/heads/feature/y")],
+        }
+        for name, log in cases.items():
+            code, fake, asked = self.run_carried(True, pushes=log)
+            self.assertEqual((code, asked), (1, []), name)
+            self.assertIn(self.DROPPED, fake.writes, name)
+
+    def test_forged_commit_dates_and_runs_are_ignored(self):
+        # The pusher writes author and committer dates, and any workflow can
+        # create check suites or start runs. Planting them next to a push log
+        # whose tip at the label is a...a changes nothing: only the log counts.
+        pr = self.pr(labels=("security-sensitive", "security-ack"))
+        pr["base"]["sha"] = "b" * 40
+        routes = self.routes(pr, self.SENSITIVE, self.ACK_BY_OWNER,
+                             pushes=[self.push("d" * 40, "2026-10-25T01:05:00Z"), self.push("a" * 40)])
+        routes["pulls/7/commits"] = [{"sha": "d" * 40, "commit": {
+            "author": {"date": "2026-10-25T00:30:00Z"}, "committer": {"date": "2026-10-25T00:30:00Z"}}}]
+        routes["actions/runs"] = {"workflow_runs": [{"event": "pull_request", "head_sha": "d" * 40,
+                                                     "created_at": "2026-10-25T01:00:02Z",
+                                                     "path": ".github/workflows/security-gate.yml",
+                                                     "actor": {"login": "0xmanhnv"}}]}
+        routes["commits/" + "d" * 40 + "/check-suites"] = {"check_suites": [{"created_at": "2026-10-25T00:30:00Z"}]}
+        asked = []
+
+        def still_covers(gitdir, base_sha, acked, head_sha, config, env=None):
+            asked.append(acked)
+            return False
+        with mock.patch.object(sg, "fetch_pr_commits", lambda *a: None), \
+                mock.patch.object(sg, "ack_still_covers", still_covers):
+            code, fake = self.run_gate("pull_request", self.SYNC, routes)
+        self.assertEqual((code, asked), (1, ["a" * 40]))
         self.assertIn(self.DROPPED, fake.writes)
-        # The earliest matching run wins (the label's own run, not a later push).
-        runs = [self.gate_run(h, at="2026-10-25T01:00:40Z"), self.gate_run("a" * 40, at="2026-10-25T01:00:02Z")]
-        code, _, asked = self.run_carried(True, runs=runs)
-        self.assertEqual((code, asked[0][0]), (0, "a" * 40))
+
+    def test_push_log_api_error_fails_closed(self):
+        pr = self.pr(labels=("security-ack",))
+        routes = self.routes(pr, self.SENSITIVE, self.ACK_BY_OWNER)
+        del routes[self.ACTIVITY]  # the fake raises like an HTTP error
+        code, fake = self.run_gate("pull_request", self.SYNC, routes)
+        self.assertEqual(code, 1)
+        self.assertIn(self.DROPPED, fake.writes)
+
+    def test_fork_head_reads_the_forks_push_log(self):
+        pr = self.pr(labels=("security-ack",), head_repo="fork/r")
+        routes = self.routes(pr, self.SENSITIVE, self.ACK_BY_OWNER)
+        routes["https://api.github.com/repos/fork/r/activity?ref=refs%2Fheads%2Ffeature%2Fx"] = routes.pop(self.ACTIVITY)
+        code, fake = self.run_gate("pull_request", self.SYNC, routes)
+        self.assertEqual((code, fake.writes), (0, []))
 
     def test_pr_touching_workflows_or_the_gate_gets_no_carried_ack(self):
         for name in (".github/workflows/api-ci.yml", ".github/actions/setup/action.yml",
@@ -426,7 +486,7 @@ class GateTest(unittest.TestCase):
             self.assertEqual((code, asked), (1, []), name)  # git is not even asked
             self.assertIn(self.DROPPED, fake.writes, name)
             # Acked on exactly this head, the same pull request passes.
-            code, _, _ = self.run_carried(True, files=files, runs=[self.gate_run("h" * 40)])
+            code, _, _ = self.run_carried(True, files=files, pushes=self.at_label("d" * 40))
             self.assertEqual(code, 0, name)
 
     def test_touches_gate_sees_both_names_of_a_rename(self):
@@ -436,69 +496,70 @@ class GateTest(unittest.TestCase):
 
     def test_retargeted_after_the_ack_drops_it(self):
         events = self.ACK_BY_OWNER + [{"event": "base_ref_changed", "actor": {"login": "0xmanhnv"}}]
-        code, fake, asked = self.run_carried(True, events=events, runs=[self.gate_run("h" * 40)])
+        code, fake, asked = self.run_carried(True, events=events, pushes=self.at_label("d" * 40))
         self.assertEqual((code, asked), (1, []))
         self.assertIn(self.DROPPED, fake.writes)
         # A retarget before the label does not matter.
         events = [{"event": "base_ref_changed", "actor": {"login": "0xmanhnv"}}] + self.ACK_BY_OWNER
-        self.assertEqual(self.run_carried(True, events=events, runs=[self.gate_run("h" * 40)])[0], 0)
+        self.assertEqual(self.run_carried(True, events=events, pushes=self.at_label("d" * 40))[0], 0)
 
-    PINNED = "refs/heads/develop"
     RULESET = [{"type": "workflows", "parameters": {"workflows": [
         {"path": ".github/workflows/security-gate.yml", "ref": "refs/heads/develop", "repository_id": 1}]}}]
     GATE_EDIT = [{"filename": ".github/workflows/security-gate.yml", "status": "modified", "deletions": 1,
                   "patch": patch("x")}]
 
-    def test_gate_editing_pr_trusts_only_the_ruleset_run(self):
-        # The PR's own security-gate.yml skipped the label's run; the acker's
-        # next action (adding ci:full) started a run of that edited file on an
-        # unreviewed head h. It must not name the acked commit.
-        h = "h" * 40
-        later = self.gate_run(h, at="2026-10-25T01:04:00Z")
-        code, fake, asked = self.run_carried(True, files=self.GATE_EDIT, runs=[later], rules=self.RULESET)
-        self.assertEqual((code, asked), (1, []))
+    def test_gate_editing_pr_needs_the_ack_on_its_exact_head(self):
+        # Its own workflows run on its events, but they cannot rewrite the
+        # push log: the tip at the label decides, also with a ruleset.
+        h = "d" * 40
+        code, fake, asked = self.run_carried(True, files=self.GATE_EDIT, rules=self.RULESET)
+        self.assertEqual((code, asked), (1, []))  # acked a...a, head d...d: no carry, git not asked
         self.assertIn(self.DROPPED, fake.writes)
-        # The run of the pinned workflow the ruleset started on the label does.
-        pinned = self.gate_run(h, path=f".github/workflows/security-gate.yml@{self.PINNED}")
-        code, fake, _ = self.run_carried(False, files=self.GATE_EDIT, runs=[later, pinned], rules=self.RULESET)
+        code, fake, _ = self.run_carried(False, files=self.GATE_EDIT, pushes=self.at_label(h), rules=self.RULESET)
         self.assertEqual(code, 0)
         self.assertNotIn(self.DROPPED, fake.writes)
-        # A pinned run at another ref, or on an older head, does not.
-        other = self.gate_run(h, path=".github/workflows/security-gate.yml@refs/heads/feature/x")
-        self.assertEqual(self.run_carried(True, files=self.GATE_EDIT, runs=[other], rules=self.RULESET)[0], 1)
-        old = self.gate_run("a" * 40, path=f".github/workflows/security-gate.yml@{self.PINNED}")
-        self.assertEqual(self.run_carried(True, files=self.GATE_EDIT, runs=[old], rules=self.RULESET)[0], 1)
+        body = [b["body"] for m, p, b in fake.writes if m == "POST" and p == "issues/7/comments"][0]
+        self.assertNotIn("no ruleset requires", body)
+
+    def test_gate_editing_pr_in_the_merge_queue(self):
+        event = {"merge_group": {"head_ref": "refs/heads/gh-readonly-queue/develop/pr-7-abc123"}}
+        code, fake, _ = self.run_carried(True, files=self.GATE_EDIT, rules=self.RULESET,
+                                         event_name="merge_group", event=event)
+        self.assertEqual((code, fake.writes), (1, []))
+        code, fake, _ = self.run_carried(True, files=self.GATE_EDIT, rules=self.RULESET, pushes=self.at_label("d" * 40),
+                                         event_name="merge_group", event=event)
+        self.assertEqual((code, fake.writes), (0, []))
 
     def test_gate_editing_pr_without_a_ruleset_is_flagged(self):
-        code, fake, _ = self.run_carried(True, files=self.GATE_EDIT, runs=[self.gate_run("h" * 40)])
+        code, fake, _ = self.run_carried(True, files=self.GATE_EDIT, pushes=self.at_label("d" * 40))
         self.assertEqual(code, 0)
         body = [b["body"] for m, p, b in fake.writes if m == "POST" and p == "issues/7/comments"][0]
         self.assertIn("no ruleset requires the gate workflow", body)
-        code, fake, _ = self.run_carried(True, runs=[self.gate_run("h" * 40)])  # not gate-touching: no flag
+        code, fake, _ = self.run_carried(True, pushes=self.at_label("d" * 40))  # not gate-touching: no flag
         body = [b["body"] for m, p, b in fake.writes if m == "POST" and p == "issues/7/comments"][0]
         self.assertNotIn("no ruleset requires", body)
 
     def test_comment_shows_the_acknowledged_commit(self):
         code, fake, _ = self.run_carried(True)
         body = [b["body"] for m, p, b in fake.writes if m == "POST" and p == "issues/7/comments"][0]
-        self.assertIn(f"Acknowledged commit: `{'a' * 40}` (head now `{'h' * 40}`)", body)
+        self.assertIn(f"Acknowledged commit: `{'a' * 40}` (head now `{'d' * 40}`)", body)
 
     def test_event_list_that_does_not_end_with_the_label_is_not_trusted(self):
         # The label is on the PR, so the newest security-ack event must be `labeled`.
         events = self.ACK_BY_OWNER + [{"event": "unlabeled", "label": {"name": "security-ack"},
                                        "actor": {"login": "0xmanhnv"}}]
-        self.assertEqual(self.run_carried(True, events=events, runs=[self.gate_run("h" * 40)])[0], 1)
+        self.assertEqual(self.run_carried(True, events=events, pushes=self.at_label("d" * 40))[0], 1)
 
     def test_too_many_events_fails_closed(self):
         events = [{"event": "commented"}] * sg.MAX_EVENTS + self.ACK_BY_OWNER
         with self.assertRaises(RuntimeError):
-            self.run_carried(True, events=events, runs=[self.gate_run("h" * 40)])
+            self.run_carried(True, events=events, pushes=self.at_label("d" * 40))
 
     def test_merge_group_with_an_uncovered_ack_blocks_without_writing(self):
         event = {"merge_group": {"head_ref": "refs/heads/gh-readonly-queue/develop/pr-7-abc123"}}
         code, fake, _ = self.run_carried(False, event_name="merge_group", event=event)
         self.assertEqual((code, fake.writes), (1, []))
-        code, fake, _ = self.run_carried(False, event_name="merge_group", event=event, runs=[self.gate_run("h" * 40)])
+        code, fake, _ = self.run_carried(False, event_name="merge_group", event=event, pushes=self.at_label("d" * 40))
         self.assertEqual((code, fake.writes), (0, []))
 
     def test_fork_pr_is_read_only(self):
@@ -531,11 +592,11 @@ class GateTest(unittest.TestCase):
     def test_release_pr_evaluates_only_what_it_adds_to_develop(self):
         pr = self.pr(base="main", head_ref="release/v1.2.3")
         routes = self.routes(pr, self.SENSITIVE)  # the full diff carries develop's sensitive change
-        routes["compare/develop..." + "h" * 40] = {"files": [{"filename": "versions.yaml", "status": "modified",
+        routes["compare/develop..." + "d" * 40] = {"files": [{"filename": "versions.yaml", "status": "modified",
                                                              "deletions": 1, "patch": patch("v: 1.2.3")}]}
         code, _ = self.run_gate("pull_request", {"pull_request": {"number": 7}}, routes)
         self.assertEqual(code, 0)
-        routes["compare/develop..." + "h" * 40] = {"files": self.SENSITIVE}
+        routes["compare/develop..." + "d" * 40] = {"files": self.SENSITIVE}
         code, _ = self.run_gate("pull_request", {"pull_request": {"number": 7}}, routes)
         self.assertEqual(code, 1)
 
@@ -549,6 +610,131 @@ class GateTest(unittest.TestCase):
         del routes["pulls/7/files"]
         with self.assertRaises(RuntimeError):
             self.run_gate("pull_request", {"pull_request": {"number": 7}}, routes)
+
+
+class PushLogTest(unittest.TestCase):
+    """acked_head walks every page of the push log and orders it itself."""
+
+    class Pages:
+        def __init__(self, pages):
+            self.pages, self.api, self.urls = pages, "https://api.github.com", []
+
+        def request(self, method, url):
+            self.urls.append(url)
+            i = len(self.urls) - 1
+            more = f'<https://api.github.com/next?page={i + 1}>; rel="next"' if i + 1 < len(self.pages) else ""
+            return self.pages[i], more
+
+    PR = {"head": {"ref": "feature/x", "repo": {"full_name": "o/r"}, "sha": "d" * 40}}
+    ACK = {"created_at": "2026-10-25T01:00:00Z"}
+
+    def test_reads_every_page_and_sorts_by_time(self):
+        push = GateTest.push
+        pages = [[push("e" * 40, "2026-10-25T00:10:00Z")],          # ascending, across two pages
+                 [push("a" * 40, "2026-10-25T00:50:00Z"), push("d" * 40, "2026-10-25T01:20:00Z")]]
+        gh = self.Pages(pages)
+        self.assertEqual(sg.acked_head(gh, self.PR, self.ACK), "a" * 40)
+        self.assertEqual(len(gh.urls), 2)
+        self.assertIn("/repos/o/r/activity?ref=refs%2Fheads%2Ffeature%2Fx", gh.urls[0])
+
+    def test_same_second_pushes_are_ordered_by_id(self):
+        one, two = GateTest.push("a" * 40), GateTest.push("e" * 40)
+        one["id"], two["id"] = 2, 1
+        self.assertEqual(sg.acked_head(self.Pages([[two, one]]), self.PR, self.ACK), "a" * 40)
+
+    def test_a_log_longer_than_the_page_cap_fails_closed(self):
+        pages = [[GateTest.push("a" * 40)]] * (sg.MAX_ACTIVITY_PAGES + 1)
+        self.assertIsNone(sg.acked_head(self.Pages(pages), self.PR, self.ACK))
+
+    def test_missing_label_time_or_head_repo_fails_closed(self):
+        gh = self.Pages([[GateTest.push("a" * 40)]])
+        self.assertIsNone(sg.acked_head(gh, self.PR, {}))
+        self.assertIsNone(sg.acked_head(gh, {"head": {"ref": "feature/x", "repo": None}}, self.ACK))
+
+
+class RerunTest(unittest.TestCase):
+    """The label workflow's `rerun` command: it only asks the gate to run again."""
+
+    LABELED = {"action": "labeled", "label": {"name": "security-ack"},
+               "pull_request": {"number": 7, "head": {"repo": {"full_name": "o/r"}}}}
+
+    @staticmethod
+    def run_(run_id, started, status="completed", head="d" * 40, path=".github/workflows/security-gate.yml",
+             repo="o/r", created=None):
+        return {"id": run_id, "event": "pull_request", "head_sha": head, "path": path, "status": status,
+                "created_at": created or started, "run_started_at": started,
+                "head_repository": {"full_name": repo}}
+
+    def rerun(self, runs_seq, event=None, state="open"):
+        """runs_seq: the gate runs listed on each poll (the last one repeats)."""
+        polls = []
+        routes = {"actions/runs/99": {"created_at": "2026-10-25T01:00:05Z"},
+                  "pulls/7": {"state": state, "head": {"sha": "d" * 40}}}
+        fake = FakeGitHub(routes)
+
+        def request(self_, method, path, body=None, ok404=False):
+            if method == "GET" and path.startswith("actions/runs?"):
+                polls.append(path)
+                runs = runs_seq[min(len(polls), len(runs_seq)) - 1]
+                return {"workflow_runs": runs}, ""
+            return fake.request(method, path, body, ok404)
+        clock = [datetime.datetime(2026, 10, 25, 1, 0, 6, tzinfo=datetime.timezone.utc)]
+
+        def sleep(sec):
+            clock[0] += datetime.timedelta(seconds=sec)
+        with tempfile.TemporaryDirectory() as d:
+            ev = pathlib.Path(d, "event.json")
+            ev.write_text(json.dumps(event or self.LABELED))
+            env = {"GITHUB_REPOSITORY": "o/r", "GITHUB_TOKEN": "t", "GITHUB_EVENT_NAME": "pull_request",
+                   "GITHUB_EVENT_PATH": str(ev), "GITHUB_RUN_ID": "99"}
+            with mock.patch.dict(os.environ, env), mock.patch.object(sg.GitHub, "request", request), \
+                    mock.patch("builtins.print"):
+                code = sg.cmd_rerun(sleep=sleep, now=lambda: clock[0])
+        return code, [w for w in fake.writes], polls
+
+    def test_reruns_the_finished_gate_run_of_the_head(self):
+        old = self.run_(1, "2026-10-25T00:40:00Z")
+        newest = self.run_(2, "2026-10-25T00:55:00Z")
+        decoys = [self.run_(5, "2026-10-25T00:58:00Z", path=".github/workflows/other.yml"),
+                  self.run_(6, "2026-10-25T00:58:00Z", head="a" * 40),
+                  self.run_(7, "2026-10-25T00:58:00Z", repo="fork/r")]
+        code, writes, _ = self.rerun([[old, newest] + decoys])
+        self.assertEqual((code, writes), (0, [("POST", "actions/runs/2/rerun", None)]))
+
+    def test_waits_for_a_running_gate_run_then_reruns_it(self):
+        running = self.run_(2, "2026-10-25T00:59:00Z", status="in_progress")
+        done = self.run_(2, "2026-10-25T00:59:00Z")
+        code, writes, polls = self.rerun([[running], [running], [done]])
+        self.assertEqual((code, writes, len(polls)), (0, [("POST", "actions/runs/2/rerun", None)], 3))
+
+    def test_a_run_started_after_the_change_already_read_the_label(self):
+        code, writes, _ = self.rerun([[self.run_(2, "2026-10-25T01:00:30Z", status="in_progress")]])
+        self.assertEqual((code, writes), (0, []))
+        # A re-run attempt started after the change counts too (run_started_at is per attempt).
+        code, writes, _ = self.rerun([[self.run_(2, "2026-10-25T01:00:30Z", created="2026-10-25T00:30:00Z")]])
+        self.assertEqual((code, writes), (0, []))
+
+    def test_no_gate_run_within_the_wait_fails_visibly(self):
+        code, writes, polls = self.rerun([[]])
+        self.assertEqual((code, writes), (1, []))
+        self.assertGreater(len(polls), 1)
+
+    def test_ignores_other_events_forks_and_closed_prs(self):
+        cases = [dict(self.LABELED, label={"name": "run-e2e"}),
+                 dict(self.LABELED, action="edited", changes={"title": {"from": "x"}}),
+                 dict(self.LABELED, action="synchronize"),
+                 dict(self.LABELED, pull_request={"number": 7, "head": {"repo": {"full_name": "fork/r"}}})]
+        for ev in cases:
+            code, writes, polls = self.rerun([[self.run_(2, "2026-10-25T00:55:00Z")]], event=ev)
+            self.assertEqual((code, writes, polls), (0, [], []), ev)
+        code, writes, _ = self.rerun([[self.run_(2, "2026-10-25T00:55:00Z")]], state="closed")
+        self.assertEqual((code, writes), (0, []))
+
+    def test_unlabel_and_retarget_rerun_too(self):
+        for ev in (dict(self.LABELED, action="unlabeled"),
+                   dict(self.LABELED, action="edited", changes={"base": {"ref": {"from": "feature/p"}}})):
+            code, writes, _ = self.rerun([[self.run_(2, "2026-10-25T00:55:00Z")]], event=ev)
+            self.assertEqual((code, writes), (0, [("POST", "actions/runs/2/rerun", None)]), ev)
 
 
 class LargePullRequestTest(unittest.TestCase):
@@ -621,7 +807,7 @@ class LargePullRequestTest(unittest.TestCase):
                   "base": {"ref": "main", "sha": base}}
             routes = {"pulls/7": pr, "issues/7/events": list(events), "issues/7/comments": [],
                       "commits/" + head + "/check-runs": {"check_runs": []},  # no pulls/7/files route: the API list is not used
-                      "actions/runs": {"workflow_runs": [GateTest.gate_run(head)]}}
+                      GateTest.ACTIVITY: [GateTest.push(head)]}
             fake = FakeGitHub(routes)
             evp = pathlib.Path(ev_dir, "event.json")
             evp.write_text(json.dumps({"pull_request": {"number": 7}}))
