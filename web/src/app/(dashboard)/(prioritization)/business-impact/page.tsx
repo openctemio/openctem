@@ -293,7 +293,7 @@ export default function BusinessImpactPage() {
                           </span>
                         </p>
                       </div>
-                      <RiskScoreBadge score={asset.risk_score ?? 0} size="sm" />
+                      <RiskScoreBadge score={asset.risk_score ?? 0} size="sm" labelled />
                     </div>
                   ))}
                 </div>
