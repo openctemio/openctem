@@ -314,7 +314,7 @@ func (t *WidgetTime) normalize(m Metric) error {
 		return fmt.Errorf("%w: metric %s has no time range or comparison", shared.ErrValidation, m.ID)
 	}
 	if !m.Comparable() && t.Compare != CompareNone {
-		return fmt.Errorf("%w: metric %s has no comparison", shared.ErrValidation, m.ID)
+		return fmt.Errorf("%w: this metric has no previous-period comparison", shared.ErrValidation)
 	}
 	return nil
 }
