@@ -262,7 +262,7 @@
   "assets.dedup.merged": "Duplicates merged",
   "assets.dedup.reason": "Reason",
   "assets.dedup.rejectFailed": "Failed to reject review",
-  "assets.dedup.search": "Search reviews...",
+  "assets.dedup.search": "Search reviews…",
   "assets.exposure.isolated": "Isolated",
   "assets.exposure.isolated.hint": "Air-gapped or highly restricted environment",
   "assets.exposure.private": "Private",

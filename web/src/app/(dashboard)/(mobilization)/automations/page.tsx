@@ -898,10 +898,7 @@ export default function WorkflowsPage() {
                   columns={workflowColumns}
                   data={workflows}
                   searchKey="name"
-                  searchPlaceholder={t(
-                    'automations.table.searchPlaceholder',
-                    'Search workflows...'
-                  )}
+                  searchPlaceholder={t('automations.table.searchPlaceholder', 'Search workflows…')}
                   getRowId={(w) => w.id}
                   onRowClick={handleViewWorkflow}
                   emptyMessage={t('automations.table.noMatch', 'No workflows match')}

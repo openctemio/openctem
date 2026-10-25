@@ -1234,7 +1234,7 @@ export default function TicketingIntegrationPage() {
                   getRowId={(c) => c.id}
                   searchPlaceholder={t(
                     'ticketingIntegration.page.searchPlaceholder',
-                    'Search connections...'
+                    'Search connections…'
                   )}
                   showSelectionCount={false}
                 />

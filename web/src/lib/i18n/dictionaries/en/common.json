@@ -147,7 +147,7 @@
   "common.table.previousPage": "Previous page",
   "common.table.resultsNoun": "results",
   "common.table.rowsPerPage": "Rows per page",
-  "common.table.search": "Search...",
+  "common.table.search": "Search…",
   "common.table.selectColumn": "Select",
   "common.table.selectedOf": "{selected} of {total} selected",
   "common.table.showing": "Showing {start} - {end} of {total} {noun}",

@@ -848,7 +848,7 @@
   "org.teams.nameRequired": "Nhập tên nhóm",
   "org.teams.noMatch": "Không có nhóm nào khớp với tìm kiếm",
   "org.teams.noTeamNote": "Thành viên không thuộc nhóm nào sẽ không thấy tài sản hay phát hiện nào cho đến khi bạn thêm họ vào một nhóm hoặc cấp cho họ một tài sản. Chủ sở hữu, quản trị viên và các vai trò có toàn quyền truy cập dữ liệu thấy tất cả.",
-  "org.teams.searchPlaceholder": "Tìm nhóm...",
+  "org.teams.searchPlaceholder": "Tìm nhóm…",
   "org.teams.teamName": "Tên nhóm",
   "org.teams.teamNamePlaceholder": "Ví dụ: Nhóm bảo mật, DevOps",
   "org.teams.viewDetails": "Xem chi tiết",

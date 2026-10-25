@@ -20,7 +20,7 @@
   "siemIntegration.form.title": "Tích hợp Splunk HEC mới",
   "siemIntegration.form.token": "Token HEC",
   "siemIntegration.form.url": "URL điểm cuối HEC",
-  "siemIntegration.searchPlaceholder": "Tìm kiếm tích hợp...",
+  "siemIntegration.searchPlaceholder": "Tìm kiếm tích hợp…",
   "siemIntegration.status.connected": "đã kết nối",
   "siemIntegration.status.disabled": "đã tắt",
   "siemIntegration.status.disconnected": "đã ngắt kết nối",

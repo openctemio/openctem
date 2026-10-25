@@ -91,7 +91,7 @@
   "ticketingIntegration.page.emptyDescription": "Kết nối một hệ thống ticketing để tự động tạo và theo dõi ticket khắc phục.",
   "ticketingIntegration.page.emptyTitle": "Chưa kết nối hệ thống ticketing nào",
   "ticketingIntegration.page.errorTitle": "kết nối ticketing",
-  "ticketingIntegration.page.searchPlaceholder": "Tìm kiếm kết nối...",
+  "ticketingIntegration.page.searchPlaceholder": "Tìm kiếm kết nối…",
   "ticketingIntegration.page.title": "Ticketing",
   "ticketingIntegration.provider.custom": "Tùy chỉnh",
   "ticketingIntegration.status.connected": "Đã kết nối",
