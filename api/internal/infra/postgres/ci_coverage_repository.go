@@ -379,7 +379,8 @@ func (r *CIRunRepository) MarkStaleSourceFindings(ctx context.Context, tenantID 
 }
 
 // RetirePipeline retires a pipeline and closes the open findings only it
-// reported as "source_retired", in one transaction. Returns the pipeline as
+// reported as "source_retired", in one transaction. Secret findings stay
+// open: a pipeline that no longer reports a secret has not rotated it. Returns the pipeline as
 // it was and the closed finding ids.
 func (r *CIRunRepository) RetirePipeline(ctx context.Context, tenantID, pipelineID shared.ID, by *shared.ID, reason string, at time.Time) (*cirun.Pipeline, []shared.ID, error) {
 	tx, err := r.db.BeginTx(ctx, nil)
@@ -419,6 +420,7 @@ func (r *CIRunRepository) RetirePipeline(ctx context.Context, tenantID, pipeline
 	rows, err := tx.QueryContext(ctx, `UPDATE findings f SET status = 'resolved', resolution = 'source_retired',
 		closure_reason = 'obsolete_source', verification = 'none', resolved_at = $5, resolved_by = $6, updated_at = NOW()
 		WHERE `+soleSourceFindings+` AND f.status IN `+sourceRetiredFromSQL+`
+		AND NOT `+secretFindingSQL("f")+`
 		RETURNING f.id::text`, tenantID.String(), pipelineID.String(), p.RepositoryAssetID.String(), p.LastRunAt, at, nullID(by))
 	if err != nil {
 		return nil, nil, fmt.Errorf("close retired-source findings: %w", err)

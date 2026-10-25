@@ -64,4 +64,21 @@ describe('SharedSensorsOptOutSwitch', () => {
       })
     )
   })
+
+  it('opting back in asks first, then saves', async () => {
+    role.value = 'owner'
+    api.data = { opt_out: true }
+    api.put.mockResolvedValue({ opt_out: false })
+    const user = userEvent.setup()
+    render(<SharedSensorsOptOutSwitch />)
+    await user.click(screen.getByRole('switch', { name: 'sensors.sharedOptOut.label' }))
+    await screen.findByRole('alertdialog')
+    expect(api.put).not.toHaveBeenCalled()
+    await user.click(screen.getByRole('button', { name: 'confirm.sharedSensors.btn' }))
+    await waitFor(() =>
+      expect(api.put).toHaveBeenCalledWith('/api/v1/organization/settings/shared-sensors', {
+        opt_out: false,
+      })
+    )
+  })
 })
