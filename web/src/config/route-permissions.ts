@@ -500,6 +500,11 @@ export const routePermissions: Record<string, RoutePermissionConfig> = {
     permission: Permission.FindingsRead,
     module: Module.Findings,
   },
+  // Triage mode decides findings: the status permission, like its button.
+  '/findings/triage': {
+    permission: Permission.FindingsStatus,
+    module: Module.Findings,
+  },
 
   // ========================================
   // Insights - Reports (Module: reports)
