@@ -7,7 +7,6 @@ import {
   ConfirmDialog,
   ConfirmSample,
   irreversibleTypeToConfirm,
-  nameToConfirm,
   typedTextMatches,
 } from '../confirm-dialog'
 
@@ -173,14 +172,5 @@ describe('ConfirmSample', () => {
   it('says nothing more when every name is shown', () => {
     render(<ConfirmSample names={['a', 'b']} />)
     expect(screen.queryByText(/more/)).toBeNull()
-  })
-})
-
-describe('nameToConfirm', () => {
-  it('asks for the name, or a short id when the name is empty or too long to type', () => {
-    expect(nameToConfirm('payments', '12345678-aaaa')).toBe('payments')
-    expect(nameToConfirm('  ', '12345678-aaaa')).toBe('12345678')
-    expect(nameToConfirm(undefined, '12345678-aaaa')).toBe('12345678')
-    expect(nameToConfirm('x'.repeat(65), '12345678-aaaa')).toBe('12345678')
   })
 })

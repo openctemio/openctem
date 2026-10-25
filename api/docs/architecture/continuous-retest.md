@@ -21,15 +21,57 @@ decides:
 | Re-run | Attempt evidence | Outcome (`reason_code`) | Finding |
 |---|---|---|---|
 | matched | any | `still_vulnerable` (`matched`) | open: unchanged · `resolved` → `confirmed` (regression) · `fix_applied` → `in_progress`; validation `reproducible`, observation `present` |
-| no match | request to the finding's endpoint, answered 1xx–4xx except 401/403/407/429 | `confirmed_fixed` (`not_matched`) | status unchanged, validation `not_reproducible` ("verified fixed — awaiting confirmation"); → `resolved` (`fixed` / `retest`) only with `settings.retest.auto_resolve`; `resolved` stays |
-| no match | answered 403 / 429 | `inconclusive` (`blocked`) | unchanged |
-| no match | answered 401 / 407 | `inconclusive` (`auth_changed`) | unchanged |
+| no match | request to the finding's endpoint, answered 1xx–4xx except 401/403/407/429, with no edge marker | `confirmed_fixed` (`not_matched`) | status unchanged, validation `not_reproducible` ("verified fixed — awaiting confirmation"); → `resolved` (`fixed` / `retest`) only with `settings.retest.auto_resolve`; `resolved` stays |
+| no match | any answer carrying a CDN or WAF challenge or block marker (a vendor header or error page), or a throttle with a vendor marker | `inconclusive` (`edge_blocked`), never a fix | unchanged |
+| no match | origin 401 / 403 (no edge marker), exposure-class platform template, second sighting (the previous completed retest, at least an hour earlier, was the same origin refusal) | `confirmed_fixed` (`access_denied`), "access now denied by the server" | as for any confirmed fix |
+| no match | origin 401 / 403, exposure-class template, first sighting, or less than an hour after the first | `inconclusive` (`access_denied`) | unchanged |
+| no match | origin 401 / 403, any other class | `inconclusive` (`access_denied`), "access denied: cannot confirm the fix" | unchanged |
+| no match | answered 429 (no edge marker) | `inconclusive` (`blocked`) | unchanged |
+| no match | answered 407 | `inconclusive` (`auth_changed`) | unchanged |
 | no match | answered 5xx | `inconclusive` (`server_error`) | unchanged |
 | no match | request to another URL | `inconclusive` (`endpoint_mismatch`) | unchanged |
 | no match | no response | `inconclusive` (`unreachable`) | unchanged |
 | no match | none, target answered the probe | `not_reproduced` (`no_endpoint_proof`) | unchanged |
 | no match | none, target did not answer | `inconclusive` (`unreachable`) | unchanged |
 | error / no result / deadline passed | any | `inconclusive` (`error`, `no_result`) | unchanged |
+| tool: check not in the sensor's template set | any | `inconclusive` (`template_not_found`) | unchanged |
+| tool: check excluded by the sensor's safety policy | any | `inconclusive` (`excluded_by_policy`) | unchanged |
+| tool: ended without judging the item | any | `inconclusive` (`no_verdict`) | unchanged |
+
+**Edge answers and access denied.** The platform reads the recorded response
+(status, headers, body) with the edge detector of ctis (`edgeprotect`).
+A challenge or block page of a CDN or WAF says nothing about the service, so
+it is `edge_blocked` (the message names the vendor and asks to allow the
+scanner at the edge, see the edge-protection guidance) and is never a fix. A
+bare 403 with no marker is the origin's own answer. For an exposure-class
+platform template the class comes from the template's own tags (such as
+`exposure`, `exposed-panel`, `swagger`, `config`, `backup`, `debug`,
+`listing`, `disclosure`; any attacking tag such as `rce`, `sqli`, `xss`,
+`lfi`, `bypass` or `default-login` wins), recorded by the scanner at the
+finding's last sighting in `findings.template_exposure`. It is never read
+from the finding's own tags, which a user can edit, and it is not recorded
+for an organization's own rules or a custom retest check. A server that
+refuses the request has then removed what was exposed: that is a fix once
+seen twice, on two consecutive retests of the same check at least an hour
+apart, both answered by the origin (an edge-marked answer in between is not a
+refusal and resets the count; the reachability probe is not a second
+sighting). The earlier refusal counts only when it is at most 14 days old and
+the finding was neither sighted nor reopened since it. Only a result of a
+command the platform dispatched sets the class: an API, CTIS or CI upload
+never does, whatever tags it carries. For every other class a refusal may only mean the check never
+reached the vulnerable code, so it stays inconclusive. The classification
+needs no new
+data from the sensor: the evidence it already reports carries the response.
+
+A tool that retests gives an unverifiable item a reason code (sdk-go
+`tool.VerdictCode`: `template_not_found`, `excluded_by_policy`,
+`target_unreachable`, `egress_refused`, `no_verdict`). The platform maps it to
+the reason codes above (`target_unreachable` to `unreachable`, `egress_refused`
+to `blocked`), and the finding card shows what it means and what to do next
+(en and vi). The code only labels an inconclusive result: it never changes a
+verdict, and an unknown or missing code (an older sensor) is a plain `error`.
+A retest whose tool could not run the check (`error`, `template_not_found`,
+`excluded_by_policy`, `no_verdict`) settles its run as blocked, not failed.
 
 The endpoint is the finding's matched-at: scheme, host, port (default ports
 dropped), path and the parameter names (values are not compared: a token

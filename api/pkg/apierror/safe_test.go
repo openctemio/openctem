@@ -195,3 +195,25 @@ func TestMain(m *testing.M) {
 	slog.SetDefault(slog.New(slog.NewTextHandler(io.Discard, nil)))
 	os.Exit(m.Run())
 }
+
+// The original text goes to the log for debugging, but a driver or upstream
+// error can quote a DSN or token: it is redacted before logging.
+func TestPublicMessage_LogsRedactedOriginal(t *testing.T) {
+	var buf strings.Builder
+	prev := slog.Default()
+	slog.SetDefault(slog.New(slog.NewTextHandler(&buf, nil)))
+	defer slog.SetDefault(prev)
+
+	e := &Error{Code: CodeInternalError, Status: 500, Message: "dial tcp: connect postgres://app:S3cr3tPw@db:5432/x token=abc123def456 refused"}
+	got := e.publicMessage("req-1")
+	if strings.Contains(got, "S3cr3tPw") || strings.Contains(got, "postgres") {
+		t.Fatalf("client message leaks: %q", got)
+	}
+	log := buf.String()
+	if !strings.Contains(log, "original=") || !strings.Contains(log, "db:5432") {
+		t.Fatalf("original not logged: %q", log)
+	}
+	if strings.Contains(log, "S3cr3tPw") || strings.Contains(log, "abc123def456") {
+		t.Fatalf("secret reached the log: %q", log)
+	}
+}
