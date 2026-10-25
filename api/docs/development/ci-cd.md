@@ -124,6 +124,33 @@ queue branch name and reads its labels and code-scanning alerts through the API.
   falls back to the earlier rule on its next push (a push that changes a
   sensitive file, or any force-push, removes it), and records the digest when
   it survives.
+- Migration renumbering keeps the ack: a migration counts in the digest by its
+  name without the version number, in version order, so the merge queue moving
+  a pull request's migrations above `develop` (same names, same order, same
+  content) changes nothing, while editing or reordering them does.
+- Base merges that change the diff keep the ack too. When `develop` changed
+  the same sensitive file, the pull request's own `+`/`-` lines can shift (a
+  removed line now reads differently, a hunk merged into `develop` by a stacked
+  parent disappears) and the digest differs although nobody touched the
+  change. So the comment also records the head commit and base branch the ack
+  was last confirmed on (`ack-head`), moved forward on every run that keeps the
+  ack. When the digest differs, the gate fetches the history (trees, blobs on
+  demand) and keeps the ack only if all of these hold:
+  1. the base branch is the one recorded (a retargeted pull request is acked
+     again);
+  2. the recorded head's own diff still fingerprints to the recorded digest;
+  3. the recorded head is an ancestor of the new head (a rebase or force-push
+     is acked again);
+  4. every sensitive file of the pull request is the same blob in the new head
+     as in a clean `git merge-tree` of the recorded head with the newest
+     `develop` commit the new head contains (migrations matched by name and
+     order).
+  A sensitive change in any non-merge commit, or a conflict resolved inside a
+  sensitive file of a merge commit, makes 4 fail; plain files may change
+  freely. Every git or API error counts as "not covered" and removes the ack.
+  Like the digest, the markers count only in the comment the workflow wrote;
+  a repository writer could edit that comment, which is the same trust as the
+  label itself.
 - A HIGH diff finding is resolved by changing the line, or, for a reviewed false
   positive, by a comment on the same line:
   `security-review: allow <RULE-ID> <reason>` (visible in the diff and in git

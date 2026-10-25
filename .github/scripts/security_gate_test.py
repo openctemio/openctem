@@ -207,6 +207,20 @@ class DigestTest(unittest.TestCase):
         mig = sg.ChangedFile("api/migrations/000999_x.up.sql", status="added", patch=patch("GRANT SELECT ON t TO app;"))
         self.assertNotEqual(self.digest(s), self.digest(s, mig))
 
+    def test_renumbered_migration_keeps_the_digest_reordered_ones_do_not(self):
+        s = sg.ChangedFile("api/pkg/httpsec/ssrf.go", patch=patch("x := 1"))
+        mig = lambda n, name, body: sg.ChangedFile(f"api/migrations/{n}_{name}.up.sql", status="added",  # noqa: E731
+                                                   patch=patch(body))
+        before = self.digest(s, mig("003389", "finding_a", "GRANT a;"), mig("003390", "finding_b", "GRANT b;"))
+        renumbered = self.digest(s, mig("003410", "finding_a", "GRANT a;"), mig("003411", "finding_b", "GRANT b;"))
+        reordered = self.digest(s, mig("003411", "finding_a", "GRANT a;"), mig("003410", "finding_b", "GRANT b;"))
+        edited = self.digest(s, mig("003410", "finding_a", "GRANT all;"), mig("003411", "finding_b", "GRANT b;"))
+        self.assertEqual(before, renumbered)
+        self.assertNotEqual(before, reordered)
+        self.assertNotEqual(before, edited)
+        self.assertEqual(sg.stable_path("api/migrations/003410_finding_a.up.sql"), "api/migrations/#_finding_a.up.sql")
+        self.assertEqual(sg.stable_path("api/pkg/v2_x.go"), "api/pkg/v2_x.go")
+
     def test_missing_patch_uses_the_blob(self):
         a = sg.ChangedFile("api/pkg/httpsec/ssrf.go", patch=None, sha="a" * 40)
         b = sg.ChangedFile("api/pkg/httpsec/ssrf.go", patch=None, sha="b" * 40)
@@ -353,6 +367,57 @@ class GateTest(unittest.TestCase):
         self.assertIn(("DELETE", "issues/7/labels/security-ack", None), fake.writes)
         patched = [b["body"] for m, p, b in fake.writes if m == "PATCH"]
         self.assertTrue(patched and "ack-digest" not in patched[0] and "was removed" in patched[0])
+
+    def comment_with_head(self, files, head="a" * 40, base="develop"):
+        c = self.comment(files)
+        c[0]["body"] += f"<!-- security-gate:ack-head={head} base={base} -->\n"
+        return c
+
+    head_matches = True
+
+    def run_with_merges_only(self, answer, base="develop"):
+        moved = [dict(self.SENSITIVE[0], patch=patch("x := 1", "y := 2"))]  # the base merge changed the PR's diff
+        pr = self.pr(labels=("security-ack",))
+        pr["base"]["sha"] = "b" * 40
+        routes = self.routes(pr, moved, self.ACK_BY_OWNER)
+        routes["issues/7/comments"] = self.comment_with_head(self.SENSITIVE, base=base)
+        event = {"action": "synchronize", "before": "a", "after": "h", "pull_request": {"number": 7}}
+        asked = []
+
+        def covered(gitdir, acked, base_sha, head_sha, names, env=None):
+            asked.append((acked, base_sha, head_sha, sorted(names)))
+            return answer
+        with mock.patch.object(sg, "fetch_pr_commits", lambda *a: None), \
+                mock.patch.object(sg, "ack_head_matches", lambda *a: self.head_matches), \
+                mock.patch.object(sg, "covered_by_merges", covered):
+            code, fake = self.run_gate("pull_request", event, routes)
+        return code, fake, asked
+
+    def test_base_merge_that_changes_the_diff_keeps_ack_when_git_confirms(self):
+        code, fake, asked = self.run_with_merges_only(True)
+        self.assertEqual(code, 0)
+        self.assertFalse(any(m == "DELETE" for m, _, _ in fake.writes))
+        self.assertEqual(asked, [("a" * 40, "b" * 40, "h" * 40, ["api/pkg/httpsec/ssrf.go"])])
+        body = [b["body"] for m, p, b in fake.writes if m == "PATCH"][0]
+        self.assertIn(f"<!-- security-gate:ack-head={'h' * 40} base=develop -->", body)  # moves to the new head
+
+    def test_new_sensitive_commit_drops_ack_even_with_a_recorded_head(self):
+        code, fake, asked = self.run_with_merges_only(False)
+        self.assertEqual(code, 1)
+        self.assertEqual(len(asked), 1)
+        self.assertIn(("DELETE", "issues/7/labels/security-ack", None), fake.writes)
+
+    def test_head_marker_that_does_not_match_the_digest_is_not_used(self):
+        self.head_matches = False
+        code, fake, asked = self.run_with_merges_only(True)
+        self.assertEqual((code, asked), (1, []))
+        self.assertIn(("DELETE", "issues/7/labels/security-ack", None), fake.writes)
+
+    def test_retargeted_pr_drops_ack_without_asking_git(self):
+        # The ack was given against another base branch (a stacked PR's parent).
+        code, fake, asked = self.run_with_merges_only(True, base="feature/parent")
+        self.assertEqual((code, asked), (1, []))
+        self.assertIn(("DELETE", "issues/7/labels/security-ack", None), fake.writes)
 
     def test_digest_in_a_comment_someone_else_wrote_is_ignored(self):
         # A planted marker comment cannot vouch for a push that touches the sensitive file.
@@ -528,6 +593,106 @@ class LargePullRequestTest(unittest.TestCase):
         routes = GateTest.routes(GateTest(), GateTest.pr(GateTest()), GateTest.PLAIN)
         code, _ = GateTest.run_gate(GateTest(), "pull_request", {"pull_request": {"number": 7}}, routes)
         self.assertEqual(code, 0)
+
+
+class CoveredByMergesTest(unittest.TestCase):
+    """covered_by_merges on a real repository: a head that only merged the
+    base branch in (and renumbered its migration) keeps the ack; any other
+    change to a sensitive file does not."""
+
+    git = LargePullRequestTest.git
+    SENSITIVE = "api/pkg/httpsec/ssrf.go"
+    NAMES = {"api/pkg/httpsec/ssrf.go", "api/migrations/000011_finding_x.up.sql"}
+
+    def write(self, d, name, body):
+        pathlib.Path(d, name).parent.mkdir(parents=True, exist_ok=True)
+        pathlib.Path(d, name).write_text(body)
+
+    def commit(self, d, msg):
+        self.git(d, "add", "-A"); self.git(d, "commit", "-qm", msg)
+        return self.git(d, "rev-parse", "HEAD")
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        d = self.d = self.tmp.name
+        self.git(d, "init", "-q", "-b", "develop")
+        lines = [f"line {i}" for i in range(40)]
+        self.write(d, self.SENSITIVE, "\n".join(lines) + "\n")
+        self.write(d, "api/migrations/000009_base.up.sql", "SELECT 9;\n")
+        self.write(d, "web/a.tsx", "a\n")
+        self.commit(d, "base")
+        self.git(d, "checkout", "-q", "-b", "feature")
+        lines[2] = "line 2 changed by the PR"
+        self.write(d, self.SENSITIVE, "\n".join(lines) + "\n")
+        self.write(d, "api/migrations/000010_finding_x.up.sql", "GRANT SELECT ON f TO app;\n")
+        self.acked = self.commit(d, "pr")
+        # develop moves on: another line of the same sensitive file, and a
+        # migration that takes the PR's number.
+        self.git(d, "checkout", "-q", "develop")
+        dev = self.SENSITIVE
+        text = pathlib.Path(d, dev).read_text().replace("line 30", "line 30 changed on develop")
+        self.write(d, dev, text)
+        self.write(d, "api/migrations/000010_other.up.sql", "SELECT 10;\n")
+        self.base = self.commit(d, "develop moves")
+        self.git(d, "checkout", "-q", "feature")
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def merge_and_renumber(self):
+        self.git(self.d, "merge", "-q", "--no-edit", "develop")
+        self.git(self.d, "mv", "api/migrations/000010_finding_x.up.sql", "api/migrations/000011_finding_x.up.sql")
+        return self.commit(self.d, "renumber 10 -> 11")
+
+    def covered(self, head):
+        return sg.covered_by_merges(self.d, self.acked, self.base, head, self.NAMES)
+
+    def test_clean_base_merge_and_renumber_keep_the_ack(self):
+        self.assertTrue(self.covered(self.merge_and_renumber()))
+
+    def test_plain_file_commit_after_the_merge_keeps_the_ack(self):
+        self.merge_and_renumber()
+        self.write(self.d, "web/a.tsx", "b\n")
+        self.assertTrue(self.covered(self.commit(self.d, "web only")))
+
+    def test_sensitive_commit_after_the_merge_drops_it(self):
+        self.merge_and_renumber()
+        text = pathlib.Path(self.d, self.SENSITIVE).read_text().replace("line 5", "line 5 sneaked in")
+        self.write(self.d, self.SENSITIVE, text)
+        self.assertFalse(self.covered(self.commit(self.d, "sensitive")))
+
+    def test_change_hidden_in_the_merge_commit_drops_it(self):
+        self.git(self.d, "merge", "-q", "--no-commit", "develop")
+        text = pathlib.Path(self.d, self.SENSITIVE).read_text().replace("line 7", "line 7 in the merge")
+        self.write(self.d, self.SENSITIVE, text)
+        self.git(self.d, "mv", "api/migrations/000010_finding_x.up.sql", "api/migrations/000011_finding_x.up.sql")
+        self.assertFalse(self.covered(self.commit(self.d, "evil merge")))
+
+    def test_renumber_that_also_edits_the_migration_drops_it(self):
+        self.merge_and_renumber()
+        self.write(self.d, "api/migrations/000011_finding_x.up.sql", "GRANT ALL ON f TO app;\n")
+        self.assertFalse(self.covered(self.commit(self.d, "edit")))
+
+    def test_rebase_drops_it(self):
+        self.git(self.d, "rebase", "-q", "develop")
+        self.git(self.d, "mv", "api/migrations/000010_finding_x.up.sql", "api/migrations/000011_finding_x.up.sql")
+        self.assertFalse(self.covered(self.commit(self.d, "renumber after rebase")))
+
+    def test_ack_head_matches_its_digest_after_the_base_moved(self):
+        first = self.git(self.d, "rev-list", "--max-parents=0", "develop")
+        at_ack = sg.git_changed_files(self.d, first, self.acked, CONFIG)
+        digest = sg.sensitive_digest(at_ack, CONFIG, sg.review(at_ack)[0])
+        self.assertTrue(sg.ack_head_matches(self.d, self.base, self.acked, CONFIG, digest))
+        self.assertFalse(sg.ack_head_matches(self.d, self.base, self.acked, CONFIG, "0" * 64))
+        later = self.merge_and_renumber()
+        text = pathlib.Path(self.d, self.SENSITIVE).read_text().replace("line 5", "line 5 changed")
+        self.write(self.d, self.SENSITIVE, text)
+        forged = self.commit(self.d, "change")  # a head marker moved to this commit would not match
+        self.assertNotEqual(later, forged)
+        self.assertFalse(sg.ack_head_matches(self.d, self.base, forged, CONFIG, digest))
+
+    def test_unknown_acked_commit_counts_as_not_covered(self):
+        self.assertFalse(sg.covered_by_merges(self.d, "f" * 40, self.base, self.merge_and_renumber(), self.NAMES))
 
 
 if __name__ == "__main__":
