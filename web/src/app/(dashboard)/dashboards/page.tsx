@@ -297,6 +297,7 @@ function DashboardsList({ onEdit }: { onEdit: (id: string) => void }) {
                         type="button"
                         size="icon"
                         variant="ghost"
+                        className="ms-2 text-destructive hover:text-destructive"
                         title={t('confirm.delete', 'Delete')}
                         aria-label={t('confirm.dashboard.deleteLabel', 'Delete dashboard {name}', {
                           name: d.name,
@@ -321,9 +322,9 @@ function DashboardsList({ onEdit }: { onEdit: (id: string) => void }) {
           })}
           desc={t(
             'confirm.dashboard.deleteDesc',
-            'The dashboard and its widget layout are deleted for everyone who can see it. Your data is not affected. This cannot be undone.'
+            'The dashboard and its widget layout are deleted for everyone who can see it. The data behind the widgets is not affected.'
           )}
-          confirmText={t('confirm.delete', 'Delete')}
+          confirmText={t('confirm.dashboard.deleteButton', 'Delete dashboard')}
           handleConfirm={() =>
             pendingDelete ? remove(pendingDelete.id, pendingDelete.name) : undefined
           }

@@ -23,12 +23,15 @@ export function RunMap({
   refreshInterval,
   tasks,
   tasksTruncated,
+  runKind,
 }: {
   runId: string
   refreshInterval?: number
   /** The run's tasks as the run read returned them (the panel's task list). */
   tasks?: RunTask[]
   tasksTruncated?: boolean
+  /** The run's kind (retest runs produce a verdict, not assets). */
+  runKind?: string
 }) {
   const { t } = useTranslation()
   const [selected, setSelected] = useState<string | null>(null)
@@ -100,6 +103,7 @@ export function RunMap({
             node={selectedNode}
             tasks={tasks}
             tasksTruncated={tasksTruncated}
+            runKind={runKind}
             onClose={() => setSelected(null)}
           />
         ) : null}

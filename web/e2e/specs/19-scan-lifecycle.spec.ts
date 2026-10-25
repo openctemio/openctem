@@ -138,7 +138,9 @@ async function runAndOpen(page: Page, scanId: string) {
   )
   await page.getByRole('button', { name: /^run now$/i }).click()
   const confirm = page.getByRole('alertdialog')
-  if (await confirm.isVisible().catch(() => false)) {
+  // The confirm dialog renders a moment after the click; wait for it
+  // instead of checking once.
+  if (await confirm.waitFor({ state: 'visible', timeout: 3000 }).then(() => true, () => false)) {
     await confirm.getByRole('button').last().click()
   }
   const res = await triggered
