@@ -6,6 +6,7 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { useTranslation } from '@/context/i18n-provider'
 import { cn } from '@/lib/utils'
+import { foldToFit } from '@/lib/fit-row'
 
 /**
  * The active-filter row under a list toolbar (research/267, research/266 §5),
@@ -81,17 +82,7 @@ export function fitChipsRow({ total, lead, trail, end, chips }: ChipsRowWidths):
     const present = blocks.filter((w) => w > 0)
     return total - present.reduce((s, w) => s + w + BLOCK_GAP, 0)
   }
-  const fold = (avail: number) => {
-    if (chipsWidth <= avail) return n
-    let fit = 0
-    let used = MORE_WIDTH
-    for (const x of chips) {
-      if (used + x + GAP > avail) break
-      used += x + GAP
-      fit += 1
-    }
-    return fit
-  }
+  const fold = (avail: number) => foldToFit(avail, chips, GAP, MORE_WIDTH)
 
   if (lead > 0) {
     const oneLine = room([lead, trail, end])

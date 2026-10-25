@@ -22,14 +22,20 @@ import { Checkbox } from '@/components/ui/checkbox'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Switch } from '@/components/ui/switch'
-import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { useTranslation } from '@/context/i18n-provider'
 import {
   acceptExposure,
   markExposureFalsePositive,
   resolveExposure,
 } from '@/features/exposures/hooks/use-exposures'
-import { EmptyState, ErrorState, RelativeTime, SeverityBadge } from '@/features/shared'
+import {
+  EmptyState,
+  ErrorState,
+  FilterSelect,
+  RelativeTime,
+  SeverityBadge,
+} from '@/features/shared'
+import { useUrlFilter } from '@/hooks/use-url-param'
 import { Skeleton } from '@/components/ui/skeleton'
 import { toSeverity } from './easm-overview'
 import type { LookalikeWatch } from '@/lib/api/generated'
@@ -316,9 +322,13 @@ function ReviewRow({
             </Badge>
           )}
         </div>
-        <p className="text-xs text-muted-foreground">
-          {t('lookalikes.of', 'Lookalike of {domain}', { domain: String(d.lookalike_of ?? '') })}
-          {typeof d.technique === 'string' && ` · ${label(d.technique)}`} ·{' '}
+        <p className="flex flex-wrap gap-x-3 text-xs text-muted-foreground">
+          <span>
+            {t('lookalikes.of', 'Lookalike of {domain}', {
+              domain: String(d.lookalike_of ?? ''),
+            })}
+          </span>
+          {typeof d.technique === 'string' && <span>{label(d.technique)}</span>}
           <RelativeTime date={exposure.first_seen_at} />
         </p>
       </div>
@@ -384,7 +394,11 @@ function ReviewSection() {
   const { t } = useTranslation()
   const { can } = usePermissions()
   const canTriage = can(Permission.ExposuresTriage)
-  const [state, setState] = useState<ReviewState>('active')
+  // The state is a filter in the URL (research/249 R21), not a tab row.
+  const [stateParam, setStateParam] = useUrlFilter('state', 'active')
+  const state: ReviewState = REVIEW_STATES.includes(stateParam as ReviewState)
+    ? (stateParam as ReviewState)
+    : 'active'
   const {
     exposures,
     total,
@@ -420,21 +434,16 @@ function ReviewSection() {
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-3">
-        <Tabs
+        <FilterSelect
+          label={t('lookalikes.stateFilter', 'State')}
+          clearable={false}
           value={state}
-          onValueChange={(v) => {
-            setState(v as ReviewState)
+          options={REVIEW_STATES.map((s) => ({ value: s, label: stateLabel(s) }))}
+          onChange={(v) => {
+            setStateParam(v || 'active')
             reset()
           }}
-        >
-          <TabsList>
-            {REVIEW_STATES.map((s) => (
-              <TabsTrigger key={s} value={s}>
-                {stateLabel(s)}
-              </TabsTrigger>
-            ))}
-          </TabsList>
-        </Tabs>
+        />
         {error ? (
           <ErrorState
             title={t('lookalikes.errorTitle', 'lookalike domains')}

@@ -1,6 +1,7 @@
 import { test, expect } from '../fixtures/authenticated-page'
 import type { Locator, Page, TestInfo } from '@playwright/test'
 import { openFirstAssetSheet } from '../helpers/assets'
+import { seriousAxe } from '../helpers/layout'
 import { firstDataRow } from '../helpers/table'
 
 /**
@@ -10,7 +11,13 @@ import { firstDataRow } from '../helpers/table'
  *     (a squeezed column breaks "Technologies" letter by letter);
  *  b. every metadata line (data-slot="meta-line") has one font size across
  *     all of its text;
- *  c. no visible text is smaller than 12px.
+ *  c. no visible text is smaller than 12px;
+ *  d. no two pieces of text are drawn over each other (a long value that
+ *     breaks out of its column, like a sensor's SDK pseudo-version over the
+ *     next field). Each text box is first cut to what its clipping
+ *     ancestors show, so a truncated value is measured as shown.
+ *
+ * The sensor drawer is also checked with axe (serious and critical rules).
  *
  * Runs at a phone (390) and a desktop (1440) width over the asset drawer
  * (every tab), the finding drawer, a scan run view and a sensor drawer. The
@@ -29,24 +36,87 @@ async function shot(page: Page, info: TestInfo, name: string) {
   await info.attach(name, { body: await page.screenshot(), contentType: 'image/png' })
 }
 
-type Violations = { brokenWords: string[]; mixedMeta: string[]; tiny: string[] }
+type Violations = {
+  brokenWords: string[]
+  mixedMeta: string[]
+  tiny: string[]
+  overlaps: string[]
+}
 
 /** Measure the text inside `root`; runs in the page. */
 async function measure(root: Locator): Promise<Violations> {
   return root.evaluate((el): Violations => {
-    const out: Violations = { brokenWords: [], mixedMeta: [], tiny: [] }
+    const out: Violations = { brokenWords: [], mixedMeta: [], tiny: [], overlaps: [] }
     const visible = (node: Element) => {
       const r = node.getBoundingClientRect()
       if (r.width === 0 || r.height === 0) return false
       const cs = getComputedStyle(node)
       return cs.visibility !== 'hidden' && cs.display !== 'none' && cs.opacity !== '0'
     }
+    // What the clipping ancestors (overflow hidden or clip: a truncated
+    // value) of a node leave visible, up to the first scrolling ancestor:
+    // what it scrolls out of view is still reachable.
+    const clips = (v: string) => v === 'hidden' || v === 'clip'
+    const clipCache = new Map<Element, DOMRect | null>()
+    const clipOf = (node: Element): DOMRect | null => {
+      if (clipCache.has(node)) return clipCache.get(node)!
+      let box: DOMRect | null = null
+      for (let a: Element | null = node; a && el.contains(a); a = a.parentElement) {
+        const cs = getComputedStyle(a)
+        // Above the scrolling body (the drawer frame) nothing clips content.
+        if (/auto|scroll/.test(cs.overflowX + cs.overflowY)) break
+        if (clips(cs.overflowX) || clips(cs.overflowY)) {
+          const r = a.getBoundingClientRect()
+          box = box
+            ? new DOMRect(
+                Math.max(box.left, r.left),
+                Math.max(box.top, r.top),
+                Math.max(0, Math.min(box.right, r.right) - Math.max(box.left, r.left)),
+                Math.max(0, Math.min(box.bottom, r.bottom) - Math.max(box.top, r.top))
+              )
+            : r
+        }
+      }
+      clipCache.set(node, box)
+      return box
+    }
+    // The scrolling ancestor a node moves with (or `el`): text in the body
+    // passes under a pinned header or footer by design, so only text that
+    // scrolls together is compared.
+    const scrollerOf = (node: Element): Element => {
+      for (let a: Element | null = node; a && a !== el; a = a.parentElement) {
+        const cs = getComputedStyle(a)
+        if (cs.position === 'sticky' || cs.position === 'fixed') return a
+        if (/auto|scroll/.test(cs.overflowX + cs.overflowY)) return a
+      }
+      return el
+    }
+    const boxes: { text: string; owner: Element; layer: Element; r: DOMRect }[] = []
     const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT)
     for (let n = walker.nextNode(); n; n = walker.nextNode()) {
       const text = n.textContent ?? ''
       const parent = n.parentElement
       if (!parent || !text.trim() || !visible(parent)) continue
       if (parent.closest('script,style,svg,[aria-hidden="true"]')) continue
+      if (!parent.closest('.sr-only, details:not([open]) > :not(summary)')) {
+        const clip = clipOf(parent)
+        const range = document.createRange()
+        range.selectNodeContents(n)
+        for (const raw of range.getClientRects()) {
+          const left = Math.max(raw.left, clip?.left ?? -Infinity)
+          const right = Math.min(raw.right, clip?.right ?? Infinity)
+          const top = Math.max(raw.top, clip?.top ?? -Infinity)
+          const bottom = Math.min(raw.bottom, clip?.bottom ?? Infinity)
+          if (right - left > 1 && bottom - top > 1) {
+            boxes.push({
+              text: text.trim().slice(0, 40),
+              owner: parent,
+              layer: scrollerOf(parent),
+              r: new DOMRect(left, top, right - left, bottom - top),
+            })
+          }
+        }
+      }
       const px = parseFloat(getComputedStyle(parent).fontSize)
       if (px < 11.99) out.tiny.push(`${px}px "${text.trim().slice(0, 40)}"`)
       const trimmed = text.trim()
@@ -55,6 +125,16 @@ async function measure(root: Locator): Promise<Violations> {
         range.selectNodeContents(n)
         const tops = new Set([...range.getClientRects()].map((r) => Math.round(r.top)))
         if (tops.size > 1) out.brokenWords.push(trimmed)
+      }
+    }
+    for (let i = 0; i < boxes.length; i++) {
+      for (let j = i + 1; j < boxes.length; j++) {
+        const a = boxes[i]
+        const b = boxes[j]
+        if (a.owner === b.owner || a.layer !== b.layer) continue
+        const x = Math.min(a.r.right, b.r.right) - Math.max(a.r.left, b.r.left)
+        const y = Math.min(a.r.bottom, b.r.bottom) - Math.max(a.r.top, b.r.top)
+        if (x > 2 && y > 2) out.overlaps.push(`"${a.text}" over "${b.text}"`)
       }
     }
     for (const line of el.querySelectorAll('[data-slot="meta-line"]')) {
@@ -76,9 +156,10 @@ async function measure(root: Locator): Promise<Violations> {
 
 async function check(root: Locator, label: string) {
   const v = await measure(root)
-  expect(v.brokenWords, `${label}: words broken over two lines`).toEqual([])
-  expect(v.mixedMeta, `${label}: a meta line mixes font sizes`).toEqual([])
-  expect(v.tiny, `${label}: text under 12px`).toEqual([])
+  expect.soft(v.brokenWords, `${label}: words broken over two lines`).toEqual([])
+  expect.soft(v.mixedMeta, `${label}: a meta line mixes font sizes`).toEqual([])
+  expect.soft(v.tiny, `${label}: text under 12px`).toEqual([])
+  expect.soft(v.overlaps, `${label}: text drawn over other text`).toEqual([])
 }
 
 for (const size of SIZES) {
@@ -168,6 +249,9 @@ for (const size of SIZES) {
       await page.waitForLoadState('networkidle')
       await shot(page, info, `${size.name}-sensor`)
       await check(sheet, 'sensor drawer')
+      expect
+        .soft(await seriousAxe(page, '[data-slot="detail-sheet"]'), 'sensor drawer: axe')
+        .toEqual([])
       const tabs = sheet.getByRole('tab')
       const count = await tabs.count()
       for (let i = 0; i < count; i++) {

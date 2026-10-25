@@ -43,6 +43,7 @@ import {
   MetaItem,
   MetaLine,
   RelativeTime,
+  scrollDetailBodyTo,
   type DetailCalloutTone,
   type DetailCheck,
   type DetailMenuItem,
@@ -71,7 +72,7 @@ import type { EntityActivityHandle } from '@/features/activity/components/entity
 import { requestSensorContentRefresh, SensorContentSection } from './sensor-content-section'
 import { SensorControlSection, hasHeartbeatHistory } from './sensor-control-section'
 import { SensorLocalPolicySection } from './sensor-local-policy-section'
-import { SensorPostureSection } from './sensor-posture'
+import { SENSOR_POSTURE_SECTION_ID, SensorPostureSection } from './sensor-posture'
 import { SensorGrantSection } from './sensor-grant-section'
 import { SensorNetworkPathSection } from '@/features/proxy-pools'
 import { SensorManifestTab } from './sensor-manifest-tab'
@@ -87,10 +88,12 @@ import {
   PROTOCOL_V1_SUNSET,
   PROTOCOL_V2_SENSOR_VERSION,
   SensorKeyCell,
+  SensorSdkValue,
   SensorTag,
   SensorToolList,
   SensorVersionCell,
 } from './sensor-cells'
+import { sensorSdkVersion } from '../lib/sensor-version'
 import { SensorInstallSnippets } from './sensor-install-snippets'
 import {
   capacityLabel,
@@ -545,15 +548,16 @@ function ToolsAndCapacity({
                 {platform ?? t('sensors.detail.platformNotReported', 'Platform not reported')}
               </span>
               {load && (
-                <span className="text-xs text-muted-foreground">
-                  <span className={cn(load.cpu >= 90 && 'text-warning')}>
-                    {t('sensors.detail.cpu', 'CPU {pct}%', { pct: load.cpu })}
-                  </span>
-                  {' · '}
-                  <span className={cn(load.mem >= 90 && 'text-warning')}>
-                    {t('sensors.detail.memory', 'memory {pct}%', { pct: load.mem })}
-                  </span>
-                </span>
+                <MetaLine
+                  items={[
+                    <span key="cpu" className={cn(load.cpu >= 90 && 'text-warning')}>
+                      {t('sensors.detail.cpu', 'CPU {pct}%', { pct: load.cpu })}
+                    </span>,
+                    <span key="mem" className={cn(load.mem >= 90 && 'text-warning')}>
+                      {t('sensors.detail.memory', 'memory {pct}%', { pct: load.mem })}
+                    </span>,
+                  ]}
+                />
               )}
             </span>
           </DetailField>
@@ -569,10 +573,10 @@ function ProtocolValue({ sensor }: { sensor: Sensor }) {
   if (!p) return null
   const v1 = p.deprecated || p.version < 2
   const badge = (
-    <SensorTag tone={v1 ? 'warning' : 'muted'}>
-      v{p.version}
-      {v1 ? ` · ${t('sensors.protocol.deprecated', 'deprecated')}` : ''}
-    </SensorTag>
+    <span className="inline-flex flex-wrap items-center gap-1.5">
+      <SensorTag tone={v1 ? 'warning' : 'muted'}>v{p.version}</SensorTag>
+      {v1 && <SensorTag tone="warning">{t('sensors.protocol.deprecated', 'deprecated')}</SensorTag>}
+    </span>
   )
   return (
     <span className="flex flex-col gap-0.5">
@@ -642,11 +646,10 @@ function TransportValue({ protocol }: { protocol: NonNullable<Sensor['protocol']
     : protocol.binding
   const reason = protocol.fallback_reason
   return (
-    <span className="text-xs text-muted-foreground" data-testid="sensor-transport">
-      {t('sensors.transport.label', 'Transport: {binding}', { binding })}
+    <span className="flex flex-col text-xs text-muted-foreground" data-testid="sensor-transport">
+      <span>{t('sensors.transport.label', 'Transport: {binding}', { binding })}</span>
       {reason ? (
         <>
-          {' · '}
           <Tooltip>
             <TooltipTrigger asChild>
               <span
@@ -672,11 +675,14 @@ function ConnectionAndIdentity({
   now,
   channel,
   zoneNames,
+  onRotateKey,
 }: {
   sensor: Sensor
   now: number
   channel?: ReleaseChannel
   zoneNames: string[]
+  /** Rotate the key; only for viewers who may (sensors:write). */
+  onRotateKey?: () => void
 }) {
   const { t } = useTranslation()
   const labels = Object.entries(sensor.labels ?? {})
@@ -686,7 +692,7 @@ function ConnectionAndIdentity({
     <DetailSection title={t('sensors.detail.connection', 'Connection & identity')}>
       <DetailFieldGrid>
         <DetailField label={t('sensors.detail.f.version', 'Version')}>
-          <SensorVersionCell sensor={sensor} channel={channel} />
+          <SensorVersionCell sensor={sensor} channel={channel} showSdk="when-flagged" />
         </DetailField>
         {sensor.protocol && (
           <DetailField label={t('sensors.detail.f.protocol', 'Protocol')}>
@@ -695,14 +701,35 @@ function ConnectionAndIdentity({
         )}
         <DetailField label={t('sensors.detail.f.apiKey', 'API key')}>
           <span className="flex flex-col gap-0.5">
-            <span className="font-mono text-xs">{sensor.api_key_prefix}…</span>
+            {sensor.api_key_prefix && (
+              // The display prefix only, never key material.
+              <span className="font-mono text-xs">{sensor.api_key_prefix}…</span>
+            )}
             <span className="text-meta [&>span]:text-meta">
               <SensorKeyCell sensor={sensor} now={now} />
             </span>
+            {sensor.key_last_used_at && (
+              <span className="text-xs text-muted-foreground">
+                {t('sensors.detail.keyLastUsed', 'last used')}{' '}
+                <RelativeTime date={sensor.key_last_used_at} className="text-inherit" />
+              </span>
+            )}
             {sensor.legacy_key && (
               <span className="text-xs text-muted-foreground">
                 {t('sensors.cells.legacyKeyHelp', LEGACY_KEY_EXPLANATION)}
               </span>
+            )}
+            {onRotateKey && (
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="mt-1 w-fit"
+                onClick={onRotateKey}
+              >
+                <KeyRound className="h-3.5 w-3.5" />
+                {t('sensors.detail.action.rotate_key', 'Rotate key')}
+              </Button>
             )}
           </span>
         </DetailField>
@@ -769,6 +796,11 @@ function ConnectionAndIdentity({
               <RelativeTime date={sensor.last_offline_at} className="text-foreground" />
             </DetailField>
           )}
+          {sensorSdkVersion(sensor) && (
+            <DetailField label={t('sensors.detail.f.sdk', 'SDK')}>
+              <SensorSdkValue sensor={sensor} />
+            </DetailField>
+          )}
           {sensor.sensor_commit && (
             <DetailField label={t('sensors.detail.f.commit', 'Commit')}>
               <span className="font-mono text-xs">{sensor.sensor_commit}</span>
@@ -803,10 +835,14 @@ const JOB_STATUS_STATE: Record<string, HealthState> = {
   pending: 'queued',
 }
 
-function jobTitle(c: SensorCommand): string {
+/** The job's kind and, when it names one, its tool: two parts, never one joined string. */
+function jobTitle(c: SensorCommand): { kind: string; tool: string | null } {
   const p = (c.payload ?? {}) as Record<string, unknown>
-  const tool = (p.scanner ?? p.tool ?? p.scanner_type) as string | undefined
-  return [c.type.replace(/_/g, ' '), tool].filter(Boolean).join(' · ')
+  const tool = p.scanner ?? p.tool ?? p.scanner_type
+  return {
+    kind: c.type.replace(/_/g, ' '),
+    tool: typeof tool === 'string' && tool ? tool : null,
+  }
 }
 
 function jobTarget(c: SensorCommand): string | null {
@@ -890,10 +926,16 @@ function SensorJobs({ sensor }: { sensor: Sensor }) {
         <ul className="divide-y rounded-lg border">
           {jobs.map((c) => {
             const target = jobTarget(c)
+            const title = jobTitle(c)
             return (
               <li key={c.id} className="space-y-1 px-3 py-2.5 text-sm">
                 <div className="flex items-center justify-between gap-2">
-                  <span className="truncate font-medium">{jobTitle(c)}</span>
+                  <span className="flex min-w-0 items-center gap-2">
+                    <span className="truncate font-medium first-letter:uppercase">
+                      {title.kind}
+                    </span>
+                    {title.tool && <SensorTag tone="muted">{title.tool}</SensorTag>}
+                  </span>
                   <HealthStatus
                     state={JOB_STATUS_STATE[c.status] ?? 'unknown'}
                     value={c.status}
@@ -1028,7 +1070,8 @@ export function SensorDetailSheet({
   // The subline: what it is and where it runs. The host name only when it
   // says something the name does not.
   const subline = [
-    `${role} · ${mode.toLowerCase()}`,
+    role,
+    mode,
     distinctHostname(sensor),
     sensor.ip_address ?? null,
     zoneNames.length > 0
@@ -1089,7 +1132,16 @@ export function SensorDetailSheet({
               <SensorStateBadge sensor={sensor} now={now} thresholds={thresholds} />
               <ProtocolTag sensor={sensor} />
               <ConfigHealthTag health={sensor.config_health} />
-              <SensorPostureTag sensor={sensor} />
+              <SensorPostureTag
+                sensor={sensor}
+                onOpen={() => {
+                  setTab('overview')
+                  // After the overview has rendered.
+                  requestAnimationFrame(() =>
+                    scrollDetailBodyTo(document.getElementById(SENSOR_POSTURE_SECTION_ID))
+                  )
+                }}
+              />
             </>
           }
           meta={subline}
@@ -1158,6 +1210,7 @@ export function SensorDetailSheet({
               now={now}
               channel={channel}
               zoneNames={zoneNames}
+              onRotateKey={can.rotate ? () => onRegenerateKey(sensor) : undefined}
             />
           </DetailSections>
         </div>
