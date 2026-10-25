@@ -89,6 +89,12 @@ type unableRunFinisher interface {
 	FinishRetestRunUnable(ctx context.Context, tenantID, runID shared.ID, message, code string) error
 }
 
+// resultRunFinisher settles a retest's run that completed with a conclusion
+// (inconclusive, or exposed at another path): completed, not failed.
+type resultRunFinisher interface {
+	FinishRetestRunResult(ctx context.Context, tenantID, runID shared.ID, kind, code string) error
+}
+
 // RunCodeToolUnable is the refusal code of a retest run whose tool could not
 // run the check.
 const RunCodeToolUnable = "RETEST_UNAVAILABLE"
@@ -856,11 +862,11 @@ func (s *Service) readCheck(ctx context.Context, tenantID shared.ID, id *shared.
 	}
 	switch cmd.Status {
 	case commanddom.CommandStatusCompleted:
-		outcome, summary, digest, items := commandOutcome(cmd.Result)
+		outcome, summary, digest, items, requests := commandOutcome(cmd.Result)
 		if outcome == "" {
 			return retestdom.CheckResult{Missing: true}, true
 		}
-		return retestdom.CheckResult{Outcome: outcome, Summary: summary, TemplateDigest: digest, Evidence: items}, true
+		return retestdom.CheckResult{Outcome: outcome, Summary: summary, TemplateDigest: digest, Evidence: items, Requests: requests}, true
 	case commanddom.CommandStatusFailed, commanddom.CommandStatusExpired, commanddom.CommandStatusCanceled:
 		return retestdom.CheckResult{Missing: true, Summary: cmd.ErrorMessage}, true
 	default:
@@ -873,16 +879,16 @@ func (s *Service) readCheck(ctx context.Context, tenantID shared.ID, id *shared.
 // the command directly may put it at the top level. Same rule as the
 // validation completion hook. The attempt's proof is evidence.evidence_items
 // (CTIS 1.6 items), normalized.
-func commandOutcome(raw json.RawMessage) (outcome, summary, templateDigest string, items []evidence.Item) {
+func commandOutcome(raw json.RawMessage) (outcome, summary, templateDigest string, items []evidence.Item, requests []retestdom.RequestResult) {
 	if len(raw) == 0 {
-		return "", "", "", nil
+		return "", "", "", nil, nil
 	}
 	var result struct {
 		validation.ValidateResultPayload
 		Metadata validation.ValidateResultPayload `json:"metadata"`
 	}
 	if err := json.Unmarshal(raw, &result); err != nil {
-		return "", "", "", nil
+		return "", "", "", nil, nil
 	}
 	v := result.ValidateResultPayload
 	if v.Outcome == "" {
@@ -902,7 +908,8 @@ func commandOutcome(raw json.RawMessage) (outcome, summary, templateDigest strin
 			}
 		}
 	}
-	return v.Outcome, v.Summary, templateDigest, items
+	requests = retestdom.DecodeRequestsFromAny(v.Evidence["requests"])
+	return v.Outcome, v.Summary, templateDigest, items, requests
 }
 
 // templateBaseline is the template digest recorded at the finding's last
@@ -943,6 +950,11 @@ func (s *Service) settle(ctx context.Context, rt *retestdom.Retest, v retestdom.
 	}
 	if rt.Method != "" {
 		changes["method"] = rt.Method
+	}
+	if len(v.OtherPaths) > 0 {
+		// The other paths the check matched at (outcome still_exposed_elsewhere):
+		// kept on the activity so a person can open a finding for each.
+		changes["other_paths"] = v.OtherPaths
 	}
 	if rt.CheckID != nil {
 		changes["retest_check_id"] = rt.CheckID.String()
@@ -1095,8 +1107,10 @@ func (s *Service) startRun(ctx context.Context, rt *retestdom.Retest) runRef {
 }
 
 // finishRun settles the retest's run with the verdict: a verdict (fixed,
-// not reproduced, still vulnerable) completes it; an inconclusive retest
-// fails it with the reason.
+// not reproduced, still vulnerable, exposed at another path) completes it, and
+// so does an inconclusive one the tool ran to the end (the run carries the
+// result). A tool that could not run the check blocks it; a retest that
+// produced no result, or whose target did not answer, fails it with the reason.
 func (s *Service) finishRun(ctx context.Context, rt *retestdom.Retest, v retestdom.Verdict) {
 	if s.runs == nil || rt.RunID == nil {
 		return
@@ -1108,6 +1122,17 @@ func (s *Service) finishRun(ctx context.Context, rt *retestdom.Retest, v retestd
 	msg := sensordom.RedactPlatformText(evidence.RedactText(v.Reason))
 	if f, ok := s.runs.(unableRunFinisher); ok && v.Outcome == retestdom.OutcomeInconclusive && v.Code.ToolUnable() {
 		if err := f.FinishRetestRunUnable(ctx, rt.TenantID, *rt.RunID, msg, RunCodeToolUnable); err != nil {
+			s.logger.Warn("failed to settle the retest run", "retest_id", rt.ID.String(), "run_id", rt.RunID.String(), "error", err)
+		}
+		return
+	}
+	// A retest whose tool ran to the end and concluded "inconclusive" (the
+	// endpoint answered something that proves nothing, a CDN block, another
+	// path was checked) completed: it is not a failure of the tool, the sensor
+	// or the platform. Failed stays for a retest that produced no result.
+	if f, ok := s.runs.(resultRunFinisher); ok && v.Code != retestdom.ReasonNoResult && v.Code != retestdom.ReasonUnreachable &&
+		(v.Outcome == retestdom.OutcomeInconclusive || v.Outcome == retestdom.OutcomeStillExposedElsewhere) {
+		if err := f.FinishRetestRunResult(ctx, rt.TenantID, *rt.RunID, string(v.Outcome), string(v.Code)); err != nil {
 			s.logger.Warn("failed to settle the retest run", "retest_id", rt.ID.String(), "run_id", rt.RunID.String(), "error", err)
 		}
 		return

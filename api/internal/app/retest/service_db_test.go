@@ -746,3 +746,66 @@ func TestRetestDB_AvailabilityReasons(t *testing.T) {
 		t.Fatalf("cross-tenant: err = %v, want not found", err)
 	}
 }
+
+// finishRequests completes a template re-run that reports its per-request
+// results (a template that probes several paths), keeping one exchange as
+// evidence like the sensor does.
+func (fx *fixture) finishRequests(cmd *shared.ID, outcome string, kept string, status int, requests []map[string]any) {
+	fx.t.Helper()
+	res, _ := json.Marshal(map[string]any{"metadata": map[string]any{"outcome": outcome, "summary": "re-run",
+		"evidence": map[string]any{"evidence_items": attemptItems(kept, status), "requests": requests}}})
+	fx.exec(`UPDATE commands SET status = 'completed', result = $2, completed_at = NOW() WHERE id = $1`, cmd.String(), res)
+}
+
+// The finding's own endpoint decides, not whichever exchange the sensor kept
+// as evidence: the owner's swagger case settled "another endpoint was checked"
+// although the endpoint had been requested.
+func TestRetestDB_MultiPathTemplateSettlesOnTheOriginalEndpoint(t *testing.T) {
+	fx := newFixture(t)
+	svc := fx.service()
+	orig := "https://shop.example.com/admin"
+	other := "https://shop.example.com/developers/documentation"
+	run := func(outcome string, status int, requests []map[string]any) (*retestdom.Retest, string) {
+		t.Helper()
+		f := fx.newFinding(fx.asset, "confirmed", "swagger-api")
+		rt := fx.request(svc, f)
+		fx.finishRequests(rt.CheckCommandID, outcome, other, status, requests)
+		fx.finish(rt.ReachCommandID, "detected", "target answered")
+		svc.OnCommandFinished(context.Background(), fx.tenant, *rt.ReachCommandID)
+		st, _, _ := fx.findingState(f)
+		return fx.retest(rt.ID), st
+	}
+
+	// The original answered 404 and did not match; the kept exchange is another path: fixed.
+	got, _ := run("not_detected", 200, []map[string]any{
+		{"url": other, "status": 200}, {"url": orig, "status": 404}})
+	if got.Outcome != retestdom.OutcomeConfirmedFixed {
+		t.Fatalf("original answered 404: %s/%s (%s)", got.Outcome, got.ReasonCode, got.Reason)
+	}
+
+	// Another path matched, the original did not: exposed elsewhere, the finding stays open.
+	got, st := run("detected", 200, []map[string]any{
+		{"url": orig, "status": 404}, {"url": other, "status": 200, "matched": true}})
+	if got.Outcome != retestdom.OutcomeStillExposedElsewhere || got.ReasonCode != retestdom.ReasonMatchedElsewhere ||
+		!strings.Contains(got.Reason, "developers/documentation") || st != "confirmed" {
+		t.Fatalf("exposed elsewhere: %s/%s (%s), finding %s, status %s", got.Outcome, got.ReasonCode, got.Reason, st, got.Status)
+	}
+
+	// The original was never requested and nothing matched: inconclusive.
+	got, _ = run("not_detected", 200, []map[string]any{{"url": other, "status": 200}})
+	if got.Outcome != retestdom.OutcomeInconclusive || got.ReasonCode != retestdom.ReasonEndpointMismatch {
+		t.Fatalf("original not requested: %s/%s", got.Outcome, got.ReasonCode)
+	}
+
+	// The original matched: still vulnerable.
+	got, _ = run("detected", 200, []map[string]any{{"url": orig, "status": 200, "matched": true}})
+	if got.Outcome != retestdom.OutcomeStillVulnerable {
+		t.Fatalf("original matched: %s", got.Outcome)
+	}
+
+	// An older sensor (no requests): today's reading, the kept exchange is another path.
+	got, _ = run("not_detected", 200, nil)
+	if got.Outcome != retestdom.OutcomeInconclusive || got.ReasonCode != retestdom.ReasonEndpointMismatch {
+		t.Fatalf("older sensor: %s/%s", got.Outcome, got.ReasonCode)
+	}
+}
