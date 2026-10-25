@@ -141,7 +141,7 @@ describe('SuggestionsInbox keyboard review', () => {
   it('ignores keys typed in the search field', async () => {
     render(<SuggestionsInbox />)
     const user = userEvent.setup()
-    await user.click(screen.getByRole('textbox', { name: 'Search suggestions' }))
+    await user.click(screen.getByRole('searchbox', { name: /^Search suggestions/ }))
     await user.keyboard('a')
     expect(approve).not.toHaveBeenCalled()
   })

@@ -264,7 +264,7 @@ export function IOCsPanel() {
         <DataTable
           columns={columns}
           data={iocs}
-          searchPlaceholder="Search indicators…"
+          searchPlaceholder={t('threatIntel.iocs.search', 'Search indicators…')}
           emptyMessage="No indicators"
           emptyDescription="Add an indicator of compromise to start correlating runtime telemetry."
           onRowClick={(row) => setSelectedId(row.id)}

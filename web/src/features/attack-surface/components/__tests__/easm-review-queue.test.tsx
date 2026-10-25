@@ -246,7 +246,7 @@ describe('EASMReviewQueue', () => {
     api.get.mockImplementation(byUrl(queue))
     wrap(<EASMReviewQueue />)
     await screen.findByText('api.acme.io')
-    await userEvent.type(screen.getByRole('textbox', { name: 'Search names' }), 'api')
+    await userEvent.type(screen.getByRole('searchbox', { name: /^Search names/ }), 'api')
     expect(new URLSearchParams(window.location.search).get('q')).toBe('api')
   })
 })

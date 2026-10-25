@@ -221,7 +221,7 @@
   "automations.switch.activate": "Activate workflow",
   "automations.switch.deactivate": "Deactivate workflow",
   "automations.table.noMatch": "No workflows match",
-  "automations.table.searchPlaceholder": "Search workflows...",
+  "automations.table.searchPlaceholder": "Search workflows…",
   "automations.tabs.builder": "Visual builder",
   "automations.tabs.executions": "Recent executions",
   "automations.tabs.workflows": "Workflows",

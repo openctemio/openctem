@@ -19,7 +19,7 @@
   "scmIntegration.page.noMatch": "Không có kết nối nào khớp với tìm kiếm",
   "scmIntegration.page.refresh": "Làm mới",
   "scmIntegration.page.repositories": "Kho mã nguồn",
-  "scmIntegration.page.searchPlaceholder": "Tìm kết nối...",
+  "scmIntegration.page.searchPlaceholder": "Tìm kết nối…",
   "scmIntegration.page.title": "Kết nối SCM",
   "scmIntegration.repoCount": "{count} kho",
   "scmIntegration.status.connected": "Đã kết nối",

@@ -1,22 +1,11 @@
 'use client'
 
 import { useState, useMemo, useCallback } from 'react'
-import {
-  Plus,
-  Zap,
-  Loader2,
-  Search,
-  LayoutGrid,
-  TableIcon,
-  AlertTriangle,
-  Wrench,
-  Bot,
-} from 'lucide-react'
+import { Plus, Zap, Loader2, LayoutGrid, TableIcon, AlertTriangle, Wrench, Bot } from 'lucide-react'
 import { toast } from 'sonner'
 import { getErrorMessage } from '@/lib/api/error-handler'
 
 import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
 import { Tabs, TabsList, TabsTrigger, TabsCount } from '@/components/ui/tabs'
 import { ConfirmDialog } from '@/components/confirm-dialog'
 import { confirmName } from '@/lib/confirm-name'
@@ -45,7 +34,7 @@ import {
   invalidateCapabilitiesCache,
 } from '@/lib/api/capability-hooks'
 import type { Capability, CapabilityUsageStatsBatchResponse } from '@/lib/api/capability-types'
-import { EmptyState, ErrorState, PageHeader, PageStack } from '@/features/shared'
+import { EmptyState, ErrorState, ListToolbar, PageHeader, PageStack } from '@/features/shared'
 import { useTranslation } from '@/context/i18n-provider'
 
 type ViewMode = 'grid' | 'table'
@@ -202,18 +191,15 @@ export function CapabilitiesSection() {
   const selectedHasUsage =
     selectedUsageStats && (selectedUsageStats.tool_count > 0 || selectedUsageStats.sensor_count > 0)
 
+  const search = {
+    value: searchQuery,
+    onChange: setSearchQuery,
+    placeholder: t('scans.capabilities.search.placeholder', 'Search capabilities…'),
+    label: t('scans.capabilities.search.label', 'Search capabilities'),
+  }
+
   const toolbarStart = (
     <>
-      <div className="relative min-w-0 flex-1 sm:max-w-sm">
-        <Search className="pointer-events-none absolute start-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-        <Input
-          placeholder="Search capabilities…"
-          aria-label="Search capabilities"
-          value={searchQuery}
-          onChange={(e) => setSearchQuery(e.target.value)}
-          className="h-9 ps-9"
-        />
-      </div>
       {categories.length > 0 && (
         <Select value={categoryFilter} onValueChange={setCategoryFilter}>
           <SelectTrigger className="h-9 w-[160px]" aria-label="Category">
@@ -307,6 +293,7 @@ export function CapabilitiesSection() {
           onDelete={isCustomMode && canDeleteCapability ? handleDeleteClick : undefined}
           onViewDetails={handleViewDetails}
           readOnly={!isCustomMode}
+          search={search}
           toolbarStart={toolbarStart}
           toolbarEnd={toolbarEnd}
         />
@@ -315,10 +302,7 @@ export function CapabilitiesSection() {
     // Card view: the same toolbar row the table draws, then the grid.
     body = (
       <div className="space-y-4">
-        <div className="flex items-center gap-2">
-          <div className="flex min-w-0 flex-1 items-center gap-2">{toolbarStart}</div>
-          <div className="ms-auto flex shrink-0 items-center gap-2">{toolbarEnd}</div>
-        </div>
+        <ListToolbar search={search} start={toolbarStart} end={toolbarEnd} />
         {filteredCapabilities.length > 0 ? (
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
             {filteredCapabilities.map((capability) => (

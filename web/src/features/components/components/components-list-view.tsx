@@ -8,18 +8,16 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import type { ColumnDef } from '@tanstack/react-table'
-import { Download, FileCheck2, Package, Search, Upload } from 'lucide-react'
+import { Download, FileCheck2, Package, Upload } from 'lucide-react'
 import Link from '@/components/link'
 import { Main } from '@/components/layout'
 import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
 import { useTranslation } from '@/context/i18n-provider'
 import {
   DataTable,
   DataTableColumnHeader,
   EmptyState,
   ErrorState,
-  FilterPanelToggle,
   FilterSheet,
   MetricStrip,
   type MetricStripItem,
@@ -287,32 +285,6 @@ export function ComponentsListView() {
     />
   )
 
-  const toolbarStart = (
-    <>
-      <FilterPanelToggle
-        open={filtersOpen}
-        onToggle={() => setFiltersOpen(!filtersOpen)}
-        onOpenSheet={() => setSheetOpen(true)}
-        activeCount={activeCount}
-        controlsId="component-filters"
-        label={t('components.filters', 'Filters')}
-      />
-      <div className="relative w-full sm:w-72">
-        <Search
-          className="pointer-events-none absolute start-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground"
-          aria-hidden
-        />
-        <Input
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          placeholder={t('components.searchPlaceholder', 'Search packages…')}
-          aria-label={t('components.searchLabel', 'Search packages by name or namespace')}
-          className="h-9 ps-8"
-        />
-      </div>
-    </>
-  )
-
   const empty = !isLoading && !error && data && data.total === 0 && !hasQuery
 
   return (
@@ -393,7 +365,20 @@ export function ComponentsListView() {
                   columns={columns}
                   data={data?.data ?? []}
                   showSearch={false}
-                  toolbarStart={toolbarStart}
+                  search={{
+                    value: search,
+                    onChange: setSearch,
+                    placeholder: t('components.searchPlaceholder', 'Search packages…'),
+                    label: t('components.searchLabel', 'Search packages by name or namespace'),
+                  }}
+                  filterToggle={{
+                    open: filtersOpen,
+                    onToggle: () => setFiltersOpen(!filtersOpen),
+                    onOpenSheet: () => setSheetOpen(true),
+                    activeCount,
+                    controlsId: 'component-filters',
+                    label: t('components.filters', 'Filters'),
+                  }}
                   manualPagination
                   rowCount={data?.total ?? 0}
                   pagination={list.pagination}

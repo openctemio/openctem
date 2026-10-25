@@ -83,7 +83,7 @@
   "notificationChannels.page.noMatch": "No channels match your search",
   "notificationChannels.page.queue": "Queue",
   "notificationChannels.page.refresh": "Refresh",
-  "notificationChannels.page.searchPlaceholder": "Search channels...",
+  "notificationChannels.page.searchPlaceholder": "Search channels…",
   "notificationChannels.page.title": "Notification channels",
   "notificationChannels.page.viewEvents": "View events",
   "notificationChannels.severity.all": "All severities",

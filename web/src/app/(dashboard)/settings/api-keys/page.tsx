@@ -19,7 +19,6 @@ import { Badge } from '@/components/ui/badge'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Button } from '@/components/ui/button'
 import { usePermissions, useCanMutate } from '@/lib/permissions'
-import { Input } from '@/components/ui/input'
 import { ConfirmDialog } from '@/components/confirm-dialog'
 import { DataTableRowActions } from '@/features/shared/components/data-table-row-actions'
 import { useUrlFilter } from '@/hooks/use-url-param'
@@ -368,18 +367,15 @@ export default function APIKeysPage() {
                 pageSizeOptions={API_KEY_PAGE_SIZES}
                 paginationNoun={t('settings.apiKeys.noun', 'keys')}
                 showSearch={false}
-                toolbarStart={
-                  <Input
-                    placeholder={t('settings.apiKeys.searchPlaceholder', 'Search API keys…')}
-                    value={searchParam}
-                    onChange={(e) => {
-                      setSearchParam(e.target.value)
-                      resetPage()
-                    }}
-                    className="h-9 max-w-sm"
-                    aria-label={t('settings.apiKeys.searchLabel', 'Search API keys')}
-                  />
-                }
+                search={{
+                  value: searchParam,
+                  onChange: (v) => {
+                    setSearchParam(v)
+                    resetPage()
+                  },
+                  placeholder: t('settings.apiKeys.searchPlaceholder', 'Search API keys…'),
+                  label: t('settings.apiKeys.searchLabel', 'Search API keys'),
+                }}
                 emptyMessage={t('settings.apiKeys.noKeys', 'No API keys')}
                 emptyDescription={t('settings.apiKeys.noMatch', 'No API keys match your search.')}
               />

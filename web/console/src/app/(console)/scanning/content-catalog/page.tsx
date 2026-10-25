@@ -2,12 +2,11 @@
 
 import { useMemo, useState } from 'react'
 import type { ColumnDef } from '@tanstack/react-table'
-import { Package, Search, Upload } from 'lucide-react'
+import { Package, Upload } from 'lucide-react'
 import { Main } from '@/components/layout'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
-import { Input } from '@/components/ui/input'
 import {
   Select,
   SelectContent,
@@ -23,7 +22,14 @@ import {
   SheetTitle,
 } from '@/components/ui/sheet'
 import { Skeleton } from '@/components/ui/skeleton'
-import { DataTable, ErrorState, PageHeader, PageStack, RelativeTime } from '@/features/shared'
+import {
+  DataTable,
+  ErrorState,
+  ListToolbar,
+  PageHeader,
+  PageStack,
+  RelativeTime,
+} from '@/features/shared'
 import { useTranslation } from '@/context/i18n-provider'
 import { useListParams } from '@/hooks/use-list-params'
 import { TrustBanner } from '@/features/content-catalog/components/trust-banner'
@@ -235,37 +241,37 @@ export default function ContentCatalogPage() {
           </>
         )}
 
-        <div className="flex flex-col gap-2 sm:flex-row">
-          <div className="relative w-full sm:max-w-xs">
-            <Search className="absolute start-2.5 top-2.5 size-4 text-muted-foreground" />
-            <Input
-              value={list.q}
-              onChange={(e) => list.setSearch(e.target.value)}
-              placeholder={t('admin.catalog.search', 'Package id or title...')}
-              aria-label={t('admin.catalog.searchLabel', 'Search packages')}
-              className="ps-8"
-            />
-          </div>
-          <Select
-            value={list.filters.type || ALL_TYPES}
-            onValueChange={(v) => list.setFilter('type', v === ALL_TYPES ? '' : v)}
-          >
-            <SelectTrigger
-              className="w-full sm:w-48"
-              aria-label={t('admin.catalog.typeFilter', 'Package type')}
+        <ListToolbar
+          search={{
+            value: list.q,
+            onChange: list.setSearch,
+            placeholder: t('admin.catalog.search', 'Search package id or title…'),
+            label: t('admin.catalog.searchLabel', 'Search packages'),
+          }}
+          start={
+            <Select
+              value={list.filters.type || ALL_TYPES}
+              onValueChange={(v) => list.setFilter('type', v === ALL_TYPES ? '' : v)}
             >
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value={ALL_TYPES}>{t('admin.catalog.allTypes', 'All types')}</SelectItem>
-              {CONTENT_TYPES.map((ty) => (
-                <SelectItem key={ty} value={ty}>
-                  {t(`contentCatalog.type.${ty}`, ty)}
+              <SelectTrigger
+                className="w-full sm:w-48"
+                aria-label={t('admin.catalog.typeFilter', 'Package type')}
+              >
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value={ALL_TYPES}>
+                  {t('admin.catalog.allTypes', 'All types')}
                 </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
+                {CONTENT_TYPES.map((ty) => (
+                  <SelectItem key={ty} value={ty}>
+                    {t(`contentCatalog.type.${ty}`, ty)}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          }
+        />
         {pkgs.error ? (
           <ErrorState
             title={t('admin.catalog.packagesError', 'the catalog packages')}

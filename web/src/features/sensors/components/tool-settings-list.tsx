@@ -15,7 +15,8 @@
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
-import { AlertTriangle, Pencil, RotateCcw, Search } from 'lucide-react'
+import { AlertTriangle, Pencil, RotateCcw } from 'lucide-react'
+import { ListToolbar } from '@/features/shared'
 import { toast } from 'sonner'
 
 import {
@@ -925,20 +926,14 @@ export function ToolSettingsList({
 
   return (
     <div className="space-y-3">
-      <div className="relative">
-        <Search
-          className="pointer-events-none absolute top-1/2 left-2.5 h-4 w-4 -translate-y-1/2 text-muted-foreground"
-          aria-hidden
-        />
-        <Input
-          type="search"
-          className="ps-8"
-          value={query}
-          onChange={(e) => onSearch(e.target.value)}
-          placeholder={t('sensors.toolSettings.searchPlaceholder')}
-          aria-label={t('sensors.toolSettings.searchLabel')}
-        />
-      </div>
+      <ListToolbar
+        search={{
+          value: query,
+          onChange: onSearch,
+          placeholder: t('sensors.toolSettings.searchPlaceholder'),
+          label: t('sensors.toolSettings.searchLabel'),
+        }}
+      />
       {!anyVisible && (
         <p className="text-sm text-muted-foreground">
           {t('sensors.toolSettings.searchEmpty', undefined, { query: query.trim() })}

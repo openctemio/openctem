@@ -80,7 +80,7 @@
   "emergingThreats.filter.internetOnly": "Internet-facing only",
   "emergingThreats.filter.level": "Level",
   "emergingThreats.filter.search": "Search",
-  "emergingThreats.filter.searchPlaceholder": "Vulnerability ID, e.g. CVE-2026-12345",
+  "emergingThreats.filter.searchPlaceholder": "Search by vulnerability ID, e.g. CVE-2026-12345…",
   "emergingThreats.filter.state": "State",
   "emergingThreats.filter.stateAll": "All states",
   "emergingThreats.filter.stateOpen": "Open (not closed)",

@@ -72,6 +72,7 @@ import {
   type StatusGlyph,
 } from '@/components/ui/status-glyphs'
 import type { StatusTone } from '@/lib/status-colors'
+import { useTranslation } from '@/context/i18n-provider'
 
 // ── Local view types ──────────────────────────────────────────────────────────
 
@@ -226,6 +227,7 @@ function FrameworkCard({
 }
 
 export default function CompliancePage() {
+  const { t } = useTranslation()
   // ── API data ──────────────────────────────────────────────────────────────
   const { data: frameworksData, isLoading: loadingFrameworks } = useFrameworks()
   const { data: apiStats } = useComplianceStats()
@@ -554,7 +556,7 @@ export default function CompliancePage() {
                 <DataTable
                   columns={columns}
                   data={filteredRows}
-                  searchPlaceholder="Search controls…"
+                  searchPlaceholder={t('scoping.compliance.search', 'Search controls…')}
                   toolbarEnd={filterSelects}
                   onRowClick={setViewRequirement}
                   emptyMessage="No controls match these filters"

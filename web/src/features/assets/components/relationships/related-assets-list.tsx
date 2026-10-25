@@ -16,11 +16,10 @@
  */
 
 import * as React from 'react'
-import { ChevronDown, ChevronRight, Lock, MoreHorizontal, Network, Search } from 'lucide-react'
+import { ChevronDown, ChevronRight, Lock, MoreHorizontal, Network } from 'lucide-react'
 import { mutate as globalMutate } from 'swr'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
 import { Skeleton } from '@/components/ui/skeleton'
 import {
   DropdownMenu,
@@ -33,6 +32,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip
 import { useTranslation } from '@/context/i18n-provider'
 import { EmptyState } from '@/features/shared/components/empty-state'
 import { ErrorState } from '@/features/shared/components/error-state'
+import { ListToolbar } from '@/features/shared/components/list-toolbar'
 import { AssetStatusBadge } from '@/features/asset-lifecycle/components/asset-status-badge'
 import { endpoints } from '@/lib/api/endpoints'
 import { cn } from '@/lib/utils'
@@ -359,17 +359,14 @@ function GroupPager({
   return (
     <div>
       {group.total > PAGE_SIZE && (
-        <div className="relative border-b px-3 py-2">
-          <Search
-            className="pointer-events-none absolute left-5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground"
-            aria-hidden
-          />
-          <Input
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            placeholder={t('assets.related.search', 'Search by name')}
-            aria-label={t('assets.related.searchIn', 'Search {verb}', { verb })}
-            className="h-8 pl-8"
+        <div className="border-b px-3 py-2">
+          <ListToolbar
+            search={{
+              value: query,
+              onChange: setQuery,
+              placeholder: t('assets.related.search', 'Search by name…'),
+              label: t('assets.related.searchIn', 'Search {verb}', { verb }),
+            }}
           />
         </div>
       )}

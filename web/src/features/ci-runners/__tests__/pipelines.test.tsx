@@ -228,7 +228,7 @@ describe('CIPipelinesPanel', () => {
       pipelines = [failing]
       counts = { failing: 1 }
       render(<CIPipelinesPanel />)
-      const box = screen.getByRole('textbox', { name: /search ci pipelines/i })
+      const box = screen.getByRole('searchbox', { name: /search ci pipelines/i })
       await userEvent.type(box, 'api')
       expect(lastPipelineFilters?.search).toBe('')
       await act(async () => {

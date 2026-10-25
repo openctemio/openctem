@@ -24,13 +24,11 @@ import {
   Pencil,
   Power,
   PowerOff,
-  Search as SearchIcon,
   Trash2,
 } from 'lucide-react'
 import { toast } from 'sonner'
 import Link from '@/components/link'
 
-import { Input } from '@/components/ui/input'
 import {
   Select,
   SelectContent,
@@ -391,16 +389,6 @@ export function ScopeEntriesTable({
   const toolbarStart = (
     <>
       {leading}
-      <div className="relative min-w-0 flex-1 sm:max-w-sm">
-        <SearchIcon className="pointer-events-none absolute start-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-        <Input
-          placeholder={t('scope.entries.search', 'Search entries…')}
-          aria-label={t('scope.entries.searchLabel', 'Search scope entries')}
-          value={searchInput}
-          onChange={(e) => onSearchInput(e.target.value)}
-          className="h-9 ps-9"
-        />
-      </div>
       <ScopeTargetTypeSelect
         value={kind ?? 'all'}
         onValueChange={onKindChange}
@@ -452,6 +440,12 @@ export function ScopeEntriesTable({
             data={entries}
             getRowId={(r) => r.id ?? r.pattern ?? ''}
             showSearch={false}
+            search={{
+              value: searchInput,
+              onChange: onSearchInput,
+              placeholder: t('scope.entries.search', 'Search entries…'),
+              label: t('scope.entries.searchLabel', 'Search scope entries'),
+            }}
             toolbarStart={toolbarStart}
             manualPagination
             rowCount={data?.total ?? 0}

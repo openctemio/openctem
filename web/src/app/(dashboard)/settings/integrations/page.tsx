@@ -230,7 +230,7 @@ export default function IntegrationsPage() {
             columns={columns}
             data={visible}
             getRowId={(i) => i.id}
-            searchPlaceholder={t('integrationsHub.searchPlaceholder', 'Search integrations...')}
+            searchPlaceholder={t('integrationsHub.searchPlaceholder', 'Search integrations…')}
             showSelectionCount={false}
           />
         )}
