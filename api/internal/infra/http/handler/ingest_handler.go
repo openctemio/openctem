@@ -317,6 +317,9 @@ func (h *IngestHandler) AuthenticateSource(next http.Handler) http.Handler {
 		if err == nil && id.Paused {
 			err = errSensorPaused
 		}
+		if writeClockSkew(w, r, err, h.logger) {
+			return
+		}
 		if err != nil {
 			h.logger.Debug("authentication failed", "error", err)
 			apierror.Unauthorized("Invalid API key").WriteJSON(w)
