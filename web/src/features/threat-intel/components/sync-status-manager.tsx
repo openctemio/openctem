@@ -3,6 +3,7 @@
 import { useState } from 'react'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
+import { ConfirmDialog } from '@/components/confirm-dialog'
 import { Switch } from '@/components/ui/switch'
 import { Badge } from '@/components/ui/badge'
 import { Alert, AlertDescription } from '@/components/ui/alert'
@@ -98,11 +99,13 @@ function SyncStatusRow({ status, onUpdate }: SyncStatusRowProps) {
   const dateLocale = dateFnsLocaleFor(locale)
   const [isToggling, setIsToggling] = useState(false)
   const [isSyncing, setIsSyncing] = useState(false)
+  const [enableOpen, setEnableOpen] = useState(false)
 
   const config = sourceConfig[status.source]
   const Icon = config.icon
 
   const handleToggleEnabled = async () => {
+    setEnableOpen(false)
     setIsToggling(true)
     try {
       await setSyncEnabled(status.source, !status.enabled)
@@ -230,11 +233,29 @@ function SyncStatusRow({ status, onUpdate }: SyncStatusRowProps) {
           <Switch
             aria-label={t('threatIntel.sync.enabledAria', undefined, { name: config.name })}
             checked={status.enabled}
-            onCheckedChange={handleToggleEnabled}
+            onCheckedChange={(on) => {
+              // Turning a feed on starts downloads on a schedule: ask first. Off is one click.
+              if (on) setEnableOpen(true)
+              else void handleToggleEnabled()
+            }}
             disabled={isToggling}
           />
         </div>
       </div>
+      <ConfirmDialog
+        open={enableOpen}
+        onOpenChange={setEnableOpen}
+        title={t('threatIntel.sync.enableConfirmTitle', 'Turn on {name} sync?', {
+          name: config.name,
+        })}
+        desc={t(
+          'threatIntel.sync.enableConfirmDesc',
+          'The {name} feed is downloaded on its schedule and its data is added to your threat intelligence. You can turn it off again at any time.',
+          { name: config.name }
+        )}
+        confirmText={t('threatIntel.sync.enableConfirmButton', 'Turn on sync')}
+        handleConfirm={handleToggleEnabled}
+      />
     </div>
   )
 }

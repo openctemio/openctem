@@ -66,7 +66,7 @@ type ToolResult struct {
 // or "unverifiable". A "fixed" verdict is only a confirmed fix when its
 // evidence proves the finding's endpoint was requested and answered
 // (decideNotMatched); a bare "fixed" is "not reproduced".
-func DecideToolVerdict(raw json.RawMessage, findingID, matchedAt string) ToolResult {
+func DecideToolVerdict(raw json.RawMessage, findingID, matchedAt string, cls ...Class) ToolResult {
 	if len(raw) == 0 {
 		return ToolResult{Verdict: inconclusive(ReasonNoResult, "the tool reported no result")}
 	}
@@ -103,7 +103,7 @@ func DecideToolVerdict(raw json.RawMessage, findingID, matchedAt string) ToolRes
 			out.Verdict = Verdict{Outcome: OutcomeStillVulnerable, Code: ReasonMatched,
 				Reason: nonEmpty(detail, "the tool's check found the issue again")}
 		case VerdictFixed:
-			out.Verdict = decideNotMatched(AnalyzeAttempt(normalized(out.Evidence), matchedAt), matchedAt, true, "")
+			out.Verdict = decideNotMatched(AnalyzeAttempt(normalized(out.Evidence), matchedAt), matchedAt, true, "", firstClass(cls))
 		case VerdictUnverifiable:
 			// The tool could not run the check (template not available,
 			// tool error, target not connectable): a gap of the tool, not
