@@ -73,7 +73,7 @@
   "attackSurface.decide.truncated": "More after these: the card comes back",
   "attackSurface.decide.undo": "Undo",
   "attackSurface.decide.undoFailed": "Undo failed",
-  "attackSurface.decide.viewAll": "All suggestions",
+  "attackSurface.decide.viewAll": "Open Review",
   "attackSurface.decide.viewList": "View list",
   "attackSurface.digest.day": "Sent on (at {hour}:00 UTC)",
   "attackSurface.digest.description": "Once a week, administrators and the notification channels that receive attack surface events get a summary of what changed: new and removed hosts, ports, certificates, DNS records, technologies and exposures. A week without changes sends nothing.",
