@@ -147,6 +147,11 @@ func TestFindingsList_QuickViewFilters(t *testing.T) {
 	if _, n, _ := h.listIDs(t, admin, "status=accepted&acceptance_expires_at_lte=P30D"); n != 2 {
 		t.Errorf("accepted expiring within 30 days = %d, want 2", n)
 	}
+	// The list says when each accepted risk ends (My Work's Acceptances expiring).
+	if status, _, body := h.listFindingsPath(t, admin, "/api/v1/findings?status=accepted&acceptance_expires_at_lte=P30D"); status != http.StatusOK ||
+		strings.Count(body, `"acceptance_expires_at":`) != 2 {
+		t.Errorf("accepted expiring rows carry no acceptance_expires_at: %d %.300s", status, body)
+	}
 	if _, n, _ := h.listIDs(t, admin, "acceptance_expires_at_gt=%2BP30D"); n != 2 {
 		t.Errorf("acceptance expiring after 30 days = %d, want 2", n)
 	}
