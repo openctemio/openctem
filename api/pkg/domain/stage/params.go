@@ -287,3 +287,33 @@ func sortedKeys(m map[string]any) []string {
 	sort.Strings(keys)
 	return keys
 }
+
+// ValidateStandardParams checks params that may only be the capability's
+// standard params: no tool extras and no executor keys, each param known
+// to the capability, with its type, enum and bounds.
+func ValidateStandardParams(s Stage, params map[string]any) error {
+	for _, key := range sortedKeys(params) {
+		if key == ParamsKeyExtras || executorKeys[key] {
+			return fmt.Errorf("%w: %q is not a standard param of %s", ErrInvalidParams, key, s.Name)
+		}
+		p, ok := s.ParamByName(key)
+		if !ok {
+			return fmt.Errorf("%w: %q is not a standard param of %s", ErrInvalidParams, key, s.Name)
+		}
+		if checkParam(p, params[key]) != nil {
+			return fmt.Errorf("%w: %q has a value %s does not take (type %s)", ErrInvalidParams, key, s.Name, p.Type)
+		}
+	}
+	return nil
+}
+
+// InvalidStandardParam is the first key of params (sorted) that is not a
+// valid standard param of the capability; ok is true when every key is.
+func InvalidStandardParam(s Stage, params map[string]any) (key string, ok bool) {
+	for _, k := range sortedKeys(params) {
+		if ValidateStandardParams(s, map[string]any{k: params[k]}) != nil {
+			return k, false
+		}
+	}
+	return "", true
+}
