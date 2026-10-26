@@ -50,7 +50,6 @@ assert_eq "wrong version in the branch name" 1 "$(prov release/v0.3.1 "$head" >/
 git -C "$w" switch -q -c evil "$head^1"
 echo x >>"$w/api/internal/app.go" 2>/dev/null || { mkdir -p "$w/api/internal"; echo x >"$w/api/internal/app.go"; }
 git -C "$w" add -A; git -C "$w" commit -q --amend --no-edit
-v2="$(git -C "$w" rev-parse HEAD)"
 git -C "$w" merge -q -s ours --no-edit origin/main >/dev/null
 evil="$(git -C "$w" rev-parse HEAD)"
 out="$(prov release/v0.3.0 "$evil")"; rc=$?
@@ -100,6 +99,7 @@ git -C "$w" commit -q -m "chore(release): versions.yaml platform.release = v0.2.
 forged="$(git -C "$w" rev-parse HEAD)"
 out="$(prov release/v0.2.1 "$forged")"; rc=$?
 assert_eq "hotfix: a pick that differs from its develop commit is not verified" 1 "$rc"
+assert_contains "hotfix: the forged pick is named" "differs from the develop commit" "$out"
 git -C "$w" switch -q develop
 
 finish
