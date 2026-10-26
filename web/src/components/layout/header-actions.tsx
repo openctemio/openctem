@@ -19,6 +19,7 @@ import { ThemeSwitch } from '@/components/theme-switch'
 import { ProfileDropdown } from '@/components/profile-dropdown'
 import { NotificationBell } from '@/components/notification-bell'
 import { FullscreenToggle } from '@/components/fullscreen-toggle'
+import { HeaderApprovals } from './header-approvals'
 
 interface HeaderActionsProps {
   /**
@@ -45,13 +46,20 @@ export function HeaderActions({
   hideThemeSwitch = false,
   hideProfile = false,
 }: HeaderActionsProps) {
+  // The search (the command palette) sits in the middle of the bar; the
+  // account controls at the end.
   return (
-    <div className="ms-auto flex items-center gap-2 sm:gap-4">
-      {!hideSearch && <Search />}
-      <FullscreenToggle />
-      {!hideNotifications && <NotificationBell />}
-      {!hideThemeSwitch && <ThemeSwitch />}
-      {!hideProfile && <ProfileDropdown />}
-    </div>
+    <>
+      <div className="ms-auto flex min-w-0 justify-center sm:mx-auto sm:flex-[0_1_26rem]">
+        {!hideSearch && <Search className="sm:w-full lg:w-full xl:w-full" />}
+      </div>
+      <div className="flex shrink-0 items-center gap-1 sm:gap-2">
+        <FullscreenToggle />
+        <HeaderApprovals />
+        {!hideNotifications && <NotificationBell />}
+        {!hideThemeSwitch && <ThemeSwitch />}
+        {!hideProfile && <ProfileDropdown />}
+      </div>
+    </>
   )
 }
