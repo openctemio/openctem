@@ -31,7 +31,7 @@ type InternetFlowNode = Node<InternetNodeData, 'internet'>
 
 /** The kind dot of each role: entry in the caution tone (public exposure), hop blue, target ink. */
 export const ROLE_DOT: Record<PathNode['role'], string> = {
-  entry: 'bg-st-accepted-fg',
+  entry: 'bg-warning',
   hop: 'bg-info',
   target: 'bg-foreground',
 }
