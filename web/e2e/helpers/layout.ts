@@ -30,10 +30,14 @@ export async function layoutDefects(page: Page) {
   })
 }
 
-/** Serious and critical axe violations inside the page's main content. */
-export async function seriousAxe(page: Page) {
+/**
+ * Serious and critical axe violations inside the page's main content, or
+ * inside `include` (a CSS selector, e.g. an open drawer, which is portalled
+ * outside main).
+ */
+export async function seriousAxe(page: Page, include = 'main#content') {
   await page.addScriptTag({ path: AXE })
-  const result = await page.evaluate(async () => {
+  const result = await page.evaluate(async (selector) => {
     const w = window as unknown as {
       axe: {
         run: (
@@ -48,8 +52,8 @@ export async function seriousAxe(page: Page) {
         }>
       }
     }
-    return w.axe.run({ include: [['main#content']] }, { resultTypes: ['violations'] })
-  })
+    return w.axe.run({ include: [[selector]] }, { resultTypes: ['violations'] })
+  }, include)
   return result.violations
     .filter((v) => v.impact === 'serious' || v.impact === 'critical')
     .map((v) => `${v.id}: ${v.nodes.map((n) => n.target.join(' ')).join(', ')}`)

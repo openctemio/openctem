@@ -2,8 +2,14 @@ import { describe, expect, it, vi } from 'vitest'
 import { render, screen, within } from '@testing-library/react'
 import type { FindingDetail } from '../../../types'
 
+let evidenceData: unknown[] = []
 vi.mock('../../../api/use-finding-evidence-items', () => ({
-  useFindingEvidenceItems: () => ({ data: { data: [] } }),
+  useFindingEvidenceItems: () => ({ data: { data: evidenceData } }),
+  revealEvidence: vi.fn(),
+}))
+vi.mock('@/lib/permissions', () => ({
+  Permission: { EvidenceReveal: 'findings:evidence:reveal' },
+  useHasPermission: () => false,
 }))
 const { FindingTypePanel } = await import('../finding-type-panel')
 
@@ -92,5 +98,60 @@ describe('FindingTypePanel', () => {
   it('renders nothing for a dependency finding', () => {
     const { container } = render(<FindingTypePanel finding={finding({ source: 'sca' })} />)
     expect(container).toBeEmptyDOMElement()
+  })
+
+  it('shows the request and response of a web finding, not the tool curl item stored after it', () => {
+    const at = '2026-10-20T10:00:00Z'
+    evidenceData = [
+      {
+        id: 'c1',
+        finding_id: 'f1',
+        origin: 'detection',
+        kind: 'curl',
+        created_at: at,
+        captured_at: at,
+        revealable: [],
+        item: { kind: 'curl', text: "curl 'https://h.example/'" },
+      },
+      {
+        id: 'e1',
+        finding_id: 'f1',
+        origin: 'detection',
+        kind: 'http_exchange',
+        created_at: at,
+        captured_at: at,
+        revealable: [],
+        curl: "curl -sS -i 'https://h.example/'",
+        item: {
+          kind: 'http_exchange',
+          http: {
+            request: { method: 'GET', url: 'https://h.example/' },
+            response: { status: 403, reason: 'Forbidden', body: 'denied' },
+          },
+        },
+      },
+      {
+        id: 'e0',
+        finding_id: 'f1',
+        origin: 'retest',
+        retest_id: 'r1',
+        kind: 'http_exchange',
+        created_at: '2026-10-19T10:00:00Z',
+        captured_at: '2026-10-19T10:00:00Z',
+        revealable: [],
+        curl: "curl 'https://h.example/'",
+        item: { kind: 'http_exchange', http: { request: { url: 'https://h.example/' } } },
+      },
+    ]
+    const onOpenEvidence = vi.fn()
+    render(
+      <FindingTypePanel finding={finding({ source: 'dast' })} onOpenEvidence={onOpenEvidence} />
+    )
+    expect(screen.getAllByTestId('evidence-item')).toHaveLength(1)
+    expect(screen.getByText(/403/)).toBeInTheDocument()
+    expect(screen.getByText('denied')).toBeInTheDocument()
+    screen.getByTestId('evidence-open-all').click()
+    expect(onOpenEvidence).toHaveBeenCalled()
+    evidenceData = []
   })
 })

@@ -119,6 +119,11 @@ describe('RiskScoreBadge freshness', () => {
     const { RiskScoreBadge } = await import('../components/risk-score-badge')
     render(<RiskScoreBadge score={75} state="pending" />)
     expect(screen.getByText('75')).toBeInTheDocument()
+    // The clock beside it is explained by the badge's own name and tooltip.
+    const badge = screen.getByLabelText(
+      /^Risk 75 of 100, .+\. Its inputs changed; the new score is being computed\.$/
+    )
+    expect(badge).toHaveAttribute('title', badge.getAttribute('aria-label'))
   })
 })
 
