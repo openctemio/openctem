@@ -72,8 +72,11 @@ const (
 
 // AuthRequest is one authorization transaction.
 type AuthRequest struct {
-	ID            shared.ID
-	Client        Client
+	ID     shared.ID
+	Client Client
+	// ClientPending: Client is a metadata document fetched for this request
+	// and not stored yet. It is stored when a signed-in person approves.
+	ClientPending bool
 	RedirectURI   string
 	State         string
 	CodeChallenge string
@@ -165,8 +168,9 @@ type Repository interface {
 	// already claimed by someone else is ErrRequestState.
 	ClaimRequest(ctx context.Context, id, userID shared.ID, now time.Time) (*AuthRequest, error)
 	// ApproveRequest moves a pending request claimed by userID to approved
-	// and stores the code hash.
-	ApproveRequest(ctx context.Context, id, userID, tenantID shared.ID, granted []Scope, codeHash string, codeExpiresAt, now time.Time) error
+	// and stores the code hash. clientRef is the stored client the request
+	// now points to (a pending metadata-document client is stored first).
+	ApproveRequest(ctx context.Context, id, userID, tenantID, clientRef shared.ID, granted []Scope, codeHash string, codeExpiresAt, now time.Time) error
 	// DenyRequest moves a pending request claimed by userID to denied.
 	DenyRequest(ctx context.Context, id, userID shared.ID, now time.Time) error
 	// RedeemCode atomically moves the approved request holding codeHash to
