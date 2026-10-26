@@ -340,7 +340,7 @@ func registerAdminRoutes(
 		requireSuper := h.AdminAuthMiddleware.RequireRole(admin.AdminRoleSuperAdmin)
 		router.Group("/api/v1/admin/settings/signup", func(r Router) {
 			r.GET("/", h.AdminSignup.Get)
-			r.PUT("/", h.AdminSignup.Update, requireSuper, stepUp("settings.signup"))
+			r.PUT("/", h.AdminSignup.Update, requireSuper, freshStepUp("settings.signup"))
 		}, adminMiddlewares...)
 	}
 
@@ -377,7 +377,7 @@ func registerAdminRoutes(
 		requireSuper := h.AdminAuthMiddleware.RequireRole(admin.AdminRoleSuperAdmin)
 		router.Group("/api/v1/admin/settings/email", func(r Router) {
 			r.GET("/", h.AdminEmail.Get)
-			r.PUT("/", h.AdminEmail.Update, requireSuper, stepUp("settings.email"))
+			r.PUT("/", h.AdminEmail.Update, requireSuper, freshStepUp("settings.email"))
 			r.POST("/test", h.AdminEmail.SendTest, requireSuper)
 		}, adminMiddlewares...)
 	}
@@ -562,12 +562,14 @@ func registerAdminRoutes(
 		}, superAdminOnly...)
 
 		// The administrators' identity provider (System -> Admin sign-in):
-		// who may sign in to the console, so every change takes step-up. The
-		// service writes high-severity audit rows for every change.
+		// who may sign in to the console and whether the console asks its own
+		// second factor, so every change takes a fresh code (never the step-up
+		// window). The service writes critical audit rows with the previous
+		// configuration.
 		router.Group("/api/v1/admin/platform-idp", func(r Router) {
 			r.GET("/", h.AdminConsole.GetPlatformIdP)
-			r.PUT("/", h.AdminConsole.PutPlatformIdP, stepUp("platform_idp.update"))
-			r.DELETE("/", h.AdminConsole.DeletePlatformIdP, stepUp("platform_idp.delete"))
+			r.PUT("/", h.AdminConsole.PutPlatformIdP, freshStepUp("platform_idp.update"))
+			r.DELETE("/", h.AdminConsole.DeletePlatformIdP, freshStepUp("platform_idp.delete"))
 		}, superAdminOnly...)
 	}
 
