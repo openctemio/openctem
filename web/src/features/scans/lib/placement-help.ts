@@ -54,6 +54,7 @@ export const FAILURE_FIX: Record<string, FixTarget | null> = {
   TARGET_UNREACHABLE: 'zones',
   DEADLINE_TOO_CLOSE: null,
   COVERAGE_GAPS: null,
+  NO_RESOLVING_TARGETS: null,
   // Retest reason codes (api pkg/domain/retest).
   UNREACHABLE: null,
   BLOCKED: 'sensors',
@@ -88,6 +89,7 @@ export const PLACEMENT_FIX: Record<string, FixTarget | null> = {
   private_needs_local_policy: 'sensors',
   opt_in_disabled: 'sensors',
   local_policy_refuses: 'sensors',
+  stopped_claiming: 'sensors',
   no_free_slot: null,
 }
 
@@ -105,6 +107,7 @@ const CLASSES = new Set([
   'timeout',
   'canceled',
   'partial',
+  'target',
 ])
 
 /** What to show for one code: its meaning, the fix and where to apply it. */

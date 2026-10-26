@@ -72,3 +72,35 @@ func TestExcludedTargets_MatchesTheHostOfURLAndHostPortTargets(t *testing.T) {
 		}
 	}
 }
+
+// An exclusion of one host removes that host in every spelling and never a
+// sibling whose name only starts the same way.
+func TestExcludedTargets_ExclusionLabelBoundary(t *testing.T) {
+	tenantID := shared.NewID()
+	svc := newFilterService(&fakeExclusionRepo{active: []*scopedom.Exclusion{
+		newTypedExclusion(t, tenantID, scopedom.ExclusionTypeDomain, "dev.example.com"),
+	}})
+	excludedTargets := []string{"dev.example.com", "DEV.Example.com.", "dev.example.com:8080", "https://dev.example.com.:8443/x"}
+	keptTargets := []string{"devops.example.com", "mydev.example.com", "dev.example.com.evil.test",
+		"https://devops.example.com:8443/", "x.dev.example.com", "example.com", "https://evil.test/?h=dev.example.com"}
+
+	candidates := []ExclusionCandidate{}
+	want := map[shared.ID]bool{}
+	for _, v := range excludedTargets {
+		id := shared.NewID()
+		want[id] = true
+		candidates = append(candidates, ExclusionCandidate{ID: id, Values: []string{v}})
+	}
+	for _, v := range keptTargets {
+		candidates = append(candidates, ExclusionCandidate{ID: shared.NewID(), Values: []string{v}})
+	}
+	got, err := svc.ExcludedTargets(context.Background(), tenantID.String(), candidates)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, c := range candidates {
+		if got[c.ID] != want[c.ID] {
+			t.Errorf("target %q excluded = %v, want %v", c.Values[0], got[c.ID], want[c.ID])
+		}
+	}
+}

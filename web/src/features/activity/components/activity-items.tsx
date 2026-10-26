@@ -155,9 +155,7 @@ export function EventRow({ item }: { item: ActivityEventItem }) {
           {item.actor.name && (
             <span className="font-medium text-foreground">{item.actor.name} </span>
           )}
-          {item.summary}
-          <span aria-hidden> · </span>
-          <ActivityTime at={item.at} />
+          {item.summary} <ActivityTime at={item.at} className="ms-2" />
         </p>
         {item.detail && (
           <div className="mt-0.5 text-xs break-words text-muted-foreground">{item.detail}</div>
@@ -192,9 +190,7 @@ export function CollapsedEventsRow({
         <Layers className="h-3 w-3" />
       </span>
       <span className="min-w-0 flex-1 truncate">
-        {label}
-        <span aria-hidden> · </span>
-        <ActivityTime at={items[items.length - 1].at} />
+        {label} <ActivityTime at={items[items.length - 1].at} className="ms-2" />
       </span>
       <span className="flex shrink-0 items-center gap-0.5 text-xs font-medium text-foreground group-hover:underline">
         Show

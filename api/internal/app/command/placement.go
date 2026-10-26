@@ -319,6 +319,12 @@ func (s *Service) sensorPlacement(ctx context.Context, tenantID shared.ID, cmd *
 		sp.Reasons = append(sp.Reasons, gateReason(r))
 		return sp, nil
 	}
+	// The platform would hand it out, but the sensor said it claims nothing
+	// new until its local store recovers: that is why the command waits.
+	if sn != nil && sn.StoppedClaiming() {
+		sp.Reasons = append(sp.Reasons, commanddom.PlacementStoppedClaiming)
+		return sp, nil
+	}
 	sp.Eligible = true
 	if cmd.Type == commanddom.CommandTypeScan && sn != nil {
 		free := sn.FreeSlots(now)

@@ -35,6 +35,15 @@ Status: shipped (web). No API endpoint of its own.
 - Moving to the next finding costs one read (`GET /findings/{id}`), plus a
   window every 25 findings (and the AI triage read, when that card is on).
 
+## Finding view
+
+The centre column shows the finding's facts, its description, then its code
+location (file, lines, branch, commit, the snippet with the finding's line
+highlighted, a link to the file at the commit) through the same
+`FindingCodeLocation` component as the finding drawer and the Overview tab.
+Snippets are scanner text rendered as text; a secret's snippet arrives masked.
+Evidence items load on `e`.
+
 ## Decisions
 
 Every key is also a visible, labelled button in the decision region. Each

@@ -282,3 +282,41 @@ func TestRouter_UncoveredKinds(t *testing.T) {
 		t.Errorf("restricted uncovered = %+v", sel.Uncovered)
 	}
 }
+
+// A router for a lookup-only job places a name with no DNS answer as a
+// public target (default zone, else unzoned), still flagged Unresolved;
+// every other routing rule is unchanged. The default router leaves it
+// uncovered.
+func TestRouter_LookupOnlyPlacesUnresolvedNames(t *testing.T) {
+	ctx := context.Background()
+	dmz := mustZone(t, "dmz", false, "198.51.100.0/24")
+	def := mustZone(t, "internet", true)
+	res := fakeResolver{"intra.example.com": {"192.168.5.5"}, "meta.example.com": {"169.254.169.254"}}
+
+	if got := NewRouter([]*Zone{dmz}, res).Route(ctx, "gone.example.com"); got.Kind != KindUnresolved || got.Unzoned || got.Zone != nil {
+		t.Fatalf("default router: %+v, want uncovered unresolved", got)
+	}
+	got := NewRouter([]*Zone{dmz}, res).LookupOnly(true).Route(ctx, "gone.example.com")
+	if !got.Unzoned || got.Zone != nil || !got.Unresolved || got.Reason != "" || got.Kind != "" {
+		t.Fatalf("lookup-only, no default zone: %+v, want unzoned and flagged", got)
+	}
+	if got := NewRouter([]*Zone{dmz, def}, res).LookupOnly(true).Route(ctx, "gone.example.com"); got.Zone != def || !got.Unresolved {
+		t.Fatalf("lookup-only with a default zone: %+v, want the default zone", got)
+	}
+	r := NewRouter([]*Zone{dmz}, res).LookupOnly(true)
+	if got := r.Route(ctx, "intra.example.com"); got.Kind != KindOutsideZones {
+		t.Fatalf("lookup-only private name: %+v, want outside_zones", got)
+	}
+	if got := r.Route(ctx, "meta.example.com"); got.Kind != KindDenyList {
+		t.Fatalf("lookup-only denied name: %+v, want deny_list", got)
+	}
+	if got := r.Route(ctx, "169.254.169.254"); got.Kind != KindDenyList {
+		t.Fatalf("lookup-only denied address: %+v, want deny_list", got)
+	}
+	// Pinned to a zone that is not the default: like any public target,
+	// outside the selected zone.
+	plan := NewRouter([]*Zone{dmz}, res).LookupOnly(true).Plan(ctx, []string{"gone.example.com"}).RestrictTo(dmz)
+	if len(plan.Uncovered) != 1 || plan.Uncovered[0].Kind != KindOutsideSelected {
+		t.Fatalf("selected zone: %+v", plan.Uncovered)
+	}
+}
