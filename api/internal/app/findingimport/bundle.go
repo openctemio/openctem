@@ -114,7 +114,7 @@ func (s *Service) judgeScope(ctx context.Context, tenantID shared.ID, res *impor
 		}
 	}
 	// A finding on a host outside the organization's scope stays visible
-	// everywhere, labelled with the tag "candidate" so a reader knows the
+	// everywhere, labeled with the tag "candidate" so a reader knows the
 	// host was not confirmed as theirs.
 	for i := range res.Report.Findings {
 		f := &res.Report.Findings[i]

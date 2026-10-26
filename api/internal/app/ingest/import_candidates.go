@@ -49,7 +49,7 @@ func importCandidates(scope *alterScope, report *ctis.Report, assetMap map[strin
 	if scope == nil || report == nil {
 		return nil
 	}
-	var out []ScannedAsset
+	out := make([]ScannedAsset, 0, len(report.Assets))
 	seen := map[shared.ID]bool{}
 	for i := range report.Assets {
 		a := &report.Assets[i]
