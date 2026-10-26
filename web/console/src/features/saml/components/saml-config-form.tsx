@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react'
 import { toast } from 'sonner'
-import { Trash2, Copy, Check, Loader2, RotateCcw } from 'lucide-react'
+import { Trash2, Loader2, RotateCcw } from 'lucide-react'
 import { ErrorState } from '@/features/shared'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -20,7 +20,6 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { ConfirmDialog } from '@/components/confirm-dialog'
-import { copyToClipboard } from '@/lib/clipboard'
 import { getErrorMessage } from '@/lib/api/error-handler'
 import {
   useSamlConfig,
@@ -32,32 +31,9 @@ import {
   isPendingSSOChange,
   PENDING_SSO_MESSAGE,
 } from '@/features/sso-approvals/api/use-sso-changes'
+import { CopyableUrl } from '@console/features/sso/components/copyable-url'
 import { emptySamlConfig, type SamlConfig } from '@console/features/saml/types/saml.types'
 import { useTranslation } from '@/context/i18n-provider'
-
-function CopyableUrl({ label, url }: { label: string; url: string }) {
-  const [copied, setCopied] = useState(false)
-  return (
-    <div className="space-y-1">
-      <Label className="text-muted-foreground text-xs">{label}</Label>
-      <div className="flex items-center gap-2">
-        <code className="bg-muted min-w-0 flex-1 truncate rounded px-2 py-1 text-xs">{url}</code>
-        <Button
-          type="button"
-          size="icon"
-          variant="ghost"
-          onClick={async () => {
-            await copyToClipboard(url)
-            setCopied(true)
-            setTimeout(() => setCopied(false), 1500)
-          }}
-        >
-          {copied ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
-        </Button>
-      </div>
-    </div>
-  )
-}
 
 interface SamlConfigFormProps {
   /** Organization being configured. */
