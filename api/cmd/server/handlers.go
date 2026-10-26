@@ -264,6 +264,9 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 	sensorHandler.SetContentPolicySource(svc.SensorContent)
 	sensorHandler.SetZoneLister(repos.ScanZone)
 	sensorHandler.SetGrantService(svc.SensorGrant)
+	if svc.JobSigner != nil {
+		sensorHandler.SetJobSigningRoot(svc.JobSigner.RootKeyID)
+	}
 	commandHandler.SetScanRunService(svc.ScanRun)
 	commandHandler.SetAuditService(svc.Audit)
 	commandHandler.SetScanCommandGate(svc.Scan)
