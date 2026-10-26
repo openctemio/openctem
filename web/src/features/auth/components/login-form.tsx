@@ -15,7 +15,6 @@ import Link from '@/components/link'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { KeyRound, Loader2, LogIn } from 'lucide-react'
 import { toast } from 'sonner'
-import { safeText } from '@/lib/api/error-message'
 
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
@@ -32,6 +31,7 @@ import { PasswordInput } from '@/components/password-input'
 import { IconGoogle, IconGithub, IconMicrosoft } from '@/assets/brand-icons'
 
 import { validateRedirectUrl } from '@/lib/redirect'
+import { authErrorText } from '@/features/auth/lib/auth-error-codes'
 import { loginErrorMessage } from '@/features/auth/lib/login-error'
 import { isInvitationReturnTo } from '@/features/auth/lib/self-register'
 import { useTranslation } from '@/context/i18n-provider'
@@ -261,14 +261,14 @@ export function LoginForm({
       hardNavigate(safeRedirectTo)
     } else if (result.code === 'ORGANIZATION_SUSPENDED') {
       toast.error(
-        t('auth.organizationSuspended.message', 'This organization is suspended: contact support')
+        t('auth.organizationSuspended.message', 'This organization is suspended. Contact support.')
       )
     } else if (result.code === 'CAPTCHA_REQUIRED') {
       setCaptchaRequired(true)
       toast.error(t('auth.login.captchaRequired'))
     } else {
       setSignInFailed(true)
-      toast.error(safeText(result.error, t('auth.login.failed', 'Sign-in failed')))
+      toast.error(authErrorText(result.code, t, t('auth.login.failed', 'Sign-in failed')))
     }
   }
 

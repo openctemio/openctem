@@ -29,6 +29,7 @@ import {
   VerificationCodeInput,
 } from '@/components/security'
 import { useTranslation } from '@/context/i18n-provider'
+import { authErrorText } from '@/features/auth/lib/auth-error-codes'
 
 import {
   cancelMfaAction,
@@ -50,7 +51,27 @@ interface MfaStepProps {
 
 // The challenge expired, was used up, or the cookie is gone: only a fresh
 // password login helps.
-const RESTART_PATTERN = /sign in again|enter your password again|expired/i
+const RESTART_CODES: ReadonlySet<string> = new Set([
+  'MFA_CHALLENGE_INVALID',
+  'SESSION_EXPIRED',
+  'SESSION_REVOKED',
+  'TOKEN_INVALID',
+  'REFRESH_TOKEN_INVALID',
+  'REFRESH_TOKEN_EXPIRED',
+])
+
+/** The words for a failed step, from the API's code. */
+function stepError(
+  result: { code?: string },
+  t: (key: string, fallback?: string) => string,
+  fallbackKey: string,
+  fallback: string
+): { msg: string; restart: boolean } {
+  return {
+    msg: authErrorText(result.code, t, t(fallbackKey, fallback)),
+    restart: !!result.code && RESTART_CODES.has(result.code),
+  }
+}
 
 /**
  * A completed second factor: the session was issued, or the only memberships
@@ -109,8 +130,8 @@ function VerifyStep({ onDone, onCancel }: Omit<MfaStepProps, 'purpose'>) {
         onDone(result)
         return
       }
-      const msg = result.error || t('auth.mfa.verifyFailed', 'Verification failed')
-      if (RESTART_PATTERN.test(msg)) {
+      const { msg, restart } = stepError(result, t, 'auth.mfa.verifyFailed', 'Verification failed')
+      if (restart) {
         onCancel(msg)
         return
       }
@@ -197,6 +218,7 @@ function EnrollStep({ onDone, onCancel }: Omit<MfaStepProps, 'purpose'>) {
   const startFailedRef = useRef(
     t('auth.mfa.startFailed', 'Could not start two-factor setup. Please sign in again.')
   )
+  const tRef = useRef(t)
   const [setup, setSetup] = useState<{ secret: string; uri: string } | null>(null)
   const [code, setCode] = useState('')
   const [error, setError] = useState<string | null>(null)
@@ -220,7 +242,7 @@ function EnrollStep({ onDone, onCancel }: Omit<MfaStepProps, 'purpose'>) {
       if (res.success && res.secret && res.otpauthUri) {
         setSetup({ secret: res.secret, uri: res.otpauthUri })
       } else {
-        onCancelRef.current(res.error || startFailedRef.current)
+        onCancelRef.current(authErrorText(res.code, tRef.current, startFailedRef.current))
       }
     })
   }, [])
@@ -234,8 +256,8 @@ function EnrollStep({ onDone, onCancel }: Omit<MfaStepProps, 'purpose'>) {
         setFinished(result)
         return
       }
-      const msg = result.error || t('auth.mfa.verifyFailed', 'Verification failed')
-      if (RESTART_PATTERN.test(msg)) {
+      const { msg, restart } = stepError(result, t, 'auth.mfa.verifyFailed', 'Verification failed')
+      if (restart) {
         onCancel(msg)
         return
       }
@@ -286,7 +308,9 @@ function EnrollStep({ onDone, onCancel }: Omit<MfaStepProps, 'purpose'>) {
               if (isCompleted(result)) {
                 onDone(result)
               } else {
-                onCancel(result.error)
+                onCancel(
+                  authErrorText(result.code, t, t('auth.mfa.verifyFailed', 'Verification failed'))
+                )
               }
             })
           }
