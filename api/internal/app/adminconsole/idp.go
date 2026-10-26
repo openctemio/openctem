@@ -314,8 +314,9 @@ func (s *Service) SavePlatformIdP(ctx context.Context, actor *admin.AdminUser, i
 				"trusted_amr_values": amr,
 				"secret_changed":     in.ClientSecret != "",
 				"bindings_cleared":   clearBindings,
+				"previous":           idpAuditValues(existing),
 			}).
-			High().
+			Critical().
 			Build()
 		s.writeAudit(ctx, ActionPlatformIdPSave, entry)
 	}
@@ -340,7 +341,8 @@ func (s *Service) DeletePlatformIdP(ctx context.Context, actor *admin.AdminUser,
 		entry := admin.NewAuditLogBuilder(actor, ActionPlatformIdPDel).
 			Resource("platform_idp", nil, existing.Issuer).
 			Context(client.IP, client.UserAgent).
-			High().
+			Request("", "", map[string]interface{}{"previous": idpAuditValues(existing)}).
+			Critical().
 			Build()
 		s.writeAudit(ctx, ActionPlatformIdPDel, entry)
 	}
@@ -666,4 +668,22 @@ func trustedIdPMFA(p *admin.PlatformIdP, c *oidc.Claims) (string, bool) {
 		}
 	}
 	return "", false
+}
+
+// idpAuditValues is what an audit row records of the configuration before a
+// change: who could sign in and which IdP factors the console trusted. The
+// client secret is never recorded.
+func idpAuditValues(p *admin.PlatformIdP) map[string]interface{} {
+	if p == nil {
+		return nil
+	}
+	return map[string]interface{}{
+		"enabled":            p.Enabled,
+		"issuer":             p.Issuer,
+		"client_id":          p.ClientID,
+		"redirect_uri":       p.RedirectURI,
+		"require_idp":        p.RequireIdP,
+		"trusted_acr_values": p.TrustedACRValues,
+		"trusted_amr_values": p.TrustedAMRValues,
+	}
 }

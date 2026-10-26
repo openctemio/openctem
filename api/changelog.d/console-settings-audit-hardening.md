@@ -1,0 +1,6 @@
+### Security: console settings audit rows no longer keep webhook addresses, and sign-in settings take a fresh code
+
+- The write-ahead audit row of every super admin change recorded the request body with only secret-named keys redacted, so the full alert webhook address (`PUT /api/v1/admin/settings/alerts`, field `url`) was readable by every administrator, read-only ones included. A webhook path or query works as a bearer secret. Address fields (`url`, `*url`, `*webhook*`) now keep only their scheme and host.
+- **Upgrade note:** rows written before this release still hold the full address. Rotate the alert webhook (and any webhook address entered in the console) after upgrading.
+- The administrators' identity provider (`PUT`/`DELETE /api/v1/admin/platform-idp`), the platform e-mail relay (`PUT /api/v1/admin/settings/email`) and the sign-up policy (`PUT /api/v1/admin/settings/signup`) now need a fresh authenticator code on every change instead of the console session's step-up window. The console already asks for the code when the API requests it.
+- Identity provider changes and removals, and the console security-key policy, are audited at critical severity with the configuration before the change (the security-key policy was recorded at info severity with no previous value).
