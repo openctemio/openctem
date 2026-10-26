@@ -4,6 +4,7 @@ import (
 	"context"
 	"time"
 
+	"github.com/openctemio/openctem/api/internal/app/feedstatus"
 	"github.com/openctemio/openctem/api/internal/app/vulnfeed"
 	"github.com/openctemio/openctem/api/pkg/logger"
 )
@@ -37,7 +38,7 @@ func (c *VulnFeedImportController) Name() string { return "vuln-feed-import" }
 // Interval: every 20 minutes. A bundle is published every hour; a run with
 // nothing newer fetches only the key set and the pointer, and a platform
 // that applied the previous bundle fetches only the delta.
-func (c *VulnFeedImportController) Interval() time.Duration { return 20 * time.Minute }
+func (c *VulnFeedImportController) Interval() time.Duration { return feedstatus.IntervalVulnfeed }
 
 // ReconcileTimeout leaves room for a first snapshot.
 func (c *VulnFeedImportController) ReconcileTimeout() time.Duration { return 45 * time.Minute }
