@@ -88,6 +88,7 @@ import en_riskScore from './en/riskScore.json'
 import en_severity from './en/severity.json'
 import en_userMenu from './en/userMenu.json'
 import en_validation from './en/validation.json'
+import en_vulnPage from './en/vulnPage.json'
 import en_webEvidence from './en/webEvidence.json'
 import en_workflowStages from './en/workflowStages.json'
 import en_remediationHub from './en/remediationHub.json'
@@ -180,6 +181,7 @@ import vi_riskScore from './vi/riskScore.json'
 import vi_severity from './vi/severity.json'
 import vi_userMenu from './vi/userMenu.json'
 import vi_validation from './vi/validation.json'
+import vi_vulnPage from './vi/vulnPage.json'
 import vi_webEvidence from './vi/webEvidence.json'
 import vi_workflowStages from './vi/workflowStages.json'
 import vi_remediationHub from './vi/remediationHub.json'
@@ -277,6 +279,7 @@ export const enNamespaces: Record<string, Dictionary> = {
   severity: en_severity,
   userMenu: en_userMenu,
   validation: en_validation,
+  vulnPage: en_vulnPage,
   webEvidence: en_webEvidence,
   workflowStages: en_workflowStages,
   remediationHub: en_remediationHub,
@@ -372,6 +375,7 @@ export const viNamespaces: Record<string, Dictionary> = {
   severity: vi_severity,
   userMenu: vi_userMenu,
   validation: vi_validation,
+  vulnPage: vi_vulnPage,
   webEvidence: vi_webEvidence,
   workflowStages: vi_workflowStages,
   remediationHub: vi_remediationHub,

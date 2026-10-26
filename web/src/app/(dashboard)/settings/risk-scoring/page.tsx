@@ -728,11 +728,11 @@ export default function ScoringConfigurationPage() {
                     : (config.score_composition_mode ?? 'multiply') === 'amplify_headroom'
                       ? t(
                           'riskScore.model.amplifyHint',
-                          'Highly-exposed critical assets no longer all pin at 100. The exposure boost fills the remaining range instead of overflowing, which improves ranking at the top.'
+                          'Highly-exposed critical assets no longer all pin at 100. The exposure boost fills the remaining range instead of overflowing, which improves ranking at the top. An asset without an open finding scores 0.'
                         )
                       : t(
                           'riskScore.model.multiplyHint',
-                          'Exposure multiplier scales the whole score.'
+                          'Exposure multiplier scales the whole score. An asset without an open finding scores 0.'
                         )}
                 </p>
               </div>

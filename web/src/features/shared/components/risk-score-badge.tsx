@@ -110,9 +110,17 @@ export function RiskScoreBadge({
     : labelled
       ? t('riskScore.labelled', 'Risk: {score}', { score: value })
       : value
-  const name = none
+  const scoreName = none
     ? t('riskScore.nameNone', 'Risk: {band}', { band })
     : t('riskScore.name', 'Risk {score} of 100, {band}', { score: value, band })
+  // A queued rescore keeps the score and adds a clock; the badge's own name
+  // says what the clock means, so hovering either part explains it.
+  const name =
+    state === 'pending'
+      ? t('riskScore.namePending', '{name}. Its inputs changed; the new score is being computed.', {
+          name: scoreName,
+        })
+      : scoreName
   const badge = (
     <SeverityBadge
       score={score}
@@ -125,11 +133,7 @@ export function RiskScoreBadge({
   )
   if (state !== 'pending') return badge
   return (
-    <span
-      className="inline-flex items-center gap-1"
-      title={t('riskScore.calculatingHint', 'Its inputs changed; the new score is being computed.')}
-      data-state="pending"
-    >
+    <span className="inline-flex items-center gap-1" title={name} data-state="pending">
       {badge}
       <Clock className="size-3 text-muted-foreground" aria-hidden />
     </span>
