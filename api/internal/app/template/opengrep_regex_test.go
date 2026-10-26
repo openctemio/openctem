@@ -8,8 +8,6 @@ import (
 	"testing"
 
 	"gopkg.in/yaml.v3"
-
-	"github.com/openctemio/openctem/api/pkg/domain/scannertemplate"
 )
 
 var badOpengrepRegexes = map[string]string{
@@ -124,9 +122,9 @@ func TestSemgrepValidator_AcceptsSafeRegexFields(t *testing.T) {
 func TestRepoOpengrepRulesPass(t *testing.T) {
 	root := filepath.Join("..", "..", "..", "..")
 	v := &SemgrepValidator{}
-	_ = filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
+	err := filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
-			return nil
+			return err
 		}
 		if d.IsDir() {
 			switch d.Name() {
@@ -139,7 +137,10 @@ func TestRepoOpengrepRulesPass(t *testing.T) {
 			return nil
 		}
 		data, rerr := os.ReadFile(path)
-		if rerr != nil || !strings.Contains(string(data), "pattern-regex") && !strings.Contains(string(data), "metavariable-regex") {
+		if rerr != nil {
+			return rerr
+		}
+		if !strings.Contains(string(data), "pattern-regex") && !strings.Contains(string(data), "metavariable-regex") {
 			return nil
 		}
 		if res := v.Validate(data); res.HasErrors() {
@@ -147,5 +148,7 @@ func TestRepoOpengrepRulesPass(t *testing.T) {
 		}
 		return nil
 	})
-	_ = scannertemplate.TemplateTypeSemgrep
+	if err != nil {
+		t.Fatal(err)
+	}
 }

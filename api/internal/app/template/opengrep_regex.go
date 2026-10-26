@@ -58,6 +58,30 @@ func unionSets(sets []runeSet) runeSet {
 	return u
 }
 
+// normalizeEscape maps the escape \n (n = the byte after the backslash) to
+// Go syntax, and reports whether it is a backreference.
+func normalizeEscape(n byte, inClass bool) (string, bool) {
+	switch {
+	case n >= '1' && n <= '9':
+		return "", true
+	case (n == 'g' || n == 'k') && !inClass:
+		return "", true
+	}
+	if !inClass {
+		switch n {
+		case 'h':
+			return `[ \t]`, false
+		case 'K', 'G':
+			return "", false
+		case 'R':
+			return `\n`, false
+		case 'Z':
+			return `\z`, false
+		}
+	}
+	return "\\" + string(n), false
+}
+
 // normalizePCRE rewrites PCRE-only syntax that cannot change the matching
 // cost class into Go syntax so the pattern can be parsed. It reports whether
 // the pattern uses a backreference.
@@ -68,39 +92,11 @@ func normalizePCRE(p string) (string, bool) {
 	for i := 0; i < len(p); i++ {
 		c := p[i]
 		if c == '\\' && i+1 < len(p) {
-			n := p[i+1]
-			switch {
-			case n >= '1' && n <= '9':
+			rep, backref := normalizeEscape(p[i+1], inClass)
+			if backref {
 				return "", true
-			case n == 'g' || n == 'k':
-				if !inClass {
-					return "", true
-				}
 			}
-			if !inClass {
-				switch n {
-				case 'h':
-					b.WriteString(`[ \t]`)
-					i++
-					prevQuant = false
-					continue
-				case 'K', 'G':
-					i++
-					continue
-				case 'R':
-					b.WriteString(`\n`)
-					i++
-					prevQuant = false
-					continue
-				case 'Z':
-					b.WriteString(`\z`)
-					i++
-					prevQuant = false
-					continue
-				}
-			}
-			b.WriteByte(c)
-			b.WriteByte(n)
+			b.WriteString(rep)
 			i++
 			prevQuant = false
 			continue
@@ -267,7 +263,7 @@ func isUnboundedRep(n *syntax.Regexp) bool {
 }
 
 // edgeRepeats collects the character sets of unbounded repeats found at the
-// start (or end) of n, looking through nullable neighbours.
+// start (or end) of n, looking through nullable neighbors.
 func edgeRepeats(n *syntax.Regexp, first bool) []runeSet {
 	switch n.Op {
 	case syntax.OpStar, syntax.OpPlus, syntax.OpRepeat:
@@ -477,7 +473,7 @@ func checkBacktrackingRegex(p string) string {
 	}
 	re, err := syntax.Parse(norm, syntax.Perl)
 	if err != nil {
-		return fmt.Sprintf("regex could not be analysed: %v", err)
+		return fmt.Sprintf("regex could not be analyzed: %v", err)
 	}
 	if why := walkBacktracking(re); why != "" {
 		return why
