@@ -540,11 +540,11 @@ func (r *SensorRepository) UpdateHeartbeat(ctx context.Context, id shared.ID, hb
 		    -- stored snapshot and its timestamp as they are.
 		    outbox_stats = COALESCE($14::jsonb, outbox_stats),
 		    outbox_reported_at = CASE WHEN $14::jsonb IS NULL THEN outbox_reported_at ELSE NOW() END,
-		    -- Protocol telemetry (RFC-029 §5.3): $15 = 0 leaves it untouched.
+		    -- Protocol telemetry: $15 = 0 leaves it untouched.
 		    protocol_version = CASE WHEN $15::smallint > 0 THEN $15::smallint ELSE protocol_version END,
 		    protocol_client = CASE WHEN $15::smallint > 0 THEN NULLIF($16, '') ELSE protocol_client END,
 		    protocol_seen_at = CASE WHEN $15::smallint > 0 THEN NOW() ELSE protocol_seen_at END,
-		    -- Transport (RFC-059): with the protocol telemetry.
+		    -- Transport: with the protocol telemetry.
 		    protocol_binding = CASE WHEN $15::smallint > 0 THEN NULLIF($39, '') ELSE protocol_binding END,
 		    protocol_fallback_reason = CASE WHEN $15::smallint > 0 THEN NULLIF($40, '') ELSE protocol_fallback_reason END,
 		    -- Process start time from the reported uptime; 0 (not reported)
@@ -561,7 +561,7 @@ func (r *SensorRepository) UpdateHeartbeat(ctx context.Context, id shared.ID, hb
 		    reported_os = COALESCE($22::varchar, reported_os),
 		    reported_arch = COALESCE($23::varchar, reported_arch),
 		    reported_at = CASE WHEN $24::boolean THEN NOW() ELSE reported_at END,
-		    -- Load report (RFC-030 §5.8): each part NULL ($25..$27) leaves it
+		    -- Load report: each part NULL ($25..$27) leaves it
 		    -- as it is; $28 says the heartbeat carried one at all.
 		    reported_resources = COALESCE($25::jsonb, reported_resources),
 		    reported_capacity = COALESCE($26::jsonb, reported_capacity),
@@ -573,20 +573,20 @@ func (r *SensorRepository) UpdateHeartbeat(ctx context.Context, id shared.ID, hb
 		    sensor_product = COALESCE(NULLIF($31, ''), sensor_product),
 		    sensor_commit = COALESCE(NULLIF($32, ''), sensor_commit),
 		    sensor_build_time = COALESCE($33::timestamptz, sensor_build_time),
-		    -- Deadline of the next heartbeat (RFC-035 §5.6): the interval the
+		    -- Deadline of the next heartbeat: the interval the
 		    -- sensor follows from now on.
 		    heartbeat_interval_seconds = $35::integer,
 		    heartbeat_due_at = NOW() + make_interval(secs => $35::integer),
 		    -- Control report: NULL ($36) leaves the stored one as it is.
 		    reported_control = COALESCE($36::jsonb, reported_control),
 		    control_reported_at = CASE WHEN $36::jsonb IS NULL THEN control_reported_at ELSE NOW() END,
-		    -- Local policy report (RFC-040 §5.7): NULL ($37) leaves it as it is.
+		    -- Local policy report: NULL ($37) leaves it as it is.
 		    reported_local_policy = COALESCE($37::jsonb, reported_local_policy),
 		    local_policy_reported_at = CASE WHEN $37::jsonb IS NULL THEN local_policy_reported_at ELSE NOW() END,
 		    -- Local store report: NULL ($41) leaves the stored one as it is.
 		    reported_local_store = COALESCE($41::jsonb, reported_local_store),
 		    local_store_reported_at = CASE WHEN $41::jsonb IS NULL THEN local_store_reported_at ELSE NOW() END,
-		    -- The config report digest this heartbeat echoed (research/26);
+		    -- The config report digest this heartbeat echoed;
 		    -- NULL when it echoed none, so a stale stored report shows.
 		    config_heartbeat_digest = NULLIF($38, ''),
 		    metrics_updated_at = NOW(),

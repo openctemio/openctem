@@ -36,7 +36,7 @@ type RunScopeSnapshotResponse struct {
 
 // GetRunScopeSnapshot handles GET /api/v1/scan-runs/{id}/scope-snapshot
 // @Summary      Scope snapshot of a run
-// @Description  The scope the run relied on when it started (RFC-065): the entries that covered its targets (with their authorization source, program and tier), the programs they belong to with their accepted terms hash and program exclusions, and the SHA-256 of the canonical body. Needs scans:read and either scope:read or programs:read; a run the caller may not see answers 404, as does a run without a snapshot.
+// @Description  The scope the run relied on when it started: the entries that covered its targets (with their authorization source, program and tier), the programs they belong to with their accepted terms hash and program exclusions, and the SHA-256 of the canonical body. Needs scans:read and either scope:read or programs:read; a run the caller may not see answers 404, as does a run without a snapshot.
 // @Tags         Scans
 // @Produce      json
 // @Param        id   path      string  true  "Run ID"
