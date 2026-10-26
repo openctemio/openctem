@@ -194,7 +194,7 @@ func (h *MCPHandler) runWriteTool(r *http.Request, tool *mcpTool, tenantID strin
 	ctx := r.Context()
 	p := middleware.GetMCPPrincipal(ctx)
 	if p == nil || h.confirmer == nil {
-		return toolErrorResult(mcpError{Code: mcpErrPermissionDenied, Message: "this tool needs a connection a person approved; API keys cannot change data"}), true
+		return toolErrorResult(mcpError{Code: mcpErrPermissionDenied, Message: "this tool needs a connection a person approved; API keys cannot change data." + mcpPolicyDecision()}), true
 	}
 	var args map[string]any
 	if len(raw) > 0 {
