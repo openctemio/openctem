@@ -278,8 +278,8 @@ func registerProxyTestEchoRoute(router Router, h *handler.ProxyTestEchoHandler) 
 	cfg := middleware.DefaultAuthRateLimitConfig()
 	// A pool of 64 endpoints behind one gateway tests from one address.
 	cfg.TokenExchangeRatePerMin = 600
-	limiter := middleware.NewDistributedAuthRateLimiter(cfg, nil, authRateLimitBackend, "proxy-test-echo")
-	router.GET("/api/v1/proxy-test-echo/{tenant_id}/{command_id}/{nonce}", h.Echo, limiter.TokenExchangeMiddleware())
+	limiter := middleware.NewDistributedAuthRateLimiter(cfg, nil, authRateLimitBackend, "proxy-test-echoes")
+	router.GET("/api/v1/proxy-test-echoes/{nonce}", h.Echo, limiter.TokenExchangeMiddleware())
 }
 
 // registerScanWindowRoutes registers the scan window API (RFC-067).

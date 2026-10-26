@@ -167,19 +167,18 @@ type ProxyTestEchoResponse struct {
 	Address string `json:"address"`
 }
 
-// Echo handles GET /api/v1/proxy-test-echo/{tenant_id}/{command_id}/{nonce}
+// Echo handles GET /api/v1/proxy-test-echoes/{nonce}
 // @Summary      Proxy test echo
 // @Description  Answers the address the request came from, for the token of a live proxy test command. Called by sensors through the proxy under test; every other request is not found.
 // @Tags         Proxy Pools
 // @Produce      json
-// @Param        tenant_id   path      string  true  "Organization ID"
-// @Param        command_id  path      string  true  "Test command ID"
 // @Param        nonce       path      string  true  "Token of the test"
 // @Success      200         {object}  ProxyTestEchoResponse
 // @Failure      404         {object}  apierror.Error
-// @Router       /proxy-test-echo/{tenant_id}/{command_id}/{nonce} [get]
+// @Router       /proxy-test-echoes/{nonce} [get]
 func (h *ProxyTestEchoHandler) Echo(w http.ResponseWriter, r *http.Request) {
-	if !h.service.VerifyTestEcho(r.Context(), chi.URLParam(r, "tenant_id"), chi.URLParam(r, "command_id"), chi.URLParam(r, "nonce")) {
+	tenantID, commandID, nonce, ok := proxypoolapp.SplitTestEchoToken(chi.URLParam(r, "nonce"))
+	if !ok || !h.service.VerifyTestEcho(r.Context(), tenantID, commandID, nonce) {
 		apierror.NotFound("Page").WriteJSON(w)
 		return
 	}

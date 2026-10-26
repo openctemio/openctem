@@ -111,7 +111,7 @@ through the normal `egress-report`, which a test command may send for the pool
 it names: a passing test moves a quarantined endpoint to probation and wrong
 credentials quarantine it, as for a scan.
 
-**The echo** is `GET /api/v1/proxy-test-echo/{tenant_id}/{command_id}/{nonce}`:
+**The echo** is `GET /api/v1/proxy-test-echoes/{nonce}`, where the one path segment is `<tenant id>.<command id>.<nonce>`:
 no session and no sensor key (the request leaves through a proxy the
 organization chose, so it carries nothing but the one-test token in its path).
 It answers the address the request came from (`{address}`, `no-store`) only
