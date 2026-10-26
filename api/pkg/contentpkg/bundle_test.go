@@ -13,6 +13,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/openctemio/openctem/api/pkg/contentpkg/sigstore"
 )
 
 // The sast-rules v0.1.0 release: its tarball and the keyless Sigstore
@@ -25,13 +27,13 @@ const (
 
 var (
 	sigOnce     sync.Once
-	sigVerifier *SigstoreVerifier
+	sigVerifier *sigstore.Verifier
 	sigErr      error
 )
 
-func sigstoreVerifier(t *testing.T) *SigstoreVerifier {
+func sigstoreVerifier(t *testing.T) *sigstore.Verifier {
 	t.Helper()
-	sigOnce.Do(func() { sigVerifier, sigErr = NewSigstoreVerifier("") })
+	sigOnce.Do(func() { sigVerifier, sigErr = sigstore.New("") })
 	if sigErr != nil {
 		t.Fatal(sigErr)
 	}
@@ -136,7 +138,7 @@ func newFixture(t *testing.T) *fixture {
 		},
 	}
 	f.options = VerifyOptions{Trust: Trust{Roots: []string{RootKeyID(root.Public().(ed25519.PublicKey))}},
-		Publisher: sigstoreVerifier(t), Now: now}
+		Publisher: PublisherVerifierFunc(sigstoreVerifier(t).Verify), Now: now}
 	return f
 }
 
