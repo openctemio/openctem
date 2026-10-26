@@ -6,7 +6,10 @@ package command
 // receives (never on the stored command) for that sensor, so the job
 // signature covers it. A sensor whose jobs use a pool but which does not
 // report the capability to honor one gets no scan or retest jobs at all:
-// it would run them directly.
+// it would run them directly. Validate jobs probe targets too: a sensor
+// whose jobs use a pool gets them only when it also reports that its
+// validate executor honors the pool (sensordom.CapabilityEgressValidate),
+// and then they carry the member as well.
 
 import (
 	"context"
@@ -43,9 +46,16 @@ func WithEgress(src EgressSource) Option {
 	return func(s *Service) { s.egress = src }
 }
 
-// egressCommand reports whether a command type carries an egress member.
+// egressCommand reports whether a command type is a scan or retest job,
+// which every sensor that honors pools runs through its pool.
 func egressCommand(t commanddom.CommandType) bool {
 	return t == commanddom.CommandTypeScan || t == commanddom.CommandTypeRetest
+}
+
+// egressBound reports whether a command type reaches targets and so
+// carries the egress member: scan and retest jobs, and validate jobs.
+func egressBound(t commanddom.CommandType) bool {
+	return egressCommand(t) || t == commanddom.CommandTypeValidate
 }
 
 // egressDecision is the egress of one organization sensor's jobs.
@@ -53,6 +63,17 @@ type egressDecision struct {
 	egress *proxypool.JobEgress
 	// blocked: the jobs use a pool and the sensor cannot honor it.
 	blocked bool
+	// validateBlocked: the jobs use a pool and the sensor's validate jobs
+	// would not go through it (they would probe from its own address).
+	validateBlocked bool
+}
+
+// holds reports whether the decision keeps command type t from the sensor.
+func (d egressDecision) holds(t commanddom.CommandType) bool {
+	if t == commanddom.CommandTypeValidate {
+		return d.validateBlocked
+	}
+	return d.blocked && egressCommand(t)
 }
 
 // egressFor resolves the egress of sensorID's jobs among cmds (nothing to
@@ -60,7 +81,7 @@ type egressDecision struct {
 // without the source, gets none. An error fails the delivery: a job never
 // leaves without the pool the organization set.
 func (s *Service) egressFor(ctx context.Context, tenantID shared.ID, sensorID string, cmds []*commanddom.Command) (egressDecision, error) {
-	if s.egress == nil || sensorID == "" || !slices.ContainsFunc(cmds, func(c *commanddom.Command) bool { return egressCommand(c.Type) }) {
+	if s.egress == nil || sensorID == "" || !slices.ContainsFunc(cmds, func(c *commanddom.Command) bool { return egressBound(c.Type) }) {
 		return egressDecision{}, nil
 	}
 	sid, err := shared.IDFromString(sensorID)
@@ -91,18 +112,21 @@ func (s *Service) egressFor(ctx context.Context, tenantID shared.ID, sensorID st
 	supported := sn != nil &&
 		slices.Contains(sn.Reported.Capabilities, sensordom.CapabilityEgressUpstream) &&
 		slices.Contains(sn.Reported.Capabilities, sensordom.CapabilityNetConfined)
-	return egressDecision{egress: eg, blocked: !supported}, nil
+	validates := supported && slices.Contains(sn.Reported.Capabilities, sensordom.CapabilityEgressValidate)
+	return egressDecision{egress: eg, blocked: !supported, validateBlocked: !validates}, nil
 }
 
-// withoutEgressJobs drops the scan and retest commands when the sensor
-// cannot honor its pool; the rest go out as usual.
+// withoutEgressJobs drops the commands the sensor cannot run through its
+// pool (scan and retest jobs when it cannot honor one, validate jobs when
+// its validate executor does not); the rest go out as usual. They stay
+// pending for a sensor that can.
 func (d egressDecision) withoutEgressJobs(cmds []*commanddom.Command) []*commanddom.Command {
-	if !d.blocked {
+	if !d.blocked && !d.validateBlocked {
 		return cmds
 	}
 	out := cmds[:0:0]
 	for _, c := range cmds {
-		if !egressCommand(c.Type) {
+		if !d.holds(c.Type) {
 			out = append(out, c)
 		}
 	}
@@ -110,12 +134,12 @@ func (d egressDecision) withoutEgressJobs(cmds []*commanddom.Command) []*command
 	return out
 }
 
-// stamp sets the egress member on copies of the scan and retest commands,
-// or removes one a command's creator put there: the field belongs to the
-// platform.
+// stamp sets the egress member on copies of the scan, retest and validate
+// commands, or removes one a command's creator put there: the field
+// belongs to the platform.
 func (d egressDecision) stamp(cmds []*commanddom.Command) ([]*commanddom.Command, error) {
 	for i, c := range cmds {
-		if !egressCommand(c.Type) {
+		if !egressBound(c.Type) {
 			continue
 		}
 		payload, err := withEgressPayload(c.Payload, d.egress)
@@ -154,14 +178,14 @@ func withEgressPayload(payload json.RawMessage, eg *proxypool.JobEgress) (json.R
 // egressOne applies the decision to one command a sensor claims by id:
 // refused when the sensor cannot honor its pool, else stamped.
 func (s *Service) egressOne(ctx context.Context, sensorID string, cmd *commanddom.Command) (*commanddom.Command, error) {
-	if cmd == nil || !egressCommand(cmd.Type) {
+	if cmd == nil || !egressBound(cmd.Type) {
 		return cmd, nil
 	}
 	d, err := s.egressFor(ctx, cmd.TenantID, sensorID, []*commanddom.Command{cmd})
 	if err != nil {
 		return nil, err
 	}
-	if d.blocked {
+	if d.holds(cmd.Type) {
 		return nil, ErrEgressUnsupported
 	}
 	out, err := d.stamp([]*commanddom.Command{cmd})

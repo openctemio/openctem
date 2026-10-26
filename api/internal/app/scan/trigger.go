@@ -351,6 +351,7 @@ func (s *Service) triggerWorkflow(ctx context.Context, sc *scan.Scan, triggerTyp
 	// The probe ceiling of every step (RFC-071), from the scan, never from
 	// the trigger's context.
 	runContext[RunContextKeyIntensity] = string(sc.EffectiveIntensity())
+	runContext[scanrun.RunContextKeyDepth] = string(sc.EffectiveDepth())
 	if sc.TargetOptions.EffectiveCIDRMode() == scan.CIDRModeLiveness {
 		runContext[RunContextKeyCIDRMode] = string(scan.CIDRModeLiveness)
 	} else {
@@ -493,6 +494,7 @@ func (s *Service) triggerSingleScan(ctx context.Context, sc *scan.Scan, triggerT
 	recordSkippedTargets(sc, runContext)
 	runContext["scanner_name"] = sc.ScannerName
 	runContext[RunContextKeyIntensity] = string(sc.EffectiveIntensity())
+	runContext[scanrun.RunContextKeyDepth] = string(sc.EffectiveDepth())
 	runContext["scanner_config"] = sc.ScannerConfig
 	if sc.TargetOptions.EffectiveCIDRMode() == scan.CIDRModeLiveness {
 		runContext[RunContextKeyCIDRMode] = string(scan.CIDRModeLiveness)
@@ -717,6 +719,11 @@ func (s *Service) scheduleWorkflowSteps(ctx context.Context, run *scanrun.Run, s
 			aboveIntensity++
 			continue
 		}
+		if reason := DepthSkipReason(run, step); reason != "" {
+			s.skipWorkflowStep(ctx, run, step, reason)
+			aboveIntensity++
+			continue
+		}
 		if queued >= maxParallel {
 			continue // started by the scan run service as slots free up
 		}
@@ -749,7 +756,7 @@ func (s *Service) scheduleWorkflowSteps(ctx context.Context, run *scanrun.Run, s
 		msg := "workflow has no step without dependencies; nothing can start"
 		switch {
 		case aboveIntensity > 0:
-			msg = "no step started: every first step either probes above this scan's intensity or its condition was false"
+			msg = "no step started: every first step either probes above this scan's intensity, runs only at a deeper depth, or its condition was false"
 		case roots > 0:
 			msg = "no step started: the condition of every first step was false"
 		}
@@ -1347,7 +1354,13 @@ func (s *Service) validateWorkflowStepTools(ctx context.Context, sc *scan.Scan) 
 	}
 
 	for _, step := range steps {
+		if stepNotRunBy(sc, step) {
+			continue
+		}
 		if err := s.validateStepTool(ctx, sc.TenantID, step); err != nil {
+			if optionalWithoutTool(step, err) {
+				continue
+			}
 			return err
 		}
 	}

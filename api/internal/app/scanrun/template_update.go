@@ -249,6 +249,7 @@ func stepInputOf(tenantID, workflowID string, st scanworkflow.SpecStep) AddStepI
 		Tool: st.Tool, Capabilities: st.Capabilities, PreferTools: st.PreferTools, Config: st.Config,
 		TimeoutSeconds: st.TimeoutSeconds, DependsOn: st.DependsOn, MaxRetries: st.MaxRetries,
 		RetryDelaySeconds: st.RetryDelaySeconds,
+		RunPolicy:         st.RunPolicy,
 	}
 	cond := st.Condition
 	in.Condition = &cond
