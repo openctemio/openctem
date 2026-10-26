@@ -92,6 +92,15 @@ unreported, and the run closed it. A finding whose `scan_id` is one of the
 run's reports still counts as seen. The like-for-like guards are unchanged:
 same tool, same scan profile, a clean command, the blinding guard.
 
+A run that did not cover every target closes nothing either, whatever its
+reports' `coverage_type` says. The evaluation ends with the reason
+`uncovered_targets` when the command result lists or counts coverage gaps
+(hosts the sensor gave up or that blocked it), unreached targets or targets
+its local policy refused (`resultLeftTargetsUncovered`,
+`internal/app/ingest/coverage_autoresolve.go`). Such a host can still count as
+touched (an asset record, some findings), so a finding the run did not repeat
+there proves nothing. A metadata block that does not parse is not trusted.
+
 A receipt that cannot prove absence closes nothing. The evaluation ends with the
 reason `receipt_incomplete` (`ingestreport.ErrReceiptIncomplete`) when:
 
