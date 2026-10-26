@@ -90,6 +90,7 @@ const (
 	coverageRejectedItems       = "report_rejected_items"
 	coveragePartial             = "partial_coverage"
 	coverageUndeclared          = "coverage_undeclared"
+	coverageTruncated           = "truncated_result"
 	coverageRepositoryScan      = "repository_scan"
 	coverageNotRepositoryScan   = "not_repository_scan"
 	coverageNotDefaultBranch    = "not_default_branch"
@@ -137,6 +138,11 @@ func decideRunCoverage(c *ingestreport.CommandCoverage, repo bool) coverageDecis
 	}
 	if len(c.Result) > 0 && json.Unmarshal(c.Result, &result) == nil && result.ExitCode != nil && *result.ExitCode != 0 {
 		return coverageDecision{reason: coverageNonZeroExit}
+	}
+	// A result cut short (deadline, disk, cap) cannot prove that what it
+	// does not report is gone, whatever coverage_type its reports declare.
+	if command.ResultTruncated(c.Result) {
+		return coverageDecision{reason: coverageTruncated}
 	}
 	if len(c.Reports) == 0 {
 		return coverageDecision{reason: coverageNoReports}

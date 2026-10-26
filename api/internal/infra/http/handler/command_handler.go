@@ -946,6 +946,12 @@ func (h *CommandHandler) triggerScanRunProgression(ctx context.Context, cmd *com
 	if unfinished, ok := commanddom.ConnectorUnfinishedTargets(cmd); ok {
 		partial.Unfinished = unfinished
 	}
+	// A truncated result (cut short by a deadline, disk or cap) finished
+	// none of its targets as far as the run can tell: the step ends partial
+	// and the targets are recorded as unfinished.
+	if cut := commanddom.TruncatedTargets(cmd); len(cut) > 0 {
+		partial.Unfinished = mergeTargets(partial.Unfinished, cut)
+	}
 
 	// Trigger scan workflow progression asynchronously with independent context
 	// Use background context since the HTTP request context will be canceled after response
@@ -961,6 +967,21 @@ func (h *CommandHandler) triggerScanRunProgression(ctx context.Context, cmd *com
 			)
 		}
 	}()
+}
+
+// mergeTargets is a followed by the targets of b that a does not have.
+func mergeTargets(a, b []string) []string {
+	have := make(map[string]bool, len(a))
+	for _, t := range a {
+		have[t] = true
+	}
+	for _, t := range b {
+		if !have[t] {
+			have[t] = true
+			a = append(a, t)
+		}
+	}
+	return a
 }
 
 // withReach adds a command result's reach outcome (sensor-supplied: parsed

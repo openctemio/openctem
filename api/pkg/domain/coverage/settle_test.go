@@ -106,3 +106,45 @@ func TestVerdicts_UniformTargetSideFailureIsSensorFailure(t *testing.T) {
 		t.Errorf("different classes = %+v, want each its own", v)
 	}
 }
+
+// A truncated result (cut short by a deadline, disk or cap) covers nothing:
+// its done targets are unfinished, with or without per-target outcomes, and
+// a later complete task still decides them.
+func TestVerdicts_TruncatedResultNeverCovers(t *testing.T) {
+	for name, result := range map[string]string{
+		"no outcomes":   `{"metadata": {"truncated": true}}`,
+		"top-level":     `{"truncated": true}`,
+		"with outcomes": `{"metadata": {"truncated": true}, "target_outcomes": [{"target": "a", "state": "done"}, {"target": "b", "state": "done"}]}`,
+	} {
+		v := Verdicts([]TaskResult{{Status: "completed", Targets: []string{"a", "b"}, Result: json.RawMessage(result)}}, nil)
+		for _, k := range []string{"a", "b"} {
+			if v[k].Kind != VerdictFailed || v[k].Outcome != OutcomeUnfinished {
+				t.Errorf("%s: %s = %+v, want unfinished", name, k, v[k])
+			}
+		}
+	}
+	// A complete follow-up overrides the truncated task.
+	v := Verdicts([]TaskResult{
+		{Status: "completed", Targets: []string{"a", "b"}, Result: json.RawMessage(`{"metadata": {"truncated": true}}`)},
+		{Status: "completed", Targets: []string{"a"}},
+	}, nil)
+	if v["a"].Kind != VerdictCovered || v["b"].Kind != VerdictFailed {
+		t.Errorf("follow-up: a = %+v, b = %+v", v["a"], v["b"])
+	}
+	// Facts about a target stay: unreached is still unreached, a skip stays blocked.
+	v = Verdicts([]TaskResult{{Status: "completed", Targets: []string{"a", "b"},
+		Result: json.RawMessage(`{"metadata": {"truncated": true, "unreached_targets": [{"target": "a"}]}}`)}}, nil)
+	if v["a"].Outcome != "unreachable" || v["b"].Outcome != OutcomeUnfinished {
+		t.Errorf("unreached: a = %+v, b = %+v", v["a"], v["b"])
+	}
+	v = Verdicts([]TaskResult{{Status: "completed", Targets: []string{"a", "b"},
+		Result: json.RawMessage(`{"metadata": {"truncated": true}, "target_outcomes": [{"target": "a", "state": "skipped", "class": "refused"}, {"target": "b", "state": "done"}]}`)}}, nil)
+	if v["a"].Kind != VerdictBlocked || v["b"].Kind != VerdictFailed {
+		t.Errorf("skip: a = %+v, b = %+v", v["a"], v["b"])
+	}
+	// An untruncated result is unchanged.
+	v = Verdicts([]TaskResult{{Status: "completed", Targets: []string{"a"}, Result: json.RawMessage(`{"metadata": {"truncated": false}}`)}}, nil)
+	if v["a"].Kind != VerdictCovered {
+		t.Errorf("complete = %+v", v["a"])
+	}
+}
