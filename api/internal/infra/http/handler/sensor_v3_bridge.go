@@ -135,7 +135,7 @@ func (h *SensorResultsV2Handler) AuthenticateV3(next http.Handler) http.Handler 
 			return
 		}
 		if err != nil || id.Sensor == nil {
-			h.logger.Debug("v3 authentication failed", "error", err)
+			h.logger.Debug("v3 authentication failed", "reason", sensorAuthFailureReason(err))
 			protov2.NewProblem(protov2.ProblemUnauthenticated).Write(w)
 			return
 		}
