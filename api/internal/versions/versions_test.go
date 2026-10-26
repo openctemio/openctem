@@ -7,6 +7,8 @@ import (
 	"runtime"
 	"strings"
 	"testing"
+
+	"github.com/openctemio/openctem/api/pkg/version"
 )
 
 // rootManifest is the repository's versions.yaml (two levels above api/).
@@ -56,15 +58,14 @@ func TestGettersEqualManifest(t *testing.T) {
 		return ""
 	}
 	for name, c := range map[string][2]string{
-		"PlatformRelease": {PlatformRelease(), get("platform", "release")},
-		"SensorLatest":    {SensorLatest(), get("sensor", "latest")},
-		"SensorMin":       {SensorMin(), get("sensor", "min")},
-		"SensorImage":     {SensorImage(), get("sensor", "image")},
-		"SDKLatest":       {SDKLatest(), get("sdk", "latest")},
-		"SDKMin":          {SDKMin(), get("sdk", "min")},
-		"SDKAdvisories":   {strings.Join(SDKAdvisories(), " "), strings.Join(strings.Fields(get("sdk", "advisories")), " ")},
-		"CIRunnerLatest":  {CIRunnerLatest(), get("ci", "latest")},
-		"CIRunnerMin":     {CIRunnerMin(), get("ci", "min")},
+		"SensorLatest":   {SensorLatest(), get("sensor", "latest")},
+		"SensorMin":      {SensorMin(), get("sensor", "min")},
+		"SensorImage":    {SensorImage(), get("sensor", "image")},
+		"SDKLatest":      {SDKLatest(), get("sdk", "latest")},
+		"SDKMin":         {SDKMin(), get("sdk", "min")},
+		"SDKAdvisories":  {strings.Join(SDKAdvisories(), " "), strings.Join(strings.Fields(get("sdk", "advisories")), " ")},
+		"CIRunnerLatest": {CIRunnerLatest(), get("ci", "latest")},
+		"CIRunnerMin":    {CIRunnerMin(), get("ci", "min")},
 	} {
 		if c[0] != c[1] {
 			t.Errorf("%s() = %q, versions.yaml says %q", name, c[0], c[1])
@@ -79,9 +80,7 @@ func TestGettersEqualManifest(t *testing.T) {
 	}
 }
 
-const validManifest = `platform:
-  release: v1.2.3
-sensor:
+const validManifest = `sensor:
   product: openctemio-sensor
   latest: v0.5.0
   min: ""
@@ -102,8 +101,6 @@ sdk:
 ci:
   latest: v0.3.0
   min: ""
-chart:
-  version: 0.1.0
 `
 
 func TestParseValid(t *testing.T) {
@@ -125,10 +122,9 @@ func TestParseValid(t *testing.T) {
 // A malformed manifest is an error, never a fallback.
 func TestParseRejects(t *testing.T) {
 	for name, c := range map[string]struct{ old, new, want string }{
-		"not yaml":             {"platform:", "platform: [", "not YAML"},
-		"bad version":          {"release: v1.2.3", "release: 1.2", "platform.release"},
+		"not yaml":             {"sensor:", "sensor: [", "not YAML"},
 		"pre-release":          {"latest: v0.5.0", "latest: v0.5.0-rc.1", "sensor.latest"},
-		"missing section":      {"chart:\n  version: 0.1.0\n", "", `section "chart" is missing`},
+		"missing section":      {"ci:\n  latest: v0.3.0\n  min: \"\"\n", "", `section "ci" is missing`},
 		"unknown key":          {"  advisories:", "  minimum: v0.1.0\n  advisories:", "sdk.minimum: unknown key"},
 		"missing key":          {"  install: other\n", "", "other.install is missing"},
 		"required empty":       {"latest: v0.1.0", `latest: ""`, "other.latest must be set"},
@@ -148,10 +144,9 @@ func TestParseRejects(t *testing.T) {
 		"sdk min not version":  {"  min: v0.1.0\n  advisories", "  min: soon\n  advisories", "sdk.min"},
 		"sdk min above latest": {"  min: v0.1.0\n  advisories", "  min: v0.4.0\n  advisories", "sdk.min v0.4.0 is newer"},
 		"ci min above latest":  {"ci:\n  latest: v0.3.0\n  min: \"\"", "ci:\n  latest: v0.3.0\n  min: v0.4.0", "ci.min v0.4.0 is newer"},
-		"bad chart":            {"version: 0.1.0", "version: v0.1.0", "chart.version"},
-		"duplicate section":    {"chart:\n", "ci:\n  latest: v0.3.0\n  min: \"\"\nchart:\n", "ci"},
+		"duplicate section":    {"sdk:\n", "ci:\n  latest: v0.3.0\n  min: \"\"\nsdk:\n", "ci"},
 		"top level not a map":  {validManifest, "- a\n", "top level"},
-		"section not a map":    {"chart:\n  version: 0.1.0", "chart: 0.1.0", "chart: must be a mapping"},
+		"section not a map":    {"ci:\n  latest: v0.3.0\n  min: \"\"", "ci: 0.1.0", "ci: must be a mapping"},
 		"ci min not a version": {"ci:\n  latest: v0.3.0\n  min: \"\"", "ci:\n  latest: v0.3.0\n  min: x", "ci.min"},
 	} {
 		t.Run(name, func(t *testing.T) {
@@ -173,7 +168,7 @@ func TestMustParsePanics(t *testing.T) {
 			t.Fatal("mustParse accepted a malformed manifest")
 		}
 	}()
-	mustParse([]byte("platform: ["))
+	mustParse([]byte("sensor: ["))
 }
 
 func TestGettersReturnCopies(t *testing.T) {
@@ -307,5 +302,38 @@ func TestSetLearned_Overlay(t *testing.T) {
 	SetLearned(map[string]Learned{toy.Key: {Version: "v99.0.0"}})
 	if p, _ := LookupProduct("acme-toy-sensor"); p.Latest != "v1.2.3" || p.LatestSource != SourceOperator {
 		t.Fatalf("operator product overlaid: %+v", p)
+	}
+}
+
+func TestBaseRelease(t *testing.T) {
+	for in, want := range map[string]string{
+		"v0.15.0":                "v0.15.0",
+		"v0.15.0-rc.1":           "v0.15.0",
+		"v0.15.0-dev+abc12345":   "v0.15.0",
+		" v1.2.3 ":               "v1.2.3",
+		"dev":                    "",
+		"":                       "",
+		"0.15.0":                 "",
+		"v0.15":                  "",
+		"v0.15.0.1":              "",
+		"release-v0.15.0-broken": "",
+	} {
+		if got := baseRelease(in); got != want {
+			t.Errorf("baseRelease(%q) = %q, want %q", in, got, want)
+		}
+	}
+}
+
+// The platform release comes from the build, so the embedded manifest names
+// none: a release needs no version-bump commit on develop.
+func TestPlatformReleaseFromBuild(t *testing.T) {
+	old := version.Version
+	t.Cleanup(func() { version.Version = old })
+	version.Version = "v9.8.7-dev+deadbeef"
+	if got := PlatformRelease(); got != "v9.8.7" {
+		t.Errorf("PlatformRelease() = %q, want v9.8.7", got)
+	}
+	if strings.Contains(string(manifestYAML), "platform:") {
+		t.Error("versions.yaml must not carry a platform section")
 	}
 }

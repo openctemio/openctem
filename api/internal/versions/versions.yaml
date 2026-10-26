@@ -8,11 +8,12 @@
 #
 # The API embeds a byte-for-byte copy (api/internal/versions/versions.yaml,
 # written by sync-versions.sh) and reads every default from it, so a version
-# bump changes YAML only, never Go. The other consumers (compose defaults,
-# .env examples, the console's CI pin) are listed in sync-versions.sh.
-# platform.release is set on the release branch (one commit by
-# cut-release.sh), so a tag's checkout defaults to its own version; develop
-# gets it when main is merged back after the tag.
+# bump changes YAML only, never Go. The other consumers (the bundled sensor's
+# compose default, the console's CI pin) are listed in sync-versions.sh.
+# This file holds no version of the platform itself: that is the git tag.
+# A tag's checkout installs its own version from api/deploy/VERSION, which
+# cut-release.sh writes on the release branch only (it never reaches develop);
+# the API reports the version it was built with (ldflags from the tag).
 #
 # Compatibility versus availability (api/docs/rfcs/RFC-037 §12): the "min"
 # values and sdk.advisories are this platform's compatibility floor and change
@@ -26,11 +27,6 @@
 # Format: two levels, "key: value" with values unquoted or double-quoted. ""
 # means "not set". Keep it that simple: the release scripts read it without a
 # YAML library, and the API's tests fail on anything else.
-
-# The newest released vX.Y.Z tag of this repository (API + web share it); on
-# release/vX.Y.Z, that vX.Y.Z.
-platform:
-  release: v0.12.0
 
 # Sensor products: every top-level section other than platform, sdk, ci and
 # chart is one sensor product (api/docs/rfcs/RFC-037 §11). A sensor reports its
@@ -96,9 +92,3 @@ sdk:
 ci:
   latest: v0.3.0
   min: v0.3.0
-
-# Helm chart (openctemio/helm-charts): the newest published chart whose
-# appVersion is platform.release. The chart is published after the tag, so a
-# tag still names the previous chart; the develop follow-up sets this one.
-chart:
-  version: 0.23.3
