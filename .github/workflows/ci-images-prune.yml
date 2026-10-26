@@ -1,0 +1,37 @@
+name: Prune CI images
+
+# Retention for ghcr.io/openctemio/ci-images (built by build-images.yml):
+# versions older than 14 days go, except the ones an open (draft or
+# pre-release) release names by digest. .github/scripts/ci-images-prune.sh.
+# Deleting a package version needs package admin rights on the packages for
+# the workflow token (package settings, "Manage Actions access": Admin); without
+# them the run warns per version and deletes nothing.
+
+on:
+  schedule:
+    - cron: "37 3 * * *"
+  workflow_dispatch:
+
+concurrency:
+  group: ci-images-prune
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  prune:
+    name: Delete CI images older than 14 days
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Prune
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: bash .github/scripts/ci-images-prune.sh run

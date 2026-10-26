@@ -82,9 +82,28 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: bash .github/scripts/queue-verified.sh
 
+  # The four images come from build-images.yml: built once per content key for
+  # the whole pipeline, by digest (the all-in-one is assembled FROM the three
+  # components). A fork pull request gets none and `images` builds them locally.
+  shared:
+    name: CI images
+    needs: changes
+    if: needs.changes.outputs.images == 'true' && needs.changes.outputs.full == 'true'
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+      attestations: write
+    uses: ./.github/workflows/build-images.yml
+    with:
+      images: allinone
+    secrets:
+      DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+      DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
+
   images:
     name: Build and smoke-test images (amd64)
-    needs: changes
+    needs: [changes, shared]
     if: needs.changes.outputs.images == 'true' && needs.changes.outputs.full == 'true'
     runs-on: ubuntu-latest
     services:
@@ -118,19 +137,41 @@ jobs:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           dockerhub-username: ${{ secrets.DOCKERHUB_USERNAME }}
           dockerhub-token: ${{ secrets.DOCKERHUB_TOKEN }}
-      # The default docker driver: images built here are visible to the next
-      # build's FROM without a registry.
+      # Shared images: pull the digests, tag them as the steps below expect.
+      - name: Pull the shared images
+        if: needs.shared.outputs.push == 'true'
+        env:
+          API_REF: ${{ needs.shared.outputs.api }}
+          WEB_REF: ${{ needs.shared.outputs.web }}
+          CONSOLE_REF: ${{ needs.shared.outputs.console }}
+          ALLINONE_REF: ${{ needs.shared.outputs.allinone }}
+        run: |
+          set -euo pipefail
+          for pair in "$API_REF local/openctem-api:ci" "$WEB_REF local/openctem-web:ci" "$CONSOLE_REF local/openctem-console:ci" "$ALLINONE_REF local/openctem:ci"; do
+            set -- $pair
+            [ -n "$1" ] || { echo "::error::a shared image is missing"; exit 1; }
+            bash .github/scripts/retry.sh docker pull -q "$1"
+            docker tag "$1" "$2"
+          done
+      # No shared images (a fork pull request): build here, with the default
+      # docker driver, so images built here are visible to the next build's FROM
+      # without a registry.
       - name: Build openctem-api
+        if: needs.shared.outputs.push != 'true'
         run: bash .github/scripts/retry.sh docker build -t local/openctem-api:ci --target production api
       # The web image compiles against the generated contract files, which are
       # not committed (api/docs/development/ci-cd.md).
       - name: Generate the contract files
+        if: needs.shared.outputs.push != 'true'
         uses: ./.github/actions/generate-contract
       - name: Build openctem-web
+        if: needs.shared.outputs.push != 'true'
         run: bash .github/scripts/retry.sh docker build -t local/openctem-web:ci web
       - name: Build openctem-console
+        if: needs.shared.outputs.push != 'true'
         run: bash .github/scripts/retry.sh docker build -t local/openctem-console:ci --target console web
       - name: Build openctem (all-in-one)
+        if: needs.shared.outputs.push != 'true'
         run: >-
           bash .github/scripts/retry.sh
           docker buildx build --load -t local/openctem:ci
@@ -177,7 +218,7 @@ jobs:
     # request pr-hygiene.yml reports that name, so this one must not.
     name: ${{ github.event_name == 'pull_request' && 'All-in-one (PR build)' || 'All-in-one OK' }}
     if: always()
-    needs: [changes, images]
+    needs: [changes, shared, images]
     runs-on: ubuntu-latest
     steps:
       - name: All jobs passed or were skipped; the build ran where it must
