@@ -41,6 +41,10 @@ jobs:
   changes:
     name: Detect web changes
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read # the PR's commits and labels (changed.sh)
+      checks: read # green-base.sh and release-provenance.sh read a commit's check runs
     outputs:
       web: ${{ steps.f.outputs.web }}
       api: ${{ steps.f.outputs.api }}
@@ -55,6 +59,9 @@ jobs:
           EVENT_BEFORE: ${{ github.event.before }}
           MG_BASE: ${{ github.event.merge_group.base_sha }}
           MG_HEAD: ${{ github.event.merge_group.head_sha }}
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          PR_LABELS: ${{ toJSON(github.event.pull_request.labels.*.name) }}
         run: bash .github/scripts/changed.sh
 
   # Generates the contract files for this commit (artifact `contract`) and, for

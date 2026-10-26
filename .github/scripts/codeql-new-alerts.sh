@@ -15,12 +15,22 @@
 # even when the PR shifts its line. Alerts of a side the PR did not analyse are
 # the base's own alerts and are therefore never new.
 #
+# A release pull request (head release/vX.Y.Z of this repository, into main) is
+# compared with develop instead: its content was already gated there, so what
+# counts is whatever the release adds on top of develop, not the alerts main has
+# not caught up with yet. Any other pull request is compared with its base.
+#
 # Inputs (env): GH_TOKEN (security-events: read), REPO (owner/name), PR_NUMBER,
-# BASE_REF (branch name). Optional: GITHUB_STEP_SUMMARY.
+# BASE_REF (branch name). Optional: HEAD_REF and HEAD_REPO (the pull request's
+# head branch and repository, for the release rule), GITHUB_STEP_SUMMARY.
 set -euo pipefail
 
 : "${REPO:?}" "${PR_NUMBER:?}" "${BASE_REF:?}"
 summary="${GITHUB_STEP_SUMMARY:-/dev/null}"
+if [[ "$BASE_REF" == main && "${HEAD_REF:-}" =~ ^release/v[0-9]+\.[0-9]+\.[0-9]+$ && "${HEAD_REPO:-}" == "$REPO" ]]; then
+  echo "Release pull request: comparing with develop, where its content was already gated." | tee -a "$summary"
+  BASE_REF=develop
+fi
 sev='map(select((.rule.security_severity_level // "") | IN("medium","high","critical")))'
 
 fetch() { # fetch <ref> -> JSON array of open alerts at medium or above

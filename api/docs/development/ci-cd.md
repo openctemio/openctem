@@ -445,6 +445,132 @@ PR-only steps (Migration Safety, golangci-lint on new code) are skipped in the
 queue: they already ran on the PR. API Security and Web Security do not run in
 the queue (no required check; the PR and the push scan the change).
 
+### Incremental pull request CI
+
+Once something ran clean, the next push should run only what it touches.
+`.github/scripts/changed.sh` (the one place the routing lives) therefore measures
+a pull request push against the PR's **last green commit** instead of the base:
+
+1. On `pull_request` `synchronize` (a push to the PR), `green-base.sh` lists the
+   PR's commits through the API and walks back from the one before the new head.
+   A commit is green when every one of `API CI OK`, `Web CI OK`, `CodeQL OK`,
+   `E2E OK`, `All-in-one OK`, `Secret Scanning` and `Workflow Lint` has a
+   GitHub Actions check run on it that completed as success, skipped or neutral.
+   `security-gate` is left out: it waits for a person's label and says nothing
+   about the code. Check runs of other apps do not count.
+2. `api`, `web`, `docs` and `migrations` are computed from
+   `git diff <green>..<new head>`. An area with no change since reports success
+   as *unchanged since `<sha>`* (the job is skipped, which the `… OK`
+   aggregators already accept; the notice and the job summary of `Detect ...
+   changes` name the commit). A merge of the base into the branch is just a
+   commit: what it changed relative to the green commit is what runs.
+3. `full` (the `ci:full` label, a changed CI definition) is always decided
+   against the base, so a PR that needs the full tier keeps it for the areas that
+   run.
+
+It falls back to measuring against the base (everything the PR changes) when:
+the event is not `synchronize` (opened, reopened, label events), the PR changes
+anything under `.github/` (workflows, scripts, actions, Dependabot, CODEOWNERS:
+a CI change re-runs everything, and an earlier check cannot vouch for a changed
+CI), there is no green commit among the last 20, or the API cannot be read (no
+token, an error). The API-contract comparison and the e2e `http` and `suite`
+signals use the same range.
+
+`merge_group` and pushes to `develop`/`main` never use it: they run the full
+tier of what they changed (a push to `develop` of a commit the queue already
+passed still skips by `queue-verified.sh`). **Why skipping is safe:** the merge
+queue is the gate for `develop`. It tests the PR merged onto the current base
+with the full tier and `E2E OK` required, so a push that skipped an area on the
+PR (or an area whose result is older than the latest `develop`) is still fully
+tested before it merges. The PR run is early feedback; what it skips is exactly
+what a green earlier run on the same files already vouched for.
+
+Required checks by event:
+
+| Check | Pull request (`synchronize`) | Merge queue / push | Release PR (verified) |
+|-------|------------------------------|--------------------|-----------------------|
+| `API CI OK`, `Web CI OK` | the areas changed since the last green commit | the full tier of what the group changed | skipped areas, success |
+| `E2E OK` | as before (label, suite change), on the incremental range | whenever `web/` or `api/` changed | skipped, success |
+| `CodeQL OK` | the changed language(s), incrementally; new alerts vs the base | none on the queue; both on push | no analysis, success |
+| `All-in-one OK` | the PR stub (build only on a CI change) | the image build | skipped, success |
+| `Secret Scanning`, `Workflow Lint`, `security-gate` | always | always | always |
+
+Local check of the routing: `bash .github/scripts/changed.test.sh` and
+`bash .github/scripts/green-base.test.sh`.
+
+Estimate (jobs started per push, from the table above): a docs- or
+changelog-only follow-up push on an `api/` + `web/` PR drops from about 32 to
+16; a fix confined to `web/` after a green `api/` + `web/` push from 32 to
+about 23; a fix confined to `api/` from 32 to about 26 to 33. A push that
+repeats the same area (a second fix in `api/`) runs that area again, as before.
+
+### Release pull request fast path
+
+A release PR (head `release/vX.Y.Z` of this repository, into `main`, built by
+`cut-release.sh`) carries no new code: its content is a `develop` commit whose
+checks all passed, plus the version bump. The merge queue still runs the full
+tier on `main`; what the PR does not need is a second full run of the same
+content. `release-provenance.sh` (called from `changed.sh`) checks:
+
+- **train** (head is the `merge -s ours` of main over the version commit): the
+  merge commit has the version commit's tree; the version commit has one parent,
+  a commit **on `develop` for which every required check passed** (`check-ci.sh`,
+  the push and merge-queue runs), and changes only the files the train writes:
+  `versions.yaml`, `api/internal/versions/versions.yaml`,
+  `api/deploy/.env.example`, `api/deploy/docker-compose*.yml`, `api/CHANGELOG.md`,
+  and sets `platform.release` to the branch's version;
+- **hotfix** (the last tag, `cherry-pick -x` commits, the version commit): the
+  tag is the newest and `main` has its tree, every pick has the **same patch-id**
+  as the `develop` commit it names, that commit is on `develop` and the
+  first-parent `develop` commit that holds it passed its checks, and the version
+  commit is as above.
+
+If everything verifies, `changed.sh` reports `api`, `web`, `docs`, `migrations`
+and `full` as false with the reason (the sha and "release provenance"), so the
+heavy suites are skipped and the aggregators pass; **required check names do not
+change**. An extra commit, a file outside the list, a red or unknown `develop`
+commit, a fork, or an API error means "not verified" and the PR runs as any other
+PR does, with its full tier. `Secret Scanning`, `Workflow Lint`, `Docs check` and
+`security-gate` always run. **Why this is safe:** the content was gated on
+`develop` (queue full tier, pushes) and the check proves the PR is that content
+and nothing else; `main` then gets the queue's full tier. A release PR that
+changes `.github/` is not verified, since the allow-list excludes it.
+
+The code-scanning gate (`CodeQL OK`) of a release PR compares with `develop`,
+not `main`: the content was already gated there, so what counts is what the
+release adds, not the alerts `main` has not caught up with. Other PRs compare
+with their base as before (`codeql-new-alerts.sh`).
+
+Tests: `bash .github/scripts/release/tests/test_release_provenance.sh`.
+
+### Early warning and release preflight
+
+**Early warning.** A new high or critical finding on `develop` should be known
+the day it lands, not when a release PR first meets it. Two jobs open (or update,
+or close) **one GitHub issue each**, labelled `security` and `early-warning`,
+and never fail a build (`continue-on-error`, no required check):
+
+- `CodeQL` job *Early warning (develop)*, after the push analysis: the open
+  alerts of severity high or critical on `develop` that `main` does not have.
+  The issue records the alert numbers; alerts new since the previous scan are
+  marked and named in a comment, and the issue closes when none is left.
+- `All-in-one CI` job *Early warning (images)*, on a push to `develop` that built
+  the images: the fixable HIGH/CRITICAL advisories `image-guard.sh` found
+  (`IMAGE_GUARD_REPORT`, uploaded as the `image-guard-report` artifact).
+
+**Release preflight.** `bash .github/scripts/release-preflight.sh` (also locally:
+`GH_TOKEN=$(gh auth token) REPO=openctemio/openctem bash .github/scripts/release-preflight.sh`)
+lists what would stop the next release: alerts on `develop` absent from `main`
+(high and critical block, medium warns), the image advisories of the newest
+`image-guard-report` (OS packages block, application dependencies warn), and the
+migration numbers added since the last tag (a duplicate or a number below that
+tag's highest blocks, through `check-migration-versions.sh`). It exits 1 on a
+blocker. The Release Train *Plan* job runs it on the chosen commit and shows it
+in the run summary; a blocker fails the plan unless `allow_blockers` is set.
+Hotfixes (built on the last tag) skip it. Tests:
+`bash .github/scripts/early-warning.test.sh`,
+`bash .github/scripts/release/tests/test_release_preflight.sh`.
+
 ### Toolchain versions
 
 - **Go:** every `actions/setup-go` step uses `go-version-file: api/go.mod`, which
