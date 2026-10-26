@@ -144,7 +144,7 @@ export function TargetMappingDialog({
             <DialogDescription>
               {t(
                 'admin.targetMappingDialog.aScannerThatDeclaresThis',
-                'A scanner that declares this target type can scan assets of this type. Scans skip assets no active mapping covers.'
+                'A scanner that declares this target type can also scan assets of this type. Pairs the asset type catalog already has are refused.'
               )}
             </DialogDescription>
           </DialogHeader>
