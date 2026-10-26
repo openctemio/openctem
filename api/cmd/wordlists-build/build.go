@@ -23,6 +23,7 @@ import (
 
 	"github.com/openctemio/openctem/api/internal/app/contentpack"
 	dom "github.com/openctemio/openctem/api/pkg/domain/contentpack"
+	"github.com/openctemio/openctem/api/pkg/httpsec"
 )
 
 // Sources is sources.yaml: what the packs are built from.
@@ -168,7 +169,7 @@ func (h HTTPFetcher) Fetch(ctx context.Context, src Source, f SourceFile) ([]byt
 	}
 	cl := h.Client
 	if cl == nil {
-		cl = &http.Client{Timeout: 2 * time.Minute}
+		cl = httpsec.SafeHTTPClient(2 * time.Minute)
 	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u.String(), nil)
 	if err != nil {
