@@ -671,7 +671,7 @@
   "settings.search.label": "Search settings",
   "settings.search.placeholder": "Search settings: two-factor, IP allowlist, Slack…",
   "settings.securityCard.allGood": "Nothing needs attention right now.",
-  "settings.securityCard.counts": "{risks} risks · {warns} warnings",
+  "settings.securityCard.counts": "{risks} risks, {warns} warnings",
   "settings.securityCard.open": "Open the security overview",
   "settings.serviceAccounts.accountable": "Accountable person",
   "settings.serviceAccounts.cardDescription": "A service account never signs in and can never be an owner, an administrator or see every asset. It holds what its roles and teams give it, and its keys carry no more.",

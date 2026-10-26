@@ -84,7 +84,7 @@ export function VersionHistory({ mappingId, versions, latest, onLoad }: VersionH
                 {t('importMappings.history.identity', 'Identity: {members}', {
                   members: v.identity.length ? v.identity.join(', ') : '-',
                 })}
-                {' · '}
+                {', '}
                 {v.digest.slice(0, 19)}
               </p>
             </div>

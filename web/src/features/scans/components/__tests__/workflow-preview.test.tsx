@@ -45,7 +45,7 @@ describe('WorkflowPreviewBody', () => {
     expect(screen.getByText('discover.subdomains@1')).toBeInTheDocument()
     expect(screen.getByText('T0')).toBeInTheDocument()
     expect(screen.getByText('picks subfinder')).toBeInTheDocument()
-    expect(screen.getByText('ready · 2/2 online')).toBeInTheDocument()
+    expect(screen.getByText('ready, 2/2 online')).toBeInTheDocument()
     expect(screen.getByText(/3 target\(s\) resolved, 1 excluded by scope/)).toBeInTheDocument()
   })
 

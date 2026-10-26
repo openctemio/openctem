@@ -176,3 +176,19 @@ function localizedSummaryLines(p: SensorLocalPolicy | null | undefined, tr: Tr):
     lines.push(tr('sensors.localPolicy.sum.jobTime', undefined, { n: s.max_job_seconds }))
   return lines
 }
+
+/**
+ * The host command that writes a reviewed policy to the sensor's default
+ * path (read by the sensor at start and again on SIGHUP). The policy text is
+ * the API's rendering; the heredoc delimiter never occurs in it.
+ */
+export function policyApplyCommand(policy: string): string {
+  const body = policy.endsWith('\n') ? policy : `${policy}\n`
+  return [
+    'sudo install -d -m 0755 /etc/openctem',
+    "sudo tee /etc/openctem/sensor-policy.yaml >/dev/null <<'OPENCTEM_POLICY'",
+    `${body}OPENCTEM_POLICY`,
+    'sudo chmod 0644 /etc/openctem/sensor-policy.yaml',
+    '',
+  ].join('\n')
+}

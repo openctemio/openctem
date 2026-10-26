@@ -154,10 +154,10 @@ describe('RelatedAssetsList (full)', () => {
     render(wrap(<RelatedAssetsList assetId="a1" />))
     expect(await screen.findByText(/not seen for 120 days/)).toBeInTheDocument()
     const legacy = screen.getByText('legacy.example.com').closest('li') as HTMLElement
-    expect(within(legacy).getByText(/Added by hand · added 10 days ago/)).toBeInTheDocument()
+    expect(within(legacy).getByText(/Added by hand, added 10 days ago/)).toBeInTheDocument()
     const ip = screen.getByText('203.0.113.21').closest('li') as HTMLElement
     expect(within(ip).getByText('Internet-facing')).toBeInTheDocument()
-    expect(within(ip).getByText(/Scanner · seen today/)).toBeInTheDocument()
+    expect(within(ip).getByText(/Scanner, seen today/)).toBeInTheDocument()
   })
 
   it('opens a related asset in one click, with its id and name', async () => {

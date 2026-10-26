@@ -88,7 +88,7 @@ describe('location and errors', () => {
     expect(
       memberLocation({ ...base, asset_name: 'shop-api', file_path: 'app/db.py', start_line: 42 })
         .full
-    ).toBe('shop-api · app/db.py:42')
+    ).toBe('shop-api, app/db.py:42')
     expect(
       memberLocation({ ...base, location_targets: ['https://x.example.com/a', 'b'] }).full
     ).toBe('https://x.example.com/a +1')

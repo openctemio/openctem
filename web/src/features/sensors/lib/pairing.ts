@@ -35,7 +35,7 @@ export function formatPairingCode(code: string): string {
 export function splitSas(sas: string | undefined): { number: string; words: string[] } | null {
   if (!sas) return null
   const parts = sas
-    .split('·')
+    .split('·') // separator-ok: parses the SAS string the sensor prints
     .map((p) => p.trim())
     .filter(Boolean)
   if (parts.length < 2) return null

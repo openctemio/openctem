@@ -135,7 +135,7 @@ export function AddFindingsToTaskDialog({
     (task: RemediationTask) =>
       [owners.user(task.assignee_user_id), owners.group(task.assignee_group_id)]
         .filter(Boolean)
-        .join(' · ') || t('remediationClaim.conflict.unassigned'),
+        .join(', ') || t('remediationClaim.conflict.unassigned'),
     [owners, t]
   )
 
@@ -375,7 +375,7 @@ export function AddFindingsToTaskDialog({
                             <div className="min-w-0 flex-1">
                               <div className="truncate font-medium">{task.title}</div>
                               <div className="text-muted-foreground text-xs">
-                                {ownerOf(task)} ·{' '}
+                                {ownerOf(task)},{' '}
                                 {t(
                                   `remediationClaim.add.findingCount.${task.counts.total === 1 ? 'one' : 'other'}`,
                                   undefined,
