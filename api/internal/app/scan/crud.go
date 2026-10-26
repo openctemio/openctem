@@ -1,7 +1,9 @@
 package scan
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
 	"time"
 
@@ -34,7 +36,11 @@ type CreateScanInput struct {
 	TargetOptions *scan.TargetOptions `json:"target_options"`
 	// Intensity is the probe ceiling (RFC-071): passive, active or
 	// intrusive; "" = the tier the tool or workflow probes at.
-	Intensity      string         `json:"intensity" validate:"omitempty,oneof=passive active intrusive"`
+	Intensity string `json:"intensity" validate:"omitempty,oneof=passive active intrusive"`
+	// Depth is how much of the workflow each run executes: passive (only
+	// steps that send nothing to the targets), standard or deep; "" =
+	// standard. Workflow scans only.
+	Depth          string         `json:"depth" validate:"omitempty,oneof=passive standard deep"`
 	ScanType       string         `json:"scan_type" validate:"required,oneof=workflow single"`
 	ScanWorkflowID string         `json:"scan_workflow_id" validate:"omitempty,uuid"`
 	ScannerName    string         `json:"scanner_name" validate:"max=100"`
@@ -191,6 +197,13 @@ func (s *Service) CreateScan(ctx context.Context, input CreateScanInput) (*scan.
 	if err := s.applyIntensity(ctx, sc, input.Intensity); err != nil {
 		return nil, err
 	}
+	// The depth: at least one first step of the workflow must run at it.
+	if err := sc.SetDepth(input.Depth); err != nil {
+		return nil, err
+	}
+	if err := s.checkDepthRunsSomething(ctx, sc); err != nil {
+		return nil, err
+	}
 
 	// Configure schedule
 	if err := configureScanSchedule(sc, input); err != nil {
@@ -289,6 +302,22 @@ func (s *Service) CreateScan(ctx context.Context, input CreateScanInput) (*scan.
 
 	s.logger.Info("scan created", "id", sc.ID.String(), "name", sc.Name)
 	return sc, nil
+}
+
+// changedScannerConfig returns the config an edit would store (masked
+// values restored to the stored secrets), or nil when it equals the stored
+// config or the edit sends none.
+func changedScannerConfig(incoming, stored map[string]any) map[string]any {
+	if incoming == nil {
+		return nil
+	}
+	cfg := scan.RestoreRedactedConfigSecrets(incoming, stored)
+	a, errA := json.Marshal(cfg)
+	b, errB := json.Marshal(stored)
+	if errA == nil && errB == nil && bytes.Equal(a, b) {
+		return nil
+	}
+	return cfg
 }
 
 // validateScanSecurityInputs validates tags, scanner config, and cron expression.
@@ -798,7 +827,9 @@ type UpdateScanInput struct {
 	// TargetOptions: nil = unchanged (RFC-068).
 	TargetOptions *scan.TargetOptions `json:"target_options"`
 	// Intensity: "" = unchanged (RFC-071).
-	Intensity    string `json:"intensity" validate:"omitempty,oneof=passive active intrusive"`
+	Intensity string `json:"intensity" validate:"omitempty,oneof=passive active intrusive"`
+	// Depth: "" = unchanged.
+	Depth        string `json:"depth" validate:"omitempty,oneof=passive standard deep"`
 	ScheduleType string `json:"schedule_type" validate:"omitempty,oneof=manual daily weekly monthly crontab rrule once"`
 	ScheduleCron string `json:"schedule_cron" validate:"max=100"`
 	// ScheduleRRule is the RFC 5545 rule of an rrule schedule.
@@ -855,6 +886,19 @@ func (s *Service) UpdateScan(ctx context.Context, input UpdateScanInput) (*scan.
 	// Editing a scan is acting on its targets: the editor must be allowed
 	// to scan every direct target (D9). Group members are filtered per run.
 	if err := s.refuseOutOfActScope(ctx, sc.TenantID, nil, sc.Targets); err != nil {
+		return nil, err
+	}
+	// An edit passes the input checks a new scan passes (tags, scanner
+	// config keys and values, cron): without this a scan saved harmless
+	// could be edited into a config that create refuses. A value saved back
+	// masked is checked as the stored value it keeps; a config sent back
+	// unchanged is not checked again, so an older scan stays editable.
+	if err := s.validateScanSecurityInputs(ctx, sc.TenantID, CreateScanInput{
+		TenantID:      input.TenantID,
+		Tags:          input.Tags,
+		ScannerConfig: changedScannerConfig(input.ScannerConfig, sc.ScannerConfig),
+		ScheduleCron:  input.ScheduleCron,
+	}); err != nil {
 		return nil, err
 	}
 
@@ -928,6 +972,17 @@ func (s *Service) UpdateScan(ctx context.Context, input UpdateScanInput) (*scan.
 			requested = string(sc.EffectiveIntensity())
 		}
 		if err := s.applyIntensity(ctx, sc, requested); err != nil {
+			return nil, err
+		}
+	}
+	// A new depth or workflow: a first step must still run at the depth.
+	if input.Depth != "" || input.ScanWorkflowID != "" {
+		if input.Depth != "" {
+			if err := sc.SetDepth(input.Depth); err != nil {
+				return nil, err
+			}
+		}
+		if err := s.checkDepthRunsSomething(ctx, sc); err != nil {
 			return nil, err
 		}
 	}

@@ -112,6 +112,17 @@ func TestDecideCoverage(t *testing.T) {
 		{"zero counts and empty lists", func(c *ingestreport.CommandCoverage) {
 			c.Result = json.RawMessage(`{"exit_code":0,"metadata":{"coverage_gaps":[],"coverage_gaps_total":0,"unreached_targets_total":0,"refused_targets":[]}}`)
 		}, coverageEligible},
+		// A result cut short (deadline, disk, cap) never closes what it does
+		// not report, even when its reports declare full coverage.
+		{"truncated result, metadata flag", func(c *ingestreport.CommandCoverage) {
+			c.Result = json.RawMessage(`{"exit_code":0,"metadata":{"truncated":true}}`)
+		}, coverageTruncated},
+		{"truncated result, top-level flag", func(c *ingestreport.CommandCoverage) {
+			c.Result = json.RawMessage(`{"exit_code":0,"truncated":true}`)
+		}, coverageTruncated},
+		{"truncated false is complete", func(c *ingestreport.CommandCoverage) {
+			c.Result = json.RawMessage(`{"exit_code":0,"metadata":{"truncated":false}}`)
+		}, coverageEligible},
 		{"no report filed", func(c *ingestreport.CommandCoverage) { c.Reports = nil }, coverageNoReports},
 		{"report still processing", func(c *ingestreport.CommandCoverage) { c.Reports[0].State = protov2.StateProcessing }, coverageReportsPending},
 		{"report failed", func(c *ingestreport.CommandCoverage) { c.Reports[0].State = protov2.StateFailed }, coverageReportNotCompleted},

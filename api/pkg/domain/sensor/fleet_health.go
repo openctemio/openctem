@@ -70,6 +70,9 @@ const (
 	ReasonConfigCheckFailed  HealthReasonCode = "config_check_failed"
 	ReasonConfigCheckWarning HealthReasonCode = "config_check_warning"
 	ReasonConfigReportStale  HealthReasonCode = "config_report_stale"
+	// ReasonStoppedClaiming: the sensor's local store is full (storage, disk
+	// or unacknowledged results) and it claims no new jobs (local_store.go).
+	ReasonStoppedClaiming HealthReasonCode = "stopped_claiming"
 )
 
 // Reason severities.
@@ -416,6 +419,10 @@ func (a *Sensor) healthReasons(now time.Time, p HealthPolicy, line ReleaseLine, 
 	}
 
 	reasons = append(reasons, a.contentReasons(now, p.Content)...)
+
+	if r, ok := a.localStoreReason(); ok {
+		reasons = append(reasons, r)
+	}
 
 	if c := a.Control; c != nil {
 		if c.GapLate() {

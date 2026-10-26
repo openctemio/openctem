@@ -34,6 +34,7 @@ func TestPresetPipelines_UseShippedTools(t *testing.T) {
 		JOIN scan_workflows pt ON pt.id = ps.scan_workflow_id
 		LEFT JOIN tools t ON t.name = ps.tool AND t.tenant_id IS NULL AND t.is_active
 		WHERE pt.is_system_template AND pt.is_active
+		  AND NOT COALESCE((ps.run_policy->>'optional')::boolean, false) -- waits for a tool (planned capability)
 		  AND (pt.id::text LIKE 'a0000001-%' OR pt.id::text LIKE 'a0000002-%')`) // presets and starters; Quick Scan picks its tool per run
 	if err != nil {
 		t.Fatal(err)

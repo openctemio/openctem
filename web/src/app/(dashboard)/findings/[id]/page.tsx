@@ -288,7 +288,7 @@ export default function FindingDetailPage() {
         </aside>
 
         <div className="min-w-0 space-y-4 lg:col-start-1">
-          <FindingApprovalBand findingId={finding.id} />
+          <FindingApprovalBand findingId={finding.id} onDecided={() => mutateFinding()} />
           {slaLate && (
             <DetailCallout
               tone="destructive"
