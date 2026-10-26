@@ -98,7 +98,7 @@ describe('AssetTimeline', () => {
     expect(within(entries[0]).getByText('Newer report')).toBeInTheDocument()
     expect(within(entries[0]).getByText('Changed 3 times within an hour')).toBeInTheDocument()
     expect(
-      within(entries[0]).getByText(/Decided by cmdb \(Connector\) · run sync-9/)
+      within(entries[0]).getByText(/Decided by cmdb \(Connector\), run sync-9/)
     ).toBeInTheDocument()
     expect(within(entries[1]).getByText(/same value, new deciding source/)).toBeInTheDocument()
     expect(within(entries[1]).getByText('Source order changed')).toBeInTheDocument()

@@ -56,7 +56,7 @@ export function CharterOutcome({ evaluation }: { evaluation: CharterEvaluation }
                 <div className="min-w-0 space-y-0.5">
                   <p className="text-sm font-medium">{c.name || 'Untitled criterion'}</p>
                   <p className="text-xs text-muted-foreground">
-                    {c.metric || 'No metric'} · {c.target || 'no target'}
+                    {c.metric || 'No metric'}, {c.target || 'no target'}
                   </p>
                   <p
                     className={cn(

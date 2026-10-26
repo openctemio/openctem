@@ -181,7 +181,7 @@
   "dashboards.manage.open": "Mở",
   "dashboards.manage.saveOpen": "Lưu và mở",
   "dashboards.manage.saving": "Đang lưu",
-  "dashboards.manage.summary": "{n} widget · {cols} cột",
+  "dashboards.manage.summary": "{n} widget, {cols} cột",
   "dashboards.manage.templates": "Bắt đầu từ mẫu",
   "dashboards.manage.title": "Bảng điều khiển",
   "dashboards.manage.useTemplate": "Dùng mẫu",

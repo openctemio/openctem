@@ -302,15 +302,44 @@
   }
 }
 
-/* Connected visuals (dashboard exposure flow, intake panel): a healthy
-   source's wire carries a moving dash; volume is the wire's width, so the
-   speed is constant. Static under reduced motion (the meaning holds through
-   width and the row's words). */
+/* Graph kit edges (components/flow/flow-edge.tsx, research/229 §4.2): width is
+   volume, the selected path moves at one constant speed, alternatives are
+   dotted. Reduced motion (system setting or data-motion="off") keeps the
+   selected path solid and static; width, arrows and labels still carry it. */
+.flow-edge {
+  transition: opacity 200ms ease;
+}
+.flow-edge-dim {
+  opacity: 0.3;
+}
+.flow-edge-alt {
+  stroke-dasharray: 2 5;
+  opacity: 0.6;
+}
+.flow-edge-hot {
+  stroke-dasharray: 3 7;
+  animation: flow-dash 1.6s linear infinite;
+}
 @keyframes flow-dash {
   to {
     stroke-dashoffset: -20;
   }
 }
+@media (prefers-reduced-motion: reduce) {
+  .flow-edge-hot {
+    animation: none;
+    stroke-dasharray: none;
+  }
+}
+[data-motion='off'] .flow-edge-hot {
+  animation: none;
+  stroke-dasharray: none;
+}
+
+/* Connected visuals (dashboard exposure flow, intake panel): a healthy
+   source's wire carries a moving dash; volume is the wire's width, so the
+   speed is constant. Static under reduced motion (the meaning holds through
+   width and the row's words). */
 .animate-flow-dash {
   animation: flow-dash 1.6s linear infinite;
 }

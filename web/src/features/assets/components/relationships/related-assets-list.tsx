@@ -212,10 +212,9 @@ function SummaryRow({
         <GroupVerb group={group} />
       </dt>
       <dd className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-sm">
-        {shown.map((it, i) => (
+        {shown.map((it) => (
           <React.Fragment key={it.relationship_id}>
             <AssetName item={it} onNavigateToAsset={onNavigateToAsset} />
-            {i < shown.length - 1 && <span className="text-muted-foreground">·</span>}
           </React.Fragment>
         ))}
         {rest > 0 &&
@@ -561,9 +560,9 @@ function EdgeFacts({ item }: { item: RelatedAssetItem }) {
         >
           {t(`assets.related.source.${source}`, sourceFallback[source])}
           {item.confidence === 'low' && (
-            <> · {t('assets.related.lowConfidence', 'low confidence')}</>
+            <>, {t('assets.related.lowConfidence', 'low confidence')}</>
           )}
-          <> · {when}</>
+          <>, {when}</>
         </span>
       </TooltipTrigger>
       <TooltipContent side="top" className="max-w-xs text-xs">

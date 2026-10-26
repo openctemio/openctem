@@ -123,7 +123,7 @@ describe('TenableConnectorView', () => {
     render(<TenableConnectorView />)
 
     expect(screen.getByText('Tenable.sc prod')).toBeTruthy()
-    expect(screen.getByText(/Sensor dc-sensor · instance sc-prod · Tenable.sc 6.4.0/)).toBeTruthy()
+    expect(screen.getByText(/Sensor dc-sensor, instance sc-prod, Tenable.sc 6.4.0/)).toBeTruthy()
     expect(screen.getByText('Completed')).toBeTruthy()
     expect(screen.getByText('80')).toBeTruthy()
     expect(screen.getByText('Basic Network Scan')).toBeTruthy()

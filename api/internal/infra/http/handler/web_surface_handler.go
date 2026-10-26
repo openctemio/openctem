@@ -101,7 +101,7 @@ func (h *WebEndpointHandler) groupRoute(name string) filterquery.Route {
 // @Param  state  query  []string  false  "state: any of (comma list)"  collectionFormat(csv)  Enums(active, gone, ignored)
 // @Param  state_not  query  []string  false  "state: none of (comma list)"  collectionFormat(csv)  Enums(active, gone, ignored)
 // @Param  in_scope  query  boolean  false  "in scope equals"
-// @Param  source  query  []string  false  "source: any of (comma list)"  collectionFormat(csv)  Enums(crawl, js, sitemap, robots, spec, har, archive, dast, probe)
+// @Param  source  query  []string  false  "source: any of (comma list)"  collectionFormat(csv)  Enums(crawl, js, sitemap, robots, spec, har, archive, dast, probe, import)
 // @Param  label  query  []string  false  "label: any of (comma list)"  collectionFormat(csv)
 // @Param  catalog_key  query  []string  false  "catalog key: any of (comma list)"  collectionFormat(csv)
 // @Param  catalog_key_not  query  []string  false  "catalog key: none of (comma list)"  collectionFormat(csv)
@@ -178,7 +178,7 @@ func (h *WebEndpointHandler) Patterns(w http.ResponseWriter, r *http.Request) {
 // @Param  state  query  []string  false  "state: any of (comma list)"  collectionFormat(csv)  Enums(active, gone, ignored)
 // @Param  state_not  query  []string  false  "state: none of (comma list)"  collectionFormat(csv)  Enums(active, gone, ignored)
 // @Param  in_scope  query  boolean  false  "in scope equals"
-// @Param  source  query  []string  false  "source: any of (comma list)"  collectionFormat(csv)  Enums(crawl, js, sitemap, robots, spec, har, archive, dast, probe)
+// @Param  source  query  []string  false  "source: any of (comma list)"  collectionFormat(csv)  Enums(crawl, js, sitemap, robots, spec, har, archive, dast, probe, import)
 // @Param  label  query  []string  false  "label: any of (comma list)"  collectionFormat(csv)
 // @Param  catalog_key  query  []string  false  "catalog key: any of (comma list)"  collectionFormat(csv)
 // @Param  catalog_key_not  query  []string  false  "catalog key: none of (comma list)"  collectionFormat(csv)

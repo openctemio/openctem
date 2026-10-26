@@ -183,7 +183,7 @@ function Freshness({ asOf, stale }: { asOf: string; stale: boolean }) {
       {stale && (
         <span className="inline-flex items-center gap-1 font-medium text-warning">
           <Clock className="size-3.5" aria-hidden />
-          {t('dashboardKit.freshness.stale', 'Stale · {age}', {
+          {t('dashboardKit.freshness.stale', 'Stale for {age}', {
             age: age == null ? '—' : formatDuration(age / 3_600_000, locale),
           })}
         </span>

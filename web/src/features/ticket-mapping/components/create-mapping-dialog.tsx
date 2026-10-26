@@ -196,7 +196,7 @@ export function CreateMappingDialog({ open, onOpenChange, initial }: Props) {
                     <SelectContent>
                       {projects.map((p) => (
                         <SelectItem key={p.key} value={p.key}>
-                          {p.key} · {p.name}
+                          {p.key}, {p.name}
                         </SelectItem>
                       ))}
                     </SelectContent>

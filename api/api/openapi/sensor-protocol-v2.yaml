@@ -3,10 +3,8 @@ info:
   title: OpenCTEM sensor protocol v2
   version: "2"
   description: |
-    Sensor protocol v2: results ingest (RFC-026,
-    docs/rfcs/RFC-026-sensor-results-ingest.md) and the control plane —
-    heartbeat, commands, suppressions, fingerprint queries, key renewal
-    (RFC-029, docs/rfcs/RFC-029-sensor-protocol-v2-and-sdk-stability.md).
+    Sensor protocol v2: results ingest and the control plane —
+    heartbeat, commands, suppressions, fingerprint queries, key renewal.
     Control-plane bodies are JSON, decoded leniently (unknown members are
     ignored); clients must ignore unknown response members. Hand-maintained: the
     generated swagger.yaml is Swagger 2.0 with basePath /api/v1 and cannot
@@ -173,7 +171,7 @@ paths:
         "429": { $ref: "#/components/responses/Problem" }
   /api/v2/sensor/manifest:
     put:
-      summary: Register what this sensor is (feature "manifest", RFC-033)
+      summary: Register what this sensor is (feature "manifest")
       operationId: sensorV2PutManifest
       description: >-
         The sensor's manifest: build, platform, resources, concurrency ceiling,
@@ -203,7 +201,7 @@ paths:
         "429": { $ref: "#/components/responses/Problem" }
         "503": { $ref: "#/components/responses/Problem" }
     get:
-      summary: The current manifest digest and the policy as it stands now (RFC-033 §6.12)
+      summary: The current manifest digest and the policy as it stands now
       operationId: sensorV2GetManifest
       description: >-
         Re-read when the heartbeat's config_version changes: the administrator's
@@ -220,7 +218,7 @@ paths:
         "429": { $ref: "#/components/responses/Problem" }
   /api/v2/sensor/config-report:
     put:
-      summary: Store this sensor's preflight check results (feature "config_report", research/26)
+      summary: Store this sensor's preflight check results (feature "config_report")
       operationId: sensorV2PutConfigReport
       description: >-
         The results of the checks the sensor ran on itself (settings, state
@@ -333,7 +331,7 @@ paths:
     parameters:
       - $ref: "#/components/parameters/TransitionCommandID"
     post:
-      summary: Hand a claimed or running command back to the queue (acknowledged/running → pending, unpinned; feature "release", RFC-030 §5.12)
+      summary: Hand a claimed or running command back to the queue (acknowledged/running → pending, unpinned; feature "release")
       description: >-
         Only the sensor that holds the command may release it. The command
         returns to the queue at once (its scan zone kept) instead of waiting
@@ -354,7 +352,7 @@ paths:
     parameters:
       - $ref: "#/components/parameters/TransitionCommandID"
     post:
-      summary: Store a batch of a task's log lines (feature "logs", RFC-029 §4.4.1)
+      summary: Store a batch of a task's log lines (feature "logs")
       description: >-
         Only the sensor that holds (or last held) the command may send its
         logs, while it runs and up to 24 hours after it finished (an outbox
@@ -513,7 +511,7 @@ paths:
         "429": { $ref: "#/components/responses/Problem" }
   /api/v2/sensor/identity/bind:
     post:
-      summary: Bind this bearer-key sensor's own signing key (RFC-052 §4.8)
+      summary: Bind this bearer-key sensor's own signing key
       operationId: sensorV2BindKey
       description: |
         A sensor authenticated by its API key binds an Ed25519 key it
@@ -560,11 +558,10 @@ paths:
         "429": { $ref: "#/components/responses/Problem" }
   /api/v2/sensor/pairings:
     post:
-      summary: Start an interactive pairing (RFC-052)
+      summary: Start an interactive pairing
       operationId: sensorV2PairingStart
       description: |
-        No bearer key: the request is signed (RFC 9421, the profile of
-        docs/rfcs/RFC-052-sensor-pairing-and-authorization.md §4.3) with the
+        No bearer key: the request is signed (RFC 9421) with the
         Ed25519 key in the body, keyid = its RFC 7638 thumbprint. Capped per
         address (10/hour) and platform-wide; the answer has the same shape
         whether or not a reverse-mode code matched. The request belongs to no
@@ -706,7 +703,7 @@ components:
         application/json:
           schema: { $ref: "#/components/schemas/Status" }
     Problem:
-      description: RFC 9457 problem. The type URI is https://openctem.io/problems/ingest/<name> (RFC-026) or https://openctem.io/problems/sensor/<name> (RFC-029).
+      description: RFC 9457 problem. The type URI is https://openctem.io/problems/ingest/<name> or https://openctem.io/problems/sensor/<name>.
       content:
         application/problem+json:
           schema: { $ref: "#/components/schemas/Problem" }
@@ -731,9 +728,17 @@ components:
         enrollment_token:
           type: string
           description: |
-            A single-use instance enrollment token (octe_…, docs/rfcs/RFC-100-shared-sensors.md §7):
+            A single-use instance enrollment token (octe_…):
             the request is approved as a shared sensor (no organization) once the nonce is revealed.
             Never with code or sensor_id. A malformed, unknown, expired or used token is 401.
+            With enrollment_scope "organization" it is an organization enrollment token instead
+            (docs/architecture/sensor-pairing.md, "Enrollment tokens"): the request joins the
+            token's organization with its presets, at trust level New, approved once the nonce is
+            revealed unless the token requires approval. Same 401 for every unusable token.
+        enrollment_scope:
+          type: string
+          enum: [organization]
+          description: "Only with enrollment_token: the token is an organization enrollment token. Absent: an instance token."
         host:
           type: object
           properties:
@@ -873,7 +878,7 @@ components:
         transport_v3:
           type: object
           description: >-
-            Where this platform serves sensor protocol v3 (RFC-059); absent
+            Where this platform serves sensor protocol v3; absent
             when it does not.
           properties:
             https_path: { type: string, description: The HTTPS binding on this host (/api/v3/sensor). }
@@ -884,7 +889,7 @@ components:
         content:
           type: array
           description: >-
-            Slim heartbeat (RFC-033 §6.12): with tools left out, each tool's
+            Slim heartbeat: with tools left out, each tool's
             content freshness, merged into the stored tools' content.
           items:
             type: object
@@ -904,15 +909,14 @@ components:
           type: string
           maxLength: 71
           description: >-
-            The digest PUT /manifest returned (feature "manifest", RFC-033).
+            The digest PUT /manifest returned (feature "manifest").
             When it is not the platform's current one the answer carries the
             action send_manifest. Absent: the platform derives the manifest
             from this heartbeat's tools.
         config_report:
           type: object
           description: >-
-            Summary of the sensor's config report (feature "config_report",
-            research/26). digest is the one PUT /config-report returned; when
+            Summary of the sensor's config report (feature "config_report"). digest is the one PUT /config-report returned; when
             it is not the platform's stored one the answer carries the action
             send_config_report. A heartbeat without it marks a stored report
             stale. Read leniently.
@@ -933,7 +937,7 @@ components:
           description: >-
             Random id the sensor process picks at start (sdk-go v0.12+). Two live
             instances alternating on one key flag the sensor as a cloned
-            identity (RFC-032 Phase 0). Optional; without it the platform
+            identity. Optional; without it the platform
             observes the hostname.
         message: { type: string }
         scanners: { type: array, items: { type: string } }
@@ -941,8 +945,7 @@ components:
         uptime_seconds: { type: integer }
         control:
           description: >-
-            How well the sensor's heartbeat loop keeps time (sdk-go, RFC-035
-            §5.5). Read leniently (a member of the wrong type is ignored) and
+            How well the sensor's heartbeat loop keeps time (sdk-go). Read leniently (a member of the wrong type is ignored) and
             clamped. interval_s, with the advised next_heartbeat_seconds,
             sets the sensor's heartbeat deadline (the longer of the two).
           type: object
@@ -972,7 +975,7 @@ components:
             dead_letter_count: { type: integer }
             evicted_count: { type: integer }
         resources:
-          description: The machine as the SDK measured it (container limits when in one); feature "load", RFC-030 §5.8. Clamped; display and selection input.
+          description: The machine as the SDK measured it (container limits when in one); feature "load". Clamped; display and selection input.
           type: object
           properties:
             cpu_cores: { type: number }
@@ -1007,7 +1010,7 @@ components:
     Manifest:
       type: object
       required: [schema]
-      description: RFC-033 §6.2. Every member but schema is optional; unknown members are ignored and listed.
+      description: Every member but schema is optional; unknown members are ignored and listed.
       properties:
         schema: { type: integer, enum: [1] }
         sensor:
@@ -1065,7 +1068,7 @@ components:
                     managed: { type: boolean }
     ManifestPolicy:
       type: object
-      description: The sensor's effective tools, capabilities and capacity (its report narrowed by the administrator's settings). The SDK refuses commands whose tool (payload scanner, else preferred_tool) is not in allowed_tools (owner decision O2).
+      description: The sensor's effective tools, capabilities and capacity (its report narrowed by the administrator's settings). The SDK refuses commands whose tool (payload scanner, else preferred_tool) is not in allowed_tools.
       required: [allowed_tools, allowed_capabilities, max_jobs]
       properties:
         allowed_tools: { type: array, items: { type: string } }
@@ -1075,7 +1078,7 @@ components:
       type: object
       required: [omit_inventory]
       properties:
-        omit_inventory: { type: boolean, description: "While heartbeats echo the digest they may leave out tools, capabilities and max_concurrent_jobs and send the content block instead (owner decision O3). False under the kill switch SENSOR_SLIM_HEARTBEAT=false." }
+        omit_inventory: { type: boolean, description: "While heartbeats echo the digest they may leave out tools, capabilities and max_concurrent_jobs and send the content block instead. False under the kill switch SENSOR_SLIM_HEARTBEAT=false." }
     ManifestStateResponse:
       type: object
       required: [manifest_digest, policy, heartbeat]
@@ -1175,7 +1178,7 @@ components:
         status: { type: string, enum: [ok, paused] }
         pending_jobs: { type: integer }
         next_heartbeat_seconds: { type: integer }
-        actions: { type: array, items: { type: string, description: "pause, resume, drain, rotate_key, update, send_manifest (RFC-033: PUT /manifest; only for a sensor that sent manifest_digest, or one that sent a slim heartbeat while slim heartbeats are switched off), send_config_report (PUT /config-report; only for a sensor that sent config_report.digest); ignore unknown values" } }
+        actions: { type: array, items: { type: string, description: "pause, resume, drain, rotate_key, update, send_manifest, send_config_report (PUT /config-report; only for a sensor that sent config_report.digest); ignore unknown values" } }
         config_version: { type: string }
     Command:
       type: object

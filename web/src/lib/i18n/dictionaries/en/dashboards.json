@@ -181,7 +181,7 @@
   "dashboards.manage.open": "Open",
   "dashboards.manage.saveOpen": "Save and open",
   "dashboards.manage.saving": "Saving",
-  "dashboards.manage.summary": "{n, plural, one {# widget} other {# widgets}} · {cols} columns",
+  "dashboards.manage.summary": "{n, plural, one {# widget} other {# widgets}}, {cols} columns",
   "dashboards.manage.templates": "Start from a template",
   "dashboards.manage.title": "Dashboards",
   "dashboards.manage.useTemplate": "Use template",

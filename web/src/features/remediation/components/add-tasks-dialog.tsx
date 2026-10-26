@@ -109,7 +109,7 @@ export function AddTasksDialog({
     (task: RemediationTask) =>
       [owners.user(task.assignee_user_id), owners.group(task.assignee_group_id)]
         .filter(Boolean)
-        .join(' · ') || t('remediationCampaigns.owner.unassigned'),
+        .join(', ') || t('remediationCampaigns.owner.unassigned'),
     [owners, t]
   )
 
@@ -179,7 +179,7 @@ export function AddTasksDialog({
                           name: c.campaign_name,
                         })
                       : t('remediationCampaigns.addTasks.inHiddenCampaign')}
-                    {!c.can_move && ` · ${t('remediationCampaigns.addTasks.cannotMove')}`}
+                    {!c.can_move && `, ${t('remediationCampaigns.addTasks.cannotMove')}`}
                   </div>
                 </li>
               ))}
@@ -232,14 +232,14 @@ export function AddTasksDialog({
                         >
                           <span className="block truncate font-medium">{task.title}</span>
                           <span className="text-muted-foreground block text-xs">
-                            {ownerOf(task)} ·{' '}
+                            {ownerOf(task)},{' '}
                             {t(
                               `remediationCampaigns.addTasks.findings.${task.counts.total === 1 ? 'one' : 'other'}`,
                               undefined,
                               { count: task.counts.total }
                             )}
                             {task.campaign_id &&
-                              ` · ${
+                              `, ${
                                 campaignName.get(task.campaign_id)
                                   ? t('remediationCampaigns.addTasks.inCampaign', undefined, {
                                       name: campaignName.get(task.campaign_id) ?? '',
