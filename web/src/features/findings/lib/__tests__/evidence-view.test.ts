@@ -2,6 +2,8 @@ import { describe, expect, it } from 'vitest'
 import type { EvidenceItem } from '@/lib/api/generated'
 import {
   byteToCharIndex,
+  foldEvidence,
+  primaryEvidence,
   placeholdersOf,
   rawRequestText,
   rawResponseText,
@@ -101,5 +103,51 @@ describe('evidence view helpers', () => {
       "curl -H 'Authorization: Bearer tok'\\''$(id)' 'https://h'"
     )
     expect(substitute('a «secret:token#9» b', v)).toBe('a «secret:token#9» b')
+  })
+})
+
+describe('evidence grouping', () => {
+  const t0 = '2026-10-20T10:00:00.000Z'
+  const t1 = '2026-10-20T10:00:02.000Z'
+  const later = '2026-10-21T08:00:00.000Z'
+  const ex = (id: string, created_at: string, origin = 'detection', retest_id?: string) => ({
+    id,
+    kind: 'http_exchange',
+    origin,
+    retest_id,
+    created_at,
+    curl: "curl 'https://h/'",
+  })
+  const curl = (id: string, created_at: string, origin = 'detection', retest_id?: string) => ({
+    id,
+    kind: 'curl',
+    origin,
+    retest_id,
+    created_at,
+  })
+
+  it('drops the curl item of the same capture, keeps others', () => {
+    const items = [curl('c1', t1), ex('e1', t0), curl('c-alone', later, 'retest', 'r1')]
+    expect(foldEvidence(items).map((r) => r.id)).toEqual(['e1', 'c-alone'])
+  })
+
+  it('does not fold a curl item into a different retest attempt', () => {
+    const items = [curl('c1', t0, 'retest', 'r2'), ex('e1', t0, 'retest', 'r1')]
+    expect(foldEvidence(items).map((r) => r.id)).toEqual(['c1', 'e1'])
+  })
+
+  it('picks the HTTP exchange of the newest detection, not its curl item', () => {
+    const items = [curl('c2', later), ex('e2', later), curl('c1', t1), ex('e1', t0)]
+    expect(primaryEvidence(items)?.id).toBe('e2')
+  })
+
+  it('prefers a detection over a newer retest attempt', () => {
+    const items = [ex('r', later, 'retest', 'r1'), ex('d', t0)]
+    expect(primaryEvidence(items)?.id).toBe('d')
+  })
+
+  it('falls back to whatever exists', () => {
+    expect(primaryEvidence([curl('c', t0)])?.id).toBe('c')
+    expect(primaryEvidence([])).toBeUndefined()
   })
 })
