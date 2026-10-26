@@ -95,6 +95,7 @@ const NEUTRAL_WORDS = new Set(
     'MCP',
     'AI',
     'x',
+    'sid',
     'gRPC',
     'mTLS',
   ].map((w) => w.toLowerCase())
