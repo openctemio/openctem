@@ -45,7 +45,7 @@ export function ProviderSetupGuide({
             <CopyableUrl
               label={t(
                 'admin.ssoSetupGuide.logoutUrl',
-                'Front-channel logout URL (enables sign-out of OpenCTEM sessions)'
+                'Front-channel logout URL (enables sign-out of {product} sessions)'
               )}
               url={ssoBackchannelLogoutUrl(appUrl)}
             />
@@ -89,7 +89,7 @@ export function ProviderSetupGuide({
               <code>sid</code>{' '}
               {t(
                 'admin.ssoSetupGuide.claimSid',
-                '(signs out one OpenCTEM session; without it a sign-out ends all of the user sessions).'
+                '(signs out one {product} session; without it a sign-out ends all of the user sessions).'
               )}
             </li>
           </ul>
