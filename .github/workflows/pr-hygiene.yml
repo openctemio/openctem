@@ -1,0 +1,97 @@
+name: PR hygiene
+
+# One workflow for the light, never-heavy checks that used to start a run each
+# (Docs check, PR Release-Note Labels, the PR-time All-in-one OK report): a
+# pull request push starts one run here instead of three.
+#
+# Check names are unchanged. Required: `All-in-one OK`. A pull_request gets it
+# from the job below (a pass: the image build gates the merge queue); the merge
+# queue and pushes get it from allinone-ci.yml, never both for one event.
+
+on:
+  pull_request:
+    branches: [main, develop]
+    types: [opened, synchronize, reopened, ready_for_review]
+  push:
+    branches: [main, develop]
+  merge_group:
+    types: [checks_requested]
+
+permissions:
+  contents: read
+
+# A newer push to the same PR cancels the older run. Never a queued group.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  docs-check:
+    name: Docs check
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Links, language and private addresses
+        run: python3 scripts/docs_check.py .
+      # api/docs/rfcs/README.md index table is generated from the RFC headers.
+      - name: RFC index is current
+        run: |
+          python3 scripts/rfc_index_test.py
+          python3 scripts/rfc_index.py --check
+
+      # docs.openctem.io links (page and anchor) and github.com/openctemio file
+      # links in code, against the docs site source (openctemio/docs main) and
+      # the repositories they name.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: openctemio/docs
+          ref: main
+          path: .docs-site
+          persist-credentials: false
+      - name: Documentation links in code
+        run: python3 scripts/check_docs_links.py --docs .docs-site --fetch-other --live .
+
+  label:
+    name: Release-note labels
+    if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      pull-requests: write # add labels (and create the four label names once)
+      issues: write # labels live on the issue side of a pull request
+    steps:
+      - name: Check out the labeler from the base commit
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.base.sha }}
+          persist-credentials: false
+          sparse-checkout: .github/scripts/pr-labels.py
+          sparse-checkout-cone-mode: false
+
+      - name: Label the pull request
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR: ${{ github.event.pull_request.number }}
+          REPO: ${{ github.repository }}
+        run: |
+          if [ ! -f .github/scripts/pr-labels.py ]; then
+            echo "::notice::the base commit has no pr-labels.py yet; nothing to do"
+            exit 0
+          fi
+          python3 .github/scripts/pr-labels.py --pr "$PR" --repo "$REPO" --apply
+
+  allinone-ok:
+    name: All-in-one OK
+    # The required check on a pull request. The image build is the full tier
+    # (merge queue and pushes); allinone-ci.yml reports the real `All-in-one OK`
+    # there. On a PR that changes a CI definition it also runs the build for
+    # early feedback, under the name "All-in-one (PR build)".
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - run: echo "the image build runs in the merge queue (full tier)"

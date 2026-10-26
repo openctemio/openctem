@@ -14,18 +14,24 @@ name: All-in-one CI
 # built from the whole component directory, so any change there is an image
 # change. A docs-only change at the root runs nothing.
 #
-# FULL tier only: the merge queue and pushes to develop/main build the images;
-# a pull_request does not (the image build is the single most expensive job, and
-# the queue tests the PR on its final base anyway), unless it has the `ci:full`
-# label or changes a CI definition (the `full` output of changed.sh). On a fast
-# PR, `All-in-one OK` passes with the build skipped; in the queue it requires
-# the build.
+# FULL tier only: the merge queue and pushes to develop/main build the images
+# (the image build is the single most expensive job; the queue tests the PR on
+# its final base). A pull_request starts this workflow only when it changes a CI
+# definition (see `paths:` below); the required `All-in-one OK` of a PR comes from
+# pr-hygiene.yml.
 
 on:
   push:
     branches: [main, develop]
+  # A pull request runs this workflow only when it changes a CI definition (the
+  # build then gives early feedback as "All-in-one (PR build)", not required).
+  # Any other PR gets the required `All-in-one OK` from pr-hygiene.yml.
   pull_request:
     branches: [main, develop]
+    paths:
+      - .github/workflows/**
+      - .github/scripts/**
+      - .github/actions/**
   merge_group:
     types: [checks_requested]
 
@@ -167,7 +173,9 @@ jobs:
         run: docker image ls --format '{{.Repository}}:{{.Tag}} {{.Size}}' | grep '^local/'
 
   allinone-ok:
-    name: All-in-one OK
+    # `All-in-one OK` is required on develop/main and the merge queue. On a pull
+    # request pr-hygiene.yml reports that name, so this one must not.
+    name: ${{ github.event_name == 'pull_request' && 'All-in-one (PR build)' || 'All-in-one OK' }}
     if: always()
     needs: [changes, images]
     runs-on: ubuntu-latest
