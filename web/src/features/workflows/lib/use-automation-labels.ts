@@ -10,33 +10,33 @@ import { useTranslation } from '@/context/i18n-provider'
 // and a type without a name here shows as its id.
 const TRIGGER: Record<string, [string, string]> = {
   manual: ['automations.triggerType.manual', 'Manual'],
-  finding_created: ['automations.triggerType.finding_created', 'Finding Created'],
+  finding_created: ['automations.triggerType.finding_created', 'Finding created'],
   finding_status_changed: [
     'automations.triggerType.finding_status_changed',
-    'Finding Status Changed',
+    'Finding status changed',
   ],
-  asset_discovered: ['automations.triggerType.asset_discovered', 'Asset Discovered'],
-  scan_completed: ['automations.triggerType.scan_completed', 'Scan Completed'],
-  ai_triage_completed: ['automations.triggerType.ai_triage_completed', 'AI Triage Completed'],
-  ai_triage_failed: ['automations.triggerType.ai_triage_failed', 'AI Triage Failed'],
+  asset_discovered: ['automations.triggerType.asset_discovered', 'Asset discovered'],
+  scan_completed: ['automations.triggerType.scan_completed', 'Scan completed'],
+  ai_triage_completed: ['automations.triggerType.ai_triage_completed', 'AI triage completed'],
+  ai_triage_failed: ['automations.triggerType.ai_triage_failed', 'AI triage failed'],
 }
 
 const ACTION: Record<string, [string, string]> = {
-  assign_user: ['automations.actionType.assign_user', 'Assign User'],
-  update_status: ['automations.actionType.update_status', 'Update Status'],
-  add_tags: ['automations.actionType.add_tags', 'Add Tags'],
-  remove_tags: ['automations.actionType.remove_tags', 'Remove Tags'],
-  create_ticket: ['automations.actionType.create_ticket', 'Create Ticket'],
-  update_ticket: ['automations.actionType.update_ticket', 'Update Ticket'],
-  trigger_scan: ['automations.actionType.trigger_scan', 'Trigger Scan'],
-  trigger_ai_triage: ['automations.actionType.trigger_ai_triage', 'Run AI Triage'],
+  assign_user: ['automations.actionType.assign_user', 'Assign user'],
+  update_status: ['automations.actionType.update_status', 'Update status'],
+  add_tags: ['automations.actionType.add_tags', 'Add tags'],
+  remove_tags: ['automations.actionType.remove_tags', 'Remove tags'],
+  create_ticket: ['automations.actionType.create_ticket', 'Create ticket'],
+  update_ticket: ['automations.actionType.update_ticket', 'Update ticket'],
+  trigger_scan: ['automations.actionType.trigger_scan', 'Trigger scan'],
+  trigger_ai_triage: ['automations.actionType.trigger_ai_triage', 'Run AI triage'],
   request_false_positive: [
     'automations.actionType.request_false_positive',
-    'Request False Positive',
+    'Request false positive',
   ],
   request_risk_acceptance: [
     'automations.actionType.request_risk_acceptance',
-    'Request Risk Acceptance',
+    'Request risk acceptance',
   ],
 }
 

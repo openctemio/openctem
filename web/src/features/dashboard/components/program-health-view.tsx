@@ -290,7 +290,7 @@ export function ProgramHealthView() {
       },
       {
         id: 'remediation-time',
-        label: t('dashboardMetrics.program.p0MeanTime', 'Mean time to fix · P0'),
+        label: t('dashboardMetrics.program.p0MeanTime', 'Mean time to fix, P0'),
         measures: t(
           'dashboardMetrics.program.p0MeanTimeMeasures',
           'Mean time from discovery to fix for P0 findings fixed in the last 90 days'

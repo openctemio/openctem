@@ -115,7 +115,7 @@ function CurrentManifest({ v, now }: { v: SensorManifestVersion; now: number }) 
           <span className="flex flex-col gap-0.5">
             <Digest digest={v.digest} />
             <span className="text-xs text-muted-foreground" title={exactTime(v.current_since)}>
-              {t('sensors.manifest.currentSince', '{source} · current since {ago}', {
+              {t('sensors.manifest.currentSince', '{source}, current since {ago}', {
                 source: manifestSourceLabel(v.source, t),
                 ago: agoShort(v.current_since, now),
               })}
@@ -196,9 +196,7 @@ function CurrentManifest({ v, now }: { v: SensorManifestVersion; now: number }) 
             )}
             {(tool.content?.length ?? 0) > 0 && (
               <div className="text-xs text-muted-foreground">
-                {tool
-                  .content!.map((c) => [c.name, c.version].filter(Boolean).join(' '))
-                  .join(' · ')}
+                {tool.content!.map((c) => [c.name, c.version].filter(Boolean).join(' ')).join(', ')}
               </div>
             )}
             {tool.contract && <ToolContract tool={tool.name} c={tool.contract} />}
