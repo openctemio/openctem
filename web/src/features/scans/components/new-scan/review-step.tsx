@@ -168,6 +168,8 @@ export function ReviewStep({
 }: ReviewStepProps) {
   const { t } = useTranslation()
   const tgt = data.targets
+  // Typed targets (not picked assets or inventory names) the review may take out.
+  const typedSet = new Set(tgt.customTargets.map((x) => x.trim().toLowerCase()))
   const typed = parsePastedTargets(tgt.customTargets).targets.length
   const expanded = tgt.coverage && tgt.coverage !== 'host' ? (tgt.expandedTargets ?? []).length : 0
   const results = review.scope.results ?? []
@@ -355,13 +357,25 @@ export function ReviewStep({
         </section>
       )}
 
-      {canReadZones && zones.length > 0 && (
+      {canReadZones && (
         <div className="rounded-lg border">
           <ScanRoutingSection
             zones={zones}
             value={data.scanZoneId}
             onChange={(scanZoneId) => onChange({ scanZoneId })}
             request={zoneRequest}
+            removable={(target) => typedSet.has(target.toLowerCase())}
+            onRemove={(targets) => {
+              const drop = new Set(targets.map((x) => x.toLowerCase()))
+              onChange({
+                targets: {
+                  ...data.targets,
+                  customTargets: data.targets.customTargets.filter(
+                    (x) => !drop.has(x.trim().toLowerCase())
+                  ),
+                },
+              })
+            }}
           />
         </div>
       )}

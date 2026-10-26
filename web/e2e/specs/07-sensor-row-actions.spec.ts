@@ -106,7 +106,12 @@ test.describe('Sensor row actions', () => {
   test('the new sensor key is labelled, and so are its show and copy buttons', async ({ page }) => {
     const name = `e2e-key-a11y-${Date.now()}`
     await openSensors(page)
-    await page.getByRole('button', { name: 'Install sensor' }).first().click()
+    // The key install sits inside Add sensor, below pairing.
+    await page.getByRole('button', { name: 'Add sensor' }).first().click()
+    await page
+      .getByRole('dialog', { name: 'Add sensor' })
+      .getByRole('button', { name: 'Install with an API key instead' })
+      .click()
     const dialog = page.getByRole('dialog', { name: 'Install a sensor' })
     await dialog.getByRole('textbox', { name: 'Name' }).fill(name)
     await dialog.getByRole('button', { name: 'Create and show the command' }).click()

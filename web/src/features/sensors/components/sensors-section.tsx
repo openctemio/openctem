@@ -28,7 +28,7 @@ import { Can, Permission, useHasPermission } from '@/lib/permissions'
 import { cn } from '@/lib/utils'
 
 import { InstallSensorDialog } from './install-sensor-dialog'
-import { PairSensorButton, PairSensorDialog } from './pair-sensor-dialog'
+import { AddSensorButton, AddSensorDialog } from './add-sensor-dialog'
 import { SensorInstallFlow } from './sensor-install-flow'
 import { EditSensorDialog } from './edit-sensor-dialog'
 import { RegenerateKeyDialog } from './regenerate-key-dialog'
@@ -678,8 +678,8 @@ export function SensorsSection({
         canPair={canPairSensors}
         canInstallWithKey={canInstallWithKey}
         canReadCI={canReadCI}
-        onPair={() => setPairDialogOpen(true)}
         onInstall={() => setInlineInstall(true)}
+        onOpenSensor={handleViewSensor}
       />
     )
   } else {
@@ -741,8 +741,8 @@ export function SensorsSection({
                 <Download className="h-4 w-4" />
                 {t('sensors.list.export')}
               </Button>
-              <PairSensorButton onClick={() => setPairDialogOpen(true)} />
-              {canInstallWithKey && (
+              <AddSensorButton onClick={() => setPairDialogOpen(true)} />
+              {canInstallWithKey && !canPairSensors && (
                 <Button size="sm" onClick={() => setAddDialogOpen(true)}>
                   <Plus className="h-4 w-4" />
                   {t('sensors.list.install')}
@@ -857,7 +857,19 @@ export function SensorsSection({
       </Can>
 
       {pairDialogOpen && (
-        <PairSensorDialog open={pairDialogOpen} onOpenChange={setPairDialogOpen} />
+        <AddSensorDialog
+          open={pairDialogOpen}
+          onOpenChange={setPairDialogOpen}
+          canInstallWithKey={canInstallWithKey}
+          onInstallWithKey={() => {
+            setPairDialogOpen(false)
+            setAddDialogOpen(true)
+          }}
+          onOpenSensor={(s) => {
+            setPairDialogOpen(false)
+            handleViewSensor(s)
+          }}
+        />
       )}
 
       {/* Mounted only while open: it loads tools and zones. */}
