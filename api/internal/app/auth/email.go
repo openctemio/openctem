@@ -52,15 +52,22 @@ func (s *EmailService) SetTenantSMTPResolver(resolver TenantSMTPResolver) {
 	s.tenantSMTP = resolver
 }
 
-// SendReport emails an already-rendered HTML report to explicit recipients,
-// using the tenant's SMTP if configured (else the system default). Used by the
-// scheduled-report controller. No-op (returns nil) when there are no recipients;
-// errors if no SMTP sender is configured.
+// SendReport emails an already-rendered HTML report (organization content)
+// to explicit recipients. With a tenantID it goes through the organization's
+// own relay when one is active; if the organization chose a relay that cannot
+// be used now, the report is NOT sent through the platform relay (the
+// organization may have chosen its relay for data-handling reasons): the
+// error is returned. Without an organization relay (mode off, none set) and
+// with an empty tenantID it uses the platform relay. No-op (returns nil) when
+// there are no recipients; errors if no SMTP sender is configured.
 func (s *EmailService) SendReport(ctx context.Context, tenantID string, to []string, subject, htmlBody string) error {
 	if len(to) == 0 {
 		return nil
 	}
-	sender := s.getSenderForTenant(ctx, tenantID)
+	sender, err := s.contentSender(ctx, tenantID)
+	if err != nil {
+		return err
+	}
 	if sender == nil || !sender.IsConfigured() {
 		return fmt.Errorf("email: no SMTP sender configured")
 	}
@@ -72,7 +79,29 @@ func (s *EmailService) SendReport(ctx context.Context, tenantID string, to []str
 	})
 }
 
-// getSenderForTenant returns a per-tenant SMTP sender if configured, or the default sender.
+// contentSender is the sender of organization content mail (reports): the
+// organization relay when active, the platform relay when the organization
+// has none, and an error (never the platform relay) when its relay is
+// active but unusable.
+func (s *EmailService) contentSender(ctx context.Context, tenantID string) (emaildom.Sender, error) {
+	if s.tenantSMTP == nil || tenantID == "" {
+		return s.sender, nil
+	}
+	cfg, err := s.tenantSMTP.GetTenantSMTPConfig(ctx, tenantID)
+	if err != nil {
+		s.logger.Warn("organization mail relay unusable; content mail not sent", "tenant_id", logSafe(tenantID), "error", err)
+		return nil, err
+	}
+	if cfg == nil {
+		return s.sender, nil
+	}
+	return emaildom.NewSMTPSender(*cfg), nil
+}
+
+// getSenderForTenant is the sender of organization transactional mail with
+// no exposure data (invitation, account setup, member suspended or
+// reactivated): the organization relay when active, else the platform relay,
+// including when the organization's relay cannot be used now.
 func (s *EmailService) getSenderForTenant(ctx context.Context, tenantID string) emaildom.Sender {
 	if s.tenantSMTP == nil || tenantID == "" {
 		return s.sender
@@ -80,7 +109,7 @@ func (s *EmailService) getSenderForTenant(ctx context.Context, tenantID string) 
 
 	cfg, err := s.tenantSMTP.GetTenantSMTPConfig(ctx, tenantID)
 	if err != nil {
-		s.logger.Debug("no tenant SMTP config, using system default", "tenant_id", logSafe(tenantID))
+		s.logger.Warn("organization mail relay unusable; using the platform relay", "tenant_id", logSafe(tenantID), "error", err)
 		return s.sender
 	}
 	if cfg == nil {
@@ -101,18 +130,14 @@ func (s *EmailService) HasSystemSMTP() bool {
 	return s.IsConfigured()
 }
 
-// HasTenantSMTP implements SMTPAvailabilityCheck.
-// Returns true if the given tenant has a custom SMTP integration configured.
-// tenantID may be empty for self-registration without tenant context.
-func (s *EmailService) HasTenantSMTP(ctx context.Context, tenantID string) bool {
-	if s.tenantSMTP == nil || tenantID == "" {
-		return false
-	}
-	cfg, err := s.tenantSMTP.GetTenantSMTPConfig(ctx, tenantID)
-	if err != nil || cfg == nil {
-		return false
-	}
-	return cfg.Host != ""
+// HasTenantSMTP implements SMTPAvailabilityCheck. It is always false:
+// verification, password reset and the other account security mail are
+// sent through the platform relay only (an organization's relay is
+// organization-controlled infrastructure and must never carry another
+// organization's member's account mail), so an organization relay does not
+// make account verification possible.
+func (s *EmailService) HasTenantSMTP(_ context.Context, _ string) bool {
+	return false
 }
 
 // SendVerificationEmail sends an email verification link to a user.
