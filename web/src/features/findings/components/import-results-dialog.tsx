@@ -342,7 +342,7 @@ function IssueList({ issues }: { issues: NonNullable<ImportFileResponse['issues'
 function Count({ label, value }: { label: string; value: number }) {
   return (
     <div className="rounded-md border px-2 py-1">
-      <div className="text-muted-foreground text-[11px]">{label}</div>
+      <div className="text-muted-foreground text-xs">{label}</div>
       <div className="font-medium tabular-nums">{value}</div>
     </div>
   )
@@ -498,7 +498,7 @@ function PathList({
         {label}
       </CollapsibleTrigger>
       <CollapsibleContent>
-        <ul className="mt-1 max-h-32 overflow-y-auto font-mono text-[11px]">
+        <ul className="mt-1 max-h-32 overflow-y-auto font-mono text-xs">
           {paths.map((p) => (
             <li key={p.path} className="break-all">
               {p.path}
@@ -509,7 +509,7 @@ function PathList({
           ))}
         </ul>
         {total > paths.length && (
-          <p className="text-muted-foreground mt-1 text-[11px]">
+          <p className="text-muted-foreground mt-1 text-xs">
             {t('findings.importResults.listCut', 'Showing {shown} of {total}.', {
               shown: paths.length,
               total,
