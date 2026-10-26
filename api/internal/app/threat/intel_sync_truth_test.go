@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -203,5 +204,17 @@ func TestSyncEPSS_ShrinkGuardAndEmpty(t *testing.T) {
 	s, repo = newTruthService(t, serve(95), 0, 100, 0, map[string]any{})
 	if r := s.SyncEPSS(context.Background()); r.Error != nil || repo.epss.upserted != 95 {
 		t.Fatalf("ok: %+v upserted %d", r, repo.epss.upserted)
+	}
+}
+
+// The organization stats payload carries sync state, never the raw error text
+// of a failed fetch.
+func TestThreatIntelSyncDTO_HasNoErrorText(t *testing.T) {
+	typ := reflect.TypeOf(ThreatIntelSyncDTO{})
+	for i := 0; i < typ.NumField(); i++ {
+		tag := typ.Field(i).Tag.Get("json")
+		if strings.Contains(tag, "error") {
+			t.Fatalf("ThreatIntelSyncDTO field %s (%s) can carry raw error text", typ.Field(i).Name, tag)
+		}
 	}
 }
