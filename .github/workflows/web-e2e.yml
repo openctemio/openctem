@@ -410,8 +410,8 @@ jobs:
           # directory (the tag gate refuses anything but [A-Za-z0-9._/-]).
           SPECS: ${{ matrix.files }}
         run: |
-          read -r -a specs <<< "$SPECS"
-          npx playwright test "${specs[@]}"
+          read -r -a spec_files <<< "$SPECS"
+          npx playwright test "${spec_files[@]}"
 
       - name: Stack logs
         if: failure()
