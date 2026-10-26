@@ -781,6 +781,27 @@ binary that reports no version. Promotion needs the version to come from a
 runtime file or label that is not part of the image content; until then the
 release builds its own images, from the registry cache.
 
+## Work done once per run
+
+Setup that every job of a run needs is done once and handed over:
+
+- **OpenAPI spec** (`api-ci.yml`, job `spec`): `make swagger` takes 1.5-2
+  minutes and every test and least-privilege shard ran it (14 shards on the
+  full tier; in the merge queue nothing is cached). One job generates it and
+  uploads `openapi-spec`; the shards download it.
+- **Images** are built once per content key across workflows
+  (Build images once, in `build-images.yml`).
+- **Contract files** are generated once per workflow and passed on as the
+  `contract` artifact (`web-ci.yml`); `build-images.yml` generates them once for
+  the web and console images together.
+
+Not shared on purpose: the Go and npm caches (a merge-queue ref can neither read
+nor share them, so a job there starts cold regardless), `go vet`/`staticcheck`
+(static job) versus golangci-lint (`//nolint` handling differs), and the
+`tools/lint` guards that run both as named gates in `API static checks` and
+inside the test shards (removing them from the shards would make the shard
+cover-every-test check depend on the static job).
+
 ## Releases
 
 **One tag, `vX.Y.Z` on `main`, releases the whole product.** API and web always
