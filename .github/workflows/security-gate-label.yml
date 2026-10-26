@@ -1,0 +1,71 @@
+name: Security Gate Label
+
+# Re-runs the `security-gate` check when `security-ack` is added or removed,
+# or the pull request is retargeted. Guide: api/docs/development/ci-cd.md#security-gate.
+#
+# Why: the organization ruleset that pins security-gate.yml to develop starts
+# that pinned run only on opened/synchronize/reopened, never on `labeled`. So
+# after the maintainer adds the label, the run that read the labels before
+# stays the check result until something re-runs it. This job re-runs the
+# newest gate run of the pull request's head (a re-run keeps its event and
+# pinned workflow version; the gate reads the labels again).
+#
+# Safety:
+# - It decides nothing. Which commit the ack covers, and whether it still
+#   covers the head, is the gate's own decision from GitHub's records (the
+#   `labeled` event and the branch push log). A missing re-run leaves the
+#   check red; an extra one evaluates the same records again.
+# - `pull_request` only (no `pull_request_target`), no code from the pull
+#   request runs: the script is checked out sparse from the base commit
+#   (bootstrap: nothing to do while the base has no `rerun` command).
+# - A pull request that changes workflows runs its own copy of this file. Its
+#   token can only do what a workflow it adds could do anyway (same-repository
+#   branches only; fork pull requests get a read-only token and are skipped).
+# - `actions: write` is used for one call: POST actions/runs/{id}/rerun on the
+#   gate run of this pull request's current head.
+
+on:
+  pull_request:
+    types: [labeled, unlabeled, edited]
+
+permissions: {}
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  rerun:
+    name: security-gate-label
+    # Only the ack label and retargets change the verdict; same-repository
+    # pull requests only (a fork's token cannot re-run anything).
+    if: >-
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      (github.event.label.name == 'security-ack' ||
+       (github.event.action == 'edited' && github.event.changes.base))
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read # sparse checkout of the base commit
+      pull-requests: read # the pull request's current head
+      actions: write # re-run the gate run of that head
+    steps:
+      - name: Check out the gate from the base commit
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.base.sha }}
+          path: base
+          persist-credentials: false
+          sparse-checkout: |
+            .github/scripts/security_gate.py
+          sparse-checkout-cone-mode: false
+
+      - name: Re-run the gate
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          if ! grep -q '^def cmd_rerun' base/.github/scripts/security_gate.py 2>/dev/null; then
+            echo "::notice::the base commit's gate has no rerun command yet (bootstrap); nothing to do"
+            exit 0
+          fi
+          python3 base/.github/scripts/security_gate.py rerun

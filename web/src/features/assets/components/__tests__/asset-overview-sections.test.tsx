@@ -79,7 +79,8 @@ function makeAsset(overrides: Partial<Asset> = {}): Asset {
 describe('RiskSummarySection', () => {
   it('shows the risk score, finding count and severity breakdown', () => {
     render(<RiskSummarySection asset={makeAsset()} />)
-    expect(screen.getByText(/^73 High$/)).toBeInTheDocument()
+    expect(screen.getByText(/^73$/)).toBeInTheDocument()
+    expect(screen.getByLabelText('Risk 73 of 100, High')).toBeInTheDocument()
     expect(screen.getByText('22')).toBeInTheDocument()
     expect(screen.getByText('16')).toBeInTheDocument() // high
     expect(screen.getByText('6')).toBeInTheDocument() // medium
@@ -112,7 +113,7 @@ describe('RiskSummarySection', () => {
         asset={makeAsset({ riskScored: true, riskScoredAt: new Date().toISOString() })}
       />
     )
-    expect(screen.getByText('Score updated')).toBeInTheDocument()
+    expect(screen.getByText('Score last changed')).toBeInTheDocument()
   })
 
   it('explains the score with its factors and the findings that drive it', async () => {

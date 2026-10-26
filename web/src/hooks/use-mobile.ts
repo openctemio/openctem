@@ -22,3 +22,25 @@ const isMobileOnServer = () => false
 export function useIsMobile() {
   return React.useSyncExternalStore(subscribe, isMobileNow, isMobileOnServer)
 }
+
+const WIDE_BREAKPOINT = 1280
+
+function subscribeWide(onChange: () => void) {
+  if (typeof window.matchMedia !== 'function') return () => {}
+  const mql = window.matchMedia(`(min-width: ${WIDE_BREAKPOINT}px)`)
+  mql.addEventListener('change', onChange)
+  return () => mql.removeEventListener('change', onChange)
+}
+
+/**
+ * Whether the viewport is `xl` or wider, for layouts that move a block (an
+ * editor's side rail) rather than restyle it: render the block once, in the
+ * place this says, so its fields and ids exist once. The server says `false`.
+ */
+export function useIsWide() {
+  return React.useSyncExternalStore(
+    subscribeWide,
+    () => window.innerWidth >= WIDE_BREAKPOINT,
+    () => false
+  )
+}

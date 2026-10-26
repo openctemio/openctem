@@ -96,6 +96,10 @@ const (
 	// PlacementNoFreeSlot: the sensor could take the command but runs as
 	// many scans as it can now.
 	PlacementNoFreeSlot = "no_free_slot"
+	// PlacementStoppedClaiming: the platform would hand the command to the
+	// sensor, but the sensor reports that it claims no new jobs because its
+	// local store is full (storage, disk or unacknowledged results).
+	PlacementStoppedClaiming = "stopped_claiming"
 )
 
 // PayloadKeyRequiredFeatures lists what a sensor must enforce to take the

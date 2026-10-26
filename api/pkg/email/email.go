@@ -398,7 +398,9 @@ func (s *LoggingSender) SendTemplate(ctx context.Context, to string, template Te
 		s.logger.Info("templated email send failed",
 			"to", safeTo,
 			"template", template,
-			"error", err,
+			// Logger is an interface here, so the escaping of the slog
+			// handler behind it is not visible to the log-injection query.
+			"error", SanitizeHeaderValue(err.Error()),
 		)
 	} else {
 		s.logger.Info("templated email sent successfully",

@@ -216,3 +216,95 @@ func TestSuggestionCards_EvidenceAndOwnPrefix(t *testing.T) {
 		}
 	}
 }
+
+// While unclassified assets get low-impact checks, a known, unshared address
+// needs no decision: it is listed apart and the card counts only the
+// unknown ones. A card that offers nothing is not a decision.
+func TestSuggestionCards_UnclassifiedChecksAndTotal(t *testing.T) {
+	store := &fakeSuggestionStore{addrs: []AddressBehindNames{
+		addr("198.51.100.20", nil, "u.acme.example"),                                                 // unknown network: waits
+		addr("198.51.100.21", map[string]any{"asn": "AS64500", "asn_org": "Acme"}, "k.acme.example"), // known: checked
+		addr("104.16.2.2", nil, "e.acme.example"),                                                    // edge: shared
+	}}
+	cover := coverSet{"u.acme.example": true, "k.acme.example": true, "e.acme.example": true}
+	org := func(context.Context, shared.ID) (string, error) { return "Acme", nil }
+	for _, tc := range []struct {
+		mode               string
+		count, checked, sh int
+	}{
+		{"low_impact", 1, 1, 1},
+		{"full", 1, 1, 1},
+		{"off", 2, 0, 1},
+		{"garbage", 2, 0, 1},
+	} {
+		svc := NewSuggestionService(store, cover, nil, org, nil)
+		mode := tc.mode
+		svc.SetUnclassified(func(context.Context, shared.ID) (string, error) { return mode, nil })
+		out, err := svc.Cards(context.Background(), shared.NewID(), true)
+		if err != nil {
+			t.Fatal(err)
+		}
+		c := out.Cards[0]
+		if c.Count != tc.count || c.CheckedCount != tc.checked || len(c.CheckedAddresses) != tc.checked || c.SharedCount != tc.sh {
+			t.Errorf("%s: count %d checked %d shared %d", tc.mode, c.Count, c.CheckedCount, c.SharedCount)
+		}
+		if tc.checked == 1 && c.CheckedAddresses[0].Address != "198.51.100.21" {
+			t.Errorf("%s: checked %v", tc.mode, c.CheckedAddresses)
+		}
+		out.Finish(2)
+		if out.Total != 3 || out.NameRules != 2 {
+			t.Errorf("%s: total %d name rules %d", tc.mode, out.Total, out.NameRules)
+		}
+	}
+
+	// Only shared addresses: the card comes back for the page, the badge
+	// counts nothing.
+	only := &fakeSuggestionStore{addrs: []AddressBehindNames{addr("104.16.3.3", nil, "e.acme.example")}}
+	out, err := NewSuggestionService(only, cover, nil, org, nil).Cards(context.Background(), shared.NewID(), true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	out.Finish(0)
+	if len(out.Cards) != 1 || out.Cards[0].Count != 0 || out.Total != 0 {
+		t.Fatalf("shared-only %+v", out)
+	}
+}
+
+// Provider addresses carry their class and provider, are grouped by
+// provider for the quiet line, and never carry ports (they are the
+// provider's); an offered address keeps its ports.
+func TestSuggestionCards_ProviderClassesAndNoPorts(t *testing.T) {
+	edgePorts := map[string]any{"ports": []any{map[string]any{"port": float64(443), "state": "open"}}}
+	store := &fakeSuggestionStore{addrs: []AddressBehindNames{
+		addr("104.16.7.7", edgePorts, "a.acme.example"),
+		addr("104.16.7.8", edgePorts, "b.acme.example"),
+		addr("198.51.100.30", map[string]any{"asn_org": "Vercel Inc"}, "c.acme.example"),
+		addr("198.51.100.31", map[string]any{"asn_org": "Hosting Elsewhere", "ports": edgePorts["ports"]}, "d.acme.example"),
+		addr("198.51.100.32", edgePorts, "e.acme.example"),
+	}}
+	cover := coverSet{"a.acme.example": true, "b.acme.example": true, "c.acme.example": true, "d.acme.example": true, "e.acme.example": true}
+	org := func(context.Context, shared.ID) (string, error) { return "Acme", nil }
+	out, err := NewSuggestionService(store, cover, nil, org, nil).Cards(context.Background(), shared.NewID(), true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	c := out.Cards[0]
+	if c.SharedCount != 4 || c.ProviderCount != 3 {
+		t.Fatalf("shared %d providers %d", c.SharedCount, c.ProviderCount)
+	}
+	if len(c.Providers) != 2 || c.Providers[0] != (SuggestionProvider{Provider: "Cloudflare", Class: "edge", Addresses: 2}) ||
+		c.Providers[1] != (SuggestionProvider{Provider: "Vercel", Class: "saas_hosting", Addresses: 1}) {
+		t.Fatalf("providers %+v", c.Providers)
+	}
+	for _, a := range c.SharedAddresses {
+		if len(a.Ports) != 0 {
+			t.Errorf("%s: shared address carries ports %v", a.Address, a.Ports)
+		}
+	}
+	if c.SharedAddresses[0].Network.Class != "edge" {
+		t.Errorf("class %+v", c.SharedAddresses[0].Network)
+	}
+	if c.Count != 1 || len(c.Addresses[0].Ports) != 1 || c.Addresses[0].Network.Class != "dedicated" {
+		t.Fatalf("offered %+v", c.Addresses)
+	}
+}

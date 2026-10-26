@@ -3,7 +3,6 @@
   "assetDetail.backToAssets": "Back to assets",
   "assetDetail.description": "Description",
   "assetDetail.errorTitle": "asset details",
-  "assetDetail.findings": "Findings",
   "assetDetail.findingsEmpty": "No open findings",
   "assetDetail.findingsEmptyHint": "This asset has no open security findings.",
   "assetDetail.findingsErrorTitle": "findings",
@@ -25,6 +24,5 @@
   "assetDetail.subtitle": "Asset type: {type}",
   "assetDetail.tags": "Tags",
   "assetDetail.title": "Asset",
-  "assetDetail.type": "Type",
-  "assetDetail.viewFindings": "View {count} findings for this asset"
+  "assetDetail.type": "Type"
 }

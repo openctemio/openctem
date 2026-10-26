@@ -58,7 +58,7 @@ vi.mock('@/features/assets', () => ({
 }))
 vi.mock('@/features/assets/hooks/use-assets', () => ({ fetchAllAssets: vi.fn() }))
 vi.mock('@/features/assets/components/service-cells', () => ({
-  IssuesChip: () => null,
+  OpenFindingsCell: () => null,
   LabelChips: () => null,
   SurfaceFacts: () => null,
 }))

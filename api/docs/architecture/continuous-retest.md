@@ -206,7 +206,7 @@ A run whose reports disagree on the release counts as reporting none.
 |---|---|
 | `POST /api/v1/findings/{id}/retests` — Retest now (202) | `findings:verify` + data scope |
 | `GET /api/v1/findings/{id}/retests` — history, newest first | `findings:read` + data scope |
-| `GET/PUT /api/v1/organization/settings/retest` — `auto_enabled`, `interval_hours`, `daily_cap` (audited `tenant.retest_updated`) | team admin |
+| `GET/PUT /api/v1/organization/settings/retest` — `auto_enabled`, `interval_hours`, `daily_cap`, `auto_resolve` (audited `tenant.retest_updated`; turning `auto_resolve` on needs step-up re-authentication, is audited high and tells every owner and administrator) | team admin |
 
 Auto-retest is **off** for every tenant until an admin turns it on (owner
 ordering: until the scans redesign P1 lands).

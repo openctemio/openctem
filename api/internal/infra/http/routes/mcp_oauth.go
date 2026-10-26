@@ -37,7 +37,7 @@ func registerMCPOAuthRoutes(router Router, h *handler.MCPOAuthHandler, rateLimit
 		// Blocked application: the member asks an administrator, or a
 		// caller who may change the policy approves the publisher here.
 		r.POST("/{id}/access-request", h.RequestPublisherAccess)
-		r.POST("/{id}/allow-publisher", h.AllowPublisher, middleware.Require(permission.SettingsWrite), requireStepUp())
+		r.POST("/{id}/allow-publisher", h.AllowPublisher, middleware.Require(permission.SettingsWrite), middleware.RequireAdmin(), requireStepUp())
 	}, tenantMiddlewares...)
 }
 
@@ -48,7 +48,7 @@ func registerMCPSettingsRoutes(router Router, h *handler.MCPSettingsHandler, aut
 	tenantMiddlewares := buildTokenTenantMiddlewares(authMiddleware, userSyncMiddleware)
 	router.Group("/api/v1/mcp-access/settings", func(r Router) {
 		r.GET("/", h.Get, middleware.Require(permission.SettingsRead))
-		r.PUT("/", h.Update, middleware.Require(permission.SettingsWrite), requireStepUp())
+		r.PUT("/", h.Update, middleware.Require(permission.SettingsWrite), middleware.RequireAdmin(), requireStepUp())
 	}, tenantMiddlewares...)
 }
 
@@ -83,15 +83,15 @@ func registerMCPClientRoutes(router Router, h *handler.MCPClientsHandler, authMi
 	tenantMiddlewares := buildTokenTenantMiddlewares(authMiddleware, userSyncMiddleware)
 	router.Group("/api/v1/mcp-access/clients", func(r Router) {
 		r.GET("/", h.List, middleware.Require(permission.SettingsRead))
-		r.POST("/", h.Create, middleware.Require(permission.SettingsWrite), requireStepUp())
-		r.DELETE("/{id}", h.Delete, middleware.Require(permission.SettingsWrite), requireStepUp())
+		r.POST("/", h.Create, middleware.Require(permission.SettingsWrite), middleware.RequireAdmin(), requireStepUp())
+		r.DELETE("/{id}", h.Delete, middleware.Require(permission.SettingsWrite), middleware.RequireAdmin(), requireStepUp())
 	}, tenantMiddlewares...)
 	// Members' requests to approve a publisher: approving loosens the
 	// policy (step-up); declining does not.
 	router.Group("/api/v1/mcp-access/requests", func(r Router) {
 		r.GET("/", h.ListAccessRequests, middleware.Require(permission.SettingsRead))
-		r.POST("/{id}/approve", h.ApproveAccessRequest, middleware.Require(permission.SettingsWrite), requireStepUp())
-		r.POST("/{id}/deny", h.DenyAccessRequest, middleware.Require(permission.SettingsWrite))
+		r.POST("/{id}/approve", h.ApproveAccessRequest, middleware.Require(permission.SettingsWrite), middleware.RequireAdmin(), requireStepUp())
+		r.POST("/{id}/deny", h.DenyAccessRequest, middleware.Require(permission.SettingsWrite), middleware.RequireAdmin())
 	}, tenantMiddlewares...)
 	router.POST("/oauth/register", h.Register, newAuthRateLimiter("mcp-register").RegisterMiddleware())
 }

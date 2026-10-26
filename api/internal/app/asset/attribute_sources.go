@@ -157,6 +157,7 @@ func (s *AssetService) recordManualAttributes(ctx context.Context, tenantID, ass
 		name = "api"
 	}
 	obs := make([]assetdom.AttributeObservation, 0, len(values))
+	prior := map[assetdom.AttributeRef]string{}
 	for attr, v := range values {
 		if before != nil && before[attr] == v {
 			continue
@@ -165,6 +166,11 @@ func (s *AssetService) recordManualAttributes(ctx context.Context, tenantID, ass
 			AssetID: assetID, Attribute: attr, Kind: assetdom.SourceKindManual, Name: name,
 			Value: v, ObservedAt: now, Confidence: 100,
 		})
+		if before != nil {
+			// The edit already saved the new value: the change is from the
+			// value shown before it.
+			prior[assetdom.AttributeRef{AssetID: assetID, Attribute: attr}] = before[attr]
+		}
 	}
 	if len(obs) == 0 {
 		return
@@ -173,7 +179,7 @@ func (s *AssetService) recordManualAttributes(ctx context.Context, tenantID, ass
 	if id, err := shared.IDFromString(actorID); err == nil {
 		actor = &id
 	}
-	if _, err := s.applyAttributes(ctx, tenantID, assetdom.AttributeApply{Observations: obs}, actor); err != nil {
+	if _, err := s.applyAttributes(ctx, tenantID, assetdom.AttributeApply{Observations: obs, Prior: prior}, actor); err != nil {
 		s.logger.Warn("manual attribute lock not recorded", "asset_id", assetID.String(), "error", err)
 	}
 }

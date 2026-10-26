@@ -357,9 +357,49 @@ type UploadResult struct {
 type Filter struct {
 	SourceKind SourceKind
 	SourceRef  string
+	// Origin keeps the receipts of one source group (FactKind: sensor,
+	// import, connector, ci), the grouping the dashboards count by.
+	Origin string
+	// Tool keeps the receipts of one tool; UnknownTool matches the
+	// receipts that named none.
+	Tool string
+	// Since keeps the receipts with activity (updated_at) at or after it.
+	Since *time.Time
 	// ActorUserID, when set, keeps only the receipts that person started
 	// (a reader without an organization view).
 	ActorUserID *shared.ID
+}
+
+// UnknownTool is the tool key of a receipt that named no tool, in lists,
+// filters and dash_ingest_day.
+const UnknownTool = "unknown"
+
+// Origins lists the source groups a list filter and the dashboards accept
+// (the FactKind of every source kind).
+func Origins() []string { return []string{"sensor", "import", "connector", "ci"} }
+
+// IsOrigin reports whether o is a known source group.
+func IsOrigin(o string) bool {
+	for _, v := range Origins() {
+		if v == o {
+			return true
+		}
+	}
+	return false
+}
+
+// Totals sums the receipts of a filter: the figures a dashboard shows for
+// the same filter, so a dashboard number equals the list it opens.
+type Totals struct {
+	Receipts      int64
+	Received      int64
+	Created       int64
+	StillDetected int64
+	Reopened      int64
+	Closed        int64
+	Skipped       int64
+	Failed        int64
+	Suppressed    int64
 }
 
 // ActionRow is one finding a receipt acted on, as listed to a reader.
