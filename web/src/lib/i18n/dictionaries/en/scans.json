@@ -1315,6 +1315,8 @@
   "scans.map.state.succeeded": "Done",
   "scans.map.state.waiting": "Waiting for a sensor",
   "scans.map.workflowVersion": "Workflow version {version}, as the run started",
+  "scans.new.continuousProbeSensors": "Check sensors",
+  "scans.new.continuousProbeWaiting": "Probing new assets will start when a sensor with port scan and HTTP probe connects.",
   "scans.new.continuousSecondFailed": "The passive discovery scan was saved, but the scan that probes new assets was not: {error}",
   "scans.new.continuousSecondName": "{name}: new assets",
   "scans.new.createFailed": "Failed to create scan. Please try again.",
