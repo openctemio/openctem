@@ -66,6 +66,7 @@ var routeAuthzAllowlist = map[string]string{
 // self-scoped /me + /users/me where the handler scopes to the caller).
 var allowlistPrefixes = []struct{ prefix, reason string }{
 	{"/api/v1/auth", "public auth flow / self-scoped (login, register, oauth, sso, saml, logout)"},
+	{"/api/v1/proxy-test-echo", "public by design: the page a sensor requests through the proxy under test; the path carries the token of one live proxy_test command, anything else is 404; rate limited per address; answers only the caller's own address"},
 	{"/api/v1/users/me", "self-scoped: acts only on the authenticated user"},
 	{"/api/v1/me/", "self-scoped: /me/* reads the caller's own perms/modules/roles"},
 	{"/api/v1/notifications", "tenant+user-scoped in handler"},

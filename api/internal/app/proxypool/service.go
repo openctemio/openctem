@@ -34,6 +34,8 @@ type Service struct {
 	audit  AuditLogger
 	logger *logger.Logger
 	now    func() time.Time
+	// test is the proxy test (EnableTest); nil: not available.
+	test *testSetup
 }
 
 // NewService creates the proxy pool service. enc encrypts credentials; a
@@ -619,10 +621,20 @@ func (s *Service) ApplyReport(ctx context.Context, tenantID, sensorID shared.ID,
 	if p == nil || p.ID != pid {
 		return pooldom.ErrPoolNotFound
 	}
+	return s.applyHealth(ctx, p, sensorID, r)
+}
+
+// applyHealth folds a sensor's report into the health of pool p's
+// endpoints (the caller checked that the sensor may report on p).
+func (s *Service) applyHealth(ctx context.Context, p *pooldom.Pool, sensorID shared.ID, r Report) error {
+	tenantID, pid := p.TenantID, p.ID
+	if len(r.Endpoints) == 0 {
+		return nil
+	}
 	now := s.now().UTC()
 	type change struct{ addr, state, lastError string }
 	var changed []change
-	err = s.repo.UpdateHealth(ctx, tenantID, pid, func(eps []*pooldom.Endpoint) {
+	err := s.repo.UpdateHealth(ctx, tenantID, pid, func(eps []*pooldom.Endpoint) {
 		for _, e := range eps {
 			sig, ok := r.Endpoints[e.ID.String()]
 			if !ok {
