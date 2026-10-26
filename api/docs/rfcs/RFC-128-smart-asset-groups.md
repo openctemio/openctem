@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | Status | Accepted (2026-10-26). API and web editor shipped together ([smart-asset-groups.md](../architecture/smart-asset-groups.md) says what is shipped) |
-| Scope | api (`pkg/domain/assetgroup`, `internal/app/asset`, `internal/infra/postgres`, asset group routes, migration `003438_smart_asset_groups`), web (asset group wizard and page, Assets list bulk actions) |
+| Scope | api (`pkg/domain/assetgroup`, `internal/app/asset`, `internal/infra/postgres`, asset group routes, migration `003440_smart_asset_groups`), web (asset group wizard and page, Assets list bulk actions) |
 | Architecture | [smart-asset-groups.md](../architecture/smart-asset-groups.md), [asset-group-recalculation.md](../architecture/asset-group-recalculation.md) |
 | Related | RFC-054 (scope), RFC-065 (programs), the data-scope model (`datascope`) |
 
