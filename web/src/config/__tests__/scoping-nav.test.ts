@@ -11,6 +11,7 @@ import { existsSync, readdirSync, statSync } from 'node:fs'
 import { join } from 'node:path'
 import { sidebarData } from '../sidebar-data'
 import {
+  ASSET_ATTENTION_REASONS,
   BUSINESS_CONTEXT_SECTION_TABS,
   SCOPE_SECTION_TABS,
   THREAT_MODEL_SECTION_TABS,
@@ -60,10 +61,12 @@ describe('Scoping rows', () => {
     ])
   })
 
-  it('Scope carries Scope | Programs, gated like their routes (RFC-065)', () => {
+  it('Scope carries Scope | Domain proof | Networks | Programs | Letters, gated like their routes (RFC-065)', () => {
     expect(row('Scoping', 'Scope').sections).toBe(SCOPE_SECTION_TABS)
     expect(SCOPE_SECTION_TABS.map((t) => [t.label, t.href, t.permission])).toEqual([
       ['Scope', '/scope', 'attack_surface:scope:read'],
+      ['Domain proof', '/scope/domain-proof', 'attack_surface:scope:read'],
+      ['Networks', '/scope/networks', 'attack_surface:scope:read'],
       ['Programs', '/programs', 'attack_surface:programs:read'],
       ['Letters', '/scope/letters', 'attack_surface:scope:read'],
     ])
@@ -124,12 +127,14 @@ describe('Scoping rows', () => {
 })
 
 describe('moves out of Scoping', () => {
-  it('Attack surface is a Discovery row; Asset groups and Relationships are Assets tabs', () => {
+  it('Attack surface is a Discovery row; Asset groups and Needs attention are Assets tabs', () => {
     const discovery = links('Discovery')
     expect(discovery.map((i) => i.url)).toContain('/attack-surface')
     const assetTabs = row('Discovery', 'Assets').sections!.map((s) => s.href)
     expect(assetTabs).toContain('/assets/groups')
-    expect(assetTabs).toContain('/assets/suggestions')
+    // Relationship suggestions are a reason of Needs attention.
+    expect(assetTabs).toContain('/assets/attention')
+    expect(ASSET_ATTENTION_REASONS.map((t) => t.href)).toContain('/assets/suggestions')
   })
 
   it('Compliance is an Insights row', () => {

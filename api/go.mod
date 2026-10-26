@@ -23,7 +23,6 @@ require (
 	github.com/aws/aws-sdk-go-v2 v1.47.3
 	github.com/aws/aws-sdk-go-v2/credentials v1.20.9
 	github.com/aws/aws-sdk-go-v2/service/s3 v1.114.3
-	github.com/aws/aws-sdk-go-v2/service/sts v1.51.4
 	github.com/go-git/go-git/v5 v5.19.3
 	github.com/gorilla/websocket v1.5.3
 	github.com/prometheus/client_model v0.6.3
@@ -153,16 +152,16 @@ require (
 require (
 	connectrpc.com/connect v1.21.1
 	github.com/aws/smithy-go v1.28.5
-	github.com/beevik/etree v1.6.0
+	github.com/beevik/etree v1.8.1
 	github.com/crewjam/saml v0.5.1
 	github.com/fxamacker/cbor/v2 v2.9.6
 	github.com/go-pdf/fpdf v0.9.0
 	github.com/go-webauthn/webauthn v0.18.2
 	github.com/mattermost/xml-roundtrip-validator v0.1.0
-	github.com/openctemio/ctis v1.6.1-0.20261019060712-e3550c7f219c
+	github.com/openctemio/ctis v1.6.3
 	github.com/openctemio/ctis/transfer v0.1.0
 	github.com/pires/go-proxyproto v0.15.0
-	github.com/russellhaering/goxmldsig v1.6.0
+	github.com/russellhaering/goxmldsig v1.6.1
 	github.com/santhosh-tekuri/jsonschema/v6 v6.0.3
 	github.com/sigstore/sigstore-go v1.3.0
 	github.com/teambition/rrule-go v1.8.2

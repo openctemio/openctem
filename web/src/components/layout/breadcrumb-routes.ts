@@ -14,11 +14,14 @@
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
-/** True for a segment that is a record id (UUID, ObjectId or a long number). */
+/** True for a segment that is a record id (UUID, ObjectId, a long number or a vulnerability id). */
 export function isIdSegment(segment: string): boolean {
   if (UUID_PATTERN.test(segment)) return true
   if (/^[0-9a-f]{24}$/i.test(segment)) return true // MongoDB ObjectId
   if (/^[0-9]+$/.test(segment) && segment.length > 5) return true // Long numeric IDs
+  // A vulnerability id (/vulnerabilities/CVE-2024-3094, or an advisory id).
+  if (/^CVE-\d{4}-\d{4,19}$/i.test(segment)) return true
+  if (/^GHSA(-[23456789cfghjmpqrvwx]{4}){3}$/i.test(segment)) return true
   return false
 }
 
@@ -33,7 +36,6 @@ export const PATHS_WITHOUT_PAGE: ReadonlySet<string> = new Set([
   '/auth/sso/callback',
   '/ci-cd/github-app',
   '/insights',
-  '/insights/reports',
   '/mcp',
   '/mcp/confirm',
   '/oauth',
@@ -44,6 +46,7 @@ export const PATHS_WITHOUT_PAGE: ReadonlySet<string> = new Set([
   '/settings/tenant',
   '/settings/pentest/templates/[id]',
   '/settings/scanning',
+  '/vulnerabilities',
 ])
 
 /** Whether `path` (a real URL path, ids included) has a page to link to. */

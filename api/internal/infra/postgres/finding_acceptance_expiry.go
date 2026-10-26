@@ -156,6 +156,7 @@ func (r *FindingAcceptanceExpiryRepository) endAcceptance(ctx context.Context, d
 				resolved_at = NULL, resolved_by = NULL,
 				sla_deadline = COALESCE($3, sla_deadline),
 				sla_status = CASE WHEN $3::timestamptz IS NULL THEN sla_status ELSE 'on_track' END,
+				sla_kev_capped = CASE WHEN $3::timestamptz IS NULL THEN sla_kev_capped ELSE false END,
 				sla_started_at = CASE WHEN $3::timestamptz IS NULL THEN sla_started_at ELSE $4 END,
 				updated_at = $4
 			WHERE tenant_id = $1 AND id = $2 AND status = 'accepted'`,

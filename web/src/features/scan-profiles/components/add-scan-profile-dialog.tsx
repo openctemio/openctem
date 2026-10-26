@@ -40,6 +40,7 @@ import {
 import { useCreateScanProfile, invalidateScanProfilesCache } from '@/lib/api/scan-profile-hooks'
 import { createDefaultQualityGate, type QualityGate } from '@/lib/api/scan-profile-types'
 import type { RuleSources } from '@/lib/api/scan-types'
+import { useCanMutate } from '@/lib/permissions'
 import { QualityGateFields } from './quality-gate-fields'
 import { RuleSourcesField } from './rule-sources-field'
 
@@ -51,6 +52,8 @@ interface AddScanProfileDialogProps {
 
 export function AddScanProfileDialog({ open, onOpenChange, onSuccess }: AddScanProfileDialogProps) {
   const { t } = useTranslation()
+  // Creating a profile as the organization's default is owner or admin only.
+  const canSetDefault = useCanMutate('POST /api/v1/scan-profiles/{id}/set-default')
   const [gate, setGate] = useState<QualityGate>(createDefaultQualityGate())
   const [ruleSources, setRuleSources] = useState<RuleSources>('both')
 
@@ -69,7 +72,12 @@ export function AddScanProfileDialog({ open, onOpenChange, onSuccess }: AddScanP
 
   const onSubmit = async (data: CreateScanProfileFormData) => {
     try {
-      await createProfile({ ...data, quality_gate: gate, rule_sources: ruleSources })
+      await createProfile({
+        ...data,
+        is_default: canSetDefault && data.is_default,
+        quality_gate: gate,
+        rule_sources: ruleSources,
+      })
       toast.success(t('scans.profiles.created', undefined, { name: data.name }))
       await invalidateScanProfilesCache()
       reset()
@@ -145,23 +153,25 @@ export function AddScanProfileDialog({ open, onOpenChange, onSuccess }: AddScanP
                 idPrefix="add-profile"
               />
 
-              <Separator />
+              {canSetDefault && <Separator />}
 
-              <FormField
-                control={form.control}
-                name="is_default"
-                render={({ field }) => (
-                  <FormItem className="flex items-center justify-between rounded-lg border p-3">
-                    <div className="space-y-0.5">
-                      <FormLabel>{t('scans.profiles.setDefault')}</FormLabel>
-                      <FormDescription>{t('scans.profiles.setDefaultHelp')}</FormDescription>
-                    </div>
-                    <FormControl>
-                      <Switch checked={field.value} onCheckedChange={field.onChange} />
-                    </FormControl>
-                  </FormItem>
-                )}
-              />
+              {canSetDefault && (
+                <FormField
+                  control={form.control}
+                  name="is_default"
+                  render={({ field }) => (
+                    <FormItem className="flex items-center justify-between rounded-lg border p-3">
+                      <div className="space-y-0.5">
+                        <FormLabel>{t('scans.profiles.setDefault')}</FormLabel>
+                        <FormDescription>{t('scans.profiles.setDefaultHelp')}</FormDescription>
+                      </div>
+                      <FormControl>
+                        <Switch checked={field.value} onCheckedChange={field.onChange} />
+                      </FormControl>
+                    </FormItem>
+                  )}
+                />
+              )}
             </DialogBody>
 
             <DialogFooter>

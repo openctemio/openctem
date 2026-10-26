@@ -26,6 +26,8 @@ export interface WidgetFrameProps {
   definition?: ReactNode
   /** When the figures were computed (ISO). Shown as "Updated …" with the absolute time on hover. */
   asOf?: string | null
+  /** The page's own "Updated" time: a widget repeats its time only when stale or when it differs. */
+  pageAsOf?: string | null
   state: WidgetState
   /** Skeleton shape while loading (default: chart). */
   skeleton?: SkeletonKind
@@ -348,12 +350,15 @@ export function WidgetFrame(props: WidgetFrameProps) {
       aria-busy={state === 'loading' || state === 'scope_changed'}
       data-state={state}
       className={cn(
-        'flex h-full min-w-0 flex-col overflow-hidden rounded-xl border bg-card p-4 text-card-foreground shadow-sm',
+        'flex h-full min-w-0 flex-col overflow-hidden rounded-lg border bg-card p-4 text-card-foreground',
         className
       )}
     >
       <header className="mb-2 flex items-start gap-2">
-        <h3 id={titleId} className="min-w-0 flex-1 truncate text-sm font-medium">
+        <h3
+          id={titleId}
+          className="min-w-0 flex-1 text-sm font-medium line-clamp-2 sm:line-clamp-1"
+        >
           {title}
         </h3>
         {definition && (
@@ -393,14 +398,8 @@ export function WidgetFrame(props: WidgetFrameProps) {
           <FrameBody {...props} />
         </div>
       </WidgetErrorBoundary>
-      {showsFigures && asOf && <Freshness asOf={asOf} stale={state === 'stale'} />}
-      {state === 'stale' && onRetry && (
-        <div className="pt-1">
-          <Button variant="ghost" size="sm" onClick={onRetry}>
-            <RefreshCw aria-hidden />
-            {t('dashboardKit.action.refresh', 'Refresh')}
-          </Button>
-        </div>
+      {showsFigures && asOf && (state === 'stale' || asOf !== props.pageAsOf) && (
+        <Freshness asOf={asOf} stale={state === 'stale'} />
       )}
     </section>
   )

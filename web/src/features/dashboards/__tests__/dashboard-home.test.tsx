@@ -225,6 +225,60 @@ describe('DashboardHome', () => {
     expect(screen.getByRole('button', { name: 'Refresh now' })).toBeEnabled()
   })
 
+  it('Customize is offered on an organization dashboard to a manager only', () => {
+    perms.list = ['dashboards:org:view', 'dashboards:org:manage']
+    api.org = [dash('o2', 'Overview', { is_org_default: true })]
+    data.byKey['organization:o2'] = snapshot('organization', 1)
+    renderHome()
+    expect(screen.getByRole('button', { name: 'Customize' })).toBeInTheDocument()
+  })
+
+  it('Edit details is hidden on an organization dashboard for a viewer, shown to a manager', async () => {
+    perms.list = ['dashboards:org:view']
+    api.org = [dash('o2', 'Overview', { is_org_default: true })]
+    data.byKey['organization:o2'] = snapshot('organization', 1)
+    const { unmount } = renderHome()
+    await userEvent.click(screen.getByRole('button', { name: 'More dashboard actions' }))
+    expect(screen.queryByRole('menuitem', { name: 'Edit details' })).toBeNull()
+    unmount()
+    perms.list = ['dashboards:org:view', 'dashboards:org:manage']
+    renderHome()
+    await userEvent.click(screen.getByRole('button', { name: 'More dashboard actions' }))
+    expect(screen.getByRole('menuitem', { name: 'Edit details' })).toBeInTheDocument()
+  })
+
+  it('Refresh now stays enabled when the figures failed to load', () => {
+    api.mine = [dash('p1', 'Mine', { is_default: true })]
+    renderHome()
+    expect(screen.getByRole('button', { name: 'Refresh now' })).toBeEnabled()
+  })
+
+  it('the personal delete confirm does not claim the dashboard is deleted for everyone', async () => {
+    api.mine = [dash('p1', 'Mine', { is_default: true })]
+    data.byKey['personal:p1'] = snapshot('personal', 5)
+    renderHome()
+    await userEvent.click(screen.getByRole('button', { name: 'More dashboard actions' }))
+    await userEvent.click(screen.getByRole('menuitem', { name: 'Delete' }))
+    const dialog = await screen.findByRole('alertdialog')
+    expect(dialog).toHaveTextContent(
+      'Copies you shared and the data behind the widgets are not affected'
+    )
+    expect(dialog).not.toHaveTextContent('for everyone')
+  })
+
+  it('setting a default clears the stored last choice and shows no success toast', async () => {
+    api.mine = [dash('p1', 'Mine', { is_default: true }), dash('p2', 'Other')]
+    data.byKey['personal:p2'] = snapshot('personal', 5)
+    window.localStorage.setItem(DASHBOARD_CHOICE_KEY, 'personal:p2')
+    renderHome()
+    await userEvent.click(screen.getByRole('button', { name: 'More dashboard actions' }))
+    await userEvent.click(screen.getByRole('menuitem', { name: 'Set as my default' }))
+    const { setDefaultDashboard } = await import('../api/use-dashboards-api')
+    await waitFor(() => expect(setDefaultDashboard).toHaveBeenCalledWith('p2'))
+    await waitFor(() => expect(window.localStorage.getItem(DASHBOARD_CHOICE_KEY)).toBeNull())
+    expect(toast.success).not.toHaveBeenCalled()
+  })
+
   it('a manager may set the organization schedule', () => {
     perms.list = ['dashboards:org:view', 'dashboards:org:manage']
     api.org = [dash('o2', 'Overview', { is_org_default: true })]
@@ -257,10 +311,38 @@ describe('DashboardHome', () => {
     renderHome()
     await userEvent.click(screen.getByRole('button', { name: 'Refresh now' }))
     await waitFor(() => expect(data.refresh).toHaveBeenCalledWith('personal', 'p1'))
-    expect(toast.success).toHaveBeenCalled()
+    // The Updated line already shows the change: no success toast.
+    expect(toast.success).not.toHaveBeenCalled()
     data.refresh.mockRejectedValueOnce(new ApiClientError('limited', 'TOO_MANY_REQUESTS', 429))
     await userEvent.click(screen.getByRole('button', { name: 'Refresh now' }))
     await waitFor(() => expect(toast.info).toHaveBeenCalled())
+  })
+
+  it('the actions menu carries Customize and the schedule for the phone toolbar', async () => {
+    api.mine = [dash('p1', 'Mine', { is_default: true })]
+    data.byKey['personal:p1'] = snapshot('personal', 5)
+    renderHome()
+    // One toolbar row: the switcher, Refresh (named even when icon-only) and More.
+    const toolbar = screen.getByTestId('dashboard-toolbar')
+    expect(within(toolbar).getByRole('button', { name: /Switch dashboard/ })).toBeInTheDocument()
+    expect(within(toolbar).getByRole('button', { name: 'Refresh now' })).toBeInTheDocument()
+    await userEvent.click(within(toolbar).getByRole('button', { name: 'More dashboard actions' }))
+    const menu = screen.getByRole('menu')
+    expect(within(menu).getByRole('menuitem', { name: 'Customize' })).toBeInTheDocument()
+    const radios = within(menu).getAllByRole('menuitemradio')
+    expect(radios.map((r) => r.textContent)).toContain('Organization default')
+    await userEvent.click(within(menu).getByRole('menuitemradio', { name: 'Every 6 hours' }))
+    const { setDashboardSchedule } = await import('../api/use-dashboards-api')
+    await waitFor(() => expect(setDashboardSchedule).toHaveBeenCalledWith('personal', 'p1', '6h'))
+  })
+
+  it('the meta line names the scope, the last and the next refresh on one line', () => {
+    api.mine = [dash('p1', 'Mine', { is_default: true })]
+    data.byKey['personal:p1'] = snapshot('personal', 5)
+    renderHome()
+    const meta = screen.getByTestId('dashboard-meta')
+    expect(meta).toHaveTextContent('Your scope')
+    expect(meta).toHaveTextContent(/Updated/)
   })
 
   it('renders in Vietnamese', () => {
@@ -273,7 +355,7 @@ describe('DashboardHome', () => {
   })
 })
 
-describe('DashboardHome CTEM hint', () => {
+describe('DashboardHome new layout hint', () => {
   const overviewCopy = (id: string): Dashboard =>
     dash(id, 'Overview', {
       kind: 'personal',
@@ -283,6 +365,7 @@ describe('DashboardHome CTEM hint', () => {
         stat('w_ov2', 'intel.kev_open'),
         stat('w_ov3', 'sla.within'),
         { ...stat('w_ov5', 'exposure.open_by_priority'), h: 2 },
+        { ...stat('w_ov8', 'sla.at_risk'), h: 3 },
       ],
     })
 
@@ -296,23 +379,22 @@ describe('DashboardHome CTEM hint', () => {
     vi.clearAllMocks()
   })
 
-  it('offers the CTEM loop on an earlier Overview copy and never changes it on its own', async () => {
+  it('offers the new widgets on an earlier Overview copy and never changes it on its own', async () => {
     api.mine = [overviewCopy('d1')]
     renderHome()
-    const hint = await screen.findByTestId('ctem-hint')
-    expect(within(hint).getByRole('button', { name: 'Add the CTEM loop' })).toBeInTheDocument()
-    expect(
-      within(hint).getByRole('button', { name: 'Switch to the CTEM template' })
-    ).toBeInTheDocument()
+    const hint = await screen.findByTestId('layout-hint')
+    expect(hint).toHaveTextContent('New on the Overview layout: Time to fix')
+    expect(within(hint).getByRole('button', { name: 'Add them to this dashboard' })).toBeVisible()
+    expect(within(hint).getByRole('button', { name: 'Switch to the new layout' })).toBeVisible()
     expect(api.update).not.toHaveBeenCalled()
     expect(api.create).not.toHaveBeenCalled()
   })
 
-  it('"Add the CTEM loop" puts the loop after the leading row and keeps every widget', async () => {
+  it('"Add them" inserts each missing widget where the template has it and keeps every widget', async () => {
     api.mine = [overviewCopy('d1')]
     api.update.mockResolvedValue({})
     renderHome()
-    await userEvent.click(await screen.findByRole('button', { name: 'Add the CTEM loop' }))
+    await userEvent.click(await screen.findByRole('button', { name: 'Add them to this dashboard' }))
     await waitFor(() => expect(api.update).toHaveBeenCalledTimes(1))
     const [id, input] = api.update.mock.calls[0] as [
       string,
@@ -324,47 +406,69 @@ describe('DashboardHome CTEM hint', () => {
       'exposure.priority_open',
       'intel.kev_open',
       'sla.within',
-      'ctem.loop',
+      'fix.time_to_fix',
+      'coverage.discovery',
       'exposure.open_by_priority',
+      'ctem.loop',
+      'flow.new_vs_fixed',
+      'findings.age_bands',
+      'fix.next',
+      'attack_paths.to_crown_jewels',
+      // The person's own extra widget stays.
+      'sla.at_risk',
     ])
-    expect(new Set(input.layout.map((w) => w.config.id)).size).toBe(5)
-    expect(screen.queryByTestId('ctem-hint')).toBeNull()
+    expect(new Set(input.layout.map((w) => w.config.id)).size).toBe(input.layout.length)
+    expect(screen.queryByTestId('layout-hint')).toBeNull()
   })
 
-  it('"Switch to the CTEM template" adds a CTEM dashboard and keeps the Overview', async () => {
+  it('"Switch to the new layout" adds a fresh copy and keeps the old dashboard', async () => {
     api.mine = [overviewCopy('d1')]
     api.create.mockResolvedValue({ id: 'c1' })
     renderHome()
-    await userEvent.click(
-      await screen.findByRole('button', { name: 'Switch to the CTEM template' })
-    )
+    await userEvent.click(await screen.findByRole('button', { name: 'Switch to the new layout' }))
     await waitFor(() => expect(api.create).toHaveBeenCalledTimes(1))
-    expect((api.create.mock.calls[0][0] as { name: string }).name).toBe('CTEM')
+    // The copy the hint is on already uses the template's name.
+    expect((api.create.mock.calls[0][0] as { name: string }).name).toBe('Overview (new layout)')
     expect(api.update).not.toHaveBeenCalled()
     expect(window.localStorage.getItem(DASHBOARD_CHOICE_KEY)).toBe('personal:c1')
   })
 
-  it('a dismissed hint stays dismissed', async () => {
+  it('the fresh copy never takes a name the person already uses', async () => {
+    api.mine = [{ ...overviewCopy('d1'), name: 'Overview' }, dash('d2', 'Overview (new layout)')]
+    window.localStorage.setItem(DASHBOARD_CHOICE_KEY, 'personal:d1')
+    api.create.mockResolvedValue({ id: 'c1' })
+    renderHome()
+    await userEvent.click(await screen.findByRole('button', { name: 'Switch to the new layout' }))
+    await waitFor(() => expect(api.create).toHaveBeenCalledTimes(1))
+    expect((api.create.mock.calls[0][0] as { name: string }).name).toBe('Overview (new layout) 2')
+  })
+
+  it('a dismissed hint stays dismissed for this layout version', async () => {
     api.mine = [overviewCopy('d1')]
     const { unmount } = renderHome()
     await userEvent.click(await screen.findByRole('button', { name: 'Dismiss' }))
-    expect(screen.queryByTestId('ctem-hint')).toBeNull()
+    expect(screen.queryByTestId('layout-hint')).toBeNull()
     unmount()
     renderHome()
     expect(await screen.findByTestId('dashboard-freshness')).toBeInTheDocument()
-    expect(screen.queryByTestId('ctem-hint')).toBeNull()
+    expect(screen.queryByTestId('layout-hint')).toBeNull()
     expect(api.update).not.toHaveBeenCalled()
   })
 
-  it('no hint on a dashboard that is not an Overview copy or already has the loop', async () => {
-    const withLoop = overviewCopy('d3')
-    withLoop.layout = [...withLoop.layout, stat('w_x', 'ctem.loop')]
-    for (const d of [dash('d2', 'Mine', { kind: 'personal' }), withLoop]) {
+  it('no hint on a dashboard that is not a template copy, or on an organization dashboard', async () => {
+    perms.list = ['dashboards:org:view', 'dashboards:org:manage']
+    for (const d of [dash('d2', 'Mine', { kind: 'personal' })]) {
       api.mine = [d]
       const { unmount } = renderHome()
       expect(await screen.findByTestId('dashboard-freshness')).toBeInTheDocument()
-      expect(screen.queryByTestId('ctem-hint')).toBeNull()
+      expect(screen.queryByTestId('layout-hint')).toBeNull()
       unmount()
     }
+    api.mine = []
+    api.org = [{ ...overviewCopy('o1'), kind: 'organization', is_org_default: true }]
+    data.byKey['organization:o1'] = snapshot('organization', 1)
+    renderHome()
+    expect(await screen.findByTestId('dashboard-freshness')).toBeInTheDocument()
+    expect(screen.queryByTestId('layout-hint')).toBeNull()
   })
 })

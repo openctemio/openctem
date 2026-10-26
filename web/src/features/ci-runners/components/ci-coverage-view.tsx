@@ -9,16 +9,16 @@
  */
 
 import { useState } from 'react'
-import { Search, ShieldQuestion } from 'lucide-react'
+import { ShieldQuestion } from 'lucide-react'
 import { toast } from 'sonner'
 import type { ColumnDef } from '@tanstack/react-table'
 import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
 import {
   DataTable,
   EmptyState,
   ErrorState,
   MetricStrip,
+  PageStack,
   StackedCell,
   type MetricStripItem,
 } from '@/features/shared'
@@ -45,6 +45,7 @@ import type {
   CICoverageFilter,
   CIRepositoryCoverage,
 } from '../types'
+import { useSearchQuery } from '@/hooks/use-search-query'
 
 type TFn = ReturnType<typeof useTranslation>['t']
 
@@ -200,11 +201,12 @@ export function CICoverageView({ toolbarStart }: CICoverageViewProps) {
   const [filterParam, setFilterParam] = useUrlFilter('coverage', '')
   const filter: CICoverageFilter = isCoverageFilter(filterParam) ? filterParam : ''
   const [q, setQ] = useUrlFilter('q', '')
+  const searchTerm = useSearchQuery(q).term
   const { pagination, setPagination, setPage } = useListParams({ defaultPageSize: 20 })
   const [pending, setPending] = useState<string | null>(null)
   const { data, error, isLoading, mutate } = useCICoverage({
     filter,
-    search: q,
+    search: searchTerm,
     page: pagination.pageIndex + 1,
     perPage: pagination.pageSize,
   })
@@ -286,7 +288,7 @@ export function CICoverageView({ toolbarStart }: CICoverageViewProps) {
 
   const empty = !isLoading && !error && (s?.repositories ?? 0) === 0 && !q && !filter
   return (
-    <div className="mt-5 space-y-5">
+    <PageStack>
       {!empty && <MetricStrip loading={isLoading && !data} items={metrics} />}
       {data?.truncated && (
         <p className="text-sm text-muted-foreground">
@@ -301,7 +303,7 @@ export function CICoverageView({ toolbarStart }: CICoverageViewProps) {
         />
       ) : empty ? (
         <>
-          <div className="flex flex-wrap items-center gap-2">{toolbarStart}</div>
+          {toolbarStart && <div className="flex flex-wrap items-center gap-2">{toolbarStart}</div>}
           <EmptyState
             icon={ShieldQuestion}
             title={t('scans.ci.coverage.emptyTitle', 'No repositories in scope')}
@@ -325,24 +327,16 @@ export function CICoverageView({ toolbarStart }: CICoverageViewProps) {
           showSearch={false}
           paginationNoun={t('scans.ci.noun.repositories', 'repositories')}
           emptyMessage={t('scans.ci.coverage.noMatch', 'No repository matches')}
-          toolbarStart={
-            <>
-              {toolbarStart}
-              <div className="relative min-w-0 flex-1 sm:max-w-xs">
-                <Search className="pointer-events-none absolute start-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-                <Input
-                  placeholder={t('scans.ci.coverage.search', 'Search repository…')}
-                  aria-label={t('scans.ci.coverage.searchLabel', 'Search repositories')}
-                  value={q}
-                  onChange={(e) => {
-                    setQ(e.target.value)
-                    setPage(1)
-                  }}
-                  className="h-9 ps-9"
-                />
-              </div>
-            </>
-          }
+          search={{
+            value: q,
+            onChange: (v) => {
+              setQ(v)
+              setPage(1)
+            },
+            placeholder: t('scans.ci.coverage.search', 'Search repository…'),
+            label: t('scans.ci.coverage.searchLabel', 'Search repositories'),
+          }}
+          toolbarStart={toolbarStart}
         />
       )}
       {drifted.length > 0 && (
@@ -378,6 +372,6 @@ export function CICoverageView({ toolbarStart }: CICoverageViewProps) {
           </ul>
         </section>
       )}
-    </div>
+    </PageStack>
   )
 }

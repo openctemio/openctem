@@ -20,15 +20,15 @@
  * them.
  */
 
-import { useCallback, useMemo, useState } from 'react'
+import { CveLink } from '@/features/vulnerabilities/components/cve-link'
+import { isCveId } from '@/features/vulnerabilities/lib/vuln-page'
+import { FindingLastSeenIn } from '../receipt-summary'
+import { useMemo } from 'react'
 import Link from '@/components/link'
 import {
   ArrowUpRight,
   Bot,
-  Check,
-  Copy,
   ExternalLink,
-  FileCode2,
   FileText,
   Fingerprint,
   Terminal,
@@ -45,15 +45,15 @@ import {
   DetailSection,
   DetailSections,
 } from '@/features/shared/components/detail-sheet'
-import { copyToClipboard } from '@/lib/clipboard'
 import { UntrustedTextBlock } from '@/features/shared/components/untrusted-text-block'
 import { useTriageResult } from '@/features/ai-triage/api'
 import { useRelatedCVEs } from '../../api/use-finding-groups'
-import { formatEpssPercentile, formatEpssScore } from '@/lib/epss'
+import { formatEpssPercentile } from '@/lib/epss'
+import { EpssChip } from '@/components/ui/epss-chip'
+import { KevBadge } from '@/components/ui/kev-badge'
 import { cn, sanitizeExternalUrl } from '@/lib/utils'
 import type { FindingDetail } from '../../types'
 import { FINDING_TYPE_CONFIG } from '../../types'
-import { CodeHighlighter } from './code-highlighter'
 import { MetadataViewer } from './source-panels/metadata-viewer'
 import { SourceDataSection } from './source-data-section'
 import { VersionMatchPanel } from '@/features/vuln-matching/components/version-match-panel'
@@ -62,7 +62,9 @@ import { findingTypeSections } from './finding-type-details'
 import { assetDetailHref, isLinkableAssetId } from '../../lib/asset-link'
 import { findingAssetTypeLabel } from '../../lib/finding-asset-type'
 import { HUMAN_SOURCES, findingDescription } from '../../lib/finding-detail'
-import { buildRepositoryCodeUrl } from '../../lib/repository-url'
+import { FindingCodeLocation, codeLocationOf } from './finding-code-location'
+import { FindingIssueGroupSection } from './finding-issue-group-section'
+import { FindingIdentitySection } from './finding-identity-section'
 
 interface OverviewTabProps {
   finding: FindingDetail
@@ -83,7 +85,7 @@ function Mono({ children }: { children: React.ReactNode }) {
 }
 
 export function OverviewTab({ finding }: OverviewTabProps) {
-  const { t } = useTranslation()
+  const { t, locale } = useTranslation()
   const isHuman = HUMAN_SOURCES.has(finding.source)
 
   // Read from the AI triage endpoint, not from the first page of activities:
@@ -146,8 +148,10 @@ export function OverviewTab({ finding }: OverviewTabProps) {
       {findingTypeSections(finding)}
 
       {(finding.filePath || finding.snippet || finding.contextSnippet) && (
-        <CodeLocationSection finding={finding} />
+        <FindingCodeLocation location={codeLocationOf(finding)} />
       )}
+
+      <FindingIssueGroupSection findingId={finding.id} />
 
       {finding.scannerOutput && <ScannerOutputSection output={finding.scannerOutput} />}
 
@@ -236,6 +240,8 @@ export function OverviewTab({ finding }: OverviewTabProps) {
 
       <IdentifiersSection finding={finding} />
 
+      <FindingIdentitySection findingId={finding.id} />
+
       {!isHuman && (
         <DetailDisclosure summary={t('findings.overviewTab.moreDetails', 'More details')}>
           <div className="mt-3 space-y-4">
@@ -270,10 +276,15 @@ export function OverviewTab({ finding }: OverviewTabProps) {
                 ) : null}
               </DetailField>
               <DetailField label={t('findings.overviewTab.scan', 'Scan')}>
+                {/* The id of the report that carried this finding, not a run id;
+                    "Last seen in" below links the run. */}
                 {finding.scanId ? <Mono>{finding.scanId}</Mono> : null}
               </DetailField>
+              <DetailField label={t('findings.receipts.lastSeenIn', 'Last seen in')}>
+                <FindingLastSeenIn findingId={finding.id} />
+              </DetailField>
               <DetailField label={t('findings.overviewTab.recorded', 'Recorded')}>
-                {new Date(finding.createdAt).toLocaleString('en-US', {
+                {new Date(finding.createdAt).toLocaleString(locale, {
                   dateStyle: 'medium',
                   timeStyle: 'short',
                 })}
@@ -289,26 +300,8 @@ export function OverviewTab({ finding }: OverviewTabProps) {
   )
 }
 
-const CVE_RE = /^CVE-\d{4}-\d{4,}$/
-
-/** A CVE id as an NVD link, or as text when it is not a well-formed CVE id. */
-function CveLink({ id }: { id: string }) {
-  if (!CVE_RE.test(id)) return <Mono>{id}</Mono>
-  return (
-    <a
-      href={`https://nvd.nist.gov/vuln/detail/${encodeURIComponent(id)}`}
-      target="_blank"
-      rel="noopener noreferrer"
-      className="inline-flex items-center gap-1 font-mono text-[13px] text-primary hover:underline"
-    >
-      {id}
-      <ExternalLink className="h-3 w-3" aria-hidden />
-    </a>
-  )
-}
-
-function formatDay(iso: string): string {
-  return new Date(iso).toLocaleDateString('en-US', {
+function formatDay(iso: string, locale: string): string {
+  return new Date(iso).toLocaleDateString(locale, {
     month: 'short',
     day: 'numeric',
     year: 'numeric',
@@ -321,7 +314,7 @@ function formatDay(iso: string): string {
  * when the latest sighting wrote it. Collapsed by default.
  */
 function ScannerOutputSection({ output }: { output: NonNullable<FindingDetail['scannerOutput']> }) {
-  const { t } = useTranslation()
+  const { t, locale } = useTranslation()
   return (
     <DetailSection
       title={t('findings.overviewTab.scannerOutput', 'Scanner output')}
@@ -334,7 +327,7 @@ function ScannerOutputSection({ output }: { output: NonNullable<FindingDetail['s
             {' '}
             ·{' '}
             {t('findings.overviewTab.fromSighting', 'from the sighting of {date}', {
-              date: formatDay(output.updatedAt),
+              date: formatDay(output.updatedAt, locale),
             })}
           </>
         )}
@@ -353,14 +346,14 @@ function ScannerOutputSection({ output }: { output: NonNullable<FindingDetail['s
 }
 
 function IdentifiersSection({ finding }: { finding: FindingDetail }) {
-  const { t } = useTranslation()
+  const { t, locale } = useTranslation()
   const adv = finding.advisory
   const sf = finding.scannerFacts
   const cweNum = finding.cwe?.replace(/^CWE-/i, '')
   const allCves = Array.from(
     new Set([...(finding.cve ? [finding.cve] : []), ...(sf?.cveIds ?? [])])
   )
-  const primaryCve = finding.cve && CVE_RE.test(finding.cve) ? finding.cve : null
+  const primaryCve = finding.cve && isCveId(finding.cve) ? finding.cve : null
   const { data: related } = useRelatedCVEs(primaryCve)
   const relatedCves = (related?.related_cves ?? []).filter((r) => !allCves.includes(r.cve_id))
   const v3 =
@@ -403,8 +396,12 @@ function IdentifiersSection({ finding }: { finding: FindingDetail }) {
         </DetailField>
         <DetailField label="EPSS">
           {finding.epssScore !== undefined ? (
-            <span className="tabular-nums">
-              {formatEpssScore(finding.epssScore, finding.epssScore < 0.1 ? 2 : 1)}
+            <span className="inline-flex flex-wrap items-center gap-x-2 gap-y-1 tabular-nums">
+              <EpssChip
+                score={finding.epssScore}
+                threshold={0}
+                digits={finding.epssScore < 0.1 ? 2 : 1}
+              />
               {finding.epssPercentile !== undefined && (
                 <span className="text-muted-foreground">
                   {' '}
@@ -448,7 +445,7 @@ function IdentifiersSection({ finding }: { finding: FindingDetail }) {
           {port ? <Mono>{port}</Mono> : null}
         </DetailField>
         <DetailField label={t('findings.overviewTab.patchPublished', 'Patch published')}>
-          {sf?.patchPublishedAt ? formatDay(sf.patchPublishedAt) : null}
+          {sf?.patchPublishedAt ? formatDay(sf.patchPublishedAt, locale) : null}
         </DetailField>
         <DetailField
           label={
@@ -501,7 +498,7 @@ function IdentifiersSection({ finding }: { finding: FindingDetail }) {
         <DetailField label="OWASP">{finding.owasp}</DetailField>
         <DetailField label={t('findings.overviewTab.published', 'Published')}>
           {adv?.publishedAt
-            ? new Date(adv.publishedAt).toLocaleDateString('en-US', {
+            ? new Date(adv.publishedAt).toLocaleDateString(locale, {
                 month: 'short',
                 day: 'numeric',
                 year: 'numeric',
@@ -510,13 +507,17 @@ function IdentifiersSection({ finding }: { finding: FindingDetail }) {
         </DetailField>
         <DetailField label={t('findings.overviewTab.kev', 'CISA KEV')}>
           {adv?.kev ? (
-            <span className="font-medium text-destructive">
-              {t('findings.overviewTab.kevListed', 'Added {added} · due {due}', {
-                added: adv.kev.dateAdded.slice(0, 10),
-                due: adv.kev.dueDate.slice(0, 10),
-              })}
-              {adv.kev.ransomwareUse === 'Known' &&
-                ` · ${t('findings.overviewTab.kevRansomware', 'used by ransomware')}`}
+            <span className="inline-flex flex-wrap items-center gap-x-2 gap-y-1">
+              <KevBadge
+                pastDue={adv.kev.isPastDue}
+                ransomware={adv.kev.ransomwareUse === 'Known'}
+              />
+              <span>
+                {t('findings.overviewTab.kevListed', 'Added {added} · due {due}', {
+                  added: adv.kev.dateAdded.slice(0, 10),
+                  due: adv.kev.dueDate.slice(0, 10),
+                })}
+              </span>
             </span>
           ) : adv ? (
             t('findings.overviewTab.notListed', 'Not listed')
@@ -547,105 +548,6 @@ function IdentifiersSection({ finding }: { finding: FindingDetail }) {
 }
 
 /** File, lines and the code around them. */
-function CodeLocationSection({ finding }: { finding: FindingDetail }) {
-  const { t } = useTranslation()
-  const [copied, setCopied] = useState(false)
-  const code = finding.contextSnippet || finding.snippet
-  const startLine = finding.contextSnippet ? finding.contextStartLine || 1 : finding.startLine || 1
-  const lines =
-    finding.startLine !== undefined && finding.startLine > 0
-      ? `${finding.startLine}${finding.endLine && finding.endLine !== finding.startLine ? `–${finding.endLine}` : ''}`
-      : ''
-  const repoUrl = buildRepositoryCodeUrl({
-    repositoryUrl: finding.repositoryUrl || finding.assets[0]?.url,
-    filePath: finding.filePath,
-    startLine: finding.startLine,
-    endLine: finding.endLine,
-    branch: finding.branch,
-    commitSha: finding.commitSha,
-  })
-
-  const copy = useCallback(async () => {
-    if (code && (await copyToClipboard(code))) {
-      setCopied(true)
-      setTimeout(() => setCopied(false), 1500)
-    }
-  }, [code])
-
-  return (
-    <DetailSection
-      title={t('findings.overviewTab.codeLocation', 'Code location')}
-      icon={FileCode2}
-      actions={
-        repoUrl ? (
-          <a
-            href={sanitizeExternalUrl(repoUrl)}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="inline-flex items-center gap-1 text-xs text-primary hover:underline"
-          >
-            {t('findings.overviewTab.viewInRepo', 'View in repository')}
-            <ExternalLink className="h-3 w-3" aria-hidden />
-          </a>
-        ) : undefined
-      }
-    >
-      {finding.filePath && (
-        <p className="font-mono text-[13px] break-all">
-          {finding.filePath}
-          {lines && <span className="text-muted-foreground">:{lines}</span>}
-        </p>
-      )}
-      {(finding.branch || finding.commitSha) && (
-        <p className="text-xs text-muted-foreground">
-          {finding.branch && (
-            <>
-              {t('findings.overviewTab.branch', 'Branch')}{' '}
-              <span className="font-mono">{finding.branch}</span>
-            </>
-          )}
-          {finding.branch && finding.commitSha && ' · '}
-          {finding.commitSha && (
-            <>
-              {t('findings.overviewTab.commit', 'Commit')}{' '}
-              <span className="font-mono">{finding.commitSha.slice(0, 10)}</span>
-            </>
-          )}
-        </p>
-      )}
-      {code && (
-        <div className="overflow-hidden rounded-lg border bg-muted/30">
-          <div className="flex items-center justify-between border-b bg-muted/50 px-3 py-1.5">
-            <span className="text-xs text-muted-foreground">
-              {finding.contextSnippet
-                ? t('findings.overviewTab.snippetCtx', 'Snippet with context')
-                : t('findings.overviewTab.snippet', 'Snippet')}
-            </span>
-            <button
-              type="button"
-              onClick={() => void copy()}
-              className="rounded-sm p-1 text-muted-foreground hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
-              aria-label={t('findings.overviewTab.copyCode', 'Copy code')}
-            >
-              {copied ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
-            </button>
-          </div>
-          <div className="overflow-x-auto p-3">
-            <CodeHighlighter
-              code={code}
-              filePath={finding.filePath}
-              className="bg-transparent"
-              showLineNumbers
-              startLine={startLine}
-              highlightLine={finding.startLine}
-            />
-          </div>
-        </div>
-      )}
-    </DetailSection>
-  )
-}
-
 /** How likely the model thinks the finding is a false positive (a suggestion). */
 function AIFalsePositiveLikelihood({ data }: { data: AITriageSummaryData }) {
   if (data.falsePositiveLikelihood === undefined) return null
@@ -654,14 +556,14 @@ function AIFalsePositiveLikelihood({ data }: { data: AITriageSummaryData }) {
 
 /** The latest completed AI triage. */
 function AITriageSummary({ data }: { data: AITriageSummaryData }) {
-  const { t } = useTranslation()
+  const { t, locale } = useTranslation()
   return (
     <DetailSection
       title={t('findings.overviewTab.aiAnalysis', 'AI analysis')}
       icon={Bot}
       actions={
         <span className="text-xs text-muted-foreground">
-          {new Date(data.createdAt).toLocaleDateString('en-US', {
+          {new Date(data.createdAt).toLocaleDateString(locale, {
             month: 'short',
             day: 'numeric',
             hour: '2-digit',

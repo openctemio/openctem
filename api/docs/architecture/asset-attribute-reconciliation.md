@@ -143,6 +143,13 @@ source passed its TTL moves on with reason `ttl_expiry` without waiting for
 the next report. Events cascade with the asset (tenant deletion erases
 them) and move with it in a merge.
 
+A person's edit saves the asset row and then records the lock; the apply
+receives the value shown before the edit (`AttributeApply.Prior`), so the
+event, the history row and the rescore read the change from that value. The
+first edit of a value no source ever decided, and a second edit by the same
+person, are entries like any other. The edit path records the exposure
+history row only through this apply (once, with the person).
+
 ## Who writes observations
 
 ```
@@ -169,8 +176,8 @@ untrusted for.
   assets in the caller's data scope; adds the `tag` filter.
 
 Web: the asset sheet's Timeline tab and the asset page's Timeline card
-(`AssetTimeline`), and Discovery › Assets › Timeline (`/assets/timeline`,
-`RecentAssetChanges`), in `web/src/features/assets/components/asset-timeline.tsx`.
+(`AssetTimeline`), and the Values kind of Discovery › Assets › Activity
+(`/assets/changes?view=values`, `RecentAssetChanges`), in `web/src/features/assets/components/asset-timeline.tsx`.
 - `GET/PUT /api/v1/organization/settings/asset-reconciliation` (owner/admin):
   `{"default": [{"source": "integration", "ttl_days": 30, "trusted": true}, …],
   "classes": {"ownership": […]}}` (see Precedence); `GET` adds the effective

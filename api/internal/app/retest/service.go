@@ -89,6 +89,12 @@ type unableRunFinisher interface {
 	FinishRetestRunUnable(ctx context.Context, tenantID, runID shared.ID, message, code string) error
 }
 
+// resultRunFinisher settles a retest's run that completed with a conclusion
+// (inconclusive, or exposed at another path): completed, not failed.
+type resultRunFinisher interface {
+	FinishRetestRunResult(ctx context.Context, tenantID, runID shared.ID, kind, code string) error
+}
+
 // RunCodeToolUnable is the refusal code of a retest run whose tool could not
 // run the check.
 const RunCodeToolUnable = "RETEST_UNAVAILABLE"
@@ -671,6 +677,7 @@ func (s *Service) Sweep(ctx context.Context, limit int) (int, error) {
 // passed), it decides and settles. Returns whether it settled.
 func (s *Service) trySettle(ctx context.Context, rt *retestdom.Retest, force bool) (bool, error) {
 	matchedAt := s.matchedAt(ctx, rt)
+	cls := s.settleClass(ctx, rt)
 	if rt.CheckID != nil {
 		// A custom check proves the endpoint it requests, not the one the
 		// finding was reported at.
@@ -687,7 +694,7 @@ func (s *Service) trySettle(ctx context.Context, rt *retestdom.Retest, force boo
 		case cmd == nil:
 			v = retestdom.Inconclusive(retestdom.ReasonNoResult, "no result from the tool's retest")
 		case cmd.Status == commanddom.CommandStatusCompleted:
-			tr = retestdom.DecideToolVerdict(cmd.Result, rt.FindingID.String(), matchedAt)
+			tr = retestdom.DecideToolVerdict(cmd.Result, rt.FindingID.String(), matchedAt, cls)
 			v = tr.Verdict
 		case done:
 			v = retestdom.Inconclusive(retestdom.ReasonError, "the tool's retest did not complete: "+
@@ -710,7 +717,7 @@ func (s *Service) trySettle(ctx context.Context, rt *retestdom.Retest, force boo
 	if !(checkDone && reachDone) && !force {
 		return false, nil
 	}
-	v := retestdom.Decide(check, reach, matchedAt)
+	v := retestdom.Decide(check, reach, matchedAt, cls)
 	if !(checkDone && reachDone) && v.Outcome == retestdom.OutcomeInconclusive && v.Code == retestdom.ReasonNoResult {
 		v.Reason = "no sensor result before the deadline"
 	}
@@ -787,6 +794,48 @@ func (s *Service) matchedAt(ctx context.Context, rt *retestdom.Retest) string {
 	return f.FilePath()
 }
 
+// settleClass is what the settlement needs to know about the finding: whether
+// the platform template that matched it is of the exposure class (from the
+// template tags the scanner recorded at the sighting, never the finding's
+// editable tags; a custom check never is) and whether its previous completed
+// retest, at least MinDenialGap and at most MaxDenialAge ago and after the finding's last
+// sighting or reopening, was an origin refusal of the same check.
+// Anything unreadable gives the careful answer.
+func (s *Service) settleClass(ctx context.Context, rt *retestdom.Retest) retestdom.Class {
+	var cls retestdom.Class
+	if rt.CheckID != nil {
+		return cls
+	}
+	store, ok := s.findings.(vulnerability.TemplateProvenanceStore)
+	if !ok {
+		return cls
+	}
+	p, err := store.TemplateBaseline(ctx, rt.TenantID, rt.FindingID)
+	if err != nil || !p.ExposureClass {
+		return cls
+	}
+	cls.Exposure = true
+	sightedAt := p.SightedAt
+	prev, err := s.store.ListByFinding(ctx, rt.TenantID, rt.FindingID, 5)
+	if err != nil {
+		return cls
+	}
+	for _, p := range prev {
+		if p.ID == rt.ID || p.Status != retestdom.StatusCompleted {
+			continue
+		}
+		cls.PriorAccessDenied = p.Outcome == retestdom.OutcomeInconclusive &&
+			p.ReasonCode == retestdom.ReasonAccessDenied && p.TemplateID == rt.TemplateID && p.Target == rt.Target &&
+			p.CompletedAt != nil && s.now().Sub(*p.CompletedAt) >= retestdom.MinDenialGap &&
+			// A denial counts only when it is recent and the finding was not
+			// seen or reopened since: a sighting after it shows the page was
+			// reachable, so the refusal is no longer the first of a pair.
+			s.now().Sub(*p.CompletedAt) <= retestdom.MaxDenialAge && p.CompletedAt.After(sightedAt)
+		break
+	}
+	return cls
+}
+
 // storeAttempt keeps what the re-run reported it sent and received.
 func (s *Service) storeAttempt(ctx context.Context, rt *retestdom.Retest, items []evidence.Item, digest string) {
 	if s.evidence == nil || len(items) == 0 {
@@ -856,11 +905,11 @@ func (s *Service) readCheck(ctx context.Context, tenantID shared.ID, id *shared.
 	}
 	switch cmd.Status {
 	case commanddom.CommandStatusCompleted:
-		outcome, summary, digest, items := commandOutcome(cmd.Result)
+		outcome, summary, digest, items, requests := commandOutcome(cmd.Result)
 		if outcome == "" {
 			return retestdom.CheckResult{Missing: true}, true
 		}
-		return retestdom.CheckResult{Outcome: outcome, Summary: summary, TemplateDigest: digest, Evidence: items}, true
+		return retestdom.CheckResult{Outcome: outcome, Summary: summary, TemplateDigest: digest, Evidence: items, Requests: requests}, true
 	case commanddom.CommandStatusFailed, commanddom.CommandStatusExpired, commanddom.CommandStatusCanceled:
 		return retestdom.CheckResult{Missing: true, Summary: cmd.ErrorMessage}, true
 	default:
@@ -873,16 +922,16 @@ func (s *Service) readCheck(ctx context.Context, tenantID shared.ID, id *shared.
 // the command directly may put it at the top level. Same rule as the
 // validation completion hook. The attempt's proof is evidence.evidence_items
 // (CTIS 1.6 items), normalized.
-func commandOutcome(raw json.RawMessage) (outcome, summary, templateDigest string, items []evidence.Item) {
+func commandOutcome(raw json.RawMessage) (outcome, summary, templateDigest string, items []evidence.Item, requests []retestdom.RequestResult) {
 	if len(raw) == 0 {
-		return "", "", "", nil
+		return "", "", "", nil, nil
 	}
 	var result struct {
 		validation.ValidateResultPayload
 		Metadata validation.ValidateResultPayload `json:"metadata"`
 	}
 	if err := json.Unmarshal(raw, &result); err != nil {
-		return "", "", "", nil
+		return "", "", "", nil, nil
 	}
 	v := result.ValidateResultPayload
 	if v.Outcome == "" {
@@ -902,7 +951,8 @@ func commandOutcome(raw json.RawMessage) (outcome, summary, templateDigest strin
 			}
 		}
 	}
-	return v.Outcome, v.Summary, templateDigest, items
+	requests = retestdom.DecodeRequestsFromAny(v.Evidence["requests"])
+	return v.Outcome, v.Summary, templateDigest, items, requests
 }
 
 // templateBaseline is the template digest recorded at the finding's last
@@ -943,6 +993,11 @@ func (s *Service) settle(ctx context.Context, rt *retestdom.Retest, v retestdom.
 	}
 	if rt.Method != "" {
 		changes["method"] = rt.Method
+	}
+	if len(v.OtherPaths) > 0 {
+		// The other paths the check matched at (outcome still_exposed_elsewhere):
+		// kept on the activity so a person can open a finding for each.
+		changes["other_paths"] = v.OtherPaths
 	}
 	if rt.CheckID != nil {
 		changes["retest_check_id"] = rt.CheckID.String()
@@ -1095,8 +1150,10 @@ func (s *Service) startRun(ctx context.Context, rt *retestdom.Retest) runRef {
 }
 
 // finishRun settles the retest's run with the verdict: a verdict (fixed,
-// not reproduced, still vulnerable) completes it; an inconclusive retest
-// fails it with the reason.
+// not reproduced, still vulnerable, exposed at another path) completes it, and
+// so does an inconclusive one the tool ran to the end (the run carries the
+// result). A tool that could not run the check blocks it; a retest that
+// produced no result, or whose target did not answer, fails it with the reason.
 func (s *Service) finishRun(ctx context.Context, rt *retestdom.Retest, v retestdom.Verdict) {
 	if s.runs == nil || rt.RunID == nil {
 		return
@@ -1106,8 +1163,19 @@ func (s *Service) finishRun(ctx context.Context, rt *retestdom.Retest, v retestd
 	// run the check, so its own addresses and paths are masked on the run
 	// (the run is shown on the Runs page, beside platform-run scans).
 	msg := sensordom.RedactPlatformText(evidence.RedactText(v.Reason))
-	if f, ok := s.runs.(unableRunFinisher); ok && v.Outcome == retestdom.OutcomeInconclusive && v.Code == retestdom.ReasonError {
+	if f, ok := s.runs.(unableRunFinisher); ok && v.Outcome == retestdom.OutcomeInconclusive && v.Code.ToolUnable() {
 		if err := f.FinishRetestRunUnable(ctx, rt.TenantID, *rt.RunID, msg, RunCodeToolUnable); err != nil {
+			s.logger.Warn("failed to settle the retest run", "retest_id", rt.ID.String(), "run_id", rt.RunID.String(), "error", err)
+		}
+		return
+	}
+	// A retest whose tool ran to the end and concluded "inconclusive" (the
+	// endpoint answered something that proves nothing, a CDN block, another
+	// path was checked) completed: it is not a failure of the tool, the sensor
+	// or the platform. Failed stays for a retest that produced no result.
+	if f, ok := s.runs.(resultRunFinisher); ok && v.Code != retestdom.ReasonNoResult && v.Code != retestdom.ReasonUnreachable &&
+		(v.Outcome == retestdom.OutcomeInconclusive || v.Outcome == retestdom.OutcomeStillExposedElsewhere) {
+		if err := f.FinishRetestRunResult(ctx, rt.TenantID, *rt.RunID, string(v.Outcome), string(v.Code)); err != nil {
 			s.logger.Warn("failed to settle the retest run", "retest_id", rt.ID.String(), "run_id", rt.RunID.String(), "error", err)
 		}
 		return

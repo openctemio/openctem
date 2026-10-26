@@ -24,7 +24,8 @@ import { useTranslation } from '@/context/i18n-provider'
 import { ErrorState } from '@/features/shared/components/error-state'
 import { RelativeTime } from '@/features/shared/components/relative-time'
 import { PageHeader } from '@/features/shared/components/page-header'
-import { Main } from '@/components/layout'
+import { PageStack } from '@/features/shared/components/page-stack'
+import { Main, useBreadcrumbTitle } from '@/components/layout'
 import { formatEpssScore } from '@/lib/epss'
 import { useEmergingThreat } from '../api'
 import type { EmergingThreatAsset, EmergingThreatDetail, EtsBreakdown } from '../types'
@@ -41,26 +42,29 @@ import {
 export function EmergingThreatDetailView({ id }: { id: string }) {
   const { t } = useTranslation()
   const { data, error, isLoading, mutate } = useEmergingThreat(id)
+  useBreadcrumbTitle(data?.vuln_id)
 
   return (
     <Main>
-      <Button asChild variant="ghost" size="sm" className="-ms-2 mb-2">
-        <Link href="/emerging-threats">
-          <ArrowLeft className="me-1 h-4 w-4 rtl:rotate-180" aria-hidden />
-          {t('emergingThreats.back')}
-        </Link>
-      </Button>
-      {error ? (
-        <ErrorState
-          title={t('emergingThreats.loadOneError')}
-          error={error}
-          onRetry={() => void mutate()}
-        />
-      ) : isLoading || !data ? (
-        <Skeleton className="h-96 w-full rounded-xl" />
-      ) : (
-        <DetailBody alert={data} />
-      )}
+      <PageStack>
+        <Button asChild variant="ghost" size="sm" className="-ms-2 self-start">
+          <Link href="/emerging-threats">
+            <ArrowLeft className="me-1 h-4 w-4 rtl:rotate-180" aria-hidden />
+            {t('emergingThreats.back')}
+          </Link>
+        </Button>
+        {error ? (
+          <ErrorState
+            title={t('emergingThreats.loadOneError')}
+            error={error}
+            onRetry={() => void mutate()}
+          />
+        ) : isLoading || !data ? (
+          <Skeleton className="h-96 w-full rounded-xl" />
+        ) : (
+          <DetailBody alert={data} />
+        )}
+      </PageStack>
     </Main>
   )
 }
@@ -68,7 +72,7 @@ export function EmergingThreatDetailView({ id }: { id: string }) {
 function DetailBody({ alert }: { alert: EmergingThreatDetail }) {
   const { t } = useTranslation()
   return (
-    <div className="space-y-5">
+    <>
       <PageHeader
         title={alert.vuln_id}
         description={
@@ -93,7 +97,7 @@ function DetailBody({ alert }: { alert: EmergingThreatDetail }) {
             {t(`emergingThreats.notAffected.reasons.${alert.state_reason}`, alert.state_reason)}
             {alert.suppressed_until && (
               <>
-                {' · '}
+                {', '}
                 {t('emergingThreats.suppressedUntil', undefined, {
                   date: new Date(alert.suppressed_until).toLocaleDateString(),
                 })}
@@ -128,7 +132,7 @@ function DetailBody({ alert }: { alert: EmergingThreatDetail }) {
 
       <Timeline alert={alert} />
       <AffectedAssets alert={alert} />
-    </div>
+    </>
   )
 }
 
@@ -262,7 +266,7 @@ function AffectedAssets({ alert }: { alert: EmergingThreatDetail }) {
   const confirmed = alert.assets.filter((a) => a.tier === 'confirmed' || a.tier === 'likely')
   const possible = alert.assets.filter((a) => a.tier === 'possible')
   return (
-    <div className="space-y-4">
+    <PageStack>
       <AssetGroup
         title={t('emergingThreats.assets.confirmed')}
         assets={confirmed}
@@ -271,7 +275,7 @@ function AffectedAssets({ alert }: { alert: EmergingThreatDetail }) {
       {possible.length > 0 && (
         <AssetGroup title={t('emergingThreats.assets.possible')} assets={possible} />
       )}
-    </div>
+    </PageStack>
   )
 }
 

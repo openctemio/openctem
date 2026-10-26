@@ -64,7 +64,14 @@ import { FindingTaskBand } from '@/features/remediation-hub/components/finding-t
 import { FindingAssetName } from './detail/finding-asset-name'
 import { FindingProperties } from './detail/finding-properties'
 import { FindingProvenanceSection } from './detail/finding-provenance-section'
+import { FindingIssueGroupSection } from './detail/finding-issue-group-section'
+import { FindingIdentitySection } from './detail/finding-identity-section'
 import { FindingTypePanel } from './detail/finding-type-panel'
+import {
+  FindingCodeLocation,
+  codeLocationOf,
+  showDrawerCodeLocation,
+} from './detail/finding-code-location'
 import { FindingIntelSection } from './detail/finding-intel-section'
 import { FindingRetestSection } from './detail/finding-retest'
 import { VerificationPanel } from './detail/verification-panel'
@@ -74,6 +81,8 @@ import { FindingActivity } from './finding-activity'
 import { AdvisoryText } from './detail/advisory-text'
 import type { EntityActivityHandle } from '@/features/activity/components/entity-activity'
 import { AIProposalBadge } from './ai-proposal-badge'
+import { toDisplayText } from '@/lib/untrusted-text'
+import { formatAbsoluteTime, formatRelativeTime } from '@/lib/format-metric'
 
 /** The drawer inside a task: position in the task's findings and the task to return to. */
 export interface FindingDrawerTaskNav {
@@ -123,7 +132,7 @@ export function FindingDetailDrawer({
   onAssigneeChange,
   taskNav,
 }: FindingDetailDrawerProps) {
-  const { t } = useTranslation()
+  const { t, locale } = useTranslation()
   const router = useRouter()
   const canCreateTicket = useCanCreateTicket()
   const [ticketOpen, setTicketOpen] = useState(false)
@@ -172,8 +181,8 @@ export function FindingDetailDrawer({
     [finding, onOpenChange, router, taskNav]
   )
 
-  // ⌘/Ctrl+Enter opens the full page; ⌘/Ctrl+C opens the activity panel on
-  // its comment box (unless text is selected: then it is a copy).
+  // ⌘/Ctrl+Enter opens the full page. The platform copy chord is left alone:
+  // the activity panel's own "C" key opens the comment box.
   useEffect(() => {
     if (!open) return
     const onKey = (e: KeyboardEvent) => {
@@ -181,16 +190,6 @@ export function FindingDetailDrawer({
       if ((e.metaKey || e.ctrlKey) && e.key === 'Enter' && el.tagName !== 'TEXTAREA') {
         e.preventDefault()
         openPage()
-      }
-      if ((e.metaKey || e.ctrlKey) && e.key === 'c' && !e.shiftKey) {
-        if (
-          el.tagName !== 'TEXTAREA' &&
-          el.tagName !== 'INPUT' &&
-          !window.getSelection()?.toString()
-        ) {
-          e.preventDefault()
-          activityRef.current?.open({ compose: true })
-        }
       }
     }
     document.addEventListener('keydown', onKey, true)
@@ -204,16 +203,22 @@ export function FindingDetailDrawer({
       label: t('findings.drawer.copyLink', 'Copy link'),
       icon: Link2,
       onSelect: () => {
-        void copyToClipboard(`${window.location.origin}/findings/${finding.id}`)
-        toast.success(t('findings.drawer.linkCopied', 'Link copied'))
+        void copyToClipboard(`${window.location.origin}/findings/${finding.id}`).then((ok) =>
+          ok
+            ? toast.success(t('findings.drawer.linkCopied', 'Link copied'))
+            : toast.error(t('findings.toast.copyFailed', 'Could not copy to the clipboard'))
+        )
       },
     },
     {
       label: t('findings.drawer.copyId', 'Copy finding ID'),
       icon: Copy,
       onSelect: () => {
-        void copyToClipboard(finding.id)
-        toast.success(t('findings.drawer.idCopied', 'Finding ID copied'))
+        void copyToClipboard(finding.id).then((ok) =>
+          ok
+            ? toast.success(t('findings.drawer.idCopied', 'Finding ID copied'))
+            : toast.error(t('findings.toast.copyFailed', 'Could not copy to the clipboard'))
+        )
       },
     },
     ...(canCreateTicket
@@ -338,14 +343,23 @@ export function FindingDetailDrawer({
             {!taskNav && <FindingTaskBand findingId={detail.id} />}
             <FindingFixCard finding={detail} compact onOpenPlan={() => openPage('remediation')} />
             <DetailSections>
-              <FindingTypePanel finding={detail} onOpenTrace={() => openPage('attack-path')} />
+              <FindingTypePanel
+                finding={detail}
+                onOpenTrace={() => openPage('attack-path')}
+                onOpenEvidence={() => openPage('evidence')}
+              />
               <FindingProperties finding={detail} triage={triage} hideTriage />
+              {showDrawerCodeLocation(detail) && (
+                <FindingCodeLocation location={codeLocationOf(detail)} compact />
+              )}
               <FindingIntelSection finding={detail} />
               <FindingProvenanceSection finding={detail} />
+              <FindingIdentitySection findingId={detail.id} />
               <VerificationPanel findingId={detail.id} />
               <FindingRetestSection finding={{ ...detail, status: triage.status }} />
               <FindingRetestCheckSection finding={detail} />
               <FindingTenableRescanSection finding={detail} />
+              <FindingIssueGroupSection findingId={detail.id} />
 
               {description.text && (
                 <DetailSection
@@ -367,30 +381,45 @@ export function FindingDetailDrawer({
                       <li key={a.id} className="space-y-1 rounded-md border p-2.5 text-xs">
                         <div className="flex items-center justify-between">
                           <Badge variant="outline" className="text-[11px]">
-                            {APPROVAL_STATUS_CONFIG[a.status as ApprovalStatus]?.label ?? a.status}
+                            {t(
+                              `findings.approvals.status.${a.status}`,
+                              APPROVAL_STATUS_CONFIG[a.status as ApprovalStatus]?.label ?? a.status
+                            )}
                           </Badge>
-                          <span className="text-muted-foreground">
-                            {new Date(a.created_at).toLocaleDateString('en-US', {
-                              month: 'short',
-                              day: 'numeric',
-                              year: 'numeric',
-                            })}
-                          </span>
+                          <time
+                            dateTime={a.created_at}
+                            title={formatAbsoluteTime(a.created_at, locale)}
+                            className="text-muted-foreground"
+                          >
+                            {formatRelativeTime(a.created_at, locale)}
+                          </time>
                         </div>
                         <p className="text-muted-foreground">
                           {t('findings.drawer.requested', 'Requested:')}{' '}
                           <span className="font-medium text-foreground">
-                            {FINDING_STATUS_CONFIG[a.requested_status as FindingStatus]?.label ??
-                              a.requested_status}
+                            {(() => {
+                              const cfg = FINDING_STATUS_CONFIG[a.requested_status as FindingStatus]
+                              return cfg ? t(cfg.labelKey, cfg.label) : a.requested_status
+                            })()}
                           </span>
                         </p>
                         <AIProposalBadge approval={a} />
+                        {/* Member text: plain, capped and bidi-isolated, so a
+                            right-to-left override cannot change how it reads. */}
                         {a.justification && (
-                          <p className="line-clamp-2 text-muted-foreground">{a.justification}</p>
+                          <p
+                            dir="auto"
+                            className="line-clamp-2 text-muted-foreground [unicode-bidi:isolate]"
+                          >
+                            {toDisplayText(a.justification, 500)}
+                          </p>
                         )}
                         {a.rejection_reason && (
                           <p className="line-clamp-2 text-destructive">
-                            {t('findings.drawer.reason', 'Reason:')} {a.rejection_reason}
+                            {t('findings.drawer.reason', 'Reason:')}{' '}
+                            <span dir="auto" className="[unicode-bidi:isolate]">
+                              {toDisplayText(a.rejection_reason, 500)}
+                            </span>
                           </p>
                         )}
                       </li>

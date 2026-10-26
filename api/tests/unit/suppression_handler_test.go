@@ -11,7 +11,6 @@ import (
 	"net/http/httptest"
 	"path/filepath"
 	"reflect"
-	"strings"
 	"testing"
 	"time"
 
@@ -68,7 +67,7 @@ func (m *MockSuppressionRepository) FindByID(_ context.Context, tenantID, ruleID
 	return rule, nil
 }
 
-func (m *MockSuppressionRepository) Delete(_ context.Context, tenantID, ruleID shared.ID) error {
+func (m *MockSuppressionRepository) Delete(_ context.Context, tenantID, ruleID, _ shared.ID, _ map[string]any) error {
 	delete(m.rules, ruleID)
 	return nil
 }
@@ -565,30 +564,45 @@ func TestSuppressionPreviewGate(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	// Gates keyed by "METHOD <group prefix><path>": a route is matched by its
+	// full path, never a suffix, so another module's /{id}/approve cannot
+	// stand in for the suppression one.
 	gates := map[string][]string{}
-	ast.Inspect(f, func(n ast.Node) bool {
-		ce, ok := n.(*ast.CallExpr)
-		if !ok || len(ce.Args) < 2 {
+	var walk func(n ast.Node, prefix string)
+	walk = func(root ast.Node, prefix string) {
+		ast.Inspect(root, func(n ast.Node) bool {
+			ce, ok := n.(*ast.CallExpr)
+			if !ok || len(ce.Args) < 2 {
+				return true
+			}
+			sel, ok := ce.Fun.(*ast.SelectorExpr)
+			if !ok {
+				return true
+			}
+			path, ok := routePathArg(ce.Args[0])
+			if !ok {
+				return true
+			}
+			if sel.Sel.Name == "Group" {
+				for _, a := range ce.Args[1:] {
+					if fl, ok := a.(*ast.FuncLit); ok {
+						walk(fl.Body, prefix+path)
+					}
+				}
+				return false
+			}
+			var g routeGate
+			for _, a := range ce.Args[1:] {
+				gateOf(a, perms, &g)
+			}
+			gates[sel.Sel.Name+" "+prefix+path] = g.Permissions
 			return true
-		}
-		sel, ok := ce.Fun.(*ast.SelectorExpr)
-		if !ok {
-			return true
-		}
-		path, ok := routePathArg(ce.Args[0])
-		if !ok || !strings.HasPrefix(path, "/{id}/") {
-			return true
-		}
-		var g routeGate
-		for _, a := range ce.Args[1:] {
-			gateOf(a, perms, &g)
-		}
-		gates[sel.Sel.Name+" "+path] = g.Permissions
-		return true
-	})
+		})
+	}
+	walk(f, "")
 	for route, want := range map[string][]string{
-		"GET /{id}/preview":  {"findings:suppressions:approve"},
-		"POST /{id}/approve": {"findings:suppressions:approve"},
+		"GET /api/v1/suppressions/{id}/preview":  {"findings:suppressions:approve"},
+		"POST /api/v1/suppressions/{id}/approve": {"findings:suppressions:approve"},
 	} {
 		if got := gates[route]; !reflect.DeepEqual(got, want) {
 			t.Errorf("%s: gate %v, want %v", route, got, want)

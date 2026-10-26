@@ -2,11 +2,14 @@ package handler
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"io"
 	"mime/multipart"
 	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
 	"time"
@@ -18,15 +21,16 @@ import (
 	"github.com/openctemio/openctem/api/internal/app/datascope"
 	"github.com/openctemio/openctem/api/internal/app/findingimport"
 	"github.com/openctemio/openctem/api/internal/app/ingest"
+	"github.com/openctemio/openctem/api/internal/app/ingestqueue"
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
 	"github.com/openctemio/openctem/api/pkg/apierror"
-	auditdom "github.com/openctemio/openctem/api/pkg/domain/audit"
+	"github.com/openctemio/openctem/api/pkg/domain/idempotency"
 	"github.com/openctemio/openctem/api/pkg/domain/permission"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/logger"
 )
 
-// Upload limits of POST /findings/import.
+// Upload limits of POST /findings/imports.
 const (
 	// MaxFindingImportBody bounds the whole multipart body.
 	MaxFindingImportBody = 110 << 20
@@ -38,27 +42,57 @@ const (
 	// findingImportTimeout bounds the work of one request.
 	findingImportTimeout = 10 * time.Minute
 	// maxAuditedImportIDs bounds the finding ids an audit record lists.
-	maxAuditedImportIDs = 100
 )
 
-// FindingImportHandler serves POST /api/v1/findings/import.
+// FindingImportHandler serves POST /api/v1/findings/imports.
 type FindingImportHandler struct {
 	svc *findingimport.Service
+	// ds is the data scope enforcer: the uploader recorded for the worker.
+	ds *datascope.Enforcer
 	// actorOf resolves the uploader's data scope: nil is unrestricted.
 	actorOf func(ctx context.Context, tenantID shared.ID) (ingest.ActorScope, error)
-	audit   *auditapp.AuditService
-	logger  *logger.Logger
+	// coverageOf resolves the uploader's visibility for a full-coverage
+	// declaration (nil func: the declaration falls back to actorOf).
+	coverageOf func(ctx context.Context, tenantID shared.ID) (ingest.ActorScope, error)
+	audit      *auditapp.AuditService
+	logger     *logger.Logger
 	// tempDir is where an uploaded archive is spooled ("" = os.TempDir()).
 	tempDir string
 	// maxBody bounds the request body (0 = MaxFindingImportBody).
 	maxBody int64
+	// receipts reads the upload's receipt for the response; idem is the
+	// durable Idempotency-Key store (nil: a request with a key is refused).
+	receipts IngestReceiptReader
+	idem     idempotency.Store
+	// mappings resolves format=mapping:<ref> (nil: such a format is
+	// refused).
+	mappings ImportMappingResolver
+}
+
+// SetMappingResolver wires the organization's import mappings.
+func (h *FindingImportHandler) SetMappingResolver(m ImportMappingResolver) { h.mappings = m }
+
+// SetReceiptStores wires the receipt reader and the Idempotency-Key store.
+func (h *FindingImportHandler) SetReceiptStores(receipts IngestReceiptReader, idem idempotency.Store) {
+	h.receipts, h.idem = receipts, idem
 }
 
 // NewFindingImportHandler creates the handler. Without a data scope
 // enforcer every upload is refused (fail closed).
 func NewFindingImportHandler(svc *findingimport.Service, ds *datascope.Enforcer, audit *auditapp.AuditService, log *logger.Logger) *FindingImportHandler {
-	h := &FindingImportHandler{svc: svc, audit: audit, logger: log}
+	h := &FindingImportHandler{svc: svc, ds: ds, audit: audit, logger: log}
 	if ds != nil {
+		// A full-coverage declaration names assets: each must be visible to
+		// the uploader, so an unrestricted member cannot close the findings
+		// of a private program asset hidden from them (nil: an
+		// administrator, every asset).
+		h.coverageOf = func(ctx context.Context, tenantID shared.ID) (ingest.ActorScope, error) {
+			scope, err := ds.Resolve(ctx, tenantID)
+			if err != nil || scope == nil {
+				return nil, err
+			}
+			return uploaderScope{enforcer: ds, scope: scope}, nil
+		}
 		h.actorOf = func(ctx context.Context, tenantID shared.ID) (ingest.ActorScope, error) {
 			scope, err := ds.Resolve(ctx, tenantID)
 			if err != nil || !scope.Restricted() {
@@ -102,8 +136,19 @@ func (h *FindingImportHandler) SetActorResolver(fn func(ctx context.Context, ten
 
 // FindingImportResponse is the result of an import or a preview.
 type FindingImportResponse struct {
-	SessionID string `json:"session_id"`
+	// Receipt is what the upload did to the organization's findings (absent
+	// in a preview).
+	Receipt   *ReceiptResponse `json:"receipt,omitempty"`
+	SessionID string           `json:"session_id"`
+	// ReceiptID is the upload's receipt (empty in a preview): what the
+	// upload did to the organization's findings.
+	ReceiptID string `json:"receipt_id,omitempty"`
 	DryRun    bool   `json:"dry_run"`
+	// Status of a committed upload: queued (stored, imported by the ingest
+	// worker; files is empty until then). Empty in a preview.
+	Status string `json:"status,omitempty"`
+	// ErrorCode says why a committed upload failed (a fixed code).
+	ErrorCode string `json:"error_code,omitempty"`
 	// How VEX documents act: off (stored only), dry_run (counted), enforce
 	// (not_affected closes findings).
 	VEXMode string `json:"vex_mode"`
@@ -180,25 +225,32 @@ type ImportIngestSummary struct {
 	Errors                  []string `json:"errors,omitempty"`
 }
 
-// Import handles POST /api/v1/findings/import.
+// Import handles POST /api/v1/findings/imports.
 //
 // @Summary      Import results from another tool
-// @Description  Multipart upload of an exported file (Nessus .nessus, Qualys detection XML with an optional KnowledgeBase part, CycloneDX, SPDX, OSV results, CSAF, OpenVEX, DefectDojo Generic Findings JSON) or a ZIP of them. The format is detected from the content. With dry_run=true the files are only parsed and counted. The import runs with the uploader's rights: findings land only on assets in the uploader's data scope, nothing is auto-resolved, and a VEX not_affected statement only requests a false positive (a pending request that a second person decides under the approval policy), and only under INGEST_VEX=enforce for an uploader holding findings:approve. Send the knowledge_base part before the file part.
+// @Description  Multipart upload of an exported file (Nessus .nessus, Qualys detection XML with an optional KnowledgeBase part, CycloneDX, SPDX, OSV results, CSAF, OpenVEX, DefectDojo Generic Findings JSON) or a ZIP of them. The format is detected from the content. A committed upload is stored and imported by the ingest worker: it answers 202 with Location (its receipt) as soon as the files are stored; GET /findings/imports/{id}/result (with wait=N to wait) returns the per-file results once it is imported, and the receipt says what it did to the organization's findings. The same files from the same caller within 10 minutes, without an Idempotency-Key, are the same upload. With dry_run=true the files are only parsed and counted in the request (200). The import runs with the uploader's rights: findings land only on assets in the uploader's data scope, nothing is closed unless the upload declares coverage=full for explicit asset_id values (then the open findings of each file's tool on those assets that the upload did not report are closed, with the same guards as a covered scan), and a VEX not_affected statement only requests a false positive (a pending request that a second person decides under the approval policy), and only under INGEST_VEX=enforce for an uploader holding findings:approve. Send the knowledge_base part before the file part. An Idempotency-Key header (1-128 printable ASCII) makes a retry of the same files return the first answer (Idempotent-Replayed: true); the same key with other files is 422, while the first request runs 409, and when the key store is unavailable 503 (nothing imported).
 // @Tags         Findings
 // @Accept       multipart/form-data
 // @Produce      json
-// @Param        file            formData  file    true   "Exported file or ZIP archive"
-// @Param        knowledge_base  formData  file    false  "Qualys KnowledgeBase XML (before file)"
-// @Param        dry_run         query     bool    false  "Parse and count only"
-// @Param        format          query     string  false  "Force the format of a single file"
-// @Param        min_severity    query     string  false  "Drop findings below: info, low, medium, high, critical"
-// @Success      200  {object}  FindingImportResponse
+// @Param        file             formData  file    true   "Exported file or ZIP archive"
+// @Param        knowledge_base   formData  file    false  "Qualys KnowledgeBase XML (before file)"
+// @Param        dry_run          query     bool    false  "Parse and count only"
+// @Param        format           query     string  false  "Force the format of a single file"
+// @Param        min_severity     query     string  false  "Drop findings below: info, low, medium, high, critical"
+// @Param        coverage         query     string  false  "partial (default, closes nothing) or full: the upload is a complete scan of the asset_id assets by each file's tool, and their open findings of that tool it does not report are closed (needs findings:status, findings:bulk_update and step-up; not with min_severity)"
+// @Param        asset_id         query     []string  false  "With coverage=full: 1 to 100 asset ids visible to the uploader"  collectionFormat(multi)
+// @Param        Idempotency-Key  header    string  false  "Makes a retry of the same upload return the first answer"
+// @Success      200  {object}  FindingImportResponse  "Preview"
+// @Success      202  {object}  FindingImportResponse  "Stored: imported by the ingest worker; Location is the receipt"
 // @Failure      400  {object}  apierror.Error
+// @Failure      409  {object}  apierror.Error
 // @Failure      413  {object}  apierror.Error
+// @Failure      422  {object}  apierror.Error
 // @Failure      429  {object}  apierror.Error
+// @Failure      503  {object}  apierror.Error
 // @Security     BearerAuth
-// @Router       /findings/import [post]
-func (h *FindingImportHandler) Import(w http.ResponseWriter, r *http.Request) {
+// @Router       /findings/imports [post]
+func (h *FindingImportHandler) Import(w http.ResponseWriter, r *http.Request) { //nolint:cyclop,gocognit // one upload flow: params, key, parts, receipt
 	tid, err := shared.IDFromString(middleware.MustGetTenantID(r.Context()))
 	if err != nil {
 		apierror.BadRequest("invalid tenant").WriteJSON(w)
@@ -228,11 +280,18 @@ func (h *FindingImportHandler) Import(w http.ResponseWriter, r *http.Request) {
 		req.ActorUserID = &uid
 	}
 	if f := strings.TrimSpace(q.Get("format")); f != "" {
-		if !importer.Format(f).IsValid() {
+		if mp, ok, apiErr := resolveMappingFormat(r.Context(), h.mappings, tid, f); ok {
+			if apiErr != nil {
+				apiErr.WriteJSON(w)
+				return
+			}
+			req.Mapping, req.Format = mp, importer.Format(mp.Format())
+		} else if !importer.Format(f).IsValid() {
 			apierror.BadRequest("unknown format; supported: " + strings.Join(supportedFormats(), ", ")).WriteJSON(w)
 			return
+		} else {
+			req.Format = importer.Format(f)
 		}
-		req.Format = importer.Format(f)
 	}
 	if s := strings.TrimSpace(q.Get("min_severity")); s != "" {
 		sev := ctis.Severity(strings.ToLower(s))
@@ -243,10 +302,26 @@ func (h *FindingImportHandler) Import(w http.ResponseWriter, r *http.Request) {
 		req.MinSeverity = sev
 	}
 
+	if apiErr := h.parseCoverage(r, &req); apiErr != nil {
+		apiErr.WriteJSON(w)
+		return
+	}
+	if req.Mapping != nil && req.Coverage.Full {
+		apierror.BadRequest("an import through a mapping is always partial coverage; coverage=full is not accepted").WriteJSON(w)
+		return
+	}
+
 	maxBody := h.maxBody
 	if maxBody <= 0 {
 		maxBody = MaxFindingImportBody
 	}
+	if !req.DryRun {
+		h.commitImport(w, r, req, q, maxBody)
+		return
+	}
+
+	// A preview: parsed and counted in the request, nothing is written (an
+	// Idempotency-Key is ignored).
 	r.Body = http.MaxBytesReader(w, r.Body, maxBody)
 	mr, err := r.MultipartReader()
 	if err != nil {
@@ -258,7 +333,7 @@ func (h *FindingImportHandler) Import(w http.ResponseWriter, r *http.Request) {
 
 	resp := FindingImportResponse{
 		SessionID:        req.SessionID,
-		DryRun:           req.DryRun,
+		DryRun:           true,
 		VEXMode:          string(h.svc.VEXMode()),
 		VEXCanClose:      string(h.svc.VEXMode()) == "enforce" && req.CanApprove,
 		SupportedFormats: supportedFormats(),
@@ -292,7 +367,7 @@ func (h *FindingImportHandler) Import(w http.ResponseWriter, r *http.Request) {
 				apierror.BadRequest(fmt.Sprintf("at most %d files per request", maxImportFiles)).WriteJSON(w)
 				return
 			}
-			out, status, apiErr := h.importPart(ctx, req, part, kb, len(results))
+			out, status, apiErr := h.importPart(ctx, req, part, part, kb, len(results))
 			if apiErr != nil {
 				apiErr.WriteJSON(w)
 				return
@@ -304,12 +379,11 @@ func (h *FindingImportHandler) Import(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 			results = append(results, out...)
-		default:
-			// Unknown parts are drained, never stored.
-			if _, err := io.Copy(io.Discard, part); err != nil {
-				writeBodyError(w, err)
-				return
-			}
+		}
+		// Unknown parts are drained, never stored.
+		if _, err := io.Copy(io.Discard, part); err != nil {
+			writeBodyError(w, err)
+			return
 		}
 		_ = part.Close()
 	}
@@ -320,9 +394,125 @@ func (h *FindingImportHandler) Import(w http.ResponseWriter, r *http.Request) {
 	for i := range results {
 		resp.Files = append(resp.Files, toImportFileResponse(&results[i]))
 	}
-	h.auditImport(r, req, results)
-
+	findingimport.AuditImport(r.Context(), h.auditor(), h.auditContext(r, req.TenantID), req, results, h.svc.VEXMode())
 	writeJSON(w, http.StatusOK, resp)
+}
+
+// claimKey claims the request's Idempotency-Key. handled is true when the
+// answer was written: a bad key (400), the store down (503, fail closed), a
+// key in flight (409) or reused (422), or a replay of the stored answer.
+// Without a key (or in a preview) claim and hasher are nil.
+func (h *FindingImportHandler) claimKey(w http.ResponseWriter, r *http.Request, tid shared.ID, q url.Values, maxBody int64,
+	dryRun bool) (*idempotency.Claim, *requestHasher, bool) {
+	key := r.Header.Get(idempotency.Header)
+	if key == "" || dryRun {
+		return nil, nil, false
+	}
+	scope, err := idempotency.NewScope(tid, importPrincipal(r), findingImportRoute, key)
+	if err != nil {
+		apierror.BadRequest(err.Error()).WriteJSON(w)
+		return nil, nil, true
+	}
+	if h.idem == nil {
+		h.logger.Error("finding import: Idempotency-Key sent but no key store is wired")
+		storeUnavailable(w)
+		return nil, nil, true
+	}
+	c, existing, err := h.idem.Claim(r.Context(), scope, findingImportTimeout+5*time.Minute)
+	if err != nil {
+		h.logger.Error("finding import: idempotency store", "error", logger.SanitizeError(err))
+		storeUnavailable(w)
+		return nil, nil, true
+	}
+	if existing == nil {
+		return c, newRequestHasher(q), false
+	}
+	if existing.State != idempotency.StateDone {
+		writeIdempotencyRefusal(w, true)
+		return nil, nil, true
+	}
+	fp, err := fingerprintRequest(r, maxBody, w)
+	switch {
+	case err != nil:
+		writeBodyError(w, err)
+	case fp != existing.RequestSHA256:
+		writeIdempotencyRefusal(w, false)
+	default:
+		replay(w, existing)
+	}
+	return nil, nil, true
+}
+
+// parseCoverage reads coverage=full and its asset_id values. Declaring full
+// coverage closes findings in bulk, so it needs findings:status and
+// findings:bulk_update (the route adds step-up), cannot drop findings with
+// min_severity, and every asset must be the organization's and visible to
+// the uploader (one answer for a missing and a hidden asset).
+func (h *FindingImportHandler) parseCoverage(r *http.Request, req *findingimport.Request) *apierror.Error {
+	q := r.URL.Query()
+	switch c := q.Get("coverage"); c {
+	case "", "partial":
+	case "full":
+		req.Coverage.Full = true
+	default:
+		return apierror.BadRequest("coverage must be partial or full")
+	}
+	raw := q["asset_id"]
+	if len(raw) > findingimport.MaxCoverageAssets {
+		return apierror.BadRequest(findingimport.ErrCoverageScope.Error())
+	}
+	for _, v := range raw {
+		id, err := shared.IDFromString(v)
+		if err != nil {
+			return apierror.BadRequest(findingimport.ErrCoverageScope.Error())
+		}
+		req.Coverage.AssetIDs = append(req.Coverage.AssetIDs, id)
+	}
+	if req.Coverage.Full {
+		// A full-coverage upload is a bulk close: the permissions of POST
+		// /findings/bulk/status closing findings (the route adds its
+		// step-up).
+		for _, p := range []permission.Permission{permission.FindingsStatus, permission.FindingsBulkUpdate} {
+			if !middleware.HasPermission(r.Context(), p.String()) {
+				return apierror.Forbidden("coverage=full closes findings and needs " + permission.FindingsStatus.String() +
+					" and " + permission.FindingsBulkUpdate.String())
+			}
+		}
+		if req.MinSeverity != "" {
+			// Findings below min_severity are dropped, so their absence
+			// proves nothing.
+			return apierror.BadRequest("coverage=full cannot be combined with min_severity")
+		}
+		if h.coverageOf != nil {
+			scope, err := h.coverageOf(r.Context(), req.TenantID)
+			if err != nil {
+				h.logger.Error("finding import: resolve coverage scope", "error", err)
+				return apierror.InternalServerError("import failed")
+			}
+			req.CoverageScope = scope
+		}
+	}
+	if err := h.svc.CheckCoverage(r.Context(), *req); err != nil {
+		switch {
+		case errors.Is(err, findingimport.ErrCoverageScope):
+			return apierror.BadRequest(err.Error())
+		case errors.Is(err, findingimport.ErrCoverageUnsupported):
+			return apierror.New(http.StatusNotImplemented, "NOT_IMPLEMENTED", err.Error())
+		default:
+			h.logger.Error("finding import: check coverage", "error", err)
+			return apierror.InternalServerError("import failed")
+		}
+	}
+	return nil
+}
+
+// importPrincipal is who an Idempotency-Key belongs to: the API key, or the
+// user, behind the request.
+func importPrincipal(r *http.Request) string {
+	if k := middleware.GetAPIKeyID(r.Context()); k != "" {
+		return "key:" + k
+	}
+	return "user:" + middleware.GetUserID(r.Context())
 }
 
 // importPart imports one file part through findingimport (the one entry
@@ -330,9 +520,9 @@ func (h *FindingImportHandler) Import(w http.ResponseWriter, r *http.Request) {
 // be read, or an upload refused as a whole, it returns the HTTP status the
 // request fails with and the file to describe.
 func (h *FindingImportHandler) importPart(ctx context.Context, req findingimport.Request, part *multipart.Part,
-	kb []byte, index int) ([]findingimport.FileResult, int, *apierror.Error) {
+	body io.Reader, kb []byte, index int) ([]findingimport.FileResult, int, *apierror.Error) {
 	name := findingimport.SafeName(part.FileName())
-	tr := &readErrTracker{r: part}
+	tr := &readErrTracker{r: body}
 	up := findingimport.Upload{
 		Name:           name,
 		Body:           tr,
@@ -455,99 +645,209 @@ func toImportFileResponse(fr *findingimport.FileResult) ImportFileResponse {
 	return out
 }
 
-// auditImport records the import (or the preview): counts, formats and file
-// names, never file content. A VEX document that closed findings, or would
-// have, gets its own record listing them.
-func (h *FindingImportHandler) auditImport(r *http.Request, req findingimport.Request, results []findingimport.FileResult) {
+// parseBool is strconv.ParseBool that treats an error as false.
+func parseBool(s string) bool {
+	b, _ := strconv.ParseBool(s)
+	return b
+}
+
+// auditor is the audit service as findingimport consumes it (nil: none).
+func (h *FindingImportHandler) auditor() findingimport.Auditor {
 	if h.audit == nil {
-		return
+		return nil
 	}
-	actx := auditapp.AuditContext{
-		TenantID:   req.TenantID.String(),
+	return h.audit
+}
+
+// auditContext is who made the request, for the import's audit record.
+func (h *FindingImportHandler) auditContext(r *http.Request, tid shared.ID) auditapp.AuditContext {
+	return auditapp.AuditContext{
+		TenantID:   tid.String(),
 		ActorID:    middleware.GetUserID(r.Context()),
 		ActorEmail: auditActorEmail(r.Context()),
 		ActorIP:    getClientIP(r),
 		UserAgent:  r.UserAgent(),
 		RequestID:  middleware.GetRequestID(r.Context()),
 	}
-	importIDs := make([]string, 0, len(results))
-	names := make([]string, 0, len(results))
-	formats := make([]string, 0, len(results))
-	var assetsC, assetsU, skipped, findC, findU, failed, vexStored, vexRequested, vexWould int
-	var vexIDs []string
-	for i := range results {
-		fr := &results[i]
-		names = append(names, fr.Name)
-		if fr.ImportID != "" {
-			importIDs = append(importIDs, fr.ImportID)
-		}
-		formats = append(formats, string(fr.Format))
-		if fr.Error != nil {
-			failed++
-		}
-		if o := fr.Ingest; o != nil {
-			assetsC += o.AssetsCreated
-			assetsU += o.AssetsUpdated
-			skipped += o.AssetsSkippedOutOfScope
-			findC += o.FindingsCreated
-			findU += o.FindingsUpdated
-		}
-		if v := fr.VEX; v != nil {
-			vexStored += v.Stored
-			vexRequested += v.Requested
-			vexWould += v.WouldClose
-			for _, id := range v.FindingIDs {
-				if len(vexIDs) < maxAuditedImportIDs {
-					vexIDs = append(vexIDs, id.String())
-				}
-			}
-		}
-	}
-	msg := "Findings imported from files"
-	if req.DryRun {
-		msg = "Finding import previewed"
-	}
-	event := auditapp.NewSuccessEvent(auditdom.ActionAssetImported, auditdom.ResourceTypeFinding, req.SessionID).
-		WithMessage(msg).
-		WithSeverity(auditdom.SeverityForAction(auditdom.ActionAssetImported)).
-		WithMetadata("source", "finding_import").
-		WithMetadata("dry_run", req.DryRun).
-		WithMetadata("restricted_uploader", req.Actor != nil).
-		WithMetadata("import_ids", importIDs).
-		WithMetadata("files", names).
-		WithMetadata("formats", formats).
-		WithMetadata("files_failed", failed).
-		WithMetadata("assets_created", assetsC).
-		WithMetadata("assets_updated", assetsU).
-		WithMetadata("assets_skipped_out_of_scope", skipped).
-		WithMetadata("findings_created", findC).
-		WithMetadata("findings_updated", findU).
-		WithMetadata("vex_stored", vexStored).
-		WithMetadata("vex_requested", vexRequested).
-		WithMetadata("vex_would_close", vexWould)
-	_ = h.audit.LogEvent(r.Context(), actx, event)
-
-	if len(vexIDs) > 0 && !req.DryRun {
-		action := auditdom.ActionIngestVEXDryRun
-		if vexRequested > 0 {
-			action = auditdom.ActionIngestVEXApplied
-		}
-		ve := auditapp.NewSuccessEvent(action, auditdom.ResourceTypeIngest, req.SessionID).
-			WithMessage("VEX not_affected from an imported document").
-			WithSeverity(auditdom.SeverityForAction(action)).
-			WithMetadata("source", "finding_import").
-			WithMetadata("import_ids", importIDs).
-			WithMetadata("mode", string(h.svc.VEXMode())).
-			WithMetadata("requested", vexRequested).
-			WithMetadata("would_close", vexWould).
-			WithMetadata("finding_ids", vexIDs).
-			WithMetadata("finding_ids_truncated", vexRequested+vexWould > len(vexIDs))
-		_ = h.audit.LogEvent(r.Context(), actx, ve)
-	}
 }
 
-// parseBool is strconv.ParseBool that treats an error as false.
-func parseBool(s string) bool {
-	b, _ := strconv.ParseBool(s)
-	return b
+// commitImport stores a committed upload and enqueues it for the ingest
+// worker: every part is sealed and stored as it streams in, then the
+// receipt (queued) and the job are recorded, and the answer is 202 with the
+// receipt's Location.
+func (h *FindingImportHandler) commitImport(w http.ResponseWriter, r *http.Request, req findingimport.Request, //nolint:cyclop,gocognit // one upload flow: key, parts, commit
+	q url.Values, maxBody int64) {
+	tid := req.TenantID
+	claim, _, handled := h.claimKey(w, r, tid, q, maxBody, false)
+	if handled {
+		return
+	}
+	completed := false
+	if claim != nil {
+		defer func() {
+			if !completed {
+				if err := h.idem.Release(context.WithoutCancel(r.Context()), claim); err != nil {
+					h.logger.Warn("finding import: release idempotency key", "error", logger.SanitizeError(err))
+				}
+			}
+		}()
+	}
+	// Back-pressure before the body is read: a tenant at its queue limit
+	// gets 429 without storing a part.
+	if err := h.svc.AdmitUpload(r.Context(), tid); err != nil {
+		h.writeQueueErr(w, err)
+		return
+	}
+	r.Body = http.MaxBytesReader(w, r.Body, maxBody)
+	mr, err := r.MultipartReader()
+	if err != nil {
+		apierror.BadRequest("send the file as multipart/form-data").WriteJSON(w)
+		return
+	}
+	ctx := r.Context()
+	jobID := shared.NewID()
+	committed := false
+	defer func() {
+		if !committed {
+			h.svc.DiscardParts(context.WithoutCancel(ctx), tid, jobID)
+		}
+	}()
+	hasher := newRequestHasher(q)
+	env := findingimport.Envelope{
+		SessionID: req.SessionID, Format: string(req.Format), MinSeverity: string(req.MinSeverity),
+		CanApprove: req.CanApprove, CoverageAll: req.Coverage.Full, Caller: h.callerOf(r),
+		Audit: h.auditContext(r, tid),
+	}
+	if req.Mapping != nil {
+		// The version resolved now is the one the worker applies: it
+		// resolves this pin again in the job's organization.
+		env.Format = ""
+		env.Mapping = &findingimport.MappingPin{ID: req.Mapping.Mapping.ID.String(), Format: req.Mapping.Format()}
+	}
+	for _, id := range req.Coverage.AssetIDs {
+		env.CoverageIDs = append(env.CoverageIDs, id.String())
+	}
+	files, part := 0, 0
+	firstName := ""
+	for {
+		mp, err := mr.NextPart()
+		if errors.Is(err, io.EOF) {
+			break
+		}
+		if err != nil {
+			writeBodyError(w, err)
+			return
+		}
+		body := hasher.part(mp.FormName(), mp)
+		switch mp.FormName() {
+		case "knowledge_base", "file":
+			limit := int64(maxImportKB)
+			if mp.FormName() == "file" {
+				files++
+				if files > maxImportFiles {
+					apierror.BadRequest(fmt.Sprintf("at most %d files per request", maxImportFiles)).WriteJSON(w)
+					return
+				}
+				limit = maxBody
+			}
+			data, err := io.ReadAll(io.LimitReader(body, limit+1))
+			if err != nil {
+				writeBodyError(w, err)
+				return
+			}
+			if int64(len(data)) > limit {
+				apierror.New(http.StatusRequestEntityTooLarge, "PAYLOAD_TOO_LARGE", "the "+strings.ReplaceAll(mp.FormName(), "_", " ")+" part is too large").WriteJSON(w)
+				return
+			}
+			name := findingimport.SafeName(mp.FileName())
+			if mp.FormName() == "file" && firstName == "" {
+				firstName = name
+			}
+			if err := h.svc.StagePart(ctx, tid, jobID, part, name, data); err != nil {
+				h.writeQueueErr(w, err)
+				return
+			}
+			env.Parts = append(env.Parts, findingimport.EnvelopePart{Part: part, KB: mp.FormName() == "knowledge_base", Name: name})
+			part++
+		}
+		// Unknown parts are drained, never stored; every part is read to
+		// its end for the fingerprint.
+		if err := body.done(); err != nil {
+			writeBodyError(w, err)
+			return
+		}
+		_ = mp.Close()
+	}
+	if files == 0 {
+		apierror.BadRequest("no file part in the upload").WriteJSON(w)
+		return
+	}
+	fp := hasher.sum()
+	digest, _ := hex.DecodeString(fp)
+	if env.Mapping != nil {
+		// The same files through another mapping or version are another upload.
+		d := sha256.Sum256(append(digest, []byte("\x00"+env.Mapping.ID+"\x00"+env.Mapping.Format)...))
+		digest = d[:]
+	}
+	var actorUser *shared.ID
+	if req.ActorUserID != nil {
+		actorUser = req.ActorUserID
+	}
+	acc, err := h.svc.CommitUpload(ctx, tid, actorUser, jobID, importPrincipal(r), digest, claim != nil, firstName, env)
+	if err != nil {
+		h.writeQueueErr(w, err)
+		return
+	}
+	committed = true
+	resp := FindingImportResponse{
+		SessionID: req.SessionID, ReceiptID: acc.ReceiptID.String(), Status: "queued",
+		VEXMode: string(h.svc.VEXMode()), VEXCanClose: string(h.svc.VEXMode()) == "enforce" && req.CanApprove,
+		Files: []ImportFileResponse{}, SupportedFormats: supportedFormats(),
+	}
+	if acc.Replayed {
+		resp.Status = string(acc.Status)
+		w.Header().Set("Idempotent-Replayed", "true")
+	}
+	out, err := storableResponse(resp)
+	if err != nil {
+		apierror.InternalServerError("import failed").WriteJSON(w)
+		return
+	}
+	if claim != nil {
+		rid := acc.ReceiptID
+		if err := h.idem.Complete(context.WithoutCancel(ctx), claim, fp, http.StatusAccepted, out, &rid); err != nil {
+			h.logger.Error("finding import: store idempotent answer", "error", logger.SanitizeError(err))
+		}
+		completed = true
+	}
+	w.Header().Set("Location", "/api/v1/findings/imports/"+acc.ReceiptID.String())
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusAccepted)
+	_, _ = w.Write(out)
+}
+
+// callerOf is the uploader as the data scope sees it, recorded for the
+// worker.
+func (h *FindingImportHandler) callerOf(r *http.Request) findingimport.Caller {
+	if h.ds != nil {
+		c := h.ds.CallerOf(r.Context())
+		return findingimport.Caller{UserID: c.UserID, IsAdmin: c.IsAdmin, IsOwner: c.IsOwner, APIKey: c.APIKey,
+			APIKeyID: middleware.GetAPIKeyID(r.Context())}
+	}
+	keyID := middleware.GetAPIKeyID(r.Context())
+	return findingimport.Caller{UserID: middleware.GetUserID(r.Context()), APIKey: keyID != "", APIKeyID: keyID}
+}
+
+// writeQueueErr answers an upload that could not be stored.
+func (h *FindingImportHandler) writeQueueErr(w http.ResponseWriter, err error) {
+	if writeBackpressure(w, err) {
+		return
+	}
+	if errors.Is(err, findingimport.ErrQueueUnavailable) || errors.Is(err, ingestqueue.ErrUnavailable) {
+		w.Header().Set("Retry-After", "30")
+		apierror.ServiceUnavailable("imports are not available right now; nothing was imported").WriteJSON(w)
+		return
+	}
+	h.logger.Error("finding import: store upload", "error", logger.SanitizeError(err))
+	apierror.InternalServerError("import failed").WriteJSON(w)
 }

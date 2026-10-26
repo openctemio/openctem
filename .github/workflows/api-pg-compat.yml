@@ -1,0 +1,186 @@
+name: API PostgreSQL Compatibility
+
+# Supported PostgreSQL: 16, 17 and 18 (17 is the recommended version).
+# API CI runs the whole suite on 17 for every pull request and merge group. This
+# workflow runs the DB-backed packages on the two other supported majors, 16 and
+# 18, so a migration or query that works only on 17 is found within a day:
+#
+#   - schedule: nightly (02:17 UTC, from the default branch's copy of this file)
+#   - push to develop: only when a migration, the role script, the PostgreSQL
+#     repositories or this file changed (the merge queue pushes often)
+#   - pull_request: only a change to this file, to prove the change works
+#   - workflow_dispatch: any time
+#
+# Same method as the least-privilege job in API CI: roles are bootstrapped by a
+# superuser, every migration is applied as the migrator (the schema owner, not a
+# superuser), and the suite runs as the app role, which has DML only. The three
+# `pkgs` shards hold every DB-backed package (tests/unit has no database tests of
+# its own that 17 does not already cover). Not a required check: it does not run
+# on ordinary pull requests, so a skipped run leaves nothing pending.
+
+on:
+  schedule:
+    - cron: "17 2 * * *"
+  push:
+    branches: [develop]
+    paths:
+      - api/migrations/**
+      - api/deploy/postgres/**
+      - api/internal/infra/postgres/**
+      - .github/workflows/api-pg-compat.yml
+  pull_request:
+    paths:
+      - .github/workflows/api-pg-compat.yml
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  # A newer push supersedes an older one; a nightly or manual run is never cancelled.
+  cancel-in-progress: ${{ github.event_name == 'push' || github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+  # The Redis service container pulls the CI image mirror (ghcr.io/openctemio/mirror).
+  packages: read
+
+env:
+  GOWORK: "off"
+
+defaults:
+  run:
+    working-directory: api
+
+jobs:
+  suite:
+    name: PostgreSQL ${{ matrix.pg }}, DB shard ${{ matrix.shard }}/3
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        # The digests are the ones in .github/ci-images.txt (bump both together).
+        pg: [16, 18]
+        shard: [0, 1, 2]
+        include:
+          - pg: 16
+            digest: sha256:f4610795587492cd4fb887c2dc3de301b813278bb6f616992061141b5f15ac36
+          - pg: 18
+            digest: sha256:77f585114c32fbca283dc835b0596f4e52b51b4c6662d7810b2f4084f60a1873
+    services:
+      redis:
+        image: ghcr.io/openctemio/mirror/redis:7-alpine
+        credentials:
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      SUPER_URL: postgres://postgres@localhost:5432/lp_test?sslmode=disable
+      MIGRATOR_URL: postgres://openctem_migrator@localhost:5432/lp_test?sslmode=disable
+      APP_ROLE_URL: postgres://openctem_app@localhost:5432/lp_test?sslmode=disable
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      # The CI image mirror first; its upstream (same digest) until the mirror
+      # has copied the image. Trust auth on the job's throwaway database: no
+      # credential literal in the repo; role separation is what is under test.
+      - name: Start PostgreSQL ${{ matrix.pg }}
+        working-directory: .
+        env:
+          PG: ${{ matrix.pg }}
+          DIGEST: ${{ matrix.digest }}
+        run: |
+          img="ghcr.io/openctemio/mirror/postgres:${PG}-alpine@${DIGEST}"
+          if ! docker pull -q "$img"; then
+            # Until the mirror has copied the image: the ECR copy, then Docker Hub
+            # (same digest), each with the retry helper for registry limits.
+            img="public.ecr.aws/docker/library/postgres:${PG}-alpine@${DIGEST}"
+            if ! bash .github/scripts/retry.sh docker pull -q "$img"; then
+              img="docker.io/library/postgres:${PG}-alpine@${DIGEST}"
+              bash .github/scripts/retry.sh docker pull -q "$img"
+            fi
+          fi
+          docker run -d --name pg -p 5432:5432 -e POSTGRES_USER=postgres \
+            -e POSTGRES_HOST_AUTH_METHOD=trust -e POSTGRES_DB=lp_test "$img"
+          # Over TCP: the entrypoint's init server listens on the socket only.
+          for _ in $(seq 1 60); do
+            docker exec pg pg_isready -h 127.0.0.1 -U postgres -d lp_test -q && exit 0
+            sleep 1
+          done
+          docker logs pg
+          exit 1
+
+      # A wrong image tag must not pass as the version under test.
+      - name: The server is the version under test
+        env:
+          PG: ${{ matrix.pg }}
+        run: |
+          major="$(psql "$SUPER_URL" -X -At -c 'SHOW server_version_num')"
+          major="${major:0:2}"
+          echo "PostgreSQL major ${major}"
+          [ "$major" = "$PG" ] || { echo "::error::expected PostgreSQL ${PG}, the server is ${major}"; exit 1; }
+
+      - name: Setup Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: api/go.mod
+          cache: true
+          cache-dependency-path: api/go.sum
+
+      # The spec is generated, not committed; the contract tests read it.
+      - name: Generate the OpenAPI spec
+        run: make swagger
+
+      - name: Install golang-migrate
+        run: go install -tags 'postgres' github.com/golang-migrate/migrate/v4/cmd/migrate@v4.18.1
+
+      - name: Bootstrap the roles on a fresh database
+        run: psql "$SUPER_URL" -X -v ON_ERROR_STOP=1 -f deploy/postgres/least-privilege-roles.sql
+
+      - name: Apply every migration as the migrator (not a superuser)
+        run: migrate -path migrations -database "$MIGRATOR_URL" up
+
+      - name: Re-run the bootstrap (idempotent; verifies grants on the migrated schema)
+        run: psql "$SUPER_URL" -X -v ON_ERROR_STOP=1 -f deploy/postgres/least-privilege-roles.sql
+
+      - name: The app role can reach the database (so a skip cannot pass silently)
+        run: psql "$APP_ROLE_URL" -X -v ON_ERROR_STOP=1 -c 'SELECT count(*) FROM tenants'
+
+      # OPENCTEM_TEST_DB_REQUIRED + the skip check: a DB test that skipped for a
+      # missing database fails the job instead of passing silently. The two
+      # tests that need CREATEDB skip here by design and run in API CI on 17.
+      - name: Run the DB-backed suite as the app role (shard ${{ matrix.shard }}/3)
+        id: suite
+        shell: bash # -o pipefail: the pipe into tee/jq must not hide a failure
+        env:
+          SHARD: ${{ matrix.shard }}
+          OPENCTEM_TEST_DB_REQUIRED: "1"
+          DATABASE_URL: ${{ env.APP_ROLE_URL }}
+          DATABASE_MIGRATE_URL: ${{ env.MIGRATOR_URL }}
+          # testdb.PrivateDatabase only: CREATE DATABASE + migrations need a superuser.
+          DATABASE_ADMIN_URL: ${{ env.SUPER_URL }}
+          DB_HOST: localhost
+          DB_PORT: 5432
+          DB_USER: openctem_app
+          DB_NAME: lp_test
+          REDIS_HOST: localhost
+          REDIS_PORT: 6379
+        run: |
+          bash ../.github/scripts/go-shard-run.sh "$SHARD" 3 pg-test.json -timeout 40m
+
+      - name: No DB-backed test was skipped
+        if: ${{ !cancelled() && steps.suite.outcome != 'skipped' }}
+        run: bash ../.github/scripts/check-db-test-skips.sh pg-test.json
+
+      - name: PostgreSQL log tail (on failure)
+        if: ${{ failure() }}
+        working-directory: .
+        run: docker logs --tail 200 pg

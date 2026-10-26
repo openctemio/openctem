@@ -29,7 +29,7 @@ import { useTranslation } from '@/context/i18n-provider'
 import { SCOPE_SECTION_TABS } from '@/config/section-tabs'
 import { ApiClientError } from '@/lib/api/error-handler'
 import { Permission, useHasPermission } from '@/lib/permissions'
-import { EmptyState, ErrorState, GatedSectionTabs, PageHeader } from '@/features/shared'
+import { EmptyState, ErrorState, GatedSectionTabs, PageHeader, PageStack } from '@/features/shared'
 import {
   LETTER_PROBLEM_TEXT,
   LETTER_TYPES,
@@ -41,6 +41,7 @@ import {
   useLetters,
   type AuthorizationLetter,
 } from '@/features/scope-letters'
+import { confirmName } from '@/lib/confirm-name'
 
 function errorText(err: unknown, fallback: string): string {
   return err instanceof ApiClientError ? err.message : fallback
@@ -213,106 +214,111 @@ export default function ScopeLettersPage() {
 
   return (
     <Main>
-      <PageHeader
-        title={t('letters.title', 'Letters of authorization')}
-        description={t(
-          'letters.description',
-          'Signed letters that authorize testing systems your organization does not own. A letter authorizes nothing by itself: scope entries that name it need approval and stop when it expires or is revoked.'
-        )}
-      >
-        {canUpload && (
-          <Button onClick={() => setUploading((x) => !x)}>
-            <Upload className="mr-2 h-4 w-4" />
-            {t('letters.upload', 'Upload letter')}
-          </Button>
-        )}
-      </PageHeader>
-      <GatedSectionTabs tabs={SCOPE_SECTION_TABS} label="Scope sections" className="mt-4 mb-0" />
+      <PageStack>
+        <PageHeader
+          title={t('letters.title', 'Letters of authorization')}
+          description={t(
+            'letters.description',
+            'Signed letters that authorize testing systems your organization does not own. A letter authorizes nothing by itself: scope entries that name it need approval and stop when it expires or is revoked.'
+          )}
+        >
+          {canUpload && (
+            <Button onClick={() => setUploading((x) => !x)}>
+              <Upload className="mr-2 h-4 w-4" />
+              {t('letters.upload', 'Upload letter')}
+            </Button>
+          )}
+        </PageHeader>
+        <GatedSectionTabs tabs={SCOPE_SECTION_TABS} label="Scope sections" />
 
-      <div className="space-y-6">
-        {uploading && canUpload && (
-          <UploadForm
-            onDone={() => {
-              setUploading(false)
-              void mutate()
-            }}
-          />
-        )}
+        <>
+          {uploading && canUpload && (
+            <UploadForm
+              onDone={() => {
+                setUploading(false)
+                void mutate()
+              }}
+            />
+          )}
 
-        {error ? (
-          <ErrorState
-            title={t('letters.title', 'Letters of authorization')}
-            error={error}
-            onRetry={() => mutate()}
-          />
-        ) : !isLoading && (data ?? []).length === 0 ? (
-          <EmptyState
-            icon={FileSignature}
-            title={t('letters.empty', 'No letters yet')}
-            description={t(
-              'letters.emptyHint',
-              'Upload a signed letter of authorization, then add scope entries that name it.'
-            )}
-          />
-        ) : (
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>{t('letters.form.title', 'Title')}</TableHead>
-                <TableHead>{t('letters.col.issuer', 'Issued by')}</TableHead>
-                <TableHead>{t('letters.col.valid', 'Valid')}</TableHead>
-                <TableHead>{t('letters.col.status', 'Status')}</TableHead>
-                <TableHead>{t('letters.col.sha', 'SHA-256')}</TableHead>
-                <TableHead className="text-right">{t('letters.col.actions', 'Actions')}</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {(data ?? []).map((l) => (
-                <TableRow key={l.id}>
-                  <TableCell className="font-medium break-words">
-                    {l.title}
-                    {l.reference && (
-                      <span className="text-muted-foreground block text-xs">{l.reference}</span>
-                    )}
-                  </TableCell>
-                  <TableCell className="text-sm">{l.issuer || '-'}</TableCell>
-                  <TableCell className="text-xs whitespace-nowrap">
-                    {new Date(l.valid_from).toLocaleDateString()} –{' '}
-                    {new Date(l.valid_until).toLocaleDateString()}
-                  </TableCell>
-                  <TableCell>
-                    <LetterStatus letter={l} />
-                  </TableCell>
-                  <TableCell className="font-mono text-xs" title={l.file_sha256}>
-                    {l.file_sha256.slice(0, 12)}…
-                  </TableCell>
-                  <TableCell className="text-right whitespace-nowrap">
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => download(l)}
-                      aria-label={t('letters.download', 'Download')}
-                    >
-                      <Download className="h-4 w-4" />
-                    </Button>
-                    {canRevoke && !l.revoked_at && (
+          {error ? (
+            <ErrorState
+              title={t('letters.title', 'Letters of authorization')}
+              error={error}
+              onRetry={() => mutate()}
+            />
+          ) : !isLoading && (data ?? []).length === 0 ? (
+            <EmptyState
+              icon={FileSignature}
+              title={t('letters.empty', 'No letters yet')}
+              description={t(
+                'letters.emptyHint',
+                'Upload a signed letter of authorization, then add scope entries that name it.'
+              )}
+            />
+          ) : (
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>{t('letters.form.title', 'Title')}</TableHead>
+                  <TableHead>{t('letters.col.issuer', 'Issued by')}</TableHead>
+                  <TableHead>{t('letters.col.valid', 'Valid')}</TableHead>
+                  <TableHead>{t('letters.col.status', 'Status')}</TableHead>
+                  <TableHead>{t('letters.col.sha', 'SHA-256')}</TableHead>
+                  <TableHead className="text-right">
+                    {t('letters.col.actions', 'Actions')}
+                  </TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {(data ?? []).map((l) => (
+                  <TableRow key={l.id}>
+                    <TableCell className="font-medium break-words">
+                      {l.title}
+                      {l.reference && (
+                        <span className="text-muted-foreground block text-xs">{l.reference}</span>
+                      )}
+                    </TableCell>
+                    <TableCell className="text-sm">{l.issuer || '-'}</TableCell>
+                    <TableCell className="text-xs whitespace-nowrap">
+                      {new Date(l.valid_from).toLocaleDateString()} –{' '}
+                      {new Date(l.valid_until).toLocaleDateString()}
+                    </TableCell>
+                    <TableCell>
+                      <LetterStatus letter={l} />
+                    </TableCell>
+                    <TableCell className="font-mono text-xs" title={l.file_sha256}>
+                      {l.file_sha256.slice(0, 12)}…
+                    </TableCell>
+                    <TableCell className="text-right whitespace-nowrap">
                       <Button
                         variant="ghost"
                         size="sm"
-                        className="text-destructive"
-                        disabled={busy === l.id}
-                        onClick={() => setPendingRevoke(l)}
+                        onClick={() => download(l)}
+                        aria-label={t('letters.download', 'Download')}
                       >
-                        {t('letters.revoke', 'Revoke')}
+                        <Download className="h-4 w-4" />
                       </Button>
-                    )}
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        )}
-      </div>
+                      {canRevoke && !l.revoked_at && (
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          // Set apart from Download so a tap meant for it cannot land here.
+                          className="ms-3 text-destructive"
+                          disabled={busy === l.id}
+                          onClick={() => setPendingRevoke(l)}
+                        >
+                          {t('letters.revoke', 'Revoke')}
+                        </Button>
+                      )}
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          )}
+        </>
+      </PageStack>
       <ConfirmDialog
         open={pendingRevoke !== null}
         onOpenChange={(open) => !open && setPendingRevoke(null)}
@@ -324,7 +330,10 @@ export default function ScopeLettersPage() {
           'confirm.letter.revokeDesc',
           'Scope entries that name this letter stop authorizing active scans at once. A revoked letter cannot be reinstated; upload a new letter instead.'
         )}
-        confirmText={t('confirm.revoke', 'Revoke')}
+        confirmText={t('confirm.letter.revokeButton', 'Revoke letter')}
+        typeToConfirm={
+          pendingRevoke ? confirmName(pendingRevoke.title, pendingRevoke.id) : undefined
+        }
         isLoading={busy !== null}
         handleConfirm={() => (pendingRevoke ? revoke(pendingRevoke) : undefined)}
       />

@@ -94,6 +94,11 @@ type NavLink = BaseNavItem & {
    * section so they stay searchable. The page renders the same list as tabs.
    */
   sections?: readonly NavSectionLink[]
+  /**
+   * Lists the list's quick views (with counts) under this row while that
+   * list is open: the Findings views, or the asset inventory's lenses.
+   */
+  quickViews?: 'findings' | 'assets'
 }
 
 // ✅ Nav item dạng collapsible có danh sách con

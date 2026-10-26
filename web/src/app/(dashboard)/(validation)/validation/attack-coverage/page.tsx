@@ -2,12 +2,13 @@
 
 import { useMemo } from 'react'
 import { Main } from '@/components/layout'
-import { PageHeader, StatsCard } from '@/features/shared'
+import { PageHeader, PageStack, MetricStrip } from '@/features/shared'
 import { SEVERITY_DOT_COLORS } from '@/lib/severity-colors'
 import { CRITICALITY_DOT_COLORS } from '@/lib/criticality-colors'
 import { useUrlFilter } from '@/hooks/use-url-param'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
+import { SignalChip } from '@/components/ui/signal-chip'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
@@ -18,7 +19,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { Shield, Target, AlertTriangle, RefreshCw } from 'lucide-react'
+import { RefreshCw } from 'lucide-react'
+import { useTranslation } from '@/context/i18n-provider'
 import { useAllPentestFindings } from '@/features/pentest/api/use-pentest-api'
 import type { ApiFinding } from '@/features/pentest/api/adapters'
 import { useSimulations, type Simulation } from '@/features/simulation/api/use-simulation-api'
@@ -202,6 +204,7 @@ function LegendItem({ color, label }: { color: string; label: string }) {
 }
 
 function HeatmapCell({ cell }: { cell: TechniqueCell | undefined; tacticId: string }) {
+  const { t } = useTranslation()
   const bgColor = getCellColor(cell)
   const textColor = getCellTextColor(cell)
   const total = cell ? cell.findingCount + cell.simulationCount : 0
@@ -231,14 +234,31 @@ function HeatmapCell({ cell }: { cell: TechniqueCell | undefined; tacticId: stri
             <div className="flex flex-wrap gap-2 pt-1">
               {cell.findingCount > 0 && (
                 <span className="text-xs">
-                  {cell.findingCount} pentest finding{cell.findingCount !== 1 ? 's' : ''}
+                  {cell.findingCount === 1
+                    ? t('validation.attackCoverage.findingCount', '{count} pentest finding', {
+                        count: cell.findingCount,
+                      })
+                    : t(
+                        'validation.attackCoverage.findingCount_other',
+                        '{count} pentest findings',
+                        {
+                          count: cell.findingCount,
+                        }
+                      )}
                 </span>
               )}
               {cell.simulationCount > 0 && (
                 <>
                   <span className="text-muted-foreground text-xs">|</span>
                   <span className="text-xs">
-                    {cell.detected} detected, {cell.bypassed} bypassed
+                    {t(
+                      'validation.attackCoverage.detectedBypassed',
+                      '{detected} detected, {bypassed} bypassed',
+                      {
+                        detected: cell.detected,
+                        bypassed: cell.bypassed,
+                      }
+                    )}
                   </span>
                 </>
               )}
@@ -247,7 +267,7 @@ function HeatmapCell({ cell }: { cell: TechniqueCell | undefined; tacticId: stri
               <div className="flex flex-wrap gap-1 pt-1">
                 {[...new Set(cell.severities)].map((sev) => (
                   <Badge key={sev} variant="outline" className="text-xs capitalize">
-                    {sev}
+                    {t(`severity.${sev}`, sev)}
                   </Badge>
                 ))}
               </div>
@@ -287,19 +307,18 @@ const TACTIC_TECHNIQUES: Record<string, { id: string; name: string }[]> = (() =>
 function LoadingSkeleton() {
   return (
     <Main>
-      <Skeleton className="h-8 w-72" />
-      <Skeleton className="mt-2 h-4 w-96 max-w-full" />
-      <div className="mt-5 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        {Array.from({ length: 4 }).map((_, i) => (
-          <Skeleton key={i} className="h-24 rounded-xl" />
-        ))}
-      </div>
-      <Skeleton className="mt-5 h-96 rounded-xl" />
+      <PageStack>
+        <Skeleton className="h-8 w-72" />
+        <Skeleton className="h-4 w-96 max-w-full" />
+        <Skeleton className="h-16 rounded-xl" />
+        <Skeleton className="h-96 rounded-xl" />
+      </PageStack>
     </Main>
   )
 }
 
 export default function MitreCoveragePage() {
+  const { t } = useTranslation()
   // The source filter lives in the URL so a view can be linked.
   const [sourceParam, setSourceParam] = useUrlFilter('source', 'all')
   const source: CoverageSource =
@@ -399,162 +418,241 @@ export default function MitreCoveragePage() {
 
   return (
     <Main>
-      <PageHeader
-        title="ATT&CK coverage"
-        description={
-          simulationEnabled
-            ? 'Which ATT&CK techniques your pentest findings and attack simulations have exercised.'
-            : 'Which ATT&CK techniques your pentest findings have exercised.'
-        }
-      >
-        <Button variant="outline" size="sm" onClick={handleRefresh}>
-          <RefreshCw className="h-4 w-4 sm:me-2" />
-          <span className="sr-only sm:not-sr-only">Refresh</span>
-        </Button>
-      </PageHeader>
-
-      <div className="mt-5 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        <StatsCard
-          icon={Target}
-          title="Techniques covered"
-          value={`${stats.covered}/${stats.totalTechniques}`}
-          description={`${stats.coverage}% coverage`}
-        />
-        <StatsCard icon={Shield} title="Pentest findings" value={findings.length} />
-        <StatsCard
-          icon={AlertTriangle}
-          title="Simulations bypassed"
-          value={stats.bypassed}
-          valueClassName={stats.bypassed > 0 ? 'text-destructive' : undefined}
-        />
-        <StatsCard icon={Shield} title="Simulations detected" value={stats.detected} />
-      </div>
-
-      <Card className="mt-5">
-        <CardHeader className="flex flex-row flex-wrap items-start justify-between gap-3 space-y-0">
-          <div className="min-w-0 space-y-1.5">
-            <CardTitle>ATT&CK matrix</CardTitle>
-            <CardDescription>
-              Each cell is a technique; its colour shows coverage and severity.
-            </CardDescription>
-          </div>
-          {simulationEnabled && (
-            <Select value={source} onValueChange={setSourceParam}>
-              <SelectTrigger className="h-9 w-40" aria-label="Coverage source">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All sources</SelectItem>
-                <SelectItem value="pentest">Pentest only</SelectItem>
-                <SelectItem value="simulation">Simulation only</SelectItem>
-              </SelectContent>
-            </Select>
-          )}
-          <div className="flex w-full flex-wrap gap-x-4 gap-y-2">
-            <LegendItem color={HEAT.none} label="No coverage" />
-            <LegendItem color={HEAT.lowMed} label="Pentest finding (low/med)" />
-            <LegendItem color={HEAT.high} label="Pentest finding (high)" />
-            <LegendItem color={HEAT.critical} label="Critical / bypassed" />
-            {simulationEnabled && (
-              <>
-                <LegendItem color={HEAT.partial} label="Partially detected" />
-                <LegendItem color={HEAT.detected} label="Detected / prevented" />
-              </>
-            )}
-          </div>
-        </CardHeader>
-        <CardContent className="overflow-x-auto">
-          <div className="min-w-[900px]">
-            {/* Tactic headers */}
-            <div
-              className="mb-2 grid gap-1"
-              style={{ gridTemplateColumns: `repeat(${MITRE_TACTICS.length}, 1fr)` }}
-            >
-              {MITRE_TACTICS.map((tactic) => (
-                <TacticHeader key={tactic.id} tactic={tactic} />
-              ))}
-            </div>
-
-            {/* Technique rows — we render by row index across all tactics */}
-            <TechniqueGrid
-              tactics={MITRE_TACTICS}
-              enrichedTacticTechniques={enrichedTacticTechniques}
-              coverageMap={coverageMap}
-            />
-          </div>
-        </CardContent>
-      </Card>
-
-      {/* Detail table — covered techniques */}
-      {coverageMap.size > 0 && (
-        <Card className="mt-5">
-          <CardHeader>
-            <CardTitle>Covered techniques</CardTitle>
-            <CardDescription>
-              Techniques with at least one finding or simulation result.
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="divide-y divide-border">
-              {[...coverageMap.values()]
-                .filter((c) => c.findingCount + c.simulationCount > 0)
-                .sort(
-                  (a, b) =>
-                    b.findingCount + b.simulationCount - (a.findingCount + a.simulationCount)
+      <PageStack>
+        <PageHeader
+          title={t('validation.attackCoverage.title', 'ATT&CK coverage')}
+          description={
+            simulationEnabled
+              ? t(
+                  'validation.attackCoverage.descSim',
+                  'Which ATT&CK techniques your pentest findings and attack simulations have exercised.'
                 )
-                .map((cell) => {
-                  const tactic = MITRE_TACTICS.find((t) => t.id === cell.tacticId)
-                  return (
-                    <div
-                      key={`${cell.tacticId}::${cell.techniqueId}`}
-                      className="flex flex-wrap items-center justify-between gap-2 py-2"
-                    >
-                      <div className="flex min-w-0 items-center gap-3">
-                        <span className="text-muted-foreground font-mono text-xs w-16 shrink-0">
-                          {cell.techniqueId}
-                        </span>
-                        <div className="min-w-0">
-                          <p className="text-sm font-medium truncate">{cell.techniqueName}</p>
-                          <p className="text-muted-foreground text-xs truncate">{tactic?.name}</p>
-                        </div>
-                      </div>
-                      <div className="flex flex-wrap items-center gap-2">
-                        {cell.findingCount > 0 && (
-                          <Badge variant="outline" className="text-xs">
-                            {cell.findingCount} finding{cell.findingCount !== 1 ? 's' : ''}
-                          </Badge>
-                        )}
-                        {cell.simulationCount > 0 && (
-                          <>
-                            {cell.detected > 0 && (
-                              <Badge variant="secondary" className="tabular-nums">
-                                {cell.detected} detected
-                              </Badge>
-                            )}
-                            {cell.bypassed > 0 && (
-                              <Badge variant="outline" className="text-destructive tabular-nums">
-                                {cell.bypassed} bypassed
-                              </Badge>
-                            )}
-                          </>
-                        )}
-                        {cell.severities.length > 0 && (
-                          <div className="flex gap-1">
-                            {[...new Set(cell.severities)].map((sev) => (
-                              <Badge key={sev} variant="outline" className="text-xs capitalize">
-                                {sev}
-                              </Badge>
-                            ))}
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                  )
-                })}
+              : t(
+                  'validation.attackCoverage.descPentest',
+                  'Which ATT&CK techniques your pentest findings have exercised.'
+                )
+          }
+        >
+          <Button variant="outline" size="sm" onClick={handleRefresh}>
+            <RefreshCw className="h-4 w-4 sm:me-2" />
+            <span className="sr-only sm:not-sr-only">
+              {t('validation.attackCoverage.refresh', 'Refresh')}
+            </span>
+          </Button>
+        </PageHeader>
+
+        <MetricStrip
+          items={[
+            {
+              key: 'findings',
+              label: t('validation.attackCoverage.stat.findings', 'Pentest findings'),
+              value: findings.length,
+              href: '/findings?source=pentest',
+            },
+            ...(simulationEnabled
+              ? [
+                  {
+                    key: 'bypassed',
+                    label: t('validation.attackCoverage.stat.bypassed', 'Simulations bypassed'),
+                    value: stats.bypassed,
+                    tone: 'danger' as const,
+                    href: '/attack-simulation?show=bypassed',
+                  },
+                  {
+                    key: 'detected',
+                    label: t('validation.attackCoverage.stat.detected', 'Simulations detected'),
+                    value: stats.detected,
+                    href: '/attack-simulation?show=caught',
+                  },
+                ]
+              : []),
+          ]}
+        />
+
+        <Card>
+          <CardHeader className="flex flex-row flex-wrap items-start justify-between gap-3 space-y-0">
+            <div className="min-w-0 space-y-1.5">
+              <CardTitle>{t('validation.attackCoverage.matrixTitle', 'ATT&CK matrix')}</CardTitle>
+              <CardDescription>
+                {t(
+                  'validation.attackCoverage.matrixSummary',
+                  '{covered} of {total} techniques covered, {pct}% coverage. Each cell is a technique; its colour shows coverage and severity.',
+                  { covered: stats.covered, total: stats.totalTechniques, pct: stats.coverage }
+                )}
+              </CardDescription>
+            </div>
+            {simulationEnabled && (
+              <Select value={source} onValueChange={setSourceParam}>
+                <SelectTrigger
+                  className="h-9 w-40"
+                  aria-label={t('validation.attackCoverage.sourceAria', 'Coverage source')}
+                >
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">
+                    {t('validation.attackCoverage.source.all', 'All sources')}
+                  </SelectItem>
+                  <SelectItem value="pentest">
+                    {t('validation.attackCoverage.source.pentest', 'Pentest only')}
+                  </SelectItem>
+                  <SelectItem value="simulation">
+                    {t('validation.attackCoverage.source.simulation', 'Simulation only')}
+                  </SelectItem>
+                </SelectContent>
+              </Select>
+            )}
+            <div className="flex w-full flex-wrap gap-x-4 gap-y-2">
+              <LegendItem
+                color={HEAT.none}
+                label={t('validation.attackCoverage.legend.none', 'No coverage')}
+              />
+              <LegendItem
+                color={HEAT.lowMed}
+                label={t('validation.attackCoverage.legend.lowMed', 'Pentest finding (low/med)')}
+              />
+              <LegendItem
+                color={HEAT.high}
+                label={t('validation.attackCoverage.legend.high', 'Pentest finding (high)')}
+              />
+              <LegendItem
+                color={HEAT.critical}
+                label={t('validation.attackCoverage.legend.critical', 'Critical / bypassed')}
+              />
+              {simulationEnabled && (
+                <>
+                  <LegendItem
+                    color={HEAT.partial}
+                    label={t('validation.attackCoverage.legend.partial', 'Partially detected')}
+                  />
+                  <LegendItem
+                    color={HEAT.detected}
+                    label={t('validation.attackCoverage.legend.detected', 'Detected / prevented')}
+                  />
+                </>
+              )}
+            </div>
+          </CardHeader>
+          <CardContent className="overflow-x-auto">
+            <div className="min-w-[900px]">
+              {/* Tactic headers */}
+              <div
+                className="mb-2 grid gap-1"
+                style={{ gridTemplateColumns: `repeat(${MITRE_TACTICS.length}, 1fr)` }}
+              >
+                {MITRE_TACTICS.map((tactic) => (
+                  <TacticHeader key={tactic.id} tactic={tactic} />
+                ))}
+              </div>
+
+              {/* Technique rows — we render by row index across all tactics */}
+              <TechniqueGrid
+                tactics={MITRE_TACTICS}
+                enrichedTacticTechniques={enrichedTacticTechniques}
+                coverageMap={coverageMap}
+              />
             </div>
           </CardContent>
         </Card>
-      )}
+
+        {/* Detail table — covered techniques */}
+        {coverageMap.size > 0 && (
+          <Card>
+            <CardHeader>
+              <CardTitle>
+                {t('validation.attackCoverage.coveredTitle', 'Covered techniques')}
+              </CardTitle>
+              <CardDescription>
+                {t(
+                  'validation.attackCoverage.coveredDesc',
+                  'Techniques with at least one finding or simulation result.'
+                )}
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="divide-y divide-border">
+                {[...coverageMap.values()]
+                  .filter((c) => c.findingCount + c.simulationCount > 0)
+                  .sort(
+                    (a, b) =>
+                      b.findingCount + b.simulationCount - (a.findingCount + a.simulationCount)
+                  )
+                  .map((cell) => {
+                    const tactic = MITRE_TACTICS.find((t) => t.id === cell.tacticId)
+                    return (
+                      <div
+                        key={`${cell.tacticId}::${cell.techniqueId}`}
+                        className="flex flex-wrap items-center justify-between gap-2 py-2"
+                      >
+                        <div className="flex min-w-0 items-center gap-3">
+                          <span className="text-muted-foreground font-mono text-xs w-16 shrink-0">
+                            {cell.techniqueId}
+                          </span>
+                          <div className="min-w-0">
+                            <p className="text-sm font-medium truncate">{cell.techniqueName}</p>
+                            <p className="text-muted-foreground text-xs truncate">{tactic?.name}</p>
+                          </div>
+                        </div>
+                        <div className="flex flex-wrap items-center gap-2">
+                          {cell.findingCount > 0 && (
+                            <Badge variant="outline" className="text-xs">
+                              {cell.findingCount === 1
+                                ? t('validation.attackCoverage.badgeFinding', '{count} finding', {
+                                    count: cell.findingCount,
+                                  })
+                                : t(
+                                    'validation.attackCoverage.badgeFinding_other',
+                                    '{count} findings',
+                                    {
+                                      count: cell.findingCount,
+                                    }
+                                  )}
+                            </Badge>
+                          )}
+                          {cell.simulationCount > 0 && (
+                            <>
+                              {cell.detected > 0 && (
+                                <Badge variant="secondary" className="tabular-nums">
+                                  {t(
+                                    'validation.attackCoverage.badgeDetected',
+                                    '{count} detected',
+                                    {
+                                      count: cell.detected,
+                                    }
+                                  )}
+                                </Badge>
+                              )}
+                              {cell.bypassed > 0 && (
+                                <SignalChip tone="alert" alertText>
+                                  {t(
+                                    'validation.attackCoverage.badgeBypassed',
+                                    '{count} bypassed',
+                                    {
+                                      count: cell.bypassed,
+                                    }
+                                  )}
+                                </SignalChip>
+                              )}
+                            </>
+                          )}
+                          {cell.severities.length > 0 && (
+                            <div className="flex gap-1">
+                              {[...new Set(cell.severities)].map((sev) => (
+                                <Badge key={sev} variant="outline" className="text-xs capitalize">
+                                  {t(`severity.${sev}`, sev)}
+                                </Badge>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    )
+                  })}
+              </div>
+            </CardContent>
+          </Card>
+        )}
+      </PageStack>
     </Main>
   )
 }
@@ -570,7 +668,7 @@ function TacticHeader({ tactic }: { tactic: MitreTactic }) {
         <TooltipTrigger asChild>
           <div className="bg-primary/10 rounded px-1 py-1.5 text-center">
             <p className="text-primary truncate text-xs font-semibold">{tactic.shortName}</p>
-            <p className="text-muted-foreground font-mono text-[10px]">{tactic.id}</p>
+            <p className="text-muted-foreground font-mono text-xs">{tactic.id}</p>
           </div>
         </TooltipTrigger>
         <TooltipContent>

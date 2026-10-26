@@ -1,10 +1,200 @@
 # Automations: how runs start and how many
 
-Automations are the event rules at `/api/v1/workflows` ("When → If → Then").
+Automations are the event rules at `/api/v1/workflows` ("When → If → Then"); design: [RFC-125](../rfcs/RFC-125-automation-simulate-and-go-live.md).
 This page covers how an event becomes runs and the limits on them. A
 redesign (a durable event journal, versions, retries) is **Planned**. Who a run acts as is covered in
 [authorization-matrix.md](authorization-matrix.md), "Automation runs act as
 one person".
+
+## The catalog: what the engine runs
+
+`GET /api/v1/workflows/catalog` (`findings:workflows:read`) lists every
+trigger, action and notification type the engine runs, in builder order,
+with the permission each needs and whether the caller holds it. The console
+builds its palette from this answer, and the API refuses a node of any other
+type. The lists live in `pkg/domain/automation/catalog.go`; `IsValid` on
+each type is built from them.
+
+| Kind | Types |
+|---|---|
+| Trigger | `manual`, `finding_created`, `finding_status_changed`, `asset_discovered`, `scan_completed`, `ai_triage_completed`, `ai_triage_failed` |
+| Action | `assign_user`, `update_status` (to `confirmed` or `in_progress` only), `add_tags`, `remove_tags`, `create_ticket`, `update_ticket`, `trigger_scan`, `trigger_ai_triage`, `request_false_positive`, `request_risk_acceptance` |
+| Notification | `slack`, `teams`, `email`, `webhook` (a registered integration) |
+
+**Removed types.** The `schedule`, `finding_age`, `finding_updated` and
+`webhook` triggers, the `assign_team`, `update_priority`, `run_script`,
+`http_request` and `trigger_pipeline` actions and the `pagerduty`
+notification never ran (nothing fired them, or every run failed or was
+refused) and are no longer types. Migration `automations_removed_types`
+switched off every automation that still held one and set
+`automations.disabled_reason = uses_removed_type`; nothing was deleted, and
+the stored headers of `http_request` nodes were dropped (they were often
+credentials in plain config). Such an automation stays readable
+(`disabled_reason` and `unsupported_features` on `GET /workflows/{id}`), and
+cannot be switched on until the node is replaced; saving a graph of known
+types clears the reason. Scans keep their own schedules; a sweep schedule for
+rules (a saved filter evaluated on a schedule, for digests and periodic
+sweeps) is designed separately and is not a trigger yet.
+
+## Versions and mode
+
+The nodes and edges of an automation are its **draft**. `POST
+/api/v1/workflows/{id}/publish` stores the draft as an immutable row of
+`automation_versions` (definition, SHA-256 digest, risk class, publisher)
+and makes it the **published version**: the automation switches to
+`mode = live` and `published_version_id` points at it. The previous
+published version becomes `superseded`.
+
+| Mode | Runs execute | Effects |
+|---|---|---|
+| `simulate` (every new automation) | the draft | none: action and notification steps record what they would do |
+| `live` | the published version, pinned when the run is created | the steps act |
+
+- A run pins its version (`automation_runs.version_id`, `mode`). Editing the
+  draft never changes a live automation, nor a run already created; an
+  unpublished trigger change never changes what starts it (the dispatcher
+  matches a live automation on its published trigger).
+- `draft_changed` on `GET /workflows/{id}` says the draft differs from the
+  published version (digest of the steps, ignoring node positions).
+- `POST /workflows/{id}/versions/{version_id}/rollback` publishes an older
+  definition again as a new version; history keeps every version
+  (`GET /workflows/{id}/versions`, `GET /workflows/{id}/versions/{version_id}`).
+- `PUT /workflows/{id}/mode {"mode":"simulate"}` switches back in one call
+  and keeps the published version. Live is reached only by publishing.
+- **Owner.** Publishing (and switching on) makes the caller the owner live
+  runs act as. Editing the draft does not change the owner any more: a draft
+  only simulates, and nothing an editor changes acts before someone publishes
+  it. Publishing needs the permission of every step of the definition it
+  stores: the service runs the check on that exact definition (a concurrent
+  draft edit cannot slip an unchecked step in), and stores the version and
+  switches the automation live in one transaction. Rollback checks the old
+  definition the same way and validates its graph like a publish does.
+- **Permissions of a live automation.** Switching a live automation on, and
+  a manual run of it, need the permissions of the steps that run: its
+  published version (switching on also needs the draft's, as any change to
+  the draft does).
+- The draft cannot be replaced while a simulate run of it waits or runs;
+  live runs do not block an edit. Run steps keep the node id of the
+  definition they ran (the foreign key to the draft's nodes is gone, so
+  replacing the draft no longer deletes earlier runs' step history).
+- **Upgrade.** Migration `automation_versions` makes every automation that
+  is switched on version 1, published by its owner, live, so working rules
+  keep acting. Automations that are off stay in simulate without a version.
+  The migration cannot compute the Go canonical digest, so those rows carry
+  the placeholder `backfill` until the API stores `Definition.Digest()` for
+  them at startup (idempotent). The mode checks are added `NOT VALID` and
+  validated by the next migration.
+
+### Simulate by construction, the run trace and deliveries
+
+An action or notification step is either **executed** (the handlers, which
+hold the services that change data, open tickets, start scans and send
+messages) or **evaluated** (`internal/app/automation/evaluate.go`). A simulate
+run reaches only the evaluator, whose single dependency is a read-only finding
+reader: by type it cannot write or reach the network. A unit test walks the
+evaluator's fields and fails if anything else appears there, and another runs
+an automation whose live handlers call a fake server: in simulate the server
+receives nothing. The step's permission and the subject's scope are still
+checked for the owner before evaluation, so a simulation also shows steps the
+owner may not run.
+
+Each step records a trace on `automation_run_steps`: `in_count` (subjects
+that reached it), `out_count` (acted on, or would act on) and `skipped`, per
+reason (`condition_false`, `branch_not_taken`, `no_change`, `no_subject`,
+`refused:not_authorized`). Every notification and ticket step records a
+delivery in `automation_deliveries`: channel, target, mode, status
+(`simulated`, never sent; `sent`, `failed`, `held` by a create policy),
+attempts, external reference, and a payload limited to an allow-list
+(title, severity, subject, provider, project, issue type, repository, body
+length): never a body, headers or a secret.
+
+- `GET /workflow-runs/{id}` returns the steps with their trace, the
+  deliveries and `retained_until`.
+- `GET /workflows/{id}/trace?mode=simulate&days=30` sums the trace and the
+  deliveries per channel over the window.
+- **Scope.** Runs record the finding or asset their trigger names
+  (`subject_id`). A run about a subject outside the caller's data scope, or
+  about a pentest finding of a campaign the caller is not a member of
+  (administrators excepted), is not listed and answers 404, and the trace counts only runs the caller may
+  see (runs without a subject, such as a finished scan, are visible to every
+  reader).
+- **Retention.** Simulate runs are kept 30 days, live runs and their
+  deliveries 180 days; the `automation-run-retention` controller (every 6
+  hours, one replica) deletes older finished runs in batches.
+
+### Preview and validate
+
+Both take the draft in the body (`nodes`, `edges`) or, without one, the saved
+draft; both read only and need `findings:workflows:write`.
+
+- `POST /workflows/{id}/preview {"limit": 1..100}` runs the draft against the
+  latest subjects of its trigger's kind (findings, or assets for
+  `asset_discovered`; a scan trigger has none) **that the caller may read**,
+  applies the trigger's filters, walks the graph in memory through the
+  simulate evaluator and returns per-step counts, the sample ids and what it
+  would send. Nothing is stored or sent. One call per 10 seconds per user
+  (429 `RATE_LIMITED`); a limit above 100 is a 400. A call without a person
+  (an API key) is refused: samples follow a person's scope.
+- `POST /workflows/{id}/verify` returns `problems` (block publishing) and
+  `warnings`: `UNSUPPORTED_TYPE`, graph codes (`GRAPH_CYCLE`,
+  `GRAPH_UNREACHABLE`, `GRAPH_EDGE`), `TRIGGER_CONFIG_INVALID`,
+  `CONDITION_INVALID`, `CONDITION_UNKNOWN_FIELD` (warning), `CONFIG_MISSING`,
+  `INTEGRATION_MISSING` (not set, or not an integration of this organization),
+  `OWNER_LACKS_PERMISSION` (the caller would own the automation once they
+  publish it) and `NO_SIMULATION_SINCE_EDIT` (warning). Ten calls per 10
+  seconds per user.
+
+### The go-live gate
+
+Risk classes (`pkg/domain/automation/risk.go`): low (tags), elevated
+(status, assignment, tickets, notifications, AI triage), high (scans, and
+any automation that lets automation-caused events start it). A version's
+class is the highest of its steps.
+
+| Highest risk | `POST /workflows/{id}/publish` needs |
+|---|---|
+| low | `automations:publish` and the permission of every step |
+| elevated | the same, plus a recent re-authentication (403 `STEP_UP_REQUIRED`; `step_up_at` is stored on the version) |
+| high | the same, and the version waits (`202`, `pending_approval`) until a second person with `automations:publish`, who re-authenticated and is not the publisher, approves it: `POST /workflows/{id}/versions/{versionId}/approve {"digest"}` |
+
+- A draft with blocking validate problems is refused (400 `WORKFLOW_INVALID`,
+  the problems in `details.problems`).
+- The approval binds the version's digest: a wrong digest, or a version a
+  newer publish request replaced or a draft edit withdrew (`retired`: any
+  edit that changes the digest, not a node move), is 409 `VERSION_CHANGED`; the
+  publisher approving is 403 `SELF_APPROVAL`. On approval the version goes
+  live and its publisher becomes the owner live runs act as.
+- Rollback takes the same gate as the older version's class.
+- Narrowing needs no step-up: pausing, switching to simulate.
+- Audit: `workflow.published`, `workflow.publish_requested`,
+  `workflow.version_approved`, `workflow.rolled_back`, `workflow.mode_changed`
+  with the version, digest and risk class.
+
+## Guardrails: no rule closes risk, and no run makes unlimited changes
+
+- **Requests only.** No action writes false positive, accepted, resolved or
+  duplicate. `update_status` may set only `confirmed` or `in_progress`
+  (400 `AUTOMATION_STATUS_NOT_ALLOWED` on save; a stored node is refused at
+  run time; validate reports `STATUS_NOT_ALLOWED`). `request_false_positive`
+  (`closure_reason`, `justification`) and `request_risk_acceptance` (plus
+  `expires_in_days`, 1-365) create a request through the approvals service on
+  behalf of the run's owner, marked as an automation's (`ByAutomation`,
+  activity `by_automation: true`). The approval policy never lets one person
+  decide such a request (`approvalpolicy.Request.AutomationMade`, reason
+  `automation_cannot_decide`), even when the organization's false-positive or
+  acceptance level is `off`: the level lets a *person* decide alone, never a
+  rule. The request actions are high risk, so going live needs a second
+  publisher.
+- **Change cap.** A live run makes at most `max_changes_per_run` changes (an
+  action or notification step is one change; default 250, at most 1,000; set
+  on the automation, pinned by the version; above 250 the automation is high
+  risk). The step past the cap does not start: the run becomes `paused`
+  (`pause_reason: blast_radius`) and `POST /workflow-runs/{id}/approve`
+  (`automations:publish`) lets it continue past the cap, keeping the steps it
+  finished; cancel ends it.
+- Migration `automation_guardrails` switched off (and back to simulate) every
+  automation whose draft or published version set another status
+  (`disabled_reason = status_not_allowed`); nothing was deleted.
 
 ## One run per subject
 
@@ -92,3 +282,44 @@ Code: `pkg/domain/automation/run_limits.go` (the values),
 `WorkflowRunRepository.CreateRunIfUnderLimit` (enforcement),
 `WorkflowEventDispatcher.dispatchFindingsCreated`, and
 `WorkflowExecutor.ExecuteAsyncWithTenant`.
+
+## The console builder
+
+The Automations page (`web/src/app/(dashboard)/(mobilization)/automations`)
+edits the draft graph on a canvas (`web/src/features/workflows`). Below 900px
+the canvas becomes a list of steps in run order and the run trace becomes
+cards.
+
+- **Palette and pickers** come only from `GET /workflows/catalog`; the web
+  keeps no list of types. An entry whose permission the viewer lacks is
+  listed disabled with that permission. A stored node of a type the catalog
+  no longer lists shows as "Removed type: `<id>`", and
+  `disabled_reason = uses_removed_type` is explained on the canvas and in the
+  detail sheet. `update_status` offers only Confirmed and In progress; the
+  request actions say that they create a request a person decides.
+- **Simulate or live.** The header shows the mode, "Version N, published by X
+  on date" and "Unpublished changes" (`draft_changed`). Simulate is one click
+  (`PUT /workflows/{id}/mode`); live is reached only through publishing.
+  "Before going live" lists the rule's risk class and what publishing needs
+  (step-up for elevated, step-up and a second publisher for high), the latest
+  validate result and the change cap. A step-up answer opens the shared
+  re-authentication dialog and the publish is retried. A pending version shows
+  who published it and an Approve button for another holder of
+  `automations:publish` (the digest is sent with the approval); the publisher
+  never gets the button. The versions dialog lists every version with rollback.
+- **Preview** (`POST /workflows/{id}/preview`, 20, 50 or 100 subjects) puts
+  in/out and skipped counts on the steps and lists what would be sent; a 429
+  is explained. Without a preview, the counts of recorded simulate runs
+  (`GET /workflows/{id}/trace`) are shown.
+- **Validate** lists problems and warnings; one with a `node_key` selects that
+  step. Known codes are translated; others show the API's message.
+- **Run trace.** A row of Recent executions opens the run: per-step status,
+  in/out and skipped counts, errors, the deliveries ("Never sent: simulate"
+  in simulate) and "Kept until" from `retained_until`. A run paused at the
+  change cap offers Continue (`POST /workflow-runs/{id}/approve`) and Cancel.
+
+The page hides or disables each control by the permission it needs
+(`automations:write` to edit, preview, validate and run by hand;
+`automations:publish` to go live, approve, roll back, change the mode, switch
+on or off, delete and continue a paused run). The API is the authority for
+all of them.

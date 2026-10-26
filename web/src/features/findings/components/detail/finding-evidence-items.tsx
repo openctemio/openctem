@@ -49,6 +49,7 @@ import {
 } from '../../api/use-finding-evidence-items'
 import {
   bodyRanges,
+  foldEvidence,
   kindLabel,
   partMatched,
   placeholdersOf,
@@ -78,6 +79,21 @@ interface RevealContextValue {
 
 const RevealContext = React.createContext<RevealContextValue | null>(null)
 
+/** Compact layout (the finding drawer): headers fold away, panes are shorter. */
+const CompactContext = React.createContext(false)
+
+/** The translated name of an evidence kind; unknown kinds show as sent. */
+function useKindLabel(): (kind: string) => string {
+  const { t } = useTranslation()
+  return React.useCallback(
+    (kind: string) => {
+      const known = kindLabel(kind)
+      return known === kind ? kind : t(`findings.evidenceItems.kind.${kind}`, known)
+    },
+    [t]
+  )
+}
+
 function useReveal(): RevealContextValue {
   const ctx = React.useContext(RevealContext)
   if (!ctx) throw new Error('useReveal outside an evidence item')
@@ -88,17 +104,31 @@ export interface FindingEvidenceItemsProps {
   findingId: string
   items: FindingEvidenceItem[]
   className?: string
+  /** Shorter panes and folded headers, for the finding drawer. */
+  compact?: boolean
 }
 
-/** The list of evidence items of a finding (or of one retest attempt). */
-export function FindingEvidenceItems({ findingId, items, className }: FindingEvidenceItemsProps) {
-  if (items.length === 0) return null
+/**
+ * The list of evidence items of a finding (or of one retest attempt). A tool's
+ * separate curl item is folded into the HTTP exchange of the same capture,
+ * which offers the same command as "Copy curl".
+ */
+export function FindingEvidenceItems({
+  findingId,
+  items,
+  className,
+  compact = false,
+}: FindingEvidenceItemsProps) {
+  const shown = React.useMemo(() => foldEvidence(items), [items])
+  if (shown.length === 0) return null
   return (
-    <div className={cn('space-y-4', className)} data-testid="finding-evidence-items">
-      {items.map((it) => (
-        <EvidenceItemCard key={it.id} findingId={findingId} record={it} />
-      ))}
-    </div>
+    <CompactContext.Provider value={compact}>
+      <div className={cn('space-y-4', className)} data-testid="finding-evidence-items">
+        {shown.map((it) => (
+          <EvidenceItemCard key={it.id} findingId={findingId} record={it} />
+        ))}
+      </div>
+    </CompactContext.Provider>
   )
 }
 
@@ -110,6 +140,7 @@ function EvidenceItemCard({
   record: FindingEvidenceItem
 }) {
   const { t } = useTranslation()
+  const kindName = useKindLabel()
   const canReveal = useHasPermission(Permission.EvidenceReveal)
   const [state, setState] = React.useState<RevealState>({ values: {}, until: 0 })
   const item = record.item as EvidenceItem
@@ -172,13 +203,13 @@ function EvidenceItemCard({
       <section
         className="rounded-lg border bg-card"
         aria-label={t('findings.evidenceItems.itemAria', '{kind} evidence', {
-          kind: kindLabel(record.kind ?? ''),
+          kind: kindName(record.kind ?? ''),
         })}
         data-testid="evidence-item"
       >
         <header className="flex flex-wrap items-center gap-2 border-b px-4 py-2.5">
           <FileSearch className="h-4 w-4 text-muted-foreground" aria-hidden />
-          <span className="text-sm font-medium">{kindLabel(record.kind ?? '')}</span>
+          <span className="text-sm font-medium">{kindName(record.kind ?? '')}</span>
           {label && (
             <span className="truncate text-xs text-muted-foreground">
               {toDisplayText(label, 200)}
@@ -302,6 +333,7 @@ function ItemActions({ record, item }: { record: FindingEvidenceItem; item: Evid
 
 function ItemBody({ item }: { item: EvidenceItem }) {
   const { t } = useTranslation()
+  const kindName = useKindLabel()
   switch (item.kind) {
     case 'http_exchange':
       return <HTTPExchangeView item={item} />
@@ -341,7 +373,7 @@ function ItemBody({ item }: { item: EvidenceItem }) {
             </p>
           )}
           <TextPane
-            label={kindLabel(item.kind ?? '')}
+            label={kindName(item.kind ?? '')}
             segments={splitPlaceholders(item.text ?? '')}
           />
         </div>
@@ -382,7 +414,7 @@ function HTTPExchangeView({ item }: { item: EvidenceItem }) {
       </div>
       {q && (
         <div className="space-y-1.5">
-          <h4 className="flex items-center gap-1.5 text-xs font-semibold uppercase text-muted-foreground">
+          <h4 className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
             <ArrowUpRight className="h-3.5 w-3.5" aria-hidden />
             {t('findings.evidenceItems.request', 'Request')}
           </h4>
@@ -395,7 +427,7 @@ function HTTPExchangeView({ item }: { item: EvidenceItem }) {
             <>
               <p
                 className={cn(
-                  'break-all font-mono text-sm',
+                  'font-mono text-sm [overflow-wrap:anywhere]',
                   partMatched(item, 'request', 'url') && 'rounded bg-warning/20 px-1'
                 )}
                 dir="ltr"
@@ -425,7 +457,7 @@ function HTTPExchangeView({ item }: { item: EvidenceItem }) {
       )}
       {s && (
         <div className="space-y-1.5">
-          <h4 className="flex items-center gap-1.5 text-xs font-semibold uppercase text-muted-foreground">
+          <h4 className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
             <ArrowDownLeft className="h-3.5 w-3.5" aria-hidden />
             {t('findings.evidenceItems.response', 'Response')}
           </h4>
@@ -490,8 +522,10 @@ function Headers({
   headers?: Array<{ name?: string; value?: string }>
   matched?: boolean
 }) {
+  const { t } = useTranslation()
+  const compact = React.useContext(CompactContext)
   if (!headers || headers.length === 0) return null
-  return (
+  const list = (
     <dl
       className={cn(
         'grid grid-cols-[minmax(0,10rem)_minmax(0,1fr)] gap-x-3 gap-y-0.5 rounded-md border bg-muted/30 p-2 font-mono text-xs',
@@ -502,12 +536,22 @@ function Headers({
       {headers.map((h, i) => (
         <React.Fragment key={i}>
           <dt className="truncate text-muted-foreground">{toDisplayText(h.name ?? '', 256)}</dt>
-          <dd className="break-all">
+          <dd className="[overflow-wrap:anywhere]">
             <Segments segments={splitPlaceholders(h.value ?? '')} inline />
           </dd>
         </React.Fragment>
       ))}
     </dl>
+  )
+  if (!compact) return list
+  // A matched header stays open: it is part of why the finding exists.
+  return (
+    <details open={matched} className="group text-xs" data-testid="evidence-headers">
+      <summary className="cursor-pointer select-none text-muted-foreground hover:text-foreground">
+        {t('findings.evidenceItems.headersCount', 'Headers ({count})', { count: headers.length })}
+      </summary>
+      <div className="mt-1">{list}</div>
+    </details>
   )
 }
 
@@ -520,14 +564,28 @@ function TextPane({
   segments: Segment[]
   note?: string
 }) {
+  const compact = React.useContext(CompactContext)
+  const ref = React.useRef<HTMLPreElement>(null)
+  // Long bodies: start the pane at the matched part, not at the top.
+  React.useEffect(() => {
+    const pre = ref.current
+    const mark = pre?.querySelector<HTMLElement>('[data-testid="evidence-match"]')
+    if (pre && mark && pre.scrollHeight > pre.clientHeight) {
+      pre.scrollTop = Math.max(0, mark.offsetTop - pre.offsetTop - 32)
+    }
+  }, [segments])
   return (
     <div>
       <pre
+        ref={ref}
         aria-label={label}
         dir="ltr"
         tabIndex={0}
         data-testid="evidence-text"
-        className="max-h-96 overflow-auto rounded-md border bg-muted/40 p-3 font-mono text-xs leading-relaxed whitespace-pre-wrap break-words [unicode-bidi:isolate] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        className={cn(
+          'overflow-auto rounded-md border bg-muted/40 p-3 font-mono text-xs leading-relaxed whitespace-pre-wrap break-words [unicode-bidi:isolate] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+          compact ? 'max-h-64' : 'max-h-96'
+        )}
       >
         <Segments segments={segments} />
       </pre>

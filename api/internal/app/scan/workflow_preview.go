@@ -31,10 +31,14 @@ const maxWorkflowPreviewSamples = 20
 // WorkflowPreviewInput is a workflow and the targets a scan would run it on.
 type WorkflowPreviewInput struct {
 	TenantID       string
+	UserID         string // the caller: the preview runs in their act scope
 	ScanWorkflowID string
 	Targets        []string
 	AssetGroupIDs  []string
 	ScanZoneID     string
+	// Depth is the scan's depth ("" = standard): the preview shows which
+	// steps it skips and the params each step runs with.
+	Depth string
 }
 
 // WorkflowPreviewNode is what one step would run.
@@ -59,6 +63,14 @@ type WorkflowPreviewNode struct {
 	MaxParallelSensors int `json:"max_parallel_sensors"`
 	// Blocking is what the trigger would refuse this step with.
 	Blocking *PreviewError `json:"blocking,omitempty"`
+	// Skipped says why the run would skip the step: the depth
+	// (DEPTH_SKIPPED) or no installed tool for an optional step
+	// (TOOL_NOT_INSTALLED). A skipped step never blocks.
+	Skipped *PreviewError `json:"skipped,omitempty"`
+	// DepthParams are the standard params the depth sets on the step, and
+	// MaxTargets its target cap at the depth (0: the stage's own).
+	DepthParams map[string]any `json:"depth_params,omitempty"`
+	MaxTargets  int            `json:"max_targets,omitempty"`
 }
 
 // WorkflowPreviewAvailability is a tool's sensor availability.
@@ -98,6 +110,7 @@ func (s *Service) PreviewWorkflow(ctx context.Context, in WorkflowPreviewInput) 
 
 	targets, err := s.PreviewZoneRouting(ctx, ZoneRoutingPreviewInput{
 		TenantID:      in.TenantID,
+		UserID:        in.UserID,
 		Targets:       in.Targets,
 		AssetGroupIDs: in.AssetGroupIDs,
 		ScanType:      "workflow",
@@ -118,8 +131,12 @@ func (s *Service) PreviewWorkflow(ctx context.Context, in WorkflowPreviewInput) 
 	}
 
 	out := &WorkflowPreview{Nodes: make([]WorkflowPreviewNode, 0, len(tpl.Steps)), Targets: targets}
+	depth, err := scanworkflow.ParseDepth(in.Depth)
+	if err != nil {
+		return nil, err
+	}
 	for _, step := range tpl.Steps {
-		node := s.previewStep(ctx, tenantID, zoneID, step)
+		node := s.previewStepAtDepth(ctx, tenantID, zoneID, step, depth)
 		if node.Blocking != nil {
 			out.Blocking = true
 		}
@@ -142,6 +159,42 @@ func maxParallelSensors(chunkSize, online int) int {
 		return online
 	}
 	return 1
+}
+
+// Codes of a step the run would skip.
+const (
+	CodeDepthSkipped     = "DEPTH_SKIPPED"
+	CodeToolNotInstalled = "TOOL_NOT_INSTALLED"
+)
+
+// previewStepAtDepth is previewStep at the scan's depth: a step the depth
+// skips is reported skipped (its tool is never needed), an optional step
+// without a tool is skipped instead of blocking, and the others resolve
+// with the depth's params.
+func (s *Service) previewStepAtDepth(ctx context.Context, tenantID shared.ID, zoneID *shared.ID, step *scanworkflow.Step, depth scanworkflow.Depth) WorkflowPreviewNode {
+	overlay := step.RunPolicy.Overlay(depth)
+	if reason := step.RunPolicy.DepthSkipReason(depth, StepIntensityTier(step)); reason != "" {
+		node := WorkflowPreviewNode{StepKey: step.StepKey, Name: step.Name, Candidates: []string{},
+			Skipped: &PreviewError{Code: CodeDepthSkipped, Message: reason}}
+		if st, ok := stage.ForStep(step.Tool, step.Capabilities); ok {
+			node.Capability, node.Tier = st.ID(), st.Tier.String()
+		}
+		return node
+	}
+	at := step
+	if len(overlay.Params) > 0 {
+		cp := *step
+		cp.Config = step.RunPolicy.ConfigAt(step.Config, depth)
+		at = &cp
+	}
+	node := s.previewStep(ctx, tenantID, zoneID, at)
+	node.DepthParams, node.MaxTargets = overlay.Params, overlay.MaxTargets
+	if node.Blocking != nil && step.RunPolicy.Optional && node.Blocking.Code == codeNoMatchingTool {
+		node.Skipped = &PreviewError{Code: CodeToolNotInstalled,
+			Message: "Skipped: available when a tool that runs this capability is installed."}
+		node.Blocking = nil
+	}
+	return node
 }
 
 // previewStep resolves one step as the trigger would.

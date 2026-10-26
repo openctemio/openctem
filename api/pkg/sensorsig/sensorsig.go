@@ -457,6 +457,12 @@ func (p *Parsed) CheckWindow(now time.Time) error {
 	return nil
 }
 
+// ClockOffset is how far the signer's clock was from now when it signed:
+// created minus now, positive when the signer's clock is ahead. A request
+// CheckWindow refused with ErrExpired (and whose signature verifies) was
+// made by a signer whose clock, or this server's, is off by about this much.
+func (p *Parsed) ClockOffset(now time.Time) time.Duration { return p.Params.Created.Sub(now) }
+
 // Verify checks the signature over r's components with pub. It does not
 // check the body against Content-Digest (VerifyContentDigest), the window
 // (CheckWindow) or the nonce: the caller does those.

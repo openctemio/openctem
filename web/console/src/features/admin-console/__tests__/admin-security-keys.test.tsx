@@ -290,7 +290,7 @@ describe('Require security keys (policy)', () => {
       json({ code: 'MFA_POLICY_ACTOR_NOT_COMPLIANT', message: 'not compliant' }, 409)
     wrap(<ConsoleMfaPolicyCard />)
     await user.click(await screen.findByRole('switch'))
-    await user.click(await screen.findByRole('button', { name: 'Confirm' }))
+    await user.click(await screen.findByRole('button', { name: 'Require security keys' }))
     expect(
       await screen.findByText(/Register at least two security keys and generate recovery codes/)
     ).toBeInTheDocument()

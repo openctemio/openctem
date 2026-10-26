@@ -17,6 +17,13 @@ const (
 	RequiresResolves = "resolves"
 	// RequiresWebPort: the open port is one of WebPorts.
 	RequiresWebPort = "web_port"
+	// RequiresWebPortOrUnscanned: a name is worth an HTTP probe: an
+	// address it resolves to has an open port in WebPorts, a web origin of
+	// the name was seen, or its ports are unknown (no port scan of the name
+	// or its addresses has succeeded and none of its addresses has an open
+	// port on record). A name whose port scan found no web port is not
+	// probed until one appears.
+	RequiresWebPortOrUnscanned = "web_port_or_unscanned"
 	// RequiresScopeEntry: an active scope entry covers the name.
 	RequiresScopeEntry = "scope_entry"
 )
@@ -255,9 +262,23 @@ type FailedPair struct {
 // Planner is the ledger as the planner needs it. Every method is scoped to
 // one tenant.
 type Planner interface {
-	// DueBatch returns up to limit due or failed pairs of a capability whose
-	// time has come, highest priority and oldest first, on active assets.
-	DueBatch(ctx context.Context, tenantID shared.ID, capability string, limit int) ([]DueTarget, error)
+	// DueBatch returns up to limit pairs of a capability whose time has
+	// come (due, failed after its back-off, covered past its cadence,
+	// blocked past its recheck), highest priority and oldest first, on
+	// active assets. When one of them is due now it also takes pairs due
+	// within lookahead; when none is due now it returns nothing.
+	DueBatch(ctx context.Context, tenantID shared.ID, capability string, limit int, lookahead time.Duration) ([]DueTarget, error)
+	// HasScopeEntries reports whether the tenant has an active scope entry.
+	HasScopeEntries(ctx context.Context, tenantID shared.ID) (bool, error)
+	// PausedForReadiness returns, per capability, the readiness reason its
+	// paused pairs carry.
+	PausedForReadiness(ctx context.Context, tenantID shared.ID) (map[string]string, error)
+	// PauseForReadiness pauses the capability's pairs whose time has come
+	// with a readiness reason; they may resume after retryAfter.
+	PauseForReadiness(ctx context.Context, tenantID shared.ID, capability, reason string, retryAfter time.Duration) (int, error)
+	// ResumeFromReadiness makes pairs paused for a readiness reason due
+	// again once their retry time has passed.
+	ResumeFromReadiness(ctx context.Context, tenantID shared.ID, capability string) (int, error)
 	// MarkQueued records that the pairs were handed to a run.
 	MarkQueued(ctx context.Context, tenantID shared.ID, capability string, assetIDs []shared.ID, runID shared.ID, tool string) error
 	// MarkBlocked records that the gate refused the pairs, with its code;
@@ -275,6 +296,10 @@ type Planner interface {
 	// SettleFailed settles queued pairs of a run as failed, each with its
 	// outcome and error, due again after a back-off bounded by every.
 	SettleFailed(ctx context.Context, tenantID, runID shared.ID, capability string, failed []FailedPair, every time.Duration) (int, error)
+	// SettleTargetSide settles queued pairs of a run whose target did not
+	// answer: paused with the outcome as the reason, the streak counted and
+	// rechecked on the TargetSideRecheck schedule.
+	SettleTargetSide(ctx context.Context, tenantID, runID shared.ID, capability string, pairs []FailedPair) (int, error)
 	// QueuedTargets returns the queued pairs a run holds.
 	QueuedTargets(ctx context.Context, tenantID, runID shared.ID, capability string) ([]DueTarget, error)
 	// AttemptsSince counts the pairs of the tenant attempted since t (the
@@ -295,6 +320,10 @@ type CapabilityHealth struct {
 	// OK and NoOutput: pairs settled in the last 24 h with and without the
 	// expected output.
 	OK, NoOutput int
+	// Paused: pairs paused for a readiness reason; PausedReason is that
+	// reason (the planner keeps one per capability).
+	Paused       int
+	PausedReason string
 }
 
 // Alert kinds.
@@ -332,7 +361,8 @@ type HealthReader interface {
 	// Health returns one entry per capability of the tenant's ledger;
 	// cadence gives the cadence of each capability (a missing one is a day).
 	Health(ctx context.Context, tenantID shared.ID, cadence map[string]time.Duration) ([]CapabilityHealth, error)
-	// ClaimAlert claims the right to send one alert key for ttl (at most
-	// once per ttl across replicas and restarts).
-	ClaimAlert(ctx context.Context, key string, ttl time.Duration) (bool, error)
+	// AlertStates returns the tenant's stored alert states.
+	AlertStates(ctx context.Context, tenantID shared.ID) ([]AlertState, error)
+	// SaveAlertStates upserts alert states of the tenant.
+	SaveAlertStates(ctx context.Context, tenantID shared.ID, states []AlertState) error
 }

@@ -155,9 +155,11 @@ export const Permission = {
   RemediationRead: 'findings:remediation:read',
   RemediationWrite: 'findings:remediation:write',
 
-  // Workflows (findings:workflows:*)
-  WorkflowsRead: 'findings:workflows:read',
-  WorkflowsWrite: 'findings:workflows:write',
+  // Automations (automations:*): read; write drafts, preview, validate,
+  // manual runs; publish (go live, approve, roll back, mode, on/off, delete)
+  AutomationsRead: 'automations:read',
+  AutomationsWrite: 'automations:write',
+  AutomationsPublish: 'automations:publish',
 
   // ===========================================
   // SCANS MODULE
@@ -177,6 +179,7 @@ export const Permission = {
   SourcesRead: 'scans:sources:read',
   SourcesWrite: 'scans:sources:write',
   SourcesDelete: 'scans:sources:delete',
+  SourcesApprove: 'scans:sources:approve',
 
   // Tools (scans:tools:*)
   ToolsRead: 'scans:tools:read',
@@ -458,7 +461,7 @@ export const PermissionGroups = {
     Permission.VulnerabilitiesRead,
     Permission.CredentialsRead,
     Permission.RemediationRead,
-    Permission.WorkflowsRead,
+    Permission.AutomationsRead,
     Permission.ScansRead,
     Permission.ScanProfilesRead,
     Permission.SourcesRead,
@@ -509,7 +512,8 @@ export const PermissionGroups = {
     Permission.SuppressionsWrite,
     Permission.CredentialsWrite,
     Permission.RemediationWrite,
-    Permission.WorkflowsWrite,
+    Permission.AutomationsWrite,
+    Permission.AutomationsPublish,
     Permission.ScansWrite,
     Permission.ScanProfilesWrite,
     Permission.SourcesWrite,
@@ -670,8 +674,9 @@ export const PermissionLabels: Partial<Record<PermissionString, string>> = {
   [Permission.CredentialsWrite]: 'Manage Credentials',
   [Permission.RemediationRead]: 'View Remediation',
   [Permission.RemediationWrite]: 'Manage Remediation',
-  [Permission.WorkflowsRead]: 'View Workflows',
-  [Permission.WorkflowsWrite]: 'Manage Workflows',
+  [Permission.AutomationsRead]: 'View Automations',
+  [Permission.AutomationsWrite]: 'Edit Automations',
+  [Permission.AutomationsPublish]: 'Publish Automations',
 
   // Scans
   [Permission.ScansRead]: 'View Scans',
@@ -884,8 +889,9 @@ export const RolePermissions: Record<RoleString, PermissionString[]> = {
     Permission.CredentialsWrite,
     Permission.RemediationRead,
     Permission.RemediationWrite,
-    Permission.WorkflowsRead,
-    Permission.WorkflowsWrite,
+    Permission.AutomationsRead,
+    Permission.AutomationsWrite,
+    Permission.AutomationsPublish,
     // Scans
     Permission.ScansRead,
     Permission.ScansWrite,
@@ -1056,8 +1062,9 @@ export const RolePermissions: Record<RoleString, PermissionString[]> = {
     Permission.CredentialsWrite,
     Permission.RemediationRead,
     Permission.RemediationWrite,
-    Permission.WorkflowsRead,
-    Permission.WorkflowsWrite,
+    Permission.AutomationsRead,
+    Permission.AutomationsWrite,
+    Permission.AutomationsPublish,
     // Scans
     Permission.ScansRead,
     Permission.ScansWrite,
@@ -1208,7 +1215,7 @@ export const RolePermissions: Record<RoleString, PermissionString[]> = {
     Permission.CredentialsRead,
     Permission.RemediationRead,
     Permission.RemediationWrite,
-    Permission.WorkflowsRead,
+    Permission.AutomationsRead,
     // Scans (read + write, no delete)
     Permission.ScansRead,
     Permission.ScansWrite,
@@ -1293,7 +1300,7 @@ export const RolePermissions: Record<RoleString, PermissionString[]> = {
     Permission.VulnerabilitiesRead,
     Permission.CredentialsRead,
     Permission.RemediationRead,
-    Permission.WorkflowsRead,
+    Permission.AutomationsRead,
     // Scans (read only)
     Permission.ScansRead,
     Permission.ScanProfilesRead,

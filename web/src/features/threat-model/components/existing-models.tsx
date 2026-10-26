@@ -1,11 +1,14 @@
 'use client'
 
+import { Tag } from '@/components/ui/tag'
+import { useTranslation } from '@/context/i18n-provider'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { EmptyState } from '@/features/shared'
 import { cn } from '@/lib/utils'
 import { ChevronRight, ScanSearch } from 'lucide-react'
 import type { ThreatModelSummary } from '../types'
+import { formatDateTime } from '../lib/format-date'
 
 interface ExistingModelsProps {
   models: ThreatModelSummary[]
@@ -13,19 +16,25 @@ interface ExistingModelsProps {
   onOpen: (id: string) => void
 }
 
-/** Previously generated threat models — open one without regenerating. */
+/** Previously generated threat models. Open one without regenerating. */
 export function ExistingModels({ models, selectedId, onOpen }: ExistingModelsProps) {
+  const { t, locale } = useTranslation()
   return (
     <Card>
       <CardHeader>
-        <CardTitle className="text-base">Threat models</CardTitle>
+        <CardTitle className="text-base">
+          {t('threatModel.existing.title', 'Threat models')}
+        </CardTitle>
       </CardHeader>
       <CardContent>
         {models.length === 0 ? (
           <EmptyState
             icon={ScanSearch}
-            title="No threat models yet"
-            description="Generate one from a crown-jewel scope above to get started."
+            title={t('threatModel.existing.emptyTitle', 'No threat models yet')}
+            description={t(
+              'threatModel.existing.emptyDescription',
+              'Generate one from a crown-jewel scope above to get started.'
+            )}
             card={false}
           />
         ) : (
@@ -45,21 +54,27 @@ export function ExistingModels({ models, selectedId, onOpen }: ExistingModelsPro
                     <div className="min-w-0 flex-1">
                       <p className="truncate font-medium">{m.name}</p>
                       <p className="text-muted-foreground text-xs">
-                        Generated {formatDate(m.generated_at)} · {m.technique_dataset_version}
+                        {t('threatModel.generatedWithVersion', 'Generated {date} · {version}', {
+                          date: formatDateTime(m.generated_at, locale),
+                          version: m.technique_dataset_version,
+                        })}
                       </p>
                     </div>
-                    <div className="flex shrink-0 items-center gap-2">
+                    <div className="flex shrink-0 flex-col items-end gap-2 sm:flex-row sm:items-center">
                       {m.threats_open > 0 && (
-                        <Badge
-                          variant="outline"
-                          className="border-destructive/30 bg-destructive/10 text-destructive"
-                        >
-                          {m.threats_open} open
-                        </Badge>
+                        <Tag
+                          label={t('threatModel.existing.open', '{n} open', { n: m.threats_open })}
+                        />
                       )}
-                      <Badge variant="secondary">{m.threats_total} threats</Badge>
+                      <Badge variant="secondary">
+                        {t(
+                          'threatModel.existing.threats',
+                          '{n, plural, one {# threat} other {# threats}}',
+                          { n: m.threats_total }
+                        )}
+                      </Badge>
                       <span className="text-muted-foreground w-24 text-end text-sm tabular-nums">
-                        {coverage}% covered
+                        {t('threatModel.existing.covered', '{pct}% covered', { pct: coverage })}
                       </span>
                       <ChevronRight className="text-muted-foreground h-4 w-4" />
                     </div>
@@ -72,17 +87,4 @@ export function ExistingModels({ models, selectedId, onOpen }: ExistingModelsPro
       </CardContent>
     </Card>
   )
-}
-
-function formatDate(iso: string): string {
-  const d = new Date(iso)
-  return Number.isNaN(d.getTime())
-    ? iso
-    : d.toLocaleString(undefined, {
-        year: 'numeric',
-        month: 'short',
-        day: 'numeric',
-        hour: '2-digit',
-        minute: '2-digit',
-      })
 }

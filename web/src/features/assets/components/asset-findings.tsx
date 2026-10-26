@@ -21,19 +21,28 @@ import { Separator } from '@/components/ui/separator'
 import { Skeleton } from '@/components/ui/skeleton'
 import { cn } from '@/lib/utils'
 import { useTranslation } from '@/context/i18n-provider'
-import { DetailSheetFooter, EmptyState } from '@/features/shared'
+import { DetailSheetFooter, EmptyState, ErrorState } from '@/features/shared'
+import { FindingStatusBadge } from '@/features/findings/components/finding-status-badge'
 import { SEVERITY_BADGE_SOFT, SEVERITY_TEXT_COLORS } from '@/lib/severity-colors'
-import { SEVERITY_LABELS, SEVERITY_LEVELS, normalizeSeverity } from '@/lib/severity'
+import { SEVERITY_LEVELS, normalizeSeverity } from '@/lib/severity'
 
-import type { AssetFinding } from '../types/asset.types'
-import { useAssetFindingsApi } from '@/features/findings/api/use-findings-api'
+import type { Asset, AssetFinding } from '../types/asset.types'
+import { assetFindingsHref } from './service-cells/open-findings-link'
+import type { FindingStatus } from '@/features/findings/types'
+import { useFindingsApi } from '@/features/findings/api/use-findings-api'
 import type { ApiFinding } from '@/features/findings/api/finding-api.types'
 
 interface AssetFindingsProps {
   assetId: string
   assetName?: string
+  /** The asset's own open-findings figure (the tab badge): the footer count and the severity chips come from it, not from the loaded page. */
+  findingCount?: number
+  severityCounts?: Asset['findingSeverityCounts']
   className?: string
 }
+
+/** A finding row as this tab shows it: the real status, not a folded one. */
+type TabFinding = Omit<AssetFinding, 'status'> & { status: FindingStatus }
 
 // Colours come from the shared severity source (dark-mode aware).
 const SEVERITY_ICONS: Record<AssetFinding['severity'], React.ElementType> = {
@@ -43,9 +52,6 @@ const SEVERITY_ICONS: Record<AssetFinding['severity'], React.ElementType> = {
   low: Info,
   info: Info,
 }
-const severityConfig = Object.fromEntries(
-  SEVERITY_LEVELS.map((s) => [s, { label: SEVERITY_LABELS[s], icon: SEVERITY_ICONS[s] }])
-) as Record<AssetFinding['severity'], { label: string; icon: React.ElementType }>
 
 const typeConfig: Record<AssetFinding['type'], { label: string; icon: React.ElementType }> = {
   vulnerability: { label: 'Vulnerability', icon: Bug },
@@ -55,21 +61,10 @@ const typeConfig: Record<AssetFinding['type'], { label: string; icon: React.Elem
   compliance: { label: 'Compliance', icon: Shield },
 }
 
-const statusConfig: Record<
-  AssetFinding['status'],
-  { label: string; variant: 'default' | 'secondary' | 'destructive' | 'outline' }
-> = {
-  open: { label: 'Open', variant: 'destructive' },
-  in_progress: { label: 'In progress', variant: 'default' },
-  resolved: { label: 'Resolved', variant: 'secondary' },
-  accepted: { label: 'Accepted', variant: 'outline' },
-  false_positive: { label: 'False positive', variant: 'outline' },
-}
-
 /**
  * Map API finding to the AssetFinding shape used by this component.
  */
-function mapApiFinding(f: ApiFinding): AssetFinding {
+function mapApiFinding(f: ApiFinding): TabFinding {
   // Map API finding_type/source to the component's FindingType
   const typeMap: Record<string, AssetFinding['type']> = {
     vulnerability: 'vulnerability',
@@ -80,20 +75,7 @@ function mapApiFinding(f: ApiFinding): AssetFinding {
   const findingType: AssetFinding['type'] =
     (f.finding_type && typeMap[f.finding_type]) || 'vulnerability'
 
-  // Map API status to the component's FindingStatus
-  const statusMap: Record<string, AssetFinding['status']> = {
-    new: 'open',
-    confirmed: 'open',
-    in_progress: 'in_progress',
-    resolved: 'resolved',
-    false_positive: 'false_positive',
-    accepted: 'accepted',
-    duplicate: 'resolved',
-    draft: 'open',
-    in_review: 'in_progress',
-    fix_applied: 'in_progress',
-  }
-  const status: AssetFinding['status'] = statusMap[f.status] || 'open'
+  const status = f.status as FindingStatus
 
   // none (CVSS 0.0) is shown as info; an unknown value too, never dropped.
   const severity: AssetFinding['severity'] = normalizeSeverity(f.severity) ?? 'info'
@@ -120,23 +102,41 @@ function mapApiFinding(f: ApiFinding): AssetFinding {
   }
 }
 
-export function AssetFindings({ assetId, className }: AssetFindingsProps) {
+export function AssetFindings({
+  assetId,
+  findingCount,
+  severityCounts: assetSeverityCounts,
+  className,
+}: AssetFindingsProps) {
   const { t } = useTranslation()
-  const { data: response, isLoading, error } = useAssetFindingsApi(assetId, undefined, 1, 50)
+  // Open findings only: the tab badge, the chips, this list and the footer
+  // link (which opens the default open lens) then name the same set.
+  const {
+    data: response,
+    isLoading,
+    error,
+    mutate,
+  } = useFindingsApi({ asset_id: assetId, state: 'open', page: 1, per_page: 50 })
 
-  const findings = React.useMemo<AssetFinding[]>(() => {
+  const findings = React.useMemo<TabFinding[]>(() => {
     if (!response?.data) return []
     return response.data.map(mapApiFinding)
   }, [response])
 
+  // The asset's own per-severity counts; the loaded page (50 rows) only
+  // stands in when the row carries none.
   const severityCounts = React.useMemo(() => {
     const counts = Object.fromEntries(SEVERITY_LEVELS.map((s) => [s, 0])) as Record<
       AssetFinding['severity'],
       number
     >
-    for (const f of findings) counts[f.severity] += 1
+    if (assetSeverityCounts && Object.keys(assetSeverityCounts).length > 0) {
+      for (const s of SEVERITY_LEVELS) counts[s] = assetSeverityCounts[s] ?? 0
+    } else {
+      for (const f of findings) counts[f.severity] += 1
+    }
     return counts
-  }, [findings])
+  }, [findings, assetSeverityCounts])
 
   if (isLoading) {
     return (
@@ -167,17 +167,12 @@ export function AssetFindings({ assetId, className }: AssetFindingsProps) {
 
   if (error) {
     return (
-      <div className={cn('flex flex-col items-center justify-center py-8 text-center', className)}>
-        <AlertCircle className="h-12 w-12 text-destructive mb-3" />
-        <h3 className="font-medium">
-          {t('assets.findings.loadFailed', 'Failed to load findings')}
-        </h3>
-        <p className="text-sm text-muted-foreground mt-1">
-          {t(
-            'assets.findings.loadFailedHint',
-            'Could not fetch findings for this asset. Please try again later.'
-          )}
-        </p>
+      <div className={className}>
+        <ErrorState
+          title={t('assetDetail.findingsErrorTitle', 'findings')}
+          error={error}
+          onRetry={() => mutate()}
+        />
       </div>
     )
   }
@@ -187,8 +182,11 @@ export function AssetFindings({ assetId, className }: AssetFindingsProps) {
       <EmptyState
         card={false}
         icon={Shield}
-        title={t('assets.findings.empty', 'No findings')}
-        description={t('assets.findings.emptyHint', 'This asset has no security findings.')}
+        title={t('assetDetail.findingsEmpty', 'No open findings')}
+        description={t(
+          'assetDetail.findingsEmptyHint',
+          'This asset has no open security findings.'
+        )}
         className={className}
       />
     )
@@ -199,7 +197,7 @@ export function AssetFindings({ assetId, className }: AssetFindingsProps) {
       {/* Severity summary */}
       <div className="flex flex-wrap gap-2">
         {SEVERITY_LEVELS.filter((level) => severityCounts[level] > 0).map((level) => {
-          const Icon = severityConfig[level].icon
+          const Icon = SEVERITY_ICONS[level]
           return (
             <Badge
               key={level}
@@ -207,7 +205,7 @@ export function AssetFindings({ assetId, className }: AssetFindingsProps) {
               className={cn('gap-1.5 font-medium tabular-nums', SEVERITY_BADGE_SOFT[level])}
             >
               <Icon className="h-3.5 w-3.5" />
-              {severityCounts[level]} {severityConfig[level].label}
+              {severityCounts[level]} {t(`severity.${level}`, level)}
             </Badge>
           )
         })}
@@ -217,10 +215,8 @@ export function AssetFindings({ assetId, className }: AssetFindingsProps) {
           The sheet's tab body is the scroll container. */}
       <ul className="divide-y border-y">
         {findings.map((finding) => {
-          const severity = severityConfig[finding.severity]
           const type = typeConfig[finding.type]
-          const status = statusConfig[finding.status]
-          const SeverityIcon = severity.icon
+          const SeverityIcon = SEVERITY_ICONS[finding.severity]
           const TypeIcon = type.icon
 
           return (
@@ -231,14 +227,12 @@ export function AssetFindings({ assetId, className }: AssetFindingsProps) {
               >
                 <SeverityIcon
                   className={cn('mt-0.5 h-4 w-4 shrink-0', SEVERITY_TEXT_COLORS[finding.severity])}
-                  aria-label={severity.label}
+                  aria-label={t(`severity.${finding.severity}`, finding.severity)}
                 />
                 <div className="min-w-0 flex-1">
                   <div className="flex flex-wrap items-center gap-2">
                     <h4 className="text-sm font-medium break-words">{finding.title}</h4>
-                    <Badge variant={status.variant} className="text-xs">
-                      {t(`assets.findings.status.${finding.status}`, status.label)}
-                    </Badge>
+                    <FindingStatusBadge status={finding.status} />
                   </div>
                   {finding.description && finding.description !== finding.title && (
                     <p className="mt-1 line-clamp-2 text-sm text-muted-foreground">
@@ -282,10 +276,11 @@ export function AssetFindings({ assetId, className }: AssetFindingsProps) {
       {/* View All Link */}
       <DetailSheetFooter>
         <Button asChild variant="outline" className="w-full">
-          <Link href={`/findings?asset_id=${assetId}`}>
+          {/* The same open set as the count, so the list it opens shows that number. */}
+          <Link href={assetFindingsHref(assetId)}>
             <FileWarning className="me-2 h-4 w-4" />
-            {t('assets.findings.viewAll', 'View all findings ({count})', {
-              count: response?.total ?? findings.length,
+            {t('assets.findings.viewOpen', 'View {count} open findings', {
+              count: findingCount ?? response?.total ?? findings.length,
             })}
             <ChevronRight className="ms-2 h-4 w-4" />
           </Link>

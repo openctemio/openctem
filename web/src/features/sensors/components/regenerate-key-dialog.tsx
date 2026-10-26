@@ -1,11 +1,15 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useId, useState, useEffect } from 'react'
 import { Loader2, KeyRound, AlertTriangle } from 'lucide-react'
 import { toast } from 'sonner'
 import { getErrorMessage } from '@/lib/api/error-handler'
 
 import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
+import { typedTextMatches } from '@/components/confirm-dialog'
+import { confirmName } from '@/lib/confirm-name'
 import {
   Dialog,
   DialogContent,
@@ -21,6 +25,7 @@ import { OneTimeSecretField } from '@/features/shared'
 import { useRegenerateSensorKey, invalidateSensorsCache } from '@/lib/api/sensor-hooks'
 import type { Sensor } from '@/lib/api/sensor-types'
 import { SensorInstallSnippets } from './sensor-install-snippets'
+import { useOneTimeKeyGuard } from './one-time-key-guard'
 
 interface RegenerateKeyDialogProps {
   open: boolean
@@ -41,12 +46,22 @@ export function RegenerateKeyDialog({
 }: RegenerateKeyDialogProps) {
   const { t } = useTranslation()
   const [apiKey, setApiKey] = useState<string | null>(null)
+  // Rotating cuts the sensor off at once: the sensor's name is retyped first.
+  const [typed, setTyped] = useState('')
+  const typedId = useId()
+  const expected = confirmName(sensor.name, sensor.id)
+  const [typeBefore, typeAfter = ''] = t('confirm.typeToConfirm', 'Type {text} to confirm').split(
+    '{text}'
+  )
 
   const { trigger: regenerateKey, isMutating } = useRegenerateSensorKey()
 
   // Reset state when dialog opens
   useEffect(() => {
-    if (open) setApiKey(null)
+    if (open) {
+      setApiKey(null)
+      setTyped('')
+    }
   }, [open])
 
   const handleRegenerate = async () => {
@@ -78,36 +93,41 @@ export function RegenerateKeyDialog({
     }
   }
 
+  const guard = useOneTimeKeyGuard(!!apiKey, handleClose)
+
   if (apiKey) {
     return (
-      <Dialog open={open} onOpenChange={handleClose}>
-        <DialogContent size="lg">
-          <DialogHeader>
-            <DialogTitle>
-              {t('sensors.regenerate.newKeyTitle', undefined, { name: sensor.name })}
-            </DialogTitle>
-            <DialogDescription>{t('sensors.regenerate.newKeyBody')}</DialogDescription>
-          </DialogHeader>
+      <>
+        <Dialog open={open} onOpenChange={guard.requestClose}>
+          <DialogContent size="lg" {...guard.contentProps}>
+            <DialogHeader>
+              <DialogTitle>
+                {t('sensors.regenerate.newKeyTitle', undefined, { name: sensor.name })}
+              </DialogTitle>
+              <DialogDescription>{t('sensors.regenerate.newKeyBody')}</DialogDescription>
+            </DialogHeader>
 
-          <DialogBody>
-            <div className="min-w-0 space-y-4">
-              <OneTimeSecretField
-                label={t('sensors.regenerate.newKeyLabel')}
-                noun={t('sensors.regenerate.keyNoun')}
-                value={apiKey}
-              />
-              <div>
-                <p className="mb-2 text-sm font-medium">{t('sensors.regenerate.restart')}</p>
-                <SensorInstallSnippets sensorId={sensor.id} apiKey={apiKey} />
+            <DialogBody>
+              <div className="min-w-0 space-y-4">
+                <OneTimeSecretField
+                  label={t('sensors.regenerate.newKeyLabel')}
+                  noun={t('sensors.regenerate.keyNoun')}
+                  value={apiKey}
+                />
+                <div>
+                  <p className="mb-2 text-sm font-medium">{t('sensors.regenerate.restart')}</p>
+                  <SensorInstallSnippets sensorId={sensor.id} apiKey={apiKey} />
+                </div>
               </div>
-            </div>
-          </DialogBody>
+            </DialogBody>
 
-          <DialogFooter>
-            <Button onClick={handleClose}>{t('sensors.pair.done')}</Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+            <DialogFooter>
+              <Button onClick={handleClose}>{t('sensors.pair.done')}</Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+        {guard.confirm}
+      </>
     )
   }
 
@@ -138,13 +158,32 @@ export function RegenerateKeyDialog({
             {t('sensors.regenerate.currentKey')}{' '}
             <span className="font-mono">{sensor.api_key_prefix}…</span>
           </p>
+
+          <div className="space-y-2">
+            <Label htmlFor={typedId} className="block font-normal">
+              {typeBefore}
+              <span className="font-semibold break-all">{expected}</span>
+              {typeAfter}
+            </Label>
+            <Input
+              id={typedId}
+              value={typed}
+              onChange={(e) => setTyped(e.target.value)}
+              autoComplete="off"
+              spellCheck={false}
+            />
+          </div>
         </DialogBody>
 
         <DialogFooter>
           <Button type="button" variant="outline" onClick={handleClose} disabled={isMutating}>
             {t('common.cancel')}
           </Button>
-          <Button variant="destructive" onClick={handleRegenerate} disabled={isMutating}>
+          <Button
+            variant="destructive"
+            onClick={handleRegenerate}
+            disabled={isMutating || !typedTextMatches(typed, expected)}
+          >
             {isMutating && <Loader2 className="me-2 h-4 w-4 animate-spin" />}
             {t('sensors.regenerate.rotate')}
           </Button>

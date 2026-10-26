@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 	"sync"
 	"time"
 
@@ -21,6 +22,7 @@ import (
 	integrationdom "github.com/openctemio/openctem/api/pkg/domain/integration"
 	"github.com/openctemio/openctem/api/pkg/domain/outbox"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	emailpkg "github.com/openctemio/openctem/api/pkg/email"
 	"github.com/openctemio/openctem/api/pkg/httpsec"
 	"github.com/openctemio/openctem/api/pkg/logger"
 )
@@ -807,7 +809,7 @@ func (s *IntegrationService) TestIntegration(ctx context.Context, id string, ten
 
 	credentials, err := s.decryptCredentials(intg)
 	if err != nil {
-		intg.SetError(err.Error())
+		s.recordFailure(intg, err)
 		if updateErr := s.repo.Update(ctx, intg); updateErr != nil {
 			s.logger.Error("Failed to update integration after decrypt error", "error", updateErr)
 		}
@@ -823,7 +825,7 @@ func (s *IntegrationService) TestIntegration(ctx context.Context, id string, ten
 		AuthType:     scm.AuthType(intg.AuthType()),
 	})
 	if err != nil {
-		intg.SetError(fmt.Sprintf("Failed to create client: %v", err))
+		s.recordFailure(intg, err)
 		if updateErr := s.repo.Update(ctx, intg); updateErr != nil {
 			s.logger.Error("Failed to update integration after client error", "error", updateErr)
 		}
@@ -833,7 +835,7 @@ func (s *IntegrationService) TestIntegration(ctx context.Context, id string, ten
 	// Test the connection
 	result, err := client.TestConnection(ctx)
 	if err != nil {
-		intg.SetError(fmt.Sprintf("Connection test failed: %v", err))
+		s.recordFailure(intg, err)
 		if updateErr := s.repo.Update(ctx, intg); updateErr != nil {
 			s.logger.Error("Failed to update integration after test error", "error", updateErr)
 		}
@@ -858,7 +860,11 @@ func (s *IntegrationService) TestIntegration(ctx context.Context, id string, ten
 		stats.TotalRepositories = result.RepoCount
 		intg.SetStats(stats)
 	} else {
-		intg.SetError(result.Message)
+		cause := result.Cause
+		if cause == nil {
+			cause = errors.New(result.Message)
+		}
+		s.recordFailure(intg, cause)
 	}
 
 	if err := s.repo.Update(ctx, intg); err != nil {
@@ -880,8 +886,11 @@ type TestIntegrationCredentialsInput struct {
 
 // TestIntegrationCredentialsResult represents the result of testing credentials.
 type TestIntegrationCredentialsResult struct {
-	Success      bool
-	Message      string
+	Success bool
+	Message string
+	// Code is why a failed test failed (an INTEGRATION_* code); empty on
+	// success.
+	Code         string
 	RepoCount    int
 	Organization string
 	Username     string
@@ -921,19 +930,20 @@ func (s *IntegrationService) TestIntegrationCredentials(ctx context.Context, inp
 		AuthType:     scm.AuthType(input.AuthType),
 	})
 	if err != nil {
-		return &TestIntegrationCredentialsResult{
-			Success: false,
-			Message: fmt.Sprintf("Failed to create SCM client: %v", err),
-		}, nil
+		return s.credentialsTestFailure(provider, err), nil
 	}
 
 	// Test the connection
 	result, err := client.TestConnection(ctx)
 	if err != nil {
-		return &TestIntegrationCredentialsResult{
-			Success: false,
-			Message: fmt.Sprintf("Connection test failed: %v", err),
-		}, nil
+		return s.credentialsTestFailure(provider, err), nil
+	}
+	if !result.Success {
+		cause := result.Cause
+		if cause == nil {
+			cause = errors.New(result.Message)
+		}
+		return s.credentialsTestFailure(provider, cause), nil
 	}
 
 	// Extract organization name and username from result
@@ -953,6 +963,17 @@ func (s *IntegrationService) TestIntegrationCredentials(ctx context.Context, inp
 		Organization: orgName,
 		Username:     username,
 	}, nil
+}
+
+// credentialsTestFailure is the answer of a failed credentials test: a code
+// and a safe sentence; the cause goes to the log.
+func (s *IntegrationService) credentialsTestFailure(provider integrationdom.Provider, err error) *TestIntegrationCredentialsResult {
+	f := ClassifyConnFailure(err)
+	// The cause can quote the remote server's answer: redact secrets and strip
+	// CR/LF at the log site so it cannot forge a log line.
+	cause := strings.ReplaceAll(strings.ReplaceAll(logger.RedactedText(err.Error()), "\n", " "), "\r", " ")
+	s.logger.Info("integration credentials test failed", "provider", provider.String(), "code", string(f.Code), "error", cause)
+	return &TestIntegrationCredentialsResult{Success: false, Code: string(f.Code), Message: f.Message}
 }
 
 // IntegrationListReposInput represents the input for listing repositories from an SCM integration.
@@ -1051,7 +1072,7 @@ func (s *IntegrationService) ListSCMRepositories(ctx context.Context, input Inte
 		// the stored status (set at create/last successful test) goes stale and
 		// the connection looks healthy while every sync fails.
 		if errors.Is(err, scm.ErrAuthFailed) {
-			intg.SetError("Stored credentials are invalid or expired")
+			s.recordFailure(intg, err)
 			if updateErr := s.repo.Update(ctx, intg); updateErr != nil {
 				s.logger.Warn("failed to mark integration credentials invalid", "integration_id", intgID.String(), "error", updateErr)
 			}
@@ -1103,7 +1124,7 @@ func (s *IntegrationService) ListSCMRepositories(ctx context.Context, input Inte
 // configured APP_ENCRYPTION_KEY (a key mismatch, a corrupt value, or a legacy
 // plaintext row; cmd/encrypt-credentials encrypts those). It wraps
 // scm.ErrAuthFailed so the API answers "re-enter the credentials".
-var ErrCredentialsUnreadable = fmt.Errorf("%w: stored credentials cannot be decrypted with the configured key", scm.ErrAuthFailed)
+var ErrCredentialsUnreadable = fmt.Errorf("%w: %w", integrationdom.ErrCredentialsUnreadable, scm.ErrAuthFailed)
 
 // decryptCredentials decrypts the stored credentials of an integration. It
 // fails closed: a value that does not decrypt is never used as is, so a key
@@ -1218,6 +1239,9 @@ func (s *IntegrationService) parseEmailCredentials(credentials string) (*notifie
 	if emailCreds.SMTPPort == 0 {
 		return nil, fmt.Errorf("SMTP port is required")
 	}
+	if !emailpkg.TenantPortAllowed(emailCreds.SMTPPort) {
+		return nil, emailpkg.ErrTenantPortNotAllowed
+	}
 	if emailCreds.FromEmail == "" {
 		return nil, fmt.Errorf("sender email is required")
 	}
@@ -1254,7 +1278,16 @@ func (s *IntegrationService) buildNotificationConfig(intg *integrationdom.Integr
 	}
 
 	switch provider {
-	case integrationdom.ProviderSlack, integrationdom.ProviderTeams, integrationdom.ProviderWebhook:
+	case integrationdom.ProviderWebhook:
+		config.WebhookURL = credentials
+		// A test delivery is signed like a real one, so the receiver's
+		// verification can be checked with it.
+		secrets, err := integrationdom.SigningSecrets(intg.Metadata(), s.encryptor.DecryptString, time.Now())
+		if err != nil {
+			return config, err
+		}
+		config.SigningSecrets = secrets
+	case integrationdom.ProviderSlack, integrationdom.ProviderTeams:
 		config.WebhookURL = credentials
 	case integrationdom.ProviderTelegram:
 		config.BotToken = credentials
@@ -1375,6 +1408,9 @@ func (s *IntegrationService) setEmailCredentials(intg *integrationdom.Integratio
 	if emailCreds.SMTPPort == 0 {
 		return fmt.Errorf("%w: SMTP port is required", shared.ErrValidation)
 	}
+	if !emailpkg.TenantPortAllowed(emailCreds.SMTPPort) {
+		return fmt.Errorf("%w: %w", shared.ErrValidation, emailpkg.ErrTenantPortNotAllowed)
+	}
 	if emailCreds.FromEmail == "" {
 		return fmt.Errorf("%w: sender email is required", shared.ErrValidation)
 	}
@@ -1421,6 +1457,10 @@ func (s *IntegrationService) updateEmailCredentials(intg *integrationdom.Integra
 		return errSMTPSkipVerify
 	}
 
+	// Legacy rows keep the relay inside the encrypted credentials; read it
+	// so a destination change is detected against the real stored value.
+	s.populateMetadataFromCredentials(intg)
+
 	// Get existing metadata to merge
 	existingMetadata := intg.Metadata()
 
@@ -1436,6 +1476,9 @@ func (s *IntegrationService) updateEmailCredentials(intg *integrationdom.Integra
 
 	// SMTP Port
 	if emailCreds.SMTPPort != 0 {
+		if !emailpkg.TenantPortAllowed(emailCreds.SMTPPort) {
+			return fmt.Errorf("%w: %w", shared.ErrValidation, emailpkg.ErrTenantPortNotAllowed)
+		}
 		newMetadata["smtp_port"] = emailCreds.SMTPPort
 	} else if v, ok := existingMetadata["smtp_port"].(float64); ok {
 		newMetadata["smtp_port"] = int(v)
@@ -1502,6 +1545,14 @@ func (s *IntegrationService) updateEmailCredentials(intg *integrationdom.Integra
 		return fmt.Errorf("%w: at least one recipient email is required", shared.ErrValidation)
 	}
 
+	// A new relay (host, port) or a weaker transport must not inherit the
+	// stored username/password: the next delivery would present them to it.
+	if err := requireCredentialsForDestinationChange(intg,
+		emailDestinationChanged(existingMetadata, newMetadata),
+		emailCreds.Username != "" || emailCreds.Password != ""); err != nil {
+		return err
+	}
+
 	intg.SetMetadata(newMetadata)
 
 	// Handle sensitive credentials - only update if provided
@@ -1522,6 +1573,35 @@ func (s *IntegrationService) updateEmailCredentials(intg *integrationdom.Integra
 	}
 
 	return nil
+}
+
+// emailDestinationChanged reports whether the SMTP relay moved (host or port)
+// or the transport got weaker (TLS or STARTTLS switched off).
+func emailDestinationChanged(old, updated map[string]any) bool {
+	oldHost, _ := old["smtp_host"].(string)
+	newHost, _ := updated["smtp_host"].(string)
+	if !strings.EqualFold(strings.TrimSpace(oldHost), strings.TrimSpace(newHost)) {
+		return true
+	}
+	if smtpPortOf(old) != smtpPortOf(updated) {
+		return true
+	}
+	for _, k := range []string{"use_tls", "use_starttls"} {
+		if getBoolFromMap(old, k) && !getBoolFromMap(updated, k) {
+			return true
+		}
+	}
+	return false
+}
+
+func smtpPortOf(m map[string]any) int {
+	switch v := m["smtp_port"].(type) {
+	case int:
+		return v
+	case float64:
+		return int(v)
+	}
+	return 0
 }
 
 // TelegramCredentials represents the JSON structure for Telegram credentials (full input from frontend).
@@ -1670,11 +1750,22 @@ func (s *IntegrationService) getDefaultBaseURL(provider integrationdom.Provider)
 	}
 }
 
+// recordFailure stores why a connection failed as a code and a safe
+// sentence, and logs the cause (which may name the integration by id, hold an
+// upstream body or an internal address) with the integration's ids.
+func (s *IntegrationService) recordFailure(intg *integrationdom.Integration, err error) {
+	f := ClassifyConnFailure(err)
+	s.logger.Warn("integration connection failed",
+		"tenant_id", intg.TenantID().String(), "integration_id", intg.ID().String(),
+		"provider", intg.Provider().String(), "code", string(f.Code), "error", err)
+	intg.SetFailure(string(f.Code), f.Message)
+}
+
 // testTicketingIntegration checks a ticketing integration's credentials and
 // records the outcome as connected or error, with the reason.
 func (s *IntegrationService) testTicketingIntegration(ctx context.Context, intg *integrationdom.Integration) (*integrationdom.IntegrationWithSCM, error) {
 	if err := s.ticketingTester.TestTicketingConnection(ctx, intg); err != nil {
-		intg.SetError(fmt.Sprintf("Connection test failed: %v", err))
+		s.recordFailure(intg, err)
 	} else {
 		intg.SetConnected()
 	}
@@ -2189,6 +2280,7 @@ func (s *IntegrationService) UpdateNotificationIntegration(ctx context.Context, 
 
 	// Handle credentials and metadata based on provider
 	provider := intg.Provider()
+	oldHecHost := hostOf(getStringFromMap(intg.Metadata(), "hec_url"))
 	if input.Credentials != nil {
 		if err := validateNotificationWebhookURL(provider, *input.Credentials); err != nil {
 			return nil, err
@@ -2259,6 +2351,14 @@ func (s *IntegrationService) UpdateNotificationIntegration(ctx context.Context, 
 		}
 		for k, v := range callerMeta {
 			merged[k] = v
+		}
+		// The HEC token is sent to hec_url: a new collector host needs a new token.
+		if provider == integrationdom.ProviderSplunk {
+			newHost := hostOf(getStringFromMap(merged, "hec_url"))
+			if err := requireCredentialsForDestinationChange(intg, newHost != oldHecHost,
+				input.Credentials != nil && *input.Credentials != ""); err != nil {
+				return nil, err
+			}
 		}
 		intg.SetMetadata(merged)
 	}
@@ -2346,7 +2446,7 @@ func (s *IntegrationService) TestNotificationIntegration(ctx context.Context, id
 	// Build notification client config
 	config, err := s.buildNotificationConfig(intg, notifExt)
 	if err != nil {
-		intg.SetError(fmt.Sprintf("Failed to build config: %v", err))
+		s.recordFailure(intg, err)
 		if updateErr := s.repo.Update(ctx, intg); updateErr != nil {
 			s.logger.Error("Failed to update integration after config error", "error", updateErr)
 		}
@@ -2356,7 +2456,7 @@ func (s *IntegrationService) TestNotificationIntegration(ctx context.Context, id
 	// Create notification client
 	client, err := s.notificationFactory.CreateClient(config)
 	if err != nil {
-		intg.SetError(fmt.Sprintf("Failed to create client: %v", err))
+		s.recordFailure(intg, err)
 		if updateErr := s.repo.Update(ctx, intg); updateErr != nil {
 			s.logger.Error("Failed to update integration after client error", "error", updateErr)
 		}
@@ -2368,7 +2468,7 @@ func (s *IntegrationService) TestNotificationIntegration(ctx context.Context, id
 	// They are only for verifying the connection works.
 	result, err := client.TestConnection(ctx)
 	if err != nil {
-		intg.SetError(fmt.Sprintf("Connection test failed: %v", err))
+		s.recordFailure(intg, err)
 		if updateErr := s.repo.Update(ctx, intg); updateErr != nil {
 			s.logger.Error("Failed to update integration after test error", "error", updateErr)
 		}
@@ -2379,7 +2479,11 @@ func (s *IntegrationService) TestNotificationIntegration(ctx context.Context, id
 	if result.Success {
 		intg.SetConnected()
 	} else {
-		intg.SetError(result.Error)
+		f := ClassifySendFailure(result.Error)
+		s.logger.Warn("integration connection test failed",
+			"tenant_id", intg.TenantID().String(), "integration_id", intg.ID().String(),
+			"provider", intg.Provider().String(), "code", string(f.Code), "error", result.Error)
+		intg.SetFailure(string(f.Code), f.Message)
 	}
 
 	if err := s.repo.Update(ctx, intg); err != nil {
@@ -2677,6 +2781,9 @@ type NotificationEventSendResult struct {
 	MessageID       string    `json:"message_id,omitempty"`
 	Error           string    `json:"error,omitempty"`
 	SentAt          time.Time `json:"sent_at"`
+	// Attempts is how many times the channel was tried (absent in events
+	// archived before per-channel delivery).
+	Attempts int `json:"attempts,omitempty"`
 }
 
 // GetNotificationEvents retrieves notification events for a specific integration.
@@ -2767,6 +2874,7 @@ func (s *IntegrationService) GetNotificationEvents(ctx context.Context, input Ge
 					MessageID:       sr.MessageID,
 					Error:           sr.Error,
 					SentAt:          sr.SentAt,
+					Attempts:        sr.Attempts,
 				})
 			}
 		}

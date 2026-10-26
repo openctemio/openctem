@@ -12,6 +12,8 @@
 
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { toast } from 'sonner'
+
+import { undoToast } from '@/lib/undo-toast'
 import { getErrorMessage } from '@/lib/api/error-handler'
 import type { Severity } from '@/features/shared/types'
 import { mutate as mutateSWR } from 'swr'
@@ -106,9 +108,15 @@ export function useFindingTriage(finding: FindingTriageTarget, opts: UseFindingT
     setSeverity((prev) => (prev === finding.severity ? prev : finding.severity))
   }, [finding.id, finding.severity])
   useEffect(() => {
-    setAssignee((prev) =>
-      (prev?.id ?? null) === (finding.assignee?.id ?? null) ? prev : finding.assignee
-    )
+    setAssignee((prev) => {
+      if ((prev?.id ?? null) !== (finding.assignee?.id ?? null)) return finding.assignee
+      // Same person: take the name once the enriched record arrives (the list
+      // row seeds an assignee without one), never replace a name with none.
+      if (prev && finding.assignee?.name && prev.name !== finding.assignee.name) {
+        return finding.assignee
+      }
+      return prev
+    })
   }, [finding.id, finding.assignee])
 
   // The version the person decided on: sent as If-Match so a write never
@@ -198,20 +206,18 @@ export function useFindingTriage(finding: FindingTriageTarget, opts: UseFindingT
       // No Undo on a closing move (resolve): reverting it is a reopen, which
       // a person makes deliberately from the status control.
       const closing = (FINDINGS_CLOSED_STATUSES as readonly string[]).includes(next)
-      toast.success(
-        t('findings.triage.statusUpdated', 'Status updated to {status}', {
-          status: t(FINDING_STATUS_CONFIG[next].labelKey, FINDING_STATUS_CONFIG[next].label),
-        }),
-        isUndo || closing
-          ? { duration: 3000 }
-          : {
-              action: {
-                label: t('findings.triage.undo', 'Undo'),
-                onClick: () => void changeStatusRef.current(previous, true),
-              },
-              duration: 5000,
-            }
-      )
+      const statusMessage = t('findings.triage.statusUpdated', 'Status updated to {status}', {
+        status: t(FINDING_STATUS_CONFIG[next].labelKey, FINDING_STATUS_CONFIG[next].label),
+      })
+      if (isUndo || closing) toast.success(statusMessage, { duration: 3000 })
+      else
+        undoToast({
+          message: statusMessage,
+          t,
+          // changeStatus reports its own result and never rejects.
+          undoneMessage: false,
+          undo: () => changeStatusRef.current(previous, true),
+        })
     } catch (error) {
       setStatus(previous)
       setSubStatusId(previousSub)
@@ -306,20 +312,17 @@ export function useFindingTriage(finding: FindingTriageTarget, opts: UseFindingT
       else wrote(await unassignUser({ rowVersion: rowVersion.current }))
       opts.onAssigneeChange?.(next)
       await invalidateFindingsCache()
-      toast.success(
-        next
-          ? t('findings.triage.assignedTo', 'Assigned to {name}', { name: next.name })
-          : t('findings.triage.unassigned', 'Unassigned'),
-        isUndo
-          ? { duration: 3000 }
-          : {
-              action: {
-                label: t('findings.triage.undo', 'Undo'),
-                onClick: () => void changeAssignee(previous, true),
-              },
-              duration: 5000,
-            }
-      )
+      const assigneeMessage = next
+        ? t('findings.triage.assignedTo', 'Assigned to {name}', { name: next.name })
+        : t('findings.triage.unassigned', 'Unassigned')
+      if (isUndo) toast.success(assigneeMessage, { duration: 3000 })
+      else
+        undoToast({
+          message: assigneeMessage,
+          t,
+          undoneMessage: false,
+          undo: () => changeAssignee(previous, true),
+        })
     } catch (error) {
       setAssignee(previous ?? undefined)
       if (await changedMeanwhile(error)) return

@@ -15,6 +15,14 @@
  *   - sequential ramps: monotone lightness with visible steps, and the ink
  *     printed on each step reaching 4.5:1.
  *
+ *   - ordinal ramps (priority, level): lightness strictly monotone from the
+ *     strongest step (most contrast with the surface) with steps of at least
+ *     ORDINAL_MIN_DL, adjacent steps apart under every colour-vision deficiency
+ *     (protanopia, deuteranopia, tritanopia >= CVD_TARGET) and every step at
+ *     least 3:1 on the surface, so a segment never relies on its neighbours.
+ *
+ *   - the accent band: no data colour at OKLCH hue 165-200 (the brand teal).
+ *
  * Usage: node scripts/check-palette.mjs   (exit 1 on any failure)
  */
 import { readFileSync } from 'node:fs'
@@ -29,6 +37,10 @@ const NORMAL_FLOOR = 15
 const CONTRAST_MIN = 3
 const INK_MIN = 4.5
 const SEQ_MIN_DL = 0.06
+/** Minimum OKLCH lightness step between adjacent levels of an ordinal label scale. */
+export const ORDINAL_MIN_DL = 0.1
+/** Minimum normal-vision delta E between adjacent ordinal steps. */
+export const ORDINAL_MIN_DE = 10
 
 const MACHADO = {
   protan: [
@@ -40,6 +52,11 @@ const MACHADO = {
     [0.367322, 0.860646, -0.227968],
     [0.280085, 0.672501, 0.047413],
     [-0.01182, 0.04294, 0.968881],
+  ],
+  tritan: [
+    [1.255528, -0.076749, -0.178779],
+    [-0.078411, 0.930809, 0.147602],
+    [0.004733, 0.691367, 0.3089],
   ],
 }
 
@@ -69,7 +86,22 @@ function oklabFromLin([r, g, b]) {
 }
 export function oklch(h) {
   const [L, a, b] = oklabFromLin(lin(h))
-  return [L, Math.hypot(a, b)]
+  const hue = ((Math.atan2(b, a) * 180) / Math.PI + 360) % 360
+  return [L, Math.hypot(a, b), hue]
+}
+
+/**
+ * The accent band: OKLCH hue 165-200 belongs to the brand teal (--signal),
+ * which marks the one place to act. No data colour may sit in it, or a chart
+ * series reads as a call to action. Near-grey colours (chroma < 0.04) have no
+ * meaningful hue and are exempt.
+ */
+export const ACCENT_BAND = [165, 200]
+export function accentBandHits(colors) {
+  return colors.filter((c) => {
+    const [, C, H] = oklch(c)
+    return C >= 0.04 && H >= ACCENT_BAND[0] && H <= ACCENT_BAND[1]
+  })
 }
 function simulate(h, kind) {
   const [r, g, b] = lin(h)
@@ -138,11 +170,50 @@ export function validateSequential(colors, inks, { mode, surface }) {
   return { fails, warns }
 }
 
+/** Worst delta E of a pair across protanopia, deuteranopia and tritanopia. */
+export function worstCvd(a, b) {
+  return Math.min(deltaE(a, b, 'protan'), deltaE(a, b, 'deutan'), deltaE(a, b, 'tritan'))
+}
+
+/**
+ * Validates an ordinal label ramp, strongest step first (P0, critical). The
+ * strongest step has the most contrast with the surface; each next step loses
+ * at least ORDINAL_MIN_DL of OKLCH lightness distance from the surface.
+ */
+export function validateOrdinal(colors, { surface }) {
+  const fails = []
+  const warns = []
+  const Lsurf = oklch(surface)[0]
+  const dist = colors.map((c) => Math.abs(oklch(c)[0] - Lsurf))
+  for (let i = 1; i < colors.length; i++) {
+    const a = colors[i - 1]
+    const b = colors[i]
+    const step = dist[i - 1] - dist[i]
+    if (step < ORDINAL_MIN_DL)
+      fails.push(
+        `ordinal step ${a} -> ${b} lightness change ${step.toFixed(3)} < ${ORDINAL_MIN_DL}`
+      )
+    const cvd = worstCvd(a, b)
+    if (cvd < CVD_TARGET)
+      fails.push(`ordinal CVD delta E ${cvd.toFixed(1)} < ${CVD_TARGET}: ${a} ${b}`)
+    const normal = deltaE(a, b)
+    if (normal < ORDINAL_MIN_DE)
+      fails.push(`ordinal delta E ${normal.toFixed(1)} < ${ORDINAL_MIN_DE}: ${a} ${b}`)
+  }
+  for (const c of colors)
+    if (contrast(c, surface) < CONTRAST_MIN)
+      fails.push(`ordinal step ${c} is ${contrast(c, surface).toFixed(2)}:1 on ${surface}`)
+  return { fails, warns }
+}
+
 /** The --viz-* tokens the palette defines, by mode. */
 export function expectedTokens(p, mode) {
   const t = {}
   p.severity.keys.forEach((k, i) => (t[`--viz-sev-${k}`] = p.severity[mode][i]))
   t['--viz-sev-info'] = p.severity.info[mode]
+  p.priority[mode].forEach((c, i) => (t[`--viz-prio-${i}`] = c))
+  t['--viz-prio-none'] = p.priority.none[mode]
+  p.level.keys.forEach((k, i) => (t[`--viz-lvl-${k}`] = p.level[mode][i]))
   p.categorical[mode].forEach((c, i) => (t[`--viz-cat-${i + 1}`] = c))
   t['--viz-cat-other'] = p.categorical.other[mode]
   p.diverging.keys.forEach((k, i) => (t[`--viz-div-${k}`] = p.diverging[mode][i]))
@@ -180,12 +251,30 @@ export function checkAll(palette, css) {
         bandWaived: mode === 'dark' && !!palette.severity.darkBandWaiver,
       })
     )
+    add(`priority/${mode}`, validateOrdinal(palette.priority[mode], { surface }))
+    add(`level/${mode}`, validateOrdinal(palette.level[mode], { surface }))
     add(`categorical/${mode}`, validateCategorical(palette.categorical[mode], { mode, surface }))
     add(`diverging/${mode}`, validateCategorical(palette.diverging[mode], { mode, surface }))
     add(
       `sequential/${mode}`,
       validateSequential(palette.sequential[mode], palette.sequential.ink[mode], { mode, surface })
     )
+    const data = [
+      ...palette.severity[mode],
+      palette.severity.info[mode],
+      ...palette.priority[mode],
+      palette.priority.none[mode],
+      ...palette.level[mode],
+      ...palette.categorical[mode],
+      palette.categorical.other[mode],
+      ...palette.diverging[mode],
+      ...palette.sequential[mode],
+    ]
+    const teal = accentBandHits(data)
+    if (teal.length)
+      fails.push(
+        `accent band ${mode}: ${teal.join(' ')} sit at hue ${ACCENT_BAND.join('-')} (reserved for --signal)`
+      )
     if (css != null) {
       const have = cssBlockTokens(css, mode === 'light' ? ':root' : '.dark')
       for (const [name, value] of Object.entries(expectedTokens(palette, mode))) {

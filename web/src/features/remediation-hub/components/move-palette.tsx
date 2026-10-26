@@ -22,6 +22,7 @@ import {
 import type { MoveWarning, RemediationTask } from '../api/types'
 import { hubApi, useTasks } from '../api/use-remediation-hub'
 import { TaskStatePill } from './task-bits'
+import { useSearchQuery } from '@/hooks/use-search-query'
 
 export interface MoveTarget {
   task: RemediationTask | null
@@ -46,12 +47,13 @@ export function MovePalette({
 }) {
   const { t } = useTranslation()
   const [search, setSearch] = useState('')
+  const searchTerm = useSearchQuery(search).term
   const [pending, setPending] = useState<MoveTarget | null>(null)
   const [checking, setChecking] = useState(false)
   const { data } = useTasks(
     {
       states: ['open', 'in_progress', 'verifying', 'on_hold'],
-      search,
+      search: searchTerm,
       sort: 'updated',
       perPage: 20,
     },

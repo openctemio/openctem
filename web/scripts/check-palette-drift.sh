@@ -117,6 +117,106 @@ surface (bg-muted/40) plus a check or bold label. A neutral indent rule such as
 EOF
 fi
 
+# --- priority and severity colours live in one place -----------------------------
+# Priority (P0-P3) and severity (critical..info) each have one token set: the
+# --prio-* / --sev-* tokens in src/styles/theme.css, read through
+# src/lib/priority-colors.ts and src/lib/severity-colors.ts and rendered by
+# <PriorityBadge> and <SeverityBadge>. Workflow status has the --st-* tokens, read
+# through src/lib/status-colors.ts and rendered by <StatusLozenge>. Outside those modules an added line may
+# not (1) name a --prio/--sev token or its Tailwind class, (2) colour a priority
+# class with a palette class or hex, or (3) key a palette class or hex by a
+# severity name. Annotate a real exception with `label-colour-ok: <reason>`.
+LABEL_ALLOW='^(web/)?src/(lib/(priority-colors|severity-colors|status-colors|health-colors|tag-colors|chart-palette)[.]ts|components/ui/counter[.]tsx|styles/theme[.]css)$|(__tests__/|[.]test[.]tsx?$)'
+LABEL_TOKEN='\b(bg|text|border|ring|fill|stroke|from|via|to|divide|outline|shadow)-(prio|sev|st|hl|ctr|tag)-[a-z0-9-]+|var\(--(prio|sev|st|hl|ctr|tag|viz-sev)-'
+LABEL_COLOUR="(\\b${PROPS}-${PALETTE}-[0-9]{2,3}\\b|#[0-9a-fA-F]{6}\\b)"
+label_lines="$(git diff --unified=0 "$merge_base"...HEAD -- 'src/*.tsx' 'src/*.ts' \
+  | awk -v allow="$LABEL_ALLOW" '
+      /^\+\+\+ /{ f=substr($0,7); skip=(f ~ allow); next }
+      /^\+/ && !skip { sub(/^\+/,""); print f ": " $0 }' \
+  | grep -v 'label-colour-ok:' \
+  | grep -E "${LABEL_TOKEN}|(['\"]P[0-3]['\"]|\\bP[0-3]['\"]?[[:space:]]*:|[Pp]riority).*${LABEL_COLOUR}|\\b(critical|high|medium|low|info)['\"]?[[:space:]]*:.*${LABEL_COLOUR}" \
+  | cut -c1-170 || true)"
+label_fail=0
+if [[ -n "$label_lines" ]]; then
+  label_fail=1
+  cat >&2 <<EOF
+
+This branch hand-writes a priority or severity colour outside the shared module:
+
+$label_lines
+
+Priority and severity each have ONE colour source, so a P0 or a Critical looks the
+same in a list, a chart and a drawer:
+  priority  <PriorityBadge priorityClass="P1" />   src/lib/priority-colors.ts
+  severity  <SeverityBadge severity="high" />      src/lib/severity-colors.ts
+  status    <StatusLozenge tone="progress" />      src/lib/status-colors.ts
+Charts take PRIORITY_CHART_COLORS / SEVERITY_CHART_COLORS. Teal is the act-here
+accent and is never a priority or severity colour. If this really is neither,
+say so on the line:  // label-colour-ok: <reason>
+
+EOF
+fi
+stripe_fail=$((stripe_fail || label_fail))
+
+# --- one label system (research/247) -------------------------------------------
+# Labels come from the primitives in src/components/ui (HealthStatus,
+# StatusLozenge, SignalChip, Tag, Counter, Marker, SeverityBadge, PriorityBadge).
+# An ADDED line outside components/ui/, the colour modules and tests may not:
+#   (a) put a colour class on a <Badge> (bg-/text-/border- + a semantic or palette colour);
+#   (b) set 9-11px text on a badge, pill or rounded-full line;
+#   (c) use uppercase or font-mono on a <Badge> line (mono is for ids, CVEs, versions);
+#   (d) spin or pulse inside a status component (nothing spins or pulses);
+#   (e) declare a new *_COLORS / *_BADGE_* map outside lib/*-colors.ts;
+#   (f) put state text on its own tint (text-success on bg-success/10 fails AA);
+#   (g) hand-pick a hex colour (bg-[#…], style={{ color: '#…' }}, fill="#…").
+# Annotate a real exception with `label-ok: <reason>`.
+SYS_ALLOW='^(web/)?src/(components/ui/|lib/[a-z-]*-colors[.]ts$|styles/)|(__tests__/|[.]test[.]tsx?$)'
+SEMANTIC='(primary|secondary|accent|destructive|warning|success|info|muted|foreground|background|card|signal|brand|sev-[a-z]+|st-[a-z]+-[a-z]+|hl-[a-z]+|prio-[0-9])'
+BADGE_COLOUR="\\b(bg|text|border|ring)-(${SEMANTIC}|${PALETTE}-[0-9]{2,3})\\b"
+TAB="$(printf '\t')"
+sys_all="$(git diff --unified=0 "$merge_base"...HEAD -- 'src/*.tsx' 'src/*.ts' \
+  | awk -v allow="$SYS_ALLOW" '
+      /^\+\+\+ /{ f=substr($0,7); skip=(f ~ allow); next }
+      /^\+/ && !skip { sub(/^\+/,""); print f "\t" $0 }' \
+  | grep -v 'label-ok:' || true)"
+sys_lines=""
+if [[ -n "$sys_all" ]]; then
+  a_lines="$(printf '%s\n' "$sys_all" | grep -E '<Badge\b' | grep -E "$BADGE_COLOUR" | sed 's/^/(a) colour class on Badge: /' || true)"
+  b_lines="$(printf '%s\n' "$sys_all" | grep -E 'Badge|rounded-full|Pill' | grep -E 'text-\[(9|10|11)(px|\.[0-9]+px)\]' | sed 's/^/(b) text under 12px on a label: /' || true)"
+  c_lines="$(printf '%s\n' "$sys_all" | grep -E '<Badge\b' | grep -E '\buppercase\b|\bfont-mono\b' | sed 's/^/(c) uppercase or mono on a label: /' || true)"
+  d_lines="$(printf '%s\n' "$sys_all" | grep -iE '(status|health|pill|chip|badge|lozenge)' | grep -E 'animate-(spin|ping|pulse)|<Loader2' | sed 's/^/(d) spinning or pulsing status: /' || true)"
+  e_lines="$(printf '%s\n' "$sys_all" | grep -E "${TAB}[[:space:]]*(export )?const [A-Z0-9_]*(_COLORS|_BADGE_[A-Z_]*)\b" | sed 's/^/(e) new colour map: /' || true)"
+  # (f) state text on its own tint: text-success on bg-success/10 is 4.38:1 in light mode (below AA).
+  f_lines="$(printf '%s\n' "$sys_all" | grep -E '\bbg-(success|warning|destructive|info)/[0-9]+' | grep -E '\btext-(success|warning|destructive|info)\b' | sed 's/^/(f) state text on its own tint: /' || true)"
+  # (g) a hand-picked hex colour (arbitrary class or inline style / SVG attribute).
+  g_lines="$(printf '%s\n' "$sys_all" | grep -E "\b(bg|text|border|fill|stroke|ring|outline|from|to|via)-\[#[0-9a-fA-F]{3,8}\]|\b(color|background|backgroundColor|fill|stroke|borderColor)[[:space:]]*[:=][[:space:]]*[{]?['\"]#[0-9a-fA-F]{3,8}['\"]" | sed 's/^/(g) hand-picked hex colour: /' || true)"
+  sys_lines="$(printf '%s\n%s\n%s\n%s\n%s\n%s\n%s\n' "$a_lines" "$b_lines" "$c_lines" "$d_lines" "$e_lines" "$f_lines" "$g_lines" | grep -v '^$' | tr '\t' ' ' | cut -c1-190 || true)"
+fi
+sys_fail=0
+if [[ -n "$sys_lines" ]]; then
+  sys_fail=1
+  cat >&2 <<EOF
+
+This branch hand-styles a label outside the label primitives:
+
+$sys_lines
+
+One label system: pick the primitive by meaning (src/components/ui).
+  a number            <Counter>          a feature marker   <Marker>
+  how bad             <SeverityBadge>    the decision       <PriorityBadge>
+  a work item's state <StatusLozenge>    a machine's state  <HealthStatus>
+  a supporting fact   <SignalChip>       a classification   <Tag>
+Labels are 12px or more, sentence case, sans (mono only for ids, CVEs and
+versions), and never spin or pulse. Colours live in lib/*-colors.ts and
+theme.css; charts take seriesVar / seriesFill from lib/chart-palette.ts. State
+text never sits on its own tint (below AA), and no colour is a hand-picked hex
+(research/257 measures every family). If this really is none of those, say so on the line:
+  // label-ok: <reason>
+
+EOF
+fi
+stripe_fail=$((stripe_fail || sys_fail))
+
 violations="$(printf '%s\n' "$added" \
   | grep -v 'palette-ok:' \
   | grep -oE "\b${PROPS}-${PALETTE}-[0-9]{2,3}\b" \

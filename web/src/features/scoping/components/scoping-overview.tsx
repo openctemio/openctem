@@ -7,30 +7,17 @@ import { Main } from '@/components/layout'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Skeleton } from '@/components/ui/skeleton'
-import { ErrorState, PageHeader } from '@/features/shared'
+import { ErrorState, PageHeader, PageStack } from '@/features/shared'
 import { CycleStatusBadge } from '@/features/cycles/components/cycle-status-badge'
-import { useNavItemAccess } from '@/lib/permissions'
+import { Permission, useHasPermission, useNavItemAccess } from '@/lib/permissions'
 import { cn } from '@/lib/utils'
 import { useScopingSummary, type ScopingSummary } from '../api'
 import { readinessRows, readinessScore, visibleReadiness, type ReadinessRow } from '../readiness'
 import { useTranslation } from '@/context/i18n-provider'
-
-const DAY = 86_400_000
-
-function cycleWhen(c: NonNullable<ScopingSummary['active_cycle']>): string {
-  if (!c.start_date || !c.end_date) return 'no dates'
-  const start = new Date(c.start_date).getTime()
-  const end = new Date(c.end_date).getTime()
-  const total = Math.max(1, Math.round((end - start) / DAY))
-  if (c.status !== 'active') {
-    return `${new Date(c.start_date).toLocaleDateString()} – ${new Date(c.end_date).toLocaleDateString()}`
-  }
-  const day = Math.min(total, Math.max(0, Math.round((Date.now() - start) / DAY)))
-  return `day ${day} of ${total}`
-}
+import { cycleTimeline } from '@/features/cycles/cycle-format'
 
 function CycleCard({ summary }: { summary: ScopingSummary }) {
-  const { t } = useTranslation()
+  const { t, locale } = useTranslation()
   const c = summary.active_cycle
   if (!c) {
     return (
@@ -50,17 +37,29 @@ function CycleCard({ summary }: { summary: ScopingSummary }) {
     )
   }
   const parts = [
-    `${c.objectives} objective${c.objectives === 1 ? '' : 's'}`,
-    `${c.success_criteria} success criteri${c.success_criteria === 1 ? 'on' : 'a'}`,
-    `${c.in_scope_services} service${c.in_scope_services === 1 ? '' : 's'}`,
-    `${c.exclusions} exclusion${c.exclusions === 1 ? '' : 's'}`,
+    t('scoping.overview.objectives', '{n, plural, one {# objective} other {# objectives}}', {
+      n: c.objectives,
+    }),
+    t(
+      'scoping.overview.criteria',
+      '{n, plural, one {# success criterion} other {# success criteria}}',
+      { n: c.success_criteria }
+    ),
+    t('scoping.overview.services', '{n, plural, one {# service} other {# services}}', {
+      n: c.in_scope_services,
+    }),
+    t('scoping.overview.exclusions', '{n, plural, one {# exclusion} other {# exclusions}}', {
+      n: c.exclusions,
+    }),
   ]
   return (
     <Card>
       <CardHeader className="flex flex-row flex-wrap items-start justify-between gap-3 space-y-0">
         <div className="min-w-0 space-y-1">
           <p className="text-xs text-muted-foreground">
-            {c.status === 'active' ? 'Active cycle' : 'Current cycle'}
+            {c.status === 'active'
+              ? t('scoping.overview.activeCycle', 'Active cycle')
+              : t('scoping.overview.currentCycle', 'Current cycle')}
           </p>
           <CardTitle className="flex flex-wrap items-center gap-2 text-base">
             <Link href={`/cycles/${c.id}`} className="hover:underline">
@@ -69,35 +68,49 @@ function CycleCard({ summary }: { summary: ScopingSummary }) {
             <CycleStatusBadge status={c.status} />
           </CardTitle>
           <CardDescription>
-            {cycleWhen(c)}
+            {cycleTimeline(c, t, locale).value}
             {c.status !== 'planning' &&
-              ` · ${c.scope_assets} asset${c.scope_assets === 1 ? '' : 's'} in scope`}
+              ` · ${t(
+                'scoping.overview.assetsInScope',
+                '{n, plural, one {# asset} other {# assets}} in scope',
+                { n: c.scope_assets }
+              )}`}
           </CardDescription>
         </div>
         <Button asChild size="sm" variant="outline">
           <Link href={`/cycles/${c.id}`}>
-            Open <ArrowRight className="ms-1 h-4 w-4" />
+            {t('scoping.overview.open', 'Open')} <ArrowRight className="ms-1 h-4 w-4" />
           </Link>
         </Button>
       </CardHeader>
       <CardContent>
-        <p className="text-sm text-muted-foreground">Charter: {parts.join(' · ')}</p>
+        <p className="text-sm text-muted-foreground">
+          {t('scoping.overview.charter', 'Charter: {summary}', { summary: parts.join(' · ') })}
+        </p>
       </CardContent>
     </Card>
   )
 }
 
 function ReadinessList({ rows }: { rows: ReadinessRow[] }) {
+  const { t } = useTranslation()
   const score = readinessScore(rows)
   return (
     <Card className="gap-0">
       <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-4">
         <div className="space-y-1">
-          <CardTitle className="text-base">Readiness</CardTitle>
-          <CardDescription>What a cycle needs written down before it starts.</CardDescription>
+          <CardTitle className="text-base">
+            {t('scoping.overview.readiness', 'Readiness')}
+          </CardTitle>
+          <CardDescription>
+            {t(
+              'scoping.overview.readinessHint',
+              'What a cycle needs written down before it starts.'
+            )}
+          </CardDescription>
         </div>
         <span className="text-sm font-medium tabular-nums whitespace-nowrap">
-          {score.ready} of {score.total} ready
+          {t('scoping.overview.readyCount', '{ready} of {total} ready', score)}
         </span>
       </CardHeader>
       <CardContent className="px-0 pb-0">
@@ -109,9 +122,15 @@ function ReadinessList({ rows }: { rows: ReadinessRow[] }) {
               data-ready={r.ready}
             >
               {r.ready ? (
-                <CheckCircle2 className="h-4 w-4 shrink-0 text-success" aria-label="Ready" />
+                <CheckCircle2
+                  className="h-4 w-4 shrink-0 text-success"
+                  aria-label={t('scoping.overview.ready', 'Ready')}
+                />
               ) : (
-                <Circle className="h-4 w-4 shrink-0 text-muted-foreground" aria-label="Not ready" />
+                <Circle
+                  className="h-4 w-4 shrink-0 text-muted-foreground"
+                  aria-label={t('scoping.overview.notReady', 'Not ready')}
+                />
               )}
               {/* Label over value on a phone, side by side from sm up. */}
               <div className="min-w-0 flex-1 sm:flex sm:items-center sm:justify-between sm:gap-3">
@@ -119,7 +138,13 @@ function ReadinessList({ rows }: { rows: ReadinessRow[] }) {
                 <p className="text-sm text-muted-foreground tabular-nums sm:text-end">{r.value}</p>
               </div>
               <Button asChild size="sm" variant={r.ready ? 'ghost' : 'outline'} className="h-7">
-                <Link href={r.href} aria-label={`${r.action}: ${r.label}`}>
+                <Link
+                  href={r.href}
+                  aria-label={t('scoping.overview.rowAction', '{action}: {label}', {
+                    action: r.action,
+                    label: r.label,
+                  })}
+                >
                   {r.action}
                 </Link>
               </Button>
@@ -138,61 +163,85 @@ function ReadinessList({ rows }: { rows: ReadinessRow[] }) {
  * left out.
  */
 export function ScopingOverview() {
+  const { t } = useTranslation()
   const { data, error, isLoading, mutate } = useScopingSummary()
   const allowed = useNavItemAccess()
   const rows = useMemo(
-    () => (data ? visibleReadiness(readinessRows(data), (module) => allowed({ module })) : []),
-    [data, allowed]
+    () => (data ? visibleReadiness(readinessRows(data, t), (module) => allowed({ module })) : []),
+    [data, allowed, t]
   )
   const cycle = data?.active_cycle ?? null
   const cyclesOn = allowed({ module: 'ctem_cycles' })
+  // Starting a cycle creates one, which needs the write permission; opening the
+  // running cycle only reads it.
+  const canStartCycle = useHasPermission(Permission.CTEMCyclesWrite)
 
   return (
     <Main>
-      <PageHeader
-        title="Scoping"
-        description="What the program protects this cycle, and whether that is written down."
-      >
-        {cyclesOn && !isLoading && data && (
-          <Button asChild size="sm">
-            {cycle ? (
-              <Link href={`/cycles/${cycle.id}`}>
-                <RotateCcw className="me-2 h-4 w-4" />
-                Open cycle
-              </Link>
-            ) : (
-              <Link href="/cycles">
-                <Plus className="me-2 h-4 w-4" />
-                Start a cycle
-              </Link>
-            )}
-          </Button>
-        )}
-      </PageHeader>
+      <PageStack>
+        <PageHeader
+          title={t('scoping.overview.title', 'Scoping')}
+          description={t(
+            'scoping.overview.description',
+            'What the program protects this cycle, and whether that is written down.'
+          )}
+        >
+          {cyclesOn && !isLoading && data && (cycle || canStartCycle) && (
+            <Button asChild size="sm">
+              {cycle ? (
+                <Link href={`/cycles/${cycle.id}`}>
+                  <RotateCcw className="me-2 h-4 w-4" />
+                  {t('scoping.overview.openCycle', 'Open cycle')}
+                </Link>
+              ) : (
+                <Link href="/cycles">
+                  <Plus className="me-2 h-4 w-4" />
+                  {t('scoping.overview.startCycle', 'Start a cycle')}
+                </Link>
+              )}
+            </Button>
+          )}
+        </PageHeader>
 
-      {error ? (
-        <div className="mt-5">
-          <ErrorState title="the scoping summary" error={error} onRetry={() => mutate()} />
-        </div>
-      ) : isLoading || !data ? (
-        <div className="mt-5 space-y-5">
-          <Skeleton className="h-32 w-full rounded-xl" />
-          <Skeleton className="h-96 w-full rounded-xl" />
-        </div>
-      ) : (
-        <div className="mt-5 space-y-5">
-          {cyclesOn && <CycleCard summary={data} />}
-          <ReadinessList rows={rows} />
-          <p className="text-sm text-muted-foreground">
-            Feeds Discovery:{' '}
-            {cycle && cycle.status !== 'planning'
-              ? `${cycle.scope_assets} asset${cycle.scope_assets === 1 ? '' : 's'} snapshotted`
-              : 'no scope snapshot yet'}{' '}
-            · {data.boundary.exclusions} exclusion{data.boundary.exclusions === 1 ? '' : 's'}{' '}
-            enforced on scans
-          </p>
-        </div>
-      )}
+        {error ? (
+          <ErrorState
+            title={t('scoping.overview.loadError', 'the scoping summary')}
+            error={error}
+            onRetry={() => mutate()}
+          />
+        ) : isLoading || !data ? (
+          <PageStack>
+            <Skeleton className="h-32 w-full rounded-xl" />
+            <Skeleton className="h-96 w-full rounded-xl" />
+          </PageStack>
+        ) : (
+          <PageStack>
+            {cyclesOn && <CycleCard summary={data} />}
+            <ReadinessList rows={rows} />
+            <p className="text-sm text-muted-foreground">
+              {t(
+                'scoping.overview.feeds',
+                'Feeds Discovery: {snapshot}, {exclusions} enforced on scans',
+                {
+                  snapshot:
+                    cycle && cycle.status !== 'planning'
+                      ? t(
+                          'scoping.overview.snapshotted',
+                          '{n, plural, one {# asset} other {# assets}} snapshotted',
+                          { n: cycle.scope_assets }
+                        )
+                      : t('scoping.overview.noSnapshot', 'no scope snapshot yet'),
+                  exclusions: t(
+                    'scoping.overview.exclusions',
+                    '{n, plural, one {# exclusion} other {# exclusions}}',
+                    { n: data.boundary.exclusions }
+                  ),
+                }
+              )}
+            </p>
+          </PageStack>
+        )}
+      </PageStack>
     </Main>
   )
 }

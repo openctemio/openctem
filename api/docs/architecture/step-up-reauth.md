@@ -117,10 +117,12 @@ offboarding without step-up and is removed.
 | Route | Why |
 |---|---|
 | `POST /api/v1/api-keys`, `DELETE /api/v1/api-keys/{id}` | A new key outlives the session; deleting one hides it. Revoking stays one click. |
-| `POST /api/v1/scim-tokens` | A SCIM token creates, suspends and re-roles every member. |
+| `POST /api/v1/scim-tokens`, `POST /api/v1/scim-tokens/{id}/rotate` | A SCIM token creates, suspends and re-roles every member; a rotation hands out a new one. |
 | `PUT /api/v1/scim-tokens/group-mappings` | The mapping decides which role a directory group's members receive. |
 | `POST /api/v1/integrations`, `POST /api/v1/integrations/notifications`, `PUT`/`DELETE /api/v1/integrations/{id}`, `POST /api/v1/integrations/{id}/disable`, `PUT /api/v1/integrations/{id}/notification` | Connecting, repointing or removing an integration decides where data and credentials go. |
 | `PATCH /api/v1/tenants/{tenant}/settings/security` | MFA requirement, IP allowlist, allowed domains, SSO enforcement. |
+| `PATCH /api/v1/tenants/{tenant}/settings/modules`, `POST …/settings/modules/reset`, `POST …/settings/modules/presets/{presetId}/apply` | Turns features on or off for the whole organization: what it scans, which integrations and AI run, what it exposes. The validate and preview dry-runs change nothing and need no step-up. |
+| `POST /api/v1/secret-store`, `PUT`/`DELETE /api/v1/secret-store/{id}`, `POST …/{id}/rotate` | A stored secret authenticates the organization to an outside system (Git tokens, cloud keys); a stolen session must not plant, swap or remove one. |
 | `PATCH /api/v1/tenants/{tenant}/settings/risk-scoring` | Risk scoring settings: every asset's risk band and, through the ownership floor, finding priorities ([scoring versions](scoring-versions.md)). |
 | `POST /api/v1/tenants/{tenant}/settings/sso/changes/{id}/approve` | Installs who can sign in to the organization. |
 | `DELETE /api/v1/tenants/{tenant}` | Deletes the organization. |
@@ -128,8 +130,14 @@ offboarding without step-up and is removed.
 | `POST /api/v1/organization/members/{id}/offboard`, `.../erase` | Removes a person's access; erases their personal data. Disabling (`POST /api/v1/tenants/{tenant}/members/{id}/suspend`) and re-enabling stay one click: they are reversible and keep everything the member holds. |
 | `POST /api/v1/ci/gate-overrides` | Break-glass past the CI security gate. |
 | `POST /api/v1/integrations/{id}/jira-webhook/secret/rotate`, `PUT …/{id}/jira-webhook/secret`, `POST …/{id}/github-webhook/secret/rotate` | Whoever holds the secret can forge inbound webhook events (issue sync, push events) for that integration. |
+| `POST /api/v1/integrations/{id}/signing-secret/rotate` | Whoever holds the outbound signing secret can forge deliveries the organization's receiver trusts (RFC-124). |
 | `PATCH /api/v1/attachments/storage-config` | Decides where evidence files are written and with which credentials. |
-| `POST /api/v1/sensors`, `POST /api/v1/sensors/{id}/regenerate-key` | Mints a persistent sensor key, a credential that outlives the session (the same reason as an API key). Revoking, disabling and deleting stay one click. |
+| `POST /api/v1/sensors`, `POST /api/v1/sensors/{id}/regenerate-key` | Mints a persistent sensor key, a credential that outlives the session (the same reason as an API key). Revoking and disabling stay one click. |
+| `DELETE /api/v1/sensors/{id}` | Removes the sensor and its history; it cannot be undone. Revoking (`POST …/{id}/revoke`) cuts a sensor off at once without step-up, so an incident never waits on it. |
+| `DELETE /api/v1/service-accounts/{id}` | Ends every API key the service account holds, as deleting one of its keys (`DELETE …/{id}/api-keys/{key_id}`) does. |
+| `GET /api/v1/audit-logs/export` | The file holds every member's email and IP address for the filtered period. Reading the log in the app stays a plain read. |
+| `POST /api/v1/scan-approvals/{id}/approve` | Lets a held scan send traffic to its targets, the same weight as approving a scope target. Reject and withdraw stay one click. |
+| `POST /api/v1/pentest/campaigns/{id}/secrets/{secret_id}/reveal`, `DELETE …/secrets/{secret_id}` | Shows a campaign test credential in clear text; deletes one for good (the same reason as the secret store and leaked credentials). |
 | `POST /api/v1/priority-rules`, `PUT`/`DELETE /api/v1/priority-rules/{id}` | A rule re-classes findings across the organization, down to the platform floors ([priority explainability](priority-explainability.md)). |
 | `POST /api/v1/approvals/{id}/approve`, `POST /api/v1/approvals/batches/{id}/approve`, `POST /api/v1/findings/{id}/severity-requests/{request_id}/approve` | Decisions that close or lower risk (false positive, accepted risk, severity change). Reject and cancel stay one click: they keep the finding as it is. |
 | `DELETE /api/v1/findings/{id}` | Removes a finding and its history. |

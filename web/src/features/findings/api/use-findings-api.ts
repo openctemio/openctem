@@ -10,7 +10,7 @@
 
 import useSWR, { type SWRConfiguration } from 'swr'
 import useSWRMutation from 'swr/mutation'
-import { get, post, patch, put } from '@/lib/api/client'
+import { get, post, patch } from '@/lib/api/client'
 import { handleApiError } from '@/lib/api/error-handler'
 import { useTenant } from '@/context/tenant-provider'
 import type {
@@ -27,6 +27,7 @@ import type {
 import type { ApiApproval, ApprovalStatus } from '../types/finding.types'
 import { ifMatchRowVersion, splitRowVersion, type WithRowVersion } from '../lib/finding-conflict'
 import type { ApprovalEvaluation, ApprovalPolicy } from '../lib/approval-policy'
+import { buildFindingsEndpoint, buildFindingsQuery } from './findings-query'
 
 // ============================================
 // SWR CONFIGURATION
@@ -59,63 +60,8 @@ const defaultConfig: SWRConfiguration = {
 // ENDPOINT BUILDERS
 // ============================================
 
-export function buildFindingsEndpoint(filters?: FindingApiFilters): string {
-  const baseUrl = '/api/v1/findings'
-  if (!filters) return baseUrl
-  const queryString = buildFindingsQuery(filters).toString()
-  return queryString ? `${baseUrl}?${queryString}` : baseUrl
-}
-
-/** The list query (RFC-048 param names) for a filter set; shared by list, stats and export. */
-export function buildFindingsQuery(filters: FindingApiFilters): URLSearchParams {
-  const params = new URLSearchParams()
-
-  // The list query contract's param names (RFC-048): the singular response
-  // field names. The old plural names still work on the server, as
-  // deprecated aliases.
-  if (filters.asset_id) params.set('asset_id', filters.asset_id)
-  if (filters.branch_id) params.set('branch_id', filters.branch_id)
-  if (filters.branch_id && filters.branch_status && filters.branch_status !== 'all')
-    params.set('branch_status', filters.branch_status)
-  if (filters.component_id) params.set('component_id', filters.component_id)
-  if (filters.vulnerability_id) params.set('vulnerability_id', filters.vulnerability_id)
-  if (filters.tool_name) params.set('tool_name', filters.tool_name)
-  if (filters.rule_id) params.set('rule_id', filters.rule_id)
-  if (filters.scan_id) params.set('scan_id', filters.scan_id)
-  if (filters.file_path) params.set('file_path', filters.file_path)
-  if (filters.search) params.set('q', filters.search)
-  if (filters.page) params.set('page', String(filters.page))
-  if (filters.per_page) params.set('per_page', String(filters.per_page))
-
-  if (filters.severities?.length) params.set('severity', filters.severities.join(','))
-  if (filters.statuses?.length) params.set('status', filters.statuses.join(','))
-  if (filters.exclude_statuses?.length) params.set('status_not', filters.exclude_statuses.join(','))
-  if (filters.sources?.length) params.set('source', filters.sources.join(','))
-
-  // CTEM prioritization filters (RFC-017)
-  if (filters.priority_classes?.length)
-    params.set('priority_class', filters.priority_classes.join(','))
-  if (filters.is_in_kev) params.set('is_in_kev', 'true')
-  if (filters.is_reachable) params.set('is_reachable', 'true')
-  if (filters.branch_only) params.set('branch_only', 'true')
-  if (filters.assigned_to_me) params.set('related_to', 'me')
-  if (filters.sla_statuses?.length) params.set('sla_status', filters.sla_statuses.join(','))
-  if (filters.sla_deadline_gt) params.set('sla_deadline_gt', filters.sla_deadline_gt)
-  if (filters.sla_deadline_lte) params.set('sla_deadline_lte', filters.sla_deadline_lte)
-  if (filters.epss_min != null) params.set('epss_score_gte', String(filters.epss_min))
-  if (filters.finding_ids?.length) params.set('id', filters.finding_ids.join(','))
-  if (filters.cve_ids?.length) params.set('cve_id', filters.cve_ids.join(','))
-  if (filters.finding_types?.length) params.set('finding_type', filters.finding_types.join(','))
-  if (filters.families?.length) params.set('family', filters.families.join(','))
-  if (filters.state) params.set('state', filters.state)
-  if (filters.asset_owner_id) params.set('asset_owner_id', filters.asset_owner_id)
-  if (filters.asset_owner_unassigned) params.set('asset_owner_id_null', 'true')
-  if (filters.asset_group_id) params.set('asset_group_id', filters.asset_group_id)
-  if (filters.asset_crown_jewel) params.set('asset_crown_jewel', 'true')
-  if (filters.view) params.set('view', filters.view)
-  if (filters.sort) params.set('sort', filters.sort)
-  return params
-}
+// The list query builders live in their own module (shared with the count hook).
+export { buildFindingsEndpoint, buildFindingsQuery } from './findings-query'
 
 function buildFindingEndpoint(findingId: string): string {
   return `/api/v1/findings/${findingId}`
@@ -525,12 +471,15 @@ export function buildFindingStatsUrl(filters?: FindingStatsFilters): string {
   return queryString ? `/api/v1/findings/stats?${queryString}` : '/api/v1/findings/stats'
 }
 
-/** `/api/v1/findings/export` for a filter set (RFC-048; needs findings:export). */
+/**
+ * `/api/v1/findings/export` for a filter set (RFC-048; needs findings:export).
+ * The export keeps the list's sort; paging does not apply.
+ */
 export function buildFindingsExportUrl(
   filters: FindingApiFilters,
   format: 'csv' | 'ndjson'
 ): string {
-  const { page: _page, per_page: _perPage, sort: _sort, ...rest } = filters
+  const { page: _page, per_page: _perPage, ...rest } = filters
   const params = buildFindingsQuery(rest)
   params.set('format', format)
   return `/api/v1/findings/export?${params.toString()}`
@@ -600,7 +549,8 @@ export function useRequestApproval(findingId: string) {
       }
     ) => {
       // Usually a pending request; an approved one (single_person) when the
-      // organization lets the requester decide this false positive alone.
+      // organization's level lets the requester decide this false positive
+      // or accepted risk alone.
       const response = await post<ApiApproval>(url, arg)
       return response
     }
@@ -610,6 +560,8 @@ export function useRequestApproval(findingId: string) {
 /** How a request of one status on one finding is decided now. */
 export interface FalsePositivePolicy {
   fp_approval: FPApprovalLevel
+  /** The organization's risk acceptance level in force. */
+  accept_approval?: FPApprovalLevel
   /** One person holding findings:approve may decide it alone. */
   single_person: boolean
   /** ...and the caller is such a person: it applies at once. */
@@ -684,6 +636,8 @@ export interface ApprovalListResponse {
    * may approve their own pending requests with an authenticator code.
    */
   self_approval_available?: boolean
+  /** With `?queue=`: the pending count of each personal queue (My Work). */
+  queue_counts?: { review: number; requested: number }
 }
 
 /** The approved request after a sole member's own approval. */
@@ -705,7 +659,11 @@ export function selfApproveFindingApproval(id: string, input: { reason: string; 
 }
 
 /** The organization's finding approval settings. */
-/** Who decides a false positive (accepted risk always needs a second person). */
+/**
+ * An approval level: who decides a false positive (fp_approval) or an
+ * accepted risk (accept_approval). all: a second person always;
+ * high_and_above: only for a material finding; off: one person.
+ */
 export type FPApprovalLevel = 'all' | 'high_and_above' | 'off'
 
 export interface FindingApprovalSettings {
@@ -716,6 +674,11 @@ export interface FindingApprovalSettings {
   /** A lower level chosen less than 24 hours ago, in force at pending_fp_approval_at. */
   pending_fp_approval?: FPApprovalLevel
   pending_fp_approval_at?: string
+  /** The risk acceptance approval level in force. */
+  accept_approval?: FPApprovalLevel
+  /** A lower level chosen less than 24 hours ago, in force at pending_accept_approval_at. */
+  pending_accept_approval?: FPApprovalLevel
+  pending_accept_approval_at?: string
   /** Share (0-10 %) of single-person false positives flagged for a second look. */
   second_look_percent?: number
   /** A lower share chosen less than 24 hours ago, in force at pending_second_look_at. */
@@ -733,12 +696,15 @@ export interface FindingApprovalSettings {
 }
 
 /**
- * PUT body: any of the plain fields, or the whole approval policy.
- * `cancel_pending` drops every waiting lowering (level, second-look share,
+ * PATCH body: any of the plain fields, or the whole approval policy.
+ * `cancel_pending` drops every waiting lowering (levels, second-look share,
  * relaxing policy) and keeps the values in force.
  */
 export type FindingApprovalSettingsUpdate = Partial<
-  Pick<FindingApprovalSettings, 'backup_contact_email' | 'fp_approval' | 'second_look_percent'>
+  Pick<
+    FindingApprovalSettings,
+    'backup_contact_email' | 'fp_approval' | 'accept_approval' | 'second_look_percent'
+  >
 > & { policy?: ApprovalPolicy; cancel_pending?: boolean }
 
 const FINDING_APPROVAL_SETTINGS_URL = '/api/v1/organization/settings/finding-approvals'
@@ -759,7 +725,7 @@ export function useFindingApprovalSettings() {
  * Fields left out keep their value.
  */
 export function updateFindingApprovalSettings(input: FindingApprovalSettingsUpdate) {
-  return put<FindingApprovalSettings>(FINDING_APPROVAL_SETTINGS_URL, input)
+  return patch<FindingApprovalSettings>(FINDING_APPROVAL_SETTINGS_URL, input)
 }
 
 /**

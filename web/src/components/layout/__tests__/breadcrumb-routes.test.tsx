@@ -71,7 +71,7 @@ describe('BreadcrumbNav', () => {
   })
 
   it('leaves only the home link when no parent has a page', () => {
-    pathname.current = '/insights/reports/scheduled'
+    pathname.current = '/mcp/confirm'
     const { container } = render(<BreadcrumbNav />)
     // The current page renders role="link" without an href; count real links only.
     const links = [...container.querySelectorAll('a[href]')].map((a) => a.getAttribute('href'))

@@ -1,34 +1,191 @@
+/*
+ * OpenCTEM brand tokens (light: `:root`, dark: `.dark`).
+ *
+ * Brand: ink #0A1628 (text, dark ground), paper #FAFAF9 (light ground), one
+ * teal accent that marks the place to act (`--signal`: the focus ring, a
+ * page's one primary call to action, links), muted #525252. Dark surfaces sit
+ * on the ink hue (about 258deg), never on teal. No gradients.
+ *
+ * The shadcn names (--background, --primary, ...) are aliases of these
+ * values, so every kit component follows the brand. Contrast pairs are
+ * asserted by src/styles/__tests__/contrast.test.ts; the --viz-* chart
+ * palette by scripts/check-palette.mjs (source src/lib/chart-palette.json).
+ */
 :root {
-  --radius: 0.625rem;
-  --background: oklch(1 0 0);
-  --foreground: oklch(0.129 0.042 264.695);
-  --card: oklch(1 0 0);
-  --card-foreground: oklch(0.129 0.042 264.695);
-  --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.129 0.042 264.695);
-  --primary: oklch(0.208 0.042 265.755);
-  --primary-foreground: oklch(0.984 0.003 247.858);
-  --secondary: oklch(0.968 0.007 247.896);
-  --secondary-foreground: oklch(0.208 0.042 265.755);
-  --muted: oklch(0.968 0.007 247.896);
-  --muted-foreground: oklch(0.554 0.046 257.417);
-  --accent: oklch(0.968 0.007 247.896);
-  --accent-foreground: oklch(0.208 0.042 265.755);
-  --destructive: oklch(0.577 0.245 27.325);
-  --destructive-foreground: oklch(0.984 0.003 247.858);
-  --success: oklch(0.527 0.154 150.069);
-  --warning: oklch(0.666 0.179 58.318);
-  --info: oklch(0.546 0.245 262.881);
-  /* Brand accent (docs/brand): used only to mark where to act. */
-  --brand: #0d9488;
-  --border: oklch(0.929 0.013 255.508);
-  --input: oklch(0.929 0.013 255.508);
-  --ring: oklch(0.704 0.04 256.788);
-  --chart-1: oklch(0.646 0.222 41.116);
-  --chart-2: oklch(0.6 0.118 184.704);
-  --chart-3: oklch(0.398 0.07 227.392);
-  --chart-4: oklch(0.828 0.189 84.429);
-  --chart-5: oklch(0.769 0.188 70.08);
+  /* Radius by role: 4 chips, 6 buttons and inputs, 8 cards and dialogs. */
+  --radius: 0.5rem;
+
+  /* Surfaces and text */
+  --background: #fafaf9; /* brand paper */
+  --foreground: #0a1628; /* brand ink */
+  --surface-raised: #f5f6f8; /* hover, selected row */
+  --surface-sunken: #eef0f3; /* wells, canvas */
+  --border-subtle: #e7e9ee; /* inner dividers */
+  --border-strong: #7d8799; /* inputs, edges (3:1 on white) */
+  --fg-dim: #5e6673; /* low-priority rows: a colour, never opacity */
+  --card: #ffffff;
+  --card-foreground: var(--foreground);
+  --popover: #ffffff;
+  --popover-foreground: var(--foreground);
+  --primary: #0a1628;
+  --primary-foreground: #fafaf9;
+  --secondary: var(--surface-raised);
+  --secondary-foreground: var(--foreground);
+  --muted: var(--surface-raised);
+  --muted-foreground: #525252; /* brand muted */
+  --accent: var(--surface-raised); /* the kit's hover surface, not the brand accent */
+  --accent-foreground: var(--foreground);
+  --border: #d8dce3;
+  --input: var(--border-strong);
+
+  /* The one accent: where to act. */
+  --signal: #0f766e; /* AA step of brand teal; white text 5.5:1 */
+  --signal-text: #0f766e; /* links on paper and white */
+  --signal-ink: #ffffff; /* text on a --signal fill */
+  --brand: #0d9488; /* the logo marker dot only */
+  --ring: var(--signal);
+
+  /* State */
+  --destructive: #b42318;
+  --destructive-foreground: #ffffff;
+  --success: #15803d;
+  --warning: #b45309;
+  --info: #1d5fd1;
+
+  /* Severity: marks (>= 3:1 except medium, which always carries its label),
+     text (>= 4.5:1 on card, paper and raised), ink on a solid mark. */
+  --sev-critical: var(--viz-sev-critical);
+  --sev-high: var(--viz-sev-high);
+  --sev-medium: var(--viz-sev-medium);
+  --sev-low: var(--viz-sev-low);
+  --sev-info: var(--viz-sev-info);
+  --sev-critical-text: #a3123a;
+  --sev-high-text: #b0420a;
+  --sev-medium-text: #85600a;
+  --sev-low-text: #1d5fd1;
+  --sev-info-text: #4b5563;
+  --sev-critical-ink: #ffffff;
+  --sev-high-ink: #0a1628;
+  --sev-medium-ink: #0a1628;
+  --sev-low-ink: #0a1628;
+  --sev-info-ink: #ffffff;
+
+  /* Priority class (P0-P3): CTEM's decision, the only filled label in a row. Its
+     own violet system (oklch hue about 293): never a severity hue, never the teal
+     accent, never ink. P3 is neutral on purpose ("track"). --prio-N is the mark
+     (charts, dots, the P0 fill and every box edge), from the --viz-prio-* ramp:
+     each step >= 0.10 OKLCH lightness from the next, >= 3:1 on card, paper and
+     raised, P0 the strongest contrast (research/257). --prio-N-bg / -fg are the
+     box and its text (>= 4.5:1). Not prioritised is a hatch of --viz-prio-none. */
+  --prio-0: var(--viz-prio-0);
+  --prio-1: var(--viz-prio-1);
+  --prio-2: var(--viz-prio-2);
+  --prio-3: var(--viz-prio-3);
+  --prio-0-bg: var(--prio-0);
+  --prio-0-fg: #ffffff;
+  --prio-0-border: var(--prio-0);
+  --prio-1-bg: #ede9fe;
+  --prio-1-fg: #4c1d95;
+  --prio-1-border: var(--prio-1);
+  --prio-2-bg: transparent;
+  --prio-2-fg: #5b21b6;
+  --prio-2-border: var(--prio-2);
+  --prio-3-bg: transparent;
+  --prio-3-fg: #525252;
+  --prio-3-border: var(--prio-3);
+
+  /* Workflow status by category (a lozenge tint, not one colour per status):
+     triage (untouched, dashed edge), open, progress, resolved, accepted, closed
+     (not fixed). -fg on -bg and on the card >= 4.5:1. A transparent -bg sits on the card. */
+  --st-triage-bg: transparent;
+  --st-triage-fg: #0a1628;
+  --st-triage-border: #7d8799;
+  --st-open-bg: #eef0f3;
+  --st-open-fg: #0a1628;
+  --st-open-border: #eef0f3;
+  --st-progress-bg: #e8f0fd;
+  --st-progress-fg: #1d4fb0;
+  --st-progress-border: #e8f0fd;
+  --st-resolved-bg: #e7f6ec;
+  --st-resolved-fg: #15663a;
+  --st-resolved-border: #e7f6ec;
+  --st-accepted-bg: #fdf3e2;
+  --st-accepted-fg: #8a4b06;
+  --st-accepted-border: #fdf3e2;
+  --st-closed-bg: transparent;
+  --st-closed-fg: #525252;
+  --st-closed-border: var(--border-subtle);
+
+  /* The bolt of an exploit chip (KEV): the chip is neutral, only this icon is red. */
+  --sig-icon: var(--destructive);
+
+  /* Waiting on a person or decision: the accepted amber, told apart by its icon. */
+  --st-waiting-bg: var(--st-accepted-bg);
+  --st-waiting-fg: var(--st-accepted-fg);
+  --st-waiting-border: var(--st-accepted-border);
+
+  /* Attention tones (ToneChip, research/266): one colour language for labels
+     a reader scans a column for (exposure, scope standing, HTTP status class).
+     Colour says how much attention it needs; the icon says which family. The
+     ok, info, caution and neutral pairs are the status lozenge pairs; danger
+     is the critical red on a light tint. Text on every tint is AA. */
+  --tone-danger-bg: #fdecee;
+  --tone-danger-fg: #a3123a;
+  --tone-danger-border: #fdecee;
+
+  /* Ordinal levels (Tag level: criticality, CIA impact), research/266: brand
+     ink by weight, never a severity hue. 4 solid ink, 3 ink tint, 2 outline,
+     1 muted text, 0 dashed. The fill steps sit far apart in lightness, and
+     the bars glyph and the word carry the level without colour. */
+  --lvl-4-bg: #0a1628;
+  --lvl-4-fg: #ffffff;
+  --lvl-3-bg: #d5dce7;
+  --lvl-3-fg: #0a1628;
+  --lvl-2-border: #7d8799;
+  --lvl-2-fg: #0a1628;
+  --lvl-1-fg: #525252;
+
+  /* Machine health icons (HealthStatus): the text stays --foreground. Each is
+     >= 3:1 on the card (WCAG 1.4.11); the idle grey is the neutral states.
+     ok, warn and down sit apart in lightness, so they stay apart for red-green
+     colour blindness too; each state also has its own glyph. */
+  --hl-ok: #007835;
+  --hl-run: var(--info);
+  --hl-warn: #bb7e05;
+  --hl-down: #c13616;
+  --hl-idle: #7d8799;
+
+  /* Counter: neutral pill, ink fill only for "waiting for you". */
+  --ctr-bg: #eef0f3;
+  --ctr-fg: #0a1628;
+  --ctr-em-bg: #0a1628;
+  --ctr-em-fg: #fafaf9;
+
+  /* The fixed palette of a user-chosen tag colour: an 8px dot, never a fill.
+     >= 3:1 on the card. Teal is not in the list (it is the act-here accent). */
+  --tag-red: #dc2626;
+  --tag-orange: #ea580c;
+  --tag-amber: #d97706;
+  --tag-yellow: #b58900;
+  --tag-green: #16a34a;
+  --tag-cyan: #0891b2;
+  --tag-blue: #2563eb;
+  --tag-violet: #ac47c2;
+  --tag-pink: #db2777;
+  --tag-grey: #6b7280;
+
+  /* Elevation: overlays only. Motion. */
+  --shadow-overlay: 0 8px 24px rgb(10 22 40 / 0.12), 0 1px 2px rgb(10 22 40 / 0.08);
+  --dur-fast: 120ms;
+  --dur: 200ms;
+  --ease: cubic-bezier(0.2, 0, 0, 1);
+
+  /* Older chart names follow the validated palette. */
+  --chart-1: var(--viz-cat-1);
+  --chart-2: var(--viz-cat-2);
+  --chart-3: var(--viz-cat-3);
+  --chart-4: var(--viz-cat-4);
+  --chart-5: var(--viz-cat-5);
 
   /* Dashboard chart palette (validated: scripts/check-palette.mjs, source src/lib/chart-palette.json). */
   --viz-sev-critical: #a3123a;
@@ -36,13 +193,22 @@
   --viz-sev-medium: #e0a106;
   --viz-sev-low: #3b82f6;
   --viz-sev-info: #6b7280;
+  --viz-prio-0: #3e0d78;
+  --viz-prio-1: #5e0dbd;
+  --viz-prio-2: #7945df;
+  --viz-prio-3: #878e9a;
+  --viz-prio-none: #7d8799;
+  --viz-lvl-critical: #1f2e44;
+  --viz-lvl-high: #3e4d62;
+  --viz-lvl-medium: #5f6d80;
+  --viz-lvl-low: #848e9d;
   --viz-cat-1: #2a78d6;
   --viz-cat-2: #eb6834;
-  --viz-cat-3: #1baf7a;
-  --viz-cat-4: #eda100;
-  --viz-cat-5: #e87ba4;
-  --viz-cat-6: #008300;
-  --viz-cat-7: #4a3aa7;
+  --viz-cat-3: #7a4fd0;
+  --viz-cat-4: #2e9a45;
+  --viz-cat-5: #e0609a;
+  --viz-cat-6: #8a8a00;
+  --viz-cat-7: #1a8fd0;
   --viz-cat-8: #e34948;
   --viz-cat-other: #9ca3af;
   --viz-div-opened: #eb6834;
@@ -69,57 +235,156 @@
 }
 
 .dark {
-  --background: oklch(0.129 0.042 264.695);
-  --foreground: oklch(0.984 0.003 247.858);
-  --card: oklch(0.14 0.04 259.21);
-  --card-foreground: oklch(0.984 0.003 247.858);
-  --popover: oklch(0.208 0.042 265.755);
-  --popover-foreground: oklch(0.984 0.003 247.858);
-  --primary: oklch(0.929 0.013 255.508);
-  --primary-foreground: oklch(0.208 0.042 265.755);
-  --secondary: oklch(0.279 0.041 260.031);
-  --secondary-foreground: oklch(0.984 0.003 247.858);
-  --muted: oklch(0.279 0.041 260.031);
-  --muted-foreground: oklch(0.704 0.04 256.788);
-  --accent: oklch(0.279 0.041 260.031);
-  --accent-foreground: oklch(0.984 0.003 247.858);
-  --destructive: oklch(0.704 0.191 22.216);
-  --destructive-foreground: oklch(0.984 0.003 247.858);
-  --success: oklch(0.792 0.209 151.711);
-  --warning: oklch(0.828 0.189 84.429);
-  --info: oklch(0.707 0.165 254.624);
+  --background: #0a1628; /* brand ink */
+  --foreground: #fafaf9; /* brand paper */
+  --surface-raised: #15253f;
+  --surface-sunken: #0b182c;
+  --border-subtle: #1b2a43;
+  --border-strong: #63728a; /* 3.4:1 on a card */
+  --fg-dim: #97a2b3;
+  --card: #0f1d33; /* ink, lighter, same hue */
+  --popover: #15253f;
+  --primary: #fafaf9;
+  --primary-foreground: #0a1628;
+  --muted-foreground: #a9b4c4;
+  --border: #24354f;
+
+  --signal: #14b8a6; /* brand teal-bright; ink text 7.3:1 */
+  --signal-text: #14b8a6;
+  --signal-ink: #0a1628;
   --brand: #14b8a6;
-  --border: oklch(1 0 0 / 10%);
-  --input: oklch(1 0 0 / 15%);
-  --ring: oklch(0.551 0.027 264.364);
-  --chart-1: oklch(0.488 0.243 264.376);
-  --chart-2: oklch(0.696 0.17 162.48);
-  --chart-3: oklch(0.769 0.188 70.08);
-  --chart-4: oklch(0.627 0.265 303.9);
-  --chart-5: oklch(0.645 0.246 16.439);
+
+  --destructive: #f2685c;
+  --destructive-foreground: #0a1628;
+  --success: #4ade80;
+  --warning: #f5b451;
+  --info: #7fb0f5;
+
+  --sev-critical-text: #f27493;
+  --sev-high-text: #f59a5c;
+  --sev-medium-text: #e8c14a;
+  --sev-low-text: #7fb0f5;
+  --sev-info-text: #a9b4c4;
+  --sev-critical-ink: #ffffff;
+  --sev-high-ink: #0a1628;
+  --sev-medium-ink: #0a1628;
+  --sev-low-ink: #0a1628;
+  --sev-info-ink: #0a1628;
+
+  --prio-0: var(--viz-prio-0);
+  --prio-1: var(--viz-prio-1);
+  --prio-2: var(--viz-prio-2);
+  --prio-3: var(--viz-prio-3);
+  --prio-0-bg: var(--prio-0);
+  --prio-0-fg: #0a1628;
+  --prio-0-border: var(--prio-0);
+  --prio-1-bg: #2a2150;
+  --prio-1-fg: #ddd6fe;
+  --prio-1-border: var(--prio-1);
+  --prio-2-bg: transparent;
+  --prio-2-fg: #c4b5fd;
+  --prio-2-border: var(--prio-2);
+  --prio-3-bg: transparent;
+  --prio-3-fg: #a9b4c4;
+  --prio-3-border: var(--prio-3);
+
+  --st-triage-bg: transparent;
+  --st-triage-fg: #fafaf9;
+  --st-triage-border: #63728a;
+  --st-open-bg: #1e2c45;
+  --st-open-fg: #fafaf9;
+  --st-open-border: #1e2c45;
+  --st-progress-bg: #13284a;
+  --st-progress-fg: #9cc2ff;
+  --st-progress-border: #13284a;
+  --st-resolved-bg: #0f2e22;
+  --st-resolved-fg: #7ee2a0;
+  --st-resolved-border: #0f2e22;
+  --st-accepted-bg: #33240c;
+  --st-accepted-fg: #f5c26b;
+  --st-accepted-border: #33240c;
+  --st-closed-bg: transparent;
+  --st-closed-fg: #a9b4c4;
+  --st-closed-border: var(--border-subtle);
+
+  --st-waiting-bg: var(--st-accepted-bg);
+  --st-waiting-fg: var(--st-accepted-fg);
+  --st-waiting-border: var(--st-accepted-border);
+
+  --tone-danger-bg: #3a1520;
+  --tone-danger-fg: #f7a1b5;
+  --tone-danger-border: #3a1520;
+
+  --lvl-4-bg: #fafaf9;
+  --lvl-4-fg: #0a1628;
+  --lvl-3-bg: #33445f;
+  --lvl-3-fg: #fafaf9;
+  --lvl-2-border: #63728a;
+  --lvl-2-fg: #fafaf9;
+  --lvl-1-fg: #a9b4c4;
+
+  /* Machine health icons (HealthStatus): the text stays --foreground. Each is
+     >= 3:1 on the card (WCAG 1.4.11); the idle grey is the neutral states.
+     ok, warn and down sit apart in lightness, so they stay apart for red-green
+     colour blindness too; each state also has its own glyph. */
+  --hl-ok: #46bc69;
+  --hl-run: var(--info);
+  --hl-warn: #ffcb70;
+  --hl-down: #e54e3c;
+  --hl-idle: #63728a;
+
+  /* Counter: neutral pill, ink fill only for "waiting for you". */
+  --ctr-bg: #1e2c45;
+  --ctr-fg: #fafaf9;
+  --ctr-em-bg: #fafaf9;
+  --ctr-em-fg: #0a1628;
+
+  /* The fixed palette of a user-chosen tag colour: an 8px dot, never a fill.
+     >= 3:1 on the card. Teal is not in the list (it is the act-here accent). */
+  --tag-red: #f87171;
+  --tag-orange: #fb923c;
+  --tag-amber: #f59e0b;
+  --tag-yellow: #facc15;
+  --tag-green: #4ade80;
+  --tag-cyan: #22d3ee;
+  --tag-blue: #60a5fa;
+  --tag-violet: #d787e9;
+  --tag-pink: #f472b6;
+  --tag-grey: #94a3b8;
+
+  --shadow-overlay: 0 12px 32px rgb(0 0 0 / 0.45), 0 1px 2px rgb(0 0 0 / 0.3);
 
   /* Dashboard chart palette (validated: scripts/check-palette.mjs, source src/lib/chart-palette.json). */
   --viz-sev-critical: #d9365e;
   --viz-sev-high: #f07a2c;
   --viz-sev-medium: #e8c14a;
   --viz-sev-low: #4f8ff0;
-  --viz-sev-info: #94a3b8;
+  --viz-sev-info: #a9b4c4;
+  --viz-prio-0: #ded3fe;
+  --viz-prio-1: #baa5ff;
+  --viz-prio-2: #9a79f6;
+  --viz-prio-3: #687284;
+  --viz-prio-none: #63728a;
+  --viz-lvl-critical: #d6dfec;
+  --viz-lvl-high: #adbacd;
+  --viz-lvl-medium: #8896ab;
+  --viz-lvl-low: #65748b;
   --viz-cat-1: #3987e5;
   --viz-cat-2: #d95926;
-  --viz-cat-3: #199e70;
-  --viz-cat-4: #c98500;
-  --viz-cat-5: #d55181;
-  --viz-cat-6: #008300;
-  --viz-cat-7: #9085e9;
+  --viz-cat-3: #9085e9;
+  --viz-cat-4: #2c9442;
+  --viz-cat-5: #dc6497;
+  --viz-cat-6: #9a9400;
+  --viz-cat-7: #2a9fd8;
   --viz-cat-8: #e66767;
   --viz-cat-other: #64748b;
   --viz-div-opened: #d95926;
   --viz-div-fixed: #3987e5;
-  --viz-seq-1: #0d366b;
-  --viz-seq-2: #184f95;
-  --viz-seq-3: #256abf;
-  --viz-seq-4: #5598e7;
-  --viz-seq-5: #86b6ef;
+  --viz-seq-1: #1a4a91;
+  --viz-seq-2: #225db0;
+  --viz-seq-3: #2f72cc;
+  --viz-seq-4: #6aa3ec;
+  --viz-seq-5: #9fc4f4;
   --viz-seq-ink-1: #ffffff;
   --viz-seq-ink-2: #ffffff;
   --viz-seq-ink-3: #ffffff;
@@ -146,8 +411,43 @@
       transform: scale(1);
     }
   }
-  --font-inter: 'Inter', 'sans-serif';
-  --font-manrope: 'Manrope', 'sans-serif';
+  /* One text face and one mono, self-hosted (src/styles/fonts.css). */
+  --font-sans:
+    'Inter', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial,
+    sans-serif;
+  --font-mono:
+    'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono',
+    monospace;
+
+  /* Type scale (research/244). One size and one line height per role; nothing
+     under 12px. Classes: text-title, text-section, text-body, text-meta,
+     text-data, text-kpi. The kit sizes map onto it (text-xs = meta,
+     text-sm = body); arbitrary sizes (text-[10px]) are refused by
+     scripts/check-page-anatomy.sh. A label is muted, never smaller than its
+     value, and a line of metadata uses one size. */
+  --text-title: 1.5rem; /* page title, 24px */
+  --text-title--line-height: 2rem;
+  --text-title--font-weight: 600;
+  --text-section: 1rem; /* section and drawer title, 16px */
+  --text-section--line-height: 1.5rem;
+  --text-section--font-weight: 600;
+  --text-body: 0.875rem; /* body, values, buttons, 14px */
+  --text-body--line-height: 1.25rem;
+  --text-meta: 0.75rem; /* labels, metadata, chips, 12px */
+  --text-meta--line-height: 1rem;
+  --text-data: 0.8125rem; /* ids, hashes, versions in mono, 13px */
+  --text-data--line-height: 1.25rem;
+  --text-kpi: 1.5rem; /* a metric strip value, 24px, tabular */
+  --text-kpi--line-height: 2rem;
+  --text-kpi--font-weight: 600;
+
+  /* Page rhythm (research/244). The gap between the blocks of a page
+     (header, tabs, banner, metric strip, list) is owned by <PageStack>, never
+     by a block's own margin: page = 20px between blocks, page-tight = 16px
+     from a header to its tabs and from a toolbar to its table. Classes:
+     gap-page, gap-page-tight. */
+  --spacing-page: 1.25rem;
+  --spacing-page-tight: 1rem;
 
   --radius-sm: calc(var(--radius) - 4px);
   --radius-md: calc(var(--radius) - 2px);
@@ -173,6 +473,96 @@
   --color-warning: var(--warning);
   --color-info: var(--info);
   --color-brand: var(--brand);
+  --color-signal: var(--signal);
+  --color-signal-text: var(--signal-text);
+  --color-signal-ink: var(--signal-ink);
+  --color-surface-raised: var(--surface-raised);
+  --color-surface-sunken: var(--surface-sunken);
+  --color-border-subtle: var(--border-subtle);
+  --color-border-strong: var(--border-strong);
+  --color-fg-dim: var(--fg-dim);
+  --color-sev-critical: var(--sev-critical);
+  --color-sev-high: var(--sev-high);
+  --color-sev-medium: var(--sev-medium);
+  --color-sev-low: var(--sev-low);
+  --color-sev-info: var(--sev-info);
+  --color-sev-critical-text: var(--sev-critical-text);
+  --color-sev-high-text: var(--sev-high-text);
+  --color-sev-medium-text: var(--sev-medium-text);
+  --color-sev-low-text: var(--sev-low-text);
+  --color-sev-info-text: var(--sev-info-text);
+  --color-sev-critical-ink: var(--sev-critical-ink);
+  --color-sev-high-ink: var(--sev-high-ink);
+  --color-sev-medium-ink: var(--sev-medium-ink);
+  --color-sev-low-ink: var(--sev-low-ink);
+  --color-sev-info-ink: var(--sev-info-ink);
+  --color-prio-0: var(--prio-0);
+  --color-prio-0-bg: var(--prio-0-bg);
+  --color-prio-0-fg: var(--prio-0-fg);
+  --color-prio-0-border: var(--prio-0-border);
+  --color-prio-1: var(--prio-1);
+  --color-prio-1-bg: var(--prio-1-bg);
+  --color-prio-1-fg: var(--prio-1-fg);
+  --color-prio-1-border: var(--prio-1-border);
+  --color-prio-2: var(--prio-2);
+  --color-prio-2-bg: var(--prio-2-bg);
+  --color-prio-2-fg: var(--prio-2-fg);
+  --color-prio-2-border: var(--prio-2-border);
+  --color-prio-3: var(--prio-3);
+  --color-prio-3-bg: var(--prio-3-bg);
+  --color-prio-3-fg: var(--prio-3-fg);
+  --color-prio-3-border: var(--prio-3-border);
+  --color-st-triage-bg: var(--st-triage-bg);
+  --color-st-triage-fg: var(--st-triage-fg);
+  --color-st-triage-border: var(--st-triage-border);
+  --color-st-open-bg: var(--st-open-bg);
+  --color-st-open-fg: var(--st-open-fg);
+  --color-st-open-border: var(--st-open-border);
+  --color-st-progress-bg: var(--st-progress-bg);
+  --color-st-progress-fg: var(--st-progress-fg);
+  --color-st-progress-border: var(--st-progress-border);
+  --color-st-resolved-bg: var(--st-resolved-bg);
+  --color-st-resolved-fg: var(--st-resolved-fg);
+  --color-st-resolved-border: var(--st-resolved-border);
+  --color-st-accepted-bg: var(--st-accepted-bg);
+  --color-st-accepted-fg: var(--st-accepted-fg);
+  --color-st-accepted-border: var(--st-accepted-border);
+  --color-st-closed-bg: var(--st-closed-bg);
+  --color-st-closed-fg: var(--st-closed-fg);
+  --color-st-closed-border: var(--st-closed-border);
+  --color-sig-icon: var(--sig-icon);
+  --color-tone-danger-bg: var(--tone-danger-bg);
+  --color-tone-danger-fg: var(--tone-danger-fg);
+  --color-tone-danger-border: var(--tone-danger-border);
+  --color-lvl-4-bg: var(--lvl-4-bg);
+  --color-lvl-4-fg: var(--lvl-4-fg);
+  --color-lvl-3-bg: var(--lvl-3-bg);
+  --color-lvl-3-fg: var(--lvl-3-fg);
+  --color-lvl-2-border: var(--lvl-2-border);
+  --color-lvl-2-fg: var(--lvl-2-fg);
+  --color-lvl-1-fg: var(--lvl-1-fg);
+  --color-st-waiting-bg: var(--st-waiting-bg);
+  --color-st-waiting-fg: var(--st-waiting-fg);
+  --color-st-waiting-border: var(--st-waiting-border);
+  --color-hl-ok: var(--hl-ok);
+  --color-hl-run: var(--hl-run);
+  --color-hl-warn: var(--hl-warn);
+  --color-hl-down: var(--hl-down);
+  --color-hl-idle: var(--hl-idle);
+  --color-ctr-bg: var(--ctr-bg);
+  --color-ctr-fg: var(--ctr-fg);
+  --color-ctr-em-bg: var(--ctr-em-bg);
+  --color-ctr-em-fg: var(--ctr-em-fg);
+  --color-tag-red: var(--tag-red);
+  --color-tag-orange: var(--tag-orange);
+  --color-tag-amber: var(--tag-amber);
+  --color-tag-yellow: var(--tag-yellow);
+  --color-tag-green: var(--tag-green);
+  --color-tag-cyan: var(--tag-cyan);
+  --color-tag-blue: var(--tag-blue);
+  --color-tag-violet: var(--tag-violet);
+  --color-tag-pink: var(--tag-pink);
+  --color-tag-grey: var(--tag-grey);
   --color-border: var(--border);
   --color-input: var(--input);
   --color-ring: var(--ring);
@@ -186,6 +576,15 @@
   --color-viz-sev-medium: var(--viz-sev-medium);
   --color-viz-sev-low: var(--viz-sev-low);
   --color-viz-sev-info: var(--viz-sev-info);
+  --color-viz-prio-0: var(--viz-prio-0);
+  --color-viz-prio-1: var(--viz-prio-1);
+  --color-viz-prio-2: var(--viz-prio-2);
+  --color-viz-prio-3: var(--viz-prio-3);
+  --color-viz-prio-none: var(--viz-prio-none);
+  --color-viz-lvl-critical: var(--viz-lvl-critical);
+  --color-viz-lvl-high: var(--viz-lvl-high);
+  --color-viz-lvl-medium: var(--viz-lvl-medium);
+  --color-viz-lvl-low: var(--viz-lvl-low);
   --color-viz-cat-1: var(--viz-cat-1);
   --color-viz-cat-2: var(--viz-cat-2);
   --color-viz-cat-3: var(--viz-cat-3);

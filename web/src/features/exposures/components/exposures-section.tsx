@@ -11,25 +11,27 @@ import { Button } from '@/components/ui/button'
 import { SectionTabs } from '@/features/shared'
 import { EXPOSURES_SECTION_TABS } from '@/config/section-tabs'
 import { FINDINGS_LIST_HIDDEN_STATUSES } from '@/features/findings/lib/list-defaults'
+import { useTranslation } from '@/context/i18n-provider'
 import type { FindingTypeStats } from '../hooks/use-finding-type-stats'
 
 /**
  * Overview · Vulnerabilities · Secrets · Code weaknesses · Misconfigurations.
  * Placed directly under the page's `PageHeader`, like every route-tab strip
- * (see docs/ui-style-contract.md); the page's content follows with `mt-5`.
+ * (see docs/ui-style-contract.md).
  */
 export function ExposuresTabs() {
-  return (
-    <SectionTabs tabs={EXPOSURES_SECTION_TABS} label="Exposures sections" className="mt-4 mb-0" />
-  )
+  return <SectionTabs tabs={EXPOSURES_SECTION_TABS} label="Exposures sections" />
 }
 
 /**
  * The Findings list filtered to these finding sources. `/findings` reads the
- * comma-separated `sources` param (useUrlFilterList('sources')).
+ * comma-separated `source` param (useUrlFilterList('source')). `state=all`
+ * drops the default Open lens, so the list shows every finding the type page
+ * counted (the list still hides pentest drafts and in-review findings; see
+ * `listedFindingCount`).
  */
 export function findingsHrefForSources(sources: readonly string[]): string {
-  return `/findings?source=${sources.map(encodeURIComponent).join(',')}`
+  return `/findings?source=${sources.map(encodeURIComponent).join(',')}&state=all`
 }
 
 /**
@@ -61,12 +63,15 @@ export function ViewFindingsButton({
   sources: readonly string[]
   isLoading?: boolean
 }) {
+  const { t } = useTranslation()
   if (isLoading || stats.total === 0) return null
   const count = listedFindingCount(stats)
   const label =
     count === null
-      ? 'View findings'
-      : `View ${count.toLocaleString()} ${count === 1 ? 'finding' : 'findings'}`
+      ? t('exposures.type.viewFindings', 'View findings')
+      : count === 1
+        ? t('exposures.type.viewOne', 'View 1 finding')
+        : t('exposures.type.viewMany', 'View {count} findings', { count: count.toLocaleString() })
   return (
     <Button asChild variant="outline" size="sm">
       <Link href={findingsHrefForSources(sources)}>

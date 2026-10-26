@@ -7,6 +7,7 @@ import (
 	"github.com/openctemio/ctis"
 
 	"github.com/openctemio/openctem/api/pkg/domain/asset"
+	"github.com/openctemio/openctem/api/pkg/domain/ingestreceipt"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 )
 
@@ -128,6 +129,10 @@ type Options struct {
 	// SourceRun is the import, sync run or feed sequence of a server-side
 	// ingest (trusted binding only; informational).
 	SourceRun string
+	// Receipt is the receipt this ingest counts toward (an upload sets its
+	// own). Nil derives it from the binding: the command's scan run or the
+	// command, the CI run, the connector run, or the sensor's report.
+	Receipt *ingestreceipt.Source
 	// NoExposureProjection: the report lists targets someone published, not
 	// what was observed (program targets, RFC-065 §16.8), so its service
 	// assets open no exposure.
@@ -182,9 +187,22 @@ func (i Input) IsFullCoverage() bool {
 
 // Output represents the result of ingestion.
 type Output struct {
-	ReportID      string `json:"report_id"`
-	AssetsCreated int    `json:"assets_created"`
-	AssetsUpdated int    `json:"assets_updated"`
+	ReportID string `json:"report_id"`
+	// ReceiptID is the receipt the ingest was recorded on ("" when the
+	// receipt could not be written; the ingest itself stands).
+	ReceiptID string `json:"receipt_id,omitempty"`
+	// ReceiptFailed is set when receipts are on and this ingest could not
+	// be recorded on its receipt. The receipt's action rows decide what a
+	// covered run did not report, so a command-bound segment fails (and is
+	// retried) rather than leave its findings off the receipt.
+	ReceiptFailed bool `json:"-"`
+	// BranchOccurrencesFailed is set when this ingest could not record the
+	// branch occurrences of its findings. The occurrence sweep of the scanned
+	// branch is then skipped: it would mark the findings this scan did see as
+	// no longer on the branch.
+	BranchOccurrencesFailed bool `json:"-"`
+	AssetsCreated           int  `json:"assets_created"`
+	AssetsUpdated           int  `json:"assets_updated"`
 	// AssetsSkippedExcluded counts new assets not added because they match
 	// an active scope exclusion (RFC-042 F16).
 	AssetsSkippedExcluded int `json:"assets_skipped_excluded,omitempty"`
@@ -269,6 +287,11 @@ type Output struct {
 	// it was merged into. Not exposed; v2 derives per-item outcomes from it.
 	AssetMap map[string]shared.ID `json:"-"`
 
+	// CreatedIDs and ReopenedIDs are the findings this report created and
+	// reopened (for the receipt's action log).
+	CreatedIDs  []shared.ID `json:"-"`
+	ReopenedIDs []shared.ID `json:"-"`
+
 	// SightedFingerprints are the stored fingerprints of the findings this
 	// report sighted (after alias resolution). Not exposed; the CI gate
 	// records them for its run (RFC-051).
@@ -289,6 +312,15 @@ type Output struct {
 	// because they lie outside their command's addresses. Their findings
 	// are skipped, never attached to another asset of the report.
 	OutOfScopeAssetRefs map[string]bool `json:"-"`
+
+	// Decided are the new findings a policy decided (suppressed, held),
+	// and Items the reported items that did not become findings, with the
+	// policy and version that decided them: the receipt records both.
+	Decided []ingestreceipt.PolicyAction `json:"-"`
+	Items   []ingestreceipt.Item         `json:"-"`
+
+	// policy is the snapshot this ingest applies.
+	policy *PolicySnapshot
 }
 
 // FailedFinding contains details about a finding that failed during ingestion.

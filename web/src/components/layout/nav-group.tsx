@@ -39,9 +39,12 @@ import {
 } from '@/features/integrations/api/use-tenant-modules'
 import { useTranslation } from '@/context/i18n-provider'
 import { cn } from '@/lib/utils'
+import { NavCount } from './nav-count'
 import { subModuleStatus } from '@/lib/permissions/sub-modules'
 import { activeSubItemUrl, checkIsActive, sectionHasActiveRoute } from './nav-active'
 import { NavPendingHint, SidebarLink } from './sidebar-link'
+import { FindingsQuickViews } from './findings-quick-views'
+import { AssetsQuickViews } from './assets-quick-views'
 
 /** Maps a sidebar group title to its i18n key, e.g. "Scoping" → "nav.group.scoping". */
 function groupTitleKey(title: string): string {
@@ -271,7 +274,7 @@ export function NavBadge({
       </Badge>
     )
   }
-  return <Badge className="ms-auto shrink-0 rounded-full px-1 py-0 text-xs">{children}</Badge>
+  return <NavCount tone="action">{children}</NavCount>
 }
 
 /**
@@ -374,6 +377,7 @@ const SidebarMenuLink = memo(function SidebarMenuLink({
           )}
         </SidebarLink>
       </SidebarMenuButton>
+      {item.quickViews === 'findings' && <FindingsQuickViews />}
     </SidebarMenuItem>
   )
 })
@@ -503,7 +507,7 @@ const NavSubLeaf = memo(function NavSubLeaf({
   /**
    * Whether this row is the current page. Siblings are resolved together by the
    * parent (longest matching url wins), so "Assets" at `/assets` does
-   * not light up alongside "What changed" at `/assets/changes`.
+   * not light up alongside "Activity" at `/assets/changes`.
    */
   active?: boolean
 }) {
@@ -549,6 +553,7 @@ const NavSubLeaf = memo(function NavSubLeaf({
           )}
         </SidebarLink>
       </SidebarMenuSubButton>
+      {item.quickViews === 'assets' && <AssetsQuickViews />}
     </SidebarMenuSubItem>
   )
 })

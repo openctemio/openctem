@@ -43,7 +43,7 @@ func TestCIGateBaseline_DefaultBranchRerunCannotWhitewash(t *testing.T) {
 			"id_token": r.idp.token(t, cfg.Audience, "acme/rerun", ref, sha, claims)})
 		id, tok := ex["run_id"].(string), ex["token"].(string)
 		lastRun = id
-		if resp, out := r.post("/api/v1/ci/runs/"+id+"/results", tok, ciReport(repoName, findings...)); resp.StatusCode != http.StatusCreated {
+		if resp, out := r.upload(id, tok, ciReport(repoName, findings...)); resp.StatusCode != http.StatusAccepted {
 			t.Fatalf("upload: %d %v", resp.StatusCode, out)
 		}
 		resp, v := r.post("/api/v1/ci/runs/"+id+"/evaluate", tok, map[string]any{})

@@ -3,13 +3,14 @@
 import { useState, useMemo, useCallback } from 'react'
 import type { ColumnDef, SortingState } from '@tanstack/react-table'
 import { Main } from '@/components/layout'
+import { ConfirmDialog } from '@/components/confirm-dialog'
 import {
   PageHeader,
   DataTable,
   DataTableColumnHeader,
   EmptyState,
   MetricStrip,
-  SeverityBadge,
+  SEVERITY_CONFIG,
   DetailCopyId,
   DetailField,
   DetailFieldGrid,
@@ -17,9 +18,9 @@ import {
   DetailSection,
   DetailSections,
   DetailSheet,
+  PageStack,
 } from '@/features/shared'
 import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
@@ -31,7 +32,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { Search as SearchIcon, RefreshCw, AlertCircle, ShieldX, Copy, Download } from 'lucide-react'
+import { RefreshCw, AlertCircle, ShieldX, Copy, Download } from 'lucide-react'
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -54,6 +55,7 @@ import {
   SEVERITY_DISPLAY,
   formatAction,
 } from '@/features/organization'
+import { cn } from '@/lib/utils'
 import { copyToClipboard } from '@/lib/clipboard'
 import { toast } from 'sonner'
 import { canonicalAuditMetadataKey, canonicalAuditResourceType } from '@/lib/api/audit-types'
@@ -61,7 +63,7 @@ import { humanizeIdentifier } from '@/lib/humanize-identifier'
 import { Permission, useHasPermission } from '@/lib/permissions'
 import { useTranslation } from '@/context/i18n-provider'
 import { ApiClientError } from '@/lib/api/error-handler'
-import { useDebounce } from '@/hooks/use-debounce'
+import { useSearchQuery } from '@/hooks/use-search-query'
 import { useUrlFilter } from '@/hooks/use-url-param'
 import { useListParams } from '@/hooks/use-list-params'
 
@@ -70,23 +72,25 @@ const SORTABLE = ['logged_at', 'action', 'resource_type', 'result', 'severity']
 const RESULT_OPTIONS: AuditResult[] = ['success', 'failure', 'denied']
 const SEVERITY_OPTIONS: AuditSeverity[] = ['info', 'low', 'medium', 'high', 'critical']
 
+type TFn = ReturnType<typeof useTranslation>['t']
+
 // Helper functions
-const formatDate = (dateString: string) => {
-  return new Date(dateString).toLocaleDateString('en-US', {
+const formatDate = (dateString: string, locale: string) => {
+  return new Date(dateString).toLocaleDateString(locale, {
     year: 'numeric',
     month: 'short',
     day: 'numeric',
   })
 }
 
-const formatTime = (dateString: string) => {
-  return new Date(dateString).toLocaleTimeString('en-US', {
+const formatTime = (dateString: string, locale: string) => {
+  return new Date(dateString).toLocaleTimeString(locale, {
     hour: '2-digit',
     minute: '2-digit',
   })
 }
 
-const formatRelativeTime = (dateString: string) => {
+const formatRelativeTime = (dateString: string, t: TFn, locale: string) => {
   const date = new Date(dateString)
   const now = new Date()
   const diffMs = now.getTime() - date.getTime()
@@ -94,16 +98,17 @@ const formatRelativeTime = (dateString: string) => {
   const diffHours = Math.floor(diffMs / 3600000)
   const diffDays = Math.floor(diffMs / 86400000)
 
-  if (diffMins < 1) return 'Just now'
-  if (diffMins < 60) return `${diffMins}m ago`
-  if (diffHours < 24) return `${diffHours}h ago`
-  if (diffDays < 7) return `${diffDays}d ago`
-  return formatDate(dateString)
+  if (diffMins < 1) return t('auditLog.time.justNow', 'Just now')
+  if (diffMins < 60) return t('auditLog.time.minutesAgo', '{n}m ago', { n: diffMins })
+  if (diffHours < 24) return t('auditLog.time.hoursAgo', '{n}h ago', { n: diffHours })
+  if (diffDays < 7) return t('auditLog.time.daysAgo', '{n}d ago', { n: diffDays })
+  return formatDate(dateString, locale)
 }
 
 /** Result as a token-coloured badge: only a problem (failure / denied) is red. */
 function ResultBadge({ result }: { result: AuditResult }) {
-  const label = RESULT_DISPLAY[result]?.label ?? result
+  const { t } = useTranslation()
+  const label = t(`auditLog.result.${result}`, RESULT_DISPLAY[result]?.label ?? result)
   if (result === 'failure') return <Badge variant="destructive">{label}</Badge>
   if (result === 'denied')
     return (
@@ -114,8 +119,25 @@ function ResultBadge({ result }: { result: AuditResult }) {
   return <Badge variant="secondary">{label}</Badge>
 }
 
-export default function AuditLogPage() {
+/** Severity as a coloured badge, with the label in the reader's language. */
+function SeverityCell({ severity }: { severity: AuditSeverity }) {
   const { t } = useTranslation()
+  const config = SEVERITY_CONFIG[severity as keyof typeof SEVERITY_CONFIG]
+  if (!config)
+    return (
+      <Badge className="bg-muted font-medium text-muted-foreground">
+        {t('auditLog.severity.unknown', 'Unknown')}
+      </Badge>
+    )
+  return (
+    <Badge className={cn(config.color, config.textColor, 'font-medium')}>
+      {t(`severity.${severity}`, config.label)}
+    </Badge>
+  )
+}
+
+export default function AuditLogPage() {
+  const { t, locale } = useTranslation()
   // Permission check
   const hasAuditPermission = useHasPermission(Permission.AuditRead)
 
@@ -129,7 +151,7 @@ export default function AuditLogPage() {
   const { pagination, setPagination, setPage } = list
   const [selectedLog, setSelectedLog] = useState<AuditLog | null>(null)
 
-  const debouncedSearch = useDebounce(searchTerm, 300)
+  const debouncedSearch = useSearchQuery(searchTerm).term
 
   // `sort=field:dir` in the URL ↔ the table's sorting state.
   const sorting = useMemo<SortingState>(() => {
@@ -184,20 +206,24 @@ export default function AuditLogPage() {
   const { stats, isLoading: statsLoading } = useAuditStats(!needsFullData)
   // The export carries the filters the list shows; paging and sort do not apply.
   const { run: runExport, isExporting } = useAuditExport(activeFilters)
+  // The file holds members' emails and IP addresses, so a format pick asks first.
+  const [pendingExport, setPendingExport] = useState<'csv' | 'jsonl' | null>(null)
 
   const columns = useMemo<ColumnDef<AuditLog>[]>(
     () => [
       {
         id: 'logged_at',
         accessorKey: 'timestamp',
-        header: ({ column }) => <DataTableColumnHeader column={column} title="Time" />,
+        header: ({ column }) => (
+          <DataTableColumnHeader column={column} title={t('auditLog.col.time', 'Time')} />
+        ),
         cell: ({ row }) => (
           <div className="flex flex-col whitespace-nowrap">
             <span className="text-sm font-medium">
-              {formatRelativeTime(row.original.timestamp)}
+              {formatRelativeTime(row.original.timestamp, t, locale)}
             </span>
             <span className="text-xs text-muted-foreground">
-              {formatTime(row.original.timestamp)}
+              {formatTime(row.original.timestamp, locale)}
             </span>
           </div>
         ),
@@ -205,12 +231,14 @@ export default function AuditLogPage() {
       {
         id: 'action',
         accessorKey: 'action',
-        header: ({ column }) => <DataTableColumnHeader column={column} title="Action" />,
+        header: ({ column }) => (
+          <DataTableColumnHeader column={column} title={t('auditLog.col.action', 'Action')} />
+        ),
         cell: ({ row }) => <span className="text-sm">{formatAction(row.original.action)}</span>,
       },
       {
         id: 'actor',
-        header: 'Actor',
+        header: t('auditLog.col.actor', 'Actor'),
         enableSorting: false,
         cell: ({ row }) => (
           <div className="flex items-center gap-2">
@@ -220,7 +248,7 @@ export default function AuditLogPage() {
               </AvatarFallback>
             </Avatar>
             <span className="text-sm truncate max-w-[180px]">
-              {row.original.actor_email || 'System'}
+              {row.original.actor_email || t('auditLog.system', 'System')}
             </span>
           </div>
         ),
@@ -228,7 +256,9 @@ export default function AuditLogPage() {
       {
         id: 'resource_type',
         accessorKey: 'resource_type',
-        header: ({ column }) => <DataTableColumnHeader column={column} title="Resource" />,
+        header: ({ column }) => (
+          <DataTableColumnHeader column={column} title={t('auditLog.col.resource', 'Resource')} />
+        ),
         cell: ({ row }) => (
           <div className="flex flex-col">
             <span className="text-sm">
@@ -243,30 +273,41 @@ export default function AuditLogPage() {
       {
         id: 'result',
         accessorKey: 'result',
-        header: ({ column }) => <DataTableColumnHeader column={column} title="Result" />,
+        header: ({ column }) => (
+          <DataTableColumnHeader column={column} title={t('auditLog.col.result', 'Result')} />
+        ),
         cell: ({ row }) => <ResultBadge result={row.original.result} />,
       },
       {
         id: 'severity',
         accessorKey: 'severity',
-        header: ({ column }) => <DataTableColumnHeader column={column} title="Severity" />,
-        cell: ({ row }) => <SeverityBadge severity={row.original.severity} />,
+        header: ({ column }) => (
+          <DataTableColumnHeader column={column} title={t('auditLog.col.severity', 'Severity')} />
+        ),
+        cell: ({ row }) => <SeverityCell severity={row.original.severity} />,
       },
     ],
-    []
+    [t, locale]
   )
 
   // Access denied page
   if (!hasAuditPermission) {
     return (
       <Main>
-        <PageHeader title="Audit log" description="Activity history and security events." />
-        <EmptyState
-          className="mt-5"
-          icon={ShieldX}
-          title="Access denied"
-          description="You don't have permission to view audit logs. Ask your administrator for access."
-        />
+        <PageStack>
+          <PageHeader
+            title={t('auditLog.title', 'Audit log')}
+            description={t('auditLog.description', 'Activity history and security events.')}
+          />
+          <EmptyState
+            icon={ShieldX}
+            title={t('auditLog.denied.title', 'Access denied')}
+            description={t(
+              'auditLog.denied.description',
+              "You don't have permission to view audit logs. Ask your administrator for access."
+            )}
+          />
+        </PageStack>
       </Main>
     )
   }
@@ -285,19 +326,6 @@ export default function AuditLogPage() {
 
   const toolbarStart = (
     <>
-      <div className="relative min-w-0 flex-1 sm:max-w-sm">
-        <SearchIcon className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-        <Input
-          placeholder="Search by actor, action, resource..."
-          value={searchTerm}
-          onChange={(e) => {
-            setSearchTerm(e.target.value)
-            setPage(1)
-          }}
-          className="ps-9"
-          aria-label="Search audit log"
-        />
-      </div>
       <Select
         value={resultFilter ?? 'all'}
         onValueChange={(value) => {
@@ -305,14 +333,14 @@ export default function AuditLogPage() {
           setPage(1)
         }}
       >
-        <SelectTrigger className="h-9 w-[130px]" aria-label="Result">
-          <SelectValue placeholder="Result" />
+        <SelectTrigger className="h-9 w-[130px]" aria-label={t('auditLog.filter.result', 'Result')}>
+          <SelectValue placeholder={t('auditLog.filter.result', 'Result')} />
         </SelectTrigger>
         <SelectContent>
-          <SelectItem value="all">All results</SelectItem>
+          <SelectItem value="all">{t('auditLog.filter.allResults', 'All results')}</SelectItem>
           {RESULT_OPTIONS.map((result) => (
             <SelectItem key={result} value={result}>
-              {RESULT_DISPLAY[result].label}
+              {t(`auditLog.result.${result}`, RESULT_DISPLAY[result].label)}
             </SelectItem>
           ))}
         </SelectContent>
@@ -324,21 +352,26 @@ export default function AuditLogPage() {
           setPage(1)
         }}
       >
-        <SelectTrigger className="h-9 w-[140px]" aria-label="Severity">
-          <SelectValue placeholder="Severity" />
+        <SelectTrigger
+          className="h-9 w-[140px]"
+          aria-label={t('auditLog.filter.severity', 'Severity')}
+        >
+          <SelectValue placeholder={t('auditLog.filter.severity', 'Severity')} />
         </SelectTrigger>
         <SelectContent>
-          <SelectItem value="all">All severities</SelectItem>
+          <SelectItem value="all">
+            {t('auditLog.filter.allSeverities', 'All severities')}
+          </SelectItem>
           {SEVERITY_OPTIONS.map((severity) => (
             <SelectItem key={severity} value={severity}>
-              {SEVERITY_DISPLAY[severity].label}
+              {t(`severity.${severity}`, SEVERITY_DISPLAY[severity].label)}
             </SelectItem>
           ))}
         </SelectContent>
       </Select>
       {activeFiltersCount > 0 && (
         <Button variant="ghost" size="sm" onClick={clearFilters}>
-          Clear
+          {t('auditLog.filter.clear', 'Clear')}
         </Button>
       )}
     </>
@@ -358,9 +391,9 @@ export default function AuditLogPage() {
         <Label
           htmlFor="exclude-system"
           className="cursor-pointer whitespace-nowrap text-sm font-normal"
-          title="Hide events performed by the system itself"
+          title={t('auditLog.hideSystemHint', 'Hide events performed by the system itself')}
         >
-          Hide system
+          {t('auditLog.hideSystem', 'Hide system')}
         </Label>
       </div>
       {hasAuditPermission && (
@@ -378,10 +411,10 @@ export default function AuditLogPage() {
                 'Exports the events that match the current filters, newest first.'
               )}
             </DropdownMenuLabel>
-            <DropdownMenuItem onSelect={() => void runExport('csv')}>
+            <DropdownMenuItem onSelect={() => setPendingExport('csv')}>
               {t('auditLog.export.csv', 'CSV')}
             </DropdownMenuItem>
-            <DropdownMenuItem onSelect={() => void runExport('jsonl')}>
+            <DropdownMenuItem onSelect={() => setPendingExport('jsonl')}>
               {t('auditLog.export.jsonl', 'JSON lines')}
             </DropdownMenuItem>
           </DropdownMenuContent>
@@ -392,7 +425,7 @@ export default function AuditLogPage() {
         size="sm"
         className="h-9"
         onClick={() => mutate()}
-        aria-label="Refresh"
+        aria-label={t('auditLog.refresh', 'Refresh')}
       >
         <RefreshCw className="h-4 w-4" />
       </Button>
@@ -402,36 +435,33 @@ export default function AuditLogPage() {
   return (
     <>
       <Main>
-        <PageHeader title="Audit log" description="Activity history and security events." />
-
-        {!needsFullData && (
-          <MetricStrip
-            className="mt-5"
-            loading={statsLoading}
-            items={[
-              { key: 'total', label: 'Events (7 days)', value: stats?.total_logs ?? 0 },
-              {
-                key: 'success',
-                label: 'Successful',
-                value: stats?.logs_by_result?.success ?? 0,
-              },
-              {
-                key: 'failure',
-                label: 'Failed',
-                value: stats?.logs_by_result?.failure ?? 0,
-                tone: 'danger',
-              },
-              {
-                key: 'denied',
-                label: 'Denied',
-                value: stats?.logs_by_result?.denied ?? 0,
-                tone: 'danger',
-              },
-            ]}
+        <PageStack>
+          <PageHeader
+            title={t('auditLog.title', 'Audit log')}
+            description={t('auditLog.description', 'Activity history and security events.')}
           />
-        )}
 
-        <div className="mt-5">
+          {!needsFullData && (
+            <MetricStrip
+              loading={statsLoading}
+              items={(['failure', 'denied'] as const).map((r) => ({
+                key: r,
+                label:
+                  r === 'failure'
+                    ? t('auditLog.stat.failed', 'Failed')
+                    : t('auditLog.stat.denied', 'Denied'),
+                value: stats?.logs_by_result?.[r] ?? 0,
+                hint: t('auditLog.stat.window', 'last 7 days'),
+                tone: 'danger' as const,
+                active: resultFilter === r,
+                onClick: () => {
+                  setResultParam(resultFilter === r ? 'all' : r)
+                  setPage(1)
+                },
+              }))}
+            />
+          )}
+
           {needsFullData ? (
             <EmptyState
               icon={ShieldX}
@@ -441,12 +471,16 @@ export default function AuditLogPage() {
           ) : isError && !isLoading ? (
             <Alert variant="destructive">
               <AlertCircle className="h-4 w-4" />
-              <AlertTitle>Failed to load audit logs</AlertTitle>
+              <AlertTitle>{t('auditLog.loadFailed', 'Could not load the audit log')}</AlertTitle>
               <AlertDescription>
-                <p>{error instanceof Error ? error.message : 'An unexpected error occurred.'}</p>
+                <p>
+                  {error instanceof Error
+                    ? error.message
+                    : t('auditLog.unexpectedError', 'An unexpected error occurred.')}
+                </p>
                 <Button variant="outline" size="sm" className="mt-2" onClick={() => mutate()}>
                   <RefreshCw className="me-2 h-4 w-4" />
-                  Retry
+                  {t('common.retry', 'Retry')}
                 </Button>
               </AlertDescription>
             </Alert>
@@ -463,6 +497,15 @@ export default function AuditLogPage() {
               data={logs}
               getRowId={(log) => log.id}
               showSearch={false}
+              search={{
+                value: searchTerm,
+                onChange: (v) => {
+                  setSearchTerm(v)
+                  setPage(1)
+                },
+                placeholder: t('auditLog.search.placeholder', 'Search by actor, action, resource…'),
+                label: t('auditLog.search.label', 'Search audit log'),
+              }}
               showColumnToggle={false}
               toolbarStart={toolbarStart}
               toolbarEnd={toolbarEnd}
@@ -474,15 +517,18 @@ export default function AuditLogPage() {
               pageSizeOptions={PAGE_SIZES}
               sorting={sorting}
               onSortingChange={handleSortingChange}
-              emptyMessage="No audit events found"
+              emptyMessage={t('auditLog.empty', 'No audit events found')}
               emptyDescription={
                 activeFiltersCount > 0
-                  ? 'Try adjusting your search or filters.'
-                  : 'Events appear here as people and systems act in this workspace.'
+                  ? t('auditLog.emptyFiltered', 'Try adjusting your search or filters.')
+                  : t(
+                      'auditLog.emptyHint',
+                      'Events appear here as people and systems act in this workspace.'
+                    )
               }
             />
           )}
-        </div>
+        </PageStack>
       </Main>
 
       {/* Audit Log Detail Sheet */}
@@ -497,30 +543,30 @@ export default function AuditLogPage() {
               badges={
                 <>
                   <ResultBadge result={selectedLog.result} />
-                  <SeverityBadge severity={selectedLog.severity} />
+                  <SeverityCell severity={selectedLog.severity} />
                 </>
               }
               meta={[
-                selectedLog.actor_email || 'System',
+                selectedLog.actor_email || t('auditLog.system', 'System'),
                 new Date(selectedLog.timestamp).toLocaleString(),
               ]}
               menu={[
                 {
-                  label: 'Copy resource ID',
+                  label: t('auditLog.copyResourceId', 'Copy resource ID'),
                   icon: Copy,
                   onSelect: () => {
                     copyToClipboard(selectedLog.resource_id)
-                    toast.success('Resource ID copied to clipboard')
+                    toast.success(t('auditLog.resourceIdCopied', 'Resource ID copied'))
                   },
                 },
                 ...(selectedLog.request_id
                   ? [
                       {
-                        label: 'Copy request ID',
+                        label: t('auditLog.copyRequestId', 'Copy request ID'),
                         icon: Copy,
                         onSelect: () => {
                           copyToClipboard(selectedLog.request_id!)
-                          toast.success('Request ID copied to clipboard')
+                          toast.success(t('auditLog.requestIdCopied', 'Request ID copied'))
                         },
                       },
                     ]
@@ -532,30 +578,32 @@ export default function AuditLogPage() {
         >
           <DetailSections>
             {selectedLog.message && (
-              <DetailSection title="Message">
+              <DetailSection title={t('auditLog.detail.message', 'Message')}>
                 <p className="text-sm break-words text-muted-foreground">{selectedLog.message}</p>
               </DetailSection>
             )}
 
-            <DetailSection title="Who and when">
+            <DetailSection title={t('auditLog.detail.whoWhen', 'Who and when')}>
               <DetailFieldGrid>
-                <DetailField label="Actor">
-                  <span className="break-all">{selectedLog.actor_email || 'System'}</span>
+                <DetailField label={t('auditLog.col.actor', 'Actor')}>
+                  <span className="break-all">
+                    {selectedLog.actor_email || t('auditLog.system', 'System')}
+                  </span>
                 </DetailField>
                 {selectedLog.actor_ip && (
-                  <DetailField label="IP address">
+                  <DetailField label={t('auditLog.detail.ip', 'IP address')}>
                     <span className="font-mono text-xs">{selectedLog.actor_ip}</span>
                   </DetailField>
                 )}
-                <DetailField label="Date">
-                  {new Date(selectedLog.timestamp).toLocaleString(undefined, {
+                <DetailField label={t('auditLog.detail.date', 'Date')}>
+                  {new Date(selectedLog.timestamp).toLocaleString(locale, {
                     weekday: 'short',
                     year: 'numeric',
                     month: 'short',
                     day: 'numeric',
                   })}
                 </DetailField>
-                <DetailField label="Time">
+                <DetailField label={t('auditLog.col.time', 'Time')}>
                   <span className="tabular-nums">
                     {new Date(selectedLog.timestamp).toLocaleTimeString()}
                   </span>
@@ -563,16 +611,21 @@ export default function AuditLogPage() {
               </DetailFieldGrid>
             </DetailSection>
 
-            <DetailSection title="Resource">
+            <DetailSection title={t('auditLog.col.resource', 'Resource')}>
               <DetailFieldGrid>
-                <DetailField label="Type">
+                <DetailField label={t('auditLog.detail.type', 'Type')}>
                   {humanizeIdentifier(canonicalAuditResourceType(selectedLog.resource_type))}
                 </DetailField>
-                <DetailField label="Name">
+                <DetailField label={t('auditLog.detail.name', 'Name')}>
                   <span className="break-words">{selectedLog.resource_name || '-'}</span>
                 </DetailField>
-                <DetailField label="ID" full>
-                  <DetailCopyId id={selectedLog.resource_id} label="Resource ID" />
+                <DetailField label={t('auditLog.detail.id', 'ID')} full>
+                  <DetailCopyId
+                    id={selectedLog.resource_id}
+                    label="Resource ID"
+                    ariaLabel={t('auditLog.copyResourceId', 'Copy resource ID')}
+                    copiedMessage={t('auditLog.resourceIdCopied', 'Resource ID copied')}
+                  />
                 </DetailField>
               </DetailFieldGrid>
             </DetailSection>
@@ -580,7 +633,7 @@ export default function AuditLogPage() {
             {selectedLog.changes?.field_changes &&
               Object.keys(selectedLog.changes.field_changes).length > 0 && (
                 <DetailSection
-                  title="Changes"
+                  title={t('auditLog.detail.changes', 'Changes')}
                   count={Object.keys(selectedLog.changes.field_changes).length}
                 >
                   <ul className="divide-y rounded-lg border">
@@ -606,7 +659,10 @@ export default function AuditLogPage() {
               )}
 
             {selectedLog.metadata && Object.keys(selectedLog.metadata).length > 0 && (
-              <DetailSection title="Metadata" count={Object.keys(selectedLog.metadata).length}>
+              <DetailSection
+                title={t('auditLog.detail.metadata', 'Metadata')}
+                count={Object.keys(selectedLog.metadata).length}
+              >
                 <DetailFieldGrid>
                   {Object.entries(selectedLog.metadata).map(([key, value]) => (
                     <DetailField key={key} label={canonicalAuditMetadataKey(key)}>
@@ -620,13 +676,39 @@ export default function AuditLogPage() {
             )}
 
             {selectedLog.request_id && (
-              <DetailSection title="Request">
-                <DetailCopyId id={selectedLog.request_id} label="Request ID" />
+              <DetailSection title={t('auditLog.detail.request', 'Request')}>
+                <DetailCopyId
+                  id={selectedLog.request_id}
+                  label="Request ID"
+                  ariaLabel={t('auditLog.copyRequestId', 'Copy request ID')}
+                  copiedMessage={t('auditLog.requestIdCopied', 'Request ID copied')}
+                />
               </DetailSection>
             )}
           </DetailSections>
         </DetailSheet>
       )}
+      <ConfirmDialog
+        open={pendingExport !== null}
+        onOpenChange={(open) => {
+          if (!open) setPendingExport(null)
+        }}
+        title={t('auditLog.export.confirmTitle', 'Export the audit log?')}
+        desc={t(
+          'auditLog.export.confirmDesc',
+          "The file lists the events that match the current filters, newest first, with members' emails and IP addresses. Keep it where only people who may see them can read it. You may be asked to verify it's you."
+        )}
+        confirmText={
+          pendingExport === 'jsonl'
+            ? t('auditLog.export.confirmJsonl', 'Export JSON lines')
+            : t('auditLog.export.confirmCsv', 'Export CSV')
+        }
+        handleConfirm={async () => {
+          const format = pendingExport
+          setPendingExport(null)
+          if (format) await runExport(format)
+        }}
+      />
     </>
   )
 }

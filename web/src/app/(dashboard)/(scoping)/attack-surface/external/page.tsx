@@ -14,7 +14,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import type { ColumnDef } from '@tanstack/react-table'
-import { Download, Eye, Pencil, Plus, RefreshCw, Search as SearchIcon, Trash2 } from 'lucide-react'
+import { Download, Eye, Pencil, Plus, RefreshCw, Trash2 } from 'lucide-react'
 import { toast } from 'sonner'
 
 import { Main } from '@/components/layout'
@@ -24,6 +24,7 @@ import {
   ErrorState,
   MetricStrip,
   PageHeader,
+  PageStack,
   RelativeTime,
   RiskScoreBadge,
   StackedCell,
@@ -65,17 +66,22 @@ import { ipAddresses } from '@/features/assets/lib/service-facts'
 import { propertyValue } from '@/features/asset-types/lib/property-schema'
 import type { AssetMetadata } from '@/features/assets/types'
 import { toastIfDuplicateAsset } from '@/features/assets/lib/duplicate-asset'
-import { IssuesChip, LabelChips, SurfaceFacts } from '@/features/assets/components/service-cells'
+import {
+  LabelChips,
+  OpenFindingsCell,
+  SurfaceFacts,
+} from '@/features/assets/components/service-cells'
 import { useExposures } from '@/features/exposures/hooks'
 import { ScanAssetsDialog, type ScanCandidate } from '@/features/scans/components'
 import { useTenant } from '@/context/tenant-provider'
 import { useRiskThresholds } from '@/context/risk-scoring-provider'
-import { useDebounce } from '@/hooks/use-debounce'
+import { useSearchQuery } from '@/hooks/use-search-query'
 import { useUrlFilter } from '@/hooks/use-url-param'
 import { useListParams } from '@/hooks/use-list-params'
 import { exportToCsv } from '@/hooks/use-csv-export'
 import { getErrorMessage } from '@/lib/api/error-handler'
 import { Can, Permission, usePermissions } from '@/lib/permissions'
+import { ACTIONABLE_SEVERITIES } from '@/lib/severity'
 import type { RiskLevelThresholds } from '@/features/shared/types'
 import {
   externalSurfaceFilters,
@@ -85,29 +91,61 @@ import {
 
 const PAGE_SIZES = [20, 50, 100]
 
-const TYPE_OPTIONS: { value: string; label: string }[] = [
-  { value: 'domain', label: 'Domain' },
-  { value: 'subdomain', label: 'Subdomain' },
-  { value: 'ip_address', label: 'IP address' },
-  { value: 'service', label: 'Service' },
-  { value: 'application', label: 'Application' },
-  { value: 'certificate', label: 'Certificate' },
-  { value: 'host', label: 'Host' },
-]
+// The exposures list has no event-type URL filter: it opens on a search for
+// certificates, open ones first.
+const CERT_EXPOSURES_HREF = '/exposures?q=certificate'
 
-const RISK_OPTIONS: { value: RiskBand; label: string }[] = [
-  { value: 'critical', label: 'Critical' },
-  { value: 'high', label: 'High' },
-  { value: 'medium', label: 'Medium' },
-  { value: 'low', label: 'Low' },
-]
+const TYPE_VALUES = [
+  'domain',
+  'subdomain',
+  'ip_address',
+  'service',
+  'application',
+  'certificate',
+  'host',
+] as const
+
+const RISK_VALUES: readonly RiskBand[] = ACTIONABLE_SEVERITIES
 
 const CREATE_TYPES = ['domain', 'subdomain', 'ip_address', 'service', 'certificate'] as const
 
-function sentence(s?: string): string {
-  if (!s) return ''
-  const t = s.replace(/_/g, ' ')
-  return t.charAt(0).toUpperCase() + t.slice(1)
+type TFn = ReturnType<typeof useTranslation>['t']
+
+/** An asset type in words; an unlisted type is shown as a sentence. */
+function typeLabel(t: TFn, type?: string): string {
+  switch (type) {
+    case 'domain':
+      return t('attackSurface.external.type.domain', 'Domain')
+    case 'subdomain':
+      return t('attackSurface.external.type.subdomain', 'Subdomain')
+    case 'ip_address':
+      return t('attackSurface.external.type.ip_address', 'IP address')
+    case 'service':
+      return t('attackSurface.external.type.service', 'Service')
+    case 'application':
+      return t('attackSurface.external.type.application', 'Application')
+    case 'certificate':
+      return t('attackSurface.external.type.certificate', 'Certificate')
+    case 'host':
+      return t('attackSurface.external.type.host', 'Host')
+    default: {
+      const s = (type ?? '').replace(/_/g, ' ')
+      return s.charAt(0).toUpperCase() + s.slice(1)
+    }
+  }
+}
+
+function riskLabel(t: TFn, band: RiskBand): string {
+  switch (band) {
+    case 'critical':
+      return t('attackSurface.external.risk.critical', 'Critical')
+    case 'high':
+      return t('attackSurface.external.risk.high', 'High')
+    case 'medium':
+      return t('attackSurface.external.risk.medium', 'Medium')
+    case 'low':
+      return t('attackSurface.external.risk.low', 'Low')
+  }
 }
 
 /**
@@ -158,7 +196,7 @@ export default function ExternalSurfacePage() {
   const { pagination, setPagination, setPage } = list
 
   const [searchInput, setSearchInput] = useState(qParam)
-  const search = useDebounce(searchInput, 300)
+  const search = useSearchQuery(searchInput).term
   // Push the debounced search into the URL and back to page 1. The ref holds
   // the last value written, so the URL echoing it back (or a new setter
   // identity) never re-triggers the reset to page 1.
@@ -203,8 +241,9 @@ export default function ExternalSurfacePage() {
   const allCount = useAssetCount(base)
   const criticalCount = useAssetCount({ ...base, ...riskRange('critical', thresholds) })
   const withFindingsCount = useAssetCount({ ...base, hasFindings: true })
-  const canReadExposures = can(Permission.FindingsRead)
-  const { total: expiringCerts } = useExposures(currentTenant?.id ?? null, {
+  // GET /exposures needs findings:read and exposures:read (the hook gates on both).
+  const canReadExposures = can(Permission.FindingsRead) && can(Permission.ExposuresRead)
+  const { total: expiringCerts, error: certsError } = useExposures(currentTenant?.id ?? null, {
     event_types: ['certificate_expiring', 'certificate_expired'],
     states: ['active'],
     per_page: 1,
@@ -213,7 +252,7 @@ export default function ExternalSurfacePage() {
   const metrics: MetricStripItem[] = [
     {
       key: 'all',
-      label: 'Internet-facing assets',
+      label: t('attackSurface.external.metric.all', 'Internet-facing assets'),
       value: allCount.total,
       onClick: () => {
         setRiskParam('all')
@@ -224,10 +263,12 @@ export default function ExternalSurfacePage() {
     },
     {
       key: 'critical',
-      label: 'Critical risk',
+      label: t('attackSurface.external.metric.critical', 'Critical risk'),
       value: criticalCount.total,
       tone: 'danger',
-      hint: `Risk score ${thresholds.critical_min} or more`,
+      hint: t('attackSurface.external.metric.criticalHint', 'Risk score {min} or more', {
+        min: thresholds.critical_min,
+      }),
       onClick: () => {
         setRiskParam(riskParam === 'critical' ? 'all' : 'critical')
         setPage(1)
@@ -236,7 +277,7 @@ export default function ExternalSurfacePage() {
     },
     {
       key: 'findings',
-      label: 'With open findings',
+      label: t('attackSurface.external.metric.findings', 'With open findings'),
       value: withFindingsCount.total,
       tone: 'warning',
       onClick: () => {
@@ -247,10 +288,16 @@ export default function ExternalSurfacePage() {
     },
     {
       key: 'certs',
-      label: 'Expiring certificates',
-      value: canReadExposures ? expiringCerts : '—',
+      label: t('attackSurface.external.metric.certs', 'Expiring certificates'),
+      // "—", never a false 0, when the count cannot be read.
+      value: canReadExposures && !certsError ? expiringCerts : '—',
       tone: 'warning',
-      hint: canReadExposures ? 'Open, expired included' : 'Needs permission to read findings',
+      hint: !canReadExposures
+        ? t('attackSurface.external.metric.certsNoAccess', 'Needs permission to read exposures')
+        : certsError
+          ? t('attackSurface.external.metric.certsError', 'Could not be loaded')
+          : t('attackSurface.external.metric.certsHint', 'Open, expired included'),
+      href: canReadExposures ? CERT_EXPOSURES_HREF : undefined,
     },
   ]
   const metricsLoading =
@@ -262,6 +309,7 @@ export default function ExternalSurfacePage() {
   const [editAsset, setEditAsset] = useState<Asset | null>(null)
   const [deleteAsset, setDeleteAsset] = useState<Asset | null>(null)
   const [formData, setFormData] = useState<FormState>(EMPTY_FORM)
+  const [submitting, setSubmitting] = useState(false)
   const [scanCandidates, setScanCandidates] = useState<ScanCandidate[]>([])
   const [scanDialogOpen, setScanDialogOpen] = useState(false)
 
@@ -272,10 +320,12 @@ export default function ExternalSurfacePage() {
   })
 
   const handleCreate = async () => {
+    if (submitting) return
     if (!formData.name) {
-      toast.error('Enter an asset name')
+      toast.error(t('attackSurface.external.enterName', 'Enter an asset name'))
       return
     }
+    setSubmitting(true)
     try {
       // exposure 'public' is what puts an asset on this page.
       await createAsset({
@@ -286,35 +336,62 @@ export default function ExternalSurfacePage() {
         description: formData.notes || undefined,
         metadata: metadataFromForm(),
       })
-      toast.success('External asset added')
+      toast.success(t('attackSurface.external.added', 'External asset added.'))
       setIsCreateOpen(false)
       setFormData(EMPTY_FORM)
       await refetchAssets()
     } catch (e) {
       // A name that already exists is a 409 that may link to the asset.
       if (!toastIfDuplicateAsset(e, router.push)) {
-        toast.error(getErrorMessage(e, 'Failed to add external asset'))
+        toast.error(
+          getErrorMessage(e, t('attackSurface.external.addFailed', 'Failed to add external asset'))
+        )
       }
+    } finally {
+      setSubmitting(false)
     }
   }
 
   const handleEdit = async () => {
+    if (submitting) return
     if (!editAsset || !formData.name) {
-      toast.error('Enter an asset name')
+      toast.error(t('attackSurface.external.enterName', 'Enter an asset name'))
       return
     }
+    setSubmitting(true)
     try {
+      // A field the person cleared is sent as an explicit null (and the notes
+      // as an empty string): leaving it out would keep the old value, since
+      // the server merges properties.
+      const metadata: AssetMetadata = { ...metadataFromForm() }
+      const was = {
+        ip_addresses: ipOf(editAsset),
+        port: propertyValue(editAsset.metadata, 'port'),
+        parent_domain: propertyValue(editAsset.metadata, 'parent_domain'),
+      }
+      for (const key of ['ip_addresses', 'port', 'parent_domain'] as const) {
+        if (was[key] != null && was[key] !== '' && !(key in metadata)) {
+          ;(metadata as Record<string, unknown>)[key] = null
+        }
+      }
       await updateAsset(editAsset.id, {
         name: formData.name,
-        description: formData.notes || undefined,
-        metadata: metadataFromForm(),
+        description: formData.notes,
+        metadata,
       })
-      toast.success('External asset updated')
+      toast.success(t('attackSurface.external.updated', 'External asset updated.'))
       setEditAsset(null)
       setFormData(EMPTY_FORM)
       await refetchAssets()
     } catch (e) {
-      toast.error(getErrorMessage(e, 'Failed to update external asset'))
+      toast.error(
+        getErrorMessage(
+          e,
+          t('attackSurface.external.updateFailed', 'Failed to update external asset')
+        )
+      )
+    } finally {
+      setSubmitting(false)
     }
   }
 
@@ -363,36 +440,59 @@ export default function ExternalSurfacePage() {
     async (id: string, tags: string[]) => {
       try {
         await updateAsset(id, { tags })
-        toast.success('Label added')
+        toast.success(t('attackSurface.external.labelAdded', 'Label added.'))
         await refetchAssets()
       } catch (e) {
-        toast.error(getErrorMessage(e, 'Failed to add the label'))
+        toast.error(
+          getErrorMessage(e, t('attackSurface.external.labelFailed', 'Failed to add the label'))
+        )
         throw e
       }
     },
-    [refetchAssets]
+    [refetchAssets, t]
   )
   const canWriteAssets = can(Permission.AssetsWrite)
 
   const handleExport = async () => {
     try {
       const all = await fetchAllAssets(listFilters, (loaded, cap) =>
-        toast.warning(`Export stopped at ${loaded} of more than ${cap} assets`)
+        toast.warning(
+          t(
+            'attackSurface.external.exportStopped',
+            'Export stopped at {loaded} of more than {cap} assets',
+            {
+              loaded,
+              cap,
+            }
+          )
+        )
       )
       exportToCsv(
         all,
         [
-          { header: 'Name', accessor: (a) => a.name },
-          { header: 'Type', accessor: (a) => a.type },
-          { header: 'IP addresses', accessor: (a) => ipAddresses(a).join(';') },
-          { header: 'Risk score', accessor: (a) => a.riskScore },
-          { header: 'Findings', accessor: (a) => a.findingCount },
-          { header: 'Last seen', accessor: (a) => a.lastSeen ?? '' },
+          { header: t('attackSurface.external.csv.name', 'Name'), accessor: (a) => a.name },
+          { header: t('attackSurface.external.csv.type', 'Type'), accessor: (a) => a.type },
+          {
+            header: t('attackSurface.external.csv.ip', 'IP addresses'),
+            accessor: (a) => ipAddresses(a).join(';'),
+          },
+          {
+            header: t('attackSurface.external.csv.risk', 'Risk score'),
+            accessor: (a) => a.riskScore,
+          },
+          {
+            header: t('attackSurface.external.csv.findings', 'Findings'),
+            accessor: (a) => a.findingCount,
+          },
+          {
+            header: t('attackSurface.external.csv.lastSeen', 'Last seen'),
+            accessor: (a) => a.lastSeen ?? '',
+          },
         ],
         'external-assets'
       )
     } catch (e) {
-      toast.error(getErrorMessage(e, 'Export failed'))
+      toast.error(getErrorMessage(e, t('attackSurface.external.exportFailed', 'Export failed')))
     }
   }
 
@@ -400,14 +500,14 @@ export default function ExternalSurfacePage() {
     () => [
       {
         id: 'name',
-        header: 'Asset',
+        header: t('attackSurface.external.col.asset', 'Asset'),
         enableSorting: false,
         cell: ({ row }) => (
           <StackedCell
             truncate
             className="max-w-[360px]"
             primary={<span className="font-medium">{row.original.name}</span>}
-            secondary={sentence(row.original.type)}
+            secondary={typeLabel(t, row.original.type)}
           />
         ),
       },
@@ -416,30 +516,27 @@ export default function ExternalSurfacePage() {
         // chosen per type by cellsForType. IPs are among them, so there is
         // no separate IP column.
         id: 'service',
-        header: 'Service facts',
+        header: t('attackSurface.external.col.service', 'Service facts'),
         enableSorting: false,
         cell: ({ row }) => <SurfaceFacts asset={row.original} className="max-w-[380px]" />,
       },
       {
         id: 'risk',
-        header: 'Risk',
+        header: t('attackSurface.external.col.risk', 'Risk'),
         enableSorting: false,
         cell: ({ row }) => <RiskScoreBadge score={row.original.riskScore} size="sm" />,
       },
       {
         id: 'findings',
-        header: 'Findings',
+        header: t('assets.col.openFindings', 'Open findings'),
         enableSorting: false,
-        cell: ({ row }) =>
-          row.original.findingCount > 0 ? (
-            <IssuesChip assetId={row.original.id} count={row.original.findingCount} />
-          ) : (
-            <span className="text-muted-foreground tabular-nums">0</span>
-          ),
+        cell: ({ row }) => (
+          <OpenFindingsCell assetId={row.original.id} count={row.original.findingCount} />
+        ),
       },
       {
         id: 'labels',
-        header: 'Labels',
+        header: t('attackSurface.external.col.labels', 'Labels'),
         enableSorting: false,
         cell: ({ row }) => (
           <LabelChips
@@ -451,7 +548,7 @@ export default function ExternalSurfacePage() {
       },
       {
         id: 'last_seen',
-        header: 'Last seen',
+        header: t('attackSurface.external.col.lastSeen', 'Last seen'),
         enableSorting: false,
         cell: ({ row }) =>
           row.original.lastSeen ? (
@@ -468,18 +565,18 @@ export default function ExternalSurfacePage() {
             <DataTableRowActions
               actions={[
                 {
-                  label: 'Open',
+                  label: t('attackSurface.external.action.open', 'Open'),
                   icon: Eye,
                   onClick: () => router.push(`/assets/${row.original.id}`),
                 },
                 {
-                  label: 'Edit',
+                  label: t('attackSurface.external.action.edit', 'Edit'),
                   icon: Pencil,
                   onClick: () => openEdit(row.original),
                   permission: Permission.AssetsWrite,
                 },
                 {
-                  label: 'Delete',
+                  label: t('attackSurface.external.action.delete', 'Delete'),
                   icon: Trash2,
                   onClick: () => setDeleteAsset(row.original),
                   destructive: true,
@@ -491,24 +588,14 @@ export default function ExternalSurfacePage() {
         ),
       },
     ],
-    [router, openEdit, canWriteAssets, saveRowLabels]
+    [router, openEdit, canWriteAssets, saveRowLabels, t]
   )
 
   const filtersActive =
     !!qParam || typeParam !== 'all' || riskParam !== 'all' || findingsParam !== 'all'
 
   const toolbarStart = (
-    <div className="flex flex-wrap items-center gap-2">
-      <div className="relative w-full sm:w-64">
-        <SearchIcon className="pointer-events-none absolute start-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-        <Input
-          placeholder="Search assets"
-          aria-label="Search assets"
-          className="h-9 ps-9"
-          value={searchInput}
-          onChange={(e) => setSearchInput(e.target.value)}
-        />
-      </div>
+    <>
       <Select
         value={typeParam}
         onValueChange={(v) => {
@@ -516,14 +603,17 @@ export default function ExternalSurfacePage() {
           setPage(1)
         }}
       >
-        <SelectTrigger className="h-9 w-36" aria-label="Filter by type">
+        <SelectTrigger
+          className="h-9 w-36"
+          aria-label={t('attackSurface.external.filterType', 'Filter by type')}
+        >
           <SelectValue />
         </SelectTrigger>
         <SelectContent>
-          <SelectItem value="all">All types</SelectItem>
-          {TYPE_OPTIONS.map((o) => (
-            <SelectItem key={o.value} value={o.value}>
-              {o.label}
+          <SelectItem value="all">{t('attackSurface.external.allTypes', 'All types')}</SelectItem>
+          {TYPE_VALUES.map((v) => (
+            <SelectItem key={v} value={v}>
+              {typeLabel(t, v)}
             </SelectItem>
           ))}
         </SelectContent>
@@ -535,19 +625,22 @@ export default function ExternalSurfacePage() {
           setPage(1)
         }}
       >
-        <SelectTrigger className="h-9 w-32" aria-label="Filter by risk">
+        <SelectTrigger
+          className="h-9 w-32"
+          aria-label={t('attackSurface.external.filterRisk', 'Filter by risk')}
+        >
           <SelectValue />
         </SelectTrigger>
         <SelectContent>
-          <SelectItem value="all">All risks</SelectItem>
-          {RISK_OPTIONS.map((o) => (
-            <SelectItem key={o.value} value={o.value}>
-              {o.label}
+          <SelectItem value="all">{t('attackSurface.external.allRisks', 'All risks')}</SelectItem>
+          {RISK_VALUES.map((v) => (
+            <SelectItem key={v} value={v}>
+              {riskLabel(t, v)}
             </SelectItem>
           ))}
         </SelectContent>
       </Select>
-    </div>
+    </>
   )
 
   const toolbarEnd = (
@@ -556,7 +649,7 @@ export default function ExternalSurfacePage() {
       size="sm"
       className="h-9"
       onClick={() => void refetchAssets()}
-      aria-label="Refresh"
+      aria-label={t('attackSurface.external.refresh', 'Refresh')}
     >
       <RefreshCw className="h-4 w-4" />
     </Button>
@@ -564,9 +657,9 @@ export default function ExternalSurfacePage() {
 
   const formFields = (
     <div className="space-y-4">
-      <div className="grid grid-cols-2 gap-4">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
         <div className="space-y-2">
-          <Label htmlFor="ext-name">Name</Label>
+          <Label htmlFor="ext-name">{t('attackSurface.external.form.name', 'Name')}</Label>
           <Input
             id="ext-name"
             placeholder="api.example.com"
@@ -576,18 +669,18 @@ export default function ExternalSurfacePage() {
         </div>
         {!editAsset && (
           <div className="space-y-2">
-            <Label>Type</Label>
+            <Label htmlFor="ext-type">{t('attackSurface.external.form.type', 'Type')}</Label>
             <Select
               value={formData.type}
               onValueChange={(v) => setFormData({ ...formData, type: v as FormState['type'] })}
             >
-              <SelectTrigger aria-label="Asset type">
+              <SelectTrigger id="ext-type">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                {CREATE_TYPES.map((t) => (
-                  <SelectItem key={t} value={t}>
-                    {sentence(t)}
+                {CREATE_TYPES.map((v) => (
+                  <SelectItem key={v} value={v}>
+                    {typeLabel(t, v)}
                   </SelectItem>
                 ))}
               </SelectContent>
@@ -595,9 +688,11 @@ export default function ExternalSurfacePage() {
           </div>
         )}
       </div>
-      <div className="grid grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
         <div className="space-y-2">
-          <Label htmlFor="ext-parent">Parent domain</Label>
+          <Label htmlFor="ext-parent">
+            {t('attackSurface.external.form.parent', 'Parent domain')}
+          </Label>
           <Input
             id="ext-parent"
             placeholder="example.com"
@@ -606,7 +701,7 @@ export default function ExternalSurfacePage() {
           />
         </div>
         <div className="space-y-2">
-          <Label htmlFor="ext-ip">IP address</Label>
+          <Label htmlFor="ext-ip">{t('attackSurface.external.form.ip', 'IP address')}</Label>
           <Input
             id="ext-ip"
             placeholder="203.0.113.10"
@@ -615,7 +710,7 @@ export default function ExternalSurfacePage() {
           />
         </div>
         <div className="space-y-2">
-          <Label htmlFor="ext-port">Port</Label>
+          <Label htmlFor="ext-port">{t('attackSurface.external.form.port', 'Port')}</Label>
           <Input
             id="ext-port"
             type="number"
@@ -626,10 +721,10 @@ export default function ExternalSurfacePage() {
         </div>
       </div>
       <div className="space-y-2">
-        <Label htmlFor="ext-notes">Notes</Label>
+        <Label htmlFor="ext-notes">{t('attackSurface.external.form.notes', 'Notes')}</Label>
         <Input
           id="ext-notes"
-          placeholder="Optional"
+          placeholder={t('attackSurface.external.form.optional', 'Optional')}
           value={formData.notes}
           onChange={(e) => setFormData({ ...formData, notes: e.target.value })}
         />
@@ -640,38 +735,45 @@ export default function ExternalSurfacePage() {
   return (
     <>
       <Main>
-        <PageHeader
-          title="External attack surface"
-          description="Every internet-facing asset, riskiest first."
-        >
-          <Can permission={Permission.ScansExecute}>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => openScanDialog(assets)}
-              disabled={assets.length === 0}
-            >
-              <RefreshCw className="me-2 h-4 w-4" />
-              Scan this page
+        <PageStack>
+          <PageHeader
+            title={t('attackSurface.external.title', 'External attack surface')}
+            description={t(
+              'attackSurface.external.description',
+              'Every internet-facing asset, riskiest first.'
+            )}
+          >
+            <Can permission={Permission.ScansExecute}>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => openScanDialog(assets)}
+                disabled={assets.length === 0}
+              >
+                <RefreshCw className="me-2 h-4 w-4" />
+                {t('attackSurface.external.scanPage', 'Scan this page')}
+              </Button>
+            </Can>
+            <Button variant="outline" size="sm" onClick={() => void handleExport()}>
+              <Download className="me-2 h-4 w-4" />
+              {t('attackSurface.external.export', 'Export')}
             </Button>
-          </Can>
-          <Button variant="outline" size="sm" onClick={() => void handleExport()}>
-            <Download className="me-2 h-4 w-4" />
-            Export
-          </Button>
-          <Can permission={Permission.AssetsWrite}>
-            <Button size="sm" onClick={() => setIsCreateOpen(true)}>
-              <Plus className="me-2 h-4 w-4" />
-              Add asset
-            </Button>
-          </Can>
-        </PageHeader>
+            <Can permission={Permission.AssetsWrite}>
+              <Button size="sm" onClick={() => setIsCreateOpen(true)}>
+                <Plus className="me-2 h-4 w-4" />
+                {t('attackSurface.external.addAsset', 'Add asset')}
+              </Button>
+            </Can>
+          </PageHeader>
 
-        <MetricStrip className="mt-5" loading={metricsLoading} items={metrics} />
+          <MetricStrip loading={metricsLoading} items={metrics} />
 
-        <div className="mt-5">
           {error && !isLoading ? (
-            <ErrorState title="external assets" error={error} onRetry={() => refetchAssets()} />
+            <ErrorState
+              title={t('attackSurface.external.errorTitle', 'external assets')}
+              error={error}
+              onRetry={() => refetchAssets()}
+            />
           ) : isLoading && assets.length === 0 ? (
             <div className="space-y-2">
               <Skeleton className="h-9 w-full max-w-sm" />
@@ -685,6 +787,11 @@ export default function ExternalSurfacePage() {
               data={assets}
               getRowId={(a) => a.id}
               showSearch={false}
+              search={{
+                value: searchInput,
+                onChange: setSearchInput,
+                placeholder: t('attackSurface.external.search', 'Search assets…'),
+              }}
               showColumnToggle={false}
               toolbarStart={toolbarStart}
               toolbarEnd={toolbarEnd}
@@ -695,30 +802,45 @@ export default function ExternalSurfacePage() {
               pageSizeOptions={PAGE_SIZES}
               onRowClick={(a) => router.push(`/assets/${a.id}`)}
               emptyMessage={
-                filtersActive ? 'No internet-facing assets match' : 'No internet-facing assets yet'
+                filtersActive
+                  ? t('attackSurface.external.emptyFiltered', 'No internet-facing assets match')
+                  : t('attackSurface.external.empty', 'No internet-facing assets yet')
               }
               emptyDescription={
                 filtersActive
-                  ? 'Clear the search or filters to see every internet-facing asset.'
-                  : 'Assets appear here once a scan, import or the certificate monitor marks them public.'
+                  ? t(
+                      'attackSurface.external.emptyFilteredDescription',
+                      'Clear the search or filters to see every internet-facing asset.'
+                    )
+                  : t(
+                      'attackSurface.external.emptyDescription',
+                      'Assets appear here once a scan, import or the certificate monitor marks them public.'
+                    )
               }
             />
           )}
-        </div>
+        </PageStack>
       </Main>
 
       <Dialog open={isCreateOpen} onOpenChange={setIsCreateOpen}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Add external asset</DialogTitle>
-            <DialogDescription>Add an internet-facing asset to monitor.</DialogDescription>
+            <DialogTitle>{t('attackSurface.external.addTitle', 'Add external asset')}</DialogTitle>
+            <DialogDescription>
+              {t(
+                'attackSurface.external.addDescription',
+                'Add an internet-facing asset to monitor.'
+              )}
+            </DialogDescription>
           </DialogHeader>
           <DialogBody>{formFields}</DialogBody>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setIsCreateOpen(false)}>
-              Cancel
+            <Button variant="outline" onClick={() => setIsCreateOpen(false)} disabled={submitting}>
+              {t('attackSurface.external.cancel', 'Cancel')}
             </Button>
-            <Button onClick={handleCreate}>Add asset</Button>
+            <Button onClick={handleCreate} disabled={submitting}>
+              {t('attackSurface.external.addAsset', 'Add asset')}
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -726,15 +848,24 @@ export default function ExternalSurfacePage() {
       <Dialog open={!!editAsset} onOpenChange={(open) => !open && setEditAsset(null)}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Edit external asset</DialogTitle>
-            <DialogDescription>Update the asset&apos;s name, address and notes.</DialogDescription>
+            <DialogTitle>
+              {t('attackSurface.external.editTitle', 'Edit external asset')}
+            </DialogTitle>
+            <DialogDescription>
+              {t(
+                'attackSurface.external.editDescription',
+                "Update the asset's name, address and notes."
+              )}
+            </DialogDescription>
           </DialogHeader>
           <DialogBody>{formFields}</DialogBody>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setEditAsset(null)}>
-              Cancel
+            <Button variant="outline" onClick={() => setEditAsset(null)} disabled={submitting}>
+              {t('attackSurface.external.cancel', 'Cancel')}
             </Button>
-            <Button onClick={handleEdit}>Save changes</Button>
+            <Button onClick={handleEdit} disabled={submitting}>
+              {t('attackSurface.external.saveChanges', 'Save changes')}
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -753,7 +884,7 @@ export default function ExternalSurfacePage() {
         open={scanDialogOpen}
         onOpenChange={setScanDialogOpen}
         candidates={scanCandidates}
-        title="Scan external assets"
+        title={t('attackSurface.external.scanTitle', 'Scan external assets')}
       />
     </>
   )

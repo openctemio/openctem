@@ -9,8 +9,6 @@
 # reviewed exception and says why the id alone is safe.
 capability_repository.go:CapabilityRepository.GetByID:capabilities  D-11 baseline: add the tenant predicate
 ingest_job_repository.go:IngestJobRepository.ClaimBatch:ingest_jobs  D-11 baseline: add the tenant predicate
-ingest_job_repository.go:IngestJobRepository.Complete:ingest_jobs  D-11 baseline: add the tenant predicate
-ingest_job_repository.go:IngestJobRepository.Fail:ingest_jobs  D-11 baseline: add the tenant predicate
 ingest_report_repository.go:IngestReportRepository.Abandon:ingest_reports  D-11 baseline: add the tenant predicate
 ingest_report_repository.go:IngestReportRepository.ClaimFinalize:ingest_reports  D-11 baseline: add the tenant predicate
 ingest_report_repository.go:IngestReportRepository.Commit:ingest_reports  D-11 baseline: add the tenant predicate
@@ -56,10 +54,6 @@ sensor_repository.go:SensorRepository.UpdateLastSeen:sensors  D-11 baseline: add
 sensor_repository.go:SensorRepository.UpdateOfflineTimestamp:sensors  D-11 baseline: add the tenant predicate
 sensor_repository.go:SensorRepository.Update:sensors  D-11 baseline: add the tenant predicate
 sensor_repository.go:updateInlineKey:sensors  D-11 baseline: add the tenant predicate
-template_source_repository.go:TemplateSourceRepository.Delete:template_sources  D-11 baseline: add the tenant predicate
-template_source_repository.go:TemplateSourceRepository.GetByID:template_sources  D-11 baseline: add the tenant predicate
-template_source_repository.go:TemplateSourceRepository.UpdateSyncStatus:template_sources  D-11 baseline: add the tenant predicate
-template_source_repository.go:TemplateSourceRepository.Update:template_sources  D-11 baseline: add the tenant predicate
 tenant_tool_config_repository.go:TenantToolConfigRepository.Delete:tenant_tool_configs  D-11 baseline: add the tenant predicate
 tenant_tool_config_repository.go:TenantToolConfigRepository.GetByID:tenant_tool_configs  D-11 baseline: add the tenant predicate
 tenant_tool_config_repository.go:TenantToolConfigRepository.Update:tenant_tool_configs  D-11 baseline: add the tenant predicate

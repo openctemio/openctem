@@ -129,15 +129,16 @@ type RecentChangeLister interface {
 
 // SurfaceService provides attack surface operations.
 type SurfaceService struct {
-	assetRepo   asset.Repository
-	relRepo     asset.RelationshipRepository
-	history     RecentChangeLister
-	attribution AttributionRecords
-	findingRisk FindingRiskCounter
-	dataScope   *datascope.Enforcer               // Layer 2 narrowing of member-facing reads (nil = unrestricted)
-	chains      *tenantCache[ExposureChainResult] // per-tenant exposure-chain results, shared by every reader
-	scores      *tenantCache[PathScoringResult]   // per-tenant attack-path scores
-	logger      *logger.Logger
+	assetRepo    asset.Repository
+	relRepo      asset.RelationshipRepository
+	history      RecentChangeLister
+	attribution  AttributionRecords
+	findingRisk  FindingRiskCounter
+	pathFindings PathFindingReader                 // per-asset finding summary for the attack paths to one asset
+	dataScope    *datascope.Enforcer               // Layer 2 narrowing of member-facing reads (nil = unrestricted)
+	chains       *tenantCache[ExposureChainResult] // per-tenant exposure-chain results, shared by every reader
+	scores       *tenantCache[PathScoringResult]   // per-tenant attack-path scores
+	logger       *logger.Logger
 }
 
 // NewSurfaceService creates a new SurfaceService.
@@ -225,16 +226,16 @@ func (s *SurfaceService) GetStats(ctx context.Context, tenantID shared.ID) (*Sur
 	newlyExposed := s.countNewlyExposed(ctx, tenantID, scope, since)
 
 	// Get assets with risk score for average calculation
-	avgRiskScore := s.calculateAverageRiskScore(ctx, tenantID, scope)
+	avgRiskScore := s.calculateAverageRiskScore(ctx, tenantID, scope, &approved)
 
 	// Get asset breakdown by type
-	assetBreakdown := s.getAssetBreakdown(ctx, tenantID, scope)
+	assetBreakdown := s.getAssetBreakdown(ctx, tenantID, scope, &approved)
 
 	// Get exposed services list (limit to 5 for overview)
 	exposedServicesList := s.getExposedServicesList(ctx, tenantIDStr, scope, approved, 5)
 
 	// Get recent changes (limit to 5 for overview)
-	recentChanges := s.getRecentChanges(ctx, tenantID, scope, 5)
+	recentChanges := s.getRecentChanges(ctx, tenantID, scope, approved, 5)
 
 	return &SurfaceStats{
 		TotalAssets:                  int(totalAssets),
@@ -251,8 +252,8 @@ func (s *SurfaceService) GetStats(ctx context.Context, tenantID shared.ID) (*Sur
 }
 
 // calculateAverageRiskScore calculates the average risk score using a single AVG() query.
-func (s *SurfaceService) calculateAverageRiskScore(ctx context.Context, tenantID shared.ID, scope *shared.DataScope) float64 {
-	avg, err := s.assetRepo.GetAverageRiskScore(ctx, tenantID, scope)
+func (s *SurfaceService) calculateAverageRiskScore(ctx context.Context, tenantID shared.ID, scope *shared.DataScope, af *attribution.StateFilter) float64 {
+	avg, err := s.assetRepo.GetAverageRiskScore(ctx, tenantID, scope, af)
 	if err != nil {
 		s.logger.Error("failed to get average risk score", "error", err)
 		return 0
@@ -294,8 +295,8 @@ func (s *SurfaceService) countOrZero(ctx context.Context, what string, f asset.F
 // api and web_application are stored as application since migration 000130;
 // ingest aliases them the same way), so a "Websites" row can no longer sit at
 // 0 while the tenant's sites are counted nowhere.
-func (s *SurfaceService) getAssetBreakdown(ctx context.Context, tenantID shared.ID, scope *shared.DataScope) []AssetTypeBreakdown {
-	statsMap, err := s.assetRepo.GetAssetTypeBreakdown(ctx, tenantID, scope)
+func (s *SurfaceService) getAssetBreakdown(ctx context.Context, tenantID shared.ID, scope *shared.DataScope, af *attribution.StateFilter) []AssetTypeBreakdown {
+	statsMap, err := s.assetRepo.GetAssetTypeBreakdown(ctx, tenantID, scope, af)
 	if err != nil {
 		s.logger.Error("failed to get asset type breakdown", "error", err)
 		return []AssetTypeBreakdown{}
@@ -372,20 +373,24 @@ func (s *SurfaceService) getExposedServicesList(ctx context.Context, tenantID st
 //   - "removed" / "changed": asset state history (disappeared, exposure,
 //     status, criticality, owner … changes), when the store is wired.
 //
+// Only the attribution population of the stat tiles is listed: a name a
+// person rejected, or one waiting for review, is not shown as an addition or
+// a change (history rows of such assets are dropped after the lookup).
+//
 // Before this, the block listed assets by creation date and labeled any asset
 // updated more than a day after creation "changed", so a re-scan that changed
 // nothing looked like a change and nothing was ever "removed".
 //
 // For a data-scope-restricted member only their in-scope additions are shown:
 // state history is tenant-wide and would reveal names of out-of-scope assets.
-func (s *SurfaceService) getRecentChanges(ctx context.Context, tenantID shared.ID, scope *shared.DataScope, limit int) []AssetChange {
+func (s *SurfaceService) getRecentChanges(ctx context.Context, tenantID shared.ID, scope *shared.DataScope, approved attribution.StateFilter, limit int) []AssetChange {
 	tenantIDStr := tenantID.String()
 	changes := make([]AssetChange, 0, limit*2)
 	added := make(map[string]struct{}, limit)
 
 	result, err := s.assetRepo.List(ctx, asset.Filter{
 		TenantID: &tenantIDStr,
-	}.WithDataScope(scope), asset.ListOptions{}, pagination.Pagination{Page: 1, PerPage: limit})
+	}.WithAttribution(approved).WithDataScope(scope), asset.ListOptions{}, pagination.Pagination{Page: 1, PerPage: limit})
 	if err != nil {
 		s.logger.Error("failed to get recently added assets", "error", err)
 	} else {
@@ -412,7 +417,27 @@ func (s *SurfaceService) getRecentChanges(ctx context.Context, tenantID shared.I
 		changes = changes[:limit]
 	}
 	s.annotateAttribution(ctx, tenantID, changes)
-	return changes
+	kept := changes[:0]
+	for _, c := range changes {
+		if inPopulation(approved, c.AttributionState) {
+			kept = append(kept, c)
+		}
+	}
+	return kept
+}
+
+// inPopulation reports whether an asset with this recorded attribution state
+// ("" = no record) belongs to the filter's population.
+func inPopulation(f attribution.StateFilter, state string) bool {
+	if state == "" {
+		return f.Unrecorded
+	}
+	for _, st := range f.States {
+		if string(st) == state {
+			return true
+		}
+	}
+	return false
 }
 
 // annotateAttribution sets each change's attribution state and inventory

@@ -1,5 +1,6 @@
 'use client'
 
+import { IntegrationHealth } from '@/features/integrations/components/integration-health'
 import { useState } from 'react'
 import {
   MoreHorizontal,
@@ -7,14 +8,12 @@ import {
   RefreshCw,
   ExternalLink,
   Loader2,
-  CheckCircle,
-  XCircle,
   Clock,
-  AlertCircle,
   Download,
   Settings,
 } from 'lucide-react'
 import { toast } from 'sonner'
+import { connectionProblem } from '@/features/integrations/lib/connection-status'
 
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -26,6 +25,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
+import { confirmName } from '@/lib/confirm-name'
 import { ConfirmDialog } from '@/components/confirm-dialog'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import { cn, sanitizeExternalUrl } from '@/lib/utils'
@@ -88,7 +88,15 @@ export function SCMConnectionCard({
       if (result && result.status === 'connected') {
         toast.success(`Connection "${connection.name}" validated successfully`)
       } else if (result && result.status === 'error') {
-        toast.error(result.status_message || `Connection "${connection.name}" test failed`)
+        toast.error(
+          connectionProblem(
+            result,
+            t,
+            t('scmIntegration.toast.testFailedNamed', 'Could not connect to {name}.', {
+              name: connection.name,
+            })
+          ).message
+        )
       } else {
         toast.warning(`Connection "${connection.name}" status: ${result?.status || 'unknown'}`)
       }
@@ -97,38 +105,13 @@ export function SCMConnectionCard({
     }
   }
 
-  const statusConfig: Record<string, { icon: React.ReactNode; color: string; label: string }> = {
-    connected: {
-      icon: <CheckCircle className="h-3.5 w-3.5" />,
-      color: 'text-green-500',
-      label: 'Connected',
-    },
-    pending: {
-      icon: <AlertCircle className="h-3.5 w-3.5" />,
-      color: 'text-yellow-500',
-      label: 'Pending',
-    },
-    disconnected: {
-      icon: <XCircle className="h-3.5 w-3.5" />,
-      color: 'text-gray-400',
-      label: 'Disconnected',
-    },
-    error: {
-      icon: <XCircle className="h-3.5 w-3.5" />,
-      color: 'text-red-500',
-      label: 'Error',
-    },
-  }
-
-  const status = statusConfig[connection.status] || statusConfig.disconnected
-
   return (
     <>
       <Card
         className={cn(
           'transition-all cursor-pointer hover:border-primary/50',
           selected && 'border-primary ring-1 ring-primary',
-          connection.status === 'error' && 'border-red-500/30'
+          connection.status === 'error' && 'border-destructive/40'
         )}
         onClick={onSelect}
       >
@@ -204,11 +187,11 @@ export function SCMConnectionCard({
                 )}
                 <DropdownMenuSeparator />
                 <DropdownMenuItem
-                  className="text-red-500"
+                  className="text-destructive"
                   onClick={() => setDeleteDialogOpen(true)}
                 >
                   <Trash2 className="me-2 h-4 w-4" />
-                  Delete
+                  {t('confirm.delete', 'Delete')}
                 </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
@@ -220,14 +203,25 @@ export function SCMConnectionCard({
               <TooltipProvider>
                 <Tooltip>
                   <TooltipTrigger asChild>
-                    <span className={cn('flex items-center gap-1', status.color)}>
-                      {status.icon}
-                      {status.label}
-                    </span>
+                    <IntegrationHealth status={connection.status} />
                   </TooltipTrigger>
-                  {connection.status_message && connection.status === 'error' && (
+                  {connection.status === 'error' && (
                     <TooltipContent className="max-w-xs">
-                      <p className="text-red-400">{connection.status_message}</p>
+                      <p>
+                        {
+                          connectionProblem(
+                            connection,
+                            t,
+                            t(
+                              'scmIntegration.toast.testFailedNamed',
+                              'Could not connect to {name}.',
+                              {
+                                name: connection.name,
+                              }
+                            )
+                          ).message
+                        }
+                      </p>
                     </TooltipContent>
                   )}
                 </Tooltip>
@@ -277,8 +271,9 @@ export function SCMConnectionCard({
             )}
           </>
         }
-        confirmText={t('confirm.delete', 'Delete')}
+        confirmText={t('confirm.scm.deleteBtn')}
         destructive
+        typeToConfirm={confirmName(connection.name, connection.id)}
         isLoading={isDeleting}
         handleConfirm={handleDelete}
       />

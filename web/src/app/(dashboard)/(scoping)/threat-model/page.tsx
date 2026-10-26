@@ -2,7 +2,8 @@
 
 import { useMemo, useState } from 'react'
 import { Main } from '@/components/layout'
-import { GatedSectionTabs, PageHeader } from '@/features/shared'
+import { useTranslation } from '@/context/i18n-provider'
+import { ErrorState, GatedSectionTabs, PageHeader, PageStack } from '@/features/shared'
 import { THREAT_MODEL_SECTION_TABS } from '@/config/section-tabs'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
@@ -28,6 +29,7 @@ import {
 import type { ThreatFilters } from '@/features/threat-model'
 import { useModuleEnabled } from '@/features/integrations/api/use-tenant-modules'
 import { useUrlFilter } from '@/hooks/use-url-param'
+import { formatDateTime } from '@/features/threat-model/lib/format-date'
 
 const DEFAULT_FILTERS: ThreatFilters = {
   status: 'all',
@@ -37,6 +39,7 @@ const DEFAULT_FILTERS: ThreatFilters = {
 }
 
 export default function ThreatModelPage() {
+  const { t, locale } = useTranslation()
   // The open model and its tab live in the URL so a model can be linked to.
   const [modelParam, setModelParam] = useUrlFilter('model', '')
   const [tab, setTab] = useUrlFilter('tab', 'threats')
@@ -48,9 +51,19 @@ export default function ThreatModelPage() {
   const [isGenerating, setIsGenerating] = useState(false)
   const [filters, setFilters] = useState<ThreatFilters>(DEFAULT_FILTERS)
 
-  const { models, isLoading: modelsLoading, mutate: mutateModels } = useThreatModels()
+  const {
+    models,
+    isLoading: modelsLoading,
+    error: modelsError,
+    mutate: mutateModels,
+  } = useThreatModels()
   const { crownJewels, isLoading: crownJewelsLoading } = useCrownJewels()
-  const { model, isLoading: modelLoading } = useThreatModel(selectedModelId)
+  const {
+    model,
+    isLoading: modelLoading,
+    error: modelError,
+    mutate: mutateModel,
+  } = useThreatModel(selectedModelId)
   // attacker_profiles is a separate (Phase-3 gated) module from this page's
   // attack_surface module; skip its fetch when disabled (rows fall back to id).
   const attackerProfilesEnabled = useModuleEnabled('attacker_profiles')
@@ -59,8 +72,8 @@ export default function ThreatModelPage() {
   const assetIds = useMemo(() => {
     if (!model?.threats) return []
     const ids: string[] = []
-    for (const t of model.threats) {
-      ids.push(t.entry_point_asset_id, t.hop_asset_id, t.target_asset_id)
+    for (const th of model.threats) {
+      ids.push(th.entry_point_asset_id, th.hop_asset_id, th.target_asset_id)
     }
     return ids
   }, [model])
@@ -73,9 +86,9 @@ export default function ThreatModelPage() {
       await mutateModels()
       setSelectedModelId(generated.id)
       setFilters(DEFAULT_FILTERS)
-      toast.success('Threat model generated')
+      toast.success(t('threatModel.toast.generated', 'Threat model generated.'))
     } catch {
-      toast.error('Failed to generate threat model')
+      toast.error(t('threatModel.toast.generateFailed', 'Could not generate the threat model.'))
     } finally {
       setIsGenerating(false)
     }
@@ -88,9 +101,9 @@ export default function ThreatModelPage() {
       const generated = await generateThreatModel(model.scope_type, model.scope_ref_id)
       await mutateModels()
       setSelectedModelId(generated.id)
-      toast.success('Threat model refreshed')
+      toast.success(t('threatModel.toast.refreshed', 'Threat model refreshed.'))
     } catch {
-      toast.error('Failed to refresh threat model')
+      toast.error(t('threatModel.toast.refreshFailed', 'Could not refresh the threat model.'))
     } finally {
       setIsGenerating(false)
     }
@@ -105,63 +118,85 @@ export default function ThreatModelPage() {
   if (selectedModelId) {
     return (
       <Main>
-        <PageHeader
-          title={model?.name ?? 'Threat model'}
-          description={
-            model
-              ? `Generated ${formatDate(model.generated_at)} · ATT&CK ${model.technique_dataset_version}`
-              : 'Loading threat model…'
-          }
-        >
-          <Button variant="outline" size="sm" onClick={() => setSelectedModelId(null)}>
-            <ArrowLeft className="me-2 h-4 w-4" />
-            All models
-          </Button>
-          <Can
-            permission={Permission.AssetsWrite}
-            mode="disable"
-            disabledTooltip="You need assets:write to refresh"
+        <PageStack>
+          <PageHeader
+            title={model?.name ?? t('threatModel.title', 'Threat model')}
+            description={
+              model
+                ? t('threatModel.detail.generated', 'Generated {date}, ATT&CK {version}', {
+                    date: formatDateTime(model.generated_at, locale),
+                    version: model.technique_dataset_version,
+                  })
+                : t('threatModel.detail.loading', 'Loading threat model…')
+            }
           >
-            <Button size="sm" onClick={handleRefresh} disabled={isGenerating || !model}>
-              {isGenerating ? (
-                <Loader2 className="me-2 h-4 w-4 animate-spin" />
-              ) : (
-                <RefreshCw className="me-2 h-4 w-4" />
-              )}
-              Refresh
+            <Button variant="outline" size="sm" onClick={() => setSelectedModelId(null)}>
+              <ArrowLeft className="me-2 h-4 w-4" />
+              {t('threatModel.detail.allModels', 'All models')}
             </Button>
-          </Can>
-        </PageHeader>
+            <Can
+              permission={Permission.AssetsWrite}
+              mode="disable"
+              disabledTooltip={t(
+                'threatModel.detail.needWrite',
+                'You need assets:write to refresh'
+              )}
+            >
+              <Button size="sm" onClick={handleRefresh} disabled={isGenerating || !model}>
+                {isGenerating ? (
+                  <Loader2 className="me-2 h-4 w-4 animate-spin" />
+                ) : (
+                  <RefreshCw className="me-2 h-4 w-4" />
+                )}
+                {t('threatModel.detail.refresh', 'Refresh')}
+              </Button>
+            </Can>
+          </PageHeader>
+          <GatedSectionTabs
+            tabs={THREAT_MODEL_SECTION_TABS}
+            label={t('threatModel.sections', 'Threat model sections')}
+          />
 
-        {modelLoading || !model ? (
-          <div className="mt-5 space-y-5">
-            <Skeleton className="h-[68px] w-full rounded-xl" />
-            <Skeleton className="h-96 w-full" />
-          </div>
-        ) : (
-          <div className="mt-5 space-y-5">
-            <CoverageStats model={model} />
-            <Tabs value={tab} onValueChange={setTab}>
-              <TabsList>
-                <TabsTrigger value="threats">Threats</TabsTrigger>
-                <TabsTrigger value="coverage">Coverage matrix</TabsTrigger>
-              </TabsList>
-              <TabsContent value="threats" className="mt-4">
-                <ThreatModelTable
-                  threats={model.threats ?? []}
-                  filters={filters}
-                  onFiltersChange={setFilters}
-                  profileMap={profileMap}
-                  nameFor={nameFor}
-                />
-              </TabsContent>
-              <TabsContent value="coverage" className="mt-4">
-                <CoverageHeatmap modelId={model.id} modelName={model.name} />
-              </TabsContent>
-            </Tabs>
-            <MitreFooter />
-          </div>
-        )}
+          {modelError ? (
+            <ErrorState
+              title={t('threatModel.thisModel', 'this threat model')}
+              error={modelError}
+              onRetry={() => mutateModel()}
+            />
+          ) : modelLoading || !model ? (
+            <PageStack>
+              <Skeleton className="h-[68px] w-full rounded-xl" />
+              <Skeleton className="h-96 w-full" />
+            </PageStack>
+          ) : (
+            <PageStack>
+              <CoverageStats model={model} />
+              <Tabs value={tab} onValueChange={setTab}>
+                <TabsList>
+                  <TabsTrigger value="threats">
+                    {t('threatModel.tab.threats', 'Threats')}
+                  </TabsTrigger>
+                  <TabsTrigger value="coverage">
+                    {t('threatModel.tab.coverage', 'Coverage matrix')}
+                  </TabsTrigger>
+                </TabsList>
+                <TabsContent value="threats">
+                  <ThreatModelTable
+                    threats={model.threats ?? []}
+                    filters={filters}
+                    onFiltersChange={setFilters}
+                    profileMap={profileMap}
+                    nameFor={nameFor}
+                  />
+                </TabsContent>
+                <TabsContent value="coverage">
+                  <CoverageHeatmap modelId={model.id} modelName={model.name} />
+                </TabsContent>
+              </Tabs>
+              <MitreFooter />
+            </PageStack>
+          )}
+        </PageStack>
       </Main>
     )
   }
@@ -169,48 +204,45 @@ export default function ThreatModelPage() {
   // ----- Landing / list view -----
   return (
     <Main>
-      <PageHeader
-        title="Threat model"
-        description="Attack techniques derived per crown jewel, mapped to MITRE ATT&CK and scored by coverage."
-      />
-      <GatedSectionTabs
-        tabs={THREAT_MODEL_SECTION_TABS}
-        label="Threat model sections"
-        className="mt-4 mb-0"
-      />
-      <div className="mt-5 space-y-5">
-        <ScopePicker
-          crownJewels={crownJewels}
-          isLoading={crownJewelsLoading}
-          isGenerating={isGenerating}
-          onGenerate={handleGenerate}
+      <PageStack>
+        <PageHeader
+          title={t('threatModel.title', 'Threat model')}
+          description={t(
+            'threatModel.description',
+            'Attack techniques derived per crown jewel, mapped to MITRE ATT&CK and scored by coverage.'
+          )}
         />
-        {modelsLoading ? (
-          <Card>
-            <CardContent className="space-y-3 py-6">
-              {[1, 2, 3].map((i) => (
-                <Skeleton key={i} className="h-12 w-full" />
-              ))}
-            </CardContent>
-          </Card>
-        ) : (
-          <ExistingModels models={models} selectedId={selectedModelId} onOpen={openModel} />
-        )}
-        <MitreFooter />
-      </div>
+        <GatedSectionTabs
+          tabs={THREAT_MODEL_SECTION_TABS}
+          label={t('threatModel.sections', 'Threat model sections')}
+        />
+        <PageStack>
+          <ScopePicker
+            crownJewels={crownJewels}
+            isLoading={crownJewelsLoading}
+            isGenerating={isGenerating}
+            onGenerate={handleGenerate}
+          />
+          {modelsError ? (
+            <ErrorState
+              title={t('threatModel.models', 'threat models')}
+              error={modelsError}
+              onRetry={() => mutateModels()}
+            />
+          ) : modelsLoading ? (
+            <Card>
+              <CardContent className="space-y-3 py-6">
+                {[1, 2, 3].map((i) => (
+                  <Skeleton key={i} className="h-12 w-full" />
+                ))}
+              </CardContent>
+            </Card>
+          ) : (
+            <ExistingModels models={models} selectedId={selectedModelId} onOpen={openModel} />
+          )}
+          <MitreFooter />
+        </PageStack>
+      </PageStack>
     </Main>
   )
-}
-
-function formatDate(iso: string): string {
-  const d = new Date(iso)
-  return Number.isNaN(d.getTime())
-    ? iso
-    : d.toLocaleString(undefined, {
-        year: 'numeric',
-        month: 'short',
-        day: 'numeric',
-        hour: '2-digit',
-        minute: '2-digit',
-      })
 }

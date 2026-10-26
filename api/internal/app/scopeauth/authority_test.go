@@ -174,3 +174,95 @@ func TestCoversAt(t *testing.T) {
 		t.Error("another tenant's entry covered a name")
 	}
 }
+
+// Rows of a type with no matcher (or a wildcard URL host) that exist in the
+// database from before validation refused them cover nothing: no probe of an
+// arbitrary host or address is authorized by them. The deny list is not
+// involved here; the gate evaluates it first.
+func TestStoredWildcardRowsAuthorizeNothing(t *testing.T) {
+	tenant := shared.NewID()
+	f := &fakeSources{tenant: tenant}
+	now := time.Now()
+	for i, r := range []struct {
+		typ     scopedom.TargetType
+		pattern string
+	}{
+		{scopedom.TargetTypeCertificate, "*"}, {scopedom.TargetTypeContainer, "*"},
+		{scopedom.TargetTypeDatabase, "*"}, {scopedom.TargetTypeMobileApp, "*"},
+		{scopedom.TargetTypeCloudResource, "*"}, {scopedom.TargetTypeNetwork, "*"},
+		{scopedom.TargetTypeURL, "*"}, {scopedom.TargetTypeURL, "https://*"},
+		{scopedom.TargetTypeWebsite, "*"}, {scopedom.TargetTypeAPI, "*"},
+		{scopedom.TargetTypeHost, "*"}, {scopedom.TargetTypeProject, "*"},
+	} {
+		_ = i
+		f.targets = append(f.targets, scopedom.ReconstituteTarget(shared.NewID(), tenant, r.typ, r.pattern, "", 0,
+			scopedom.StatusActive, nil, "", now, now))
+	}
+	a, err := Load(context.Background(), tenant, f, f)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{"victim.example", "203.0.113.9", "203.0.113.9:443", "https://victim.example/x", "198.51.100.0/24", "github.com/victim/repo"} {
+		if v, ok := a.Covers(name); ok {
+			t.Errorf("Covers(%q) = %+v", name, v)
+		}
+		if _, ok := a.CoversAt(name, scopedom.TierActive); ok {
+			t.Errorf("CoversAt(%q) is covered", name)
+		}
+	}
+}
+
+// Label-boundary vectors at the API gate: a name is covered only when it is
+// the entry's own name or a whole label below it, in every spelling.
+func TestCovers_LabelBoundary(t *testing.T) {
+	f := newSources(t)
+	a, err := Load(context.Background(), f.tenant, f, f)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, n := range []string{"app.scoped.com", "APP.Scoped.COM.", "scoped.com", "scoped.com.", "app.scoped.com:8443",
+		"https://app.scoped.com./x", "http://scoped.com:80"} {
+		if _, ok := a.Covers(n); !ok {
+			t.Errorf("Covers(%q) = false, want covered", n)
+		}
+	}
+	for _, n := range []string{"notscoped.com", "notscoped.com:443", "https://notscoped.com/", "scoped.com.evil.test",
+		"https://scoped.com.evil.test:8443/", "scoped.com@evil.test", "https://scoped.com@evil.test/",
+		"evil-scoped.com", "scoped.co", "com", "https://evil.test/?h=app.scoped.com"} {
+		if via, ok := a.Covers(n); ok {
+			t.Errorf("Covers(%q) = %+v, want not covered", n, via)
+		}
+	}
+}
+
+// Two tenants with entries on different roots: each gate answers only for
+// its own entries, whatever the spelling.
+func TestCovers_TenantsDoNotShareEntries(t *testing.T) {
+	a1, a2 := newSources(t), newSources(t)
+	other, err := scopedom.NewTarget(a2.tenant, scopedom.TargetTypeDomain, "*.other.example", "", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	a2.targets = []*scopedom.Target{other}
+	auth1, err := Load(context.Background(), a1.tenant, a1, a1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	auth2, err := Load(context.Background(), a2.tenant, a2, a2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, n := range []string{"app.other.example", "app.other.example:443", "https://APP.other.example./"} {
+		if _, ok := auth1.Covers(n); ok {
+			t.Errorf("tenant 1 covered tenant 2's name %q", n)
+		}
+		if _, ok := auth2.Covers(n); !ok {
+			t.Errorf("tenant 2 does not cover its own name %q", n)
+		}
+	}
+	for _, n := range []string{"app.scoped.com", "app.scoped.com:443"} {
+		if _, ok := auth2.Covers(n); ok {
+			t.Errorf("tenant 2 covered tenant 1's name %q", n)
+		}
+	}
+}

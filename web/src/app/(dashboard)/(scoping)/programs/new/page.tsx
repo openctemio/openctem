@@ -8,33 +8,54 @@
  */
 
 import { useRouter } from 'next/navigation'
+import Link from '@/components/link'
 import { toast } from 'sonner'
 import { Main } from '@/components/layout'
+import { Button } from '@/components/ui/button'
 import { useTranslation } from '@/context/i18n-provider'
-import { PageHeader } from '@/features/shared'
+import { NoAccessState, PageHeader, PageStack } from '@/features/shared'
+import { Permission, useHasPermission } from '@/lib/permissions'
 import { ProgramForm, importProgram, invalidatePrograms } from '@/features/programs'
 
 export default function NewProgramPage() {
   const { t } = useTranslation()
   const router = useRouter()
+  const canWrite = useHasPermission(Permission.ProgramsWrite)
+  // Without programs:write the form could only fail at submit.
+  if (!canWrite) {
+    return (
+      <Main>
+        <PageStack>
+          <PageHeader title={t('programs.new.title', 'Import program')} />
+          <NoAccessState title={t('programs.new.title', 'Import program')} />
+        </PageStack>
+      </Main>
+    )
+  }
   return (
     <Main>
-      <PageHeader
-        title={t('programs.new.title', 'Add program')}
-        description={t(
-          'programs.new.descriptionSources',
-          'Enter the scope by hand or import the scope file from the program page. In-scope targets become scope entries that take effect when you accept the program rules; out-of-scope items stop program entries only, never your own scope.'
-        )}
-      />
-      <ProgramForm
-        submitLabel={t('programs.new.submit', 'Accept and import')}
-        onSubmit={importProgram}
-        onDone={(change) => {
-          void invalidatePrograms()
-          toast.success(t('programs.new.done', 'Program imported'))
-          router.push(`/programs/${change.program.id}`)
-        }}
-      />
+      <PageStack>
+        <PageHeader
+          title={t('programs.new.title', 'Import program')}
+          description={t(
+            'programs.new.descriptionSources',
+            'Enter the scope by hand or import the scope file from the program page. In-scope targets become scope entries that take effect when you accept the program rules; out-of-scope items stop program entries only, never your own scope.'
+          )}
+        >
+          <Button asChild variant="outline" size="sm">
+            <Link href="/programs">{t('common.cancel', 'Cancel')}</Link>
+          </Button>
+        </PageHeader>
+        <ProgramForm
+          submitLabel={t('programs.new.submit', 'Accept and import')}
+          onSubmit={importProgram}
+          onDone={(change) => {
+            void invalidatePrograms()
+            toast.success(t('programs.new.done', 'Program imported'))
+            router.push(`/programs/${change.program.id}`)
+          }}
+        />
+      </PageStack>
     </Main>
   )
 }

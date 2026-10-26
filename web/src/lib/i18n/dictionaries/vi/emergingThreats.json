@@ -80,7 +80,7 @@
   "emergingThreats.filter.internetOnly": "Chỉ hướng ra Internet",
   "emergingThreats.filter.level": "Mức",
   "emergingThreats.filter.search": "Tìm kiếm",
-  "emergingThreats.filter.searchPlaceholder": "Mã lỗ hổng, ví dụ CVE-2026-12345",
+  "emergingThreats.filter.searchPlaceholder": "Tìm theo mã lỗ hổng, ví dụ CVE-2026-12345…",
   "emergingThreats.filter.state": "Trạng thái",
   "emergingThreats.filter.stateAll": "Mọi trạng thái",
   "emergingThreats.filter.stateOpen": "Đang mở (chưa đóng)",

@@ -3,6 +3,7 @@ package coverage
 import (
 	"encoding/json"
 	"testing"
+	"time"
 )
 
 // The sensor's per-target outcomes are read against each task's own
@@ -61,5 +62,89 @@ func TestVerdicts_UnreachedTargetIsNotCovered(t *testing.T) {
 		if v["b"].Kind != VerdictFailed || v["b"].Outcome != "unreachable" {
 			t.Errorf("%s: b = %+v, want failed unreachable", name, v["b"])
 		}
+	}
+}
+
+func TestTargetSide(t *testing.T) {
+	for o, want := range map[string]bool{"unreachable": true, "timeout": true, "tool_error": false, "egress_refused": false,
+		"failed": false, "unfinished": false, "not_dispatched": false, "stalled": false} {
+		if IsTargetSide(o) != want {
+			t.Errorf("IsTargetSide(%q) = %v", o, !want)
+		}
+	}
+	day := 24 * time.Hour
+	for n, want := range map[int]time.Duration{0: day, 1: day, 2: 3 * day, 3: 7 * day, 4: 7 * day, 50: 7 * day} {
+		if got := TargetSideRecheck(n); got != want {
+			t.Errorf("TargetSideRecheck(%d) = %v, want %v", n, got, want)
+		}
+	}
+}
+
+// A task whose every target failed the same target-side way points at the
+// sensor, not at the targets: the verdicts are plain failures (back-off),
+// not target-side pauses. A lone target, or a mixed task, keeps its class.
+func TestVerdicts_UniformTargetSideFailureIsSensorFailure(t *testing.T) {
+	task := func(targets []string, outcomes string) []TaskResult {
+		return []TaskResult{{Status: "completed", Targets: targets, Result: json.RawMessage(`{"target_outcomes": ` + outcomes + `}`)}}
+	}
+	all := task([]string{"a", "b"}, `[{"target":"a","state":"failed","class":"timeout"},{"target":"b","state":"failed","class":"timeout"}]`)
+	for k, v := range Verdicts(all, nil) {
+		if v.Kind != VerdictFailed || v.Outcome != OutcomeFailed || IsTargetSide(v.Outcome) {
+			t.Errorf("all timeouts, %s = %+v, want a sensor failure", k, v)
+		}
+	}
+	mixed := task([]string{"a", "b"}, `[{"target":"a","state":"failed","class":"timeout"},{"target":"b","state":"done"}]`)
+	if v := Verdicts(mixed, nil)["a"]; v.Outcome != "timeout" || !IsTargetSide(v.Outcome) {
+		t.Errorf("one timeout among answers = %+v, want target-side", v)
+	}
+	lone := task([]string{"a"}, `[{"target":"a","state":"failed","class":"timeout"}]`)
+	if v := Verdicts(lone, nil)["a"]; v.Outcome != "timeout" {
+		t.Errorf("lone timeout = %+v, want target-side", v)
+	}
+	differing := task([]string{"a", "b"}, `[{"target":"a","state":"failed","class":"timeout"},{"target":"b","state":"failed","class":"unreachable"}]`)
+	if v := Verdicts(differing, nil)["a"]; v.Outcome != "timeout" {
+		t.Errorf("different classes = %+v, want each its own", v)
+	}
+}
+
+// A truncated result (cut short by a deadline, disk or cap) covers nothing:
+// its done targets are unfinished, with or without per-target outcomes, and
+// a later complete task still decides them.
+func TestVerdicts_TruncatedResultNeverCovers(t *testing.T) {
+	for name, result := range map[string]string{
+		"no outcomes":   `{"metadata": {"truncated": true}}`,
+		"top-level":     `{"truncated": true}`,
+		"with outcomes": `{"metadata": {"truncated": true}, "target_outcomes": [{"target": "a", "state": "done"}, {"target": "b", "state": "done"}]}`,
+	} {
+		v := Verdicts([]TaskResult{{Status: "completed", Targets: []string{"a", "b"}, Result: json.RawMessage(result)}}, nil)
+		for _, k := range []string{"a", "b"} {
+			if v[k].Kind != VerdictFailed || v[k].Outcome != OutcomeUnfinished {
+				t.Errorf("%s: %s = %+v, want unfinished", name, k, v[k])
+			}
+		}
+	}
+	// A complete follow-up overrides the truncated task.
+	v := Verdicts([]TaskResult{
+		{Status: "completed", Targets: []string{"a", "b"}, Result: json.RawMessage(`{"metadata": {"truncated": true}}`)},
+		{Status: "completed", Targets: []string{"a"}},
+	}, nil)
+	if v["a"].Kind != VerdictCovered || v["b"].Kind != VerdictFailed {
+		t.Errorf("follow-up: a = %+v, b = %+v", v["a"], v["b"])
+	}
+	// Facts about a target stay: unreached is still unreached, a skip stays blocked.
+	v = Verdicts([]TaskResult{{Status: "completed", Targets: []string{"a", "b"},
+		Result: json.RawMessage(`{"metadata": {"truncated": true, "unreached_targets": [{"target": "a"}]}}`)}}, nil)
+	if v["a"].Outcome != "unreachable" || v["b"].Outcome != OutcomeUnfinished {
+		t.Errorf("unreached: a = %+v, b = %+v", v["a"], v["b"])
+	}
+	v = Verdicts([]TaskResult{{Status: "completed", Targets: []string{"a", "b"},
+		Result: json.RawMessage(`{"metadata": {"truncated": true}, "target_outcomes": [{"target": "a", "state": "skipped", "class": "refused"}, {"target": "b", "state": "done"}]}`)}}, nil)
+	if v["a"].Kind != VerdictBlocked || v["b"].Kind != VerdictFailed {
+		t.Errorf("skip: a = %+v, b = %+v", v["a"], v["b"])
+	}
+	// An untruncated result is unchanged.
+	v = Verdicts([]TaskResult{{Status: "completed", Targets: []string{"a"}, Result: json.RawMessage(`{"metadata": {"truncated": false}}`)}}, nil)
+	if v["a"].Kind != VerdictCovered {
+		t.Errorf("complete = %+v", v["a"])
 	}
 }

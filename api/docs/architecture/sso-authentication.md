@@ -159,6 +159,14 @@ an identity provider, SSO enforcement and verified domains apply directly.
 Code: `internal/app/auth/sso_change.go`, `internal/infra/postgres/sso_change_repository.go`,
 `internal/infra/http/handler/sso_change_handler.go`.
 
+## Changing an identity provider's issuer
+
+The client secret is sent to the issuer's token endpoint at every sign-in, so
+an update that changes `issuer_url` (or the directory or organization in
+`tenant_identifier`) is refused unless it carries a new client secret. The
+check runs when the change is submitted and again when an approved change is
+applied.
+
 ## Configuration resolution (tenant → env fallback)
 
 `SSOService.resolveProvider(tenantID, provider)` returns the **effective**
@@ -215,8 +223,12 @@ Every tenant OIDC provider (Entra ID, Okta, Google Workspace) must return an
 completing login (`SSOService.verifyIDToken` → `oidc.Client.VerifyIDToken`):
 
 - **Signature** — verified against the provider's JWKS (`Provider.JWKSURL`)
-  by the shared core (see "One verifier, separate trust" below): RS256/384/512,
-  PS256 or ES256 with the key type matching, never HMAC or `none`.
+  by the shared core (see "One verifier, separate trust" below). Only
+  **RS256, PS256 or ES256** are accepted (`oidc.IdentityTokenAlgorithms`), with
+  the key type matching, never HMAC (a leaked client secret could mint tokens)
+  or `none`. The same list applies to OIDC back-channel logout tokens and to the
+  platform's Microsoft and Google sign-in. CI workload tokens keep the shared
+  list, which also has RS384/RS512 (`TokenPolicy.Algorithms` can only narrow it).
 - **Audience** — must contain our `client_id`; `azp`, when present (required
   with several audiences), must be our `client_id`.
 - **Expiry** — `exp`, `iat` and `sub` required; `exp`/`nbf`/`iat` enforced with
@@ -248,6 +260,15 @@ The `openid` scope is therefore required:
 
 For Okta and Google the email still comes from the userinfo endpoint (with its
 `email_verified` claim); for Entra it comes from the verified `id_token`.
+
+**Platform social sign-in.** "Sign in with Microsoft" and "Sign in with Google"
+also require a verified `id_token` (code flow, delivered server to server, so
+there is no nonce). For Google the account's subject and verified email come
+from the `id_token`, checked against Google's JWKS, our client id and Google's
+issuer. The userinfo API only supplies the display name and picture, and it must
+describe the same `sub`. A Google login without an `id_token` (the `openid` scope
+was removed from `OAUTH_GOOGLE_SCOPES`) is refused. GitHub has no `id_token`;
+its identity comes from its API as before.
 
 ### Google Workspace: the `hd` claim
 
@@ -439,6 +460,25 @@ the exact `GetProvidersForTenant` resolution the login page uses). This stops an
 admin enforcing SSO with no way for anyone to sign in. If the checker is not
 wired the guard is skipped (logged) — the owner break-glass below is the real
 lock-out guarantee.
+
+**Verified-domain precondition** (research/232 D11): turning enforcement on
+(off → on, today from the platform console,
+`PUT /api/v1/admin/tenants/{tenantId}/sso/enforcement`) also needs at least one
+domain the organization verified for SSO by DNS TXT
+(`domainverify.Service.HasVerifiedSSODomain`). Otherwise the change is refused with 400:
+"verify at least one of the organization's domains for SSO first". This check
+fails closed: it refuses when it is not wired or the lookup fails. It does not
+run when enforcement is already on, so re-saving and unrelated saves keep
+working after a domain lapses. Turning enforcement off is never blocked.
+
+**A lapsed domain does not lift enforcement** (threat T24). The
+`domain-reverify` sweep downgrades a domain whose TXT record is gone to
+`failed`, so it stops admitting new people through SSO (JIT, SCIM). Enforcement
+**stays on**, because switching it off would reopen password sign-in to whoever
+removed the DNS record. On the verified-to-failed transition the organization's
+owners and administrators get an in-app alert (system alert, High) that names
+the domain and says enforcement stays. It is sent once, and the owners decide
+what to do (`TenantService.SSODomainVerificationLost`).
 
 ### How a session's login method is recorded
 

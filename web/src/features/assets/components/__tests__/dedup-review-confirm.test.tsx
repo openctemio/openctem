@@ -8,6 +8,10 @@ import { DedupReviewPage } from '../dedup-review-page'
 vi.mock('@/components/layout', () => ({
   Main: ({ children }: { children: React.ReactNode }) => <main>{children}</main>,
 }))
+vi.mock('../assets-section-tabs', () => ({
+  AssetsSectionTabs: () => null,
+}))
+vi.mock('../attention/attention-queue-header', () => ({ AttentionQueueHeader: () => null }))
 vi.mock('@/lib/permissions', async (orig) => ({
   ...(await orig<typeof import('@/lib/permissions')>()),
   Can: ({ children }: { children: React.ReactNode }) => <>{children}</>,
@@ -57,7 +61,11 @@ describe('Duplicate review', () => {
     const dialog = await screen.findByRole('alertdialog')
     expect(dialog).toHaveTextContent('Merge 2 assets into web-01?')
     expect(dialog).toHaveTextContent('WEB-01, web-01.local')
-    await userEvent.click(within(dialog).getByRole('button', { name: 'Merge' }))
+    const confirm = within(dialog).getByRole('button', { name: 'Merge 2 assets' })
+    // The count of assets that go away is typed before the merge runs.
+    expect(confirm).toBeDisabled()
+    await userEvent.type(within(dialog).getByRole('textbox'), '2')
+    await userEvent.click(confirm)
     await waitFor(() => expect(approveDedupReview).toHaveBeenCalledWith('r1'))
   })
 

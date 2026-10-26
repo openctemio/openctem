@@ -38,29 +38,24 @@ const ErrCodeRunNotAuthorized = "AUTOMATION_RUN_NOT_AUTHORIZED"
 // this config, and that the run's principal needs when the node runs. It
 // mirrors the direct API route for the same change: update_status needs
 // FindingsWrite like PATCH /findings/{id}/status, trigger_scan needs
-// ScansWrite, and so on. Outbound HTTP needs IntegrationsManage (it sends
-// data to an address of the editor's choosing, like configuring an
-// integration does); a notification needs IntegrationsRead. The bool is false
+// ScansWrite, and so on. A notification needs IntegrationsRead. The bool is false
 // for trigger and condition nodes, which need nothing beyond the workflow
 // permission.
 func NodePermission(c automationdom.NodeConfig) (permission.Permission, bool) {
 	switch c.ActionType {
 	case "":
-	case automationdom.ActionTypeAssignUser, automationdom.ActionTypeAssignTeam,
-		automationdom.ActionTypeUpdatePriority, automationdom.ActionTypeUpdateStatus,
+	case automationdom.ActionTypeAssignUser, automationdom.ActionTypeUpdateStatus,
 		automationdom.ActionTypeAddTags, automationdom.ActionTypeRemoveTags,
 		automationdom.ActionTypeCreateTicket, automationdom.ActionTypeUpdateTicket,
-		automationdom.ActionTypeTriggerAITriage:
+		automationdom.ActionTypeTriggerAITriage,
+		automationdom.ActionTypeRequestFalsePositive, automationdom.ActionTypeRequestRiskAcceptance:
 		return permission.FindingsWrite, true
 	case automationdom.ActionTypeTriggerScan:
 		return permission.ScansWrite, true
-	case automationdom.ActionTypeTriggerPipeline:
-		return permission.ScanWorkflowsWrite, true
-	case automationdom.ActionTypeHTTPRequest:
-		return permission.IntegrationsManage, true
 	default:
-		// An action type with no mapping (run_script, which never runs) is
-		// refused for everyone but administrators rather than allowed.
+		// An action type with no mapping (a removed type a stored node may
+		// still name) is refused for everyone but administrators rather
+		// than allowed.
 		return permission.IntegrationsManage, true
 	}
 	if c.NotificationType != "" {

@@ -24,6 +24,7 @@ func TestLimitKeysAreListed(t *testing.T) {
 		"seats", "assets", "sensors", "api_keys", "ci_trusts", "invites_per_day",
 		"platform_scans_per_day", "platform_scans_concurrent", "findings", "lifecycle_sub_statuses", "lifecycle_schemes",
 		"storage_mb", "orgs_per_user", "dashboard_refresh_floor_minutes",
+		"content_sources", "content_storage_mb", "content_sync_floor_minutes", "content_snapshot_max_mb",
 	}
 	got := make([]string, 0, len(limits.Keys))
 	for _, k := range limits.Keys {
@@ -32,7 +33,7 @@ func TestLimitKeysAreListed(t *testing.T) {
 	if strings.Join(got, ",") != strings.Join(want, ",") {
 		t.Fatalf("limit keys changed:\n got %v\nwant %v\nupdate this list and docs/architecture/limits.md", got, want)
 	}
-	wantNamed := []string{}
+	wantNamed := []string{"content_sources.private_git", "content_sources.review_policy", "content_sources.webhook", "ldap", "scim", "sso.connections", "sso.enforcement", "sso.group_links"}
 	if strings.Join(limits.NamedFeatures, ",") != strings.Join(wantNamed, ",") {
 		t.Fatalf("named features changed: %v; update this list and docs/architecture/limits.md", limits.NamedFeatures)
 	}

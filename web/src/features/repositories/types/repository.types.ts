@@ -32,7 +32,6 @@ export {
   // Labels and colors
   SCM_PROVIDER_LABELS,
   REPO_VISIBILITY_LABELS,
-  REPO_VISIBILITY_COLORS,
   ASSET_SCOPE_LABELS,
   EXPOSURE_LEVEL_LABELS,
   CRITICALITY_LABELS,
@@ -56,15 +55,6 @@ export const SCM_CONNECTION_STATUS_LABELS: Record<SCMConnectionStatus, string> =
   connected: 'Connected',
   disconnected: 'Disconnected',
   error: 'Error',
-}
-
-export const SCM_CONNECTION_STATUS_COLORS: Record<
-  SCMConnectionStatus,
-  { bg: string; text: string }
-> = {
-  connected: { bg: 'bg-green-500/15', text: 'text-green-600' },
-  disconnected: { bg: 'bg-gray-500/15', text: 'text-gray-600' },
-  error: { bg: 'bg-red-500/15', text: 'text-red-600' },
 }
 
 /**
@@ -115,14 +105,6 @@ export const SYNC_STATUS_LABELS: Record<SyncStatus, string> = {
   disabled: 'Sync Disabled',
 }
 
-export const SYNC_STATUS_COLORS: Record<SyncStatus, { bg: string; text: string }> = {
-  synced: { bg: 'bg-green-500/15', text: 'text-green-600' },
-  pending: { bg: 'bg-yellow-500/15', text: 'text-yellow-600' },
-  syncing: { bg: 'bg-blue-500/15', text: 'text-blue-600' },
-  error: { bg: 'bg-red-500/15', text: 'text-red-600' },
-  disabled: { bg: 'bg-gray-500/15', text: 'text-gray-600' },
-}
-
 /**
  * Compliance status
  */
@@ -168,14 +150,6 @@ export const SCANNER_TYPE_LABELS: Record<ScannerType, string> = {
 
 export type Severity = SeverityLevel
 export { SEVERITY_LABELS }
-
-export const SEVERITY_COLORS: Record<Severity, { bg: string; text: string; border: string }> = {
-  critical: { bg: 'bg-red-500/15', text: 'text-red-600', border: 'border-red-500/30' },
-  high: { bg: 'bg-orange-500/15', text: 'text-orange-600', border: 'border-orange-500/30' },
-  medium: { bg: 'bg-yellow-500/15', text: 'text-yellow-600', border: 'border-yellow-500/30' },
-  low: { bg: 'bg-blue-500/15', text: 'text-blue-600', border: 'border-blue-500/30' },
-  info: { bg: 'bg-gray-500/15', text: 'text-gray-600', border: 'border-gray-500/30' },
-}
 
 // ============================================
 // Findings Summary Types
@@ -304,18 +278,7 @@ export const BRANCH_STATUS_LABELS: Record<BranchStatus, string> = {
   failed: 'Failed',
   warning: 'Warning',
   scanning: 'Scanning',
-  not_scanned: 'Not Scanned',
-}
-
-export const BRANCH_STATUS_COLORS: Record<
-  BranchStatus,
-  { bg: string; text: string; border: string }
-> = {
-  passed: { bg: 'bg-green-500/15', text: 'text-green-600', border: 'border-green-500/30' },
-  failed: { bg: 'bg-red-500/15', text: 'text-red-600', border: 'border-red-500/30' },
-  warning: { bg: 'bg-yellow-500/15', text: 'text-yellow-600', border: 'border-yellow-500/30' },
-  scanning: { bg: 'bg-blue-500/15', text: 'text-blue-600', border: 'border-blue-500/30' },
-  not_scanned: { bg: 'bg-gray-500/15', text: 'text-gray-600', border: 'border-gray-500/30' },
+  not_scanned: 'Not scanned',
 }
 
 export interface Branch {
@@ -492,14 +455,6 @@ export const SLA_STATUS_LABELS: Record<SLAStatus, string> = {
   overdue: 'Overdue',
   exceeded: 'Exceeded',
   not_applicable: 'N/A',
-}
-
-export const SLA_STATUS_COLORS: Record<SLAStatus, { bg: string; text: string }> = {
-  on_track: { bg: 'bg-green-500/15', text: 'text-green-600' },
-  warning: { bg: 'bg-yellow-500/15', text: 'text-yellow-600' },
-  overdue: { bg: 'bg-orange-500/15', text: 'text-orange-600' },
-  exceeded: { bg: 'bg-red-500/15', text: 'text-red-600' },
-  not_applicable: { bg: 'bg-gray-500/15', text: 'text-gray-600' },
 }
 
 export interface SLAPolicy {

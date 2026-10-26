@@ -6,6 +6,7 @@ import { toast } from 'sonner'
 
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
+import { ConfirmDialog } from '@/components/confirm-dialog'
 import {
   Card,
   CardContent,
@@ -72,6 +73,7 @@ export function McpPolicyCard({ policy, canEdit }: McpPolicyCardProps) {
   const { scopeTitle } = useMcpLabels()
   const [draft, setDraft] = useState<PolicyDraft>(() => draftOf(policy))
   const [saving, setSaving] = useState(false)
+  const [confirming, setConfirming] = useState(false)
 
   useEffect(() => {
     setDraft(draftOf(policy))
@@ -89,7 +91,48 @@ export function McpPolicyCard({ policy, canEdit }: McpPolicyCardProps) {
     set({ scopes: Array.from(next).sort() })
   }
 
+  // What this save lets AI assistants do that they could not before.
+  const was = draftOf(policy)
+  const wasScopes = new Set(was.scopes)
+  const widened: string[] = []
+  if (!was.enabled && draft.enabled)
+    widened.push(
+      t('confirm.mcpPolicy.enable', 'AI assistants can connect to this organization again.')
+    )
+  const newWrites = writeScopes.filter((s) => selected.has(s.scope) && !wasScopes.has(s.scope))
+  if (newWrites.length > 0)
+    widened.push(
+      t('confirm.mcpPolicy.write', 'Assistants can write: {scopes}.', {
+        scopes: newWrites.map((s) => scopeTitle(s.scope)).join(', '),
+      })
+    )
+  if (!was.api_keys_allowed && draft.api_keys_allowed)
+    widened.push(
+      t('confirm.mcpPolicy.keys', 'API keys can use the MCP server, with no person in the loop.')
+    )
+  if (was.require_dpop && !draft.require_dpop)
+    widened.push(
+      t(
+        'confirm.mcpPolicy.dpop',
+        'Connections no longer need proof of possession, so a stolen token works anywhere.'
+      )
+    )
+  if (draft.refresh_days > was.refresh_days)
+    widened.push(
+      t('confirm.mcpPolicy.refresh', 'Connections last {days} days instead of {was}.', {
+        days: draft.refresh_days,
+        was: was.refresh_days,
+      })
+    )
+  if (CAMPAIGN_TLPS.indexOf(draft.max_tlp) > CAMPAIGN_TLPS.indexOf(was.max_tlp))
+    widened.push(
+      t('confirm.mcpPolicy.tlp', 'Assistants can read content up to {tlp}.', {
+        tlp: tlpLabel(draft.max_tlp),
+      })
+    )
+
   const save = async () => {
+    setConfirming(false)
     setSaving(true)
     try {
       // Exactly every read scope is stored as the empty list, so read scopes
@@ -310,12 +353,38 @@ export function McpPolicyCard({ policy, canEdit }: McpPolicyCardProps) {
       </CardContent>
       {canEdit && (
         <CardFooter className="justify-end">
-          <Button onClick={() => void save()} disabled={saving || readCount === 0}>
+          <Button
+            onClick={() => (widened.length > 0 ? setConfirming(true) : void save())}
+            disabled={saving || readCount === 0}
+          >
             {saving && <Loader2 className="mr-2 h-4 w-4 animate-spin" aria-hidden />}
             {t('mcp.policy.save', 'Save policy')}
           </Button>
         </CardFooter>
       )}
+      <ConfirmDialog
+        open={confirming}
+        onOpenChange={setConfirming}
+        title={t('confirm.mcpPolicy.title', 'Give AI assistants more access?')}
+        desc={
+          <div className="space-y-2">
+            <ul className="list-disc space-y-1 ps-5">
+              {widened.map((line) => (
+                <li key={line}>{line}</li>
+              ))}
+            </ul>
+            <p>
+              {t(
+                'confirm.mcpPolicy.note',
+                "It applies to existing connections at once. You will be asked to verify it's you."
+              )}
+            </p>
+          </div>
+        }
+        confirmText={t('confirm.mcpPolicy.confirm', 'Save wider policy')}
+        destructive
+        handleConfirm={save}
+      />
     </Card>
   )
 }

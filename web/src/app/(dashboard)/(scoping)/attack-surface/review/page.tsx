@@ -1,7 +1,7 @@
 'use client'
 
 /**
- * Attack surface › Suggestions (research/117): the scope decisions that still
+ * Attack surface › Review (research/117, research/274): the scope decisions that still
  * need a person, one card each (addresses behind in-scope names, names found
  * outside every entry, confirmed assets no entry covers). Every row of the
  * attribution queue stays one click away ("Show all items") for audits and
@@ -11,7 +11,7 @@
 import { List } from 'lucide-react'
 import { Main } from '@/components/layout'
 import { Button } from '@/components/ui/button'
-import { PageHeader } from '@/features/shared'
+import { PageHeader, PageStack } from '@/features/shared'
 import {
   AttackSurfaceSectionTabs,
   EASMDecidePanel,
@@ -23,19 +23,27 @@ import { useUrlFilter } from '@/hooks/use-url-param'
 export default function AttackSurfaceSuggestionsPage() {
   const { t } = useTranslation()
   const [all, setAll] = useUrlFilter('all', '0')
-  const [tab] = useUrlFilter('tab', '')
-  const showAll = all === '1' || tab !== ''
+  const [tab, setTab] = useUrlFilter('tab', '')
+  const [reason, setReason] = useUrlFilter('reason', '')
+  // A deep link (?tab=, ?reason=) opens the list it filters; Hide closes it by
+  // clearing all three, otherwise it would stay open.
+  const showAll = all === '1' || tab !== '' || reason !== ''
+  const hideAll = () => {
+    setAll('0')
+    setTab('')
+    setReason('')
+  }
   return (
     <Main>
-      <PageHeader
-        title={t('attackSurface.title', 'Attack surface')}
-        description={t(
-          'attackSurface.suggestions.description',
-          'Decisions that still need a person. Confirming a name or address as yours adds its exact scope entry; addresses are never added because a name points at them.'
-        )}
-      />
-      <AttackSurfaceSectionTabs />
-      <div className="mt-5 space-y-5">
+      <PageStack>
+        <PageHeader
+          title={t('attackSurface.title', 'Attack surface')}
+          description={t(
+            'attackSurface.suggestions.description',
+            'Names and addresses that need a person to decide whether they are yours. Nothing joins your scope until someone confirms it.'
+          )}
+        />
+        <AttackSurfaceSectionTabs />
         <EASMDecidePanel />
         {showAll ? (
           <section
@@ -46,7 +54,7 @@ export default function AttackSurfaceSuggestionsPage() {
               <h2 className="text-base font-semibold">
                 {t('attackSurface.suggestions.allItems', 'All items')}
               </h2>
-              <Button size="sm" variant="ghost" onClick={() => setAll('0')}>
+              <Button size="sm" variant="ghost" onClick={hideAll}>
                 {t('attackSurface.suggestions.hideAll', 'Hide items')}
               </Button>
             </div>
@@ -58,7 +66,7 @@ export default function AttackSurfaceSuggestionsPage() {
             {t('attackSurface.suggestions.showAll', 'Show all items')}
           </Button>
         )}
-      </div>
+      </PageStack>
     </Main>
   )
 }

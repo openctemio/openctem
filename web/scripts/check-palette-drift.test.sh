@@ -34,6 +34,43 @@ must_pass 'spinner' '<span className="animate-spin border-2 border-t-primary" />
 must_pass 'annotated exception' '<div className="border-l-4 border-l-primary" /> {/* stripe-ok: wizard step rail */}'
 must_pass 'plain card' '<div className="rounded border bg-card p-4" />'
 
+# priority / severity colours (the file is src/a.tsx, outside the shared modules)
+must_fail 'priority colour by hand' "const P1 = 'P1' // bg-orange-500"
+must_fail 'priority hex' "const pc = { P0: '#ff0000' }"
+must_fail 'severity map by palette' "critical: 'bg-red-500/10 text-red-500',"
+must_fail 'severity hex' "high: '#f97316',"
+must_fail 'sev token class by hand' '<span className="bg-sev-high/10" />'
+must_fail 'prio token var by hand' "fill: 'var(--prio-0)'"
+must_fail 'status token class by hand' '<span className="bg-st-progress-bg" />'
+must_fail 'status token var by hand' "fill: 'var(--st-open-fg)'"
+must_pass 'shared lozenge use' '<StatusLozenge tone="open" label="x" />'
+must_pass 'shared badge use' '<PriorityBadge priorityClass="P1" />'
+must_pass 'annotated colour exception' "critical: '#ff0000', // label-colour-ok: exported PDF palette"
+
+# one label system: no hand-styled labels (colour on Badge, tiny text, uppercase / mono, spin, new maps)
+must_fail 'semantic colour on Badge' '<Badge variant="outline" className="bg-success/10 text-success">x</Badge>'
+must_fail 'border colour on Badge' '<Badge className="border-warning">x</Badge>'
+must_fail 'tiny text on a pill' '<span className="rounded-full px-2 text-[10px]">x</span>'
+must_fail 'tiny text on Badge' '<Badge className="text-[11px]">x</Badge>'
+must_fail 'uppercase Badge' '<Badge className="uppercase">{row.source}</Badge>'
+must_fail 'mono Badge' '<Badge className="font-mono">{row.name}</Badge>'
+must_fail 'spinning status' '<Loader2 className="size-3 animate-spin" /> {statusLabel}'
+must_fail 'spinning health badge' '<RunBadge className="animate-spin" />'
+must_fail 'new colour map' 'const FOO_STATUS_COLORS = { a: "x" }'
+must_fail 'new badge map' 'export const FOO_BADGE_CLASS = {}'
+must_fail 'state text on its own tint' '<span className="rounded bg-success/10 text-success">On track</span>'
+must_fail 'warning soft pill in a map' "warning: 'border-warning/40 bg-warning/10 text-warning',"
+must_fail 'arbitrary hex class' '<div className="bg-[#7c3aed]" />'
+must_fail 'inline hex style' '<span style={{ color: "#ef4444" }} />'
+must_fail 'svg hex fill' '<rect fill="#3b82f6" />'
+must_pass 'token fill' '<rect fill="var(--viz-cat-1)" />'
+must_pass 'state icon colour alone' '<CheckCircle2 className="text-success" />'
+must_pass 'Badge without colour' '<Badge variant="outline">{count}</Badge>'
+must_pass 'plain 12px text on a pill' '<span className="rounded-full px-2 text-xs">x</span>'
+must_pass 'spinner on a button' '<Loader2 className="size-4 animate-spin" />'
+must_pass 'label primitive' '<HealthStatus state="ok" label="Online" />'
+must_pass 'annotated label exception' '<Badge className="font-mono">{id}</Badge> {/* label-ok: a commit id */}'
+
 find "$t" -delete
 [ $fail = 0 ] && echo ok
 exit $fail

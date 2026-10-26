@@ -3,7 +3,7 @@
 import { Main } from '@/components/layout'
 import { useTranslation } from '@/context/i18n-provider'
 import { DomainSignupPolicies } from '@/features/organization/components/domain-signup-policies'
-import { PageHeader } from '@/features/shared'
+import { PageHeader, PageStack } from '@/features/shared'
 import { usePermissions } from '@/lib/permissions'
 
 /**
@@ -15,10 +15,10 @@ export default function DomainsSettingsPage() {
   const { isOwner, isAtLeast, isLoading } = usePermissions()
   return (
     <Main>
-      <PageHeader title={t('settings.domains.title')} description={t('settings.domains.desc')} />
-      <div className="mt-5">
+      <PageStack>
+        <PageHeader title={t('settings.domains.title')} description={t('settings.domains.desc')} />
         {!isLoading && <DomainSignupPolicies canRead={isAtLeast('admin')} isOwner={isOwner()} />}
-      </div>
+      </PageStack>
     </Main>
   )
 }

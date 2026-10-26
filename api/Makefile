@@ -1,4 +1,4 @@
-.PHONY: all build run test test-db lint clean docker-build docker-dev docker-prod docker-down migrate generate seed help seed-required docker-seed docker-seed-required db-setup db-setup-dev swagger contract swagger-check swagger-install env-docs
+.PHONY: all build run test test-db budgets-update lint clean docker-build docker-dev docker-prod docker-down migrate generate seed help seed-required docker-seed docker-seed-required db-setup db-setup-dev swagger contract swagger-check swagger-install env-docs authz-matrix migration-new migration-renumber
 
 # Variables
 APP_NAME := openctem
@@ -73,6 +73,12 @@ test:
 test-db:
 	@if [ -z "$(TEST_DATABASE_URL)" ]; then echo "TEST_DATABASE_URL is required, e.g. postgres://postgres@localhost:55432/app_test?sslmode=disable"; exit 1; fi
 	DATABASE_URL="$(TEST_DATABASE_URL)" OPENCTEM_TEST_DB_REQUIRED=1 $(GOTEST) -race -timeout 20m ./...
+
+## budgets-update: Rewrite the SQL statement budget of the ingest test (tests/integration/testdata/ingest_budget.json) from a measured run
+budgets-update:
+	@if [ -z "$(TEST_DATABASE_URL)" ]; then echo "TEST_DATABASE_URL is required, e.g. postgres://postgres@localhost:55432/app_test?sslmode=disable"; exit 1; fi
+	DATABASE_URL="$(TEST_DATABASE_URL)" OPENCTEM_TEST_DB_REQUIRED=1 $(GOTEST) -count=1 -run '^TestIngestQueryBudget$$' ./tests/integration -update-budgets
+	@git diff --stat -- tests/integration/testdata/ingest_budget.json || true
 
 ## test-coverage: Run tests with coverage report
 test-coverage:
@@ -182,6 +188,12 @@ authz-docs:
 	@test -n "$(DIR)" || { echo "usage: make authz-docs DIR=<output dir> [FRONT_MATTER=1]" >&2; exit 2; }
 	@GOWORK=off go run ./cmd/gen-authz-docs -json "" -md "$(DIR)" $(if $(FRONT_MATTER),-front-matter,)
 
+## authz-matrix: Run the authorization regression suite (tests/authzmatrix)
+##               against a scratch stack it starts and removes (Docker needed;
+##               MATRIX_REPORT=<file.json> writes the report)
+authz-matrix:
+	@bash tests/authzmatrix/ci/run.sh
+
 ## swagger-check: Generate the spec, then fail if the annotations, the spec and
 ## the routes disagree. Compares SETS of operations, not bytes — see
 ## tools/lint/openapicontract for why.
@@ -283,6 +295,14 @@ migrate-create:
 	fi
 	@echo "Creating migration $(name)..."
 	migrate create -ext sql -dir migrations -seq $(name)
+
+## migration-new: Create a migration numbered above develop and every open PR (usage: make migration-new name=x)
+migration-new:
+	@bash scripts/migration-number.sh new "$(name)"
+
+## migration-renumber: Move this branch's new migrations above develop and every open PR, staged
+migration-renumber:
+	@bash scripts/migration-number.sh renumber
 
 ## migrate-status: Show migration status
 migrate-status:

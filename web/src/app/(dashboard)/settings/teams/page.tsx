@@ -2,12 +2,13 @@
 
 import type { ReactNode } from 'react'
 import { Main } from '@/components/layout'
-import { PageHeader } from '@/features/shared'
+import { PageHeader, PageStack } from '@/features/shared'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { TeamsSection } from '@/features/access-control/components/teams-section'
 import { AssignmentRulesSection } from '@/features/access-control/components/assignment-rules-section'
 import { useUrlFilter } from '@/hooks/use-url-param'
 import { useHasPermission, Permission } from '@/lib/permissions'
+import { useTranslation } from '@/context/i18n-provider'
 
 type Tab = 'teams' | 'assignment-rules'
 
@@ -18,6 +19,7 @@ type Tab = 'teams' | 'assignment-rules'
  * here (the rules to ?tab=assignment-rules).
  */
 export default function TeamsPage() {
+  const { t } = useTranslation()
   const [tabParam, setTab] = useUrlFilter('tab', 'teams')
   const canSeeRules = useHasPermission(Permission.AssignmentRulesRead)
   const tab: Tab = tabParam === 'assignment-rules' && canSeeRules ? 'assignment-rules' : 'teams'
@@ -25,20 +27,28 @@ export default function TeamsPage() {
   const header = (actions: ReactNode) => (
     <>
       <PageHeader
-        title="Teams"
+        title={t('org.teamsPage.title', 'Teams')}
         description={
           tab === 'teams'
-            ? 'Organize members into teams to control which assets they can see. What members can do comes from their roles.'
-            : 'Rules that assign assets to teams automatically, evaluated in priority order.'
+            ? t(
+                'org.teamsPage.teamsDesc',
+                'Organize members into teams to control which assets they can see. What members can do comes from their roles.'
+              )
+            : t(
+                'org.teamsPage.rulesDesc',
+                'Rules that assign assets to teams automatically, evaluated in priority order.'
+              )
         }
       >
         {actions}
       </PageHeader>
       {canSeeRules && (
-        <Tabs value={tab} onValueChange={setTab} className="mt-4">
+        <Tabs value={tab} onValueChange={setTab}>
           <TabsList>
-            <TabsTrigger value="teams">Teams</TabsTrigger>
-            <TabsTrigger value="assignment-rules">Assignment rules</TabsTrigger>
+            <TabsTrigger value="teams">{t('org.teamsPage.tabTeams', 'Teams')}</TabsTrigger>
+            <TabsTrigger value="assignment-rules">
+              {t('org.teamsPage.tabRules', 'Assignment rules')}
+            </TabsTrigger>
           </TabsList>
         </Tabs>
       )}
@@ -47,11 +57,13 @@ export default function TeamsPage() {
 
   return (
     <Main>
-      {tab === 'teams' ? (
-        <TeamsSection header={header} />
-      ) : (
-        <AssignmentRulesSection header={header} />
-      )}
+      <PageStack>
+        {tab === 'teams' ? (
+          <TeamsSection header={header} />
+        ) : (
+          <AssignmentRulesSection header={header} />
+        )}
+      </PageStack>
     </Main>
   )
 }

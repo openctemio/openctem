@@ -1,9 +1,12 @@
 import * as React from 'react'
 import { cn } from '@/lib/utils'
+import { TONE_CLASS } from '@/components/ui/tone-chip'
 
 /**
  * The one chip every service cell is built from. Theme tokens only, so each
- * tone has its dark-mode value (ui-style-contract §6).
+ * tone has its dark-mode value (ui-style-contract §6). The status tones are
+ * the attention tones of ToneChip (all AA on their tint, research/266):
+ * success is ok, info is info, warning is caution, destructive is danger.
  *
  * - `neutral`: a recorded value (a technology, a label);
  * - `muted`: context (IP, CNAME, "+N") and known negatives ("No TLS");
@@ -20,10 +23,11 @@ const TONES: Record<FactChipTone, string> = {
   neutral: 'border-border bg-card text-foreground',
   muted: 'border-border bg-card text-muted-foreground',
   label: 'border-transparent bg-secondary text-secondary-foreground',
-  success: 'border-transparent bg-success/15 text-success',
-  info: 'border-transparent bg-info/15 text-info',
-  warning: 'border-transparent bg-warning/15 text-warning',
-  destructive: 'border-transparent bg-destructive/15 text-destructive',
+  // The attention tones of ToneChip (research/266): one colour language.
+  success: TONE_CLASS.ok,
+  info: TONE_CLASS.info,
+  warning: TONE_CLASS.caution,
+  destructive: TONE_CLASS.danger,
 }
 
 export const factChipBase =
@@ -35,18 +39,20 @@ export interface FactChipProps extends React.HTMLAttributes<HTMLSpanElement> {
 
 export function FactChip({ tone = 'neutral', className, ...props }: FactChipProps) {
   return (
+    // `data-slot` after the spread: a tooltip trigger wrapping the chip
+    // (asChild) passes its own slot, and the chip must stay a fact chip.
     <span
-      data-slot="fact-chip"
       data-tone={tone}
       className={cn(factChipBase, TONES[tone], className)}
       {...props}
+      data-slot="fact-chip"
     />
   )
 }
 
 /** A monospace run inside a chip, for identifiers (IPs, ports, hosts). */
 export function ChipMono({ children }: { children: React.ReactNode }) {
-  return <span className="min-w-0 truncate font-mono text-[11.5px]">{children}</span>
+  return <span className="min-w-0 truncate font-mono text-xs">{children}</span>
 }
 
 /** Chips laid out in a wrapping row. */

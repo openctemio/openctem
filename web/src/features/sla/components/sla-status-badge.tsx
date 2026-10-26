@@ -1,15 +1,11 @@
 import { Timer } from 'lucide-react'
 import { cn } from '@/lib/utils'
-import {
-  SLA_STATUS_LABELS,
-  SLA_STATUS_COLORS,
-  type SLAStatus,
-} from '@/features/repositories/types/repository.types'
+import { useTranslation } from '@/context/i18n-provider'
+import { slaStateClass } from '@/lib/sla-colors'
+import { SLA_STATUS_LABELS, type SLAStatus } from '@/features/repositories/types/repository.types'
 
 /**
- * SLA status pill. Colours come from the single-source SLA_STATUS_COLORS map
- * (defined in repository.types.ts) so no new hardcoded palette classes are
- * introduced here — see scripts/check-palette-drift.sh.
+ * SLA status pill. Colours come from the one SLA map in lib/sla-colors.ts.
  *
  * Backend status values (vulnerability value_objects.go): on_track | warning |
  * overdue | exceeded | not_applicable.
@@ -21,16 +17,16 @@ export function SlaStatusBadge({
   status?: string | null
   className?: string
 }) {
+  const { t } = useTranslation()
   const key = (status as SLAStatus) || 'not_applicable'
-  const colors = SLA_STATUS_COLORS[key] ?? SLA_STATUS_COLORS.not_applicable
-  const label = SLA_STATUS_LABELS[key] ?? SLA_STATUS_LABELS.not_applicable
+  const fallback = SLA_STATUS_LABELS[key] ?? SLA_STATUS_LABELS.not_applicable
+  const label = t(`findings.sla.${SLA_STATUS_LABELS[key] ? key : 'not_applicable'}`, fallback)
 
   return (
     <span
       className={cn(
-        'inline-flex items-center gap-1 rounded-md border border-transparent px-2 py-0.5 text-xs font-medium',
-        colors.bg,
-        colors.text,
+        'inline-flex items-center gap-1 rounded-md border px-2 py-0.5 text-xs font-medium',
+        slaStateClass(status),
         className
       )}
     >

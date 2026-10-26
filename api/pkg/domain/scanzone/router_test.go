@@ -244,3 +244,79 @@ func TestRouter_ServiceNamesRouteByHost(t *testing.T) {
 		t.Fatalf("ParseTarget = %+v", pt)
 	}
 }
+
+// Every uncovered target carries the kind of its reason, and a name that does
+// not resolve is told as a DNS fact, never in zone wording.
+func TestRouter_UncoveredKinds(t *testing.T) {
+	dc := mustZone(t, "dc", false, "10.1.0.0/16")
+	other := mustZone(t, "lab", false, "10.9.0.0/16")
+	res := fakeResolver{"internal.example.com": {"192.168.5.5"}, "meta.example.com": {"169.254.169.254"}}
+	r := NewRouter([]*Zone{dc, other}, res)
+
+	cases := map[string]string{
+		"go.example.com":       KindUnresolved,
+		"192.168.1.1":          KindOutsideZones,
+		"internal.example.com": KindOutsideZones,
+		"127.0.0.1":            KindDenyList,
+		"meta.example.com":     KindDenyList,
+		"10.0.0.0/8":           KindPartlyCovered,
+	}
+	for target, want := range cases {
+		got := r.Route(context.Background(), target)
+		if got.Zone != nil || got.Unzoned || got.Kind != want {
+			t.Errorf("%s: zone=%v unzoned=%v kind=%q, want uncovered %q", target, got.Zone, got.Unzoned, got.Kind, want)
+		}
+	}
+	unres := r.Route(context.Background(), "go.example.com")
+	if strings.Contains(strings.ToLower(unres.Reason), "zone") || !strings.Contains(unres.Reason, "does not resolve in DNS") {
+		t.Errorf("unresolved reason = %q, want a DNS fact without zone wording", unres.Reason)
+	}
+
+	plan := r.Plan(context.Background(), []string{"go.example.com", "192.168.1.1"})
+	if len(plan.Uncovered) != 2 || plan.Uncovered[0].Kind != KindUnresolved || plan.Uncovered[1].Kind != KindOutsideZones {
+		t.Errorf("plan uncovered = %+v", plan.Uncovered)
+	}
+
+	sel := NewRouter([]*Zone{dc}, res).Plan(context.Background(), []string{"8.8.8.8", "go.example.com"}).RestrictTo(dc)
+	if len(sel.Uncovered) != 2 || sel.Uncovered[0].Kind != KindOutsideSelected || sel.Uncovered[1].Kind != KindUnresolved {
+		t.Errorf("restricted uncovered = %+v", sel.Uncovered)
+	}
+}
+
+// A router for a lookup-only job places a name with no DNS answer as a
+// public target (default zone, else unzoned), still flagged Unresolved;
+// every other routing rule is unchanged. The default router leaves it
+// uncovered.
+func TestRouter_LookupOnlyPlacesUnresolvedNames(t *testing.T) {
+	ctx := context.Background()
+	dmz := mustZone(t, "dmz", false, "198.51.100.0/24")
+	def := mustZone(t, "internet", true)
+	res := fakeResolver{"intra.example.com": {"192.168.5.5"}, "meta.example.com": {"169.254.169.254"}}
+
+	if got := NewRouter([]*Zone{dmz}, res).Route(ctx, "gone.example.com"); got.Kind != KindUnresolved || got.Unzoned || got.Zone != nil {
+		t.Fatalf("default router: %+v, want uncovered unresolved", got)
+	}
+	got := NewRouter([]*Zone{dmz}, res).LookupOnly(true).Route(ctx, "gone.example.com")
+	if !got.Unzoned || got.Zone != nil || !got.Unresolved || got.Reason != "" || got.Kind != "" {
+		t.Fatalf("lookup-only, no default zone: %+v, want unzoned and flagged", got)
+	}
+	if got := NewRouter([]*Zone{dmz, def}, res).LookupOnly(true).Route(ctx, "gone.example.com"); got.Zone != def || !got.Unresolved {
+		t.Fatalf("lookup-only with a default zone: %+v, want the default zone", got)
+	}
+	r := NewRouter([]*Zone{dmz}, res).LookupOnly(true)
+	if got := r.Route(ctx, "intra.example.com"); got.Kind != KindOutsideZones {
+		t.Fatalf("lookup-only private name: %+v, want outside_zones", got)
+	}
+	if got := r.Route(ctx, "meta.example.com"); got.Kind != KindDenyList {
+		t.Fatalf("lookup-only denied name: %+v, want deny_list", got)
+	}
+	if got := r.Route(ctx, "169.254.169.254"); got.Kind != KindDenyList {
+		t.Fatalf("lookup-only denied address: %+v, want deny_list", got)
+	}
+	// Pinned to a zone that is not the default: like any public target,
+	// outside the selected zone.
+	plan := NewRouter([]*Zone{dmz}, res).LookupOnly(true).Plan(ctx, []string{"gone.example.com"}).RestrictTo(dmz)
+	if len(plan.Uncovered) != 1 || plan.Uncovered[0].Kind != KindOutsideSelected {
+		t.Fatalf("selected zone: %+v", plan.Uncovered)
+	}
+}

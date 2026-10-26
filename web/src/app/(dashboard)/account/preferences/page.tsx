@@ -12,21 +12,26 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { Separator } from '@/components/ui/separator'
 import { Skeleton } from '@/components/ui/skeleton'
-import { Palette, Globe, Clock, Calendar, Save, Loader2, RotateCcw } from 'lucide-react'
+import { Palette, Save, Loader2, RotateCcw, Bug } from 'lucide-react'
 import { toast } from 'sonner'
 import { getErrorMessage } from '@/lib/api/error-handler'
 import { useTheme } from 'next-themes'
-import {
-  usePreferences,
-  useUpdatePreferences,
-  getLocalPreferences,
-  mergeLocalPreferences,
-  SUPPORTED_TIMEZONES,
-  DATE_FORMATS,
-} from '@/features/account'
-import type { UpdatePreferencesInput } from '@/features/account'
+import { usePreferences, useUpdatePreferences } from '@/features/account'
+import type { FindingsInformationalPreference, UpdatePreferencesInput } from '@/features/account'
+import { refreshFindingQuickViews } from '@/features/findings/api/use-quick-views'
+import { PageStack } from '@/features/shared'
+
+const THEME_FALLBACK = { light: 'Light', dark: 'Dark', system: 'System' } as const
+
+const INFORMATIONAL_CHOICES: ReadonlyArray<{
+  value: FindingsInformationalPreference
+  fallback: string
+}> = [
+  { value: 'default', fallback: "Organization's default" },
+  { value: 'exclude', fallback: 'Hide informational findings' },
+  { value: 'include', fallback: 'Show informational findings' },
+]
 
 export default function PreferencesPage() {
   const { t } = useTranslation()
@@ -38,27 +43,19 @@ export default function PreferencesPage() {
   const [formData, setFormData] = useState<UpdatePreferencesInput>({
     theme: 'system',
     language: 'en',
-    timezone: 'UTC',
-    date_format: 'DD/MM/YYYY',
-    time_format: '24h',
+    findings_informational: 'default',
   })
   const [hasChanges, setHasChanges] = useState(false)
 
-  // Populate form when preferences load.
-  // The backend only stores `theme` + `language`. The remaining fields
-  // (timezone, date/time format) have no backend column, so they are
-  // persisted in localStorage — otherwise a
-  // Save followed by a reload would silently lose them. This mirrors the
-  // browser-local Display Preferences on the General Settings page.
+  // Populate form when preferences load. A personal time zone and date or
+  // time format come back when one date formatter honours them (research
+  // 273 D9); until then the browser's own zone and locale apply.
   useEffect(() => {
     if (preferences) {
-      const local = getLocalPreferences() || {}
       setFormData({
         theme: preferences.theme || 'system',
         language: preferences.language || 'en',
-        timezone: local.timezone || 'UTC',
-        date_format: local.date_format || 'DD/MM/YYYY',
-        time_format: local.time_format || '24h',
+        findings_informational: preferences.findings_informational || 'default',
       })
       setHasChanges(false)
     }
@@ -85,32 +82,27 @@ export default function PreferencesPage() {
     }
   }
 
-  // Save preferences.
-  // Split the write: theme + language go to the server (the only fields it
-  // persists); the display preferences are browser-local, so
-  // they are written to localStorage. Sending the phantom fields to the API
-  // was a no-op (silently dropped), which is the bug this fixes.
+  // Save preferences (theme, language and the findings default are stored
+  // on the server).
   const handleSave = async () => {
     try {
-      // Merge: the same browser-local object also holds the desktop
-      // notification choice, which /account/notifications owns.
-      mergeLocalPreferences({
-        timezone: formData.timezone,
-        date_format: formData.date_format,
-        time_format: formData.time_format,
-      })
       await updatePreferences({
         theme: formData.theme,
         language: formData.language,
+        findings_informational: formData.findings_informational,
       })
+      // The findings work views follow the new choice.
+      void refreshFindingQuickViews()
       // Re-read the preferences from the server rather than caching the PUT
       // response: an older API returned the whole user object there, which
       // reset this form to its defaults (23a B4).
       await mutate()
       setHasChanges(false)
-      toast.success('Preferences saved successfully')
+      toast.success(t('account.preferences.saved', 'Preferences saved'))
     } catch (error) {
-      toast.error(getErrorMessage(error, 'Failed to save preferences'))
+      toast.error(
+        getErrorMessage(error, t('account.preferences.saveFailed', 'Could not save preferences'))
+      )
     }
   }
 
@@ -119,35 +111,33 @@ export default function PreferencesPage() {
     const defaults: UpdatePreferencesInput = {
       theme: 'system',
       language: 'en',
-      timezone: 'UTC',
-      date_format: 'DD/MM/YYYY',
-      time_format: '24h',
+      findings_informational: 'default',
     }
     setFormData(defaults)
     setTheme('system')
     setHasChanges(true)
-    toast.info('Preferences reset to defaults (unsaved)')
+    toast.info(t('account.preferences.resetDone', 'Preferences reset to defaults (not saved yet)'))
   }
 
   // Loading state
   if (isLoading) {
     return (
-      <div className="grid gap-6">
+      <PageStack>
         <Skeleton className="h-48 w-full" />
         <Skeleton className="h-48 w-full" />
         <Skeleton className="h-64 w-full" />
-      </div>
+      </PageStack>
     )
   }
 
   return (
-    <div className="grid gap-6">
+    <PageStack>
       {/* Appearance */}
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <Palette className="h-5 w-5" />
-            Appearance
+            {t('account.preferences.appearance', 'Appearance')}
           </CardTitle>
           <CardDescription>
             {t(
@@ -158,108 +148,77 @@ export default function PreferencesPage() {
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="space-y-2">
-            <Label>Theme</Label>
-            <div className="flex gap-2">
-              {(['light', 'dark', 'system'] as const).map((t) => (
+            <Label id="theme-label">{t('account.preferences.theme', 'Theme')}</Label>
+            <div className="flex gap-2" role="group" aria-labelledby="theme-label">
+              {(['light', 'dark', 'system'] as const).map((mode) => (
                 <Button
-                  key={t}
-                  variant={formData.theme === t ? 'default' : 'outline'}
+                  key={mode}
+                  variant={formData.theme === mode ? 'default' : 'outline'}
                   size="sm"
-                  onClick={() => handleChange('theme', t)}
+                  aria-pressed={formData.theme === mode}
+                  onClick={() => handleChange('theme', mode)}
                   className="flex-1"
                 >
-                  {t.charAt(0).toUpperCase() + t.slice(1)}
+                  {t(`account.preferences.theme.${mode}`, THEME_FALLBACK[mode])}
                 </Button>
               ))}
             </div>
             <p className="text-xs text-muted-foreground">
               {formData.theme === 'system'
-                ? 'Automatically switch based on your system settings'
-                : `Always use ${formData.theme} mode`}
+                ? t(
+                    'account.preferences.theme.systemHint',
+                    'Automatically switch based on your system settings'
+                  )
+                : formData.theme === 'dark'
+                  ? t('account.preferences.theme.darkHint', 'Always use dark mode')
+                  : t('account.preferences.theme.lightHint', 'Always use light mode')}
             </p>
           </div>
         </CardContent>
       </Card>
 
-      {/* Localization */}
+      {/* Findings */}
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
-            <Globe className="h-5 w-5" />
-            Localization
+            <Bug className="h-5 w-5" />
+            {t('account.preferences.findings', 'Findings')}
           </CardTitle>
-          <CardDescription>Timezone and date format preferences</CardDescription>
+          <CardDescription>
+            {t(
+              'account.preferences.findingsDescription',
+              'How your findings work views (Active, My queue, SLA breached) open'
+            )}
+          </CardDescription>
         </CardHeader>
-        <CardContent className="space-y-6">
-          <div className="grid gap-4 sm:grid-cols-2">
-            {/* Language is chosen from the user menu (the one picker that drives the
-                interface); a second picker here changed nothing visible. */}
-            {/* Timezone */}
-            <div className="space-y-2">
-              <Label htmlFor="timezone" className="flex items-center gap-2">
-                <Clock className="h-4 w-4" />
-                Timezone
-              </Label>
-              <Select
-                value={formData.timezone}
-                onValueChange={(value) => handleChange('timezone', value)}
-              >
-                <SelectTrigger id="timezone">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {SUPPORTED_TIMEZONES.map((tz) => (
-                    <SelectItem key={tz.value} value={tz.value}>
-                      {tz.label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-          </div>
-
-          <Separator />
-
-          <div className="grid gap-4 sm:grid-cols-2">
-            {/* Date Format */}
-            <div className="space-y-2">
-              <Label htmlFor="date-format" className="flex items-center gap-2">
-                <Calendar className="h-4 w-4" />
-                Date Format
-              </Label>
-              <Select
-                value={formData.date_format}
-                onValueChange={(value) => handleChange('date_format', value)}
-              >
-                <SelectTrigger id="date-format">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {DATE_FORMATS.map((fmt) => (
-                    <SelectItem key={fmt.value} value={fmt.value}>
-                      {fmt.label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-
-            {/* Time Format */}
-            <div className="space-y-2">
-              <Label htmlFor="time-format">Time Format</Label>
-              <Select
-                value={formData.time_format}
-                onValueChange={(value) => handleChange('time_format', value as '12h' | '24h')}
-              >
-                <SelectTrigger id="time-format">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="24h">24-hour (14:30)</SelectItem>
-                  <SelectItem value="12h">12-hour (2:30 PM)</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
+        <CardContent>
+          <div className="space-y-2 sm:max-w-sm">
+            <Label htmlFor="findings-informational">
+              {t('account.preferences.findingsInformational', 'Informational findings')}
+            </Label>
+            <Select
+              value={formData.findings_informational}
+              onValueChange={(value) =>
+                handleChange('findings_informational', value as FindingsInformationalPreference)
+              }
+            >
+              <SelectTrigger id="findings-informational">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {INFORMATIONAL_CHOICES.map((c) => (
+                  <SelectItem key={c.value} value={c.value}>
+                    {t(`account.preferences.findingsInformational.${c.value}`, c.fallback)}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <p className="text-xs text-muted-foreground">
+              {t(
+                'account.preferences.findingsInformationalHint',
+                'Needs triage never lists them. All findings and an Informational severity filter always do.'
+              )}
+            </p>
           </div>
         </CardContent>
       </Card>
@@ -268,7 +227,7 @@ export default function PreferencesPage() {
       <div className="flex justify-between">
         <Button variant="outline" onClick={handleReset}>
           <RotateCcw className="me-2 h-4 w-4" />
-          Reset to Defaults
+          {t('account.preferences.reset', 'Reset to defaults')}
         </Button>
         <Button onClick={handleSave} disabled={!hasChanges || isUpdating}>
           {isUpdating ? (
@@ -276,9 +235,11 @@ export default function PreferencesPage() {
           ) : (
             <Save className="me-2 h-4 w-4" />
           )}
-          {isUpdating ? 'Saving...' : 'Save Preferences'}
+          {isUpdating
+            ? t('account.saving', 'Saving...')
+            : t('account.preferences.save', 'Save preferences')}
         </Button>
       </div>
-    </div>
+    </PageStack>
   )
 }

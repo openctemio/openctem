@@ -47,6 +47,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          persist-credentials: false
           fetch-depth: 0
       - id: f
         working-directory: .
@@ -71,6 +72,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          persist-credentials: false
           fetch-depth: 0
 
       - name: Generate the contract files
@@ -238,6 +240,7 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          persist-credentials: false
           fetch-depth: 0 # check-palette-drift needs the merge base
 
       - name: Setup Node.js
@@ -276,10 +279,40 @@ jobs:
       - name: Check palette drift
         if: github.event_name == 'pull_request'
         run: |
-          git fetch --no-tags origin "${{ github.base_ref }}"
-          base="$(bash ../.github/scripts/effective-base.sh web "origin/${{ github.base_ref }}")"
+          git fetch --no-tags origin "${GITHUB_BASE_REF}"
+          base="$(bash ../.github/scripts/effective-base.sh web "origin/${GITHUB_BASE_REF}")"
           bash scripts/check-palette-drift.sh "$base"
           sh scripts/check-palette-drift.test.sh
+
+      # Page anatomy and type scale (research/244): added lines only, like the
+      # palette gate. No new StatsCard or hand-built metric tiles, no arbitrary
+      # text sizes, one text size per line, no margins on route tab strips.
+      - name: Check page anatomy
+        if: github.event_name == 'pull_request'
+        run: |
+          base="$(bash ../.github/scripts/effective-base.sh web "origin/${GITHUB_BASE_REF}")"
+          bash scripts/check-page-anatomy.sh "$base"
+          sh scripts/check-page-anatomy.test.sh
+
+      # No separator glyphs in UI text (research/248): added lines only. Spacing
+      # (MetaLine) or formatList separates facts, not a middle dot, bullet or
+      # spaced em dash. Escape with `separator-ok: <reason>`.
+      - name: Check separators
+        if: github.event_name == 'pull_request'
+        run: |
+          base="$(bash ../.github/scripts/effective-base.sh web "origin/${GITHUB_BASE_REF}")"
+          bash scripts/check-separators.sh "$base"
+          sh scripts/check-separators.test.sh
+
+      # Copy rules for added or changed English strings (research/237 R12,
+      # R18, R19): no marketing words, "successfully", exclamation marks, em
+      # dash asides or Title Case labels. `node scripts/check-copy.mjs --all`
+      # lists the existing strings to clean up.
+      - name: Check copy
+        if: github.event_name == 'pull_request'
+        run: |
+          base="$(bash ../.github/scripts/effective-base.sh web "origin/${GITHUB_BASE_REF}")"
+          node scripts/check-copy.mjs "$base"
 
   # The Vitest suite, in three parallel shards (vitest --shard). Same setup as
   # `Web checks`; the endpoint check reads api/api/openapi/routes.txt.
@@ -295,6 +328,8 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
       - name: Setup Node.js
         uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
@@ -318,7 +353,11 @@ jobs:
           cp "$RUNNER_TEMP/contract/api-route-permissions.json" "$RUNNER_TEMP/contract/authz-matrix.json" web/src/config/
           (cd web && npm run generate:api-types)
 
+      # A Vitest worker (jsdom + v8 coverage) ran out of its default heap and
+      # failed a shard; 4 GB per worker fits the hosted runner's 16 GB.
       - name: Run tests (shard ${{ matrix.shard }}/3)
+        env:
+          NODE_OPTIONS: --max-old-space-size=4096
         run: npm test -- --run --coverage --passWithNoTests --shard=${{ matrix.shard }}/3
 
       - name: Upload coverage
@@ -339,6 +378,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version-file: web/.nvmrc

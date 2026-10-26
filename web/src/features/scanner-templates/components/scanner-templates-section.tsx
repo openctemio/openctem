@@ -7,7 +7,6 @@ import {
   Plus,
   FileCode2,
   Loader2,
-  Search,
   Trash2,
   Download,
   CheckCircle,
@@ -24,7 +23,6 @@ import { toast } from 'sonner'
 
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
-import { Input } from '@/components/ui/input'
 import { ConfirmDialog } from '@/components/confirm-dialog'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import {
@@ -44,10 +42,9 @@ import {
   DataTableRowActions,
   EmptyState,
   ErrorState,
-  MetricStrip,
   PageHeader,
-  type MetricStripItem,
   type RowAction,
+  PageStack,
 } from '@/features/shared'
 
 import { Can, Permission } from '@/lib/permissions'
@@ -56,7 +53,6 @@ import {
   useDeleteScannerTemplate,
   useDeprecateScannerTemplate,
   approveScannerTemplate,
-  useTemplateUsage,
   invalidateScannerTemplatesCache,
 } from '@/lib/api/scanner-template-hooks'
 import type {
@@ -70,11 +66,10 @@ import {
   TEMPLATE_STATUS_DISPLAY_NAMES,
   TEMPLATE_TYPES,
   isManuallyUploadedTemplate,
-  getUsagePercentage,
-  formatStorageSize,
 } from '@/lib/api/scanner-template-types'
 import { getErrorMessage } from '@/lib/api/error-handler'
 import { useTranslation } from '@/context/i18n-provider'
+import { useSearchQuery } from '@/hooks/use-search-query'
 
 function TemplateStatusBadge({ status }: { status: TemplateStatus }) {
   const IconMap: Record<TemplateStatus, React.ElementType> = {
@@ -131,23 +126,6 @@ function TemplateSourceBadge({ template }: { template: ScannerTemplate }) {
   )
 }
 
-/** A quota metric: the current count, "of max" as the hint, red once nearly full. */
-function quotaMetric(
-  key: string,
-  label: string,
-  current: number,
-  max: number,
-  format: (n: number) => string | number = (n) => n
-): MetricStripItem {
-  return {
-    key,
-    label,
-    value: format(current),
-    hint: `of ${format(max)}`,
-    tone: getUsagePercentage(current, max) >= 95 ? 'danger' : 'default',
-  }
-}
-
 export function ScannerTemplatesSection() {
   const { t } = useTranslation()
   // Dialog states
@@ -160,6 +138,7 @@ export function ScannerTemplatesSection() {
 
   // Filter states
   const [searchQuery, setSearchQuery] = useUrlFilter('q', '')
+  const searchTerm = useSearchQuery(searchQuery).term
   const [typeParam, setTypeFilter] = useUrlFilter('type', 'all')
   const [statusParam, setStatusFilter] = useUrlFilter('status', 'all')
   const typeFilter = typeParam as TemplateType | 'all'
@@ -171,10 +150,10 @@ export function ScannerTemplatesSection() {
     () => ({
       template_type: typeFilter !== 'all' ? typeFilter : undefined,
       status: statusFilter !== 'all' ? statusFilter : undefined,
-      search: searchQuery || undefined,
+      search: searchTerm || undefined,
       per_page: 100,
     }),
-    [typeFilter, statusFilter, searchQuery]
+    [typeFilter, statusFilter, searchTerm]
   )
 
   const { data: templatesData, error, isLoading, mutate } = useScannerTemplates(filters)
@@ -184,7 +163,6 @@ export function ScannerTemplatesSection() {
   )
 
   // Usage/quota data
-  const { data: usageData } = useTemplateUsage()
 
   // Mutations
   const { trigger: deleteTemplate, isMutating: isDeleting } = useDeleteScannerTemplate(
@@ -239,19 +217,28 @@ export function ScannerTemplatesSection() {
 
   // Approving a version for sensors: once the organization's approval count
   // is reached, the job signer records it and sensors may run it.
-  const handleApproveClick = useCallback(async (template: ScannerTemplate) => {
+  // Approving lets every sensor of the organization run the template (the
+  // server asks for a recent sign-in), so it is confirmed first.
+  const [approveTarget, setApproveTarget] = useState<ScannerTemplate | null>(null)
+  const handleApproveClick = useCallback((template: ScannerTemplate) => {
+    setApproveTarget(template)
+  }, [])
+  const handleApproveConfirm = useCallback(async () => {
+    const template = approveTarget
+    setApproveTarget(null)
+    if (!template) return
     try {
       const updated = await approveScannerTemplate(template.id)
       toast.success(
         updated?.sensor_approval?.approved
-          ? `"${template.name}" is approved for sensors`
-          : `Approval recorded for "${template.name}"`
+          ? t('scans.templates.approved', undefined, { name: template.name })
+          : t('scans.templates.approvalRecorded', undefined, { name: template.name })
       )
       await invalidateScannerTemplatesCache()
     } catch (err) {
-      toast.error(getErrorMessage(err, 'Failed to approve template'))
+      toast.error(getErrorMessage(err, t('scans.templates.approveFailed')))
     }
-  }, [])
+  }, [approveTarget, t])
 
   const handleDownload = useCallback(async (template: ScannerTemplate) => {
     try {
@@ -372,7 +359,7 @@ export function ScannerTemplatesSection() {
             <DataTableRowActions
               actions={[
                 {
-                  label: 'Download',
+                  label: t('scans.templates.row.download'),
                   icon: Download,
                   onClick: () => handleDownload(template),
                 },
@@ -381,7 +368,7 @@ export function ScannerTemplatesSection() {
                 !template.sensor_approval.approved
                   ? ([
                       {
-                        label: 'Approve for sensors',
+                        label: t('scans.templates.row.approve'),
                         icon: ShieldCheck,
                         onClick: () => handleApproveClick(template),
                         permission: Permission.ScopeApprove,
@@ -391,7 +378,7 @@ export function ScannerTemplatesSection() {
                 ...(template.status === 'active'
                   ? ([
                       {
-                        label: 'Deprecate',
+                        label: t('scans.templates.row.deprecate'),
                         icon: Archive,
                         onClick: () => handleDeprecateClick(template),
                         permission: Permission.ScannerTemplatesWrite,
@@ -399,7 +386,7 @@ export function ScannerTemplatesSection() {
                     ] satisfies RowAction[])
                   : []),
                 {
-                  label: 'Delete',
+                  label: t('scans.templates.row.delete'),
                   icon: Trash2,
                   onClick: () => handleDeleteClick(template),
                   destructive: true,
@@ -412,59 +399,13 @@ export function ScannerTemplatesSection() {
         },
       },
     ],
-    [handleDownload, handleDeprecateClick, handleDeleteClick, handleApproveClick]
+    [handleDownload, handleDeprecateClick, handleDeleteClick, handleApproveClick, t]
   )
-
-  const metrics: MetricStripItem[] = usageData
-    ? [
-        quotaMetric(
-          'total',
-          'Templates',
-          usageData.usage.total_templates,
-          usageData.quota.max_templates
-        ),
-        quotaMetric(
-          'nuclei',
-          'Nuclei',
-          usageData.usage.nuclei_templates,
-          usageData.quota.max_templates_nuclei
-        ),
-        quotaMetric(
-          'semgrep',
-          'Semgrep',
-          usageData.usage.semgrep_templates,
-          usageData.quota.max_templates_semgrep
-        ),
-        quotaMetric(
-          'betterleaks',
-          'Betterleaks',
-          usageData.usage.betterleaks_templates,
-          usageData.quota.max_templates_betterleaks
-        ),
-        quotaMetric(
-          'storage',
-          'Storage',
-          usageData.usage.total_storage_bytes,
-          usageData.quota.max_total_storage_bytes,
-          formatStorageSize
-        ),
-      ]
-    : []
 
   // Search and filters are applied by the API, so the table gets its own
   // server-backed search box instead of its built-in client filter.
   const toolbarStart = (
     <>
-      <div className="relative min-w-0 flex-1 sm:max-w-sm">
-        <Search className="pointer-events-none absolute start-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-        <Input
-          placeholder="Search templates…"
-          aria-label="Search templates"
-          value={searchQuery}
-          onChange={(e) => setSearchQuery(e.target.value)}
-          className="h-9 ps-9"
-        />
-      </div>
       <Select value={typeFilter} onValueChange={setTypeFilter}>
         <SelectTrigger className="h-9 w-[140px]" aria-label="Template type">
           <SelectValue placeholder="All types" />
@@ -523,6 +464,12 @@ export function ScannerTemplatesSection() {
         data={templates}
         getRowId={(t) => t.id}
         showSearch={false}
+        search={{
+          value: searchQuery,
+          onChange: setSearchQuery,
+          placeholder: t('scans.templates.search.placeholder', 'Search templates…'),
+          label: t('scans.templates.search.label', 'Search templates'),
+        }}
         toolbarStart={toolbarStart}
         toolbarEnd={<RefreshButton onClick={handleRefresh} loading={isLoading} />}
         emptyMessage={isLoading ? 'Loading templates…' : 'No templates match these filters'}
@@ -531,7 +478,7 @@ export function ScannerTemplatesSection() {
   }
 
   return (
-    <>
+    <PageStack>
       <PageHeader
         title={t('scans.templates.title', 'Scanner templates')}
         description={t(
@@ -547,15 +494,24 @@ export function ScannerTemplatesSection() {
         </Can>
       </PageHeader>
 
-      {metrics.length > 0 && <MetricStrip className="mt-5" items={metrics} />}
-
-      <div className="mt-5">{body}</div>
+      {body}
 
       {/* Dialogs */}
       <AddScannerTemplateDialog
         open={addDialogOpen}
         onOpenChange={setAddDialogOpen}
         onSuccess={handleRefresh}
+      />
+
+      <ConfirmDialog
+        open={approveTarget !== null}
+        onOpenChange={(open) => !open && setApproveTarget(null)}
+        title={t('confirm.scannerTemplate.approveTitle', undefined, {
+          name: approveTarget?.name ?? '',
+        })}
+        desc={t('confirm.scannerTemplate.approveDesc')}
+        confirmText={t('confirm.scannerTemplate.approveBtn')}
+        handleConfirm={handleApproveConfirm}
       />
 
       {/* Delete Confirmation */}
@@ -599,6 +555,6 @@ export function ScannerTemplatesSection() {
         isLoading={isDeprecating}
         handleConfirm={handleDeprecateConfirm}
       />
-    </>
+    </PageStack>
   )
 }

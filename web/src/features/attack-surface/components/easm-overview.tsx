@@ -87,7 +87,7 @@ export function EASMOverview() {
 
   if (error) {
     return (
-      <div className="mt-5">
+      <div>
         <ErrorState
           title={t('easmReview.overview.errorTitle', 'the external attack surface')}
           error={error}
@@ -103,7 +103,7 @@ export function EASMOverview() {
   const risks = summary?.top_risks ?? []
 
   return (
-    <div className="mt-5 grid gap-5 lg:grid-cols-3">
+    <div className="grid gap-5 lg:grid-cols-3">
       <Card>
         <CardHeader>
           <CardTitle className="text-base">
@@ -158,21 +158,20 @@ export function EASMOverview() {
                   value={(a?.needs_review ?? 0) + (a?.candidate ?? 0)}
                   hint={
                     (a?.needs_review ?? 0) + (a?.candidate ?? 0) > 0 ? (
-                      <>
+                      <span className="inline-flex flex-wrap items-baseline justify-end gap-x-2">
                         {a?.review_oldest_since && (
-                          <>
+                          <span>
                             {t('easmReview.overview.oldest', 'oldest')}{' '}
                             <RelativeTime date={a.review_oldest_since} className="text-xs" />
-                            {' · '}
-                          </>
+                          </span>
                         )}
                         <Link
                           href={EASM_REVIEW_HREF}
                           className="font-medium text-foreground underline underline-offset-2"
                         >
-                          {t('easmReview.overview.suggestions', 'Suggestions')}
+                          {t('easmReview.overview.suggestions', 'Review')}
                         </Link>
-                      </>
+                      </span>
                     ) : undefined
                   }
                 />
@@ -233,11 +232,17 @@ export function EASMOverview() {
           <CardTitle className="text-base">
             {t('easmReview.overview.risks', 'Top external risks')}
           </CardTitle>
-          <CardDescription>
-            {t('easmReview.overview.risksHint', 'Open external exposures, most severe first')}
-            {summary?.exposures?.open
-              ? ` · ${t('easmReview.overview.openTotal', '{n} open in total', { n: summary.exposures.open })}`
-              : ''}
+          <CardDescription className="flex flex-wrap gap-x-3">
+            <span>
+              {t('easmReview.overview.risksHint', 'Open external exposures, most severe first')}
+            </span>
+            {summary?.exposures?.open ? (
+              <span>
+                {t('easmReview.overview.openTotal', '{n} open in total', {
+                  n: summary.exposures.open,
+                })}
+              </span>
+            ) : null}
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -267,9 +272,9 @@ export function EASMOverview() {
                   <SeverityBadge severity={toSeverity(r.severity)} />
                   <div className="min-w-0 flex-1">
                     <div className="truncate font-medium">{r.title}</div>
-                    <div className="truncate text-xs text-muted-foreground">
-                      {exposureTypeLabel(r.type ?? '', t)}
-                      {r.asset_name ? ` · ${r.asset_name}` : ''}
+                    <div className="flex min-w-0 gap-x-2 text-xs text-muted-foreground">
+                      <span className="shrink-0">{exposureTypeLabel(r.type ?? '', t)}</span>
+                      {r.asset_name && <span className="truncate">{r.asset_name}</span>}
                     </div>
                   </div>
                   {r.last_seen && <RelativeTime date={r.last_seen} className="text-xs" />}

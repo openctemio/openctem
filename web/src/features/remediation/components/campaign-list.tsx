@@ -16,8 +16,8 @@ import { useTranslation } from '@/context/i18n-provider'
 import { usePermissions } from '@/context/permission-provider'
 import { Permission } from '@/lib/permissions'
 import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
-import { DataTable } from '@/features/shared'
+import { DataTable, FilterSelect, ListToolbar, PageStack } from '@/features/shared'
+import { useUrlFilter } from '@/hooks/use-url-param'
 import { EmptyState } from '@/features/shared/components/empty-state'
 import { ErrorState } from '@/features/shared/components/error-state'
 import { StatusChip } from '@/features/shared/components/status-chip'
@@ -33,6 +33,7 @@ import {
 } from '../api/use-remediation-campaigns'
 import { CampaignDue, CampaignTasksCell, FindingsProgress, useCampaignOwner } from './campaign-bits'
 import { CampaignFormDialog } from './campaign-form-dialog'
+import { useSearchQuery } from '@/hooks/use-search-query'
 
 type StatusFilter = CampaignStatus | 'all'
 
@@ -43,14 +44,19 @@ export function CampaignList() {
   const canWrite = hasPermission(Permission.RemediationWrite)
   const ownerOf = useCampaignOwner()
   const revalidate = useRevalidateCampaigns()
-  const [status, setStatus] = useState<StatusFilter>('all')
+  // The status is a filter of the rows, kept in the URL so a view can be linked.
+  const [statusParam, setStatusParam] = useUrlFilter('status', '')
+  const status: StatusFilter = (CAMPAIGN_STATUSES as readonly string[]).includes(statusParam)
+    ? (statusParam as StatusFilter)
+    : 'all'
   const [search, setSearch] = useState('')
+  const searchTerm = useSearchQuery(search).term
   const [pagination, setPagination] = useState({ pageIndex: 0, pageSize: 25 })
   const [createOpen, setCreateOpen] = useState(false)
 
   const { data, error, isLoading, mutate } = useRemediationCampaigns({
     status: status === 'all' ? undefined : status,
-    search,
+    search: searchTerm,
     page: pagination.pageIndex + 1,
     perPage: pagination.pageSize,
   })
@@ -111,7 +117,6 @@ export function CampaignList() {
     [ownerOf, t]
   )
 
-  const filters: StatusFilter[] = ['all', ...CAMPAIGN_STATUSES]
   const filtered = status !== 'all' || search.trim() !== ''
 
   return (
@@ -127,43 +132,35 @@ export function CampaignList() {
         )
       }
     >
-      <div className="mt-4 space-y-4">
-        <div className="flex flex-wrap items-center gap-2">
-          <Input
-            className="w-full sm:w-64"
-            placeholder={t('remediationCampaigns.search')}
-            aria-label={t('remediationCampaigns.search')}
-            value={search}
-            onChange={(e) => {
-              setSearch(e.target.value)
+      <PageStack>
+        <ListToolbar
+          search={{
+            value: search,
+            onChange: (v) => {
+              setSearch(v)
               setPagination((p) => ({ ...p, pageIndex: 0 }))
-            }}
-          />
-          <div
-            role="tablist"
-            aria-label={t('remediationCampaigns.statusFilter')}
-            className="flex flex-wrap gap-1"
-          >
-            {filters.map((s) => (
-              <Button
-                key={s}
-                role="tab"
-                aria-selected={status === s}
-                size="sm"
-                variant={status === s ? 'secondary' : 'ghost'}
-                onClick={() => {
-                  setStatus(s)
+            },
+            placeholder: t('remediationCampaigns.search'),
+          }}
+          start={
+            <>
+              <FilterSelect<Exclude<StatusFilter, 'all'>>
+                label={t('remediationCampaigns.statusLabel', 'Status')}
+                value={status === 'all' ? '' : status}
+                allCount={counts?.all}
+                options={CAMPAIGN_STATUSES.map((s) => ({
+                  value: s,
+                  label: t(`remediationCampaigns.filter.${s}`),
+                  count: counts?.[s],
+                }))}
+                onChange={(next) => {
+                  setStatusParam(next)
                   setPagination((p) => ({ ...p, pageIndex: 0 }))
                 }}
-              >
-                {t(`remediationCampaigns.filter.${s}`)}
-                {counts && (
-                  <span className="text-muted-foreground ms-1 tabular-nums">{counts[s]}</span>
-                )}
-              </Button>
-            ))}
-          </div>
-        </div>
+              />
+            </>
+          }
+        />
 
         {error ? (
           <ErrorState
@@ -222,7 +219,7 @@ export function CampaignList() {
             )}
           />
         )}
-      </div>
+      </PageStack>
 
       <CampaignFormDialog
         open={createOpen}

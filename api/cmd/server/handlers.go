@@ -248,7 +248,7 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 	}
 
 	// CI runs (RFC-051): OIDC exchange, uploads, the gate, administration.
-	ciAdmin, ciRunner := newCIHandlers(cfg, repos, svc, deps.RedisClient, log)
+	ciAdmin, ciRunner := newCIHandlers(cfg, repos, svc, log)
 
 	// Asset handler with integration service wired
 	assetHandler := handler.NewAssetHandler(svc.Asset, v, log)
@@ -264,6 +264,9 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 	sensorHandler.SetContentPolicySource(svc.SensorContent)
 	sensorHandler.SetZoneLister(repos.ScanZone)
 	sensorHandler.SetGrantService(svc.SensorGrant)
+	if svc.JobSigner != nil {
+		sensorHandler.SetJobSigningRoot(svc.JobSigner.RootKeyID)
+	}
 	commandHandler.SetScanRunService(svc.ScanRun)
 	commandHandler.SetAuditService(svc.Audit)
 	commandHandler.SetScanCommandGate(svc.Scan)
@@ -503,6 +506,9 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		// Write tools run only after the person confirms the action in the
 		// web UI (RFC-062 §10).
 		mcpHandler.SetWriteTools(mcpOAuth, svc.Vulnerability)
+		// Proposal tools file requests another person decides; they need
+		// the person behind an OAuth connection.
+		mcpHandler.SetProposalTools(svc.Vulnerability, mcpDiscovery.Endpoints.Issuer)
 	}
 	if mcpAuth != nil && mcpPolicies != nil {
 		auth, gate := mcpAuth, middleware.MCPKeyPolicyGate(mcpPolicies, log)
@@ -570,6 +576,7 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		RelationshipSuggestion: handler.NewRelationshipSuggestionHandler(svc.RelationshipSuggestion, log),
 		AssetImport:            newAssetImportHandler(svc, log),
 		FindingImport:          newFindingImportHandler(cfg, repos, svc, log),
+		IngestReceipt:          newIngestReceiptHandler(cfg, repos, svc, log),
 		ReportSchedule:         newReportScheduleHandler(repos, svc, log),
 		UserDashboard:          handler.NewUserDashboardHandler(svc.UserDashboard, log).SetWidgetData(svc.DashboardWidgets),
 		SavedView:              handler.NewSavedViewHandler(svc.SavedView, log),
@@ -590,6 +597,7 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		FindingEvidenceItems: handler.NewFindingEvidenceItemsHandler(svc.Evidence, log),
 		JiraWebhook:          jiraWebhookHandler,
 		TicketMapping:        ticketMappingHandler,
+		ImportMapping:        newImportMappingHandler(svc, log),
 		GitHubWebhook:        githubWebhookHandler,
 		Exposure:             handler.NewExposureHandler(svc.Exposure, svc.User, v, log),
 		ThreatIntel:          handler.NewThreatIntelHandler(svc.ThreatIntel, v, log).SetDataScope(svc.DataScope),
@@ -642,12 +650,14 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 			h.SetAuditService(svc.Audit)
 			return h
 		}(),
-		SCIMAuth: middleware.SCIMAuth(svc.SCIMToken),
+		// SCIM requests also need SCIM to be available for the organization (a loss
+		// keeps it during the read-only grace).
+		SCIMAuth: middleware.SCIMAuthWithFeature(svc.SCIMToken, svc.Entitlement),
 
 		// Scanning & ScanRuns
 		ScanProfile:         handler.NewScanProfileHandler(svc.ScanProfile, v, log),
 		ScannerTemplate:     handler.NewScannerTemplateHandler(svc.ScannerTemplate, v, log),
-		TemplateSource:      handler.NewTemplateSourceHandler(svc.TemplateSource, v, log),
+		ContentSource:       handler.NewContentSourceHandler(svc.ContentSource, log),
 		ContentPack:         handler.NewContentPackHandler(svc.ContentPacks, log),
 		PlatformContentPack: handler.NewPlatformContentPackHandler(svc.PlatformContentPacks, adminConsoleSvc, repos.AdminAuditLog, log),
 		ContentCatalog:      handler.NewContentCatalogHandler(svc.ContentCatalog, log),
@@ -855,7 +865,8 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 	handlers.Tool.SetAuditService(svc.Audit)
 	// Configuration changes audited with a before/after diff.
 	handlers.Integration.SetAuditService(svc.Audit)
-	handlers.TemplateSource.SetAuditService(svc.Audit)
+	// Redelivery of an archived notification event to one channel (RFC-124).
+	handlers.Integration.SetDeliveryRedeliverer(svc.Outbox)
 	handlers.SLA.SetAuditService(svc.Audit)
 	handlers.AssignmentRule.SetAuditService(svc.Audit)
 	handlers.ScopeRule.SetAuditService(svc.Audit)
@@ -1223,6 +1234,10 @@ func wireStepUpGate(handlers *routes.Handlers, svc *Services) {
 	if svc.Suppression != nil {
 		svc.Suppression.SetStepUpGate(gate)
 	}
+	if svc.Workflow != nil {
+		// Publishing elevated and high-risk automations (RFC-125 D6).
+		svc.Workflow.SetStepUpGate(gate)
+	}
 	if svc.Group != nil {
 		// Edits of the approval policy's security pool group.
 		svc.Group.SetStepUpGate(gate)
@@ -1499,6 +1514,9 @@ func newEASMHandler(repos *Repositories, svc *Services, log *logger.Logger) *han
 		// The organization's own prefixes are offered only when the platform
 		// guardrails accept them as entries.
 		suggestions.SetGuardrails(svc.ScopeGuardrails)
+		// Addresses the unclassified-scans mode already checks need no
+		// decision: the same mode the active gate reads.
+		suggestions.SetUnclassified(svc.ActiveGate.UnclassifiedMode)
 		h.SetSuggestions(suggestions)
 	}
 	// Review by rule (RFC-054 §6.7): rules are scope entries and exclusions.
@@ -1557,7 +1575,8 @@ func newAssetAttributionHandler(repos *Repositories, svc *Services, log *logger.
 	h := handler.NewAssetAttributionHandler(repos.Attribution, svc.Asset, log)
 	if svc.ActiveGate != nil {
 		h.SetActiveGate(svc.ActiveGate)
-		h.SetScopeReader(svc.ActiveGate) // scope_status, covered_by (RFC-054 §6.6)
+		h.SetScopeReader(svc.ActiveGate)       // scope_status, covered_by (RFC-054 §6.6)
+		h.SetCertificateReader(svc.ActiveGate) // certificate standing (RFC-054 §19)
 	}
 	if svc.Audit != nil {
 		h.SetAuditService(svc.Audit)
@@ -1584,12 +1603,60 @@ func newAssetImportHandler(svc *Services, log *logger.Logger) *handler.AssetImpo
 	return h
 }
 
-// newFindingImportHandler builds the handler of POST /findings/import: the
+// newImportMappingHandler builds the import mapping handler (nil without
+// its service).
+func newImportMappingHandler(svc *Services, log *logger.Logger) *handler.ImportMappingHandler {
+	if svc.ImportMapping == nil {
+		return nil
+	}
+	return handler.NewImportMappingHandler(svc.ImportMapping, svc.Audit, log)
+}
+
+// newFindingImportHandler builds the handler of POST /findings/imports: the
 // ctis importers, ingest with the uploader's rights, VEX documents applied
-// under INGEST_VEX.
+// under INGEST_VEX, the upload's receipt and the durable Idempotency-Key
+// store.
 func newFindingImportHandler(cfg *config.Config, repos *Repositories, svc *Services, log *logger.Logger) *handler.FindingImportHandler {
-	imp := findingimport.NewService(svc.Ingest, repos.Finding, ingest.ParseVEXMode(cfg.Ingest.VEX), log)
-	return handler.NewFindingImportHandler(imp, svc.DataScope, svc.Audit, log)
+	imp := newFindingImportService(cfg, repos, svc, log)
+	h := handler.NewFindingImportHandler(imp, svc.DataScope, svc.Audit, log)
+	h.SetReceiptStores(repos.IngestReceipt, repos.IdempotencyKey)
+	if svc.ImportMapping != nil {
+		h.SetMappingResolver(svc.ImportMapping)
+	}
+	return h
+}
+
+// newIngestReceiptHandler builds the receipt reads, with the per-file
+// results of committed uploads.
+func newIngestReceiptHandler(cfg *config.Config, repos *Repositories, svc *Services, log *logger.Logger) *handler.IngestReceiptHandler {
+	h := handler.NewIngestReceiptHandler(repos.IngestReceipt, svc.DataScope, log)
+	h.SetImportResults(newFindingImportService(cfg, repos, svc, log))
+	return h
+}
+
+// newFindingImportService builds the import service shared by the upload
+// handler (accept, preview) and the ingest worker (import of a committed
+// upload, RFC-122): the uploader's scope is resolved through the data scope
+// enforcer when the upload is imported.
+func newFindingImportService(cfg *config.Config, repos *Repositories, svc *Services, log *logger.Logger) *findingimport.Service {
+	imp := findingimport.NewService(svc.Ingest, repos.Finding, repos.IngestReceipt, ingest.ParseVEXMode(cfg.Ingest.VEX), log)
+	var audit findingimport.Auditor
+	if svc.Audit != nil {
+		audit = svc.Audit
+	}
+	if svc.IngestQueue != nil && svc.DataScope != nil {
+		imp.SetQueue(svc.IngestQueue, findingimport.DataScopeResolver(svc.DataScope), audit)
+		// The worker re-reads the uploader's membership before importing.
+		imp.SetMembers(repos.Tenant)
+		// ... and the upload's API key and the findings:approve right.
+		if repos.APIKey != nil && svc.Role != nil {
+			imp.SetRights(repos.APIKey, svc.Role)
+		}
+	}
+	if svc.ImportMapping != nil {
+		imp.SetMappingResolver(svc.ImportMapping)
+	}
+	return imp
 }
 
 // newReportScheduleHandler builds the report schedule handler with its audit
@@ -1610,11 +1677,50 @@ func newSuppressionHandler(svc *Services, log *logger.Logger) *handler.Suppressi
 }
 
 // newCIHandlers builds the CI run service and its two handlers (RFC-051).
-// The CI providers' discovery and JWKS documents are fetched through the
-// SSRF-safe client: a self-managed GitLab issuer is configured by a tenant.
-func newCIHandlers(cfg *config.Config, repos *Repositories, svc *Services, redisClient *redis.Client, log *logger.Logger) (*handler.CIAdminHandler, *handler.CIRunnerHandler) {
-	if repos.CIRun == nil || svc.Ingest == nil {
+func newCIHandlers(cfg *config.Config, repos *Repositories, svc *Services, log *logger.Logger) (*handler.CIAdminHandler, *handler.CIRunnerHandler) {
+	ciSvc := newCIRunService(cfg, repos, svc, log)
+	if ciSvc == nil {
 		return nil, nil
+	}
+	var ds handler.DataScopeEnforcer
+	if svc.DataScope != nil {
+		ds = svc.DataScope
+	}
+	admin := handler.NewCIAdminHandler(ciSvc, ds, log)
+	admin.SetPipelineService(ciSvc)
+	admin.SetCoverageService(ciSvc)
+	admin.SetSettingsService(ciSvc)
+	admin.SetGateBaselineService(ciSvc)
+	admin.SetRepositorySettingsService(ciSvc)
+	if repos.CodeScan != nil {
+		var csAudit codescanapp.Auditor
+		if svc.Audit != nil {
+			csAudit = svc.Audit
+		}
+		admin.SetCodeScanService(codescanapp.NewService(repos.CodeScan, csAudit, log))
+	}
+	admin.SetRefusalService(ciSvc)
+	runner := handler.NewCIRunnerHandler(ciSvc, log)
+	if svc.ImportMapping != nil {
+		runner.SetMappingResolver(svc.ImportMapping)
+	}
+	if fp := vulnerability.NewSecretFingerprinter([]byte(cfg.FingerprintSecret())); fp != nil {
+		runner.SetSecretKeys(fp)
+	}
+	// Idempotency-Key on uploads: the durable store (fails closed).
+	if repos.IdempotencyKey != nil {
+		runner.SetIdempotencyStore(repos.IdempotencyKey)
+	}
+	return admin, runner
+}
+
+// newCIRunService builds the CI run service (RFC-051), shared by the HTTP
+// handlers and the ingest worker that applies queued uploads. The CI
+// providers' discovery and JWKS documents are fetched through the SSRF-safe
+// client: a self-managed GitLab issuer is configured by a tenant.
+func newCIRunService(cfg *config.Config, repos *Repositories, svc *Services, log *logger.Logger) *cirunapp.Service {
+	if repos.CIRun == nil || svc.Ingest == nil {
+		return nil
 	}
 	verifier := oidc.NewClient(httpsec.SafeHTTPClient(10*time.Second), func(raw string) error {
 		_, err := httpsec.ValidateURL(raw)
@@ -1655,10 +1761,6 @@ func newCIHandlers(cfg *config.Config, repos *Repositories, svc *Services, redis
 	}, cirunapp.Config{WebBaseURL: cfg.SMTP.BaseURL, Versions: ciRunnerVersionPolicy(cfg, log)}, log)
 	// No CI run token is issued or accepted for a suspended organization.
 	ciSvc.SetOrganizationGate(svc.OrganizationGate)
-	var ds handler.DataScopeEnforcer
-	if svc.DataScope != nil {
-		ds = svc.DataScope
-	}
 	if svc.Suppression != nil {
 		var mg cirunapp.ModuleGuard
 		if svc.Module != nil {
@@ -1688,32 +1790,17 @@ func newCIHandlers(cfg *config.Config, repos *Repositories, svc *Services, redis
 		// A trust's repositories are repository scope entries linked to it.
 		ciSvc.SetScopeLinker(svc.Scope)
 	}
-	admin := handler.NewCIAdminHandler(ciSvc, ds, log)
-	admin.SetPipelineService(ciSvc)
-	admin.SetCoverageService(ciSvc)
-	admin.SetSettingsService(ciSvc)
-	admin.SetGateBaselineService(ciSvc)
-	admin.SetRepositorySettingsService(ciSvc)
-	if repos.CodeScan != nil {
-		var csAudit codescanapp.Auditor
-		if svc.Audit != nil {
-			csAudit = svc.Audit
-		}
-		admin.SetCodeScanService(codescanapp.NewService(repos.CodeScan, csAudit, log))
+	// Uploads are stored and applied by the ingest worker; VEX documents a
+	// run uploads are stored on the run repository's findings, never
+	// closing any (the run token is not a person with findings:approve).
+	// A CI upload with a KEV finding takes the urgent lane.
+	ciSvc.SetKEVChecker(repos.KEV)
+	if svc.ImportMapping != nil {
+		ciSvc.SetMappingResolver(svc.ImportMapping)
 	}
-	admin.SetRefusalService(ciSvc)
-	runner := handler.NewCIRunnerHandler(ciSvc, log)
-	if fp := vulnerability.NewSecretFingerprinter([]byte(cfg.FingerprintSecret())); fp != nil {
-		runner.SetSecretKeys(fp)
-	}
-	// VEX documents a run uploads: stored on the run repository's findings,
-	// never closing any (the run token is not a person with findings:approve).
-	runner.SetVEXApplier(findingimport.NewService(svc.Ingest, repos.Finding, ingest.ParseVEXMode(cfg.Ingest.VEX), log))
-	// Idempotency-Key on uploads needs the shared store; without Redis the header is ignored.
-	if redisClient != nil {
-		runner.SetIdempotencyStore(redisClient)
-	}
-	return admin, runner
+	ciSvc.SetUploadQueue(svc.IngestQueue, findingimport.NewService(svc.Ingest, repos.Finding, repos.IngestReceipt,
+		ingest.ParseVEXMode(cfg.Ingest.VEX), log))
+	return ciSvc
 }
 
 // newSensorPairingHandler builds the pairing handler (RFC-052); nil when

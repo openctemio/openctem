@@ -38,6 +38,7 @@ import {
 import { useUpdateScanProfile, invalidateScanProfilesCache } from '@/lib/api/scan-profile-hooks'
 import type { QualityGate, ScanProfile } from '@/lib/api/scan-profile-types'
 import type { RuleSources } from '@/lib/api/scan-types'
+import { useCanMutate } from '@/lib/permissions'
 import { QualityGateFields } from './quality-gate-fields'
 import { RuleSourcesField } from './rule-sources-field'
 
@@ -85,6 +86,10 @@ export function EditScanProfileDialog({
   }
 
   const isSystemProfile = profile.is_system
+
+  // A quality gate is organization-wide (it can block a merge): owner or admin only.
+
+  const canEditGate = useCanMutate('PUT /api/v1/scan-profiles/{id}/quality-gate')
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -145,9 +150,14 @@ export function EditScanProfileDialog({
                 <QualityGateFields
                   value={gate}
                   onChange={setGate}
-                  disabled={isSystemProfile}
+                  disabled={isSystemProfile || !canEditGate}
                   idPrefix="edit-profile"
                 />
+                {!isSystemProfile && !canEditGate && (
+                  <p className="text-muted-foreground text-xs">
+                    {t('scans.profiles.gate.adminOnly')}
+                  </p>
+                )}
               </div>
 
               <Separator />

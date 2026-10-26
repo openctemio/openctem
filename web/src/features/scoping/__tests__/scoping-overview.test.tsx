@@ -10,6 +10,11 @@ import type { ReactNode } from 'react'
 import { readinessRows, readinessScore, visibleReadiness } from '../readiness'
 import type { ScopingSummary } from '../api'
 import { ScopingOverview } from '../components/scoping-overview'
+import { I18nProvider } from '@/context/i18n-provider'
+import { getDictionary, translate } from '@/lib/i18n'
+
+const tEn = (key: string, fallback?: string, vars?: Record<string, string | number>) =>
+  translate(getDictionary('en'), key, fallback, vars)
 
 const api = vi.hoisted(() => ({ get: vi.fn() }))
 vi.mock('@/lib/api/client', () => api)
@@ -73,7 +78,7 @@ beforeEach(() => {
 })
 
 describe('readinessRows', () => {
-  const rows = readinessRows(LIVE)
+  const rows = readinessRows(LIVE, tEn)
   const row = (key: string) => rows.find((r) => r.key === key)!
 
   it('measures each artifact against the summary', () => {
@@ -95,15 +100,15 @@ describe('readinessRows', () => {
   })
 
   it('an active cycle with a charter is ready', () => {
-    const r = readinessRows({
-      ...LIVE,
-      active_cycle: { ...LIVE.active_cycle!, status: 'active', objectives: 2 },
-    })
+    const r = readinessRows(
+      { ...LIVE, active_cycle: { ...LIVE.active_cycle!, status: 'active', objectives: 2 } },
+      tEn
+    )
     expect(r.find((x) => x.key === 'cycle')!.ready).toBe(true)
   })
 
   it('no cycle points at the cycle list', () => {
-    const r = readinessRows({ ...LIVE, active_cycle: null })
+    const r = readinessRows({ ...LIVE, active_cycle: null }, tEn)
     expect(r.find((x) => x.key === 'cycle')).toMatchObject({ href: '/cycles', action: 'Start' })
   })
 
@@ -139,5 +144,33 @@ describe('ScopingOverview', () => {
     api.get.mockRejectedValue(new Error('boom'))
     wrap(<ScopingOverview />)
     expect(await screen.findByText(/Failed to load the scoping summary/)).toBeInTheDocument()
+  })
+})
+
+describe('ScopingOverview in Vietnamese', () => {
+  it('shows the readiness rows, the status and the dates in Vietnamese', async () => {
+    api.get.mockResolvedValue({
+      ...LIVE,
+      active_cycle: {
+        ...LIVE.active_cycle!,
+        status: 'closed',
+        start_date: '2026-10-01',
+        end_date: '2026-12-31',
+      },
+    })
+    wrap(
+      <I18nProvider locale="vi">
+        <ScopingOverview />
+      </I18nProvider>
+    )
+    expect(await screen.findByText('Đã xác định tài sản trọng yếu')).toBeInTheDocument()
+    expect(screen.getByText('Tài sản trọng yếu đều có chủ sở hữu')).toBeInTheDocument()
+    expect(screen.getAllByText('3 trên 9')).toHaveLength(2)
+    expect(screen.getByText('3 trên 9 đã sẵn sàng')).toBeInTheDocument()
+    // The status is a key, not the raw enum, and the range has no en-dash.
+    expect(screen.getByText('Đã đóng')).toBeInTheDocument()
+    expect(screen.getByText(/ đến /)).toBeInTheDocument()
+    expect(screen.queryByText('Readiness')).toBeNull()
+    expect(screen.queryByText(/closed/)).toBeNull()
   })
 })

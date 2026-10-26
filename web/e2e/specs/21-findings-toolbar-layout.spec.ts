@@ -3,7 +3,7 @@ import type { Page, TestInfo } from '@playwright/test'
 
 /**
  * Findings list toolbar layout. Two rows that never reflow into each other:
- * row 1 = state lens + page actions, row 2 = [filter | search] + saved views,
+ * row 1 = view title + page actions, row 2 = [filter | search] + saved views,
  * Group and the table's View menu. The filter button is joined to the search
  * field, so the field can never drop onto a line of its own under the button
  * (the bug this guards), and no control may stick out past the list's edge.
@@ -24,7 +24,7 @@ async function checkToolbar(page: Page, label: string) {
   await expect(primary).toBeVisible()
   await expect(toolbar).toBeVisible()
 
-  const search = toolbar.getByRole('textbox', { name: /search findings/i })
+  const search = toolbar.getByRole('searchbox', { name: /search findings/i })
   const filter = toolbar.locator('[data-slot="filter-button"]:visible').first()
   const s = await search.boundingBox()
   const f = await filter.boundingBox()
@@ -39,6 +39,16 @@ async function checkToolbar(page: Page, label: string) {
   const p = await primary.boundingBox()
   const t = await toolbar.boundingBox()
   expect(p && t && p.y < t.y, `${label}: lens row above the search row`).toBeTruthy()
+
+  // The view title keeps readable room inside the primary row (at phone width
+  // the Awaiting verification button used to squeeze it to nothing).
+  const title = await page.getByTestId('findings-view-title').boundingBox()
+  const row = await primary.boundingBox()
+  expect(title && title.width >= 32, `${label}: the view title has room`).toBeTruthy()
+  expect(
+    title && row && title.x >= row.x - 1,
+    `${label}: the view title starts inside the row`
+  ).toBeTruthy()
 
   // Nothing sticks out of either row.
   for (const [name, row] of [
@@ -61,7 +71,7 @@ for (const width of WIDTHS) {
   }, info) => {
     await page.setViewportSize({ width, height: 900 })
     await page.goto('/findings')
-    await expect(page.getByRole('radiogroup', { name: /finding state/i })).toBeVisible({
+    await expect(page.getByTestId('findings-view-title')).toBeVisible({
       timeout: 20_000,
     })
     await page.waitForLoadState('networkidle')
@@ -69,7 +79,7 @@ for (const width of WIDTHS) {
     await checkToolbar(page, `${width}px panel closed`)
 
     if (width >= 1024) {
-      const toggle = page.locator('[data-slot="filter-button"][aria-controls]').first()
+      const toggle = page.locator('[data-slot="filter-button"][aria-pressed]').first()
       if ((await toggle.getAttribute('aria-pressed')) !== 'true') await toggle.click()
       await expect(page.locator('#finding-filters')).toBeVisible()
       // Let the panel's width transition finish before measuring.

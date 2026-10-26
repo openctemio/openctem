@@ -15,12 +15,13 @@
 
 import { useState } from 'react'
 import { Main } from '@/components/layout'
-import { PageHeader, EmptyState } from '@/features/shared'
+import { PageHeader, EmptyState, PageStack } from '@/features/shared'
 import { Card, CardContent } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
+import { confirmName } from '@/lib/confirm-name'
 import { ConfirmDialog } from '@/components/confirm-dialog'
 import { Can, Permission } from '@/lib/permissions'
 import { Clock, PauseCircle, ShieldCheck, Trash2, Upload } from 'lucide-react'
@@ -35,7 +36,7 @@ import { ImportResultsDialog } from '@/features/findings/components/import-resul
 import { toast } from 'sonner'
 import { useTranslation } from '@/context/i18n-provider'
 
-/** POST /findings/import requires all three (api routes/finding_import.go). */
+/** POST /findings/imports requires all three (api routes/finding_import.go). */
 const IMPORT_PERMISSIONS = [
   Permission.AssetsWrite,
   Permission.FindingsWrite,
@@ -100,7 +101,9 @@ export function PausedScannerCard({
             {integration.last_sync_at && (
               <span className="text-muted-foreground flex items-center gap-1 text-xs">
                 <Clock className="h-3 w-3" />
-                Last sync: {new Date(integration.last_sync_at).toLocaleString()}
+                {t('tenableSc.imports.lastSync', undefined, {
+                  time: new Date(integration.last_sync_at).toLocaleString(),
+                })}
               </span>
             )}
           </div>
@@ -109,8 +112,8 @@ export function PausedScannerCard({
               variant="ghost"
               size="icon"
               onClick={() => setDeleteOpen(true)}
-              title="Remove"
-              aria-label={`Remove ${integration.name}`}
+              title={t('tenableSc.imports.remove', undefined, { name: integration.name })}
+              aria-label={t('tenableSc.imports.remove', undefined, { name: integration.name })}
               className="shrink-0 text-destructive hover:text-destructive/80"
             >
               <Trash2 className="h-4 w-4" />
@@ -129,8 +132,11 @@ export function PausedScannerCard({
           'confirm.scannerIntegration.removeDesc',
           'Its imports stop and its settings are deleted. Findings already ingested are kept. This cannot be undone.'
         )}
-        confirmText={deleting ? t('confirm.removing', 'Removing…') : t('confirm.remove', 'Remove')}
+        confirmText={
+          deleting ? t('confirm.removing', 'Removing…') : t('confirm.scannerIntegration.removeBtn')
+        }
         destructive
+        typeToConfirm={confirmName(integration.name, integration.id)}
         isLoading={deleting}
         handleConfirm={() => void handleDelete()}
       />
@@ -145,13 +151,15 @@ export function PausedScannerCard({
 function LoadingSkeleton() {
   return (
     <Main>
-      <Skeleton className="mb-6 h-8 w-56" />
-      <Skeleton className="h-20 rounded-lg" />
-      <div className="mt-6 space-y-4">
-        {Array.from({ length: 2 }).map((_, i) => (
-          <Skeleton key={i} className="h-28 rounded-lg" />
-        ))}
-      </div>
+      <PageStack>
+        <Skeleton className="h-8 w-56" />
+        <Skeleton className="h-20 rounded-lg" />
+        <div className="space-y-4">
+          {Array.from({ length: 2 }).map((_, i) => (
+            <Skeleton key={i} className="h-28 rounded-lg" />
+          ))}
+        </div>
+      </PageStack>
     </Main>
   )
 }
@@ -179,68 +187,70 @@ export function ScannerImportsView() {
 
   return (
     <Main>
-      <PageHeader
-        title="Vulnerability scanners"
-        description="Import Nessus and Tenable scan exports as assets and findings"
-      >
-        <Can permission={IMPORT_PERMISSIONS} requireAll mode="hide">
-          <Button size="sm" onClick={() => setImportOpen(true)}>
-            <Upload className="me-2 h-4 w-4" />
-            Import .nessus
-          </Button>
-        </Can>
-      </PageHeader>
+      <PageStack>
+        <PageHeader
+          title="Vulnerability scanners"
+          description="Import Nessus and Tenable scan exports as assets and findings"
+        >
+          <Can permission={IMPORT_PERMISSIONS} requireAll mode="hide">
+            <Button size="sm" onClick={() => setImportOpen(true)}>
+              <Upload className="me-2 h-4 w-4" />
+              Import .nessus
+            </Button>
+          </Can>
+        </PageHeader>
 
-      <Alert className="mt-6">
-        <PauseCircle className="h-4 w-4" />
-        <AlertTitle>
-          {t('settings.scanners.pausedTitle', 'The live Tenable connector is paused')}
-        </AlertTitle>
-        <AlertDescription>
-          {t(
-            'settings.scanners.pausedBody',
-            'Connecting Nessus Pro or Tenable.sc is not available for now. Importing .nessus exports works.'
+        <Alert>
+          <PauseCircle className="h-4 w-4" />
+          <AlertTitle>
+            {t('settings.scanners.pausedTitle', 'The live Tenable connector is paused')}
+          </AlertTitle>
+          <AlertDescription>
+            {t(
+              'settings.scanners.pausedBody',
+              'Connecting Nessus Pro or Tenable.sc is not available for now. Importing .nessus exports works.'
+            )}
+          </AlertDescription>
+        </Alert>
+
+        <div>
+          {paused.length === 0 ? (
+            <EmptyState
+              icon={ShieldCheck}
+              title="Import scan results"
+              description="Upload a .nessus export: hosts become assets and vulnerabilities become findings."
+              action={
+                <Can permission={IMPORT_PERMISSIONS} requireAll mode="hide">
+                  <Button size="sm" onClick={() => setImportOpen(true)}>
+                    <Upload className="me-2 h-4 w-4" />
+                    Import .nessus
+                  </Button>
+                </Can>
+              }
+            />
+          ) : (
+            <>
+              <h2 className="mb-1 text-lg font-semibold">Paused connectors</h2>
+              <p className="text-muted-foreground mb-4 text-sm">
+                Created before the pause. They do not scan; remove them or keep them for when the
+                connector returns.
+              </p>
+              <div className="space-y-4">
+                {paused.map((s) => (
+                  <PausedScannerCard key={s.id} integration={s} onChanged={refresh} />
+                ))}
+              </div>
+            </>
           )}
-        </AlertDescription>
-      </Alert>
+        </div>
 
-      <div className="mt-6">
-        {paused.length === 0 ? (
-          <EmptyState
-            icon={ShieldCheck}
-            title="Import scan results"
-            description="Upload a .nessus export: hosts become assets and vulnerabilities become findings."
-            action={
-              <Can permission={IMPORT_PERMISSIONS} requireAll mode="hide">
-                <Button size="sm" onClick={() => setImportOpen(true)}>
-                  <Upload className="me-2 h-4 w-4" />
-                  Import .nessus
-                </Button>
-              </Can>
-            }
-          />
-        ) : (
-          <>
-            <h2 className="mb-1 text-lg font-semibold">Paused connectors</h2>
-            <p className="text-muted-foreground mb-4 text-sm">
-              Created before the pause. They do not scan; remove them or keep them for when the
-              connector returns.
-            </p>
-            <div className="space-y-4">
-              {paused.map((s) => (
-                <PausedScannerCard key={s.id} integration={s} onChanged={refresh} />
-              ))}
-            </div>
-          </>
-        )}
-      </div>
-
-      <ImportResultsDialog
-        open={importOpen}
-        onOpenChange={setImportOpen}
-        onImported={refresh}
-        minSeverity="low"
-      />
+        <ImportResultsDialog
+          open={importOpen}
+          onOpenChange={setImportOpen}
+          onImported={refresh}
+          minSeverity="low"
+        />
+      </PageStack>
     </Main>
   )
 }

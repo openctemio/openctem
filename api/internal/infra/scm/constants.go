@@ -4,6 +4,7 @@ package scm
 const (
 	// Connection messages
 	connectionSuccessful = "Connection successful"
+	authenticationFailed = "Authentication failed"
 
 	// GitLab URLs
 	defaultGitLabURL = "https://gitlab.com"

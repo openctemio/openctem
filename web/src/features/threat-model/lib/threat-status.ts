@@ -1,55 +1,42 @@
+import { ShieldAlert, ShieldCheck } from 'lucide-react'
+import {
+  CheckCircleGlyph,
+  DashedCircleGlyph,
+  RingDotGlyph,
+  type StatusGlyph,
+} from '@/components/ui/status-glyphs'
+import type { StatusTone } from '@/lib/status-colors'
 import type { ThreatStatus } from '../types'
 
 /**
- * Status visual language for derived threats. Colors follow the app's
- * severity/status conventions:
- *   open        → critical / red   (a confirmed, unmitigated exposure)
- *   mitigated   → positive / green (a control or fix neutralises it)
- *   covered     → info / blue      (covered by a compensating control)
- *   accepted    → muted            (risk-accepted by an owner)
- *   theoretical → neutral / slate  (applicable technique, no evidence yet)
+ * Status of a derived threat on the shared workflow tones (research/247
+ * section 4): open is open work, mitigated and covered are done (covered by a
+ * compensating control, with a shield), accepted is a risk decision, and
+ * theoretical (a technique that applies, with no evidence yet) is untouched.
+ * The map holds no classes; colour comes from `lib/status-colors`.
  */
 export interface ThreatStatusStyle {
-  label: string
-  /** Badge class bundle (bg/text/border), matching severity-colors soft style. */
-  badgeClass: string
-  /** Solid dot color for compact rollups. */
-  dotClass: string
+  /** i18n key of the status label. */
+  labelKey: string
+  tone: StatusTone
+  icon: StatusGlyph
 }
 
 export const THREAT_STATUS_STYLES: Record<ThreatStatus, ThreatStatusStyle> = {
-  open: {
-    label: 'Open',
-    badgeClass: 'bg-red-500/10 text-red-600 border-red-500/20 dark:text-red-400',
-    dotClass: 'bg-red-500',
-  },
-  mitigated: {
-    label: 'Mitigated',
-    badgeClass: 'bg-green-500/10 text-green-600 border-green-500/20 dark:text-green-400',
-    dotClass: 'bg-green-500',
-  },
-  covered: {
-    label: 'Covered',
-    badgeClass: 'bg-blue-500/10 text-blue-600 border-blue-500/20 dark:text-blue-400',
-    dotClass: 'bg-blue-500',
-  },
-  accepted: {
-    label: 'Accepted',
-    badgeClass: 'bg-muted text-muted-foreground border-border',
-    dotClass: 'bg-muted-foreground',
-  },
+  open: { labelKey: 'threatModel.status.open', tone: 'open', icon: RingDotGlyph },
+  mitigated: { labelKey: 'threatModel.status.mitigated', tone: 'resolved', icon: CheckCircleGlyph },
+  covered: { labelKey: 'threatModel.status.covered', tone: 'resolved', icon: ShieldCheck },
+  accepted: { labelKey: 'threatModel.status.accepted', tone: 'accepted', icon: ShieldAlert },
   theoretical: {
-    label: 'Theoretical',
-    badgeClass: 'bg-slate-500/10 text-slate-600 border-slate-500/20 dark:text-slate-400',
-    dotClass: 'bg-slate-400',
+    labelKey: 'threatModel.status.theoretical',
+    tone: 'triage',
+    icon: DashedCircleGlyph,
   },
 }
 
 /**
- * Concrete hex for each status, keyed to the same Tailwind color families used
- * by the badge/dot classes above (red-500 / green-500 / blue-500 / gray-400 /
- * slate-400). Used where a literal color is required and Tailwind classes
- * cannot be — e.g. the ATT&CK Navigator layer export.
+ * Concrete hex for each status, for the ATT&CK Navigator layer export, where a
+ * literal color is required and a class cannot be used.
  */
 export const THREAT_STATUS_HEX: Record<ThreatStatus, string> = {
   open: '#ef4444', // red-500
@@ -75,9 +62,9 @@ export const THREAT_STATUS_ORDER: ThreatStatus[] = [
 export function getThreatStatusStyle(status: ThreatStatus): ThreatStatusStyle {
   return (
     THREAT_STATUS_STYLES[status] ?? {
-      label: status,
-      badgeClass: 'bg-muted text-muted-foreground border-border',
-      dotClass: 'bg-muted-foreground',
+      labelKey: `threatModel.status.${status}`,
+      tone: 'closed',
+      icon: DashedCircleGlyph,
     }
   )
 }

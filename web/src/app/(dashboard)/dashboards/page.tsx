@@ -1,17 +1,18 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { useRouter } from 'next/navigation'
-import { ArrowLeft, Plus, Star, Trash2, Pencil, LayoutGrid, ExternalLink } from 'lucide-react'
+import { useRouter, useSearchParams } from 'next/navigation'
+import { ArrowLeft, Plus, Star, Trash2, Pencil, ExternalLink, LayoutDashboard } from 'lucide-react'
 import { Main } from '@/components/layout'
 import { ConfirmDialog } from '@/components/confirm-dialog'
 import { useTranslation } from '@/context/i18n-provider'
-import { PageHeader } from '@/features/shared'
+import { PageHeader, PageStack } from '@/features/shared'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
+import { uniqueDashboardName } from '@/features/dashboards/lib/unique-name'
 import { Skeleton } from '@/components/ui/skeleton'
 import { toast } from 'sonner'
 import { cn } from '@/lib/utils'
@@ -42,12 +43,17 @@ import type { DashboardWidget } from '@/features/dashboards/api/dashboards.types
  * open it to populate it.
  */
 export default function DashboardsPage() {
-  const [editId, setEditId] = useState<string | null>(null)
+  // The edit form is part of the URL (`?edit=<id>`): Back returns to the list
+  // and the form can be linked to.
+  const router = useRouter()
+  const editId = useSearchParams()?.get('edit') || null
 
   if (editId) {
-    return <DashboardEditForm id={editId} onBack={() => setEditId(null)} />
+    return <DashboardEditForm id={editId} onBack={() => router.push('/dashboards')} />
   }
-  return <DashboardsList onEdit={setEditId} />
+  return (
+    <DashboardsList onEdit={(id) => router.push(`/dashboards?edit=${encodeURIComponent(id)}`)} />
+  )
 }
 
 // ── Column-layout picker options ─────────────────────────────────────────────
@@ -94,9 +100,16 @@ function DashboardsList({ onEdit }: { onEdit: (id: string) => void }) {
   const createFrom = async (name: string, layout: DashboardWidget[], columns = 2) => {
     setBusy(true)
     try {
-      const d = await createDashboard({ name, layout, columns })
+      const d = await createDashboard({
+        name: uniqueDashboardName(
+          name,
+          saved.map((x) => x.name),
+          name
+        ),
+        layout,
+        columns,
+      })
       await revalidate()
-      toast.success(t('dashboards.manage.created', 'Created "{name}"', { name }))
       onEdit(d.id)
     } catch (e) {
       toast.error(getErrorMessage(e))
@@ -105,9 +118,9 @@ function DashboardsList({ onEdit }: { onEdit: (id: string) => void }) {
     }
   }
 
-  const openView = (id: string) => {
+  const openView = (id: string, customize = false) => {
     rememberChoice(id)
-    router.push('/')
+    router.push(customize ? '/?customize=1' : '/')
   }
 
   const remove = async (id: string, name: string) => {
@@ -125,7 +138,6 @@ function DashboardsList({ onEdit }: { onEdit: (id: string) => void }) {
     try {
       await setDefaultDashboard(id)
       await revalidate()
-      toast.success(t('dashboards.actions.defaultSet', 'Default dashboard set'))
     } catch (e) {
       toast.error(getErrorMessage(e))
     }
@@ -133,163 +145,191 @@ function DashboardsList({ onEdit }: { onEdit: (id: string) => void }) {
 
   return (
     <Main>
-      <PageHeader
-        title={t('dashboards.manage.title', 'Dashboards')}
-        description={t(
-          'dashboards.manage.description',
-          'Start from a template or build your own. Your dashboards are computed for your own access.'
-        )}
-      >
-        <Button
-          variant="outline"
-          disabled={busy}
-          onClick={() => createFrom(t('dashboards.manage.blankName', 'My dashboard'), [])}
+      <PageStack>
+        <PageHeader
+          title={t('dashboards.manage.title', 'Dashboards')}
+          description={t(
+            'dashboards.manage.description',
+            'Start from a template or build your own. Your dashboards are computed for your own access.'
+          )}
         >
-          <Plus className="me-2 h-4 w-4" aria-hidden />{' '}
-          {t('dashboards.manage.newBlank', 'New blank')}
-        </Button>
-      </PageHeader>
+          <Button
+            variant="outline"
+            disabled={busy}
+            onClick={() => createFrom(t('dashboards.manage.blankName', 'My dashboard'), [])}
+          >
+            <Plus className="me-2 h-4 w-4" aria-hidden />{' '}
+            {t('dashboards.manage.newBlank', 'New blank')}
+          </Button>
+        </PageHeader>
 
-      {/* Templates */}
-      <section className="mt-2">
-        <h2 className="mb-3 text-sm font-medium text-muted-foreground">
-          {t('dashboards.manage.templates', 'Start from a template')}
-        </h2>
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          {DASHBOARD_TEMPLATES.map((tpl) => (
-            <Card key={tpl.key} className="flex flex-col">
-              <CardHeader className="pb-2">
-                <CardTitle className="flex items-center gap-2 text-base">
-                  <LayoutGrid className="h-4 w-4 text-muted-foreground" aria-hidden />
-                  {t(templateNameKey(tpl.key), tpl.key)}
-                </CardTitle>
-                <CardDescription>{t(templateDescriptionKey(tpl.key), '')}</CardDescription>
-              </CardHeader>
-              <CardContent className="mt-auto flex items-center justify-between">
-                <span className="text-xs text-muted-foreground">
-                  {t('dashboards.manage.widgetCount', '{n} widgets', { n: tpl.widgets.length })}
-                </span>
-                <Button
-                  size="sm"
-                  disabled={busy}
-                  onClick={() =>
-                    createFrom(
-                      t(templateNameKey(tpl.key), tpl.key),
-                      templateLayout(tpl),
-                      tpl.columns
-                    )
-                  }
-                >
-                  {t('dashboards.manage.useTemplate', 'Use template')}
-                </Button>
-              </CardContent>
-            </Card>
-          ))}
-        </div>
-      </section>
-
-      {/* Saved */}
-      <section className="mt-8">
-        <h2 className="mb-3 text-sm font-medium text-muted-foreground">
-          {t('dashboards.manage.yours', 'Your dashboards')}
-        </h2>
-        {isLoading ? (
+        {/* Templates */}
+        <section>
+          <h2 className="mb-3 text-sm font-medium text-muted-foreground">
+            {t('dashboards.manage.templates', 'Start from a template')}
+          </h2>
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-            {Array.from({ length: 3 }).map((_, i) => (
-              <Skeleton key={i} className="h-28 w-full" />
-            ))}
-          </div>
-        ) : saved.length === 0 ? (
-          <div className="rounded-lg border border-dashed py-10 text-center text-sm text-muted-foreground">
-            {t(
-              'dashboards.manage.none',
-              'No dashboards yet. Copy a template above to get started.'
-            )}
-          </div>
-        ) : (
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-            {saved.map((d) => (
-              <Card key={d.id} className="flex flex-col">
+            {DASHBOARD_TEMPLATES.map((tpl) => (
+              <Card key={tpl.key} className="flex flex-col">
                 <CardHeader className="pb-2">
-                  <CardTitle className="flex items-center gap-2 text-base">
-                    <button
-                      className="truncate text-start hover:underline"
-                      onClick={() => openView(d.id)}
-                    >
-                      {d.name}
-                    </button>
-                    {d.is_default && (
-                      <Badge variant="secondary" className="shrink-0 gap-1 text-[10px]">
-                        <Star className="h-3 w-3" aria-hidden />{' '}
-                        {t('dashboards.switcher.default', 'Default')}
-                      </Badge>
-                    )}
+                  <CardTitle className="text-base">
+                    {t(templateNameKey(tpl.key), tpl.key)}
                   </CardTitle>
-                  {d.description ? (
-                    <CardDescription className="line-clamp-2">{d.description}</CardDescription>
-                  ) : null}
+                  <CardDescription>{t(templateDescriptionKey(tpl.key), '')}</CardDescription>
                 </CardHeader>
                 <CardContent className="mt-auto flex items-center justify-between">
                   <span className="text-xs text-muted-foreground">
-                    {t('dashboards.manage.summary', '{n} widgets · {cols} columns', {
-                      n: d.layout.length,
-                      cols: d.columns ?? 2,
-                    })}
+                    {t('dashboards.manage.widgetCount', '{n} widgets', { n: tpl.widgets.length })}
                   </span>
-                  <div className="flex gap-1">
-                    <Button size="sm" onClick={() => openView(d.id)}>
-                      <ExternalLink className="me-2 h-4 w-4" aria-hidden />{' '}
-                      {t('dashboards.manage.open', 'Open')}
-                    </Button>
-                    <Button size="sm" variant="outline" onClick={() => onEdit(d.id)}>
-                      <Pencil className="me-2 h-4 w-4" aria-hidden />{' '}
-                      {t('dashboards.manage.edit', 'Edit')}
-                    </Button>
-                    {!d.is_default && (
-                      <Button
-                        size="icon"
-                        variant="ghost"
-                        title={t('dashboards.actions.setDefault', 'Set as my default')}
-                        aria-label={t('dashboards.actions.setDefault', 'Set as my default')}
-                        onClick={() => makeDefault(d.id)}
-                      >
-                        <Star className="h-4 w-4" />
-                      </Button>
-                    )}
-                    <Button
-                      size="icon"
-                      variant="ghost"
-                      title={t('confirm.delete', 'Delete')}
-                      aria-label={t('confirm.dashboard.deleteLabel', 'Delete dashboard {name}', {
-                        name: d.name,
-                      })}
-                      onClick={() => setPendingDelete({ id: d.id, name: d.name })}
-                    >
-                      <Trash2 className="h-4 w-4" />
-                    </Button>
-                  </div>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    disabled={busy}
+                    onClick={() =>
+                      createFrom(
+                        t(templateNameKey(tpl.key), tpl.key),
+                        templateLayout(tpl),
+                        tpl.columns
+                      )
+                    }
+                  >
+                    {t('dashboards.manage.useTemplate', 'Use template')}
+                  </Button>
                 </CardContent>
               </Card>
             ))}
           </div>
-        )}
-      </section>
-      <ConfirmDialog
-        open={pendingDelete !== null}
-        onOpenChange={(open) => !open && setPendingDelete(null)}
-        destructive
-        title={t('confirm.dashboard.deleteTitle', 'Delete dashboard "{name}"?', {
-          name: pendingDelete?.name ?? '',
-        })}
-        desc={t(
-          'confirm.dashboard.deleteDesc',
-          'The dashboard and its widget layout are deleted for everyone who can see it. Your data is not affected. This cannot be undone.'
-        )}
-        confirmText={t('confirm.delete', 'Delete')}
-        handleConfirm={() =>
-          pendingDelete ? remove(pendingDelete.id, pendingDelete.name) : undefined
-        }
-      />
+        </section>
+
+        {/* Saved */}
+        <section>
+          <h2 className="mb-3 text-sm font-medium text-muted-foreground">
+            {t('dashboards.manage.yours', 'Your dashboards')}
+          </h2>
+          {isLoading ? (
+            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+              {Array.from({ length: 3 }).map((_, i) => (
+                <Skeleton key={i} className="h-28 w-full" />
+              ))}
+            </div>
+          ) : saved.length === 0 ? (
+            <div className="rounded-lg border border-dashed py-10 text-center text-sm text-muted-foreground">
+              {t(
+                'dashboards.manage.none',
+                'No dashboards yet. Copy a template above to get started.'
+              )}
+            </div>
+          ) : (
+            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+              {saved.map((d) => (
+                <Card key={d.id} className="flex flex-col">
+                  <CardHeader className="pb-2">
+                    <CardTitle className="flex items-center gap-2 text-base">
+                      <button
+                        type="button"
+                        className="truncate text-start hover:underline"
+                        onClick={() => openView(d.id)}
+                      >
+                        {d.name}
+                      </button>
+                      {d.is_default && (
+                        <Badge variant="secondary" className="shrink-0 gap-1">
+                          <Star className="h-3 w-3" aria-hidden />{' '}
+                          {t('dashboards.switcher.default', 'Default')}
+                        </Badge>
+                      )}
+                    </CardTitle>
+                    {d.description ? (
+                      <CardDescription className="line-clamp-2">{d.description}</CardDescription>
+                    ) : null}
+                  </CardHeader>
+                  <CardContent className="mt-auto flex items-center justify-between">
+                    <span className="flex gap-3 text-xs text-muted-foreground">
+                      <span>
+                        {t('dashboards.manage.widgets', '{n} widgets', { n: d.layout.length })}
+                      </span>
+                      <span>
+                        {t('dashboards.manage.columns', '{cols} columns', { cols: d.columns ?? 2 })}
+                      </span>
+                    </span>
+                    <div className="flex gap-1">
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="outline"
+                        onClick={() => openView(d.id)}
+                      >
+                        <ExternalLink className="me-2 h-4 w-4" aria-hidden />{' '}
+                        {t('dashboards.manage.open', 'Open')}
+                      </Button>
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="outline"
+                        onClick={() => openView(d.id, true)}
+                      >
+                        <LayoutDashboard className="me-2 h-4 w-4" aria-hidden />{' '}
+                        {t('dashboards.manage.customize', 'Customize')}
+                      </Button>
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="outline"
+                        onClick={() => onEdit(d.id)}
+                      >
+                        <Pencil className="me-2 h-4 w-4" aria-hidden />{' '}
+                        {t('dashboards.manage.edit', 'Edit')}
+                      </Button>
+                      {!d.is_default && (
+                        <Button
+                          type="button"
+                          size="icon"
+                          variant="ghost"
+                          title={t('dashboards.actions.setDefault', 'Set as my default')}
+                          aria-label={t('dashboards.actions.setDefault', 'Set as my default')}
+                          onClick={() => makeDefault(d.id)}
+                        >
+                          <Star className="h-4 w-4" aria-hidden />
+                        </Button>
+                      )}
+                      <Button
+                        type="button"
+                        size="icon"
+                        variant="ghost"
+                        className="ms-2 text-destructive hover:text-destructive"
+                        title={t('confirm.delete', 'Delete')}
+                        aria-label={t('confirm.dashboard.deleteLabel', 'Delete dashboard {name}', {
+                          name: d.name,
+                        })}
+                        onClick={() => setPendingDelete({ id: d.id, name: d.name })}
+                      >
+                        <Trash2 className="h-4 w-4" aria-hidden />
+                      </Button>
+                    </div>
+                  </CardContent>
+                </Card>
+              ))}
+            </div>
+          )}
+        </section>
+        <ConfirmDialog
+          open={pendingDelete !== null}
+          onOpenChange={(open) => !open && setPendingDelete(null)}
+          destructive
+          title={t('confirm.dashboard.deleteTitle', 'Delete dashboard "{name}"?', {
+            name: pendingDelete?.name ?? '',
+          })}
+          desc={t(
+            'confirm.dashboard.deleteDesc',
+            'The dashboard and its widget layout are deleted for everyone who can see it. The data behind the widgets is not affected.'
+          )}
+          confirmText={t('confirm.dashboard.deleteButton', 'Delete dashboard')}
+          handleConfirm={() =>
+            pendingDelete ? remove(pendingDelete.id, pendingDelete.name) : undefined
+          }
+        />
+      </PageStack>
     </Main>
   )
 }
@@ -330,7 +370,6 @@ function DashboardEditForm({ id, onBack }: { id: string; onBack: () => void }) {
       const layout: DashboardWidget[] = data.layout
       await updateDashboard(id, { name: trimmed, description: description.trim(), columns, layout })
       await revalidate()
-      toast.success(t('dashboards.editor.saved', 'Dashboard saved'))
       if (thenOpen) {
         rememberChoice(id)
         router.push('/')
@@ -347,11 +386,13 @@ function DashboardEditForm({ id, onBack }: { id: string; onBack: () => void }) {
   if (isLoading || !ready) {
     return (
       <Main>
-        <Skeleton className="h-9 w-48" />
-        <div className="mx-auto mt-6 w-full max-w-3xl space-y-4">
-          <Skeleton className="h-40 w-full" />
-          <Skeleton className="h-32 w-full" />
-        </div>
+        <PageStack>
+          <Skeleton className="h-9 w-48" />
+          <div className="mx-auto w-full max-w-3xl space-y-4">
+            <Skeleton className="h-40 w-full" />
+            <Skeleton className="h-32 w-full" />
+          </div>
+        </PageStack>
       </Main>
     )
   }
@@ -359,46 +400,49 @@ function DashboardEditForm({ id, onBack }: { id: string; onBack: () => void }) {
   if (!data) {
     return (
       <Main>
-        <Button variant="ghost" onClick={onBack}>
-          <ArrowLeft className="me-2 h-4 w-4" aria-hidden /> {t('dashboards.manage.back', 'Back')}
-        </Button>
-        <div className="mt-6 rounded-lg border border-dashed py-10 text-center text-sm text-muted-foreground">
-          {t('dashboards.manage.notFound', 'Dashboard not found.')}
-        </div>
+        <PageStack>
+          <Button variant="ghost" onClick={onBack} className="self-start">
+            <ArrowLeft className="me-2 h-4 w-4" aria-hidden /> {t('dashboards.manage.back', 'Back')}
+          </Button>
+          <div className="rounded-lg border border-dashed py-10 text-center text-sm text-muted-foreground">
+            {t('dashboards.manage.notFound', 'Dashboard not found.')}
+          </div>
+        </PageStack>
       </Main>
     )
   }
 
   return (
     <Main>
-      <PageHeader
-        title={t('dashboards.manage.editTitle', 'Edit dashboard')}
-        description={t(
-          'dashboards.manage.editDescription',
-          'Set the name, description and number of columns. Add and arrange widgets on the dashboard itself.'
-        )}
-      >
-        <div className="flex gap-2">
-          <Button variant="ghost" onClick={onBack}>
-            <ArrowLeft className="me-2 h-4 w-4" aria-hidden /> {t('dashboards.manage.back', 'Back')}
-          </Button>
-          <Button variant="outline" disabled={saving} onClick={() => submit(true)}>
-            <ExternalLink className="me-2 h-4 w-4" aria-hidden />{' '}
-            {t('dashboards.manage.saveOpen', 'Save and open')}
-          </Button>
-          <Button disabled={saving} onClick={() => submit(false)}>
-            {saving ? t('dashboards.manage.saving', 'Saving') : t('dashboards.editor.save', 'Save')}
-          </Button>
-        </div>
-      </PageHeader>
+      <PageStack>
+        <PageHeader
+          title={t('dashboards.manage.editTitle', 'Edit dashboard')}
+          description={t(
+            'dashboards.manage.editDescription',
+            'Set the name, description and number of columns. Add and arrange widgets on the dashboard itself.'
+          )}
+        >
+          <div className="flex gap-2">
+            <Button variant="ghost" onClick={onBack}>
+              <ArrowLeft className="me-2 h-4 w-4" aria-hidden />{' '}
+              {t('dashboards.manage.back', 'Back')}
+            </Button>
+            <Button variant="outline" disabled={saving} onClick={() => submit(true)}>
+              <ExternalLink className="me-2 h-4 w-4" aria-hidden />{' '}
+              {t('dashboards.manage.saveOpen', 'Save and open')}
+            </Button>
+            <Button disabled={saving} onClick={() => submit(false)}>
+              {saving
+                ? t('dashboards.manage.saving', 'Saving')
+                : t('dashboards.editor.save', 'Save')}
+            </Button>
+          </div>
+        </PageHeader>
 
-      <div className="mx-auto mt-2 w-full max-w-3xl space-y-6">
-        {/* General */}
-        <Card>
-          <CardHeader className="pb-3">
-            <CardTitle className="text-base">{t('dashboards.manage.general', 'General')}</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-4">
+        <div className="mx-auto w-full max-w-3xl space-y-6">
+          {/* General */}
+          <section className="space-y-4">
+            <h2 className="text-base font-medium">{t('dashboards.manage.general', 'General')}</h2>
             <div className="space-y-1.5">
               <label htmlFor="dash-name" className="text-sm font-medium">
                 {t('dashboards.manage.name', 'Name')} <span className="text-destructive">*</span>
@@ -431,21 +475,19 @@ function DashboardEditForm({ id, onBack }: { id: string; onBack: () => void }) {
               />
               <p className="text-xs text-muted-foreground">{description.length}/500</p>
             </div>
-          </CardContent>
-        </Card>
+          </section>
 
-        {/* Layout */}
-        <Card>
-          <CardHeader className="pb-3">
-            <CardTitle className="text-base">{t('dashboards.manage.layout', 'Layout')}</CardTitle>
-            <CardDescription>
-              {t(
-                'dashboards.manage.layoutHint',
-                'How many columns the dashboard is arranged in. Each widget keeps its share of the row.'
-              )}
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
+          {/* Layout */}
+          <section className="space-y-3 border-t pt-6">
+            <div>
+              <h2 className="text-base font-medium">{t('dashboards.manage.layout', 'Layout')}</h2>
+              <p className="text-sm text-muted-foreground">
+                {t(
+                  'dashboards.manage.layoutHint',
+                  'How many columns the dashboard is arranged in. Each widget keeps its share of the row.'
+                )}
+              </p>
+            </div>
             <div className="flex flex-wrap gap-3">
               {LAYOUT_OPTIONS.map((cols) => (
                 <button
@@ -468,9 +510,9 @@ function DashboardEditForm({ id, onBack }: { id: string; onBack: () => void }) {
                 </button>
               ))}
             </div>
-          </CardContent>
-        </Card>
-      </div>
+          </section>
+        </div>
+      </PageStack>
     </Main>
   )
 }

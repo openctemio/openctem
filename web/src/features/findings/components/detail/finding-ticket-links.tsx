@@ -105,9 +105,9 @@ export function FindingTicketLinks({
   const holdText = (h: TicketHold) => {
     switch (h.reason) {
       case 'daily_cap':
-        return t('findings.ticketHolds.dailyCap', 'Not sent to Jira yet — today’s limit is reached')
+        return t('findings.ticketHolds.dailyCap', 'Not sent to Jira yet. Today’s limit is reached')
       case 'create_failed':
-        return t('findings.ticketHolds.createFailed', 'Not sent to Jira — the last attempt failed')
+        return t('findings.ticketHolds.createFailed', 'Not sent to Jira. The last attempt failed')
       default:
         return t(
           'findings.ticketHolds.belowThreshold',
@@ -141,12 +141,12 @@ export function FindingTicketLinks({
             <ExternalLink className="h-3 w-3 shrink-0" aria-hidden />
           </a>
           {l.last_status && (
-            <Badge variant="secondary" className="text-[10px]">
+            <Badge variant="secondary" className="text-meta">
               {l.last_status}
             </Badge>
           )}
           {l.sync_error && (
-            <Badge variant="destructive" className="text-[10px]" title={l.sync_error}>
+            <Badge variant="destructive" className="text-meta" title={l.sync_error}>
               {t('findings.ticketLinks.syncError', 'Sync error')}
             </Badge>
           )}

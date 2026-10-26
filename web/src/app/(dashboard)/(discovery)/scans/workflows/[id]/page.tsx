@@ -1,5 +1,8 @@
 'use client'
 
+import { Tag } from '@/components/ui/tag'
+import { StatusLozenge } from '@/components/ui/status-lozenge'
+import { DashedCircleGlyph } from '@/components/ui/status-glyphs'
 import { use, useState, useCallback, useEffect, useMemo, useRef } from 'react'
 import dynamic from 'next/dynamic'
 import { useRouter } from 'next/navigation'
@@ -9,7 +12,18 @@ import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { ConfirmDialog } from '@/components/confirm-dialog'
 import { Skeleton } from '@/components/ui/skeleton'
-import { Save, ArrowLeft, Cloud, Server, Loader2, AlertTriangle, Upload, Undo2 } from 'lucide-react'
+import {
+  Save,
+  ArrowLeft,
+  Cloud,
+  Copy,
+  Server,
+  Loader2,
+  AlertTriangle,
+  Upload,
+  Undo2,
+  Clock,
+} from 'lucide-react'
 import { toast } from 'sonner'
 
 import { NodePalette } from '@/features/scan-workflows/components/node-palette'
@@ -25,12 +39,14 @@ const WorkflowBuilder = dynamic(
 )
 import {
   get,
+  post,
   scanWorkflowEndpoints,
   invalidateAllScanWorkflowCaches,
   type ScanWorkflow,
   type ScanWorkflowStep,
   type UIPosition,
 } from '@/lib/api'
+import { ErrorState } from '@/features/shared'
 import { useToolsWithConfig } from '@/lib/api/tool-hooks'
 import { getErrorMessage } from '@/lib/api/error-handler'
 import { generateTempStepId } from '@/lib/utils'
@@ -77,7 +93,10 @@ export default function WorkflowBuilderPage({ params }: PageProps) {
   const [workflow, setWorkflow] = useState<ScanWorkflow | null>(null)
   useBreadcrumbTitle(workflow?.name)
   const [isLoading, setIsLoading] = useState(true)
-  const [error, setError] = useState<string | null>(null)
+  const [error, setError] = useState<unknown>(null)
+  // Bumped by Retry to load the workflow again.
+  const [reloadKey, setReloadKey] = useState(0)
+  const [isCloning, setIsCloning] = useState(false)
 
   // Local state for steps
   const [localSteps, setLocalSteps] = useState<ScanWorkflowStep[]>([])
@@ -86,6 +105,10 @@ export default function WorkflowBuilderPage({ params }: PageProps) {
   // A saved draft differs from what runs; publishing makes it what runs.
   const [hasDraft, setHasDraft] = useState(false)
   const [isPublishing, setIsPublishing] = useState(false)
+  // Publishing changes what every scan using this workflow runs, and a discard
+  // loses the saved draft: both ask first.
+  const [askPublish, setAskPublish] = useState(false)
+  const [askDiscardDraft, setAskDiscardDraft] = useState(false)
   // Bumped by every edit, so a save that finishes after a newer edit does
   // not mark the newer edit as saved.
   const editSeq = useRef(0)
@@ -134,7 +157,9 @@ export default function WorkflowBuilderPage({ params }: PageProps) {
         setWorkflow(data)
         // The editor opens the draft when there is one: the layout and the
         // edits saved last, valid or not.
-        const draft = data.is_system_template ? null : await fetchDraft(id).catch(() => null)
+        // (fetchDraft answers null for a workflow without a draft; any
+        // other failure is a real error, not "no draft".)
+        const draft = data.is_system_template ? null : await fetchDraft(id)
         if (draft) {
           setLocalSteps(draft.steps.map(fromDraftStep))
           setStartPosition(draft.ui_start_position ?? data.ui_start_position)
@@ -149,14 +174,13 @@ export default function WorkflowBuilderPage({ params }: PageProps) {
         }
         setError(null)
       } catch (err) {
-        console.error('Failed to load workflow:', err)
-        setError('Failed to load workflow')
+        setError(err)
       } finally {
         setIsLoading(false)
       }
     }
     loadWorkflow()
-  }, [id])
+  }, [id, reloadKey])
 
   // A system template is read-only for everyone; any workflow is for a
   // member without scan_workflows:write (the API refuses their saves).
@@ -175,11 +199,11 @@ export default function WorkflowBuilderPage({ params }: PageProps) {
       setHasDraft(true)
       if (editSeq.current === seq) setHasChanges(false)
     } catch (err) {
-      toast.error(getErrorMessage(err, 'Failed to save the draft'))
+      toast.error(getErrorMessage(err, t('workflowStages.builder.saveFailed')))
     } finally {
       setIsSaving(false)
     }
-  }, [workflow, isReadOnly, localSteps, startPosition, endPosition])
+  }, [workflow, isReadOnly, localSteps, startPosition, endPosition, t])
 
   // Autosave: the draft is saved shortly after the last change.
   useEffect(() => {
@@ -321,8 +345,8 @@ export default function WorkflowBuilderPage({ params }: PageProps) {
   // Handle add node from palette
   const handleAddNode = useCallback(
     (data: AddNodeData) => {
-      const { nodeType, position, label, toolName } = data
-      const stepName = label || `New ${nodeType.charAt(0).toUpperCase() + nodeType.slice(1)}`
+      const { position, label, toolName } = data
+      const stepName = label || t('workflowStages.builder.newStep')
       // The step runs the capability its tool implements (or the tool's own
       // words); its key is made from that, unique in this workflow.
       const declared = availableTools.find((t) => t.name === toolName)?.capabilities ?? []
@@ -352,7 +376,7 @@ export default function WorkflowBuilderPage({ params }: PageProps) {
       setLocalSteps((prev) => [...prev, newStep])
       markChanged()
     },
-    [localSteps, availableTools, capabilityTable, markChanged]
+    [localSteps, availableTools, capabilityTable, markChanged, t]
   )
 
   // Handle node delete
@@ -368,7 +392,6 @@ export default function WorkflowBuilderPage({ params }: PageProps) {
 
     markChanged()
     setDeleteStepId(null)
-    toast.success('Step deleted')
   }, [deleteStepId, markChanged])
 
   // Save the draft now (the autosave does the same a moment later).
@@ -386,11 +409,15 @@ export default function WorkflowBuilderPage({ params }: PageProps) {
       setLocalSteps(fresh.steps || [])
       setHasDraft(false)
       await invalidateAllScanWorkflowCaches()
-      toast.success(`Published version ${published.version}`)
+      toast.success(
+        t('workflowStages.builder.publishedDone', 'Published version {version}', {
+          version: published.version,
+        })
+      )
     } catch (err) {
       const details = (err as { details?: unknown })?.details as GraphValidation | undefined
       if (details && Array.isArray(details.errors)) setGraphReport({ ...details, valid: false })
-      toast.error(getErrorMessage(err, 'Failed to publish'))
+      toast.error(getErrorMessage(err, t('workflowStages.builder.publishFailed')))
     } finally {
       setIsPublishing(false)
     }
@@ -424,9 +451,32 @@ export default function WorkflowBuilderPage({ params }: PageProps) {
       setGraphReport(null)
       setHasDraft(false)
       setHasChanges(false)
-      toast.success('Draft discarded')
+      toast.success(t('workflowStages.builder.discarded'))
     } catch (err) {
-      toast.error(getErrorMessage(err, 'Failed to discard the draft'))
+      toast.error(getErrorMessage(err, t('workflowStages.builder.discardFailed')))
+    }
+  }
+
+  // A system template is read-only: Clone makes the editable copy in the
+  // tenant's own workflows (the same call as the list's Clone) and opens it.
+  const handleCloneTemplate = async () => {
+    if (!workflow || isCloning) return
+    setIsCloning(true)
+    try {
+      const copy = await post<ScanWorkflow>(scanWorkflowEndpoints.clone(workflow.id), {
+        name: workflow.name,
+      })
+      await invalidateAllScanWorkflowCaches()
+      toast.success(
+        t('workflowStages.builder.cloned', 'Template cloned to your workflows as "{name}".', {
+          name: workflow.name,
+        })
+      )
+      router.push(`/scans/workflows/${copy.id}`)
+    } catch (err) {
+      toast.error(getErrorMessage(err, t('workflowStages.builder.cloneFailed')))
+    } finally {
+      setIsCloning(false)
     }
   }
 
@@ -461,16 +511,28 @@ export default function WorkflowBuilderPage({ params }: PageProps) {
   }
 
   // Error state
+  const loadStatus = (error as { statusCode?: number } | null)?.statusCode
   if (error || !workflow) {
+    const notFound = loadStatus === 404 || (!error && !workflow)
     return (
       <Main fixed>
-        <div className="flex flex-col items-center justify-center h-full gap-4">
-          <AlertTriangle className="h-12 w-12 text-destructive" />
-          <p className="text-lg font-medium">{error || 'Workflow not found'}</p>
-          <Button variant="outline" asChild>
+        <div className="mx-auto flex h-full w-full max-w-xl flex-col justify-center gap-4 p-4">
+          {notFound ? (
+            <div className="flex flex-col items-center gap-4">
+              <AlertTriangle className="h-12 w-12 text-muted-foreground" />
+              <p className="text-lg font-medium">{t('workflowStages.builder.notFound')}</p>
+            </div>
+          ) : (
+            <ErrorState
+              title={t('workflowStages.builder.error.title')}
+              error={error}
+              onRetry={() => setReloadKey((n) => n + 1)}
+            />
+          )}
+          <Button variant="outline" asChild className="self-center">
             <Link href="/scans/workflows">
               <ArrowLeft className="me-2 h-4 w-4" />
-              Back to Workflows
+              {t('workflowStages.builder.back')}
             </Link>
           </Button>
         </div>
@@ -485,11 +547,17 @@ export default function WorkflowBuilderPage({ params }: PageProps) {
           {/* Header */}
           <div className="flex items-center justify-between px-4 py-3 border-b bg-background shrink-0">
             <div className="flex items-center gap-3 min-w-0">
-              <Button variant="ghost" size="icon" onClick={handleBack} className="shrink-0">
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={handleBack}
+                className="shrink-0"
+                aria-label={t('workflowStages.builder.back')}
+              >
                 <ArrowLeft className="h-4 w-4" />
               </Button>
               {workflow.is_system_template ? (
-                <Cloud className="h-5 w-5 text-blue-500 shrink-0" />
+                <Cloud className="h-5 w-5 text-muted-foreground shrink-0" />
               ) : (
                 <Server className="h-5 w-5 text-muted-foreground shrink-0" />
               )}
@@ -497,43 +565,75 @@ export default function WorkflowBuilderPage({ params }: PageProps) {
                 <h1 className="text-base font-semibold truncate">{workflow.name}</h1>
                 <p className="text-xs text-muted-foreground whitespace-nowrap">
                   {isSystemTemplate
-                    ? 'Read-only view - Clone to edit'
+                    ? t('workflowStages.builder.hintTemplate')
                     : isReadOnly
                       ? t('scans.workflows.readOnlyNoPermission')
-                      : 'Drag nodes from palette • Connect nodes • Click to edit'}
+                      : t('workflowStages.builder.hintEdit')}
                 </p>
               </div>
             </div>
             <div className="flex items-center gap-2 shrink-0">
               {isSystemTemplate && (
-                <Badge className="bg-blue-500/15 text-blue-600 border-0 text-xs">
-                  System Template
-                </Badge>
+                <Tag
+                  variant="plain"
+                  icon={Cloud}
+                  label={t('workflowStages.builder.systemTemplate')}
+                />
+              )}
+              {isSystemTemplate && canWriteWorkflows && (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => void handleCloneTemplate()}
+                  disabled={isCloning}
+                  title={t('workflowStages.builder.cloneHint')}
+                >
+                  {isCloning ? (
+                    <Loader2 className="me-2 h-4 w-4 animate-spin" />
+                  ) : (
+                    <Copy className="me-2 h-4 w-4" />
+                  )}
+                  {t('workflowStages.builder.clone')}
+                </Button>
               )}
               {!isReadOnly && (
-                <Badge variant="outline" className="text-xs" title="The version runs use">
-                  Published v{workflow.version}
+                <Badge
+                  variant="outline"
+                  className="text-xs"
+                  title={t('workflowStages.builder.publishedTitle')}
+                >
+                  {t('workflowStages.builder.published', 'Published v{version}', {
+                    version: workflow.version,
+                  })}
                 </Badge>
               )}
               {hasDraft && !hasChanges && !isReadOnly && (
-                <Badge variant="outline" className="text-xs border-info text-info">
-                  Draft
-                </Badge>
+                <StatusLozenge
+                  tone="triage"
+                  icon={DashedCircleGlyph}
+                  label={t('workflowStages.builder.draft')}
+                />
               )}
               {hasChanges && !isReadOnly && (
-                <Badge variant="outline" className="text-yellow-600 border-yellow-600 text-xs">
-                  {isSaving ? 'Saving...' : 'Unsaved'}
-                </Badge>
+                <StatusLozenge
+                  tone="waiting"
+                  icon={Clock}
+                  label={
+                    isSaving
+                      ? t('workflowStages.builder.saving')
+                      : t('workflowStages.builder.unsaved')
+                  }
+                />
               )}
               {hasDraft && !isReadOnly && (
                 <Button
                   size="sm"
                   variant="ghost"
-                  onClick={handleDiscardDraft}
-                  title="Discard the draft"
+                  onClick={() => setAskDiscardDraft(true)}
+                  title={t('workflowStages.builder.discardDraftTitle')}
                 >
                   <Undo2 className="me-2 h-4 w-4" />
-                  Discard draft
+                  {t('workflowStages.builder.discardDraft')}
                 </Button>
               )}
               {!isReadOnly && (
@@ -548,20 +648,20 @@ export default function WorkflowBuilderPage({ params }: PageProps) {
                   ) : (
                     <Save className="me-2 h-4 w-4" />
                   )}
-                  Save draft
+                  {t('workflowStages.builder.saveDraft')}
                 </Button>
               )}
               {!isReadOnly && (
                 <Button
                   size="sm"
-                  onClick={handlePublish}
+                  onClick={() => setAskPublish(true)}
                   disabled={!canPublish || isPublishing}
                   title={
                     blockingIssues > 0
-                      ? 'Fix the blocking issues to publish'
+                      ? t('workflowStages.builder.publishBlocked')
                       : hasDraft
-                        ? 'Make this draft the version runs use'
-                        : 'Nothing to publish'
+                        ? t('workflowStages.builder.publishReady')
+                        : t('workflowStages.builder.publishNothing')
                   }
                 >
                   {isPublishing ? (
@@ -569,7 +669,7 @@ export default function WorkflowBuilderPage({ params }: PageProps) {
                   ) : (
                     <Upload className="me-2 h-4 w-4" />
                   )}
-                  Publish
+                  {t('workflowStages.builder.publish')}
                 </Button>
               )}
             </div>
@@ -639,6 +739,30 @@ export default function WorkflowBuilderPage({ params }: PageProps) {
           </div>
         </div>
       </Main>
+
+      <ConfirmDialog
+        open={askPublish}
+        onOpenChange={setAskPublish}
+        title={t('confirm.workflow.publishTitle', undefined, { name: workflow?.name ?? '' })}
+        desc={t('confirm.workflow.publishDesc')}
+        confirmText={t('confirm.workflow.publishBtn')}
+        handleConfirm={async () => {
+          setAskPublish(false)
+          await handlePublish()
+        }}
+      />
+      <ConfirmDialog
+        open={askDiscardDraft}
+        onOpenChange={setAskDiscardDraft}
+        destructive
+        title={t('confirm.workflow.discardDraftTitle', undefined, { name: workflow?.name ?? '' })}
+        desc={t('confirm.workflow.discardDraftDesc')}
+        confirmText={t('confirm.workflow.discardDraftBtn')}
+        handleConfirm={async () => {
+          setAskDiscardDraft(false)
+          await handleDiscardDraft()
+        }}
+      />
 
       {/* Delete Confirmation Dialog */}
       <ConfirmDialog

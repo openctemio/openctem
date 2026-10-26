@@ -1612,9 +1612,13 @@ func TestRedactSecretSnippet_KeepsAMaskedLine(t *testing.T) {
 type defaultBranchStubRepo struct {
 	defaultBranch *branch.Branch
 	setCalls      []shared.ID
+	getErr        error
 }
 
 func (s *defaultBranchStubRepo) GetDefaultBranch(_ context.Context, _ shared.ID) (*branch.Branch, error) {
+	if s.getErr != nil {
+		return nil, s.getErr
+	}
 	if s.defaultBranch == nil {
 		return nil, shared.ErrNotFound
 	}

@@ -8,10 +8,12 @@ import userEvent from '@testing-library/user-event'
 
 const csrfFetch = vi.hoisted(() => vi.fn())
 const post = vi.hoisted(() => vi.fn())
+const del = vi.hoisted(() => vi.fn())
 vi.mock('@/lib/api/client', async (orig) => ({
   ...(await orig<typeof import('@/lib/api/client')>()),
   csrfFetch,
   post,
+  del,
 }))
 
 globalThis.ResizeObserver ??= class {
@@ -149,7 +151,13 @@ vi.mock('@/features/components/api/hooks', () => ({
 vi.mock('@/context/tenant-provider', () => ({
   useTenant: () => ({ currentTenant: { id: 't1', slug: 't1' } }),
 }))
-vi.mock('@/features/findings/components/assignee-select', () => ({ AssigneeSelect: () => null }))
+vi.mock('@/features/findings/components/assignee-select', () => ({
+  AssigneeSelect: ({ onChange }: { onChange: (u: { id: string; name: string }) => void }) => (
+    <button type="button" onClick={() => onChange({ id: 'u1', name: 'Ada Lovelace' })}>
+      Pick Ada
+    </button>
+  ),
+}))
 // The dry run of the API's transition engine: f2 is blocked unless allowAll.
 let allowAll = true
 const evaluate = vi.hoisted(() => vi.fn())
@@ -163,6 +171,20 @@ evaluate.mockImplementation(async (ids: string[], to: string) =>
       : { finding_id: id, decision: { to, allowed: false, blocked: [{ code: 'not_fix_owner' }] } }
   )
 )
+
+vi.mock('@/features/findings/filters/contract', async (orig) => ({
+  ...(await orig<typeof import('@/features/findings/filters/contract')>()),
+  useFindingFilterContract: () => ({ contract: undefined, isLoading: false, error: undefined }),
+}))
+vi.mock('@/features/saved-views/api/use-saved-views', async (orig) => ({
+  ...(await orig<typeof import('@/features/saved-views/api/use-saved-views')>()),
+  useSavedViews: () => ({ views: [], error: undefined, isLoading: false, mutate: vi.fn() }),
+}))
+
+vi.mock('@/features/findings/api/use-quick-views', () => ({
+  useFindingQuickViews: () => ({ data: undefined }),
+  refreshFindingQuickViews: vi.fn(),
+}))
 
 import FindingsPage from '../page'
 
@@ -183,11 +205,11 @@ describe('Findings bulk resolve', () => {
     expect(dialog).toHaveTextContent('Resolve 2 findings?')
 
     // A bulk resolve is attested: the confirm waits for a note.
-    expect(within(dialog).getByRole('button', { name: 'Resolve' })).toBeDisabled()
+    expect(within(dialog).getByRole('button', { name: 'Resolve 2 findings' })).toBeDisabled()
     fireEvent.change(within(dialog).getByLabelText('Note (required)'), {
       target: { value: 'patched in 4.2' },
     })
-    await userEvent.click(within(dialog).getByRole('button', { name: 'Resolve' }))
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Resolve 2 findings' }))
     await waitFor(() => expect(bulkCalls()).toHaveLength(1))
     expect(bulkCalls()[0][1]).toMatchObject({
       finding_ids: ['f1', 'f2'],
@@ -195,6 +217,55 @@ describe('Findings bulk resolve', () => {
       resolution: 'patched in 4.2',
     })
   })
+  it('asks before a bulk status move, with the count and the finding titles', async () => {
+    allowAll = true
+    post.mockClear()
+    post.mockResolvedValue({ updated: 2, failed: 0 })
+    window.history.replaceState(null, '', '/findings')
+    render(<FindingsPage />)
+    await userEvent.click(screen.getAllByRole('checkbox', { name: /select all/i })[0])
+    const bar = screen.getByRole('toolbar', { name: 'Actions for selected rows' })
+    await userEvent.click(within(bar).getByRole('button', { name: 'Status' }))
+    await userEvent.click(await screen.findByRole('menuitem', { name: 'In progress' }))
+    const bulkCalls = () =>
+      post.mock.calls.filter(([url]) => String(url).includes('/findings/bulk/status'))
+    const dialog = await screen.findByRole('alertdialog')
+    expect(dialog).toHaveTextContent('Mark 2 findings as In progress?')
+    expect(dialog).toHaveTextContent('Outdated TLS')
+    expect(dialog).toHaveTextContent('Open admin panel')
+    expect(bulkCalls()).toHaveLength(0)
+
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Cancel' }))
+    expect(bulkCalls()).toHaveLength(0)
+
+    await userEvent.click(within(bar).getByRole('button', { name: 'Status' }))
+    await userEvent.click(await screen.findByRole('menuitem', { name: 'In progress' }))
+    await userEvent.click(
+      within(await screen.findByRole('alertdialog')).getByRole('button', {
+        name: 'Mark 2 findings In progress',
+      })
+    )
+    await waitFor(() => expect(bulkCalls()).toHaveLength(1))
+    expect(bulkCalls()[0][1]).toMatchObject({ finding_ids: ['f1', 'f2'], status: 'in_progress' })
+  })
+
+  it('asks before a bulk assignment and names the assignee', async () => {
+    post.mockClear()
+    post.mockResolvedValue({ updated: 2, failed: 0 })
+    window.history.replaceState(null, '', '/findings')
+    render(<FindingsPage />)
+    await userEvent.click(screen.getAllByRole('checkbox', { name: /select all/i })[0])
+    await userEvent.click(screen.getByRole('button', { name: 'Pick Ada' }))
+    const assignCalls = () =>
+      post.mock.calls.filter(([url]) => String(url).includes('/findings/bulk/assign'))
+    const dialog = await screen.findByRole('alertdialog')
+    expect(dialog).toHaveTextContent('Assign 2 findings to Ada Lovelace?')
+    expect(assignCalls()).toHaveLength(0)
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Assign 2 findings' }))
+    await waitFor(() => expect(assignCalls()).toHaveLength(1))
+    expect(assignCalls()[0][1]).toMatchObject({ finding_ids: ['f1', 'f2'], user_id: 'u1' })
+  })
+
   it('sends only the findings the dry run allows', async () => {
     allowAll = false
     post.mockClear()
@@ -209,7 +280,7 @@ describe('Findings bulk resolve', () => {
     fireEvent.change(within(dialog).getByLabelText('Note (required)'), {
       target: { value: 'patched in 4.2' },
     })
-    await userEvent.click(within(dialog).getByRole('button', { name: 'Resolve' }))
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Resolve 2 findings' }))
     const bulkCalls = () =>
       post.mock.calls.filter(([url]) => String(url).includes('/findings/bulk/status'))
     await waitFor(() => expect(bulkCalls()).toHaveLength(1))
@@ -230,7 +301,7 @@ describe('Findings bulk resolve', () => {
     fireEvent.change(within(dialog).getByLabelText('Note (required)'), {
       target: { value: 'patched in 4.2' },
     })
-    await userEvent.click(within(dialog).getByRole('button', { name: 'Resolve' }))
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Resolve 2 findings' }))
     await waitFor(() =>
       expect(
         post.mock.calls.filter(([url]) => String(url).includes('/findings/bulk/status'))
@@ -238,6 +309,23 @@ describe('Findings bulk resolve', () => {
     )
     expect(await screen.findByRole('alertdialog')).toBeInTheDocument()
     expect(screen.getByLabelText('Note (required)')).toHaveValue('patched in 4.2')
+  })
+
+  it('deletes a finding only after its title is typed', async () => {
+    del.mockClear()
+    del.mockResolvedValue(undefined)
+    window.history.replaceState(null, '', '/findings')
+    render(<FindingsPage />)
+    await userEvent.click(screen.getByRole('button', { name: 'Actions for Outdated TLS' }))
+    await userEvent.click(await screen.findByRole('menuitem', { name: 'Delete' }))
+    const dialog = await screen.findByRole('alertdialog')
+    expect(dialog).toHaveTextContent('Delete the finding "Outdated TLS"?')
+    const confirm = within(dialog).getByRole('button', { name: 'Delete finding' })
+    expect(confirm).toBeDisabled()
+    await userEvent.type(within(dialog).getByRole('textbox'), 'Outdated TLS')
+    await userEvent.click(confirm)
+    await waitFor(() => expect(del).toHaveBeenCalledTimes(1))
+    expect(String(del.mock.calls[0][0])).toContain('/api/v1/findings/f1')
   })
 
   it('offers no selection or bulk bar without findings:bulk_update', () => {

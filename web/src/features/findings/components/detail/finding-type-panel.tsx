@@ -12,10 +12,12 @@
  * Other types have no extra band: their facts are in Fix and Intelligence.
  */
 
+import * as React from 'react'
 import { ExternalLink, KeyRound, Network, Route } from 'lucide-react'
 import { useTranslation } from '@/context/i18n-provider'
 import { safeHref } from '@/lib/safe-href'
 import { Badge } from '@/components/ui/badge'
+import { Button } from '@/components/ui/button'
 import {
   DetailField,
   DetailFieldGrid,
@@ -25,6 +27,7 @@ import { cn } from '@/lib/utils'
 import { useFindingEvidenceItems } from '../../api/use-finding-evidence-items'
 import { DATA_FLOW_LOCATION_CONFIG, type FindingDetail } from '../../types'
 import { buildRepositoryCodeUrl } from '../../lib/repository-url'
+import { foldEvidence, primaryEvidence } from '../../lib/evidence-view'
 import { FindingEvidenceItems } from './finding-evidence-items'
 
 /** Steps shown in the drawer; the page's Data flow tab has the rest. */
@@ -77,7 +80,7 @@ function TracePanel({
               <span
                 aria-hidden
                 className={cn(
-                  'mt-0.5 flex size-5 shrink-0 items-center justify-center rounded-full text-[11px] font-semibold',
+                  'mt-0.5 flex size-5 shrink-0 items-center justify-center rounded-full text-meta font-semibold',
                   cfg.bgColor,
                   cfg.color
                 )}
@@ -181,18 +184,38 @@ function SecretPanel({ finding }: { finding: FindingDetail }) {
   )
 }
 
-function WebEvidencePanel({ finding }: { finding: FindingDetail }) {
+function WebEvidencePanel({
+  finding,
+  onOpenEvidence,
+}: {
+  finding: FindingDetail
+  onOpenEvidence?: () => void
+}) {
   const { t } = useTranslation()
   const { data } = useFindingEvidenceItems(finding.id)
-  const items = data?.data ?? []
-  if (items.length === 0) return null
+  const items = React.useMemo(() => foldEvidence(data?.data ?? []), [data])
+  const primary = React.useMemo(() => primaryEvidence(items), [items])
+  if (!primary) return null
+  const more = items.length - 1
   return (
     <DetailSection
       title={t('findings.typePanel.httpEvidence', 'HTTP evidence')}
       icon={Network}
       count={items.length}
     >
-      <FindingEvidenceItems findingId={finding.id} items={items.slice(0, 1)} />
+      <FindingEvidenceItems findingId={finding.id} items={[primary]} compact />
+      {more > 0 && onOpenEvidence && (
+        <Button
+          type="button"
+          variant="link"
+          size="sm"
+          className="mt-2 h-auto p-0 text-xs"
+          onClick={onOpenEvidence}
+          data-testid="evidence-open-all"
+        >
+          {t('findings.typePanel.allEvidence', 'All evidence ({count})', { count: items.length })}
+        </Button>
+      )}
     </DetailSection>
   )
 }
@@ -201,9 +224,11 @@ export interface FindingTypePanelProps {
   finding: FindingDetail
   /** Opens the full page on the data-flow tab. */
   onOpenTrace?: () => void
+  /** Opens the full page on the evidence tab. */
+  onOpenEvidence?: () => void
 }
 
-export function FindingTypePanel({ finding, onOpenTrace }: FindingTypePanelProps) {
+export function FindingTypePanel({ finding, onOpenTrace, onOpenEvidence }: FindingTypePanelProps) {
   if (finding.source === 'secret' || finding.findingType === 'secret') {
     return <SecretPanel finding={finding} />
   }
@@ -211,7 +236,7 @@ export function FindingTypePanel({ finding, onOpenTrace }: FindingTypePanelProps
     return <TracePanel finding={finding} onOpenTrace={onOpenTrace} />
   }
   if (WEB_SOURCES.has(finding.source)) {
-    return <WebEvidencePanel finding={finding} />
+    return <WebEvidencePanel finding={finding} onOpenEvidence={onOpenEvidence} />
   }
   return null
 }

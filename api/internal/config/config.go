@@ -379,6 +379,16 @@ type IngestConfig struct {
 	// MaxPendingPerTenant bounds a tenant's queue depth; further submissions get
 	// 429 + Retry-After. 0 disables the check.
 	MaxPendingPerTenant int
+	// Workers is how many ingest jobs one server processes at once
+	// (INGEST_WORKERS, default 4).
+	Workers int
+	// MaxJobDuration is the hard cap on one ingest job's processing, however
+	// long its lease is renewed (INGEST_MAX_JOB_DURATION, default 30m).
+	MaxJobDuration time.Duration
+	// MaxRunningPerTenant caps one tenant's processing jobs across servers
+	// (INGEST_MAX_RUNNING_PER_TENANT, default 2: half the workers of one
+	// server, so one tenant never holds them all).
+	MaxRunningPerTenant int
 
 	// V2Results mounts sensor protocol v2 results (RFC-026) at
 	// /api/v2/sensor, processes its jobs and advertises it to v1 sensors that
@@ -661,14 +671,17 @@ func (c *ServerConfig) TLSEnabled() bool { return c.TLSCertFile != "" }
 
 // DatabaseConfig holds database configuration.
 type DatabaseConfig struct {
-	Host            string
-	Port            int
-	User            string
-	Password        string
-	Name            string
-	SSLMode         string
-	MaxOpenConns    int
-	MaxIdleConns    int
+	Host         string
+	Port         int
+	User         string
+	Password     string
+	Name         string
+	SSLMode      string
+	MaxOpenConns int
+	MaxIdleConns int
+	// IngestMaxConns sizes the ingest pool (DB_INGEST_MAX_CONNS, default 8):
+	// the connections ingest writes use, apart from the API's pool.
+	IngestMaxConns  int
 	ConnMaxLifetime time.Duration
 	// JITEnabled controls PostgreSQL's JIT compiler for the API's sessions
 	// (env DB_JIT_ENABLED, default false). JIT pays off for long analytical
@@ -719,6 +732,19 @@ func (c *DatabaseConfig) AdminConfig() *DatabaseConfig {
 	a := *c
 	a.User, a.Password = c.AdminUser, c.AdminPassword
 	a.MaxOpenConns, a.MaxIdleConns = 5, 2
+	return &a
+}
+
+// IngestConfig returns the database settings of the ingest pool: the API's
+// settings with IngestMaxConns open connections, all kept idle (bursts do
+// not churn connections).
+func (c *DatabaseConfig) IngestConfig() *DatabaseConfig {
+	a := *c
+	n := c.IngestMaxConns
+	if n <= 0 {
+		n = 8
+	}
+	a.MaxOpenConns, a.MaxIdleConns = n, n
 	return &a
 }
 
@@ -1113,6 +1139,12 @@ type SensorTransportV3Config struct {
 	MTLSTrustedProxies []string
 }
 
+// VulnFeedOfficialRootKeyID is the root key id of the official vulnerability
+// bundles (openctemio/vulnfeed keys/root-keyid.txt, first key ceremony
+// 2026-10-25). Pinned so the import works with no setup; VULNFEED_ROOT_KEY_ID
+// overrides it for a private collector.
+const VulnFeedOfficialRootKeyID = "SHA256:cb881872776e9b00fa699ccdc809af71243728279083f7bcdf6dd171e5a246c2"
+
 // SensorConfig holds sensor management configuration.
 type SensorConfig struct {
 	// HeartbeatTimeout is the duration after which a sensor is marked as inactive
@@ -1132,7 +1164,8 @@ type SensorConfig struct {
 	CTEMIDFeedURL string
 
 	// Vulnerability bundles (RFC-066 §5.5): the pinned root key id
-	// (VULNFEED_ROOT_KEY_ID; empty = no import), the release base URL
+	// (VULNFEED_ROOT_KEY_ID; defaults to VulnFeedOfficialRootKeyID, the root
+	// of the official openctemio/vulnfeed releases), the release base URL
 	// (VULNFEED_BASE_URL) and, for air-gapped platforms, a local directory
 	// holding a release's files (VULNFEED_BUNDLE_DIR). VulnFeedMirrors
 	// (VULNFEED_MIRRORS, comma separated, https) are tried after the
@@ -1557,7 +1590,7 @@ func Load() (*Config, error) {
 			Host:                  getEnv("SERVER_HOST", "0.0.0.0"),
 			Port:                  getEnvInt("SERVER_PORT", 8080),
 			ReadTimeout:           getEnvDuration("SERVER_READ_TIMEOUT", 15*time.Second),
-			WriteTimeout:          getEnvDuration("SERVER_WRITE_TIMEOUT", 15*time.Second),
+			WriteTimeout:          getEnvDuration("SERVER_WRITE_TIMEOUT", defaultWriteTimeout(getEnvDuration("SERVER_REQUEST_TIMEOUT", 30*time.Second))),
 			RequestTimeout:        getEnvDuration("SERVER_REQUEST_TIMEOUT", 30*time.Second), // Per-request timeout
 			ShutdownTimeout:       getEnvDuration("SERVER_SHUTDOWN_TIMEOUT", 30*time.Second),
 			MaxBodySize:           getEnvInt64("SERVER_MAX_BODY_SIZE", 10<<20), // 10MB default
@@ -1578,6 +1611,7 @@ func Load() (*Config, error) {
 			SSLMode:         getEnv("DB_SSLMODE", "disable"),
 			MaxOpenConns:    getEnvInt("DB_MAX_OPEN_CONNS", 25),
 			MaxIdleConns:    getEnvInt("DB_MAX_IDLE_CONNS", 5),
+			IngestMaxConns:  getEnvInt("DB_INGEST_MAX_CONNS", 8),
 			ConnMaxLifetime: getEnvDuration("DB_CONN_MAX_LIFETIME", 5*time.Minute),
 			JITEnabled:      getEnvBool("DB_JIT_ENABLED", false),
 		},
@@ -1711,7 +1745,7 @@ func Load() (*Config, error) {
 			HeartbeatTimeout:                  getEnvDuration("WORKER_HEARTBEAT_TIMEOUT", 5*time.Minute),
 			SCMSyncInterval:                   getEnvDuration("SCM_SYNC_INTERVAL", 0),
 			CTEMIDFeedURL:                     getEnv("CTEM_ID_FEED_URL", "https://ctem.org/source.json"),
-			VulnFeedRootKeyID:                 getEnv("VULNFEED_ROOT_KEY_ID", ""),
+			VulnFeedRootKeyID:                 getEnv("VULNFEED_ROOT_KEY_ID", VulnFeedOfficialRootKeyID),
 			VulnFeedBaseURL:                   getEnv("VULNFEED_BASE_URL", "https://github.com/openctemio/vulnfeed/releases"),
 			VulnFeedBundleDir:                 getEnv("VULNFEED_BUNDLE_DIR", ""),
 			VulnFeedMirrors:                   feedURLs("", getEnv("VULNFEED_MIRRORS", "")),
@@ -1762,6 +1796,9 @@ func Load() (*Config, error) {
 		Ingest: IngestConfig{
 			Mode:                  getEnv("INGEST_MODE", "sync"),
 			MaxPendingPerTenant:   getEnvInt("INGEST_MAX_PENDING_PER_TENANT", 100),
+			Workers:               getEnvInt("INGEST_WORKERS", 4),
+			MaxRunningPerTenant:   getEnvInt("INGEST_MAX_RUNNING_PER_TENANT", 2),
+			MaxJobDuration:        getEnvDuration("INGEST_MAX_JOB_DURATION", 30*time.Minute),
 			V2Results:             getEnvBool("SENSOR_PROTOCOL_V2_RESULTS", true),
 			V2BlindingRatio:       getEnvFloat("SENSOR_V2_BLINDING_RATIO", 0.5),
 			V2BlindingMinFindings: getEnvInt("SENSOR_V2_BLINDING_MIN_FINDINGS", 100),
@@ -2036,6 +2073,12 @@ func (c *Config) validateBasic() error {
 	if err := httpsec.ValidatePrivateEgress(c.App.Env,
 		os.Getenv(httpsec.EnvAllowPrivate), os.Getenv(httpsec.EnvAllowPrivateCIDRs)); err != nil {
 		return err
+	}
+	// The opened ranges are reachable by every organization's integrations.
+	// Where anyone may create an organization, that hands the operator's
+	// private network to strangers, so the two settings are not combined.
+	if c.Auth.SignupMode == SignupModeOpen && strings.TrimSpace(os.Getenv(httpsec.EnvAllowPrivateCIDRs)) != "" {
+		return fmt.Errorf("%s opens private ranges to every organization's integrations and cannot be combined with SIGNUP_MODE=open, where anyone can create an organization; unset it, or use SIGNUP_MODE=disabled or domain", httpsec.EnvAllowPrivateCIDRs)
 	}
 	if c.Server.Port < 1 || c.Server.Port > 65535 {
 		return fmt.Errorf("invalid server port: %d", c.Server.Port)
@@ -2945,3 +2988,21 @@ func feedURLs(primary, mirrors string) []string {
 // deploymentRegionRE is the shape of DEPLOYMENT_REGION (the tenants.region
 // check in the database is the same).
 var deploymentRegionRE = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{0,31}$`)
+
+// writeTimeoutMargin is how long the connection stays writable after the
+// per-request timeout fires, so the 503 timeout body can still be sent.
+const writeTimeoutMargin = 5 * time.Second
+
+// defaultWriteTimeout is the HTTP write timeout used when SERVER_WRITE_TIMEOUT
+// is not set: the request timeout plus a margin. A write timeout at or below
+// the request timeout closes the connection before the timeout answer is
+// written, and the client sees EOF instead of a 503.
+func defaultWriteTimeout(request time.Duration) time.Duration {
+	return request + writeTimeoutMargin
+}
+
+// WriteTimeoutBelowRequest reports whether the write timeout would cut the
+// connection before the request timeout answer can be written.
+func (s ServerConfig) WriteTimeoutBelowRequest() bool {
+	return s.RequestTimeout > 0 && s.WriteTimeout > 0 && s.WriteTimeout <= s.RequestTimeout
+}

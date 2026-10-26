@@ -78,6 +78,14 @@ type ScanWorkflowSettingsRequest struct {
 	FailFast         bool   `json:"fail_fast"`
 	TimeoutSeconds   int    `json:"timeout_seconds" validate:"min=0,max=86400"`
 	SensorPreference string `json:"sensor_preference" validate:"omitempty,oneof=auto tenant platform"`
+	// DeltaGating: heavy chained stages (templates, crawl, screenshots,
+	// service detection) take only the assets new, changed or due since the
+	// previous run of the same scan. Omitted on update: unchanged.
+	DeltaGating *bool `json:"delta_gating,omitempty"`
+	// ContinueOnFailedDependency: a step whose dependency failed, was
+	// skipped or timed out still runs on the seeds and on what its other
+	// predecessors produced. Omitted on update: unchanged.
+	ContinueOnFailedDependency *bool `json:"continue_on_failed_dependency,omitempty"`
 }
 
 // UIPositionRequest represents a visual position in the workflow builder.
@@ -110,6 +118,10 @@ type CreateStepRequest struct {
 	Condition         *StepConditionRequest  `json:"condition"`
 	MaxRetries        int                    `json:"max_retries"`
 	RetryDelaySeconds int                    `json:"retry_delay_seconds"`
+	// RunPolicy is how the step runs at each depth (min_depth, per-depth
+	// standard params and target cap) and whether it waits for a tool
+	// (optional). Omitted on a step update: unchanged.
+	RunPolicy *scanworkflow.RunPolicy `json:"run_policy,omitempty"`
 }
 
 // StepConditionRequest represents a step condition in the request.
@@ -148,6 +160,10 @@ type ScanWorkflowSettingsResponse struct {
 	FailFast         bool   `json:"fail_fast"`
 	TimeoutSeconds   int    `json:"timeout_seconds"`
 	SensorPreference string `json:"sensor_preference"`
+	// DeltaGating: heavy chained stages run only on new, changed or due assets.
+	DeltaGating bool `json:"delta_gating"`
+	// ContinueOnFailedDependency: dependents of a failed step still run.
+	ContinueOnFailedDependency bool `json:"continue_on_failed_dependency"`
 }
 
 // UIPositionResponse represents a visual position in the workflow builder response.
@@ -177,6 +193,9 @@ type StepResponse struct {
 	Condition         *StepConditionResponse `json:"condition,omitempty"`
 	MaxRetries        int                    `json:"max_retries"`
 	RetryDelaySeconds int                    `json:"retry_delay_seconds"`
+	// RunPolicy is how the step runs at each depth and whether it waits for
+	// a tool; absent when the step sets none.
+	RunPolicy *scanworkflow.RunPolicy `json:"run_policy,omitempty"`
 }
 
 // StepConditionResponse represents a step condition in the response.
@@ -231,6 +250,11 @@ type RunResponse struct {
 	// Subject names what a run that executes no scan workflow is about,
 	// e.g. {"finding_id", "retest_id"} for a retest.
 	Subject map[string]any `json:"subject,omitempty"`
+	// Result is what a completed run concluded when that is more than
+	// "done": a retest that was inconclusive or found the exposure at
+	// another path. The run is completed (the tool did its work); the
+	// console words the result from its code.
+	Result *RunResult `json:"result,omitempty"`
 	// ScanWorkflowVersion is the saved version of the scan workflow this run
 	// executes (settings and steps as the run started), SpecDigest its
 	// digest. Absent for runs without a workflow and runs from before
@@ -469,6 +493,11 @@ type RunDispatchResponse struct {
 	// an inventory-mode CIDR) added from the inventory when the run started
 	// (RFC-068).
 	TargetExpansion []RunTargetExpansion `json:"target_expansion,omitempty"`
+	// WillScan is how many targets the run dispatched; Skipped groups every
+	// other target by reason (docs/architecture/scan-targets.md, "Skipped
+	// targets"). Absent on runs started before the groups were recorded.
+	WillScan *int                `json:"will_scan,omitempty"`
+	Skipped  []scansvc.SkipGroup `json:"skipped,omitempty"`
 }
 
 // RunTargetExpansion is what one selector added to a run.
@@ -791,6 +820,10 @@ func (h *ScanWorkflowHandler) UpdateTemplate(w http.ResponseWriter, r *http.Requ
 		UIStartPosition: toUIPosition(req.UIStartPosition),
 		UIEndPosition:   toUIPosition(req.UIEndPosition),
 	}
+	if req.Settings != nil {
+		input.DeltaGating = req.Settings.DeltaGating
+		input.ContinueOnFailedDependency = req.Settings.ContinueOnFailedDependency
+	}
 
 	template, err := h.service.UpdateTemplate(scanWorkflowAuditCtx(r), input)
 	if err != nil {
@@ -909,6 +942,7 @@ func toAddStepInput(tenantID, templateID string, req CreateStepRequest) scanrun.
 		Condition:         toCondition(req.Condition),
 		MaxRetries:        req.MaxRetries,
 		RetryDelaySeconds: req.RetryDelaySeconds,
+		RunPolicy:         req.RunPolicy,
 	}
 	if req.UIPosition != nil {
 		in.UIPositionX = &req.UIPosition.X
@@ -1332,6 +1366,12 @@ func toSettings(settings *ScanWorkflowSettingsRequest) *scanworkflow.Settings {
 		FailFast:         settings.FailFast,
 		TimeoutSeconds:   settings.TimeoutSeconds,
 	}
+	if settings.DeltaGating != nil {
+		s.DeltaGating = *settings.DeltaGating
+	}
+	if settings.ContinueOnFailedDependency != nil {
+		s.ContinueOnFailedDependency = *settings.ContinueOnFailedDependency
+	}
 	if settings.SensorPreference != "" {
 		s.SensorPreference = scanworkflow.SensorPreference(settings.SensorPreference)
 	}
@@ -1373,10 +1413,12 @@ func toTemplateResponse(t *scanworkflow.Workflow) *TemplateResponse {
 		IsActive:         t.IsActive,
 		IsSystemTemplate: t.IsSystemTemplate,
 		Settings: ScanWorkflowSettingsResponse{
-			MaxParallelSteps: t.Settings.MaxParallelSteps,
-			FailFast:         t.Settings.FailFast,
-			TimeoutSeconds:   t.Settings.TimeoutSeconds,
-			SensorPreference: string(t.Settings.SensorPreference),
+			MaxParallelSteps:           t.Settings.MaxParallelSteps,
+			FailFast:                   t.Settings.FailFast,
+			TimeoutSeconds:             t.Settings.TimeoutSeconds,
+			SensorPreference:           string(t.Settings.SensorPreference),
+			DeltaGating:                t.Settings.DeltaGating,
+			ContinueOnFailedDependency: t.Settings.ContinueOnFailedDependency,
 		},
 		Tags:      t.Tags,
 		Steps:     steps,
@@ -1420,6 +1462,10 @@ func toStepResponse(s *scanworkflow.Step) *StepResponse {
 		MaxRetries:        s.MaxRetries,
 		RetryDelaySeconds: s.RetryDelaySeconds,
 	}
+	if !s.RunPolicy.IsZero() {
+		p := s.RunPolicy.Clone()
+		resp.RunPolicy = &p
+	}
 
 	if s.Condition.Type != "" {
 		resp.Condition = &StepConditionResponse{
@@ -1429,6 +1475,29 @@ func toStepResponse(s *scanworkflow.Step) *StepResponse {
 	}
 
 	return resp
+}
+
+// RunResult is the conclusion of a completed run (retest outcomes).
+type RunResult struct {
+	// Kind is the outcome, e.g. inconclusive or still_exposed_elsewhere.
+	Kind string `json:"kind"`
+	// Code is the reason code in lower case, e.g. endpoint_mismatch.
+	Code string `json:"code,omitempty"`
+}
+
+// runResultOf reads a run's result from its context (written when a retest
+// run completes with a conclusion); nil when it has none.
+func runResultOf(ctx map[string]any) *RunResult {
+	m, ok := ctx[scanrun.RunContextResult].(map[string]any)
+	if !ok {
+		return nil
+	}
+	kind, _ := m["kind"].(string)
+	if kind == "" {
+		return nil
+	}
+	code, _ := m["code"].(string)
+	return &RunResult{Kind: kind, Code: code}
 }
 
 func toRunResponse(r *scanrundom.Run) *RunResponse {
@@ -1450,6 +1519,7 @@ func toRunResponse(r *scanrundom.Run) *RunResponse {
 		Kind:           string(r.KindOrDefault()),
 		Trigger:        ptrRunTrigger(runTrigger(r)),
 		Subject:        r.Subject,
+		Result:         runResultOf(r.Context),
 		CreatedAt:      r.CreatedAt.Format("2006-01-02T15:04:05Z07:00"),
 
 		ScanWorkflowVersion: r.ScanWorkflowVersion,
@@ -1522,7 +1592,7 @@ func toRunResponse(r *scanrundom.Run) *RunResponse {
 // the run context. Values round-trip through JSON so the same code reads a
 // freshly built context and one loaded from the database.
 func toRunDispatchResponse(runContext map[string]any) *RunDispatchResponse {
-	keys := []string{"resolved_target_count", "excluded_target_count", "excluded_targets", "dispatch_warnings", "uncovered_targets", "zone_routing", "sensor_routing", "target_expansion"}
+	keys := []string{"resolved_target_count", "excluded_target_count", "excluded_targets", "dispatch_warnings", "uncovered_targets", "zone_routing", "sensor_routing", "target_expansion", scansvc.RunContextKeySkipped}
 	present := map[string]any{}
 	for _, k := range keys {
 		if v, ok := runContext[k]; ok && v != nil {
@@ -1545,11 +1615,12 @@ func toRunDispatchResponse(runContext map[string]any) *RunDispatchResponse {
 		Routing   *RunZoneRouting      `json:"zone_routing"`
 		Sensor    string               `json:"sensor_routing"`
 		Expansion []RunTargetExpansion `json:"target_expansion"`
+		Skipped   []scansvc.SkipGroup  `json:"skipped_targets"`
 	}
 	if err := json.Unmarshal(raw, &in); err != nil {
 		return nil
 	}
-	return &RunDispatchResponse{
+	out := &RunDispatchResponse{
 		ResolvedTargets:  in.Resolved,
 		ExcludedTargets:  in.Excluded,
 		Excluded:         in.Detail,
@@ -1559,6 +1630,14 @@ func toRunDispatchResponse(runContext map[string]any) *RunDispatchResponse {
 		SensorRouting:    in.Sensor,
 		TargetExpansion:  in.Expansion,
 	}
+	if _, recorded := present[scansvc.RunContextKeySkipped]; recorded {
+		will := in.Resolved
+		if in.Routing != nil {
+			will -= in.Routing.UncoveredTargets
+		}
+		out.WillScan, out.Skipped = &will, in.Skipped
+	}
+	return out
 }
 
 // toFilteringResultResponse converts filtering result from context to response type.

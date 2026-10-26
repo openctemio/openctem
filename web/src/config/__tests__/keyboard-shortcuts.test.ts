@@ -30,13 +30,33 @@ const HANDLERS: Record<string, [string, RegExp]> = {
     'features/findings/components/finding-detail-drawer.tsx',
     /\(e\.metaKey \|\| e\.ctrlKey\) && e\.key === 'Enter'/,
   ],
-  'toggle-comment': [
-    'features/findings/components/finding-detail-drawer.tsx',
-    /\(e\.metaKey \|\| e\.ctrlKey\) && e\.key === 'c' && !e\.shiftKey/,
-  ],
   'open-activity': [
     'features/activity/components/activity-trigger.tsx',
     /e\.key !== 'c' && e\.key !== 'C'[\s\S]*e\.metaKey \|\| e\.ctrlKey \|\| e\.altKey/,
+  ],
+  'next-finding': [
+    'features/findings/hooks/use-drawer-navigation.ts',
+    /e\.key !== 'j' && e\.key !== 'k'/,
+  ],
+  'previous-finding': [
+    'features/findings/hooks/use-drawer-navigation.ts',
+    /e\.key !== 'j' && e\.key !== 'k'/,
+  ],
+  triage: [
+    'app/(dashboard)/findings/page.tsx',
+    /e\.key !== 't' \|\| e\.metaKey \|\| e\.ctrlKey \|\| e\.altKey/,
+  ],
+  'add-filter': [
+    'features/findings/filters/add-filter-popover.tsx',
+    /e\.key !== 'f' \|\| e\.metaKey \|\| e\.ctrlKey \|\| e\.altKey/,
+  ],
+  'focus-search': [
+    'features/shared/components/list-toolbar.tsx',
+    /e\.key !== '\/' && e\.key !== 'f'[\s\S]*if \(e\.key === '\/'\)[\s\S]*input\.focus\(\)/,
+  ],
+  'open-filters': [
+    'features/shared/components/list-toolbar.tsx',
+    /aria-keyshortcuts="f"\]:not[\s\S]*trigger\.click\(\)/,
   ],
   'clear-selection': [
     'features/shared/components/bulk-action-bar.tsx',

@@ -60,7 +60,7 @@ Prefixes the API owns: `APP_`, `BRAND_`, `SERVER_`, `DB_`, `REDIS_`, `LOG_`, `AU
 | `SERVER_REQUEST_TIMEOUT` | duration | `30s` |  |  | Per-request handler timeout. |
 | `SERVER_SHUTDOWN_TIMEOUT` | duration | `30s` |  |  | Grace period for in-flight requests on shutdown. |
 | `SERVER_TRUSTED_PROXIES` | list | empty |  |  | Comma-separated CIDRs or IPs of proxies whose `X-Real-IP` / `X-Forwarded-For` the API believes (audit log, rate limits, IP allowlists). Empty: the API treats every peer as the client. The Compose stack lists the gateway and the web console. |
-| `SERVER_WRITE_TIMEOUT` | duration | `15s` |  |  | HTTP server write timeout. |
+| `SERVER_WRITE_TIMEOUT` | duration | `SERVER_REQUEST_TIMEOUT + 5s (35s)` |  |  | HTTP server write timeout. Keep it above `SERVER_REQUEST_TIMEOUT`: at or below it the connection closes before the `503` timeout answer is written and the client sees EOF. The API logs a warning at startup when it is not. |
 | `SESSION_TIMEOUT_MINUTES` | int | `30` |  |  | Maximum age, in minutes, of an access token (from its issued-at time) before the API answers `401 Session has expired`. `0` turns the check off. |
 | `SERVER_TLS_CERT_FILE` | path | empty |  |  | PEM certificate (full chain) for the API listener to terminate TLS itself, when no TLS proxy is in front. Set together with `SERVER_TLS_KEY_FILE`. |
 | `SERVER_TLS_KEY_FILE` | path | empty |  |  | PEM key matching `SERVER_TLS_CERT_FILE`. |
@@ -72,6 +72,7 @@ Prefixes the API owns: `APP_`, `BRAND_`, `SERVER_`, `DB_`, `REDIS_`, `LOG_`, `AU
 | `DB_CONN_MAX_LIFETIME` | duration | `5m` |  |  | Maximum lifetime of a pooled connection. |
 | `DB_HOST` | string | `localhost` | yes |  | PostgreSQL host. |
 | `DB_JIT_ENABLED` | bool | `false` |  |  | PostgreSQL JIT for the API's sessions. Off by default because request-path queries pay the JIT compile cost without benefiting from it. |
+| `DB_INGEST_MAX_CONNS` | int | `8` |  |  | Connections of the ingest pool, apart from the API's pool: the asset and finding writes of the ingest worker (CI results, imports, sensor reports) use it, so a burst of uploads cannot take the connections the API's requests need. All are kept idle. |
 | `DB_MAX_IDLE_CONNS` | int | `5` |  |  | Maximum idle connections kept in the pool. |
 | `DB_MAX_OPEN_CONNS` | int | `25` |  |  | Maximum open connections in the API's pool. |
 | `DB_NAME` | string | `openctem` |  |  | Database name. |
@@ -312,10 +313,13 @@ Prefixes the API owns: `APP_`, `BRAND_`, `SERVER_`, `DB_`, `REDIS_`, `LOG_`, `AU
 | Variable | Type | Default | Required | Secret | Description |
 |---|---|---|---|---|---|
 | `INGEST_COVERAGE_AUTO_RESOLVE` | string | `dry_run` |  |  | Coverage-scoped auto-resolve of non-repository findings: `off`, `dry_run` (log, metric and audit entry only) or `enforce`. |
-| `INGEST_MAX_PENDING_PER_TENANT` | int | `100` |  |  | Queue depth per organization in `async` mode; further submissions get `429` with `Retry-After`. `0` turns the check off. |
+| `INGEST_MAX_PENDING_PER_TENANT` | int | `100` |  |  | Unfinished ingest jobs per organization (CI uploads, imports, sensor report segments); a further upload gets `429` with a `Retry-After` computed from how fast the organization's jobs drain. A depth that cannot be read refuses the upload (`503`). `0` turns the check off. |
+| `INGEST_MAX_RUNNING_PER_TENANT` | int | `2` |  |  | Ingest jobs of one organization processing at once, across servers, so one organization cannot hold every worker. Keep it below `INGEST_WORKERS` times the number of servers. |
+| `INGEST_MAX_JOB_DURATION` | duration | `30m` |  |  | Hard cap on how long one ingest job may run. The worker renews a running job's five-minute lease, so a long import succeeds; a job past this cap is cancelled and retried. |
 | `INGEST_MODE` | string | `sync` |  |  | `sync`: scan results are processed in the request. `async`: results are stored, answered with `202` and processed by the ingest worker. |
 | `INGEST_SOURCE_RESOLVE` | string | `dry_run` |  |  | Resolve a finding when a connector source reports it mitigated: `off`, `dry_run` or `enforce`. |
 | `INGEST_VEX` | string | `dry_run` |  |  | How a VEX `not_affected` statement in a scan report acts on the matching open finding: `off`, `dry_run` or `enforce`. A false positive needs four-eyes, so `enforce` requests one (a pending approval by the actor `vex`, with the justification) that a person with `findings:approve` decides; it never sets the status itself. |
+| `INGEST_WORKERS` | int | `4` |  |  | Ingest jobs one server processes at once. Jobs of one asset scope (one repository, one organization's imports, one sensor report) never run together; size it to `DB_INGEST_MAX_CONNS`. |
 | `SENSOR_PROTOCOL_V2_RESULTS` | bool | `true` |  |  | Serve sensor protocol v2 results at `/api/v2/sensor`. Sensors need it; keep it on. |
 | `SENSOR_V2_BLINDING_MIN_FINDINGS` | int | `100` |  |  | The guard applies only when more than this many findings would close. |
 | `SENSOR_V2_BLINDING_RATIO` | float | `0.5` |  |  | Blinding guard: an auto-resolve that would close more than this fraction of a tool's open findings on the report's assets is held for review. |
@@ -352,7 +356,7 @@ Prefixes the API owns: `APP_`, `BRAND_`, `SERVER_`, `DB_`, `REDIS_`, `LOG_`, `AU
 | `VULNFEED_BASE_URL` | url | `https://github.com/openctemio/vulnfeed/releases` |  |  | Release base URL of the signed vulnerability bundles. |
 | `VULNFEED_BUNDLE_DIR` | path | empty |  |  | Air-gapped platforms: local directory holding a vulnerability bundle release's files. |
 | `VULNFEED_MIRRORS` | list | empty |  |  | Comma-separated https mirrors tried after the release for chunked vulnerability bundles. |
-| `VULNFEED_ROOT_KEY_ID` | string | empty |  |  | Pinned root key id of the vulnerability bundles. Unset: no bundle is imported. |
+| `VULNFEED_ROOT_KEY_ID` | string | `official root` |  |  | Pinned root key id of the vulnerability bundles. Defaults to the root of the official openctemio/vulnfeed releases; set it only for a private collector. |
 
 ### Integrations
 
@@ -368,7 +372,7 @@ Prefixes the API owns: `APP_`, `BRAND_`, `SERVER_`, `DB_`, `REDIS_`, `LOG_`, `AU
 | `GITHUB_APP_API_URL` | url | empty |  |  | GitHub API base URL for GitHub Enterprise Server. Unset: api.github.com. |
 | `GITHUB_APP_WEB_URL` | url | empty |  |  | GitHub web base URL for GitHub Enterprise Server. Unset: github.com. |
 | `OPENCTEM_HTTPSEC_ALLOW_PRIVATE` | string | `unset` |  |  | `1` opens every private range. Honored only with `APP_ENV=development`: with any other `APP_ENV` (or none) the API refuses to start, because it would open the platform's own network to every organization. Use `OPENCTEM_HTTPSEC_ALLOW_PRIVATE_CIDRS` instead. Any value other than empty, `0` or `1` is refused. |
-| `OPENCTEM_HTTPSEC_ALLOW_PRIVATE_CIDRS` | string | empty |  |  | Comma-separated private ranges that outbound calls of the API (webhook and notification channels, self-hosted Jira or GitLab, an SMTP relay) may reach, for example `10.20.0.0/16`. Each entry must be a CIDR inside `10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16` or `fc00::/7`, otherwise the API refuses to start. The list applies to every organization, so name only the subnets of your own services. Loopback, link-local, CGNAT and cloud metadata addresses stay blocked whatever the list says. |
+| `OPENCTEM_HTTPSEC_ALLOW_PRIVATE_CIDRS` | string | empty |  |  | Comma-separated private ranges that outbound calls of the API (webhook and notification channels, self-hosted Jira or GitLab, an SMTP relay) may reach, for example `10.20.0.0/16`. Each entry must be a CIDR inside `10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16` or `fc00::/7`, otherwise the API refuses to start. The list applies to every organization, so name only the subnets of your own services; the API refuses to start when it is set together with `SIGNUP_MODE=open`. Loopback, link-local, CGNAT and cloud metadata addresses stay blocked whatever the list says. |
 
 ### Internal entitlements API
 

@@ -9,6 +9,7 @@ import (
 	"net/netip"
 	"regexp"
 	"slices"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -16,6 +17,7 @@ import (
 	"github.com/lib/pq"
 
 	"github.com/openctemio/openctem/api/pkg/domain/asset"
+	"github.com/openctemio/openctem/api/pkg/domain/attribution"
 	"github.com/openctemio/openctem/api/pkg/domain/limits"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
@@ -182,7 +184,8 @@ func (r *AssetRepository) GetDisplayInfoByIDs(ctx context.Context, tenantID shar
 	}
 
 	rows, err := r.db.QueryContext(ctx,
-		`SELECT id, name, asset_type FROM assets WHERE deleted_at IS NULL AND tenant_id = $1 AND id = ANY($2::uuid[])`,
+		`SELECT a.id, a.name, a.asset_type, COALESCE(a.is_crown_jewel, false), `+asset.InternetFacingSQL("a")+`
+		 FROM assets a WHERE a.deleted_at IS NULL AND a.tenant_id = $1 AND a.id = ANY($2::uuid[])`,
 		tenantID.String(), pq.Array(idStrs))
 	if err != nil {
 		return nil, fmt.Errorf("failed to batch get asset display info: %w", err)
@@ -192,15 +195,16 @@ func (r *AssetRepository) GetDisplayInfoByIDs(ctx context.Context, tenantID shar
 	for rows.Next() {
 		var (
 			idStr, name, assetType string
+			crown, internet        bool
 		)
-		if err := rows.Scan(&idStr, &name, &assetType); err != nil {
+		if err := rows.Scan(&idStr, &name, &assetType, &crown, &internet); err != nil {
 			return nil, fmt.Errorf("failed to scan asset display info: %w", err)
 		}
 		id, err := shared.IDFromString(idStr)
 		if err != nil {
 			return nil, fmt.Errorf("invalid asset id %q: %w", idStr, err)
 		}
-		result[id] = asset.DisplayInfo{ID: id, Name: name, Type: asset.AssetType(assetType)}
+		result[id] = asset.DisplayInfo{ID: id, Name: name, Type: asset.AssetType(assetType), CrownJewel: crown, InternetFacing: internet}
 	}
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("failed to iterate asset display info: %w", err)
@@ -507,7 +511,7 @@ func (r *AssetRepository) selectQuery() string {
 			   a.impact_confidentiality, a.impact_integrity, a.impact_availability,
 			   a.is_crown_jewel,
 			   a.risk_scored_at,
-			   EXISTS (SELECT 1 FROM asset_risk_queue q WHERE q.asset_id = a.id) AS risk_score_pending
+			   EXISTS (SELECT 1 FROM asset_risk_queue q WHERE q.asset_id = a.id AND q.enqueued_at <= now()) AS risk_score_pending
 		FROM assets a
 		-- LATERAL correlates the finding aggregate to each selected asset (and its
 		-- tenant), so it runs indexed per-row via idx_findings_tenant_asset_status
@@ -1478,25 +1482,10 @@ func (r *AssetRepository) buildWhereClause(filter asset.Filter) (string, []any) 
 	// an asset with no row is a legacy asset, matched only when the filter
 	// admits unrecorded assets. The join is pinned to the asset's tenant.
 	if af := filter.Attribution; af != nil {
-		var parts []string
-		if len(af.States) > 0 {
-			states := make([]string, len(af.States))
-			for i, st := range af.States {
-				states[i] = string(st)
-			}
-			parts = append(parts, fmt.Sprintf(
-				"EXISTS (SELECT 1 FROM asset_attributions aat WHERE aat.asset_id = a.id AND aat.tenant_id = a.tenant_id AND aat.state = ANY($%d))",
-				argIndex))
-			args = append(args, pq.Array(states))
-			argIndex++
-		}
-		if af.Unrecorded {
-			parts = append(parts, "NOT EXISTS (SELECT 1 FROM asset_attributions aat WHERE aat.asset_id = a.id)")
-		}
-		if len(parts) == 0 {
-			parts = append(parts, "FALSE")
-		}
-		conditions = append(conditions, "("+strings.Join(parts, " OR ")+")")
+		cond, afArgs := attributionCond(af, argIndex)
+		conditions = append(conditions, cond)
+		args = append(args, afArgs...)
+		argIndex += len(afArgs)
 	}
 
 	// Assets the scope join confirmed through one scope entry (RFC-054
@@ -1728,11 +1717,40 @@ func (r *AssetRepository) UpsertBatch(ctx context.Context, assets []*asset.Asset
 	// covers the case where the batch contains two assets with the same
 	// (tenant_id, name) — ON CONFLICT cannot update a row twice in one
 	// statement.
-	created, updated, persistedIDs, err = r.upsertBatchMultiRow(ctx, assets)
+	//
+	// The rows are written in (tenant, name) order, so concurrent uploads of
+	// overlapping assets lock them in one order and queue instead of
+	// deadlocking. A deadlock or serialization failure that still happens
+	// runs the transaction again; it never drops to the per-row path, which
+	// would meet the same conflict one row at a time.
+	sorted := sortedAssetsForWrite(assets)
+	err = retryWriteConflict(ctx, func() error {
+		var txErr error
+		created, updated, persistedIDs, txErr = r.upsertBatchMultiRow(ctx, sorted)
+		return txErr
+	})
+	if isWriteConflict(err) {
+		return 0, 0, nil, err
+	}
 	if err != nil {
-		return r.upsertBatchPerRow(ctx, assets)
+		return r.upsertBatchPerRow(ctx, sorted)
 	}
 	return created, updated, persistedIDs, nil
+}
+
+// sortedAssetsForWrite returns the assets in (tenant, name) order, the
+// order every batched asset write locks rows in. The caller's slice is not
+// reordered.
+func sortedAssetsForWrite(assets []*asset.Asset) []*asset.Asset {
+	out := append([]*asset.Asset(nil), assets...)
+	sort.SliceStable(out, func(i, j int) bool {
+		ti, tj := out[i].TenantID().String(), out[j].TenantID().String()
+		if ti != tj {
+			return ti < tj
+		}
+		return out[i].Name() < out[j].Name()
+	})
+	return out
 }
 
 // checkNewAssets checks the assets of a batch that do not exist yet (by id or
@@ -1928,9 +1946,20 @@ func assetUpsertArgs(a *asset.Asset) ([]any, error) {
 // ensureRepositoryExtensions inserts the asset_repositories rows required by the
 // repository_branches FK for any repository-type assets in the batch. Idempotent
 // (ON CONFLICT DO NOTHING). Runs in the same tx as the asset upsert.
-func (r *AssetRepository) ensureRepositoryExtensions(ctx context.Context, tx *sql.Tx, assets []*asset.Asset) error {
+//
+// The row is keyed by the id the upsert stored (persistedIDs, name -> id from
+// its RETURNING), never by the in-memory a.ID(): when two uploads create the
+// same new repository at once, the one that loses the insert race keeps the
+// winner's row, and its own fresh id names no asset. Using it failed the
+// foreign key and rolled back every asset and finding of that upload.
+func (r *AssetRepository) ensureRepositoryExtensions(ctx context.Context, tx *sql.Tx, assets []*asset.Asset, persistedIDs map[string]shared.ID) error {
 	for _, a := range assets {
 		if !a.Type().IsRepository() {
+			continue
+		}
+		id, ok := persistedIDs[a.Name()]
+		if !ok || id.IsZero() {
+			// The upsert did not store this row (refused); nothing to extend.
 			continue
 		}
 		const repoQuery = `
@@ -1938,7 +1967,7 @@ func (r *AssetRepository) ensureRepositoryExtensions(ctx context.Context, tx *sq
 			VALUES ($1, $2, 'main', 'private')
 			ON CONFLICT (asset_id) DO NOTHING
 		`
-		if _, err := tx.ExecContext(ctx, repoQuery, a.ID().String(), a.Name()); err != nil {
+		if _, err := tx.ExecContext(ctx, repoQuery, id.String(), a.Name()); err != nil {
 			return fmt.Errorf("failed to ensure repository extension for %s: %w", a.Name(), err)
 		}
 	}
@@ -2033,7 +2062,7 @@ func (r *AssetRepository) upsertBatchMultiRow(ctx context.Context, assets []*ass
 		return 0, 0, nil, err
 	}
 
-	if err = r.ensureRepositoryExtensions(ctx, tx, assets); err != nil {
+	if err := r.ensureRepositoryExtensions(ctx, tx, assets, persistedIDs); err != nil {
 		return 0, 0, nil, err
 	}
 
@@ -2164,7 +2193,7 @@ func (r *AssetRepository) upsertBatchPerRow(ctx context.Context, assets []*asset
 		}
 	}
 
-	if err := r.ensureRepositoryExtensions(ctx, tx, stored); err != nil {
+	if err := r.ensureRepositoryExtensions(ctx, tx, stored, persistedIDs); err != nil {
 		return created, updated, nil, err
 	}
 
@@ -2332,15 +2361,55 @@ func (r *AssetRepository) BulkUpdateStatus(ctx context.Context, tenantID shared.
 	return result.RowsAffected()
 }
 
-// GetAssetTypeBreakdown returns total and exposed counts per asset_type in a single query.
-func (r *AssetRepository) GetAssetTypeBreakdown(ctx context.Context, tenantID shared.ID, scope *shared.DataScope) (map[string]asset.AssetTypeStats, error) {
+// attributionCond is the SQL predicate for an attribution filter on alias "a"
+// (RFC-036 §6.4) with its bind args, numbered from argIndex. An asset with no
+// attribution row is a legacy asset, matched only when the filter admits
+// unrecorded assets. The join is pinned to the asset's tenant.
+func attributionCond(af *attribution.StateFilter, argIndex int) (string, []any) {
+	var parts []string
+	var args []any
+	if len(af.States) > 0 {
+		states := make([]string, len(af.States))
+		for i, st := range af.States {
+			states[i] = string(st)
+		}
+		parts = append(parts, fmt.Sprintf(
+			"EXISTS (SELECT 1 FROM asset_attributions aat WHERE aat.asset_id = a.id AND aat.tenant_id = a.tenant_id AND aat.state = ANY($%d))",
+			argIndex))
+		args = append(args, pq.Array(states))
+	}
+	if af.Unrecorded {
+		parts = append(parts, "NOT EXISTS (SELECT 1 FROM asset_attributions aat WHERE aat.asset_id = a.id)")
+	}
+	if len(parts) == 0 {
+		parts = append(parts, "FALSE")
+	}
+	return "(" + strings.Join(parts, " OR ") + ")", args
+}
+
+// scopeAndAttributionSQL builds the extra WHERE terms of the overview
+// aggregates: the caller's data scope and the attribution population, so the
+// aggregates count the same assets as the stat tiles.
+func scopeAndAttributionSQL(tenantID shared.ID, scope *shared.DataScope, af *attribution.StateFilter) (string, []any) {
 	args := []any{tenantID.String()}
-	scopeSQL := ""
+	sqlText := ""
 	if scope != nil {
 		cond, scopeArgs := dataScopeCondAt("a.id", scope, 2)
-		scopeSQL = " AND " + cond
+		sqlText += " AND " + cond
 		args = append(args, scopeArgs...)
 	}
+	if af != nil {
+		cond, afArgs := attributionCond(af, len(args)+1)
+		sqlText += " AND " + cond
+		args = append(args, afArgs...)
+	}
+	return sqlText, args
+}
+
+// GetAssetTypeBreakdown returns total and exposed counts per asset_type in a
+// single query, limited to the attribution population when one is given.
+func (r *AssetRepository) GetAssetTypeBreakdown(ctx context.Context, tenantID shared.ID, scope *shared.DataScope, af *attribution.StateFilter) (map[string]asset.AssetTypeStats, error) {
+	scopeSQL, args := scopeAndAttributionSQL(tenantID, scope, af)
 	query := `
 		SELECT
 			a.asset_type,
@@ -2374,15 +2443,9 @@ func (r *AssetRepository) GetAssetTypeBreakdown(ctx context.Context, tenantID sh
 }
 
 // GetAverageRiskScore returns the average risk_score for all assets in a tenant.
-func (r *AssetRepository) GetAverageRiskScore(ctx context.Context, tenantID shared.ID, scope *shared.DataScope) (float64, error) {
+func (r *AssetRepository) GetAverageRiskScore(ctx context.Context, tenantID shared.ID, scope *shared.DataScope, af *attribution.StateFilter) (float64, error) {
 	var avg float64
-	args := []any{tenantID.String()}
-	scopeSQL := ""
-	if scope != nil {
-		cond, scopeArgs := dataScopeCondAt("a.id", scope, 2)
-		scopeSQL = " AND " + cond
-		args = append(args, scopeArgs...)
-	}
+	scopeSQL, args := scopeAndAttributionSQL(tenantID, scope, af)
 	err := r.db.QueryRowContext(ctx,
 		`SELECT COALESCE(AVG(a.risk_score), 0) FROM assets a WHERE a.deleted_at IS NULL AND a.tenant_id = $1`+scopeSQL,
 		args...,
@@ -2473,9 +2536,13 @@ WITH filtered AS (
   %s
 ),
 finding_counts AS (
+  -- Open findings only (vulnerability.OpenStatusSQL): the same set as each
+  -- row's finding_count and the has_findings filter, so "N with findings"
+  -- and the findings total agree with the list.
   SELECT f.asset_id, COUNT(*)::bigint AS cnt
   FROM findings f
   WHERE f.asset_id IN (SELECT id FROM filtered) AND NOT f.branch_only
+    AND `+vulnerability.OpenStatusSQL("f.status")+`
   GROUP BY f.asset_id
 )
 SELECT category, key, value FROM (

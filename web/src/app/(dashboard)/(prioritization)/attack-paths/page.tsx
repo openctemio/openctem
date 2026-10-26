@@ -3,22 +3,14 @@
 import { useMemo } from 'react'
 import Link from '@/components/link'
 import { Main } from '@/components/layout'
-import { PageHeader, StatsCard, EmptyState, ErrorState } from '@/features/shared'
+import { PageHeader, PageStack, MetricStrip, EmptyState, ErrorState } from '@/features/shared'
 import { useAttackPathScoring, PathGraph } from '@/features/attack-surface'
 import type { AttackPathScore, PathGraphPath } from '@/features/attack-surface'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
-import {
-  Route,
-  ShieldAlert,
-  ShieldCheck,
-  Globe,
-  AlertTriangle,
-  ArrowRight,
-  GitBranch,
-} from 'lucide-react'
+import { Globe, ShieldCheck, ArrowRight, GitBranch } from 'lucide-react'
 import { useTranslation } from '@/context/i18n-provider'
 
 // ============================================================
@@ -58,8 +50,8 @@ function assetToPath(asset: AttackPathScore, maxPathScore: number): PathGraphPat
 function LoadingSkeleton() {
   return (
     <>
-      <section className="mt-5 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        {[1, 2, 3, 4].map((i) => (
+      <section className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+        {[1, 2, 3].map((i) => (
           <Card key={i}>
             <CardHeader className="pb-2">
               <Skeleton className="h-4 w-24" />
@@ -71,7 +63,7 @@ function LoadingSkeleton() {
           </Card>
         ))}
       </section>
-      <Card className="mt-5">
+      <Card>
         <CardHeader>
           <Skeleton className="h-5 w-48" />
           <Skeleton className="h-4 w-64" />
@@ -149,280 +141,280 @@ export default function AttackPathAnalysisPage() {
 
   return (
     <Main>
-      <PageHeader
-        title={t('prioritization.attackPaths.title', 'Attack paths')}
-        description={t(
-          'prioritization.attackPaths.description',
-          'Assets ranked by how many public entry points reach them.'
-        )}
-      />
-
-      {isLoading ? (
-        <LoadingSkeleton />
-      ) : error ? (
-        // A failed read is not "no data": say we could not find out.
-        <ErrorState
-          title={t('prioritization.errorTitle.attackPaths', 'attack paths')}
-          error={error}
-          onRetry={() => void mutate()}
+      <PageStack>
+        <PageHeader
+          title={t('prioritization.attackPaths.title', 'Attack paths')}
+          description={t(
+            'prioritization.attackPaths.description',
+            'Assets ranked by how many public entry points reach them.'
+          )}
         />
-      ) : !hasData ? (
-        <NoRelationshipData />
-      ) : (
-        <>
-          {/* Stats Row */}
-          <section className="mt-5 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-            <StatsCard
-              title={t('prioritization.attackPaths.stat.paths', 'Attack paths')}
-              value={summary?.totalPaths ?? 0}
-              icon={Route}
-              description={t(
-                'prioritization.attackPaths.stat.pathsHint',
-                'Entry-point to asset pairs'
-              )}
-            />
-            <StatsCard
-              title={t('prioritization.attackPaths.stat.entries', 'Entry points')}
-              value={summary?.entryPoints ?? 0}
-              icon={Globe}
-              description={t(
-                'prioritization.attackPaths.stat.entriesHint',
-                'Internet-facing assets'
-              )}
-            />
-            <StatsCard
-              title={t('prioritization.attackPaths.stat.reachable', 'Reachable assets')}
-              value={summary?.reachableAssets ?? 0}
-              icon={AlertTriangle}
-              description={t(
-                'prioritization.attackPaths.stat.reachableHint',
-                'Internal assets at risk'
-              )}
-            />
-            <StatsCard
-              title={t('prioritization.attackPaths.stat.critical', 'Critical reachable')}
-              value={summary?.criticalReachable ?? 0}
-              valueClassName={
-                (summary?.criticalReachable ?? 0) > 0 ? 'text-destructive' : undefined
-              }
-              icon={ShieldAlert}
-              description={t(
-                'prioritization.attackPaths.stat.criticalHint',
-                'High/critical assets exposed'
-              )}
-            />
-          </section>
 
-          {/* Main content: ranked path graph + entry points sidebar */}
-          <section className="mt-5 grid grid-cols-1 gap-5 lg:grid-cols-3">
-            {/* Ranked assets */}
-            {/* The ranked list is a column of bordered chain rows, so it sits under a
+        {isLoading ? (
+          <LoadingSkeleton />
+        ) : error ? (
+          // A failed read is not "no data": say we could not find out.
+          <ErrorState
+            title={t('prioritization.errorTitle.attackPaths', 'attack paths')}
+            error={error}
+            onRetry={() => void mutate()}
+          />
+        ) : !hasData ? (
+          <NoRelationshipData />
+        ) : (
+          <>
+            <MetricStrip
+              items={[
+                {
+                  key: 'entries',
+                  label: t('prioritization.attackPaths.stat.entries', 'Entry points'),
+                  value: summary?.entryPoints ?? 0,
+                  hint: t('prioritization.attackPaths.stat.entriesHint', 'Internet-facing assets'),
+                  href: '/assets?internet_facing=true',
+                },
+                {
+                  key: 'reachable',
+                  label: t('prioritization.attackPaths.stat.reachable', 'Reachable assets'),
+                  value: summary?.reachableAssets ?? 0,
+                  hint: t(
+                    'prioritization.attackPaths.stat.reachableHint',
+                    'Internal assets at risk'
+                  ),
+                  href: '#ranked-assets',
+                },
+                {
+                  key: 'critical',
+                  label: t('prioritization.attackPaths.stat.critical', 'Critical reachable'),
+                  value: summary?.criticalReachable ?? 0,
+                  tone: 'danger',
+                  hint: t(
+                    'prioritization.attackPaths.stat.criticalHint',
+                    'High/critical assets exposed'
+                  ),
+                  href: '#ranked-assets',
+                },
+              ]}
+            />
+
+            {/* Main content: ranked path graph + entry points sidebar */}
+            <section className="grid grid-cols-1 gap-5 lg:grid-cols-3">
+              {/* Ranked assets */}
+              {/* The ranked list is a column of bordered chain rows, so it sits under a
                 section heading rather than inside another card. */}
-            <section className="space-y-3 lg:col-span-2">
-              <div>
-                <h2 className="text-base font-semibold">
-                  {t(
-                    'prioritization.attackPaths.rankedTitle',
-                    'Assets ranked by attack-path score'
-                  )}
-                </h2>
-                <p className="text-sm text-muted-foreground">
-                  {t(
-                    'prioritization.attackPaths.rankedHint',
-                    'Score = reachable entry points × risk score × criticality weight. Click a node to open its findings.'
-                  )}
-                </p>
-              </div>
-              <PathGraph
-                paths={paths}
-                empty={
-                  <EmptyState
-                    icon={ShieldCheck}
-                    title={t(
-                      'prioritization.attackPaths.emptyTitle',
-                      'No reachable internal assets'
-                    )}
-                    description={t(
-                      'prioritization.attackPaths.emptyDescription',
-                      'Your entry points do not reach any internal asset through tracked relationships.'
-                    )}
-                  />
-                }
-              />
-            </section>
-
-            {/* Sidebar: entry points + extra stats */}
-            <div className="flex flex-col gap-5">
-              {/* Chain depth info */}
-              <Card>
-                <CardHeader className="pb-3">
-                  <CardTitle className="text-sm">
-                    {t('prioritization.attackPaths.depthTitle', 'Path depth')}
-                  </CardTitle>
-                </CardHeader>
-                <CardContent className="space-y-3">
-                  <div className="flex items-center justify-between">
-                    <span className="text-muted-foreground text-sm">
-                      {t('prioritization.attackPaths.maxDepth', 'Max chain depth')}
-                    </span>
-                    <span className="font-semibold tabular-nums">
-                      {(summary?.maxDepth ?? 0) === 1
-                        ? t('prioritization.attackPaths.hopOne', '{count} hop', { count: 1 })
-                        : t('prioritization.attackPaths.hopOther', '{count} hops', {
-                            count: summary?.maxDepth ?? 0,
-                          })}
-                    </span>
-                  </div>
-                  <div className="flex items-center justify-between">
-                    <span className="text-muted-foreground text-sm">
-                      {t('prioritization.attackPaths.crownOnPath')}
-                    </span>
-                    <span
-                      className={cn(
-                        'font-semibold tabular-nums',
-                        (summary?.crownJewelsAtRisk ?? 0) > 0
-                          ? 'text-destructive'
-                          : 'text-muted-foreground'
-                      )}
-                    >
-                      {summary?.crownJewelsAtRisk ?? 0}
-                    </span>
-                  </div>
-                </CardContent>
-              </Card>
-
-              {/* Top entry points */}
-              <Card>
-                <CardHeader className="pb-3">
-                  <CardTitle className="text-sm">
-                    {t('prioritization.attackPaths.entriesTitle', 'Top entry points')}
-                  </CardTitle>
-                  <CardDescription className="text-xs">
+              <section id="ranked-assets" className="scroll-mt-20 space-y-3 lg:col-span-2">
+                <div>
+                  <h2 className="text-base font-semibold">
                     {t(
-                      'prioritization.attackPaths.entriesHint',
-                      'Public assets an attacker can reach directly.'
+                      'prioritization.attackPaths.rankedTitle',
+                      'Assets ranked by attack-path score'
                     )}
-                  </CardDescription>
-                </CardHeader>
-                <CardContent>
-                  {entryPointAssets.length > 0 ? (
-                    <div className="space-y-2">
-                      {entryPointAssets.map((ep) =>
-                        ep.assetId ? (
-                          <Link
-                            key={ep.assetId}
-                            href={`/findings?asset_id=${ep.assetId}`}
-                            aria-label={t(
-                              'prioritization.attackPaths.viewFindingsFor',
-                              'View findings for {name}',
+                  </h2>
+                  <p className="text-sm text-muted-foreground">
+                    {t(
+                      'prioritization.attackPaths.rankedHint',
+                      'Score = reachable entry points × risk score × criticality weight. Click a node to open its findings.'
+                    )}
+                  </p>
+                </div>
+                <PathGraph
+                  paths={paths}
+                  empty={
+                    <EmptyState
+                      icon={ShieldCheck}
+                      title={t(
+                        'prioritization.attackPaths.emptyTitle',
+                        'No reachable internal assets'
+                      )}
+                      description={t(
+                        'prioritization.attackPaths.emptyDescription',
+                        'Your entry points do not reach any internal asset through tracked relationships.'
+                      )}
+                    />
+                  }
+                />
+              </section>
+
+              {/* Sidebar: entry points + extra stats */}
+              <div className="flex flex-col gap-5">
+                {/* Chain depth info */}
+                <Card>
+                  <CardHeader className="pb-3">
+                    <CardTitle className="text-sm">
+                      {t('prioritization.attackPaths.depthTitle', 'Path depth')}
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent className="space-y-3">
+                    <div className="flex items-center justify-between">
+                      <span className="text-muted-foreground text-sm">
+                        {t('prioritization.attackPaths.maxDepth', 'Max chain depth')}
+                      </span>
+                      <span className="font-semibold tabular-nums">
+                        {(summary?.maxDepth ?? 0) === 1
+                          ? t('prioritization.attackPaths.hopOne', '{count} hop', { count: 1 })
+                          : t('prioritization.attackPaths.hopOther', '{count} hops', {
+                              count: summary?.maxDepth ?? 0,
+                            })}
+                      </span>
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <span className="text-muted-foreground text-sm">
+                        {t('prioritization.attackPaths.crownOnPath')}
+                      </span>
+                      <span
+                        className={cn(
+                          'font-semibold tabular-nums',
+                          (summary?.crownJewelsAtRisk ?? 0) > 0
+                            ? 'text-destructive'
+                            : 'text-muted-foreground'
+                        )}
+                      >
+                        {summary?.crownJewelsAtRisk ?? 0}
+                      </span>
+                    </div>
+                  </CardContent>
+                </Card>
+
+                {/* Top entry points */}
+                <Card>
+                  <CardHeader className="pb-3">
+                    <CardTitle className="text-sm">
+                      {t('prioritization.attackPaths.entriesTitle', 'Top entry points')}
+                    </CardTitle>
+                    <CardDescription className="text-xs">
+                      {t(
+                        'prioritization.attackPaths.entriesHint',
+                        'Public assets an attacker can reach directly.'
+                      )}
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    {entryPointAssets.length > 0 ? (
+                      <div className="space-y-2">
+                        {entryPointAssets.map((ep) =>
+                          ep.assetId ? (
+                            <Link
+                              key={ep.assetId}
+                              href={`/findings?asset_id=${ep.assetId}`}
+                              aria-label={t(
+                                'prioritization.attackPaths.viewFindingsFor',
+                                'View findings for {name}',
+                                {
+                                  name: ep.name,
+                                }
+                              )}
+                              className="hover:bg-muted/50 focus-visible:ring-ring flex items-center gap-2 rounded-md px-2 py-1.5 text-sm focus-visible:ring-2 focus-visible:outline-none"
+                            >
+                              <Globe className="text-muted-foreground h-3.5 w-3.5 shrink-0" />
+                              <span className="min-w-0 flex-1 truncate">{ep.name}</span>
+                              {ep.findingCount > 0 && (
+                                <span className="text-muted-foreground shrink-0 text-xs tabular-nums">
+                                  {ep.findingCount === 1
+                                    ? t('prioritization.pathGraph.findingOne', '{count} finding', {
+                                        count: 1,
+                                      })
+                                    : t(
+                                        'prioritization.pathGraph.findingOther',
+                                        '{count} findings',
+                                        {
+                                          count: ep.findingCount,
+                                        }
+                                      )}
+                                </span>
+                              )}
+                            </Link>
+                          ) : (
+                            <div
+                              key={ep.name}
+                              className="flex items-center gap-2 rounded-md px-2 py-1.5 text-sm"
+                            >
+                              <Globe className="text-muted-foreground h-3.5 w-3.5 shrink-0" />
+                              <span className="min-w-0 flex-1 truncate">{ep.name}</span>
+                              {ep.findingCount > 0 && (
+                                <span className="text-muted-foreground shrink-0 text-xs tabular-nums">
+                                  {ep.findingCount === 1
+                                    ? t('prioritization.pathGraph.findingOne', '{count} finding', {
+                                        count: 1,
+                                      })
+                                    : t(
+                                        'prioritization.pathGraph.findingOther',
+                                        '{count} findings',
+                                        {
+                                          count: ep.findingCount,
+                                        }
+                                      )}
+                                </span>
+                              )}
+                            </div>
+                          )
+                        )}
+                        {(summary?.entryPoints ?? 0) > entryPointAssets.length && (
+                          <p className="text-muted-foreground mt-2 text-xs">
+                            {t(
+                              'prioritization.attackPaths.moreEntries',
+                              '+ {count} more entry points',
                               {
-                                name: ep.name,
+                                count: (summary?.entryPoints ?? 0) - entryPointAssets.length,
                               }
                             )}
-                            className="hover:bg-muted/50 focus-visible:ring-ring flex items-center gap-2 rounded-md px-2 py-1.5 text-sm focus-visible:ring-2 focus-visible:outline-none"
-                          >
-                            <Globe className="text-muted-foreground h-3.5 w-3.5 shrink-0" />
-                            <span className="min-w-0 flex-1 truncate">{ep.name}</span>
-                            {ep.findingCount > 0 && (
-                              <span className="text-muted-foreground shrink-0 text-xs tabular-nums">
-                                {ep.findingCount === 1
-                                  ? t('prioritization.pathGraph.findingOne', '{count} finding', {
-                                      count: 1,
-                                    })
-                                  : t('prioritization.pathGraph.findingOther', '{count} findings', {
-                                      count: ep.findingCount,
-                                    })}
-                              </span>
-                            )}
-                          </Link>
-                        ) : (
-                          <div
-                            key={ep.name}
-                            className="flex items-center gap-2 rounded-md px-2 py-1.5 text-sm"
-                          >
-                            <Globe className="text-muted-foreground h-3.5 w-3.5 shrink-0" />
-                            <span className="min-w-0 flex-1 truncate">{ep.name}</span>
-                            {ep.findingCount > 0 && (
-                              <span className="text-muted-foreground shrink-0 text-xs tabular-nums">
-                                {ep.findingCount === 1
-                                  ? t('prioritization.pathGraph.findingOne', '{count} finding', {
-                                      count: 1,
-                                    })
-                                  : t('prioritization.pathGraph.findingOther', '{count} findings', {
-                                      count: ep.findingCount,
-                                    })}
-                              </span>
-                            )}
-                          </div>
-                        )
-                      )}
-                      {(summary?.entryPoints ?? 0) > entryPointAssets.length && (
-                        <p className="text-muted-foreground mt-2 text-xs">
-                          {t(
-                            'prioritization.attackPaths.moreEntries',
-                            '+ {count} more entry points',
-                            {
-                              count: (summary?.entryPoints ?? 0) - entryPointAssets.length,
-                            }
-                          )}
-                        </p>
-                      )}
-                    </div>
-                  ) : (
-                    <EmptyState
-                      card={false}
-                      icon={Globe}
-                      title={t('prioritization.attackPaths.noEntriesTitle', 'No entry points')}
-                      description={t(
-                        'prioritization.attackPaths.noEntriesDescription',
-                        'No asset is marked as publicly exposed.'
-                      )}
-                      className="py-6"
-                    />
-                  )}
-                </CardContent>
-              </Card>
+                          </p>
+                        )}
+                      </div>
+                    ) : (
+                      <EmptyState
+                        card={false}
+                        icon={Globe}
+                        title={t('prioritization.attackPaths.noEntriesTitle', 'No entry points')}
+                        description={t(
+                          'prioritization.attackPaths.noEntriesDescription',
+                          'No asset is marked as publicly exposed.'
+                        )}
+                        className="py-6"
+                      />
+                    )}
+                  </CardContent>
+                </Card>
 
-              {/* How it works */}
-              <Card>
-                <CardHeader className="pb-3">
-                  <CardTitle className="text-sm">
-                    {t('prioritization.attackPaths.howTitle', 'How scoring works')}
-                  </CardTitle>
-                </CardHeader>
-                <CardContent className="text-muted-foreground space-y-2 text-xs">
-                  <p>
-                    <strong className="text-foreground">
-                      {t('prioritization.attackPaths.howReachableLead', 'Reachable from')}
-                    </strong>{' '}
-                    —{' '}
-                    {t(
-                      'prioritization.attackPaths.howReachable',
-                      'traversal from every public asset following attack-path relationship types (runs_on, depends_on, exposes, stores_data_in, etc.)'
-                    )}
-                  </p>
-                  <p>
-                    <strong className="text-foreground">
-                      {t('prioritization.attackPaths.howScoreLead', 'Path score')}
-                    </strong>{' '}
-                    —{' '}
-                    {t(
-                      'prioritization.attackPaths.howScore',
-                      "reachable entry points multiplied by the asset's risk score and criticality weight (critical=4x, high=3x, medium=2x, low=1x), boosted by open findings."
-                    )}
-                  </p>
-                  <p>
-                    {t(
-                      'prioritization.attackPaths.howCaveat',
-                      'The ranking shows how widely each asset is exposed. It does not tell you which single fix would break the most paths.'
-                    )}
-                  </p>
-                </CardContent>
-              </Card>
-            </div>
-          </section>
-        </>
-      )}
+                {/* How it works */}
+                <Card>
+                  <CardHeader className="pb-3">
+                    <CardTitle className="text-sm">
+                      {t('prioritization.attackPaths.howTitle', 'How scoring works')}
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent className="text-muted-foreground space-y-2 text-xs">
+                    <p>
+                      <strong className="text-foreground">
+                        {t('prioritization.attackPaths.howReachableLead', 'Reachable from')}
+                      </strong>
+                      {': '}
+                      {t(
+                        'prioritization.attackPaths.howReachable',
+                        'traversal from every public asset following attack-path relationship types (runs_on, depends_on, exposes, stores_data_in, etc.)'
+                      )}
+                    </p>
+                    <p>
+                      <strong className="text-foreground">
+                        {t('prioritization.attackPaths.howScoreLead', 'Path score')}
+                      </strong>
+                      {': '}
+                      {t(
+                        'prioritization.attackPaths.howScore',
+                        "reachable entry points multiplied by the asset's risk score and criticality weight (critical=4x, high=3x, medium=2x, low=1x), boosted by open findings."
+                      )}
+                    </p>
+                    <p>
+                      {t(
+                        'prioritization.attackPaths.howCaveat',
+                        'The ranking shows how widely each asset is exposed. It does not tell you which single fix would break the most paths.'
+                      )}
+                    </p>
+                  </CardContent>
+                </Card>
+              </div>
+            </section>
+          </>
+        )}
+      </PageStack>
     </Main>
   )
 }

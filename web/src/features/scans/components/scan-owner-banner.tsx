@@ -14,6 +14,7 @@ import { useState } from 'react'
 import { UserX } from 'lucide-react'
 import { toast } from 'sonner'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
+import { ConfirmDialog } from '@/components/confirm-dialog'
 import { Button } from '@/components/ui/button'
 import { useTranslation } from '@/context/i18n-provider'
 import { post } from '@/lib/api/client'
@@ -31,6 +32,8 @@ export function ScanOwnerBanner({ config, onChanged }: ScanOwnerBannerProps) {
   const { t } = useTranslation()
   const { isAdmin } = usePermissions()
   const [busy, setBusy] = useState(false)
+  // Taking ownership makes its scheduled runs act as you: ask first.
+  const [asking, setAsking] = useState(false)
 
   const state = config.owner_state
   if (state !== 'missing' && state !== 'inactive') return null
@@ -79,7 +82,7 @@ export function ScanOwnerBanner({ config, onChanged }: ScanOwnerBannerProps) {
           {reason} {effect}
         </p>
         {isAdmin() ? (
-          <Button size="sm" className="mt-2" onClick={() => void take()} disabled={busy}>
+          <Button size="sm" className="mt-2" onClick={() => setAsking(true)} disabled={busy}>
             {busy
               ? t('scans.owner.taking', 'Taking ownership…')
               : t('scans.owner.take', 'Take ownership')}
@@ -90,6 +93,17 @@ export function ScanOwnerBanner({ config, onChanged }: ScanOwnerBannerProps) {
           </p>
         )}
       </AlertDescription>
+      <ConfirmDialog
+        open={asking}
+        onOpenChange={setAsking}
+        title={t('confirm.scan.takeOwnershipTitle', undefined, { name: config.name })}
+        desc={t('confirm.scan.takeOwnershipDesc')}
+        confirmText={t('confirm.scan.takeOwnershipBtn')}
+        handleConfirm={async () => {
+          setAsking(false)
+          await take()
+        }}
+      />
     </Alert>
   )
 }

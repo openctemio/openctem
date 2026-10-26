@@ -21,6 +21,9 @@ const (
 	stepUpPurposeFeatureDeny       = "organization feature deny change"
 	// codeLimitReached is the error code of an addition refused by a limit.
 	codeLimitReached apierror.Code = "LIMIT_REACHED"
+	// codeFeatureNotIncluded: the feature a change needs is not available
+	// for the organization.
+	codeFeatureNotIncluded apierror.Code = "FEATURE_NOT_INCLUDED"
 )
 
 // LimitsHandler serves per-organization limits and feature denies
@@ -489,6 +492,8 @@ func LimitMessage(lim *limits.ErrLimitReached) string {
 		limits.OrgsPerUser: "organizations per person", limits.Findings: "findings",
 		limits.PlatformScansPerDay: "shared sensor scans a day", limits.PlatformScansConcurrent: "shared sensor jobs at a time",
 		limits.LifecycleSubStatuses: "finding sub-statuses", limits.LifecycleSchemes: "finding lifecycles",
+		limits.ContentSources: "rule sources", limits.ContentStorageMB: "MiB of rule snapshots",
+		limits.ContentSnapshotMaxMB: "MiB per rule snapshot",
 	}[lim.Key]
 	if label == "" {
 		label = string(lim.Key)
@@ -498,4 +503,38 @@ func LimitMessage(lim *limits.ErrLimitReached) string {
 	}
 	return "The limit is " + strconv.Itoa(lim.Limit) + " " + label + "; " + strconv.Itoa(lim.Used) +
 		" are in use. Remove some, or ask your administrator for more."
+}
+
+// WriteFeatureDenied answers a change refused because the feature is not
+// available for the organization: 403 FEATURE_NOT_INCLUDED (503 when its
+// limits could not be read; the change was refused either way).
+func WriteFeatureDenied(w http.ResponseWriter, err error) bool {
+	var fd *limits.ErrFeatureDenied
+	if !errors.As(err, &fd) {
+		return false
+	}
+	if fd.Unavailable {
+		apierror.ServiceUnavailable("This could not be checked against the organization's limits right now. Try again later.").WriteJSON(w)
+		return true
+	}
+	apierror.New(http.StatusForbidden, codeFeatureNotIncluded, FeatureMessage(fd.Feature)).WriteJSON(w)
+	return true
+}
+
+// FeatureMessage is the person-facing text of a feature refusal.
+func FeatureMessage(feature string) string {
+	label := map[string]string{
+		limits.FeatureSSOConnections:      "Single sign-on connections",
+		limits.FeatureSSOEnforcement:      "Requiring single sign-on",
+		limits.FeatureSCIM:                "SCIM provisioning",
+		limits.FeatureSSOGroupLinks:       "Identity provider group links",
+		limits.FeatureLDAP:                "LDAP sign-in",
+		limits.FeatureContentWebhook:      "Rule source webhooks",
+		limits.FeatureContentReviewPolicy: "The review promotion policy for rule sources",
+		limits.FeatureContentPrivateGit:   "Rule sources on private network hosts",
+	}[feature]
+	if label == "" {
+		label = feature
+	}
+	return label + " is not available for this organization."
 }

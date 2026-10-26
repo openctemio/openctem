@@ -9,8 +9,8 @@ import (
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 )
 
-// False-positive approval levels of an organization (the values of the
-// tenant setting finding_approvals.fp_approval).
+// Approval levels of an organization (the values of the tenant settings
+// finding_approvals.fp_approval and finding_approvals.accept_approval).
 const (
 	FPLevelAll          = "all"
 	FPLevelHighAndAbove = "high_and_above"
@@ -23,13 +23,17 @@ const (
 	ReasonPlatformDefault     = "platform_default"
 	ReasonOrganizationPolicy  = "organization_policy"
 	ReasonFPLevel             = "fp_level"
+	ReasonAcceptLevel         = "accept_level"
 	ReasonRequesterCannotSelf = "requester_cannot_decide_alone"
 	ReasonRequesterOwnsAsset  = "requester_owns_asset"
-	ReasonGroupDecision       = "group_decision"
-	ReasonPoolFallback        = "security_pool_fallback"
-	ReasonNoEligibleApprover  = "no_eligible_approver"
-	ReasonNotEnoughApprovers  = "not_enough_eligible_approvers"
-	ReasonActorExtraSignoff   = "actor_request_extra_signoff"
+	// ReasonAutomationCannotSelf: an automation made the request; a person
+	// always decides it, whatever the organization's approval level.
+	ReasonAutomationCannotSelf = "automation_cannot_decide"
+	ReasonGroupDecision        = "group_decision"
+	ReasonPoolFallback         = "security_pool_fallback"
+	ReasonNoEligibleApprover   = "no_eligible_approver"
+	ReasonNotEnoughApprovers   = "not_enough_eligible_approvers"
+	ReasonActorExtraSignoff    = "actor_request_extra_signoff"
 )
 
 // ExcludeReason says why a member may not approve a request.
@@ -65,9 +69,16 @@ type Request struct {
 	// RequesterCanApprove: the requester holds the approve permission and
 	// the subject is in their data scope (only then may they decide alone).
 	RequesterCanApprove bool
+	// AutomationMade: an automation step made the request (on behalf of its
+	// owner). It is never decided by one person, even when the organization's
+	// level would let the owner decide alone (RFC-125 D9).
+	AutomationMade bool
 	// FPLevel is the organization's false-positive level in force (false
 	// positives only; "" = all).
 	FPLevel string
+	// AcceptLevel is the organization's risk acceptance level in force
+	// (accepted risks of one finding only; "" = all).
+	AcceptLevel string
 	// AssetOwners are the people who own the subject's asset (user owners
 	// and members of owner groups).
 	AssetOwners []shared.ID
@@ -163,11 +174,22 @@ func Evaluate(p Policy, r Request) Result {
 		}
 		res.Reasons = append(res.Reasons, ReasonFPLevel)
 	}
+	if r.Kind == KindAccepted && !LevelNeedsSecond(r.AcceptLevel, MaterialForFalsePositive(r.Facts, threshold)) {
+		// The organization's risk acceptance level lets one person decide:
+		// the floor drops to single, and only an organization cell above
+		// the platform default still applies.
+		res.Floor = TierSingle
+		tier = acceptedLevelTier(p, class)
+		res.Reasons = append(res.Reasons, ReasonAcceptLevel)
+	}
 	tier = MaxTier(res.Floor, tier)
 
 	isOwner := func(id shared.ID) bool { return containsID(r.AssetOwners, id) }
 	if tier == TierSingle {
 		switch {
+		case r.AutomationMade:
+			tier = TierPeer
+			res.Reasons = append(res.Reasons, ReasonAutomationCannotSelf)
 		case r.RequesterID.IsZero() || !r.RequesterCanApprove:
 			tier = TierPeer
 			res.Reasons = append(res.Reasons, ReasonRequesterCannotSelf)
@@ -217,18 +239,49 @@ func (res *Result) fillPools(p Policy, r Request, isOwner func(shared.ID) bool) 
 	res.finishPools(p, r.SecurityPoolConfigured)
 }
 
-// fpLevelTier is the false-positive tier the organization's level gives.
-func fpLevelTier(level string, material bool) Tier {
+// LevelNeedsSecond reports whether an approval level (false positive or
+// risk acceptance) asks for a second person on a finding that is material
+// or not: all (and anything unknown) always, high_and_above for a material
+// finding, off never.
+func LevelNeedsSecond(level string, material bool) bool {
 	switch level {
 	case FPLevelOff:
-		return TierSingle
+		return false
 	case FPLevelHighAndAbove:
-		if material {
-			return TierPeer
-		}
-		return TierSingle
+		return material
 	}
-	return TierPeer
+	return true
+}
+
+// acceptedLevelTier is the tier of an accepted risk the organization's level
+// lets one person decide: single, unless the organization's cell for the
+// class sits above the platform default (an explicit tightening).
+func acceptedLevelTier(p Policy, class Class) Tier {
+	if p.cellSet(KindAccepted, class) {
+		if t := p.TierFor(KindAccepted, class); t.Rank() > Default(KindAccepted, class).Rank() {
+			return t
+		}
+	}
+	return TierSingle
+}
+
+// AcceptedTier is the tier an accepted risk with facts f needs under policy
+// p and the risk acceptance level: the policy's tier, or what the level lets
+// one person decide (before the requester checks of Evaluate).
+func AcceptedTier(p Policy, level string, f Facts) Tier {
+	class, _ := ClassOf(KindAccepted, f, p.EPSS())
+	if !LevelNeedsSecond(level, MaterialForFalsePositive(f, p.EPSS())) {
+		return acceptedLevelTier(p, class)
+	}
+	return p.TierFor(KindAccepted, class)
+}
+
+// fpLevelTier is the false-positive tier the organization's level gives.
+func fpLevelTier(level string, material bool) Tier {
+	if LevelNeedsSecond(level, material) {
+		return TierPeer
+	}
+	return TierSingle
 }
 
 // Combine merges the evaluations of every finding a group decision covers

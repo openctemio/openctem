@@ -31,11 +31,11 @@ var RolePermissions = map[tenant.Role][]Permission{
 		VulnerabilitiesRead,
 		CredentialsRead, CredentialsWrite, CredentialsReveal, EvidenceReveal,
 		RemediationRead, RemediationWrite,
-		WorkflowsRead, WorkflowsWrite,
+		AutomationsRead, AutomationsWrite, AutomationsPublish,
 		// Scans
 		ScansRead, ScansWrite, ScansDelete, ScansExecute, ScansApprove,
 		ScanProfilesRead, ScanProfilesWrite, ScanProfilesDelete,
-		TemplateSourcesRead, TemplateSourcesWrite, TemplateSourcesDelete,
+		ContentSourcesRead, ContentSourcesWrite, ContentSourcesDelete, ContentSourcesApprove,
 		ToolsRead, ToolsWrite, ToolsDelete,
 		TenantToolsRead, TenantToolsWrite,
 		ScannerTemplatesRead, ScannerTemplatesWrite, ScannerTemplatesDelete,
@@ -113,11 +113,11 @@ var RolePermissions = map[tenant.Role][]Permission{
 		VulnerabilitiesRead,
 		CredentialsRead, CredentialsWrite, CredentialsReveal, EvidenceReveal,
 		RemediationRead, RemediationWrite,
-		WorkflowsRead, WorkflowsWrite,
+		AutomationsRead, AutomationsWrite, AutomationsPublish,
 		// Scans
 		ScansRead, ScansWrite, ScansDelete, ScansExecute, ScansApprove,
 		ScanProfilesRead, ScanProfilesWrite, ScanProfilesDelete,
-		TemplateSourcesRead, TemplateSourcesWrite, TemplateSourcesDelete,
+		ContentSourcesRead, ContentSourcesWrite, ContentSourcesDelete, ContentSourcesApprove,
 		ToolsRead, ToolsWrite, ToolsDelete,
 		TenantToolsRead, TenantToolsWrite,
 		ScannerTemplatesRead, ScannerTemplatesWrite, ScannerTemplatesDelete,
@@ -199,14 +199,14 @@ var RolePermissions = map[tenant.Role][]Permission{
 		VulnerabilitiesRead,
 		CredentialsRead,
 		RemediationRead, RemediationWrite,
-		WorkflowsRead,
+		AutomationsRead,
 		// Scans (read + write, no delete)
 		ScansRead, ScansWrite, ScansExecute,
 		ScanProfilesRead, ScanProfilesWrite,
 		// Template sources and scanner templates: read only. A custom
 		// template is code the sensors run, so writing one is owner/admin
 		// only (owner decision 2026-10-02, migration 000262).
-		TemplateSourcesRead,
+		ContentSourcesRead,
 		ToolsRead,
 		TenantToolsRead, TenantToolsWrite,
 		ScannerTemplatesRead,
@@ -277,11 +277,11 @@ var RolePermissions = map[tenant.Role][]Permission{
 		VulnerabilitiesRead,
 		CredentialsRead,
 		RemediationRead,
-		WorkflowsRead,
+		AutomationsRead,
 		// Scans (read only)
 		ScansRead,
 		ScanProfilesRead,
-		TemplateSourcesRead,
+		ContentSourcesRead,
 		ToolsRead,
 		TenantToolsRead,
 		ScannerTemplatesRead,

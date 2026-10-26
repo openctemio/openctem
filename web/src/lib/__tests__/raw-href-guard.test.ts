@@ -46,9 +46,18 @@ const SAFE_CALLS = new Set([
   // with the asset id and fixed statuses in the query.
   'assetFindingsHref',
   'campaignHref',
+  // features/vulnerabilities/lib/vuln-page.ts: `/findings?cve_id=…` with the
+  // filters as URLSearchParams values.
+  'cveFindingsHref',
   'findingsHrefForSources',
   'mitreTechniqueUrl',
+  // features/findings/lib/quick-views.ts: `/findings?` with a quick view's
+  // filter (from the API) only in the query.
+  'quickViewHref',
   'registerHref',
+  // features/vulnerabilities/api/use-cve-exposure.ts: `/vulnerabilities/` with
+  // the id URI-encoded.
+  'vulnerabilityHref',
 ])
 
 /** Components that encode their own href. */
@@ -62,14 +71,8 @@ const SAFE_TAGS = new Set(['SafeExternalLink'])
 const REVIEWED = new Set([
   // Asset group page: findingsHref() is a fixed same-origin /findings prefix with the group id encoded and a severity from a fixed list.
   'app/(dashboard)/(discovery)/assets/groups/[id]/page.tsx|NextLink|href={findingsHref(severity)}',
-  // StatLink only forwards the page's own constant routes (INTERNET_FACING_HREF and siblings).
-  'app/(dashboard)/(scoping)/attack-surface/page.tsx|Link|href={href}',
-  // Dashboard drill-down links: DRILL (features/dashboard/lib/drill.ts) holds build-time constant
-  // same-origin list routes; DrillCard only forwards its caller's DRILL value.
-  'app/(dashboard)/insights/executive/page.tsx|Link|href={href}',
-  'app/(dashboard)/insights/executive/page.tsx|DrillCard|href={DRILL.slaBreached}',
-  'app/(dashboard)/insights/executive/page.tsx|DrillCard|href={DRILL.p0Open}',
-  'app/(dashboard)/insights/executive/page.tsx|DrillCard|href={DRILL.p1Open}',
+  // StatsCard href only receives the callers' own constant routes (attack surface tiles).
+  'features/shared/components/stats-card.tsx|Link|href={href}',
   // LEGAL_DOCS paths are constants in src/lib/legal.ts (/terms, /privacy, ...).
   'features/legal/components/legal-document.tsx|Link|href={d.path}',
   // Fix plan rows: href is built in the same file as /remediation/tasks/{id} or /remediation/suggestions.

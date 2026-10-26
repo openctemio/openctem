@@ -28,8 +28,12 @@ const (
 	CodeUnprocessableEntity Code = "UNPROCESSABLE_ENTITY"
 	CodeInternalError       Code = "INTERNAL_ERROR"
 	CodeServiceUnavailable  Code = "SERVICE_UNAVAILABLE"
-	CodeValidationFailed    Code = "VALIDATION_FAILED"
-	CodeRateLimitExceeded   Code = "RATE_LIMIT_EXCEEDED"
+	// CodeQueryTimeout is a 503 for a list or count read that ran past its
+	// statement timeout: the request is valid, but too broad to answer in
+	// time; narrowing the filter or search helps, retrying as is may not.
+	CodeQueryTimeout      Code = "QUERY_TIMEOUT"
+	CodeValidationFailed  Code = "VALIDATION_FAILED"
+	CodeRateLimitExceeded Code = "RATE_LIMIT_EXCEEDED"
 	// CodeUpstreamError is a 502: a service the request depends on (e.g. a
 	// template source's server) failed or refused it.
 	CodeUpstreamError Code = "UPSTREAM_ERROR"
@@ -53,6 +57,22 @@ const (
 	// does not check against its entity (pkg/querylang). Details carry the
 	// byte range, line and column of each problem.
 	CodeInvalidQuery Code = "INVALID_QUERY"
+	// CodeSelectionChanged is a 409 for a bulk change by filter whose
+	// filter, recompiled in the caller's scope, no longer selects the count
+	// the caller confirmed. Details carry the new count.
+	CodeSelectionChanged Code = "SELECTION_CHANGED"
+	// CodeBulkTooLarge is a 400 for a bulk change by filter over its cap.
+	CodeBulkTooLarge Code = "BULK_TOO_LARGE"
+	// CodeBulkNotAllowed is a 400 for a change that is never made in bulk
+	// by filter (false positive, accepted risk, duplicate: they stay
+	// per-finding requests with their own approval).
+	CodeBulkNotAllowed Code = "BULK_NOT_ALLOWED"
+	// CodeOperationRunning is a 409: the caller already has an operation
+	// running.
+	CodeOperationRunning Code = "OPERATION_RUNNING"
+	// CodeIdempotencyKeyReused is a 422: the idempotency key was used before
+	// with a different request.
+	CodeIdempotencyKeyReused Code = "IDEMPOTENCY_KEY_REUSED"
 )
 
 // Error represents a standardized API error.
@@ -91,10 +111,12 @@ func (e *Error) MarshalJSON() ([]byte, error) {
 	type alias Error
 	return json.Marshal(&struct {
 		*alias
-		Error string `json:"error"`
+		Message string `json:"message"`
+		Error   string `json:"error"`
 	}{
-		alias: (*alias)(e),
-		Error: string(e.Code),
+		alias:   (*alias)(e),
+		Message: e.publicMessage(""),
+		Error:   string(e.Code),
 	})
 }
 
@@ -107,14 +129,10 @@ type Response struct {
 	RequestID string `json:"request_id,omitempty"`
 }
 
-// ToResponse converts the error to a response structure.
+// ToResponse converts the error to a response structure. The message is
+// the public one (safe.go): never an id or internal error text.
 func (e *Error) ToResponse() Response {
-	return Response{
-		Error:   string(e.Code),
-		Code:    e.Code,
-		Message: e.Message,
-		Details: e.Details,
-	}
+	return e.ToResponseWithRequestID("")
 }
 
 // ToResponseWithRequestID converts the error to a response with request ID.
@@ -122,7 +140,7 @@ func (e *Error) ToResponseWithRequestID(requestID string) Response {
 	return Response{
 		Error:     string(e.Code),
 		Code:      e.Code,
-		Message:   e.Message,
+		Message:   e.publicMessage(requestID),
 		Details:   e.Details,
 		RequestID: requestID,
 	}
@@ -260,7 +278,12 @@ func InternalServerError(message string) *Error {
 	return New(http.StatusInternalServerError, CodeInternalError, message)
 }
 
-// ServiceUnavailable creates a 503 Service Unavailable error.
+// QueryTimeout returns a 503 QUERY_TIMEOUT error.
+func QueryTimeout(message string) *Error {
+	return New(http.StatusServiceUnavailable, CodeQueryTimeout, message)
+}
+
+// ServiceUnavailable returns a 503 SERVICE_UNAVAILABLE error.
 func ServiceUnavailable(message string) *Error {
 	if message == "" {
 		message = "Service temporarily unavailable"

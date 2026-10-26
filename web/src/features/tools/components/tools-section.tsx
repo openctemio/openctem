@@ -11,11 +11,10 @@
 import { buildCsv, downloadCsv } from '@/hooks/use-csv-export'
 import Link from '@/components/link'
 import { useState, useMemo, useCallback } from 'react'
-import { Plus, Wrench, Search, Download } from 'lucide-react'
+import { Plus, Wrench, Download } from 'lucide-react'
 import { toast } from 'sonner'
 
 import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Switch } from '@/components/ui/switch'
 import {
@@ -52,6 +51,7 @@ import {
   MetricStrip,
   PageHeader,
   type MetricStripItem,
+  PageStack,
 } from '@/features/shared'
 import { useTranslation } from '@/context/i18n-provider'
 
@@ -244,7 +244,6 @@ export function ToolsSection() {
     statusMetric('offline_only', 'warning'),
     statusMetric('no_sensor'),
     statusMetric('outdated', 'warning'),
-    statusMetric('disabled'),
     {
       key: 'updates',
       label: 'Updates available',
@@ -259,16 +258,6 @@ export function ToolsSection() {
 
   const toolbarStart = (
     <>
-      <div className="relative min-w-0 flex-1 sm:max-w-sm">
-        <Search className="pointer-events-none absolute start-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-        <Input
-          placeholder="Search tools…"
-          aria-label="Search tools"
-          value={searchQuery}
-          onChange={(e) => setSearchQuery(e.target.value)}
-          className="h-9 ps-9"
-        />
-      </div>
       <Select value={categoryFilter} onValueChange={setCategoryFilter}>
         <SelectTrigger className="h-9 w-[150px]" aria-label="Category">
           <SelectValue placeholder="All categories" />
@@ -353,6 +342,12 @@ export function ToolsSection() {
         onEditTool={canEditTool ? handleEditTool : undefined}
         onDeleteTool={canDeleteTool ? handleDeleteClick : undefined}
         onToggleEnabled={canToggle ? handleToggleEnabled : undefined}
+        search={{
+          value: searchQuery,
+          onChange: setSearchQuery,
+          placeholder: t('scans.tools.search.placeholder', 'Search tools…'),
+          label: t('scans.tools.search.label', 'Search tools'),
+        }}
         toolbarStart={toolbarStart}
         toolbarEnd={toolbarEnd}
         emptyMessage={
@@ -365,7 +360,7 @@ export function ToolsSection() {
   }
 
   return (
-    <>
+    <PageStack>
       <PageHeader
         title="Tools"
         description="The tools your sensors report, and whether a scan with each can run now. Add custom tools for your own scanners."
@@ -382,9 +377,9 @@ export function ToolsSection() {
         </Can>
       </PageHeader>
 
-      <MetricStrip className="mt-5" loading={isLoading} items={metrics} />
+      <MetricStrip loading={isLoading} items={metrics} />
 
-      <div className="mt-5">{body}</div>
+      {body}
 
       <AddToolDialog
         open={addDialogOpen}
@@ -423,6 +418,6 @@ export function ToolsSection() {
         isLoading={isDeleting}
         handleConfirm={handleDeleteConfirm}
       />
-    </>
+    </PageStack>
   )
 }

@@ -114,6 +114,36 @@ that was approved (or not needed) for a different finding. Request the
 decision on the finding itself. The activity on both findings names the user;
 the audit log records `finding.duplicate_marked`.
 
+**Why a finding is one (identity explanation):** every keying records the
+recipe in `findings.identity_algo` and the NAMES of the key's fields, in recipe
+order, in `findings.identity_fields` (migration `003351`, nullable, no
+backfill). Recipe names: `v2/<kind>` (`v2/sca`, `v2/sast`, `v2/secret`,
+`v2/dast`, `v2/network`, `v2/misconfig`) set by `Finding.SetIdentity`;
+`v1/ingest` for the server's version-1 ingest key (F1, also when a
+report-chosen key is re-keyed to it); `manual/v1` for a manual finding (F2,
+fields `asset, rule, path, line, message`); `pentest/v1` for a pentest finding
+(F3, fields `campaign, title`). They are written by the insert, kept by the
+re-sighting upsert (a row without them takes the incoming ones only when both
+were keyed by the same recipe version), and rewritten with the key by every
+re-key (version-2 adoption, former-key adoption, the re-key job, the DAST
+repair, an asset merge). A version-2 row keyed before the columns existed is
+explained from `identity_key` (`derived: true`); a version-1 row without them
+is `legacy: true`. Values (asset id, secret HMAC, path, snippet hash) are never
+copied out of `identity_key`.
+`GET /api/v1/findings/{id}/identity` (`findings:read`) answers with
+`algo`, `version`, `fields`, `derived`, `legacy`, `sources` (the finding's
+tool, the tools of the ingest receipts that touched it and the tools of its
+merged duplicates, each with its latest sighting, at most 20) and `merged`
+(tombstones with `duplicate_of = id`: id, tool, merge time and cause code from
+the tombstone's `duplicate_marked` activity, newest first, at most 50). The
+finding passes the same check as `GET /findings/{id}` (route guard and
+service; 404 otherwise, another tenant 404); each tombstone, and its tool, is
+listed only when it is in the caller's data scope (asset scope rows or
+assignee, never a hidden program asset), and the response carries no count of
+the others. No key, fingerprint, partial fingerprint or secret material is
+returned. The finding detail shows it as "Why this is one finding"
+(`web/src/features/findings/components/detail/finding-identity-section.tsx`).
+
 Known limits: the SAST occurrence index is counted within one report, so twin
 snippets split across report chunks can swap; the secret HMAC is over the
 masked value the sensor sends (CTIS carries no raw value), so two secrets that
@@ -158,6 +188,102 @@ The API never sets `Snippet`, `LogicalLocation`, `TargetHost`, `TargetPath`,
 `Parameter` or `ImageTarget`, so the line-independent `sast-content` recipe and
 the `dast` / `container` recipes are unreachable from ingest.
 
+### Canonical vulnerability ids
+
+Design: [RFC-043 §17.2](../rfcs/RFC-043-deduplication-and-identity.md#172-canonicalisation-before-keying).
+Two tools often name one vulnerability differently (`GHSA-35jh-r3h4-6jhm`,
+`CVE-2021-23337`). Before an SCA, network or DAST finding is keyed:
+
+- **Its own ids first.** A finding that names a CVE keys on it. The other
+  CVEs among its CTIS typed ids join `cve_ids`, and a network or SCA finding
+  that names several CVEs becomes one finding per CVE (decisions D3, D20);
+  the copy for the CVE it was keyed on keeps its key and triage.
+- **Feed aliases.** A finding that names no CVE, only advisory ids (its rule
+  id or typed ids: GHSA, PYSEC-, GO-, RUSTSEC-, …), is keyed on the CVE the
+  signed feed ties them to (`vuln_id_aliases`, filled by the bundle importer;
+  see vulnerability-matching.md), only when every id it names that the feed
+  knows leads to the **same single** CVE. Its `cve_id` is set to it.
+  Otherwise it keeps its advisory key, so an over-broad advisory never fuses
+  two CVEs. A report's own ids decide only that report's key: an alias one
+  report asserts is never applied to another finding.
+- **Stored findings keep their triage.** The key the finding had (on the
+  advisory) is a former key: on its next sighting a finding stored under it
+  takes the CVE key in place (its old key stays an alias). When another
+  live finding of the asset already holds the CVE key, nothing is merged:
+  the two are linked as the same issue (rule `vuln_alias`, see below), each
+  keeping its status and decisions (`internal/app/ingest/vuln_alias.go`).
+  The advisory tool's report now lands on the CVE finding, so the advisory
+  finding, while open, takes that sighting too (scan, tool and time, never a
+  status): coverage auto-resolve does not close it as fixed while its tool
+  still reports the vulnerability.
+- **Without a new sighting.** `refingerprint -vuln-aliases [-tenant <id>]
+  [-apply]` rewrites only the vulnerability field of each stored tuple
+  (`vuln` for SCA and network, `rule` for DAST), re-keys in place when the
+  CVE key is free, links otherwise; dry run by default, idempotent, one
+  `findings.refingerprinted` audit entry per tenant it changed
+  (`internal/infra/postgres/finding_alias_rekey.go`).
+
+Until the feed publishes the map, `vuln_id_aliases` is empty and keys are
+unchanged; the feed status shows whether a map was applied.
+
+### Same issue across tools (links)
+
+Design: [RFC-043 §17](../rfcs/RFC-043-deduplication-and-identity.md#17-cross-tool-deduplication-amendment-2026-10-23).
+Findings that different tools (or rules) report for one issue, on a strong
+signal that is not an identity, are **linked**, not merged: they form a group
+shown on each finding ("Same issue in other tools") and counted once in the
+dashboard facts, while each keeps its own status, severity, SLA, ticket, task
+and approvals.
+
+| Rule | Linked when | Never linked |
+|---|---|---|
+| `sast_overlap` | same asset and repository path, different rule ids, overlapping line ranges, a shared CWE (`CWE-89`, `cwe-089` and `89` are one) | across assets (a monorepo split into two assets), the same rule, another CWE on the line, disjoint lines |
+| `secret_value` | the same per-tenant keyed hash of the raw secret, in another file or repository | a secret known only by its mask; another tenant. CI-hashed secrets link within one repository (the CI key is per repository) |
+| `vuln_alias` | a finding still stored under its advisory key while another finding of the asset holds the CVE key the feed gives it | across assets; decided when keys change, not released on a sighting |
+
+How it runs:
+
+- **Keys.** After an ingest batch is stored (step 11 of
+  `FindingProcessor.processBatch`, `internal/app/ingest/issue_links.go`), the
+  batch's version-2 SAST and secret findings get their link keys
+  (`pkg/domain/issuelink.Keys`) in `finding_link_keys`: a hash of (asset,
+  path, CWE) with the line range per CWE, or a hash of the secret's keyed
+  hash. Keys are never returned by the API.
+- **Groups.** One indexed lookup finds the other holders of the batch's keys;
+  `issuelink.PlanLinks` decides the links. A group is a star around its
+  primary (the earliest-created finding when it formed); a finding joins the
+  group of the secret it shares, but a SAST group only by overlapping its
+  primary (line overlap is not transitive, so a wide range never chains two
+  separate issues into one group); two groups are never fused. Caps: a key
+  held by more than 200 findings links nothing, a group has at most 50
+  members. Derivation runs under a per-tenant transaction lock
+  (`FindingIssueLinkRepository`, `internal/infra/postgres/finding_issue_link_repository.go`).
+- **Release and unlink.** A link whose signal no longer holds (the code
+  moved) is released on the next sighting. `DELETE
+  /api/v1/findings/{id}/issue-links/{other}` (`findings:triage`, both
+  findings in the caller's data scope) ends a link as `unlinked`: the pair is
+  never linked again automatically; both timelines get `issue_unlinked` and
+  the audit log `finding.issue_unlinked`. A timeline entry names the other
+  finding only when both are on one asset: a link across repositories (one
+  secret in two) writes no `issue_linked` entry, and its unlink entries name
+  no id, so a viewer of one repository never learns that another holds the
+  same secret.
+- **Reading.** `GET /api/v1/findings/{id}/issue-links` (`findings:read`)
+  lists the members the caller may see, the primary first, with the rule and
+  the field names it compared; a member on an asset outside the caller's
+  scope is neither listed nor counted.
+- **Dashboard facts.** `dash_recompute_asset` (migration
+  `003366_finding_issue_links`) skips a linked member when another finding
+  of its group on the same asset, in the same state, is at least as severe
+  and as urgent (the primary first, then the earliest), so counting once
+  never hides a higher severity or priority. A link or unlink marks both
+  assets dirty.
+- **Finding merge.** Keys and links stay on the tombstone (tombstones are
+  never candidates); the survivor's are derived again on its next sighting.
+- **Existing findings.** `refingerprint -links [-tenant <id>] [-apply]`
+  derives keys and links of stored findings (dry run by default: counts what
+  it would link; idempotent).
+
 ### 1.1 The write path
 
 `FindingProcessor.processBatch` (`processor_findings.go:213-640`) is
@@ -175,6 +301,54 @@ the `dast` / `container` recipes are unreachable from ingest.
    that has **no `RETURNING`** and counts every row as created (`:376`, `:387`).
 4. Post-insert hooks run on the in-memory `newFindings` (created callback `:495`,
    assignment, remediation keys, exposure bridge, suppression audit).
+
+### 1.2 Concurrent uploads
+
+Many pipelines, sensors and tools upload at once, often the same findings (CI
+re-runs, matrix jobs). The batched writes are deadlock-safe:
+
+- **One lock order.** Every batched write takes its row locks in one stable order:
+  assets by `(tenant, name)` (`UpsertBatch`), and findings rows by fingerprint
+  in byte order (Go's string `<`, SQL `fingerprint COLLATE "C"`;
+  `finding_lock_order.go`). Fingerprint, because the upsert of new findings
+  (`CreateBatchWithResult`) can order only by what it has before the rows exist:
+  its `ON CONFLICT DO UPDATE` branch locks the rows another upload inserted first
+  in the order of its sorted `VALUES` list. Every other batched writer of findings
+  locks its rows in a CTE first (`SELECT ... ORDER BY fingerprint COLLATE "C"
+  FOR NO KEY UPDATE`) and then updates only rows it holds: enrichment, the
+  sighting update, auto-reopen, snippets, interop data, scanner output, branch
+  backfill, a person's bulk status move and the finding-priority pass (class and
+  version stamp). Branch occurrences are upserted in `(fingerprint, branch)`
+  order. A writer that locked by id or in report order deadlocked with the
+  upsert: Postgres aborted one of them (`40P01`) and the best-effort writers
+  dropped their rows with only a warning. Concurrent writers of the same rows
+  now queue instead.
+- **Enrichment under the lock.** `EnrichBatchByFingerprints` locks the stored rows,
+  reads them, merges each sighting (`Finding.EnrichFrom`) and writes them in one
+  transaction, so no writer can change a row between the read and the write. The
+  `row_version` predicate stays as a guard. Before this, every concurrent writer
+  but one lost the optimistic race, ran out of retries and fell back to a
+  sighting-only update.
+- **Bounded retry on conflict.** A deadlock (`40P01`) or serialization failure
+  (`40001`) that still happens, for example through a trigger or another code path,
+  rolls back only that statement or transaction. It runs again, up to 5 times
+  with jittered exponential back-off from 20 ms (`write_retry.go`). It never drops
+  to the per-row fallback, which would meet the same conflict row by row.
+- **One sighting per report.** When enrichment fails partway, only the findings it
+  did not write get the sighting-only fallback (`vulnerability.EnrichIncompleteError`),
+  so no finding is counted or rewritten twice.
+
+Measured with the research/241 harness (20 concurrent uploads of the same 500
+findings to one repository, 3 rounds): before, 7–30 deadlocks per round, 9–17 of
+20 uploads with errors, and 3,000 of 10,000 sightings recorded in one round.
+After, 0 deadlocks, 0 uploads with errors, and every sighting recorded
+(`tests/integration/ingest_concurrent_resighting_test.go`). The database's own
+deadlock counter stays at 0 with concurrent uploads, priority stamps and bulk
+status moves on the same findings (`tests/integration/ingest_lock_order_test.go`).
+
+A write of branch occurrences that still fails is reported in the upload's
+errors, and the occurrence sweep of that scan is skipped, so the findings it
+saw are never marked as gone from the branch.
 
 ## 2. Entity table
 
@@ -226,7 +400,15 @@ Names are normalized by `pkg/domain/asset/normalize.go` at construction
 (`entity.go:117`). Ingest upserts with
 `INSERT … ON CONFLICT (tenant_id, name) DO UPDATE … RETURNING` (`asset_repository.go:1439-1482`),
 so concurrent ingests of one normalized name are safe (**P1:** 12 concurrent
-ingests → 1 asset). Strong identifiers (RFC-028) live in `asset_identifiers`
+ingests → 1 asset). Every row written after the upsert in the same transaction
+uses the id the upsert returned for the name, never the in-memory id of the
+asset the report built: when two uploads create the same new repository at once,
+the loser's in-memory id names no row. The repository extension
+(`asset_repositories`, `ensureRepositoryExtensions`) is keyed that way, so the
+losing upload attaches its findings to the stored repository instead of failing
+the foreign key and dropping the upload (research/241 L7: 20 concurrent uploads
+to one new repository, 2–7 failed before, 0 after;
+`tests/integration/ingest_repository_race_test.go`). Strong identifiers (RFC-028) live in `asset_identifiers`
 with `UNIQUE (tenant_id, kind, value) WHERE strong` (`000243:30-31`).
 
 | Asset type | Normalization | Status | Proven failure (P3 / P17) |
@@ -294,7 +476,7 @@ merge into the survivor and tombstone the loser (RFC-043 §5).
 | Nessus / DefectDojo converter fingerprints | `nessus:host:plugin:port/proto`, `defectdojo:<hash>` (`nessus/converter.go:242`, `defectdojo/converter.go:130`) | **BROKEN** | not hex → discarded by `isValidFingerprint` | DefectDojo's "stable across re-imports" key is never used; two jars with one CVE on a product merge via `netva::<cve>` (**code**) |
 | SARIF via `/ingest/scanner?scanner_type=sarif` | `matchBasedId/v1`, else the usable value under the **lowest key**, long values hashed (`resultFingerprint`, `internal/infra/adapters/sarif/adapter.go`) — the rule `ctis.FromSARIF` applies on `/ingest/sarif` | **OK** (RFC-043 item 12) | was the first map entry (random) | — |
 | SARIF parsers inside the API | one parser, `ctis.FromSARIF` through the ctis importer; it maps `codeFlows` to `data_flow`. The in-tree adapter and `pkg/parsers/sarif` are deleted, and so is the API's unused code-flow converter | **OK** | — | every entry point stores the same title, data flow and identity |
-| Nessus `.nessus` parsing | one parser, the ctis importer (`importer.FormatNessus`), behind `POST /findings/import`; the API's own parser, findings converter and host-only asset import are deleted | **OK** (RFC-043 item 12) | was three XML models | every plugin result, host-level ones included, keys on the network identity (host, CVE or plugin, port) |
+| Nessus `.nessus` parsing | one parser, the ctis importer (`importer.FormatNessus`), behind `POST /findings/imports`; the API's own parser, findings converter and host-only asset import are deleted | **OK** (RFC-043 item 12) | was three XML models | every plugin result, host-level ones included, keys on the network identity (host, CVE or plugin, port) |
 | In-tree adapters (`internal/infra/adapters/*`) vs sensor parsers | two implementations of trivy/semgrep/nuclei/betterleaks parsing with different fingerprints | **PARTIAL** — identity no longer depends on it | API nuclei adapter: `GenerateSAST(host, template, 0)` (`nuclei/adapter.go:164`); sensor: `template|host|matched-at|matcher` | with identity version 2 the sensor or adapter fingerprint is only a sighting key, so the same nuclei result through `/ingest/scanner` and through the sensor keys on the same server recipe; the parsers are still two copies in two repositories (follow-up: canonical converters in `ctis`, as `FromSARIF` and the recon converter already are) |
 | Threat models | `UNIQUE (tenant_id, scope_type, scope_ref_id)` with `scope_ref_id` NULL for tenant-wide (`000189:33`); unlocked select-then-insert (`threat_model_repository.go:125-170`) | **BROKEN** | NULLS DISTINCT | **P18:** two tenant-wide models inserted for one tenant |
 | Attack paths | not stored (the unused `attack_paths` tables were dropped by migration 001491); paths computed on read | n/a | — | — |
@@ -302,6 +484,28 @@ merge into the survivor and tombstone the loser (RFC-043 §5).
 | Suppression rules | no uniqueness on criteria; `finding_suppressions UNIQUE (finding_id, rule)` | **OK** (rules are user data) | rules match on tool/rule/asset/path, not fingerprint (`suppression/entity.go:320-350`), so they survive re-keying | — |
 | Asset dedup review pairs | partial unique on `keep_asset_id` | **BROKEN** | keep = most findings (`correlator.go:186-193`); reversed pending pairs not checked (`asset_dedup_repository.go:241-243`) | scan 1 proposes keep A/merge B, scan 2 keep B/merge A → two contradictory pending reviews (**code**) |
 | Comments / activities | append-only, cascade with the finding | **OK** | — | lost on a finding delete (§2.4) |
+
+### 2.6 Branch counters
+
+`repository_branches.findings_total` and `findings_critical/high/medium/low` count
+the open findings of a branch (`is_open_finding_status`). Statement triggers on
+`findings` keep them up to date (migration `branch_finding_counts_per_statement`):
+
+- `trg_findings_branch_counts_insert` / `_delete` collect the distinct `branch_id`
+  of the statement's rows from its transition table.
+- `trg_findings_branch_counts_update` collects the old and new branch of every row
+  whose `branch_id`, `status` or `severity` changed. A re-sighting that moves no
+  counted value recounts nothing.
+- `refresh_branch_finding_counts(uuid[])` locks the touched branch rows in id
+  order, then recounts each branch once in one aggregate pass. It skips a branch
+  whose repository is gone, as in the cascade of a tenant delete.
+
+The counts are a recount, not deltas, so they stay exact and heal a counter that
+drifted. The row trigger they replace recounted the whole branch five times for
+every inserted row. That was quadratic in the report size: 5,000 findings took
+37.6 s in research/241, against 7.3 s with the trigger off. It also held the
+branch row lock for the whole upload. Parity with the row trigger is tested by
+`tests/integration/branch_finding_counts_test.go`.
 
 ## 3. Open pull requests that change identity
 

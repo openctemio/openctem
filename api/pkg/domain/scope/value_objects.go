@@ -57,6 +57,35 @@ func (t TargetType) IsValid() bool {
 	return false
 }
 
+// AuthorizesProbes reports whether an entry of this type can authorize active
+// probes. Only types with a proper matcher do: a name, an address, a range, a
+// network, a URL origin or a repository namespace. Every other type has no
+// matcher, so an entry of it never covers a target (it used to fall back to a
+// wildcard match, and the pattern "*" then covered every host and address).
+func (t TargetType) AuthorizesProbes() bool {
+	switch t {
+	case TargetTypeDomain, TargetTypeSubdomain, TargetTypeEmailDomain,
+		TargetTypeIPAddress, TargetTypeIPRange, TargetTypeCIDR,
+		TargetTypeURL, TargetTypeAPI, TargetTypeWebsite,
+		TargetTypeHost, TargetTypeRepository:
+		return true
+	}
+	return false
+}
+
+// Retired reports whether new scope entries of this type are refused. These
+// types name no network location a probe could be authorized for; the thing
+// to scope is the domain, address or network that serves them. Existing rows
+// stay readable but authorize nothing.
+func (t TargetType) Retired() bool {
+	switch t {
+	case TargetTypeCertificate, TargetTypeContainer, TargetTypeDatabase,
+		TargetTypeMobileApp, TargetTypeCloudResource, TargetTypeNetwork:
+		return true
+	}
+	return false
+}
+
 // ParseTargetType parses a string into a TargetType.
 func ParseTargetType(s string) (TargetType, error) {
 	t := TargetType(strings.ToLower(s))
@@ -185,10 +214,30 @@ func ValidatePattern(targetType TargetType, pattern string) error {
 		return validateCloudAccountPattern(pattern)
 	case TargetTypeURL, TargetTypeAPI, TargetTypeWebsite:
 		return validateURLPattern(pattern)
+	case TargetTypeHost:
+		return validateHostPattern(pattern)
 	default:
-		// Basic validation for other types
+		// Types with no matcher take no wildcard: "*" would otherwise
+		// read as "everything" wherever the pattern is compared.
+		if strings.Contains(pattern, "*") {
+			return ErrWildcardNotAllowed
+		}
 		return nil
 	}
+}
+
+// validateHostPattern accepts a host name (or *.name) or one address.
+func validateHostPattern(pattern string) error {
+	if _, err := netip.ParseAddr(strings.Trim(pattern, "[]")); err == nil {
+		return nil
+	}
+	if _, ok := parseIPSet(pattern); ok || strings.Contains(pattern, "/") {
+		return fmt.Errorf("%w: a host is a name or one address; use a CIDR or range entry for a network", ErrInvalidPattern)
+	}
+	if strings.Contains(strings.TrimPrefix(pattern, "*."), "*") {
+		return ErrWildcardNotAllowed
+	}
+	return validateDomainPattern(pattern)
 }
 
 func validateDomainPattern(pattern string) error {
@@ -252,12 +301,52 @@ func validateCloudAccountPattern(pattern string) error {
 	return nil
 }
 
-func validateURLPattern(pattern string) error {
-	// Allow wildcards in path
-	if !strings.HasPrefix(pattern, "http://") && !strings.HasPrefix(pattern, "https://") && !strings.HasPrefix(pattern, "*") {
-		return fmt.Errorf("%w: a URL must start with http://, https:// or *", ErrInvalidPattern)
+// urlAuthorityWild reports whether the host part of a URL pattern holds a
+// "*", or the pattern has no scheme and host at all.
+func urlAuthorityWild(pattern string) bool {
+	_, rest, ok := strings.Cut(pattern, "://")
+	if !ok {
+		return strings.Contains(pattern, "*")
 	}
-	return nil
+	authority, _, _ := strings.Cut(rest, "/")
+	return authority == "" || strings.Contains(authority, "*")
+}
+
+// validateURLPattern accepts "http(s)://host[:port][/path*]". The host is a
+// name or an address: a wildcard host would cover every origin, so only the
+// path may end in "*".
+func validateURLPattern(pattern string) error {
+	lower := strings.ToLower(pattern)
+	var rest string
+	switch {
+	case strings.HasPrefix(lower, "http://"):
+		rest = pattern[len("http://"):]
+	case strings.HasPrefix(lower, "https://"):
+		rest = pattern[len("https://"):]
+	case strings.HasPrefix(pattern, "*://"):
+		rest = pattern[len("*://"):] // any scheme, one concrete host
+	default:
+		return fmt.Errorf("%w: a URL must start with http:// or https://", ErrInvalidPattern)
+	}
+	authority, _, _ := strings.Cut(rest, "/")
+	if strings.ContainsAny(authority, "?#@") {
+		return fmt.Errorf("%w: a URL entry names a host (and optional port) with no credentials, query or fragment", ErrInvalidPattern)
+	}
+	if strings.Contains(authority, "*") {
+		return ErrWildcardNotAllowed
+	}
+	host := authority
+	if h, _, err := net.SplitHostPort(authority); err == nil {
+		host = h
+	}
+	host = strings.Trim(host, "[]")
+	if host == "" {
+		return fmt.Errorf("%w: a URL entry needs a host", ErrInvalidPattern)
+	}
+	if net.ParseIP(host) != nil {
+		return nil
+	}
+	return validateDomainPattern(host)
 }
 
 // =============================================================================
@@ -270,7 +359,12 @@ func MatchesPattern(targetType TargetType, pattern, value string) bool {
 	case TargetTypeDomain, TargetTypeSubdomain, TargetTypeEmailDomain:
 		return matchDomain(pattern, value)
 	case TargetTypeIPAddress:
-		return pattern == value
+		// One address in any spelling: "2001:DB8::1" and "2001:db8::1",
+		// "10.0.0.5" and "::ffff:10.0.0.5" are the same address.
+		if a, err := netip.ParseAddr(strings.Trim(strings.TrimSpace(pattern), "[]")); err == nil {
+			return matchCIDR(a.Unmap().String(), value)
+		}
+		return false
 	case TargetTypeIPRange, TargetTypeCIDR:
 		return matchCIDR(pattern, value)
 	case TargetTypeRepository:
@@ -279,8 +373,32 @@ func MatchesPattern(targetType TargetType, pattern, value string) bool {
 		return matchWildcard(pattern, value)
 	case TargetTypeCloudAccount:
 		return matchWildcard(pattern, value)
-	default:
+	case TargetTypeURL, TargetTypeAPI, TargetTypeWebsite:
+		// A wildcard in the host would cover every origin; stored rows
+		// from before validation refused it authorize nothing.
+		if urlAuthorityWild(pattern) {
+			return false
+		}
+		// "*://host" means any scheme on that host: the value's own scheme
+		// takes the place of "*", so the star cannot swallow a host.
+		pattern, ok := bindWildScheme(pattern, value)
+		if !ok {
+			return false
+		}
 		return matchWildcard(pattern, value)
+	case TargetTypeHost:
+		// One address, or a name (*.name). A CIDR or a range belongs to an
+		// ip_range or cidr entry: as a host pattern it covers nothing.
+		if a, err := netip.ParseAddr(strings.Trim(strings.TrimSpace(pattern), "[]")); err == nil {
+			return matchCIDR(a.Unmap().String(), value)
+		}
+		if _, ok := parseIPSet(pattern); ok {
+			return false
+		}
+		return matchDomain(pattern, value)
+	default:
+		// No matcher: exact text only, never a wildcard.
+		return strings.EqualFold(strings.TrimSpace(pattern), strings.TrimSpace(value))
 	}
 }
 
@@ -305,13 +423,22 @@ func MatchesPattern(targetType TargetType, pattern, value string) bool {
 func matchDomain(pattern, domain string) bool {
 	pWild, p := splitDomainWildcard(pattern)
 	dWild, d := splitDomainWildcard(domain)
-	if p == "" || d == "" {
+	if p == "" || d == "" || !hostnameOnly(p) || !hostnameOnly(d) {
 		return false
 	}
 	if !pWild {
 		return !dWild && d == p
 	}
 	return d == p || strings.HasSuffix(d, "."+p)
+}
+
+// hostnameOnly reports whether s can only be a host name: no URL, port,
+// user, path, query or fragment syntax and no whitespace. A domain entry
+// matches host names only; without this, the raw text of a URL such as
+// "http://other.test/?q=.example.com" ends in ".example.com" and passed the
+// suffix test. The host of a URL or host:port is matched as its own form.
+func hostnameOnly(s string) bool {
+	return !strings.ContainsAny(s, "/?#@:\\[]% \t\r\n")
 }
 
 // domainIDNA converts a name to its ASCII (punycode) form for comparison.
@@ -489,4 +616,19 @@ func MatchesExclusionPattern(exclusionType ExclusionType, pattern, value string)
 	default:
 		return matchWildcard(pattern, value)
 	}
+}
+
+// bindWildScheme replaces a leading "*://" of a URL pattern with the
+// value's own scheme. A value without a plain scheme (letters, digits, "+",
+// "-") binds nothing. Patterns without "*://" come back unchanged.
+func bindWildScheme(pattern, value string) (string, bool) {
+	rest, ok := strings.CutPrefix(strings.ToLower(strings.TrimSpace(pattern)), "*://")
+	if !ok {
+		return pattern, true
+	}
+	s, _, found := strings.Cut(strings.ToLower(strings.TrimSpace(value)), "://")
+	if !found || s == "" || strings.ContainsAny(s, "/?#@.") {
+		return "", false
+	}
+	return s + "://" + rest, true
 }

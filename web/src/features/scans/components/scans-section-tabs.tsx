@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, type ReactNode } from 'react'
+import { useCallback, useState, type ReactNode } from 'react'
 import { useTranslation } from '@/context/i18n-provider'
 import { Plus, Zap } from 'lucide-react'
 
@@ -8,23 +8,23 @@ import { Button } from '@/components/ui/button'
 import { SCANS_SECTION_TABS } from '@/config/section-tabs'
 import { GatedSectionTabs, PageHeader } from '@/features/shared'
 import { Can, Permission } from '@/lib/permissions'
+import { usePermissions } from '@/lib/permissions/hooks'
+import { useOpenForm } from '@/hooks/use-open-form'
 import { NewScanDialog } from './new-scan/new-scan-dialog'
 import { QuickScanDialog } from './quick-scan-dialog'
 
 /**
  * Scans · Runs · Workflows, the route tabs of Discovery > Scans. One table per
  * route, so every list keeps plain `page`, `per_page` and `sort` parameters.
- * Placed directly under the page's `PageHeader`; the next block carries `mt-5`.
+ * anatomy-ok: inside a PageStack (the Scans pages render this header and
+ * the strip as the first blocks of their own PageStack).
+ *
+ * Placed directly under the page's `PageHeader` inside the page's `PageStack`,
+ * which owns the 16px above and the 20px below (research/244).
  */
 export function ScansSectionTabs() {
   const { t } = useTranslation()
-  return (
-    <GatedSectionTabs
-      tabs={SCANS_SECTION_TABS}
-      label={t('scans.header.sections')}
-      className="mt-4 mb-0"
-    />
-  )
+  return <GatedSectionTabs tabs={SCANS_SECTION_TABS} label={t('scans.header.sections')} />
 }
 
 /**
@@ -45,6 +45,9 @@ export function ScanCreateActions() {
   const { t } = useTranslation()
   const [dialogOpen, setDialogOpen] = useState(false)
   const [quickScanOpen, setQuickScanOpen] = useState(false)
+  const { can } = usePermissions()
+  const openNewScan = useCallback(() => setDialogOpen(true), [])
+  useOpenForm('scan', can(Permission.ScansWrite), openNewScan)
   return (
     <>
       <NewScanDialog open={dialogOpen} onOpenChange={setDialogOpen} />

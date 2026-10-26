@@ -91,6 +91,9 @@ type Importer struct {
 
 	// aliases applies the release's alias dictionary (nil: not applied).
 	aliases software.AliasWriter
+	// vulnIDs applies the release's vulnerability id alias map (nil: not
+	// applied).
+	vulnIDs VulnIDAliasWriter
 }
 
 // NewImporter creates an importer. It refuses a base URL that is not a

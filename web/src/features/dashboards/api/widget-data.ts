@@ -29,7 +29,7 @@ export interface WidgetValue {
   index: number
   widget_type: string
   state: WidgetState
-  /** Machine code: no_denominator, too_few_fixed, legacy_tile, facts_building, failed, timeout. */
+  /** Machine code: no_denominator, too_few_fixed, legacy_tile, forbidden, facts_building, failed, timeout. */
   reason?: string
   metric?: string
   shape?: ResultShape
@@ -77,9 +77,12 @@ export interface WidgetValue {
   }
   matrix?: { rows: string[]; cols: string[]; cells: number[][] }
   items?: {
+    /** The full list's count under the same filter, when the server sends it. */
+    total?: number
     rows: Array<{
       id: string
-      title: string
+      /** Null or empty when the finding was stored without a title. */
+      title: string | null
       severity: string
       priority_class: string
       asset_id?: string
@@ -165,8 +168,30 @@ export function useDashboardData(kind: DashboardKind, id: string | null) {
   return useSWR<DashboardData>(
     currentTenant && id ? dashboardDataKey(kind, id) : null,
     (url: string) => get<DashboardData>(url),
-    { revalidateOnFocus: false }
+    { revalidateOnFocus: false, refreshInterval: dashboardRefreshInterval }
   )
+}
+
+/** Poll every 15s while the first fact build runs. */
+export const BUILDING_POLL_MS = 15_000
+/** Never poll faster than this for a scheduled refresh. */
+export const MIN_POLL_MS = 30_000
+
+/**
+ * How long until the page should read the figures again: the time to the
+ * next scheduled refresh plus 5s (at least 30s); 15s while the first build
+ * runs; never for a manual dashboard (no next refresh).
+ */
+export function dashboardRefreshInterval(
+  data: DashboardData | undefined,
+  now = Date.now()
+): number {
+  if (!data) return 0
+  if (!data.facts_built_at) return BUILDING_POLL_MS
+  if (!data.next_refresh_at) return 0
+  const due = Date.parse(data.next_refresh_at)
+  if (Number.isNaN(due)) return 0
+  return Math.max(MIN_POLL_MS, due - now + 5_000)
 }
 
 /** One typed widget computed for the caller's own scope (gallery, config panel). */

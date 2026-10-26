@@ -16,7 +16,7 @@ var ErrIntegrationDisabled = fmt.Errorf("%w: integration is disabled; enable it 
 // ErrCredentialsRequiredForNewHost is returned when base_url moves to another
 // host without new credentials: the stored token was issued for the old host
 // and must not be sent to a host someone else chose.
-var ErrCredentialsRequiredForNewHost = fmt.Errorf("%w: changing base_url to another host requires re-entering the credentials", shared.ErrValidation)
+var ErrCredentialsRequiredForNewHost = fmt.Errorf("%w: changing the destination host requires re-entering the credentials", shared.ErrValidation)
 
 // callerMetadataKeys are the integration metadata keys a caller may set
 // directly: non-secret provider settings (Splunk HEC endpoint, index and
@@ -78,6 +78,17 @@ func requireCredentialsForHostChange(intg *integrationdom.Integration, newBaseUR
 		return nil
 	}
 	if newCredentials != nil && *newCredentials != "" {
+		return nil
+	}
+	return ErrCredentialsRequiredForNewHost
+}
+
+// requireCredentialsForDestinationChange is the same rule for destinations
+// that live in metadata rather than in base_url (SMTP relay, Splunk HEC
+// endpoint): when stored credentials exist and the destination changed, the
+// request must carry new credentials, which replace the stored ones.
+func requireCredentialsForDestinationChange(intg *integrationdom.Integration, destinationChanged, newCredentialsGiven bool) error {
+	if !destinationChanged || intg.CredentialsEncrypted() == "" || newCredentialsGiven {
 		return nil
 	}
 	return ErrCredentialsRequiredForNewHost

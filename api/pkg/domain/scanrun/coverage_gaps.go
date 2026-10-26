@@ -39,8 +39,12 @@ const (
 )
 
 // ErrCodeCoverageGaps is the code of a step that completed with hosts its
-// sensor could not fully cover.
-const ErrCodeCoverageGaps = "COVERAGE_GAPS"
+// sensor could not fully cover (FailureCoverageGaps, class partial).
+const ErrCodeCoverageGaps = FailureCoverageGaps
+
+// GapReasons lists the coverage-gap reasons the platform accepts, in a
+// stable order (the console has words for each; a test checks it).
+var GapReasons = []string{GapReasonBreakerOpen, GapReasonRateFloor, GapReasonBlocked}
 
 // CoverageGap is one host a sensor could not fully cover, and why.
 type CoverageGap struct {

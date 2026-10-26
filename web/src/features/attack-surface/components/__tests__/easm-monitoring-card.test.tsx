@@ -4,7 +4,7 @@
  * changes without the permissions.
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen } from '@testing-library/react'
+import { render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { SWRConfig } from 'swr'
 import type { ReactNode } from 'react'
@@ -16,6 +16,7 @@ vi.mock('@/lib/permissions', async (orig) => {
   const actual = await orig<typeof import('@/lib/permissions')>()
   return {
     ...actual,
+    useCanMutate: (key: string) => (key === 'PUT /api/v1/easm/settings' ? perms.settings : true),
     usePermissions: () => ({
       can: (p: string) =>
         p === actual.Permission.SettingsWrite
@@ -102,6 +103,10 @@ describe('EASMMonitoringCard', () => {
     const shots = await screen.findByRole('switch', { name: 'Screenshots of web assets' })
     expect(shots).not.toBeChecked()
     await userEvent.click(shots)
+    // Turning it on starts screenshots of the web assets, so it asks first.
+    expect(api.put).not.toHaveBeenCalled()
+    const dialog = await screen.findByRole('alertdialog')
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Keep screenshots' }))
     expect(api.put).toHaveBeenCalledWith('/api/v1/easm/settings', {
       ct_enabled: true,
       dns_checks_enabled: true,
@@ -170,6 +175,10 @@ describe('EASMMonitoringCard', () => {
   it('runs now', async () => {
     wrap(<EASMMonitoringCard />)
     await userEvent.click(await screen.findByRole('button', { name: /Run now/ }))
+    // The sweep sends lookups at once, so it asks first.
+    expect(api.post).not.toHaveBeenCalled()
+    const dialog = await screen.findByRole('alertdialog')
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Run now' }))
     expect(api.post).toHaveBeenCalledWith('/api/v1/easm/sweeps', {})
   })
 
@@ -188,5 +197,16 @@ describe('EASMMonitoringCard', () => {
     wrap(<EASMMonitoringCard />)
     expect(await screen.findByRole('switch', { name: 'DNS checks' })).toBeDisabled()
     expect(screen.queryByRole('button', { name: /Run now/ })).not.toBeInTheDocument()
+  })
+})
+
+describe('turning a lookup off', () => {
+  it('stays one click and opens no dialog', async () => {
+    api.put.mockResolvedValue(settings)
+    wrap(<EASMMonitoringCard />)
+    const sw = await screen.findByRole('switch', { name: 'Automatic enrichment' })
+    expect(sw).toBeChecked()
+    await userEvent.click(sw)
+    expect(screen.queryByRole('alertdialog')).toBeNull()
   })
 })

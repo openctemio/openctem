@@ -2,6 +2,7 @@
 
 import { useState, useMemo, useCallback, useEffect } from 'react'
 import { Button } from '@/components/ui/button'
+import { ConfirmDialog, ConfirmSample } from '@/components/confirm-dialog'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Badge } from '@/components/ui/badge'
@@ -21,6 +22,7 @@ import {
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import { toast } from 'sonner'
+import { useTranslation } from '@/context/i18n-provider'
 import {
   Shield,
   Search,
@@ -87,6 +89,7 @@ function getPermissionType(permissionId: string): string {
 }
 
 export function EditRoleSheet({ role, open, onOpenChange, onSuccess }: EditRoleSheetProps) {
+  const { t } = useTranslation()
   const { updateRole, isUpdating } = useUpdateRole(role?.id || null)
   const { modules: permissionModules, isLoading: isLoadingModules } = useTenantPermissionModules(
     true,
@@ -243,12 +246,23 @@ export function EditRoleSheet({ role, open, onOpenChange, onSuccess }: EditRoleS
     return nameChanged || descChanged || accessChanged || permsChanged
   }, [role, form])
 
+  // Widening a role (permissions added, or full data access turned on) reaches
+  // everyone who holds it at once, so it asks first. Narrowing saves directly.
+  const [confirmWiden, setConfirmWiden] = useState(false)
+  const addedPermissions = useMemo(
+    () => (role ? form.permissions.filter((p) => !role.permissions.includes(p)) : []),
+    [role, form.permissions]
+  )
+  const gainsFullData = !!role && form.hasFullDataAccess && !role.has_full_data_access
+  const widens = addedPermissions.length > 0 || gainsFullData
+
   // Handle update
   const handleUpdate = async () => {
+    setConfirmWiden(false)
     if (!role) return
 
     if (!form.name.trim()) {
-      toast.error('Please enter a role name')
+      toast.error(t('org.roleSheet.nameRequired', 'Enter a role name'))
       return
     }
 
@@ -260,11 +274,11 @@ export function EditRoleSheet({ role, open, onOpenChange, onSuccess }: EditRoleS
         has_full_data_access: form.hasFullDataAccess,
         permissions: form.permissions,
       })
-      toast.success(`Role "${form.name}" updated successfully`)
+      toast.success(t('org.roleSheet.updated', 'Role "{name}" updated', { name: form.name }))
       handleOpenChange(false)
       onSuccess?.()
     } catch (error) {
-      toast.error(getErrorMessage(error, 'Failed to update role'))
+      toast.error(getErrorMessage(error, t('org.roleSheet.updateFailed', 'Failed to update role')))
     }
   }
 
@@ -294,8 +308,10 @@ export function EditRoleSheet({ role, open, onOpenChange, onSuccess }: EditRoleS
               <Pencil className="h-5 w-5 text-blue-600" />
             </div>
             <div>
-              <SheetTitle>Edit Role</SheetTitle>
-              <SheetDescription>Update role settings and permissions</SheetDescription>
+              <SheetTitle>{t('org.roleSheet.editTitle', 'Edit role')}</SheetTitle>
+              <SheetDescription>
+                {t('org.roleSheet.editDesc', 'Update role settings and permissions')}
+              </SheetDescription>
             </div>
           </div>
         </SheetHeader>
@@ -309,10 +325,13 @@ export function EditRoleSheet({ role, open, onOpenChange, onSuccess }: EditRoleS
                 {/* Basic Info */}
                 <div className="space-y-4">
                   <div className="space-y-2">
-                    <Label htmlFor="role-name">Role Name</Label>
+                    <Label htmlFor="role-name">{t('org.roleSheet.roleName', 'Role name')}</Label>
                     <Input
                       id="role-name"
-                      placeholder="e.g., Security Analyst, DevOps Lead"
+                      placeholder={t(
+                        'org.roleSheet.roleNamePlaceholder',
+                        'e.g., Security analyst, DevOps lead'
+                      )}
                       value={form.name}
                       onChange={(e) => setForm((prev) => ({ ...prev, name: e.target.value }))}
                     />
@@ -323,10 +342,15 @@ export function EditRoleSheet({ role, open, onOpenChange, onSuccess }: EditRoleS
                   </div>
 
                   <div className="space-y-2">
-                    <Label htmlFor="role-description">Description (optional)</Label>
+                    <Label htmlFor="role-description">
+                      {t('org.roleSheet.descLabel', 'Description (optional)')}
+                    </Label>
                     <Textarea
                       id="role-description"
-                      placeholder="Describe what this role can do..."
+                      placeholder={t(
+                        'org.roleSheet.descPlaceholder',
+                        'Describe what this role can do...'
+                      )}
                       value={form.description}
                       onChange={(e) =>
                         setForm((prev) => ({ ...prev, description: e.target.value }))
@@ -339,14 +363,19 @@ export function EditRoleSheet({ role, open, onOpenChange, onSuccess }: EditRoleS
                     <div className="flex items-center gap-3">
                       <Database className="h-4 w-4 text-muted-foreground" />
                       <div>
-                        <Label className="text-sm font-medium">Full Data Access</Label>
+                        <Label className="text-sm font-medium">
+                          {t('org.roleSheet.fullData', 'Full data access')}
+                        </Label>
                         <p className="text-xs text-muted-foreground">
-                          Access all data regardless of group membership
+                          {t(
+                            'org.roleSheet.fullDataHint',
+                            'Access all data regardless of team membership'
+                          )}
                         </p>
                       </div>
                     </div>
                     <Switch
-                      aria-label="Full Data Access"
+                      aria-label={t('org.roleSheet.fullData', 'Full data access')}
                       checked={form.hasFullDataAccess}
                       onCheckedChange={(checked) =>
                         setForm((prev) => ({ ...prev, hasFullDataAccess: checked }))
@@ -358,9 +387,13 @@ export function EditRoleSheet({ role, open, onOpenChange, onSuccess }: EditRoleS
                 {/* Permissions Section */}
                 <div className="space-y-4">
                   <div className="flex items-center justify-between">
-                    <Label className="text-base font-semibold">Permissions</Label>
+                    <Label className="text-base font-semibold">
+                      {t('org.roleSheet.permissions', 'Permissions')}
+                    </Label>
                     <Badge variant="secondary" className="font-mono">
-                      {form.permissions.length} selected
+                      {t('org.roleSheet.selectedCount', '{count} selected', {
+                        count: form.permissions.length,
+                      })}
                     </Badge>
                   </div>
 
@@ -368,7 +401,8 @@ export function EditRoleSheet({ role, open, onOpenChange, onSuccess }: EditRoleS
                   <div className="relative">
                     <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                     <Input
-                      placeholder="Search permissions..."
+                      placeholder={t('org.roleSheet.searchPlaceholder', 'Search permissions...')}
+                      aria-label={t('org.roleSheet.searchLabel', 'Search permissions')}
                       value={searchQuery}
                       onChange={(e) => setSearchQuery(e.target.value)}
                       className="ps-9"
@@ -382,20 +416,24 @@ export function EditRoleSheet({ role, open, onOpenChange, onSuccess }: EditRoleS
                         <TooltipTrigger asChild>
                           <Button variant="outline" size="sm" onClick={selectAllRead}>
                             <Eye className="me-1.5 h-3.5 w-3.5 text-emerald-600" />
-                            All Read
+                            {t('org.roleSheet.allRead', 'All read')}
                           </Button>
                         </TooltipTrigger>
-                        <TooltipContent>Select all read permissions</TooltipContent>
+                        <TooltipContent>
+                          {t('org.roleSheet.allReadHint', 'Select all read permissions')}
+                        </TooltipContent>
                       </Tooltip>
 
                       <Tooltip>
                         <TooltipTrigger asChild>
                           <Button variant="outline" size="sm" onClick={selectAllWrite}>
                             <Pencil className="me-1.5 h-3.5 w-3.5 text-blue-600" />
-                            All Write
+                            {t('org.roleSheet.allWrite', 'All write')}
                           </Button>
                         </TooltipTrigger>
-                        <TooltipContent>Select all write permissions</TooltipContent>
+                        <TooltipContent>
+                          {t('org.roleSheet.allWriteHint', 'Select all write permissions')}
+                        </TooltipContent>
                       </Tooltip>
 
                       <Tooltip>
@@ -407,10 +445,12 @@ export function EditRoleSheet({ role, open, onOpenChange, onSuccess }: EditRoleS
                             disabled={form.permissions.length === 0}
                           >
                             <Eraser className="me-1.5 h-3.5 w-3.5" />
-                            Clear
+                            {t('org.roleSheet.clear', 'Clear')}
                           </Button>
                         </TooltipTrigger>
-                        <TooltipContent>Clear all selected permissions</TooltipContent>
+                        <TooltipContent>
+                          {t('org.roleSheet.clearHint', 'Clear all selected permissions')}
+                        </TooltipContent>
                       </Tooltip>
                     </TooltipProvider>
                   </div>
@@ -423,7 +463,9 @@ export function EditRoleSheet({ role, open, onOpenChange, onSuccess }: EditRoleS
                   ) : filteredModules.length === 0 ? (
                     <div className="flex flex-col items-center justify-center py-12 text-center">
                       <Search className="h-8 w-8 text-muted-foreground/50 mb-2" />
-                      <p className="text-muted-foreground text-sm">No permissions found</p>
+                      <p className="text-muted-foreground text-sm">
+                        {t('org.roleSheet.noneFound', 'No permissions found')}
+                      </p>
                     </div>
                   ) : (
                     <div className="space-y-2">
@@ -532,7 +574,7 @@ export function EditRoleSheet({ role, open, onOpenChange, onSuccess }: EditRoleS
           {/* Right Column - Preview */}
           <div className="w-80 flex flex-col min-h-0 bg-muted/30">
             <div className="p-4 border-b shrink-0">
-              <h3 className="font-semibold text-sm">Preview</h3>
+              <h3 className="font-semibold text-sm">{t('org.roleSheet.preview', 'Preview')}</h3>
             </div>
             <ScrollArea className="flex-1 h-full">
               <div className="p-4 space-y-4">
@@ -545,11 +587,15 @@ export function EditRoleSheet({ role, open, onOpenChange, onSuccess }: EditRoleS
                     <div>
                       <p className="font-medium text-sm">
                         {form.name || (
-                          <span className="text-muted-foreground italic">Enter role name...</span>
+                          <span className="text-muted-foreground italic">
+                            {t('org.roleSheet.enterName', 'Enter role name...')}
+                          </span>
                         )}
                       </p>
                       <p className="text-xs text-muted-foreground">
-                        {form.permissions.length} permissions
+                        {t('org.roleSheet.permCount', '{count} permissions', {
+                          count: form.permissions.length,
+                        })}
                       </p>
                     </div>
                   </div>
@@ -559,7 +605,7 @@ export function EditRoleSheet({ role, open, onOpenChange, onSuccess }: EditRoleS
                   {form.hasFullDataAccess && (
                     <Badge variant="secondary" className="text-xs">
                       <Database className="me-1 h-3 w-3" />
-                      Full Data Access
+                      {t('org.roleSheet.fullData', 'Full data access')}
                     </Badge>
                   )}
                 </div>
@@ -568,7 +614,7 @@ export function EditRoleSheet({ role, open, onOpenChange, onSuccess }: EditRoleS
                 {hasChanges && (
                   <div className="p-2 rounded-lg bg-amber-50 dark:bg-amber-950 border border-amber-200 dark:border-amber-800">
                     <p className="text-xs text-amber-700 dark:text-amber-300 font-medium">
-                      Unsaved changes
+                      {t('org.roleSheet.unsaved', 'Unsaved changes')}
                     </p>
                   </div>
                 )}
@@ -577,12 +623,14 @@ export function EditRoleSheet({ role, open, onOpenChange, onSuccess }: EditRoleS
                 {form.permissions.length === 0 ? (
                   <div className="flex flex-col items-center justify-center py-8 text-center">
                     <Shield className="h-8 w-8 text-muted-foreground/30 mb-2" />
-                    <p className="text-xs text-muted-foreground">No permissions selected</p>
+                    <p className="text-xs text-muted-foreground">
+                      {t('org.roleSheet.noneSelected', 'No permissions selected')}
+                    </p>
                   </div>
                 ) : (
                   <div className="space-y-3">
                     <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
-                      Selected Permissions
+                      {t('org.roleSheet.selectedPermissions', 'Selected permissions')}
                     </p>
                     {Object.entries(groupedSelectedPermissions).map(
                       ([moduleId, { module, permissions }]) => (
@@ -629,18 +677,53 @@ export function EditRoleSheet({ role, open, onOpenChange, onSuccess }: EditRoleS
         {/* Footer */}
         <SheetFooter>
           <Button variant="ghost" onClick={() => handleOpenChange(false)}>
-            Cancel
+            {t('common.cancel', 'Cancel')}
           </Button>
-          <Button onClick={handleUpdate} disabled={isUpdating || !form.name.trim() || !hasChanges}>
+          <Button
+            onClick={() => (widens ? setConfirmWiden(true) : void handleUpdate())}
+            disabled={isUpdating || !form.name.trim() || !hasChanges}
+          >
             {isUpdating ? (
               <Loader2 className="me-2 h-4 w-4 animate-spin" />
             ) : (
               <Save className="me-2 h-4 w-4" />
             )}
-            Save Changes
+            {t('org.roleSheet.saveChanges', 'Save changes')}
           </Button>
         </SheetFooter>
       </SheetContent>
+      <ConfirmDialog
+        open={confirmWiden}
+        onOpenChange={setConfirmWiden}
+        title={t('confirm.role.widenTitle', 'Give everyone with {name} more access?', {
+          name: role?.name ?? '',
+        })}
+        desc={
+          <>
+            {addedPermissions.length > 0 &&
+              t(
+                'confirm.role.widenPermissions',
+                'This role gains {count} permissions. Everyone who holds it has them as soon as you save.',
+                { count: addedPermissions.length }
+              )}{' '}
+            {gainsFullData &&
+              t(
+                'confirm.role.widenFullData',
+                'It also gives them access to every asset, not only their own scope.'
+              )}{' '}
+            {t(
+              'confirm.role.widenNote',
+              'The change is recorded in the audit log. You can narrow the role again later.'
+            )}
+          </>
+        }
+        confirmText={t('confirm.role.widenConfirm', 'Save and widen role')}
+        handleConfirm={handleUpdate}
+      >
+        {addedPermissions.length > 0 && (
+          <ConfirmSample names={addedPermissions} total={addedPermissions.length} />
+        )}
+      </ConfirmDialog>
     </Sheet>
   )
 }

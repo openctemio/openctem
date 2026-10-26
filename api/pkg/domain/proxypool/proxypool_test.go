@@ -203,7 +203,7 @@ func TestHealthBackoffCapped(t *testing.T) {
 func TestBuildJobEgress(t *testing.T) {
 	now := time.Now()
 	until := now.Add(time.Hour)
-	p := &Pool{ID: shared.NewID(), Revision: 3, Strategy: StrategyPriority}
+	p := &Pool{ID: shared.NewID(), Enabled: true, Revision: 3, Strategy: StrategyPriority}
 	healthy := Health{State: StateHealthy, Score: 0.9}
 	p.Endpoints = []*Endpoint{
 		{ID: shared.NewID(), Scheme: "socks5", Host: "10.0.0.5", Port: 1080, Enabled: true, Health: healthy, CredentialsEncrypted: "x"},
@@ -218,6 +218,13 @@ func TestBuildJobEgress(t *testing.T) {
 	if !eg.Endpoints[0].Auth || eg.Endpoints[0].Host != "10.0.0.5" || eg.Endpoints[1].Host != "10.0.0.8" || eg.Endpoints[1].Weight <= 0 {
 		t.Fatalf("%+v", eg.Endpoints)
 	}
+	// A disabled pool (a sensor assigned to it): the pool with no
+	// endpoint, so the job fails closed, never direct.
+	p.Enabled = false
+	if eg := BuildJobEgress(p, AppliesAll, now); eg.Endpoints == nil || len(eg.Endpoints) != 0 || eg.Mode != ModePool || eg.PoolID != p.ID.String() {
+		t.Fatalf("disabled pool: %+v", eg)
+	}
+	p.Enabled = true
 	// All quarantined: an empty list, never no egress.
 	p.Endpoints = p.Endpoints[2:3]
 	if eg := BuildJobEgress(p, AppliesPublic, now); eg.Endpoints == nil || len(eg.Endpoints) != 0 || eg.Mode != ModePool {

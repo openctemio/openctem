@@ -27,6 +27,7 @@ export function buildSlaPolicyPayload(
     medium_days: data.medium_days,
     low_days: data.low_days,
     info_days: data.info_days,
+    kev_cap_days: data.kev_cap_days,
     warning_threshold_pct: data.warning_threshold_pct,
     escalation_enabled: data.escalation_enabled,
   }

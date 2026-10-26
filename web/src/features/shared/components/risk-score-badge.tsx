@@ -1,9 +1,10 @@
 'use client'
 
-import { Badge } from '@/components/ui/badge'
+import { SeverityBadge } from '@/components/ui/severity-badge'
+import { HealthStatus } from '@/components/ui/health-status'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import { cn } from '@/lib/utils'
-import { Loader2 } from 'lucide-react'
+import { Clock } from 'lucide-react'
 import { getRiskLevel } from '../types'
 import { useRiskThresholds } from '@/context/risk-scoring-provider'
 import { useTranslation } from '@/context/i18n-provider'
@@ -27,9 +28,14 @@ export function riskScoreState(a: {
 
 interface RiskScoreBadgeProps {
   score: number
-  showScore?: boolean
   size?: 'sm' | 'md' | 'lg'
   className?: string
+  /**
+   * Name the dimension in the visible text ("Risk: 73"). Use it wherever no
+   * column header or field label already says "Risk": phone cards, headers,
+   * chip rows. The tooltip and the accessible name always carry it.
+   */
+  labelled?: boolean
   /**
    * Freshness of the score. A never-scored asset shows "Not yet scored" and a
    * queued first score "Calculating…", never a fake "0". A queued rescore of
@@ -39,63 +45,98 @@ interface RiskScoreBadgeProps {
 }
 
 const badgeSizeClasses = {
-  sm: 'text-xs px-1.5 py-0.5',
-  md: 'text-sm px-2 py-0.5',
-  lg: 'text-base px-2.5 py-1',
+  sm: 'text-xs',
+  md: 'text-sm',
+  lg: 'text-base',
 }
 
+/**
+ * A risk score: the glyph and colour of its band (SeverityBadge score) and the
+ * number, never a solid fill. The band word ("High") is in the tooltip and the
+ * accessible name, never next to the number: criticality uses the same words,
+ * and a row showing "High" twice reads as one dimension (research/271).
+ * Freshness states are machine states: a never-scored asset is "unknown", a
+ * queued first score is "running", a queued rescore keeps the score with a
+ * clock and a hint.
+ */
 export function RiskScoreBadge({
   score,
-  showScore = true,
   size = 'md',
   className,
+  labelled = false,
   state = 'scored',
 }: RiskScoreBadgeProps) {
   const { t } = useTranslation()
   const thresholds = useRiskThresholds()
   const level = getRiskLevel(score, thresholds)
-  const label = t(`riskScore.level.${level.key}`, level.label)
+  const band = t(`riskScore.level.${level.key}`, level.label)
+  const value = !Number.isFinite(score)
+    ? '0'
+    : Number.isInteger(score)
+      ? String(score)
+      : score.toFixed(1)
 
   if (state === 'calculating') {
     return (
-      <Badge
-        variant="outline"
-        className={cn('text-muted-foreground', badgeSizeClasses[size], className)}
+      <HealthStatus
+        state="run"
+        value="calculating"
+        label={t('riskScore.calculating', 'Calculating…')}
         title={t(
           'riskScore.calculatingHint',
           'Its inputs changed; the new score is being computed.'
         )}
-      >
-        <Loader2 className="mr-1 h-3 w-3 animate-spin" aria-hidden />
-        {t('riskScore.calculating', 'Calculating…')}
-      </Badge>
+        className={cn(badgeSizeClasses[size], className)}
+      />
     )
   }
 
   if (state === 'unscored') {
     return (
-      <Badge
-        variant="outline"
-        className={cn('text-muted-foreground', badgeSizeClasses[size], className)}
+      <HealthStatus
+        state="unknown"
+        value="unscored"
+        label={t('riskScore.notScored', 'Not yet scored')}
         title={t('riskScore.notScoredHint', "This asset's risk score has not been computed yet.")}
-      >
-        {t('riskScore.notScored', 'Not yet scored')}
-      </Badge>
+        className={cn(badgeSizeClasses[size], className)}
+      />
     )
   }
 
-  return (
-    <Badge
-      className={cn(level.color, level.textColor, badgeSizeClasses[size], className)}
-      title={
-        state === 'pending'
-          ? t('riskScore.calculatingHint', 'Its inputs changed; the new score is being computed.')
-          : undefined
-      }
+  // A zero is no open risk, not a low score: say so instead of "0".
+  const none = level.key === 'none'
+  const text = none
+    ? band
+    : labelled
+      ? t('riskScore.labelled', 'Risk: {score}', { score: value })
+      : value
+  const scoreName = none
+    ? t('riskScore.nameNone', 'Risk: {band}', { band })
+    : t('riskScore.name', 'Risk {score} of 100, {band}', { score: value, band })
+  // A queued rescore keeps the score and adds a clock; the badge's own name
+  // says what the clock means, so hovering either part explains it.
+  const name =
+    state === 'pending'
+      ? t('riskScore.namePending', '{name}. Its inputs changed; the new score is being computed.', {
+          name: scoreName,
+        })
+      : scoreName
+  const badge = (
+    <SeverityBadge
+      score={score}
+      aria-label={name}
+      title={name}
+      className={cn(badgeSizeClasses[size], className)}
     >
-      {state === 'pending' && <Loader2 className="mr-1 h-3 w-3 animate-spin" aria-hidden />}
-      {showScore ? `${score} - ${label}` : label}
-    </Badge>
+      {text}
+    </SeverityBadge>
+  )
+  if (state !== 'pending') return badge
+  return (
+    <span className="inline-flex items-center gap-1" title={name} data-state="pending">
+      {badge}
+      <Clock className="size-3 text-muted-foreground" aria-hidden />
+    </span>
   )
 }
 
@@ -124,9 +165,6 @@ export function RiskScoreMeter({
   const { color } = level
   const label = t(`riskScore.level.${level.key}`, level.label)
 
-  // Map color classes to progress bar colors
-  const progressColor = color.replace('bg-', '')
-
   const sizeConfig = {
     sm: { height: 'h-1.5', text: 'text-xs', width: 'w-16' },
     md: { height: 'h-2', text: 'text-sm', width: 'w-20' },
@@ -139,10 +177,7 @@ export function RiskScoreMeter({
     <div className={cn('flex items-center gap-2', className)}>
       <div className={cn('relative rounded-full bg-muted overflow-hidden', height, width)}>
         <div
-          className={cn(
-            'absolute left-0 top-0 h-full rounded-full transition-all',
-            `bg-${progressColor}`
-          )}
+          className={cn('absolute left-0 top-0 h-full rounded-full transition-all', color)}
           style={{ width: `${Math.min(100, Math.max(0, score))}%` }}
         />
       </div>
@@ -189,7 +224,6 @@ export function RiskScoreGauge({
   const { t } = useTranslation()
   const thresholds = useRiskThresholds()
   const level = getRiskLevel(score, thresholds)
-  const { color } = level
   const label = t(`riskScore.level.${level.key}`, level.label)
 
   const sizeConfig = {
@@ -205,7 +239,7 @@ export function RiskScoreGauge({
   const strokeDashoffset = circumference * (1 - progress)
 
   // Extract color name for stroke
-  const strokeColor = color.replace('bg-', 'stroke-')
+  const strokeColor = level.stroke
 
   return (
     <div className={cn('relative inline-flex items-center justify-center', className)}>

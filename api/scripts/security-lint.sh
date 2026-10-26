@@ -99,13 +99,11 @@ check_http_client() {
         # IsIPBlocked with a custom dialer. The &http.Client{...} here
         # wraps that custom dialer, equivalent to SafeHTTPClient.
         'api/internal/infra/fetchers/http_fetcher.go'
-        # Webhook fallback: SafeHTTPClient is attempted first; the
-        # fallback path only fires when the helper returns nil (tests).
-        'api/internal/infra/notifier/webhook.go'
-        # Splunk HEC fallback: identical pattern to webhook.go —
-        # SafeHTTPClient is used in production; the plain &http.Client
-        # fires only on the AllowLoopback test path (httptest 127.0.0.1).
-        'api/internal/infra/notifier/splunk.go'
+        # Notifier clients (newHTTPClient): SafeHTTPClient with redirects
+        # refused in production; the plain &http.Client fires only on the
+        # AllowLoopback unit-test path (httptest binds 127.0.0.1), and it
+        # refuses redirects too.
+        'api/internal/infra/notifier/client.go'
         # Sensor Tenable.sc connector (RFC-047): reaches an operator-configured
         # Tenable.sc that usually sits on a private address, so the RFC1918
         # block of SafeHTTPClient cannot apply. Its own dialer resolves once
@@ -138,6 +136,12 @@ check_http_client() {
         # CONNECTOR_API_URL on the private network, which SafeHTTPClient
         # refuses; it uses no proxy and follows no redirects.
         'api/internal/sensorrelay/connector.go'
+        # Authorization-matrix test harness: drives a disposable test stack
+        # started by the suite itself on loopback (never a tenant or request
+        # URL), which SafeHTTPClient refuses by design. Test-only package
+        # (api/tests/authzmatrix), never linked into a shipped binary.
+        'api/tests/authzmatrix/client.go'
+        'api/tests/authzmatrix/console.go'
     )
 
     local hits
@@ -345,9 +349,8 @@ check_httpsec_used() {
         'api/internal/infra/llm/claude.go'
         'api/internal/infra/llm/gemini.go'
         'api/internal/infra/llm/openai.go'
-        'api/internal/infra/notifier/slack.go'
-        'api/internal/infra/notifier/teams.go'
-        'api/internal/infra/notifier/telegram.go'
+        # Every notifier client is built by newHTTPClient here.
+        'api/internal/infra/notifier/client.go'
         'api/internal/infra/notifier/webhook.go'
         'api/internal/infra/jira/client.go'
         'api/internal/app/auth/sso.go'
@@ -509,6 +512,12 @@ check_client_ip_headers() {
         # usually a log collector on a private network, which SafeHTTPClient
         # refuses. https only, TLS 1.2+, no redirects.
         'api/internal/infra/auditsink/sink.go'
+        # Authorization-matrix test harness: only SETS X-Forwarded-For on the
+        # requests it sends to its own disposable test stack, to give each
+        # simulated user a distinct client identity for the rate limiter.
+        # Nothing is read from a client request; test-only package.
+        'api/tests/authzmatrix/client.go'
+        'api/tests/authzmatrix/console.go'
     )
 
     local hits
@@ -600,6 +609,92 @@ check_upstream_body_in_errors() {
 }
 
 # ---------------------------------------------------------------------------
+# Rule 10: outbound network primitives only through pkg/httpsec.
+#
+# Rule 1 catches the &http.Client{ literal. This rule catches every other way
+# to open a connection without the guard (docs/architecture/outbound-
+# requests.md): the package-level http helpers and default client/transport
+# (they dial anything and take a proxy from the environment), a bare
+# http.Transport or http.Client value, net/tls dialers, net/smtp's own dial,
+# a proxy from the environment, and go-git transports other than the guarded
+# http one. A new site either uses httpsec (SafeHTTPClient, SafeDialContext,
+# ResolveSafeHost) or joins the allow-list below with its reason.
+# ---------------------------------------------------------------------------
+check_outbound_primitives() {
+    local allow_sites=(
+        # The guard itself.
+        'api/pkg/httpsec/'
+        # Signer: a fixed local Unix socket from the server's environment.
+        'api/cmd/signer/main.go'
+        'api/internal/infra/signer/client.go'
+        # `server -healthcheck`: this process's own loopback listener.
+        'api/cmd/server/healthcheck.go'
+        # Scan-zone resolver: the recursive resolver the operator names in
+        # the server's environment (SCOPE_ZONE_RESOLVER).
+        'api/cmd/server/scope_zone_resolver.go'
+        # Admin audit sink: destination from the server's environment only.
+        'api/internal/infra/auditsink/sink.go'
+        # Sensor transport probe: the platform's own sensor endpoint.
+        'api/internal/infra/sensortransport/probe.go'
+        # Sensor relay connector: two destinations from the server's
+        # environment; no proxy, no redirects.
+        'api/internal/sensorrelay/connector.go'
+        # Sensor-side request signing transport (used by sensor clients that
+        # talk to the platform), not a platform outbound call.
+        'api/pkg/sensorsig/sensorsig.go'
+        # EASM DNS client: port 53 only, every server address checked with
+        # httpsec.IsIPBlocked before the dial.
+        'api/pkg/dnsprobe/client.go'
+        # ClamAV daemon: address from the server's environment (STORAGE_CLAMD_ADDRESS).
+        'api/internal/infra/malware/clamd.go'
+        # SMTP: dials the address httpsec.ResolveSafeHost vetted (an IP
+        # literal), never a host name.
+        'api/pkg/email/email.go'
+        'api/internal/infra/notifier/email.go'
+        # Rule sources: installs the guarded http transport and removes the
+        # others.
+        'api/internal/infra/fetchers/git_snapshot.go'
+    )
+    local pattern='http\.(Get|Post|PostForm|Head)\(|http\.DefaultClient|http\.DefaultTransport|(^|[^&])http\.Client\{|new\(http\.Client\)|http\.Transport\{|net\.Dial(Timeout|TCP|UDP|IP|Unix)?\(|net\.Dialer\b|tls\.Dial(WithDialer)?\(|tls\.Dialer\b|httputil\.(NewSingleHostReverseProxy|ReverseProxy)\b|smtp\.(Dial|SendMail)\(|ProxyFromEnvironment|InstallProtocol\(|go-git/v5/plumbing/transport/(ssh|git|file)"'
+
+    # Fail closed: a run that scanned nothing (no SECLINT_ROOT and the script
+    # cd'd into api/, so "api/" does not exist) must not report a pass.
+    if [[ ! -d api ]] || [[ -z "$(find api -name '*.go' -not -name '*_test.go' -print -quit 2>/dev/null)" ]]; then
+        say_fail "Rule 10: no api/ Go sources under $ROOT — set SECLINT_ROOT to the workspace root"
+        return
+    fi
+
+    local hits
+    hits="$(grep -RnE "$pattern" \
+        --include='*.go' \
+        --exclude='*_test.go' \
+        --exclude-dir='vendor' \
+        --exclude-dir='node_modules' \
+        --exclude-dir='.claude' \
+        api/ 2>/dev/null | grep -vE '^[^:]+:[0-9]+:[[:space:]]*//' || true)"
+
+    local filtered=""
+    while IFS= read -r line; do
+        [[ -z "$line" ]] && continue
+        local file="${line%%:*}"
+        local ok=0
+        for a in "${allow_sites[@]}"; do
+            if [[ "$file" == *"$a"* ]]; then ok=1; break; fi
+        done
+        if [[ "$ok" -eq 0 ]]; then
+            filtered+="$line"$'\n'
+        fi
+    done <<< "$hits"
+
+    if [[ -n "${filtered//[[:space:]]/}" ]]; then
+        say_fail "Rule 10: outbound network primitive outside pkg/httpsec — use httpsec.SafeHTTPClient / SafeDialContext / ResolveSafeHost, or add the site with its reason:"
+        printf '%s' "$filtered" | sed 's/^/       /'
+        return
+    fi
+    say_pass "Rule 10: outbound connections only through pkg/httpsec (api/; ${#allow_sites[@]} documented sites)"
+}
+
+# ---------------------------------------------------------------------------
 # Run
 # ---------------------------------------------------------------------------
 printf '== security-lint ==\n'
@@ -622,6 +717,7 @@ check_httpsec_drift
 check_client_ip_headers
 check_bounded_response_reads
 check_upstream_body_in_errors
+check_outbound_primitives
 printf '\n'
 if [[ $fail -ne 0 ]]; then
     printf '%sSecurity lint FAILED.%s Fix the rules above before merging.\n' "$RED" "$RST"

@@ -1,6 +1,6 @@
 # Scan stages: catalogue, planner and chaining
 
-> Last updated: 2026-10-07. Design: [RFC-046](../rfcs/RFC-046-scans-redesign.md)
+> Last updated: 2026-10-25. Design: [RFC-046](../rfcs/RFC-046-scans-redesign.md)
 > §5 (engines and the stage catalogue; scan modes and workflows, decisions
 > G1–G12). Run model: [scan-lifecycle.md](scan-lifecycle.md).
 > Target gate: [active-probe-gate.md](active-probe-gate.md).
@@ -146,10 +146,30 @@ A scan workflow step is a **capability node**. It names a capability and picks i
 tool in one of three ways (`tool_selection` on the step response):
 
 - **auto** (no tool, no `prefer_tools`): any implementation of the capability,
-  in catalog order, with the default first;
+  in catalog order, with the default first, then the organization's declared
+  tools that implement it, by name (below);
 - **prefer** (`prefer_tools`, migration 001176): the listed tools, in that
-  order. Each must implement the capability;
+  order. Each must implement the capability (a catalog implementation or one
+  of the organization's declared tools);
 - **pin** (`tool`): that tool only (strict, G10).
+
+**Declared tools** (a tool an organization's sensor reports with a valid
+contract, `tool-contract.md` §6) are offered by capability like any
+implementation, with no platform change for a new tool:
+
+- A declared tool is a candidate for a node when it is active, a scanner, and
+  its descriptor implements the node's `capability@major`. Only the step's own
+  organization's tools are read (`ListTenantCustomTools`), and a declared tool
+  never takes a catalog implementation's name.
+- Its standard params map through its descriptor (`implements[].params`, kept
+  on the catalog row as `metadata.params`), with the same eligibility rule: a
+  param it does not take skips it with the reason.
+- Its command always names the capability (`StepTool.CommandPayload`), so the
+  sensor checks that the tool implements it and checks its output against the
+  capability, and the hop router chains it like a catalog implementation.
+- A pinned declared tool runs its step's capability the same way.
+- Being picked grants nothing: an operator-installed tool runs as T2 (its
+  contract's origin), so it needs a grant and scope that allow T2.
 
 A pin and a prefer list together are refused.
 
@@ -221,6 +241,32 @@ when the template changed since the preview (`template_digest`, 409).
 every lookup is by the caller's tenant (another tenant's copy is not found)
 and the source must be a system template.
 
+#### EASM recon set
+
+Migration `easm_workflow_depth_templates` adds the recon set: system
+workflows tagged `easm-recon`, each a capability graph with delta gating and
+continue-on-failure on (§1.5). Discover, Discover + Vuln and Web app are
+superseded by Subdomains, Standard recon and Web: deactivated, not deleted,
+so scans and copies made from them keep working.
+
+| Workflow | Graph (→ dependency, ∥ parallel) | Passive | Standard | Deep |
+|---|---|---|---|---|
+| Passive discovery | subdomains ∥ rdap → dns → asn | every step (all T0), no announced ranges | + announced ranges | + every DNS record type |
+| Subdomains | subdomains → dns → http ∥ takeover (optional) | discovery and resolution | + web probe | + every DNS record type |
+| Standard recon | subdomains → dns → http ∥ ports ∥ asn → screenshots (optional) ∥ crawl ∥ services (optional) → templates (after http and crawl) | discovery, resolution, ASN | top-100 ports (cap 1 000), templates critical/high/medium (cap 500), no crawl | top-1 000 ports (cap 5 000), crawl (cap 200), templates down to low (cap 2 000) |
+| Web | http → screenshots (optional) ∥ crawl → templates | refused at save (no first step runs) | templates critical/high/medium, no crawl | + crawl, templates down to low |
+| Deep recon | Standard recon + rdap + takeover (optional), crawl from Standard, higher caps | T0 steps | as drawn | deepest params and caps |
+
+**Stage I/O.** The chain is typed end to end with the ports of §1.1: seeds
+(`root_domain`, `cidr`, `ip`) → `discover.subdomains` (`hostname` candidates)
+→ `resolve.dns` (resolved `hostname` and `ip`; wildcard answers dropped per
+parent) → `probe.http` (`url`, with the address's CDN/edge record) and
+`scan.ports` (`service`) → `detect.services` (`service` with product),
+`capture.screenshot` (evidence on `url`), `crawl.web` (`url`) →
+`vuln.templates` (`finding`). The wildcard verdict and the edge class are
+attributes the next stage reads, not port types. An edge whose types do not
+meet is refused by the builder and by every save.
+
 ### 1.4 Workflow preview
 
 `POST /api/v1/scans/workflow-preview` (`scans:write`) answers what a workflow
@@ -240,6 +286,64 @@ scan would do if it started now, without creating anything
 
 The workflow must be the organization's own or a system workflow (otherwise
 404). The new-scan wizard shows the preview on its last step.
+
+### 1.5 Depth, run policies, optional steps and run rules
+
+**Depth.** A workflow scan has a depth (`scans.depth`: `passive`, `standard`
+or `deep`; default standard), copied into each run's context (`depth`) and
+sent with the scan API (`depth` on create, update, read, export and the
+workflow preview). Every step reacts to it:
+
+- `passive` runs only steps that send nothing to the targets (T0); any
+  other step is skipped with "this step sends traffic to the targets, and the
+  scan runs at Passive depth". Independent of intensity.
+- A step's **run policy** (`scan_workflow_steps.run_policy`) may set
+  `min_depth`: below it the step is skipped with the reason.
+- `depths.<depth>.params` are standard params of the step's capability,
+  merged over its config at dispatch, before the tool is resolved (a tool
+  that does not take a param is not eligible, as for config). Checked on
+  every save against the contract: standard params only, never tool extras
+  (`x`) or executor keys, each with its type and bounds, and the config at
+  each depth valid as a whole. A step outside the catalog may not set them.
+- `depths.<depth>.max_targets` caps what the hop router hands the step
+  (lower-only: it never raises the stage or run cap); the rest are recorded
+  `over_cap`.
+- A scan whose depth skips every first step of its workflow is refused at
+  save (`DEPTH_RUNS_NOTHING`). The trigger checks a step's tool only when the
+  depth runs the step.
+- Depth never raises a tier: intensity, the scope entry's tier and the
+  claim's tier check still decide. A passive-depth run refuses, before any
+  command exists, a resolved tool that reaches its targets.
+
+**Optional steps.** `run_policy.optional` marks a step that waits for a
+tool. The graph check accepts a planned capability (§1.1) only on such a
+step, as a warning (`CAPABILITY_WAITS_FOR_TOOL`), and still types its
+connections. At dispatch, when no tool implements its capability
+(`NO_MATCHING_TOOL`), the step is skipped with "available when a tool that
+runs <capability> is installed", never failed and never silent; the trigger
+does not refuse a run for it. A tool that exists but has no online sensor
+refuses the run like any step.
+
+**Run rules** (workflow settings, both off for existing workflows; omitted on
+an update means unchanged):
+
+- `continue_on_failed_dependency`: a step runs once every dependency is
+  terminal, on the seeds and on what the dependencies that produced results
+  found (the hop router reads only those). A step left with nothing it can
+  take settles with no inputs. Without the setting, a dependent of a failed,
+  skipped or timed-out step is skipped (unchanged).
+- `delta_gating`: heavy chained stages take only assets new, changed or due
+  since the previous run of the same scan. The setting is stored and served
+  now; the gate itself lands separately.
+
+**Versions.** A run pins its workflow's version: the run policy is part of
+the version's spec (left out when empty, so the digest of a workflow without
+policies is unchanged), and a copy of a system workflow keeps its steps'
+policies and prefer lists.
+
+**Preview.** `POST /api/v1/scans/workflow-preview` takes `depth` and returns
+per step `skipped` (`DEPTH_SKIPPED` or `TOOL_NOT_INSTALLED`; a skipped step
+never blocks), `depth_params` and `max_targets`.
 
 ## 2. The planner: one dispatcher, capability → tool
 
@@ -264,6 +368,8 @@ payload comes from one builder, `scan.StepCommandPayload`.
   does not know fall back to the tenant's tool lookup (tenant-scoped, platform
   tools first). Platform implementations are read with
   `GetPlatformToolByName`, never another tenant's tool of the same name.
+  After them come the organization's declared implementations (§1.2); a
+  failed lookup of those fails the step rather than reading as "none".
 - **Target kinds (RFC-088).** After the type gate, every target of a step
   goes only to a stage that takes its kind (`stage.AcceptsKind`): a name, an
   address, a network range, a URL or a service. A typed-in target is

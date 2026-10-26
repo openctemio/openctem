@@ -8,7 +8,8 @@ import { Checkbox } from '@/components/ui/checkbox'
 import { Progress } from '@/components/ui/progress'
 import { Eye, Settings, KeyRound, Trash2, Power, PowerOff } from 'lucide-react'
 import { useTranslation } from '@/context/i18n-provider'
-import { Permission } from '@/lib/permissions'
+import { Permission, useHasPermission } from '@/lib/permissions'
+import { sensorActions } from '../lib/sensor-actions'
 import {
   DataTable,
   DataTableColumnHeader,
@@ -16,11 +17,11 @@ import {
   type DataTableRowGroups,
   type FilterPanelToggleProps,
   type RowAction,
+  type DataTableSearch,
 } from '@/features/shared'
 
 import type { Sensor } from '@/lib/api/sensor-types'
 import { sensorRoleOf } from '@/lib/api/sensor-types'
-import { SENSOR_TYPE_LABELS } from './sensor-type-icon'
 import { SensorStateBadge } from './sensor-state-badge'
 import {
   SensorJobsCell,
@@ -51,6 +52,7 @@ interface SensorTableProps {
   onSelectionChange?: (sensors: Sensor[]) => void
   /** Bump to clear the selection (e.g. after a bulk delete). */
   resetSelectionKey?: number
+  search?: DataTableSearch
   toolbarStart?: React.ReactNode
   toolbarEnd?: React.ReactNode
   filterToggle?: FilterPanelToggleProps
@@ -98,6 +100,7 @@ export function SensorTable({
   onRegenerateKey,
   onSelectionChange,
   resetSelectionKey,
+  search,
   toolbarStart,
   toolbarEnd,
   filterToggle,
@@ -110,31 +113,38 @@ export function SensorTable({
   grants,
 }: SensorTableProps) {
   const { t } = useTranslation()
+  const canWrite = useHasPermission(Permission.SensorsWrite)
+  const canRevoke = useHasPermission(Permission.SensorsRevoke)
+  const canDelete = useHasPermission(Permission.SensorsDelete)
   const columns = useMemo<ColumnDef<Sensor>[]>(
     () => [
-      {
-        id: 'select',
-        header: ({ table }) => (
-          <Checkbox
-            checked={
-              table.getIsAllPageRowsSelected() ||
-              (table.getIsSomePageRowsSelected() && 'indeterminate')
-            }
-            onCheckedChange={(value) => table.toggleAllPageRowsSelected(!!value)}
-            aria-label={t('sensors.table.selectAll')}
-          />
-        ),
-        cell: ({ row }) => (
-          <Checkbox
-            checked={row.getIsSelected()}
-            onCheckedChange={(value) => row.toggleSelected(!!value)}
-            aria-label={t('sensors.table.selectRow')}
-            onClick={(e) => e.stopPropagation()}
-          />
-        ),
-        enableSorting: false,
-        enableHiding: false,
-      },
+      ...(canDelete
+        ? ([
+            {
+              id: 'select',
+              header: ({ table }) => (
+                <Checkbox
+                  checked={
+                    table.getIsAllPageRowsSelected() ||
+                    (table.getIsSomePageRowsSelected() && 'indeterminate')
+                  }
+                  onCheckedChange={(value) => table.toggleAllPageRowsSelected(!!value)}
+                  aria-label={t('sensors.table.selectAll')}
+                />
+              ),
+              cell: ({ row }) => (
+                <Checkbox
+                  checked={row.getIsSelected()}
+                  onCheckedChange={(value) => row.toggleSelected(!!value)}
+                  aria-label={t('sensors.table.selectRow')}
+                  onClick={(e) => e.stopPropagation()}
+                />
+              ),
+              enableSorting: false,
+              enableHiding: false,
+            },
+          ] as ColumnDef<Sensor>[])
+        : []),
       {
         id: 'name',
         meta: { label: t('sensors.table.col.sensor') },
@@ -235,7 +245,7 @@ export function SensorTable({
       {
         id: 'type',
         meta: { label: t('sensors.table.col.role') },
-        accessorFn: (a) => SENSOR_TYPE_LABELS[a.type] ?? a.type,
+        accessorFn: (a) => a.type,
         header: ({ column }) => (
           <DataTableColumnHeader column={column} title={t('sensors.table.col.role')} />
         ),
@@ -246,10 +256,7 @@ export function SensorTable({
               : t('sensors.table.roleScanner')}
             <span className="text-muted-foreground">
               {' · '}
-              {t(
-                `sensors.table.type.${row.original.type}`,
-                SENSOR_TYPE_LABELS[row.original.type] ?? row.original.type
-              )}
+              {t(`sensors.table.type.${row.original.type}`, row.original.type)}
             </span>
           </span>
         ),
@@ -295,50 +302,52 @@ export function SensorTable({
           const sensor = row.original
           // Editing, keys and lifecycle are admin actions (sensors:write /
           // sensors:delete, admins and owners only since api#669).
+          const can = sensorActions(sensor, {
+            write: canWrite,
+            revoke: canRevoke,
+            delete: canDelete,
+          })
           const actions: RowAction[] = [
             {
               label: t('sensors.table.action.viewDetails'),
               icon: Eye,
               onClick: () => onViewSensor(sensor),
             },
-            {
+          ]
+          if (can.edit)
+            actions.push({
               label: t('sensors.table.action.edit'),
               icon: Settings,
               onClick: () => onEditSensor(sensor),
-              permission: Permission.SensorsWrite,
-            },
-            {
+            })
+          if (can.rotate)
+            actions.push({
               label: t('sensors.table.action.rotateKey'),
               icon: KeyRound,
               onClick: () => onRegenerateKey(sensor),
-              permission: Permission.SensorsWrite,
-            },
-          ]
-          if (sensor.status === 'disabled' || sensor.status === 'revoked') {
+            })
+          if (can.enable)
             actions.push({
               label: t('sensors.table.action.enable'),
               icon: Power,
               onClick: () => onActivateSensor(sensor),
               separatorBefore: true,
-              permission: Permission.SensorsWrite,
             })
-          } else if (sensor.status === 'active') {
+          if (can.disable)
             actions.push({
               label: t('sensors.table.action.disable'),
               icon: PowerOff,
               onClick: () => onDeactivateSensor(sensor),
               separatorBefore: true,
-              permission: Permission.SensorsWrite,
             })
-          }
-          actions.push({
-            label: t('sensors.table.action.delete'),
-            icon: Trash2,
-            onClick: () => onDeleteSensor(sensor),
-            destructive: true,
-            separatorBefore: true,
-            permission: Permission.SensorsDelete,
-          })
+          if (can.delete)
+            actions.push({
+              label: t('sensors.table.action.delete'),
+              icon: Trash2,
+              onClick: () => onDeleteSensor(sensor),
+              destructive: true,
+              separatorBefore: true,
+            })
           return <DataTableRowActions actions={actions} />
         },
       },
@@ -350,6 +359,9 @@ export function SensorTable({
       onDeactivateSensor,
       onDeleteSensor,
       onRegenerateKey,
+      canWrite,
+      canRevoke,
+      canDelete,
       thresholds,
       now,
       channel,
@@ -369,6 +381,7 @@ export function SensorTable({
       resetSelectionKey={resetSelectionKey}
       showSelectionCount={false}
       filterToggle={filterToggle}
+      search={search}
       toolbarStart={toolbarStart}
       toolbarEnd={toolbarEnd}
       emptyMessage={emptyMessage ?? t('sensors.table.emptyMessage')}

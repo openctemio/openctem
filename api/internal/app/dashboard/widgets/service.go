@@ -64,6 +64,7 @@ const (
 	ReasonFailed         = "failed"
 	ReasonTimeout        = "timeout"
 	ReasonNoHistoryForBy = "previous_not_in_history"
+	ReasonForbidden      = "forbidden"
 )
 
 // Service computes widget results.
@@ -148,6 +149,8 @@ type WidgetValue struct {
 	Items    *ItemsValue    `json:"items,omitempty"`
 	Stages   *StagesValue   `json:"stages,omitempty"`
 	Paths    *PathsValue    `json:"paths,omitempty"`
+	Flow     *FlowValue     `json:"flow,omitempty"`
+	Intake   *IntakeValue   `json:"intake,omitempty"`
 }
 
 // ScalarValue is one count, with the previous period and a sparkline when
@@ -256,7 +259,7 @@ func (s *Service) PersonalData(ctx context.Context, c dashboardapp.Caller, id st
 	if err != nil {
 		return nil, err
 	}
-	return s.forViewer(ctx, out, c, scope.CampaignViewer)
+	return s.personalForViewer(ctx, out, c, scope)
 }
 
 // OrgData returns every widget of an organization dashboard the caller may
@@ -296,7 +299,7 @@ func (s *Service) Preview(ctx context.Context, c dashboardapp.Caller, widgetType
 	if err != nil {
 		return nil, err
 	}
-	out, err = s.forViewer(ctx, out, c, scope.CampaignViewer)
+	out, err = s.personalForViewer(ctx, out, c, scope)
 	if err != nil {
 		return nil, err
 	}
@@ -353,6 +356,15 @@ func (s *Service) compute(ctx context.Context, tenantID, userID shared.ID, dashI
 		out.Widgets = append(out.Widgets, s.widget(ctx, i, w, builtAt != nil, scope))
 	}
 	return out, nil
+}
+
+// personalForViewer is the one exit of every personal read (data, refresh,
+// preview): widgets whose metric the caller may not read are masked first,
+// then forViewer applies the campaign rules. A new personal path returns
+// through here so it cannot skip the mask.
+func (s *Service) personalForViewer(ctx context.Context, d *DashboardData, c dashboardapp.Caller, scope dashboard.ReadScope) (*DashboardData, error) {
+	maskForbidden(d, c)
+	return s.forViewer(ctx, d, c, scope.CampaignViewer)
 }
 
 // forViewer prepares stored or computed figures for one viewer: list rows of
@@ -434,7 +446,7 @@ func (s *Service) widget(ctx context.Context, i int, w dashboard.Widget, factsRe
 		s.logger.Warn("dashboard widget read failed", "metric", m.ID, "error", err.Error())
 		v.State, v.Reason = StateError, reason
 		v.Scalar, v.Ratio, v.Duration, v.Category, v.Series, v.Matrix, v.Items = nil, nil, nil, nil, nil, nil, nil
-		v.Stages, v.Paths = nil, nil
+		v.Stages, v.Paths, v.Flow, v.Intake = nil, nil, nil, nil
 	}
 	return v
 }
@@ -453,6 +465,9 @@ func (s *Service) metric(ctx context.Context, v *WidgetValue, m dashboard.Metric
 		v.Drill = drillHref(f)
 		return s.count(ctx, v, f, gb, win, compare, spec.Data.Limit, agg)
 	case dashboard.MetricKindRatio:
+		if m.ID == "coverage.discovery" {
+			return s.discoveryCoverage(ctx, v, spec.Target, compare, agg)
+		}
 		num, den, err := s.facts.SLAWithin(ctx, agg, f)
 		if err != nil {
 			return err
@@ -516,6 +531,12 @@ func (s *Service) metric(ctx context.Context, v *WidgetValue, m dashboard.Metric
 		return s.ctemLoop(ctx, v, agg)
 	case dashboard.MetricKindPaths:
 		return s.attackPaths(ctx, v, spec.Data.Limit, agg)
+	case dashboard.MetricKindExposureFlow:
+		v.Window = &win
+		return s.exposureFlow(ctx, v, win, agg)
+	case dashboard.MetricKindIntake:
+		v.Window = &win
+		return s.intakeMetric(ctx, v, win, agg)
 	}
 	return fmt.Errorf("unknown metric kind %q", m.Kind)
 }

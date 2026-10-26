@@ -19,7 +19,7 @@ Permissions are included in the access token and checked using `middleware.Requi
 of truth is `permission.AllPermissions()` in
 `pkg/domain/permission/permission.go`; `permission.IsValid()` /
 `ParsePermission()` validate against it. As of this writing it defines
-**166 permissions**, grouped by module. Rather than hand-mirror all 166 (which
+**167 permissions**, grouped by module. Rather than hand-mirror all 167 (which
 would drift), the table below lists the module groups and the count each
 contributes — derive the exact strings from `AllPermissions()`.
 
@@ -27,7 +27,8 @@ contributes — derive the exact strings from `AllPermissions()`.
 |--------------|-------|---------------------|
 | Core (dashboard, audit, settings) | 6 | `dashboard:read`, `dashboards:org:view`, `dashboards:org:manage`, `audit:read`, `settings:read/write` |
 | Assets | 11 | `assets:read/write/delete/import/export`, `asset_groups:*`, `components:*` |
-| Findings | 32 | `findings:read/write/delete/assign/triage/status/export/approve/fix_apply/verify`, `exposures:*`, `suppressions:*`, `vulnerabilities:*`, `credentials:*`, `remediation:*`, `workflows:*`, `policies:*` |
+| Findings | 31 | `findings:read/write/delete/assign/triage/status/export/approve/fix_apply/verify`, `exposures:*`, `suppressions:*`, `vulnerabilities:*`, `credentials:*`, `remediation:*`, `policies:*` |
+| Automations | 3 | `automations:read`, `automations:write` (drafts, preview, validate, manual runs), `automations:publish` (go live, approve, roll back, mode, on/off, delete; RFC-125) |
 | Scans | 23 | `scans:read/write/delete/execute`, `scans:windows:manage`, `scans:windows:override`, `scan_profiles:*`, `sources:*`, `tools:*`, `tenant_tools:*`, `scanner_templates:*`, `secret_store:*` |
 | Sensors | 17 | `sensors:read/write/delete`, `sensors:commands:read/write/delete`, `sensors:zones:read/write/delete`, `sensors:egress:read/write/delete` (proxy pools), `sensors:pair`, `sensors:approve`, `sensors:grant:narrow/widen`, `sensors:revoke` (RFC-052) |
 | Team | 20 | `team:*`, `members:*`, `groups:*`, `roles:*`, `assignment_rules:*` |
@@ -76,6 +77,24 @@ Team roles are used for team management operations:
   editor's recent re-authentication when the role has holders, and for a
   team-bound role it is also owner-only. Giving a user a custom role that
   carries such a permission needs the same step-up.
+- The privileged permissions (`permission.PrivilegedPermissions`) are member
+  invitation and writes, service accounts, team, role and API key writes,
+  secret store access, settings writes, and the two that decide where an
+  organization's integrations send data and stored tokens:
+  `integrations:manage` and `integrations:scm:write`. Both are held by the
+  owner and administrator roles; the built-in member role keeps
+  `integrations:scm:write` for its own connections, and a custom role that
+  carries either follows the rules above.
+- A stored integration secret never follows a changed destination. A
+  notification channel update that moves an email channel to another SMTP
+  host or port (or weakens its TLS mode) or a Splunk channel to another
+  `hec_url` host is refused with 400 unless it carries new credentials, which
+  replace the stored ones. A console identity provider update that changes the
+  issuer (or the Entra directory) is refused unless the client secret is
+  entered again, and a tenant storage configuration that changes the provider,
+  endpoint, bucket or region needs new keys. Webhook, Slack and Teams
+  channels hold the destination itself as the secret, and Telegram only ever
+  sends its token to the Telegram API, so neither can redirect a stored secret.
 
 ### One authority for the team role
 
@@ -209,8 +228,10 @@ check and answers `403 STEP_UP_REQUIRED` (outside the window) or
 `sessions.step_up_at`, server-side and per session. Routes:
 
 - `POST /api/v1/api-keys`, `DELETE /api/v1/api-keys/{id}`
-- `POST /api/v1/scim-tokens`
-- `PATCH /api/v1/tenants/{tenant}/settings/security`
+- `POST /api/v1/scim-tokens`, `POST /api/v1/scim-tokens/{id}/rotate`
+- `PATCH /api/v1/tenants/{tenant}/settings/security` (MFA, IP allowlist, allowed domains)
+- `PATCH /api/v1/tenants/{tenant}/settings/modules`, `POST .../settings/modules/reset`, `POST .../settings/modules/presets/{presetId}/apply`
+- `POST /api/v1/secret-store`, `PUT`/`DELETE /api/v1/secret-store/{id}`, `POST .../{id}/rotate`
 - `POST /api/v1/tenants/{tenant}/settings/sso/changes/{id}/approve`
 - `PUT /api/v1/organization/settings/domains/{domain_id}/signup-policy`
 - `DELETE /api/v1/tenants/{tenant}`
@@ -218,7 +239,7 @@ check and answers `403 STEP_UP_REQUIRED` (outside the window) or
 - `POST /api/v1/organization/leave`
 - `DELETE /api/v1/organization/members/{id}/mfa`, `POST .../offboard`, `POST .../erase`
 - `POST /api/v1/ci/gate-overrides`
-- `POST /api/v1/integrations/{id}/jira-webhook/secret/rotate`, `PUT .../{id}/jira-webhook/secret`, `POST .../{id}/github-webhook/secret/rotate`
+- `POST /api/v1/integrations/{id}/jira-webhook/secret/rotate`, `PUT .../{id}/jira-webhook/secret`, `POST .../{id}/github-webhook/secret/rotate`, `POST .../{id}/signing-secret/rotate` (outbound webhook signing secret, RFC-124)
 - `POST /api/v1/integrations`, `POST .../integrations/notifications`, `PUT`/`DELETE /api/v1/integrations/{id}`, `POST .../{id}/disable`, `PUT .../{id}/notification`
 - `PUT /api/v1/scim-tokens/group-mappings`
 - `PATCH /api/v1/attachments/storage-config`
@@ -298,14 +319,14 @@ API keys are refused on both prefixes; the tenant is the session's. Design: `mcp
 |----------|---------------------|
 | `GET /api/v1/oauth/requests/{id}`, `POST /{id}/approve`, `/{id}/deny` | any member, on a consent request they claimed (404 otherwise); the grant never exceeds what they hold |
 | `POST /api/v1/oauth/requests/{id}/access-request` | any active member, on a consent request they claimed and only when the application is blocked because its publisher is not approved; at most 5 new requests per member per day, 50 waiting per organization (429); audited |
-| `POST /api/v1/oauth/requests/{id}/allow-publisher` | `settings:write` + a recent sign-in; adds the publisher host of that consent request to the caller's organization policy; audited |
+| `POST /api/v1/oauth/requests/{id}/allow-publisher` | owner or administrator (`RequireAdmin`) **and** `settings:write` + a recent sign-in; adds the publisher host of that consent request to the caller's organization policy; audited |
 | `GET /api/v1/organization/security-overview` | owner or admin with `settings:read`; the organization comes from the credential; counts and statuses only, no personal data ([security-overview.md](security-overview.md)) |
 | `GET /api/v1/audit-logs/export` | `audit:read` and the list's full-data rule; filters as the list; at most 50,000 rows, one export at a time per person, heavy-read cap; audited `audit_log.exported` |
-| `GET`/`PUT /api/v1/mcp-access/settings` | `settings:read` / `settings:write` + a recent sign-in; audited |
+| `GET`/`PUT /api/v1/mcp-access/settings` | `settings:read` / owner or administrator **and** `settings:write` + a recent sign-in; audited |
 | `GET /api/v1/mcp-access/requests` | `settings:read` (the organization's waiting requests; requester name, no e-mail or IP) |
-| `POST /api/v1/mcp-access/requests/{id}/approve` | `settings:write` + a recent sign-in (loosens the policy); another organization's request is 404; audited |
-| `POST /api/v1/mcp-access/requests/{id}/deny` | `settings:write` (tightens nothing, no step-up); 404 across organizations; audited |
-| `GET`/`POST`/`DELETE /api/v1/mcp-access/clients` | `settings:read` / `settings:write` + a recent sign-in |
+| `POST /api/v1/mcp-access/requests/{id}/approve` | owner or administrator **and** `settings:write` + a recent sign-in (loosens the policy); another organization's request is 404; audited |
+| `POST /api/v1/mcp-access/requests/{id}/deny` | owner or administrator **and** `settings:write` (tightens nothing, no step-up); 404 across organizations; audited |
+| `GET`/`POST`/`DELETE /api/v1/mcp-access/clients` | `settings:read` / owner or administrator **and** `settings:write` + a recent sign-in |
 | `GET`/`DELETE /api/v1/mcp-access/connections` | owner or administrator (`RequireAdmin`) |
 | `GET`/`DELETE /api/v1/mcp-access/my-connections` | any member, own connections only |
 
@@ -319,7 +340,7 @@ API keys are refused on both prefixes; the tenant is the session's. Design: `mcp
 | `POST /api/v1/components/import` | `components:write` (target asset in scope; rate limited) |
 | `GET /api/v1/assets/{id}/components`, `/dependency-paths`, `/dependency-graph` | `components:read` (asset in scope) |
 | `GET /api/v1/vex-statements`, `/{id}` | `components:read` (asset-bound statements: asset in scope; statements for every asset: an in-scope asset uses the package; else 404) |
-| `GET`/`PUT /api/v1/organization/settings/license-policy` | `settings:read` / `settings:write` (configuration of the caller's organization; a PUT re-evaluates its package links and license findings; audited) |
+| `GET`/`PUT /api/v1/organization/settings/license-policy` | `settings:read` / owner or administrator **and** `settings:write` (configuration of the caller's organization; a PUT re-evaluates its package links and license findings; audited) |
 | `POST /api/v1/vex-statements`, `PATCH`/`DELETE /{id}`, `POST /import` | `findings:approve`, plus `findings:verify` to write a `fixed` statement (create or patch to `fixed`, widen a fixed one, or import a document with any `fixed` statement; the whole import is refused with 403 before anything is written), because `fixed` resolves findings with verification `vex_statement`; `not_affected` and delete need only approve (closes findings: asset-bound needs the asset in scope, 404 otherwise; a statement for every asset needs full data access, 403 otherwise; import rate limited) |
 
 The inventory has no manual create, update or delete (RFC-070): sensors, CI
@@ -334,11 +355,16 @@ and SBOM import write it.
 | `POST /api/v1/findings` | `findings:write` |
 | `DELETE /api/v1/findings/{id}` | `findings:delete` (hard delete; the activity timeline goes with the row. An audit event `finding.deleted` is written first with the actor, title, severity, status, source, CVE, asset, fingerprint, tool and the number of activities removed; if that write fails the finding is not deleted) |
 | `PATCH /api/v1/findings/{id}/status` | `findings:status`; moving a finding **out of** an approved false positive or an accepted risk needs `findings:approve` as well (403 otherwise), on this route and on bulk status. A workflow, automation action or ticket webhook cannot move a finding out of a decided status at all (false positive, accepted risk, duplicate; a workflow also not out of resolved) |
+| `GET /api/v1/findings/{id}/duplicate-candidates` (suggestions for "mark duplicate", RFC-121) | `findings:triage`. The finding must be in the caller's tenant and data scope (else 404, also for another tenant's id); candidates are filtered with the findings-list scope rules (asset scope rows, private program assets, pentest member visibility), so neither the list nor `known_since` reveals a finding the caller cannot read. Nothing is merged |
 | `POST /api/v1/findings/{id}/duplicates` (mark the body's finding a duplicate of `{id}`, RFC-043) | `findings:triage`; refused with 409 (whatever the caller holds) when one finding is a false positive or risk acceptance and the other is not, or the two differ, because a merge writes no approval. Both findings must be in the caller's tenant and data scope (else 404) and on the same asset |
+| `GET /api/v1/findings/{id}/issue-links`, `DELETE /api/v1/findings/{id}/issue-links/{other}` (same-issue group, RFC-043 §17) | read: `findings:read`, the finding in the caller's data scope (else 404); members on assets outside the scope are neither listed nor counted. Unlink: `findings:triage`, both findings in the caller's tenant and data scope (else 404); never changes either finding's status |
 | `POST /api/v1/findings` with `bounty_report`, `PUT /api/v1/findings/{id}/bounty-report` (bug-bounty report fields, RFC-121) | `findings:write`; setting or changing `reward` or `disclosure` also needs `findings:triage` (403 `TRIAGE_PERMISSION_REQUIRED`, nothing written). Only `bug_bounty` findings; the finding (or the asset on create) must be in the caller's tenant and data scope (else 404); a second finding for the same intake and ref is 409. Audited with old and new values |
 | `POST /api/v1/findings/{id}/assign` · `/unassign` · `/actions/assign-to-owners` | `findings:assign` |
 | `POST /api/v1/findings/bulk/status` | `findings:bulk_update` **and** `findings:status` (the bulk permission widens the reach of a move; it does not replace the right to make it) |
 | `POST /api/v1/findings/bulk/assign` | `findings:bulk_update` **and** `findings:assign` |
+| `POST /api/v1/findings/{id}/approvals` (false-positive or accepted-risk request) | `findings:write`, the finding in the caller's data scope; decided at once (`single_person`) only when the organization's false-positive or risk acceptance level allows it **and** the caller holds `findings:approve` and does not own the asset; bulk, group, import and automation paths never decide alone |
+| `GET /api/v1/organization/settings/finding-approvals` | `findings:read` |
+| `PATCH /api/v1/organization/settings/finding-approvals` | owner or administrator **and** `settings:write` **and** step-up; a lower `fp_approval` or `accept_approval` level takes effect after 24 hours, raising at once; lowering a level or `second_look_percent`, relaxing the policy and changing `backup_contact_email` are **owner only** (403 for an administrator); audited `finding_approval.settings_changed` (high), approvers told |
 | `POST /api/v1/findings/{id}/verify` | `findings:verify` |
 
 > The finding **action** routes (status, triage, assign, bulk, verify) are gated on
@@ -470,7 +496,7 @@ closed):
 | Path | Effect of a match |
 |------|-------------------|
 | Scan trigger (direct targets and asset-group members) | Target dropped from the run; a run whose every target is excluded is refused (`ALL_TARGETS_EXCLUDED`) |
-| `POST /api/v1/scan-workflows/runs`, the `trigger_pipeline` workflow action | Target dropped from `context.targets`, the rest run; every target excluded is refused. The same run is refused (400 `TARGET_REFUSED`) for a target the scan target validator or zone routing refuses (private address outside every zone, loopback, link-local/metadata, uncovered). `scan_zone_id` in the caller's context is ignored and set from the routing |
+| `POST /api/v1/scan-workflows/runs` | Target dropped from `context.targets`, the rest run; every target excluded is refused. The same run is refused (400 `TARGET_REFUSED`) for a target the scan target validator or zone routing refuses (private address outside every zone, loopback, link-local/metadata, uncovered). `scan_zone_id` in the caller's context is ignored and set from the routing |
 | Tenable rolling coverage dispatcher | Asset skipped this rotation (its cursor still moves, so it does not hold the top of every batch); same for a target the validator or zone routing refuses. A batch stays in one zone and the command is stamped with it |
 | Certificate Transparency discovery | An excluded watched domain is not queried; an excluded host gets no exposure |
 | Ingest | A NEW asset matching by name, repository URL or address (and a root domain or resolved IP derived from one) is not added: counted as `assets_skipped_excluded`, named in the warnings, its findings skipped and never attached to another asset. An asset already in the inventory is not changed or deleted |
@@ -642,7 +668,7 @@ authenticator code, and is audited.
 | Endpoint | Gate |
 |----------|------|
 | `GET /api/v1/scim-tokens` · `GET/PUT /group-mappings` | owner/admin (`RequireAdmin`); a `PUT` that adds, changes or removes a mapping **to admin** is owner only (service check, 403) |
-| `POST /api/v1/scim-tokens` · `DELETE /{id}` | **owner only** (`RequireOwner`); create also needs **step-up** |
+| `POST /api/v1/scim-tokens` · `POST /{id}/rotate` · `DELETE /{id}` | **owner only** (`RequireOwner`); create and rotate also need **step-up** |
 
 > A SCIM token can create, suspend and re-role every member, so minting and
 > revoking one is the owner's decision (owner decision 2026-10-02). Which IdP
@@ -716,69 +742,52 @@ the billing page in the UI.
 > verification) and every verdict is audited; no token is ever written.
 > Pipelines follow the repository data scope like runs.
 
-#### Template sources and the secret store (`/api/v1/template-sources`, `/api/v1/secret-store`)
+#### Rule sources and the secret store (`/api/v1/content-sources`, `/api/v1/secret-store`)
 
 | Endpoint | Permission Required |
 |----------|---------------------|
-| `GET /api/v1/template-sources` · `/{id}` | `scans:sources:read` |
-| `POST /api/v1/template-sources` · `PUT /{id}` · `/{id}/enable` · `/disable` · `/sync` | `scans:sources:write` |
-| `DELETE /api/v1/template-sources/{id}` | `scans:sources:delete` |
-| Secret store `GET` / `POST`,`PUT`,`POST /{id}/rotate` / `DELETE` | `scans:secret_store:read` / `:write` and owner/admin / `:delete` |
+| `GET /api/v1/content-sources` · `/{id}` · `/{id}/snapshots` · `/{id}/snapshots/{snapshot_id}` | `scans:sources:read` |
+| `POST /api/v1/content-sources` · `PUT /{id}` · `PUT /{id}/credential` · `POST /{id}/webhook` · `POST /test` · `POST /{id}/test` | `scans:sources:write` + **step-up** |
+| `DELETE /{id}/credential` · `DELETE /{id}/webhook` · `POST /{id}/sync` | `scans:sources:write` |
+| `DELETE /api/v1/content-sources/{id}` | `scans:sources:delete` + **step-up** |
+| `POST /{id}/snapshots/{snapshot_id}/approve` (promote) · `POST /{id}/rollback` | `scans:sources:approve` + **step-up** |
+| `POST /{id}/snapshots/{snapshot_id}/reject` | `scans:sources:approve` |
+| `POST /hooks/content-sources/{id}` | public: the source's own webhook secret (constant-time compare); only queues a sync |
+| Secret store `GET` / `POST`,`PUT`,`POST /{id}/rotate` / `DELETE` | `scans:secret_store:read` / `:write` and owner/admin / `:delete`; every write also needs **step-up** |
+
+> **Rule sources** ([content-sources.md](content-sources.md)). Owners and
+> administrators hold every `scans:sources:*` permission (migration
+> `content_sources` adds `scans:sources:approve` to both); the built-in Member
+> and Viewer roles read only. Every route takes the tenant from the token:
+> another organization's source, and a hidden platform source, answer 404 for
+> every operation; an offered platform source is readable as a projection (no
+> URL, credential, CA, schedule, webhook or error text) and every change to it
+> answers 403. The fetch credential is write-only: encrypted with the
+> installation key and bound to the source id, the organization and the host;
+> changing the host clears it. Under the review policy, and for every candidate
+> that raises the tier, the member who last changed what the source fetches
+> cannot promote the candidate (four-eyes, 403 `FOUR_EYES`, audited as denied).
+> Template sources and their `credential_id` binding to the secret store are
+> removed.
 
 #### Organization-wide scan configuration
 
-Owner and administrator only, on top of the permission: `PUT /api/v1/scan-profiles/{id}/quality-gate`, `POST /api/v1/scan-profiles/{id}/set-default`, `PATCH /api/v1/tools/settings`, `PATCH /api/v1/tools/{id}/settings` (each changes what every scan of the organization runs with), and `DELETE /api/v1/secret-store/{id}`. A member whose role carries the write permission is refused with 403; the web console hides these controls from members.
+Owner and administrator only, on top of the permission: `PUT /api/v1/scan-profiles/{id}/quality-gate`, `POST /api/v1/scan-profiles/{id}/set-default`, `PATCH /api/v1/tools/settings`, `PATCH /api/v1/tools/{id}/settings` (each changes what every scan of the organization runs with), and `DELETE /api/v1/secret-store/{id}`. A member whose role carries the write permission is refused with 403; the web console hides these controls from members. The general profile routes hold the same rule: `PUT /api/v1/scan-profiles/{id}` refuses a member who changes the pass/fail rule or edits the default profile, and `POST /api/v1/scan-profiles` refuses a member who creates the profile as the default (403). A member still creates profiles and edits their other fields, and may send the pass/fail rule back unchanged. `PUT /api/v1/easm/settings` is owner or administrator **and** `settings:write`.
 
-> Writing the credential store is owner/admin only: its one consumer, a template source, is owner/admin only, so a member could otherwise replace the credential an administrator's source authenticates with. The built-in Member role no longer holds `scans:secret_store:write` (migration `002905`).
+> Writing the credential store is owner/admin only, so a member cannot replace a credential an administrator's configuration authenticates with. The built-in Member role no longer holds `scans:secret_store:write` (migration `002905`).
 
 > **Secret store writes.** `PUT /secret-store/{id}` changes metadata only and
 > leaves absent fields unchanged (`description: ""` clears it, `expires_at: null`
 > clears the expiry; `expires_at` is RFC 3339 and must be in the future). The
 > secret is replaced only by `POST /secret-store/{id}/rotate` (same credential
 > type; `key_version` and `last_rotated_at` advance). Update, rotate (High),
-> delete (High) and decrypt (High) are audited with the acting user, or a named
-> system actor for a scheduled template sync. All lookups are by tenant and id.
+> delete (High) and decrypt (High) are audited with the acting user. All lookups are by tenant and id.
 
-> **A stored credential goes only where someone entitled to it pointed it.**
-> A sync decrypts the source's `credential_id` and sends it to the source's
-> URL (bearer/basic/API key, git token or SSH key, S3 keys). Members used to
-> hold `scans:sources:write` (removed by migration `000262`, see rule 10) and
-> still hold `scans:secret_store:write`; a custom role may carry both. The
-> route gates alone would then let its holder send any stored secret to a
-> server they run. `template.SourceService` therefore checks, on create and
-> update:
-> - **Binding** a credential (a new `credential_id`, or keeping one while the
->   destination changes) is allowed to tenant owners/admins and to the user who
->   stored that credential (`credentials.created_by`). Anyone else gets 403
->   `CREDENTIAL_BIND_FORBIDDEN`, and the attempt is audited as
->   `template_source.credential_attached` with result `denied`.
-> - **Re-pointing** a source that carries a credential (git URL, HTTP URL, or
->   S3 endpoint/region/bucket/role ARN) without re-binding it in the same request
->   **drops the credential**, audited as `template_source.credential_detached`
->   (`reason: destination changed`). An S3 source cannot exist without its
->   keys, so re-pointing one needs the owner/admin to re-bind.
-> - Every successful bind is audited as `template_source.credential_attached`
->   (severity high) with the credential id/name and the destination host.
->
-> **No credentials in the source configuration, https only.** The git, HTTP and
-> S3 configuration is stored as plain JSON and returned to anyone with
-> `scans:sources:read`, and the templates it fetches run on sensors. Create and
-> edit therefore refuse plain `http://` (git and HTTP sources), a URL with a
-> password or token (`https://user:token@host/...`), and HTTP headers that carry
-> a credential (`Authorization`, `Cookie`, `*token*`, `*key*`, `*secret*`,
-> `*auth*`): bind a credential instead. Rows stored before this rule keep
-> syncing and are masked in responses (URL password, credential header values).
-> Downloads stop at 50 MB (HTTP) and clones at 200 MB on disk or 20,000 files
-> (git), so a source cannot fill the API server's disk.
->
-> The secret store has no per-credential host allowlist; the binding check
-> above is the control. Sources bound before this check existed keep their
-> credential until they are next re-pointed.
->
-> Templates synced or uploaded are validated before use. For Nuclei, the
-> `code`, `javascript` and `headless` protocols are refused on the **parsed**
-> document (`execProtocolKey`), so JSON, flow-style YAML, escaped or
-> differently-cased keys cannot hide them.
+> Custom templates are validated before use. For Nuclei, the `code`,
+> `javascript` and `headless` protocols are refused on the **parsed** document
+> (`execProtocolKey`), so JSON, flow-style YAML, escaped or differently-cased
+> keys cannot hide them. Rule source snapshots are linted the same way
+> ([content packs](content-packs.md)).
 
 #### Scans and commands: secret-looking config values
 
@@ -820,15 +829,18 @@ Owner and administrator only, on top of the permission: `PUT /api/v1/scan-profil
 #### Dashboards (`/api/v1/me/dashboards`, `/api/v1/organization/dashboards`)
 
 Two kinds ([dashboards](dashboards.md)). Personal dashboards are the caller's
-own: `/me/*` is self-scoped (no permission gate) and every query filters on
-the caller's tenant and user, so another user's or tenant's dashboard is 404.
+own: the layout routes of `/me/*` are self-scoped (no permission gate) and every
+query filters on the caller's tenant and user, so another user's or tenant's
+dashboard is 404. The routes that compute figures need `dashboard:read`, and
+each metric needs the permission of what it counts.
 Organization dashboards belong to the organization.
 
 | Endpoint | Permission Required |
 |----------|---------------------|
 | `GET/POST /api/v1/me/dashboards`, `GET/PUT/DELETE /api/v1/me/dashboards/{id}`, `POST …/{id}/default`, `PUT …/{id}/schedule` | self (owner only) |
 | `POST /api/v1/me/dashboards/{id}/share` | self; recipients must be active members of the tenant; each gets a layout copy of their own (audited) |
-| `GET /api/v1/me/dashboards/{id}/data`, `POST …/{id}/refresh`, `POST /api/v1/me/dashboards/widget-preview`, `GET /api/v1/me/dashboards/widget-catalog` | self (owner only); figures follow the caller's own data scope and pentest campaign membership; Refresh now budgeted (1/min per person and dashboard, 30/h per organization) |
+| `GET /api/v1/me/dashboards/widget-catalog` | self (static catalog, no data) |
+| `GET /api/v1/me/dashboards/{id}/data`, `POST …/{id}/refresh`, `POST /api/v1/me/dashboards/widget-preview` | `dashboard:read`; self (owner only); a widget whose metric counts findings needs `findings:read`, one that counts assets needs `assets:read` (otherwise it is returned as unsupported with reason `forbidden` and no figure); figures follow the caller's own data scope and pentest campaign membership; Refresh now budgeted (1/min per person and dashboard, 30/h per organization) |
 | `GET /api/v1/organization/dashboards`, `GET …/{id}`, `GET …/{id}/data`, `POST …/{id}/refresh` | `dashboards:org:view` (or `dashboards:org:manage`); a viewer outside the dashboard's audience gets it left out of the list and 404 by id; managers see every one with its audience |
 | `POST /api/v1/me/dashboards` with `from_organization_dashboard_id` ("duplicate to mine") | `dashboards:org:view` + audience; copies the layout into a new personal dashboard of the caller |
 | `POST /api/v1/organization/dashboards`, `PUT/DELETE …/{id}`, `POST …/{id}/default`, `PUT …/order`, `PUT …/{id}/audience`, `PUT …/{id}/schedule` | `dashboards:org:manage` (owner and admin by default), audited |
@@ -974,6 +986,14 @@ same tenant gates as any session tenant route ([RFC-045](../rfcs/RFC-045-websock
   caller outside the organization's IP allowlist (403 `IP_NOT_ALLOWED`), a
   password session in an SSO-enforced tenant and a revoked session are
   refused at the upgrade.
+- When the revoked-session lookup itself fails (the store is down), a session
+  that was signed out cannot be told from a live one. Every route behind the
+  unified authenticator then fails closed for writes (POST, PUT, PATCH,
+  DELETE answer 503 with `Retry-After`) at once, and for reads (including the
+  WebSocket upgrade) after a 2-minute window that starts at the first failure
+  and ends at the first successful lookup, so a short outage does not sign
+  everyone out. The permission-version check keeps its own, separate
+  behaviour (see Permission caching).
 - The browser always opens the socket on the UI's own origin: the gateway
   routes `/api/v1/ws` to the API, and the web server (`server-with-ws.mjs`,
   all-in-one image and Helm) or `next dev` forwards it with the `Cookie` and
@@ -1860,7 +1880,9 @@ a personal address, or be a work domain nobody has verified.
   - `MemberAccessExpiryController` suspends the membership within a minute
     (`suspended_reason = expired`), in that organization only;
   - `PATCH /api/v1/organization/members/{member_id}/access` (owner/admin,
-    `members:write`) sets a new end date and re-enables them;
+    `members:write`) sets a new end date and re-enables them; a change that
+    widens access (a later end, no end, or re-enabling) needs a recent sign-in
+    (step-up), shortening does not;
   - a plain reactivation is refused.
 - **API keys** follow the member: allowed unless an active trust with their
   home forbids keys, and never beyond the end of access.
@@ -1888,6 +1910,7 @@ a personal address, or be a work domain nobody has verified.
 | `GET /assets/{id}`, `/findings/{id}`, `/findings/{id}/activities`, `POST /findings/{id}/comments` | scoped | scoped (guard + service) |
 | `GET /assets/{id}/full`, `/assets/{id}/findings`, `/assets/{id}/{owners,relationships,components,services,identifiers,state-history,sla-policy}` | **bypass** | 404 (guard) |
 | `GET /findings/{id}/{comments,priority-explanation,dataflows,approvals,evidence,ai-triage}` | **bypass** | 404 (guard) |
+| `GET /findings/{id}/identity` (`findings:read`) | new | 404 (guard + `GetFindingWithScope`); merged duplicates and their tools listed only when in the caller's scope, no count of the others; names only, never a key or value |
 | `PATCH /findings/{id}/{status,severity,triage,classify,remediation}`, `PUT /tags`, `POST /{assign,unassign,verify,...}`, `DELETE /findings/{id}` | **bypass (write)** | 404 (guard) + service check (`getFindingWithTenantCheck`, status, delete) |
 | `POST /findings/{id}/severity-requests/{request_id}/{approve,reject}` (`findings:approve`), `/cancel` (`findings:severity`, requester only) | new | 404 (guard) + `getFindingWithTenantCheck`; the request must belong to that finding and tenant; approve runs the approval policy (never the requester or an asset owner, approver needs the finding in scope) |
 | `PUT/DELETE /findings/{id}/comments/{comment_id}` | bypass | 404 (guard) + comment's finding checked |
@@ -1934,7 +1957,10 @@ a personal address, or be a work domain nobody has verified.
 | WebSocket `finding:{id}`, `triage:{id}` | **bypass** (permission only) | also requires the finding to be in scope |
 | `GET /notification-outbox` (+ `/stats`, `/{id}`, retry, delete), `GET /integrations/{id}/notification-events` | **bypass (every finding/asset event, owner emails) to members and viewers via `notifications:read` / `integrations:read`** | channel managers only: `integrations:manage` in addition (owner/admin by default); not scoped, because a channel manager already routes the whole stream (L-03) |
 | `POST /assets/import/nessus-findings` | **bypass (write)**: ran as a trusted server-side sensor, so a member added findings to any host and auto-resolved any tool's findings on it (`?tool=`) | runs with the uploader's rights (`ingest.Options.Actor`): a restricted uploader only adds findings to existing in-scope assets, creates no asset, never auto-resolves; hidden and unknown hosts both count as `assets_skipped_out_of_scope`. An unrestricted uploader auto-resolves only with the default `tenable` tool (any other `?tool=` = partial coverage). Audited `asset.imported` (L-05) |
-| `POST /findings/import` | new | runs with the uploader's rights (it replaced `POST /assets/import/nessus` and `/nessus-findings`, removed): ingest `Actor` (in-scope assets only, none created by a restricted uploader), always partial coverage (no auto-resolve); VEX documents touch only in-scope findings and close only under `INGEST_VEX=enforce` with `findings:approve`. Rate limited per organization; audited `asset.imported` ([finding-import.md](finding-import.md)) |
+| `POST /findings/imports` | new | runs with the uploader's rights (it replaced `POST /assets/import/nessus` and `/nessus-findings`, removed): ingest `Actor` (in-scope assets only, none created by a restricted uploader), partial coverage (closes nothing) unless `coverage=full` names explicit assets visible to the uploader and they hold `findings:status` and `findings:bulk_update` with step-up (then the uncovered findings of each file's tool on them close, with the covered-scan guards); VEX documents touch only in-scope findings and close only under `INGEST_VEX=enforce` with `findings:approve`. Rate limited per organization; audited `asset.imported` ([finding-import.md](finding-import.md)) |
+| `GET /findings/imports`, `GET /findings/imports/{id}`, `GET /findings/imports/{id}/actions` | new | `findings:read`. Receipt counts are organization-wide: a caller with the organization view (unrestricted data scope, or `dashboards:org:view`) reads every receipt; any other caller reads only the uploads they made, and any other receipt is 404. `by_severity` and the action rows are limited to findings in the caller's data scope and the pentest visibility rule ([ingest-receipts.md](ingest-receipts.md)) |
+| `GET /findings/{id}/imports` | new | `findings:read`; the finding must be in the caller's data scope (404 otherwise); lists receipt ids, kinds, tools and actions, never counts |
+| `GET/POST/PATCH/DELETE /import-mappings...` | new | organization configuration (RFC-126): reads need `integrations:read` or `assets:import`, writes, verify and preview `integrations:manage` (delete with step-up); preview maps an uploaded sample and reads no stored finding or asset; a mapping of another organization is 404 by id or name, and `format=mapping:` on `POST /findings/imports` or a CI upload resolves only in the caller's organization ([import-mappings.md](import-mappings.md)) |
 | `GET /components/{id}/assets` (reverse lookup), `GET /components` (incl. `?asset_id=`, export), `POST/PUT/DELETE /components[/{id}]`, `POST /components/import?asset_id=`, `GET /vulnerabilities/...` dependency detail | **bypass**: names, criticality and risk of every asset using a package; writes on any asset of the tenant | the reverse lookup and list only show in-scope assets (`dataScopeCond` in SQL); an out-of-scope asset id or dependency id answers 404 (`ComponentService`, `SBOMImportService`; L-10) |
 | `/repositories/{id}/branches/**` (list, get, default, compare, create, update, delete) | **bypass** (tenant only) | the repository must be in scope (`AssetService.GetAssetInCallerScope`): 404 otherwise (L-10) |
 | `GET /threat-models` (+ `/{id}`, `/{id}/coverage`), `POST /threat-models/generate` | **bypass** (crown-jewel model names, threat paths through any asset) | crown-jewel models of out-of-scope assets are hidden (404 by id, also on generate, which names the asset); a threat is listed and counted in coverage only when its entry point, target, hop and evidence finding are all in scope. Model rollup counters stay graph-wide (L-10) |
@@ -2045,6 +2071,29 @@ trend window takes the same scope). A schedule with no recorded creator, or whos
 longer be resolved (left the organization), is not rendered or sent
 (`failed`).
 
+### Automations: who may edit, publish and approve (RFC-125)
+
+| Route | Permission | Also |
+|---|---|---|
+| `GET /workflows`, `/workflows/catalog`, `/workflows/{id}`, `/{id}/versions[/{versionId}]`, `/{id}/trace`, `GET /workflow-runs[/{id}]` | `automations:read` | runs and trace counts follow the caller's data scope (out of scope: 404, not counted) |
+| `POST /workflows`, `PUT /{id}` (name, description, tags), `PUT /{id}/graph`, nodes, edges, `POST /{id}/preview`, `POST /{id}/verify`, `POST /{id}/runs`, `POST /workflow-runs/{id}/cancel` | `automations:write` | building a step needs its own permission; preview samples only the caller's scope; a manual run acts as the caller |
+| `POST /{id}/publish`, `POST /{id}/versions/{versionId}/rollback` | `automations:publish` | every step's permission; elevated risk: step-up; high risk: the version waits for a second publisher |
+| `POST /{id}/versions/{versionId}/approve` | `automations:publish` | step-up, not the publisher, the reviewed digest, every step's permission |
+| `PUT /{id}/mode` (simulate), `PUT /{id}` with `is_active`, `DELETE /{id}` | `automations:publish` | no step-up: pausing and switching to simulate narrow |
+| `POST /workflow-runs/{id}/approve` | `automations:publish` | a run paused at its change cap continues; the run's subject must be in the caller's scope |
+
+No automation step writes false positive, accepted, resolved or duplicate:
+`update_status` sets only confirmed or in progress, and the request actions
+create requests no single person may decide, whatever the organization's
+approval level (`approvalpolicy.Request.AutomationMade`).
+
+Risk classes: low (tags), elevated (status, assignment, tickets,
+notifications, AI triage), high (scans, false-positive and acceptance
+requests, chaining on, a change cap above the default). Migration
+`automations_permissions` renamed `findings:workflows:{read,write}` one to one
+and gave `automations:publish` to every role that held write, so nobody lost
+a power; owners and administrators hold all three.
+
 ### Automation runs act as one person
 
 An automation run (`/api/v1/workflows`, research doc 61 §1.6) acts as one
@@ -2057,17 +2106,18 @@ person, its principal, and never as the system:
   entity by forging the event that names it. The caller must hold the
   permission of every step, and the subject must be in their data scope (a
   subject outside it answers 404, like one that does not exist);
-- an event run acts as the automation's owner (`workflows.created_by`, the
-  column the member lifecycle pauses and reassigns). Whoever creates,
-  switches on, or changes what an automation does (graph, node, edge)
-  becomes its owner.
+- an event run acts as the automation's owner (`automations.created_by`,
+  the column the member lifecycle pauses and reassigns). Whoever creates,
+  publishes or switches on an automation becomes its owner. Editing the
+  draft (graph, node, edge) does not: a draft only runs in simulate, and a
+  live automation runs its published version until someone publishes again
+  ([automations.md](automations.md), "Versions and mode").
 
 Before every action and notification step the principal is checked again,
 live (`workflow.PrincipalAuthorizer`): an active member with an active
 account, holding the step's permission (`workflow.NodePermission`: the
 direct route's permission, e.g. `findings:write` for a status change,
-`scans:write` to start a scan, `integrations:manage` for outbound HTTP,
-`integrations:read` for a notification), with the run's subject and any
+`scans:write` to start a scan, `integrations:read` for a notification), with the run's subject and any
 finding the step names in its config inside their data scope. A failed check
 fails the step with `AUTOMATION_RUN_NOT_AUTHORIZED` and changes nothing. The
 step then runs with the principal in its context, so the services it calls
@@ -2085,10 +2135,12 @@ own schedule.
 Editing needs the same permissions: building a node needs its permission,
 and any change to what an existing automation does (an edge, deleting a
 node, a node edit, switching it on) needs the permission of every step it
-has. The `http_request` action is retired: new nodes are refused, a stored
-one no longer runs (its step fails), its header values are never returned by
-the API, and no response body or header is stored with a run. Building one
-needed `integrations:manage`.
+has. There is no free-form outbound HTTP action: the `http_request` action
+is removed (migration `automations_removed_types` switched off every
+automation that held one and dropped its stored headers), and outbound calls
+go through a registered notification integration. A stored node of any
+removed type runs nothing; a step naming an unknown type needs
+`integrations:manage` (administrators) and is refused before it runs.
 
 ### Tenant-wide aggregates still to scope (counts only, no row data)
 
@@ -2501,7 +2553,7 @@ deliberately.
     custom scanner template (nuclei especially) decides which hosts the sensor
     contacts and what it sends, so only owners and administrators author one:
     `scans:templates:write` (scanner templates) and `scans:sources:write`
-    (template sources, which pull templates from a URL) are owner/admin only;
+    (rule sources, which the platform syncs from a git repository) are owner/admin only;
     migration `000262` removed both from member. Members and viewers keep
     `scans:templates:read` / `scans:sources:read` and pick approved templates
     for a scan by id (`scanner_config.custom_template_ids`). `POST
@@ -2633,7 +2685,7 @@ from a custom role to deny that one action.
 
 | Permission | Routes | Old gate |
 |---|---|---|
-| `assets:import` | `POST /assets/import/csv`, `POST /findings/import` (with `findings:write`) | `assets:write` |
+| `assets:import` | `POST /assets/import/csv`, `POST /findings/imports` (with `findings:write`) | `assets:write` |
 | `scans:execute` | `POST /scans/{id}/trigger`, `POST /scans/quick`, `POST /assets/{id}/scan` | `scans:write` / `assets:write` |
 | `scans:workflows:execute` | `POST /scan-workflows/{id}/runs` | `scans:workflows:write` |
 | `ai_triage:read` | `GET /findings/{id}/ai-triage*`, `GET /findings/ai-triage/config` | `findings:read` |
@@ -2651,7 +2703,7 @@ from a custom role to deny that one action.
 | `team:update` | `PATCH /tenants/{tenant}` | team admin |
 | `team:members:write` | member add/role/suspend/reactivate/remove, admin-created users and setup links | team admin |
 | `team:members:invite` | create/resend/delete invitations | team admin |
-| `settings:write` | every `PATCH/PUT/POST .../settings/*` (owner-only ones stay owner-only) | team admin / owner |
+| `settings:write` | every `PATCH/PUT/POST .../settings/*`, always together with the owner or administrator role (`RequireAdmin`; owner-only ones stay owner-only). A custom role holding `settings:write` alone changes no organization setting; `TestOrganizationSettingsWritesNeedAdminRole` keeps every settings write route on this rule | team admin / owner |
 | `team:delete` | `DELETE /tenants/{tenant}` | team owner |
 
 `/tenants/{tenant}/...` routes name the tenant in the path, which may differ
@@ -2768,10 +2820,36 @@ These tests fail the build if the model erodes. Treat them as executable spec:
 | **Go permission registry ≡ DB seed** | `tests/unit/permission_catalog_sync_test.go` (AUTHZ-17) | Parses the seed migrations and asserts set-equality with `permission.AllPermissions()`. A permission added to code but not seeded (or vice-versa) → red. |
 | **No tenantless by-id statement on a tenant-scoped table** | `tools/lint/tenantsql` (D-11) | Folds the SQL each `internal/infra/postgres` function sends and fails on `WHERE id = $n` against a table with a `tenant_id` column when the statement has no tenant predicate, unless the method is named `...ForPlatform`/`...Unscoped` (never callable from an HTTP handler) or the shrink-only `allowlist.txt` records why. See `tools/lint/tenantsql/README.md`. |
 | **Every referenced permission exists** | `tests/unit/permission_references_exist_test.go` | Every value in `module.ModulePermissionMapping` (sidebar/bootstrap), every `permission.X` constant used in api Go code, and every value of the web `Permission` object (`web/src/lib/permissions/constants.ts`) is in `permission.AllPermissions()`. A reference to a permission no role can hold (which silently hides a module from every non-admin) → red. |
+| **Routes answer as their gates say, per principal and organization** | `tests/authzmatrix` (nightly `api-authz-matrix.yml`, `make -C api authz-matrix`) | Dynamic: seeds two organizations through the public API (owner, admin, member, viewer, custom roles, a data-scoped member, a group-derived role, a suspended member, API keys, a sensor, no credential) and sends every route as every principal, with its own and with the other organization's ids. A refusal where the gate admits, a pass where it refuses, a 2xx write with another organization's ids, or another organization's (or out-of-scope) ids in a response body fails the run, unless `testdata/allowlist.tsv` records why. Scenario tests cover the role-management API (ceilings, owner rules, invitations, API keys, four-eyes, step-up, how fast a grant or revocation applies). See [Authorization matrix suite](#authorization-matrix-suite). |
 
 Each module in `ModulePermissionMapping` names the permission its routes gate
 on, so the sidebar and the API agree (for example Attack Surface → `assets:read`,
 CTEM Cycles → `ctem:cycles:read`, Scan Pipelines → `scans:workflows:read`).
+
+## Authorization matrix suite
+
+`api/tests/authzmatrix` (build tag `authzmatrix`) checks the running API
+against the model above. `ci/run.sh` starts Postgres and Redis on 127.0.0.1
+(tmpfs), applies the migrations, builds and starts the API from the same tree,
+runs the suite and removes everything.
+
+- **Expected outcome** per route and principal comes from the route gates in the
+  source (`internal/authzdoc`), the API key rules (read-only, never a team role,
+  denied prefixes, scopes narrowed to the creator) and a short table of checks
+  handlers add after the gate. Routes with their own credential (sensor
+  protocol, SCIM, CI run tokens, webhooks, OAuth, invitations) and public
+  endpoints are not judged by the gate; their bodies are still checked.
+- **Cells**: reads with the organization's real ids (harvested from its list
+  routes), writes with fresh random ids and an empty body (a write that passes
+  its gate finds no row), then the same route with the other organization's ids
+  and, for data-scoped principals, with an asset or finding outside their scope.
+  Writes that would end the principal's own session or membership are covered
+  by the scenario tests with throw-away accounts instead.
+- **Allowlist** (`testdata/allowlist.tsv`): one line per reviewed exception, with
+  a reason. A confirmed issue is listed as `known:<report id>` and skipped until
+  its fix lands; the line carries no description.
+- **Report**: `MATRIX_REPORT=<file.json>` writes the cells (`-reads`, `-writes`)
+  and the scenario steps (`-scenarios`).
 
 ## How to … (recipes that stay inside the invariants)
 

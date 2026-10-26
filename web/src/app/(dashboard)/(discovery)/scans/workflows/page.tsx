@@ -9,7 +9,7 @@ import {
   DataTable,
   DataTableColumnHeader,
   EmptyState,
-  MetricStrip,
+  PageStack,
   DetailCallout,
   DetailField,
   DetailFieldGrid,
@@ -90,7 +90,6 @@ import { ScansPageHeader, ScansSectionTabs } from '@/features/scans/components/s
 import { NewScanWorkflowButton } from '@/features/scan-workflows/components/new-scan-workflow-button'
 import {
   useScanWorkflows,
-  useScanManagementStats,
   useCreateScanWorkflow,
   invalidateAllScanWorkflowCaches,
   get,
@@ -128,7 +127,6 @@ export default function ScanWorkflowsPage() {
     isLoading: loadingWorkflows,
     error: workflowsError,
   } = useScanWorkflows({ per_page: 100, include: 'readiness' })
-  const { data: stats, isLoading: loadingStats } = useScanManagementStats()
   // Changing a workflow (switch, edit, clone, use a template) needs
   // scan_workflows:write, as the API requires.
   const canWriteWorkflows = useHasPermission(Permission.ScanWorkflowsWrite)
@@ -290,25 +288,9 @@ export default function ScanWorkflowsPage() {
     setIsFormOpen(false)
   }
 
-  // Calculate stats
-  // Split workflows into tenant-owned and system templates for clearer stats
+  // Owner filter: tenant-owned workflows vs system templates.
   const tenantWorkflows = workflows?.data?.filter((p) => !p.is_system_template) ?? []
   const systemTemplates = workflows?.data?.filter((p) => p.is_system_template) ?? []
-
-  // "My Workflows" = only tenant-owned workflows (not system templates)
-  const totalWorkflows = tenantWorkflows.length
-  // Active count = only active tenant workflows
-  const activeWorkflows = tenantWorkflows.filter((p) => p.is_active).length
-  // System templates count (for display if needed)
-  const _totalSystemTemplates = systemTemplates.length
-
-  // Total runs = workflow runs (from stats.scan_runs, not stats.scans)
-  const totalRuns = stats?.scan_runs.total ?? 0
-  // Success rate = completed workflow runs / total workflow runs
-  const successRate =
-    stats && stats.scan_runs.total > 0
-      ? Math.round((stats.scan_runs.completed / stats.scan_runs.total) * 100)
-      : 0
 
   const allWorkflows = workflows?.data ?? []
   const visibleWorkflows =
@@ -469,13 +451,18 @@ export default function ScanWorkflowsPage() {
 
   const ownerFilter = (
     <Select value={owner} onValueChange={setOwner}>
-      <SelectTrigger className="h-9 w-[160px]" aria-label="Workflow owner">
+      <SelectTrigger
+        className="h-9 w-auto min-w-36"
+        aria-label={t('scans.workflows.ownerFilter', 'Workflow owner')}
+      >
         <SelectValue />
       </SelectTrigger>
       <SelectContent>
-        <SelectItem value="all">All workflows</SelectItem>
-        <SelectItem value="mine">My workflows</SelectItem>
-        <SelectItem value="system">System templates</SelectItem>
+        <SelectItem value="all">{t('scans.workflows.ownerAll', 'All workflows')}</SelectItem>
+        <SelectItem value="mine">{t('scans.workflows.ownerMine', 'My workflows')}</SelectItem>
+        <SelectItem value="system">
+          {t('scans.workflows.ownerSystem', 'System templates')}
+        </SelectItem>
       </SelectContent>
     </Select>
   )
@@ -483,38 +470,14 @@ export default function ScanWorkflowsPage() {
   return (
     <>
       <Main>
-        <ScansPageHeader>
-          <NewScanWorkflowButton label="New workflow" onClick={handleOpenCreateForm} />
-        </ScansPageHeader>
-        <ScansSectionTabs />
+        <PageStack>
+          <ScansPageHeader>
+            <NewScanWorkflowButton label="New workflow" onClick={handleOpenCreateForm} />
+          </ScansPageHeader>
+          <ScansSectionTabs />
 
-        <div className="mt-5 space-y-5">
-          <MetricStrip
-            loading={loadingWorkflows || loadingStats}
-            items={[
-              {
-                key: 'mine',
-                label: 'My workflows',
-                value: totalWorkflows,
-                onClick: () => setOwner(owner === 'mine' ? 'all' : 'mine'),
-                active: owner === 'mine',
-              },
-              { key: 'active', label: 'Active', value: activeWorkflows },
-              {
-                key: 'system',
-                label: 'System templates',
-                value: systemTemplates.length,
-                onClick: () => setOwner(owner === 'system' ? 'all' : 'system'),
-                active: owner === 'system',
-              },
-              { key: 'runs', label: 'Total runs', value: totalRuns },
-              {
-                key: 'success',
-                label: 'Success rate',
-                value: totalRuns > 0 ? `${successRate}%` : '—',
-              },
-            ]}
-          />
+          {/* No metric strip on Workflows (research/244): its tiles only
+            repeated the owner filter, and run totals belong to the Runs tab. */}
           {workflowsError ? (
             <Alert variant="destructive">
               <AlertCircle className="h-4 w-4" />
@@ -547,10 +510,10 @@ export default function ScanWorkflowsPage() {
               columns={workflowColumns}
               data={visibleWorkflows}
               searchKey="name"
-              searchPlaceholder="Search workflows..."
+              searchPlaceholder={t('scans.workflows.search', 'Search workflows…')}
               getRowId={(p) => p.id}
               onRowClick={handleOpenWorkflowDetail}
-              toolbarEnd={ownerFilter}
+              toolbarStart={ownerFilter}
               emptyMessage={owner === 'mine' ? 'No custom workflows yet' : 'No workflows match'}
               emptyDescription={
                 owner === 'mine'
@@ -559,7 +522,7 @@ export default function ScanWorkflowsPage() {
               }
             />
           )}
-        </div>
+        </PageStack>
       </Main>
 
       {/* Create/Edit Workflow Sheet */}

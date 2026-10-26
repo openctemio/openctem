@@ -74,9 +74,12 @@ func seedAll(t *testing.T, db *sql.DB, key string) map[string]string {
 	exec(`INSERT INTO admin_users (id, email, name) VALUES ($1, 'admin@example.com', 'Admin')`, adminID)
 
 	exec(`INSERT INTO integrations (id, tenant_id, name, category, provider, credentials_encrypted, metadata)
-		VALUES ($1, $2, 'jira', 'ticketing', 'jira', $3, jsonb_build_object('webhook_secret_encrypted', $4::text))`,
+		VALUES ($1, $2, 'jira', 'ticketing', 'jira', $3, jsonb_build_object('webhook_secret_encrypted', $4::text,
+			'signing_secret_encrypted', $5::text, 'signing_secret_previous_encrypted', $6::text))`,
 		intgID, tenantID, put("integrations.credentials_encrypted", `{"token":"jira"}`),
-		put("integrations.metadata.webhook_secret_encrypted", "jira-hook-secret"))
+		put("integrations.metadata.webhook_secret_encrypted", "jira-hook-secret"),
+		put("integrations.metadata.signing_secret_encrypted", "whsec_current"),
+		put("integrations.metadata.signing_secret_previous_encrypted", "whsec_previous"))
 	exec(`INSERT INTO integration_scm_extensions (integration_id, webhook_secret_encrypted) VALUES ($1, convert_to($2, 'UTF8'))`,
 		intgID, put("integration_scm_extensions.webhook_secret_encrypted", "scm-hook-secret"))
 	exec(`INSERT INTO tenant_identity_providers (tenant_id, provider, display_name, client_id, client_secret_encrypted)
@@ -178,24 +181,26 @@ func readAll(t *testing.T, db *sql.DB, key string) map[string]string {
 	}
 	out := map[string]string{}
 	for loc, q := range map[string]string{
-		"tenant_ai_settings.key_enc":                          `SELECT key_enc FROM tenant_ai_settings`,
-		"integrations.credentials_encrypted":                  `SELECT credentials_encrypted FROM integrations`,
-		"integrations.metadata.webhook_secret_encrypted":      `SELECT metadata->>'webhook_secret_encrypted' FROM integrations`,
-		"integration_scm_extensions.webhook_secret_encrypted": `SELECT convert_from(webhook_secret_encrypted, 'UTF8') FROM integration_scm_extensions`,
-		"tenant_identity_providers.client_secret_encrypted":   `SELECT client_secret_encrypted FROM tenant_identity_providers`,
-		"platform_identity_provider.client_secret_encrypted":  `SELECT client_secret_encrypted FROM platform_identity_provider`,
-		"admin_idp_login_states.code_verifier_encrypted":      `SELECT code_verifier_encrypted FROM admin_idp_login_states`,
-		"admin_credentials.mfa_secret_encrypted":              `SELECT mfa_secret_encrypted FROM admin_credentials`,
-		"user_mfa.secret_encrypted":                           `SELECT secret_encrypted FROM user_mfa`,
-		"user_mfa.pending_secret_encrypted":                   `SELECT pending_secret_encrypted FROM user_mfa`,
-		"finding_evidence_secrets.ciphertext":                 `SELECT ciphertext FROM finding_evidence_secrets`,
-		"pentest_campaign_secrets.ciphertext":                 `SELECT ciphertext FROM pentest_campaign_secrets`,
-		"scm_gitlab_connections.token_encrypted":              `SELECT token_encrypted FROM scm_gitlab_connections`,
-		"settings.value_json.access_key":                      `SELECT value_json->>'access_key' FROM settings WHERE key = 'storage_config'`,
-		"settings.value_json.secret_key":                      `SELECT value_json->>'secret_key' FROM settings WHERE key = 'storage_config'`,
-		"platform_settings.value.password_encrypted":          `SELECT value->>'password_encrypted' FROM platform_settings WHERE key = 'email.smtp'`,
-		"platform_settings.value.key_encrypted":               `SELECT value->>'key_encrypted' FROM platform_settings WHERE key = 'ai.platform'`,
-		"exposure_events.details.secret_value_enc":            `SELECT details->>'secret_value_enc' FROM exposure_events`,
+		"tenant_ai_settings.key_enc":                              `SELECT key_enc FROM tenant_ai_settings`,
+		"integrations.credentials_encrypted":                      `SELECT credentials_encrypted FROM integrations`,
+		"integrations.metadata.webhook_secret_encrypted":          `SELECT metadata->>'webhook_secret_encrypted' FROM integrations`,
+		"integrations.metadata.signing_secret_encrypted":          `SELECT metadata->>'signing_secret_encrypted' FROM integrations`,
+		"integrations.metadata.signing_secret_previous_encrypted": `SELECT metadata->>'signing_secret_previous_encrypted' FROM integrations`,
+		"integration_scm_extensions.webhook_secret_encrypted":     `SELECT convert_from(webhook_secret_encrypted, 'UTF8') FROM integration_scm_extensions`,
+		"tenant_identity_providers.client_secret_encrypted":       `SELECT client_secret_encrypted FROM tenant_identity_providers`,
+		"platform_identity_provider.client_secret_encrypted":      `SELECT client_secret_encrypted FROM platform_identity_provider`,
+		"admin_idp_login_states.code_verifier_encrypted":          `SELECT code_verifier_encrypted FROM admin_idp_login_states`,
+		"admin_credentials.mfa_secret_encrypted":                  `SELECT mfa_secret_encrypted FROM admin_credentials`,
+		"user_mfa.secret_encrypted":                               `SELECT secret_encrypted FROM user_mfa`,
+		"user_mfa.pending_secret_encrypted":                       `SELECT pending_secret_encrypted FROM user_mfa`,
+		"finding_evidence_secrets.ciphertext":                     `SELECT ciphertext FROM finding_evidence_secrets`,
+		"pentest_campaign_secrets.ciphertext":                     `SELECT ciphertext FROM pentest_campaign_secrets`,
+		"scm_gitlab_connections.token_encrypted":                  `SELECT token_encrypted FROM scm_gitlab_connections`,
+		"settings.value_json.access_key":                          `SELECT value_json->>'access_key' FROM settings WHERE key = 'storage_config'`,
+		"settings.value_json.secret_key":                          `SELECT value_json->>'secret_key' FROM settings WHERE key = 'storage_config'`,
+		"platform_settings.value.password_encrypted":              `SELECT value->>'password_encrypted' FROM platform_settings WHERE key = 'email.smtp'`,
+		"platform_settings.value.key_encrypted":                   `SELECT value->>'key_encrypted' FROM platform_settings WHERE key = 'ai.platform'`,
+		"exposure_events.details.secret_value_enc":                `SELECT details->>'secret_value_enc' FROM exposure_events`,
 	} {
 		out[loc] = dec(one(q))
 	}

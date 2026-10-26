@@ -36,6 +36,15 @@ type WorkflowService struct {
 	edgeRepo     automationdom.EdgeRepository
 	runRepo      automationdom.RunRepository
 	nodeRunRepo  automationdom.NodeRunRepository
+	versions     automationdom.VersionRepository
+	deliveries   automationdom.DeliveryRepository
+	scope        ScopeChecker
+	// Preview and validate (preview.go).
+	sampler      SubjectSampler
+	evaluator    StepEvaluator
+	integrations IntegrationLookup
+	stepUp       shared.RecentAuthGate
+	users        UserDirectory
 	executor     *WorkflowExecutor
 	auditService *auditapp.AuditService
 	logger       *logger.Logger
@@ -97,11 +106,13 @@ func (s *WorkflowService) logAudit(ctx context.Context, actx auditapp.AuditConte
 	}
 }
 
-// takeOwnership makes the member who changes what an automation does (its
-// graph, a node or edge, or switching it on) its owner: event runs act as the
-// owner (authz.go), so an edit never makes the automation act with someone
-// else's permissions or data scope. Edits by an internal call (no user) keep
-// the owner.
+// takeOwnership makes the member who makes an automation act (publishing a
+// version, or switching it on) its owner: event runs act as the owner
+// (authz.go), so the automation never acts with the permissions or data
+// scope of someone who did not decide that it acts. Editing the draft does
+// not change the owner: a draft runs only in simulate, and nothing the editor
+// changes acts before someone publishes it. Internal calls (no user) keep the
+// owner.
 func (s *WorkflowService) takeOwnership(ctx context.Context, w *automationdom.Workflow, userID shared.ID) error {
 	if userID.IsZero() || (w.CreatedBy != nil && *w.CreatedBy == userID) {
 		return nil
@@ -128,8 +139,10 @@ type CreateWorkflowInput struct {
 	Name        string
 	Description string
 	Tags        []string
-	Nodes       []CreateNodeInput
-	Edges       []CreateEdgeInput
+	// MaxChangesPerRun caps one live run's changes (0: the default).
+	MaxChangesPerRun int
+	Nodes            []CreateNodeInput
+	Edges            []CreateEdgeInput
 }
 
 // CreateNodeInput represents input for creating a workflow node.
@@ -166,6 +179,10 @@ func (s *WorkflowService) CreateWorkflow(ctx context.Context, input CreateWorkfl
 	if input.Tags != nil {
 		w.Tags = input.Tags
 	}
+	if err := automationdom.ValidateMaxChanges(input.MaxChangesPerRun); err != nil {
+		return nil, err
+	}
+	w.MaxChangesPerRun = input.MaxChangesPerRun
 
 	// Refuse trigger/action types the platform does not execute and an
 	// invalid graph (cycle, unreachable node, edge into a trigger), before
@@ -283,6 +300,9 @@ type UpdateWorkflowInput struct {
 	Description *string
 	Tags        []string
 	IsActive    *bool
+	// MaxChangesPerRun sets the draft's change cap (published with the next
+	// version; above the default it makes the automation high risk).
+	MaxChangesPerRun *int
 }
 
 // UpdateWorkflow updates a workflow.
@@ -301,24 +321,41 @@ func (s *WorkflowService) UpdateWorkflow(ctx context.Context, input UpdateWorkfl
 	if input.Tags != nil {
 		w.Tags = input.Tags
 	}
+	if input.MaxChangesPerRun != nil {
+		if err := automationdom.ValidateMaxChanges(*input.MaxChangesPerRun); err != nil {
+			return nil, err
+		}
+		// The cap is part of the version: a new one withdraws a request
+		// waiting for approval (withdrawRequestIfChanged).
+		if *input.MaxChangesPerRun != w.MaxChangesPerRun && s.versions != nil {
+			if err := s.versions.RetirePending(ctx, input.TenantID, input.WorkflowID); err != nil {
+				return nil, err
+			}
+		}
+		w.MaxChangesPerRun = *input.MaxChangesPerRun
+	}
 
 	// Track activation changes for audit
 	var activationChange string
 	if input.IsActive != nil {
 		if *input.IsActive && !w.IsActive {
-			// A workflow that uses a trigger or action the platform does not
-			// execute stays readable, but cannot be switched on.
-			full, err := s.workflowRepo.GetWithGraph(ctx, w.ID)
-			if err != nil {
-				return nil, fmt.Errorf("failed to load workflow graph: %w", err)
-			}
-			if err := full.ValidateSupported(); err != nil {
-				return nil, err
-			}
-			// Nor can a graph with a cycle or a node no trigger reaches
-			// (possible when it was built one node and edge at a time).
-			if err := full.ValidateTopology(); err != nil {
-				return nil, err
+			// A simulate automation runs its draft: a draft that uses a
+			// type the platform does not have stays readable, but cannot be
+			// switched on, nor can one with a cycle or a node no trigger
+			// reaches (possible when it was built one node and edge at a
+			// time). A live one runs its published version, checked when it
+			// was published.
+			if w.Mode != automationdom.ModeLive {
+				full, err := s.workflowRepo.GetWithGraph(ctx, w.ID)
+				if err != nil {
+					return nil, fmt.Errorf("failed to load workflow graph: %w", err)
+				}
+				if err := full.ValidateSupported(); err != nil {
+					return nil, err
+				}
+				if err := full.ValidateTopology(); err != nil {
+					return nil, err
+				}
 			}
 			w.Activate()
 			activationChange = "activated"
@@ -381,13 +418,15 @@ func (s *WorkflowService) UpdateWorkflowGraph(ctx context.Context, input UpdateW
 		return nil, err
 	}
 
-	// Check for active runs - cannot modify graph while runs are in progress
-	activeCount, err := s.runRepo.CountActiveByWorkflowID(ctx, input.WorkflowID)
+	// A run of the draft (simulate) reads the graph as it starts: the draft
+	// cannot be replaced under a waiting or running one. Live runs execute
+	// their pinned version and do not block an edit.
+	activeCount, err := s.countActiveDraftRuns(ctx, input.TenantID, input.WorkflowID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to check active runs: %w", err)
 	}
 	if activeCount > 0 {
-		return nil, shared.NewDomainError("ACTIVE_RUNS_EXIST", "cannot update workflow graph with active runs", shared.ErrValidation)
+		return nil, shared.NewDomainError("ACTIVE_RUNS_EXIST", "cannot update the draft while a simulate run of it is waiting or running", shared.ErrValidation)
 	}
 
 	// Refuse trigger/action types the platform does not execute and an
@@ -408,6 +447,19 @@ func (s *WorkflowService) UpdateWorkflowGraph(ctx context.Context, input UpdateW
 	}
 	if input.Tags != nil {
 		w.Tags = input.Tags
+	}
+	// The new graph holds only known types and allowed status targets: the
+	// platform's reason no longer applies (the automation stays off until someone switches it on).
+	if w.DisabledReason == automationdom.DisabledReasonRemovedType || w.DisabledReason == automationdom.DisabledReasonStatusNotAllowed {
+		w.DisabledReason = ""
+	}
+
+	// A request waiting for approval is withdrawn before the graph is
+	// replaced by one that does something else (withdrawRequestIfChanged).
+	if s.versions != nil && s.draftDigest(ctx, input.TenantID, input.WorkflowID) != graphInputsDigest(w, input.Nodes, input.Edges) {
+		if err := s.versions.RetirePending(ctx, input.TenantID, input.WorkflowID); err != nil {
+			return nil, err
+		}
 	}
 
 	// Delete existing edges first (FK constraint)
@@ -463,12 +515,10 @@ func (s *WorkflowService) UpdateWorkflowGraph(ctx context.Context, input UpdateW
 		return nil, fmt.Errorf("graph validation failed: %w", err)
 	}
 
-	// Update workflow metadata; the editor becomes the owner.
+	// Update workflow metadata. The owner does not change: the draft acts
+	// only once someone publishes it.
 	if err := s.workflowRepo.Update(ctx, w); err != nil {
 		return nil, fmt.Errorf("failed to update workflow: %w", err)
-	}
-	if err := s.takeOwnership(ctx, w, input.UserID); err != nil {
-		return nil, err
 	}
 
 	// Audit log
@@ -551,6 +601,7 @@ func (s *WorkflowService) AddNode(ctx context.Context, input AddNodeInput) (*aut
 	if err := validateNodeConfigs(input.Config); err != nil {
 		return nil, err
 	}
+	before := s.draftDigest(ctx, input.TenantID, input.WorkflowID)
 
 	node, err := automationdom.NewNode(w.ID, input.NodeKey, input.NodeType, input.Name)
 	if err != nil {
@@ -563,7 +614,7 @@ func (s *WorkflowService) AddNode(ctx context.Context, input AddNodeInput) (*aut
 	if err := s.nodeRepo.Create(ctx, node); err != nil {
 		return nil, fmt.Errorf("failed to create node: %w", err)
 	}
-	if err := s.takeOwnership(ctx, w, input.UserID); err != nil {
+	if err := s.withdrawRequestIfChanged(ctx, input.TenantID, input.WorkflowID, before); err != nil {
 		return nil, err
 	}
 
@@ -586,8 +637,7 @@ type UpdateNodeInput struct {
 // UpdateNode updates a workflow node.
 func (s *WorkflowService) UpdateNode(ctx context.Context, input UpdateNodeInput) (*automationdom.Node, error) {
 	// Verify workflow belongs to tenant
-	w, err := s.workflowRepo.GetByTenantAndID(ctx, input.TenantID, input.WorkflowID)
-	if err != nil {
+	if _, err := s.workflowRepo.GetByTenantAndID(ctx, input.TenantID, input.WorkflowID); err != nil {
 		return nil, err
 	}
 
@@ -600,6 +650,7 @@ func (s *WorkflowService) UpdateNode(ctx context.Context, input UpdateNodeInput)
 	if node.WorkflowID != input.WorkflowID {
 		return nil, shared.ErrNotFound
 	}
+	before := s.draftDigest(ctx, input.TenantID, input.WorkflowID)
 
 	if input.Name != nil {
 		node.Name = *input.Name
@@ -620,22 +671,17 @@ func (s *WorkflowService) UpdateNode(ctx context.Context, input UpdateNodeInput)
 	if err := s.nodeRepo.Update(ctx, node); err != nil {
 		return nil, fmt.Errorf("failed to update node: %w", err)
 	}
-	// A config edit changes what runs: the editor becomes the owner.
-	if input.Config != nil {
-		if err := s.takeOwnership(ctx, w, input.UserID); err != nil {
-			return nil, err
-		}
+	if err := s.withdrawRequestIfChanged(ctx, input.TenantID, input.WorkflowID, before); err != nil {
+		return nil, err
 	}
 
 	return node, nil
 }
 
-// DeleteNode deletes a node from a workflow. userID (the editor) becomes
-// the owner.
-func (s *WorkflowService) DeleteNode(ctx context.Context, tenantID, userID, workflowID, nodeID shared.ID) error {
+// DeleteNode deletes a node from a workflow's draft.
+func (s *WorkflowService) DeleteNode(ctx context.Context, tenantID, _, workflowID, nodeID shared.ID) error {
 	// Verify workflow belongs to tenant
-	w, err := s.workflowRepo.GetByTenantAndID(ctx, tenantID, workflowID)
-	if err != nil {
+	if _, err := s.workflowRepo.GetByTenantAndID(ctx, tenantID, workflowID); err != nil {
 		return err
 	}
 
@@ -648,11 +694,12 @@ func (s *WorkflowService) DeleteNode(ctx context.Context, tenantID, userID, work
 	if node.WorkflowID != workflowID {
 		return shared.ErrNotFound
 	}
+	before := s.draftDigest(ctx, tenantID, workflowID)
 
 	if err := s.nodeRepo.Delete(ctx, nodeID); err != nil {
 		return err
 	}
-	return s.takeOwnership(ctx, w, userID)
+	return s.withdrawRequestIfChanged(ctx, tenantID, workflowID, before)
 }
 
 // --------------------------------------------------------------------------
@@ -705,23 +752,22 @@ func (s *WorkflowService) AddEdge(ctx context.Context, input AddEdgeInput) (*aut
 	if err := full.ValidateNewEdge(edge); err != nil {
 		return nil, err
 	}
+	before := automationdom.DefinitionOf(full).Digest()
 
 	if err := s.edgeRepo.Create(ctx, edge); err != nil {
 		return nil, fmt.Errorf("failed to create edge: %w", err)
 	}
-	if err := s.takeOwnership(ctx, w, input.UserID); err != nil {
+	if err := s.withdrawRequestIfChanged(ctx, input.TenantID, input.WorkflowID, before); err != nil {
 		return nil, err
 	}
 
 	return edge, nil
 }
 
-// DeleteEdge deletes an edge from a workflow. userID (the editor) becomes
-// the owner.
-func (s *WorkflowService) DeleteEdge(ctx context.Context, tenantID, userID, workflowID, edgeID shared.ID) error {
+// DeleteEdge deletes an edge from a workflow's draft.
+func (s *WorkflowService) DeleteEdge(ctx context.Context, tenantID, _, workflowID, edgeID shared.ID) error {
 	// Verify workflow belongs to tenant
-	w, err := s.workflowRepo.GetByTenantAndID(ctx, tenantID, workflowID)
-	if err != nil {
+	if _, err := s.workflowRepo.GetByTenantAndID(ctx, tenantID, workflowID); err != nil {
 		return err
 	}
 
@@ -734,11 +780,12 @@ func (s *WorkflowService) DeleteEdge(ctx context.Context, tenantID, userID, work
 	if edge.WorkflowID != workflowID {
 		return shared.ErrNotFound
 	}
+	before := s.draftDigest(ctx, tenantID, workflowID)
 
 	if err := s.edgeRepo.Delete(ctx, edgeID); err != nil {
 		return err
 	}
-	return s.takeOwnership(ctx, w, userID)
+	return s.withdrawRequestIfChanged(ctx, tenantID, workflowID, before)
 }
 
 // --------------------------------------------------------------------------
@@ -794,18 +841,37 @@ func (s *WorkflowService) TriggerWorkflow(ctx context.Context, input TriggerWork
 		}
 	}
 
+	// A live automation runs its published version, a simulate one its
+	// draft (versions.go).
+	graph, mode, version, err := s.runGraph(ctx, w)
+	if err != nil {
+		return nil, err
+	}
+
 	// Create run
 	run, err := automationdom.NewRun(input.WorkflowID, input.TenantID, input.TriggerType, input.TriggerData)
 	if err != nil {
 		return nil, err
 	}
+	run.Mode = mode
+	if version != nil {
+		run.VersionID = &version.ID
+	}
 
 	if !input.UserID.IsZero() {
 		run.SetTriggeredBy(input.UserID)
 	}
-	run.SetSubject(input.SubjectID, input.IdempotencyKey)
+	// A run always records the finding or asset its trigger names, so reads
+	// of it follow the data scope (run_view.go).
+	subject := input.SubjectID
+	if subject == nil {
+		if id, err := shared.IDFromString(subjectFromTrigger(input.TriggerData)); err == nil {
+			subject = &id
+		}
+	}
+	run.SetSubject(subject, input.IdempotencyKey)
 
-	run.TotalNodes = len(w.Nodes)
+	run.TotalNodes = len(graph.Nodes)
 
 	// FIXED: Use atomic CreateRunIfUnderLimit to prevent race conditions
 	// This atomically checks concurrent run limits AND creates the run in a single transaction.
@@ -815,8 +881,8 @@ func (s *WorkflowService) TriggerWorkflow(ctx context.Context, input TriggerWork
 		return nil, err
 	}
 
-	// Create node runs for all nodes
-	for _, node := range w.Nodes {
+	// Create node runs for all nodes of the graph the run executes
+	for _, node := range graph.Nodes {
 		nodeRun, err := automationdom.NewNodeRun(run.ID, node.ID, node.NodeKey, node.NodeType)
 		if err != nil {
 			return nil, fmt.Errorf("failed to create node run for %s: %w", node.NodeKey, err)
@@ -835,6 +901,7 @@ func (s *WorkflowService) TriggerWorkflow(ctx context.Context, input TriggerWork
 			WithResourceName(w.Name).
 			WithMessage(fmt.Sprintf("Workflow '%s' triggered", w.Name)).
 			WithMetadata("trigger_type", string(input.TriggerType)).
+			WithMetadata("mode", string(mode)).
 			WithMetadata("workflow_id", w.ID.String()))
 
 	// Execute workflow asynchronously with tenant context for isolation
@@ -860,8 +927,11 @@ type ListWorkflowRunsInput struct {
 	TenantID   shared.ID
 	WorkflowID *shared.ID
 	Status     *automationdom.RunStatus
-	Page       int
-	PerPage    int
+	Mode       *automationdom.Mode
+	// scope, when set, keeps runs whose subject is inside it (run_view.go).
+	scope   *shared.DataScope
+	Page    int
+	PerPage int
 }
 
 // ListRuns lists workflow runs.
@@ -870,6 +940,8 @@ func (s *WorkflowService) ListRuns(ctx context.Context, input ListWorkflowRunsIn
 		TenantID:   &input.TenantID,
 		WorkflowID: input.WorkflowID,
 		Status:     input.Status,
+		Mode:       input.Mode,
+		Scope:      input.scope,
 	}
 
 	page := pagination.Pagination{
@@ -943,6 +1015,15 @@ func (s *WorkflowService) skipOpenNodeRuns(ctx context.Context, tenantID, runID 
 	return n
 }
 
+// countActiveDraftRuns counts the waiting and running simulate runs of a
+// workflow (all its active runs when the repository cannot tell modes apart).
+func (s *WorkflowService) countActiveDraftRuns(ctx context.Context, tenantID, workflowID shared.ID) (int, error) {
+	if c, ok := s.runRepo.(automationdom.DraftRunCounter); ok {
+		return c.CountActiveDraftRuns(ctx, tenantID, workflowID)
+	}
+	return s.runRepo.CountActiveByWorkflowID(ctx, workflowID)
+}
+
 // validateGraphInputs builds the graph from the inputs in memory and runs
 // the domain graph checks (unique keys, known edge ends, a trigger, no
 // edge into a trigger, condition handles, no cycle, every node reached
@@ -967,6 +1048,20 @@ func validateGraphInputs(nodes []CreateNodeInput, edges []CreateEdgeInput) error
 	return trial.ValidateGraph()
 }
 
+// graphInputsDigest is the digest w would have with the given graph.
+func graphInputsDigest(w *automationdom.Workflow, nodes []CreateNodeInput, edges []CreateEdgeInput) string {
+	trial := *w
+	trial.Nodes, trial.Edges = nil, nil
+	for _, n := range nodes {
+		trial.Nodes = append(trial.Nodes, &automationdom.Node{NodeKey: n.NodeKey, NodeType: n.NodeType, Name: n.Name, Config: n.Config})
+	}
+	for _, e := range edges {
+		trial.Edges = append(trial.Edges, &automationdom.Edge{SourceNodeKey: e.SourceNodeKey, TargetNodeKey: e.TargetNodeKey,
+			SourceHandle: e.SourceHandle, Label: e.Label})
+	}
+	return automationdom.DefinitionOf(&trial).Digest()
+}
+
 // validateSupportedNodeInputs refuses node inputs that use a trigger or action
 // type the platform does not execute (see automationdom.ValidateSupported).
 func validateSupportedNodeInputs(nodes []CreateNodeInput) error {
@@ -981,6 +1076,12 @@ func validateSupportedNodeInputs(nodes []CreateNodeInput) error {
 // trigger options that would never match.
 func validateNodeConfigs(configs ...automationdom.NodeConfig) error {
 	if err := automationdom.ValidateSupported(configs...); err != nil {
+		return err
+	}
+	if err := automationdom.ValidateStatusTargets(configs...); err != nil {
+		return err
+	}
+	if err := automationdom.ValidateRequestConfigs(configs...); err != nil {
 		return err
 	}
 	return automationdom.ValidateTriggerConfig(configs...)

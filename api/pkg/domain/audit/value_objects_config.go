@@ -9,6 +9,7 @@ const (
 
 	ActionSCIMTokenCreated Action = "scim_token.created"
 	ActionSCIMTokenRevoked Action = "scim_token.revoked"
+	ActionSCIMTokenRotated Action = "scim_token.rotated"
 
 	ActionStorageConfigUpdated Action = "storage_config.updated"
 
@@ -20,6 +21,9 @@ const (
 	ActionIntegrationCredentialsChanged   Action = "integration.credentials_changed"
 	ActionIntegrationWebhookSecretRead    Action = "integration.webhook_secret_read"
 	ActionIntegrationWebhookSecretRotated Action = "integration.webhook_secret_rotated"
+	// ActionIntegrationDeliveryRedelivered: an archived notification event
+	// was queued again for one channel (RFC-124).
+	ActionIntegrationDeliveryRedelivered Action = "integration.delivery_redelivered"
 
 	ActionNotificationOutboxRetried Action = "notification_outbox.retried"
 	ActionNotificationOutboxDeleted Action = "notification_outbox.deleted"
@@ -41,6 +45,11 @@ const (
 	ActionTicketMappingPublished Action = "ticket_mapping.published"
 	ActionTicketMappingDeleted   Action = "ticket_mapping.deleted"
 
+	ActionImportMappingCreated        Action = "import_mapping.created"
+	ActionImportMappingVersionCreated Action = "import_mapping.version_created"
+	ActionImportMappingUpdated        Action = "import_mapping.updated"
+	ActionImportMappingDeleted        Action = "import_mapping.deleted"
+
 	ActionTicketCreatePolicyUpdated Action = "ticket_create_policy.updated"
 	// ActionTicketCreatedBelowThreshold: a person created an issue for a
 	// finding below the integration's create policy (confirmed override).
@@ -57,12 +66,14 @@ const (
 	ResourceTypeAssignmentRule     ResourceType = "assignment_rule"
 	ResourceTypeTicketMapping      ResourceType = "ticket_mapping"
 	ResourceTypeTicketCreatePolicy ResourceType = "ticket_create_policy"
+	ResourceTypeImportMapping      ResourceType = "import_mapping"
 )
 
 var configActions = map[Action]struct{}{
 	ActionInvitationResent:                {},
 	ActionSCIMTokenCreated:                {},
 	ActionSCIMTokenRevoked:                {},
+	ActionSCIMTokenRotated:                {},
 	ActionStorageConfigUpdated:            {},
 	ActionIntegrationCreated:              {},
 	ActionIntegrationUpdated:              {},
@@ -72,6 +83,7 @@ var configActions = map[Action]struct{}{
 	ActionIntegrationCredentialsChanged:   {},
 	ActionIntegrationWebhookSecretRead:    {},
 	ActionIntegrationWebhookSecretRotated: {},
+	ActionIntegrationDeliveryRedelivered:  {},
 	ActionNotificationOutboxRetried:       {},
 	ActionNotificationOutboxDeleted:       {},
 	ActionPriorityRuleCreated:             {},
@@ -88,6 +100,10 @@ var configActions = map[Action]struct{}{
 	ActionTicketMappingPublished:          {},
 	ActionTicketMappingDeleted:            {},
 	ActionTicketCreatePolicyUpdated:       {},
+	ActionImportMappingCreated:            {},
+	ActionImportMappingVersionCreated:     {},
+	ActionImportMappingUpdated:            {},
+	ActionImportMappingDeleted:            {},
 	ActionTicketCreatedBelowThreshold:     {},
 }
 
@@ -100,6 +116,7 @@ var configResourceTypes = map[ResourceType]struct{}{
 	ResourceTypeAssignmentRule:     {},
 	ResourceTypeTicketMapping:      {},
 	ResourceTypeTicketCreatePolicy: {},
+	ResourceTypeImportMapping:      {},
 	ResourceTypeDashboard:          {},
 }
 

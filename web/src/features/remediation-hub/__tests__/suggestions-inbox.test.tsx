@@ -5,12 +5,13 @@
  */
 
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import type { RemediationSuggestion } from '../api/types'
 import { ApiClientError } from '@/lib/api/error-handler'
 
 const approve = vi.fn()
+const bulkApprove = vi.fn()
 // Permissions the mocked member holds; the default is everything.
 const granted = { write: true }
 const items = { join: false }
@@ -76,7 +77,7 @@ vi.mock('../api/use-remediation-hub', () => ({
     reject: vi.fn(),
     snooze: vi.fn(),
     reopen: vi.fn(),
-    bulkApprove: vi.fn(),
+    bulkApprove: (...a: unknown[]) => bulkApprove(...a),
     runNow: vi.fn(),
   },
 }))
@@ -104,7 +105,28 @@ describe('SuggestionsInbox keyboard review', () => {
     const user = userEvent.setup()
     await user.keyboard('j')
     await user.keyboard('a')
+    // Accepting asks first: nothing is sent until the dialog is confirmed.
+    expect(approve).not.toHaveBeenCalled()
+    await user.click(
+      within(await screen.findByRole('alertdialog')).getByRole('button', {
+        name: 'Accept suggestion',
+      })
+    )
     await waitFor(() => expect(approve).toHaveBeenCalledWith('two', { version: 7 }))
+  })
+
+  it('asks before accepting the selected suggestions, with the count', async () => {
+    bulkApprove.mockReset()
+    bulkApprove.mockResolvedValue([{ suggestion_id: 'one' }])
+    render(<SuggestionsInbox />)
+    const user = userEvent.setup()
+    await user.keyboard('x')
+    await user.click(screen.getByRole('button', { name: /Accept 1 selected/ }))
+    expect(bulkApprove).not.toHaveBeenCalled()
+    const dialog = await screen.findByRole('alertdialog')
+    expect(dialog).toHaveTextContent('Accept 1 suggestions?')
+    await user.click(within(dialog).getByRole('button', { name: 'Accept 1 suggestions' }))
+    await waitFor(() => expect(bulkApprove).toHaveBeenCalledTimes(1))
   })
 
   it('opens the dismiss dialog with d', async () => {
@@ -119,7 +141,7 @@ describe('SuggestionsInbox keyboard review', () => {
   it('ignores keys typed in the search field', async () => {
     render(<SuggestionsInbox />)
     const user = userEvent.setup()
-    await user.click(screen.getByRole('textbox', { name: 'Search suggestions' }))
+    await user.click(screen.getByRole('searchbox', { name: /^Search suggestions/ }))
     await user.keyboard('a')
     expect(approve).not.toHaveBeenCalled()
   })
@@ -139,6 +161,13 @@ describe('SuggestionsInbox keyboard review', () => {
     expect(approve).not.toHaveBeenCalled()
     await user.keyboard('j')
     await user.keyboard('a')
+    // Accepting asks first: nothing is sent until the dialog is confirmed.
+    expect(approve).not.toHaveBeenCalled()
+    await user.click(
+      within(await screen.findByRole('alertdialog')).getByRole('button', {
+        name: 'Accept suggestion',
+      })
+    )
     await waitFor(() => expect(approve).toHaveBeenCalledWith('two', { version: 7 }))
   })
 
@@ -183,6 +212,13 @@ describe('SuggestionsInbox keyboard review', () => {
     render(<SuggestionsInbox />)
     const user = userEvent.setup()
     await user.keyboard('a')
+    // Accepting asks first: nothing is sent until the dialog is confirmed.
+    expect(approve).not.toHaveBeenCalled()
+    await user.click(
+      within(await screen.findByRole('alertdialog')).getByRole('button', {
+        name: 'Accept suggestion',
+      })
+    )
     const dialog = await screen.findByRole('dialog')
     expect(dialog).toHaveTextContent('Some findings are already in another task')
     expect(dialog).toHaveTextContent('In task "Patch the gateway" (Unassigned)')
@@ -214,6 +250,13 @@ describe('SuggestionsInbox keyboard review', () => {
     render(<SuggestionsInbox />)
     const user = userEvent.setup()
     await user.keyboard('a')
+    // Accepting asks first: nothing is sent until the dialog is confirmed.
+    expect(approve).not.toHaveBeenCalled()
+    await user.click(
+      within(await screen.findByRole('alertdialog')).getByRole('button', {
+        name: 'Accept suggestion',
+      })
+    )
     await screen.findByRole('dialog')
     await user.click(screen.getByRole('radio', { name: 'Move here' }))
     const confirm = screen.getByRole('button', { name: 'Move 1 and accept' })

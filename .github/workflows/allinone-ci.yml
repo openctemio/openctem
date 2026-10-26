@@ -45,12 +45,15 @@ jobs:
     permissions:
       contents: read
       pull-requests: read # the `ci:full` label (changed.sh reads it live)
+      actions: read # queue-verified.sh reads the merge queue's runs of this commit
     outputs:
-      images: ${{ steps.f.outputs.api == 'true' || steps.f.outputs.web == 'true' }}
+      images: ${{ (steps.f.outputs.api == 'true' || steps.f.outputs.web == 'true') && steps.queue.outputs.verified != 'true' }}
+      verified: ${{ steps.queue.outputs.verified }}
       full: ${{ steps.f.outputs.full }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          persist-credentials: false
           fetch-depth: 0
       - id: f
         env:
@@ -61,6 +64,17 @@ jobs:
           PR_NUMBER: ${{ github.event.pull_request.number }}
           PR_LABELS: ${{ toJSON(github.event.pull_request.labels.*.name) }}
         run: bash .github/scripts/changed.sh
+      # A push to develop of a commit the merge queue already passed with this
+      # workflow skips the jobs below (.github/scripts/queue-verified.sh).
+      - id: queue
+        env:
+          EVENT: ${{ github.event_name }}
+          REF: ${{ github.ref }}
+          SHA: ${{ github.sha }}
+          WORKFLOW_REF: ${{ github.workflow_ref }}
+          REPO: ${{ github.repository }}
+          GH_TOKEN: ${{ github.token }}
+        run: bash .github/scripts/queue-verified.sh
 
   images:
     name: Build and smoke-test images (amd64)
@@ -90,6 +104,8 @@ jobs:
         ports: ["6379:6379"]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - name: Registry login (GHCR mirror; Docker Hub when configured)
         uses: ./.github/actions/registry-login
         with:

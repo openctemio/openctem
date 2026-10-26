@@ -5,8 +5,7 @@ import { useTranslation } from '@/context/i18n-provider'
 import { useState, useCallback, useMemo } from 'react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { Tabs, TabsContent } from '@/components/ui/tabs'
 import { Badge } from '@/components/ui/badge'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Skeleton } from '@/components/ui/skeleton'
@@ -25,10 +24,13 @@ import {
 import { Main } from '@/components/layout'
 import {
   DataTable,
+  ErrorState,
   EmptyState,
   GatedButton,
   MetricStrip,
   PageHeader,
+  PageStack,
+  ViewSwitcher,
   SeverityBadge,
   DetailField,
   DetailFieldGrid,
@@ -40,11 +42,9 @@ import {
 import type { MetricStripItem } from '@/features/shared'
 import { useUrlFilter, useUrlFilterList } from '@/hooks/use-url-param'
 import { useListParams } from '@/hooks/use-list-params'
-import { useDebounce } from '@/hooks/use-debounce'
-import { copyToClipboard } from '@/lib/clipboard'
+import { useSearchQuery } from '@/hooks/use-search-query'
 import { cn } from '@/lib/utils'
 import {
-  Search,
   RefreshCw,
   Download,
   Shield,
@@ -54,17 +54,11 @@ import {
   X,
   Clock,
   Activity,
-  Eye,
-  EyeOff,
-  Copy,
-  ExternalLink,
-  Database,
-  Key,
-  Globe,
   ArrowRightLeft,
-  Server,
   ChevronDown,
   BarChart3,
+  ChartColumn,
+  List,
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { formatRelative } from '@/lib/format-date'
@@ -74,7 +68,6 @@ import { useTenant } from '@/context/tenant-provider'
 import { exportToCsv, type ExportFieldConfig } from '@/hooks/use-csv-export'
 import { fetchAllPages } from '@/lib/api/fetch-all-pages'
 import { exposureEndpoints } from '@/lib/api/endpoints'
-import { LeakedSecretField } from '@/features/credentials'
 
 import {
   useExposures,
@@ -85,7 +78,7 @@ import {
   markExposureFalsePositive,
 } from '@/features/exposures/hooks'
 import {
-  EXPOSURE_STATE_BADGE,
+  ExposureStateBadge,
   ExposureSeverityBreakdown,
   ExposureStateBreakdown,
   getExposureColumns,
@@ -97,15 +90,15 @@ import {
   useCanApproveExposures,
   PendingDispositionBadge,
   PendingDispositionPanel,
-  notifyPendingDispositions,
+  ExposureDetailsView,
 } from '@/features/exposures/components'
+import { runPool, summarizeBulk } from '@/features/exposures/lib/bulk'
 import type {
   ExposureEvent,
   ExposureListFilters,
   ExposureSeverity,
   ExposureState,
 } from '@/lib/api/exposure-types'
-import { SafeExternalLink } from '@/components/safe-external-link'
 import { SEVERITY_LEVELS } from '@/lib/severity'
 import { SEVERITY_LABELS as SHARED_SEVERITY_LABELS } from '@/lib/severity'
 
@@ -180,7 +173,7 @@ export default function ExposuresPage() {
     ? (stateParam as StateTab)
     : 'needs_attention'
   const [searchQuery, setSearchQuery] = useUrlFilter('q', '')
-  const debouncedSearch = useDebounce(searchQuery, 300)
+  const debouncedSearch = useSearchQuery(searchQuery).term
   const [severityParam, setSeverityParam] = useUrlFilterList('severity')
   const selectedSeverities = useMemo(
     () =>
@@ -196,6 +189,7 @@ export default function ExposuresPage() {
   // Selection is owned by the DataTable; we mirror it for the bulk-action bar
   // and bump the epoch to clear the table's own checkboxes.
   const [selectedIds, setSelectedIds] = useState<string[]>([])
+  const [selectedNames, setSelectedNames] = useState<string[]>([])
   const [selectionEpoch, setSelectionEpoch] = useState(0)
   const clearSelection = useCallback(() => {
     setSelectedIds([])
@@ -229,7 +223,12 @@ export default function ExposuresPage() {
     mutate: refreshExposures,
   } = useExposures(tenantId, apiFilters)
 
-  const { stats, isLoading: statsLoading, mutate: refreshStats } = useExposureStats(tenantId)
+  const {
+    stats,
+    isLoading: statsLoading,
+    error: statsError,
+    mutate: refreshStats,
+  } = useExposureStats(tenantId)
 
   const isLoading = exposuresLoading || statsLoading
 
@@ -245,7 +244,11 @@ export default function ExposuresPage() {
         {
           onTruncated: (loaded) =>
             toast.warning(
-              `Export limited to the first ${loaded.toLocaleString()} exposures — refine filters to export the rest`
+              t(
+                'exposures.export.truncated',
+                'Export limited to the first {count} exposures. Refine the filters to export the rest.',
+                { count: loaded.toLocaleString() }
+              )
             ),
         }
       )
@@ -255,7 +258,7 @@ export default function ExposuresPage() {
     } finally {
       setIsExporting(false)
     }
-  }, [isExporting, apiFilters])
+  }, [isExporting, apiFilters, t])
 
   const handleRefresh = useCallback(() => {
     refreshExposures()
@@ -302,33 +305,34 @@ export default function ExposuresPage() {
   }, [handleRefresh, clearSelection])
 
   // Bulk handlers apply the per-exposure state-change API to every selected id.
-  // ExposureBulkActions surfaces the success/error toast and clears selection;
-  // we only refresh on completion. Throwing propagates to its catch so a
-  // partial/total failure shows the error toast instead of a false success.
+  // They run through a pool of 5, never reject on a partial failure and return
+  // the outcome; ExposureBulkActions owns the toasts and clears selection. The
+  // list refreshes after every run so rows that did change are not left stale.
   const handleBulkResolve = useCallback(
     async (ids: string[]) => {
-      await Promise.all(ids.map((id) => resolveExposure(id)))
+      const results = await runPool(ids, (id) => resolveExposure(id))
       handleRefresh()
+      return summarizeBulk(results)
     },
     [handleRefresh]
   )
 
   const handleBulkAccept = useCallback(
     async (ids: string[], reason: string) => {
-      const results = await Promise.all(ids.map((id) => acceptExposure(id, { reason })))
-      notifyPendingDispositions(results, t)
+      const results = await runPool(ids, (id) => acceptExposure(id, { reason }))
       handleRefresh()
+      return summarizeBulk(results, (r) => Boolean(r?.pending_disposition))
     },
-    [handleRefresh, t]
+    [handleRefresh]
   )
 
   const handleBulkFalsePositive = useCallback(
     async (ids: string[], reason: string) => {
-      const results = await Promise.all(ids.map((id) => markExposureFalsePositive(id, { reason })))
-      notifyPendingDispositions(results, t)
+      const results = await runPool(ids, (id) => markExposureFalsePositive(id, { reason }))
       handleRefresh()
+      return summarizeBulk(results, (r) => Boolean(r?.pending_disposition))
     },
-    [handleRefresh, t]
+    [handleRefresh]
   )
 
   const clearFilters = useCallback(() => {
@@ -376,15 +380,14 @@ export default function ExposuresPage() {
     },
     {
       key: 'resolved',
-      label: 'Resolved',
-      value: stats?.resolved_count ?? 0,
+      label: t('exposures.metrics.closed', 'Closed'),
+      // Same three states the Closed view lists, so the tile equals its list.
+      value:
+        (stats?.by_state?.resolved ?? 0) +
+        (stats?.by_state?.accepted ?? 0) +
+        (stats?.by_state?.false_positive ?? 0),
       onClick: () => setView('resolved'),
       active: activeView === 'resolved',
-    },
-    {
-      key: 'mttr',
-      label: 'Mean time to resolve',
-      value: stats?.mttr_hours ? `${stats.mttr_hours.toFixed(1)}h` : '—',
     },
   ]
 
@@ -393,16 +396,6 @@ export default function ExposuresPage() {
 
   const toolbarStart = (
     <>
-      <div className="relative min-w-40 flex-1 sm:max-w-sm">
-        <Search className="pointer-events-none absolute start-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-        <Input
-          value={searchQuery}
-          onChange={(e) => handleSearch(e.target.value)}
-          placeholder="Search exposures…"
-          aria-label="Search exposures"
-          className="h-9 ps-9"
-        />
-      </div>
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
           <Button variant="outline" size="sm" className="h-9">
@@ -497,94 +490,140 @@ export default function ExposuresPage() {
 
   return (
     <Main>
-      <PageHeader
-        title="Exposures"
-        description="Changes to your attack surface that need a decision — resolve, accept or dismiss them."
-      />
-
-      <ExposuresTabs />
-
-      <Tabs value={tab} onValueChange={setTabParam} className="mt-4">
-        <TabsList>
-          <TabsTrigger value="list">All exposures</TabsTrigger>
-          <TabsTrigger value="analytics">Analytics</TabsTrigger>
-        </TabsList>
-
-        <TabsContent value="list" className="mt-5 space-y-5">
-          <MetricStrip loading={statsLoading} items={metrics} />
-
-          {exposuresError ? (
-            <Alert variant="destructive">
-              <AlertTriangle className="h-4 w-4" />
-              <AlertTitle>Could not load exposures</AlertTitle>
-              <AlertDescription className="flex flex-wrap items-center gap-3">
-                The exposure list failed to load.
-                <Button variant="outline" size="sm" onClick={handleRefresh}>
-                  Retry
-                </Button>
-              </AlertDescription>
-            </Alert>
-          ) : exposuresLoading && exposures.length === 0 ? (
-            <ExposureTableSkeleton />
-          ) : (
-            <DataTable
-              columns={columns}
-              data={exposures}
-              showSearch={false}
-              toolbarStart={toolbarStart}
-              toolbarEnd={toolbarEnd}
-              getRowId={(e) => e.id}
-              manualPagination
-              rowCount={total}
-              pagination={pagination}
-              onPaginationChange={setPagination}
-              pageSizeOptions={PAGE_SIZES}
-              onRowClick={setDetailExposure}
-              onSelectionChange={(rows) => setSelectedIds(rows.map((e) => e.id))}
-              resetSelectionKey={selectionEpoch}
-              showSelectionCount={false}
-              emptyMessage={hasActiveFilters ? 'No exposures match these filters' : 'No exposures'}
-              emptyDescription={
-                hasActiveFilters
-                  ? 'Try removing a filter or clearing them all.'
-                  : 'Your attack surface has no open exposure events.'
-              }
+      <PageStack>
+        <PageHeader
+          title="Exposures"
+          description={t(
+            'exposures.page.description',
+            'Changes to your attack surface that need a decision. Resolve, accept or dismiss them.'
+          )}
+          viewSwitcher={
+            // List and analytics are two views of the same events: a view
+            // switch, not a second row of tabs (research/249 R21).
+            <ViewSwitcher
+              options={[
+                { value: 'list', label: t('exposures.view.list', 'List view'), icon: List },
+                {
+                  value: 'analytics',
+                  label: t('exposures.view.analytics', 'Analytics view'),
+                  icon: ChartColumn,
+                },
+              ]}
+              value={tab}
+              onChange={(v) => setTabParam(v === 'analytics' ? 'analytics' : '')}
             />
-          )}
+          }
+        />
 
-          <ExposureBulkActions
-            selectedIds={selectedIds}
-            onClearSelection={clearSelection}
-            onBulkResolve={handleBulkResolve}
-            onBulkAccept={handleBulkAccept}
-            onBulkFalsePositive={handleBulkFalsePositive}
-          />
-        </TabsContent>
+        <ExposuresTabs />
 
-        <TabsContent value="analytics" className="mt-5 space-y-5">
-          {statsLoading ? (
-            <div className="grid gap-4 md:grid-cols-2">
-              <Skeleton className="h-64 w-full rounded-xl" />
-              <Skeleton className="h-64 w-full rounded-xl" />
-            </div>
-          ) : (
-            <>
-              <div className="grid gap-4 md:grid-cols-2">
-                <ExposureSeverityBreakdown bySeverity={stats.by_severity} />
-                <ExposureStateBreakdown byState={stats.by_state} />
-              </div>
-              <Card>
-                <CardHeader>
-                  <CardTitle>By event type</CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <EventTypeDistribution byEventType={stats.by_event_type} />
-                </CardContent>
-              </Card>
-            </>
-          )}
-        </TabsContent>
-      </Tabs>
+        <Tabs value={tab} onValueChange={setTabParam}>
+          <TabsContent value="list">
+            <PageStack>
+              {statsError ? (
+                <ErrorState
+                  title={t('exposures.stats.errorTitle', 'exposure statistics')}
+                  error={statsError}
+                  onRetry={() => refreshStats()}
+                />
+              ) : (
+                <MetricStrip loading={statsLoading} items={metrics} />
+              )}
+
+              {exposuresError ? (
+                <Alert variant="destructive">
+                  <AlertTriangle className="h-4 w-4" />
+                  <AlertTitle>Could not load exposures</AlertTitle>
+                  <AlertDescription className="flex flex-wrap items-center gap-3">
+                    The exposure list failed to load.
+                    <Button variant="outline" size="sm" onClick={handleRefresh}>
+                      Retry
+                    </Button>
+                  </AlertDescription>
+                </Alert>
+              ) : exposuresLoading && exposures.length === 0 ? (
+                <ExposureTableSkeleton />
+              ) : (
+                <DataTable
+                  columns={columns}
+                  data={exposures}
+                  showSearch={false}
+                  search={{
+                    value: searchQuery,
+                    onChange: handleSearch,
+                    placeholder: t('exposures.search.placeholder', 'Search exposures…'),
+                    label: t('exposures.search.label', 'Search exposures'),
+                  }}
+                  toolbarStart={toolbarStart}
+                  toolbarEnd={toolbarEnd}
+                  getRowId={(e) => e.id}
+                  manualPagination
+                  rowCount={total}
+                  pagination={pagination}
+                  onPaginationChange={setPagination}
+                  pageSizeOptions={PAGE_SIZES}
+                  onRowClick={setDetailExposure}
+                  onSelectionChange={(rows) => {
+                    setSelectedIds(rows.map((e) => e.id))
+                    setSelectedNames(rows.map((e) => e.title))
+                  }}
+                  resetSelectionKey={selectionEpoch}
+                  showSelectionCount={false}
+                  emptyMessage={
+                    hasActiveFilters ? 'No exposures match these filters' : 'No exposures'
+                  }
+                  emptyDescription={
+                    hasActiveFilters
+                      ? 'Try removing a filter or clearing them all.'
+                      : 'Your attack surface has no open exposure events.'
+                  }
+                />
+              )}
+
+              <ExposureBulkActions
+                selectedIds={selectedIds}
+                selectedNames={selectedNames}
+                onClearSelection={clearSelection}
+                onBulkResolve={handleBulkResolve}
+                onBulkAccept={handleBulkAccept}
+                onBulkFalsePositive={handleBulkFalsePositive}
+              />
+            </PageStack>
+          </TabsContent>
+
+          <TabsContent value="analytics">
+            <PageStack>
+              {statsError ? (
+                <ErrorState
+                  title={t('exposures.stats.errorTitle', 'exposure statistics')}
+                  error={statsError}
+                  onRetry={() => refreshStats()}
+                />
+              ) : statsLoading ? (
+                <div className="grid gap-4 md:grid-cols-2">
+                  <Skeleton className="h-64 w-full rounded-xl" />
+                  <Skeleton className="h-64 w-full rounded-xl" />
+                </div>
+              ) : (
+                <>
+                  <div className="grid gap-4 md:grid-cols-2">
+                    <ExposureSeverityBreakdown bySeverity={stats.by_severity} />
+                    <ExposureStateBreakdown byState={stats.by_state} />
+                  </div>
+                  <Card>
+                    <CardHeader>
+                      <CardTitle>By event type</CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                      <EventTypeDistribution byEventType={stats.by_event_type} />
+                    </CardContent>
+                  </Card>
+                </>
+              )}
+            </PageStack>
+          </TabsContent>
+        </Tabs>
+      </PageStack>
 
       {/* Action Dialog */}
       <ExposureActionDialog
@@ -656,332 +695,6 @@ function EventTypeDistribution({ byEventType }: EventTypeDistributionProps) {
   )
 }
 
-/** `source_url` → `Source url` when there is no explicit label. */
-function humanizeKey(key: string): string {
-  const text = key.replace(/_/g, ' ')
-  return text.charAt(0).toUpperCase() + text.slice(1)
-}
-
-// ============================================
-// EXPOSURE DETAILS CONSTANTS
-// ============================================
-
-// Sensitive field patterns
-const SENSITIVE_FIELDS = ['secret_value', 'password', 'api_key', 'token', 'private_key', 'secret']
-
-// A leaked credential's secret is served only as a mask and a keyed
-// fingerprint, both safe to show; the plaintext is revealed on demand through
-// LeakedSecretField. These keys are rendered there, not in the grid.
-const LEAKED_SECRET_FIELDS = ['secret_value', 'secret_masked', 'secret_fingerprint']
-
-// Field labels mapping
-const FIELD_LABELS: Record<string, string> = {
-  credential_type: 'Type',
-  source_type: 'Source type',
-  source_url: 'Source URL',
-  source_name: 'Source',
-  database_host: 'Host',
-  database_name: 'Database',
-  database_port: 'Port',
-  database_type: 'Type',
-  username: 'Username',
-  email: 'Email',
-  domain: 'Domain',
-  identifier: 'Identifier',
-  ip_address: 'IP address',
-  file_path: 'File',
-  repository: 'Repository',
-  commit_hash: 'Commit',
-  branch: 'Branch',
-  line_number: 'Line',
-  breach_name: 'Breach',
-  breach_date: 'Date',
-  is_verified: 'Verified',
-  is_revoked: 'Revoked',
-  discovered_at: 'Discovered',
-  classification: 'Classification',
-}
-
-// Group fields by category
-const FIELD_GROUPS: Record<string, { title: string; icon: typeof Key; fields: string[] }> = {
-  credential: {
-    title: 'Credential',
-    icon: Key,
-    fields: ['credential_type', 'identifier', 'username', 'email', 'is_verified', 'is_revoked'],
-  },
-  database: {
-    title: 'Database',
-    icon: Database,
-    fields: ['database_host', 'database_name', 'database_port', 'database_type'],
-  },
-  source: {
-    title: 'Source',
-    icon: Globe,
-    fields: [
-      'source_type',
-      'source_name',
-      'source_url',
-      'breach_name',
-      'breach_date',
-      'discovered_at',
-    ],
-  },
-  code: {
-    title: 'Code location',
-    icon: Server,
-    fields: ['repository', 'file_path', 'branch', 'commit_hash', 'line_number'],
-  },
-  network: {
-    title: 'Network',
-    icon: Globe,
-    fields: ['domain', 'ip_address'],
-  },
-}
-
-// ============================================
-// EXPOSURE DETAILS VIEW COMPONENT
-// ============================================
-
-interface ExposureDetailsViewProps {
-  details: Record<string, unknown>
-  secretsRevealed: boolean
-  onToggleSecrets: () => void
-  /** Set for a credential_leaked exposure: its id doubles as the credential id. */
-  leakedCredentialId?: string
-}
-
-function ExposureDetailsView({
-  details: rawDetails,
-  secretsRevealed,
-  onToggleSecrets,
-  leakedCredentialId,
-}: ExposureDetailsViewProps) {
-  const leakedSecret = {
-    masked: typeof rawDetails.secret_masked === 'string' ? rawDetails.secret_masked : undefined,
-    fingerprint:
-      typeof rawDetails.secret_fingerprint === 'string' ? rawDetails.secret_fingerprint : undefined,
-  }
-  const hasLeakedSecret = Boolean(leakedSecret.masked || leakedSecret.fingerprint)
-  const details = Object.fromEntries(
-    Object.entries(rawDetails).filter(([key]) => !LEAKED_SECRET_FIELDS.includes(key))
-  )
-  const handleCopy = (text: string) => {
-    copyToClipboard(text)
-    toast.success('Copied to clipboard')
-  }
-
-  const formatValue = (key: string, value: unknown): string => {
-    if (value === null || value === undefined) return '-'
-    if (typeof value === 'boolean') return value ? 'Yes' : 'No'
-    if (typeof value === 'number') return String(value)
-    return String(value)
-  }
-
-  const isSensitiveField = (key: string): boolean => {
-    return SENSITIVE_FIELDS.some((pattern) => key.toLowerCase().includes(pattern))
-  }
-
-  const maskValue = (value: string): string => {
-    if (value.length <= 4) return '****'
-    return (
-      value.substring(0, 2) +
-      '*'.repeat(Math.min(value.length - 4, 20)) +
-      value.substring(value.length - 2)
-    )
-  }
-
-  const isUrl = (value: string): boolean => {
-    return value.startsWith('http://') || value.startsWith('https://')
-  }
-
-  // Organize details into groups
-  const groupedDetails: Record<string, { key: string; value: unknown }[]> = {}
-  const ungroupedDetails: { key: string; value: unknown }[] = []
-
-  Object.entries(details).forEach(([key, value]) => {
-    // Skip empty values
-    if (value === null || value === undefined || value === '') return
-
-    let found = false
-    for (const [groupKey, group] of Object.entries(FIELD_GROUPS)) {
-      if (group.fields.includes(key)) {
-        if (!groupedDetails[groupKey]) {
-          groupedDetails[groupKey] = []
-        }
-        groupedDetails[groupKey].push({ key, value })
-        found = true
-        break
-      }
-    }
-    if (!found) {
-      ungroupedDetails.push({ key, value })
-    }
-  })
-
-  // Check if we have any sensitive fields
-  const hasSensitiveFields = Object.keys(details).some(isSensitiveField)
-
-  return (
-    <div className="space-y-4">
-      {leakedCredentialId && hasLeakedSecret && (
-        <LeakedSecretField
-          credentialId={leakedCredentialId}
-          hasSecret
-          masked={leakedSecret.masked}
-          fingerprint={leakedSecret.fingerprint}
-          showWarning={false}
-        />
-      )}
-      <div className="flex items-center justify-between">
-        <h4 className="text-sm font-medium">Details</h4>
-        {hasSensitiveFields && (
-          <Button variant="ghost" size="sm" className="h-7 text-xs" onClick={onToggleSecrets}>
-            {secretsRevealed ? (
-              <>
-                <EyeOff className="me-1 h-3 w-3" />
-                Hide secrets
-              </>
-            ) : (
-              <>
-                <Eye className="me-1 h-3 w-3" />
-                Reveal secrets
-              </>
-            )}
-          </Button>
-        )}
-      </div>
-
-      {/* Grouped Details */}
-      {Object.entries(FIELD_GROUPS).map(([groupKey, group]) => {
-        const groupItems = groupedDetails[groupKey]
-        if (!groupItems || groupItems.length === 0) return null
-
-        const GroupIcon = group.icon
-
-        return (
-          <div key={groupKey} className="rounded-lg border">
-            <div className="flex items-center gap-2 px-3 py-2 bg-muted/50 border-b">
-              <GroupIcon className="h-4 w-4 text-muted-foreground" />
-              <span className="text-sm font-medium">{group.title}</span>
-            </div>
-            <div className="divide-y">
-              {groupItems.map(({ key, value }) => {
-                const label = FIELD_LABELS[key] || humanizeKey(key)
-                const stringValue = formatValue(key, value)
-                const isSensitive = isSensitiveField(key)
-                const displayValue =
-                  isSensitive && !secretsRevealed ? maskValue(stringValue) : stringValue
-                const showAsUrl = !isSensitive && isUrl(stringValue)
-
-                return (
-                  <div key={key} className="flex items-center justify-between px-3 py-2 text-sm">
-                    <span className="text-muted-foreground">{label}</span>
-                    <div className="flex items-center gap-2">
-                      {showAsUrl ? (
-                        <SafeExternalLink
-                          href={stringValue}
-                          className="text-primary hover:underline flex items-center gap-1 max-w-[200px] truncate"
-                        >
-                          {displayValue}
-                          <ExternalLink className="h-3 w-3 flex-shrink-0" />
-                        </SafeExternalLink>
-                      ) : (
-                        <span
-                          className={cn(
-                            'font-mono text-xs max-w-[200px] truncate',
-                            isSensitive && 'text-destructive'
-                          )}
-                        >
-                          {displayValue}
-                        </span>
-                      )}
-                      {!isSensitive && stringValue !== '-' && (
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          className="h-6 w-6 p-0"
-                          onClick={() => handleCopy(stringValue)}
-                        >
-                          <Copy className="h-3 w-3" />
-                        </Button>
-                      )}
-                      {isSensitive && secretsRevealed && stringValue !== '-' && (
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          className="h-6 w-6 p-0"
-                          onClick={() => handleCopy(stringValue)}
-                        >
-                          <Copy className="h-3 w-3" />
-                        </Button>
-                      )}
-                    </div>
-                  </div>
-                )
-              })}
-            </div>
-          </div>
-        )
-      })}
-
-      {/* Ungrouped Details */}
-      {ungroupedDetails.length > 0 && (
-        <div className="rounded-lg border">
-          <div className="flex items-center gap-2 px-3 py-2 bg-muted/50 border-b">
-            <span className="text-sm font-medium">Additional details</span>
-          </div>
-          <div className="divide-y">
-            {ungroupedDetails.map(({ key, value }) => {
-              const label = FIELD_LABELS[key] || humanizeKey(key)
-              const stringValue = formatValue(key, value)
-              const isSensitive = isSensitiveField(key)
-              const displayValue =
-                isSensitive && !secretsRevealed ? maskValue(stringValue) : stringValue
-              const showAsUrl = !isSensitive && isUrl(stringValue)
-
-              return (
-                <div key={key} className="flex items-center justify-between px-3 py-2 text-sm">
-                  <span className="text-muted-foreground">{label}</span>
-                  <div className="flex items-center gap-2">
-                    {showAsUrl ? (
-                      <SafeExternalLink
-                        href={stringValue}
-                        className="text-primary hover:underline flex items-center gap-1 max-w-[200px] truncate"
-                      >
-                        {displayValue}
-                        <ExternalLink className="h-3 w-3 flex-shrink-0" />
-                      </SafeExternalLink>
-                    ) : (
-                      <span
-                        className={cn(
-                          'font-mono text-xs max-w-[200px] truncate',
-                          isSensitive && 'text-destructive'
-                        )}
-                      >
-                        {displayValue}
-                      </span>
-                    )}
-                    {stringValue !== '-' && (!isSensitive || secretsRevealed) && (
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        className="h-6 w-6 p-0"
-                        onClick={() => handleCopy(stringValue)}
-                      >
-                        <Copy className="h-3 w-3" />
-                      </Button>
-                    )}
-                  </div>
-                </div>
-              )
-            })}
-          </div>
-        </div>
-      )}
-    </div>
-  )
-}
-
 interface ExposureDetailSheetProps {
   exposure: ExposureEvent | null
   open: boolean
@@ -999,7 +712,6 @@ function ExposureDetailSheet({
 }: ExposureDetailSheetProps) {
   const canApprove = useCanApproveExposures()
   const { currentTenant } = useTenant()
-  const [secretsRevealed, setSecretsRevealed] = useState(false)
   const {
     history,
     isLoading: historyLoading,
@@ -1008,8 +720,6 @@ function ExposureDetailSheet({
   } = useExposureHistory(currentTenant?.id || null, exposure?.id || null)
 
   if (!exposure) return null
-
-  const state = EXPOSURE_STATE_BADGE[exposure.state]
 
   return (
     <DetailSheet
@@ -1021,7 +731,7 @@ function ExposureDetailSheet({
           badges={
             <>
               <SeverityBadge severity={exposure.severity} />
-              {state && <Badge variant={state.variant}>{state.label}</Badge>}
+              <ExposureStateBadge state={exposure.state} />
               <PendingDispositionBadge exposure={exposure} />
             </>
           }
@@ -1094,8 +804,6 @@ function ExposureDetailSheet({
         {exposure.details && Object.keys(exposure.details).length > 0 && (
           <ExposureDetailsView
             details={exposure.details}
-            secretsRevealed={secretsRevealed}
-            onToggleSecrets={() => setSecretsRevealed(!secretsRevealed)}
             leakedCredentialId={
               exposure.event_type === 'credential_leaked' ? exposure.id : undefined
             }

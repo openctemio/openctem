@@ -115,15 +115,6 @@ export type {
 } from '../schemas/auth.schema'
 
 // ============================================
-// RE-EXPORTS FROM ACTIONS
-// ============================================
-
-/**
- * Server action types
- */
-export type { HandleCallbackInput, RefreshTokenResult } from '../actions/auth-actions'
-
-// ============================================
 // COMPONENT PROP TYPES
 // ============================================
 
@@ -133,7 +124,7 @@ export type { HandleCallbackInput, RefreshTokenResult } from '../actions/auth-ac
 export interface LoginFormProps extends React.HTMLAttributes<HTMLFormElement> {
   /**
    * URL to redirect to after successful login
-   * @default '/dashboard'
+   * @default '/'
    */
   redirectTo?: string
 
@@ -150,7 +141,7 @@ export interface LoginFormProps extends React.HTMLAttributes<HTMLFormElement> {
 export interface RegisterFormProps extends React.HTMLAttributes<HTMLFormElement> {
   /**
    * URL to redirect to after successful registration
-   * @default '/dashboard'
+   * @default '/'
    */
   redirectTo?: string
 

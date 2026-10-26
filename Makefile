@@ -1,7 +1,7 @@
 # OpenCTEM monorepo — thin root targets that delegate to api/ (make) and web/ (npm).
 # Component-specific targets stay in api/Makefile and web/package.json.
 
-.PHONY: help setup hooks generate generate-api generate-web generate-docker dev-api dev-web build test lint check api-types allinone api-% web-%
+.PHONY: help setup hooks precheck generate generate-api generate-web generate-docker dev-api dev-web build test lint check api-types budgets-update allinone api-% web-%
 
 help: ## Show this help
 	@grep -hE '^[a-zA-Z_%-]+:.*?## ' $(MAKEFILE_LIST) | awk 'BEGIN{FS=":.*?## "}{printf "  %-14s %s\n",$$1,$$2}'
@@ -11,8 +11,13 @@ setup: hooks ## Install dependencies for both components, then generate the cont
 	cd web && npm ci
 	$(MAKE) generate
 
-hooks: ## Use the repository's git hooks (.githooks)
+hooks: ## Use the repository's git hooks (.githooks) and merge drivers (.gitattributes)
 	git config core.hooksPath .githooks
+	git config merge.i18n-json.name "i18n catalogs, merged key by key"
+	git config merge.i18n-json.driver "node web/scripts/i18n-json.mjs merge %O %A %B %P"
+
+precheck: ## Sync with the PR base branch, then run the lint and static checks CI gates on (the pre-push hook verifies)
+	@bash scripts/precheck.sh
 
 # The contract files are generated, never committed (pull requests cannot
 # conflict on them): the OpenAPI spec, the route manifest and the web route
@@ -56,6 +61,9 @@ api-types: generate-web ## Regenerate the web wire types from the generated spec
 check: generate ## The contract checks CI runs on every PR
 	bash api/scripts/check-openapi.sh
 	cd web && npm run type-check
+
+budgets-update: ## Rewrite the ingest SQL statement budget (needs TEST_DATABASE_URL, a migrated *_test database)
+	$(MAKE) -C api budgets-update
 
 api-%: ## Run any api/Makefile target, e.g. make api-swagger
 	$(MAKE) -C api $*

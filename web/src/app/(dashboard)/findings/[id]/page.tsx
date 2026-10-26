@@ -28,6 +28,7 @@ import { useTranslation } from '@/context/i18n-provider'
 import { findingStatusesInCategory } from '@/features/findings/types/finding.types'
 import { useParams, useRouter } from 'next/navigation'
 import { useSWRConfig } from 'swr'
+import { useMemo } from 'react'
 import { AlertTriangle } from 'lucide-react'
 import { Main, useBreadcrumbTitle } from '@/components/layout'
 import { Button } from '@/components/ui/button'
@@ -141,7 +142,8 @@ export default function FindingDetailPage() {
     mutateFinding()
   }
 
-  const finding = apiFinding ? toFindingDetail(apiFinding) : null
+  // Stable identity: children and the activity feed memoise on this object.
+  const finding = useMemo(() => (apiFinding ? toFindingDetail(apiFinding) : null), [apiFinding])
   useBreadcrumbTitle(finding ? findingShortName(finding) : null)
 
   // Activity and comments: the rail's summary and the shared panel. The feed
@@ -169,7 +171,10 @@ export default function FindingDetailPage() {
   const baseTabs = getOrderedTabs(layout).filter(
     (key) => key !== 'attack-path' || (finding ? dataFlowCount(finding) > 0 : false)
   )
-  const tabs = [...baseTabs.filter((key) => key !== 'related'), 'related']
+  // A key without a label is not a tab (no raw key as a tab name).
+  const tabs = [...baseTabs.filter((key) => key !== 'related'), 'related'].filter(
+    (key) => TAB_LABEL[key]
+  )
   const [tab, setTab] = useDetailTab('tab', tabs)
 
   if (isLoading) {
@@ -283,7 +288,7 @@ export default function FindingDetailPage() {
         </aside>
 
         <div className="min-w-0 space-y-4 lg:col-start-1">
-          <FindingApprovalBand findingId={finding.id} />
+          <FindingApprovalBand findingId={finding.id} onDecided={() => mutateFinding()} />
           {slaLate && (
             <DetailCallout
               tone="destructive"
@@ -321,7 +326,7 @@ export default function FindingDetailPage() {
               <TabsList>
                 {tabs.map((key) => (
                   <TabsTrigger key={key} value={key}>
-                    {TAB_LABEL[key] ? t(`findings.detail.tab.${key}`, TAB_LABEL[key]) : key}
+                    {t(`findings.detail.tab.${key}`, TAB_LABEL[key])}
                     {key === 'evidence' && evidenceTabCount > 0 && (
                       <TabsCount value={evidenceTabCount} />
                     )}

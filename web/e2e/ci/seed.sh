@@ -4,8 +4,8 @@
 #
 #   - an organization and its owner (bootstrap-admin), who signs in
 #   - assets of two types, two sensors, a CTIS report with 15 findings
-#     (enough for the findings picker to scroll), a scan with a run in
-#     progress, a remediation task
+#     (enough for the findings picker to scroll; two name CVE-2099-0101) and 10 for the triage
+#     spec, a scan with a run in progress, a remediation task
 #
 # Requires: docker (also runs psql from PSQL_IMAGE, default postgres:17-alpine), curl, jq. Env: ADMIN_IMAGE (api/Dockerfile.admin-cli),
 # E2E_OWNER_PASSWORD and E2E_DATABASE_URL (web/e2e/ci/make-env.sh),
@@ -93,6 +93,24 @@ call POST /api/v1/assets '{"name":"10.20.30.40","type":"ip_address","criticality
 # gate): a scope target covering the e2e domain lets the seed scan run.
 call POST /api/v1/scope/targets '{"target_type":"domain","pattern":"e2e-web.example.com","description":"e2e scope"}'
 
+log "http services with service facts"
+# 41-assets-service-facts: one service with more facts than a list cell holds
+# (status, port, two addresses, a CNAME, an edge provider, TLS and four
+# technologies), one with few. Technologies have no write endpoint (scanners
+# report them), so the seed inserts them.
+call POST /api/v1/assets '{"name":"https://e2e-edge.example.com","type":"http_service","criticality":"medium","properties":{"status_code":301,"port":443,"protocol":"https","scheme":"https","has_tls":true,"ip_addresses":["162.159.140.229","172.66.0.227"],"cname_target":"e2e-edge.example.com.cdn.cloudflare.net","cdn":"Cloudflare"}}'
+EDGE_ID=$(jq -r .id <<<"$BODY")
+call POST /api/v1/assets '{"name":"https://e2e-app.example.com","type":"http_service","criticality":"low","properties":{"status_code":200,"port":443,"protocol":"https","scheme":"https","has_tls":true}}'
+docker run --rm -i --network "$NETWORK" -e PGCONNECT_TIMEOUT=10 "${PSQL_IMAGE:-postgres:17-alpine}" \
+  psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -qtA -v asset="$EDGE_ID" >/dev/null <<'SQL'
+INSERT INTO asset_technologies (tenant_id, asset_id, name_key, name, version, category, first_seen, last_seen)
+SELECT a.tenant_id, a.id, t.k, t.n, t.v, t.c, now(), now()
+  FROM assets a,
+       (VALUES ('nginx', 'nginx', '1.25.3', 'web_server'), ('react', 'React', '18.3.1', 'js_library'),
+               ('cloudflare', 'Cloudflare', '', 'cdn'), ('hsts', 'HSTS', '', 'security_header')) AS t(k, n, v, c)
+ WHERE a.id = :'asset';
+SQL
+
 log "sensors and a CTIS report"
 # The seed pushes its report from a worker sensor without a command. A new
 # tenant holds such reports for review (RFC-040 §5.3, mode "quarantine");
@@ -121,16 +139,52 @@ call POST /api/v1/sensors '{"name":"e2e-sensor-b","type":"worker","execution_mod
 # accepts a report only from a tool the sensor has reported (sensors.tools was
 # dropped, #1254), and dispatch counts only reported tools too (#824). Nothing
 # claims the scan's job below, so its run stays in progress for
-# 10-scan-detail-runs.
+# 10-scan-detail-runs. It reports a release and an SDK pseudo-version (a
+# build of an unreleased commit, 40 characters): the drawer specs check that
+# a value that long stays inside its column (30-drawer-text-layout).
 code=$(curl -sS -o "$WORK/body" -w '%{http_code}' -X POST "$API/api/v2/sensor/heartbeat" \
   -H "Authorization: Bearer $KEY" -H 'Content-Type: application/json' \
-  -d '{"status":"online","scanners":["nuclei"],"tools":[{"name":"nuclei","kind":"scanner","installed":true}]}')
+  -d '{"status":"online","version":"v0.25.0","scanners":["nuclei"],"tools":[{"name":"nuclei","kind":"scanner","installed":true}],"sdk":{"name":"openctem-sdk-go","version":"v0.37.1-0.20261025003926-6373f2417870"},"sensor":{"name":"openctem-sensor","version":"v0.25.0"}}')
 [[ "$code" =~ ^2 ]] || { log "heartbeat -> $code: $(head -c 300 "$WORK/body")"; exit 1; }
 
-findings=$(for i in $(seq 1 15); do
-  printf '{"type":"vulnerability","title":"E2E finding %02d","severity":"%s","rule_id":"e2e-%02d","asset_ref":"a%d","description":"e2e"}\n' \
-    "$i" "$([[ $((i % 3)) == 0 ]] && echo critical || echo medium)" "$i" "$((i % 2 + 1))"
-done | jq -s .)
+findings=$({
+  for i in $(seq 1 15); do
+    # The first two (one per asset) name one CVE: the vulnerability page spec
+    # (40) opens it. Two findings of one CVE on one asset would be merged.
+    cve=''
+    [[ $i -le 2 ]] && cve=',"vulnerability":{"cve_id":"CVE-2099-0101"}'
+    printf '{"type":"vulnerability","title":"E2E finding %02d","severity":"%s","rule_id":"e2e-%02d","asset_ref":"a%d","description":"e2e"%s}\n' \
+      "$i" "$([[ $((i % 3)) == 0 ]] && echo critical || echo medium)" "$i" "$((i % 2 + 1))" "$cve"
+  done
+  # Ten more for the triage mode spec (36-findings-triage-mode), which decides
+  # them: no other spec reads them.
+  for i in $(seq 1 10); do
+    printf '{"type":"vulnerability","title":"E2E triage %02d","severity":"high","rule_id":"e2e-tri-%02d","asset_ref":"a1","description":"e2e triage"}\n' \
+      "$i" "$i"
+  done
+  # One web finding with the proof nuclei sends (an HTTP exchange, then its
+  # curl item) for the drawer evidence spec (31-finding-drawer-evidence). The
+  # Authorization value must arrive masked; no other spec reads it.
+  jq -nc '{
+    type: "vulnerability", title: "E2E evidence 01", severity: "low",
+    rule_id: "e2e-evidence-01", asset_ref: "a1", description: "e2e evidence",
+    evidence_items: [
+      { kind: "http_exchange",
+        http: {
+          request: { method: "GET", url: "https://e2e-web.example.com/wp-admin/js/theme.js",
+            http_version: "HTTP/1.1",
+            headers: [ { name: "Host", value: "e2e-web.example.com" },
+                       { name: "Authorization", value: "Bearer e2e-not-a-real-token-0001" } ] },
+          response: { status: 200, reason: "OK", http_version: "HTTP/1.1",
+            headers: [ { name: "Content-Type", value: "text/html" },
+                       { name: "Server", value: "e2e" } ],
+            body: "<html><script>window.__pwned=1</script> e2e theme preview wp-version 7.1.0</html>" } },
+        match: [ { location: "response", part: "body", start: 69, end: 74, matcher: "version" } ] },
+      { kind: "curl",
+        text: "curl -X GET -H \"Authorization: Bearer e2e-not-a-real-token-0001\" https://e2e-web.example.com/wp-admin/js/theme.js" }
+    ]
+  }'
+} | jq -s .)
 # Protocol v1 is gone: the report goes to the v2 results resource (one PUT
 # is a whole report), its id a lower-case UUID that metadata.id repeats.
 REPORT_ID=$(cat /proc/sys/kernel/random/uuid 2>/dev/null || uuidgen | tr 'A-Z' 'a-z')
@@ -161,10 +215,11 @@ call POST /api/v1/remediation/campaigns '{"name":"E2E remediation campaign","des
 for _ in $(seq 1 30); do
   call GET "/api/v1/findings?per_page=50"
   n=$(jq -r '[.data[]? | select(.title|startswith("E2E finding"))] | length' <<<"$BODY")
-  [[ "$n" -ge 15 ]] && break
+  nt=$(jq -r '[.data[]? | select(.title|startswith("E2E triage"))] | length' <<<"$BODY")
+  [[ "$n" -ge 15 && "$nt" -ge 10 ]] && break
   sleep 1
 done
-[[ "$n" -ge 15 ]] || { log "only $n of 15 findings visible"; exit 1; }
+[[ "$n" -ge 15 && "$nt" -ge 10 ]] || { log "only $n of 15 findings and $nt of 10 triage findings visible"; exit 1; }
 
 log "a member (E2E_LIMITED_*)"
 # The member-or-viewer checks in 09, 11 and 12 skip without one.

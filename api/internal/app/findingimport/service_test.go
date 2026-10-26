@@ -16,6 +16,7 @@ import (
 	"github.com/openctemio/ctis/importer"
 
 	"github.com/openctemio/openctem/api/internal/app/ingest"
+	"github.com/openctemio/openctem/api/pkg/domain/ingestreceipt"
 	"github.com/openctemio/openctem/api/pkg/domain/sensor"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
@@ -48,8 +49,8 @@ type applyCall struct {
 }
 
 type fakeRepo struct {
-	created  []vulnerability.FindingImport
-	finished []vulnerability.FindingImport
+	created  []ingestreceipt.Upload
+	finished []ingestreceipt.UploadResult
 	stamped  []shared.ID
 	cands    []vulnerability.VEXCandidate
 	// assetName names the candidates' assets, for AssetNames queries.
@@ -58,13 +59,13 @@ type fakeRepo struct {
 	applies   []applyCall
 }
 
-func (f *fakeRepo) CreateFindingImport(_ context.Context, rec *vulnerability.FindingImport) error {
-	f.created = append(f.created, *rec)
+func (f *fakeRepo) CreateUpload(_ context.Context, u *ingestreceipt.Upload) error {
+	f.created = append(f.created, *u)
 	return nil
 }
 
-func (f *fakeRepo) FinishFindingImport(_ context.Context, rec *vulnerability.FindingImport) error {
-	f.finished = append(f.finished, *rec)
+func (f *fakeRepo) FinishUpload(_ context.Context, _, _ shared.ID, r *ingestreceipt.UploadResult) error {
+	f.finished = append(f.finished, *r)
 	return nil
 }
 
@@ -141,7 +142,7 @@ const nessusDoc = `<?xml version="1.0"?>
 func newSvc(mode ingest.VEXMode) (*Service, *fakeIngester, *fakeRepo) {
 	ing := &fakeIngester{}
 	repo := &fakeRepo{}
-	return NewService(ing, repo, mode, logger.NewNop()), ing, repo
+	return NewService(ing, repo, repo, mode, logger.NewNop()), ing, repo
 }
 
 func TestImportFile_PreviewWritesNothing(t *testing.T) {
@@ -214,7 +215,13 @@ func TestImportFile_RealFixtures(t *testing.T) {
 				kb = bytes.NewReader(b)
 			}
 			svc, ing, _ := newSvc(ingest.SourceResolveDryRun)
-			fr := svc.ImportFile(context.Background(), Request{TenantID: shared.NewID(), SessionID: "s"}, 0, base, f, kb)
+			req := Request{TenantID: shared.NewID(), SessionID: "s"}
+			// A CSV is read only when the format is named (it has no
+			// signature to detect).
+			if strings.HasSuffix(base, ".csv") {
+				req.Format = importer.Format(filepath.Base(filepath.Dir(p)))
+			}
+			fr := svc.ImportFile(context.Background(), req, 0, base, f, kb)
 			if fr.Error != nil {
 				t.Fatalf("%+v", fr.Error)
 			}
@@ -417,7 +424,7 @@ func TestImportFile_RecordsTheProducer(t *testing.T) {
 		t.Fatalf("import = %+v, records %d", fr.Error, len(repo.created))
 	}
 	rec := repo.created[0]
-	if rec.ID.String() != fr.ImportID || rec.TenantID != tid || rec.ActorUserID == nil || *rec.ActorUserID != uid || rec.Format != "nessus" {
+	if rec.ID.String() != fr.ImportID || rec.TenantID != tid || rec.ActorUserID == nil || *rec.ActorUserID != uid {
 		t.Fatalf("record = %+v", rec)
 	}
 	if len(rec.FilenameSHA256) != 64 || strings.Contains(rec.FilenameSHA256, "secret") {
@@ -426,7 +433,13 @@ func TestImportFile_RecordsTheProducer(t *testing.T) {
 	if ing.calls[0].Report.Metadata.ID != fr.ImportID {
 		t.Fatalf("report id %q is not the import id", ing.calls[0].Report.Metadata.ID)
 	}
-	if len(repo.stamped) != 1 || len(repo.finished) != 1 || repo.finished[0].FindingsCreated != 2 || repo.finished[0].AssetsCreated != 1 {
+	// The ingest counts toward the upload's receipt; the receipt is
+	// finished with the file-level counts.
+	if src := ing.calls[0].Options.Receipt; src == nil || src.Kind != ingestreceipt.SourceUpload || src.Ref != fr.ImportID {
+		t.Fatalf("ingest receipt source = %+v", ing.calls[0].Options.Receipt)
+	}
+	if len(repo.stamped) != 1 || len(repo.finished) != 1 || repo.finished[0].Format != "nessus" ||
+		repo.finished[0].Status != ingestreceipt.StatusCompleted {
 		t.Fatalf("stamped %v finished %+v", repo.stamped, repo.finished)
 	}
 

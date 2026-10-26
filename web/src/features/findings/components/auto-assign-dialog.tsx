@@ -2,18 +2,8 @@
 
 import { useTranslation } from '@/context/i18n-provider'
 import { useState } from 'react'
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-  AlertDialogBody,
-} from '@/components/ui/alert-dialog'
-import { Loader2, Users } from 'lucide-react'
+import { ConfirmDialog } from '@/components/confirm-dialog'
+import { Loader2 } from 'lucide-react'
 import { toast } from 'sonner'
 import { post } from '@/lib/api/client'
 import { getErrorMessage } from '@/lib/api/error-handler'
@@ -33,7 +23,6 @@ interface AutoAssignDialogProps {
 export function AutoAssignDialog({ open, onOpenChange, onSuccess }: AutoAssignDialogProps) {
   const { t } = useTranslation()
   const [isSubmitting, setIsSubmitting] = useState(false)
-  const [result, setResult] = useState<AutoAssignResult | null>(null)
 
   const handleAssign = async () => {
     setIsSubmitting(true)
@@ -43,8 +32,6 @@ export function AutoAssignDialog({ open, onOpenChange, onSuccess }: AutoAssignDi
           // Assign unassigned critical+high findings
         },
       })
-
-      setResult(data)
 
       const ownerCount = Object.keys(data.by_owner).length
       toast.success(
@@ -69,7 +56,6 @@ export function AutoAssignDialog({ open, onOpenChange, onSuccess }: AutoAssignDi
 
       onSuccess?.()
       onOpenChange(false)
-      setResult(null)
     } catch (error) {
       toast.error(getErrorMessage(error, t('findings.autoAssign.failed', 'Failed to auto-assign')))
     } finally {
@@ -78,78 +64,27 @@ export function AutoAssignDialog({ open, onOpenChange, onSuccess }: AutoAssignDi
   }
 
   return (
-    <AlertDialog open={open} onOpenChange={onOpenChange}>
-      <AlertDialogContent>
-        <AlertDialogHeader>
-          <AlertDialogTitle className="flex items-center gap-2">
-            <Users className="h-5 w-5" />
-            {t('findings.autoAssign.title', 'Auto-Assign to Asset Owners')}
-          </AlertDialogTitle>
-          <AlertDialogDescription>
-            {t(
-              'findings.autoAssign.description',
-              'This will assign unassigned findings to their asset owners. Findings that already have an assignee will not be changed. Assets without an owner will be skipped.'
-            )}
-          </AlertDialogDescription>
-        </AlertDialogHeader>
-
-        <AlertDialogBody>
-          {result && (
-            <div className="rounded-lg border bg-muted/50 p-3 my-2 space-y-2">
-              <p className="text-sm font-medium">
-                {t('findings.autoAssign.assigned', '{count} findings assigned', {
-                  count: result.assigned,
-                })}
-              </p>
-              {Object.entries(result.by_owner).length > 0 && (
-                <div className="text-xs text-muted-foreground space-y-0.5">
-                  {Object.entries(result.by_owner)
-                    .sort(([, a], [, b]) => b - a)
-                    .slice(0, 10)
-                    .map(([owner, count]) => (
-                      <div key={owner}>
-                        {t('findings.autoAssign.ownerCount', '{owner}: {count} findings', {
-                          owner,
-                          count,
-                        })}
-                      </div>
-                    ))}
-                </div>
-              )}
-              {result.unassigned > 0 && (
-                <p className="text-xs text-warning">
-                  {t('findings.autoAssign.skipped', '{count} findings skipped (no asset owner)', {
-                    count: result.unassigned,
-                  })}
-                </p>
-              )}
-            </div>
-          )}
-        </AlertDialogBody>
-
-        <AlertDialogFooter>
-          <AlertDialogCancel disabled={isSubmitting}>
-            {t('common.cancel', 'Cancel')}
-          </AlertDialogCancel>
-          <AlertDialogAction
-            onClick={(e) => {
-              e.preventDefault()
-              handleAssign()
-            }}
-            disabled={isSubmitting}
-          >
-            {isSubmitting ? (
-              <>
-                <Loader2 className="me-2 h-4 w-4 animate-spin" />
-                {t('findings.autoAssign.assigning', 'Assigning...')}
-              </>
-            ) : (
-              t('findings.autoAssign.submit', 'Auto-Assign')
-            )}
-          </AlertDialogAction>
-        </AlertDialogFooter>
-      </AlertDialogContent>
-    </AlertDialog>
+    <ConfirmDialog
+      open={open}
+      onOpenChange={onOpenChange}
+      title={t('findings.autoAssign.title', 'Assign unassigned findings to their asset owners?')}
+      desc={t(
+        'findings.autoAssign.description',
+        'Every unassigned finding is assigned to the owner of its asset. Findings that already have an assignee stay as they are, and findings on assets without an owner are skipped.'
+      )}
+      confirmText={
+        isSubmitting ? (
+          <>
+            <Loader2 className="me-2 h-4 w-4 animate-spin" />
+            {t('findings.autoAssign.assigning', 'Assigning...')}
+          </>
+        ) : (
+          t('findings.autoAssign.submit', 'Assign to owners')
+        )
+      }
+      isLoading={isSubmitting}
+      handleConfirm={handleAssign}
+    />
   )
 }
 

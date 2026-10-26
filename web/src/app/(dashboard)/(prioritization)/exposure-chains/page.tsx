@@ -3,13 +3,13 @@
 import { useMemo } from 'react'
 import Link from '@/components/link'
 import { Main } from '@/components/layout'
-import { PageHeader, StatsCard, EmptyState, ErrorState } from '@/features/shared'
+import { PageHeader, PageStack, MetricStrip, EmptyState, ErrorState } from '@/features/shared'
 import { useExposureChains, PathGraph } from '@/features/attack-surface'
 import type { ExposureChain, PathGraphPath, PathGraphNode } from '@/features/attack-surface'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Button } from '@/components/ui/button'
-import { Route, ShieldAlert, ShieldCheck, Globe, ArrowRight, Network, Target } from 'lucide-react'
+import { ShieldCheck, ArrowRight, Network } from 'lucide-react'
 import { useTranslation } from '@/context/i18n-provider'
 
 // ============================================================
@@ -53,8 +53,8 @@ function chainToPath(chain: ExposureChain, maxScore: number): PathGraphPath {
 function LoadingSkeleton() {
   return (
     <>
-      <section className="mt-5 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        {[1, 2, 3, 4].map((i) => (
+      <section className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+        {[1, 2, 3].map((i) => (
           <Card key={i}>
             <CardHeader className="pb-2">
               <Skeleton className="h-4 w-24" />
@@ -66,7 +66,7 @@ function LoadingSkeleton() {
           </Card>
         ))}
       </section>
-      <Card className="mt-5">
+      <Card>
         <CardHeader>
           <Skeleton className="h-5 w-48" />
           <Skeleton className="h-4 w-64" />
@@ -132,162 +132,159 @@ export default function ExposureChainsPage() {
 
   return (
     <Main>
-      <PageHeader
-        title={t('prioritization.exposureChains.title', 'Exposure chains')}
-        description={t(
-          'prioritization.exposureChains.description',
-          'Paths from internet-facing entry points to assets with KEV or critical findings, ranked by urgency.'
-        )}
-      />
-
-      {isLoading ? (
-        <LoadingSkeleton />
-      ) : error ? (
-        // A failed read is not "no data": say we could not find out.
-        <ErrorState
-          title={t('prioritization.errorTitle.exposureChains', 'exposure chains')}
-          error={error}
-          onRetry={() => void mutate()}
+      <PageStack>
+        <PageHeader
+          title={t('prioritization.exposureChains.title', 'Exposure chains')}
+          description={t(
+            'prioritization.exposureChains.description',
+            'Paths from internet-facing entry points to assets with KEV or critical findings, ranked by urgency.'
+          )}
         />
-      ) : !hasData ? (
-        <NoRelationshipData />
-      ) : (
-        <>
-          {/* Stats row */}
-          <section className="mt-5 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-            <StatsCard
-              title={t('prioritization.exposureChains.stat.entries', 'Entry points')}
-              value={summary?.entryPoints ?? 0}
-              icon={Globe}
-              description={t(
-                'prioritization.exposureChains.stat.entriesHint',
-                'Internet-facing assets'
-              )}
-            />
-            <StatsCard
-              title={t('prioritization.exposureChains.stat.targets', 'Targets at risk')}
-              value={summary?.targetsAtRisk ?? 0}
-              valueClassName={(summary?.targetsAtRisk ?? 0) > 0 ? 'text-destructive' : undefined}
-              icon={ShieldAlert}
-              description={t(
-                'prioritization.exposureChains.stat.targetsHint',
-                'Reachable KEV/critical assets'
-              )}
-            />
-            <StatsCard
-              title={t('prioritization.exposureChains.stat.chains', 'Exposure chains')}
-              value={summary?.totalChains ?? 0}
-              icon={Route}
-              description={t(
-                'prioritization.exposureChains.stat.chainsHint',
-                'Entry-point to dangerous asset'
-              )}
-            />
-            <StatsCard
-              title={t('prioritization.exposureChains.stat.shown', 'Shown')}
-              value={chains.length}
-              icon={Target}
-              description={t(
-                'prioritization.exposureChains.stat.shownHint',
-                'Top chains by urgency'
-              )}
-            />
-          </section>
 
-          {/* Main: ranked chains + explainer */}
-          <section className="mt-5 grid grid-cols-1 gap-5 lg:grid-cols-3">
-            {/* The ranked list is a column of bordered chain rows, so it sits under a
+        {isLoading ? (
+          <LoadingSkeleton />
+        ) : error ? (
+          // A failed read is not "no data": say we could not find out.
+          <ErrorState
+            title={t('prioritization.errorTitle.exposureChains', 'exposure chains')}
+            error={error}
+            onRetry={() => void mutate()}
+          />
+        ) : !hasData ? (
+          <NoRelationshipData />
+        ) : (
+          <>
+            <MetricStrip
+              items={[
+                {
+                  key: 'entries',
+                  label: t('prioritization.exposureChains.stat.entries', 'Entry points'),
+                  value: summary?.entryPoints ?? 0,
+                  hint: t(
+                    'prioritization.exposureChains.stat.entriesHint',
+                    'Internet-facing assets'
+                  ),
+                  href: '/assets?internet_facing=true',
+                },
+                {
+                  key: 'targets',
+                  label: t('prioritization.exposureChains.stat.targets', 'Targets at risk'),
+                  value: summary?.targetsAtRisk ?? 0,
+                  tone: 'danger',
+                  hint: t(
+                    'prioritization.exposureChains.stat.targetsHint',
+                    'Reachable KEV/critical assets'
+                  ),
+                  href: '#ranked-chains',
+                },
+                {
+                  key: 'chains',
+                  label: t('prioritization.exposureChains.stat.chains', 'Exposure chains'),
+                  value: summary?.totalChains ?? 0,
+                  hint: t(
+                    'prioritization.exposureChains.stat.chainsHint',
+                    'Entry-point to dangerous asset'
+                  ),
+                  href: '#ranked-chains',
+                },
+              ]}
+            />
+
+            {/* Main: ranked chains + explainer */}
+            <section className="grid grid-cols-1 gap-5 lg:grid-cols-3">
+              {/* The ranked list is a column of bordered chain rows, so it sits under a
                 section heading rather than inside another card. */}
-            <section className="space-y-3 lg:col-span-2">
-              <div>
-                <h2 className="text-base font-semibold">
-                  {t('prioritization.exposureChains.rankedTitle', 'Chains ranked by urgency')}
-                </h2>
-                <p className="text-sm text-muted-foreground">
-                  {t(
-                    'prioritization.exposureChains.rankedHint',
-                    'Each chain is the shortest path. Click a node to open its findings.'
-                  )}
-                </p>
-              </div>
-              <PathGraph
-                paths={paths}
-                empty={
-                  <EmptyState
-                    icon={ShieldCheck}
-                    title={t('prioritization.exposureChains.emptyTitle', 'No exposure chains')}
-                    description={t(
-                      'prioritization.exposureChains.emptyDescription',
-                      'No internet-facing entry point reaches an asset with KEV or critical findings.'
+              <section id="ranked-chains" className="scroll-mt-20 space-y-3 lg:col-span-2">
+                <div>
+                  <h2 className="text-base font-semibold">
+                    {t('prioritization.exposureChains.rankedTitle', 'Chains ranked by urgency')}
+                  </h2>
+                  <p className="text-sm text-muted-foreground">
+                    {t(
+                      'prioritization.exposureChains.rankedHint',
+                      'Each chain is the shortest path. Click a node to open its findings.'
                     )}
-                  />
-                }
-              />
-            </section>
+                  </p>
+                </div>
+                <PathGraph
+                  paths={paths}
+                  empty={
+                    <EmptyState
+                      icon={ShieldCheck}
+                      title={t('prioritization.exposureChains.emptyTitle', 'No exposure chains')}
+                      description={t(
+                        'prioritization.exposureChains.emptyDescription',
+                        'No internet-facing entry point reaches an asset with KEV or critical findings.'
+                      )}
+                    />
+                  }
+                />
+              </section>
 
-            {/* Sidebar explainer */}
-            <div className="flex flex-col gap-5">
-              <Card>
-                <CardHeader className="pb-3">
-                  <CardTitle className="text-sm">
-                    {t('prioritization.exposureChains.howTitle', 'How chains are built')}
-                  </CardTitle>
-                </CardHeader>
-                <CardContent className="text-muted-foreground space-y-2 text-xs">
-                  <p>
-                    <strong className="text-foreground">
-                      {t('prioritization.exposureChains.howEntryLead', 'Entry point')}
-                    </strong>{' '}
-                    —{' '}
-                    {t(
-                      'prioritization.exposureChains.howEntry',
-                      'any asset with public exposure, the foothold an attacker reaches directly.'
-                    )}
-                  </p>
-                  <p>
-                    <strong className="text-foreground">
-                      {t('prioritization.exposureChains.howPathLead', 'Path')}
-                    </strong>{' '}
-                    —{' '}
-                    {t(
-                      'prioritization.exposureChains.howPath',
-                      'search over attack-path relationships (runs_on, depends_on, exposes, stores_data_in, ...) capturing the shortest route to each dangerous asset.'
-                    )}
-                  </p>
-                  <p>
-                    <strong className="text-foreground">
-                      {t('prioritization.exposureChains.howTargetLead', 'Target')}
-                    </strong>{' '}
-                    —{' '}
-                    {t(
-                      'prioritization.exposureChains.howTarget',
-                      'an asset carrying open KEV or critical findings. A directly-exposed target (0 hops) is the most urgent.'
-                    )}
-                  </p>
-                  <p>
-                    <strong className="text-foreground">
-                      {t('prioritization.exposureChains.howScoreLead', 'Score')}
-                    </strong>{' '}
-                    —{' '}
-                    {t(
-                      'prioritization.exposureChains.howScore',
-                      'KEV-weighted danger x criticality x crown-jewel, amplified the closer the target sits to the internet.'
-                    )}
-                  </p>
-                  {hasHiddenStep && (
+              {/* Sidebar explainer */}
+              <div className="flex flex-col gap-5">
+                <Card>
+                  <CardHeader className="pb-3">
+                    <CardTitle className="text-sm">
+                      {t('prioritization.exposureChains.howTitle', 'How chains are built')}
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent className="text-muted-foreground space-y-2 text-xs">
                     <p>
+                      <strong className="text-foreground">
+                        {t('prioritization.exposureChains.howEntryLead', 'Entry point')}
+                      </strong>
+                      {': '}
                       {t(
-                        'prioritization.exposureChains.hiddenNote',
-                        'Steps shown as "Outside your access" are assets you are not allowed to see. The path to your asset is real.'
+                        'prioritization.exposureChains.howEntry',
+                        'any asset with public exposure, the foothold an attacker reaches directly.'
                       )}
                     </p>
-                  )}
-                </CardContent>
-              </Card>
-            </div>
-          </section>
-        </>
-      )}
+                    <p>
+                      <strong className="text-foreground">
+                        {t('prioritization.exposureChains.howPathLead', 'Path')}
+                      </strong>
+                      {': '}
+                      {t(
+                        'prioritization.exposureChains.howPath',
+                        'search over attack-path relationships (runs_on, depends_on, exposes, stores_data_in, ...) capturing the shortest route to each dangerous asset.'
+                      )}
+                    </p>
+                    <p>
+                      <strong className="text-foreground">
+                        {t('prioritization.exposureChains.howTargetLead', 'Target')}
+                      </strong>
+                      {': '}
+                      {t(
+                        'prioritization.exposureChains.howTarget',
+                        'an asset carrying open KEV or critical findings. A directly-exposed target (0 hops) is the most urgent.'
+                      )}
+                    </p>
+                    <p>
+                      <strong className="text-foreground">
+                        {t('prioritization.exposureChains.howScoreLead', 'Score')}
+                      </strong>
+                      {': '}
+                      {t(
+                        'prioritization.exposureChains.howScore',
+                        'KEV-weighted danger x criticality x crown-jewel, amplified the closer the target sits to the internet.'
+                      )}
+                    </p>
+                    {hasHiddenStep && (
+                      <p>
+                        {t(
+                          'prioritization.exposureChains.hiddenNote',
+                          'Steps shown as "Outside your access" are assets you are not allowed to see. The path to your asset is real.'
+                        )}
+                      </p>
+                    )}
+                  </CardContent>
+                </Card>
+              </div>
+            </section>
+          </>
+        )}
+      </PageStack>
     </Main>
   )
 }

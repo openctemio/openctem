@@ -17,7 +17,7 @@
 
 import { useMemo } from 'react'
 import { Main } from '@/components/layout'
-import { PageHeader, EmptyState, MetricStrip } from '@/features/shared'
+import { PageHeader, PageStack, EmptyState, MetricStrip } from '@/features/shared'
 import { useTenant } from '@/context/tenant-provider'
 import { usePermissions, Permission } from '@/lib/permissions'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
@@ -26,6 +26,8 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { cn } from '@/lib/utils'
 import { STATE_BADGE_SOFT, STATE_BAR, type CtemState } from '../lib/ctem-colors'
 import { useDataQuality } from '../hooks/use-ctem-dashboard'
+import { WidgetError } from './widget-error'
+import { formatCount } from '../lib/format'
 import {
   type MetricStatus,
   ownershipState,
@@ -34,6 +36,7 @@ import {
   staleState,
   fmtPct,
   fmtAge,
+  OWNER_COVERAGE_TARGET_PCT,
 } from '../lib/data-quality'
 import {
   Database,
@@ -62,16 +65,15 @@ interface QualityMetric {
   status: MetricStatus
   /** Optional 0–100 fill for the meter bar (omit for value-only metrics). */
   bar?: number | null
-  /** Real data source (the API field). */
-  source: string
 }
 
-const STATUS_META: Record<MetricStatus, { label: string; icon: LucideIcon }> = {
-  good: { label: 'On track', icon: CheckCircle2 },
-  warn: { label: 'Watch', icon: AlertTriangle },
-  crit: { label: 'Off track', icon: XCircle },
-  pending: { label: 'Not measured', icon: MinusCircle },
-}
+const STATUS_META: Record<MetricStatus, { labelKey: string; fallback: string; icon: LucideIcon }> =
+  {
+    good: { labelKey: 'insights.status.good', fallback: 'On track', icon: CheckCircle2 },
+    warn: { labelKey: 'insights.status.warn', fallback: 'Watch', icon: AlertTriangle },
+    crit: { labelKey: 'insights.status.crit', fallback: 'Off track', icon: XCircle },
+    pending: { labelKey: 'insights.status.pending', fallback: 'Not measured', icon: MinusCircle },
+  }
 
 // ============================================
 // HELPERS
@@ -99,6 +101,7 @@ function barClass(status: MetricStatus): string {
 // ============================================
 
 function StatusPill({ status }: { status: MetricStatus }) {
+  const { t } = useTranslation()
   const meta = STATUS_META[status]
   const Icon = meta.icon
   return (
@@ -107,12 +110,13 @@ function StatusPill({ status }: { status: MetricStatus }) {
       className={cn('shrink-0 gap-1 whitespace-nowrap', statusBadgeClass(status))}
     >
       <Icon className="h-3 w-3" />
-      {meta.label}
+      {t(meta.labelKey, meta.fallback)}
     </Badge>
   )
 }
 
 function MetricCard({ metric }: { metric: QualityMetric }) {
+  const { t } = useTranslation()
   const hasBar = metric.bar !== undefined && metric.bar !== null
   return (
     <Card className="flex flex-col">
@@ -130,7 +134,14 @@ function MetricCard({ metric }: { metric: QualityMetric }) {
           <StatusPill status={metric.status} />
         </div>
         {hasBar && (
-          <div className="mt-3 h-1.5 w-full overflow-hidden rounded-full bg-muted">
+          <div
+            role="progressbar"
+            aria-label={metric.label}
+            aria-valuemin={0}
+            aria-valuemax={100}
+            aria-valuenow={Math.round(Math.min(100, Math.max(0, metric.bar as number)))}
+            className="mt-3 h-1.5 w-full overflow-hidden rounded-full bg-muted"
+          >
             <div
               className={cn('h-full rounded-full transition-all', barClass(metric.status))}
               style={{ width: `${Math.min(100, Math.max(0, metric.bar as number))}%` }}
@@ -138,11 +149,8 @@ function MetricCard({ metric }: { metric: QualityMetric }) {
           </div>
         )}
         <p className="mt-2 text-xs text-muted-foreground">
-          Target: <span className="font-medium text-foreground">{metric.target}</span>
-        </p>
-        <p className="mt-2 border-t pt-2 text-[11px] text-muted-foreground">
-          {metric.status === 'pending' ? 'Source: ' : 'From: '}
-          {metric.source}
+          {t('insights.target', 'Target:')}{' '}
+          <span className="font-medium text-foreground">{metric.target}</span>
         </p>
       </CardContent>
     </Card>
@@ -173,14 +181,14 @@ function ScorecardSkeleton() {
 // ============================================
 
 export function DataQualityView() {
-  const { t } = useTranslation()
+  const { t, locale } = useTranslation()
   const { currentTenant } = useTenant()
   const { can } = usePermissions()
 
   const tenantId = currentTenant?.id ?? null
   const canRead = can(Permission.DashboardRead)
 
-  const { data: q, isLoading } = useDataQuality(tenantId)
+  const { data: q, isLoading, error, mutate: retry } = useDataQuality(tenantId)
 
   const metrics = useMemo<QualityMetric[]>(() => {
     const owner = q?.asset_ownership_pct
@@ -191,81 +199,101 @@ export function DataQualityView() {
     return [
       {
         id: 'owner-coverage',
-        label: 'Asset owner coverage',
-        measures: 'Assets in inventory with an assigned owner',
-        display: fmtPct(owner),
-        target: '≥ 95%',
+        label: t('insights.ownerCoverage.label', 'Asset owner coverage'),
+        measures: t(
+          'insights.ownerCoverage.measures',
+          'Assets in inventory with an assigned owner'
+        ),
+        display: fmtPct(owner, locale),
+        target: t('insights.ownerCoverage.target', '≥ {pct}%', { pct: OWNER_COVERAGE_TARGET_PCT }),
         status: ownershipState(owner),
         bar: owner ?? null,
-        source: 'data-quality (asset_ownership_pct)',
       },
       {
         id: 'evidence-coverage',
-        label: 'Finding evidence coverage',
-        measures: 'Findings carrying evidence/context metadata',
-        display: fmtPct(evidence),
+        label: t('insights.dataQuality.evidence', 'Finding evidence coverage'),
+        measures: t(
+          'insights.dataQuality.evidenceMeasures',
+          'Findings carrying evidence or context metadata'
+        ),
+        display: fmtPct(evidence, locale),
         target: '≥ 90%',
         status: evidenceState(evidence),
         bar: evidence ?? null,
-        source: 'data-quality (finding_evidence_pct)',
       },
       {
         id: 'freshness',
-        label: 'Inventory freshness',
-        measures: 'Median age of the most recent observation across all assets',
+        label: t('insights.dataQuality.freshness', 'Inventory freshness'),
+        measures: t(
+          'insights.dataQuality.freshnessMeasures',
+          'Median age of the most recent observation across all assets'
+        ),
         display: fmtAge(freshHours),
         target: '< 48h',
         status: freshnessState(freshHours),
-        source: 'data-quality (median_last_seen_age_hours)',
       },
       {
         id: 'stale-assets',
-        label: 'Stale assets',
-        measures: 'Assets not re-observed in the last 30 days — should trend down',
-        display: fmtPct(stale),
-        target: 'Trending down',
+        label: t('insights.dataQuality.stale', 'Stale assets'),
+        measures: t(
+          'insights.dataQuality.staleMeasures',
+          'Assets not re-observed in the last 30 days, which should trend down'
+        ),
+        display: fmtPct(stale, locale),
+        target: t('insights.programHealth.trendingDown', 'Trending down'),
         status: staleState(stale),
         bar: stale ?? null,
-        source: 'data-quality (stale_asset_pct)',
       },
     ]
-  }, [q])
+  }, [q, t, locale])
 
   if (!canRead) {
     return (
       <Main>
-        <PageHeader title="Data quality" />
-        <EmptyState
-          className="mt-5"
-          icon={Lock}
-          title="You don’t have access to data-quality metrics."
-          description="Dashboard read permission is required to view the data-quality scorecard."
-        />
+        <PageStack>
+          <PageHeader title={t('insights.dataQuality.title', 'Data quality')} />
+          <EmptyState
+            icon={Lock}
+            title={t(
+              'insights.dataQuality.noAccessTitle',
+              'You don’t have access to data-quality metrics.'
+            )}
+            description={t(
+              'insights.dataQuality.noAccessDescription',
+              'Dashboard read permission is required to view the data-quality scorecard.'
+            )}
+          />
+        </PageStack>
       </Main>
     )
   }
 
   const hasData = !!q
-  const dedupPct = fmtPct(q?.deduplication_rate)
+  const dedupPct = fmtPct(q?.deduplication_rate, locale)
 
   return (
     <Main>
-      <PageHeader
-        title={t('insights.dataQuality.title', 'Data quality')}
-        description={t(
-          'insights.dataQuality.description',
-          'Whether the inventory is owned, evidenced and fresh enough to prioritise on.'
-        )}
-      />
+      <PageStack>
+        <PageHeader
+          title={t('insights.dataQuality.title', 'Data quality')}
+          description={t(
+            'insights.dataQuality.description',
+            'Whether the inventory is owned, evidenced and fresh enough to prioritise on.'
+          )}
+        />
 
-      <div className="mt-5">
         {isLoading ? (
           <ScorecardSkeleton />
+        ) : !hasData && error ? (
+          <WidgetError onRetry={() => void retry()} className="rounded-lg border py-8" />
         ) : !hasData ? (
           <EmptyState
             icon={Database}
-            title="No data-quality metrics yet"
-            description="Once assets and findings are ingested, the scorecard populates here."
+            title={t('insights.dataQuality.emptyTitle', 'No data-quality metrics yet')}
+            description={t(
+              'insights.dataQuality.emptyDescription',
+              'Once assets and findings are ingested, the scorecard populates here.'
+            )}
           />
         ) : (
           <>
@@ -275,33 +303,60 @@ export function DataQualityView() {
               ))}
             </section>
 
-            {/* Context counts — the denominators behind the rates above. */}
-            <section className="mt-5 space-y-3">
+            {/* Context counts: the denominators behind the rates above. */}
+            <section className="space-y-3">
               <div>
-                <h2 className="text-base font-semibold">Inventory context</h2>
+                <h2 className="text-base font-semibold">
+                  {t('insights.dataQuality.contextTitle', 'Inventory context')}
+                </h2>
                 <p className="text-sm text-muted-foreground">
-                  The scope the rates above are measured over.
+                  {t(
+                    'insights.dataQuality.contextDescription',
+                    'The scope the rates above are measured over.'
+                  )}
                 </p>
               </div>
               <MetricStrip
                 items={[
-                  { key: 'assets', label: 'Total assets', value: q?.total_assets ?? 0 },
-                  { key: 'findings', label: 'Total findings', value: q?.total_findings ?? 0 },
-                  { key: 'dedup', label: 'Dedup merges (of inventory)', value: dedupPct ?? '—' },
                   {
-                    key: 'last-seen',
-                    label: 'Median last-seen (internet-exposed)',
-                    value:
-                      q?.median_last_seen_days != null
-                        ? `${q.median_last_seen_days.toFixed(1)}d`
-                        : '—',
+                    key: 'assets',
+                    label: t('insights.dataQuality.totalAssets', 'Total assets'),
+                    value: q?.total_assets ?? 0,
+                    href: '/assets',
+                  },
+                  {
+                    key: 'findings',
+                    label: t('insights.dataQuality.totalFindings', 'Total findings'),
+                    value: q?.total_findings ?? 0,
+                    href: '/findings',
                   },
                 ]}
               />
+              <dl className="flex flex-wrap gap-x-6 gap-y-1 text-sm text-muted-foreground">
+                <div className="flex gap-1.5">
+                  <dt>{t('insights.dataQuality.dedup', 'Dedup merges (of inventory)')}</dt>
+                  <dd className="font-medium text-foreground tabular-nums">{dedupPct ?? '—'}</dd>
+                </div>
+                <div className="flex gap-1.5">
+                  <dt>
+                    {t(
+                      'insights.dataQuality.lastSeenExposed',
+                      'Median last-seen (internet-exposed)'
+                    )}
+                  </dt>
+                  <dd className="font-medium text-foreground tabular-nums">
+                    {q?.median_last_seen_days != null
+                      ? t('insights.programHealth.days', '{value}d', {
+                          value: formatCount(Number(q.median_last_seen_days.toFixed(1)), locale),
+                        })
+                      : '—'}
+                  </dd>
+                </div>
+              </dl>
             </section>
           </>
         )}
-      </div>
+      </PageStack>
     </Main>
   )
 }

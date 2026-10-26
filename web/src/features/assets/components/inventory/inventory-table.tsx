@@ -26,10 +26,11 @@ import {
   Pencil,
   Trash2,
   User,
+  UserX,
   Users,
 } from 'lucide-react'
+import { formatLocalized, formatRelative } from '@/lib/format-date'
 import { toast } from 'sonner'
-import { Badge } from '@/components/ui/badge'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Button } from '@/components/ui/button'
 import {
@@ -47,28 +48,56 @@ import type { TypeView } from '@/features/asset-types/lib/type-view'
 import { propertyLabel } from '@/features/asset-types/lib/property-schema'
 import { rowActionsFor } from '../../lib/type-actions'
 import { AttributeCell } from './attribute-cell'
-import { DataTable, DataTableColumnHeader, RiskScoreBadge, riskScoreState } from '@/features/shared'
+import {
+  DataTable,
+  DataTableColumnHeader,
+  RiskScoreBadge,
+  riskScoreState,
+  type DataTableSearch,
+} from '@/features/shared'
 import { AssetStatusBadge } from '@/features/asset-lifecycle'
 import { useAssetTypeRegistry } from '@/features/asset-types/api/use-asset-type-registry'
 import { CriticalityBadge, ExposureBadge } from '../classification-badges'
 import { AssetDetailSheet } from '../asset-detail-sheet'
+import { ScanConfirmDialog } from '../scan-confirm-dialog'
 import { getAsset, updateAsset } from '../../hooks'
 import { useAssetTags } from '../../hooks/use-asset-tags'
 import { isPlainLeftClick } from '../../lib/plain-click'
 import { AssetTypeIcon } from '../../lib/asset-type-icon'
+import { AssetNameCell } from './asset-name-cell'
+import { typeKeyOf } from '../../lib/inventory-lenses'
 import { Permission, usePermissions } from '@/lib/permissions'
-import { ASSET_TYPE_LABELS, type Asset } from '../../types/asset.types'
+import type { Asset } from '../../types/asset.types'
 import { SORT_FIELDS, sortToSorting, sortingToSort } from '../../lib/inventory-url'
 import {
-  IssuesChip,
+  OpenFindingsCell,
+  OpenFindingsLink,
   LabelChips,
-  SurfaceFacts,
+  SurfaceFactsLine,
   cellsForType,
   hasSurfaceFacts,
   surfaceCellsCovered,
 } from '../service-cells'
 
 const PAGE_SIZES = [10, 20, 30, 50, 100]
+
+/**
+ * Column priority (research/266, research/271): the table frame width each
+ * lower-priority column needs before it shows, so a narrow screen drops
+ * columns instead of scrolling the table sideways. Name, risk, scope and
+ * service facts always show (with the checkbox and the row menu they take
+ * about 860px); then open findings, criticality, exposure, owner and last
+ * seen join in that order (research/242 D9). Each value is the running sum of the columns'
+ * measured widths in the every-type list, plus a few pixels of slack. A
+ * column turned on or off under Columns keeps that choice.
+ */
+const COLUMN_ROOM = {
+  findings: 1020,
+  criticality: 1140,
+  exposure: 1255,
+  owner: 1355,
+  last_seen: 1475,
+} as const
 
 /** A one-type list shows "Service facts" only when its own columns do not already. */
 function showsServiceFacts(view: TypeView): boolean {
@@ -102,8 +131,18 @@ interface InventoryTableProps {
   onSortChange: (sort: string | undefined) => void
   onSelectionChange: (assets: Asset[]) => void
   resetSelectionKey: number
+  /** Replaces the "nothing here" block (which kind of empty, the next action). */
+  emptyState?: ReactNode
+  /** Shown in place of the rows when the read failed; the toolbar stays. */
+  errorState?: ReactNode
+  /** The list's search box (the toolbar draws it). */
+  search?: DataTableSearch
+  /** The phone filter-sheet trigger, joined to the search. */
+  filter?: ReactNode
   toolbarStart?: ReactNode
   toolbarEnd?: ReactNode
+  /** A full-width row under the toolbar: the filter chips. */
+  toolbarBelow?: ReactNode
   hasFilters: boolean
   /** Called after an asset is edited from the detail sheet (e.g. tags), to refetch the list. */
   onAssetUpdated?: () => void
@@ -132,8 +171,13 @@ export function InventoryTable({
   onSortChange,
   onSelectionChange,
   resetSelectionKey,
+  emptyState,
+  errorState,
+  search,
+  filter,
   toolbarStart,
   toolbarEnd,
+  toolbarBelow,
   hasFilters,
   onAssetUpdated,
   typeView = null,
@@ -144,8 +188,21 @@ export function InventoryTable({
   filterTags,
   onToggleTagFilter,
 }: InventoryTableProps) {
-  const [selectedAsset, setSelectedAsset] = useState<Asset | null>(null)
-  const { t } = useTranslation()
+  const [selectedSnapshot, setSelectedAsset] = useState<Asset | null>(null)
+  // The repository a row's Scan was clicked on, until the user confirms it.
+  const [scanTarget, setScanTarget] = useState<Asset | null>(null)
+  // The asset the drawer asked to delete: once the refreshed list no longer
+  // holds it, the drawer closes instead of staying open on a deleted row.
+  const [deleteRequestedId, setDeleteRequestedId] = useState<string | null>(null)
+  // The drawer shows the row as the list now has it (an edit refreshes the
+  // list), falling back to the snapshot for an asset opened from elsewhere.
+  const selectedAsset = useMemo(() => {
+    if (!selectedSnapshot) return null
+    const inList = assets.find((a) => a.id === selectedSnapshot.id)
+    if (!inList && deleteRequestedId === selectedSnapshot.id) return null
+    return inList ?? selectedSnapshot
+  }, [selectedSnapshot, assets, deleteRequestedId])
+  const { t, locale } = useTranslation()
   const { can } = usePermissions()
   const canWriteAssets = can(Permission.AssetsWrite)
   const canDeleteAssets = can(Permission.AssetsDelete)
@@ -164,7 +221,7 @@ export function InventoryTable({
   const { tags: tagSuggestions } = useAssetTags(undefined, canWriteAssets)
   const sorting = useMemo(() => sortToSorting(sort), [sort])
   // RFC-042 class and lens of each row ("Code repository · Code").
-  const { classAndLens } = useAssetTypeRegistry()
+  const { registry, classAndLens } = useAssetTypeRegistry()
 
   // "+ Add label" on a row: one PUT of that asset's tags, then a refetch.
   const saveRowLabels = useCallback(
@@ -222,32 +279,30 @@ export function InventoryTable({
             title={t('assets.properties.columns.name', 'Name')}
           />
         ),
+        // Name cut in the middle with a copy button; a certificate shows its
+        // subject name with the asset name below (research/242 D9). The
+        // description moved to the drawer, so a row stays one line.
         cell: ({ row }) => (
-          <div className="flex min-w-0 items-center gap-2">
-            <AssetTypeIcon
-              type={row.original.type}
-              className="h-4 w-4 shrink-0 text-muted-foreground"
-            />
-            <div className="min-w-0">
-              <Link
-                href={assetDetailHref(row.original.id)}
-                onClick={(e) => {
-                  // Plain click opens the drawer; ctrl/cmd/middle-click follow the link.
-                  if (!isPlainLeftClick(e)) return
-                  e.preventDefault()
-                  setSelectedAsset(row.original)
-                }}
-                className="block truncate font-medium hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-              >
-                {row.original.name}
-              </Link>
-              {row.original.description && (
-                <p className="line-clamp-1 text-xs text-muted-foreground">
-                  {row.original.description}
-                </p>
-              )}
-            </div>
-          </div>
+          <AssetNameCell
+            asset={row.original}
+            // Every-type list: the type under the name (research/266), so the
+            // Type column is off by default and the name keeps its width.
+            subtitle={
+              typeView
+                ? undefined
+                : (() => {
+                    const key = typeKeyOf(registry, row.original.type, row.original.subType)
+                    return t(`assets.typeLabel.${key.type}`, key.label)
+                  })()
+            }
+            href={assetDetailHref(row.original.id)}
+            onOpen={(e) => {
+              // Plain click opens the drawer; ctrl/cmd/middle-click follow the link.
+              if (!isPlainLeftClick(e)) return
+              e.preventDefault()
+              setSelectedAsset(row.original)
+            }}
+          />
         ),
       },
       ...(typeView?.columns ?? []).map((attribute): ColumnDef<Asset> => ({
@@ -259,6 +314,21 @@ export function InventoryTable({
         cell: ({ row }) => <AttributeCell asset={row.original} attribute={attribute} />,
       })),
       {
+        id: 'risk',
+        accessorKey: 'riskScore',
+        enableSorting: sortable('risk'),
+        header: ({ column }) => (
+          <DataTableColumnHeader column={column} title={t('components.col.risk', 'Risk')} />
+        ),
+        cell: ({ row }) => (
+          <RiskScoreBadge
+            score={row.original.riskScore}
+            state={riskScoreState(row.original)}
+            size="sm"
+          />
+        ),
+      },
+      {
         id: 'type',
         accessorKey: 'type',
         enableSorting: sortable('type'),
@@ -268,16 +338,20 @@ export function InventoryTable({
             title={t('assets.properties.columns.type', 'Type')}
           />
         ),
-        cell: ({ row }) => (
-          <div className="flex min-w-0 flex-col items-start gap-0.5">
-            <Badge variant="outline" className="font-normal">
-              {ASSET_TYPE_LABELS[row.original.type] ?? row.original.type}
-            </Badge>
-            <span className="truncate text-xs text-muted-foreground">
-              {classAndLens(row.original.type, row.original.subType)}
+        // One line: the registry's name for the row's type (an alias such as
+        // "HTTP Service" when the sub-type has one); class and lens are in
+        // the tooltip, since the open view already names the lens.
+        cell: ({ row }) => {
+          const key = typeKeyOf(registry, row.original.type, row.original.subType)
+          return (
+            <span
+              className="block truncate text-sm text-muted-foreground"
+              title={classAndLens(row.original.type, row.original.subType)}
+            >
+              {t(`assets.typeLabel.${key.type}`, key.label)}
             </span>
-          </div>
-        ),
+          )
+        },
       },
       // The scope standing from each row's triage, when the typed scope
       // check column below is not shown (research/124).
@@ -302,15 +376,22 @@ export function InventoryTable({
         header: ({ column }) => (
           <DataTableColumnHeader column={column} title={t('assets.facts.title', 'Service facts')} />
         ),
-        cell: ({ row }) =>
-          cellsForType(row.original.type, row.original.subType) ? (
-            <SurfaceFacts asset={row.original} className="max-w-[380px]" />
-          ) : (
-            <span className="text-muted-foreground">—</span>
-          ),
+        // One line (research/266) in a fixed width: as many whole facts as
+        // fit (status code, port, edge, what runs there), then "+N" opening
+        // every fact, so rows keep one height and no chip is cut.
+        cell: ({ row }) => (
+          <div className="w-64">
+            {cellsForType(row.original.type, row.original.subType) ? (
+              <SurfaceFactsLine asset={row.original} />
+            ) : (
+              <span className="text-muted-foreground">—</span>
+            )}
+          </div>
+        ),
       },
       {
         id: 'criticality',
+        meta: { hideBelow: COLUMN_ROOM.criticality },
         accessorKey: 'criticality',
         enableSorting: sortable('criticality'),
         header: ({ column }) => (
@@ -325,6 +406,7 @@ export function InventoryTable({
       },
       {
         id: 'exposure',
+        meta: { hideBelow: COLUMN_ROOM.exposure },
         accessorKey: 'exposure',
         enableSorting: sortable('exposure'),
         header: ({ column }) => (
@@ -335,7 +417,23 @@ export function InventoryTable({
         ),
       },
       {
+        id: 'findings',
+        meta: { hideBelow: COLUMN_ROOM.findings },
+        accessorKey: 'findingCount',
+        enableSorting: sortable('findings'),
+        header: ({ column }) => (
+          <DataTableColumnHeader
+            column={column}
+            title={t('assets.col.openFindings', 'Open findings')}
+          />
+        ),
+        cell: ({ row }) => (
+          <OpenFindingsCell assetId={row.original.id} count={row.original.findingCount} />
+        ),
+      },
+      {
         id: 'owner',
+        meta: { hideBelow: COLUMN_ROOM.owner },
         enableSorting: false,
         header: ({ column }) => (
           <DataTableColumnHeader column={column} title={t('assets.inv.col.owner', 'Owner')} />
@@ -354,47 +452,18 @@ export function InventoryTable({
           if (row.original.ownerRef) {
             return <span className="truncate text-sm">{row.original.ownerRef}</span>
           }
+          // A gap, not a value: muted, dashed icon (Needs attention lists them).
           return (
-            <span className="text-sm text-muted-foreground">
-              {t('assets.views.unowned', 'Unowned')}
+            <span className="inline-flex items-center gap-1.5 whitespace-nowrap text-sm text-muted-foreground">
+              <UserX className="h-3.5 w-3.5 shrink-0" aria-hidden />
+              {t('assets.inv.noOwner', 'No owner')}
             </span>
           )
         },
       },
       {
-        id: 'risk',
-        accessorKey: 'riskScore',
-        enableSorting: sortable('risk'),
-        header: ({ column }) => (
-          <DataTableColumnHeader column={column} title={t('components.col.risk', 'Risk')} />
-        ),
-        cell: ({ row }) => (
-          <RiskScoreBadge
-            score={row.original.riskScore}
-            state={riskScoreState(row.original)}
-            size="sm"
-          />
-        ),
-      },
-      {
-        id: 'findings',
-        accessorKey: 'findingCount',
-        enableSorting: sortable('findings'),
-        header: ({ column }) => (
-          <DataTableColumnHeader
-            column={column}
-            title={t('assets.sheet.tab.findings', 'Findings')}
-          />
-        ),
-        cell: ({ row }) =>
-          row.original.findingCount > 0 ? (
-            <IssuesChip assetId={row.original.id} count={row.original.findingCount} />
-          ) : (
-            <span className="text-muted-foreground tabular-nums">0</span>
-          ),
-      },
-      {
         id: 'last_seen',
+        meta: { hideBelow: COLUMN_ROOM.last_seen },
         accessorKey: 'lastSeen',
         enableSorting: sortable('last_seen'),
         header: ({ column }) => (
@@ -403,12 +472,25 @@ export function InventoryTable({
             title={t('components.col.lastSeen', 'Last seen')}
           />
         ),
+        // The time it was last seen (the column's name); the lifecycle state
+        // only when it is not active, since nearly every row is.
         cell: ({ row }) => (
-          <AssetStatusBadge
-            status={row.original.status}
-            daysSinceLastSeen={daysSinceISO(row.original.lastSeen)}
-            snoozedUntil={row.original.lifecyclePausedUntil}
-          />
+          <span className="inline-flex items-center gap-2 whitespace-nowrap">
+            <time
+              dateTime={row.original.lastSeen || undefined}
+              title={formatLocalized(row.original.lastSeen, locale, { time: true })}
+              className="text-sm tabular-nums text-muted-foreground"
+            >
+              {formatRelative(row.original.lastSeen, '—', locale)}
+            </time>
+            {row.original.status !== 'active' && (
+              <AssetStatusBadge
+                status={row.original.status}
+                daysSinceLastSeen={daysSinceISO(row.original.lastSeen)}
+                snoozedUntil={row.original.lifecyclePausedUntil}
+              />
+            )}
+          </span>
         ),
       },
       {
@@ -479,7 +561,10 @@ export function InventoryTable({
                   </Link>
                 </DropdownMenuItem>
                 {actions.map((a) => (
-                  <DropdownMenuItem key={a.id} onClick={() => void a.run(asset)}>
+                  <DropdownMenuItem
+                    key={a.id}
+                    onClick={() => (a.id === 'scan' ? setScanTarget(asset) : void a.run(asset))}
+                  >
                     <a.icon className="me-2 h-4 w-4" />
                     {a.label}
                   </DropdownMenuItem>
@@ -513,6 +598,7 @@ export function InventoryTable({
     )
   }, [
     classAndLens,
+    registry,
     canWriteAssets,
     canDeleteAssets,
     can,
@@ -524,18 +610,37 @@ export function InventoryTable({
     onEditAsset,
     onDeleteAsset,
     t,
+    locale,
     filterTags,
     onToggleTagFilter,
   ])
 
   return (
     <>
+      <ScanConfirmDialog
+        open={!!scanTarget}
+        onOpenChange={(open) => !open && setScanTarget(null)}
+        names={scanTarget ? [scanTarget.name] : []}
+        onConfirm={async () => {
+          const target = scanTarget
+          setScanTarget(null)
+          if (target)
+            await rowActionsFor(target, typeView, t)
+              .find((a) => a.id === 'scan')
+              ?.run(target)
+        }}
+      />
       <DataTable
         columns={columns}
         data={assets}
         showSearch={false}
+        search={search}
+        filter={filter}
+        emptyState={emptyState}
+        errorState={errorState}
         toolbarStart={toolbarStart}
         toolbarEnd={toolbarEnd}
+        toolbarBelow={toolbarBelow}
         getRowId={(a) => a.id}
         manualPagination
         rowCount={total}
@@ -549,14 +654,27 @@ export function InventoryTable({
         resetSelectionKey={resetSelectionKey}
         showSelectionCount={false}
         onRowClick={setSelectedAsset}
+        // Single-line rows (research/242 D9) until the viewer picks a density.
+        defaultDensity="compact"
+        // Labels are a working column, not a reading one: on under Columns.
+        // The type is the name's second line, so its own column is off too.
+        initialColumnVisibility={{ tags: false, type: false }}
         mobileRow={(a) => {
-          const typeLabel = ASSET_TYPE_LABELS[a.type] ?? a.type
+          const typeKey = typeKeyOf(registry, a.type, a.subType)
+          const typeLabel = t(`assets.typeLabel.${typeKey.type}`, typeKey.label)
           const context = a.groupName || a.description
-          // A card shows the facts row only when it has something known in it.
-          const hasFacts = a.findingCount > 0 || hasSurfaceFacts(a)
-          // The card opens the drawer (a stretched button); the chip row sits
-          // above it so its links and "+N" tooltips are not nested inside a
-          // button.
+          const riskState = riskScoreState(a)
+          // A real score sits at the card's right edge under the word "Risk",
+          // where a phone list keeps its key number; a missing score ("Not
+          // yet scored", "Calculating…") names itself in the meta line.
+          const scored = riskState === 'scored' || riskState === 'pending'
+          // The card (research/271): name, then type and context, then ONE
+          // meta line. A phone card has no column headers, so criticality
+          // names itself ("Criticality: High") and the risk number sits under
+          // "Risk"; the band word is the risk's colour and tooltip, never a
+          // second "High". The whole card opens the drawer (a stretched
+          // button); the meta line sits above it so the findings link is not
+          // nested in a button, and lets other taps through.
           return (
             <div className="relative px-3 py-3 transition-colors hover:bg-muted/50">
               <button
@@ -570,42 +688,65 @@ export function InventoryTable({
                 />
                 <div className="min-w-0 flex-1">
                   <p className="line-clamp-2 break-all text-sm font-medium">{a.name}</p>
-                  <p className="mt-0.5 truncate text-xs text-muted-foreground">
-                    {typeLabel}
-                    {context && ` · ${context}`}
+                  <p className="mt-0.5 flex min-w-0 gap-2 text-xs text-muted-foreground">
+                    <span className="shrink-0">{typeLabel}</span>
+                    {context && <span className="min-w-0 truncate">{context}</span>}
                   </p>
-                  <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
-                    <CriticalityBadge criticality={a.criticality} size="sm" showTooltip={false} />
-                    {/* Scope standing only when a scan may not reach it (research/124). */}
-                    {a.triage && !a.triage.scanAllowed && <ScopeTriageBadge triage={a.triage} />}
-                    {/* Most assets are active; say so only when one is not. */}
-                    {a.status !== 'active' && (
-                      <AssetStatusBadge
-                        status={a.status}
-                        daysSinceLastSeen={daysSinceISO(a.lastSeen)}
-                        snoozedUntil={a.lifecyclePausedUntil}
-                      />
-                    )}
-                    {(a.riskScore > 0 || riskScoreState(a) !== 'scored') && (
-                      <RiskScoreBadge score={a.riskScore} state={riskScoreState(a)} size="sm" />
-                    )}
-                  </div>
                 </div>
+                {scored && a.riskScore > 0 && (
+                  <div data-slot="asset-card-risk" className="flex shrink-0 flex-col items-end">
+                    <span className="text-xs leading-4 text-muted-foreground">
+                      {t('components.col.risk', 'Risk')}
+                    </span>
+                    <RiskScoreBadge
+                      score={a.riskScore}
+                      state={riskState}
+                      size="md"
+                      className="font-semibold"
+                    />
+                  </div>
+                )}
                 <ChevronRight className="mt-1 h-4 w-4 shrink-0 text-muted-foreground" />
               </button>
-              {hasFacts && (
-                <div className="relative z-10 mt-1.5 flex flex-wrap items-center gap-1 ps-7">
-                  <IssuesChip assetId={a.id} count={a.findingCount} />
-                  <SurfaceFacts asset={a} empty={null} />
+              <div
+                data-slot="asset-card-meta"
+                className="pointer-events-none relative z-10 mt-1.5 flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1 ps-7 [&_a]:pointer-events-auto [&_button]:pointer-events-auto"
+              >
+                <CriticalityBadge
+                  criticality={a.criticality}
+                  size="sm"
+                  showTooltip={false}
+                  labelled
+                />
+                <OpenFindingsLink assetId={a.id} count={a.findingCount} />
+                {!scored && <RiskScoreBadge score={a.riskScore} state={riskState} size="sm" />}
+                {/* Scope standing only when a scan may not reach it (research/124). */}
+                {a.triage && !a.triage.scanAllowed && <ScopeTriageBadge triage={a.triage} />}
+                {/* Most assets are active; say so only when one is not. */}
+                {a.status !== 'active' && (
+                  <AssetStatusBadge
+                    status={a.status}
+                    daysSinceLastSeen={daysSinceISO(a.lastSeen)}
+                    snoozedUntil={a.lifecyclePausedUntil}
+                  />
+                )}
+              </div>
+              {hasSurfaceFacts(a) && (
+                <div className="pointer-events-none relative z-10 mt-1.5 min-w-0 ps-7 [&_a]:pointer-events-auto [&_button]:pointer-events-auto">
+                  <SurfaceFactsLine asset={a} max={2} />
                 </div>
               )}
             </div>
           )
         }}
-        emptyMessage={emptyMessage ?? 'No assets match these filters'}
+        emptyMessage={
+          emptyMessage ?? t('assets.inv.emptyFiltered', 'No assets match these filters')
+        }
         emptyDescription={
           emptyDescription ??
-          (hasFilters ? 'Try removing a filter or clearing them all.' : 'No assets yet.')
+          (hasFilters
+            ? t('assets.inv.emptyFilteredHint', 'Try removing a filter or clearing them all.')
+            : t('assets.inv.emptyNone', 'No assets yet.'))
         }
       />
 
@@ -618,7 +759,10 @@ export function InventoryTable({
           if (selectedAsset) onEditAsset?.(selectedAsset)
         }}
         onDelete={() => {
-          if (selectedAsset) onDeleteAsset?.(selectedAsset)
+          if (selectedAsset) {
+            setDeleteRequestedId(selectedAsset.id)
+            onDeleteAsset?.(selectedAsset)
+          }
         }}
         canEdit={canWriteAssets && !!onEditAsset}
         canDelete={canDeleteAssets && !!onDeleteAsset}

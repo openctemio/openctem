@@ -100,7 +100,11 @@ type CreateScanRequest struct {
 	// probing) or intrusive. Omitted: the tier the scanner or workflow
 	// probes at. A scanner or workflow step above it is refused
 	// (INTENSITY_EXCEEDED).
-	Intensity      string         `json:"intensity" validate:"omitempty,oneof=passive active intrusive"`
+	Intensity string `json:"intensity" validate:"omitempty,oneof=passive active intrusive"`
+	// Depth is how much of the workflow each run executes: passive (only
+	// steps that send nothing to the targets), standard (default) or deep.
+	// A depth at which no first step can run is refused (DEPTH_RUNS_NOTHING).
+	Depth          string         `json:"depth" validate:"omitempty,oneof=passive standard deep"`
 	ScanType       string         `json:"scan_type" validate:"required,oneof=workflow single"`
 	ScanWorkflowID string         `json:"scan_workflow_id" validate:"omitempty,uuid"`
 	ScannerName    string         `json:"scanner_name" validate:"max=100"`
@@ -152,7 +156,9 @@ type UpdateScanRequest struct {
 	// TargetOptions: omitted = unchanged (RFC-068).
 	TargetOptions *scan.TargetOptions `json:"target_options"`
 	// Intensity: omitted = unchanged (RFC-071).
-	Intensity    string `json:"intensity" validate:"omitempty,oneof=passive active intrusive"`
+	Intensity string `json:"intensity" validate:"omitempty,oneof=passive active intrusive"`
+	// Depth: omitted = unchanged.
+	Depth        string `json:"depth" validate:"omitempty,oneof=passive standard deep"`
 	ScheduleType string `json:"schedule_type" validate:"omitempty,oneof=manual daily weekly monthly crontab rrule once"`
 	ScheduleCron string `json:"schedule_cron" validate:"max=100"`
 	// ScheduleRRule is an RFC 5545 rule (RRULE parts) for schedule_type rrule,
@@ -287,7 +293,9 @@ type ScanDetailResponse struct {
 	TargetOptions scan.TargetOptions `json:"target_options"`
 	// Intensity is the probe ceiling of every run: passive, active or
 	// intrusive (RFC-071).
-	Intensity      string         `json:"intensity" enums:"passive,active,intrusive"`
+	Intensity string `json:"intensity" enums:"passive,active,intrusive"`
+	// Depth is how much of the workflow each run executes.
+	Depth          string         `json:"depth" enums:"passive,standard,deep"`
 	ScanType       string         `json:"scan_type"`
 	ScanWorkflowID *string        `json:"scan_workflow_id,omitempty"`
 	ScannerName    string         `json:"scanner_name,omitempty"`
@@ -335,6 +343,9 @@ type ScanDetailResponse struct {
 	// progress, completed, partial, failed, blocked with the reason, ...).
 	// Absent before the first run.
 	LastRun *ScanLastRunResponse `json:"last_run,omitempty"`
+	// RecentRuns are the scan's latest runs (at most 10), newest first: the
+	// list's run history and the window its success rate is read over.
+	RecentRuns []ScanRecentRunResponse `json:"recent_runs,omitempty"`
 	// ScanWorkflowName names the workflow a workflow scan runs.
 	ScanWorkflowName string  `json:"scan_workflow_name,omitempty"`
 	CreatedBy        *string `json:"created_by,omitempty"`
@@ -446,6 +457,7 @@ func (h *ScanHandler) CreateScan(w http.ResponseWriter, r *http.Request) {
 		AssetIDs:            req.AssetIDs,
 		TargetOptions:       req.TargetOptions,
 		Intensity:           req.Intensity,
+		Depth:               req.Depth,
 		ScanType:            req.ScanType,
 		ScanWorkflowID:      req.ScanWorkflowID,
 		ScannerName:         req.ScannerName,
@@ -675,6 +687,7 @@ func (h *ScanHandler) UpdateScan(w http.ResponseWriter, r *http.Request) {
 		TargetsPerJob:       req.TargetsPerJob,
 		TargetOptions:       req.TargetOptions,
 		Intensity:           req.Intensity,
+		Depth:               req.Depth,
 		ScheduleType:        req.ScheduleType,
 		ScheduleCron:        req.ScheduleCron,
 		ScheduleRRule:       req.ScheduleRRule,
@@ -1322,6 +1335,31 @@ type ScanLastRunResponse struct {
 	TaskSummary  *RunTaskSummaryResponse `json:"task_summary,omitempty"`
 }
 
+// ScanRecentRunResponse is one of a scan's latest runs: its state, the
+// refusal code of a blocked one, and when it was created.
+type ScanRecentRunResponse struct {
+	ID          string `json:"id"`
+	Status      string `json:"status"`
+	RefusalCode string `json:"refusal_code,omitempty"`
+	CreatedAt   string `json:"created_at"`
+}
+
+func toScanRecentRunsResponse(runs []scanrun.RecentRun) []ScanRecentRunResponse {
+	if len(runs) == 0 {
+		return nil
+	}
+	out := make([]ScanRecentRunResponse, len(runs))
+	for i, r := range runs {
+		out[i] = ScanRecentRunResponse{
+			ID:          r.ID.String(),
+			Status:      string(r.Status),
+			RefusalCode: r.RefusalCode,
+			CreatedAt:   r.CreatedAt.Format(time.RFC3339),
+		}
+	}
+	return out
+}
+
 func toScanLastRunResponse(lr scansvc.LastRun) *ScanLastRunResponse {
 	r := lr.Run
 	if r == nil {
@@ -1350,14 +1388,15 @@ func toScanLastRunResponse(lr scansvc.LastRun) *ScanLastRunResponse {
 	return out
 }
 
-// enrichScanResponses adds each scan's latest run and workflow name: two
-// batch reads for the whole page, scoped to the caller's tenant.
+// enrichScanResponses adds each scan's latest run, recent runs and workflow
+// name: batch reads for the whole page, scoped to the caller's tenant.
 func (h *ScanHandler) enrichScanResponses(ctx context.Context, tenantID string, scans []*scan.Scan, items []*ScanDetailResponse) {
 	tid, err := shared.IDFromString(tenantID)
 	if err != nil || len(scans) == 0 {
 		return
 	}
 	lastRuns := h.service.LastRuns(ctx, tid, scans)
+	recent := h.service.RecentRuns(ctx, tid, scans)
 	names := h.service.ScanWorkflowNames(ctx, tid, scans)
 	approvals := h.approvals.latestStatuses(ctx, tid, scans)
 	for i, s := range scans {
@@ -1365,6 +1404,7 @@ func (h *ScanHandler) enrichScanResponses(ctx context.Context, tenantID string, 
 		if lr, ok := lastRuns[s.ID]; ok {
 			items[i].LastRun = toScanLastRunResponse(lr)
 		}
+		items[i].RecentRuns = toScanRecentRunsResponse(recent[s.ID])
 		if s.ScanWorkflowID != nil {
 			items[i].ScanWorkflowName = names[*s.ScanWorkflowID]
 		}
@@ -1498,6 +1538,7 @@ func buildScanResponse(s *scan.Scan, createdByName *string, revealSecrets bool) 
 		TargetOptions:         s.TargetOptions,
 		SkippedTargets:        s.SkippedTargets,
 		Intensity:             string(s.EffectiveIntensity()),
+		Depth:                 string(s.EffectiveDepth()),
 		ScanType:              string(s.ScanType),
 		ScannerName:           s.ScannerName,
 		ScannerConfig:         scannerConfigFor(s.ScannerConfig, revealSecrets),

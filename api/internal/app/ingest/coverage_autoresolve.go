@@ -23,6 +23,7 @@ package ingest
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"strings"
 
 	auditapp "github.com/openctemio/openctem/api/internal/app/audit"
@@ -89,6 +90,7 @@ const (
 	coverageRejectedItems       = "report_rejected_items"
 	coveragePartial             = "partial_coverage"
 	coverageUndeclared          = "coverage_undeclared"
+	coverageTruncated           = "truncated_result"
 	coverageRepositoryScan      = "repository_scan"
 	coverageNotRepositoryScan   = "not_repository_scan"
 	coverageNotDefaultBranch    = "not_default_branch"
@@ -136,6 +138,11 @@ func decideRunCoverage(c *ingestreport.CommandCoverage, repo bool) coverageDecis
 	}
 	if len(c.Result) > 0 && json.Unmarshal(c.Result, &result) == nil && result.ExitCode != nil && *result.ExitCode != 0 {
 		return coverageDecision{reason: coverageNonZeroExit}
+	}
+	// A result cut short (deadline, disk, cap) cannot prove that what it
+	// does not report is gone, whatever coverage_type its reports declare.
+	if command.ResultTruncated(c.Result) {
+		return coverageDecision{reason: coverageTruncated}
 	}
 	if len(c.Reports) == 0 {
 		return coverageDecision{reason: coverageNoReports}
@@ -221,6 +228,21 @@ func decideRunCoverage(c *ingestreport.CommandCoverage, repo bool) coverageDecis
 	}
 	q.TemplatesDigest = templates
 	return coverageDecision{reason: coverageEligible, query: q}
+}
+
+// coverageReceiptIncomplete: the run's receipt is missing or past its
+// action cap, so it cannot prove what the run did not report; nothing closes.
+const coverageReceiptIncomplete = "receipt_incomplete"
+
+// coverageError: the evaluation could not complete; nothing closes.
+const coverageError = "error"
+
+// coverageCandidateError is the outcome reason of a failed candidate query.
+func coverageCandidateError(err error) string {
+	if errors.Is(err, ingestreport.ErrReceiptIncomplete) {
+		return coverageReceiptIncomplete
+	}
+	return coverageError
 }
 
 // CoverageOutcome is what one evaluation did.
@@ -350,7 +372,7 @@ func (s *Service) EvaluateCommandCoverage(ctx context.Context, tenantID, command
 	cov, err := repo.CommandCoverage(ctx, tenantID, commandID)
 	if err != nil {
 		s.logger.Warn("coverage auto-resolve: could not load the command's run", "command_id", commandID.String(), "error", err)
-		out.Reason = "error"
+		out.Reason = coverageError
 		return out
 	}
 	// A finished filtered resolution marks the names it did not report
@@ -388,22 +410,24 @@ func (s *Service) EvaluateCommandCoverage(ctx context.Context, tenantID, command
 	ctx = vulnerability.WithTransitionEvidence(ctx, map[string]any{
 		"scanner": d.query.ToolName, "scan_id": commandID.String(), "profile_id": d.query.ProfileID,
 	})
+	d.query.CommandID = commandID
 	stale, open, err := repo.CoverageStaleFindings(ctx, tenantID, d.query)
 	if err != nil {
-		s.logger.Warn("coverage auto-resolve: candidate query failed", "command_id", commandID.String(), "error", err)
-		out.Reason = "error"
+		out.Reason = coverageCandidateError(err)
+		s.logger.Warn("coverage auto-resolve: candidate query failed", "command_id", commandID.String(), "reason", out.Reason, "error", err)
 		return out
 	}
 	if mode == CoverageAutoResolveEnforce {
 		out.NotObserved = append(out.NotObserved, s.markSecretsNotObserved(ctx, tenantID, commandID, d.query, false)...)
 	}
 	if len(stale) == 0 {
+		s.recordCoverageReceipt(ctx, tenantID, commandID, d.query, out, false)
 		return out
 	}
 	out.Held = s.coverageGuard.Holds(len(stale), open)
 	resolvable, drifted, ok := s.splitTemplateDrift(ctx, tenantID, stale, d.query.TemplatesDigest)
 	if !ok {
-		out.Reason = "error"
+		out.Reason = coverageError
 		return out
 	}
 	out.WouldResolve, out.TemplateDrift = resolvable, drifted
@@ -445,6 +469,7 @@ func (s *Service) EvaluateCommandCoverage(ctx context.Context, tenantID, command
 		s.logger.Info("coverage auto-resolve: resolved findings", append(logArgs, "resolved", len(resolved))...)
 	}
 	s.auditCoverageAutoResolve(ctx, tenantID, commandID, d.query, out, open)
+	s.recordCoverageReceipt(ctx, tenantID, commandID, d.query, out, false)
 	return out
 }
 
@@ -496,14 +521,16 @@ func (s *Service) evaluateRepoCoverage(ctx context.Context, tenantID, commandID 
 	ctx = vulnerability.WithTransitionEvidence(ctx, map[string]any{
 		"scanner": d.query.ToolName, "scan_id": commandID.String(), "profile_id": d.query.ProfileID,
 	})
+	d.query.CommandID = commandID
 	stale, open, err := repo.RepoCoverageStaleFindings(ctx, tenantID, d.query)
 	if err != nil {
-		s.logger.Warn("repository auto-resolve: candidate query failed", "command_id", commandID.String(), "error", err)
-		out.Reason = "error"
+		out.Reason = coverageCandidateError(err)
+		s.logger.Warn("repository auto-resolve: candidate query failed", "command_id", commandID.String(), "reason", out.Reason, "error", err)
 		return out
 	}
 	out.NotObserved = append(out.NotObserved, s.markSecretsNotObserved(ctx, tenantID, commandID, d.query, true)...)
 	if len(stale) == 0 {
+		s.recordCoverageReceipt(ctx, tenantID, commandID, d.query, out, true)
 		return out
 	}
 	out.WouldResolve = stale
@@ -529,6 +556,7 @@ func (s *Service) evaluateRepoCoverage(ctx context.Context, tenantID, commandID 
 		s.logger.Info("repository auto-resolve: resolved findings", append(logArgs, "resolved", len(resolved))...)
 	}
 	s.auditCoverageAutoResolve(ctx, tenantID, commandID, d.query, out, open)
+	s.recordCoverageReceipt(ctx, tenantID, commandID, d.query, out, true)
 	return out
 }
 

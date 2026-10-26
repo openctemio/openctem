@@ -1,5 +1,8 @@
 'use client'
 
+import { Tag } from '@/components/ui/tag'
+import { HealthStatus } from '@/components/ui/health-status'
+import { TAG_SWATCH_CLASS, tagColorForName } from '@/lib/tag-colors'
 import { useState, useMemo } from 'react'
 import {
   Radar,
@@ -27,6 +30,7 @@ import {
 } from 'lucide-react'
 import { Input } from '@/components/ui/input'
 import { cn } from '@/lib/utils'
+import { useTranslation } from '@/context/i18n-provider'
 import { useToolAvailability, useToolsWithConfig } from '@/lib/api/tool-hooks'
 import {
   TOOL_STATUS_META,
@@ -69,34 +73,6 @@ function getIconForTool(tool: ToolWithConfig['tool']): React.ElementType {
   }
   // Fallback to generic scanner
   return Radar
-}
-
-// Map color names from database to Tailwind classes
-const COLOR_MAP: Record<string, string> = {
-  blue: 'bg-blue-600',
-  purple: 'bg-purple-600',
-  green: 'bg-green-600',
-  red: 'bg-red-600',
-  orange: 'bg-orange-600',
-  cyan: 'bg-cyan-600',
-  yellow: 'bg-yellow-600',
-  pink: 'bg-pink-600',
-  indigo: 'bg-indigo-600',
-  violet: 'bg-violet-600',
-  emerald: 'bg-emerald-600',
-  amber: 'bg-amber-600',
-  slate: 'bg-slate-600',
-  gray: 'bg-gray-600',
-}
-
-// Get color from category (dynamic from database) or fallback
-function getColorForTool(tool: ToolWithConfig['tool']): string {
-  // Use category color from database if available
-  if (tool.category?.color) {
-    const color = COLOR_MAP[tool.category.color]
-    if (color) return color
-  }
-  return 'bg-slate-600'
 }
 
 // Group tools by their category (from embedded category info)
@@ -154,6 +130,7 @@ interface NodePaletteProps {
 }
 
 export function NodePalette({ onDragStart, position = 'right' }: NodePaletteProps) {
+  const { t } = useTranslation()
   const [searchQuery, setSearchQuery] = useState('')
   const [expandedCategories, setExpandedCategories] = useState<Set<string>>(new Set())
 
@@ -248,7 +225,7 @@ export function NodePalette({ onDragStart, position = 'right' }: NodePaletteProp
         )}
       >
         <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
-        <p className="text-xs text-muted-foreground mt-2">Loading tools...</p>
+        <p className="text-xs text-muted-foreground mt-2">{t('workflowStages.palette.loading')}</p>
       </div>
     )
   }
@@ -263,7 +240,9 @@ export function NodePalette({ onDragStart, position = 'right' }: NodePaletteProp
         )}
       >
         <AlertCircle className="h-6 w-6 text-destructive" />
-        <p className="text-xs text-muted-foreground mt-2 text-center">Failed to load tools</p>
+        <p className="text-xs text-muted-foreground mt-2 text-center">
+          {t('workflowStages.palette.loadFailed')}
+        </p>
       </div>
     )
   }
@@ -277,18 +256,21 @@ export function NodePalette({ onDragStart, position = 'right' }: NodePaletteProp
     >
       {/* Header */}
       <div className="p-3 border-b">
-        <h4 className="text-sm font-semibold mb-2">Scanner Tools</h4>
+        <h4 className="text-sm font-semibold mb-2">{t('workflowStages.palette.title')}</h4>
         <div className="relative">
           <SearchIcon className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
           <Input
-            placeholder="Search tools..."
+            placeholder={t('workflowStages.palette.search')}
+            aria-label={t('workflowStages.palette.search')}
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             className="h-8 ps-8 text-xs"
           />
         </div>
         <p className="text-[10px] text-muted-foreground mt-2">
-          {enabledTools.length} tools available
+          {t('workflowStages.palette.available', '{count} tools available', {
+            count: enabledTools.length,
+          })}
         </p>
       </div>
 
@@ -298,7 +280,9 @@ export function NodePalette({ onDragStart, position = 'right' }: NodePaletteProp
           <div className="text-center py-8">
             <Wrench className="h-8 w-8 text-muted-foreground/50 mx-auto" />
             <p className="text-xs text-muted-foreground mt-2">
-              {searchQuery ? 'No tools match your search' : 'No tools enabled'}
+              {searchQuery
+                ? t('workflowStages.palette.noMatch')
+                : t('workflowStages.palette.noneEnabled')}
             </p>
           </div>
         ) : (
@@ -327,11 +311,11 @@ export function NodePalette({ onDragStart, position = 'right' }: NodePaletteProp
                     {tools.map((toolWithConfig) => {
                       const tool = toolWithConfig.tool
                       const Icon = getIconForTool(tool)
-                      const iconBg = getColorForTool(tool)
+                      const swatch = tagColorForName(tool.category?.color)
                       const isAvailable = toolWithConfig.is_available === true
                       const avail = availability.get(tool.name)
                       const unavailableReason =
-                        toolUnavailableReason(avail) ?? 'No online sensor can run it'
+                        toolUnavailableReason(avail) ?? t('workflowStages.palette.noOnlineSensor')
                       const logoSrc = safeImageSrc(tool.logo_url)
 
                       return (
@@ -368,16 +352,19 @@ export function NodePalette({ onDragStart, position = 'right' }: NodePaletteProp
                           ) : (
                             <div
                               className={cn(
-                                'h-8 w-8 rounded-lg flex items-center justify-center flex-shrink-0 shadow-sm',
-                                isAvailable ? iconBg : 'bg-muted'
+                                'relative h-8 w-8 rounded-lg flex items-center justify-center flex-shrink-0 bg-muted'
                               )}
                             >
-                              <Icon
-                                className={cn(
-                                  'h-4 w-4',
-                                  isAvailable ? 'text-white' : 'text-muted-foreground'
-                                )}
-                              />
+                              <Icon className="h-4 w-4 text-foreground" />
+                              {isAvailable && (
+                                <span
+                                  aria-hidden
+                                  className={cn(
+                                    'absolute -right-0.5 -top-0.5 size-2 rounded-full ring-2 ring-card',
+                                    TAG_SWATCH_CLASS[swatch]
+                                  )}
+                                />
+                              )}
                             </div>
                           )}
                           <div className="min-w-0 flex-1">
@@ -392,24 +379,31 @@ export function NodePalette({ onDragStart, position = 'right' }: NodePaletteProp
                               </span>
                               {/* Show badge for platform vs custom tools */}
                               {tool.is_platform_tool ? (
-                                <span className="text-[9px] px-1 py-0.5 rounded bg-blue-500/15 text-blue-600 font-medium shrink-0 flex items-center gap-0.5">
-                                  <Cloud className="h-2.5 w-2.5" />
-                                  Platform
-                                </span>
+                                <Tag
+                                  variant="plain"
+                                  icon={Cloud}
+                                  label={t('workflowStages.palette.platform')}
+                                />
                               ) : (
-                                <span className="text-[9px] px-1 py-0.5 rounded bg-amber-500/15 text-amber-600 font-medium shrink-0 flex items-center gap-0.5">
-                                  <User className="h-2.5 w-2.5" />
-                                  Custom
-                                </span>
+                                <Tag
+                                  variant="plain"
+                                  icon={User}
+                                  label={t('workflowStages.palette.custom')}
+                                />
                               )}
                               {avail && (
                                 <ToolTrustBadge item={avail} className="text-[9px] px-1 py-0" />
                               )}
                               {/* Show badge for unavailable tools */}
                               {!isAvailable && (
-                                <span className="text-[9px] px-1 py-0.5 rounded bg-red-500/15 text-red-600 font-medium shrink-0">
-                                  {avail ? TOOL_STATUS_META[avail.status].label : 'No sensor'}
-                                </span>
+                                <HealthStatus
+                                  state="down"
+                                  label={
+                                    avail
+                                      ? TOOL_STATUS_META[avail.status].label
+                                      : t('workflowStages.palette.noSensor')
+                                  }
+                                />
                               )}
                             </div>
                             {tool.capabilities && tool.capabilities.length > 0 && (
@@ -436,7 +430,7 @@ export function NodePalette({ onDragStart, position = 'right' }: NodePaletteProp
       {/* Footer Tips */}
       <div className="p-3 border-t bg-muted/20">
         <p className="text-[10px] text-muted-foreground leading-relaxed">
-          Drag tools to canvas. Connect to create dependencies.
+          {t('workflowStages.palette.hint')}
         </p>
       </div>
     </div>

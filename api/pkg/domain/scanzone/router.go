@@ -42,6 +42,23 @@ type Router struct {
 	zones    []*Zone
 	def      *Zone
 	resolver Resolver
+	// lookupOnly routes a hostname with no DNS answer as a public target
+	// (LookupOnly).
+	lookupOnly bool
+}
+
+// LookupOnly makes the router place a hostname with no DNS answer as a
+// public target (the default zone, else unzoned) instead of leaving it
+// uncovered, for a job that only looks names up (DNS resolution, passive
+// enumeration: scopedom.JobShape.LookupOnly) and sends nothing to the
+// target hosts. Such a job exists to find out whether the name resolves.
+// The route keeps Unresolved set. Every other rule is unchanged: a name
+// that resolves is routed by its addresses (a private or denied answer
+// stays uncovered), and the sensor's egress guard still checks every
+// address before it connects anywhere.
+func (r *Router) LookupOnly(on bool) *Router {
+	r.lookupOnly = on
+	return r
 }
 
 // NewRouter builds a router over a tenant's zones. resolver may be nil, in
@@ -76,14 +93,44 @@ type Route struct {
 	// zone range holds it (as opposed to the deny list or failed DNS).
 	OutsideZones bool
 	// Unresolved is set when a hostname has no address from the platform's
-	// resolver: it cannot be placed in any zone, whatever its scope says.
+	// resolver: it cannot be placed in any zone, whatever its scope says,
+	// unless the router routes for a lookup-only job (Router.LookupOnly).
 	Unresolved bool
+	// Kind is why an uncovered target is not scanned (Kind* constants);
+	// empty when the target is routed.
+	Kind string
 }
+
+// Why a target is not scanned. A caller groups uncovered targets by kind to
+// explain a refusal; only the zone kinds mention zones.
+const (
+	// KindUnresolved: a hostname with no DNS answer from the platform. A
+	// fact about the target, not about zones.
+	KindUnresolved = "unresolved"
+	// KindOutsideZones: a private address (or a name resolving to one) that
+	// no zone range holds.
+	KindOutsideZones = "outside_zones"
+	// KindPartlyCovered: a private range only partly inside a zone.
+	KindPartlyCovered = "partly_covered"
+	// KindOutsideSelected: outside the zone the scan is pinned to.
+	KindOutsideSelected = "outside_selected_zone"
+	// KindDenyList: in the built-in deny list (loopback, link-local,
+	// metadata, multicast, unspecified).
+	KindDenyList = "deny_list"
+	// KindInvalid: not an address, range or hostname.
+	KindInvalid = "invalid"
+	// KindZoneNoSensor: the target's zone has no sensor assigned.
+	KindZoneNoSensor = "zone_no_sensor"
+	// KindSensorPolicy: no sensor of the zone accepts the job under its
+	// local policy.
+	KindSensorPolicy = "sensor_policy"
+)
 
 // Uncovered is a target that will not be scanned, with the reason.
 type Uncovered struct {
 	Target string `json:"target"`
 	Reason string `json:"reason"`
+	Kind   string `json:"kind,omitempty"`
 }
 
 // Plan is the routing of a whole target list.
@@ -134,7 +181,7 @@ func buildPlan(routes []Route) *Plan {
 		case rt.Unzoned:
 			p.Unzoned = append(p.Unzoned, rt.Target)
 		default:
-			p.Uncovered = append(p.Uncovered, Uncovered{Target: rt.Target, Reason: rt.Reason})
+			p.Uncovered = append(p.Uncovered, Uncovered{Target: rt.Target, Reason: rt.Reason, Kind: rt.Kind})
 		}
 	}
 	return p
@@ -152,13 +199,20 @@ func (r *Router) routeTarget(ctx context.Context, target string, pt Target) Rout
 		return rt
 	}
 	if pt.Host == "" {
-		rt.Reason = "not an address, range or hostname"
+		rt.Reason, rt.Kind = "not an address, range or hostname", KindInvalid
 		return rt
 	}
 	addrs := r.resolve(ctx, pt.Host)
 	if len(addrs) == 0 {
+		// Said as a fact about the name: zones are not the reason, even
+		// though they are why an unresolved name cannot be placed.
 		rt.Unresolved = true
-		rt.Reason = "hostname did not resolve from the platform; zones route hostnames by resolved address, so add the address or fix DNS"
+		if r.lookupOnly {
+			r.routePublic(&rt)
+			return rt
+		}
+		rt.Kind = KindUnresolved
+		rt.Reason = "does not resolve in DNS; fix its DNS record, or scan its address"
 		return rt
 	}
 	rt.Addrs = addrs
@@ -168,7 +222,7 @@ func (r *Router) routeTarget(ctx context.Context, target string, pt Target) Rout
 
 func (r *Router) routePrefix(rt *Route, p netip.Prefix) {
 	if IsDenied(p.Addr()) || (p.Bits() < p.Addr().BitLen() && overlapsDeny(p)) {
-		rt.Reason = fmt.Sprintf("%s is in the built-in deny list (loopback, link-local/metadata, multicast, unspecified)", p)
+		rt.Reason, rt.Kind = fmt.Sprintf("%s is in the built-in deny list (loopback, link-local/metadata, multicast, unspecified)", p), KindDenyList
 		return
 	}
 	if z := r.narrowest(p); z != nil {
@@ -178,10 +232,10 @@ func (r *Router) routePrefix(rt *Route, p netip.Prefix) {
 	if prefixIsPrivate(p) {
 		rt.OutsideZones = true
 		if p.Bits() < p.Addr().BitLen() && r.partlyCovered(p) {
-			rt.Reason = fmt.Sprintf("range %s is only partly inside a zone; split it so each part lies in one zone", p)
+			rt.Reason, rt.Kind = fmt.Sprintf("range %s is only partly inside a zone; split it so each part lies in one zone", p), KindPartlyCovered
 			return
 		}
-		rt.Reason = fmt.Sprintf("%s is a private address outside every scan zone", p.Addr())
+		rt.Reason, rt.Kind = fmt.Sprintf("%s is a private address outside every scan zone", p.Addr()), KindOutsideZones
 		return
 	}
 	r.routePublic(rt)
@@ -217,12 +271,12 @@ func (r *Router) routeAddrs(rt *Route, addrs []netip.Addr) {
 	// resolver may know internal names, and a reason is shown to whoever
 	// asked (scan-zone preview).
 	case private.IsValid():
-		rt.OutsideZones = true
+		rt.OutsideZones, rt.Kind = true, KindOutsideZones
 		rt.Reason = "resolves to a private address outside every scan zone"
 	case denied.IsValid() && len(addrs) == 1:
-		rt.Reason = "resolves to an address in the built-in deny list"
+		rt.Reason, rt.Kind = "resolves to an address in the built-in deny list", KindDenyList
 	case denied.IsValid() && !hasPublic(addrs):
-		rt.Reason = "resolves only to addresses in the built-in deny list"
+		rt.Reason, rt.Kind = "resolves only to addresses in the built-in deny list", KindDenyList
 	default:
 		r.routePublic(rt)
 	}
@@ -248,11 +302,11 @@ func (p *Plan) RestrictTo(selected *Zone) *Plan {
 		rt := &routes[i]
 		switch {
 		case rt.Zone != nil && rt.Zone.ID != selected.ID:
-			rt.Zone, rt.Reason = nil, reason
+			rt.Zone, rt.Reason, rt.Kind = nil, reason, KindOutsideSelected
 		case rt.Unzoned:
-			rt.Unzoned, rt.Reason = false, reason
+			rt.Unzoned, rt.Reason, rt.Kind = false, reason, KindOutsideSelected
 		case rt.Zone == nil && rt.OutsideZones:
-			rt.Reason = reason
+			rt.Reason, rt.Kind = reason, KindOutsideSelected
 		}
 	}
 	return buildPlan(routes)

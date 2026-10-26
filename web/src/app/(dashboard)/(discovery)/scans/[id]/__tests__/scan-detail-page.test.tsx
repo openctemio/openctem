@@ -10,7 +10,11 @@ import ScanDetailPage from '../page'
 // newest runs), one metric strip with honest numbers, and targets shown as
 // inert, escaped text.
 const runCalls: Array<{ page: number; perPage: number }> = []
-let config: Record<string, unknown>
+let config: Record<string, unknown> | undefined
+let configError: unknown
+const refetchConfig = vi.fn()
+const mutateSpy = vi.hoisted(() => vi.fn())
+const channelCb = vi.hoisted(() => ({ current: undefined as undefined | (() => void) }))
 let runsByPage: (page: number) => unknown
 
 vi.mock('next/navigation', () => ({
@@ -18,15 +22,31 @@ vi.mock('next/navigation', () => ({
   useRouter: () => ({ push: vi.fn() }),
 }))
 vi.mock('@/lib/api/scan-hooks', () => ({
-  useScanConfig: () => ({ data: config, isLoading: false, error: undefined }),
-  useScanRuns: (_id: string, page: number, perPage: number) => {
-    runCalls.push({ page, perPage })
+  useScanConfig: () => ({
+    data: config,
+    isLoading: false,
+    error: configError,
+    mutate: refetchConfig,
+  }),
+  useScanRuns: (id: string | null, page: number, perPage: number) => {
+    // A null id disables the request (SWR key null): not a fetch.
+    if (id) runCalls.push({ page, perPage })
     return { data: runsByPage(page), isLoading: false, mutate: vi.fn() }
   },
   invalidateScanConfigsCache: vi.fn(),
 }))
 vi.mock('@/lib/api/security-hooks', () => ({
   useAssetGroup: (id: string) => ({ data: id === 'g1' ? { name: 'Internet edge' } : undefined }),
+}))
+vi.mock('swr', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('swr')>()
+  return { ...actual, useSWRConfig: () => ({ mutate: mutateSpy }) }
+})
+vi.mock('@/hooks/use-websocket', () => ({
+  useRunChannels: (_ids: string[], cb: () => void) => {
+    channelCb.current = cb
+    return true
+  },
 }))
 vi.mock('@/lib/api/client', () => ({ get: vi.fn(), post: vi.fn(), del: vi.fn() }))
 vi.mock('@/context/tenant-provider', () => ({
@@ -52,22 +72,48 @@ vi.mock('@/lib/permissions', async (importOriginal) => {
   return { ...actual, Can: ({ children }: { children: React.ReactNode }) => <>{children}</> }
 })
 const urlState: Record<string, string> = {}
-vi.mock('@/hooks/use-url-param', () => ({
-  useUrlFilter: (key: string, fallback: string) => [
-    urlState[key] ?? fallback,
-    (v: string) => {
-      if (v === fallback) delete urlState[key]
-      else urlState[key] = v
+// A URL-backed store that re-renders its readers, as the real hooks do.
+const urlListeners = new Set<() => void>()
+const setUrl = (key: string, v: string, fallback: string) => {
+  if (v === fallback) delete urlState[key]
+  else urlState[key] = v
+  urlListeners.forEach((l) => l())
+}
+vi.mock('@/hooks/use-url-param', async () => {
+  const { useReducer, useEffect } = await import('react')
+  const useSubscribe = () => {
+    const [, bump] = useReducer((n: number) => n + 1, 0)
+    useEffect(() => {
+      urlListeners.add(bump)
+      return () => void urlListeners.delete(bump)
+    }, [])
+  }
+  return {
+    // The list hook reads the whole query and writes it back in one go.
+    useUrlParams: () => {
+      useSubscribe()
+      return new URLSearchParams(urlState)
     },
-  ],
-  useUrlFilterNumber: (key: string, fallback: number) => [
-    urlState[key] ? Number(urlState[key]) : fallback,
-    (v: number) => {
-      if (v === fallback) delete urlState[key]
-      else urlState[key] = String(v)
+    replaceUrlSearch: (next: URLSearchParams) => {
+      for (const k of Object.keys(urlState)) delete urlState[k]
+      next.forEach((v, k) => {
+        urlState[k] = v
+      })
+      urlListeners.forEach((l) => l())
     },
-  ],
-}))
+    useUrlFilter: (key: string, fallback: string) => {
+      useSubscribe()
+      return [urlState[key] ?? fallback, (v: string) => setUrl(key, v, fallback)]
+    },
+    useUrlFilterNumber: (key: string, fallback: number) => {
+      useSubscribe()
+      return [
+        urlState[key] ? Number(urlState[key]) : fallback,
+        (v: number) => setUrl(key, String(v), String(fallback)),
+      ]
+    },
+  }
+})
 
 globalThis.ResizeObserver ??= class {
   observe() {}
@@ -93,6 +139,9 @@ const run = (id: string, over: Record<string, unknown> = {}) => ({
 describe('Scan page', () => {
   beforeEach(() => {
     runCalls.length = 0
+    configError = undefined
+    refetchConfig.mockClear()
+    mutateSpy.mockClear()
     for (const k of Object.keys(urlState)) delete urlState[k]
     config = {
       id: 's1',
@@ -125,16 +174,61 @@ describe('Scan page', () => {
   it('pages the run history on the server and links to the full runs list', async () => {
     render(<ScanDetailPage />)
     expect(runCalls).toContainEqual({ page: 1, perPage: 25 })
-    // The numbers come from the newest runs whatever page is open.
-    expect(runCalls).toContainEqual({ page: 1, perPage: 10 })
     await userEvent.click(screen.getByRole('button', { name: 'Next page' }))
     expect(runCalls).toContainEqual({ page: 2, perPage: 25 })
+    // The page is in the URL, so a reload or a shared link keeps it.
+    expect(urlState.page).toBe('2')
     expect(screen.getByText(/^Showing/).textContent).toMatch(/26\s*-\s*50\s*of\s*60\s*runs/)
-    expect(Object.keys(urlState).filter((k) => k.startsWith('run_'))).toEqual([])
     expect(screen.getByRole('link', { name: 'View all runs' })).toHaveAttribute(
       'href',
       '/scans/runs?scan_id=s1'
     )
+  })
+
+  // One request for page 1 on load: the newest runs for the strip come from
+  // the history page itself (it fetched the same endpoint twice).
+  it('fetches the first page of runs once on load', () => {
+    render(<ScanDetailPage />)
+    expect(runCalls.filter((c) => c.page === 1)).toEqual([{ page: 1, perPage: 25 }])
+  })
+
+  it('reads the run history page and size from the URL', () => {
+    urlState.page = '3'
+    urlState.per_page = '50'
+    render(<ScanDetailPage />)
+    expect(runCalls).toContainEqual({ page: 3, perPage: 50 })
+  })
+
+  // The config key holds the counters and next run; a finished run must
+  // refresh it with the runs.
+  it('revalidates the scan config when a run notice arrives', () => {
+    render(<ScanDetailPage />)
+    channelCb.current?.()
+    const matcher = mutateSpy.mock.calls[0][0] as (key: unknown) => boolean
+    expect(matcher('/api/v1/scans/s1')).toBe(true)
+    expect(matcher('/api/v1/scans/s1/runs?page=1&per_page=25')).toBe(true)
+    expect(matcher('/api/v1/scans/other')).toBe(false)
+  })
+
+  it('says not found on a 404', () => {
+    config = undefined
+    configError = { statusCode: 404, message: 'not found' }
+    render(<ScanDetailPage />)
+    expect(screen.getByText('Scan not found')).toBeInTheDocument()
+  })
+
+  it('shows a retryable error, not "not found", on a server failure', async () => {
+    config = undefined
+    configError = { statusCode: 500, message: 'boom' }
+    render(<ScanDetailPage />)
+    expect(screen.queryByText('Scan not found')).toBeNull()
+    await userEvent.click(screen.getByRole('button', { name: 'Retry' }))
+    expect(refetchConfig).toHaveBeenCalled()
+  })
+
+  it('has no back link that repeats the breadcrumb', () => {
+    render(<ScanDetailPage />)
+    expect(screen.queryByRole('link', { name: 'Scans' })).toBeNull()
   })
 
   it('names the scan in the header breadcrumb', () => {
@@ -151,8 +245,21 @@ describe('Scan page', () => {
 
   it('says n/a, not 0 %, before any run settled', () => {
     render(<ScanDetailPage />)
-    expect(screen.getByText('n/a')).toBeInTheDocument()
-    expect(screen.getByText('No finished run yet')).toBeInTheDocument()
+    expect(screen.getByText(/Success rate:\s*n\/a/)).toBeInTheDocument()
+  })
+
+  it("links every strip tile to this scan's runs with the matching status", () => {
+    render(<ScanDetailPage />)
+    const hrefOf = (name: RegExp) =>
+      screen
+        .getAllByRole('link')
+        .find(
+          (a) => name.test(a.textContent ?? '') && a.getAttribute('href')?.includes('/scans/runs')
+        )
+        ?.getAttribute('href')
+    expect(hrefOf(/Successful/)).toMatch(/\/scans\/runs\?scan_id=.+&status=completed$/)
+    expect(hrefOf(/Partial/)).toMatch(/&status=partial$/)
+    expect(hrefOf(/Failed/)).toMatch(/&status=failed$/)
   })
 
   it('shows asset groups by name and targets as escaped text', async () => {

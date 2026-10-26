@@ -1,0 +1,110 @@
+import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { fireEvent, render, screen } from '@testing-library/react'
+
+const state = vi.hoisted(() => ({
+  group: null as unknown,
+  error: null as unknown,
+  assets: [] as unknown[],
+  refresh: vi.fn(),
+}))
+
+vi.mock('next/navigation', () => ({
+  useRouter: () => ({ push: vi.fn(), replace: vi.fn() }),
+  usePathname: () => '/assets/groups/g1',
+}))
+vi.mock('@/components/layout', () => ({
+  Main: ({ children }: { children: React.ReactNode }) => <main>{children}</main>,
+  useBreadcrumbTitle: () => {},
+}))
+vi.mock('@/context/tenant-provider', () => ({
+  useTenant: () => ({ currentTenant: { id: 't1' }, isLoading: false }),
+}))
+vi.mock('@/lib/permissions', async (orig) => ({
+  ...(await orig<typeof import('@/lib/permissions')>()),
+  usePermissions: () => ({ can: () => true }),
+}))
+vi.mock('@/features/asset-types/api/use-asset-type-registry', () => ({
+  useAssetTypeRegistry: () => ({ registry: undefined }),
+}))
+vi.mock('@/features/asset-groups', () => ({
+  EditGroupDialog: () => null,
+  AddAssetsDialog: () => null,
+  useAssetGroup: () => ({
+    data: state.group,
+    isLoading: false,
+    error: state.error,
+    mutate: state.refresh,
+  }),
+  useGroupAssets: () => ({
+    data: state.assets,
+    total: state.assets.length,
+    isLoading: false,
+    mutate: vi.fn(),
+  }),
+  useGroupFindings: () => ({ data: [], total: 0, isLoading: false }),
+  useUpdateAssetGroup: () => ({ trigger: vi.fn(), isMutating: false }),
+  useDeleteAssetGroup: () => ({ trigger: vi.fn(), isMutating: false }),
+  useRemoveAssetsFromGroup: () => ({ trigger: vi.fn(), isMutating: false }),
+  useAddAssetsToGroup: () => ({ trigger: vi.fn(), isMutating: false }),
+}))
+
+import AssetGroupDetailPage from '../[id]/page'
+
+const group = {
+  id: 'g1',
+  name: 'Core',
+  description: '',
+  environment: 'production',
+  criticality: 'high',
+  assetCount: 340,
+  findingCount: 0,
+  riskScore: 10,
+  createdAt: '2026-01-01T00:00:00Z',
+  updatedAt: '2026-01-02T00:00:00Z',
+  tags: [],
+}
+
+function renderPage() {
+  // A settled thenable, so `use(params)` reads it without suspending.
+  const value = { id: 'g1' }
+  const params = Object.assign(Promise.resolve(value), { status: 'fulfilled', value })
+  render(<AssetGroupDetailPage params={params} />)
+}
+
+beforeEach(() => {
+  state.group = null
+  state.error = null
+  state.assets = []
+  state.refresh.mockReset()
+})
+
+describe('/assets/groups/[id]', () => {
+  it('a server error offers retry and is not "Group not found"', async () => {
+    state.error = Object.assign(new Error('boom'), { statusCode: 500 })
+    renderPage()
+    fireEvent.click(await screen.findByRole('button', { name: /retry/i }))
+    expect(state.refresh).toHaveBeenCalled()
+    expect(screen.queryByText('Group not found')).toBeNull()
+  })
+
+  it('a 404 reads as not found', async () => {
+    state.error = Object.assign(new Error('nope'), { statusCode: 404 })
+    renderPage()
+    expect(await screen.findByText('Group not found')).toBeInTheDocument()
+  })
+
+  it('a group larger than the loaded page says its figures are partial', async () => {
+    state.group = group
+    state.assets = Array.from({ length: 100 }, (_, i) => ({
+      id: `a${i}`,
+      name: `asset ${i}`,
+      type: 'host',
+      status: 'active',
+      riskScore: 1,
+      findingCount: 0,
+      lastSeen: '2026-01-01T00:00:00Z',
+    }))
+    renderPage()
+    expect(await screen.findAllByText(/Based on the first 100 of 340/)).not.toHaveLength(0)
+  })
+})

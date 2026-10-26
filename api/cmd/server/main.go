@@ -5,6 +5,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	nethttp "net/http"
 	"os"
 	"os/signal"
 	"strings"
@@ -175,6 +176,15 @@ func run() int {
 		defer closeWithLog(adminDB, "console database pool", log)
 		log.Info("console identity tables use their own database role", "role", cfg.Database.AdminUser)
 	}
+	// Ingest writes (assets, findings, components, branches) go through
+	// their own pool (DB_INGEST_MAX_CONNS): a burst of uploads cannot take
+	// the connections the API's requests need.
+	ingestDB, err := postgres.New(cfg.Database.IngestConfig())
+	if err != nil {
+		log.Error("failed to open the ingest database pool", "error", err)
+		return 1
+	}
+	defer closeWithLog(ingestDB, "ingest database pool", log)
 	if err := checkAppRoleConsoleTables(ctx, db.DB, cfg, log); err != nil {
 		log.Error("database role check failed: refusing to start", "error", err)
 		return 1
@@ -249,6 +259,7 @@ func run() int {
 		Log:         log,
 		DB:          db.DB,
 		Repos:       repos,
+		IngestDB:    ingestDB,
 		RedisClient: redisClient,
 	})
 	if err != nil {
@@ -556,9 +567,14 @@ func run() int {
 	// ==========================================================================
 	// Start Server
 	// ==========================================================================
+	// A listener that cannot start (port in use, bad TLS material) ends the
+	// process with a non-zero exit so the orchestrator restarts it, instead of
+	// leaving a replica that runs controllers but serves no HTTP.
+	serverFailed := make(chan error, 1)
 	go func() {
-		if err := server.Start(); err != nil {
+		if err := server.Start(); fatalListenerError(err) {
 			log.Error("server error", "error", err)
+			serverFailed <- err
 		}
 	}()
 	if handlers.SensorV3 != nil && servesTenant {
@@ -578,7 +594,12 @@ func run() int {
 	// ==========================================================================
 	quit := make(chan os.Signal, 1)
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
-	<-quit
+	exitCode := 0
+	select {
+	case <-quit:
+	case <-serverFailed:
+		exitCode = 1
+	}
 
 	log.Info("shutting down...")
 
@@ -618,7 +639,13 @@ func run() int {
 	}
 
 	log.Info("application stopped")
-	return 0
+	return exitCode
+}
+
+// fatalListenerError reports whether an error from the HTTP server's Start
+// means it is not serving: any error except a normal close.
+func fatalListenerError(err error) bool {
+	return err != nil && !errors.Is(err, nethttp.ErrServerClosed)
 }
 
 // =============================================================================

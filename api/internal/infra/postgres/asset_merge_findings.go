@@ -84,6 +84,11 @@ var findingMergeRefs = []mergeRef{
 	// survivor against the policy; the survivor's own hold wins.
 	{table: "ticket_create_holds", column: "finding_id", tenantCol: "tenant_id", idCol: "ctid",
 		keys: []mergeKey{{cols: []string{"integration_id"}}}},
+	// What an upload or run did to the loser is now what it did to the
+	// survivor; a receipt that already acted on the survivor keeps its own
+	// row (one row per receipt and finding).
+	{table: "finding_ingest_actions", column: "finding_id", tenantCol: "tenant_id", idCol: "ctid",
+		keys: []mergeKey{{cols: []string{"receipt_id"}}}},
 	// A person took the finding out of a fix: the survivor stays out of it.
 	{table: "remediation_key_exclusions", column: "finding_id", tenantCol: "tenant_id", idCol: "ctid",
 		keys: []mergeKey{{cols: []string{"action_key"}}}},
@@ -111,6 +116,12 @@ var findingMergeKeptRefs = map[string]string{
 	// the tombstone closes (duplicate) inside its task; the survivor keeps
 	// its own task, or is proposed for one.
 	"remediation_task_members.finding_id": "kept on the tombstone; the duplicate closes in its task, the survivor keeps its own",
+	// Link keys and same-issue links describe the finding they were derived
+	// from; tombstones are never link candidates, and the survivor's own are
+	// derived again on its next sighting or by the link backfill.
+	"finding_link_keys.finding_id":   "kept on the tombstone; tombstones are never link candidates",
+	"finding_issue_links.primary_id": "kept on the tombstone; re-derived for the survivor",
+	"finding_issue_links.member_id":  "kept on the tombstone; re-derived for the survivor",
 }
 
 // FindingMergeReferenceHandling returns "table.column" for every reference to
@@ -202,8 +213,8 @@ func rekeyMergedFinding(ctx context.Context, tx *sql.Tx, tenantID, keepID string
 			return err
 		}
 		if _, err := tx.ExecContext(ctx,
-			`UPDATE findings SET fingerprint = $1, identity_key = COALESCE($4::jsonb, identity_key) WHERE id = $2 AND tenant_id = $3`,
-			newFP, f.id, tenantID, nullJSON(newKey)); err != nil {
+			`UPDATE findings SET fingerprint = $1, identity_key = COALESCE($4::jsonb, identity_key)`+mergedIdentityRecipeSQL+` WHERE id = $2 AND tenant_id = $3`,
+			append([]any{newFP, f.id, tenantID, nullJSON(newKey)}, identityKeyRecipeArgs(newKey)...)...); err != nil {
 			return fmt.Errorf("re-key merged finding: %w", err)
 		}
 		return nil
@@ -218,13 +229,20 @@ func rekeyMergedFinding(ctx context.Context, tx *sql.Tx, tenantID, keepID string
 			return err
 		}
 		if _, err := tx.ExecContext(ctx,
-			`UPDATE findings SET fingerprint = $1, identity_key = COALESCE($4::jsonb, identity_key) WHERE id = $2 AND tenant_id = $3`,
-			newFP, f.id, tenantID, nullJSON(newKey)); err != nil {
+			`UPDATE findings SET fingerprint = $1, identity_key = COALESCE($4::jsonb, identity_key)`+mergedIdentityRecipeSQL+` WHERE id = $2 AND tenant_id = $3`,
+			append([]any{newFP, f.id, tenantID, nullJSON(newKey)}, identityKeyRecipeArgs(newKey)...)...); err != nil {
 			return fmt.Errorf("re-key surviving finding: %w", err)
 		}
 		return nil
 	}
 }
+
+// mergedIdentityRecipeSQL keeps the recorded recipe of a finding re-keyed by
+// an asset merge (only the asset value changes, never a field name) and
+// fills it from the rewritten tuple ($5, $6) when none was recorded.
+const mergedIdentityRecipeSQL = `,
+			identity_fields = CASE WHEN identity_algo IS NULL AND $5::varchar IS NOT NULL THEN $6::text[] ELSE identity_fields END,
+			identity_algo = COALESCE(identity_algo, $5::varchar)`
 
 // mergedFindingFingerprint is f's fingerprint on the kept asset (and, for a
 // versioned key, the rewritten identity tuple), or "" when it cannot be
