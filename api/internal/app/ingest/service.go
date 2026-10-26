@@ -100,6 +100,9 @@ type Service struct {
 	scanAttribution ScanAttributionStamper
 	// importCandidates holds the new hosts of an import for review.
 	importCandidates ImportCandidateHolder
+	// groupRules is told when a report created or updated assets, so the
+	// tenant's rule groups are evaluated again (debounced). Nil-safe.
+	groupRules AssetChangeNotifier
 
 	// takeoverConfirmer raises subdomain_takeover from nuclei takeover
 	// findings of command-bound reports (RFC-036 P1). Nil-safe.
@@ -578,6 +581,10 @@ func (s *Service) Ingest(ctx context.Context, agt *sensor.Sensor, input Input) (
 	s.recordTechnologies(ctx, tenantID, scope, src, observedAt, report, assetMap)
 	if binding.Kind == BindingTrusted && sourceKind == asset.SourceKindImport {
 		s.holdImportCandidates(ctx, tenantID, scope, report, assetMap, output)
+	}
+
+	if s.groupRules != nil && output.AssetsCreated+output.AssetsUpdated > 0 {
+		s.groupRules.NotifyAssetsChanged(tenantID)
 	}
 
 	s.logger.Debug("asset processing complete",
@@ -1170,3 +1177,13 @@ func UnmarshalReport(data []byte) (*ctis.Report, error) {
 	}
 	return &report, nil
 }
+
+// AssetChangeNotifier is told when assets of a tenant were created or
+// changed (*asset.GroupRuleScheduler).
+type AssetChangeNotifier interface {
+	NotifyAssetsChanged(tenantID shared.ID)
+}
+
+// SetAssetChangeNotifier wires the evaluation of rule groups after a report
+// created or updated assets.
+func (s *Service) SetAssetChangeNotifier(n AssetChangeNotifier) { s.groupRules = n }

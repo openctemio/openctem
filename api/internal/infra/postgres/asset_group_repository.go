@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/lib/pq"
 
@@ -727,7 +728,7 @@ func (r *AssetGroupRepository) GetGroupAssets(ctx context.Context, groupID share
 	query := `
 		SELECT a.id, a.name, a.asset_type, a.status, a.risk_score,
 			   (SELECT COUNT(*) FROM findings f WHERE f.asset_id = a.id AND NOT f.branch_only) AS finding_count,
-			   a.last_seen
+			   a.last_seen, agm.source, agm.added_at
 		FROM ` + groupMembersFrom + `
 		WHERE agm.asset_group_id = $1 AND ` + scopeCond + `
 		ORDER BY a.name
@@ -749,9 +750,11 @@ func (r *AssetGroupRepository) GetGroupAssets(ctx context.Context, groupID share
 			riskScore    int
 			findingCount int
 			lastSeen     sql.NullTime
+			source       string
+			addedAt      time.Time
 		)
 
-		if err := rows.Scan(&id, &name, &assetType, &status, &riskScore, &findingCount, &lastSeen); err != nil {
+		if err := rows.Scan(&id, &name, &assetType, &status, &riskScore, &findingCount, &lastSeen, &source, &addedAt); err != nil {
 			continue
 		}
 
@@ -769,6 +772,8 @@ func (r *AssetGroupRepository) GetGroupAssets(ctx context.Context, groupID share
 			RiskScore:    riskScore,
 			FindingCount: findingCount,
 			LastSeen:     ls,
+			Source:       source,
+			AddedAt:      addedAt,
 		})
 	}
 

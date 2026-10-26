@@ -665,6 +665,8 @@ type Services struct {
 	CertMonitor  *certmonitorapp.Service
 	// ActiveGate decides what an active scan may touch (RFC-036 §6.3).
 	ActiveGate *easmapp.ActiveGate
+	// AssetGroupRules evaluates rule groups after asset changes (debounced).
+	AssetGroupRules *asset.GroupRuleScheduler
 	// ScopeJoin confirms discovered names a permanent scope target or seed
 	// covers (RFC-054 §4.3).
 	ScopeJoin *easmapp.ScopeJoin
@@ -1152,6 +1154,13 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 
 	s.AssetGroup = asset.NewAssetGroupService(repos.AssetGroup, log)
 	s.AssetGroup.SetDataScope(s.DataScope)
+	// Groups that fill themselves: rules, member sources and history. Asset
+	// changes ask for the tenant's rule groups to be evaluated again
+	// (debounced); the periodic controller is the safety net.
+	s.AssetGroup.SetRuleStore(repos.AssetGroup, repos.Asset)
+	s.AssetGroup.SetOwnerCheck(datascope.MembershipOwnerLookup(repos.Tenant))
+	s.AssetGroupRules = asset.NewGroupRuleScheduler(s.AssetGroup, 0, log)
+	s.Asset.SetGroupRuleNotifier(s.AssetGroupRules)
 	s.AssetType = asset.NewAssetTypeService(repos.AssetType, repos.AssetTypeCat, log)
 	s.Scope = scope.NewService(repos.ScopeTarget, repos.ScopeExcl, repos.Asset, log)
 	// Every web job carries the path exclusions of its hosts, whatever path
@@ -2283,6 +2292,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// Policies are applied from a per-tenant snapshot, reloaded when their
 	// version changes.
 	s.Ingest.SetPolicyVersions(repos.IngestPolicyVersions)
+	s.Ingest.SetAssetChangeNotifier(s.AssetGroupRules)
 	// DefectDojo co-existence sync (RFC-013): pull a tenant's DefectDojo findings
 	// and ingest them as CTIS (one-way; OpenCTEM is the system of record).
 	s.DefectDojoSync = defectdojo.NewSyncService(repos.Integration, s.Ingest, s.Encryptor, log)
@@ -2475,6 +2485,10 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 		WithPlatformPolicy(s.ScopeGuardrails)
 	s.ActiveGate.SetWildcardDNS(repos.AssetWildcardDNS)
 	s.ActiveGate.SetCertificates(repos.AssetRelationship)
+	// A pasted list may create the assets it names that do not exist: the
+	// scope check decides which join the inventory and which wait for review
+	// as candidates (the same hold an import gets).
+	s.AssetGroup.SetPasteAssets(newPasteAssets(s.Asset, s.ActiveGate, easmapp.NewScanStamper(repos.Attribution, repos.VerifiedNames)))
 	// RFC-065 §16.8: signed jobs for sensors that enforce scope limits carry
 	// the limits of port- and path-limited targets.
 	s.Command.SetScopeLimits(s.ActiveGate)
@@ -2862,6 +2876,9 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// Wire scope rule hooks for real-time evaluation
 	s.Asset.SetScopeRuleEvaluator(s.ScopeRule.EvaluateAsset)
 	s.AssetGroup.SetScopeRuleReconciler(s.ScopeRule.ReconcileByAssetGroup)
+	// A group that a privileged team's scope rules use is changed only by
+	// the owner after a recent sign-in.
+	s.AssetGroup.SetAccessGuard(s.Group)
 
 	// Initialize assignment engine and wire to vulnerability service for auto-routing
 	assignmentEngine := assignment.NewEngine(repos.AccessControl, log)

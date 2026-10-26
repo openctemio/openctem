@@ -135,6 +135,7 @@ RFC-003 (asset source priority) was withdrawn on 2026-10-05; see
 | [RFC-124](RFC-124-outbound-webhooks.md) | Outbound webhooks: delivery per channel, typed events, signing and redelivery | Implemented (2026-10-22): delivery per channel, typed payload, refused redirects, signing and redelivery |
 | [RFC-125](RFC-125-automation-simulate-and-go-live.md) | Automations: catalog, versions, simulate and the go-live gate | Accepted (2026-10-23). |
 | [RFC-126](RFC-126-import-mappings.md) | Import mappings | Accepted (2026-10-23). |
+| [RFC-128](RFC-128-smart-asset-groups.md) | Smart asset groups | Accepted (2026-10-26). |
 <!-- END RFC INDEX -->
 
 > Status legend: **Proposed** = under review · **Phase N done** = that phase shipped to `develop` · **Implemented** = fully landed.
