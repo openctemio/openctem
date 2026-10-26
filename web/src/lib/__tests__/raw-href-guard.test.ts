@@ -46,9 +46,18 @@ const SAFE_CALLS = new Set([
   // with the asset id and fixed statuses in the query.
   'assetFindingsHref',
   'campaignHref',
+  // features/vulnerabilities/lib/vuln-page.ts: `/findings?cve_id=…` with the
+  // filters as URLSearchParams values.
+  'cveFindingsHref',
   'findingsHrefForSources',
   'mitreTechniqueUrl',
+  // features/findings/lib/quick-views.ts: `/findings?` with a quick view's
+  // filter (from the API) only in the query.
+  'quickViewHref',
   'registerHref',
+  // features/vulnerabilities/api/use-cve-exposure.ts: `/vulnerabilities/` with
+  // the id URI-encoded.
+  'vulnerabilityHref',
 ])
 
 /** Components that encode their own href. */
@@ -60,8 +69,6 @@ const SAFE_TAGS = new Set(['SafeExternalLink'])
  * route builder or a constant.
  */
 const REVIEWED = new Set([
-  // My work drill: findingsDrillUrl() builds a fixed same-origin /findings path from the page's constant metric filters.
-  'app/(dashboard)/my-work/page.tsx|Link|href={findingsDrillUrl(MY_WORK_METRIC_FILTERS.open)}',
   // Asset group page: findingsHref() is a fixed same-origin /findings prefix with the group id encoded and a severity from a fixed list.
   'app/(dashboard)/(discovery)/assets/groups/[id]/page.tsx|NextLink|href={findingsHref(severity)}',
   // StatsCard href only receives the callers' own constant routes (attack surface tiles).

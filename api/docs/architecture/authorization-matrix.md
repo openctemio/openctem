@@ -319,14 +319,14 @@ API keys are refused on both prefixes; the tenant is the session's. Design: `mcp
 |----------|---------------------|
 | `GET /api/v1/oauth/requests/{id}`, `POST /{id}/approve`, `/{id}/deny` | any member, on a consent request they claimed (404 otherwise); the grant never exceeds what they hold |
 | `POST /api/v1/oauth/requests/{id}/access-request` | any active member, on a consent request they claimed and only when the application is blocked because its publisher is not approved; at most 5 new requests per member per day, 50 waiting per organization (429); audited |
-| `POST /api/v1/oauth/requests/{id}/allow-publisher` | `settings:write` + a recent sign-in; adds the publisher host of that consent request to the caller's organization policy; audited |
+| `POST /api/v1/oauth/requests/{id}/allow-publisher` | owner or administrator (`RequireAdmin`) **and** `settings:write` + a recent sign-in; adds the publisher host of that consent request to the caller's organization policy; audited |
 | `GET /api/v1/organization/security-overview` | owner or admin with `settings:read`; the organization comes from the credential; counts and statuses only, no personal data ([security-overview.md](security-overview.md)) |
 | `GET /api/v1/audit-logs/export` | `audit:read` and the list's full-data rule; filters as the list; at most 50,000 rows, one export at a time per person, heavy-read cap; audited `audit_log.exported` |
-| `GET`/`PUT /api/v1/mcp-access/settings` | `settings:read` / `settings:write` + a recent sign-in; audited |
+| `GET`/`PUT /api/v1/mcp-access/settings` | `settings:read` / owner or administrator **and** `settings:write` + a recent sign-in; audited |
 | `GET /api/v1/mcp-access/requests` | `settings:read` (the organization's waiting requests; requester name, no e-mail or IP) |
-| `POST /api/v1/mcp-access/requests/{id}/approve` | `settings:write` + a recent sign-in (loosens the policy); another organization's request is 404; audited |
-| `POST /api/v1/mcp-access/requests/{id}/deny` | `settings:write` (tightens nothing, no step-up); 404 across organizations; audited |
-| `GET`/`POST`/`DELETE /api/v1/mcp-access/clients` | `settings:read` / `settings:write` + a recent sign-in |
+| `POST /api/v1/mcp-access/requests/{id}/approve` | owner or administrator **and** `settings:write` + a recent sign-in (loosens the policy); another organization's request is 404; audited |
+| `POST /api/v1/mcp-access/requests/{id}/deny` | owner or administrator **and** `settings:write` (tightens nothing, no step-up); 404 across organizations; audited |
+| `GET`/`POST`/`DELETE /api/v1/mcp-access/clients` | `settings:read` / owner or administrator **and** `settings:write` + a recent sign-in |
 | `GET`/`DELETE /api/v1/mcp-access/connections` | owner or administrator (`RequireAdmin`) |
 | `GET`/`DELETE /api/v1/mcp-access/my-connections` | any member, own connections only |
 
@@ -340,7 +340,7 @@ API keys are refused on both prefixes; the tenant is the session's. Design: `mcp
 | `POST /api/v1/components/import` | `components:write` (target asset in scope; rate limited) |
 | `GET /api/v1/assets/{id}/components`, `/dependency-paths`, `/dependency-graph` | `components:read` (asset in scope) |
 | `GET /api/v1/vex-statements`, `/{id}` | `components:read` (asset-bound statements: asset in scope; statements for every asset: an in-scope asset uses the package; else 404) |
-| `GET`/`PUT /api/v1/organization/settings/license-policy` | `settings:read` / `settings:write` (configuration of the caller's organization; a PUT re-evaluates its package links and license findings; audited) |
+| `GET`/`PUT /api/v1/organization/settings/license-policy` | `settings:read` / owner or administrator **and** `settings:write` (configuration of the caller's organization; a PUT re-evaluates its package links and license findings; audited) |
 | `POST /api/v1/vex-statements`, `PATCH`/`DELETE /{id}`, `POST /import` | `findings:approve`, plus `findings:verify` to write a `fixed` statement (create or patch to `fixed`, widen a fixed one, or import a document with any `fixed` statement; the whole import is refused with 403 before anything is written), because `fixed` resolves findings with verification `vex_statement`; `not_affected` and delete need only approve (closes findings: asset-bound needs the asset in scope, 404 otherwise; a statement for every asset needs full data access, 403 otherwise; import rate limited) |
 
 The inventory has no manual create, update or delete (RFC-070): sensors, CI
@@ -772,7 +772,7 @@ the billing page in the UI.
 
 #### Organization-wide scan configuration
 
-Owner and administrator only, on top of the permission: `PUT /api/v1/scan-profiles/{id}/quality-gate`, `POST /api/v1/scan-profiles/{id}/set-default`, `PATCH /api/v1/tools/settings`, `PATCH /api/v1/tools/{id}/settings` (each changes what every scan of the organization runs with), and `DELETE /api/v1/secret-store/{id}`. A member whose role carries the write permission is refused with 403; the web console hides these controls from members.
+Owner and administrator only, on top of the permission: `PUT /api/v1/scan-profiles/{id}/quality-gate`, `POST /api/v1/scan-profiles/{id}/set-default`, `PATCH /api/v1/tools/settings`, `PATCH /api/v1/tools/{id}/settings` (each changes what every scan of the organization runs with), and `DELETE /api/v1/secret-store/{id}`. A member whose role carries the write permission is refused with 403; the web console hides these controls from members. The general profile routes hold the same rule: `PUT /api/v1/scan-profiles/{id}` refuses a member who changes the pass/fail rule or edits the default profile, and `POST /api/v1/scan-profiles` refuses a member who creates the profile as the default (403). A member still creates profiles and edits their other fields, and may send the pass/fail rule back unchanged. `PUT /api/v1/easm/settings` is owner or administrator **and** `settings:write`.
 
 > Writing the credential store is owner/admin only, so a member cannot replace a credential an administrator's configuration authenticates with. The built-in Member role no longer holds `scans:secret_store:write` (migration `002905`).
 
@@ -2703,7 +2703,7 @@ from a custom role to deny that one action.
 | `team:update` | `PATCH /tenants/{tenant}` | team admin |
 | `team:members:write` | member add/role/suspend/reactivate/remove, admin-created users and setup links | team admin |
 | `team:members:invite` | create/resend/delete invitations | team admin |
-| `settings:write` | every `PATCH/PUT/POST .../settings/*` (owner-only ones stay owner-only) | team admin / owner |
+| `settings:write` | every `PATCH/PUT/POST .../settings/*`, always together with the owner or administrator role (`RequireAdmin`; owner-only ones stay owner-only). A custom role holding `settings:write` alone changes no organization setting; `TestOrganizationSettingsWritesNeedAdminRole` keeps every settings write route on this rule | team admin / owner |
 | `team:delete` | `DELETE /tenants/{tenant}` | team owner |
 
 `/tenants/{tenant}/...` routes name the tenant in the path, which may differ

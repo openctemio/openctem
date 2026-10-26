@@ -252,6 +252,7 @@ export interface AffectedAsset {
   /** public | restricted | private | isolated | unknown (detail page only). */
   exposure?: string
   isInternetAccessible?: boolean
+  isCrownJewel?: boolean
 }
 
 /** The package an SCA finding is about (detail page only). */
@@ -800,6 +801,8 @@ export interface Finding {
   workItemUris?: string[] // linked issues
   occurrenceCount?: number
   duplicateCount?: number
+  /** Findings marked as duplicates of this one that the viewer can read. */
+  duplicatesMarked?: number
   lastSeenAt?: string
   correlationId?: string // for grouping related findings
 
@@ -1260,6 +1263,23 @@ export interface ApiApproval {
    * only with its group (approving it alone answers 409 BATCH_MEMBER).
    */
   batch_id?: string
+  /** The finding's facts now (My Work queue lists, `?queue=`). */
+  finding?: ApprovalFindingFacts
+  /**
+   * Approval-policy class reasons true for the finding now and not when the
+   * request was made (`kev`, `severity_critical`, ...): queue lists, pending
+   * requests only.
+   */
+  changed_since_request?: string[]
+}
+
+/** What an approver weighs at a glance (approval queue rows). */
+export interface ApprovalFindingFacts {
+  severity: string
+  priority_class?: string
+  kev: boolean
+  epss?: number
+  asset_name?: string
 }
 
 export type ApprovalStatus = 'pending' | 'approved' | 'rejected' | 'canceled' | 'expired'

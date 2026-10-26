@@ -81,6 +81,24 @@ import {
 
 const PAGE_SIZES = [10, 20, 30, 50, 100]
 
+/**
+ * Column priority (research/266, research/271): the table frame width each
+ * lower-priority column needs before it shows, so a narrow screen drops
+ * columns instead of scrolling the table sideways. Name, risk, scope and
+ * service facts always show (with the checkbox and the row menu they take
+ * about 860px); then open findings, criticality, exposure, owner and last
+ * seen join in that order (research/242 D9). Each value is the running sum of the columns'
+ * measured widths in the every-type list, plus a few pixels of slack. A
+ * column turned on or off under Columns keeps that choice.
+ */
+const COLUMN_ROOM = {
+  findings: 1020,
+  criticality: 1140,
+  exposure: 1255,
+  owner: 1355,
+  last_seen: 1475,
+} as const
+
 /** A one-type list shows "Service facts" only when its own columns do not already. */
 function showsServiceFacts(view: TypeView): boolean {
   const cells = cellsForType(view.type, view.subType)
@@ -113,6 +131,10 @@ interface InventoryTableProps {
   onSortChange: (sort: string | undefined) => void
   onSelectionChange: (assets: Asset[]) => void
   resetSelectionKey: number
+  /** Replaces the "nothing here" block (which kind of empty, the next action). */
+  emptyState?: ReactNode
+  /** Shown in place of the rows when the read failed; the toolbar stays. */
+  errorState?: ReactNode
   /** The list's search box (the toolbar draws it). */
   search?: DataTableSearch
   /** The phone filter-sheet trigger, joined to the search. */
@@ -149,6 +171,8 @@ export function InventoryTable({
   onSortChange,
   onSelectionChange,
   resetSelectionKey,
+  emptyState,
+  errorState,
   search,
   filter,
   toolbarStart,
@@ -352,19 +376,22 @@ export function InventoryTable({
         header: ({ column }) => (
           <DataTableColumnHeader column={column} title={t('assets.facts.title', 'Service facts')} />
         ),
-        // One line (research/266): status, port, what runs there, then "+N"
-        // opening every fact, so rows keep one height.
-        cell: ({ row }) =>
-          cellsForType(row.original.type, row.original.subType) ? (
-            <div className="w-[19.5rem] max-w-[19.5rem]">
+        // One line (research/266) in a fixed width: as many whole facts as
+        // fit (status code, port, edge, what runs there), then "+N" opening
+        // every fact, so rows keep one height and no chip is cut.
+        cell: ({ row }) => (
+          <div className="w-64">
+            {cellsForType(row.original.type, row.original.subType) ? (
               <SurfaceFactsLine asset={row.original} />
-            </div>
-          ) : (
-            <span className="text-muted-foreground">—</span>
-          ),
+            ) : (
+              <span className="text-muted-foreground">—</span>
+            )}
+          </div>
+        ),
       },
       {
         id: 'criticality',
+        meta: { hideBelow: COLUMN_ROOM.criticality },
         accessorKey: 'criticality',
         enableSorting: sortable('criticality'),
         header: ({ column }) => (
@@ -379,6 +406,7 @@ export function InventoryTable({
       },
       {
         id: 'exposure',
+        meta: { hideBelow: COLUMN_ROOM.exposure },
         accessorKey: 'exposure',
         enableSorting: sortable('exposure'),
         header: ({ column }) => (
@@ -390,6 +418,7 @@ export function InventoryTable({
       },
       {
         id: 'findings',
+        meta: { hideBelow: COLUMN_ROOM.findings },
         accessorKey: 'findingCount',
         enableSorting: sortable('findings'),
         header: ({ column }) => (
@@ -404,6 +433,7 @@ export function InventoryTable({
       },
       {
         id: 'owner',
+        meta: { hideBelow: COLUMN_ROOM.owner },
         enableSorting: false,
         header: ({ column }) => (
           <DataTableColumnHeader column={column} title={t('assets.inv.col.owner', 'Owner')} />
@@ -433,6 +463,7 @@ export function InventoryTable({
       },
       {
         id: 'last_seen',
+        meta: { hideBelow: COLUMN_ROOM.last_seen },
         accessorKey: 'lastSeen',
         enableSorting: sortable('last_seen'),
         header: ({ column }) => (
@@ -605,6 +636,8 @@ export function InventoryTable({
         showSearch={false}
         search={search}
         filter={filter}
+        emptyState={emptyState}
+        errorState={errorState}
         toolbarStart={toolbarStart}
         toolbarEnd={toolbarEnd}
         toolbarBelow={toolbarBelow}

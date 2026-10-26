@@ -26,10 +26,22 @@
 {{- else}}
 #   kubectl apply -n <namespace> -f {{$slug}}.yaml
 {{- end}}
-{{- if not .APIKey}}
+{{- if eq .Auth "pair"}}
+# No key to copy: the sensor makes its own key on first start and pairs.
+{{- if .PairingCode}}
+# It attaches to pairing code {{.PairingCode}} (single use, valid 10 minutes)
+# and prints a fingerprint (kubectl logs deploy/{{$slug}}): approve it in the
+# console only when the console shows the same fingerprint.
+{{- else}}
+# It prints a pairing code and a fingerprint (kubectl logs deploy/{{$slug}}):
+# enter the code under Sensors > Add sensor, compare the fingerprint, approve.
+{{- end}}
+# One code pairs one sensor: for many sensors use an enrollment token.
+{{- else if not .APIKey}}
 # Replace octs_... below with the sensor's API key first (it is shown once,
 # when the sensor is created or its key is rotated).
 {{- end}}
+{{- if or (ne .Auth "pair") .CACert}}
 apiVersion: v1
 kind: Secret
 metadata:
@@ -39,10 +51,13 @@ metadata:
     app.kubernetes.io/instance: {{$slug}}
 type: Opaque
 stringData:
+{{- if ne .Auth "pair"}}
   api-key: {{if .APIKey}}{{.APIKey}}{{else}}octs_...{{end}}
+{{- end}}
 {{- if .CACert}}
   ca.crt: |
 {{indent 4 .CACert}}
+{{- end}}
 {{- end}}
 {{- if isDaemon .Sensor}}
 ---
@@ -113,11 +128,22 @@ spec:
           env:
             - name: SENSOR_API_URL
               value: {{yamlQuote .BaseURL}}
+{{- if eq .Auth "pair"}}
+{{- if .PairingCode}}
+            - name: SENSOR_PAIRING_CODE
+              value: {{yamlQuote .PairingCode}}
+{{- end}}
+{{- if .JobSigningRoot}}
+            - name: SENSOR_JOB_SIGNING_ROOT
+              value: {{yamlQuote .JobSigningRoot}}
+{{- end}}
+{{- else}}
             - name: SENSOR_API_KEY
               valueFrom:
                 secretKeyRef:
                   name: {{$slug}}
                   key: api-key
+{{- end}}
             - name: SENSOR_LOCAL_POLICY
               value: /etc/openctem/policy/sensor-policy.yaml
             # The tools keep their settings under /tmp; the image's home

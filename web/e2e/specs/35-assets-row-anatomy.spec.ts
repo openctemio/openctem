@@ -29,10 +29,12 @@ async function seriousViolations(page: import('@playwright/test').Page) {
 }
 
 for (const scheme of ['light', 'dark'] as const) {
-  test(`asset rows at 1440px in ${scheme}: one height, type under the name, a time`, async ({
+  // 1920px: at narrower widths Last seen is one of the columns the table
+  // drops to fit (column priority, 41-assets-service-facts).
+  test(`asset rows at 1920px in ${scheme}: one height, type under the name, a time`, async ({
     page,
   }, testInfo) => {
-    await page.setViewportSize({ width: 1440, height: 900 })
+    await page.setViewportSize({ width: 1920, height: 900 })
     await page.emulateMedia({ colorScheme: scheme })
     await page.goto('/assets')
     const cells = page.getByTestId('asset-name-cell')
@@ -56,7 +58,7 @@ for (const scheme of ['light', 'dark'] as const) {
     await expect(lastSeen).toHaveText(/ago|now/)
 
     expect(await seriousViolations(page)).toEqual([])
-    await testInfo.attach(`assets-1440-${scheme}.png`, {
+    await testInfo.attach(`assets-1920-${scheme}.png`, {
       body: await page.screenshot({ fullPage: true }),
       contentType: 'image/png',
     })

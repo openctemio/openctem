@@ -240,7 +240,10 @@ export interface ApiFinding {
     /** Single-finding response only. */
     criticality?: string
     exposure?: string
+    /** Internet-facing (list rows and the single finding). */
     is_internet_accessible?: boolean
+    /** Crown jewel (list rows and the single finding). */
+    is_crown_jewel?: boolean
   }
   branch_id?: string
   component_id?: string
@@ -353,11 +356,14 @@ export interface ApiFinding {
   kind?: string // fail/pass/warning/note
   occurrence_count?: number // number of occurrences
   duplicate_count?: number // number of duplicates
+  /** Findings marked as duplicates of this one that the caller can read (list rows). */
+  duplicates_marked?: number
   duplicate_of?: string // the finding this one was folded into (status duplicate)
   comments_count?: number // number of comments
   sla_status?: string // on_track | warning | overdue | exceeded | not_applicable
   sla_deadline?: string // ISO timestamp of the remediation deadline (nullable)
   sla_kev_capped?: boolean // the deadline was shortened by the policy's known exploited (KEV) cap
+  acceptance_expires_at?: string // when an accepted risk ends and the finding reopens (accepted only)
 
   // Threat Intel Enrichment (RFC-004)
   epss_score?: number // 0.0-1.0 exploitation probability
@@ -726,6 +732,8 @@ export interface FindingApiFilters {
    *  assignee, owns the asset, or is a member of an assigned group. Sent as
    *  `assigned_to_me=true`. Backs the My Work view. */
   assigned_to_me?: boolean
+  /** `my_team`: findings assigned to the caller's groups or their members (My Work). */
+  related_to?: 'my_team'
   /** SLA status filter — sent as `sla_status` (comma-separated). Backend accepts
    *  on_track | warning | overdue | exceeded | not_applicable. */
   sla_statuses?: string[]

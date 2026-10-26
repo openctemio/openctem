@@ -45,6 +45,7 @@ func (h *ScanHandler) PreviewWorkflow(w http.ResponseWriter, r *http.Request) {
 	}
 	out, err := h.service.PreviewWorkflow(r.Context(), scansvc.WorkflowPreviewInput{
 		TenantID:       middleware.GetTenantID(r.Context()),
+		UserID:         middleware.GetUserID(r.Context()),
 		ScanWorkflowID: req.ScanWorkflowID,
 		Targets:        req.Targets,
 		AssetGroupIDs:  req.AssetGroupIDs,

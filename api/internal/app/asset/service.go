@@ -1197,7 +1197,9 @@ func (s *AssetService) updateAsset(ctx context.Context, assetID string, tenantID
 
 	// A manual exposure change (e.g. an operator marking an asset public) is
 	// part of "what changed" in the attack surface, same as a scan-driven one.
-	if a.Exposure() != oldExposure {
+	// With attribute reconciliation wired, the person's lock records it (with
+	// the actor) in recordManualAttributes.
+	if a.Exposure() != oldExposure && s.attrSources == nil {
 		s.recordStateChange(ctx, assetdom.RecordFieldChange(parsedTenantID, parsedID,
 			assetdom.StateChangeExposureChanged, "exposure",
 			oldExposure.String(), a.Exposure().String(), assetdom.ChangeSourceManual, nil))
@@ -2272,6 +2274,9 @@ type AssetDisplay struct {
 	Name   string
 	Type   string
 	WebURL string // repository assets only; empty otherwise
+	// CrownJewel and InternetFacing: the asset facts a findings row shows.
+	CrownJewel     bool
+	InternetFacing bool
 }
 
 // GetAssetDisplayInfo resolves the display label of many assets with two
@@ -2315,7 +2320,10 @@ func (s *AssetService) GetAssetDisplayInfo(ctx context.Context, tenantID string,
 
 	var repoIDs []shared.ID
 	for id, info := range infos {
-		result[id.String()] = AssetDisplay{ID: id.String(), Name: info.Name, Type: info.Type.String()}
+		result[id.String()] = AssetDisplay{
+			ID: id.String(), Name: info.Name, Type: info.Type.String(),
+			CrownJewel: info.CrownJewel, InternetFacing: info.InternetFacing,
+		}
 		if info.Type == assetdom.AssetTypeRepository {
 			repoIDs = append(repoIDs, id)
 		}

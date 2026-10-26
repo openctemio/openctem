@@ -207,7 +207,7 @@ widget has `widget_type` `metric` or `note` and a `config` of this form
   | `intel.kev_open` | scalar, preset KEV | as above | F1 |
   | `findings.age_bands` | matrix severity × age band | as above | F1 |
   | `sla.within` | ratio | none | F1 |
-  | `coverage.discovery` | ratio: ledger-tracked assets in scope with a successful discovery run in the coverage window (blocked or failed runs never count); nothing tracked is not measured; opens the uncovered assets | none | coverage ledger + `assets` |
+  | `coverage.discovery` | ratio: ledger-tracked assets in scope whose every applicable capability succeeded in the coverage window (a failed, timed-out, paused or never-run capability leaves the asset uncovered; scope-blocked rows and the platform DNS checks are not required); nothing tracked is not measured; opens the uncovered assets | none | coverage ledger + `assets` |
   | `exposure.open_by_priority` | time series by priority (P0-P2) | priority or severity | F1 + F2 |
   | `flow.new_vs_fixed` | time series of flows | none | F2 |
   | `fix.time_to_fix` | duration (1: category) | priority or severity | F2 |
@@ -215,12 +215,14 @@ widget has `widget_type` `metric` or `note` and a `config` of this form
   | `crown_jewels.exposed` | scalar (assets), preset P0+P1, filter priority only | none | F1 + `assets` |
   | `ctem.loop` | stages (the five CTEM stages) | none | see "CTEM metrics" |
   | `attack_paths.to_crown_jewels` | paths (reachable crown jewels) | none | attack-path scoring + `assets` |
+  | `exposure.flow` | flow (sources, funnel, classes, stages, outcomes) | none | F1 + `findings` + receipts, see "Exposure flow and intake" |
+  | `ingest.intake` | intake (receipts per source, noise, health) | none | `ingest_receipts`, see "Exposure flow and intake" |
 
 - **Shapes and visualizations.** scalar: stat, progress; ratio: progress,
   stat; duration: stat; category: bar, column, table, donut, stat; time
   series: area, line, column, table (a flow: diverging, column, table, never
   an area); matrix: heatmap, table, column; items: list, table; stages: loop, table;
-  paths: paths, table. The first is
+  paths: paths, table; flow: flow, table; intake: intake, table. The first is
   the default; a widget without `viz.type` gets it.
 - **Validation** (`ParseWidgetSpec`, on every create, update and copy of a
   personal or organization dashboard): the config is decoded with unknown
@@ -304,7 +306,7 @@ computed for the read's scope and stored in the snapshot.
 | Stage of `ctem.loop` | Figure | Second figure | Opens | Not measured when |
 |---|---|---|---|---|
 | Scoping | crown jewels in scope (`assets.is_crown_jewel`) | crown jewels with an open P0/P1 finding | `/assets?is_crown_jewel=true&program_assets=exclude` | never (0 designated is "designate crown jewels") |
-| Discovery | % of assets the coverage ledger tracks (`asset_coverage`, a capability that applies) with a successful run of any capability in the last 30 days | assets not covered | `/assets?coverage=uncovered&program_assets=exclude` | the ledger tracks no asset in scope |
+| Discovery | % of assets the coverage ledger tracks (`asset_coverage`, a capability that applies) where every applicable capability succeeded in the last 30 days (scope-blocked rows and the platform DNS checks are not required) | assets not covered | `/assets?coverage=uncovered&program_assets=exclude` | the ledger tracks no asset in scope |
 | Prioritize | open P0 findings (F1) | open KEV findings (F1) | the findings list of the same filter | never |
 | Validate | % of open findings with validation evidence (the Validation overview's coverage) | retests completed in the last 30 days | `/validation` | no open finding in scope |
 | Mobilize | % of open findings with an SLA that is not breached (F1) | breached findings | the breached findings list | no open finding has an SLA |
@@ -347,6 +349,67 @@ computed for the read's scope and stored in the snapshot.
   asset and findings lists), `internal/app/dashboard/widgets/ctem_test.go`
   (every stage reads the server-built scope, not-measured stages carry no
   value, out-of-scope crown jewels never reach the result).
+
+### Exposure flow and intake
+
+Two catalog metrics carry the dashboard's first screen: where findings come
+from, what the platform removed as noise, and where findings went. Both are
+read for one window (the spec's range, 30 days by default; no comparison)
+and stored in the snapshot like every widget, so opening the dashboard
+costs no extra request and no query.
+
+`exposure.flow` (visualization `flow`):
+
+| Part | Figure | Opens |
+|---|---|---|
+| Actionable | open findings of classes P0 to P3 (F1), by class; the classes sum to it | `/findings?state=open&priority_class=...` |
+| Open | every open finding (F1), by severity | `/findings?state=open` (`&severity=`) |
+| Past SLA | open findings with a breached SLA (F1) | the breached findings list |
+| In progress | findings with status `in_progress` now | `/findings?status=in_progress` |
+| Fixed, Accepted, False positive | findings closed with that status in the window (`resolved_at`) | `/findings?status=...&resolved_at_gte=<window start>` |
+| Stages | the `ctem.loop` stages, same read | as `ctem.loop` |
+| Intake | the `ingest.intake` value (organization reads only) | as below |
+
+`ingest.intake` (visualization `intake`) sums the receipts
+([ingest receipts](ingest-receipts.md)) with activity in the window, per
+source: the source group (`sensor`, `import`, `connector`, `ci`, the receipt
+kind's group) and the tool (`unknown` when the source named none).
+
+- Per source: receipts, received, created, still detected, reopened,
+  closed, suppressed, not stored (skipped or failed), the latest receipt
+  (time, status, id) and the usual interval (the median time between its
+  receipts; three receipts or more).
+- Health: `failed` when the latest receipt failed; `stale` when nothing
+  came for more than twice the usual interval and at least a day; `ok`
+  otherwise. A source with fewer than three receipts is never stale.
+- Noise: received splits into new or reopened (created less suppressed,
+  plus reopened), merged into findings that exist (the rest after new,
+  reopened and not stored: still detected and repeats within a report),
+  suppressed by an approved rule (stored closed) and not stored. The parts
+  sum to received.
+- False positive: the findings closed as false positive in the window, the
+  same figure as the flow's.
+- Each source figure opens the receipt list with the same filter
+  (`/findings/imports?origin=&tool=&since=`), whose `totals` are computed by
+  the same grouping expressions (`receiptOriginSQL`, `receiptToolSQL`), so
+  the figure equals the list it opens.
+
+Scope: receipts count findings across the organization and are not
+asset-scoped, so the intake is computed only for a read with no data scope
+(an organization dashboard, or a personal dashboard of the owner), the same
+rule the receipt list uses to show every receipt. Any other personal read
+gets the flow without intake (`intake_reason: organization_only`) and the
+intake widget is `not_measured` (`organization_only`): never an estimate and
+never organization volumes. No source sent anything in the window:
+`no_receipts`.
+
+Tests: `dashboard_flow_widgets_db_test.go` (organization read: sources,
+health, noise, another tenant's receipts and receipts outside the window
+never count, each source figure equals the receipt list's totals, each
+findings figure equals the findings list; personal reads: a scoped member,
+a member without scope rows and the owner, the out-of-scope false positive
+never counts, receipts only for the owner; receipt list filters refuse
+malformed values), `internal/app/dashboard/widgets/flow_test.go`.
 
 ### Scope and isolation
 
