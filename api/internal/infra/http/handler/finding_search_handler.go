@@ -90,7 +90,7 @@ func (h *VulnerabilityHandler) FindingFilterMeta(w http.ResponseWriter, r *http.
 // writeFindingList runs a decoded filter as the caller and writes the list
 // response (shared by GET /findings and POST /findings/search).
 func (h *VulnerabilityHandler) writeFindingList(w http.ResponseWriter, r *http.Request, spec *filterspec.Spec) {
-	result, err := h.service.ListFindingsBySpec(r.Context(), filterCaller(r), spec)
+	result, dupCounts, err := h.service.ListFindingsWithDuplicatesBySpec(r.Context(), filterCaller(r), spec)
 	if err != nil {
 		if writeFindingQueryTimeout(w, err) {
 			return
@@ -111,6 +111,9 @@ func (h *VulnerabilityHandler) writeFindingList(w http.ResponseWriter, r *http.R
 	h.enrichFindingsWithAssetInfo(r.Context(), middleware.MustGetTenantID(r.Context()), data)
 	h.enrichFindingsWithAssigneeInfo(r.Context(), middleware.MustGetTenantID(r.Context()), data)
 	h.enrichFindingsWithKEVRansomware(r.Context(), data)
+	for i, f := range result.Data {
+		data[i].DuplicatesMarked = dupCounts[f.ID()]
+	}
 
 	response := ListResponse[FindingResponse]{
 		Data:       data,
