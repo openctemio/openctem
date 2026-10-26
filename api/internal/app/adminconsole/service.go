@@ -247,6 +247,11 @@ func (s *Service) Start(ctx context.Context, email, password string, client Clie
 			// and never clears it.
 			s.accounts.RecordPasswordFailure(ctx, u.UserID)
 			s.record(ctx, a, ActionLoginFailed, client, "identity provider sign-in required")
+			// The caller sees the same answer as a wrong password: a distinct
+			// refusal would tell a guesser the password was right. The sign-in
+			// page learns that the identity provider is required from the
+			// public policy endpoint, not from this response.
+			return nil, admin.ErrInvalidCredentials
 		}
 		return nil, err
 	}
