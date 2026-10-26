@@ -13,6 +13,7 @@ import (
 	"github.com/openctemio/openctem/api/pkg/domain/command"
 	"github.com/openctemio/openctem/api/pkg/domain/scan"
 	"github.com/openctemio/openctem/api/pkg/domain/scanzone"
+	scopedom "github.com/openctemio/openctem/api/pkg/domain/scope"
 	"github.com/openctemio/openctem/api/pkg/domain/sensor"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/validator"
@@ -125,16 +126,19 @@ func selectedZone(sc *scan.Scan, zones []*scanzone.Zone) (*scanzone.Zone, error)
 }
 
 // routeForScan routes a scan's targets: to the narrowest zone (Automatic), or
-// only into the scan's selected zone, whose ranges are always enforced.
+// only into the scan's selected zone, whose ranges are always enforced. A
+// single-scanner scan whose tool only looks names up (dnsx) keeps the names
+// that do not resolve (scopedom.JobShape.LookupOnly), as the claim does.
 func (s *Service) routeForScan(ctx context.Context, sc *scan.Scan, zones []*scanzone.Zone, targets []string) (*scanzone.Plan, error) {
 	sel, err := selectedZone(sc, zones)
 	if err != nil {
 		return nil, err
 	}
+	lookupOnly := sc.ScannerName != "" && scopedom.JobShape{Tool: sc.ScannerName}.LookupOnly()
 	if sel != nil {
-		return scanzone.NewRouter([]*scanzone.Zone{sel}, s.zoneResolver).Plan(ctx, targets).RestrictTo(sel), nil
+		return scanzone.NewRouter([]*scanzone.Zone{sel}, s.zoneResolver).LookupOnly(lookupOnly).Plan(ctx, targets).RestrictTo(sel), nil
 	}
-	return scanzone.NewRouter(zones, s.zoneResolver).Plan(ctx, targets), nil
+	return scanzone.NewRouter(zones, s.zoneResolver).LookupOnly(lookupOnly).Plan(ctx, targets), nil
 }
 
 // planZoneDispatch routes targets to zones, batches them, and picks the least
@@ -379,7 +383,7 @@ func (s *Service) createZoneCommands(ctx context.Context, sc *scan.Scan, run *sc
 		if stepRun != nil {
 			cmd.SetStepRunID(stepRun.ID) // the step finishes with its last batch
 		}
-		cmd.DispatchGate = scanDispatchGate(sc, run)
+		cmd.DispatchGate = scanDispatchGate(ctx, sc, run)
 		if b.Zone != nil {
 			cmd.SetScanZone(b.Zone.ID)
 			if b.SensorID != nil {
@@ -494,22 +498,22 @@ func appendUnique(xs []string, x string) []string {
 // scan workflow, so all of its routed targets must fall in one zone (or all be
 // unzoned public targets); the run is stamped with that zone and every step
 // command stays inside it.
-func (s *Service) routeWorkflowTargets(ctx context.Context, sc *scan.Scan, zones []*scanzone.Zone, targets []string, runContext map[string]any) ([]string, error) {
+func (s *Service) routeWorkflowTargets(ctx context.Context, sc *scan.Scan, zones []*scanzone.Zone, targets []string, runContext map[string]any) ([]string, *zonePlan, error) {
 	routing, err := s.routeForScan(ctx, sc, zones, targets)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	plan, kept, err := planWorkflowZone(sc, routing)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	if zid, ok := plan.Summary["zone_id"].(string); ok {
 		runContext[scanrun.RunContextKeyScanZoneID] = zid
 	}
 	if err := recordZonePlan(plan, runContext); err != nil {
-		return nil, err
+		return nil, nil, err
 	}
-	return kept, nil
+	return kept, plan, nil
 }
 
 // planWorkflowZone decides the one zone of a workflow run from its routing.

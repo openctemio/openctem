@@ -210,6 +210,13 @@ func drillHref(f dashboard.WidgetFilter) string {
 	if len(f.Severity) > 0 {
 		q.Set("severity", strings.Join(f.Severity, ","))
 	}
+	if len(f.Severity) == 0 && len(f.PriorityClass) == 0 && len(f.SLAState) == 0 {
+		// The facts count informational findings; the findings page hides them
+		// unless asked (an explicit severity always shows them), so a plain
+		// open link asks for them and the list total equals the figure. A
+		// priority or SLA link is left as it is.
+		q.Set("informational", "true")
+	}
 	if len(f.PriorityClass) > 0 {
 		for _, p := range f.PriorityClass {
 			if p == "none" {

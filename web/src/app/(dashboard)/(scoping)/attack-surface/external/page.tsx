@@ -66,7 +66,11 @@ import { ipAddresses } from '@/features/assets/lib/service-facts'
 import { propertyValue } from '@/features/asset-types/lib/property-schema'
 import type { AssetMetadata } from '@/features/assets/types'
 import { toastIfDuplicateAsset } from '@/features/assets/lib/duplicate-asset'
-import { IssuesChip, LabelChips, SurfaceFacts } from '@/features/assets/components/service-cells'
+import {
+  LabelChips,
+  OpenFindingsCell,
+  SurfaceFacts,
+} from '@/features/assets/components/service-cells'
 import { useExposures } from '@/features/exposures/hooks'
 import { ScanAssetsDialog, type ScanCandidate } from '@/features/scans/components'
 import { useTenant } from '@/context/tenant-provider'
@@ -524,14 +528,11 @@ export default function ExternalSurfacePage() {
       },
       {
         id: 'findings',
-        header: t('attackSurface.external.col.findings', 'Findings'),
+        header: t('assets.col.openFindings', 'Open findings'),
         enableSorting: false,
-        cell: ({ row }) =>
-          row.original.findingCount > 0 ? (
-            <IssuesChip assetId={row.original.id} count={row.original.findingCount} />
-          ) : (
-            <span className="text-muted-foreground tabular-nums">0</span>
-          ),
+        cell: ({ row }) => (
+          <OpenFindingsCell assetId={row.original.id} count={row.original.findingCount} />
+        ),
       },
       {
         id: 'labels',

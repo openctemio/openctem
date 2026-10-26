@@ -1226,6 +1226,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	s.AttackSurface = attack.NewSurfaceService(repos.Asset, repos.AssetRelationship, log)
 	// Wire the KEV/critical finding counter for exposure-chain analysis.
 	s.AttackSurface.SetFindingRiskCounter(repos.Finding)
+	s.AttackSurface.SetPathFindingReader(repos.Finding) // lead finding and counts per step of the attack paths to one asset
 	s.AttackSurface.SetDataScope(s.DataScope)
 	s.AttackSurface.SetStateHistory(repos.AssetStateHistory) // recent changes: real removals + exposure changes
 	if repos.Attribution != nil {
@@ -1314,8 +1315,9 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// Note: WebSocket broadcaster is wired later after WebSocketHub is initialized
 
 	// Wire activity service dependencies
-	s.Vulnerability.SetActivityService(s.FindingActivity) // Wire activity tracking
-	s.Vulnerability.SetUserRepository(repos.User)         // Wire user lookup for activity records
+	s.Vulnerability.SetActivityService(s.FindingActivity)    // Wire activity tracking
+	s.Vulnerability.SetTaskRecomputer(repos.RemediationTask) // a delete re-derives the tasks that held the findings
+	s.Vulnerability.SetUserRepository(repos.User)            // Wire user lookup for activity records
 
 	// Note: AITriage is wired to VulnerabilityService later after AITriage initialization
 

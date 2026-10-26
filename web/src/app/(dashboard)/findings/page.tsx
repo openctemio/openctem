@@ -1,5 +1,7 @@
 'use client'
 
+import { CveLink } from '@/features/vulnerabilities/components/cve-link'
+import { MetaLine } from '@/features/shared/components/text-layout'
 import { evaluateFindingTransitions } from '@/features/findings/api/use-finding-transitions'
 import { summarizeDryRun } from '@/features/findings/lib/transition-reasons'
 import { FindingSubStatus } from '@/features/findings/components/lifecycle/finding-sub-status'
@@ -45,6 +47,7 @@ import {
 } from '@/features/config/api/finding-source-api'
 import { useSearchQuery } from '@/hooks/use-search-query'
 import { toDisplayText } from '@/lib/untrusted-text'
+import { useOpenForm } from '@/hooks/use-open-form'
 import type { ColumnDef, SortingState, VisibilityState } from '@tanstack/react-table'
 import { Main } from '@/components/layout'
 import {
@@ -59,7 +62,6 @@ import {
   FacetGroupLabel,
   BulkActionBar,
   FilterSheet,
-  TruncatedText,
   DrillDownBreadcrumb,
   ErrorState,
   type MobileRowSelection,
@@ -168,11 +170,13 @@ import {
   findingStatusesInCategory,
 } from '@/features/findings'
 import { ExploitSignals } from '@/features/findings/components/exploit-signals'
+import { FindingAssetCell } from '@/features/findings/components/cells/finding-asset-cell'
+import { DuplicatesChip } from '@/features/findings/components/cells/duplicates-chip'
+import { findingRowTone } from '@/features/findings/lib/row-tone'
 import { PriorityClassBadge } from '@/features/findings/components/priority-class-badge'
 import { BranchOnlyBadge } from '@/features/findings/components/branch-only-badge'
-import { SlaStatusBadge } from '@/features/sla/components/sla-status-badge'
 import { SLA_STATUS_LABELS, type SLAStatus } from '@/features/repositories/types/repository.types'
-import { formatDueRelative } from '@/features/sla/lib/sla'
+import { SlaDueChip } from '@/features/sla/components/sla-due-chip'
 import {
   FindingRowMenu,
   type FindingRowAction,
@@ -574,6 +578,8 @@ function FindingsContent() {
   // with the CTEM signals; the backend resolves the user from the token.
   const [relatedToFilter, setRelatedToFilter] = useUrlFilter('related_to', '')
   const mineActive = relatedToFilter === 'me'
+  // My Work's My team (related_to=my_team): findings held by the caller's groups.
+  const teamActive = relatedToFilter === 'my_team'
   const setMineFilter = useCallback(
     (on: string) => setRelatedToFilter(on === 'true' ? 'me' : ''),
     [setRelatedToFilter]
@@ -734,6 +740,8 @@ function FindingsContent() {
     hasPermission('findings:write') &&
     hasPermission('assets:write') &&
     hasPermission('assets:import')
+  const openImportForm = useCallback(() => setImportDialogOpen(true), [])
+  useOpenForm('import', canImport, openImportForm)
   // Both are Phase-3 gated modules embedded in this (findings) page: the "Create
   // Jira Ticket" action hits the integrations module, and "Add to remediation"
   // hits the remediation module. Hide + skip-fetch when disabled (fail-open on
@@ -915,6 +923,7 @@ function FindingsContent() {
     reachableActive,
     branchOnlyActive,
     mineActive,
+    teamActive,
     slaFilter.join(),
     pendingApprovalParam,
     acceptanceExpiresParam,
@@ -990,6 +999,7 @@ function FindingsContent() {
     if (reachableActive) filters.is_reachable = true
     if (branchOnlyActive) filters.branch_only = true
     if (mineActive) filters.assigned_to_me = true
+    if (teamActive) filters.related_to = 'my_team'
     if (slaFilter.length > 0) filters.sla_statuses = slaFilter
     if (pendingApprovalFilter !== undefined) filters.pending_approval = pendingApprovalFilter
     if (Object.keys(extraParams).length > 0) filters.extra = extraParams
@@ -1016,6 +1026,7 @@ function FindingsContent() {
     reachableActive,
     branchOnlyActive,
     mineActive,
+    teamActive,
     slaFilter,
     pendingApprovalFilter,
     acceptanceExpiresParam,
@@ -1517,6 +1528,7 @@ function FindingsContent() {
                 <p dir="auto" className="font-medium truncate [unicode-bidi:isolate]">
                   {toDisplayText(row.getValue('title'), 500)}
                 </p>
+                <DuplicatesChip count={row.original.duplicatesMarked} interactive={false} />
                 {row.original.branchOnly && <BranchOnlyBadge />}
                 {hasDataFlow && (
                   <Tooltip>
@@ -1532,13 +1544,13 @@ function FindingsContent() {
                   </Tooltip>
                 )}
               </div>
-              {(row.original.cve || row.original.scanner) && (
-                <p className="text-muted-foreground truncate text-xs">
-                  {row.original.cve && <span className="font-mono">{row.original.cve}</span>}
-                  {row.original.cve && row.original.scanner && ' · '}
-                  {row.original.scanner}
-                </p>
-              )}
+              <MetaLine
+                className="flex-nowrap overflow-hidden whitespace-nowrap"
+                items={[
+                  row.original.cve && <CveLink id={row.original.cve} stopPropagation />,
+                  row.original.scanner,
+                ]}
+              />
             </div>
           )
         },
@@ -1580,6 +1592,7 @@ function FindingsContent() {
         header: () => t('findings.columns.exploitSignals', 'Exploit signals'),
         cell: ({ row }) => (
           <ExploitSignals
+            variant="cell"
             isInKev={row.original.isInKev}
             kevDueDate={row.original.kevDueDate}
             kevRansomware={row.original.kevRansomware}
@@ -1608,52 +1621,7 @@ function FindingsContent() {
         header: ({ column }) => (
           <DataTableColumnHeader column={column} title={t('findings.list.location')} />
         ),
-        cell: ({ row }) => {
-          const asset = row.original.assets[0]
-          const loc = row.original.location
-          if (loc && (loc.asset || loc.detail)) {
-            // Asset on top, the place on it below, cut from the middle so the
-            // part that differs between two findings (the end of a path or
-            // URL) stays visible; the full value is in the tooltip.
-            return (
-              <div className="flex min-w-0 max-w-[240px] flex-col">
-                {loc.asset && (
-                  <TruncatedText
-                    value={loc.asset}
-                    label={t('findings.list.asset')}
-                    className="text-sm"
-                  />
-                )}
-                {loc.detail && (
-                  <TruncatedText
-                    value={loc.detail}
-                    label={t('findings.list.location')}
-                    middle={30}
-                    className={cn(
-                      'font-mono text-muted-foreground',
-                      loc.asset ? 'text-xs' : 'text-sm'
-                    )}
-                  />
-                )}
-              </div>
-            )
-          }
-          // No asset name and no location: a plain "Unnamed asset" link to
-          // the asset (an id fragment meant nothing to people, and the
-          // external-link icon suggested another site).
-          if (asset?.id) {
-            return (
-              <Link
-                href={`/assets/${encodeURIComponent(asset.id)}`}
-                title={asset.id}
-                className="text-muted-foreground hover:text-foreground text-sm hover:underline"
-              >
-                {t('findings.list.unnamedAsset', 'Unnamed asset')}
-              </Link>
-            )
-          }
-          return <span className="text-muted-foreground text-sm">—</span>
-        },
+        cell: ({ row }) => <FindingAssetCell finding={row.original} />,
       },
       {
         accessorKey: 'slaStatus',
@@ -1662,36 +1630,13 @@ function FindingsContent() {
         header: ({ column }) => (
           <DataTableColumnHeader column={column} title={t('findings.columns.sla', 'Due / SLA')} />
         ),
-        cell: ({ row }) => {
-          const status = row.original.slaStatus
-          if (!status || status === 'not_applicable') {
-            return <span className="text-muted-foreground text-sm">—</span>
-          }
-          const cell = (
-            <div className="flex flex-col gap-0.5">
-              <SlaStatusBadge status={status} />
-              {row.original.slaDeadline && (
-                <span className="text-muted-foreground text-xs tabular-nums">
-                  {formatDueRelative(row.original.slaDeadline)}
-                </span>
-              )}
-            </div>
-          )
-          if (!row.original.slaKevCapped) return cell
-          // The deadline came from the SLA policy's known exploited cap.
-          return (
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <div data-slot="sla-kev-capped" tabIndex={0} className="w-fit">
-                  {cell}
-                </div>
-              </TooltipTrigger>
-              <TooltipContent side="top" className="max-w-xs text-xs">
-                {t('findings.properties.slaKevCapped', 'Shortened because it is in CISA KEV')}
-              </TooltipContent>
-            </Tooltip>
-          )
-        },
+        cell: ({ row }) => (
+          <SlaDueChip
+            status={row.original.slaStatus}
+            deadline={row.original.slaDeadline}
+            kevCapped={row.original.slaKevCapped}
+          />
+        ),
       },
       {
         accessorKey: 'createdAt',
@@ -1776,6 +1721,7 @@ function FindingsContent() {
 
   const activeCount =
     Number(mineActive) +
+    Number(teamActive) +
     severities.length +
     statuses.length +
     priorityClasses.length +
@@ -2277,7 +2223,7 @@ function FindingsContent() {
           <Button
             variant="outline"
             size="sm"
-            className="h-8 shrink-0"
+            className="h-9 shrink-0"
             onClick={() => setViewParam('verify')}
           >
             {/* A short label on a narrow row, so the view title keeps its room
@@ -2442,7 +2388,7 @@ function FindingsContent() {
           <PageHeader title={t('findings.page.title', 'Findings')} description={drillBreadcrumb}>
             <Button variant="outline" size="sm" asChild>
               <Link href="/findings/approvals">
-                <ClipboardList className="h-4 w-4 sm:me-2" />
+                <ClipboardList className="h-4 w-4 sm:me-2" aria-hidden />
                 <span className="sr-only sm:not-sr-only">
                   {t('findings.header.approvals', 'Approvals')}
                 </span>
@@ -2484,9 +2430,20 @@ function FindingsContent() {
                 variant={triageCount > 0 ? 'default' : 'outline'}
                 onClick={openTriage}
                 aria-keyshortcuts="t"
+                aria-label={
+                  triageCount > 0
+                    ? t(
+                        'findings.header.triageCount',
+                        '{count, plural, one {Triage, # finding to triage} other {Triage, # findings to triage}}',
+                        { count: triageCount }
+                      )
+                    : undefined
+                }
               >
-                <ListChecks className="h-4 w-4 sm:me-2" aria-hidden />
-                <span className="sr-only sm:not-sr-only">
+                <ListChecks className="h-4 w-4 me-2" aria-hidden />
+                {/* The page's primary action keeps its word on a phone, so the
+                    count beside it reads as the number to triage. */}
+                <span>
                   {triageCount > 0
                     ? t('findings.header.triage', 'Triage')
                     : t('findings.header.triageView', 'Triage view')}
@@ -2650,6 +2607,7 @@ function FindingsContent() {
                       onSelectionChange={setSelectedFindings}
                       resetSelectionKey={`${selectionEpoch}|${selectionScope}`}
                       onRowClick={handleRowClick}
+                      rowTone={findingRowTone}
                       mobileRow={mobileRow}
                       columnVisibility={columnVisibility}
                       onColumnVisibilityChange={onColumnVisibilityChange}

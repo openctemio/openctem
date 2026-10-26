@@ -53,6 +53,22 @@ interface AssigneeSelectProps {
    * server refuses the unreadable ones per finding.
    */
   findingId?: string
+  /**
+   * A fixed list of the people who may be assigned, when the server's list
+   * for one finding does not apply (a pentest finding being written: its
+   * campaign's working members). Filtered here by the search box; nothing is
+   * fetched. The API still refuses anyone outside the rule.
+   */
+  members?: { user_id: string; name: string; email?: string; role?: string }[]
+  /** The fixed list is loading. */
+  membersLoading?: boolean
+  /** id of the trigger, for a <Label htmlFor>. */
+  id?: string
+  /**
+   * `inline` (default): the compact trigger of table rows and property rows.
+   * `field`: a form field, full width, the name or placeholder always shown.
+   */
+  layout?: 'inline' | 'field'
 }
 
 function getInitials(name: string): string {
@@ -74,7 +90,12 @@ export function AssigneeSelect({
   showFullName = false,
   placeholder,
   findingId,
+  members,
+  membersLoading = false,
+  id,
+  layout = 'inline',
 }: AssigneeSelectProps) {
+  const field = layout === 'field'
   const { t } = useTranslation()
   const [open, setOpen] = useState(false)
   const [search, setSearch] = useState('')
@@ -86,38 +107,64 @@ export function AssigneeSelect({
   // Lazy fetch: only load members when the popover is opened. One finding:
   // the server lists who can read it; bulk: the plain member list.
   const isSearchActive = deferredSearch.length > 0
-  const scoped = Boolean(findingId)
+  const fixed = members !== undefined
+  const scoped = Boolean(findingId) && !fixed
   const {
     members: dropdownMembers,
     total: dropdownTotal,
     isLoading: isLoadingDropdown,
-  } = useMembers(open && !scoped ? currentTenant?.id : undefined, {
+  } = useMembers(open && !scoped && !fixed ? currentTenant?.id : undefined, {
     limit: MAX_DISPLAY_MEMBERS,
   })
   const {
     members: searchedMembers,
     total: searchedTotal,
     isLoading: isSearching,
-  } = useMembers(open && !scoped && isSearchActive ? currentTenant?.id : undefined, {
+  } = useMembers(open && !scoped && !fixed && isSearchActive ? currentTenant?.id : undefined, {
     search: deferredSearch,
     limit: MAX_DISPLAY_MEMBERS,
   })
   const { members: assignable, isLoading: isLoadingAssignable } = useAssignableMembers(findingId, {
     search: deferredSearch,
     limit: 20,
-    enabled: open,
+    enabled: open && scoped,
   })
+  const needle = search.trim().toLowerCase()
+  const fixedMatches = (members ?? []).filter(
+    (m) =>
+      !needle ||
+      m.name.toLowerCase().includes(needle) ||
+      (m.email ?? '').toLowerCase().includes(needle)
+  )
 
-  const displayMembers = scoped ? assignable : isSearchActive ? searchedMembers : dropdownMembers
-  const totalMembers = scoped ? assignable.length : isSearchActive ? searchedTotal : dropdownTotal
-  const isLoadingMembers = scoped
-    ? isLoadingAssignable
-    : isSearchActive
-      ? isSearching
-      : isLoadingDropdown
+  const displayMembers = fixed
+    ? fixedMatches
+    : scoped
+      ? assignable
+      : isSearchActive
+        ? searchedMembers
+        : dropdownMembers
+  const totalMembers = fixed
+    ? fixedMatches.length
+    : scoped
+      ? assignable.length
+      : isSearchActive
+        ? searchedTotal
+        : dropdownTotal
+  const isLoadingMembers = fixed
+    ? membersLoading
+    : scoped
+      ? isLoadingAssignable
+      : isSearchActive
+        ? isSearching
+        : isLoadingDropdown
 
   // Check if there are more members than displayed
-  const hasMoreMembers = scoped ? totalMembers >= 20 : totalMembers > MAX_DISPLAY_MEMBERS
+  const hasMoreMembers = fixed
+    ? false
+    : scoped
+      ? totalMembers >= 20
+      : totalMembers > MAX_DISPLAY_MEMBERS
 
   const handleSelect = (member: { user_id: string; name?: string; email?: string }) => {
     onChange({
@@ -145,9 +192,14 @@ export function AssigneeSelect({
     >
       <PopoverTrigger asChild>
         <Button
+          id={id}
           variant={variant}
           size={size}
-          className={`${size === 'sm' ? 'h-7 px-1.5 gap-1 text-xs' : 'h-9 sm:h-8 gap-2'} min-h-[32px]`}
+          className={
+            field
+              ? 'h-9 w-full justify-start gap-2 font-normal'
+              : `${size === 'sm' ? 'h-7 px-1.5 gap-1 text-xs' : 'h-9 sm:h-8 gap-2'} min-h-[32px]`
+          }
           disabled={disabled || loading}
         >
           {loading && <Loader2 className="h-3 w-3 animate-spin" />}
@@ -158,8 +210,10 @@ export function AssigneeSelect({
                 <Avatar className="h-4 w-4">
                   <AvatarFallback className="text-[8px]">{getInitials(value.name)}</AvatarFallback>
                 </Avatar>
-                <span className="max-w-[80px] truncate">
-                  {showFullName ? value.name : value.name.split(' ')[0]}
+                <span
+                  className={field ? 'min-w-0 flex-1 truncate text-start' : 'max-w-[80px] truncate'}
+                >
+                  {showFullName || field ? value.name : value.name.split(' ')[0]}
                 </span>
               </>
             ) : (
@@ -174,7 +228,13 @@ export function AssigneeSelect({
           ) : !loading ? (
             <>
               <UserPlus className="h-3 w-3" />
-              <span className="sr-only sm:not-sr-only">
+              <span
+                className={
+                  field
+                    ? 'min-w-0 flex-1 truncate text-start text-muted-foreground'
+                    : 'sr-only sm:not-sr-only'
+                }
+              >
                 {placeholder ?? t('findings.assigneeSelect.assign', 'Assign')}
               </span>
             </>
