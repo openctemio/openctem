@@ -61,7 +61,7 @@ describe('ScopeEntryDialog', () => {
     const user = userEvent.setup()
     wrap(<ScopeEntryDialog open onOpenChange={() => {}} />)
     await user.type(await screen.findByLabelText('What'), 'acme.io')
-    expect(screen.getByText('acme.io and every name below it · permanent')).toBeInTheDocument()
+    expect(screen.getByText('acme.io and every name below it, permanent')).toBeInTheDocument()
     expect(screen.getByText(/Needs 1 approval from another approver/)).toBeInTheDocument()
     await user.click(screen.getByRole('button', { name: 'Add to scope' }))
     await waitFor(() =>

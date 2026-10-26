@@ -47,7 +47,7 @@ describe('runTargetNote', () => {
     expect(runTargetNote({ unreachable_target_count: 3 })).toBe('3 unreachable')
     expect(runTargetNote({ skipped_target_count: 2 })).toBe('2 skipped')
     expect(runTargetNote({ unreachable_target_count: 3, skipped_target_count: 2 })).toBe(
-      '3 unreachable · 2 skipped'
+      '3 unreachable, 2 skipped'
     )
   })
 })

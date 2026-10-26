@@ -169,7 +169,7 @@ export function CvssCalculator({ vector, onScoreChange, onVectorChange }: CvssCa
               className={cn('tabular-nums', SEVERITY_BADGE_SOLID[band(score)])}
               data-testid="cvss-score"
             >
-              {score.toFixed(1)} ·{' '}
+              {score.toFixed(1)},{' '}
               {t(SEVERITY_LABEL_KEYS[band(score)], SEVERITY_LABELS[band(score)])}
             </Badge>
           ) : (

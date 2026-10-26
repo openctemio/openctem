@@ -128,7 +128,7 @@ describe('SourceDataSection', () => {
     })!
     const { container } = render(<SourceDataSection data={d} ruleName="WordPress Click2Shell" />)
     const rule = screen.getByTestId('source-detection-rule').textContent ?? ''
-    expect(rule).toContain('wordpress-click2shell · WordPress Click2Shell')
+    expect(rule).toContain('wordpress-click2shell, WordPress Click2Shell')
     expect(rule).toContain('nuclei-templates@2026-10-05 (7ae245)')
     expect(rule).toContain('http/vulnerabilities/wordpress/wordpress-click2shell.yaml')
     expect(container.textContent).not.toContain('/var/lib')

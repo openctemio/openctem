@@ -523,7 +523,7 @@ function ManagedByCITrust({ entry }: { entry: ApiScopeTarget }) {
     <p className="text-xs text-muted-foreground" data-testid="scope-managed-by">
       {trusts.map((m, i) => (
         <span key={m.trust_config_id ?? i}>
-          {i > 0 && ' · '}
+          {i > 0 && ', '}
           {t('scope.ciTrust.managedBy', 'Managed by the CI trust {name}', {
             name: m.trust_name ?? '',
           })}
