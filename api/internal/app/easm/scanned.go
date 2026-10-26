@@ -197,6 +197,15 @@ func (s *ScanStamper) StampScanned(ctx context.Context, tenantID shared.ID, asse
 	return nil
 }
 
+// HoldImportCandidates gives the new internet-facing assets an import
+// created, whose scope the organization did not confirm, a candidate record
+// (ingest.ImportCandidateHolder). A person's decision or an existing record
+// is never touched.
+func (s *ScanStamper) HoldImportCandidates(ctx context.Context, tenantID shared.ID, assets []ingest.ScannedAsset) error {
+	defer s.linkChildren(ctx, tenantID)
+	return s.holdUnsolicited(ctx, tenantID, assets)
+}
+
 func (s *ScanStamper) linkChildren(ctx context.Context, tenantID shared.ID) {
 	if l, ok := s.store.(ChildLinker); ok {
 		_, _ = l.LinkChildren(ctx, tenantID)
