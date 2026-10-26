@@ -1226,6 +1226,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	s.AttackSurface = attack.NewSurfaceService(repos.Asset, repos.AssetRelationship, log)
 	// Wire the KEV/critical finding counter for exposure-chain analysis.
 	s.AttackSurface.SetFindingRiskCounter(repos.Finding)
+	s.AttackSurface.SetPathFindingReader(repos.Finding) // lead finding and counts per step of the attack paths to one asset
 	s.AttackSurface.SetDataScope(s.DataScope)
 	s.AttackSurface.SetStateHistory(repos.AssetStateHistory) // recent changes: real removals + exposure changes
 	if repos.Attribution != nil {

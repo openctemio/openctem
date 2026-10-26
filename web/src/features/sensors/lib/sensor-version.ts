@@ -139,3 +139,26 @@ export function sensorSdkVersion(sensor: Pick<Sensor, 'sdk_version'>): string | 
 export function sensorSdkVersionKey(sensor: Pick<Sensor, 'sdk_version'>): string {
   return sensorSdkVersion(sensor) ?? 'unknown'
 }
+
+/** A Go pseudo-version split into its parts (a build of an unreleased commit). */
+export interface PseudoVersion {
+  /** The release it precedes, e.g. "v0.37.1". */
+  base: string
+  /** The commit, shortened to 7 characters. */
+  commit: string
+}
+
+// vX.Y.Z-0.yyyymmddhhmmss-abcdefabcdef, vX.Y.Z-pre.0.yyyymmddhhmmss-abcdef…,
+// vX.Y.Z-0.yyyymmddhhmmss-abcdef…+incompatible (go.dev/ref/mod#pseudo-versions).
+const PSEUDO =
+  /^(v\d+\.\d+\.\d+)(?:-[0-9A-Za-z.]+?)?[-.]0\.\d{14}-([0-9a-f]{12})(?:\+[0-9A-Za-z.]+)?$/
+
+/**
+ * The parts of a pseudo-version, or null for a release or anything else.
+ * A pseudo-version is long (40 characters) and says little to an operator:
+ * show "v0.37.1 pre-release" and keep the full string for the details.
+ */
+export function parsePseudoVersion(raw: string | null | undefined): PseudoVersion | null {
+  const m = raw ? PSEUDO.exec(raw.trim()) : null
+  return m ? { base: m[1], commit: m[2].slice(0, 7) } : null
+}
