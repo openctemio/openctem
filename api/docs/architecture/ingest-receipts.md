@@ -92,6 +92,15 @@ unreported, and the run closed it. A finding whose `scan_id` is one of the
 run's reports still counts as seen. The like-for-like guards are unchanged:
 same tool, same scan profile, a clean command, the blinding guard.
 
+A run that did not cover every target closes nothing either, whatever its
+reports' `coverage_type` says. The evaluation ends with the reason
+`uncovered_targets` when the command result lists or counts coverage gaps
+(hosts the sensor gave up or that blocked it), unreached targets or targets
+its local policy refused (`resultLeftTargetsUncovered`,
+`internal/app/ingest/coverage_autoresolve.go`). Such a host can still count as
+touched (an asset record, some findings), so a finding the run did not repeat
+there proves nothing. A metadata block that does not parse is not trusted.
+
 A receipt that cannot prove absence closes nothing. The evaluation ends with the
 reason `receipt_incomplete` (`ingestreport.ErrReceiptIncomplete`) when:
 
@@ -155,11 +164,16 @@ member may write to but not see. When the request has read every part,
   longer lists everything the upload reported (`AbsenceReceiptByID`);
 - checks the declaration again (`scope_changed`, nothing closed, when an
   asset left the uploader's scope or the organization while the upload ran);
+- refuses to close anything (`coverage_note = needs_verify`, coverage stays
+  `partial`, the file is still imported) when the uploader lacks
+  `findings:verify`, as closing a finding as fixed is a verification;
 - per tool: candidates are the open findings on the declared assets last
   seen by that tool, not a branch occurrence, not from a human source (pentest,
   manual, bug bounty, red team), not a leaked secret, and not reported by
   this upload: no action row on the upload's receipt (the same rule as a
-  covered scan, see "Absence"). A concurrent upload of the same tool
+  covered scan, see "Absence"), not critical, not in the known-exploited list,
+  and whose latest sighting (newest action row) came from an upload, so a
+  finding a platform sensor saw last stays open. A concurrent upload of the same tool
   overwrites `scan_id`, so `scan_id` alone does not prove absence;
 - the blinding guard holds a mass close (`held`, nothing closed);
 - otherwise closes them (`resolved`, verification `covered_scan`, timeline

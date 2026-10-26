@@ -3877,8 +3877,9 @@ func (r *FindingRepository) buildWhereClause(filter vulnerability.FindingFilter)
 // The reopen clears resolution, the closure and resolved_by on the row, so
 // it returns what they were (read under the row lock, in the same statement):
 // the regression's activity entry keeps who resolved the finding and how
-// (RFC-039 §6.5). Returns fingerprint -> reopened finding.
-func (r *FindingRepository) AutoReopenByFingerprintsBatch(ctx context.Context, tenantID shared.ID, fingerprints []string) (map[string]vulnerability.ReopenedFinding, error) {
+// (RFC-039 §6.5). A finding resolved at or after observedAt is left alone: the
+// report is older than the fix. Returns fingerprint -> reopened finding.
+func (r *FindingRepository) AutoReopenByFingerprintsBatch(ctx context.Context, tenantID shared.ID, fingerprints []string, observedAt time.Time) (map[string]vulnerability.ReopenedFinding, error) {
 	result := make(map[string]vulnerability.ReopenedFinding)
 
 	if len(fingerprints) == 0 {
@@ -3890,7 +3891,7 @@ func (r *FindingRepository) AutoReopenByFingerprintsBatch(ctx context.Context, t
 	// A write conflict rolls the transaction back and runs it again.
 	err := retryWriteConflict(ctx, func() error {
 		clear(result)
-		return r.autoReopenTx(ctx, autoReopenQuery, tenantID, fingerprints, result)
+		return r.autoReopenTx(ctx, autoReopenQuery, tenantID, fingerprints, observedAt, result)
 	})
 	if err != nil {
 		return nil, err
@@ -3912,7 +3913,8 @@ var (
 	// checked against the lifecycle when the package loads.
 	_ = platformFromSQL(vulnerability.FindingStatusNew, vulnerability.FindingStatusResolved)
 
-	// $1 tenant, $2 fingerprints, $3 the flap window in seconds. A duplicate
+	// $1 tenant, $2 fingerprints, $3 the flap window in seconds, $4 when the
+	// report's source observed the findings. A duplicate
 	// reported again reopens the finding it was folded into (same asset),
 	// never the duplicate itself (its status is not resolved).
 	autoReopenQuery = `
@@ -3937,6 +3939,9 @@ var (
 				-- resolved while the statement stands (it is withdrawn on edit,
 				-- delete or expiry, which reopens it).
 				AND NOT (status = 'resolved' AND verification = 'vex_statement' AND vex_statement_id IS NOT NULL)
+				-- A report observed before the finding was resolved is stale: it
+				-- shows what was there then, not whether the fix held.
+				AND (resolved_at IS NULL OR resolved_at < $4)
 			-- The global lock order of findings rows (finding_lock_order.go).
 			ORDER BY ` + findingLockOrderSQL + `
 			FOR NO KEY UPDATE
@@ -4003,9 +4008,9 @@ func (r *FindingRepository) MarkDuplicateTargetsSeen(ctx context.Context, tenant
 
 // autoReopenTx runs the reopen of AutoReopenByFingerprintsBatch in one
 // transaction and records each reopened finding in result.
-func (r *FindingRepository) autoReopenTx(ctx context.Context, query string, tenantID shared.ID, fingerprints []string, result map[string]vulnerability.ReopenedFinding) error {
+func (r *FindingRepository) autoReopenTx(ctx context.Context, query string, tenantID shared.ID, fingerprints []string, observedAt time.Time, result map[string]vulnerability.ReopenedFinding) error {
 	return r.db.withFindingTransition(ctx, autoReopenTransition, func(tx *sql.Tx) error {
-		rows, err := tx.QueryContext(ctx, query, tenantID.String(), pq.Array(fingerprints), vulnerability.SeenAgainWindow.Seconds())
+		rows, err := tx.QueryContext(ctx, query, tenantID.String(), pq.Array(fingerprints), vulnerability.SeenAgainWindow.Seconds(), observedAt)
 		if err != nil {
 			return fmt.Errorf("failed to batch auto-reopen findings: %w", err)
 		}

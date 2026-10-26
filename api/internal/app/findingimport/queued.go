@@ -202,7 +202,9 @@ type Envelope struct {
 	CanApprove  bool     `json:"can_approve,omitempty"`
 	CoverageAll bool     `json:"coverage_full,omitempty"`
 	CoverageIDs []string `json:"coverage_asset_ids,omitempty"`
-	Caller      Caller   `json:"caller"`
+	// CoverageVerify: the uploader held findings:verify when it was accepted.
+	CoverageVerify bool   `json:"coverage_verify,omitempty"`
+	Caller         Caller `json:"caller"`
 	// Mapping is the import mapping version the file is converted through,
 	// pinned at accept (Format is then empty). The organization is never
 	// part of it: the worker uses the job's.
@@ -564,6 +566,7 @@ func (e Envelope) request(tenantID, receiptID shared.ID, actor, coverage ingest.
 		req.MinSeverity = sev
 	}
 	req.Coverage.Full = e.CoverageAll
+	req.Coverage.CanVerify = e.CoverageVerify
 	for _, raw := range e.CoverageIDs {
 		id, err := shared.IDFromString(raw)
 		if err != nil {

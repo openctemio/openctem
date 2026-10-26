@@ -237,7 +237,7 @@ type ImportIngestSummary struct {
 // @Param        dry_run          query     bool    false  "Parse and count only"
 // @Param        format           query     string  false  "Force the format of a single file"
 // @Param        min_severity     query     string  false  "Drop findings below: info, low, medium, high, critical"
-// @Param        coverage         query     string  false  "partial (default, closes nothing) or full: the upload is a complete scan of the asset_id assets by each file's tool, and their open findings of that tool it does not report are closed (needs findings:status, findings:bulk_update and step-up; not with min_severity)"
+// @Param        coverage         query     string  false  "partial (default, closes nothing) or full: the upload is a complete scan of the asset_id assets by each file's tool, and their open findings of that tool it does not report are closed (needs findings:status, findings:bulk_update and step-up; not with min_severity; closes only with findings:verify, else the receipt note is needs_verify and nothing closes; critical and known-exploited findings, and findings last sighted by a platform sensor, stay open)"
 // @Param        asset_id         query     []string  false  "With coverage=full: 1 to 100 asset ids visible to the uploader"  collectionFormat(multi)
 // @Param        Idempotency-Key  header    string  false  "Makes a retry of the same upload return the first answer"
 // @Success      200  {object}  FindingImportResponse  "Preview"
@@ -478,6 +478,9 @@ func (h *FindingImportHandler) parseCoverage(r *http.Request, req *findingimport
 					" and " + permission.FindingsBulkUpdate.String())
 			}
 		}
+		// Closing as fixed is a verification: without findings:verify the
+		// upload is imported and closes nothing (coverage note needs_verify).
+		req.Coverage.CanVerify = middleware.HasPermission(r.Context(), permission.FindingsVerify.String())
 		if req.MinSeverity != "" {
 			// Findings below min_severity are dropped, so their absence
 			// proves nothing.
@@ -715,7 +718,7 @@ func (h *FindingImportHandler) commitImport(w http.ResponseWriter, r *http.Reque
 	hasher := newRequestHasher(q)
 	env := findingimport.Envelope{
 		SessionID: req.SessionID, Format: string(req.Format), MinSeverity: string(req.MinSeverity),
-		CanApprove: req.CanApprove, CoverageAll: req.Coverage.Full, Caller: h.callerOf(r),
+		CanApprove: req.CanApprove, CoverageAll: req.Coverage.Full, CoverageVerify: req.Coverage.CanVerify, Caller: h.callerOf(r),
 		Audit: h.auditContext(r, tid),
 	}
 	if req.Mapping != nil {
