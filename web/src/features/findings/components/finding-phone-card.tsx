@@ -16,6 +16,9 @@ import { useTranslation } from '@/context/i18n-provider'
 import { toDisplayText } from '@/lib/untrusted-text'
 import { middleEllipsis } from '@/lib/middle-ellipsis'
 import { cn } from '@/lib/utils'
+import { findingRowTone } from '@/features/findings/lib/row-tone'
+import { AssetMarkers } from '@/features/findings/components/cells/asset-markers'
+import { DuplicatesChip } from '@/features/findings/components/cells/duplicates-chip'
 
 interface FindingPhoneCardProps {
   finding: Finding
@@ -38,6 +41,7 @@ export function FindingPhoneCard({ finding: f, selection, onOpen, menu }: Findin
     <div
       data-testid="finding-phone-card"
       data-state={selection.selected ? 'selected' : undefined}
+      data-tone={findingRowTone(f)}
       className={cn(
         'flex w-full items-start gap-1 ps-3 pe-1 transition-colors hover:bg-muted/50 data-[state=selected]:bg-muted'
       )}
@@ -71,8 +75,15 @@ export function FindingPhoneCard({ finding: f, selection, onOpen, menu }: Findin
             />
           )}
           {f.location?.asset && (
-            <p dir="auto" className="mt-0.5 truncate text-xs [unicode-bidi:isolate]">
-              {toDisplayText(f.location.asset, 500)}
+            <p className="mt-0.5 flex min-w-0 items-center gap-1 text-xs">
+              <span dir="auto" className="truncate [unicode-bidi:isolate]">
+                {toDisplayText(f.location.asset, 500)}
+              </span>
+              <AssetMarkers
+                interactive={false}
+                internetFacing={f.assets[0]?.isInternetAccessible}
+                crownJewel={f.assets[0]?.isCrownJewel}
+              />
             </p>
           )}
           {f.location?.detail && (
@@ -96,6 +107,7 @@ export function FindingPhoneCard({ finding: f, selection, onOpen, menu }: Findin
               kevRansomware={f.kevRansomware}
               epssScore={f.epssScore}
             />
+            <DuplicatesChip count={f.duplicatesMarked} interactive={false} />
           </div>
         </div>
         <ChevronRight
