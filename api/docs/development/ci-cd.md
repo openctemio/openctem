@@ -723,7 +723,7 @@ Setup that every job of a run needs is done once and handed over:
   full tier; in the merge queue nothing is cached). One job generates it and
   uploads `openapi-spec`; the shards download it.
 - **Images** are built once per content key across workflows
-  ([Build images once](#build-images-once)).
+  (Build images once, in `build-images.yml`).
 - **Contract files** are generated once per workflow and passed on as the
   `contract` artifact (`web-ci.yml`); `build-images.yml` generates them once for
   the web and console images together.
