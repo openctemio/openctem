@@ -54,7 +54,7 @@ func TestFederatedSession_SSOEnforcement_IssuingOrgOnly(t *testing.T) {
 		{"social OAuth session -> org A (SSO enforced) refused", session.AuthMethodSSO, "", "A", "member", true, auth.ErrSSORequired, ""},
 		{"social OAuth session -> org A (not enforced) allowed as password", session.AuthMethodSSO, "", "A", "member", false, nil, "password"},
 		{"org B session -> org A (not enforced) allowed as password", session.AuthMethodSAML, "B", "A", "admin", false, nil, "password"},
-		{"org B session -> org A OWNER (break-glass) allowed as password", session.AuthMethodSAML, "B", "A", "owner", true, nil, "password"},
+		{"org B session -> org A OWNER needs its own second factor, not a foreign IdP session", session.AuthMethodSAML, "B", "A", "owner", true, auth.ErrSSOBreakGlassNeedsMFA, ""},
 	}
 
 	for _, c := range cases {

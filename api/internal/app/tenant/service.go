@@ -118,6 +118,9 @@ type TenantService struct {
 	// ssoDomains reports whether a tenant holds a domain verified for SSO
 	// (requiring SSO needs one). Nil: requiring SSO is refused.
 	ssoDomains SSODomainChecker
+	// ssoStore backs the Require SSO preconditions and the credential
+	// revocation at enable. Nil: requiring SSO is refused (fail closed).
+	ssoStore SSOEnforcementStore
 
 	// sessions reads the acting owner's session for the "SSO must prove
 	// two-factor" lockout guard. Optional: when nil the guard is skipped.
@@ -183,6 +186,16 @@ type SSODomainChecker interface {
 // ErrSSOEnforceNeedsVerifiedDomain refuses turning SSO enforcement on for an
 // organization without a domain verified for SSO.
 var ErrSSOEnforceNeedsVerifiedDomain = fmt.Errorf("%w: cannot enforce SSO — verify at least one of the organization's domains for SSO first", shared.ErrValidation)
+
+// SSOEnforcementStore is what Require SSO needs to know and do beyond the
+// settings themselves (sso_enforcement.go). Implemented by
+// postgres.SSOEnforcementRepository.
+type SSOEnforcementStore interface {
+	HasAdminSSOSignIn(ctx context.Context, tenantID shared.ID) (bool, error)
+	HasOwnerWithSecondFactor(ctx context.Context, tenantID shared.ID) (bool, error)
+	CountCredentials(ctx context.Context, tenantID shared.ID) (keys, grants int, err error)
+	RevokeCredentials(ctx context.Context, tenantID, actorID shared.ID) (keys, grants int, err error)
+}
 
 // SessionReader loads a sign-in session by id (the "SSO must prove
 // two-factor" lockout guard).
@@ -2001,7 +2014,11 @@ type UpdateSecuritySettingsInput struct {
 	// by the platform administrator (RFC-022); the tenant-facing handler refuses
 	// it, so an organization cannot turn enforcement on or off for itself.
 	SSOEnforced *bool `json:"sso_enforced"`
-	MFARequired *bool `json:"mfa_required"`
+	// RevokeCredentialsOnSSOEnforce: when turning SSOEnforced on, revoke the
+	// user API keys and connector grants that exist at that moment. Nil means
+	// yes: keys and grants made from a later SSO session keep working.
+	RevokeCredentialsOnSSOEnforce *bool `json:"revoke_credentials_on_sso_enforce"`
+	MFARequired                   *bool `json:"mfa_required"`
 	// MFARequiredForAdmins: see tenantdom.SecuritySettings.
 	MFARequiredForAdmins  *bool    `json:"mfa_required_for_admins"`
 	IPWhitelist           []string `json:"ip_whitelist"`
@@ -2111,8 +2128,10 @@ func (s *TenantService) guardSSOMFAProofLockout(ctx context.Context, tenantID, s
 // UpdateSecuritySettings updates only the security settings.
 func (s *TenantService) UpdateSecuritySettings(ctx context.Context, tenantID string, input UpdateSecuritySettingsInput, actx auditapp.AuditContext) (*tenantdom.Settings, error) {
 	var before tenantdom.SecuritySettings
+	enforcedNow := false
 	t, err := s.writeSettingsSection(ctx, tenantID, tenantdom.SectionSecurity, func(t *tenantdom.Tenant) error {
 		before = t.TypedSettings().Security
+		enforcedNow = false
 		// Partial merge: start from the persisted section and overlay only the
 		// fields the client actually sent. Omitted fields are preserved.
 		security := t.TypedSettings().Security
@@ -2215,6 +2234,12 @@ func (s *TenantService) UpdateSecuritySettings(ctx context.Context, tenantID str
 			if !ok {
 				return ErrSSOEnforceNeedsVerifiedDomain
 			}
+			// The IdP path is proven and an owner can break-glass, so an
+			// organization that enforces SSO can always still be entered.
+			if err := s.requireSSOEnforcePreconditions(ctx, t.ID()); err != nil {
+				return err
+			}
+			enforcedNow = true
 		}
 
 		// Lockout guard: an administrator may not save an IP allowlist that would
@@ -2247,6 +2272,9 @@ func (s *TenantService) UpdateSecuritySettings(ctx context.Context, tenantID str
 	s.auditSensorOptIn(ctx, actx, "allow_sensor_interactsh", before.AllowSensorInteractsh, after.AllowSensorInteractsh)
 	s.auditSensorOptIn(ctx, actx, "allow_sensor_custom_templates", before.AllowSensorCustomTemplates, after.AllowSensorCustomTemplates)
 	s.notifySecurityLoosened(ctx, tenantID, actx, before, after)
+	if enforcedNow {
+		s.revokeCredentialsAtSSOEnforce(ctx, t.ID(), actx, input.RevokeCredentialsOnSSOEnforce)
+	}
 
 	result := t.TypedSettings()
 	return &result, nil
