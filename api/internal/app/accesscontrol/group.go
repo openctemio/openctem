@@ -268,6 +268,11 @@ func (s *GroupService) UpdateGroup(ctx context.Context, groupID string, input Up
 		return nil, err
 	}
 
+	// A team with elevated access is the owner's to change.
+	if err := s.requirePrivilegedTeamOwner(ctx, g, actx.ActorID); err != nil {
+		return nil, err
+	}
+
 	// Switching a team on or off changes what its members hold (scope rows
 	// and bound roles), so it is a grant: checked before anything changes.
 	flip := input.IsActive != nil && *input.IsActive != g.IsActive()

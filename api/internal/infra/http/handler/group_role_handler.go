@@ -15,11 +15,13 @@ import (
 
 // GroupRoleResponse is a role bound to a team.
 type GroupRoleResponse struct {
-	RoleID     string    `json:"role_id"`
-	Name       string    `json:"name"`
-	Privileged bool      `json:"privileged"`
-	CreatedBy  string    `json:"created_by,omitempty"`
-	CreatedAt  time.Time `json:"created_at"`
+	RoleID     string `json:"role_id"`
+	Name       string `json:"name"`
+	Privileged bool   `json:"privileged"`
+	// Managed: the role belongs to the team's access settings.
+	Managed   bool      `json:"managed"`
+	CreatedBy string    `json:"created_by,omitempty"`
+	CreatedAt time.Time `json:"created_at"`
 }
 
 // GroupRoleListResponse lists the roles bound to a team.
@@ -69,7 +71,7 @@ func (h *GroupHandler) ListGroupRoles(w http.ResponseWriter, r *http.Request) {
 	for _, v := range views {
 		item := GroupRoleResponse{
 			RoleID: v.Binding.RoleID.String(), Name: v.Binding.RoleName,
-			Privileged: v.Privileged, CreatedAt: v.Binding.CreatedAt,
+			Privileged: v.Privileged, Managed: v.Managed, CreatedAt: v.Binding.CreatedAt,
 		}
 		if v.Binding.CreatedBy != nil {
 			item.CreatedBy = v.Binding.CreatedBy.String()

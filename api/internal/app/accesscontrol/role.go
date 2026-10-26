@@ -381,11 +381,15 @@ func (s *RoleService) roleForTenant(ctx context.Context, tenantID string, id rol
 // belongs to.
 func (s *RoleService) ValidateRolesForTenant(ctx context.Context, tenantID string, roleIDs []string) error {
 	for _, raw := range roleIDs {
-		if _, err := s.GetRole(ctx, tenantID, raw); err != nil {
+		r, err := s.GetRole(ctx, tenantID, raw)
+		if err != nil {
 			if errors.Is(err, roledom.ErrRoleNotFound) || shared.IsNotFound(err) || errors.Is(err, shared.ErrValidation) {
 				return fmt.Errorf("%w: role %s is not available in this organization", shared.ErrValidation, raw)
 			}
 			return fmt.Errorf("look up role %s: %w", raw, err)
+		}
+		if err := refuseManaged(r); err != nil {
+			return err
 		}
 	}
 	return nil
@@ -454,6 +458,9 @@ func (s *RoleService) UpdateRole(ctx context.Context, tenantID, roleID string, i
 
 	// Tenant scoping: only the owning tenant may modify a custom role.
 	if err := assertRoleTenant(r, tenantID); err != nil {
+		return nil, err
+	}
+	if err := refuseManaged(r); err != nil {
 		return nil, err
 	}
 
@@ -614,6 +621,9 @@ func (s *RoleService) DeleteRole(ctx context.Context, tenantID, roleID string, a
 
 	// Tenant scoping: only the owning tenant may delete a custom role.
 	if err := assertRoleTenant(r, tenantID); err != nil {
+		return err
+	}
+	if err := refuseManaged(r); err != nil {
 		return err
 	}
 
@@ -815,6 +825,9 @@ func (s *RoleService) AssignRole(ctx context.Context, input AssignRoleInput, ass
 	if r.TenantID() != nil && r.TenantID().String() != input.TenantID {
 		return fmt.Errorf("%w: role not available for this tenant", shared.ErrValidation)
 	}
+	if err := refuseManaged(r); err != nil {
+		return err
+	}
 
 	// Reject grants to a user who is not a member of this tenant.
 	if err := s.ensureTenantMember(ctx, input.UserID, input.TenantID); err != nil {
@@ -1008,6 +1021,9 @@ func (s *RoleService) setUserRoles(ctx context.Context, input SetUserRolesInput,
 		if r.TenantID() != nil && r.TenantID().String() != input.TenantID {
 			return fmt.Errorf("%w: role %s not available for this tenant", shared.ErrValidation, ridStr)
 		}
+		if err := refuseManaged(r); err != nil {
+			return err
+		}
 		if err := actor.mayGrant(r); err != nil {
 			return err
 		}
@@ -1141,6 +1157,9 @@ func (s *RoleService) BulkAssignRoleToUsers(ctx context.Context, input BulkAssig
 	// Ensure role is either a system role or belongs to the same tenant
 	if r.TenantID() != nil && r.TenantID().String() != input.TenantID {
 		return nil, fmt.Errorf("%w: role not available for this tenant", shared.ErrValidation)
+	}
+	if err := refuseManaged(r); err != nil {
+		return nil, err
 	}
 
 	actor, err := s.loadGrantActor(ctx, tid, assignedBy)

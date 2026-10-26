@@ -170,3 +170,38 @@ func (r *GroupRoleBindingRepository) IsExternalMember(ctx context.Context, tenan
 	}
 	return ok, nil
 }
+
+// ListUserTeamGrants returns the roles the user holds through the active
+// teams they belong to (an ended membership counts as gone).
+func (r *GroupRoleBindingRepository) ListUserTeamGrants(ctx context.Context, tenantID, userID shared.ID) ([]group.UserTeamGrant, error) {
+	rows, err := r.db.QueryContext(ctx, `
+		SELECT g.id, g.name, ro.id, ro.name, ro.managed_group_id IS NOT NULL, COALESCE(ro.template_id, ''), gm.expires_at
+		FROM v_user_role_grants v
+		JOIN groups g ON g.id = v.group_id AND g.tenant_id = v.tenant_id
+		JOIN group_members gm ON gm.group_id = g.id AND gm.user_id = v.user_id
+		JOIN roles ro ON ro.id = v.role_id AND ro.tenant_id = v.tenant_id
+		WHERE v.tenant_id = $1 AND v.user_id = $2 AND v.source = 'group'
+		ORDER BY g.name, ro.name
+		LIMIT $3`, tenantID.String(), userID.String(), maxSubResourceRows)
+	if err != nil {
+		return nil, fmt.Errorf("list user team grants: %w", err)
+	}
+	defer rows.Close()
+	var out []group.UserTeamGrant
+	for rows.Next() {
+		var gid, rid string
+		var g group.UserTeamGrant
+		var until sql.NullTime
+		if err := rows.Scan(&gid, &g.GroupName, &rid, &g.RoleName, &g.Managed, &g.TemplateID, &until); err != nil {
+			return nil, fmt.Errorf("scan user team grant: %w", err)
+		}
+		g.GroupID, _ = shared.IDFromString(gid)
+		g.RoleID, _ = shared.IDFromString(rid)
+		if until.Valid {
+			t := until.Time
+			g.MemberUntil = &t
+		}
+		out = append(out, g)
+	}
+	return out, rows.Err()
+}

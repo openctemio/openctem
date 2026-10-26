@@ -35,10 +35,14 @@ func (r *RoleRepository) Create(ctx context.Context, ro *role.Role) error {
 	query := `
 		INSERT INTO roles (id, tenant_id, slug, name, description, is_system,
 		                   hierarchy_level, has_full_data_access, created_by, created_at, updated_at,
-		                   template_id, template_version, template_permissions)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
+		                   template_id, template_version, template_permissions, managed_group_id)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
 	`
 	tplID, tplVersion, tplPerms := roleTemplateColumns(ro)
+	var managedGroup sql.NullString
+	if g := ro.ManagedGroupID(); g != nil {
+		managedGroup = sql.NullString{String: g.String(), Valid: true}
+	}
 
 	var tenantID sql.NullString
 	if ro.TenantID() != nil {
@@ -62,7 +66,7 @@ func (r *RoleRepository) Create(ctx context.Context, ro *role.Role) error {
 		createdBy,
 		ro.CreatedAt(),
 		ro.UpdatedAt(),
-		tplID, tplVersion, tplPerms,
+		tplID, tplVersion, tplPerms, managedGroup,
 	)
 	if err != nil {
 		if isUniqueViolation(err) {
@@ -85,7 +89,7 @@ func (r *RoleRepository) GetByID(ctx context.Context, tenantID, id role.ID) (*ro
 	query := `
 		SELECT id, tenant_id, slug, name, description, is_system,
 		       hierarchy_level, has_full_data_access, created_at, updated_at, created_by,
-		       template_id, template_version, template_permissions
+		       template_id, template_version, template_permissions, managed_group_id
 		FROM roles
 		WHERE id = $1 AND (tenant_id = $2 OR tenant_id IS NULL)
 	`
@@ -109,7 +113,7 @@ func (r *RoleRepository) GetByID(ctx context.Context, tenantID, id role.ID) (*ro
 		&roleID, &dbTenantID, &slug, &name, &description,
 		&isSystem, &hierarchyLevel, &hasFullDataAccess,
 		&createdAt, &updatedAt, &createdBy,
-		&tpl.id, &tpl.version, &tpl.permissions,
+		&tpl.id, &tpl.version, &tpl.permissions, &tpl.managed,
 	)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
@@ -196,15 +200,17 @@ func (r *RoleRepository) GetBySlug(ctx context.Context, tenantID *role.ID, slug 
 		permissions, createdAt, updatedAt, createdBy)
 }
 
-// ListForTenant returns all roles available for a tenant.
+// ListForTenant returns all roles available for a tenant, except the roles
+// teams manage for themselves (managed roles are shown on the team).
 // OPTIMIZED: Uses batch permission loading to avoid N+1 queries.
 func (r *RoleRepository) ListForTenant(ctx context.Context, tenantID role.ID) ([]*role.Role, error) {
 	query := `
 		SELECT id, tenant_id, slug, name, description, is_system,
 		       hierarchy_level, has_full_data_access, created_at, updated_at, created_by,
-		       template_id, template_version, template_permissions
+		       template_id, template_version, template_permissions, managed_group_id
 		FROM roles
-		WHERE tenant_id IS NULL OR tenant_id = $1
+		WHERE (tenant_id IS NULL OR tenant_id = $1)
+		  AND managed_group_id IS NULL
 		ORDER BY hierarchy_level DESC, name ASC
 	`
 
@@ -238,7 +244,7 @@ func (r *RoleRepository) ListForTenant(ctx context.Context, tenantID role.ID) ([
 		if err := rows.Scan(&rd.roleID, &rd.dbTenantID, &rd.slug, &rd.name, &rd.description,
 			&rd.isSystem, &rd.hierarchyLevel, &rd.hasFullDataAccess,
 			&rd.createdAt, &rd.updatedAt, &rd.createdBy,
-			&rd.tpl.id, &rd.tpl.version, &rd.tpl.permissions); err != nil {
+			&rd.tpl.id, &rd.tpl.version, &rd.tpl.permissions, &rd.tpl.managed); err != nil {
 			return nil, fmt.Errorf("failed to scan role: %w", err)
 		}
 		roleDataList = append(roleDataList, rd)
@@ -1136,10 +1142,16 @@ type roleTemplateRow struct {
 	id          sql.NullString
 	version     sql.NullInt32
 	permissions pq.StringArray
+	managed     sql.NullString
 }
 
 // apply sets the template origin on ro when the row has one.
 func (t roleTemplateRow) apply(ro *role.Role) {
+	if t.managed.Valid {
+		if g, err := role.ParseID(t.managed.String); err == nil {
+			ro.SetManagedGroup(&g)
+		}
+	}
 	if !t.id.Valid || t.id.String == "" {
 		return
 	}
@@ -1160,7 +1172,11 @@ func roleTemplateColumns(ro *role.Role) (sql.NullString, sql.NullInt32, any) {
 	if t.Version > 0 && t.Version <= math.MaxInt32 {
 		v = int32(t.Version) //nolint:gosec // bounded just above
 	}
-	return sql.NullString{String: t.ID, Valid: true}, sql.NullInt32{Int32: v, Valid: true}, pq.Array(t.Permissions)
+	perms := t.Permissions
+	if perms == nil {
+		perms = []string{} // the check constraint wants an array, even an empty one
+	}
+	return sql.NullString{String: t.ID, Valid: true}, sql.NullInt32{Int32: v, Valid: true}, pq.Array(perms)
 }
 
 // Ensure RoleRepository implements role.Repository
