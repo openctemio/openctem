@@ -6,7 +6,7 @@
  * (one shared component per pattern). Every cell shows scan output as text.
  */
 
-import { useMemo } from 'react'
+import { useCallback, useMemo } from 'react'
 import type { ColumnDef } from '@tanstack/react-table'
 import { Badge } from '@/components/ui/badge'
 import { RelativeTime, StackedCell } from '@/features/shared'
@@ -45,10 +45,13 @@ export function eventDetail(e: WebEndpointEventResponse): string {
 /** The label of a change kind in the active language. */
 export function useEventLabel(): (kind: string | undefined) => string {
   const { t } = useTranslation()
-  return (kind) =>
-    kind && EVENT_KINDS[kind]
-      ? t(`attackSurface.web.event.${kind}`, EVENT_KINDS[kind])
-      : (kind ?? '')
+  return useCallback(
+    (kind) =>
+      kind && EVENT_KINDS[kind]
+        ? t(`attackSurface.web.event.${kind}`, EVENT_KINDS[kind])
+        : (kind ?? ''),
+    [t]
+  )
 }
 
 export function useEndpointColumns(): ColumnDef<WebEndpointResponse>[] {
@@ -174,7 +177,6 @@ export function useEventColumns(
           ) : null,
       },
     ],
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- label is rebuilt each render from t
-    [t, catalogByKey]
+    [t, label, catalogByKey]
   )
 }
