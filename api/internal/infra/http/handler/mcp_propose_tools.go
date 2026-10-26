@@ -3,12 +3,15 @@ package handler
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 	"unicode/utf8"
 
+	appcompliance "github.com/openctemio/openctem/api/internal/app/compliance"
 	"github.com/openctemio/openctem/api/internal/app/finding"
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
+	moduledom "github.com/openctemio/openctem/api/pkg/domain/module"
 	"github.com/openctemio/openctem/api/pkg/domain/permission"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
@@ -166,4 +169,218 @@ func proposalClientName(name string) string {
 		return "AI application"
 	}
 	return n
+}
+
+// mcpPentestDrafter creates pentest findings (*compliance.PentestService).
+type mcpPentestDrafter interface {
+	CreateUnifiedFinding(ctx context.Context, input appcompliance.PentestFindingInput) (*vulnerability.Finding, error)
+}
+
+// SetPentestDraftTool enables draft_pentest_finding. Without a drafter it is
+// not listed.
+func (h *MCPHandler) SetPentestDraftTool(drafter mcpPentestDrafter, webBase string) {
+	h.drafter = drafter
+	h.webBase = strings.TrimRight(webBase, "/")
+	if drafter != nil {
+		h.tools = append(h.tools, h.buildPentestDraftTool())
+	}
+}
+
+// Caps on an AI draft beyond the service's own field bounds.
+const (
+	maxDraftRequestResponses = 10
+	maxDraftHTTPBodyRunes    = 32000
+	maxDraftHTTPHeaders      = 50
+)
+
+func (h *MCPHandler) buildPentestDraftTool() mcpTool {
+	return mcpTool{
+		Name: "draft_pentest_finding",
+		Description: "Save a pentest finding as a DRAFT in a campaign you test or review. The draft is the user's, " +
+			"marked as written by this AI application; the campaign client never sees a draft, and another campaign " +
+			"member (a reviewer or the lead) must confirm it: the user cannot confirm a draft their AI application wrote. " +
+			"Call list_campaign_findings first to avoid duplicates: a finding with the same title in the campaign " +
+			"answers conflict. Who may add depends on the campaign phase (testers while testing, reviewers while " +
+			"reporting). Write plain text; hidden characters are refused.",
+		InputSchema: json.RawMessage(`{"type":"object","properties":{` +
+			`"campaign_id":{"type":"string","format":"uuid","description":"campaign UUID (see list_campaigns)"},` +
+			`"title":{"type":"string","description":"short title"},` +
+			`"severity":{"type":"string","enum":["critical","high","medium","low","info"]},` +
+			`"description":{"type":"string","description":"what the issue is"},` +
+			`"asset_id":{"type":"string","format":"uuid","description":"the affected asset in the inventory, when there is one"},` +
+			`"affected_targets":{"type":"array","items":{"type":"string"},"description":"affected URLs, hosts or components (required without asset_id)"},` +
+			`"steps_to_reproduce":{"type":"array","items":{"type":"string"}},` +
+			`"request_responses":{"type":"array","maxItems":10,"items":{"type":"object","properties":{` +
+			`"method":{"type":"string"},"url":{"type":"string"},"request_headers":{"type":"object","additionalProperties":{"type":"string"}},` +
+			`"request_body":{"type":"string"},"response_status":{"type":"integer"},"response_headers":{"type":"object","additionalProperties":{"type":"string"}},` +
+			`"response_body":{"type":"string"},"notes":{"type":"string"}},"required":["method","url"]}},` +
+			`"cvss_vector":{"type":"string","description":"CVSS v3.1 or v4.0 vector"},` +
+			`"cwe_id":{"type":"string","description":"for example CWE-639"},` +
+			`"owasp_category":{"type":"string"},` +
+			`"business_impact":{"type":"string"},"technical_impact":{"type":"string"},` +
+			`"remediation_guidance":{"type":"string"},` +
+			`"reference_urls":{"type":"array","items":{"type":"string"}}},` +
+			`"required":["campaign_id","title","severity","description"]}`),
+		RequiredPerm: string(permission.PentestFindingsWrite),
+		Module:       moduledom.ModulePentest,
+		Propose:      true,
+		call:         h.toolDraftPentestFinding,
+	}
+}
+
+type draftHTTPExchange struct {
+	Method          string            `json:"method"`
+	URL             string            `json:"url"`
+	RequestHeaders  map[string]string `json:"request_headers"`
+	RequestBody     string            `json:"request_body"`
+	ResponseStatus  int               `json:"response_status"`
+	ResponseHeaders map[string]string `json:"response_headers"`
+	ResponseBody    string            `json:"response_body"`
+	Notes           string            `json:"notes"`
+}
+
+type draftPentestArgs struct {
+	CampaignID          string              `json:"campaign_id"`
+	Title               string              `json:"title"`
+	Severity            string              `json:"severity"`
+	Description         string              `json:"description"`
+	AssetID             string              `json:"asset_id"`
+	AffectedTargets     []string            `json:"affected_targets"`
+	StepsToReproduce    []string            `json:"steps_to_reproduce"`
+	RequestResponses    []draftHTTPExchange `json:"request_responses"`
+	CVSSVector          string              `json:"cvss_vector"`
+	CWEID               string              `json:"cwe_id"`
+	OWASPCategory       string              `json:"owasp_category"`
+	BusinessImpact      string              `json:"business_impact"`
+	TechnicalImpact     string              `json:"technical_impact"`
+	RemediationGuidance string              `json:"remediation_guidance"`
+	ReferenceURLs       []string            `json:"reference_urls"`
+}
+
+// draftText normalizes line ends and refuses hidden characters: a reviewer
+// reads exactly what the model sent.
+func draftText(field, s string, maxRunes int) (string, error) {
+	n := strings.TrimSpace(strings.ReplaceAll(strings.ReplaceAll(s, "\r\n", "\n"), "\r", "\n"))
+	if safetext.Clean(n) != n {
+		return "", toolInputError{field + " must not contain hidden or control characters (bidirectional, zero-width, tag or control characters)"}
+	}
+	if maxRunes > 0 && utf8.RuneCountInString(n) > maxRunes {
+		return "", toolInputError{fmt.Sprintf("%s is longer than %d characters", field, maxRunes)}
+	}
+	return n, nil
+}
+
+func parseDraftPentestArgs(raw json.RawMessage) (draftPentestArgs, error) { //nolint:cyclop // one check per field
+	var a draftPentestArgs
+	if err := json.Unmarshal(raw, &a); err != nil {
+		return a, toolInputError{"invalid arguments: malformed JSON"}
+	}
+	if _, err := shared.IDFromString(a.CampaignID); err != nil {
+		return a, toolInputError{"campaign_id must be a campaign UUID"}
+	}
+	if a.AssetID != "" {
+		if _, err := shared.IDFromString(a.AssetID); err != nil {
+			return a, toolInputError{"asset_id must be an asset UUID"}
+		}
+	}
+	var err error
+	if a.Title, err = draftText("title", a.Title, safetext.MaxTitleRunes); err != nil {
+		return a, err
+	}
+	if a.Title == "" || strings.ContainsRune(a.Title, '\n') {
+		return a, toolInputError{"title is required, on one line"}
+	}
+	if a.Description, err = draftText("description", a.Description, 0); err != nil {
+		return a, err
+	}
+	if a.Description == "" {
+		return a, toolInputError{"description is required"}
+	}
+	for _, f := range []*string{&a.CVSSVector, &a.CWEID, &a.OWASPCategory, &a.BusinessImpact, &a.TechnicalImpact, &a.RemediationGuidance} {
+		if *f, err = draftText("a text field", *f, 0); err != nil {
+			return a, err
+		}
+	}
+	for _, list := range [][]string{a.AffectedTargets, a.StepsToReproduce, a.ReferenceURLs} {
+		for i := range list {
+			if list[i], err = draftText("a list item", list[i], 0); err != nil {
+				return a, err
+			}
+		}
+	}
+	if a.AssetID == "" && len(a.AffectedTargets) == 0 {
+		return a, toolInputError{"give asset_id or at least one affected target"}
+	}
+	if len(a.RequestResponses) > maxDraftRequestResponses {
+		return a, toolInputError{fmt.Sprintf("at most %d request/response pairs", maxDraftRequestResponses)}
+	}
+	for i := range a.RequestResponses {
+		rr := &a.RequestResponses[i]
+		if len(rr.RequestHeaders) > maxDraftHTTPHeaders || len(rr.ResponseHeaders) > maxDraftHTTPHeaders {
+			return a, toolInputError{fmt.Sprintf("at most %d headers per request or response", maxDraftHTTPHeaders)}
+		}
+		for _, f := range []*string{&rr.Method, &rr.URL, &rr.Notes} {
+			if *f, err = draftText("a request/response field", *f, safetext.MaxInlineRunes); err != nil {
+				return a, err
+			}
+		}
+		for _, f := range []*string{&rr.RequestBody, &rr.ResponseBody} {
+			if *f, err = draftText("a request/response body", *f, maxDraftHTTPBodyRunes); err != nil {
+				return a, err
+			}
+		}
+		if rr.Method == "" || rr.URL == "" {
+			return a, toolInputError{"each request/response needs method and url"}
+		}
+	}
+	return a, nil
+}
+
+func (h *MCPHandler) toolDraftPentestFinding(ctx context.Context, tenantID string, raw json.RawMessage) (any, error) {
+	p := middleware.GetMCPPrincipal(ctx)
+	if p == nil { // the dispatcher refuses this first
+		return nil, fmt.Errorf("%w: this tool needs a connection a person approved", shared.ErrForbidden)
+	}
+	a, err := parseDraftPentestArgs(raw)
+	if err != nil {
+		return nil, err
+	}
+	// Membership (a non-member gets not_found), TLP and the campaign's AI
+	// switch before anything is written. The phase and role rule for adding
+	// a finding is the service's.
+	user, _, err := h.campaignReader(ctx, tenantID, a.CampaignID)
+	if err != nil {
+		return nil, err
+	}
+	exchanges := make([]map[string]any, 0, len(a.RequestResponses))
+	for _, rr := range a.RequestResponses {
+		exchanges = append(exchanges, map[string]any{
+			"id": shared.NewID().String(), "method": rr.Method, "url": rr.URL,
+			"request_headers": rr.RequestHeaders, "request_body": rr.RequestBody,
+			"response_status": rr.ResponseStatus, "response_headers": rr.ResponseHeaders,
+			"response_body": rr.ResponseBody, "notes": rr.Notes,
+		})
+	}
+	f, err := h.drafter.CreateUnifiedFinding(ctx, appcompliance.PentestFindingInput{
+		TenantID: tenantID, CampaignID: a.CampaignID, AssetID: a.AssetID,
+		Title: a.Title, Description: a.Description, Severity: a.Severity,
+		CVSSVector: a.CVSSVector, CWEID: a.CWEID, OWASPCategory: a.OWASPCategory,
+		AffectedAssetsText: a.AffectedTargets, StepsToReproduce: a.StepsToReproduce,
+		RequestResponses: exchanges, BusinessImpact: a.BusinessImpact, TechnicalImpact: a.TechnicalImpact,
+		RemediationGuidance: a.RemediationGuidance, ReferenceURLs: a.ReferenceURLs,
+		ActorID: user, ActorIsAdmin: false,
+		DraftedVia: proposalClientName(p.ClientName),
+	})
+	if err != nil {
+		if errors.Is(err, shared.ErrAlreadyExists) {
+			return nil, fmt.Errorf("%w: the campaign already has a finding with this title; read it with list_campaign_findings and change the title if this is a different issue", shared.ErrConflict)
+		}
+		return nil, err
+	}
+	return map[string]any{
+		"status":     "drafted",
+		"finding_id": f.ID().String(),
+		"review_url": h.webBase + "/findings/" + f.ID().String(),
+		"next":       "Saved as a draft. Another campaign member (a reviewer or the lead) confirms it; the user cannot confirm a draft written by their AI application.",
+	}, nil
 }

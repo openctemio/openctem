@@ -111,7 +111,7 @@ var adminWriteInventory = map[string]struct {
 
 	// Platform settings and trust.
 	"PUT /api/v1/admin/settings/signup/":                            {stepUpRoute, "sign-up mode"},
-	"PUT /api/v1/admin/settings/email/":                             {stepUpRoute, "platform mail relay"},
+	"PUT /api/v1/admin/settings/email/":                             {stepUpRoute, "platform mail relay: receives password-reset mail (fresh)"},
 	"POST /api/v1/admin/settings/email/test":                        {routine, "sends a test to the caller's own address"},
 	"PUT /api/v1/admin/settings/legal/":                             {stepUpRoute, "legal pages"},
 	"PUT /api/v1/admin/settings/captcha/":                           {stepUpRoute, "abuse controls of sign-up and every sign-in (fresh)"},
@@ -256,6 +256,12 @@ func TestFactorRoutesDemandFreshStepUp(t *testing.T) {
 		{"PUT", "/api/v1/admin/settings/alerts/", "settings.alerts"},
 		{"PUT", "/api/v1/admin/settings/ai/", "settings.ai"},
 		{"PUT", "/api/v1/admin/settings/ai/org-policy", "settings.ai_org_policy"},
+		// Who receives password-reset mail, who may create an organization,
+		// and who may sign in to the console.
+		{"PUT", "/api/v1/admin/settings/email/", "settings.email"},
+		{"PUT", "/api/v1/admin/settings/signup/", "settings.signup"},
+		{"PUT", "/api/v1/admin/platform-idp/", "platform_idp.update"},
+		{"DELETE", "/api/v1/admin/platform-idp/", "platform_idp.delete"},
 		{"POST", "/api/v1/admin/approvals/" + shared.NewID().String() + "/approve", "approval.approve"},
 		{"POST", "/api/v1/admin/tenants/" + shared.NewID().String() + "/users", "organization.owner_create"},
 		{"POST", "/api/v1/admin/tenants/" + shared.NewID().String() + "/purge", "organization.purge"},
