@@ -216,6 +216,12 @@ func validPlatformAIDestinationTarget(target string) bool {
 	return PlatformAIDestinationTarget(c.Provider, c.BaseURL, c.AllowPrivate, c.KeyFP) == target
 }
 
+// Connection security values of a platform e-mail relay target.
+const (
+	relaySecurityStartTLS = "starttls"
+	relaySecurityNone     = "none"
+)
+
 // platformEmailRelay is the canonical form of a platform e-mail relay target.
 // Security is "starttls" or "none".
 type platformEmailRelay struct {
@@ -227,9 +233,9 @@ type platformEmailRelay struct {
 // PlatformEmailRelayTarget is the approval target of a platform e-mail relay:
 // the host (lower case), port and connection security.
 func PlatformEmailRelayTarget(host string, port int, startTLS bool) string {
-	sec := "none"
+	sec := relaySecurityNone
 	if startTLS {
-		sec = "starttls"
+		sec = relaySecurityStartTLS
 	}
 	return canonicalTarget(platformEmailRelay{Host: strings.ToLower(host), Port: port, Security: sec})
 }
@@ -243,10 +249,10 @@ func validPlatformEmailRelayTarget(target string) bool {
 	var c platformEmailRelay
 	dec := json.NewDecoder(strings.NewReader(target))
 	dec.DisallowUnknownFields()
-	if err := dec.Decode(&c); err != nil || c.Host == "" || c.Port < 1 || c.Port > 65535 || (c.Security != "starttls" && c.Security != "none") {
+	if err := dec.Decode(&c); err != nil || c.Host == "" || c.Port < 1 || c.Port > 65535 || (c.Security != relaySecurityStartTLS && c.Security != relaySecurityNone) {
 		return false
 	}
-	return PlatformEmailRelayTarget(c.Host, c.Port, c.Security == "starttls") == target
+	return PlatformEmailRelayTarget(c.Host, c.Port, c.Security == relaySecurityStartTLS) == target
 }
 
 // PlatformEmailRelayLabel describes a relay target for the approver, e.g.
@@ -257,7 +263,7 @@ func PlatformEmailRelayLabel(target string) string {
 		return ""
 	}
 	sec := "without encryption"
-	if c.Security == "starttls" {
+	if c.Security == relaySecurityStartTLS {
 		sec = "with STARTTLS"
 	}
 	return fmt.Sprintf("%s port %d %s", c.Host, c.Port, sec)
