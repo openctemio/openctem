@@ -326,7 +326,7 @@ func (h *IngestHandler) AuthenticateSource(next http.Handler) http.Handler {
 			return
 		}
 		if err != nil {
-			h.logger.Debug("authentication failed", "error", err)
+			h.logger.Debug("authentication failed", "reason", sensorAuthFailureReason(err))
 			apierror.Unauthorized("Invalid API key").WriteJSON(w)
 			return
 		}
