@@ -9,6 +9,7 @@
  * where (asset, source), then when (first / last seen), then trivia.
  */
 
+import { SlaWhyThisDate } from './sla-why-this-date'
 import { assigneeLabel } from '../../lib/assignee-label'
 import { VERSION_MATCH_TOOL } from '@/features/vuln-matching/types'
 import { findingStatusesInCategory } from '@/features/findings/types/finding.types'
@@ -258,12 +259,19 @@ export function FindingProperties({
         </Row>
       )}
       <Row label={t('findings.properties.slaDue', 'SLA due')}>
-        <SlaDue
-          deadline={finding.slaDeadline}
-          status={finding.slaStatus}
-          closed={closed}
-          kevCapped={finding.slaKevCapped}
-        />
+        <div className="flex flex-col items-start gap-0.5">
+          <SlaDue
+            deadline={finding.slaDeadline}
+            status={finding.slaStatus}
+            closed={closed}
+            kevCapped={finding.slaKevCapped}
+          />
+          <SlaWhyThisDate
+            basis={finding.slaBasis}
+            priorityClass={finding.priorityClass}
+            severity={finding.severity}
+          />
+        </div>
       </Row>
       <FindingPeople findingId={finding.id} assignee={assigneeNode} />
 
