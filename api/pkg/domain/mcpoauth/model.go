@@ -215,13 +215,23 @@ type ClientUsage struct {
 	LastUsedAt        *time.Time
 }
 
+// ClientFilter narrows the platform's client list: Q matches part of the
+// client_id (its host) or the declared name; Blocked keeps blocked (true) or
+// unblocked (false) clients, nil keeps both.
+type ClientFilter struct {
+	Q       string
+	Blocked *bool
+}
+
 // ConnectionRepository lists and manages connections (RFC-062 §12).
 type ConnectionRepository interface {
 	ListConnections(ctx context.Context, tenantID shared.ID, userID *shared.ID, now time.Time) ([]Connection, error)
 	GetGrant(ctx context.Context, tenantID, grantID shared.ID) (*Grant, error)
 	// ListClientsForPlatform and SetClientBlockedForPlatform serve the
 	// platform admin console only.
-	ListClientsForPlatform(ctx context.Context, now time.Time) ([]ClientUsage, error)
+	// ListClientsForPlatform returns one page (newest first) and the total
+	// number of clients matching f.
+	ListClientsForPlatform(ctx context.Context, f ClientFilter, limit, offset int, now time.Time) ([]ClientUsage, int, error)
 	SetClientBlockedForPlatform(ctx context.Context, clientRef shared.ID, blocked bool, now time.Time) error
 }
 

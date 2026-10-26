@@ -247,7 +247,7 @@ approve and stay behind `any_client`.
 |---|---|---|
 | Everyone | My account, Connected applications (`/account/connected-apps`) | `GET /api/v1/mcp-access/my-connections`, `DELETE /api/v1/mcp-access/my-connections/{id}` |
 | Owners and administrators | Settings, AI assistants (MCP) (`/settings/mcp`), tabs Applications, Connections and Policy: approved publishers, waiting requests, registered applications, every connection of the organization with the person, and the policy | `GET /api/v1/mcp-access/connections`, `DELETE /api/v1/mcp-access/connections/{id}` (`RequireAdmin`) |
-| Platform administrators | Console, System, AI applications (`/admin/system/ai-applications`): every client with active connections and organization counts (no tenant data); block or unblock (ops_admin+, audited `mcp_client.blocked` / `mcp_client.unblocked`) | `GET /api/v1/admin/mcp-clients`, `POST /api/v1/admin/mcp-clients/{id}/block`, `…/unblock` |
+| Platform administrators | Console, System, AI applications (`/admin/system/ai-applications`): every client with active connections and organization counts (no tenant data); block or unblock (ops_admin+, audited `mcp_client.blocked` / `mcp_client.unblocked`) | `GET /api/v1/admin/mcp-clients` (`page`, `per_page`, `q`, `blocked`), `POST /api/v1/admin/mcp-clients/{id}/block`, `…/unblock` |
 
 A row shows the application, where it is published (or that the
 organization registered it, or that it is unverified), the access, when it
