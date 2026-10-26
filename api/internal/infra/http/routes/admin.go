@@ -480,7 +480,8 @@ func registerAdminRoutes(
 		}, adminMiddlewares...)
 	}
 
-	// The request-access queue: any admin reads; approving (creates the
+	// The request-access queue: any admin reads (a read-only administrator
+	// gets masked addresses and no notes); approving (creates the
 	// organization, requester as owner) or rejecting needs ops_admin+, audited.
 	if h.AccessRequest != nil {
 		requireOps := h.AdminAuthMiddleware.RequireRole(admin.AdminRoleSuperAdmin, admin.AdminRoleOpsAdmin)
@@ -630,7 +631,9 @@ func registerAdminRoutes(
 		router.Group("/api/v1/admin/tenants", func(r Router) {
 			r.GET("/", h.AdminOrganization.List)
 			r.POST("/", h.AdminOrganization.Create, with([]Middleware{opsWrite, stepUp("organization.create")}, audit("organization.create"))...)
-			r.GET("/{tenantId}", h.AdminOrganization.Get)
+			// One organization's page carries its owners' addresses (ops_admin
+			// and above): every view is audited, like the member list.
+			r.GET("/{tenantId}", h.AdminOrganization.Get, audit("organization.view")...)
 
 			// Organization users: list, and bootstrap the FIRST owner of an
 			// organization that has none (RFC-022 rev. 5). The platform
@@ -770,6 +773,9 @@ func registerAdminRoutes(
 		// Finding people by email is personal data: ops_admin+ (a read-only
 		// administrator sees counts elsewhere, never accounts).
 		opsRead := []Middleware{h.AdminAuthMiddleware.RequireRole(admin.AdminRoleSuperAdmin, admin.AdminRoleOpsAdmin)}
+		if h.AdminDirectoryReadLimiter != nil {
+			opsRead = append(opsRead, h.AdminDirectoryReadLimiter.WriteMiddleware())
+		}
 		router.Group("/api/v1/admin/platform-users", func(r Router) {
 			r.GET("/", h.AdminPlatformUser.List, opsRead...)
 			r.GET("/{user_id}", h.AdminPlatformUser.Get, append(cloneMW(opsRead), audited("platform_user.view", nil)...)...)

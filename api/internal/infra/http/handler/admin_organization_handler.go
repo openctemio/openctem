@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"slices"
 	"strings"
 	"time"
 
@@ -68,9 +69,12 @@ type AdminOrganizationResponse struct {
 	Description   string    `json:"description,omitempty"`
 	CreatedAt     time.Time `json:"created_at"`
 	ActiveMembers int       `json:"active_members"`
-	// OwnerEmails is empty for a read-only administrator (personal data);
+	// OwnerEmails is on the organization's own page only (GET one), for
+	// ops_admin and above, and that view is audited; the list never carries
+	// it. OwnerDomains (the list's owner column) is for ops_admin and above.
 	// OwnerCount is always there.
 	OwnerEmails             []string `json:"owner_emails"`
+	OwnerDomains            []string `json:"owner_domains"`
 	OwnerCount              int      `json:"owner_count"`
 	SAMLEnabled             bool     `json:"saml_enabled"`
 	ActiveIdentityProviders int      `json:"active_identity_providers"`
@@ -79,7 +83,8 @@ type AdminOrganizationResponse struct {
 	// LimitsApply: at least one limit or feature deny is set.
 	LimitsApply bool `json:"limits_apply"`
 	// Status is the platform status: active or suspended. The suspension
-	// reason is for administrators only.
+	// reason is free text written by an administrator: ops_admin and above
+	// only.
 	Status          string     `json:"status"`
 	SuspendedAt     *time.Time `json:"suspended_at,omitempty"`
 	SuspendedReason string     `json:"suspended_reason,omitempty"`
@@ -191,18 +196,43 @@ type AdminSSOEnforcementResponse struct {
 	Enforced bool `json:"enforced"`
 }
 
-func toAdminOrganizationResponse(o *admin.Organization, personalData bool) AdminOrganizationResponse {
-	owners := o.OwnerEmails
-	count := len(owners)
-	if owners == nil || !personalData {
-		owners = []string{}
+// ownerDomains returns the distinct, sorted domains of the owners' addresses.
+func ownerDomains(emails []string) []string {
+	seen := map[string]bool{}
+	out := []string{}
+	for _, e := range emails {
+		if _, d, ok := strings.Cut(strings.ToLower(e), "@"); ok && d != "" && !seen[d] {
+			seen[d] = true
+			out = append(out, d)
+		}
+	}
+	slices.Sort(out)
+	return out
+}
+
+// toAdminOrganizationResponse builds one organization. personalData is the
+// caller's role (not read-only); withOwnerEmails is true only for the single
+// organization view, never for the list: the owners' addresses of every
+// organization are not one request away.
+func toAdminOrganizationResponse(o *admin.Organization, personalData, withOwnerEmails bool) AdminOrganizationResponse {
+	count := len(o.OwnerEmails)
+	owners, domains := []string{}, []string{}
+	if personalData {
+		domains = ownerDomains(o.OwnerEmails)
+		if withOwnerEmails {
+			owners = append(owners, o.OwnerEmails...)
+		}
+	}
+	reason := o.SuspendedReason
+	if !personalData {
+		reason = ""
 	}
 	return AdminOrganizationResponse{
 		ID: o.ID.String(), Name: o.Name, Slug: o.Slug, Description: o.Description,
-		CreatedAt: o.CreatedAt, ActiveMembers: o.ActiveMembers, OwnerEmails: owners, OwnerCount: count,
+		CreatedAt: o.CreatedAt, ActiveMembers: o.ActiveMembers, OwnerEmails: owners, OwnerDomains: domains, OwnerCount: count,
 		SAMLEnabled: o.SAMLEnabled, ActiveIdentityProviders: o.ActiveIdentityProviders,
 		VerifiedDomains: o.VerifiedDomains, SSOEnforced: o.SSOEnforced, LimitsApply: o.LimitsApply,
-		Status: o.Status, SuspendedAt: o.SuspendedAt, SuspendedReason: o.SuspendedReason, DeletionDueAt: o.DeletionDueAt,
+		Status: o.Status, SuspendedAt: o.SuspendedAt, SuspendedReason: reason, DeletionDueAt: o.DeletionDueAt,
 	}
 }
 
@@ -287,7 +317,7 @@ func (h *AdminOrganizationHandler) List(w http.ResponseWriter, r *http.Request) 
 		TotalPages: (total + perPage - 1) / perPage,
 	}
 	for _, o := range orgs {
-		resp.Data = append(resp.Data, toAdminOrganizationResponse(o, adminSeesPersonalData(r)))
+		resp.Data = append(resp.Data, toAdminOrganizationResponse(o, adminSeesPersonalData(r), false))
 	}
 	writeJSON(w, http.StatusOK, resp)
 }
@@ -316,7 +346,7 @@ func (h *AdminOrganizationHandler) Get(w http.ResponseWriter, r *http.Request) {
 		apierror.InternalError(err).WriteJSON(w)
 		return
 	}
-	writeJSON(w, http.StatusOK, toAdminOrganizationResponse(o, adminSeesPersonalData(r)))
+	writeJSON(w, http.StatusOK, toAdminOrganizationResponse(o, adminSeesPersonalData(r), true))
 }
 
 // Create handles POST /api/v1/admin/tenants. The owner must be an existing
@@ -377,7 +407,7 @@ func (h *AdminOrganizationHandler) Create(w http.ResponseWriter, r *http.Request
 		apierror.InternalError(err).WriteJSON(w)
 		return
 	}
-	resp.AdminOrganizationResponse = toAdminOrganizationResponse(o, true)
+	resp.AdminOrganizationResponse = toAdminOrganizationResponse(o, true, true)
 	w.Header().Set("Cache-Control", "no-store")
 	writeJSON(w, http.StatusCreated, resp)
 }

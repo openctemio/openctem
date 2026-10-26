@@ -288,8 +288,11 @@ type Handlers struct {
 	Announcement      *handler.AnnouncementHandler
 	// AdminSupportRateLimiter caps console support actions per administrator.
 	AdminSupportRateLimiter *middleware.AdminMappingRateLimiter
-	AdminConsole            *handler.AdminConsoleHandler
-	AdminAuditChain         *handler.AdminAuditChainHandler
+	// AdminDirectoryReadLimiter caps reads of the cross-organization user
+	// directory per administrator (bulk harvesting of accounts).
+	AdminDirectoryReadLimiter *middleware.AdminMappingRateLimiter
+	AdminConsole              *handler.AdminConsoleHandler
+	AdminAuditChain           *handler.AdminAuditChainHandler
 	// AccessRequest: the request-access queue (public form + console).
 	AccessRequest *handler.AccessRequestHandler
 	// Limits: per-organization limits and feature denies (console
