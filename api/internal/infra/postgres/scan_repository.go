@@ -98,10 +98,10 @@ func (r *ScanRepository) Create(ctx context.Context, s *scan.Scan) error {
 			last_run_id, last_run_at, last_run_status,
 			total_runs, successful_runs, failed_runs,
 			created_by, created_at, updated_at, scan_zone_id, ad_hoc, schedule_rrule, schedule_run_at, target_options, intensity, skipped_targets,
-			rule_sources, managed_by, managed_key
+			rule_sources, managed_by, managed_key, depth
 		)
 		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, $32, $33, $34, $35, $36, $37, NULLIF($38, ''), $39, $40, $41, $42,
-			NULLIF($43, ''), NULLIF($44, ''), NULLIF($45, ''))
+			NULLIF($43, ''), NULLIF($44, ''), NULLIF($45, ''), $46)
 	`
 
 	_, err = r.db.ExecContext(ctx, query,
@@ -150,6 +150,7 @@ func (r *ScanRepository) Create(ctx context.Context, s *scan.Scan) error {
 		string(s.RuleSources),
 		string(s.ManagedBy),
 		s.ManagedKey,
+		string(s.EffectiveDepth()),
 	)
 
 	if err != nil {
@@ -290,7 +291,8 @@ func (r *ScanRepository) Update(ctx context.Context, s *scan.Scan) error {
 		    tags = $18, run_on_tenant_runner = $19, sensor_preference = $20, profile_id = $21, timeout_seconds = $22,
 		    max_retries = $23, retry_backoff_seconds = $24, status = $25,
 		    updated_at = $26, scan_zone_id = $28, ad_hoc = $29, schedule_rrule = NULLIF($30, ''), schedule_run_at = $31,
-		    target_options = $32, intensity = $33, skipped_targets = $34, rule_sources = NULLIF($35, '')
+		    target_options = $32, intensity = $33, skipped_targets = $34, rule_sources = NULLIF($35, ''),
+		    depth = $36
 		WHERE id = $1 AND tenant_id = $27
 	`
 
@@ -330,6 +332,7 @@ func (r *ScanRepository) Update(ctx context.Context, s *scan.Scan) error {
 		string(s.EffectiveIntensity()), // $33
 		skipped,                        // $34
 		string(s.RuleSources),          // $35
+		string(s.EffectiveDepth()),     // $36
 	)
 
 	if err != nil {
@@ -694,7 +697,7 @@ func (r *ScanRepository) selectQuery() string {
 		       total_runs, successful_runs, failed_runs,
 		       created_by, created_at, updated_at, scan_zone_id, ad_hoc, partial_runs,
 		       COALESCE(schedule_rrule, ''), blocked_runs, schedule_run_at, target_options, intensity, skipped_targets,
-		       COALESCE(rule_sources, ''), COALESCE(managed_by, ''), COALESCE(managed_key, '')
+		       COALESCE(rule_sources, ''), COALESCE(managed_by, ''), COALESCE(managed_key, ''), depth
 		FROM scans
 	`
 }
@@ -786,6 +789,7 @@ func (r *ScanRepository) readScan(reader scanRowReader) (*scan.Scan, error) {
 		&s.RuleSources,
 		&managedBy,
 		&s.ManagedKey,
+		&s.Depth,
 	)
 	if err != nil {
 		return nil, err

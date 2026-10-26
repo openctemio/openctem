@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/openctemio/openctem/api/pkg/domain/scanworkflow"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 )
 
@@ -103,4 +104,28 @@ func IntensityExceededError(i Intensity, what string, tier int) error {
 	return shared.NewDomainError(CodeIntensityExceeded,
 		fmt.Sprintf("%s probes at %s, above this scan's %s intensity. Choose a higher intensity or a tool that stays within it.",
 			what, TierLabel(tier), i), shared.ErrValidation)
+}
+
+// SetDepth sets how much of its workflow the scan runs ("" is the default
+// depth).
+func (s *Scan) SetDepth(raw string) error {
+	d, err := scanworkflow.ParseDepth(raw)
+	if err != nil {
+		return err
+	}
+	s.Depth = d
+	s.UpdatedAt = time.Now()
+	return nil
+}
+
+// EffectiveDepth is the scan's depth, the default when unset or unknown.
+func (s *Scan) EffectiveDepth() scanworkflow.Depth {
+	if s == nil {
+		return scanworkflow.DefaultDepth
+	}
+	d, err := scanworkflow.ParseDepth(string(s.Depth))
+	if err != nil {
+		return scanworkflow.DefaultDepth
+	}
+	return d
 }

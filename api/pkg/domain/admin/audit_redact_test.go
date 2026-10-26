@@ -34,3 +34,38 @@ func TestRedactSensitiveFieldsKeyRules(t *testing.T) {
 		t.Error("input must not be modified")
 	}
 }
+
+// A webhook address is a bearer secret: the audit row keeps its origin only.
+func TestRedactSensitiveFieldsKeepsOnlyTheOriginOfAddresses(t *testing.T) {
+	in := map[string]interface{}{
+		"url":         "https://hooks.example.com/services/T000/B000/XXXXSECRET?x=1",
+		"webhook_url": "https://user:pw@chat.example.com/webhook/abc",
+		"issuer_url":  "https://idp.example.com/",
+		"terms_url":   "https://example.com/terms",
+		"base_url":    "not a url",
+		"note_url":    "",
+		"name":        "https://kept.example.com/path",
+		"nested":      map[string]interface{}{"url": "https://hooks.example.com/secret"},
+	}
+	out := redactSensitiveFields(in)
+	want := map[string]string{
+		"url":         "https://hooks.example.com/[REDACTED]",
+		"webhook_url": "https://chat.example.com/[REDACTED]",
+		"issuer_url":  "https://idp.example.com",
+		"terms_url":   "https://example.com/[REDACTED]",
+		"base_url":    "[REDACTED]",
+		"note_url":    "",
+		"name":        "https://kept.example.com/path",
+	}
+	for k, v := range want {
+		if out[k] != v {
+			t.Errorf("%s = %v, want %v", k, out[k], v)
+		}
+	}
+	if n := out["nested"].(map[string]interface{}); n["url"] != "https://hooks.example.com/[REDACTED]" {
+		t.Errorf("nested url: %v", n["url"])
+	}
+	if in["url"] == out["url"] {
+		t.Error("input must not be modified")
+	}
+}

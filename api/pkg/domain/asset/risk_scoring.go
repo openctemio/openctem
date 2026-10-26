@@ -290,6 +290,11 @@ func (e *RiskScoringEngine) effectiveWeights() ComponentWeights {
 			w.Criticality = int(math.Round(float64(w.Criticality) * factor))
 			w.Findings = 100 - w.Exposure - w.Criticality
 			w.CTEM = 0
+		} else {
+			// Only CTEM was weighted and CTEM is off: score with the
+			// platform weights rather than give every asset 0. Validation
+			// refuses this configuration; this covers one stored before.
+			w = LegacyRiskScoringConfig().Weights
 		}
 	}
 	return w

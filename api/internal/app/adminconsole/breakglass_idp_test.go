@@ -534,10 +534,12 @@ func TestSavePlatformIdPValidatesAndEncrypts(t *testing.T) {
 	if p.TokenEndpoint != b.idp.issuer+"/token" || p.JWKSURI != b.idp.issuer+"/jwks" {
 		t.Fatalf("endpoints must come from discovery: %+v", p)
 	}
-	if e := b.entries.find(ActionPlatformIdPSave); e == nil || e.Severity != admin.SeverityHigh {
-		t.Fatal("config changes are audited with high severity")
+	if e := b.entries.find(ActionPlatformIdPSave); e == nil || e.Severity != admin.SeverityCritical {
+		t.Fatal("config changes are audited with critical severity")
 	} else if raw, _ := json.Marshal(e.RequestBody); strings.Contains(string(raw), `"s"`) {
 		t.Fatal("the audit row must not carry the secret")
+	} else if _, ok := e.RequestBody["previous"]; !ok {
+		t.Fatal("the audit row must carry the previous configuration")
 	}
 
 	// Update without a secret keeps the stored one.
