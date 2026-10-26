@@ -184,6 +184,11 @@ type HeartbeatRequest struct {
 	// "config_report" on hello. The digest is the one PUT /config-report
 	// returned. Read leniently (a member of the wrong shape is ignored).
 	ConfigReport json.RawMessage `json:"config_report,omitempty" swaggertype:"object"`
+	// LocalStore is the sensor's local data report, sent by SDKs that see
+	// "local_store" on hello: watermark, whether it stopped claiming jobs and
+	// why, bytes per class, disk level, cleanup sweeps. Read leniently and
+	// clamped (sensor.ParseLocalStoreReport); display and health only.
+	LocalStore json.RawMessage `json:"local_store,omitempty" swaggertype:"object"`
 }
 
 // loadReport returns the heartbeat's load report, nil when it carried none.
@@ -316,6 +321,9 @@ func (h *IngestHandler) AuthenticateSource(next http.Handler) http.Handler {
 		}
 		if err == nil && id.Paused {
 			err = errSensorPaused
+		}
+		if writeClockSkew(w, r, err, h.logger) {
+			return
 		}
 		if err != nil {
 			h.logger.Debug("authentication failed", "error", err)

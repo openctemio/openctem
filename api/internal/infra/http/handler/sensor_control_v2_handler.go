@@ -84,7 +84,7 @@ func (h *SensorControlV2Handler) Features() []string {
 		out = append(out, protov2.FeatureManifest)
 	}
 	if h.ingest != nil {
-		out = append(out, protov2.FeatureLocalPolicy, protov2.FeatureCommandProgress)
+		out = append(out, protov2.FeatureLocalPolicy, protov2.FeatureCommandProgress, protov2.FeatureLocalStore)
 	}
 	if h.ingest != nil && h.ingest.sensorService.SupportsManifests() {
 		out = append(out, protov2.FeaturePosture)
@@ -518,6 +518,8 @@ func heartbeatData(r *http.Request, req *HeartbeatRequest, protocol int) sensora
 		LocalPolicy: req.LocalPolicy,
 		// Untrusted; only a well-formed digest is stored.
 		ConfigReport: sensor.ParseConfigReportSummary(req.ConfigReport),
+		// Untrusted; read leniently, clamped and sanitized.
+		LocalStore: sensor.ParseLocalStoreReport(req.LocalStore),
 	}
 }
 
