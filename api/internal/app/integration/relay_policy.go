@@ -17,6 +17,15 @@ import (
 	"github.com/openctemio/openctem/api/pkg/domain/ssochange"
 )
 
+// relayRuleError is a validation error that carries the transport rule a
+// relay failed (pkg/email ValidateTenantRelay: fixed sentences, never a
+// lower error's text). It matches shared.ErrValidation and the rule.
+type relayRuleError struct{ rule error }
+
+func (e relayRuleError) Error() string { return shared.ErrValidation.Error() + ": " + e.rule.Error() }
+
+func (e relayRuleError) Unwrap() []error { return []error{shared.ErrValidation, e.rule} }
+
 // RelayOwners lists an organization's active owners.
 type RelayOwners interface {
 	ListActiveOwners(ctx context.Context, tenantID shared.ID) ([]ssochange.OwnerContact, error)
