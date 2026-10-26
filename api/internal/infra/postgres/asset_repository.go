@@ -184,7 +184,8 @@ func (r *AssetRepository) GetDisplayInfoByIDs(ctx context.Context, tenantID shar
 	}
 
 	rows, err := r.db.QueryContext(ctx,
-		`SELECT id, name, asset_type FROM assets WHERE deleted_at IS NULL AND tenant_id = $1 AND id = ANY($2::uuid[])`,
+		`SELECT a.id, a.name, a.asset_type, COALESCE(a.is_crown_jewel, false), `+asset.InternetFacingSQL("a")+`
+		 FROM assets a WHERE a.deleted_at IS NULL AND a.tenant_id = $1 AND a.id = ANY($2::uuid[])`,
 		tenantID.String(), pq.Array(idStrs))
 	if err != nil {
 		return nil, fmt.Errorf("failed to batch get asset display info: %w", err)
@@ -194,15 +195,16 @@ func (r *AssetRepository) GetDisplayInfoByIDs(ctx context.Context, tenantID shar
 	for rows.Next() {
 		var (
 			idStr, name, assetType string
+			crown, internet        bool
 		)
-		if err := rows.Scan(&idStr, &name, &assetType); err != nil {
+		if err := rows.Scan(&idStr, &name, &assetType, &crown, &internet); err != nil {
 			return nil, fmt.Errorf("failed to scan asset display info: %w", err)
 		}
 		id, err := shared.IDFromString(idStr)
 		if err != nil {
 			return nil, fmt.Errorf("invalid asset id %q: %w", idStr, err)
 		}
-		result[id] = asset.DisplayInfo{ID: id, Name: name, Type: asset.AssetType(assetType)}
+		result[id] = asset.DisplayInfo{ID: id, Name: name, Type: asset.AssetType(assetType), CrownJewel: crown, InternetFacing: internet}
 	}
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("failed to iterate asset display info: %w", err)
@@ -509,7 +511,7 @@ func (r *AssetRepository) selectQuery() string {
 			   a.impact_confidentiality, a.impact_integrity, a.impact_availability,
 			   a.is_crown_jewel,
 			   a.risk_scored_at,
-			   EXISTS (SELECT 1 FROM asset_risk_queue q WHERE q.asset_id = a.id) AS risk_score_pending
+			   EXISTS (SELECT 1 FROM asset_risk_queue q WHERE q.asset_id = a.id AND q.enqueued_at <= now()) AS risk_score_pending
 		FROM assets a
 		-- LATERAL correlates the finding aggregate to each selected asset (and its
 		-- tenant), so it runs indexed per-row via idx_findings_tenant_asset_status
@@ -2534,9 +2536,13 @@ WITH filtered AS (
   %s
 ),
 finding_counts AS (
+  -- Open findings only (vulnerability.OpenStatusSQL): the same set as each
+  -- row's finding_count and the has_findings filter, so "N with findings"
+  -- and the findings total agree with the list.
   SELECT f.asset_id, COUNT(*)::bigint AS cnt
   FROM findings f
   WHERE f.asset_id IN (SELECT id FROM filtered) AND NOT f.branch_only
+    AND `+vulnerability.OpenStatusSQL("f.status")+`
   GROUP BY f.asset_id
 )
 SELECT category, key, value FROM (

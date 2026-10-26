@@ -38,6 +38,7 @@ import {
   planHasChanges,
   type GeneralSettingsValues,
 } from '../lib/general-save-plan'
+import { TimezoneSelect } from '@/features/scans/components/timezone-select'
 import { DashboardDataCard } from './dashboard-data-card'
 import { DeleteOrganizationItem } from './delete-organization'
 import { SettingsLoadError, SettingsLoading } from './settings-load-state'
@@ -389,6 +390,24 @@ export function GeneralSettings() {
                             onChange={(e) => setGeneral((g) => ({ ...g, website: e.target.value }))}
                             disabled={!canUpdateTenant}
                           />
+                        </div>
+                        <div className="space-y-2" id="org-timezone-setting">
+                          <Label htmlFor="org-timezone">
+                            {t('org.general.timezone', 'Time zone')}
+                          </Label>
+                          <TimezoneSelect
+                            id="org-timezone"
+                            value={general.timezone}
+                            onChange={(zone) => setGeneral((g) => ({ ...g, timezone: zone }))}
+                            disabled={!canUpdateTenant}
+                            aria-describedby="org-timezone-help"
+                          />
+                          <p id="org-timezone-help" className="text-xs text-muted-foreground">
+                            {t(
+                              'org.general.timezoneHelp',
+                              'The organization clock: alert quiet hours, the daily digest and scan approval hours use it.'
+                            )}
+                          </p>
                         </div>
                       </div>
                     </div>

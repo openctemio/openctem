@@ -71,6 +71,10 @@ export async function submitSignIn(page: Page, arrived: (url: URL) => boolean): 
  */
 export async function loginAs(page: Page, config: E2EConfig): Promise<void> {
   await page.goto('/login')
+  // Fill only once the form is hydrated: text typed into the server-rendered
+  // inputs before React takes over is dropped (seen on WebKit against a dev
+  // server, where hydration is slow).
+  await page.waitForLoadState('networkidle')
 
   // Email + password fields. Targeting by accessible label survives
   // class name and DOM structure changes.

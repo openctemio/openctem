@@ -18,17 +18,26 @@ import (
 // program-only, the ReadScope asset scope, and the pentest campaign rule for
 // anything counted from findings.
 
-// coverageTrackedSQL / coverageCoveredSQL are the ledger predicates for one
+// coverageTrackedSQL / coverageCoveredFmt are the ledger predicates for one
 // asset (alias a): tracked = the ledger has a capability that applies to it;
-// covered = a run of any capability succeeded since {since}. The asset list
+// covered = a capability succeeded since {since} AND every capability that
+// applies to it succeeded since then. One working probe never makes an asset
+// covered while its vulnerability check failed, timed out, was paused or was
+// never run: that gap stays visible. Rows refused by scope policy
+// ('blocked') and the platform's own DNS checks are not part of the
+// requirement; per-vantage rows are read by their own views. The asset list
 // filter coverage=covered|uncovered uses the same predicates, so the
 // Discovery figure equals the list it opens.
 const (
 	coverageTrackedSQL = `EXISTS (SELECT 1 FROM asset_coverage act
 		WHERE act.tenant_id = a.tenant_id AND act.asset_id = a.id AND act.state <> 'not_applicable')`
-	coverageCoveredFmt = `EXISTS (SELECT 1 FROM asset_coverage acs
+	coverageCoveredFmt = `(EXISTS (SELECT 1 FROM asset_coverage acs
 		WHERE acs.tenant_id = a.tenant_id AND acs.asset_id = a.id AND acs.state <> 'not_applicable'
-		AND acs.last_success_at >= %s)`
+		AND acs.last_success_at >= %[1]s)
+		AND NOT EXISTS (SELECT 1 FROM asset_coverage acg
+		WHERE acg.tenant_id = a.tenant_id AND acg.asset_id = a.id AND acg.vantage = ''
+		AND acg.state NOT IN ('not_applicable', 'blocked') AND acg.capability NOT LIKE 'dns.%%'
+		AND (acg.last_success_at IS NULL OR acg.last_success_at < %[1]s)))`
 )
 
 // CoverageCondition is the asset list predicate for coverage=covered or

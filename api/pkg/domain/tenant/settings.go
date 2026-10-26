@@ -8,6 +8,7 @@ import (
 	"slices"
 	"strings"
 	"time"
+	_ "time/tzdata" // isValidTimezone must not depend on the host zone database
 
 	"github.com/openctemio/openctem/api/pkg/domain/branch"
 	"github.com/openctemio/openctem/api/pkg/domain/licensepolicy"
@@ -959,27 +960,17 @@ func SettingsFromMap(m map[string]any) Settings {
 // Validation Helpers
 // =============================================================================
 
-// Valid timezones (simplified list - in production, use time.LoadLocation)
-var validTimezones = map[string]bool{
-	"UTC":                 true,
-	"Asia/Ho_Chi_Minh":    true,
-	"Asia/Bangkok":        true,
-	"Asia/Singapore":      true,
-	"Asia/Tokyo":          true,
-	"Asia/Seoul":          true,
-	"Asia/Shanghai":       true,
-	"Asia/Hong_Kong":      true,
-	"Europe/London":       true,
-	"Europe/Paris":        true,
-	"Europe/Berlin":       true,
-	"America/New_York":    true,
-	"America/Los_Angeles": true,
-	"America/Chicago":     true,
-	"Australia/Sydney":    true,
-}
-
+// isValidTimezone accepts any IANA time zone name ("Europe/Berlin",
+// "America/Argentina/Buenos_Aires", "UTC"). The zone database is embedded in
+// the binary (time/tzdata), so the answer does not depend on the host. The
+// readers (alert quiet hours, scan approval clocks) load it the same way.
+// "Local" is refused: it would mean the server's own zone.
 func isValidTimezone(tz string) bool {
-	return validTimezones[tz]
+	if tz == "" || tz == "Local" || len(tz) > 64 {
+		return false
+	}
+	_, err := time.LoadLocation(tz)
+	return err == nil
 }
 
 // Valid languages

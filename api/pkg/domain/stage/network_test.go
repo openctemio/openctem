@@ -101,3 +101,21 @@ func TestLookupStages(t *testing.T) {
 		t.Fatalf("rdap params refused: %v", miss)
 	}
 }
+
+func TestLookupOnlyTool(t *testing.T) {
+	for tool, want := range map[string]bool{
+		"dnsx": true, "subfinder": true, "DNSX": true,
+		"nuclei": false, "naabu": false, "httpx": false, "katana": false,
+		"": false, "my-scanner": false,
+	} {
+		if got := LookupOnlyTool(tool); got != want {
+			t.Errorf("LookupOnlyTool(%q) = %v, want %v", tool, got, want)
+		}
+	}
+	if st, _ := Lookup(ResolveDNS); !st.LookupOnly() {
+		t.Error("resolve.dns is not lookup-only")
+	}
+	if st, _ := Lookup(ScanPorts); st.LookupOnly() {
+		t.Error("scan.ports is lookup-only")
+	}
+}

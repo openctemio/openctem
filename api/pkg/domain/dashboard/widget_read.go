@@ -111,6 +111,45 @@ type FactReader interface {
 	// VisibleAssets keeps the ids that are assets of the tenant, not
 	// deleted, not program-only and inside the scope.
 	VisibleAssets(ctx context.Context, scope ReadScope, ids []shared.ID) (map[shared.ID]bool, error)
+
+	// Outcomes counts the findings in scope by where they went: in progress
+	// now, and fixed, accepted and false positive since the given time
+	// (resolved_at), with the findings list's rules (campaign rule applied).
+	Outcomes(ctx context.Context, scope ReadScope, since time.Time) (OutcomeCounts, error)
+	// OrgIntake sums the organization's receipts with activity since the
+	// given time, per source group and tool. Receipts are organization-wide
+	// (tool volumes are not asset-scoped): callers use it for an
+	// organization read only.
+	OrgIntake(ctx context.Context, tenantID shared.ID, since time.Time) ([]IntakeRow, error)
+}
+
+// OutcomeCounts are the findings of a scope by outcome.
+type OutcomeCounts struct {
+	InProgress    int64
+	Fixed         int64
+	Accepted      int64
+	FalsePositive int64
+}
+
+// IntakeRow is the receipts of one source (a source group and a tool) in a
+// window: their sums, the latest receipt and the median time between
+// receipts (nil with fewer than three).
+type IntakeRow struct {
+	Origin        string
+	Tool          string
+	Receipts      int64
+	Received      int64
+	Created       int64
+	StillDetected int64
+	Reopened      int64
+	Closed        int64
+	Skipped       int64
+	Failed        int64
+	Suppressed    int64
+	LastAt        time.Time
+	LastStatus    string
+	LastReceiptID shared.ID
+	MedianGap     *time.Duration
 }
 
 // CrownJewelCounts are the crown jewels of a scope.

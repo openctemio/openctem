@@ -115,6 +115,7 @@ export function apiTargetOptions(o?: ScanTargetOptions): ScanTargetOptions | und
   if (o.seen_within_days && o.seen_within_days > 0) out.seen_within_days = o.seen_within_days
   if (o.include_stale) out.include_stale = true
   if (o.new_since_last_run) out.new_since_last_run = true
+  if (o.include_unresolved) out.include_unresolved = true
   return Object.keys(out).length > 0 ? out : undefined
 }
 

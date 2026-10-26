@@ -117,6 +117,10 @@ func (r *ScanCoverageRepository) ActiveIPs(_ context.Context, _ shared.ID) (int,
 // (RFC-007 Phase 4 observability), computed with conditional aggregation over
 // the scannable estate LEFT JOIN the rotation cursor. windowDays defines the
 // freshness window. Tenant-scoped.
+//
+// "Scanned" means the connector's batch settled the host as scanned
+// (last_success_at), never only that it was dispatched: a host whose scan
+// was unreachable or failed stays never scanned / uncovered.
 func (r *ScanCoverageRepository) CoverageStats(ctx context.Context, tenantID shared.ID, scope *shared.DataScope, windowDays int) (*scancoverage.CoverageStats, error) {
 	if windowDays <= 0 {
 		windowDays = scancoverage.DefaultCoverageWindowDays
@@ -128,7 +132,7 @@ func (r *ScanCoverageRepository) CoverageStats(ctx context.Context, tenantID sha
 	//nolint:gosec // G202: inScope is built from fixed SQL and numbered placeholders
 	query := `
 		WITH scannable AS (
-			SELECT a.criticality, c.last_attempt_at AS last_dispatched_at
+			SELECT a.criticality, c.last_success_at AS last_scanned_at, c.last_attempt_at AS last_dispatched_at
 			FROM assets a
 			LEFT JOIN asset_coverage c
 			       ON c.tenant_id = a.tenant_id AND c.asset_id = a.id
@@ -140,14 +144,14 @@ func (r *ScanCoverageRepository) CoverageStats(ctx context.Context, tenantID sha
 		)
 		SELECT
 			count(*),
-			count(*) FILTER (WHERE last_dispatched_at IS NULL),
-			count(*) FILTER (WHERE last_dispatched_at >= now() - make_interval(days => $3)),
-			count(*) FILTER (WHERE last_dispatched_at IS NOT NULL
-			                   AND last_dispatched_at < now() - make_interval(days => $3)),
-			count(*) FILTER (WHERE last_dispatched_at IS NULL AND criticality = 'critical'),
+			count(*) FILTER (WHERE last_scanned_at IS NULL),
+			count(*) FILTER (WHERE last_scanned_at >= now() - make_interval(days => $3)),
+			count(*) FILTER (WHERE last_scanned_at IS NOT NULL
+			                   AND last_scanned_at < now() - make_interval(days => $3)),
+			count(*) FILTER (WHERE last_scanned_at IS NULL AND criticality = 'critical'),
 			count(*) FILTER (WHERE criticality = 'critical'
-			                   AND (last_dispatched_at IS NULL
-			                        OR last_dispatched_at < now() - make_interval(days => $3))),
+			                   AND (last_scanned_at IS NULL
+			                        OR last_scanned_at < now() - make_interval(days => $3))),
 			min(last_dispatched_at)
 		FROM scannable`
 
