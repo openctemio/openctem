@@ -145,6 +145,6 @@ describe('MetricStrip anatomy', () => {
       onClick: () => {},
     }))
     render(<MetricStrip items={items} />)
-    expect(warn).toHaveBeenCalledWith(expect.stringContaining('research/244'))
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining('the page anatomy allows'))
   })
 })

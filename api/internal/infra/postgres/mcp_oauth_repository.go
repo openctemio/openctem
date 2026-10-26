@@ -360,6 +360,34 @@ func (r *MCPOAuthRepository) RevokeGrant(ctx context.Context, tenantID, grantID 
 	})
 }
 
+// RevokeGrantsByUser implements mcpoauth.Repository. The user id is the only
+// filter: the revocation is deliberately tenant-agnostic for that one user.
+func (r *MCPOAuthRepository) RevokeGrantsByUser(ctx context.Context, userID shared.ID, reason string, now time.Time) (int, error) {
+	var n int
+	err := r.db.Transaction(ctx, func(tx *sql.Tx) error {
+		res, err := tx.ExecContext(ctx, `
+			UPDATE mcp_oauth_grants SET revoked_at = $2, revoked_reason = $3
+			 WHERE user_id = $1 AND revoked_at IS NULL`, userID.String(), now, reason)
+		if err != nil {
+			return fmt.Errorf("revoke user mcp grants: %w", err)
+		}
+		cnt, _ := res.RowsAffected()
+		n = int(cnt)
+		if _, err := tx.ExecContext(ctx, `
+			DELETE FROM mcp_oauth_tokens t USING mcp_oauth_grants g
+			 WHERE t.grant_id = g.id AND g.user_id = $1`, userID.String()); err != nil {
+			return fmt.Errorf("delete user mcp grant tokens: %w", err)
+		}
+		if _, err := tx.ExecContext(ctx, `
+			UPDATE mcp_oauth_requests SET status = 'denied'
+			 WHERE user_id = $1 AND status IN ('pending', 'approved')`, userID.String()); err != nil {
+			return fmt.Errorf("cancel user mcp requests: %w", err)
+		}
+		return nil
+	})
+	return n, err
+}
+
 // TouchGrant implements mcpoauth.Repository. At most one write a minute per
 // grant: last use is shown to people, not used for decisions.
 func (r *MCPOAuthRepository) TouchGrant(ctx context.Context, tenantID, grantID shared.ID, ip string, now time.Time) error {

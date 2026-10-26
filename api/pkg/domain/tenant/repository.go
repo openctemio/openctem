@@ -99,7 +99,7 @@ type TenantWithRole struct {
 	Tenant   *Tenant
 	Role     Role
 	JoinedAt time.Time
-	// The caller's own membership (RFC-058), for the organization switcher.
+	// The caller's own membership, for the organization switcher.
 	MemberStatus    MemberStatus
 	Kind            MemberKind
 	HomeTenantID    *shared.ID

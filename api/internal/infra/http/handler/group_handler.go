@@ -95,7 +95,7 @@ type GroupMemberWithUserResponse struct {
 	Email       string    `json:"email"`
 	Name        string    `json:"name"`
 	AvatarURL   string    `json:"avatar_url,omitempty"`
-	// ExpiresAt: when the membership ends (RFC-050 W22); absent means no end.
+	// ExpiresAt: when the membership ends; absent means no end.
 	ExpiresAt    *time.Time `json:"expires_at,omitempty"`
 	ExpiryReason string     `json:"expiry_reason,omitempty"`
 }
@@ -653,7 +653,7 @@ func (h *GroupHandler) AddMember(w http.ResponseWriter, r *http.Request) {
 
 // UpdateMemberAccess handles PATCH /api/v1/groups/{groupId}/members/{userId}
 // @Summary Set when a team membership ends
-// @Description Sets, moves or clears (expires_at null) the end date of a team membership (RFC-050 W22). External teams always need an end date; at most 365 days ahead. The membership is removed within a minute of its end date.
+// @Description Sets, moves or clears (expires_at null) the end date of a team membership. External teams always need an end date; at most 365 days ahead. The membership is removed within a minute of its end date.
 // @Tags groups
 // @Accept json
 // @Produce json

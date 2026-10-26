@@ -75,7 +75,7 @@ func toPublicProgramResponse(p bp.PublicProgram) PublicProgramResponse {
 
 // Catalog handles GET /api/v1/programs/catalog
 // @Summary      List public programs
-// @Description  The public bug-bounty programs of the platform catalog, imported from the signed program feed (RFC-065 §16): published scope, rules and terms. Public data; subscribing creates the organization's own program.
+// @Description  The public bug-bounty programs of the platform catalog, imported from the signed program feed: published scope, rules and terms. Public data; subscribing creates the organization's own program.
 // @Tags         Programs
 // @Produce      json
 // @Param        search  query     string  false  "Name or id"

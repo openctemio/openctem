@@ -211,7 +211,7 @@ type RunResponse struct {
 	ID             string `json:"id"`
 	TenantID       string `json:"tenant_id"`
 	ScanWorkflowID string `json:"scan_workflow_id"`
-	// Intensity is the probe ceiling the run started with (RFC-071):
+	// Intensity is the probe ceiling the run started with:
 	// passive, active or intrusive; absent for a run without one.
 	Intensity string  `json:"intensity,omitempty" enums:"passive,active,intrusive"`
 	AssetID   *string `json:"asset_id,omitempty"`
@@ -264,7 +264,7 @@ type RunResponse struct {
 	CreatedAt           string `json:"created_at"`
 	// ScheduledFor is the schedule occurrence this run serves (scheduled runs only).
 	ScheduledFor *string `json:"scheduled_for,omitempty"`
-	// DeadlineAt is when the run is settled if it is still open (RFC-046 §6.3).
+	// DeadlineAt is when the run is settled if it is still open.
 	DeadlineAt *string `json:"deadline_at,omitempty"`
 	// DeadlineReason is which policy set DeadlineAt: scan_max_duration,
 	// workflow_max_duration, platform_cap, or legacy (set before reasons
@@ -286,7 +286,7 @@ type RunResponse struct {
 	// (GET /scan-runs/{id}/tasks?cursor=) when TasksTruncated.
 	TasksNextCursor string `json:"tasks_next_cursor,omitempty"`
 	// WindowWaits: the targets that had to wait for their scan windows when
-	// the run started, and until when (RFC-067).
+	// the run started, and until when.
 	WindowWaits *RunWindowWaitsResponse `json:"window_waits,omitempty"`
 }
 
@@ -382,7 +382,7 @@ type RunTaskResponse struct {
 	// by which task, and how many of its targets can start.
 	HostWait *RunTaskHostWait `json:"host_wait,omitempty"`
 	// Progress is a running task's finished targets as its sensor last
-	// reported them, and when that count last grew (research/122).
+	// reported them, and when that count last grew.
 	Progress *RunTaskProgress `json:"progress,omitempty"`
 	// BudgetSeconds is the task's expected time; StallSeconds how long it
 	// may finish no target before it is re-queued as stalled. 0: none.
@@ -481,7 +481,7 @@ type RunDispatchResponse struct {
 	ExcludedTargets int `json:"excluded_targets"`
 	// Excluded lists the targets the organization's exclusions left out
 	// (whole, or a range cut around excluded addresses) with the matching
-	// rules, at most 50 (RFC-054 §6.5).
+	// rules, at most 50.
 	Excluded         []RunExcludedTarget  `json:"excluded,omitempty"`
 	Warnings         []string             `json:"warnings,omitempty"`
 	UncoveredTargets []RunUncoveredTarget `json:"uncovered_targets,omitempty"`
@@ -490,8 +490,7 @@ type RunDispatchResponse struct {
 	// "platform" (shared platform sensors), decided at trigger time.
 	SensorRouting string `json:"sensor_routing,omitempty"`
 	// TargetExpansion is what each dynamic target selector (*.example.com,
-	// an inventory-mode CIDR) added from the inventory when the run started
-	// (RFC-068).
+	// an inventory-mode CIDR) added from the inventory when the run started.
 	TargetExpansion []RunTargetExpansion `json:"target_expansion,omitempty"`
 	// WillScan is how many targets the run dispatched; Skipped groups every
 	// other target by reason (docs/architecture/scan-targets.md, "Skipped

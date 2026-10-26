@@ -1,11 +1,13 @@
 package findingimport
 
 import (
+	"archive/zip"
 	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"io"
+	"io/fs"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -204,6 +206,20 @@ func TestImportFile_RealFixtures(t *testing.T) {
 			continue
 		}
 		n++
+		if st, err := os.Stat(p); err == nil && st.IsDir() {
+			// A recon directory fixture: imported as the ZIP of its files.
+			t.Run(filepath.Base(filepath.Dir(p))+"/"+base, func(t *testing.T) {
+				svc, ing, _ := newSvc(ingest.SourceResolveDryRun)
+				res := importBundle(t, svc, Request{TenantID: shared.NewID(), ReceiptID: shared.NewID(), SessionID: "s"}, zipDir(t, p))
+				if len(res) != 1 || res[0].Error != nil || res[0].Stats.Assets == 0 || len(ing.calls) != 1 {
+					t.Fatalf("%+v", res)
+				}
+				if err := ing.calls[0].Report.Validate(); err != nil {
+					t.Fatalf("invalid report: %v", err)
+				}
+			})
+			continue
+		}
 		t.Run(filepath.Base(filepath.Dir(p))+"/"+base, func(t *testing.T) {
 			f, err := os.Open(p)
 			if err != nil {
@@ -485,4 +501,34 @@ password: Plug1nS3cret</plugin_output></ReportItem>
 	if fr.Ingest == nil || fr.ImportID == "" {
 		t.Fatal("not committed")
 	}
+}
+
+// zipDir zips the files under dir, paths relative to it.
+func zipDir(t *testing.T, dir string) []byte {
+	t.Helper()
+	var buf bytes.Buffer
+	zw := zip.NewWriter(&buf)
+	err := filepath.WalkDir(dir, func(p string, d fs.DirEntry, err error) error {
+		if err != nil || d.IsDir() {
+			return err
+		}
+		rel, _ := filepath.Rel(dir, p)
+		b, err := os.ReadFile(p)
+		if err != nil {
+			return err
+		}
+		w, err := zw.Create(filepath.ToSlash(rel))
+		if err != nil {
+			return err
+		}
+		_, err = w.Write(b)
+		return err
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := zw.Close(); err != nil {
+		t.Fatal(err)
+	}
+	return buf.Bytes()
 }

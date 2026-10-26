@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://openctem.io/schemas/filter-document/v1.json",
   "title": "FilterDocument",
-  "description": "RFC-048 FilterDocument: the body of POST /{resource}/search and the stored form of saved views, exports, reports and campaigns. Field names and enums are per resource (GET /api/v1/meta/filters/{resource}). Limits: 50 leaves, depth 3, 100 values per list (500 for id fields), 200 characters per value, q 255, 32 KB per document.",
+  "description": "FilterDocument: the body of POST /{resource}/search and the stored form of saved views, exports, reports and campaigns. Field names and enums are per resource (GET /api/v1/meta/filters/{resource}). Limits: 50 leaves, depth 3, 100 values per list (500 for id fields), 200 characters per value, q 255, 32 KB per document.",
   "type": "object",
   "additionalProperties": false,
   "properties": {

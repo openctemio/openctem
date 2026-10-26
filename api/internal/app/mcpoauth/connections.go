@@ -102,6 +102,24 @@ func (s *Service) RevokeConnection(ctx context.Context, tenantID, grantID, actor
 	return nil
 }
 
+// RevokeUserGrants ends every connected application of one person in every
+// organization, after a credential change (password reset or change, sign-out
+// everywhere). It touches only that user and returns how many connections
+// ended. No per-organization audit event is written here: the credential
+// change itself is audited, and this logs the count.
+func (s *Service) RevokeUserGrants(ctx context.Context, userID shared.ID) (int, error) {
+	n, err := s.repo.RevokeGrantsByUser(ctx, userID, mcpoauth.RevokedCredentials, s.now())
+	if err != nil {
+		s.log.Error("mcp oauth: revoke user grants", "user_id", userID.String(), "error", err.Error())
+		return 0, err
+	}
+	if n > 0 {
+		s.log.Info("mcp oauth: connected applications revoked after a credential change",
+			"user_id", userID.String(), "grants", n)
+	}
+	return n, nil
+}
+
 // ListAllClients lists every client with usage counts. Platform admin
 // console only (console session); no tenant data.
 func (s *Service) ListAllClients(ctx context.Context) ([]mcpoauth.ClientUsage, error) {

@@ -98,6 +98,8 @@ type Service struct {
 	// scanAttribution stamps tenant_scanned attribution evidence on the
 	// assets of command-bound reports (RFC-036 O8). Nil-safe.
 	scanAttribution ScanAttributionStamper
+	// importCandidates holds the new hosts of an import for review.
+	importCandidates ImportCandidateHolder
 
 	// takeoverConfirmer raises subdomain_takeover from nuclei takeover
 	// findings of command-bound reports (RFC-036 P1). Nil-safe.
@@ -574,6 +576,9 @@ func (s *Service) Ingest(ctx context.Context, agt *sensor.Sensor, input Input) (
 	// What each asset was fingerprinted with (RFC-112), after the sets
 	// decided which technologies the asset shows.
 	s.recordTechnologies(ctx, tenantID, scope, src, observedAt, report, assetMap)
+	if binding.Kind == BindingTrusted && sourceKind == asset.SourceKindImport {
+		s.holdImportCandidates(ctx, tenantID, scope, report, assetMap, output)
+	}
 
 	s.logger.Debug("asset processing complete",
 		"assets_created", output.AssetsCreated,
