@@ -367,3 +367,47 @@ describe('ItemsViz View all', () => {
     expect(screen.getByText('High')).toBeInTheDocument()
   })
 })
+
+describe('ItemsViz row grid', () => {
+  it('a row with no severity and no due date keeps the dot slot and a due column', () => {
+    render(
+      <ItemsViz
+        result={{
+          shape: 'items',
+          rows: [
+            {
+              id: 'a',
+              title: 'Full',
+              priority: 'P1',
+              severity: 'high',
+              due_at: '2999-01-01T00:00:00Z',
+              href: '/findings/a',
+            },
+            {
+              id: 'b',
+              title: 'Bare',
+              priority: 'P1',
+              severity: 'none',
+              due_at: null,
+              href: '/findings/b',
+            },
+            {
+              id: 'c',
+              title: 'Odd',
+              priority: 'P1',
+              severity: 'weird',
+              due_at: null,
+              href: '/findings/c',
+            },
+          ],
+        }}
+      />
+    )
+    expect(screen.getAllByTestId('items-severity-dot')).toHaveLength(3)
+    expect(screen.getAllByText('No due date')).toHaveLength(2)
+    const odd = screen.getByRole('link', { name: /Odd/ })
+    expect(within(odd).getByText('Unknown')).toBeInTheDocument()
+    const bare = screen.getByRole('link', { name: /Bare/ })
+    expect(within(bare).getByText('Info')).toBeInTheDocument()
+  })
+})

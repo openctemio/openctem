@@ -20,6 +20,7 @@
   "dashboardKit.heatmap.more": "Nhiều hơn",
   "dashboardKit.items.due": "hạn {time}",
   "dashboardKit.items.kev": "KEV",
+  "dashboardKit.items.noDue": "Không có hạn",
   "dashboardKit.items.overdue": "Quá hạn {time}",
   "dashboardKit.items.untitled": "Phát hiện chưa có tiêu đề",
   "dashboardKit.items.viewAll": "Xem tất cả {n}",
