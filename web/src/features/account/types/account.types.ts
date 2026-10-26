@@ -38,6 +38,8 @@ export interface ChangePasswordInput {
   current_password: string
   new_password: string
   confirm_password: string
+  /** Also revoke every API key the person owns (connected apps always go). */
+  revoke_api_keys?: boolean
 }
 
 /** GET /api/v1/users/me/2fa */
@@ -90,6 +92,8 @@ export interface Session {
 
 export interface SessionListResponse {
   sessions: Session[]
+  /** API keys the person owns, in every organization. */
+  active_api_keys?: number
 }
 
 // ============================================
