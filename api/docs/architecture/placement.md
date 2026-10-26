@@ -31,6 +31,9 @@ it, instead of "Waiting for a sensor".
 | Dispatch gate | private targets: the sensor enforces a local policy when the organization requires one | `private_needs_local_policy` |
 | Dispatch gate | the organization enabled the opt-in the task uses | `opt_in_disabled` |
 | Dispatch gate | the sensor's own local policy accepts the task | `local_policy_refuses` |
+| Delivery (proxy pools) | the sensor's jobs go through a proxy pool and the sensor reports it can honor one (`egress.upstream@1`, `net.confined@1`); scan and retest jobs only | `egress_unsupported` |
+| Delivery (proxy pools) | the same, and for a validate job the sensor's validate executor goes through the pool (`egress.validate@1`) | `egress_validate_unsupported` |
+| Delivery (proxy pools) | the sensor's owner set it to scan direct on its host (`egress.host-direct@1`) and the job needs a pool: the organization requires a proxy, or a pool is named for the sensor | `egress_host_direct` |
 | Sensor report | the sensor claims new jobs (its heartbeats do not report `local_store.stop_claiming`: storage over quota, disk low, or results not yet acknowledged) | `stopped_claiming` |
 | Slots | a free scan slot (eligible but busy otherwise) | `no_free_slot` (counted as *busy*) |
 
@@ -186,3 +189,7 @@ as defence in depth.
 - `internal/infra/postgres/command_placement.go`: the predicates read back.
 - `internal/app/command/placement.go`: the explainer.
 - `internal/infra/http/handler/scan_run_task_placement_handler.go`: the endpoint.
+
+## Proxy pool holds name their pool
+
+A sensor held back by `egress_unsupported`, `egress_validate_unsupported` or `egress_host_direct` carries the pool its jobs use (`egress_pool` with `id` and `name` in the per-sensor verdict of `GET /scan-runs/{id}/tasks/{task_id}/placement`). Like the rest of the per-sensor verdicts it is returned only to a caller with `sensors:read`, and the name is read for the caller's own organization only. The run page turns it into one sentence per sensor ("Sensor X cannot use the proxies of pool P (no proxy support reported)") and links the fix. A pool whose endpoints are all quarantined is not a hold: the sensor fails the job rather than waiting (it never goes direct). Every egress hold takes its code from `egressDecision.holdReason`, so a new kind of hold adds one case there and one entry in the web `PLACEMENT_FIX`.

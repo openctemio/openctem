@@ -291,6 +291,7 @@ properties:
   waf: { label: WAF, label_vi: WAF }
   redirect_url: { label: Redirects to, label_vi: Chuyển hướng tới, format: url }
   chain_status_codes: { label: Redirect chain, label_vi: Chuỗi chuyển hướng }
+  http_posture: { label: Response header posture, label_vi: Tư thế header phản hồi }
   method: { label: Method, label_vi: Phương thức }
   source: { label: Source, label_vi: Nguồn }
   depth: { label: Crawl depth, label_vi: Độ sâu thu thập }
@@ -663,6 +664,7 @@ types:
       - { name: response_time_ms, type: int }
       - { name: redirect_url, type: string }
       - { name: chain_status_codes, type: list }
+      - { name: http_posture, type: object }
     columns: [name, status_code, title, server, findings.open, last_seen]
     card: service
     scannable_by: [url, service, port]

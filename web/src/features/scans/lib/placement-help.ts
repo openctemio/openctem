@@ -90,6 +90,9 @@ export const PLACEMENT_FIX: Record<string, FixTarget | null> = {
   opt_in_disabled: 'sensors',
   local_policy_refuses: 'sensors',
   stopped_claiming: 'sensors',
+  egress_unsupported: 'sensors',
+  egress_validate_unsupported: 'sensors',
+  egress_host_direct: 'sensors',
   no_free_slot: null,
 }
 
