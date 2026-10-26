@@ -76,6 +76,26 @@ func TestNavPins_OwnListScopedCountsAndVisibility(t *testing.T) {
 		t.Errorf("quick view count %d, list total %d", *qv.Count, qtotal)
 	}
 
+	// The session bootstrap carries the same pins and counts for memberA, and
+	// none of them for anyone else.
+	bstatus, braw := h.do(h.memberA, false, http.MethodGet, "/api/v1/test/bootstrap-pins", nil)
+	var boot pinsResp
+	if err := json.Unmarshal([]byte(braw), &boot); bstatus != http.StatusOK || err != nil || len(boot.Data) != 3 {
+		t.Fatalf("bootstrap pins = %d %s", bstatus, braw)
+	}
+	for i := range boot.Data {
+		if boot.Data[i].Ref != got.Data[i].Ref || (boot.Data[i].Count == nil) != (got.Data[i].Count == nil) ||
+			(boot.Data[i].Count != nil && *boot.Data[i].Count != *got.Data[i].Count) {
+			t.Errorf("bootstrap pin %d = %+v, GET /me/pins = %+v", i, boot.Data[i], got.Data[i])
+		}
+	}
+	var other pinsResp
+	if bstatus, braw := h.do(h.ownerB, false, http.MethodGet, "/api/v1/test/bootstrap-pins", nil); bstatus != http.StatusOK {
+		t.Errorf("ownerB bootstrap pins = %d %s", bstatus, braw)
+	} else if err := json.Unmarshal([]byte(braw), &other); err != nil || len(other.Data) != 0 {
+		t.Errorf("ownerB bootstrap pins = %s, want empty", braw)
+	}
+
 	// Another member sees none of memberA's pins and cannot pin their view.
 	if status, other, _ := h.pins(t, h.ownerB, http.MethodGet, nil); status != http.StatusOK || len(other.Data) != 0 {
 		t.Errorf("ownerB GET = %d %+v, want empty", status, other.Data)

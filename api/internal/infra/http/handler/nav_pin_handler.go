@@ -89,15 +89,37 @@ func (h *NavPinHandler) caller(r *http.Request) (navpinapp.Caller, bool) {
 	}, true
 }
 
-func (h *NavPinHandler) write(w http.ResponseWriter, c navpinapp.Caller, pins []navpinapp.PinView) {
-	resp := NavPinsResponse{Data: make([]NavPinResponse, len(pins)), Max: navpin.MaxPins, IncludeInformational: c.IncludeInformational}
+func toNavPinsResponse(c navpinapp.Caller, pins []navpinapp.PinView) *NavPinsResponse {
+	resp := &NavPinsResponse{Data: make([]NavPinResponse, len(pins)), Max: navpin.MaxPins, IncludeInformational: c.IncludeInformational}
 	for i, p := range pins {
 		resp.Data[i] = NavPinResponse{Kind: string(p.Kind), Ref: p.Ref, Name: p.Name, Params: p.Params, Count: p.Count}
 	}
+	return resp
+}
+
+func (h *NavPinHandler) write(w http.ResponseWriter, c navpinapp.Caller, pins []navpinapp.PinView) {
 	w.Header().Set("Content-Type", "application/json")
 	w.Header().Set("Cache-Control", "private, no-store")
 	w.WriteHeader(http.StatusOK)
-	_ = json.NewEncoder(w).Encode(resp)
+	_ = json.NewEncoder(w).Encode(toNavPinsResponse(c, pins))
+}
+
+// errNoPinCaller: the request carries no tenant and user to read pins for.
+var errNoPinCaller = errors.New("nav pins: no tenant or user in the request")
+
+// Response is the GET /me/pins body for the request's own caller. The
+// session bootstrap carries it, so the sidebar does not ask for its pins on
+// every page load; the caller, scope and counts are exactly those of List.
+func (h *NavPinHandler) Response(r *http.Request) (*NavPinsResponse, error) {
+	c, ok := h.caller(r)
+	if !ok {
+		return nil, errNoPinCaller
+	}
+	pins, err := h.service.List(r.Context(), c)
+	if err != nil {
+		return nil, err
+	}
+	return toNavPinsResponse(c, pins), nil
 }
 
 func (h *NavPinHandler) writeErr(w http.ResponseWriter, err error) {

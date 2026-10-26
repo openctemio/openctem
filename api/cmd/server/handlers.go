@@ -1826,7 +1826,7 @@ func newSensorPairingHandler(svc *Services, log *logger.Logger) *handler.SensorP
 
 // bootstrapSession wires the session parts of GET /me/bootstrap to the same
 // code that serves /users/me, /users/me/tenants, /notifications/unread-count,
-// /easm/candidates, the pending count of /approvals and the organization
+// /easm/candidates, the pending count of /approvals, /me/pins and the organization
 // policy of /auth/providers.
 func bootstrapSession(cfg *config.Config, svc *Services, h routes.Handlers) handler.BootstrapSession {
 	s := handler.BootstrapSession{}
@@ -1845,6 +1845,9 @@ func bootstrapSession(cfg *config.Config, svc *Services, h routes.Handlers) hand
 	}
 	if svc.Entitlement != nil {
 		s.LimitsApply = svc.Entitlement.Applies
+	}
+	if h.NavPin != nil {
+		s.Pins = h.NavPin.Response
 	}
 	if svc.Vulnerability != nil {
 		vulns := svc.Vulnerability
