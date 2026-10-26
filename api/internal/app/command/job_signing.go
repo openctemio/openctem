@@ -82,7 +82,17 @@ func (s *Service) SetInstanceZoneSource(z InstanceZoneSource) { s.instanceZones 
 // signJob returns a copy of c with its delivery payload and the signer's
 // envelope for sensorID, or ErrJobNotSigned.
 func (s *Service) signJob(ctx context.Context, sensorID string, c *commanddom.Command, limits bool) (*commanddom.Command, error) {
+	// The packs and generated lists the job pins join the payload first, so
+	// the signature covers them (content_pin.go).
+	pinned, err := s.pinContent(ctx, c)
+	if err != nil {
+		return nil, s.contentNotSigned(c, sensorID, err)
+	}
+	c = pinned
 	payload := DeliveryPayload(c.Payload)
+	if err := s.checkPinnedContent(ctx, c, payload); err != nil {
+		return nil, s.contentNotSigned(c, sensorID, err)
+	}
 	now := s.now().UTC()
 	expires := now.Add(jobsign.MaxTTL)
 	if c.ExpiresAt != nil && c.ExpiresAt.After(now) && c.ExpiresAt.Before(expires) {
@@ -121,6 +131,7 @@ func (s *Service) signJob(ctx context.Context, sensorID string, c *commanddom.Co
 		PayloadSHA256: jobsign.PayloadDigest(payload),
 		Targets:       targets,
 		Templates:     templates,
+		Content:       jobsign.PayloadContentRefs(payload),
 		Limits:        lims,
 		LeaseEpoch:    c.LeaseEpoch,
 		IssuedAt:      now,
@@ -168,6 +179,14 @@ func (s *Service) signJob(ctx context.Context, sensorID string, c *commanddom.Co
 	return &cp, nil
 }
 
+// contentNotSigned is the error of a job whose content could not be pinned:
+// permanent when the platform refuses it (ErrContentRefused), else transient.
+func (s *Service) contentNotSigned(c *commanddom.Command, sensorID string, err error) error {
+	s.logger.Warn("job content not pinned; command not handed to the sensor",
+		"command_id", c.ID.String(), "sensor_id", sensorID, "refused", errors.Is(err, ErrContentRefused), "error", err)
+	return fmt.Errorf("%w: %w", ErrJobNotSigned, err)
+}
+
 // signClaimed signs each claimed command for sensorID. A command the signer
 // does not sign is taken back (pending again, pinned only if it was pinned
 // to the sensor before the claim) and left out: the sensor gets no unsigned
@@ -198,6 +217,14 @@ func (s *Service) signClaimed(ctx context.Context, tenantID shared.ID, sensorID 
 				// The signer's ledger does not authorize this job: it would
 				// refuse it on every claim. Fail it with the reason.
 				s.failAtClaim(ctx, c, signerRefusedMessage(rf), FailureSignerRefused)
+			case errors.Is(err, ErrContentRefused):
+				down = false
+				var cr *ContentRefusedError
+				reason := "the job's content cannot be pinned"
+				if errors.As(err, &cr) {
+					reason = cr.Reason
+				}
+				s.failAtClaim(ctx, c, truncateUTF8(FailureSignerRefused+": content: "+reason, MaxFailErrorMessageBytes), FailureSignerRefused)
 			case errors.Is(err, commanddom.ErrTemplateContent):
 				down = false
 				s.failAtClaim(ctx, c, truncateUTF8(FailureSignerRefused+": "+err.Error(), MaxFailErrorMessageBytes), FailureSignerRefused)
