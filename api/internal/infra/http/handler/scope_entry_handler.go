@@ -122,8 +122,8 @@ type ScopeSettingsResponse struct {
 	// UnclassifiedScansEffective is the mode in force: off under the
 	// Strict scan approval mode, else the setting (read-only).
 	UnclassifiedScansEffective string `json:"unclassified_scans_effective" enums:"off,low_impact,full"`
-	// AutoCoverage is the organization's choice for automatic coverage
-	//: true, false, or null for the default (on unless Strict).
+	// AutoCoverage is the organization's choice for automatic coverage:
+	// true, false, or null for the default (on unless Strict).
 	AutoCoverage *bool `json:"auto_coverage"`
 	// AutoCoverageEffective: automatic coverage runs now (read-only).
 	AutoCoverageEffective bool `json:"auto_coverage_effective"`
