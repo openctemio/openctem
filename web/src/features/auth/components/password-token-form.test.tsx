@@ -85,10 +85,15 @@ describe('PasswordTokenForm', () => {
   })
 
   it('an expired setup link tells the user to ask for a new one', async () => {
-    mockReset.mockResolvedValue({ success: false, error: 'Token expired' })
+    mockReset.mockResolvedValue({
+      success: false,
+      code: 'INVALID_RESET_TOKEN',
+      error: 'SERVER SENTENCE token expired',
+    })
     render(<PasswordTokenForm mode="setup" token="tok-3" />)
     await fillAndSubmit(/^set password$/i)
-    expect(await screen.findByText('Token expired')).toBeInTheDocument()
+    expect(await screen.findByText(/reset link is invalid or has expired/i)).toBeInTheDocument()
+    expect(screen.queryByText(/SERVER SENTENCE/)).not.toBeInTheDocument()
     expect(screen.getByText(/ask your administrator for a new one/i)).toBeInTheDocument()
   })
 })
