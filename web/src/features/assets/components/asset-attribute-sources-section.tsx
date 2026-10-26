@@ -146,7 +146,7 @@ function AttributeRow({
         {decidedByText(a)}
         {a.decided_by && (
           <>
-            {t('assets.attrSources.seen', ' · seen ')}
+            {t('assets.attrSources.seen', ', seen ')}
             <RelativeTime date={a.decided_by.observed_at} />
           </>
         )}
@@ -175,7 +175,7 @@ function AttributeRow({
                 {t('assets.attrSources.says', 'says {value}', { value: displayValue(s.value) })}
               </span>
               <span>
-                · {SOURCE_STATUS_LABEL[s.status]}, {t('assets.attrSources.seenShort', 'seen')}{' '}
+                , {SOURCE_STATUS_LABEL[s.status]}, {t('assets.attrSources.seenShort', 'seen')}{' '}
                 <RelativeTime date={s.observed_at} />
               </span>
             </li>

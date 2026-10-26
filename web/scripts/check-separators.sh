@@ -51,6 +51,25 @@ fi
 
 merge_base="$(git merge-base "$BASE_REF" HEAD)"
 
+# Existing lines: outside the files listed in scripts/separators-debt.txt (the
+# few still waiting for a cleanup) no source file and no dictionary may carry a
+# separator glyph at all, so a cleaned file cannot regress when its line is
+# edited or moved. Comment lines, a trailing // comment, a credential mask (three
+# or more bullets) and a `separator-ok:` line are ignored. Remove a file from the
+# list when it is clean; never add one.
+debt_file="$(dirname "$0")/separators-debt.txt"
+existing="$(grep -rnE '[·•∙⋅]' src --include='*.ts' --include='*.tsx' --include='*.json' \
+  --exclude='*.test.ts' --exclude='*.test.tsx' --exclude-dir=__tests__ \
+  | grep -v 'separator-ok:' \
+  | awk -F: '{f=$1; t=substr($0, length($1)+length($2)+3); u=t; sub(/ \/\/ .*$/, "", u); gsub(/•••+/, "", u); \
+      if (u ~ /^[[:space:]]*(\/\/|\/\*|\*|\{\/\*)/) next; if (u ~ /[·•∙⋅]/) print f ":" $2 ":" substr(t,1,160)}' \
+  | grep -vFf <(sed 's#$#:#' "$debt_file" 2>/dev/null) || true)"
+if [[ -n "$existing" ]]; then
+  printf '\nA separator glyph remains in a file that was cleaned:\n\n%s\n\n%s\n' "$existing" \
+    "Use <MetaLine items={[...]}/> for rendered rows or a comma for text. Files still being cleaned are listed in scripts/separators-debt.txt." >&2
+  exit 1
+fi
+
 # Added lines as "file:text", tests excluded. A line that the same file also
 # loses is a moved line (the catalogs are re-sorted by key), not a new one.
 added="$(git diff -U0 "$merge_base"...HEAD -- 'src/*.tsx' 'src/*.ts' 'src/lib/i18n/dictionaries/*.json' \

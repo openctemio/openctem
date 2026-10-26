@@ -9,7 +9,7 @@
   "emergingThreats.actions.outOfScopeHint": "Cảnh báo này có tài sản ngoài phạm vi của bạn nên bạn không thể đánh dấu không bị ảnh hưởng. Hãy nhờ người có quyền rộng hơn.",
   "emergingThreats.actions.remediating": "Đánh dấu đang khắc phục",
   "emergingThreats.actions.reopen": "Mở lại",
-  "emergingThreats.affectedCounts": "{confirmed} xác nhận · {possible} có thể · {internet} hướng ra Internet",
+  "emergingThreats.affectedCounts": "{confirmed} xác nhận, {possible} có thể, {internet} hướng ra Internet",
   "emergingThreats.assets.asset": "Tài sản",
   "emergingThreats.assets.confirmed": "Đã xác nhận bị ảnh hưởng",
   "emergingThreats.assets.criticality": "Mức quan trọng",

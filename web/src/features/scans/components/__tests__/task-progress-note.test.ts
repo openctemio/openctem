@@ -17,7 +17,7 @@ describe('taskProgressNote', () => {
     )
     expect(n).toEqual({
       kind: 'progress',
-      text: '12/72 targets done · last 1m 0s ago · budget 10m 0s',
+      text: '12/72 targets done, last 1m 0s ago, budget 10m 0s',
     })
   })
 

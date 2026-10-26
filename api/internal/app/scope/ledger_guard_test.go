@@ -312,6 +312,10 @@ func TestLedgerGuard_RepositoriesHandedOutOnlyAtKnownSites(t *testing.T) {
 		"cmd/server/services.go ScopeExcl":   true,
 		"cmd/server/workers.go ScopeTarget":  true,
 		"cmd/server/workers.go ScopeExcl":    true,
+		// The sensor policy prefill: read-only lister interfaces (ListActive only),
+		// so nothing it holds can write scope around the ledger hook.
+		"cmd/server/handlers.go ScopeTarget": true,
+		"cmd/server/handlers.go ScopeExcl":   true,
 	}
 	root := moduleRoot(t)
 	seen := map[string]int{}

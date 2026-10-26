@@ -146,7 +146,7 @@ function EvidenceSummary({ plan, t }: { plan: VerificationPlan; t: Translate }) 
           </span>
           {retest.completed_at && (
             <>
-              {' · '}
+              {', '}
               <RelativeTime date={retest.completed_at} className="text-sm" />
             </>
           )}
@@ -174,7 +174,7 @@ function EvidenceSummary({ plan, t }: { plan: VerificationPlan; t: Translate }) 
         </span>
         {checklist.completed_at && (
           <>
-            {' · '}
+            {', '}
             <RelativeTime date={checklist.completed_at} className="text-sm" />
           </>
         )}

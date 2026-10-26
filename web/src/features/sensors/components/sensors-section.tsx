@@ -57,6 +57,7 @@ import { PlatformScanningCard } from '@/features/platform'
 import { BulkActionBar, ErrorState, FilterSheet, PageHeader, PageStack } from '@/features/shared'
 import { useModuleEnabled } from '@/features/integrations/api/use-tenant-modules'
 import { CIPipelinesHint } from '@/features/ci-runners/components/ci-pipelines-hint'
+import { EnrollmentTokensPanel } from './enrollment-tokens-panel'
 import { SensorsEmptyState } from './sensors-empty-state'
 
 import {
@@ -209,6 +210,9 @@ export function SensorsSection({
   const bearerKeysAllowed = identityPolicy?.bearer_keys_allowed !== false
   const canInstallWithKey = canWriteSensors && bearerKeysAllowed
   const zonesTab = tabParam === 'zones' && canReadZones
+  // Organization enrollment tokens (unattended installs) and the sensors
+  // waiting for approval.
+  const tokensTab = tabParam === 'tokens' && canReadSensors
   // CI pipelines have their own page; this page only links there.
   const scansEnabled = useModuleEnabled('scans')
   const canReadCI = useHasPermission(Permission.CIRead) && scansEnabled
@@ -395,10 +399,9 @@ export function SensorsSection({
           <span className="flex flex-wrap items-center gap-x-1.5">
             <span className="font-medium text-foreground">{g.label}</span>
             {g.zone && g.zone.ranges.length > 0 && (
-              <span className="font-mono">· {g.zone.ranges.slice(0, 2).join(', ')}</span>
+              <span className="font-mono">{g.zone.ranges.slice(0, 2).join(', ')}</span>
             )}
             <span>
-              ·{' '}
               {t(
                 rows.length === 1 ? 'sensors.list.count.one' : 'sensors.list.count.other',
                 undefined,
@@ -408,12 +411,12 @@ export function SensorsSection({
               )}
             </span>
             {zoneGap ? (
-              <span className="text-destructive">· {t('sensors.list.zoneGap')}</span>
+              <span className="text-destructive">{t('sensors.list.zoneGap')}</span>
             ) : (
-              <span>· {t('sensors.list.onlineCount', undefined, { count: online })}</span>
+              <span>{t('sensors.list.onlineCount', undefined, { count: online })}</span>
             )}
             {key === '__none__' && groupBy === 'zone' && (
-              <span>· {t('sensors.list.noZoneHint')}</span>
+              <span>{t('sensors.list.noZoneHint')}</span>
             )}
           </span>
         )
@@ -722,7 +725,7 @@ export function SensorsSection({
   return (
     <PageStack>
       <PageHeader title={title} description={description}>
-        {zonesTab ? (
+        {tokensTab ? null : zonesTab ? (
           <Can permission={Permission.ScanZonesWrite}>
             <Button size="sm" onClick={() => setZoneCreateOpen(true)}>
               <Plus className="h-4 w-4" />
@@ -754,23 +757,30 @@ export function SensorsSection({
         )}
       </PageHeader>
 
-      {canReadZones && (
+      {(canReadZones || canReadSensors) && (
         <Tabs
-          value={zonesTab ? 'zones' : 'sensors'}
-          onValueChange={(v) => setTabParam(v === 'zones' ? 'zones' : '')}
+          value={tokensTab ? 'tokens' : zonesTab ? 'zones' : 'sensors'}
+          onValueChange={(v) => setTabParam(v === 'zones' || v === 'tokens' ? v : '')}
         >
           <TabsList>
             <TabsTrigger value="sensors">
               {t('sensors.list.tab.sensors')} <TabsCount value={isLoading ? null : roleCount} />
             </TabsTrigger>
-            <TabsTrigger value="zones">
-              {t('sensors.list.tab.zones')} <TabsCount value={zonesData ? zones.length : null} />
-            </TabsTrigger>
+            {canReadZones && (
+              <TabsTrigger value="zones">
+                {t('sensors.list.tab.zones')} <TabsCount value={zonesData ? zones.length : null} />
+              </TabsTrigger>
+            )}
+            {canReadSensors && (
+              <TabsTrigger value="tokens">{t('sensors.list.tab.tokens')}</TabsTrigger>
+            )}
           </TabsList>
         </Tabs>
       )}
 
-      {zonesTab ? (
+      {tokensTab ? (
+        <EnrollmentTokensPanel />
+      ) : zonesTab ? (
         <ScanZonesPanel createOpen={zoneCreateOpen} onCreateOpenChange={setZoneCreateOpen} />
       ) : (
         <>

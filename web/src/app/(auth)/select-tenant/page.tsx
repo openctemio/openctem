@@ -16,7 +16,7 @@ import {
   localLogoutAction,
   type LoginTenant,
 } from '@/features/auth/actions/local-auth-actions'
-import { authErrorText } from '@/features/auth/lib/auth-error-codes'
+import { getErrorMessage } from '@/lib/api/error-handler'
 import { useCanCreateOrganization } from '@/features/auth/hooks/use-can-create-organization'
 import { useTranslation } from '@/context/i18n-provider'
 
@@ -50,7 +50,7 @@ export default function SelectTenantPage() {
   const { t } = useTranslation()
   // Read through a ref so the redirect effect below does not depend on t.
   const listExpiredRef = useRef(
-    t('auth.selectTenant.listExpired', 'Your organization list expired. Sign in again to continue.')
+    t('auth.selectTenant.listExpired', 'Your team list expired. Please sign in again to continue.')
   )
   const { canCreate: canCreateTeam } = useCanCreateOrganization()
   const [isPending, startTransition] = useTransition()
@@ -103,7 +103,7 @@ export default function SelectTenantPage() {
       const result = await selectTenantAction(tenantId)
 
       if (result.success) {
-        toast.success(t('auth.selectTenant.selected', 'Organization selected'))
+        toast.success(t('auth.selectTenant.selected', 'Team selected'))
         // Brief delay to ensure Set-Cookie headers are fully processed by browser
         // before hard redirect. Without this, dashboard bootstrap may race with
         // cookie initialization and flash a 401 error before auto-recovering.
@@ -113,10 +113,9 @@ export default function SelectTenantPage() {
       } else {
         setSelectedId(null)
         toast.error(
-          authErrorText(
-            result.code,
-            t,
-            t('auth.selectTenant.selectFailed', 'Failed to select organization')
+          getErrorMessage(
+            result.error,
+            t('auth.selectTenant.selectFailed', 'Failed to select team')
           )
         )
       }
@@ -171,18 +170,13 @@ export default function SelectTenantPage() {
     */
     <Card className="w-full max-w-md flex flex-col max-h-[min(90vh,720px)] overflow-hidden">
       <CardHeader className="text-center shrink-0 pb-4">
-        <CardTitle className="text-xl">
-          {t('auth.selectTenant.title', 'Select an organization')}
-        </CardTitle>
+        <CardTitle className="text-xl">{t('auth.selectTenant.title', 'Select a team')}</CardTitle>
         <CardDescription className="text-sm">
           {tenants.length === 1
-            ? t(
-                'auth.selectTenant.one',
-                'You have access to one organization. Select it to continue.'
-              )
+            ? t('auth.selectTenant.one', 'You have access to one team. Select it to continue.')
             : t(
                 'auth.selectTenant.many',
-                'You have access to {count} organizations. Pick one to continue.',
+                'You have access to {count} teams. Pick one to continue.',
                 {
                   count: tenants.length,
                 }
@@ -201,12 +195,12 @@ export default function SelectTenantPage() {
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" />
             <Input
               type="search"
-              placeholder={t('auth.selectTenant.search', 'Search organizations…')}
+              placeholder={t('auth.selectTenant.search', 'Search teams…')}
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               disabled={isPending || isLoggingOut}
               className="ps-9"
-              aria-label={t('auth.selectTenant.searchLabel', 'Search organizations')}
+              aria-label={t('auth.selectTenant.searchLabel', 'Search teams')}
               autoFocus
             />
           </div>
@@ -258,9 +252,8 @@ export default function SelectTenantPage() {
                 {/* Info */}
                 <div className="flex-1 text-start min-w-0">
                   <p className="font-medium truncate">{tenant.name}</p>
-                  <p className="text-sm text-muted-foreground flex gap-2 truncate">
-                    <span className="truncate">{tenant.slug}</span>
-                    <span>{tenant.role}</span>
+                  <p className="text-sm text-muted-foreground truncate">
+                    {tenant.slug}, {tenant.role}
                   </p>
                 </div>
 
@@ -274,9 +267,7 @@ export default function SelectTenantPage() {
           {filteredTenants.length === 0 && (
             <div className="flex flex-col items-center justify-center py-8 text-center">
               <p className="text-sm text-muted-foreground">
-                {t('auth.selectTenant.noMatch', 'No organizations match “{query}”', {
-                  query: searchQuery,
-                })}
+                {t('auth.selectTenant.noMatch', 'No teams match “{query}”', { query: searchQuery })}
               </p>
               <Button variant="link" size="sm" onClick={() => setSearchQuery('')} className="mt-1">
                 {t('auth.selectTenant.clearSearch', 'Clear search')}
@@ -314,7 +305,7 @@ export default function SelectTenantPage() {
             </div>
             <div className="flex-1 text-start min-w-0">
               <p className="font-medium text-sm sm:text-base">
-                {t('auth.selectTenant.createTitle', 'Create a new organization')}
+                {t('auth.selectTenant.createTitle', 'Create a new team')}
               </p>
               <p className="text-xs sm:text-sm text-muted-foreground truncate">
                 {t(

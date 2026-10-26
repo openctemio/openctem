@@ -234,7 +234,7 @@ export function ProtocolTag({ sensor }: { sensor: Pick<Sensor, 'protocol'> }) {
         date: PROTOCOL_V1_SUNSET,
       })}
     >
-      v{sensor.protocol.version} · {t('sensors.edit.about.deprecated')}
+      v{sensor.protocol.version}, {t('sensors.edit.about.deprecated')}
     </SensorTag>
   )
 }
@@ -662,7 +662,7 @@ export function SensorToolList({ rows }: { rows: SensorToolRow[] }) {
                     list: r.capabilities.join(', '),
                   })}
                 >
-                  {r.capabilities.join(' · ')}
+                  {r.capabilities.join(', ')}
                 </span>
               )}
             </>
