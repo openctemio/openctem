@@ -1117,6 +1117,9 @@ func (h *LocalAuthHandler) ResendVerification(w http.ResponseWriter, r *http.Req
 type ResetPasswordRequest struct {
 	Token       string `json:"token" validate:"required"`
 	NewPassword string `json:"new_password" validate:"required,min=8,max=128"`
+	// RevokeAPIKeys also revokes every API key the person owns. Connected
+	// applications are always revoked.
+	RevokeAPIKeys bool `json:"revoke_api_keys"`
 }
 
 // ResetPassword handles password reset.
@@ -1125,7 +1128,8 @@ type ResetPasswordRequest struct {
 // @Tags         Authentication
 // @Accept       json
 // @Produce      json
-// @Param        request  body      ResetPasswordRequest  true  "Reset token and new password"
+// @Description  Also revokes the account's sessions and connected applications (MCP) in every organization; API keys too when revoke_api_keys is true.
+// @Param        request  body      ResetPasswordRequest  true  "Reset token, new password, revoke_api_keys"
 // @Success      200  {object}  map[string]string
 // @Failure      400  {object}  map[string]string
 // @Router       /auth/reset-password [post]
@@ -1142,10 +1146,11 @@ func (h *LocalAuthHandler) ResetPassword(w http.ResponseWriter, r *http.Request)
 	}
 
 	if err := h.authService.ResetPassword(r.Context(), auth.ResetPasswordInput{
-		Token:       req.Token,
-		NewPassword: req.NewPassword,
-		IPAddress:   getClientIP(r),
-		UserAgent:   r.UserAgent(),
+		Token:         req.Token,
+		NewPassword:   req.NewPassword,
+		RevokeAPIKeys: req.RevokeAPIKeys,
+		IPAddress:     getClientIP(r),
+		UserAgent:     r.UserAgent(),
 	}); err != nil {
 		h.handleAuthError(w, err)
 		return
@@ -1154,7 +1159,7 @@ func (h *LocalAuthHandler) ResetPassword(w http.ResponseWriter, r *http.Request)
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	json.NewEncoder(w).Encode(map[string]string{
-		"message": "Password reset successfully",
+		"message": "Password reset successfully. Sessions and connected apps have been signed out.",
 	})
 }
 
@@ -1162,6 +1167,9 @@ func (h *LocalAuthHandler) ResetPassword(w http.ResponseWriter, r *http.Request)
 type ChangePasswordRequest struct {
 	CurrentPassword string `json:"current_password" validate:"required"`
 	NewPassword     string `json:"new_password" validate:"required,min=8,max=128"`
+	// RevokeAPIKeys also revokes every API key the person owns. Connected
+	// applications are always revoked.
+	RevokeAPIKeys bool `json:"revoke_api_keys"`
 }
 
 // ChangePassword handles password change for authenticated users.
@@ -1171,7 +1179,8 @@ type ChangePasswordRequest struct {
 // @Accept       json
 // @Produce      json
 // @Security     BearerAuth
-// @Param        request  body      ChangePasswordRequest  true  "Current and new password"
+// @Description  Signs out the other sessions and revokes connected applications (MCP) in every organization; API keys too when revoke_api_keys is true.
+// @Param        request  body      ChangePasswordRequest  true  "Current and new password, revoke_api_keys"
 // @Success      200  {object}  map[string]string
 // @Failure      400  {object}  map[string]string
 // @Failure      401  {object}  map[string]string
@@ -1198,6 +1207,7 @@ func (h *LocalAuthHandler) ChangePassword(w http.ResponseWriter, r *http.Request
 		CurrentPassword:  req.CurrentPassword,
 		NewPassword:      req.NewPassword,
 		CurrentSessionID: middleware.GetSessionID(r.Context()),
+		RevokeAPIKeys:    req.RevokeAPIKeys,
 		IPAddress:        getClientIP(r),
 		UserAgent:        r.UserAgent(),
 	}); err != nil {
@@ -1208,13 +1218,16 @@ func (h *LocalAuthHandler) ChangePassword(w http.ResponseWriter, r *http.Request
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	json.NewEncoder(w).Encode(map[string]string{
-		"message": "Password changed successfully. Your other sessions have been signed out.",
+		"message": "Password changed successfully. Your other sessions and connected apps have been signed out.",
 	})
 }
 
 // SessionsResponse is the response body for listing sessions.
 type SessionsResponse struct {
 	Sessions []auth.SessionInfo `json:"sessions"`
+	// ActiveAPIKeys is how many API keys the person owns (every
+	// organization): the "Also revoke API keys (N)" checkbox shows it.
+	ActiveAPIKeys int `json:"active_api_keys"`
 }
 
 // ListSessions lists all active sessions for the authenticated user.
@@ -1243,7 +1256,10 @@ func (h *LocalAuthHandler) ListSessions(w http.ResponseWriter, r *http.Request) 
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
-	json.NewEncoder(w).Encode(SessionsResponse{Sessions: sessions})
+	json.NewEncoder(w).Encode(SessionsResponse{
+		Sessions:      sessions,
+		ActiveAPIKeys: h.sessionService.ActiveAPIKeys(r.Context(), userID),
+	})
 }
 
 // RevokeSession revokes a specific session.
@@ -1286,11 +1302,12 @@ func (h *LocalAuthHandler) RevokeSession(w http.ResponseWriter, r *http.Request)
 
 // RevokeAllSessions revokes all sessions except the current one.
 // @Summary      Revoke all sessions
-// @Description  Revokes all sessions except current
+// @Description  Revokes all sessions except current, and the person's connected applications (MCP) in every organization. API keys too when revoke_api_keys=true.
 // @Tags         Authentication
 // @Produce      json
 // @Security     BearerAuth
-// @Success      200  {object}  map[string]string
+// @Param        revoke_api_keys  query  bool  false  "Also revoke every API key the person owns"
+// @Success      200  {object}  map[string]any
 // @Failure      401  {object}  map[string]string
 // @Router       /users/me/sessions [delete]
 func (h *LocalAuthHandler) RevokeAllSessions(w http.ResponseWriter, r *http.Request) {
@@ -1302,7 +1319,8 @@ func (h *LocalAuthHandler) RevokeAllSessions(w http.ResponseWriter, r *http.Requ
 
 	currentSessionID := middleware.GetSessionID(r.Context())
 
-	if err := h.sessionService.RevokeAllSessions(r.Context(), userID, currentSessionID); err != nil {
+	res, err := h.sessionService.SignOutEverywhere(r.Context(), userID, currentSessionID, r.URL.Query().Get("revoke_api_keys") == "true")
+	if err != nil {
 		apierror.InternalError(err).WriteJSON(w)
 		return
 	}
@@ -1310,8 +1328,10 @@ func (h *LocalAuthHandler) RevokeAllSessions(w http.ResponseWriter, r *http.Requ
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
-	json.NewEncoder(w).Encode(map[string]string{
-		"message": "All other sessions revoked successfully",
+	json.NewEncoder(w).Encode(map[string]any{
+		"message":                "All other sessions and connected apps revoked successfully",
+		"connected_apps_revoked": true,
+		"api_keys_revoked":       res.APIKeysRevoked,
 	})
 }
 
