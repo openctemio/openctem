@@ -90,8 +90,13 @@ func TestScopesFor(t *testing.T) {
 	if got := ScopesFor(string(permission.FindingsComment)); len(got) != 1 || got[0] != ScopeFindingsComment {
 		t.Fatalf("ScopesFor(findings:comment) = %v, want the comment scope only", got)
 	}
-	// No MCP scope grants the broader finding permissions.
-	for _, p := range []permission.Permission{permission.FindingsWrite, permission.FindingsSeverity} {
+	// findings:write comes only with the proposal scope (its tools file
+	// requests another person decides; mcp_registry_test pins that only
+	// proposal or confirmed write tools need it). No scope grants severity.
+	if got := ScopesFor(string(permission.FindingsWrite)); len(got) != 1 || got[0] != ScopeFindingsPropose || !IsWrite(got[0]) {
+		t.Fatalf("ScopesFor(findings:write) = %v, want the proposal write scope only", got)
+	}
+	for _, p := range []permission.Permission{permission.FindingsSeverity} {
 		if got := ScopesFor(string(p)); len(got) != 0 {
 			t.Fatalf("ScopesFor(%s) = %v, want none", p, got)
 		}
