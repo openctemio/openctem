@@ -151,7 +151,7 @@ export default function SIEMIntegrationPage() {
         }),
     ]
       .filter(Boolean)
-      .join(' · ')
+      .join(', ')
 
   const columns: ColumnDef<Integration>[] = [
     {

@@ -189,7 +189,7 @@ describe('FindingRetestCheckSection', () => {
         }),
       })
     )
-    expect(screen.getByText('T0 · passive')).toBeInTheDocument()
+    expect(screen.getByText('T0, passive')).toBeInTheDocument()
 
     // Changing the input after validating requires a new validation.
     await user.type(path, 'x')
@@ -234,7 +234,7 @@ describe('FindingRetestCheckSection', () => {
     render(<FindingRetestCheckSection finding={finding} />)
     expect(screen.getByText('Reflected XSS on /search')).toBeInTheDocument()
     expect(screen.getByText(/sha256:abcdef123456/)).toBeInTheDocument()
-    expect(screen.getByText('T1 · active')).toBeInTheDocument()
+    expect(screen.getByText('T1, active')).toBeInTheDocument()
     expect(screen.getByText('Not calibrated yet')).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Edit check' })).not.toBeInTheDocument()
   })

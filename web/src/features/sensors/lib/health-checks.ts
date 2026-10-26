@@ -535,7 +535,7 @@ export function sensorHealthChecks(
           const st = sensorState(s, now, thresholds)
           return stateTakesJobs(st)
         }).length
-        const ranges = z.ranges.length ? ` · ${z.ranges.slice(0, 2).join(', ')}` : ''
+        const ranges = z.ranges.length ? `, ${z.ranges.slice(0, 2).join(', ')}` : ''
         return msg(tr, 'sensors.checks.zone.entry', '{name}{ranges} ({online} of {total} online)', {
           name: z.name,
           ranges,

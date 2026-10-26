@@ -277,7 +277,7 @@ func consentCaller(r *http.Request) (requestID, userID, tenantID shared.ID, ok b
 // GetConsentRequest serves GET /api/v1/oauth/requests/{id}: what the consent
 // page shows. Opening it claims the request for the signed-in user.
 // @Summary      Read an AI application's connection request
-// @Description  What the consent page shows for an MCP client asking to connect (RFC-062): the application, where it is published, where the browser returns, and the access in plain words, evaluated in the session's organization. The first signed-in user who opens a request claims it; for anyone else it is not found. Browser sessions only.
+// @Description  What the consent page shows for an MCP client asking to connect: the application, where it is published, where the browser returns, and the access in plain words, evaluated in the session's organization. The first signed-in user who opens a request claims it; for anyone else it is not found. Browser sessions only.
 // @Tags         MCP
 // @Produce      json
 // @Security     BearerAuth

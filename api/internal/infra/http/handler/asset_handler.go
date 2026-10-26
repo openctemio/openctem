@@ -305,8 +305,7 @@ func (h *AssetHandler) UnsnoozeAssetLifecycle(w http.ResponseWriter, r *http.Req
 
 // AssetResponse represents an asset in API responses.
 type AssetResponse struct {
-	// SystemTags are derived by the platform from program links (RFC-065
-	// §16.5: bug-bounty, source:…, platform:…, program:…:…,
+	// SystemTags are derived by the platform from program links (bug-bounty, source:…, platform:…, program:…:…,
 	// program-unattested); no request can change them.
 	SystemTags []string `json:"system_tags,omitempty"`
 	// PendingRiskRequest is an edit that lowers the asset's exposure,
@@ -317,9 +316,9 @@ type AssetResponse struct {
 	// scope covers it; organization metrics leave it out by default.
 	ProgramOnly bool `json:"program_only,omitempty"`
 	// Triage: attribution and what an active scan would do now; only with
-	// ?with_triage=true on the list (research/124).
+	// ?with_triage=true on the list.
 	Triage *AssetTriage `json:"triage,omitempty"`
-	// Technologies detected on the asset (RFC-112): at most 20 on a list,
+	// Technologies detected on the asset: at most 20 on a list,
 	// every one on a single asset. Absent when none were detected.
 	Technologies          []AssetTechnologyBrief   `json:"technologies,omitempty"`
 	ID                    string                   `json:"id"`

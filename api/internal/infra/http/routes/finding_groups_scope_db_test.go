@@ -29,6 +29,7 @@ import (
 	"github.com/openctemio/openctem/api/internal/app/finding"
 	appremediation "github.com/openctemio/openctem/api/internal/app/remediation"
 	savedviewapp "github.com/openctemio/openctem/api/internal/app/savedview"
+	slaapp "github.com/openctemio/openctem/api/internal/app/sla"
 	infrahttp "github.com/openctemio/openctem/api/internal/infra/http"
 	"github.com/openctemio/openctem/api/internal/infra/http/handler"
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
@@ -140,6 +141,7 @@ func newGroupScopeHarness(t *testing.T) *gsHarness {
 	intel := postgres.NewThreatIntelRepository(db)
 	vulnHandler.SetIntelFeeds(intel.EPSS(), intel.KEV())
 	vulnHandler.SetSavedViews(viewSvc)
+	vulnHandler.SetSLABasis(slaapp.NewService(postgres.NewSLAPolicyRepository(db), log), postgres.NewFindingSLARestartRepository(db))
 	actionsHandler := handler.NewFindingActionsHandler(actionsSvc, log)
 	actionsHandler.SetSavedViews(viewSvc)
 

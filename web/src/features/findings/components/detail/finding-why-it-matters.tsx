@@ -170,7 +170,7 @@ export function FindingWhyItMatters({ finding, compact, className }: FindingWhyI
             assetId={slaAsset}
             severity={finding.severity}
             variant="sentence"
-            className="text-sm text-muted-foreground before:content-['·_']"
+            className="text-sm text-muted-foreground"
           />
           {finding.priorityClassOverride && (
             <Badge variant="outline" className="text-xs">

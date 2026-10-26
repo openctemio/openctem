@@ -106,7 +106,7 @@ func TestAuthService_ResetPassword_RunsSessionsRevokedHook(t *testing.T) {
 	svc, deps, _, _ := newResetAuditHarness()
 	u := seedAuthUserWithResetToken(deps.userRepo, "admin@example.com", "$2a$04$dummy", "tok-3")
 	var got []string
-	svc.SetSessionsRevokedHook(func(_ context.Context, userID shared.ID) { got = append(got, userID.String()) })
+	svc.AddSessionsRevokedHook(func(_ context.Context, userID shared.ID) { got = append(got, userID.String()) })
 
 	if err := svc.ResetPassword(context.Background(), auth.ResetPasswordInput{Token: "tok-3", NewPassword: "NewStrongPassword123!"}); err != nil {
 		t.Fatalf("ResetPassword: %v", err)

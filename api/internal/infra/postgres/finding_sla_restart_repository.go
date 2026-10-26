@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"time"
 
@@ -132,4 +133,42 @@ func markSLARestart(ctx context.Context, tx *sql.Tx) error {
 		return fmt.Errorf("mark sla restart: %w", err)
 	}
 	return nil
+}
+
+// SLAClock reads when a finding's SLA clock started, its latest reopen and
+// its regression restarts. Tenant-scoped; shared.ErrNotFound when the
+// finding is not in the tenant.
+func (r *FindingSLARestartRepository) SLAClock(ctx context.Context, tenantID, findingID shared.ID) (sladom.Clock, error) {
+	var (
+		c       sladom.Clock
+		started sql.NullTime
+		reopen  sql.NullTime
+		trigger sql.NullString
+	)
+	err := r.db.QueryRowContext(ctx, `
+		SELECT f.sla_started_at, f.last_reopened_at,
+		       (SELECT COUNT(*) FROM finding_activities a
+		         WHERE a.tenant_id = f.tenant_id AND a.finding_id = f.id AND a.activity_type = $3),
+		       (SELECT a.changes->>'trigger' FROM finding_activities a
+		         WHERE a.tenant_id = f.tenant_id AND a.finding_id = f.id AND a.activity_type = $3
+		         ORDER BY a.created_at DESC LIMIT 1)
+		FROM findings f WHERE f.tenant_id = $1 AND f.id = $2`,
+		tenantID.String(), findingID.String(), string(vulnerability.ActivitySLARestarted),
+	).Scan(&started, &reopen, &c.Restarts, &trigger)
+	if errors.Is(err, sql.ErrNoRows) {
+		return c, shared.ErrNotFound
+	}
+	if err != nil {
+		return c, fmt.Errorf("read sla clock: %w", err)
+	}
+	if started.Valid {
+		t := started.Time
+		c.StartedAt = &t
+	}
+	if reopen.Valid {
+		t := reopen.Time
+		c.LastReopenedAt = &t
+	}
+	c.LastRestartTrigger = trigger.String
+	return c, nil
 }

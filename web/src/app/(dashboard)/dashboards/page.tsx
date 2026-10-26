@@ -250,7 +250,7 @@ function DashboardsList({ onEdit }: { onEdit: (id: string) => void }) {
                         {t('dashboards.manage.widgets', '{n} widgets', { n: d.layout.length })}
                       </span>
                       <span>
-                        {t('dashboards.manage.columns', '{cols} columns', { cols: d.columns ?? 2 })}
+                        {t('dashboards.manage.columns', '{n} columns', { n: d.columns ?? 2 })}
                       </span>
                     </span>
                     <div className="flex gap-1">

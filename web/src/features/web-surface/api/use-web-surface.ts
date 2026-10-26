@@ -104,3 +104,24 @@ export function updateWebEndpoint(
 ): Promise<WebEndpointResponse> {
   return patch<WebEndpointResponse>(endpointUrl(id), body)
 }
+
+/**
+ * The parameters of several endpoints (one request each; the API lists them
+ * per endpoint). `lists[i]` belongs to `ids[i]`.
+ */
+export function useWebEndpointsParams(ids: string[], enabled = true) {
+  const key = enabled && ids.length > 0 ? ['web-endpoints-params', ...ids] : null
+  const { data, error, isLoading } = useSWR<WebEndpointParamResponse[][]>(
+    key,
+    () =>
+      Promise.all(
+        ids.map((id) =>
+          get<{ data?: WebEndpointParamResponse[] }>(endpointParamsUrl(id)).then(
+            (r) => r.data ?? []
+          )
+        )
+      ),
+    swrConfig
+  )
+  return { lists: data, error, isLoading }
+}

@@ -112,3 +112,18 @@ being created.
 | The sensor keeps waiting after you created an expectation | The code typed on the sensor was wrong; run `pair` again with the code from the console. |
 | `certificate chain does not contain the pinned CA` | `SENSOR_CA_FINGERPRINT` does not match the certificate authority your platform presents, or a TLS-inspecting proxy sits in between. |
 | `identity directory permissions` at start | Run the `chmod`/`chown` the sensor printed. |
+
+## Many sensors: enrollment tokens
+
+To install many sensors without approving each one (Kubernetes, Terraform,
+a fleet of hosts), open **Sensors → Enrollment tokens → Create token**
+(needs **Approve sensors** and a recent sign-in). Choose the expiry, how many
+sensors it may enroll, the scan zones, the grant profile, optional labels,
+optional allowed source addresses, and whether each sensor still needs your
+approval. The token is shown once: put it in a root-only file (or a
+Kubernetes Secret) and point the sensor at it with
+`SENSOR_ENROLLMENT_TOKEN_FILE` (sensor releases with sdk-go that reads
+`SENSOR_ENROLLMENT_TOKEN`; older sensors cannot use organization tokens). Each sensor that starts with it
+joins the organization at trust level New; you are notified of every
+enrollment and can revoke the token at any time.
+
