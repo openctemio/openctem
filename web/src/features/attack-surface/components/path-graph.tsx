@@ -3,6 +3,7 @@
 import { createElement, Fragment } from 'react'
 import Link from '@/components/link'
 import { cn } from '@/lib/utils'
+import { safeInternalHref } from '@/lib/safe-href'
 import { Badge } from '@/components/ui/badge'
 import { Progress } from '@/components/ui/progress'
 import { useTranslation } from '@/context/i18n-provider'
@@ -304,9 +305,9 @@ function PathRow({ path }: { path: PathGraphPath }) {
           )}
         </div>
 
-        {path.detailHref && (
+        {safeInternalHref(path.detailHref) && (
           <Link
-            href={path.detailHref}
+            href={safeInternalHref(path.detailHref) ?? '/'}
             className="shrink-0 text-sm text-signal-text hover:underline"
             data-testid="chain-attack-paths-link"
           >
