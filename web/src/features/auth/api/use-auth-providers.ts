@@ -9,6 +9,7 @@
 
 import useSWR, { type SWRConfiguration } from 'swr'
 
+import { useBootstrapContextOptional } from '@/context/bootstrap-provider'
 import { get } from '@/lib/api/client'
 
 import type { PasswordPolicy } from '../lib/password-policy'
@@ -100,9 +101,19 @@ export function usePasswordPolicy(): PasswordPolicy | undefined {
 }
 
 /**
- * True when the server reports it cannot send email (undefined until the
- * answer is loaded, so forms do not flash the no-email variant).
+ * True when the server reports it cannot send email (false until the answer
+ * is loaded, so forms do not flash the no-email variant).
+ *
+ * Inside the app shell the session bootstrap carries the flag, so a dashboard
+ * page (the members page) never asks the public /auth/providers for it; the
+ * auth pages, or an API whose bootstrap lacks the field, ask that endpoint.
  */
 export function useEmailUnavailable(): boolean {
-  return useAuthProviders().data?.email_delivery === false
+  const bootstrap = useBootstrapContextOptional()
+  const fromBootstrap = bootstrap?.data?.email_delivery
+  const waitForBootstrap = bootstrap !== null && bootstrap.isLoading
+  const skipProviders = waitForBootstrap || fromBootstrap !== undefined
+  const { data } = useAuthProviders(undefined, !skipProviders)
+  if (fromBootstrap !== undefined) return fromBootstrap === false
+  return data?.email_delivery === false
 }

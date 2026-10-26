@@ -1873,6 +1873,10 @@ func bootstrapSession(cfg *config.Config, svc *Services, h routes.Handlers) hand
 		}
 		return mode
 	}
+	// The same answer as GET /auth/providers (routes/auth.go): a server
+	// without local auth reports no email delivery.
+	localAuth := h.LocalAuth
+	s.EmailDelivery = func() bool { return localAuth != nil && localAuth.EmailDeliveryAvailable() }
 	return s
 }
 
