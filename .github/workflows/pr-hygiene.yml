@@ -85,12 +85,14 @@ jobs:
           python3 .github/scripts/pr-labels.py --pr "$PR" --repo "$REPO" --apply
 
   allinone-ok:
-    name: All-in-one OK
     # The required check on a pull request. The image build is the full tier
     # (merge queue and pushes); allinone-ci.yml reports the real `All-in-one OK`
     # there. On a PR that changes a CI definition it also runs the build for
     # early feedback, under the name "All-in-one (PR build)".
-    if: github.event_name == 'pull_request'
+    # No `if:` here: a skipped job still reports its name as passing, so in the
+    # merge queue a skipped `All-in-one OK` could satisfy the required check
+    # before the real build finishes. Off a pull request it has another name.
+    name: ${{ github.event_name == 'pull_request' && 'All-in-one OK' || 'All-in-one (PR stub)' }}
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
