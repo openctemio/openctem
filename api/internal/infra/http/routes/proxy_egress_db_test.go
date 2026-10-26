@@ -17,6 +17,7 @@ import (
 	"github.com/lib/pq"
 
 	auditapp "github.com/openctemio/openctem/api/internal/app/audit"
+	"github.com/openctemio/openctem/api/internal/app/command"
 	proxypoolapp "github.com/openctemio/openctem/api/internal/app/proxypool"
 	"github.com/openctemio/openctem/api/pkg/domain/proxypool"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
@@ -277,4 +278,120 @@ func mustID(t *testing.T, s string) shared.ID {
 		t.Fatal(err)
 	}
 	return id
+}
+
+func (h *ctlHarness) newValidateCommand(tenantID, sensorID string) string {
+	h.t.Helper()
+	c, err := h.cmds.Create(context.Background(), command.CreateInput{TenantID: tenantID, SensorID: sensorID,
+		Type: "validate", Priority: "normal", Payload: json.RawMessage(`{"target":{"address":"203.0.113.9:443"},"executor_kind":"safe-check"}`), ExpiresIn: 3600})
+	if err != nil {
+		h.t.Fatalf("create validate command: %v", err)
+	}
+	return c.ID.String()
+}
+
+// SECURITY (egress leak): a validate job probes its target. A sensor whose
+// jobs use a pool gets one only when its validate executor reports that it
+// honors the pool (egress.validate@1), and then the job carries the pool;
+// an older sensor would probe from its own address, so the job waits.
+func TestProxyEgress_ValidateJobsNeverGoDirect(t *testing.T) {
+	h := newCtlHarnessWith(t, true)
+	s := h.newSensor(h.tenantID, "egress-validate")
+	h.reportCaps(s, "validate", "net.confined@1", "egress.upstream@1")
+	pool := h.newPool(h.tenantID, "corp", "http://10.0.0.6:3128", true)
+	id := h.newValidateCommand(h.tenantID, s.id)
+
+	if got := h.pollClaim(s); len(got) != 0 {
+		t.Fatalf("a sensor whose validate jobs would go direct got %d job(s)", len(got))
+	}
+	resp, raw := h.call(s.key, http.MethodPost, "/api/v2/sensor/commands/"+id+"/claim", nil)
+	if resp.StatusCode != http.StatusConflict {
+		t.Fatalf("claim by id = %d %s, want 409", resp.StatusCode, raw)
+	}
+	var status string
+	if err := h.db.QueryRow(`SELECT status FROM commands WHERE id = $1`, id).Scan(&status); err != nil || status != "pending" {
+		t.Fatalf("command %s after a refused claim (%v)", status, err)
+	}
+
+	// A sensor that routes validate jobs through the pool gets it, with
+	// the pool.
+	h.reportCaps(s, "validate", "net.confined@1", "egress.upstream@1", "egress.validate@1")
+	got := h.pollClaim(s)
+	if len(got) != 1 || got[0].ID != id {
+		t.Fatalf("poll = %+v", got)
+	}
+	if eg := egressOf(t, got[0].Payload); eg == nil || eg.PoolID != pool.ID.String() || len(eg.Endpoints) != 1 {
+		t.Fatalf("validate job egress = %+v", eg)
+	}
+
+	// The validate capability alone, without confinement, is not enough.
+	other := h.newSensor(h.tenantID, "egress-validate-unconfined")
+	h.reportCaps(other, "validate", "egress.validate@1")
+	h.newValidateCommand(h.tenantID, other.id)
+	if got := h.pollClaim(other); len(got) != 0 {
+		t.Fatalf("an unconfined sensor got %d validate job(s)", len(got))
+	}
+
+	// Direct for a sensor: its validate jobs go out without a member, and
+	// one a command's creator put in the payload is removed.
+	if err := h.egress.AssignSensor(context.Background(), h.tenantID, other.id, proxypool.ModeDirect, "", auditapp.AuditContext{}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := h.db.Exec(`UPDATE commands SET payload = payload || '{"egress":{"mode":"pool","pool_id":"x","endpoints":[{"host":"203.0.113.9"}]}}'::jsonb WHERE sensor_id = $1`, other.id); err != nil {
+		t.Fatal(err)
+	}
+	got = h.pollClaim(other)
+	if len(got) != 1 || egressOf(t, got[0].Payload) != nil {
+		t.Fatalf("direct sensor: %+v", got)
+	}
+}
+
+// SECURITY (egress leak): disabling a pool that a sensor is assigned to
+// never sends that sensor's scans direct: its jobs carry the pool with no
+// endpoint, so the sensor fails them closed, and no credential is handed
+// out. A disabled organization default is the "use proxies" switch: the
+// sensors that inherit it scan directly.
+func TestProxyEgress_DisabledAssignedPoolFailsClosed(t *testing.T) {
+	h := newCtlHarnessWith(t, true)
+	s := h.newSensor(h.tenantID, "egress-disabled")
+	h.reportCaps(s, "net.confined@1", "egress.upstream@1")
+	seg := h.newPool(h.tenantID, "segment", "socks5://bob:"+egressSecret+"@10.9.0.1:1080", false)
+	if err := h.egress.AssignSensor(context.Background(), h.tenantID, s.id, proxypool.ModePool, seg.ID.String(), auditapp.AuditContext{}); err != nil {
+		t.Fatal(err)
+	}
+	off := false
+	if _, err := h.egress.UpdatePool(context.Background(), proxypoolapp.UpdatePoolInput{TenantID: h.tenantID, PoolID: seg.ID.String(), Enabled: &off},
+		auditapp.AuditContext{TenantID: h.tenantID}); err != nil {
+		t.Fatal(err)
+	}
+	id := h.newCommand(h.tenantID, s.id)
+	got := h.pollClaim(s)
+	if len(got) != 1 {
+		t.Fatalf("poll = %d", len(got))
+	}
+	eg := egressOf(t, got[0].Payload)
+	if eg == nil || eg.PoolID != seg.ID.String() || eg.AppliesTo != proxypool.AppliesAll || eg.Endpoints == nil || len(eg.Endpoints) != 0 {
+		t.Fatalf("disabled assigned pool: egress = %+v (want the pool with no endpoint)", eg)
+	}
+	credPath := "/api/v2/sensor/commands/" + id + "/" + protov2.EgressCredentialsAction
+	resp, raw := h.call(s.key, http.MethodPost, credPath, map[string]any{"pool_id": seg.ID.String()},
+		protov2.HeaderLeaseEpoch, strconv.Itoa(got[0].LeaseEpoch))
+	h.want(resp, raw, 200, "")
+	if creds := decodeAs[protov2.EgressCredentialsResponse](t, raw); len(creds.Credentials) != 0 || strings.Contains(string(raw), egressSecret) {
+		t.Fatalf("credentials of a disabled pool: %s", raw)
+	}
+
+	// A disabled default: inheriting sensors scan directly.
+	inherit := h.newSensor(h.tenantID, "egress-inherit")
+	h.reportCaps(inherit, "net.confined@1", "egress.upstream@1")
+	def := false
+	if _, err := h.egress.CreatePool(context.Background(), proxypoolapp.CreatePoolInput{TenantID: h.tenantID, Name: "default",
+		IsDefault: true, Enabled: &def}, auditapp.AuditContext{TenantID: h.tenantID}); err != nil {
+		t.Fatal(err)
+	}
+	h.newCommand(h.tenantID, inherit.id)
+	got = h.pollClaim(inherit)
+	if len(got) != 1 || egressOf(t, got[0].Payload) != nil {
+		t.Fatalf("disabled default: %+v", got)
+	}
 }

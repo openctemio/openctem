@@ -43,11 +43,15 @@ target's answer never moves traffic to another path. What ships first:
 - **Which pool a job uses.** Sensor-local veto (`SENSOR_SCAN_EGRESS`) >
   the sensor's own assignment (Direct or a pool, all target addresses) > the
   organization default pool (public target addresses only, so internal
-  targets never pick up an external proxy) > direct. A disabled pool is not
-  used. Shared sensors never use an organization pool.
+  targets never pick up an external proxy) > direct. A disabled default is
+  off (inheriting sensors scan directly); a disabled pool a sensor is
+  assigned to stays its path with no endpoint, so its jobs fail closed and
+  never go direct. Shared sensors never use an organization pool.
 - **Delivery.** The platform stamps an `egress` member (pool id, revision,
   strategy, `applies_to`, eligible endpoints with weights; no credentials)
-  on every scan and retest job the claiming sensor receives, including the
+  on every scan, retest and validate job the claiming sensor receives
+  (validate jobs only to a sensor that reports `egress.validate@1`; a pooled
+  sensor without it gets none), including the
   claim repeat a signing sensor runs, so the job signature
   (`payload_sha256`) covers it. The leasing sensor fetches the credentials
   per job (`POST /api/v2/sensor/commands/{id}/egress-credentials`, v2 HTTPS

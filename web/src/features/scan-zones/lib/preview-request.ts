@@ -11,6 +11,7 @@ export function toZonePreviewRequest(
     | 'scanner_name'
     | 'scan_workflow_id'
     | 'targets_per_job'
+    | 'target_options'
   >,
   scanZoneId: string | null | undefined
 ): ScanZonePreviewRequest {
@@ -22,5 +23,8 @@ export function toZonePreviewRequest(
     scan_workflow_id: r.scan_workflow_id,
     targets_per_job: r.targets_per_job,
     scan_zone_id: scanZoneId ?? null,
+    ...(r.target_options && Object.keys(r.target_options).length > 0
+      ? { target_options: r.target_options }
+      : {}),
   }
 }
