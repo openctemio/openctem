@@ -549,14 +549,47 @@ export interface AdminAnnouncement {
 }
 
 /** One threat-intelligence feed's sync state (GET /admin/threat-intel/sync). */
+export type ThreatIntelFeedState =
+  'up_to_date' | 'waiting_for_publisher' | 'stale' | 'failing' | 'refused' | 'running' | 'off'
+
+/** One upstream source named by the applied vulnerability bundle. */
+export interface ThreatIntelBundleSource {
+  name: string
+  as_of?: string
+  fresh: boolean
+}
+
+/** The vulnerability bundle feed's own progress. */
+export interface ThreatIntelBundleDetail {
+  applied_sequence: number
+  keyset_version: number
+  root_key_id?: string
+  kind?: string
+  bundle_created_at?: string
+  sources: ThreatIntelBundleSource[]
+}
+
+/** A platform-wide intelligence feed as the server computes its status. */
 export interface ThreatIntelFeed {
   source: string
   enabled: boolean
-  last_sync_at?: string
-  last_sync_status: string
+  state: ThreatIntelFeedState
+  /** Classifies the last failure; `error_params` fills its message. */
+  error_code?: string
+  error_params?: Record<string, string>
+  /** The raw text of the last failure (platform admin route only). */
   last_error?: string
-  records_synced: number
-  next_sync_at?: string
+  last_attempt_at?: string
+  last_success_at?: string
+  failing_since?: string
+  next_run_at?: string
+  /** Size of the stored catalog, and what the last run wrote. */
+  catalog_records: number
+  records_changed: number
+  data_as_of?: string
+  interval_seconds: number
+  stale_after_seconds: number
+  detail?: ThreatIntelBundleDetail
 }
 
 /** A release in the signed release feed. */
