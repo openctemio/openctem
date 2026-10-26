@@ -154,7 +154,7 @@ func (s *Service) planStage(ctx context.Context, run *scanrun.Run, step *scanwor
 	}
 
 	outputs = canonicalWebInputs(st, outputs, plan.Skipped)
-	cands, inputs := deriveCandidates(st, outputs, parents, stageOf, seen, plan.Skipped, len(seedList))
+	cands, inputs := deriveCandidates(st, outputs, parents, stageOf, seen, plan.Skipped, len(seedList), stepTargetCap(run, step))
 	if cands, err = s.expandEndpoints(ctx, run, st, step, cands, plan.Skipped); err != nil {
 		return nil, err
 	}
@@ -337,12 +337,17 @@ type candidates struct {
 // and per-stage caps. It returns them and how many outputs were inputs of
 // the stage (outputs of a type the stage does not take are not).
 func deriveCandidates(st stage.Stage, outputs []scanrun.StepOutput, parents []scanrun.RunTarget,
-	stageOf map[shared.ID]string, seen map[string]bool, skipped map[string]int, seedCount int,
+	stageOf map[shared.ID]string, seen map[string]bool, skipped map[string]int, seedCount, stepCap int,
 ) (candidates, int) {
 	var out candidates
 	inputs := 0
 	perParent := map[string]int{}
-	budget := min(st.MaxFanout, stage.RunFanoutCap) - seedCount
+	budget := min(st.MaxFanout, stage.RunFanoutCap)
+	if stepCap > 0 && stepCap < budget {
+		// The step's own cap at the run's depth: lower-only.
+		budget = stepCap
+	}
+	budget -= seedCount
 	// Deterministic: by name, so a cap keeps the same targets run to run.
 	sorted := append([]scanrun.StepOutput{}, outputs...)
 	sort.SliceStable(sorted, func(i, j int) bool { return sorted[i].Name < sorted[j].Name })

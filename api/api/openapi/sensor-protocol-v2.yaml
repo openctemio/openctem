@@ -804,6 +804,8 @@ components:
         errors: { type: array, items: { $ref: "#/components/schemas/ItemError" } }
         limit: { type: integer, description: The limit a 413 or a too-many-items exceeded. }
         state: { type: string, description: The command's current state on an invalid-transition. }
+        server_time: { type: string, format: date-time, description: "The server's clock (UTC, whole seconds) on a clock-skew problem (401): a signature that verifies with its key but was made more than 2 minutes outside its window." }
+        clock_offset_seconds: { type: integer, description: The signature's created time minus server_time on a clock-skew problem; positive when the sensor's clock is ahead. }
         retryable: { type: boolean }
     Counts:
       type: object

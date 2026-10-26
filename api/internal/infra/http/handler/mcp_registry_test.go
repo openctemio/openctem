@@ -24,6 +24,42 @@ var mcpWriteToolAllowlist = map[string]string{
 		"hidden characters rejected; client visibility needs lead or reviewer",
 }
 
+// mcpProposalToolAllowlist is the complete set of proposal tools: they file
+// a request in the person's name that ANOTHER person decides, and run without
+// a per-call confirmation. A new one needs the same review: the request must
+// go through a flow whose four-eyes rule refuses the requester.
+var mcpProposalToolAllowlist = map[string]string{
+	"propose_finding_status": "findings:write; OAuth person only; files RequestApproval with RequestedVia " +
+		"(ByAutomation, never decided alone); Approval.Approve and SelfApproveSolo refuse the requester; " +
+		"data scope and AI egress checked first; hidden characters rejected",
+}
+
+func TestMCPProposalToolAllowlist(t *testing.T) {
+	h := newTestMCPWithPentest(&fakeFindingReader{}, &fakePentestReader{})
+	h.SetWriteTools(&fakeConfirmer{approved: map[string]string{}}, &fakeCommenter{})
+	h.SetProposalTools(&fakeApprovalRequester{}, "https://openctem.example")
+	n := 0
+	for _, tool := range h.tools {
+		if tool.Propose {
+			n++
+			if strings.TrimSpace(mcpProposalToolAllowlist[tool.Name]) == "" {
+				t.Errorf("proposal tool %q is not in mcpProposalToolAllowlist", tool.Name)
+			}
+			if tool.Write {
+				t.Errorf("tool %q is both a proposal and a confirmed write", tool.Name)
+			}
+		}
+		// findings:write reaches an MCP token only through the proposal
+		// scope: a tool needing it must be a proposal tool.
+		if tool.RequiredPerm == "findings:write" && !tool.Propose {
+			t.Errorf("tool %q needs findings:write but is not a proposal tool", tool.Name)
+		}
+	}
+	if n != len(mcpProposalToolAllowlist) {
+		t.Errorf("%d proposal tools, allowlist has %d", n, len(mcpProposalToolAllowlist))
+	}
+}
+
 func TestMCPWriteToolAllowlist(t *testing.T) {
 	h := newTestMCPWithPentest(&fakeFindingReader{}, &fakePentestReader{})
 	h.SetWriteTools(&fakeConfirmer{approved: map[string]string{}}, &fakeCommenter{})
@@ -51,6 +87,7 @@ func TestMCPWriteToolAllowlist(t *testing.T) {
 func TestMCPCanRequestButNeverApprove(t *testing.T) {
 	h := newTestMCPWithPentest(&fakeFindingReader{}, &fakePentestReader{})
 	h.SetWriteTools(&fakeConfirmer{approved: map[string]string{}}, &fakeCommenter{})
+	h.SetProposalTools(&fakeApprovalRequester{}, "https://openctem.example")
 	banned := []string{"approve", "reject", "decide", "accept", "false_positive", "fp_", "delete", "remove",
 		"launch", "scan_start", "run_scan", "integration", "confirm", "grant", "revoke", "role"}
 	for _, tool := range h.tools {

@@ -1,14 +1,14 @@
 'use client'
 
 /**
- * "Pair a sensor" (api docs/rfcs/RFC-052 §4): the sensor creates its own key
- * and the administrator never handles a secret.
+ * The pairing steps the "Add sensor" panel uses (api docs/rfcs/RFC-052 §4):
+ * the sensor creates its own key and the administrator never handles a
+ * secret.
  *
- * - Enter code: the sensor printed a code and a fingerprint; the
+ * - EnterCodePanel: the sensor printed a code and a fingerprint; the
  *   administrator looks the code up and compares the fingerprint.
- * - Expect a sensor: the console makes a code; the administrator runs
- *   `openctemio-sensor pair <CODE>` on the host, the dialog waits for the
- *   sensor to connect, then shows the fingerprint to compare.
+ * - PairingReview: the fingerprint, the host facts and the approval form,
+ *   for a code entered here or one the console created first.
  *
  * Approval binds the sensor's key to this organization. It needs the
  * "fingerprint matches" tick (the API refuses an approval without it) and
@@ -16,23 +16,16 @@
  */
 
 import { useEffect, useId, useMemo, useRef, useState } from 'react'
-import { AlertTriangle, Check, ChevronDown, Link2, Loader2, ShieldCheck } from 'lucide-react'
+import { AlertTriangle, Check, Loader2 } from 'lucide-react'
 import { toast } from 'sonner'
 
 import { TOTP_CODE_LENGTH, VerificationCodeInput } from '@/components/security'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogTitle,
-  DialogHeader,
-  DialogBody,
-} from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { KeyValueList } from '@/features/shared/components/text-layout'
 import {
   Select,
   SelectContent,
@@ -40,24 +33,17 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import { useDocsHref } from '@/context/brand-provider'
 import { useTranslation } from '@/context/i18n-provider'
 import { useNow } from '@/hooks/use-now'
 import { useScanZones } from '@/lib/api/scan-zone-hooks'
-import { invalidateSensorsCache, useTenantSensorStats } from '@/lib/api/sensor-hooks'
+import { invalidateSensorsCache } from '@/lib/api/sensor-hooks'
 import {
   approvePairing,
-  createPairingExpectation,
   lookupPairing,
-  pairingSettled,
   rejectPairing,
-  usePairingExpectation,
   type SensorPairingView,
 } from '@/lib/api/sensor-pairing-hooks'
 import type { SensorType } from '@/lib/api/sensor-types'
-import { DOCS } from '@/lib/docs-links'
 import { Permission, useHasPermission } from '@/lib/permissions'
 
 import {
@@ -66,7 +52,6 @@ import {
   PAIRING_CODE_LENGTH,
   PARAMETERISED_PROFILES,
   formatCountdown,
-  formatPairingCode,
   grantProfileValue,
   normalizePairingCode,
   pairingErrorMessage,
@@ -75,8 +60,6 @@ import {
   stepUpMethodOf,
   validIntegrationName,
 } from '../lib/pairing'
-import { DEFAULT_SENSOR_PRODUCT } from '../lib/sensor-version'
-import { Snippet } from './sensor-install-snippets'
 import { ToggleChip } from './toggle-chip'
 
 const SENSOR_TYPES: { value: SensorType; labelKey: string }[] = [
@@ -85,126 +68,11 @@ const SENSOR_TYPES: { value: SensorType; labelKey: string }[] = [
   { value: 'sensor', labelKey: 'sensors.pair.type.sensor' },
 ]
 
-type Mode = 'code' | 'expect'
-
-/** The page-header entry point; hidden without sensors:pair. */
-export function PairSensorButton({ onClick }: { onClick: () => void }) {
-  const { t } = useTranslation()
-  const canPair = useHasPermission(Permission.SensorsPair)
-  if (!canPair) return null
-  return (
-    <Button variant="outline" size="sm" onClick={onClick}>
-      <Link2 className="h-4 w-4" />
-      {t('sensors.pair.title')}
-    </Button>
-  )
-}
-
-/**
- * "Don't have the sensor yet?": how to get it onto the host before pairing.
- * Keyless by design: the sensor makes its own key when it pairs, so nothing
- * here carries a secret. The image comes from the platform's release line
- * and is shown only to a reader of the fleet (the stats endpoint's gate).
- */
-function GetTheSensor() {
-  const { t } = useTranslation()
-  const docsHref = useDocsHref()
-  const canReadFleet = useHasPermission(Permission.SensorsRead)
-  const { data: stats } = useTenantSensorStats({ isPaused: () => !canReadFleet })
-  const image = stats?.products?.find((p) => p.id === DEFAULT_SENSOR_PRODUCT)?.image
-  return (
-    <Collapsible className="mb-4 rounded-lg border">
-      <CollapsibleTrigger className="flex w-full items-center justify-between gap-2 px-3 py-2 text-sm font-medium">
-        {t('sensors.pair.getSensor.title')}
-        <ChevronDown className="h-4 w-4 shrink-0" aria-hidden />
-      </CollapsibleTrigger>
-      <CollapsibleContent className="space-y-3 border-t px-3 py-3">
-        <p className="text-sm text-muted-foreground">{t('sensors.pair.getSensor.body')}</p>
-        {image && (
-          <Snippet text={`docker pull ${image}`} label={t('sensors.pair.getSensor.pull')} />
-        )}
-        <a
-          href={docsHref(DOCS.sensors.install)}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="text-sm text-primary underline-offset-4 hover:underline"
-        >
-          {t('sensors.pair.getSensor.guide')}
-        </a>
-      </CollapsibleContent>
-    </Collapsible>
-  )
-}
-
-export function PairSensorDialog({
-  open,
-  onOpenChange,
-}: {
-  open: boolean
-  onOpenChange: (open: boolean) => void
-}) {
-  const { t } = useTranslation()
-  const [mode, setMode] = useState<Mode>('code')
-  const [approved, setApproved] = useState<SensorPairingView | null>(null)
-
-  return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent size="lg">
-        <DialogHeader>
-          <DialogTitle>{t('sensors.pair.title')}</DialogTitle>
-          <DialogDescription>{t('sensors.pair.description')}</DialogDescription>
-        </DialogHeader>
-        <DialogBody className="py-4">
-          {approved ? (
-            <ApprovedNotice view={approved} onClose={() => onOpenChange(false)} />
-          ) : (
-            <>
-              <GetTheSensor />
-              <Tabs value={mode} onValueChange={(v) => setMode(v as Mode)}>
-                <TabsList>
-                  <TabsTrigger value="code">{t('sensors.pair.tabCode')}</TabsTrigger>
-                  <TabsTrigger value="expect">{t('sensors.pair.tabExpect')}</TabsTrigger>
-                </TabsList>
-                <TabsContent value="code" className="mt-4">
-                  <EnterCodePanel onApproved={setApproved} onClose={() => onOpenChange(false)} />
-                </TabsContent>
-                <TabsContent value="expect" className="mt-4">
-                  <ExpectPanel onApproved={setApproved} onClose={() => onOpenChange(false)} />
-                </TabsContent>
-              </Tabs>
-            </>
-          )}
-        </DialogBody>
-      </DialogContent>
-    </Dialog>
-  )
-}
-
-function ApprovedNotice({ view, onClose }: { view: SensorPairingView; onClose: () => void }) {
-  const { t } = useTranslation()
-  return (
-    <div className="space-y-4">
-      <Alert>
-        <ShieldCheck className="h-4 w-4" />
-        <AlertTitle>{t('sensors.pair.approvedTitle')}</AlertTitle>
-        <AlertDescription>
-          {t('sensors.pair.approvedBody', undefined, {
-            who: view.host_facts?.hostname || t('sensors.pair.theSensor'),
-          })}
-        </AlertDescription>
-      </Alert>
-      <div className="flex justify-end">
-        <Button onClick={onClose}>{t('sensors.pair.done')}</Button>
-      </div>
-    </div>
-  )
-}
-
 // ---------------------------------------------------------------------------
 // Enter code (the sensor printed it)
 // ---------------------------------------------------------------------------
 
-function EnterCodePanel({
+export function EnterCodePanel({
   onApproved,
   onClose,
 }: {
@@ -298,124 +166,8 @@ function EnterCodePanel({
 }
 
 // ---------------------------------------------------------------------------
-// Expect a sensor (reverse mode)
-// ---------------------------------------------------------------------------
-
-function ExpectPanel({
-  onApproved,
-  onClose,
-}: {
-  onApproved: (v: SensorPairingView) => void
-  onClose: () => void
-}) {
-  const { t } = useTranslation()
-  const [created, setCreated] = useState<SensorPairingView | null>(null)
-  const [error, setError] = useState<string | null>(null)
-  const [busy, setBusy] = useState(false)
-  const { data: polled, error: pollError } = usePairingExpectation(created?.id ?? null)
-  const view = polled ?? created
-  const now = useNow(1000)
-
-  const create = async () => {
-    setError(null)
-    setBusy(true)
-    try {
-      setCreated(await createPairingExpectation({}))
-    } catch (err) {
-      setError(pairingErrorMessage(err, t('sensors.pair.err.create'), t))
-    } finally {
-      setBusy(false)
-    }
-  }
-
-  if (!view) {
-    return (
-      <div className="space-y-3">
-        <p className="text-sm text-muted-foreground">{t('sensors.pair.expectHelp')}</p>
-        {error && (
-          <p role="alert" className="text-sm text-destructive">
-            {error}
-          </p>
-        )}
-        <div className="flex justify-end">
-          <Button onClick={() => void create()} disabled={busy}>
-            {busy && <Loader2 className="h-4 w-4 animate-spin" />}
-            {t('sensors.pair.getCode')}
-          </Button>
-        </div>
-      </div>
-    )
-  }
-
-  if (pollError && !polled) {
-    return (
-      <p role="alert" className="text-sm text-destructive">
-        {pairingErrorMessage(pollError, t('sensors.pair.notFound'), t)}
-      </p>
-    )
-  }
-
-  const left = secondsUntil(view.expires_at, now)
-  const expired = view.status === 'expired' || left === 0
-
-  if (view.sas && !pairingSettled(view.status)) {
-    return <PairingReview view={view} onApproved={onApproved} onDone={onClose} />
-  }
-
-  const code = view.code ? formatPairingCode(view.code) : (created?.code ?? '')
-  // The job-signing root travels with the command (research/191 A-1): the
-  // sensor checks the platform's signer against it while pairing.
-  const root = view.job_signing_root ?? ''
-  const pairCommand = root
-    ? `SENSOR_JOB_SIGNING_ROOT=${root} openctemio-sensor pair ${code}`
-    : `openctemio-sensor pair ${code}`
-  return (
-    <div className="space-y-4">
-      <p className="text-sm text-muted-foreground">{t('sensors.pair.runOnHost')}</p>
-      <Snippet text={pairCommand} label={t('sensors.pair.pairCommand')} />
-      {root && <p className="text-xs text-muted-foreground">{t('sensors.pair.signingRootNote')}</p>}
-      {expired ? (
-        <p role="alert" className="text-sm text-destructive">
-          {t('sensors.pair.expired')}
-        </p>
-      ) : view.status === 'denied' ? (
-        <p className="text-sm text-muted-foreground">{t('sensors.pair.rejected')}</p>
-      ) : (
-        <p className="flex items-center gap-2 text-sm text-muted-foreground" aria-live="polite">
-          <Loader2 className="h-4 w-4 animate-spin" />
-          {t('sensors.pair.waiting', undefined, { time: formatCountdown(left) })}
-        </p>
-      )}
-      {expired && (
-        <div className="flex justify-end">
-          <Button
-            variant="outline"
-            onClick={() => {
-              setCreated(null)
-              void create()
-            }}
-          >
-            {t('sensors.pair.getNewCode')}
-          </Button>
-        </div>
-      )}
-    </div>
-  )
-}
-
-// ---------------------------------------------------------------------------
 // Review and approve
 // ---------------------------------------------------------------------------
-
-function FactRow({ label, value }: { label: string; value?: string }) {
-  if (!value) return null
-  return (
-    <div className="grid grid-cols-[9rem_1fr] gap-2 text-sm">
-      <dt className="text-muted-foreground">{label}</dt>
-      <dd className="min-w-0 break-all font-mono">{value}</dd>
-    </div>
-  )
-}
 
 export function PairingFingerprint({ sas }: { sas?: string }) {
   const { t } = useTranslation()
@@ -483,20 +235,29 @@ export function PairingReview({
         </div>
       )}
 
-      <dl className="space-y-1.5">
-        <FactRow label={t('sensors.pair.fact.hostname')} value={facts.hostname} />
-        <FactRow
-          label={t('sensors.pair.fact.system')}
-          value={[facts.os, facts.arch].filter(Boolean).join(' / ') || undefined}
-        />
-        <FactRow label={t('sensors.pair.fact.version')} value={facts.sensor_version} />
-        <FactRow label={t('sensors.pair.fact.requestedFrom')} value={view.source_ip} />
-        <FactRow label={t('sensors.pair.fact.keyFingerprint')} value={view.key_fingerprint} />
-        <FactRow
-          label={t('sensors.pair.fact.expiresIn')}
-          value={left > 0 ? formatCountdown(left) : t('sensors.pair.fact.expired')}
-        />
-      </dl>
+      <KeyValueList
+        items={[
+          { key: 'hostname', label: t('sensors.pair.fact.hostname'), value: facts.hostname },
+          {
+            key: 'system',
+            label: t('sensors.pair.fact.system'),
+            value: [facts.os, facts.arch].filter(Boolean).join(' / '),
+          },
+          { key: 'version', label: t('sensors.pair.fact.version'), value: facts.sensor_version },
+          { key: 'from', label: t('sensors.pair.fact.requestedFrom'), value: view.source_ip },
+          {
+            key: 'key',
+            label: t('sensors.pair.fact.keyFingerprint'),
+            value: view.key_fingerprint,
+            token: true,
+          },
+          {
+            key: 'expires',
+            label: t('sensors.pair.fact.expiresIn'),
+            value: left > 0 ? formatCountdown(left) : t('sensors.pair.fact.expired'),
+          },
+        ].filter((i) => !!i.value)}
+      />
       <p className="text-xs text-muted-foreground">{t('sensors.pair.factsNote')}</p>
 
       {ready ? (

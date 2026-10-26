@@ -12,7 +12,7 @@
  */
 
 import { useCallback, useState } from 'react'
-import { Loader2 } from 'lucide-react'
+import { Loader2, Lock } from 'lucide-react'
 import { toast } from 'sonner'
 import { ConfirmDialog } from '@/components/confirm-dialog'
 import {
@@ -26,6 +26,7 @@ import {
 } from '@/components/ui/dialog'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { Textarea } from '@/components/ui/textarea'
 import { useTranslation } from '@/context/i18n-provider'
 import { getErrorMessage } from '@/lib/api/error-handler'
@@ -267,4 +268,59 @@ export function useApprovalDecision({ onDecided }: { onDecided: () => unknown })
   )
 
   return { busyId, openApprove, openReject, dialogs }
+}
+
+/**
+ * Approve (with the lock that says a sign-in confirmation follows) and
+ * Reject for one request: the one pair of decision buttons, in My Work and
+ * on the finding page. The buttons open the dialogs of useApprovalDecision.
+ */
+export function ApprovalDecisionButtons({
+  approval,
+  busy,
+  onApprove,
+  onReject,
+}: {
+  approval: ApiApproval
+  busy?: boolean
+  onApprove: (a: ApiApproval) => void
+  onReject: (a: ApiApproval) => void
+}) {
+  const { t } = useTranslation()
+  const hint = t(
+    'myWork.review.stepUpHint',
+    'You confirm your sign-in before the approval is saved.'
+  )
+  const hintId = `stepup-${approval.id}`
+  return (
+    <>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <Button
+            size="sm"
+            disabled={busy}
+            onClick={() => onApprove(approval)}
+            aria-describedby={hintId}
+            data-slot="approval-approve"
+          >
+            {t('myWork.review.approve', 'Approve')}
+            <Lock className="ms-1.5 size-3.5" aria-hidden="true" />
+          </Button>
+        </TooltipTrigger>
+        <TooltipContent className="max-w-xs text-xs">{hint}</TooltipContent>
+      </Tooltip>
+      <span id={hintId} className="sr-only">
+        {hint}
+      </span>
+      <Button
+        size="sm"
+        variant="outline"
+        disabled={busy}
+        onClick={() => onReject(approval)}
+        data-slot="approval-reject"
+      >
+        {t('myWork.review.reject', 'Reject')}
+      </Button>
+    </>
+  )
 }

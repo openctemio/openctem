@@ -28,6 +28,7 @@ import (
 
 	"github.com/openctemio/openctem/api/internal/app/scope"
 	"github.com/openctemio/openctem/api/pkg/domain/attribution"
+	"github.com/openctemio/openctem/api/pkg/domain/edgeaddr"
 	scopedom "github.com/openctemio/openctem/api/pkg/domain/scope"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 )
@@ -146,29 +147,24 @@ func (s *RuleService) pending(ctx context.Context, tenantID shared.ID, states []
 	return page.Items, nil
 }
 
-// sharedProviders are address owners whose space many organizations share
-// (CDN, cloud): never grouped into a range.
-var sharedProviders = []string{
-	"cloudflare", "akamai", "fastly", "amazon", "aws", "google", "microsoft", "azure", "digitalocean",
-	"linode", "akamai", "ovh", "hetzner", "alibaba", "tencent", "oracle", "incapsula", "imperva", "sucuri",
-	"stackpath", "edgecast", "limelight", "bunny", "vercel", "netlify", "github", "heroku",
-}
-
+// sharedAddress reports whether an address sits in a provider's space (a
+// CDN its own record names, or a network held by a CDN, hosting or cloud
+// provider), by the one address classifier (pkg/domain/edgeaddr), and names
+// the provider as recorded. Such space is never grouped into a range.
 func sharedAddress(props map[string]any) (bool, string) {
 	if props == nil {
 		return false, ""
 	}
-	if cdn, _ := props["cdn"].(string); cdn != "" {
+	cdn, _ := props["cdn"].(string)
+	org, _ := props["asn_org"].(string)
+	r := edgeaddr.Default().Address("", cdn, org)
+	if !r.ProviderSpace() {
+		return false, ""
+	}
+	if r.Basis == edgeaddr.BasisCDN {
 		return true, cdn
 	}
-	org, _ := props["asn_org"].(string)
-	l := strings.ToLower(org)
-	for _, p := range sharedProviders {
-		if strings.Contains(l, p) {
-			return true, org
-		}
-	}
-	return false, ""
+	return true, org
 }
 
 func asnHint(props map[string]any) string {
