@@ -103,7 +103,11 @@ function platformIdPChangeLabel(target: string, t: Translate): string | null {
 function platformAIDestinationLabel(target: string, t: Translate): string | null {
   if (!target.startsWith('{"provider":')) return null
   try {
-    const c = JSON.parse(target) as { provider?: string; base_url?: string; allow_private?: boolean }
+    const c = JSON.parse(target) as {
+      provider?: string
+      base_url?: string
+      allow_private?: boolean
+    }
     return t(
       'admin.approvals.target.platformAiDestination',
       'Provider {provider}, server {server}, private network {private}',
