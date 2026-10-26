@@ -130,3 +130,32 @@ func TestRemediationMarkFixed_RegressionOpensLinkedTask(t *testing.T) {
 	assert.Equal(t, remediation.TaskStateOpen, reg.State)
 	assert.Contains(t, reg.Title, "Regression")
 }
+
+// A fix claim that comes from a tracker event rather than a person carries
+// its source and the external account on the audit event instead of only the
+// system actor.
+func TestRemediationMarkFixed_AuditNamesSource(t *testing.T) {
+	r := newRTRig(t)
+	ctx := r.adminCtx()
+	r.wireMarkFixed()
+	aud := &ownerAudit{}
+	r.svc.SetAuditLogger(aud)
+	r.exec(`INSERT INTO asset_owners (asset_id, user_id, ownership_type, assignment_source) VALUES ($1, $2, 'primary', 'manual')`,
+		r.assetA.String(), r.admin.String())
+	f := r.finding(r.assetA, "new", nil)
+	task := r.newTask(ctx, "Epic", nil, &r.admin, nil, f)
+
+	_, err := r.svc.MarkFixed(ctx, remediationapp.MarkFixedInput{TenantID: r.tenant, TaskID: task.ID, Version: task.Version,
+		Note: "jira SEC-1 moved to Done", ActorID: &r.admin, HasFixApplyPermission: true,
+		Source: remediationapp.EpicClaimSource, ExternalAccount: "acct-1"}, auditapp.AuditContext{})
+	require.NoError(t, err)
+	var got *auditapp.AuditEvent
+	for i := range aud.events {
+		if string(aud.events[i].Action) == "remediation_task.fix_claimed" {
+			got = &aud.events[i]
+		}
+	}
+	require.NotNil(t, got, "the claim is audited")
+	assert.Equal(t, "jira_epic", got.Metadata["source"])
+	assert.Equal(t, "acct-1", got.Metadata["external_account"])
+}
