@@ -21,6 +21,15 @@ and its content downloads stay sensor-local (`SENSOR_CONTROL_PROXY`,
 | 3 | The organization default pool (`is_default`, at most one) | **public** target addresses only; private, ULA and CGNAT targets are dialed directly, so internal targets never reach an external proxy |
 | 4 | none | today's behaviour |
 
+A sensor whose owner set `SENSOR_SCAN_EGRESS=direct-only` reports the marker
+`egress.host-direct@1` (not `egress.upstream@1`). If it only inherits the
+organization default, the platform treats it as Direct: its scans run direct
+(no `egress` member is stamped) and the sensor page shows "Direct (set on the
+sensor host)". If a pool is assigned to it, or the organization requires a
+proxy (a hook in the dispatch decision, `command.WithProxyRequirement`, wired
+with the "Proxy required" switch later), its jobs wait: a pool the host
+refuses never turns into a direct scan.
+
 A disabled organization default is off: the sensors that inherit it scan
 directly (it is the organization's "use proxies" switch). A disabled pool
 that a sensor is assigned to stays that sensor's path with no endpoint: its
@@ -53,6 +62,8 @@ Code: `pkg/domain/proxypool` (validation, paste list, health, job egress),
 | `PUT /api/v1/proxy-pools/{id}/endpoints` `{text}` | `sensors:egress:write` |
 | `PATCH /api/v1/proxy-pools/{id}/endpoints/{endpoint_id}` `{enabled, reset_health}` | `sensors:egress:write` |
 | `PUT /api/v1/proxy-pools/assignments/{sensor_id}` `{mode: inherit|direct|pool, pool_id}` | `sensors:egress:write` |
+| `POST /api/v1/proxy-pools/{id}/test` `{sensor_ids}` (1 to 3) → 202 `{items: [{sensor_id, sensor_name, command_id}]}` | `sensors:egress:write` |
+| `GET /api/v1/proxy-pools/{id}/tests?command_ids=a,b,c` | `sensors:egress:read` |
 | `DELETE /api/v1/proxy-pools/{id}` | `sensors:egress:delete` |
 
 Owner and admin hold all three; write and delete are admin-only (no custom
@@ -75,6 +86,53 @@ name or an IP address; port 1–65535. Refused: loopback, link-local
 `localhost`, `*.localhost`, `metadata`, `metadata.google.internal`. Private
 addresses are allowed: a proxy into a segment usually is one. The sensor
 checks every address a host name resolves to again before it dials.
+
+## Test
+
+The Test button never makes the platform connect to a proxy (a platform that
+dials arbitrary endpoints is an SSRF primitive, and it cannot reach a proxy
+on a private network). `POST /{id}/test` queues one `proxy_test` command per
+chosen sensor, pinned to it. The sensors must be sensors of the organization
+(another organization's, and shared sensors, are `404`), active and online (or
+late) and report `proxy.test@1` (`409 PROXY_TEST_SENSOR_OFFLINE`,
+`PROXY_TEST_SENSOR_UNSUPPORTED`); a pool may be disabled and unassigned (test
+before enabling). One test per pool per minute (`429`), audited as
+`proxy_pool.test_requested`; the finished test is audited as
+`proxy_pool.tested` with counts and failure classes only, never an address.
+
+The command carries every endpoint of the pool (no credentials), applying to
+all targets, and the platform's echo. The sensor fetches the credentials under
+the command's lease (`egress-credentials` names the command's own pool, which
+may be one no sensor uses), tests each endpoint (TCP and TLS to the proxy, the
+credentials, a tunnel to the echo, TLS in the tunnel and one GET) and completes
+with one result per endpoint: `{endpoint_id, ok, class, handshake_ms, exit_ip,
+families, port_restricted, error}`. Its attempts reach the endpoints' health
+through the normal `egress-report`, which a test command may send for the pool
+it names: a passing test moves a quarantined endpoint to probation and wrong
+credentials quarantine it, as for a scan.
+
+**The echo** is `GET /api/v1/proxy-test-echo/{tenant_id}/{command_id}/{nonce}`:
+no session and no sensor key (the request leaves through a proxy the
+organization chose, so it carries nothing but the one-test token in its path).
+It answers the address the request came from (`{address}`, `no-store`) only
+while the command is a live `proxy_test` of that tenant (acknowledged or
+running) and the nonce matches the one in its payload (constant time);
+anything else is `404`. It is rate limited per address. Its origin is
+`PROXY_TEST_ECHO_URL`, else `SENSOR_PUBLIC_API_URL`, else `APP_URL`, and must
+be an https address reachable by the proxies on a public port (not the sensor
+mTLS port); without one the Test button answers `409 PROXY_TEST_UNAVAILABLE`.
+`PROXY_TEST_ALT_PORT` (default 80) is the echo host's second port: a proxy
+that carries 443 and refuses it is shown as port-restricted.
+
+**What the platform accepts back.** The sensor's result is untrusted: only
+endpoints of the pool are read, classes (`proxy_down`, `proxy_auth`,
+`target_unreachable`, `target_refused`, `echo_failed`) and families (`v4`,
+`v6`) are a closed set, the exit address must parse as an address, the time is
+bounded and the error text is sanitized (one line, 200 characters, no URL user
+information). The sensor refuses an echo address a proxy must never be asked to
+reach (loopback, link-local, metadata) and applies its own
+`SENSOR_SCAN_EGRESS_ALLOW`; a sensor set to `direct-only`, and a shared sensor,
+do not serve the test.
 
 ## Delivery and signing
 
@@ -101,7 +159,9 @@ only when it reported `egress.upstream@1` and `net.confined@1` (what the
 sensor reports, never what an administrator declares), and validate jobs
 (stage 4 re-checks, which probe the target) only when it also reported
 `egress.validate@1`, the sensor's statement that its validate executor
-sends its probes through the job's pool; otherwise the poll leaves them
+sends its probes through the job's pool (the safe-check's connection and the
+nuclei re-verification; a probe never goes direct, and a failure of the proxy
+is never read as "the target is closed"); otherwise the poll leaves them
 pending (metric reason `egress_unsupported`) and a claim by id answers
 `command-claimed`. The sensor drawer's network path says which of these
 applies to a sensor. When every endpoint is quarantined the member
@@ -182,9 +242,8 @@ Credentials sealed to the claiming sensor's key (today they travel in the
 clear inside the sensor's TLS connection, so a TLS-inspecting proxy on the
 sensor's control path can read them), one report per job, zone pools,
 tool rules (pool / direct / refuse), per-scan override,
-instance pools offered to tenants, exit-IP attribution, `dns=proxy`, the
-Test button, a reason on the sensor page when a sensor lacks proxy support,
-a sensor whose validate executor runs through the pool (`egress.validate@1`;
-until a sensor reports it, a pooled sensor gets no validate jobs), and
+instance pools offered to tenants, exit-IP attribution, `dns=proxy`, a reason
+on the sensor page when a sensor lacks proxy support, the "Proxy required"
+organization switch (the dispatch hook exists), and
 pools for reach-probe jobs (the platform does not dispatch them yet; when
 it does, a probe must use the path the scans use).

@@ -25,6 +25,7 @@ import {
   useProxyPools,
 } from '../api/use-proxy-pools'
 import { describeProxyError } from '../lib/errors'
+import { hostDirectState } from '../lib/host-direct'
 import type { ProxyPool, SetProxyAssignmentRequest } from '../types'
 
 const POOL_PREFIX = 'pool:'
@@ -111,8 +112,14 @@ export function SensorNetworkPathSection({
   const known =
     value === 'inherit' || value === 'direct' || list.some((p) => `${POOL_PREFIX}${p.id}` === value)
   const defaultOn = list.some((p) => p.is_default && p.enabled)
+  // A host direct-only sensor takes no pool: its scans run direct (set on
+  // the host) unless a pool is chosen for it, which holds its jobs.
+  const hostState =
+    loading || failed ? null : hostDirectState(known ? value : 'inherit', capabilities)
   const warning =
-    loading || failed ? null : pathWarning(known ? value : 'inherit', list, capabilities)
+    loading || failed || hostState
+      ? null
+      : pathWarning(known ? value : 'inherit', list, capabilities)
 
   async function change(next: string) {
     setSaving(true)
@@ -191,6 +198,30 @@ export function SensorNetworkPathSection({
               </SelectContent>
             </Select>
           </>
+        )}
+        {hostState === 'direct-host' && (
+          <DetailCallout
+            tone="info"
+            icon={Info}
+            title={t('proxyPools.sensor.hostDirectTitle', 'Direct (set on the sensor host)')}
+          >
+            {t(
+              'proxyPools.sensor.hostDirectBody',
+              "This sensor's owner set it to run scans direct (SENSOR_SCAN_EGRESS=direct-only). It sends scans from its own address and does not use proxy pools. Change that setting on the sensor host to use them."
+            )}
+          </DetailCallout>
+        )}
+        {hostState === 'host-conflict' && (
+          <DetailCallout
+            tone="warning"
+            icon={AlertTriangle}
+            title={t('proxyPools.sensor.hostConflictTitle', 'This sensor receives no scan jobs')}
+          >
+            {t(
+              'proxyPools.sensor.hostConflictBody',
+              'A pool is chosen for this sensor, but its owner set it to run scans direct on the sensor host. Its scans wait; they never go direct. Choose Inherit, or change the sensor setting.'
+            )}
+          </DetailCallout>
         )}
         {warning === 'pool-disabled' && (
           <DetailCallout

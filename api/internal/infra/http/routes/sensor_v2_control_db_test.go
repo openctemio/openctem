@@ -102,6 +102,7 @@ func newCtlHarnessWith(t *testing.T, egress bool, opts ...command.Option) *ctlHa
 			t.Fatal(err)
 		}
 		poolSvc = proxypoolapp.NewService(postgres.NewProxyPoolRepository(db), enc, nil, log)
+		poolSvc.EnableTest(sensorRepo, cmdRepo, proxypoolapp.TestConfig{EchoBase: "https://echo.example.test", AltPort: 80})
 		opts = append(opts, command.WithSensorLookup(sensorRepo), command.WithEgress(poolSvc))
 	}
 	cmdSvc := command.NewService(cmdRepo, log, opts...)

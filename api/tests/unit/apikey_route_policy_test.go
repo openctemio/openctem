@@ -24,6 +24,7 @@ var keyChainExempt = map[string]string{
 	"/api/v1/module-presets":                  "JWT-only base chain",
 	"/api/v1/version":                         "JWT-only base chain (authMiddleware, no oct_ keys)",
 	"/api/v1/announcements":                   "JWT-only base chain (authMiddleware, no oct_ keys)",
+	"/api/v1/proxy-test-echo":                 "public, no chain: the proxy test's echo, gated by the token of one live test command; answers only the caller's own address",
 	"/api/v1/client-errors":                   "public, no chain: counts a web error kind",
 	"/api/v1/legal":                           "public, no chain: the operator's legal information, no tenant data",
 	"/api/v1/brand":                           "public, no chain: the instance brand, no tenant data",

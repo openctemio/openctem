@@ -83,7 +83,15 @@ func (h *SensorControlV2Handler) EgressCredentials(w http.ResponseWriter, r *htt
 	if !decodeControl(w, r, h.limits.MaxControlBodyBytes, &req) {
 		return
 	}
-	creds, err := h.egress.CredentialsFor(r.Context(), *s.TenantID, s.ID, req.PoolID)
+	var creds []proxypoolapp.Credential
+	var err error
+	if cmd.Type == commanddom.CommandTypeProxyTest {
+		// A test names its own pool (a draft pool no sensor uses yet); the
+		// credentials are those of that pool only, under this command's lease.
+		creds, err = h.egress.TestCredentialsFor(r.Context(), cmd, req.PoolID)
+	} else {
+		creds, err = h.egress.CredentialsFor(r.Context(), *s.TenantID, s.ID, req.PoolID)
+	}
 	if err != nil {
 		if errors.Is(err, shared.ErrNotFound) {
 			protov2.NewProblem(protov2.ProblemCommandNotFound).Write(w)
@@ -123,7 +131,14 @@ func (h *SensorControlV2Handler) EgressReport(w http.ResponseWriter, r *http.Req
 			TargetUnreachable: e.TargetUnreachable, TargetRefused: e.TargetRefused,
 			HandshakeMsP50: e.HandshakeMsP50, HandshakeMsP95: e.HandshakeMsP95, LastError: e.LastError}
 	}
-	if err := h.egress.ApplyReport(r.Context(), *s.TenantID, s.ID, rep); err != nil {
+	var err error
+	if cmd.Type == commanddom.CommandTypeProxyTest {
+		// The attempts of a test move the health of the pool it names.
+		err = h.egress.ApplyTestReport(r.Context(), cmd, s.ID, rep)
+	} else {
+		err = h.egress.ApplyReport(r.Context(), *s.TenantID, s.ID, rep)
+	}
+	if err != nil {
 		if errors.Is(err, shared.ErrNotFound) {
 			protov2.NewProblem(protov2.ProblemCommandNotFound).Write(w)
 			return

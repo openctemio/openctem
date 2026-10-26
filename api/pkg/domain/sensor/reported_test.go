@@ -363,3 +363,22 @@ func TestSanitizeKeepsReachProbeService(t *testing.T) {
 		t.Fatalf("look-alikes kept: %v %v", out.Capabilities, out.Tools)
 	}
 }
+
+// Sanitize keeps only known capabilities, so a sensor-wide capability that
+// jobs are gated on must be listed: a missing one is dropped from every
+// report and the work that needs it waits forever.
+func TestSanitizeKeepsTheProxyCapabilities(t *testing.T) {
+	want := []string{CapabilityEgressUpstream, CapabilityEgressValidate, CapabilityEgressHostDirect, CapabilityProxyTest}
+	got := CapabilityReportInput{Capabilities: append([]string{"made-up@1"}, want...)}.Sanitize(map[string]bool{}, map[string]bool{})
+	for _, c := range want {
+		if !slices.Contains(got.Capabilities, c) {
+			t.Errorf("%s dropped from the report: %v", c, got.Capabilities)
+		}
+	}
+	if slices.Contains(got.Capabilities, "made-up@1") {
+		t.Errorf("an unknown capability was kept: %v", got.Capabilities)
+	}
+	if CapabilityEgressHostDirect != "egress.host-direct@1" || CapabilityProxyTest != "proxy.test@1" {
+		t.Fatal("capability names are the wire contract with the sensor SDK")
+	}
+}

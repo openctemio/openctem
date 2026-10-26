@@ -23,6 +23,7 @@ import { maskPasteText } from '../lib/mask'
 import type { ProxyPool } from '../types'
 import { EndpointTable } from './endpoint-table'
 import { PasteListField } from './paste-list-field'
+import { TestPoolButton } from './test-pool-button'
 
 interface DefaultPoolCardProps {
   /** The pool with is_default, if the organization has one. */
@@ -139,7 +140,12 @@ export function DefaultPoolCard({ pool, canWrite }: DefaultPoolCardProps) {
           </div>
         )}
         {pool && pool.endpoints.length > 0 && (
-          <EndpointTable poolId={pool.id} endpoints={pool.endpoints} canWrite={canWrite} />
+          <>
+            <div className="flex justify-end">
+              <TestPoolButton pool={pool} canWrite={canWrite} />
+            </div>
+            <EndpointTable poolId={pool.id} endpoints={pool.endpoints} canWrite={canWrite} />
+          </>
         )}
       </CardContent>
     </Card>

@@ -90,3 +90,56 @@ export interface SetProxyAssignmentRequest {
   mode: ProxyAssignmentMode
   pool_id?: string
 }
+
+/** Why a proxy test failed for one endpoint. */
+export type ProxyTestClass =
+  'proxy_down' | 'proxy_auth' | 'target_unreachable' | 'target_refused' | 'echo_failed'
+
+export type ProxyTestStatus =
+  'pending' | 'running' | 'completed' | 'failed' | 'canceled' | 'expired'
+
+export interface ProxyTestStartRequest {
+  /** 1 to 3 online sensors of the organization that report proxy.test@1. */
+  sensor_ids: string[]
+}
+
+export interface ProxyTestStarted {
+  sensor_id: string
+  sensor_name: string
+  command_id: string
+}
+
+export interface ProxyTestStartResponse {
+  items: ProxyTestStarted[]
+}
+
+/** One endpoint's result of a test (no credentials; the address is scheme://host:port). */
+export interface ProxyTestEndpointResult {
+  endpoint_id: string
+  address: string
+  ok: boolean
+  class?: ProxyTestClass
+  handshake_ms: number
+  /** The address the platform's echo saw through the proxy. */
+  exit_ip?: string
+  /** IP families the proxy carried. */
+  families?: ('v4' | 'v6')[]
+  /** True for a proxy that carries 443 and refuses other ports; absent when not decided. */
+  port_restricted?: boolean
+  error?: string
+}
+
+/** One sensor's test. */
+export interface ProxyTestOutcome {
+  command_id: string
+  sensor_id: string
+  sensor_name: string
+  status: ProxyTestStatus
+  error?: string
+  finished_at?: string
+  results: ProxyTestEndpointResult[]
+}
+
+export interface ProxyTestResultsResponse {
+  items: ProxyTestOutcome[]
+}
