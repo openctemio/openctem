@@ -175,8 +175,10 @@ test.describe('attack path view', () => {
         // Keyboard: one tab stop, the arrows follow the edges.
         await entry.focus()
         await page.keyboard.press('ArrowRight')
-        await expect(hopA.or(hopB).first()).toBeFocused()
-        await expect(page.locator('[data-testid=flow-node]:focus')).toHaveCount(1)
+        // The arrow goes to the hop nearest the entry's row: either hop.
+        const focused = page.locator('[data-testid=flow-node]:focus')
+        await expect(focused).toHaveCount(1)
+        await expect(focused).toHaveAccessibleName(/^Hop /)
         await page.keyboard.press('Escape')
 
         expect(await seriousViolations(page)).toEqual([])
