@@ -195,6 +195,8 @@
   "mcp.scope.findings.title": "Đọc phát hiện, lỗ hổng, mức ưu tiên và nhóm khắc phục",
   "mcp.scope.pentest.short": "Pentest",
   "mcp.scope.pentest.title": "Đọc chiến dịch pentest, phát hiện, kiểm thử lại và mẫu",
+  "mcp.scope.pentestDraft.short": "Bản nháp pentest",
+  "mcp.scope.pentestDraft.title": "Lưu phát hiện pentest dưới dạng bản nháp, mỗi bản do một thành viên khác của chiến dịch xác nhận",
   "mcp.scope.propose.short": "Đề xuất",
   "mcp.scope.propose.title": "Đề xuất dương tính giả và chấp nhận rủi ro, mỗi đề xuất do người khác quyết định",
   "mcp.status.anyClient": "Cho phép ứng dụng chưa xác minh",
