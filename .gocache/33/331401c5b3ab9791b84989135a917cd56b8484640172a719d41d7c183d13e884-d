@@ -1,0 +1,9 @@
+./delivery.go
+./program.go
+./public.go
+./repository.go
+./scope_file.go
+./scope_parse.go
+./sync.go
+./target_assets.go
+./windows.go

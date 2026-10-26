@@ -1,0 +1,8 @@
+./doc.go
+./options.go
+./rapidoc.go
+./redoc.go
+./render.go
+./spec.go
+./swaggerui.go
+./swaggerui_oauth2.go

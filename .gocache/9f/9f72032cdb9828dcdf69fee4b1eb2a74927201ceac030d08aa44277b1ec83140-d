@@ -1,0 +1,5 @@
+./doc.go
+./split.go
+./string_slice.go
+./strings.go
+./uri.go

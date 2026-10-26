@@ -1,0 +1,6 @@
+./anomaly.go
+./internal_zones.go
+./proof.go
+./service.go
+./shared_egress.go
+./shared_sensors.go

@@ -1,0 +1,6 @@
+./doc.go
+./errors.go
+./loaders.go
+./options.go
+./restricted.go
+./spec.go

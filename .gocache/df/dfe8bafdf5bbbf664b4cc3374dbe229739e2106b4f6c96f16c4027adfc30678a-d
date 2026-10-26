@@ -1,0 +1,5 @@
+./entries.go
+./error.go
+./test_util.go
+./types.go
+./versionmap.go

@@ -1,0 +1,5 @@
+./get_log_info_parameters.go
+./get_log_info_responses.go
+./get_log_proof_parameters.go
+./get_log_proof_responses.go
+./tlog_client.go

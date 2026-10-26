@@ -1,0 +1,6 @@
+./constants.go
+./error.go
+./kdf.go
+./open_other.go
+./structures.go
+./tpm2.go

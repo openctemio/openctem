@@ -1,0 +1,6 @@
+./azure.go
+./bitbucket.go
+./client.go
+./constants.go
+./github.go
+./gitlab.go

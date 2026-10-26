@@ -1,0 +1,4 @@
+./bundle.go
+./options.go
+./signature_content.go
+./verification_content.go

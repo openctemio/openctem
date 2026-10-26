@@ -1,0 +1,12 @@
+./context.go
+./context_skipauth_disabled.go
+./doc.go
+./not_implemented.go
+./operation.go
+./parameter.go
+./request.go
+./router.go
+./seam.go
+./security.go
+./typeutils.go
+./validation.go

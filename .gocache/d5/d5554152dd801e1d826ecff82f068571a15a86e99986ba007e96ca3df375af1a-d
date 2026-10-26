@@ -1,0 +1,4 @@
+./doc.go
+./go_name_provider.go
+./ifaces.go
+./name_provider.go

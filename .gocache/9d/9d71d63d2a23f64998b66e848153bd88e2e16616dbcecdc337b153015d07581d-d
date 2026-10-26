@@ -1,0 +1,8 @@
+./client.go
+./email.go
+./redact.go
+./slack.go
+./splunk.go
+./teams.go
+./telegram.go
+./webhook.go

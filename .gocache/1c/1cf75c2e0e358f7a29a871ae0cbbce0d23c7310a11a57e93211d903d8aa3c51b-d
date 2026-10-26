@@ -1,0 +1,10 @@
+./catalog.go
+./diff.go
+./fieldmeta.go
+./presets.go
+./profile.go
+./render.go
+./spec.go
+./status.go
+./template.go
+./validate.go

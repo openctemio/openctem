@@ -1,0 +1,11 @@
+./doc.go
+./document.go
+./errors.go
+./go_module_metadata.go
+./properties.go
+./schema.go
+./schema_ext.go
+./serde.go
+./trait.go
+./type_registry.go
+./validation.go

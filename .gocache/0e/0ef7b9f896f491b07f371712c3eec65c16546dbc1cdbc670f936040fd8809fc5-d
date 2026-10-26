@@ -1,0 +1,9 @@
+./datascope.go
+./discovered_assets.go
+./errors.go
+./finding_viewer.go
+./id.go
+./permission_check.go
+./program_assets.go
+./stepup.go
+./task_owner_view.go

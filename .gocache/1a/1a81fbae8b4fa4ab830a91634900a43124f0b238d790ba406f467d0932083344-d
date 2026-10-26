@@ -1,0 +1,3 @@
+./getentries.go
+./logclient.go
+./multilog.go

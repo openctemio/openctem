@@ -1,0 +1,17 @@
+./baseline.go
+./claims.go
+./coverage.go
+./gate.go
+./layers.go
+./loosen.go
+./modes.go
+./pipeline.go
+./policy_strictness.go
+./providers.go
+./repo_policy.go
+./repository.go
+./retention.go
+./run.go
+./scope.go
+./secret.go
+./trust.go

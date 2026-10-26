@@ -1,0 +1,5 @@
+./ddl.go
+./migrator.go
+./packages.go
+./private.go
+./testdb.go

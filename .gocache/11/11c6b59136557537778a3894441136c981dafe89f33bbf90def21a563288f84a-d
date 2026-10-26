@@ -1,0 +1,14 @@
+./algorithm_registry.go
+./doc.go
+./ecdsa.go
+./ed25519.go
+./ed25519ph.go
+./message.go
+./options.go
+./publickey.go
+./rsapkcs1v15.go
+./rsapss.go
+./signer.go
+./signerverifier.go
+./util.go
+./verifier.go

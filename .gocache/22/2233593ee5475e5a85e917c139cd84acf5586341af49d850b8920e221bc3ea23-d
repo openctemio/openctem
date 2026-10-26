@@ -1,0 +1,11 @@
+./ast.go
+./describe.go
+./document.go
+./entities.go
+./entity.go
+./errors.go
+./lexer.go
+./parser.go
+./pipeline.go
+./plan.go
+./printer.go

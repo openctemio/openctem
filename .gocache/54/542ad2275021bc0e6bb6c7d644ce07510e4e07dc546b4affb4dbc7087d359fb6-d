@@ -1,0 +1,7 @@
+./dsse.pb.go
+./entry.pb.go
+./hashedrekord.pb.go
+./rekor_service.pb.go
+./rekor_service.pb.gw.go
+./rekor_service_grpc.pb.go
+./verifier.pb.go

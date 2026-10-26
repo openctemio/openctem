@@ -1,0 +1,7 @@
+./curve.go
+./curve_amd64.go
+./curve_generic.go
+./doc.go
+./key.go
+./table.go
+./curve_amd64.s
