@@ -10,6 +10,8 @@ import { cn } from '@/lib/utils'
 import { safeHref } from '@/lib/safe-href'
 import { NavCount } from './nav-count'
 import { SidebarLink } from './sidebar-link'
+import type { NavPin } from '@/features/nav-pins/api/use-nav-pins'
+import { PinAction } from '@/features/nav-pins/components/pin-action'
 
 /** One built-in view of a list, as the sidebar lists it under the list's row. */
 export interface NavQuickView {
@@ -22,6 +24,8 @@ export interface NavQuickView {
   active: boolean
   /** The count is a problem to act on (shown in the error colour when above zero). */
   danger?: boolean
+  /** The view can be pinned to the top of the sidebar as this pin. */
+  pin?: Pick<NavPin, 'kind' | 'ref'>
 }
 
 /**
@@ -70,6 +74,7 @@ export function NavQuickViewList({
               )}
             </SidebarLink>
           </SidebarMenuSubButton>
+          {v.pin && <PinAction pin={v.pin} label={v.label} sub />}
         </SidebarMenuSubItem>
       ))}
     </SidebarMenuSub>
