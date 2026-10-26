@@ -1367,11 +1367,10 @@ function BranchesTab({
                           {branch.last_commit_message || ''}
                         </span>
                       </div>
-                      <div className="flex items-center gap-1 text-[10px] text-muted-foreground">
+                      <div className="flex items-center gap-2 text-xs text-muted-foreground">
                         <span>{branch.last_commit_author || 'unknown'}</span>
                         {branch.last_commit_at && (
                           <>
-                            <span>·</span>
                             <span>{formatTimeAgo(branch.last_commit_at)}</span>
                           </>
                         )}

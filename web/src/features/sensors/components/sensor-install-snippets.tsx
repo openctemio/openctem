@@ -33,7 +33,7 @@ export interface SensorTemplates {
   compose?: string
   kubernetes?: string
   helm?: string
-  /** The sensor-local policy template (api RFC-040 §5.7), prefilled with the zones' ranges. */
+  /** The sensor-local policy template, prefilled with the zones' ranges, else the organization's scope. */
   policy?: string
   image?: string
   /** The sensor product the snippets install ("" for a collector). */
@@ -178,6 +178,8 @@ export function Snippet({ text, label, file }: { text: string; label: string; fi
         tabIndex={0}
         className="max-h-96 overflow-auto rounded-lg p-4 pe-28 font-mono text-xs leading-relaxed whitespace-pre focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
         data-format={label}
+        role="region"
+        aria-label={label}
       >
         {text}
       </pre>

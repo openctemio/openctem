@@ -162,7 +162,7 @@ describe('Coverage view', () => {
     const row = screen.getByText('acme/api').closest('tr') as HTMLElement
     expect(within(row).getByText('Fresh')).toBeInTheDocument()
     expect(within(row).getByText('Stale')).toBeInTheDocument()
-    expect(within(row).getByText('Never · expected')).toBeInTheDocument()
+    expect(within(row).getByText('Never, expected')).toBeInTheDocument()
     expect(row.querySelector('[data-state="gap"]')).not.toBeNull()
     expect(screen.getByText('Template drift')).toBeInTheDocument()
     expect(screen.getByText(/1 of 3 pipelines not on refs\/tags\/v2/)).toBeInTheDocument()
