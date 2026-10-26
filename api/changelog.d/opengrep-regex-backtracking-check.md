@@ -1,0 +1,3 @@
+### Security: opengrep rule regexes are checked for catastrophic backtracking
+
+- Opengrep evaluates rule regexes with a backtracking engine, and the rule validator never looked at them, so a pattern such as `(a+)+$` in a custom rule could pin a sensor core. The validator (and the content-pack lint, which uses it) now checks every `pattern-regex`, `pattern-not-regex`, `metavariable-regex` and `fix-regex` field and rejects nested quantifiers that can match the same text, overlapping alternatives under a repeat, backreferences, and patterns over 1000 characters. The error names the field path and the line.
