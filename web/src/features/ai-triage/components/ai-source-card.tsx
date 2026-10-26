@@ -326,7 +326,7 @@ export function AISourceCard({ settings, canEdit, onSaved }: AISourceCardProps) 
                   ? t(
                       'settings.ai.source.keyStatus',
                       'A key is set (ends in {last4}), updated {date}. It is never shown again.',
-                      { last4: settings.key.last4 || '····', date: keyDate }
+                      { last4: settings.key.last4 || '••••', date: keyDate }
                     )
                   : settings.key.set
                     ? t(

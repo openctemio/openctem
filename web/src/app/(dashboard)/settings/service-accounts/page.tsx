@@ -234,7 +234,7 @@ function AccountKeysSheet({
                         {k.expires_at && (
                           <>
                             {' '}
-                            · {t('settings.serviceAccounts.expires', 'expires')}{' '}
+                            , {t('settings.serviceAccounts.expires', 'expires')}{' '}
                             <RelativeTime date={k.expires_at} />
                           </>
                         )}

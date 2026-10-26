@@ -280,7 +280,7 @@ export function VisualBuilderDialog({
                 <DialogDescription className="text-xs text-muted-foreground whitespace-nowrap">
                   {isReadOnly
                     ? 'Read-only view - Clone to edit'
-                    : 'Drag nodes from palette • Connect nodes • Click to edit'}
+                    : 'Drag nodes from the palette, connect them, click one to edit'}
                 </DialogDescription>
               </div>
             </div>

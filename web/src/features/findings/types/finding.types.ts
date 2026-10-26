@@ -5,6 +5,7 @@
  */
 
 import type { FindingLocation } from '@/features/findings/lib/finding-location'
+import type { ApiSlaBasis } from '@/features/findings/api/finding-api.types'
 
 import type { Severity } from '@/features/shared/types'
 import { severityStyleParts } from '@/lib/severity-colors'
@@ -725,6 +726,8 @@ export interface Finding {
   slaDeadline?: string // ISO timestamp of the remediation deadline (nullable)
   /** The deadline was shortened by the SLA policy's known exploited (KEV) cap. */
   slaKevCapped?: boolean
+  /** Why the deadline is the date it is (detail page only). */
+  slaBasis?: ApiSlaBasis
 
   // Threat Intel Enrichment (RFC-004)
   epssScore?: number

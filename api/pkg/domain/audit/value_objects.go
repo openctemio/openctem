@@ -409,7 +409,12 @@ const (
 	ActionSensorPairingDenied    Action = "sensor.pairing_denied"
 	ActionSensorPairingCompleted Action = "sensor.pairing_completed"
 	ActionSensorRepaired         Action = "sensor.repaired"
-	ActionSensorKeyRevoked       Action = "sensor.key_revoked"
+	// Organization enrollment tokens (docs/architecture/sensor-pairing.md).
+	ActionSensorEnrollmentTokenCreated Action = "sensor.enrollment_token_created"
+	ActionSensorEnrollmentTokenRevoked Action = "sensor.enrollment_token_revoked"
+	ActionSensorEnrolled               Action = "sensor.enrolled"
+	ActionSensorEnrollmentRefused      Action = "sensor.enrollment_refused"
+	ActionSensorKeyRevoked             Action = "sensor.key_revoked"
 	// ActionSensorKeyBound: a bearer-key sensor bound its own signing key
 	// (its API keys retired, one way); ActionSensorKeyBindRefused: such a
 	// bind was refused (policy, proof, state).
@@ -853,6 +858,7 @@ func (a Action) IsValid() bool {
 		ActionSensorResultPolicyUpdated,
 		ActionSensorPairingExpected, ActionSensorPairingApproved, ActionSensorPairingDenied, ActionSensorPairingCompleted,
 		ActionSensorRepaired, ActionSensorKeyRevoked, ActionSensorIdentityPolicySet, ActionSensorKeyBound, ActionSensorKeyBindRefused,
+		ActionSensorEnrollmentTokenCreated, ActionSensorEnrollmentTokenRevoked, ActionSensorEnrolled, ActionSensorEnrollmentRefused,
 		ActionSensorGrantChanged, ActionSensorClaimRefusedGrant, ActionSensorCredentialRefused, ActionSensorPushRefusedGrant,
 		ActionIntegrationSyncRequested,
 		ActionScanZoneCreated, ActionScanZoneUpdated, ActionScanZoneDeleted,
@@ -996,6 +1002,7 @@ func (a Action) Category() string {
 		ActionSensorResultPolicyUpdated,
 		ActionSensorPairingExpected, ActionSensorPairingApproved, ActionSensorPairingDenied, ActionSensorPairingCompleted,
 		ActionSensorRepaired, ActionSensorKeyRevoked, ActionSensorIdentityPolicySet, ActionSensorKeyBound, ActionSensorKeyBindRefused,
+		ActionSensorEnrollmentTokenCreated, ActionSensorEnrollmentTokenRevoked, ActionSensorEnrolled, ActionSensorEnrollmentRefused,
 		ActionSensorGrantChanged, ActionSensorClaimRefusedGrant, ActionSensorCredentialRefused, ActionSensorPushRefusedGrant:
 		return "sensor"
 	case ActionScanZoneCreated, ActionScanZoneUpdated, ActionScanZoneDeleted,

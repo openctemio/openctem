@@ -185,7 +185,7 @@ export function describeFindingEvent(a: Activity): EventText | null {
       return {
         icon: Bot,
         tone: 'info',
-        summary: `finished AI triage${sev ? ` · suggests ${sev}` : ''}`,
+        summary: `finished AI triage${sev ? `, suggests ${sev}` : ''}`,
         detail: str(m.ai_recommendation),
       }
     }

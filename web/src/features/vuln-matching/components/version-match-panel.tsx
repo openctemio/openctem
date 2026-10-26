@@ -46,7 +46,7 @@ export function VersionMatchPanel({ metadata }: VersionMatchPanelProps) {
               ? t('assets.software.likely', 'Likely')
               : t('assets.software.potential', 'Potential')}
             {ev.confidence != null
-              ? ` · ${t('assets.software.confidence', 'confidence {value}', { value: ev.confidence })}`
+              ? `, ${t('assets.software.confidence', 'confidence {value}', { value: ev.confidence })}`
               : ''}
           </Badge>
           {ev.qualifier && (

@@ -50,10 +50,10 @@ describe('AutomationInspector', () => {
     await userEvent.click(screen.getByRole('combobox', { name: 'Action' }))
     const options = screen.getAllByRole('option')
     expect(options.map((o) => o.textContent)).toEqual([
-      'Add Tags',
-      'Update Status',
-      'Trigger ScanNeeds scans:execute',
-      'Request False Positive',
+      'Add tags',
+      'Update status',
+      'Trigger scanNeeds scans:execute',
+      'Request false positive',
     ])
     const scan = options[2]
     expect(scan).toHaveAttribute('aria-disabled', 'true')
@@ -121,7 +121,7 @@ describe('AutomationInspector', () => {
       within(list)
         .getAllByRole('option')
         .map((o) => o.textContent)
-    ).toEqual(['Manual', 'Finding Created'])
+    ).toEqual(['Manual', 'Finding created'])
   })
 
   it('edits tags as a list', () => {

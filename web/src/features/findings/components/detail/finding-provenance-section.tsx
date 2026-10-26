@@ -108,8 +108,8 @@ export function FindingProvenanceSection({ finding }: { finding: FindingDetail }
             <span className="inline-flex flex-wrap items-center gap-x-1.5">
               <span className="font-medium">{firstBranch}</span>
               <Commit sha={firstCommit} repo={repo} />
-              {first && <span className="text-muted-foreground">· {when(first.createdAt)}</span>}
-              {first && <>· {run(first)}</>}
+              {first && <span className="text-muted-foreground">{when(first.createdAt)}</span>}
+              {first && <>{run(first)}</>}
             </span>
           </DetailField>
         )}
@@ -118,10 +118,10 @@ export function FindingProvenanceSection({ finding }: { finding: FindingDetail }
             <span className="inline-flex flex-wrap items-center gap-x-1.5">
               <span className="font-medium">{lastBranch}</span>
               <Commit sha={lastCommit} repo={repo} />
-              {newest && <span className="text-muted-foreground">· {when(newest.lastSeenAt)}</span>}
+              {newest && <span className="text-muted-foreground">{when(newest.lastSeenAt)}</span>}
               {otherTool && (
                 <span className="text-muted-foreground">
-                  · {t('findings.provenance.byTool', 'by {tool}', { tool: otherTool })}
+                  {t('findings.provenance.byTool', 'by {tool}', { tool: otherTool })}
                 </span>
               )}
             </span>
@@ -154,7 +154,6 @@ export function FindingProvenanceSection({ finding }: { finding: FindingDetail }
                   )}
                   {b.status !== 'open' && (
                     <span className="text-xs text-muted-foreground">
-                      ·{' '}
                       {b.status === 'auto_fixed'
                         ? t('findings.provenance.fixedHere', 'fixed here')
                         : t('findings.provenance.resolvedHere', 'resolved here')}
@@ -171,9 +170,9 @@ export function FindingProvenanceSection({ finding }: { finding: FindingDetail }
               {p.runs.map((r) => (
                 <li key={r.id} className="flex flex-wrap items-center gap-x-1.5">
                   {run(r)}
-                  {r.branch && <span className="text-muted-foreground">· {r.branch}</span>}
+                  {r.branch && <span className="text-muted-foreground">{r.branch}</span>}
                   <Commit sha={r.commitSha} repo={repo} />
-                  <span className="text-muted-foreground">· {when(r.createdAt)}</span>
+                  <span className="text-muted-foreground">{when(r.createdAt)}</span>
                 </li>
               ))}
             </ul>
