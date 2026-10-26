@@ -57,9 +57,12 @@ const intake: IntakeData = {
     received: 602,
     receipts: 9,
     still_detected: 924,
-    suppressed: 0,
+    created: 300,
+    reopened: 12,
+    suppressed: 8,
+    not_stored: 12,
   }),
-  noise: { received: 602, new: 312, merged: 270, suppressed: 8, not_stored: 12 },
+  noise: { received: 602, new: 312, merged: 278, suppressed: 8, not_stored: 12 },
   failing: 1,
   stale: 1,
   drill: '/findings/imports?since=x',
@@ -155,7 +158,7 @@ describe('ringArcs', () => {
 describe('ExposureFlowViz', () => {
   it('shows every figure as a link to the list it counts', () => {
     render(<ExposureFlowViz result={flow} scope="organization" />)
-    expect(hrefOf(/^Actionable 791$/)).toBe(flow.actionable.drill)
+    expect(hrefOf(/^Actionable now 791/)).toBe(flow.actionable.drill)
     expect(hrefOf(/^Received 602$/)).toBe(intake.drill)
     expect(hrefOf(/^New or reopened 312$/)).toBe(intake.drill)
     expect(hrefOf(/^Open 791$/)).toBe(flow.open.drill)
@@ -219,7 +222,7 @@ describe('ExposureFlowViz', () => {
     expect(screen.queryByRole('link', { name: /^nuclei/ })).not.toBeInTheDocument()
     expect(screen.queryByText('602')).not.toBeInTheDocument()
     expect(screen.getByText('Counts in your data scope')).toBeInTheDocument()
-    expect(hrefOf(/^Actionable 791$/)).toBe(flow.actionable.drill)
+    expect(hrefOf(/^Actionable now 791/)).toBe(flow.actionable.drill)
   })
 
   it('never links an unsafe drill', () => {
@@ -241,10 +244,13 @@ describe('IntakeViz', () => {
   it('splits received into parts that sum to it, each opening the receipts', () => {
     render(<IntakeViz result={{ shape: 'intake', intake }} />)
     const n = intake.noise
-    expect(n.new + n.merged + n.suppressed + n.not_stored).toBe(n.received)
-    expect(hrefOf('Merged: 270')).toBe(intake.drill)
-    expect(hrefOf('Suppressed by rules: 8')).toBe(intake.drill)
-    expect(screen.getByText('290 noise removed')).toBeInTheDocument()
+    // New or reopened is the receipt list's New plus Reopened; suppressed
+    // is inside it, so the three parts sum to received.
+    expect(n.new + n.merged + n.not_stored).toBe(n.received)
+    expect(n.new).toBe(intake.totals.created + intake.totals.reopened)
+    expect(hrefOf('Merged: 278')).toBe(intake.drill)
+    expect(hrefOf('of which suppressed by rules: 8')).toBe(intake.drill)
+    expect(screen.getByText('298 noise removed')).toBeInTheDocument()
     expect(hrefOf('97 findings closed as false positive')).toBe(intake.false_positive.drill)
   })
 
@@ -261,5 +267,65 @@ describe('IntakeViz', () => {
       intake.sources[1].drill
     )
     expect(screen.getByRole('tooltip')).toBeInTheDocument()
+  })
+})
+
+// The seeded organization of the 2026-10-25 screenshots: 1,634 findings
+// received, 346 new, 83 of them closed on arrival by a rule, 760 open now.
+// Every figure is what the receipt list shows for the same filter, and the
+// funnel's flow steps never grow; the stock is set apart.
+describe('one definition per figure (count equals the list it opens)', () => {
+  const seeded: IntakeData = {
+    ...intake,
+    sources: [
+      source({
+        id: 'sensor:a',
+        tool: 'a',
+        origin: 'sensor',
+        received: 1634,
+        created: 346,
+        reopened: 0,
+        suppressed: 83,
+      }),
+    ],
+    totals: source({
+      id: ':',
+      tool: '',
+      origin: '',
+      received: 1634,
+      created: 346,
+      reopened: 0,
+      suppressed: 83,
+      not_stored: 5,
+    }),
+    noise: { received: 1634, new: 346, merged: 1283, suppressed: 83, not_stored: 5 },
+  }
+  const seededFlow: FlowResult = {
+    ...flow,
+    intake: seeded,
+    actionable: { value: 760, drill: flow.actionable.drill },
+  }
+
+  it('shows the same new figure in the summary, the headline and the funnel', () => {
+    const t = seeded.totals
+    expect(seeded.noise.new).toBe(t.created + t.reopened)
+    expect(seeded.noise.new + seeded.noise.merged + seeded.noise.not_stored).toBe(
+      seeded.noise.received
+    )
+    render(<IntakeViz result={{ shape: 'intake', intake: seeded }} />)
+    expect(screen.getByText('+346')).toBeInTheDocument()
+    expect(hrefOf('New or reopened: 346')).toBe(seeded.drill)
+    expect(screen.queryByText('263')).not.toBeInTheDocument()
+  })
+
+  it('keeps the flow steps non-increasing and sets the stock apart', () => {
+    render(<ExposureFlowViz result={seededFlow} />)
+    const received = screen.getByRole('link', { name: /Received/ })
+    const newOrReopened = screen.getByRole('link', { name: /New or reopened/ })
+    expect(received).toHaveTextContent('1,634')
+    expect(newOrReopened).toHaveTextContent('346')
+    const actionable = screen.getByRole('link', { name: /Actionable now/ })
+    expect(actionable).toHaveTextContent('760')
+    expect(actionable).toHaveTextContent('open now, not part of the period')
   })
 })

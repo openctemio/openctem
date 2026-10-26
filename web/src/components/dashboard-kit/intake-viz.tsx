@@ -368,12 +368,17 @@ function NoiseReduction({ data }: { data: IntakeData }) {
   const { t, locale } = useTranslation()
   const n = (v: number) => formatCount(v, locale)
   const noise = data.noise
-  const removed = Math.max(0, noise.received - noise.new)
+  // New or reopened is the receipt list's New plus Reopened. Suppressed is
+  // the part of it an approved rule closed on arrival, so the bar draws it
+  // inside New, and the removed noise adds it back (it was never opened).
+  const removed = Math.max(0, noise.received - noise.new) + noise.suppressed
+  const segment = (key: (typeof NOISE_PARTS)[number]['key']) =>
+    key === 'new' ? Math.max(0, noise.new - noise.suppressed) : noise[key]
   const label = (key: (typeof NOISE_PARTS)[number]['key']) =>
     ({
       new: t('dashboardKit.intake.noise.new', 'New or reopened'),
       merged: t('dashboardKit.intake.noise.merged', 'Merged'),
-      suppressed: t('dashboardKit.intake.noise.suppressed', 'Suppressed by rules'),
+      suppressed: t('dashboardKit.intake.noise.suppressed', 'of which suppressed by rules'),
       not_stored: t('dashboardKit.intake.noise.notStored', 'Not stored'),
     })[key]
   const days = data.days
@@ -421,14 +426,14 @@ function NoiseReduction({ data }: { data: IntakeData }) {
           role="img"
           aria-label={t(
             'dashboardKit.intake.noiseBarAria',
-            'Received split into new or reopened, merged, suppressed and not stored'
+            'Received split into new or reopened (some suppressed by rules), merged and not stored'
           )}
         >
           {NOISE_PARTS.map((p) =>
-            noise[p.key] > 0 ? (
+            segment(p.key) > 0 ? (
               <span
                 key={p.key}
-                style={{ flex: noise[p.key], background: p.color }}
+                style={{ flex: segment(p.key), background: p.color }}
                 data-part={p.key}
               />
             ) : null

@@ -382,11 +382,19 @@ kind's group) and the tool (`unknown` when the source named none).
 - Health: `failed` when the latest receipt failed; `stale` when nothing
   came for more than twice the usual interval and at least a day; `ok`
   otherwise. A source with fewer than three receipts is never stale.
-- Noise: received splits into new or reopened (created less suppressed,
-  plus reopened), merged into findings that exist (the rest after new,
-  reopened and not stored: still detected and repeats within a report),
-  suppressed by an approved rule (stored closed) and not stored. The parts
-  sum to received.
+- Noise: received splits into new or reopened (created plus reopened:
+  the receipt list's New and Reopened totals added), merged into findings
+  that exist (the rest after new, reopened and not stored: still detected
+  and repeats within a report) and not stored. These three sum to received.
+  Suppressed by an approved rule is the part of New that was stored closed
+  on arrival (the list's Suppressed total); it is inside New, not a fourth
+  part. One definition per label: the intake summary, the noise headline,
+  the hero funnel and the source tooltip all use it.
+- Funnel: received and new or reopened are the period's flow (received is
+  at least new or reopened); actionable is a stock (open findings of
+  classes P0 to P3 now), so the hero shows it apart from the flow with the
+  caption "open now", never as a third step that can be larger than the
+  first.
 - False positive: the findings closed as false positive in the window, the
   same figure as the flow's.
 - Each source figure opens the receipt list with the same filter

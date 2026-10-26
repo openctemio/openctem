@@ -260,10 +260,7 @@ function FlowChart({ result, scope }: { result: FlowResult; scope?: 'organizatio
         }),
         rows: [
           [t('dashboardKit.flow.tip.received', 'Received'), n(s.received)],
-          [
-            t('dashboardKit.flow.tip.newOrReopened', 'New or reopened'),
-            n(Math.max(0, s.created - s.suppressed) + s.reopened),
-          ],
+          [t('dashboardKit.flow.tip.newOrReopened', 'New or reopened'), n(s.created + s.reopened)],
           [t('dashboardKit.flow.tip.receipts', 'Receipts'), n(s.receipts)],
           [
             t('dashboardKit.flow.tip.lastReceipt', 'Last receipt'),
@@ -556,16 +553,18 @@ function FlowChart({ result, scope }: { result: FlowResult; scope?: 'organizatio
                   to={intake.drill}
                   bind={bind('f:new')}
                 />
-                <span className="pb-1 text-muted-foreground" aria-hidden>
-                  →
-                </span>
+                <span className="mb-1 h-8 self-end border-s" aria-hidden />
               </>
             )}
             <FunnelFigure
-              label={t('dashboardKit.flow.funnel.actionable', 'Actionable')}
+              label={t('dashboardKit.flow.funnel.actionable', 'Actionable now')}
               value={n(actionableTotal)}
               to={result.actionable.drill}
               bind={bind('f:actionable')}
+              caption={t(
+                'dashboardKit.flow.funnel.actionableCaption',
+                'open now, not part of the period'
+              )}
             />
           </div>
 
@@ -770,16 +769,19 @@ function FunnelFigure({
   value,
   to,
   bind,
+  caption,
 }: {
   label: string
   value: string
   to: string | null | undefined
   bind: Record<string, unknown>
+  caption?: string
 }) {
   return (
     <FlowLink to={to} className="grid justify-items-center hover:underline" {...bind}>
       <span className="text-xs text-muted-foreground">{label}</span>{' '}
       <span className="text-2xl font-semibold leading-tight tabular-nums">{value}</span>
+      {caption && <span className="text-xs text-muted-foreground">{caption}</span>}
     </FlowLink>
   )
 }
@@ -880,7 +882,7 @@ function FlowTable({ result }: { result: FlowResult }) {
         </caption>
         <tbody>
           {result.classes.map((c) => row(c.key ?? '', c))}
-          {row(t('dashboardKit.flow.funnel.actionable', 'Actionable'), result.actionable)}
+          {row(t('dashboardKit.flow.funnel.actionable', 'Actionable now'), result.actionable)}
         </tbody>
       </table>
       <table className="w-full">
