@@ -89,19 +89,20 @@ applies.
 
 Rows record `local` for the server storage whatever its driver, so switching
 `STORAGE_PROVIDER` alone makes existing files answer 404. Copy them first
-with the `admin-cli` image (its `bootstrap-admin` binary), with the same
+with `bootstrap-admin` from the API image, with the same
 `STORAGE_BUCKET`/`_REGION`/`_ENDPOINT`/`_ACCESS_KEY`/`_SECRET_KEY` (and
 `STORAGE_SSE`) the API will use:
 
 ```sh
 # 1. what would be copied
-bootstrap-admin storage migrate -from local -to s3 -local-path /app/data/attachments -dry-run
+bootstrap-admin storage migrate -from local -to s3 -local-path /app/data/attachments -dry-run  # Kubernetes: a Job with the openctem-api image, command /app/bootstrap-admin
 # 2. copy while the API runs (repeatable: copied objects are skipped)
 bootstrap-admin storage migrate -from local -to s3 -local-path /app/data/attachments
 # 3. stop the API, copy once more, set STORAGE_PROVIDER=s3, start the API
 ```
 
-Docker Compose: run it in a one-off container of the `admin-cli` image with
+Docker Compose: `docker compose run --rm bootstrap-admin storage migrate ...` (the API image, entrypoint
+`/app/bootstrap-admin`) with
 the `api-data` volume mounted at `/app/data` and the `STORAGE_*` variables.
 Each object keeps its namespace and key, is read back and compared by
 SHA-256, and the source is never changed; `-verify` also hashes objects

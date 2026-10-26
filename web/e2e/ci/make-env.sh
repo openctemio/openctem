@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Writes web/e2e/ci/.env for the e2e stack (compose.yml, seed.sh): fresh random
 # passwords and secrets on every run, plus image names and published ports
-# (override with API_IMAGE, WEB_IMAGE, ADMIN_IMAGE, E2E_API_PORT, E2E_WEB_PORT).
+# (override with API_IMAGE, WEB_IMAGE, E2E_API_PORT, E2E_WEB_PORT).
 # The file is git-ignored; no credential lives in the repository.
 #
 # In GitHub Actions ($GITHUB_ENV set) the values are also exported to later
@@ -34,7 +34,6 @@ umask 077
 cat >"$out" <<ENV
 API_IMAGE=${API_IMAGE:-local/openctem-api:e2e}
 WEB_IMAGE=${WEB_IMAGE:-local/openctem-web:e2e}
-ADMIN_IMAGE=${ADMIN_IMAGE:-local/admin-cli:e2e}
 E2E_API_PORT=${E2E_API_PORT:-8080}
 E2E_WEB_PORT=${E2E_WEB_PORT:-3000}
 E2E_DB_PASSWORD=${db_password}

@@ -14,7 +14,7 @@ deploy OpenCTEM with Docker Compose or the all-in-one image, follow
 | File | Purpose |
 |------|---------|
 | `api/Dockerfile` | Multi-target build: `development` (Air, Delve, migrate), `base` and `builder`, `production` (Alpine, non-root user `openctem`) |
-| `api/Dockerfile.migrations`, `Dockerfile.seed`, `Dockerfile.admin-cli` | The `migrations`, `seed` and `admin-cli` release images |
+| `api/Dockerfile.migrations`, `Dockerfile.seed` | The `migrations` and `seed` release images |
 | `api/docker-compose.yml` | Base services: PostgreSQL 17 and Redis 7 (ports published for development). Supported PostgreSQL: 16, 17 and 18; 17 is recommended. |
 | `api/docker-compose.dev.yml` | The API in the `development` target, source bind-mounted |
 | `api/deploy/docker-compose.yml` | The supported Compose deployment: gateway (one HTTPS port), web, API, PostgreSQL and Redis with TLS, and the one-shot `datastore-tls`, `db-roles` and `migrate` services |
@@ -78,7 +78,12 @@ make allinone
 Release images are built by `.github/workflows/docker-publish.yml` from a
 `vX.Y.Z` tag: `ghcr.io/openctemio/openctem-api`, `openctem-web`,
 `openctem-console` (the platform console), `openctem` (all-in-one),
-`openctem-gateway`, `migrations`, `seed` and `admin-cli`.
+`openctem-gateway`, `migrations` and `seed`.
+
+There is no separate admin image: `bootstrap-admin` (first administrator, `storage migrate`,
+`verify-audit`, ...) ships in the API image. With Compose run
+`docker compose run --rm bootstrap-admin ...`; on Kubernetes use a Job with the `openctem-api`
+image and command `/app/bootstrap-admin`.
 
 ## Production
 

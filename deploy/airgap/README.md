@@ -18,7 +18,7 @@ signed `checksums-sha256.txt`. Guide: `api/docs/deployment/air-gapped.md`
 | `templates/` | Docker Compose `.env`, Helm values and Ansible variables for a private registry; Kyverno signature policy; egress proxy (Squid) and firewall (nftables) allowlists. |
 
 Images of a release: `openctem-api`, `openctem-web`, `openctem-console`,
-`openctem-gateway`, `migrations`, `seed`, `admin-cli`, and the all-in-one
+`openctem-gateway`, `migrations`, `seed`, and the all-in-one
 `openctem`. Each is signed keyless by
 `https://github.com/openctemio/openctem/.github/workflows/docker-publish.yml@refs/tags/<version>`
 (issuer `https://token.actions.githubusercontent.com`). Release assets

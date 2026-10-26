@@ -499,8 +499,8 @@ the queue (no required check; the PR and the push scan the change).
 - **Go:** every `actions/setup-go` step uses `go-version-file: api/go.mod`, which
   reads the `toolchain` directive (currently `go1.26.10`). setup-go sets
   `GOTOOLCHAIN=local`, so this is exactly the Go that tests, CodeQL, govulncheck
-  and the release binaries use. `api/Dockerfile` and `api/Dockerfile.admin-cli`
-  pin their `golang:` base image separately: bump them with `go.mod`.
+  and the release binaries use. `api/Dockerfile`
+  pins its `golang:` base image separately: bump them with `go.mod`.
 - **Node:** every `actions/setup-node` step uses `node-version-file: web/.nvmrc`
   (`26`), the same major as `web/Dockerfile` (`node:26-alpine`). Node 25+ ships
   its own `localStorage`; `web/src/test/setup.ts` points Vitest back at jsdom's.
@@ -850,7 +850,6 @@ image, so images without a shell are checked the same way.
 | `ghcr.io/openctemio/openctem` | `deploy/allinone/` FROM the two above + `api/deploy/gateway` | All-in-one: API + web + Caddy gateway. `GATEWAY=on` (default) serves only 443; `GATEWAY=off` serves 8080 + 3000. Postgres/Redis external. |
 | `ghcr.io/openctemio/migrations` | `api/Dockerfile.migrations` | One-shot migration runner |
 | `ghcr.io/openctemio/seed` | `api/Dockerfile.seed` | Seeding utility |
-| `ghcr.io/openctemio/admin-cli` | `api/Dockerfile.admin-cli` | Admin CLI |
 
 **Legacy names.** During a transition window (two releases, per the root
 README) `ghcr.io/openctemio/api` and `ghcr.io/openctemio/ui` receive the same
@@ -974,7 +973,7 @@ The legacy `ui` GHCR package was created by `openctemio/ui`; this repository nee
   on `develop` (lint diffs against `.github/scripts/effective-base.sh`).
 - **govulncheck fails on every PR at once.** A new Go stdlib CVE: bump the
   `toolchain` directive in `api/go.mod` (CI follows it) and the `golang:` base
-  image in `api/Dockerfile` and `api/Dockerfile.admin-cli`.
+  image in `api/Dockerfile`.
 - **Image not found after a tag.** Check the Docker Publish run; the tag must match
   `v<major>.<minor>.<patch>[-suffix]`. Images for v0.8.0 and earlier exist only
   under the legacy `api` / `ui` names.

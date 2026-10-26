@@ -95,7 +95,7 @@ Installation, configuration and operations are documented at
 ## Releases
 
 One tag, `vX.Y.Z`, releases every image from the same commit: `openctem-api`,
-`openctem-web`, `openctem` (all-in-one), `openctem-gateway`, `migrations`, `seed`, `admin-cli`, all
+`openctem-web`, `openctem` (all-in-one), `openctem-gateway`, `migrations`, `seed`, all
 multi-arch (amd64, arm64), signed with cosign, with a signed SPDX SBOM
 attestation per image (also attached to the release). The release notes carry
 the `cosign verify` and `cosign verify-attestation --type spdxjson` commands for

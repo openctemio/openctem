@@ -6,7 +6,7 @@ package bootstrapadmin
 // checks the links from the newest retention anchor to the tail. Exit 0 when
 // every row verifies, 1 when one does not, 2 on a usage or connection error.
 //
-//	docker compose run --rm admin-cli verify-audit
+//	docker compose run --rm bootstrap-admin verify-audit
 //	DATABASE_URL=... ./bootstrap-admin verify-audit [-json]
 //
 // The database URL comes from the environment (DATABASE_URL or DB_*). The -db

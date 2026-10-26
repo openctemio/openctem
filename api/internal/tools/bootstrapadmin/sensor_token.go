@@ -2,8 +2,8 @@ package bootstrapadmin
 
 // `bootstrap-admin sensor-token` gives an install a single-use instance
 // enrollment token for its bundled sensor, which then enrolls as a shared
-// sensor (api/docs/rfcs/RFC-100-shared-sensors.md §7). The admin-cli image's
-// entrypoint is this binary; the compose and Helm installs run it once the
+// sensor (api/docs/rfcs/RFC-100-shared-sensors.md §7). The API image ships it as
+// /app/bootstrap-admin; the compose and Helm installs run it once the
 // migrations are applied.
 //
 //	# Register the value the install generated and gave the sensor as a secret

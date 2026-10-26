@@ -42,7 +42,6 @@ spec:
             - "registry.example.internal/openctem-trusted/openctem:*"
             - "registry.example.internal/openctem-trusted/openctem@*"
             - "registry.example.internal/openctem-trusted/migrations*"
-            - "registry.example.internal/openctem-trusted/admin-cli*"
             - "registry.example.internal/openctem-trusted/seed*"
           mutateDigest: true
           verifyDigest: true
