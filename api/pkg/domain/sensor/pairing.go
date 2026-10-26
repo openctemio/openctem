@@ -96,10 +96,17 @@ type Pairing struct {
 	// InstanceTokenID is the instance enrollment token the sensor started
 	// with: such a request never has a tenant and approves a shared sensor.
 	InstanceTokenID *shared.ID
+	// EnrollmentTokenID is the organization enrollment token the sensor
+	// started with: the request has the token's tenant from the start.
+	EnrollmentTokenID *shared.ID
 }
 
 // IsInstance reports whether the request enrolls a shared sensor.
 func (p *Pairing) IsInstance() bool { return p != nil && p.InstanceTokenID != nil }
+
+// IsEnrollment reports whether an organization enrollment token started the
+// request.
+func (p *Pairing) IsEnrollment() bool { return p != nil && p.EnrollmentTokenID != nil }
 
 // Revealed reports whether the sensor revealed its nonce (the SAS exists).
 func (p *Pairing) Revealed() bool { return p != nil && len(p.SensorNonce) > 0 && p.SAS != "" }

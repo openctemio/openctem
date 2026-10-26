@@ -58,6 +58,55 @@ pending ──reveal──▶ pending (sas set) ──approve──▶ approved 
 Reverse mode starts as an `expecting` row with a tenant and a code but no
 key; the sensor's start request fills in the key and turns it `pending`.
 
+## Enrollment tokens (unattended installs)
+
+For fleets (Kubernetes, Terraform, many hosts) an organization administrator
+creates an enrollment token under **Sensors → Enrollment tokens**. A token is
+a pre-approval: a sensor that starts pairing with it runs the same key-bound
+exchange as every pairing (its own Ed25519 key, the platform's signed answer,
+the nonce commitment, a signed confirmation), and once it reveals its nonce
+the request is approved in the name of the token's creator with the token's
+presets. With "approve each sensor" the request waits instead, listed under
+**Waiting for approval**, and is approved with the fingerprint compare and
+step-up like any other.
+
+| Piece | Where |
+|---|---|
+| Table | `sensor_enrollment_tokens` (keyed hash, hint, max uses, use count, expiry, presets, allowed source CIDRs, revoked); `sensor_pairings.enrollment_token_id` |
+| Service | `internal/app/sensorpairing/enrollment.go` |
+| Repository | `internal/infra/postgres/enrollment_token_repository.go` |
+| Routes | `GET /api/v1/sensor-pairings/enrollment-tokens` (`sensors:read`), `POST .../enrollment-tokens` (`sensors:approve` + step-up), `POST .../enrollment-tokens/{id}/revoke` (`sensors:approve`), `GET /api/v1/sensor-pairings/pending` (`sensors:pair`) |
+| Sensor side | the start request's `enrollment_token` with `enrollment_scope: organization` (`SENSOR_ENROLLMENT_TOKEN` or `SENSOR_ENROLLMENT_TOKEN_FILE`, sdk-go sensorkit) |
+
+Rules:
+
+- **Shown once, hashed at rest.** `octe_` and 49 letters or digits (the
+  shape of an instance token); stored as HMAC-SHA256 with the sensor-key
+  pepper under its own label. The sensor says which kind it holds
+  (`enrollment_scope`), so an organization token is never used as an
+  instance token or the reverse, and a sensor configured for a shared
+  sensor never ends up in an organization.
+- **Bounded.** Expiry 1 hour to 30 days (default 24 hours); 1 to 1000 uses
+  (default 10). A use is a distinct sensor key, counted under a row lock in
+  the transaction that inserts the request, so concurrent starts never
+  exceed the cap, and a sensor that asks again with the same key (its
+  request expired while waiting) spends nothing.
+- **Refused uniformly.** Unknown, expired, used up, revoked, outside the
+  allowed source CIDRs, or created by someone who is no longer an active
+  member: the sensor gets the same `401` as for a bad instance token; the
+  reason is logged and, for a known token, audited in its organization
+  (`sensor.enrollment_refused`).
+- **Tenant from the token only.** The request's tenant comes from the token
+  row, never from the sensor; every user-plane query is scoped by the
+  session's tenant.
+- **Least privilege.** Every enrolled sensor starts at trust level New
+  (passive work only, no credentials, no push ingest) in the preset zones;
+  promotion stays an administrator's action.
+- **Audited and announced.** Created (`sensor.enrollment_token_created`,
+  high), revoked, each enrollment (`sensor.enrolled`, high, with the token,
+  fingerprint, host facts and source address), each refusal; every
+  administrator is notified of creations and enrollments.
+
 ### Onboarding (the Add sensor panel)
 
 The console has one place to add a sensor: **Sensors → Add sensor** (inline
