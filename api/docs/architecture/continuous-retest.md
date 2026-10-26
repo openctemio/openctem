@@ -27,13 +27,13 @@ decides:
 | no match | origin 401 / 403, exposure-class template, first sighting, or less than an hour after the first | `inconclusive` (`access_denied`) | unchanged |
 | no match | origin 401 / 403, any other class | `inconclusive` (`access_denied`), "access denied: cannot confirm the fix" | unchanged |
 | no match | answered 429 (no edge marker) | `inconclusive` (`blocked`) | unchanged |
-| no match | answered 407 | `inconclusive` (`auth_changed`) | unchanged |
+| no match | answered 407, or a 3xx to another path (a login page) or with no recorded target, for a class other than exposure | `inconclusive` (`auth_changed`) | unchanged |
 | no match | answered 5xx | `inconclusive` (`server_error`) | unchanged |
 | no match | request to another URL (a sensor that reports no per-request results) | `inconclusive` (`endpoint_mismatch`) | unchanged |
 | per-request results, the finding's endpoint matched | any | `still_vulnerable` (`matched`) | as above |
 | per-request results, the endpoint did not match, another path matched | any | `still_exposed_elsewhere` (`matched_elsewhere`) | unchanged (never closed, never reopened); the other paths are named in the reason and kept on the retest activity (`other_paths`) |
 | per-request results, nothing matched, the endpoint was not requested | any | `inconclusive` (`endpoint_mismatch`) | unchanged |
-| per-request results, nothing matched, the endpoint answered | its own answer | the rows above for a non-match (`confirmed_fixed`, `edge_blocked`, `access_denied`, `blocked`, `auth_changed`, `server_error`, `unreachable`); the line's edge state (`challenged`, `blocked`, `rate_limited`, from the sensor's edge detector) is `edge_blocked`, and an origin 401/403 follows the access-denied rules of the finding's class | as above |
+| per-request results, nothing matched, the endpoint answered | its own answer | the rows above for a non-match (`confirmed_fixed`, `edge_blocked`, `access_denied`, `blocked`, `auth_changed`, `server_error`, `unreachable`); the line's edge state (`challenged`, `blocked`, `rate_limited`, from the sensor's edge detector) is `edge_blocked`, and so is an edge marker the platform reads in the recorded exchange at the same endpoint when the line names none (sdk-go sensors send no edge state), and an origin 401/403 follows the access-denied rules of the finding's class | as above |
 | no match | no response | `inconclusive` (`unreachable`) | unchanged |
 | no match | none, target answered the probe | `not_reproduced` (`no_endpoint_proof`) | unchanged |
 | no match | none, target did not answer | `inconclusive` (`unreachable`) | unchanged |
@@ -41,6 +41,8 @@ decides:
 | tool: check not in the sensor's template set | any | `inconclusive` (`template_not_found`) | unchanged |
 | tool: check excluded by the sensor's safety policy | any | `inconclusive` (`excluded_by_policy`) | unchanged |
 | tool: ended without judging the item | any | `inconclusive` (`no_verdict`) | unchanged |
+
+**A sighting after the check.** A confirmed fix is applied only if no scan sighted the finding (`last_seen_at`) or reopened it after the check command completed; the settlement checks this under the finding's row lock. Otherwise the retest is recorded `inconclusive` (`seen_after_check`, "the finding was sighted again after the check ran") and the finding does not move.
 
 **Edge answers and access denied.** The platform reads the recorded response
 (status, headers, body) with the edge detector of ctis (`edgeprotect`).
@@ -60,7 +62,7 @@ seen twice, on two consecutive retests of the same check at least an hour
 apart, both answered by the origin (an edge-marked answer in between is not a
 refusal and resets the count; the reachability probe is not a second
 sighting). The earlier refusal counts only when it is at most 14 days old and
-the finding was neither sighted nor reopened since it. Only a result of a
+the finding was neither sighted nor reopened since it. The hour is measured between the two checks' completion times, not to the moment the second is settled. Only a result of a
 command the platform dispatched sets the class: an API, CTIS or CI upload
 never does, whatever tags it carries. For every other class a refusal may only mean the check never
 reached the vulnerable code, so it stays inconclusive. The classification
@@ -242,6 +244,10 @@ What a re-detection of a closed finding is, in the order it is decided
 - **Not a coverage proof, no close.** A partial scan, a run that did not complete cleanly, or the
   full scan of another tool never auto-resolves a finding, so the next sighting is a plain
   sighting.
+- **An older report does not reopen a fix.** A report is judged by when its source observed
+  the findings (its timestamp, clamped into the command's window, else the arrival time). A
+  finding resolved at or after that time stays resolved (`AutoReopenByFingerprintsBatch`
+  compares `resolved_at` with it); a report observed after the fix reopens it.
 - **A duplicate seen again** is a sighting of the finding it was folded into (`duplicate_of`,
   same asset): that finding is marked seen in the scan (it is not auto-resolved) and reopens if it
   was closed; the duplicate itself stays a duplicate.

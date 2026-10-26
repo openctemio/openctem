@@ -153,7 +153,7 @@ func (s *stubFindingRepo) GetStats(_ context.Context, _ shared.ID, _ *shared.ID,
 func (s *stubFindingRepo) CountBySeverityForScan(_ context.Context, _ shared.ID, _ string) (vulnerability.SeverityCounts, error) {
 	return vulnerability.SeverityCounts{}, nil
 }
-func (s *stubFindingRepo) AutoReopenByFingerprintsBatch(_ context.Context, _ shared.ID, _ []string) (map[string]vulnerability.ReopenedFinding, error) {
+func (s *stubFindingRepo) AutoReopenByFingerprintsBatch(_ context.Context, _ shared.ID, _ []string, _ time.Time) (map[string]vulnerability.ReopenedFinding, error) {
 	return nil, nil
 }
 func (s *stubFindingRepo) ExpireFeatureBranchFindings(_ context.Context, _ shared.ID, _ int) (int64, error) {

@@ -88,6 +88,30 @@ func TestDecideCoverage(t *testing.T) {
 			b, _ := json.Marshal(map[string]any{"exit_code": five})
 			c.Result = b
 		}, coverageNonZeroExit},
+		// A host the sensor gave up, could not reach or refused is not read as
+		// "no findings" (RFC-074), even with coverage_type "full" and the host
+		// touched: such a run closes nothing.
+		{"coverage gaps", func(c *ingestreport.CommandCoverage) {
+			c.Result = json.RawMessage(`{"exit_code":0,"metadata":{"coverage_gaps":[{"host":"app.example.test","reason":"breaker_open"}],"coverage_gaps_total":1}}`)
+		}, coverageUncoveredTargets},
+		{"coverage gaps counted only", func(c *ingestreport.CommandCoverage) {
+			c.Result = json.RawMessage(`{"exit_code":0,"metadata":{"coverage_gaps_total":3}}`)
+		}, coverageUncoveredTargets},
+		{"coverage gaps listed only", func(c *ingestreport.CommandCoverage) {
+			c.Result = json.RawMessage(`{"metadata":{"coverage_gaps":[{"host":"app.example.test","reason":"blocked"}]}}`)
+		}, coverageUncoveredTargets},
+		{"unreached targets", func(c *ingestreport.CommandCoverage) {
+			c.Result = json.RawMessage(`{"exit_code":0,"metadata":{"unreached_targets":[{"target":"api.example.test","reason":"timeout"}],"unreached_targets_total":1}}`)
+		}, coverageUncoveredTargets},
+		{"refused targets", func(c *ingestreport.CommandCoverage) {
+			c.Result = json.RawMessage(`{"exit_code":0,"metadata":{"refused_targets_total":2}}`)
+		}, coverageUncoveredTargets},
+		{"metadata in an unexpected shape", func(c *ingestreport.CommandCoverage) {
+			c.Result = json.RawMessage(`{"exit_code":0,"metadata":{"coverage_gaps_total":"many"}}`)
+		}, coverageUncoveredTargets},
+		{"zero counts and empty lists", func(c *ingestreport.CommandCoverage) {
+			c.Result = json.RawMessage(`{"exit_code":0,"metadata":{"coverage_gaps":[],"coverage_gaps_total":0,"unreached_targets_total":0,"refused_targets":[]}}`)
+		}, coverageEligible},
 		// A result cut short (deadline, disk, cap) never closes what it does
 		// not report, even when its reports declare full coverage.
 		{"truncated result, metadata flag", func(c *ingestreport.CommandCoverage) {
