@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { act, render, screen, waitFor } from '@testing-library/react'
+import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 
 import { ApiClientError } from '@/lib/api/error-handler'
@@ -56,7 +56,11 @@ vi.mock('@/lib/api/sensor-pairing-hooks', () => ({
   },
 }))
 
-import { PairSensorButton, PairSensorDialog } from '../pair-sensor-dialog'
+import { EnterCodePanel } from '../sensor-pairing-steps'
+
+const onApproved = vi.fn()
+const onClose = vi.fn()
+const panel = () => <EnterCodePanel onApproved={onApproved} onClose={onClose} />
 
 const future = () => new Date(Date.now() + 9 * 60_000).toISOString()
 
@@ -80,7 +84,7 @@ async function findByCode(user: ReturnType<typeof userEvent.setup>) {
   await user.type(screen.getByLabelText('Pairing code'), 'k7qm-4ztd')
 }
 
-describe('PairSensorDialog', () => {
+describe('EnterCodePanel', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     perms.granted = new Set(['sensors:pair', 'sensors:approve', 'zones:read'])
@@ -88,31 +92,10 @@ describe('PairSensorDialog', () => {
     api.expectationIds = []
   })
 
-  it('tells a first-time admin how to get the sensor, keyless and per permission', async () => {
-    perms.granted = new Set(['sensors:pair', 'sensors:approve', 'sensors:read'])
-    const { unmount } = render(<PairSensorDialog open onOpenChange={() => {}} />)
-    await userEvent.click(screen.getByRole('button', { name: "Don't have the sensor yet?" }))
-    expect(screen.getByText('docker pull ghcr.io/example/sensor:1.2.3')).toBeInTheDocument()
-    expect(
-      screen.getByRole('link', { name: 'Open the sensor installation guide' })
-    ).toHaveAttribute('href', expect.stringContaining('/install/'))
-    expect(screen.queryByText(/API_KEY|apikey/i)).toBeNull()
-    unmount()
-
-    // Without a read of the fleet the image is not shown; the guide still is.
-    perms.granted = new Set(['sensors:pair'])
-    render(<PairSensorDialog open onOpenChange={() => {}} />)
-    await userEvent.click(screen.getByRole('button', { name: "Don't have the sensor yet?" }))
-    expect(screen.queryByText(/docker pull/)).toBeNull()
-    expect(
-      screen.getByRole('link', { name: 'Open the sensor installation guide' })
-    ).toBeInTheDocument()
-  })
-
   it('looks up the normalised code and shows the fingerprint, host facts and source address', async () => {
     api.lookup.mockResolvedValue(pendingView())
     const user = userEvent.setup()
-    render(<PairSensorDialog open onOpenChange={() => {}} />)
+    render(panel())
     await findByCode(user)
     expect(api.lookup).toHaveBeenCalledWith('K7QM4ZTD')
     expect(await screen.findByTestId('pairing-fingerprint')).toHaveTextContent(
@@ -126,14 +109,14 @@ describe('PairSensorDialog', () => {
   it('answers every miss with the same message (uniform 404)', async () => {
     api.lookup.mockRejectedValue(new ApiClientError('Pairing request not found', 'NOT_FOUND', 404))
     const user = userEvent.setup()
-    render(<PairSensorDialog open onOpenChange={() => {}} />)
+    render(panel())
     await findByCode(user)
     expect(await screen.findByRole('alert')).toHaveTextContent('Code not found or expired')
   })
 
   it('says the same for input that cannot be a code, without calling the API', async () => {
     const user = userEvent.setup()
-    render(<PairSensorDialog open onOpenChange={() => {}} />)
+    render(panel())
     await user.type(screen.getByLabelText('Pairing code'), 'nope')
     await user.click(screen.getByRole('button', { name: /find sensor/i }))
     expect(await screen.findByRole('alert')).toHaveTextContent('Code not found or expired')
@@ -143,7 +126,7 @@ describe('PairSensorDialog', () => {
   it('reports rate limiting', async () => {
     api.lookup.mockRejectedValue(new ApiClientError('slow down', 'RATE_LIMIT_EXCEEDED', 429))
     const user = userEvent.setup()
-    render(<PairSensorDialog open onOpenChange={() => {}} />)
+    render(panel())
     await findByCode(user)
     expect(await screen.findByRole('alert')).toHaveTextContent(/too many attempts/i)
   })
@@ -151,7 +134,7 @@ describe('PairSensorDialog', () => {
   it('keeps Approve disabled until the fingerprint tick and the step-up code are given', async () => {
     api.lookup.mockResolvedValue(pendingView())
     const user = userEvent.setup()
-    render(<PairSensorDialog open onOpenChange={() => {}} />)
+    render(panel())
     await findByCode(user)
     const approve = await screen.findByRole('button', { name: /^approve$/i })
     expect(approve).toBeDisabled()
@@ -165,7 +148,7 @@ describe('PairSensorDialog', () => {
     api.lookup.mockResolvedValue(pendingView())
     api.approve.mockResolvedValue({ ...pendingView(), status: 'approved', sensor_id: 's1' })
     const user = userEvent.setup()
-    render(<PairSensorDialog open onOpenChange={() => {}} />)
+    render(panel())
     await findByCode(user)
     await user.click(await screen.findByRole('button', { name: 'dmz' }))
     await user.click(screen.getByLabelText(/fingerprint shown on the sensor console matches/i))
@@ -181,14 +164,16 @@ describe('PairSensorDialog', () => {
       zone_ids: ['z1'],
       grant_profile: 'internal-network-scanner',
     })
-    expect(await screen.findByText('Sensor approved')).toBeInTheDocument()
+    await waitFor(() =>
+      expect(onApproved).toHaveBeenCalledWith(expect.objectContaining({ sensor_id: 's1' }))
+    )
   })
 
   it('asks for the password when the account has no TOTP, and clears it after a failure', async () => {
     api.lookup.mockResolvedValue(pendingView({ step_up: 'password' }))
     api.approve.mockRejectedValue(new ApiClientError('no', 'STEP_UP_FAILED', 403))
     const user = userEvent.setup()
-    render(<PairSensorDialog open onOpenChange={() => {}} />)
+    render(panel())
     await findByCode(user)
     await user.click(
       await screen.findByLabelText(/fingerprint shown on the sensor console matches/i)
@@ -203,7 +188,7 @@ describe('PairSensorDialog', () => {
   it('never offers the broad legacy grant', async () => {
     api.lookup.mockResolvedValue(pendingView())
     const user = userEvent.setup()
-    render(<PairSensorDialog open onOpenChange={() => {}} />)
+    render(panel())
     await findByCode(user)
     await user.click(await screen.findByTestId('grant-profile'))
     expect(screen.queryByRole('option', { name: /legacy/i })).not.toBeInTheDocument()
@@ -214,7 +199,7 @@ describe('PairSensorDialog', () => {
     perms.granted = new Set(['sensors:pair'])
     api.lookup.mockResolvedValue(pendingView())
     const user = userEvent.setup()
-    render(<PairSensorDialog open onOpenChange={() => {}} />)
+    render(panel())
     await findByCode(user)
     await user.click(
       await screen.findByLabelText(/fingerprint shown on the sensor console matches/i)
@@ -227,7 +212,7 @@ describe('PairSensorDialog', () => {
   it('shows no approval form before the sensor revealed its nonce', async () => {
     api.lookup.mockResolvedValue(pendingView({ sas: '' }))
     const user = userEvent.setup()
-    render(<PairSensorDialog open onOpenChange={() => {}} />)
+    render(panel())
     await findByCode(user)
     expect(await screen.findByText(/has not finished its handshake/i)).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: /^approve$/i })).not.toBeInTheDocument()
@@ -236,49 +221,11 @@ describe('PairSensorDialog', () => {
   it('rejects a request', async () => {
     api.lookup.mockResolvedValue(pendingView())
     api.reject.mockResolvedValue(undefined)
-    const onOpenChange = vi.fn()
     const user = userEvent.setup()
-    render(<PairSensorDialog open onOpenChange={onOpenChange} />)
+    render(panel())
     await findByCode(user)
     await user.click(await screen.findByRole('button', { name: /^reject$/i }))
     expect(api.reject).toHaveBeenCalledWith('p1')
-    await waitFor(() => expect(onOpenChange).toHaveBeenCalledWith(false))
-  })
-
-  it('reverse mode: shows the pair command, polls, then shows the fingerprint to compare', async () => {
-    api.expect.mockResolvedValue({
-      id: 'e1',
-      mode: 'reverse',
-      status: 'expecting',
-      code: 'K7QM4ZTD',
-      expires_at: future(),
-    })
-    const user = userEvent.setup()
-    const { rerender } = render(<PairSensorDialog open onOpenChange={() => {}} />)
-    await user.click(screen.getByRole('tab', { name: /expect a sensor/i }))
-    await user.click(screen.getByRole('button', { name: /get a code/i }))
-    expect(await screen.findByText('openctemio-sensor pair K7QM-4ZTD')).toBeInTheDocument()
-    expect(screen.getByText(/waiting for the sensor to connect/i)).toBeInTheDocument()
-    expect(api.expectationIds).toContain('e1')
-
-    // The poll now returns the connected sensor.
-    api.expectation = { data: pendingView({ id: 'e1', mode: 'reverse' }), error: undefined }
-    await act(async () => rerender(<PairSensorDialog open onOpenChange={() => {}} />))
-    expect(await screen.findByTestId('pairing-fingerprint')).toHaveTextContent('tiger')
-    expect(screen.getByRole('button', { name: /^approve$/i })).toBeDisabled()
-  })
-})
-
-describe('PairSensorButton', () => {
-  it('is hidden without sensors:pair', () => {
-    perms.granted = new Set(['sensors:write'])
-    const { container } = render(<PairSensorButton onClick={() => {}} />)
-    expect(container).toBeEmptyDOMElement()
-  })
-
-  it('shows with sensors:pair', () => {
-    perms.granted = new Set(['sensors:pair'])
-    render(<PairSensorButton onClick={() => {}} />)
-    expect(screen.getByRole('button', { name: /pair a sensor/i })).toBeInTheDocument()
+    await waitFor(() => expect(onClose).toHaveBeenCalled())
   })
 })

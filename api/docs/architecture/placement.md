@@ -31,6 +31,7 @@ it, instead of "Waiting for a sensor".
 | Dispatch gate | private targets: the sensor enforces a local policy when the organization requires one | `private_needs_local_policy` |
 | Dispatch gate | the organization enabled the opt-in the task uses | `opt_in_disabled` |
 | Dispatch gate | the sensor's own local policy accepts the task | `local_policy_refuses` |
+| Sensor report | the sensor claims new jobs (its heartbeats do not report `local_store.stop_claiming`: storage over quota, disk low, or results not yet acknowledged) | `stopped_claiming` |
 | Slots | a free scan slot (eligible but busy otherwise) | `no_free_slot` (counted as *busy*) |
 
 The claim SQL lives in `internal/infra/postgres/command_repository.go`

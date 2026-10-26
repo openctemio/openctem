@@ -14,24 +14,12 @@ import { cn } from '@/lib/utils'
 import { approvalRequester } from '@/features/findings/lib/approvals'
 import type { ApiApproval } from '@/features/findings/types'
 import { acceptanceDays } from '../lib/queues'
+import { ChangedSinceRequest } from '@/features/findings/components/changed-since-request'
 
 /** English fallbacks; the key is myWork.kind.<requested_status>. */
 const KIND_LABELS: Record<string, string> = {
   false_positive: 'False positive',
   accepted: 'Risk acceptance',
-}
-
-/** English fallbacks; the key is myWork.changed.<reason>. */
-const CHANGE_LABELS: Record<string, string> = {
-  kev: 'now in CISA KEV',
-  severity_critical: 'severity now critical',
-  severity_high: 'severity now high',
-  priority_p0: 'priority now P0',
-  priority_p1: 'priority now P1',
-  exploit_validated: 'exploit validated',
-  epss_at_or_above_threshold: 'EPSS now above the threshold',
-  crown_jewel: 'asset is a crown jewel',
-  internet_exposed: 'asset is internet exposed',
 }
 
 /**
@@ -133,18 +121,7 @@ export function ApprovalRow({
           ]}
         />
         <div className="mt-1.5 flex min-w-0 flex-wrap items-center gap-1.5">
-          {changed.length > 0 && (
-            <span
-              data-slot="changed-since-request"
-              className="text-meta font-medium text-destructive"
-            >
-              {t('myWork.changedSince', 'Changed since the request: {changes}', {
-                changes: changed
-                  .map((c) => t(`myWork.changed.${c}`, CHANGE_LABELS[c] ?? c))
-                  .join(', '),
-              })}
-            </span>
-          )}
+          <ChangedSinceRequest changes={changed} />
           {facts?.kev && <KevBadge />}
           {facts && <EpssChip score={facts.epss} />}
           {facts?.asset_name && (

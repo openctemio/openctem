@@ -11,6 +11,7 @@ import (
 	"github.com/openctemio/openctem/api/internal/metrics"
 
 	"github.com/openctemio/openctem/api/pkg/domain/command"
+	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/logger"
 )
 
@@ -62,7 +63,7 @@ type JobRecoveryController struct {
 // StepFailureNotifier is told when a workflow step's command died here.
 // Satisfied by the scan run service.
 type StepFailureNotifier interface {
-	OnStepFailed(ctx context.Context, runID, stepKey, errorMessage, errorCode string) error
+	OnStepFailed(ctx context.Context, tenantID shared.ID, runID, stepKey, errorMessage, errorCode string) error
 }
 
 // SetStepFailureNotifier wires the scan workflow: a command failed for exhausting
@@ -297,7 +298,7 @@ func (c *JobRecoveryController) notifyExhausted(ctx context.Context, failed []*c
 			continue // not a scan workflow command
 		}
 		msg := fmt.Sprintf("the command was handed to a sensor %d times and never finished (max dispatch attempts exceeded)", cmd.DispatchAttempts)
-		if err := c.steps.OnStepFailed(ctx, p.ScanRunID, p.StepKey, msg, scanrun.FailureCommandExhausted); err != nil {
+		if err := c.steps.OnStepFailed(ctx, cmd.TenantID, p.ScanRunID, p.StepKey, msg, scanrun.FailureCommandExhausted); err != nil {
 			c.logger.Error("failed to fail the scan workflow step of an exhausted command",
 				"command_id", cmd.ID.String(), "scan_run_id", p.ScanRunID, "step_key", p.StepKey, "error", err)
 		}

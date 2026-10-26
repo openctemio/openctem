@@ -835,6 +835,13 @@ from the day it runs, with a timeline note (reason `acceptance_end_default`).
 
 AI triage may **propose** a false positive; it never decides one.
 
+An AI application a person connected over MCP may propose a false positive
+or an accepted risk too (`propose_finding_status`, RFC-062 §10a). Unlike AI
+triage, that request has a person as requester (the one who connected the
+application) and `requested_via` names the application: it is an
+automation's request (never decided alone), and the four-eyes rule refuses
+that person as approver, the solo self-approval included.
+
 - When a triage completes with a false-positive likelihood of at least 0.9
   on a **medium or low** finding, the finding service creates a **pending**
   `finding_status_approvals` request for `false_positive`. The model's

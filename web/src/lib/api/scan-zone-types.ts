@@ -3,6 +3,7 @@
  * Contract: api/docs/architecture/scan-zones.md ("UI contract").
  */
 import type { components } from '@/lib/api/generated/api.types'
+import type { ScanTargetOptions, SkipGroup } from '@/lib/api/scan-types'
 
 /** A tenant-owned set of address ranges and the sensors that may scan them. */
 export interface ScanZone {
@@ -85,6 +86,8 @@ export interface ScanZonePreviewRequest {
   targets_per_job?: number
   /** null = Automatic (narrowest zone). */
   scan_zone_id?: string | null
+  /** How the scan's runs resolve its selectors. */
+  target_options?: ScanTargetOptions
 }
 
 export type ScanZonePreviewTargetStatus = 'zone' | 'unzoned' | 'uncovered'
@@ -97,6 +100,8 @@ export interface ScanZonePreviewTarget {
   /** The sensor the target's job would be pinned to (absent: waits in the zone, or unzoned). */
   sensor_id?: string
   reason?: string
+  /** Skip reason of an uncovered target (SkipGroup.reason). */
+  kind?: string
   /** What a hostname resolved to from the platform. */
   addresses?: string[]
 }
@@ -132,4 +137,8 @@ export interface ScanZonePreview {
   error?: { code: string; message: string }
   /** What the scan windows mean for the targets now (absent: none applies). RFC-067. */
   windows?: components['schemas']['github_com_openctemio_openctem_api_internal_app_scan.WindowPreview']
+  /** Targets a run would dispatch, and every other one grouped by reason. */
+  will_scan?: number
+  skipped?: SkipGroup[]
+  skipped_total?: number
 }
