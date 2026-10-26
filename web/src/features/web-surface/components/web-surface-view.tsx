@@ -33,8 +33,6 @@ import { useUrlFilter } from '@/hooks/use-url-param'
 import { Permission, useHasPermission } from '@/lib/permissions'
 import { useTranslation } from '@/context/i18n-provider'
 import type {
-  WebEndpointEventResponse,
-  WebEndpointResponse,
   WebOriginResponse,
   WebPathCatalogEntry,
   WebPathPatternResponse,
@@ -48,7 +46,8 @@ import {
   useWebPathPatterns,
 } from '../api/use-web-surface'
 import { isWebSurfaceTab, type EndpointFilters, type WebSurfaceTab } from '../lib/web-surface-url'
-import { AuthPill, CatalogBadge, ExcludedBadge, MethodBadge, PathText } from './web-surface-badges'
+import { CatalogBadge, PathText } from './web-surface-badges'
+import { EVENT_KINDS, num, useEndpointColumns, useEventColumns } from './web-surface-columns'
 import { EndpointSheet } from './endpoint-sheet'
 import { useSearchQuery } from '@/hooks/use-search-query'
 
@@ -61,31 +60,8 @@ const TAB_LABEL: Record<WebSurfaceTab, string> = {
   changes: 'Changes',
 }
 
-const EVENT_LABEL: Record<string, string> = {
-  appeared: 'Appeared',
-  returned: 'Seen again',
-  gone: 'Gone',
-  status_changed: 'Status changed',
-  auth_changed: 'Auth changed',
-  param_added: 'New parameter',
-}
-
 const METHODS = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS', 'ANY']
 const KINDS = ['page', 'api', 'form', 'script', 'graphql', 'websocket', 'other']
-
-function num(v: number | undefined): number {
-  return v ?? 0
-}
-
-/** Detail of a change event in words (status codes and auth states only). */
-export function eventDetail(e: WebEndpointEventResponse): string {
-  const d = (e.detail ?? {}) as Record<string, unknown>
-  if (e.kind === 'status_changed' || e.kind === 'auth_changed') {
-    return `${String(d.from ?? '?')} → ${String(d.to ?? '?')}`
-  }
-  if (e.kind === 'param_added') return `${String(d.count ?? 1)} new`
-  return ''
-}
 
 function usePaging(prefix: string) {
   const [pageParam, setPageParam] = useUrlFilter(`${prefix}page`, '1')
@@ -304,67 +280,7 @@ export function WebSurfaceView() {
     [go]
   )
 
-  const endpointColumns = useMemo<ColumnDef<WebEndpointResponse>[]>(
-    () => [
-      {
-        id: 'endpoint',
-        header: 'Endpoint',
-        enableSorting: false,
-        cell: ({ row }) => (
-          <div className="flex min-w-0 items-start gap-2">
-            <MethodBadge method={row.original.method} />
-            <StackedCell
-              truncate
-              className="max-w-[420px]"
-              primary={<PathText path={row.original.path_template} />}
-              secondary={row.original.origin}
-            />
-          </div>
-        ),
-      },
-      {
-        id: 'status',
-        header: 'Status',
-        enableSorting: false,
-        cell: ({ row }) => <span className="tabular-nums">{row.original.last_status || '—'}</span>,
-      },
-      {
-        id: 'auth',
-        header: 'Auth',
-        enableSorting: false,
-        cell: ({ row }) => <AuthPill state={row.original.auth_state} />,
-      },
-      {
-        id: 'flags',
-        header: 'Notes',
-        enableSorting: false,
-        cell: ({ row }) => (
-          <div className="flex flex-wrap gap-1">
-            <CatalogBadge entry={row.original.catalog} />
-            {!row.original.in_scope && <ExcludedBadge exclusionId={row.original.exclusion_id} />}
-            {row.original.state === 'ignored' && (
-              <Badge variant="secondary" className="font-normal">
-                Ignored
-              </Badge>
-            )}
-          </div>
-        ),
-      },
-      {
-        id: 'params',
-        header: 'Params',
-        enableSorting: false,
-        cell: ({ row }) => <span className="tabular-nums">{num(row.original.param_count)}</span>,
-      },
-      {
-        id: 'last_seen',
-        header: 'Last seen',
-        enableSorting: false,
-        cell: ({ row }) => <RelativeTime date={row.original.last_seen_at} />,
-      },
-    ],
-    []
-  )
+  const endpointColumns = useEndpointColumns()
 
   const patternColumns = useMemo<ColumnDef<WebPathPatternResponse>[]>(
     () => [
@@ -433,61 +349,7 @@ export function WebSurfaceView() {
     [go]
   )
 
-  const eventColumns = useMemo<ColumnDef<WebEndpointEventResponse>[]>(
-    () => [
-      {
-        id: 'at',
-        header: 'When',
-        enableSorting: false,
-        cell: ({ row }) => <RelativeTime date={row.original.at} />,
-      },
-      {
-        id: 'kind',
-        header: 'Change',
-        enableSorting: false,
-        cell: ({ row }) => (
-          <Badge
-            variant={row.original.kind === 'gone' ? 'outline' : 'secondary'}
-            className="font-normal"
-          >
-            {EVENT_LABEL[row.original.kind ?? ''] ?? row.original.kind}
-          </Badge>
-        ),
-      },
-      {
-        id: 'endpoint',
-        header: 'Endpoint',
-        enableSorting: false,
-        cell: ({ row }) => (
-          <div className="flex min-w-0 items-start gap-2">
-            <MethodBadge method={row.original.method} />
-            <StackedCell
-              truncate
-              className="max-w-[420px]"
-              primary={<PathText path={row.original.path_template} />}
-              secondary={row.original.origin}
-            />
-          </div>
-        ),
-      },
-      {
-        id: 'detail',
-        header: 'Detail',
-        enableSorting: false,
-        cell: ({ row }) => <span className="text-sm">{eventDetail(row.original) || '—'}</span>,
-      },
-      {
-        id: 'sensitive',
-        header: 'Sensitive',
-        enableSorting: false,
-        cell: ({ row }) =>
-          row.original.catalog_key ? (
-            <CatalogBadge entry={catalogByKey.get(row.original.catalog_key)} />
-          ) : null,
-      },
-    ],
-    [catalogByKey]
-  )
+  const eventColumns = useEventColumns(catalogByKey)
 
   if (!canRead) {
     return (
@@ -595,9 +457,9 @@ export function WebSurfaceView() {
           </SelectTrigger>
           <SelectContent>
             <SelectItem value="all">Any change</SelectItem>
-            {Object.entries(EVENT_LABEL).map(([k, label]) => (
+            {Object.entries(EVENT_KINDS).map(([k, label]) => (
               <SelectItem key={k} value={k}>
-                {label}
+                {t(`attackSurface.web.event.${k}`, label)}
               </SelectItem>
             ))}
           </SelectContent>

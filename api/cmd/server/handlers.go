@@ -220,7 +220,13 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 	adminConsoleSvc.SetFactorChangeNotifier(adminFactorMailer{email: svc.Email, appName: cfg.Brand.DisplayName(), log: log})
 	// A password reset or change, or a two-step reset, of the linked account
 	// also ends the administrator's console sessions.
-	svc.Auth.SetSessionsRevokedHook(adminConsoleSvc.EndSessionsForAccount)
+	svc.Auth.AddSessionsRevokedHook(adminConsoleSvc.EndSessionsForAccount)
+	// Sign-out everywhere runs the same hooks, and API keys go too when the
+	// request asks for it.
+	svc.Session.SetSessionsRevokedHooks(svc.Auth.SessionsRevoked())
+	if svc.APIKey != nil {
+		svc.Auth.SetAPIKeyRevoker(svc.APIKey)
+	}
 	adminConsoleSvc.SetRosterChangeNotifier(rosterChangeMailer{email: svc.Email, appName: cfg.Brand.DisplayName(), log: log})
 	// Console security keys (RFC-078): the relying party is the console origin.
 	if cfg.AdminPublicURL != "" && repos.AdminFactor != nil && repos.PlatformSetting != nil {
@@ -900,6 +906,7 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		handlers.SSO.SetAuditService(svc.Audit)
 		// Admin-console identity-provider creates/updates wait for an owner.
 		handlers.SSO.SetChangeApproval(svc.SSOChange)
+		handlers.SSO.SetAppURL(cfg.SMTP.BaseURL)
 	}
 	if svc.SSOChange != nil {
 		handlers.SSOChange = handler.NewSSOChangeHandler(svc.SSOChange, svc.Audit, log)
