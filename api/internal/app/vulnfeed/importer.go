@@ -155,6 +155,26 @@ func toUint(v any) uint64 {
 	return 0
 }
 
+// ErrNotConfigured: no pinned root key, so the importer does nothing.
+var ErrNotConfigured = errors.New("vulnerability bundle import is not configured (VULNFEED_ROOT_KEY_ID is empty)")
+
+// Sync is Run for an operator's request: a feed that would do nothing
+// (not configured, switched off) is reported as such instead of as a run
+// that succeeded.
+func (im *Importer) Sync(ctx context.Context) (Result, error) {
+	if im.cfg.RootKeyID == "" {
+		return Result{}, ErrNotConfigured
+	}
+	st, err := im.status.GetBySource(ctx, SourceName)
+	if err != nil {
+		return Result{}, fmt.Errorf("vulnfeed status: %w", err)
+	}
+	if !st.IsEnabled() {
+		return Result{}, threatintel.ErrSyncDisabled
+	}
+	return im.Run(ctx)
+}
+
 // Run imports the newest bundle when there is one.
 func (im *Importer) Run(ctx context.Context) (Result, error) {
 	var res Result
