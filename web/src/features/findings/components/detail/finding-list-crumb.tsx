@@ -4,6 +4,7 @@ import { useEffect } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { ChevronLeft, ChevronRight } from 'lucide-react'
 import Link from '@/components/link'
+import { safeHref } from '@/lib/safe-href'
 import { Button } from '@/components/ui/button'
 import { useTranslation } from '@/context/i18n-provider'
 import { useFindingListNav } from '../../hooks/use-finding-list-nav'
@@ -21,8 +22,11 @@ export function FindingListCrumb({ findingId }: { findingId: string }) {
   // Opened from a remediation task: the task crumb says where it came from.
   const fromTask = !!useSearchParams().get('from')
   const nav = useFindingListNav(fromTask ? undefined : findingId)
-  const prevHref = nav?.prevHref
-  const nextHref = nav?.nextHref
+  // The hrefs were built from a validated list context; safeHref re-checks them
+  // (same-origin paths only) where they reach a link or router.push.
+  const prevHref = safeHref(nav?.prevHref, { allowRelative: true })
+  const nextHref = safeHref(nav?.nextHref, { allowRelative: true })
+  const returnHref = safeHref(nav?.returnPath, { allowRelative: true }) ?? '/findings'
 
   useEffect(() => {
     if (!prevHref && !nextHref) return
@@ -56,7 +60,7 @@ export function FindingListCrumb({ findingId }: { findingId: string }) {
         </Link>
         <ChevronRight className="size-3.5 shrink-0 rtl:rotate-180" aria-hidden />
         <Link
-          href={nav.returnPath}
+          href={returnHref}
           className="text-foreground min-w-0 truncate font-medium hover:underline"
         >
           {label}
