@@ -431,6 +431,12 @@ var seedOverrides = map[string]func(s *schemaSeeder) map[string]any{
 		return map[string]any{"name": "probe-token", "max_uses": 1, "use_count": 0, "labels": "{}",
 			"created_at": "2026-10-05T10:00:00Z", "expires_at": "2026-10-06T10:00:00Z"}
 	},
+	// A person can only hold a role that no team manages, so the seeded role is
+	// not tied to a team (the managed-team column is filled from its foreign
+	// key otherwise).
+	"roles": func(*schemaSeeder) map[string]any {
+		return map[string]any{"managed_group_id": nil}
+	},
 	"scan_window_overrides": func(*schemaSeeder) map[string]any {
 		return map[string]any{"reason": "incident rescan now", "starts_at": "2026-10-05T10:00:00Z", "ends_at": "2026-10-05T11:00:00Z"}
 	},

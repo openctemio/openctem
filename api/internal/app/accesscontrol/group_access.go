@@ -197,7 +197,7 @@ func presetSpec(templateID string) (managedRoleSpec, error) {
 	}
 	tpl, ok := permission.RoleTemplateByID(templateID)
 	if !ok {
-		return managedRoleSpec{}, fmt.Errorf("%w: unknown preset %q", shared.ErrValidation, templateID)
+		return managedRoleSpec{}, fmt.Errorf("%w: unknown access preset", shared.ErrValidation)
 	}
 	return managedRoleSpec{
 		templateID: tpl.ID, version: tpl.Version, name: tpl.Name,
@@ -249,7 +249,7 @@ func wantedPresets(in SetTeamAccessInput) (map[string]managedRoleSpec, error) {
 	want := map[string]managedRoleSpec{}
 	for _, id := range in.Presets {
 		if id == allAssetsTemplateID {
-			return nil, fmt.Errorf("%w: unknown preset %q", shared.ErrValidation, id)
+			return nil, fmt.Errorf("%w: unknown access preset", shared.ErrValidation)
 		}
 		spec, err := presetSpec(id)
 		if err != nil {
