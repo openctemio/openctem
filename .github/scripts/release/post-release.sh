@@ -3,25 +3,22 @@
 # post-release.sh: the follow-up branch for develop after vX.Y.Z is tagged
 # (api/docs/rfcs/RFC-037 §4.2).
 #
-#   post-release.sh --version vX.Y.Z [--mode train|hotfix] [--chart-version X.Y.Z]
+#   post-release.sh --version vX.Y.Z [--mode train|hotfix]
 #                   [--push] [--remote origin] [--develop develop] [--main main]
 #                   [--repo DIR]
 #
-# Builds chore/post-release-vX.Y.Z from develop with:
-#   1. (train only) main merged back. main's tree is an earlier develop tree
-#      plus the release branch's version commit (cut-release.sh), so the merge
-#      brings exactly that: versions.yaml platform.release = vX.Y.Z and its
-#      consumers. It makes main, and the tag on it, an ancestor of develop:
-#      `git pull` then fetches the tag, dev builds see it (RFC-037 §3.3) and
-#      the next cut needs no -s ours. A hotfix skips it: its commits are
-#      already on develop, as the originals.
-#   2. versions.yaml platform.release = vX.Y.Z (a no-op after a train's merge;
-#      the bump itself for a hotfix) and chart.version when given, copied into
-#      every consumer by sync-versions.sh.
-# Refused unless the result is develop's tree plus step 2 alone: a merge that
-# brings anything else means main has changes develop lacks.
+# A train: builds chore/post-release-vX.Y.Z from develop with main (the tag)
+# merged in using `-s ours`. The merge makes the tag an ancestor of develop, so
+# `git pull` fetches it, dev builds see it (RFC-037 §3.3) and the next cut needs
+# no -s ours; and it changes no file: develop's tree stays byte for byte, so no
+# version ever lands on develop (the install version, api/deploy/VERSION, lives
+# on the release branch and main only). Refused when main has a file develop
+# lacks (a fix made on main alone would be silently dropped).
 #
-# Prints KEY=VALUE lines: BRANCH, HEAD.
+# A hotfix: nothing to do. Its commits are already on develop as the originals
+# and it changes no version file; the script says so and exits 0 without a branch.
+#
+# Prints KEY=VALUE lines: BRANCH, HEAD (none for a hotfix).
 set -euo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -30,7 +27,6 @@ source "$HERE/lib.sh"
 
 VERSION=""
 MODE="train"
-CHART=""
 PUSH=0
 REMOTE="origin"
 DEVELOP="develop"
@@ -40,7 +36,6 @@ while [[ $# -gt 0 ]]; do
   case "$1" in
     --version) VERSION="$2"; shift ;;
     --mode) MODE="$2"; shift ;;
-    --chart-version) CHART="$2"; shift ;;
     --push) PUSH=1 ;;
     --remote) REMOTE="$2"; shift ;;
     --develop) DEVELOP="$2"; shift ;;
@@ -75,45 +70,38 @@ g branch -f "$BRANCH" "$dev_ref" >/dev/null
 g worktree add --quiet "$worktree" "$BRANCH"
 w() { git -C "$worktree" -c user.name="${GIT_AUTHOR_NAME:-openctem-release}" -c user.email="${GIT_AUTHOR_EMAIL:-release@openctem.invalid}" "$@"; }
 
-if [[ -n "$CHART" ]]; then
-  [[ "$CHART" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "--chart-version must be X.Y.Z" >&2; exit 2; }
+if [[ "$MODE" == hotfix ]]; then
+  echo "note: a hotfix needs no develop follow-up (its commits are on $DEVELOP already; no version file changes)" >&2
+  exit 0
 fi
-# set_versions: versions.yaml platform.release = VERSION (+ chart), synced, staged.
-set_versions() {
-  rel_yaml_set "$worktree/versions.yaml" platform.release "$VERSION"
-  [[ -z "$CHART" ]] || rel_yaml_set "$worktree/versions.yaml" chart.version "$CHART"
-  bash "$HERE/sync-versions.sh" --root "$worktree" >&2 || die "versions.yaml does not sync cleanly"
-  w add -A
-}
 
-# The tree develop must end up with: its own tree plus the version bump, nothing else.
-set_versions
-want_tree="$(w write-tree)"
-w reset --quiet --hard
+if g merge-base --is-ancestor "refs/tags/$VERSION" "$dev_ref"; then
+  echo "note: $VERSION is already an ancestor of $DEVELOP; nothing to merge" >&2
+  exit 0
+fi
 
-if [[ "$MODE" == train ]]; then
-  if g merge-base --is-ancestor "refs/tags/$VERSION" "$dev_ref"; then
-    echo "note: $VERSION is already an ancestor of $DEVELOP; nothing to merge" >&2
-  else
-    w merge --no-ff --no-edit "refs/tags/$VERSION" -m "chore(release): merge $VERSION back into $DEVELOP
+# A file the tag has and develop never did would be dropped by -s ours.
+# api/deploy/VERSION is the one allowed (it is written on the release branch
+# only); a file develop deleted on purpose is fine.
+refused=()
+while IFS= read -r path; do
+  [[ -n "$path" && "$path" != "$VERSION_FILE" ]] || continue
+  [[ -n "$(g log -m -1 --format=%H --diff-filter=D "$dev_ref" -- "$path")" ]] || refused+=("$path")
+done < <(g diff --no-renames --name-only --diff-filter=A "$dev_ref" "refs/tags/$VERSION")
+if [[ ${#refused[@]} -gt 0 ]]; then
+  die "$MAIN has ${#refused[@]} file(s) $DEVELOP never had (${refused[*]}); -s ours would drop them. Bring them to $DEVELOP first"
+fi
+
+w merge -s ours --no-ff --no-edit "refs/tags/$VERSION" -m "chore(release): merge $VERSION back into $DEVELOP
 
 Makes the release tag an ancestor of $DEVELOP (it lives on $MAIN), so a pull
-fetches it and the next release branch needs no -s ours. It brings only the
-release branch's version commit (versions.yaml platform.release = $VERSION):
-the rest of $MAIN's tree is an earlier $DEVELOP tree." >/dev/null ||
-      die "merging $VERSION into $DEVELOP conflicts; $MAIN has changes $DEVELOP lacks"
-  fi
-fi
-
-set_versions
-if ! w diff --cached --quiet; then
-  w commit --quiet -m "chore(release): versions.yaml platform.release = $VERSION"
-fi
-[[ "$(w rev-parse 'HEAD^{tree}')" == "$want_tree" ]] ||
-  die "merging $VERSION would change $DEVELOP beyond versions.yaml and its consumers; $MAIN has changes $DEVELOP lacks (bring them over first)"
+fetches it and the next release branch needs no -s ours. -s ours keeps
+$DEVELOP's tree byte for byte: no file changes, no version is committed to
+$DEVELOP." >/dev/null || die "merging $VERSION into $DEVELOP failed"
+[[ "$(w rev-parse 'HEAD^{tree}')" == "$(g rev-parse "$dev_ref^{tree}")" ]] ||
+  die "the merge changed $DEVELOP's tree; refusing"
 
 HEAD_SHA="$(w rev-parse HEAD)"
-[[ "$HEAD_SHA" != "$(g rev-parse "$dev_ref")" ]] || die "nothing to do: $DEVELOP already says $VERSION"
 if [[ $PUSH -eq 1 ]]; then
   w push --quiet "$REMOTE" "HEAD:refs/heads/$BRANCH"
   echo "pushed $BRANCH" >&2

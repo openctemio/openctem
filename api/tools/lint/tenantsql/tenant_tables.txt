@@ -170,6 +170,7 @@ mcp_action_confirmations
 mcp_oauth_clients
 mcp_oauth_grants
 mcp_oauth_requests
+nav_pins
 notification_events
 notification_outbox
 notification_preferences
@@ -300,7 +301,9 @@ verified_domains
 vex_statements
 vuln_match_queue
 vulnerabilities
+web_alert_fingerprints
 web_endpoint_events
 web_endpoint_params
+web_endpoint_verifications
 web_endpoints
 work_item_subscriptions
