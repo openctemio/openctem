@@ -1631,6 +1631,8 @@
   "scans.result.no_result.text": "The tool finished but sent no result for this check.",
   "scans.result.no_verdict.fix": "Retest again. If it repeats, check the sensor and the run log.",
   "scans.result.no_verdict.text": "The tool ended without a verdict for this finding.",
+  "scans.result.seen_after_check.fix": "The finding is unchanged. Retest again once the fix is deployed.",
+  "scans.result.seen_after_check.text": "A scan sighted the finding again after the check ran, so the check does not show the current state.",
   "scans.result.server_error.fix": "The finding is unchanged. Retest when the application is healthy.",
   "scans.result.server_error.text": "The endpoint answered with a server error, so the check could not tell whether the issue is still there.",
   "scans.result.template_changed.fix": "The finding is unchanged. Verify it by hand, or attach a check that matches the original one.",
