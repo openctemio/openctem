@@ -231,6 +231,9 @@ const (
 	// ActionFindingEvidenceUpdated records a change to the role or order of a
 	// finding's evidence items.
 	ActionFindingEvidenceUpdated Action = "finding.evidence_updated"
+	// ActionFindingProofOverridden records a pentest finding confirmed without
+	// a proof basis, on the stated reason.
+	ActionFindingProofOverridden Action = "finding.proof_basis_overridden"
 	// ActionFindingRemediationStepAdded records a manually-appended remediation
 	// step on a generic finding.
 	ActionFindingRemediationStepAdded Action = "finding.remediation_step_added"
@@ -836,7 +839,7 @@ func (a Action) IsValid() bool {
 		ActionVulnerabilityCreated, ActionVulnerabilityUpdated, ActionVulnerabilityDeleted,
 		ActionFindingCreated, ActionFindingUpdated, ActionFindingDeleted, ActionFindingStatusChanged,
 		ActionFindingTriaged, ActionFindingAssigned, ActionFindingUnassigned, ActionFindingCommented, ActionFindingBulkUpdated,
-		ActionFindingEvidenceAdded, ActionFindingEvidenceDeleted, ActionFindingEvidenceUpdated, ActionFindingRemediationStepAdded,
+		ActionFindingEvidenceAdded, ActionFindingEvidenceDeleted, ActionFindingEvidenceUpdated, ActionFindingProofOverridden, ActionFindingRemediationStepAdded,
 		ActionFindingTicketLinked, ActionFindingTicketUnlinked,
 		ActionFindingRetestRequested, ActionFindingEvidenceRevealed, ActionFindingVerificationChecklistUpdated, ActionFindingClassified,
 		ActionFindingRetestCheckSaved, ActionFindingRetestCheckRemoved, ActionFindingRetestCheckApproved,
@@ -974,7 +977,7 @@ func (a Action) Category() string {
 		return "vulnerability"
 	case ActionFindingCreated, ActionFindingUpdated, ActionFindingDeleted, ActionFindingStatusChanged,
 		ActionFindingTriaged, ActionFindingAssigned, ActionFindingUnassigned, ActionFindingCommented, ActionFindingBulkUpdated,
-		ActionFindingEvidenceAdded, ActionFindingEvidenceDeleted, ActionFindingEvidenceUpdated, ActionFindingRemediationStepAdded,
+		ActionFindingEvidenceAdded, ActionFindingEvidenceDeleted, ActionFindingEvidenceUpdated, ActionFindingProofOverridden, ActionFindingRemediationStepAdded,
 		ActionFindingTicketLinked, ActionFindingTicketUnlinked,
 		ActionFindingRetestRequested, ActionFindingEvidenceRevealed, ActionFindingVerificationChecklistUpdated, ActionFindingClassified, ActionFindingCommentReactionRemoved, ActionFindingCommentEdited, ActionFindingCommentDeleted, ActionFindingDuplicateMarked, ActionFindingIssueUnlinked, ActionFindingBountyReportChanged,
 		ActionFindingRetestCheckSaved, ActionFindingRetestCheckRemoved, ActionFindingRetestCheckApproved,
