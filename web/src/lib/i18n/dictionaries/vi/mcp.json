@@ -183,7 +183,7 @@
   "mcp.requests.emptyTitle": "Không có yêu cầu nào đang chờ",
   "mcp.requests.failed": "Không xử lý được yêu cầu",
   "mcp.requests.formerMember": "một cựu thành viên",
-  "mcp.requests.meta": "Yêu cầu bởi {name} · {count} lượt · {when}",
+  "mcp.requests.meta": "Yêu cầu bởi {name}, {count} lượt, {when}",
   "mcp.requests.title": "Yêu cầu truy cập",
   "mcp.scope.assets.short": "Tài sản",
   "mcp.scope.assets.title": "Đọc tài sản và đường tấn công",

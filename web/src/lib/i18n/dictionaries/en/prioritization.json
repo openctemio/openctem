@@ -43,7 +43,7 @@
   "prioritization.businessImpact.crown.emptyDescription": "Mark assets as crown jewels from the Crown jewels page.",
   "prioritization.businessImpact.crown.emptyTitle": "No crown jewels yet",
   "prioritization.businessImpact.crown.findings": "{count} findings",
-  "prioritization.businessImpact.crown.meta": "{type} · {count} findings",
+  "prioritization.businessImpact.crown.meta": "{type}, {count} findings",
   "prioritization.businessImpact.crown.title": "Crown jewels",
   "prioritization.businessImpact.description": "Where vulnerabilities hit the business hardest, by asset criticality, crown jewel and business unit.",
   "prioritization.businessImpact.stat.assets": "Assets",

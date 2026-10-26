@@ -322,7 +322,7 @@ export function ApprovalDialog({
                       count: justification.length,
                     })}
                     {minNote > 0 &&
-                      ` · ${t('findingApprovals.evaluation.noteMin', 'at least {count}', {
+                      `, ${t('findingApprovals.evaluation.noteMin', 'at least {count}', {
                         count: minNote,
                       })}`}
                   </p>

@@ -347,8 +347,8 @@ export function ScopeApprovals() {
                   </div>
                   <p className="text-sm text-muted-foreground">
                     {isEntry
-                      ? `Covers ${coversText(c.item)} · ${scopeTargetTypeLabel(c.item.target_type ?? '')} · ${TIER_LABEL[c.item.max_tier ?? 't1'] ?? ''} · ${c.item.expires_at ? expiryText(c.item.expires_at) : 'permanent'}`
-                      : `Scans would never touch ${coversText({ pattern: c.item.pattern, target_type: c.item.exclusion_type })}${c.item.expires_at ? ` · ${expiryText(c.item.expires_at).toLowerCase()}` : ''}`}
+                      ? `Covers ${coversText(c.item)}, ${scopeTargetTypeLabel(c.item.target_type ?? '')}, ${TIER_LABEL[c.item.max_tier ?? 't1'] ?? ''}, ${c.item.expires_at ? expiryText(c.item.expires_at) : 'permanent'}`
+                      : `Scans would never touch ${coversText({ pattern: c.item.pattern, target_type: c.item.exclusion_type })}${c.item.expires_at ? `, ${expiryText(c.item.expires_at).toLowerCase()}` : ''}`}
                   </p>
                   {e.reason && <p className="text-sm">&ldquo;{e.reason}&rdquo;</p>}
                   <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">

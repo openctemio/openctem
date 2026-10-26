@@ -59,14 +59,14 @@ function draw(description: EdgeDescription, zoom = 1) {
 
 const data: EdgeDescription = {
   flow: { state: 'data', types: ['url', 'ip'] },
-  label: 'url · ip',
+  label: 'url, ip',
   text: 'HTTP probe passes URL, IP address to Vulnerability templates',
 }
 
 describe('DataFlowEdge', () => {
   it('labels the line with the types and names the edge with the sentence', async () => {
     draw(data)
-    const label = await screen.findByText('url · ip')
+    const label = await screen.findByText('url, ip')
     expect(label).toHaveAttribute('data-edge-state', 'data')
     expect(label).toHaveAttribute('title', data.text)
     expect(screen.getByRole('group', { name: data.text })).toBeInTheDocument()
@@ -87,6 +87,6 @@ describe('DataFlowEdge', () => {
   it('leaves the label out when zoomed far out; the edge keeps its name', async () => {
     draw(data, 0.3)
     expect(await screen.findByRole('group', { name: data.text })).toBeInTheDocument()
-    expect(screen.queryByText('url · ip')).toBeNull()
+    expect(screen.queryByText('url, ip')).toBeNull()
   })
 })

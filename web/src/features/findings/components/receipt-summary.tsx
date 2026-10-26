@@ -131,7 +131,7 @@ export function RecentImports() {
               <span className="text-muted-foreground text-xs tabular-nums">
                 {t(
                   'findings.receipts.recentLine',
-                  '{created} new · {updated} still detected · {closed} closed',
+                  '{created} new, {updated} still detected, {closed} closed',
                   {
                     created: r.counts?.created ?? 0,
                     updated: r.counts?.updated ?? 0,
@@ -198,7 +198,10 @@ export function FindingLastSeenIn({ findingId }: { findingId: string }) {
   if (!last) return <span className="text-muted-foreground">—</span>
   const label = kindLabel(t, last.source?.kind)
   return (
-    <span className="flex flex-wrap items-center gap-1" data-testid="finding-last-seen-in">
+    <span
+      className="flex flex-wrap items-center gap-x-2 gap-y-1"
+      data-testid="finding-last-seen-in"
+    >
       {last.source?.kind === 'scan_run' && last.source.ref ? (
         <Link
           href={`/scans/runs?run=${encodeURIComponent(last.source.ref)}`}
@@ -210,7 +213,7 @@ export function FindingLastSeenIn({ findingId }: { findingId: string }) {
         <span>{label}</span>
       )}
       {last.tool ? <span className="font-mono text-xs">{last.tool}</span> : null}
-      <span className="text-muted-foreground">· {actionLabel(t, last.action)} ·</span>
+      <span className="text-muted-foreground">{actionLabel(t, last.action)}</span>
       <RelativeTime date={last.at} className="text-xs" />
     </span>
   )

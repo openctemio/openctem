@@ -368,7 +368,7 @@ describe('Scan page', () => {
     it('says the platform manages it and links to the coverage settings', () => {
       render(<ScanDetailPage />)
       const banner = screen.getByTestId('managed-scan-banner')
-      expect(banner).toHaveTextContent('Managed by the platform · Continuous coverage')
+      expect(banner).toHaveTextContent('Managed by the platform: continuous coverage')
       expect(within(banner).getByRole('link', { name: 'Open coverage settings' })).toHaveAttribute(
         'href',
         '/settings/scope'

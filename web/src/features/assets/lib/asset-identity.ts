@@ -188,5 +188,5 @@ export function describeEvidence(evidence: Record<string, unknown> | null | unde
     if (used.has(k) || !str(v)) continue
     parts.push(`${k.replace(/_/g, ' ')}: ${str(v)}`)
   }
-  return parts.join(' · ')
+  return parts.join(', ')
 }
