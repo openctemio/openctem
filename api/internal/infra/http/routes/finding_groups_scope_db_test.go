@@ -27,6 +27,7 @@ import (
 	auditapp "github.com/openctemio/openctem/api/internal/app/audit"
 	"github.com/openctemio/openctem/api/internal/app/datascope"
 	"github.com/openctemio/openctem/api/internal/app/finding"
+	navpinapp "github.com/openctemio/openctem/api/internal/app/navpin"
 	appremediation "github.com/openctemio/openctem/api/internal/app/remediation"
 	savedviewapp "github.com/openctemio/openctem/api/internal/app/savedview"
 	slaapp "github.com/openctemio/openctem/api/internal/app/sla"
@@ -149,6 +150,21 @@ func newGroupScopeHarness(t *testing.T) *gsHarness {
 	registerVulnerabilityRoutes(router, vulnHandler,
 		actionsHandler, nil, handler.NewRemediationGroupHandler(remediationSvc), auth, nil)
 	registerSavedViewRoutes(router, handler.NewSavedViewHandler(viewSvc, log), auth, nil)
+	navPinHandler := handler.NewNavPinHandler(
+		navpinapp.NewService(postgres.NewNavPinRepository(db), viewSvc, vulnSvc, log), vulnSvc, log)
+	registerNavPinRoutes(router, navPinHandler, auth, nil)
+	// What GET /me/bootstrap carries as "pins" (BootstrapSession.Pins), behind
+	// the same token and tenant middlewares.
+	router.Group("/api/v1/test/bootstrap-pins", func(r Router) {
+		r.GET("/", func(w http.ResponseWriter, req *http.Request) {
+			resp, err := navPinHandler.Response(req)
+			if err != nil {
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+				return
+			}
+			_ = json.NewEncoder(w).Encode(resp)
+		})
+	}, buildTokenTenantMiddlewares(auth, nil)...)
 	checklistHandler := handler.NewVerificationChecklistHandler(finding.NewVerificationChecklistService(ds.db, enforcer), log)
 	checklistHandler.SetAuditService(auditapp.NewAuditService(postgres.NewAuditRepository(db), log))
 	registerVerificationChecklistRoutes(router, checklistHandler, []Middleware{auth})
