@@ -6,7 +6,7 @@
 # -----------------------------------------------------------------------------
 # Development stage - Standalone, no deps copy needed (uses volumes)
 # -----------------------------------------------------------------------------
-FROM golang:1.27.2-alpine@sha256:f92b6ef800e499660581efdabdf25d9d817a9d124eaf900924f0504e7e27e12d AS development
+FROM golang:1.27.3-alpine@sha256:b8c9b82affbbb82a020bbcf998dad2ba9516944ac7e883524642a481a9505e9c AS development
 
 WORKDIR /app
 
@@ -41,7 +41,7 @@ CMD ["/usr/local/bin/dev-entrypoint.sh"]
 # SDK is fetched from GitHub as a released module (not local)
 # Build context: api/ folder (not parent)
 # -----------------------------------------------------------------------------
-FROM golang:1.27.2-alpine@sha256:f92b6ef800e499660581efdabdf25d9d817a9d124eaf900924f0504e7e27e12d AS base
+FROM golang:1.27.3-alpine@sha256:b8c9b82affbbb82a020bbcf998dad2ba9516944ac7e883524642a481a9505e9c AS base
 
 WORKDIR /app
 
@@ -65,7 +65,7 @@ RUN go mod download
 # /app/api/openapi/swagger.yaml. It is the same on every architecture, so it
 # runs on the build platform (no emulation). Same swag version and flags as
 # `make swagger` (SWAG_VERSION there and in scripts/check-openapi.sh).
-FROM --platform=$BUILDPLATFORM golang:1.27.2-alpine@sha256:f92b6ef800e499660581efdabdf25d9d817a9d124eaf900924f0504e7e27e12d AS openapi
+FROM --platform=$BUILDPLATFORM golang:1.27.3-alpine@sha256:b8c9b82affbbb82a020bbcf998dad2ba9516944ac7e883524642a481a9505e9c AS openapi
 ARG SWAG_VERSION=v1.16.4
 WORKDIR /app
 ENV GOWORK=off
