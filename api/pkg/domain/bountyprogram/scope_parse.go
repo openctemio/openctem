@@ -68,7 +68,7 @@ type Item struct {
 	// Note says why an item is not scannable.
 	Note string `json:"note,omitempty"`
 	// Confidence is the program feed's confidence in the target
-	// (published or inferred, RFC-065 §16); empty for other sources.
+	// (published or inferred); empty for other sources.
 	Confidence string `json:"confidence,omitempty"`
 	// Ports and Protocol limit an in-scope entry to a service
 	// ("api.example.com:8443/tcp"): the entry covers only those ports

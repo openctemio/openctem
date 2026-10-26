@@ -100,7 +100,7 @@ type FleetRefreshContentResponse struct {
 
 // GetPolicy handles GET /api/v1/sensors/content-policy
 // @Summary      Get the scanner content policy
-// @Description  The tenant's scanner content policy (RFC-031): refresh interval, and per content the maximum age, a pinned version and semgrep rulesets. Defaults are filled in.
+// @Description  The tenant's scanner content policy: refresh interval, and per content the maximum age, a pinned version and semgrep rulesets. Defaults are filled in.
 // @Tags         Sensors
 // @Produce      json
 // @Success      200  {object}  ContentPolicyResponse

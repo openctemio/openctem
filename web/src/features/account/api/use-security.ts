@@ -36,6 +36,7 @@ export function useChangePassword() {
       await post(userEndpoints.changePassword(), {
         current_password: input.current_password,
         new_password: input.new_password,
+        revoke_api_keys: input.revoke_api_keys ?? false,
       })
       return true
     } catch (err) {
