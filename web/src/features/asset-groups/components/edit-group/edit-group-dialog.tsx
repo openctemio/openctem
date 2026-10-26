@@ -46,6 +46,8 @@ import {
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { BusinessUnitField } from '../business-unit-field'
+import { GroupMembersSection } from '../members/group-members-section'
+import { useTranslation } from '@/context/i18n-provider'
 import type { Environment, Criticality } from '@/features/shared/types'
 import type { AssetGroup } from '../../types'
 
@@ -163,6 +165,8 @@ export function EditGroupDialog({
   })
   const [tagInput, setTagInput] = useState('')
   const [businessContextOpen, setBusinessContextOpen] = useState(false)
+  const [membersOpen, setMembersOpen] = useState(false)
+  const { t } = useTranslation()
 
   // Sync form data when group changes or dialog opens
   useEffect(() => {
@@ -488,7 +492,7 @@ export function EditGroupDialog({
                         <span className="text-xs text-muted-foreground me-1 py-0.5">
                           Quick add:
                         </span>
-                        {SUGGESTED_TAGS.filter((t) => !formData.tags.includes(t))
+                        {SUGGESTED_TAGS.filter((tg) => !formData.tags.includes(tg))
                           .slice(0, 4)
                           .map((tag) => (
                             <Badge
@@ -505,6 +509,40 @@ export function EditGroupDialog({
                           ))}
                       </div>
                     </div>
+                  </CardContent>
+                </CollapsibleContent>
+              </Card>
+            </Collapsible>
+
+            {/* Members: the rule that fills the group, and a pasted list */}
+            <Collapsible open={membersOpen} onOpenChange={setMembersOpen}>
+              <Card>
+                <CollapsibleTrigger asChild>
+                  <CardHeader className="pb-3 cursor-pointer hover:bg-muted/50 transition-colors rounded-t-lg">
+                    <CardTitle className="text-sm font-medium flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <div className="h-7 w-7 rounded-lg bg-muted flex items-center justify-center">
+                          <Server className="h-3.5 w-3.5 text-muted-foreground" />
+                        </div>
+                        {t('assetGroups.members.section', 'Members')}
+                        {group.rule && (
+                          <Badge variant="outline" className="ms-2 text-xs font-normal">
+                            {t('assetGroups.members.automatic', 'Automatic')}
+                          </Badge>
+                        )}
+                      </div>
+                      <ChevronDown
+                        className={cn(
+                          'h-4 w-4 text-muted-foreground transition-transform duration-200',
+                          membersOpen && 'rotate-180'
+                        )}
+                      />
+                    </CardTitle>
+                  </CardHeader>
+                </CollapsibleTrigger>
+                <CollapsibleContent>
+                  <CardContent className="pt-0">
+                    <GroupMembersSection group={group} />
                   </CardContent>
                 </CollapsibleContent>
               </Card>

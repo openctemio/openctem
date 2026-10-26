@@ -15,7 +15,7 @@ import type {
   ApiGroupAsset,
   ApiGroupFinding,
 } from '../api'
-import type { GroupAsset, GroupFinding } from '../types'
+import type { GroupAsset, GroupFinding, GroupRule } from '../types'
 import { FINDINGS_OPEN_STATUSES } from '@/features/findings/lib/list-defaults'
 
 // ============================================
@@ -61,6 +61,9 @@ export function transformApiAssetGroup(api: ApiAssetGroup): AssetGroup {
     // Timestamps
     createdAt: api.created_at ?? '',
     updatedAt: api.updated_at ?? '',
+
+    // Set when the group fills itself by a rule
+    rule: api.rule ? (api.rule as unknown as GroupRule) : undefined,
   }
 }
 
@@ -78,6 +81,8 @@ export function transformApiGroupAsset(api: ApiGroupAsset): GroupAsset {
     riskScore: api.risk_score ?? 0,
     findingCount: api.finding_count ?? 0,
     lastSeen: api.last_seen ?? '',
+    source: api.source as GroupAsset['source'],
+    addedAt: api.added_at || undefined,
   }
 }
 
@@ -131,6 +136,7 @@ export function transformCreateAssetGroupInput(
       description: asset.description,
       tags: asset.tags,
     })),
+    rule: input.rule,
   }
 }
 

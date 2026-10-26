@@ -44,6 +44,8 @@ import {
   transformCreateAssetGroupInput,
   transformUpdateAssetGroupInput,
 } from '../lib/transformers'
+import { pasteIntoGroup } from '../api/use-group-rule-api'
+import { useTranslation } from '@/context/i18n-provider'
 import type { AssetGroup, CreateAssetGroupInput, UpdateAssetGroupInput } from '../types'
 import type { AssetGroupApiFilters, GroupAssetsApiFilters } from '../api'
 import type { RatedCriticality } from '@/lib/criticality'
@@ -380,6 +382,7 @@ interface MutationResult<T = void> {
  */
 export function useCreateAssetGroup(): MutationResult<CreateAssetGroupInput> {
   const apiMutation = useCreateAssetGroupApi()
+  const { t } = useTranslation()
 
   const trigger = async (input?: CreateAssetGroupInput) => {
     if (!input) return
@@ -387,11 +390,38 @@ export function useCreateAssetGroup(): MutationResult<CreateAssetGroupInput> {
     if (USE_REAL_API) {
       try {
         const apiInput = transformCreateAssetGroupInput(input)
-        await apiMutation.trigger(apiInput)
+        const created = await apiMutation.trigger(apiInput)
         await invalidateAssetGroupsCache()
         toast.success('Asset group created', {
           description: input.name,
         })
+        // A pasted list is matched once the group exists.
+        if (input.paste && created?.id) {
+          try {
+            const res = await pasteIntoGroup(created.id, {
+              text: input.paste.text,
+              createMissing: input.paste.createMissing,
+            })
+            await invalidateAssetGroupsCache()
+            toast.success(
+              t(
+                'assetGroups.members.paste.createdResult',
+                '{added} added from the list, {missing} not found, {rejected} rejected',
+                { added: res.added, missing: res.not_found, rejected: res.rejected.length }
+              )
+            )
+          } catch (error) {
+            toast.error(
+              getErrorMessage(
+                error,
+                t(
+                  'assetGroups.members.paste.createdFailed',
+                  'The group was created but the list could not be added'
+                )
+              )
+            )
+          }
+        }
       } catch (error) {
         toast.error(getErrorMessage(error, 'Failed to create asset group'))
         throw error

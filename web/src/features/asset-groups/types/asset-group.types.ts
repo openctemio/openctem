@@ -41,6 +41,9 @@ export interface AssetGroup {
   // Timestamps
   createdAt: string
   updatedAt: string
+
+  /** Set when the group fills itself by a rule. */
+  rule?: import('./group-rule.types').GroupRule
 }
 
 // ============================================
@@ -84,6 +87,12 @@ export interface CreateAssetGroupInput {
    * IDs of existing ungrouped assets to add to this group
    */
   existingAssetIds?: string[]
+
+  /** A rule that fills the group (evaluated as the caller, inside their data scope). */
+  rule?: import('./group-rule.types').GroupRuleDocument
+
+  /** A pasted list added once the group exists. */
+  paste?: { text: string; createMissing: boolean }
 }
 
 /**
@@ -163,6 +172,9 @@ export interface GroupAsset {
   riskScore: number
   findingCount: number
   lastSeen: string
+  /** How the asset joined the group. Empty for a response without it. */
+  source?: 'rule' | 'manual' | 'paste'
+  addedAt?: string
 }
 
 /** A finding on a group member. `open` follows the findings' open statuses. */
