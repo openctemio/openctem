@@ -88,7 +88,7 @@ function PlanItems({ items }: { items: FindingFixPlanItem[] }) {
             className="min-w-0 truncate underline-offset-2 hover:underline"
           >
             {i.cveId ? <span className="font-mono text-xs">{i.cveId}</span> : null}
-            {i.cveId ? ' · ' : null}
+            {i.cveId ? ', ' : null}
             {i.title}
           </Link>
         </li>
@@ -297,7 +297,7 @@ export function FindingFixCard({ finding, onOpenPlan, compact, className }: Find
                 <span key={i} className="inline-flex min-w-0 items-center">
                   {i > 0 && (
                     <span aria-hidden className="whitespace-pre">
-                      {' · '}
+                      {', '}
                     </span>
                   )}
                   {h}

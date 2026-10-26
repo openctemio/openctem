@@ -146,11 +146,11 @@ export function SessionsCard({ sessions, isLoading, onChanged }: SessionsCardPro
                         ) : (
                           t('account.sessions.unknownIp', 'Unknown IP')
                         )}
-                        {' · '}
+                        {', '}
                         {t('account.sessions.signedIn', 'Signed in {date}', {
                           date: formatDateSafe(s.created_at),
                         })}
-                        {' · '}
+                        {', '}
                         {t('account.sessions.lastActive', 'Last active {when}', {
                           when: formatRelative(s.last_activity_at),
                         })}

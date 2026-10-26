@@ -245,7 +245,7 @@ export function SupportAccessSettings({
                             time: formatSupportTime(g.expires_at, locale),
                           })}
                           {g.case_ref
-                            ? ` · ${t('supportAccess.caseRef', 'case {ref}', { ref: g.case_ref })}`
+                            ? `, ${t('supportAccess.caseRef', 'case {ref}', { ref: g.case_ref })}`
                             : ''}
                         </p>
                         <p className="text-sm break-words">{g.reason}</p>

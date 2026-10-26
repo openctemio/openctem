@@ -230,7 +230,7 @@ export function CIPipelinesPanel() {
       label: t('scans.ci.metric.attention', 'Stale or degraded'),
       value: n('stale') + n('degraded'),
       tone: 'warning',
-      detail: t('scans.ci.metric.attentionDetail', '{stale} stale · {degraded} degraded', {
+      detail: t('scans.ci.metric.attentionDetail', '{stale} stale, {degraded} degraded', {
         stale: n('stale'),
         degraded: n('degraded'),
       }),
