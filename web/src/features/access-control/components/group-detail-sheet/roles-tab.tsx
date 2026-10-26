@@ -160,6 +160,18 @@ export function RolesTab({
             <li key={b.role_id} className="flex items-center justify-between rounded-lg border p-3">
               <div className="flex min-w-0 flex-wrap items-center gap-2">
                 <span className="text-sm font-medium break-words">{b.name}</span>
+                {b.managed && (
+                  <Badge
+                    variant="outline"
+                    className="text-xs"
+                    title={t(
+                      'org.teamRoles.managedHint',
+                      'Set by the Access tab; it cannot be changed here'
+                    )}
+                  >
+                    {t('org.teamRoles.managed', 'Preset')}
+                  </Badge>
+                )}
                 {b.privileged && (
                   <Badge
                     variant="outline"
@@ -186,7 +198,7 @@ export function RolesTab({
                   </Badge>
                 )}
               </div>
-              {canUnbind && (
+              {canUnbind && !b.managed && (
                 <Button
                   variant="ghost"
                   size="icon"

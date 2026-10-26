@@ -139,6 +139,8 @@ export interface GroupRoleBinding {
   role_id: string
   name: string
   privileged: boolean
+  /** The role belongs to the team's access settings (presets), not to a person. */
+  managed?: boolean
   created_by?: string
   created_at: string
 }

@@ -37,7 +37,9 @@ import {
 } from '@/features/access-control'
 import { GroupDetailSheet } from '@/features/access-control/components/group-detail-sheet'
 import { getErrorMessage } from '@/lib/api/error-handler'
-import { Can } from '@/lib/permissions'
+import { Can, useCanMutate, usePermissions } from '@/lib/permissions'
+import { setTeamAccess, useTeamPresetTemplates } from '../api/use-team-access'
+import { EMPTY_TEAM_ACCESS, TeamAccessFields, type TeamAccessValue } from './team-access-fields'
 import { confirmName } from '@/lib/confirm-name'
 import { ConfirmDialog } from '@/components/confirm-dialog'
 import { useTranslation } from '@/context/i18n-provider'
@@ -76,6 +78,14 @@ export function TeamsSection({ header }: SectionProps) {
   const [createForm, setCreateForm] = useState({
     name: '',
     description: '',
+  })
+  const [createAccess, setCreateAccess] = useState<TeamAccessValue>(EMPTY_TEAM_ACCESS)
+  // The Access section follows the route that sets it, so a person who cannot
+  // set access is not offered it.
+  const canSetAccess = useCanMutate('PUT /api/v1/groups/{groupId}/access')
+  const { isOwner } = usePermissions()
+  const { templates: presetTemplates, isLoading: presetsLoading } = useTeamPresetTemplates({
+    skip: !createDialogOpen || !canSetAccess,
   })
 
   // Delete hook - need to pass groupId
@@ -177,7 +187,7 @@ export function TeamsSection({ header }: SectionProps) {
     }
 
     try {
-      await createGroup({
+      const created = await createGroup({
         slug: generateSlug(createForm.name),
         name: createForm.name,
         description: createForm.description || undefined,
@@ -187,6 +197,28 @@ export function TeamsSection({ header }: SectionProps) {
       setCreateDialogOpen(false)
       setCreateForm({ name: '', description: '' })
       refreshData()
+      // The team exists even if its access cannot be set: say so and leave the
+      // rest to the team's Access tab.
+      const createdId = (created as unknown as { id?: string } | undefined)?.id
+      if (createdId && (createAccess.presets.length > 0 || createAccess.scopeMode !== 'specific')) {
+        try {
+          await setTeamAccess(createdId, {
+            presets: createAccess.presets,
+            scope_mode: createAccess.scopeMode,
+          })
+        } catch (accessError) {
+          toast.error(
+            getErrorMessage(
+              accessError,
+              t(
+                'org.teams.accessFailed',
+                'The team was created but its access was not saved. Set it on the team.'
+              )
+            )
+          )
+        }
+      }
+      setCreateAccess(EMPTY_TEAM_ACCESS)
     } catch (error) {
       toast.error(getErrorMessage(error, t('org.teams.createFailed', 'Failed to create team')))
     }
@@ -298,7 +330,7 @@ export function TeamsSection({ header }: SectionProps) {
 
       {/* Create Group Dialog */}
       <Dialog open={createDialogOpen} onOpenChange={setCreateDialogOpen}>
-        <DialogContent size="sm">
+        <DialogContent size="lg">
           <DialogHeader>
             <DialogTitle>{t('org.teams.createTeam', 'Create team')}</DialogTitle>
             <DialogDescription>
@@ -336,6 +368,21 @@ export function TeamsSection({ header }: SectionProps) {
                   rows={3}
                 />
               </div>
+
+              {canSetAccess && (
+                <div className="space-y-2 border-t pt-4">
+                  <h3 className="text-sm font-semibold">{t('org.teamAccess.title', 'Access')}</h3>
+                  <TeamAccessFields
+                    idPrefix="create-team"
+                    templates={presetTemplates}
+                    loading={presetsLoading}
+                    value={createAccess}
+                    onChange={setCreateAccess}
+                    canSetAllAssets={isOwner()}
+                    disabled={isCreating}
+                  />
+                </div>
+              )}
             </div>
           </DialogBody>
 
