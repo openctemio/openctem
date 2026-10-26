@@ -21,8 +21,13 @@ and its content downloads stay sensor-local (`SENSOR_CONTROL_PROXY`,
 | 3 | The organization default pool (`is_default`, at most one) | **public** target addresses only; private, ULA and CGNAT targets are dialed directly, so internal targets never reach an external proxy |
 | 4 | none | today's behaviour |
 
-A disabled pool is not used (its sensors scan directly). Shared (operator)
-sensors never use an organization pool.
+A disabled organization default is off: the sensors that inherit it scan
+directly (it is the organization's "use proxies" switch). A disabled pool
+that a sensor is assigned to stays that sensor's path with no endpoint: its
+jobs carry the pool with an empty list and fail closed on the sensor
+(`egress_unavailable`), and no credential is handed out, until the pool is
+enabled or the sensor gets another path; Direct is only ever an explicit
+choice. Shared (operator) sensors never use an organization pool.
 
 ## Data model (migration `sensor_proxy_pools`)
 
@@ -73,8 +78,9 @@ checks every address a host name resolves to again before it dials.
 
 ## Delivery and signing
 
-When an organization sensor receives a scan or retest job (claim-N poll, the
-plain poll, a claim by id, and the claim repeat that a signing sensor runs),
+When an organization sensor receives a scan, retest or validate job (claim-N
+poll, the plain poll, a claim by id, and the claim repeat that a signing
+sensor runs),
 `internal/app/command/egress.go` sets the payload member on the copy it hands
 out:
 
@@ -92,9 +98,13 @@ is replaced or removed, also on shared sensors.
 
 **Fail closed.** A sensor whose jobs use a pool gets scan and retest jobs
 only when it reported `egress.upstream@1` and `net.confined@1` (what the
-sensor reports, never what an administrator declares); otherwise the poll
-leaves them pending (metric reason `egress_unsupported`) and a claim by id
-answers `command-claimed`. When every endpoint is quarantined the member
+sensor reports, never what an administrator declares), and validate jobs
+(stage 4 re-checks, which probe the target) only when it also reported
+`egress.validate@1`, the sensor's statement that its validate executor
+sends its probes through the job's pool; otherwise the poll leaves them
+pending (metric reason `egress_unsupported`) and a claim by id answers
+`command-claimed`. The sensor drawer's network path says which of these
+applies to a sensor. When every endpoint is quarantined the member
 still goes out with an empty list and the sensor fails the job
 (`egress_unavailable`); it never goes direct.
 
@@ -174,4 +184,7 @@ sensor's control path can read them), one report per job, zone pools,
 tool rules (pool / direct / refuse), per-scan override,
 instance pools offered to tenants, exit-IP attribution, `dns=proxy`, the
 Test button, a reason on the sensor page when a sensor lacks proxy support,
-and pools for validation and reach-probe jobs (they run without a pool).
+a sensor whose validate executor runs through the pool (`egress.validate@1`;
+until a sensor reports it, a pooled sensor gets no validate jobs), and
+pools for reach-probe jobs (the platform does not dispatch them yet; when
+it does, a probe must use the path the scans use).

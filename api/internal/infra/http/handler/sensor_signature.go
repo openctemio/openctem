@@ -15,7 +15,9 @@ import (
 	"time"
 
 	"github.com/openctemio/openctem/api/internal/app/sensor"
+	"github.com/openctemio/openctem/api/pkg/logger"
 	"github.com/openctemio/openctem/api/pkg/sensorproto/relay"
+	protov2 "github.com/openctemio/openctem/api/pkg/sensorproto/v2"
 	"github.com/openctemio/openctem/api/pkg/sensorsig"
 )
 
@@ -30,8 +32,52 @@ const maxSignedBodyBytes = 64 << 20
 var errNotSigned = errors.New("request not signed")
 
 // errSignedRefused is every refusal of a signed request; the reason is
-// logged at debug level only.
+// logged at debug level only, except a clock skew (clockSkewError), which
+// is answered and logged as such.
 var errSignedRefused = errors.New("signed request refused")
+
+// clockSkewError is the refusal of a request whose signature verifies with
+// the key it names but whose time lies outside the clock tolerance: the
+// signer's clock or this server's is wrong. It is an errSignedRefused.
+type clockSkewError struct {
+	now      time.Time
+	offset   time.Duration
+	keyID    string
+	sensorID string
+}
+
+func (e *clockSkewError) Error() string {
+	return "signed request refused: clock skew " + e.offset.Round(time.Second).String()
+}
+
+func (e *clockSkewError) Unwrap() error { return errSignedRefused }
+
+// asClockSkew returns the clock-skew refusal inside err, logged at WARN
+// with the offset (nothing secret: the key thumbprint and sensor id are
+// identifiers), or nil when err is any other refusal.
+func asClockSkew(err error, log *logger.Logger, r *http.Request) *clockSkewError {
+	var ce *clockSkewError
+	if !errors.As(err, &ce) {
+		return nil
+	}
+	if log != nil {
+		log.Warn("sensor request signature outside the clock tolerance: the sensor's or the server's clock is wrong",
+			"offset_seconds", int64(ce.offset/time.Second), "server_time", ce.now.UTC().Format(time.RFC3339),
+			"key_id", ce.keyID, "sensor_id", ce.sensorID, "path", r.URL.Path, "client_ip", getClientIP(r))
+	}
+	return ce
+}
+
+// writeClockSkew answers a clock-skew refusal with its v2 problem and
+// reports whether err was one.
+func writeClockSkew(w http.ResponseWriter, r *http.Request, err error, log *logger.Logger) bool {
+	ce := asClockSkew(err, log, r)
+	if ce == nil {
+		return false
+	}
+	protov2.NewProblem(protov2.ProblemClockSkew).WithClock(ce.now, ce.offset).Write(w)
+	return true
+}
 
 // signedAuthenticator is what the verifier needs from the sensor service.
 type signedAuthenticator interface {
@@ -54,7 +100,13 @@ func authenticateSigned(r *http.Request, svc signedAuthenticator, clientIP strin
 	if err != nil {
 		return sensor.SensorIdentity{}, nil, errSignedRefused
 	}
-	if err := p.CheckWindow(now); err != nil {
+	// A window outside the profile is refused at once; a window outside the
+	// clock tolerance is reported only after the signature verified with
+	// the registered key, so the clock-skew answer goes to the key's holder
+	// alone (a replayed old request gets it too, which tells the replayer
+	// nothing it did not know: the server's time is in every Date header).
+	windowErr := p.CheckWindow(now)
+	if windowErr != nil && !errors.Is(windowErr, sensorsig.ErrExpired) {
 		return sensor.SensorIdentity{}, nil, errSignedRefused
 	}
 	id, pub, err := svc.SigningIdentity(r.Context(), p.Params.KeyID, true)
@@ -63,6 +115,13 @@ func authenticateSigned(r *http.Request, svc signedAuthenticator, clientIP strin
 	}
 	if err := p.Verify(r, pub); err != nil {
 		return sensor.SensorIdentity{}, nil, errSignedRefused
+	}
+	if windowErr != nil {
+		ce := &clockSkewError{now: now, offset: p.ClockOffset(now), keyID: p.Params.KeyID}
+		if id.Sensor != nil {
+			ce.sensorID = id.Sensor.ID.String()
+		}
+		return sensor.SensorIdentity{}, nil, ce
 	}
 	// Relayed request: the connector names the sensor of the route it
 	// arrived on. A different signing sensor means an envelope crossed

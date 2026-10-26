@@ -1,0 +1,384 @@
+{
+ "version": "2026-10-25.1",
+ "ranges": [
+  {
+   "provider": "Cloudflare",
+   "class": "edge",
+   "prefixes": [
+    "173.245.48.0/20",
+    "103.21.244.0/22",
+    "103.22.200.0/22",
+    "103.31.4.0/22",
+    "141.101.64.0/18",
+    "108.162.192.0/18",
+    "190.93.240.0/20",
+    "188.114.96.0/20",
+    "197.234.240.0/22",
+    "198.41.128.0/17",
+    "162.158.0.0/15",
+    "104.16.0.0/13",
+    "104.24.0.0/14",
+    "172.64.0.0/13",
+    "131.0.72.0/22",
+    "2400:cb00::/32",
+    "2606:4700::/32",
+    "2803:f800::/32",
+    "2405:b500::/32",
+    "2405:8100::/32",
+    "2a06:98c0::/29",
+    "2c0f:f248::/32"
+   ]
+  },
+  {
+   "provider": "Fastly",
+   "class": "edge",
+   "prefixes": [
+    "23.235.32.0/20",
+    "43.249.72.0/22",
+    "103.244.50.0/24",
+    "103.245.222.0/23",
+    "103.245.224.0/24",
+    "104.156.80.0/20",
+    "140.248.64.0/18",
+    "140.248.128.0/17",
+    "146.75.0.0/17",
+    "151.101.0.0/16",
+    "157.52.64.0/18",
+    "167.82.0.0/17",
+    "167.82.128.0/20",
+    "167.82.160.0/20",
+    "167.82.224.0/20",
+    "172.111.64.0/18",
+    "185.31.16.0/22",
+    "199.27.72.0/21",
+    "199.232.0.0/16",
+    "2a04:4e40::/32",
+    "2a04:4e42::/32"
+   ]
+  }
+ ],
+ "orgs": [
+  {
+   "match": "cloudflare",
+   "provider": "Cloudflare",
+   "class": "edge"
+  },
+  {
+   "match": "fastly",
+   "provider": "Fastly",
+   "class": "edge"
+  },
+  {
+   "match": "akamai",
+   "provider": "Akamai",
+   "class": "edge"
+  },
+  {
+   "match": "incapsula",
+   "provider": "Imperva",
+   "class": "edge"
+  },
+  {
+   "match": "imperva",
+   "provider": "Imperva",
+   "class": "edge"
+  },
+  {
+   "match": "sucuri",
+   "provider": "Sucuri",
+   "class": "edge"
+  },
+  {
+   "match": "stackpath",
+   "provider": "StackPath",
+   "class": "edge"
+  },
+  {
+   "match": "edgecast",
+   "provider": "Edgecast",
+   "class": "edge"
+  },
+  {
+   "match": "limelight",
+   "provider": "Limelight",
+   "class": "edge"
+  },
+  {
+   "match": "bunny",
+   "provider": "bunny.net",
+   "class": "edge"
+  },
+  {
+   "match": "cdn77",
+   "provider": "CDN77",
+   "class": "edge"
+  },
+  {
+   "match": "vercel",
+   "provider": "Vercel",
+   "class": "saas_hosting"
+  },
+  {
+   "match": "netlify",
+   "provider": "Netlify",
+   "class": "saas_hosting"
+  },
+  {
+   "match": "github",
+   "provider": "GitHub",
+   "class": "saas_hosting"
+  },
+  {
+   "match": "heroku",
+   "provider": "Heroku",
+   "class": "saas_hosting"
+  },
+  {
+   "match": "automattic",
+   "provider": "WordPress.com",
+   "class": "saas_hosting"
+  },
+  {
+   "match": "squarespace",
+   "provider": "Squarespace",
+   "class": "saas_hosting"
+  },
+  {
+   "match": "wix.com",
+   "provider": "Wix",
+   "class": "saas_hosting"
+  },
+  {
+   "match": "shopify",
+   "provider": "Shopify",
+   "class": "saas_hosting"
+  },
+  {
+   "match": "amazon",
+   "provider": "Amazon",
+   "class": "dedicated"
+  },
+  {
+   "match": "aws",
+   "provider": "Amazon",
+   "class": "dedicated"
+  },
+  {
+   "match": "google",
+   "provider": "Google",
+   "class": "dedicated"
+  },
+  {
+   "match": "microsoft",
+   "provider": "Microsoft",
+   "class": "dedicated"
+  },
+  {
+   "match": "azure",
+   "provider": "Microsoft",
+   "class": "dedicated"
+  },
+  {
+   "match": "oracle",
+   "provider": "Oracle",
+   "class": "dedicated"
+  },
+  {
+   "match": "alibaba",
+   "provider": "Alibaba",
+   "class": "dedicated"
+  },
+  {
+   "match": "tencent",
+   "provider": "Tencent",
+   "class": "dedicated"
+  },
+  {
+   "match": "digitalocean",
+   "provider": "DigitalOcean",
+   "class": "dedicated"
+  },
+  {
+   "match": "linode",
+   "provider": "Linode",
+   "class": "dedicated"
+  },
+  {
+   "match": "ovh",
+   "provider": "OVH",
+   "class": "dedicated"
+  },
+  {
+   "match": "hetzner",
+   "provider": "Hetzner",
+   "class": "dedicated"
+  }
+ ],
+ "apexes": [
+  {
+   "suffix": "cloudfront.net",
+   "provider": "Amazon CloudFront",
+   "class": "edge"
+  },
+  {
+   "suffix": "azureedge.net",
+   "provider": "Microsoft",
+   "class": "edge"
+  },
+  {
+   "suffix": "azurefd.net",
+   "provider": "Microsoft",
+   "class": "edge"
+  },
+  {
+   "suffix": "cloudflare.net",
+   "provider": "Cloudflare",
+   "class": "edge"
+  },
+  {
+   "suffix": "fastly.net",
+   "provider": "Fastly",
+   "class": "edge"
+  },
+  {
+   "suffix": "fastlylb.net",
+   "provider": "Fastly",
+   "class": "edge"
+  },
+  {
+   "suffix": "akamaiedge.net",
+   "provider": "Akamai",
+   "class": "edge"
+  },
+  {
+   "suffix": "akamai.net",
+   "provider": "Akamai",
+   "class": "edge"
+  },
+  {
+   "suffix": "edgekey.net",
+   "provider": "Akamai",
+   "class": "edge"
+  },
+  {
+   "suffix": "edgesuite.net",
+   "provider": "Akamai",
+   "class": "edge"
+  },
+  {
+   "suffix": "elb.amazonaws.com",
+   "provider": "Amazon",
+   "class": "cloud_shared"
+  },
+  {
+   "suffix": "elasticbeanstalk.com",
+   "provider": "Amazon",
+   "class": "cloud_shared"
+  },
+  {
+   "suffix": "awsapprunner.com",
+   "provider": "Amazon",
+   "class": "cloud_shared"
+  },
+  {
+   "suffix": "cloudapp.azure.com",
+   "provider": "Microsoft",
+   "class": "cloud_shared"
+  },
+  {
+   "suffix": "cloudapp.net",
+   "provider": "Microsoft",
+   "class": "cloud_shared"
+  },
+  {
+   "suffix": "trafficmanager.net",
+   "provider": "Microsoft",
+   "class": "cloud_shared"
+  },
+  {
+   "suffix": "azurewebsites.net",
+   "provider": "Microsoft",
+   "class": "saas_hosting"
+  },
+  {
+   "suffix": "appspot.com",
+   "provider": "Google",
+   "class": "saas_hosting"
+  },
+  {
+   "suffix": "run.app",
+   "provider": "Google",
+   "class": "cloud_shared"
+  },
+  {
+   "suffix": "web.app",
+   "provider": "Google",
+   "class": "saas_hosting"
+  },
+  {
+   "suffix": "firebaseapp.com",
+   "provider": "Google",
+   "class": "saas_hosting"
+  },
+  {
+   "suffix": "herokuapp.com",
+   "provider": "Heroku",
+   "class": "saas_hosting"
+  },
+  {
+   "suffix": "herokudns.com",
+   "provider": "Heroku",
+   "class": "saas_hosting"
+  },
+  {
+   "suffix": "github.io",
+   "provider": "GitHub",
+   "class": "saas_hosting"
+  },
+  {
+   "suffix": "gitlab.io",
+   "provider": "GitLab",
+   "class": "saas_hosting"
+  },
+  {
+   "suffix": "vercel.app",
+   "provider": "Vercel",
+   "class": "saas_hosting"
+  },
+  {
+   "suffix": "netlify.app",
+   "provider": "Netlify",
+   "class": "saas_hosting"
+  },
+  {
+   "suffix": "pages.dev",
+   "provider": "Cloudflare",
+   "class": "saas_hosting"
+  },
+  {
+   "suffix": "workers.dev",
+   "provider": "Cloudflare",
+   "class": "saas_hosting"
+  },
+  {
+   "suffix": "myshopify.com",
+   "provider": "Shopify",
+   "class": "saas_hosting"
+  },
+  {
+   "suffix": "wordpress.com",
+   "provider": "WordPress.com",
+   "class": "saas_hosting"
+  },
+  {
+   "suffix": "wixsite.com",
+   "provider": "Wix",
+   "class": "saas_hosting"
+  },
+  {
+   "suffix": "squarespace.com",
+   "provider": "Squarespace",
+   "class": "saas_hosting"
+  }
+ ]
+}
