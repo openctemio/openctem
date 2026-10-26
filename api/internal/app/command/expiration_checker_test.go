@@ -61,7 +61,7 @@ type stubStepFailer struct {
 	calls []recordedStepFailure
 }
 
-func (s *stubStepFailer) OnStepFailed(_ context.Context, runID, stepKey, message, code string) error {
+func (s *stubStepFailer) OnStepFailed(_ context.Context, _ shared.ID, runID, stepKey, message, code string) error {
 	s.calls = append(s.calls, recordedStepFailure{runID, stepKey, message, code})
 	return nil
 }

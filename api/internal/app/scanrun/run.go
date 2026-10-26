@@ -998,10 +998,17 @@ func (s *Service) finishRun(ctx context.Context, run *scanrun.Run, status scanru
 // which step is executing and how long each step took. Before this nothing
 // called it: a step went from queued straight to completed and its
 // started_at stayed empty.
-func (s *Service) OnStepStarted(ctx context.Context, runID, stepKey string, sensorID, commandID shared.ID) error {
+func (s *Service) OnStepStarted(ctx context.Context, tenantID shared.ID, runID, stepKey string, sensorID, commandID shared.ID) error {
 	rid, err := shared.IDFromString(runID)
 	if err != nil {
 		return err
+	}
+	// The run id comes from the command payload: bind it to the command's
+	// tenant before touching a step run.
+	if run, err := s.runRepo.GetByTenantAndID(ctx, tenantID, rid); err != nil {
+		return err
+	} else if run == nil {
+		return shared.ErrNotFound
 	}
 	stepRun, err := s.stepRunRepo.GetByStepKey(ctx, rid, stepKey)
 	if err != nil {
@@ -1017,10 +1024,27 @@ func (s *Service) OnStepStarted(ctx context.Context, runID, stepKey string, sens
 	return nil
 }
 
+// stepResultRun loads the run a step result names. The run id is read from
+// the command payload, so the run must belong to the command's tenant: a
+// command of one organization can never settle, fail or advance a step of
+// another organization's run (a foreign run is not found).
+func (s *Service) stepResultRun(ctx context.Context, tenantID, runID shared.ID) (*scanrun.Run, error) {
+	run, err := s.runRepo.GetWithStepRuns(ctx, runID)
+	if err != nil {
+		return nil, err
+	}
+	if run == nil || tenantID.IsZero() || run.TenantID != tenantID {
+		s.logger.Warn("step result refused: the run belongs to another tenant or none",
+			"run_id", runID.String(), "tenant_id", tenantID.String())
+		return nil, shared.ErrNotFound
+	}
+	return run, nil
+}
+
 // OnStepCompleted is called when a sensor reports step completion.
 // This triggers scheduling of dependent steps.
-func (s *Service) OnStepCompleted(ctx context.Context, runID, stepKey string, findingsCount int, output map[string]any) error {
-	return s.OnStepCompletedPartial(ctx, runID, stepKey, findingsCount, output, Partial{})
+func (s *Service) OnStepCompleted(ctx context.Context, tenantID shared.ID, runID, stepKey string, findingsCount int, output map[string]any) error {
+	return s.OnStepCompletedPartial(ctx, tenantID, runID, stepKey, findingsCount, output, Partial{})
 }
 
 // Partial says why a completed command covered less than it was given.
@@ -1153,7 +1177,7 @@ func (p Partial) message() (string, string) {
 // host with a gap is never read as "no findings". A task that reached
 // none of its targets and found nothing fails the step with
 // TARGET_UNREACHABLE: unreachable is not "nothing found".
-func (s *Service) OnStepCompletedPartial(ctx context.Context, runID, stepKey string, findingsCount int, output map[string]any, p Partial) error {
+func (s *Service) OnStepCompletedPartial(ctx context.Context, tenantID shared.ID, runID, stepKey string, findingsCount int, output map[string]any, p Partial) error {
 	rid, err := shared.IDFromString(runID)
 	if err != nil {
 		return err
@@ -1164,7 +1188,7 @@ func (s *Service) OnStepCompletedPartial(ctx context.Context, runID, stepKey str
 		"findings", findingsCount, "skipped_targets", p.Skipped, "coverage_gaps", p.Gaps)
 
 	// Get the run with step runs
-	run, err := s.runRepo.GetWithStepRuns(ctx, rid)
+	run, err := s.stepResultRun(ctx, tenantID, rid)
 	if err != nil {
 		return err
 	}
@@ -1236,7 +1260,7 @@ func (s *Service) OnStepCompletedPartial(ctx context.Context, runID, stepKey str
 }
 
 // OnStepFailed is called when a sensor reports step failure.
-func (s *Service) OnStepFailed(ctx context.Context, runID, stepKey, errorMessage, errorCode string) error {
+func (s *Service) OnStepFailed(ctx context.Context, tenantID shared.ID, runID, stepKey, errorMessage, errorCode string) error {
 	s.logger.Info("step failed", "run_id", logger.SanitizeValue(runID), "step_key", logger.SanitizeValue(stepKey), "error", logger.SanitizeValue(errorMessage))
 
 	rid, err := shared.IDFromString(runID)
@@ -1245,7 +1269,7 @@ func (s *Service) OnStepFailed(ctx context.Context, runID, stepKey, errorMessage
 	}
 
 	// Get the run
-	run, err := s.runRepo.GetWithStepRuns(ctx, rid)
+	run, err := s.stepResultRun(ctx, tenantID, rid)
 	if err != nil {
 		return err
 	}

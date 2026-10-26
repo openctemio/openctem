@@ -32,7 +32,7 @@ func TestStepUnfinished_PartialAndRecordedOnTheRun(t *testing.T) {
 	rec := &recordingRuns{statusRuns: runs}
 	s.runRepo = rec
 	p := Partial{Unfinished: []string{"10.0.0.7", "10.0.1.0/30"}}
-	if err := s.OnStepCompletedPartial(context.Background(), runs.run.ID.String(), "a", 2, nil, p); err != nil {
+	if err := s.OnStepCompletedPartial(context.Background(), runs.run.TenantID, runs.run.ID.String(), "a", 2, nil, p); err != nil {
 		t.Fatal(err)
 	}
 	a := store.rows["a"]
@@ -51,7 +51,7 @@ func TestStepNothingUnfinished_Completes(t *testing.T) {
 	s, store, runs := batchedFixture(command.StepBatch{Total: 1})
 	rec := &recordingRuns{statusRuns: runs}
 	s.runRepo = rec
-	if err := s.OnStepCompletedPartial(context.Background(), runs.run.ID.String(), "a", 0, nil, Partial{}); err != nil {
+	if err := s.OnStepCompletedPartial(context.Background(), runs.run.TenantID, runs.run.ID.String(), "a", 0, nil, Partial{}); err != nil {
 		t.Fatal(err)
 	}
 	if a := store.rows["a"]; a.Status != scanrun.StepRunStatusCompleted || len(rec.added) != 0 {
