@@ -2060,18 +2060,12 @@ func emergingThreatHandler(svc *Services, log *logger.Logger) *handler.EmergingT
 	return handler.NewEmergingThreatHandler(svc.ThreatAlerts, svc.DataScope, log)
 }
 
-// newThreatIntelHandler builds the threat-intelligence handler; when the
-// bundle source can run (repositories present), the admin sync endpoint also
-// runs the vulnfeed source.
+// newThreatIntelHandler builds the threat-intelligence handler and the
+// background runner behind its admin sync endpoint.
 func newThreatIntelHandler(deps *HandlerDeps, v *validator.Validator, log *logger.Logger) *handler.ThreatIntelHandler {
 	h := handler.NewThreatIntelHandler(deps.Services.ThreatIntel, v, log).SetDataScope(deps.Services.DataScope)
-	repos := deps.Repos
-	if repos != nil && repos.ThreatIntel != nil && repos.CVECorpus != nil && repos.Software != nil {
-		if im, err := newVulnFeedImporter(deps.Config, repos, log.With("component", "vulnfeed")); err == nil {
-			h.SetBundleSyncer(im)
-		} else {
-			log.Warn("vulnfeed sync endpoint disabled", "error", err)
-		}
+	if runner, configured := newFeedRunner(deps, log); runner != nil {
+		h.SetFeedRunner(runner, configured)
 	}
 	return h
 }
