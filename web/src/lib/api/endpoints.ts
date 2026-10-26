@@ -95,6 +95,11 @@ export const authEndpoints = {
   verifyEmail: () => `${API_BASE.AUTH}/verify-email`,
 
   /**
+   * Send the email verification link again (constant 202)
+   */
+  resendVerification: () => `${API_BASE.AUTH}/resend-verification`,
+
+  /**
    * Request password reset
    */
   forgotPassword: () => `${API_BASE.AUTH}/forgot-password`,
@@ -361,6 +366,19 @@ export const tenantEndpoints = {
    */
   deleteInvitation: (tenantIdOrSlug: string, invitationId: string) =>
     `${API_BASE.TENANTS}/${tenantIdOrSlug}/invitations/${invitationId}`,
+
+  /**
+   * Copy a new invitation link (POST): rotates the token, sends no email,
+   * returns the new token once.
+   */
+  invitationLink: (tenantIdOrSlug: string, invitationId: string) =>
+    `${API_BASE.TENANTS}/${tenantIdOrSlug}/invitations/${invitationId}/link`,
+
+  /**
+   * Renew an expired invitation (POST): new lifetime and token, no email.
+   */
+  renewInvitation: (tenantIdOrSlug: string, invitationId: string) =>
+    `${API_BASE.TENANTS}/${tenantIdOrSlug}/invitations/${invitationId}/renew`,
 
   /**
    * Resend invitation email (POST) — re-queues the email without

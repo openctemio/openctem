@@ -115,6 +115,10 @@ func registerTenantRoutes(
 		r.POST("/users", h.CreateUser, middleware.RequireTeamAdmin(), tenantPerm(permission.MembersWrite))
 		r.POST("/users/{userId}/setup-link", h.ReissueSetupLink, middleware.RequireTeamAdmin(), tenantPerm(permission.MembersWrite))
 		r.POST("/invitations/{invitationId}/resend", h.ResendInvitation, middleware.RequireTeamAdmin(), tenantPerm(permission.MembersInvite))
+		// A new link without email (servers that cannot send mail, lost links)
+		// and renewal of an expired invitation: rotate the token, return it once.
+		r.POST("/invitations/{invitationId}/link", h.RegenerateInvitationLink, middleware.RequireTeamAdmin(), tenantPerm(permission.MembersInvite))
+		r.POST("/invitations/{invitationId}/renew", h.RenewInvitation, middleware.RequireTeamAdmin(), tenantPerm(permission.MembersInvite))
 		r.DELETE("/invitations/{invitationId}", h.DeleteInvitation, middleware.RequireTeamAdmin(), tenantPerm(permission.MembersInvite))
 
 		// Settings management (admin+)

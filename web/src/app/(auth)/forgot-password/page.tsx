@@ -22,7 +22,7 @@ import { Input } from '@/components/ui/input'
 import { forgotPasswordSchema, type ForgotPasswordInput } from '@/features/auth/schemas/auth.schema'
 import { translatingResolver } from '@/features/auth/lib/translating-resolver'
 import { forgotPasswordAction } from '@/features/auth/actions/local-auth-actions'
-import { usePasswordPolicy } from '@/features/auth/api/use-auth-providers'
+import { useEmailUnavailable, usePasswordPolicy } from '@/features/auth/api/use-auth-providers'
 import { formatLinkLifetime } from '@/features/auth/lib/password-policy'
 import { useTranslation } from '@/context/i18n-provider'
 
@@ -30,6 +30,7 @@ export default function ForgotPasswordPage() {
   const [isPending, startTransition] = useTransition()
   const [isSubmitted, setIsSubmitted] = useState(false)
   const passwordPolicy = usePasswordPolicy()
+  const emailUnavailable = useEmailUnavailable()
   const { t } = useTranslation()
 
   const form = useForm<ForgotPasswordInput>({
@@ -52,6 +53,35 @@ export default function ForgotPasswordPage() {
         )
       }
     })
+  }
+
+  // A server that cannot send email must not promise one: the person asks an
+  // administrator, who can copy a reset link from the console or the
+  // organization's settings.
+  if (emailUnavailable) {
+    return (
+      <Card className="gap-4">
+        <CardHeader>
+          <CardTitle className="text-lg tracking-tight">
+            <h1>{t('auth.forgot.noEmailTitle', 'Password reset by email is not available')}</h1>
+          </CardTitle>
+          <CardDescription>
+            {t(
+              'auth.forgot.noEmailBody',
+              'This server cannot send email. Ask your administrator for a reset link.'
+            )}
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="grid gap-3">
+          <Button variant="outline" asChild>
+            <Link href="/login">
+              <ArrowLeft className="h-4 w-4" />
+              {t('auth.common.backToSignIn', 'Back to sign in')}
+            </Link>
+          </Button>
+        </CardContent>
+      </Card>
+    )
   }
 
   if (isSubmitted) {

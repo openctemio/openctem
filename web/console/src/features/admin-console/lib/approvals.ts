@@ -13,6 +13,7 @@ const ACTION_FALLBACK: Record<string, string> = {
   'signup.open': 'Open sign-up',
   'audit_chain.rebaseline': "Re-sign an organization's audit chain",
   'organization.purge': 'Delete an organization now',
+  'user.reset_mfa': "Reset a user's two-factor authentication",
 }
 
 /** The protected action in words. */

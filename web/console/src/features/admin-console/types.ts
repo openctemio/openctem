@@ -375,6 +375,8 @@ export interface PlatformUser {
 }
 
 export interface PlatformUserDetail extends PlatformUser {
+  /** The server can send email. False: copy a reset link, mark email verified. */
+  email_delivery?: boolean
   membership_list: {
     tenant_id: string
     tenant_name: string
@@ -402,7 +404,20 @@ export interface PlatformUserDetail extends PlatformUser {
 }
 
 export type PlatformUserAction =
-  'revoke-sessions' | 'unlock' | 'password-reset' | 'verification-emails' | 'block' | 'unblock'
+  | 'revoke-sessions'
+  | 'unlock'
+  | 'password-reset'
+  | 'verification-emails'
+  | 'block'
+  | 'unblock'
+  | 'mark-verified'
+  | 'mfa/reset'
+
+/** POST /admin/platform-users/{id}/reset-link: shown once, never stored. */
+export interface PlatformUserResetLink {
+  link: string
+  expires_at: string
+}
 
 /** GET /admin/sessions: one open console session (super admin). */
 export interface AdminConsoleSession {
@@ -435,6 +450,7 @@ export type AdminApprovalAction =
   | 'signup.open'
   | 'audit_chain.rebaseline'
   | 'organization.purge'
+  | 'user.reset_mfa'
 
 export type AdminApprovalStatus =
   'pending' | 'approved' | 'rejected' | 'canceled' | 'expired' | 'used'

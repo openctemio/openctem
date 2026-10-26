@@ -169,6 +169,9 @@ var adminWriteInventory = map[string]struct {
 	"POST /api/v1/admin/platform-users/{user_id}/unlock":              {stepUpRoute, "clears a lockout; reason, audited"},
 	"POST /api/v1/admin/platform-users/{user_id}/password-reset":      {stepUpRoute, "emails the user a reset link; reason, audited"},
 	"POST /api/v1/admin/platform-users/{user_id}/verification-emails": {stepUpRoute, "re-sends verification; reason, audited"},
+	"POST /api/v1/admin/platform-users/{user_id}/reset-link":          {stepUpRoute, "shows a one-hour reset link once, only without email; super_admin, reason, audited"},
+	"POST /api/v1/admin/platform-users/{user_id}/mark-verified":       {stepUpRoute, "marks an email verified, only without email; super_admin, reason, audited"},
+	"POST /api/v1/admin/platform-users/{user_id}/mfa/reset":           {stepUpRoute, "turns off a user's second factor; super_admin, reason, second approval, audited"},
 }
 
 // inventorySessions authenticates every request as one verified super admin.

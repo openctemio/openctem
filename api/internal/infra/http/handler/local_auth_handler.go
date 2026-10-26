@@ -1046,6 +1046,73 @@ func (h *LocalAuthHandler) sendResetLinkAsync(r *http.Request, email string) {
 	}()
 }
 
+// CodeEmailNotVerified is the error code of a sign-in refused because the
+// address is not verified yet (the form then offers "send the link again").
+const CodeEmailNotVerified apierror.Code = "EMAIL_NOT_VERIFIED"
+
+// EmailDeliveryAvailable reports whether this server can send email. When it
+// cannot, forgot-password and resend-verification do nothing and the UI says
+// so instead of promising an email.
+func (h *LocalAuthHandler) EmailDeliveryAvailable() bool {
+	return h.emailService != nil && h.emailService.IsConfigured()
+}
+
+// ResendVerificationRequest is the body of POST /auth/resend-verification.
+type ResendVerificationRequest struct {
+	Email string `json:"email" validate:"required,email"`
+}
+
+// ResendVerification sends a new verification link.
+// @Summary      Resend the email verification link
+// @Description  Emails a new verification link to an unverified local account; the previous link stops working. The answer is always 202 with the same body, whether or not the address has an account, is verified, or was mailed less than 2 minutes ago (one email per address per 2 minutes, plus the per-IP limit). When the server cannot send email nothing is sent: ask an administrator to mark the address verified.
+// @Tags         Authentication
+// @Accept       json
+// @Produce      json
+// @Param        request  body      ResendVerificationRequest  true  "Email address"
+// @Success      202  {object}  map[string]string
+// @Failure      400  {object}  apierror.Error
+// @Failure      429  {object}  apierror.Error
+// @Router       /auth/resend-verification [post]
+func (h *LocalAuthHandler) ResendVerification(w http.ResponseWriter, r *http.Request) {
+	var req ResendVerificationRequest
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096)).Decode(&req); err != nil {
+		apierror.BadRequest("Invalid request body").WriteJSON(w)
+		return
+	}
+	if err := h.validator.Validate(req); err != nil {
+		apierror.ValidationFailed("Validation failed", err).WriteJSON(w)
+		return
+	}
+
+	// SECURITY (anti-enumeration): the answer and its latency do not depend
+	// on the address; the lookup, the token write and the email run after
+	// the response.
+	if h.EmailDeliveryAvailable() {
+		duration := h.authConfig.EmailVerificationDuration
+		go func() {
+			ctx, cancel := context.WithTimeout(context.WithoutCancel(r.Context()), 30*time.Second)
+			defer cancel()
+			res, err := h.authService.ResendVerification(ctx, req.Email)
+			if err != nil {
+				h.logger.Error("resend verification failed", "error", logger.SanitizeError(err))
+				return
+			}
+			if res == nil {
+				return
+			}
+			if err := h.emailService.SendVerificationEmail(ctx, req.Email, res.UserName, res.Token, duration); err != nil {
+				h.logger.Error("failed to send verification email", "error", logger.SanitizeError(err))
+			}
+		}()
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusAccepted)
+	_ = json.NewEncoder(w).Encode(map[string]string{
+		"message": "If the address has an account that is not verified yet, a new link has been sent",
+	})
+}
+
 // ResetPasswordRequest is the request body for password reset.
 type ResetPasswordRequest struct {
 	Token       string `json:"token" validate:"required"`
@@ -1292,7 +1359,8 @@ func (h *LocalAuthHandler) handleAuthError(w http.ResponseWriter, err error) {
 	case errors.Is(err, auth.ErrAccountSuspended):
 		apierror.Forbidden("Account is suspended").WriteJSON(w)
 	case errors.Is(err, auth.ErrEmailNotVerified):
-		apierror.Forbidden("Email is not verified").WriteJSON(w)
+		// A stable code: the sign-in form offers to send the link again.
+		apierror.New(http.StatusForbidden, CodeEmailNotVerified, "Email is not verified").WriteJSON(w)
 	case WriteLimitError(w, err):
 	case errors.Is(err, auth.ErrRegistrationDisabled), errors.Is(err, auth.ErrSignupNotAvailable):
 		writeSignupNotAvailable(w)

@@ -61,10 +61,14 @@ const (
 	// ApprovalOrgPurge: an organization is deleted at once, before its grace
 	// period ends ("tenant:<id>").
 	ApprovalOrgPurge ApprovalAction = "organization.purge"
+	// ApprovalUserMFAReset: an organization user's two-factor authentication
+	// is turned off by the console ("user:<id>"), for a person who lost their
+	// device and codes and has no organization administrator to reset them.
+	ApprovalUserMFAReset ApprovalAction = "user.reset_mfa"
 )
 
 var (
-	approvalIDTarget     = regexp.MustCompile(`^(admin|tenant):[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$`)
+	approvalIDTarget     = regexp.MustCompile(`^(admin|tenant|user):[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$`)
 	approvalEmailTarget  = regexp.MustCompile(`^email:[^\s@]{1,64}@[^\s@]{1,255}$`)
 	approvalSignupTarget = regexp.MustCompile(`^mode=(admin_only|self_service);accounts=(closed|domain|open)$`)
 )
@@ -93,6 +97,8 @@ func (a ApprovalAction) ValidTarget(target string) bool {
 		return approvalSignupTarget.MatchString(target)
 	case ApprovalAuditChainRebaseline, ApprovalOrgPurge:
 		return approvalIDTarget.MatchString(target) && strings.HasPrefix(target, "tenant:")
+	case ApprovalUserMFAReset:
+		return approvalIDTarget.MatchString(target) && strings.HasPrefix(target, "user:")
 	}
 	return false
 }
@@ -102,7 +108,7 @@ func (a ApprovalAction) IsValid() bool {
 	switch a {
 	case ApprovalGrantSuperAdmin, ApprovalRevokeSuperAdmin, ApprovalConsoleMFAOff,
 		ApprovalPlatformIdPRemove, ApprovalSignupOpen, ApprovalAuditChainRebaseline, ApprovalOrgPurge,
-		ApprovalPlatformIdPChange, ApprovalResetCredentials:
+		ApprovalPlatformIdPChange, ApprovalResetCredentials, ApprovalUserMFAReset:
 		return true
 	}
 	return false

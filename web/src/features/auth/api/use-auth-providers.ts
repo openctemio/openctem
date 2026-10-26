@@ -42,6 +42,13 @@ export interface AuthProvidersResponse {
   captcha_site_key?: string
   /** DEPLOYMENT_REGION: the region a new organization gets (fixed). */
   deployment_region?: string
+  /**
+   * Whether this server can send email. False: forgot-password, verification
+   * and invitation emails are not sent, so forms say "ask your administrator"
+   * and administrators copy links by hand. Absent until loaded: treat only an
+   * explicit false as "no email".
+   */
+  email_delivery?: boolean
 }
 
 // ============================================
@@ -90,4 +97,12 @@ export function useAuthProviders(config?: SWRConfiguration, enabled = true) {
  */
 export function usePasswordPolicy(): PasswordPolicy | undefined {
   return useAuthProviders().data?.password_policy
+}
+
+/**
+ * True when the server reports it cannot send email (undefined until the
+ * answer is loaded, so forms do not flash the no-email variant).
+ */
+export function useEmailUnavailable(): boolean {
+  return useAuthProviders().data?.email_delivery === false
 }
