@@ -174,7 +174,7 @@ func (m *wfActionMockFindingRepo) CountBySeverityForScan(_ context.Context, _ sh
 	return vulnerability.SeverityCounts{}, nil
 }
 
-func (m *wfActionMockFindingRepo) AutoReopenByFingerprintsBatch(_ context.Context, _ shared.ID, _ []string) (map[string]vulnerability.ReopenedFinding, error) {
+func (m *wfActionMockFindingRepo) AutoReopenByFingerprintsBatch(_ context.Context, _ shared.ID, _ []string, _ time.Time) (map[string]vulnerability.ReopenedFinding, error) {
 	return nil, nil
 }
 

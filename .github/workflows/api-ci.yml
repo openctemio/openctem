@@ -371,12 +371,43 @@ jobs:
           base="$(bash ../.github/scripts/effective-base.sh api "origin/${GITHUB_BASE_REF}")"
           make lint-new BASE_REF="$base"
 
+  # The OpenAPI spec, generated once and handed to the test and least-privilege
+  # shards (14 shards on the full tier each generated it: ~27 runner-minutes per
+  # merge group, and in the queue nothing is cached). Same wall time: the shards
+  # start their tests when the spec arrives instead of generating it.
+  spec:
+    name: OpenAPI spec
+    needs: changes
+    if: needs.changes.outputs.api == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Setup Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: api/go.mod
+          # Same rule as the shards: a merge-queue ref neither restores nor saves.
+          cache: ${{ github.event_name != 'merge_group' }}
+          cache-dependency-path: api/go.sum
+      - name: Generate the OpenAPI spec
+        run: make swagger
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: openapi-spec
+          path: api/api/openapi/swagger.yaml
+          if-no-files-found: error
+          retention-days: 1
+
   # Every event (PRs included): the whole suite against real Postgres and
   # Redis, so the DB-backed tests run too. The shard list comes from `changes`
   # (fast tier 6 shards without -race, full tier 8 with -race).
   test:
     name: Tests (Postgres + Redis)
-    needs: changes
+    needs: [changes, spec]
     if: needs.changes.outputs.api == 'true'
     runs-on: ubuntu-latest
     # The suite is split into parallel shards (.github/scripts/go-shard.sh:
@@ -439,9 +470,14 @@ jobs:
           cache: ${{ github.event_name != 'merge_group' }}
           cache-dependency-path: api/go.sum
 
-      # The spec is generated, not committed; the contract tests read it.
-      - name: Generate the OpenAPI spec
-        run: make swagger
+      # The spec is generated, not committed; the contract tests read it. The
+      # `spec` job generated it once for every shard (a shard used to spend
+      # 1.5-2 minutes on it).
+      - name: Download the OpenAPI spec
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: openapi-spec
+          path: api/api/openapi
 
       - name: Install golang-migrate
         run: go install -tags 'postgres' github.com/golang-migrate/migrate/v4/cmd/migrate@v4.18.1
@@ -501,7 +537,7 @@ jobs:
   # Any runtime statement the app role may not run fails here with 42501.
   least-privilege:
     name: Tests (least-privilege DB role)
-    needs: changes
+    needs: [changes, spec]
     if: needs.changes.outputs.api == 'true' && (needs.changes.outputs.full == 'true' || needs.changes.outputs.migrations == 'true')
     runs-on: ubuntu-latest
     strategy:
@@ -566,9 +602,14 @@ jobs:
           cache: ${{ github.event_name != 'merge_group' }}
           cache-dependency-path: api/go.sum
 
-      # The spec is generated, not committed; the contract tests read it.
-      - name: Generate the OpenAPI spec
-        run: make swagger
+      # The spec is generated, not committed; the contract tests read it. The
+      # `spec` job generated it once for every shard (a shard used to spend
+      # 1.5-2 minutes on it).
+      - name: Download the OpenAPI spec
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: openapi-spec
+          path: api/api/openapi
 
       - name: Install golang-migrate
         run: go install -tags 'postgres' github.com/golang-migrate/migrate/v4/cmd/migrate@v4.18.1

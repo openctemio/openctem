@@ -33,6 +33,17 @@ var importCoverageScope = `
 // A finding whose scan_id is this receipt still counts as reported.
 var importNotReportedSQL = `COALESCE(f.scan_id, '') <> $4 AND NOT ` + receiptSeenSQL("f", "$4")
 
+// importCloseableSQL is true for a finding an upload may close by absence:
+// not critical and not in the known-exploited list (those need a person's
+// verification), and whose latest sighting (the newest action row of any
+// receipt, the 90 days the actions are kept) came from an upload. A finding
+// last sighted by a platform sensor or a scan is never overruled by a file.
+var importCloseableSQL = `f.severity <> 'critical' AND NOT COALESCE(f.is_in_kev, false)
+	AND (SELECT ir.source_kind FROM finding_ingest_actions fia
+		JOIN ingest_receipts ir ON ir.id = fia.receipt_id AND ir.tenant_id = fia.tenant_id
+		WHERE fia.finding_id = f.id AND fia.tenant_id = f.tenant_id
+		ORDER BY fia.created_at DESC LIMIT 1) = 'upload'`
+
 // ImportCoverageCandidates returns the open findings of the scope the upload
 // (receiptID) did not report, and how many open findings the scope has (the
 // blinding guard). The receipt must be complete (AbsenceReceiptByID).
@@ -46,7 +57,7 @@ func (r *FindingRepository) ImportCoverageCandidates(ctx context.Context, tenant
 	}
 	rows, err := r.db.QueryContext(ctx, `
 		SELECT f.id::text, COUNT(*) OVER (),
-			`+importNotReportedSQL+` AND NOT `+secretFindingSQL("f")+`
+			`+importNotReportedSQL+` AND NOT `+secretFindingSQL("f")+` AND `+importCloseableSQL+`
 		FROM findings f
 		WHERE `+importCoverageScope,
 		tenantID.String(), pq.Array(importScopeIDs(assets)), tool, receiptID.String())
@@ -89,6 +100,7 @@ func (r *FindingRepository) ResolveImportCoverage(ctx context.Context, tenantID 
 		WHERE `+importCoverageScope+`
 			AND `+importNotReportedSQL+`
 			AND NOT `+secretFindingSQL("f")+`
+			AND `+importCloseableSQL+`
 			AND f.id = ANY($5::uuid[])
 		RETURNING f.id::text`,
 		tenantID.String(), pq.Array(importScopeIDs(assets)), tool, receiptID.String(), pq.Array(importScopeIDs(ids)))
