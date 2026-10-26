@@ -367,9 +367,6 @@ export function AuthenticationSettings() {
                     ))}
                   </SelectContent>
                 </Select>
-                    </span>
-                  </p>
-                )}
               </div>
             </CardContent>
           </Card>
