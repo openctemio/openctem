@@ -37,6 +37,7 @@ type SpecStep struct {
 	Condition         Condition      `json:"condition"`
 	MaxRetries        int            `json:"max_retries,omitempty"`
 	RetryDelaySeconds int            `json:"retry_delay_seconds,omitempty"`
+	RunPolicy         *RunPolicy     `json:"run_policy,omitempty"`
 }
 
 // SpecOf is the spec of a workflow loaded with its steps.
@@ -60,6 +61,12 @@ func SpecOf(w *Workflow) Spec {
 			Condition:         st.Condition,
 			MaxRetries:        st.MaxRetries,
 			RetryDelaySeconds: st.RetryDelaySeconds,
+		}
+		if !st.RunPolicy.IsZero() {
+			// A zero policy is left out, so the digest of a workflow that
+			// sets none is what it was before policies.
+			p := st.RunPolicy.Clone()
+			ss.RunPolicy = &p
 		}
 		if st.ToolID != nil {
 			ss.ToolID = st.ToolID.String()
@@ -107,6 +114,9 @@ func (s Spec) Workflow(live *Workflow) *Workflow {
 			Condition:         ss.Condition,
 			MaxRetries:        ss.MaxRetries,
 			RetryDelaySeconds: ss.RetryDelaySeconds,
+		}
+		if ss.RunPolicy != nil {
+			st.RunPolicy = ss.RunPolicy.Clone()
 		}
 		st.ID, _ = shared.IDFromString(ss.ID)
 		if ss.UIPosition != nil {

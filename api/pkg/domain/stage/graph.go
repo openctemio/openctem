@@ -32,6 +32,10 @@ type GraphNode struct {
 	Capability Key
 	// Tool is the pinned tool, if any.
 	Tool string
+	// Optional marks a node that waits for a tool: a planned capability is
+	// then a warning, not an error, and the node is skipped with the reason
+	// until a tool implements it.
+	Optional bool
 }
 
 // GraphEdge feeds To from From. FromPort and ToPort are optional: an edge
@@ -69,6 +73,7 @@ const (
 	IssueIntrusiveFed      = "INTRUSIVE_NODE_FED"
 	IssueTooLarge          = "GRAPH_TOO_LARGE"
 	IssueOpaqueEdge        = "EDGE_PASSES_NO_DATA"
+	IssueWaitsForTool      = "CAPABILITY_WAITS_FOR_TOOL"
 )
 
 // GraphIssue is one problem, anchored to a node or an edge.
@@ -189,9 +194,14 @@ func checkNodeCapability(rep *GraphReport, id string, n GraphNode) (Stage, bool)
 	st, ok := Lookup(n.Capability)
 	if !ok {
 		if p, planned := lookupPlanned(n.Capability); planned {
-			if p.CrossCutting {
+			switch {
+			case p.CrossCutting:
 				rep.errorf(IssueCrossCutting, anchor, "%s (%s) is used by retests, not as a workflow step", p.Name, p.Key)
-			} else {
+			case n.Optional:
+				// Typed like any node, so its connections are checked.
+				rep.warnf(IssueWaitsForTool, anchor, "%s (%s) runs when a tool that implements it is installed; until then the step is skipped", p.Name, p.Key)
+				return p, true
+			default:
 				rep.errorf(IssuePlanned, anchor, "%s (%s) is not available yet", p.Name, p.Key)
 			}
 			return Stage{}, false
@@ -254,6 +264,13 @@ func portNames(ps []PortType) string {
 		s[i] = string(p)
 	}
 	return strings.Join(s, ", ")
+}
+
+// IsPlanned reports whether k is a planned (not yet routed) capability that
+// may be a workflow node (cross-cutting capabilities are not).
+func IsPlanned(k Key) bool {
+	p, ok := lookupPlanned(k)
+	return ok && !p.CrossCutting
 }
 
 func lookupPlanned(k Key) (Stage, bool) {

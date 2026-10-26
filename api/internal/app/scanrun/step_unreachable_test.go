@@ -19,7 +19,7 @@ func TestStepAllUnreached_FailsTargetUnreachable(t *testing.T) {
 	s, store, runs := batchedFixture(command.StepBatch{Total: 1})
 	msg := "No target was reachable from the sensor (3 target(s): timeout 3)"
 	p := Partial{Unreached: 3, Tried: 3, UnreachedSummary: "x", AllUnreached: true, UnreachableMessage: msg}
-	if err := s.OnStepCompletedPartial(context.Background(), runs.run.ID.String(), "a", 0, nil, p); err != nil {
+	if err := s.OnStepCompletedPartial(context.Background(), runs.run.TenantID, runs.run.ID.String(), "a", 0, nil, p); err != nil {
 		t.Fatal(err)
 	}
 	a := store.rows["a"]
@@ -36,7 +36,7 @@ func TestStepAllUnreached_FailsTargetUnreachable(t *testing.T) {
 func TestStepAllUnreachedWithFindings_CompletedWithCount(t *testing.T) {
 	s, store, runs := batchedFixture(command.StepBatch{Total: 1})
 	p := Partial{Unreached: 2, Tried: 2, UnreachedSummary: "Completed with 2 target(s) unreachable", AllUnreached: true, UnreachableMessage: "none"}
-	if err := s.OnStepCompletedPartial(context.Background(), runs.run.ID.String(), "a", 4, nil, p); err != nil {
+	if err := s.OnStepCompletedPartial(context.Background(), runs.run.TenantID, runs.run.ID.String(), "a", 4, nil, p); err != nil {
 		t.Fatal(err)
 	}
 	a := store.rows["a"]
@@ -54,7 +54,7 @@ func TestStepAllUnreachedWithFindings_CompletedWithCount(t *testing.T) {
 func TestStepSingleTargetUnreached_Completed(t *testing.T) {
 	s, store, runs := batchedFixture(command.StepBatch{Total: 1})
 	p := Partial{Unreached: 1, Tried: 1, UnreachedSummary: "1 unreachable", AllUnreached: true, UnreachableMessage: "No target was reachable"}
-	if err := s.OnStepCompletedPartial(context.Background(), runs.run.ID.String(), "a", 0, nil, p); err != nil {
+	if err := s.OnStepCompletedPartial(context.Background(), runs.run.TenantID, runs.run.ID.String(), "a", 0, nil, p); err != nil {
 		t.Fatal(err)
 	}
 	if a := store.rows["a"]; a.Status != scanrun.StepRunStatusCompleted || a.Output[StepOutputUnreachable] != 1 {
@@ -72,7 +72,7 @@ func TestStepSingleTargetUnreached_Completed(t *testing.T) {
 func TestStepSomeUnreached_CompletedWithCount(t *testing.T) {
 	s, store, runs := batchedFixture(command.StepBatch{Total: 1})
 	summary := "Completed with 1 of 4 target(s) unreachable from the sensor (no_route 1): 10.2.0.7 (no_route)"
-	if err := s.OnStepCompletedPartial(context.Background(), runs.run.ID.String(), "a", 0, nil, Partial{Unreached: 1, Tried: 4, UnreachedSummary: summary}); err != nil {
+	if err := s.OnStepCompletedPartial(context.Background(), runs.run.TenantID, runs.run.ID.String(), "a", 0, nil, Partial{Unreached: 1, Tried: 4, UnreachedSummary: summary}); err != nil {
 		t.Fatal(err)
 	}
 	a := store.rows["a"]
@@ -98,7 +98,7 @@ func TestStepUnfinishedWork_StillPartial(t *testing.T) {
 		"unfinished":   {Unfinished: []string{"a.example.com"}, Unreached: 2, Skipped: 1},
 	} {
 		s, store, runs := batchedFixture(command.StepBatch{Total: 1})
-		if err := s.OnStepCompletedPartial(context.Background(), runs.run.ID.String(), "a", 1, nil, p); err != nil {
+		if err := s.OnStepCompletedPartial(context.Background(), runs.run.TenantID, runs.run.ID.String(), "a", 1, nil, p); err != nil {
 			t.Fatal(err)
 		}
 		a := store.rows["a"]
@@ -141,7 +141,7 @@ func TestBatchedStep_Unreached(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			s, store, runs := batchedFixture(tc.state)
-			if err := s.OnStepCompleted(context.Background(), runs.run.ID.String(), "a", 0, nil); err != nil {
+			if err := s.OnStepCompleted(context.Background(), runs.run.TenantID, runs.run.ID.String(), "a", 0, nil); err != nil {
 				t.Fatal(err)
 			}
 			a := store.rows["a"]

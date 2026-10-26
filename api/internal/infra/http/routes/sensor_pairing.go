@@ -1,6 +1,8 @@
 package routes
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"net/http"
 	"net/netip"
 	"strconv"
@@ -16,9 +18,25 @@ import (
 // Pairing caps (docs/rfcs/RFC-052-sensor-pairing-and-authorization.md §4.4).
 // Variables so a test can lift them.
 var (
-	// Start requests per source address: 10 per hour, burst 3.
-	pairingStartPerIPRate  = 10.0 / 3600
-	pairingStartPerIPBurst = 3
+	// Every start request per source address, before any work: 60 per hour,
+	// burst 10. A refused start (bad signature, clock skew, malformed body)
+	// spends only this budget, which refills in minutes, so a sensor that
+	// failed for a reason it then fixed is not locked out for an hour.
+	pairingStartPerIPRate  = 60.0 / 3600
+	pairingStartPerIPBurst = 10
+	// Verified starts without a code or token per source address: 10 per
+	// hour, burst 3. Each one opens a request with a fresh user code.
+	pairingCodelessPerIPRate  = 10.0 / 3600
+	pairingCodelessPerIPBurst = 3
+	// Verified starts with a pairing code or an enrollment token: 5 per hour,
+	// burst 3, per code or token, and 30 per hour, burst 10, per source
+	// address (a site behind one address installing several sensors, each
+	// with its own code). The address cap holds whether or not the code is
+	// open, so neither cap tells a caller whether a guessed code exists.
+	pairingPerCredentialRate    = 5.0 / 3600
+	pairingPerCredentialBurst   = 3
+	pairingCredentialPerIPRate  = 30.0 / 3600
+	pairingCredentialPerIPBurst = 10
 	// Start requests platform-wide: 600 per hour, burst 50. The open-request
 	// cap (sensorpairing.DefaultMaxOpen) is the hard limit across replicas.
 	pairingStartGlobalRate  = 600.0 / 3600
@@ -31,6 +49,42 @@ var (
 	pairingPerUserBurst = 10
 )
 
+// pairingStartBudget charges verified start requests (handler.PairingStartBudget):
+// a start with a code or token by that credential and by address, a start
+// without either by address alone.
+type pairingStartBudget struct {
+	codeless, credentialIP, credential *middleware.TelemetryRateLimiter
+}
+
+func newPairingStartBudget(log *logger.Logger) *pairingStartBudget {
+	return &pairingStartBudget{
+		codeless:     middleware.NewTelemetryRateLimiter(pairingCodelessPerIPRate, pairingCodelessPerIPBurst, 2*time.Hour, log),
+		credentialIP: middleware.NewTelemetryRateLimiter(pairingCredentialPerIPRate, pairingCredentialPerIPBurst, 2*time.Hour, log),
+		credential:   middleware.NewTelemetryRateLimiter(pairingPerCredentialRate, pairingPerCredentialBurst, 2*time.Hour, log),
+	}
+}
+
+// ChargeStart implements handler.PairingStartBudget. The credential is kept
+// only as a SHA-256 key, so the limiter never holds a code or token.
+func (b *pairingStartBudget) ChargeStart(r *http.Request, credential string) (time.Duration, bool) {
+	ip := pairingSourceKey(r)
+	if credential == "" {
+		if !b.codeless.Allow(ip) {
+			return b.codeless.RefillTime(ip), false
+		}
+		return 0, true
+	}
+	sum := sha256.Sum256([]byte(credential))
+	key := hex.EncodeToString(sum[:])
+	if !b.credential.Allow(key) {
+		return b.credential.RefillTime(key), false
+	}
+	if !b.credentialIP.Allow(ip) {
+		return b.credentialIP.RefillTime(ip), false
+	}
+	return 0, true
+}
+
 // registerSensorPairingRoutes mounts pairing: the sensor plane under
 // /api/v2/sensor/pairings (no bearer key; every request signed by the key
 // being paired, verified in the handler) and the user plane under
@@ -41,6 +95,7 @@ func registerSensorPairingRoutes(router Router, h *handler.SensorPairingHandler,
 	perRequest := middleware.NewTelemetryRateLimiter(pairingPerRequestRate, pairingPerRequestBurst, 30*time.Minute, log)
 	perUser := middleware.NewTelemetryRateLimiter(pairingPerUserRate, pairingPerUserBurst, time.Hour, log)
 
+	h.SetStartBudget(newPairingStartBudget(log))
 	start := []Middleware{
 		pairingLimit(perIP, pairingSourceKey),
 		pairingLimit(global, func(*http.Request) string { return "global" }),
@@ -120,7 +175,7 @@ func pairingLimit(rl *middleware.TelemetryRateLimiter, key func(*http.Request) s
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			if k := key(r); k != "" && !rl.Allow(k) {
-				w.Header().Set("Retry-After", strconv.Itoa(60))
+				w.Header().Set("Retry-After", strconv.Itoa(middleware.JitteredRetryAfter(rl.RefillTime(k))))
 				protov2.NewProblem(protov2.ProblemRateLimited).Write(w)
 				return
 			}

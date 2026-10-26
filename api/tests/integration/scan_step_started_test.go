@@ -56,7 +56,7 @@ func TestScanLoop_StartedCommandMarksTheStepRunning(t *testing.T) {
 		t.Fatalf("precondition: the step run is %q (started_at set: %v) before any sensor started it", status, started.Valid)
 	}
 
-	if err := pipeSvc.OnStepStarted(ctx, p.ScanRunID, p.StepKey, sensorID, shared.MustIDFromString(commandID)); err != nil {
+	if err := pipeSvc.OnStepStarted(ctx, tenantID, p.ScanRunID, p.StepKey, sensorID, shared.MustIDFromString(commandID)); err != nil {
 		t.Fatalf("OnStepStarted: %v", err)
 	}
 	status, started, sensor := step()
@@ -65,11 +65,11 @@ func TestScanLoop_StartedCommandMarksTheStepRunning(t *testing.T) {
 			status, started.Valid, sensor.String, sensorID)
 	}
 
-	if err := pipeSvc.OnStepCompleted(ctx, p.ScanRunID, p.StepKey, 0, nil); err != nil {
+	if err := pipeSvc.OnStepCompleted(ctx, tenantID, p.ScanRunID, p.StepKey, 0, nil); err != nil {
 		t.Fatalf("OnStepCompleted: %v", err)
 	}
 	// A start replayed after the result must not reopen the step.
-	if err := pipeSvc.OnStepStarted(ctx, p.ScanRunID, p.StepKey, sensorID, shared.MustIDFromString(commandID)); err != nil {
+	if err := pipeSvc.OnStepStarted(ctx, tenantID, p.ScanRunID, p.StepKey, sensorID, shared.MustIDFromString(commandID)); err != nil {
 		t.Fatalf("late OnStepStarted: %v", err)
 	}
 	status, after, _ := step()

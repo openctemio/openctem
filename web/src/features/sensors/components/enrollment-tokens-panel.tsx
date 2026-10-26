@@ -74,7 +74,7 @@ import {
 import { agoShort, exactTime } from '../lib/format'
 import { GRANT_PROFILES, pairingErrorMessage } from '../lib/pairing'
 import { useOneTimeKeyGuard } from './one-time-key-guard'
-import { PairingReview } from './pair-sensor-dialog'
+import { PairingReview } from './sensor-pairing-steps'
 import { Snippet } from './sensor-install-snippets'
 import { ToggleChip } from './toggle-chip'
 

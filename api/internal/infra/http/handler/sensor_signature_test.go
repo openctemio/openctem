@@ -160,3 +160,85 @@ func TestAuthenticateSigned_Refusals(t *testing.T) {
 		})
 	}
 }
+
+// A request whose signature verifies with its key but whose time is outside
+// the clock tolerance is a clock skew, with the offset; the nonce is not
+// spent, so the same sensor succeeds once its clock is right.
+func TestAuthenticateSigned_ClockSkew(t *testing.T) {
+	f, s := newSignedFixture(t)
+	now := time.Now()
+	s.Now = func() time.Time { return now.Add(4 * time.Hour) }
+	r := signedRequest(t, s, http.MethodPost, "/api/v2/sensor/heartbeat", `{}`)
+	_, _, err := authenticateSigned(r, f, "", now)
+	var ce *clockSkewError
+	if !errors.As(err, &ce) || !errors.Is(err, errSignedRefused) {
+		t.Fatalf("want a clock-skew refusal, got %v", err)
+	}
+	if d := ce.offset - 4*time.Hour; d < -2*time.Second || d > 2*time.Second {
+		t.Fatalf("offset %v, want about 4h", ce.offset)
+	}
+	if ce.sensorID == "" || ce.keyID != f.keyID {
+		t.Fatalf("clock-skew error lacks its sensor: %+v", ce)
+	}
+	if len(f.nonces) != 0 || f.used != 0 {
+		t.Fatal("a refused request spent a nonce or recorded a use")
+	}
+	rec := httptest.NewRecorder()
+	if !writeClockSkew(rec, r, err, nil) {
+		t.Fatal("clock skew not answered")
+	}
+	body := rec.Body.String()
+	if rec.Code != http.StatusUnauthorized || !strings.Contains(body, "/clock-skew") ||
+		!strings.Contains(body, `"server_time":"`) || !strings.Contains(body, `"clock_offset_seconds":14`) {
+		t.Fatalf("clock-skew answer %d %s", rec.Code, body)
+	}
+	s.Now = time.Now
+	if _, _, err := authenticateSigned(signedRequest(t, s, http.MethodPost, "/api/v2/sensor/heartbeat", `{}`), f, "", now); err != nil {
+		t.Fatalf("request with the right clock refused: %v", err)
+	}
+}
+
+// The clock-skew answer is given only for a signature that verifies with the
+// key it names: an unknown key, a forged signature or a window outside the
+// profile is the generic refusal, whatever the time.
+func TestAuthenticateSigned_ClockSkewOnlyForValidSignatures(t *testing.T) {
+	skewed := func(s *sensorsig.Signer) { s.Now = func() time.Time { return time.Now().Add(-3 * time.Hour) } }
+	cases := map[string]func(t *testing.T, f *fakeSigned, s *sensorsig.Signer) *http.Request{
+		"unknown key": func(t *testing.T, f *fakeSigned, s *sensorsig.Signer) *http.Request {
+			f.keyID = "other"
+			skewed(s)
+			return signedRequest(t, s, http.MethodGet, "/api/v2/sensor/hello", "")
+		},
+		"forged signature": func(t *testing.T, _ *fakeSigned, s *sensorsig.Signer) *http.Request {
+			skewed(s)
+			r := signedRequest(t, s, http.MethodGet, "/api/v2/sensor/commands", "")
+			r.URL.Path = "/api/v2/sensor/suppressions"
+			return r
+		},
+		"key of another sensor": func(t *testing.T, f *fakeSigned, _ *sensorsig.Signer) *http.Request {
+			other, err := sensorsig.NewSigner(ed25519.NewKeyFromSeed(bytes.Repeat([]byte{9}, 32)))
+			if err != nil {
+				t.Fatal(err)
+			}
+			skewed(other)
+			r := signedRequest(t, other, http.MethodGet, "/api/v2/sensor/hello", "")
+			// Claim the registered key id: the signature does not verify.
+			r.Header.Set(sensorsig.HeaderSignatureInput, strings.Replace(r.Header.Get(sensorsig.HeaderSignatureInput), other.KeyID(), f.keyID, 1))
+			return r
+		},
+	}
+	for name, build := range cases {
+		t.Run(name, func(t *testing.T) {
+			f, s := newSignedFixture(t)
+			r := build(t, f, s)
+			_, _, err := authenticateSigned(r, f, "", time.Now())
+			var ce *clockSkewError
+			if !errors.Is(err, errSignedRefused) || errors.As(err, &ce) {
+				t.Fatalf("want the generic refusal, got %v", err)
+			}
+			if writeClockSkew(httptest.NewRecorder(), r, err, nil) {
+				t.Fatal("generic refusal answered as a clock skew")
+			}
+		})
+	}
+}

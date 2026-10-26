@@ -106,6 +106,8 @@ const POLLING_BASELINE: Record<string, number> = {
   'features/scans/components/scan-runs-tab.tsx': 2,
   'features/sensors/components/sensor-detail-sheet.tsx': 1,
   'features/sensors/components/sensor-install-flow.tsx': 1,
+  // Add sensor: the approved sensor's first heartbeat, stops once it is seen.
+  'features/sensors/components/sensor-onboarding-panel.tsx': 1,
   'lib/api/hooks.ts': 1,
   'lib/api/scan-workflow-hooks.ts': 1,
   'lib/api/security-hooks.ts': 1,

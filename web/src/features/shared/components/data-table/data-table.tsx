@@ -112,6 +112,11 @@ interface DataTableProps<TData, TValue> {
   errorState?: React.ReactNode
   onRowClick?: (row: TData) => void
   /**
+   * The tone of a row: 'dim' greys its text (a colour, never opacity) for rows
+   * that are not the work of the moment, such as low-priority or closed ones.
+   */
+  rowTone?: (row: TData) => 'dim' | undefined
+  /**
    * Notified whenever the row selection changes, with the selected row data.
    * The table owns selection state internally (via the `select` column's
    * checkboxes); this is the only way for a parent to observe it (e.g. to drive
@@ -421,6 +426,7 @@ export function DataTable<TData, TValue>({
   emptyState,
   errorState,
   onRowClick,
+  rowTone,
   onSelectionChange,
   manualPagination = false,
   pageCount,
@@ -1029,6 +1035,7 @@ export function DataTable<TData, TValue>({
                       <TableRow
                         key={row.id}
                         data-state={row.getIsSelected() && 'selected'}
+                        data-tone={rowTone?.(row.original)}
                         className={cn(
                           'group/row',
                           onRowClick && 'cursor-pointer hover:bg-muted/50'
