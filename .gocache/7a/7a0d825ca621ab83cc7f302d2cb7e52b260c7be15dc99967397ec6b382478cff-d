@@ -1,7 +1,0 @@
-./cbc.go
-./decrypt.go
-./digest.go
-./fuzz.go
-./gcm.go
-./pubkey.go
-./xmlenc.go

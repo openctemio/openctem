@@ -1,8 +1,0 @@
-./diff.go
-./diffmatchpatch.go
-./index.go
-./match.go
-./mathutil.go
-./operation_string.go
-./patch.go
-./stringutil.go

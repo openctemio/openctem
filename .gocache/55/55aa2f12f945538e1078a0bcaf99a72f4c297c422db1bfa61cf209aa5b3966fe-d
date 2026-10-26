@@ -1,6 +1,0 @@
-./access_request.go
-./confirmation.go
-./endpoints.go
-./model.go
-./redirect.go
-./scope.go

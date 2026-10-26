@@ -1,8 +1,0 @@
-./cpe.go
-./distro.go
-./match.go
-./maven.go
-./normalize.go
-./pep440.go
-./scheme.go
-./version.go

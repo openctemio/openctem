@@ -1,5 +1,0 @@
-./entity.go
-./errors.go
-./graph.go
-./repository.go
-./value_objects.go

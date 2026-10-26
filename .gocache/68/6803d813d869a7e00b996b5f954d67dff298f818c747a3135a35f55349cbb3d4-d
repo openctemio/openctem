@@ -1,5 +1,0 @@
-./delivery.go
-./errors.go
-./event.go
-./outbox.go
-./repository.go

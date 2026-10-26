@@ -1,5 +1,0 @@
-./argon2.go
-./blake2b.go
-./blamka_amd64.go
-./blamka_generic.go
-./blamka_amd64.s

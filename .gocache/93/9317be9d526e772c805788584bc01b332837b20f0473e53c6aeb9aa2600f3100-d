@@ -1,4 +1,0 @@
-./capabilities.go
-./opengrep_regex.go
-./payload_signer.go
-./validator.go

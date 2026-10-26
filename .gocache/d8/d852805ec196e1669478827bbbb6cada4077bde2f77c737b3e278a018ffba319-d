@@ -1,5 +1,0 @@
-./reader.go
-./reader_buffered.go
-./redis_errors.go
-./scan.go
-./writer.go

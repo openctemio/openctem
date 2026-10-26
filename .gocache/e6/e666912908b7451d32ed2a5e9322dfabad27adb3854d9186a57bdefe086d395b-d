@@ -1,9 +1,0 @@
-./doc.go
-./initialism_index.go
-./name_lexem.go
-./name_mangler.go
-./options.go
-./pools.go
-./split.go
-./string_bytes.go
-./util.go

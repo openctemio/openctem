@@ -1,8 +1,0 @@
-./certificate.go
-./doc.go
-./generic.go
-./password.go
-./privatekey.go
-./publickey.go
-./safestring.go
-./sans.go

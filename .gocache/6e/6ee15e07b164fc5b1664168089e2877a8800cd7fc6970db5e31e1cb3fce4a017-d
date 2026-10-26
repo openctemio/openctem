@@ -1,8 +1,0 @@
-./dependency.go
-./errors.go
-./event_type.go
-./module.go
-./presets.go
-./registry.go
-./registry_generated.go
-./repository.go

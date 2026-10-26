@@ -1,6 +1,0 @@
-./errors.go
-./keys.go
-./logger.go
-./marshal.go
-./metadata.go
-./types.go

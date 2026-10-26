@@ -1,5 +1,0 @@
-./catalog.go
-./entity.go
-./errors.go
-./generation.go
-./repository.go

@@ -1,6 +1,0 @@
-./admin_plane.go
-./brand.go
-./config.go
-./envdoc.go
-./registry.go
-./trusted_proxies.go

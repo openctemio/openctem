@@ -1,5 +1,0 @@
-./const.go
-./dvmask_amd64.go
-./dvmask_avx512_table_amd64.go
-./ubc.go
-./dvmask_avx512_amd64.s

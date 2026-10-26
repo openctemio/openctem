@@ -1,9 +1,0 @@
-./akp_unsupported.go
-./const.go
-./cose_algorithm_identifier.go
-./cose_elliptic_curve.go
-./cose_key_type.go
-./ed25519.go
-./secp256k1.go
-./types.go
-./webauthncose.go

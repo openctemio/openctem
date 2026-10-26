@@ -1,9 +1,0 @@
-./asset_coverage.go
-./asset_freshness.go
-./asset_reconciliation.go
-./dashboard_facts.go
-./ingest_receipts.go
-./metrics.go
-./operations.go
-./security_defenses.go
-./websocket.go

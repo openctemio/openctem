@@ -1,7 +1,0 @@
-./chain_cache.go
-./crown_jewel_paths.go
-./exposure_chains.go
-./path_detail.go
-./path_scoring.go
-./scoped.go
-./surface_service.go

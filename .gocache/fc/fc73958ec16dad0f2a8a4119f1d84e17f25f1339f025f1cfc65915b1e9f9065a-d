@@ -1,4 +1,0 @@
-./adapters.go
-./scanner_template_ledger.go
-./scanner_template_service.go
-./security_validator.go
