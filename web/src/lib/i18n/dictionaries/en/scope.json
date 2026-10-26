@@ -152,7 +152,6 @@
   "scope.entry.permanent": "permanent",
   "scope.entry.pickKind": "Pick the kind",
   "scope.entry.proofPlatform": "Shared sensors also need proof that you control {domain}; your organization's sensors need this entry only.",
-  "scope.entry.proofT2": "Intrusive (T2) probes also need proof that you control {domain}.",
   "scope.entry.reason": "Reason",
   "scope.entry.reasonOptional": "Reason (optional)",
   "scope.entry.reasonPlaceholder": "Why may this be probed? For example: our domain, registrar account 123; pentest ticket OPS-12.",
