@@ -453,19 +453,16 @@ export function ScopeEntryDialog({
           ) : outcome ? (
             <div className="space-y-3">
               {outcome.error != null && (
-                <div
-                  role="alert"
-                  className="flex items-start gap-2 rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive"
-                >
-                  <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
-                  <span>
+                <Alert variant="destructive">
+                  <AlertTriangle />
+                  <AlertDescription>
                     {scopeErrorMessage(
                       t,
                       outcome.error,
                       t('scope.bulk.failed', 'Could not add to scope')
                     )}
-                  </span>
-                </div>
+                  </AlertDescription>
+                </Alert>
               )}
               <ScopeBulkResult
                 results={outcome.results}
@@ -478,13 +475,10 @@ export function ScopeEntryDialog({
           ) : (
             <form id={formId} onSubmit={submit} className="space-y-4">
               {error && (
-                <div
-                  role="alert"
-                  className="flex items-start gap-2 rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive"
-                >
-                  <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
-                  <span>{error}</span>
-                </div>
+                <Alert variant="destructive">
+                  <AlertTriangle />
+                  <AlertDescription>{error}</AlertDescription>
+                </Alert>
               )}
               {dup && dup.pattern === pattern && (
                 <ScopeExistingNotice
