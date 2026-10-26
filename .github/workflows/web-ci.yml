@@ -304,6 +304,16 @@ jobs:
           bash scripts/check-separators.sh "$base"
           sh scripts/check-separators.test.sh
 
+      # Copy rules for added or changed English strings (research/237 R12,
+      # R18, R19): no marketing words, "successfully", exclamation marks, em
+      # dash asides or Title Case labels. `node scripts/check-copy.mjs --all`
+      # lists the existing strings to clean up.
+      - name: Check copy
+        if: github.event_name == 'pull_request'
+        run: |
+          base="$(bash ../.github/scripts/effective-base.sh web "origin/${GITHUB_BASE_REF}")"
+          node scripts/check-copy.mjs "$base"
+
   # The Vitest suite, in three parallel shards (vitest --shard). Same setup as
   # `Web checks`; the endpoint check reads api/api/openapi/routes.txt.
   tests:

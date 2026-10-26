@@ -10,7 +10,9 @@ package easm
 //     shared hosting, a released cloud address), so a person decides. Shared
 //     and CDN addresses are listed apart and never offered; an address whose
 //     network we know nothing about is offered but marked unknown, never
-//     presented as safe.
+//     presented as safe. While the organization's unclassified-scans mode
+//     gives known, unshared addresses low-impact checks, only the unknown
+//     ones wait; the others are listed apart as already checked.
 //   - confirmed_out_of_scope: assets a person confirmed as the
 //     organization's that no active scope entry covers (confirmations made
 //     before a confirmation added its own entry).
@@ -32,7 +34,9 @@ import (
 	"github.com/openctemio/openctem/api/internal/app/datascope"
 	"github.com/openctemio/openctem/api/internal/app/scope"
 	"github.com/openctemio/openctem/api/pkg/domain/asset"
+	"github.com/openctemio/openctem/api/pkg/domain/attribution"
 	"github.com/openctemio/openctem/api/pkg/domain/easmseed"
+	"github.com/openctemio/openctem/api/pkg/domain/edgeaddr"
 	scopedom "github.com/openctemio/openctem/api/pkg/domain/scope"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 )
@@ -102,6 +106,18 @@ type SuggestionNetwork struct {
 	ASN      string `json:"asn,omitempty"`
 	Org      string `json:"org,omitempty"`
 	Provider string `json:"provider,omitempty"`
+	// Class: edge, saas_hosting, cloud_shared or dedicated (the address
+	// classifier, pkg/domain/edgeaddr). Only a dedicated address can be the
+	// organization's.
+	Class string `json:"class,omitempty"`
+}
+
+// SuggestionProvider is a provider whose addresses the in-scope names
+// resolve to: none of them needs a decision.
+type SuggestionProvider struct {
+	Provider  string `json:"provider"`
+	Class     string `json:"class"`
+	Addresses int    `json:"addresses"`
 }
 
 // SuggestionAsset is one confirmed asset no entry covers.
@@ -120,11 +136,23 @@ type SuggestionCard struct {
 	// and the card comes back with the rest.
 	Truncated bool `json:"truncated"`
 	// addresses_behind_names only.
-	NamesCount          int                 `json:"names_count,omitempty"`
-	UnknownNetworkCount int                 `json:"unknown_network_count,omitempty"`
-	SharedCount         int                 `json:"shared_count,omitempty"`
-	Addresses           []SuggestionAddress `json:"addresses,omitempty"`
-	SharedAddresses     []SuggestionAddress `json:"shared_addresses,omitempty"`
+	NamesCount          int `json:"names_count,omitempty"`
+	UnknownNetworkCount int `json:"unknown_network_count,omitempty"`
+	SharedCount         int `json:"shared_count,omitempty"`
+	// CheckedCount: addresses that need no decision because the
+	// organization's unclassified-scans mode already gives them low-impact
+	// checks (a known network that is not shared); adding them is optional
+	// (a full scan). Listed in CheckedAddresses, never in Addresses.
+	CheckedCount int `json:"checked_count,omitempty"`
+	// ProviderCount: the shared addresses that belong to a CDN, hosting or
+	// cloud-shared provider (class not dedicated), grouped in Providers,
+	// most addresses first; the rest of SharedCount is shared with other
+	// organizations.
+	ProviderCount    int                  `json:"provider_count,omitempty"`
+	Providers        []SuggestionProvider `json:"providers,omitempty"`
+	Addresses        []SuggestionAddress  `json:"addresses,omitempty"`
+	SharedAddresses  []SuggestionAddress  `json:"shared_addresses,omitempty"`
+	CheckedAddresses []SuggestionAddress  `json:"checked_addresses,omitempty"`
 	// PrefixRules: the organization's own prefixes holding offered
 	// addresses (Prefix), most addresses first.
 	PrefixRules []SuggestionPrefix `json:"prefix_rules,omitempty"`
@@ -135,9 +163,14 @@ type SuggestionCard struct {
 // SuggestionCards is the answer.
 type SuggestionCards struct {
 	Cards []SuggestionCard `json:"cards"`
-	// Total: the decisions waiting, one per card, the review-by-rule cards
-	// of names included (the Suggestions tab badge).
+	// Total: the decisions waiting (the Review tab and sidebar badge): one
+	// per card that offers something (Count > 0) plus NameRules. A card that
+	// only lists addresses needing no decision (shared, already checked) is
+	// returned for the page but never counted.
 	Total int `json:"total"`
+	// NameRules: the review-by-rule cards about names over the names that
+	// wait for a decision (DecisionStates), as the Review tab lists them.
+	NameRules int `json:"name_rules"`
 	// CanAdd: the caller may accept a card (scope write permission).
 	CanAdd bool `json:"can_add"`
 }
@@ -177,6 +210,40 @@ type SuggestionService struct {
 	// guardrails decide which seeded prefixes may be offered as rules; nil
 	// offers none.
 	guardrails *scopedom.Guardrails
+	// unclassified answers the organization's unclassified-scans mode; nil
+	// or unreadable means off (every offered address waits).
+	unclassified UnclassifiedPolicy
+}
+
+// DecisionStates are the attribution states that wait for a person: the
+// Review tab lists them and the badge counts them. Discovered names are in
+// the inventory already and need no decision.
+var DecisionStates = []attribution.State{attribution.StateNeedsReview, attribution.StateCandidate}
+
+// SetUnclassified lets the card tell addresses that already get low-impact
+// checks (RFC-054 §16) from those that wait for a decision.
+func (s *SuggestionService) SetUnclassified(p UnclassifiedPolicy) { s.unclassified = p }
+
+// checksUnclassified: the organization's mode gives unclassified assets
+// low-impact checks. Anything unreadable is off.
+func (s *SuggestionService) checksUnclassified(ctx context.Context, tenantID shared.ID) bool {
+	if s.unclassified == nil {
+		return false
+	}
+	m, err := s.unclassified(ctx, tenantID)
+	return err == nil && (m == unclassifiedLowImpact || m == unclassifiedFull)
+}
+
+// Finish sets NameRules and Total: one per card that offers something, plus
+// the name rules.
+func (c *SuggestionCards) Finish(nameRules int) {
+	c.NameRules = nameRules
+	c.Total = nameRules
+	for _, card := range c.Cards {
+		if card.Count > 0 {
+			c.Total++
+		}
+	}
 }
 
 // SetGuardrails lets the card offer the organization's own prefixes as
@@ -252,8 +319,11 @@ func (s *SuggestionService) addressCard(ctx context.Context, tenantID shared.ID,
 		}
 		seeds = &n
 	}
-	card := &SuggestionCard{Kind: CardAddressesBehindNames, Addresses: []SuggestionAddress{}, SharedAddresses: []SuggestionAddress{}}
+	checks := s.checksUnclassified(ctx, tenantID)
+	card := &SuggestionCard{Kind: CardAddressesBehindNames, Addresses: []SuggestionAddress{},
+		SharedAddresses: []SuggestionAddress{}, CheckedAddresses: []SuggestionAddress{}}
 	names := map[string]bool{}
+	providers := map[string]int{}
 	for _, r := range rows {
 		if _, covered := cover[r.Address]; covered {
 			continue
@@ -274,7 +344,10 @@ func (s *SuggestionService) addressCard(ctx context.Context, tenantID shared.ID,
 		}
 		item := SuggestionAddress{AssetID: r.AssetID, Address: r.Address, ResolvedFrom: from}
 		item.Network, item.Shared = classifyAddress(r, org, seeds)
-		item.Ports = addressPorts(r)
+		if item.Shared == "" {
+			// A shared address's open ports are its provider's: never shown.
+			item.Ports = addressPorts(r)
+		}
 		for _, n := range r.VisibleNames {
 			if _, ok := cover[n]; !ok && len(item.OtherNames) < maxResolvedFrom {
 				item.OtherNames = append(item.OtherNames, n)
@@ -284,17 +357,27 @@ func (s *SuggestionService) addressCard(ctx context.Context, tenantID shared.ID,
 		if item.Shared == "" && seeds != nil {
 			item.Prefix = s.ownPrefix(*seeds, r.Address)
 		}
-		if item.Shared == "" {
-			for _, n := range all {
-				names[n] = true // names_count: the names behind the offered addresses
-			}
-		}
 		if item.Shared != "" {
 			card.SharedCount++
+			if item.Network.Class != "" && item.Network.Class != string(edgeaddr.Dedicated) {
+				card.ProviderCount++
+				providers[item.Network.Provider+"|"+item.Network.Class]++
+			}
 			if len(card.SharedAddresses) < MaxSuggestionItems {
 				card.SharedAddresses = append(card.SharedAddresses, item)
 			}
 			continue
+		}
+		if checks && item.Network.Known {
+			// Already gets low-impact checks: no decision waits.
+			card.CheckedCount++
+			if len(card.CheckedAddresses) < MaxSuggestionItems {
+				card.CheckedAddresses = append(card.CheckedAddresses, item)
+			}
+			continue
+		}
+		for _, n := range all {
+			names[n] = true // names_count: the names behind the addresses that wait
 		}
 		if !item.Network.Known {
 			card.UnknownNetworkCount++
@@ -308,33 +391,41 @@ func (s *SuggestionService) addressCard(ctx context.Context, tenantID shared.ID,
 	card.Count = len(card.Addresses)
 	card.NamesCount = len(names)
 	card.PrefixRules = prefixRules(card.Addresses)
+	card.Providers = providerList(providers)
 
-	if card.Count == 0 && card.SharedCount == 0 {
+	if card.Count == 0 && card.SharedCount == 0 && card.CheckedCount == 0 {
 		return nil, nil
 	}
 	return card, nil
 }
 
 // classifyAddress tells what we know about the address's network and why it
-// is shared ("" when it is offered).
+// is shared ("" when it is offered). The address classifier decides edge,
+// hosting and cloud-shared space; the checks after it catch shared hosting
+// it cannot know (many domains, another organization's network).
 func classifyAddress(r AddressBehindNames, org string, seeds *easmseed.Networks) (SuggestionNetwork, string) {
 	net := SuggestionNetwork{}
+	var cdn string
 	if r.Props != nil {
 		net.ASN = strings.TrimSpace(asnHint(map[string]any{"asn": r.Props["asn"]}))
 		net.Org, _ = r.Props["asn_org"].(string)
 		net.Known = net.ASN != "" || net.Org != ""
-		if cdn, _ := r.Props["cdn"].(string); cdn != "" {
-			net.Known, net.Provider = true, cdn
-			return net, SharedCDN
-		}
-		if shared, provider := sharedAddress(r.Props); shared {
-			net.Provider = provider
-			return net, SharedProvider
-		}
+		cdn, _ = r.Props["cdn"].(string)
 	}
-	if provider := edgeRangeProvider(r.Address); provider != "" {
-		net.Known, net.Provider = true, provider
+	res := edgeaddr.Default().Address(r.Address, cdn, net.Org)
+	net.Class = string(res.Class)
+	switch {
+	case res.Basis == edgeaddr.BasisRange:
+		net.Known, net.Provider = true, res.Provider
 		return net, SharedEdgeRange
+	case res.Basis == edgeaddr.BasisCDN:
+		net.Known, net.Provider = true, res.Provider
+		return net, SharedCDN
+	case res.ProviderSpace():
+		// Provider space, dedicated cloud addresses included: never offered
+		// on a name's word alone.
+		net.Provider = res.Provider
+		return net, SharedProvider
 	}
 	if registrableDomains(r.AllNames) >= sharedDomainThreshold {
 		return net, SharedManyDomains
@@ -344,6 +435,22 @@ func classifyAddress(r AddressBehindNames, org string, seeds *easmseed.Networks)
 		return net, SharedOtherNetwork
 	}
 	return net, ""
+}
+
+// providerList is the providers by addresses, most first.
+func providerList(m map[string]int) []SuggestionProvider {
+	out := make([]SuggestionProvider, 0, len(m))
+	for k, n := range m {
+		provider, class, _ := strings.Cut(k, "|")
+		out = append(out, SuggestionProvider{Provider: provider, Class: class, Addresses: n})
+	}
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].Addresses != out[j].Addresses {
+			return out[i].Addresses > out[j].Addresses
+		}
+		return out[i].Provider < out[j].Provider
+	})
+	return out
 }
 
 // registrableDomains counts the distinct registrable domains among names.
@@ -414,56 +521,13 @@ func SuggestionTargetType(assetType string) string {
 	return string(scopedom.TargetTypeDomain)
 }
 
-// edgeRanges are published CDN edge ranges: addresses there serve many
-// organizations. It is a floor, not a complete list: an address outside
-// it with no network data is reported as unknown, never as not shared.
-var edgeRanges = func() []struct {
-	p        netip.Prefix
-	provider string
-} {
-	lists := map[string][]string{
-		"Cloudflare": {
-			"173.245.48.0/20", "103.21.244.0/22", "103.22.200.0/22", "103.31.4.0/22", "141.101.64.0/18",
-			"108.162.192.0/18", "190.93.240.0/20", "188.114.96.0/20", "197.234.240.0/22", "198.41.128.0/17",
-			"162.158.0.0/15", "104.16.0.0/13", "104.24.0.0/14", "172.64.0.0/13", "131.0.72.0/22",
-			"2400:cb00::/32", "2606:4700::/32", "2803:f800::/32", "2405:b500::/32", "2405:8100::/32",
-			"2a06:98c0::/29", "2c0f:f248::/32",
-		},
-		"Fastly": {
-			"23.235.32.0/20", "43.249.72.0/22", "103.244.50.0/24", "103.245.222.0/23", "103.245.224.0/24",
-			"104.156.80.0/20", "140.248.64.0/18", "140.248.128.0/17", "146.75.0.0/17", "151.101.0.0/16",
-			"157.52.64.0/18", "167.82.0.0/17", "167.82.128.0/20", "167.82.160.0/20", "167.82.224.0/20",
-			"172.111.64.0/18", "185.31.16.0/22", "199.27.72.0/21", "199.232.0.0/16",
-			"2a04:4e40::/32", "2a04:4e42::/32",
-		},
-	}
-	var out []struct {
-		p        netip.Prefix
-		provider string
-	}
-	for provider, ps := range lists {
-		for _, s := range ps {
-			out = append(out, struct {
-				p        netip.Prefix
-				provider string
-			}{netip.MustParsePrefix(s), provider})
-		}
-	}
-	return out
-}()
-
-// edgeRangeProvider names the CDN whose published edge range holds addr
-// ("" when none does).
+// edgeRangeProvider names the provider whose published edge range holds
+// addr ("" when none does), from the address classifier's dataset. It is a
+// floor, not a complete list: an address outside it with no network data is
+// reported as unknown, never as not shared.
 func edgeRangeProvider(addr string) string {
-	a, err := netip.ParseAddr(addr)
-	if err != nil {
-		return ""
-	}
-	a = a.Unmap()
-	for _, r := range edgeRanges {
-		if r.p.Contains(a) {
-			return r.provider
-		}
+	if r := edgeaddr.Default().Address(addr, "", ""); r.Basis == edgeaddr.BasisRange {
+		return r.Provider
 	}
 	return ""
 }

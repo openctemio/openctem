@@ -14,7 +14,7 @@ const api = vi.hoisted(() => ({ get: vi.fn() }))
 vi.mock('@/lib/api/client', () => api)
 vi.mock('@/lib/permissions', async (orig) => {
   const actual = await orig<typeof import('@/lib/permissions')>()
-  return { ...actual, usePermissions: () => ({ can: () => true }) }
+  return { ...actual, usePermissions: () => ({ can: () => true }), useCanMutate: () => true }
 })
 
 const wrap = (ui: ReactNode) =>
@@ -59,7 +59,8 @@ describe('EASMOverview', () => {
     expect(screen.getByText('no cycle started')).toBeInTheDocument()
     expect(screen.getByText('CT lookups failing')).toBeInTheDocument()
     expect(screen.getByText(/7 open in total/)).toBeInTheDocument()
-    expect(screen.getByText(/Dangling CNAME · old.acme.com/)).toBeInTheDocument()
+    expect(screen.getByText('Dangling CNAME')).toBeInTheDocument()
+    expect(screen.getByText('old.acme.com')).toBeInTheDocument()
     // Names waiting for review link to the review queue.
     expect(screen.getByRole('link', { name: 'Review' })).toHaveAttribute(
       'href',

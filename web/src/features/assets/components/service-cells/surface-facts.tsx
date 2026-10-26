@@ -1,8 +1,9 @@
-import type { ReactNode } from 'react'
+import { useId, type ReactNode } from 'react'
 import { useTranslation } from '@/context/i18n-provider'
 import type { Asset } from '../../types'
 import {
   asnInfo,
+  cdnName,
   cnames,
   formatPort,
   httpStatusCode,
@@ -20,6 +21,8 @@ import {
   tlsFacts,
 } from '../../lib/service-facts'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
+import { useFitCount } from '@/hooks/use-fit-count'
 import { cellsForType, type SurfaceCell } from './cells-for-type'
 import { ChipMono, ChipRow, FactChip } from './fact-chip'
 import { HttpStatusChip } from './http-status-chip'
@@ -91,6 +94,32 @@ export function ProductChip({ asset }: { asset: Asset }) {
   )
 }
 
+/**
+ * "Behind Cloudflare": the service is served through a CDN or edge provider,
+ * so the addresses it resolves to are the provider's (research/259).
+ */
+export function EdgeChip({ provider }: { provider: string }) {
+  const { t } = useTranslation()
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <FactChip tone="muted" data-slot="edge-chip">
+          <span className="max-w-[8rem] truncate">
+            {t('assets.facts.behind', 'Behind {provider}', { provider })}
+          </span>
+        </FactChip>
+      </TooltipTrigger>
+      <TooltipContent side="top" className="max-w-xs">
+        {t(
+          'assets.facts.behindHint',
+          "Served through {provider}'s edge: its addresses belong to {provider}, not to this service.",
+          { provider }
+        )}
+      </TooltipContent>
+    </Tooltip>
+  )
+}
+
 interface CellSpec {
   /** Whether the cell has anything to show for this asset. */
   known: (a: Asset) => boolean
@@ -108,6 +137,13 @@ const SPECS: Record<SurfaceCell, CellSpec> = {
     known: (a) => httpStatusCode(a) !== null,
     render: (a) => <HttpStatusChip status={httpStatusCode(a)} chain={redirectChain(a)} />,
     missing: (a) => (httpStatusCode(a) === null ? 'HTTP status' : null),
+  },
+  edge: {
+    known: (a) => !!cdnName(a),
+    render: (a) => {
+      const provider = cdnName(a)
+      return provider ? <EdgeChip provider={provider} /> : null
+    },
   },
   port: {
     known: (a) => servicePort(a) !== null,
@@ -262,14 +298,15 @@ const ATOM_RANK: Record<SurfaceCell, number> = {
   status: 0,
   port: 1,
   ports: 1,
-  tech: 2,
-  product: 2,
-  cert: 3,
-  ip: 4,
-  dns: 4,
-  cname: 5,
-  tls: 6,
-  asn: 7,
+  edge: 2,
+  tech: 3,
+  product: 3,
+  cert: 4,
+  ip: 5,
+  dns: 5,
+  cname: 6,
+  tls: 7,
+  asn: 8,
 }
 
 function factAtoms(asset: Asset, cells: readonly SurfaceCell[]): FactAtom[] {
@@ -281,7 +318,9 @@ function factAtoms(asset: Asset, cells: readonly SurfaceCell[]): FactAtom[] {
       node: (
         <FactChip tone="muted">
           {label && <span>{label}</span>}
-          <ChipMono>{v}</ChipMono>
+          {/* A long name (an IPv6 address, a CNAME) ends in "…" inside its
+              chip; the popover lists it whole. */}
+          <span className="min-w-0 max-w-[10rem] truncate font-mono text-xs">{v}</span>
         </FactChip>
       ),
     })
@@ -289,6 +328,15 @@ function factAtoms(asset: Asset, cells: readonly SurfaceCell[]): FactAtom[] {
     if (!SPECS[cell].known(asset)) continue
     const rank = ATOM_RANK[cell]
     switch (cell) {
+      case 'status':
+        out.push({
+          key: 'status',
+          rank,
+          node: (
+            <HttpStatusChip status={httpStatusCode(asset)} chain={redirectChain(asset)} compact />
+          ),
+        })
+        break
       case 'port': {
         const port = servicePort(asset)
         const proto = serviceProtocol(asset)
@@ -331,33 +379,45 @@ function factAtoms(asset: Asset, cells: readonly SurfaceCell[]): FactAtom[] {
     .map((x) => x.a)
 }
 
+const FACT_GAP = 4 // gap-1
+const MORE_WIDTH = 40 // the "+N" chip, up to two digits
+
 /**
- * The list's service facts on ONE line (research/266): the first `max` facts
- * in a fixed order (status, port, what runs there, where it lives), then a
- * "+N" button that opens every fact in a popover (click, tap or keyboard).
- * The line never wraps, so every row has the same height, and no chip has
- * its own native tooltip to cover its neighbours.
+ * The list's service facts on ONE line (research/266) that always fits its
+ * cell: the facts in a fixed order (status as its code, the port, the edge
+ * provider, what runs there, where it lives), as many WHOLE chips as the
+ * cell holds (measured, `useFitCount`), at most `max`; the rest fold into
+ * "+N", a button that opens every fact in a popover (click, tap or
+ * keyboard). No chip is ever cut by the cell's edge, every row has the same
+ * height, and only the status and edge chips have a tooltip.
  */
-export function SurfaceFactsLine({ asset, max = 3 }: { asset: Asset; max?: number }) {
-  const { t } = useTranslation()
+export function SurfaceFactsLine({ asset, max = 4 }: { asset: Asset; max?: number }) {
   const cells = cellsForType(asset.type, asset.subType)
   if (!cells) return null
   const atoms = factAtoms(asset, cells)
   if (atoms.length === 0) return <EmptyCell />
-  const shown = atoms.slice(0, max)
+  return <FittedFacts asset={asset} atoms={atoms} max={max} />
+}
+
+function FittedFacts({ asset, atoms, max }: { asset: Asset; atoms: FactAtom[]; max: number }) {
+  const { t } = useTranslation()
+  const titleId = useId()
+  const capped = atoms.slice(0, max)
+  const { rowRef, fit } = useFitCount<HTMLDivElement>(
+    capped.map((a) => a.key),
+    { gap: FACT_GAP, more: MORE_WIDTH }
+  )
+  const shown = capped.slice(0, fit)
   const rest = atoms.length - shown.length
   return (
     <div
+      ref={rowRef}
       data-testid="surface-facts-line"
-      className="flex min-w-0 flex-nowrap items-center gap-1 overflow-hidden"
+      data-folded={rest > 0 ? rest : undefined}
+      className="flex w-full min-w-0 flex-nowrap items-center gap-1 overflow-hidden"
     >
       {shown.map((a) => (
-        // Status and port keep their full text; a long name (a technology,
-        // an IP) is what gets cut.
-        <span
-          key={a.key}
-          className={a.rank <= 1 ? 'inline-flex shrink-0' : 'inline-flex min-w-14 shrink'}
-        >
+        <span key={a.key} data-fit-key={a.key} className="inline-flex shrink-0">
           {a.node}
         </span>
       ))}
@@ -366,6 +426,7 @@ export function SurfaceFactsLine({ asset, max = 3 }: { asset: Asset; max?: numbe
           <PopoverTrigger asChild>
             <button
               type="button"
+              data-slot="facts-more"
               onClick={(e) => e.stopPropagation()}
               aria-label={t('assets.facts.moreFacts', '{count} more facts', { count: rest })}
               className="shrink-0 rounded-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring [&>[data-slot=fact-chip]]:hover:bg-accent"
@@ -378,9 +439,10 @@ export function SurfaceFactsLine({ asset, max = 3 }: { asset: Asset; max?: numbe
           <PopoverContent
             align="start"
             className="w-[min(380px,calc(100vw-32px))] p-3"
+            aria-labelledby={titleId}
             onClick={(e) => e.stopPropagation()}
           >
-            <p className="mb-2 text-xs font-medium text-muted-foreground">
+            <p id={titleId} className="mb-2 text-xs font-medium text-muted-foreground">
               {t('assets.facts.title', 'Service facts')}
             </p>
             <SurfaceFactsDetail asset={asset} />
