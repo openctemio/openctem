@@ -16,6 +16,7 @@
 import { useRef } from 'react'
 import { FileUp, GitBranch, Plug, Radar } from 'lucide-react'
 import { useTranslation } from '@/context/i18n-provider'
+import { KeyValueList } from '@/features/shared/components/text-layout'
 import { formatCount, formatRelativeTime } from '@/lib/format-metric'
 import { cn } from '@/lib/utils'
 import { healthNote, originLabel, sourceName } from './exposure-flow-viz'
@@ -247,16 +248,30 @@ function ConnectorPanel({ data }: { data: IntakeData }) {
                     { count: data.sources.length }
                   )}
             </p>
-            <dl className="grid grid-cols-[1fr_auto] gap-x-3 gap-y-1 text-sm">
-              <dt>{t('dashboardKit.intake.outcome.new', 'New')}</dt>
-              <dd className="text-right tabular-nums text-success">+{n(shown.created)}</dd>
-              <dt>{t('dashboardKit.intake.outcome.still', 'Still detected')}</dt>
-              <dd className="text-right tabular-nums">{n(shown.still_detected)}</dd>
-              <dt>{t('dashboardKit.intake.outcome.reopened', 'Reopened')}</dt>
-              <dd className="text-right tabular-nums">{n(shown.reopened)}</dd>
-              <dt>{t('dashboardKit.intake.outcome.closed', 'Resolved by source')}</dt>
-              <dd className="text-right tabular-nums">{n(shown.closed)}</dd>
-            </dl>
+            <KeyValueList
+              items={[
+                {
+                  key: 'new',
+                  label: t('dashboardKit.intake.outcome.new', 'New'),
+                  value: <span className="tabular-nums text-success">+{n(shown.created)}</span>,
+                },
+                {
+                  key: 'still',
+                  label: t('dashboardKit.intake.outcome.still', 'Still detected'),
+                  value: <span className="tabular-nums">{n(shown.still_detected)}</span>,
+                },
+                {
+                  key: 'reopened',
+                  label: t('dashboardKit.intake.outcome.reopened', 'Reopened'),
+                  value: <span className="tabular-nums">{n(shown.reopened)}</span>,
+                },
+                {
+                  key: 'closed',
+                  label: t('dashboardKit.intake.outcome.closed', 'Resolved by source'),
+                  value: <span className="tabular-nums">{n(shown.closed)}</span>,
+                },
+              ]}
+            />
           </div>
         </div>
 

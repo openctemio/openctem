@@ -17,6 +17,7 @@ import { Main } from '@/components/layout'
 import { Button } from '@/components/ui/button'
 import { useTranslation } from '@/context/i18n-provider'
 import { DataTable } from '@/features/shared/components/data-table/data-table'
+import { DetailStat, DetailStatGrid } from '@/features/shared/components/detail-sheet'
 import { ErrorState } from '@/features/shared/components/error-state'
 import { PageHeader } from '@/features/shared/components/page-header'
 import { PageStack } from '@/features/shared/components/page-stack'
@@ -244,10 +245,7 @@ export function ReceiptHistory() {
                 { count: n(totals.receipts) }
               )}
             </h2>
-            <dl
-              className="grid grid-cols-2 gap-x-6 gap-y-2 sm:grid-cols-4 lg:grid-cols-7"
-              data-testid="receipt-totals"
-            >
+            <DetailStatGrid data-testid="receipt-totals">
               {(
                 [
                   [
@@ -279,12 +277,9 @@ export function ReceiptHistory() {
                   ],
                 ] as const
               ).map(([k, label, v]) => (
-                <div key={k} data-total={k}>
-                  <dt className="text-xs text-muted-foreground">{label}</dt>
-                  <dd className="text-lg font-semibold tabular-nums">{n(v)}</dd>
-                </div>
+                <DetailStat key={k} label={label} value={n(v)} />
               ))}
-            </dl>
+            </DetailStatGrid>
           </section>
         )}
         {error ? (

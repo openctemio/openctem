@@ -24,6 +24,7 @@ import {
   type RefObject,
 } from 'react'
 import Link from '@/components/link'
+import { KeyValueList } from '@/features/shared/components/text-layout'
 import { safeInternalHref } from '@/lib/safe-href'
 import { cn } from '@/lib/utils'
 import type { SourceHealth } from './types'
@@ -223,14 +224,11 @@ export function FlowTip({
     >
       <p className="mb-2 text-sm font-semibold">{content.title}</p>
       {content.rows.length > 0 && (
-        <dl className="mb-2 grid grid-cols-[1fr_auto] gap-x-3 gap-y-1 text-xs">
-          {content.rows.map(([k, v]) => (
-            <div key={k} className="contents">
-              <dt className="text-muted-foreground">{k}</dt>
-              <dd className="text-right tabular-nums">{v}</dd>
-            </div>
-          ))}
-        </dl>
+        <KeyValueList
+          size="meta"
+          className="mb-2"
+          items={content.rows.map(([k, v]) => ({ key: k, label: k, value: v }))}
+        />
       )}
       {content.definition && (
         <p className="mb-2 text-xs leading-relaxed text-muted-foreground">{content.definition}</p>
