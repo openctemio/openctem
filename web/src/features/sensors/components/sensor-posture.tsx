@@ -1,10 +1,13 @@
 'use client'
 
-import { ShieldAlert } from 'lucide-react'
+import { BookOpen, ShieldAlert } from 'lucide-react'
 
 import { HealthStatus } from '@/components/ui/health-status'
 import type { HealthState } from '@/lib/health-colors'
+import { SafeExternalLink } from '@/components/safe-external-link'
+import { useDocsHref } from '@/context/brand-provider'
 import { useTranslation } from '@/context/i18n-provider'
+import { DOCS } from '@/lib/docs-links'
 import { DetailCallout, DetailField, DetailFieldGrid, DetailSection } from '@/features/shared'
 import type { Sensor } from '@/lib/api/sensor-types'
 
@@ -32,12 +35,19 @@ function PostureBadge({ value }: { value: PostureValue }) {
  * platform and whether its tools are network-confined, as the sensor
  * reports them, with what to do for each weakness.
  */
+/** The posture section's id: the header's "Unhardened" tag scrolls to it. */
+export const SENSOR_POSTURE_SECTION_ID = 'sensor-posture'
+
 export function SensorPostureSection({ sensor }: { sensor: Pick<Sensor, 'posture'> }) {
   const { t } = useTranslation()
+  const docsHref = useDocsHref()
   if (!sensor.posture) return null
   const issues = postureIssues(sensor)
   return (
-    <DetailSection title={t('sensors.posture.title', 'Security posture')}>
+    <DetailSection
+      id={SENSOR_POSTURE_SECTION_ID}
+      title={t('sensors.posture.title', 'Security posture')}
+    >
       {issues.length > 0 && (
         <DetailCallout
           tone="warning"
@@ -51,6 +61,13 @@ export function SensorPostureSection({ sensor }: { sensor: Pick<Sensor, 'posture
               </li>
             ))}
           </ul>
+          <SafeExternalLink
+            href={docsHref(DOCS.sensors.security)}
+            className="mt-2 inline-flex items-center gap-1 text-primary hover:underline"
+          >
+            <BookOpen className="h-3.5 w-3.5" aria-hidden />
+            {t('sensors.posture.docs', 'How to harden a sensor')}
+          </SafeExternalLink>
         </DetailCallout>
       )}
       <DetailFieldGrid>

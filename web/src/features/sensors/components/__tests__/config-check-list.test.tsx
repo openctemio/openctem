@@ -226,8 +226,8 @@ describe('ConfigCheckList: header, notices, settings', () => {
   it('shows health, counts and groups failing areas first', () => {
     render(<ConfigCheckList report={report()} />)
     expect(screen.getByText('Setup needs attention')).toBeInTheDocument()
-    expect(document.querySelector('[data-slot="config-counts"]')).toHaveTextContent(
-      '1 warnings · 1 passed'
+    expect(document.querySelector('[data-testid="config-counts"]')).toHaveTextContent(
+      '1 with warnings, 1 passed'
     )
     const headings = screen.getAllByRole('heading', { level: 3 }).map((h) => h.textContent)
     expect(headings[0]).toContain('Identity')

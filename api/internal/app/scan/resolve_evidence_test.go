@@ -156,3 +156,55 @@ func TestWildcardFilterDefault(t *testing.T) {
 		t.Fatalf("naabu config = %v", got)
 	}
 }
+
+// A name a selector or an asset group added is taken by an active scanner
+// only with proof that it resolves; a typed name without evidence is still
+// handed on; the scan's option to include names that do not resolve hands
+// every inventory name on.
+func TestDropStaleRunNames_InventoryNamesNeedProof(t *testing.T) {
+	tenant := shared.NewID()
+	_, rf, s := evidenceFixture(tenant)
+	neverID := shared.NewID()
+	newResolved := func() *resolvedTargets {
+		return &resolvedTargets{
+			Targets:   []string{"fresh.example.com", "never.example.com", "typed.example.com", "198.51.100.7"},
+			Inventory: map[string]shared.ID{"fresh.example.com": shared.NewID(), "never.example.com": neverID},
+		}
+	}
+	sc := &scan.Scan{TenantID: tenant, Name: "web"}
+	r := newResolved()
+	rc := map[string]any{}
+	if err := s.dropStaleRunNames(context.Background(), sc, r, rc); err != nil {
+		t.Fatal(err)
+	}
+	if !slices.Equal(r.Targets, []string{"fresh.example.com", "typed.example.com", "198.51.100.7"}) ||
+		!slices.Equal(r.NotResolving, []string{"never.example.com"}) || rc[RunContextKeyNotResolving] != 1 {
+		t.Fatalf("targets %v not resolving %v context %v", r.Targets, r.NotResolving, rc)
+	}
+	if !slices.Contains(rf.ids, neverID) {
+		t.Fatalf("enrichment of the name without proof not requested: %v", rf.ids)
+	}
+
+	sc.TargetOptions.IncludeUnresolved = true
+	r = newResolved()
+	if err := s.dropStaleRunNames(context.Background(), sc, r, map[string]any{}); err != nil {
+		t.Fatal(err)
+	}
+	if len(r.Targets) != 4 || len(r.NotResolving) != 0 {
+		t.Fatalf("include unresolved: targets %v not resolving %v", r.Targets, r.NotResolving)
+	}
+}
+
+// Another tenant's proof never counts: a name that resolves in tenant B is
+// still a name without proof in tenant A.
+func TestDropStaleRunNames_InventoryProofIsPerTenant(t *testing.T) {
+	tenantA, tenantB := shared.NewID(), shared.NewID()
+	_, _, s := evidenceFixture(tenantB)
+	r := &resolvedTargets{Targets: []string{"fresh.example.com", "a.example.com"}, Inventory: map[string]shared.ID{"fresh.example.com": shared.NewID()}}
+	if err := s.dropStaleRunNames(context.Background(), &scan.Scan{TenantID: tenantA}, r, map[string]any{}); err != nil {
+		t.Fatal(err)
+	}
+	if !slices.Equal(r.Targets, []string{"a.example.com"}) || !slices.Equal(r.NotResolving, []string{"fresh.example.com"}) {
+		t.Fatalf("tenant A: targets %v not resolving %v", r.Targets, r.NotResolving)
+	}
+}

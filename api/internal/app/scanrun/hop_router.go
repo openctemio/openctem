@@ -406,8 +406,11 @@ func (s *Service) gateCandidates(ctx context.Context, run *scanrun.Run, st stage
 		SystemPolicy: scanapp.RunSystemPolicy(run),
 		PassiveOnly:  st.Tier.Passive(),
 		Tier:         stageTier(st),
-		Targets:      make([]string, 0, len(cands.gate)),
-		Assets:       make(map[string]scanapp.DispatchAsset, len(cands.gate)),
+		// A lookup-only stage (resolve.dns) runs on names with no DNS
+		// answer: finding out whether they resolve is its work.
+		Capability: string(st.Key),
+		Targets:    make([]string, 0, len(cands.gate)),
+		Assets:     make(map[string]scanapp.DispatchAsset, len(cands.gate)),
 	}
 	for _, c := range cands.gate {
 		byKey[c.key] = c
