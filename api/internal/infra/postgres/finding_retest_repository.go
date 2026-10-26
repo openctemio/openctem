@@ -239,14 +239,33 @@ func (r *FindingRetestRepository) Settle(ctx context.Context, in retest.SettleIn
 		}
 
 		var current string
-		err = tx.QueryRowContext(ctx, `SELECT status FROM findings WHERE tenant_id = $1 AND id = $2 FOR UPDATE`,
-			in.TenantID.String(), in.FindingID.String()).Scan(&current)
+		var lastSeen sql.NullTime
+		err = tx.QueryRowContext(ctx, `SELECT status, GREATEST(last_seen_at, last_reopened_at) FROM findings WHERE tenant_id = $1 AND id = $2 FOR UPDATE`,
+			in.TenantID.String(), in.FindingID.String()).Scan(&current, &lastSeen)
 		findingGone := errors.Is(err, sql.ErrNoRows)
 		if err != nil && !findingGone {
 			return fmt.Errorf("lock finding: %w", err)
 		}
 		res.PriorStatus = vulnerability.FindingStatus(current)
 		res.ResultStatus = res.PriorStatus
+
+		// A scan that sighted the finding after the check ran outranks the
+		// check's no-match: the fix is not applied.
+		if !findingGone && in.Outcome == retest.OutcomeConfirmedFixed && !in.CheckedAt.IsZero() &&
+			lastSeen.Valid && lastSeen.Time.After(in.CheckedAt) {
+			stale := retest.StaleFixVerdict()
+			in.Outcome, in.ReasonCode, in.Reason = stale.Outcome, stale.Code, stale.Reason
+			in.Decide = nil
+			res.Stale = true
+			if in.Activity != nil {
+				act := make(map[string]any, len(in.Activity))
+				for k, v := range in.Activity {
+					act[k] = v
+				}
+				act["outcome"], act["reason_code"], act["reason"] = string(stale.Outcome), string(stale.Code), stale.Reason
+				in.Activity = act
+			}
+		}
 
 		// A conclusive outcome is the finding's validation verdict, whether or
 		// not it moves the status; still vulnerable also means it is present.

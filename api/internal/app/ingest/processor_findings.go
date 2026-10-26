@@ -598,7 +598,7 @@ func (p *FindingProcessor) processBatch(
 		p.sightDuplicateTargets(ctx, tenantID, existingFingerprints, report.Metadata.ID, scanner)
 		// Each reopen writes its timeline entry with the scan behind it.
 		reopenCtx := vulnerability.WithTransitionEvidence(ctx, map[string]any{"scanner": scanner, "scan_id": report.Metadata.ID})
-		reopenedMap, err := p.repo.AutoReopenByFingerprintsBatch(reopenCtx, tenantID, existingFingerprints)
+		reopenedMap, err := p.repo.AutoReopenByFingerprintsBatch(reopenCtx, tenantID, existingFingerprints, reportObservedAt(report, time.Now()))
 		if err != nil {
 			p.logger.Warn("failed to batch auto-reopen findings", "error", err)
 		} else if len(reopenedMap) > 0 {
