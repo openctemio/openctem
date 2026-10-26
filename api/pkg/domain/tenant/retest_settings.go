@@ -31,7 +31,7 @@ type RetestSettings struct {
 	// 0 = DefaultRetestDailyCap.
 	DailyCap int `json:"daily_cap,omitempty"`
 	// AutoResolve: a confirmed fix (the endpoint answered and the check did
-	// not match, RFC-057 R2) resolves the finding. Off (default): it moves the
+	// not match) resolves the finding. Off (default): it moves the
 	// finding's validation not_reproducible for a person with findings:verify to close.
 	AutoResolve bool `json:"auto_resolve"`
 }

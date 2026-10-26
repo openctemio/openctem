@@ -125,7 +125,7 @@ type FindingApprovalSettingsResponse struct {
 	// PendingSecondLookAt (a lowering waits 24 hours).
 	PendingSecondLookPercent *int    `json:"pending_second_look_percent,omitempty"`
 	PendingSecondLookAt      *string `json:"pending_second_look_at,omitempty"`
-	// Policy is the approval policy in force (RFC-111); PendingPolicy a
+	// Policy is the approval policy in force; PendingPolicy a
 	// relaxing change that takes effect at PendingPolicyAt.
 	Policy          ApprovalPolicyDTO  `json:"policy"`
 	PendingPolicy   *ApprovalPolicyDTO `json:"pending_policy,omitempty"`
