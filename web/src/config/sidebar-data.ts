@@ -100,7 +100,7 @@ export const sidebarData: SidebarData = {
           permission: Permission.DashboardRead,
         },
         {
-          title: 'My Work',
+          title: 'My work',
           url: '/my-work',
           icon: ClipboardCheck,
           permission: Permission.FindingsRead,
@@ -337,28 +337,28 @@ export const sidebarData: SidebarData = {
       cluster: 'cycle',
       items: [
         {
-          title: 'Exposure Chains',
+          title: 'Exposure chains',
           url: '/exposure-chains',
           icon: Route,
           permission: Permission.AssetsRead,
           module: 'attack_surface',
         },
         {
-          title: 'Attack Paths',
+          title: 'Attack paths',
           url: '/attack-paths',
           icon: Waypoints,
           permission: Permission.AssetsRead,
           module: 'attack_surface',
         },
         {
-          title: 'Threat Intel',
+          title: 'Threat intel',
           url: '/threat-intel',
           icon: TrendingUp,
           permission: Permission.VulnerabilitiesRead,
           module: 'threat_intel',
         },
         {
-          title: 'Emerging Threats',
+          title: 'Emerging threats',
           url: '/emerging-threats',
           icon: Siren,
           permission: Permission.VulnerabilitiesRead,
@@ -385,7 +385,7 @@ export const sidebarData: SidebarData = {
           module: 'iocs',
         },
         {
-          title: 'Business Impact',
+          title: 'Business impact',
           url: '/business-impact',
           icon: Building2,
           permission: Permission.VulnerabilitiesRead,
@@ -394,14 +394,14 @@ export const sidebarData: SidebarData = {
         {
           // Compensating controls lower a finding's priority, so they sit with
           // the other prioritization levers (was under Validation).
-          title: 'Compensating Controls',
+          title: 'Compensating controls',
           url: '/controls',
           icon: Shield,
           permission: Permission.CompensatingControlsRead,
           module: 'compensating_controls',
         },
         {
-          title: 'Priority Rules',
+          title: 'Priority rules',
           url: '/priority-rules',
           icon: Settings2,
           permission: Permission.PriorityRulesRead,
@@ -525,28 +525,28 @@ export const sidebarData: SidebarData = {
       icon: BarChart3,
       items: [
         {
-          title: 'Program Health',
+          title: 'Program health',
           url: '/insights/program-health',
           icon: Target,
           // Outcome scorecard — always available with dashboard read, no module gate.
           permission: Permission.DashboardRead,
         },
         {
-          title: 'Data Quality',
+          title: 'Data quality',
           url: '/insights/data-quality',
           icon: Database,
           // Discovery data-hygiene scorecard — core, no module gate (same as Program Health).
           permission: Permission.DashboardRead,
         },
         {
-          title: 'Executive Summary',
+          title: 'Executive summary',
           url: '/insights/executive',
           icon: TrendingUp,
           permission: Permission.DashboardRead,
           module: 'executive_summary',
         },
         {
-          title: 'CTEM Maturity',
+          title: 'CTEM maturity',
           url: '/insights/ctem-maturity',
           icon: ShieldCheck,
           permission: Permission.DashboardRead,

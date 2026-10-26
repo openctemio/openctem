@@ -61,7 +61,7 @@ describe('SuggestionCard', () => {
   it('shows the fix, its reach, the owner and the risk parts', () => {
     renderCard()
     expect(screen.getByRole('heading', { name: 'Upgrade django to 4.2.30' })).toBeInTheDocument()
-    expect(screen.getByText(/2 findings · 1 asset ·/)).toBeInTheDocument()
+    expect(screen.getByText(/2 findings, 1 asset,/)).toBeInTheDocument()
     expect(
       screen.getByRole('button', { name: '6 risk points: what they mean' })
     ).toBeInTheDocument()
@@ -81,8 +81,8 @@ describe('SuggestionCard', () => {
       key_kind: 'sol',
       confidence: 0.7,
     })
-    expect(screen.getByText(/^1 finding · 3 assets ·/)).toBeInTheDocument()
-    expect(screen.getByText(/Hoa N\. · 1 finding/)).toBeInTheDocument()
+    expect(screen.getByText(/^1 finding, 3 assets,/)).toBeInTheDocument()
+    expect(screen.getByText(/Hoa N\., 1 finding/)).toBeInTheDocument()
     expect(screen.getByText('Medium confidence')).toBeInTheDocument()
   })
 

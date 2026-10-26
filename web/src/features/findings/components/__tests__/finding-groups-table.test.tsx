@@ -129,7 +129,7 @@ describe('FindingGroupsTable', () => {
       renderGroupActions: (g) => <button type="button">Mark {g.group_key}</button>,
     })
     expect(screen.getByText('label a1')).toBeInTheDocument()
-    expect(screen.getByText(/Host · Owner Ann · 3 findings/)).toBeInTheDocument()
+    expect(screen.getByText(/Host, Owner Ann, 3 findings/)).toBeInTheDocument()
     expect(screen.getByText('0% verified')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Mark a1' })).toBeInTheDocument()
     expect(document.body.textContent).toContain('of 1 groups')

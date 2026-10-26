@@ -285,7 +285,7 @@ function ScanRunsTable() {
                 <p className="text-xs text-muted-foreground tabular-nums">
                   {progress.details.map((d, i) => (
                     <span key={d.key} className={d.key === 'failed' ? 'text-destructive' : ''}>
-                      {i > 0 && ' · '}
+                      {i > 0 && ', '}
                       {d.count} {t(`scans.taskState.${d.key}`)}
                     </span>
                   ))}

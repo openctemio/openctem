@@ -98,7 +98,7 @@ export function MorePoolsSection({ pools, canWrite, canDelete }: MorePoolsSectio
                       : t('proxyPools.assignedSensors.other', '{count} sensors assigned', {
                           count: p.assigned_sensors,
                         })}
-                    {p.description ? ` · ${p.description}` : ''}
+                    {p.description ? `, ${p.description}` : ''}
                   </CardDescription>
                 </div>
                 <div className="flex gap-2">

@@ -59,7 +59,7 @@ function IdentityTitle({ identity }: { identity: ApiIdentityExposure }) {
       <span className="max-w-[28rem] truncate text-sm font-medium text-foreground">
         {identity.identity}
       </span>
-      <span className="tabular-nums">· {facts.join(' · ')}</span>
+      <span className="tabular-nums">, {facts.join(', ')}</span>
     </span>
   )
 }

@@ -127,6 +127,8 @@ type Service struct {
 	jobRoot func(ctx context.Context) string
 
 	adminAudit AdminAuditWriter
+	// tokens stores organization enrollment tokens (nil: none).
+	tokens sensordom.EnrollmentTokenRepository
 
 	platformKey ed25519.PrivateKey
 	codeKey     []byte
@@ -224,6 +226,9 @@ func (s *Service) Start(ctx context.Context, in StartInput) (*pairing.StartRespo
 	if req.EnrollmentToken != "" && (req.Code != "" || req.SensorID != "") {
 		return nil, ErrInvalid
 	}
+	if req.EnrollmentScope != "" && (req.EnrollmentScope != pairing.EnrollmentScopeOrganization || req.EnrollmentToken == "") {
+		return nil, ErrInvalid
+	}
 	var repair *shared.ID
 	if req.SensorID != "" {
 		id, err := shared.IDFromString(req.SensorID)
@@ -260,7 +265,14 @@ func (s *Service) Start(ctx context.Context, in StartInput) (*pairing.StartRespo
 	userCode := ""
 	switch {
 	case req.EnrollmentToken != "":
-		if err := s.startInstance(ctx, req.EnrollmentToken, p); err != nil {
+		// The sensor says which kind of token it holds; a token is never
+		// used as the other kind (an operator who configured a shared
+		// sensor never gets an organization sensor, and the reverse).
+		if req.EnrollmentScope == pairing.EnrollmentScopeOrganization {
+			if err := s.startEnrollment(ctx, req.EnrollmentToken, p); err != nil {
+				return nil, err
+			}
+		} else if err := s.startInstance(ctx, req.EnrollmentToken, p); err != nil {
 			return nil, err
 		}
 	case code != "":
@@ -325,7 +337,7 @@ func (s *Service) Reveal(ctx context.Context, id shared.ID, thumbprint string, r
 		return ErrInvalid
 	}
 	now := s.now()
-	if p.IsInstance() && p.Status == sensordom.PairingApproved && hmac.Equal(p.SensorNonce, nonce) {
+	if (p.IsInstance() || p.IsEnrollment()) && p.Status == sensordom.PairingApproved && hmac.Equal(p.SensorNonce, nonce) {
 		return nil // a retried reveal of a request the token already approved
 	}
 	if p.Status != sensordom.PairingPending || !now.Before(p.ExpiresAt) {
@@ -354,6 +366,9 @@ func (s *Service) Reveal(ctx context.Context, id shared.ID, thumbprint string, r
 	if p.IsInstance() {
 		// The token was the administrator's approval.
 		return s.approveInstance(ctx, p)
+	}
+	if p.IsEnrollment() {
+		return s.approveEnrollment(ctx, p)
 	}
 	return nil
 }
@@ -677,6 +692,12 @@ func (s *Service) Approve(ctx context.Context, actor Actor, id shared.ID, in App
 	}
 	if s.hook != nil {
 		approval.OnApproved = s.hook.OnApproved(actor.TenantID, profile, zones, actor.UserID)
+	}
+	if p.IsEnrollment() && s.tokens != nil {
+		// A request a token started keeps the token's labels.
+		if t, err := s.tokens.GetEnrollmentTokenUnscoped(ctx, *p.EnrollmentTokenID); err == nil && t.TenantID == actor.TenantID {
+			approval.OnApproved = withLabels(approval.OnApproved, actor.TenantID, t.Labels)
+		}
 	}
 	res, err := s.repo.Approve(ctx, approval, nil)
 	if err != nil {
