@@ -1672,6 +1672,11 @@ func newFindingImportService(cfg *config.Config, repos *Repositories, svc *Servi
 			imp.SetRights(repos.APIKey, svc.Role)
 		}
 	}
+	if svc.ActiveGate != nil {
+		// Recon directories: the organization's scope decides which hosts
+		// are its own; the rest wait for review.
+		imp.SetScopeCover(svc.ActiveGate)
+	}
 	if svc.ImportMapping != nil {
 		imp.SetMappingResolver(svc.ImportMapping)
 	}
