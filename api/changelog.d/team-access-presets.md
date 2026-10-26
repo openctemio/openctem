@@ -1,6 +1,6 @@
 ### Added: a team carries access, add people and they inherit it
 
-- A team's **Access** settings name one or more presets (role templates) and a scope mode (specific assets, or all assets). Each preset becomes a managed role of the team; members inherit the permissions and the scope when they are added and lose them when they leave or their membership ends. No role needs to be created first. New routes `GET/PUT /api/v1/groups/{groupId}/access`, `POST /api/v1/groups/{groupId}/access/upgrade` and `GET /api/v1/users/{userId}/team-access`; migration `003433_team_access_presets`. See RFC-127 and the how-to "Give a team access".
+- A team's **Access** settings name one or more presets (role templates) and a scope mode (specific assets, or all assets). Each preset becomes a managed role of the team; members inherit the permissions and the scope when they are added and lose them when they leave or their membership ends. No role needs to be created first. New routes `GET/PUT /api/v1/groups/{groupId}/access`, `POST /api/v1/groups/{groupId}/access/upgrade` and `GET /api/v1/users/{userId}/team-access`; migration `003434_team_access_presets`. See RFC-127 and the how-to "Give a team access".
 - A preset follows its template: the team shows when a newer version is available and applies it on request.
 
 ### Security: teams with elevated access are the owner's
