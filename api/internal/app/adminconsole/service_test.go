@@ -3,6 +3,7 @@ package adminconsole
 import (
 	"context"
 	"errors"
+	"fmt"
 	"sort"
 	"strings"
 	"sync"
@@ -350,15 +351,36 @@ func (f *fakeAccounts) VerifyPassword(_ context.Context, email, pw string, _ Cli
 	return u, nil
 }
 
-func (f *fakeAccounts) CreateAccount(_ context.Context, email, _ string) (shared.ID, string, error) {
+func (f *fakeAccounts) CreateInvitedAccount(_ context.Context, email, _ string, ttl time.Duration) (shared.ID, Invitation, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	if _, ok := f.byEmail[strings.ToLower(email)]; ok {
-		return shared.ID{}, "", admin.ErrEmailHasAccount
+		return shared.ID{}, Invitation{}, admin.ErrEmailHasAccount
 	}
 	id := shared.NewID()
 	f.byEmail[strings.ToLower(email)] = id
-	return id, "Temp-Password-1!", nil
+	return id, Invitation{Token: "invite-token-" + id.String(), ExpiresAt: time.Now().Add(ttl)}, nil
+}
+
+// fakeInvites is the invitation mailer: it records what would be emailed.
+type fakeInvites struct {
+	can     bool
+	sendErr error
+	sent    []sentInvite
+}
+
+type sentInvite struct{ to, token string }
+
+func (f *fakeInvites) CanDeliver(context.Context) bool { return f.can }
+func (f *fakeInvites) SetupURL(token string) string {
+	return "https://app.example.test/set-password#token=" + token
+}
+func (f *fakeInvites) SendAdminInvitation(_ context.Context, email, _, token string, _ time.Duration) error {
+	if f.sendErr != nil {
+		return f.sendErr
+	}
+	f.sent = append(f.sent, sentInvite{to: email, token: token})
+	return nil
 }
 
 func (f *fakeAccounts) AccountActive(_ context.Context, userID shared.ID) (bool, error) {
@@ -767,22 +789,100 @@ func TestLogoutEndsSession(t *testing.T) {
 
 func TestProvisionAdmin(t *testing.T) {
 	ctx := context.Background()
+	provision := func(h *harness, email string, role admin.AdminRole, approvals bool) (*Provisioned, error) {
+		return h.svc.Provision(ctx, h.admin, ProvisionInput{Email: email, Name: "New", Role: role, ApprovalsActive: approvals}, client)
+	}
 
-	t.Run("new person gets a local account with a temporary password", func(t *testing.T) {
+	t.Run("new person gets an emailed invitation and nobody learns a password", func(t *testing.T) {
 		h := newHarness(t)
-		a, temp, err := h.svc.ProvisionAdmin(ctx, h.admin, "new@acme.io", "New", admin.AdminRoleOpsAdmin, client)
+		mail := &fakeInvites{can: true}
+		h.svc.SetInvitationMailer(mail)
+		res, err := provision(h, "new@acme.io", admin.AdminRoleOpsAdmin, false)
 		if err != nil {
 			t.Fatal(err)
 		}
-		if temp == "" || a.Role() != admin.AdminRoleOpsAdmin {
-			t.Fatalf("temp=%q role=%s", temp, a.Role())
+		if res.Admin.Role() != admin.AdminRoleOpsAdmin || !res.Emailed || res.SetupLink != "" {
+			t.Fatalf("want an emailed invitation and no link for the caller: %+v", res)
+		}
+		if len(mail.sent) != 1 || mail.sent[0].to != "new@acme.io" || mail.sent[0].token == "" {
+			t.Fatalf("invitation not sent to the new address: %+v", mail.sent)
+		}
+		if res.Admin.PasswordChangeRequired() {
+			t.Fatal("the administrator chooses their own password; no temporary one exists")
 		}
 		uid := h.accounts.byEmail["new@acme.io"]
-		if linked, err := h.admins.GetByUserID(ctx, uid); err != nil || linked.ID() != a.ID() {
+		if linked, err := h.admins.GetByUserID(ctx, uid); err != nil || linked.ID() != res.Admin.ID() {
 			t.Fatalf("administrator not linked to the account: %v", err)
 		}
-		if !h.audit.has(ActionAdminProvisioned) {
+		e := h.audit.last(ActionAdminProvisioned)
+		if e == nil {
 			t.Fatal("provisioning must be audited")
+		}
+		if e.RequestBody["invitation_emailed"] != true || e.RequestBody["setup_link_returned"] != false {
+			t.Fatalf("the audit row must say how the invitation was delivered: %v", e.RequestBody)
+		}
+		if strings.Contains(fmt.Sprint(e.RequestBody), mail.sent[0].token) {
+			t.Fatal("the audit row must not carry the token")
+		}
+	})
+
+	// The four-eyes bypass: the requester of a super admin must never be able
+	// to obtain anything that signs in as the account the second administrator
+	// approved.
+	t.Run("a super admin with approvals on and no mail is refused and nothing is created", func(t *testing.T) {
+		h := newHarness(t)
+		h.svc.SetInvitationMailer(&fakeInvites{can: false})
+		before := len(h.admins.byID)
+		if _, err := provision(h, "bob@acme.io", admin.AdminRoleSuperAdmin, true); !errors.Is(err, ErrInvitationNeedsEmail) {
+			t.Fatalf("got %v, want ErrInvitationNeedsEmail", err)
+		}
+		if len(h.admins.byID) != before || h.accounts.byEmail["bob@acme.io"] != (shared.ID{}) {
+			t.Fatal("no administrator or account may be created")
+		}
+	})
+	t.Run("without any mailer a super admin with approvals on is refused too", func(t *testing.T) {
+		h := newHarness(t)
+		if _, err := provision(h, "bob@acme.io", admin.AdminRoleSuperAdmin, true); !errors.Is(err, ErrInvitationNeedsEmail) {
+			t.Fatalf("got %v, want ErrInvitationNeedsEmail", err)
+		}
+	})
+	t.Run("a super admin with approvals on and mail never gets the link in the response", func(t *testing.T) {
+		h := newHarness(t)
+		mail := &fakeInvites{can: true}
+		h.svc.SetInvitationMailer(mail)
+		res, err := provision(h, "bob@acme.io", admin.AdminRoleSuperAdmin, true)
+		if err != nil || !res.Emailed || res.SetupLink != "" {
+			t.Fatalf("want emailed and no link: %+v %v", res, err)
+		}
+	})
+	t.Run("a failed send never falls back to showing the link", func(t *testing.T) {
+		h := newHarness(t)
+		h.svc.SetInvitationMailer(&fakeInvites{can: true, sendErr: errors.New("relay down")})
+		res, err := provision(h, "bob@acme.io", admin.AdminRoleSuperAdmin, true)
+		if err != nil || res.Emailed || !res.EmailFailed || res.SetupLink != "" {
+			t.Fatalf("want a failed send and no link: %+v %v", res, err)
+		}
+	})
+	t.Run("no mail: the link is shown once for a non-super role", func(t *testing.T) {
+		h := newHarness(t)
+		h.svc.SetInvitationMailer(&fakeInvites{can: false})
+		res, err := provision(h, "ro@acme.io", admin.AdminRoleReadonly, true)
+		if err != nil || res.Emailed || res.SetupLink == "" {
+			t.Fatalf("want the link for a read-only role: %+v %v", res, err)
+		}
+		if e := h.audit.last(ActionAdminProvisioned); e == nil || e.RequestBody["setup_link_returned"] != true {
+			t.Fatalf("the audit row must record that the link was returned: %v", e)
+		}
+		if e := h.audit.last(ActionInvitationLinkDisclosed); e == nil || e.Severity != admin.SeverityCritical {
+			t.Fatalf("showing the link needs its own critical audit row: %v", e)
+		}
+	})
+	t.Run("no mail: the link is shown once for a super admin only while approvals are off", func(t *testing.T) {
+		h := newHarness(t)
+		h.svc.SetInvitationMailer(&fakeInvites{can: false})
+		res, err := provision(h, "bob@acme.io", admin.AdminRoleSuperAdmin, false)
+		if err != nil || res.SetupLink == "" {
+			t.Fatalf("approvals off: want the link: %+v %v", res, err)
 		}
 	})
 
@@ -791,9 +891,10 @@ func TestProvisionAdmin(t *testing.T) {
 	// attacker, who owns its password, the administrator.
 	t.Run("an email that already has an account is refused and nothing is left behind", func(t *testing.T) {
 		h := newHarness(t)
+		h.svc.SetInvitationMailer(&fakeInvites{can: true})
 		h.accounts.byEmail["victim@acme.io"] = shared.NewID() // registered by someone else
 		before := len(h.admins.byID)
-		if _, _, err := h.svc.ProvisionAdmin(ctx, h.admin, "victim@acme.io", "V", admin.AdminRoleSuperAdmin, client); !errors.Is(err, admin.ErrEmailHasAccount) {
+		if _, err := provision(h, "victim@acme.io", admin.AdminRoleSuperAdmin, false); !errors.Is(err, admin.ErrEmailHasAccount) {
 			t.Fatalf("got %v, want ErrEmailHasAccount", err)
 		}
 		if len(h.admins.byID) != before {
@@ -803,7 +904,7 @@ func TestProvisionAdmin(t *testing.T) {
 
 	t.Run("already an administrator", func(t *testing.T) {
 		h := newHarness(t)
-		if _, _, err := h.svc.ProvisionAdmin(ctx, h.admin, "OPS@acme.io", "Ops", admin.AdminRoleReadonly, client); !errors.Is(err, admin.ErrAdminAlreadyExists) {
+		if _, err := provision(h, "OPS@acme.io", admin.AdminRoleReadonly, false); !errors.Is(err, admin.ErrAdminAlreadyExists) {
 			t.Fatalf("got %v, want ErrAdminAlreadyExists", err)
 		}
 	})
