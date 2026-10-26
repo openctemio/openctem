@@ -11,7 +11,7 @@ describe('AIProposalBadge', () => {
 
   it('names the AI application that proposed it for a person, who cannot approve it', () => {
     render(<AIProposalBadge approval={{ requested_via: 'Claude Desktop' }} withHint />)
-    expect(screen.getByText('Proposed by AI agent: Claude Desktop')).toBeInTheDocument()
+    expect(screen.getByText('Proposed by AI application: Claude Desktop')).toBeInTheDocument()
     expect(screen.getByText(/who cannot approve it/)).toBeInTheDocument()
   })
 
