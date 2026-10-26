@@ -111,7 +111,7 @@ func (h *SSOChangeHandler) writeList(w http.ResponseWriter, r *http.Request, ten
 
 // AdminList handles GET /api/v1/admin/tenants/{tenantId}/sso/changes.
 // @Summary List an organization's SSO changes awaiting owner approval
-// @Description Platform admin console (RFC-022). SAML and identity-provider changes submitted here wait for an owner of the organization. Pending, unexpired changes by default; status=all includes decided ones.
+// @Description Platform admin console. SAML and identity-provider changes submitted here wait for an owner of the organization. Pending, unexpired changes by default; status=all includes decided ones.
 // @Tags Admin Organization SSO
 // @Produce json
 // @Param tenantId path string true "Organization ID"

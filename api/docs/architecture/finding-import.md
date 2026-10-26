@@ -23,6 +23,45 @@ fixtures and a field-coverage test in the ctis repository
 point, `findingimport.Convert` (content sniffing, archive limits, KnowledgeBase
 pairing), which any other caller that accepts exported files reuses.
 
+## Recon results (reconFTW directory)
+
+A ZIP whose file names form a reconFTW results directory (`report/report.json`,
+`subdomains/`, `webs/`, `hosts/`, `nuclei_output/`, one leading directory
+allowed) is detected from its layout (`importer.DetectBundle`) and read as one
+unit by `importer.ParseBundle`, not file by file. The route, the dry-run
+preview, the async path and the response are the same as for any upload. Bundle
+limits (`findingimport.BundleLimits`): 50,000 files listed, 300 read, 256 MiB per
+file, 2 GiB in total, 64 KiB per line. Mapping: ctis `docs/importers/reconftw.md`.
+
+What the platform adds:
+
+- **Partial coverage, always.** A host missing from a later import says nothing
+  about whether it still exists. A bundle never closes a finding and never marks
+  coverage; a request with `coverage=full` is refused for it. A CI-run upload
+  refuses bundles.
+- **Scope comes from the organization, not the file.** The importer marks each
+  host with `properties.import_scope` relative to the target the file names; the
+  import service replaces it from the organization's scope entries
+  (`easm.ActiveGate.CoverOf`): `in_target` (covered; an address inside a scope
+  CIDR counts), `unknown` (an uncovered address), `outside_target` (anything
+  else). A file naming a victim's domain as its target gains nothing. If the scope
+  cannot be read every host is a candidate.
+- **Candidates.** An asset the import creates whose verdict is not `in_target`
+  gets a `candidate` attribution record (`ingest.holdImportCandidates`): out of
+  the inventory, never selected by a scan, never probed (the active-scan gate
+  refuses what no scope entry covers). Assets the organization already had are
+  never touched. A person confirms or rejects a candidate in the attribution
+  review. Findings on such a host are not hidden: they carry the tag `candidate`.
+- **Endpoints.** The report's `endpoints[]` (source `import`) are admitted only
+  under http_service origins the uploader may change (data scope), with the
+  tenant's path exclusions applied; query values are never stored.
+- **People and credentials.** Everything under `osint/` and the screenshots are
+  never opened. The response lists them in `skipped_by_policy`, and every file
+  the spec does not know in `unmapped` (both cut at 100 entries with a total).
+- **Receipt.** `skipped` on the upload receipt counts the records the parser
+  skipped and the files skipped by policy; unmapped paths are in the response only.
+- **Source.** Assets carry the source `import:reconftw`.
+
 ## Request
 
 Multipart form:
@@ -190,5 +229,8 @@ finding ids.
 | Cross-tenant write | tenant from the request; every query `tenant_id = $1` first; `TestFindingVEXDocument_DB`, `TestFindingImport_VEXDocument_DB` |
 | Out-of-scope write by a restricted member | ingest `Actor`; VEX candidates filtered by the data scope |
 | Forged VEX closing findings | operator opt-in (`enforce`) plus `findings:approve` to make the request; the request is pending until another person approves it under the approval policy (the actor `vex` needs one more sign-off); human-source findings never requested; audited with ids |
+| A recon directory naming someone else's hosts (or claiming their domain as its target) | scope verdict from the organization's scope entries; uncovered hosts are candidates, never scanned; endpoints only under origins the uploader may change |
+| A recon directory closing findings | partial coverage by nature; full coverage refused; `closeUncovered` skips bundles; `TestBundle_PartialNeverCloses` |
+| People and credential data in a recon directory | `osint/` never opened; `TestBundle_OsintNeverRead` |
 | Abuse of the parser | per-organization rate limit; request timeout |
 | Credentials or account names in reports | the importers skip the Nessus scan policy and login accounts and redact credentials in scanner output |
