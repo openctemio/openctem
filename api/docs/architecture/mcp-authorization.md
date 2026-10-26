@@ -333,3 +333,11 @@ cases.
 
 URL-mode elicitation for the confirmation once the endpoint speaks MCP
 2026-07-28 (RFC-062 §10, §11).
+
+## Credential changes end connected applications
+
+A password reset, a password change and "sign out all others" revoke the person's MCP grants in every organization they belong to (all grants of that one user, nobody else's), delete their tokens and cancel any approved but unredeemed authorization code. The next refresh answers `invalid_grant`. This runs as one of the sessions-revoked hooks (`internal/app/auth/sessions_revoked_hook.go`), next to the one that ends the linked administrator's console sessions. Enabling or resetting two-step verification runs the same hooks.
+
+API keys are revoked in the same step only when the request sets `revoke_api_keys` (a ticked checkbox in the web dialogs, "Also revoke API keys"). Keys without an owner (service keys) are never touched.
+
+Approving a consent needs a recent sign-in (step-up), so a stolen session cannot connect a new application. A membership whose end date has passed stops API keys and MCP tokens at once, before the expiry sweeper suspends it. A blocked or suspended account can no longer exchange or refresh a token, or open a session through a federated sign-in.

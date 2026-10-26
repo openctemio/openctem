@@ -31,8 +31,10 @@ func registerMCPOAuthRoutes(router Router, h *handler.MCPOAuthHandler, rateLimit
 	router.Group("/api/v1/oauth/requests", func(r Router) {
 		// Any member may connect an application for themselves: the grant
 		// never exceeds what they hold, so no permission gate applies.
+		// Approving needs a recent sign-in: a stolen session must not be
+		// able to mint a 90-day connector grant.
 		r.GET("/{id}", h.GetConsentRequest)
-		r.POST("/{id}/approve", h.ApproveConsent)
+		r.POST("/{id}/approve", h.ApproveConsent, requireStepUp())
 		r.POST("/{id}/deny", h.DenyConsent)
 		// Blocked application: the member asks an administrator, or a
 		// caller who may change the policy approves the publisher here.
