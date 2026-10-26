@@ -1103,7 +1103,7 @@ empty `owner_emails`. Every member-list view is audited
 | `POST /api/v1/admin/users/{id}/reset-credentials` | **super_admin** + **step-up** (audited; not self) |
 | `POST /api/v1/admin/users/{id}/break-glass-test` | **super_admin** + **step-up** (audited; not the break-glass account itself) |
 | `DELETE /api/v1/admin/users/{id}/idp-binding` | **super_admin** + **step-up** (audited high) |
-| `GET/PUT/DELETE /api/v1/admin/platform-idp` | **super_admin**; writes + **step-up** (audited high; secret never returned) |
+| `GET/PUT/DELETE /api/v1/admin/platform-idp` | **super_admin**; writes + a **fresh** authenticator code (never the step-up window); switching it off, no longer requiring it, a new issuer or client, or a newly trusted ACR/AMR value also need a second super admin; audited **critical** with the previous configuration; secret never returned |
 | `GET /api/v1/admin/access-requests` | any admin |
 | `POST /api/v1/admin/access-requests/{id}/approve`, `/reject` | **ops_admin+** (audited); approve creates the organization with the requester as owner and takes **step-up** |
 | `GET /api/v1/admin/settings/limits` | any admin (self-service default limits, configured sources) |
@@ -1195,7 +1195,7 @@ password) and `POST /api/v1/admin/auth/mfa` open a console session. Rules:
   recovery codes (step-up). Every query is keyed on the caller's administrator
   id. A super admin's reset-credentials removes keys and codes too.
 - **Policy "require security keys"** (`/admin/settings/console-mfa`, super
-  admin + step-up). Turning it on needs a configured relying party and an
+  admin + a fresh step-up; audited critical with the value before and after). Turning it on needs a configured relying party and an
   actor with at least two keys and unused recovery codes. Under the policy an
   administrator holding a key cannot use TOTP (sign-in or step-up: 403
   `WEBAUTHN_REQUIRED`), a trusted platform-IdP MFA no longer skips the
