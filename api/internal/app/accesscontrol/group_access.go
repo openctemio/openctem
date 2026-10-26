@@ -240,18 +240,9 @@ type SetTeamAccessInput struct {
 	ScopeMode string
 }
 
-// SetTeamAccess makes the team's presets and scope mode what the input says:
-// it adds the managed roles that are missing, removes the ones no longer
-// named and leaves the rest alone. A call that changes nothing is not an
-// error and is not audited.
-func (s *GroupService) SetTeamAccess(ctx context.Context, in SetTeamAccessInput, actx auditapp.AuditContext) (*TeamAccessView, error) {
-	if err := s.requireBindings(); err != nil {
-		return nil, err
-	}
-	gid, err := shared.IDFromString(in.GroupID)
-	if err != nil {
-		return nil, fmt.Errorf("%w: invalid group id format", shared.ErrValidation)
-	}
+// wantedPresets turns the requested presets and scope mode into the managed
+// roles the team should carry, keyed by template id.
+func wantedPresets(in SetTeamAccessInput) (map[string]managedRoleSpec, error) {
 	if in.ScopeMode != TeamScopeSpecific && in.ScopeMode != TeamScopeAllAssets {
 		return nil, fmt.Errorf("%w: scope_mode must be %q or %q", shared.ErrValidation, TeamScopeSpecific, TeamScopeAllAssets)
 	}
@@ -266,14 +257,142 @@ func (s *GroupService) SetTeamAccess(ctx context.Context, in SetTeamAccessInput,
 		}
 		want[id] = spec
 	}
+	if len(want) > MaxTeamPresets {
+		return nil, fmt.Errorf("%w: a team has at most %d presets", shared.ErrValidation, MaxTeamPresets)
+	}
 	if in.ScopeMode == TeamScopeAllAssets {
 		spec, _ := presetSpec(allAssetsTemplateID)
 		want[allAssetsTemplateID] = spec
 	}
-	if len(want) > MaxTeamPresets+1 {
-		return nil, fmt.Errorf("%w: a team has at most %d presets", shared.ErrValidation, MaxTeamPresets)
-	}
+	return want, nil
+}
 
+// accessChange is what setting a team's access adds and removes.
+type accessChange struct {
+	add    []managedRoleSpec
+	remove []*roledom.Role
+}
+
+// diffAccess compares the wanted managed roles with the team's current roles.
+// It also returns how many roles were bound by hand.
+func diffAccess(want map[string]managedRoleSpec, current []*roledom.Role) (accessChange, int) {
+	have := map[string]*roledom.Role{}
+	handBound := 0
+	for _, r := range current {
+		t := r.Template()
+		if !r.IsManaged() || t == nil {
+			handBound++
+			continue
+		}
+		have[t.ID] = r
+	}
+	var ch accessChange
+	for id, spec := range want {
+		if _, ok := have[id]; !ok {
+			ch.add = append(ch.add, spec)
+		}
+	}
+	for id, r := range have {
+		if _, ok := want[id]; !ok {
+			ch.remove = append(ch.remove, r)
+		}
+	}
+	slices.SortFunc(ch.add, func(x, y managedRoleSpec) int { return strings.Compare(x.templateID, y.templateID) })
+	slices.SortFunc(ch.remove, func(x, y *roledom.Role) int { return strings.Compare(x.Slug(), y.Slug()) })
+	return ch, handBound
+}
+
+// authorizeAccessChange applies the grant rules to a change of team g's
+// access by actor a. It returns whether the change touches elevated access.
+func (s *GroupService) authorizeAccessChange(ctx context.Context, g *groupdom.Group, a grantActor, ch accessChange) (bool, error) {
+	privileged, fullData := false, false
+	for _, spec := range ch.add {
+		if err := a.mayCarry(spec.permissions, spec.fullData); err != nil {
+			return false, fmt.Errorf("%w (preset %q)", err, spec.name)
+		}
+		privileged = privileged || permission.IsPrivilegedRole(spec.permissions, spec.fullData)
+		fullData = fullData || spec.fullData
+	}
+	for _, r := range ch.remove {
+		if err := a.mayRevoke(r); err != nil {
+			return false, err
+		}
+		privileged = privileged || isPrivileged(r)
+	}
+	if privileged {
+		if err := s.requireOwnerStepUp(ctx, a); err != nil {
+			return false, err
+		}
+	}
+	if len(ch.add) > 0 && !a.owner {
+		actor, err := shared.IDFromString(a.id)
+		if err != nil {
+			return false, fmt.Errorf("%w: invalid actor id format", shared.ErrValidation)
+		}
+		isMember, err := s.repo.IsMember(ctx, g.ID(), actor)
+		if err != nil {
+			return false, err
+		}
+		if isMember {
+			return false, ErrSelfJoinRoleTeam
+		}
+	}
+	if fullData {
+		external, err := s.bindings.HasExternalMembers(ctx, g.TenantID(), g.ID())
+		if err != nil {
+			return false, err
+		}
+		if external {
+			return false, ErrExternalTeamFullData
+		}
+	}
+	return privileged, nil
+}
+
+// applyAccessChange removes and creates the managed roles. A call that fails
+// midway is repeatable: the next one computes the remaining difference.
+func (s *GroupService) applyAccessChange(ctx context.Context, g *groupdom.Group, a grantActor, ch accessChange, members []shared.ID, actx auditapp.AuditContext) error {
+	createdBy, _ := roledom.ParseID(a.id)
+	by := asSharedID(createdBy)
+	for _, r := range ch.remove {
+		if err := s.bindings.UnbindRole(ctx, g.TenantID(), g.ID(), asSharedID(r.ID())); err != nil {
+			return err
+		}
+		if err := s.roles.roleRepo.Delete(ctx, asRoleID(g.TenantID()), r.ID()); err != nil {
+			return fmt.Errorf("delete managed role: %w", err)
+		}
+		s.auditBinding(ctx, actx, g, r, false, len(members))
+	}
+	for _, spec := range ch.add {
+		r, err := s.roles.createManagedRole(ctx, g, spec, createdBy)
+		if err != nil {
+			return err
+		}
+		if err := s.bindings.BindRole(ctx, g.TenantID(), g.ID(), asSharedID(r.ID()), &by); err != nil {
+			_ = s.roles.roleRepo.Delete(ctx, asRoleID(g.TenantID()), r.ID())
+			return err
+		}
+		s.auditBinding(ctx, actx, g, r, true, len(members))
+	}
+	return nil
+}
+
+// SetTeamAccess makes the team's presets and scope mode what the input says:
+// it adds the managed roles that are missing, removes the ones no longer
+// named and leaves the rest alone. A call that changes nothing is not an
+// error and is not audited.
+func (s *GroupService) SetTeamAccess(ctx context.Context, in SetTeamAccessInput, actx auditapp.AuditContext) (*TeamAccessView, error) {
+	if err := s.requireBindings(); err != nil {
+		return nil, err
+	}
+	gid, err := shared.IDFromString(in.GroupID)
+	if err != nil {
+		return nil, fmt.Errorf("%w: invalid group id format", shared.ErrValidation)
+	}
+	want, err := wantedPresets(in)
+	if err != nil {
+		return nil, err
+	}
 	g, err := s.groupForTenant(ctx, gid, actx.TenantID)
 	if err != nil {
 		return nil, err
@@ -290,122 +409,31 @@ func (s *GroupService) SetTeamAccess(ctx context.Context, in SetTeamAccessInput,
 	if err := s.requireWholeGroupInScope(ctx, g); err != nil {
 		return nil, err
 	}
-
 	current, err := s.boundRoles(ctx, g)
 	if err != nil {
 		return nil, err
 	}
-	have := map[string]*roledom.Role{}
-	handBound := 0
-	for _, r := range current {
-		if !r.IsManaged() {
-			handBound++
-			continue
-		}
-		if t := r.Template(); t != nil {
-			have[t.ID] = r
-		}
-	}
+	ch, handBound := diffAccess(want, current)
 	if handBound+len(want) > groupdom.MaxRoleBindingsPerGroup {
 		return nil, groupdom.ErrTooManyBindings
 	}
-
-	var add []managedRoleSpec
-	for id, spec := range want {
-		if _, ok := have[id]; !ok {
-			add = append(add, spec)
-		}
-	}
-	var remove []*roledom.Role
-	for id, r := range have {
-		if _, ok := want[id]; !ok {
-			remove = append(remove, r)
-		}
-	}
-	slices.SortFunc(add, func(x, y managedRoleSpec) int { return strings.Compare(x.templateID, y.templateID) })
-	slices.SortFunc(remove, func(x, y *roledom.Role) int { return strings.Compare(x.Slug(), y.Slug()) })
-	if len(add) == 0 && len(remove) == 0 {
+	if len(ch.add) == 0 && len(ch.remove) == 0 {
 		v := s.teamAccessView(current)
 		return &v, nil
 	}
-
-	// Authorization: the actor holds what they hand out (or take away), a
-	// self-member does not grow their own access, and anything privileged
-	// (before or after) is the owner's with a recent sign-in.
-	privileged := false
-	fullData := false
-	for _, spec := range add {
-		if err := a.mayCarry(spec.permissions, spec.fullData); err != nil {
-			return nil, fmt.Errorf("%w (preset %q)", err, spec.name)
-		}
-		privileged = privileged || permission.IsPrivilegedRole(spec.permissions, spec.fullData)
-		fullData = fullData || spec.fullData
+	privileged, err := s.authorizeAccessChange(ctx, g, a, ch)
+	if err != nil {
+		return nil, err
 	}
-	for _, r := range remove {
-		if err := a.mayRevoke(r); err != nil {
-			return nil, err
-		}
-		privileged = privileged || isPrivileged(r)
-	}
-	if privileged {
-		if err := s.requireOwnerStepUp(ctx, a); err != nil {
-			return nil, err
-		}
-	}
-	if len(add) > 0 && !a.owner {
-		actor, perr := shared.IDFromString(a.id)
-		if perr != nil {
-			return nil, fmt.Errorf("%w: invalid actor id format", shared.ErrValidation)
-		}
-		isMember, merr := s.repo.IsMember(ctx, g.ID(), actor)
-		if merr != nil {
-			return nil, merr
-		}
-		if isMember {
-			return nil, ErrSelfJoinRoleTeam
-		}
-	}
-	if fullData {
-		external, err := s.bindings.HasExternalMembers(ctx, g.TenantID(), g.ID())
-		if err != nil {
-			return nil, err
-		}
-		if external {
-			return nil, ErrExternalTeamFullData
-		}
-	}
-
 	members, err := s.bindings.ListActiveMemberIDs(ctx, g.TenantID(), g.ID())
 	if err != nil {
 		return nil, err
 	}
-	createdBy, _ := roledom.ParseID(a.id)
-	by := asSharedID(createdBy)
-
-	for _, r := range remove {
-		if err := s.bindings.UnbindRole(ctx, g.TenantID(), g.ID(), asSharedID(r.ID())); err != nil {
-			return nil, err
-		}
-		if err := s.roles.roleRepo.Delete(ctx, asRoleID(g.TenantID()), r.ID()); err != nil {
-			return nil, fmt.Errorf("delete managed role: %w", err)
-		}
-		s.auditBinding(ctx, actx, g, r, false, len(members))
-	}
-	for _, spec := range add {
-		r, err := s.roles.createManagedRole(ctx, g, spec, createdBy)
-		if err != nil {
-			s.invalidateMembers(ctx, g.TenantID(), members)
-			return nil, err
-		}
-		if err := s.bindings.BindRole(ctx, g.TenantID(), g.ID(), asSharedID(r.ID()), &by); err != nil {
-			_ = s.roles.roleRepo.Delete(ctx, asRoleID(g.TenantID()), r.ID())
-			s.invalidateMembers(ctx, g.TenantID(), members)
-			return nil, err
-		}
-		s.auditBinding(ctx, actx, g, r, true, len(members))
-	}
+	applyErr := s.applyAccessChange(ctx, g, a, ch, members, actx)
 	s.invalidateMembers(ctx, g.TenantID(), members)
-
+	if applyErr != nil {
+		return nil, applyErr
+	}
 	after, err := s.boundRoles(ctx, g)
 	if err != nil {
 		return nil, err
