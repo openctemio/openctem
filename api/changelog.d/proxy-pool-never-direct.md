@@ -1,0 +1,5 @@
+### Security: proxy pools never send validation probes or a disabled pool's sensors direct
+
+- Validate jobs (stage 4 re-checks) probe their target. A sensor whose jobs use a proxy pool now gets them only when it reports `egress.validate@1` (its validate executor sends the probes through the pool) next to `egress.upstream@1` and `net.confined@1`, and the job then carries the pool like a scan job. Before, such a sensor ran them from its own address, around the pool. Until a sensor version reports the capability, validate jobs wait for a sensor without a pool or one set to Direct.
+- A disabled pool that a sensor is assigned to no longer sends that sensor's scans direct: its jobs carry the pool with no endpoint, the sensor fails them closed, and no credential is handed out. A disabled organization default still turns proxies off for the sensors that inherit it.
+- The sensor drawer's network path now says when a pooled sensor receives no scan jobs (no proxy support reported), when its chosen pool is disabled (scans fail), and when its validation jobs wait.
