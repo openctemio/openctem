@@ -57,7 +57,9 @@ jobs:
           EVENT_BEFORE: ${{ github.event.before }}
           MG_BASE: ${{ github.event.merge_group.base_sha }}
           MG_HEAD: ${{ github.event.merge_group.head_sha }}
-          PR_LABELS: ${{ toJSON(github.event.pull_request.labels.*.name) }} # the `ci:full` label
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          PR_LABELS: ${{ toJSON(github.event.pull_request.labels.*.name) }}
         run: bash .github/scripts/changed.sh
       # `next build` runs on push only; it is skipped when the push changed
       # nothing that ships (tests, specs, documentation).
