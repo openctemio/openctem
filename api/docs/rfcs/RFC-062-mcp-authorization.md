@@ -156,6 +156,7 @@ approved before (the page says so); `prompt=none` returns `consent_required`.
 | `mcp:assets.read` | `assets:read` | assets, exposure chains |
 | `mcp:compliance.read` | `compliance:frameworks:read` | compliance posture |
 | `mcp:pentest.read` | `pentest:campaigns:read`, `pentest:findings:read`, `pentest:retests:read`, `pentest:templates:read` | pentest campaigns, findings, retests, templates, report prompts |
+| `mcp:scope.read` | `attack_surface:scope:read` | check_scope: may this target be tested at this intensity (§10b) |
 | `mcp:findings.comment` (write) | `findings:comment` | add a comment, confirmed per call (§10) |
 | `mcp:findings.propose` (write) | `findings:write` | propose a false positive or an accepted risk (§10a) |
 | `mcp:pentest.draft` (write) | `pentest:findings:write` | save a pentest finding as a draft (§10a) |
@@ -302,6 +303,18 @@ bodies 32,000 characters).
 Threats this answers: content the agent reads (finding text, scanner output,
 target responses) steering it to hide a real risk. The agent can at most
 file a request that a different person reads, marked as written by an AI.
+
+## 10b. Scope check tool
+
+`check_scope` lets an outside AI client ask "may I test this target at this intensity?" before it acts. It reads; it never changes a scope, and no tool of this server widens one (widening stays with people: approvals, step-up, audit).
+
+- **Input.** `target` (domain, IP, CIDR or URL), optional `intensity` (`passive`, `active` default, `intrusive`), optional `program_id` for a target only a bug-bounty program rule covers.
+- **Answer.** The one scope authority a scan asks (`scopeauth`), so the answer matches a scan's: `allowed` (with the kind and id of the covering entry), `passive_only` (covered, but not at that intensity) or `refused`, with reason codes and a hint for the person. A refusal is worded as the platform's decision and says variations are refused too.
+- **Never echoed.** Deny-list contents, scope patterns and entries other than the covering one. The platform deny list answers with a reason code only.
+- **Fails closed.** Any lookup error (scope entries, verified domains, program exclusions or memberships) answers `refused` with `scope_lookup_failed`.
+- **Program-only targets.** A target covered only by program rules is allowed only when `program_id` names a program the caller belongs to whose in-effect rule covers it (program exclusions applied).
+- **Tenant and permission.** The tenant comes from the connection. The scope `mcp:scope.read` stands for `attack_surface:scope:read`, the permission of the REST route that lists scope entries, which discloses more than this tool. Another tenant's entries never match.
+- **Abuse.** A rate limit per connection (30 a minute, burst 10; per API replica) stops scope enumeration by brute force; a limited call answers `refused` with `rate_limited` and `retry_after_seconds`. Every call is audited with the target stored as a digest, never in clear.
 
 ## 11. Transport
 
