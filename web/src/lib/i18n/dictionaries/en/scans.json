@@ -1195,7 +1195,6 @@
   "scans.groups.platformHint": "Only bug-bounty program entries cover these targets. Run the scan on your own sensor, or remove them.",
   "scans.groups.proof": "{count} need a verified domain for shared sensors",
   "scans.groups.proofHint": "The platform's shared sensors scan only domains your organization verified. Run the scan on your own sensor, verify the domain, or remove these targets.",
-  "scans.groups.proofIntrusiveHint": "Intrusive checks need a verified domain of your organization on every sensor. Verify the domain, or remove these targets.",
   "scans.groups.removeMany": "Remove these {count} targets",
   "scans.groups.removeOne": "Remove this target",
   "scans.groups.resolvedAtRun": "A group's members are resolved when the scan runs.",
