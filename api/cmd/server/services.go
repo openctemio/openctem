@@ -3239,6 +3239,12 @@ func (s *Services) InitAuthServices(cfg *config.Config, repos *Repositories, log
 		s.SSO.SetSignInHook(s.AccountDeletion.CancelOnSignIn)
 	}
 	s.SSO.SetSessionRevocationStore(sessionRevocations, revocationTTL)
+	if redisClient != nil {
+		// SSO state is single use across replicas only through a shared store.
+		s.SSO.SetStateStore(redisClient)
+	} else {
+		log.Warn("sso: no Redis client; sign-in state kept in process (single-replica only)")
+	}
 	// Configuring SSO connections needs sso.connections for the organization; sign-in
 	// through a configured connection is never gated.
 	s.SSO.SetFeatureGate(s.Entitlement)
@@ -3300,6 +3306,10 @@ func (s *Services) InitAuthServices(cfg *config.Config, repos *Repositories, log
 		return sso.HasUsableSSOPath(ctx, t.Slug())
 	})
 	s.SSO.SetJITApprovalNotifier(s.Tenant)
+	s.Auth.SetBreakGlassNotifier(s.Tenant)
+	ssoEnforcement := repos.SSOEnforcement
+	s.SSO.SetSSOSignInRecorder(ssoEnforcement)
+	s.Tenant.SetSSOEnforcementStore(ssoEnforcement)
 	s.Role.SetPrivilegeNotifier(s.Tenant)
 	s.Auth.SetInvitationAcceptor(s.Tenant)
 

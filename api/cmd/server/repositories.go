@@ -278,6 +278,8 @@ type Repositories struct {
 	PlatformIdP *postgres.PlatformIdPRepository
 	// AdminDB is the pool of the console's identity tables (UseAdminDB).
 	AdminDB *postgres.DB
+	// SSOEnforcement backs the Require SSO guard (preconditions, revoke at enable).
+	SSOEnforcement *postgres.SSOEnforcementRepository
 
 	// Target Mappings (scanner target type -> asset type)
 	TargetMapping *postgres.TargetMappingRepository
@@ -585,6 +587,7 @@ func newRepositories(db *postgres.DB) *Repositories {
 		AccessControl:     postgres.NewAccessControlRepository(db),
 		DataScope:         postgres.NewDataScopeRepository(db),
 		MemberLifecycle:   postgres.NewMemberLifecycleRepository(db),
+		SSOEnforcement:    postgres.NewSSOEnforcementRepository(db),
 		OwnershipTransfer: postgres.NewOwnershipTransferRepository(db),
 		Role:              postgres.NewRoleRepository(db),
 		RolePermission:    postgres.NewPermissionRepository(db),

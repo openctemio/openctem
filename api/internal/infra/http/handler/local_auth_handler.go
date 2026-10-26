@@ -1318,6 +1318,8 @@ func (h *LocalAuthHandler) handleAuthError(w http.ResponseWriter, err error) {
 		middleware.WriteOrganizationSuspended(w)
 	case errors.Is(err, auth.ErrTenantAccessDenied):
 		apierror.Forbidden("User does not have access to this tenant").WriteJSON(w)
+	case errors.Is(err, auth.ErrSSOBreakGlassNeedsMFA):
+		apierror.Forbidden("This organization requires SSO sign-in. Owner access with a password needs two-factor authentication: turn it on for your account and sign in again, or sign in through your identity provider.").WriteJSON(w)
 	case errors.Is(err, auth.ErrSSORequired):
 		apierror.Forbidden("This organization requires SSO sign-in. Please sign in through your identity provider.").WriteJSON(w)
 	case errors.Is(err, auth.ErrTenantRequired):

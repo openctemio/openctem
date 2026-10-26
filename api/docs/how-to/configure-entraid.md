@@ -447,8 +447,23 @@ generic `400` and revokes nothing.
 > Related hardening: OpenCTEM also re-checks **enforce-SSO on every request**
 > (not only at token mint), so toggling **Settings → Security → "Require SSO"**
 > on takes effect for already-issued password tokens within ~60s, without
-> waiting for them to expire. Federated sessions and the tenant owner
-> (break-glass) are unaffected.
+> waiting for them to expire. Federated sessions are unaffected. The tenant
+> owner can still enter with a password **and their second factor**
+> (break-glass); a password alone is refused, and each break-glass sign-in is
+> written to the audit log as `sso.break_glass_used` and announced to the
+> organization's other owners and admins.
+>
+> Requiring SSO can be switched on only after an owner or admin has signed in
+> through the organization's identity provider once and an owner has
+> two-factor authentication turned on. Switching it on also revokes, by
+> default, the user API keys and AI connections that exist at that moment
+> (untick the box in the console to keep them); keys and connections made
+> afterwards from an SSO sign-in keep working.
+>
+> The sign-in state is single use and bound to the browser that started the
+> sign-in: the API returns a one-time `browser_binding` secret with the
+> authorize URL, the web app keeps it in an HttpOnly cookie, and the callback
+> is refused without it.
 
 ---
 

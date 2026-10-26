@@ -8,7 +8,6 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/base64"
-	"encoding/json"
 	"errors"
 	"io"
 	"net/http"
@@ -16,7 +15,6 @@ import (
 	"net/url"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/openctemio/openctem/api/internal/config"
 	"github.com/openctemio/openctem/api/pkg/crypto"
@@ -73,13 +71,13 @@ func TestGenerateAuthorizeURL_PKCE_S256(t *testing.T) {
 	}
 
 	// Recover the verifier from state and prove S256(verifier) == challenge.
-	st, verr := svc.validateState(res.State)
+	st, verr := svc.consumeState(context.Background(), res.State, res.BrowserBinding)
 	verifier := st.codeVerifier
 	if verr != nil {
-		t.Fatalf("validateState: %v", verr)
+		t.Fatalf("consumeState: %v", verr)
 	}
 	if verifier == "" {
-		t.Fatal("no PKCE verifier recovered from state")
+		t.Fatal("no PKCE verifier recovered from the state record")
 	}
 	sum := sha256.Sum256([]byte(verifier))
 	want := base64.RawURLEncoding.EncodeToString(sum[:])
@@ -87,8 +85,8 @@ func TestGenerateAuthorizeURL_PKCE_S256(t *testing.T) {
 		t.Fatalf("challenge mismatch: url=%s recomputed=%s", challenge, want)
 	}
 
-	// CRUX: the raw verifier must NOT appear in the (signed, unencrypted) state
-	// that round-trips through the browser — it is AES-GCM-encrypted.
+	// CRUX: the state that round-trips through the browser is an opaque handle;
+	// the verifier never travels in it, not even encrypted.
 	if strings.Contains(res.State, verifier) {
 		t.Fatal("raw PKCE verifier leaked in the round-tripping state")
 	}
@@ -116,45 +114,18 @@ func TestExchangeCode_IncludesPKCEVerifier(t *testing.T) {
 	}
 }
 
-func TestHandleCallback_MissingPKCEVerifier_FailsClosed(t *testing.T) {
+func TestHandleCallback_UnknownState_FailsClosed(t *testing.T) {
 	svc := newPKCESSOService(t, crypto.NewNoOpEncryptor(), []string{"https://app.example.com"})
 
-	// A validly-signed state that carries NO pkce field (tampered / pre-PKCE).
-	stateData := map[string]interface{}{
-		"org": "acme", "provider": "entra_id", "nonce": "n",
-		"random": "r", "exp": time.Now().Add(5 * time.Minute).Unix(),
-	}
-	js, _ := json.Marshal(stateData)
-	b64 := base64.URLEncoding.EncodeToString(js)
-	state := b64 + "." + svc.signState(b64)
+	// A validly signed handle that the server never issued (or already spent).
+	state := "forged-handle." + svc.signState("forged-handle")
 
 	_, err := svc.HandleCallback(context.Background(), SSOCallbackInput{
-		Provider: "entra_id", Code: "c", State: state,
+		Provider: "entra_id", Code: "c", State: state, BrowserBinding: "b",
 		RedirectURI: "https://app.example.com/cb",
 	})
 	if !errors.Is(err, ErrSSOInvalidState) {
-		t.Fatalf("want ErrSSOInvalidState for missing verifier, got %v", err)
-	}
-}
-
-func TestValidateState_TamperedPKCE_FailsClosed(t *testing.T) {
-	cipher, err := crypto.NewCipher([]byte("0123456789abcdef0123456789abcdef"))
-	if err != nil {
-		t.Fatalf("cipher: %v", err)
-	}
-	svc := newPKCESSOService(t, cipher, nil)
-
-	stateData := map[string]interface{}{
-		"org": "acme", "provider": "entra_id", "nonce": "n",
-		"pkce": "!!!not-valid-ciphertext!!!", "random": "r",
-		"exp": time.Now().Add(5 * time.Minute).Unix(),
-	}
-	js, _ := json.Marshal(stateData)
-	b64 := base64.URLEncoding.EncodeToString(js)
-	state := b64 + "." + svc.signState(b64)
-
-	if _, err := svc.validateState(state); err == nil {
-		t.Fatal("expected error for undecryptable pkce ciphertext")
+		t.Fatalf("want ErrSSOInvalidState for an unknown state, got %v", err)
 	}
 }
 
