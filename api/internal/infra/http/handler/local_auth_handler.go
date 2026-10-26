@@ -89,11 +89,6 @@ func writeSignupNotAvailable(w http.ResponseWriter) {
 // organization; the web sends the person through email-first discovery.
 const CodeSignupSSORequired apierror.Code = "SSO_REQUIRED"
 
-func writeSignupSSORequired(w http.ResponseWriter) {
-	apierror.New(http.StatusForbidden, CodeSignupSSORequired,
-		"Your organization requires single sign-on for this address. Sign in with your organization's SSO.").WriteJSON(w)
-}
-
 // NewLocalAuthHandler creates a new LocalAuthHandler.
 func NewLocalAuthHandler(
 	authService *auth.AuthService,

@@ -48,11 +48,17 @@ describe('MfaStep verify', () => {
   })
 
   it('shows a wrong-code error and does not continue', async () => {
-    actions.verifyMfaAction.mockResolvedValue({ success: false, error: 'Invalid code' })
+    actions.verifyMfaAction.mockResolvedValue({
+      success: false,
+      code: 'MFA_CODE_INVALID',
+      error: 'SERVER SENTENCE invalid code',
+    })
     const onDone = vi.fn()
     render(<MfaStep purpose="verify" onDone={onDone} onCancel={vi.fn()} />)
     submitCode()
-    expect(await screen.findByRole('alert')).toHaveTextContent('Invalid code')
+    const alert = await screen.findByRole('alert')
+    expect(alert).toHaveTextContent('That code is not valid')
+    expect(alert).not.toHaveTextContent('SERVER SENTENCE')
     expect(onDone).not.toHaveBeenCalled()
   })
 })
@@ -96,10 +102,16 @@ describe('MfaStep enroll', () => {
   })
 
   it('goes back to sign-in with the error when finishing fails', async () => {
-    actions.finishMfaEnrollmentAction.mockResolvedValue({ success: false, error: 'Expired' })
+    actions.finishMfaEnrollmentAction.mockResolvedValue({
+      success: false,
+      code: 'MFA_CHALLENGE_INVALID',
+      error: 'Expired',
+    })
     const { onDone, onCancel } = mountEnroll()
     await reachCodesStep()
-    await waitFor(() => expect(onCancel).toHaveBeenCalledWith('Expired'))
+    await waitFor(() =>
+      expect(onCancel).toHaveBeenCalledWith('Your sign-in verification expired. Sign in again.')
+    )
     expect(onDone).not.toHaveBeenCalled()
   })
 })
