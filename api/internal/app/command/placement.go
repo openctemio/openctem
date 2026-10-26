@@ -354,6 +354,9 @@ func claimReasons(c commanddom.SensorClaim) []string {
 	if !c.NotRefused {
 		out = append(out, commanddom.PlacementRefusedEarlier)
 	}
+	if !c.NotFailedHere {
+		out = append(out, commanddom.PlacementFailedHereEarlier)
+	}
 	if !c.CapabilityOK {
 		out = append(out, commanddom.PlacementCapabilityMissing)
 	}
