@@ -258,6 +258,11 @@ func NewExclusion(
 	if !exclusionType.IsValid() {
 		return nil, ErrInvalidExclusionType
 	}
+	if exclusionType != ExclusionTypePath {
+		if err := ValidateExclusionPattern(exclusionType, pattern); err != nil {
+			return nil, err
+		}
+	}
 
 	if reason == "" {
 		return nil, ErrReasonRequired
