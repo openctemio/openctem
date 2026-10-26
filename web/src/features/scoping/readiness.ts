@@ -24,7 +24,7 @@ export interface ReadinessRow {
   module?: string
 }
 
-const SEP = ' · '
+const SEP = ', '
 
 export function readinessRows(s: ScopingSummary, t: Translate): ReadinessRow[] {
   const cycle = s.active_cycle

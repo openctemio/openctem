@@ -9,7 +9,7 @@
   "emergingThreats.actions.outOfScopeHint": "This alert has assets outside your scope, so you cannot mark it not affected. Ask someone with wider access.",
   "emergingThreats.actions.remediating": "Mark remediating",
   "emergingThreats.actions.reopen": "Reopen",
-  "emergingThreats.affectedCounts": "{confirmed} confirmed · {possible} possible · {internet} internet-facing",
+  "emergingThreats.affectedCounts": "{confirmed} confirmed, {possible} possible, {internet} internet-facing",
   "emergingThreats.assets.asset": "Asset",
   "emergingThreats.assets.confirmed": "Confirmed affected",
   "emergingThreats.assets.criticality": "Criticality",

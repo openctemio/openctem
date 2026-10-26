@@ -48,16 +48,14 @@ export function LastChanged({
   const last = useMemo(() => lastChangeOf(logs ?? [], fields), [logs, fields])
   if (!last) return null
   return (
-    <p className="flex flex-wrap items-center gap-1 text-xs text-muted-foreground">
+    <p className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground">
       <History className="size-3.5" aria-hidden />
       <span>
         {t('org.lastChanged.by', 'Last changed by {actor}', {
           actor: last.actor_email || t('org.lastChanged.system', 'the system'),
         })}
       </span>
-      <span aria-hidden>·</span>
       <RelativeTime date={last.timestamp} />
-      <span aria-hidden>·</span>
       <Link href="/settings/audit-log" className="underline-offset-2 hover:underline">
         {t('org.lastChanged.history', 'History')}
       </Link>

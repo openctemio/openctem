@@ -54,7 +54,7 @@ export function ExistingModels({ models, selectedId, onOpen }: ExistingModelsPro
                     <div className="min-w-0 flex-1">
                       <p className="truncate font-medium">{m.name}</p>
                       <p className="text-muted-foreground text-xs">
-                        {t('threatModel.generatedWithVersion', 'Generated {date} · {version}', {
+                        {t('threatModel.generatedWithVersion', 'Generated {date}, {version}', {
                           date: formatDateTime(m.generated_at, locale),
                           version: m.technique_dataset_version,
                         })}

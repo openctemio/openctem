@@ -150,7 +150,7 @@ function SecretPanel({ finding }: { finding: FindingDetail }) {
           {s?.maskedValue ? <code className="font-mono text-xs">{s.maskedValue}</code> : null}
         </DetailField>
         <DetailField label={t('findings.typePanel.kind', 'Kind')}>
-          {[s?.service, s?.secretType?.replace(/_/g, ' ')].filter(Boolean).join(' · ') || null}
+          {[s?.service, s?.secretType?.replace(/_/g, ' ')].filter(Boolean).join(', ') || null}
         </DetailField>
         <DetailField label={t('findings.typePanel.validity', 'Validity')}>
           <Badge
