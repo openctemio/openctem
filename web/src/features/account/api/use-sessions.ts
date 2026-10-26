@@ -31,6 +31,7 @@ export function useSessions() {
   return {
     sessions,
     total: sessions.length,
+    activeApiKeys: data?.active_api_keys ?? 0,
     isLoading,
     isError: !!error,
     error,
@@ -79,12 +80,12 @@ export function useRevokeAllSessions() {
   const [isRevoking, setIsRevoking] = useState(false)
   const [error, setError] = useState<Error | null>(null)
 
-  const revokeAllSessions = useCallback(async (): Promise<boolean> => {
+  const revokeAllSessions = useCallback(async (revokeApiKeys = false): Promise<boolean> => {
     setIsRevoking(true)
     setError(null)
 
     try {
-      await del(userEndpoints.revokeAllSessions())
+      await del(userEndpoints.revokeAllSessions() + (revokeApiKeys ? '?revoke_api_keys=true' : ''))
       return true
     } catch (err) {
       const error = err instanceof Error ? err : new Error('Failed to revoke all sessions')
