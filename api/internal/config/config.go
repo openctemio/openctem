@@ -848,6 +848,10 @@ func (c AuthConfig) PublicSignup() bool {
 
 // AuthConfig holds authentication configuration.
 type AuthConfig struct {
+	// MFAFloor (AUTH_MFA_FLOOR: none, admins or everyone) is the default of
+	// the platform two-factor floor until a super admin stores a value in
+	// the console. Empty: admins.
+	MFAFloor string
 	// SignupMode is the deployment's sign-up ceiling: SignupModeDisabled
 	// (default), SignupModeDomain or SignupModeOpen. No API can change it.
 	// The platform administrator creates organizations in every mode.
@@ -1661,6 +1665,7 @@ func Load() (*Config, error) {
 			MaxLoginAttempts:          getEnvInt("AUTH_MAX_LOGIN_ATTEMPTS", 5),
 			LockoutDuration:           getEnvDuration("AUTH_LOCKOUT_DURATION", 15*time.Minute),
 			MaxActiveSessions:         getEnvInt("AUTH_MAX_ACTIVE_SESSIONS", 10),
+			MFAFloor:                  getEnv("AUTH_MFA_FLOOR", ""),
 			RequireEmailVerification:  getEnvBool("AUTH_REQUIRE_EMAIL_VERIFICATION", true),
 			CaptchaTurnstileSecret:    getEnv("CAPTCHA_TURNSTILE_SECRET", ""),
 			CaptchaTurnstileSiteKey:   getEnv("CAPTCHA_TURNSTILE_SITE_KEY", ""),

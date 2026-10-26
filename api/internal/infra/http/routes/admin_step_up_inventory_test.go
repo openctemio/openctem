@@ -118,6 +118,7 @@ var adminWriteInventory = map[string]struct {
 	"POST /api/v1/admin/settings/captcha/verify":                    {routine, "asks Turnstile about a secret; changes nothing"},
 	"PUT /api/v1/admin/settings/region/":                            {stepUpRoute, "data residency of every new organization, once (fresh)"},
 	"PUT /api/v1/admin/settings/storage-quota/":                     {stepUpRoute, "default storage quota of organizations"},
+	"PUT /api/v1/admin/settings/auth-mfa/":                          {stepUpRoute, "lowest two-factor requirement of every organization (fresh)"},
 	"PUT /api/v1/admin/settings/alerts/":                            {stepUpRoute, "where administrator alerts go (fresh)"},
 	"POST /api/v1/admin/settings/alerts/test":                       {routine, "sends a test alert to the stored webhook; changes nothing"},
 	"PUT /api/v1/admin/settings/ai/":                                {stepUpRoute, "platform AI provider and key: cost and subprocessor (fresh)"},
@@ -253,6 +254,7 @@ func TestFactorRoutesDemandFreshStepUp(t *testing.T) {
 		// Settings whose loosening is a security decision (RFC-079).
 		{"PUT", "/api/v1/admin/settings/captcha/", "settings.captcha"},
 		{"PUT", "/api/v1/admin/settings/region/", "settings.region"},
+		{"PUT", "/api/v1/admin/settings/auth-mfa/", "settings.auth_mfa"},
 		{"PUT", "/api/v1/admin/settings/alerts/", "settings.alerts"},
 		{"PUT", "/api/v1/admin/settings/ai/", "settings.ai"},
 		{"PUT", "/api/v1/admin/settings/ai/org-policy", "settings.ai_org_policy"},

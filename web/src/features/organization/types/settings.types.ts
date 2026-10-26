@@ -39,6 +39,12 @@ export interface SecuritySettings {
   mfa_required: boolean
   /** Owners and admins must use 2FA (on for new organizations). */
   mfa_required_for_admins?: boolean
+  /**
+   * The platform's lowest two-factor requirement. mfa_required and
+   * mfa_required_for_admins already include it: an organization can require
+   * more, never less.
+   */
+  platform_mfa_floor?: 'none' | 'admins' | 'everyone'
   ip_whitelist: string[]
   allowed_domains: string[]
   email_verification_mode: EmailVerificationMode

@@ -587,6 +587,11 @@ func (h *TenantHandler) handleServiceError(w http.ResponseWriter, err error) {
 		apierror.InternalServerError("These settings could not be read. Contact your platform administrator.").WriteJSON(w)
 		return
 	}
+	if errors.Is(err, tenantapp.ErrMFABelowPlatformFloor) {
+		apierror.New(http.StatusUnprocessableEntity, apierror.Code("MFA_BELOW_PLATFORM_FLOOR"),
+			"The platform requires two-factor authentication at least for administrators. An organization can require more, not less.").WriteJSON(w)
+		return
+	}
 	if code, status, ok := invitationErrorCode(err); ok {
 		msg := err.Error()
 		if idx := strings.Index(msg, ": "); idx != -1 {
@@ -2109,6 +2114,10 @@ type SecuritySettingsResponse struct {
 	// SSORequireMFAEvidence: a sign-in through the organization's own identity
 	// provider must carry the provider's proof of a second factor.
 	SSORequireMFAEvidence bool `json:"sso_require_mfa_evidence"`
+	// PlatformMFAFloor is the platform's lowest two-factor requirement (none,
+	// admins, everyone). mfa_required and mfa_required_for_admins already
+	// include it; an organization can raise them, not lower them below it.
+	PlatformMFAFloor string `json:"platform_mfa_floor,omitempty"`
 	// CurrentIP is the caller's IP as the API sees it, the value the IP
 	// allowlist is checked against (empty outside a request context).
 	CurrentIP string `json:"current_ip,omitempty"`
@@ -2186,10 +2195,12 @@ func (h *TenantHandler) GetSettings(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	settings, floor := h.service.ApplyMFAFloor(r.Context(), settings)
 	resp := withSettingsETags(toSettingsResponse(settings), h.settingsETags(r.Context(), tenantID)).
 		forRole(middleware.GetTeamRole(r.Context()))
 	if resp.Security != nil {
 		resp.Security.CurrentIP = getClientIP(r)
+		resp.Security.PlatformMFAFloor = string(floor)
 	}
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
@@ -2348,8 +2359,10 @@ func (h *TenantHandler) UpdateSecuritySettings(w http.ResponseWriter, r *http.Re
 		h.invalidateSecurityPolicy(tenantID.String())
 	}
 
+	settings, floor := h.service.ApplyMFAFloor(r.Context(), settings)
 	resp := withSettingsETags(toSettingsResponse(settings), etags)
 	resp.Security.CurrentIP = clientIP // security PATCH is owner-only
+	resp.Security.PlatformMFAFloor = string(floor)
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	_ = json.NewEncoder(w).Encode(resp)

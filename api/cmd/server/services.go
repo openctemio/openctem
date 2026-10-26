@@ -104,6 +104,7 @@ import (
 	"github.com/openctemio/openctem/api/internal/app/platformalert"
 	"github.com/openctemio/openctem/api/internal/app/platformcaptcha"
 	"github.com/openctemio/openctem/api/internal/app/platformemail"
+	"github.com/openctemio/openctem/api/internal/app/platformmfa"
 	programfeedapp "github.com/openctemio/openctem/api/internal/app/programfeed"
 	"github.com/openctemio/openctem/api/internal/app/programtarget"
 	proxypoolapp "github.com/openctemio/openctem/api/internal/app/proxypool"
@@ -935,6 +936,7 @@ type Services struct {
 	PlatformCaptcha  *platformcaptcha.Service
 	DeploymentRegion *deploymentregion.Service
 	StorageQuota     *storagequota.Service
+	PlatformMFA      *platformmfa.Service
 	PlatformAlert    *platformalert.Service
 	PlatformAI       *platformai.Service
 	// TenantAI is the organizations' AI settings (consent, source, own provider).
@@ -1067,6 +1069,9 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	s.Entitlement = entitlementapp.NewService(repos.Limits, repos.AdminAuditLog, log)
 	if repos.PlatformSetting != nil {
 		s.StorageQuota = storagequota.NewService(repos.PlatformSetting, s.Entitlement, s.SettingRecorder, cfg.Storage.TenantQuotaMB)
+	}
+	if repos.PlatformSetting != nil {
+		s.PlatformMFA = platformmfa.NewService(repos.PlatformSetting, s.SettingRecorder, cfg.App.ManagedService, cfg.Auth.MFAFloor)
 	}
 	s.IdleWorkspaces = lifecycleapp.NewService(repos.IdleLifecycle, s.Audit, repos.AdminAuditLog, repos.Admin, nil, log)
 	// Suspended organizations: one access gate every credential path asks,
@@ -3188,6 +3193,18 @@ func (s *Services) InitAuthServices(cfg *config.Config, repos *Repositories, log
 	// AES-GCM key as integration credentials.
 	s.Auth.SetMFA(repos.UserMFA, s.Encryptor, cfg.Brand.DisplayName())
 	s.Session.SetMFAChallengeCleanup(repos.UserMFA)
+	// The platform two-factor floor (setting auth.mfa) and the lookup that
+	// tells an administrator by effective grants. Without the settings store
+	// only the organizations' own requirements apply.
+	var floorSource auth.MFAFloorSource
+	if s.PlatformMFA != nil {
+		floorSource = s.PlatformMFA
+	}
+	var privilegeSource auth.PrivilegeSource
+	if s.Role != nil {
+		privilegeSource = s.Role
+	}
+	s.Auth.SetMFAFloor(floorSource, privilegeSource)
 
 	// Immediate session revocation: signing a session out (logout, "sign out
 	// this device", password change, enabling 2FA, suspension) records its id
@@ -3388,6 +3405,11 @@ func (s *Services) InitAuthServices(cfg *config.Config, repos *Repositories, log
 	// when the tenant has no usable SSO login path. main.go rebuilds s.Tenant, so
 	// this is re-applied there too.
 	s.Tenant.SetSSOPathChecker(s.SSO)
+	// An organization's 2FA settings may tighten the platform floor, not
+	// loosen below it.
+	if s.PlatformMFA != nil {
+		s.Tenant.SetMFAFloorSource(s.PlatformMFA)
+	}
 	s.Tenant.SetSessionReader(repos.Session)
 
 	// Member lifecycle (RFC-050): disable / re-enable / offboard / erase run
