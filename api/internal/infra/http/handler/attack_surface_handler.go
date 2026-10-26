@@ -2,6 +2,7 @@ package handler
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 
 	"github.com/openctemio/openctem/api/internal/app/attack"
@@ -249,6 +250,43 @@ func (h *AttackSurfaceHandler) GetExposureChains(w http.ResponseWriter, r *http.
 		return
 	}
 
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	_ = json.NewEncoder(w).Encode(result)
+}
+
+// GetAttackPathsToAsset handles GET /api/v1/attack-surface/attack-paths/{id}.
+// It returns the routes from internet-facing entry points to one asset, the
+// finding that enables each step, the likelihood of each route and the choke
+// points. An asset outside the tenant or the caller's data scope answers 404.
+// @Summary      Attack paths to one asset
+// @Description  Routes from entry points to the asset, step weights, route likelihood and choke points, in the caller's data scope
+// @Tags         Attack Surface
+// @Produce      json
+// @Security     BearerAuth
+// @Param        id   path      string  true  "Asset ID"
+// @Success      200  {object}  attack.PathDetail
+// @Failure      401  {object}  apierror.Error
+// @Failure      404  {object}  apierror.Error
+// @Failure      500  {object}  apierror.Error
+// @Router       /attack-surface/attack-paths/{id} [get]
+func (h *AttackSurfaceHandler) GetAttackPathsToAsset(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	tenantID, err := shared.IDFromString(middleware.MustGetTenantID(ctx))
+	if err != nil {
+		apierror.BadRequest("Invalid tenant ID format").WriteJSON(w)
+		return
+	}
+	result, err := h.service.PathDetailForCaller(ctx, tenantID, r.PathValue("id"))
+	if err != nil {
+		if errors.Is(err, shared.ErrNotFound) {
+			apierror.NotFound("Asset").WriteJSON(w)
+			return
+		}
+		h.logger.Error("failed to compute attack paths to asset", "error", err)
+		apierror.InternalError(err).WriteJSON(w)
+		return
+	}
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	_ = json.NewEncoder(w).Encode(result)

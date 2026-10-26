@@ -1130,6 +1130,7 @@
   "scans.failureClass.placement": "Phân bổ",
   "scans.failureClass.policy": "Chính sách",
   "scans.failureClass.scope": "Phạm vi",
+  "scans.failureClass.target": "Mục tiêu",
   "scans.failureClass.timeout": "Hết thời gian",
   "scans.failureClass.tool": "Công cụ",
   "scans.failureClass.transient": "Tạm thời",

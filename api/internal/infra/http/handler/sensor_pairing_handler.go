@@ -13,6 +13,7 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"strconv"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -37,12 +38,41 @@ type PairingNonces interface {
 	UseNonce(ctx context.Context, keyID, nonce string) error
 }
 
+// PairingStartBudget charges a start request whose signature verified to
+// its budget. credential is what the start presents: "code:<code>",
+// "token:<enrollment token>", or "" for a start without either. ok false
+// refuses the start; retryAfter is when the budget holds a token again.
+type PairingStartBudget interface {
+	ChargeStart(r *http.Request, credential string) (retryAfter time.Duration, ok bool)
+}
+
 // SensorPairingHandler serves both planes of pairing.
 type SensorPairingHandler struct {
 	svc    *sensorpairing.Service
 	nonces PairingNonces
 	log    *logger.Logger
 	now    func() time.Time
+	budget PairingStartBudget
+}
+
+// SetStartBudget sets the budget verified start requests are charged to.
+func (h *SensorPairingHandler) SetStartBudget(b PairingStartBudget) { h.budget = b }
+
+// startCredential is the credential a start is budgeted by: the pairing
+// code (canonical form when it parses) or the enrollment token. Whether the
+// code or token exists is never looked at here, so the budget answer
+// cannot tell a caller whether a code it guessed is open.
+func startCredential(req pairing.StartRequest) string {
+	switch {
+	case req.EnrollmentToken != "":
+		return "token:" + req.EnrollmentToken
+	case req.Code != "":
+		if c, err := pairing.NormalizeCode(req.Code); err == nil {
+			return "code:" + c
+		}
+		return "code:" + req.Code
+	}
+	return ""
 }
 
 // NewSensorPairingHandler creates the handler.
@@ -61,8 +91,18 @@ func (h *SensorPairingHandler) verifyWithKey(r *http.Request, pub ed25519.Public
 	if err != nil {
 		return nil, errSignedRefused
 	}
-	if p.CheckWindow(h.now()) != nil || p.Verify(r, pub) != nil {
+	// A clock skew is reported only for a signature that verifies with the
+	// key (as for every signed sensor request, authenticateSigned).
+	now := h.now()
+	windowErr := p.CheckWindow(now)
+	if windowErr != nil && !errors.Is(windowErr, sensorsig.ErrExpired) {
 		return nil, errSignedRefused
+	}
+	if p.Verify(r, pub) != nil {
+		return nil, errSignedRefused
+	}
+	if windowErr != nil {
+		return nil, &clockSkewError{now: now, offset: p.ClockOffset(now), keyID: p.Params.KeyID}
 	}
 	if h.nonces.UseNonce(r.Context(), p.Params.KeyID, p.Params.Nonce) != nil {
 		return nil, errSignedRefused
@@ -120,8 +160,21 @@ func (h *SensorPairingHandler) Start(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if _, err := h.verifyWithKey(r, pub); err != nil {
+		if writeClockSkew(w, r, err, h.log) {
+			return
+		}
 		protov2.NewProblem(protov2.ProblemUnauthenticated).Write(w)
 		return
+	}
+	// Only a start whose signature verified reaches its budget: a refused
+	// one (bad signature, clock skew, malformed body) spent only the
+	// per-address entry budget of the route.
+	if h.budget != nil {
+		if wait, ok := h.budget.ChargeStart(r, startCredential(req)); !ok {
+			w.Header().Set("Retry-After", strconv.Itoa(middleware.JitteredRetryAfter(wait)))
+			protov2.NewProblem(protov2.ProblemRateLimited).Write(w)
+			return
+		}
 	}
 	resp, err := h.svc.Start(r.Context(), sensorpairing.StartInput{Request: req, PublicKey: pub, SourceIP: net.ParseIP(getClientIP(r))})
 	switch {
@@ -157,6 +210,9 @@ func (h *SensorPairingHandler) pairingRequest(w http.ResponseWriter, r *http.Req
 		return shared.ID{}, "", nil, false
 	}
 	body, err := h.verifyWithKey(r, pub)
+	if writeClockSkew(w, r, err, h.log) {
+		return shared.ID{}, "", nil, false
+	}
 	if err != nil {
 		protov2.NewProblem(protov2.ProblemPairingNotFound).Write(w)
 		return shared.ID{}, "", nil, false
