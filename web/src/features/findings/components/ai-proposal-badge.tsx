@@ -19,21 +19,23 @@ export function AIProposalBadge({
   withHint?: boolean
 }) {
   const { t } = useTranslation()
-  const agent = approval.requested_via
-  if (!agent && approval.requested_by_actor !== 'ai_triage') return null
+  const via = approval.requested_via
+  if (!via && approval.requested_by_actor !== 'ai_triage') return null
   return (
     <span className="inline-flex flex-col gap-1">
       <Badge variant="outline" className="w-fit gap-1 text-[11px]">
         <Sparkles className="h-3 w-3" />
-        {agent
-          ? t('findings.aiProposal.agentBadge', 'Proposed by AI agent: {client}', { client: agent })
+        {via
+          ? t('findings.aiProposal.appBadge', 'Proposed by AI application: {client}', {
+              client: via,
+            })
           : t('findings.aiProposal.badge', 'Proposed by AI triage')}
       </Badge>
       {withHint && (
         <span className="text-xs text-muted-foreground">
-          {agent
+          {via
             ? t(
-                'findings.aiProposal.agentHint',
+                'findings.aiProposal.appHint',
                 'Written by an AI application for the requester, who cannot approve it. Check the finding before you approve it.'
               )
             : t(
