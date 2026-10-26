@@ -58,6 +58,21 @@ pending ──reveal──▶ pending (sas set) ──approve──▶ approved 
 Reverse mode starts as an `expecting` row with a tenant and a code but no
 key; the sensor's start request fills in the key and turns it `pending`.
 
+### Onboarding (the Add sensor panel)
+
+The console has one place to add a sensor: **Sensors → Add sensor** (inline
+on the empty page). `POST /api/v1/sensors/install-templates`
+(`sensors:pair`, `internal/infra/http/handler/sensor_install_handler.go`)
+renders the docker run, Compose, Kubernetes and Linux (binary and systemd)
+commands and the local policy from the same templates as a sensor's own
+install (`configs/sensor-products/sensor/*.tmpl`), with
+`SensorTemplateData.Auth = pair`: no API key, the job-signing root as
+`SENSOR_JOB_SIGNING_ROOT`, and, when the console created a code first, the
+code as `SENSOR_PAIRING_CODE`. The code travels in the request body, never
+in a URL; the route renders text only and neither checks nor spends it. The
+panel then polls the expectation (waiting, fingerprint to compare, approved)
+and the new sensor (online). Threat model and decisions: research note 280.
+
 ## Self-binding: a bearer-key sensor becomes key-bound
 
 RFC-052 §4.8. A sensor that authenticates with an API key and sees the
