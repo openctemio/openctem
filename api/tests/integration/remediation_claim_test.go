@@ -310,3 +310,38 @@ func TestRemediationClaim_ConcurrentAcceptsOneWins(t *testing.T) {
 	assert.Equal(t, 1, wins, "exactly one accept wins")
 	assert.Equal(t, 1, conflicts, "the other answers 409")
 }
+
+// Eight concurrent creates over one finding: the one-primary-task index lets
+// exactly one through and the rest answer the claim conflict.
+func TestRemediationClaim_ConcurrentCreatesOneWins(t *testing.T) {
+	r := newRTRig(t)
+	ctx := r.adminCtx()
+	f := r.finding(r.assetA, "new", nil)
+	const n = 8
+	errs := make([]error, n)
+	var wg sync.WaitGroup
+	for i := 0; i < n; i++ {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			_, errs[i] = r.svc.CreateTask(ctx, remediationapp.CreateTaskInput{TenantID: r.tenant, ActorID: &r.admin,
+				Title: "Race", FindingIDs: []shared.ID{f}}, auditapp.AuditContext{})
+		}(i)
+	}
+	wg.Wait()
+	wins := 0
+	for _, err := range errs {
+		switch {
+		case err == nil:
+			wins++
+		case errors.Is(err, remediation.ErrFindingsInOtherTask):
+		default:
+			t.Fatalf("unexpected error: %v", err)
+		}
+	}
+	assert.Equal(t, 1, wins, "exactly one create wins")
+	var tasks int
+	require.NoError(t, r.db.QueryRow(`SELECT COUNT(*) FROM remediation_task_members WHERE tenant_id = $1 AND finding_id = $2 AND left_at IS NULL`,
+		r.tenant.String(), f.String()).Scan(&tasks))
+	assert.Equal(t, 1, tasks)
+}

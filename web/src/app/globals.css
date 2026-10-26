@@ -335,3 +335,18 @@
   animation: none;
   stroke-dasharray: none;
 }
+
+/* A dim list row (DataTable rowTone, the finding phone card): low-priority or
+   closed work. Its text takes --fg-dim, a colour with 4.5:1 contrast, never
+   opacity; chips and badges keep their own colours. In the utilities layer
+   so it wins over the text colour utilities inside the row. */
+@layer utilities {
+  [data-tone='dim'],
+  [data-tone='dim'] .text-foreground,
+  [data-tone='dim'] .text-muted-foreground {
+    color: var(--fg-dim);
+  }
+  [data-tone='dim'] .font-medium {
+    font-weight: 400;
+  }
+}

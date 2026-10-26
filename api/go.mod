@@ -152,7 +152,7 @@ require (
 require (
 	connectrpc.com/connect v1.21.1
 	github.com/aws/smithy-go v1.28.5
-	github.com/beevik/etree v1.6.0
+	github.com/beevik/etree v1.8.1
 	github.com/crewjam/saml v0.5.1
 	github.com/fxamacker/cbor/v2 v2.9.6
 	github.com/go-pdf/fpdf v0.9.0
@@ -161,7 +161,7 @@ require (
 	github.com/openctemio/ctis v1.6.3
 	github.com/openctemio/ctis/transfer v0.1.0
 	github.com/pires/go-proxyproto v0.15.0
-	github.com/russellhaering/goxmldsig v1.6.0
+	github.com/russellhaering/goxmldsig v1.6.1
 	github.com/santhosh-tekuri/jsonschema/v6 v6.0.3
 	github.com/sigstore/sigstore-go v1.3.0
 	github.com/teambition/rrule-go v1.8.2

@@ -125,13 +125,14 @@ func (r *fakeCampaignRepo) ListForReconcile(context.Context, int) ([]*remediatio
 type fakeTasks struct {
 	notWritable map[shared.ID]bool
 	// forbidden tasks are visible but have findings outside the caller's scope.
-	forbidden  map[shared.ID]bool
-	live       []shared.ID
-	recomputed []shared.ID
-	claimed    []shared.ID
-	lastNote   string
-	refusals   map[shared.ID][]string
-	claimErr   error
+	forbidden   map[shared.ID]bool
+	live        []shared.ID
+	recomputed  []shared.ID
+	claimed     []shared.ID
+	lastNote    string
+	lastAccount string
+	refusals    map[shared.ID][]string
+	claimErr    error
 }
 
 func (f *fakeTasks) CheckTaskWritable(_ context.Context, _, id shared.ID) error {
@@ -153,12 +154,13 @@ func (f *fakeTasks) CampaignTaskIDs(context.Context, shared.ID, shared.ID) ([]sh
 	return f.live, nil
 }
 
-func (f *fakeTasks) ClaimTaskFixed(_ context.Context, _, id shared.ID, note string) ([]string, error) {
+func (f *fakeTasks) ClaimTaskFixed(_ context.Context, _, id shared.ID, note, account string) ([]string, error) {
 	if f.claimErr != nil {
 		return nil, f.claimErr
 	}
 	f.claimed = append(f.claimed, id)
 	f.lastNote = note
+	f.lastAccount = account
 	return f.refusals[id], nil
 }
 

@@ -798,6 +798,11 @@ func (m *mockSensorSelector) SelectSensor(_ context.Context, _ scanservice.Selec
 
 type mockSecurityValidator struct {
 	cronErr error
+	// refuseConfigKey, when set, makes ValidateScannerConfig refuse a
+	// config holding that key (stands in for the dangerous-key checks).
+	refuseConfigKey string
+	// configChecks counts the ValidateScannerConfig calls.
+	configChecks int
 }
 
 func (m *mockSecurityValidator) ValidateIdentifier(_ string, _ int, _ string) *scanservice.ValidationResult {
@@ -808,7 +813,11 @@ func (m *mockSecurityValidator) ValidateIdentifiers(_ []string, _ int, _ string)
 	return &scanservice.ValidationResult{Valid: true}
 }
 
-func (m *mockSecurityValidator) ValidateScannerConfig(_ context.Context, _ shared.ID, _ map[string]any) *scanservice.ValidationResult {
+func (m *mockSecurityValidator) ValidateScannerConfig(_ context.Context, _ shared.ID, cfg map[string]any) *scanservice.ValidationResult {
+	m.configChecks++
+	if _, bad := cfg[m.refuseConfigKey]; m.refuseConfigKey != "" && bad {
+		return &scanservice.ValidationResult{Valid: false, Errors: []scanservice.ValidationError{{Field: m.refuseConfigKey, Message: "refused key"}}}
+	}
 	return &scanservice.ValidationResult{Valid: true}
 }
 
