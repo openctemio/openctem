@@ -42,6 +42,13 @@ type Settings struct {
 	FailFast         bool             `json:"fail_fast,omitempty"`
 	TimeoutSeconds   int              `json:"timeout_seconds,omitempty"`
 	SensorPreference SensorPreference `json:"sensor_preference,omitempty"` // Sensor selection mode: auto, tenant, platform
+	// DeltaGating: heavy chained stages (stage.Heavy) take only the assets
+	// that are new, changed or due since the previous run of the same scan.
+	DeltaGating bool `json:"delta_gating,omitempty"`
+	// ContinueOnFailedDependency: a step whose dependency failed, was
+	// skipped or timed out still runs, on the seeds and on what its other
+	// predecessors produced.
+	ContinueOnFailedDependency bool `json:"continue_on_failed_dependency,omitempty"`
 }
 
 // DefaultSettings returns default scan workflow settings.

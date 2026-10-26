@@ -8,6 +8,7 @@ import (
 	"github.com/robfig/cron/v3"
 
 	"github.com/openctemio/openctem/api/pkg/domain/scannertemplate"
+	"github.com/openctemio/openctem/api/pkg/domain/scanworkflow"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 )
 
@@ -39,6 +40,9 @@ type Scan struct {
 	// Intensity is the probe ceiling of every run: passive,
 	// active or intrusive. Copied to each run.
 	Intensity Intensity
+	// Depth is how much of the workflow each run executes (passive,
+	// standard or deep; scanworkflow.Depth). Workflow scans only.
+	Depth scanworkflow.Depth
 
 	// Schedule
 	ScheduleType     ScheduleType
@@ -136,6 +140,7 @@ func NewScan(tenantID shared.ID, name string, assetGroupID shared.ID, scanType S
 		ScannerConfig:       make(map[string]any),
 		TargetsPerJob:       1,
 		Intensity:           DefaultIntensity,
+		Depth:               scanworkflow.DefaultDepth,
 		ScheduleType:        ScheduleManual,
 		ScheduleTimezone:    "UTC",
 		Tags:                []string{},
@@ -178,6 +183,7 @@ func NewScanWithTargets(tenantID shared.ID, name string, targets []string, scanT
 		ScannerConfig:       make(map[string]any),
 		TargetsPerJob:       1,
 		Intensity:           DefaultIntensity,
+		Depth:               scanworkflow.DefaultDepth,
 		ScheduleType:        ScheduleManual,
 		ScheduleTimezone:    "UTC",
 		Tags:                []string{},
@@ -925,6 +931,7 @@ func (s *Scan) Clone(newName string) *Scan {
 		MaxRetries:          s.MaxRetries,
 		RetryBackoffSeconds: s.RetryBackoffSeconds,
 		Intensity:           s.Intensity,
+		Depth:               s.Depth,
 		// A copy starts paused: it runs on its schedule only once someone
 		// resumes it, never as a side effect of cloning.
 		Status:         StatusPaused,
