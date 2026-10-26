@@ -99,12 +99,12 @@ scan() { # <ERE> [skip]
 # research/290). The API's error strings are checked on added lines: a Go string
 # literal in an apierror, errors.New or fmt.Errorf call, or a Message field.
 auth_dicts="$(for f in src/lib/i18n/dictionaries/en/auth.json src/lib/i18n/dictionaries/vi/auth.json; do
-  [[ -f "$f" ]] && awk -v f="$f" '/ — |·|•|∙|⋅/{print f ":" $0}' "$f"
+  if [[ -f "$f" ]]; then awk -v f="$f" '/ — |·|•|∙|⋅/{print f ":" $0}' "$f"; fi
 done)"
 [[ -n "$auth_dicts" ]] && report "A sign-in dictionary has a separator glyph or a spaced em dash:" "$auth_dicts" \
   "Use a colon, a comma or a full stop, or split into two keys."
 
-go_added="$(git diff -U0 "$merge_base"...HEAD -- '../api/*.go' \
+go_added="$(git diff -U0 "$merge_base"...HEAD -- ':(top)api/*.go' \
   | awk '/^\+\+\+ b\//{f=substr($0,7); next} /^\+/{print f ":" substr($0,2)}' \
   | grep -Ev '_test\.go:' | grep -v 'separator-ok:' \
   | grep -E '(apierror\.[A-Za-z]+\(|errors\.New\(|fmt\.Errorf\(|Message:)' \
