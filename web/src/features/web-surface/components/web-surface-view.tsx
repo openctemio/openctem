@@ -377,7 +377,7 @@ export function WebSurfaceView() {
             truncate
             className="max-w-[420px]"
             primary={<PathText path={row.original.path_template} />}
-            secondary={(row.original.methods ?? []).join(' · ')}
+            secondary={(row.original.methods ?? []).join(', ')}
           />
         ),
       },

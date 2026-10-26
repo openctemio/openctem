@@ -1260,6 +1260,23 @@ export interface ApiApproval {
    * only with its group (approving it alone answers 409 BATCH_MEMBER).
    */
   batch_id?: string
+  /** The finding's facts now (My Work queue lists, `?queue=`). */
+  finding?: ApprovalFindingFacts
+  /**
+   * Approval-policy class reasons true for the finding now and not when the
+   * request was made (`kev`, `severity_critical`, ...): queue lists, pending
+   * requests only.
+   */
+  changed_since_request?: string[]
+}
+
+/** What an approver weighs at a glance (approval queue rows). */
+export interface ApprovalFindingFacts {
+  severity: string
+  priority_class?: string
+  kev: boolean
+  epss?: number
+  asset_name?: string
 }
 
 export type ApprovalStatus = 'pending' | 'approved' | 'rejected' | 'canceled' | 'expired'
