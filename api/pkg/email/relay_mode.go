@@ -47,3 +47,16 @@ func DefaultRelayMode(managed bool) RelayMode {
 // cannot be used right now (sender domain not verified, rules not met, not
 // connected). Content mail does not fall back to the platform relay then.
 var ErrTenantRelayUnusable = errors.New("the organization's mail relay cannot be used")
+
+type tenantRelayUnusable struct{ cause error }
+
+func (e tenantRelayUnusable) Error() string {
+	return ErrTenantRelayUnusable.Error() + ": " + e.cause.Error()
+}
+
+func (e tenantRelayUnusable) Unwrap() []error { return []error{ErrTenantRelayUnusable, e.cause} }
+
+// RelayUnusable is ErrTenantRelayUnusable with the reason it failed. The
+// reason must be one of this package's or the resolver's fixed sentences,
+// never a lower error's text.
+func RelayUnusable(reason error) error { return tenantRelayUnusable{reason} }
