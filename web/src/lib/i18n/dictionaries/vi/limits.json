@@ -2,6 +2,7 @@
   "limits.access.unavailableBody": "Tính năng này không khả dụng cho tổ chức này.",
   "limits.access.unavailableHelp": "Hãy liên hệ quản trị viên của bản cài đặt này để được cung cấp.",
   "limits.access.unavailableTitle": "Không khả dụng cho tổ chức này",
+  "limits.accountPortal": "Quản lý tài khoản dịch vụ",
   "limits.banner.readOnlyBody": "Tính năng này không còn khả dụng cho tổ chức này. Bạn vẫn có thể xem và xuất dữ liệu; các thay đổi bị tắt. Hãy liên hệ quản trị viên của bản cài đặt này để giữ lại.",
   "limits.banner.readOnlyUntil": "Chỉ đọc đến {date}.",
   "limits.col.item": "Giới hạn",
@@ -52,6 +53,11 @@
   "limits.key.api_keys": "Khoá API",
   "limits.key.assets": "Tài sản",
   "limits.key.ci_trusts": "Cấu hình tin cậy CI",
+  "limits.key.content_snapshot_max_mb": "Bản chụp quy tắc lớn nhất (MiB)",
+  "limits.key.content_sources": "Nguồn quy tắc",
+  "limits.key.content_storage_mb": "Dung lượng bản chụp quy tắc (MiB)",
+  "limits.key.content_sync_floor_minutes": "Chu kỳ đồng bộ nguồn quy tắc tối thiểu (phút)",
+  "limits.key.dashboard_refresh_floor_minutes": "Chu kỳ làm mới bảng điều khiển tối thiểu (phút)",
   "limits.key.findings": "Phát hiện",
   "limits.key.invites_per_day": "Lời mời mỗi ngày",
   "limits.key.lifecycle_schemes": "Vòng đời phát hiện",
@@ -61,6 +67,7 @@
   "limits.key.platform_scans_per_day": "Lượt quét nền tảng mỗi ngày",
   "limits.key.seats": "Thành viên",
   "limits.key.sensors": "Cảm biến",
+  "limits.key.storage_mb": "Lưu trữ (MiB)",
   "limits.loadError": "giới hạn",
   "limits.moduleLock.readOnlyHint": "Mô-đun này không còn khả dụng cho tổ chức này. Dữ liệu có thể xem và xuất cho đến ngày đó; các thay đổi bị tắt.",
   "limits.moduleLock.readOnlyUntil": "Chỉ đọc đến {date}",
@@ -78,8 +85,5 @@
   "limits.unlimited": "Không giới hạn",
   "limits.until": "đến {date}",
   "limits.usage.description": "Những gì tổ chức này có thể thêm. Để thay đổi giới hạn, hãy liên hệ quản trị viên của bản cài đặt này.",
-  "limits.usage.title": "Giới hạn",
-  "limits.accountPortal": "Quản lý tài khoản dịch vụ",
-  "limits.key.storage_mb": "Lưu trữ (MiB)",
-  "limits.key.dashboard_refresh_floor_minutes": "Chu kỳ làm mới bảng điều khiển tối thiểu (phút)"
+  "limits.usage.title": "Giới hạn"
 }

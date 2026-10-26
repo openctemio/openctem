@@ -292,6 +292,10 @@ func hasDotSegment(path string) bool {
 // port), and the value's path at or under the prefix, segment by segment,
 // without dot segments.
 func matchURLPrefix(pattern, value string) bool {
+	pattern, ok := bindWildScheme(pattern, value)
+	if !ok {
+		return false
+	}
 	origin, prefix, ok := urlPatternParts(pattern)
 	if !ok {
 		return false
@@ -318,6 +322,9 @@ func matchURLPrefix(pattern, value string) bool {
 // dispatch gate, the claim re-check, the signer's ledger) uses it, so the
 // ledger is never wider than the entries in the database.
 func EntryMatches(t TargetType, pattern string, c Constraint, value string) bool {
+	if !t.AuthorizesProbes() {
+		return false
+	}
 	if URLPathLimited(t, pattern) {
 		return matchURLPrefix(pattern, value)
 	}
@@ -436,6 +443,31 @@ func (j JobShape) PortScan() bool {
 
 func portScanCapability(k stage.Key) bool {
 	return k == stage.ScanPorts || k == stage.DiscoverHosts
+}
+
+// LookupOnly reports whether the job only looks its targets up (DNS
+// resolution, passive enumeration): it sends nothing to the target hosts,
+// so a name with no DNS answer is still a target it can run on
+// (stage.Stage.LookupOnly). Its tool must be one the catalog knows to be
+// lookup-only, and a capability it names must be a lookup-only stage too. A
+// job that names neither, an unknown tool or an unknown capability is not
+// lookup-only (fail closed).
+func (j JobShape) LookupOnly() bool {
+	tool, capability := strings.TrimSpace(j.Tool), strings.TrimSpace(j.Capability)
+	if tool == "" && capability == "" {
+		return false
+	}
+	if tool != "" && !stage.LookupOnlyTool(tool) {
+		return false
+	}
+	if capability != "" {
+		key, _, _ := strings.Cut(capability, "@")
+		st, ok := stage.Lookup(stage.Key(strings.ToLower(key)))
+		if !ok || !st.LookupOnly() {
+			return false
+		}
+	}
+	return true
 }
 
 // SettingsUnreadable marks a job whose settings cannot be read (the

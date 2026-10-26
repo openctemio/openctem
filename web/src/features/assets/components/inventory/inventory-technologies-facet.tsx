@@ -19,7 +19,7 @@ import { Search } from 'lucide-react'
 import { Input } from '@/components/ui/input'
 import { useTranslation } from '@/context/i18n-provider'
 import { FacetGroupLabel, FacetOption, FacetSection } from '@/features/shared'
-import { useDebounce } from '@/hooks/use-debounce'
+import { useSearchQuery } from '@/hooks/use-search-query'
 import { useTechnologyFacets } from '../../hooks/use-asset-technologies'
 import type { InventoryFilters } from '../../lib/inventory-url'
 import { TECHNOLOGY_CATEGORIES, useCategoryLabel } from '../technologies/technologies-by-category'
@@ -37,16 +37,19 @@ function toggle(list: string[] | undefined, value: string, on: boolean): string[
 export function InventoryTechnologiesFacet({
   filters,
   onChange,
+  defaultOpen = false,
 }: {
   filters: InventoryFilters
   onChange: (next: InventoryFilters) => void
+  /** Unfold it, and load its options (the Add filter editor). */
+  defaultOpen?: boolean
 }) {
   const { t } = useTranslation()
   const categoryLabel = useCategoryLabel()
   const [query, setQuery] = useState('')
   const [expanded, setExpanded] = useState(false)
-  const [open, setOpen] = useState(false)
-  const q = useDebounce(query.trim(), 250)
+  const [open, setOpen] = useState(defaultOpen)
+  const q = useSearchQuery(query).term
   const selectedTech = filters.technologies ?? []
   const selectedCats = filters.technologyCategories ?? []
   // Ask only once the section is opened or something is selected.
@@ -62,7 +65,7 @@ export function InventoryTechnologiesFacet({
     <FacetSection
       title={t('assets.technologies.title', 'Technologies')}
       selectedCount={selectedTech.length + selectedCats.length}
-      defaultOpen={selectedTech.length + selectedCats.length > 0}
+      defaultOpen={defaultOpen || selectedTech.length + selectedCats.length > 0}
       onOpenChange={setOpen}
     >
       <FacetGroupLabel>{t('assets.technologies.filter.category', 'Category')}</FacetGroupLabel>

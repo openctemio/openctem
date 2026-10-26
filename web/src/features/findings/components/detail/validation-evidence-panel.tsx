@@ -1,12 +1,13 @@
 'use client'
 
-import { useCallback } from 'react'
+import { HealthStatus } from '@/components/ui/health-status'
+import type { HealthState } from '@/lib/health-colors'
+import { useCallback, useState } from 'react'
+import { ConfirmDialog } from '@/components/confirm-dialog'
 import { toast } from 'sonner'
-import { ShieldCheck, RefreshCw, Loader2, Eye, EyeOff, Unplug, type LucideIcon } from 'lucide-react'
+import { ShieldCheck, RefreshCw, Loader2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
-import { cn } from '@/lib/utils'
-import { SEVERITY_BADGE_SOFT } from '@/lib/severity-colors'
 import { getErrorMessage } from '@/lib/api/error-handler'
 import { usePermissions } from '@/context/permission-provider'
 import { useTranslation } from '@/context/i18n-provider'
@@ -21,12 +22,17 @@ interface ValidationEvidencePanelProps {
   findingId: string
 }
 
-const OUTCOME_STYLES: Record<string, string> = {
-  not_detected: 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400',
-  detected: 'bg-red-500/15 text-red-600 dark:text-red-400',
-  inconclusive: 'bg-amber-500/15 text-amber-600 dark:text-amber-400',
-  error: 'bg-red-500/15 text-red-600 dark:text-red-400',
-  skipped: 'bg-muted text-muted-foreground',
+/**
+ * The re-check outcome of an exposure is a machine result, so a health state:
+ * not detected (no longer reachable) is ok, detected (still reachable) is
+ * down, inconclusive warns, an error is down and a skipped check is off.
+ */
+export const OUTCOME_HEALTH: Record<string, HealthState> = {
+  not_detected: 'ok',
+  detected: 'down',
+  inconclusive: 'warn',
+  error: 'down',
+  skipped: 'off',
 }
 
 type TFn = ReturnType<typeof useTranslation>['t']
@@ -91,8 +97,7 @@ const DETECTION_META: Record<
     label: string
     titleKey: string
     title: string
-    className: string
-    Icon: LucideIcon
+    health: HealthState
   }
 > = {
   observed: {
@@ -100,16 +105,14 @@ const DETECTION_META: Record<
     label: 'Observed by controls',
     titleKey: 'findings.validationEvidence.obsTitle',
     title: 'A security control observed this validation activity.',
-    className: 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400', // palette-ok: success accent — the theme has no semantic "success" token
-    Icon: Eye,
+    health: 'ok',
   },
   not_observed: {
     labelKey: 'findings.validationEvidence.gapLabel',
     label: 'Detection gap',
     titleKey: 'findings.validationEvidence.gapTitle',
     title: 'No control observed this validation — a detection gap worth closing.',
-    className: SEVERITY_BADGE_SOFT.medium,
-    Icon: EyeOff,
+    health: 'warn',
   },
   no_telemetry_source: {
     labelKey: 'findings.validationEvidence.noTelLabel',
@@ -117,8 +120,7 @@ const DETECTION_META: Record<
     titleKey: 'findings.validationEvidence.noTelTitle',
     title:
       'No telemetry source is connected for this asset, so detection is unknown — not a control failure.',
-    className: 'bg-muted text-muted-foreground',
-    Icon: Unplug,
+    health: 'unknown',
   },
 }
 
@@ -127,48 +129,41 @@ function DetectionBadge({ item }: { item: ValidationEvidenceItem }) {
   if (!item.detection_status) return null
   const meta = DETECTION_META[item.detection_status]
   if (!meta) return null
-  const { className, Icon } = meta
   return (
-    <Badge
-      variant="secondary"
-      className={cn('gap-1 font-medium', className)}
+    <HealthStatus
+      state={meta.health}
+      value={item.detection_status}
+      label={t(meta.labelKey, meta.label)}
       title={t(meta.titleKey, meta.title)}
-    >
-      <Icon className="h-3 w-3" />
-      {t(meta.labelKey, meta.label)}
-    </Badge>
+    />
   )
 }
 
-function formatTimestamp(value?: string): string {
+function formatTimestamp(value: string | undefined, locale: string): string {
   if (!value) return ''
   const d = new Date(value)
-  return Number.isNaN(d.getTime()) ? value : d.toLocaleString()
+  return Number.isNaN(d.getTime()) ? value : d.toLocaleString(locale)
 }
 
 function EvidenceRow({ item }: { item: ValidationEvidenceItem }) {
-  const { t } = useTranslation()
+  const { t, locale } = useTranslation()
   return (
     <li className="flex flex-col gap-1 rounded-md border p-3">
       <div className="flex flex-wrap items-center gap-2">
-        <Badge
-          variant="secondary"
-          className={cn(
-            'font-medium',
-            item.executor_kind === 'safe-check'
-              ? OUTCOME_STYLES.skipped
-              : (OUTCOME_STYLES[item.outcome] ?? OUTCOME_STYLES.skipped)
-          )}
-        >
-          {outcomeLabel(item, t)}
-        </Badge>
+        <HealthStatus
+          state={
+            item.executor_kind === 'safe-check' ? 'off' : (OUTCOME_HEALTH[item.outcome] ?? 'off')
+          }
+          value={item.outcome}
+          label={outcomeLabel(item, t)}
+        />
         <DetectionBadge item={item} />
         <span className="text-muted-foreground text-xs">{item.executor_kind}</span>
         {item.technique ? (
           <span className="text-muted-foreground text-xs">· {item.technique}</span>
         ) : null}
         <span className="text-muted-foreground ms-auto text-xs">
-          {formatTimestamp(item.created_at)}
+          {formatTimestamp(item.created_at, locale)}
         </span>
       </div>
       {item.summary ? <p className="text-sm">{item.summary}</p> : null}
@@ -191,7 +186,10 @@ export function ValidationEvidencePanel({ findingId }: ValidationEvidencePanelPr
   const { data: plan } = useFindingVerificationPlan(findingId)
   const safeCheck = planMethod(plan, 'safe_check')
 
+  const [confirmOpen, setConfirmOpen] = useState(false)
+
   const handleValidate = useCallback(async () => {
+    setConfirmOpen(false)
     try {
       await requestValidation()
       toast.success(t('findings.validationEvidence.requested', 'Validation requested'), {
@@ -229,7 +227,12 @@ export function ValidationEvidencePanel({ findingId }: ValidationEvidencePanelPr
           {evidence.length > 0 ? <Badge variant="secondary">{evidence.length}</Badge> : null}
         </div>
         {hasPermission('findings:verify') && safeCheck?.available ? (
-          <Button size="sm" variant="outline" onClick={handleValidate} disabled={isMutating}>
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => setConfirmOpen(true)}
+            disabled={isMutating}
+          >
             {isMutating ? (
               <Loader2 className="me-1.5 h-3.5 w-3.5 animate-spin" />
             ) : (
@@ -239,6 +242,21 @@ export function ValidationEvidencePanel({ findingId }: ValidationEvidencePanelPr
           </Button>
         ) : null}
       </div>
+
+      <ConfirmDialog
+        open={confirmOpen}
+        onOpenChange={setConfirmOpen}
+        title={t(
+          'findings.validationEvidence.confirmTitle',
+          "Check the reachability of this finding's target now?"
+        )}
+        desc={t(
+          'findings.validationEvidence.confirmDesc',
+          "A safe check sends a request to the target now. The result is added as evidence and does not change the finding's status."
+        )}
+        confirmText={t('findings.validationEvidence.confirmButton', 'Run safe check')}
+        handleConfirm={handleValidate}
+      />
 
       {isLoading ? (
         <p className="text-muted-foreground text-sm">

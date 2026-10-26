@@ -18,7 +18,7 @@ func TestRunWithUncoveredTargets_EndsPartial(t *testing.T) {
 		"zone_routing":      map[string]any{"uncovered_targets": float64(2)},
 		"uncovered_targets": []any{map[string]any{"target": "api.example.com", "reason": "hostname did not resolve from the platform"}},
 	}
-	if err := s.OnStepCompleted(context.Background(), run.ID.String(), "a", 0, nil); err != nil {
+	if err := s.OnStepCompleted(context.Background(), run.TenantID, run.ID.String(), "a", 0, nil); err != nil {
 		t.Fatal(err)
 	}
 	if len(runs.statuses) != 1 || runs.statuses[0] != scanrun.RunStatusPartial {

@@ -84,16 +84,49 @@ CREATE TABLE notification_outbox (
     retry_count INT NOT NULL DEFAULT 0,
     last_error TEXT,
     processed_at TIMESTAMPTZ,
-    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    deliveries JSONB NOT NULL DEFAULT '[]'  -- per-channel state (migration 003326)
 );
 ```
 
 **Status Lifecycle:**
 ```
-pending → processing → [DELETED after archive]
-                    ↳ failed (retries with exponential backoff)
-                           ↳ dead (manual intervention required)
+pending → processing → pending (a channel is due for a retry)
+                    ↳ [archived + DELETED once every channel is delivered or dead]
+                    ↳ failed (the channels could not be resolved; entry-level retry)
 ```
+
+### Delivery per channel
+
+Each channel (integration) an event goes to has its own delivery state in
+`deliveries`: `{integration_id, name, provider, status, attempts,
+next_attempt_at, last_attempt_at, last_error, message_id}` with status
+`pending`, `success` or `dead` (`pkg/domain/outbox/delivery.go`).
+
+- The first pass resolves the channels: the connected integrations whose
+  severity and event filters match and that the private-program routing
+  allows. Later passes keep that set: an integration created after the event
+  does not get it.
+- A pass attempts only the channels that are due. A channel that got the
+  event is never sent it again; a failed one waits its own backoff, whatever
+  the other channels did. Before this, one channel's success marked the whole
+  entry done and the failed channels were never retried.
+- Backoff after each failure: 1 min, 5 min, 30 min, 2 h, 6 h, 12 h, 24 h, so 8
+  attempts in about 45 hours, then the channel is `dead` and an ERROR is
+  logged per dead channel.
+- A channel whose integration is deleted, disabled or disconnected counts a
+  failed attempt (it may come back in the window). A channel the routing rule
+  no longer allows (the asset moved into a private program) is abandoned at
+  once, never delivered.
+- The entry goes back to `pending`, scheduled at the earliest channel retry,
+  until every channel is terminal; then it is archived with one send result
+  per channel (with its `attempts`) and deleted.
+- A refused delivery is a failure: a non-2xx answer, a transport error, or a
+  redirect (redirects are never followed, see Security). Before this, the
+  HTTP clients reported a refused delivery as a result rather than an error
+  and it was archived as a success.
+- A manual retry (`POST /api/v1/notification-outbox/{id}/retry`) gives the
+  dead channels a fresh budget and leaves delivered ones alone.
 
 ### 2. Notification Events (Archive)
 
@@ -203,46 +236,12 @@ func (s *NotificationScheduler) processBatch() {
 
 ### Step 3: Process Each Entry
 
-```go
-// internal/app/outbox/service.go
-
-func (s *NotificationService) processOutboxEntry(ctx context.Context, entry *Outbox) error {
-    // 1. Get all integrations for tenant
-    integrations, _ := s.getNotificationIntegrationsForTenant(ctx, entry.TenantID())
-
-    // 2. Collect processing results
-    results := ProcessingResults{
-        IntegrationsTotal:   len(integrations),
-        SendResults:         make([]SendResult, 0),
-    }
-
-    // 3. Send to each matching integration
-    for _, intg := range integrations {
-        if !s.shouldSendToIntegration(intg, entry) {
-            continue
-        }
-        results.IntegrationsMatched++
-
-        sendResult := s.sendToIntegration(ctx, intg, entry)
-        results.SendResults = append(results.SendResults, sendResult)
-
-        if sendResult.Status == "success" {
-            results.IntegrationsSucceeded++
-        } else {
-            results.IntegrationsFailed++
-        }
-    }
-
-    // 4. Archive to notification_events
-    event := notification.NewEventFromOutbox(entry, results)
-    s.eventRepo.Create(ctx, event)
-
-    // 5. Delete from outbox (it's now archived)
-    s.outboxRepo.Delete(ctx, entry.ID())
-
-    return nil
-}
-```
+`processOutboxEntry` (`internal/app/outbox/service.go`) loads the tenant's
+connected notification integrations and the private-program routing, resolves
+the entry's channels on its first pass, sends to each due channel, records
+the outcome on that channel, and then either reschedules the entry (a channel
+is pending) or archives it to `notification_events` and deletes it. See
+"Delivery per channel" above.
 
 ## Retention & Cleanup
 
@@ -341,6 +340,91 @@ func (f *ClientFactory) CreateClient(config Config) (Client, error) {
 | **Email** | SMTP config | HTML with CSS | TLS/STARTTLS, multiple recipients |
 | **Webhook** | Custom URL | JSON payload | Flexible, any endpoint |
 
+### Generic webhook payload
+
+```json
+{
+  "event_type": "new_finding",
+  "event_version": 1,
+  "idempotency_key": "outbox-0192…",
+  "occurred_at": "2026-10-22T08:00:00Z",
+  "timestamp": "2026-10-22T08:00:03Z",
+  "title": "New finding (high)",
+  "body": "Open the link to see the details.",
+  "severity": "high",
+  "url": "https://console.example.com/findings/…",
+  "source": "openctem.io"
+}
+```
+
+- `event_type` is the catalogue type (`AllEventTypes`, e.g. `new_finding`,
+  `sensor.offline`, `ci.gate_failing`); a test delivery is `test`. Before
+  this it was always `notification`.
+- `event_version` is the payload version of that type
+  (`integration.EventPayloadVersion`, 1 for every type today). An
+  incompatible change to what a type sends bumps it and is listed in the
+  changelog; a receiver routes on the pair.
+- `idempotency_key` equals the `Idempotency-Key` header and stays the same
+  across retries of one event, so a receiver can drop a duplicate.
+- `occurred_at` is when the event was recorded; `timestamp` is when this
+  attempt was sent.
+
+### Webhook signing
+
+Every generic webhook delivery carries the Standard Webhooks headers
+(`pkg/webhooksig`):
+
+| Header | Value |
+|---|---|
+| `webhook-id` | the idempotency key (`outbox-<event id>`), the same on every retry and redelivery of the event; `msg_<uuid>` for a test delivery |
+| `webhook-timestamp` | unix seconds when this attempt was sent |
+| `webhook-signature` | `v1,<base64 HMAC-SHA256(key, id + "." + timestamp + "." + body)>`, one per valid secret, space separated |
+
+- **Secret.** `whsec_` + base64 of 32 random bytes, generated by the
+  platform (`POST /api/v1/integrations/{id}/signing-secret/rotate`,
+  integrations:manage plus step-up, audited as
+  `integration.webhook_secret_rotated`). It is returned in that response only
+  (`Cache-Control: no-store`), stored encrypted with `APP_ENCRYPTION_KEY` in
+  the integration's metadata (`signing_secret_encrypted`), never returned by
+  a read (`GET .../signing-secret` gives only `configured`, `rotated_at`,
+  `previous_valid_until`; the integration read redacts every key containing
+  `secret`), and cannot be set by a caller (the metadata allowlist does not
+  name it). `cmd/rekey` re-encrypts it.
+- **Rotation overlap.** A rotation keeps the replaced secret signing for 24
+  hours (`SigningSecretOverlap`): deliveries carry two signatures, so the
+  receiver can switch without dropping any. A rotation inside an overlap
+  drops the oldest secret at once; at most two ever sign.
+- **No secret yet.** An integration created before signing, or never
+  rotated, sends unsigned deliveries (still with `webhook-id` and
+  `webhook-timestamp`). The first rotation creates the secret.
+- **Fail closed.** A stored secret that does not decrypt fails the delivery
+  (retried, then dead) rather than sending it unsigned to a receiver that
+  verifies.
+- **Test delivery.** `POST .../test-notification` is signed the same way, so
+  the receiver's check can be tried before real events flow.
+- **Receiver.** Recompute the HMAC over the raw body with the key decoded
+  from the secret, compare in constant time with each `v1` signature, refuse a
+  timestamp more than 5 minutes from the receiver's clock (replay window),
+  and drop a `webhook-id` already processed. `webhooksig.Verify` is the
+  reference check; the public docs have snippets.
+
+### Redelivery
+
+`POST /api/v1/integrations/{id}/deliveries/{delivery_id}/redeliver`
+(integrations:manage, 30 a minute per organization, audited as
+`integration.delivery_redelivered`) sends an archived event (`delivery_id` is
+the id in the delivery history) again to that integration only:
+
+- The event must be the caller's organization's (tenant-scoped lookup) and
+  must list the integration in its send results; anything else is 404, one
+  answer for every cause. The integration must be connected (else 400).
+- It queues a new outbox entry whose only channel is that integration, with
+  `metadata.redelivery_of` naming the first event. The entry goes through the
+  normal pass: private-program routing is checked again, the delivery is
+  signed with the current secret, retried and archived like any other.
+- The redelivery keeps the original `webhook-id`, so a receiver that already
+  processed the event recognises it.
+
 ### Severity Indicators
 
 | Severity | Color | Emoji | Teams Style |
@@ -351,6 +435,18 @@ func (f *ClientFactory) CreateClient(config Config) (Client, error) {
 | Low | `#2563eb` (Blue) | :large_blue_circle: | good |
 
 ## Security
+
+### Credentials follow their destination
+
+A stored secret is never sent to a destination someone else just chose. An
+update (`PUT /integrations/{id}/notification`) that moves an email channel to
+another SMTP host or port, or switches TLS or STARTTLS off, or moves a Splunk
+channel to another `hec_url` host, is refused with 400 unless it carries new
+credentials; they replace the stored ones, and nothing is saved on a refusal.
+The test delivery that follows an update therefore only ever uses credentials
+entered for the destination it goes to. Webhook, Slack and Teams channels
+keep the destination itself as the secret, and Telegram sends its token only to
+the Telegram API. Destination changes are audited at high severity.
 
 ### Credentials Encryption
 
@@ -363,6 +459,17 @@ credentials, err := s.credentialDecrypt(intg.CredentialsEncrypted())
 ```
 
 **Environment Variable:** `APP_ENCRYPTION_KEY` (32-byte key, hex or base64 format)
+
+### Outbound requests: SSRF guard, no redirects
+
+A channel URL is chosen by the organization, so every notifier client
+(`newHTTPClient` in `internal/infra/notifier/client.go`) uses
+`httpsec.SafeHTTPClient`: the URL is validated when the client is built, and
+every dial resolves once and refuses loopback, private, link-local, metadata
+and the other blocked ranges, so DNS rebinding cannot reach them. Redirects
+are refused: a 3xx answer is a failed delivery. Following one would hand the
+event body and headers to a host the channel was not configured with (a
+public host the guard allows, chosen by whoever controls the endpoint).
 
 ### Untrusted message text
 

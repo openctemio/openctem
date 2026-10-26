@@ -10,9 +10,7 @@
   "scmIntegration.col.repositories": "Kho mã nguồn",
   "scmIntegration.col.status": "Trạng thái",
   "scmIntegration.metrics.connected": "Đã kết nối",
-  "scmIntegration.metrics.connections": "Kết nối",
   "scmIntegration.metrics.errors": "Lỗi",
-  "scmIntegration.metrics.repositories": "Kho mã nguồn",
   "scmIntegration.page.addConnection": "Thêm kết nối",
   "scmIntegration.page.description": "Kết nối GitHub, GitLab, Bitbucket hoặc Azure DevOps, rồi nhập kho mã nguồn để quét.",
   "scmIntegration.page.emptyDescription": "Kết nối tài khoản GitHub, GitLab, Bitbucket hoặc Azure DevOps để nhập và quét kho mã nguồn.",
@@ -21,7 +19,7 @@
   "scmIntegration.page.noMatch": "Không có kết nối nào khớp với tìm kiếm",
   "scmIntegration.page.refresh": "Làm mới",
   "scmIntegration.page.repositories": "Kho mã nguồn",
-  "scmIntegration.page.searchPlaceholder": "Tìm kết nối...",
+  "scmIntegration.page.searchPlaceholder": "Tìm kết nối…",
   "scmIntegration.page.title": "Kết nối SCM",
   "scmIntegration.repoCount": "{count} kho",
   "scmIntegration.status.connected": "Đã kết nối",
@@ -34,5 +32,6 @@
   "scmIntegration.toast.refreshed": "Đã làm mới các kết nối",
   "scmIntegration.toast.testError": "Không kiểm tra được kết nối",
   "scmIntegration.toast.testFailed": "Kiểm tra kết nối thất bại",
+  "scmIntegration.toast.testFailedNamed": "Không kết nối được tới {name}.",
   "scmIntegration.toast.testOk": "Kết nối \"{name}\" hoạt động bình thường"
 }

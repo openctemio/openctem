@@ -2,11 +2,11 @@
 
 import { Lock, OctagonPause, ShieldAlert } from 'lucide-react'
 
-import { Badge } from '@/components/ui/badge'
+import { HealthStatus } from '@/components/ui/health-status'
+import type { HealthState } from '@/lib/health-colors'
 import { useTranslation } from '@/context/i18n-provider'
 import { DetailCallout, DetailField, DetailFieldGrid, DetailSection } from '@/features/shared'
 import type { Sensor } from '@/lib/api/sensor-types'
-import { cn } from '@/lib/utils'
 
 import { exactTime } from '../lib/format'
 import {
@@ -16,22 +16,18 @@ import {
   noLocalPolicyGuidance,
 } from '../lib/local-policy'
 
-const TONE_CLASS = {
-  ok: 'border-success/40 bg-success/10 text-success',
-  warn: 'border-warning/40 bg-warning/10 text-warning',
-  danger: 'border-destructive/40 bg-destructive/10 text-destructive',
-  muted: 'text-muted-foreground',
-} as const
+const TONE_STATE = {
+  ok: 'ok',
+  warn: 'warn',
+  danger: 'down',
+  muted: 'off',
+} as const satisfies Record<string, HealthState>
 
 /** The state of a sensor's local policy as a small badge (api RFC-040 §5.7). */
 export function SensorLocalPolicyBadge({ sensor }: { sensor: Pick<Sensor, 'local_policy'> }) {
   const { t } = useTranslation()
   const view = localPolicyView(sensor.local_policy, t)
-  return (
-    <Badge variant="outline" className={cn(TONE_CLASS[view.tone])} title={view.description}>
-      {view.label}
-    </Badge>
-  )
+  return <HealthStatus state={TONE_STATE[view.tone]} label={view.label} title={view.description} />
 }
 
 /**

@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"strings"
 	"sync"
 	"time"
 
@@ -29,6 +30,12 @@ type WorkflowExecutor struct {
 	workflowRepo automationdom.WorkflowRepository
 	runRepo      automationdom.RunRepository
 	nodeRunRepo  automationdom.NodeRunRepository
+	versions     automationdom.VersionRepository
+	// deliveries records what egress steps sent or would have sent.
+	deliveries automationdom.DeliveryRepository
+	// evaluator is the only thing a simulate run's action and notification
+	// steps reach (evaluate.go).
+	evaluator StepEvaluator
 
 	// Action handlers
 	actionHandlers      map[automationdom.ActionType]ActionHandler
@@ -122,6 +129,22 @@ func WithExecutorStepAuthorizer(a StepAuthorizer) WorkflowExecutorOption {
 	}
 }
 
+// WithExecutorNotificationHandler sets the handler live notification steps
+// send through (the default is built from the outbox service).
+func WithExecutorNotificationHandler(h NotificationHandler) WorkflowExecutorOption {
+	return func(e *WorkflowExecutor) {
+		e.notificationHandler = h
+	}
+}
+
+// WithExecutorDeliveries sets where egress steps record what they sent or
+// would have sent.
+func WithExecutorDeliveries(r automationdom.DeliveryRepository) WorkflowExecutorOption {
+	return func(e *WorkflowExecutor) {
+		e.deliveries = r
+	}
+}
+
 // WithExecutorDB sets the database connection for transactions.
 func WithExecutorDB(db *sql.DB) WorkflowExecutorOption {
 	return func(e *WorkflowExecutor) {
@@ -169,9 +192,6 @@ func NewWorkflowExecutor(
 
 // registerDefaultHandlers registers the built-in action handlers.
 func (e *WorkflowExecutor) registerDefaultHandlers() {
-	// HTTP Request handler (with SSRF protection)
-	e.RegisterActionHandler(automationdom.ActionTypeHTTPRequest, NewHTTPRequestHandler(e.logger))
-
 	// Notification-based actions will use the notification service
 	if e.notificationService != nil {
 		e.notificationHandler = &DefaultNotificationHandler{
@@ -187,6 +207,14 @@ func (e *WorkflowExecutor) RegisterActionHandler(actionType automationdom.Action
 	e.mu.Lock()
 	defer e.mu.Unlock()
 	e.actionHandlers[actionType] = handler
+}
+
+// HasActionHandler reports whether a handler is registered for the action type.
+func (e *WorkflowExecutor) HasActionHandler(actionType automationdom.ActionType) bool {
+	e.mu.RLock()
+	defer e.mu.RUnlock()
+	_, ok := e.actionHandlers[actionType]
+	return ok
 }
 
 // Execute executes a workflow run.
@@ -221,7 +249,7 @@ func (e *WorkflowExecutor) ExecuteWithTenant(ctx context.Context, runID shared.I
 		return fmt.Errorf("access denied: run does not belong to tenant")
 	}
 
-	// Check if already running or completed
+	// Check if already running or completed (a resumed run is pending again)
 	if run.Status != automationdom.RunStatusPending {
 		return fmt.Errorf("run is not in pending state: %s", run.Status)
 	}
@@ -230,6 +258,27 @@ func (e *WorkflowExecutor) ExecuteWithTenant(ctx context.Context, runID shared.I
 	wf, err := e.workflowRepo.GetWithGraph(execCtx, run.WorkflowID)
 	if err != nil {
 		return fmt.Errorf("failed to load workflow: %w", err)
+	}
+
+	// A live run executes the version it pinned when it was created, not
+	// the draft as it is now (versions.go). A live run without a pinned
+	// version would act on the unpublished draft, past the go-live gate: it
+	// is refused once versions are configured.
+	if run.Mode == automationdom.ModeLive && run.VersionID == nil && e.versions != nil {
+		return fmt.Errorf("integrity error: live run %s has no pinned version", run.ID)
+	}
+	if run.VersionID != nil {
+		if e.versions == nil {
+			return fmt.Errorf("load run version: versions are not configured")
+		}
+		v, err := e.versions.GetByTenantAndID(execCtx, run.TenantID, *run.VersionID)
+		if err != nil {
+			return fmt.Errorf("failed to load run version: %w", err)
+		}
+		if v.AutomationID != wf.ID {
+			return fmt.Errorf("integrity error: run version belongs to another automation")
+		}
+		wf = v.Definition.Materialize(wf)
 	}
 
 	// SEC-WF05: Verify workflow belongs to same tenant
@@ -257,11 +306,22 @@ func (e *WorkflowExecutor) ExecuteWithTenant(ctx context.Context, runID shared.I
 		Context:           make(map[string]any),
 		CompletedNodeKeys: make(map[string]bool),
 		NodeRunsByKey:     make(map[string]*automationdom.NodeRun),
+		maxChanges:        automationdom.EffectiveMaxChanges(wf.MaxChangesPerRun),
+	}
+	if confirmed, _ := run.Context["change_cap_confirmed"].(bool); confirmed {
+		workflowExecCtx.capConfirmed = true
 	}
 
-	// Index node runs by key
+	// Index node runs by key. A resumed run keeps the steps it already
+	// finished: they are not run again and their outputs feed what follows.
 	for _, nr := range run.NodeRuns {
 		workflowExecCtx.NodeRunsByKey[nr.NodeKey] = nr
+		if nr.Status == automationdom.NodeRunStatusCompleted || nr.Status == automationdom.NodeRunStatusSkipped {
+			workflowExecCtx.CompletedNodeKeys[nr.NodeKey] = true
+			if nr.Output != nil {
+				workflowExecCtx.Context[fmt.Sprintf("node.%s.output", nr.NodeKey)] = nr.Output
+			}
+		}
 	}
 
 	// Execute the workflow graph
@@ -270,11 +330,17 @@ func (e *WorkflowExecutor) ExecuteWithTenant(ctx context.Context, runID shared.I
 	// Finalize the run
 	e.finalizeRun(context.Background(), workflowExecCtx, err) // Use background ctx for finalization
 
+	if errors.Is(err, errRunPaused) {
+		return nil // waiting for a publisher, not a failure
+	}
 	return err
 }
 
 // errRunCanceled stops an execution whose run was canceled.
 var errRunCanceled = errors.New("workflow run canceled")
+
+// errRunPaused stops an execution at its change cap (guardrails).
+var errRunPaused = errors.New("workflow run paused at its change cap")
 
 // runCanceled reports whether run was canceled since the executor loaded it,
 // reading it again by its own tenant. A read error does not stop the run.
@@ -297,7 +363,33 @@ type ExecutionContext struct {
 	Context           map[string]any // Shared context across nodes
 	CompletedNodeKeys map[string]bool
 	NodeRunsByKey     map[string]*automationdom.NodeRun
-	mu                sync.RWMutex
+	// traces holds the trace a step set while it ran (keyed by node key).
+	traces map[string]automationdom.StepTrace
+	// changes counts the side effects of a live run; maxChanges is its cap
+	// and capConfirmed says a publisher let it go past the cap.
+	changes      int
+	maxChanges   int
+	capConfirmed bool
+	mu           sync.RWMutex
+}
+
+// setTrace records the trace of the step nodeKey.
+func (ec *ExecutionContext) setTrace(nodeKey string, t automationdom.StepTrace) {
+	ec.mu.Lock()
+	defer ec.mu.Unlock()
+	if ec.traces == nil {
+		ec.traces = map[string]automationdom.StepTrace{}
+	}
+	ec.traces[nodeKey] = t
+}
+
+// takeTrace returns and forgets the trace of the step nodeKey.
+func (ec *ExecutionContext) takeTrace(nodeKey string) (automationdom.StepTrace, bool) {
+	ec.mu.Lock()
+	defer ec.mu.Unlock()
+	t, ok := ec.traces[nodeKey]
+	delete(ec.traces, nodeKey)
+	return t, ok
 }
 
 // SetContextValue sets a value in the execution context.
@@ -339,8 +431,11 @@ func (e *WorkflowExecutor) executeGraph(ctx context.Context, execCtx *ExecutionC
 		return fmt.Errorf("workflow has no trigger nodes")
 	}
 
-	// Execute trigger nodes first
+	// Execute trigger nodes first (a resumed run already did)
 	for _, trigger := range triggerNodes {
+		if execCtx.IsNodeCompleted(trigger.NodeKey) {
+			continue
+		}
 		if err := e.executeNode(ctx, execCtx, trigger); err != nil {
 			// Trigger failures are fatal
 			return fmt.Errorf("trigger node %s failed: %w", trigger.NodeKey, err)
@@ -381,7 +476,7 @@ func (e *WorkflowExecutor) executeDownstream(ctx context.Context, execCtx *Execu
 			}
 
 			if err := e.executeNode(ctx, execCtx, node); err != nil {
-				if errors.Is(err, errRunCanceled) {
+				if errors.Is(err, errRunCanceled) || errors.Is(err, errRunPaused) {
 					return err
 				}
 				e.logger.Error("node execution failed", "node_key", logger.SanitizeValue(node.NodeKey), "error", logger.SanitizeError(err))
@@ -495,6 +590,12 @@ func (e *WorkflowExecutor) executeNode(ctx context.Context, execCtx *ExecutionCo
 	if e.runCanceled(ctx, execCtx.Run) {
 		return errRunCanceled
 	}
+	// A live run stops before the change past its cap, until a publisher
+	// lets it continue; the step stays pending.
+	sideEffect := node.NodeType == automationdom.NodeTypeAction || node.NodeType == automationdom.NodeTypeNotification
+	if sideEffect && execCtx.Run.Mode == automationdom.ModeLive && !execCtx.capConfirmed && execCtx.changes >= execCtx.maxChanges {
+		return errRunPaused
+	}
 
 	e.logger.Info("executing node", "node_key", node.NodeKey, "node_type", node.NodeType)
 
@@ -534,14 +635,29 @@ func (e *WorkflowExecutor) executeNode(ctx context.Context, execCtx *ExecutionCo
 	cancelStep()
 
 	// Update node run result
+	trace, traced := execCtx.takeTrace(node.NodeKey)
 	if execErr != nil {
 		code := "EXECUTION_ERROR"
 		if IsRunNotAuthorized(execErr) {
 			code = ErrCodeRunNotAuthorized
 		}
+		if !traced {
+			trace = automationdom.StepTrace{In: 1}
+			if code == ErrCodeRunNotAuthorized {
+				trace.Skip(automationdom.SkipNotAuthorized, 1)
+			}
+		}
+		nodeRun.SetTrace(trace)
 		nodeRun.Fail(execErr.Error(), code)
 		e.updateRunStats(execCtx, false)
 	} else {
+		if !traced {
+			trace = automationdom.StepTrace{In: 1, Out: 1}
+		}
+		nodeRun.SetTrace(trace)
+		if sideEffect && execCtx.Run.Mode == automationdom.ModeLive {
+			execCtx.changes++
+		}
 		nodeRun.Complete(output)
 		execCtx.MarkNodeCompleted(node.NodeKey)
 		e.updateRunStats(execCtx, true)
@@ -571,6 +687,9 @@ func (e *WorkflowExecutor) skipNode(ctx context.Context, execCtx *ExecutionConte
 		return nil
 	}
 
+	var t automationdom.StepTrace
+	t.Skip(automationdom.SkipBranchNotTaken, 1)
+	nodeRun.SetTrace(t)
 	nodeRun.Skip(reason)
 	execCtx.MarkNodeCompleted(node.NodeKey)
 
@@ -629,6 +748,13 @@ func (e *WorkflowExecutor) executeConditionNode(ctx context.Context, execCtx *Ex
 	}
 
 	nodeRun.SetConditionResult(result)
+	t := automationdom.StepTrace{In: 1}
+	if result {
+		t.Out = 1
+	} else {
+		t.Skip(automationdom.SkipConditionFalse, 1)
+	}
+	execCtx.setTrace(node.NodeKey, t)
 
 	return map[string]any{
 		"result":     result,
@@ -640,10 +766,21 @@ func (e *WorkflowExecutor) executeConditionNode(ctx context.Context, execCtx *Ex
 func (e *WorkflowExecutor) executeActionNode(ctx context.Context, execCtx *ExecutionContext, node *automationdom.Node) (map[string]any, error) {
 	actionType := node.Config.ActionType
 
-	// A stored workflow may still hold an action type that new writes refuse
+	// A stored workflow may still hold a removed action type
 	// (automationdom.ValidateSupported). Such a node never runs.
-	if !actionType.IsSupported() {
+	if !actionType.IsValid() {
 		return nil, fmt.Errorf("action type %s is not supported; edit the automation to remove it", actionType)
+	}
+
+	stepCtx, err := e.authorizeStep(ctx, execCtx, node.Config, node.Config.ActionConfig)
+	if err != nil {
+		return nil, err
+	}
+
+	// Only a live run calls an action handler; any other run (simulate, or
+	// a mode this build does not know) records what the step would do.
+	if execCtx.Run.Mode != automationdom.ModeLive {
+		return e.simulateStep(stepCtx, execCtx, node)
 	}
 
 	// Look up the action handler
@@ -653,11 +790,6 @@ func (e *WorkflowExecutor) executeActionNode(ctx context.Context, execCtx *Execu
 
 	if !ok {
 		return nil, fmt.Errorf("no handler registered for action type: %s", actionType)
-	}
-
-	stepCtx, err := e.authorizeStep(ctx, execCtx, node.Config, node.Config.ActionConfig)
-	if err != nil {
-		return nil, err
 	}
 
 	// Build action input
@@ -676,7 +808,11 @@ func (e *WorkflowExecutor) executeActionNode(ctx context.Context, execCtx *Execu
 	// Execute the action as the run principal. The events the step causes
 	// (a status change, a scan) carry the run as their cause, so they cannot
 	// start a loop (loop_guard.go).
-	return handler.Execute(WithAutomationCause(stepCtx, stepCause(execCtx.Run, node.NodeKey)), input)
+	out, err := handler.Execute(WithAutomationCause(stepCtx, stepCause(execCtx.Run, node.NodeKey)), input)
+	if actionType == automationdom.ActionTypeCreateTicket || actionType == automationdom.ActionTypeUpdateTicket {
+		e.recordLiveTicket(ctx, execCtx, node, out, err)
+	}
+	return out, err
 }
 
 // authorizeStep checks that the run's principal may run a step with this
@@ -705,12 +841,17 @@ func (e *WorkflowExecutor) authorizeStep(ctx context.Context, execCtx *Execution
 
 // executeNotificationNode executes a notification node.
 func (e *WorkflowExecutor) executeNotificationNode(ctx context.Context, execCtx *ExecutionContext, node *automationdom.Node) (map[string]any, error) {
-	if e.notificationHandler == nil {
-		return nil, fmt.Errorf("notification handler not configured")
-	}
 	stepCtx, err := e.authorizeStep(ctx, execCtx, node.Config, nil)
 	if err != nil {
 		return nil, err
+	}
+
+	// Only a live run sends; any other run records what the step would send.
+	if execCtx.Run.Mode != automationdom.ModeLive {
+		return e.simulateStep(stepCtx, execCtx, node)
+	}
+	if e.notificationHandler == nil {
+		return nil, fmt.Errorf("notification handler not configured")
 	}
 
 	// Build notification input
@@ -725,7 +866,90 @@ func (e *WorkflowExecutor) executeNotificationNode(ctx context.Context, execCtx 
 		Context:            e.buildNodeInput(execCtx, node),
 	}
 
-	return e.notificationHandler.Send(WithAutomationCause(stepCtx, stepCause(execCtx.Run, node.NodeKey)), input)
+	out, sendErr := e.notificationHandler.Send(WithAutomationCause(stepCtx, stepCause(execCtx.Run, node.NodeKey)), input)
+	d := notificationDelivery(input)
+	d.Status, d.Attempts = automationdom.DeliverySent, 1
+	if sendErr != nil {
+		d.Status, d.Error = automationdom.DeliveryFailed, sendErr.Error()
+	}
+	e.recordDelivery(ctx, execCtx, node, d)
+	return out, sendErr
+}
+
+// simulateStep evaluates a step of a simulate run: it records what the
+// step would do (its trace and any delivery, mode simulate), and never calls
+// a handler.
+func (e *WorkflowExecutor) simulateStep(ctx context.Context, execCtx *ExecutionContext, node *automationdom.Node) (map[string]any, error) {
+	if e.evaluator == nil {
+		return simulatedOutput(node), nil
+	}
+	eff, err := e.evaluator.Evaluate(ctx, &EvalInput{
+		TenantID: execCtx.Run.TenantID, WorkflowID: execCtx.Workflow.ID, RunID: execCtx.Run.ID,
+		NodeKey: node.NodeKey, Config: node.Config, TriggerData: execCtx.TriggerData,
+	})
+	if err != nil {
+		return nil, err
+	}
+	execCtx.setTrace(node.NodeKey, eff.Trace)
+	if eff.Delivery != nil {
+		eff.Delivery.Status = automationdom.DeliverySimulated
+		e.recordDelivery(ctx, execCtx, node, eff.Delivery)
+	}
+	return eff.Output, nil
+}
+
+// recordLiveTicket records the delivery of a live ticket step.
+func (e *WorkflowExecutor) recordLiveTicket(ctx context.Context, execCtx *ExecutionContext, node *automationdom.Node, out map[string]any, err error) {
+	provider, _ := out["provider"].(string)
+	if provider == "" {
+		provider, _ = node.Config.ActionConfig["provider"].(string)
+	}
+	if provider == "" {
+		provider = "jira"
+	}
+	findingID, _ := out["finding_id"].(string)
+	d := &automationdom.Delivery{Channel: strings.ToLower(provider), Attempts: 1, Status: automationdom.DeliverySent,
+		Payload: map[string]any{"provider": provider, "finding_id": findingID}}
+	if project, ok := node.Config.ActionConfig["project_key"].(string); ok {
+		d.Target = project
+	}
+	switch {
+	case err != nil:
+		d.Status, d.Error = automationdom.DeliveryFailed, err.Error()
+	case out["held"] == true:
+		d.Status = automationdom.DeliveryHeld
+		d.Payload["held_reason"], _ = out["held_reason"].(string)
+	default:
+		d.ExternalRef, _ = out["ticket_key"].(string)
+	}
+	e.recordDelivery(ctx, execCtx, node, d)
+}
+
+// recordDelivery stores d for the step (best effort: a lost record never
+// changes the step's outcome).
+func (e *WorkflowExecutor) recordDelivery(ctx context.Context, execCtx *ExecutionContext, node *automationdom.Node, d *automationdom.Delivery) {
+	if e.deliveries == nil || d == nil {
+		return
+	}
+	d.TenantID, d.RunID, d.NodeKey, d.Mode = execCtx.Run.TenantID, execCtx.Run.ID, node.NodeKey, execCtx.Run.Mode
+	d.IdempotencyKey = execCtx.Run.ID.String() + ":" + node.NodeKey
+	if err := e.deliveries.Record(context.WithoutCancel(ctx), d); err != nil {
+		e.logger.Warn("failed to record an automation delivery", "run_id", execCtx.Run.ID, "node_key", node.NodeKey, "error", err)
+	}
+}
+
+// simulatedOutput is the output of an action or notification step of a
+// simulate run when no evaluator is configured: what it would have done,
+// nothing done.
+func simulatedOutput(node *automationdom.Node) map[string]any {
+	out := map[string]any{"simulated": true}
+	if node.Config.ActionType != "" {
+		out["would"] = string(node.Config.ActionType)
+	}
+	if node.Config.NotificationType != "" {
+		out["would"] = "notify:" + string(node.Config.NotificationType)
+	}
+	return out
 }
 
 // updateRunStats updates the run statistics.
@@ -745,6 +969,26 @@ func (e *WorkflowExecutor) finalizeRun(ctx context.Context, execCtx *ExecutionCo
 	// closed the steps; the executor writes nothing over it.
 	if errors.Is(execErr, errRunCanceled) {
 		e.logger.Info("workflow run canceled; stopped before its next step", "run_id", run.ID)
+		return
+	}
+
+	// At the change cap: the run waits for a publisher (POST
+	// /workflow-runs/{id}/approve); nothing is counted as finished.
+	if errors.Is(execErr, errRunPaused) {
+		run.Pause(automationdom.PauseReasonBlastRadius)
+		if err := e.runRepo.Update(ctx, run); err != nil {
+			e.logger.Error("failed to pause run", "run_id", run.ID, "error", err)
+			return
+		}
+		e.logger.Warn("automation run paused at its change cap", "run_id", run.ID, "changes", execCtx.changes, "cap", execCtx.maxChanges)
+		if e.auditService != nil {
+			auditapp.RecordOrWarn(ctx, e.logger, e.auditService, auditapp.AuditContext{TenantID: run.TenantID.String()},
+				auditapp.NewSuccessEvent(audit.ActionWorkflowRunPaused, audit.ResourceTypeWorkflowRun, run.ID.String()).
+					WithResourceName(execCtx.Workflow.Name).
+					WithMessage(fmt.Sprintf("Automation run paused after %d changes (its cap); a publisher may let it continue", execCtx.changes)).
+					WithMetadata("workflow_id", execCtx.Workflow.ID.String()).
+					WithMetadata("cap", execCtx.maxChanges))
+		}
 		return
 	}
 
@@ -791,7 +1035,7 @@ func (e *WorkflowExecutor) finalizeRun(ctx context.Context, execCtx *ExecutionCo
 		e.logger.Warn("automation paused: its latest runs all failed",
 			"workflow_id", wf.ID, "workflow_name", wf.Name, "failed_runs", maxConsecutiveFailures)
 		if e.auditService != nil {
-			_ = e.auditService.LogEvent(ctx, auditapp.AuditContext{TenantID: run.TenantID.String()},
+			auditapp.RecordOrWarn(ctx, e.logger, e.auditService, auditapp.AuditContext{TenantID: run.TenantID.String()},
 				auditapp.NewSuccessEvent(audit.ActionWorkflowDeactivated, audit.ResourceTypeWorkflow, wf.ID.String()).
 					WithResourceName(wf.Name).
 					WithMessage(fmt.Sprintf("Automation '%s' paused by the platform: its last %d runs failed", wf.Name, maxConsecutiveFailures)).

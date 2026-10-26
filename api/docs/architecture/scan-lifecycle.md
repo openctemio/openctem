@@ -35,10 +35,20 @@ Scan (definition) ──fires──▶ Run (one occurrence) ──is cut into─
 | `pending` | Created, no task claimed yet | no | — |
 | `running` | At least one task claimed or started | no | — |
 | `completed` | Every task completed. Targets that did not answer (`unreachable_target_count`) or that the sensor's local policy skipped (`skipped_target_count`) do not change the status: they are facts about the targets, recorded in the run context and shown as a note ("Completed · N unreachable") | yes | success |
-| `partial` | Some tasks completed, some failed, or the deadline passed with work done, or a sensor left coverage gaps or unfinished targets; results kept, unfinished targets recorded. Also when every step finished but zone routing left targets uncovered (`uncovered_targets`): the run did not scan everything it was asked to | yes | partial |
+| `partial` | Some tasks completed, some failed, or the deadline passed with work done, or a sensor left coverage gaps or unfinished targets; results kept, unfinished targets recorded. Also when every step finished but zone routing left targets uncovered (`uncovered_targets`): the run did not scan everything it was asked to | yes | success with coverage gaps |
 | `failed` | No task completed (all failed, or nobody claimed within 4 h scheduled / 1 h interactive), or a step tried more than one target and reached none (`TARGET_UNREACHABLE`: the sensor may be cut off). A single target that did not answer is `completed`, one unreachable | yes | failure |
 | `timeout` | Deadline passed and no task completed | yes | failure |
 | `canceled` | Stopped by a user with `scans:write` | yes | not counted in the success rate |
+| `blocked` | Refused before anything was dispatched (scope gate, unconfirmed targets, no sensor, scan window, scanner); `refusal_code` says why | yes | not counted in the success rate |
+
+**Success rate.** The share of counted runs that did their job: (completed +
+partial) / (completed + partial + failed + timeout). A partial run finished
+with coverage gaps; a host that did not answer is a fact about the target, not
+a scan failure, so it never lowers the rate. Blocked, canceled and live runs
+are not counted. Below three counted runs there is no rate ("-"). The scan
+list reads it over the scan's latest ten runs (`recent_runs` of `GET /scans`,
+newest first, tenant-scoped, one batch query per page); the scan page and the
+scan drawer read it over the scan's lifetime counters with the same rule.
 
 A terminal run never changes again, and neither does a terminal step run: a
 late or duplicate sensor result, a cancel racing a completion or the reaper
@@ -67,7 +77,7 @@ cannot reopen one, recount its findings or record its outcome twice.
 | Run terminal guard | done | `api/internal/infra/postgres/pipeline_run_repository.go` (`terminalRunStatusesSQL`) |
 | Step terminal guard | RFC-046 P1.1 (first implementation PR) | same file |
 | `partial` | done: settle matrix (P1.2) and deadline → `partial` (P1.3) | `api/internal/app/pipeline/run.go`, `pipeline_run_repository.go` (`MarkTimedOutRuns`) |
-| Deadline + rollover | done: `deadline_at` fixed when the run starts (scan timeout, 24 h cap); at the deadline open commands fail and lose their lease (the sensor is told to stop on its next heartbeat), unfinished targets (≤ 10,000, dispatch order) are recorded; the next **scheduled** run plans them first, reordering only targets the gate resolved again | `pipeline_run_repository.go` (`runDeadlineSQL`, `MarkTimedOutRuns`, `LatestRollover`), `api/internal/app/scan/rollover.go` |
+| Deadline + rollover | done: `deadline_at` fixed when the run starts (scan timeout, 24 h cap); every scan command carries the run's deadline (`deadline`) and the sensor ends the job's time budget a margin before it (a tenth of the time left, 1 to 10 min), so a run cut there still reports what it settled; at the deadline open commands fail and lose their lease (the sensor is told to stop on its next heartbeat) with a message that says what is known (not picked up by a sensor; the tool finished every target but its result did not arrive; no result), unfinished targets (≤ 10,000, dispatch order) are recorded; the next **scheduled** run plans them first, reordering only targets the gate resolved again | `pipeline_run_repository.go` (`runDeadlineSQL`, `MarkTimedOutRuns`, `LatestRollover`), `api/internal/app/scan/rollover.go` |
 | Occurrence claim | compare-and-set on `next_run_at`; occurrence key planned (P1.5) | `api/internal/app/scan/scheduler.go`, `scan_repository.go` (`ClaimScheduledRun`) |
 | Overlap skip | done; checked in the run-insert transaction under the scan row lock (P1.6), so a manual trigger cannot slip in between | `scheduler.go` (`SkipIfRunning`), `pipeline_run_repository.go` (`CreateRunIfUnderLimit`, `ErrScanRunActive`) |
 | rrule | `schedule_type` `rrule`: an RFC 5545 rule (RRULE parts only, e.g. `FREQ=WEEKLY;BYDAY=MO;BYHOUR=2`) in `scans.schedule_rrule`, evaluated in `schedule_timezone` from a fixed anchor (2024-01-01 00:00 local, so INTERVAL counts the same everywhere; no BYHOUR means midnight); refused on save if it does not parse, has no future occurrence, uses SECONDLY/BYSECOND/COUNT/DTSTART, or fires more often than every 15 minutes over the next year. Legacy daily/weekly/monthly/crontab still work; their backfill to rules is pending. Crontabs and rules more frequent than 15 minutes are refused; legacy ones are spaced when claimed; missed occurrences are skipped (`skipped_misfire`) | `api/pkg/domain/scan/rrule.go`, `entity.go` |
@@ -96,11 +106,12 @@ cannot reopen one, recount its findings or record its outcome twice.
 - **Interactsh** is off on the sensor unless the sensor-local policy and the
   job both allow it (RFC-040, RFC-046 D6).
 - **Adaptive chunk sizing** is deferred (RFC-046 D9, RFC-030 Phase 2).
-- **Automations refuse what they cannot run.** The schedule and finding_age
-  triggers and the assign_team, update_priority and run_script actions
-  (no sandbox for a tenant script) are refused on create, graph save, node
-  edit and activation with 400 `UNSUPPORTED_WORKFLOW_FEATURE`; stored ones
-  stay readable and flagged. A graph save is also refused, before anything
+- **Automations offer only what they run.** The removed types (the schedule,
+  finding_age, finding_updated and webhook triggers, the assign_team,
+  update_priority, run_script, http_request and trigger_pipeline actions and
+  the pagerduty notification) are refused on create, graph save, node edit
+  and activation with 400 `UNSUPPORTED_WORKFLOW_FEATURE`; stored ones stay
+  readable, flagged and switched off ([automations.md](automations.md)). A graph save is also refused, before anything
   is written, when the graph has a cycle (`WORKFLOW_GRAPH_CYCLE`), a node no
   trigger reaches (`WORKFLOW_GRAPH_UNREACHABLE`), an edge into a trigger or
   a condition edge without a yes/no handle (`WORKFLOW_GRAPH_EDGE`). Adding
@@ -147,3 +158,7 @@ The Scans area separates the platform's own scans from people's:
 - A run a platform policy started is labelled "Automatic coverage" (or "Automatic enrichment") in the Trigger column, not "System".
 - A run's status badge carries the target note when it has one: "Completed · 3 unreachable", "· 2 skipped" (`unreachable_target_count`, `skipped_target_count` of the run response). The note never changes the status.
 - The success-rate labels of the list and the scan page come from the dictionary (en and vi).
+- The list's **Recent runs** column shows the latest ten runs as run-state glyphs (oldest to newest, the glyphs of the run status label) and the success rate over them; its tooltip and accessible name give the breakdown (completed, completed with coverage gaps, failed, blocked and canceled not counted).
+- A blocked latest run says why under its state, without hovering, with a link to where it is fixed: unconfirmed targets to the scope, excluded targets to the exclusions, no sensor to the sensors, a scan window, a disabled scanner. Other refusal codes read "Refused before it started" and the run has the details.
+- On a phone each scan is one card: the name and the latest run's state on the first line, then the type, the kind and the intensity as separate elements, then when it last ran, the run count and the recent runs. Every line wraps; no element can overflow into another.
+- Scan intensity uses the label system: passive and active are plain tags (icon and word, neutral ink), intrusive is a neutral signal chip. No hue, so it never reads as a severity or a run state.

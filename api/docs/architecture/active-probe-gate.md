@@ -304,7 +304,7 @@ any lookup error returns an error, and the caller dispatches nothing.
 |---|---|
 | Scan create, clone, import (`CreateScan`), quick scan, `POST /commands` | the request is refused as a whole (`TARGET_OUT_OF_SCOPE`, 400, the targets named with the generic reason) and audited (`scan.target_refused`). Exception: a create with `start_when_scope_approved` whose refused targets are all covered by pending entries is saved and started once they are approved, as the requester, with every gate checked again (RFC-054 §12.8, `internal/app/scan/scope_wait.go`) |
 | Scan run: manual trigger, schedule, retry controller, workflow trigger | the target (direct or group member) is skipped with a run warning; a run left with nothing is refused (`ALL_TARGETS_UNCONFIRMED`) |
-| `POST /scan-workflows/runs`, `trigger_pipeline`, coverage dispatcher, every validate command (re-checks, proof-of-fix, retests, attack-simulation safe-checks), connector scans | `ResolveDispatchTargets` refuses the target |
+| `POST /scan-workflows/runs`, coverage dispatcher, every validate command (re-checks, proof-of-fix, retests, attack-simulation safe-checks), connector scans | `ResolveDispatchTargets` refuses the target |
 
 `GET /api/v1/assets/{id}/attribution` answers `active_checks_allowed` with the
 same gate and names the reason in `active_checks_blocked_by`.
@@ -316,6 +316,21 @@ An internet-facing asset outside every scope entry is not probed, whether or not
 Ownership-tab confirmation no longer authorizes alone). Runs that skip such
 targets say so in their warnings; `GET /assets/{id}/attribution` answers
 `active_checks_blocked_by: out_of_scope`.
+
+## Certificates (RFC-054 §19)
+
+A certificate asset is evidence, not a probe target, and its name is a fingerprint. The gate does not judge it
+by name. `ActiveGate.judgeCertificates` (`internal/app/easm/cert_standing.go`) reads the tenant's assets with
+a `serves_certificate` edge to it (`AssetRelationshipRepository.ServingEndpoints`, tenant-pinned on both ends)
+and runs `decide` on each endpoint. The certificate passes when any endpoint passes, shows the strongest
+refusal otherwise, and is not applicable (refused) when no endpoint is known. A person's non-confirmed
+decision on the certificate itself still refuses.
+
+Ownership (`Authority.OwnedName`) is separate: a SAN or CN under a domain, subdomain or host entry of the
+tenant, or a verified domain, marks the certificate `yours`; foreign names only on a covered endpoint make it
+`third_party`. It never authorizes a probe, and the inheritance is one-way (endpoint to certificate), so a
+certificate with any names on any address changes nothing for that address. `CertificateStandings` exposes
+the result; the attribution endpoint returns it as `certificate`.
 
 ## Unclassified assets (RFC-054 §16)
 
@@ -461,14 +476,37 @@ repository is dispatched by its asset name, which the validator refuses); an
 internal address still needs a scan zone. A target that now routes to
 another zone than the command's `scan_zone_id` (or into or out of every
 zone) is refused as `zone_changed`. The re-check never asks more than the
-dispatch did, so a job is refused only for a change.
+dispatch did, so a job is refused only for a change: a single-scanner run
+the trigger did not route over zones (a passive coverage run of public
+names) records `no_zone_routing`, so the claim does not route it either.
+
+**Lookup-only jobs and names with no DNS answer.** A job that only looks
+names up (`scopedom.JobShape.LookupOnly`: every stage of its tool, and the
+capability it names, is passive and reaches resolvers, third-party sources
+or a vendor API, never the target hosts; today `dnsx` for `resolve.dns` and
+`subfinder` for `discover.subdomains`) runs on a hostname that does not
+resolve: finding that out is its work (coverage S5 re-checks names that
+stopped resolving). Zone routing then places such a name as a public target
+(the default zone, else unzoned: `scanzone.Router.LookupOnly`) instead of
+refusing it as `unresolved`. It is one rule, applied wherever targets are
+routed: the dispatch gate (the claim passes the job; dispatch paths pass
+`Tool`/`Capability`), the scan trigger's own routing (`routeForScan`) and
+coverage. Every other check still applies: scope entries, exclusions,
+rejected names, the deny list, private or internal addresses, domain proof
+and the tier, and the sensor's egress guard still checks every address
+before it connects. A job of any other tool, an unknown tool, or a caller
+that names neither is refused `unresolved` as before (fail closed).
 
 **Outcome.** Refused targets are taken out of the job before it is handed
 out: out of `targets`, `target` and `context.targets`, in the response and in
 the stored payload (a conditional write on the pending command), so result
 binding narrows too. A job left with no target is not handed out: it is
 failed with `SCOPE_CHANGED: <target> (<code>); ...` (a conditional write on
-the pending command, so a second or concurrent claim records nothing), and
+the pending command, so a second or concurrent claim records nothing), or,
+when every refusal is `unresolved` (the names stopped resolving while the
+job was queued, nothing about the scope changed), with
+`NO_RESOLVING_TARGETS: ...` (failure class `target`, a fact about the
+targets, not retried), and
 what waits on it is settled as on a sensor's failure
 (`CommandHandler.OnCommandFailed`, the `command.FailureObserver`): its scan
 step fails with `SCOPE_CHANGED` (failure class `scope`, not retried), a
@@ -512,7 +550,7 @@ system, which is unrestricted.
 | Scan create, quick scan | refused as a whole (`TARGET_OUT_OF_SCOPE`, 400, with each target and its reason) |
 | Scan update | refused when the editor may not scan every direct target of the scan |
 | Scan run (manual, scheduled, workflow) | out-of-scope direct targets and group members are skipped, with a run warning; a run left with nothing is refused |
-| `POST /scan-workflows/runs`, `trigger_pipeline` | `ResolveDispatchTargets` with `ActScope: true`; `triggered_by` is the fallback actor; any refused target fails the run |
+| `POST /scan-workflows/runs` | `ResolveDispatchTargets` with `ActScope: true`; `triggered_by` is the fallback actor; any refused target fails the run |
 | `POST /commands` | refused as a whole |
 
 Every lookup error refuses (fail closed). A dispatch that asks for the check

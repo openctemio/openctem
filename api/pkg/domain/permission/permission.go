@@ -147,9 +147,14 @@ const (
 	RemediationRead  Permission = "findings:remediation:read"
 	RemediationWrite Permission = "findings:remediation:write"
 
-	// Workflow permissions (findings:workflows:*)
-	WorkflowsRead  Permission = "findings:workflows:read"
-	WorkflowsWrite Permission = "findings:workflows:write"
+	// Automation permissions (RFC-125 D7). Read: automations, runs,
+	// versions, trace. Write: drafts, preview, validate, manual runs (as the
+	// caller). Publish: go live (with step-up for elevated rules and a second
+	// publisher for high-risk ones), approve another person's version, roll
+	// back, change mode, switch on or off, delete, resume a paused run.
+	AutomationsRead    Permission = "automations:read"
+	AutomationsWrite   Permission = "automations:write"
+	AutomationsPublish Permission = "automations:publish"
 )
 
 // =============================================================================
@@ -171,10 +176,12 @@ const (
 	ScanProfilesWrite  Permission = "scans:profiles:write"
 	ScanProfilesDelete Permission = "scans:profiles:delete"
 
-	// Template source permissions (scans:sources:*)
-	TemplateSourcesRead   Permission = "scans:sources:read"
-	TemplateSourcesWrite  Permission = "scans:sources:write"
-	TemplateSourcesDelete Permission = "scans:sources:delete"
+	// Rule source permissions (scans:sources:*). Approve promotes, rejects
+	// and rolls back snapshots (docs/architecture/content-sources.md).
+	ContentSourcesRead    Permission = "scans:sources:read"
+	ContentSourcesWrite   Permission = "scans:sources:write"
+	ContentSourcesDelete  Permission = "scans:sources:delete"
+	ContentSourcesApprove Permission = "scans:sources:approve"
 
 	// Tool Registry permissions (scans:tools:*)
 	ToolsRead   Permission = "scans:tools:read"
@@ -499,12 +506,12 @@ func AllPermissions() []Permission {
 		VulnerabilitiesRead,
 		CredentialsRead, CredentialsWrite, CredentialsReveal, EvidenceReveal,
 		RemediationRead, RemediationWrite,
-		WorkflowsRead, WorkflowsWrite,
+		AutomationsRead, AutomationsWrite, AutomationsPublish,
 
 		// Scans module
 		ScansRead, ScansWrite, ScansDelete, ScansExecute, ScansApprove,
 		ScanProfilesRead, ScanProfilesWrite, ScanProfilesDelete,
-		TemplateSourcesRead, TemplateSourcesWrite, TemplateSourcesDelete,
+		ContentSourcesRead, ContentSourcesWrite, ContentSourcesDelete, ContentSourcesApprove,
 		ToolsRead, ToolsWrite, ToolsDelete,
 		TenantToolsRead, TenantToolsWrite,
 		ScannerTemplatesRead, ScannerTemplatesWrite, ScannerTemplatesDelete,

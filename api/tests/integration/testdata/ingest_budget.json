@@ -1,0 +1,21 @@
+{
+  "_comment": "SQL statements per phase of TestIngestQueryBudget (tests/integration/ingest_budget_test.go). Regenerate with `make budgets-update` and review the diff.",
+  "phases": {
+    "import": {
+      "statements": 22,
+      "transactions": 1
+    },
+    "reimport_finding_gone": {
+      "statements": 25,
+      "transactions": 3
+    },
+    "reimport_finding_new": {
+      "statements": 29,
+      "transactions": 3
+    },
+    "reimport_unchanged": {
+      "statements": 25,
+      "transactions": 3
+    }
+  }
+}

@@ -71,14 +71,15 @@ const MaskedCredentials = "••••"
 
 // Errors. Each wraps a shared sentinel so handlers map them to HTTP codes.
 var (
-	ErrPoolNotFound     = fmt.Errorf("%w: proxy pool not found", shared.ErrNotFound)
-	ErrEndpointNotFound = fmt.Errorf("%w: proxy endpoint not found", shared.ErrNotFound)
-	ErrSensorNotFound   = fmt.Errorf("%w: sensor not found", shared.ErrNotFound)
-	ErrPoolNameTaken    = shared.NewDomainError("PROXY_POOL_NAME_TAKEN", "a proxy pool with this name already exists", shared.ErrAlreadyExists)
-	ErrDefaultTaken     = shared.NewDomainError("PROXY_POOL_DEFAULT_EXISTS", "the organization already has a default proxy pool", shared.ErrAlreadyExists)
-	ErrPoolInUse        = shared.NewDomainError("PROXY_POOL_IN_USE", "sensors use this proxy pool; set their network path to another pool, Direct or Inherit first", shared.ErrConflict)
-	ErrTooManyPools     = shared.NewDomainError("TOO_MANY_PROXY_POOLS", fmt.Sprintf("an organization may define at most %d proxy pools", MaxPoolsPerTenant), shared.ErrValidation)
-	ErrNoEncryption     = shared.NewDomainError("PROXY_CREDENTIALS_UNAVAILABLE", "proxy credentials cannot be stored: the server has no encryption key", shared.ErrValidation)
+	ErrPoolNotFound         = fmt.Errorf("%w: proxy pool not found", shared.ErrNotFound)
+	ErrEndpointNotFound     = fmt.Errorf("%w: proxy endpoint not found", shared.ErrNotFound)
+	ErrSensorNotFound       = fmt.Errorf("%w: sensor not found", shared.ErrNotFound)
+	ErrPoolNameTaken        = shared.NewDomainError("PROXY_POOL_NAME_TAKEN", "a proxy pool with this name already exists", shared.ErrAlreadyExists)
+	ErrDefaultTaken         = shared.NewDomainError("PROXY_POOL_DEFAULT_EXISTS", "the organization already has a default proxy pool", shared.ErrAlreadyExists)
+	ErrPoolInUse            = shared.NewDomainError("PROXY_POOL_IN_USE", "sensors use this proxy pool; set their network path to another pool, Direct or Inherit first", shared.ErrConflict)
+	ErrTooManyPools         = shared.NewDomainError("TOO_MANY_PROXY_POOLS", fmt.Sprintf("an organization may define at most %d proxy pools", MaxPoolsPerTenant), shared.ErrValidation)
+	ErrEnabledNeedsEndpoint = shared.NewDomainError("PROXY_POOL_NEEDS_ENDPOINT", "add at least one proxy before enabling the pool: scans fail closed when an enabled pool has none", shared.ErrValidation)
+	ErrNoEncryption         = shared.NewDomainError("PROXY_CREDENTIALS_UNAVAILABLE", "proxy credentials cannot be stored: the server has no encryption key", shared.ErrValidation)
 )
 
 func invalid(format string, args ...any) error {

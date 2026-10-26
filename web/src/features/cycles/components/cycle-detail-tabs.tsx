@@ -29,6 +29,8 @@ import {
 import { useBusinessServiceOptions } from '@/features/business-services/api/business-service-assets'
 import { Can, Permission, usePermissions } from '@/lib/permissions'
 import { getErrorMessage } from '@/lib/api/error-handler'
+import { formatDateOnly } from '@/lib/date-only'
+import { useTranslation } from '@/context/i18n-provider'
 import {
   profileTypeLabel,
   saveScopeRefinement,
@@ -42,9 +44,14 @@ import { CharterOutcome } from './charter-outcome'
 import { CharterExclusionsField } from './charter-exclusions-field'
 import { CharterAttackerProfilesField } from './charter-attacker-profiles-field'
 
+function NotSet() {
+  const { t } = useTranslation()
+  return <p className="text-sm text-muted-foreground">{t('scoping.cycleTabs.notSet', 'Not set')}</p>
+}
+
 function TextList({ items, numbered }: { items?: string[]; numbered?: boolean }) {
   const filled = (items ?? []).filter((s) => s.trim())
-  if (filled.length === 0) return <p className="text-sm text-muted-foreground">Not set</p>
+  if (filled.length === 0) return <NotSet />
   const List = numbered ? 'ol' : 'ul'
   return (
     <List className={`${numbered ? 'list-decimal' : 'list-disc'} space-y-1 ps-5 text-sm`}>
@@ -65,14 +72,11 @@ function Field({ label, children }: { label: string; children: ReactNode }) {
 }
 
 const text = (v?: string) =>
-  v?.trim() ? (
-    <p className="text-sm whitespace-pre-wrap">{v}</p>
-  ) : (
-    <p className="text-sm text-muted-foreground">Not set</p>
-  )
+  v?.trim() ? <p className="text-sm whitespace-pre-wrap">{v}</p> : <NotSet />
 
 /** The charter, read-only (it is edited in the charter sheet while planning). */
 export function CycleCharterTab({ cycle, onEdit }: { cycle: CtemCycle; onEdit: () => void }) {
+  const { t } = useTranslation()
   const charter = cycle.charter ?? {}
   const serviceIds = charter.in_scope_services ?? []
   const { data: services } = useBusinessServiceOptions(serviceIds.length > 0)
@@ -87,81 +91,117 @@ export function CycleCharterTab({ cycle, onEdit }: { cycle: CtemCycle; onEdit: (
       <div className="flex flex-wrap items-center justify-between gap-2">
         <p className="flex items-center gap-1.5 text-sm text-muted-foreground">
           {planning ? (
-            'The charter can be edited until the cycle is activated.'
+            t(
+              'scoping.cycleTabs.editableUntil',
+              'The charter can be edited until the cycle is activated.'
+            )
           ) : (
             <>
               <Lock className="h-3.5 w-3.5" />
-              Frozen when the cycle was activated.
+              {t('scoping.cycleTabs.frozen', 'Frozen when the cycle was activated.')}
             </>
           )}
         </p>
         <Button size="sm" variant="outline" onClick={onEdit}>
           <ScrollText className="me-2 h-4 w-4" />
-          {planning ? 'Edit charter' : 'Open charter'}
+          {planning
+            ? t('scoping.cycleTabs.editCharter', 'Edit charter')
+            : t('scoping.cycleTabs.openCharter', 'Open charter')}
         </Button>
       </div>
       <DetailSections>
-        <DetailSection title="Scope and objectives">
+        <DetailSection title={t('scoping.cycleTabs.scopeObjectives', 'Scope and objectives')}>
           <div className="grid gap-4 md:grid-cols-2">
-            <Field label="Objectives">
+            <Field label={t('scoping.cycleTabs.objectives', 'Objectives')}>
               <TextList items={charter.objectives} numbered />
             </Field>
-            <Field label="Business priorities">
+            <Field label={t('scoping.cycleTabs.priorities', 'Business priorities')}>
               <TextList items={charter.business_priorities} />
             </Field>
-            <Field label="In-scope services">
+            <Field label={t('scoping.cycleTabs.inScopeServices', 'In-scope services')}>
               {serviceIds.length === 0 ? (
                 <p className="text-sm text-muted-foreground">
-                  None: activating covers every asset.
+                  {t('scoping.cycleTabs.noServices', 'None. Activating covers every asset.')}
                 </p>
               ) : (
                 <ul className="list-disc space-y-1 ps-5 text-sm">
                   {serviceIds.map((id) => (
                     <li key={id}>
                       {nameOf.get(id) ?? (
-                        <span className="text-muted-foreground">{id} (not a business service)</span>
+                        <span className="text-muted-foreground">
+                          {t('scoping.cycleTabs.notAService', '{id} (not a business service)', {
+                            id,
+                          })}
+                        </span>
                       )}
                     </li>
                   ))}
                 </ul>
               )}
             </Field>
-            <Field label="Risk appetite">{text(charter.risk_appetite)}</Field>
+            <Field label={t('scoping.cycleTabs.riskAppetite', 'Risk appetite')}>
+              {text(charter.risk_appetite)}
+            </Field>
           </div>
         </DetailSection>
-        <DetailSection title="Success criteria" count={charter.success_criteria?.length ?? 0}>
+        <DetailSection
+          title={t('scoping.cycleTabs.successCriteria', 'Success criteria')}
+          count={charter.success_criteria?.length ?? 0}
+        >
           {(charter.success_criteria ?? []).length === 0 ? (
             <p className="text-sm text-muted-foreground">
-              Not set. Criteria with a metric and a target are checked when the cycle closes.
+              {t(
+                'scoping.cycleTabs.noCriteria',
+                'Not set. Criteria with a metric and a target are checked when the cycle closes.'
+              )}
             </p>
           ) : (
             <ul className="space-y-1 text-sm">
               {charter.success_criteria!.map((c, i) => (
                 <li key={i}>
-                  <span className="font-medium">{c.name || 'Untitled'}</span>
+                  <span className="font-medium">
+                    {c.name || t('scoping.cycleTabs.untitled', 'Untitled')}
+                  </span>
                   <span className="text-muted-foreground">
                     {' '}
-                    · {c.metric || 'no metric'}: {c.target || 'no target'}
+                    ·{' '}
+                    {t('scoping.cycleTabs.metricTarget', '{metric}: {target}', {
+                      metric: c.metric || t('scoping.cycleTabs.noMetric', 'no metric'),
+                      target: c.target || t('scoping.cycleTabs.noTarget', 'no target'),
+                    })}
                   </span>
                 </li>
               ))}
             </ul>
           )}
         </DetailSection>
-        <DetailSection title="Exclusions" count={charter.exclusions?.length ?? 0}>
+        <DetailSection
+          title={t('scoping.cycleTabs.exclusions', 'Exclusions')}
+          count={charter.exclusions?.length ?? 0}
+        >
           <CharterExclusionsField
             value={charter.exclusions ?? []}
             onChange={() => {}}
             editable={false}
           />
         </DetailSection>
-        <DetailSection title="Escalation, roles and timeline">
+        <DetailSection title={t('scoping.cycleTabs.governance', 'Escalation, roles and timeline')}>
           <div className="grid gap-4 md:grid-cols-3">
-            <Field label="Sponsor">{text(charter.roles?.sponsor)}</Field>
-            <Field label="Operator">{text(charter.roles?.operator)}</Field>
-            <Field label="Engineering partner">{text(charter.roles?.engineering_partner)}</Field>
-            <Field label="Escalation path">{text(charter.escalation_path)}</Field>
-            <Field label="Timeline">{text(charter.timeline)}</Field>
+            <Field label={t('scoping.cycleTabs.sponsor', 'Sponsor')}>
+              {text(charter.roles?.sponsor)}
+            </Field>
+            <Field label={t('scoping.cycleTabs.operator', 'Operator')}>
+              {text(charter.roles?.operator)}
+            </Field>
+            <Field label={t('scoping.cycleTabs.engineeringPartner', 'Engineering partner')}>
+              {text(charter.roles?.engineering_partner)}
+            </Field>
+            <Field label={t('scoping.cycleTabs.escalation', 'Escalation path')}>
+              {text(charter.escalation_path)}
+            </Field>
+            <Field label={t('scoping.cycleTabs.timeline', 'Timeline')}>
+              {text(charter.timeline)}
+            </Field>
           </div>
         </DetailSection>
       </DetailSections>
@@ -169,47 +209,74 @@ export function CycleCharterTab({ cycle, onEdit }: { cycle: CtemCycle; onEdit: (
   )
 }
 
-const scopeColumns: ColumnDef<CycleScopeItem>[] = [
-  {
-    id: 'name',
-    accessorFn: (r) => r.asset_name || r.asset_id,
-    header: ({ column }) => <DataTableColumnHeader column={column} title="Asset" />,
-    // An empty name means the asset was deleted after the snapshot; no name
-    // field at all is an API from before the join, so link the id instead.
-    cell: ({ row }) =>
-      row.original.asset_name === '' ? (
-        <span className="text-muted-foreground">Deleted asset</span>
-      ) : (
-        <Link href={`/assets/${row.original.asset_id}`} className="font-medium hover:underline">
-          {row.original.asset_name ?? (
-            <span className="font-mono text-xs">{row.original.asset_id}</span>
-          )}
-        </Link>
-      ),
-  },
-  {
-    id: 'type',
-    accessorFn: (r) => r.asset_type ?? '',
-    header: ({ column }) => <DataTableColumnHeader column={column} title="Type" />,
-    cell: ({ row }) => (
-      <span className="capitalize">{(row.original.asset_type ?? '—').replace(/_/g, ' ')}</span>
-    ),
-  },
-  {
-    id: 'criticality',
-    accessorFn: (r) => r.asset_criticality ?? '',
-    header: ({ column }) => <DataTableColumnHeader column={column} title="Criticality" />,
-    cell: ({ row }) => <span className="capitalize">{row.original.asset_criticality || '—'}</span>,
-  },
-  {
-    accessorKey: 'included_at',
-    header: ({ column }) => <DataTableColumnHeader column={column} title="Frozen" />,
-    cell: ({ row }) => new Date(row.original.included_at).toLocaleDateString(),
-  },
-]
-
 /** The assets frozen into the cycle on Activate. */
 export function CycleScopeTab({ cycle }: { cycle: CtemCycle }) {
+  const { t, locale } = useTranslation()
+  const scopeColumns = useMemo<ColumnDef<CycleScopeItem>[]>(
+    () => [
+      {
+        id: 'name',
+        accessorFn: (r) => r.asset_name || r.asset_id,
+        header: ({ column }) => (
+          <DataTableColumnHeader
+            column={column}
+            title={t('scoping.cycleTabs.col.asset', 'Asset')}
+          />
+        ),
+        // An empty name means the asset was deleted after the snapshot; no name
+        // field at all is an API from before the join, so link the id instead.
+        cell: ({ row }) =>
+          row.original.asset_name === '' ? (
+            <span className="text-muted-foreground">
+              {t('scoping.cycleTabs.deletedAsset', 'Deleted asset')}
+            </span>
+          ) : (
+            <Link href={`/assets/${row.original.asset_id}`} className="font-medium hover:underline">
+              {row.original.asset_name ?? (
+                <span className="font-mono text-xs">{row.original.asset_id}</span>
+              )}
+            </Link>
+          ),
+      },
+      {
+        id: 'type',
+        accessorFn: (r) => r.asset_type ?? '',
+        header: ({ column }) => (
+          <DataTableColumnHeader column={column} title={t('scoping.cycleTabs.col.type', 'Type')} />
+        ),
+        cell: ({ row }) => {
+          const type = row.original.asset_type
+          if (!type) return <span>—</span>
+          return <span>{t(`assets.typeLabel.${type}`, type.replace(/_/g, ' '))}</span>
+        },
+      },
+      {
+        id: 'criticality',
+        accessorFn: (r) => r.asset_criticality ?? '',
+        header: ({ column }) => (
+          <DataTableColumnHeader
+            column={column}
+            title={t('scoping.cycleTabs.col.criticality', 'Criticality')}
+          />
+        ),
+        cell: ({ row }) => {
+          const c = row.original.asset_criticality
+          return <span>{c ? t(`criticality.${c}`, c) : '—'}</span>
+        },
+      },
+      {
+        accessorKey: 'included_at',
+        header: ({ column }) => (
+          <DataTableColumnHeader
+            column={column}
+            title={t('scoping.cycleTabs.col.frozen', 'Frozen')}
+          />
+        ),
+        cell: ({ row }) => formatDateOnly(row.original.included_at, locale) || '—',
+      },
+    ],
+    [t, locale]
+  )
   const planning = cycle.status === 'planning'
   const { data, error, isLoading, mutate } = useCycleScope(planning ? null : cycle.id)
 
@@ -218,24 +285,41 @@ export function CycleScopeTab({ cycle }: { cycle: CtemCycle }) {
     return (
       <EmptyState
         icon={ShieldQuestion}
-        title="Scope is frozen on Activate"
+        title={t('scoping.cycleTabs.scopeFrozenTitle', 'Scope is frozen on Activate')}
         description={
           services > 0
-            ? `Activating snapshots the assets linked to the ${services} in-scope service${services === 1 ? '' : 's'}. Link assets to those services under Business context first.`
-            : 'No in-scope services are chosen, so activating snapshots every asset. Pick services in the charter to narrow it.'
+            ? t(
+                'scoping.cycleTabs.scopeFrozenServices',
+                'Activating snapshots the assets linked to the {n, plural, one {# in-scope service} other {# in-scope services}}. Link assets to those services under Business context first.',
+                { n: services }
+              )
+            : t(
+                'scoping.cycleTabs.scopeFrozenAll',
+                'No in-scope services are chosen, so activating snapshots every asset. Pick services in the charter to narrow it.'
+              )
         }
       />
     )
   }
-  if (error) return <ErrorState title="the scope snapshot" error={error} onRetry={() => mutate()} />
+  if (error)
+    return (
+      <ErrorState
+        title={t('scoping.cycleTabs.scopeLoadError', 'the scope snapshot')}
+        error={error}
+        onRetry={() => mutate()}
+      />
+    )
   if (isLoading || !data) return <Skeleton className="h-48 w-full" />
   return (
     <DataTable
       columns={scopeColumns}
       data={data}
-      searchPlaceholder="Search assets in scope..."
-      emptyMessage="Nothing was frozen into scope"
-      emptyDescription="The snapshot is empty: the in-scope services had no linked assets when the cycle was activated."
+      searchPlaceholder={t('scoping.cycleTabs.scopeSearch', 'Search assets in scope…')}
+      emptyMessage={t('scoping.cycleTabs.scopeEmpty', 'Nothing was frozen into scope')}
+      emptyDescription={t(
+        'scoping.cycleTabs.scopeEmptyHint',
+        'The snapshot is empty. The in-scope services had no linked assets when the cycle was activated.'
+      )}
     />
   )
 }
@@ -245,6 +329,7 @@ export function CycleScopeTab({ cycle }: { cycle: CtemCycle }) {
  * (planning, active, review); closed cycles are archive.
  */
 export function CycleProfilesTab({ cycle }: { cycle: CtemCycle }) {
+  const { t } = useTranslation()
   const { can } = usePermissions()
   const { data, error, isLoading, mutate } = useCycleProfiles(cycle.id)
   const linked = useMemo(() => data?.data ?? [], [data])
@@ -261,12 +346,19 @@ export function CycleProfilesTab({ cycle }: { cycle: CtemCycle }) {
         linked.map((p) => p.id),
         draft
       )
-      await mutate()
-      toast.success('Attacker profiles saved')
+      toast.success(t('scoping.cycleTabs.profilesSaved', 'Attacker profiles saved.'))
       setEditing(false)
     } catch (err) {
-      toast.error(getErrorMessage(err, 'Failed to save attacker profiles'))
+      toast.error(
+        getErrorMessage(
+          err,
+          t('scoping.cycleTabs.profilesSaveFailed', 'Failed to save attacker profiles')
+        )
+      )
     } finally {
+      // A save that failed midway may have linked or unlinked some profiles:
+      // always show what the server holds now.
+      await mutate()
       setSaving(false)
     }
   }
@@ -275,8 +367,10 @@ export function CycleProfilesTab({ cycle }: { cycle: CtemCycle }) {
     <div className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <p className="text-sm text-muted-foreground">
-          Who this cycle assumes it defends against. The threat model reasons over the same
-          profiles.
+          {t(
+            'scoping.cycleTabs.profilesHint',
+            'Who this cycle assumes it defends against. The threat model reasons over the same profiles.'
+          )}
         </p>
         {editable && (
           <Button
@@ -288,19 +382,26 @@ export function CycleProfilesTab({ cycle }: { cycle: CtemCycle }) {
             }}
           >
             <Swords className="me-2 h-4 w-4" />
-            Choose profiles
+            {t('scoping.cycleTabs.chooseProfiles', 'Choose profiles')}
           </Button>
         )}
       </div>
       {error ? (
-        <ErrorState title="attacker profiles" error={error} onRetry={() => mutate()} />
+        <ErrorState
+          title={t('scoping.cycleTabs.profilesLoadError', 'attacker profiles')}
+          error={error}
+          onRetry={() => mutate()}
+        />
       ) : isLoading ? (
         <Skeleton className="h-24 w-full" />
       ) : linked.length === 0 ? (
         <EmptyState
           icon={Swords}
-          title="No attacker profiles chosen"
-          description="Choose the attackers this cycle assumes: external, with stolen credentials, an insider, a supplier."
+          title={t('scoping.cycleTabs.noProfiles', 'No attacker profiles chosen')}
+          description={t(
+            'scoping.cycleTabs.noProfilesHint',
+            'Choose the attackers this cycle assumes: external, with stolen credentials, an insider, a supplier.'
+          )}
           card={false}
           className="rounded-lg border border-dashed py-8"
         />
@@ -311,11 +412,14 @@ export function CycleProfilesTab({ cycle }: { cycle: CtemCycle }) {
               <p className="flex items-center gap-1.5 text-sm font-medium">
                 {p.name}
                 {p.is_default && (
-                  <Lock className="h-3 w-3 text-muted-foreground" aria-label="Built-in profile" />
+                  <Lock
+                    className="h-3 w-3 text-muted-foreground"
+                    aria-label={t('attackerProfiles.builtIn', 'Built-in profile')}
+                  />
                 )}
               </p>
               <p className="text-xs text-muted-foreground">
-                {profileTypeLabel(p.profile_type)}
+                {profileTypeLabel(p.profile_type, t)}
                 {p.description ? ` · ${p.description}` : ''}
               </p>
             </li>
@@ -326,18 +430,24 @@ export function CycleProfilesTab({ cycle }: { cycle: CtemCycle }) {
       <Dialog open={editing} onOpenChange={(o) => !saving && setEditing(o)}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Attacker profiles</DialogTitle>
-            <DialogDescription>Choose the attackers {cycle.name} assumes.</DialogDescription>
+            <DialogTitle>
+              {t('scoping.cycleTabs.profilesDialogTitle', 'Attacker profiles')}
+            </DialogTitle>
+            <DialogDescription>
+              {t('scoping.cycleTabs.profilesDialogHint', 'Choose the attackers {name} assumes.', {
+                name: cycle.name,
+              })}
+            </DialogDescription>
           </DialogHeader>
           <DialogBody>
             <CharterAttackerProfilesField value={draft} onChange={setDraft} editable />
           </DialogBody>
           <DialogFooter>
             <Button variant="outline" onClick={() => setEditing(false)} disabled={saving}>
-              Cancel
+              {t('common.cancel', 'Cancel')}
             </Button>
             <Button onClick={save} disabled={saving}>
-              {saving ? 'Saving…' : 'Save'}
+              {saving ? t('scoping.cycleTabs.saving', 'Saving…') : t('common.save', 'Save')}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -348,6 +458,7 @@ export function CycleProfilesTab({ cycle }: { cycle: CtemCycle }) {
 
 /** Close-time verdict on the success criteria, and what the cycle taught about scope. */
 export function CycleOutcomeTab({ cycle, onSaved }: { cycle: CtemCycle; onSaved: () => void }) {
+  const { t } = useTranslation()
   const [editing, setEditing] = useState(false)
   const [notes, setNotes] = useState('')
   const [saving, setSaving] = useState(false)
@@ -358,11 +469,16 @@ export function CycleOutcomeTab({ cycle, onSaved }: { cycle: CtemCycle; onSaved:
     setSaving(true)
     try {
       await saveScopeRefinement(cycle.id, notes)
-      toast.success('Scope refinement notes saved')
+      toast.success(t('scoping.cycleTabs.notesSaved', 'Scope refinement notes saved.'))
       setEditing(false)
       onSaved()
     } catch (err) {
-      toast.error(getErrorMessage(err, 'Failed to save scope refinement notes'))
+      toast.error(
+        getErrorMessage(
+          err,
+          t('scoping.cycleTabs.notesSaveFailed', 'Failed to save scope refinement notes')
+        )
+      )
     } finally {
       setSaving(false)
     }
@@ -370,17 +486,20 @@ export function CycleOutcomeTab({ cycle, onSaved }: { cycle: CtemCycle; onSaved:
 
   return (
     <DetailSections>
-      <DetailSection title="Success criteria outcome">
+      <DetailSection title={t('scoping.cycleTabs.outcomeTitle', 'Success criteria outcome')}>
         {cycle.charter_evaluation ? (
           <CharterOutcome evaluation={cycle.charter_evaluation} />
         ) : (
           <p className="text-sm text-muted-foreground">
-            Evaluated when the cycle closes, against the charter&apos;s success criteria.
+            {t(
+              'scoping.cycleTabs.outcomePending',
+              'Evaluated when the cycle closes, against the success criteria of the charter.'
+            )}
           </p>
         )}
       </DetailSection>
       <DetailSection
-        title="Scope refinement"
+        title={t('scoping.cycleTabs.refinement', 'Scope refinement')}
         actions={
           canNote ? (
             <Can permission={Permission.CTEMCyclesWrite}>
@@ -393,7 +512,9 @@ export function CycleOutcomeTab({ cycle, onSaved }: { cycle: CtemCycle; onSaved:
                 }}
               >
                 <NotebookPen className="me-2 h-4 w-4" />
-                {saved ? 'Edit notes' : 'Add notes'}
+                {saved
+                  ? t('scoping.cycleTabs.editNotes', 'Edit notes')
+                  : t('scoping.cycleTabs.addNotes', 'Add notes')}
               </Button>
             </Can>
           ) : undefined
@@ -404,8 +525,14 @@ export function CycleOutcomeTab({ cycle, onSaved }: { cycle: CtemCycle; onSaved:
         ) : (
           <p className="text-sm text-muted-foreground">
             {canNote
-              ? 'What this cycle taught about scope: gaps to add, items to exclude, lessons for the next charter.'
-              : 'Recorded at review and close; the next cycle is created with them in view.'}
+              ? t(
+                  'scoping.cycleTabs.notesPrompt',
+                  'What this cycle taught about scope: gaps to add, items to exclude, lessons for the next charter.'
+                )
+              : t(
+                  'scoping.cycleTabs.notesLater',
+                  'Recorded at review and close. The next cycle is created with them in view.'
+                )}
           </p>
         )}
       </DetailSection>
@@ -413,30 +540,41 @@ export function CycleOutcomeTab({ cycle, onSaved }: { cycle: CtemCycle; onSaved:
       <Dialog open={editing} onOpenChange={(o) => !saving && setEditing(o)}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Scope refinement and lessons</DialogTitle>
+            <DialogTitle>
+              {t('scoping.cycleTabs.notesDialogTitle', 'Scope refinement and lessons')}
+            </DialogTitle>
             <DialogDescription>
-              What {cycle.name} taught about scope. Shown when the next cycle is created.
+              {t(
+                'scoping.cycleTabs.notesDialogHint',
+                'What {name} taught about scope. Shown when the next cycle is created.',
+                { name: cycle.name }
+              )}
             </DialogDescription>
           </DialogHeader>
           <DialogBody>
             <div className="space-y-2">
-              <Label htmlFor="scope-notes">Notes</Label>
+              <Label htmlFor="scope-notes">{t('scoping.cycleTabs.notes', 'Notes')}</Label>
               <Textarea
                 id="scope-notes"
                 rows={6}
                 value={notes}
                 onChange={(e) => setNotes(e.target.value)}
-                placeholder="e.g. Add exposed RDP to scope next cycle; the legacy VPN exclusion held up."
+                placeholder={t(
+                  'scoping.cycleTabs.notesPlaceholder',
+                  'e.g. Add exposed RDP to scope next cycle. The legacy VPN exclusion held up.'
+                )}
                 disabled={saving}
               />
             </div>
           </DialogBody>
           <DialogFooter>
             <Button variant="ghost" onClick={() => setEditing(false)} disabled={saving}>
-              Cancel
+              {t('common.cancel', 'Cancel')}
             </Button>
             <Button onClick={save} disabled={saving}>
-              {saving ? 'Saving…' : 'Save notes'}
+              {saving
+                ? t('scoping.cycleTabs.saving', 'Saving…')
+                : t('scoping.cycleTabs.saveNotes', 'Save notes')}
             </Button>
           </DialogFooter>
         </DialogContent>

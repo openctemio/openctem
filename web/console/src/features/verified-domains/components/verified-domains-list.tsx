@@ -56,7 +56,7 @@ function DomainActions({
         toast.info(
           t(
             'admin.verifiedDomainsList.stillPendingTheTxtRecord',
-            'Still pending — the TXT record for {domain} was not found yet.',
+            'Still pending. The TXT record for {domain} was not found yet.',
             { domain: domain.domain }
           )
         )
@@ -278,7 +278,7 @@ export function VerifiedDomainsList({
       columns={columns}
       data={domains}
       getRowId={(d) => d.id}
-      searchPlaceholder="Search domains..."
+      searchPlaceholder={t('admin.verifiedDomainsList.search', 'Search domains…')}
       showSelectionCount={false}
     />
   )

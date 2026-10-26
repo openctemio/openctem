@@ -123,6 +123,9 @@ type EASMSettingsResponse struct {
 	DigestWeekday int `json:"digest_weekday"`
 	// DigestHourUTC is the hour (UTC) the digest goes out.
 	DigestHourUTC int `json:"digest_hour_utc"`
+	// ReappearAfterDays is the effective number of days an exposure must go
+	// unseen before it is announced again as reappeared.
+	ReappearAfterDays int `json:"reappear_after_days"`
 	// LastDigestAt is when the latest digest was recorded.
 	LastDigestAt *time.Time `json:"last_digest_at,omitempty"`
 }
@@ -146,6 +149,8 @@ type EASMSettingsUpdateRequest struct {
 	WeeklyDigestEnabled *bool `json:"weekly_digest_enabled,omitempty"`
 	// DigestWeekday omitted keeps it; 1..7 = Monday..Sunday.
 	DigestWeekday *int `json:"digest_weekday,omitempty"`
+	// ReappearAfterDays omitted keeps it; 0 = default (30), otherwise 7..365.
+	ReappearAfterDays *int `json:"reappear_after_days,omitempty"`
 }
 
 func (h *EASMSettingsHandler) tenant(w http.ResponseWriter, r *http.Request) (shared.ID, bool) {
@@ -185,6 +190,7 @@ func (h *EASMSettingsHandler) respond(ctx context.Context, tenantID shared.ID, e
 		WeeklyDigestEnabled:   !es.WeeklyDigestDisabled,
 		DigestWeekday:         isoWeekday(easmchange.Weekday(es.DigestWeekday)),
 		DigestHourUTC:         easmchange.DigestHourUTC,
+		ReappearAfterDays:     int(es.ReappearAfter() / (24 * time.Hour)),
 		NetworkLookupsEnabled: !es.NetworkLookupsDisabled,
 		WebScreenshotsEnabled: es.WebScreenshotsEnabled,
 	}
@@ -288,6 +294,9 @@ func (h *EASMSettingsHandler) Update(w http.ResponseWriter, r *http.Request) {
 		}
 		es.DigestWeekday = *req.DigestWeekday
 	}
+	if req.ReappearAfterDays != nil {
+		es.ReappearAfterDays = *req.ReappearAfterDays
+	}
 	if err := es.Validate(); err != nil {
 		apierror.BadRequest(easmValidationMessage(err)).WriteJSON(w)
 		return
@@ -343,7 +352,7 @@ func (h *EASMSettingsHandler) RunNow(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if h.audit != nil {
-		_ = h.audit.LogEvent(r.Context(), h.actx(r),
+		auditapp.RecordOrWarn(r.Context(), h.logger, h.audit, h.actx(r),
 			auditapp.NewSuccessEvent(auditdom.ActionEASMSweepRequested, auditdom.ResourceTypeTenant, tenantID.String()).
 				WithMessage("Attack-surface sweep requested").
 				WithMetadata("ct_included", ticket.CTIncluded).

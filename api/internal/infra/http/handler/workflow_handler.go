@@ -11,6 +11,7 @@ import (
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
 	"github.com/openctemio/openctem/api/pkg/apierror"
 	"github.com/openctemio/openctem/api/pkg/domain/automation"
+	"github.com/openctemio/openctem/api/pkg/domain/permission"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/logger"
 	"github.com/openctemio/openctem/api/pkg/validator"
@@ -41,6 +42,9 @@ type CreateWorkflowRequest struct {
 	Tags        []string            `json:"tags" validate:"max=10,dive,max=50"`
 	Nodes       []NodeRequest       `json:"nodes" validate:"min=1,max=50,dive"`
 	Edges       []CreateEdgeRequest `json:"edges" validate:"max=100,dive"`
+	// MaxChangesPerRun caps one live run's changes (0 or absent: 250; at
+	// most 1,000; above 250 the automation is high risk).
+	MaxChangesPerRun int `json:"max_changes_per_run" validate:"min=0,max=1000"`
 }
 
 // NodeRequest represents a node in the workflow request.
@@ -80,27 +84,44 @@ type CreateEdgeRequest struct {
 
 // WorkflowResponse represents the response for a workflow.
 type WorkflowResponse struct {
-	ID             string         `json:"id"`
-	TenantID       string         `json:"tenant_id"`
-	Name           string         `json:"name"`
-	Description    string         `json:"description,omitempty"`
-	IsActive       bool           `json:"is_active"`
-	Tags           []string       `json:"tags,omitempty"`
-	Nodes          []NodeResponse `json:"nodes,omitempty"`
-	Edges          []EdgeResponse `json:"edges,omitempty"`
-	TotalRuns      int            `json:"total_runs"`
-	SuccessfulRuns int            `json:"successful_runs"`
-	FailedRuns     int            `json:"failed_runs"`
-	LastRunID      *string        `json:"last_run_id,omitempty"`
-	LastRunAt      *string        `json:"last_run_at,omitempty"`
-	LastRunStatus  string         `json:"last_run_status,omitempty"`
-	CreatedBy      *string        `json:"created_by,omitempty"`
-	CreatedAt      string         `json:"created_at"`
-	UpdatedAt      string         `json:"updated_at"`
-	// UnsupportedFeatures lists the trigger and action types this workflow
-	// uses that the platform does not execute ("trigger:schedule",
-	// "action:assign_team", ...). Such a workflow stays readable but cannot
-	// be activated or saved until they are removed. Only set when the graph
+	ID          string `json:"id"`
+	TenantID    string `json:"tenant_id"`
+	Name        string `json:"name"`
+	Description string `json:"description,omitempty"`
+	IsActive    bool   `json:"is_active"`
+	// DisabledReason says why the platform switched the automation off
+	// ("uses_removed_type"); empty when it did not.
+	DisabledReason string `json:"disabled_reason,omitempty"`
+	// Mode: live runs execute the published version; simulate runs execute
+	// the draft and only record what they would do.
+	Mode string `json:"mode"`
+	// MaxChangesPerRun is the draft's change cap in force (250 by default).
+	MaxChangesPerRun int `json:"max_changes_per_run"`
+	// RiskClass is the class of the draft (low, elevated, high); set on the
+	// single-automation answers.
+	RiskClass string `json:"risk_class,omitempty"`
+	// DraftChanged: the draft differs from the published version.
+	DraftChanged bool `json:"draft_changed"`
+	// PublishedVersion is the version live runs execute; PendingVersion the
+	// newest one waiting for a second person.
+	PublishedVersion *WorkflowVersionResponse `json:"published_version,omitempty"`
+	PendingVersion   *WorkflowVersionResponse `json:"pending_version,omitempty"`
+	Tags             []string                 `json:"tags,omitempty"`
+	Nodes            []NodeResponse           `json:"nodes,omitempty"`
+	Edges            []EdgeResponse           `json:"edges,omitempty"`
+	TotalRuns        int                      `json:"total_runs"`
+	SuccessfulRuns   int                      `json:"successful_runs"`
+	FailedRuns       int                      `json:"failed_runs"`
+	LastRunID        *string                  `json:"last_run_id,omitempty"`
+	LastRunAt        *string                  `json:"last_run_at,omitempty"`
+	LastRunStatus    string                   `json:"last_run_status,omitempty"`
+	CreatedBy        *string                  `json:"created_by,omitempty"`
+	CreatedAt        string                   `json:"created_at"`
+	UpdatedAt        string                   `json:"updated_at"`
+	// UnsupportedFeatures lists the removed trigger, action and notification
+	// types this workflow still holds ("trigger:schedule",
+	// "action:http_request", ...). Such a workflow stays readable but cannot
+	// be activated or saved until they are replaced. Only set when the graph
 	// is loaded.
 	UnsupportedFeatures []string `json:"unsupported_features,omitempty"`
 }
@@ -169,6 +190,9 @@ type WorkflowRunResponse struct {
 	TriggerType    string            `json:"trigger_type"`
 	TriggerData    map[string]any    `json:"trigger_data,omitempty"`
 	Status         string            `json:"status"`
+	Mode           string            `json:"mode"`
+	VersionID      *string           `json:"version_id,omitempty"`
+	PauseReason    string            `json:"pause_reason,omitempty"`
 	StartedAt      *string           `json:"started_at,omitempty"`
 	CompletedAt    *string           `json:"completed_at,omitempty"`
 	TotalNodes     int               `json:"total_nodes"`
@@ -178,6 +202,25 @@ type WorkflowRunResponse struct {
 	ErrorMessage   string            `json:"error_message,omitempty"`
 	NodeRuns       []NodeRunResponse `json:"node_runs,omitempty"`
 	CreatedAt      string            `json:"created_at"`
+	// Deliveries and RetainedUntil are set on GET /workflow-runs/{id}.
+	Deliveries    []WorkflowDeliveryResponse `json:"deliveries,omitempty"`
+	RetainedUntil *string                    `json:"retained_until,omitempty"`
+}
+
+// WorkflowDeliveryResponse is one message or ticket a step sent (live) or
+// would have sent (simulate: never sent).
+type WorkflowDeliveryResponse struct {
+	ID          string         `json:"id"`
+	NodeKey     string         `json:"node_key"`
+	Channel     string         `json:"channel"`
+	Target      string         `json:"target,omitempty"`
+	Mode        string         `json:"mode"`
+	Status      string         `json:"status"`
+	Attempts    int            `json:"attempts"`
+	Payload     map[string]any `json:"payload,omitempty"`
+	ExternalRef string         `json:"external_ref,omitempty"`
+	Error       string         `json:"error,omitempty"`
+	CreatedAt   string         `json:"created_at"`
 }
 
 // NodeRunResponse represents a node run in the response.
@@ -194,6 +237,11 @@ type NodeRunResponse struct {
 	CompletedAt   *string        `json:"completed_at,omitempty"`
 	ErrorMessage  string         `json:"error_message,omitempty"`
 	ErrorCode     string         `json:"error_code,omitempty"`
+	// Trace: subjects that reached the step, that it acted on (or would
+	// act on), and per reason those it left alone.
+	InCount  int            `json:"in_count"`
+	OutCount int            `json:"out_count"`
+	Skipped  map[string]int `json:"skipped,omitempty"`
 }
 
 // --- Workflow Handlers ---
@@ -223,7 +271,7 @@ func (h *WorkflowHandler) CreateWorkflow(w http.ResponseWriter, r *http.Request)
 	userUUID, _ := shared.IDFromString(userID) // May be empty for service accounts
 
 	// AuthZ: a user may only build action nodes whose underlying mutation they
-	// are permitted to perform directly (WorkflowsWrite alone is not enough).
+	// are permitted to perform directly (AutomationsWrite alone is not enough).
 	actionCfgs := make([]*NodeConfigRequest, len(req.Nodes))
 	for i := range req.Nodes {
 		actionCfgs[i] = req.Nodes[i].Config
@@ -269,6 +317,8 @@ func (h *WorkflowHandler) CreateWorkflow(w http.ResponseWriter, r *http.Request)
 		Tags:        req.Tags,
 		Nodes:       nodes,
 		Edges:       edges,
+
+		MaxChangesPerRun: req.MaxChangesPerRun,
 	}
 
 	wf, err := h.service.CreateWorkflow(r.Context(), input)
@@ -299,14 +349,7 @@ func (h *WorkflowHandler) GetWorkflow(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	wf, err := h.service.GetWorkflow(r.Context(), tenantUUID, workflowUUID)
-	if err != nil {
-		h.handleServiceError(w, err)
-		return
-	}
-
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(toWorkflowResponse(wf))
+	h.writeWorkflowDetail(w, r, tenantUUID, workflowUUID, http.StatusOK)
 }
 
 // ListWorkflows handles GET /api/v1/workflows
@@ -367,6 +410,8 @@ type UpdateWorkflowRequest struct {
 	Description *string  `json:"description" validate:"omitempty,max=1000"`
 	Tags        []string `json:"tags" validate:"max=10,dive,max=50"`
 	IsActive    *bool    `json:"is_active"`
+	// MaxChangesPerRun sets the draft's change cap (0: 250; at most 1,000).
+	MaxChangesPerRun *int `json:"max_changes_per_run" validate:"omitempty,min=0,max=1000"`
 }
 
 // UpdateWorkflow handles PUT /api/v1/workflows/{id}
@@ -400,8 +445,13 @@ func (h *WorkflowHandler) UpdateWorkflow(w http.ResponseWriter, r *http.Request)
 
 	userUUID, _ := shared.IDFromString(userID)
 
-	// Switching a workflow on makes its steps run (as the caller, who
-	// becomes its owner): it needs the permission of every step.
+	// Switching an automation on or off is a publisher's decision
+	// (automations:publish); switching it on makes its steps run as the
+	// caller, who becomes its owner, so it needs every step's permission too.
+	if req.IsActive != nil && !middleware.HasPermission(r.Context(), string(permission.AutomationsPublish)) {
+		apierror.Forbidden("switching an automation on or off needs '" + string(permission.AutomationsPublish) + "'").WriteJSON(w)
+		return
+	}
 	if req.IsActive != nil && *req.IsActive && !h.requireWorkflowPermissions(w, r, tenantUUID, workflowUUID) {
 		return
 	}
@@ -414,6 +464,8 @@ func (h *WorkflowHandler) UpdateWorkflow(w http.ResponseWriter, r *http.Request)
 		Description: req.Description,
 		Tags:        req.Tags,
 		IsActive:    req.IsActive,
+
+		MaxChangesPerRun: req.MaxChangesPerRun,
 	}
 
 	wf, err := h.service.UpdateWorkflow(r.Context(), input)
@@ -932,14 +984,31 @@ func (h *WorkflowHandler) GetRun(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	run, err := h.service.GetRun(r.Context(), tenantUUID, runUUID)
+	userUUID, _ := shared.IDFromString(middleware.GetUserID(r.Context()))
+	d, err := h.service.GetRunForCaller(r.Context(), tenantUUID, userUUID, runUUID)
 	if err != nil {
 		h.handleServiceError(w, err)
 		return
 	}
 
+	writeRunDetail(w, d)
+}
+
+// writeRunDetail writes a run read through GetRunForCaller (already redacted
+// for the caller's scope).
+func writeRunDetail(w http.ResponseWriter, d *automationsvc.RunDetail) {
+	resp := toWorkflowRunResponse(d.Run)
+	until := d.RetainedUntil.Format("2006-01-02T15:04:05Z07:00")
+	resp.RetainedUntil = &until
+	for _, dl := range d.Deliveries {
+		resp.Deliveries = append(resp.Deliveries, WorkflowDeliveryResponse{
+			ID: dl.ID.String(), NodeKey: dl.NodeKey, Channel: dl.Channel, Target: dl.Target, Mode: string(dl.Mode),
+			Status: string(dl.Status), Attempts: dl.Attempts, Payload: dl.Payload, ExternalRef: dl.ExternalRef,
+			Error: dl.Error, CreatedAt: dl.CreatedAt.Format("2006-01-02T15:04:05Z07:00"),
+		})
+	}
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(toWorkflowRunResponse(run))
+	json.NewEncoder(w).Encode(resp)
 }
 
 // ListRuns handles GET /api/v1/workflow-runs
@@ -973,8 +1042,12 @@ func (h *WorkflowHandler) ListRuns(w http.ResponseWriter, r *http.Request) {
 		s := automation.RunStatus(status)
 		input.Status = &s
 	}
+	if mode := automation.Mode(r.URL.Query().Get("mode")); mode.IsValid() {
+		input.Mode = &mode
+	}
 
-	result, err := h.service.ListRuns(r.Context(), input)
+	userUUID, _ := shared.IDFromString(middleware.GetUserID(r.Context()))
+	result, err := h.service.ListRunsForCaller(r.Context(), userUUID, input)
 	if err != nil {
 		h.handleServiceError(w, err)
 		return
@@ -1025,6 +1098,49 @@ func (h *WorkflowHandler) CancelRun(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
+// ResumeRun handles POST /api/v1/workflow-runs/{id}/approve.
+// @Summary      Let a paused automation run continue
+// @Description  A live run that reached its change cap (status paused, pause_reason blast_radius) continues past the cap; its finished steps are kept. Only a paused run resumes.
+// @Tags         Automations
+// @Produce      json
+// @Param        id   path  string  true  "Run ID"
+// @Success      200  {object}  WorkflowRunResponse
+// @Failure      400  {object}  apierror.Error
+// @Failure      404  {object}  apierror.Error
+// @Security     BearerAuth
+// @Router       /workflow-runs/{id}/approve [post]
+func (h *WorkflowHandler) ResumeRun(w http.ResponseWriter, r *http.Request) {
+	tenantUUID, err := shared.IDFromString(middleware.GetTenantID(r.Context()))
+	if err != nil {
+		apierror.BadRequest("Invalid tenant ID").WriteJSON(w)
+		return
+	}
+	runUUID, err := shared.IDFromString(chi.URLParam(r, "id"))
+	if err != nil {
+		apierror.BadRequest("Invalid run ID").WriteJSON(w)
+		return
+	}
+	userUUID, _ := shared.IDFromString(middleware.GetUserID(r.Context()))
+	// A run about a subject outside the caller's scope is not theirs to
+	// continue (404, like one that does not exist).
+	if _, err := h.service.GetRunForCaller(r.Context(), tenantUUID, userUUID, runUUID); err != nil {
+		h.handleServiceError(w, err)
+		return
+	}
+	if err := h.service.ResumeRun(r.Context(), tenantUUID, userUUID, runUUID); err != nil {
+		h.handleServiceError(w, err)
+		return
+	}
+	// The run comes back through the same scope-redacted read as GET, never
+	// the raw row.
+	d, err := h.service.GetRunForCaller(r.Context(), tenantUUID, userUUID, runUUID)
+	if err != nil {
+		h.handleServiceError(w, err)
+		return
+	}
+	writeRunDetail(w, d)
+}
+
 // --- Conversion Helpers ---
 
 func toNodeConfig(req *NodeConfigRequest) automation.NodeConfig {
@@ -1049,13 +1165,17 @@ func toWorkflowResponse(wf *automation.Workflow) *WorkflowResponse {
 		Name:           wf.Name,
 		Description:    wf.Description,
 		IsActive:       wf.IsActive,
-		Tags:           wf.Tags,
-		TotalRuns:      wf.TotalRuns,
-		SuccessfulRuns: wf.SuccessfulRuns,
-		FailedRuns:     wf.FailedRuns,
-		LastRunStatus:  wf.LastRunStatus,
-		CreatedAt:      wf.CreatedAt.Format("2006-01-02T15:04:05Z07:00"),
-		UpdatedAt:      wf.UpdatedAt.Format("2006-01-02T15:04:05Z07:00"),
+		DisabledReason: wf.DisabledReason,
+		Mode:           string(wf.Mode),
+
+		MaxChangesPerRun: automation.EffectiveMaxChanges(wf.MaxChangesPerRun),
+		Tags:             wf.Tags,
+		TotalRuns:        wf.TotalRuns,
+		SuccessfulRuns:   wf.SuccessfulRuns,
+		FailedRuns:       wf.FailedRuns,
+		LastRunStatus:    wf.LastRunStatus,
+		CreatedAt:        wf.CreatedAt.Format("2006-01-02T15:04:05Z07:00"),
+		UpdatedAt:        wf.UpdatedAt.Format("2006-01-02T15:04:05Z07:00"),
 	}
 
 	if wf.LastRunID != nil {
@@ -1109,39 +1229,12 @@ func toNodeResponse(n *automation.Node) *NodeResponse {
 			TriggerConfig:      n.Config.TriggerConfig,
 			ConditionExpr:      n.Config.ConditionExpr,
 			ActionType:         string(n.Config.ActionType),
-			ActionConfig:       redactActionConfig(n.Config.ActionType, n.Config.ActionConfig),
+			ActionConfig:       n.Config.ActionConfig,
 			NotificationType:   string(n.Config.NotificationType),
 			NotificationConfig: n.Config.NotificationConfig,
 		},
 		CreatedAt: n.CreatedAt.Format("2006-01-02T15:04:05Z07:00"),
 	}
-}
-
-// redactedValue replaces a secret in a response.
-const redactedValue = "[redacted]"
-
-// redactActionConfig hides the header values of a stored http_request node
-// (they are often credentials). The action is refused for new nodes; a
-// stored one keeps its headers only to keep running, and no reader of the
-// workflow sees them.
-func redactActionConfig(t automation.ActionType, cfg map[string]any) map[string]any {
-	if t != automation.ActionTypeHTTPRequest || cfg == nil {
-		return cfg
-	}
-	hdrs, ok := cfg["headers"].(map[string]any)
-	if !ok || len(hdrs) == 0 {
-		return cfg
-	}
-	out := make(map[string]any, len(cfg))
-	for k, v := range cfg {
-		out[k] = v
-	}
-	masked := make(map[string]any, len(hdrs))
-	for k := range hdrs {
-		masked[k] = redactedValue
-	}
-	out["headers"] = masked
-	return out
 }
 
 func toEdgeResponse(e *automation.Edge) *EdgeResponse {
@@ -1164,6 +1257,9 @@ func toWorkflowRunResponse(run *automation.Run) *WorkflowRunResponse {
 		TriggerType:    string(run.TriggerType),
 		TriggerData:    run.TriggerData,
 		Status:         string(run.Status),
+		Mode:           string(run.Mode),
+		VersionID:      idPtrString(run.VersionID),
+		PauseReason:    run.PauseReason,
 		TotalNodes:     run.TotalNodes,
 		CompletedNodes: run.CompletedNodes,
 		FailedNodes:    run.FailedNodes,
@@ -1208,6 +1304,9 @@ func toNodeRunResponse(nr *automation.NodeRun) NodeRunResponse {
 		Output:        nr.Output,
 		ErrorMessage:  nr.ErrorMessage,
 		ErrorCode:     nr.ErrorCode,
+		InCount:       nr.InCount,
+		OutCount:      nr.OutCount,
+		Skipped:       nr.Skipped,
 	}
 
 	if nr.StartedAt != nil {
@@ -1254,6 +1353,13 @@ func (h *WorkflowHandler) handleServiceError(w http.ResponseWriter, err error) {
 		apierror.NotFound("Workflow").WriteJSON(w)
 	case errors.Is(err, shared.ErrAlreadyExists):
 		apierror.Conflict("Workflow already exists").WriteJSON(w)
+	case errors.Is(err, shared.ErrConflict):
+		var de *shared.DomainError
+		if errors.As(err, &de) && de.Code != "" {
+			apierror.New(http.StatusConflict, apierror.Code(de.Code), de.Message).WriteJSON(w)
+			return
+		}
+		apierror.Conflict(err.Error()).WriteJSON(w)
 	case errors.Is(err, shared.ErrValidation):
 		// A domain error carries a stable code (WORKFLOW_GRAPH_CYCLE,
 		// UNSUPPORTED_WORKFLOW_FEATURE, ...) the client can act on.
@@ -1269,6 +1375,10 @@ func (h *WorkflowHandler) handleServiceError(w http.ResponseWriter, err error) {
 		var de *shared.DomainError
 		if errors.As(err, &de) && de.Code == automationsvc.ErrCodeRunNotAuthorized {
 			apierror.Forbidden(de.Message).WriteJSON(w)
+			return
+		}
+		if errors.As(err, &de) && de.Code != "" {
+			apierror.New(http.StatusForbidden, apierror.Code(de.Code), de.Message).WriteJSON(w)
 			return
 		}
 		apierror.Forbidden("").WriteJSON(w)

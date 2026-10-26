@@ -41,7 +41,9 @@ func (s *TenantService) SharedSensorsOptedOut(ctx context.Context, tenantID shar
 }
 
 // UpdateSharedSensorsSettings replaces the organization's shared sensor
-// choice (one compare-and-swap section write) and audits it.
+// choice (one compare-and-swap section write) and audits it. Opting back in
+// lets the organization's scan jobs run on platform-operated sensors, so it
+// needs step-up re-authentication; opting out does not.
 func (s *TenantService) UpdateSharedSensorsSettings(
 	ctx context.Context,
 	tenantID string,
@@ -51,6 +53,11 @@ func (s *TenantService) UpdateSharedSensorsSettings(
 	var before tenantdom.SharedSensorsSettings
 	t, err := s.writeSettingsSection(ctx, tenantID, tenantdom.SectionSharedSensors, func(t *tenantdom.Tenant) error {
 		before = t.TypedSettings().SharedSensors
+		if before.OptOut && !ss.OptOut {
+			if err := s.requireStepUp(ctx, actx.ActorID); err != nil {
+				return err
+			}
+		}
 		return t.UpdateSharedSensorsSettings(ss)
 	})
 	if err != nil {

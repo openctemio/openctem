@@ -20,7 +20,7 @@ import {
   type LucideIcon,
 } from 'lucide-react'
 import { formatRelative, formatDateSafe } from '@/lib/format-date'
-import { EmptyState } from '@/features/shared'
+import { EmptyState, PageStack } from '@/features/shared'
 import { useAccountActivity } from '@/features/account'
 import {
   getActionCategory,
@@ -65,7 +65,7 @@ export default function ActivityPage() {
   const { activities, total, totalPages, isLoading } = useAccountActivity(user?.id, page, PER_PAGE)
 
   return (
-    <div className="grid gap-6">
+    <PageStack>
       {/* Header with Filter */}
       <Card>
         <CardHeader>
@@ -73,10 +73,13 @@ export default function ActivityPage() {
             <div>
               <CardTitle className="flex items-center gap-2">
                 <History className="h-5 w-5" />
-                Activity Log
+                {t('account.activity.title', 'Activity log')}
               </CardTitle>
               <CardDescription>
-                View your recent account activity and security events
+                {t(
+                  'account.activity.description',
+                  'View your recent account activity and security events'
+                )}
               </CardDescription>
             </div>
           </div>
@@ -89,7 +92,11 @@ export default function ActivityPage() {
               ))}
             </div>
           ) : activities.length === 0 ? (
-            <EmptyState icon={History} title="No activity found" card={false} />
+            <EmptyState
+              icon={History}
+              title={t('account.activity.empty', 'No activity found')}
+              card={false}
+            />
           ) : (
             <div className="space-y-4">
               {activities.map((activity) => {
@@ -113,7 +120,7 @@ export default function ActivityPage() {
                         <p className="font-medium">{formatAction(activity.action)}</p>
                         {result && (
                           <Badge className={`${result.bgColor} ${result.color} border-0 text-xs`}>
-                            {result.label}
+                            {t(`auditLog.result.${activity.result}`, result.label)}
                           </Badge>
                         )}
                       </div>
@@ -138,8 +145,11 @@ export default function ActivityPage() {
           {totalPages > 1 && (
             <div className="flex items-center justify-between mt-6">
               <p className="text-sm text-muted-foreground">
-                Showing {(page - 1) * PER_PAGE + 1} to {Math.min(page * PER_PAGE, total)} of {total}{' '}
-                activities
+                {t('account.activity.showing', 'Showing {from} to {to} of {total} activities', {
+                  from: (page - 1) * PER_PAGE + 1,
+                  to: Math.min(page * PER_PAGE, total),
+                  total,
+                })}
               </p>
               <div className="flex items-center gap-2">
                 <Button
@@ -147,17 +157,22 @@ export default function ActivityPage() {
                   size="sm"
                   onClick={() => setPage(page - 1)}
                   disabled={page === 1}
+                  aria-label={t('account.activity.prev', 'Previous page')}
                 >
                   <ChevronLeft className="h-4 w-4" />
                 </Button>
                 <span className="text-sm">
-                  Page {page} of {totalPages}
+                  {t('account.activity.pageOf', 'Page {page} of {total}', {
+                    page,
+                    total: totalPages,
+                  })}
                 </span>
                 <Button
                   variant="outline"
                   size="sm"
                   onClick={() => setPage(page + 1)}
                   disabled={page === totalPages}
+                  aria-label={t('account.activity.next', 'Next page')}
                 >
                   <ChevronRight className="h-4 w-4" />
                 </Button>
@@ -186,6 +201,6 @@ export default function ActivityPage() {
           </div>
         </CardContent>
       </Card>
-    </div>
+    </PageStack>
   )
 }

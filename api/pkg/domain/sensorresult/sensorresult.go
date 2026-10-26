@@ -168,6 +168,8 @@ var (
 	ErrNotFound = shared.NewDomainError("NOT_FOUND", "quarantined result not found", shared.ErrNotFound)
 	// ErrAlreadyReviewed: the item was accepted or discarded already.
 	ErrAlreadyReviewed = shared.NewDomainError("CONFLICT", "quarantined result was already reviewed", shared.ErrConflict)
+	// ErrBeingApplied: another accept of the item is applying it now.
+	ErrBeingApplied = shared.NewDomainError("CONFLICT", "quarantined result is being applied", shared.ErrConflict)
 	// ErrFull: the tenant's or the sensor's quarantine is at its limit, or
 	// the report is larger than the quarantine keeps.
 	ErrFull = shared.NewDomainError("RESULTS_QUARANTINE_FULL", "the results quarantine is full; the report was refused", shared.ErrValidation)
@@ -187,9 +189,17 @@ type Repository interface {
 	List(ctx context.Context, tenantID shared.ID, f ListFilter) ([]Item, int, error)
 	// Get returns one item with its payload.
 	Get(ctx context.Context, tenantID, id shared.ID) (*Item, error)
-	// Review moves a pending item to accepted or discarded. ErrAlreadyReviewed
+	// Review moves a pending item to accepted or discarded (and clears an
+	// apply claim). ErrAlreadyReviewed
 	// when it is not pending any more. Discarding drops the payload.
 	Review(ctx context.Context, tenantID, id shared.ID, to Status, by shared.ID) error
+	// ClaimForApply marks a pending item as being applied (it stays
+	// pending until the apply succeeds). ErrAlreadyReviewed when it is not
+	// pending, ErrBeingApplied when another accept holds a fresh claim.
+	ClaimForApply(ctx context.Context, tenantID, id shared.ID) error
+	// ReleaseApply drops the claim of a failed apply: the item can be
+	// accepted again.
+	ReleaseApply(ctx context.Context, tenantID, id shared.ID) error
 	// SetResult stores what applying an accepted item did.
 	SetResult(ctx context.Context, tenantID, id shared.ID, result []byte) error
 	// PurgeReviewed deletes reviewed items older than the cutoff.

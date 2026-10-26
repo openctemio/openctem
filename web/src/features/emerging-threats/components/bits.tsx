@@ -2,13 +2,25 @@
 
 /** Small pieces shared by the emerging-threat list and detail. */
 
+import { KevBadge } from '@/components/ui/kev-badge'
 import type { Locale } from 'date-fns'
 import { Badge } from '@/components/ui/badge'
 import { useTranslation } from '@/context/i18n-provider'
 import { formatEpssScore } from '@/lib/epss'
 import { dateFnsLocaleFor } from '@/features/shared/components/activity-timeline'
 import { Meter, type MeterTone } from '@/features/shared/components/meter'
-import { TonePill, type PillTone } from '@/features/shared/components/tone-pill'
+import { Clock, List, Zap, type LucideIcon } from 'lucide-react'
+import { SignalChip } from '@/components/ui/signal-chip'
+import { StatusLozenge } from '@/components/ui/status-lozenge'
+import {
+  CheckCircleGlyph,
+  DashedCircleGlyph,
+  HalfCircleGlyph,
+  RingDotGlyph,
+  SlashedCircleGlyph,
+  type StatusGlyph,
+} from '@/components/ui/status-glyphs'
+import type { StatusTone } from '@/lib/status-colors'
 import type { AlertLevel, AlertState, TimelineEvent } from '../types'
 
 /** date-fns locale of the active language, for relative times. */
@@ -17,38 +29,48 @@ export function useDateLocale(): Locale | undefined {
   return dateFnsLocaleFor(locale)
 }
 
-const LEVEL_TONE: Record<AlertLevel, PillTone> = {
-  immediate: 'destructive',
-  digest: 'warning',
-  listed: 'muted',
+/**
+ * Alert level as a chip (research/247 section 4): immediate is the alert
+ * (bolt icon in red), digest is neutral (clock), listed carries no urgency.
+ */
+const LEVEL_ICON: Record<AlertLevel, LucideIcon> = {
+  immediate: Zap,
+  digest: Clock,
+  listed: List,
 }
 
 export function LevelBadge({ level }: { level: AlertLevel }) {
   const { t } = useTranslation()
   return (
-    <TonePill
-      tone={LEVEL_TONE[level] ?? 'muted'}
-      state={level}
-      label={t(`emergingThreats.level.${level}`, level)}
+    <SignalChip
+      slot="alert-level"
+      icon={LEVEL_ICON[level] ?? List}
+      tone={level === 'immediate' ? 'alert' : 'neutral'}
+      data-level={level}
       title={t(`emergingThreats.levelHint.${level}`, '')}
-    />
+    >
+      {t(`emergingThreats.level.${level}`, level)}
+    </SignalChip>
   )
 }
 
-const STATE_TONE: Record<AlertState, PillTone> = {
-  new: 'info',
-  acknowledged: 'info',
-  remediating: 'warning',
-  not_affected: 'muted',
-  resolved: 'success',
+/** Alert state on the shared workflow tones (research/247 section 4). */
+export const ALERT_STATE_TONE: Record<AlertState, { tone: StatusTone; icon: StatusGlyph }> = {
+  new: { tone: 'triage', icon: DashedCircleGlyph },
+  acknowledged: { tone: 'open', icon: RingDotGlyph },
+  remediating: { tone: 'progress', icon: HalfCircleGlyph },
+  resolved: { tone: 'resolved', icon: CheckCircleGlyph },
+  not_affected: { tone: 'closed', icon: SlashedCircleGlyph },
 }
 
 export function StateBadge({ state }: { state: AlertState }) {
   const { t } = useTranslation()
+  const cfg = ALERT_STATE_TONE[state] ?? { tone: 'closed' as const, icon: SlashedCircleGlyph }
   return (
-    <TonePill
-      tone={STATE_TONE[state] ?? 'muted'}
-      state={state}
+    <StatusLozenge
+      tone={cfg.tone}
+      icon={cfg.icon}
+      value={state}
       label={t(`emergingThreats.state.${state}`, state)}
     />
   )
@@ -90,7 +112,7 @@ export function ExploitBadges({
   const { t } = useTranslation()
   return (
     <div className="flex flex-wrap items-center gap-1">
-      {inKev && <Badge variant="destructive">{t('emergingThreats.exploit.kev')}</Badge>}
+      {inKev && <KevBadge label={t('emergingThreats.exploit.kev')} />}
       {ransomware && <Badge variant="destructive">{t('emergingThreats.exploit.ransomware')}</Badge>}
       {epss != null && (
         <Badge variant="outline" className="tabular-nums">

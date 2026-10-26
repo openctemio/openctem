@@ -48,7 +48,7 @@ const RAW_FETCH_EXEMPT_DIRS = ['lib/api/', 'app/api/', 'lib/admin-api/', 'consol
 /** Reviewed raw `fetch('/api/v1/…')` call sites, file → count. */
 const RAW_FETCH_BASELINE: Record<string, number> = {
   'context/tenant-provider.tsx': 1,
-  'features/pentest/components/attachment-upload.tsx': 2,
+  'features/pentest/components/attachment-upload.tsx': 1,
   'features/pentest/components/report-builder.tsx': 1,
   'features/scanner-templates/components/scanner-templates-section.tsx': 1,
   'features/tenant/components/create-team-form.tsx': 1,
@@ -82,6 +82,10 @@ const POLLING_BASELINE: Record<string, number> = {
   // pushes; the page is for an operator watching the fleet (30 s).
   'console/features/admin-console/api/use-shared-fleet.ts': 2,
   'features/ai-triage/hooks/use-ai-triage.ts': 1,
+  // Dashboard figures are precomputed snapshots on a refresh schedule no event
+  // announces: one read when the next snapshot is due (at least 30 s apart),
+  // every 15 s only while the first build runs.
+  'features/dashboards/api/widget-data.ts': 1,
   'features/ci-runners/api/use-ci.ts': 1,
   // Runs and refused exchanges are polled only while the CI setup dialog
   // waits for a first run (10 s, the dialog open): neither is pushed as an
@@ -102,6 +106,8 @@ const POLLING_BASELINE: Record<string, number> = {
   'features/scans/components/scan-runs-tab.tsx': 2,
   'features/sensors/components/sensor-detail-sheet.tsx': 1,
   'features/sensors/components/sensor-install-flow.tsx': 1,
+  // Add sensor: the approved sensor's first heartbeat, stops once it is seen.
+  'features/sensors/components/sensor-onboarding-panel.tsx': 1,
   'lib/api/hooks.ts': 1,
   'lib/api/scan-workflow-hooks.ts': 1,
   'lib/api/security-hooks.ts': 1,

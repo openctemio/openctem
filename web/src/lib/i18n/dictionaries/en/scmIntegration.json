@@ -10,9 +10,7 @@
   "scmIntegration.col.repositories": "Repositories",
   "scmIntegration.col.status": "Status",
   "scmIntegration.metrics.connected": "Connected",
-  "scmIntegration.metrics.connections": "Connections",
   "scmIntegration.metrics.errors": "Errors",
-  "scmIntegration.metrics.repositories": "Repositories",
   "scmIntegration.page.addConnection": "Add connection",
   "scmIntegration.page.description": "Connect GitHub, GitLab, Bitbucket or Azure DevOps, then import repositories for scanning.",
   "scmIntegration.page.emptyDescription": "Connect your GitHub, GitLab, Bitbucket, or Azure DevOps account to import and scan repositories.",
@@ -21,7 +19,7 @@
   "scmIntegration.page.noMatch": "No connections match your search",
   "scmIntegration.page.refresh": "Refresh",
   "scmIntegration.page.repositories": "Repositories",
-  "scmIntegration.page.searchPlaceholder": "Search connections...",
+  "scmIntegration.page.searchPlaceholder": "Search connections…",
   "scmIntegration.page.title": "SCM connections",
   "scmIntegration.repoCount": "{count} repos",
   "scmIntegration.status.connected": "Connected",
@@ -34,5 +32,6 @@
   "scmIntegration.toast.refreshed": "Connections refreshed",
   "scmIntegration.toast.testError": "Failed to test connection",
   "scmIntegration.toast.testFailed": "Connection test failed",
+  "scmIntegration.toast.testFailedNamed": "Could not connect to {name}.",
   "scmIntegration.toast.testOk": "Connection \"{name}\" is working"
 }

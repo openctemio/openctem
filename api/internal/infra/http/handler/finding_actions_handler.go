@@ -100,6 +100,7 @@ func (h *FindingActionsHandler) findingGroupsRoute() filterquery.Route {
 // @Param  vulnerability_id_not  query  []string  false  "vulnerability id: none of (comma list)"  collectionFormat(csv)
 // @Param  severity  query  []string  false  "severity: any of (comma list)"  collectionFormat(csv)  Enums(critical, high, medium, low, info, none)
 // @Param  severity_not  query  []string  false  "severity: none of (comma list)"  collectionFormat(csv)  Enums(critical, high, medium, low, info, none)
+// @Param  informational  query  boolean  false  "informational equals"
 // @Param  status  query  []string  false  "status: any of (comma list)"  collectionFormat(csv)  Enums(new, confirmed, in_progress, fix_applied, resolved, false_positive, accepted, duplicate, draft, in_review)
 // @Param  status_not  query  []string  false  "status: none of (comma list)"  collectionFormat(csv)  Enums(new, confirmed, in_progress, fix_applied, resolved, false_positive, accepted, duplicate, draft, in_review)
 // @Param  observation  query  []string  false  "observation: any of (comma list)"  collectionFormat(csv)  Enums(present, stale)
@@ -114,12 +115,14 @@ func (h *FindingActionsHandler) findingGroupsRoute() filterquery.Route {
 // @Param  priority_class  query  []string  false  "priority class: any of (comma list)"  collectionFormat(csv)  Enums(P0, P1, P2, P3)
 // @Param  priority_class_not  query  []string  false  "priority class: none of (comma list)"  collectionFormat(csv)  Enums(P0, P1, P2, P3)
 // @Param  cve_id  query  []string  false  "cve id: any of (comma list)"  collectionFormat(csv)
+// @Param  cve_id_null  query  boolean  false  "cve id is unset (true) or set (false)"
 // @Param  cve_id_not  query  []string  false  "cve id: none of (comma list)"  collectionFormat(csv)
 // @Param  family  query  []string  false  "family: any of (comma list)"  collectionFormat(csv)
 // @Param  family_not  query  []string  false  "family: none of (comma list)"  collectionFormat(csv)
 // @Param  finding_type  query  []string  false  "finding type: any of (comma list)"  collectionFormat(csv)  Enums(vulnerability, secret, misconfiguration, compliance, web3, license)
 // @Param  finding_type_not  query  []string  false  "finding type: none of (comma list)"  collectionFormat(csv)  Enums(vulnerability, secret, misconfiguration, compliance, web3, license)
 // @Param  is_in_kev  query  boolean  false  "is in kev equals"
+// @Param  kev_ransomware  query  boolean  false  "kev ransomware equals"
 // @Param  is_reachable  query  boolean  false  "is reachable equals"
 // @Param  epss_score_gte  query  number  false  "epss score at least"
 // @Param  epss_score_lte  query  number  false  "epss score at most"
@@ -133,10 +136,12 @@ func (h *FindingActionsHandler) findingGroupsRoute() filterquery.Route {
 // @Param  scan_id_not  query  []string  false  "scan id: none of (comma list)"  collectionFormat(csv)
 // @Param  file_path  query  string  false  "file path contains"
 // @Param  file_path_contains  query  string  false  "file path contains"
+// @Param  description  query  string  false  "description contains"
+// @Param  description_contains  query  string  false  "description contains"
 // @Param  asset_tag  query  []string  false  "asset tag: any of (comma list)"  collectionFormat(csv)
 // @Param  asset_tag_not  query  []string  false  "asset tag: none of (comma list)"  collectionFormat(csv)
 // @Param  asset_group_id  query  []string  false  "asset group id: any of (comma list)"  collectionFormat(csv)
-// @Param  related_to  query  string  false  "related to equals"  Enums(me)
+// @Param  related_to  query  string  false  "related to equals"  Enums(me, my_team)
 // @Param  cvss_score_gte  query  number  false  "cvss score at least"
 // @Param  cvss_score_lte  query  number  false  "cvss score at most"
 // @Param  cvss_score_gt  query  number  false  "cvss score greater than"
@@ -189,7 +194,7 @@ func (h *FindingActionsHandler) findingGroupsRoute() filterquery.Route {
 // @Param  updated_at_lt  query  string  false  "updated at less than (RFC 3339, YYYY-MM-DD, -P30D ago or P30D ahead)"
 // end filterspec-params
 // @Param        view   query  string  false  "Saved view ID: its filter, with the other params overriding it field by field"
-// @Param        q         query  string  false  "Free text"
+// @Param        q         query  string  false  "Matches title, file path, rule id, CVE id (exact) and asset name"
 // @Param        sort      query  string  false  "Ignored by groups (accepted for URL parity with the list)"
 // @Param        page      query  int     false  "Page number"  default(1)
 // @Param        per_page  query  int     false  "Groups per page"  default(50)
@@ -266,6 +271,7 @@ func (h *FindingActionsHandler) ListFindingGroups(w http.ResponseWriter, r *http
 // @Param  vulnerability_id_not  query  []string  false  "vulnerability id: none of (comma list)"  collectionFormat(csv)
 // @Param  severity  query  []string  false  "severity: any of (comma list)"  collectionFormat(csv)  Enums(critical, high, medium, low, info, none)
 // @Param  severity_not  query  []string  false  "severity: none of (comma list)"  collectionFormat(csv)  Enums(critical, high, medium, low, info, none)
+// @Param  informational  query  boolean  false  "informational equals"
 // @Param  status  query  []string  false  "status: any of (comma list)"  collectionFormat(csv)  Enums(new, confirmed, in_progress, fix_applied, resolved, false_positive, accepted, duplicate, draft, in_review)
 // @Param  status_not  query  []string  false  "status: none of (comma list)"  collectionFormat(csv)  Enums(new, confirmed, in_progress, fix_applied, resolved, false_positive, accepted, duplicate, draft, in_review)
 // @Param  observation  query  []string  false  "observation: any of (comma list)"  collectionFormat(csv)  Enums(present, stale)
@@ -280,12 +286,14 @@ func (h *FindingActionsHandler) ListFindingGroups(w http.ResponseWriter, r *http
 // @Param  priority_class  query  []string  false  "priority class: any of (comma list)"  collectionFormat(csv)  Enums(P0, P1, P2, P3)
 // @Param  priority_class_not  query  []string  false  "priority class: none of (comma list)"  collectionFormat(csv)  Enums(P0, P1, P2, P3)
 // @Param  cve_id  query  []string  false  "cve id: any of (comma list)"  collectionFormat(csv)
+// @Param  cve_id_null  query  boolean  false  "cve id is unset (true) or set (false)"
 // @Param  cve_id_not  query  []string  false  "cve id: none of (comma list)"  collectionFormat(csv)
 // @Param  family  query  []string  false  "family: any of (comma list)"  collectionFormat(csv)
 // @Param  family_not  query  []string  false  "family: none of (comma list)"  collectionFormat(csv)
 // @Param  finding_type  query  []string  false  "finding type: any of (comma list)"  collectionFormat(csv)  Enums(vulnerability, secret, misconfiguration, compliance, web3, license)
 // @Param  finding_type_not  query  []string  false  "finding type: none of (comma list)"  collectionFormat(csv)  Enums(vulnerability, secret, misconfiguration, compliance, web3, license)
 // @Param  is_in_kev  query  boolean  false  "is in kev equals"
+// @Param  kev_ransomware  query  boolean  false  "kev ransomware equals"
 // @Param  is_reachable  query  boolean  false  "is reachable equals"
 // @Param  epss_score_gte  query  number  false  "epss score at least"
 // @Param  epss_score_lte  query  number  false  "epss score at most"
@@ -299,10 +307,12 @@ func (h *FindingActionsHandler) ListFindingGroups(w http.ResponseWriter, r *http
 // @Param  scan_id_not  query  []string  false  "scan id: none of (comma list)"  collectionFormat(csv)
 // @Param  file_path  query  string  false  "file path contains"
 // @Param  file_path_contains  query  string  false  "file path contains"
+// @Param  description  query  string  false  "description contains"
+// @Param  description_contains  query  string  false  "description contains"
 // @Param  asset_tag  query  []string  false  "asset tag: any of (comma list)"  collectionFormat(csv)
 // @Param  asset_tag_not  query  []string  false  "asset tag: none of (comma list)"  collectionFormat(csv)
 // @Param  asset_group_id  query  []string  false  "asset group id: any of (comma list)"  collectionFormat(csv)
-// @Param  related_to  query  string  false  "related to equals"  Enums(me)
+// @Param  related_to  query  string  false  "related to equals"  Enums(me, my_team)
 // @Param  cvss_score_gte  query  number  false  "cvss score at least"
 // @Param  cvss_score_lte  query  number  false  "cvss score at most"
 // @Param  cvss_score_gt  query  number  false  "cvss score greater than"
@@ -354,7 +364,7 @@ func (h *FindingActionsHandler) ListFindingGroups(w http.ResponseWriter, r *http
 // @Param  updated_at_gt  query  string  false  "updated at greater than (RFC 3339, YYYY-MM-DD, -P30D ago or P30D ahead)"
 // @Param  updated_at_lt  query  string  false  "updated at less than (RFC 3339, YYYY-MM-DD, -P30D ago or P30D ahead)"
 // end filterspec-params
-// @Param        q      query  string  false  "Free text"
+// @Param        q      query  string  false  "Matches title, file path, rule id, CVE id (exact) and asset name"
 // @Success      200  {object}  map[string]interface{}
 // @Failure      400  {object}  map[string]interface{}  "INVALID_FILTER"
 // @Router       /findings/related-cves/{cveId} [get]

@@ -33,6 +33,7 @@ import { PasswordInput } from '@/components/password-input'
 import { useTranslation } from '@/context/i18n-provider'
 
 import { resetPasswordSchema, type ResetPasswordInput } from '../schemas/auth.schema'
+import { translatingResolver } from '../lib/translating-resolver'
 import { resetPasswordAction } from '../actions/local-auth-actions'
 import { usePasswordPolicy } from '../api/use-auth-providers'
 import { passwordPolicyIssue } from '../lib/password-policy'
@@ -58,12 +59,12 @@ export const PASSWORD_TOKEN_COPY: Record<PasswordTokenMode, ModeCopy> = {
     title: 'Reset password',
     description: 'Enter your new password below.',
     submit: 'Reset password',
-    successTitle: 'Password reset successful',
+    successTitle: 'Password reset',
     successDescription:
       'Your password has been updated. You can now sign in with your new password.',
     invalidTitle: 'Invalid reset link',
     invalidDescription:
-      'This password reset link is invalid or missing a token. Please request a new one.',
+      'This password reset link is invalid or missing a token. Request a new one.',
     newLink: { href: '/forgot-password', label: 'Request a new reset link' },
     newLinkHint: '',
   },
@@ -113,7 +114,9 @@ export function PasswordTokenForm({ mode, token }: { mode: PasswordTokenMode; to
     return (
       <Card className="gap-4">
         <CardHeader>
-          <CardTitle className="text-lg tracking-tight">{copy.invalidTitle}</CardTitle>
+          <CardTitle className="text-lg tracking-tight">
+            <h1>{copy.invalidTitle}</h1>
+          </CardTitle>
           <CardDescription>{copy.invalidDescription}</CardDescription>
         </CardHeader>
         <CardContent>
@@ -147,7 +150,7 @@ function TokenPasswordForm({ mode, token }: { mode: PasswordTokenMode; token: st
 
   const passwordPolicy = usePasswordPolicy()
   const form = useForm<ResetPasswordInput>({
-    resolver: zodResolver(resetPasswordSchema),
+    resolver: translatingResolver(zodResolver(resetPasswordSchema), t),
     defaultValues: { password: '', confirmPassword: '', token },
   })
 
@@ -181,7 +184,9 @@ function TokenPasswordForm({ mode, token }: { mode: PasswordTokenMode; token: st
           <div className="text-primary mb-2 flex justify-center">
             <CheckCircle className="h-10 w-10" />
           </div>
-          <CardTitle className="text-center text-lg tracking-tight">{copy.successTitle}</CardTitle>
+          <CardTitle className="text-center text-lg tracking-tight">
+            <h1>{copy.successTitle}</h1>
+          </CardTitle>
           <CardDescription className="text-center">{copy.successDescription}</CardDescription>
         </CardHeader>
         <CardContent>
@@ -201,7 +206,9 @@ function TokenPasswordForm({ mode, token }: { mode: PasswordTokenMode; token: st
   return (
     <Card className="gap-4">
       <CardHeader>
-        <CardTitle className="text-lg tracking-tight">{copy.title}</CardTitle>
+        <CardTitle className="text-lg tracking-tight">
+          <h1>{copy.title}</h1>
+        </CardTitle>
         <CardDescription>{copy.description}</CardDescription>
       </CardHeader>
       <CardContent>

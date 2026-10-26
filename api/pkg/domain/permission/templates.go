@@ -77,7 +77,7 @@ var roleTemplates = []RoleTemplate{
 	},
 	{
 		ID:      "security-analyst",
-		Version: 2,
+		Version: 3,
 		Name:    "Security analyst",
 		Description: "Triages findings and exposures in their scope: severity, status, duplicates, assignment, " +
 			"comments and evidence; verifies fixes and requests retests. May request risk acceptance but " +
@@ -87,7 +87,7 @@ var roleTemplates = []RoleTemplate{
 			FindingsWrite, FindingsComment, FindingsSeverity,
 			FindingsTriage, FindingsStatus, FindingsAssign, FindingsBulkUpdate, FindingsVerify, FindingsRetestChecksWrite,
 			ExposuresWrite, ExposuresTriage, SuppressionsRead, SuppressionsWrite,
-			CredentialsRead, WorkflowsRead,
+			CredentialsRead, AutomationsRead,
 			ScansRead, ScansExecute, ScanProfilesRead,
 			ThreatIntelRead, AITriageRead, AITriageTrigger,
 			CTEMCyclesRead, BusinessServicesRead, CompensatingControlsRead, VerificationChecklistsRead,
@@ -96,7 +96,7 @@ var roleTemplates = []RoleTemplate{
 	},
 	{
 		ID:      "vulnerability-manager",
-		Version: 2,
+		Version: 3,
 		Name:    "Vulnerability manager",
 		Description: "Owns the remediation backlog: routes work to owners with assignment rules, runs " +
 			"remediation campaigns, schedules scans and reports on SLA performance. Does not approve " +
@@ -107,7 +107,7 @@ var roleTemplates = []RoleTemplate{
 			FindingsTriage, FindingsStatus, FindingsAssign, FindingsBulkUpdate, FindingsVerify, FindingsRetestChecksWrite,
 			FindingsExport,
 			ExposuresWrite, ExposuresTriage, SuppressionsRead, SuppressionsWrite,
-			RemediationWrite, WorkflowsRead, WorkflowsWrite,
+			RemediationWrite, AutomationsRead, AutomationsWrite,
 			AssignmentRulesRead, AssignmentRulesWrite,
 			ScansRead, ScansWrite, ScansExecute, ScanProfilesRead, ScanProfilesWrite, ScanWorkflowsRead,
 			ScannerTemplatesRead, ToolsRead,
@@ -174,7 +174,7 @@ var roleTemplates = []RoleTemplate{
 		Personas: []string{"Scanning operations engineer"},
 		Permissions: join(readCore, []Permission{
 			ScansRead, ScansWrite, ScansExecute, ScanProfilesRead, ScanProfilesWrite,
-			ScanWorkflowsRead, ScanWorkflowsWrite, ScannerTemplatesRead, TemplateSourcesRead,
+			ScanWorkflowsRead, ScanWorkflowsWrite, ScannerTemplatesRead, ContentSourcesRead,
 			ToolsRead, TenantToolsRead, ContentPacksRead,
 			SensorsRead, CommandsRead, ScanZonesRead, ScopeRead,
 		}),

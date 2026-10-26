@@ -116,6 +116,10 @@ func newGroupScopeHarness(t *testing.T) *gsHarness {
 			ctx := r.Context()
 			if id, err := shared.IDFromString(r.Header.Get("X-Test-User")); err == nil {
 				if u, err := userdom.NewLocalUserWithID(id, id.String()+"@ds.test", "t"); err == nil {
+					// The caller's findings work-view preference, when a test sets one.
+					if v := r.Header.Get("X-Test-Findings-Informational"); v != "" {
+						u.UpdatePreferences(u.Preferences().WithFindingsInformational(v))
+					}
 					ctx = context.WithValue(ctx, middleware.LocalUserKey, u)
 				}
 				if middleware.GetSessionID(ctx) == "" {
@@ -133,6 +137,8 @@ func newGroupScopeHarness(t *testing.T) *gsHarness {
 	viewSvc.SetAuditService(auditapp.NewAuditService(postgres.NewAuditRepository(db), log))
 	h.views = viewSvc
 	vulnHandler := handler.NewVulnerabilityHandler(vulnSvc, validator.New(), log)
+	intel := postgres.NewThreatIntelRepository(db)
+	vulnHandler.SetIntelFeeds(intel.EPSS(), intel.KEV())
 	vulnHandler.SetSavedViews(viewSvc)
 	actionsHandler := handler.NewFindingActionsHandler(actionsSvc, log)
 	actionsHandler.SetSavedViews(viewSvc)

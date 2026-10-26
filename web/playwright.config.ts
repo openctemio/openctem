@@ -62,9 +62,7 @@ export default defineConfig({
   forbidOnly: isCI,
   retries: isCI ? 1 : 0,
 
-  reporter: isCI
-    ? [['list'], ['blob'], ['github']]
-    : [['list'], ['html', { open: 'never' }]],
+  reporter: isCI ? [['list'], ['blob'], ['github']] : [['list'], ['html', { open: 'never' }]],
 
   use: {
     baseURL,
@@ -82,6 +80,11 @@ export default defineConfig({
       name: 'chromium',
       use: { ...devices['Desktop Chrome'] },
     },
-    // Add firefox / webkit projects when cross-browser coverage is needed.
+    // Phone tests (tagged @phone) on WebKit with an iPhone viewport, the
+    // engine of every iPhone browser. Opt in with E2E_WEBKIT=1 (needs
+    // `npx playwright install --with-deps webkit`).
+    ...(process.env.E2E_WEBKIT === '1'
+      ? [{ name: 'webkit-mobile', use: { ...devices['iPhone 13'] }, grep: /@phone/ }]
+      : []),
   ],
 })

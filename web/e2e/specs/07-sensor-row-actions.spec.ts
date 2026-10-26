@@ -106,7 +106,12 @@ test.describe('Sensor row actions', () => {
   test('the new sensor key is labelled, and so are its show and copy buttons', async ({ page }) => {
     const name = `e2e-key-a11y-${Date.now()}`
     await openSensors(page)
-    await page.getByRole('button', { name: 'Install sensor' }).first().click()
+    // The key install sits inside Add sensor, below pairing.
+    await page.getByRole('button', { name: 'Add sensor' }).first().click()
+    await page
+      .getByRole('dialog', { name: 'Add sensor' })
+      .getByRole('button', { name: 'Install with an API key instead' })
+      .click()
     const dialog = page.getByRole('dialog', { name: 'Install a sensor' })
     await dialog.getByRole('textbox', { name: 'Name' }).fill(name)
     await dialog.getByRole('button', { name: 'Create and show the command' }).click()
@@ -120,6 +125,9 @@ test.describe('Sensor row actions', () => {
     await expect(dialog.getByRole('button', { name: 'Hide API key' })).toBeVisible()
     await expect(dialog.getByRole('button', { name: 'Copy API key' })).toBeVisible()
     await dialog.getByRole('button', { name: 'Close' }).first().click()
+    // The key is shown once: closing asks for confirmation first.
+    const guard = page.getByRole('alertdialog', { name: 'Did you copy the key?' })
+    await guard.getByRole('button', { name: 'Close anyway' }).click()
     await expect(dialog).toBeHidden()
 
     // Clean up the sensor this test created.

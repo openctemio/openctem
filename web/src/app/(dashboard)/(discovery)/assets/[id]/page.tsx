@@ -17,13 +17,15 @@
 
 import * as React from 'react'
 import { useRouter, useParams } from 'next/navigation'
-import Link from '@/components/link'
-import { AlertCircle, ArrowLeft, Globe, Loader2, Server, Shield } from 'lucide-react'
+import { OpenFindingsLink } from '@/features/assets/components/service-cells'
+import { ArrowLeft, Lock } from 'lucide-react'
 import { Main, useBreadcrumbTitle } from '@/components/layout'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { DetailSections, PageHeader } from '@/features/shared'
+import { Skeleton } from '@/components/ui/skeleton'
+import { DetailSections, EmptyState, ErrorState, PageHeader, PageStack } from '@/features/shared'
+import { RiskScoreBadge, riskScoreState } from '@/features/shared/components/risk-score-badge'
 import {
   AssetAttributeSourcesSection,
   AssetFreshnessSection,
@@ -33,14 +35,15 @@ import {
   AssetTimeline,
   useAsset,
 } from '@/features/assets'
+import { ClassificationBadges } from '@/features/assets/components/classification-badges'
+import { getAssetTypeLabel } from '@/features/assets/lib/asset-type-icon'
+import { AssetStatusBadge } from '@/features/asset-lifecycle'
 import { AssetScanWindowCard } from '@/features/scan-windows'
 import { AssetWebEvidenceCard } from '@/features/attack-surface'
-import { cn } from '@/lib/utils'
 import { useTranslation } from '@/context/i18n-provider'
+import { useTenant } from '@/context/tenant-provider'
+import { usePermissions, Permission } from '@/lib/permissions'
 import { RepositoryWorkspace } from '@/features/repositories/components/repository-workspace'
-import { CRITICALITY_TEXT_COLORS } from '@/lib/criticality-colors'
-
-const CRITICALITY_COLOR: Record<string, string> = CRITICALITY_TEXT_COLORS
 
 export default function AssetDetailPage() {
   const router = useRouter()
@@ -48,38 +51,83 @@ export default function AssetDetailPage() {
   const assetId = params?.id ?? null
 
   const { t } = useTranslation()
-  const { asset, isLoading, error } = useAsset(assetId)
+  const { can } = usePermissions()
+  const { isLoading: tenantLoading } = useTenant()
+  const { asset, isLoading, error, mutate } = useAsset(assetId)
   useBreadcrumbTitle(asset?.name)
 
-  if (isLoading) {
+  // useAsset sends nothing until the tenant is known, so wait for it instead
+  // of reading the empty answer as "not found".
+  if (tenantLoading || isLoading) {
     return (
       <Main>
-        <div className="flex items-center justify-center py-24">
-          <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+        <div
+          className="space-y-4"
+          role="status"
+          aria-label={t('assetDetail.loading', 'Loading asset')}
+        >
+          <Skeleton className="h-8 w-64" />
+          <Skeleton className="h-5 w-40" />
+          <Skeleton className="h-40 w-full" />
         </div>
       </Main>
     )
   }
 
-  if (error || !asset) {
+  if (!can(Permission.AssetsRead)) {
     return (
       <Main>
-        <PageHeader title="Asset not found" className="mb-6" />
-        <Card className="border-destructive/40">
-          <CardContent className="flex flex-col items-center justify-center py-12">
-            <AlertCircle className="h-12 w-12 text-destructive mb-3" />
-            <p className="text-base font-medium">
-              {error ? 'Failed to load asset details' : 'No asset with this ID'}
-            </p>
-            <p className="text-sm text-muted-foreground mt-1">
-              The asset may have been deleted or you may not have access.
-            </p>
-            <Button variant="outline" className="mt-4" onClick={() => router.push('/assets')}>
-              <ArrowLeft className="me-2 h-4 w-4" />
-              Back to assets
-            </Button>
-          </CardContent>
-        </Card>
+        <EmptyState
+          icon={Lock}
+          title={t('assetDetail.noAccess', 'You do not have access to assets')}
+          description={t(
+            'assetDetail.noAccessHint',
+            'Ask a team administrator for the assets:read permission.'
+          )}
+        />
+      </Main>
+    )
+  }
+
+  const notFound = (error as { statusCode?: number } | undefined)?.statusCode === 404
+  if (error && !notFound) {
+    return (
+      <Main>
+        <PageStack>
+          <PageHeader title={t('assetDetail.title', 'Asset')} />
+          <ErrorState
+            title={t('assetDetail.errorTitle', 'asset details')}
+            error={error}
+            onRetry={() => mutate()}
+          />
+        </PageStack>
+      </Main>
+    )
+  }
+
+  if (!asset) {
+    return (
+      <Main>
+        <PageStack>
+          <PageHeader title={t('assetDetail.notFound', 'Asset not found')} />
+          <Card>
+            <CardContent className="flex flex-col items-center justify-center py-12 text-center">
+              <p className="text-base font-medium">
+                {t('assetDetail.notFoundTitle', 'No asset with this ID')}
+              </p>
+              <p className="mt-1 text-sm text-muted-foreground">
+                {t(
+                  'assetDetail.notFoundHint',
+                  'The asset may have been deleted or you may not have access.'
+                )}
+              </p>
+              <Button variant="outline" className="mt-4" onClick={() => router.push('/assets')}>
+                <ArrowLeft className="me-2 h-4 w-4" />
+                {t('assetDetail.backToAssets', 'Back to assets')}
+              </Button>
+            </CardContent>
+          </Card>
+        </PageStack>
       </Main>
     )
   }
@@ -91,185 +139,149 @@ export default function AssetDetailPage() {
   // The inventory filtered to this asset's type (and alias sub-type).
   const listingQuery = new URLSearchParams({ types: asset.type })
   if (asset.subType) listingQuery.set('sub_type', asset.subType)
-  const typeLabel = asset.type.replace(/_/g, ' ')
+  const typeLabel = getAssetTypeLabel(asset.type)
 
   return (
     <Main>
-      <div className="mb-4">
-        <Button variant="ghost" size="sm" onClick={() => router.back()}>
+      <PageStack>
+        <Button variant="ghost" size="sm" className="self-start" onClick={() => router.back()}>
           <ArrowLeft className="me-2 h-4 w-4" />
-          Back
+          {t('assetDetail.back', 'Back')}
         </Button>
-      </div>
 
-      <PageHeader title={asset.name} description={`Asset · ${typeLabel}`} className="mb-6" />
+        <PageHeader
+          title={asset.name}
+          description={t('assetDetail.subtitle', 'Asset type: {type}', { type: typeLabel })}
+        />
 
-      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4 mb-6">
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm flex items-center gap-2">
-              <Shield className="h-4 w-4" />
-              Criticality
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <p
-              className={cn('text-2xl font-bold capitalize', CRITICALITY_COLOR[asset.criticality])}
-            >
-              {asset.criticality}
-            </p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm flex items-center gap-2">
-              <Server className="h-4 w-4" />
-              Risk Score
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <p className="text-2xl font-bold">{asset.riskScore}/100</p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm flex items-center gap-2">
-              <Globe className="h-4 w-4" />
-              Exposure
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <Badge variant="outline" className="text-base capitalize">
-              {asset.exposure}
-            </Badge>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm">Findings</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <Link
-              href={`/findings?asset_id=${assetId}`}
-              className={cn(
-                'inline-block text-2xl font-bold hover:underline',
-                asset.findingCount > 0 ? 'text-destructive' : ''
-              )}
-              aria-label={`View ${asset.findingCount} findings for this asset`}
-            >
-              {asset.findingCount}
-            </Link>
-          </CardContent>
-        </Card>
-      </div>
-
-      <Card>
-        <CardHeader>
-          <CardTitle>Properties</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-3">
-          <DetailRow label="ID" value={<code className="text-xs font-mono">{asset.id}</code>} />
-          <DetailRow label="Type" value={<span className="capitalize">{typeLabel}</span>} />
-          <DetailRow
-            label="Status"
-            value={
-              <Badge variant="outline" className="capitalize">
-                {asset.status}
-              </Badge>
-            }
+        <div className="flex flex-wrap items-center gap-2">
+          <ClassificationBadges
+            scope={asset.scope}
+            exposure={asset.exposure}
+            criticality={asset.criticality}
+            size="md"
+            labelled
           />
-          <DetailRow
-            label="Scope"
-            value={
-              <Badge variant="outline" className="capitalize">
-                {asset.scope}
-              </Badge>
-            }
-          />
-          {asset.description && <DetailRow label="Description" value={asset.description} />}
-          {asset.tags && asset.tags.length > 0 && (
+          <RiskScoreBadge score={asset.riskScore} state={riskScoreState(asset)} labelled />
+          {asset.findingCount > 0 ? (
+            <OpenFindingsLink assetId={assetId} count={asset.findingCount} className="text-sm" />
+          ) : (
+            <span className="text-sm text-muted-foreground">
+              {t('assets.overview2.noOpenShort', 'No open findings')}
+            </span>
+          )}
+        </div>
+
+        <Card>
+          <CardHeader>
+            <CardTitle>{t('assetDetail.properties', 'Properties')}</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-3">
             <DetailRow
-              label="Tags"
-              value={
-                <div className="flex flex-wrap gap-1">
-                  {asset.tags.map((t) => (
-                    <Badge key={t} variant="secondary" className="text-xs">
-                      {t}
-                    </Badge>
-                  ))}
-                </div>
+              label={t('assetDetail.id', 'ID')}
+              value={<code className="font-mono text-xs break-all">{asset.id}</code>}
+            />
+            <DetailRow label={t('assetDetail.type', 'Type')} value={typeLabel} />
+            <DetailRow
+              label={t('assetDetail.status', 'Status')}
+              value={<AssetStatusBadge status={asset.status} />}
+            />
+            {asset.description && (
+              <DetailRow
+                label={t('assetDetail.description', 'Description')}
+                value={asset.description}
+              />
+            )}
+            {asset.tags && asset.tags.length > 0 && (
+              <DetailRow
+                label={t('assetDetail.tags', 'Tags')}
+                value={
+                  <div className="flex flex-wrap justify-end gap-1">
+                    {asset.tags.map((tag) => (
+                      <Badge key={tag} variant="secondary" className="text-xs">
+                        {tag}
+                      </Badge>
+                    ))}
+                  </div>
+                }
+              />
+            )}
+          </CardContent>
+        </Card>
+
+        <Card id="asset-identity">
+          <CardHeader>
+            <CardTitle>{t('assetDetail.identity', 'Identity')}</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <DetailSections>
+              <AssetAttributionSection
+                assetId={asset.id}
+                assetName={asset.name}
+                assetType={asset.type}
+              />
+              <AssetAttributeSourcesSection assetId={asset.id} />
+              <AssetFreshnessSection assetId={asset.id} />
+              <AssetCoverageSection assetId={asset.id} />
+              <AssetIdentitySections
+                assetId={asset.id}
+                assetName={asset.name}
+                properties={asset.metadata}
+              />
+            </DetailSections>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle>{t('assetTimeline.tab', 'Timeline')}</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <AssetTimeline
+              assetId={asset.id}
+              onWhy={() =>
+                document
+                  .getElementById('asset-identity')
+                  ?.scrollIntoView({ behavior: 'smooth', block: 'start' })
               }
             />
-          )}
-        </CardContent>
-      </Card>
+          </CardContent>
+        </Card>
+        {/* What a sensor saw when it fetched the asset (RFC-081); hidden when none. */}
+        <AssetWebEvidenceCard assetId={asset.id} />
+        {/* When active scans of this asset may run (RFC-067); hidden when no window applies. */}
+        <AssetScanWindowCard assetId={asset.id} />
 
-      <Card className="mt-4" id="asset-identity">
-        <CardHeader>
-          <CardTitle>Identity</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <DetailSections>
-            <AssetAttributionSection
-              assetId={asset.id}
-              assetName={asset.name}
-              assetType={asset.type}
-            />
-            <AssetAttributeSourcesSection assetId={asset.id} />
-            <AssetFreshnessSection assetId={asset.id} />
-            <AssetCoverageSection assetId={asset.id} />
-            <AssetIdentitySections
-              assetId={asset.id}
-              assetName={asset.name}
-              properties={asset.metadata}
-            />
-          </DetailSections>
-        </CardContent>
-      </Card>
-
-      <Card className="mt-4">
-        <CardHeader>
-          <CardTitle>{t('assetTimeline.tab', 'Timeline')}</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <AssetTimeline
-            assetId={asset.id}
-            onWhy={() =>
-              document
-                .getElementById('asset-identity')
-                ?.scrollIntoView({ behavior: 'smooth', block: 'start' })
-            }
-          />
-        </CardContent>
-      </Card>
-      {/* What a sensor saw when it fetched the asset (RFC-081); hidden when none. */}
-      <AssetWebEvidenceCard assetId={asset.id} className="mt-4" />
-      {/* When active scans of this asset may run (RFC-067); hidden when no window applies. */}
-      <AssetScanWindowCard assetId={asset.id} className="mt-4" />
-
-      {/* The inventory filtered to this type */}
-      <Card className="mt-4 bg-muted/30">
-        <CardContent className="flex items-center justify-between py-4">
-          <div>
-            <p className="text-sm font-medium">Looking for richer details?</p>
-            <p className="text-xs text-muted-foreground mt-1">
-              The inventory lists every {typeLabel} with its filters, columns and actions.
-            </p>
-          </div>
-          <Button variant="outline" onClick={() => router.push(`/assets?${listingQuery}`)}>
-            Open {typeLabel} list
-          </Button>
-        </CardContent>
-      </Card>
+        {/* The inventory filtered to this type */}
+        <Card className="bg-muted/30">
+          <CardContent className="flex flex-wrap items-center justify-between gap-3 py-4">
+            <div className="min-w-0">
+              <p className="text-sm font-medium">
+                {t('assetDetail.richerTitle', 'Looking for richer details?')}
+              </p>
+              <p className="mt-1 text-xs text-muted-foreground">
+                {t(
+                  'assetDetail.richerHint',
+                  'The inventory lists every {type} with its filters, columns and actions.',
+                  { type: typeLabel }
+                )}
+              </p>
+            </div>
+            <Button variant="outline" onClick={() => router.push(`/assets?${listingQuery}`)}>
+              {t('assetDetail.openList', 'Open {type} list', { type: typeLabel })}
+            </Button>
+          </CardContent>
+        </Card>
+      </PageStack>
     </Main>
   )
 }
 
 function DetailRow({ label, value }: { label: string; value: React.ReactNode }) {
   return (
-    <div className="flex items-start justify-between gap-4 py-2 border-b last:border-0">
-      <span className="text-sm text-muted-foreground shrink-0">{label}</span>
-      <div className="text-sm text-end">{value}</div>
+    <div className="flex items-start justify-between gap-4 border-b py-2 last:border-0">
+      <span className="shrink-0 text-sm text-muted-foreground">{label}</span>
+      <div className="min-w-0 text-end text-sm break-words">{value}</div>
     </div>
   )
 }

@@ -30,6 +30,7 @@ import {
   Copy,
   GripVertical,
   Minus,
+  MoreHorizontal,
   Plus,
   Redo2,
   Save,
@@ -39,7 +40,16 @@ import {
   X,
 } from 'lucide-react'
 import { toast } from 'sonner'
+import { ConfirmDialog } from '@/components/confirm-dialog'
 import { Button } from '@/components/ui/button'
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuShortcut,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu'
 import { useTranslation } from '@/context/i18n-provider'
 import { getErrorMessage } from '@/lib/api/error-handler'
 import { cn } from '@/lib/utils'
@@ -52,7 +62,8 @@ import { WidgetView } from '../components/widget-view'
 import {
   ROW_HEIGHT,
   colSpanFor,
-  columnsClass,
+  editorColumnsClass,
+  editorSpanClass,
   gridColumnSpan,
   normalizeColumns,
   widgetRowSpan,
@@ -140,6 +151,22 @@ export function DashboardEditor({ dashboard, kind, data, onExit }: DashboardEdit
   const cardRefs = useRef(new Map<string, HTMLDivElement>())
 
   const dirty = history.past.length > 0
+  const historyRef = useRef(history)
+  useEffect(() => {
+    historyRef.current = history
+  }, [history])
+  const [confirmDiscard, setConfirmDiscard] = useState(false)
+
+  // Leaving the page with unsaved changes asks the browser to confirm.
+  useEffect(() => {
+    if (!dirty) return
+    const guard = (e: BeforeUnloadEvent) => {
+      e.preventDefault()
+      e.returnValue = ''
+    }
+    window.addEventListener('beforeunload', guard)
+    return () => window.removeEventListener('beforeunload', guard)
+  }, [dirty])
   const set = useCallback((next: DashboardWidget[], message?: string) => {
     dispatch({ type: 'set', layout: withUids(next) })
     if (message) setAnnouncement(message)
@@ -167,10 +194,18 @@ export function DashboardEditor({ dashboard, kind, data, onExit }: DashboardEdit
       ops.remove(layout, i),
       t('dashboards.editor.removed', '{name} removed', { name: nameOf(w) })
     )
+    // The removal is the newest history step. If anything changed after it, a
+    // plain undo would revert that change instead, so the widget is put back
+    // at its index.
+    const stepsAfterRemoval = historyRef.current.past.length + 1
     toast(t('dashboards.editor.removed', '{name} removed', { name: nameOf(w) }), {
       action: {
         label: t('dashboards.editor.undo', 'Undo'),
-        onClick: () => dispatch({ type: 'undo' }),
+        onClick: () => {
+          const h = historyRef.current
+          if (h.past.length === stepsAfterRemoval) dispatch({ type: 'undo' })
+          else set(ops.insert(h.present, w, i))
+        },
       },
     })
   }
@@ -349,7 +384,12 @@ export function DashboardEditor({ dashboard, kind, data, onExit }: DashboardEdit
           <Plus className="me-1.5 h-4 w-4" aria-hidden />
           {t('dashboards.editor.add', 'Add widget')}
         </Button>
-        <Button variant="outline" size="sm" onClick={() => onExit(false)} disabled={saving}>
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => (dirty ? setConfirmDiscard(true) : onExit(false))}
+          disabled={saving}
+        >
           <X className="me-1.5 h-4 w-4" aria-hidden />
           {t('dashboards.config.cancel', 'Cancel')}
         </Button>
@@ -380,8 +420,12 @@ export function DashboardEditor({ dashboard, kind, data, onExit }: DashboardEdit
         <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={onDragEnd}>
           <SortableContext items={layout.map((w) => w.uid)} strategy={rectSortingStrategy}>
             <div
-              className={cn('grid gap-4', columnsClass(cols))}
-              style={{ gridAutoRows: `minmax(${ROW_HEIGHT}px, auto)` }}
+              className={cn(
+                'grid gap-3 sm:gap-4 sm:[grid-auto-rows:minmax(var(--row),auto)]',
+                editorColumnsClass(cols)
+              )}
+              style={{ '--row': `${ROW_HEIGHT}px` } as React.CSSProperties}
+              data-testid="editor-grid"
             >
               {layout.map((w, i) => (
                 <EditorCard
@@ -421,8 +465,25 @@ export function DashboardEditor({ dashboard, kind, data, onExit }: DashboardEdit
         onAddMetric={addMetric}
         onAddNote={addNote}
       />
+      <ConfirmDialog
+        open={confirmDiscard}
+        onOpenChange={setConfirmDiscard}
+        destructive
+        title={t('dashboards.editor.discardTitle', 'Discard your changes?')}
+        desc={t(
+          'dashboards.editor.discardDesc',
+          'The changes you made to this dashboard are lost if you leave without saving.'
+        )}
+        confirmText={t('dashboards.editor.discard', 'Discard changes')}
+        cancelBtnText={t('dashboards.editor.keepEditing', 'Keep editing')}
+        handleConfirm={() => {
+          setConfirmDiscard(false)
+          onExit(false)
+        }}
+      />
       <WidgetConfigPanel
         spec={editing?.spec ?? null}
+        initialValue={editing ? values.get(editing.uid) : undefined}
         onCancel={() => setEditing(null)}
         onApply={applyConfig}
       />
@@ -475,17 +536,27 @@ function EditorCard({
   } = useSortable({ id: widget.uid })
   const typed = !!specOf(widget)
   const span = colSpanFor(widget.w, columns)
-  const iconBtn = 'h-7 w-7'
+  // 44px targets on a phone, compact from 640px.
+  const iconBtn = 'size-11 shrink-0 sm:size-8'
+  const item = 'min-h-11 sm:min-h-8'
   return (
     <div
       ref={setNodeRef}
-      style={{
-        gridColumn: gridColumnSpan(span),
-        gridRow: widgetRowSpan(widget.h),
-        transform: CSS.Transform.toString(transform),
-        transition,
-      }}
-      className={cn('flex min-w-0 flex-col', isDragging && 'z-20 opacity-80')}
+      style={
+        {
+          '--span': gridColumnSpan(span),
+          '--span-sm': gridColumnSpan(Math.min(2, span)),
+          gridRow: widgetRowSpan(widget.h),
+          transform: CSS.Transform.toString(transform),
+          transition,
+        } as React.CSSProperties
+      }
+      className={cn(
+        // On a phone the editor is a list: one row per widget, no preview.
+        'flex min-w-0 flex-col max-sm:[grid-row:auto]',
+        editorSpanClass(columns),
+        isDragging && 'z-20 opacity-80'
+      )}
     >
       <div
         ref={cardRef}
@@ -501,88 +572,36 @@ function EditorCard({
         onKeyDown={(e) => {
           if (e.target === e.currentTarget) onKeyDown(e)
         }}
-        className="flex flex-1 flex-col rounded-lg ring-offset-2 outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        className="flex min-w-0 flex-1 flex-col rounded-lg ring-offset-2 outline-none focus-visible:ring-2 focus-visible:ring-ring"
         data-testid="editor-card"
       >
-        <div className="flex items-center gap-0.5 rounded-t-lg border border-b-0 bg-muted/40 px-1 py-0.5">
+        {/* The chrome never outgrows its widget: handle, title (truncated,
+            full name on hover), Configure and More; Duplicate and Remove show
+            inline only when the widget itself is wide enough (container query). */}
+        <div
+          className="@container flex min-w-0 items-center gap-0.5 overflow-hidden rounded-t-lg border bg-muted/40 px-1 py-0.5 max-sm:rounded-b-lg sm:border-b-0"
+          data-testid="editor-chrome"
+        >
           <button
             type="button"
             ref={setActivatorNodeRef}
             {...attributes}
             {...listeners}
             tabIndex={-1}
-            className="cursor-grab rounded p-1 text-muted-foreground"
+            className={cn(
+              iconBtn,
+              'inline-flex cursor-grab touch-none items-center justify-center rounded text-muted-foreground'
+            )}
             aria-label={t('dashboards.editor.drag', 'Drag {name}', { name })}
           >
             <GripVertical className="h-4 w-4" aria-hidden />
           </button>
-          <span className="me-auto truncate px-1 text-xs text-muted-foreground">{name}</span>
-          <Button
-            variant="ghost"
-            size="icon"
-            className={iconBtn}
-            tabIndex={-1}
-            onClick={() => onMove(-1)}
-            disabled={index === 0}
-            aria-label={t('dashboards.editor.moveEarlier', 'Move earlier')}
+          <span
+            className="min-w-0 flex-1 truncate px-1 text-sm text-muted-foreground sm:text-xs"
+            title={name}
           >
-            <ArrowLeft className="h-3.5 w-3.5" aria-hidden />
-          </Button>
-          <Button
-            variant="ghost"
-            size="icon"
-            className={iconBtn}
-            tabIndex={-1}
-            onClick={() => onMove(1)}
-            disabled={index === total - 1}
-            aria-label={t('dashboards.editor.moveLater', 'Move later')}
-          >
-            <ArrowRight className="h-3.5 w-3.5" aria-hidden />
-          </Button>
-          <Button
-            variant="ghost"
-            size="icon"
-            className={iconBtn}
-            tabIndex={-1}
-            onClick={() => onWidth(-1)}
-            disabled={span <= 1}
-            aria-label={t('dashboards.editor.narrower', 'Narrower')}
-          >
-            <Minus className="h-3.5 w-3.5" aria-hidden />
-          </Button>
-          <Button
-            variant="ghost"
-            size="icon"
-            className={iconBtn}
-            tabIndex={-1}
-            onClick={() => onWidth(1)}
-            disabled={span >= columns}
-            aria-label={t('dashboards.editor.wider', 'Wider')}
-          >
-            <Plus className="h-3.5 w-3.5" aria-hidden />
-          </Button>
-          <Button
-            variant="ghost"
-            size="icon"
-            className={iconBtn}
-            tabIndex={-1}
-            onClick={() => onHeight(-1)}
-            disabled={widget.h <= ops.MIN_ROWS}
-            aria-label={t('dashboards.editor.shorter', 'Shorter')}
-          >
-            <ArrowUpToLine className="h-3.5 w-3.5" aria-hidden />
-          </Button>
-          <Button
-            variant="ghost"
-            size="icon"
-            className={iconBtn}
-            tabIndex={-1}
-            onClick={() => onHeight(1)}
-            disabled={widget.h >= ops.MAX_ROWS}
-            aria-label={t('dashboards.editor.taller', 'Taller')}
-          >
-            <ArrowDownToLine className="h-3.5 w-3.5" aria-hidden />
-          </Button>
+            {name}
+          </span>
           {typed && (
             <Button
               variant="ghost"
@@ -598,7 +617,7 @@ function EditorCard({
           <Button
             variant="ghost"
             size="icon"
-            className={iconBtn}
+            className={cn(iconBtn, 'hidden @[22rem]:inline-flex')}
             tabIndex={-1}
             onClick={onDuplicate}
             aria-label={t('dashboards.editor.duplicate', 'Duplicate {name}', { name })}
@@ -608,15 +627,94 @@ function EditorCard({
           <Button
             variant="ghost"
             size="icon"
-            className={cn(iconBtn, 'text-destructive')}
+            className={cn(iconBtn, 'hidden text-destructive @[22rem]:inline-flex')}
             tabIndex={-1}
             onClick={onRemove}
             aria-label={t('dashboards.editor.remove', 'Remove {name}', { name })}
           >
             <Trash2 className="h-3.5 w-3.5" aria-hidden />
           </Button>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button
+                variant="ghost"
+                size="icon"
+                className={iconBtn}
+                tabIndex={-1}
+                aria-label={t('dashboards.editor.more', 'More actions for {name}', { name })}
+              >
+                <MoreHorizontal className="h-4 w-4" aria-hidden />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-56">
+              <DropdownMenuItem className={item} disabled={index === 0} onSelect={() => onMove(-1)}>
+                <ArrowLeft className="me-2 h-4 w-4" aria-hidden />
+                {t('dashboards.editor.moveEarlier', 'Move earlier')}
+                <DropdownMenuShortcut>←</DropdownMenuShortcut>
+              </DropdownMenuItem>
+              <DropdownMenuItem
+                className={item}
+                disabled={index === total - 1}
+                onSelect={() => onMove(1)}
+              >
+                <ArrowRight className="me-2 h-4 w-4" aria-hidden />
+                {t('dashboards.editor.moveLater', 'Move later')}
+                <DropdownMenuShortcut>→</DropdownMenuShortcut>
+              </DropdownMenuItem>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem className={item} disabled={span <= 1} onSelect={() => onWidth(-1)}>
+                <Minus className="me-2 h-4 w-4" aria-hidden />
+                {t('dashboards.editor.narrower', 'Narrower')}
+                <DropdownMenuShortcut>⇧←</DropdownMenuShortcut>
+              </DropdownMenuItem>
+              <DropdownMenuItem
+                className={item}
+                disabled={span >= columns}
+                onSelect={() => onWidth(1)}
+              >
+                <Plus className="me-2 h-4 w-4" aria-hidden />
+                {t('dashboards.editor.wider', 'Wider')}
+                <DropdownMenuShortcut>⇧→</DropdownMenuShortcut>
+              </DropdownMenuItem>
+              <DropdownMenuItem
+                className={item}
+                disabled={widget.h <= ops.MIN_ROWS}
+                onSelect={() => onHeight(-1)}
+              >
+                <ArrowUpToLine className="me-2 h-4 w-4" aria-hidden />
+                {t('dashboards.editor.shorter', 'Shorter')}
+                <DropdownMenuShortcut>⇧↑</DropdownMenuShortcut>
+              </DropdownMenuItem>
+              <DropdownMenuItem
+                className={item}
+                disabled={widget.h >= ops.MAX_ROWS}
+                onSelect={() => onHeight(1)}
+              >
+                <ArrowDownToLine className="me-2 h-4 w-4" aria-hidden />
+                {t('dashboards.editor.taller', 'Taller')}
+                <DropdownMenuShortcut>⇧↓</DropdownMenuShortcut>
+              </DropdownMenuItem>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem className={item} onSelect={onDuplicate}>
+                <Copy className="me-2 h-4 w-4" aria-hidden />
+                {t('dashboards.editor.duplicateShort', 'Duplicate')}
+                <DropdownMenuShortcut>D</DropdownMenuShortcut>
+              </DropdownMenuItem>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem
+                className={cn(item, 'text-destructive focus:text-destructive')}
+                onSelect={onRemove}
+              >
+                <Trash2 className="me-2 h-4 w-4" aria-hidden />
+                {t('dashboards.editor.removeShort', 'Remove')}
+                <DropdownMenuShortcut>
+                  {t('dashboards.editor.keyDelete', 'Del')}
+                </DropdownMenuShortcut>
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
         </div>
-        <div className="pointer-events-none flex flex-1 flex-col">
+        <div className="pointer-events-none flex min-w-0 flex-1 flex-col max-sm:hidden">
           <WidgetView
             widget={widget}
             value={

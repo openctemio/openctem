@@ -9,15 +9,18 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
+import { ApiClientError } from '@/lib/api/error-handler'
 import { VerificationPanel } from '../verification-panel'
 import type { VerificationPlan } from '../../../api/use-finding-verification'
 
 let mockPlan: VerificationPlan | undefined
+let mockError: unknown
+const mockMutate = vi.fn()
 let mockHasPermission = (_: string) => true
 const mockSave = vi.fn()
 
 vi.mock('../../../api/use-finding-verification', () => ({
-  useFindingVerificationPlan: () => ({ data: mockPlan, error: undefined }),
+  useFindingVerificationPlan: () => ({ data: mockPlan, error: mockError, mutate: mockMutate }),
   useVerificationChecklist: () => ({
     data: {
       id: 'c-1',
@@ -69,6 +72,7 @@ describe('VerificationPanel', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     mockHasPermission = () => true
+    mockError = undefined
     mockPlan = secretPlan()
     mockSave.mockResolvedValue({ is_complete: true })
   })
@@ -159,6 +163,22 @@ describe('VerificationPanel', () => {
       ],
     })
     rerender(<VerificationPanel findingId="f-1" />)
+    expect(container).toBeEmptyDOMElement()
+  })
+
+  it('shows an error row with Retry when the plan fails to load', async () => {
+    mockPlan = undefined
+    mockError = new ApiClientError('boom', 'INTERNAL', 500)
+    render(<VerificationPanel findingId="f-1" />)
+    expect(screen.getByTestId('section-load-error')).toBeInTheDocument()
+    await userEvent.click(screen.getByRole('button', { name: 'Retry' }))
+    expect(mockMutate).toHaveBeenCalledTimes(1)
+  })
+
+  it('stays hidden for a 404 refusal (no oracle)', () => {
+    mockPlan = undefined
+    mockError = new ApiClientError('nope', 'NOT_FOUND', 404)
+    const { container } = render(<VerificationPanel findingId="f-1" />)
     expect(container).toBeEmptyDOMElement()
   })
 })

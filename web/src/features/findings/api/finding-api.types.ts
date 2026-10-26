@@ -30,6 +30,7 @@ export type FindingSource =
   // Cloud & Infrastructure security
   | 'cspm' // Cloud Security Posture Management (cloud posture scanners)
   | 'easm' // External Attack Surface Management (ProjectDiscovery and external data sources)
+  | 'va' // Network/host vulnerability assessment (Nessus, Tenable, Qualys, OpenVAS)
   // Runtime & Production
   | 'rasp' // Runtime Application Self-Protection
   | 'waf' // Web Application Firewall findings
@@ -43,6 +44,9 @@ export type FindingSource =
   | 'external' // Imported from external tools/systems
   | 'threat_intel' // Threat intelligence feeds
   | 'vendor' // Vendor security assessments/third-party audits
+  // Legacy aliases the API still accepts
+  | 'sarif'
+  | 'sca_tool'
 
 export type ApiFindingType = 'vulnerability' | 'secret' | 'misconfiguration' | 'compliance' | 'web3'
 
@@ -236,7 +240,10 @@ export interface ApiFinding {
     /** Single-finding response only. */
     criticality?: string
     exposure?: string
+    /** Internet-facing (list rows and the single finding). */
     is_internet_accessible?: boolean
+    /** Crown jewel (list rows and the single finding). */
+    is_crown_jewel?: boolean
   }
   branch_id?: string
   component_id?: string
@@ -349,16 +356,21 @@ export interface ApiFinding {
   kind?: string // fail/pass/warning/note
   occurrence_count?: number // number of occurrences
   duplicate_count?: number // number of duplicates
+  /** Findings marked as duplicates of this one that the caller can read (list rows). */
+  duplicates_marked?: number
   duplicate_of?: string // the finding this one was folded into (status duplicate)
   comments_count?: number // number of comments
   sla_status?: string // on_track | warning | overdue | exceeded | not_applicable
   sla_deadline?: string // ISO timestamp of the remediation deadline (nullable)
+  sla_kev_capped?: boolean // the deadline was shortened by the policy's known exploited (KEV) cap
+  acceptance_expires_at?: string // when an accepted risk ends and the finding reopens (accepted only)
 
   // Threat Intel Enrichment (RFC-004)
   epss_score?: number // 0.0-1.0 exploitation probability
   epss_percentile?: number // 0.0-100.0
   is_in_kev?: boolean // CISA Known Exploited Vulnerabilities
   kev_due_date?: string // CISA remediation deadline
+  kev_ransomware?: boolean // CISA: used in known ransomware campaigns
 
   // Priority Classification (RFC-004)
   priority_class?: 'P0' | 'P1' | 'P2' | 'P3'
@@ -720,6 +732,8 @@ export interface FindingApiFilters {
    *  assignee, owns the asset, or is a member of an assigned group. Sent as
    *  `assigned_to_me=true`. Backs the My Work view. */
   assigned_to_me?: boolean
+  /** `my_team`: findings assigned to the caller's groups or their members (My Work). */
+  related_to?: 'my_team'
   /** SLA status filter — sent as `sla_status` (comma-separated). Backend accepts
    *  on_track | warning | overdue | exceeded | not_applicable. */
   sla_statuses?: string[]
@@ -737,12 +751,22 @@ export interface FindingApiFilters {
   view?: string
   /** Scanner rule families (Nessus / Tenable.sc plugin family). Sent as `family`. */
   families?: string[]
-  /** The state lens: open | fixed | dispositioned | all (research 24, C2). Sent as `state`. */
-  state?: 'open' | 'fixed' | 'dispositioned' | 'all'
+  /** Filters the page URL carries that the typed fields above do not: param name to value, sent as they are. */
+  extra?: Record<string, string>
+  /** An approval request for the finding is pending (or, with false, is not). Sent as `pending_approval`. */
+  pending_approval?: boolean
+  /** Informational findings (info and none) only, or (false) none of them. Sent as `informational`. */
+  informational?: boolean
+  /** Accepted risks that lapse by then (`P30D` = 30 days ahead). Sent as `acceptance_expires_at_lte`. */
+  acceptance_expires_at_lte?: string
+  /** The state lens: open | fixed | dispositioned | closed | all (research 24, C2). Sent as `state`. */
+  state?: 'open' | 'fixed' | 'dispositioned' | 'closed' | 'all'
   /** The asset's primary owner (a group-by-owner row's View). Sent as `asset_owner_id`. */
   asset_owner_id?: string
   /** Assets with no primary owner (the Unassigned owner row). Sent as `asset_owner_id_null=true`. */
   asset_owner_unassigned?: boolean
+  /** Findings with no CVE (a rule-only finding). Sent as `cve_id_null=true`. */
+  cve_id_unset?: boolean
   /** Findings on the members of an asset group (the group page's links). Sent as `asset_group_id`. */
   asset_group_id?: string
   /** Findings on crown jewels (the dashboard's "crown jewels exposed"). Sent as `asset_crown_jewel=true`. */
@@ -769,7 +793,7 @@ export interface FindingStatsResponse {
   epss_high_open?: number
   sla_breached?: number
   /** The state lens counts of the same filter: open, fixed, dispositioned, all. */
-  by_state?: Partial<Record<'open' | 'fixed' | 'dispositioned' | 'all', number>>
+  by_state?: Partial<Record<'open' | 'fixed' | 'dispositioned' | 'closed' | 'all', number>>
   /** The Open lens by severity (critical, high, medium, low, info). */
   open_by_severity?: Partial<Record<'critical' | 'high' | 'medium' | 'low' | 'info', number>>
   /** Fixes claimed by an owner (fix_applied), waiting for a verifier. */

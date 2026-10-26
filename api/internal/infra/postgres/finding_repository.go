@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"slices"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -26,8 +27,8 @@ const maxJSONSize = 64 * 1024 * 1024 // 64MB upper bound for marshaled JSON fiel
 type FindingRepository struct {
 	db *DB
 	limitChecks
-	// afterEnrichLoad, when set (tests only), runs between the enrichment's
-	// read and its write, to stand in for a concurrent writer.
+	// afterEnrichLoad, when set (tests only), runs before each enrichment
+	// attempt locks and reads its rows, to stand in for a concurrent writer.
 	afterEnrichLoad func(attempt int)
 }
 
@@ -203,7 +204,9 @@ var findingCreateSQL = `
 			fingerprint_version, identity_key,
 			` + findingTypeColumnsSQL + `,
 			` + findingNetworkColumnsSQL + `,
-			` + findingScannerColumnsSQL + `
+			` + findingScannerColumnsSQL + `,
+			` + findingIdentityColumnsSQL + `,
+			` + findingSLAKEVColumnsSQL + `
 		)
 		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, $32, $33, $34,
 			$35, $36, $37, $38, $39, $40, $41, $42, $43, $44, $45, $46, $47, $48, $49, $50,
@@ -212,7 +215,9 @@ var findingCreateSQL = `
 			$83, $84, $85, $86, $87, $88,
 			$89, $90, $91, $92, $93, $94` + findingTypePlaceholders(95) +
 	findingNetworkPlaceholders(95+findingTypeColumnCount) +
-	findingScannerPlaceholders(95+findingTypeColumnCount+findingNetworkColumnCount) + `)
+	findingScannerPlaceholders(95+findingTypeColumnCount+findingNetworkColumnCount) +
+	findingIdentityPlaceholders(95+findingTypeColumnCount+findingNetworkColumnCount+findingScannerColumnCount) +
+	findingSLAKEVPlaceholders(95+findingTypeColumnCount+findingNetworkColumnCount+findingScannerColumnCount+findingIdentityColumnCount) + `)
 	`
 
 // findingCreateArgs is the argument list for findingCreateSQL. metadata is
@@ -340,6 +345,8 @@ func findingCreateArgs(finding *vulnerability.Finding, metadata []byte) ([]any, 
 	args = append(args, findingTypeArgs(finding)...) // $95…
 	args = append(args, findingNetworkArgs(finding)...)
 	args = append(args, findingScannerArgs(finding)...)
+	args = append(args, findingIdentityArgs(finding)...)
+	args = append(args, findingSLAKEVArgs(finding)...)
 	return args, nil
 }
 
@@ -439,6 +446,22 @@ func (r *FindingRepository) CreateBatchWithResult(ctx context.Context, findings 
 		}
 	}
 
+	// Write in fingerprint order: concurrent uploads of overlapping findings
+	// then take the unique-index and row locks of the upsert in one order and
+	// queue instead of deadlocking. positions keeps each row's input index.
+	order := make([]int, len(findings))
+	for i := range order {
+		order[i] = i
+	}
+	sort.SliceStable(order, func(a, b int) bool { return findings[order[a]].Fingerprint() < findings[order[b]].Fingerprint() })
+	sortedFindings := make([]*vulnerability.Finding, len(findings))
+	sortedPositions := make([]int, len(findings))
+	for i, o := range order {
+		sortedFindings[i] = findings[o]
+		sortedPositions[i] = positions[o]
+	}
+	findings, positions = sortedFindings, sortedPositions
+
 	record := func(index int, finding *vulnerability.Finding, row upsertedRow) {
 		result.IDs[index] = row.id
 		result.Inserted[index] = row.inserted
@@ -461,8 +484,14 @@ func (r *FindingRepository) CreateBatchWithResult(ctx context.Context, findings 
 		}
 		chunk := findings[chunkStart:chunkEnd]
 
-		// Try to insert the entire chunk
-		rows, err := r.insertChunk(ctx, chunk)
+		// Try to insert the entire chunk; a deadlock or serialization
+		// failure runs it again rather than dropping to the per-row path.
+		var rows []upsertedRow
+		err := retryWriteConflict(ctx, func() error {
+			var chunkErr error
+			rows, chunkErr = r.insertChunk(ctx, chunk)
+			return chunkErr
+		})
 		if err == nil {
 			for i, finding := range chunk {
 				record(positions[chunkStart+i], finding, rows[i])
@@ -473,7 +502,12 @@ func (r *FindingRepository) CreateBatchWithResult(ctx context.Context, findings 
 		// Chunk failed - retry individually to identify bad findings
 		for i, finding := range chunk {
 			globalIndex := positions[chunkStart+i]
-			row, err := r.insertSingleFinding(ctx, finding)
+			var row upsertedRow
+			err := retryWriteConflict(ctx, func() error {
+				var rowErr error
+				row, rowErr = r.insertSingleFinding(ctx, finding)
+				return rowErr
+			})
 			if err != nil {
 				result.Skipped++
 				result.Errors[globalIndex] = err.Error()
@@ -723,7 +757,9 @@ func findingInsertColumnsSQL() string {
 			fingerprint_version, identity_key,
 			` + findingTypeColumnsSQL + `,
 			` + findingNetworkColumnsSQL + `,
-			` + findingScannerColumnsSQL + `
+			` + findingScannerColumnsSQL + `,
+			` + findingIdentityColumnsSQL + `,
+			` + findingSLAKEVColumnsSQL + `
 		)`
 }
 
@@ -860,7 +896,7 @@ func findingUpsertConflictSQL() string {
 			tags = ` + findingTagsMergeSQL("findings.tags", "EXCLUDED.tags") + `,
 			-- Rule name: first non-empty one wins, as in EnrichFrom.
 			rule_name = COALESCE(NULLIF(findings.rule_name, ''), EXCLUDED.rule_name)` +
-		findingTypeConflictSQL() + findingNetworkConflictSQL() + findingScannerConflictSQL() + "\n\t"
+		findingTypeConflictSQL() + findingNetworkConflictSQL() + findingScannerConflictSQL() + findingIdentityConflictSQL() + findingSLAKEVConflictSQL() + "\n\t"
 }
 
 // findingTagsMergeSQL is the SQL expression merging a stored and an incoming
@@ -893,7 +929,7 @@ func (r *FindingRepository) execFindingInsert(ctx context.Context, stmt *sql.Stm
 
 // findingInsertColumnCount is the number of columns in the findings INSERT.
 // It MUST stay in sync with findingInsertColumnsSQL and findingInsertArgs.
-const findingInsertColumnCount = 94 + findingTypeColumnCount + findingNetworkColumnCount + findingScannerColumnCount
+const findingInsertColumnCount = 94 + findingTypeColumnCount + findingNetworkColumnCount + findingScannerColumnCount + findingIdentityColumnCount + findingSLAKEVColumnCount
 
 // findingInsertArgs returns the ordered argument list for a single findings
 // INSERT row. Shared by the single-row prepared-statement path and the
@@ -1028,7 +1064,7 @@ func findingInsertArgs(finding *vulnerability.Finding) ([]any, error) {
 		// Identity recipe version and tuple (RFC-043 §6).
 		finding.FingerprintVersion(),
 		nullJSON(finding.IdentityKey()),
-	}, append(append(findingTypeArgs(finding), findingNetworkArgs(finding)...), findingScannerArgs(finding)...)...), nil
+	}, append(append(append(append(findingTypeArgs(finding), findingNetworkArgs(finding)...), findingScannerArgs(finding)...), findingIdentityArgs(finding)...), findingSLAKEVArgs(finding)...)...), nil
 }
 
 // PentestCampaignRole returns the user's role in a pentest campaign of the
@@ -1187,6 +1223,11 @@ func (r *FindingRepository) Update(ctx context.Context, finding *vulnerability.F
 	args = append(args, nullID(finding.SubStatusID()))
 	query = strings.Replace(query, "\n\t\tWHERE id = $1 AND tenant_id = $20",
 		fmt.Sprintf(",\n\t\t\tsub_status_id = $%d\n\t\tWHERE id = $1 AND tenant_id = $20", len(args)), 1)
+	// The known exploited cap flag travels with the deadline (the guard
+	// trigger keeps both when it refuses a later deadline).
+	args = append(args, finding.SLAKEVCapped())
+	query = strings.Replace(query, "\n\t\tWHERE id = $1 AND tenant_id = $20",
+		fmt.Sprintf(",\n\t\t\tsla_kev_capped = $%d\n\t\tWHERE id = $1 AND tenant_id = $20", len(args)), 1)
 	if !strings.Contains(query, "sub_status_id = $") {
 		return errors.New("finding update: the sub-status column was not bound")
 	}
@@ -1956,6 +1997,14 @@ func (r *FindingRepository) UpsertBranchOccurrences(ctx context.Context, tenantI
 	// (finding, branch) row twice, and the duplicate used to drop every
 	// occurrence of the report. The last sighting wins (latest commit).
 	items = dedupeLastWins(items, branchOccurrenceKey)
+	// Concurrent uploads of one repository upsert the same (finding, branch)
+	// rows: every writer takes them in one order, (fingerprint, branch) in
+	// byte order, matching the global lock order of findings rows
+	// (finding_lock_order.go), and the statement inserts in that order.
+	items = slices.Clone(items)
+	slices.SortStableFunc(items, func(a, b vulnerability.BranchOccurrenceUpsert) int {
+		return strings.Compare(branchOccurrenceKey(a), branchOccurrenceKey(b))
+	})
 
 	fingerprints := make([]string, len(items))
 	branchIDs := make([]string, len(items))
@@ -1983,6 +2032,7 @@ func (r *FindingRepository) UpsertBranchOccurrences(ctx context.Context, tenantI
 			AS inp(fingerprint, branch_id, scan_id, commit_sha)
 		JOIN findings f ON f.tenant_id = $1 AND f.fingerprint = inp.fingerprint
 		JOIN repository_branches b ON b.id = inp.branch_id
+		ORDER BY inp.fingerprint COLLATE "C", inp.branch_id::text COLLATE "C"
 		ON CONFLICT (finding_id, branch_id) DO UPDATE SET
 			last_seen_at = NOW(),
 			last_seen_scan_id = EXCLUDED.last_seen_scan_id,
@@ -1992,9 +2042,12 @@ func (r *FindingRepository) UpsertBranchOccurrences(ctx context.Context, tenantI
 			updated_at = NOW()
 	`
 
-	if _, err := r.db.ExecContext(ctx, query, tenantID.String(),
-		pq.Array(fingerprints), pq.Array(branchIDs), pq.Array(scanIDs), pq.Array(commits),
-	); err != nil {
+	err := retryWriteConflict(ctx, func() error {
+		_, execErr := r.db.ExecContext(ctx, query, tenantID.String(),
+			pq.Array(fingerprints), pq.Array(branchIDs), pq.Array(scanIDs), pq.Array(commits))
+		return execErr
+	})
+	if err != nil {
 		return fmt.Errorf("failed to upsert branch occurrences: %w", err)
 	}
 	return nil
@@ -2033,18 +2086,27 @@ func (r *FindingRepository) BackfillFindingBranches(ctx context.Context, tenantI
 		branchIDs[i] = it.BranchID.String()
 	}
 
-	const query = `
-		UPDATE findings f
-		SET branch_id = b.id, updated_at = NOW()
-		FROM unnest($2::text[], $3::uuid[]) AS inp(fingerprint, branch_id)
-		JOIN repository_branches b ON b.id = inp.branch_id
-		WHERE f.tenant_id = $1
+	// The rows to move are locked first in the global order
+	// (finding_lock_order.go); the update rechecks the same condition.
+	const moves = `f.tenant_id = $1
 			AND f.fingerprint = inp.fingerprint
 			AND b.repository_id = f.asset_id
-			AND (f.branch_id IS NULL OR (b.is_default AND f.branch_id <> b.id))
-	`
+			AND (f.branch_id IS NULL OR (b.is_default AND f.branch_id <> b.id))`
+	const input = `unnest($2::text[], $3::uuid[]) AS inp(fingerprint, branch_id)
+		JOIN repository_branches b ON b.id = inp.branch_id`
+	query := `
+		WITH ` + findingLockCTE("findings f, "+input, moves) + `
+		UPDATE findings f
+		SET branch_id = b.id, updated_at = NOW()
+		FROM locked l, ` + input + `
+		WHERE f.id = l.locked_id AND ` + moves
 
-	res, err := r.db.ExecContext(ctx, query, tenantID.String(), pq.Array(fingerprints), pq.Array(branchIDs))
+	var res sql.Result
+	err := retryWriteConflict(ctx, func() error {
+		var execErr error
+		res, execErr = r.db.ExecContext(ctx, query, tenantID.String(), pq.Array(fingerprints), pq.Array(branchIDs))
+		return execErr
+	})
 	if err != nil {
 		return 0, fmt.Errorf("failed to backfill finding branches: %w", err)
 	}
@@ -2210,7 +2272,12 @@ func (r *FindingRepository) updateStatusBatch(ctx context.Context, tenantID shar
 	if err != nil {
 		return nil, err
 	}
-	moved, err := r.db.queryStatusWriteIDs(ctx, ids, query+" RETURNING id", args...)
+	var moved []shared.ID
+	err = retryWriteConflict(ctx, func() error {
+		var txErr error
+		moved, txErr = r.db.queryStatusWriteIDs(ctx, ids, query+" RETURNING f.id", args...)
+		return txErr
+	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to update findings status: %w", err)
 	}
@@ -2251,11 +2318,18 @@ func statusWriteSQL(tenantID shared.ID, ids []shared.ID, status vulnerability.Fi
 
 	// Security: Include tenant_id in WHERE clause
 	// Security: Exclude pentest findings — they must be managed via the pentest module
+	// The rows are locked first in the global order of findings rows
+	// (finding_lock_order.go), so a bulk move never deadlocks with an ingest
+	// writing the same findings; the update rechecks the condition.
+	movable := fmt.Sprintf(`f.tenant_id = $1 AND f.source != 'pentest' AND f.status = ANY($7) AND f.id IN (%s)`,
+		strings.Join(placeholders, ", "))
 	query := fmt.Sprintf(`
-		UPDATE findings
+		WITH %s
+		UPDATE findings f
 		SET status = $2, resolution = $3, resolved_by = $4, closure_reason = $5, verification = $6%s, updated_at = NOW()
-		WHERE tenant_id = $1 AND source != 'pentest' AND status = ANY($7) AND id IN (%s)
-	`, resolvedClause, strings.Join(placeholders, ", "))
+		FROM locked l
+		WHERE f.id = l.locked_id AND %s
+	`, findingLockCTE("findings f", movable), resolvedClause, movable)
 
 	return query, args, nil
 }
@@ -2307,17 +2381,26 @@ func (r *FindingRepository) UpdateScanIDBatchByFingerprints(ctx context.Context,
 		return 0, nil
 	}
 
-	// Use ANY with array for better performance with large fingerprint lists
 	// Note: Status is intentionally NOT updated to preserve user-set values (false_positive, accepted, etc.)
+	// The rows are locked first in the global order (finding_lock_order.go),
+	// so concurrent sightings of the same findings queue instead of
+	// deadlocking; a conflict that still happens runs the statement again.
 	query := `
-		UPDATE findings
+		WITH ` + findingLockCTE("findings f", "f.tenant_id = $2 AND f.fingerprint = ANY($3)") + `
+		UPDATE findings f
 		SET scan_id = $1, updated_at = NOW(), last_seen_at = NOW(), observation_state = 'present',
-			occurrence_count = occurrence_count + 1,
-			last_seen_tool = COALESCE(NULLIF($4, ''), last_seen_tool)
-		WHERE tenant_id = $2 AND fingerprint = ANY($3)
+			occurrence_count = f.occurrence_count + 1,
+			last_seen_tool = COALESCE(NULLIF($4, ''), f.last_seen_tool)
+		FROM locked l
+		WHERE f.id = l.locked_id AND f.tenant_id = $2
 	`
 
-	result, err := r.db.ExecContext(ctx, query, scanID, tenantID.String(), pq.Array(fingerprints), toolName)
+	var result sql.Result
+	err := retryWriteConflict(ctx, func() error {
+		var execErr error
+		result, execErr = r.db.ExecContext(ctx, query, scanID, tenantID.String(), pq.Array(fingerprints), toolName)
+		return execErr
+	})
 	if err != nil {
 		return 0, fmt.Errorf("failed to update findings scan_id: %w", err)
 	}
@@ -2345,6 +2428,9 @@ func (r *FindingRepository) UpdateSnippetBatchByFingerprints(ctx context.Context
 	for fp := range snippets {
 		fingerprints = append(fingerprints, fp)
 	}
+	// The global lock order of findings rows (finding_lock_order.go), across
+	// the batches and inside each.
+	sort.Strings(fingerprints)
 
 	for i := 0; i < len(fingerprints); i += batchSize {
 		end := i + batchSize
@@ -2355,7 +2441,7 @@ func (r *FindingRepository) UpdateSnippetBatchByFingerprints(ctx context.Context
 
 		// Build CASE statement for batch update
 		var caseBuilder strings.Builder
-		caseBuilder.WriteString("CASE fingerprint ")
+		caseBuilder.WriteString("CASE f.fingerprint ")
 		args := []interface{}{tenantID.String()}
 		argIdx := 2
 
@@ -2379,15 +2465,22 @@ func (r *FindingRepository) UpdateSnippetBatchByFingerprints(ctx context.Context
 		caseBuilder.WriteString("END")
 		args = append(args, pq.Array(validFingerprints))
 
+		const needsSnippet = `(f.snippet IS NULL OR f.snippet = '' OR f.snippet = 'requires login')`
 		query := fmt.Sprintf(`
-			UPDATE findings
+			WITH %s
+			UPDATE findings f
 			SET snippet = %s, updated_at = NOW()
-			WHERE tenant_id = $1
-			AND fingerprint = ANY($%d)
-			AND (snippet IS NULL OR snippet = '' OR snippet = 'requires login')
-		`, caseBuilder.String(), argIdx)
+			FROM locked l
+			WHERE f.id = l.locked_id AND f.tenant_id = $1 AND %s
+		`, findingLockCTE("findings f", fmt.Sprintf("f.tenant_id = $1 AND f.fingerprint = ANY($%d) AND %s", argIdx, needsSnippet)),
+			caseBuilder.String(), needsSnippet)
 
-		result, err := r.db.ExecContext(ctx, query, args...)
+		var result sql.Result
+		err := retryWriteConflict(ctx, func() error {
+			var execErr error
+			result, execErr = r.db.ExecContext(ctx, query, args...)
+			return execErr
+		})
 		if err != nil {
 			return totalUpdated, fmt.Errorf("failed to update snippets: %w", err)
 		}
@@ -2485,7 +2578,7 @@ func (r *FindingRepository) selectQuery() string {
 			` + findingNetworkColumnsSQL + `,
 			` + findingScannerColumnsSQL + `,
 			` + findingSeverityColumnsSQL + `,
-			branch_only, row_version,
+			branch_only, row_version, sla_kev_capped,
 			EXISTS(SELECT 1 FROM finding_data_flows df WHERE df.finding_id = findings.id) AS has_data_flow
 		FROM findings
 	`
@@ -2622,6 +2715,8 @@ func (r *FindingRepository) doScan(scan func(dest ...any) error) (*vulnerability
 		ingestChannel sql.NullString
 		// Branch-only mark (migration 001138)
 		branchOnly bool
+		// The deadline came from the known exploited cap.
+		slaKEVCapped bool
 		// Data flow flag
 		hasDataFlow bool
 	)
@@ -2661,7 +2756,7 @@ func (r *FindingRepository) doScan(scan func(dest ...any) error) (*vulnerability
 	dests = append(dests, scanCols.dests()...)
 	var rowVersion int64
 	dests = append(dests, sevCols.dests()...)
-	dests = append(dests, &branchOnly, &rowVersion, &hasDataFlow)
+	dests = append(dests, &branchOnly, &rowVersion, &slaKEVCapped, &hasDataFlow)
 	if err := scan(dests...); err != nil {
 		return nil, err
 	}
@@ -2710,6 +2805,7 @@ func (r *FindingRepository) doScan(scan func(dest ...any) error) (*vulnerability
 	f.RestoreScannerDetails(scanCols.details())
 	f.RestoreSeverityProvenance(sevCols.provenance())
 	f.RestoreBranchOnly(branchOnly)
+	f.RestoreSLAKEVCapped(slaKEVCapped)
 	f.RestoreRowVersion(rowVersion)
 	return f, nil
 }
@@ -3291,7 +3387,7 @@ func (r *FindingRepository) GetStats(ctx context.Context, tenantID shared.ID, da
 		query += " AND " + vulnerability.FindingMemberVisibilitySQL("findings", "$1", fmt.Sprintf("$%d::uuid", len(args)))
 	}
 
-	return r.queryFindingStats(ctx, query, args)
+	return r.queryFindingStats(ctx, r.db, query, args)
 }
 
 // findingStatsSelect is the one aggregate behind every findings stats read:
@@ -3339,8 +3435,11 @@ var findingStatsSelect = `
 			COUNT(*) FILTER (WHERE severity = 'medium' AND ` + openLens + `) as open_medium,
 			COUNT(*) FILTER (WHERE severity = 'low' AND ` + openLens + `) as open_low,
 			COUNT(*) FILTER (WHERE severity IN ('info', 'none') AND ` + openLens + `) as open_info,
-			-- Fixes claimed by an owner, waiting for a verifier.
-			COUNT(*) FILTER (WHERE status = 'fix_applied') as awaiting_verification,
+			-- Fixes claimed by an owner, waiting for a verifier: the verification
+			-- queue. Pentest findings are verified in their own module (the
+			-- grouped queue and the verify actions leave them out), so they
+			-- are not counted here either.
+			COUNT(*) FILTER (WHERE status = 'fix_applied' AND source <> 'pentest') as awaiting_verification,
 			COUNT(*) FILTER (WHERE ` + vulnerability.FindingLensSQL(vulnerability.FindingLensOpen) + `) as state_open,
 			COUNT(*) FILTER (WHERE ` + vulnerability.FindingLensSQL(vulnerability.FindingLensFixed) + `) as state_fixed,
 			COUNT(*) FILTER (WHERE ` + vulnerability.FindingLensSQL(vulnerability.FindingLensDispositioned) + `) as state_dispositioned
@@ -3348,7 +3447,7 @@ var findingStatsSelect = `
 `
 
 // queryFindingStats runs a findingStatsSelect query and maps its row.
-func (r *FindingRepository) queryFindingStats(ctx context.Context, query string, args []any) (*vulnerability.FindingStats, error) {
+func (r *FindingRepository) queryFindingStats(ctx context.Context, q findingRowQuerier, query string, args []any) (*vulnerability.FindingStats, error) {
 	stats := vulnerability.NewFindingStats()
 
 	var (
@@ -3365,7 +3464,7 @@ func (r *FindingRepository) queryFindingStats(ctx context.Context, query string,
 		stateOpen, stateFixed, stateDispositioned                    int64
 	)
 
-	err := r.db.QueryRowContext(ctx, query, args...).Scan(
+	err := q.QueryRowContext(ctx, query, args...).Scan(
 		&total,
 		&critical, &high, &medium, &low, &info,
 		&statusNew, &statusConfirmed, &statusInProgress, &statusResolved,
@@ -3497,8 +3596,10 @@ func (r *FindingRepository) buildWhereClause(filter vulnerability.FindingFilter)
 	}
 
 	if len(filter.Severities) > 0 {
-		placeholders := make([]string, len(filter.Severities))
-		for i, sev := range filter.Severities {
+		// info also matches none (vulnerability.ExpandSeverityFilter).
+		sevs := vulnerability.ExpandSeverityFilter(filter.Severities)
+		placeholders := make([]string, len(sevs))
+		for i, sev := range sevs {
 			placeholders[i] = fmt.Sprintf("$%d", argIndex)
 			args = append(args, sev.String())
 			argIndex++
@@ -3784,12 +3885,47 @@ func (r *FindingRepository) AutoReopenByFingerprintsBatch(ctx context.Context, t
 		return result, nil
 	}
 
-	query := `
+	// Each reopen writes its auto_reopened timeline entry in the same
+	// transaction (the scan behind it comes from the context's evidence).
+	// A write conflict rolls the transaction back and runs it again.
+	err := retryWriteConflict(ctx, func() error {
+		clear(result)
+		return r.autoReopenTx(ctx, autoReopenQuery, tenantID, fingerprints, result)
+	})
+	if err != nil {
+		return nil, err
+	}
+	return result, nil
+}
+
+// everTriagedSQL is true for a finding someone worked on: it has an assignee,
+// or its timeline shows a move to confirmed, in_progress or fix_applied. A
+// finding no one touched reopens as new; a triaged one as confirmed (it keeps
+// the triage decision that it is real).
+const everTriagedSQL = `(assigned_to IS NOT NULL OR EXISTS (
+			SELECT 1 FROM finding_activities fa
+			WHERE fa.tenant_id = findings.tenant_id AND fa.finding_id = findings.id
+				AND fa.changes->>'new_status' IN ('confirmed', 'in_progress', 'fix_applied')))`
+
+var (
+	// The reopen target "new" is a platform move only for a resolved finding;
+	// checked against the lifecycle when the package loads.
+	_ = platformFromSQL(vulnerability.FindingStatusNew, vulnerability.FindingStatusResolved)
+
+	// $1 tenant, $2 fingerprints, $3 the flap window in seconds. A duplicate
+	// reported again reopens the finding it was folded into (same asset),
+	// never the duplicate itself (its status is not resolved).
+	autoReopenQuery = `
 		WITH prev AS (
-			SELECT id, status, resolution, closure_reason, verification, resolved_by, resolved_at
+			SELECT id, status, resolution, closure_reason, verification, resolved_by, resolved_at,
+				finding_reopen_class(findings, $3::double precision) AS reopen_class,
+				CASE WHEN ` + everTriagedSQL + ` THEN 'confirmed' ELSE 'new' END AS reopen_to
 			FROM findings
 			WHERE tenant_id = $1
-				AND fingerprint = ANY($2)
+				AND (fingerprint = ANY($2)
+					OR id IN (SELECT d.duplicate_of FROM findings d
+						WHERE d.tenant_id = $1 AND d.fingerprint = ANY($2) AND d.status = 'duplicate'
+							AND d.duplicate_of IS NOT NULL AND d.asset_id = findings.asset_id))
 				AND status IN ` + regressionReopenFromSQL + `
 				-- Status decides: only a resolved row reopens (dispositions are
 				-- other statuses). The free-text resolution note is not read.
@@ -3801,10 +3937,12 @@ func (r *FindingRepository) AutoReopenByFingerprintsBatch(ctx context.Context, t
 				-- resolved while the statement stands (it is withdrawn on edit,
 				-- delete or expiry, which reopens it).
 				AND NOT (status = 'resolved' AND verification = 'vex_statement' AND vex_statement_id IS NOT NULL)
-			FOR UPDATE
+			-- The global lock order of findings rows (finding_lock_order.go).
+			ORDER BY ` + findingLockOrderSQL + `
+			FOR NO KEY UPDATE
 		)
 		UPDATE findings f
-		SET status = 'confirmed',
+		SET status = prev.reopen_to,
 			resolution = NULL,
 			closure_reason = NULL,
 			verification = NULL,
@@ -3813,16 +3951,61 @@ func (r *FindingRepository) AutoReopenByFingerprintsBatch(ctx context.Context, t
 			updated_at = NOW()
 		FROM prev
 		WHERE f.id = prev.id
-		RETURNING f.id, f.fingerprint, prev.status, prev.resolution, prev.closure_reason, prev.verification, prev.resolved_by, prev.resolved_at
+		RETURNING f.id, f.fingerprint, prev.status, prev.resolution, prev.closure_reason, prev.verification, prev.resolved_by, prev.resolved_at, prev.reopen_to, prev.reopen_class
 	`
 
-	// Each reopen writes its auto_reopened timeline entry in the same
-	// transaction (the scan behind it comes from the context's evidence).
-	err := r.db.withFindingTransition(ctx, findingTransition{
-		ActivityType: "auto_reopened", Source: "auto", Reason: "regression_detected_again", ActorType: "scanner",
-		ActorName: "system: scan detected it again",
-	}, func(tx *sql.Tx) error {
-		rows, err := tx.QueryContext(ctx, query, tenantID.String(), pq.Array(fingerprints))
+	// What the timeline says per class of reopen.
+	autoReopenTransition = findingTransition{
+		ActivityType: "auto_reopened", Source: "auto", ActorType: "scanner", ActorName: "system: scan detected it again",
+		SeenAgainWindowSecs: vulnerability.SeenAgainWindow.Seconds(),
+		ReasonByReopenClass: map[string]string{
+			string(vulnerability.ReopenVerifiedRegression): "regression_detected_again",
+			string(vulnerability.ReopenRegression):         "regression_detected_again",
+			string(vulnerability.ReopenSeenAgain):          "seen_again",
+		},
+		MessageByReopenClass: map[string]string{
+			string(vulnerability.ReopenVerifiedRegression): "Seen again after a verified fix: the fix did not hold",
+			string(vulnerability.ReopenRegression):         "Seen again after it was closed as fixed",
+			string(vulnerability.ReopenSeenAgain):          "Seen again shortly after an automatic close: not counted as a regression",
+		},
+	}
+)
+
+// MarkDuplicateTargetsSeen records the scan as the latest sighting of the
+// findings that the given fingerprints (duplicates a scan reported again) were
+// folded into, on the same asset, so the target is not auto-resolved while its
+// duplicate is still reported. A duplicate is never touched. Tenant-scoped.
+func (r *FindingRepository) MarkDuplicateTargetsSeen(ctx context.Context, tenantID shared.ID, fingerprints []string, scanID, toolName string) (int64, error) {
+	if len(fingerprints) == 0 {
+		return 0, nil
+	}
+	query := `
+		WITH ` + findingLockCTE("findings f", `f.tenant_id = $2 AND f.status <> 'duplicate'
+				AND f.id IN (SELECT d.duplicate_of FROM findings d
+					WHERE d.tenant_id = $2 AND d.fingerprint = ANY($3) AND d.status = 'duplicate'
+						AND d.duplicate_of IS NOT NULL AND d.asset_id = f.asset_id)`) + `
+		UPDATE findings f
+		SET scan_id = $1, updated_at = NOW(), last_seen_at = NOW(), observation_state = 'present',
+			last_seen_tool = COALESCE(NULLIF($4, ''), f.last_seen_tool)
+		FROM locked l
+		WHERE f.id = l.locked_id AND f.tenant_id = $2`
+	var res sql.Result
+	err := retryWriteConflict(ctx, func() error {
+		var execErr error
+		res, execErr = r.db.ExecContext(ctx, query, scanID, tenantID.String(), pq.Array(fingerprints), toolName)
+		return execErr
+	})
+	if err != nil {
+		return 0, fmt.Errorf("mark duplicate targets seen: %w", err)
+	}
+	return res.RowsAffected()
+}
+
+// autoReopenTx runs the reopen of AutoReopenByFingerprintsBatch in one
+// transaction and records each reopened finding in result.
+func (r *FindingRepository) autoReopenTx(ctx context.Context, query string, tenantID shared.ID, fingerprints []string, result map[string]vulnerability.ReopenedFinding) error {
+	return r.db.withFindingTransition(ctx, autoReopenTransition, func(tx *sql.Tx) error {
+		rows, err := tx.QueryContext(ctx, query, tenantID.String(), pq.Array(fingerprints), vulnerability.SeenAgainWindow.Seconds())
 		if err != nil {
 			return fmt.Errorf("failed to batch auto-reopen findings: %w", err)
 		}
@@ -3830,11 +4013,11 @@ func (r *FindingRepository) AutoReopenByFingerprintsBatch(ctx context.Context, t
 
 		for rows.Next() {
 			var (
-				idStr, fp, prevStatus                       string
+				idStr, fp, prevStatus, reopenTo, class      string
 				resolution, reason, verified, resolvedByStr sql.NullString
 				resolvedAt                                  sql.NullTime
 			)
-			if err := rows.Scan(&idStr, &fp, &prevStatus, &resolution, &reason, &verified, &resolvedByStr, &resolvedAt); err != nil {
+			if err := rows.Scan(&idStr, &fp, &prevStatus, &resolution, &reason, &verified, &resolvedByStr, &resolvedAt, &reopenTo, &class); err != nil {
 				return fmt.Errorf("failed to scan reopened finding: %w", err)
 			}
 			id, err := shared.IDFromString(idStr)
@@ -3842,6 +4025,8 @@ func (r *FindingRepository) AutoReopenByFingerprintsBatch(ctx context.Context, t
 				continue
 			}
 			rf := vulnerability.ReopenedFinding{
+				Class:                 vulnerability.ReopenClass(class),
+				ReopenedTo:            vulnerability.FindingStatus(reopenTo),
 				ID:                    id,
 				Fingerprint:           fp,
 				PreviousStatus:        vulnerability.FindingStatus(prevStatus),
@@ -3863,10 +4048,6 @@ func (r *FindingRepository) AutoReopenByFingerprintsBatch(ctx context.Context, t
 
 		return rows.Err()
 	})
-	if err != nil {
-		return nil, err
-	}
-	return result, nil
 }
 
 // ExpireFeatureBranchFindings marks stale feature branch findings stale
@@ -4064,7 +4245,7 @@ func (r *FindingRepository) selectQueryForEnrichment() string {
 			` + findingNetworkColumnsSQL + `,
 			` + findingScannerColumnsSQL + `,
 			` + findingSeverityColumnsSQL + `,
-			branch_only, row_version,
+			branch_only, row_version, sla_kev_capped,
 			FALSE AS has_data_flow
 		FROM findings
 	`
@@ -4170,76 +4351,109 @@ var enrichColumnDefs = []enrichColumnDef{
 }
 
 // EnrichBatchByFingerprints enriches existing findings with new scan data using domain EnrichFrom() rules.
-// It loads existing findings by fingerprint, applies enrichment, and batch updates enrichable columns
-// using a chunked VALUES-based UPDATE (1 query per chunk instead of N individual UPDATEs).
-// Protected fields (status, resolution, assigned_to, etc.) are never modified.
-// Returns the count of enriched findings.
+// It locks the stored rows, merges each sighting into the row it read under
+// the lock and batch updates the enrichable columns with a chunked
+// VALUES-based UPDATE (1 query per chunk instead of N individual UPDATEs),
+// all in one transaction. Protected fields (status, resolution, assigned_to,
+// etc.) are never modified.
 //
-//nolint:cyclop // Enrichment batch update inherently has many columns to persist
+// Concurrent uploads of the same findings (CI re-runs, matrix jobs) used to
+// read the rows, merge outside any lock and write back with a row_version
+// check: every writer but one lost the race, the retries ran out, and the
+// rest of the batch fell back to a sighting-only update or failed with a
+// deadlock (the rows were locked in plan order). Locking the rows in the
+// global order (finding_lock_order.go) before the read makes concurrent
+// writers queue on the same order: none can change a row between this read
+// and this write, and none can deadlock with another enrichment, the upsert
+// of new findings or any other batched finding write. A deadlock or serialization failure that
+// still happens (another code path) rolls the transaction back and it runs
+// again (retryWriteConflict).
+//
+// Returns the count of enriched findings. On error the returned
+// *vulnerability.EnrichIncompleteError lists the fingerprints whose sighting
+// did not land, so the caller records only those.
 func (r *FindingRepository) EnrichBatchByFingerprints(ctx context.Context, tenantID shared.ID, newFindings []*vulnerability.Finding, scanID string) (int64, error) {
 	if len(newFindings) == 0 {
 		return 0, nil
 	}
 
-	// Collect fingerprints and build lookup map from new findings
 	fingerprints := make([]string, 0, len(newFindings))
 	newByFP := make(map[string]*vulnerability.Finding, len(newFindings))
 	for _, f := range newFindings {
 		fp := f.Fingerprint()
-		fingerprints = append(fingerprints, fp)
+		if _, dup := newByFP[fp]; !dup {
+			fingerprints = append(fingerprints, fp)
+		}
 		newByFP[fp] = f
 	}
 
-	// Load, merge and write; a row another writer changed between the read
-	// and the write is left alone by the row_version predicate, then read
-	// and merged again (bounded).
+	// The row_version predicate stays as a guard: a row that still moved
+	// between the locked read and the write (it cannot under the lock) is
+	// read and merged again (bounded).
 	var totalEnriched int64
 	pending := fingerprints
 	for attempt := 0; attempt < vulnerability.FindingWriteAttempts && len(pending) > 0; attempt++ {
-		existingByFP, err := r.GetByFingerprintsBatch(ctx, tenantID, pending)
-		if err != nil {
-			return totalEnriched, fmt.Errorf("failed to load existing findings for enrichment: %w", err)
-		}
 		if r.afterEnrichLoad != nil {
 			r.afterEnrichLoad(attempt)
 		}
-		written, lost, err := r.enrichOnce(ctx, existingByFP, newByFP)
-		totalEnriched += written
+		var (
+			written int64
+			lost    []string
+		)
+		err := retryWriteConflict(ctx, func() error {
+			var txErr error
+			written, lost, txErr = r.enrichOnce(ctx, tenantID, pending, newByFP)
+			return txErr
+		})
 		if err != nil {
-			return totalEnriched, err
+			return totalEnriched, &vulnerability.EnrichIncompleteError{Fingerprints: pending, Err: err}
 		}
+		totalEnriched += written
 		pending = lost
 	}
 	if len(pending) > 0 {
-		return totalEnriched, fmt.Errorf("enrich %d findings: %w", len(pending), vulnerability.ErrFindingConflict)
+		return totalEnriched, &vulnerability.EnrichIncompleteError{Fingerprints: pending,
+			Err: fmt.Errorf("enrich %d findings: %w", len(pending), vulnerability.ErrFindingConflict)}
 	}
 	return totalEnriched, nil
 }
 
-// enrichOnce merges each new sighting into the stored finding read with it
-// and writes the merged rows in one transaction. It returns how many rows
-// landed and the fingerprints whose row moved after it was read.
-func (r *FindingRepository) enrichOnce(ctx context.Context, existingByFP, newByFP map[string]*vulnerability.Finding) (int64, []string, error) {
-	allArgs := make([][]interface{}, 0, len(existingByFP))
-	fpByID := make(map[string]string, len(existingByFP))
-	for fp, existing := range existingByFP {
-		newData, ok := newByFP[fp]
-		if !ok {
-			continue
-		}
-		existing.EnrichFrom(newData)
-		args, argErr := collectEnrichArgs(existing)
-		if argErr != nil {
-			return 0, nil, fmt.Errorf("failed to collect enrich args for %s: %w", fp, argErr)
-		}
-		allArgs = append(allArgs, args)
-		fpByID[existing.ID().String()] = fp
-	}
-	if len(allArgs) == 0 {
-		return 0, nil, nil
-	}
+// enrichLockedSelectSQL reads the findings an enrichment merges into and
+// locks them in the global order of findings rows (finding_lock_order.go).
+func (r *FindingRepository) enrichLockedSelectSQL() string {
+	return r.selectQueryForEnrichment() + `
+		WHERE tenant_id = $1 AND fingerprint = ANY($2)
+		ORDER BY ` + findingLockOrderSQL + `
+		FOR NO KEY UPDATE`
+}
 
-	// Batch UPDATE in transaction using chunked VALUES clause
+// loadLockedForEnrich reads the stored findings of the fingerprints under a
+// row lock taken in the global order (enrichLockedSelectSQL).
+func (r *FindingRepository) loadLockedForEnrich(ctx context.Context, tx *sql.Tx, tenantID shared.ID, fingerprints []string) ([]*vulnerability.Finding, error) {
+	rows, err := tx.QueryContext(ctx, r.enrichLockedSelectSQL(), tenantID.String(), pq.Array(fingerprints))
+	if err != nil {
+		return nil, fmt.Errorf("failed to load existing findings for enrichment: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+	var existing []*vulnerability.Finding
+	for rows.Next() {
+		f, scanErr := r.scanFindingFromRows(rows)
+		if scanErr != nil {
+			return nil, fmt.Errorf("failed to scan finding: %w", scanErr)
+		}
+		existing = append(existing, f)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("error iterating findings: %w", err)
+	}
+	return existing, nil
+}
+
+// enrichOnce locks and reads the stored findings of the given fingerprints,
+// merges each new sighting into the row read with it and writes the merged
+// rows, in one transaction. It returns how many rows landed and the
+// fingerprints whose row moved after it was read.
+func (r *FindingRepository) enrichOnce(ctx context.Context, tenantID shared.ID, fingerprints []string, newByFP map[string]*vulnerability.Finding) (int64, []string, error) {
 	tx, err := r.db.BeginTx(ctx, nil)
 	if err != nil {
 		return 0, nil, fmt.Errorf("failed to begin enrichment transaction: %w", err)
@@ -4247,6 +4461,31 @@ func (r *FindingRepository) enrichOnce(ctx context.Context, existingByFP, newByF
 	defer func() { _ = tx.Rollback() }()
 	if err := setLocalStatementTimeout(ctx, tx, timeoutBatch); err != nil {
 		return 0, nil, err
+	}
+
+	// Rows come back locked, in the global order; the write keeps that order.
+	existing, err := r.loadLockedForEnrich(ctx, tx, tenantID, fingerprints)
+	if err != nil {
+		return 0, nil, err
+	}
+
+	allArgs := make([][]interface{}, 0, len(existing))
+	fpByID := make(map[string]string, len(existing))
+	for _, f := range existing {
+		newData, ok := newByFP[f.Fingerprint()]
+		if !ok {
+			continue
+		}
+		f.EnrichFrom(newData)
+		args, argErr := collectEnrichArgs(f)
+		if argErr != nil {
+			return 0, nil, fmt.Errorf("failed to collect enrich args for %s: %w", f.Fingerprint(), argErr)
+		}
+		allArgs = append(allArgs, args)
+		fpByID[f.ID().String()] = f.Fingerprint()
+	}
+	if len(allArgs) == 0 {
+		return 0, nil, nil
 	}
 
 	landed := make(map[string]bool, len(allArgs))
@@ -4284,6 +4523,7 @@ func (r *FindingRepository) enrichOnce(ctx context.Context, existingByFP, newByF
 			lost = append(lost, fp)
 		}
 	}
+	sort.Strings(lost)
 	return int64(len(landed)), lost, nil
 }
 

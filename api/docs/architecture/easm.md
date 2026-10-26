@@ -41,7 +41,7 @@ importance rule, program metrics and software matches all read it.
 
 "Newly exposed" is one computation too: the state-history changes that made an
 asset internet-facing (`asset.NewlyExposedHistory`), counted the same way by
-Assets › What changed (`/state-history/counts`) and the attack surface overview
+Assets › Activity (`/state-history/counts`) and the attack surface overview
 (`newly_exposed`).
 
 ## 1. Flow
@@ -120,7 +120,7 @@ API connector already uses (`pkg/httpsec`).
 | `/attack-surface` | Real, over `GET /attack-surface/stats`; the trend fields are hard-coded 0 in the API |
 | `/attack-surface/external` | Partial: client-side over the first 100 assets; the "Expiring certs" card is always 0 |
 | `/assets/{domains,certificates,ip-addresses,websites,services}` | Real lists over `/assets?types=`; certificates without `not_after` show as valid; websites without a status show 200 |
-| `/assets/changes` (What changed) | Real |
+| `/assets/changes` (Activity: inventory changes, and value changes with `?view=values`) | Real |
 | `/attack-paths`, `/exposure-chains`, `/exposures` | Real |
 | `/exposures/{vulnerabilities,secrets,code,misconfigurations}` | Partial: side cards show tenant-wide numbers |
 | `/scope`, `/scoping` | Real |
@@ -305,11 +305,11 @@ the scope decisions that still need a person, one card each
 
 `total` is the number of decisions waiting: one per card, plus one per
 suggested rule about names and one for the names no rule groups (address rules
-belong to the addresses card). It is the Suggestions tab and sidebar badge
+belong to the addresses card). It is the Review tab and sidebar badge
 (`GET /easm/suggestions?view=count`, seeded by the session bootstrap as
 `badges.easm_review`). The web console shows the cards in the Decide panel
 (`web/src/features/attack-surface/components/easm-decide-panel.tsx`) on the
-Suggestions tab and, with "Not now", at the top of the overview; the row list
+Review tab and, with "Not now", at the top of the overview; the row list
 is behind "Show all items".
 A card holds at most 200 items (`truncated` says more exist). Accepting one
 is an ordinary `POST /scope/targets/bulk` with its items (exact `ip_address`
@@ -364,7 +364,13 @@ exposures through `postgres.EASMExposureWriter`; the DNS checks' reopen goes
 through `EASMDNSRepository.ReopenAuto`. Both enqueue in **the same
 transaction** as the exposure write, and only for rows that were **inserted**
 (`xmax = 0` on the upsert) or **reopened** by the check. A re-sighting
-announces nothing; a rollback leaves neither row.
+announces nothing, with one exception: an **active** exposure that was not
+seen for longer than the tenant's alert fingerprint lifetime
+(`reappear_after_days` in the EASM settings, 7..365, default 30) and is seen
+again goes out as **reappeared**, so a host that disappears and returns
+alerts again. The prior `last_seen_at` is read in the same transaction before
+the upsert moves it, per tenant. Resolved or accepted exposures stay quiet.
+A rollback leaves neither row.
 
 | Exposure | Alert |
 |---|---|
@@ -384,7 +390,7 @@ their severity filter applies.
 
 Payload metadata: `channel` `easm`, `exposure_id`, `event_type`, `severity`,
 `source` (`cert_transparency`, `easm_dns`), `attribution` (state or label),
-`reason` (`new`/`reopened`), `asset_id`/`asset_name`, `fingerprint`.
+`reason` (`new`/`reopened`/`reappeared`), `asset_id`/`asset_name`, `fingerprint`.
 
 **Tenant isolation.** The alerter loads exposures with the tenant id in the
 query, so ids of another tenant announce nothing; the throttle counter

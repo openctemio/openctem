@@ -9,7 +9,7 @@ name: API CI
 # Two tiers (`changes` decides; the `full` output of .github/scripts/changed.sh):
 #   fast            pull_request. `API static checks` (one job: every short gate
 #                   and the linters as steps) + `Tests (Postgres + Redis)`: the
-#                   whole suite against real Postgres and Redis in 2 + 2 shards
+#                   whole suite against real Postgres and Redis in 6 shards
 #                   without the race detector, so the tenant-isolation and other
 #                   DB-backed tests fail on the PR, not first in the merge queue
 #                   (owner decision D-30). `Tests (least-privilege DB role)` and
@@ -17,7 +17,7 @@ name: API CI
 #                   a migration or the role script. PR runs are cancelled by a
 #                   newer push to the same PR (concurrency below).
 #   full            merge_group, push, and a PR with the `ci:full` label or a
-#                   changed CI definition. The suite in 4 + 4 shards with -race,
+#                   changed CI definition. The suite in 8 shards with -race,
 #                   the least-privilege suite (D-6), PostgreSQL 18, plus
 #                   `Release Binaries` (not on a PR), and on main the Docker build.
 # `API CI OK` refuses a merge_group or push run that was not the full tier, so
@@ -62,14 +62,17 @@ jobs:
     permissions:
       contents: read
       pull-requests: read # the `ci:full` label (changed.sh reads it live)
+      actions: read # queue-verified.sh reads the merge queue's runs of this commit
     outputs:
-      api: ${{ steps.f.outputs.api }}
+      api: ${{ steps.f.outputs.api == 'true' && steps.queue.outputs.verified != 'true' }}
+      verified: ${{ steps.queue.outputs.verified }}
       full: ${{ steps.f.outputs.full }}
       migrations: ${{ steps.f.outputs.migrations }}
       test_matrix: ${{ steps.tier.outputs.test_matrix }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          persist-credentials: false
           fetch-depth: 0
       - id: f
         working-directory: .
@@ -81,19 +84,31 @@ jobs:
           PR_NUMBER: ${{ github.event.pull_request.number }}
           PR_LABELS: ${{ toJSON(github.event.pull_request.labels.*.name) }}
         run: bash .github/scripts/changed.sh
+      # A push to develop of a commit the merge queue already passed with this
+      # workflow skips the jobs below (.github/scripts/queue-verified.sh).
+      - id: queue
+        working-directory: .
+        env:
+          EVENT: ${{ github.event_name }}
+          REF: ${{ github.ref }}
+          SHA: ${{ github.sha }}
+          WORKFLOW_REF: ${{ github.workflow_ref }}
+          REPO: ${{ github.repository }}
+          GH_TOKEN: ${{ github.token }}
+        run: bash .github/scripts/queue-verified.sh
 
-      # The shards of `Tests (Postgres + Redis)` for this tier. Full: 4 + 4
-      # shards with -race. Fast: 2 + 2 shards without it (same tests, about half
-      # the runner time; the race detector runs in the queue and on push).
-      # `API static checks` proves both splits cover every test exactly once.
+      # The shards of `Tests (Postgres + Redis)` for this tier. Full: 8 shards
+      # with -race. Fast: 6 shards without it (same tests, about half the
+      # runner time; the race detector runs in the queue and on push).
+      # `API static checks` proves every split covers every test exactly once.
       - id: tier
         working-directory: .
         env:
           FULL: ${{ steps.f.outputs.full }}
         run: |
-          if [ "$FULL" = true ]; then n=4 race=true; else n=2 race=false; fi
+          if [ "$FULL" = true ]; then n=8 race=true; else n=6 race=false; fi
           m="$(jq -nc --argjson n "$n" --argjson race "$race" \
-            '[range($n) | {kind: "unit", shard: ., total: $n, race: $race}] + [range($n) | {kind: "pkgs", shard: ., total: $n, race: $race}]')"
+            '[range($n) | {shard: ., total: $n, race: $race}]')"
           echo "test_matrix=$m" | tee -a "$GITHUB_OUTPUT"
 
       # Runs on every PR, also a docs-only one that skips the jobs below.
@@ -115,6 +130,7 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          persist-credentials: false
           fetch-depth: 0 # base branch for the migration diff and golangci --new-from-rev
 
       # security-lint.sh expects <root>/{api,agent,sdk-go}. The monorepo root
@@ -122,12 +138,14 @@ jobs:
       - name: Checkout sensor (as agent/)
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          persist-credentials: false
           repository: openctemio/sensor
           path: agent
 
       - name: Checkout sdk-go
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          persist-credentials: false
           repository: openctemio/sdk-go
           path: sdk-go
 
@@ -135,7 +153,9 @@ jobs:
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: api/go.mod
-          cache: true
+          # A merge-queue ref can neither read develop's cache nor share what
+          # it writes, so it neither restores nor saves one.
+          cache: ${{ github.event_name != 'merge_group' }}
           cache-dependency-path: api/go.sum
 
       # The analysis caches of golangci-lint, and the installed staticcheck
@@ -154,7 +174,7 @@ jobs:
 
       - name: Fetch base branch
         if: github.event_name == 'pull_request'
-        run: git fetch --no-tags origin "${{ github.base_ref }}"
+        run: git fetch --no-tags origin "${GITHUB_BASE_REF}"
 
       # PR-only: it reads the PR's labels (allow-destructive-migration).
       - name: Migration Safety
@@ -162,7 +182,7 @@ jobs:
         env:
           ALLOW_DESTRUCTIVE_MIGRATION: ${{ contains(github.event.pull_request.labels.*.name, 'allow-destructive-migration') }}
         run: |
-          BASE_REF="$(bash ../.github/scripts/effective-base.sh api "origin/${{ github.base_ref }}")"
+          BASE_REF="$(bash ../.github/scripts/effective-base.sh api "origin/${GITHUB_BASE_REF}")"
           export BASE_REF
           bash scripts/check-migrations.sh
 
@@ -174,13 +194,16 @@ jobs:
       # ahead, so two queued PRs with the same number cannot both land.
       # On pull_request "below the base max" is only a warning: the merge
       # queue renumbers a PR's migrations when it enqueues it. merge_group and
-      # push keep it an error; duplicates fail everywhere.
+      # push keep it an error; duplicates fail everywhere. A push to develop is
+      # compared with develop before the push (see the push branch below).
       - name: Migration Versions
         working-directory: .
         env:
           EVENT: ${{ github.event_name }}
           BASE_REF: ${{ github.base_ref }}
           MG_BASE: ${{ github.event.merge_group.base_sha }}
+          PUSH_REF: ${{ github.ref }}
+          PUSH_BEFORE: ${{ github.event.before }}
         run: |
           bash .github/scripts/check-migration-versions.test.sh >/dev/null
           bash .github/scripts/pr-migration-renumber.test.sh >/dev/null
@@ -190,7 +213,17 @@ jobs:
           case "$EVENT" in
             pull_request) MIGRATION_BELOW_BASE=warning bash .github/scripts/check-migration-versions.sh "origin/${BASE_REF}" ;;
             merge_group)  bash .github/scripts/check-migration-versions.sh "$MG_BASE" ;;
-            *)            bash .github/scripts/check-migration-versions.sh ;;
+            *)
+              # A push to develop that skipped the queue (a direct or admin
+              # merge) is checked against develop as it was before the push,
+              # so a migration numbered at or below develop's highest turns
+              # develop red at once instead of being skipped silently on
+              # databases that are already past it.
+              base=""
+              if [ "$PUSH_REF" = "refs/heads/develop" ] && git cat-file -e "${PUSH_BEFORE}^{commit}" 2>/dev/null; then
+                base="$PUSH_BEFORE"
+              fi
+              bash .github/scripts/check-migration-versions.sh ${base:+"$base"} ;;
           esac
 
       # PR only: a migration whose number develop has taken since is
@@ -255,6 +288,12 @@ jobs:
       - name: Security Gates (raw membership role guard)
         run: go test ./tools/lint/rawrole/... -count=1
 
+      # No new err.Error(), lower error text or entity id in a response
+      # message, stored status or audit message (shrink-only baseline;
+      # docs/architecture/error-responses.md).
+      - name: Security Gates (error message leak guard)
+        run: go test ./tools/lint/errleak/... -count=1
+
       - name: Security Gates (sensor vocabulary guard)
         run: go test ./tools/lint/sensorvocab/... -count=1
 
@@ -304,14 +343,12 @@ jobs:
           done
           rm .env
 
-      # The shards of the two DB-backed jobs below cover every package and
-      # every top-level test of tests/unit exactly once.
-      # 4 + 4: full tier, 2 + 2: fast tier, 3 + 3: least-privilege.
+      # The shards of the DB-backed jobs cover every package and every
+      # top-level test of a split package exactly once. 8: full tier,
+      # 6: fast tier and least-privilege, 3: api-pg-compat.yml.
       - name: Test shards cover every test
         run: |
-          bash ../.github/scripts/go-shard.sh check 4 4
-          bash ../.github/scripts/go-shard.sh check 2 2
-          bash ../.github/scripts/go-shard.sh check 3 3
+          bash ../.github/scripts/go-shard.sh check 8 6 3
 
       # vet, staticcheck and golangci-lint: steps of this job (one runner, one
       # checkout, one setup-go) rather than a job of their own. The test shards
@@ -330,19 +367,20 @@ jobs:
       - name: Lint (golangci-lint on new code)
         if: github.event_name == 'pull_request'
         run: |
-          base="$(bash ../.github/scripts/effective-base.sh api "origin/${{ github.base_ref }}")"
+          base="$(bash ../.github/scripts/effective-base.sh api "origin/${GITHUB_BASE_REF}")"
           make lint-new BASE_REF="$base"
 
   # Every event (PRs included): the whole suite against real Postgres and
   # Redis, so the DB-backed tests run too. The shard list comes from `changes`
-  # (fast tier 2 + 2 without -race, full tier 4 + 4 with -race).
+  # (fast tier 6 shards without -race, full tier 8 with -race).
   test:
     name: Tests (Postgres + Redis)
     needs: changes
     if: needs.changes.outputs.api == 'true'
     runs-on: ubuntu-latest
     # The suite is split into parallel shards (.github/scripts/go-shard.sh:
-    # tests/unit alone is most of the run time, so it has its own shards).
+    # the few packages that hold most of the run time are split by test name
+    # over every shard, the rest go whole to one shard each).
     # `Static checks` proves the shards together cover every test once.
     strategy:
       fail-fast: false
@@ -383,6 +421,7 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          persist-credentials: false
           fetch-depth: 2 # the test merge's base parent, for the renumber below
 
       - name: Renumber this PR's clashing migrations (this run only)
@@ -394,7 +433,9 @@ jobs:
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: api/go.mod
-          cache: true
+          # A merge-queue ref can neither read develop's cache nor share what
+          # it writes, so it neither restores nor saves one.
+          cache: ${{ github.event_name != 'merge_group' }}
           cache-dependency-path: api/go.sum
 
       # The spec is generated, not committed; the contract tests read it.
@@ -414,12 +455,11 @@ jobs:
       # OPENCTEM_TEST_DB_REQUIRED: testdb fails instead of skipping when the
       # database is missing or unreachable. -json feeds the skip check below;
       # the jq filter prints the same log that -v would.
-      - name: Run tests (${{ matrix.kind }} shard ${{ matrix.shard }}/${{ matrix.total }})
+      - name: Run tests (shard ${{ matrix.shard }}/${{ matrix.total }})
         # shell: bash means -o pipefail. Without it a failing go test is hidden
         # by the pipe into tee/jq and the step goes green.
         shell: bash
         env:
-          KIND: ${{ matrix.kind }}
           SHARD: ${{ matrix.shard }}
           TOTAL: ${{ matrix.total }}
           WITH_RACE: ${{ matrix.race }}
@@ -432,21 +472,10 @@ jobs:
           REDIS_HOST: localhost
           REDIS_PORT: 6379
         run: |
-          if [ "$KIND" = unit ]; then
-            run="$(bash ../.github/scripts/go-shard.sh unit "$SHARD" "$TOTAL")"
-            set -- -run "$run" ./tests/unit
-          else
-            mapfile -t pk < <(bash ../.github/scripts/go-shard.sh pkgs "$SHARD" "$TOTAL")
-            set -- "${pk[@]}"
-          fi
           race_flag=()
           if [ "$WITH_RACE" = true ]; then race_flag=(-race); fi
-          go test -json "${race_flag[@]}" -timeout 20m -coverprofile=coverage.out -covermode=atomic "$@" \
-            | tee test.json \
-            | jq -Rrj '. as $l | (try fromjson catch null) as $e
-                | if $e == null then $l + "\n"
-                  elif ($e.Action == "output" or $e.Action == "build-output") then $e.Output
-                  else empty end'
+          bash ../.github/scripts/go-shard-run.sh "$SHARD" "$TOTAL" test.json \
+            "${race_flag[@]}" -timeout 20m -coverprofile=coverage.out -covermode=atomic
 
       # A test that skips itself on a failed ping (t.Skipf) would otherwise let
       # this job go green without running its DB checks.
@@ -459,7 +488,7 @@ jobs:
         with:
           files: ./api/coverage.out
           flags: api
-          name: api-${{ matrix.kind }}-${{ matrix.shard }}-of-${{ matrix.total }}
+          name: api-${{ matrix.shard }}-of-${{ matrix.total }}
           fail_ci_if_error: false
 
   # D-6: the API connects as a least-privilege role (docs/deployment/database-roles.md).
@@ -477,13 +506,8 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        include:
-          - { kind: unit, shard: 0, total: 3 }
-          - { kind: unit, shard: 1, total: 3 }
-          - { kind: unit, shard: 2, total: 3 }
-          - { kind: pkgs, shard: 0, total: 3 }
-          - { kind: pkgs, shard: 1, total: 3 }
-          - { kind: pkgs, shard: 2, total: 3 }
+        shard: [0, 1, 2, 3, 4, 5]
+        total: [6]
     services:
       postgres:
         image: ghcr.io/openctemio/mirror/postgres:17-alpine
@@ -524,6 +548,7 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          persist-credentials: false
           fetch-depth: 2 # the test merge's base parent, for the renumber below
 
       - name: Renumber this PR's clashing migrations (this run only)
@@ -535,7 +560,9 @@ jobs:
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: api/go.mod
-          cache: true
+          # A merge-queue ref can neither read develop's cache nor share what
+          # it writes, so it neither restores nor saves one.
+          cache: ${{ github.event_name != 'merge_group' }}
           cache-dependency-path: api/go.sum
 
       # The spec is generated, not committed; the contract tests read it.
@@ -561,10 +588,9 @@ jobs:
       # missing database fails the job instead of passing silently. The two
       # tests that need CREATEDB (a superuser) skip here by design and run in
       # Tests (Postgres + Redis).
-      - name: Run the DB-backed suite as the app role (${{ matrix.kind }} shard ${{ matrix.shard }}/${{ matrix.total }})
+      - name: Run the DB-backed suite as the app role (shard ${{ matrix.shard }}/${{ matrix.total }})
         shell: bash # -o pipefail: the pipe into tee/jq must not hide a failure
         env:
-          KIND: ${{ matrix.kind }}
           SHARD: ${{ matrix.shard }}
           TOTAL: ${{ matrix.total }}
           OPENCTEM_TEST_DB_REQUIRED: "1"
@@ -579,19 +605,7 @@ jobs:
           REDIS_HOST: localhost
           REDIS_PORT: 6379
         run: |
-          if [ "$KIND" = unit ]; then
-            run="$(bash ../.github/scripts/go-shard.sh unit "$SHARD" "$TOTAL")"
-            set -- -run "$run" ./tests/unit
-          else
-            mapfile -t pk < <(bash ../.github/scripts/go-shard.sh pkgs "$SHARD" "$TOTAL")
-            set -- "${pk[@]}"
-          fi
-          go test -json -timeout 30m "$@" \
-            | tee lp-test.json \
-            | jq -Rrj '. as $l | (try fromjson catch null) as $e
-                | if $e == null then $l + "\n"
-                  elif ($e.Action == "output" or $e.Action == "build-output") then $e.Output
-                  else empty end'
+          bash ../.github/scripts/go-shard-run.sh "$SHARD" "$TOTAL" lp-test.json -timeout 30m
 
       - name: No DB-backed test was skipped
         if: ${{ !cancelled() }}
@@ -616,6 +630,7 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          persist-credentials: false
           fetch-depth: 2 # the test merge's base parent, for the renumber below
 
       - name: Renumber this PR's clashing migrations (this run only)
@@ -647,7 +662,9 @@ jobs:
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: api/go.mod
-          cache: true
+          # A merge-queue ref can neither read develop's cache nor share what
+          # it writes, so it neither restores nor saves one.
+          cache: ${{ github.event_name != 'merge_group' }}
           cache-dependency-path: api/go.sum
 
       - name: Install golang-migrate
@@ -661,6 +678,31 @@ jobs:
           OPENCTEM_TEST_DB_REQUIRED: "1"
         run: go test -count=1 -run 'TestCheckSensorRename' ./internal/infra/postgres/
 
+  # A push to develop whose jobs were skipped (the merge queue passed this
+  # commit) still keeps develop's Go cache current: pull requests restore it,
+  # and setup-go writes it only when no cache for this go.sum exists yet.
+  warm-cache:
+    name: Go cache (develop)
+    needs: changes
+    if: needs.changes.outputs.verified == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - id: go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: api/go.mod
+          # A merge-queue ref can neither read develop's cache nor share what
+          # it writes, so it neither restores nor saves one.
+          cache: ${{ github.event_name != 'merge_group' }}
+          cache-dependency-path: api/go.sum
+      - name: Fill the cache (only when there was none for this go.sum)
+        if: steps.go.outputs.cache-hit != 'true'
+        run: go build ./... && go vet ./...
+
   # Merge queue and pushes only: the release-style static binaries (the former
   # separate `Build` job).
   binaries:
@@ -671,12 +713,16 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
       - name: Setup Go
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: api/go.mod
-          cache: true
+          # A merge-queue ref can neither read develop's cache nor share what
+          # it writes, so it neither restores nor saves one.
+          cache: ${{ github.event_name != 'merge_group' }}
           cache-dependency-path: api/go.sum
 
       - name: Build release binaries (linux/amd64, static)
@@ -705,6 +751,8 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1

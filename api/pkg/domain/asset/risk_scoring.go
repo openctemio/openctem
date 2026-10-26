@@ -211,9 +211,23 @@ func (e *RiskScoringEngine) CalculateScoreWithCriticality(a *Asset, effectiveCri
 	return e.CalculateScoreWithInputs(a, RiskInputs{EffectiveCriticality: effectiveCriticality})
 }
 
+// openActionableFindings is the number of the asset's open findings that are
+// weaknesses (informational findings excluded).
+func openActionableFindings(a *Asset) int {
+	if c := a.findingSeverityCounts; c != nil {
+		return c.Critical + c.High + c.Medium + c.Low
+	}
+	return a.findingCount
+}
+
 // weightedScore is the weighted-sum model (composition multiply or
-// amplify_headroom).
+// amplify_headroom). An asset without an open actionable finding scores 0,
+// as in the likelihood-impact model: exposure, criticality and data context
+// scale the risk of findings, they are not risk on their own.
 func (e *RiskScoringEngine) weightedScore(a *Asset, effectiveCriticality Criticality) int {
+	if openActionableFindings(a) <= 0 {
+		return 0
+	}
 	crit := effectiveCriticality
 	if crit == "" {
 		crit = a.criticality

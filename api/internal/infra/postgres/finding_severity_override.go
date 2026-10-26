@@ -42,6 +42,7 @@ const severityDecisionSQL = `
 		epss_score = $12, epss_percentile = $13, is_in_kev = $14, kev_due_date = $15,
 		sla_deadline = COALESCE($16::timestamptz, sla_deadline),
 		sla_status = CASE WHEN $16::timestamptz IS NULL THEN sla_status ELSE $17 END,
+		sla_kev_capped = CASE WHEN $16::timestamptz IS NULL THEN sla_kev_capped ELSE $20 END,
 		updated_at = now()
 	WHERE tenant_id = $1 AND id = $2 AND severity = $18
 	  AND ($19::bigint IS NULL OR row_version = $19)
@@ -68,7 +69,7 @@ func saveSeverityDecision(ctx context.Context, x severityExecer, f *vulnerabilit
 		f.IsReachable(), f.ReachableFromCount(),
 		nullFloat64(f.EPSSScore()), nullFloat64(f.EPSSPercentile()), f.IsInKEV(), nullTime(f.KEVDueDate()),
 		nullTime(f.SLADeadline()), string(f.SLAStatus()),
-		expected.String(), wantVersion).Scan(&newVersion)
+		expected.String(), wantVersion, f.SLAKEVCapped()).Scan(&newVersion)
 	if errors.Is(err, sql.ErrNoRows) {
 		if wantVersion.Valid {
 			return &vulnerability.FindingConflictError{FindingID: f.ID()}

@@ -11,18 +11,17 @@ import {
   DataTableColumnHeader,
   DataTableRowActions,
   RiskScoreBadge,
-  EmptyState,
+  ErrorState,
   MetricStrip,
   type MetricStripItem,
   FacetPanel,
   FacetSection,
   FacetOption,
   BulkActionBar,
-  FilterPanelToggle,
   FilterSheet,
+  PageStack,
 } from '@/features/shared'
 import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Slider } from '@/components/ui/slider'
 import { Skeleton } from '@/components/ui/skeleton'
@@ -39,7 +38,6 @@ import {
   ExternalLink,
   SlidersHorizontal,
   Tags,
-  Search as SearchIcon,
   Package,
 } from 'lucide-react'
 import {
@@ -48,17 +46,13 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-  DialogBody,
-} from '@/components/ui/dialog'
+import {} from '@/components/ui/dialog'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
-import { bulkTypeToConfirm, ConfirmDialog } from '@/components/confirm-dialog'
+import {
+  ConfirmDialog,
+  ConfirmSample,
+  irreversibleTypeToConfirm,
+} from '@/components/confirm-dialog'
 import { Badge } from '@/components/ui/badge'
 import { toast } from 'sonner'
 import {
@@ -66,20 +60,22 @@ import {
   EditGroupDialog,
   GroupQuickView,
   type EditGroupFormData,
-  useAssetGroups,
+  useAllAssetGroups,
   useAssetGroupStats,
   useCreateAssetGroup,
   useUpdateAssetGroup,
   useDeleteAssetGroup,
-  useAddAssetsToGroup,
   useBulkAssetGroupOperations,
 } from '@/features/asset-groups'
 import { useAssets } from '@/features/assets'
+import { useSearchQuery } from '@/hooks/use-search-query'
 import type { AssetGroup, CreateAssetGroupInput } from '@/features/asset-groups/types'
+import type { Asset } from '@/features/assets/types'
+import { GroupAddAssetsDialog } from '@/features/asset-groups/components/group-add-assets-dialog'
 import type { AssetGroupApiFilters } from '@/features/asset-groups/api'
 import { copyToClipboard } from '@/lib/clipboard'
 import { Can, Permission } from '@/lib/permissions'
-import { CRITICALITY_BADGE_SOFT, CRITICALITY_DOT_COLORS } from '@/lib/criticality-colors'
+import { CriticalityBadge } from '@/features/assets/components/classification-badges'
 import {
   CRITICALITY_LABELS,
   RATED_CRITICALITY_LEVELS,
@@ -89,6 +85,7 @@ import { useCsvExport, type ExportFieldConfig } from '@/hooks/use-csv-export'
 import { useUrlFilter, useUrlFilterList } from '@/hooks/use-url-param'
 import { cn } from '@/lib/utils'
 import { useTranslation } from '@/context/i18n-provider'
+import { confirmName } from '@/lib/confirm-name'
 
 // ============================================
 // CONSTANTS
@@ -100,8 +97,6 @@ type Criticality = RatedCriticality
 const ENVIRONMENTS: Environment[] = ['production', 'staging', 'development', 'testing']
 const CRITICALITIES: readonly Criticality[] = RATED_CRITICALITY_LEVELS
 
-const CRITICALITY_BADGE: Record<string, string> = CRITICALITY_BADGE_SOFT
-
 const FILTERS_OPEN_KEY = 'openctem:asset-groups-filters-open'
 
 /** A 0–100 score from a URL value; anything else falls back. */
@@ -110,146 +105,27 @@ function clampScore(raw: string, fallback: number): number {
   return Math.min(100, Math.max(0, Number(raw)))
 }
 
-const ASSET_GROUP_EXPORT_FIELDS: ExportFieldConfig<AssetGroup>[] = [
-  { header: 'Name', accessor: (g) => g.name },
-  { header: 'Description', accessor: (g) => g.description ?? '' },
-  { header: 'Environment', accessor: (g) => g.environment },
-  { header: 'Criticality', accessor: (g) => g.criticality },
-  { header: 'Business Unit', accessor: (g) => g.businessUnit ?? '' },
-  { header: 'Owner', accessor: (g) => g.owner ?? '' },
-  { header: 'Assets', accessor: (g) => g.assetCount },
-  { header: 'Findings', accessor: (g) => g.findingCount },
-  { header: 'Risk Score', accessor: (g) => g.riskScore },
-  { header: 'Tags', accessor: (g) => (g.tags ?? []).join('; ') },
-]
+type Translate = ReturnType<typeof useTranslation>['t']
 
-// ============================================
-// ADD ASSETS DIALOG (Simplified for list page)
-// ============================================
-
-function AddAssetsDialog({
-  group,
-  onClose,
-  onSuccess,
-}: {
-  group: AssetGroup
-  onClose: () => void
-  onSuccess: () => void
-}) {
-  const { trigger: addAssets, isMutating } = useAddAssetsToGroup(group.id)
-  const { assets: allAssets } = useAssets({ pageSize: 100 })
-  const [selectedIds, setSelectedIds] = useState<string[]>([])
-  const [search, setSearch] = useState('')
-  const [displayLimit, setDisplayLimit] = useState(20)
-
-  const filtered = useMemo(() => {
-    return (allAssets || []).filter((a) => a.name.toLowerCase().includes(search.toLowerCase()))
-  }, [allAssets, search])
-
-  useEffect(() => {
-    setDisplayLimit(20)
-  }, [search])
-
-  const displayed = filtered.slice(0, displayLimit)
-
-  const handleSubmit = async () => {
-    try {
-      await addAssets(selectedIds)
-      onSuccess()
-    } catch {
-      // Error handled by hook
-    }
-  }
-
-  return (
-    <Dialog open onOpenChange={(open) => !open && onClose()}>
-      <DialogContent>
-        <DialogHeader>
-          <DialogTitle>Add assets to &quot;{group.name}&quot;</DialogTitle>
-          <DialogDescription>Select assets to add to this group.</DialogDescription>
-        </DialogHeader>
-
-        <DialogBody>
-          <div className="space-y-4">
-            <div className="relative">
-              <SearchIcon className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-              <Input
-                placeholder="Search assets..."
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                className="ps-9"
-              />
-            </div>
-
-            <div className="overflow-y-auto border rounded-lg max-h-64">
-              {displayed.length === 0 ? (
-                <EmptyState
-                  icon={Package}
-                  title="No assets found"
-                  description="Try a different search."
-                  card={false}
-                />
-              ) : (
-                <div className="divide-y">
-                  {displayed.map((asset) => (
-                    <label
-                      key={asset.id}
-                      className="flex items-center gap-3 p-3 hover:bg-muted/50 cursor-pointer"
-                    >
-                      <Checkbox
-                        checked={selectedIds.includes(asset.id)}
-                        onCheckedChange={() =>
-                          setSelectedIds((prev) =>
-                            prev.includes(asset.id)
-                              ? prev.filter((id) => id !== asset.id)
-                              : [...prev, asset.id]
-                          )
-                        }
-                      />
-                      <div className="flex-1 min-w-0">
-                        <p className="font-medium truncate">{asset.name}</p>
-                        <p className="text-sm text-muted-foreground">{asset.type}</p>
-                      </div>
-                      <RiskScoreBadge score={asset.riskScore} size="sm" />
-                    </label>
-                  ))}
-                  {displayLimit < filtered.length && (
-                    <div className="p-3 text-center">
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => setDisplayLimit((prev) => prev + 20)}
-                        className="w-full"
-                      >
-                        Load more ({filtered.length - displayLimit} remaining)
-                      </Button>
-                    </div>
-                  )}
-                </div>
-              )}
-            </div>
-
-            {selectedIds.length > 0 && (
-              <p className="text-sm text-muted-foreground">
-                {selectedIds.length} asset(s) selected
-              </p>
-            )}
-          </div>
-        </DialogBody>
-
-        <DialogFooter>
-          <Button variant="outline" onClick={onClose} disabled={isMutating}>
-            Cancel
-          </Button>
-          <Button onClick={handleSubmit} disabled={selectedIds.length === 0 || isMutating}>
-            {isMutating
-              ? 'Adding...'
-              : `Add ${selectedIds.length || ''} asset${selectedIds.length !== 1 ? 's' : ''}`}
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
-  )
+function assetGroupExportFields(t: Translate): ExportFieldConfig<AssetGroup>[] {
+  return [
+    { header: t('assetGroups.csv.name', 'Name'), accessor: (g) => g.name },
+    {
+      header: t('assetGroups.csv.description', 'Description'),
+      accessor: (g) => g.description ?? '',
+    },
+    { header: t('assetGroups.csv.environment', 'Environment'), accessor: (g) => g.environment },
+    { header: t('assetGroups.csv.criticality', 'Criticality'), accessor: (g) => g.criticality },
+    {
+      header: t('assetGroups.csv.businessUnit', 'Business unit'),
+      accessor: (g) => g.businessUnit ?? '',
+    },
+    { header: t('assetGroups.csv.owner', 'Owner'), accessor: (g) => g.owner ?? '' },
+    { header: t('assetGroups.csv.assets', 'Assets'), accessor: (g) => g.assetCount },
+    { header: t('assetGroups.csv.findings', 'Findings'), accessor: (g) => g.findingCount },
+    { header: t('assetGroups.csv.riskScore', 'Risk score'), accessor: (g) => g.riskScore },
+    { header: t('assetGroups.csv.tags', 'Tags'), accessor: (g) => (g.tags ?? []).join('; ') },
+  ]
 }
 
 // ============================================
@@ -320,9 +196,17 @@ export default function AssetGroupsPage() {
 
   // Selection state. The table owns the checkboxes; bumping the epoch clears them.
   const [selectedIds, setSelectedIds] = useState<string[]>([])
+  const [selectedNames, setSelectedNames] = useState<string[]>([])
+  // A bulk criticality or environment change waits here for the user to confirm.
+  const [pendingBulk, setPendingBulk] = useState<{
+    action: 'change-criticality' | 'change-environment'
+    value: string
+    label: string
+  } | null>(null)
   const [selectionEpoch, setSelectionEpoch] = useState(0)
   const clearSelection = useCallback(() => {
     setSelectedIds([])
+    setSelectedNames([])
     setSelectionEpoch((n) => n + 1)
   }, [])
 
@@ -332,6 +216,9 @@ export default function AssetGroupsPage() {
     criticalities.length +
     (riskActive ? 1 : 0) +
     (hasFindings !== null ? 1 : 0)
+
+  // The search box writes the URL on every key; the request waits for a pause.
+  const debouncedSearch = useSearchQuery(searchQuery).term
 
   // Build API filters
   const apiFilters = useMemo(() => {
@@ -343,34 +230,31 @@ export default function AssetGroupsPage() {
     if (hasFindings !== null) result.has_findings = hasFindings
     return result
   }, [environments, criticalities, riskMin, riskMax, hasFindings])
+  const searchFilters = useMemo(
+    () => (debouncedSearch ? { ...apiFilters, search: debouncedSearch } : apiFilters),
+    [apiFilters, debouncedSearch]
+  )
 
   // Fetch data
+  // The server searches (name, description, tags) across every group.
   const {
-    data: fetchedGroups,
+    data: groups,
+    total: groupsTotal,
+    truncated,
+    cap,
     isLoading,
+    isError,
+    error: listError,
     mutate: refreshData,
-  } = useAssetGroups({ filters: apiFilters })
+  } = useAllAssetGroups({ filters: searchFilters })
+  const fetchedGroups = groups
 
-  const groups = useMemo(() => {
-    const q = searchQuery.trim().toLowerCase()
-    if (!q) return fetchedGroups
-    return fetchedGroups.filter(
-      (g) =>
-        g.name.toLowerCase().includes(q) ||
-        (g.description ?? '').toLowerCase().includes(q) ||
-        (g.tags ?? []).some((t) => t.toLowerCase().includes(q))
-    )
-  }, [fetchedGroups, searchQuery])
-
+  const exportFields = useMemo(() => assetGroupExportFields(t), [t])
   // CSV export of the current (filtered) groups list.
-  const { handleExport: handleExportCsv } = useCsvExport(
-    groups,
-    ASSET_GROUP_EXPORT_FIELDS,
-    'asset-groups'
-  )
+  const { handleExport: handleExportCsv } = useCsvExport(groups, exportFields, 'asset-groups')
   const handleExportJson = () => {
     if (!groups.length) {
-      toast.error('No data to export')
+      toast.error(t('assetGroups.noDataToExport', 'Nothing to export'))
       return
     }
     const blob = new Blob([JSON.stringify(groups, null, 2)], { type: 'application/json' })
@@ -380,11 +264,28 @@ export default function AssetGroupsPage() {
     a.download = `asset-groups-${new Date().toISOString().slice(0, 10)}.json`
     a.click()
     URL.revokeObjectURL(url)
-    toast.success('Exported successfully')
   }
 
   // Get all assets for create dialog (lazy: only fetch when dialog is open)
-  const { assets: allAssets } = useAssets({ pageSize: 100, skip: !isCreateOpen })
+  const [createSearch, setCreateSearch] = useState('')
+  const debouncedCreateSearch = useSearchQuery(createSearch).term
+  const { assets: foundAssets } = useAssets({
+    search: debouncedCreateSearch || undefined,
+    pageSize: 20,
+    skip: !isCreateOpen,
+  })
+  // Assets seen in any search, so the picks of an earlier search stay listed
+  // (the review step names them) after the search term changes.
+  const [seenAssets, setSeenAssets] = useState<Map<string, Asset>>(new Map())
+  useEffect(() => {
+    if (foundAssets.length === 0) return
+    setSeenAssets((prev) => {
+      const next = new Map(prev)
+      for (const a of foundAssets) next.set(a.id, a)
+      return next
+    })
+  }, [foundAssets])
+  const allAssets = useMemo(() => Array.from(seenAssets.values()), [seenAssets])
 
   // Mutation hooks
   const updateAssetGroup = useUpdateAssetGroup(editGroup?.id || '')
@@ -393,7 +294,6 @@ export default function AssetGroupsPage() {
   // Handlers
   const handleRefresh = () => {
     refreshData()
-    toast.success('Asset groups refreshed')
   }
 
   const handleCreate = async (input: CreateAssetGroupInput) => {
@@ -418,7 +318,11 @@ export default function AssetGroupsPage() {
       refreshData()
       setEditGroup(null)
     } catch (error) {
-      console.error('Failed to update asset group:', error)
+      toast.error(
+        error instanceof Error
+          ? error.message
+          : t('assetGroups.updateFailed', 'Failed to update the group')
+      )
     } finally {
       setIsEditSubmitting(false)
     }
@@ -436,33 +340,48 @@ export default function AssetGroupsPage() {
     }
   }
 
+  // A bulk call can fail as a whole. The hook toasts the failure; here the
+  // dialog closes and the list refreshes either way, so a failure no longer
+  // leaves the confirm dialog open on a stale selection.
   const handleBulkDelete = async () => {
-    await bulkOperations.bulkDelete(selectedIds)
-    clearSelection()
-    setBulkDeleteConfirm(false)
-    refreshData()
+    try {
+      await bulkOperations.bulkDelete(selectedIds)
+      clearSelection()
+    } catch {
+      // Reported by the hook.
+    } finally {
+      setBulkDeleteConfirm(false)
+      refreshData()
+    }
   }
 
   const handleBulkAction = async (action: string, value?: string) => {
-    if (action === 'change-criticality' && value) {
-      await bulkOperations.bulkUpdate(selectedIds, { criticality: value })
+    const changes =
+      action === 'change-criticality' && value
+        ? { criticality: value }
+        : action === 'change-environment' && value
+          ? { environment: value }
+          : null
+    if (!changes) return
+    try {
+      await bulkOperations.bulkUpdate(selectedIds, changes)
       clearSelection()
-      refreshData()
-    } else if (action === 'change-environment' && value) {
-      await bulkOperations.bulkUpdate(selectedIds, { environment: value })
-      clearSelection()
+    } catch {
+      // Reported by the hook.
+    } finally {
+      setPendingBulk(null)
       refreshData()
     }
   }
 
   const handleCopyId = (id: string) => {
     copyToClipboard(id)
-    toast.success('Group ID copied')
+    toast.success(t('assetGroups.idCopied', 'Group ID copied'))
   }
 
   const handleCopyLink = (id: string) => {
     copyToClipboard(`${window.location.origin}/assets/groups/${id}`)
-    toast.success('Link copied to clipboard')
+    toast.success(t('assetGroups.linkCopied', 'Link copied'))
   }
 
   const clearFilters = () => {
@@ -485,7 +404,7 @@ export default function AssetGroupsPage() {
         <Checkbox
           checked={table.getIsAllPageRowsSelected()}
           onCheckedChange={(value) => table.toggleAllPageRowsSelected(!!value)}
-          aria-label="Select all"
+          aria-label={t('assetGroups.selectAll', 'Select all')}
         />
       ),
       cell: ({ row }) => (
@@ -493,7 +412,7 @@ export default function AssetGroupsPage() {
           checked={row.getIsSelected()}
           onCheckedChange={(value) => row.toggleSelected(!!value)}
           onClick={(e) => e.stopPropagation()}
-          aria-label="Select row"
+          aria-label={t('assetGroups.selectRow', 'Select row')}
         />
       ),
       enableSorting: false,
@@ -501,7 +420,9 @@ export default function AssetGroupsPage() {
     },
     {
       accessorKey: 'name',
-      header: ({ column }) => <DataTableColumnHeader column={column} title="Name" />,
+      header: ({ column }) => (
+        <DataTableColumnHeader column={column} title={t('assetGroups.col.name', 'Name')} />
+      ),
       cell: ({ row }) => {
         const group = row.original
         return (
@@ -519,35 +440,47 @@ export default function AssetGroupsPage() {
     },
     {
       accessorKey: 'environment',
-      header: ({ column }) => <DataTableColumnHeader column={column} title="Environment" />,
+      header: ({ column }) => (
+        <DataTableColumnHeader
+          column={column}
+          title={t('assetGroups.col.environment', 'Environment')}
+        />
+      ),
       cell: ({ row }) => (
-        <Badge variant="outline" className="capitalize">
-          {row.original.environment}
+        <Badge variant="outline">
+          {t(`assetGroups.environment.${row.original.environment}`, row.original.environment)}
         </Badge>
       ),
       filterFn: (row, id, value) => value.includes(row.getValue(id)),
     },
     {
       accessorKey: 'criticality',
-      header: ({ column }) => <DataTableColumnHeader column={column} title="Criticality" />,
+      header: ({ column }) => (
+        <DataTableColumnHeader
+          column={column}
+          title={t('assetGroups.col.criticality', 'Criticality')}
+        />
+      ),
       cell: ({ row }) => (
-        <Badge
-          variant="outline"
-          className={cn('capitalize', CRITICALITY_BADGE[row.original.criticality])}
-        >
-          {row.original.criticality}
-        </Badge>
+        <CriticalityBadge
+          criticality={row.original.criticality as Criticality}
+          showTooltip={false}
+        />
       ),
       filterFn: (row, id, value) => value.includes(row.getValue(id)),
     },
     {
       accessorKey: 'assetCount',
-      header: ({ column }) => <DataTableColumnHeader column={column} title="Assets" />,
+      header: ({ column }) => (
+        <DataTableColumnHeader column={column} title={t('assetGroups.col.assets', 'Assets')} />
+      ),
       cell: ({ row }) => <span className="tabular-nums">{row.original.assetCount}</span>,
     },
     {
       accessorKey: 'findingCount',
-      header: ({ column }) => <DataTableColumnHeader column={column} title="Findings" />,
+      header: ({ column }) => (
+        <DataTableColumnHeader column={column} title={t('assetGroups.col.findings', 'Findings')} />
+      ),
       cell: ({ row }) => {
         const count = row.original.findingCount
         return (
@@ -564,7 +497,12 @@ export default function AssetGroupsPage() {
     },
     {
       accessorKey: 'riskScore',
-      header: ({ column }) => <DataTableColumnHeader column={column} title="Risk score" />,
+      header: ({ column }) => (
+        <DataTableColumnHeader
+          column={column}
+          title={t('assetGroups.col.riskScore', 'Risk score')}
+        />
+      ),
       cell: ({ row }) => <RiskScoreBadge score={row.original.riskScore} size="sm" />,
     },
     {
@@ -574,39 +512,47 @@ export default function AssetGroupsPage() {
         return (
           <DataTableRowActions
             actions={[
-              { label: 'Quick view', icon: Eye, onClick: () => setViewGroup(group) },
               {
-                label: 'Open full page',
+                label: t('assetGroups.action.quickView', 'Quick view'),
+                icon: Eye,
+                onClick: () => setViewGroup(group),
+              },
+              {
+                label: t('assetGroups.action.openFullPage', 'Open full page'),
                 icon: ExternalLink,
                 onClick: () => router.push(`/assets/groups/${group.id}`),
               },
               {
-                label: 'Edit',
+                label: t('assetGroups.action.edit', 'Edit'),
                 icon: Pencil,
                 onClick: () => setEditGroup(group),
                 permission: Permission.AssetGroupsWrite,
               },
               {
-                label: 'Add assets',
+                label: t('assetGroups.action.addAssets', 'Add assets'),
                 icon: Plus,
                 onClick: () => setAddAssetsGroup(group),
                 permission: Permission.AssetGroupsWrite,
               },
               {
-                label: 'Manage assets',
+                label: t('assetGroups.action.manageAssets', 'Manage assets'),
                 icon: Package,
                 onClick: () => router.push(`/assets/groups/${group.id}?tab=assets`),
                 permission: Permission.AssetGroupsWrite,
               },
               {
-                label: 'Copy ID',
+                label: t('assetGroups.action.copyId', 'Copy ID'),
                 icon: Copy,
                 onClick: () => handleCopyId(group.id),
                 separatorBefore: true,
               },
-              { label: 'Copy link', icon: Link, onClick: () => handleCopyLink(group.id) },
               {
-                label: 'Delete',
+                label: t('assetGroups.action.copyLink', 'Copy link'),
+                icon: Link,
+                onClick: () => handleCopyLink(group.id),
+              },
+              {
+                label: t('assetGroups.action.delete', 'Delete'),
                 icon: Trash2,
                 onClick: () => setDeleteGroup(group),
                 destructive: true,
@@ -624,68 +570,67 @@ export default function AssetGroupsPage() {
   const metrics: MetricStripItem[] = [
     {
       key: 'total',
-      label: 'Groups',
+      label: t('assetGroups.metric.groups', 'Groups'),
       value: stats.total,
       onClick: clearFilters,
       active: activeFilterCount === 0,
     },
     {
       key: 'critical',
-      label: 'Critical groups',
+      label: t('assetGroups.metric.critical', 'Critical groups'),
       value: stats.byCriticality?.critical ?? 0,
-      tone: 'danger',
       onClick: () => setCritParam(criticalOnly ? [] : ['critical']),
       active: criticalOnly,
-    },
-    { key: 'assets', label: 'Assets in groups', value: stats.totalAssets },
-    {
-      key: 'risk',
-      label: 'Average risk score',
-      // One decimal: the raw average of integer scores can carry a long
-      // repeating fractional tail (e.g. 53.16666666666664).
-      value: Math.round((stats.averageRiskScore ?? 0) * 10) / 10,
-      hint: 'of 100',
     },
   ]
 
   const facetPanel = (
     <FacetPanel activeCount={activeFilterCount} onClearAll={clearFilters}>
-      <FacetSection title="Environment" selectedCount={environments.length}>
+      <FacetSection
+        title={t('assetGroups.facet.environment', 'Environment')}
+        selectedCount={environments.length}
+      >
         {ENVIRONMENTS.map((env) => (
           <FacetOption
             key={env}
-            label={<span className="capitalize">{env}</span>}
+            label={t(`assetGroups.environment.${env}`, env)}
             checked={environments.includes(env)}
             onCheckedChange={(on) => toggleIn(setEnvParam, env, on)}
           />
         ))}
       </FacetSection>
-      <FacetSection title="Criticality" selectedCount={criticalities.length}>
+      <FacetSection
+        title={t('assetGroups.facet.criticality', 'Criticality')}
+        selectedCount={criticalities.length}
+      >
         {CRITICALITIES.map((crit) => (
           <FacetOption
             key={crit}
-            label={CRITICALITY_LABELS[crit]}
-            adornment={
-              <span className={cn('size-2 shrink-0 rounded-full', CRITICALITY_DOT_COLORS[crit])} />
-            }
+            label={t(`criticality.${crit}`, CRITICALITY_LABELS[crit])}
             checked={criticalities.includes(crit)}
             onCheckedChange={(on) => toggleIn(setCritParam, crit, on)}
           />
         ))}
       </FacetSection>
-      <FacetSection title="Findings" selectedCount={hasFindings !== null ? 1 : 0}>
+      <FacetSection
+        title={t('assetGroups.facet.findings', 'Findings')}
+        selectedCount={hasFindings !== null ? 1 : 0}
+      >
         <FacetOption
-          label="Has findings"
+          label={t('assetGroups.facet.hasFindings', 'Has findings')}
           checked={hasFindings === true}
           onCheckedChange={(on) => setFindingsParam(on ? 'yes' : '')}
         />
         <FacetOption
-          label="No findings"
+          label={t('assetGroups.facet.noFindings', 'No findings')}
           checked={hasFindings === false}
           onCheckedChange={(on) => setFindingsParam(on ? 'no' : '')}
         />
       </FacetSection>
-      <FacetSection title="Risk score" selectedCount={riskActive ? 1 : 0}>
+      <FacetSection
+        title={t('assetGroups.facet.riskScore', 'Risk score')}
+        selectedCount={riskActive ? 1 : 0}
+      >
         <div className="space-y-3 pe-1.5 pt-1">
           <p className="text-xs tabular-nums text-muted-foreground">
             {riskRange[0]} – {riskRange[1]}
@@ -701,33 +646,11 @@ export default function AssetGroupsPage() {
             max={100}
             min={0}
             step={5}
-            aria-label="Risk score range"
+            aria-label={t('assetGroups.facet.riskRange', 'Risk score range')}
           />
         </div>
       </FacetSection>
     </FacetPanel>
-  )
-
-  const toolbarStart = (
-    <>
-      <FilterPanelToggle
-        open={filtersOpen}
-        onToggle={toggleFiltersOpen}
-        onOpenSheet={() => setFilterSheetOpen(true)}
-        activeCount={activeFilterCount}
-        controlsId="asset-group-filters"
-      />
-      <div className="relative min-w-0 flex-1 sm:max-w-sm">
-        <SearchIcon className="pointer-events-none absolute start-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-        <Input
-          value={searchQuery}
-          onChange={(e) => setSearchQuery(e.target.value)}
-          placeholder="Search name, description or tag…"
-          aria-label="Search asset groups"
-          className="h-9 ps-9"
-        />
-      </div>
-    </>
   )
 
   const toolbarEnd = (
@@ -740,26 +663,26 @@ export default function AssetGroupsPage() {
             className="h-9 w-9"
             onClick={handleRefresh}
             disabled={isLoading}
-            aria-label="Refresh"
+            aria-label={t('assetGroups.refresh', 'Refresh')}
           >
             <RefreshCw className={cn('h-4 w-4', isLoading && 'animate-spin')} />
           </Button>
         </TooltipTrigger>
-        <TooltipContent>Refresh</TooltipContent>
+        <TooltipContent>{t('assetGroups.refresh', 'Refresh')}</TooltipContent>
       </Tooltip>
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
           <Button variant="outline" size="sm" className="h-9">
             <Download className="h-4 w-4 md:me-2" />
-            <span className="hidden md:inline">Export</span>
+            <span className="sr-only md:not-sr-only">{t('assetGroups.export', 'Export')}</span>
           </Button>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end">
           <DropdownMenuItem onClick={handleExportCsv} disabled={groups.length === 0}>
-            Export as CSV
+            {t('assetGroups.exportCsv', 'Export as CSV')}
           </DropdownMenuItem>
           <DropdownMenuItem onClick={handleExportJson} disabled={groups.length === 0}>
-            Export as JSON
+            {t('assetGroups.exportJson', 'Export as JSON')}
           </DropdownMenuItem>
         </DropdownMenuContent>
       </DropdownMenu>
@@ -769,121 +692,173 @@ export default function AssetGroupsPage() {
   return (
     <>
       <Main>
-        <PageHeader
-          title="Asset groups"
-          description="Organize and monitor assets by logical group."
-        >
-          <Can permission={Permission.AssetGroupsWrite} mode="disable">
-            <Button size="sm" onClick={() => setIsCreateOpen(true)}>
-              <Plus className="me-2 h-4 w-4" />
-              New group
-            </Button>
-          </Can>
-        </PageHeader>
-        <AssetsSectionTabs />
-
-        <MetricStrip className="mt-5" loading={statsLoading} items={metrics} />
-
-        <div className="mt-5 flex items-start gap-5">
-          {filtersOpen && (
-            <aside
-              id="asset-group-filters"
-              aria-label="Asset group filters"
-              className="sticky top-4 hidden max-h-[calc(100svh-7.5rem)] w-64 shrink-0 flex-col rounded-xl border bg-card p-4 shadow-sm lg:flex"
-            >
-              <div className="flex min-h-0 flex-1 flex-col">{facetPanel}</div>
-            </aside>
-          )}
-
-          <div className="min-w-0 flex-1">
-            {isLoading && fetchedGroups.length === 0 ? (
-              <div className="space-y-2 rounded-xl border p-3">
-                {Array.from({ length: 8 }).map((_, i) => (
-                  <Skeleton key={i} className="h-10 w-full" />
-                ))}
-              </div>
-            ) : (
-              <DataTable
-                columns={columns}
-                data={groups}
-                showSearch={false}
-                toolbarStart={toolbarStart}
-                toolbarEnd={toolbarEnd}
-                emptyMessage="No asset groups found"
-                emptyDescription={
-                  activeFilterCount > 0 || searchQuery
-                    ? 'Try adjusting your search or filters'
-                    : 'Create a group to organize your assets'
-                }
-                onRowClick={(group) => setViewGroup(group)}
-                getRowId={(group) => group.id}
-                onSelectionChange={(rows) => setSelectedIds(rows.map((g) => g.id))}
-                resetSelectionKey={selectionEpoch}
-                showSelectionCount={false}
-              />
+        <PageStack>
+          <PageHeader
+            title={t('assetGroups.title', 'Asset groups')}
+            description={t(
+              'assetGroups.description',
+              'Organize and monitor assets by logical group.'
             )}
+          >
+            <Can permission={Permission.AssetGroupsWrite} mode="disable">
+              <Button size="sm" onClick={() => setIsCreateOpen(true)}>
+                <Plus className="me-2 h-4 w-4" />
+                {t('assetGroups.newGroup', 'New group')}
+              </Button>
+            </Can>
+          </PageHeader>
+          <AssetsSectionTabs />
+
+          <MetricStrip loading={statsLoading} items={metrics} />
+
+          <div className="flex items-start gap-5">
+            {filtersOpen && (
+              <aside
+                id="asset-group-filters"
+                aria-label={t('assetGroups.filtersLabel', 'Asset group filters')}
+                className="sticky top-4 hidden max-h-[calc(100svh-7.5rem)] w-64 shrink-0 flex-col rounded-xl border bg-card p-4 shadow-sm lg:flex"
+              >
+                <div className="flex min-h-0 flex-1 flex-col">{facetPanel}</div>
+              </aside>
+            )}
+
+            <div className="min-w-0 flex-1">
+              {isError && fetchedGroups.length === 0 ? (
+                <ErrorState
+                  title={t('assetGroups.errorTitle', 'asset groups')}
+                  error={listError}
+                  onRetry={() => refreshData()}
+                />
+              ) : isLoading && fetchedGroups.length === 0 ? (
+                <div className="space-y-2 rounded-xl border p-3">
+                  {Array.from({ length: 8 }).map((_, i) => (
+                    <Skeleton key={i} className="h-10 w-full" />
+                  ))}
+                </div>
+              ) : (
+                <DataTable
+                  columns={columns}
+                  data={groups}
+                  showSearch={false}
+                  search={{
+                    value: searchQuery,
+                    onChange: setSearchQuery,
+                    placeholder: t(
+                      'assetGroups.search.placeholder',
+                      'Search name, description or tag…'
+                    ),
+                    label: t('assetGroups.search.label', 'Search asset groups'),
+                  }}
+                  filterToggle={{
+                    open: filtersOpen,
+                    onToggle: toggleFiltersOpen,
+                    onOpenSheet: () => setFilterSheetOpen(true),
+                    activeCount: activeFilterCount,
+                    controlsId: 'asset-group-filters',
+                  }}
+                  toolbarEnd={toolbarEnd}
+                  emptyMessage={t('assetGroups.empty.title', 'No asset groups found')}
+                  emptyDescription={
+                    activeFilterCount > 0 || searchQuery
+                      ? t('assetGroups.empty.filtered', 'Try adjusting your search or filters')
+                      : t('assetGroups.empty.none', 'Create a group to organize your assets')
+                  }
+                  onRowClick={(group) => setViewGroup(group)}
+                  getRowId={(group) => group.id}
+                  onSelectionChange={(rows) => {
+                    setSelectedIds(rows.map((g) => g.id))
+                    setSelectedNames(rows.map((g) => g.name))
+                  }}
+                  resetSelectionKey={selectionEpoch}
+                  showSelectionCount={false}
+                />
+              )}
+              {truncated && (
+                <p className="mt-2 text-xs text-muted-foreground">
+                  {t(
+                    'assetGroups.truncated',
+                    'Showing the first {shown} of {total} groups. Search or filter to narrow the list.',
+                    {
+                      shown: cap,
+                      total: groupsTotal,
+                    }
+                  )}
+                </p>
+              )}
+            </div>
           </div>
-        </div>
 
-        <BulkActionBar count={selectedIds.length} onClear={clearSelection} noun="selected">
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button variant="ghost" size="sm" className="h-8">
-                <Tags className="me-2 h-4 w-4" />
-                Criticality
+          <BulkActionBar count={selectedIds.length} onClear={clearSelection} noun="selected">
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="ghost" size="sm" className="h-8">
+                  <Tags className="me-2 h-4 w-4" />
+                  {t('assetGroups.bulk.criticality', 'Criticality')}
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent>
+                {CRITICALITIES.map((crit) => (
+                  <DropdownMenuItem
+                    key={crit}
+                    onClick={() =>
+                      setPendingBulk({
+                        action: 'change-criticality',
+                        value: crit,
+                        label: t(`criticality.${crit}`, CRITICALITY_LABELS[crit]),
+                      })
+                    }
+                  >
+                    {t(`criticality.${crit}`, CRITICALITY_LABELS[crit])}
+                  </DropdownMenuItem>
+                ))}
+              </DropdownMenuContent>
+            </DropdownMenu>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="ghost" size="sm" className="h-8">
+                  <SlidersHorizontal className="me-2 h-4 w-4" />
+                  {t('assetGroups.bulk.environment', 'Environment')}
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent>
+                {ENVIRONMENTS.map((env) => (
+                  <DropdownMenuItem
+                    key={env}
+                    onClick={() =>
+                      setPendingBulk({
+                        action: 'change-environment',
+                        value: env,
+                        label: t(`assetGroups.environment.${env}`, env),
+                      })
+                    }
+                  >
+                    {t(`assetGroups.environment.${env}`, env)}
+                  </DropdownMenuItem>
+                ))}
+              </DropdownMenuContent>
+            </DropdownMenu>
+            <Can permission={Permission.AssetGroupsDelete}>
+              <span aria-hidden className="mx-1.5 h-5 w-px shrink-0 bg-border" />
+              <Button
+                variant="destructive"
+                size="sm"
+                className="h-8"
+                onClick={() => setBulkDeleteConfirm(true)}
+              >
+                <Trash2 className="me-2 h-4 w-4" />
+                {t('assetGroups.action.delete', 'Delete')}
               </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent>
-              {CRITICALITIES.map((crit) => (
-                <DropdownMenuItem
-                  key={crit}
-                  onClick={() => handleBulkAction('change-criticality', crit)}
-                >
-                  <span className={cn('me-2 size-2 rounded-full', CRITICALITY_DOT_COLORS[crit])} />
-                  {CRITICALITY_LABELS[crit]}
-                </DropdownMenuItem>
-              ))}
-            </DropdownMenuContent>
-          </DropdownMenu>
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button variant="ghost" size="sm" className="h-8">
-                <SlidersHorizontal className="me-2 h-4 w-4" />
-                Environment
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent>
-              {ENVIRONMENTS.map((env) => (
-                <DropdownMenuItem
-                  key={env}
-                  className="capitalize"
-                  onClick={() => handleBulkAction('change-environment', env)}
-                >
-                  {env}
-                </DropdownMenuItem>
-              ))}
-            </DropdownMenuContent>
-          </DropdownMenu>
-          <Can permission={Permission.AssetGroupsDelete}>
-            <Button
-              variant="ghost"
-              size="sm"
-              className="h-8 text-destructive hover:text-destructive"
-              onClick={() => setBulkDeleteConfirm(true)}
-            >
-              <Trash2 className="me-2 h-4 w-4" />
-              Delete
-            </Button>
-          </Can>
-        </BulkActionBar>
+            </Can>
+          </BulkActionBar>
 
-        <FilterSheet
-          open={filterSheetOpen}
-          onOpenChange={setFilterSheetOpen}
-          title="Asset group filters"
-        >
-          {facetPanel}
-        </FilterSheet>
+          <FilterSheet
+            open={filterSheetOpen}
+            onOpenChange={setFilterSheetOpen}
+            title={t('assetGroups.filtersLabel', 'Asset group filters')}
+          >
+            {facetPanel}
+          </FilterSheet>
+        </PageStack>
       </Main>
 
       {/* Quick View Sheet */}
@@ -899,7 +874,9 @@ export default function AssetGroupsPage() {
       <CreateGroupDialog
         open={isCreateOpen}
         onOpenChange={setIsCreateOpen}
-        ungroupedAssets={allAssets}
+        ungroupedAssets={foundAssets}
+        reviewAssets={allAssets}
+        onAssetSearchChange={setCreateSearch}
         onSubmit={handleCreate}
       />
 
@@ -923,10 +900,11 @@ export default function AssetGroupsPage() {
         })}
         desc={t(
           'confirm.assetGroup.deleteDesc',
-          'The group is deleted and its assets leave it; scans and rules that target the group no longer cover them. The assets themselves are not deleted. This cannot be undone.'
+          'The group is deleted for good and its assets leave it; scans and rules that target the group no longer cover them. The assets themselves are kept.'
         )}
-        confirmText={t('confirm.delete', 'Delete')}
+        confirmText={t('confirm.assetGroup.deleteButton', 'Delete group')}
         destructive
+        typeToConfirm={deleteGroup ? confirmName(deleteGroup.name, deleteGroup.id) : undefined}
         handleConfirm={handleDelete}
       />
 
@@ -943,17 +921,63 @@ export default function AssetGroupsPage() {
         }
         desc={t(
           'confirm.assetGroup.bulkDeleteDesc',
-          'The groups are deleted and their assets leave them; scans and rules that target these groups no longer cover them. The assets themselves are not deleted. This cannot be undone.'
+          'The groups are deleted for good and their assets leave them; scans and rules that target these groups no longer cover them. The assets themselves are kept.'
         )}
-        confirmText={t('confirm.delete', 'Delete')}
+        confirmText={
+          selectedIds.length === 1
+            ? t('confirm.assetGroup.bulkDeleteButtonOne', 'Delete 1 group')
+            : t('confirm.assetGroup.bulkDeleteButton', 'Delete {count} groups', {
+                count: selectedIds.length,
+              })
+        }
         destructive
-        typeToConfirm={bulkTypeToConfirm(selectedIds.length)}
+        typeToConfirm={irreversibleTypeToConfirm(selectedNames)}
         handleConfirm={handleBulkDelete}
-      />
+      >
+        <ConfirmSample names={selectedNames} total={selectedIds.length} />
+      </ConfirmDialog>
+
+      {/* Bulk criticality / environment */}
+      <ConfirmDialog
+        open={!!pendingBulk}
+        onOpenChange={(open) => !open && setPendingBulk(null)}
+        title={
+          pendingBulk?.action === 'change-criticality'
+            ? t(
+                'confirm.assetGroup.bulkCriticalityTitle',
+                'Set the criticality to {value} for {count} selected?',
+                { count: selectedIds.length, value: pendingBulk.label }
+              )
+            : t(
+                'confirm.assetGroup.bulkEnvironmentTitle',
+                'Set the environment to {value} for {count} selected?',
+                { count: selectedIds.length, value: pendingBulk?.label ?? '' }
+              )
+        }
+        desc={
+          pendingBulk?.action === 'change-criticality'
+            ? t(
+                'confirm.assetGroup.bulkCriticalityDesc',
+                "The value replaces each group's current criticality and can change how its findings are prioritised. You can set it back to the old value later."
+              )
+            : t(
+                'confirm.assetGroup.bulkEnvironmentDesc',
+                "The value replaces each group's current environment. You can set it back to the old value later."
+              )
+        }
+        confirmText={t('confirm.assetGroup.bulkApplyButton', 'Update {count} selected', {
+          count: selectedIds.length,
+        })}
+        handleConfirm={() => {
+          if (pendingBulk) return handleBulkAction(pendingBulk.action, pendingBulk.value)
+        }}
+      >
+        <ConfirmSample names={selectedNames} total={selectedIds.length} />
+      </ConfirmDialog>
 
       {/* Add Assets Dialog */}
       {addAssetsGroup && (
-        <AddAssetsDialog
+        <GroupAddAssetsDialog
           group={addAssetsGroup}
           onClose={() => setAddAssetsGroup(null)}
           onSuccess={() => {

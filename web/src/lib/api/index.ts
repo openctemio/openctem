@@ -505,19 +505,8 @@ export type {
 export {
   WORKFLOW_NODE_TYPES,
   WORKFLOW_NODE_TYPE_LABELS,
-  WORKFLOW_TRIGGER_TYPES,
-  WORKFLOW_UNSUPPORTED_TRIGGER_TYPES,
-  WORKFLOW_TRIGGER_LABELS,
-  WORKFLOW_ACTION_TYPES,
-  WORKFLOW_UNSUPPORTED_ACTION_TYPES,
-  WORKFLOW_ACTION_LABELS,
-  WORKFLOW_NOTIFICATION_TYPES,
-  WORKFLOW_NOTIFICATION_LABELS,
   WORKFLOW_RUN_STATUSES,
-  WORKFLOW_RUN_STATUS_LABELS,
   NODE_RUN_STATUSES,
-  getUnsupportedWorkflowFeatures,
-  formatUnsupportedWorkflowFeature,
 } from './workflow-types'
 
 // ============================================
@@ -745,54 +734,6 @@ export {
 // ============================================
 
 export { scannerTemplateEndpoints } from './endpoints'
-
-// ============================================
-// TEMPLATE SOURCE HOOKS & TYPES
-// ============================================
-
-export {
-  // Template source hooks
-  useTemplateSources,
-  useTemplateSource,
-  useCreateTemplateSource,
-  useUpdateTemplateSource,
-  useDeleteTemplateSource,
-  useEnableTemplateSource,
-  useDisableTemplateSource,
-  useSyncTemplateSource,
-
-  // Cache utilities
-  templateSourceKeys,
-  invalidateTemplateSourcesCache,
-  templateSourceEndpoints,
-} from './template-source-hooks'
-
-export type {
-  TemplateSource,
-  SourceType,
-  SyncStatus,
-  GitSourceConfig,
-  S3SourceConfig,
-  HTTPSourceConfig,
-  TemplateSyncResult,
-  CreateTemplateSourceRequest,
-  UpdateTemplateSourceRequest,
-  TemplateSourceListFilters,
-  TemplateSourceListResponse,
-} from './template-source-types'
-
-export {
-  SOURCE_TYPES,
-  SYNC_STATUSES,
-  SOURCE_TYPE_DISPLAY_NAMES,
-  SOURCE_TYPE_DESCRIPTIONS,
-  SOURCE_TYPE_ICONS,
-  SYNC_STATUS_DISPLAY_NAMES,
-  SYNC_STATUS_COLORS,
-  sourceNeedsSync,
-  formatSyncTime,
-  getSourceDisplayUrl,
-} from './template-source-types'
 
 // ============================================
 // SECRET STORE HOOKS & TYPES

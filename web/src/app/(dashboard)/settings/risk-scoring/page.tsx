@@ -5,12 +5,13 @@ import { ListOrdered } from 'lucide-react'
 import { useHasPermission, Permission } from '@/lib/permissions'
 import { useModuleEnabled } from '@/features/integrations/api/use-tenant-modules'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useId } from 'react'
 import { Main } from '@/components/layout'
-import { PageHeader } from '@/features/shared'
+import { PageHeader, PageStack } from '@/features/shared'
 import { useTenant } from '@/context/tenant-provider'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { Skeleton } from '@/components/ui/skeleton'
+import { ConfirmDialog } from '@/components/confirm-dialog'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -24,17 +25,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-  AlertDialogTrigger,
-} from '@/components/ui/alert-dialog'
 import { toast } from 'sonner'
 import { Save, RotateCcw, Info, ArrowUpDown, Loader2, AlertCircle } from 'lucide-react'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
@@ -46,6 +36,7 @@ import {
   useRiskScoringPresets,
 } from '@/features/organization/api/use-risk-scoring-settings'
 import type {
+  ScoreCompositionMode,
   RiskScoringSettings,
   RiskScoringPreviewResponse,
 } from '@/features/organization/types/settings.types'
@@ -61,11 +52,13 @@ const PAGE_DESCRIPTION =
 function LoadingSkeleton() {
   return (
     <Main>
-      <PageHeader title={PAGE_TITLE} description={PAGE_DESCRIPTION} />
-      <div className="mt-5 grid gap-5 lg:grid-cols-2">
-        <Skeleton className="h-80 rounded-xl" />
-        <Skeleton className="h-80 rounded-xl" />
-      </div>
+      <PageStack>
+        <PageHeader title={PAGE_TITLE} description={PAGE_DESCRIPTION} />
+        <div className="grid gap-5 lg:grid-cols-2">
+          <Skeleton className="h-80 rounded-xl" />
+          <Skeleton className="h-80 rounded-xl" />
+        </div>
+      </PageStack>
     </Main>
   )
 }
@@ -193,13 +186,15 @@ function NumberInput({
   step?: number
   tooltip?: string
 }) {
+  const id = useId()
   return (
     <div className="space-y-1">
-      <Label className="flex items-center text-xs">
+      <Label htmlFor={id} className="flex items-center text-xs">
         {label}
         {tooltip && <InfoTip text={tooltip} />}
       </Label>
       <Input
+        id={id}
         type="number"
         value={value}
         onChange={(e) => onChange(Number(e.target.value))}
@@ -222,6 +217,7 @@ export default function ScoringConfigurationPage() {
   const { updateRiskScoring, isUpdating } = useUpdateRiskScoring(tenantId)
   const { previewChanges, isPreviewing } = useRiskScoringPreview(tenantId)
   const { recalculate, isRecalculating } = useRecalculateRiskScores(tenantId)
+  const [confirmRecalc, setConfirmRecalc] = useState(false)
   const { presets } = useRiskScoringPresets(tenantId)
 
   const [config, setConfig] = useState<RiskScoringSettings | null>(null)
@@ -379,17 +375,19 @@ export default function ScoringConfigurationPage() {
   if (error && !config) {
     return (
       <Main>
-        <PageHeader title={PAGE_TITLE} description={PAGE_DESCRIPTION} />
-        <Alert variant="destructive" className="mt-5">
-          <AlertCircle className="h-4 w-4" />
-          <AlertTitle>Failed to load scoring settings</AlertTitle>
-          <AlertDescription>
-            <p>{getErrorMessage(error, 'The scoring settings request failed.')}</p>
-            <Button variant="outline" size="sm" className="mt-2" onClick={() => void mutate()}>
-              Retry
-            </Button>
-          </AlertDescription>
-        </Alert>
+        <PageStack>
+          <PageHeader title={PAGE_TITLE} description={PAGE_DESCRIPTION} />
+          <Alert variant="destructive">
+            <AlertCircle className="h-4 w-4" />
+            <AlertTitle>Failed to load scoring settings</AlertTitle>
+            <AlertDescription>
+              <p>{getErrorMessage(error, 'The scoring settings request failed.')}</p>
+              <Button variant="outline" size="sm" className="mt-2" onClick={() => void mutate()}>
+                Retry
+              </Button>
+            </AlertDescription>
+          </Alert>
+        </PageStack>
       </Main>
     )
   }
@@ -398,6 +396,10 @@ export default function ScoringConfigurationPage() {
     return <LoadingSkeleton />
   }
 
+  // The default model (likelihood × impact) uses only the exposure and
+  // criticality factors and the risk levels; weights, multipliers, finding
+  // impact and CTEM points apply to the weighted compositions only.
+  const weighted = config.score_composition_mode !== 'likelihood_impact'
   const weightSum =
     config.weights.exposure +
     config.weights.criticality +
@@ -409,772 +411,861 @@ export default function ScoringConfigurationPage() {
   const { critical_min, high_min, medium_min, low_min } = config.risk_levels
   const isThresholdValid =
     critical_min > high_min && high_min > medium_min && medium_min > low_min && low_min > 0
-  const canSave = isDirty && isWeightValid && isThresholdValid && !isUpdating
+  const canSave = isDirty && (!weighted || isWeightValid) && isThresholdValid && !isUpdating
 
   return (
     <Main>
-      <PageHeader title={PAGE_TITLE} description={PAGE_DESCRIPTION}>
-        {/* The other lever on a finding's priority: per-finding override rules. */}
-        {canSeePriorityRules && (
-          <Button variant="outline" size="sm" asChild>
-            <Link href="/priority-rules">
-              <ListOrdered className="h-4 w-4" />
-              Priority rules
-            </Link>
+      <PageStack>
+        <PageHeader title={PAGE_TITLE} description={PAGE_DESCRIPTION}>
+          {/* The other lever on a finding's priority: per-finding override rules. */}
+          {canSeePriorityRules && (
+            <Button variant="outline" size="sm" asChild>
+              <Link href="/priority-rules">
+                <ListOrdered className="h-4 w-4" />
+                Priority rules
+              </Link>
+            </Button>
+          )}
+          <Button variant="outline" size="sm" onClick={handleReset} disabled={!isDirty}>
+            <RotateCcw className="h-4 w-4" />
+            Reset
           </Button>
-        )}
-        <Button variant="outline" size="sm" onClick={handleReset} disabled={!isDirty}>
-          <RotateCcw className="h-4 w-4" />
-          Reset
-        </Button>
-        <Button size="sm" onClick={handleSave} disabled={!canSave}>
-          {isUpdating ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
-          {t('riskScore.impact.reviewAndSave', 'Review and save')}
-        </Button>
-      </PageHeader>
+          <Button size="sm" onClick={handleSave} disabled={!canSave}>
+            {isUpdating ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              <Save className="h-4 w-4" />
+            )}
+            {t('riskScore.impact.reviewAndSave', 'Review and save')}
+          </Button>
+        </PageHeader>
 
-      {/* Preset Selector */}
-      {presets && presets.length > 0 && (
-        <Card className="mt-5">
-          <CardHeader>
-            <CardTitle>Presets</CardTitle>
-            <CardDescription>Start from a preset optimized for your industry</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-4">
-              {presets.map((preset) => (
-                <button
-                  key={preset.name}
-                  type="button"
-                  onClick={() => handlePresetSelect(preset.name)}
+        {/* Preset Selector */}
+        {presets && presets.length > 0 && (
+          <Card>
+            <CardHeader>
+              <CardTitle>Presets</CardTitle>
+              <CardDescription>Start from a preset optimized for your industry</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-4">
+                {presets.map((preset) => (
+                  <button
+                    key={preset.name}
+                    type="button"
+                    onClick={() => handlePresetSelect(preset.name)}
+                    className={`rounded-lg border p-3 text-start transition-colors ${
+                      config.preset === preset.name
+                        ? 'border-primary bg-primary/5'
+                        : 'hover:border-muted-foreground/30 border-transparent'
+                    }`}
+                  >
+                    <div className="text-sm font-medium">
+                      {preset.name.charAt(0).toUpperCase() + preset.name.slice(1)}
+                    </div>
+                    <div className="text-muted-foreground mt-0.5 text-xs">
+                      {PRESET_DESCRIPTIONS[preset.name] || ''}
+                    </div>
+                  </button>
+                ))}
+                <div
                   className={`rounded-lg border p-3 text-start transition-colors ${
-                    config.preset === preset.name
+                    config.preset === 'custom'
                       ? 'border-primary bg-primary/5'
                       : 'hover:border-muted-foreground/30 border-transparent'
                   }`}
                 >
-                  <div className="text-sm font-medium">
-                    {preset.name.charAt(0).toUpperCase() + preset.name.slice(1)}
-                  </div>
+                  <div className="text-sm font-medium">Custom</div>
                   <div className="text-muted-foreground mt-0.5 text-xs">
-                    {PRESET_DESCRIPTIONS[preset.name] || ''}
+                    Manually configured values
                   </div>
-                </button>
-              ))}
-              <div
-                className={`rounded-lg border p-3 text-start transition-colors ${
-                  config.preset === 'custom'
-                    ? 'border-primary bg-primary/5'
-                    : 'hover:border-muted-foreground/30 border-transparent'
-                }`}
-              >
-                <div className="text-sm font-medium">Custom</div>
-                <div className="text-muted-foreground mt-0.5 text-xs">
-                  Manually configured values
                 </div>
               </div>
-            </div>
-          </CardContent>
-        </Card>
-      )}
+            </CardContent>
+          </Card>
+        )}
 
-      <div className="mt-5 grid gap-5 lg:grid-cols-2">
-        {/* Component Weights */}
-        <Card>
-          <CardHeader>
-            <CardTitle>Component weights</CardTitle>
-            <CardDescription>
-              Adjust the weight of each factor. Weights auto-balance to 100%.
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <WeightDistributionBar weights={config.weights} />
-            <WeightSlider
-              label="Exposure"
-              value={config.weights.exposure}
-              onChange={(v) => updateWeight('exposure', v)}
-              color="#ef4444"
-              tooltip="How much the asset's network exposure (public, private, isolated) affects its risk score"
-            />
-            <WeightSlider
-              label="Criticality"
-              value={config.weights.criticality}
-              onChange={(v) => updateWeight('criticality', v)}
-              color="#f97316"
-              tooltip="How much the asset's business criticality level affects its risk score"
-            />
-            <WeightSlider
-              label="Findings"
-              value={config.weights.findings}
-              onChange={(v) => updateWeight('findings', v)}
-              color="#eab308"
-              tooltip="How much vulnerability findings (count or severity-weighted) affect the risk score"
-            />
-            <WeightSlider
-              label="CTEM"
-              value={config.weights.ctem}
-              onChange={(v) => updateWeight('ctem', v)}
-              color="#3b82f6"
-              tooltip="Continuous Threat Exposure Management bonus points for factors like PII exposure, internet accessibility, and compliance risk"
-            />
-            {!config.ctem_points.enabled && config.weights.ctem > 0 && (
-              <p className="text-muted-foreground text-xs">
-                CTEM is disabled. Its weight will be redistributed to other components.
-              </p>
-            )}
-          </CardContent>
-        </Card>
+        {!weighted && (
+          <Alert>
+            <Info className="h-4 w-4" />
+            <AlertTitle>{t('riskScore.model.noticeTitle', 'Likelihood × impact model')}</AlertTitle>
+            <AlertDescription>
+              {t(
+                'riskScore.model.notice',
+                'Risk is the findings score times the exposure and criticality factors below, lowered by compensating controls. Component weights, exposure multipliers, finding impact and CTEM points apply only to the weighted compositions; choose one under Score composition to edit them.'
+              )}
+            </AlertDescription>
+          </Alert>
+        )}
 
-        {/* Exposure Scores */}
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-1">
-              Exposure scores
-              <InfoTip text="Base scores assigned based on how exposed an asset is to external access. Higher scores mean more risk." />
-            </CardTitle>
-            <CardDescription>Base score (0-100) for each exposure level</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="grid grid-cols-3 gap-2 sm:grid-cols-5">
-              <NumberInput
-                label="Public"
-                tooltip="Directly accessible from the internet"
-                value={config.exposure_scores.public}
-                onChange={(v) =>
-                  updateConfig((c) => ({
-                    ...c,
-                    exposure_scores: { ...c.exposure_scores, public: v },
-                  }))
-                }
-              />
-              <NumberInput
-                label="Restricted"
-                tooltip="Behind VPN or firewall, limited external access"
-                value={config.exposure_scores.restricted}
-                onChange={(v) =>
-                  updateConfig((c) => ({
-                    ...c,
-                    exposure_scores: { ...c.exposure_scores, restricted: v },
-                  }))
-                }
-              />
-              <NumberInput
-                label="Private"
-                tooltip="Internal network only, no external access"
-                value={config.exposure_scores.private}
-                onChange={(v) =>
-                  updateConfig((c) => ({
-                    ...c,
-                    exposure_scores: { ...c.exposure_scores, private: v },
-                  }))
-                }
-              />
-              <NumberInput
-                label="Isolated"
-                tooltip="Air-gapped or completely isolated from other networks"
-                value={config.exposure_scores.isolated}
-                onChange={(v) =>
-                  updateConfig((c) => ({
-                    ...c,
-                    exposure_scores: { ...c.exposure_scores, isolated: v },
-                  }))
-                }
-              />
-              <NumberInput
-                label="Unknown"
-                tooltip="Exposure level has not been classified"
-                value={config.exposure_scores.unknown}
-                onChange={(v) =>
-                  updateConfig((c) => ({
-                    ...c,
-                    exposure_scores: { ...c.exposure_scores, unknown: v },
-                  }))
-                }
-              />
-            </div>
-            <Separator className="my-4" />
-            <CardDescription className="mb-2 flex items-center">
-              Multipliers (0.1 - 3.0)
-              <InfoTip text="Final score is multiplied by this factor based on asset exposure. A multiplier of 1.0 means no change, >1.0 amplifies risk, <1.0 reduces risk." />
-            </CardDescription>
-            <div className="grid grid-cols-3 gap-2 sm:grid-cols-5">
-              <NumberInput
-                label="Public"
-                value={config.exposure_multipliers.public}
-                onChange={(v) =>
-                  updateConfig((c) => ({
-                    ...c,
-                    exposure_multipliers: { ...c.exposure_multipliers, public: v },
-                  }))
-                }
-                min={0.1}
-                max={3.0}
-                step={0.1}
-              />
-              <NumberInput
-                label="Restricted"
-                value={config.exposure_multipliers.restricted}
-                onChange={(v) =>
-                  updateConfig((c) => ({
-                    ...c,
-                    exposure_multipliers: { ...c.exposure_multipliers, restricted: v },
-                  }))
-                }
-                min={0.1}
-                max={3.0}
-                step={0.1}
-              />
-              <NumberInput
-                label="Private"
-                value={config.exposure_multipliers.private}
-                onChange={(v) =>
-                  updateConfig((c) => ({
-                    ...c,
-                    exposure_multipliers: { ...c.exposure_multipliers, private: v },
-                  }))
-                }
-                min={0.1}
-                max={3.0}
-                step={0.1}
-              />
-              <NumberInput
-                label="Isolated"
-                value={config.exposure_multipliers.isolated}
-                onChange={(v) =>
-                  updateConfig((c) => ({
-                    ...c,
-                    exposure_multipliers: { ...c.exposure_multipliers, isolated: v },
-                  }))
-                }
-                min={0.1}
-                max={3.0}
-                step={0.1}
-              />
-              <NumberInput
-                label="Unknown"
-                value={config.exposure_multipliers.unknown}
-                onChange={(v) =>
-                  updateConfig((c) => ({
-                    ...c,
-                    exposure_multipliers: { ...c.exposure_multipliers, unknown: v },
-                  }))
-                }
-                min={0.1}
-                max={3.0}
-                step={0.1}
-              />
-            </div>
-            <Separator className="my-4" />
-            <div className="space-y-1">
-              <Label className="flex items-center text-sm font-medium">
-                Score composition
-                <InfoTip text="Controls how the exposure multiplier combines with the weighted base score. Standard multiplies the whole score (can pin highly-exposed critical assets at 100). Amplify within headroom fills the remaining range instead, so top-risk assets keep a distinguishable ranking." />
-              </Label>
-              <Select
-                value={config.score_composition_mode ?? 'multiply'}
-                onValueChange={(v) =>
-                  updateConfig((c) => ({
-                    ...c,
-                    score_composition_mode: v as 'multiply' | 'amplify_headroom',
-                  }))
-                }
-              >
-                <SelectTrigger className="h-8">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="multiply">Standard (multiply)</SelectItem>
-                  <SelectItem value="amplify_headroom">Amplify within headroom</SelectItem>
-                </SelectContent>
-              </Select>
-              <p className="text-muted-foreground text-xs">
-                {(config.score_composition_mode ?? 'multiply') === 'amplify_headroom'
-                  ? 'Highly-exposed critical assets no longer all pin at 100 — the exposure boost fills the remaining range instead of overflowing. Improves ranking at the top.'
-                  : 'Exposure multiplier scales the whole score.'}
-              </p>
-            </div>
-          </CardContent>
-        </Card>
-
-        {/* Criticality Scores & Risk Level Thresholds */}
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-1">
-              Criticality and risk levels
-              <InfoTip text="Criticality scores define the base risk score for each business criticality level. Risk level thresholds define the score boundaries that determine the final risk label (Critical, High, Medium, Low)." />
-            </CardTitle>
-            <CardDescription>
-              Asset criticality scores and risk level threshold boundaries
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div>
-              <Label className="flex items-center text-sm font-medium">
-                Criticality scores (0–100)
-                <InfoTip text="Base score assigned to each asset based on its criticality classification. A 'Critical' asset (e.g., payment gateway) gets a higher base score than a 'Low' asset (e.g., dev blog)." />
-              </Label>
-              <div className="mt-2 grid grid-cols-3 gap-2 sm:grid-cols-5">
-                <NumberInput
-                  label="Critical"
-                  value={config.criticality_scores.critical}
-                  onChange={(v) =>
-                    updateConfig((c) => ({
-                      ...c,
-                      criticality_scores: { ...c.criticality_scores, critical: v },
-                    }))
-                  }
+        <div className="grid gap-5 lg:grid-cols-2">
+          {/* Component Weights: the weighted compositions only */}
+          {weighted && (
+            <Card>
+              <CardHeader>
+                <CardTitle>Component weights</CardTitle>
+                <CardDescription>
+                  Adjust the weight of each factor. Weights auto-balance to 100%.
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <WeightDistributionBar weights={config.weights} />
+                <WeightSlider
+                  label="Exposure"
+                  value={config.weights.exposure}
+                  onChange={(v) => updateWeight('exposure', v)}
+                  color="#ef4444" // label-ok: slider track colour, matches the weight bar segment
+                  tooltip="How much the asset's network exposure (public, private, isolated) affects its risk score"
                 />
-                <NumberInput
-                  label="High"
-                  value={config.criticality_scores.high}
-                  onChange={(v) =>
-                    updateConfig((c) => ({
-                      ...c,
-                      criticality_scores: { ...c.criticality_scores, high: v },
-                    }))
-                  }
+                <WeightSlider
+                  label="Criticality"
+                  value={config.weights.criticality}
+                  onChange={(v) => updateWeight('criticality', v)}
+                  color="#f97316" // label-ok: slider track colour, matches the weight bar segment
+                  tooltip="How much the asset's business criticality level affects its risk score"
                 />
-                <NumberInput
-                  label="Medium"
-                  value={config.criticality_scores.medium}
-                  onChange={(v) =>
-                    updateConfig((c) => ({
-                      ...c,
-                      criticality_scores: { ...c.criticality_scores, medium: v },
-                    }))
-                  }
+                <WeightSlider
+                  label="Findings"
+                  value={config.weights.findings}
+                  onChange={(v) => updateWeight('findings', v)}
+                  color="#eab308" // label-ok: slider track colour, matches the weight bar segment
+                  tooltip="How much vulnerability findings (count or severity-weighted) affect the risk score"
                 />
-                <NumberInput
-                  label="Low"
-                  value={config.criticality_scores.low}
-                  onChange={(v) =>
-                    updateConfig((c) => ({
-                      ...c,
-                      criticality_scores: { ...c.criticality_scores, low: v },
-                    }))
-                  }
+                <WeightSlider
+                  label="CTEM"
+                  value={config.weights.ctem}
+                  onChange={(v) => updateWeight('ctem', v)}
+                  color="#3b82f6" // label-ok: slider track colour, matches the CTEM bar segment
+                  tooltip="Continuous Threat Exposure Management bonus points for factors like PII exposure, internet accessibility, and compliance risk"
                 />
-                <NumberInput
-                  label="None"
-                  value={config.criticality_scores.none}
-                  onChange={(v) =>
-                    updateConfig((c) => ({
-                      ...c,
-                      criticality_scores: { ...c.criticality_scores, none: v },
-                    }))
-                  }
-                />
-              </div>
-            </div>
-            <Separator />
-            <div>
-              <div className="flex items-center justify-between">
-                <Label className="flex items-center text-sm font-medium">
-                  Risk level thresholds (min score)
-                  <InfoTip text="Minimum score required for each risk level. E.g., if Critical=80, any asset with score >= 80 is labeled Critical. Must be in descending order." />
-                </Label>
-                {!isThresholdValid && isDirty && (
-                  <span className="text-xs font-medium text-destructive">
-                    Must be ordered: Critical &gt; High &gt; Medium &gt; Low &gt; 0
-                  </span>
+                {!config.ctem_points.enabled && config.weights.ctem > 0 && (
+                  <p className="text-muted-foreground text-xs">
+                    CTEM is disabled. Its weight will be redistributed to other components.
+                  </p>
                 )}
-              </div>
-              <div className="mt-2 grid grid-cols-2 gap-2 sm:grid-cols-4">
-                <NumberInput
-                  label="Critical (min)"
-                  value={config.risk_levels.critical_min}
-                  onChange={(v) =>
-                    updateConfig((c) => ({
-                      ...c,
-                      risk_levels: { ...c.risk_levels, critical_min: v },
-                    }))
-                  }
-                  min={1}
-                />
-                <NumberInput
-                  label="High (min)"
-                  value={config.risk_levels.high_min}
-                  onChange={(v) =>
-                    updateConfig((c) => ({ ...c, risk_levels: { ...c.risk_levels, high_min: v } }))
-                  }
-                  min={1}
-                />
-                <NumberInput
-                  label="Medium (min)"
-                  value={config.risk_levels.medium_min}
-                  onChange={(v) =>
-                    updateConfig((c) => ({
-                      ...c,
-                      risk_levels: { ...c.risk_levels, medium_min: v },
-                    }))
-                  }
-                  min={1}
-                />
-                <NumberInput
-                  label="Low (min)"
-                  value={config.risk_levels.low_min}
-                  onChange={(v) =>
-                    updateConfig((c) => ({ ...c, risk_levels: { ...c.risk_levels, low_min: v } }))
-                  }
-                  min={1}
-                />
-              </div>
-            </div>
-          </CardContent>
-        </Card>
+              </CardContent>
+            </Card>
+          )}
 
-        {/* Finding & CTEM Impact */}
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-1">
-              Finding and CTEM impact
-              <InfoTip text="Configure how vulnerability findings and CTEM threat exposure factors contribute to the overall risk score." />
-            </CardTitle>
-            <CardDescription>
-              How findings and threat exposure factors affect scores
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div>
-              <Label className="flex items-center text-sm font-medium">
-                Finding impact
-                <InfoTip text="Determines how vulnerability findings on an asset affect its score. Count-based adds fixed points per finding. Severity-weighted adds different points based on finding severity." />
-              </Label>
-              <div className="mt-2 space-y-3">
-                <div className="space-y-1">
-                  <Label className="flex items-center text-xs">
-                    Mode
-                    <InfoTip text="Count-based: each finding adds fixed points regardless of severity. Severity-weighted: each finding adds points based on its severity level (Critical findings add more than Info findings)." />
-                  </Label>
-                  <Select
-                    value={config.finding_impact.mode}
-                    onValueChange={(v) =>
-                      updateConfig((c) => ({
-                        ...c,
-                        finding_impact: {
-                          ...c.finding_impact,
-                          mode: v as 'count' | 'severity_weighted',
-                        },
-                      }))
-                    }
-                  >
-                    <SelectTrigger className="h-8">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="count">Count-based</SelectItem>
-                      <SelectItem value="severity_weighted">Severity-weighted</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div className="grid grid-cols-2 gap-2">
-                  {config.finding_impact.mode === 'count' && (
+          {/* Exposure Scores */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-1">
+                Exposure scores
+                <InfoTip text="Base scores assigned based on how exposed an asset is to external access. Higher scores mean more risk." />
+              </CardTitle>
+              <CardDescription>Base score (0-100) for each exposure level</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="grid grid-cols-3 gap-2 sm:grid-cols-5">
+                <NumberInput
+                  label="Public"
+                  tooltip="Directly accessible from the internet"
+                  value={config.exposure_scores.public}
+                  onChange={(v) =>
+                    updateConfig((c) => ({
+                      ...c,
+                      exposure_scores: { ...c.exposure_scores, public: v },
+                    }))
+                  }
+                />
+                <NumberInput
+                  label="Restricted"
+                  tooltip="Behind VPN or firewall, limited external access"
+                  value={config.exposure_scores.restricted}
+                  onChange={(v) =>
+                    updateConfig((c) => ({
+                      ...c,
+                      exposure_scores: { ...c.exposure_scores, restricted: v },
+                    }))
+                  }
+                />
+                <NumberInput
+                  label="Private"
+                  tooltip="Internal network only, no external access"
+                  value={config.exposure_scores.private}
+                  onChange={(v) =>
+                    updateConfig((c) => ({
+                      ...c,
+                      exposure_scores: { ...c.exposure_scores, private: v },
+                    }))
+                  }
+                />
+                <NumberInput
+                  label="Isolated"
+                  tooltip="Air-gapped or completely isolated from other networks"
+                  value={config.exposure_scores.isolated}
+                  onChange={(v) =>
+                    updateConfig((c) => ({
+                      ...c,
+                      exposure_scores: { ...c.exposure_scores, isolated: v },
+                    }))
+                  }
+                />
+                <NumberInput
+                  label="Unknown"
+                  tooltip="Exposure level has not been classified"
+                  value={config.exposure_scores.unknown}
+                  onChange={(v) =>
+                    updateConfig((c) => ({
+                      ...c,
+                      exposure_scores: { ...c.exposure_scores, unknown: v },
+                    }))
+                  }
+                />
+              </div>
+              {weighted && (
+                <>
+                  <Separator className="my-4" />
+                  <CardDescription className="mb-2 flex items-center">
+                    Multipliers (0.1 - 3.0)
+                    <InfoTip text="Final score is multiplied by this factor based on asset exposure. A multiplier of 1.0 means no change, >1.0 amplifies risk, <1.0 reduces risk." />
+                  </CardDescription>
+                  <div className="grid grid-cols-3 gap-2 sm:grid-cols-5">
                     <NumberInput
-                      label="Per-finding points"
-                      tooltip="Points added to the score for each open finding on this asset"
-                      value={config.finding_impact.per_finding_points}
+                      label="Public"
+                      value={config.exposure_multipliers.public}
                       onChange={(v) =>
                         updateConfig((c) => ({
                           ...c,
-                          finding_impact: { ...c.finding_impact, per_finding_points: v },
+                          exposure_multipliers: { ...c.exposure_multipliers, public: v },
                         }))
                       }
-                      min={1}
-                      max={50}
+                      min={0.1}
+                      max={3.0}
+                      step={0.1}
                     />
-                  )}
+                    <NumberInput
+                      label="Restricted"
+                      value={config.exposure_multipliers.restricted}
+                      onChange={(v) =>
+                        updateConfig((c) => ({
+                          ...c,
+                          exposure_multipliers: { ...c.exposure_multipliers, restricted: v },
+                        }))
+                      }
+                      min={0.1}
+                      max={3.0}
+                      step={0.1}
+                    />
+                    <NumberInput
+                      label="Private"
+                      value={config.exposure_multipliers.private}
+                      onChange={(v) =>
+                        updateConfig((c) => ({
+                          ...c,
+                          exposure_multipliers: { ...c.exposure_multipliers, private: v },
+                        }))
+                      }
+                      min={0.1}
+                      max={3.0}
+                      step={0.1}
+                    />
+                    <NumberInput
+                      label="Isolated"
+                      value={config.exposure_multipliers.isolated}
+                      onChange={(v) =>
+                        updateConfig((c) => ({
+                          ...c,
+                          exposure_multipliers: { ...c.exposure_multipliers, isolated: v },
+                        }))
+                      }
+                      min={0.1}
+                      max={3.0}
+                      step={0.1}
+                    />
+                    <NumberInput
+                      label="Unknown"
+                      value={config.exposure_multipliers.unknown}
+                      onChange={(v) =>
+                        updateConfig((c) => ({
+                          ...c,
+                          exposure_multipliers: { ...c.exposure_multipliers, unknown: v },
+                        }))
+                      }
+                      min={0.1}
+                      max={3.0}
+                      step={0.1}
+                    />
+                  </div>
+                </>
+              )}
+              <Separator className="my-4" />
+              <div className="space-y-1">
+                <Label className="flex items-center text-sm font-medium">
+                  Score composition
+                  <InfoTip text="Controls how the exposure multiplier combines with the weighted base score. Standard multiplies the whole score (can pin highly-exposed critical assets at 100). Amplify within headroom fills the remaining range instead, so top-risk assets keep a distinguishable ranking." />
+                </Label>
+                <Select
+                  value={config.score_composition_mode ?? 'multiply'}
+                  onValueChange={(v) =>
+                    updateConfig((c) => ({
+                      ...c,
+                      score_composition_mode: v as ScoreCompositionMode,
+                    }))
+                  }
+                >
+                  <SelectTrigger
+                    className="h-8"
+                    aria-label={t('riskScore.model.label', 'Score composition')}
+                  >
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="likelihood_impact">
+                      {t('riskScore.model.likelihoodImpact', 'Likelihood × impact (default)')}
+                    </SelectItem>
+                    <SelectItem value="multiply">Standard (multiply)</SelectItem>
+                    <SelectItem value="amplify_headroom">Amplify within headroom</SelectItem>
+                  </SelectContent>
+                </Select>
+                <p className="text-muted-foreground text-xs">
+                  {!weighted
+                    ? t(
+                        'riskScore.model.likelihoodImpactHint',
+                        'Risk = findings score × exposure % × criticality % × (1 − control reduction).'
+                      )
+                    : (config.score_composition_mode ?? 'multiply') === 'amplify_headroom'
+                      ? t(
+                          'riskScore.model.amplifyHint',
+                          'Highly-exposed critical assets no longer all pin at 100. The exposure boost fills the remaining range instead of overflowing, which improves ranking at the top. An asset without an open finding scores 0.'
+                        )
+                      : t(
+                          'riskScore.model.multiplyHint',
+                          'Exposure multiplier scales the whole score. An asset without an open finding scores 0.'
+                        )}
+                </p>
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Criticality Scores & Risk Level Thresholds */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-1">
+                Criticality and risk levels
+                <InfoTip text="Criticality scores define the base risk score for each business criticality level. Risk level thresholds define the score boundaries that determine the final risk label (Critical, High, Medium, Low)." />
+              </CardTitle>
+              <CardDescription>
+                Asset criticality scores and risk level threshold boundaries
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div>
+                <Label className="flex items-center text-sm font-medium">
+                  Criticality scores (0–100)
+                  <InfoTip text="Base score assigned to each asset based on its criticality classification. A 'Critical' asset (e.g., payment gateway) gets a higher base score than a 'Low' asset (e.g., dev blog)." />
+                </Label>
+                <div className="mt-2 grid grid-cols-3 gap-2 sm:grid-cols-5">
                   <NumberInput
-                    label="Finding cap"
-                    tooltip="Maximum number of findings counted toward the score. Prevents a single heavily-scanned asset from getting an unfairly high score."
-                    value={config.finding_impact.finding_cap}
+                    label="Critical"
+                    value={config.criticality_scores.critical}
                     onChange={(v) =>
                       updateConfig((c) => ({
                         ...c,
-                        finding_impact: { ...c.finding_impact, finding_cap: v },
+                        criticality_scores: { ...c.criticality_scores, critical: v },
+                      }))
+                    }
+                  />
+                  <NumberInput
+                    label="High"
+                    value={config.criticality_scores.high}
+                    onChange={(v) =>
+                      updateConfig((c) => ({
+                        ...c,
+                        criticality_scores: { ...c.criticality_scores, high: v },
+                      }))
+                    }
+                  />
+                  <NumberInput
+                    label="Medium"
+                    value={config.criticality_scores.medium}
+                    onChange={(v) =>
+                      updateConfig((c) => ({
+                        ...c,
+                        criticality_scores: { ...c.criticality_scores, medium: v },
+                      }))
+                    }
+                  />
+                  <NumberInput
+                    label="Low"
+                    value={config.criticality_scores.low}
+                    onChange={(v) =>
+                      updateConfig((c) => ({
+                        ...c,
+                        criticality_scores: { ...c.criticality_scores, low: v },
+                      }))
+                    }
+                  />
+                  <NumberInput
+                    label="None"
+                    value={config.criticality_scores.none}
+                    onChange={(v) =>
+                      updateConfig((c) => ({
+                        ...c,
+                        criticality_scores: { ...c.criticality_scores, none: v },
+                      }))
+                    }
+                  />
+                </div>
+              </div>
+              <Separator />
+              <div>
+                <div className="flex items-center justify-between">
+                  <Label className="flex items-center text-sm font-medium">
+                    Risk level thresholds (min score)
+                    <InfoTip text="Minimum score required for each risk level. E.g., if Critical=80, any asset with score >= 80 is labeled Critical. Must be in descending order." />
+                  </Label>
+                  {!isThresholdValid && isDirty && (
+                    <span className="text-xs font-medium text-destructive">
+                      Must be ordered: Critical &gt; High &gt; Medium &gt; Low &gt; 0
+                    </span>
+                  )}
+                </div>
+                <div className="mt-2 grid grid-cols-2 gap-2 sm:grid-cols-4">
+                  <NumberInput
+                    label="Critical (min)"
+                    value={config.risk_levels.critical_min}
+                    onChange={(v) =>
+                      updateConfig((c) => ({
+                        ...c,
+                        risk_levels: { ...c.risk_levels, critical_min: v },
                       }))
                     }
                     min={1}
-                    max={100}
+                  />
+                  <NumberInput
+                    label="High (min)"
+                    value={config.risk_levels.high_min}
+                    onChange={(v) =>
+                      updateConfig((c) => ({
+                        ...c,
+                        risk_levels: { ...c.risk_levels, high_min: v },
+                      }))
+                    }
+                    min={1}
+                  />
+                  <NumberInput
+                    label="Medium (min)"
+                    value={config.risk_levels.medium_min}
+                    onChange={(v) =>
+                      updateConfig((c) => ({
+                        ...c,
+                        risk_levels: { ...c.risk_levels, medium_min: v },
+                      }))
+                    }
+                    min={1}
+                  />
+                  <NumberInput
+                    label="Low (min)"
+                    value={config.risk_levels.low_min}
+                    onChange={(v) =>
+                      updateConfig((c) => ({ ...c, risk_levels: { ...c.risk_levels, low_min: v } }))
+                    }
+                    min={1}
                   />
                 </div>
-                {config.finding_impact.mode === 'severity_weighted' && (
-                  <div>
-                    <Label className="flex items-center text-xs">
-                      Severity weights (points per finding)
-                      <InfoTip text="Points added per finding of each severity. E.g., if Critical=10 and an asset has 3 critical findings, it adds 30 points (capped by Finding Cap)." />
-                    </Label>
-                    <div className="mt-1 grid grid-cols-3 gap-2 sm:grid-cols-5">
-                      <NumberInput
-                        label="Critical"
-                        value={config.finding_impact.severity_weights.critical}
-                        onChange={(v) =>
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Finding & CTEM Impact: the weighted compositions only */}
+          {weighted && (
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-1">
+                  Finding and CTEM impact
+                  <InfoTip text="Configure how vulnerability findings and CTEM threat exposure factors contribute to the overall risk score." />
+                </CardTitle>
+                <CardDescription>
+                  How findings and threat exposure factors affect scores
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div>
+                  <Label className="flex items-center text-sm font-medium">
+                    Finding impact
+                    <InfoTip text="Determines how vulnerability findings on an asset affect its score. Count-based adds fixed points per finding. Severity-weighted adds different points based on finding severity." />
+                  </Label>
+                  <div className="mt-2 space-y-3">
+                    <div className="space-y-1">
+                      <Label className="flex items-center text-xs">
+                        Mode
+                        <InfoTip text="Count-based: each finding adds fixed points regardless of severity. Severity-weighted: each finding adds points based on its severity level (Critical findings add more than Info findings)." />
+                      </Label>
+                      <Select
+                        value={config.finding_impact.mode}
+                        onValueChange={(v) =>
                           updateConfig((c) => ({
                             ...c,
                             finding_impact: {
                               ...c.finding_impact,
-                              severity_weights: {
-                                ...c.finding_impact.severity_weights,
-                                critical: v,
-                              },
+                              mode: v as 'count' | 'severity_weighted',
                             },
                           }))
                         }
-                        max={50}
-                      />
+                      >
+                        <SelectTrigger className="h-8">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="count">Count-based</SelectItem>
+                          <SelectItem value="severity_weighted">Severity-weighted</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="grid grid-cols-2 gap-2">
+                      {config.finding_impact.mode === 'count' && (
+                        <NumberInput
+                          label="Per-finding points"
+                          tooltip="Points added to the score for each open finding on this asset"
+                          value={config.finding_impact.per_finding_points}
+                          onChange={(v) =>
+                            updateConfig((c) => ({
+                              ...c,
+                              finding_impact: { ...c.finding_impact, per_finding_points: v },
+                            }))
+                          }
+                          min={1}
+                          max={50}
+                        />
+                      )}
                       <NumberInput
-                        label="High"
-                        value={config.finding_impact.severity_weights.high}
+                        label="Finding cap"
+                        tooltip="Maximum number of findings counted toward the score. Prevents a single heavily-scanned asset from getting an unfairly high score."
+                        value={config.finding_impact.finding_cap}
                         onChange={(v) =>
                           updateConfig((c) => ({
                             ...c,
-                            finding_impact: {
-                              ...c.finding_impact,
-                              severity_weights: { ...c.finding_impact.severity_weights, high: v },
-                            },
+                            finding_impact: { ...c.finding_impact, finding_cap: v },
                           }))
                         }
-                        max={50}
-                      />
-                      <NumberInput
-                        label="Medium"
-                        value={config.finding_impact.severity_weights.medium}
-                        onChange={(v) =>
-                          updateConfig((c) => ({
-                            ...c,
-                            finding_impact: {
-                              ...c.finding_impact,
-                              severity_weights: { ...c.finding_impact.severity_weights, medium: v },
-                            },
-                          }))
-                        }
-                        max={50}
-                      />
-                      <NumberInput
-                        label="Low"
-                        value={config.finding_impact.severity_weights.low}
-                        onChange={(v) =>
-                          updateConfig((c) => ({
-                            ...c,
-                            finding_impact: {
-                              ...c.finding_impact,
-                              severity_weights: { ...c.finding_impact.severity_weights, low: v },
-                            },
-                          }))
-                        }
-                        max={50}
-                      />
-                      <NumberInput
-                        label="Info"
-                        value={config.finding_impact.severity_weights.info}
-                        onChange={(v) =>
-                          updateConfig((c) => ({
-                            ...c,
-                            finding_impact: {
-                              ...c.finding_impact,
-                              severity_weights: { ...c.finding_impact.severity_weights, info: v },
-                            },
-                          }))
-                        }
-                        max={50}
+                        min={1}
+                        max={100}
                       />
                     </div>
+                    {config.finding_impact.mode === 'severity_weighted' && (
+                      <div>
+                        <Label className="flex items-center text-xs">
+                          Severity weights (points per finding)
+                          <InfoTip text="Points added per finding of each severity. E.g., if Critical=10 and an asset has 3 critical findings, it adds 30 points (capped by Finding Cap)." />
+                        </Label>
+                        <div className="mt-1 grid grid-cols-3 gap-2 sm:grid-cols-5">
+                          <NumberInput
+                            label="Critical"
+                            value={config.finding_impact.severity_weights.critical}
+                            onChange={(v) =>
+                              updateConfig((c) => ({
+                                ...c,
+                                finding_impact: {
+                                  ...c.finding_impact,
+                                  severity_weights: {
+                                    ...c.finding_impact.severity_weights,
+                                    critical: v,
+                                  },
+                                },
+                              }))
+                            }
+                            max={50}
+                          />
+                          <NumberInput
+                            label="High"
+                            value={config.finding_impact.severity_weights.high}
+                            onChange={(v) =>
+                              updateConfig((c) => ({
+                                ...c,
+                                finding_impact: {
+                                  ...c.finding_impact,
+                                  severity_weights: {
+                                    ...c.finding_impact.severity_weights,
+                                    high: v,
+                                  },
+                                },
+                              }))
+                            }
+                            max={50}
+                          />
+                          <NumberInput
+                            label="Medium"
+                            value={config.finding_impact.severity_weights.medium}
+                            onChange={(v) =>
+                              updateConfig((c) => ({
+                                ...c,
+                                finding_impact: {
+                                  ...c.finding_impact,
+                                  severity_weights: {
+                                    ...c.finding_impact.severity_weights,
+                                    medium: v,
+                                  },
+                                },
+                              }))
+                            }
+                            max={50}
+                          />
+                          <NumberInput
+                            label="Low"
+                            value={config.finding_impact.severity_weights.low}
+                            onChange={(v) =>
+                              updateConfig((c) => ({
+                                ...c,
+                                finding_impact: {
+                                  ...c.finding_impact,
+                                  severity_weights: {
+                                    ...c.finding_impact.severity_weights,
+                                    low: v,
+                                  },
+                                },
+                              }))
+                            }
+                            max={50}
+                          />
+                          <NumberInput
+                            label="Info"
+                            value={config.finding_impact.severity_weights.info}
+                            onChange={(v) =>
+                              updateConfig((c) => ({
+                                ...c,
+                                finding_impact: {
+                                  ...c.finding_impact,
+                                  severity_weights: {
+                                    ...c.finding_impact.severity_weights,
+                                    info: v,
+                                  },
+                                },
+                              }))
+                            }
+                            max={50}
+                          />
+                        </div>
+                      </div>
+                    )}
                   </div>
-                )}
-              </div>
-            </div>
-            <Separator />
-            <div>
-              <div className="flex items-center justify-between">
-                <Label className="flex items-center text-sm font-medium">
-                  CTEM bonus points
-                  <InfoTip text="Additional points added to the CTEM component based on specific threat exposure attributes of each asset. Points are additive (an asset with PII + internet exposure gets both bonuses)." />
+                </div>
+                <Separator />
+                <div>
+                  <div className="flex items-center justify-between">
+                    <Label className="flex items-center text-sm font-medium">
+                      CTEM bonus points
+                      <InfoTip text="Additional points added to the CTEM component based on specific threat exposure attributes of each asset. Points are additive (an asset with PII + internet exposure gets both bonuses)." />
+                    </Label>
+                    <div className="flex items-center gap-2">
+                      <Switch
+                        id="ctem-toggle"
+                        checked={config.ctem_points.enabled}
+                        onCheckedChange={(v) =>
+                          updateConfig((c) => ({
+                            ...c,
+                            ctem_points: { ...c.ctem_points, enabled: v },
+                          }))
+                        }
+                      />
+                      <Label htmlFor="ctem-toggle" className="text-xs">
+                        Enabled
+                      </Label>
+                    </div>
+                  </div>
+                  {config.ctem_points.enabled && (
+                    <div className="mt-2 grid grid-cols-3 gap-2">
+                      <NumberInput
+                        label="Internet Accessible"
+                        tooltip="Bonus points for assets directly reachable from the internet"
+                        value={config.ctem_points.internet_accessible}
+                        onChange={(v) =>
+                          updateConfig((c) => ({
+                            ...c,
+                            ctem_points: { ...c.ctem_points, internet_accessible: v },
+                          }))
+                        }
+                      />
+                      <NumberInput
+                        label="PII Exposed"
+                        tooltip="Bonus points for assets that process or store Personally Identifiable Information"
+                        value={config.ctem_points.pii_exposed}
+                        onChange={(v) =>
+                          updateConfig((c) => ({
+                            ...c,
+                            ctem_points: { ...c.ctem_points, pii_exposed: v },
+                          }))
+                        }
+                      />
+                      <NumberInput
+                        label="PHI Exposed"
+                        tooltip="Bonus points for assets that process or store Protected Health Information (HIPAA)"
+                        value={config.ctem_points.phi_exposed}
+                        onChange={(v) =>
+                          updateConfig((c) => ({
+                            ...c,
+                            ctem_points: { ...c.ctem_points, phi_exposed: v },
+                          }))
+                        }
+                      />
+                      <NumberInput
+                        label="High Risk Compliance"
+                        tooltip="Bonus points for assets under high-risk compliance frameworks (PCI-DSS, SOX, etc.)"
+                        value={config.ctem_points.high_risk_compliance}
+                        onChange={(v) =>
+                          updateConfig((c) => ({
+                            ...c,
+                            ctem_points: { ...c.ctem_points, high_risk_compliance: v },
+                          }))
+                        }
+                      />
+                      <NumberInput
+                        label="Restricted Data"
+                        tooltip="Bonus points for assets that handle classified or restricted data"
+                        value={config.ctem_points.restricted_data}
+                        onChange={(v) =>
+                          updateConfig((c) => ({
+                            ...c,
+                            ctem_points: { ...c.ctem_points, restricted_data: v },
+                          }))
+                        }
+                      />
+                    </div>
+                  )}
+                  {!config.ctem_points.enabled && (
+                    <p className="text-muted-foreground mt-1 text-xs">
+                      CTEM scoring is disabled. Enable to add bonus points for threat exposure
+                      factors.
+                    </p>
+                  )}
+                </div>
+              </CardContent>
+            </Card>
+          )}
+        </div>
+
+        {/* Unowned Findings Floor — CTEM "ownership unknown defaults to P2" rule */}
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-1">
+              Unowned findings floor
+              <InfoTip text="CTEM playbook rule. When enabled, findings on assets with no assigned owner are floored at P2 priority. It is a strict floor: only ever raises a P3 to P2, never lowers anything and never touches P0/P1." />
+            </CardTitle>
+            <CardDescription>How findings on ownerless assets are prioritized</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="flex items-start justify-between gap-4">
+              <div className="space-y-1">
+                <Label htmlFor="floor-unowned-toggle" className="text-sm font-medium">
+                  {t('riskScore.floor.title', 'Floor unowned findings at P2')}
                 </Label>
-                <div className="flex items-center gap-2">
-                  <Switch
-                    id="ctem-toggle"
-                    checked={config.ctem_points.enabled}
-                    onCheckedChange={(v) =>
-                      updateConfig((c) => ({ ...c, ctem_points: { ...c.ctem_points, enabled: v } }))
-                    }
-                  />
-                  <Label htmlFor="ctem-toggle" className="text-xs">
-                    Enabled
-                  </Label>
-                </div>
+                <p className="text-muted-foreground max-w-prose text-xs">
+                  {t(
+                    'riskScore.floor.desc',
+                    "Findings on assets with no assigned owner can't be safely deprioritized, so keep them at P2 minimum. Off by default."
+                  )}
+                </p>
               </div>
-              {config.ctem_points.enabled && (
-                <div className="mt-2 grid grid-cols-3 gap-2">
-                  <NumberInput
-                    label="Internet Accessible"
-                    tooltip="Bonus points for assets directly reachable from the internet"
-                    value={config.ctem_points.internet_accessible}
-                    onChange={(v) =>
-                      updateConfig((c) => ({
-                        ...c,
-                        ctem_points: { ...c.ctem_points, internet_accessible: v },
-                      }))
-                    }
-                  />
-                  <NumberInput
-                    label="PII Exposed"
-                    tooltip="Bonus points for assets that process or store Personally Identifiable Information"
-                    value={config.ctem_points.pii_exposed}
-                    onChange={(v) =>
-                      updateConfig((c) => ({
-                        ...c,
-                        ctem_points: { ...c.ctem_points, pii_exposed: v },
-                      }))
-                    }
-                  />
-                  <NumberInput
-                    label="PHI Exposed"
-                    tooltip="Bonus points for assets that process or store Protected Health Information (HIPAA)"
-                    value={config.ctem_points.phi_exposed}
-                    onChange={(v) =>
-                      updateConfig((c) => ({
-                        ...c,
-                        ctem_points: { ...c.ctem_points, phi_exposed: v },
-                      }))
-                    }
-                  />
-                  <NumberInput
-                    label="High Risk Compliance"
-                    tooltip="Bonus points for assets under high-risk compliance frameworks (PCI-DSS, SOX, etc.)"
-                    value={config.ctem_points.high_risk_compliance}
-                    onChange={(v) =>
-                      updateConfig((c) => ({
-                        ...c,
-                        ctem_points: { ...c.ctem_points, high_risk_compliance: v },
-                      }))
-                    }
-                  />
-                  <NumberInput
-                    label="Restricted Data"
-                    tooltip="Bonus points for assets that handle classified or restricted data"
-                    value={config.ctem_points.restricted_data}
-                    onChange={(v) =>
-                      updateConfig((c) => ({
-                        ...c,
-                        ctem_points: { ...c.ctem_points, restricted_data: v },
-                      }))
-                    }
-                  />
-                </div>
-              )}
-              {!config.ctem_points.enabled && (
-                <p className="text-muted-foreground mt-1 text-xs">
-                  CTEM scoring is disabled. Enable to add bonus points for threat exposure factors.
+              <Switch
+                id="floor-unowned-toggle"
+                checked={config.floor_unowned_at_p2 ?? false}
+                onCheckedChange={(v) => updateConfig((c) => ({ ...c, floor_unowned_at_p2: v }))}
+              />
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* Recalculate and How Scoring Works, side by side */}
+        <div className="grid gap-5 lg:grid-cols-2">
+          <Card>
+            <CardHeader>
+              <CardTitle>{t('riskScore.recalc.title', 'Recalculate scores')}</CardTitle>
+              <CardDescription>
+                {t(
+                  'riskScore.recalc.desc',
+                  'Apply current scoring configuration to all assets. This may take a moment for large portfolios.'
+                )}
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={isRecalculating || isDirty}
+                onClick={() => setConfirmRecalc(true)}
+              >
+                {isRecalculating ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <ArrowUpDown className="h-4 w-4" />
+                )}
+                {t('riskScore.recalc.button', 'Recalculate all scores')}
+              </Button>
+              <ConfirmDialog
+                open={confirmRecalc}
+                onOpenChange={setConfirmRecalc}
+                title={t(
+                  'confirm.riskScore.recalcTitle',
+                  'Recalculate the risk score of every asset?'
+                )}
+                desc={t(
+                  'confirm.riskScore.recalcDesc',
+                  'Every asset is queued for a new score with the saved configuration. Scores, priorities and the order of findings change for the whole organization while it runs. Findings themselves are not changed.'
+                )}
+                confirmText={t('confirm.riskScore.recalcConfirm', 'Recalculate all scores')}
+                handleConfirm={async () => {
+                  setConfirmRecalc(false)
+                  await handleRecalculate()
+                }}
+              />
+              {isDirty && (
+                <p className="text-muted-foreground mt-2 text-xs">
+                  {t('riskScore.recalc.saveFirst', 'Save changes before recalculating.')}
                 </p>
               )}
-            </div>
-          </CardContent>
-        </Card>
-      </div>
+            </CardContent>
+          </Card>
 
-      {/* Unowned Findings Floor — CTEM "ownership unknown defaults to P2" rule */}
-      <Card className="mt-5">
-        <CardHeader>
-          <CardTitle className="flex items-center gap-1">
-            Unowned findings floor
-            <InfoTip text="CTEM playbook rule. When enabled, findings on assets with no assigned owner are floored at P2 priority. It is a strict floor: only ever raises a P3 to P2, never lowers anything and never touches P0/P1." />
-          </CardTitle>
-          <CardDescription>How findings on ownerless assets are prioritized</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <div className="flex items-start justify-between gap-4">
-            <div className="space-y-1">
-              <Label htmlFor="floor-unowned-toggle" className="text-sm font-medium">
-                Floor unowned findings at P2
-              </Label>
-              <p className="text-muted-foreground max-w-prose text-xs">
-                Findings on assets with no assigned owner can&apos;t be safely deprioritized — keep
-                them at P2 minimum. Off by default.
-              </p>
-            </div>
-            <Switch
-              id="floor-unowned-toggle"
-              checked={config.floor_unowned_at_p2 ?? false}
-              onCheckedChange={(v) => updateConfig((c) => ({ ...c, floor_unowned_at_p2: v }))}
-            />
-          </div>
-        </CardContent>
-      </Card>
-
-      {/* Recalculate & How Scoring Works — side by side */}
-      <div className="mt-5 grid gap-5 lg:grid-cols-2">
-        <Card>
-          <CardHeader>
-            <CardTitle>Recalculate scores</CardTitle>
-            <CardDescription>
-              Apply current scoring configuration to all assets. This may take a moment for large
-              portfolios.
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <AlertDialog>
-              <AlertDialogTrigger asChild>
-                <Button variant="outline" size="sm" disabled={isRecalculating || isDirty}>
-                  {isRecalculating ? (
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                  ) : (
-                    <ArrowUpDown className="h-4 w-4" />
-                  )}
-                  Recalculate all scores
-                </Button>
-              </AlertDialogTrigger>
-              <AlertDialogContent>
-                <AlertDialogHeader>
-                  <AlertDialogTitle>Recalculate risk scores</AlertDialogTitle>
-                  <AlertDialogDescription>
-                    This will recalculate risk scores for all assets using the current saved
-                    configuration. This operation cannot be undone.
-                  </AlertDialogDescription>
-                </AlertDialogHeader>
-                <AlertDialogFooter>
-                  <AlertDialogCancel>Cancel</AlertDialogCancel>
-                  <AlertDialogAction onClick={handleRecalculate}>Recalculate</AlertDialogAction>
-                </AlertDialogFooter>
-              </AlertDialogContent>
-            </AlertDialog>
-            {isDirty && (
-              <p className="text-muted-foreground mt-2 text-xs">
-                Save changes before recalculating.
-              </p>
-            )}
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader>
-            <CardTitle>How scoring works</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="text-muted-foreground space-y-2 text-sm">
-              <p>
-                <strong className="text-foreground">Formula:</strong> Score = (Exposure x W1 +
-                Criticality x W2 + Findings x W3 + CTEM x W4) x Multiplier
-              </p>
-              <p>
-                Each component produces a score (0-100) weighted by its percentage. The exposure
-                multiplier adjusts the final score. Result is clamped to 0-100.
-              </p>
-              <p>
-                When CTEM is disabled, its weight is redistributed proportionally to the other
-                components.
-              </p>
-            </div>
-          </CardContent>
-        </Card>
-      </div>
-      <ScoringImpactDialog
-        open={impactOpen}
-        onOpenChange={setImpactOpen}
-        preview={impact}
-        loading={isPreviewing}
-        error={impactError}
-        applying={isUpdating}
-        onApply={handleApply}
-      />
+          <Card>
+            <CardHeader>
+              <CardTitle>How scoring works</CardTitle>
+            </CardHeader>
+            <CardContent>
+              {!weighted ? (
+                <div className="text-muted-foreground space-y-2 text-sm">
+                  <p>
+                    {t(
+                      'riskScore.model.howLikelihood',
+                      'Risk = findings score × exposure factor × criticality factor × (1 − control reduction). The findings score grows with each open finding by severity, with diminishing returns; exploit signals count one severity higher.'
+                    )}
+                  </p>
+                  <p>
+                    {t(
+                      'riskScore.model.howLikelihoodZero',
+                      'An asset with no open finding has a risk of 0. Exposure and criticality scale risk; they are not risk on their own.'
+                    )}
+                  </p>
+                </div>
+              ) : (
+                <div className="text-muted-foreground space-y-2 text-sm">
+                  <p>
+                    <strong className="text-foreground">Formula:</strong> Score = (Exposure x W1 +
+                    Criticality x W2 + Findings x W3 + CTEM x W4) x Multiplier
+                  </p>
+                  <p>
+                    Each component produces a score (0-100) weighted by its percentage. The exposure
+                    multiplier adjusts the final score. Result is clamped to 0-100.
+                  </p>
+                  <p>
+                    When CTEM is disabled, its weight is redistributed proportionally to the other
+                    components.
+                  </p>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </div>
+        <ScoringImpactDialog
+          open={impactOpen}
+          onOpenChange={setImpactOpen}
+          preview={impact}
+          loading={isPreviewing}
+          error={impactError}
+          applying={isUpdating}
+          onApply={handleApply}
+        />
+      </PageStack>
     </Main>
   )
 }

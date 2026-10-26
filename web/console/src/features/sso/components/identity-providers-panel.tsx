@@ -548,9 +548,10 @@ export function IdentityProvidersPanel({
         })}
         desc={t(
           'confirm.idp.removeDesc',
-          'People can no longer sign in to this organization with it. Make sure they have another way to sign in first. This cannot be undone.'
+          'People can no longer sign in to this organization with it. Make sure they have another way to sign in first. Its stored settings are deleted; you can configure it again from scratch.'
         )}
-        confirmText={t('confirm.remove', 'Remove')}
+        confirmText={t('confirm.idp.removeButton', 'Remove identity provider')}
+        typeToConfirm={ssoDeleteTarget ? getProviderLabel(ssoDeleteTarget.provider) : undefined}
         destructive
         handleConfirm={() => void handleDeleteSSO()}
       />

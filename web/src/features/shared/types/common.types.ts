@@ -4,10 +4,13 @@
  * Shared type definitions used across features
  */
 
+import type { SeverityLevel } from '@/lib/severity'
 import {
   SEVERITY_DOT_COLORS,
   SEVERITY_SOLID_TEXT,
   SEVERITY_BORDER_COLORS,
+  SEVERITY_STROKE_COLORS,
+  SEVERITY_TEXT_COLORS,
   type SeverityLevel as SeverityColorLevel,
 } from '@/lib/severity-colors'
 import type { RatedCriticality } from '@/lib/criticality'
@@ -94,47 +97,19 @@ export type RiskLevelKey = 'critical' | 'high' | 'medium' | 'low' | 'minimal' | 
  */
 export const getRiskLevel = (score: number, thresholds?: RiskLevelThresholds) => {
   const t = thresholds ?? DEFAULT_RISK_LEVELS
-  if (score >= t.critical_min)
-    return {
-      key: 'critical' as RiskLevelKey,
-      label: 'Critical',
-      color: 'bg-red-500', // palette-ok: risk band fill, also mapped to stroke- and bar colours
-      textColor: 'text-white',
-    }
-  if (score >= t.high_min)
-    return {
-      key: 'high' as RiskLevelKey,
-      label: 'High',
-      color: 'bg-orange-500', // palette-ok: risk band fill, also mapped to stroke- and bar colours
-      textColor: 'text-white',
-    }
-  if (score >= t.medium_min)
-    return {
-      key: 'medium' as RiskLevelKey,
-      label: 'Medium',
-      color: 'bg-yellow-500', // palette-ok: risk band fill, also mapped to stroke- and bar colours
-      textColor: 'text-black',
-    }
-  if (score >= t.low_min)
-    return {
-      key: 'low' as RiskLevelKey,
-      label: 'Low',
-      color: 'bg-blue-500', // palette-ok: risk band fill, also mapped to stroke- and bar colours
-      textColor: 'text-white',
-    }
-  if (score > 0)
-    return {
-      key: 'minimal' as RiskLevelKey,
-      label: 'Minimal',
-      color: 'bg-green-500', // palette-ok: risk band fill, also mapped to stroke- and bar colours
-      textColor: 'text-white',
-    }
-  return {
-    key: 'none' as RiskLevelKey,
-    label: 'No open risk',
-    color: 'bg-green-500', // palette-ok: risk band fill, also mapped to stroke- and bar colours
-    textColor: 'text-white',
-  }
+  const band = (key: RiskLevelKey, label: string, level: SeverityLevel | null) => ({
+    key,
+    label,
+    color: level ? SEVERITY_DOT_COLORS[level] : 'bg-success',
+    textColor: level ? SEVERITY_SOLID_TEXT[level] : 'text-primary-foreground',
+    stroke: level ? SEVERITY_STROKE_COLORS[level] : 'stroke-success',
+  })
+  if (score >= t.critical_min) return band('critical', 'Critical', 'critical')
+  if (score >= t.high_min) return band('high', 'High', 'high')
+  if (score >= t.medium_min) return band('medium', 'Medium', 'medium')
+  if (score >= t.low_min) return band('low', 'Low', 'low')
+  if (score > 0) return band('minimal', 'Minimal', null)
+  return band('none', 'No open risk', null)
 }
 
 // ============================================
@@ -163,11 +138,11 @@ export function formatRiskScore(score: number, fractionDigits = 1): string {
 /** Tailwind text-color class for a 0–100 risk score, aligned with getRiskLevel bands. */
 export function getRiskScoreTextColor(score: number, thresholds?: RiskLevelThresholds): string {
   const t = thresholds ?? DEFAULT_RISK_LEVELS
-  if (score >= t.critical_min) return 'text-red-500'
-  if (score >= t.high_min) return 'text-orange-500'
-  if (score >= t.medium_min) return 'text-yellow-500'
-  if (score >= t.low_min) return 'text-blue-500'
-  return 'text-green-500'
+  if (score >= t.critical_min) return SEVERITY_TEXT_COLORS.critical
+  if (score >= t.high_min) return SEVERITY_TEXT_COLORS.high
+  if (score >= t.medium_min) return SEVERITY_TEXT_COLORS.medium
+  if (score >= t.low_min) return SEVERITY_TEXT_COLORS.low
+  return 'text-success'
 }
 
 /** StatsCard `changeType` for a 0–100 risk score (higher = worse). */

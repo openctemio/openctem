@@ -27,6 +27,20 @@ type Workflow struct {
 
 	// Status
 	IsActive bool
+	// DisabledReason says why the platform switched the automation off
+	// (DisabledReasonRemovedType); "" when it did not. Switching it on
+	// clears it.
+	DisabledReason string
+
+	// Mode: live runs execute the published version; simulate runs execute
+	// the draft and only record what they would do (version.go).
+	Mode Mode
+	// PublishedVersionID is the version live runs execute (nil before the
+	// first publish).
+	PublishedVersionID *shared.ID
+	// MaxChangesPerRun caps the changes of one live run (0: the default;
+	// guardrails.go).
+	MaxChangesPerRun int
 
 	// Metadata
 	Tags []string
@@ -62,6 +76,7 @@ func NewWorkflow(tenantID shared.ID, name, description string) (*Workflow, error
 		Name:        name,
 		Description: description,
 		IsActive:    true,
+		Mode:        ModeSimulate,
 		Tags:        []string{},
 		Nodes:       []*Node{},
 		Edges:       []*Edge{},
@@ -78,6 +93,7 @@ func (w *Workflow) SetCreatedBy(userID shared.ID) {
 // Activate activates the workflow.
 func (w *Workflow) Activate() {
 	w.IsActive = true
+	w.DisabledReason = ""
 	w.UpdatedAt = time.Now()
 }
 
@@ -202,6 +218,7 @@ func (w *Workflow) Clone(newName string) *Workflow {
 		Name:        newName,
 		Description: w.Description,
 		IsActive:    true,
+		Mode:        ModeSimulate,
 		Tags:        make([]string, len(w.Tags)),
 		CreatedAt:   now,
 		UpdatedAt:   now,

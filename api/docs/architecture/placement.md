@@ -31,6 +31,7 @@ it, instead of "Waiting for a sensor".
 | Dispatch gate | private targets: the sensor enforces a local policy when the organization requires one | `private_needs_local_policy` |
 | Dispatch gate | the organization enabled the opt-in the task uses | `opt_in_disabled` |
 | Dispatch gate | the sensor's own local policy accepts the task | `local_policy_refuses` |
+| Sensor report | the sensor claims new jobs (its heartbeats do not report `local_store.stop_claiming`: storage over quota, disk low, or results not yet acknowledged) | `stopped_claiming` |
 | Slots | a free scan slot (eligible but busy otherwise) | `no_free_slot` (counted as *busy*) |
 
 The claim SQL lives in `internal/infra/postgres/command_repository.go`
@@ -142,11 +143,28 @@ as defence in depth.
   verdict (`web/src/features/scans/components/task-placement.tsx`).
 - **Step panel:** a failed, partial, skipped or canceled step shows its error
   code, its class and the code's meaning, fix and link
-  (`code-help.tsx`).
-- Every step error code (`pkg/domain/scanrun/failure.go`) and placement
-  reason (`pkg/domain/command/placement.go`) has an entry with en and vi
-  text (`web/src/features/scans/lib/placement-help.ts`); a web test reads
-  both Go files and fails on a code without one.
+  (`code-help.tsx`). What the step did not do comes from its structured
+  outcome on the run map (`outcome`: `coverage_gaps` as `{host, reason}`,
+  `coverage_gap_count`, `unfinished_target_count`,
+  `unreachable_target_count`, `skipped_target_count`), read from the step
+  output that `scanrun.Partial` writes; each host shows its translated
+  reason and why. The step's `error_message` (an English summary for API
+  clients) is shown only for the codes that carry the sensor's or the tool's
+  own text (`COMMAND_FAILED`, `TOOL_EXIT`, `PARSE_ERROR`, `BATCH_FAILED`) and
+  for a code the console does not know, under "Message from the sensor".
+- A step that completed with hosts not fully covered or targets left
+  unfinished ends with `COVERAGE_GAPS`, class `partial` (results kept, not a
+  retryable failure).
+- Every step error code (`pkg/domain/scanrun/failure.go`), placement
+  reason (`pkg/domain/command/placement.go`), failure class, coverage-gap
+  reason (`coverage_gaps.go`: `breaker_open` the host stopped answering,
+  `rate_floor` it kept pushing back at the lowest rate, `blocked` it answered
+  with a block), skipped-target reason (`skipped_targets.go`) and unreached
+  reach class (`reach.go`) has en and vi text
+  (`web/src/features/scans/lib/placement-help.ts`, `scans.*` keys); a web
+  test reads the Go files and fails on one without. The API keeps only the
+  reasons it lists (a sensor's unknown reason is dropped or shown as a
+  generic gap), so a newer sensor never puts raw text on the page.
 
 ## Security
 

@@ -104,11 +104,15 @@ var suffixOps = []struct {
 //   - ArgToken: the leaf's value (or array of values);
 //   - TenantToken: the actor's tenant;
 //   - UserToken: the acting user (::uuid), for user-relative fields and the
-//     member visibility rule.
+//     member visibility rule;
+//   - UpperToken: in a Search template only, q trimmed and upper-cased
+//     (bound as is, never a pattern), for exact identifier matches such as a
+//     CVE id.
 const (
 	ArgToken    = "{arg}"
 	TenantToken = "{tenant}"
 	UserToken   = "{user}"
+	UpperToken  = "{upper}"
 )
 
 // Limits (RFC-048 §3.7).
@@ -152,6 +156,10 @@ type Field struct {
 	EnumTemplates map[string]string
 	// Enum is the allowed set for TypeEnum.
 	Enum []string
+	// EnumExpand, for a TypeEnum field, maps a value to the other stored
+	// values it also matches (eq, ne, in, not_in): one reporting bucket kept
+	// as several stored values. Constants only, never input.
+	EnumExpand map[string][]string
 	// EnumRetired maps a value that was retired from Enum to the error
 	// that says what replaces it (a constant, never input).
 	EnumRetired map[string]string
@@ -201,6 +209,9 @@ type Search struct {
 	// Pattern binds the value as an ILIKE pattern %value% with LIKE
 	// metacharacters escaped (use ESCAPE '\' in the template).
 	Pattern bool
+	// Fields names what q matches, for clients (a search box placeholder).
+	// Descriptive only: the template is the rule.
+	Fields []string
 }
 
 // Registry is the allowlist of one resource.
@@ -563,7 +574,9 @@ type Description struct {
 	Aliases     map[string]string  `json:"aliases,omitempty"`
 	DefaultSort []string           `json:"default_sort"`
 	Search      bool               `json:"search"`
-	Limits      map[string]int     `json:"limits"`
+	// SearchFields names what q matches.
+	SearchFields []string       `json:"search_fields,omitempty"`
+	Limits       map[string]int `json:"limits"`
 }
 
 // Describe returns the registry's contract as seen by a caller: fields that
@@ -580,6 +593,9 @@ func (r *Registry) Describe(has func(permission string) bool) Description {
 			"q_length": MaxQLen, "body_bytes": MaxBodyBytes, "sort_keys": MaxSortKeys,
 			"max_offset": DefaultMaxOffset,
 		},
+	}
+	if r.Search != nil {
+		d.SearchFields = append([]string(nil), r.Search.Fields...)
 	}
 	for _, n := range r.order {
 		f := r.fields[n]

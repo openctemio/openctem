@@ -11,7 +11,7 @@
  */
 
 import { useState } from 'react'
-import { Copy, Plus, Settings2, Trash2 } from 'lucide-react'
+import { Copy, Loader2, Plus, Settings2, Trash2 } from 'lucide-react'
 import { toast } from 'sonner'
 
 import { ConfirmDialog } from '@/components/confirm-dialog'
@@ -22,14 +22,22 @@ import { Checkbox } from '@/components/ui/checkbox'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Switch } from '@/components/ui/switch'
-import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { useTranslation } from '@/context/i18n-provider'
 import {
   acceptExposure,
   markExposureFalsePositive,
   resolveExposure,
 } from '@/features/exposures/hooks/use-exposures'
-import { EmptyState, ErrorState, RelativeTime } from '@/features/shared'
+import {
+  EmptyState,
+  ErrorState,
+  FilterSelect,
+  RelativeTime,
+  SeverityBadge,
+} from '@/features/shared'
+import { useUrlFilter } from '@/hooks/use-url-param'
+import { Skeleton } from '@/components/ui/skeleton'
+import { toSeverity } from './easm-overview'
 import type { LookalikeWatch } from '@/lib/api/generated'
 import type { ExposureEvent } from '@/lib/api/exposure-types'
 import { getErrorMessage } from '@/lib/api/error-handler'
@@ -41,6 +49,13 @@ import {
   useLookalikeExposures,
   useLookalikeWatches,
 } from '../hooks/use-easm-lookalikes'
+import { confirmName } from '@/lib/confirm-name'
+
+/** Candidates one watch may check (the API's range). */
+const MAX_CANDIDATES_MIN = 10
+const MAX_CANDIDATES_MAX = 1000
+const maxValid = (n: number) =>
+  Number.isInteger(n) && n >= MAX_CANDIDATES_MIN && n <= MAX_CANDIDATES_MAX
 
 type ReviewState = 'active' | 'accepted' | 'false_positive' | 'resolved'
 const REVIEW_STATES: ReviewState[] = ['active', 'accepted', 'false_positive', 'resolved']
@@ -116,7 +131,7 @@ function WatchSettings({
           })}
         </div>
       </fieldset>
-      <div className="flex items-center gap-2">
+      <div className="flex flex-wrap items-center gap-2">
         <Label htmlFor={`${idPrefix}-max`} className="font-normal">
           {t('lookalikes.max', 'Candidates to check (10 to 1000)')}
         </Label>
@@ -126,9 +141,16 @@ function WatchSettings({
           min={10}
           max={1000}
           className="w-28"
-          value={max}
+          value={max || ''}
+          aria-invalid={!maxValid(max)}
+          aria-describedby={maxValid(max) ? undefined : `${idPrefix}-max-error`}
           onChange={(e) => onMax(Number(e.target.value))}
         />
+        {!maxValid(max) && (
+          <p id={`${idPrefix}-max-error`} className="text-xs text-destructive">
+            {t('lookalikes.maxInvalid', 'Enter a whole number from 10 to 1000')}
+          </p>
+        )}
       </div>
     </div>
   )
@@ -201,7 +223,15 @@ function WatchRow({
               aria-label={t('lookalikes.edit', 'Settings of {domain}', {
                 domain: watch.domain ?? '',
               })}
-              onClick={() => setEditing(!editing)}
+              onClick={() => {
+                // Opening the form starts from what the watch has now, not from
+                // the values it had when the row first rendered.
+                if (!editing) {
+                  setSelected(watch.techniques ?? [])
+                  setMax(watch.max_candidates ?? 300)
+                }
+                setEditing(!editing)
+              }}
             >
               <Settings2 className="h-4 w-4" aria-hidden />
             </Button>
@@ -232,7 +262,7 @@ function WatchRow({
           />
           <Button
             size="sm"
-            disabled={busy}
+            disabled={busy || !maxValid(max)}
             onClick={() => void save(!!watch.enabled, selected, max)}
           >
             {t('lookalikes.save', 'Save')}
@@ -279,12 +309,7 @@ function ReviewRow({
             // An IDN homoglyph reads like the real name: always show what it really is.
             <span className="break-all font-mono text-xs text-muted-foreground">{ascii}</span>
           )}
-          <Badge
-            variant={exposure.severity === 'medium' ? 'destructive' : 'secondary'}
-            className="capitalize"
-          >
-            {exposure.severity}
-          </Badge>
+          <SeverityBadge severity={toSeverity(exposure.severity)} />
           {d.has_mx === true && (
             <Badge variant="outline">{t('lookalikes.mail', 'Receives mail')}</Badge>
           )}
@@ -297,9 +322,13 @@ function ReviewRow({
             </Badge>
           )}
         </div>
-        <p className="text-xs text-muted-foreground">
-          {t('lookalikes.of', 'Lookalike of {domain}', { domain: String(d.lookalike_of ?? '') })}
-          {typeof d.technique === 'string' && ` · ${label(d.technique)}`} ·{' '}
+        <p className="flex flex-wrap gap-x-3 text-xs text-muted-foreground">
+          <span>
+            {t('lookalikes.of', 'Lookalike of {domain}', {
+              domain: String(d.lookalike_of ?? ''),
+            })}
+          </span>
+          {typeof d.technique === 'string' && <span>{label(d.technique)}</span>}
           <RelativeTime date={exposure.first_seen_at} />
         </p>
       </div>
@@ -351,12 +380,37 @@ function ReviewRow({
   )
 }
 
+function RowsSkeleton() {
+  return (
+    <div className="space-y-3" aria-hidden>
+      {Array.from({ length: 3 }).map((_, i) => (
+        <Skeleton key={i} className="h-12 w-full" />
+      ))}
+    </div>
+  )
+}
+
 function ReviewSection() {
   const { t } = useTranslation()
   const { can } = usePermissions()
   const canTriage = can(Permission.ExposuresTriage)
-  const [state, setState] = useState<ReviewState>('active')
-  const { exposures, error, isLoading, mutate, allowed } = useLookalikeExposures(state)
+  // The state is a filter in the URL (research/249 R21), not a tab row.
+  const [stateParam, setStateParam] = useUrlFilter('state', 'active')
+  const state: ReviewState = REVIEW_STATES.includes(stateParam as ReviewState)
+    ? (stateParam as ReviewState)
+    : 'active'
+  const {
+    exposures,
+    total,
+    error,
+    isLoading,
+    mutate,
+    allowed,
+    hasMore,
+    loadingMore,
+    loadMore,
+    reset,
+  } = useLookalikeExposures(state)
   if (!allowed) return null
   const stateLabel = (s: ReviewState) =>
     s === 'active'
@@ -380,22 +434,25 @@ function ReviewSection() {
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-3">
-        <Tabs value={state} onValueChange={(v) => setState(v as ReviewState)}>
-          <TabsList>
-            {REVIEW_STATES.map((s) => (
-              <TabsTrigger key={s} value={s}>
-                {stateLabel(s)}
-              </TabsTrigger>
-            ))}
-          </TabsList>
-        </Tabs>
+        <FilterSelect
+          label={t('lookalikes.stateFilter', 'State')}
+          clearable={false}
+          value={state}
+          options={REVIEW_STATES.map((s) => ({ value: s, label: stateLabel(s) }))}
+          onChange={(v) => {
+            setStateParam(v || 'active')
+            reset()
+          }}
+        />
         {error ? (
           <ErrorState
             title={t('lookalikes.errorTitle', 'lookalike domains')}
             error={error}
             onRetry={() => void mutate()}
           />
-        ) : !isLoading && exposures.length === 0 ? (
+        ) : isLoading ? (
+          <RowsSkeleton />
+        ) : exposures.length === 0 ? (
           <EmptyState
             icon={Copy}
             card={false}
@@ -403,16 +460,34 @@ function ReviewSection() {
             description={t('lookalikes.emptyReview', 'No registered lookalike in this state.')}
           />
         ) : (
-          <ul className="divide-y">
-            {exposures.map((e) => (
-              <ReviewRow
-                key={e.id}
-                exposure={e}
-                canTriage={canTriage}
-                onChanged={() => void mutate()}
-              />
-            ))}
-          </ul>
+          <>
+            <ul className="divide-y">
+              {exposures.map((e) => (
+                <ReviewRow
+                  key={e.id}
+                  exposure={e}
+                  canTriage={canTriage}
+                  onChanged={() => void mutate()}
+                />
+              ))}
+            </ul>
+            <div className="flex flex-wrap items-center gap-3">
+              <p className="text-xs text-muted-foreground">
+                {t('lookalikes.shownOf', '{shown} of {total}', { shown: exposures.length, total })}
+              </p>
+              {hasMore && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  disabled={loadingMore}
+                  onClick={() => void loadMore()}
+                >
+                  {loadingMore && <Loader2 className="me-1 h-4 w-4 animate-spin" aria-hidden />}
+                  {t('lookalikes.loadMore', 'Load more')}
+                </Button>
+              )}
+            </div>
+          </>
         )}
       </CardContent>
     </Card>
@@ -514,7 +589,7 @@ export function EASMLookalikes() {
                 </div>
                 <Button
                   type="button"
-                  disabled={saving || !domain.trim()}
+                  disabled={saving || !domain.trim() || !maxValid(maxN)}
                   onClick={() => void add()}
                 >
                   <Plus className="me-1 h-4 w-4" aria-hidden />
@@ -531,7 +606,9 @@ export function EASMLookalikes() {
               />
             </div>
           )}
-          {!isLoading && watches.length === 0 ? (
+          {isLoading ? (
+            <RowsSkeleton />
+          ) : watches.length === 0 ? (
             <EmptyState
               icon={Copy}
               card={false}
@@ -569,8 +646,9 @@ export function EASMLookalikes() {
           'lookalikes.removeDesc',
           'Its open lookalike exposures are resolved and its candidates are dropped.'
         )}
-        confirmText={t('confirm.remove', 'Remove')}
+        confirmText={t('lookalikes.removeButton', 'Stop watching')}
         destructive
+        typeToConfirm={removing ? confirmName(removing.domain, removing.id ?? '') : undefined}
         handleConfirm={() => void remove()}
       />
     </div>

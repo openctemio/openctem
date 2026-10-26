@@ -397,6 +397,10 @@ func (s *Service) MonitorTenant(ctx context.Context, tenantID shared.ID) (int, e
 		}
 
 		d := collectDiscoveries(root.name, res.entries, attempted, s.expiryWindow, s.expiredLookback, s.maxSubs)
+		if d.subdomainsCut > 0 {
+			s.logger.Info("ct sweep: subdomain exposures capped for this domain; every name is still promoted",
+				"tenant_id", tenantID.String(), "domain", root.name, "cap", s.maxSubs, "not_listed", d.subdomainsCut)
+		}
 		d, dropped := withoutExcluded(d, excl)
 		excludedHosts += dropped
 		found = append(found, rootFinds{root: root, d: d})
@@ -744,6 +748,10 @@ type discoveries struct {
 	// exactly (not only through a wildcard) on a certificate that is valid
 	// or lapsed within promoteLookback.
 	promotable []ctHost
+	// subdomainsCut is how many subdomains the per-domain exposure cap left
+	// out of subdomains. They are still promotable: the cap bounds the
+	// exposure rows, never which names reach inventory.
+	subdomainsCut int
 }
 
 // ctHost is what CT says about one promotable name.
@@ -835,10 +843,11 @@ func collectDiscoveries(domain string, entries []crtEntry, now time.Time, window
 		d.subdomains = append(d.subdomains, h)
 	}
 	sort.Strings(d.subdomains)
-	if maxSubs > 0 && len(d.subdomains) > maxSubs {
-		d.subdomains = d.subdomains[:maxSubs]
-	}
 
+	// Promotable names come from every subdomain. Cutting first dropped
+	// the same alphabetical tail on every run, so a large domain's later
+	// hosts never reached inventory; promote bounds new names per run and
+	// skips names it already has, so the tail arrives over later runs.
 	for _, h := range d.subdomains {
 		l, ok := newest[h]
 		if !exact[h] || !ok || now.Sub(l.notAfter) > promoteLookback {
@@ -849,6 +858,10 @@ func collectDiscoveries(domain string, entries []crtEntry, now time.Time, window
 			fs = now
 		}
 		d.promotable = append(d.promotable, ctHost{Name: h, FirstSeen: fs, NotAfter: l.notAfter, Issuer: l.issuer})
+	}
+	if maxSubs > 0 && len(d.subdomains) > maxSubs {
+		d.subdomainsCut = len(d.subdomains) - maxSubs
+		d.subdomains = d.subdomains[:maxSubs]
 	}
 
 	for host, l := range newest {

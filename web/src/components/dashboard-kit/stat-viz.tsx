@@ -106,10 +106,11 @@ export function StatViz({
           unit={parts.unit}
           polarity={polarity}
           comparedTo={comparedTo}
+          previous={parts.previous}
         />
         <TargetChip value={parts.value} target={target} unit={parts.unit} />
       </div>
-      <Sparkline points={series} className="mt-auto" />
+      <Sparkline points={series} unit={parts.unit} className="mt-auto" />
     </div>
   )
 }
@@ -179,6 +180,7 @@ export function ProgressViz({
         unit="percent"
         polarity={polarity}
         comparedTo={comparedTo}
+        previous={result.previous_pct}
       />
     </div>
   )

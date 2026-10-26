@@ -120,9 +120,12 @@ type Service struct {
 	// §5.3). Without results every tenant behaves as in "warn" mode.
 	commands commandReader
 	// wildcardDNS keeps the names a filtered resolution did not report.
-	wildcardDNS  assetfreshness.WildcardDNSStore
-	results      sensorresult.Repository
-	resultLimits sensorresult.Limits
+	wildcardDNS assetfreshness.WildcardDNSStore
+	results     sensorresult.Repository
+	// policyVersions and policies: the versioned policy snapshots.
+	policyVersions PolicyVersionReader
+	policies       policyCache
+	resultLimits   sensorresult.Limits
 	// grants and pushRefusals enforce the sensor's push-ingest grant before
 	// the unsolicited policy (RFC-052 §5.3); nil: not enforced.
 	grants GrantReader
@@ -137,6 +140,10 @@ type Service struct {
 	// reach reads what a sensor's lookups may answer about
 	// (sensor_reach.go); nil: nothing outside the tenant-wide roles.
 	reach ReachSource
+
+	// receipts records what each ingest and coverage decision did
+	// (receipt.go). Nil: no receipts are written.
+	receipts ReceiptRecorder
 
 	logger *logger.Logger
 
@@ -335,6 +342,15 @@ func (s *Service) SetSecretFingerprinter(fp *vulnerability.SecretFingerprinter) 
 // SetCorrelationStore wires cross-rule finding correlation (nil: off).
 func (s *Service) SetCorrelationStore(c CorrelationStore) { s.findingProcessor.SetCorrelationStore(c) }
 
+// SetVulnAliasResolver wires the feed's vulnerability id aliases into
+// keying (nil: off).
+func (s *Service) SetVulnAliasResolver(r VulnAliasResolver) {
+	s.findingProcessor.SetVulnAliasResolver(r)
+}
+
+// SetIssueLinkStore wires same-issue links between findings (nil: off).
+func (s *Service) SetIssueLinkStore(l IssueLinkStore) { s.findingProcessor.SetIssueLinkStore(l) }
+
 // SetSuppressionChecker wires approved suppression-rule enforcement into the
 // ingest finding path: a new finding matching an active (approved, non-expired)
 // rule lands resolved+suppressed. Nil-safe: when not wired, findings are never
@@ -389,6 +405,12 @@ func (s *Service) Ingest(ctx context.Context, agt *sensor.Sensor, input Input) (
 
 	// Validate report limits
 	if err := s.validator.ValidateReport(report); err != nil {
+		return nil, err
+	}
+	// The policies this ingest applies, before anything is written: no
+	// snapshot, no ingest (the caller retries).
+	policy, err := s.loadPolicySnapshot(ctx, tenantID)
+	if err != nil {
 		return nil, err
 	}
 	// SECURITY: mask a secret scanner's raw match wherever a finding
@@ -473,6 +495,7 @@ func (s *Service) Ingest(ctx context.Context, agt *sensor.Sensor, input Input) (
 		ReportID:          report.Metadata.ID,
 		Binding:           binding.String(),
 		UnsolicitedWarned: unsolicitedWarned,
+		policy:            policy,
 	}
 	// Web endpoints (and legacy discovered_url assets) go to the web surface
 	// sub-inventory under their origin asset, never one asset per URL.
@@ -660,7 +683,9 @@ func (s *Service) Ingest(ctx context.Context, agt *sensor.Sensor, input Input) (
 	// the scan no longer reports as auto_fixed — so per-branch state reflects what
 	// is actually present on that branch. Additive: it only touches occurrence
 	// rows, never the finding's headline status. Best-effort.
-	if !opts.DeferAutoResolve && unsolicitedMayResolve && !scope.actorRestricted() && input.IsFullCoverage() && s.findingRepo != nil && s.branchRepo != nil &&
+	// Skipped when this ingest could not record its occurrences: the sweep
+	// would mark the findings it did see as gone from the branch.
+	if !opts.DeferAutoResolve && unsolicitedMayResolve && !output.BranchOccurrencesFailed && !scope.actorRestricted() && input.IsFullCoverage() && s.findingRepo != nil && s.branchRepo != nil &&
 		report.Tool != nil && report.Metadata.ID != "" &&
 		report.Metadata.Branch != nil && report.Metadata.Branch.Name != "" {
 		toolName := report.Tool.Name
@@ -705,6 +730,9 @@ func (s *Service) Ingest(ctx context.Context, agt *sensor.Sensor, input Input) (
 	)
 
 	recordWithheld(output)
+
+	// Step 5b: the receipt of the upload or run this report belongs to.
+	s.recordReceipt(ctx, agt, tenantID, binding, opts, report, output)
 
 	// Step 6: Create audit log for ingestion
 	s.createIngestAuditLog(ctx, agt, tenantID, report, output)

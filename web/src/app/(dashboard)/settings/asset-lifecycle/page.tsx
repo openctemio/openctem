@@ -3,7 +3,7 @@
 import { useCallback, useState } from 'react'
 import { AlertCircle, Loader2, PlayCircle, Save } from 'lucide-react'
 import { Main } from '@/components/layout'
-import { PageHeader } from '@/features/shared'
+import { PageHeader, PageStack } from '@/features/shared'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
@@ -33,42 +33,42 @@ export default function AssetLifecycleSettingsPage() {
 
   return (
     <Main>
-      <PageHeader
-        title={t('settings.assetLifecycle.title', 'Asset lifecycle')}
-        description={t(
-          'settings.assetLifecycle.description',
-          'Mark assets as stale when no scan or integration has seen them for a while.'
-        )}
-      >
-        {formReady && (
-          <>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => setDryRunOpen(true)}
-              disabled={status.submitting || !currentTenant}
-            >
-              <PlayCircle className="h-4 w-4" />
-              Run dry-run
-            </Button>
-            <Button
-              type="submit"
-              form={FORM_ID}
-              size="sm"
-              disabled={!status.dirty || status.submitting || !currentTenant}
-            >
-              {status.submitting ? (
-                <Loader2 className="h-4 w-4 animate-spin" />
-              ) : (
-                <Save className="h-4 w-4" />
-              )}
-              Save changes
-            </Button>
-          </>
-        )}
-      </PageHeader>
+      <PageStack>
+        <PageHeader
+          title={t('settings.assetLifecycle.title', 'Asset lifecycle')}
+          description={t(
+            'settings.assetLifecycle.description',
+            'Mark assets as stale when no scan or integration has seen them for a while.'
+          )}
+        >
+          {formReady && (
+            <>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setDryRunOpen(true)}
+                disabled={status.submitting || !currentTenant}
+              >
+                <PlayCircle className="h-4 w-4" />
+                {t('settings.assetLifecycle.runDryRun', 'Run dry run')}
+              </Button>
+              <Button
+                type="submit"
+                form={FORM_ID}
+                size="sm"
+                disabled={!status.dirty || status.submitting || !currentTenant}
+              >
+                {status.submitting ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <Save className="h-4 w-4" />
+                )}
+                {t('settings.assetLifecycle.save', 'Save changes')}
+              </Button>
+            </>
+          )}
+        </PageHeader>
 
-      <div className="mt-5">
         {!canRead ? (
           <Alert variant="destructive">
             <AlertCircle className="h-4 w-4" />
@@ -101,7 +101,7 @@ export default function AssetLifecycleSettingsPage() {
             onDryRunOpenChange={setDryRunOpen}
           />
         )}
-      </div>
+      </PageStack>
     </Main>
   )
 }

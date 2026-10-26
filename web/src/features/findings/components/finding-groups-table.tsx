@@ -11,12 +11,19 @@ import { useTranslation } from '@/context/i18n-provider'
 import * as React from 'react'
 import type { ColumnDef } from '@tanstack/react-table'
 import { Button } from '@/components/ui/button'
-import { Badge } from '@/components/ui/badge'
-import { DataTable, ErrorState, SeverityBadge, type DataTableRowGroups } from '@/features/shared'
+import {
+  DataTable,
+  ErrorState,
+  SeverityBadge,
+  type DataTableRowGroups,
+  type MobileRowSelection,
+} from '@/features/shared'
 import { formatEpssScore } from '@/lib/epss'
+import { KevBadge } from '@/components/ui/kev-badge'
 import { cn } from '@/lib/utils'
 import { useLazyGroupRows } from '@/hooks/use-lazy-group-rows'
 import type { FilterPanelToggleProps } from '@/features/shared/components/filter-button'
+import type { DataTableSearch } from '@/features/shared'
 import {
   useFindingGroups,
   type FindingGroup,
@@ -179,11 +186,7 @@ function GroupTitle({ group }: { group: FindingGroup }) {
           severity={group.severity as 'critical' | 'high' | 'medium' | 'low' | 'info'}
         />
       )}
-      {Boolean(meta.cisa_kev) && (
-        <Badge variant="destructive" className="h-5 px-1.5 text-[10px]">
-          KEV
-        </Badge>
-      )}
+      {Boolean(meta.cisa_kev) && <KevBadge />}
       <span className="tabular-nums">· {facts.join(' · ')}</span>
     </span>
   )
@@ -286,8 +289,10 @@ export interface FindingGroupsTableProps<TRow extends { id: string }> {
   onRowClick?: (row: TRow) => void
   onSelectionChange?: (rows: TRow[]) => void
   resetSelectionKey?: string | number
-  mobileRow?: (row: TRow) => React.ReactNode
+  mobileRow?: (row: TRow, selection: MobileRowSelection) => React.ReactNode
   filterToggle?: FilterPanelToggleProps
+  /** The list's server search (the toolbar draws it, joined to the filter trigger). */
+  search?: DataTableSearch
   toolbarStart?: React.ReactNode
   toolbarEnd?: React.ReactNode
   /** A full-width row under the toolbar (the active context-filter chips). */
@@ -317,6 +322,7 @@ export function FindingGroupsTable<TRow extends { id: string }>({
   resetSelectionKey,
   mobileRow,
   filterToggle,
+  search,
   toolbarStart,
   toolbarEnd,
   toolbarBelow,
@@ -602,6 +608,7 @@ export function FindingGroupsTable<TRow extends { id: string }>({
       data={rows}
       showSearch={false}
       filterToggle={filterToggle}
+      search={search}
       toolbarStart={toolbarStart}
       toolbarEnd={toolbarEnd}
       toolbarBelow={toolbarBelow}

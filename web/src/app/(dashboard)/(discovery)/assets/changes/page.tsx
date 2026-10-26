@@ -11,15 +11,17 @@ import {
   DataTable,
   EmptyState,
   ErrorState,
-  MetricStrip,
   RelativeTime,
+  FilterSelect,
+  PageStack,
   StackedCell,
-  type MetricStripItem,
 } from '@/features/shared'
+import { RecentAssetChanges } from '@/features/assets'
+import { useTranslation } from '@/context/i18n-provider'
+import { safeHref } from '@/lib/safe-href'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Label } from '@/components/ui/label'
-import { Skeleton } from '@/components/ui/skeleton'
 import { Switch } from '@/components/ui/switch'
 import {
   Select,
@@ -42,16 +44,31 @@ import {
 const PAGE_SIZES = [10, 20, 50, 100]
 
 const PERIODS = [
-  { value: '24h', label: 'Last 24 hours', ms: 24 * 3600_000 },
-  { value: '7d', label: 'Last 7 days', ms: 7 * 86400_000 },
-  { value: '30d', label: 'Last 30 days', ms: 30 * 86400_000 },
-  { value: '90d', label: 'Last 90 days', ms: 90 * 86400_000 },
+  {
+    value: '24h',
+    key: 'assetTimeline.activity.period.24h',
+    label: 'Last 24 hours',
+    ms: 24 * 3600_000,
+  },
+  { value: '7d', key: 'assetTimeline.activity.period.7d', label: 'Last 7 days', ms: 7 * 86400_000 },
+  {
+    value: '30d',
+    key: 'assetTimeline.activity.period.30d',
+    label: 'Last 30 days',
+    ms: 30 * 86400_000,
+  },
+  {
+    value: '90d',
+    key: 'assetTimeline.activity.period.90d',
+    label: 'Last 90 days',
+    ms: 90 * 86400_000,
+  },
 ] as const
 
-const VIEW_META: Record<
-  ChangeView,
-  { label: string; empty: string; hint: string; danger?: boolean }
-> = {
+/** The kinds of activity: the inventory changes, then the value changes (RFC-069). */
+type ActivityKind = ChangeView | 'values'
+
+const VIEW_META: Record<ChangeView, { label: string; empty: string; hint: string }> = {
   appeared: {
     label: 'Appeared',
     empty: 'No new assets',
@@ -66,7 +83,6 @@ const VIEW_META: Record<
     label: 'Newly exposed',
     empty: 'Nothing newly exposed',
     hint: 'Assets that became reachable from the internet in this period appear here.',
-    danger: true,
   },
   exposure_changes: {
     label: 'Exposure changes',
@@ -77,7 +93,6 @@ const VIEW_META: Record<
     label: 'Shadow IT',
     empty: 'No shadow IT',
     hint: 'New assets in the shadow scope (found, but not part of any known scope) appear here.',
-    danger: true,
   },
 }
 
@@ -100,6 +115,8 @@ const SOURCE_LABEL: Record<string, string> = {
   api: 'API',
 }
 
+type T = (key: string, fallback?: string, vars?: Record<string, string | number>) => string
+
 function sentence(value: string | undefined): string {
   if (!value) return '—'
   const s = value
@@ -110,29 +127,33 @@ function sentence(value: string | undefined): string {
 }
 
 /** A field change's value in words: booleans of is_internet_accessible read as reachability. */
-function valueLabel(field: string | undefined, value: string | undefined): string {
+function valueLabel(t: T, field: string | undefined, value: string | undefined): string {
   if (field === 'is_internet_accessible') {
-    return value === 'true' ? 'Internet-facing' : 'Not internet-facing'
+    return value === 'true'
+      ? t('assetTimeline.activity.internetFacing', 'Internet-facing')
+      : t('assetTimeline.activity.notInternetFacing', 'Not internet-facing')
   }
   return sentence(value)
 }
 
-function ChangeDetail({ change }: { change: StateChangeResponse }) {
+function ChangeDetail({ change, t }: { change: StateChangeResponse; t: T }) {
   if (change.field && (change.old_value || change.new_value)) {
     return (
       <span className="inline-flex flex-wrap items-center gap-1.5 text-sm">
-        <span className="text-muted-foreground">{valueLabel(change.field, change.old_value)}</span>
+        <span className="text-muted-foreground">
+          {valueLabel(t, change.field, change.old_value)}
+        </span>
         <span className="text-muted-foreground" aria-hidden>
           →
         </span>
-        <span className="font-medium">{valueLabel(change.field, change.new_value)}</span>
+        <span className="font-medium">{valueLabel(t, change.field, change.new_value)}</span>
       </span>
     )
   }
   return <span className="text-sm text-muted-foreground">{sentence(change.reason)}</span>
 }
 
-function ExposureNow({ change }: { change: StateChangeResponse }) {
+function ExposureNow({ change, t }: { change: StateChangeResponse; t: T }) {
   if (!change.asset_exposure) return <span className="text-sm text-muted-foreground">—</span>
   const facing = change.asset_internet_accessible || change.asset_exposure === 'public'
   return (
@@ -140,7 +161,7 @@ function ExposureNow({ change }: { change: StateChangeResponse }) {
       <span className="text-sm">{sentence(change.asset_exposure)}</span>
       {facing && (
         <Badge variant="outline" className="font-normal">
-          Internet-facing
+          {t('assetTimeline.activity.internetFacing', 'Internet-facing')}
         </Badge>
       )}
     </span>
@@ -148,6 +169,7 @@ function ExposureNow({ change }: { change: StateChangeResponse }) {
 }
 
 export default function AssetChangesPage() {
+  const { t } = useTranslation()
   const canRead = useHasPermission(Permission.AssetsRead)
 
   const [viewParam, setViewParam] = useUrlFilter('view', 'appeared')
@@ -159,7 +181,10 @@ export default function AssetChangesPage() {
   // recomputed from now.
   const [anchor, setAnchor] = useState(() => Date.now())
 
-  const view: ChangeView = isChangeView(viewParam) ? viewParam : 'appeared'
+  const kind: ActivityKind =
+    viewParam === 'values' ? 'values' : isChangeView(viewParam) ? viewParam : 'appeared'
+  const view: ChangeView = kind === 'values' ? 'appeared' : kind
+  const isValues = kind === 'values'
   const period = PERIODS.find((p) => p.value === periodParam) ?? PERIODS[1]
   // Newly exposed is internet-facing by definition; the toggle does not apply.
   const internetOnly = internetParam === 'true' && view !== 'newly_exposed'
@@ -172,11 +197,12 @@ export default function AssetChangesPage() {
   )
 
   const query = useMemo(() => ({ from, internetOnly }), [from, internetOnly])
+  // The value feed has its own request; the inventory list is not asked for then.
   const { changes, total, error, isLoading, mutate } = useAssetChanges(
     view,
     query,
     pagination,
-    canRead
+    canRead && !isValues
   )
   // Counts follow the internet-facing toggle too, so a number and the list it
   // opens always agree (the hook leaves it off for newly exposed, like the list).
@@ -184,45 +210,51 @@ export default function AssetChangesPage() {
     () => ({ from, internetOnly: internetParam === 'true' }),
     [from, internetParam]
   )
-  const {
-    counts,
-    isLoading: countsLoading,
-    mutate: mutateCounts,
-  } = useAssetChangeCounts(countQuery, canRead)
+  const { counts, mutate: mutateCounts } = useAssetChangeCounts(countQuery, canRead)
 
-  const selectView = useCallback(
-    (next: ChangeView) => {
+  const selectKind = useCallback(
+    (next: ActivityKind) => {
       setViewParam(next)
       setPage(1)
     },
     [setViewParam, setPage]
   )
 
-  const metrics: MetricStripItem[] = (Object.keys(VIEW_META) as ChangeView[]).map((key) => ({
-    key,
-    label: VIEW_META[key].label,
-    value: counts?.[key] ?? 0,
-    tone: VIEW_META[key].danger ? 'danger' : 'default',
-    onClick: () => selectView(key),
-    active: view === key,
-  }))
+  const kindOptions = [
+    ...(Object.keys(VIEW_META) as ChangeView[]).map((key) => ({
+      value: key as ActivityKind,
+      label: t(`assetTimeline.activity.kind.${key}`, VIEW_META[key].label),
+      count: counts?.[key],
+    })),
+    {
+      value: 'values' as ActivityKind,
+      label: t('assetTimeline.activity.kind.values', 'Values'),
+      description: t(
+        'assetTimeline.activity.kind.valuesHint',
+        'Changes of an asset value or of the source that decides it'
+      ),
+    },
+  ]
 
   const columns = useMemo<ColumnDef<StateChangeResponse>[]>(
     () => [
       {
         id: 'asset',
-        header: 'Asset',
+        header: t('assetTimeline.activity.col.asset', 'Asset'),
         enableSorting: false,
         cell: ({ row }) => {
           const c = row.original
-          const name = c.asset_name || 'Deleted asset'
+          const name = c.asset_name || t('assetTimeline.deletedAsset', 'Deleted asset')
           return (
             <StackedCell
               truncate
               className="max-w-[320px]"
               primary={
                 c.asset_name && c.asset_id ? (
-                  <Link href={`/assets/${c.asset_id}`} className="hover:underline">
+                  <Link
+                    href={safeHref(`/assets/${encodeURIComponent(c.asset_id)}`) ?? '/assets'}
+                    className="hover:underline"
+                  >
                     {name}
                   </Link>
                 ) : (
@@ -236,56 +268,76 @@ export default function AssetChangesPage() {
       },
       {
         id: 'change',
-        header: 'Change',
+        header: t('assetTimeline.activity.col.change', 'Change'),
         enableSorting: false,
-        cell: ({ row }) => (
-          <Badge variant="secondary" className="font-normal">
-            {CHANGE_LABEL[row.original.change_type ?? ''] ?? sentence(row.original.change_type)}
-          </Badge>
-        ),
+        cell: ({ row }) => {
+          const type = row.original.change_type ?? ''
+          return (
+            <Badge variant="secondary" className="font-normal">
+              {CHANGE_LABEL[type]
+                ? t(`assetTimeline.activity.change.${type}`, CHANGE_LABEL[type])
+                : sentence(type)}
+            </Badge>
+          )
+        },
       },
       {
         id: 'detail',
-        header: 'Detail',
+        header: t('assetTimeline.activity.col.detail', 'Detail'),
         enableSorting: false,
-        cell: ({ row }) => <ChangeDetail change={row.original} />,
+        cell: ({ row }) => <ChangeDetail change={row.original} t={t} />,
       },
       {
         id: 'exposure',
-        header: 'Exposure now',
+        header: t('assetTimeline.activity.col.exposure', 'Exposure now'),
         enableSorting: false,
-        cell: ({ row }) => <ExposureNow change={row.original} />,
+        cell: ({ row }) => <ExposureNow change={row.original} t={t} />,
       },
       {
         id: 'source',
-        header: 'Source',
+        header: t('assetTimeline.activity.col.source', 'Source'),
         enableSorting: false,
-        cell: ({ row }) => (
-          <span className="text-sm">
-            {SOURCE_LABEL[row.original.source ?? ''] ?? sentence(row.original.source)}
-          </span>
-        ),
+        cell: ({ row }) => {
+          const src = row.original.source ?? ''
+          return (
+            <span className="text-sm">
+              {SOURCE_LABEL[src]
+                ? t(`assetTimeline.activity.source.${src}`, SOURCE_LABEL[src])
+                : sentence(src)}
+            </span>
+          )
+        },
       },
       {
         id: 'changed_at',
-        header: 'When',
+        header: t('assetTimeline.activity.col.when', 'When'),
         enableSorting: false,
         cell: ({ row }) => <RelativeTime date={row.original.changed_at} />,
       },
     ],
-    []
+    [t]
+  )
+
+  const title = t('assetTimeline.activity.title', 'Activity')
+  const description = t(
+    'assetTimeline.activity.description',
+    'What changed on your assets: new, gone and newly exposed assets over a period, and every change of an asset value.'
   )
 
   if (!canRead) {
     return (
       <Main>
-        <PageHeader title="What changed" description="New, gone and newly exposed assets." />
-        <EmptyState
-          className="mt-5"
-          icon={ShieldX}
-          title="Access denied"
-          description="You don't have permission to view assets. Ask your administrator for access."
-        />
+        <PageStack>
+          <PageHeader title={title} description={description} />
+          <EmptyState
+            icon={ShieldX}
+            title={t('assetTimeline.noAccessTitle', 'Access denied')}
+            description={t(
+              'assetTimeline.noAccess',
+              'You do not have permission to view assets. Ask your administrator for access.'
+            )}
+          />
+        </PageStack>
       </Main>
     )
   }
@@ -296,74 +348,96 @@ export default function AssetChangesPage() {
     void mutateCounts()
   }
 
-  const toolbarStart =
-    view === 'newly_exposed' ? undefined : (
-      <div className="flex items-center gap-2">
-        <Switch
-          id="internet-only"
-          checked={internetParam === 'true'}
-          onCheckedChange={(checked) => {
-            setInternetParam(checked ? 'true' : 'false')
-            setPage(1)
-          }}
-        />
-        <Label htmlFor="internet-only" className="cursor-pointer text-sm font-normal">
-          Internet-facing only
-        </Label>
-      </div>
-    )
+  // The kind of change is a filter token, first in the toolbar, not a second
+  // row under the tabs (research/249 R21). One kind is always chosen: the
+  // kinds are different lists (Values is the value-change feed).
+  const kindSelect = (
+    <FilterSelect<ActivityKind>
+      label={t('assetTimeline.activity.kind.short', 'Kind')}
+      value={kind}
+      clearable={false}
+      options={kindOptions}
+      onChange={(next) => selectKind((next || 'appeared') as ActivityKind)}
+    />
+  )
+  const periodSelect = (
+    <Select
+      value={period.value}
+      onValueChange={(value) => {
+        setPeriodParam(value)
+        setPage(1)
+      }}
+    >
+      <SelectTrigger
+        className="h-9 w-[150px]"
+        aria-label={t('assetTimeline.activity.period.label', 'Period')}
+      >
+        <SelectValue />
+      </SelectTrigger>
+      <SelectContent>
+        {PERIODS.map((p) => (
+          <SelectItem key={p.value} value={p.value}>
+            {t(p.key, p.label)}
+          </SelectItem>
+        ))}
+      </SelectContent>
+    </Select>
+  )
+  const toolbarStart = (
+    <>
+      {kindSelect}
+      {periodSelect}
+      {view !== 'newly_exposed' && (
+        <div className="flex items-center gap-2">
+          <Switch
+            id="internet-only"
+            checked={internetParam === 'true'}
+            onCheckedChange={(checked) => {
+              setInternetParam(checked ? 'true' : 'false')
+              setPage(1)
+            }}
+          />
+          <Label htmlFor="internet-only" className="cursor-pointer text-sm font-normal">
+            {t('assetTimeline.activity.internetOnly', 'Internet-facing only')}
+          </Label>
+        </div>
+      )}
+    </>
+  )
 
+  const refreshLabel = t('assetTimeline.activity.refresh', 'Refresh')
   const toolbarEnd = (
-    <Button variant="outline" size="sm" className="h-9" onClick={refresh} aria-label="Refresh">
+    <Button variant="outline" size="sm" className="h-9" onClick={refresh} aria-label={refreshLabel}>
       <RefreshCw className="h-4 w-4" />
     </Button>
   )
 
-  const meta = VIEW_META[view]
+  const meta = isValues ? undefined : VIEW_META[view]
+  const periodLabel = t(period.key, period.label)
 
   return (
     <Main>
-      <PageHeader
-        title="What changed"
-        description="New, gone and newly exposed assets in your attack surface over a period."
-      >
-        <Select
-          value={period.value}
-          onValueChange={(value) => {
-            setPeriodParam(value)
-            setPage(1)
-          }}
-        >
-          <SelectTrigger className="h-9 w-[150px]" aria-label="Period">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            {PERIODS.map((p) => (
-              <SelectItem key={p.value} value={p.value}>
-                {p.label}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-      </PageHeader>
-      <AssetsSectionTabs />
+      <PageStack>
+        <PageHeader title={title} description={description} />
+        <AssetsSectionTabs />
 
-      <MetricStrip className="mt-5" loading={countsLoading && !counts} items={metrics} />
-
-      <div className="mt-5">
-        {error && !isLoading ? (
-          <ErrorState title="changes" error={error} onRetry={() => mutate()} />
-        ) : isLoading && changes.length === 0 ? (
-          <div className="space-y-2">
-            <Skeleton className="h-9 w-full max-w-sm" />
-            {Array.from({ length: 8 }).map((_, i) => (
-              <Skeleton key={i} className="h-12 w-full" />
-            ))}
-          </div>
+        {isValues ? (
+          <RecentAssetChanges leading={kindSelect} />
         ) : (
+          // The toolbar (kind, period) stays while the list loads or fails.
           <DataTable
             columns={columns}
             data={changes}
+            isLoading={isLoading && changes.length === 0}
+            errorState={
+              error && !isLoading ? (
+                <ErrorState
+                  title={t('assetTimeline.activity.errorTitle', 'changes')}
+                  error={error}
+                  onRetry={() => mutate()}
+                />
+              ) : undefined
+            }
             getRowId={(c) => c.id ?? `${c.asset_id}-${c.changed_at}`}
             showSearch={false}
             showColumnToggle={false}
@@ -374,15 +448,21 @@ export default function AssetChangesPage() {
             pagination={pagination}
             onPaginationChange={setPagination}
             pageSizeOptions={PAGE_SIZES}
-            emptyMessage={`${meta.empty} in the ${period.label.toLowerCase()}`}
+            emptyMessage={t('assetTimeline.activity.emptyIn', '{empty} in the {period}', {
+              empty: t(`assetTimeline.activity.empty.${view}`, meta?.empty ?? ''),
+              period: periodLabel.toLowerCase(),
+            })}
             emptyDescription={
               internetOnly
-                ? 'Turn off “Internet-facing only” to include internal assets.'
-                : meta.hint
+                ? t(
+                    'assetTimeline.activity.internetOnlyHint',
+                    'Turn off “Internet-facing only” to include internal assets.'
+                  )
+                : t(`assetTimeline.activity.hint.${view}`, meta?.hint ?? '')
             }
           />
         )}
-      </div>
+      </PageStack>
     </Main>
   )
 }

@@ -11,10 +11,9 @@
  * gate settings.
  */
 
-import { useMemo } from 'react'
-import { Search, Workflow } from 'lucide-react'
+import { useEffect, useMemo, useState } from 'react'
+import { Workflow } from 'lucide-react'
 import type { ColumnDef } from '@tanstack/react-table'
-import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Switch } from '@/components/ui/switch'
 import {
@@ -23,13 +22,14 @@ import {
   ErrorState,
   MetricStrip,
   RelativeTime,
-  SegmentedLens,
+  PageStack,
   StackedCell,
   type MetricStripItem,
 } from '@/features/shared'
 import { ProviderIcon } from '@/features/scm-connections'
 import { useUrlFilter, useUrlFilterList } from '@/hooks/use-url-param'
 import { useListParams } from '@/hooks/use-list-params'
+import { useSearchQuery } from '@/hooks/use-search-query'
 import { cn } from '@/lib/utils'
 
 import { useCIPipelines } from '../api/use-ci'
@@ -52,6 +52,7 @@ import { useTranslation } from '@/context/i18n-provider'
 type RunnerView = 'pipelines' | 'runs' | 'coverage'
 
 const QUICK = {
+  fresh: ['fresh', 'running'] as CIPipelineStatus[],
   failing: ['failing'] as CIPipelineStatus[],
   attention: ['degraded', 'stale'] as CIPipelineStatus[],
 }
@@ -133,10 +134,14 @@ export function CIPipelinesPanel() {
   const { t } = useTranslation()
   const { can } = usePermissions()
   const canWrite = can(Permission.CIWrite)
-  const [viewParam, setView] = useUrlFilter('view', 'pipelines')
+  const [viewParam] = useUrlFilter('view', 'pipelines')
   const view: RunnerView =
     viewParam === 'runs' || viewParam === 'coverage' ? viewParam : 'pipelines'
   const [q, setQ] = useUrlFilter('q', '')
+  // The box types at once; the request and the URL follow 300 ms later (each
+  // request makes the server assess every pipeline of the tenant).
+  const [searchText, setSearchText] = useState(q)
+  const debouncedSearch = useSearchQuery(searchText).term
   const [statusParam, setStatusParam] = useUrlFilterList('pipeline_status')
   const [inactiveParam, setInactiveParam] = useUrlFilter('inactive', '')
   const [overridesParam, setOverridesParam] = useUrlFilter('overrides', '')
@@ -144,6 +149,16 @@ export function CIPipelinesPanel() {
   const [openId, setOpenId] = useUrlFilter('pipeline', '')
   const { pagination, setPagination, setPage } = useListParams({ defaultPageSize: 20 })
 
+  useEffect(() => {
+    if (debouncedSearch !== q) {
+      setQ(debouncedSearch)
+      setPage(1)
+    }
+    // Only a settled search writes the URL; q itself must not re-trigger it.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [debouncedSearch])
+
+  const columns = useMemo(() => pipelineColumns(t), [t])
   const statuses = useMemo(() => statusParam.filter(isPipelineStatus), [statusParam])
   const includeInactive = inactiveParam === '1'
   const { data, error, isLoading, mutate } = useCIPipelines(
@@ -166,6 +181,19 @@ export function CIPipelinesPanel() {
     setStatusParam(sameSet(statuses, next) ? [] : next)
     setPage(1)
   }
+  // Inactive pipelines are listed with the active ones; a status list would
+  // narrow the answer first, so turning Inactive on drops it.
+  const setInactive = (on: boolean) => {
+    setInactiveParam(on ? '1' : '')
+    if (on) setStatusParam([])
+    setPage(1)
+  }
+  const clearFilters = () => {
+    setStatusParam([])
+    setInactiveParam('')
+    setOverridesParam('')
+    setPage(1)
+  }
   const metrics: MetricStripItem[] = [
     {
       key: 'pipelines',
@@ -173,11 +201,15 @@ export function CIPipelinesPanel() {
       value: active,
       hint: t('scans.ci.metric.active', 'active'),
       detail: t('scans.ci.metric.pipelinesDetail', 'one per workflow file of each repository'),
+      onClick: clearFilters,
+      active: statuses.length === 0 && !includeInactive && !hasOverrides,
     },
     {
       key: 'fresh',
       label: t('scans.ci.metric.fresh', 'Fresh'),
       value: n('fresh') + n('running'),
+      onClick: () => toggleStatuses(QUICK.fresh),
+      active: sameSet(statuses, QUICK.fresh),
       hint: t('scans.ci.metric.ofTotal', 'of {total}', { total: active }),
       detail:
         n('running') > 0
@@ -213,60 +245,22 @@ export function CIPipelinesPanel() {
         'scans.ci.metric.inactiveDetail',
         'archived, retired, revoked or never ran; hidden, not deleted'
       ),
-      onClick: () => {
-        setInactiveParam(includeInactive ? '' : '1')
-        setPage(1)
-      },
+      onClick: () => setInactive(!includeInactive),
       active: includeInactive,
     },
   ]
 
-  const lens = (
-    <SegmentedLens<RunnerView>
-      label={t('scans.ci.view.label', 'Runner view')}
-      value={view}
-      onChange={(v) => {
-        setView(v)
-        setPage(1)
-      }}
-      options={[
-        {
-          value: 'pipelines',
-          label: t('scans.ci.view.pipelines', 'Pipelines'),
-          description: t('scans.ci.view.pipelinesHint', 'One row per workflow file'),
-        },
-        {
-          value: 'runs',
-          label: t('scans.ci.view.runs', 'Runs'),
-          description: t('scans.ci.view.runsHint', 'Every run, newest first'),
-        },
-        {
-          value: 'coverage',
-          label: t('scans.ci.view.coverage', 'Coverage'),
-          description: t(
-            'scans.ci.view.coverageHint',
-            'Repositories by capability: which are not being looked at'
-          ),
-        },
-      ]}
-    />
-  )
-
   if (view === 'coverage') {
-    return <CICoverageView toolbarStart={lens} />
+    return <CICoverageView />
   }
 
   if (view === 'runs') {
-    return (
-      <div className="mt-5">
-        <CIRunsView embedded toolbarStart={lens} />
-      </div>
-    )
+    return <CIRunsView embedded />
   }
 
   const empty = !isLoading && !error && active + inactive === 0 && !q && !hasOverrides
   return (
-    <div className="mt-5 space-y-5">
+    <PageStack>
       {!empty && <MetricStrip loading={isLoading && !data} items={metrics} />}
       {error ? (
         <ErrorState
@@ -276,7 +270,6 @@ export function CIPipelinesPanel() {
         />
       ) : empty ? (
         <>
-          <div className="flex flex-wrap items-center gap-2">{lens}</div>
           <EmptyState
             icon={Workflow}
             title={
@@ -300,7 +293,7 @@ export function CIPipelinesPanel() {
         </>
       ) : (
         <DataTable
-          columns={pipelineColumns(t)}
+          columns={columns}
           data={data?.data ?? []}
           isLoading={isLoading}
           manualPagination
@@ -326,24 +319,12 @@ export function CIPipelinesPanel() {
                     'Inactive pipelines are hidden: turn on Show inactive.'
                   )
           }
-          toolbarStart={
-            <>
-              {lens}
-              <div className="relative min-w-0 flex-1 sm:max-w-xs">
-                <Search className="pointer-events-none absolute start-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-                <Input
-                  placeholder={t('scans.ci.searchPipelines', 'Search repository or workflow…')}
-                  aria-label={t('scans.ci.searchPipelinesLabel', 'Search CI pipelines')}
-                  value={q}
-                  onChange={(e) => {
-                    setQ(e.target.value)
-                    setPage(1)
-                  }}
-                  className="h-9 ps-9"
-                />
-              </div>
-            </>
-          }
+          search={{
+            value: searchText,
+            onChange: setSearchText,
+            placeholder: t('scans.ci.searchPipelines', 'Search repository or workflow…'),
+            label: t('scans.ci.searchPipelinesLabel', 'Search CI pipelines'),
+          }}
           toolbarEnd={
             <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
               <div className="flex items-center gap-2">
@@ -363,10 +344,7 @@ export function CIPipelinesPanel() {
                 <Switch
                   id="pipelines-inactive"
                   checked={includeInactive}
-                  onCheckedChange={(on) => {
-                    setInactiveParam(on ? '1' : '')
-                    setPage(1)
-                  }}
+                  onCheckedChange={setInactive}
                 />
                 <Label htmlFor="pipelines-inactive" className="text-sm font-normal">
                   {t('scans.ci.showInactive', 'Show inactive')}
@@ -377,6 +355,6 @@ export function CIPipelinesPanel() {
         />
       )}
       <CIPipelineSheet id={openId || null} onClose={() => setOpenId('')} />
-    </div>
+    </PageStack>
   )
 }

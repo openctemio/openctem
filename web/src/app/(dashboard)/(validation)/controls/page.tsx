@@ -4,8 +4,20 @@ import { useMemo, useState } from 'react'
 import type { ColumnDef } from '@tanstack/react-table'
 import useSWR from 'swr'
 import { Main } from '@/components/layout'
-import { PageHeader, DataTable, DataTableColumnHeader, EmptyState } from '@/features/shared'
+import {
+  PageHeader,
+  PageStack,
+  DataTable,
+  DataTableColumnHeader,
+  EmptyState,
+} from '@/features/shared'
 import { Button } from '@/components/ui/button'
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu'
 import { Badge } from '@/components/ui/badge'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -26,8 +38,9 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { ConfirmDialog } from '@/components/confirm-dialog'
+import { confirmName } from '@/lib/confirm-name'
 import { Skeleton } from '@/components/ui/skeleton'
-import { Plus, Trash2, FlaskConical, Link2, ShieldCheck } from 'lucide-react'
+import { Plus, Trash2, FlaskConical, Link2, MoreHorizontal, ShieldCheck } from 'lucide-react'
 import { get, post, del } from '@/lib/api/client'
 import { getErrorMessage } from '@/lib/api/error-handler'
 import { Can, Permission } from '@/lib/permissions'
@@ -47,6 +60,7 @@ import {
   type TestResult,
 } from '@/features/controls/vocabulary'
 import { useTranslation } from '@/context/i18n-provider'
+import { formatDateSafe } from '@/lib/format-date'
 
 interface CompensatingControl {
   id: string
@@ -83,11 +97,6 @@ const testResultVariant: Record<string, { variant: 'secondary' | 'outline'; clas
     fail: { variant: 'outline', className: 'text-destructive' },
     partial: { variant: 'outline' },
   }
-
-function formatDate(dateStr: string | null): string {
-  if (!dateStr) return 'Never'
-  return new Date(dateStr).toLocaleDateString()
-}
 
 export default function CompensatingControlsPage() {
   const { t } = useTranslation()
@@ -127,12 +136,17 @@ export default function CompensatingControlsPage() {
 
   const handleCreate = async () => {
     if (!formData.name.trim()) {
-      toast.error('Please provide a control name')
+      toast.error(t('validation.controls.nameRequired', 'Enter a control name.'))
       return
     }
     const percent = Number(formData.reduction_percent)
     if (!isValidReductionPercent(percent)) {
-      toast.error('Reduction must be between 1% and 100% — a 0% control would have no effect')
+      toast.error(
+        t(
+          'validation.controls.reductionRange',
+          'Reduction must be between 1% and 100%. A 0% control would have no effect.'
+        )
+      )
       return
     }
     setIsCreating(true)
@@ -145,11 +159,18 @@ export default function CompensatingControlsPage() {
         reduction_factor: percentToFactor(percent),
       })
       await mutate()
-      toast.success('Compensating control created. Link assets to make it reduce their priority.')
+      toast.success(
+        t(
+          'validation.controls.created',
+          'Compensating control created. Link assets to make it reduce their priority.'
+        )
+      )
       setIsCreateOpen(false)
       resetForm()
     } catch (error) {
-      toast.error(getErrorMessage(error, 'Failed to create control'))
+      toast.error(
+        getErrorMessage(error, t('validation.controls.createFailed', 'Failed to create control'))
+      )
     } finally {
       setIsCreating(false)
     }
@@ -166,12 +187,20 @@ export default function CompensatingControlsPage() {
       await mutate()
       toast.success(
         testResult === 'fail'
-          ? 'Test result recorded. A failed control is deactivated and stops reducing priority.'
-          : 'Test result recorded'
+          ? t(
+              'validation.controls.testRecordedFail',
+              'Test result recorded. A failed control is deactivated and stops reducing priority.'
+            )
+          : t('validation.controls.testRecorded', 'Test result recorded')
       )
       setTestControlId(null)
     } catch (error) {
-      toast.error(getErrorMessage(error, 'Failed to record test result'))
+      toast.error(
+        getErrorMessage(
+          error,
+          t('validation.controls.recordFailed', 'Failed to record test result')
+        )
+      )
     }
   }
 
@@ -180,10 +209,12 @@ export default function CompensatingControlsPage() {
     try {
       await del(`/api/v1/compensating-controls/${deleteControl.id}`)
       await mutate()
-      toast.success('Control deleted')
+      toast.success(t('validation.controls.deleted', 'Control deleted'))
       setDeleteControl(null)
     } catch (error) {
-      toast.error(getErrorMessage(error, 'Failed to delete control'))
+      toast.error(
+        getErrorMessage(error, t('validation.controls.deleteFailed', 'Failed to delete control'))
+      )
     }
   }
 
@@ -191,31 +222,59 @@ export default function CompensatingControlsPage() {
     () => [
       {
         accessorKey: 'name',
-        header: ({ column }) => <DataTableColumnHeader column={column} title="Name" />,
+        header: ({ column }) => (
+          <DataTableColumnHeader
+            column={column}
+            title={t('validation.controls.col.name', 'Name')}
+          />
+        ),
         cell: ({ row }) => <span className="font-medium">{row.original.name}</span>,
       },
       {
         accessorKey: 'control_type',
-        header: ({ column }) => <DataTableColumnHeader column={column} title="Type" />,
+        header: ({ column }) => (
+          <DataTableColumnHeader
+            column={column}
+            title={t('validation.controls.col.type', 'Type')}
+          />
+        ),
         cell: ({ row }) => (
-          <Badge variant="outline">{humanizeControlValue(row.original.control_type)}</Badge>
+          <Badge variant="outline">
+            {t(
+              `validation.controls.type.${row.original.control_type}`,
+              humanizeControlValue(row.original.control_type)
+            )}
+          </Badge>
         ),
       },
       {
         accessorKey: 'status',
-        header: ({ column }) => <DataTableColumnHeader column={column} title="Status" />,
+        header: ({ column }) => (
+          <DataTableColumnHeader
+            column={column}
+            title={t('validation.controls.col.status', 'Status')}
+          />
+        ),
         cell: ({ row }) => {
           const v = statusVariant[row.original.status] ?? { variant: 'outline' as const }
           return (
             <Badge variant={v.variant} className={v.className}>
-              {humanizeControlValue(row.original.status)}
+              {t(
+                `validation.controls.status.${row.original.status}`,
+                humanizeControlValue(row.original.status)
+              )}
             </Badge>
           )
         },
       },
       {
         accessorKey: 'reduction_factor',
-        header: ({ column }) => <DataTableColumnHeader column={column} title="Reduction" />,
+        header: ({ column }) => (
+          <DataTableColumnHeader
+            column={column}
+            title={t('validation.controls.col.reduction', 'Reduction')}
+          />
+        ),
         // The API stores a 0-1 fraction; render it as the percent the form
         // accepts. Previously the raw fraction was suffixed with "%", so a
         // stored 0.30 displayed as "0.3%".
@@ -227,23 +286,38 @@ export default function CompensatingControlsPage() {
       },
       {
         accessorKey: 'last_tested_at',
-        header: ({ column }) => <DataTableColumnHeader column={column} title="Last tested" />,
+        header: ({ column }) => (
+          <DataTableColumnHeader
+            column={column}
+            title={t('validation.controls.col.lastTested', 'Last tested')}
+          />
+        ),
         cell: ({ row }) => (
           <span className="text-sm text-muted-foreground">
-            {formatDate(row.original.last_tested_at)}
+            {row.original.last_tested_at
+              ? formatDateSafe(row.original.last_tested_at)
+              : t('validation.controls.never', 'Never')}
           </span>
         ),
       },
       {
         accessorKey: 'test_result',
-        header: ({ column }) => <DataTableColumnHeader column={column} title="Test result" />,
+        header: ({ column }) => (
+          <DataTableColumnHeader
+            column={column}
+            title={t('validation.controls.col.testResult', 'Test result')}
+          />
+        ),
         cell: ({ row }) =>
           row.original.test_result ? (
             <Badge
               variant={testResultVariant[row.original.test_result]?.variant ?? 'outline'}
               className={testResultVariant[row.original.test_result]?.className}
             >
-              {humanizeControlValue(row.original.test_result)}
+              {t(
+                `validation.controls.result.${row.original.test_result}`,
+                humanizeControlValue(row.original.test_result)
+              )}
             </Badge>
           ) : (
             <span className="text-sm text-muted-foreground">—</span>
@@ -260,7 +334,7 @@ export default function CompensatingControlsPage() {
               <div className="flex items-center justify-end gap-1">
                 <Button variant="ghost" size="sm" onClick={() => setLinkControl(control)}>
                   <Link2 className="me-1 h-3 w-3" />
-                  Link assets
+                  {t('validation.controls.linkAssets', 'Link assets')}
                 </Button>
                 <Button
                   variant="ghost"
@@ -271,42 +345,60 @@ export default function CompensatingControlsPage() {
                   }}
                 >
                   <FlaskConical className="me-1 h-3 w-3" />
-                  Test
+                  {t('validation.controls.test', 'Test')}
                 </Button>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => setDeleteControl(control)}
-                  className="text-destructive"
-                  aria-label={`Delete ${control.name}`}
-                >
-                  <Trash2 className="h-4 w-4" />
-                </Button>
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      aria-label={t('validation.controls.moreAria', 'More actions for {name}', {
+                        name: control.name,
+                      })}
+                    >
+                      <MoreHorizontal className="h-4 w-4" />
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end">
+                    <DropdownMenuItem
+                      className="text-destructive focus:text-destructive"
+                      onSelect={() => setDeleteControl(control)}
+                    >
+                      <Trash2 className="me-2 h-4 w-4" />
+                      {t('validation.controls.deleteAria', 'Delete {name}', {
+                        name: control.name,
+                      })}
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
               </div>
             </Can>
           )
         },
       },
     ],
-    []
+    [t]
   )
 
   return (
     <>
       <Main>
-        <PageHeader
-          title="Compensating controls"
-          description="Controls that hold down the priority of findings on the assets they protect."
-        >
-          <Can permission={Permission.CompensatingControlsWrite}>
-            <Button size="sm" onClick={() => setIsCreateOpen(true)}>
-              <Plus className="me-2 h-4 w-4" />
-              New control
-            </Button>
-          </Can>
-        </PageHeader>
+        <PageStack>
+          <PageHeader
+            title={t('validation.controls.title', 'Compensating controls')}
+            description={t(
+              'validation.controls.description',
+              'Controls that hold down the priority of findings on the assets they protect.'
+            )}
+          >
+            <Can permission={Permission.CompensatingControlsWrite}>
+              <Button size="sm" onClick={() => setIsCreateOpen(true)}>
+                <Plus className="me-2 h-4 w-4" />
+                {t('validation.controls.new', 'New control')}
+              </Button>
+            </Can>
+          </PageHeader>
 
-        <div className="mt-5">
           {isLoading ? (
             <div className="space-y-2">
               {[1, 2, 3].map((i) => (
@@ -316,45 +408,69 @@ export default function CompensatingControlsPage() {
           ) : controls.length === 0 ? (
             <EmptyState
               icon={ShieldCheck}
-              title="No compensating controls yet"
-              description="Create a control, then link the assets it protects."
+              title={t('validation.controls.emptyTitle', 'No compensating controls yet')}
+              description={t(
+                'validation.controls.emptyDesc',
+                'Create a control, then link the assets it protects.'
+              )}
             />
           ) : (
-            <DataTable columns={columns} data={controls} searchPlaceholder="Search controls…" />
+            <DataTable
+              columns={columns}
+              data={controls}
+              searchPlaceholder={t('validation.controls.searchPlaceholder', 'Search controls…')}
+            />
           )}
-        </div>
+        </PageStack>
       </Main>
 
       {/* Create Dialog */}
       <Dialog open={isCreateOpen} onOpenChange={setIsCreateOpen}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>New compensating control</DialogTitle>
-            <DialogDescription>Add a control that reduces finding risk scores.</DialogDescription>
+            <DialogTitle>
+              {t('validation.controls.createTitle', 'New compensating control')}
+            </DialogTitle>
+            <DialogDescription>
+              {t(
+                'validation.controls.createDesc',
+                'Add a control that reduces finding risk scores.'
+              )}
+            </DialogDescription>
           </DialogHeader>
           <DialogBody>
             <div className="space-y-4">
               <div className="space-y-2">
-                <Label htmlFor="name">Name *</Label>
+                <Label htmlFor="name">{t('validation.controls.field.name', 'Name *')}</Label>
                 <Input
                   id="name"
                   value={formData.name}
                   onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                  placeholder="e.g., WAF Rate Limiting"
+                  placeholder={t(
+                    'validation.controls.field.namePlaceholder',
+                    'e.g., WAF rate limiting'
+                  )}
                 />
               </div>
               <div className="space-y-2">
-                <Label htmlFor="description">Description</Label>
+                <Label htmlFor="description">
+                  {t('validation.controls.field.description', 'Description')}
+                </Label>
                 <Input
                   id="description"
                   value={formData.description}
                   onChange={(e) => setFormData({ ...formData, description: e.target.value })}
-                  placeholder="What this control does"
+                  placeholder={t(
+                    'validation.controls.field.descriptionPlaceholder',
+                    'What this control does'
+                  )}
                 />
               </div>
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">
-                  <Label htmlFor="control_type">Control type</Label>
+                  <Label htmlFor="control_type">
+                    {t('validation.controls.field.type', 'Control type')}
+                  </Label>
                   <Select
                     value={formData.control_type}
                     onValueChange={(value) =>
@@ -364,7 +480,7 @@ export default function CompensatingControlsPage() {
                       })
                     }
                   >
-                    <SelectTrigger>
+                    <SelectTrigger id="control_type">
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
@@ -372,14 +488,16 @@ export default function CompensatingControlsPage() {
                         offer a value the backend rejects. */}
                       {CONTROL_TYPES.map((type) => (
                         <SelectItem key={type.value} value={type.value}>
-                          {type.label}
+                          {t(`validation.controls.type.${type.value}`, type.label)}
                         </SelectItem>
                       ))}
                     </SelectContent>
                   </Select>
                 </div>
                 <div className="space-y-2">
-                  <Label htmlFor="reduction_percent">Risk reduction (%)</Label>
+                  <Label htmlFor="reduction_percent">
+                    {t('validation.controls.field.reduction', 'Risk reduction (%)')}
+                  </Label>
                   <Input
                     id="reduction_percent"
                     type="number"
@@ -402,10 +520,12 @@ export default function CompensatingControlsPage() {
           </DialogBody>
           <DialogFooter>
             <Button variant="outline" onClick={() => setIsCreateOpen(false)}>
-              Cancel
+              {t('common.cancel', 'Cancel')}
             </Button>
             <Button onClick={handleCreate} disabled={isCreating}>
-              {isCreating ? 'Creating…' : 'Create'}
+              {isCreating
+                ? t('validation.controls.creating', 'Creating…')
+                : t('validation.controls.create', 'Create')}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -415,26 +535,31 @@ export default function CompensatingControlsPage() {
       <Dialog open={!!testControlId} onOpenChange={(open) => !open && setTestControlId(null)}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Record test result</DialogTitle>
+            <DialogTitle>{t('validation.controls.recordTitle', 'Record test result')}</DialogTitle>
             <DialogDescription>
-              Record the result of a control effectiveness test.
+              {t(
+                'validation.controls.recordDesc',
+                'Record the result of a control effectiveness test.'
+              )}
             </DialogDescription>
           </DialogHeader>
           <DialogBody>
             <div className="space-y-4">
               <div className="space-y-2">
-                <Label htmlFor="test_result">Test result</Label>
+                <Label htmlFor="test_result">
+                  {t('validation.controls.field.testResult', 'Test result')}
+                </Label>
                 <Select
                   value={testResult}
                   onValueChange={(v) => setTestResult(v as typeof testResult)}
                 >
-                  <SelectTrigger>
+                  <SelectTrigger id="test_result">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
                     {TEST_RESULTS.map((result) => (
                       <SelectItem key={result} value={result}>
-                        {humanizeControlValue(result)}
+                        {t(`validation.controls.result.${result}`, humanizeControlValue(result))}
                       </SelectItem>
                     ))}
                   </SelectContent>
@@ -442,17 +567,19 @@ export default function CompensatingControlsPage() {
               </div>
               {testResult === 'fail' && (
                 <p className="text-muted-foreground text-xs">
-                  Recording a failure deactivates this control — it will stop reducing the priority
-                  of findings on its linked assets.
+                  {t(
+                    'validation.controls.failHint',
+                    'Recording a failure deactivates this control. It will stop reducing the priority of findings on its linked assets.'
+                  )}
                 </p>
               )}
             </div>
           </DialogBody>
           <DialogFooter>
             <Button variant="outline" onClick={() => setTestControlId(null)}>
-              Cancel
+              {t('common.cancel', 'Cancel')}
             </Button>
-            <Button onClick={handleRecordTest}>Record</Button>
+            <Button onClick={handleRecordTest}>{t('validation.controls.record', 'Record')}</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -473,8 +600,14 @@ export default function CompensatingControlsPage() {
         title={t('confirm.control.deleteTitle', 'Delete the control "{name}"?', {
           name: deleteControl?.name ?? '',
         })}
-        desc={t('confirm.control.deleteDesc', 'This cannot be undone.')}
-        confirmText={t('confirm.delete', 'Delete')}
+        desc={t(
+          'confirm.control.deleteDesc',
+          'The control and its links to assets are removed, so findings on those assets are no longer held down by it and their priority rises again.'
+        )}
+        typeToConfirm={
+          deleteControl ? confirmName(deleteControl.name, deleteControl.id) : undefined
+        }
+        confirmText={t('confirm.control.deleteButton', 'Delete control')}
         destructive
         handleConfirm={handleDelete}
       />

@@ -150,7 +150,7 @@ func TestParallelFinalSteps_RunCompletes(t *testing.T) {
 	b.Complete(0, nil)
 	store.rows["b"] = b
 
-	if err := s.OnStepCompleted(context.Background(), run.ID.String(), "a", 0, nil); err != nil {
+	if err := s.OnStepCompleted(context.Background(), run.TenantID, run.ID.String(), "a", 0, nil); err != nil {
 		t.Fatal(err)
 	}
 	if len(runs.statuses) != 1 || runs.statuses[0] != scanrun.RunStatusCompleted {

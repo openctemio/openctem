@@ -22,7 +22,7 @@
 import Link from '@/components/link'
 import { AlertCircle, ArrowLeft, RefreshCw, ShieldOff, GaugeCircle } from 'lucide-react'
 import { Main } from '@/components/layout'
-import { ErrorState, PageHeader } from '@/features/shared'
+import { ErrorState, PageHeader, PageStack } from '@/features/shared'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader } from '@/components/ui/card'
@@ -37,7 +37,7 @@ import { accessStateOf } from '@/lib/api/access-state'
 
 function LoadingState() {
   return (
-    <div className="space-y-5">
+    <PageStack>
       <Card>
         <CardHeader>
           <Skeleton className="h-5 w-48" />
@@ -57,7 +57,7 @@ function LoadingState() {
         <Skeleton className="h-72 w-full" />
         <Skeleton className="h-72 w-full" />
       </div>
-    </div>
+    </PageStack>
   )
 }
 
@@ -73,7 +73,7 @@ function ModuleDisabledState() {
       )}
       action={
         <Button variant="outline" size="sm" asChild>
-          <Link href="/dashboard">
+          <Link href="/">
             <ArrowLeft className="me-2 h-4 w-4" />
             {t('insights.backToDashboard', 'Back to dashboard')}
           </Link>
@@ -132,26 +132,28 @@ export default function CTEMMaturityPage() {
     }
 
     return (
-      <div className="space-y-5">
+      <PageStack>
         <MaturityBreakdownCard maturity={data.maturity} />
         <div className="grid grid-cols-1 gap-5 lg:grid-cols-2">
           <MaturityTrendCard trend={data} />
           <StageCoverageCard coverage={data.maturity.ctem_stage_coverage} />
         </div>
-      </div>
+      </PageStack>
     )
   })()
 
   return (
     <Main>
-      <PageHeader
-        title={t('insights.maturity.title', 'CTEM maturity')}
-        description={t(
-          'insights.maturity.description',
-          'A weighted score across your closed CTEM cycles.'
-        )}
-      />
-      <div className="mt-5">{body}</div>
+      <PageStack>
+        <PageHeader
+          title={t('insights.maturity.title', 'CTEM maturity')}
+          description={t(
+            'insights.maturity.description',
+            'A weighted score across your closed CTEM cycles.'
+          )}
+        />
+        {body}
+      </PageStack>
     </Main>
   )
 }

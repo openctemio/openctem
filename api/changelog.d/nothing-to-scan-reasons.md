@@ -1,0 +1,5 @@
+### Fixed: a scan with nothing to scan says why, per target
+
+- A scan whose targets all fall out of zone routing was refused with "No target of scan "Quick Scan - ..." can be scanned: N target(s) are outside every scan zone or in a zone without sensors", even when the only reason was a name that does not resolve in DNS. The refusal now names each real reason with its targets and the next step (does not resolve in DNS, private address outside every scan zone, outside the selected zone, zone with no sensor, refused by sensor policy, deny list), and lists every target with its refusal code in `details.refused`, so the console shows them in the dialog. Every target unresolvable: code `NO_RESOLVING_TARGETS` and no zone wording. Zones are mentioned only for the targets they are the reason for.
+- Trigger refusals no longer quote the scan's name (an ad-hoc quick scan's name carries a time and a random suffix): "This scan ..." instead.
+- Uncovered targets in the run context and the routing preview carry a `kind`.

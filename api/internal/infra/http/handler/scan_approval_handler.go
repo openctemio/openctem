@@ -489,6 +489,29 @@ func userActor(id string) *ActorRef {
 	return actorRef(id)
 }
 
+// redactApprovalSecrets masks the scanner_config values that look like
+// credentials in an approval request's definition and in its changes, the
+// way the scan read masks them for a caller without scans:write. The stored
+// request is not modified (the digest is computed on the stored definition).
+func redactApprovalSecrets(def scangov.Definition, changes []scangov.Change) (scangov.Definition, []scangov.Change) {
+	def.ScannerConfig = scan.RedactConfigSecrets(def.ScannerConfig)
+	out := make([]scangov.Change, len(changes))
+	for i, c := range changes {
+		out[i] = scangov.Change{Field: c.Field, Before: redactChangeValue(c.Before), After: redactChangeValue(c.After)}
+	}
+	return def, out
+}
+
+// redactChangeValue masks a change value that is a config object. A change
+// carries the canonical field value: scanner_config and target_options are
+// maps, the other fields are strings, lists or numbers with no secrets.
+func redactChangeValue(v any) any {
+	if m, ok := v.(map[string]any); ok {
+		return scan.RedactConfigSecrets(m)
+	}
+	return v
+}
+
 func (h *ScanApprovalHandler) requestResponse(r *http.Request, q *scangov.Request) *ScanApprovalRequestResponse {
 	viewer := middleware.GetUserID(r.Context())
 	out := &ScanApprovalRequestResponse{
@@ -501,6 +524,9 @@ func (h *ScanApprovalHandler) requestResponse(r *http.Request, q *scangov.Reques
 	}
 	if out.Changes == nil {
 		out.Changes = []scangov.Change{}
+	}
+	if !canSeeScanConfigSecrets(r.Context()) {
+		out.Definition, out.Changes = redactApprovalSecrets(out.Definition, out.Changes)
 	}
 	for _, a := range q.Approvals {
 		out.Approvals = append(out.Approvals, ScanApprovalResponse{Approver: userActor(a.UserID), ApprovedAt: a.ApprovedAt,

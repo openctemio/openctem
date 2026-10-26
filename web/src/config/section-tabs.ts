@@ -5,9 +5,9 @@
  * shows ONE row per section (at most two nav levels: group, then item).
  */
 import {
-  AlertTriangle,
+  AppWindow,
+  Briefcase,
   Bug,
-  Building,
   Building2,
   ClipboardCheck,
   Copy,
@@ -21,16 +21,21 @@ import {
   FolderKanban,
   GitBranch,
   Globe,
+  GlobeLock,
   History,
-  ListTree,
+  LayoutDashboard,
   Link2,
   ListChecks,
+  Network,
   Radar,
   ShieldCheck,
   Swords,
   Trophy,
+  UserX,
+  Gauge,
   Wrench,
 } from 'lucide-react'
+import type { ElementType } from 'react'
 import type { SectionTab } from '@/features/shared/components/section-tabs'
 import { Permission } from '@/lib/permissions'
 
@@ -39,7 +44,7 @@ import { Permission } from '@/lib/permissions'
  * findings by type. URLs predate the tabs and are unchanged.
  */
 export const EXPOSURES_SECTION_TABS: readonly SectionTab[] = [
-  { label: 'Overview', href: '/exposures', icon: AlertTriangle },
+  { label: 'Overview', href: '/exposures', icon: LayoutDashboard },
   { label: 'Vulnerabilities', href: '/exposures/vulnerabilities', icon: Bug },
   // FileKey, not KeyRound: KeyRound reads as the separate Credential leaks
   // module (leaked accounts), while this tab is secrets committed to code.
@@ -75,6 +80,23 @@ export const SCOPE_SECTION_TABS: readonly SectionTab[] = [
     permission: Permission.ScopeRead,
   },
   {
+    // Domains proved by DNS; its own page so Scope keeps one tab row.
+    label: 'Domain proof',
+    labelKey: 'scope.tabs.proof',
+    href: '/scope/domain-proof',
+    icon: GlobeLock,
+    module: 'attack_surface',
+    permission: Permission.ScopeRead,
+  },
+  {
+    label: 'Networks',
+    labelKey: 'networkSeeds.tab',
+    href: '/scope/networks',
+    icon: Network,
+    module: 'attack_surface',
+    permission: Permission.ScopeRead,
+  },
+  {
     label: 'Programs',
     href: '/programs',
     icon: Trophy,
@@ -107,7 +129,7 @@ export const BUSINESS_CONTEXT_SECTION_TABS: readonly SectionTab[] = [
   {
     label: 'Services',
     href: '/business-services',
-    icon: Building,
+    icon: Briefcase,
     module: 'business_services',
     permission: Permission.BusinessServicesRead,
   },
@@ -195,6 +217,17 @@ export const ASSETS_SECTION_TABS: readonly SectionTab[] = [
     permission: Permission.AssetsRead,
   },
   {
+    // The data-quality queue (research/233 D8, 242 D3): assets missing an
+    // owner, a criticality or a recent scan, relationship suggestions and
+    // possible duplicates. Relationships and duplicates keep their own URLs.
+    label: 'Needs attention',
+    href: '/assets/attention',
+    matchPrefix: ['/assets/suggestions', '/assets/duplicates'],
+    icon: ListChecks,
+    module: 'assets',
+    permission: Permission.AssetsRead,
+  },
+  {
     label: 'Groups',
     href: '/assets/groups',
     icon: FolderKanban,
@@ -202,33 +235,111 @@ export const ASSETS_SECTION_TABS: readonly SectionTab[] = [
     permission: Permission.AssetGroupsRead,
   },
   {
-    label: 'What changed',
+    // One feed of what changed on assets: new, gone and newly exposed assets,
+    // exposure changes, shadow IT, and value changes (RFC-069, `?view=values`).
+    // It keeps the URL the change digest links to.
+    label: 'Activity',
     href: '/assets/changes',
     icon: History,
     module: 'assets',
     permission: Permission.AssetsRead,
   },
+]
+
+/**
+ * A reason on Assets › Needs attention (research/249). The landing lists them
+ * as a queue list and each queue page keeps its own route; this registry is
+ * the one source of order, gate, label, why line and unit for both, and for
+ * the switch menu. The order is fixed (by kind), never sorted by count.
+ */
+export interface AttentionReasonDef {
+  id: 'no_owner' | 'context' | 'unscanned' | 'relationships' | 'duplicates'
+  /** "Fix on the asset" reasons are filters of the inventory; "Review" ones have their own rows. */
+  group: 'fix' | 'review'
+  label: string
+  labelKey: string
+  whyKey: string
+  why: string
+  /** Unit after the count: an ICU plural of `count`. */
+  unitKey: string
+  unit: string
+  href: string
+  icon: ElementType
+  module: string
+  permission: string
+}
+
+const ASSETS_UNIT = '{count, plural, one {asset} other {assets}}'
+
+export const ASSET_ATTENTION_REASONS: readonly AttentionReasonDef[] = [
   {
-    // Changes of asset values and of the sources that decide them (RFC-069).
-    label: 'Timeline',
-    href: '/assets/timeline',
-    icon: ListTree,
+    id: 'no_owner',
+    group: 'fix',
+    label: 'No owner',
+    labelKey: 'assets.attention.tab.noOwner',
+    whyKey: 'assets.attention.why.noOwner',
+    why: 'Findings on these assets have nobody to assign to.',
+    unitKey: 'assets.attention.unit.assets',
+    unit: ASSETS_UNIT,
+    href: '/assets/attention/no-owner',
+    icon: UserX,
     module: 'assets',
     permission: Permission.AssetsRead,
   },
   {
-    // Origins, endpoints, path patterns and their changes (RFC-056).
-    label: 'Web surface',
-    href: '/assets/web',
-    icon: Globe,
+    id: 'context',
+    group: 'fix',
+    label: 'Criticality not set',
+    labelKey: 'assets.attention.tab.context',
+    whyKey: 'assets.attention.why.context',
+    why: 'Priority uses the default weight for them.',
+    unitKey: 'assets.attention.unit.assets',
+    unit: ASSETS_UNIT,
+    href: '/assets/attention/context',
+    icon: Gauge,
     module: 'assets',
     permission: Permission.AssetsRead,
   },
   {
-    label: 'Suggestions',
+    id: 'unscanned',
+    group: 'fix',
+    label: 'Not scanned in 30 days',
+    labelKey: 'assets.attention.tab.unscanned',
+    whyKey: 'assets.attention.why.unscanned',
+    why: 'No successful scan, so new exposures on them go unseen.',
+    unitKey: 'assets.attention.unit.assets',
+    unit: ASSETS_UNIT,
+    href: '/assets/attention/unscanned',
+    icon: Radar,
+    module: 'assets',
+    permission: Permission.AssetsRead,
+  },
+  {
+    id: 'relationships',
+    group: 'review',
+    label: 'Relationships',
+    labelKey: 'assets.attention.tab.relationships',
+    whyKey: 'assets.attention.why.relationships',
+    why: 'Links found between assets that wait for a yes or no.',
+    unitKey: 'assets.attention.unit.toReview',
+    unit: 'to review',
     href: '/assets/suggestions',
     icon: Link2,
     module: 'relationships',
+    permission: Permission.AssetsRead,
+  },
+  {
+    id: 'duplicates',
+    group: 'review',
+    label: 'Possible duplicates',
+    labelKey: 'assets.attention.tab.duplicates',
+    whyKey: 'assets.attention.why.duplicates',
+    why: 'Assets that look like one thing under two names.',
+    unitKey: 'assets.attention.unit.pairs',
+    unit: '{count, plural, one {pair} other {pairs}}',
+    href: '/assets/duplicates',
+    icon: Copy,
+    module: 'assets',
     permission: Permission.AssetsRead,
   },
 ]
@@ -247,7 +358,7 @@ export const ATTACK_SURFACE_SECTION_TABS: readonly SectionTab[] = [
     permission: Permission.AssetsRead,
   },
   {
-    label: 'Suggestions',
+    label: 'Review',
     href: '/attack-surface/review',
     icon: ClipboardCheck,
     module: 'attack_surface',
@@ -265,6 +376,17 @@ export const ATTACK_SURFACE_SECTION_TABS: readonly SectionTab[] = [
     href: '/attack-surface/changes',
     icon: History,
     module: 'attack_surface',
+    permission: Permission.AssetsRead,
+  },
+  {
+    // What the web origins serve: endpoints, parameters, the same path across
+    // origins and their changes (RFC-056). Its rows are endpoints, not assets,
+    // so it sits with the external surface work rather than as an asset lens
+    // (research/242 D4). The data is the assets module's.
+    label: 'Web surface',
+    href: '/attack-surface/web',
+    icon: AppWindow,
+    module: 'assets',
     permission: Permission.AssetsRead,
   },
 ]

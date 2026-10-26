@@ -3,7 +3,7 @@
 import { useCallback, useState } from 'react'
 import { Loader2, Save } from 'lucide-react'
 import { Main } from '@/components/layout'
-import { ErrorState, PageHeader } from '@/features/shared'
+import { ErrorState, PageHeader, PageStack } from '@/features/shared'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
 import {
@@ -14,14 +14,13 @@ import {
 import { useTenantSettings } from '@/features/organization/api/use-tenant-settings'
 import { useTenant } from '@/context/tenant-provider'
 import { useTranslation } from '@/context/i18n-provider'
-import { usePermissions, Permission } from '@/lib/permissions'
+import { useCanMutate } from '@/lib/permissions'
 
 const FORM_ID = 'license-policy-form'
 
 export default function LicensePolicySettingsPage() {
   const { t } = useTranslation()
-  const { can } = usePermissions()
-  const canEdit = can(Permission.SettingsWrite)
+  const canEdit = useCanMutate('PUT /api/v1/organization/settings/license-policy')
   const { currentTenant } = useTenant()
   const { data, error, isLoading, mutate } = useLicensePolicy()
   // The section's ETag rides on the organization settings read.
@@ -35,30 +34,30 @@ export default function LicensePolicySettingsPage() {
 
   return (
     <Main>
-      <PageHeader
-        title={t('settings.item.license-policy', 'License policy')}
-        description={t(
-          'licensePolicy.pageDescription',
-          'Allow, review or deny the licenses your open-source packages declare. Denied licenses open findings.'
-        )}
-      >
-        {canEdit && data && (
-          <Button
-            type="submit"
-            form={FORM_ID}
-            size="sm"
-            disabled={!status.dirty || status.submitting}
-          >
-            {status.submitting ? (
-              <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
-            ) : (
-              <Save className="h-4 w-4" aria-hidden />
-            )}
-            {t('licensePolicy.save', 'Save changes')}
-          </Button>
-        )}
-      </PageHeader>
-      <div className="mt-5">
+      <PageStack>
+        <PageHeader
+          title={t('settings.item.license-policy', 'License policy')}
+          description={t(
+            'licensePolicy.pageDescription',
+            'Allow, review or deny the licenses your open-source packages declare. Denied licenses open findings.'
+          )}
+        >
+          {canEdit && data && (
+            <Button
+              type="submit"
+              form={FORM_ID}
+              size="sm"
+              disabled={!status.dirty || status.submitting}
+            >
+              {status.submitting ? (
+                <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
+              ) : (
+                <Save className="h-4 w-4" aria-hidden />
+              )}
+              {t('licensePolicy.save', 'Save changes')}
+            </Button>
+          )}
+        </PageHeader>
         {error ? (
           <ErrorState
             title={t('licensePolicy.loadTitle', 'license policy')}
@@ -78,7 +77,7 @@ export default function LicensePolicySettingsPage() {
             onStatusChange={onStatusChange}
           />
         )}
-      </div>
+      </PageStack>
     </Main>
   )
 }

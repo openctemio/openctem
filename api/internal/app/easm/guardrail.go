@@ -80,6 +80,12 @@ func (g *ActiveGate) SetUnclassified(policy UnclassifiedPolicy, names GuardrailN
 	g.resolving = names
 }
 
+// UnclassifiedMode is the tenant's unclassified-scans mode as the gate
+// applies it (off, low_impact or full; anything unreadable is off).
+func (g *ActiveGate) UnclassifiedMode(ctx context.Context, tenantID shared.ID) (string, error) {
+	return g.unclassifiedMode(ctx, tenantID), nil
+}
+
 // unclassifiedMode is the tenant's mode; anything unreadable is off.
 func (g *ActiveGate) unclassifiedMode(ctx context.Context, tenantID shared.ID) string {
 	if g.unclassified == nil {
@@ -248,15 +254,31 @@ func (g *ActiveGate) GuardrailOf(ctx context.Context, tenantID shared.ID, ids []
 		return nil, err
 	}
 	candidates := make([]string, 0, len(ids))
+	var certs []*asset.Asset
 	for _, id := range ids {
 		a := assets[id.String()]
 		if a == nil { // another tenant's or unknown (the lookup is tenant-scoped)
+			continue
+		}
+		if a.Type() == asset.AssetTypeCertificate {
+			certs = append(certs, a)
 			continue
 		}
 		if _, ok := auth.Covers(a.Name()); ok {
 			continue
 		}
 		candidates = append(candidates, id.String())
+	}
+	// A certificate is held only as far as every endpoint that served it
+	// is: it shows the guardrail of its strongest-refused endpoint.
+	judged, err := g.judgeCertificates(ctx, tenantID, certs)
+	if err != nil {
+		return nil, err
+	}
+	for id, j := range judged {
+		if h := j.standing.HeldBy; h != nil && h.Guardrail != "" {
+			out[id] = h.Guardrail
+		}
 	}
 	for id, reason := range g.guardrailReasons(ctx, tenantID, auth, candidates, assets) {
 		if reason != "" {

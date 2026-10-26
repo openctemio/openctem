@@ -13,7 +13,9 @@
  * that found the issue. The old whole-asset "verification scan" is retired.
  */
 
+import { CveLink } from '@/features/vulnerabilities/components/cve-link'
 import { useState } from 'react'
+import { ConfirmDialog } from '@/components/confirm-dialog'
 import Link from '@/components/link'
 import { useRouter } from 'next/navigation'
 import {
@@ -66,6 +68,7 @@ export function FindingHeader({ finding, status, onTriageCompleted }: FindingHea
   const canCreateTicket = useCanCreateTicket()
   const [ticketOpen, setTicketOpen] = useState(false)
   const [duplicateOpen, setDuplicateOpen] = useState(false)
+  const [reverifyOpen, setReverifyOpen] = useState(false)
   // An inventory asset (not a free-text pentest target) the duplicate must share.
   const assetId = isHuman ? undefined : finding.assets[0]?.id
   const canMarkDuplicate =
@@ -79,6 +82,7 @@ export function FindingHeader({ finding, status, onTriageCompleted }: FindingHea
   )
 
   const reverify = async () => {
+    setReverifyOpen(false)
     try {
       await requestValidation()
       toast.success(t('findings.header.reverifyQueued', 'Re-verification queued'), {
@@ -125,16 +129,8 @@ export function FindingHeader({ finding, status, onTriageCompleted }: FindingHea
         )}
         {finding.branchOnly && <BranchOnlyBadge />}
         {finding.cve && (
-          <Badge variant="outline" asChild className="font-mono text-xs">
-            <a
-              href={`https://nvd.nist.gov/vuln/detail/${encodeURIComponent(finding.cve)}`}
-              target="_blank"
-              rel="noopener noreferrer"
-              aria-label={t('findings.header.cveOnNvd', '{cve} on NVD', { cve: finding.cve })}
-            >
-              {finding.cve}
-              <ExternalLink className="h-3 w-3" aria-hidden />
-            </a>
+          <Badge variant="outline" className="text-xs">
+            <CveLink id={finding.cve} />
           </Badge>
         )}
         {duplicateOfHref && (
@@ -151,7 +147,7 @@ export function FindingHeader({ finding, status, onTriageCompleted }: FindingHea
               href={`https://cwe.mitre.org/data/definitions/${encodeURIComponent(cweNum)}.html`}
               target="_blank"
               rel="noopener noreferrer"
-              aria-label={t('findings.header.cweOnMitre', '{cwe} on MITRE', { cwe: finding.cwe })}
+              aria-label={`${t('findings.header.cweOnMitre', '{cwe} on MITRE', { cwe: finding.cwe })} ${t('common.opensNewTab', '(opens in a new tab)')}`}
             >
               {finding.cwe}
               <ExternalLink className="h-3 w-3" aria-hidden />
@@ -169,7 +165,7 @@ export function FindingHeader({ finding, status, onTriageCompleted }: FindingHea
           <Button
             variant="outline"
             size="sm"
-            onClick={() => void reverify()}
+            onClick={() => setReverifyOpen(true)}
             disabled={reverifying}
             title={t(
               'findings.header.reverifyTitle',
@@ -203,9 +199,10 @@ export function FindingHeader({ finding, status, onTriageCompleted }: FindingHea
           </DropdownMenuTrigger>
           <DropdownMenuContent align="start" className="w-52">
             <DropdownMenuItem
-              onClick={() => {
-                void copyToClipboard(`${window.location.origin}/findings/${finding.id}`)
-                toast.success(t('findings.header.linkCopied', 'Link copied'))
+              onClick={async () => {
+                const ok = await copyToClipboard(`${window.location.origin}/findings/${finding.id}`)
+                if (ok) toast.success(t('findings.header.linkCopied', 'Link copied'))
+                else toast.error(t('common.copyFailed', 'Could not copy'))
               }}
             >
               <Link2 className="h-4 w-4" />
@@ -226,6 +223,20 @@ export function FindingHeader({ finding, status, onTriageCompleted }: FindingHea
           </DropdownMenuContent>
         </DropdownMenu>
       </div>
+
+      <ConfirmDialog
+        open={reverifyOpen}
+        onOpenChange={setReverifyOpen}
+        title={t('findings.header.reverifyConfirmTitle', 'Re-verify "{title}" now?', {
+          title: finding.title,
+        })}
+        desc={t(
+          'findings.header.reverifyConfirmDesc',
+          "A safe check sends a request to the finding's target now. The result is recorded as evidence and never changes the status."
+        )}
+        confirmText={t('findings.header.reverifyConfirmButton', 'Run safe check')}
+        handleConfirm={reverify}
+      />
 
       {canMarkDuplicate && assetId && (
         <MarkDuplicateDialog

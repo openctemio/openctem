@@ -24,6 +24,7 @@ var ctemLayout = []any{
 	metricWidget("w_loop", "ctem.loop", nil),
 	metricWidget("w_cj", "crown_jewels.exposed", nil),
 	metricWidget("w_paths", "attack_paths.to_crown_jewels", map[string]any{"limit": 5}),
+	metricWidget("w_cov", "coverage.discovery", nil),
 }
 
 // newCTEMEnv extends the pentest fixture: A1 and B1 are crown jewels (A1 in
@@ -230,6 +231,23 @@ func TestDashboardCTEMWidgets_ScopeAndParity_DB(t *testing.T) {
 				t.Errorf("parity uncovered: widget %d, asset list %d", tc.uncovered, got)
 			}
 
+			// The catalog coverage figure is the same read as the loop's
+			// Discovery stage, in the same scope; nothing tracked is not
+			// measured, never 0 %.
+			cov := byID(t, out, "w_cov")
+			if tc.tracked == 0 {
+				if cov.State != widgets.StateNotMeasured || cov.Reason != widgets.ReasonNoTrackedAssets || (cov.Ratio != nil && cov.Ratio.ValuePct != nil) {
+					t.Errorf("coverage without tracked assets = %+v", cov)
+				}
+			} else {
+				if cov.State != widgets.StateReady || cov.Ratio == nil || cov.Ratio.Den != tc.tracked || cov.Ratio.Num != tc.tracked-tc.uncovered {
+					t.Errorf("coverage = %+v, want %d of %d", cov.Ratio, tc.tracked-tc.uncovered, tc.tracked)
+				}
+				if cov.Drill != "/assets?coverage=uncovered&program_assets=exclude" {
+					t.Errorf("coverage drill %s", cov.Drill)
+				}
+			}
+
 			val := stage(t, loop, widgets.StageValidate)
 			if tc.open == 0 {
 				if val.State != widgets.StageNotMeasured {
@@ -290,4 +308,38 @@ func withoutParam(query, name string) string {
 	}
 	v.Del(name)
 	return v.Encode()
+}
+
+// An asset is covered only when every capability that applies to it
+// succeeded in the window: a working HTTP probe never hides a failed or
+// paused vulnerability check. Scope-blocked rows and the platform's DNS
+// checks are not part of the requirement.
+func TestAssetListCoverage_EveryApplicableCapability_DB(t *testing.T) {
+	e := newCTEMEnv(t)
+	h := e.h
+	ten := h.tenant.String()
+	before := e.assetTotal(t, h.owner, true, "coverage=uncovered&program_assets=exclude")
+
+	mixed, full, paused := shared.NewID(), shared.NewID(), shared.NewID()
+	for _, id := range []shared.ID{mixed, full, paused} {
+		h.exec(`INSERT INTO assets (id, tenant_id, name, asset_type, exposure, criticality)
+			VALUES ($1, $2, $3, 'domain', 'public', 'high')`, id.String(), ten, "cov-"+id.String()+".example.com")
+	}
+	h.exec(`INSERT INTO asset_coverage (tenant_id, asset_id, capability, vantage, state, last_success_at) VALUES
+		($1, $2, 'web.http_probe', '', 'covered', now()),
+		($1, $2, 'vuln.templates', '', 'failed', NULL),
+		($1, $3, 'web.http_probe', '', 'covered', now()),
+		($1, $3, 'vuln.templates', '', 'covered', now()),
+		($1, $3, 'port.scan', '', 'blocked', NULL),
+		($1, $3, 'dns.email', '', 'failed', NULL),
+		($1, $4, 'web.http_probe', '', 'covered', now()),
+		($1, $4, 'vuln.templates', '', 'paused', now() - interval '400 days')`,
+		ten, mixed.String(), full.String(), paused.String())
+
+	if got := e.assetTotal(t, h.owner, true, "coverage=covered&program_assets=exclude"); got != 2 {
+		t.Errorf("covered = %d, want 2 (A1 and the asset whose every applicable check succeeded)", got)
+	}
+	if got := e.assetTotal(t, h.owner, true, "coverage=uncovered&program_assets=exclude"); got != before+2 {
+		t.Errorf("uncovered = %d, want %d (the failed and the paused vulnerability check are gaps)", got, before+2)
+	}
 }

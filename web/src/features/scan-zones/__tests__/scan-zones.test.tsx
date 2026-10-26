@@ -139,33 +139,72 @@ describe('ScanZoneDialog', () => {
 })
 
 describe('RunDispatchPanel', () => {
-  it('lists uncovered targets once, with their reasons, and other warnings', () => {
+  it('groups skipped targets by reason, neutral when expected, and keeps other warnings', async () => {
     perms.granted.clear()
     const dispatch: RunDispatch = {
-      resolved_targets: 3,
-      excluded_targets: 1,
-      warnings: ['10.9.9.9 not scanned: private address outside every scan zone', 'other note'],
-      uncovered_targets: [
-        { target: '10.9.9.9', reason: 'private address outside every scan zone' },
-      ],
-      zone_routing: {
-        jobs: 2,
-        unzoned_targets: 0,
-        uncovered_targets: 1,
-        zones: [
-          { zone_id: 'z1', zone_name: 'HQ', targets: 2, jobs: 2, queued_jobs: 0, sensor_ids: [] },
-        ],
-      },
+      resolved_targets: 555,
+      excluded_targets: 0,
+      warnings: ['gone-name not scanned: does not resolve in DNS', 'other note'],
+      uncovered_targets: [{ target: 'gone-name', reason: 'does not resolve in DNS' }],
+      zone_routing: { jobs: 13, unzoned_targets: 121, uncovered_targets: 434, zones: [] },
       sensor_routing: 'tenant',
+      will_scan: 121,
+      skipped: [
+        { reason: 'unresolved', tone: 'info', count: 434, targets: ['gone-name'] },
+        { reason: 'zone_no_sensor', tone: 'warning', count: 1, targets: ['10.3.0.1'] },
+      ],
     }
     render(<RunDispatchPanel dispatch={dispatch} />)
-    const uncovered = screen.getByTestId('run-uncovered')
-    expect(within(uncovered).getByText('10.9.9.9')).toBeInTheDocument()
+    expect(screen.getByTestId('outcome-will-scan')).toHaveTextContent('121')
+    expect(screen.getByTestId('outcome-skipped')).toHaveTextContent('435')
+    // Nothing on the card is red: skipping is an outcome, not a failure.
+    expect(screen.getByTestId('run-dispatch').querySelector('.text-destructive')).toBeNull()
+    const unresolved = screen.getByText('Do not resolve in DNS').closest('li')!
+    expect(unresolved).toHaveAttribute('data-tone', 'info')
+    await userEvent.click(within(unresolved).getByRole('button'))
+    expect(within(unresolved).getByText('gone-name')).toBeInTheDocument()
+    expect(within(unresolved).getByText(/and 433 more not listed/)).toBeInTheDocument()
     const warnings = screen.getByTestId('run-warnings')
-    expect(within(warnings).queryByText(/10\.9\.9\.9/)).not.toBeInTheDocument()
+    expect(
+      within(warnings).queryByText((text) => text.includes('gone-name'))
+    ).not.toBeInTheDocument()
     expect(within(warnings).getByText('other note')).toBeInTheDocument()
-    expect(screen.getByText('HQ')).toBeInTheDocument()
-    expect(screen.queryByTestId('run-target-expansion')).not.toBeInTheDocument()
+    // No zone took a share: no zone table and no zone wording.
+    expect(screen.queryByTestId('zone-share-table')).not.toBeInTheDocument()
+    expect(screen.queryByText(/public targets go to any of your sensors/)).not.toBeInTheDocument()
+  })
+
+  it('groups an older run from its listed uncovered targets and shows the zone share', () => {
+    perms.granted.clear()
+    render(
+      <RunDispatchPanel
+        dispatch={{
+          resolved_targets: 3,
+          excluded_targets: 0,
+          uncovered_targets: [
+            { target: '10.9.9.9', reason: 'private address outside every scan zone' },
+          ],
+          zone_routing: {
+            jobs: 2,
+            unzoned_targets: 0,
+            uncovered_targets: 1,
+            zones: [
+              {
+                zone_id: 'z1',
+                zone_name: 'HQ',
+                targets: 2,
+                jobs: 2,
+                queued_jobs: 0,
+                sensor_ids: [],
+              },
+            ],
+          },
+        }}
+      />
+    )
+    expect(screen.getByTestId('outcome-will-scan')).toHaveTextContent('2')
+    expect(screen.getByText('Other reasons').closest('li')).toHaveAttribute('data-tone', 'warning')
+    expect(within(screen.getByTestId('zone-share-table')).getByText('HQ')).toBeInTheDocument()
   })
 
   it('shows what each dynamic target resolved to when the run started (RFC-068)', () => {
@@ -216,7 +255,7 @@ describe('helpers', () => {
 
   it('explains trigger refusals', () => {
     const err = new ApiClientError('No target...', 'NO_ZONE_COVERAGE', 400)
-    expect(triggerErrorHint(err)).toMatch(/outside every scan zone/)
+    expect(triggerErrorHint(err)).toMatch(/private ranges to a scan zone/)
     expect(describeScanZoneError(err, 'x').status).toBe(400)
     expect(triggerErrorHint(new Error('x'))).toBeUndefined()
     // research/25: refusals from the sensor policy pre-check and the opt-ins.

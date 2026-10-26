@@ -57,6 +57,9 @@ func newV2RigWith(t *testing.T, guard ingest.BlindingGuard, configure func(*inge
 		postgres.NewVulnerabilityRepository(db), postgres.NewComponentRepository(db),
 		postgres.NewSensorRepository(db), postgres.NewBranchRepository(db), postgres.NewTenantRepository(db),
 		postgres.NewAuditRepository(db), log)
+	// Receipts are on in production; a covered run's receipt decides what it
+	// did not report.
+	svc.SetReceiptRecorder(postgres.NewIngestReceiptRepository(db))
 	if configure != nil {
 		configure(svc, db)
 	}

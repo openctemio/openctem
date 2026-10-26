@@ -207,6 +207,7 @@ widget has `widget_type` `metric` or `note` and a `config` of this form
   | `intel.kev_open` | scalar, preset KEV | as above | F1 |
   | `findings.age_bands` | matrix severity × age band | as above | F1 |
   | `sla.within` | ratio | none | F1 |
+  | `coverage.discovery` | ratio: ledger-tracked assets in scope whose every applicable capability succeeded in the coverage window (a failed, timed-out, paused or never-run capability leaves the asset uncovered; scope-blocked rows and the platform DNS checks are not required); nothing tracked is not measured; opens the uncovered assets | none | coverage ledger + `assets` |
   | `exposure.open_by_priority` | time series by priority (P0-P2) | priority or severity | F1 + F2 |
   | `flow.new_vs_fixed` | time series of flows | none | F2 |
   | `fix.time_to_fix` | duration (1: category) | priority or severity | F2 |
@@ -214,12 +215,14 @@ widget has `widget_type` `metric` or `note` and a `config` of this form
   | `crown_jewels.exposed` | scalar (assets), preset P0+P1, filter priority only | none | F1 + `assets` |
   | `ctem.loop` | stages (the five CTEM stages) | none | see "CTEM metrics" |
   | `attack_paths.to_crown_jewels` | paths (reachable crown jewels) | none | attack-path scoring + `assets` |
+  | `exposure.flow` | flow (sources, funnel, classes, stages, outcomes) | none | F1 + `findings` + receipts, see "Exposure flow and intake" |
+  | `ingest.intake` | intake (receipts per source, noise, health) | none | `ingest_receipts`, see "Exposure flow and intake" |
 
 - **Shapes and visualizations.** scalar: stat, progress; ratio: progress,
   stat; duration: stat; category: bar, column, table, donut, stat; time
   series: area, line, column, table (a flow: diverging, column, table, never
   an area); matrix: heatmap, table, column; items: list, table; stages: loop, table;
-  paths: paths, table. The first is
+  paths: paths, table; flow: flow, table; intake: intake, table. The first is
   the default; a widget without `viz.type` gets it.
 - **Validation** (`ParseWidgetSpec`, on every create, update and copy of a
   personal or organization dashboard): the config is decoded with unknown
@@ -247,9 +250,17 @@ widget has `widget_type` `metric` or `note` and a `config` of this form
 
 | Route | Who | Numbers |
 |---|---|---|
-| `GET /api/v1/me/dashboards/{id}/data` | the dashboard's owner (another person's dashboard is 404) | the caller's own data scope |
+| `GET /api/v1/me/dashboards/{id}/data` | `dashboard:read` and the dashboard's owner (another person's dashboard is 404) | the caller's own data scope; per-metric permission applies (below) |
 | `GET /api/v1/organization/dashboards/{id}/data` | `dashboards:org:view` (403 without), inside the audience (404 outside) | the whole organization |
-| `POST /api/v1/me/dashboards/widget-preview` | any member | one spec, the caller's own data scope (400 when the spec would be refused on save) |
+| `POST /api/v1/me/dashboards/widget-preview` | `dashboard:read` | one spec, the caller's own data scope (400 when the spec would be refused on save) |
+
+A personal read also needs the permission of what a metric counts:
+`findings:read` for finding metrics, `assets:read` for asset metrics
+(`crown_jewels.exposed`, `coverage.discovery`, `attack_paths.to_crown_jewels`).
+A widget the caller may not read comes back `unsupported` with reason
+`forbidden` and no figure, also when the figures come from a stored snapshot.
+Organization dashboards are organization-wide by design and follow
+`dashboards:org:view`.
 
 Every widget of the layout gets a result: typed widgets, and the legacy
 tiles the facts can answer (`LegacySpec`); other legacy tiles answer
@@ -295,7 +306,7 @@ computed for the read's scope and stored in the snapshot.
 | Stage of `ctem.loop` | Figure | Second figure | Opens | Not measured when |
 |---|---|---|---|---|
 | Scoping | crown jewels in scope (`assets.is_crown_jewel`) | crown jewels with an open P0/P1 finding | `/assets?is_crown_jewel=true&program_assets=exclude` | never (0 designated is "designate crown jewels") |
-| Discovery | % of assets the coverage ledger tracks (`asset_coverage`, a capability that applies) with a successful run of any capability in the last 30 days | assets not covered | `/assets?coverage=uncovered&program_assets=exclude` | the ledger tracks no asset in scope |
+| Discovery | % of assets the coverage ledger tracks (`asset_coverage`, a capability that applies) where every applicable capability succeeded in the last 30 days (scope-blocked rows and the platform DNS checks are not required) | assets not covered | `/assets?coverage=uncovered&program_assets=exclude` | the ledger tracks no asset in scope |
 | Prioritize | open P0 findings (F1) | open KEV findings (F1) | the findings list of the same filter | never |
 | Validate | % of open findings with validation evidence (the Validation overview's coverage) | retests completed in the last 30 days | `/validation` | no open finding in scope |
 | Mobilize | % of open findings with an SLA that is not breached (F1) | breached findings | the breached findings list | no open finding has an SLA |
@@ -338,6 +349,67 @@ computed for the read's scope and stored in the snapshot.
   asset and findings lists), `internal/app/dashboard/widgets/ctem_test.go`
   (every stage reads the server-built scope, not-measured stages carry no
   value, out-of-scope crown jewels never reach the result).
+
+### Exposure flow and intake
+
+Two catalog metrics carry the dashboard's first screen: where findings come
+from, what the platform removed as noise, and where findings went. Both are
+read for one window (the spec's range, 30 days by default; no comparison)
+and stored in the snapshot like every widget, so opening the dashboard
+costs no extra request and no query.
+
+`exposure.flow` (visualization `flow`):
+
+| Part | Figure | Opens |
+|---|---|---|
+| Actionable | open findings of classes P0 to P3 (F1), by class; the classes sum to it | `/findings?state=open&priority_class=...` |
+| Open | every open finding (F1), by severity | `/findings?state=open` (`&severity=`) |
+| Past SLA | open findings with a breached SLA (F1) | the breached findings list |
+| In progress | findings with status `in_progress` now | `/findings?status=in_progress` |
+| Fixed, Accepted, False positive | findings closed with that status in the window (`resolved_at`) | `/findings?status=...&resolved_at_gte=<window start>` |
+| Stages | the `ctem.loop` stages, same read | as `ctem.loop` |
+| Intake | the `ingest.intake` value (organization reads only) | as below |
+
+`ingest.intake` (visualization `intake`) sums the receipts
+([ingest receipts](ingest-receipts.md)) with activity in the window, per
+source: the source group (`sensor`, `import`, `connector`, `ci`, the receipt
+kind's group) and the tool (`unknown` when the source named none).
+
+- Per source: receipts, received, created, still detected, reopened,
+  closed, suppressed, not stored (skipped or failed), the latest receipt
+  (time, status, id) and the usual interval (the median time between its
+  receipts; three receipts or more).
+- Health: `failed` when the latest receipt failed; `stale` when nothing
+  came for more than twice the usual interval and at least a day; `ok`
+  otherwise. A source with fewer than three receipts is never stale.
+- Noise: received splits into new or reopened (created less suppressed,
+  plus reopened), merged into findings that exist (the rest after new,
+  reopened and not stored: still detected and repeats within a report),
+  suppressed by an approved rule (stored closed) and not stored. The parts
+  sum to received.
+- False positive: the findings closed as false positive in the window, the
+  same figure as the flow's.
+- Each source figure opens the receipt list with the same filter
+  (`/findings/imports?origin=&tool=&since=`), whose `totals` are computed by
+  the same grouping expressions (`receiptOriginSQL`, `receiptToolSQL`), so
+  the figure equals the list it opens.
+
+Scope: receipts count findings across the organization and are not
+asset-scoped, so the intake is computed only for a read with no data scope
+(an organization dashboard, or a personal dashboard of the owner), the same
+rule the receipt list uses to show every receipt. Any other personal read
+gets the flow without intake (`intake_reason: organization_only`) and the
+intake widget is `not_measured` (`organization_only`): never an estimate and
+never organization volumes. No source sent anything in the window:
+`no_receipts`.
+
+Tests: `dashboard_flow_widgets_db_test.go` (organization read: sources,
+health, noise, another tenant's receipts and receipts outside the window
+never count, each source figure equals the receipt list's totals, each
+findings figure equals the findings list; personal reads: a scoped member,
+a member without scope rows and the owner, the out-of-scope false positive
+never counts, receipts only for the owner; receipt list filters refuse
+malformed values), `internal/app/dashboard/widgets/flow_test.go`.
 
 ### Scope and isolation
 
@@ -387,7 +459,7 @@ and `last_refresh_error`.
 
 | Route | Who | Effect |
 |---|---|---|
-| `POST /api/v1/me/dashboards/{id}/refresh` | the owner (404 for anyone else) | recompute and store now |
+| `POST /api/v1/me/dashboards/{id}/refresh` | `dashboard:read` and the owner (404 for anyone else) | recompute and store now |
 | `POST /api/v1/organization/dashboards/{id}/refresh` | `dashboards:org:view` inside the audience | recompute and store now |
 
 - **Refresh now budget**: once a minute per person and dashboard, 30 an hour
@@ -477,6 +549,7 @@ scoped read never does (the same rule as the findings list).
 | `dash_asset_rank` (F3) | asset × list kind × partition, top 10 | kinds `fix_next` (priority, severity, newest), `sla_due` (earliest SLA deadline), `oldest` (first detected); `finding_id`, `priority_class`, `severity`, `sort_at` |
 | `dash_dirty_assets` | one row per pending mark | `tenant_id`, `asset_id`, `reasons` (bits), `marked_at` |
 | `dash_fact_status` | tenant | `rebuilt_at` (last full rebuild, NULL = never built), `aged_marked_at` |
+| `dash_ingest_day` | tenant × UTC day × source kind (`sensor`, `import`, `connector`, `ci`) × tool | `reports`, `received`, `created`, `still_detected`, `reopened`, `closed`, `skipped`, `failed`, `suppressed`. Not per asset and not maintained by the facts maintainer: the receipt writer upserts it in the transaction that records each ingest ([ingest-receipts.md](ingest-receipts.md)); kept 13 months; organization-wide only |
 
 What is stored, exactly:
 
@@ -750,18 +823,26 @@ widget kit's frame, with its own error boundary.
   own, none from the organization) gets a personal copy of the CTEM
   template, created once and computed for their own access, with a hint to
   customize it or choose another template.
-- **CTEM offer**: a personal dashboard that is a copy of the Overview template
-  (its `w_ov*` widget ids) without the CTEM loop shows a one-time hint: "Add
-  the CTEM loop" (inserts the loop after the leading row of figures and saves
-  the layout), "Switch to the CTEM template" (adds a CTEM dashboard and opens
-  it; the Overview copy is kept), or dismiss. Nothing changes until the viewer
-  chooses; the dismissal is kept in the browser. No request is made for the
-  hint.
+- **New layout offer**: a personal copy of the Overview or CTEM template
+  (three or more of its `w_ov*` / `w_ct*` widget ids) that lacks some of the
+  template's widgets (by metric) shows a hint naming them: "Add them to this
+  dashboard" (each missing widget is inserted where the template has it: a
+  single figure after its predecessor, a larger widget before its successor;
+  every existing widget keeps its place, size and settings, and the layout is
+  saved), "Switch to the new layout" (adds a fresh copy of the template under
+  a name the person does not already use, e.g. "CTEM (new layout)", and opens
+  it; the old dashboard is kept), or dismiss. Nothing changes until the viewer
+  chooses; the dismissal is kept in the browser per layout version
+  (`LAYOUT_HINT_VERSION` in `layout-hint.ts`). No request is made for the
+  hint, and organization dashboards never show it.
 - **Templates** are typed widget configs in
-  `web/src/features/dashboards/templates.json`: CTEM (the first-visit
-  default: active exposure figures, the CTEM loop, fix next, attack paths to
-  crown jewels, priority over time), Overview (with the CTEM loop after its
-  figures), Executive, Vulnerability program, Triage. `/dashboards` copies one into a personal
+  `web/src/features/dashboards/templates.json`. CTEM (the first-visit
+  default) and Overview share one set: the figure row (open P0-P1, KEV open,
+  open within SLA, time to fix median with p90), discovery coverage beside
+  priority over time, the CTEM loop, new vs fixed, the severity × age
+  heatmap, fix next and attack paths to crown jewels; CTEM puts the loop
+  right after the figures and attack paths before fix next, Overview puts
+  the loop after the charts. Then Executive, Vulnerability program, Triage. `/dashboards` copies one into a personal
   dashboard ("Use template"); the copy is a stored dashboard like any other.
   `api/pkg/domain/dashboard/templates_test.go` parses every template widget
   with the server's spec validation, so a template is never refused on save.
@@ -771,10 +852,18 @@ widget kit's frame, with its own error boundary.
   never requested) and "Mine", search above eight entries, New and Manage.
 - **Scope badge**: "Organization-wide" or "Your scope", from the response's
   `scope`; drill-downs open lists in the viewer's own access.
-- **Freshness line**: when the figures were computed, the next scheduled
-  refresh, stale and failed states, Refresh now (429 answered with a
-  message), and the schedule picker for the owner of a personal dashboard or
-  a manager of an organization dashboard (the server checks both).
+- **Toolbar**: on a phone (below 640px) one row with the switcher filling the
+  width, an icon-only Refresh now and an icon-only More menu (44px targets,
+  accessible names); Customize and the refresh schedule move into More. From
+  640px one row: switcher, Customize, schedule picker, Refresh now, More. The
+  dashboard description is hidden on a phone.
+- **Freshness line**: one muted line under the toolbar, "Your scope · Updated
+  2m ago · Next in 58m" (narrow relative times, full dates on hover); the next refresh
+  truncates first on narrow screens; a status line appears under it only when the
+  figures are stale, the last refresh failed, or the data is being built for
+  the first time. Refresh now answers a 429 with a message. The schedule
+  picker is offered to the owner of a personal dashboard or a manager of an
+  organization dashboard (the server checks both).
 - **Actions**: Customize (personal), Duplicate to mine (organization), Set as
   default (personal; organization for managers), Delete (personal).
 - **Customize** (owner of a personal dashboard; `dashboards:org:manage` for
@@ -797,6 +886,14 @@ widget kit's frame, with its own error boundary.
     Undo). Ctrl/Cmd+Z and Ctrl/Cmd+Shift+Z undo and redo within the session;
     every change is announced to screen readers. Save stores the layout;
     Cancel drops the session.
+  - Each widget's header holds only the drag handle, the title (truncated,
+    full name on hover), Configure and a More menu with Move earlier / later,
+    Narrower / Wider, Shorter / Taller, Duplicate and, after a separator,
+    Remove (each with its key shown). Duplicate and Remove also show inline
+    when the widget itself is at least 22rem wide (a container query on the
+    widget, not the viewport). The header never outgrows its widget.
+  - On a phone (below 640px) the editor is a single-column list of those
+    headers (44px targets), without previews.
   - Moved widgets keep their stored figures; new or changed widgets show
     their preview, or "Figures appear after you save".
 - Widget states map from the server: `building` → no data yet, `not_measured`
@@ -829,8 +926,7 @@ widget kit's frame, with its own error boundary.
 ## Widget kit (web)
 
 `web/src/components/dashboard-kit/` is what every dashboard widget renders
-with. No page uses it yet: the dashboard pages move to it together with the
-widget data endpoint.
+with (the `/` dashboard and the editor's previews).
 
 ### Frame and states
 
@@ -865,13 +961,13 @@ figure means not measured and is never drawn as 0.
 
 | Visualization | Shapes | Notes |
 |---|---|---|
-| `StatViz` | scalar, ratio, duration | value, change against the previous period, sparkline, target chip |
+| `StatViz` | scalar, ratio, duration | value, change against the previous period with its base ("+15 vs 41 previous period"), a labelled sparkline (first and last bucket's value and date printed under the line, one sentence for screen readers; nothing with fewer than two points), target chip |
 | `ProgressViz` | ratio | a meter against the target, with the target tick |
 | `BarViz` | category | one bar per key or one stacked bar with shares; values printed |
 | `ColumnViz` | time_series (flows) | stacked columns per bucket |
 | `AreaLineViz` | time_series (stocks) | stacked area or lines, markers for scoring changes |
 | `DivergingViz` | time_series with `opened` / `fixed` | opened up, fixed down, the net in words |
-| `HeatmapViz` | matrix | every value printed, shaded on the sequential ramp |
+| `HeatmapViz` | matrix | every value printed, shaded on the sequential ramp, with a Fewer-More scale and the maximum; column headers wrap rather than truncate; severity rows carry their severity dot |
 | `LoopViz` | stages | the CTEM loop as an ordered list (`<ol>`); each stage's figure and second figure link to their lists, its state is an icon and words in a pill (never a coloured stripe; cards keep one neutral border), unmeasured stages show "—" with the reason; the focus stage is `aria-current="step"` and marked "Act here" with the brand accent (`--brand`, the only use of it) |
 | `PathsViz` | paths | reachable crown jewels (linked to the attack paths) and the top ones with the entry points reaching them; "none designated" and "none reachable" are different states |
 | `ItemsViz` | items | rows with priority, KEV, asset and due time, and "View all" |
@@ -884,6 +980,17 @@ Rules every visualization follows:
   a screen reader hears "better" or "worse". The target chip carries an icon
   and words (on target, close to target, off target, not measured).
 - **Table view.** Every chart has a "Show table" toggle with the exact figures.
+- **Named figure.** A chart is a `role="figure"` named by one sentence: a
+  series chart by its first and last bucket and latest values, the diverging
+  chart by its net, a bar chart by its largest rows, a heatmap by its peak
+  cell. The metric's definition comes from the same registry key as the
+  frame's "How this is counted" popover.
+- **Phone.** Plots are 180px tall below 640px (220px above). A four-column
+  dashboard is two columns on a phone: single-figure tiles (one column, one
+  row) sit two abreast and every other widget takes the full row; rows fit
+  their content (the stored height applies from 640px). Widget
+  titles wrap to two lines, and the per-widget "Updated" footer is hidden
+  unless the widget is stale (the dashboard's meta line carries the time).
 - **Drill-down.** A mark, row or stage opens its list through a drill builder.
   The path is reduced to a same-origin path (`safeInternalHref`); anything else
   renders as plain text, so a server-supplied path cannot leave the app.
@@ -917,7 +1024,10 @@ icon and a label.
 palette against its mode's card surface: adjacent-pair separation under
 protanopia and deuteranopia (OKLab ΔE ≥ 8, 6-8 only with secondary encoding),
 normal-vision separation (≥ 15), chroma, lightness band, contrast, monotone
-sequential steps with readable ink, and that the theme tokens equal the JSON.
+sequential steps with readable ink, the accent band (no data colour at OKLCH
+hue 165-200, which belongs to the brand teal that marks where to act), and
+that the theme tokens equal the JSON. The dark card surface is the brand's
+ink-derived `#0F1D33`.
 A unit test (`dashboard-kit/__tests__/palette.test.ts`) runs the same check in
 CI. Two documented relaxations, both covered by the table view and labels:
 some light-mode marks are below 3:1 against white, and the dark severity

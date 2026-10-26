@@ -28,7 +28,7 @@ or use OpenCTEM, see [docs.openctem.io](https://docs.openctem.io)
 ## API
 
 - [REST API overview](api/README.md) and [reference notes](api/endpoints.md) (the spec is served at `/openapi.yaml`; see the reference notes for who can read it in production)
-- [API conventions](architecture/api-conventions.md), [dashboard metrics](architecture/dashboard-metrics.md), [list query contract](architecture/list-query-contract.md), [custom query language](architecture/query-language.md)
+- [API conventions](architecture/api-conventions.md), [dashboard metrics](architecture/dashboard-metrics.md), [list query contract](architecture/list-query-contract.md), [findings bulk by filter](architecture/findings-bulk-by-filter.md), [findings triage mode](architecture/findings-triage-mode.md), [My Work](architecture/my-work.md), [operations](architecture/operations.md), [custom query language](architecture/query-language.md)
 - [Tenant API keys](architecture/api-keys.md), [MCP server](architecture/mcp-server.md), [attack paths](architecture/attack-paths.md)
 - [Credential import](api/credential-import.md), [suppressions](api/suppressions.md)
 
@@ -44,7 +44,7 @@ or use OpenCTEM, see [docs.openctem.io](https://docs.openctem.io)
 - [Authorization matrix](architecture/authorization-matrix.md) (the canonical authorization model), [access control rules](architecture/access-control-rules.md), [generated authorization reference](architecture/authorization-reference.md)
 - [User onboarding](architecture/user-onboarding.md), [sign-up feed and burst alerts](architecture/signup-activity.md), [two-factor authentication](architecture/user-two-factor-authentication.md), [step-up re-authentication](architecture/step-up-reauth.md)
 - [SSO authentication](architecture/sso-authentication.md), [multi-tenant Entra ID model](architecture/multi-tenant-entraid-model.md), [SAML SSO](architecture/saml-sso.md), [SCIM provisioning](architecture/scim-provisioning.md)
-- [Platform console](architecture/platform-console.md) (its own service, site and plane), [Audit hash chain](architecture/audit-hash-chain.md), [Security overview and audit log export](architecture/security-overview.md)
+- [Platform console](architecture/platform-console.md) (its own service, site and plane), [Audit hash chain](architecture/audit-hash-chain.md), [Security overview and audit log export](architecture/security-overview.md), [Outbound requests](architecture/outbound-requests.md)
 
 **Assets and scope**
 - [Asset inventory v2](architecture/asset-inventory-v2.md), [asset schema](architecture/asset-schema.md), [asset properties schema](asset-properties-schema.md)
@@ -59,13 +59,14 @@ or use OpenCTEM, see [docs.openctem.io](https://docs.openctem.io)
 - [Scan lifecycle](architecture/scan-lifecycle.md), [scan orchestration](architecture/scan-orchestration.md), [scan stages](architecture/scan-stages.md), [scan zones](architecture/scan-zones.md), [placement](architecture/placement.md), [job dispatch](architecture/job-dispatch.md), [scan naming](architecture/scan-naming.md)
 - [Tool contract](architecture/tool-contract.md), [tool availability](architecture/tool-availability.md), [secret scanning](architecture/secret-scanning.md)
 - [Content packs](architecture/content-packs.md), [content catalog](architecture/content-catalog.md): signed content packages, offline import, installs and revocation
+- [Rule sources](architecture/content-sources.md): git repositories the platform syncs rules from, snapshots, promotion and rollback
 - [Rule sources](architecture/rule-sources.md): a scan runs the platform's rules, the organization's templates, or both in one run
 - [Platform contracts](architecture/platform-contracts.md): the platform depends on contracts only, never on a sensor or the SDK
 - [CI runner identity and gate](architecture/ci-runner-identity.md), [shift-left CI scanning](architecture/shift-left-ci-scanning.md), [branch-only findings](architecture/branch-only-findings.md)
 - [Scan coverage (Tenable)](architecture/scan-coverage.md), [Tenable.sc connector](architecture/tenable-sc-connector.md)
 
 **Findings and prioritization**
-- [Vulnerability model](architecture/vulnerability-model.md), [emerging-threat alerts](architecture/emerging-threat-alerts.md), [finding import](architecture/finding-import.md), [bug-bounty and disclosure reports](architecture/bounty-reports.md), [finding source interop](architecture/finding-source-interop.md), [finding evidence](architecture/finding-evidence.md), [finding lifecycles (sub-statuses and schemes)](architecture/finding-lifecycles.md), [file storage](architecture/file-storage.md), [`not_observed` status](architecture/finding-status-not-observed.md), [finding write concurrency (row_version)](architecture/finding-row-version.md)
+- [Vulnerability model](architecture/vulnerability-model.md), [vulnerability page](architecture/vulnerability-page.md), [emerging-threat alerts](architecture/emerging-threat-alerts.md), [finding import](architecture/finding-import.md), [import and run receipts](architecture/ingest-receipts.md), [import mappings](architecture/import-mappings.md), [bug-bounty and disclosure reports](architecture/bounty-reports.md), [finding source interop](architecture/finding-source-interop.md), [finding evidence](architecture/finding-evidence.md), [finding lifecycles (sub-statuses and schemes)](architecture/finding-lifecycles.md), [file storage](architecture/file-storage.md), [`not_observed` status](architecture/finding-status-not-observed.md), [finding write concurrency (row_version)](architecture/finding-row-version.md)
 - [Global catalog trust](architecture/global-catalog-trust.md), [priority explainability](architecture/priority-explainability.md), [CTEM-ID catalog](architecture/ctem-id-catalog.md), [AI triage](architecture/ai-triage.md)
 - [Validation engine](architecture/validation-engine.md), [continuous retest](architecture/continuous-retest.md), [finding retest checks](architecture/finding-retest-checks.md)
 

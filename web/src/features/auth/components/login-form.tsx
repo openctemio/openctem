@@ -15,6 +15,7 @@ import Link from '@/components/link'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { KeyRound, Loader2, LogIn } from 'lucide-react'
 import { toast } from 'sonner'
+import { safeText } from '@/lib/api/error-message'
 
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
@@ -37,6 +38,7 @@ import { useTranslation } from '@/context/i18n-provider'
 
 // Import schema and server actions
 import { loginSchema, type LoginInput } from '../schemas/auth.schema'
+import { translatingResolver } from '../lib/translating-resolver'
 import {
   loginAction,
   selectTenantAction,
@@ -166,7 +168,7 @@ export function LoginForm({
 
   // Form setup with centralized schema
   const form = useForm<LoginInput>({
-    resolver: zodResolver(loginSchema),
+    resolver: translatingResolver(zodResolver(loginSchema), t),
     defaultValues: {
       email: '',
       password: '',
@@ -259,14 +261,14 @@ export function LoginForm({
       hardNavigate(safeRedirectTo)
     } else if (result.code === 'ORGANIZATION_SUSPENDED') {
       toast.error(
-        t('auth.organizationSuspended.message', 'This organization is suspended — contact support')
+        t('auth.organizationSuspended.message', 'This organization is suspended: contact support')
       )
     } else if (result.code === 'CAPTCHA_REQUIRED') {
       setCaptchaRequired(true)
       toast.error(t('auth.login.captchaRequired'))
     } else {
       setSignInFailed(true)
-      toast.error(result.error || t('auth.login.failed', 'Sign-in failed'))
+      toast.error(safeText(result.error, t('auth.login.failed', 'Sign-in failed')))
     }
   }
 
@@ -281,7 +283,11 @@ export function LoginForm({
     } catch (error) {
       setLoadingProvider(null)
       console.error(`Social login error (${provider}):`, error)
-      toast.error(`Failed to sign in with ${identityProviderLabel(provider)}. Please try again.`)
+      toast.error(
+        t('auth.login.providerFailed', 'Could not sign in with {provider}. Try again.', {
+          provider: identityProviderLabel(provider),
+        })
+      )
     }
   }
 
@@ -296,7 +302,11 @@ export function LoginForm({
     } catch (error) {
       setLoadingSSOProvider(null)
       console.error(`SSO login error (${provider}):`, error)
-      toast.error(`Failed to sign in with ${identityProviderLabel(provider)}. Please try again.`)
+      toast.error(
+        t('auth.login.providerFailed', 'Could not sign in with {provider}. Try again.', {
+          provider: identityProviderLabel(provider),
+        })
+      )
     }
   }
 
@@ -391,7 +401,7 @@ export function LoginForm({
                 href="/forgot-password"
                 className="text-muted-foreground absolute end-0 -top-0.5 text-sm font-medium hover:opacity-75 focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 rounded"
               >
-                Forgot password?
+                {t('auth.login.forgotPassword', 'Forgot password?')}
               </Link>
             </FormItem>
           )}
@@ -414,7 +424,7 @@ export function LoginForm({
         {/* Submit Button */}
         <Button className="mt-2" disabled={isLoading} type="submit">
           {isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <LogIn className="h-4 w-4" />}
-          Sign in
+          {t('auth.login.submit', 'Sign in')}
         </Button>
 
         {/* Social Login Section — only shown for providers the backend has
@@ -468,7 +478,9 @@ export function LoginForm({
                 <span className="w-full border-t" />
               </div>
               <div className="relative flex justify-center text-xs uppercase">
-                <span className="bg-background text-muted-foreground px-2">Organization SSO</span>
+                <span className="bg-background text-muted-foreground px-2">
+                  {t('auth.login.ssoSection', 'Organization SSO')}
+                </span>
               </div>
             </div>
 
@@ -487,7 +499,9 @@ export function LoginForm({
                   ) : (
                     <KeyRound className="me-2 h-4 w-4" />
                   )}
-                  Sign in with {provider.display_name}
+                  {t('auth.login.signInWith', 'Sign in with {provider}', {
+                    provider: provider.display_name,
+                  })}
                 </Button>
               ))}
             </div>

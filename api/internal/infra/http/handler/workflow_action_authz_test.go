@@ -5,9 +5,7 @@ import (
 	"testing"
 
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
-	"github.com/openctemio/openctem/api/pkg/domain/automation"
 	"github.com/openctemio/openctem/api/pkg/domain/permission"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
 )
 
 func authzCtx(isAdmin bool, perms ...string) context.Context {
@@ -19,11 +17,11 @@ func actionCfg(actionType string) *NodeConfigRequest {
 	return &NodeConfigRequest{ActionType: actionType}
 }
 
-// A member with only WorkflowsWrite must NOT be able to build a finding-mutating
+// A member with only AutomationsWrite must NOT be able to build a finding-mutating
 // or scan/pipeline action node — that is the privilege-escalation this gate
 // closes.
 func TestWorkflowActionAuthz_DeniesWithoutResourcePermission(t *testing.T) {
-	ctx := authzCtx(false, string(permission.WorkflowsWrite))
+	ctx := authzCtx(false, string(permission.AutomationsWrite))
 	cases := []struct {
 		action string
 		want   permission.Permission
@@ -34,7 +32,8 @@ func TestWorkflowActionAuthz_DeniesWithoutResourcePermission(t *testing.T) {
 		{"create_ticket", permission.FindingsWrite},
 		{"trigger_ai_triage", permission.FindingsWrite},
 		{"trigger_scan", permission.ScansWrite},
-		{"trigger_pipeline", permission.ScanWorkflowsWrite},
+		// A removed type a stored node may still name: administrators only.
+		{"trigger_pipeline", permission.IntegrationsManage},
 	}
 	for _, tc := range cases {
 		perm, ok := authorizeActionConfigs(ctx, actionCfg(tc.action))
@@ -50,13 +49,12 @@ func TestWorkflowActionAuthz_DeniesWithoutResourcePermission(t *testing.T) {
 // With the matching per-resource permission, the same nodes are allowed.
 func TestWorkflowActionAuthz_AllowsWithResourcePermission(t *testing.T) {
 	ctx := authzCtx(false,
-		string(permission.WorkflowsWrite),
+		string(permission.AutomationsWrite),
 		string(permission.FindingsWrite),
 		string(permission.ScansWrite),
-		string(permission.ScanWorkflowsWrite),
 	)
 	if _, ok := authorizeActionConfigs(ctx,
-		actionCfg("update_status"), actionCfg("trigger_scan"), actionCfg("trigger_pipeline")); !ok {
+		actionCfg("update_status"), actionCfg("trigger_scan")); !ok {
 		t.Fatal("expected authorization with all resource permissions")
 	}
 }
@@ -72,7 +70,7 @@ func TestWorkflowActionAuthz_AdminBypass(t *testing.T) {
 // Trigger and condition nodes (and a nil config) need nothing beyond the
 // workflow permission.
 func TestWorkflowActionAuthz_NonGatedNodesIgnored(t *testing.T) {
-	ctx := authzCtx(false, string(permission.WorkflowsWrite))
+	ctx := authzCtx(false, string(permission.AutomationsWrite))
 	if _, ok := authorizeActionConfigs(ctx,
 		nil,
 		&NodeConfigRequest{TriggerType: "finding_created"},
@@ -87,7 +85,7 @@ func TestWorkflowActionAuthz_NonGatedNodesIgnored(t *testing.T) {
 // action type with no mapping (run_script) is refused to non-admins rather
 // than allowed.
 func TestWorkflowActionAuthz_OutboundNodesGated(t *testing.T) {
-	ctx := authzCtx(false, string(permission.WorkflowsWrite), string(permission.FindingsWrite))
+	ctx := authzCtx(false, string(permission.AutomationsWrite), string(permission.FindingsWrite))
 	cases := []struct {
 		name string
 		cfg  *NodeConfigRequest
@@ -113,7 +111,7 @@ func TestWorkflowActionAuthz_OutboundNodesGated(t *testing.T) {
 // The first missing permission short-circuits; a mixed graph is denied if ANY
 // action node exceeds the caller's grants.
 func TestWorkflowActionAuthz_MixedGraphDeniedOnFirstGap(t *testing.T) {
-	ctx := authzCtx(false, string(permission.WorkflowsWrite), string(permission.FindingsWrite))
+	ctx := authzCtx(false, string(permission.AutomationsWrite), string(permission.FindingsWrite))
 	// update_status OK (FindingsWrite), trigger_scan NOT OK (needs ScansWrite).
 	perm, ok := authorizeActionConfigs(ctx, actionCfg("update_status"), actionCfg("trigger_scan"))
 	if ok {
@@ -121,28 +119,5 @@ func TestWorkflowActionAuthz_MixedGraphDeniedOnFirstGap(t *testing.T) {
 	}
 	if perm != permission.ScansWrite {
 		t.Fatalf("expected missing %q, got %q", permission.ScansWrite, perm)
-	}
-}
-
-// A stored http_request node keeps its headers only to keep running: no
-// reader of the workflow sees their values. Other configs pass unchanged.
-func TestWorkflowResponse_RedactsHTTPRequestHeaders(t *testing.T) {
-	cfg := map[string]any{"url": "https://hooks.example.com", "headers": map[string]any{"Authorization": "Bearer s3cr3t"}}
-	node, _ := automation.NewNode(shared.NewID(), "a", automation.NodeTypeAction, "a")
-	_ = node.SetActionConfig(automation.ActionTypeHTTPRequest, cfg)
-	resp := toNodeResponse(node)
-	hdrs, _ := resp.Config.ActionConfig["headers"].(map[string]any)
-	if hdrs["Authorization"] != redactedValue {
-		t.Fatalf("header value in the response: %v", resp.Config.ActionConfig)
-	}
-	if cfg["headers"].(map[string]any)["Authorization"] != "Bearer s3cr3t" {
-		t.Fatal("redaction changed the stored config")
-	}
-	if resp.Config.ActionConfig["url"] != "https://hooks.example.com" {
-		t.Fatal("redaction dropped other fields")
-	}
-	other := map[string]any{"tags": []any{"x"}}
-	if got := redactActionConfig(automation.ActionTypeAddTags, other); got["tags"] == nil {
-		t.Fatal("other actions must pass unchanged")
 	}
 }

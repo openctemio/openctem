@@ -3,6 +3,7 @@
 import { useCallback, useMemo } from 'react'
 import type { SortingState } from '@tanstack/react-table'
 import { replaceUrlSearch, useUrlParams } from './use-url-param'
+import { useSearchQuery, type SearchQueryOptions } from './use-search-query'
 
 /**
  * The URL state of one server-paged list: `page` (1-based), `per_page`, `sort`,
@@ -18,7 +19,9 @@ import { replaceUrlSearch, useUrlParams } from './use-url-param'
  * - a value equal to its default is left out of the URL.
  *
  * The names match the API list contract (`page`, `per_page`, `sort=-field`,
- * `q`), so `apiParams` goes to the request as it is.
+ * `q`), so `apiParams` goes to the request as it is. Its `q` is the search
+ * box settled through useSearchQuery (debounce, minimum length, IME), so a
+ * list page never requests per keystroke.
  */
 export interface ListParamsOptions<F extends string> {
   /** Offered page sizes; the first entry is not implied, see defaultPageSize. */
@@ -30,6 +33,8 @@ export interface ListParamsOptions<F extends string> {
   defaultSort?: string
   /** The list's filters and their default values ('' = no filter). */
   filters?: Record<F, string>
+  /** How the search box settles into `apiParams.q` (debounce, minimum length). */
+  search?: SearchQueryOptions
 }
 
 export interface ListParams<F extends string> {
@@ -37,6 +42,10 @@ export interface ListParams<F extends string> {
   perPage: number
   sort: string
   q: string
+  /** `q` as the request sends it: settled and normalised (useSearchQuery). */
+  searchTerm: string
+  /** The search box has changed and the list has not caught up yet. */
+  searchPending: boolean
   filters: Record<F, string>
   /** 0-based table pagination for DataTable's manual pagination. */
   pagination: { pageIndex: number; pageSize: number }
@@ -48,7 +57,7 @@ export interface ListParams<F extends string> {
   setFilter: (name: F, value: string) => void
   /** Clear search and filters (back to page 1). */
   reset: () => void
-  /** The query for the list request: only non-default values. */
+  /** The query for the list request: only non-default values; `q` is the settled search term. */
   apiParams: Record<string, string | number>
 }
 
@@ -94,6 +103,7 @@ export function useListParams<F extends string = never>(
   const perPage = pageSizes.includes(rawSize) ? rawSize : defaultPageSize
   const sort = (sortFields && parseListSort(params.get('sort'), sortFields)) || defaultSort
   const q = params.get('q') ?? ''
+  const { term: searchTerm, pending: searchPending } = useSearchQuery(q, options.search)
 
   // filterDefaults is a new object each render: key the memos on its value.
   const filterKey = JSON.stringify(filterDefaults)
@@ -167,18 +177,20 @@ export function useListParams<F extends string = never>(
   const apiParams = useMemo(() => {
     const out: Record<string, string | number> = { page, per_page: perPage }
     if (sort) out.sort = sort
-    if (q.trim()) out.q = q.trim()
+    if (searchTerm) out.q = searchTerm
     for (const [name, value] of Object.entries(filters) as [F, string][]) {
       if (value && value !== defaults[name]) out[name] = value
     }
     return out
-  }, [page, perPage, sort, q, filters, defaults])
+  }, [page, perPage, sort, searchTerm, filters, defaults])
 
   return {
     page,
     perPage,
     sort,
     q,
+    searchTerm,
+    searchPending,
     filters,
     pagination: { pageIndex: page - 1, pageSize: perPage },
     setPagination,

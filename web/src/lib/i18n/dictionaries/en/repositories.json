@@ -1,0 +1,10 @@
+{
+  "repositories.branchStatus.failed": "Failed",
+  "repositories.branchStatus.not_scanned": "Not scanned",
+  "repositories.branchStatus.passed": "Passed",
+  "repositories.branchStatus.scanning": "Scanning",
+  "repositories.branchStatus.warning": "Warning",
+  "repositories.triage.escalated": "Escalated",
+  "repositories.triage.needs_triage": "Needs triage",
+  "repositories.triage.triaged": "Triaged"
+}

@@ -14,7 +14,6 @@ import (
 	"github.com/openctemio/openctem/api/pkg/domain/stage"
 
 	"github.com/openctemio/openctem/api/internal/app/scope"
-	"github.com/openctemio/openctem/api/internal/metrics"
 	"github.com/openctemio/openctem/api/pkg/domain/asset"
 	"github.com/openctemio/openctem/api/pkg/domain/assetgroup"
 	"github.com/openctemio/openctem/api/pkg/domain/audit"
@@ -54,6 +53,10 @@ type TriggerScanExecInput struct {
 	// running it by hand. Automatic triggers (schedule, retry, automations)
 	// still need the scan active. A disabled scan runs for nobody.
 	Interactive bool `json:"-"`
+	// NoBlockedRun: a refusal is returned to the caller without being
+	// recorded as a blocked run (continuous coverage pauses the capability
+	// with a readiness reason instead of writing a run per batch per pass).
+	NoBlockedRun bool `json:"-"`
 }
 
 // ErrScanRunInProgress is returned when a trigger with SkipIfRunning finds
@@ -146,7 +149,9 @@ func (s *Service) triggerAndRecord(ctx context.Context, sc *scan.Scan, input Tri
 		// A refusal becomes a blocked run with its reason; either way the
 		// scan's summary is recomputed from its runs (a run that failed
 		// while starting is one of them).
-		s.recordBlockedRun(ctx, sc, input, input.TriggerType, err)
+		if !input.NoBlockedRun {
+			s.recordBlockedRun(ctx, sc, input, input.TriggerType, err)
+		}
 		s.refreshRunSummary(ctx, sc)
 		return nil, err
 	}
@@ -173,11 +178,11 @@ func (s *Service) triggerLoadedScan(ctx context.Context, sc *scan.Scan, input Tr
 		var msg string
 		switch sc.Status {
 		case scan.StatusPaused:
-			msg = fmt.Sprintf("Scan '%s' is paused: its schedule is off and automatic runs are refused. Resume it, or run it by hand.", sc.Name)
+			msg = "This scan is paused: its schedule is off and automatic runs are refused. Resume it, or run it by hand."
 		case scan.StatusDisabled:
-			msg = fmt.Sprintf("Cannot trigger scan '%s' because it is disabled. Activate the scan first to trigger it.", sc.Name)
+			msg = "This scan is disabled. Activate it first to run it."
 		default:
-			msg = fmt.Sprintf("Cannot trigger scan '%s' (current status: %s). Only active scans can be triggered.", sc.Name, sc.Status)
+			msg = fmt.Sprintf("This scan cannot run while it is %s. Only active scans can run.", sc.Status)
 		}
 		return nil, shared.NewDomainError("SCAN_NOT_TRIGGERABLE", msg, shared.ErrValidation)
 	}
@@ -346,6 +351,7 @@ func (s *Service) triggerWorkflow(ctx context.Context, sc *scan.Scan, triggerTyp
 	// The probe ceiling of every step (RFC-071), from the scan, never from
 	// the trigger's context.
 	runContext[RunContextKeyIntensity] = string(sc.EffectiveIntensity())
+	runContext[scanrun.RunContextKeyDepth] = string(sc.EffectiveDepth())
 	if sc.TargetOptions.EffectiveCIDRMode() == scan.CIDRModeLiveness {
 		runContext[RunContextKeyCIDRMode] = string(scan.CIDRModeLiveness)
 	} else {
@@ -384,12 +390,14 @@ func (s *Service) triggerWorkflow(ctx context.Context, sc *scan.Scan, triggerTyp
 	if _, err := selectedZone(sc, zones); err != nil {
 		return nil, err // pinned to a deleted zone: fail closed
 	}
+	var wfPlan *zonePlan
 	if len(zones) > 0 {
 		// A workflow stays inside one zone; see routeWorkflowTargets.
-		if targets, err = s.routeWorkflowTargets(ctx, sc, zones, targets, runContext); err != nil {
+		if targets, wfPlan, err = s.routeWorkflowTargets(ctx, sc, zones, targets, runContext); err != nil {
 			return nil, err
 		}
 	}
+	recordSkipGroups(runContext, skipGroups(maxRunSkipSamples, nil, resolved, nil, wfPlan))
 	runZone, err := s.workflowRunZone(ctx, sc, targets, runContext)
 	if err != nil {
 		return nil, err
@@ -486,6 +494,7 @@ func (s *Service) triggerSingleScan(ctx context.Context, sc *scan.Scan, triggerT
 	recordSkippedTargets(sc, runContext)
 	runContext["scanner_name"] = sc.ScannerName
 	runContext[RunContextKeyIntensity] = string(sc.EffectiveIntensity())
+	runContext[scanrun.RunContextKeyDepth] = string(sc.EffectiveDepth())
 	runContext["scanner_config"] = sc.ScannerConfig
 	if sc.TargetOptions.EffectiveCIDRMode() == scan.CIDRModeLiveness {
 		runContext[RunContextKeyCIDRMode] = string(scan.CIDRModeLiveness)
@@ -557,14 +566,17 @@ func (s *Service) triggerSingleScan(ctx context.Context, sc *scan.Scan, triggerT
 		return nil, err // pinned to a deleted zone: fail closed
 	}
 	var plan *zonePlan
-	if len(zones) > 0 && s.toolReachesNetwork(ctx, sc.TenantID, sc.ScannerName) {
+	// A passive coverage run of public names (coverageZoneGroup) is not
+	// zone-routed: it sends no traffic to its targets.
+	if len(zones) > 0 && !zoneRoutingSkipped(ctx) && s.toolReachesNetwork(ctx, sc.TenantID, sc.ScannerName) {
 		if plan, err = s.planZoneDispatch(ctx, sc, zones, resolved.Targets); err != nil {
 			return nil, err
 		}
-		if err := recordZonePlan(sc, plan, runContext); err != nil {
+		if err := recordZonePlan(plan, runContext); err != nil {
 			return nil, err
 		}
 	}
+	recordSkipGroups(runContext, skipGroups(maxRunSkipSamples, nil, resolved, resolved.NotResolving, plan))
 
 	// Decide platform vs tenant sensors now, before any run or command
 	// exists: an explicit 'platform' preference that cannot be honored
@@ -707,6 +719,11 @@ func (s *Service) scheduleWorkflowSteps(ctx context.Context, run *scanrun.Run, s
 			aboveIntensity++
 			continue
 		}
+		if reason := DepthSkipReason(run, step); reason != "" {
+			s.skipWorkflowStep(ctx, run, step, reason)
+			aboveIntensity++
+			continue
+		}
 		if queued >= maxParallel {
 			continue // started by the scan run service as slots free up
 		}
@@ -739,7 +756,7 @@ func (s *Service) scheduleWorkflowSteps(ctx context.Context, run *scanrun.Run, s
 		msg := "workflow has no step without dependencies; nothing can start"
 		switch {
 		case aboveIntensity > 0:
-			msg = "no step started: every first step either probes above this scan's intensity or its condition was false"
+			msg = "no step started: every first step either probes above this scan's intensity, runs only at a deeper depth, or its condition was false"
 		case roots > 0:
 			msg = "no step started: the condition of every first step was false"
 		}
@@ -810,7 +827,7 @@ func (s *Service) createScannerCommand(ctx context.Context, sc *scan.Scan, run *
 	if err != nil {
 		return err
 	}
-	cmd.DispatchGate = scanDispatchGate(sc, run)
+	cmd.DispatchGate = scanDispatchGate(ctx, sc, run)
 	if stepRun != nil {
 		// The step settles with the last command carrying its id (a
 		// follow-up of unfinished targets included).
@@ -897,6 +914,7 @@ func (s *Service) scannerPayload(
 	if len(templates) > 0 {
 		payloadMap["custom_templates"] = templates
 	}
+	withRunDeadline(payloadMap, run)
 	return payloadMap
 }
 
@@ -965,14 +983,6 @@ func (s *Service) resolveCustomTemplates(ctx context.Context, sc *scan.Scan) ([]
 		ids = append(ids, id)
 	}
 
-	// Lazy sync: Check if any template sources need sync before fetching templates
-	if err := s.lazySyncTemplatesIfNeeded(ctx, sc.TenantID); err != nil {
-		// Log warning but continue - we can still use cached templates
-		s.logger.Warn("lazy sync failed, using cached templates",
-			"tenant_id", sc.TenantID.String(),
-			"error", err)
-	}
-
 	// Fetch templates from database, in the scan's organization only: an id
 	// of another organization's template is simply not found.
 	templates, err := s.scannerTemplateRepo.ListByIDs(ctx, sc.TenantID, ids)
@@ -1015,67 +1025,6 @@ func (s *Service) resolveCustomTemplates(ctx context.Context, sc *scan.Scan) ([]
 	}
 
 	return embedded, nil
-}
-
-// lazySyncTemplatesIfNeeded checks if any template sources need sync and syncs them.
-// This is called on-demand when a scan uses custom templates (lazy sync pattern).
-func (s *Service) lazySyncTemplatesIfNeeded(ctx context.Context, tenantID shared.ID) error {
-	if s.templateSourceRepo == nil || s.templateSyncer == nil {
-		return nil
-	}
-
-	// Get sources that need sync for this tenant
-	sources, err := s.templateSourceRepo.ListEnabledForSync(ctx, tenantID)
-	if err != nil {
-		return fmt.Errorf("failed to list sources needing sync: %w", err)
-	}
-
-	if len(sources) == 0 {
-		return nil
-	}
-
-	s.logger.Info("lazy syncing template sources",
-		"tenant_id", tenantID.String(),
-		"source_count", len(sources))
-
-	// Sync each source that needs it
-	var syncErrors []error
-	for _, source := range sources {
-		// Check if source needs sync (cache expired)
-		if !source.NeedsSync() {
-			continue
-		}
-
-		s.logger.Debug("syncing template source",
-			"source_id", source.ID.String(),
-			"source_name", source.Name,
-			"source_type", string(source.SourceType))
-
-		result, err := s.templateSyncer.SyncSource(ctx, source)
-		if err != nil {
-			syncErrors = append(syncErrors, fmt.Errorf("sync %s failed: %w", source.Name, err))
-			continue
-		}
-
-		// Record metrics
-		metrics.TemplateSyncsTotal.WithLabelValues(string(source.SourceType)).Inc()
-		if result.Success {
-			metrics.TemplateSyncsSuccessTotal.WithLabelValues().Inc()
-			s.logger.Info("template source synced",
-				"source_id", source.ID.String(),
-				"source_name", source.Name,
-				"templates_found", result.TemplatesFound,
-				"templates_added", result.TemplatesAdded)
-		} else {
-			metrics.TemplateSyncsFailedTotal.WithLabelValues().Inc()
-		}
-	}
-
-	if len(syncErrors) > 0 {
-		return fmt.Errorf("some syncs failed: %v", syncErrors)
-	}
-
-	return nil
 }
 
 const (
@@ -1124,8 +1073,8 @@ func (s *Service) decideSensorRouting(ctx context.Context, sc *scan.Scan, target
 			if b.Zone != nil {
 				if sc.SensorPreference == scan.SensorPreferencePlatform {
 					return sensorRouting{}, shared.NewDomainError("PLATFORM_SENSOR_REFUSED", fmt.Sprintf(
-						"sensor_preference is 'platform', but target(s) of scan %q are inside scan zone %q and are scanned only by that zone's sensors; set sensor_preference to 'tenant' or 'auto'",
-						sc.Name, b.Zone.Name), shared.ErrValidation)
+						"sensor_preference is 'platform', but target(s) of this scan are inside scan zone %q and are scanned only by that zone's sensors; set sensor_preference to 'tenant' or 'auto'",
+						b.Zone.Name), shared.ErrValidation)
 				}
 				continue
 			}
@@ -1405,7 +1354,13 @@ func (s *Service) validateWorkflowStepTools(ctx context.Context, sc *scan.Scan) 
 	}
 
 	for _, step := range steps {
+		if stepNotRunBy(sc, step) {
+			continue
+		}
 		if err := s.validateStepTool(ctx, sc.TenantID, step); err != nil {
+			if optionalWithoutTool(step, err) {
+				continue
+			}
 			return err
 		}
 	}
@@ -1516,31 +1471,31 @@ func recordResolvedTargets(sc *scan.Scan, r *resolvedTargets, runContext map[str
 	}
 	if len(r.Targets) == 0 && r.Incompatible > 0 && r.Unconfirmed == 0 && r.Excluded == 0 {
 		return shared.NewDomainError(codeNoCompatibleTargets,
-			fmt.Sprintf("Scan %q has no target its scanner can scan: %s. Pick a scanner for these asset types or change the asset group.", sc.Name, r.IncompatibleReason),
+			fmt.Sprintf("This scan has no target its scanner can scan: %s. Pick a scanner for these asset types or change the asset group.", r.IncompatibleReason),
 			shared.ErrValidation)
 	}
 	if len(r.Targets) == 0 && r.TierExceeded > 0 && r.Unconfirmed == 0 && r.Excluded == 0 {
 		return shared.NewDomainError(codeTierExceeds,
-			fmt.Sprintf("No target of scan %q may be probed at this scanner's tier: the scope entries covering them allow less. Raise the entry's tier in Scoping > Scope, or use a less intrusive scanner.", sc.Name),
+			"No target of this scan may be probed at this scanner's tier: the scope entries covering them allow less. Raise the entry's tier in Scoping > Scope, or use a less intrusive scanner.",
 			shared.ErrValidation)
 	}
 	if len(r.Targets) == 0 && r.Unconfirmed > 0 && r.Excluded == 0 {
 		return shared.NewDomainError("ALL_TARGETS_UNCONFIRMED",
-			fmt.Sprintf("No target of scan %q is authorized for active scanning; nothing to scan. Confirm their ownership on each asset's Ownership tab, or cover them with a scope target in Scoping > Scope.", sc.Name),
+			"No target of this scan is authorized for active scanning; nothing to scan. Confirm their ownership on each asset's Ownership tab, or cover them with a scope target in Scoping > Scope.",
 			shared.ErrValidation)
 	}
 	if len(r.Targets) == 0 && r.InternalOutsideZones > 0 && r.Unconfirmed == 0 && r.Excluded == 0 {
 		return shared.NewDomainError("INTERNAL_TARGET_OUTSIDE_ZONES",
-			fmt.Sprintf("Scan %q has only internal address targets outside every scan zone; nothing to scan. Add the ranges to a scan zone in Settings > Scan zones.", sc.Name),
+			"This scan has only internal address targets outside every scan zone; nothing to scan. Add the ranges to a scan zone in Settings > Scan zones.",
 			shared.ErrValidation)
 	}
 	if len(r.Targets) == 0 && r.Excluded > 0 {
 		return shared.NewDomainError("ALL_TARGETS_EXCLUDED",
-			fmt.Sprintf("Every target of scan %q is excluded by scope; nothing to scan.", sc.Name),
+			"Every target of this scan is excluded by scope; nothing to scan.",
 			shared.ErrValidation)
 	}
 	if len(r.Targets) == 0 {
-		msg := fmt.Sprintf("Scan %q resolves to no targets: it has no direct targets and its asset group(s) have no assets. Add assets to the group or targets to the scan.", sc.Name)
+		msg := "This scan has no targets: it has no direct targets and its asset group(s) have no assets. Add assets to the group or targets to the scan."
 		if len(r.Warnings) > 0 {
 			msg += " (" + strings.Join(r.Warnings, "; ") + ")"
 		}

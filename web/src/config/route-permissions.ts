@@ -10,7 +10,7 @@
  *
  * Pattern matching:
  * - Exact match: '/settings/audit-log' matches only that path
- * - Wildcard: '/assets/*' matches '/assets/changes', '/assets/web', etc.
+ * - Wildcard: '/assets/*' matches '/assets/changes', '/assets/groups', etc.
  * - Double wildcard: '/settings/**' matches all nested paths
  *
  * Priority:
@@ -154,6 +154,11 @@ export const routePermissions: Record<string, RoutePermissionConfig> = {
     module: Module.AttackSurface,
   },
   // Typed attack-surface changes (RFC-080), narrowed to the data scope by the API.
+  // Web surface reads the assets module's web endpoints (RFC-056).
+  '/attack-surface/web': {
+    permission: Permission.AssetsRead,
+    module: Module.Assets,
+  },
   '/attack-surface/changes': {
     permission: Permission.AssetsRead,
     module: Module.AttackSurface,
@@ -177,6 +182,16 @@ export const routePermissions: Record<string, RoutePermissionConfig> = {
   '/scope': {
     permission: Permission.ScopeRead,
     module: Module.ScopeConfig,
+  },
+  // Domain proof and networks: route tabs of Scope; the panels need the
+  // attack surface module, as they did inside the Scope page.
+  '/scope/domain-proof': {
+    permission: Permission.ScopeRead,
+    module: Module.AttackSurface,
+  },
+  '/scope/networks': {
+    permission: Permission.ScopeRead,
+    module: Module.AttackSurface,
   },
   // Letters of authorization (RFC-065 §13).
   '/scope/letters': {
@@ -417,6 +432,11 @@ export const routePermissions: Record<string, RoutePermissionConfig> = {
     permission: Permission.PentestRead,
     module: Module.Pentest,
   },
+  // Report templates: every API call needs pentest:reports:write (viewers lack it).
+  '/settings/pentest/report-templates': {
+    permission: Permission.PentestReportsWrite,
+    module: Module.Pentest,
+  },
   '/settings/pentest/templates/new': {
     permission: Permission.PentestTemplatesWrite,
     module: Module.Pentest,
@@ -454,11 +474,11 @@ export const routePermissions: Record<string, RoutePermissionConfig> = {
     module: Module.Remediation,
   },
   '/automations': {
-    permission: Permission.WorkflowsRead,
+    permission: Permission.AutomationsRead,
     module: Module.Workflows,
   },
   '/automations/**': {
-    permission: Permission.WorkflowsRead,
+    permission: Permission.AutomationsRead,
     module: Module.Workflows,
   },
   '/sla': {
@@ -483,6 +503,11 @@ export const routePermissions: Record<string, RoutePermissionConfig> = {
   },
   '/findings/**': {
     permission: Permission.FindingsRead,
+    module: Module.Findings,
+  },
+  // Triage mode decides findings: the status permission, like its button.
+  '/findings/triage': {
+    permission: Permission.FindingsStatus,
     module: Module.Findings,
   },
 
@@ -736,9 +761,11 @@ export const routePermissions: Record<string, RoutePermissionConfig> = {
     permission: Permission.ApiKeysRead,
   },
   // AI triage consent: owners and administrators read and change it (api
-  // RequireTeamAdmin + settings:read / settings:write).
+  // RequireAdmin + settings:read / settings:write). team:update stands for
+  // the admin role, as on the other admin-only settings pages; settings:read
+  // alone (members, viewers) reached the page and got a 403.
   '/settings/ai': {
-    permission: Permission.SettingsRead,
+    permission: Permission.TeamUpdate,
     module: Module.AITriage,
   },
   // MCP access is issued as API keys (oct_ keys).
@@ -791,14 +818,6 @@ export const routePermissions: Record<string, RoutePermissionConfig> = {
   '/settings/scanning/templates/**': {
     permission: Permission.ScannerTemplatesRead,
     module: Module.ScannerTemplates,
-  },
-  '/settings/scanning/template-sources': {
-    permission: Permission.TemplateSourcesRead,
-    module: Module.TemplateSources,
-  },
-  '/settings/scanning/template-sources/**': {
-    permission: Permission.TemplateSourcesRead,
-    module: Module.TemplateSources,
   },
 
   // Risk scoring config — its own module

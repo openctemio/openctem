@@ -9,7 +9,6 @@ import {
   DataTableColumnHeader,
   DataTableRowActions,
   EmptyState,
-  MetricStrip,
 } from '@/features/shared'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -39,6 +38,7 @@ import {
 import { GroupDetailSheet } from '@/features/access-control/components/group-detail-sheet'
 import { getErrorMessage } from '@/lib/api/error-handler'
 import { Can } from '@/lib/permissions'
+import { confirmName } from '@/lib/confirm-name'
 import { ConfirmDialog } from '@/components/confirm-dialog'
 import { useTranslation } from '@/context/i18n-provider'
 
@@ -65,7 +65,7 @@ export function TeamsSection({ header }: SectionProps) {
   const { mutate } = useSWRConfig()
 
   // API Hooks
-  const { groups, uniqueMemberCount, isLoading, isError, mutate: mutateGroups } = useGroups()
+  const { groups, isLoading, isError, mutate: mutateGroups } = useGroups()
   const { createGroup, isCreating } = useCreateGroup()
 
   // UI State
@@ -86,15 +86,13 @@ export function TeamsSection({ header }: SectionProps) {
     mutateGroups()
   }, [mutateGroups])
 
-  // Calculate stats
-  const totalGroups = groups.length
-  const totalAssets = groups.reduce((acc, g) => acc + (g.asset_count ?? 0), 0)
-
   // Table columns
   const columns: ColumnDef<Group>[] = [
     {
       accessorKey: 'name',
-      header: ({ column }) => <DataTableColumnHeader column={column} title="Team" />,
+      header: ({ column }) => (
+        <DataTableColumnHeader column={column} title={t('org.teams.col.team', 'Team')} />
+      ),
       cell: ({ row }) => (
         <div className="min-w-0">
           <p className="font-medium">{row.original.name}</p>
@@ -106,21 +104,27 @@ export function TeamsSection({ header }: SectionProps) {
     },
     {
       accessorKey: 'member_count',
-      header: ({ column }) => <DataTableColumnHeader column={column} title="Members" />,
+      header: ({ column }) => (
+        <DataTableColumnHeader column={column} title={t('org.teams.col.members', 'Members')} />
+      ),
       cell: ({ row }) => (
         <span className="text-sm tabular-nums">{row.original.member_count ?? 0}</span>
       ),
     },
     {
       accessorKey: 'asset_count',
-      header: ({ column }) => <DataTableColumnHeader column={column} title="Assets" />,
+      header: ({ column }) => (
+        <DataTableColumnHeader column={column} title={t('org.teams.col.assets', 'Assets')} />
+      ),
       cell: ({ row }) => (
         <span className="text-sm tabular-nums">{row.original.asset_count ?? 0}</span>
       ),
     },
     {
       accessorKey: 'created_at',
-      header: ({ column }) => <DataTableColumnHeader column={column} title="Created" />,
+      header: ({ column }) => (
+        <DataTableColumnHeader column={column} title={t('org.teams.col.created', 'Created')} />
+      ),
       cell: ({ row }) => (
         <span className="text-muted-foreground text-sm">{formatDate(row.original.created_at)}</span>
       ),
@@ -135,15 +139,19 @@ export function TeamsSection({ header }: SectionProps) {
         return (
           <DataTableRowActions
             actions={[
-              { label: 'View details', icon: Eye, onClick: () => setSelectedGroupId(group.id) },
               {
-                label: 'Edit team',
+                label: t('org.teams.viewDetails', 'View details'),
+                icon: Eye,
+                onClick: () => setSelectedGroupId(group.id),
+              },
+              {
+                label: t('org.teams.editTeam', 'Edit team'),
                 icon: Pencil,
                 route: 'PUT /api/v1/groups/{groupId}',
                 onClick: () => setSelectedGroupId(group.id),
               },
               {
-                label: 'Delete team',
+                label: t('org.teams.deleteTeam', 'Delete team'),
                 icon: Trash2,
                 destructive: true,
                 separatorBefore: true,
@@ -164,7 +172,7 @@ export function TeamsSection({ header }: SectionProps) {
   // Actions
   const handleCreateGroup = async () => {
     if (!createForm.name) {
-      toast.error('Please enter a team name')
+      toast.error(t('org.teams.nameRequired', 'Enter a team name'))
       return
     }
 
@@ -175,12 +183,12 @@ export function TeamsSection({ header }: SectionProps) {
         description: createForm.description || undefined,
         group_type: 'team', // Default type for data scoping groups
       })
-      toast.success(`Team "${createForm.name}" created successfully`)
+      toast.success(t('org.teams.created', 'Team "{name}" created', { name: createForm.name }))
       setCreateDialogOpen(false)
       setCreateForm({ name: '', description: '' })
       refreshData()
     } catch (error) {
-      toast.error(getErrorMessage(error, 'Failed to create team'))
+      toast.error(getErrorMessage(error, t('org.teams.createFailed', 'Failed to create team')))
     }
   }
 
@@ -189,7 +197,7 @@ export function TeamsSection({ header }: SectionProps) {
 
     try {
       await deleteGroup()
-      toast.success(`Team "${groupToDelete.name}" deleted successfully`)
+      toast.success(t('org.teams.deleted', 'Team "{name}" deleted', { name: groupToDelete.name }))
       setDeleteDialogOpen(false)
       setGroupToDelete(null)
       // Invalidate all group-related caches
@@ -200,7 +208,7 @@ export function TeamsSection({ header }: SectionProps) {
       )
       refreshData()
     } catch (error) {
-      toast.error(getErrorMessage(error, 'Failed to delete team'))
+      toast.error(getErrorMessage(error, t('org.teams.deleteFailed', 'Failed to delete team')))
     }
   }
 
@@ -211,37 +219,27 @@ export function TeamsSection({ header }: SectionProps) {
           <Can route="POST /api/v1/groups" mode="disable">
             <Button size="sm" onClick={() => setCreateDialogOpen(true)}>
               <Plus className="me-2 h-4 w-4" />
-              Create team
+              {t('org.teams.createTeam', 'Create team')}
             </Button>
           </Can>
         </>
       )}
 
       {isError && !isLoading ? (
-        <Alert variant="destructive" className="mt-5">
+        <Alert variant="destructive">
           <AlertCircle className="h-4 w-4" />
-          <AlertTitle>Failed to load teams</AlertTitle>
+          <AlertTitle>{t('org.teams.loadFailedTitle', 'Failed to load teams')}</AlertTitle>
           <AlertDescription>
-            <p>The team list could not be loaded.</p>
+            <p>{t('org.teams.loadFailedBody', 'The team list could not be loaded.')}</p>
             <Button variant="outline" size="sm" className="mt-2" onClick={refreshData}>
               <RefreshCw className="me-2 h-4 w-4" />
-              Retry
+              {t('common.retry', 'Retry')}
             </Button>
           </AlertDescription>
         </Alert>
       ) : (
         <>
-          <MetricStrip
-            className="mt-5"
-            loading={isLoading}
-            items={[
-              { key: 'teams', label: 'Teams', value: totalGroups },
-              { key: 'members', label: 'Members', value: uniqueMemberCount },
-              { key: 'assets', label: 'Assigned assets', value: totalAssets },
-            ]}
-          />
-
-          <div className="mt-5">
+          <div>
             {isLoading ? (
               <div className="space-y-2">
                 <Skeleton className="h-9 w-full max-w-sm" />
@@ -252,13 +250,16 @@ export function TeamsSection({ header }: SectionProps) {
             ) : groups.length === 0 ? (
               <EmptyState
                 icon={FolderKey}
-                title="No teams yet"
-                description="Create a team to group users and scope their access to assets."
+                title={t('org.teams.emptyTitle', 'No teams yet')}
+                description={t(
+                  'org.teams.emptyBody',
+                  'Create a team to group users and scope their access to assets.'
+                )}
                 action={
                   <Can route="POST /api/v1/groups">
                     <Button size="sm" onClick={() => setCreateDialogOpen(true)}>
                       <Plus className="me-2 h-4 w-4" />
-                      Create team
+                      {t('org.teams.createTeam', 'Create team')}
                     </Button>
                   </Can>
                 }
@@ -268,19 +269,21 @@ export function TeamsSection({ header }: SectionProps) {
                 columns={columns}
                 data={groups}
                 getRowId={(g) => g.id}
-                searchPlaceholder="Search teams..."
+                searchPlaceholder={t('org.teams.searchPlaceholder', 'Search teams…')}
                 onRowClick={(g) => setSelectedGroupId(g.id)}
                 showColumnToggle={false}
-                emptyMessage="No teams match your search"
+                emptyMessage={t('org.teams.noMatch', 'No teams match your search')}
               />
             )}
           </div>
 
           {/* Members in no team see nothing (owner decision D2); there is
               no per-organization "see everything" switch. */}
-          <p className="mt-5 text-sm text-muted-foreground" data-testid="no-team-access-note">
-            Members who are in no team see no assets or findings until you add them to a team or
-            grant them an asset. Owners, admins and roles with full data access see everything.
+          <p className="text-sm text-muted-foreground" data-testid="no-team-access-note">
+            {t(
+              'org.teams.noTeamNote',
+              'Members who are in no team see no assets or findings until you add them to a team or grant them an asset. Owners, admins and roles with full data access see everything.'
+            )}
           </p>
         </>
       )}
@@ -297,29 +300,37 @@ export function TeamsSection({ header }: SectionProps) {
       <Dialog open={createDialogOpen} onOpenChange={setCreateDialogOpen}>
         <DialogContent size="sm">
           <DialogHeader>
-            <DialogTitle>Create team</DialogTitle>
+            <DialogTitle>{t('org.teams.createTeam', 'Create team')}</DialogTitle>
             <DialogDescription>
-              Create a new team to organize users and control access to assets.
+              {t(
+                'org.teams.createDesc',
+                'Create a new team to organize users and control access to assets.'
+              )}
             </DialogDescription>
           </DialogHeader>
 
           <DialogBody>
             <div className="space-y-4 py-4">
               <div className="space-y-2">
-                <Label htmlFor="group-name">Team name</Label>
+                <Label htmlFor="group-name">{t('org.teams.teamName', 'Team name')}</Label>
                 <Input
                   id="group-name"
-                  placeholder="e.g., Security Team, DevOps"
+                  placeholder={t('org.teams.teamNamePlaceholder', 'e.g., Security team, DevOps')}
                   value={createForm.name}
                   onChange={(e) => setCreateForm({ ...createForm, name: e.target.value })}
                 />
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="group-description">Description (optional)</Label>
+                <Label htmlFor="group-description">
+                  {t('org.teams.descLabel', 'Description (optional)')}
+                </Label>
                 <Textarea
                   id="group-description"
-                  placeholder="Describe the purpose of this group..."
+                  placeholder={t(
+                    'org.teams.descPlaceholder',
+                    'Describe the purpose of this team...'
+                  )}
                   value={createForm.description}
                   onChange={(e) => setCreateForm({ ...createForm, description: e.target.value })}
                   rows={3}
@@ -330,7 +341,7 @@ export function TeamsSection({ header }: SectionProps) {
 
           <DialogFooter>
             <Button variant="outline" onClick={() => setCreateDialogOpen(false)}>
-              Cancel
+              {t('common.cancel', 'Cancel')}
             </Button>
             <Button onClick={handleCreateGroup} disabled={isCreating || !createForm.name}>
               {isCreating ? (
@@ -338,7 +349,7 @@ export function TeamsSection({ header }: SectionProps) {
               ) : (
                 <Plus className="me-2 h-4 w-4" />
               )}
-              Create team
+              {t('org.teams.createTeam', 'Create team')}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -370,6 +381,9 @@ export function TeamsSection({ header }: SectionProps) {
           </>
         }
         isLoading={isDeleting}
+        typeToConfirm={
+          groupToDelete ? confirmName(groupToDelete.name, groupToDelete.id) : undefined
+        }
         handleConfirm={handleDeleteGroup}
       />
     </>

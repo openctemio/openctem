@@ -250,11 +250,21 @@ func (r *ScoringRepository) StampVersion(ctx context.Context, tenantID shared.ID
 	for _, id := range findingIDs {
 		ids = append(ids, id.String())
 	}
+	// The rows are locked first in the global order of findings rows
+	// (finding_lock_order.go), so a stamp never deadlocks with an ingest
+	// writing the same findings; the update rechecks the condition.
+	stale := `f.tenant_id = $1 AND f.id = ANY($2::uuid[]) AND ` + vulnerability.OpenStatusSQL("f.status") + `
+		  AND f.priority_version IS DISTINCT FROM $3`
 	q := `
-		UPDATE findings SET priority_version = $3, priority_scored_at = now()
-		WHERE tenant_id = $1 AND id = ANY($2::uuid[]) AND ` + vulnerability.OpenStatusSQL("status") + `
-		  AND priority_version IS DISTINCT FROM $3`
-	if _, err := r.db.ExecContext(ctx, q, tenantID.String(), pq.Array(ids), version); err != nil {
+		WITH ` + findingLockCTE("findings f", stale) + `
+		UPDATE findings f SET priority_version = $3, priority_scored_at = now()
+		FROM locked l
+		WHERE f.id = l.locked_id AND ` + stale
+	err := retryWriteConflict(ctx, func() error {
+		_, execErr := r.db.ExecContext(ctx, q, tenantID.String(), pq.Array(ids), version)
+		return execErr
+	})
+	if err != nil {
 		return fmt.Errorf("stamp finding priority version: %w", err)
 	}
 	return nil
@@ -475,15 +485,22 @@ func (r *ScoringRepository) SavePriorities(ctx context.Context, tenantID shared.
 			n := len(args)
 			values = append(values, fmt.Sprintf(
 				"($%d::uuid, $%d::varchar, $%d::text, $%d::boolean, $%d::integer, $%d::numeric, $%d::numeric, "+
-					"$%d::boolean, $%d::date, $%d::timestamptz, $%d::varchar)",
-				n+1, n+2, n+3, n+4, n+5, n+6, n+7, n+8, n+9, n+10, n+11))
+					"$%d::boolean, $%d::date, $%d::timestamptz, $%d::varchar, $%d::boolean)",
+				n+1, n+2, n+3, n+4, n+5, n+6, n+7, n+8, n+9, n+10, n+11, n+12))
 			args = append(args, f.ID().String(),
 				nullPriorityClass(f.PriorityClass()), nullString(f.PriorityClassReason()),
 				f.IsReachable(), f.ReachableFromCount(),
 				nullFloat64(f.EPSSScore()), nullFloat64(f.EPSSPercentile()), f.IsInKEV(), nullTime(f.KEVDueDate()),
-				nullTime(f.SLADeadline()), string(f.SLAStatus()))
+				nullTime(f.SLADeadline()), string(f.SLAStatus()), f.SLAKEVCapped())
 		}
-		res, err := r.db.ExecContext(ctx, `
+		// The rows are locked first in the global order of findings rows
+		// (finding_lock_order.go), so a pass never deadlocks with an ingest
+		// writing the same findings.
+		open := `f.tenant_id = $1 AND f.id = v.id AND ` + vulnerability.OpenStatusSQL("f.status")
+		q := `
+		WITH v(id, class, reason, reachable, reach_from, epss, epss_pct, kev, kev_due, sla, sla_status, sla_kev) AS (
+			VALUES ` + strings.Join(values, ", ") + `
+		), ` + findingLockCTE("findings f, v", open) + `
 		UPDATE findings f SET
 			priority_class = CASE WHEN f.priority_class_override THEN f.priority_class ELSE v.class END,
 			priority_class_reason = CASE WHEN f.priority_class_override THEN f.priority_class_reason ELSE v.reason END,
@@ -497,10 +514,20 @@ func (r *ScoringRepository) SavePriorities(ctx context.Context, tenantID shared.
 				WHEN v.sla IS NULL THEN f.sla_status
 				WHEN f.sla_deadline IS NULL OR v.sla < f.sla_deadline THEN v.sla_status
 				ELSE f.sla_status END,
+			-- The known exploited cap flag follows the deadline kept.
+			sla_kev_capped = CASE
+				WHEN v.sla IS NULL THEN f.sla_kev_capped
+				WHEN f.sla_deadline IS NULL OR v.sla < f.sla_deadline THEN v.sla_kev
+				ELSE f.sla_kev_capped END,
 			updated_at = now()
-		FROM (VALUES `+strings.Join(values, ", ")+`)
-			AS v(id, class, reason, reachable, reach_from, epss, epss_pct, kev, kev_due, sla, sla_status)
-		WHERE f.tenant_id = $1 AND f.id = v.id AND `+vulnerability.OpenStatusSQL("f.status"), args...)
+		FROM locked l, v
+		WHERE f.id = l.locked_id AND ` + open
+		var res sql.Result
+		err := retryWriteConflict(ctx, func() error {
+			var execErr error
+			res, execErr = r.db.ExecContext(ctx, q, args...)
+			return execErr
+		})
 		if err != nil {
 			return fmt.Errorf("save finding priorities: %w", err)
 		}
@@ -514,7 +541,7 @@ func (r *ScoringRepository) SavePriorities(ctx context.Context, tenantID shared.
 // savePriorityParams is the bind parameters per finding in SavePriorities;
 // savePriorityBatch caps the findings per statement (rows locked at once).
 const (
-	savePriorityParams = 11
+	savePriorityParams = 12
 	savePriorityBatch  = 1000
 )
 

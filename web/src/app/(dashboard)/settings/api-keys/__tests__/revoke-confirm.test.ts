@@ -15,7 +15,7 @@ const src = readFileSync(
 describe('API key revoke', () => {
   it('the Revoke button opens a confirmation instead of revoking', () => {
     expect(src).not.toMatch(/onClick=\{handleRevoke\}/)
-    expect(src).toMatch(/onClick=\{\(\) => setRevokeOpen\(true\)\}/)
+    expect(src).toMatch(/onClick: \(\) => setRevokeOpen\(true\)/)
   })
 
   it('only the confirmation calls handleRevoke', () => {
@@ -29,6 +29,8 @@ describe('API key revoke', () => {
   })
 
   it('error toasts carry the server reason', () => {
-    expect(src).toMatch(/getErrorMessage\(error, 'Failed to revoke the key'\)/)
+    expect(src).toMatch(
+      /getErrorMessage\(error, t\('settings.apiKeys.revokeFailed', 'Failed to revoke the key'\)\)/
+    )
   })
 })

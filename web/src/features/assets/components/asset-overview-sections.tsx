@@ -11,10 +11,9 @@
 'use client'
 
 import * as React from 'react'
-import { AlertTriangle, Gauge, ListTree, Radar, Search, ShieldHalf, UserRound } from 'lucide-react'
+import { AlertTriangle, Gauge, ListTree, Radar, ShieldHalf, UserRound } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
 import {
   DetailSection,
   DetailField,
@@ -23,6 +22,7 @@ import {
   RiskScoreBadge,
   riskScoreState,
   SeverityStrip,
+  ListToolbar,
 } from '@/features/shared'
 import { useTranslation } from '@/context/i18n-provider'
 import type { TFn } from '../lib/default-t'
@@ -103,7 +103,7 @@ export function RiskSummarySection({ asset, onViewFindings }: RiskSummarySection
           <RiskScoreBadge score={asset.riskScore} state={state} size="md" />
           {asset.riskScoredAt && (
             <p className="flex items-baseline gap-1 text-xs text-muted-foreground">
-              {t('riskScore.updated', 'Score updated')}
+              {t('riskScore.updated', 'Score last changed')}
               <RelativeTime date={asset.riskScoredAt} className="text-xs" />
             </p>
           )}
@@ -419,16 +419,13 @@ export function PropertiesSection({
       }
     >
       {open && count > SEARCH_FROM && (
-        <div className="relative">
-          <Search className="pointer-events-none absolute start-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
-          <Input
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            placeholder={t('assets.properties.search', 'Search properties')}
-            aria-label={t('assets.properties.search', 'Search properties')}
-            className="h-8 ps-8 text-sm"
-          />
-        </div>
+        <ListToolbar
+          search={{
+            value: query,
+            onChange: setQuery,
+            placeholder: t('assets.properties.search', 'Search properties…'),
+          }}
+        />
       )}
       {open && knownShown.length > 0 && grid(knownShown)}
       {open && otherShown.length > 0 && (

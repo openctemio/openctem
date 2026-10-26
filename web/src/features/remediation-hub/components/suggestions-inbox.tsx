@@ -18,7 +18,6 @@ import { useTranslation } from '@/context/i18n-provider'
 import { usePermissions } from '@/context/permission-provider'
 import { Permission } from '@/lib/permissions'
 import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
 import {
   Select,
   SelectContent,
@@ -29,6 +28,7 @@ import {
 import { Skeleton } from '@/components/ui/skeleton'
 import { EmptyState } from '@/features/shared/components/empty-state'
 import { ErrorState } from '@/features/shared/components/error-state'
+import { ListToolbar } from '@/features/shared/components/list-toolbar'
 import { ApiClientError } from '@/lib/api/error-handler'
 import type {
   DismissReason,
@@ -48,12 +48,16 @@ import { claimConflicts, suggestionParam } from '../lib/suggestion-detail'
 import { ConflictDialog } from './conflict-dialog'
 import { SuggestionCard } from './suggestion-card'
 import { SuggestionPanel } from './suggestion-panel'
+import { ConfirmDialog, ConfirmSample } from '@/components/confirm-dialog'
 import { AcceptDialog, DismissDialog, SnoozeDialog } from './suggestion-dialogs'
+import { useSearchQuery } from '@/hooks/use-search-query'
 
 const PER_PAGE = 25
 
 export function apiMessage(err: unknown, fallback: string): string {
-  if (err instanceof ApiClientError && err.message) return err.message
+  // A server fault carries no wording for the user ("internal error"): show
+  // the translated fallback. 4xx messages are the API's own explanation.
+  if (err instanceof ApiClientError && err.statusCode < 500 && err.message) return err.message
   return fallback
 }
 
@@ -77,11 +81,12 @@ export function SuggestionsInbox() {
   const [kind, setKind] = useState<SuggestionKind | 'all'>('all')
   const [keyKind, setKeyKind] = useState<string>('all')
   const [search, setSearch] = useState('')
+  const searchTerm = useSearchQuery(search).term
   const [page, setPage] = useState(1)
   const { data, error, isLoading, mutate } = useSuggestions({
     kinds: kind === 'all' ? undefined : [kind],
     keyKind: keyKind === 'all' ? undefined : keyKind,
-    search,
+    search: searchTerm,
     page,
     perPage: PER_PAGE,
   })
@@ -98,6 +103,8 @@ export function SuggestionsInbox() {
     conflicts: FindingConflict[]
   } | null>(null)
   const [busy, setBusy] = useState(false)
+  // Accepting creates tasks and may move findings: the person confirms first.
+  const [confirmAccept, setConfirmAccept] = useState<RemediationSuggestion | 'bulk' | null>(null)
   // The panel's suggestion: from the page when it is there, else by id.
   const onPage = openId ? items.find((x) => x.id === openId) : undefined
   const { data: byId, isLoading: byIdLoading } = useSuggestion(
@@ -266,6 +273,7 @@ export function SuggestionsInbox() {
         dismissing ||
         snoozing ||
         conflict ||
+        confirmAccept ||
         e.metaKey ||
         e.ctrlKey ||
         e.altKey ||
@@ -294,7 +302,7 @@ export function SuggestionsInbox() {
           setOpenId(items[active].id)
           break
         case 'a':
-          if (s && (canWrite || canOwnerAccept(s)) && s.hidden_members === 0) void accept(s)
+          if (s && (canWrite || canOwnerAccept(s)) && s.hidden_members === 0) setConfirmAccept(s)
           break
         case 'e':
           if (s && canWrite && s.hidden_members === 0) setEditing(s)
@@ -331,6 +339,7 @@ export function SuggestionsInbox() {
     dismissing,
     snoozing,
     conflict,
+    confirmAccept,
     canWrite,
     canOwnerAccept,
     accept,
@@ -348,75 +357,79 @@ export function SuggestionsInbox() {
 
   return (
     <div className="space-y-4">
-      <div className="flex flex-wrap items-center gap-2">
-        <Input
-          className="w-full sm:w-64"
-          placeholder={t('remediationHub.suggestions.search')}
-          aria-label={t('remediationHub.suggestions.search')}
-          value={search}
-          onChange={(e) => {
-            setSearch(e.target.value)
+      <ListToolbar
+        search={{
+          value: search,
+          onChange: (v) => {
+            setSearch(v)
             setPage(1)
-          }}
-        />
-        <Select
-          value={kind}
-          onValueChange={(v) => {
-            setKind(v as SuggestionKind | 'all')
-            setPage(1)
-          }}
-        >
-          <SelectTrigger
-            className="w-full sm:w-44"
-            aria-label={t('remediationHub.suggestions.kindFilter')}
-          >
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">{t('remediationHub.suggestions.allKinds')}</SelectItem>
-            {(['new_group', 'join', 'task_route'] as const).map((k) => (
-              <SelectItem key={k} value={k}>
-                {t(`remediationHub.kind.${k}`)}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-        <Select
-          value={keyKind}
-          onValueChange={(v) => {
-            setKeyKind(v)
-            setPage(1)
-          }}
-        >
-          <SelectTrigger
-            className="w-full sm:w-44"
-            aria-label={t('remediationHub.suggestions.keyKindFilter')}
-          >
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">{t('remediationHub.suggestions.allFixes')}</SelectItem>
-            {['upgrade', 'rotate', 'sol'].map((k) => (
-              <SelectItem key={k} value={k}>
-                {t(`remediationHub.keyKind.${k}`)}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-        <div className="ms-auto flex flex-wrap items-center gap-2">
-          {canWrite && selected.size > 0 && (
-            <Button onClick={bulkAccept} disabled={busy}>
-              {t('remediationHub.suggestions.acceptSelected', undefined, { n: selected.size })}
-            </Button>
-          )}
-          {canWrite && (
-            <Button variant="outline" onClick={runNow}>
-              <RefreshCw className="size-4" aria-hidden />
-              {t('remediationHub.suggestions.runNow')}
-            </Button>
-          )}
-        </div>
-      </div>
+          },
+          placeholder: t('remediationHub.suggestions.search'),
+        }}
+        start={
+          <>
+            <Select
+              value={kind}
+              onValueChange={(v) => {
+                setKind(v as SuggestionKind | 'all')
+                setPage(1)
+              }}
+            >
+              <SelectTrigger
+                className="h-9 w-auto min-w-36"
+                aria-label={t('remediationHub.suggestions.kindFilter')}
+              >
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">{t('remediationHub.suggestions.allKinds')}</SelectItem>
+                {(['new_group', 'join', 'task_route'] as const).map((k) => (
+                  <SelectItem key={k} value={k}>
+                    {t(`remediationHub.kind.${k}`)}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <Select
+              value={keyKind}
+              onValueChange={(v) => {
+                setKeyKind(v)
+                setPage(1)
+              }}
+            >
+              <SelectTrigger
+                className="h-9 w-auto min-w-36"
+                aria-label={t('remediationHub.suggestions.keyKindFilter')}
+              >
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">{t('remediationHub.suggestions.allFixes')}</SelectItem>
+                {['upgrade', 'rotate', 'sol'].map((k) => (
+                  <SelectItem key={k} value={k}>
+                    {t(`remediationHub.keyKind.${k}`)}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </>
+        }
+        end={
+          <>
+            {canWrite && selected.size > 0 && (
+              <Button onClick={() => setConfirmAccept('bulk')} disabled={busy}>
+                {t('remediationHub.suggestions.acceptSelected', undefined, { n: selected.size })}
+              </Button>
+            )}
+            {canWrite && (
+              <Button variant="outline" onClick={runNow}>
+                <RefreshCw className="size-4" aria-hidden />
+                {t('remediationHub.suggestions.runNow')}
+              </Button>
+            )}
+          </>
+        }
+      />
       <p className="text-muted-foreground text-xs" aria-live="polite">
         {t(canWrite ? 'remediationHub.suggestions.keys' : 'remediationHub.suggestions.keysOwner')}
       </p>
@@ -466,7 +479,7 @@ export function SuggestionsInbox() {
                 setActive(i)
                 setOpenId(s.id)
               }}
-              onAccept={() => void accept(s)}
+              onAccept={() => setConfirmAccept(s)}
               onEdit={() => setEditing(s)}
               onDismiss={() => setDismissing(s)}
               onSnooze={() => setSnoozing(s)}
@@ -498,6 +511,47 @@ export function SuggestionsInbox() {
         </div>
       )}
 
+      <ConfirmDialog
+        open={confirmAccept !== null}
+        onOpenChange={(open) => {
+          if (!open) setConfirmAccept(null)
+        }}
+        title={
+          confirmAccept === 'bulk'
+            ? t('remediationHub.suggestions.confirmBulkTitle', 'Accept {n} suggestions?', {
+                n: selected.size,
+              })
+            : t('remediationHub.suggestions.confirmOneTitle', 'Accept "{title}"?', {
+                title: confirmAccept?.title ?? '',
+              })
+        }
+        desc={t(
+          'remediationHub.suggestions.confirmDesc',
+          'Accepting creates the remediation tasks and may move their findings out of other tasks. You can move findings between tasks afterwards.'
+        )}
+        confirmText={
+          confirmAccept === 'bulk'
+            ? t('remediationHub.suggestions.confirmBulkButton', 'Accept {n} suggestions', {
+                n: selected.size,
+              })
+            : t('remediationHub.suggestions.confirmOneButton', 'Accept suggestion')
+        }
+        isLoading={busy}
+        handleConfirm={async () => {
+          const target = confirmAccept
+          if (!target) return
+          if (target === 'bulk') await bulkAccept()
+          else await accept(target)
+          setConfirmAccept(null)
+        }}
+      >
+        {confirmAccept === 'bulk' && (
+          <ConfirmSample
+            names={items.filter((x) => selected.has(x.id)).map((x) => x.title)}
+            total={selected.size}
+          />
+        )}
+      </ConfirmDialog>
       <AcceptDialog
         suggestion={editing}
         open={editing !== null}

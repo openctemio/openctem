@@ -7,9 +7,12 @@
  *
  * Rules the kit follows: categorical colours are assigned in fixed order and
  * never cycled (a 9th series folds into "Other"); severity is ordinal and
- * always labelled; status colours (good / warning / critical / unmeasured)
- * are separate tokens and always come with an icon and a label.
+ * always labelled; priority and levels are ordinal ramps stepped by lightness;
+ * "none" (no value: not prioritised, no SLA) is a hatch, never a hue; SLA
+ * states take the health colours (breached = down, warning = warn, ok = ok)
+ * and always come with a label (research/257).
  */
+import { isPriorityClass, PRIORITY_CHART_COLORS, PRIORITY_NONE_FILL } from '@/lib/priority-colors'
 import { SEVERITY_LEVELS, type SeverityLevel } from '@/lib/severity'
 import palette from './chart-palette.json'
 
@@ -44,25 +47,41 @@ export function sequentialStep(step: number): { fill: string; ink: string } {
   return { fill: `var(--viz-seq-${s + 1})`, ink: `var(--viz-seq-ink-${s + 1})` }
 }
 
-const SEVERITY_KEYS = new Set<string>(SEVERITY_LEVELS)
-/** Priority classes reuse the severity ramp, most urgent first. */
-const PRIORITY_TO_SEVERITY: Record<string, SeverityKey> = {
-  P0: 'critical',
-  P1: 'high',
-  P2: 'medium',
-  P3: 'low',
+/** CSS colour for a level of the neutral ordinal ramp (asset criticality, impact). */
+export function levelVar(key: 'critical' | 'high' | 'medium' | 'low'): string {
+  return `var(--viz-lvl-${key})`
 }
 
+/** The neutral step drawn for "none" (no value); filled as a hatch by seriesFill. */
+export const NONE_VAR = 'var(--viz-prio-none)'
+
+/** SLA states share the machine-health colours, so "breached" reads as down everywhere. */
+const SLA_STATE_VAR: Record<string, string> = {
+  breached: 'var(--hl-down)',
+  warning: 'var(--hl-warn)',
+  ok: 'var(--hl-ok)',
+}
+
+const SEVERITY_KEYS = new Set<string>(SEVERITY_LEVELS)
 /**
  * The colour of a series by its key: severities and priority classes have
- * their ordinal colour; anything else takes the categorical slot of its
+ * their ordinal colour (priority has its own ink ramp, never the severity hues); anything else takes the categorical slot of its
  * position, which the caller keeps stable (colour follows the entity).
  */
 export function seriesVar(key: string, index: number): string {
   if (SEVERITY_KEYS.has(key)) return severityVar(key as SeverityKey)
-  const sev = PRIORITY_TO_SEVERITY[key]
-  if (sev) return severityVar(sev)
+  if (isPriorityClass(key)) return PRIORITY_CHART_COLORS[key]
   if (key === 'opened' || key === 'fixed') return divergingVar(key)
   if (key === 'other') return 'var(--viz-cat-other)'
+  if (key === 'none') return NONE_VAR
+  if (Object.hasOwn(SLA_STATE_VAR, key)) return SLA_STATE_VAR[key]
   return categoricalVar(index)
+}
+
+/**
+ * The CSS background of a series in a CSS-drawn chart or legend swatch: the
+ * series colour, or the hatch for "none" so "no value" never reads as a class.
+ */
+export function seriesFill(key: string, index: number): string {
+  return key === 'none' ? PRIORITY_NONE_FILL : seriesVar(key, index)
 }

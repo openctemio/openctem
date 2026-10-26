@@ -46,6 +46,7 @@ import (
 	"github.com/openctemio/openctem/api/internal/infra/jobs"
 	"github.com/openctemio/openctem/api/internal/infra/postgres"
 	"github.com/openctemio/openctem/api/pkg/domain/durablejob"
+	"github.com/openctemio/openctem/api/pkg/domain/ingestjob"
 	integrationdom "github.com/openctemio/openctem/api/pkg/domain/integration"
 	sensordom "github.com/openctemio/openctem/api/pkg/domain/sensor"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
@@ -361,6 +362,23 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 	// when it changes).
 	w.ControllerManager.Register(controller.NewSensorLegacyKeysController(repos.Sensor, log.With("controller", "sensor-legacy-keys")))
 
+	// Ingest receipts (RFC-122): action rows after 90 days, run receipts
+	// and daily ingest facts after 400 days, expired Idempotency-Key
+	// records; upload receipts stay.
+	if repos.IngestReceipt != nil {
+		ctl := controller.NewIngestReceiptRetentionController(repos.IngestReceipt, 0)
+		if repos.IdempotencyKey != nil {
+			ctl.WithIdempotencyKeys(repos.IdempotencyKey)
+		}
+		w.ControllerManager.Register(ctl)
+	}
+
+	// Ingest queue (RFC-122): finished jobs and reports after 30 days,
+	// stored upload parts once nobody will open them.
+	if repos.IngestJob != nil {
+		w.ControllerManager.Register(controller.NewIngestQueueRetentionController(repos.IngestJob, 0))
+	}
+
 	// CI alerts (RFC-051 §10.6): missed schedules, lost coverage, failing
 	// default branches and outdated runners, once each while they hold; and
 	// findings only a stale CI pipeline reported become not observed.
@@ -417,6 +435,8 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 	// Automation runs a restart left pending or running end as failed (on
 	// start and every 15 minutes), so they stop holding the active-run cap.
 	w.ControllerManager.Register(controller.NewAutomationRunReaper(repos.WorkflowRun, 0, log))
+	// Simulate runs are kept 30 days, live runs 180 (RFC-125).
+	w.ControllerManager.Register(controller.NewAutomationRunRetention(repos.WorkflowDelivery, log))
 
 	// One-off scans that never ran are archived after 30 days (audited).
 	w.ControllerManager.Register(controller.NewOneOffScanArchiveController(svc.Scan, 0, 0))
@@ -555,6 +575,13 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 			svc.VEX, log.With("controller", "vex-statement-expiry")))
 	}
 
+	// Rule sources: scheduled, requested and webhook syncs; snapshot collection.
+	if svc.ContentSource != nil {
+		svc.ContentSource.SetModuleGuard(svc.Module) // skip organizations with rule sources off
+		w.ControllerManager.Register(controller.NewContentSourceSyncController(
+			svc.ContentSource, log.With("controller", "content-source-sync")))
+	}
+
 	// Access requests: unconfirmed ones go after 24 h, decided ones after 90 days.
 	if svc.AccessRequest != nil {
 		w.ControllerManager.Register(controller.NewAccessRequestRetentionController(
@@ -580,6 +607,13 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 				Logger:    log.With("controller", "domain-reverify"),
 			},
 		))
+	}
+
+	// SSO enforcement after a limits change: turned off once the organization
+	// lost sso.enforcement and the grace ended (never a lock-out).
+	if svc.Tenant != nil {
+		w.ControllerManager.Register(controller.NewSSOEnforcementEntitlementController(
+			svc.Tenant, time.Hour, log.With("controller", "sso-enforcement-entitlement")))
 	}
 
 	// SAML IdP certificate expiry: owners are alerted 30, 7 and 1 days before
@@ -1232,6 +1266,10 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 			svc.AssetCoverage.EnablePlanning(repos.AssetCoverage, svc.Scan,
 				coverageapp.GovernanceSwitch{Modes: svc.ScanPolicy, Settings: svc.Tenant},
 				coverageapp.Config{DailyBudget: cfg.Worker.AssetCoverageDailyBudget})
+			// Readiness: a capability with no sensor or tool that could run
+			// it gets no run; its pairs pause with the reason and resume by
+			// themselves.
+			svc.AssetCoverage.EnableReadiness(svc.Scan)
 			// Gaps, output drops and repeated failures alert the tenant's
 			// administrators (in-app and integrations) at most once a day.
 			svc.AssetCoverage.EnableAlerts(repos.AssetCoverage, repos.MemberLifecycle, svc.Notification, svc.Outbox)
@@ -1317,6 +1355,15 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 					Ratio: cfg.Ingest.V2BlindingRatio, MinFindings: cfg.Ingest.V2BlindingMinFindings,
 				}, log))
 		}
+		// CI results and file imports accepted with 202 (RFC-122).
+		if ciSvc := newCIRunService(cfg, repos, svc, log); ciSvc != nil {
+			jobs.SetKind(ingestjob.KindCIResults, ingest.KindFuncs{ProcessFn: ciSvc.ProcessUploadJob, DeadLetterFn: ciSvc.DeadLetter})
+		}
+		if svc.WorkflowDispatcher != nil {
+			jobs.SetKind(ingestjob.KindSideEffects, ingest.NewSideEffectProcessor(repos.Finding, svc.WorkflowDispatcher.RunFindingsCreated))
+		}
+		imp := newFindingImportService(cfg, repos, svc, log)
+		jobs.SetKind(ingestjob.KindFindingImport, ingest.KindFuncs{ProcessFn: imp.ProcessImportJob, DeadLetterFn: imp.DeadLetter})
 		w.ControllerManager.Register(controller.NewIngestWorkerController(
 			repos.IngestJob,
 			jobs,
@@ -1325,7 +1372,10 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 				BatchSize:    5,
 				MaxPerTick:   50,
 				LeaseTimeout: 5 * time.Minute,
-				Logger:       log.With("controller", "ingest-worker"),
+				// The lease is renewed while a job runs; this caps one job.
+				MaxJobDuration: cfg.Ingest.MaxJobDuration,
+				Workers:        cfg.Ingest.Workers,
+				Logger:         log.With("controller", "ingest-worker"),
 			},
 		))
 	}

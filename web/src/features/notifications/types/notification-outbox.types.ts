@@ -5,8 +5,6 @@
  * Tenants can monitor and manage their notification delivery queue.
  */
 
-import { SEVERITY_BADGE_LIGHT } from '@/lib/severity-colors'
-
 /**
  * Outbox entry status
  */
@@ -71,82 +69,4 @@ export interface OutboxListFilters {
   status?: OutboxStatus
   page?: number
   per_page?: number
-}
-
-/**
- * Status configuration for UI display
- */
-export const OUTBOX_STATUS_CONFIG: Record<
-  OutboxStatus,
-  {
-    label: string
-    color: string
-    bgColor: string
-    textColor: string
-  }
-> = {
-  pending: {
-    label: 'Pending',
-    color: 'text-yellow-600',
-    bgColor: 'bg-yellow-100',
-    textColor: 'text-yellow-800',
-  },
-  processing: {
-    label: 'Processing',
-    color: 'text-blue-600',
-    bgColor: 'bg-blue-100',
-    textColor: 'text-blue-800',
-  },
-  completed: {
-    label: 'Completed',
-    color: 'text-green-600',
-    bgColor: 'bg-green-100',
-    textColor: 'text-green-800',
-  },
-  failed: {
-    label: 'Failed',
-    color: 'text-red-600',
-    bgColor: 'bg-red-100',
-    textColor: 'text-red-800',
-  },
-  dead: {
-    label: 'Dead',
-    color: 'text-gray-600',
-    bgColor: 'bg-gray-100',
-    textColor: 'text-gray-800',
-  },
-}
-
-/**
- * Split a centralized light-pill palette entry into the `color` (text) and
- * `bgColor` fields this config exposes, so severity colors stay sourced from
- * `@/lib/severity-colors` (`OutboxSeverity` shares the palette's key set). This
- * also gains dark-mode variants that the previous hard-coded map lacked.
- */
-function lightSeverityStyles(level: OutboxSeverity): { color: string; bgColor: string } {
-  const tokens = SEVERITY_BADGE_LIGHT[level].split(' ')
-  const pick = (...prefixes: string[]): string =>
-    tokens.filter((t) => prefixes.some((p) => t.startsWith(p))).join(' ')
-  return {
-    color: pick('text-', 'dark:text-'),
-    bgColor: pick('bg-', 'dark:bg-'),
-  }
-}
-
-/**
- * Severity configuration for UI display
- */
-export const OUTBOX_SEVERITY_CONFIG: Record<
-  OutboxSeverity,
-  {
-    label: string
-    color: string
-    bgColor: string
-  }
-> = {
-  critical: { label: 'Critical', ...lightSeverityStyles('critical') },
-  high: { label: 'High', ...lightSeverityStyles('high') },
-  medium: { label: 'Medium', ...lightSeverityStyles('medium') },
-  low: { label: 'Low', ...lightSeverityStyles('low') },
-  info: { label: 'Info', ...lightSeverityStyles('info') },
 }

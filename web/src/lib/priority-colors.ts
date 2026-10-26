@@ -1,0 +1,57 @@
+/**
+ * The one colour source for priority classes (P0-P3).
+ *
+ * Priority is not severity. Severity (critical..info) is a shaped mark with
+ * coloured text in the CVSS hues (severity-colors.ts); priority is CTEM's
+ * decision and the only filled label in a row: a box on its own violet ramp,
+ * P0 solid, P1 tint, P2 outline, P3 neutral and faint. Fill weight, the count
+ * of filled bars and the text all carry the order, so "P1" can never be read
+ * as "High" and colour is never the only cue. Teal is the act-here accent and
+ * is never used for either scale.
+ *
+ * Every priority surface (badge, chip, chart series, legend, row marker) takes
+ * its colour from here, which reads the --prio-* tokens in src/styles/theme.css.
+ * The marks are one ramp (--viz-prio-*, source src/lib/chart-palette.json):
+ * each class is at least 0.10 OKLCH lightness from the next, so P0..P3 stay
+ * apart in a stacked bar and under every colour-vision deficiency; the P0 box
+ * fill and every box edge are the same steps, so a badge and a chart segment
+ * of one class are one colour (research/257; asserted by
+ * src/styles/__tests__/contrast.test.ts and scripts/check-palette.mjs). "Not
+ * prioritised" is a hatch, never a solid fill. The palette-drift gate refuses a
+ * hand-written priority colour outside this file.
+ */
+export const PRIORITY_ORDER = ['P0', 'P1', 'P2', 'P3'] as const
+export type PriorityClass = (typeof PRIORITY_ORDER)[number]
+
+/** The class box: fill, text and edge. Literal classes, so Tailwind generates them. */
+export const PRIORITY_BOX_CLASS: Record<PriorityClass, string> = {
+  P0: 'bg-prio-0-bg text-prio-0-fg border-prio-0-border',
+  P1: 'bg-prio-1-bg text-prio-1-fg border-prio-1-border',
+  P2: 'bg-prio-2-bg text-prio-2-fg border-prio-2-border',
+  P3: 'bg-prio-3-bg text-prio-3-fg border-prio-3-border',
+}
+
+/** Chart series, legend swatches and dots (recharts fill/stroke, inline SVG). */
+export const PRIORITY_CHART_COLORS: Record<PriorityClass, string> = {
+  P0: 'var(--prio-0)',
+  P1: 'var(--prio-1)',
+  P2: 'var(--prio-2)',
+  P3: 'var(--prio-3)',
+}
+
+/** "Not prioritised" in a chart or legend: a hatch of the neutral step (CSS background). */
+export const PRIORITY_NONE_FILL =
+  'repeating-linear-gradient(135deg, var(--viz-prio-none) 0 1.5px, transparent 1.5px 4px)'
+
+/** Dot / swatch fill as a class. */
+export const PRIORITY_DOT_CLASS: Record<PriorityClass, string> = {
+  P0: 'bg-prio-0',
+  P1: 'bg-prio-1',
+  P2: 'bg-prio-2',
+  P3: 'bg-prio-3',
+}
+
+/** True for a value that is a priority class. */
+export function isPriorityClass(v: unknown): v is PriorityClass {
+  return typeof v === 'string' && (PRIORITY_ORDER as readonly string[]).includes(v)
+}

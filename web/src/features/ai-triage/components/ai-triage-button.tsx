@@ -388,17 +388,11 @@ export function AITriageButton({
     }
 
     if (currentStatus === 'completed') {
-      return cn(
-        'border-green-500/50 text-green-600 hover:bg-green-50 dark:hover:bg-green-950/30',
-        className
-      )
+      return cn('border-success/50 text-success hover:bg-muted', className)
     }
 
     if (currentStatus === 'failed') {
-      return cn(
-        'border-red-500/50 text-red-600 hover:bg-red-50 dark:hover:bg-red-950/30',
-        className
-      )
+      return cn('border-destructive/50 text-destructive hover:bg-muted', className)
     }
 
     return className

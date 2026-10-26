@@ -58,7 +58,7 @@ RFC-003 (asset source priority) was withdrawn on 2026-10-05; see
 | [RFC-040](RFC-040-platform-sensor-mutual-distrust.md) | Mutual distrust between the platform and sensors | **Accepted** (2026-10-03; every recommendation in §9 approved). |
 | [RFC-041](RFC-041-api-path-design.md) | API path design, plane separation and a route style guard | **Accepted** (decisions D1–D12 approved 2026-10-03 as recommended, §8). |
 | [RFC-042](RFC-042-asset-inventory-v2.md) | Asset Inventory v2: services as rows, observations over time, one query language, labels, dynamic groups, policies and screenshots | **Accepted** (2026-10-03; decisions D1–D21, §12). |
-| [RFC-043](RFC-043-deduplication-and-identity.md) | Deduplication and identity | **Accepted — decisions D1–D15 approved** (2026-10-03; #892). |
+| [RFC-043](RFC-043-deduplication-and-identity.md) | Deduplication and identity | **Accepted — decisions D1–D25 approved** (D1–D15 2026-10-03, #892; D16–D25 2026-10-23, §17). |
 | [RFC-044](RFC-044-issue-definitions-and-findings.md) | Issue definitions and findings | **Accepted** (2026-10-03; decisions D1–D9 approved as recommended, §12; #895). |
 | [RFC-045](RFC-045-websocket-auth.md) | Real-time WebSocket authentication and session binding | **Implemented** (decisions 2026-10-03, §7; implemented by #934 and #950). |
 | [RFC-046](RFC-046-scans-redesign.md) | Scans redesign: Scan → Run → Task, engines, schedules and automations | **Accepted.** Product decisions D1–D13 accepted on 2026-10-02; backend decisions B1–B12 on 2026-10-03. |
@@ -77,7 +77,7 @@ RFC-003 (asset source priority) was withdrawn on 2026-10-05; see
 | [RFC-059](RFC-059-sensor-transport-v3.md) | Sensor transport v3 — gRPC with mTLS, Connect/HTTPS fallback | Accepted (owner 2026-10-08: "implement the gRPC support plan"; decisions T1–T14 delegated; revised by the owner 2026-10-11: no enable flag, bindings chosen automatically, T15; one port for every setup by ALPN routing, T16; the same without a gateway, T17) |
 | [RFC-060](RFC-060-tool-network-confinement-and-overrides.md) | Tool network confinement, verified built-ins and the tool override surface | Proposed (owner 2026-10-08: "the tool SDK must be secure", and "a developer must be able to override fields such as the User-Agent; support flexibility as much as possible") |
 | [RFC-061](RFC-061-content-packs.md) | Content packs — templates, rules, wordlists and signatures as a contract | Proposed (owner 2026-10-08: "a developer writes a tool and wants to point it at templates or rules other than the default: default + custom, custom only, or another source; it must be flexible and there must be a contract the platform understands". And: "should the tool check for updates before running, or should the platform push them? Think through every use case") |
-| [RFC-062](RFC-062-mcp-authorization.md) | MCP authorization — OAuth 2.1 for AI clients | Accepted, implemented (PRs 1–7 of §14 shipped; the organization policy has the TLP limit for AI applications since 2026-10-12) (owner 2026-10-08: "the most secure, modern and best design of auth for MCP"; decisions MA1–MA25 delegated) |
+| [RFC-062](RFC-062-mcp-authorization.md) | MCP authorization — OAuth 2.1 for AI clients | Accepted, implemented (PRs 1–8 of §14 shipped; the organization policy has the TLP limit for AI applications since 2026-10-12) (owner 2026-10-08: "the most secure, modern and best design of auth for MCP"; decisions MA1–MA25 delegated) |
 | [RFC-063](RFC-063-support-access.md) | Support access — customer-granted, time-boxed, visible | Partially implemented (read-only grants and console support sessions, §11, 2026-10-16); read and write, emergency access and the tenant-tab frame are Proposed |
 | [RFC-064](RFC-064-modules-entitlements-preferences.md) | Modules — entitlements, preferences and one registry | Accepted (decisions MD1–MD12 delegated to the platform team, 2026-10-09) |
 | [RFC-065](RFC-065-bug-bounty-programs.md) | Bug-bounty programs, authorization sources and the Researcher role | Proposed (2026-10-09); P0 in review; P1 designed (§12–§14, owner delegated 2026-10-09); private programs and the public program monitor added 2026-10-10 (§15–§16, owner direction), §15 in implementation |
@@ -130,7 +130,11 @@ RFC-003 (asset source priority) was withdrawn on 2026-10-05; see
 | [RFC-119](RFC-119-ai-triage-governance.md) | AI triage governance | Accepted (2026-10-19). |
 | [RFC-120](RFC-120-participants-and-watchers.md) | Participants and watchers on findings and remediation tasks | Accepted (2026-10-20). |
 | [RFC-121](RFC-121-bug-bounty-reports.md) | Bug-bounty and disclosure reports as findings | Accepted (2026-10-22). |
+| [RFC-122](RFC-122-ingest-receipts.md) | Import and run receipts | Accepted (2026-10-22). |
 | [RFC-123](RFC-123-identity-providers-and-sign-in-policy.md) | Identity provider catalogue and sign-in policy | Accepted (2026-10-22). |
+| [RFC-124](RFC-124-outbound-webhooks.md) | Outbound webhooks: delivery per channel, typed events, signing and redelivery | Implemented (2026-10-22): delivery per channel, typed payload, refused redirects, signing and redelivery |
+| [RFC-125](RFC-125-automation-simulate-and-go-live.md) | Automations: catalog, versions, simulate and the go-live gate | Accepted (2026-10-23). |
+| [RFC-126](RFC-126-import-mappings.md) | Import mappings | Accepted (2026-10-23). |
 <!-- END RFC INDEX -->
 
 > Status legend: **Proposed** = under review · **Phase N done** = that phase shipped to `develop` · **Implemented** = fully landed.

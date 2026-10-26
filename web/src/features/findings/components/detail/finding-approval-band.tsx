@@ -3,17 +3,18 @@
 /**
  * "Waiting on someone": the false-positive / accepted-risk requests that are
  * pending on this finding, on the page and in the drawer. Everyone who may read
- * the finding sees who asked, when, why and for which status; only the
- * requester gets a Cancel button, and approvers get a link to the approvals
- * inbox where the decision is made. This is display only: the API decides who
- * may cancel or approve.
+ * the finding sees who asked, when, why and for which status, and what
+ * changed on the finding since the request. The requester gets a Cancel
+ * button; an approver decides here (Approve with a sign-in confirmation, or
+ * Reject with a reason), with the same dialogs as My Work. The API decides
+ * who may cancel or approve.
  */
 
 import { useState } from 'react'
 import { Hourglass, Loader2 } from 'lucide-react'
 import { toast } from 'sonner'
-import Link from '@/components/link'
 import { Button } from '@/components/ui/button'
+import { ConfirmDialog } from '@/components/confirm-dialog'
 import { useTranslation } from '@/context/i18n-provider'
 import { usePermissions } from '@/context/permission-provider'
 import { useDisplayUser } from '@/hooks/use-display-user'
@@ -23,6 +24,8 @@ import { Permission } from '@/lib/permissions'
 import { cn } from '@/lib/utils'
 import { useCancelApproval, useFindingApprovals } from '../../api/use-findings-api'
 import { AIProposalBadge } from '../ai-proposal-badge'
+import { ApprovalDecisionButtons, useApprovalDecision } from '../approval-decision'
+import { ChangedSinceRequest } from '../changed-since-request'
 import { approvalRequester, canCancelApproval, isOwnApproval } from '../../lib/approvals'
 import { FINDING_STATUS_CONFIG, type ApiApproval, type FindingStatus } from '../../types'
 
@@ -56,16 +59,19 @@ function PendingRequest({
   canApprove,
   canWrite,
   onChanged,
+  decision,
 }: {
   approval: ApiApproval
   currentUserId?: string
   canApprove: boolean
   canWrite: boolean
   onChanged: () => void
+  decision: ReturnType<typeof useApprovalDecision>
 }) {
   const { t } = useTranslation()
   const { trigger: cancel, isMutating } = useCancelApproval(approval.id)
   const [error, setError] = useState(false)
+  const [cancelOpen, setCancelOpen] = useState(false)
   const mayCancel = canWrite && canCancelApproval(approval, currentUserId)
   const mayDecide = canApprove && !isOwnApproval(approval, currentUserId) && !approval.batch_id
   const cfg = FINDING_STATUS_CONFIG[approval.requested_status as FindingStatus]
@@ -73,6 +79,7 @@ function PendingRequest({
 
   const onCancel = async () => {
     setError(false)
+    setCancelOpen(false)
     try {
       await cancel()
       toast.success(t('findings.approvals.toast.canceled', 'Approval request canceled'))
@@ -97,18 +104,32 @@ function PendingRequest({
         })}
       </p>
       <AIProposalBadge approval={approval} />
+      <ChangedSinceRequest changes={approval.changed_since_request} className="block" />
       {approval.justification && (
         <p className="text-xs break-words whitespace-pre-wrap text-muted-foreground">
           {t('findings.approvalBand.reason', 'Reason:')} {approval.justification}
         </p>
       )}
+      <ConfirmDialog
+        open={cancelOpen}
+        onOpenChange={setCancelOpen}
+        title={t('confirm.findingApproval.cancelTitle', 'Cancel this approval request?')}
+        desc={t(
+          'confirm.findingApproval.cancelDesc',
+          'The request is withdrawn and the finding keeps its current status. You can send a new request afterwards.'
+        )}
+        cancelBtnText={t('confirm.findingApproval.keep', 'Keep request')}
+        confirmText={t('confirm.findingApproval.cancel', 'Cancel request')}
+        destructive
+        handleConfirm={onCancel}
+      />
       <div className="flex flex-wrap items-center gap-2 pt-1">
         {mayCancel && (
           <Button
             type="button"
             size="sm"
             variant="outline"
-            onClick={onCancel}
+            onClick={() => setCancelOpen(true)}
             disabled={isMutating}
             data-testid="finding-approval-cancel"
           >
@@ -117,13 +138,12 @@ function PendingRequest({
           </Button>
         )}
         {mayDecide && (
-          <Link
-            href="/findings/approvals"
-            className="text-xs underline-offset-2 hover:underline"
-            data-testid="finding-approval-decide-link"
-          >
-            {t('findings.approvalBand.decide', 'Decide in the approvals inbox')}
-          </Link>
+          <ApprovalDecisionButtons
+            approval={approval}
+            busy={decision.busyId === approval.id}
+            onApprove={decision.openApprove}
+            onReject={decision.openReject}
+          />
         )}
         {error && (
           <span role="alert" className="text-xs text-destructive">
@@ -138,17 +158,22 @@ function PendingRequest({
 export function FindingApprovalBand({
   findingId,
   className,
+  onDecided,
 }: {
   findingId: string
   className?: string
+  /** After a decision: refresh what else shows the finding's status. */
+  onDecided?: () => unknown
 }) {
   const { t } = useTranslation()
   const { hasPermission } = usePermissions()
   const currentUserId = useDisplayUser()?.id
   // Regardless of the finding's status: a pending request exists before it.
   const { data, mutate } = useFindingApprovals(findingId || undefined)
+  // A decision changes the finding (status, activity) as well as the band.
+  const decision = useApprovalDecision({ onDecided: () => Promise.all([mutate(), onDecided?.()]) })
   const pending = (data ?? []).filter((a) => a.status === 'pending')
-  if (pending.length === 0) return null
+  if (pending.length === 0) return decision.dialogs
   return (
     <section
       aria-label={t('findings.approvalBand.aria', 'Waiting on an approval')}
@@ -168,9 +193,11 @@ export function FindingApprovalBand({
             canApprove={hasPermission(Permission.FindingsApprove)}
             canWrite={hasPermission(Permission.FindingsWrite)}
             onChanged={() => void mutate()}
+            decision={decision}
           />
         ))}
       </ul>
+      {decision.dialogs}
     </section>
   )
 }

@@ -5,4 +5,3 @@
  */
 
 export { ActivityItem } from './activity-item'
-export { QuickStat } from './quick-stat'

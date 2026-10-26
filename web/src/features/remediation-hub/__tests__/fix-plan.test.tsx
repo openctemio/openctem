@@ -1,7 +1,7 @@
 /**
- * The fix plan strip is honest: overdue is counted on the server over every
- * open task, a number that has not arrived is a dash and a failure is an
- * error with a retry, never zeros. Suggestion rows open that suggestion.
+ * The fix plan strip is honest: each tile counts on the server with the filters
+ * of the list it opens, a number that has not arrived is a dash and a failure
+ * is an error with a retry, never zeros. Suggestion rows open that suggestion.
  */
 
 import { beforeEach, describe, expect, it, vi } from 'vitest'
@@ -10,9 +10,8 @@ import { fireEvent, render, screen, within } from '@testing-library/react'
 type Q = { data?: unknown; error?: unknown; isLoading?: boolean; mutate: () => void }
 const mutate = vi.fn()
 const taskCalls: Record<string, unknown>[] = []
-const results: { open: Q; overdue: Q; mine: Q; sugg: Q; stats: Q } = {
+const results: { open: Q; mine: Q; sugg: Q; stats: Q } = {
   open: { mutate },
-  overdue: { mutate },
   mine: { mutate },
   sugg: { mutate },
   stats: { mutate },
@@ -28,7 +27,6 @@ vi.mock('@/components/link', () => ({
 vi.mock('../api/use-remediation-hub', () => ({
   useTasks: (f: Record<string, unknown>) => {
     taskCalls.push(f)
-    if (f.overdue) return results.overdue
     if (f.mine) return results.mine
     return results.open
   },
@@ -37,6 +35,7 @@ vi.mock('../api/use-remediation-hub', () => ({
 }))
 
 import { FixPlan } from '../components/fix-plan'
+import { VIEW_FILTERS } from '../components/task-views'
 
 const counts = (total: number, risk: number) => ({
   total,
@@ -66,7 +65,6 @@ const page = (rows: unknown[], total = rows.length) => ({
 
 function ready() {
   results.open.data = page([task('a', 1, 4), task('b', 5, 20)], 60)
-  results.overdue.data = page([], 37)
   results.mine.data = page([], 2)
   results.sugg.data = page([
     { id: 's1', kind: 'new_group', title: 'Rotate keys', risk_points: 12, member_count: 3 },
@@ -79,8 +77,8 @@ function ready() {
 }
 
 const value = (label: string) => {
-  const dt = screen.getByText(label, { selector: 'dt' })
-  return (dt.parentElement as HTMLElement).querySelector('dd')!.textContent
+  const dt = screen.getByText(label, { selector: '[data-slot="metric-label"]' })
+  return (dt.parentElement as HTMLElement).querySelector('[data-slot="metric-value"]')!.textContent
 }
 
 describe('fix plan', () => {
@@ -90,27 +88,40 @@ describe('fix plan', () => {
     ready()
   })
 
-  it('counts overdue and open tasks on the server, not from the rows on screen', () => {
+  it('counts open and own tasks on the server, not from the rows on screen', () => {
     render(<FixPlan />)
-    expect(taskCalls.some((f) => f.overdue === true && f.perPage === 1)).toBe(true)
-    expect(value('Overdue')).toBe('37')
+    expect(taskCalls.some((f) => f.mine === true && f.perPage === 1)).toBe(true)
     expect(value('Open tasks')).toBe('60')
     expect(value('Suggestions to review')).toBe('9')
     expect(value('My tasks')).toBe('2')
   })
 
+  it('every tile opens the list it counts, with the same filters', () => {
+    render(<FixPlan />)
+    const href = (label: string) =>
+      (
+        screen
+          .getByText(label, { selector: '[data-slot="metric-label"]' })
+          .closest('a') as HTMLAnchorElement
+      ).getAttribute('href')
+    expect(href('Open tasks')).toBe('/remediation/tasks?view=open')
+    expect(href('Suggestions to review')).toBe('/remediation/suggestions')
+    expect(href('My tasks')).toBe('/remediation/tasks?view=mine')
+    expect(screen.queryByText('Overdue', { selector: '[data-slot="metric-label"]' })).toBeNull()
+    expect(taskCalls.find((f) => f.mine === true)?.states).toEqual(VIEW_FILTERS.mine.states)
+    expect(taskCalls.find((f) => !f.mine)?.states).toEqual(VIEW_FILTERS.open.states)
+  })
+
   it('shows dashes, not zeros, until the numbers arrive', () => {
     results.open.data = undefined
     results.open.isLoading = true
-    results.overdue.data = undefined
-    results.overdue.isLoading = true
     render(<FixPlan />)
     expect(screen.queryByText('0')).toBeNull()
   })
 
   it('a failed read is an error with retry, not zeros', () => {
-    results.overdue.data = undefined
-    results.overdue.error = new Error('boom')
+    results.mine.data = undefined
+    results.mine.error = new Error('boom')
     render(<FixPlan />)
     expect(screen.getByText(/Failed to load the fix plan/)).toBeTruthy()
     expect(screen.queryByText('0')).toBeNull()

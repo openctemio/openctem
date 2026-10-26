@@ -8,20 +8,17 @@
 
 'use client'
 
+import { CveLink } from './cve-link'
 import { formatEpssScore } from '@/lib/epss'
 import * as React from 'react'
+import { useTranslation } from '@/context/i18n-provider'
 import type { ColumnDef } from '@tanstack/react-table'
-import { AlertCircle, RefreshCw, Server, ShieldAlert, Zap } from 'lucide-react'
+import { AlertCircle, RefreshCw, Server, Zap } from 'lucide-react'
+import { KevBadge } from '@/components/ui/kev-badge'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
-import {
-  DataTable,
-  FilterPanelToggle,
-  MetricStrip,
-  SeverityBadge,
-  type MetricStripItem,
-} from '@/features/shared'
+import { DataTable, MetricStrip, SeverityBadge, type MetricStripItem } from '@/features/shared'
 import type { Severity } from '@/features/shared/types'
 import { FindingStatusBadge } from '@/features/findings/components/finding-status-badge'
 import type { FindingStatus } from '@/features/findings/types'
@@ -29,7 +26,6 @@ import { useActiveCVEs, useActiveCVEStats, type ActiveCVE, type ActiveCVEsFilter
 import { VulnerabilityDetailSheet } from './vulnerability-detail-sheet'
 import {
   FilterLayout,
-  FilterSearchBox,
   VULN_PAGE_SIZES,
   VulnerabilityFilters,
   useFilterPanelOpen,
@@ -71,15 +67,8 @@ const COLUMNS: ColumnDef<ActiveCVE>[] = [
       const c = row.original
       return (
         <div className="flex items-center gap-1.5 whitespace-nowrap">
-          <span className="font-mono text-sm font-medium">{c.cve_id}</span>
-          {c.in_cisa_kev && (
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <ShieldAlert className="h-3.5 w-3.5 text-destructive" aria-label="CISA KEV" />
-              </TooltipTrigger>
-              <TooltipContent>CISA KEV</TooltipContent>
-            </Tooltip>
-          )}
+          <CveLink id={c.cve_id} stopPropagation className="text-sm font-medium" />
+          {c.in_cisa_kev && <KevBadge />}
           {c.exploit_available && (
             <Tooltip>
               <TooltipTrigger asChild>
@@ -107,11 +96,7 @@ const COLUMNS: ColumnDef<ActiveCVE>[] = [
             {c.title}
           </span>
           {c.worst_finding_status && c.worst_finding_status !== 'unknown' && (
-            <FindingStatusBadge
-              status={c.worst_finding_status as FindingStatus}
-              variant="outline"
-              className="text-xs"
-            />
+            <FindingStatusBadge status={c.worst_finding_status as FindingStatus} />
           )}
         </div>
       )
@@ -175,7 +160,13 @@ const COLUMNS: ColumnDef<ActiveCVE>[] = [
   },
 ]
 
-export function ActiveCVEsTab() {
+export function ActiveCVEsTab({
+  leading,
+}: {
+  /** Controls the page puts first in the toolbar (which CVE list is shown). */
+  leading?: React.ReactNode
+} = {}) {
+  const { t } = useTranslation()
   // `cve_` params: this tab's filters never leak into the CVE catalog tab.
   const f = useVulnFilterParams('cve_')
   const panel = useFilterPanelOpen('openctem:active-cve-filters-open')
@@ -246,23 +237,19 @@ export function ActiveCVEsTab() {
   const hasFilters = f.activeCount > 0
   const isSearching = term !== ''
 
-  const toolbarStart = (
-    <>
-      <FilterPanelToggle
-        controlsId={PANEL_ID}
-        activeCount={f.activeCount}
-        open={panel.open}
-        onToggle={panel.toggle}
-        onOpenSheet={() => panel.setSheetOpen(true)}
-      />
-      <FilterSearchBox
-        value={f.search}
-        onChange={f.setSearch}
-        placeholder="Search this page by CVE ID or title…"
-        label="Search active CVEs"
-      />
-    </>
-  )
+  const search = {
+    value: f.search,
+    onChange: f.setSearch,
+    placeholder: t('exposures.vulnSearch.placeholder', 'Search this page by CVE ID or title…'),
+    label: t('exposures.vulnSearch.activeLabel', 'Search active CVEs'),
+  }
+  const filterToggle = {
+    controlsId: PANEL_ID,
+    activeCount: f.activeCount,
+    open: panel.open,
+    onToggle: panel.toggle,
+    onOpenSheet: () => panel.setSheetOpen(true),
+  }
   const toolbarEnd = (
     <span className="hidden text-sm tabular-nums text-muted-foreground xl:inline">
       {isSearching
@@ -277,7 +264,7 @@ export function ActiveCVEsTab() {
     <TooltipProvider>
       <MetricStrip loading={statsLoading} items={metrics} />
 
-      <div className="mt-5">
+      <div>
         <FilterLayout
           panelId={PANEL_ID}
           label="Active CVE filters"
@@ -305,7 +292,9 @@ export function ActiveCVEsTab() {
               columns={COLUMNS}
               data={visibleRows}
               showSearch={false}
-              toolbarStart={toolbarStart}
+              search={search}
+              filterToggle={filterToggle}
+              toolbarStart={leading}
               toolbarEnd={toolbarEnd}
               getRowId={(c) => c.vulnerability_id}
               manualPagination

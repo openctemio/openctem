@@ -61,13 +61,20 @@ list's built-in views in display order, each with the caller's count and the
 
 | Key | `params` |
 |---|---|
-| `active` | `state=open` |
-| `needs_triage` | `status=new` |
-| `my_queue` | `state=open&related_to=me` |
-| `sla_breached` | `state=open&sla_status=overdue,exceeded` (the stats `sla_breached` rule) |
+| `active` | `state=open` (+ `&informational=false`, see below) |
+| `needs_triage` | `status=new&informational=false` |
+| `my_queue` | `state=open&related_to=me` (+ `&informational=false`) |
+| `sla_breached` | `state=open&sla_status=overdue,exceeded` (the stats `sla_breached` rule; + `&informational=false`) |
 | `pending_approval` | `pending_approval=true` |
 | `accepted_expiring` | `status=accepted&acceptance_expires_at_lte=P30D` |
 | `closed` | `state=closed` (fixed and dispositioned) |
+
+The work views (`active`, `my_queue`, `sla_breached`) leave informational
+findings out unless the caller's preference, else the organization's default,
+includes them; `needs_triage` always leaves them out, the response's
+`include_informational` says which applied, and such a view carries
+`informational_hidden` (how many it leaves out)
+([findings-work-views.md](findings-work-views.md)).
 
 The definitions live in one place (`vulnerability.FindingQuickViews`). Each
 view's params are parsed with the strict registry and compiled with
@@ -108,6 +115,32 @@ A bad filter is `400` with code `INVALID_FILTER` and `details[]` naming the
   lists the accepted names.
 - Old names (`severities`, `search`, …) are aliases: they work, answer with
   `Deprecation`/`Sunset` and count in `deprecated_query_param_requests_total`.
+
+## Findings search (`q`)
+
+`q` on the findings list, stats, groups and export matches, inside the
+caller's compiled scope:
+
+| Field | Match | Index |
+|---|---|---|
+| title | contains, case-insensitive | `idx_findings_title_trgm` (GIN `gin_trgm_ops`) |
+| file path | contains | `idx_findings_file_path_trgm` |
+| rule id | contains | `idx_findings_rule_id_trgm` |
+| CVE id | exact, case-insensitive (`cve_id` or any of `cve_ids`) | `idx_findings_tenant_cve`, `idx_findings_cve_ids` |
+| asset name | contains (assets of the caller's tenant) | `idx_assets_name_trgm` |
+
+The description is not part of `q`: it is the opt-in `description` filter
+(`description_contains=…`). `GET /meta/filters/findings` lists the searched
+fields in `contract.search_fields` (`title, file_path, rule_id, cve_id,
+asset_name`), so a search box can say what it searches. `q` is bound as a
+parameter (LIKE metacharacters escaped) and is at most 255 characters.
+
+Every arm of the search can use an index, so the planner can combine them
+instead of reading all the tenant's findings. The list, count, stats and SLA
+breakdown each run in a read-only transaction with a 5 s statement timeout; a
+read that runs out of time is `503 QUERY_TIMEOUT` ("narrow the search or the
+filters"). `GET /findings`, its stats and groups are under the heavy-read rate
+limiter.
 
 ## Limits
 

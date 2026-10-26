@@ -37,7 +37,7 @@ import { cn } from '@/lib/utils'
 
 import { PRIORITY_WINDOWS, SEVERITY_WINDOWS } from './sla-windows'
 import { buildSlaPolicyPayload } from '../lib/sla-policy-payload'
-import { NO_SLA } from '../schemas/sla-policy-schema'
+import { DEFAULT_KEV_CAP_DAYS, NO_SLA } from '../schemas/sla-policy-schema'
 
 import {
   slaPolicySchema,
@@ -74,6 +74,7 @@ function toFormData(policy: SlaPolicy): SlaPolicyFormData {
     medium_days: policy.medium_days,
     low_days: policy.low_days,
     info_days: policy.info_days,
+    kev_cap_days: policy.kev_cap_days ?? DEFAULT_KEV_CAP_DAYS,
     warning_threshold_pct: policy.warning_threshold_pct,
     escalation_enabled: policy.escalation_enabled,
   }
@@ -290,6 +291,39 @@ export function SlaPolicyDialog({ open, onOpenChange, policy, onSuccess }: SlaPo
                   ))}
                 </div>
               </div>
+
+              <FormField
+                control={form.control}
+                name="kev_cap_days"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>
+                      {t(
+                        'settings.slaPolicies.dialog.kevCapLabel',
+                        'Known exploited (KEV) deadline cap (days)'
+                      )}
+                    </FormLabel>
+                    <FormControl>
+                      <Input
+                        type="number"
+                        min={0}
+                        max={365}
+                        className="max-w-[140px]"
+                        {...field}
+                        value={Number.isNaN(field.value) ? '' : field.value}
+                        onChange={numberChange(field)}
+                      />
+                    </FormControl>
+                    <FormDescription>
+                      {t(
+                        'settings.slaPolicies.dialog.kevCapHint',
+                        'A finding whose vulnerability is in CISA KEV is due at most this many days after it is first seen as known exploited, whatever its priority or severity. It only shortens a deadline. 0 turns it off.'
+                      )}
+                    </FormDescription>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
 
               <FormField
                 control={form.control}

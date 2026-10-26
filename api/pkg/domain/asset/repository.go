@@ -36,6 +36,10 @@ type DisplayInfo struct {
 	ID   shared.ID
 	Name string
 	Type AssetType
+	// CrownJewel and InternetFacing are the two asset facts a findings row
+	// shows beside the asset name.
+	CrownJewel     bool
+	InternetFacing bool
 }
 
 // Repository defines the interface for asset persistence.
@@ -133,11 +137,11 @@ type Repository interface {
 	// GetAssetTypeBreakdown returns total and exposed counts grouped by asset_type in a single query,
 	// over the assets in scope (nil scope: the whole tenant).
 	// This replaces the N+1 pattern of calling Count() per type.
-	GetAssetTypeBreakdown(ctx context.Context, tenantID shared.ID, scope *shared.DataScope) (map[string]AssetTypeStats, error)
+	GetAssetTypeBreakdown(ctx context.Context, tenantID shared.ID, scope *shared.DataScope, af *attribution.StateFilter) (map[string]AssetTypeStats, error)
 
 	// GetAverageRiskScore returns the average risk_score of the assets in scope (nil scope: the whole tenant).
 	// This replaces loading all assets into memory to compute the average.
-	GetAverageRiskScore(ctx context.Context, tenantID shared.ID, scope *shared.DataScope) (float64, error)
+	GetAverageRiskScore(ctx context.Context, tenantID shared.ID, scope *shared.DataScope, af *attribution.StateFilter) (float64, error)
 
 	// BatchUpdateRiskScores updates risk scores for multiple assets in a single query.
 	// Uses PostgreSQL unnest() for efficient bulk updates.
@@ -397,17 +401,28 @@ func (o ListOptions) WithSort(sort *pagination.SortOption) ListOptions {
 	return o
 }
 
-// AllowedSortFields returns the allowed sort fields for assets.
+// CriticalityRankSQL orders criticality by level (critical highest), not by
+// spelling: the column is text, so a plain ORDER BY put "low" above
+// "medium". Unknown values rank with none.
+const CriticalityRankSQL = "CASE criticality WHEN 'critical' THEN 4 WHEN 'high' THEN 3 " +
+	"WHEN 'medium' THEN 2 WHEN 'low' THEN 1 ELSE 0 END"
+
+// ExposureRankSQL orders exposure by reach (public highest), not by spelling.
+const ExposureRankSQL = "CASE exposure WHEN 'public' THEN 4 WHEN 'restricted' THEN 3 " +
+	"WHEN 'private' THEN 2 WHEN 'isolated' THEN 1 ELSE 0 END"
+
+// AllowedSortFields returns the allowed sort fields for assets. Values are
+// trusted SQL expressions; the client only picks a key.
 func AllowedSortFields() map[string]string {
 	return map[string]string{
 		"name":          "name",
 		"created_at":    "created_at",
 		"updated_at":    "updated_at",
-		"criticality":   "criticality",
+		"criticality":   CriticalityRankSQL,
 		"status":        "status",
 		"type":          "asset_type",
 		"scope":         "scope",
-		"exposure":      "exposure",
+		"exposure":      ExposureRankSQL,
 		"risk_score":    "risk_score",
 		"finding_count": "finding_count",
 		"first_seen":    "first_seen",

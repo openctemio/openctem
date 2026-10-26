@@ -6,7 +6,7 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Skeleton } from '@/components/ui/skeleton'
-import { DetailField, DetailFieldGrid, RelativeTime } from '@/features/shared'
+import { DetailField, DetailFieldGrid, RelativeTime, PageStack } from '@/features/shared'
 import { useTranslation } from '@/context/i18n-provider'
 import { useLimitKeyLabel } from '@/features/limits/components/limits-usage-table'
 import { useTenantLimits } from '../api/use-limits'
@@ -73,7 +73,7 @@ export function OrganizationSummary({
     (limits.data?.denied_features?.length ?? 0)
 
   return (
-    <div className="space-y-5">
+    <PageStack>
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
         <SummaryCard
           icon={Users}
@@ -193,6 +193,6 @@ export function OrganizationSummary({
         </div>
         <AdminActivityTable entries={activity.data?.data ?? []} isLoading={activity.isLoading} />
       </section>
-    </div>
+    </PageStack>
   )
 }

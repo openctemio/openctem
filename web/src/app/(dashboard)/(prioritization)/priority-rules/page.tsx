@@ -11,6 +11,7 @@ import useSWR from 'swr'
 import { Main } from '@/components/layout'
 import {
   PageHeader,
+  PageStack,
   DataTable,
   DataTableColumnHeader,
   DataTableRowActions,
@@ -34,6 +35,7 @@ import {
   DialogBody,
 } from '@/components/ui/dialog'
 import { ConfirmDialog } from '@/components/confirm-dialog'
+import { confirmName } from '@/lib/confirm-name'
 import {
   Select,
   SelectContent,
@@ -89,7 +91,7 @@ interface ListResponse {
 
 const FIELD_CONFIG: Record<
   FieldKey,
-  { label: string; type: FieldType; options?: string[]; optionLabels?: Record<string, string> }
+  { label: string; type: FieldType; options?: string[]; optionKeyPrefix?: string }
 > = {
   is_in_kev: { label: 'Is in KEV catalog', type: 'bool' },
   is_reachable: { label: 'Is reachable', type: 'bool' },
@@ -99,13 +101,13 @@ const FIELD_CONFIG: Record<
     label: 'Severity',
     type: 'string',
     options: [...SEVERITY_LEVELS],
-    optionLabels: SEVERITY_LABELS,
+    optionKeyPrefix: 'severity',
   },
   asset_criticality: {
     label: 'Asset criticality',
     type: 'string',
     options: [...ASSET_CRITICALITY_LEVELS],
-    optionLabels: CRITICALITY_LABELS,
+    optionKeyPrefix: 'criticality',
   },
 }
 
@@ -118,6 +120,11 @@ const OPERATOR_LABEL: Record<Operator, string> = {
 }
 
 const PRIORITY_CLASSES: PriorityClass[] = ['P0', 'P1', 'P2', 'P3']
+
+function optionFallback(prefix: string, opt: string): string {
+  if (prefix === 'severity') return SEVERITY_LABELS[opt as keyof typeof SEVERITY_LABELS] ?? opt
+  return CRITICALITY_LABELS[opt as keyof typeof CRITICALITY_LABELS] ?? opt
+}
 
 function operatorsFor(type: FieldType): Operator[] {
   switch (type) {
@@ -183,6 +190,8 @@ export default function PriorityRulesPage() {
   const [isDialogOpen, setIsDialogOpen] = useState(false)
   const [editingRule, setEditingRule] = useState<PriorityRule | null>(null)
   const [deletingRule, setDeletingRule] = useState<PriorityRule | null>(null)
+  // Switching a rule on reprioritizes findings across the organization: ask first.
+  const [activatingRule, setActivatingRule] = useState<PriorityRule | null>(null)
   const [form, setForm] = useState<FormState>(emptyForm)
   const [isSaving, setIsSaving] = useState(false)
   const [dryRunRule, setDryRunRule] = useState<DryRunRule | null>(null)
@@ -265,29 +274,32 @@ export default function PriorityRulesPage() {
         })
         await mutate()
       } catch (err) {
-        const message = err instanceof Error ? err.message : 'Failed to update rule'
+        const message =
+          err instanceof Error
+            ? err.message
+            : t('prioritization.rules.toast.failedToggle', 'Failed to update rule')
         toast.error(message)
       }
     },
-    [mutate]
+    [mutate, t]
   )
 
   async function handleSave() {
     if (!form.name.trim()) {
-      toast.error('Name is required')
+      toast.error(t('prioritization.rules.toast.nameRequired', 'Name is required'))
       return
     }
 
     const orderNum = Number(form.evaluation_order)
     if (!Number.isFinite(orderNum)) {
-      toast.error('Evaluation order must be a number')
+      toast.error(t('prioritization.rules.toast.orderNumber', 'Evaluation order must be a number'))
       return
     }
 
     // The API refuses a rule without conditions: it would re-class every
     // finding in the organization.
     if (form.conditions.length === 0) {
-      toast.error('Add at least one condition')
+      toast.error(t('prioritization.rules.toast.needCondition', 'Add at least one condition'))
       return
     }
 
@@ -296,7 +308,13 @@ export default function PriorityRulesPage() {
     for (const c of form.conditions) {
       const cfg = FIELD_CONFIG[c.field]
       if (!cfg) {
-        toast.error(`Unknown condition field "${c.field}" — remove it before saving.`)
+        toast.error(
+          t(
+            'prioritization.rules.toast.unknownField',
+            'Unknown condition field "{field}". Remove it before saving.',
+            { field: c.field }
+          )
+        )
         return
       }
       const type = cfg.type
@@ -306,7 +324,11 @@ export default function PriorityRulesPage() {
       } else if (type === 'float') {
         const n = typeof c.value === 'number' ? c.value : Number(c.value)
         if (!Number.isFinite(n)) {
-          toast.error(`Invalid number for ${c.field}`)
+          toast.error(
+            t('prioritization.rules.toast.invalidNumber', 'Invalid number for {field}', {
+              field: c.field,
+            })
+          )
           return
         }
         value = n
@@ -338,17 +360,20 @@ export default function PriorityRulesPage() {
     try {
       if (editingRule) {
         await put(`/api/v1/priority-rules/${editingRule.id}`, payload)
-        toast.success('Priority rule updated')
+        toast.success(t('prioritization.rules.toast.updated', 'Priority rule updated'))
       } else {
         await post('/api/v1/priority-rules', payload)
-        toast.success('Priority rule created')
+        toast.success(t('prioritization.rules.toast.created', 'Priority rule created'))
       }
       setIsDialogOpen(false)
       setEditingRule(null)
       setForm(emptyForm)
       await mutate()
     } catch (err) {
-      const message = err instanceof Error ? err.message : 'Failed to save priority rule'
+      const message =
+        err instanceof Error
+          ? err.message
+          : t('prioritization.rules.toast.failedSave', 'Failed to save priority rule')
       toast.error(message)
     } finally {
       setIsSaving(false)
@@ -359,11 +384,14 @@ export default function PriorityRulesPage() {
     if (!deletingRule) return
     try {
       await del(`/api/v1/priority-rules/${deletingRule.id}`)
-      toast.success('Priority rule deleted')
+      toast.success(t('prioritization.rules.toast.deleted', 'Priority rule deleted'))
       setDeletingRule(null)
       await mutate()
     } catch (err) {
-      const message = err instanceof Error ? err.message : 'Failed to delete priority rule'
+      const message =
+        err instanceof Error
+          ? err.message
+          : t('prioritization.rules.toast.failedDelete', 'Failed to delete priority rule')
       toast.error(message)
     }
   }
@@ -372,21 +400,31 @@ export default function PriorityRulesPage() {
     () => [
       {
         accessorKey: 'name',
-        header: ({ column }) => <DataTableColumnHeader column={column} title="Name" />,
+        header: ({ column }) => (
+          <DataTableColumnHeader
+            column={column}
+            title={t('prioritization.rules.col.name', 'Name')}
+          />
+        ),
         cell: ({ row }) => (
           <StackedCell primary={row.original.name} secondary={row.original.description} />
         ),
       },
       {
         accessorKey: 'priority_class',
-        header: ({ column }) => <DataTableColumnHeader column={column} title="Target class" />,
+        header: ({ column }) => (
+          <DataTableColumnHeader
+            column={column}
+            title={t('prioritization.rules.col.target', 'Target class')}
+          />
+        ),
         cell: ({ row }) => (
           <PriorityClassBadge priorityClass={row.original.priority_class} showTooltip={false} />
         ),
       },
       {
         id: 'conditions',
-        header: 'Conditions',
+        header: t('prioritization.rules.col.conditions', 'Conditions'),
         enableSorting: false,
         cell: ({ row }) => {
           const conditions = row.original.conditions ?? []
@@ -394,7 +432,7 @@ export default function PriorityRulesPage() {
             <div className="flex flex-wrap gap-1">
               {conditions.length === 0 ? (
                 <span className="text-xs text-destructive">
-                  No conditions: add one before enabling
+                  {t('prioritization.rules.noConditions', 'No conditions: add one before enabling')}
                 </span>
               ) : (
                 conditions.map((c, i) => (
@@ -414,18 +452,27 @@ export default function PriorityRulesPage() {
       },
       {
         accessorKey: 'evaluation_order',
-        header: ({ column }) => <DataTableColumnHeader column={column} title="Evaluation order" />,
+        header: ({ column }) => (
+          <DataTableColumnHeader
+            column={column}
+            title={t('prioritization.rules.col.order', 'Evaluation order')}
+          />
+        ),
         cell: ({ row }) => <span className="tabular-nums">{row.original.evaluation_order}</span>,
       },
       {
         id: 'active',
-        header: 'Active',
+        header: t('prioritization.rules.col.active', 'Active'),
         enableSorting: false,
         cell: ({ row }) => (
           <Switch
-            aria-label={`${row.original.name} active`}
+            aria-label={t('prioritization.rules.activeAria', '{name} active', {
+              name: row.original.name,
+            })}
             checked={row.original.is_active}
-            onCheckedChange={(checked) => toggleActive(row.original, checked)}
+            onCheckedChange={(checked) =>
+              checked ? setActivatingRule(row.original) : void toggleActive(row.original, false)
+            }
           />
         ),
       },
@@ -440,9 +487,13 @@ export default function PriorityRulesPage() {
             <Can permission={Permission.PriorityRulesWrite}>
               <DataTableRowActions
                 actions={[
-                  { label: 'Edit', icon: Pencil, onClick: () => openEdit(rule) },
                   {
-                    label: 'Dry run',
+                    label: t('prioritization.rules.action.edit', 'Edit'),
+                    icon: Pencil,
+                    onClick: () => openEdit(rule),
+                  },
+                  {
+                    label: t('prioritization.rules.action.dryRun', 'Dry run'),
                     icon: FlaskConical,
                     onClick: () =>
                       setDryRunRule({
@@ -452,7 +503,7 @@ export default function PriorityRulesPage() {
                       }),
                   },
                   {
-                    label: 'Delete',
+                    label: t('confirm.delete', 'Delete'),
                     icon: Trash2,
                     destructive: true,
                     separatorBefore: true,
@@ -465,23 +516,24 @@ export default function PriorityRulesPage() {
         },
       },
     ],
-    [toggleActive]
+    [toggleActive, t]
   )
 
   function renderValueInput(c: Condition, idx: number) {
     const cfg = FIELD_CONFIG[c.field]
+    const valueAria = t('prioritization.rules.cond.value', 'Value')
     if (cfg.type === 'bool') {
       return (
         <Select
           value={String(Boolean(c.value))}
           onValueChange={(v) => updateCondition(idx, { value: v === 'true' })}
         >
-          <SelectTrigger>
+          <SelectTrigger aria-label={valueAria}>
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="true">true</SelectItem>
-            <SelectItem value="false">false</SelectItem>
+            <SelectItem value="true">{t('prioritization.rules.value.true', 'True')}</SelectItem>
+            <SelectItem value="false">{t('prioritization.rules.value.false', 'False')}</SelectItem>
           </SelectContent>
         </Select>
       )
@@ -495,6 +547,7 @@ export default function PriorityRulesPage() {
           value={typeof c.value === 'number' || typeof c.value === 'string' ? String(c.value) : ''}
           onChange={(e) => updateCondition(idx, { value: e.target.value })}
           placeholder="0.0"
+          aria-label={valueAria}
         />
       )
     }
@@ -511,6 +564,7 @@ export default function PriorityRulesPage() {
           value={arr}
           onChange={(e) => updateCondition(idx, { value: e.target.value })}
           placeholder="critical, high"
+          aria-label={valueAria}
         />
       )
     }
@@ -521,13 +575,15 @@ export default function PriorityRulesPage() {
           value={typeof c.value === 'string' ? c.value : ''}
           onValueChange={(v) => updateCondition(idx, { value: v })}
         >
-          <SelectTrigger>
-            <SelectValue placeholder="Select" />
+          <SelectTrigger aria-label={valueAria}>
+            <SelectValue placeholder={t('prioritization.rules.value.select', 'Select')} />
           </SelectTrigger>
           <SelectContent>
             {cfg.options.map((opt) => (
               <SelectItem key={opt} value={opt}>
-                {cfg.optionLabels?.[opt] ?? opt}
+                {cfg.optionKeyPrefix
+                  ? t(`${cfg.optionKeyPrefix}.${opt}`, optionFallback(cfg.optionKeyPrefix, opt))
+                  : opt}
               </SelectItem>
             ))}
           </SelectContent>
@@ -539,53 +595,64 @@ export default function PriorityRulesPage() {
       <Input
         value={typeof c.value === 'string' ? c.value : ''}
         onChange={(e) => updateCondition(idx, { value: e.target.value })}
+        aria-label={valueAria}
       />
     )
   }
 
   return (
     <Main>
-      <PageHeader
-        title="Priority rules"
-        description="Define rules that override the calculated finding priority based on conditions."
-      >
-        {/* The other lever: how the underlying risk score is weighted. */}
-        {canSeeRiskScoring && (
-          <Button variant="outline" size="sm" asChild>
-            <Link href="/settings/risk-scoring">
-              <Scale className="h-4 w-4" />
-              Tune risk scoring
-            </Link>
-          </Button>
-        )}
-        <Can permission={Permission.PriorityRulesWrite}>
-          <Button size="sm" onClick={openCreate}>
-            <Plus className="h-4 w-4" />
-            Create rule
-          </Button>
-        </Can>
-      </PageHeader>
+      <PageStack>
+        <PageHeader
+          title={t('prioritization.rules.title', 'Priority rules')}
+          description={t(
+            'prioritization.rules.description',
+            'Define rules that override the calculated finding priority based on conditions.'
+          )}
+        >
+          {/* The other lever: how the underlying risk score is weighted. */}
+          {canSeeRiskScoring && (
+            <Button variant="outline" size="sm" asChild>
+              <Link href="/settings/risk-scoring">
+                <Scale className="h-4 w-4" />
+                {t('prioritization.rules.tune', 'Tune risk scoring')}
+              </Link>
+            </Button>
+          )}
+          <Can permission={Permission.PriorityRulesWrite}>
+            <Button size="sm" onClick={openCreate}>
+              <Plus className="h-4 w-4" />
+              {t('prioritization.rules.create', 'Create rule')}
+            </Button>
+          </Can>
+        </PageHeader>
 
-      <Alert className="mt-5">
-        <Info className="h-4 w-4" />
-        <AlertTitle>How evaluation works</AlertTitle>
-        <AlertDescription>
-          Rules are evaluated in descending order of <strong>evaluation order</strong>
-          {' (higher wins). '}
-          The first active rule whose conditions all match sets the finding&apos;s priority class.
-          Inactive rules are skipped.
-        </AlertDescription>
-      </Alert>
+        <Alert>
+          <Info className="h-4 w-4" />
+          <AlertTitle>{t('prioritization.rules.how.title', 'How evaluation works')}</AlertTitle>
+          <AlertDescription>
+            {t(
+              'prioritization.rules.how.body',
+              "Rules are evaluated from the highest evaluation order down (higher wins). The first active rule whose conditions all match sets the finding's priority class. Inactive rules are skipped."
+            )}
+          </AlertDescription>
+        </Alert>
 
-      <div className="mt-5">
         {error ? (
           <Alert variant="destructive">
             <AlertCircle className="h-4 w-4" />
-            <AlertTitle>Failed to load priority rules</AlertTitle>
+            <AlertTitle>
+              {t('prioritization.rules.loadFailed', 'Failed to load priority rules')}
+            </AlertTitle>
             <AlertDescription>
-              <p>{getErrorMessage(error, 'The priority rules request failed.')}</p>
+              <p>
+                {getErrorMessage(
+                  error,
+                  t('prioritization.rules.loadFailedDesc', 'The priority rules request failed.')
+                )}
+              </p>
               <Button variant="outline" size="sm" className="mt-2" onClick={() => void mutate()}>
-                Retry
+                {t('common.retry', 'Retry')}
               </Button>
             </AlertDescription>
           </Alert>
@@ -598,48 +665,68 @@ export default function PriorityRulesPage() {
           <DataTable
             columns={columns}
             data={rules}
-            searchPlaceholder="Search rules…"
-            emptyMessage="No priority rules yet"
-            emptyDescription='Click "Create rule" to add one.'
+            searchPlaceholder={t('prioritization.rules.search', 'Search rules…')}
+            emptyMessage={t('prioritization.rules.empty.title', 'No priority rules yet')}
+            emptyDescription={t(
+              'prioritization.rules.empty.desc',
+              'Create a rule to override the calculated priority.'
+            )}
           />
         )}
-      </div>
+      </PageStack>
 
       <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
         <DialogContent size="lg">
           <DialogHeader>
-            <DialogTitle>{editingRule ? 'Edit priority rule' : 'Create priority rule'}</DialogTitle>
+            <DialogTitle>
+              {editingRule
+                ? t('prioritization.rules.dialog.editTitle', 'Edit priority rule')
+                : t('prioritization.rules.dialog.createTitle', 'Create priority rule')}
+            </DialogTitle>
             <DialogDescription>
-              Define conditions that will override the calculated finding priority.
+              {t(
+                'prioritization.rules.dialog.description',
+                'Define conditions that will override the calculated finding priority.'
+              )}
             </DialogDescription>
           </DialogHeader>
 
           <DialogBody>
             <div className="grid gap-4 py-4">
               <div className="grid gap-2">
-                <Label htmlFor="name">Name *</Label>
+                <Label htmlFor="name">{t('prioritization.rules.form.name', 'Name *')}</Label>
                 <Input
                   id="name"
                   value={form.name}
                   onChange={(e) => setForm({ ...form, name: e.target.value })}
-                  placeholder="e.g. KEV on crown jewel → P0"
+                  placeholder={t(
+                    'prioritization.rules.form.namePlaceholder',
+                    'e.g. KEV on crown jewel → P0'
+                  )}
                 />
               </div>
 
               <div className="grid gap-2">
-                <Label htmlFor="description">Description</Label>
+                <Label htmlFor="description">
+                  {t('prioritization.rules.form.description', 'Description')}
+                </Label>
                 <Textarea
                   id="description"
                   value={form.description}
                   onChange={(e) => setForm({ ...form, description: e.target.value })}
-                  placeholder="Explain when and why this rule applies"
+                  placeholder={t(
+                    'prioritization.rules.form.descriptionPlaceholder',
+                    'Explain when and why this rule applies'
+                  )}
                   rows={2}
                 />
               </div>
 
               <div className="grid gap-4 sm:grid-cols-3">
                 <div className="grid gap-2">
-                  <Label htmlFor="priority_class">Target priority class</Label>
+                  <Label htmlFor="priority_class">
+                    {t('prioritization.rules.form.target', 'Target priority class')}
+                  </Label>
                   <Select
                     value={form.priority_class}
                     onValueChange={(value) =>
@@ -660,7 +747,9 @@ export default function PriorityRulesPage() {
                 </div>
 
                 <div className="grid gap-2">
-                  <Label htmlFor="evaluation_order">Evaluation order</Label>
+                  <Label htmlFor="evaluation_order">
+                    {t('prioritization.rules.form.order', 'Evaluation order')}
+                  </Label>
                   <Input
                     id="evaluation_order"
                     type="number"
@@ -671,7 +760,9 @@ export default function PriorityRulesPage() {
                 </div>
 
                 <div className="grid gap-2">
-                  <Label htmlFor="is_active">Active</Label>
+                  <Label htmlFor="is_active">
+                    {t('prioritization.rules.form.active', 'Active')}
+                  </Label>
                   <div className="flex h-9 items-center">
                     <Switch
                       id="is_active"
@@ -684,16 +775,20 @@ export default function PriorityRulesPage() {
 
               <div className="grid gap-2 rounded-md border p-3">
                 <div className="flex items-center justify-between">
-                  <Label className="text-sm font-semibold">Conditions</Label>
+                  <Label className="text-sm font-semibold">
+                    {t('prioritization.rules.form.conditions', 'Conditions')}
+                  </Label>
                   <Button type="button" variant="outline" size="sm" onClick={addCondition}>
                     <Plus className="me-1 h-3 w-3" />
-                    Add condition
+                    {t('prioritization.rules.form.addCondition', 'Add condition')}
                   </Button>
                 </div>
                 {form.conditions.length === 0 ? (
                   <p className="text-xs text-muted-foreground">
-                    Add at least one condition. A rule applies only to findings that match all of
-                    its conditions.
+                    {t(
+                      'prioritization.rules.form.conditionsHelp',
+                      'Add at least one condition. A rule applies only to findings that match all of its conditions.'
+                    )}
                   </p>
                 ) : (
                   <div className="flex flex-col gap-2">
@@ -710,15 +805,21 @@ export default function PriorityRulesPage() {
                             className="flex items-center justify-between gap-2 rounded-md border border-dashed p-2"
                           >
                             <span className="text-muted-foreground text-xs">
-                              Unknown condition field <code className="font-mono">{c.field}</code> —
-                              remove to edit this rule.
+                              {t(
+                                'prioritization.rules.cond.unknown',
+                                'Unknown condition field {field}. Remove it to edit this rule.',
+                                { field: c.field }
+                              )}
                             </span>
                             <Button
                               type="button"
                               variant="ghost"
                               size="icon"
                               className="h-9 w-9"
-                              aria-label="Remove unknown condition"
+                              aria-label={t(
+                                'prioritization.rules.cond.removeUnknown',
+                                'Remove unknown condition'
+                              )}
                               onClick={() => removeCondition(idx)}
                             >
                               <X className="h-4 w-4" />
@@ -737,13 +838,15 @@ export default function PriorityRulesPage() {
                             value={c.field}
                             onValueChange={(v) => changeConditionField(idx, v as FieldKey)}
                           >
-                            <SelectTrigger>
+                            <SelectTrigger
+                              aria-label={t('prioritization.rules.cond.field', 'Condition field')}
+                            >
                               <SelectValue />
                             </SelectTrigger>
                             <SelectContent>
                               {(Object.keys(FIELD_CONFIG) as FieldKey[]).map((k) => (
                                 <SelectItem key={k} value={k}>
-                                  {FIELD_CONFIG[k].label}
+                                  {t(`prioritization.rules.field.${k}`, FIELD_CONFIG[k].label)}
                                 </SelectItem>
                               ))}
                             </SelectContent>
@@ -752,7 +855,9 @@ export default function PriorityRulesPage() {
                             value={c.operator}
                             onValueChange={(v) => changeConditionOperator(idx, v as Operator)}
                           >
-                            <SelectTrigger>
+                            <SelectTrigger
+                              aria-label={t('prioritization.rules.cond.operator', 'Operator')}
+                            >
                               <SelectValue />
                             </SelectTrigger>
                             <SelectContent>
@@ -769,6 +874,7 @@ export default function PriorityRulesPage() {
                             variant="ghost"
                             size="icon"
                             className="h-9 w-9"
+                            aria-label={t('prioritization.rules.cond.remove', 'Remove condition')}
                             onClick={() => removeCondition(idx)}
                           >
                             <X className="h-4 w-4" />
@@ -784,7 +890,7 @@ export default function PriorityRulesPage() {
 
           <DialogFooter>
             <Button variant="outline" onClick={() => setIsDialogOpen(false)}>
-              Cancel
+              {t('common.cancel', 'Cancel')}
             </Button>
             <Button
               variant="outline"
@@ -798,11 +904,13 @@ export default function PriorityRulesPage() {
               }
             >
               <FlaskConical className="me-1 h-4 w-4" />
-              Dry run
+              {t('prioritization.rules.action.dryRun', 'Dry run')}
             </Button>
             <Button onClick={handleSave} disabled={isSaving || form.conditions.length === 0}>
               {isSaving && <Loader2 className="h-4 w-4 animate-spin" />}
-              {editingRule ? 'Update' : 'Create'}
+              {editingRule
+                ? t('prioritization.rules.form.update', 'Update')
+                : t('prioritization.rules.form.create', 'Create')}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -815,6 +923,21 @@ export default function PriorityRulesPage() {
       />
 
       <ConfirmDialog
+        open={!!activatingRule}
+        onOpenChange={(open) => !open && setActivatingRule(null)}
+        title={t('confirm.priorityRule.activateTitle', undefined, {
+          name: activatingRule?.name ?? '',
+        })}
+        desc={t('confirm.priorityRule.activateDesc')}
+        confirmText={t('confirm.priorityRule.activateBtn')}
+        handleConfirm={async () => {
+          const rule = activatingRule
+          setActivatingRule(null)
+          if (rule) await toggleActive(rule, true)
+        }}
+      />
+
+      <ConfirmDialog
         open={!!deletingRule}
         onOpenChange={(open) => !open && setDeletingRule(null)}
         title={t('confirm.priorityRule.deleteTitle', 'Delete the priority rule "{name}"?', {
@@ -824,8 +947,9 @@ export default function PriorityRulesPage() {
           'confirm.priorityRule.deleteDesc',
           'Findings it matched are no longer prioritized by it; the other rules still apply. This cannot be undone.'
         )}
-        confirmText={t('confirm.delete', 'Delete')}
+        confirmText={t('confirm.priorityRule.deleteBtn')}
         destructive
+        typeToConfirm={deletingRule ? confirmName(deletingRule.name, deletingRule.id) : undefined}
         handleConfirm={() => void handleDelete()}
       />
     </Main>

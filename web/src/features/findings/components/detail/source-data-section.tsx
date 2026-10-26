@@ -29,6 +29,7 @@ import {
 import { UntrustedTextBlock } from '@/features/shared/components/untrusted-text-block'
 import { SafeExternalLink } from '@/components/safe-external-link'
 import Link from '@/components/link'
+import { formatEpssScore } from '@/lib/epss'
 import type { FindingSourceData, FindingSourceScore } from '../../types'
 
 type Translate = (key: string, fallback?: string, vars?: Record<string, string | number>) => string
@@ -71,31 +72,33 @@ function humanize(s: string): string {
   return s.replace(/_/g, ' ')
 }
 
-function day(iso?: string): string | undefined {
+function day(iso: string | undefined, locale: string): string | undefined {
   if (!iso) return undefined
   const d = new Date(iso)
   if (Number.isNaN(d.getTime())) return undefined
-  return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+  return d.toLocaleDateString(locale, { month: 'short', day: 'numeric', year: 'numeric' })
 }
 
 function Mono({ children }: { children: React.ReactNode }) {
-  return <span className="font-mono text-[13px] break-all">{children}</span>
+  return <span className="font-mono text-body break-all">{children}</span>
 }
 
 /** The value of a score as people read it: EPSS as a percentage. */
 export function formatScoreValue(s: FindingSourceScore): string | undefined {
   if (s.value === undefined || s.value === null) return s.label || undefined
   if (s.system === 'epss' || s.system === 'epss_percentile') {
-    return `${(s.value * 100).toFixed(s.value < 0.1 ? 2 : 1)}%`
+    // A tiny score must not print as "0.00%".
+    if (s.value > 0 && s.value * 100 < 0.01) return '<0.01%'
+    return s.value < 0.1 ? formatEpssScore(s.value, 2) : formatEpssScore(s.value, 1)
   }
   return s.value.toFixed(1)
 }
 
 function ScoreRow({ score }: { score: FindingSourceScore }) {
-  const { t } = useTranslation()
+  const { t, locale } = useTranslation()
   const name = `${knownLabel(t, 'system', SYSTEM_LABEL, score.system)}${score.version ? ` ${score.version}` : ''}`
   const value = formatScoreValue(score)
-  const when = day(score.asOf)
+  const when = day(score.asOf, locale)
   return (
     <li className="space-y-0.5" data-testid="source-score">
       <div className="flex flex-wrap items-baseline gap-x-2 text-sm">
@@ -127,7 +130,7 @@ export function SourceDataSection({
   data: FindingSourceData
   ruleName?: string
 }) {
-  const { t } = useTranslation()
+  const { t, locale } = useTranslation()
   const n = data.native
   const l = data.lifecycle
   const sol = data.solution
@@ -168,7 +171,7 @@ export function SourceDataSection({
               {vex.source ? <Mono>{vex.source}</Mono> : null}
             </DetailField>
             <DetailField label={t('findings.sourceData.statedOn', 'Stated on')}>
-              {day(vex.asOf)}
+              {day(vex.asOf, locale)}
             </DetailField>
           </DetailFieldGrid>
           {vex.statement && (
@@ -215,13 +218,13 @@ export function SourceDataSection({
             </DetailField>
             <DetailField label={t('findings.sourceData.family', 'Family')}>{n?.family}</DetailField>
             <DetailField label={t('findings.sourceData.firstFound', 'First found (source)')}>
-              {day(l?.firstFound)}
+              {day(l?.firstFound, locale)}
             </DetailField>
             <DetailField label={t('findings.sourceData.lastFound', 'Last found (source)')}>
-              {day(l?.lastFound)}
+              {day(l?.lastFound, locale)}
             </DetailField>
             <DetailField label={t('findings.sourceData.lastFixed', 'Last fixed (source)')}>
-              {day(l?.lastFixed)}
+              {day(l?.lastFixed, locale)}
             </DetailField>
             <DetailField label={t('findings.sourceData.timesFound', 'Times found')}>
               {l?.timesFound ? <span className="tabular-nums">{l.timesFound}</span> : null}
@@ -251,7 +254,7 @@ export function SourceDataSection({
               {sol?.type ? humanize(sol.type) : null}
             </DetailField>
             <DetailField label={t('findings.sourceData.patchPublished', 'Patch published')}>
-              {day(sol?.patchPublishedAt)}
+              {day(sol?.patchPublishedAt, locale)}
             </DetailField>
             <DetailField label={t('findings.sourceData.advisories', 'Advisories')} full>
               {sol && sol.advisories.length > 0 ? (

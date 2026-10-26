@@ -11,8 +11,8 @@ const REVIEW_HREF = '/attack-surface/review'
 const LOOKALIKES_HREF = '/attack-surface/lookalikes'
 
 /**
- * Overview | Suggestions | Changes | Lookalikes, the route tabs of Discovery >
- * Attack surface. Suggestions shows how many decisions wait (one per card, not
+ * Overview | Review | Lookalikes | Changes | Web surface, the route tabs of
+ * Discovery > Attack surface. Review shows how many decisions wait (one per card, not
  * per row), fetched only when that tab is visible.
  */
 export function AttackSurfaceSectionTabs() {
@@ -27,11 +27,13 @@ export function AttackSurfaceSectionTabs() {
           case '/attack-surface':
             return { ...tab, label: t('attackSurface.tab.overview', tab.label) }
           case REVIEW_HREF:
-            return { ...tab, label: t('attackSurface.tab.suggestions', tab.label) }
+            return { ...tab, label: t('attackSurface.tab.review', tab.label) }
           case '/attack-surface/changes':
             return { ...tab, label: t('attackSurface.tab.changes', tab.label) }
           case LOOKALIKES_HREF:
             return { ...tab, label: t('lookalikes.tab', tab.label) }
+          case '/attack-surface/web':
+            return { ...tab, label: t('attackSurface.tab.webSurface', tab.label) }
           default:
             return tab
         }
@@ -42,7 +44,6 @@ export function AttackSurfaceSectionTabs() {
     <GatedSectionTabs
       tabs={tabs}
       label={t('attackSurface.tab.label', 'Attack surface sections')}
-      className="mt-4 mb-0"
       counts={{ [REVIEW_HREF]: waiting }}
     />
   )

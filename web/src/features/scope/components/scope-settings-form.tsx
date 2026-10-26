@@ -29,7 +29,7 @@ import {
 } from '@/components/ui/select'
 import { Switch } from '@/components/ui/switch'
 import { useTranslation } from '@/context/i18n-provider'
-import { SettingsSection } from '@/features/shared'
+import { SettingsSection, PageStack } from '@/features/shared'
 import { Permission, useHasPermission } from '@/lib/permissions'
 import { updateScopeSettings } from '../api/use-scope-api'
 import type {
@@ -191,11 +191,17 @@ export function ScopeSettingsForm({ settings }: { settings: ApiScopeSettings }) 
         setSaved(out)
         setForm(settingsToInput(out))
       }
-      toast.success('Scope policy saved', {
-        description: 'Every administrator was notified.',
+      toast.success(t('scope.settings.saved', 'Scope policy saved'), {
+        description: t('scope.settings.notified', 'Every administrator was notified.'),
       })
     } catch (err) {
-      toast.error(scopeErrorMessage(t, err, 'Could not save the scope policy.'))
+      toast.error(
+        scopeErrorMessage(
+          t,
+          err,
+          t('scope.settings.saveFailed', 'Could not save the scope policy.')
+        )
+      )
     } finally {
       setSaving(false)
     }
@@ -204,17 +210,31 @@ export function ScopeSettingsForm({ settings }: { settings: ApiScopeSettings }) 
   const disabled = !canEdit || saving
 
   return (
-    <div className="space-y-8">
+    <PageStack>
       <SettingsSection
-        title="In effect now"
-        description="Read-only. These follow from your settings and the platform's configuration."
+        title={t('scope.settings.inEffect', 'In effect now')}
+        description={t(
+          'scope.settings.inEffectHint',
+          "Read-only. These follow from your settings and the platform's configuration."
+        )}
       >
         <Card>
           <CardContent className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
             <Fact
-              label="Approvals a widening needs"
+              label={t('scope.settings.approvalsNeeded', 'Approvals a widening needs')}
               value={String(saved.effective_widening_approvals ?? 0)}
-              hint={`From ${admins} ${admins === 1 ? 'administrator' : 'administrators'}; the requester never counts. Intrusive (T2) entries always need one.`}
+              hint={
+                admins === 1
+                  ? t(
+                      'scope.settings.approvalsNeededHintOne',
+                      'From 1 administrator; the requester never counts. Intrusive (T2) entries always need one.'
+                    )
+                  : t(
+                      'scope.settings.approvalsNeededHint',
+                      'From {count} administrators; the requester never counts. Intrusive (T2) entries always need one.',
+                      { count: admins }
+                    )
+              }
             />
             <Fact
               label={t('scope.settings.proof.title', 'Active-probe proof')}
@@ -229,9 +249,12 @@ export function ScopeSettingsForm({ settings }: { settings: ApiScopeSettings }) 
               locked
             />
             <Fact
-              label="Scope checks"
-              value="Always on"
-              hint="Every scan target must be covered by a scope entry, seed or verified domain. No setting turns this off."
+              label={t('scope.settings.checks', 'Scope checks')}
+              value={t('scope.settings.checksOn', 'Always on')}
+              hint={t(
+                'scope.settings.checksHint',
+                'Every scan target must be covered by a scope entry, seed or verified domain. No setting turns this off.'
+              )}
               locked
             />
           </CardContent>
@@ -239,17 +262,20 @@ export function ScopeSettingsForm({ settings }: { settings: ApiScopeSettings }) 
       </SettingsSection>
 
       <SettingsSection
-        title="Policy"
+        title={t('scope.settings.policy', 'Policy')}
         description={
           canEdit
-            ? 'Saving asks you to confirm your identity, is audited, and notifies every administrator.'
-            : 'Only scope approvers can change these.'
+            ? t(
+                'scope.settings.policyEditHint',
+                'Saving asks you to confirm your identity, is audited, and notifies every administrator.'
+              )
+            : t('scope.settings.policyReadHint', 'Only scope approvers can change these.')
         }
         actions={
           canEdit ? (
             <Button size="sm" onClick={() => void save()} disabled={!dirty || saving}>
               {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
-              Save changes
+              {t('scope.settings.save', 'Save changes')}
             </Button>
           ) : undefined
         }
@@ -257,9 +283,13 @@ export function ScopeSettingsForm({ settings }: { settings: ApiScopeSettings }) 
         <Card>
           <CardContent className="divide-y">
             <Row
-              label="Approvals for widening"
+              label={t('scope.settings.approvals', 'Approvals for widening')}
               htmlFor={`${id}-approvals`}
-              hint={`Adding or widening an entry waits for this many other approvers. With the default, your organization needs ${effectiveApprovalsFor(null, admins)}; with this choice it needs ${nextApprovals}. An organization with two or more administrators never goes below one.`}
+              hint={t(
+                'scope.settings.approvalsHint',
+                'Adding or widening an entry waits for this many other approvers. With the default, your organization needs {fallback}; with this choice it needs {next}. An organization with two or more administrators never goes below one.',
+                { fallback: effectiveApprovalsFor(null, admins), next: nextApprovals }
+              )}
             >
               <Select
                 value={
@@ -279,18 +309,27 @@ export function ScopeSettingsForm({ settings }: { settings: ApiScopeSettings }) 
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value={DEFAULT_SENTINEL}>Default (one with 2+ admins)</SelectItem>
-                  <SelectItem value="0">None</SelectItem>
-                  <SelectItem value="1">One approver</SelectItem>
-                  <SelectItem value="2">Two approvers</SelectItem>
+                  <SelectItem value={DEFAULT_SENTINEL}>
+                    {t('scope.settings.approvalsDefault', 'Default (one with 2+ admins)')}
+                  </SelectItem>
+                  <SelectItem value="0">{t('scope.settings.approvalsNone', 'None')}</SelectItem>
+                  <SelectItem value="1">
+                    {t('scope.settings.approvalsOne', 'One approver')}
+                  </SelectItem>
+                  <SelectItem value="2">
+                    {t('scope.settings.approvalsTwo', 'Two approvers')}
+                  </SelectItem>
                 </SelectContent>
               </Select>
             </Row>
 
             <Row
-              label="One-off entries"
+              label={t('scope.settings.oneOff', 'One-off entries')}
               htmlFor={`${id}-oneoff`}
-              hint={ONE_OFF_TEXT[form.one_off_targets].hint}
+              hint={t(
+                `scope.settings.oneOff.${form.one_off_targets}.hint`,
+                ONE_OFF_TEXT[form.one_off_targets].hint
+              )}
             >
               <Select
                 value={form.one_off_targets}
@@ -303,7 +342,7 @@ export function ScopeSettingsForm({ settings }: { settings: ApiScopeSettings }) 
                 <SelectContent>
                   {(Object.keys(ONE_OFF_TEXT) as ScopeOneOffPolicy[]).map((k) => (
                     <SelectItem key={k} value={k}>
-                      {ONE_OFF_TEXT[k].label}
+                      {t(`scope.settings.oneOff.${k}.label`, ONE_OFF_TEXT[k].label)}
                     </SelectItem>
                   ))}
                 </SelectContent>
@@ -311,9 +350,12 @@ export function ScopeSettingsForm({ settings }: { settings: ApiScopeSettings }) 
             </Row>
 
             <Row
-              label="Longest one-off entry"
+              label={t('scope.settings.oneOffDays', 'Longest one-off entry')}
               htmlFor={`${id}-days`}
-              hint="Days a one-off entry may last, 1 to 30. It stops authorizing scans the moment it expires."
+              hint={t(
+                'scope.settings.oneOffDaysHint',
+                'Days a one-off entry may last, 1 to 30. It stops authorizing scans the moment it expires.'
+              )}
             >
               <div className="flex items-center gap-2">
                 <Input
@@ -326,14 +368,16 @@ export function ScopeSettingsForm({ settings }: { settings: ApiScopeSettings }) 
                   onChange={(e) => setForm({ ...form, one_off_max_days: Number(e.target.value) })}
                   disabled={disabled || form.one_off_targets === 'disabled'}
                 />
-                <span className="text-sm text-muted-foreground">days</span>
+                <span className="text-sm text-muted-foreground">
+                  {t('scope.settings.days', 'days')}
+                </span>
               </div>
             </Row>
 
             <Row
-              label="Default deepest probe"
+              label={t('scope.settings.defaultTier', 'Default deepest probe')}
               htmlFor={`${id}-tier`}
-              hint={`New entries allow this unless the person adding them picks otherwise. ${TIER_HINT[form.default_max_tier]} Intrusive (T2) is never a default.${
+              hint={`${t('scope.settings.defaultTierHint', 'New entries allow this unless the person adding them picks otherwise.')} ${t(`scope.tier.hint.${form.default_max_tier}`, TIER_HINT[form.default_max_tier])} ${t('scope.settings.defaultTierNoT2', 'Intrusive (T2) is never a default.')}${
                 (saved.approval_policy?.tier_ceilings ?? true)
                   ? ''
                   : ` ${t('scope.entries.perScanHint', 'Scan intensity is chosen on each scan. Entry ceilings apply only in Strict governance.')}`
@@ -348,8 +392,8 @@ export function ScopeSettingsForm({ settings }: { settings: ApiScopeSettings }) 
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="t0">{TIER_LABEL.t0}</SelectItem>
-                  <SelectItem value="t1">{TIER_LABEL.t1}</SelectItem>
+                  <SelectItem value="t0">{t('scope.tier.label.t0', TIER_LABEL.t0)}</SelectItem>
+                  <SelectItem value="t1">{t('scope.tier.label.t1', TIER_LABEL.t1)}</SelectItem>
                 </SelectContent>
               </Select>
             </Row>
@@ -490,7 +534,7 @@ export function ScopeSettingsForm({ settings }: { settings: ApiScopeSettings }) 
           setForm(settingsToInput(out))
         }}
       />
-    </div>
+    </PageStack>
   )
 }
 
@@ -529,10 +573,16 @@ function Fact({
   hint: string
   locked?: boolean
 }) {
+  const { t } = useTranslation()
   return (
     <div className="min-w-0 space-y-1">
       <p className="flex items-center gap-1 text-sm text-muted-foreground">
-        {locked && <Lock className="h-3.5 w-3.5" aria-label="Not a tenant setting" />}
+        {locked && (
+          <Lock
+            className="h-3.5 w-3.5"
+            aria-label={t('scope.settings.notTenantSetting', 'Not an organization setting')}
+          />
+        )}
         {label}
       </p>
       <p className="text-lg font-semibold">{value}</p>

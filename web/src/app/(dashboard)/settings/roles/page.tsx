@@ -11,9 +11,9 @@ import {
   EmptyState,
   MetricStrip,
   type RowAction,
+  PageStack,
 } from '@/features/shared'
 import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Skeleton } from '@/components/ui/skeleton'
@@ -26,17 +26,7 @@ import {
 } from '@/components/ui/select'
 import { toast } from 'sonner'
 import { Can } from '@/lib/permissions'
-import {
-  Plus,
-  Shield,
-  Trash2,
-  Search as SearchIcon,
-  Eye,
-  Pencil,
-  Loader2,
-  AlertCircle,
-  RefreshCw,
-} from 'lucide-react'
+import { Plus, Shield, Trash2, Eye, Pencil, Loader2, AlertCircle, RefreshCw } from 'lucide-react'
 import { useSWRConfig } from 'swr'
 import {
   useRoles,
@@ -47,16 +37,17 @@ import {
   EditRoleSheet,
 } from '@/features/access-control'
 import { useUrlFilter } from '@/hooks/use-url-param'
+import { confirmName } from '@/lib/confirm-name'
 import { ConfirmDialog } from '@/components/confirm-dialog'
 import { useTranslation } from '@/context/i18n-provider'
 import { RoleRiskBadge, RoleSummaryLine } from '@/features/access-control/components/role-risk'
 
 type TypeFilter = 'all' | 'system' | 'custom'
 
-const typeFilters: { value: TypeFilter; label: string }[] = [
-  { value: 'all', label: 'All types' },
-  { value: 'system', label: 'System' },
-  { value: 'custom', label: 'Custom' },
+const typeFilters: { value: TypeFilter; key: string; en: string }[] = [
+  { value: 'all', key: 'org.rolesPage.type.all', en: 'All types' },
+  { value: 'system', key: 'org.rolesPage.type.system', en: 'System' },
+  { value: 'custom', key: 'org.rolesPage.type.custom', en: 'Custom' },
 ]
 
 const formatDate = (dateString: string) => {
@@ -153,14 +144,16 @@ export default function RolesPage() {
   const columns: ColumnDef<Role>[] = [
     {
       accessorKey: 'name',
-      header: ({ column }) => <DataTableColumnHeader column={column} title="Role" />,
+      header: ({ column }) => (
+        <DataTableColumnHeader column={column} title={t('org.rolesPage.col.role', 'Role')} />
+      ),
       cell: ({ row }) => (
         <div className="min-w-0">
           <div className="flex items-center gap-2">
             <p className="font-medium">{row.original.name}</p>
             {row.original.is_system && (
               <Badge variant="outline" className="text-xs">
-                System
+                {t('org.rolesPage.system', 'System')}
               </Badge>
             )}
           </div>
@@ -186,20 +179,24 @@ export default function RolesPage() {
     },
     {
       accessorKey: 'has_full_data_access',
-      header: 'Data access',
+      header: t('org.rolesPage.col.dataAccess', 'Data access'),
       enableSorting: false,
       cell: ({ row }) => (
         <Badge
           variant={row.original.has_full_data_access ? 'default' : 'secondary'}
           className="text-xs"
         >
-          {row.original.has_full_data_access ? 'Full access' : 'Team-based'}
+          {row.original.has_full_data_access
+            ? t('org.rolesPage.fullAccess', 'Full access')
+            : t('org.rolesPage.teamBased', 'Team-based')}
         </Badge>
       ),
     },
     {
       accessorKey: 'hierarchy_level',
-      header: ({ column }) => <DataTableColumnHeader column={column} title="Level" />,
+      header: ({ column }) => (
+        <DataTableColumnHeader column={column} title={t('org.rolesPage.col.level', 'Level')} />
+      ),
       cell: ({ row }) => (
         <span className="text-muted-foreground text-sm tabular-nums">
           {row.original.hierarchy_level}
@@ -208,7 +205,9 @@ export default function RolesPage() {
     },
     {
       accessorKey: 'created_at',
-      header: ({ column }) => <DataTableColumnHeader column={column} title="Created" />,
+      header: ({ column }) => (
+        <DataTableColumnHeader column={column} title={t('org.rolesPage.col.created', 'Created')} />
+      ),
       cell: ({ row }) => (
         <span className="text-muted-foreground text-sm">{formatDate(row.original.created_at)}</span>
       ),
@@ -221,17 +220,21 @@ export default function RolesPage() {
         const role = row.original
 
         const actions: RowAction[] = [
-          { label: 'View details', icon: Eye, onClick: () => setSelectedRole(role) },
+          {
+            label: t('org.rolesPage.viewDetails', 'View details'),
+            icon: Eye,
+            onClick: () => setSelectedRole(role),
+          },
           ...(!role.is_system
             ? [
                 {
-                  label: 'Edit role',
+                  label: t('org.rolesPage.editRole', 'Edit role'),
                   icon: Pencil,
                   route: 'PUT /api/v1/roles/{roleId}' as const,
                   onClick: () => setEditRole(role),
                 },
                 {
-                  label: 'Delete role',
+                  label: t('org.rolesPage.deleteRole', 'Delete role'),
                   icon: Trash2,
                   destructive: true,
                   separatorBefore: true,
@@ -256,7 +259,9 @@ export default function RolesPage() {
 
     try {
       await deleteRole()
-      toast.success(`Role "${roleToDelete.name}" deleted successfully`)
+      toast.success(
+        t('org.rolesPage.deleted', 'Role "{name}" deleted', { name: roleToDelete.name })
+      )
       setDeleteDialogOpen(false)
       setRoleToDelete(null)
       mutate(
@@ -267,7 +272,12 @@ export default function RolesPage() {
       refreshData()
     } catch (error) {
       toast.error(
-        `Failed to delete role: ${error instanceof Error ? error.message : 'Unknown error'}`
+        t('org.rolesPage.deleteFailed', 'Failed to delete role: {error}', {
+          error:
+            error instanceof Error
+              ? error.message
+              : t('org.rolesPage.unknownError', 'Unknown error'),
+        })
       )
     }
   }
@@ -277,125 +287,131 @@ export default function RolesPage() {
   return (
     <>
       <Main>
-        <PageHeader
-          title="Roles"
-          description="Roles bundle permissions; a user can hold several roles."
-        >
-          <Can route="POST /api/v1/roles">
-            <Button size="sm" onClick={() => setCreateSheetOpen(true)}>
-              <Plus className="me-2 h-4 w-4" />
-              Create role
-            </Button>
-          </Can>
-        </PageHeader>
-
-        {isError && !isLoading ? (
-          <Alert variant="destructive" className="mt-5">
-            <AlertCircle className="h-4 w-4" />
-            <AlertTitle>Failed to load roles</AlertTitle>
-            <AlertDescription>
-              <p>The role list could not be loaded.</p>
-              <Button variant="outline" size="sm" className="mt-2" onClick={refreshData}>
-                <RefreshCw className="me-2 h-4 w-4" />
-                Retry
+        <PageStack>
+          <PageHeader
+            title={t('org.rolesPage.title', 'Roles')}
+            description={t(
+              'org.rolesPage.description',
+              'Roles bundle permissions; a user can hold several roles.'
+            )}
+          >
+            <Can route="POST /api/v1/roles">
+              <Button size="sm" onClick={() => setCreateSheetOpen(true)}>
+                <Plus className="me-2 h-4 w-4" />
+                {t('org.rolesPage.createRole', 'Create role')}
               </Button>
-            </AlertDescription>
-          </Alert>
-        ) : (
-          <>
-            <MetricStrip
-              className="mt-5"
-              loading={isLoading}
-              items={[
-                {
-                  key: 'all',
-                  label: 'Roles',
-                  value: typeCounts.all,
-                  onClick: () => setTypeFilter('all'),
-                  active: typeFilter === 'all',
-                },
-                {
-                  key: 'system',
-                  label: 'System roles',
-                  value: typeCounts.system,
-                  onClick: () => toggleType('system'),
-                  active: typeFilter === 'system',
-                },
-                {
-                  key: 'custom',
-                  label: 'Custom roles',
-                  value: typeCounts.custom,
-                  onClick: () => toggleType('custom'),
-                  active: typeFilter === 'custom',
-                },
-              ]}
-            />
+            </Can>
+          </PageHeader>
 
-            <div className="mt-5">
-              {isLoading ? (
-                <div className="space-y-2">
-                  <Skeleton className="h-9 w-full max-w-sm" />
-                  {Array.from({ length: 5 }).map((_, i) => (
-                    <Skeleton key={i} className="h-12 w-full" />
-                  ))}
-                </div>
-              ) : roles.length === 0 ? (
-                <EmptyState
-                  icon={Shield}
-                  title="No roles yet"
-                  description="Create a role to grant a set of permissions to users."
-                  action={
-                    <Can route="POST /api/v1/roles">
-                      <Button size="sm" onClick={() => setCreateSheetOpen(true)}>
-                        <Plus className="me-2 h-4 w-4" />
-                        Create role
-                      </Button>
-                    </Can>
-                  }
-                />
-              ) : (
-                <DataTable
-                  columns={columns}
-                  data={filteredData}
-                  getRowId={(r) => r.id}
-                  showSearch={false}
-                  showColumnToggle={false}
-                  onRowClick={(r) => setSelectedRole(r)}
-                  toolbarStart={
-                    <>
-                      <div className="relative min-w-0 flex-1 sm:max-w-sm">
-                        <SearchIcon className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-                        <Input
-                          placeholder="Search roles..."
-                          value={searchQuery}
-                          onChange={(e) => setSearchQuery(e.target.value)}
-                          className="ps-9"
-                          aria-label="Search roles"
-                        />
-                      </div>
-                      <Select
-                        value={typeFilter}
-                        onValueChange={(v) => setTypeFilter(v as TypeFilter)}
-                      >
-                        <SelectTrigger className="h-9 w-[130px]" aria-label="Role type">
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {typeFilters.map((f) => (
-                            <SelectItem key={f.value} value={f.value}>
-                              {f.label}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </>
-                  }
-                  emptyMessage="No roles match these filters"
-                />
-              )}
-            </div>
-          </>
-        )}
+          {isError && !isLoading ? (
+            <Alert variant="destructive">
+              <AlertCircle className="h-4 w-4" />
+              <AlertTitle>{t('org.rolesPage.loadFailedTitle', 'Failed to load roles')}</AlertTitle>
+              <AlertDescription>
+                <p>{t('org.rolesPage.loadFailedBody', 'The role list could not be loaded.')}</p>
+                <Button variant="outline" size="sm" className="mt-2" onClick={refreshData}>
+                  <RefreshCw className="me-2 h-4 w-4" />
+                  {t('common.retry', 'Retry')}
+                </Button>
+              </AlertDescription>
+            </Alert>
+          ) : (
+            <>
+              <MetricStrip
+                loading={isLoading}
+                items={[
+                  {
+                    key: 'all',
+                    label: t('org.rolesPage.metric.roles', 'Roles'),
+                    value: typeCounts.all,
+                    onClick: () => setTypeFilter('all'),
+                    active: typeFilter === 'all',
+                  },
+                  {
+                    key: 'system',
+                    label: t('org.rolesPage.metric.system', 'System roles'),
+                    value: typeCounts.system,
+                    onClick: () => toggleType('system'),
+                    active: typeFilter === 'system',
+                  },
+                  {
+                    key: 'custom',
+                    label: t('org.rolesPage.metric.custom', 'Custom roles'),
+                    value: typeCounts.custom,
+                    onClick: () => toggleType('custom'),
+                    active: typeFilter === 'custom',
+                  },
+                ]}
+              />
+
+              <div>
+                {isLoading ? (
+                  <div className="space-y-2">
+                    <Skeleton className="h-9 w-full max-w-sm" />
+                    {Array.from({ length: 5 }).map((_, i) => (
+                      <Skeleton key={i} className="h-12 w-full" />
+                    ))}
+                  </div>
+                ) : roles.length === 0 ? (
+                  <EmptyState
+                    icon={Shield}
+                    title={t('org.rolesPage.emptyTitle', 'No roles yet')}
+                    description={t(
+                      'org.rolesPage.emptyBody',
+                      'Create a role to grant a set of permissions to users.'
+                    )}
+                    action={
+                      <Can route="POST /api/v1/roles">
+                        <Button size="sm" onClick={() => setCreateSheetOpen(true)}>
+                          <Plus className="me-2 h-4 w-4" />
+                          {t('org.rolesPage.createRole', 'Create role')}
+                        </Button>
+                      </Can>
+                    }
+                  />
+                ) : (
+                  <DataTable
+                    columns={columns}
+                    data={filteredData}
+                    getRowId={(r) => r.id}
+                    showSearch={false}
+                    search={{
+                      value: searchQuery,
+                      onChange: setSearchQuery,
+                      placeholder: t('org.rolesPage.searchPlaceholder', 'Search roles…'),
+                      label: t('org.rolesPage.searchLabel', 'Search roles'),
+                    }}
+                    showColumnToggle={false}
+                    onRowClick={(r) => setSelectedRole(r)}
+                    toolbarStart={
+                      <>
+                        <Select
+                          value={typeFilter}
+                          onValueChange={(v) => setTypeFilter(v as TypeFilter)}
+                        >
+                          <SelectTrigger
+                            className="h-9 w-[130px]"
+                            aria-label={t('org.rolesPage.typeLabel', 'Role type')}
+                          >
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {typeFilters.map((f) => (
+                              <SelectItem key={f.value} value={f.value}>
+                                {t(f.key, f.en)}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </>
+                    }
+                    emptyMessage={t('org.rolesPage.noMatch', 'No roles match these filters')}
+                  />
+                )}
+              </div>
+            </>
+          )}
+        </PageStack>
       </Main>
 
       {/* Create Role Sheet */}
@@ -459,6 +475,7 @@ export default function RolesPage() {
           </>
         }
         isLoading={isDeleting}
+        typeToConfirm={roleToDelete ? confirmName(roleToDelete.name, roleToDelete.id) : undefined}
         handleConfirm={handleDeleteRole}
       />
     </>

@@ -20,6 +20,7 @@ import { env } from '@/lib/env'
 import { devLog } from '@/lib/logger'
 import { withAuthRefreshLock } from '@/lib/auth-refresh-lock'
 import { coalesceGet } from './request-dedupe'
+import { noteRateLimited } from './rate-limit-backoff'
 import { readCsrfCookie } from '@/lib/csrf-client'
 
 // ============================================
@@ -300,6 +301,12 @@ export async function apiClient<T = unknown>(
   // Create abort controller for timeout
   const controller = new AbortController()
   const timeoutId = setTimeout(() => controller.abort(), timeout)
+  // A caller's signal (a newer search superseding this one) aborts too.
+  const callerSignal = fetchOptions.signal
+  if (callerSignal) {
+    if (callerSignal.aborted) controller.abort()
+    else callerSignal.addEventListener('abort', () => controller.abort(), { once: true })
+  }
 
   try {
     // Make request
@@ -322,13 +329,21 @@ export async function apiClient<T = unknown>(
 
     // Handle non-ok responses
     if (!response.ok) {
+      // Remember the server's wait so search-as-you-type holds new queries.
+      if (response.status === 429) noteRateLimited(response.headers.get('retry-after'))
       // Handle 401 Unauthorized - try to refresh token
       if (response.status === 401 && !_skipRefreshRetry && !skipAuth) {
         // If already redirecting, don't attempt anything
         if (isRedirectingToLogin) {
           devLog.log('[API Client] Already redirecting, skipping 401 handling')
           const error = await parseErrorResponse(response)
-          throw new ApiClientError(error.message, error.code, error.statusCode, error.details)
+          throw new ApiClientError(
+            error.message,
+            error.code,
+            error.statusCode,
+            error.details,
+            error.requestId
+          )
         }
 
         const refreshed = await tryRefreshToken()
@@ -388,7 +403,13 @@ export async function apiClient<T = unknown>(
         )
       }
 
-      throw new ApiClientError(error.message, error.code, error.statusCode, error.details)
+      throw new ApiClientError(
+        error.message,
+        error.code,
+        error.statusCode,
+        error.details,
+        error.requestId
+      )
     }
 
     // Handle empty responses (204 No Content)
@@ -474,11 +495,19 @@ export async function apiClient<T = unknown>(
   }
 }
 
+/** The request id an error body carries, when it is a plain string. */
+function requestIdOf(body: unknown): string | undefined {
+  const id = (body as { request_id?: unknown } | null)?.request_id
+  return typeof id === 'string' && id.length <= 128 ? id : undefined
+}
+
 /**
  * Parse error response from backend
  */
 async function parseErrorResponse(response: Response): Promise<ApiError> {
   const contentType = response.headers.get('content-type')
+  const rawHeaderId = response.headers.get('x-request-id')
+  const headerRequestId = rawHeaderId && rawHeaderId.length <= 128 ? rawHeaderId : undefined
 
   // Try to parse JSON error response
   if (contentType?.includes('application/json')) {
@@ -492,6 +521,7 @@ async function parseErrorResponse(response: Response): Promise<ApiError> {
           message: data.error.message || response.statusText,
           details: data.error.details,
           statusCode: response.status,
+          requestId: requestIdOf(data.error) ?? requestIdOf(data) ?? headerRequestId,
         }
       }
 
@@ -502,6 +532,7 @@ async function parseErrorResponse(response: Response): Promise<ApiError> {
           message: data.message,
           details: data.details,
           statusCode: response.status,
+          requestId: requestIdOf(data) ?? headerRequestId,
         }
       }
 
@@ -522,6 +553,7 @@ async function parseErrorResponse(response: Response): Promise<ApiError> {
     code: `HTTP_${response.status}`,
     message: response.statusText || 'HTTP error',
     statusCode: response.status,
+    requestId: headerRequestId,
   }
 }
 

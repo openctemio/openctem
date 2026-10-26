@@ -76,7 +76,7 @@ func (h *ReportScheduleHandler) audit(r *http.Request, action auditdom.Action, s
 		UserAgent:  r.UserAgent(),
 		RequestID:  middleware.GetRequestID(r.Context()),
 	}
-	_ = h.auditService.LogEvent(r.Context(), actx, event)
+	auditapp.RecordOrWarn(r.Context(), h.logger, h.auditService, actx, event)
 }
 
 // NewReportScheduleHandler creates a new ReportScheduleHandler.

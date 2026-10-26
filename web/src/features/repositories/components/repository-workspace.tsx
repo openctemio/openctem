@@ -1,6 +1,16 @@
 'use client'
 
+import { Tag } from '@/components/ui/tag'
+import { Counter } from '@/components/ui/counter'
+import { slaStateClass } from '@/lib/sla-colors'
+import { HealthStatus } from '@/components/ui/health-status'
+import { StatusLozenge } from '@/components/ui/status-lozenge'
+import { DashedCircleGlyph, RingDotGlyph, type StatusGlyph } from '@/components/ui/status-glyphs'
+import type { HealthState } from '@/lib/health-colors'
+import type { StatusTone } from '@/lib/status-colors'
+import { SeverityBadge } from '@/components/ui/severity-badge'
 import { useTranslation } from '@/context/i18n-provider'
+import { ScanConfirmDialog } from '@/features/assets/components/scan-confirm-dialog'
 import { deleteAssetSafely } from '@/features/assets/lib/safe-delete'
 import { AssetDeleteDialogShared } from '@/features/assets/components/asset-delete-dialog-shared'
 import { useState, useMemo, useCallback } from 'react'
@@ -15,6 +25,7 @@ import {
   EmptyState,
   DangerZone,
   DangerZoneItem,
+  ListToolbar,
 } from '@/features/shared'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -50,13 +61,12 @@ import { AssetSlaPolicyCard } from '@/features/sla/components/sla-windows'
 import type { ActivityItem } from '@/features/activity/types'
 import { Input } from '@/components/ui/input'
 import { Switch } from '@/components/ui/switch'
-import { useDebounce } from '@/hooks/use-debounce'
+import { useSearchQuery } from '@/hooks/use-search-query'
 import { Skeleton } from '@/components/ui/skeleton'
 import { toast } from 'sonner'
 import {
   ArrowLeft,
   GitBranch,
-  Search as SearchIcon,
   MoreHorizontal,
   Eye,
   Trash2,
@@ -100,14 +110,12 @@ import {
   type ScannerType,
   SCM_PROVIDER_LABELS,
   SEVERITY_LABELS,
-  SEVERITY_COLORS,
   BRANCH_STATUS_LABELS,
-  BRANCH_STATUS_COLORS,
   SLA_STATUS_LABELS,
-  SLA_STATUS_COLORS,
   SCANNER_TYPE_LABELS,
 } from '@/features/repositories'
-import { FINDING_STATUS_CONFIG, type FindingStatus } from '@/features/findings/types/finding.types'
+import { type FindingStatus } from '@/features/findings/types/finding.types'
+import { FindingStatusBadge } from '@/features/findings/components/finding-status-badge'
 
 // Additional types for detail page
 type Repository = RepositoryView
@@ -147,24 +155,9 @@ const STATUS_LABELS: Record<string, string> = {
 }
 
 const TRIAGE_STATUS_LABELS: Record<TriageStatus, string> = {
-  needs_triage: 'Needs Triage',
+  needs_triage: 'Needs triage',
   triaged: 'Triaged',
   escalated: 'Escalated',
-}
-
-const TRIAGE_STATUS_COLORS: Record<TriageStatus, { bg: string; text: string }> = {
-  needs_triage: { bg: 'bg-yellow-500/15', text: 'text-yellow-600' },
-  triaged: { bg: 'bg-blue-500/15', text: 'text-blue-600' },
-  escalated: { bg: 'bg-red-500/15', text: 'text-red-600' },
-}
-
-const SCM_PROVIDER_COLORS: Record<SCMProvider, string> = {
-  github: 'bg-gray-900 text-white',
-  gitlab: 'bg-orange-600 text-white',
-  bitbucket: 'bg-blue-600 text-white',
-  azure_devops: 'bg-blue-500 text-white',
-  codecommit: 'bg-yellow-600 text-white',
-  local: 'bg-gray-500 text-white',
 }
 
 // Branch detail type — maps from API Branch type
@@ -572,7 +565,7 @@ function transformToRepositoryView(asset: ApiAssetResponse): RepositoryView {
 
 import { cn, sanitizeExternalUrl } from '@/lib/utils'
 import { useModuleEnabled } from '@/features/integrations/api/use-tenant-modules'
-import { SEVERITY_DOT_COLORS } from '@/lib/severity-colors'
+import { SEVERITY_DOT_COLORS, SEVERITY_TEXT_COLORS } from '@/lib/severity-colors'
 import { copyToClipboard } from '@/lib/clipboard'
 import { Can, Permission } from '@/lib/permissions'
 import { getErrorMessage } from '@/lib/api/error-handler'
@@ -598,52 +591,63 @@ function ProviderIcon({ provider, className }: { provider: SCMProvider; classNam
   }
 }
 
-function BranchStatusBadge({ status }: { status: BranchStatus }) {
-  const config: Record<BranchStatus, { icon: React.ReactNode }> = {
-    passed: { icon: <CheckCircle className="h-3 w-3" /> },
-    failed: { icon: <XCircle className="h-3 w-3" /> },
-    warning: { icon: <AlertTriangle className="h-3 w-3" /> },
-    scanning: { icon: <RefreshCw className="h-3 w-3 animate-spin" /> },
-    not_scanned: { icon: <Minus className="h-3 w-3" /> },
-  }
+const BRANCH_HEALTH: Record<BranchStatus, HealthState> = {
+  passed: 'ok',
+  failed: 'down',
+  warning: 'warn',
+  scanning: 'run',
+  not_scanned: 'off',
+}
+
+/** The scan result of a branch: a machine state, so a HealthStatus (nothing spins). */
+export function BranchStatusBadge({ status }: { status: BranchStatus }) {
+  const { t } = useTranslation()
   return (
-    <Badge variant="outline" className={cn('gap-1', BRANCH_STATUS_COLORS[status])}>
-      {config[status].icon}
-      {BRANCH_STATUS_LABELS[status]}
-    </Badge>
+    <HealthStatus
+      state={BRANCH_HEALTH[status]}
+      value={status}
+      label={t(`repositories.branchStatus.${status}`, BRANCH_STATUS_LABELS[status])}
+    />
   )
 }
 
-function SeverityBadge({ severity, count }: { severity: Severity; count?: number }) {
-  const colors = SEVERITY_COLORS[severity]
+function SeverityCountBadge({ severity, count }: { severity: Severity; count?: number }) {
   return (
-    <Badge className={cn('gap-1 border-0 font-medium', colors?.bg, colors?.text)}>
-      {count !== undefined ? `${count} ${SEVERITY_LABELS[severity]}` : SEVERITY_LABELS[severity]}
-    </Badge>
+    <SeverityBadge severity={severity} variant="soft">
+      {count !== undefined ? `${count} ${SEVERITY_LABELS[severity]}` : undefined}
+    </SeverityBadge>
   )
 }
 
-function FindingStatusBadge({ status }: { status: FindingStatus }) {
-  const cfg = FINDING_STATUS_CONFIG[status]
-  return (
-    <Badge variant="outline" className={cn('gap-1 text-xs', cfg?.bgColor, cfg?.textColor)}>
-      {cfg?.label ?? status}
-    </Badge>
-  )
+const TRIAGE_LOZENGE: Record<TriageStatus, { tone: StatusTone; icon: StatusGlyph }> = {
+  needs_triage: { tone: 'triage', icon: DashedCircleGlyph },
+  triaged: { tone: 'open', icon: RingDotGlyph },
+  escalated: { tone: 'waiting', icon: Clock },
 }
 
-function TriageStatusBadge({ status }: { status: TriageStatus }) {
+/** The triage state of a repository finding: a workflow StatusLozenge. */
+export function TriageStatusBadge({ status }: { status: TriageStatus }) {
+  const { t } = useTranslation()
+  const { tone, icon } = TRIAGE_LOZENGE[status]
   return (
-    <Badge variant="outline" className={cn('gap-1 text-xs', TRIAGE_STATUS_COLORS[status])}>
-      {TRIAGE_STATUS_LABELS[status]}
-    </Badge>
+    <StatusLozenge
+      tone={tone}
+      icon={icon}
+      value={status}
+      label={t(`repositories.triage.${status}`, TRIAGE_STATUS_LABELS[status])}
+    />
   )
 }
 
 function SLAStatusBadge({ status, daysRemaining }: { status: SLAStatus; daysRemaining?: number }) {
   if (status === 'not_applicable') return null
   return (
-    <span className={cn('flex items-center gap-1 text-xs font-medium', SLA_STATUS_COLORS[status])}>
+    <span
+      className={cn(
+        'inline-flex items-center gap-1 rounded-md border px-2 py-0.5 text-xs font-medium',
+        slaStateClass(status)
+      )}
+    >
       <Timer className="h-3 w-3" />
       {daysRemaining !== undefined && daysRemaining >= 0
         ? `${daysRemaining}d left`
@@ -728,14 +732,16 @@ function OverviewTab({
               )}
             </p>
             <p className="text-muted-foreground text-xs">
-              Run a scan to map its branches, build the SBOM (components), and enable per-branch
-              drift &amp; SLA tracking.
+              {t(
+                'assets.repository.runFirstScanHint',
+                'Run a scan to map its branches, build the SBOM (components), and enable per-branch drift and SLA tracking.'
+              )}
             </p>
           </div>
           {onScan && (
             <Button size="sm" onClick={onScan} className="shrink-0">
               <Play className="me-2 h-4 w-4" />
-              Run first scan
+              {t('assets.repository.runFirstScan', 'Run first scan')}
             </Button>
           )}
         </div>
@@ -745,26 +751,28 @@ function OverviewTab({
         <Card>
           <CardHeader className="pb-2">
             <CardDescription className="flex items-center gap-2">
-              <AlertTriangle className="h-4 w-4 text-red-500" />
+              <AlertTriangle className="h-4 w-4 text-muted-foreground" />
               Critical/High
             </CardDescription>
-            <CardTitle className="text-3xl text-red-500">{criticalCount + highCount}</CardTitle>
+            <CardTitle className={cn('text-3xl', SEVERITY_TEXT_COLORS.critical)}>
+              {criticalCount + highCount}
+            </CardTitle>
           </CardHeader>
           <CardContent className="pt-0">
             <p className="text-xs text-muted-foreground">{findings.length} total findings</p>
           </CardContent>
         </Card>
 
-        <Card className={overdueFindingsCount > 0 ? 'border-red-500/50' : ''}>
+        <Card className={overdueFindingsCount > 0 ? 'border-destructive/50' : ''}>
           <CardHeader className="pb-2">
             <CardDescription className="flex items-center gap-2">
-              <Timer className="h-4 w-4 text-orange-500" />
+              <Timer className="h-4 w-4 text-muted-foreground" />
               SLA Overdue
             </CardDescription>
             <CardTitle
               className={cn(
                 'text-3xl',
-                overdueFindingsCount > 0 ? 'text-red-500' : 'text-green-500'
+                overdueFindingsCount > 0 ? 'text-destructive' : 'text-foreground'
               )}
             >
               {overdueFindingsCount}
@@ -778,13 +786,13 @@ function OverviewTab({
         <Card>
           <CardHeader className="pb-2">
             <CardDescription className="flex items-center gap-2">
-              <GitBranch className="h-4 w-4 text-blue-500" />
+              <GitBranch className="h-4 w-4 text-muted-foreground" />
               Branches
             </CardDescription>
             <CardTitle
               className={cn(
                 'text-3xl',
-                neverScanned ? 'text-muted-foreground/50' : 'text-blue-500'
+                neverScanned ? 'text-muted-foreground/50' : 'text-foreground'
               )}
             >
               {neverScanned ? '—' : branches.length}
@@ -802,7 +810,7 @@ function OverviewTab({
         <Card>
           <CardHeader className="pb-2">
             <CardDescription className="flex items-center gap-2">
-              <Package className="h-4 w-4 text-purple-500" />
+              <Package className="h-4 w-4 text-muted-foreground" />
               Components
             </CardDescription>
             <CardTitle
@@ -810,7 +818,7 @@ function OverviewTab({
                 'text-3xl',
                 !repository.components_summary?.total
                   ? 'text-muted-foreground/50'
-                  : 'text-purple-500'
+                  : 'text-foreground'
               )}
             >
               {repository.components_summary?.total ? repository.components_summary.total : '—'}
@@ -828,8 +836,8 @@ function OverviewTab({
         <Card>
           <CardHeader className="pb-2">
             <CardDescription className="flex items-center gap-2">
-              <Activity className="h-4 w-4 text-indigo-500" />
-              Risk Score
+              <Activity className="h-4 w-4 text-muted-foreground" />
+              {t('assets.overview2.riskScore', 'Risk score')}
             </CardDescription>
           </CardHeader>
           <CardContent className="pt-0">
@@ -896,15 +904,15 @@ function OverviewTab({
                   </div>
                   <div className="flex gap-4 text-xs">
                     <span className="flex items-center gap-1">
-                      <span className="h-2 w-2 rounded-full bg-red-500" />
+                      <span className={cn('h-2 w-2 rounded-full', SEVERITY_DOT_COLORS.critical)} />
                       Critical: {defaultBranch.findings_summary.by_severity.critical}
                     </span>
                     <span className="flex items-center gap-1">
-                      <span className="h-2 w-2 rounded-full bg-orange-500" />
+                      <span className={cn('h-2 w-2 rounded-full', SEVERITY_DOT_COLORS.high)} />
                       High: {defaultBranch.findings_summary.by_severity.high}
                     </span>
                     <span className="flex items-center gap-1">
-                      <span className="h-2 w-2 rounded-full bg-yellow-500" />
+                      <span className={cn('h-2 w-2 rounded-full', SEVERITY_DOT_COLORS.medium)} />
                       Medium: {defaultBranch.findings_summary.by_severity.medium}
                     </span>
                   </div>
@@ -956,15 +964,15 @@ function OverviewTab({
                   </div>
                   <div className="flex flex-wrap gap-4 text-xs">
                     <span className="flex items-center gap-1">
-                      <span className="h-2 w-2 rounded-full bg-red-500" />
+                      <span className={cn('h-2 w-2 rounded-full', SEVERITY_DOT_COLORS.critical)} />
                       Critical: {sevCounts.critical}
                     </span>
                     <span className="flex items-center gap-1">
-                      <span className="h-2 w-2 rounded-full bg-orange-500" />
+                      <span className={cn('h-2 w-2 rounded-full', SEVERITY_DOT_COLORS.high)} />
                       High: {sevCounts.high}
                     </span>
                     <span className="flex items-center gap-1">
-                      <span className="h-2 w-2 rounded-full bg-yellow-500" />
+                      <span className={cn('h-2 w-2 rounded-full', SEVERITY_DOT_COLORS.medium)} />
                       Medium: {sevCounts.medium}
                     </span>
                   </div>
@@ -1026,7 +1034,7 @@ function OverviewTab({
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2 text-base">
-            <AlertTriangle className="h-4 w-4 text-red-500" />
+            <AlertTriangle className="h-4 w-4 text-destructive" />
             Critical & High Severity Findings
           </CardTitle>
           <CardDescription>Findings requiring immediate attention</CardDescription>
@@ -1045,7 +1053,7 @@ function OverviewTab({
                   className="flex items-center gap-4 p-3 rounded-lg border hover:bg-muted/50 cursor-pointer"
                   onClick={() => router.push(`/findings/${finding.id}`)}
                 >
-                  <SeverityBadge severity={finding.severity} />
+                  <SeverityCountBadge severity={finding.severity} />
                   <div className="flex-1 min-w-0">
                     <span className="block truncate text-sm font-medium">{finding.title}</span>
                     {finding.file_path && (
@@ -1074,7 +1082,7 @@ function OverviewTab({
               (f) => (f.severity === 'critical' || f.severity === 'high') && f.status !== 'resolved'
             ).length === 0 && (
               <div className="text-center py-8 text-muted-foreground">
-                <CheckCircle className="h-8 w-8 mx-auto mb-2 text-green-500" />
+                <CheckCircle className="h-8 w-8 mx-auto mb-2 text-success" />
                 <p>No critical or high severity findings!</p>
               </div>
             )}
@@ -1203,7 +1211,7 @@ function BranchesTab({
                   </span>
                 </div>
                 <div className="flex items-center gap-2">
-                  <Badge className="bg-green-500">{comparison.resolved_findings}</Badge>
+                  <Counter value={comparison.resolved_findings} />
                   <span>
                     Resolved (not in{' '}
                     <code className="text-xs bg-muted px-1 rounded">
@@ -1299,14 +1307,14 @@ function BranchesTab({
                   <TableCell>
                     <div className="flex items-center gap-1">
                       {branch.findings_summary.by_severity.critical > 0 && (
-                        <Badge variant="destructive" className="h-5 px-1.5 text-xs">
+                        <SeverityBadge severity="critical" variant="soft">
                           {branch.findings_summary.by_severity.critical}C
-                        </Badge>
+                        </SeverityBadge>
                       )}
                       {branch.findings_summary.by_severity.high > 0 && (
-                        <Badge className="h-5 px-1.5 text-xs bg-orange-500">
+                        <SeverityBadge severity="high" variant="soft">
                           {branch.findings_summary.by_severity.high}H
-                        </Badge>
+                        </SeverityBadge>
                       )}
                       <span className="text-sm text-muted-foreground ms-1">
                         ({branch.findings_summary.total} total)
@@ -1321,13 +1329,13 @@ function BranchesTab({
                         const diff = branch.findings_summary.total - defaultTotal
                         if (diff > 0)
                           return (
-                            <span className="flex items-center gap-1 text-sm text-red-500">
+                            <span className="flex items-center gap-1 text-sm text-destructive">
                               <TrendingUp className="h-3 w-3" />+{diff}
                             </span>
                           )
                         if (diff < 0)
                           return (
-                            <span className="flex items-center gap-1 text-sm text-green-500">
+                            <span className="flex items-center gap-1 text-sm text-success">
                               <TrendingDown className="h-3 w-3" />
                               {diff}
                             </span>
@@ -1401,12 +1409,13 @@ function FindingsTab({
   branches: BranchDetail[]
   branchFromUrl?: string
 }) {
+  const { t } = useTranslation()
   const router = useRouter()
   const searchParams = useSearchParams()
 
   // Read filters from URL (shareable)
   const [searchInput, setSearchInput] = useState(searchParams.get('q') || '')
-  const debouncedSearch = useDebounce(searchInput, 300)
+  const debouncedSearch = useSearchQuery(searchInput).term
   const [severityFilter, setSeverityFilter] = useState<string>(
     searchParams.get('severity') || 'all'
   )
@@ -1510,105 +1519,107 @@ function FindingsTab({
                 {total}
               </Badge>
             </CardTitle>
-            <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar">
-              <div className="relative min-w-[140px]">
-                <SearchIcon className="absolute left-2 top-[7px] h-3.5 w-3.5 text-muted-foreground" />
-                <Input
-                  placeholder="Search..."
-                  value={searchInput}
-                  onChange={(e) => setSearchInput(e.target.value)}
-                  className="ps-7 h-7 text-xs w-[140px]"
-                />
-              </div>
-              <Select
-                value={severityFilter}
-                onValueChange={(v) => handleFilterChange(setSeverityFilter, 'severity', v)}
-              >
-                <SelectTrigger className="w-[110px] h-7 text-xs">
-                  <SelectValue placeholder="Severity" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All Severities</SelectItem>
-                  {SEVERITY_LEVELS.map((s) => (
-                    <SelectItem key={s} value={s}>
-                      {SEVERITY_LABELS[s]}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              <Select
-                value={statusFilter}
-                onValueChange={(v) => handleFilterChange(setStatusFilter, 'status', v)}
-              >
-                <SelectTrigger className="w-[110px] h-7 text-xs">
-                  <SelectValue placeholder="Status" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All Statuses</SelectItem>
-                  <SelectItem value="new">New</SelectItem>
-                  <SelectItem value="confirmed">Confirmed</SelectItem>
-                  <SelectItem value="in_progress">In Progress</SelectItem>
-                  <SelectItem value="fix_applied">Fix Applied</SelectItem>
-                  <SelectItem value="resolved">Resolved</SelectItem>
-                  <SelectItem value="false_positive">False Positive</SelectItem>
-                </SelectContent>
-              </Select>
-              <Select
-                value={scannerFilter}
-                onValueChange={(v) => handleFilterChange(setScannerFilter, 'scanner', v)}
-              >
-                <SelectTrigger className="w-[120px] h-8 text-xs">
-                  <SelectValue placeholder="Scanner" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All Scanners</SelectItem>
-                  <SelectItem value="sast">SAST</SelectItem>
-                  <SelectItem value="sca">SCA</SelectItem>
-                  <SelectItem value="secret">Secret</SelectItem>
-                  <SelectItem value="iac">IaC</SelectItem>
-                  <SelectItem value="container">Container</SelectItem>
-                </SelectContent>
-              </Select>
-              {branches.length > 0 && (
+          </div>
+          <ListToolbar
+            className="mt-3"
+            search={{
+              value: searchInput,
+              onChange: setSearchInput,
+              placeholder: t('assets.repository.findingsSearch.placeholder', 'Search findings…'),
+              label: t('assets.repository.findingsSearch.label', 'Search findings'),
+            }}
+            start={
+              <>
                 <Select
-                  value={branchFilter}
-                  onValueChange={(v) => handleFilterChange(setBranchFilter, 'branch', v)}
+                  value={severityFilter}
+                  onValueChange={(v) => handleFilterChange(setSeverityFilter, 'severity', v)}
                 >
-                  <SelectTrigger className="w-[160px] h-8 text-xs">
-                    <SelectValue placeholder="Branch" />
+                  <SelectTrigger className="w-[110px] h-9 text-xs">
+                    <SelectValue placeholder="Severity" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="all">All Branches</SelectItem>
-                    {branches.map((b) => (
-                      <SelectItem key={b.id} value={b.name}>
-                        <span className="flex items-center gap-1">
-                          <GitBranch className="h-3 w-3" />
-                          {b.name}
-                        </span>
+                    <SelectItem value="all">All Severities</SelectItem>
+                    {SEVERITY_LEVELS.map((s) => (
+                      <SelectItem key={s} value={s}>
+                        {SEVERITY_LABELS[s]}
                       </SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
-              )}
-              {branchFilter !== 'all' && (
                 <Select
-                  value={branchStatusFilter}
-                  onValueChange={(v) =>
-                    handleFilterChange(setBranchStatusFilter, 'branch_status', v)
-                  }
+                  value={statusFilter}
+                  onValueChange={(v) => handleFilterChange(setStatusFilter, 'status', v)}
                 >
-                  <SelectTrigger className="w-[130px] h-8 text-xs">
-                    <SelectValue placeholder="On branch" />
+                  <SelectTrigger className="w-[110px] h-9 text-xs">
+                    <SelectValue placeholder="Status" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="all">All on branch</SelectItem>
-                    <SelectItem value="open">Open on branch</SelectItem>
-                    <SelectItem value="fixed">Fixed on branch</SelectItem>
+                    <SelectItem value="all">All Statuses</SelectItem>
+                    <SelectItem value="new">New</SelectItem>
+                    <SelectItem value="confirmed">Confirmed</SelectItem>
+                    <SelectItem value="in_progress">In Progress</SelectItem>
+                    <SelectItem value="fix_applied">Fix Applied</SelectItem>
+                    <SelectItem value="resolved">Resolved</SelectItem>
+                    <SelectItem value="false_positive">False Positive</SelectItem>
                   </SelectContent>
                 </Select>
-              )}
-            </div>
-          </div>
+                <Select
+                  value={scannerFilter}
+                  onValueChange={(v) => handleFilterChange(setScannerFilter, 'scanner', v)}
+                >
+                  <SelectTrigger className="w-[120px] h-9 text-xs">
+                    <SelectValue placeholder="Scanner" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All Scanners</SelectItem>
+                    <SelectItem value="sast">SAST</SelectItem>
+                    <SelectItem value="sca">SCA</SelectItem>
+                    <SelectItem value="secret">Secret</SelectItem>
+                    <SelectItem value="iac">IaC</SelectItem>
+                    <SelectItem value="container">Container</SelectItem>
+                  </SelectContent>
+                </Select>
+                {branches.length > 0 && (
+                  <Select
+                    value={branchFilter}
+                    onValueChange={(v) => handleFilterChange(setBranchFilter, 'branch', v)}
+                  >
+                    <SelectTrigger className="w-[160px] h-9 text-xs">
+                      <SelectValue placeholder="Branch" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All Branches</SelectItem>
+                      {branches.map((b) => (
+                        <SelectItem key={b.id} value={b.name}>
+                          <span className="flex items-center gap-1">
+                            <GitBranch className="h-3 w-3" />
+                            {b.name}
+                          </span>
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                )}
+                {branchFilter !== 'all' && (
+                  <Select
+                    value={branchStatusFilter}
+                    onValueChange={(v) =>
+                      handleFilterChange(setBranchStatusFilter, 'branch_status', v)
+                    }
+                  >
+                    <SelectTrigger className="w-[130px] h-9 text-xs">
+                      <SelectValue placeholder="On branch" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All on branch</SelectItem>
+                      <SelectItem value="open">Open on branch</SelectItem>
+                      <SelectItem value="fixed">Fixed on branch</SelectItem>
+                    </SelectContent>
+                  </Select>
+                )}
+              </>
+            }
+          />
         </CardHeader>
         <CardContent>
           <div className="space-y-3">
@@ -1620,7 +1631,7 @@ function FindingsTab({
               >
                 <div className="flex items-start gap-4">
                   <div className="shrink-0 mt-1">
-                    <SeverityBadge severity={finding.severity} />
+                    <SeverityCountBadge severity={finding.severity} />
                   </div>
                   <div className="flex-1 min-w-0">
                     {/* Title leads; the raw UUID is dropped from the row (it's
@@ -1747,6 +1758,7 @@ function FindingsTab({
 
 // Settings Tab
 function SettingsTab({ repository, onDelete }: { repository: Repository; onDelete?: () => void }) {
+  const { t: tDanger } = useTranslation()
   const [autoScan, setAutoScan] = useState(repository.scan_settings?.auto_scan ?? false)
   const [scanOnPush, setScanOnPush] = useState(repository.scan_settings?.scan_on_push ?? false)
   const [scanOnPR, setScanOnPR] = useState(repository.scan_settings?.scan_on_pr ?? false)
@@ -1946,11 +1958,11 @@ function SettingsTab({ repository, onDelete }: { repository: Repository; onDelet
                 key={key}
                 className={cn(
                   'flex items-center gap-3 p-3 rounded-lg border',
-                  enabled ? 'bg-green-500/5 border-green-500/20' : 'bg-muted/30'
+                  enabled ? 'bg-card' : 'bg-muted/30'
                 )}
               >
                 {enabled ? (
-                  <CheckCircle className="h-5 w-5 text-green-500 shrink-0" />
+                  <CheckCircle className="h-5 w-5 text-success shrink-0" />
                 ) : (
                   <XCircle className="h-5 w-5 text-muted-foreground shrink-0" />
                 )}
@@ -1976,11 +1988,14 @@ function SettingsTab({ repository, onDelete }: { repository: Repository; onDelet
           </Can>
           <Can permission={Permission.AssetsDelete}>
             <DangerZoneItem
-              title="Delete repository"
-              description="Permanently delete this repository and all associated data."
+              title={tDanger('assets.repository.danger.deleteTitle', 'Delete repository')}
+              description={tDanger(
+                'assets.repository.danger.deleteDesc',
+                'Remove this repository from the inventory. It leaves its groups, owners and scope. A repository with findings is not deleted, so the finding history is kept.'
+              )}
               action={
                 <Button variant="destructive" size="sm" onClick={onDelete} disabled={!onDelete}>
-                  Delete
+                  {tDanger('assets.repository.danger.deleteButton', 'Delete repository')}
                 </Button>
               }
             />
@@ -2118,6 +2133,7 @@ export function RepositoryWorkspace({ repositoryId }: { repositoryId: string }) 
   const [isScanning, setIsScanning] = useState(false)
   const [isDeleting, setIsDeleting] = useState(false)
   const [showDeleteDialog, setShowDeleteDialog] = useState(false)
+  const [showScanDialog, setShowScanDialog] = useState(false)
 
   // Fetch repository data from API
   const {
@@ -2193,16 +2209,18 @@ export function RepositoryWorkspace({ repositoryId }: { repositoryId: string }) 
         body: JSON.stringify({ scanMode: 'full' }),
       })
       if (!response.ok) {
-        throw new Error('Failed to trigger scan')
+        throw new Error(t('assets.repository.scanFailed', 'Failed to start the scan'))
       }
-      toast.success('Scan initiated successfully')
+      toast.success(t('assets.repository.scanStarted', 'Scan started'))
       mutateRepo()
     } catch (error) {
-      toast.error(getErrorMessage(error, 'Failed to trigger scan'))
+      toast.error(
+        getErrorMessage(error, t('assets.repository.scanFailed', 'Failed to start the scan'))
+      )
     } finally {
       setIsScanning(false)
     }
-  }, [repository, mutateRepo])
+  }, [repository, mutateRepo, t])
 
   const handleDelete = useCallback(async () => {
     if (!repository) return
@@ -2227,7 +2245,7 @@ export function RepositoryWorkspace({ repositoryId }: { repositoryId: string }) 
     return (
       <div className="flex h-screen items-center justify-center">
         <div className="text-center">
-          <AlertTriangle className="h-12 w-12 mx-auto mb-4 text-red-500" />
+          <AlertTriangle className="h-12 w-12 mx-auto mb-4 text-destructive" />
           <h2 className="text-xl font-semibold mb-2">Error Loading Repository</h2>
           <p className="text-muted-foreground mb-4">
             {repoError.message || 'Failed to load repository data. Please try again.'}
@@ -2280,12 +2298,7 @@ export function RepositoryWorkspace({ repositoryId }: { repositoryId: string }) 
               <div className="min-w-0">
                 <div className="mb-1 flex flex-wrap items-center gap-x-3 gap-y-1">
                   <h1 className="min-w-0 text-2xl font-bold break-words">{repository.name}</h1>
-                  <Badge
-                    variant="outline"
-                    className={cn(SCM_PROVIDER_COLORS[repository.scm_provider])}
-                  >
-                    {SCM_PROVIDER_LABELS[repository.scm_provider]}
-                  </Badge>
+                  <Tag variant="plain" label={SCM_PROVIDER_LABELS[repository.scm_provider]} />
                   <Badge variant={repository.status === 'active' ? 'default' : 'secondary'}>
                     {STATUS_LABELS[repository.status]}
                   </Badge>
@@ -2346,13 +2359,15 @@ export function RepositoryWorkspace({ repositoryId }: { repositoryId: string }) 
                 )}
                 {isSyncing ? 'Syncing...' : 'Sync'}
               </Button>
-              <Button size="sm" onClick={handleScan} disabled={isScanning}>
+              <Button size="sm" onClick={() => setShowScanDialog(true)} disabled={isScanning}>
                 {isScanning ? (
                   <Loader2 className="me-2 h-4 w-4 animate-spin" />
                 ) : (
                   <Play className="me-2 h-4 w-4" />
                 )}
-                {isScanning ? 'Scanning...' : 'Scan Now'}
+                {isScanning
+                  ? t('assets.repository.scanning', 'Scanning...')
+                  : t('assets.repository.scanNow', 'Scan now')}
               </Button>
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
@@ -2379,15 +2394,25 @@ export function RepositoryWorkspace({ repositoryId }: { repositoryId: string }) 
                   <Can permission={Permission.AssetsDelete}>
                     <DropdownMenuSeparator />
                     <DropdownMenuItem
-                      className="text-red-500"
+                      className="text-destructive"
                       onClick={() => setShowDeleteDialog(true)}
                     >
                       <Trash2 className="me-2 h-4 w-4" />
-                      Delete Repository
+                      {t('assets.repository.danger.deleteTitle', 'Delete repository')}
                     </DropdownMenuItem>
                   </Can>
                 </DropdownMenuContent>
               </DropdownMenu>
+
+              <ScanConfirmDialog
+                open={showScanDialog}
+                onOpenChange={setShowScanDialog}
+                names={[repository.name]}
+                onConfirm={async () => {
+                  setShowScanDialog(false)
+                  await handleScan()
+                }}
+              />
 
               <AssetDeleteDialogShared
                 open={showDeleteDialog}
@@ -2436,7 +2461,7 @@ export function RepositoryWorkspace({ repositoryId }: { repositoryId: string }) 
               branches={branches}
               findings={findings}
               activities={activities}
-              onScan={handleScan}
+              onScan={() => setShowScanDialog(true)}
             />
           </TabsContent>
 

@@ -8,6 +8,7 @@ import (
 	"github.com/robfig/cron/v3"
 
 	"github.com/openctemio/openctem/api/pkg/domain/scannertemplate"
+	"github.com/openctemio/openctem/api/pkg/domain/scanworkflow"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 )
 
@@ -40,6 +41,9 @@ type Scan struct {
 	// Intensity is the probe ceiling of every run (RFC-071): passive,
 	// active or intrusive. Copied to each run.
 	Intensity Intensity
+	// Depth is how much of the workflow each run executes (passive,
+	// standard or deep; scanworkflow.Depth). Workflow scans only.
+	Depth scanworkflow.Depth
 
 	// Schedule
 	ScheduleType     ScheduleType
@@ -138,6 +142,7 @@ func NewScan(tenantID shared.ID, name string, assetGroupID shared.ID, scanType S
 		ScannerConfig:       make(map[string]any),
 		TargetsPerJob:       1,
 		Intensity:           DefaultIntensity,
+		Depth:               scanworkflow.DefaultDepth,
 		ScheduleType:        ScheduleManual,
 		ScheduleTimezone:    "UTC",
 		Tags:                []string{},
@@ -180,6 +185,7 @@ func NewScanWithTargets(tenantID shared.ID, name string, targets []string, scanT
 		ScannerConfig:       make(map[string]any),
 		TargetsPerJob:       1,
 		Intensity:           DefaultIntensity,
+		Depth:               scanworkflow.DefaultDepth,
 		ScheduleType:        ScheduleManual,
 		ScheduleTimezone:    "UTC",
 		Tags:                []string{},
@@ -454,6 +460,11 @@ func (s *Scan) occurrenceAfter(t time.Time) *time.Time {
 			return nil
 		}
 		next = schedule.Next(now)
+		if isFallBackRepeat(next) {
+			// The same wall time already happened an hour earlier tonight
+			// (the clock went back): fire once per wall-clock slot.
+			next = schedule.Next(next)
+		}
 	default:
 		return nil
 	}
@@ -463,19 +474,55 @@ func (s *Scan) occurrenceAfter(t time.Time) *time.Time {
 	return &utc
 }
 
-// nextAtTimeOfDay returns the next occurrence of the given time-of-day, advancing
-// at least dayOffset days from `now` (1 = tomorrow if today's slot already passed).
+// nextAtTimeOfDay returns the next occurrence of the given time-of-day after
+// `now`. Each candidate day is built from its calendar date (never by adding
+// days to an earlier candidate), so a slot that fell in a daylight-saving gap
+// on one day does not carry its shifted clock into the following days.
 func nextAtTimeOfDay(now time.Time, t *time.Time, _ int) time.Time {
 	hour, minute := 0, 0
 	if t != nil {
 		hour = t.Hour()
 		minute = t.Minute()
 	}
-	candidate := time.Date(now.Year(), now.Month(), now.Day(), hour, minute, 0, 0, now.Location())
-	if !candidate.After(now) {
-		candidate = candidate.AddDate(0, 0, 1)
+	for off := 0; ; off++ {
+		candidate := wallClock(now.Year(), now.Month(), now.Day()+off, hour, minute, now.Location())
+		if candidate.After(now) {
+			return candidate
+		}
 	}
-	return candidate
+}
+
+// wallClock returns the instant the given local date and time-of-day names in
+// loc. A time that does not exist on that day (the clock jumps over it when
+// daylight saving starts) runs at the same wall time read with the offset in
+// force before the jump: 02:30 on a day the clock goes 02:00 to 03:00 runs at
+// 03:30. time.Date alone leaves that choice unspecified (it currently gives
+// 01:30, an hour early and before the requested time).
+func wallClock(year int, month time.Month, day, hour, minute int, loc *time.Location) time.Time {
+	c := time.Date(year, month, day, hour, minute, 0, 0, loc)
+	if c.Hour() == hour && c.Minute() == minute {
+		return c
+	}
+	// The wall time sits in a gap. Read it with the offset in force a few
+	// hours before (offsets change at most a few times a year, so that is
+	// the offset before the gap).
+	_, before := c.Add(-6 * time.Hour).Zone()
+	wall := time.Date(year, month, day, hour, minute, 0, 0, time.UTC)
+	return wall.Add(-time.Duration(before) * time.Second).In(loc)
+}
+
+// isFallBackRepeat reports whether t is the second instant of a wall-clock
+// time that occurs twice because the clock was set back (daylight saving
+// ended): the same local date and time existed under the earlier offset.
+func isFallBackRepeat(t time.Time) bool {
+	_, now := t.Zone()
+	_, before := t.Add(-6 * time.Hour).Zone()
+	if before <= now {
+		return false
+	}
+	earlier := t.Add(-time.Duration(before-now) * time.Second)
+	return earlier.Year() == t.Year() && earlier.YearDay() == t.YearDay() &&
+		earlier.Hour() == t.Hour() && earlier.Minute() == t.Minute()
 }
 
 // cronParser is the one cron dialect: 5 fields, as validated on save and
@@ -495,21 +542,27 @@ func nextAtWeekday(now time.Time, dayOfWeek *int, t *time.Time) time.Time {
 		if t != nil {
 			hour, minute = t.Hour(), t.Minute()
 		}
-		today := time.Date(now.Year(), now.Month(), now.Day(), hour, minute, 0, 0, now.Location())
+		today := wallClock(now.Year(), now.Month(), now.Day(), hour, minute, now.Location())
 		if today.After(now) {
 			return today
 		}
-		return today.AddDate(0, 0, 7)
+		return wallClock(now.Year(), now.Month(), now.Day()+7, hour, minute, now.Location())
 	}
-	candidate := nextAtTimeOfDay(now, t, 0)
+	hour, minute := 0, 0
+	if t != nil {
+		hour, minute = t.Hour(), t.Minute()
+	}
 	target := time.Weekday(*dayOfWeek)
-	for candidate.Weekday() != target {
-		candidate = candidate.AddDate(0, 0, 1)
+	for off := 0; ; off++ {
+		day := time.Date(now.Year(), now.Month(), now.Day()+off, 12, 0, 0, 0, now.Location())
+		if day.Weekday() != target {
+			continue
+		}
+		candidate := wallClock(day.Year(), day.Month(), day.Day(), hour, minute, now.Location())
+		if candidate.After(now) {
+			return candidate
+		}
 	}
-	if !candidate.After(now) {
-		candidate = candidate.AddDate(0, 0, 7)
-	}
-	return candidate
 }
 
 // nextAtDayOfMonth returns the next occurrence of the given day-of-month at the given time-of-day.
@@ -549,7 +602,7 @@ func dateOnClampedDay(year int, month time.Month, day, hour, minute int, loc *ti
 	if day < 1 {
 		day = 1
 	}
-	return time.Date(year, month, day, hour, minute, 0, 0, loc)
+	return wallClock(year, month, day, hour, minute, loc)
 }
 
 // CalculateNextRunAt returns the next scheduled run time.
@@ -880,6 +933,7 @@ func (s *Scan) Clone(newName string) *Scan {
 		MaxRetries:          s.MaxRetries,
 		RetryBackoffSeconds: s.RetryBackoffSeconds,
 		Intensity:           s.Intensity,
+		Depth:               s.Depth,
 		// A copy starts paused: it runs on its schedule only once someone
 		// resumes it, never as a side effect of cloning.
 		Status:         StatusPaused,

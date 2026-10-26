@@ -19,6 +19,9 @@ type WorkflowPreviewRequest struct {
 	Targets        []string `json:"targets" validate:"max=1000,dive,max=500"`
 	AssetGroupIDs  []string `json:"asset_group_ids" validate:"max=20,dive,uuid"`
 	ScanZoneID     string   `json:"scan_zone_id" validate:"omitempty,uuid"`
+	// Depth is the scan's depth (passive, standard or deep; default
+	// standard): skipped steps and the params each step runs with.
+	Depth string `json:"depth" validate:"omitempty,oneof=passive standard deep"`
 }
 
 // PreviewWorkflow handles POST /api/v1/scans/workflow-preview
@@ -45,10 +48,12 @@ func (h *ScanHandler) PreviewWorkflow(w http.ResponseWriter, r *http.Request) {
 	}
 	out, err := h.service.PreviewWorkflow(r.Context(), scansvc.WorkflowPreviewInput{
 		TenantID:       middleware.GetTenantID(r.Context()),
+		UserID:         middleware.GetUserID(r.Context()),
 		ScanWorkflowID: req.ScanWorkflowID,
 		Targets:        req.Targets,
 		AssetGroupIDs:  req.AssetGroupIDs,
 		ScanZoneID:     req.ScanZoneID,
+		Depth:          req.Depth,
 	})
 	if err != nil {
 		switch {

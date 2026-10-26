@@ -52,26 +52,25 @@ const ENVIRONMENTS: {
     value: 'production',
     label: 'Production',
     icon: Server,
-    color: 'text-red-500 border-red-200 bg-red-50 dark:bg-red-950/30 dark:border-red-900',
+    color: 'text-foreground border-border bg-muted',
   },
   {
     value: 'staging',
     label: 'Staging',
     icon: FlaskConical,
-    color:
-      'text-yellow-600 border-yellow-200 bg-yellow-50 dark:bg-yellow-950/30 dark:border-yellow-900',
+    color: 'text-foreground border-border bg-muted',
   },
   {
     value: 'development',
     label: 'Development',
     icon: Code,
-    color: 'text-blue-500 border-blue-200 bg-blue-50 dark:bg-blue-950/30 dark:border-blue-900',
+    color: 'text-foreground border-border bg-muted',
   },
   {
     value: 'testing',
     label: 'Testing',
     icon: TestTube,
-    color: 'text-green-500 border-green-200 bg-green-50 dark:bg-green-950/30 dark:border-green-900',
+    color: 'text-foreground border-border bg-muted',
   },
 ]
 
@@ -88,36 +87,32 @@ const CRITICALITIES: {
     label: 'Critical',
     description: 'Business critical systems - immediate response required',
     icon: AlertTriangle,
-    color: 'text-red-600 dark:text-red-400',
-    bgColor:
-      'border-red-200 bg-red-50/50 hover:bg-red-50 dark:border-red-900 dark:bg-red-950/20 dark:hover:bg-red-950/40',
+    color: 'text-foreground',
+    bgColor: 'border-primary bg-primary/5',
   },
   {
     value: 'high',
     label: 'High',
     description: 'Important business functions - prioritized attention',
     icon: AlertCircle,
-    color: 'text-orange-600 dark:text-orange-400',
-    bgColor:
-      'border-orange-200 bg-orange-50/50 hover:bg-orange-50 dark:border-orange-900 dark:bg-orange-950/20 dark:hover:bg-orange-950/40',
+    color: 'text-foreground',
+    bgColor: 'border-primary bg-primary/5',
   },
   {
     value: 'medium',
     label: 'Medium',
     description: 'Standard business operations - normal priority',
     icon: Info,
-    color: 'text-yellow-600 dark:text-yellow-400',
-    bgColor:
-      'border-yellow-200 bg-yellow-50/50 hover:bg-yellow-50 dark:border-yellow-900 dark:bg-yellow-950/20 dark:hover:bg-yellow-950/40',
+    color: 'text-foreground',
+    bgColor: 'border-primary bg-primary/5',
   },
   {
     value: 'low',
     label: 'Low',
     description: 'Non-essential systems - scheduled maintenance',
     icon: MinusCircle,
-    color: 'text-slate-500 dark:text-slate-400',
-    bgColor:
-      'border-slate-200 bg-slate-50/50 hover:bg-slate-50 dark:border-slate-800 dark:bg-slate-950/20 dark:hover:bg-slate-900/40',
+    color: 'text-foreground',
+    bgColor: 'border-primary bg-primary/5',
   },
 ]
 
@@ -238,7 +233,7 @@ export function BasicInfoStep({ data, onChange }: BasicInfoStepProps) {
                       : 'border-muted bg-muted/30 hover:bg-muted/50 text-muted-foreground hover:text-foreground'
                   )}
                 >
-                  <Icon className={cn('h-5 w-5', isSelected && env.color.split(' ')[0])} />
+                  <Icon className={cn('h-5 w-5', isSelected && 'text-foreground')} />
                   <span className="text-xs font-medium">{env.label}</span>
                 </button>
               )
@@ -293,15 +288,7 @@ export function BasicInfoStep({ data, onChange }: BasicInfoStepProps) {
                     </div>
                   </div>
                   {isSelected && (
-                    <div
-                      className={cn(
-                        'h-2 w-2 rounded-full shrink-0 mt-1.5',
-                        crit.color.includes('red') && 'bg-red-500',
-                        crit.color.includes('orange') && 'bg-orange-500',
-                        crit.color.includes('yellow') && 'bg-yellow-500',
-                        crit.color.includes('slate') && 'bg-slate-400'
-                      )}
-                    />
+                    <div className={cn('h-2 w-2 rounded-full shrink-0 mt-1.5', 'bg-foreground')} />
                   )}
                 </button>
               )
@@ -317,8 +304,8 @@ export function BasicInfoStep({ data, onChange }: BasicInfoStepProps) {
             <CardHeader className="pb-3 cursor-pointer hover:bg-muted/50 transition-colors rounded-t-lg">
               <CardTitle className="text-sm font-medium flex items-center justify-between">
                 <div className="flex items-center gap-2">
-                  <div className="h-8 w-8 rounded-lg bg-blue-500/10 flex items-center justify-center">
-                    <Building2 className="h-4 w-4 text-blue-500" />
+                  <div className="h-8 w-8 rounded-lg bg-muted flex items-center justify-center">
+                    <Building2 className="h-4 w-4 text-muted-foreground" />
                   </div>
                   Business Context
                   <Badge variant="outline" className="ms-2 text-xs font-normal">

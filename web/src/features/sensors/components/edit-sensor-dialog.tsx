@@ -37,6 +37,7 @@ import {
 } from '@/lib/api/sensor-hooks'
 import type { Sensor } from '@/lib/api/sensor-types'
 import { Permission, useHasPermission } from '@/lib/permissions'
+import { sensorActions } from '../lib/sensor-actions'
 
 import { sensorCapacity } from '../lib/capabilities'
 import { agoShort, type Tr } from '../lib/format'
@@ -167,6 +168,8 @@ export function EditSensorDialog({
     form: useId(),
   }
   const canDelete = useHasPermission(Permission.SensorsDelete)
+  const canWrite = useHasPermission(Permission.SensorsWrite)
+  const canRevoke = useHasPermission(Permission.SensorsRevoke)
   const canReadZones = useHasPermission(Permission.ScanZonesRead)
   const canWriteZones = useHasPermission(Permission.ScanZonesWrite)
   const { data: zonesData } = useScanZones(open && canReadZones)
@@ -218,6 +221,7 @@ export function EditSensorDialog({
   )
   const capacity = sensorCapacity(sensor)
   const revoked = sensor.status === 'revoked'
+  const can = sensorActions(sensor, { write: canWrite, revoke: canRevoke, delete: canDelete })
   const modeKey = EXECUTION_MODE_KEYS[sensor.execution_mode] ?? 'daemon'
   const busy = saving || isRevoking || isDeleting
 
@@ -479,9 +483,9 @@ export function EditSensorDialog({
                 </>
               )}
 
-              {canDelete && (
+              {(can.revoke || can.delete) && (
                 <DangerZone as="h3">
-                  {!revoked && (
+                  {can.revoke && (
                     <DangerZoneItem
                       title={t('sensors.edit.revokeAccess')}
                       description={t('sensors.edit.revokeAccessHelp')}
@@ -499,23 +503,24 @@ export function EditSensorDialog({
                       }
                     />
                   )}
-                  <DangerZoneItem
-                    title={t('sensors.edit.deleteSensor')}
-                    description={t('sensors.edit.deleteSensorHelp')}
-                    action={
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="sm"
-                        className="border-destructive/50 text-destructive hover:bg-destructive/10 hover:text-destructive"
-                        onClick={() => setDeleteOpen(true)}
-                        disabled={busy}
-                      >
-                        <Trash2 className="h-4 w-4" aria-hidden />
-                        {t('sensors.edit.delete')}
-                      </Button>
-                    }
-                  />
+                  {can.delete && (
+                    <DangerZoneItem
+                      title={t('sensors.edit.deleteSensor')}
+                      description={t('sensors.edit.deleteSensorHelp')}
+                      action={
+                        <Button
+                          type="button"
+                          variant="destructive"
+                          size="sm"
+                          onClick={() => setDeleteOpen(true)}
+                          disabled={busy}
+                        >
+                          <Trash2 className="h-4 w-4" aria-hidden />
+                          {t('sensors.edit.delete')}
+                        </Button>
+                      }
+                    />
+                  )}
                 </DangerZone>
               )}
             </form>

@@ -8,29 +8,27 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import type { ColumnDef } from '@tanstack/react-table'
-import { Download, FileCheck2, Package, Search, Upload } from 'lucide-react'
+import { Download, FileCheck2, Package, Upload } from 'lucide-react'
 import Link from '@/components/link'
 import { Main } from '@/components/layout'
 import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
 import { useTranslation } from '@/context/i18n-provider'
 import {
   DataTable,
   DataTableColumnHeader,
   EmptyState,
   ErrorState,
-  FilterPanelToggle,
   FilterSheet,
   MetricStrip,
   type MetricStripItem,
   PageHeader,
   RelativeTime,
   RiskScoreBadge,
-  SegmentedLens,
+  PageStack,
   StackedCell,
 } from '@/features/shared'
 import { TableSkeleton } from '@/components/list-page-parts'
-import { useDebounce } from '@/hooks/use-debounce'
+import { useSearchQuery } from '@/hooks/use-search-query'
 import { useListParams } from '@/hooks/use-list-params'
 import { Can, Permission } from '@/lib/permissions'
 import { useComponentsList, useComponentsSummary } from '../api/hooks'
@@ -92,7 +90,7 @@ export function ComponentsListView() {
     filters: { ...COMPONENT_FILTER_DEFAULTS },
   })
   const [search, setSearch] = useState(list.q)
-  const debouncedSearch = useDebounce(search, 300)
+  const debouncedSearch = useSearchQuery(search).term
   const { setSearch: setListSearch } = list
   useEffect(() => {
     if (debouncedSearch !== list.q) setListSearch(debouncedSearch)
@@ -105,7 +103,9 @@ export function ComponentsListView() {
     per_page: list.perPage,
     sort: list.sort,
   })
-  const { data: summary, isLoading: summaryLoading } = useComponentsSummary(filters)
+  // The tiles are page-level (the whole inventory, whatever the filters), so a
+  // tile's number is what its preset opens.
+  const { data: summary, isLoading: summaryLoading } = useComponentsSummary({})
 
   const [filtersOpen, setFiltersOpen] = useFiltersOpen()
   const [sheetOpen, setSheetOpen] = useState(false)
@@ -118,6 +118,9 @@ export function ComponentsListView() {
   const hasQuery = activeCount > 0 || list.q !== ''
 
   const applyPreset = (p: ComponentPreset) => {
+    // A preset replaces every filter, the search included.
+    setSearch('')
+    setListSearch('')
     for (const name of Object.keys(COMPONENT_FILTER_DEFAULTS) as ComponentFilterName[]) {
       list.setFilter(name, PRESET_FILTERS[p][name] ?? '')
     }
@@ -129,6 +132,7 @@ export function ComponentsListView() {
 
   const metrics: MetricStripItem[] = [
     {
+      // Every package: clears the presets (and the search).
       key: 'packages',
       label: t('components.kpi.packages', 'Packages'),
       value: summary?.packages ?? 0,
@@ -136,6 +140,8 @@ export function ComponentsListView() {
         versions: summary?.versions ?? 0,
         assets: summary?.assets ?? 0,
       }),
+      onClick: () => applyPreset('all'),
+      active: preset === 'all' && list.q === '',
     },
     {
       key: 'vulnerable',
@@ -160,20 +166,7 @@ export function ComponentsListView() {
       onClick: () => applyPreset('fixable'),
       active: preset === 'fixable',
     },
-    {
-      key: 'outdated',
-      label: t('components.kpi.outdated', 'Outdated'),
-      value: summary?.outdated ?? '—',
-      hint:
-        summary?.outdated == null
-          ? t(
-              'components.kpi.outdatedHint',
-              'Needs package health data from the vulnerability feed'
-            )
-          : undefined,
-    },
   ]
-
   const columns = useMemo<ColumnDef<ComponentPackage>[]>(
     () => [
       {
@@ -292,161 +285,129 @@ export function ComponentsListView() {
     />
   )
 
-  const presetOptions: { value: ComponentPreset; label: string }[] = [
-    { value: 'all', label: t('components.preset.all', 'All') },
-    { value: 'vulnerable', label: t('components.preset.vulnerable', 'Vulnerable') },
-    { value: 'kev', label: t('components.preset.kev', 'Known exploited') },
-    { value: 'fixable', label: t('components.preset.fixable', 'Fixable') },
-    { value: 'direct', label: t('components.preset.direct', 'Direct dependencies') },
-  ]
-
-  const toolbarStart = (
-    <>
-      <FilterPanelToggle
-        open={filtersOpen}
-        onToggle={() => setFiltersOpen(!filtersOpen)}
-        onOpenSheet={() => setSheetOpen(true)}
-        activeCount={activeCount}
-        controlsId="component-filters"
-        label={t('components.filters', 'Filters')}
-      />
-      <div className="relative w-full sm:w-72">
-        <Search
-          className="pointer-events-none absolute start-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground"
-          aria-hidden
-        />
-        <Input
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          placeholder={t('components.searchPlaceholder', 'Search packages…')}
-          aria-label={t('components.searchLabel', 'Search packages by name or namespace')}
-          className="h-9 ps-8"
-        />
-      </div>
-    </>
-  )
-
   const empty = !isLoading && !error && data && data.total === 0 && !hasQuery
 
   return (
     <Main>
-      <PageHeader
-        title={t('components.title', 'Components')}
-        description={t(
-          'components.description',
-          'Open-source and third-party packages your repositories, images and hosts are built from, with where they are used and what is wrong with them.'
-        )}
-      >
-        <Button variant="outline" onClick={() => setExportOpen(true)}>
-          <Download className="me-2 h-4 w-4" aria-hidden />
-          {t('components.export', 'Export SBOM')}
-        </Button>
-        <Can permission={Permission.FindingsApprove}>
-          <Button variant="outline" onClick={() => setVexOpen(true)}>
-            <FileCheck2 className="me-2 h-4 w-4" aria-hidden />
-            {t('components.importVex', 'Import VEX')}
+      <PageStack>
+        <PageHeader
+          title={t('components.title', 'Components')}
+          description={t(
+            'components.description',
+            'Open-source and third-party packages your repositories, images and hosts are built from, with where they are used and what is wrong with them.'
+          )}
+        >
+          <Button variant="outline" onClick={() => setExportOpen(true)}>
+            <Download className="me-2 h-4 w-4" aria-hidden />
+            {t('components.export', 'Export SBOM')}
           </Button>
-        </Can>
-        <Can permission={Permission.ComponentsWrite}>
-          <Button onClick={() => setImportOpen(true)}>
-            <Upload className="me-2 h-4 w-4" aria-hidden />
-            {t('components.import', 'Import SBOM')}
-          </Button>
-        </Can>
-      </PageHeader>
+          <Can permission={Permission.FindingsApprove}>
+            <Button variant="outline" onClick={() => setVexOpen(true)}>
+              <FileCheck2 className="me-2 h-4 w-4" aria-hidden />
+              {t('components.importVex', 'Import VEX')}
+            </Button>
+          </Can>
+          <Can permission={Permission.ComponentsWrite}>
+            <Button onClick={() => setImportOpen(true)}>
+              <Upload className="me-2 h-4 w-4" aria-hidden />
+              {t('components.import', 'Import SBOM')}
+            </Button>
+          </Can>
+        </PageHeader>
 
-      <MetricStrip loading={summaryLoading && !summary} items={metrics} />
+        <MetricStrip loading={summaryLoading && !summary} items={metrics} />
 
-      <div className="mt-4 overflow-x-auto">
-        <SegmentedLens<ComponentPreset>
-          label={t('components.preset.label', 'View')}
-          value={preset ?? 'all'}
-          options={presetOptions}
-          onChange={applyPreset}
-          countNoun={t('components.packagesNoun', 'packages')}
-        />
-      </div>
-
-      {error ? (
-        <div className="mt-5">
+        {error ? (
           <ErrorState
             title={t('components.loadError', 'Could not load components')}
             error={error}
             onRetry={() => mutate()}
           />
-        </div>
-      ) : empty ? (
-        <EmptyState
-          className="mt-5"
-          card
-          icon={Package}
-          title={t('components.empty.title', 'No components yet')}
-          description={t(
-            'components.empty.description',
-            'Components appear when a sensor runs an SCA tool, a CI job uploads a report, or you import an SBOM (CycloneDX or SPDX JSON).'
-          )}
-          action={
-            <div className="flex flex-wrap justify-center gap-2">
-              <Can permission={Permission.ComponentsWrite}>
-                <Button onClick={() => setImportOpen(true)}>
-                  <Upload className="me-2 h-4 w-4" aria-hidden />
-                  {t('components.import', 'Import SBOM')}
-                </Button>
-              </Can>
-              <Button variant="outline" asChild>
-                <Link href="/sensors">{t('components.empty.sensors', 'Set up a sensor')}</Link>
-              </Button>
-            </div>
-          }
-        />
-      ) : (
-        <div className="mt-4 flex items-start gap-5">
-          {filtersOpen && (
-            <aside
-              id="component-filters"
-              aria-label={t('components.filtersLabel', 'Component filters')}
-              className="sticky top-4 hidden h-[calc(100svh-7.5rem)] w-64 shrink-0 flex-col rounded-xl border bg-card p-4 shadow-sm lg:flex"
-            >
-              <div className="flex min-h-0 flex-1 flex-col">{facets}</div>
-            </aside>
-          )}
-          <div className="min-w-0 flex-1">
-            {isLoading && !data ? (
-              <TableSkeleton rows={8} />
-            ) : (
-              <DataTable
-                columns={columns}
-                data={data?.data ?? []}
-                showSearch={false}
-                toolbarStart={toolbarStart}
-                manualPagination
-                rowCount={data?.total ?? 0}
-                pagination={list.pagination}
-                onPaginationChange={list.setPagination}
-                pageSize={list.perPage}
-                pageSizeOptions={[...COMPONENT_PAGE_SIZES]}
-                sorting={list.sorting}
-                onSortingChange={list.setSorting}
-                getRowId={(p) => p.id}
-                initialColumnVisibility={{ last_seen: false }}
-                emptyMessage={t('components.noMatch', 'No packages match these filters')}
-                emptyDescription={t(
-                  'components.noMatchHint',
-                  'Remove a filter or clear the search.'
-                )}
-              />
+        ) : empty ? (
+          <EmptyState
+            card
+            icon={Package}
+            title={t('components.empty.title', 'No components yet')}
+            description={t(
+              'components.empty.description',
+              'Components appear when a sensor runs an SCA tool, a CI job uploads a report, or you import an SBOM (CycloneDX or SPDX JSON).'
             )}
+            action={
+              <div className="flex flex-wrap justify-center gap-2">
+                <Can permission={Permission.ComponentsWrite}>
+                  <Button onClick={() => setImportOpen(true)}>
+                    <Upload className="me-2 h-4 w-4" aria-hidden />
+                    {t('components.import', 'Import SBOM')}
+                  </Button>
+                </Can>
+                <Button variant="outline" asChild>
+                  <Link href="/sensors">{t('components.empty.sensors', 'Set up a sensor')}</Link>
+                </Button>
+              </div>
+            }
+          />
+        ) : (
+          <div className="flex items-start gap-5">
+            {filtersOpen && (
+              <aside
+                id="component-filters"
+                aria-label={t('components.filtersLabel', 'Component filters')}
+                className="sticky top-4 hidden h-[calc(100svh-7.5rem)] w-64 shrink-0 flex-col rounded-xl border bg-card p-4 shadow-sm lg:flex"
+              >
+                <div className="flex min-h-0 flex-1 flex-col">{facets}</div>
+              </aside>
+            )}
+            <div className="min-w-0 flex-1">
+              {isLoading && !data ? (
+                <TableSkeleton rows={8} />
+              ) : (
+                <DataTable
+                  columns={columns}
+                  data={data?.data ?? []}
+                  showSearch={false}
+                  search={{
+                    value: search,
+                    onChange: setSearch,
+                    placeholder: t('components.searchPlaceholder', 'Search packages…'),
+                    label: t('components.searchLabel', 'Search packages by name or namespace'),
+                  }}
+                  filterToggle={{
+                    open: filtersOpen,
+                    onToggle: () => setFiltersOpen(!filtersOpen),
+                    onOpenSheet: () => setSheetOpen(true),
+                    activeCount,
+                    controlsId: 'component-filters',
+                    label: t('components.filters', 'Filters'),
+                  }}
+                  manualPagination
+                  rowCount={data?.total ?? 0}
+                  pagination={list.pagination}
+                  onPaginationChange={list.setPagination}
+                  pageSize={list.perPage}
+                  pageSizeOptions={[...COMPONENT_PAGE_SIZES]}
+                  sorting={list.sorting}
+                  onSortingChange={list.setSorting}
+                  getRowId={(p) => p.id}
+                  initialColumnVisibility={{ last_seen: false }}
+                  emptyMessage={t('components.noMatch', 'No packages match these filters')}
+                  emptyDescription={t(
+                    'components.noMatchHint',
+                    'Remove a filter or clear the search.'
+                  )}
+                />
+              )}
+            </div>
           </div>
-        </div>
-      )}
+        )}
 
-      <FilterSheet
-        open={sheetOpen}
-        onOpenChange={setSheetOpen}
-        title={t('components.filtersLabel', 'Component filters')}
-      >
-        {facets}
-      </FilterSheet>
+        <FilterSheet
+          open={sheetOpen}
+          onOpenChange={setSheetOpen}
+          title={t('components.filtersLabel', 'Component filters')}
+        >
+          {facets}
+        </FilterSheet>
+      </PageStack>
       <SbomImportDialog
         open={importOpen}
         onOpenChange={setImportOpen}

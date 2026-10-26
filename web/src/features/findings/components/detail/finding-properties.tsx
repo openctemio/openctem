@@ -9,6 +9,7 @@
  * where (asset, source), then when (first / last seen), then trivia.
  */
 
+import { assigneeLabel } from '../../lib/assignee-label'
 import { VERSION_MATCH_TOOL } from '@/features/vuln-matching/types'
 import { findingStatusesInCategory } from '@/features/findings/types/finding.types'
 import Link from '@/components/link'
@@ -51,8 +52,8 @@ function Row({ label, children }: { label: string; children: React.ReactNode }) 
     return null
   return (
     <div className="grid min-h-8 grid-cols-[6.5rem_minmax(0,1fr)] items-center gap-x-3">
-      <dt className="text-xs text-muted-foreground">{label}</dt>
-      <dd className="min-w-0 text-sm break-words">{children}</dd>
+      <dt className="text-body text-muted-foreground">{label}</dt>
+      <dd className="min-w-0 text-body break-words">{children}</dd>
     </div>
   )
 }
@@ -62,10 +63,13 @@ export function SlaDue({
   deadline,
   status,
   closed,
+  kevCapped,
 }: {
   deadline?: string
   status?: string
   closed?: boolean
+  /** The SLA policy's known exploited (KEV) cap shortened the deadline. */
+  kevCapped?: boolean
 }) {
   const { t, locale } = useTranslation()
   if (!deadline)
@@ -100,6 +104,11 @@ export function SlaDue({
           {rel}
         </span>
       )}
+      {kevCapped && (
+        <span data-slot="sla-kev-capped" className="block text-xs text-muted-foreground">
+          {t('findings.properties.slaKevCapped', 'Shortened because it is in CISA KEV')}
+        </span>
+      )}
     </span>
   )
 }
@@ -131,6 +140,7 @@ export function FindingProperties({
   const locked = isTriageLocked(finding.source, readOnly)
   // Re-scoring needs findings:severity, which a remediation owner may lack.
   const canRescore = useCanMutate('PATCH /api/v1/findings/{id}/severity')
+  const canAssign = useCanMutate('POST /api/v1/findings/{id}/assign')
   const asset = finding.assets[0]
   const crit = asset?.criticality
   const assetCaption = asset
@@ -163,12 +173,15 @@ export function FindingProperties({
 
   const assigneeNode = hideTriage ? (
     <span className={triage.assignee ? undefined : 'text-muted-foreground'}>
-      {triage.assignee?.name || t('findings.properties.unassigned', 'Unassigned')}
+      {assigneeLabel(triage.assignee, {
+        assigned: t('findings.assigneeSelect.assigned', 'Assigned'),
+        unassigned: t('findings.properties.unassigned', 'Unassigned'),
+      })}
     </span>
   ) : (
     <AssigneeSelect
       findingId={finding.id}
-      disabled={locked}
+      disabled={locked || !canAssign}
       value={
         triage.assignee
           ? {
@@ -230,7 +243,7 @@ export function FindingProperties({
         <Row label={t('findings.properties.priority', 'Priority')}>
           {finding.priorityClass ? (
             <span className="inline-flex items-center gap-1.5">
-              <PriorityClassBadge priorityClass={finding.priorityClass} />
+              <PriorityClassBadge priorityClass={finding.priorityClass} showWord />
               {finding.priorityClassOverride && (
                 <span className="text-xs text-muted-foreground">
                   {t('findings.properties.setManually', 'set manually')}
@@ -245,7 +258,12 @@ export function FindingProperties({
         </Row>
       )}
       <Row label={t('findings.properties.slaDue', 'SLA due')}>
-        <SlaDue deadline={finding.slaDeadline} status={finding.slaStatus} closed={closed} />
+        <SlaDue
+          deadline={finding.slaDeadline}
+          status={finding.slaStatus}
+          closed={closed}
+          kevCapped={finding.slaKevCapped}
+        />
       </Row>
       <FindingPeople findingId={finding.id} assignee={assigneeNode} />
 

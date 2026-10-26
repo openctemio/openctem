@@ -10,17 +10,7 @@ import { useTranslation } from '@/context/i18n-provider'
 import { useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { CheckCircle, XCircle, Loader2 } from 'lucide-react'
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-  AlertDialogBody,
-} from '@/components/ui/alert-dialog'
+import { ConfirmDialog } from '@/components/confirm-dialog'
 import { Textarea } from '@/components/ui/textarea'
 import { toast } from 'sonner'
 import { post } from '@/lib/api/client'
@@ -28,15 +18,24 @@ import { getErrorMessage } from '@/lib/api/error-handler'
 import type { FindingGroup } from '../api/use-finding-groups'
 
 interface VerifyGroupActionsProps {
-  group: FindingGroup
+  /** A CVE group; every claimed fix of its CVE is approved or rejected. */
+  group?: FindingGroup
+  /** Or one finding with no CVE: only that finding is approved or rejected. */
+  finding?: { id: string; title: string }
   /** Called after the group's fixes were approved or rejected. */
   onDone?: () => void
 }
 
 /** Approve / Reject for one CVE group in the verification queue. */
-export function VerifyGroupActions({ group, onDone }: VerifyGroupActionsProps) {
+export function VerifyGroupActions({ group, finding, onDone }: VerifyGroupActionsProps) {
   const { t } = useTranslation()
+  const key = finding?.id ?? group?.group_key ?? ''
+  const label = finding?.title ?? group?.label ?? ''
+  const count = finding ? 1 : (group?.stats?.fix_applied ?? 0)
+  // One finding goes by its id; a CVE group by its CVE.
+  const target = finding ? { finding_ids: [finding.id] } : { filter: { cve_ids: [key] } }
   const [busy, setBusy] = useState(false)
+  const [approveOpen, setApproveOpen] = useState(false)
   const [rejectOpen, setRejectOpen] = useState(false)
   const [reason, setReason] = useState('')
 
@@ -44,12 +43,13 @@ export function VerifyGroupActions({ group, onDone }: VerifyGroupActionsProps) {
     setBusy(true)
     try {
       const result = await post<{ updated: number }>('/api/v1/findings/actions/verify', {
-        filter: { cve_ids: [group.group_key] },
-        note: `Batch verified: ${group.label}`,
+        ...target,
+        note: t('findings.verifyGroup.verifyNote', 'Batch verified: {label}', { label }),
       })
       toast.success(
         t('findings.verifyGroup.verified', '{count} findings verified', { count: result.updated })
       )
+      setApproveOpen(false)
       onDone?.()
     } catch (error) {
       toast.error(
@@ -65,7 +65,7 @@ export function VerifyGroupActions({ group, onDone }: VerifyGroupActionsProps) {
     setBusy(true)
     try {
       const result = await post<{ updated: number }>('/api/v1/findings/actions/reject-fix', {
-        filter: { cve_ids: [group.group_key] },
+        ...target,
         reason: reason.trim(),
       })
       toast.success(
@@ -87,7 +87,13 @@ export function VerifyGroupActions({ group, onDone }: VerifyGroupActionsProps) {
 
   return (
     <>
-      <Button variant="outline" size="sm" className="h-7 px-2" onClick={approve} disabled={busy}>
+      <Button
+        variant="outline"
+        size="sm"
+        className="h-7 px-2"
+        onClick={() => setApproveOpen(true)}
+        disabled={busy}
+      >
         {busy ? (
           <Loader2 className="me-1 h-3.5 w-3.5 animate-spin" />
         ) : (
@@ -106,57 +112,71 @@ export function VerifyGroupActions({ group, onDone }: VerifyGroupActionsProps) {
         {t('findings.verifyGroup.reject', 'Reject')}
       </Button>
 
-      <AlertDialog open={rejectOpen} onOpenChange={setRejectOpen}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>{t('findings.verifyGroup.rejectFix', 'Reject fix')}</AlertDialogTitle>
-            <AlertDialogDescription>
-              {t(
-                'findings.verifyGroup.rejectDesc',
-                'The findings go back to the assignee as In progress. Say why the fix is not enough.'
-              )}
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogBody className="grid gap-4">
-            <div className="my-2 rounded-lg border bg-muted/50 p-3">
-              <p className="font-medium">{group.label}</p>
-              <p className="text-sm text-muted-foreground">
-                {t('findings.verifyGroup.reopened', '{count} findings will be reopened', {
-                  count: group.stats?.fix_applied ?? 0,
-                })}
-              </p>
-            </div>
-            <div className="space-y-2">
-              <label htmlFor={`reject-${group.group_key}`} className="text-sm font-medium">
-                {t('findings.verifyGroup.reason', 'Reason')}
-              </label>
-              <Textarea
-                id={`reject-${group.group_key}`}
-                placeholder={t(
-                  'findings.verifyGroup.reasonPlaceholder',
-                  'e.g. Vulnerability still present: log4j 2.14.0 detected on server'
-                )}
-                value={reason}
-                onChange={(e) => setReason(e.target.value)}
-                rows={3}
-              />
-            </div>
-          </AlertDialogBody>
-          <AlertDialogFooter>
-            <AlertDialogCancel>{t('common.cancel', 'Cancel')}</AlertDialogCancel>
-            <AlertDialogAction
-              onClick={(e) => {
-                e.preventDefault()
-                void reject()
-              }}
-              disabled={!reason.trim() || busy}
-              className="bg-destructive text-white hover:bg-destructive/90"
-            >
-              {t('findings.verifyGroup.rejectFix', 'Reject fix')}
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+      <ConfirmDialog
+        open={approveOpen}
+        onOpenChange={setApproveOpen}
+        title={
+          count === 1
+            ? t('findings.verifyGroup.approveTitleOne', 'Verify the fix of "{label}"?', { label })
+            : t('findings.verifyGroup.approveTitle', 'Verify {count} fixes of "{label}"?', {
+                count,
+                label,
+              })
+        }
+        desc={t(
+          'findings.verifyGroup.approveDesc',
+          'The findings are closed as resolved and leave the open work queues and SLA tracking. A resolved finding can be reopened later.'
+        )}
+        confirmText={
+          count === 1
+            ? t('findings.verifyGroup.approveButtonOne', 'Verify 1 fix')
+            : t('findings.verifyGroup.approveButton', 'Verify {count} fixes', { count })
+        }
+        isLoading={busy}
+        handleConfirm={approve}
+      />
+
+      <ConfirmDialog
+        open={rejectOpen}
+        onOpenChange={setRejectOpen}
+        title={
+          count === 1
+            ? t('findings.verifyGroup.rejectTitleOne', 'Reject the fix of "{label}"?', { label })
+            : t('findings.verifyGroup.rejectTitle', 'Reject {count} fixes of "{label}"?', {
+                count,
+                label,
+              })
+        }
+        desc={t(
+          'findings.verifyGroup.rejectDesc',
+          'The findings go back to the assignee as In progress. Say why the fix is not enough.'
+        )}
+        confirmText={
+          count === 1
+            ? t('findings.verifyGroup.rejectButtonOne', 'Reject 1 fix')
+            : t('findings.verifyGroup.rejectButton', 'Reject {count} fixes', { count })
+        }
+        destructive
+        disabled={!reason.trim()}
+        isLoading={busy}
+        handleConfirm={reject}
+      >
+        <div className="space-y-2">
+          <label htmlFor={`reject-${key}`} className="text-sm font-medium">
+            {t('findings.verifyGroup.reason', 'Reason')}
+          </label>
+          <Textarea
+            id={`reject-${key}`}
+            placeholder={t(
+              'findings.verifyGroup.reasonPlaceholder',
+              'e.g. Vulnerability still present: log4j 2.14.0 detected on server'
+            )}
+            value={reason}
+            onChange={(e) => setReason(e.target.value)}
+            rows={3}
+          />
+        </div>
+      </ConfirmDialog>
     </>
   )
 }

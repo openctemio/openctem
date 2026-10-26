@@ -23,6 +23,8 @@ import (
 // =============================================================================
 
 type mockTenantRepo struct {
+	lastMemberFilters tenant.MemberSearchFilters
+
 	// queuedJobs records the durable jobs an invitation write was asked to queue.
 	queuedJobs []durablejob.Job
 
@@ -256,7 +258,8 @@ func (m *mockTenantRepo) ListMembersWithUserInfo(_ context.Context, _ shared.ID)
 	return m.membersWithUser, nil
 }
 
-func (m *mockTenantRepo) SearchMembersWithUserInfo(_ context.Context, _ shared.ID, _ tenant.MemberSearchFilters) (*tenant.MemberSearchResult, error) {
+func (m *mockTenantRepo) SearchMembersWithUserInfo(_ context.Context, _ shared.ID, f tenant.MemberSearchFilters) (*tenant.MemberSearchResult, error) {
+	m.lastMemberFilters = f
 	if m.searchMembersWithUserInfoErr != nil {
 		return nil, m.searchMembersWithUserInfoErr
 	}
@@ -2350,6 +2353,7 @@ func TestTenantSvc_SSOEnforced_Guard(t *testing.T) {
 	t.Run("enable allowed with a usable SSO path", func(t *testing.T) {
 		svc, repo := newTestTenantService()
 		svc.SetSSOPathChecker(&mockSSOPathChecker{usable: true})
+		svc.SetSSODomainChecker(fixedSSODomain{ok: true})
 		existing := seedTenant(repo, "Team", "team-slug")
 
 		result, err := svc.UpdateSecuritySettings(context.Background(), existing.ID().String(),
@@ -2362,8 +2366,9 @@ func TestTenantSvc_SSOEnforced_Guard(t *testing.T) {
 		}
 	})
 
-	t.Run("enable allowed (fail-open) when no checker is wired", func(t *testing.T) {
+	t.Run("enable allowed (fail-open) when no SSO-path checker is wired", func(t *testing.T) {
 		svc, repo := newTestTenantService() // no SetSSOPathChecker
+		svc.SetSSODomainChecker(fixedSSODomain{ok: true})
 		existing := seedTenant(repo, "Team", "team-slug")
 
 		result, err := svc.UpdateSecuritySettings(context.Background(), existing.ID().String(),

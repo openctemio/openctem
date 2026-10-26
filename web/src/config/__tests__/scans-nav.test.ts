@@ -81,7 +81,7 @@ describe('Mobilization > Automations', () => {
   it('is the event-rule page at /automations', () => {
     const row = links.find((r) => r.title === 'Automations')!
     expect(row.url).toBe('/automations')
-    expect(matchRoutePermission('/automations')?.permission).toBe(Permission.WorkflowsRead)
+    expect(matchRoutePermission('/automations')?.permission).toBe(Permission.AutomationsRead)
     expect(existsSync(join(APP, '(mobilization)/automations/page.tsx'))).toBe(true)
   })
 

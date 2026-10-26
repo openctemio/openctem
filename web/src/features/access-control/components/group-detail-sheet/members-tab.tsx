@@ -1,15 +1,14 @@
+import { useTranslation } from '@/context/i18n-provider'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import { Skeleton } from '@/components/ui/skeleton'
-import { Input } from '@/components/ui/input'
 import {
   Users,
   UserPlus,
   Trash2,
   Crown,
   User,
-  Search,
   ChevronLeft,
   ChevronRight,
   CalendarClock,
@@ -18,6 +17,7 @@ import { DataTableRowActions, EmptyState } from '@/features/shared'
 import { MemberRoleConfig, getInitials, type GroupMember } from '@/features/access-control'
 import { useState, useEffect } from 'react'
 import { daysUntil, formatShortDate } from '@/features/organization/lib/external-access'
+import { ListSearch } from '@/features/shared/components/list-search'
 
 interface MembersTabProps {
   members: GroupMember[]
@@ -45,6 +45,7 @@ export function MembersTab({
   onRemoveMember,
   onChangeEnd,
 }: MembersTabProps) {
+  const { t } = useTranslation()
   const [searchQuery, setSearchQuery] = useState('')
 
   // Reset to first page when search query changes
@@ -80,15 +81,12 @@ export function MembersTab({
         )}
       </div>
 
-      <div className="relative mb-4">
-        <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-        <Input
-          placeholder="Search members..."
-          className="ps-9"
-          value={searchQuery}
-          onChange={(e) => setSearchQuery(e.target.value)}
-        />
-      </div>
+      <ListSearch
+        className="mb-4"
+        value={searchQuery}
+        onChange={setSearchQuery}
+        placeholder={t('org.teamMembers.search', 'Search members…')}
+      />
 
       {isLoading ? (
         <div className="space-y-3">
@@ -142,12 +140,15 @@ export function MembersTab({
                           : 'gap-1 text-xs'
                       }
                       title={
-                        `Leaves the team ${formatShortDate(member.expires_at)}` +
-                        (member.expiry_reason ? `: ${member.expiry_reason}` : '')
+                        t('org.teamMembers.leavesOn', 'Leaves the team {date}', {
+                          date: formatShortDate(member.expires_at),
+                        }) + (member.expiry_reason ? `: ${member.expiry_reason}` : '')
                       }
                     >
                       <CalendarClock className="h-3 w-3" />
-                      Ends {formatShortDate(member.expires_at)}
+                      {t('org.teamMembers.ends', 'Ends {date}', {
+                        date: formatShortDate(member.expires_at),
+                      })}
                     </Badge>
                   )}
                   <Badge variant="outline" className="text-xs">
@@ -162,7 +163,7 @@ export function MembersTab({
                         ...(onChangeEnd
                           ? [
                               {
-                                label: 'Change end date',
+                                label: t('org.teamMembers.changeEnd', 'Change end date'),
                                 icon: CalendarClock,
                                 onClick: () =>
                                   onChangeEnd(
@@ -176,7 +177,7 @@ export function MembersTab({
                         ...(onRemoveMember
                           ? [
                               {
-                                label: 'Remove',
+                                label: t('org.teamMembers.remove', 'Remove'),
                                 icon: Trash2,
                                 destructive: true,
                                 onClick: () =>

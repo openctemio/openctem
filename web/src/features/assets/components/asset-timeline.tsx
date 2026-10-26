@@ -8,7 +8,7 @@
  * deciding source and why; "Why this value" opens where the value comes from.
  */
 
-import { useMemo, useState } from 'react'
+import { useMemo, useState, type ReactNode } from 'react'
 import { ArrowRight, History, Loader2, Repeat } from 'lucide-react'
 import Link from '@/components/link'
 import { Badge } from '@/components/ui/badge'
@@ -23,7 +23,7 @@ import {
 } from '@/components/ui/select'
 import { Skeleton } from '@/components/ui/skeleton'
 import { useTranslation } from '@/context/i18n-provider'
-import { EmptyState, ErrorState, RelativeTime } from '@/features/shared'
+import { EmptyState, ErrorState, MetaLine, RelativeTime } from '@/features/shared'
 import { useAssetChanges } from '../hooks/use-asset-timeline'
 import {
   ATTRIBUTE_LABEL,
@@ -67,7 +67,6 @@ function ChangeEntry({
   return (
     <li className="flex flex-col gap-1 py-2 text-sm" data-testid="timeline-entry">
       <div className="flex flex-wrap items-center gap-2">
-        <RelativeTime date={change.at} className="text-xs" />
         {showAsset && (
           <Link href={`/assets/${change.asset_id}`} className="font-medium hover:underline">
             {change.asset_name || t('assetTimeline.deletedAsset', 'Deleted asset')}
@@ -111,24 +110,28 @@ function ChangeEntry({
           </Badge>
         ))}
       </div>
-      <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-        <span>
-          {t('assetTimeline.decidedBy', 'Decided by {source}', { source: sourceLabel })}
-          {change.source.run
-            ? ` · ${t('assetTimeline.run', 'run {run}', { run: change.source.run })}`
-            : ''}
-          {change.actor_id ? ` · ${t('assetTimeline.byPerson', 'by a person')}` : ''}
-        </span>
-        {onWhy && (
-          <button
-            type="button"
-            className="text-primary hover:underline"
-            onClick={() => onWhy(change.attribute)}
-          >
-            {t('assetTimeline.why', 'Why this value')}
-          </button>
-        )}
-      </div>
+      <MetaLine
+        items={[
+          <RelativeTime key="at" date={change.at} />,
+          <span key="by">
+            {t('assetTimeline.decidedBy', 'Decided by {source}', { source: sourceLabel })}
+            {change.source.run
+              ? ` · ${t('assetTimeline.run', 'run {run}', { run: change.source.run })}`
+              : ''}
+            {change.actor_id ? ` · ${t('assetTimeline.byPerson', 'by a person')}` : ''}
+          </span>,
+          onWhy ? (
+            <button
+              key="why"
+              type="button"
+              className="text-primary hover:underline"
+              onClick={() => onWhy(change.attribute)}
+            >
+              {t('assetTimeline.why', 'Why this value')}
+            </button>
+          ) : null,
+        ]}
+      />
     </li>
   )
 }
@@ -137,15 +140,19 @@ function Filters({
   filters,
   onChange,
   withTag,
+  leading,
 }: {
   filters: ChangeFilters
   onChange: (f: ChangeFilters) => void
   withTag: boolean
+  /** Controls the page puts first in the row (the Activity kind filter). */
+  leading?: ReactNode
 }) {
   const { t } = useTranslation()
   const l = useLabels()
   return (
     <div className="flex flex-wrap items-center gap-2">
+      {leading}
       <Select
         value={filters.attribute || ALL}
         onValueChange={(v) => onChange({ ...filters, attribute: v === ALL ? undefined : v })}
@@ -287,11 +294,11 @@ export function AssetTimeline({
 }
 
 /** The organization's recent asset changes (assets in the caller's scope). */
-export function RecentAssetChanges() {
+export function RecentAssetChanges({ leading }: { leading?: ReactNode } = {}) {
   const [filters, setFilters] = useState<ChangeFilters>({})
   return (
     <div className="space-y-3">
-      <Filters filters={filters} onChange={setFilters} withTag />
+      <Filters filters={filters} onChange={setFilters} withTag leading={leading} />
       <TimelineBody assetId={null} filters={filters} />
     </div>
   )

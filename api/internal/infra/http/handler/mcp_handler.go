@@ -140,6 +140,10 @@ type mcpTool struct {
 	Write bool
 	// prepare checks a write action and describes it for the person.
 	prepare func(ctx context.Context, tenantID string, args json.RawMessage) (string, error)
+	// Propose marks a tool whose result is a pending request another person
+	// decides (mcp_propose_tools.go): it runs only for a connection a person
+	// made, never for an oct_ key.
+	Propose bool
 }
 
 // MCPHandler serves a read-only Model Context Protocol endpoint over JSON-RPC,
@@ -168,6 +172,10 @@ type MCPHandler struct {
 	// confirmer and comments back the write tools (SetWriteTools).
 	confirmer mcpConfirmer
 	comments  mcpFindingCommenter
+	// approvals backs the proposal tools (SetProposalTools); webBase is the
+	// public web origin their review links point to.
+	approvals mcpApprovalRequester
+	webBase   string
 	// modules answers whether a module is on for the organization (the
 	// route module gate). nil: every module counts as on (tests, stub builds).
 	modules mcpModuleChecker
@@ -307,6 +315,9 @@ func (h *MCPHandler) toolsListResult(ctx context.Context) map[string]any {
 		if !h.moduleEnabled(ctx, tenantID, t.Module) {
 			continue
 		}
+		if t.Propose && !proposeToolsUsable(ctx) {
+			continue
+		}
 		if t.Write && !h.writeToolsUsable(ctx) {
 			continue
 		}
@@ -364,6 +375,15 @@ func (h *MCPHandler) handleToolsCall(w http.ResponseWriter, r *http.Request, req
 		}
 		h.writeResult(w, req.ID, toolErrorResult(mcpError{Code: mcpErrPermissionDenied,
 			Message: "this connection lacks the permission this tool needs (" + tool.RequiredPerm + "); reconnect with that access or ask an administrator"}))
+		return
+	}
+
+	// A proposal is filed in a person's name: only a connection a person
+	// made may file one (an oct_ key has no person to act for).
+	if tool.Propose && !proposeToolsUsable(ctx) {
+		h.auditToolCall(r, tenantID, tool.Name, p.Arguments, auditdom.ResultDenied, true, 0)
+		h.writeResult(w, req.ID, toolErrorResult(mcpError{Code: mcpErrPermissionDenied,
+			Message: "this tool needs a connection a person approved; API keys cannot propose changes"}))
 		return
 	}
 
@@ -446,7 +466,7 @@ func (h *MCPHandler) auditToolCall(r *http.Request, tenantID, toolName string, a
 		UserAgent:  r.UserAgent(),
 		RequestID:  middleware.GetRequestID(r.Context()),
 	}
-	_ = h.audit.LogEvent(ctx, actx, event)
+	auditapp.RecordOrWarn(ctx, h.logger, h.audit, actx, event)
 }
 
 // auditPromptGet records one MCP prompts/get. Nil-safe like auditToolCall. The
@@ -481,7 +501,7 @@ func (h *MCPHandler) auditPromptGet(r *http.Request, tenantID, promptName string
 		UserAgent:  r.UserAgent(),
 		RequestID:  middleware.GetRequestID(r.Context()),
 	}
-	_ = h.audit.LogEvent(ctx, actx, event)
+	auditapp.RecordOrWarn(ctx, h.logger, h.audit, actx, event)
 }
 
 // mcpAuditSafeArgs is the allowlist of tool-argument keys whose scalar value is

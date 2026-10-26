@@ -10,10 +10,38 @@ import { scanRunEndpoints } from '@/lib/api/endpoints'
 import type { RunMapNode, RunStepOutputs, RunTask } from '@/lib/api/generated'
 import { toDisplayText } from '@/lib/untrusted-text'
 import { nodeBadgeLines, outputsByType, outputsDeltaLabel, stepTasks } from '../lib/run-map'
+import { runResultHelp } from '../lib/run-display'
 import { RunTasksTable } from './run-tasks-table'
-import { StepFailureHelp } from './code-help'
+import { StepFailureHelp, StepOutcome } from './code-help'
+import { FAILURE_FIX, SENSOR_TEXT_CODES } from '../lib/placement-help'
 
 const PREVIEW_LIMIT = 20
+
+/**
+ * The step's own message is the sensor's or the tool's text: shown for the
+ * codes that carry it, and for a code this console does not know. A known
+ * code is explained by its help and the structured outcome instead of the
+ * English summary.
+ */
+function showSensorText(code: string | undefined): boolean {
+  return !code || SENSOR_TEXT_CODES.has(code) || !(code in FAILURE_FIX)
+}
+
+/**
+ * What a completed step concluded when that is more than "done": the reason
+ * in plain words and what to do. No class or code chip: nothing failed.
+ */
+function StepResult({ result }: { result: { kind?: string; code?: string } }) {
+  const { t } = useTranslation()
+  const help = runResultHelp(result, t)
+  return (
+    <div className="space-y-0.5" data-slot="step-result">
+      <p className="font-medium text-foreground">{help.headline}</p>
+      <p className="text-foreground">{help.text}</p>
+      <p>{help.fix}</p>
+    </div>
+  )
+}
 
 /** Map states whose reason is the step's error code. */
 const FAILED_STATES = new Set(['failed', 'partial', 'skipped', 'canceled'])
@@ -29,12 +57,15 @@ export function RunStepPanel({
   node,
   tasks,
   tasksTruncated,
+  runKind,
   onClose,
 }: {
   runId: string
   node: RunMapNode
   tasks?: RunTask[]
   tasksTruncated?: boolean
+  /** The run's kind: a retest produces a verdict, not assets. */
+  runKind?: string
   onClose: () => void
 }) {
   const { t } = useTranslation()
@@ -51,6 +82,8 @@ export function RunStepPanel({
     (url: string) => get<RunStepOutputs>(url),
     { revalidateOnFocus: false }
   )
+  const result = node.result
+  const verdictStep = runKind === 'retest' || !!result
   const listed = preview?.outputs ?? []
   const more = (preview?.total ?? 0) - listed.length
 
@@ -74,20 +107,29 @@ export function RunStepPanel({
         {counts.map((line) => (
           <p key={line}>{line}</p>
         ))}
-        {node.error_message ? (
-          <p className="whitespace-pre-wrap text-destructive">{node.error_message}</p>
-        ) : null}
-        {node.reason && FAILED_STATES.has(node.state ?? '') ? (
+        {result ? <StepResult result={result} /> : null}
+        {!result && node.reason && FAILED_STATES.has(node.state ?? '') ? (
           <StepFailureHelp code={node.reason} errorClass={node.error_class} />
+        ) : null}
+        <StepOutcome outcome={node.outcome} />
+        {node.error_message && showSensorText(node.reason) ? (
+          <div>
+            <p className="font-medium text-foreground">{t('scans.step.sensorMessage')}</p>
+            <p className="whitespace-pre-wrap text-destructive">
+              {toDisplayText(node.error_message)}
+            </p>
+          </div>
         ) : null}
       </div>
 
       <div>
-        <h5 className="mb-1 text-xs font-medium uppercase text-muted-foreground">
+        <h5 className="mb-1 text-xs font-medium text-muted-foreground">
           {t('scans.step.outputs')}
         </h5>
         {outputs.length === 0 ? (
-          <p className="text-xs text-muted-foreground">{t('scans.step.nothingYet')}</p>
+          <p className="text-xs text-muted-foreground">
+            {verdictStep ? t('scans.step.noAssetsRetest') : t('scans.step.noAssets')}
+          </p>
         ) : (
           <ul className="grid grid-cols-2 gap-x-4 text-xs">
             {outputs.map(([type, count]) => (
@@ -114,7 +156,7 @@ export function RunStepPanel({
                 </span>
                 <span className="text-muted-foreground">{(o.type ?? '').replace(/_/g, ' ')}</span>
                 {o.new ? (
-                  <Badge variant="secondary" className="px-1 py-0 text-[10px]">
+                  <Badge variant="secondary" className="px-1 py-0 text-meta">
                     {t('scans.step.new')}
                   </Badge>
                 ) : null}
@@ -130,9 +172,7 @@ export function RunStepPanel({
       </div>
 
       <div>
-        <h5 className="mb-1 text-xs font-medium uppercase text-muted-foreground">
-          {t('scans.step.tasks')}
-        </h5>
+        <h5 className="mb-1 text-xs font-medium text-muted-foreground">{t('scans.step.tasks')}</h5>
         {mine.length === 0 ? (
           <p className="text-xs text-muted-foreground">
             {tasksTruncated ? t('scans.step.notLoaded') : t('scans.step.noTask')}

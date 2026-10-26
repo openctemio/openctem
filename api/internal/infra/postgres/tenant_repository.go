@@ -975,6 +975,11 @@ func (r *TenantRepository) SearchMembersWithUserInfo(ctx context.Context, tenant
 		args = append(args, filters.Kind)
 		argIndex++
 	}
+	if len(filters.UserIDs) > 0 {
+		whereClause += fmt.Sprintf(" AND m.user_id = ANY($%d::uuid[])", argIndex)
+		args = append(args, pq.Array(filters.UserIDs))
+		argIndex++
+	}
 
 	// Single query with COUNT(*) OVER() window function to avoid 2 round-trips
 	// This returns total matching count alongside each row.
@@ -2191,6 +2196,36 @@ func (r *TenantRepository) ListExternalHomed(ctx context.Context, f tenant.Homed
 			return nil, err
 		}
 		out = append(out, m)
+	}
+	return out, rows.Err()
+}
+
+// ListSSOEnforcedTenantIDs lists the organizations whose security settings
+// require SSO (a system sweep across organizations).
+func (r *TenantRepository) ListSSOEnforcedTenantIDs(ctx context.Context, limit int) ([]shared.ID, error) {
+	if limit <= 0 {
+		limit = 1000
+	}
+	rows, err := r.db.QueryContext(ctx, `
+		SELECT id FROM tenants
+		 WHERE COALESCE((settings -> 'security' ->> 'sso_enforced')::boolean, FALSE)
+		 ORDER BY id
+		 LIMIT $1`, limit)
+	if err != nil {
+		return nil, fmt.Errorf("list sso-enforced tenants: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+	var out []shared.ID
+	for rows.Next() {
+		var raw string
+		if err := rows.Scan(&raw); err != nil {
+			return nil, fmt.Errorf("scan tenant id: %w", err)
+		}
+		id, err := shared.IDFromString(raw)
+		if err != nil {
+			return nil, fmt.Errorf("parse tenant id: %w", err)
+		}
+		out = append(out, id)
 	}
 	return out, rows.Err()
 }

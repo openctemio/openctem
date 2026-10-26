@@ -1,0 +1,10 @@
+{
+  "repositories.branchStatus.failed": "Không đạt",
+  "repositories.branchStatus.not_scanned": "Chưa quét",
+  "repositories.branchStatus.passed": "Đạt",
+  "repositories.branchStatus.scanning": "Đang quét",
+  "repositories.branchStatus.warning": "Cảnh báo",
+  "repositories.triage.escalated": "Đã chuyển cấp",
+  "repositories.triage.needs_triage": "Cần phân loại",
+  "repositories.triage.triaged": "Đã phân loại"
+}

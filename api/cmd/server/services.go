@@ -7,14 +7,15 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
-	"net"
 	"time"
 
+	"github.com/openctemio/openctem/api/internal/app/ingestqueue"
 	queryapp "github.com/openctemio/openctem/api/internal/app/query"
 	threatalertapp "github.com/openctemio/openctem/api/internal/app/threatalert"
 
 	signupeventapp "github.com/openctemio/openctem/api/internal/app/signupevent"
 
+	"github.com/openctemio/openctem/api/pkg/domain/ingestpayload"
 	remediationdom "github.com/openctemio/openctem/api/pkg/domain/remediation"
 	"github.com/openctemio/openctem/api/pkg/pagination"
 
@@ -81,6 +82,7 @@ import (
 	"github.com/openctemio/openctem/api/internal/app/consolesetting"
 	catalogapp "github.com/openctemio/openctem/api/internal/app/contentcatalog"
 	contentpackapp "github.com/openctemio/openctem/api/internal/app/contentpack"
+	contentsourceapp "github.com/openctemio/openctem/api/internal/app/contentsource"
 	coverageapp "github.com/openctemio/openctem/api/internal/app/coverage"
 	ctemidapp "github.com/openctemio/openctem/api/internal/app/ctemid"
 	"github.com/openctemio/openctem/api/internal/app/deploymentregion"
@@ -90,6 +92,7 @@ import (
 	"github.com/openctemio/openctem/api/internal/app/exposure"
 	"github.com/openctemio/openctem/api/internal/app/exposurebridge"
 	findinglifecycleapp "github.com/openctemio/openctem/api/internal/app/findinglifecycle"
+	appimportmapping "github.com/openctemio/openctem/api/internal/app/importmapping"
 	"github.com/openctemio/openctem/api/internal/app/ingest"
 	"github.com/openctemio/openctem/api/internal/app/jira"
 	licapp "github.com/openctemio/openctem/api/internal/app/licensepolicy"
@@ -727,9 +730,8 @@ type Services struct {
 	Scan            *scan.Service
 	ScanRun         *scanrun.Service
 	ScannerTemplate *app.ScannerTemplateService
-	TemplateSource  *template.SourceService
+	ContentSource   *contentsourceapp.Service
 	SecretStore     *integration.SecretStoreService
-	TemplateSyncer  *template.Syncer
 
 	// TemplateKeys signs custom templates for sensors; nil when no key is
 	// configured (see initTemplateKeyring).
@@ -866,6 +868,8 @@ type Services struct {
 	TicketPolicy *jira.PolicyGate
 	// TicketMapping manages ticket field and status mapping profiles.
 	TicketMapping *appticketmap.Service
+	// ImportMapping manages the organization's import mappings (RFC-126).
+	ImportMapping *appimportmapping.Service
 
 	// GitHub Issues ticket provider (create-from-finding + link only)
 	GitHubTicket *ticketing.GitHubTicketService
@@ -891,6 +895,9 @@ type Services struct {
 	Encryptor crypto.Encryptor
 	// CredentialSecrets seals leaked-credential secrets (built on Encryptor).
 	CredentialSecrets *credential.SecretProtector
+	// IngestQueue stores CI results and file imports, sealed, for the
+	// ingest worker (RFC-122).
+	IngestQueue *ingestqueue.Queue
 
 	// JWT
 	JWTGenerator *jwt.Generator
@@ -1021,6 +1028,8 @@ type ServiceDeps struct {
 	DB          *sql.DB
 	Repos       *Repositories
 	RedisClient *redis.Client
+	// IngestDB is the ingest pool (DB_INGEST_MAX_CONNS); nil uses the API's.
+	IngestDB *postgres.DB
 }
 
 // NewServices initializes all services.
@@ -1041,6 +1050,12 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 		s.PlatformEmail = platformemail.NewService(repos.PlatformSetting, s.Encryptor, repos.AdminAuditLog, log)
 	}
 	s.initConsoleSettings(cfg, repos, log)
+	if s.IngestQueue, err = initIngestQueue(cfg, repos); err != nil {
+		return nil, err
+	}
+	// Back-pressure at accept: 429 past the tenant's queue limit, refused
+	// when the depth cannot be read.
+	s.IngestQueue.SetBackpressure(repos.IngestJob, cfg.Ingest.MaxPendingPerTenant)
 
 	// Initialize audit service first (used by others)
 	s.Audit = audit.NewAuditService(repos.Audit, log)
@@ -1084,6 +1099,9 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// The user service lets AddMember enforce Security.AllowedDomains and lets
 	// the suspend/reactivate notifier resolve the recipient.
 	s.Tenant.SetUserService(s.User)
+	// Requiring SSO needs sso.enforcement for the organization; the sweep turns it off
+	// after the grace once the organization lost it.
+	s.Tenant.SetSSOFeatureGate(s.Entitlement, repos.Tenant)
 
 	// Initialize asset services
 	s.Asset = asset.NewAssetService(repos.Asset, log)
@@ -1208,6 +1226,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	s.AttackSurface = attack.NewSurfaceService(repos.Asset, repos.AssetRelationship, log)
 	// Wire the KEV/critical finding counter for exposure-chain analysis.
 	s.AttackSurface.SetFindingRiskCounter(repos.Finding)
+	s.AttackSurface.SetPathFindingReader(repos.Finding) // lead finding and counts per step of the attack paths to one asset
 	s.AttackSurface.SetDataScope(s.DataScope)
 	s.AttackSurface.SetStateHistory(repos.AssetStateHistory) // recent changes: real removals + exposure changes
 	if repos.Attribution != nil {
@@ -1277,22 +1296,28 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	s.Vulnerability.SetCommentReactionRepository(repos.CommentReaction)
 	s.Vulnerability.SetAuditService(s.Audit)                     // audits reaction moderation and duplicate marking
 	s.Vulnerability.SetDataFlowRepository(repos.DataFlow)        // Wire data flow loading
+	s.Vulnerability.SetIssueLinkStore(repos.FindingIssueLinks)   // same-issue groups
 	s.Vulnerability.SetApprovalRepository(repos.FindingApproval) // Wire approval workflow
 	s.Vulnerability.SetSeverityRequestRepository(repos.SeverityRequest)
 	s.Vulnerability.SetAccessControlRepository(repos.AccessControl)
-	s.Vulnerability.SetAssigneeChecker(repos.AccessControl) // an assignee must be an active member of the tenant (21b C2)
+	s.Vulnerability.SetAssigneeProfileReader(repos.AccessControl) // list rows carry the assignee name
+	s.Vulnerability.SetAssigneeChecker(repos.AccessControl)       // an assignee must be an active member of the tenant (21b C2)
 	s.Vulnerability.SetDataScope(s.DataScope)
+	s.Vulnerability.SetFindingViewSettings(s.Tenant)       // the organization's work-view defaults
 	s.Vulnerability.SetMemberSearcher(repos.Tenant)        // the assignee picker lists only members who can read the finding
 	s.Vulnerability.SetKEVChecker(repos.ThreatIntel.KEV()) // governed classification: does the new CVE keep KEV standing
 	s.Vulnerability.SetAssetRefChecker(s.DataScope)        // POST /findings asset_id: tenant + caller scope
 	s.Vulnerability.SetBranchLookup(repos.Branch)          // a finding branch must belong to its asset
+	// Bulk changes by filter run as operations the caller reads back.
+	s.Vulnerability.SetOperationStore(postgres.NewOperationRepository(&postgres.DB{DB: deps.DB}))
 	s.FindingActivity = activity.NewFindingActivityService(repos.FindingActivity, repos.Finding, log)
 	s.FindingActivity.SetUserRepo(repos.User) // Wire user lookup for activity broadcasts
 	// Note: WebSocket broadcaster is wired later after WebSocketHub is initialized
 
 	// Wire activity service dependencies
-	s.Vulnerability.SetActivityService(s.FindingActivity) // Wire activity tracking
-	s.Vulnerability.SetUserRepository(repos.User)         // Wire user lookup for activity records
+	s.Vulnerability.SetActivityService(s.FindingActivity)    // Wire activity tracking
+	s.Vulnerability.SetTaskRecomputer(repos.RemediationTask) // a delete re-derives the tasks that held the findings
+	s.Vulnerability.SetUserRepository(repos.User)            // Wire user lookup for activity records
 
 	// Note: AITriage is wired to VulnerabilityService later after AITriage initialization
 
@@ -1892,6 +1917,8 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// A suspended organization takes no provisioning.
 	s.SCIMToken.SetOrganizationGate(s.OrganizationGate)
 	s.SCIMToken.SetLegacyPeppers(cfg.Encryption.PreviousKeys...)
+	// Minting a SCIM token needs scim for the organization.
+	s.SCIMToken.SetFeatureGate(s.Entitlement)
 	s.SCIMProvisioning = scim.NewProvisioningService(
 		repos.User, repos.Tenant, scimMembershipAdapter{svc: s.Tenant}, log,
 	)
@@ -1899,6 +1926,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 		repos.ScimGroup, repos.Tenant, scimMembershipAdapter{svc: s.Tenant}, log,
 	)
 	s.SCIMGroups.SetAuditService(s.Audit)
+	s.SCIMGroups.SetFeatureGate(s.Entitlement)
 	// Outbound Jira ticketing resolves a client per tenant from that tenant's
 	// connected ticketing integration (base URL + decrypted credentials). The
 	// static client stays nil; the resolver is the production path (mirrors the
@@ -1939,6 +1967,9 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// Ticket field and status mapping profiles: the editor reads the
 	// integration's own Jira site; previews load objects through the caller's
 	// data scope.
+	if repos.ImportMapping != nil {
+		s.ImportMapping = appimportmapping.NewService(repos.ImportMapping)
+	}
 	if repos.TicketMapping != nil {
 		objects := ticketMappingObjects{findings: repos.Finding, assets: repos.Asset, users: repos.User,
 			tasks: s.RemediationTask, taskRepo: repos.RemediationTask}
@@ -2237,7 +2268,17 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	})
 
 	// Initialize ingest service (unified ingestion engine)
-	s.Ingest = ingest.NewService(repos.Asset, repos.Finding, repos.Vulnerability, repos.Component, repos.Sensor, repos.Branch, repos.Tenant, repos.Audit, log)
+	// The heavy ingest writes run on the ingest pool when one is open.
+	ingAsset, ingFinding, ingVuln, ingComp, ingBranch := repos.Asset, repos.Finding, repos.Vulnerability, repos.Component, repos.Branch
+	if deps.IngestDB != nil {
+		ingAsset, ingFinding = postgres.NewAssetRepository(deps.IngestDB), postgres.NewFindingRepository(deps.IngestDB)
+		ingVuln, ingComp = postgres.NewVulnerabilityRepository(deps.IngestDB), postgres.NewComponentRepository(deps.IngestDB)
+		ingBranch = postgres.NewBranchRepository(deps.IngestDB)
+	}
+	s.Ingest = ingest.NewService(ingAsset, ingFinding, ingVuln, ingComp, repos.Sensor, ingBranch, repos.Tenant, repos.Audit, log)
+	// Policies are applied from a per-tenant snapshot, reloaded when their
+	// version changes.
+	s.Ingest.SetPolicyVersions(repos.IngestPolicyVersions)
 	// DefectDojo co-existence sync (RFC-013): pull a tenant's DefectDojo findings
 	// and ingest them as CTIS (one-way; OpenCTEM is the system of record).
 	s.DefectDojoSync = defectdojo.NewSyncService(repos.Integration, s.Ingest, s.Encryptor, log)
@@ -2300,6 +2341,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	s.VulnMatch.SetEnrichment(s.PriorityClassification, sla.NewApplier(s.SLA), repos.Asset)
 	s.VulnMatch.SetLinkReader(repos.Software)
 	s.VulnMatch.SetRemediationKeyApplier(remediationKeys)
+	s.VulnMatch.SetVEXApplier(s.VEX) // The organization's VEX statements cover matched findings too
 	// Emerging-threat alerts (RFC-117): matched findings are announced by
 	// their alert. The delivery sinks are wired with the workers.
 	if repos.ThreatAlert != nil {
@@ -2308,12 +2350,15 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 		s.ThreatAlerts = threatalertapp.NewService(repos.ThreatAlert, s.Audit, log)
 	}
 	s.Ingest.SetSoftwareChangeSink(s.VulnMatch)
+	s.SBOMImport.SetSoftwareChangeSink(s.VulnMatch)                  // An imported SBOM is matched in minutes
 	s.Ingest.SetRepositoryExtensionRepository(repos.RepoExt)         // Wire repository extension for auto web_url
 	s.Ingest.SetRelationshipRepository(repos.AssetRelationship)      // Wire subdomain-to-domain relationships
 	s.Ingest.SetAssetStateHistoryRepository(repos.AssetStateHistory) // Record appeared/recovered on discovery
 	s.Ingest.SetExclusionSource(s.Scope)                             // New assets matching a scope exclusion are not added (RFC-042 F16)
 	// Secret findings: fingerprint keyed by the platform secret (RFC-043).
 	s.Ingest.SetSecretFingerprinter(vulnerability.NewSecretFingerprinter([]byte(cfg.FingerprintSecret())))
+	// Receipts of uploads and sensor runs, with the daily ingest fact (RFC-122).
+	s.Ingest.SetReceiptRecorder(repos.IngestReceipt)
 	// Coverage-scoped auto-resolve of non-repository findings (default dry_run).
 	s.Ingest.SetCoverageAutoResolve(ingest.ParseCoverageAutoResolveMode(cfg.Ingest.CoverageAutoResolve), ingest.BlindingGuard{
 		Ratio: cfg.Ingest.V2BlindingRatio, MinFindings: cfg.Ingest.V2BlindingMinFindings,
@@ -2367,7 +2412,9 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 		s.ScannerTemplate.SetLedger(s.JobSigner, s.Scope)
 		s.Scope.SetLedgerTemplates(s.ScannerTemplate)
 	}
-	s.TemplateSource = template.NewSourceService(repos.TemplateSource, log)
+	// Rule sources: the platform alone fetches them; snapshots are signed
+	// content packs; credentials are sealed with the integration key.
+	s.ContentSource = contentsourceapp.NewService(repos.ContentSource, s.ContentPacks, s.Entitlement, s.Encryptor, s.Audit, log)
 
 	// A finding's custom retest check: content in the template library
 	// above, run by the retest service.
@@ -2395,21 +2442,6 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 		return nil, fmt.Errorf("failed to initialize secret store service: %w", err)
 	}
 
-	// Initialize template syncer for fetching templates from external sources
-	s.TemplateSyncer = template.NewSyncer(
-		repos.TemplateSource,
-		repos.ScannerTemplate,
-		s.SecretStore,
-		encryptionKey,
-		log,
-	)
-
-	// Wire up template syncer to source service for force sync API
-	s.TemplateSource.SetTemplateSyncer(s.TemplateSyncer)
-	// Binding a stored credential to a source is restricted to owners/admins
-	// and the credential's creator, and audited.
-	s.TemplateSource.SetCredentialGuard(s.SecretStore, s.Audit)
-
 	s.Tool = tool.NewService(repos.Tool, repos.TenantToolConfig, log)
 	// Tool availability: the catalog joined with the tools the sensors report.
 	s.Tool.SetAvailabilitySources(s.Sensor, repos.ScanZone, repos.SensorGrant)
@@ -2431,13 +2463,13 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// Create adapters for scan sub-package (clean architecture - each package defines its own interfaces)
 	scanAuditAdapter := app.NewScanAuditServiceAdapter(s.Audit)
 	scanSensorSelectorAdapter := app.NewScanSensorSelectorAdapter(s.SensorSelector, s.SharedSensorsAllowed)
-	templateScanAdapter := template.NewScanAdapter(s.TemplateSyncer)
 	scanSecurityValidatorAdapter := app.NewScanSecurityValidatorAdapter(securityValidator)
 
 	s.ActiveGate = easmapp.NewActiveGate(repos.Attribution, repos.Asset, s.Scope, repos.VerifiedNames).
 		WithTakeoverEvidence(repos.EASMDNS).
 		WithPlatformPolicy(s.ScopeGuardrails)
 	s.ActiveGate.SetWildcardDNS(repos.AssetWildcardDNS)
+	s.ActiveGate.SetCertificates(repos.AssetRelationship)
 	// RFC-065 §16.8: signed jobs for sensors that enforce scope limits carry
 	// the limits of port- and path-limited targets.
 	s.Command.SetScopeLimits(s.ActiveGate)
@@ -2463,9 +2495,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 		repos.StepRun,
 		repos.Command,
 		repos.ScannerTemplate,
-		repos.TemplateSource,
 		repos.Tool,
-		templateScanAdapter,
 		scanSensorSelectorAdapter,
 		scanSecurityValidatorAdapter,
 		log,
@@ -2576,6 +2606,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 		notifier = s.Outbox
 	}
 	changeAnnouncer := retestapp.NewChangeAnnouncer(repos.Finding, ticketCommenter, notifier, log)
+	changeAnnouncer.SetPeopleNotifier(s.Vulnerability)
 	s.Retest.SetRegressionSLA(regressionSLA)
 	s.Retest.SetAnnouncer(changeAnnouncer)
 	s.Ingest.SetRegressionHandler(retestapp.NewScanRegressions(regressionSLA, changeAnnouncer, log))
@@ -2659,6 +2690,14 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 		workflowPrincipalContext,
 	)
 
+	// Versions the migration backfilled carry a placeholder digest; store the
+	// canonical one (idempotent, a no-op once repaired).
+	if n, err := repos.WorkflowVersion.RepairBackfilledDigests(context.Background()); err != nil {
+		return nil, fmt.Errorf("repair automation version digests: %w", err)
+	} else if n > 0 {
+		log.Info("repaired automation version digests", "versions", n)
+	}
+
 	// Initialize workflow executor
 	workflowExecutor := automation.NewWorkflowExecutor(
 		repos.Workflow,
@@ -2666,6 +2705,11 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 		repos.WorkflowNodeRun,
 		log, automation.WithExecutorDB(deps.DB), automation.WithExecutorOutboxService(s.Outbox), automation.WithExecutorIntegrationService(s.Integration), automation.WithExecutorAuditService(s.Audit),
 		automation.WithExecutorStepAuthorizer(workflowAuthorizer),
+		automation.WithExecutorVersions(repos.WorkflowVersion),
+		// Simulate runs reach only this read-only evaluator; egress steps
+		// record what they sent or would have sent.
+		automation.WithExecutorEvaluator(automation.NewSimulateEvaluator(repos.Finding)),
+		automation.WithExecutorDeliveries(repos.WorkflowDelivery),
 	)
 
 	// Register all action handlers for the workflow executor. Use the AI-aware
@@ -2704,6 +2748,10 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 		log, automation.WithWorkflowAuditService(s.Audit), automation.WithWorkflowExecutor(workflowExecutor),
 		automation.WithWorkflowStepAuthorizer(workflowAuthorizer),
 		automation.WithWorkflowSubjectReaders(repos.Finding, repos.Asset),
+		automation.WithWorkflowVersions(repos.WorkflowVersion),
+		automation.WithWorkflowRunReaders(s.DataScope, repos.WorkflowDelivery),
+		automation.WithWorkflowPreview(repos.WorkflowRun, automation.NewSimulateEvaluator(repos.Finding), repos.Integration),
+		automation.WithWorkflowUserDirectory(repos.User),
 	)
 
 	// Initialize workflow event dispatcher for automatic workflow triggering
@@ -2720,6 +2768,11 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// Wire workflow dispatcher to ingest service for automatic workflow triggering
 	// when new findings are created during ingestion
 	s.Ingest.SetFindingCreatedCallback(s.WorkflowDispatcher.DispatchFindingsCreated)
+	// Durable and batched: the automations of new findings run from the
+	// ingest queue after the batch is committed.
+	if repos.IngestJob != nil {
+		s.Ingest.SetSideEffectQueue(repos.IngestJob)
+	}
 
 	// Wire workflow dispatcher to the vulnerability service so a status change
 	// (e.g. a resolve) auto-dispatches a `finding_status_changed` workflow event
@@ -2771,6 +2824,8 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	s.Ingest.SetSuppressionChecker(s.Suppression)
 	// Cross-rule correlation of DAST findings (research/134 section 12).
 	s.Ingest.SetCorrelationStore(repos.FindingCorrelation)
+	s.Ingest.SetIssueLinkStore(repos.FindingIssueLinks)
+	s.Ingest.SetVulnAliasResolver(repos.CVECorpus)
 
 	// Initialize access control services
 	s.Group = accesscontrol.NewGroupService(repos.Group, log,
@@ -3184,6 +3239,9 @@ func (s *Services) InitAuthServices(cfg *config.Config, repos *Repositories, log
 		s.SSO.SetSignInHook(s.AccountDeletion.CancelOnSignIn)
 	}
 	s.SSO.SetSessionRevocationStore(sessionRevocations, revocationTTL)
+	// Configuring SSO connections needs sso.connections for the organization; sign-in
+	// through a configured connection is never gated.
+	s.SSO.SetFeatureGate(s.Entitlement)
 
 	// SSO P1: DNS-TXT domain-ownership verification. Wired as the PRIMARY JIT
 	// auto-provisioning gate — a non-member is auto-joined only when the email
@@ -3223,6 +3281,10 @@ func (s *Services) InitAuthServices(cfg *config.Config, repos *Repositories, log
 	// A domain the home organization stops holding suspends the members it
 	// managed elsewhere; proving it again restores them (RFC-058).
 	s.DomainVerify.SetClaimListener(s.Tenant)
+	// A lapsed SSO domain alerts the owners; turning SSO enforcement on needs a
+	// verified SSO domain.
+	s.DomainVerify.SetDomainLossListener(s.Tenant)
+	s.Tenant.SetSSODomainChecker(s.DomainVerify)
 	s.Auth.SetLapsedDomainChecker(s.DomainVerify)
 	// Per-domain sign-up policy (RFC-104): sso_required, join by domain and
 	// blocking new organizations for accounts on a claimed domain.
@@ -3496,6 +3558,34 @@ func initContentSigner(cfg *config.Config, log *logger.Logger) *contentpackdom.S
 	return nil
 }
 
+// initIngestQueue builds the queue of CI results and file imports. Raw
+// reports are sealed under a key derived per tenant from APP_ENCRYPTION_KEY
+// (previous keys still open what they sealed).
+func initIngestQueue(cfg *config.Config, repos *Repositories) (*ingestqueue.Queue, error) {
+	if repos.IngestJob == nil || repos.IngestPayload == nil {
+		return nil, nil
+	}
+	current, err := crypto.ParseKey(cfg.Encryption.Key, cfg.Encryption.KeyFormat)
+	if err != nil {
+		return nil, fmt.Errorf("ingest queue key: %w", err)
+	}
+	previous := make([][]byte, 0, len(cfg.Encryption.PreviousKeys))
+	for i, k := range cfg.Encryption.PreviousKeys {
+		b, perr := crypto.ParseKey(k, "")
+		if perr != nil {
+			return nil, fmt.Errorf("APP_ENCRYPTION_KEY_PREVIOUS entry %d: %w", i+1, perr)
+		}
+		previous = append(previous, b)
+	}
+	sealer, err := ingestpayload.NewSealer(current, previous...)
+	if err != nil {
+		return nil, err
+	}
+	q := ingestqueue.New(repos.IngestJob, repos.IngestPayload, sealer)
+	repos.IngestJob.SetMaxRunningPerTenant(cfg.Ingest.MaxRunningPerTenant)
+	return q, nil
+}
+
 // initEncryptor initializes the credentials encryptor.
 func initEncryptor(cfg *config.Config, log *logger.Logger) (crypto.Encryptor, error) {
 	if !cfg.Encryption.IsConfigured() {
@@ -3643,27 +3733,6 @@ func easmRecheck(interval time.Duration) time.Duration {
 		return interval * 5 / 6
 	}
 	return interval - 30*time.Minute
-}
-
-// zoneResolver is the resolver scan-zone routing resolves hostnames with:
-// the platform's own for "system", else one that asks only the given
-// recursive resolver (host[:port], port 53 by default), so tenants cannot
-// resolve names through the platform's internal DNS.
-func zoneResolver(spec string) *net.Resolver {
-	if spec == "" || spec == config.ScanZoneResolverSystem {
-		return net.DefaultResolver
-	}
-	server := spec
-	if _, _, err := net.SplitHostPort(spec); err != nil {
-		server = net.JoinHostPort(spec, "53")
-	}
-	d := &net.Dialer{Timeout: 3 * time.Second}
-	return &net.Resolver{
-		PreferGo: true,
-		Dial: func(ctx context.Context, network, _ string) (net.Conn, error) {
-			return d.DialContext(ctx, network, server)
-		},
-	}
 }
 
 // pentestPolicyReader reads the organization's pentest settings for the

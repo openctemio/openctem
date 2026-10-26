@@ -26,6 +26,9 @@ const (
 	BlockedRecheck = 6 * time.Hour
 	// StallAfter fails a queued pair whose run never finished.
 	StallAfter = 24 * time.Hour
+	// RefusalRetry is when a capability the trigger refused as a whole (a
+	// readiness refusal the readiness check did not see) is tried again.
+	RefusalRetry = 30 * time.Minute
 )
 
 // RunStarter starts one capability on a batch of targets (scan.Service).
@@ -129,7 +132,7 @@ func (s *Service) settleRun(ctx context.Context, tenantID shared.ID, rs covdom.R
 		verdicts = covdom.Verdicts(tasks, rs.Unfinished)
 	}
 	var covered []shared.ID
-	var failed []covdom.FailedPair
+	var failed, targetSide []covdom.FailedPair
 	blocked := map[shared.ID]string{}
 	for _, d := range queued {
 		v, ok := verdicts[covdom.TargetKey(d.Target())]
@@ -152,7 +155,14 @@ func (s *Service) settleRun(ctx context.Context, tenantID shared.ID, rs covdom.R
 			if msg == "" {
 				msg = rs.Error
 			}
-			failed = append(failed, covdom.FailedPair{AssetID: d.AssetID, Outcome: v.Outcome, Error: msg})
+			fp := covdom.FailedPair{AssetID: d.AssetID, Outcome: v.Outcome, Error: msg}
+			if covdom.IsTargetSide(v.Outcome) {
+				// The target did not answer: an observation, rechecked on a
+				// widening schedule, not a failure retried every few hours.
+				targetSide = append(targetSide, fp)
+				continue
+			}
+			failed = append(failed, fp)
 		}
 	}
 	n, err := s.planner.SettleCovered(ctx, tenantID, rs.RunID, rs.Capability, covered, rule.Every, rule.Expects == "http_service")
@@ -160,6 +170,11 @@ func (s *Service) settleRun(ctx context.Context, tenantID shared.ID, rs covdom.R
 		return n, err
 	}
 	k, err := s.planner.SettleFailed(ctx, tenantID, rs.RunID, rs.Capability, failed, rule.Every)
+	n += k
+	if err != nil {
+		return n, err
+	}
+	k, err = s.planner.SettleTargetSide(ctx, tenantID, rs.RunID, rs.Capability, targetSide)
 	n += k
 	if err != nil {
 		return n, err
@@ -206,88 +221,208 @@ func (s *Service) blockRepositories(ctx context.Context, tenantID shared.ID, cap
 }
 
 // plan starts every planned capability on its due pairs, within the
-// tenant's daily budget.
+// tenant's daily budget. A capability that cannot run for the tenant now
+// (readiness) gets no run: its pairs are paused with the reason, and resume
+// on the first pass where it is ready again.
 func (s *Service) plan(ctx context.Context, tenantID shared.ID) (int, error) {
 	used, err := s.planner.AttemptsSince(ctx, tenantID, s.now().Add(-24*time.Hour))
 	if err != nil {
 		return 0, err
 	}
 	left := s.cfg.DailyBudget - used
+	capabilities := plannedCapabilities(s.rules)
+	rd := s.newReadinessPass(tenantID, capabilities)
 	total := 0
-	for _, capability := range plannedCapabilities(s.rules) {
+	for _, capability := range capabilities {
 		if left <= 0 {
 			break
 		}
-		due, err := s.planner.DueBatch(ctx, tenantID, capability, min(s.cfg.Batch, left))
+		lookahead := covdom.Lookahead(s.ruleOf(capability).Every)
+		due, err := s.dueBatch(ctx, tenantID, capability, min(s.cfg.Batch, left), lookahead)
 		if err != nil {
 			return total, err
 		}
-		if due, err = s.blockRepositories(ctx, tenantID, capability, due); err != nil {
+		paused, err := rd.paused(ctx, capability)
+		if err != nil {
 			return total, err
+		}
+		if len(due) == 0 && paused == "" {
+			continue
+		}
+		reason, err := rd.reason(ctx, capability)
+		if err != nil {
+			return total, err
+		}
+		if reason != "" {
+			if err := s.pauseCapability(ctx, tenantID, capability, reason, 0); err != nil {
+				return total, err
+			}
+			continue
+		}
+		if paused != "" {
+			n, err := s.planner.ResumeFromReadiness(ctx, tenantID, capability)
+			if err != nil {
+				return total, err
+			}
+			if n > 0 {
+				s.logger.Info("coverage resumed", "tenant_id", tenantID.String(), "capability", capability,
+					"pairs", n, "was", paused)
+				if due, err = s.dueBatch(ctx, tenantID, capability, min(s.cfg.Batch, left), lookahead); err != nil {
+					return total, err
+				}
+			}
 		}
 		if len(due) == 0 {
 			continue
 		}
-		byTarget := make(map[string][]shared.ID, len(due))
-		targets := make([]string, 0, len(due))
-		for _, d := range due {
-			t := d.Target()
-			key := strings.ToLower(t)
-			if _, dup := byTarget[key]; !dup {
-				targets = append(targets, t)
-			}
-			byTarget[key] = append(byTarget[key], d.AssetID)
-		}
-		res, err := s.starter.StartCoverage(ctx, scanapp.CoverageInput{TenantID: tenantID, Capability: capability, Targets: targets})
-		if errors.Is(err, scanapp.ErrCoverageBusy) {
-			continue // the previous batch is still running: back-pressure
-		}
+		n, err := s.startBatch(ctx, tenantID, capability, due)
+		total += n
+		left -= n
 		if err != nil {
-			// A refusal of the whole batch (zone coverage, approval, a scan
-			// that may not be triggered) blocks its pairs with the code and
-			// rechecks later; retrying it every pass changes nothing. Any
-			// other error (the database) leaves them due.
-			var de *shared.DomainError
-			if errors.As(err, &de) && de.Code != "" {
-				blocked := make(map[shared.ID]string, len(due))
-				for _, d := range due {
-					blocked[d.AssetID] = strings.ToLower(de.Code)
-				}
-				if err := s.planner.MarkBlocked(ctx, tenantID, capability, blocked, BlockedRecheck); err != nil {
-					return total, err
-				}
-				s.logger.Info("coverage batch refused, pairs blocked", "tenant_id", tenantID.String(),
-					"capability", logger.SanitizeValue(capability), "targets", len(targets), "code", logger.SanitizeValue(de.Code))
-				continue
-			}
-			s.logger.Warn("coverage run not started", "tenant_id", tenantID.String(), "capability", capability,
-				"targets", len(targets), "error", logger.SanitizeError(err))
-			continue
-		}
-		blocked := map[shared.ID]string{}
-		for _, r := range res.Refused {
-			code := r.Code
-			if code == "" {
-				code = "refused"
-			}
-			for _, id := range byTarget[strings.ToLower(strings.TrimSpace(r.Target))] {
-				blocked[id] = code
-			}
-		}
-		if err := s.planner.MarkBlocked(ctx, tenantID, capability, blocked, BlockedRecheck); err != nil {
 			return total, err
-		}
-		if res.RunID != nil {
-			kept := make([]shared.ID, 0, len(res.Kept))
-			for _, t := range res.Kept {
-				kept = append(kept, byTarget[strings.ToLower(t)]...)
-			}
-			if err := s.planner.MarkQueued(ctx, tenantID, capability, kept, *res.RunID, res.Tool); err != nil {
-				return total, fmt.Errorf("record queued coverage: %w", err)
-			}
-			total += len(kept)
-			left -= len(kept)
 		}
 	}
 	return total, nil
+}
+
+// dueBatch is the planner's due batch with repositories taken out (and
+// blocked) for a capability that takes network kinds.
+func (s *Service) dueBatch(ctx context.Context, tenantID shared.ID, capability string, limit int, lookahead time.Duration) ([]covdom.DueTarget, error) {
+	due, err := s.planner.DueBatch(ctx, tenantID, capability, limit, lookahead)
+	if err != nil {
+		return nil, err
+	}
+	return s.blockRepositories(ctx, tenantID, capability, due)
+}
+
+// pauseCapability pauses the capability's pairs whose time has come with a
+// readiness reason.
+func (s *Service) pauseCapability(ctx context.Context, tenantID shared.ID, capability, reason string, retryAfter time.Duration) error {
+	n, err := s.planner.PauseForReadiness(ctx, tenantID, capability, reason, retryAfter)
+	if err != nil {
+		return err
+	}
+	if n > 0 {
+		s.logger.Info("coverage paused", "tenant_id", tenantID.String(), "capability", capability,
+			"reason", reason, "pairs", n)
+	}
+	return nil
+}
+
+// blockNeverOpens handles a refusal that lists targets whose scan windows
+// never open: it blocks those pairs and returns the pairs left to run.
+// handled is false when err is not that refusal or lists none of the batch's
+// targets, so the caller treats it as a refusal of the whole batch. One such
+// target must not stall the capability for the others.
+func (s *Service) blockNeverOpens(ctx context.Context, tenantID shared.ID, capability string, due []covdom.DueTarget, err error) (rest []covdom.DueTarget, handled bool, ferr error) {
+	var never *scanapp.NeverOpensError
+	if !errors.As(err, &never) {
+		return nil, false, nil
+	}
+	bad := make(map[string]bool, len(never.Targets))
+	for _, t := range never.Targets {
+		bad[strings.ToLower(strings.TrimSpace(t))] = true
+	}
+	blocked := map[shared.ID]string{}
+	for _, d := range due {
+		if bad[strings.ToLower(strings.TrimSpace(d.Target()))] {
+			blocked[d.AssetID] = strings.ToLower(scanapp.CodeWindowNeverOpens)
+			continue
+		}
+		rest = append(rest, d)
+	}
+	if len(blocked) == 0 {
+		return nil, false, nil
+	}
+	if merr := s.planner.MarkBlocked(ctx, tenantID, capability, blocked, BlockedRecheck); merr != nil {
+		return nil, false, merr
+	}
+	s.logger.Info("coverage targets never open, pairs blocked", "tenant_id", tenantID.String(),
+		"capability", logger.SanitizeValue(capability), "blocked", len(blocked), "remaining", len(rest))
+	return rest, true, nil
+}
+
+// startBatch starts one capability on a due batch and records the outcome
+// on its pairs. It returns how many pairs were queued.
+func (s *Service) startBatch(ctx context.Context, tenantID shared.ID, capability string, due []covdom.DueTarget) (int, error) {
+	byTarget := make(map[string][]shared.ID, len(due))
+	targets := make([]string, 0, len(due))
+	for _, d := range due {
+		t := d.Target()
+		key := strings.ToLower(t)
+		if _, dup := byTarget[key]; !dup {
+			targets = append(targets, t)
+		}
+		byTarget[key] = append(byTarget[key], d.AssetID)
+	}
+	res, err := s.starter.StartCoverage(ctx, scanapp.CoverageInput{TenantID: tenantID, Capability: capability, Targets: targets})
+	if errors.Is(err, scanapp.ErrCoverageBusy) {
+		return 0, nil // the previous batch is still running: back-pressure
+	}
+	if err != nil {
+		// A refusal that says the capability cannot run for the tenant now
+		// (a sensor went offline between the readiness check and the
+		// trigger, a policy the readiness check does not read) pauses the
+		// capability with its readiness reason; it is retried after
+		// RefusalRetry. No blocked run is recorded.
+		if reason := scanapp.CoverageReadinessForRefusal(err); reason != "" {
+			return 0, s.pauseCapability(ctx, tenantID, capability, reason, RefusalRetry)
+		}
+		// Targets whose scan windows never open: block only those pairs
+		// and run the rest of the batch (see blockNeverOpens).
+		rest, handled, berr := s.blockNeverOpens(ctx, tenantID, capability, due, err)
+		if berr != nil {
+			return 0, berr
+		}
+		if handled {
+			if len(rest) == 0 {
+				return 0, nil
+			}
+			return s.startBatch(ctx, tenantID, capability, rest)
+		}
+		// Any other refusal of the whole batch (about its targets) blocks
+		// the batch's pairs with the code and rechecks them later; retrying
+		// it every pass changes nothing. Any other error (the database)
+		// leaves them due.
+		var de *shared.DomainError
+		if errors.As(err, &de) && de.Code != "" {
+			blocked := make(map[shared.ID]string, len(due))
+			for _, d := range due {
+				blocked[d.AssetID] = strings.ToLower(de.Code)
+			}
+			if err := s.planner.MarkBlocked(ctx, tenantID, capability, blocked, BlockedRecheck); err != nil {
+				return 0, err
+			}
+			s.logger.Info("coverage batch refused, pairs blocked", "tenant_id", tenantID.String(),
+				"capability", logger.SanitizeValue(capability), "targets", len(targets), "code", logger.SanitizeValue(de.Code))
+			return 0, nil
+		}
+		s.logger.Warn("coverage run not started", "tenant_id", tenantID.String(), "capability", capability,
+			"targets", len(targets), "error", logger.SanitizeError(err))
+		return 0, nil
+	}
+	blocked := map[shared.ID]string{}
+	for _, r := range res.Refused {
+		code := r.Code
+		if code == "" {
+			code = "refused"
+		}
+		for _, id := range byTarget[strings.ToLower(strings.TrimSpace(r.Target))] {
+			blocked[id] = code
+		}
+	}
+	if err := s.planner.MarkBlocked(ctx, tenantID, capability, blocked, BlockedRecheck); err != nil {
+		return 0, err
+	}
+	if res.RunID == nil {
+		return 0, nil
+	}
+	kept := make([]shared.ID, 0, len(res.Kept))
+	for _, t := range res.Kept {
+		kept = append(kept, byTarget[strings.ToLower(t)]...)
+	}
+	if err := s.planner.MarkQueued(ctx, tenantID, capability, kept, *res.RunID, res.Tool); err != nil {
+		return 0, fmt.Errorf("record queued coverage: %w", err)
+	}
+	return len(kept), nil
 }

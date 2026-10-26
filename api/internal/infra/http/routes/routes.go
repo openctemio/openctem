@@ -152,7 +152,7 @@ type Handlers struct {
 	CIRunner            *handler.CIRunnerHandler
 	SCMApps             *handler.SCMAppHandler              // nil without a database
 	ScannerTemplate     *handler.ScannerTemplateHandler     // nil if not initialized (no database)
-	TemplateSource      *handler.TemplateSourceHandler      // nil if not initialized (no database)
+	ContentSource       *handler.ContentSourceHandler       // nil if not initialized (no database)
 	ContentPack         *handler.ContentPackHandler         // nil if not initialized (no database)
 	PlatformContentPack *handler.PlatformContentPackHandler // nil if not initialized (no database)
 	ContentCatalog      *handler.ContentCatalogHandler      // nil if not initialized (no database)
@@ -210,6 +210,9 @@ type Handlers struct {
 	// TicketMapping serves the ticket field and status mapping editor (nil
 	// without a database).
 	TicketMapping *handler.TicketMappingHandler
+	// ImportMapping serves the organization's import mappings (nil
+	// without a database).
+	ImportMapping *handler.ImportMappingHandler
 	GitHubWebhook *handler.GitHubWebhookHandler // nil if not initialized (no database)
 
 	// Pentest Campaign Management handlers
@@ -257,6 +260,7 @@ type Handlers struct {
 
 	// Finding import (exports of other tools, VEX documents)
 	FindingImport *handler.FindingImportHandler // nil if not initialized
+	IngestReceipt *handler.IngestReceiptHandler // receipts of uploads and runs (RFC-122); nil if not initialized
 
 	// Configuration handlers (read-only system config)
 	FindingSource *handler.FindingSourceHandler // nil if not initialized (no database)
@@ -614,8 +618,11 @@ func Register(
 	if h.AssetImport != nil {
 		registerAssetImportRoutes(router, h.AssetImport, authMiddleware, userSync)
 	}
-	if h.FindingImport != nil {
-		registerFindingImportRoutes(router, h.FindingImport, authMiddleware, userSync)
+	if h.FindingImport != nil || h.IngestReceipt != nil {
+		registerFindingImportRoutes(router, h.FindingImport, h.IngestReceipt, authMiddleware, userSync)
+	}
+	if h.ImportMapping != nil {
+		registerImportMappingRoutes(router, h.ImportMapping, authMiddleware, userSync)
 	}
 
 	// Asset Owner routes (tenant from JWT token) - nested under assets
@@ -697,6 +704,7 @@ func Register(
 	registerCycleSettingsRoutes(router, h.Tenant, authMiddleware, userSync)
 	registerSharedSensorsSettingsRoutes(router, h.Tenant, authMiddleware, userSync)
 	registerFindingCorrelationSettingsRoutes(router, h.Tenant, authMiddleware, userSync)
+	registerFindingViewSettingsRoutes(router, h.Tenant, authMiddleware, userSync)
 	registerOrganizationMemberRoutes(router, h.LocalAuth, h.Tenant, authMiddleware, userSync)
 	registerOrganizationTrustRoutes(router, h.OrgTrust, authMiddleware, userSync)
 	registerOrganizationSupportAccessRoutes(router, h.SupportAccess, authMiddleware, userSync)
@@ -1066,8 +1074,9 @@ func Register(
 		registerPlatformContentPackRoutes(router, h.PlatformContentPack, authMiddleware, userSync, h.ModuleGate.RequireModule(moduledom.ModuleScannerTemplates))
 	}
 
-	if h.TemplateSource != nil {
-		registerTemplateSourceRoutes(router, h.TemplateSource, authMiddleware, userSync, h.ModuleGate.RequireModule(moduledom.ModuleTemplateSources))
+	if h.ContentSource != nil {
+		registerContentSourceRoutes(router, h.ContentSource, authMiddleware, userSync, h.ModuleGate.RequireModule(moduledom.ModuleTemplateSources))
+		registerContentSourceWebhookRoute(router, h.ContentSource, log)
 	}
 
 	// Secret Store routes (tenant from JWT token)

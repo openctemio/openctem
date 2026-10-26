@@ -3,13 +3,18 @@
 import { cn } from '@/lib/utils'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
+import { Tag } from '@/components/ui/tag'
 import { Progress } from '@/components/ui/progress'
 import { Separator } from '@/components/ui/separator'
 import { AlertTriangle, Shield, Target, FileWarning, Clock, Bot, XCircle } from 'lucide-react'
 import { useTranslation } from '@/context/i18n-provider'
 import { TriageStatusBadge } from './triage-status-badge'
 import { triageFailureMessage } from '../lib/messages'
-import { SEVERITY_BADGE_LIGHT, type SeverityLevel } from '@/lib/severity-colors'
+import {
+  SEVERITY_BADGE_LIGHT,
+  SEVERITY_TEXT_COLORS,
+  type SeverityLevel,
+} from '@/lib/severity-colors'
 import type { AITriageResult, Exploitability } from '../types'
 import { EXPLOITABILITY_CONFIG, EFFORT_CONFIG } from '../types'
 
@@ -25,23 +30,24 @@ export function TriageResultCard({ result, className }: TriageResultCardProps) {
   }
 
   const getSeverityColor = (severity: string | undefined) => {
-    if (!severity) return 'bg-gray-100 text-gray-800'
+    if (!severity) return 'bg-muted text-muted-foreground'
     return (
-      SEVERITY_BADGE_LIGHT[severity.toLowerCase() as SeverityLevel] ?? 'bg-gray-100 text-gray-800'
+      SEVERITY_BADGE_LIGHT[severity.toLowerCase() as SeverityLevel] ??
+      'bg-muted text-muted-foreground'
     )
   }
 
   const getRiskScoreColor = (score: number) => {
-    if (score >= 80) return 'text-red-600'
-    if (score >= 60) return 'text-orange-600'
-    if (score >= 40) return 'text-yellow-600'
-    return 'text-green-600'
+    if (score >= 80) return SEVERITY_TEXT_COLORS.critical
+    if (score >= 60) return SEVERITY_TEXT_COLORS.high
+    if (score >= 40) return SEVERITY_TEXT_COLORS.medium
+    return 'text-success'
   }
 
   const getFPColor = (likelihood: number) => {
-    if (likelihood >= 0.7) return 'text-green-600' // High FP = likely safe
-    if (likelihood >= 0.3) return 'text-yellow-600'
-    return 'text-red-600' // Low FP = likely real
+    if (likelihood >= 0.7) return 'text-success' // High FP = likely safe
+    if (likelihood >= 0.3) return SEVERITY_TEXT_COLORS.medium
+    return SEVERITY_TEXT_COLORS.critical // Low FP = likely real
   }
 
   if (result.status === 'pending' || result.status === 'processing') {
@@ -67,10 +73,10 @@ export function TriageResultCard({ result, className }: TriageResultCardProps) {
 
   if (result.status === 'failed') {
     return (
-      <Card className={cn('border-red-200', className)}>
+      <Card className={cn('border-destructive/40', className)}>
         <CardContent className="pt-6">
           <div className="flex flex-col items-center justify-center py-8 text-center">
-            <XCircle className="h-12 w-12 text-red-500 mb-4" />
+            <XCircle className="h-12 w-12 text-destructive mb-4" />
             <h3 className="text-lg font-medium mb-2">Triage Failed</h3>
             <p className="text-sm text-muted-foreground mb-4">
               {triageFailureMessage(t, result.errorCode)}
@@ -149,14 +155,15 @@ export function TriageResultCard({ result, className }: TriageResultCardProps) {
               Exploitability
             </div>
             {result.exploitability && (
-              <span
-                className={cn(
-                  'text-sm font-medium capitalize',
-                  EXPLOITABILITY_CONFIG[result.exploitability as Exploitability]?.color
+              <Tag
+                variant="plain"
+                level={EXPLOITABILITY_CONFIG[result.exploitability as Exploitability]?.level}
+                label={t(
+                  `findings.aiTriage.exploitability.${result.exploitability}`,
+                  EXPLOITABILITY_CONFIG[result.exploitability as Exploitability]?.label ??
+                    result.exploitability
                 )}
-              >
-                {result.exploitability}
-              </span>
+              />
             )}
           </div>
 
@@ -217,9 +224,13 @@ export function TriageResultCard({ result, className }: TriageResultCardProps) {
                   </div>
                   <div className="flex-1 space-y-1">
                     <p>{step.description}</p>
-                    <Badge variant="outline" className={EFFORT_CONFIG[step.effort]?.color}>
-                      {EFFORT_CONFIG[step.effort]?.label || step.effort}
-                    </Badge>
+                    <Tag
+                      level={EFFORT_CONFIG[step.effort]?.level}
+                      label={t(
+                        `findings.aiTriage.effort.${step.effort}`,
+                        EFFORT_CONFIG[step.effort]?.label || step.effort
+                      )}
+                    />
                   </div>
                 </div>
               ))}

@@ -76,7 +76,8 @@ func (s *Service) SetScopeJoin(j ScopeJoiner) { s.scopeJoin = j }
 
 // DefaultMaxPromotionsPerRun bounds how many CT names one tenant sweep turns
 // into new assets. A wildcard-heavy or CDN domain can carry thousands of
-// names; the rest are picked up on later runs (each run re-reads CT).
+// names; the rest are picked up on later runs (each run re-reads CT and
+// skips the names already in inventory).
 const DefaultMaxPromotionsPerRun = 500
 
 // promotion is one name to promote, with the root that produced it.

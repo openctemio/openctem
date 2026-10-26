@@ -83,6 +83,24 @@ export interface ScanTargetOptions {
    * successful run (continuous discovery, RFC-071).
    */
   new_since_last_run?: boolean
+  /**
+   * Hand an active scanner the names a selector or an asset group adds even
+   * without proof that they resolve (default: only names seen resolving in
+   * the last week).
+   */
+  include_unresolved?: boolean
+}
+
+/** `info`: an expected outcome (a name with no DNS answer); `warning`: needs a fix. */
+export type SkipTone = 'info' | 'warning'
+
+/** Every target a scan skips for one reason (api/docs/architecture/scan-targets.md). */
+export interface SkipGroup {
+  reason: string
+  tone: SkipTone
+  count: number
+  /** Up to 200 (preview) or 25 (run); empty for reasons known only as a count. */
+  targets: string[]
 }
 
 /**
@@ -170,6 +188,10 @@ export interface ScanConfig {
   blocked_runs?: number
   /** The scan's latest run, with its real state (the list's "Last run" column). */
   last_run?: ScanLastRun
+  /** The latest approval request's status, when the scan needed one. */
+  approval_status?: string
+  /** The scan's latest runs (at most 10), newest first: the list's run history. */
+  recent_runs?: ScanRecentRun[]
   /** Name of the workflow a workflow scan runs. */
   scan_workflow_name?: string
   created_by?: string
@@ -190,6 +212,14 @@ export interface ScanConfig {
   managed_by?: 'coverage' | 'enrichment'
   created_at: string
   updated_at: string
+}
+
+/** One of a scan's latest runs (GET /scans `recent_runs`). */
+export interface ScanRecentRun {
+  id: string
+  status: string
+  refusal_code?: string
+  created_at: string
 }
 
 /** A scan's latest run as the scan list carries it (GET /scans). */
@@ -466,6 +496,10 @@ export interface RunDispatch {
   sensor_routing?: 'tenant' | 'platform'
   /** What each `*.x` or inventory-mode CIDR target added when the run started (RFC-068). */
   target_expansion?: RunTargetExpansion[]
+  /** Targets the run dispatched (absent on runs recorded before skip groups). */
+  will_scan?: number
+  /** Every other target, grouped by reason, largest first. */
+  skipped?: SkipGroup[]
   /** Targets the organization's exclusions left out, with the matching rules (first 50). */
   excluded?: {
     target?: string

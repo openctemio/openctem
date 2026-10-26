@@ -3,6 +3,7 @@ package ingest
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"sort"
 	"strconv"
@@ -17,6 +18,7 @@ import (
 	evidenceapp "github.com/openctemio/openctem/api/internal/app/evidence"
 	"github.com/openctemio/openctem/api/pkg/domain/asset"
 	"github.com/openctemio/openctem/api/pkg/domain/branch"
+	"github.com/openctemio/openctem/api/pkg/domain/ingestreceipt"
 	"github.com/openctemio/openctem/api/pkg/domain/sensor"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/domain/software"
@@ -45,6 +47,8 @@ type FindingProcessor struct {
 
 	// findingCreatedCallback is called after findings are successfully created
 	findingCreatedCallback FindingCreatedCallback
+	// sideEffects, when set, stores that work durably instead (side_effects.go).
+	sideEffects SideEffectQueue
 
 	// priorityClassifier enriches + classifies findings after creation (RFC-004)
 	priorityClassifier PriorityClassifier
@@ -92,6 +96,8 @@ type FindingProcessor struct {
 	// correlations, when wired, re-derives cross-rule correlations of the
 	// batch's assets (correlation_findings.go).
 	correlations CorrelationStore
+	issueLinks   IssueLinkStore
+	vulnAliases  VulnAliasResolver
 
 	// suppressionModules, when wired, turns ingest suppression off for a
 	// tenant whose suppressions module is disabled.
@@ -285,6 +291,9 @@ func (p *FindingProcessor) processBatch(
 		// legacy is the key the old ingest built from the report's own
 		// fingerprint (legacyClientFingerprint), "" when none.
 		legacy string
+		// aliasFormer is the version-2 key the finding had before its
+		// advisory ids were replaced by the CVE the feed aliases them to.
+		aliasFormer string
 	}
 
 	// Helper to create FailedFinding from findingMeta
@@ -331,17 +340,21 @@ func (p *FindingProcessor) processBatch(
 	}
 
 	for i, reported := range report.Findings {
-		// A network finding that names several CVEs is one finding per CVE
-		// (RFC-043 decision D3).
-		for _, ctisFinding := range splitMultiCVENetworkFinding(reported) {
+		// A network or SCA finding that names several CVEs is one finding
+		// per CVE (RFC-043 decisions D3, D20).
+		for _, ctisFinding := range splitMultiCVEFinding(reported) {
 			if output.ExcludedAssetRefs[ctisFinding.AssetRef] {
 				// Its asset matches a scope exclusion and was not added.
 				output.FindingsSkipped++
+				addItem(output, report, &ctisFinding, ingestreceipt.DispositionOutOfScope, ingestreceipt.ReasonExcluded,
+					ingestreceipt.PolicyScopeExclusion, nil)
 				continue
 			}
 			if output.OutOfScopeAssetRefs[ctisFinding.AssetRef] {
 				// The upload's actor may not change its asset.
 				output.FindingsSkipped++
+				addItem(output, report, &ctisFinding, ingestreceipt.DispositionOutOfScope, ingestreceipt.ReasonOutsideScope,
+					ingestreceipt.PolicyUploaderScope, nil)
 				continue
 			}
 			// Determine target asset
@@ -371,6 +384,8 @@ func (p *FindingProcessor) processBatch(
 				)
 				addError(output, fmt.Sprintf("finding %d: no target asset", i))
 				output.FindingsSkipped++
+				addItem(output, report, &ctisFinding, ingestreceipt.DispositionRejected, ingestreceipt.ReasonNoTargetAsset,
+					ingestreceipt.PolicyValidation, nil)
 				continue
 			}
 
@@ -401,6 +416,11 @@ func (p *FindingProcessor) processBatch(
 		return nil
 	}
 
+	// Step 1a0: a finding that names only advisory ids is keyed on the CVE
+	// the signed feed ties them to (RFC-043 §17.2).
+	canonicalVulnIDsOf(ctx, p, candidates, func(fm *findingMeta) (shared.ID, *ctis.Finding) { return fm.assetID, &fm.finding },
+		func(fm *findingMeta, former string) { fm.aliasFormer = former })
+
 	// Step 1a: the version-2 identity, computed on the server (RFC-043 §4.2).
 	applyIdentityV2Of(p, tenantID, candidates, func(fm *findingMeta) (shared.ID, *ctis.Finding) { return fm.assetID, &fm.finding },
 		func(fm *findingMeta, k vulnerability.IdentityKey, formers []string) {
@@ -408,6 +428,9 @@ func (p *FindingProcessor) processBatch(
 			fm.fingerprint = k.Fingerprint()
 			fm.base = ""
 			fm.formers = formers
+			if fm.aliasFormer != "" && fm.aliasFormer != fm.fingerprint {
+				fm.formers = append(fm.formers, fm.aliasFormer)
+			}
 		})
 
 	// Step 1b: a network finding without a CVE used to be keyed without its
@@ -435,7 +458,7 @@ func (p *FindingProcessor) processBatch(
 	// A SAST finding stored under its line-anchored key takes its
 	// code-anchored key once a report carries the code (a producer that
 	// started sending the snippet or its hash), keeping its triage.
-	for i := range 2 {
+	for i := range 3 {
 		adoptFormerKeysOf(ctx, p, tenantID, candidates, func(fm findingMeta) adoptKeys {
 			ak := adoptKeys{identity: fm.identity, guard: adoptGuardOf(fm.assetID, &fm.finding, report)}
 			if i < len(fm.formers) {
@@ -556,11 +579,23 @@ func (p *FindingProcessor) processBatch(
 	// downgraded by validation (regressions).
 	// PERFORMANCE: Single query instead of N queries per existing finding
 	existingFingerprints = p.withoutHumanResolved(ctx, tenantID, existingFingerprints, guardedFingerprints, output)
+	// Only a default-branch run may reopen what was resolved on the default
+	// branch: a feature or pull-request sighting is recorded as a branch
+	// occurrence (step 6) and leaves the status alone.
+	branchSightings := make([]branchSighting, 0, len(validFindings))
+	for _, fm := range validFindings {
+		branchSightings = append(branchSightings, branchSighting{fingerprint: fm.fingerprint, assetID: fm.assetID, branchID: fm.branchID})
+	}
+	existingFingerprints = p.withoutDefaultBranchResolved(ctx, tenantID, existingFingerprints, p.offDefaultBranchFingerprints(ctx, report, branchSightings), output)
 	if len(existingFingerprints) > 0 {
 		scanner := ""
 		if report.Tool != nil {
 			scanner = report.Tool.Name
 		}
+		// A duplicate seen again is a sighting of the finding it was folded
+		// into: that one is not auto-resolved (marked seen here) and reopens
+		// below if it was closed. The duplicate itself is never reopened.
+		p.sightDuplicateTargets(ctx, tenantID, existingFingerprints, report.Metadata.ID, scanner)
 		// Each reopen writes its timeline entry with the scan behind it.
 		reopenCtx := vulnerability.WithTransitionEvidence(ctx, map[string]any{"scanner": scanner, "scan_id": report.Metadata.ID})
 		reopenedMap, err := p.repo.AutoReopenByFingerprintsBatch(reopenCtx, tenantID, existingFingerprints)
@@ -574,6 +609,7 @@ func (p *FindingProcessor) processBatch(
 			reopened := make([]vulnerability.ReopenedFinding, 0, len(reopenedMap))
 			for _, rf := range reopenedMap {
 				reopened = append(reopened, rf)
+				output.ReopenedIDs = append(output.ReopenedIDs, rf.ID)
 			}
 			// Fresh SLA + ticket comment + notification (RFC-039 D2, §7.4-7.5),
 			// for findings that count as exposure.
@@ -591,7 +627,7 @@ func (p *FindingProcessor) processBatch(
 	// being closed on a later pass. Rules are loaded ONCE per batch
 	// (tenant-scoped). The returned map (index → rule id) is recorded for audit
 	// AFTER insert, once the findings have persisted IDs. Nil-safe.
-	suppressionDecisions := p.applySuppressions(ctx, tenantID, newFindings)
+	suppressionDecisions := p.applySuppressions(ctx, tenantID, newFindings, output.policy)
 
 	// Fingerprints of findings that already existed: their remediation keys
 	// are re-derived after enrichment (Step 5c).
@@ -633,6 +669,7 @@ func (p *FindingProcessor) processBatch(
 				if result.WasInserted(i) {
 					createdFindings = append(createdFindings, f)
 					createdIndex[i] = struct{}{}
+					output.CreatedIDs = append(output.CreatedIDs, f.ID())
 				} else {
 					resighted = append(resighted, f.Fingerprint())
 				}
@@ -682,19 +719,26 @@ func (p *FindingProcessor) processBatch(
 		if len(existingNewData) > 0 {
 			enriched, err := p.repo.EnrichBatchByFingerprints(ctx, tenantID, existingNewData, scanID)
 			if err != nil {
-				// Graceful fallback: if enrichment fails, fall back to scan-id-only update
-				// Logged and reported on the ingest result: the new scanner
-				// data of these findings is not stored, only the sighting.
+				// Graceful fallback: the findings whose enrichment did not
+				// land get a sighting-only update. Logged and reported on the
+				// ingest result: their new scanner data is not stored. Only
+				// the ones not written are retried, so a finding the batch
+				// already counted is not counted (or rewritten) twice.
+				fallbackFPs := make([]string, 0, len(existingNewData))
+				var incomplete *vulnerability.EnrichIncompleteError
+				if errors.As(err, &incomplete) {
+					fallbackFPs = append(fallbackFPs, incomplete.Fingerprints...)
+				} else {
+					for _, f := range existingNewData {
+						fallbackFPs = append(fallbackFPs, f.Fingerprint())
+					}
+				}
+				output.FindingsUpdated = int(enriched)
 				p.logger.Error("enrichment failed, falling back to scan-id-only update",
 					"error", err,
-					"count", len(existingNewData),
+					"count", len(fallbackFPs),
 				)
-				addError(output, fmt.Sprintf("enrich %d existing findings failed, only their sighting was recorded: %v", len(existingNewData), err))
-				// Collect fingerprints from failed enrichment for fallback
-				fallbackFPs := make([]string, 0, len(existingNewData))
-				for _, f := range existingNewData {
-					fallbackFPs = append(fallbackFPs, f.Fingerprint())
-				}
+				addError(output, fmt.Sprintf("enrich %d existing findings failed, only their sighting was recorded: %v", len(fallbackFPs), err))
 				unenrichedFingerprints = append(unenrichedFingerprints, fallbackFPs...)
 			} else {
 				output.FindingsUpdated = int(enriched)
@@ -786,7 +830,9 @@ func (p *FindingProcessor) processBatch(
 			p.logger.Info("backfilled finding branches", "count", n)
 		}
 		if err := p.repo.UpsertBranchOccurrences(ctx, tenantID, occurrences); err != nil {
-			p.logger.Warn("failed to record branch occurrences", "error", err, "count", len(occurrences))
+			p.logger.Error("failed to record branch occurrences", "error", err, "count", len(occurrences))
+			addError(output, fmt.Sprintf("record branch occurrences of %d findings failed: %v", len(occurrences), err))
+			output.BranchOccurrencesFailed = true
 		} else {
 			p.promoteBranchOnly(ctx, tenantID, occurrences)
 		}
@@ -849,7 +895,7 @@ func (p *FindingProcessor) processBatch(
 	// finding's status, and a baseline only narrows what later proves a fix.
 	sightings := make([]vulnerability.TemplateSighting, 0, len(validFindings))
 	for _, fm := range validFindings {
-		if prov := findingTemplateProvenance(&fm.finding, report.Tool); !prov.Empty() {
+		if prov := sightingProvenance(&fm.finding, report.Tool, scope); !prov.Empty() {
 			sightings = append(sightings, vulnerability.TemplateSighting{Fingerprint: fm.fingerprint, Provenance: prov})
 		}
 	}
@@ -875,6 +921,25 @@ func (p *FindingProcessor) processBatch(
 		}
 		p.correlateFindings(ctx, tenantID, items, fingerprints)
 	}
+
+	// Step 11: same-issue links of the batch's SAST and secret findings.
+	if p.issueLinks != nil {
+		items := make([]correlationItem, len(validFindings))
+		for i := range validFindings {
+			items[i] = correlationItem{fingerprint: validFindings[i].fingerprint, assetID: validFindings[i].assetID, finding: &validFindings[i].finding}
+		}
+		p.linkIssues(ctx, tenantID, items)
+	}
+
+	// Step 12: a finding still stored under its advisory key while another
+	// holds the CVE key the feed gives it: the two are linked, not merged.
+	var collisions []AliasCollision
+	for i := range validFindings {
+		if f := validFindings[i].aliasFormer; f != "" && f != validFindings[i].fingerprint {
+			collisions = append(collisions, AliasCollision{Former: f, Canonical: validFindings[i].fingerprint})
+		}
+	}
+	p.linkAliasCollisions(ctx, tenantID, collisions)
 
 	return nil
 }
@@ -1185,6 +1250,7 @@ func (p *FindingProcessor) buildFinding(
 
 	// Set core identifiers
 	f.SetFingerprint(fp)
+	f.MarkIngestV1Key() // a version-2 identity applied later replaces it
 	f.SetSensorID(sensorID)
 	f.SetScanID(report.Metadata.ID)
 
@@ -2555,6 +2621,18 @@ func (p *FindingProcessor) afterCreate(
 			output.FindingsSuppressed += n
 			p.logger.Info("suppressed findings at ingest via approved rules", "count", n)
 		}
+		// The receipt records each as suppressed, with the rule and the
+		// policy version that decided it.
+		var version int64
+		if output.policy != nil {
+			version = output.policy.Version
+		}
+		for idx, ruleID := range decisions {
+			rid := ruleID
+			output.Decided = append(output.Decided, ingestreceipt.PolicyAction{FindingID: newFindings[idx].ID(),
+				Action: ingestreceipt.ActionSuppressed, Policy: ingestreceipt.PolicySuppressionRule, PolicyID: &rid,
+				PolicyVersion: version})
+		}
 	}
 
 	// Derive remediation-group keys (RFC-015). Best-effort; grouping is a
@@ -2571,9 +2649,14 @@ func (p *FindingProcessor) afterCreate(
 	// Trigger workflow events (notifications, ticket rules) for newly
 	// created findings. A branch-only finding is not exposure yet: its
 	// workflows run when a counting branch sees it (promoteBranchOnly).
-	if p.findingCreatedCallback != nil {
+	if p.findingCreatedCallback != nil || p.sideEffects != nil {
 		if counting := p.withoutBranchOnly(ctx, tenantID, withoutDecided(created)); len(counting) > 0 {
-			p.findingCreatedCallback(ctx, tenantID, counting)
+			switch {
+			case p.sideEffects != nil:
+				p.enqueueCreated(ctx, tenantID, counting)
+			default:
+				p.findingCreatedCallback(ctx, tenantID, counting)
+			}
 		}
 	}
 
@@ -2606,4 +2689,149 @@ func (p *FindingProcessor) applyVEXStatements(ctx context.Context, tenantID shar
 	if _, err := p.vexStatements.ApplyToFingerprints(ctx, tenantID, fps); err != nil {
 		p.logger.Warn("applying vex statements failed", "tenant_id", tenantID.String(), "error", err)
 	}
+}
+
+// addItem records a reported item that did not become a finding, with the
+// policy (and its version) that decided it. Only an identity key, the tool,
+// a title and the severity are kept: no evidence. Capped with the receipt.
+func addItem(output *Output, report *ctis.Report, f *ctis.Finding, disp ingestreceipt.Disposition, reason, policy string,
+	assetID *shared.ID) {
+	if len(output.Items) >= ingestreceipt.MaxActionsPerReceipt {
+		return
+	}
+	tool := ""
+	if report.Tool != nil {
+		tool = report.Tool.Name
+	}
+	path, line := "", 0
+	if f.Location != nil {
+		path, line = f.Location.Path, f.Location.StartLine
+	}
+	var version int64
+	if output.policy != nil {
+		version = output.policy.Version
+	}
+	output.Items = append(output.Items, ingestreceipt.Item{
+		Key:         ingestreceipt.ItemKey(tool, f.RuleID, f.Title, f.AssetRef, f.AssetValue, path, strconv.Itoa(line)),
+		Disposition: disp, ReasonCode: reason, AssetID: assetID, Tool: tool, Title: f.Title,
+		Severity: string(f.Severity), Policy: policy, PolicyVersion: version,
+	})
+}
+
+// duplicateTargetMarker is the repository's way to mark what duplicates were
+// folded into as seen (optional: a repository without it has no such sightings).
+type duplicateTargetMarker interface {
+	MarkDuplicateTargetsSeen(ctx context.Context, tenantID shared.ID, fingerprints []string, scanID, tool string) (int64, error)
+}
+
+// sightDuplicateTargets records the scan as the latest sighting of the
+// findings that fingerprints (duplicates seen again) were folded into. Best
+// effort: a failure only means the target is not touched by this scan.
+func (p *FindingProcessor) sightDuplicateTargets(ctx context.Context, tenantID shared.ID, fingerprints []string, scanID, tool string) {
+	marker, ok := p.repo.(duplicateTargetMarker)
+	if !ok {
+		return
+	}
+	if _, err := marker.MarkDuplicateTargetsSeen(ctx, tenantID, fingerprints, scanID, tool); err != nil {
+		p.logger.Warn("duplicate targets not marked seen", "error", err)
+	}
+}
+
+// defaultBranchResolvedLookup finds which fingerprints belong to findings
+// closed as fixed that count on the default branch (not branch-only).
+type defaultBranchResolvedLookup interface {
+	DefaultBranchResolvedFingerprints(ctx context.Context, tenantID shared.ID, fingerprints []string) (map[string]bool, error)
+}
+
+// branchSighting is one finding of a report with the branch it was sighted on.
+type branchSighting struct {
+	fingerprint string
+	assetID     shared.ID
+	branchID    *shared.ID
+}
+
+// offDefaultBranchFingerprints returns the fingerprints this report sighted on
+// a branch that is not its repository's default branch. The default is the
+// stored one (a report cannot re-point it, see maybeSetDefaultBranch); when
+// the repository has none yet (not found), the report's own claim decides; any
+// other lookup error treats the branch as off-default. A report
+// without branch information is not a branch sighting.
+func (p *FindingProcessor) offDefaultBranchFingerprints(ctx context.Context, report *ctis.Report, findings []branchSighting) map[string]bool {
+	if p.branchRepo == nil || report.Metadata.Branch == nil {
+		return nil
+	}
+	off := make(map[string]bool)
+	isOff := make(map[shared.ID]bool)
+	for _, fm := range findings {
+		if fm.branchID == nil {
+			continue
+		}
+		v, ok := isOff[fm.assetID]
+		if !ok {
+			def, err := p.branchRepo.GetDefaultBranch(ctx, fm.assetID)
+			switch {
+			case err == nil && def != nil:
+				v = def.ID() != *fm.branchID
+			case err == nil || errors.Is(err, shared.ErrNotFound):
+				// No stored default yet: the report's claim decides.
+				v = !report.Metadata.Branch.IsDefaultBranch
+			default:
+				// The lookup failed: do not trust the report's claim (it is
+				// what a hostile upload would forge); treat the branch as
+				// off-default, which only withholds reopens.
+				p.logger.Warn("could not read the default branch; treating the sighted branch as off-default", "error", err)
+				v = true
+			}
+			isOff[fm.assetID] = v
+		}
+		if v {
+			off[fm.fingerprint] = true
+		}
+	}
+	return off
+}
+
+// withoutDefaultBranchResolved drops from fingerprints the ones sighted only
+// off the default branch (offDefault) whose finding is closed as fixed on the
+// default branch. A finding that exists only on branches (branch-only) still
+// reopens on its branch. When the lookup is unavailable or fails, every
+// off-default fingerprint is withheld: a missed reopen is repaired by the next
+// default-branch run, a wrongful one flips a person's decision.
+func (p *FindingProcessor) withoutDefaultBranchResolved(ctx context.Context, tenantID shared.ID, fingerprints []string, offDefault map[string]bool, output *Output) []string {
+	if len(offDefault) == 0 {
+		return fingerprints
+	}
+	candidates := make([]string, 0, len(offDefault))
+	for _, fp := range fingerprints {
+		if offDefault[fp] {
+			candidates = append(candidates, fp)
+		}
+	}
+	if len(candidates) == 0 {
+		return fingerprints
+	}
+	var resolved map[string]bool
+	if lookup, ok := p.repo.(defaultBranchResolvedLookup); ok {
+		r, err := lookup.DefaultBranchResolvedFingerprints(ctx, tenantID, candidates)
+		if err != nil {
+			p.logger.Warn("could not tell default-branch findings apart; off-default sightings reopen none", "error", err)
+		} else {
+			resolved = r
+		}
+	}
+	if resolved == nil {
+		resolved = make(map[string]bool, len(candidates))
+		for _, fp := range candidates {
+			resolved[fp] = true
+		}
+	}
+	kept := make([]string, 0, len(fingerprints))
+	for _, fp := range fingerprints {
+		if offDefault[fp] && resolved[fp] {
+			output.ReopensWithheld++
+			continue
+		}
+		kept = append(kept, fp)
+	}
+	return kept
 }

@@ -29,6 +29,7 @@ API or the web console, and lists every key below.
 | `Effective(tenant)` | limits with usage, denied features, `over_limit`, `applies` |
 | `NotEntitled(tenant)` | the modules the organization may not use (module gate, jobs, console) |
 | `Allowed(tenant, feature)` | a named feature below module level |
+| `Usable(tenant, feature)` | a named feature that may keep running: allowed, or inside its read-only grace |
 | `CheckOrgsPerUser(user)` | the per-person cap on self-service organizations |
 | `ApplyControlPlane(...)` | the control plane's write (internal API) |
 
@@ -85,6 +86,10 @@ The limit is 5 seats; 7 are in use. Remove some, or ask your administrator for m
 | `storage_mb` | MiB of uploaded files (evidence, attachments) the organization holds; without it the platform's default storage quota applies (Console > Settings > Limits, else `STORAGE_TENANT_QUOTA_MB`; 0 means no quota) |
 | `orgs_per_user` | organizations one person owns, checked when they create one themselves; an instance setting (self-service defaults), never per organization |
 | `dashboard_refresh_floor_minutes` | a **floor**, not a cap: the shortest refresh cadence, in minutes, the organization's dashboards may use ([dashboards](dashboards.md)); nothing is counted against it; without it the installation's base floor of 5 minutes applies. A schedule shorter than the floor is refused when it is saved |
+| `content_sources` | the organization's own [rule sources](content-sources.md) that the platform fetches (storage `mirror` or `proxy`; platform sources and tenant-hosted sources never count); checked when a source is created. The number of rules is never limited |
+| `content_storage_mb` | MiB of the organization's rule source snapshots the platform holds (tenant-hosted sources hold none); checked when a sync stores a new snapshot (a refused sync keeps the last promoted snapshot running). Snapshot bytes also count inside the 2 GiB content pack byte quota that uploads share |
+| `content_sync_floor_minutes` | a **floor**: the shortest sync interval of the organization's rule sources; the installation's floor of 5 minutes always applies. A shorter schedule is refused when it is saved |
+| `content_snapshot_max_mb` | a **per-item cap**, nothing counted: the largest rule source snapshot, checked at sync and Test |
 
 `-1` means unlimited, the default of every key.
 
@@ -92,8 +97,32 @@ The limit is 5 seats; 7 are in use. Remove some, or ask your administrator for m
 
 Deniable features are the non-core top-level modules (by module id) plus
 the named features below module level, each checked with `Allowed` at its
-own seam. There are no named features yet. Core modules can never be
-denied.
+own seam. Core modules can never be denied.
+
+The named features are the sign-in features of research/232 D16. Security
+controls (MFA, passkeys, session policy, audit, break-glass) are never
+features: they are free everywhere. Like every feature, these are allowed
+unless the operator or a source (the hosted control plane) denies them, so a
+self-managed instance keeps all of them; the hosted service's control plane
+decides which organizations get them.
+
+| Feature | Seam (refused when denied) | After a downgrade |
+|---|---|---|
+| `sso.connections` | creating or changing a SAML or OIDC connection: console PUT/POST, a pending change's submission and its approval (`SSOService.requireConnections`) | sign-in through a connection already configured keeps working (never a lock-out); deleting one always works |
+| `sso.enforcement` | turning SSO enforcement on (`TenantService.UpdateSecuritySettings`) | enforcement stays during the grace, then the `sso-enforcement-entitlement` controller (hourly) turns it off and tells the owners and administrators: members sign in with a password (and 2FA where required) again |
+| `scim` | minting a SCIM token (`TokenService.Mint`) and the SCIM API (`middleware.SCIMFeatureGate`, after the token is authenticated) | existing tokens keep working during the grace (`Usable`), then 403; no new token |
+| `sso.group_links` | changing SCIM group to role mappings (`GroupService.SetRoleMappings`) | existing mappings keep applying |
+| `ldap` | reserved: there is no LDAP sign-in yet | — |
+| `content_sources.webhook` | setting a rule source's webhook secret (`contentsource.Service.RotateWebhookSecret`); webhook calls check `Usable` | calls keep queuing syncs during the grace, then they are refused; scheduled syncs go on |
+| `content_sources.review_policy` | switching a rule source to the review promotion policy (create, update) | sources already on review keep it |
+| `content_sources.private_git` | a rule source whose host resolves into a private range the installation allows (create, update, Test); syncs check `Usable` | syncs keep running during the grace, then fail; the last promoted snapshot keeps running |
+
+`Usable(tenant, feature)` answers "may it keep running": allowed, or denied
+less than the grace period ago. The grace of a named feature is a row in
+`tenant_module_grace` like a module's (the key is a module id or a named
+feature). A refused change answers
+`403 FEATURE_NOT_INCLUDED`, or `503` when the limits could not be read; every
+seam fails closed.
 
 ### Counting usage
 
@@ -126,6 +155,16 @@ never hand out unlimited organizations by accident, so while sign-up is
 
 An `admin_only` installation (the default) needs none of this.
 
+**Rule source keys.** `content_sources`, `content_storage_mb`,
+`content_sync_floor_minutes` and `content_snapshot_max_mb` are valid keys of
+the starting limits (for example `SELF_SERVICE_START_LIMITS='{"content_sources":5,"content_storage_mb":500,"content_sync_floor_minutes":60}'`),
+so a hosted service caps rule sources from the first minute, before its
+control plane writes the organization's own rows. The core itself ships no
+values: without a row (or a starting limit) a key is unlimited. Two safety
+floors apply on every installation: the shortest sync interval is 5 minutes,
+and rule source fetches are bounded per server process (see
+[rule sources](content-sources.md)).
+
 ## Enforcement
 
 The check sits at the **insert** (`internal/infra/postgres/limits_check.go`),
@@ -142,6 +181,8 @@ so every path that adds a row passes it, whatever the caller:
 | `APIKeyRepository.Create` | `api_keys` | API key create |
 | `CIRunRepository.CreateTrustConfig` | `ci_trusts` | CI trust create |
 | `findinglifecycle.Service.CreateSubStatus`, `CreateScheme` | `lifecycle_sub_statuses`, `lifecycle_schemes` | finding lifecycle catalog |
+| `contentsource.Service.Create` | `content_sources` | rule source create (platform sources never count) |
+| `contentsource.Service` sync (new snapshot) | `content_storage_mb`, `content_snapshot_max_mb` | scheduled, requested and webhook syncs; Test checks the per-item cap |
 | `AttachmentService.Upload` (through `storagequota.Service.QuotaBytes`) | `storage_mb`, else the platform default storage quota | file and evidence uploads; an unreadable quota refuses the upload |
 | `FindingRepository.Create`, `CreateInTx` | `findings` | manual finding create, finding import, pentest findings |
 | `FindingRepository.CreateBatchWithResult` | `findings` (only the batch's fingerprints the organization does not have yet) | ingest: new findings are admitted in report order up to the headroom; **each one over it is refused on its own** (a per-item error: v1 `errors`, v2 `finding_not_stored` item error), while the report's assets, the other findings and every re-sighting of an existing finding are still stored. The report is not failed or retried. When the limit cannot be read, every new finding of the batch is refused the same way (fail-closed). |

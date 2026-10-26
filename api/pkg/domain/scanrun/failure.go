@@ -123,6 +123,14 @@ const (
 	FailureClassTimeout FailureClass = "timeout"
 	// FailureClassCanceled: a person or the run deadline stopped it.
 	FailureClassCanceled FailureClass = "canceled"
+	// FailureClassPartial: the step completed, but not on everything it was
+	// given (hosts not fully covered, targets left unfinished). Its results
+	// are kept; running again covers the rest.
+	FailureClassPartial FailureClass = "partial"
+	// FailureClassTarget: a fact about the targets, not a fault of the
+	// platform, the sensor or the tool (no target name resolves in DNS).
+	// Running again fails the same way until the targets change.
+	FailureClassTarget FailureClass = "target"
 )
 
 // More step failure codes, recorded by the platform before or around
@@ -176,6 +184,15 @@ const (
 	// was left before its run's deadline than its tool needs to do anything
 	// useful; its targets are the run's unfinished targets (research/122).
 	FailureDeadlineTooClose = "DEADLINE_TOO_CLOSE"
+	// FailureCoverageGaps: the step completed with hosts its sensor could
+	// not fully cover, or targets it left unfinished. The step output
+	// carries the hosts and reasons (coverage_gaps) and the counts.
+	FailureCoverageGaps = "COVERAGE_GAPS"
+	// FailureNoResolvingTargets: no target name of the job resolves in DNS
+	// any more, and the job's tool needs an address to probe; recorded at
+	// claim when that is the only reason its targets are refused. A fact
+	// about the names, never a scope change.
+	FailureNoResolvingTargets = "NO_RESOLVING_TARGETS"
 )
 
 var failureClasses = map[string]FailureClass{
@@ -212,6 +229,8 @@ var failureClasses = map[string]FailureClass{
 	FailureBatchFailed:         FailureClassTool,
 	FailureTimeout:             FailureClassTimeout,
 	FailureCanceled:            FailureClassCanceled,
+	FailureCoverageGaps:        FailureClassPartial,
+	FailureNoResolvingTargets:  FailureClassTarget,
 }
 
 // ClassOf returns the class of a step failure code. An unknown code is a

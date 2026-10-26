@@ -2,6 +2,7 @@
 
 import { useState, useMemo, useCallback } from 'react'
 import { Button } from '@/components/ui/button'
+import { ConfirmDialog, ConfirmSample } from '@/components/confirm-dialog'
 import { Input } from '@/components/ui/input'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import { ScrollArea } from '@/components/ui/scroll-area'
@@ -15,6 +16,7 @@ import {
   DialogBody,
 } from '@/components/ui/dialog'
 import { toast } from 'sonner'
+import { useTranslation } from '@/context/i18n-provider'
 import { Loader2, UserPlus, Search, Mail, Users, Check } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useTenant } from '@/context/tenant-provider'
@@ -49,6 +51,7 @@ export function AddMemberToRoleDialog({
   existingMembers,
   onSuccess,
 }: AddMemberToRoleDialogProps) {
+  const { t } = useTranslation()
   const { currentTenant, isLoading: isTenantLoading } = useTenant()
   const {
     members: tenantMembers,
@@ -63,6 +66,14 @@ export function AddMemberToRoleDialog({
   // State
   const [searchQuery, setSearchQuery] = useState('')
   const [selectedUserIds, setSelectedUserIds] = useState<Set<string>>(new Set())
+  const [confirming, setConfirming] = useState(false)
+  const selectedNames = useMemo(
+    () =>
+      tenantMembers
+        .filter((m) => selectedUserIds.has(m.user_id))
+        .map((m) => m.name || m.email || m.user_id),
+    [tenantMembers, selectedUserIds]
+  )
 
   // Filter available members (exclude those already in role)
   const existingMemberIds = useMemo(() => {
@@ -105,6 +116,7 @@ export function AddMemberToRoleDialog({
 
   // Handle add members using bulk endpoint
   const handleAddMembers = async () => {
+    setConfirming(false)
     if (!role || selectedUserIds.size === 0) return
 
     try {
@@ -118,12 +130,18 @@ export function AddMemberToRoleDialog({
         if (success_count > 0) {
           toast.success(
             success_count === 1
-              ? '1 member added to role'
-              : `${success_count} members added to role`
+              ? t('org.roleAddMember.addedOne', '1 member added to role')
+              : t('org.roleAddMember.addedMany', '{count} members added to role', {
+                  count: success_count,
+                })
           )
         }
         if (failed_count > 0) {
-          toast.error(`Failed to add ${failed_count} member(s)`)
+          toast.error(
+            t('org.roleAddMember.failedSome', 'Failed to add {count} member(s)', {
+              count: failed_count,
+            })
+          )
         }
 
         if (success_count > 0) {
@@ -135,7 +153,9 @@ export function AddMemberToRoleDialog({
       }
     } catch (error) {
       console.error('Failed to bulk assign members:', error)
-      toast.error(getErrorMessage(error, 'Failed to add members to role'))
+      toast.error(
+        getErrorMessage(error, t('org.roleAddMember.failed', 'Failed to add members to role'))
+      )
     }
   }
 
@@ -156,10 +176,12 @@ export function AddMemberToRoleDialog({
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <UserPlus className="h-5 w-5" />
-            Add Members to Role
+            {t('org.roleAddMember.title', 'Add members to role')}
           </DialogTitle>
           <DialogDescription>
-            Select team members to add to the &quot;{role.name}&quot; role.
+            {t('org.roleAddMember.desc', 'Select members to add to the "{role}" role.', {
+              role: role.name,
+            })}
           </DialogDescription>
         </DialogHeader>
 
@@ -169,7 +191,8 @@ export function AddMemberToRoleDialog({
             <div className="relative">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
               <Input
-                placeholder="Search members..."
+                placeholder={t('org.roleAddMember.searchPlaceholder', 'Search members...')}
+                aria-label={t('org.roleAddMember.searchLabel', 'Search members')}
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 className="ps-9"
@@ -180,15 +203,18 @@ export function AddMemberToRoleDialog({
             {availableMembers.length > 0 && (
               <div className="flex items-center justify-between text-sm">
                 <span className="text-muted-foreground">
-                  {selectedUserIds.size} of {availableMembers.length} selected
+                  {t('org.roleAddMember.selectedOf', '{selected} of {total} selected', {
+                    selected: selectedUserIds.size,
+                    total: availableMembers.length,
+                  })}
                 </span>
                 <div className="flex items-center gap-2">
                   <Button variant="ghost" size="sm" onClick={selectAll}>
-                    Select All
+                    {t('org.roleAddMember.selectAll', 'Select all')}
                   </Button>
                   {selectedUserIds.size > 0 && (
                     <Button variant="ghost" size="sm" onClick={clearSelection}>
-                      Clear
+                      {t('org.roleAddMember.clear', 'Clear')}
                     </Button>
                   )}
                 </div>
@@ -204,20 +230,24 @@ export function AddMemberToRoleDialog({
               ) : isMembersError ? (
                 <div className="flex flex-col items-center justify-center py-12 text-center px-4">
                   <Users className="h-8 w-8 text-destructive/50 mb-2" />
-                  <p className="text-sm text-destructive">Failed to load team members</p>
+                  <p className="text-sm text-destructive">
+                    {t('org.roleAddMember.loadFailed', 'Failed to load members')}
+                  </p>
                 </div>
               ) : tenantMembers.length === 0 ? (
                 <div className="flex flex-col items-center justify-center py-12 text-center px-4">
                   <Users className="h-8 w-8 text-muted-foreground/50 mb-2" />
-                  <p className="text-sm text-muted-foreground">No team members found</p>
+                  <p className="text-sm text-muted-foreground">
+                    {t('org.roleAddMember.none', 'No members found')}
+                  </p>
                 </div>
               ) : availableMembers.length === 0 ? (
                 <div className="flex flex-col items-center justify-center py-12 text-center px-4">
                   <Users className="h-8 w-8 text-muted-foreground/50 mb-2" />
                   <p className="text-sm text-muted-foreground">
                     {searchQuery
-                      ? 'No members match your search'
-                      : 'All team members already have this role'}
+                      ? t('org.roleAddMember.noMatch', 'No members match your search')
+                      : t('org.roleAddMember.allHave', 'All members already have this role')}
                   </p>
                 </div>
               ) : (
@@ -270,19 +300,46 @@ export function AddMemberToRoleDialog({
 
         <DialogFooter>
           <Button variant="ghost" onClick={() => handleOpenChange(false)}>
-            Cancel
+            {t('common.cancel', 'Cancel')}
           </Button>
-          <Button onClick={handleAddMembers} disabled={isAssigning || selectedUserIds.size === 0}>
+          <Button
+            onClick={() => setConfirming(true)}
+            disabled={isAssigning || selectedUserIds.size === 0}
+          >
             {isAssigning ? (
               <Loader2 className="me-2 h-4 w-4 animate-spin" />
             ) : (
               <UserPlus className="me-2 h-4 w-4" />
             )}
-            Add {selectedUserIds.size > 0 ? `${selectedUserIds.size} ` : ''}Member
-            {selectedUserIds.size !== 1 ? 's' : ''}
+            {selectedUserIds.size === 0
+              ? t('org.roleAddMember.add', 'Add members')
+              : selectedUserIds.size === 1
+                ? t('org.roleAddMember.addOne', 'Add 1 member')
+                : t('org.roleAddMember.addMany', 'Add {count} members', {
+                    count: selectedUserIds.size,
+                  })}
           </Button>
         </DialogFooter>
       </DialogContent>
+      <ConfirmDialog
+        open={confirming}
+        onOpenChange={setConfirming}
+        title={t('org.roleAddMember.confirmTitle', 'Add {count} members to {role}?', {
+          count: selectedUserIds.size,
+          role: role?.name ?? '',
+        })}
+        desc={t(
+          'org.roleAddMember.confirmDesc',
+          'They get every permission this role has ({permissions} permissions) at once, and the change is recorded in the audit log. You can remove them from the role later.',
+          { permissions: role?.permission_count ?? 0 }
+        )}
+        confirmText={t('org.roleAddMember.confirmButton', 'Add {count} members', {
+          count: selectedUserIds.size,
+        })}
+        handleConfirm={handleAddMembers}
+      >
+        <ConfirmSample names={selectedNames} total={selectedUserIds.size} />
+      </ConfirmDialog>
     </Dialog>
   )
 }

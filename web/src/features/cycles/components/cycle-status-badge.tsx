@@ -1,14 +1,27 @@
-import { Badge } from '@/components/ui/badge'
-import { cn } from '@/lib/utils'
+import { StatusLozenge } from '@/components/ui/status-lozenge'
+import { CheckCircleGlyph, HalfCircleGlyph, RingDotGlyph } from '@/components/ui/status-glyphs'
+import type { StatusGlyph } from '@/components/ui/status-glyphs'
+import { Clock } from 'lucide-react'
+import type { StatusTone } from '@/lib/status-colors'
+import { useTranslation } from '@/context/i18n-provider'
 import type { CtemCycleStatus } from '../types'
 
-// Status meaning uses the theme's status tokens (dark-mode safe): planning is
-// informational, active is running, review needs attention, closed is done.
-const STATUS_CLASS: Record<CtemCycleStatus, string> = {
-  planning: 'border-info/30 bg-info/10 text-info',
-  active: 'border-success/30 bg-success/10 text-success',
-  review: 'border-warning/30 bg-warning/10 text-warning',
-  closed: 'bg-muted text-muted-foreground',
+/**
+ * A cycle moves through planning, active, review and closed (research/247
+ * section 4): planning is open, active is in progress, review waits for a
+ * person, closed is done. The map holds no classes.
+ */
+export const CYCLE_STATUS_TONE: Record<CtemCycleStatus, { tone: StatusTone; icon: StatusGlyph }> = {
+  planning: { tone: 'open', icon: RingDotGlyph },
+  active: { tone: 'progress', icon: HalfCircleGlyph },
+  review: { tone: 'waiting', icon: Clock },
+  closed: { tone: 'resolved', icon: CheckCircleGlyph },
+}
+
+/** The cycle status in words, in the console language. */
+export function useCycleStatusLabel() {
+  const { t } = useTranslation()
+  return (status: string) => t(`scoping.cycleStatus.${status}`, status)
 }
 
 export function CycleStatusBadge({
@@ -18,9 +31,15 @@ export function CycleStatusBadge({
   status: CtemCycleStatus
   className?: string
 }) {
+  const label = useCycleStatusLabel()
+  const cfg = CYCLE_STATUS_TONE[status]
   return (
-    <Badge variant="outline" className={cn('capitalize', STATUS_CLASS[status], className)}>
-      {status}
-    </Badge>
+    <StatusLozenge
+      tone={cfg?.tone ?? 'closed'}
+      icon={cfg?.icon}
+      label={label(status)}
+      value={status}
+      className={className}
+    />
   )
 }

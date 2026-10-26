@@ -114,6 +114,7 @@ export const sidebarData: SidebarData = {
           // Badge is dynamically fetched from dashboard stats - see useDynamicBadges hook
           permission: Permission.FindingsRead,
           module: 'findings',
+          quickViews: 'findings',
         },
         {
           // The four-eyes inbox: false-positive and risk-acceptance requests
@@ -252,7 +253,7 @@ export const sidebarData: SidebarData = {
         // ----------------------------------------
         // ASSETS: one row for the inventory and what organises it. Its views
         // are in-page route tabs (ASSETS_SECTION_TABS), all under /assets:
-        // Inventory | Groups | What changed | Suggestions. What changed is the delta of the
+        // Inventory | Groups | Activity | Suggestions. Activity is the delta of the
         // inventory (fed by the same scans); groups organise it into scan
         // targets and RBAC scopes; relationship suggestions curate the asset
         // graph. The row has no gate of its own: each tab carries its module
@@ -263,6 +264,9 @@ export const sidebarData: SidebarData = {
           url: '/assets',
           icon: Container,
           sections: ASSETS_SECTION_TABS,
+          // The inventory's lenses (All assets, External surface, ...) with
+          // counts, listed under this row while the inventory is open.
+          quickViews: 'assets',
         },
         // /assets opens on the full, filterable list; the category cards are a
         // view switch on the same page (?view=categories). Every asset type is a
@@ -506,7 +510,7 @@ export const sidebarData: SidebarData = {
           title: 'Automations',
           url: '/automations',
           icon: Zap,
-          permission: Permission.WorkflowsRead,
+          permission: Permission.AutomationsRead,
           module: 'workflows',
           keywords: ['workflow', 'playbook', 'rule'],
         },

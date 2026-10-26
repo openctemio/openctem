@@ -83,57 +83,96 @@ async function apiRequestsOfLoad(page: Page, route: string): Promise<string[]> {
 
 const routeBudgets = budget.routes as Record<string, number>
 
-test('every dashboard page stays within its request budget', async ({ page }) => {
-  test.setTimeout(15 * 60_000)
-  const routes = dashboardRoutes()
-  expect(routes.length).toBeGreaterThan(50)
-  // Budget entries must name real pages, so a removed page does not keep a
-  // stale allowance.
-  for (const listed of Object.keys(routeBudgets)) expect(routes, listed).toContain(listed)
+// The pages are checked in PARTS tests of every PARTS-th page each, so the
+// suite's sharding spreads them over the CI shards instead of one test taking
+// minutes on one shard while the others idle.
+const PARTS = 4
 
-  // A person's first visit to / stores their copy of the Overview template
-  // (one write, once); the budget is for every load after that.
-  await apiRequestsOfLoad(page, '/')
+for (let part = 0; part < PARTS; part++) {
+  test(`every dashboard page stays within its request budget (part ${part + 1}/${PARTS})`, async ({
+    page,
+  }) => {
+    test.setTimeout(8 * 60_000)
+    const all = dashboardRoutes()
+    expect(all.length).toBeGreaterThan(50)
+    // Budget entries must name real pages, so a removed page does not keep a
+    // stale allowance.
+    for (const listed of Object.keys(routeBudgets)) expect(all, listed).toContain(listed)
+    // E2E_BUDGET_ROUTES="/,/findings" checks only those pages (a local run
+    // while changing one page); CI leaves it unset and checks every page.
+    const only = (process.env.E2E_BUDGET_ROUTES ?? '').split(',').filter(Boolean)
+    const selected = only.length ? all.filter((r) => only.includes(r)) : all
+    expect(selected.length).toBeGreaterThan(0)
+    const routes = selected.filter((_, i) => i % PARTS === part)
+    test.skip(routes.length === 0, 'no page of the selection falls in this part')
 
-  const problems: string[] = []
-  for (const route of routes) {
-    const requests = await apiRequestsOfLoad(page, route)
-    const max = routeBudgets[route] ?? budget.defaultMax
-    if (requests.length > max) {
-      problems.push(
-        `${route}: ${requests.length} API requests (budget ${max})\n    ${requests.join('\n    ')}`
-      )
-    }
-    const counts = new Map<string, number>()
-    for (const r of requests) counts.set(r, (counts.get(r) ?? 0) + 1)
-    for (const [r, n] of counts) if (n > 1) problems.push(`${route}: ${r} sent ${n} times`)
+    // A person's first visit to / stores their copy of the Overview template
+    // (one write, once); the budget is for every load after that.
+    await apiRequestsOfLoad(page, '/')
 
-    const bootstraps = requests.filter((r) => r.startsWith('GET /api/v1/me/bootstrap')).length
-    if (bootstraps !== 1) problems.push(`${route}: /me/bootstrap sent ${bootstraps} times (want 1)`)
-    const pageUses = (budget.pageUsesSessionEndpoint as Record<string, string[]>)[route] ?? []
-    for (const r of requests) {
-      const target = r.replace(/^GET /, '')
-      if (budget.sessionOnlyFromBootstrap.includes(target) && !pageUses.includes(target)) {
-        problems.push(`${route}: ${target} is carried by /me/bootstrap and must not be asked`)
+    const problems: string[] = []
+    for (const route of routes) {
+      const requests = await apiRequestsOfLoad(page, route)
+      const max = routeBudgets[route] ?? budget.defaultMax
+      if (requests.length > max) {
+        problems.push(
+          `${route}: ${requests.length} API requests (budget ${max})\n    ${requests.join('\n    ')}`
+        )
+      }
+      const counts = new Map<string, number>()
+      for (const r of requests) counts.set(r, (counts.get(r) ?? 0) + 1)
+      for (const [r, n] of counts) if (n > 1) problems.push(`${route}: ${r} sent ${n} times`)
+
+      const bootstraps = requests.filter((r) => r.startsWith('GET /api/v1/me/bootstrap')).length
+      if (bootstraps !== 1)
+        problems.push(`${route}: /me/bootstrap sent ${bootstraps} times (want 1)`)
+      const pageUses = (budget.pageUsesSessionEndpoint as Record<string, string[]>)[route] ?? []
+      for (const r of requests) {
+        const target = r.replace(/^GET /, '')
+        if (budget.sessionOnlyFromBootstrap.includes(target) && !pageUses.includes(target)) {
+          problems.push(`${route}: ${target} is carried by /me/bootstrap and must not be asked`)
+        }
       }
     }
-  }
-  expect(problems, problems.join('\n')).toEqual([])
-})
+    expect(problems, problems.join('\n')).toEqual([])
+  })
+}
 
-test('findings: one stats response, and a tab switch sends none', async ({ page }) => {
+test('findings: one stats and one quick-views response, and a view switch sends no stats', async ({
+  page,
+}) => {
   const requests = await apiRequestsOfLoad(page, '/findings')
   const stats = requests.filter((r) => r.includes('/api/v1/findings/stats'))
   expect(stats, requests.join('\n')).toHaveLength(1)
+  const quickViews = requests.filter((r) => r.includes('/api/v1/findings/quick-views'))
+  expect(quickViews, requests.join('\n')).toHaveLength(1)
+  // The source catalog loads when the Source filter opens, not with the page.
+  expect(requests.filter((r) => r.includes('/api/v1/finding-sources'))).toHaveLength(0)
 
   const afterSwitch: string[] = []
   const listen = (req: Request) => {
     if (req.url().includes('/api/v1/findings/stats')) afterSwitch.push(req.url())
   }
   page.on('request', listen)
-  await page.getByRole('radio', { name: /^Fixed/ }).click()
-  await expect(page).toHaveURL(/state=fixed/)
+  await page.getByRole('link', { name: /^Closed/ }).click()
+  await expect(page).toHaveURL(/state=closed/)
   await page.waitForTimeout(QUIET_MS)
   page.off('request', listen)
   expect(afterSwitch).toEqual([])
+})
+
+test('findings: Refresh sends each request once', async ({ page }) => {
+  await apiRequestsOfLoad(page, '/findings')
+  const seen: string[] = []
+  const listen = (req: Request) => {
+    if (isApi(req) && req.method() === 'GET')
+      seen.push(new URL(req.url()).pathname + new URL(req.url()).search)
+  }
+  page.on('request', listen)
+  await page.getByRole('button', { name: 'Refresh' }).click()
+  await page.waitForTimeout(QUIET_MS)
+  page.off('request', listen)
+  const counts = new Map<string, number>()
+  for (const r of seen) counts.set(r, (counts.get(r) ?? 0) + 1)
+  expect([...counts].filter(([, n]) => n > 1)).toEqual([])
 })

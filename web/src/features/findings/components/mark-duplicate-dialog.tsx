@@ -34,6 +34,7 @@ import { useFindingsApi, useMarkDuplicateApi } from '../api/use-findings-api'
 import type { ApiFinding } from '../api/finding-api.types'
 import { FindingStatusBadge } from './finding-status-badge'
 import type { FindingStatus } from '../types'
+import { useSearchQuery } from '@/hooks/use-search-query'
 
 interface MarkDuplicateDialogProps {
   findingId: string
@@ -61,12 +62,13 @@ export function MarkDuplicateDialog({
   const { t } = useTranslation()
   const [search, setSearch] = useState('')
   const [selected, setSelected] = useState('')
+  const searchTerm = useSearchQuery(search).term
 
   const { data, isLoading } = useFindingsApi(
     {
       asset_id: assetId,
       exclude_statuses: ['duplicate'],
-      search: search.trim() || undefined,
+      search: searchTerm || undefined,
       per_page: CANDIDATE_PAGE,
     },
     { enabled: open && !!assetId }

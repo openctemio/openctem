@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen, within } from '@testing-library/react'
+import { act, render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 
 import { CIPipelinesPanel } from '../components/ci-pipelines-panel'
@@ -167,7 +167,9 @@ describe('CIPipelinesPanel', () => {
     expect(screen.getAllByText('Failing').length).toBeGreaterThan(0)
     expect(screen.queryByText(/offline/i)).not.toBeInTheDocument()
     // Header counts: 5 active (archived is inactive), 2 inactive.
-    const strip = screen.getByText('CI pipelines').closest('dl') as HTMLElement
+    const strip = screen
+      .getByText('CI pipelines')
+      .closest('[data-slot="metric-strip"]') as HTMLElement
     expect(within(strip).getByText('5')).toBeInTheDocument()
     expect(within(strip).getByText('Inactive')).toBeInTheDocument()
     // Inactive pipelines are hidden by default.
@@ -199,5 +201,44 @@ describe('CIPipelinesPanel', () => {
     render(<CIPipelinesPanel />)
     expect(lastPipelineFilters?.hasPolicyOverride).toBe(true)
     expect(screen.getByRole('switch', { name: 'Has overrides' })).toBeChecked()
+  })
+
+  it('turning Inactive on drops the status filter so the toggle changes the list', async () => {
+    window.history.replaceState(null, '', '/ci-cd?pipeline_status=failing')
+    pipelines = [failing]
+    counts = { failing: 1, archived: 2 }
+    render(<CIPipelinesPanel />)
+    expect(lastPipelineFilters?.status).toEqual(['failing'])
+    await userEvent.click(screen.getByRole('button', { name: /inactive/i }))
+    expect(lastPipelineFilters?.includeInactive).toBe(true)
+    expect(lastPipelineFilters?.status).toEqual([])
+  })
+
+  it('Fresh filters, and CI pipelines clears the filters', async () => {
+    pipelines = [failing]
+    counts = { failing: 1, fresh: 2, running: 1 }
+    render(<CIPipelinesPanel />)
+    await userEvent.click(screen.getByRole('button', { name: /fresh/i }))
+    expect(lastPipelineFilters?.status).toEqual(['fresh', 'running'])
+    await userEvent.click(screen.getByRole('button', { name: /ci pipelines/i }))
+    expect(lastPipelineFilters?.status).toEqual([])
+  })
+
+  it('debounces the search: one request value after typing stops', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true })
+    try {
+      pipelines = [failing]
+      counts = { failing: 1 }
+      render(<CIPipelinesPanel />)
+      const box = screen.getByRole('searchbox', { name: /search ci pipelines/i })
+      await userEvent.type(box, 'api')
+      expect(lastPipelineFilters?.search).toBe('')
+      await act(async () => {
+        vi.advanceTimersByTime(350)
+      })
+      expect(lastPipelineFilters?.search).toBe('api')
+    } finally {
+      vi.useRealTimers()
+    }
   })
 })

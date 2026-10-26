@@ -1,5 +1,6 @@
 'use client'
 
+import { RunReceiptSection } from '@/features/findings/components/receipt-summary'
 import { IntensityBadge } from './intensity-badge'
 import dynamic from 'next/dynamic'
 import { useTranslation } from '@/context/i18n-provider'
@@ -172,7 +173,11 @@ export function RunDetailSheet({ runId, onOpenChange }: RunDetailSheetProps) {
             badges={
               run ? (
                 <>
-                  <RunStatusBadge status={run.status} note={runTargetNote(run, t)} />
+                  <RunStatusBadge
+                    status={run.status}
+                    note={runTargetNote(run, t)}
+                    result={run.result}
+                  />
                   <IntensityBadge intensity={run.intensity} />
                 </>
               ) : undefined
@@ -238,7 +243,7 @@ export function RunDetailSheet({ runId, onOpenChange }: RunDetailSheetProps) {
                   {toDisplayText(run.error_message)}
                 </span>
                 {run.refusal_code && (
-                  <span className="mt-1 block font-mono text-xs text-muted-foreground">
+                  <span className="mt-1 block font-mono text-meta text-muted-foreground">
                     {toDisplayText(run.refusal_code)}
                   </span>
                 )}
@@ -263,6 +268,7 @@ export function RunDetailSheet({ runId, onOpenChange }: RunDetailSheetProps) {
             </DetailStatGrid>
 
             <DetailSections>
+              <RunReceiptSection runId={run.id} />
               {(run.scan_run_steps?.length ?? 0) > 0 && (
                 <DetailSection title={t('scans.runDetail.runMap')}>
                   <RunMap
@@ -270,6 +276,7 @@ export function RunDetailSheet({ runId, onOpenChange }: RunDetailSheetProps) {
                     refreshInterval={runRefreshInterval(run)}
                     tasks={run.tasks}
                     tasksTruncated={run.tasks_truncated}
+                    runKind={run.kind}
                   />
                 </DetailSection>
               )}
@@ -332,7 +339,9 @@ export function RunDetailSheet({ runId, onOpenChange }: RunDetailSheetProps) {
                         {formatTime(deadline.at)}
                         {deadline.relative && ` · ${deadline.relative}`}
                       </span>
-                      <span className="text-muted-foreground block text-xs">{deadline.reason}</span>
+                      <span className="text-muted-foreground block text-meta">
+                        {deadline.reason}
+                      </span>
                     </DetailField>
                   )}
                   {runId && (

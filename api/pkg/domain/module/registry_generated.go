@@ -105,7 +105,7 @@ var Registry = []Definition{
 		UserFacing: true,
 		Permission: "findings:read",
 		MCP:        []string{"list_findings", "get_finding", "finding_stats", "list_active_cves", "explain_finding_priority", "list_finding_transitions", "list_remediation_groups"},
-		Jobs:       []string{"ApprovalExpirationController", "ApprovalMaterialChangeController", "VEXRequestNoticeController", "ApprovalDigestController", "FindingPriorityController", "FindingPriorityReconcileController", "PriorityAuditRetentionController", "EvidenceRetentionController", "AttachmentRetentionController", "AttachmentScanController", "ReportFileMigrationController", "ScannerOutputRetentionController", "RiskSnapshotController", "CTEMIDRefreshController", "IngestWorkerController", "JobRecoveryController", "RetestScheduler", "ThreatIntelRefreshController", "KEVRefreshController", "VulnMatchController", "VulnFeedImportController"},
+		Jobs:       []string{"ApprovalExpirationController", "ApprovalMaterialChangeController", "VEXRequestNoticeController", "ApprovalDigestController", "FindingPriorityController", "FindingPriorityReconcileController", "PriorityAuditRetentionController", "EvidenceRetentionController", "AttachmentRetentionController", "AttachmentScanController", "ReportFileMigrationController", "ScannerOutputRetentionController", "RiskSnapshotController", "CTEMIDRefreshController", "IngestWorkerController", "IngestReceiptRetentionController", "IngestQueueRetentionController", "JobRecoveryController", "RetestScheduler", "ThreatIntelRefreshController", "KEVRefreshController", "VulnMatchController", "VulnFeedImportController"},
 	},
 	{
 		ID: ModuleScans, Slug: "scans", Name: "Scans",
@@ -240,16 +240,17 @@ var Registry = []Definition{
 		Jobs:   []string{"VEXStatementExpiryController"},
 	},
 	{
-		ID: ModuleTemplateSources, Slug: "template-sources", Name: "Template Sources",
-		Description: "Upstream git sources that templates are synced from",
+		ID: ModuleTemplateSources, Slug: "template-sources", Name: "Rule Sources",
+		Description: "Git repositories the platform syncs rules and templates from, with snapshots and promotion",
 		Icon:        "Database",
 		Category:    "settings", DisplayOrder: 11, Release: ReleaseStatusReleased,
 		UserFacing: true,
-		Permission: "scans:templates:read",
+		Permission: "scans:sources:read",
 		Depends: []Dependency{
 			{ModuleID: ModuleScannerTemplates, Type: DependencyHard, Reason: "sources feed the template catalogue"},
 		},
-		Routes: []string{"/api/v1/template-sources"},
+		Routes: []string{"/api/v1/content-sources"},
+		Jobs:   []string{"ContentSourceSyncController"},
 	},
 	{
 		ID: ModuleBranches, Slug: "branches", Name: "Branches",
@@ -517,13 +518,13 @@ var Registry = []Definition{
 		Icon:        "GitPullRequest",
 		Category:    "mobilization", DisplayOrder: 43, Release: ReleaseStatusReleased,
 		UserFacing: true,
-		Permission: "findings:workflows:read",
+		Permission: "automations:read",
 		Depends: []Dependency{
 			{ModuleID: ModuleFindings, Type: DependencySoft, Reason: "finding-lifecycle triggers are a subset of workflow triggers"},
 			{ModuleID: ModuleIntegrations, Type: DependencySoft, Reason: "most workflow actions route through integrations (Jira, Slack)"},
 		},
 		Routes: []string{"/api/v1/workflows", "/api/v1/workflow-runs"},
-		Jobs:   []string{"AutomationRunReaper"},
+		Jobs:   []string{"AutomationRunReaper", "AutomationRunRetention"},
 	},
 	{
 		ID: ModuleReports, Slug: "reports", Name: "Reports",
@@ -679,7 +680,7 @@ var Registry = []Definition{
 		Core:       true,
 		UserFacing: true,
 		Permission: "team:read",
-		Jobs:       []string{"MemberAccessExpiryController", "TeamMembershipExpiryController", "ServiceKeyCreatorController", "AccessRequestRetentionController", "SignupEventRetentionController", "SAMLCertExpiryController", "RoleSyncController", "IdleWorkspaceController"},
+		Jobs:       []string{"MemberAccessExpiryController", "TeamMembershipExpiryController", "ServiceKeyCreatorController", "AccessRequestRetentionController", "SignupEventRetentionController", "SSOEnforcementEntitlementController", "SAMLCertExpiryController", "RoleSyncController", "IdleWorkspaceController"},
 	},
 	{
 		ID: ModuleGroups, Slug: "groups", Name: "Groups",

@@ -111,6 +111,8 @@ export interface DetailSectionProps {
   actions?: React.ReactNode
   children?: React.ReactNode
   className?: string
+  /** For a link or a "show me" button that scrolls to the section. */
+  id?: string
 }
 
 export function DetailSection({
@@ -120,11 +122,12 @@ export function DetailSection({
   actions,
   children,
   className,
+  id,
 }: DetailSectionProps) {
   // The section is a landmark named by its heading.
   const headingId = React.useId()
   return (
-    <section className={cn('min-w-0 space-y-3', className)} aria-labelledby={headingId}>
+    <section id={id} className={cn('min-w-0 space-y-3', className)} aria-labelledby={headingId}>
       <div className="flex min-h-7 items-center justify-between gap-2">
         <h3 id={headingId} className="flex min-w-0 items-center gap-2 text-sm font-semibold">
           {Icon && <Icon className="h-4 w-4 shrink-0" />}
@@ -166,8 +169,9 @@ export function DetailField({ label, children, full, className }: DetailFieldPro
   if (children === null || children === undefined || children === '') return null
   return (
     <div className={cn('min-w-0 space-y-0.5', full && 'sm:col-span-2', className)}>
-      <dt className="text-xs text-muted-foreground">{label}</dt>
-      <dd className="text-sm break-words">{children}</dd>
+      {/* Label and value share one size; the label is muted (research/244). */}
+      <dt className="text-body text-muted-foreground">{label}</dt>
+      <dd className="text-body break-words">{children}</dd>
     </div>
   )
 }
@@ -222,6 +226,8 @@ export interface DetailStatProps {
   unit?: React.ReactNode
   /** One short muted line under the value. */
   caption?: React.ReactNode
+  /** Let the caption wrap onto several lines instead of truncating it. */
+  wrapCaption?: boolean
   /** A thin bar under the value (value / max), e.g. slots in use. */
   meter?: { value: number; max: number; label: string }
   /** Colour the value: only for a problem (style contract: never a zero). */
@@ -239,6 +245,7 @@ export function DetailStat({
   meter,
   tone = 'default',
   title,
+  wrapCaption,
   className,
 }: DetailStatProps) {
   return (
@@ -263,7 +270,14 @@ export function DetailStat({
         </dd>
       )}
       {caption && (
-        <dd className="mt-1 truncate text-xs text-muted-foreground tabular-nums">{caption}</dd>
+        <dd
+          className={cn(
+            'mt-1 text-xs text-muted-foreground tabular-nums',
+            wrapCaption ? 'min-w-0 break-words' : 'truncate'
+          )}
+        >
+          {caption}
+        </dd>
       )}
     </div>
   )
@@ -364,21 +378,31 @@ export interface DetailCopyIdProps {
   id: string
   /** What the ID is, for the button's name and the toast ("Sensor ID"). */
   label?: string
+  /** Translated button name; defaults to "Copy {label}". */
+  ariaLabel?: string
+  /** Translated toast; defaults to "{label} copied". */
+  copiedMessage?: string
   className?: string
 }
 
-export function DetailCopyId({ id, label = 'ID', className }: DetailCopyIdProps) {
+export function DetailCopyId({
+  id,
+  label = 'ID',
+  ariaLabel,
+  copiedMessage,
+  className,
+}: DetailCopyIdProps) {
   return (
     <button
       type="button"
-      aria-label={`Copy ${label.charAt(0).toLowerCase()}${label.slice(1)}`}
+      aria-label={ariaLabel ?? `Copy ${label.charAt(0).toLowerCase()}${label.slice(1)}`}
       className={cn(
         'inline-flex max-w-full items-center gap-1.5 rounded-sm font-mono text-xs text-muted-foreground hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none',
         className
       )}
       onClick={() => {
         copyToClipboard(id)
-        toast.success(`${label} copied`)
+        toast.success(copiedMessage ?? `${label} copied`)
       }}
     >
       <span className="truncate">{id}</span>

@@ -11,7 +11,9 @@ import {
   DataTableColumnHeader,
   DataTableRowActions,
   type RowAction,
+  type DataTableSearch,
 } from '@/features/shared'
+import { useTranslation } from '@/context/i18n-provider'
 import { Permission, useHasPermission } from '@/lib/permissions'
 import type { ScanZone, ScanZoneCoverageZone } from '@/lib/api/scan-zone-types'
 import type { Sensor } from '@/lib/api/sensor-types'
@@ -28,6 +30,7 @@ interface ScanZoneTableProps {
   onEdit: (zone: ScanZone) => void
   onSensors: (zone: ScanZone) => void
   onDelete: (zone: ScanZone) => void
+  search?: DataTableSearch
   toolbarStart?: React.ReactNode
   toolbarEnd?: React.ReactNode
 }
@@ -106,9 +109,11 @@ export function ScanZoneTable({
   onEdit,
   onSensors,
   onDelete,
+  search,
   toolbarStart,
   toolbarEnd,
 }: ScanZoneTableProps) {
+  const { t } = useTranslation()
   const canWrite = useHasPermission(Permission.ScanZonesWrite)
   const canDelete = useHasPermission(Permission.ScanZonesDelete)
   const columns = useMemo<ColumnDef<ScanZone>[]>(
@@ -176,24 +181,29 @@ export function ScanZoneTable({
           const actions: RowAction[] = []
           if (canWrite) {
             actions.push(
-              { label: 'Edit', icon: Pencil, onClick: () => onEdit(z) },
-              { label: 'Assign sensors', icon: RadioTower, onClick: () => onSensors(z) }
+              { label: t('scans.zones.row.edit'), icon: Pencil, onClick: () => onEdit(z) },
+              { label: t('scans.zones.row.sensors'), icon: RadioTower, onClick: () => onSensors(z) }
             )
           }
           if (canDelete) {
             actions.push({
-              label: 'Delete',
+              label: t('scans.zones.row.delete'),
               icon: Trash2,
               onClick: () => onDelete(z),
               destructive: true,
               separatorBefore: actions.length > 0,
             })
           }
-          return <DataTableRowActions actions={actions} label={`Actions for ${z.name}`} />
+          return (
+            <DataTableRowActions
+              actions={actions}
+              label={t('scans.zones.row.actionsFor', undefined, { name: z.name })}
+            />
+          )
         },
       },
     ],
-    [coverageByZone, sensorsById, onEdit, onSensors, onDelete, canWrite, canDelete]
+    [coverageByZone, sensorsById, onEdit, onSensors, onDelete, canWrite, canDelete, t]
   )
 
   return (
@@ -203,6 +213,7 @@ export function ScanZoneTable({
       getRowId={(z) => z.id}
       showSearch={false}
       showColumnToggle={false}
+      search={search}
       toolbarStart={toolbarStart}
       toolbarEnd={toolbarEnd}
       emptyMessage="No zones match this search"

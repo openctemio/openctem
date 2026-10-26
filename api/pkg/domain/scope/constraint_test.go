@@ -194,3 +194,30 @@ func TestJobShapePortScan(t *testing.T) {
 		t.Errorf("http probe of the allowed port: %q", got)
 	}
 }
+
+// Only a job the catalog knows to look names up (and nothing else) is
+// lookup-only; an unknown tool or capability, a mismatch, or nothing named
+// is not (fail closed).
+func TestJobShape_LookupOnly(t *testing.T) {
+	for _, tc := range []struct {
+		job  scope.JobShape
+		want bool
+	}{
+		{scope.JobShape{Tool: "dnsx"}, true},
+		{scope.JobShape{Tool: "subfinder"}, true},
+		{scope.JobShape{Capability: "resolve.dns"}, true},
+		{scope.JobShape{Tool: "dnsx", Capability: "resolve.dns@1"}, true},
+		{scope.JobShape{Capability: "discover.subdomains"}, true},
+		{scope.JobShape{Tool: "nuclei"}, false},
+		{scope.JobShape{Tool: "naabu", Capability: "scan.ports@1"}, false},
+		{scope.JobShape{Tool: "dnsx", Capability: "scan.ports"}, false},
+		{scope.JobShape{Tool: "nuclei", Capability: "resolve.dns"}, false},
+		{scope.JobShape{Tool: "my-scanner"}, false},
+		{scope.JobShape{Capability: "no.such"}, false},
+		{scope.JobShape{}, false},
+	} {
+		if got := tc.job.LookupOnly(); got != tc.want {
+			t.Errorf("%+v.LookupOnly() = %v, want %v", tc.job, got, tc.want)
+		}
+	}
+}

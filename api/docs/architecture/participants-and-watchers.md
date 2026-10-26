@@ -49,7 +49,8 @@ Comments, status changes (a fix claim is one) and assignments go through one pat
 
 1. The people the event is for by role (the assignee; the new assignee on an assignment, even if
    they had stopped watching) plus, when a **person** caused it, the watchers. A scanner, the system,
-   an integration or an AI never adds watchers to the audience.
+   an integration or an AI never adds watchers to the audience. One exception: a regression (a fix
+   that did not hold, `NotifyRegression`) is told to the watchers too (`Event.WatchersToo`).
 2. Minus the actor.
 3. Minus whoever has an `unsubscribed` row (except the new assignee on an assignment).
 4. Then only people who are, right now, active members who can read the finding (data scope, or the
@@ -86,16 +87,28 @@ Adding or removing **another** person is audited (`work_item.watcher_added`, `wo
 target user id in the metadata). A person's own bell and automatic rows are not (high volume, no
 security weight).
 
+The participants answer carries, per watcher, `added_by_name`: the name of who added them, only while
+that person is still an active member of the tenant (a former member is not named), and `me.user_id`,
+the caller, so a client finds its own row without decoding its token. Removing someone deletes their
+row and notifies nobody; if they take part again later they watch again (only a person's own stop
+sticks). Removing yourself from the list is the bell's stop, not a delete.
+
 ## Console
 
 The finding's side panel (page and drawer) and the remediation task page show a **People** section
 (`web/src/features/findings/components/detail/finding-people.tsx`,
 `web/src/features/remediation-hub/components/task-people.tsx`, both on the shared
-`features/shared/components/watchers-block.tsx`): the assignee or owner, the watchers with a reason chip
-each, the owners of the finding's asset as context, an Add control (shown from the route's gate; the
-picker lists only the members the API says can read the item) and the bell. Without the member list
-permission (viewers, pentest clients) the section shows the count and the bell only. The person's own
-switch for automatic watching is in Settings > Notifications.
+`features/shared/components/watchers/`): the assignee or owner; one **Watchers** row with up to three
+avatars and "N watching", which opens the **manage sheet**, next to the person's own **Watch /
+Watching** toggle; and the owners of the finding's asset as context. Nothing on the panel removes
+anyone. The manage sheet (a dialog on desktop, a bottom sheet on phones) lists the watchers with why
+each one watches ("Was assigned", "Added by ..."), a labelled **Remove** per row for those who may
+remove others, **Stop watching** on the person's own row, and the add search (shown from the route's
+gate; for a finding it lists only the members the API says can read it). Removing and the toggle are
+committed at once and offered back by an undo toast (10 s): Undo sends the inverse request (add back,
+or flip the bell), so a restored person reads "Added by" whoever undid it. Without the member list
+permission (viewers, pentest clients) the row and the sheet show the count and the person's own
+toggle only. The person's own switch for automatic watching is in Settings > Notifications.
 
 ## Code
 

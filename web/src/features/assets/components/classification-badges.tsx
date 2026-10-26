@@ -14,22 +14,19 @@ import {
   Users,
   Store,
   HelpCircle,
-  Eye,
   EyeOff,
   Lock,
   Shield,
-  AlertCircle,
-  AlertTriangle,
-  CircleDot,
-  CircleDashed,
-  Minus,
   Network,
 } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import { cn } from '@/lib/utils'
 import { useTranslation } from '@/context/i18n-provider'
-import { CRITICALITY_BADGE_SOFT } from '@/lib/criticality-colors'
+import { Tag } from '@/components/ui/tag'
+import { ToneChip, type Tone } from '@/components/ui/tone-chip'
+import type { LucideIcon } from 'lucide-react'
+import { IMPACT_RATING_LEVEL } from '@/lib/impact-colors'
 import type { AssetScope, ExposureLevel, Criticality, ImpactRating } from '../types'
 import {
   ASSET_SCOPE_LABELS,
@@ -42,8 +39,8 @@ import {
 } from '../types'
 
 // Scope, exposure, CIA and control-plane are descriptive, not a risk scale, so
-// they render as neutral outline badges (icon + label). Only criticality keeps a
-// colour, from the shared criticality source.
+// they render as neutral outline badges (icon + label). Criticality and CIA
+// impact are ordinal Tag levels (bars + word), never a severity hue.
 const NEUTRAL_BADGE = 'gap-1 border font-medium text-foreground'
 const NEUTRAL_ICON = 'text-muted-foreground'
 
@@ -61,22 +58,31 @@ const SCOPE_ICONS: Record<AssetScope, React.ElementType> = {
   shadow: HelpCircle,
 }
 
-// Exposure icons
-const EXPOSURE_ICONS: Record<ExposureLevel, React.ElementType> = {
-  public: Eye,
+// Exposure: how reachable the asset is, in the attention tones (research/266).
+// Public is the one that needs a look; unknown has a dashed edge.
+const EXPOSURE_ICONS: Record<ExposureLevel, LucideIcon> = {
+  public: Globe,
   restricted: Lock,
   private: EyeOff,
   isolated: Shield,
-  unknown: AlertCircle,
+  unknown: HelpCircle,
 }
 
-// Criticality icons
-const CRITICALITY_ICONS: Record<Criticality, React.ElementType> = {
-  critical: AlertTriangle,
-  high: AlertCircle,
-  medium: CircleDot,
-  low: Minus,
-  none: CircleDashed,
+export const EXPOSURE_TONE: Record<ExposureLevel, Tone> = {
+  public: 'caution',
+  restricted: 'neutral',
+  private: 'quiet',
+  isolated: 'quiet',
+  unknown: 'quiet',
+}
+
+/** Criticality as a Tag level: Critical is bold with four bars, none has no bars. */
+export const CRITICALITY_LEVEL: Record<Criticality, 0 | 1 | 2 | 3 | 4> = {
+  critical: 4,
+  high: 3,
+  medium: 2,
+  low: 1,
+  none: 0,
 }
 
 interface AssetScopeBadgeProps {
@@ -156,11 +162,17 @@ export function ExposureBadge({
   const prefix = labelled ? t('assets.badge.exposure', 'Exposure') : null
 
   const badge = (
-    <Badge variant="outline" className={cn(NEUTRAL_BADGE, sizeClass(size), className)}>
-      {showIcon && <Icon className={cn(NEUTRAL_ICON, size === 'sm' ? 'h-3 w-3' : 'h-3.5 w-3.5')} />}
-      {prefix && <span className="font-normal opacity-75">{prefix}:</span>}
-      {label}
-    </Badge>
+    <span className="inline-flex" data-slot="exposure-badge" data-exposure={exposure}>
+      <ToneChip
+        tone={EXPOSURE_TONE[exposure] ?? 'quiet'}
+        icon={showIcon ? Icon : undefined}
+        dashed={exposure === 'unknown'}
+        value={exposure}
+        label={prefix ? `${prefix}: ${label}` : label}
+        title={showTooltip ? undefined : label}
+        className={cn(size === 'sm' && 'h-5', className)}
+      />
+    </span>
   )
 
   if (!showTooltip) return badge
@@ -197,25 +209,25 @@ export function CriticalityBadge({
   labelled = false,
 }: CriticalityBadgeProps) {
   const { t } = useTranslation()
-  const Icon = CRITICALITY_ICONS[criticality]
   const label = t(`criticality.${criticality}`, CRITICALITY_LABELS[criticality])
   const description = t(`criticality.${criticality}.hint`, CRITICALITY_DESCRIPTIONS[criticality])
-  const prefix = labelled ? t('assets.badge.criticality', 'Criticality') : null
+  // The tooltip and the accessible name always say what the word measures:
+  // "High" is also a risk band word (research/271).
+  const noun = t('assets.badge.criticality', 'Criticality')
+  const named = `${noun}: ${label}`
 
+  // An ordinal classification, not a severity: four bars and the word. The
+  // icon prop is kept for callers; the bars are the glyph.
   const badge = (
-    <Badge
-      variant="outline"
-      className={cn(
-        'gap-1 font-medium border',
-        CRITICALITY_BADGE_SOFT[criticality],
-        sizeClass(size),
-        className
-      )}
-    >
-      {showIcon && <Icon className={size === 'sm' ? 'h-3 w-3' : 'h-3.5 w-3.5'} />}
-      {prefix && <span className="font-normal opacity-75">{prefix}:</span>}
-      {label}
-    </Badge>
+    <span className="inline-flex" data-slot="criticality-badge" data-criticality={criticality}>
+      {!labelled && <span className="sr-only">{noun}: </span>}
+      <Tag
+        level={CRITICALITY_LEVEL[criticality]}
+        label={labelled ? named : label}
+        title={showTooltip ? undefined : named}
+        className={cn(size === 'sm' && 'h-5', className)}
+      />
+    </span>
   )
 
   if (!showTooltip) return badge
@@ -225,7 +237,7 @@ export function CriticalityBadge({
       <Tooltip delayDuration={200}>
         <TooltipTrigger asChild>{badge}</TooltipTrigger>
         <TooltipContent side="top" className="max-w-[200px]">
-          <p className="font-medium">{label}</p>
+          <p className="font-medium">{named}</p>
           <p className="text-xs text-muted-foreground">{description}</p>
         </TooltipContent>
       </Tooltip>
@@ -365,10 +377,14 @@ export function CIABadges({
           return (
             <Tooltip key={d.key} delayDuration={200}>
               <TooltipTrigger asChild>
-                <Badge variant="outline" className={cn(NEUTRAL_BADGE, sizeClass(size))}>
-                  <span className="font-semibold text-muted-foreground">{d.letter}</span>
-                  {t(`assets.cia.rating.${rating}`, IMPACT_RATING_LABELS[rating])}
-                </Badge>
+                <span className="inline-flex">
+                  <Tag
+                    level={IMPACT_RATING_LEVEL[rating]}
+                    label={`${d.letter} ${t(`assets.cia.rating.${rating}`, IMPACT_RATING_LABELS[rating])}`}
+                    title=""
+                    className={cn(size === 'sm' && 'h-5')}
+                  />
+                </span>
               </TooltipTrigger>
               <TooltipContent side="top" className="max-w-[220px]">
                 <p className="font-medium">
