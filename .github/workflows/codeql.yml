@@ -49,6 +49,10 @@ jobs:
     # runner on detection; `CodeQL OK` passes with everything skipped.
     if: github.event_name != 'merge_group'
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read # the PR's commits and labels (changed.sh)
+      checks: read # green-base.sh and release-provenance.sh read a commit's check runs
     outputs:
       languages: ${{ steps.lang.outputs.languages }}
     steps:
@@ -61,6 +65,9 @@ jobs:
           EVENT_BEFORE: ${{ github.event.before }}
           MG_BASE: ${{ github.event.merge_group.base_sha }}
           MG_HEAD: ${{ github.event.merge_group.head_sha }}
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          PR_LABELS: ${{ toJSON(github.event.pull_request.labels.*.name) }}
         run: bash .github/scripts/changed.sh
       - id: lang
         env:
@@ -156,4 +163,35 @@ jobs:
           REPO: ${{ github.repository }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
           BASE_REF: ${{ github.event.pull_request.base.ref }}
+          # A release pull request is compared with develop (the script decides).
+          HEAD_REF: ${{ github.event.pull_request.head.ref }}
+          HEAD_REPO: ${{ github.event.pull_request.head.repo.full_name }}
         run: bash .github/scripts/codeql-new-alerts.sh
+
+  # Early warning (develop only): once the push analysis of both languages is
+  # in, list the high or critical alerts develop has and main does not, in one
+  # issue labelled `security`, so they are fixed before a release instead of at
+  # release time (.github/scripts/early-warning.sh; api/docs/development/ci-cd.md,
+  # "Early warning"). Never a gate: a failure here changes no required check.
+  early-warning:
+    name: Early warning (develop)
+    if: github.event_name == 'push' && github.ref == 'refs/heads/develop' && needs.analyze.result == 'success'
+    needs: [analyze]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    continue-on-error: true
+    permissions:
+      contents: read
+      security-events: read
+      issues: write # open, update and close the one early-warning issue
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          sparse-checkout: .github/scripts
+      - name: High or critical alerts on develop that main does not have
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          SHA: ${{ github.sha }}
+        run: bash .github/scripts/early-warning.sh code

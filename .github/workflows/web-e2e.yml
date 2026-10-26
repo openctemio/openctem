@@ -68,6 +68,7 @@ jobs:
       contents: read
       pull-requests: read # the `ci:full` label (changed.sh reads it live)
       actions: read # queue-verified.sh reads the merge queue's runs of this commit
+      checks: read # green-base.sh and release-provenance.sh read a commit's check runs
     outputs:
       web: ${{ steps.f.outputs.web }}
       api: ${{ steps.f.outputs.api }}
@@ -103,10 +104,14 @@ jobs:
           BASE_REF: ${{ github.base_ref }}
           MG_BASE: ${{ github.event.merge_group.base_sha }}
           MG_HEAD: ${{ github.event.merge_group.head_sha }}
+          # The range changed.sh measured (incremental: since the last green commit).
+          RANGE: ${{ steps.f.outputs.range }}
         run: |
           if [ -n "$MG_BASE" ] && [ -n "$MG_HEAD" ]; then
             git cat-file -e "${MG_BASE}^{commit}" 2>/dev/null || git fetch --no-tags --quiet origin "$MG_BASE" || true
             range="${MG_BASE}..${MG_HEAD}"
+          elif [ -n "$RANGE" ]; then
+            range="$RANGE"
           else
             git fetch --no-tags --quiet origin "$BASE_REF"
             range="origin/${BASE_REF}...HEAD"
@@ -121,9 +126,10 @@ jobs:
         if: github.event_name == 'pull_request'
         env:
           BASE_REF: ${{ github.base_ref }}
+          RANGE: ${{ steps.f.outputs.range }}
         run: |
           git fetch --no-tags --quiet origin "$BASE_REF"
-          if git diff --name-only "origin/${BASE_REF}...HEAD" | grep -qE '^(web/e2e/|\.github/workflows/web-e2e\.yml$)'; then
+          if git diff --name-only "${RANGE:-origin/${BASE_REF}...HEAD}" | grep -qE '^(web/e2e/|\.github/workflows/web-e2e\.yml$)'; then
             echo "changed=true" >> "$GITHUB_OUTPUT"
           else
             echo "changed=false" >> "$GITHUB_OUTPUT"

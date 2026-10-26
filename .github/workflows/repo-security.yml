@@ -242,6 +242,16 @@ jobs:
       - name: Tool pin freshness self-test
         run: bash .github/scripts/tool-pins.test.sh
 
+      # Incremental pull request CI and the release fast path.
+      - name: Incremental CI base (last green commit) self-test
+        run: bash .github/scripts/green-base.test.sh
+      - name: Release provenance self-test
+        run: bash .github/scripts/release/tests/test_release_provenance.sh
+      - name: Release preflight self-test
+        run: bash .github/scripts/release/tests/test_release_preflight.sh
+      - name: Early warning self-test
+        run: bash .github/scripts/early-warning.test.sh
+
   # New or upgraded dependencies a pull request brings in (Go modules, npm,
   # GitHub Actions) are checked against the GitHub Advisory Database. Fails on a
   # known high or critical vulnerability in what the pull request adds; existing
