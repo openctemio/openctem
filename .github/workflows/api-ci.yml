@@ -528,10 +528,13 @@ jobs:
           REDIS_HOST: localhost
           REDIS_PORT: 6379
         run: |
-          race_flag=()
-          if [ "$WITH_RACE" = true ]; then race_flag=(-race); fi
+          flags=()
+          if [ "$WITH_RACE" = true ]; then flags+=(-race); fi
+          # Quarantined flaky tests (.github/quarantine.yml) are skipped until their fix date.
+          skip="$(python3 ../.github/scripts/quarantine.py go-skip)"
+          if [ -n "$skip" ]; then flags+=(-skip "$skip"); echo "quarantined: $skip"; fi
           bash ../.github/scripts/go-shard-run.sh "$SHARD" "$TOTAL" test.json \
-            "${race_flag[@]}" -timeout 20m -coverprofile=coverage.out -covermode=atomic
+            "${flags[@]}" -timeout 20m -coverprofile=coverage.out -covermode=atomic
 
       # A test that skips itself on a failed ping (t.Skipf) would otherwise let
       # this job go green without running its DB checks.
@@ -666,7 +669,10 @@ jobs:
           REDIS_HOST: localhost
           REDIS_PORT: 6379
         run: |
-          bash ../.github/scripts/go-shard-run.sh "$SHARD" "$TOTAL" lp-test.json -timeout 30m
+          flags=()
+          skip="$(python3 ../.github/scripts/quarantine.py go-skip)"
+          if [ -n "$skip" ]; then flags+=(-skip "$skip"); echo "quarantined: $skip"; fi
+          bash ../.github/scripts/go-shard-run.sh "$SHARD" "$TOTAL" lp-test.json "${flags[@]}" -timeout 30m
 
       - name: No DB-backed test was skipped
         if: ${{ !cancelled() }}
