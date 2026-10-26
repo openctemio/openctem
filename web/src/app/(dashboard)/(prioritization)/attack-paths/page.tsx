@@ -34,9 +34,9 @@ import { AddFindingsToTaskDialog } from '@/features/remediation-hub/components/a
 import {
   EmptyState,
   ErrorState,
+  FilterSelect,
   PageHeader,
   PageStack,
-  SegmentedLens,
   ViewSwitcher,
 } from '@/features/shared'
 import { useExposureChains } from '@/features/attack-surface'
@@ -246,11 +246,11 @@ export default function AttackPathsPage() {
         </Select>
       )}
       {detail && detail.paths.length > 1 && (
-        <SegmentedLens<PathMode>
+        <FilterSelect<PathMode>
           label={t('prioritization.attackPath.pathsLabel', 'Paths')}
           value={mode}
-          onChange={(v) => setParam('paths', v === 'shortest' ? null : v)}
-          countNoun={t('prioritization.attackPath.pathsNoun', 'paths')}
+          clearable={false}
+          onChange={(v) => setParam('paths', v === 'all' ? 'all' : null)}
           options={[
             { value: 'shortest', label: t('prioritization.attackPath.shortest', 'Shortest') },
             {

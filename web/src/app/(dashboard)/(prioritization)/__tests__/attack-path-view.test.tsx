@@ -7,6 +7,7 @@
 import axe from 'axe-core'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { act, fireEvent, render, screen, within } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import { mockupDetail, node } from '@/features/attack-surface/lib/__tests__/attack-path-fixture'
 
 globalThis.ResizeObserver ??= class {
@@ -130,9 +131,10 @@ describe('/attack-paths view', () => {
     ).toHaveLength(4)
   })
 
-  it('switches the path mode through the URL', () => {
+  it('switches the path mode through the URL', async () => {
     render(<AttackPathsPage />)
-    fireEvent.click(screen.getByRole('radio', { name: /All/ }))
+    await userEvent.click(screen.getByRole('button', { name: /Paths: Shortest/ }))
+    await userEvent.click(await screen.findByRole('menuitemradio', { name: /All/ }))
     expect(replace).toHaveBeenCalledWith(expect.stringContaining('paths=all'), { scroll: false })
   })
 
