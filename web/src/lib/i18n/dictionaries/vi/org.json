@@ -213,6 +213,8 @@
   "org.general.tab.dashboardData": "Dữ liệu dashboard",
   "org.general.tab.general": "Chung",
   "org.general.tab.storage": "Lưu trữ tệp",
+  "org.general.timezone": "Múi giờ",
+  "org.general.timezoneHelp": "Đồng hồ của tổ chức: giờ yên lặng của cảnh báo, bản tóm tắt hằng ngày và giờ phê duyệt quét dùng múi giờ này.",
   "org.general.title": "Chung",
   "org.general.website": "Trang web",
   "org.id": "Mã tổ chức",

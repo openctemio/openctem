@@ -45,7 +45,7 @@ describe('inventoryChips', () => {
     expect(texts).toEqual(
       expect.arrayContaining([
         'Crown jewels',
-        'Has findings',
+        'Has open findings',
         'Risk score at least 70',
         'No successful scan in 30 days',
         'Tag is prod, pci',

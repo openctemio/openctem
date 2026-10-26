@@ -382,6 +382,9 @@ func registerAttackSurfaceRoutes(
 		// Attack path scoring — BFS reachability analysis from public entry points.
 		// Returns top assets ranked by composite path score (reachability × risk × criticality).
 		r.GET("/attack-paths", h.GetAttackPaths, middleware.Require(permission.AssetsRead), heavyReads.Middleware())
+		// Attack paths to one asset: routes, step weights, choke points (404
+		// outside the caller's data scope).
+		r.GET("/attack-paths/{id}", h.GetAttackPathsToAsset, middleware.Require(permission.AssetsRead), heavyReads.Middleware())
 		// Exposure chains — concrete shortest paths from public entry points to
 		// assets carrying KEV/critical findings, ranked by urgency.
 		r.GET("/exposure-chains", h.GetExposureChains, middleware.Require(permission.AssetsRead), heavyReads.Middleware())
@@ -459,7 +462,7 @@ func registerEASMSettingsRoutes(
 	// panics when the same path is mounted twice.
 	router.Group("/api/v1/easm/settings", func(r Router) {
 		r.GET("/", h.Get, middleware.Require(permission.SettingsRead))
-		r.PUT("/", h.Update, middleware.Require(permission.SettingsWrite))
+		r.PUT("/", h.Update, middleware.Require(permission.SettingsWrite), middleware.RequireAdmin())
 	}, tenantMiddlewares...)
 	router.Group("/api/v1/easm/sweeps", func(r Router) {
 		r.POST("/", h.RunNow, middleware.Require(permission.ScopeWrite))

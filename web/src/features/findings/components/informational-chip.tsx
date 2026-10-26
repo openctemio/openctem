@@ -3,6 +3,7 @@
 import { useState } from 'react'
 import { EyeOff } from 'lucide-react'
 import { toast } from 'sonner'
+import { LockedChip, LockedChipAction } from '@/features/shared/components/filter-chips-row'
 import { useTranslation } from '@/context/i18n-provider'
 import { getErrorMessage } from '@/lib/api/error-handler'
 import { useUpdatePreferences } from '@/features/account/api/use-preferences'
@@ -26,11 +27,6 @@ interface InformationalChipProps {
   /** Show or hide them for this view. */
   onChange: (hidden: boolean) => void
 }
-
-const chipClass =
-  'inline-flex max-w-full items-center gap-1.5 rounded-full border bg-muted/40 ps-2.5 pe-1 py-0.5 text-xs text-muted-foreground'
-const actionClass =
-  'rounded-full px-2 py-0.5 font-medium text-foreground hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50'
 
 /**
  * Informational findings are never hidden silently: while the list leaves them
@@ -78,33 +74,37 @@ export function InformationalChip({
     // Nothing is left out: nothing to say.
     if (count === 0) return null
     return (
-      <span data-testid="informational-chip" data-state="hidden" className={chipClass}>
-        <EyeOff className="size-3 shrink-0" aria-hidden />
-        <span className="min-w-0 truncate">
-          {count === undefined
-            ? t('findings.informational.hidden', 'Informational hidden')
-            : t('findings.informational.hiddenCount', 'Informational hidden ({count})', {
-                count,
-              })}
-        </span>
-        <button type="button" className={actionClass} onClick={() => onChange(false)}>
-          {t('findings.informational.show', 'Show')}
-        </button>
-      </span>
+      <LockedChip
+        data-testid="informational-chip"
+        data-state="hidden"
+        icon={EyeOff}
+        actionLabel={t('findings.informational.show', 'Show')}
+        onAction={() => onChange(false)}
+      >
+        {count === undefined
+          ? t('findings.informational.hidden', 'Informational hidden')
+          : t('findings.informational.hiddenCount', 'Informational hidden ({count})', { count })}
+      </LockedChip>
     )
   }
   if (!shownForView || saved) return null
   return (
-    <span data-testid="informational-chip" data-state="shown" className={chipClass}>
-      <span className="min-w-0 truncate">
-        {t('findings.informational.shown', 'Informational shown')}
-      </span>
-      <button type="button" className={actionClass} onClick={() => onChange(true)}>
-        {t('findings.informational.hide', 'Hide')}
-      </button>
-      <button type="button" className={actionClass} onClick={saveAsDefault} disabled={isUpdating}>
-        {t('findings.informational.alwaysShow', 'Always show')}
-      </button>
-    </span>
+    <LockedChip
+      data-testid="informational-chip"
+      data-state="shown"
+      icon={null}
+      actions={
+        <>
+          <LockedChipAction onClick={() => onChange(true)}>
+            {t('findings.informational.hide', 'Hide')}
+          </LockedChipAction>
+          <LockedChipAction onClick={saveAsDefault} disabled={isUpdating}>
+            {t('findings.informational.alwaysShow', 'Always show')}
+          </LockedChipAction>
+        </>
+      }
+    >
+      {t('findings.informational.shown', 'Informational shown')}
+    </LockedChip>
   )
 }

@@ -121,7 +121,7 @@ export function GroupAddAssetsDialog({
                         <p className="truncate font-medium">{asset.name}</p>
                         <p className="text-sm text-muted-foreground">{asset.type}</p>
                       </div>
-                      <RiskScoreBadge score={asset.riskScore} size="sm" />
+                      <RiskScoreBadge score={asset.riskScore} size="sm" labelled />
                     </label>
                   ))}
                   {total > found.length && (

@@ -112,6 +112,11 @@ interface DataTableProps<TData, TValue> {
   errorState?: React.ReactNode
   onRowClick?: (row: TData) => void
   /**
+   * The tone of a row: 'dim' greys its text (a colour, never opacity) for rows
+   * that are not the work of the moment, such as low-priority or closed ones.
+   */
+  rowTone?: (row: TData) => 'dim' | undefined
+  /**
    * Notified whenever the row selection changes, with the selected row data.
    * The table owns selection state internally (via the `select` column's
    * checkboxes); this is the only way for a parent to observe it (e.g. to drive
@@ -421,6 +426,7 @@ export function DataTable<TData, TValue>({
   emptyState,
   errorState,
   onRowClick,
+  rowTone,
   onSelectionChange,
   manualPagination = false,
   pageCount,
@@ -487,6 +493,28 @@ export function DataTable<TData, TValue>({
     () => initialColumnVisibility ?? {}
   )
   const columnVisibility = columnVisibilityProp ?? ownVisibility
+  // Column priority: a column whose `meta.hideBelow` is wider than the
+  // table's frame is hidden, so a narrow screen drops the least important
+  // columns instead of scrolling the table sideways. A column the viewer
+  // turned on or off under Columns keeps that choice (the state has its key);
+  // the menu shows an auto-hidden column as off, so turning it on is one click.
+  const [frameWidth, setFrameWidth] = React.useState(0)
+  React.useEffect(() => {
+    const el = tableWrapRef.current
+    if (!el || typeof ResizeObserver === 'undefined') return
+    const ro = new ResizeObserver(() => setFrameWidth(el.clientWidth))
+    ro.observe(el)
+    return () => ro.disconnect()
+  }, [])
+  const effectiveVisibility = React.useMemo(() => {
+    if (frameWidth === 0) return columnVisibility
+    const auto: VisibilityState = {}
+    for (const c of columns) {
+      const hideBelow = (c.meta as { hideBelow?: number } | undefined)?.hideBelow
+      if (c.id && hideBelow && frameWidth < hideBelow) auto[c.id] = false
+    }
+    return { ...auto, ...columnVisibility }
+  }, [columns, columnVisibility, frameWidth])
   const columnVisibilityRef = React.useRef(columnVisibility)
   columnVisibilityRef.current = columnVisibility
   const setColumnVisibility = React.useCallback(
@@ -574,7 +602,7 @@ export function DataTable<TData, TValue>({
     state: {
       sorting,
       columnFilters,
-      columnVisibility,
+      columnVisibility: effectiveVisibility,
       rowSelection,
       globalFilter,
       ...(manualPagination && pagination ? { pagination } : {}),
@@ -651,7 +679,7 @@ export function DataTable<TData, TValue>({
     const ro = new ResizeObserver(measureEdges)
     ro.observe(el)
     return () => ro.disconnect()
-  }, [measureEdges, data, columnVisibility])
+  }, [measureEdges, data, effectiveVisibility])
 
   // Clear the selection whenever the parent bumps resetSelectionKey, and
   // whenever a server-paged table changes page, page size or sort: the rows
@@ -1007,6 +1035,7 @@ export function DataTable<TData, TValue>({
                       <TableRow
                         key={row.id}
                         data-state={row.getIsSelected() && 'selected'}
+                        data-tone={rowTone?.(row.original)}
                         className={cn(
                           'group/row',
                           onRowClick && 'cursor-pointer hover:bg-muted/50'

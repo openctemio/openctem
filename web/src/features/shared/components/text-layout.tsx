@@ -25,15 +25,16 @@ import { cn } from '@/lib/utils'
 export function MetaLine({
   items,
   className,
-}: {
+  ...props
+}: Omit<React.ComponentProps<'p'>, 'children'> & {
   /** Null and false items are skipped. */
   items: React.ReactNode[]
-  className?: string
 }) {
   const shown = items.filter((i) => i !== null && i !== undefined && i !== false && i !== '')
   if (shown.length === 0) return null
   return (
     <p
+      {...props}
       data-slot="meta-line"
       className={cn(
         // Children inherit the size: a nested RelativeTime or badge text cannot
@@ -117,14 +118,15 @@ export function KeyValueList({
   items,
   size = 'body',
   className,
-}: {
+  ...props
+}: Omit<React.ComponentProps<'dl'>, 'children'> & {
   items: KeyValueItem[]
   /** `body` (14px) in a detail panel, `meta` (12px) in a dense list row. */
   size?: 'body' | 'meta'
-  className?: string
 }) {
   return (
     <dl
+      {...props}
       data-slot="key-value-list"
       className={cn(
         'grid grid-cols-1 gap-x-4 gap-y-1 sm:grid-cols-[minmax(6rem,max-content)_minmax(0,1fr)] sm:gap-y-2',

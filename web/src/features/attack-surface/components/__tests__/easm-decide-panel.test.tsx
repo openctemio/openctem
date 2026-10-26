@@ -1,7 +1,8 @@
 /**
  * research/117: the Decide panel shows each scope decision as one card.
  * Addresses behind in-scope names are offered as one bulk add of exact
- * entries; shared or CDN addresses are listed apart with no button; an
+ * entries; shared or CDN addresses need no decision and are one quiet line
+ * (never with ports, never counted); an
  * unknown network is said, never implied safe; nothing is added without the
  * person's click, and nothing at all without scope write.
  */
@@ -33,6 +34,7 @@ const wrap = (ui: ReactNode) =>
 const cards = (canAdd: boolean) => ({
   can_add: canAdd,
   total: 2,
+  name_rules: 0,
   cards: [
     {
       kind: 'addresses_behind_names',
@@ -40,6 +42,8 @@ const cards = (canAdd: boolean) => ({
       names_count: 3,
       unknown_network_count: 1,
       shared_count: 1,
+      provider_count: 1,
+      providers: [{ provider: 'Cloudflare', class: 'edge', addresses: 1 }],
       addresses: [
         {
           asset_id: 'a1',
@@ -63,8 +67,9 @@ const cards = (canAdd: boolean) => ({
           asset_id: 'a3',
           address: '104.16.5.5',
           resolved_from: ['cdn.acme.example'],
-          network: { known: true, provider: 'Cloudflare' },
+          network: { known: true, provider: 'Cloudflare', class: 'edge' },
           shared: 'edge_range',
+          ports: [80, 443, 8080, 8443],
         },
       ],
     },
@@ -76,22 +81,29 @@ const cards = (canAdd: boolean) => ({
   ],
 })
 
-const settings = vi.hoisted(() => ({ mode: undefined as string | undefined }))
+/** The server's split while unclassified assets get checks: the known network is checked. */
+const checkedCards = (canAdd: boolean) => {
+  const c = cards(canAdd)
+  const addr = c.cards[0]
+  const known = addr.addresses!.splice(1, 1)
+  return {
+    ...c,
+    cards: [
+      { ...addr, count: 1, checked_count: 1, checked_addresses: known, prefix_rules: [] },
+      c.cards[1],
+    ],
+  }
+}
 
 const byUrl = (body: unknown) => (url: string) =>
   Promise.resolve(
-    url.includes('/candidates/suggestions')
-      ? { suggestions: [], individual: [] }
-      : url.includes('/scope/settings')
-        ? { unclassified_scans_effective: settings.mode }
-        : body
+    url.includes('/candidates/suggestions') ? { suggestions: [], individual: [] } : body
   )
 
 beforeEach(() => {
   api.get.mockReset()
   api.post.mockReset()
   window.localStorage.clear()
-  settings.mode = undefined
 })
 
 describe('EASMDecidePanel', () => {
@@ -103,11 +115,19 @@ describe('EASMDecidePanel', () => {
       await screen.findByText('2 addresses your in-scope names resolve to')
     ).toBeInTheDocument()
     expect(screen.getByText('Network unknown for 1: check it is yours')).toBeInTheDocument()
-    expect(screen.getByText('1 shared or CDN address not offered')).toBeInTheDocument()
     expect(screen.getByText('1 asset you confirmed is not in scope')).toBeInTheDocument()
     await user.click(screen.getAllByRole('button', { name: 'View list' })[0])
     expect(screen.getByText('Network unknown')).toBeInTheDocument()
-    expect(screen.getByText('CDN edge range (Cloudflare)')).toBeInTheDocument()
+    // The shared address is not on the card: one quiet line, its own list.
+    expect(screen.queryByText('CDN edge range (Cloudflare)')).not.toBeInTheDocument()
+    const note = screen.getByTestId('decide-no-decision')
+    expect(note).toHaveTextContent(
+      '1 address your names resolve to belongs to Cloudflare and needs no decision.'
+    )
+    await user.click(within(note).getByRole('button', { name: 'View list' }))
+    expect(within(note).getByText('CDN edge range (Cloudflare)')).toBeInTheDocument()
+    // The edge's ports are the provider's: never shown.
+    expect(within(note).queryByText(/Open ports seen/)).not.toBeInTheDocument()
     expect(api.post).not.toHaveBeenCalled()
   })
 
@@ -161,7 +181,6 @@ describe('EASMDecidePanel', () => {
     await user.click(screen.getAllByRole('button', { name: 'View list' })[0])
     expect(screen.getByText(/Open ports seen: 22, 443/)).toBeInTheDocument()
     expect(screen.getByText(/Also named old.acme.example \(not in scope\)/)).toBeInTheDocument()
-    expect(screen.getByText('Shared, not offered')).toBeInTheDocument()
     await user.click(screen.getByRole('button', { name: 'Add 203.0.113.0/24' }))
     await user.click(screen.getByRole('button', { name: 'Add to scope' }))
     await waitFor(() => expect(api.post).toHaveBeenCalledTimes(1))
@@ -171,22 +190,55 @@ describe('EASMDecidePanel', () => {
   })
 
   it('while unclassified assets get checks, only unknown networks wait for a decision', async () => {
-    settings.mode = 'low_impact'
-    api.get.mockImplementation(byUrl(cards(true)))
+    api.get.mockImplementation(byUrl(checkedCards(true)))
     const user = userEvent.setup()
     wrap(<EASMDecidePanel />)
     expect(await screen.findByText('1 address your in-scope names resolve to')).toBeInTheDocument()
     // One on the addresses card, one on the confirmed-assets card.
     expect(screen.getAllByRole('button', { name: 'Add 1 to scope' })).toHaveLength(2)
-    await user.click(screen.getAllByRole('button', { name: 'View list' })[0])
+    const note = screen.getByTestId('decide-no-decision')
+    expect(note).toHaveTextContent('1 address already gets low-impact checks.')
+    await user.click(within(note).getByRole('button', { name: 'View list' }))
     expect(
-      screen.getByText('Already get low-impact checks (add to scope for a full scan)')
+      within(note).getByText('Already get low-impact checks (add to scope for a full scan)')
     ).toBeInTheDocument()
   })
 
+  it('a card that offers nothing is not a decision: empty state, one quiet line', async () => {
+    const onlyShared = cards(true)
+    const addr = onlyShared.cards[0]
+    const body = {
+      can_add: true,
+      total: 0,
+      name_rules: 0,
+      cards: [{ ...addr, count: 0, addresses: [], prefix_rules: [], unknown_network_count: 0 }],
+    }
+    api.get.mockImplementation(byUrl(body))
+    wrap(<EASMDecidePanel />)
+    expect(await screen.findByText('Nothing to decide')).toBeInTheDocument()
+    expect(screen.queryByTestId('decide-card-addresses')).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /Add \d to scope/ })).not.toBeInTheDocument()
+    expect(screen.getByTestId('decide-no-decision')).toBeInTheDocument()
+  })
+
+  it('on the overview, a card that offers nothing is not shown', async () => {
+    const addr = cards(true).cards[0]
+    api.get.mockImplementation(
+      byUrl({
+        can_add: true,
+        total: 0,
+        name_rules: 0,
+        cards: [{ ...addr, count: 0, addresses: [] }],
+      })
+    )
+    const { container } = wrap(<EASMDecidePanel compact />)
+    await waitFor(() => expect(api.get).toHaveBeenCalled())
+    await new Promise((r) => setTimeout(r, 20))
+    expect(container).toBeEmptyDOMElement()
+  })
+
   it('Not ours records a rejection of the waiting addresses only', async () => {
-    settings.mode = 'low_impact'
-    api.get.mockImplementation(byUrl(cards(true)))
+    api.get.mockImplementation(byUrl(checkedCards(true)))
     api.post.mockResolvedValue({ decided: [{ asset_id: 'a1' }], not_found: [] })
     const user = userEvent.setup()
     wrap(<EASMDecidePanel />)
@@ -224,7 +276,7 @@ describe('EASMDecidePanel', () => {
   })
 
   it('on the overview, only name rules waiting is one line with a link, not a panel', async () => {
-    api.get.mockImplementation(byUrl({ can_add: true, total: 3, cards: [] }))
+    api.get.mockImplementation(byUrl({ can_add: true, total: 3, name_rules: 3, cards: [] }))
     wrap(<EASMDecidePanel compact />)
     const line = await screen.findByTestId('decide-rules-line')
     expect(line).toHaveTextContent('3 name rules waiting')
@@ -242,8 +294,7 @@ describe('EASMDecidePanel', () => {
   })
 
   it('a failed Undo of Not ours says so', async () => {
-    settings.mode = 'low_impact'
-    api.get.mockImplementation(byUrl(cards(true)))
+    api.get.mockImplementation(byUrl(checkedCards(true)))
     api.post.mockResolvedValueOnce({ decided: [{ asset_id: 'a1' }], not_found: [] })
     const user = userEvent.setup()
     wrap(<EASMDecidePanel />)
@@ -256,5 +307,35 @@ describe('EASMDecidePanel', () => {
     api.post.mockRejectedValueOnce(new Error('boom'))
     action.onClick()
     await waitFor(() => expect(toast.error).toHaveBeenCalled())
+  })
+})
+
+describe('EASMDecidePanel provider line', () => {
+  it('names several providers and counts the other shared addresses apart', async () => {
+    const c = cards(true)
+    const addr = c.cards[0]
+    api.get.mockImplementation(
+      byUrl({
+        ...c,
+        cards: [
+          {
+            ...addr,
+            shared_count: 5,
+            provider_count: 4,
+            providers: [
+              { provider: 'Cloudflare', class: 'edge', addresses: 3 },
+              { provider: 'Vercel', class: 'saas_hosting', addresses: 1 },
+            ],
+          },
+          c.cards[1],
+        ],
+      })
+    )
+    wrap(<EASMDecidePanel />)
+    const note = await screen.findByTestId('decide-no-decision')
+    expect(note).toHaveTextContent(
+      '4 addresses your names resolve to belong to CDN or hosting providers (Cloudflare, Vercel) and need no decision.'
+    )
+    expect(note).toHaveTextContent('1 more is shared with other organizations and is not offered.')
   })
 })

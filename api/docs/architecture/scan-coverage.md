@@ -235,7 +235,10 @@ tenant-scoped coverage summary so rolling scans become *verifiable*:
 
 Computed by `ScanCoverageRepository.CoverageStats` (one conditional-aggregation
 query over the scannable estate LEFT JOIN `scan_coverage_state`). `coverage_percent`
-= covered-in-window / total. The headline risk metric is `critical_never_scanned`.
+= covered-in-window / total. A host counts as scanned only once the
+connector batch settled it as scanned (`last_success_at`); a dispatched host
+whose scan was unreachable or failed stays never scanned and uncovered. The
+headline risk metric is `critical_never_scanned`.
 
 ## Key files
 
