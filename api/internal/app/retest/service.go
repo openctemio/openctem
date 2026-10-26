@@ -323,7 +323,7 @@ func (s *Service) Request(ctx context.Context, in RequestInput) (*retestdom.Rete
 	if dispatchErr != nil {
 		s.logger.Warn("retest dispatch failed; settling as unknown",
 			"retest_id", rt.ID.String(), "finding_id", rt.FindingID.String(), "error", dispatchErr)
-		if _, err := s.settle(ctx, rt, retestdom.Inconclusive(retestdom.ReasonError, "dispatch failed: the checks could not be queued")); err != nil {
+		if _, err := s.settle(ctx, rt, retestdom.Inconclusive(retestdom.ReasonError, "dispatch failed: the checks could not be queued"), s.now()); err != nil {
 			s.logger.Error("failed to settle undispatched retest", "retest_id", rt.ID.String(), "error", err)
 		}
 		return nil, fmt.Errorf("queue retest: %w", dispatchErr)
@@ -677,7 +677,8 @@ func (s *Service) Sweep(ctx context.Context, limit int) (int, error) {
 // passed), it decides and settles. Returns whether it settled.
 func (s *Service) trySettle(ctx context.Context, rt *retestdom.Retest, force bool) (bool, error) {
 	matchedAt := s.matchedAt(ctx, rt)
-	cls := s.settleClass(ctx, rt)
+	checkedAt := s.checkCompletedAt(ctx, rt)
+	cls := s.settleClass(ctx, rt, checkedAt)
 	if rt.CheckID != nil {
 		// A custom check proves the endpoint it requests, not the one the
 		// finding was reported at.
@@ -709,7 +710,7 @@ func (s *Service) trySettle(ctx context.Context, rt *retestdom.Retest, force boo
 		if cmd != nil {
 			rt.SensorID = cmd.SensorID
 		}
-		return s.settle(ctx, rt, v)
+		return s.settle(ctx, rt, v, checkedAt)
 	}
 	rt.Method = retestdom.MethodValidate
 	check, checkDone := s.readCheck(ctx, rt.TenantID, rt.CheckCommandID)
@@ -724,7 +725,19 @@ func (s *Service) trySettle(ctx context.Context, rt *retestdom.Retest, force boo
 	v = s.applyDrift(ctx, rt, v, check.TemplateDigest, true)
 	s.storeAttempt(ctx, rt, check.Evidence, check.TemplateDigest)
 	rt.SensorID = s.checkSensor(ctx, rt)
-	return s.settle(ctx, rt, v)
+	return s.settle(ctx, rt, v, checkedAt)
+}
+
+// checkCompletedAt is when the retest's check command finished: the moment
+// its result was seen, whatever time the settlement runs at. The current time
+// stands in when the command has no completion time (never ran, or gone).
+func (s *Service) checkCompletedAt(ctx context.Context, rt *retestdom.Retest) time.Time {
+	if rt.CheckCommandID != nil {
+		if c, err := s.commands.GetByTenantAndID(ctx, rt.TenantID, *rt.CheckCommandID); err == nil && c != nil && c.CompletedAt != nil {
+			return *c.CompletedAt
+		}
+	}
+	return s.now()
 }
 
 // checkSensor is the sensor that claimed the retest's check command (nil when
@@ -801,7 +814,7 @@ func (s *Service) matchedAt(ctx context.Context, rt *retestdom.Retest) string {
 // retest, at least MinDenialGap and at most MaxDenialAge ago and after the finding's last
 // sighting or reopening, was an origin refusal of the same check.
 // Anything unreadable gives the careful answer.
-func (s *Service) settleClass(ctx context.Context, rt *retestdom.Retest) retestdom.Class {
+func (s *Service) settleClass(ctx context.Context, rt *retestdom.Retest, checkedAt time.Time) retestdom.Class {
 	var cls retestdom.Class
 	if rt.CheckID != nil {
 		return cls
@@ -826,11 +839,11 @@ func (s *Service) settleClass(ctx context.Context, rt *retestdom.Retest) retestd
 		}
 		cls.PriorAccessDenied = p.Outcome == retestdom.OutcomeInconclusive &&
 			p.ReasonCode == retestdom.ReasonAccessDenied && p.TemplateID == rt.TemplateID && p.Target == rt.Target &&
-			p.CompletedAt != nil && s.now().Sub(*p.CompletedAt) >= retestdom.MinDenialGap &&
+			p.CompletedAt != nil && checkedAt.Sub(*p.CompletedAt) >= retestdom.MinDenialGap &&
 			// A denial counts only when it is recent and the finding was not
 			// seen or reopened since: a sighting after it shows the page was
 			// reachable, so the refusal is no longer the first of a pair.
-			s.now().Sub(*p.CompletedAt) <= retestdom.MaxDenialAge && p.CompletedAt.After(sightedAt)
+			checkedAt.Sub(*p.CompletedAt) <= retestdom.MaxDenialAge && p.CompletedAt.After(sightedAt)
 		break
 	}
 	return cls
@@ -974,7 +987,7 @@ func (s *Service) templateBaseline(ctx context.Context, rt *retestdom.Retest) (s
 // settle completes the retest: the finding moves per the outcome (decided under
 // the row lock from its current status) and the completion is written with the
 // actor "system: retest".
-func (s *Service) settle(ctx context.Context, rt *retestdom.Retest, v retestdom.Verdict) (bool, error) {
+func (s *Service) settle(ctx context.Context, rt *retestdom.Retest, v retestdom.Verdict, checkedAt time.Time) (bool, error) {
 	outcome, reason := v.Outcome, evidence.RedactText(v.Reason)
 	autoResolve := s.policy != nil && s.policy.AutoResolve(ctx, rt.TenantID)
 	var resolvedBy *shared.ID
@@ -1019,7 +1032,7 @@ func (s *Service) settle(ctx context.Context, rt *retestdom.Retest, v retestdom.
 	var regression bool
 	res, err := s.store.Settle(ctx, retestdom.SettleInput{
 		TenantID: rt.TenantID, RetestID: rt.ID, FindingID: rt.FindingID,
-		Outcome: outcome, ReasonCode: v.Code, Reason: reason, SensorID: rt.SensorID, ResolvedBy: resolvedBy, TemplateID: rt.TemplateID,
+		Outcome: outcome, ReasonCode: v.Code, Reason: reason, SensorID: rt.SensorID, ResolvedBy: resolvedBy, TemplateID: rt.TemplateID, CheckedAt: checkedAt,
 		Decide: func(current vulnerability.FindingStatus) retestdom.SettleDecision {
 			next, change := retestdom.NextStatus(current, outcome, autoResolve)
 			regression = change && retestdom.IsRegression(current, next)
@@ -1033,6 +1046,12 @@ func (s *Service) settle(ctx context.Context, rt *retestdom.Retest, v retestdom.
 	})
 	if err != nil {
 		return false, err
+	}
+	if res.Stale {
+		// A scan sighted the finding after the check ran: the repository
+		// recorded the attempt as inconclusive and moved nothing.
+		v = retestdom.StaleFixVerdict()
+		outcome = v.Outcome
 	}
 	if res.Applied {
 		s.finishRun(ctx, rt, v)
