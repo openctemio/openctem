@@ -10,6 +10,10 @@
  * - Anyone else with scope:write requests a one-off for one name or address,
  *   with a reason. A request authorizes nothing until an approver approves it.
  *
+ * "What" takes one value or a pasted list (newline, comma or space separated):
+ * a list shows a parsed preview and goes through the bulk endpoint in batches
+ * of 200 (one step-up), with the Covers choice, duration and tier shared.
+ *
  * The server decides everything shown here (status, approvals, refusals);
  * the dialog only explains it before the click.
  */
@@ -42,7 +46,12 @@ import { Textarea } from '@/components/ui/textarea'
 import { useTranslation } from '@/context/i18n-provider'
 import { Permission, useHasPermission } from '@/lib/permissions'
 import { cn } from '@/lib/utils'
-import { createScopeTarget, invalidateScopeCache, useScopeSettingsApi } from '../api/use-scope-api'
+import {
+  createScopeTarget,
+  createScopeTargetsBulk,
+  invalidateScopeCache,
+  useScopeSettingsApi,
+} from '../api/use-scope-api'
 import type { ApiScopeTarget, ScopeTier } from '../api/scope-api.types'
 import { extractRootDomain } from '@/features/assets/lib/domain-hierarchy'
 import { VerifyDomainDialog } from '@/features/attack-surface/components/easm-verify-domain-dialog'
@@ -66,7 +75,19 @@ import {
   wildcardApex,
   type DurationChoice,
 } from '../lib/scope-entry'
+import {
+  itemsOf,
+  MAX_LIST_VALUES,
+  splitScopeValues,
+  parseScopeList,
+  removeInvalidScopeValues,
+  removeScopeValue,
+  submitScopeBatches,
+  type BulkListOutcome,
+} from '../lib/scope-list'
+import { ScopeBulkResult } from './scope-bulk-result'
 import { ScopeDurationField } from './scope-duration-field'
+import { ScopeListPreview } from './scope-list-preview'
 import { ScopeExistingNotice } from './scope-existing-notice'
 import {
   detectScopeKind,
@@ -175,6 +196,8 @@ export function ScopeEntryDialog({
   // The organization already has this pattern: which row, for the pattern sent.
   const [dup, setDup] = useState<{ row: ScopeDuplicate; pattern: string } | null>(null)
   const [saving, setSaving] = useState(false)
+  // A pasted list that was sent: what happened to each value.
+  const [outcome, setOutcome] = useState<BulkListOutcome | null>(null)
 
   // Reset on open, from the draft.
   useEffect(() => {
@@ -199,6 +222,7 @@ export function ScopeEntryDialog({
     setDescription('')
     setError(null)
     setDup(null)
+    setOutcome(null)
   }, [open, draft])
 
   // The default tier follows the organization's setting once it loads.
@@ -207,9 +231,6 @@ export function ScopeEntryDialog({
       setTier(settings.default_max_tier as ScopeTier)
   }, [open, tierTouched, settings?.default_max_tier])
 
-  const detected = detectScopeKind(name)
-  const type: ScopeKind = override ?? detected ?? 'domain'
-  const isDomain = type === 'domain'
   // Scope entries need approval only in Strict scan approval (RFC-073 §6);
   // unknown (still loading) counts as yes. In Off and On anyone who may add
   // entries adds them directly.
@@ -218,8 +239,25 @@ export function ScopeEntryDialog({
   // wildcard (RFC-054 §6.1).
   const isRequest = !canApprove && entriesNeedApproval
   const effectiveCoverage: DomainCoverage = isRequest ? 'name' : coverage
+
+  // One value, or a pasted list when the text holds more than one distinct value.
+  const parsed = useMemo(
+    () => parseScopeList(name, coverage, { asRequest: isRequest }),
+    [name, coverage, isRequest]
+  )
+  const multi = parsed.tooMany || parsed.rows.length > 1
+  const listItems = useMemo(() => itemsOf(parsed.rows), [parsed.rows])
+  const invalidCount = parsed.rows.filter((r) => r.issue).length
+  const listHasDomain = parsed.rows.some((r) => r.kind === 'domain' && !r.issue)
+  // The single value (a pasted duplicate counts once).
+  const first = parsed.rows[0]?.raw ?? ''
+  const one = multi ? '' : isRequest ? first : wildcardApex(first) || first
+
+  const detected = detectScopeKind(one)
+  const type: ScopeKind = override ?? detected ?? 'domain'
+  const isDomain = !multi && type === 'domain'
   // A request keeps what was typed, so a wildcard is refused, not narrowed.
-  const pattern = isDomain && !isRequest ? patternForCoverage(name, effectiveCoverage) : name.trim()
+  const pattern = isDomain && !isRequest ? patternForCoverage(one, effectiveCoverage) : one
   // Intrusive (T2) entries follow the owner's limit, others the one-off one
   // (RFC-054 §12.4). Only what the policy allows can be picked; the default
   // is the longest allowed, never a forbidden value.
@@ -239,7 +277,11 @@ export function ScopeEntryDialog({
 
   const expiresOn = expiring ? formatDay(expiryDateFor(expiryDays), locale) : ''
   const summary = [
-    ...(name.trim() ? [coversText({ pattern, target_type: type })] : []),
+    ...(multi
+      ? [t('scope.list.entries', '{count} entries', { count: listItems.length })]
+      : one
+        ? [coversText({ pattern, target_type: type })]
+        : []),
     expiring
       ? t('scope.entry.expiresOn', 'expires on {date}', { date: expiresOn })
       : t('scope.entry.permanent', 'permanent'),
@@ -247,24 +289,36 @@ export function ScopeEntryDialog({
 
   // Domain proof (RFC-054 §8.1): only when the platform requires it, for
   // platform sensors and for intrusive probes on any sensor.
-  const proofRoot =
-    isDomain && name.trim() ? extractRootDomain(wildcardApex(pattern) || pattern) : ''
+  const proofRoot = isDomain && one ? extractRootDomain(wildcardApex(pattern) || pattern) : ''
   const proofMode = settings?.active_proof ?? 'off'
   const proofNeeded = !!proofRoot && proofMode === 'platform_sensors'
   const proofRow = proofNeeded ? domainFor(proofRoot, verifiedDomains) : undefined
-  const proofMissing = proofNeeded && proofRow?.status !== 'verified'
+  const proofMissing = !multi && proofNeeded && proofRow?.status !== 'verified'
 
   const validate = (): string | null => {
-    if (!name.trim()) return t('scope.entry.errEmpty', 'Enter a name or address.')
-    if (!override && !detected)
+    if (multi) {
+      if (parsed.tooMany)
+        return t(
+          'scope.list.tooMany',
+          'A list holds at most {max} values and this one has {count}. Split it and add it in parts.',
+          { max: MAX_LIST_VALUES, count: parsed.total }
+        )
+      if (invalidCount > 0)
+        return t(
+          'scope.list.errInvalid',
+          'Remove the values that are not recognised, or fix their spelling.'
+        )
+    } else if (!one) return t('scope.entry.errEmpty', 'Enter a name or address.')
+    if (!multi && !override && !detected)
       return t(
         'scope.entry.errKind',
         'This is not a domain, IP address, IP range, URL, repository or cloud account. Pick its kind, or check the spelling.'
       )
-    if (isRequest && !(REQUESTABLE_TARGET_TYPES as string[]).includes(type))
+    if (!multi && isRequest && !(REQUESTABLE_TARGET_TYPES as string[]).includes(type))
       return t('scope.error.REQUEST_MUST_BE_SINGLE')
     if (isRequest && !requestsAllowed) return t('scope.error.REQUEST_NOT_ALLOWED')
-    if (isRequest && !isSingleTarget(type, pattern)) return t('scope.error.REQUEST_MUST_BE_SINGLE')
+    if (!multi && isRequest && !isSingleTarget(type, pattern))
+      return t('scope.error.REQUEST_MUST_BE_SINGLE')
     if (!durationAllowed(duration, policy))
       return tier === 't2'
         ? t('scope.error.INTRUSIVE_NEEDS_EXPIRY')
@@ -282,6 +336,26 @@ export function ScopeEntryDialog({
     }
     setSaving(true)
     setError(null)
+    if (multi) {
+      try {
+        const result = await submitScopeBatches(
+          listItems,
+          {
+            reason: reason.trim() || undefined,
+            max_tier: tier,
+            ...(expiring ? { expires_in_days: expiryDays } : {}),
+          },
+          createScopeTargetsBulk
+        )
+        await invalidateScopeCache()
+        setOutcome(result)
+      } catch (err) {
+        setError(scopeErrorMessage(t, err, t('scope.bulk.failed', 'Could not add to scope')))
+      } finally {
+        setSaving(false)
+      }
+      return
+    }
     try {
       const entry = await createScopeTarget({
         target_type: type,
@@ -350,6 +424,7 @@ export function ScopeEntryDialog({
     ? t('scope.entry.titleRequest', 'Request access')
     : t('scope.entry.titleAdd', 'Add to scope')
   const blocked = isRequest && !settingsLoading && !requestsAllowed
+  const unsentPatterns = outcome?.unsent.map((i) => i.pattern) ?? []
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -375,6 +450,31 @@ export function ScopeEntryDialog({
               <Info className="h-4 w-4" />
               <AlertDescription>{t('scope.error.REQUEST_NOT_ALLOWED')}</AlertDescription>
             </Alert>
+          ) : outcome ? (
+            <div className="space-y-3">
+              {outcome.error != null && (
+                <div
+                  role="alert"
+                  className="flex items-start gap-2 rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive"
+                >
+                  <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+                  <span>
+                    {scopeErrorMessage(
+                      t,
+                      outcome.error,
+                      t('scope.bulk.failed', 'Could not add to scope')
+                    )}
+                  </span>
+                </div>
+              )}
+              <ScopeBulkResult
+                results={outcome.results}
+                created={outcome.created}
+                existing={outcome.existing}
+                refused={outcome.refused}
+                unsent={unsentPatterns}
+              />
+            </div>
           ) : (
             <form id={formId} onSubmit={submit} className="space-y-4">
               {error && (
@@ -404,15 +504,26 @@ export function ScopeEntryDialog({
 
               <div className="space-y-2">
                 <Label htmlFor={`${formId}-name`}>{t('scope.entry.what', 'What')}</Label>
-                <Input
+                <Textarea
                   id={`${formId}-name`}
+                  rows={multi ? 5 : 2}
                   value={name}
                   autoComplete="off"
+                  autoCapitalize="none"
                   spellCheck={false}
+                  className="font-mono text-sm"
                   placeholder={SCOPE_KIND_PLACEHOLDER[type]}
+                  onKeyDown={(e) => {
+                    // Enter adds a line; Ctrl or Cmd with Enter sends the form.
+                    if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
+                      e.preventDefault()
+                      e.currentTarget.form?.requestSubmit()
+                    }
+                  }}
                   onChange={(e) => {
                     const v = e.target.value
-                    const apex = wildcardApex(v)
+                    const vals = splitScopeValues(v)
+                    const apex = vals.length <= 1 ? wildcardApex(vals[0] ?? '') : ''
                     // Typing "*.x" picks "x and every name below it".
                     if (apex && !isRequest) {
                       setName(apex)
@@ -420,61 +531,84 @@ export function ScopeEntryDialog({
                       setCoverageTouched(true)
                     } else {
                       setName(v)
-                      if (!coverageTouched) setCoverage(defaultCoverage(v))
+                      if (!coverageTouched) {
+                        if (vals.length <= 1) setCoverage(defaultCoverage(vals[0] ?? v))
+                        else if (vals.some((x) => wildcardApex(x))) setCoverage('subdomains')
+                      }
                     }
                     setError(null)
                   }}
                 />
-                <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-                  {override ? (
-                    <>
-                      <span>{t('scope.entry.kindColon', 'Kind:')}</span>
-                      <ScopeTargetTypeSelect
-                        value={override}
-                        onValueChange={(v) => setOverride(v as ScopeKind)}
-                        only={isRequest ? REQUESTABLE_TARGET_TYPES : undefined}
-                        className="h-7 w-44 text-xs"
-                        aria-label={t('scope.entry.kind', 'Kind')}
-                      />
-                      <button
-                        type="button"
-                        className="underline underline-offset-2 hover:text-foreground"
-                        onClick={() => setOverride(null)}
-                      >
-                        {t('scope.entry.detect', 'Detect it')}
-                      </button>
-                    </>
-                  ) : (
-                    <>
-                      <span aria-live="polite">
-                        {name.trim()
-                          ? detected
-                            ? t('scope.entry.detected', 'Detected: {kind}', {
-                                kind: SCOPE_KIND_LABEL[detected],
-                              })
-                            : t('scope.entry.notRecognised', 'Kind not recognised')
-                          : t(
-                              'scope.entry.kindsHint',
-                              'A domain, IP address, IP range, URL, repository or cloud account.'
-                            )}
-                      </span>
-                      {name.trim() && (
+                {multi ? (
+                  <ScopeListPreview
+                    parsed={parsed}
+                    onRemove={(row) =>
+                      setName(removeScopeValue(name, row, coverage, { asRequest: isRequest }))
+                    }
+                    onRemoveInvalid={() =>
+                      setName(removeInvalidScopeValues(name, coverage, { asRequest: isRequest }))
+                    }
+                  />
+                ) : (
+                  <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+                    {override ? (
+                      <>
+                        <span>{t('scope.entry.kindColon', 'Kind:')}</span>
+                        <ScopeTargetTypeSelect
+                          value={override}
+                          onValueChange={(v) => setOverride(v as ScopeKind)}
+                          only={isRequest ? REQUESTABLE_TARGET_TYPES : undefined}
+                          className="h-7 w-44 text-xs"
+                          aria-label={t('scope.entry.kind', 'Kind')}
+                        />
                         <button
                           type="button"
                           className="underline underline-offset-2 hover:text-foreground"
-                          onClick={() => setOverride(detected ?? 'domain')}
+                          onClick={() => setOverride(null)}
                         >
-                          {detected
-                            ? t('scope.entry.change', 'Change')
-                            : t('scope.entry.pickKind', 'Pick the kind')}
+                          {t('scope.entry.detect', 'Detect it')}
                         </button>
-                      )}
-                    </>
-                  )}
-                </div>
+                      </>
+                    ) : (
+                      <>
+                        <span aria-live="polite">
+                          {one
+                            ? detected
+                              ? t('scope.entry.detected', 'Detected: {kind}', {
+                                  kind: SCOPE_KIND_LABEL[detected],
+                                })
+                              : t('scope.entry.notRecognised', 'Kind not recognised')
+                            : t(
+                                'scope.entry.kindsHint',
+                                'A domain, IP address, IP range, URL, repository or cloud account.'
+                              )}
+                        </span>
+                        {one && (
+                          <button
+                            type="button"
+                            className="underline underline-offset-2 hover:text-foreground"
+                            onClick={() => setOverride(detected ?? 'domain')}
+                          >
+                            {detected
+                              ? t('scope.entry.change', 'Change')
+                              : t('scope.entry.pickKind', 'Pick the kind')}
+                          </button>
+                        )}
+                      </>
+                    )}
+                  </div>
+                )}
+                {!multi && (
+                  <p className="text-xs text-muted-foreground">
+                    {t(
+                      'scope.list.hint',
+                      'To add many at once, paste a list: one per line, or separated by commas or spaces. A spreadsheet column works.'
+                    )}
+                  </p>
+                )}
               </div>
 
-              {isDomain && !isRequest && (
+              {(isDomain || (multi && listHasDomain)) && !isRequest && (
                 <fieldset className="space-y-2">
                   <legend className="text-sm font-medium">
                     {t('scope.entry.covers', 'Covers')}
@@ -489,20 +623,35 @@ export function ScopeEntryDialog({
                   >
                     <CoverageOption
                       value="subdomains"
-                      title={t('scope.entry.coverSub', '{name} and every name below it', {
-                        name: name.trim() || 'example.com',
-                      })}
-                      hint={t(
-                        'scope.entry.coverSubHint',
-                        'Pattern *.{name}. Add an exclusion of exactly the domain to leave it out.',
-                        { name: name.trim() || 'example.com' }
-                      )}
+                      title={
+                        multi
+                          ? t('scope.list.coverSub', 'Each domain and every name below it')
+                          : t('scope.entry.coverSub', '{name} and every name below it', {
+                              name: one || 'example.com',
+                            })
+                      }
+                      hint={
+                        multi
+                          ? t(
+                              'scope.list.coverSubHint',
+                              'Pattern *.name for each domain. Add an exclusion of exactly a domain to leave it out.'
+                            )
+                          : t(
+                              'scope.entry.coverSubHint',
+                              'Pattern *.{name}. Add an exclusion of exactly the domain to leave it out.',
+                              { name: one || 'example.com' }
+                            )
+                      }
                     />
                     <CoverageOption
                       value="name"
-                      title={t('scope.entry.coverName', '{name} only', {
-                        name: name.trim() || 'example.com',
-                      })}
+                      title={
+                        multi
+                          ? t('scope.list.coverName', 'Each domain only')
+                          : t('scope.entry.coverName', '{name} only', {
+                              name: one || 'example.com',
+                            })
+                      }
                       hint={t('scope.entry.coverNameHint', 'Names below it stay out of scope.')}
                     />
                   </RadioGroup>
@@ -619,7 +768,7 @@ export function ScopeEntryDialog({
                 )}
               </div>
 
-              {usableLetters.length > 0 && (
+              {!multi && usableLetters.length > 0 && (
                 <div className="space-y-2">
                   <Label htmlFor={`${formId}-authority`}>
                     {t('scope.entry.authorizedBy', 'Authorized by')}
@@ -681,7 +830,7 @@ export function ScopeEntryDialog({
                 </p>
               </div>
 
-              {!isRequest && (
+              {!isRequest && !multi && (
                 <div className="space-y-2">
                   <Label htmlFor={`${formId}-desc`}>
                     {t('scope.entry.descOptional', 'Description (optional)')}
@@ -699,16 +848,41 @@ export function ScopeEntryDialog({
         </DialogBody>
 
         <DialogFooter>
-          <Button variant="outline" onClick={() => onOpenChange(false)} disabled={saving}>
-            {t('common.cancel', 'Cancel')}
-          </Button>
-          {!blocked && (
-            <Button type="submit" form={formId} disabled={saving || settingsLoading}>
-              {saving && <Loader2 className="me-2 h-4 w-4 animate-spin" />}
-              {isRequest
-                ? t('scope.entry.sendRequest', 'Send request')
-                : t('scope.entry.titleAdd', 'Add to scope')}
-            </Button>
+          {outcome ? (
+            <>
+              {unsentPatterns.length > 0 && (
+                <Button
+                  variant="outline"
+                  onClick={() => {
+                    setName(unsentPatterns.join('\n'))
+                    setOutcome(null)
+                  }}
+                >
+                  {t('scope.list.backToRest', 'Back to the values not sent')}
+                </Button>
+              )}
+              <Button onClick={() => onOpenChange(false)}>{t('scope.list.done', 'Done')}</Button>
+            </>
+          ) : (
+            <>
+              <Button variant="outline" onClick={() => onOpenChange(false)} disabled={saving}>
+                {t('common.cancel', 'Cancel')}
+              </Button>
+              {!blocked && (
+                <Button type="submit" form={formId} disabled={saving || settingsLoading}>
+                  {saving && <Loader2 className="me-2 h-4 w-4 animate-spin" />}
+                  {multi
+                    ? isRequest
+                      ? t('scope.list.sendRequests', 'Send {count} requests', {
+                          count: listItems.length,
+                        })
+                      : t('scope.bulk.title', 'Add {count} to scope', { count: listItems.length })
+                    : isRequest
+                      ? t('scope.entry.sendRequest', 'Send request')
+                      : t('scope.entry.titleAdd', 'Add to scope')}
+                </Button>
+              )}
+            </>
           )}
         </DialogFooter>
       </DialogContent>
