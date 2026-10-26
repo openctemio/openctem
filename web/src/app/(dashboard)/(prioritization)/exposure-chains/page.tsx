@@ -5,6 +5,7 @@ import Link from '@/components/link'
 import { Main } from '@/components/layout'
 import { PageHeader, PageStack, MetricStrip, EmptyState, ErrorState } from '@/features/shared'
 import { useExposureChains, PathGraph } from '@/features/attack-surface'
+import { attackPathHref } from '@/features/attack-surface/lib/attack-path-model'
 import type { ExposureChain, PathGraphPath, PathGraphNode } from '@/features/attack-surface'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Skeleton } from '@/components/ui/skeleton'
@@ -43,6 +44,7 @@ function chainToPath(chain: ExposureChain, maxScore: number): PathGraphPath {
     scorePct: maxScore > 0 ? (chain.score / maxScore) * 100 : 0,
     kevCount: chain.kevCount,
     criticalCount: chain.criticalCount,
+    detailHref: chain.targetId ? attackPathHref(chain.targetId) : undefined,
   }
 }
 

@@ -1230,7 +1230,8 @@ export async function confirmAccessRequestAction(
  */
 export async function resetPasswordAction(
   token: string,
-  newPassword: string
+  newPassword: string,
+  revokeApiKeys = false
 ): Promise<AuthSuccessResponse<null> | AuthErrorResponse> {
   try {
     await backendFetch<{ message: string }>(authEndpoints.resetPassword(), {
@@ -1238,6 +1239,7 @@ export async function resetPasswordAction(
       body: JSON.stringify({
         token,
         new_password: newPassword,
+        revoke_api_keys: revokeApiKeys,
       }),
     })
 

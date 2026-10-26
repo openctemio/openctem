@@ -60,7 +60,7 @@ type ScopeSettings struct {
 	// ReviewBeforeInventory keeps the review gate: what discovery finds
 	// outside every permanent scope entry waits for a person (needs_review)
 	// outside the inventory, instead of joining it as discovered (passive
-	// only; RFC-054 §15). Default off. Meant for organizations that run scan
+	// only). Default off. Meant for organizations that run scan
 	// approval Strict; it never changes what may be scanned.
 	ReviewBeforeInventory bool `json:"review_before_inventory,omitempty"`
 	// UnclassifiedScans is what active scans may do to an asset no scope

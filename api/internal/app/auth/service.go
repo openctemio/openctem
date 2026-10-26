@@ -110,9 +110,9 @@ type AuthService struct {
 	selfServiceLimits SelfServiceLimits
 	// onSignIn runs after a sign-in created a session (signin_hook.go).
 	onSignIn SignInHook
-	// onSessionsRevoked runs after the account's sessions were revoked for a
+	// sessionsRevoked runs after the account's sessions were revoked for a
 	// credential change (sessions_revoked_hook.go).
-	onSessionsRevoked SessionsRevokedHook
+	sessionsRevoked SessionsRevokedHooks
 	// signupPolicy decides who may create an organization (the console
 	// sign-up setting). Nil: SIGNUP_MODE from the config.
 	signupPolicy signupdom.PolicySource
@@ -1187,6 +1187,11 @@ func (s *AuthService) ExchangeToken(ctx context.Context, input ExchangeTokenInpu
 	if refusePlatformAdmin(ctx, s.platformAdmins, s.logger, u, "token_exchange") {
 		return nil, sessiondom.ErrRefreshTokenRevoked
 	}
+	// A blocked or suspended account mints nothing, whatever way its session
+	// was opened (a federated sign-in does not pass the password checks).
+	if !u.IsActive() {
+		return nil, ErrAccountSuspended
+	}
 
 	// Verify user has access to the requested tenant
 	memberships, err := s.tenantRepo.GetUserMemberships(ctx, u.ID())
@@ -1506,6 +1511,9 @@ func (s *AuthService) RefreshToken(ctx context.Context, input RefreshTokenInput)
 	if refusePlatformAdmin(ctx, s.platformAdmins, s.logger, u, "refresh_token") {
 		return nil, sessiondom.ErrRefreshTokenRevoked
 	}
+	if !u.IsActive() {
+		return nil, ErrAccountSuspended
+	}
 
 	// A suspended organization is refused before the refresh token is
 	// spent: the session stays usable for the member's other
@@ -1726,10 +1734,13 @@ func (s *AuthService) ForgotPassword(ctx context.Context, input ForgotPasswordIn
 
 // ResetPasswordInput represents the input for password reset.
 type ResetPasswordInput struct {
-	Token       string `json:"token" validate:"required"`
-	NewPassword string `json:"new_password" validate:"required,min=8,max=128"`
-	IPAddress   string `json:"-"`
-	UserAgent   string `json:"-"`
+	// RevokeAPIKeys also revokes every API key the person owns, in every
+	// organization. Connected applications (MCP grants) are always revoked.
+	RevokeAPIKeys bool   `json:"-"`
+	Token         string `json:"token" validate:"required"`
+	NewPassword   string `json:"new_password" validate:"required,min=8,max=128"`
+	IPAddress     string `json:"-"`
+	UserAgent     string `json:"-"`
 }
 
 // ResetPassword resets a user's password using the reset token.
@@ -1787,6 +1798,7 @@ func (s *AuthService) ResetPassword(ctx context.Context, input ResetPasswordInpu
 
 	// Revoke all sessions (and their refresh tokens) for security
 	s.revokeUserSessions(ctx, u.ID(), shared.ID{})
+	s.sessionsRevoked.RevokeAPIKeysIf(ctx, input.RevokeAPIKeys, u.ID())
 
 	if err := s.userRepo.UpdatePasswordHash(ctx, u.ID(), passwordHash); err != nil {
 		return fmt.Errorf("failed to update user: %w", err)
@@ -1835,8 +1847,10 @@ type ChangePasswordInput struct {
 	// CurrentSessionID, when set, is the session making the change: it stays
 	// signed in while every other session is revoked. Empty revokes all.
 	CurrentSessionID string `json:"-"`
-	IPAddress        string `json:"-"`
-	UserAgent        string `json:"-"`
+	// RevokeAPIKeys also revokes every API key the person owns.
+	RevokeAPIKeys bool   `json:"-"`
+	IPAddress     string `json:"-"`
+	UserAgent     string `json:"-"`
 }
 
 // ChangePassword changes a user's password (requires authentication).
@@ -1898,6 +1912,7 @@ func (s *AuthService) ChangePassword(ctx context.Context, userID string, input C
 	// everything is revoked, like ResetPassword.
 	except, _ := shared.IDFromString(input.CurrentSessionID)
 	s.revokeUserSessions(ctx, u.ID(), except)
+	s.sessionsRevoked.RevokeAPIKeysIf(ctx, input.RevokeAPIKeys, u.ID())
 
 	s.audit(ctx, auditapp.AuditContext{
 		ActorID: u.ID().String(), ActorEmail: u.Email(), ActorIP: input.IPAddress,
