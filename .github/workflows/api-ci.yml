@@ -27,7 +27,7 @@ name: API CI
 
 on:
   push:
-    branches: [main, develop]
+    branches: [develop]
   pull_request:
     branches: [main, develop]
   merge_group:
@@ -784,43 +784,13 @@ jobs:
           name: bootstrap-admin-linux-amd64
           path: api/dist/bootstrap-admin
 
-  docker:
-    name: Docker Build
-    needs: [changes, static, test]
-    if: needs.changes.outputs.api == 'true' && github.event_name == 'push' && github.ref == 'refs/heads/main'
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
-
-      - name: Registry login (GHCR mirror; Docker Hub when configured)
-        uses: ./.github/actions/registry-login
-        with:
-          github-token: ${{ secrets.GITHUB_TOKEN }}
-          dockerhub-username: ${{ secrets.DOCKERHUB_USERNAME }}
-          dockerhub-token: ${{ secrets.DOCKERHUB_TOKEN }}
-
-      - name: Build Docker image
-        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
-        with:
-          context: api
-          push: false
-          tags: openctem-api:${{ github.sha }}
-          cache-from: type=gha,scope=api
-          cache-to: type=gha,scope=api,mode=max
-
   # The ONE required status check for the API. Runs even when everything above
   # was skipped (non-API change, or a tier that does not apply to this event),
   # and fails if any job failed or was cancelled.
   api-ok:
     name: API CI OK
     if: always()
-    needs: [changes, static, test, least-privilege, pg18, binaries, docker]
+    needs: [changes, static, test, least-privilege, pg18, binaries]
     runs-on: ubuntu-latest
     steps:
       - name: All API jobs passed or were skipped; the event's tier actually ran
