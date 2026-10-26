@@ -3,6 +3,7 @@ package vulnfeed
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -167,6 +168,26 @@ func TestImport_DisabledOrUnconfigured(t *testing.T) {
 		t.Fatal("ran while disabled")
 	}
 	_ = fs
+}
+
+// An operator's sync of a feed that would do nothing says so.
+func TestSync_ReportsUnconfiguredAndDisabled(t *testing.T) {
+	root, now := goldenRoot(t)
+	corpus := &fakeCorpus{}
+	im, _ := newTestImporter(t, Config{BundleDir: goldenDir}, corpus, nil)
+	if _, err := im.Sync(context.Background()); !errors.Is(err, ErrNotConfigured) {
+		t.Fatalf("unconfigured: %v", err)
+	}
+	im2, fs2 := newTestImporter(t, Config{RootKeyID: root, BundleDir: goldenDir}, corpus, nil)
+	fs2.st.SetEnabled(false)
+	im2.now = func() time.Time { return now }
+	if _, err := im2.Sync(context.Background()); !errors.Is(err, threatintel.ErrSyncDisabled) {
+		t.Fatalf("disabled: %v", err)
+	}
+	fs2.st.SetEnabled(true)
+	if res, err := im2.Sync(context.Background()); err != nil || !res.Ran {
+		t.Fatalf("enabled: %+v %v", res, err)
+	}
 }
 
 func TestImport_SnapshotOverCorpusWithdrawsAndGuards(t *testing.T) {

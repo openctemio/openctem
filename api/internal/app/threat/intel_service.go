@@ -273,6 +273,15 @@ func (s *IntelService) SyncEPSS(ctx context.Context) IntelSyncResult {
 		return result
 	}
 
+	if gerr := s.guardEPSSShrink(ctx, len(scores)); gerr != nil {
+		result.Error = gerr
+		status.MarkSyncFailed(gerr.Error())
+		if updateErr := s.repo.SyncStatus().Update(ctx, status); updateErr != nil {
+			s.logger.Error("failed to update sync status after error", "error", updateErr)
+		}
+		return result
+	}
+
 	// Batch upsert scores
 	if err := s.repo.EPSS().UpsertBatch(ctx, scores); err != nil {
 		result.Error = fmt.Errorf("failed to upsert EPSS scores: %w", err)
@@ -348,7 +357,11 @@ func (s *IntelService) SyncKEV(ctx context.Context) IntelSyncResult {
 	if errors.Is(err, errKEVNotModified) {
 		result.NotModified = true
 		result.DurationMs = time.Since(startTime).Milliseconds()
-		status.MarkSyncSuccess(0, int(result.DurationMs))
+		stored, cerr := s.repo.KEV().Count(ctx)
+		if cerr != nil {
+			stored = 0
+		}
+		status.MarkSyncUnchanged(int(result.DurationMs), int(stored))
 		if uerr := s.repo.SyncStatus().Update(ctx, status); uerr != nil {
 			s.logger.Error("failed to update sync status", "error", uerr)
 		}
@@ -357,6 +370,15 @@ func (s *IntelService) SyncKEV(ctx context.Context) IntelSyncResult {
 	if err != nil {
 		result.Error = err
 		status.MarkSyncFailed(err.Error())
+		if updateErr := s.repo.SyncStatus().Update(ctx, status); updateErr != nil {
+			s.logger.Error("failed to update sync status after error", "error", updateErr)
+		}
+		return result
+	}
+
+	if gerr := s.guardKEVShrink(ctx, len(entries)); gerr != nil {
+		result.Error = gerr
+		status.MarkSyncFailed(gerr.Error())
 		if updateErr := s.repo.SyncStatus().Update(ctx, status); updateErr != nil {
 			s.logger.Error("failed to update sync status after error", "error", updateErr)
 		}
@@ -404,6 +426,40 @@ func (s *IntelService) SyncKEV(ctx context.Context) IntelSyncResult {
 	)
 
 	return result
+}
+
+// minSnapshotShare: a snapshot smaller than this share of the stored
+// catalog is refused (a truncated or wrong download, not a real change).
+const minSnapshotShare = 0.9
+
+// ErrFeedEmpty: the source answered 200 but carried no entries.
+var ErrFeedEmpty = errors.New("feed returned no entries")
+
+// ErrFeedShrunk: the snapshot is far smaller than the stored catalog.
+var ErrFeedShrunk = errors.New("feed refused: snapshot smaller than the stored catalog")
+
+func shrinkGuard(source string, got int, stored int64) error {
+	if stored > 0 && float64(got) < minSnapshotShare*float64(stored) {
+		return fmt.Errorf("%w (%s: %d entries, %d stored, minimum %d)", ErrFeedShrunk, source, got, stored,
+			int64(minSnapshotShare*float64(stored)))
+	}
+	return nil
+}
+
+func (s *IntelService) guardKEVShrink(ctx context.Context, got int) error {
+	stored, err := s.repo.KEV().Count(ctx)
+	if err != nil {
+		return fmt.Errorf("kev count: %w", err)
+	}
+	return shrinkGuard("kev", got, stored)
+}
+
+func (s *IntelService) guardEPSSShrink(ctx context.Context, got int) error {
+	stored, err := s.repo.EPSS().Count(ctx)
+	if err != nil {
+		return fmt.Errorf("epss count: %w", err)
+	}
+	return shrinkGuard("epss", got, stored)
 }
 
 // maxKEVRemovalsPerSync bounds how many CVEs one sync may remove from the KEV
@@ -490,7 +546,14 @@ func (s *IntelService) fetchEPSSData(ctx context.Context) ([]*threatintel.EPSSSc
 
 	// The scores CSV is parsed by a pure helper so the format handling is
 	// unit-testable without the SSRF-guarded HTTP client (which refuses loopback).
-	return parseEPSSCSV(httpsec.NewLimitedReader(gzReader, maxDecompressedFeedBytes))
+	scores, err := parseEPSSCSV(httpsec.NewLimitedReader(gzReader, maxDecompressedFeedBytes))
+	if err != nil {
+		return nil, err
+	}
+	if len(scores) == 0 {
+		return nil, fmt.Errorf("epss %w", ErrFeedEmpty)
+	}
+	return scores, nil
 }
 
 // parseEPSSCSV parses the (already-decompressed) EPSS scores CSV. The feed opens
@@ -668,6 +731,12 @@ func (s *IntelService) fetchKEVFrom(ctx context.Context, url string, prev kevVal
 	var kevCatalog kevCatalogResponse
 	if err := json.NewDecoder(httpsec.NewLimitedReader(resp.Body, maxDecompressedFeedBytes)).Decode(&kevCatalog); err != nil {
 		return nil, prev, fmt.Errorf("failed to parse KEV JSON: %w", err)
+	}
+	// A 200 without entries (a renamed or empty "vulnerabilities" array) is a
+	// failed fetch: its validators are not stored, so the next run fetches
+	// again instead of getting a 304 for the bad copy.
+	if len(kevCatalog.Vulnerabilities) == 0 {
+		return nil, prev, fmt.Errorf("kev %w", ErrFeedEmpty)
 	}
 	next := kevValidator{ETag: resp.Header.Get("ETag"), LastModified: resp.Header.Get("Last-Modified")}
 	if len(next.ETag) > 256 {
