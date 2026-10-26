@@ -84,7 +84,7 @@ func TestPhase2DB_ScanRegressionGetsFreshSLA(t *testing.T) {
 	f := fx.newFinding(fx.asset, "resolved", "tpl-scan-regress")
 	past := fx.setOverdueSLA(f)
 
-	reopened, err := postgres.NewFindingRepository(fx.pg).AutoReopenByFingerprintsBatch(context.Background(), fx.tenant, []string{f.String()})
+	reopened, err := postgres.NewFindingRepository(fx.pg).AutoReopenByFingerprintsBatch(context.Background(), fx.tenant, []string{f.String()}, time.Now())
 	if err != nil || len(reopened) != 1 {
 		t.Fatalf("reopen: %v %v", reopened, err)
 	}

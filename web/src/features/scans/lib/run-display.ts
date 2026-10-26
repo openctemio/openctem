@@ -254,6 +254,7 @@ const RESULT_CODES = new Set([
   'auth_changed',
   'server_error',
   'template_changed',
+  'seen_after_check',
   'no_result',
   'error',
   'template_not_found',

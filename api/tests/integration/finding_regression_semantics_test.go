@@ -138,15 +138,23 @@ func (x regRow) String() string {
 
 func (r *regRig) scan(t *testing.T, coverage string, fs ...ctis.Finding) {
 	t.Helper()
+	r.scanAt(t, coverage, time.Now().UTC(), fs...)
+}
+
+// scanAt is a scan that observed its findings at the given time: the report
+// carries it as its timestamp and its command was handed out an hour earlier.
+func (r *regRig) scanAt(t *testing.T, coverage string, observed time.Time, fs ...ctis.Finding) {
+	t.Helper()
 	for i := range fs {
 		fs[i].AssetRef = "repo"
 	}
 	rep := &ctis.Report{Version: "1.0", Tool: &ctis.Tool{Name: "trivy"},
-		Metadata: ctis.ReportMetadata{Timestamp: time.Now().UTC(), CoverageType: coverage,
+		Metadata: ctis.ReportMetadata{Timestamp: observed, CoverageType: coverage,
 			Branch: &ctis.BranchInfo{Name: "main", IsDefaultBranch: true, RepositoryURL: "https://" + r.tn.repo}},
 		Assets:   []ctis.Asset{{ID: "repo", Type: ctis.AssetTypeRepository, Value: r.tn.repo}},
 		Findings: fs}
 	cmd := r.r.runCommand(r.tn, "trivy", "", "completed", 0)
+	r.exec(t, `UPDATE commands SET created_at = $2 WHERE id = $1`, cmd.String(), observed.Add(-time.Hour))
 	st := r.r.sendWhole(r.tn, r.r.openAs(r.tn, shared.NewID().String(), "worker", &cmd, rep), rep)
 	if st.State != protov2.StateCompleted || st.Rejected.Findings != 0 {
 		t.Fatalf("scan: %+v", st)
@@ -467,5 +475,32 @@ func TestRegressionSemantics_FlappingIsNotRegressionSpam(t *testing.T) {
 	r.scan(t, "full", lodashFinding(), anchorFinding())
 	if got := r.row(t, lodashRule); got.reopenCount != 2 {
 		t.Fatalf("aged automatic close seen again: %s, want reopen_count 2", got)
+	}
+}
+
+// 9. A report observed before a finding was resolved shows what was there
+// then, not whether the fix held: it does not reopen the finding, however late
+// it arrives. A report observed after the fix still reopens it.
+func TestRegressionSemantics_OlderReportDoesNotReopen(t *testing.T) {
+	r := newRegRig(t)
+	r.scan(t, "full", lodashFinding(), anchorFinding())
+	r.scan(t, "full", anchorFinding())
+	// A person resolved it, with a retest, just now.
+	r.exec(t, `UPDATE findings SET status='resolved', resolution='patched', closure_reason='fixed', verification='retest', resolved_at = NOW()
+		WHERE tenant_id=$1 AND rule_id=$2`, r.tn.tenant.String(), lodashRule)
+
+	r.scanAt(t, "full", time.Now().UTC().Add(-48*time.Hour), lodashFinding(), anchorFinding())
+	got := r.row(t, lodashRule)
+	if got.status != "resolved" || got.reopenCount != 0 || got.has("auto_reopened") {
+		t.Fatalf("a report observed 2 days ago reopened the fix: %s", got)
+	}
+	if r.notes.count("finding_reopened") != 0 {
+		t.Errorf("a stale report was announced as a regression")
+	}
+
+	r.scan(t, "full", lodashFinding(), anchorFinding())
+	got = r.row(t, lodashRule)
+	if got.status == "resolved" || got.reopenCount != 1 || !got.has("auto_reopened") {
+		t.Fatalf("a report observed after the fix did not reopen it: %s", got)
 	}
 }
