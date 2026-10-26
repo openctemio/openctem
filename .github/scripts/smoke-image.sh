@@ -8,7 +8,7 @@
 #      default that shipped amd64 binaries inside "arm64" sensor images), and
 #   3. the binary actually executes here (no QEMU on the runner).
 # Files are read with `docker cp`, never a shell inside the image: images
-# without a shell (admin-cli is distroless) are checked the same way.
+# without a shell (the API image is distroless) are checked the same way.
 set -euo pipefail
 comp="$1" img="$2" want="$3"
 
@@ -31,7 +31,6 @@ elf_of() { local f; f=$(img_file "$1") && od -An -t x1 -j 18 -N 2 "$f" | tr -d '
 
 case "$comp" in
   openctem-api) bin=/app/server;            run=(/app/bootstrap-admin -h) ;;
-  admin-cli)    bin=/usr/local/bin/bootstrap-admin; run=("$bin" -h) ;;
   migrations)   bin=/usr/local/bin/migrate; run=(migrate -version) ;;
   seed)         bin=""; run=(sh -c 'true') ;;
   openctem-web) bin=/usr/local/bin/node;    run=(node -e 'process.exit(0)') ;;

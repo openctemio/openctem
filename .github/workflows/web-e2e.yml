@@ -24,7 +24,7 @@ name: Web E2E
 #                 .github/scripts/, .github/actions/): the merge-queue rule.
 #
 # How it stays fast
-#   build    the three images are built once per run (bake, GitHub Actions layer
+#   build    the two images are built once per run (bake, GitHub Actions layer
 #            cache) and handed to the shards as one artifact, so no shard builds.
 #   shards   Playwright runs as a matrix of 4 (`--shard i/4`) plus one job for
 #            the every-page request budget check (`request budget (part`, about
@@ -187,7 +187,6 @@ jobs:
     env:
       API_IMAGE: local/openctem-api:e2e
       WEB_IMAGE: local/openctem-web:e2e
-      ADMIN_IMAGE: local/admin-cli:e2e
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -207,7 +206,7 @@ jobs:
           dockerhub-username: ${{ secrets.DOCKERHUB_USERNAME }}
           dockerhub-token: ${{ secrets.DOCKERHUB_TOKEN }}
 
-      # The three images build in parallel (web/e2e/ci/docker-bake.hcl) with
+      # The two images build in parallel (web/e2e/ci/docker-bake.hcl) with
       # the GitHub Actions layer cache. Only a push to develop writes the
       # cache: pull requests read develop's, while a cache written from a pull
       # request or a merge-queue ref is readable by that ref alone and only
@@ -223,7 +222,7 @@ jobs:
       # One archive for every shard (already compressed, so no artifact
       # compression on top).
       - name: Save the images
-        run: docker save "$API_IMAGE" "$WEB_IMAGE" "$ADMIN_IMAGE" | gzip -1 > e2e-images.tar.gz
+        run: docker save "$API_IMAGE" "$WEB_IMAGE" | gzip -1 > e2e-images.tar.gz
 
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
@@ -248,7 +247,6 @@ jobs:
     env:
       API_IMAGE: local/openctem-api:e2e
       WEB_IMAGE: local/openctem-web:e2e
-      ADMIN_IMAGE: local/admin-cli:e2e
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:

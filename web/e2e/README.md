@@ -283,7 +283,7 @@ merge queue when `web/` (or a shared file) changed — the routing is
 `.github/scripts/changed.sh`, so an API-only change does not start it. It is
 not a required check yet.
 
-The job builds the production images (API, web, admin-cli) with the Actions
+The job builds the production images (API, web) with the Actions
 layer cache, generates the stack's secrets (`e2e/ci/make-env.sh`), starts `e2e/ci/compose.yml` (Postgres, Redis, migrations, API
 with `RATE_LIMIT_READ_PER_MIN=3000`, web), seeds a tenant with
 `e2e/ci/seed.sh` (owner, assets, two sensors, 15 findings, a remediation
@@ -294,7 +294,6 @@ The same stack runs locally (move the ports if 3000/8080 are taken):
 
 ```bash
 docker build -t local/openctem-api:e2e --target production api
-docker build -t local/admin-cli:e2e -f api/Dockerfile.admin-cli api
 docker build -t local/openctem-web:e2e web
 bash web/e2e/ci/make-env.sh        # web/e2e/ci/.env: random secrets (git-ignored)
 docker compose -f web/e2e/ci/compose.yml up -d --wait
