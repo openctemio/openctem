@@ -84,7 +84,7 @@ type AdminResponse struct {
 	CreatedAt  string  `json:"created_at"`
 	UpdatedAt  string  `json:"updated_at"`
 
-	// Break-glass (emergency access) and platform IdP state (RFC-022 rev. 4).
+	// Break-glass (emergency access) and platform IdP state.
 	IsBreakGlass           bool    `json:"is_break_glass"`
 	BreakGlassTestedAt     *string `json:"break_glass_tested_at,omitempty"`
 	BreakGlassTestOverdue  bool    `json:"break_glass_test_overdue"`

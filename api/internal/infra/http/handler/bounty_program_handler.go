@@ -89,7 +89,7 @@ type ProgramResponse struct {
 	CreatedBy     *ActorRef  `json:"created_by,omitempty"`
 	CreatedAt     time.Time  `json:"created_at"`
 	UpdatedAt     time.Time  `json:"updated_at"`
-	// Sync is the scope source of a synced program (RFC-065 §14); the API
+	// Sync is the scope source of a synced program; the API
 	// token is never returned, only whether one is stored.
 	Sync *ProgramSyncResponse `json:"sync,omitempty"`
 	// PendingTermsSHA256: a sync found new scope; nothing is added until a

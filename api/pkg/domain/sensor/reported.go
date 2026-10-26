@@ -139,8 +139,7 @@ type ReportedTool struct {
 	// "validate:nuclei"), known names only; nil when the sensor did not say
 	// (sdk-go before v0.13 reports only the sensor's flat list).
 	Capabilities []string `json:"capabilities,omitempty"`
-	// Content is the scanner content the tool scans with (RFC-031,
-	// content.go); nil when the sensor reported none for it.
+	// Content is the scanner content the tool scans with. Nil when the sensor reported none for it.
 	Content []ReportedContent `json:"content,omitempty"`
 }
 

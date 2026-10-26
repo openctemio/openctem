@@ -95,7 +95,7 @@ type GroupMemberWithUserResponse struct {
 	Email       string    `json:"email"`
 	Name        string    `json:"name"`
 	AvatarURL   string    `json:"avatar_url,omitempty"`
-	// ExpiresAt: when the membership ends (RFC-050 W22); absent means no end.
+	// ExpiresAt: when the membership ends; absent means no end.
 	ExpiresAt    *time.Time `json:"expires_at,omitempty"`
 	ExpiryReason string     `json:"expiry_reason,omitempty"`
 }

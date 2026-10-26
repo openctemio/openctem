@@ -56,7 +56,7 @@ import (
 // @securityDefinitions.apikey CIRunToken
 // @in header
 // @name Authorization
-// @description CI run upload token from POST /ci/oidc/exchange (RFC-051): "Bearer octci_...", 15 minutes, one run on one repository.
+// @description CI run upload token from POST /ci/oidc/exchange: "Bearer octci_...", 15 minutes, one run on one repository.
 
 // @externalDocs.description  OpenAPI
 // @externalDocs.url          https://swagger.io/resources/open-api/

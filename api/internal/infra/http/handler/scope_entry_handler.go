@@ -109,22 +109,21 @@ type ScopeSettingsResponse struct {
 	AutoJoinDiscovered bool `json:"auto_join_discovered"`
 	// ConfirmAddsToScope: a person confirming an asset as the
 	// organization's also adds its exact scope entry (default true). Never
-	// in effect while scan approval is Strict (research/117).
+	// in effect while scan approval is Strict.
 	ConfirmAddsToScope bool `json:"confirm_adds_to_scope"`
 	// ReviewBeforeInventory: discovered names outside every permanent entry
 	// wait for review outside the inventory (default false: they join the
-	// inventory as discovered, passive only; RFC-054 §15).
+	// inventory as discovered, passive only).
 	ReviewBeforeInventory bool `json:"review_before_inventory"`
 	// UnclassifiedScans is the setting: what active scans may do to an
-	// asset no scope entry covers and nobody excluded or rejected (RFC-054
-	// §16): off (passive only), low_impact (default) or full. The platform
+	// asset no scope entry covers and nobody excluded or rejected: off (passive only), low_impact (default) or full. The platform
 	// guardrails apply in every mode.
 	UnclassifiedScans string `json:"unclassified_scans" enums:"off,low_impact,full"`
 	// UnclassifiedScansEffective is the mode in force: off under the
 	// Strict scan approval mode, else the setting (read-only).
 	UnclassifiedScansEffective string `json:"unclassified_scans_effective" enums:"off,low_impact,full"`
 	// AutoCoverage is the organization's choice for automatic coverage
-	// (RFC-093): true, false, or null for the default (on unless Strict).
+	//: true, false, or null for the default (on unless Strict).
 	AutoCoverage *bool `json:"auto_coverage"`
 	// AutoCoverageEffective: automatic coverage runs now (read-only).
 	AutoCoverageEffective bool `json:"auto_coverage_effective"`
@@ -156,7 +155,7 @@ type ScopeSettingsResponse struct {
 	// Owner-only.
 	T2AttestationDays int `json:"t2_attestation_days"`
 	// ApprovalPolicy is the organization's scan approval in force and
-	// whether scope entries need approval under it (read-only; RFC-073 §6).
+	// whether scope entries need approval under it (read-only).
 	ApprovalPolicy ScopeApprovalPolicyView `json:"approval_policy"`
 }
 
