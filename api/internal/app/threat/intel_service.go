@@ -993,11 +993,6 @@ func (s *IntelService) GetThreatIntelStats(ctx context.Context, tenantID shared.
 				dto.LastSyncAt = &t
 			}
 
-			if status.LastSyncError() != "" {
-				e := status.LastSyncError()
-				dto.LastError = &e
-			}
-
 			if status.NextSyncAt() != nil {
 				t := status.NextSyncAt().Format("2006-01-02T15:04:05Z")
 				dto.NextSyncAt = &t
@@ -1048,7 +1043,6 @@ type ThreatIntelSyncDTO struct {
 	LastSyncAt     *string `json:"last_sync_at,omitempty"`
 	LastSyncStatus string  `json:"last_sync_status"`
 	RecordsSynced  int     `json:"records_synced"`
-	LastError      *string `json:"last_error,omitempty"`
 	NextSyncAt     *string `json:"next_sync_at,omitempty"`
 }
 
