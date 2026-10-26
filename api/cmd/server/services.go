@@ -1378,6 +1378,9 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	easmAlerts := postgres.NewEASMAlerter(easmDB)
 	easmExposures := postgres.NewEASMExposureWriter(easmDB, easmAlerts)
 	repos.EASMDNS.WithAlerts(easmAlerts)
+	// Immediate alerts of web endpoint changes share the exposure alerts'
+	// outbox, hourly budget and attribution rules.
+	repos.WebEndpoint.SetAlerter(postgres.NewWebAlerter(easmAlerts))
 	s.CertMonitor = certmonitorapp.NewService(repos.Asset, easmExposures, cfg.Worker.CertMonitorFeedBaseURL, log)
 	s.CertMonitor.SetDomainSources(repos.VerifiedDomain, repos.ScopeTarget)
 	// Stored CT exposures follow their host to its own asset (research/22 P0-9).

@@ -94,6 +94,30 @@ func (d egressDecision) holds(t commanddom.CommandType) bool {
 	return d.blocked && egressCommand(t)
 }
 
+// holdReason is the placement reason (commanddom.PlacementEgress*) the
+// decision keeps command type t from the sensor for; "" when it does not.
+// Every egress hold has its reason here, so a new kind of hold names itself
+// in one place.
+func (d egressDecision) holdReason(t commanddom.CommandType) string {
+	switch {
+	case !d.holds(t):
+		return ""
+	case d.hostDirect:
+		return commanddom.PlacementEgressHostDirect
+	case t == commanddom.CommandTypeValidate:
+		return commanddom.PlacementEgressValidateUnsupported
+	default:
+		return commanddom.PlacementEgressUnsupported
+	}
+}
+
+// PoolNamer names a pool of a tenant ("" when it cannot be read). An
+// EgressSource that implements it lets the placement explainer say which
+// pool holds a job.
+type PoolNamer interface {
+	PoolName(ctx context.Context, tenantID shared.ID, poolID string) string
+}
+
 // egressFor resolves the egress of sensorID's jobs among cmds (nothing to
 // look up when none is a scan or retest job). A shared sensor, or a service
 // without the source, gets none. An error fails the delivery: a job never

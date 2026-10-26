@@ -100,6 +100,16 @@ func (s *Service) GetPool(ctx context.Context, tenantID, poolID string) (*pooldo
 	return s.repo.GetPool(ctx, tid, pid)
 }
 
+// PoolName is the name of one of the tenant's pools ("" when it cannot be
+// read: another tenant's pool is never named).
+func (s *Service) PoolName(ctx context.Context, tenantID shared.ID, poolID string) string {
+	p, err := s.GetPool(ctx, tenantID.String(), poolID)
+	if err != nil || p == nil {
+		return ""
+	}
+	return p.Name
+}
+
 // CreatePoolInput is the input of CreatePool.
 type CreatePoolInput struct {
 	TenantID    string

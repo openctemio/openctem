@@ -964,11 +964,13 @@ type ManagedBy string
 const (
 	ManagedByCoverage   ManagedBy = "coverage"
 	ManagedByEnrichment ManagedBy = "enrichment"
+	// ManagedByWebVerify owns the verification runs of sensitive web paths.
+	ManagedByWebVerify ManagedBy = "web_verify"
 )
 
 // Valid reports whether m names a known policy.
 func (m ManagedBy) Valid() bool {
-	return m == ManagedByCoverage || m == ManagedByEnrichment
+	return m == ManagedByCoverage || m == ManagedByEnrichment || m == ManagedByWebVerify
 }
 
 // IsManaged reports whether a platform policy owns the scan: its definition

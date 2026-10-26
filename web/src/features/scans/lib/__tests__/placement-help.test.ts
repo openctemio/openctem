@@ -170,3 +170,20 @@ describe('rule_sources_unsupported', () => {
     }
   })
 })
+
+describe('egress holds', () => {
+  it('have text and a fix in en and vi', () => {
+    for (const code of [
+      'egress_unsupported',
+      'egress_validate_unsupported',
+      'egress_host_direct',
+    ]) {
+      expect(PLACEMENT_FIX[code]).toBe('sensors')
+      for (const d of [en, vi]) {
+        expect(hasKey(d, `scans.placement.${code}.text`), code).toBe(true)
+        expect(hasKey(d, `scans.placement.${code}.fix`), code).toBe(true)
+      }
+      expect(placementHelp(code).href).toBe('/sensors')
+    }
+  })
+})

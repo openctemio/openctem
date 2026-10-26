@@ -83,6 +83,7 @@ type Handlers struct {
 	// console); nil if not initialized.
 	DashboardFacts *handler.DashboardFactsHandler
 	SavedView      *handler.SavedViewHandler   // nil if not initialized - saved list views (D15, RFC-048)
+	NavPin         *handler.NavPinHandler      // nil if not initialized - the caller's sidebar pins
 	Audit          *handler.AuditHandler       // nil if not initialized (no database)
 	Branch         *handler.BranchHandler      // nil if not initialized (no database)
 	SLA            *handler.SLAHandler         // nil if not initialized (no database)
@@ -1126,6 +1127,9 @@ func Register(
 	}
 	if h.SavedView != nil {
 		registerSavedViewRoutes(router, h.SavedView, authMiddleware, userSync)
+	}
+	if h.NavPin != nil {
+		registerNavPinRoutes(router, h.NavPin, authMiddleware, userSync)
 	}
 
 	// Permission Sync routes (real-time permission sync with ETag support)
