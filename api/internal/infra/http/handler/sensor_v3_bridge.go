@@ -131,6 +131,9 @@ func (h *SensorResultsV2Handler) AuthenticateV3(next http.Handler) http.Handler 
 		if errors.Is(err, errNotSigned) {
 			err = errBearerOnV3
 		}
+		if writeClockSkew(w, r, err, h.logger) {
+			return
+		}
 		if err != nil || id.Sensor == nil {
 			h.logger.Debug("v3 authentication failed", "error", err)
 			protov2.NewProblem(protov2.ProblemUnauthenticated).Write(w)
