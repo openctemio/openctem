@@ -360,7 +360,7 @@ type ScanDetailResponse struct {
 	OwnerState string `json:"owner_state" enums:"ok,missing,inactive,managed"`
 	// ManagedBy names the platform policy that owns the scan (coverage,
 	// enrichment); absent on a person's scan.
-	ManagedBy string `json:"managed_by,omitempty" enums:"coverage,enrichment"`
+	ManagedBy string `json:"managed_by,omitempty" enums:"coverage,enrichment,web_verify"`
 	CreatedAt string `json:"created_at"`
 	UpdatedAt string `json:"updated_at"`
 }
