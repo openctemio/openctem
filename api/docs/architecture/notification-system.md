@@ -360,6 +360,45 @@ platform relay, once. Editing the channel to a compliant relay and testing it re
 the transport rules and the stop-and-notify. Designed, not shipped: sender-domain verification and the
 `email.tenant_relay` mode (research 308, D12).
 
+### Organization mail relay
+
+An organization can send its own mail (invitations, account setup mail, member suspended or reactivated
+notices, scheduled reports) through its e-mail notification channel's mail server. Tick "Also send my
+organization's own mail through this server" on the channel (`org_mail` in its metadata; on for a new
+channel, off for a channel saved before the flag, so no existing sender changes by itself).
+
+The platform setting `email.tenant_relay` (console, `/admin/settings/email-relay`, env default
+`ORG_EMAIL_RELAY_MODE`) decides whether that is allowed:
+
+| Mode | Behaviour | Default |
+|---|---|---|
+| `off` | organization mail always uses the platform relay; a stored organization relay stays inactive | |
+| `verified_sender` | the relay is used only when its sender address is on a DNS-verified domain of the same organization (any verification purpose) and it meets the managed transport rules | `MANAGED_SERVICE=true` |
+| `on` | the relay is used as configured; the transport rule still applies | self-managed |
+
+Plans are not modeled on the platform yet, so a hosted service has one default for every organization
+(`verified_sender`). Setting `off` for free organizations arrives with the plan model. A change needs a super
+admin, a fresh step-up and a reason, is audited as critical and is told to every administrator. An unreadable
+stored value counts as `off`.
+
+Mail classes:
+
+| Class | Mail | Relay | When the organization relay cannot be used |
+|---|---|---|---|
+| Account security | verification, password reset, password changed, welcome, MFA turned off, recovery code used, sign-in and security notices, domain managed, SSO change pending, SAML certificate expiry, support access, ownership transfer, notice that an e-mail channel was stopped | platform relay only, always (a test lists every mail method and pins its class) | not applicable |
+| Organization, no exposure data | invitation, account setup, member suspended or reactivated | organization relay when active | falls back to the platform relay |
+| Organization content | scheduled reports | organization relay when active | does not fall back: the error is returned (the organization may have chosen its relay for data-handling reasons) |
+
+Because verification mail is account security mail, an organization relay never counts as "e-mail is
+available" for the sign-up verification decision.
+
+Shipped: the mode setting, the resolver reading the stored shape (connection settings in the channel
+metadata, the login from the encrypted credentials), the sender-domain rule, implicit TLS (port 465) for the
+organization relay, the fallback rules and the class test. Designed, not shipped (research 308): the
+activation test and owner notice on a destination change, per-organization rate limits and delivery log,
+the failing state with an in-app banner, member-only recipients for organizations whose relay is off, and
+per-plan defaults. The e-mail notification channel's own alerts are not yet subject to the mode.
+
 ### Generic webhook payload
 
 ```json

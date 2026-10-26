@@ -1169,6 +1169,11 @@ type EmailCredentials struct {
 	// (RFC-049 F-5). It is never stored or used.
 	SkipVerify bool   `json:"skip_verify"`
 	ReplyTo    string `json:"reply_to,omitempty"`
+	// OrgMail also sends the organization's own mail (invitations, account
+	// setup, reports) through this relay, when the platform allows it
+	// (email.tenant_relay). Absent: on for a new integration, unchanged on
+	// an update.
+	OrgMail *bool `json:"org_mail,omitempty"`
 }
 
 // errSMTPSkipVerify refuses a tenant request to turn off TLS verification.
@@ -1429,14 +1434,15 @@ func (s *IntegrationService) setEmailCredentials(intg *integrationdom.Integratio
 
 	// Store non-sensitive config in metadata
 	intg.SetMetadata(map[string]any{
-		"smtp_host":    metadata.SMTPHost,
-		"smtp_port":    metadata.SMTPPort,
-		"from_email":   metadata.FromEmail,
-		"from_name":    metadata.FromName,
-		"to_emails":    metadata.ToEmails,
-		"use_tls":      metadata.UseTLS,
-		"use_starttls": metadata.UseSTARTTLS,
-		"reply_to":     metadata.ReplyTo,
+		"smtp_host":                     metadata.SMTPHost,
+		"smtp_port":                     metadata.SMTPPort,
+		"from_email":                    metadata.FromEmail,
+		"from_name":                     metadata.FromName,
+		"to_emails":                     metadata.ToEmails,
+		"use_tls":                       metadata.UseTLS,
+		"use_starttls":                  metadata.UseSTARTTLS,
+		"reply_to":                      metadata.ReplyTo,
+		integrationdom.MetaEmailOrgMail: emailCreds.OrgMail == nil || *emailCreds.OrgMail,
 	})
 
 	// Encrypt and store sensitive credentials
@@ -1516,6 +1522,14 @@ func (s *IntegrationService) updateEmailCredentials(intg *integrationdom.Integra
 	// Boolean flags - use from input (these have default values, so always set)
 	newMetadata["use_tls"] = emailCreds.UseTLS
 	newMetadata["use_starttls"] = emailCreds.UseSTARTTLS
+
+	// Organization mail through this relay: the request's choice, else the
+	// stored one (absent on an integration saved before the flag: off).
+	if emailCreds.OrgMail != nil {
+		newMetadata[integrationdom.MetaEmailOrgMail] = *emailCreds.OrgMail
+	} else {
+		newMetadata[integrationdom.MetaEmailOrgMail] = getBoolFromMap(existingMetadata, integrationdom.MetaEmailOrgMail)
+	}
 
 	// Reply To
 	if emailCreds.ReplyTo != "" {
