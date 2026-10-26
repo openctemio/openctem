@@ -63,9 +63,14 @@ pending invitation for that exact address) verifies its address before it can
 sign in. The verification rule is decided before the account lookup, the same
 way for a new and an existing address, so it does not enumerate.
 
-- An organization's `security.email_verification_mode` governs only the
-  accounts **invited** into that organization (the invitation proves the
-  mailbox, so an invited registration is verified at once). It never decides
+- Whether an address is verified belongs to the account, not to one organization.
+  `security.email_verification_mode` is `auto` (the default: the platform rule,
+  verify when the platform can send e-mail) or `always` (members must have a
+  verified address to **enter that organization**: the token exchange for it is
+  refused until the address is verified, other organizations the account belongs
+  to are not affected). The former `never` is retired: it is refused on write and
+  a stored `never` reads as `auto`, because skipping verification for one
+  organization let an unverified account into every other one. It never decides
   public sign-up: there is no "the only organization is the default" rule, and
   an invitation token for another address does not make its organization's
   setting apply.
