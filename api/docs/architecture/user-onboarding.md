@@ -11,7 +11,7 @@ access policies (allowed email domains, IP allowlist). Design and rationale:
 | Organization admin creates the user | `POST /api/v1/tenants/{tenant}/users` | owner/admin of the organization |
 | New set-password link for a pending account | `POST /api/v1/tenants/{tenant}/users/{userId}/setup-link` | owner/admin; account unused and in this organization only |
 | Platform admin creates the **first owner** of an organization with no owner | `POST /api/v1/admin/tenants/{tenantId}/users` | console session, ops_admin+ (audited); 409 once the organization has an owner, active or suspended — see [First owner](#first-owner-platform-administrator) |
-| Platform admin recovers an organization whose owners are all suspended | `POST /api/v1/admin/tenants/{tenantId}/users` with `"recovery": true` | console session, **super_admin** (403 otherwise); link emailed only; audited as `organization.owner_recovery` and at critical severity in the organization |
+| Platform admin recovers an organization whose owners are all suspended, blocked or erased | `POST /api/v1/admin/tenants/{tenantId}/users` with `"recovery": true` | console session, **super_admin** (403 otherwise); link emailed only; audited as `organization.owner_recovery` and at critical severity in the organization |
 | Platform admin creates an organization with a new owner | `POST /api/v1/admin/tenants` (`owner_email` without an account) | console session, ops_admin+ (audited) |
 | First organization at install | `bootstrap-admin -org-name … -org-owner-email …` (CLI, same service as the console path) | database credentials; audited with actor `bootstrap-admin` |
 | Invitation | `POST /api/v1/tenants/{tenant}/invitations`, then register with `invitation_token` (if no account) and `POST /api/v1/invitations/accept` with `{"token"}` in the body | owner/admin to invite; the token + matching email to accept |
@@ -315,7 +315,16 @@ link is a secret. Whoever runs the command holds the database credentials and
 could set any password anyway, and otherwise the new owner would have no link
 until mail works. The link is never written to a log.
 
-**Owner recovery.** When every owner of an organization is suspended, a
+**Usable owner.** Owner recovery, the Organizations list (owner filter), the
+Overview's "without owner" item and the Users tab all use one definition of
+an owner who can act: an active membership of an account that is active and
+not erased. Blocking an account (Users > Block) or erasing it therefore makes
+its organizations count as "without owner" and opens recovery, even though the
+membership row still says active. The users response carries
+`active_owner_count` for every console role, so a read-only administrator
+(who gets no rows) sees the right notice.
+
+**Owner recovery.** When every owner of an organization is suspended, blocked or erased, a
 super admin can send `{"email": "...", "name": "...", "recovery": true}` to the
 same endpoint to create a new owner (RFC-022 revision 7). It is refused with
 403 for any other console role, with 409 while any owner is active, and with
