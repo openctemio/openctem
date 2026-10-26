@@ -37,6 +37,10 @@ const (
 	// every write scope it is only granted through an insufficient_scope
 	// challenge, and only when the organization allows it.
 	ScopeFindingsPropose Scope = "mcp:findings.propose"
+	// ScopePentestDraft lets a proposal tool save pentest findings as drafts
+	// in campaigns the person may add to (pentest:findings:write). Another
+	// campaign member confirms an AI draft, never its creator.
+	ScopePentestDraft Scope = "mcp:pentest.draft"
 )
 
 // scopeInfo describes one scope.
@@ -70,6 +74,11 @@ var catalog = map[Scope]scopeInfo{ //nolint:gochecknoglobals // fixed scope tabl
 	ScopeFindingsPropose: {
 		perms: []permission.Permission{permission.FindingsWrite},
 		title: "Propose false positives and accepted risks, each decided by another person",
+		write: true,
+	},
+	ScopePentestDraft: {
+		perms: []permission.Permission{permission.PentestFindingsWrite},
+		title: "Save pentest findings as drafts, each confirmed by another campaign member",
 		write: true,
 	},
 	ScopePentestRead: {
