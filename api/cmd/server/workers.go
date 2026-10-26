@@ -39,6 +39,7 @@ import (
 	"github.com/openctemio/openctem/api/internal/app/reclassify"
 	"github.com/openctemio/openctem/api/internal/app/scancoverage"
 	"github.com/openctemio/openctem/api/internal/app/sla"
+	webverifyapp "github.com/openctemio/openctem/api/internal/app/webverify"
 	"github.com/openctemio/openctem/api/internal/config"
 	"github.com/openctemio/openctem/api/internal/infra/auditsink"
 	"github.com/openctemio/openctem/api/internal/infra/controller"
@@ -1183,6 +1184,14 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 	if repos.WebEndpoint != nil {
 		w.ControllerManager.Register(controller.NewWebSurfaceRetentionController(
 			repos.WebEndpoint, log.With("controller", "web-surface-retention")))
+	}
+
+	// Verification of sensitive web paths: new or changed catalog endpoints
+	// get the mapped signed templates, budgeted per tenant.
+	if repos.WebEndpoint != nil && svc.Scan != nil && svc.Scope != nil {
+		w.ControllerManager.Register(controller.NewWebVerifyController(
+			webverifyapp.NewPlanner(postgres.NewWebVerifyRepository(&postgres.DB{DB: deps.DB}), svc.Scan, webverifyapp.ScopeRules{Svc: svc.Scope},
+				webverifyapp.Config{}, log.With("controller", "web-verify")), 15*time.Minute))
 	}
 
 	// Per-task sensor logs (RFC-029 §4.4.1): kept 14 days.
