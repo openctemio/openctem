@@ -14,6 +14,7 @@ import (
 // ownSelector has (or has not) one online tenant sensor that takes the job.
 type ownSelector struct {
 	sensor *sensor.Sensor
+	busy   bool
 	canUse bool
 	err    error
 }
@@ -33,7 +34,7 @@ func (s ownSelector) SelectSensor(context.Context, SelectSensorRequest) (*Select
 	if s.sensor != nil {
 		return &SelectSensorResult{Sensor: s.sensor}, nil
 	}
-	return &SelectSensorResult{}, nil
+	return &SelectSensorResult{TenantBusy: s.busy}, nil
 }
 
 func plannerService(proof bool, sel SensorSelector) *Service {
@@ -66,31 +67,66 @@ func TestDryRun_RoutingAndProof(t *testing.T) {
 		{"on: auto without own sensor: unverified need proof", true, ownSelector{canUse: true}, "auto", 1, []string{"portal.customer.example"}, RoutingWaits, RoutingReasonNoTenantSensor, ""},
 		{"on: explicit platform: unverified refused", true, ownSelector{sensor: own, canUse: true}, "platform", 1, []string{"portal.customer.example"}, RoutingPlatform, RoutingReasonPlatform, ""},
 		{"on: own sensors, safe active: no proof", true, ownSelector{sensor: own}, "tenant", 1, nil, RoutingTenant, RoutingReasonTenantFirst, "sensor-docker-01"},
-		{"on: own sensors, intrusive: proof needed", true, ownSelector{sensor: own}, "tenant", 2, []string{"portal.customer.example"}, RoutingTenant, RoutingReasonTenantFirst, "sensor-docker-01"},
+		{"on: own sensors, intrusive: no proof (the tier ceiling governs)", true, ownSelector{sensor: own}, "tenant", 2, nil, RoutingTenant, RoutingReasonTenantFirst, "sensor-docker-01"},
+		{"on: auto, own sensor online, intrusive: runs there, no proof", true, ownSelector{sensor: own, canUse: true}, "auto", 2, nil, RoutingTenant, RoutingReasonProof, "sensor-docker-01"},
+		{"on: auto, passive: runs on the own sensor, no proof", true, ownSelector{sensor: own, canUse: true}, "auto", 0, nil, RoutingTenant, RoutingReasonProof, "sensor-docker-01"},
+		{"on: auto, own sensors busy: the job waits for them, no proof", true, ownSelector{busy: true, canUse: true}, "auto", 2, nil, RoutingTenant, RoutingReasonTenantBusy, ""},
+		{"on: auto, no own sensor, intrusive: unverified need proof", true, ownSelector{canUse: true}, "auto", 2, []string{"portal.customer.example"}, RoutingWaits, RoutingReasonNoTenantSensor, ""},
+		{"on: explicit platform, intrusive: unverified refused", true, ownSelector{sensor: own, canUse: true}, "platform", 2, []string{"portal.customer.example"}, RoutingPlatform, RoutingReasonPlatform, ""},
 		{"on: sensor lookup fails: waits, unverified refused", true, ownSelector{err: errors.New("db down")}, "auto", 1, []string{"portal.customer.example"}, RoutingWaits, RoutingReasonNoTenantSensor, ""},
 	}
+	// A single scan names its tool; a workflow scan names none.
 	for _, c := range cases {
-		t.Run(c.name, func(t *testing.T) {
-			out, err := plannerService(c.proof, c.sel).DryRun(ctx, DryRunInput{TenantID: shared.NewID(), Targets: targets, SensorPreference: c.pref, Tier: c.tier, Tool: "nuclei"})
-			if err != nil {
-				t.Fatal(err)
-			}
-			want := map[string]bool{}
-			for _, r := range c.refused {
-				want[r] = true
-			}
-			for _, r := range out.Results {
-				if want[r.Target] != !r.Allowed {
-					t.Fatalf("%s: allowed=%v code=%q", r.Target, r.Allowed, r.Code)
+		for _, tool := range []string{"nuclei", ""} {
+			c, tool := c, tool
+			t.Run(c.name+" ("+tool+")", func(t *testing.T) {
+				out, err := plannerService(c.proof, c.sel).DryRun(ctx, DryRunInput{TenantID: shared.NewID(), Targets: targets, SensorPreference: c.pref, Tier: c.tier, Tool: tool})
+				if err != nil {
+					t.Fatal(err)
 				}
-				if !r.Allowed && r.Code != scopedom.RefusalProofRequired {
-					t.Fatalf("%s: code %q, want proof_required", r.Target, r.Code)
+				want := map[string]bool{}
+				for _, r := range c.refused {
+					want[r] = true
 				}
-			}
-			if out.Routing.RunsOn != c.runsOn || out.Routing.Reason != c.reason || out.Routing.SensorName != c.sensorName {
-				t.Fatalf("routing = %+v, want %s/%s/%q", out.Routing, c.runsOn, c.reason, c.sensorName)
-			}
-		})
+				for _, r := range out.Results {
+					if want[r.Target] != !r.Allowed {
+						t.Fatalf("%s: allowed=%v code=%q", r.Target, r.Allowed, r.Code)
+					}
+					if !r.Allowed && r.Code != scopedom.RefusalProofRequired {
+						t.Fatalf("%s: code %q, want proof_required", r.Target, r.Code)
+					}
+				}
+				if out.Routing.RunsOn != c.runsOn || out.Routing.Reason != c.reason || out.Routing.SensorName != c.sensorName {
+					t.Fatalf("routing = %+v, want %s/%s/%q", out.Routing, c.runsOn, c.reason, c.sensorName)
+				}
+			})
+		}
+	}
+}
+
+// A refusal says why: platform sensors need the proof, or no sensor of the
+// organization can take the job.
+func TestDryRun_ProofRefusalReasons(t *testing.T) {
+	ctx := context.Background()
+	own := &sensor.Sensor{ID: shared.NewID(), Name: "sensor-docker-01"}
+	targets := []string{"portal.customer.example"}
+	cases := []struct {
+		name string
+		sel  ownSelector
+		pref string
+		want string
+	}{
+		{"platform", ownSelector{sensor: own, canUse: true}, "platform", proofReasonPlatform},
+		{"no own sensor", ownSelector{canUse: true}, "auto", proofReasonNoSensor},
+	}
+	for _, c := range cases {
+		out, err := plannerService(true, c.sel).DryRun(ctx, DryRunInput{TenantID: shared.NewID(), Targets: targets, SensorPreference: c.pref, Tier: 1})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := out.Results[0].Reason; got != c.want {
+			t.Fatalf("%s: reason %q, want %q", c.name, got, c.want)
+		}
 	}
 }
 
