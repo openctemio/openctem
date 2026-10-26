@@ -24,7 +24,7 @@ type SensorIdentityPolicy struct {
 	// (octs_). False: pairing (key-bound identity) only.
 	BearerKeysAllowed bool `json:"bearer_keys_allowed"`
 	// KeyBindRequiresApproval: a bearer-key sensor may not bind its own
-	// signing key (RFC-052 §4.8); an administrator re-pairs it. False
+	// signing key; an administrator re-pairs it. False
 	// (default): self-binding allowed, audited.
 	KeyBindRequiresApproval bool `json:"key_bind_requires_approval"`
 }

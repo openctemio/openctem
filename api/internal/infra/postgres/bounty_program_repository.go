@@ -62,7 +62,7 @@ func (r *BountyProgramRepository) Import(ctx context.Context, w bountyprogram.Im
 			INSERT INTO groups (id, tenant_id, name, slug, description, group_type, is_active)
 			VALUES ($1, $2, $3, $4, $5, 'project', true)`,
 			w.Group.ID.String(), p.TenantID.String(), w.Group.Name, w.Group.Slug,
-			"Members work on the program "+p.Name+" (RFC-065)"); err != nil {
+			"Members work on the program "+p.Name+""); err != nil {
 			if isUniqueViolation(err) {
 				return bountyprogram.ErrNameTaken
 			}

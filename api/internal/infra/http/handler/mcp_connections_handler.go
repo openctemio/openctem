@@ -120,7 +120,7 @@ func (h *MCPConnectionsHandler) revoke(w http.ResponseWriter, r *http.Request, a
 
 // ListMine serves GET /api/v1/mcp-access/my-connections.
 // @Summary      List my connected AI applications
-// @Description  The caller's active connections in the current organization: which application, what it may read, since when and when it was last used (RFC-062).
+// @Description  The caller's active connections in the current organization: which application, what it may read, since when and when it was last used.
 // @Tags         MCP
 // @Produce      json
 // @Security     BearerAuth
@@ -186,7 +186,7 @@ type AdminMCPClientList struct {
 
 // AdminListClients serves GET /api/v1/admin/mcp-clients.
 // @Summary      List AI applications (MCP clients)
-// @Description  Every MCP client known to the platform with its active connections and how many organizations use it. Counts only; no organization data (RFC-062).
+// @Description  Every MCP client known to the platform with its active connections and how many organizations use it. Counts only; no organization data.
 // @Tags         Admin
 // @Produce      json
 // @Success      200  {object}  AdminMCPClientList
