@@ -56,7 +56,10 @@ type SensorHandler struct {
 	// policy template with the sensor's ranges; nil leaves them out.
 	zones ZoneLister
 	// grants serves the per-sensor grant routes (RFC-052 §5); nil: 404.
-	grants    *sensorgrant.Service
+	grants *sensorgrant.Service
+	// jobRoot returns the job-signing root id the onboarding snippets pass
+	// as SENSOR_JOB_SIGNING_ROOT; nil: none.
+	jobRoot   func(ctx context.Context) string
 	now       func() time.Time
 	validator *validator.Validator
 	logger    *logger.Logger

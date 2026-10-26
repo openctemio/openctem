@@ -4,11 +4,13 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/openctemio/openctem/api/internal/app/participation"
 	"github.com/openctemio/openctem/api/pkg/domain/durablejob"
 	"github.com/openctemio/openctem/api/pkg/domain/notification"
 	participationdom "github.com/openctemio/openctem/api/pkg/domain/participation"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
+	"github.com/openctemio/openctem/api/pkg/logger"
 )
 
 // The side effects of a finding status change, in one place. Every route
@@ -142,19 +144,26 @@ func (s *VulnerabilityService) afterStatusChange(ctx context.Context, tenantID s
 				watches = participationdom.ReasonFixClaimed
 			}
 		}
-		s.notifyFinding(ctx, c.f, findingEvent{
-			actorID: actorID,
-			typ:     notification.TypeFindingStatusChange,
-			title:   fmt.Sprintf("Finding status changed: %s → %s", c.old, newStatus),
-			body:    c.f.Message(),
-			// The feed hides status changes from pentest clients (they may
-			// not see the old status the title names), so the notice does too.
-			teamOnly:     isPentest(c.f),
-			actorWatches: watches,
-		})
+		// A batch is told as one summary per person (below), not one notice
+		// per finding.
+		if len(changes) == 1 {
+			s.notifyFinding(ctx, c.f, findingEvent{
+				actorID: actorID,
+				typ:     notification.TypeFindingStatusChange,
+				title:   fmt.Sprintf("Finding status changed: %s → %s", c.old, newStatus),
+				body:    c.f.Message(),
+				// The feed hides status changes from pentest clients (they may
+				// not see the old status the title names), so the notice does too.
+				teamOnly:     isPentest(c.f),
+				actorWatches: watches,
+			})
+		}
 		if newStatus == vulnerability.FindingStatusFixApplied {
 			fixClaims = append(fixClaims, c.f.ID())
 		}
+	}
+	if len(changes) > 1 {
+		s.notifyStatusBatch(ctx, actorID, changes)
 	}
 	// A fix claim is verified, not trusted: one proof-of-fix re-check per
 	// finding that reached fix_applied (bounded, best effort).
@@ -214,4 +223,94 @@ func movesOf(moved []shared.ID, old func(shared.ID) vulnerability.FindingStatus,
 		out = append(out, vulnerability.StatusMove{FindingID: id, Old: old(id), New: to})
 	}
 	return out
+}
+
+// statusDigest is what one person is told about a batch of status moves.
+type statusDigest struct {
+	findings []*vulnerability.Finding
+	statuses map[vulnerability.FindingStatus]struct{}
+	reason   string
+}
+
+// notifyStatusBatch tells each person who would hear about any moved finding
+// (assignee, watchers; membership, data scope and pentest visibility are
+// re-checked per finding at send time) with one summary notice for the whole
+// batch, not one per finding. The per-finding timeline and audit entries are
+// written elsewhere and unchanged.
+func (s *VulnerabilityService) notifyStatusBatch(ctx context.Context, actorID string, changes []statusChange) {
+	if s.userNotificationService == nil {
+		return
+	}
+	actor := person(actorID)
+	digests := make(map[shared.ID]*statusDigest)
+	var order []shared.ID
+	add := func(uid shared.ID, c statusChange, reason string) {
+		d := digests[uid]
+		if d == nil {
+			d = &statusDigest{statuses: map[vulnerability.FindingStatus]struct{}{}, reason: reason}
+			digests[uid] = d
+			order = append(order, uid)
+		}
+		d.findings = append(d.findings, c.f)
+		d.statuses[c.new] = struct{}{}
+	}
+	for _, c := range changes {
+		if c.old == c.new {
+			continue
+		}
+		if s.participants == nil {
+			if a := c.f.AssignedTo(); a != nil && (actor == nil || *a != *actor) {
+				add(*a, c, notification.ReasonAssigned)
+			}
+			continue
+		}
+		pe := participation.Event{
+			Item:     participationdom.Item{Kind: participationdom.ItemFinding, ID: c.f.ID()},
+			Actor:    actor,
+			TeamOnly: isPentest(c.f),
+		}
+		if a := c.f.AssignedTo(); a != nil {
+			pe.Direct = []shared.ID{*a}
+		}
+		recipients, err := s.participants.Recipients(withLoadedFinding(ctx, c.f), c.f.TenantID(), pe)
+		if err != nil {
+			s.logger.Warn("status batch: recipients", "error", logger.SanitizeError(err))
+			continue
+		}
+		for _, r := range recipients {
+			add(r.UserID, c, r.Reason)
+		}
+	}
+	for _, uid := range order {
+		d := digests[uid]
+		uid := uid
+		title, url := statusDigestText(d)
+		if err := s.userNotificationService.Notify(ctx, notification.NotificationParams{
+			TenantID:         d.findings[0].TenantID(),
+			Audience:         notification.AudienceUser,
+			AudienceID:       &uid,
+			NotificationType: notification.TypeFindingStatusChange,
+			Severity:         highestSeverity(d.findings).String(),
+			Title:            title,
+			Body:             d.findings[0].Title(),
+			ResourceType:     "finding",
+			URL:              url,
+			ActorID:          actor,
+			Reason:           d.reason,
+		}); err != nil {
+			s.logger.Warn("status batch: notify", "error", logger.SanitizeError(err))
+		}
+	}
+}
+
+// statusDigestText words the summary and picks the list it links to: the
+// moved status when the batch has one, else the person's work list.
+func statusDigestText(d *statusDigest) (title, url string) {
+	n := len(d.findings)
+	if len(d.statuses) == 1 {
+		for st := range d.statuses {
+			return fmt.Sprintf("%d findings moved to %s", n, st), "/findings?status=" + st.String()
+		}
+	}
+	return fmt.Sprintf("%d findings changed status", n), "/my-work"
 }
