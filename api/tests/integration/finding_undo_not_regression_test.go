@@ -3,6 +3,7 @@ package integration
 import (
 	"context"
 	"testing"
+	"time"
 
 	"github.com/openctemio/openctem/api/internal/app/finding"
 	"github.com/openctemio/openctem/api/internal/infra/postgres"
@@ -86,7 +87,7 @@ func TestRegression_UndoIsNotARegression(t *testing.T) {
 	// Evidence: a scan sees a resolved finding again.
 	seen := newFinding("undo-3")
 	move(seen, "resolved")
-	if _, err := repo.AutoReopenByFingerprintsBatch(ctx, tenant, []string{"undo-3"}); err != nil {
+	if _, err := repo.AutoReopenByFingerprintsBatch(ctx, tenant, []string{"undo-3"}, time.Now()); err != nil {
 		t.Fatal(err)
 	}
 	if reg, n := regression(seen); !reg || n != 1 {

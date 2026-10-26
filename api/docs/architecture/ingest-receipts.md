@@ -155,11 +155,16 @@ member may write to but not see. When the request has read every part,
   longer lists everything the upload reported (`AbsenceReceiptByID`);
 - checks the declaration again (`scope_changed`, nothing closed, when an
   asset left the uploader's scope or the organization while the upload ran);
+- refuses to close anything (`coverage_note = needs_verify`, coverage stays
+  `partial`, the file is still imported) when the uploader lacks
+  `findings:verify`, as closing a finding as fixed is a verification;
 - per tool: candidates are the open findings on the declared assets last
   seen by that tool, not a branch occurrence, not from a human source (pentest,
   manual, bug bounty, red team), not a leaked secret, and not reported by
   this upload: no action row on the upload's receipt (the same rule as a
-  covered scan, see "Absence"). A concurrent upload of the same tool
+  covered scan, see "Absence"), not critical, not in the known-exploited list,
+  and whose latest sighting (newest action row) came from an upload, so a
+  finding a platform sensor saw last stays open. A concurrent upload of the same tool
   overwrites `scan_id`, so `scan_id` alone does not prove absence;
 - the blinding guard holds a mass close (`held`, nothing closed);
 - otherwise closes them (`resolved`, verification `covered_scan`, timeline
