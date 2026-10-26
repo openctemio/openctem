@@ -29,6 +29,9 @@ type SessionService struct {
 	// an access token. nil = access tokens expire naturally.
 	revocations   SessionRevocationStore
 	revocationTTL time.Duration
+	// recovery is the AuthService's hook list: sign-out everywhere runs it so
+	// connected applications end with the sessions. nil = none.
+	recovery *SessionsRevokedHooks
 	// mfaChallenges, when set, has its expired login challenges removed by
 	// CleanupExpiredSessions.
 	mfaChallenges mfa.Repository
@@ -199,6 +202,45 @@ func (s *SessionService) RevokeSession(ctx context.Context, userID, sessionID st
 
 	s.logger.Info("session revoked", "user_id", userID, "session_id", sessionID)
 	return nil
+}
+
+// SetSessionsRevokedHooks wires the hook list shared with AuthService.
+func (s *SessionService) SetSessionsRevokedHooks(h *SessionsRevokedHooks) { s.recovery = h }
+
+// ActiveAPIKeys counts the API keys the user owns that a sign-out everywhere
+// would revoke on request (0 when unknown).
+func (s *SessionService) ActiveAPIKeys(ctx context.Context, userID string) int {
+	uid, err := shared.IDFromString(userID)
+	if err != nil || s.recovery == nil {
+		return 0
+	}
+	return s.recovery.CountActiveAPIKeys(ctx, uid)
+}
+
+// SignOutResult says what a sign-out everywhere also ended.
+type SignOutResult struct {
+	// APIKeysRevoked is the number of API keys revoked (0 unless asked).
+	APIKeysRevoked int
+}
+
+// SignOutEverywhere revokes the user's other sessions (all when
+// exceptSessionID is empty) and, like a password change, ends the person's
+// connected applications in every organization. API keys go too when
+// revokeAPIKeys is set. It acts on the one user it is given.
+func (s *SessionService) SignOutEverywhere(ctx context.Context, userID, exceptSessionID string, revokeAPIKeys bool) (SignOutResult, error) {
+	if err := s.RevokeAllSessions(ctx, userID, exceptSessionID); err != nil {
+		return SignOutResult{}, err
+	}
+	var res SignOutResult
+	if s.recovery != nil {
+		uid, err := shared.IDFromString(userID)
+		if err != nil {
+			return res, fmt.Errorf("invalid user id: %w", err)
+		}
+		s.recovery.Run(ctx, uid)
+		res.APIKeysRevoked = s.recovery.RevokeAPIKeysIf(ctx, revokeAPIKeys, uid)
+	}
+	return res, nil
 }
 
 // RevokeAllSessions revokes all sessions for a user except the current one.
