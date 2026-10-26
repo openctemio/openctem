@@ -1,0 +1,3 @@
+### Fixed: a result cut short never counts as coverage
+
+- A completed scan task whose result says `truncated: true` (in its metadata or at the top level: cut short by a deadline, the sensor's disk or an output cap) no longer marks its targets covered, no longer lets the findings auto-resolve close findings it did not report, and ends its run step partial with the targets recorded as unfinished. Done outcomes inside a truncated result are withheld; unreached targets and skips keep their own verdicts, and a later complete task still decides a target. The same applies to Tenable.sc coverage batches.
