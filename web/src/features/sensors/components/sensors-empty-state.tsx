@@ -2,7 +2,8 @@
 
 /**
  * The Sensors page before the organization has a sensor: what a sensor is,
- * how to add one, and that scanning repositories from CI needs none.
+ * the "Add sensor" panel inline (where it runs, the exact command, how it
+ * pairs, troubleshooting), and that scanning repositories from CI needs none.
  *
  * Pairing comes first: the sensor makes its own key and the administrator
  * never handles a secret (api docs/rfcs/RFC-052). Installing with an API key
@@ -10,22 +11,26 @@
  */
 
 import Link from '@/components/link'
-import { ArrowRight, Download, Link2, RadioTower, ScanSearch, Waypoints } from 'lucide-react'
+import { ArrowRight, Download, RadioTower, ScanSearch, Waypoints } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { useTranslation } from '@/context/i18n-provider'
+import type { Sensor } from '@/lib/api/sensor-types'
 import { cn } from '@/lib/utils'
 
+import { SensorOnboardingPanel } from './sensor-onboarding-panel'
+
 export interface SensorsEmptyStateProps {
-  /** sensors:pair: show "Pair a sensor". */
+  /** sensors:pair: show the Add sensor panel. */
   canPair: boolean
   /** sensors:write and bearer keys allowed: show "Install with an API key". */
   canInstallWithKey: boolean
   /** ci:read and the scans module: show the CI/CD hint. */
   canReadCI: boolean
-  onPair: () => void
   onInstall: () => void
+  /** Open the new sensor once it is online. */
+  onOpenSensor?: (sensor: Sensor) => void
   className?: string
 }
 
@@ -33,8 +38,8 @@ export function SensorsEmptyState({
   canPair,
   canInstallWithKey,
   canReadCI,
-  onPair,
   onInstall,
+  onOpenSensor,
   className,
 }: SensorsEmptyStateProps) {
   const { t } = useTranslation()
@@ -81,26 +86,17 @@ export function SensorsEmptyState({
             ))}
           </ul>
 
-          {canPair || canInstallWithKey ? (
-            <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
-              {canPair && (
-                <Button onClick={onPair}>
-                  <Link2 className="h-4 w-4" />
-                  {t('sensors.pair.title')}
-                </Button>
-              )}
-              {canInstallWithKey && (
-                <Button variant={canPair ? 'outline' : 'default'} onClick={onInstall}>
-                  <Download className="h-4 w-4" />
-                  {t('sensors.empty.installWithKey')}
-                </Button>
-              )}
-              {canPair && (
-                <p className="text-xs text-muted-foreground sm:ms-1">
-                  {t('sensors.empty.pairHint')}
-                </p>
-              )}
-            </div>
+          {canPair ? (
+            <SensorOnboardingPanel
+              canInstallWithKey={canInstallWithKey}
+              onInstallWithKey={onInstall}
+              onOpenSensor={onOpenSensor}
+            />
+          ) : canInstallWithKey ? (
+            <Button onClick={onInstall}>
+              <Download className="h-4 w-4" />
+              {t('sensors.empty.installWithKey')}
+            </Button>
           ) : (
             <p className="text-sm text-muted-foreground">{t('sensors.empty.askAdmin')}</p>
           )}
