@@ -110,12 +110,12 @@ type TypeDefinition struct {
 	Sections       []string              `json:"sections"`
 	Relationships  TypeRelationships     `json:"relationships"`
 	// ScannableBy lists the tool target types (supported_targets) that can
-	// scan the type (RFC-042 §6.3.8 R5).
+	// scan the type.
 	ScannableBy []string `json:"scannable_by"`
 	// ExposureDefault is the exposure the type has by nature ("" = none).
 	ExposureDefault string `json:"exposure_default,omitempty"`
 	// Coverage lists the capabilities an asset of the type needs and how
-	// often (RFC-093). An alias has its own list or none.
+	// often. An alias has its own list or none.
 	Coverage []CoverageRule `json:"coverage,omitempty"`
 }
 

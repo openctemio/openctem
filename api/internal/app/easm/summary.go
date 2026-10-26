@@ -89,7 +89,7 @@ type AttributionBlock struct {
 	Confirmed int `json:"confirmed"`
 	Legacy    int `json:"legacy"`
 	// Discovered: in the inventory, found by discovery, nobody claimed it
-	// (passive only unless an entry covers it; RFC-054 §15).
+	// (passive only unless an entry covers it).
 	Discovered  int        `json:"discovered"`
 	NeedsReview int        `json:"needs_review"`
 	Candidate   int        `json:"candidate"`
@@ -98,7 +98,7 @@ type AttributionBlock struct {
 	Rejected    int        `json:"rejected"`
 	ReviewSince *time.Time `json:"review_oldest_since,omitempty"`
 	// ReviewByReason counts the review queue (needs_review and candidate)
-	// by the rule that put each asset there (RFC-054 §6.6).
+	// by the rule that put each asset there.
 	ReviewByReason map[string]int `json:"review_by_reason"`
 }
 
