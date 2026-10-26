@@ -318,7 +318,7 @@ jobs:
         working-directory: api/deploy
         run: |
           # The first-start path: setup.sh writes .env (host name + generated secrets).
-          ./setup.sh ctem.example.com
+          ./setup.sh ctem.example.com --version v0.0.0-ci
           test "$(stat -c %a .env)" = 600
           docker compose config -q
           docker compose -f docker-compose.yml -f docker-compose.http-redirect.yml config -q
