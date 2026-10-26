@@ -134,7 +134,7 @@ export function ConnectionsList({
                   t('mcp.connections.endsOn', 'ends {date}', {
                     date: formatDateSafe(c.expires_at),
                   }),
-                ].join(' · ')}
+                ].join(', ')}
               </p>
             </div>
             <Button variant="outline" size="sm" className="shrink-0" onClick={() => setPending(c)}>

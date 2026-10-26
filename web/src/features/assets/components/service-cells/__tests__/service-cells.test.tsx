@@ -173,7 +173,7 @@ describe('TlsSummary', () => {
     rerender(
       <TlsSummary facts={tlsFacts(ctisCertificate(new Date(NOW + 212 * DAY).toISOString()), NOW)} />
     )
-    expect(screen.getByText('Valid · 212 days left')).toHaveAttribute('data-tone', 'success')
+    expect(screen.getByText('Valid, 212 days left')).toHaveAttribute('data-tone', 'success')
   })
 
   it('keeps "No TLS" and "TLS" visible and hides "not collected"', () => {

@@ -179,8 +179,7 @@ export function HeartbeatGapSparkline({
           {t('sensors.sparkline.gapPer', undefined, { minutes: Math.round(widthMs / 60000) })}
           {interval > 0 && (
             <>
-              {' '}
-              ·{' '}
+              ,{' '}
               {t('sensors.sparkline.dashed', undefined, {
                 interval: formatDurationShort(interval),
               })}

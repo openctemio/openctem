@@ -337,7 +337,7 @@ export function RunDetailSheet({ runId, onOpenChange }: RunDetailSheetProps) {
                     <DetailField label={t('scans.runDetail.deadline')} full>
                       <span>
                         {formatTime(deadline.at)}
-                        {deadline.relative && ` · ${deadline.relative}`}
+                        {deadline.relative && `, ${deadline.relative}`}
                       </span>
                       <span className="text-muted-foreground block text-meta">
                         {deadline.reason}
