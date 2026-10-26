@@ -370,6 +370,7 @@ func (s *SensorService) planHeartbeatWrite(ctx context.Context, a *sensordom.Sen
 				DiskReadMBPS: hb.DiskReadMBPS, DiskWriteMBPS: hb.DiskWriteMBPS,
 				NetworkRxMBPS: hb.NetworkRxMBPS, NetworkTxMBPS: hb.NetworkTxMBPS,
 				LoadScore: hb.LoadScore, Load: hb.Load, Outbox: hb.Outbox, Control: hb.Control,
+				LocalStore: hb.LocalStore,
 			},
 		})
 	}
