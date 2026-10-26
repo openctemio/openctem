@@ -1,0 +1,4 @@
+### Security: every console write is audited before it runs, and elevation fails closed
+
+- The write-ahead audit row (`admin.write_started`) was written only when the session acted as a super administrator. An unelevated super administrator acts as read-only, so their elevation, security key, recovery code and password writes were not written ahead, and operations administrators' writes never were. Every state-changing console request now writes the row first and is refused with 503 `AUDIT_UNAVAILABLE` when it cannot be stored.
+- Elevating a console session wrote its audit row after granting the elevation and only logged a warning when the row failed. The row is now written first; with the audit log unavailable the elevation is refused (503 `AUDIT_UNAVAILABLE`) and the session stays read-only.
