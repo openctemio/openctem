@@ -148,7 +148,8 @@ def active(entries: list[dict[str, str]]) -> list[dict[str, str]]:
             if datetime.date.fromisoformat(e["fix_by"]) >= d:
                 out.append(e)
         except (KeyError, ValueError):
-            pass
+            # A missing or malformed fix_by is not active; problems() reports it.
+            continue
     return out
 
 
