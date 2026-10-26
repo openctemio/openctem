@@ -5,7 +5,11 @@ import { useRouter, useSearchParams } from 'next/navigation'
 import { receiptListUrl } from '../../api/receipts-api'
 import { ReceiptHistory, receiptFiltersOf } from '../receipt-history'
 
-const swr = vi.hoisted(() => ({ key: '' as string | null, data: undefined as unknown, error: undefined as unknown }))
+const swr = vi.hoisted(() => ({
+  key: '' as string | null,
+  data: undefined as unknown,
+  error: undefined as unknown,
+}))
 
 vi.mock('@/context/tenant-provider', () => ({ useCurrentTenantId: () => 't1' }))
 vi.mock('swr', () => ({
@@ -18,8 +22,16 @@ vi.mock('swr', () => ({
 describe('receiptFiltersOf', () => {
   it('keeps only the filters the list accepts, with valid values', () => {
     expect(
-      receiptFiltersOf(new URLSearchParams('origin=sensor&tool=nuclei&since=2026-09-26T00:00:00Z&page=2&x=1'))
-    ).toEqual({ origin: 'sensor', tool: 'nuclei', since: '2026-09-26T00:00:00Z', page: 2, perPage: 50 })
+      receiptFiltersOf(
+        new URLSearchParams('origin=sensor&tool=nuclei&since=2026-09-26T00:00:00Z&page=2&x=1')
+      )
+    ).toEqual({
+      origin: 'sensor',
+      tool: 'nuclei',
+      since: '2026-09-26T00:00:00Z',
+      page: 2,
+      perPage: 50,
+    })
     // A value the API would refuse never reaches it.
     expect(receiptFiltersOf(new URLSearchParams('origin=upload&since=yesterday&page=-1'))).toEqual({
       origin: undefined,
@@ -41,11 +53,13 @@ describe('ReceiptHistory', () => {
   const replace = vi.fn()
   beforeEach(() => {
     replace.mockClear()
-    vi.mocked(useRouter).mockReturnValue({ replace, push: vi.fn() } as unknown as ReturnType<typeof useRouter>)
+    vi.mocked(useRouter).mockReturnValue({ replace, push: vi.fn() } as unknown as ReturnType<
+      typeof useRouter
+    >)
     vi.mocked(useSearchParams).mockReturnValue(
-      new URLSearchParams('origin=sensor&tool=nuclei&since=2026-09-26T00:00:00Z') as unknown as ReturnType<
-        typeof useSearchParams
-      >
+      new URLSearchParams(
+        'origin=sensor&tool=nuclei&since=2026-09-26T00:00:00Z'
+      ) as unknown as ReturnType<typeof useSearchParams>
     )
     swr.error = undefined
     swr.data = {
@@ -56,7 +70,15 @@ describe('ReceiptHistory', () => {
           source: { kind: 'scan_run', ref: 'run-1' },
           tool: 'nuclei',
           received: 100,
-          counts: { created: 20, updated: 70, reactivated: 2, closed: 0, skipped: 3, failed: 0, suppressed: 4 },
+          counts: {
+            created: 20,
+            updated: 70,
+            reactivated: 2,
+            closed: 0,
+            skipped: 3,
+            failed: 0,
+            suppressed: 4,
+          },
           started_at: '2026-10-25T10:00:00Z',
         },
       ],
@@ -64,7 +86,17 @@ describe('ReceiptHistory', () => {
       page: 1,
       per_page: 50,
       total_pages: 1,
-      totals: { receipts: 3, received: 190, created: 27, updated: 148, reactivated: 2, closed: 0, skipped: 3, failed: 0, suppressed: 4 },
+      totals: {
+        receipts: 3,
+        received: 190,
+        created: 27,
+        updated: 148,
+        reactivated: 2,
+        closed: 0,
+        skipped: 3,
+        failed: 0,
+        suppressed: 4,
+      },
     }
   })
 

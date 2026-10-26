@@ -274,8 +274,15 @@ describe('exposure flow and intake', () => {
   })
   const intake = {
     since: '2026-09-26T00:00:00Z',
-    sources: [src('nuclei', '/findings/imports?origin=sensor&tool=nuclei'), src('x', 'javascript:alert(1)')],
-    totals: { ...src('', '/findings/imports'), origin: '' as const, last_at: '0001-01-01T00:00:00Z' },
+    sources: [
+      src('nuclei', '/findings/imports?origin=sensor&tool=nuclei'),
+      src('x', 'javascript:alert(1)'),
+    ],
+    totals: {
+      ...src('', '/findings/imports'),
+      origin: '' as const,
+      last_at: '0001-01-01T00:00:00Z',
+    },
     noise: { received: 20, new: 4, merged: 12, suppressed: 2, not_stored: 2 },
     failing: 0,
     stale: 0,
@@ -307,9 +314,16 @@ describe('exposure flow and intake', () => {
     const m = widgetModel(v, spec('exposure.flow'), false)
     expect(m.state).toBe('ready')
     if (m.result?.shape !== 'flow') throw new Error('not flow')
-    expect(m.result.actionable).toEqual({ key: undefined, value: 9, drill: '/findings?state=open&priority_class=P0,P1,P2,P3' })
+    expect(m.result.actionable).toEqual({
+      key: undefined,
+      value: 9,
+      drill: '/findings?state=open&priority_class=P0,P1,P2,P3',
+    })
     expect(m.result.classes[0].drill).toBeNull()
-    expect(m.result.intake?.sources.map((s) => s.drill)).toEqual(['/findings/imports?origin=sensor&tool=nuclei', null])
+    expect(m.result.intake?.sources.map((s) => s.drill)).toEqual([
+      '/findings/imports?origin=sensor&tool=nuclei',
+      null,
+    ])
     // A zero time is "never", not year 1.
     expect(m.result.intake?.totals.last_at).toBeNull()
     expect(m.result.stages).toBeNull()
@@ -341,7 +355,11 @@ describe('exposure flow and intake', () => {
   })
 
   it('maps the intake; organization-only and no receipts are named reasons', () => {
-    const m = widgetModel({ ...base, shape: 'intake', metric: 'ingest.intake', intake }, spec('ingest.intake'), false)
+    const m = widgetModel(
+      { ...base, shape: 'intake', metric: 'ingest.intake', intake },
+      spec('ingest.intake'),
+      false
+    )
     if (m.result?.shape !== 'intake') throw new Error('not intake')
     expect(m.result.intake.noise.received).toBe(20)
     expect(m.result.intake.false_positive.drill).toBe('/findings?status=false_positive')

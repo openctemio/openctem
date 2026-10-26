@@ -157,7 +157,11 @@ function overview(): { layout: ReturnType<typeof templateLayout>; data: Dashboar
             since: intake.since,
             intake,
             actionable: fig(31, '/findings?state=open&priority_class=P0,P1,P2,P3'),
-            classes: ['P0', 'P1', 'P2', 'P3'].map((k, j) => ({ key: k, value: j + 1, drill: `/findings?priority_class=${k}` })),
+            classes: ['P0', 'P1', 'P2', 'P3'].map((k, j) => ({
+              key: k,
+              value: j + 1,
+              drill: `/findings?priority_class=${k}`,
+            })),
             open: fig(33, '/findings?state=open'),
             severity: [{ key: 'high', value: 33, drill: '/findings?severity=high' }],
             past_sla: fig(2, '/findings?sla_status=overdue'),
@@ -168,8 +172,19 @@ function overview(): { layout: ReturnType<typeof templateLayout>; data: Dashboar
             stages: {
               focus: 0,
               stages: [
-                { key: 'scoping' as const, state: 'warn' as const, value: 0, unit: 'count' as const, drill: '/assets' },
-                { key: 'validate' as const, state: 'not_measured' as const, value: null, unit: 'percent' as const },
+                {
+                  key: 'scoping' as const,
+                  state: 'warn' as const,
+                  value: 0,
+                  unit: 'count' as const,
+                  drill: '/assets',
+                },
+                {
+                  key: 'validate' as const,
+                  state: 'not_measured' as const,
+                  value: null,
+                  unit: 'percent' as const,
+                },
               ],
             },
           },
