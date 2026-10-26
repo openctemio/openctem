@@ -88,6 +88,17 @@ func TestDecideCoverage(t *testing.T) {
 			b, _ := json.Marshal(map[string]any{"exit_code": five})
 			c.Result = b
 		}, coverageNonZeroExit},
+		// A result cut short (deadline, disk, cap) never closes what it does
+		// not report, even when its reports declare full coverage.
+		{"truncated result, metadata flag", func(c *ingestreport.CommandCoverage) {
+			c.Result = json.RawMessage(`{"exit_code":0,"metadata":{"truncated":true}}`)
+		}, coverageTruncated},
+		{"truncated result, top-level flag", func(c *ingestreport.CommandCoverage) {
+			c.Result = json.RawMessage(`{"exit_code":0,"truncated":true}`)
+		}, coverageTruncated},
+		{"truncated false is complete", func(c *ingestreport.CommandCoverage) {
+			c.Result = json.RawMessage(`{"exit_code":0,"metadata":{"truncated":false}}`)
+		}, coverageEligible},
 		{"no report filed", func(c *ingestreport.CommandCoverage) { c.Reports = nil }, coverageNoReports},
 		{"report still processing", func(c *ingestreport.CommandCoverage) { c.Reports[0].State = protov2.StateProcessing }, coverageReportsPending},
 		{"report failed", func(c *ingestreport.CommandCoverage) { c.Reports[0].State = protov2.StateFailed }, coverageReportNotCompleted},
