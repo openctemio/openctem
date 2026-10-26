@@ -385,7 +385,7 @@ type ScopeTargetResponse struct {
 	// the trust (409 CI_TRUST_MANAGED here).
 	ManagedBy []ScopeManagedByResponse `json:"managed_by,omitempty"`
 	// AuthorizationSource: ownership, program, authorization_letter or
-	// self_attestation (RFC-065). ProgramID is set for a program entry.
+	// self_attestation. ProgramID is set for a program entry.
 	AuthorizationSource string  `json:"authorization_source"`
 	ProgramID           *string `json:"program_id,omitempty"`
 	LetterID            *string `json:"letter_id,omitempty"`
@@ -401,8 +401,7 @@ type ScopeTargetResponse struct {
 	// Approval is set on a pending entry: how many approvals it still
 	// needs and who can give them.
 	Approval *ScopeApprovalStatusResponse `json:"approval,omitempty"`
-	// Attestation is set on an active t2 entry that is attested
-	// (RFC-054 §12.5).
+	// Attestation is set on an active t2 entry that is attested.
 	Attestation *ScopeAttestationResponse `json:"attestation,omitempty"`
 }
 
@@ -438,7 +437,7 @@ type ScopeExclusionResponse struct {
 	Origin    string    `json:"origin"`
 	CreatedAt time.Time `json:"created_at"`
 	UpdatedAt time.Time `json:"updated_at"`
-	// Path exclusions only (RFC-056): the path prefix, the methods blocked
+	// Path exclusions only: the path prefix, the methods blocked
 	// (empty: all), the testing mode set and the one in force now.
 	HostPattern      string     `json:"host_pattern,omitempty"`
 	PathPrefix       string     `json:"path_prefix,omitempty"`
@@ -507,7 +506,7 @@ type CreateScopeTargetRequest struct {
 	// (default) or self_attestation. Program entries come from Programs
 	// (400 PROGRAM_ENTRY_VIA_PROGRAMS).
 	AuthorizationSource string `json:"authorization_source" validate:"omitempty,max=40"`
-	// LetterID names the letter of an authorization_letter entry (RFC-065 §13).
+	// LetterID names the letter of an authorization_letter entry.
 	LetterID string `json:"letter_id" validate:"omitempty,uuid"`
 }
 
@@ -532,7 +531,7 @@ type CreateScopeExclusionRequest struct {
 	Pattern       string     `json:"pattern" validate:"required,max=500"`
 	Reason        string     `json:"reason" validate:"required,max=1000"`
 	ExpiresAt     *time.Time `json:"expires_at"`
-	// PathPrefix and Methods: a `path` exclusion's web rule (RFC-056). The
+	// PathPrefix and Methods: a `path` exclusion's web rule. The
 	// pattern is then a host pattern ("*", "*.example.com", a host or an
 	// origin URL); methods empty blocks every method.
 	PathPrefix *string  `json:"path_prefix,omitempty" validate:"omitempty,max=500"`

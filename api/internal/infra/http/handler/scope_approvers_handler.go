@@ -191,8 +191,7 @@ func (h *ScopeHandler) RemindApprovers(w http.ResponseWriter, r *http.Request) {
 	_ = json.NewEncoder(w).Encode(resp)
 }
 
-// ScopeAttestationResponse is the attestation state of an active t2 entry
-// (RFC-054 §12.5).
+// ScopeAttestationResponse is the attestation state of an active t2 entry.
 type ScopeAttestationResponse struct {
 	// DueAt: when the next confirmation falls due (null: the entry expires
 	// first and needs none).

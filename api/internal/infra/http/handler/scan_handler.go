@@ -93,9 +93,9 @@ type CreateScanRequest struct {
 	// request, without saying which.
 	AssetIDs []string `json:"asset_ids" validate:"omitempty,max=1000,dive,uuid"`
 	// TargetOptions tunes how each run resolves the dynamic selectors among
-	// the targets (*.example.com, CIDRs) from the inventory (RFC-068).
+	// the targets (*.example.com, CIDRs) from the inventory.
 	TargetOptions *scan.TargetOptions `json:"target_options"`
-	// Intensity is the probe ceiling of every run (RFC-071): passive (no
+	// Intensity is the probe ceiling of every run: passive (no
 	// packets from the sensors to the targets), active (non-intrusive
 	// probing) or intrusive. Omitted: the tier the scanner or workflow
 	// probes at. A scanner or workflow step above it is refused
@@ -149,9 +149,9 @@ type UpdateScanRequest struct {
 	ScannerName    string         `json:"scanner_name" validate:"max=100"`
 	ScannerConfig  map[string]any `json:"scanner_config"`
 	TargetsPerJob  *int           `json:"targets_per_job"`
-	// TargetOptions: omitted = unchanged (RFC-068).
+	// TargetOptions: omitted = unchanged.
 	TargetOptions *scan.TargetOptions `json:"target_options"`
-	// Intensity: omitted = unchanged (RFC-071).
+	// Intensity: omitted = unchanged.
 	Intensity    string `json:"intensity" validate:"omitempty,oneof=passive active intrusive"`
 	ScheduleType string `json:"schedule_type" validate:"omitempty,oneof=manual daily weekly monthly crontab rrule once"`
 	ScheduleCron string `json:"schedule_cron" validate:"max=100"`
@@ -269,8 +269,7 @@ type AssetCompatibilityPreviewResponse struct {
 // ScanResponse represents the response for a scan.
 type ScanDetailResponse struct {
 	// ApprovalStatus: the newest approval request of the scan (pending,
-	// approved, rejected, expired, superseded, canceled); empty when none
-	// (RFC-073). On lists only.
+	// approved, rejected, expired, superseded, canceled); empty when none. On lists only.
 	ApprovalStatus string   `json:"approval_status,omitempty"`
 	ID             string   `json:"id"`
 	TenantID       string   `json:"tenant_id"`
@@ -283,10 +282,10 @@ type ScanDetailResponse struct {
 	// scope refusal code of each.
 	SkippedTargets []scan.SkippedTarget `json:"skipped_targets,omitempty"`
 	// TargetOptions: how each run resolves the dynamic selectors among
-	// Targets from the inventory (RFC-068).
+	// Targets from the inventory.
 	TargetOptions scan.TargetOptions `json:"target_options"`
 	// Intensity is the probe ceiling of every run: passive, active or
-	// intrusive (RFC-071).
+	// intrusive.
 	Intensity      string         `json:"intensity" enums:"passive,active,intrusive"`
 	ScanType       string         `json:"scan_type"`
 	ScanWorkflowID *string        `json:"scan_workflow_id,omitempty"`
@@ -296,7 +295,7 @@ type ScanDetailResponse struct {
 	// secrets (a token, a password, an Authorization header). The config is
 	// sent to the sensor in clear inside every command, so a secret there
 	// travels and rests unprotected. A warning, never a refusal; the value
-	// itself is never echoed (RFC-032 Phase 0).
+	// itself is never echoed.
 	ScannerConfigWarnings []scan.ConfigSecretWarning `json:"scanner_config_warnings,omitempty"`
 	TargetsPerJob         int                        `json:"targets_per_job"`
 	ScheduleType          string                     `json:"schedule_type"`
@@ -326,7 +325,7 @@ type ScanDetailResponse struct {
 	TotalRuns      int     `json:"total_runs"`
 	SuccessfulRuns int     `json:"successful_runs"`
 	FailedRuns     int     `json:"failed_runs"`
-	// PartialRuns: runs that kept results but lost some work (RFC-046 D5).
+	// PartialRuns: runs that kept results but lost some work.
 	PartialRuns int `json:"partial_runs"`
 	// BlockedRuns: triggers refused before anything was dispatched; each
 	// is a run with status blocked and its refusal_code.
@@ -1796,7 +1795,7 @@ type StatusCountsResponse struct {
 	Running   int64 `json:"running"`
 	Pending   int64 `json:"pending"`
 	Completed int64 `json:"completed"`
-	// Partial: runs or steps that kept results but lost some work (RFC-046 D5).
+	// Partial: runs or steps that kept results but lost some work.
 	Partial  int64 `json:"partial"`
 	Failed   int64 `json:"failed"`
 	Canceled int64 `json:"canceled"`

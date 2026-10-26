@@ -1395,8 +1395,7 @@ type ListAssetsInput struct {
 	// dependency, monitor_only, rejected) or the aliases unknown, unconfirmed
 	// and approved (RFC-036). Validated by attribution.ParseFilter.
 	Attribution []string `validate:"max=9,dive,max=20"`
-	// CoveredBy: assets the scope join confirmed through this scope entry
-	// (RFC-054 §4.3), the link behind "N assets confirmed".
+	// CoveredBy: assets the scope join confirmed through this scope entry, the link behind "N assets confirmed".
 	CoveredBy string `validate:"omitempty,uuid"`
 	// Triage (research/124, RFC-054 §15): scope status (in_scope,
 	// not_covered, excluded, internal), the attribution rules and discovery

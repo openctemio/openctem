@@ -203,7 +203,7 @@ type SensorResponse struct {
 	// holds now (acknowledged or running), counted by the platform;
 	// available_slots is what dispatch may still hand it: its effective
 	// capacity minus current_jobs, and no more than the free slots of a
-	// fresh load report (RFC-030 §5.8).
+	// fresh load report.
 	MaxConcurrentJobs int     `json:"max_concurrent_jobs"`
 	CurrentJobs       int     `json:"current_jobs"`
 	AvailableSlots    int     `json:"available_slots"`
@@ -214,7 +214,7 @@ type SensorResponse struct {
 	// it).
 	Load *SensorLoadResponse `json:"load"`
 	// Control is the control-channel report of the sensor's last heartbeat
-	// that carried one (sdk-go, RFC-035 §5.5): how well its heartbeat loop
+	// that carried one (sdk-go): how well its heartbeat loop
 	// keeps time. null when it never reported one.
 	Control *SensorControlResponse `json:"control"`
 	// HeartbeatIntervalSeconds is the interval the sensor follows, stored at
@@ -224,7 +224,7 @@ type SensorResponse struct {
 	HeartbeatIntervalSeconds *int    `json:"heartbeat_interval_seconds"`
 	HeartbeatDueAt           *string `json:"heartbeat_due_at"`
 	// HeartbeatState is where the sensor stands on the heartbeat ladder now
-	// (RFC-035 §5.6): online until its deadline plus grace, then late (still
+	//: online until its deadline plus grace, then late (still
 	// takes work), stale (takes no new work), offline. "" when it never
 	// connected.
 	HeartbeatState string `json:"heartbeat_state" enums:",online,late,stale,offline"`
@@ -242,8 +242,7 @@ type SensorResponse struct {
 	// results: dead_letter_count > 0, evicted_count > 0, or
 	// oldest_age_seconds > 3600. False when there is no snapshot.
 	OutboxWarning bool `json:"outbox_warning"`
-	// Protocol is what the platform last saw of the sensor's protocol
-	// (RFC-029 §5.3); null before the first heartbeat that recorded it.
+	// Protocol is what the platform last saw of the sensor's protocol; null before the first heartbeat that recorded it.
 	// deprecated is true for protocol v1: the sensor needs an upgrade.
 	Protocol *SensorProtocolResponse `json:"protocol"`
 
@@ -275,7 +274,7 @@ type SensorResponse struct {
 	KeyExpiresAt *string `json:"key_expires_at"`
 	// LegacyKey is true while the sensor's current key is a legacy rda_ key.
 	// It moves to an octs_ key on its next renewal; rda_ keys are retired 90
-	// days after enrollment and key-bound identity (RFC-032) ship.
+	// days after enrollment and key-bound identity ship.
 	LegacyKey bool `json:"legacy_key"`
 	// KeyLastUsedAt and KeyLastUsedIP are the last authenticated request with
 	// any of the sensor's keys and the client address it came from (behind a
@@ -300,8 +299,7 @@ type SensorResponse struct {
 	UptimeSeconds *int64 `json:"uptime_seconds"`
 
 	// capabilities and max_concurrent_jobs above are the administrator's
-	// settings (limits). Reported is what the sensor last reported it has
-	// (RFC-029 §4.3.1), null when it never reported; Effective is what
+	// settings (limits). Reported is what the sensor last reported it has, null when it never reported; Effective is what
 	// dispatch uses: the report narrowed by those settings (the settings
 	// alone without a report). The effective tools are the reported
 	// installed tools (none before a report); the sensor grant narrows them.
@@ -312,7 +310,7 @@ type SensorResponse struct {
 	CapabilityMismatch *sensor.CapabilityMismatch `json:"capability_mismatch,omitempty"`
 
 	// Content is the scanner content the sensor reports (trivy DB, nuclei
-	// templates, semgrep rules; RFC-031), one entry per tool and content,
+	// templates, semgrep rules), one entry per tool and content,
 	// judged against the tenant's content policy. Never null.
 	Content []SensorContentResponse `json:"content"`
 	// ContentRefreshSupported: the sensor manages content, so it accepts
@@ -331,7 +329,7 @@ type SensorResponse struct {
 	SensorCommit    string  `json:"sensor_commit"`
 	SensorBuildTime *string `json:"sensor_build_time"`
 
-	// The current manifest (RFC-033): its digest, when it became current
+	// The current manifest: its digest, when it became current
 	// and where it came from (sensor: registered; heartbeat: derived by the
 	// platform). "" / null before the first one. The document itself is
 	// GET /sensors/{id}/manifest.
@@ -339,8 +337,7 @@ type SensorResponse struct {
 	ManifestAt     *string `json:"manifest_at"`
 	ManifestSource string  `json:"manifest_source" enums:",sensor,heartbeat"`
 
-	// LocalPolicy is the sensor-local policy the sensor reports (RFC-040
-	// §5.7): enforced on the sensor, shown here. Always present; state
+	// LocalPolicy is the sensor-local policy the sensor reports: enforced on the sensor, shown here. Always present; state
 	// "unknown" when the sensor never reported one.
 	LocalPolicy SensorLocalPolicyResponse `json:"local_policy"`
 
@@ -351,7 +348,7 @@ type SensorResponse struct {
 	Posture SensorPostureResponse `json:"posture"`
 
 	// ConfigHealth is the platform's rollup of the sensor's latest config
-	// report (research/26): ok, attention, impaired or blocked; null when
+	// report: ok, attention, impaired or blocked; null when
 	// it sent none. While the report is stale it is still the last rollup;
 	// health_reasons then carry config_report_stale. The checklist is
 	// GET /sensors/{id}/config-report.
@@ -493,7 +490,7 @@ type SensorProtocolResponse struct {
 	UserAgent  string `json:"user_agent"`
 	SeenAt     string `json:"seen_at"`
 	Deprecated bool   `json:"deprecated"`
-	// Binding is how the last heartbeat arrived (RFC-059): grpc (mTLS),
+	// Binding is how the last heartbeat arrived: grpc (mTLS),
 	// https (protocol v3 over HTTPS) or v2; absent before it was recorded.
 	Binding string `json:"binding,omitempty" enums:"grpc,https,v2"`
 	// FallbackReason is why the sensor is not on gRPC, as it reported it.
@@ -764,7 +761,7 @@ type SensorStatsResponse struct {
 	// listed (a custom sensor) gets no version verdict.
 	Products []SensorProductResponse `json:"products"`
 	// Each sensor is judged against its own heartbeat deadline
-	// (heartbeat_due_at; RFC-035 §5.6). OnlineWindowSeconds is how long a
+	// (heartbeat_due_at). OnlineWindowSeconds is how long a
 	// sensor on the idle interval stays online after a heartbeat (interval
 	// plus grace); OfflineAfterSeconds (WORKER_HEARTBEAT_TIMEOUT) is the
 	// backstop after which an unconvicted sensor shows offline anyway.
@@ -1423,8 +1420,7 @@ type SensorConfigTemplatesResponse struct {
 	Compose    string `json:"compose"`
 	Kubernetes string `json:"kubernetes"`
 	Helm       string `json:"helm"`
-	// Policy is the sensor-local policy template (sensor-policy.yaml, RFC-040
-	// §5.7), prefilled with the ranges of the sensor's scan zones, for the
+	// Policy is the sensor-local policy template (sensor-policy.yaml), prefilled with the ranges of the sensor's scan zones, for the
 	// network owner to review and install read-only on the sensor host.
 	Policy string `json:"policy"`
 	// Image is the sensor image the snippets run, with its pinned tag.

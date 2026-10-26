@@ -46,7 +46,7 @@ type ScanGovernanceResponse struct {
 	// SelectableModes are the modes the owner may choose under the policy.
 	SelectableModes []string `json:"selectable_modes"`
 	// ScopeEntriesNeedApproval: in Strict, widening a scope entry needs
-	// approval (RFC-054 §7); in Off and On it does not.
+	// approval; in Off and On it does not.
 	ScopeEntriesNeedApproval bool           `json:"scope_entries_need_approval"`
 	Rules                    []scangov.Rule `json:"rules"`
 	PendingExpiryDays        int            `json:"pending_expiry_days"`

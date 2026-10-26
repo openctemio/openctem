@@ -117,7 +117,7 @@ type ScannerTemplateResponse struct {
 	CreatedAt       string         `json:"created_at"`
 	UpdatedAt       string         `json:"updated_at"`
 	// SensorApproval says whether the current version may reach sensors
-	// (RFC-040 §11.5): approved by people and recorded by the job signer.
+	//: approved by people and recorded by the job signer.
 	SensorApproval TemplateSensorApproval `json:"sensor_approval"`
 }
 

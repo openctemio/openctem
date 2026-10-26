@@ -166,7 +166,7 @@ type AssetTypeRegistryResponse struct {
 	Sections   []asset.SectionDefinition `json:"sections"`
 	Cards      []string                  `json:"cards"`
 	CoreFields []string                  `json:"core_fields"`
-	// Properties is the property dictionary (RFC-042 §6.3.9): every key's
+	// Properties is the property dictionary: every key's
 	// labels, display format, synonyms and allowed classes;
 	// CommonProperties the keys every type may hold besides its attributes.
 	Properties       []asset.PropertyDefinition `json:"properties"`

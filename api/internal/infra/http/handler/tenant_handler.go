@@ -1810,7 +1810,7 @@ type InvitationLookupInvitation struct {
 	Pending     bool      `json:"pending"`
 	ExpiresAt   time.Time `json:"expires_at"`
 	InviterName string    `json:"inviter_name"`
-	// What accepting gives (RFC-095 §5): the roles with their risk, the
+	// What accepting gives: the roles with their risk, the
 	// teams, the end of access, outside-member status and whether two-factor
 	// authentication will be required.
 	// Present only while the invitation is pending.
