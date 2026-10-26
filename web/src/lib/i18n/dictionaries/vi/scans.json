@@ -1195,7 +1195,6 @@
   "scans.groups.platformHint": "Chỉ các mục của chương trình bug bounty bao phủ các đích này. Hãy chạy lượt quét trên sensor của bạn, hoặc bỏ chúng.",
   "scans.groups.proof": "{count} đích cần tên miền đã xác minh để quét bằng sensor dùng chung",
   "scans.groups.proofHint": "Sensor dùng chung của nền tảng chỉ quét các tên miền tổ chức đã xác minh. Hãy chạy lượt quét trên sensor của bạn, xác minh tên miền, hoặc bỏ các đích này.",
-  "scans.groups.proofIntrusiveHint": "Kiểm tra xâm nhập cần tên miền đã xác minh của tổ chức trên mọi sensor. Hãy xác minh tên miền, hoặc bỏ các đích này.",
   "scans.groups.removeMany": "Bỏ {count} đích này",
   "scans.groups.removeOne": "Bỏ đích này",
   "scans.groups.resolvedAtRun": "Thành viên của nhóm được xác định khi quét chạy.",
