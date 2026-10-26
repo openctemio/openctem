@@ -5,6 +5,7 @@ import (
 	"errors"
 	"testing"
 
+	"github.com/openctemio/openctem/api/internal/app/consolesetting"
 	cst "github.com/openctemio/openctem/api/internal/app/consolesetting/consolesettingtest"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	emailpkg "github.com/openctemio/openctem/api/pkg/email"
@@ -61,7 +62,7 @@ func TestUpdateRefusals(t *testing.T) {
 	if _, err := svc.Update(ctx, cst.SuperAdmin(t), "sometimes", "r", 0, "", ""); !errors.Is(err, shared.ErrValidation) {
 		t.Fatalf("bad mode: %v", err)
 	}
-	if _, err := svc.Update(ctx, cst.SuperAdmin(t), "off", "  ", 0, "", ""); !errors.Is(err, shared.ErrValidation) {
+	if _, err := svc.Update(ctx, cst.SuperAdmin(t), "off", "  ", 0, "", ""); !errors.Is(err, consolesetting.ErrReasonRequired) {
 		t.Fatalf("no reason: %v", err)
 	}
 }

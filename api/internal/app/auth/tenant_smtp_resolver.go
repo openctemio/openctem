@@ -17,7 +17,6 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"net/mail"
 	"strings"
 
@@ -27,6 +26,8 @@ import (
 	emaildom "github.com/openctemio/openctem/api/pkg/email"
 	"github.com/openctemio/openctem/api/pkg/logger"
 )
+
+var errRelayLookup = errors.New("the organization's integrations could not be read")
 
 // RelayModeSource is the platform setting email.tenant_relay.
 type RelayModeSource interface {
@@ -80,7 +81,8 @@ func (r *IntegrationSMTPResolver) GetTenantSMTPConfig(ctx context.Context, tenan
 	integrations, err := r.integrationRepo.ListByCategory(ctx, parsedTenantID, integration.CategoryNotification)
 	if err != nil {
 		// Unknown whether the organization has a relay: do not guess.
-		return nil, fmt.Errorf("%w: list integrations: %v", emaildom.ErrTenantRelayUnusable, err)
+		r.logger.Warn("organization mail relay lookup failed", "tenant_id", tenantID, "error", err)
+		return nil, emaildom.RelayUnusable(errRelayLookup)
 	}
 	for _, intg := range integrations {
 		if intg.Provider() != integration.ProviderEmail || intg.TenantID() != parsedTenantID {
@@ -93,7 +95,7 @@ func (r *IntegrationSMTPResolver) GetTenantSMTPConfig(ctx context.Context, tenan
 		if err != nil {
 			r.logger.Warn("organization mail relay not usable",
 				"tenant_id", tenantID, "integration_id", intg.ID().String(), "error", err)
-			return nil, fmt.Errorf("%w: %v", emaildom.ErrTenantRelayUnusable, err)
+			return nil, emaildom.RelayUnusable(err)
 		}
 		return cfg, nil
 	}
