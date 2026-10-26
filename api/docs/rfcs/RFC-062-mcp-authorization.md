@@ -279,7 +279,7 @@ person's name**, with `requested_via` set to the AI application's name:
   rules;
 - the approval policy (tier, approvers, acceptance cap) applies unchanged;
   one pending request per finding;
-- the approval inbox marks it "Proposed by AI agent" with the application's
+- the approval inbox marks it "Proposed by AI application" with the application's
   name, and shows the justification as plain text;
 - the activity records `source = mcp`; the tool call is audited with the
   grant and client.
