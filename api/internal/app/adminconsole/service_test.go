@@ -269,12 +269,26 @@ type fakeAudit struct {
 	admin.AuditLogRepository
 	mu      sync.Mutex
 	actions []string
+	entries []*admin.AuditLog
 }
 
 func (f *fakeAudit) Create(_ context.Context, l *admin.AuditLog) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.actions = append(f.actions, l.Action)
+	f.entries = append(f.entries, l)
+	return nil
+}
+
+// last returns the newest entry of an action, or nil.
+func (f *fakeAudit) last(action string) *admin.AuditLog {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	for i := len(f.entries) - 1; i >= 0; i-- {
+		if f.entries[i].Action == action {
+			return f.entries[i]
+		}
+	}
 	return nil
 }
 

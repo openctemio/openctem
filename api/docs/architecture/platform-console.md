@@ -204,7 +204,9 @@ recommended production setup. Details: [Docker deployment](../deployment/docker.
   not start without the off-box audit sink (`ADMIN_AUDIT_SINK`). Request
   bodies are redacted by key: any key ending in `secret`, `password`, `_key`
   or `_token` (any case), and `code`, `totp`, `recovery_code`,
-  `recovery_codes`.
+  `recovery_codes`. An address (a key `url`, ending in `url`, or naming a
+  webhook) keeps only its scheme and host: a webhook path or query works as
+  a bearer secret.
 - Administrator accounts stay off the main site: the account an administrator
   signs in with is refused on the tenant site (password, second-factor
   completion, refresh-token exchange, social and organization SSO sign-in).

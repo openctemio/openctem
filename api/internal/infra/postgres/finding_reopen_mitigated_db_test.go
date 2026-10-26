@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"testing"
+	"time"
 
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 )
@@ -44,7 +45,7 @@ func TestAutoReopenBatch_MitigatedStaysResolved(t *testing.T) {
 	dupID, dupFP := seedClosedFinding(ctx, t, db, tenantID, assetID, "resolved", "duplicate")
 	closeWithReason(ctx, t, db, dupID, "fixed")
 
-	reopened, err := repo.AutoReopenByFingerprintsBatch(ctx, tenantID, []string{mitFP, fixedFP, dupFP})
+	reopened, err := repo.AutoReopenByFingerprintsBatch(ctx, tenantID, []string{mitFP, fixedFP, dupFP}, time.Now())
 	if err != nil {
 		t.Fatalf("AutoReopenByFingerprintsBatch: %v", err)
 	}
@@ -105,7 +106,7 @@ func TestAutoReopenBatch_TenantIsolationSameFingerprint(t *testing.T) {
 		t.Fatalf("share fingerprint (was %s): %v", fpB, err)
 	}
 
-	if _, err := repo.AutoReopenByFingerprintsBatch(ctx, tenantA, []string{fp}); err != nil {
+	if _, err := repo.AutoReopenByFingerprintsBatch(ctx, tenantA, []string{fp}, time.Now()); err != nil {
 		t.Fatalf("AutoReopenByFingerprintsBatch: %v", err)
 	}
 	if got := statusOf(ctx, t, db, idA); got != "new" {

@@ -1311,7 +1311,7 @@ func (s *stubFindingRepository) CreateBatchWithResult(_ context.Context, finding
 	return &vulnerability.BatchCreateResult{Created: len(findings)}, nil
 }
 
-func (s *stubFindingRepository) AutoReopenByFingerprintsBatch(_ context.Context, _ shared.ID, _ []string) (map[string]vulnerability.ReopenedFinding, error) {
+func (s *stubFindingRepository) AutoReopenByFingerprintsBatch(_ context.Context, _ shared.ID, _ []string, _ time.Time) (map[string]vulnerability.ReopenedFinding, error) {
 	return map[string]vulnerability.ReopenedFinding{}, nil
 }
 

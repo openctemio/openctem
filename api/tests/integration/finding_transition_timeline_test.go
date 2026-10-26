@@ -150,7 +150,7 @@ func TestTransitionTimeline_AutomaticMovesAreRecorded(t *testing.T) {
 	// A scan re-detects a resolved finding.
 	reopened, rfp := f.finding(t, "confirmed")
 	f.exec(t, `UPDATE findings SET status = 'resolved', resolution = 'patched', resolved_at = NOW() - INTERVAL '10 days' WHERE id = $1`, reopened.String())
-	if _, err := f.repo.AutoReopenByFingerprintsBatch(scanCtx, f.tenant, []string{rfp}); err != nil {
+	if _, err := f.repo.AutoReopenByFingerprintsBatch(scanCtx, f.tenant, []string{rfp}, time.Now()); err != nil {
 		t.Fatal(err)
 	}
 	f.wantOne(t, "scan reopen", reopened, "auto_reopened", "auto", "resolved", "new",

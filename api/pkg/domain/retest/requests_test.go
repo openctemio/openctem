@@ -5,6 +5,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/openctemio/openctem/api/pkg/domain/evidence"
 	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
 )
 
@@ -51,7 +52,7 @@ func TestDecideByRequests(t *testing.T) {
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			v, ok := DecideByRequests(c.reqs, swaggerAt)
+			v, ok := DecideByRequests(c.reqs, swaggerAt, nil)
 			if !ok {
 				t.Fatal("not decided")
 			}
@@ -90,7 +91,7 @@ func TestDecideByRequestsOriginRefusalNeedsClass(t *testing.T) {
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			v, ok := DecideByRequests(c.reqs, swaggerAt, c.cls)
+			v, ok := DecideByRequests(c.reqs, swaggerAt, nil, c.cls)
 			if !ok || v.Outcome != c.want {
 				t.Fatalf("got %s/%s ok=%v, want %s", v.Outcome, v.Code, ok, c.want)
 			}
@@ -101,16 +102,16 @@ func TestDecideByRequestsOriginRefusalNeedsClass(t *testing.T) {
 // Without per-request data (an older sensor) or a recorded endpoint, nothing
 // is decided here: the caller keeps today's behavior.
 func TestDecideByRequestsNeedsData(t *testing.T) {
-	if _, ok := DecideByRequests(nil, swaggerAt); ok {
+	if _, ok := DecideByRequests(nil, swaggerAt, nil); ok {
 		t.Error("decided without requests")
 	}
-	if _, ok := DecideByRequests([]RequestResult{rq(swaggerAt, 200, true)}, ""); ok {
+	if _, ok := DecideByRequests([]RequestResult{rq(swaggerAt, 200, true)}, "", nil); ok {
 		t.Error("decided without a recorded endpoint")
 	}
 }
 
 func TestDecideByRequestsHidesQueryValues(t *testing.T) {
-	v, _ := DecideByRequests([]RequestResult{rq("https://api.example.com/other?token=SECRET", 200, true)}, swaggerAt)
+	v, _ := DecideByRequests([]RequestResult{rq("https://api.example.com/other?token=SECRET", 200, true)}, swaggerAt, nil)
 	if strings.Contains(v.Reason, "SECRET") || strings.Contains(strings.Join(v.OtherPaths, " "), "SECRET") {
 		t.Fatalf("a query value reached the reason: %+v", v)
 	}
@@ -193,5 +194,33 @@ func TestExposedElsewhereMovesNothing(t *testing.T) {
 	}
 	if ValidationOutcome(OutcomeStillExposedElsewhere) != "" {
 		t.Error("an exposed-elsewhere retest must not stamp the finding's validation")
+	}
+}
+
+// An edge block recorded in the evidence is never hidden by request lines
+// that carry no edge state.
+func TestEdgeMarkerInEvidenceWinsOverRequestLine(t *testing.T) {
+	cases := []struct {
+		name string
+		ev   []evidence.Item
+		line RequestResult
+		cls  Class
+	}{
+		{"403 cloudflare on an exposure check with a prior refusal", cloudflare, rq(swaggerAt, 403, false), Class{Exposure: true, PriorAccessDenied: true}},
+		{"200 challenge page on another class", answer(swaggerAt, 200, "x", evidence.Header{Name: "Cf-Mitigated", Value: "challenge"}), rq(swaggerAt, 200, false), Class{}},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			v := Decide(CheckResult{Outcome: "not_detected", Evidence: c.ev, Requests: []RequestResult{c.line}}, probeUp, swaggerAt, c.cls)
+			if v.Outcome != OutcomeInconclusive || v.Code != ReasonEdgeBlocked {
+				t.Fatalf("got %s/%s (%s)", v.Outcome, v.Code, v.Reason)
+			}
+		})
+	}
+	// Evidence for another endpoint says nothing about the line's.
+	v := Decide(CheckResult{Outcome: "not_detected", Evidence: answer("https://api.example.com/other", 403, "x", evidence.Header{Name: "Server", Value: "cloudflare"}),
+		Requests: []RequestResult{rq(swaggerAt, 200, false)}}, probeUp, swaggerAt, Class{})
+	if v.Outcome != OutcomeConfirmedFixed {
+		t.Fatalf("other endpoint's evidence changed the verdict: %s/%s", v.Outcome, v.Code)
 	}
 }
