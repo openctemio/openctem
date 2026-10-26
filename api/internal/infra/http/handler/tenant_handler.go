@@ -229,7 +229,7 @@ type TenantWithRoleResponse struct {
 	TenantResponse
 	Role     string    `json:"role"`
 	JoinedAt time.Time `json:"joined_at"`
-	// The caller's own membership (RFC-058). Kind is "internal" or
+	// The caller's own membership. Kind is "internal" or
 	// "external"; AccessExpiresAt is when an external membership ends.
 	// BlockedReason, when set, says why the organization cannot be opened:
 	// suspended, expired, home_access_ended, home_domain_lapsed,
@@ -270,7 +270,7 @@ type MemberWithUserResponse struct {
 	PendingSetup bool `json:"pending_setup"`
 	// RBAC roles (included when ?include=roles)
 	RBACRoles []MemberRBACRoleResponse `json:"rbac_roles,omitempty"`
-	// External members (RFC-058). Kind is "internal" or "external".
+	// External members. Kind is "internal" or "external".
 	// HomeOrganization names the organization that manages an external
 	// member's address (empty when none does). AccessExpiresAt and
 	// SuspendedReason ("expired") are included only for owners and admins.
@@ -314,17 +314,17 @@ type InvitationResponse struct {
 	ExpiresAt   time.Time `json:"expires_at"`
 	CreatedAt   time.Time `json:"created_at"`
 	Pending     bool      `json:"pending"`
-	// AccessExpiresAt is when an external invitee's access will end (RFC-058).
+	// AccessExpiresAt is when an external invitee's access will end.
 	AccessExpiresAt *time.Time `json:"access_expires_at,omitempty"`
 	// LookalikeOf lists members whose address reaches the same mailbox once
 	// dots and +tags are ignored: a warning, never a merge (create only).
 	LookalikeOf []string `json:"lookalike_of,omitempty"`
 	// MemberKind is internal or external, as classified at creation;
 	// Privileged: the roles are above member for an outside invitee, so the
-	// member will need two-factor (RFC-095).
+	// member will need two-factor.
 	MemberKind string `json:"member_kind"`
 	Privileged bool   `json:"privileged"`
-	// LastSentAt and ResendCount: resends are limited (RFC-095 §5).
+	// LastSentAt and ResendCount: resends are limited.
 	LastSentAt  time.Time `json:"last_sent_at"`
 	ResendCount int       `json:"resend_count"`
 	// GroupIDs: the teams the invitee joins at acceptance.
@@ -366,8 +366,8 @@ type UpdateMemberRoleRequest struct {
 type CreateInvitationRequest struct {
 	Email   string   `json:"email" validate:"required,email,max=254"`
 	RoleIDs []string `json:"role_ids" validate:"required,min=1,max=10"` // RBAC roles to assign (required, max 10)
-	// AccessExpiresAt ends the access of an invitee outside the organization
-	// (RFC-058). Required for someone no organization manages; defaults to
+	// AccessExpiresAt ends the access of an invitee outside the organization.
+	// Required for someone no organization manages; defaults to
 	// 90 days when omitted; at most 365 days. Ignored for an internal invitee.
 	AccessExpiresAt *time.Time `json:"access_expires_at,omitempty"`
 	// AccessReason says why the external invitee gets access (shown to admins).
@@ -2185,12 +2185,12 @@ type SecuritySettingsResponse struct {
 	// tools that skip TLS verification.
 	ToolHTTPUserAgent     string `json:"tool_http_user_agent"`
 	ForbidToolInsecureTLS bool   `json:"forbid_tool_insecure_tls"`
-	// PersonalAccounts: allowed, allowed_with_mfa or blocked (RFC-058).
+	// PersonalAccounts: allowed, allowed_with_mfa or blocked.
 	PersonalAccounts string `json:"personal_accounts"`
-	// Invitees: who may be invited: any, verified_domains or allow_list (RFC-095).
+	// Invitees: who may be invited: any, verified_domains or allow_list.
 	Invitees string `json:"invitees"`
 	// ExternalAccessEndRequired: outside people no organization manages must
-	// have an end of access (RFC-095).
+	// have an end of access.
 	ExternalAccessEndRequired bool `json:"external_access_end_required"`
 	// SSOExceptions: members who may sign in without SSO while it is enforced.
 	SSOExceptions []tenant.SSOException `json:"sso_exceptions"`
@@ -2363,9 +2363,9 @@ type UpdateSecuritySettingsRequest struct {
 	// Allowing insecure TLS again is audited at high severity.
 	ToolHTTPUserAgent     *string `json:"tool_http_user_agent" validate:"omitempty,max=256"`
 	ForbidToolInsecureTLS *bool   `json:"forbid_tool_insecure_tls"`
-	// PersonalAccounts: allowed, allowed_with_mfa or blocked (RFC-058).
+	// PersonalAccounts: allowed, allowed_with_mfa or blocked.
 	PersonalAccounts *string `json:"personal_accounts" validate:"omitempty,oneof=allowed allowed_with_mfa blocked"`
-	// Invitees: any, verified_domains or allow_list (RFC-095 §4.1).
+	// Invitees: any, verified_domains or allow_list.
 	Invitees *string `json:"invitees" validate:"omitempty,oneof=any verified_domains allow_list"`
 	// ExternalAccessEndRequired: see SecuritySettingsResponse.
 	ExternalAccessEndRequired *bool `json:"external_access_end_required"`
@@ -2373,7 +2373,7 @@ type UpdateSecuritySettingsRequest struct {
 	// (with a second factor) while it is enforced.
 	SSOExceptions *[]tenant.SSOException `json:"sso_exceptions" validate:"omitempty,max=100"`
 	// JITRequiresApproval holds SSO newcomers until an administrator
-	// approves them (RFC-058).
+	// approves them.
 	JITRequiresApproval *bool `json:"jit_requires_approval"`
 	// SSORequireMFAEvidence: see SecuritySettingsResponse.
 	SSORequireMFAEvidence *bool `json:"sso_require_mfa_evidence"`
