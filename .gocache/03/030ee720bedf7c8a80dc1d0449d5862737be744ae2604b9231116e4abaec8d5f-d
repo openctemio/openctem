@@ -1,6 +1,0 @@
-./entity.go
-./errors.go
-./member.go
-./repository.go
-./role_binding.go
-./value_objects.go

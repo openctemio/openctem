@@ -1,4 +1,0 @@
-./files.go
-./pem_cert_pool.go
-./revoked.go
-./x509util.go

@@ -1,6 +1,0 @@
-./checkpoint.go
-./consumer.go
-./format.go
-./metrics.go
-./sign.go
-./writer.go

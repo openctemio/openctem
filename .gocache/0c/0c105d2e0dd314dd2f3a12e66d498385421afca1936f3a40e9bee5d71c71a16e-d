@@ -1,9 +1,0 @@
-./common.go
-./compile.go
-./condition.go
-./doc.go
-./engine.go
-./fields.go
-./scheme.go
-./spec.go
-./substatus.go

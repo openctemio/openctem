@@ -1,8 +1,0 @@
-./access_requests.go
-./cimd.go
-./confirmations.go
-./connections.go
-./dpop.go
-./policy.go
-./registration.go
-./service.go

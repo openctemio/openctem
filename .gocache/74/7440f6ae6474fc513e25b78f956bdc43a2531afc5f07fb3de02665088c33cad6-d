@@ -1,6 +1,0 @@
-./branch.go
-./config.go
-./modules.go
-./optbool.go
-./refspec.go
-./url.go

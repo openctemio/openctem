@@ -1,4 +1,0 @@
-./cpu.go
-./cpu_amd64.go
-./hwcap.go
-./cpu_amd64.s

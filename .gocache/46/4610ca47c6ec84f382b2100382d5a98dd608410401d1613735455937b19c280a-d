@@ -1,6 +1,0 @@
-./entity.go
-./errors.go
-./notification_extension.go
-./repository.go
-./scm_extension.go
-./webhook_signing.go

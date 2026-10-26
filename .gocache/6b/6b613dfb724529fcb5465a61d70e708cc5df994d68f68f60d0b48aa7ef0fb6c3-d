@@ -1,7 +1,0 @@
-./artifact.go
-./bundle.go
-./manifest.go
-./publisher.go
-./trust.go
-./version.go
-./write.go

@@ -1,7 +1,0 @@
-./definition.go
-./evaluate.go
-./mode.go
-./owners.go
-./request.go
-./requester.go
-./rule.go

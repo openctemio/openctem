@@ -1,5 +1,0 @@
-./issuers.go
-./jwks.go
-./oidc.go
-./verify.go
-./workload.go

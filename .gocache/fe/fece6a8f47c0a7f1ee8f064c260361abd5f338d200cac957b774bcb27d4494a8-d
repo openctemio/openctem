@@ -1,8 +1,0 @@
-./definition.go
-./errors.go
-./kind.go
-./links.go
-./namespace.go
-./repository.go
-./scope.go
-./values.go

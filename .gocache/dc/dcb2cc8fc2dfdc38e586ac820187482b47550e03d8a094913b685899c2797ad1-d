@@ -1,9 +1,0 @@
-./catalog.go
-./chain.go
-./contract.go
-./graph.go
-./network.go
-./params.go
-./target_kind.go
-./taxonomy.go
-./web.go

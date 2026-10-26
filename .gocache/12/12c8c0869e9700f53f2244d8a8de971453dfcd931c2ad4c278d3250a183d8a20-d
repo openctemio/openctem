@@ -1,6 +1,0 @@
-./capture.go
-./easm.go
-./jit.go
-./owner.go
-./service.go
-./signup_policy.go

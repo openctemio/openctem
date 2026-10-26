@@ -1,7 +1,0 @@
-./checklist.go
-./generator.go
-./pdf.go
-./pdf_markdown.go
-./summary.go
-./template_data.go
-./template_reference.go

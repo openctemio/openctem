@@ -1,8 +1,0 @@
-./direct.go
-./entity.go
-./image.go
-./repository.go
-./retention.go
-./scan.go
-./sniff.go
-./storage.go

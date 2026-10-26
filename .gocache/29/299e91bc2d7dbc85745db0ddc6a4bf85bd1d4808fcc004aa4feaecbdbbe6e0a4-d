@@ -1,5 +1,0 @@
-./dashboard.go
-./report_schedule.go
-./service.go
-./toggle_error.go
-./version.go
