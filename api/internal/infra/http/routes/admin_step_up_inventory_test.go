@@ -122,6 +122,8 @@ var adminWriteInventory = map[string]struct {
 	"POST /api/v1/admin/settings/alerts/test":                       {routine, "sends a test alert to the stored webhook; changes nothing"},
 	"PUT /api/v1/admin/settings/ai/":                                {stepUpRoute, "platform AI provider and key: cost and subprocessor (fresh)"},
 	"PUT /api/v1/admin/settings/ai/org-policy":                      {stepUpRoute, "whether organizations may use their own AI provider (fresh)"},
+	"PUT /api/v1/admin/settings/social-login/{provider}":            {stepUpRoute, "who can start a sign-in: social login client and secret (fresh)"},
+	"POST /api/v1/admin/settings/social-login/{provider}/test":      {routine, "asks the provider's token endpoint about a client; changes nothing"},
 	"POST /api/v1/admin/settings/ai/test":                           {routine, "one minimal request with the stored key; changes nothing"},
 	"PUT /api/v1/admin/settings/limits/":                            {stepUpRoute, "self-service default limits"},
 	"PUT /api/v1/admin/settings/scan-approval-policy/":              {stepUpRoute, "scan governance default"},
@@ -255,6 +257,7 @@ func TestFactorRoutesDemandFreshStepUp(t *testing.T) {
 		{"PUT", "/api/v1/admin/settings/region/", "settings.region"},
 		{"PUT", "/api/v1/admin/settings/alerts/", "settings.alerts"},
 		{"PUT", "/api/v1/admin/settings/ai/", "settings.ai"},
+		{"PUT", "/api/v1/admin/settings/social-login/google", "settings.social_login"},
 		{"PUT", "/api/v1/admin/settings/ai/org-policy", "settings.ai_org_policy"},
 		// Who receives password-reset mail, who may create an organization,
 		// and who may sign in to the console.

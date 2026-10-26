@@ -40,6 +40,7 @@ export const CONFIG_ITEM_LABELS: Record<string, string> = {
   console_mfa_policy: 'Security keys required for administrators',
   version_check: 'Daily version check',
   'captcha.turnstile': 'CAPTCHA (Turnstile) keys',
+  'auth.social_login': 'Social login (Google, GitHub, Microsoft)',
   'deployment.region': 'Deployment region',
   'storage.tenant_quota_mb': 'Default storage quota per organization',
   'alerts.webhook': 'Alert webhook',

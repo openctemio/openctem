@@ -41,6 +41,9 @@ func registerAuthRoutes(router Router, h Handlers, cfg *config.Config, authCfg A
 		WithTenantCreationMode(tenantCreationModeOf(cfg.Auth)).
 		WithRegistrationEnabled(cfg.Auth.SignupOpen()).
 		WithPasswordPolicy(cfg.Auth)
+	if h.AdminPlatformSettings != nil && h.AdminPlatformSettings.SocialLogin != nil {
+		authProvidersHandler.WithSocialSource(h.AdminPlatformSettings.SocialLogin.Offered)
+	}
 	if h.SignupPolicy != nil {
 		authProvidersHandler.WithSignupPolicy(h.SignupPolicy)
 	}

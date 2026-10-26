@@ -84,6 +84,7 @@ type OAuthService struct {
 	refreshTokenRepo sessiondom.RefreshTokenRepository
 	tokenGenerator   *jwt.Generator
 	config           config.OAuthConfig
+	providers        ProviderSource
 	authConfig       config.AuthConfig
 	logger           *logger.Logger
 	platformAdmins   PlatformAdminGate
@@ -236,7 +237,7 @@ func (s *OAuthService) GetAuthorizationURL(ctx context.Context, input Authorizat
 		return nil, ErrInvalidProvider
 	}
 
-	providerConfig := s.getProviderConfig(input.Provider)
+	providerConfig := s.getProviderConfig(ctx, input.Provider)
 	if providerConfig == nil || !providerConfig.IsConfigured() {
 		return nil, ErrProviderDisabled
 	}
@@ -289,7 +290,7 @@ func (s *OAuthService) HandleCallback(ctx context.Context, input CallbackInput) 
 		return nil, ErrInvalidProvider
 	}
 
-	providerConfig := s.getProviderConfig(input.Provider)
+	providerConfig := s.getProviderConfig(ctx, input.Provider)
 	if providerConfig == nil || !providerConfig.IsConfigured() {
 		return nil, ErrProviderDisabled
 	}
@@ -371,16 +372,30 @@ type ProviderInfo struct {
 
 // GetAvailableProviders returns a list of available OAuth providers.
 func (s *OAuthService) GetAvailableProviders() []ProviderInfo {
-	providers := []ProviderInfo{
-		{ID: "google", Name: "Google", Enabled: s.config.Google.IsConfigured()},
-		{ID: "github", Name: "GitHub", Enabled: s.config.GitHub.IsConfigured()},
-		{ID: "microsoft", Name: "Microsoft", Enabled: s.config.Microsoft.IsConfigured()},
+	on := func(p OAuthProvider) bool {
+		c := s.getProviderConfig(context.Background(), p)
+		return c != nil && c.IsConfigured()
 	}
-	return providers
+	return []ProviderInfo{
+		{ID: "google", Name: "Google", Enabled: on(OAuthProviderGoogle)},
+		{ID: "github", Name: "GitHub", Enabled: on(OAuthProviderGitHub)},
+		{ID: "microsoft", Name: "Microsoft", Enabled: on(OAuthProviderMicrosoft)},
+	}
 }
 
 // getProviderConfig returns the configuration for a provider.
-func (s *OAuthService) getProviderConfig(provider OAuthProvider) *config.OAuthProviderConfig {
+//
+// With a ProviderSource wired (the console's social login setting) the
+// provider in force is read on every call, so a change applies without a
+// restart; without one the start-up configuration is used.
+func (s *OAuthService) getProviderConfig(ctx context.Context, provider OAuthProvider) *config.OAuthProviderConfig {
+	if !provider.IsValid() {
+		return nil
+	}
+	if s.providers != nil {
+		cfg := s.providers.OAuthProvider(ctx, string(provider))
+		return &cfg
+	}
 	switch provider {
 	case OAuthProviderGoogle:
 		return &s.config.Google
@@ -391,6 +406,16 @@ func (s *OAuthService) getProviderConfig(provider OAuthProvider) *config.OAuthPr
 	}
 	return nil
 }
+
+// ProviderSource answers which configuration a social provider has right
+// now. Implemented by the console's social login setting.
+type ProviderSource interface {
+	OAuthProvider(ctx context.Context, provider string) config.OAuthProviderConfig
+}
+
+// SetProviderSource makes the providers live: they are read from src on
+// every authorize and callback instead of the start-up configuration.
+func (s *OAuthService) SetProviderSource(src ProviderSource) { s.providers = src }
 
 // generatePKCE generates a PKCE code verifier and challenge (RFC 7636).
 func generatePKCE() (verifier, challenge string, err error) {
@@ -607,7 +632,7 @@ func (s *OAuthService) getGoogleUserInfo(ctx context.Context, tokens *oauthToken
 	if tokens == nil || strings.TrimSpace(tokens.IDToken) == "" {
 		return nil, errors.New("google login returned no id_token (the 'openid' scope is required)")
 	}
-	cfg := s.getProviderConfig(OAuthProviderGoogle)
+	cfg := s.getProviderConfig(ctx, OAuthProviderGoogle)
 	if cfg == nil {
 		return nil, ErrInvalidProvider
 	}
@@ -816,7 +841,7 @@ func (s *OAuthService) getMicrosoftUserInfo(ctx context.Context, idToken string)
 	if strings.TrimSpace(idToken) == "" {
 		return nil, errors.New("microsoft login returned no id_token (the 'openid' scope is required)")
 	}
-	cfg := s.getProviderConfig(OAuthProviderMicrosoft)
+	cfg := s.getProviderConfig(ctx, OAuthProviderMicrosoft)
 	if cfg == nil {
 		return nil, ErrInvalidProvider
 	}
@@ -1105,7 +1130,11 @@ func (s *OAuthService) getAuthURL(provider OAuthProvider) string {
 }
 
 // getTokenURL returns the token endpoint URL for a provider.
-func (s *OAuthService) getTokenURL(provider OAuthProvider) string {
+func (s *OAuthService) getTokenURL(provider OAuthProvider) string { return TokenEndpoint(provider) }
+
+// TokenEndpoint is the fixed token endpoint of a social provider ("" for an
+// unknown one). Nothing a request or a setting says changes it.
+func TokenEndpoint(provider OAuthProvider) string {
 	switch provider {
 	case OAuthProviderGoogle:
 		return "https://oauth2.googleapis.com/token"

@@ -269,6 +269,13 @@ export const adminNav: AdminNavSection[] = [
         keywords: ['registration', 'self-service', 'policy'],
       },
       {
+        title: 'Social login',
+        i18nKey: 'admin.nav.socialLogin',
+        url: '/system/social-login',
+        icon: KeyRound,
+        keywords: ['google', 'github', 'microsoft', 'oauth', 'sign-in', 'sso'],
+      },
+      {
         title: 'Limits',
         i18nKey: 'admin.nav.limits',
         url: '/system/limits',
