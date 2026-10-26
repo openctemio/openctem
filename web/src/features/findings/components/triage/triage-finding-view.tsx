@@ -25,6 +25,11 @@ import { ExploitSignals } from '../exploit-signals'
 import { PriorityClassBadge } from '../priority-class-badge'
 import { FindingStatusBadge } from '../finding-status-badge'
 import { FindingEvidenceItems } from '../detail/finding-evidence-items'
+import {
+  FindingCodeLocation,
+  codeLocationOf,
+  hasCodeLocation,
+} from '../detail/finding-code-location'
 
 /** Multi-line untrusted text: each line made safe on its own, the breaks kept. */
 function displayLines(value: string, max: number): string {
@@ -77,7 +82,7 @@ export function TriageFindingView({
   const lastSeen = finding.last_seen_at
   const firstSeen = finding.first_detected_at || finding.created_at
   const tool = finding.last_seen_tool || finding.tool_name
-  const snippet = finding.snippet || finding.context_snippet
+  const location = codeLocationOf(detail)
   const { data: evidence, isLoading: evidenceLoading } = useFindingEvidenceItems(
     showEvidence ? finding.id : null
   )
@@ -235,10 +240,8 @@ export function TriageFindingView({
             )}
           </span>
         </div>
-        {snippet ? (
-          <pre className="max-h-64 overflow-auto rounded bg-muted p-3 font-mono text-xs whitespace-pre-wrap">
-            {displayLines(snippet, 4000)}
-          </pre>
+        {hasCodeLocation(location) ? (
+          <FindingCodeLocation location={location} compact />
         ) : (
           !showEvidence && (
             <p className="text-sm text-muted-foreground">
