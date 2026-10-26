@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"net/url"
 	"strings"
 
 	auditsvc "github.com/openctemio/openctem/api/internal/app/audit"
@@ -21,7 +22,25 @@ type SSOHandler struct {
 	ssoService *auth.SSOService
 	audit      *auditsvc.AuditService
 	changes    *auth.SSOChangeService
+	appURL     string
 	logger     *logger.Logger
+}
+
+// SetAppURL sets the public address of the tenant web app (the origin of
+// APP_URL). The provider list returns it so the admin console can show the
+// redirect URI to register at the identity provider.
+func (h *SSOHandler) SetAppURL(u string) {
+	h.appURL = publicOrigin(u)
+}
+
+// publicOrigin reduces a URL to scheme://host[:port]; anything that is not an
+// http(s) URL without credentials gives "".
+func publicOrigin(raw string) string {
+	u, err := url.Parse(strings.TrimSpace(raw))
+	if err != nil || u.Host == "" || u.User != nil || (u.Scheme != "http" && u.Scheme != "https") {
+		return ""
+	}
+	return u.Scheme + "://" + u.Host
 }
 
 // SetChangeApproval routes identity-provider creates and updates made from
@@ -408,6 +427,7 @@ func (h *SSOHandler) ListProviders(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]interface{}{
 		"providers": result,
+		"app_url":   h.appURL,
 	})
 }
 
