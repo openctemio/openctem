@@ -34,7 +34,11 @@ type CreateScanInput struct {
 	TargetOptions *scan.TargetOptions `json:"target_options"`
 	// Intensity is the probe ceiling (RFC-071): passive, active or
 	// intrusive; "" = the tier the tool or workflow probes at.
-	Intensity      string         `json:"intensity" validate:"omitempty,oneof=passive active intrusive"`
+	Intensity string `json:"intensity" validate:"omitempty,oneof=passive active intrusive"`
+	// Depth is how much of the workflow each run executes: passive (only
+	// steps that send nothing to the targets), standard or deep; "" =
+	// standard. Workflow scans only.
+	Depth          string         `json:"depth" validate:"omitempty,oneof=passive standard deep"`
 	ScanType       string         `json:"scan_type" validate:"required,oneof=workflow single"`
 	ScanWorkflowID string         `json:"scan_workflow_id" validate:"omitempty,uuid"`
 	ScannerName    string         `json:"scanner_name" validate:"max=100"`
@@ -189,6 +193,13 @@ func (s *Service) CreateScan(ctx context.Context, input CreateScanInput) (*scan.
 	}
 	// The probe ceiling: nothing in the scan may probe above it.
 	if err := s.applyIntensity(ctx, sc, input.Intensity); err != nil {
+		return nil, err
+	}
+	// The depth: at least one first step of the workflow must run at it.
+	if err := sc.SetDepth(input.Depth); err != nil {
+		return nil, err
+	}
+	if err := s.checkDepthRunsSomething(ctx, sc); err != nil {
 		return nil, err
 	}
 
@@ -798,7 +809,9 @@ type UpdateScanInput struct {
 	// TargetOptions: nil = unchanged (RFC-068).
 	TargetOptions *scan.TargetOptions `json:"target_options"`
 	// Intensity: "" = unchanged (RFC-071).
-	Intensity    string `json:"intensity" validate:"omitempty,oneof=passive active intrusive"`
+	Intensity string `json:"intensity" validate:"omitempty,oneof=passive active intrusive"`
+	// Depth: "" = unchanged.
+	Depth        string `json:"depth" validate:"omitempty,oneof=passive standard deep"`
 	ScheduleType string `json:"schedule_type" validate:"omitempty,oneof=manual daily weekly monthly crontab rrule once"`
 	ScheduleCron string `json:"schedule_cron" validate:"max=100"`
 	// ScheduleRRule is the RFC 5545 rule of an rrule schedule.
@@ -928,6 +941,17 @@ func (s *Service) UpdateScan(ctx context.Context, input UpdateScanInput) (*scan.
 			requested = string(sc.EffectiveIntensity())
 		}
 		if err := s.applyIntensity(ctx, sc, requested); err != nil {
+			return nil, err
+		}
+	}
+	// A new depth or workflow: a first step must still run at the depth.
+	if input.Depth != "" || input.ScanWorkflowID != "" {
+		if input.Depth != "" {
+			if err := sc.SetDepth(input.Depth); err != nil {
+				return nil, err
+			}
+		}
+		if err := s.checkDepthRunsSomething(ctx, sc); err != nil {
 			return nil, err
 		}
 	}

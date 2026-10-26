@@ -78,6 +78,14 @@ type ScanWorkflowSettingsRequest struct {
 	FailFast         bool   `json:"fail_fast"`
 	TimeoutSeconds   int    `json:"timeout_seconds" validate:"min=0,max=86400"`
 	SensorPreference string `json:"sensor_preference" validate:"omitempty,oneof=auto tenant platform"`
+	// DeltaGating: heavy chained stages (templates, crawl, screenshots,
+	// service detection) take only the assets new, changed or due since the
+	// previous run of the same scan. Omitted on update: unchanged.
+	DeltaGating *bool `json:"delta_gating,omitempty"`
+	// ContinueOnFailedDependency: a step whose dependency failed, was
+	// skipped or timed out still runs on the seeds and on what its other
+	// predecessors produced. Omitted on update: unchanged.
+	ContinueOnFailedDependency *bool `json:"continue_on_failed_dependency,omitempty"`
 }
 
 // UIPositionRequest represents a visual position in the workflow builder.
@@ -110,6 +118,10 @@ type CreateStepRequest struct {
 	Condition         *StepConditionRequest  `json:"condition"`
 	MaxRetries        int                    `json:"max_retries"`
 	RetryDelaySeconds int                    `json:"retry_delay_seconds"`
+	// RunPolicy is how the step runs at each depth (min_depth, per-depth
+	// standard params and target cap) and whether it waits for a tool
+	// (optional). Omitted on a step update: unchanged.
+	RunPolicy *scanworkflow.RunPolicy `json:"run_policy,omitempty"`
 }
 
 // StepConditionRequest represents a step condition in the request.
@@ -148,6 +160,10 @@ type ScanWorkflowSettingsResponse struct {
 	FailFast         bool   `json:"fail_fast"`
 	TimeoutSeconds   int    `json:"timeout_seconds"`
 	SensorPreference string `json:"sensor_preference"`
+	// DeltaGating: heavy chained stages run only on new, changed or due assets.
+	DeltaGating bool `json:"delta_gating"`
+	// ContinueOnFailedDependency: dependents of a failed step still run.
+	ContinueOnFailedDependency bool `json:"continue_on_failed_dependency"`
 }
 
 // UIPositionResponse represents a visual position in the workflow builder response.
@@ -177,6 +193,9 @@ type StepResponse struct {
 	Condition         *StepConditionResponse `json:"condition,omitempty"`
 	MaxRetries        int                    `json:"max_retries"`
 	RetryDelaySeconds int                    `json:"retry_delay_seconds"`
+	// RunPolicy is how the step runs at each depth and whether it waits for
+	// a tool; absent when the step sets none.
+	RunPolicy *scanworkflow.RunPolicy `json:"run_policy,omitempty"`
 }
 
 // StepConditionResponse represents a step condition in the response.
@@ -800,6 +819,10 @@ func (h *ScanWorkflowHandler) UpdateTemplate(w http.ResponseWriter, r *http.Requ
 		UIStartPosition: toUIPosition(req.UIStartPosition),
 		UIEndPosition:   toUIPosition(req.UIEndPosition),
 	}
+	if req.Settings != nil {
+		input.DeltaGating = req.Settings.DeltaGating
+		input.ContinueOnFailedDependency = req.Settings.ContinueOnFailedDependency
+	}
 
 	template, err := h.service.UpdateTemplate(scanWorkflowAuditCtx(r), input)
 	if err != nil {
@@ -918,6 +941,7 @@ func toAddStepInput(tenantID, templateID string, req CreateStepRequest) scanrun.
 		Condition:         toCondition(req.Condition),
 		MaxRetries:        req.MaxRetries,
 		RetryDelaySeconds: req.RetryDelaySeconds,
+		RunPolicy:         req.RunPolicy,
 	}
 	if req.UIPosition != nil {
 		in.UIPositionX = &req.UIPosition.X
@@ -1341,6 +1365,12 @@ func toSettings(settings *ScanWorkflowSettingsRequest) *scanworkflow.Settings {
 		FailFast:         settings.FailFast,
 		TimeoutSeconds:   settings.TimeoutSeconds,
 	}
+	if settings.DeltaGating != nil {
+		s.DeltaGating = *settings.DeltaGating
+	}
+	if settings.ContinueOnFailedDependency != nil {
+		s.ContinueOnFailedDependency = *settings.ContinueOnFailedDependency
+	}
 	if settings.SensorPreference != "" {
 		s.SensorPreference = scanworkflow.SensorPreference(settings.SensorPreference)
 	}
@@ -1382,10 +1412,12 @@ func toTemplateResponse(t *scanworkflow.Workflow) *TemplateResponse {
 		IsActive:         t.IsActive,
 		IsSystemTemplate: t.IsSystemTemplate,
 		Settings: ScanWorkflowSettingsResponse{
-			MaxParallelSteps: t.Settings.MaxParallelSteps,
-			FailFast:         t.Settings.FailFast,
-			TimeoutSeconds:   t.Settings.TimeoutSeconds,
-			SensorPreference: string(t.Settings.SensorPreference),
+			MaxParallelSteps:           t.Settings.MaxParallelSteps,
+			FailFast:                   t.Settings.FailFast,
+			TimeoutSeconds:             t.Settings.TimeoutSeconds,
+			SensorPreference:           string(t.Settings.SensorPreference),
+			DeltaGating:                t.Settings.DeltaGating,
+			ContinueOnFailedDependency: t.Settings.ContinueOnFailedDependency,
 		},
 		Tags:      t.Tags,
 		Steps:     steps,
@@ -1428,6 +1460,10 @@ func toStepResponse(s *scanworkflow.Step) *StepResponse {
 		DependsOn:         s.DependsOn,
 		MaxRetries:        s.MaxRetries,
 		RetryDelaySeconds: s.RetryDelaySeconds,
+	}
+	if !s.RunPolicy.IsZero() {
+		p := s.RunPolicy.Clone()
+		resp.RunPolicy = &p
 	}
 
 	if s.Condition.Type != "" {
