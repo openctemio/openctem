@@ -101,3 +101,21 @@ func TestFilterAssetsForScan_UnknownToolTargetsScanEverything(t *testing.T) {
 		t.Errorf("scanned %d skipped %d", res.ScannedAssets, res.SkippedAssets)
 	}
 }
+
+// With no administrator mapping at all, every pair the registry declares is
+// compatible: deleting the seeded rows the registry covers changes nothing.
+func TestFilterAssetsForScan_RegistryPairsNeedNoMappingRow(t *testing.T) {
+	for _, p := range asset.ScanTargetPairs() {
+		if !tool.IsValidTargetType(p.TargetType) {
+			continue
+		}
+		c, err := newTypeCompatibility(context.Background(), &fakeMappings{}, []string{p.TargetType})
+		if err != nil {
+			t.Fatal(err)
+		}
+		stored := asset.CanonicalPair(p.Type, p.SubType)
+		if ok, decidable := c.decide(stored); !ok || !decidable {
+			t.Errorf("registry pair %s -> %s (%v) is not compatible without a mapping row", p.TargetType, p.Type, stored)
+		}
+	}
+}

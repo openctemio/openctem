@@ -887,6 +887,7 @@ func registerAdminRoutes(
 			// Read operations — any authenticated admin.
 			r.GET("/stats", h.AdminTargetMapping.GetStats)
 			r.GET("/types", h.AdminTargetMapping.Types)
+			r.GET("/registry", h.AdminTargetMapping.Registry)
 			r.GET("/", h.AdminTargetMapping.List)
 			r.GET("/{id}", h.AdminTargetMapping.Get)
 

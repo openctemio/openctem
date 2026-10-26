@@ -3,6 +3,7 @@ package handler
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -65,7 +66,7 @@ func (f *fakeTargetMappingRepo) List(context.Context, tool.TargetMappingFilter, 
 
 func (f *fakeTargetMappingRepo) seed(t *testing.T, priority int) *tool.TargetAssetTypeMapping {
 	t.Helper()
-	m := tool.NewTargetAssetTypeMapping("url", asset.AssetTypeWebsite)
+	m := tool.NewTargetAssetTypeMapping("certificate", asset.AssetTypeDomain)
 	m.Priority = priority
 	require.NoError(t, f.Create(context.Background(), m))
 	return m
@@ -93,21 +94,21 @@ func TestAdminTargetMappingCreate_Validation(t *testing.T) {
 		wantStatus int
 		wantMsg    string
 	}{
-		{"defaults are valid", `{"target_type":"url","asset_type":"api"}`, http.StatusCreated, ""},
-		{"primary", `{"target_type":"url","asset_type":"api","is_primary":true}`, http.StatusCreated, ""},
-		{"min priority", `{"target_type":"url","asset_type":"api","priority":1}`, http.StatusCreated, ""},
-		{"max priority", `{"target_type":"url","asset_type":"api","priority":1000}`, http.StatusCreated, ""},
-		{"zero priority", `{"target_type":"url","asset_type":"api","priority":0}`, http.StatusBadRequest, "priority must be between 1 and 1000"},
-		{"negative priority", `{"target_type":"url","asset_type":"api","priority":-5}`, http.StatusBadRequest, "priority must be between 1 and 1000"},
-		{"priority too high", `{"target_type":"url","asset_type":"api","priority":1001}`, http.StatusBadRequest, "priority must be between 1 and 1000"},
-		{"description at limit", `{"target_type":"url","asset_type":"api","description":"` + long[1:] + `"}`, http.StatusCreated, ""},
-		{"description too long", `{"target_type":"url","asset_type":"api","description":"` + long + `"}`, http.StatusBadRequest, "description must be at most 500 characters"},
-		{"duplicate pair", `{"target_type":"url","asset_type":"website"}`, http.StatusConflict, "target type url is already mapped to asset type website"},
+		{"defaults are valid", `{"target_type":"certificate","asset_type":"subdomain"}`, http.StatusCreated, ""},
+		{"primary", `{"target_type":"certificate","asset_type":"subdomain","is_primary":true}`, http.StatusCreated, ""},
+		{"min priority", `{"target_type":"certificate","asset_type":"subdomain","priority":1}`, http.StatusCreated, ""},
+		{"max priority", `{"target_type":"certificate","asset_type":"subdomain","priority":1000}`, http.StatusCreated, ""},
+		{"zero priority", `{"target_type":"certificate","asset_type":"subdomain","priority":0}`, http.StatusBadRequest, "priority must be between 1 and 1000"},
+		{"negative priority", `{"target_type":"certificate","asset_type":"subdomain","priority":-5}`, http.StatusBadRequest, "priority must be between 1 and 1000"},
+		{"priority too high", `{"target_type":"certificate","asset_type":"subdomain","priority":1001}`, http.StatusBadRequest, "priority must be between 1 and 1000"},
+		{"description at limit", `{"target_type":"certificate","asset_type":"subdomain","description":"` + long[1:] + `"}`, http.StatusCreated, ""},
+		{"description too long", `{"target_type":"certificate","asset_type":"subdomain","description":"` + long + `"}`, http.StatusBadRequest, "description must be at most 500 characters"},
+		{"duplicate pair", `{"target_type":"certificate","asset_type":"domain"}`, http.StatusConflict, "target type certificate is already mapped to asset type domain"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			repo := newFakeTargetMappingRepo()
-			repo.seed(t, 10) // url -> website
+			repo.seed(t, 10) // certificate -> domain
 			h := NewAdminTargetMappingHandler(repo, logger.NewNop())
 
 			w := httptest.NewRecorder()
@@ -182,4 +183,74 @@ func TestValidateMappingFields(t *testing.T) {
 	// Counted in characters, not bytes.
 	assert.NoError(t, tool.ValidateMappingDescription(strings.Repeat("é", tool.MaxMappingDescriptionLength)))
 	assert.True(t, shared.IsValidation(tool.ValidateMappingDescription(strings.Repeat("a", tool.MaxMappingDescriptionLength+1))))
+}
+
+// The registry is the one built-in source: a pair it already declares is
+// refused, and nothing is stored.
+func TestAdminTargetMappingCreate_RegistryCoveredPairIsRefused(t *testing.T) {
+	for _, body := range []string{
+		`{"target_type":"url","asset_type":"website"}`,
+		`{"target_type":"domain","asset_type":"domain"}`,
+		`{"target_type":"url","asset_type":"discovered_url"}`, // an alias name the registry stands for
+	} {
+		repo := newFakeTargetMappingRepo()
+		h := NewAdminTargetMappingHandler(repo, logger.NewNop())
+		w := httptest.NewRecorder()
+		h.Create(w, opsAdminRequest(t, http.MethodPost, "/api/v1/admin/target-mappings", body, ""))
+		assert.Equal(t, http.StatusConflict, w.Code, body+" "+w.Body.String())
+		assert.Contains(t, w.Body.String(), "already covered by the asset type registry")
+		assert.Empty(t, repo.byID, "nothing may be stored")
+	}
+	// A pair the registry does not declare is still accepted.
+	repo := newFakeTargetMappingRepo()
+	h := NewAdminTargetMappingHandler(repo, logger.NewNop())
+	w := httptest.NewRecorder()
+	h.Create(w, opsAdminRequest(t, http.MethodPost, "/api/v1/admin/target-mappings", `{"target_type":"certificate","asset_type":"domain"}`, ""))
+	assert.Equal(t, http.StatusCreated, w.Code, w.Body.String())
+}
+
+// The built-in pairs are listed read-only and agree with the Create rule.
+func TestAdminTargetMappingRegistry(t *testing.T) {
+	h := NewAdminTargetMappingHandler(newFakeTargetMappingRepo(), logger.NewNop())
+	w := httptest.NewRecorder()
+	h.Registry(w, httptest.NewRequest(http.MethodGet, "/api/v1/admin/target-mappings/registry", nil))
+	require.Equal(t, http.StatusOK, w.Code)
+	var resp RegistryTargetPairsResponse
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
+	require.NotEmpty(t, resp.Data)
+	found := false
+	for _, p := range resp.Data {
+		assert.True(t, tool.IsValidTargetType(p.TargetType), p.TargetType)
+		if p.TargetType == "domain" && p.AssetType == "domain" {
+			found = true
+		}
+	}
+	assert.True(t, found, "domain -> domain is a built-in pair")
+}
+
+// A read-only administrator can neither add nor change a mapping.
+func TestAdminTargetMappingWrites_ReadOnlyAdminRefused(t *testing.T) {
+	a, err := admin.NewAdminUser("ro@example.test", "Read", admin.AdminRoleReadonly, nil)
+	require.NoError(t, err)
+	repo := newFakeTargetMappingRepo()
+	m := repo.seed(t, 20)
+	h := NewAdminTargetMappingHandler(repo, logger.NewNop())
+	req := func(method, body string) *http.Request {
+		r := httptest.NewRequest(method, "/x", bytes.NewBufferString(body))
+		return r.WithContext(context.WithValue(r.Context(), middleware.AdminUserKey, a))
+	}
+	w := httptest.NewRecorder()
+	h.Create(w, req(http.MethodPost, `{"target_type":"certificate","asset_type":"subdomain"}`))
+	assert.Equal(t, http.StatusForbidden, w.Code)
+	w = httptest.NewRecorder()
+	h.Update(w, opsAsReadonly(a, req(http.MethodPatch, `{"priority":5}`), m.ID.String()))
+	assert.Equal(t, http.StatusForbidden, w.Code)
+	assert.Len(t, repo.byID, 1)
+	assert.Equal(t, 20, repo.byID[m.ID.String()].Priority)
+}
+
+func opsAsReadonly(_ *admin.AdminUser, r *http.Request, id string) *http.Request {
+	rc := chi.NewRouteContext()
+	rc.URLParams.Add("id", id)
+	return r.WithContext(context.WithValue(r.Context(), chi.RouteCtxKey, rc))
 }

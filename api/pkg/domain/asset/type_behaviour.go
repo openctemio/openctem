@@ -175,3 +175,62 @@ func TypeNameMatches(name string, ref TypeRef) bool {
 	got := CanonicalPair(ref.Type, ref.SubType)
 	return want.Type == got.Type && subTypeMatches(want.SubType, got.SubType)
 }
+
+// ScanTargetPair is one fact of the registry's scannable_by: a tool that
+// accepts TargetType can scan assets of the registry type Type (an alias
+// type is its stored pair, SubType).
+type ScanTargetPair struct {
+	TargetType string
+	Type       AssetType
+	SubType    string
+}
+
+// ScanTargetPairs lists every (target type, registry type) the registry
+// declares scannable, in registry order. Callers must not modify the result.
+func ScanTargetPairs() []ScanTargetPair {
+	var out []ScanTargetPair
+	for i := range registryTypes {
+		d := &registryTypes[i]
+		stored := TypeRef{Type: d.Type}
+		if d.AliasOf != nil {
+			stored = *d.AliasOf
+		}
+		for _, target := range ScannableBy(stored.Type, stored.SubType) {
+			out = append(out, ScanTargetPair{TargetType: target, Type: d.Type, SubType: stored.SubType})
+		}
+	}
+	return out
+}
+
+// RegistryCoversMapping reports whether the registry already lets a tool that
+// accepts targetType scan everything an administrator mapping of
+// (targetType, name) would add. A mapping reaches the stored pair the name
+// stands for and, when that pair has no sub-type, every alias sub-type of its
+// type; it is covered only when scannable_by lists the target for all of them,
+// so removing a covered mapping never changes what can be scanned.
+func RegistryCoversMapping(targetType string, name AssetType) bool {
+	if !name.IsValid() {
+		return false
+	}
+	ref := TypeRef{Type: name}
+	if !name.IsStored() {
+		ref = CanonicalPair(name, "")
+	}
+	if _, ok := registryTypeIndex[ref.Type]; !ok {
+		return false
+	}
+	pairs := []TypeRef{ref}
+	if ref.SubType == "" {
+		for i := range registryTypes {
+			if a := registryTypes[i].AliasOf; a != nil && a.Type == ref.Type {
+				pairs = append(pairs, *a)
+			}
+		}
+	}
+	for _, p := range pairs {
+		if !slices.Contains(ScannableBy(p.Type, p.SubType), targetType) {
+			return false
+		}
+	}
+	return true
+}

@@ -38,6 +38,7 @@ import {
   useTargetMappings,
 } from '@console/features/admin-console/api/use-target-mappings'
 import { useAdmin } from '@console/features/admin-console/components/admin-console-shell'
+import { TargetMappingRegistryPanel } from '@console/features/admin-console/components/target-mapping-registry-panel'
 import { TargetMappingDialog } from '@console/features/admin-console/components/target-mapping-dialog'
 import {
   MAPPABLE_ASSET_TYPES,
@@ -315,7 +316,7 @@ export default function TargetMappingsPage() {
           title={t('admin.scanningTargetMappingsPage.targetMappings', 'Target mappings')}
           description={t(
             'admin.scanningTargetMappingsPage.whichAssetTypesEachScanner',
-            'Which asset types each scanner target type can scan. Scans skip assets that no active mapping covers.'
+            'Custom pairs that let a scanner target type scan more asset types. The built-in pairs come from the asset type catalog and are listed below.'
           )}
         >
           {newButton}
@@ -330,10 +331,10 @@ export default function TargetMappingsPage() {
         ) : noMappingsAtAll ? (
           <EmptyState
             icon={Waypoints}
-            title={t('admin.targetMappings.emptyTitle', 'No target mappings')}
+            title={t('admin.targetMappings.emptyTitle', 'No custom mappings')}
             description={t(
               'admin.targetMappings.empty',
-              'Without mappings, scans skip every asset. Map each scanner target type to the asset types it can scan.'
+              'No custom mappings. The built-in pairs already cover the standard asset types; add a mapping only when a scanner needs one more.'
             )}
             action={newButton}
           />
@@ -432,6 +433,8 @@ export default function TargetMappingsPage() {
             }
           />
         )}
+
+        <TargetMappingRegistryPanel />
 
         {dialog && (
           <TargetMappingDialog
