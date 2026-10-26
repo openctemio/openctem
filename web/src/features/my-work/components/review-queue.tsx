@@ -2,13 +2,14 @@
 
 import { useCallback, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { Lock } from 'lucide-react'
 import { Button } from '@/components/ui/button'
-import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { useTranslation } from '@/context/i18n-provider'
 import { useDisplayUser } from '@/hooks/use-display-user'
 import { refreshPendingApprovalCount } from '@/hooks/use-dynamic-badges'
-import { useApprovalDecision } from '@/features/findings/components/approval-decision'
+import {
+  ApprovalDecisionButtons,
+  useApprovalDecision,
+} from '@/features/findings/components/approval-decision'
 import { isOwnApproval } from '@/features/findings/lib/approvals'
 import type { ApiApproval } from '@/features/findings/types'
 import { ApprovalRow } from './approval-row'
@@ -87,11 +88,6 @@ export function ReviewQueue({
     }
   }
 
-  const stepUpHint = t(
-    'myWork.review.stepUpHint',
-    'You confirm your sign-in before the approval is saved.'
-  )
-
   return (
     <>
       <QueueFrame
@@ -152,33 +148,12 @@ export function ReviewQueue({
                         {t('myWork.review.own', 'Your request: another person decides')}
                       </span>
                     ) : (
-                      <>
-                        <Tooltip>
-                          <TooltipTrigger asChild>
-                            <Button
-                              size="sm"
-                              disabled={busy}
-                              onClick={() => decision.openApprove(a)}
-                              aria-describedby={`stepup-${a.id}`}
-                            >
-                              {t('myWork.review.approve', 'Approve')}
-                              <Lock className="ms-1.5 size-3.5" aria-hidden="true" />
-                            </Button>
-                          </TooltipTrigger>
-                          <TooltipContent className="max-w-xs text-xs">{stepUpHint}</TooltipContent>
-                        </Tooltip>
-                        <span id={`stepup-${a.id}`} className="sr-only">
-                          {stepUpHint}
-                        </span>
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          disabled={busy}
-                          onClick={() => decision.openReject(a)}
-                        >
-                          {t('myWork.review.reject', 'Reject')}
-                        </Button>
-                      </>
+                      <ApprovalDecisionButtons
+                        approval={a}
+                        busy={busy}
+                        onApprove={decision.openApprove}
+                        onReject={decision.openReject}
+                      />
                     )
                   }
                 />

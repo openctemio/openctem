@@ -1,0 +1,5 @@
+### Changed: one address classifier for CDN, hosting and cloud-shared addresses
+
+- New `pkg/domain/edgeaddr`: one versioned dataset (published edge ranges, provider network names, provider host suffixes) sorts an address or host into `edge`, `saas_hosting`, `cloud_shared` or `dedicated`. The attack surface suggestions, review by rule, the review queue's network hints, network seeds and the unclassified-scans guardrail all read it instead of two hard-coded CDN range lists and a provider-name substring list. Network names match on word starts, so a holder such as "Dawson Hosting" is no longer read as AWS.
+- `GET /api/v1/easm/suggestions`: each address's `network.class`, and on the addresses card `provider_count` and `providers` (provider, class, addresses). Shared addresses no longer carry `ports`: the open ports of an edge or hosting address are the provider's.
+- Review tab: the quiet line names the provider ("9 addresses your names resolve to belong to Cloudflare and need no decision"), and addresses shared with other organizations are counted apart.

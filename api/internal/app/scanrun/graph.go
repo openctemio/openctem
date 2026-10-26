@@ -55,12 +55,12 @@ func StepsGraph(steps []*scanworkflow.Step) stage.Graph {
 
 func stepNode(s *scanworkflow.Step) stage.GraphNode {
 	if st, ok := stage.ForStep(s.Tool, s.Capabilities); ok {
-		return stage.GraphNode{ID: s.StepKey, Kind: stage.NodeCapability, Capability: st.Key, Tool: s.Tool}
+		return stage.GraphNode{ID: s.StepKey, Kind: stage.NodeCapability, Capability: st.Key, Tool: s.Tool, Optional: s.RunPolicy.Optional}
 	}
 	for _, c := range s.Capabilities {
 		k := stage.Key(strings.ToLower(strings.TrimSpace(c)))
 		if slices.ContainsFunc(stage.Taxonomy(), func(t stage.Stage) bool { return t.Key == k }) {
-			return stage.GraphNode{ID: s.StepKey, Kind: stage.NodeCapability, Capability: k, Tool: s.Tool}
+			return stage.GraphNode{ID: s.StepKey, Kind: stage.NodeCapability, Capability: k, Tool: s.Tool, Optional: s.RunPolicy.Optional}
 		}
 	}
 	return stage.GraphNode{ID: s.StepKey, Kind: stage.NodeOpaque, Tool: s.Tool}
