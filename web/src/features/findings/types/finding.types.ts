@@ -252,6 +252,7 @@ export interface AffectedAsset {
   /** public | restricted | private | isolated | unknown (detail page only). */
   exposure?: string
   isInternetAccessible?: boolean
+  isCrownJewel?: boolean
 }
 
 /** The package an SCA finding is about (detail page only). */
@@ -800,6 +801,8 @@ export interface Finding {
   workItemUris?: string[] // linked issues
   occurrenceCount?: number
   duplicateCount?: number
+  /** Findings marked as duplicates of this one that the viewer can read. */
+  duplicatesMarked?: number
   lastSeenAt?: string
   correlationId?: string // for grouping related findings
 
@@ -1221,6 +1224,12 @@ export interface ApiApproval {
    * Its justification is model output: show it as plain text only.
    */
   requested_by_actor?: string
+  /**
+   * The AI application that made the request over MCP for `requested_by`,
+   * who therefore cannot approve it. Its justification is model output:
+   * show it as plain text only.
+   */
+  requested_via?: string
   justification: string
   /** The closure reason the request applies (absent on older requests). */
   closure_reason?: string

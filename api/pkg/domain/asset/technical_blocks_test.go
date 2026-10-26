@@ -167,3 +167,31 @@ func TestPromoteTechnicalBlocks_NotABlock(t *testing.T) {
 		t.Error("nil stays nil")
 	}
 }
+
+// SRV records ride the existing dns_records contract: they are kept and
+// counted in dns_record_types, but their target is only data. It never fills
+// cname_target or ip_addresses, so a name an SRV record points at (a service
+// outside the organization's roots, an unresolved name) cannot become the
+// asset's own address or alias.
+func TestPromoteTechnicalBlocks_SRVRecordsAreDataOnly(t *testing.T) {
+	props := map[string]any{"domain": map[string]any{
+		"dns_records": []any{
+			map[string]any{"type": "SRV", "name": "_sip._tcp.example.com", "value": "10 60 5060 sip.vendor.test.", "ttl": 300},
+			map[string]any{"type": "srv", "name": "_xmpp._tcp.example.com", "value": "0 0 0 ."},
+			map[string]any{"type": "A", "value": "203.0.113.9"},
+		},
+	}}
+	PromoteTechnicalBlocks(AssetTypeSubdomain, "", props)
+	if props["dns_record_types"] != "SRV, A" {
+		t.Errorf("dns_record_types = %v", props["dns_record_types"])
+	}
+	if _, ok := props["cname_target"]; ok {
+		t.Errorf("an SRV target became the CNAME target: %v", props["cname_target"])
+	}
+	if got := IPAddresses(props); !slices.Equal(got, []string{"203.0.113.9"}) {
+		t.Errorf("ip_addresses = %v", got)
+	}
+	if recs, ok := props["dns_records"].([]any); !ok || len(recs) != 3 {
+		t.Errorf("the records themselves must stay: %v", props["dns_records"])
+	}
+}

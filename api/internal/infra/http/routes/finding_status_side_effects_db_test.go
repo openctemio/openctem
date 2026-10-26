@@ -247,3 +247,74 @@ func TestBulkAssign_RecordsAndNotifies_DB(t *testing.T) {
 		t.Fatalf("assignee notifications = %d, want 1", n)
 	}
 }
+
+// A bulk status move tells each person once, with a summary of the batch, not
+// once per finding; a single move keeps its per-finding notice; a person of
+// another tenant is told nothing.
+func TestBulkStatus_OneNoticePerRecipient(t *testing.T) {
+	h, _ := newEffectsHarness(t)
+	tenant := h.tenant.String()
+	notices := func(to shared.ID) int {
+		return h.count(`SELECT COUNT(*) FROM notifications WHERE tenant_id = $1 AND audience = 'user' AND audience_id = $2
+			AND notification_type = 'finding_status_change'`, tenant, to.String())
+	}
+	assigned := func(n int) []string {
+		ids := make([]string, 0, n)
+		for i := 0; i < n; i++ {
+			id := shared.NewID()
+			h.exec(`INSERT INTO findings (id, tenant_id, asset_id, source, tool_name, message, severity, fingerprint, status, assigned_to)
+				VALUES ($1::uuid, $2, $3, 'sast', 'bulk-tool', 'bulk finding', 'medium', $1::text, 'confirmed', $4)`,
+				id.String(), tenant, h.assetA.String(), h.memberA.String())
+			ids = append(ids, id.String())
+		}
+		return ids
+	}
+
+	// Another organization's person and finding, named in the same call.
+	otherTenant, otherUser, otherAsset, otherFinding := shared.NewID(), shared.NewID(), shared.NewID(), shared.NewID()
+	h.exec(`INSERT INTO tenants (id, name, slug) VALUES ($1, $2, $2)`, otherTenant.String(), "bulk-"+otherTenant.String())
+	h.exec(`INSERT INTO users (id, email, name) VALUES ($1, $2, 'bulk')`, otherUser.String(), otherUser.String()+"@bulk.test")
+	h.exec(`INSERT INTO assets (id, tenant_id, name, asset_type, exposure, criticality) VALUES ($1, $2, 'bulk-other.example.com', 'domain', 'public', 'high')`,
+		otherAsset.String(), otherTenant.String())
+	h.exec(`INSERT INTO findings (id, tenant_id, asset_id, source, tool_name, message, severity, fingerprint, status, assigned_to)
+		VALUES ($1::uuid, $2, $3, 'sast', 'bulk-tool', 'other tenant', 'medium', $1::text, 'confirmed', $4)`,
+		otherFinding.String(), otherTenant.String(), otherAsset.String(), otherUser.String())
+	t.Cleanup(func() {
+		_, _ = h.db.Exec(`DELETE FROM tenants WHERE id = $1`, otherTenant.String())
+		_, _ = h.db.Exec(`DELETE FROM users WHERE id = $1`, otherUser.String())
+	})
+
+	bulk := append(assigned(50), otherFinding.String())
+	res, err := h.vuln.BulkUpdateFindingsStatus(context.Background(), tenant, finding.BulkUpdateStatusInput{
+		FindingIDs: bulk, Status: "in_progress", ActorID: h.owner.String(), HasStatusPermission: true,
+	})
+	if err != nil || res.Updated != 50 {
+		t.Fatalf("bulk: %v updated %d failed %d (%v)", err, res.Updated, res.Failed, res.Errors)
+	}
+	if n := notices(h.memberA); n != 1 {
+		t.Fatalf("assignee notices after a 50-finding move = %d, want 1", n)
+	}
+	if n := notices(otherUser); n != 0 {
+		t.Fatalf("a person of another tenant got %d notices", n)
+	}
+	if n := h.count(`SELECT COUNT(*) FROM finding_activities WHERE tenant_id = $1 AND activity_type = 'status_changed' AND actor_id = $2`,
+		tenant, h.owner.String()); n < 50 {
+		t.Fatalf("per-finding timeline entries = %d, want at least 50", n)
+	}
+
+	// One finding keeps its own notice.
+	single := assigned(1)
+	before := notices(h.memberA)
+	if _, err := h.vuln.BulkUpdateFindingsStatus(context.Background(), tenant, finding.BulkUpdateStatusInput{
+		FindingIDs: single, Status: "in_progress", ActorID: h.owner.String(), HasStatusPermission: true,
+	}); err != nil {
+		t.Fatalf("single: %v", err)
+	}
+	if n := h.count(`SELECT COUNT(*) FROM notifications WHERE tenant_id = $1 AND resource_id = $2 AND audience_id = $3
+		AND notification_type = 'finding_status_change'`, tenant, single[0], h.memberA.String()); n != 1 {
+		t.Fatalf("single move notices for its finding = %d, want 1", n)
+	}
+	if n := notices(h.memberA); n != before+1 {
+		t.Fatalf("single move added %d notices, want 1", n-before)
+	}
+}
