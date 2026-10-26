@@ -1315,6 +1315,8 @@
   "scans.map.state.succeeded": "Xong",
   "scans.map.state.waiting": "Đang chờ sensor",
   "scans.map.workflowVersion": "Phiên bản quy trình {version}, như lúc lượt chạy bắt đầu",
+  "scans.new.continuousProbeSensors": "Kiểm tra sensor",
+  "scans.new.continuousProbeWaiting": "Việc thăm dò tài sản mới sẽ bắt đầu khi có sensor hỗ trợ quét cổng và thăm dò HTTP kết nối.",
   "scans.new.continuousSecondFailed": "Đã lưu lần quét khám phá thụ động, nhưng chưa lưu được lần quét thăm dò tài sản mới: {error}",
   "scans.new.continuousSecondName": "{name}: tài sản mới",
   "scans.new.createFailed": "Không tạo được quét. Vui lòng thử lại.",
