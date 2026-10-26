@@ -56,6 +56,9 @@ type TransitionInput struct {
 	ErrorMessage string          // fail
 	// Refusal is the structured policy refusal of a fail (v2), or nil.
 	Refusal *sensordom.DispatchRefusal
+	// Infra is the sensor's own class of a failure that is not a refusal
+	// (v2), or nil.
+	Infra *InfraReport
 	// LeaseEpoch is the lease epoch the sensor holds the command under, when
 	// it says (complete, fail): a command claimed again since is refused.
 	LeaseEpoch *int
@@ -149,7 +152,7 @@ func (s *Service) Transition(ctx context.Context, t Transition, in TransitionInp
 	case TransitionComplete:
 		out, err = s.Complete(ctx, CompleteInput{TenantID: in.TenantID, SensorID: in.SensorID, CommandID: in.CommandID, Result: in.Result, LeaseEpoch: in.LeaseEpoch})
 	case TransitionFail:
-		out, err = s.Fail(ctx, FailInput{TenantID: in.TenantID, SensorID: in.SensorID, CommandID: in.CommandID, ErrorMessage: in.ErrorMessage, LeaseEpoch: in.LeaseEpoch, Refusal: in.Refusal})
+		out, err = s.Fail(ctx, FailInput{TenantID: in.TenantID, SensorID: in.SensorID, CommandID: in.CommandID, ErrorMessage: in.ErrorMessage, LeaseEpoch: in.LeaseEpoch, Refusal: in.Refusal, Infra: in.Infra})
 	}
 	if err != nil {
 		return nil, s.transitionError(ctx, t, in, err)

@@ -205,7 +205,7 @@ func sensorWhere(ready string, tenantID shared.ID, sensorID *shared.ID, capabili
 	args := []any{tenantID.String()}
 	if sensorID != nil {
 		where += " AND (commands.sensor_id = $2 OR commands.sensor_id IS NULL) AND " + zoneClaimPredicate("$2") +
-			" AND " + toolClaimPredicate("$2") + " AND " + refusedByPredicate("$2") + " AND " + featureClaimPredicate("$2")
+			" AND " + toolClaimPredicate("$2") + " AND " + refusedByPredicate("$2") + " AND " + failedOnPredicate("$2") + " AND " + featureClaimPredicate("$2")
 		args = append(args, sensorID.String())
 	} else {
 		// No sensor identity: nothing pinned, no zone membership and no tools
@@ -383,6 +383,7 @@ func (r *CommandRepository) PendingWorkForSensor(ctx context.Context, tenantID, 
 		AND ` + zoneClaimPredicate("$2") + `
 		AND ` + toolClaimPredicate("$2") + `
 		AND ` + refusedByPredicate("$2") + `
+		AND ` + failedOnPredicate("$2") + `
 		AND ` + featureClaimPredicate("$2") + `
 		AND ` + capabilityClaimPredicate("$3")
 	query := `
@@ -565,6 +566,7 @@ func (r *CommandRepository) ClaimForSensor(ctx context.Context, tenantID, comman
 		  AND ` + toolClaimPredicate("$3") + `
 		  AND ` + capabilityClaimPredicate(claimSensorCapabilities) + `
 		  AND ` + refusedByPredicate("$3") + `
+		  AND ` + failedOnPredicate("$3") + `
 		  AND ` + featureClaimPredicate("$3") + `
 		  AND ` + scheduledDuePredicate + `
 		  AND ` + hostFreePredicate + `
@@ -1692,15 +1694,23 @@ func (r *CommandRepository) FailExhaustedCommands(ctx context.Context, maxRetrie
 // the same change as the fail_exhausted_commands() function) returning the
 // failed commands, so the caller can notify their scan runs.
 func (r *CommandRepository) FailExhaustedCommandsReturning(ctx context.Context, maxRetries int) ([]*command.Command, error) {
+	// A command that failed on sensors for infrastructure reasons (attempts)
+	// says so: the causes, not only that the attempts ran out.
 	const query = `
 		UPDATE commands
 		SET status = 'failed',
-		    error_message = CASE WHEN dispatch_attempts >= $1
-		                         THEN 'Max dispatch attempts exceeded' ELSE $3::text END,
+		    error_message = CASE
+		        WHEN dispatch_attempts >= $1 AND jsonb_array_length(attempts) > 0 THEN
+		            (SELECT 'Failed on ' || count(*) || ' sensor attempt(s) for infrastructure reasons, none about the target ('
+		                    || string_agg('sensor ' || left(a ->> 'sensor_id', 8) || ': ' || (a ->> 'class'), '; ' ORDER BY ord DESC) || ')'
+		             FROM jsonb_array_elements(attempts) WITH ORDINALITY AS t(a, ord))
+		        WHEN dispatch_attempts >= $1 THEN 'Max dispatch attempts exceeded'
+		        ELSE $3::text END,
+		    failure_class = CASE WHEN jsonb_array_length(attempts) > 0 THEN attempts -> -1 ->> 'class' ELSE failure_class END,
 		    completed_at = NOW()
 		WHERE status IN ('pending', 'acknowledged')
 		  AND (dispatch_attempts >= $1 OR requeue_count >= $2)
-		RETURNING id, tenant_id, payload, dispatch_attempts
+		RETURNING id, tenant_id, payload, dispatch_attempts, error_message, COALESCE(failure_class, '')
 	`
 	rows, err := r.db.QueryContext(ctx, query, maxRetries, command.MaxRequeues, command.RequeueExhaustedMessage)
 	if err != nil {
@@ -1710,19 +1720,24 @@ func (r *CommandRepository) FailExhaustedCommandsReturning(ctx context.Context, 
 	var out []*command.Command
 	for rows.Next() {
 		var (
-			id, tenantID string
-			payload      []byte
-			attempts     int
+			id, tenantID, msg, class string
+			payload                  []byte
+			attempts                 int
 		)
-		if err := rows.Scan(&id, &tenantID, &payload, &attempts); err != nil {
+		if err := rows.Scan(&id, &tenantID, &payload, &attempts, &msg, &class); err != nil {
 			return nil, fmt.Errorf("failed to scan exhausted command: %w", err)
 		}
 		cid, _ := shared.IDFromString(id)
 		tid, _ := shared.IDFromString(tenantID)
-		out = append(out, &command.Command{
+		c := &command.Command{
 			ID: cid, TenantID: tid, Payload: payload, DispatchAttempts: attempts,
 			Status: command.CommandStatusFailed, ErrorMessage: exhaustedMessage(attempts, maxRetries),
-		})
+		}
+		if class != "" {
+			c.ErrorMessage = msg
+			c.FailureCode = scanrun.FailureCodeForInfra(class)
+		}
+		out = append(out, c)
 	}
 	return out, rows.Err()
 }

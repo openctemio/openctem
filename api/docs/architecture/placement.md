@@ -23,6 +23,7 @@ it, instead of "Waiting for a sensor".
 | Claim SQL | in the task's scan zone, with the tool | `outside_zone` |
 | Claim SQL | the sensor reported the tool installed | `tool_missing` |
 | Claim SQL | the sensor has not refused this task | `refused_earlier` |
+| Claim SQL | the sensor has not failed this task for an infrastructure reason or lost its lease | `failed_here_earlier` |
 | Claim SQL | every required capability offered | `capability_missing` |
 | Claim SQL | every required feature *reported by the sensor* (`required_features`: `net.confined@1` for a web-scoped nuclei job) | `not_confined` |
 | Dispatch gate | the sensor grant admits the task | `grant_<dimension>` (`grant_tools`, `grant_tier_ceiling`, `grant_target_network`, …) |

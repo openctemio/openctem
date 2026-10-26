@@ -7,6 +7,7 @@ import {
   WAITING_FOR_SENSOR_MS,
   eventActor,
   eventLabel,
+  movedSentence,
   tasksWaitingForSensor,
 } from '../run-timeline'
 
@@ -39,6 +40,36 @@ describe('run timeline helpers', () => {
       { id: '4', task_id: 'c', event: 'requeued', at: at(1000) },
     ]
     expect(tasksWaitingForSensor(events)).toEqual(['a'])
+  })
+})
+
+describe('movedSentence', () => {
+  const moved = { event: 'requeued', sensor_id: 'abcdef1234', platform: false, attempt: 1 }
+
+  it('explains a move from its code, with the next attempt', () => {
+    expect(movedSentence({ ...moved, code: 'moved.tool_crashed' })).toBe(
+      'Moved to another sensor: the tool crashed on sensor abcdef12. Attempt 2 of 3.'
+    )
+    expect(movedSentence({ ...moved, code: 'moved.resource.disk' })).toContain(
+      'ran out of disk space'
+    )
+    expect(movedSentence({ ...moved, code: 'moved.sensor_offline', attempt: 2 })).toContain(
+      'Attempt 3 of 3'
+    )
+  })
+
+  it('has a generic sentence for a reason a newer API sends, and none for other events', () => {
+    expect(movedSentence({ ...moved, code: 'moved.something_new' })).toContain(
+      'not about the target'
+    )
+    expect(movedSentence({ ...moved, code: undefined })).toBeNull()
+    expect(movedSentence({ ...moved, event: 'failed', code: 'moved.tool_crashed' })).toBeNull()
+  })
+
+  it('never names a shared sensor', () => {
+    const text = movedSentence({ ...moved, platform: true, code: 'moved.tool_crashed' })
+    expect(text).toContain('Shared sensors')
+    expect(text).not.toContain('abcdef12')
   })
 })
 

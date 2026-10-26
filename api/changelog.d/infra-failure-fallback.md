@@ -1,0 +1,8 @@
+### Added: a task that fails for a reason that is not the target's moves to another sensor
+
+- A sensor can say why a task failed: the tool crashed or is missing, it ran out of memory or disk, the tool's content could not be read, or its own network or resolver failed (`failure` and the new `error_code` values on `POST /api/v2/sensor/commands/{id}/fail`; a sensor that sends neither is read by its message text). Routed scan work then goes to another eligible sensor and the sensors that already failed it are excluded. A lost lease excludes the old holder too, when another sensor could take the work.
+- The 3 attempts per task are shared by every cause. When they are spent or no other sensor can take the task, it fails naming every cause, with the step codes `TOOL_UNAVAILABLE`, `TOOL_CRASHED_ON_INPUT`, `RESOURCE_EXHAUSTED`, `CONTENT_UNAVAILABLE` or `SENSOR_LOST`, instead of "Max dispatch attempts exceeded".
+- Stop rule: when the same tool and content version fails on 2 different sensors within 30 minutes, the task is not moved to more sensors and fails with `FLEET_TOOL_FAILURE`.
+- Targets that failed because of the sensor's own network or resolver go out again on another sensor. Targets that failed because of the target (unreachable, blocked or challenged by a WAF or CDN, rate limited) are never resent from another sensor in the same run.
+- The run timeline explains every move in English and Vietnamese, and the placement view shows `failed_here_earlier`.
+- Migration `003435_command_infra_failure` adds `commands.failed_on`, `attempts`, `failure_class` and the `failure_breakers` table.

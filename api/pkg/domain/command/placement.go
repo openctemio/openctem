@@ -57,6 +57,10 @@ const (
 	PlacementPinnedElsewhere = "pinned_elsewhere"
 	// PlacementRefusedEarlier: the sensor already refused this command.
 	PlacementRefusedEarlier = "refused_earlier"
+	// PlacementFailedHereEarlier: the sensor already failed this command
+	// for an infrastructure reason (or lost its lease), so it is not
+	// offered it again (research/302).
+	PlacementFailedHereEarlier = "failed_here_earlier"
 	// PlacementOutsideZone: the command belongs to a scan zone the sensor
 	// is not assigned to (or the sensor in the zone lacks the tool).
 	PlacementOutsideZone = "outside_zone"
@@ -149,14 +153,17 @@ type HostHoldersReader interface {
 // command and one sensor of its tenant, as the repository evaluates them,
 // with the scans the sensor holds now.
 type SensorClaim struct {
-	SensorID     shared.ID
-	PinOK        bool
-	ZoneOK       bool
-	ToolOK       bool
-	NotRefused   bool
-	CapabilityOK bool
-	FeaturesOK   bool
-	HeldScans    int
+	SensorID   shared.ID
+	PinOK      bool
+	ZoneOK     bool
+	ToolOK     bool
+	NotRefused bool
+	// NotFailedHere is false for a sensor that failed the command for an
+	// infrastructure reason or lost its lease (research/302).
+	NotFailedHere bool
+	CapabilityOK  bool
+	FeaturesOK    bool
+	HeldScans     int
 }
 
 // PlacementReader evaluates the claim predicates of one command of the
