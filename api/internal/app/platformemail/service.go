@@ -55,6 +55,10 @@ type stored struct {
 	From              string `json:"from"`
 	FromName          string `json:"from_name,omitempty"`
 	StartTLS          bool   `json:"starttls"`
+	// AppliedRelay is the relay (host, port, security) last saved while
+	// turned on: a later enabled save with another relay needs a second
+	// super admin. Turning e-mail off keeps it.
+	AppliedRelay string `json:"applied_relay,omitempty"`
 }
 
 // Settings is what an administrator sees: everything but the password.
@@ -86,6 +90,12 @@ type Input struct {
 
 // hostRE: a DNS name or an IP literal, no scheme, port, path or spaces.
 var hostRE = regexp.MustCompile(`^[A-Za-z0-9]([A-Za-z0-9.\-]*[A-Za-z0-9])?$|^\[?[0-9A-Fa-f:.]+\]?$`)
+
+// trimmed is in with surrounding spaces removed, as Update stores it.
+func (in Input) trimmed() Input {
+	in.Host, in.From, in.Username, in.FromName = strings.TrimSpace(in.Host), strings.TrimSpace(in.From), strings.TrimSpace(in.Username), strings.TrimSpace(in.FromName)
+	return in
+}
 
 func (in Input) validate() error {
 	if !in.Enabled {
@@ -187,7 +197,7 @@ func (s *Service) Update(ctx context.Context, actor *admin.AdminUser, in Input, 
 	if actor == nil {
 		return Settings{}, ErrNoActor
 	}
-	in.Host, in.From, in.Username, in.FromName = strings.TrimSpace(in.Host), strings.TrimSpace(in.From), strings.TrimSpace(in.Username), strings.TrimSpace(in.FromName)
+	in = in.trimmed()
 	if err := in.validate(); err != nil {
 		return Settings{}, err
 	}
@@ -196,7 +206,11 @@ func (s *Service) Update(ctx context.Context, actor *admin.AdminUser, in Input, 
 		return Settings{}, err
 	}
 	next := stored{Enabled: in.Enabled, Host: in.Host, Port: in.Port, Username: in.Username,
-		From: in.From, FromName: in.FromName, StartTLS: in.StartTLS, PasswordEncrypted: prev.PasswordEncrypted}
+		From: in.From, FromName: in.FromName, StartTLS: in.StartTLS, PasswordEncrypted: prev.PasswordEncrypted,
+		AppliedRelay: prev.AppliedRelay}
+	if next.Enabled {
+		next.AppliedRelay = admin.PlatformEmailRelayTarget(next.Host, next.Port, next.StartTLS)
+	}
 	credentialChanged := false
 	if in.Password != nil {
 		credentialChanged = true
@@ -233,6 +247,32 @@ func (s *Service) Update(ctx context.Context, actor *admin.AdminUser, in Input, 
 	}
 	s.record(ctx, actor, prev, next, credentialChanged, ip, userAgent)
 	return s.Get(ctx)
+}
+
+// ApprovalNeeded reports whether saving in needs a second super admin, and the
+// approval target. It does when the result is turned on and its relay (host,
+// port, connection security) differs from the last one applied while on: the
+// relay receives every set-password, reset and invitation link. Rotating the
+// username or password on the same relay, changing the sender, the test send
+// and turning e-mail off need none. A change made while off is judged when
+// e-mail is turned back on. An invalid input needs none here: saving refuses it.
+func (s *Service) ApprovalNeeded(ctx context.Context, in Input) (string, bool) {
+	in = in.trimmed()
+	if !in.Enabled || in.validate() != nil {
+		return "", false
+	}
+	prev, _, _, err := s.loadFresh(ctx)
+	if err != nil {
+		// Cannot read what is applied: ask for the approval rather than skip it.
+		return admin.PlatformEmailRelayTarget(in.Host, in.Port, in.StartTLS), true
+	}
+	target := admin.PlatformEmailRelayTarget(in.Host, in.Port, in.StartTLS)
+	applied := prev.AppliedRelay
+	if applied == "" && prev.Enabled {
+		// Saved before the applied relay was kept (or seeded from the environment).
+		applied = admin.PlatformEmailRelayTarget(prev.Host, prev.Port, prev.StartTLS)
+	}
+	return target, target != applied
 }
 
 func (s *Service) loadFresh(ctx context.Context) (stored, int, time.Time, error) {

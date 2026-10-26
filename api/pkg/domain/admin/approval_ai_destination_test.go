@@ -27,3 +27,25 @@ func TestPlatformAIDestinationTarget(t *testing.T) {
 		t.Fatal("hash form has no label")
 	}
 }
+
+func TestPlatformEmailRelayTarget(t *testing.T) {
+	target := PlatformEmailRelayTarget("SMTP.Example.com", 587, true)
+	if target != `{"host":"smtp.example.com","port":587,"security":"starttls"}` {
+		t.Fatalf("target = %s", target)
+	}
+	if !ApprovalPlatformEmailRelay.IsValid() || !ApprovalPlatformEmailRelay.ValidTarget(target) {
+		t.Fatal("own target must validate")
+	}
+	for _, bad := range []string{"", "{}", `{"host":"x","port":0,"security":"none"}`, `{"host":"x","port":25,"security":"tls"}`,
+		`{"host":"X","port":25,"security":"none"}`, `{"host":"x","port":25,"security":"none","extra":1}`} {
+		if ApprovalPlatformEmailRelay.ValidTarget(bad) {
+			t.Fatalf("%q must not validate", bad)
+		}
+	}
+	if got := PlatformEmailRelayLabel(target); got != "smtp.example.com port 587 with STARTTLS" {
+		t.Fatalf("label = %q", got)
+	}
+	if got := PlatformEmailRelayLabel(PlatformEmailRelayTarget("m.example.com", 25, false)); got != "m.example.com port 25 without encryption" {
+		t.Fatalf("label = %q", got)
+	}
+}
