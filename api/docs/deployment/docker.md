@@ -90,7 +90,9 @@ image and the Helm chart; the API-only and web-only Compose files are removed.
 In `api/deploy` the API starts only after the `migrate` one-shot service
 succeeds (`depends_on: migrate: { condition: service_completed_successfully }`),
 and `OPENCTEM_VERSION` tags every platform image, so the migrations always match
-the API.
+the API. There is no default: `./setup.sh` writes it into `.env` from the
+release you checked out (`api/deploy/VERSION` in a tag's checkout), or from
+`--version vX.Y.Z`; to upgrade, check out the new tag and set it in `.env`.
 
 The API image runs in production mode unless `APP_ENV` says otherwise: an unset
 `APP_ENV` means `production`. Check a configuration without starting anything:
