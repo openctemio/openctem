@@ -63,12 +63,25 @@ pending invitation for that exact address) verifies its address before it can
 sign in. The verification rule is decided before the account lookup, the same
 way for a new and an existing address, so it does not enumerate.
 
-- An organization's `security.email_verification_mode` governs only the
-  accounts **invited** into that organization (the invitation proves the
-  mailbox, so an invited registration is verified at once). It never decides
-  public sign-up: there is no "the only organization is the default" rule, and
-  an invitation token for another address does not make its organization's
-  setting apply.
+- An invitation token is **not mailbox proof**. The inviter sees the raw token
+  (the create response and the "Copy invite link" action carry it), so
+  registering with it never marks the address verified. The account stays
+  unverified until its holder follows the verification link the platform
+  mails, and until then it is offered no other organization's invitation and
+  no join-by-domain. The one exception is an invitation from an organization
+  that has verified the address's domain (the same rule that lets it create
+  the account directly): that organization may vouch for the address. The
+  token still lets its holder accept that one invitation, which grants only
+  that organization's seat. An organization's `security.email_verification_mode`
+  of `never` does not lower this; `always` still applies. If the real holder
+  registers the address later, the existing-unverified path mails a
+  set-password link that replaces the first registrant's password. A platform
+  that can send no mail at all (no SMTP anywhere) cannot verify and keeps the
+  old behaviour.
+- An organization's `security.email_verification_mode` otherwise governs
+  nothing about public sign-up: there is no "the only organization is the
+  default" rule, and an invitation token for another address does not make its
+  organization's setting apply.
 - Missing SMTP never skips verification there. Start-up refuses `domain`/`open`
   without the platform e-mail, and sign-up closes at run time without it.
 - Under `disabled` only invited and administrator-created accounts exist; the
