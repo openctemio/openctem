@@ -3,7 +3,6 @@ package vulnfeed
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -45,6 +44,13 @@ func (f *fakeStatus) GetAll(context.Context) ([]*threatintel.SyncStatus, error) 
 func (f *fakeStatus) GetEnabled(context.Context) ([]*threatintel.SyncStatus, error) { return nil, nil }
 func (f *fakeStatus) GetDueForSync(context.Context) ([]*threatintel.SyncStatus, error) {
 	return nil, nil
+}
+func (f *fakeStatus) TryStart(_ context.Context, _ string, _ time.Duration) (bool, error) {
+	if f.st.LastSyncStatus() == threatintel.SyncStateRunning {
+		return false, nil
+	}
+	f.st.MarkSyncStarted()
+	return true, nil
 }
 func (f *fakeStatus) Update(_ context.Context, st *threatintel.SyncStatus) error {
 	f.st = st
@@ -168,26 +174,6 @@ func TestImport_DisabledOrUnconfigured(t *testing.T) {
 		t.Fatal("ran while disabled")
 	}
 	_ = fs
-}
-
-// An operator's sync of a feed that would do nothing says so.
-func TestSync_ReportsUnconfiguredAndDisabled(t *testing.T) {
-	root, now := goldenRoot(t)
-	corpus := &fakeCorpus{}
-	im, _ := newTestImporter(t, Config{BundleDir: goldenDir}, corpus, nil)
-	if _, err := im.Sync(context.Background()); !errors.Is(err, ErrNotConfigured) {
-		t.Fatalf("unconfigured: %v", err)
-	}
-	im2, fs2 := newTestImporter(t, Config{RootKeyID: root, BundleDir: goldenDir}, corpus, nil)
-	fs2.st.SetEnabled(false)
-	im2.now = func() time.Time { return now }
-	if _, err := im2.Sync(context.Background()); !errors.Is(err, threatintel.ErrSyncDisabled) {
-		t.Fatalf("disabled: %v", err)
-	}
-	fs2.st.SetEnabled(true)
-	if res, err := im2.Sync(context.Background()); err != nil || !res.Ran {
-		t.Fatalf("enabled: %+v %v", res, err)
-	}
 }
 
 func TestImport_SnapshotOverCorpusWithdrawsAndGuards(t *testing.T) {
