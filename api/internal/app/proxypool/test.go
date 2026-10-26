@@ -52,7 +52,7 @@ const (
 
 	// testEchoPath is where the platform's echo answers (the sensor's
 	// request carries the command's token in the path).
-	testEchoPath = "/api/v1/proxy-test-echo/"
+	testEchoPath = "/api/v1/proxy-test-echoes/"
 )
 
 // Errors of a test. The sentinels wrap a shared error so handlers map them.
@@ -261,7 +261,7 @@ func (s *Service) queueTest(ctx context.Context, tid shared.ID, pool *pooldom.Po
 	payload, err := json.Marshal(testPayload{
 		PoolID: pool.ID.String(),
 		Egress: eg,
-		Echo: testEcho{URL: s.test.cfg.EchoBase + testEchoPath + tid.String() + "/" + cmd.ID.String() + "/" + token,
+		Echo: testEcho{URL: s.test.cfg.EchoBase + testEchoPath + TestEchoToken(tid.String(), cmd.ID.String(), token),
 			AltPort: s.test.cfg.AltPort, Nonce: token},
 	})
 	if err != nil {
@@ -522,6 +522,22 @@ func (s *Service) OnProxyTestFinished(ctx context.Context, c *commanddom.Command
 			WithMetadata("passed", passed).
 			WithMetadata("tested", len(results)).
 			WithMetadata("failure_classes", classes))
+}
+
+// TestEchoToken is the one path segment of a test's echo URL: the tenant, the
+// command and the nonce, joined by dots. Only the nonce is secret; the other
+// two let the echo find the command without a tenant in the URL path.
+func TestEchoToken(tenantID, commandID, nonce string) string {
+	return tenantID + "." + commandID + "." + nonce
+}
+
+// SplitTestEchoToken is the inverse of TestEchoToken.
+func SplitTestEchoToken(token string) (tenantID, commandID, nonce string, ok bool) {
+	parts := strings.Split(token, ".")
+	if len(parts) != 3 {
+		return "", "", "", false
+	}
+	return parts[0], parts[1], parts[2], true
 }
 
 // VerifyTestEcho reports whether a request to the platform's echo carries

@@ -95,6 +95,7 @@ const POLLING_BASELINE: Record<string, number> = {
   'features/findings/api/use-findings-api.ts': 1,
   'features/notifications/api/use-notification-api.ts': 1,
   // Whether each policy is open is computed at read time.
+  'features/proxy-pools/api/use-proxy-pool-test.ts': 1,
   'features/scan-windows/api/use-scan-windows.ts': 1,
   'features/scans/components/run-detail-sheet.tsx': 1,
   // The support-access banner (RFC-063): a console session opening or a grant

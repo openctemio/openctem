@@ -152,7 +152,7 @@ func TestRequestTestQueuesAPinnedCommandPerSensorAndAudits(t *testing.T) {
 		!p.Egress.Endpoints[0].Auth || p.Egress.Endpoints[1].Auth || p.Egress.Endpoints[0].Weight != 1 {
 		t.Fatalf("egress %+v", p.Egress)
 	}
-	if len(p.Echo.Nonce) != 32 || !strings.HasPrefix(p.Echo.URL, "https://api.example.net"+testEchoPath+f.tenant.String()+"/"+cmd.ID.String()+"/"+p.Echo.Nonce) || p.Echo.AltPort != 80 {
+	if len(p.Echo.Nonce) != 32 || !strings.HasPrefix(p.Echo.URL, "https://api.example.net"+testEchoPath+TestEchoToken(f.tenant.String(), cmd.ID.String(), p.Echo.Nonce)) || p.Echo.AltPort != 80 {
 		t.Fatalf("echo %+v", p.Echo)
 	}
 	// Each command has its own token.

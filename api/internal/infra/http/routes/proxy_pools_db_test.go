@@ -462,7 +462,7 @@ func TestProxyPools_TestButton(t *testing.T) {
 	}
 	echo := func(tenant shared.ID, cmd, token string) (int, string) {
 		req, err := http.NewRequestWithContext(context.Background(), http.MethodGet,
-			h.srv.URL+"/api/v1/proxy-test-echo/"+tenant.String()+"/"+cmd+"/"+token, nil)
+			h.srv.URL+"/api/v1/proxy-test-echoes/"+proxypoolapp.TestEchoToken(tenant.String(), cmd, token), nil)
 		if err != nil {
 			t.Fatal(err)
 		}
