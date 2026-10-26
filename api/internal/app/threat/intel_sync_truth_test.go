@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -242,5 +243,17 @@ func TestSync_SkipsWhenAnotherRunHoldsTheFeed(t *testing.T) {
 	repo.st.held = false
 	if r := s.SyncKEV(context.Background()); r.Skipped || r.Error != nil || !fetched {
 		t.Fatalf("free: %+v", r)
+	}
+}
+
+// The organization stats payload carries sync state, never the raw error text
+// of a failed fetch.
+func TestThreatIntelSyncDTO_HasNoErrorText(t *testing.T) {
+	typ := reflect.TypeOf(ThreatIntelSyncDTO{})
+	for i := 0; i < typ.NumField(); i++ {
+		tag := typ.Field(i).Tag.Get("json")
+		if strings.Contains(tag, "error") {
+			t.Fatalf("ThreatIntelSyncDTO field %s (%s) can carry raw error text", typ.Field(i).Name, tag)
+		}
 	}
 }
