@@ -112,6 +112,58 @@ func (s *VulnerabilityService) ListFindingsBySpec(ctx context.Context, c FilterC
 	return repo.ListWhere(ctx, where, pagination.New(spec.Page, spec.PerPage))
 }
 
+// findingDuplicatesRepo counts the duplicates of a page of findings.
+type findingDuplicatesRepo interface {
+	CountDuplicatesOfWhere(ctx context.Context, w *filterspec.Where, ids []shared.ID) (map[shared.ID]int, error)
+}
+
+// ListFindingsWithDuplicatesBySpec is ListFindingsBySpec plus, per listed
+// finding, how many findings marked as its duplicates the caller can read.
+// The count is compiled with the same actor as the list (tenant, data
+// scope, private programs, pentest membership), so a duplicate on an asset
+// outside the caller's scope is neither shown nor counted. One extra
+// statement whatever the page size.
+func (s *VulnerabilityService) ListFindingsWithDuplicatesBySpec(ctx context.Context, c FilterCaller, spec *filterspec.Spec) (pagination.Result[*vulnerability.Finding], map[shared.ID]int, error) {
+	var empty pagination.Result[*vulnerability.Finding]
+	repo, ok := s.findingRepo.(findingWhereRepo)
+	if !ok {
+		return empty, nil, errNoFindingWhereRepo
+	}
+	actor, err := s.FilterActor(ctx, c)
+	if err != nil {
+		return empty, nil, err
+	}
+	where, err := filterspec.Compile(vulnerability.WithBranchOnlyDefault(spec), vulnerability.FindingFields, actor)
+	if err != nil {
+		return empty, nil, err
+	}
+	result, err := repo.ListWhere(ctx, where, pagination.New(spec.Page, spec.PerPage))
+	if err != nil {
+		return empty, nil, err
+	}
+	dups, ok := s.findingRepo.(findingDuplicatesRepo)
+	if !ok {
+		return result, nil, nil
+	}
+	// The count is an enhancement: when it cannot be computed the list stands
+	// without it.
+	visible, err := filterspec.Compile(&filterspec.Spec{}, vulnerability.FindingFields, actor)
+	if err != nil {
+		s.logger.Debug("compile duplicate visibility failed", "error", err)
+		return result, nil, nil
+	}
+	ids := make([]shared.ID, 0, len(result.Data))
+	for _, f := range result.Data {
+		ids = append(ids, f.ID())
+	}
+	counts, err := dups.CountDuplicatesOfWhere(ctx, visible, ids)
+	if err != nil {
+		s.logger.Debug("count duplicates failed", "error", err)
+		return result, nil, nil
+	}
+	return result, counts, nil
+}
+
 // GetFindingStatsBySpec computes the findings stats for a decoded filter, as
 // the caller: the same compiled WHERE as ListFindingsBySpec, so the metric
 // strip and the table count the same rows.

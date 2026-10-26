@@ -10,7 +10,7 @@ const { SkipToMain } = await import('../skip-to-main')
 describe('header controls', () => {
   it('gives the search button an accessible name even when only its icon shows', () => {
     render(<Search />)
-    expect(screen.getByRole('button', { name: 'Search' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Search or go to' })).toBeInTheDocument()
   })
 
   it('speaks the reader language', () => {
@@ -20,7 +20,7 @@ describe('header controls', () => {
         <SkipToMain />
       </I18nProvider>
     )
-    expect(screen.getByRole('button', { name: 'Tìm kiếm' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Tìm kiếm hoặc đi tới' })).toBeInTheDocument()
     expect(screen.getByRole('link', { name: 'Chuyển tới nội dung chính' })).toBeInTheDocument()
   })
 })
