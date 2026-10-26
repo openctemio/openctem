@@ -45,7 +45,7 @@ CREATE POLICY web_endpoint_verifications_tenant_isolation ON web_endpoint_verifi
 -- template) hashed. An entry older than the tenant's alert fingerprint
 -- lifetime no longer suppresses a new alert.
 CREATE TABLE web_alert_fingerprints (
-    tenant_id       uuid NOT NULL,
+    tenant_id       uuid NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
     fingerprint     character varying(64) NOT NULL,
     last_alerted_at timestamp with time zone NOT NULL DEFAULT now(),
     PRIMARY KEY (tenant_id, fingerprint)
