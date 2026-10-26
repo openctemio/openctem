@@ -29,7 +29,7 @@ case "$comp" in
   openctem-gateway) budget=75 ;;   # 63 MB (runs as uid 1000)
   migrations)       budget=25 ;;   # 18 MB
   seed)             budget=25 ;;   # 17 MB
-  admin-cli)        budget=48 ;;   # 42 MB at v0.15.0 (Go 1.27.3 toolchain, console four-eyes and recovery actions)
+  admin-cli)        budget=41 ;;   # 36 MB (Sigstore verifier split out of pkg/contentpkg, base-image tzdata and CA bundle)
   *) echo "image-guard: no budget for component '$comp'; add one" >&2; exit 2 ;;
 esac
 
