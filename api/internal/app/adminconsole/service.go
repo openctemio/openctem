@@ -102,6 +102,10 @@ type Service struct {
 	accounts  AccountDirectory
 	now       func() time.Time
 
+	// supportSessions ends a console session's support sessions at sign-out;
+	// nil when support access is not wired.
+	supportSessions SupportSessionEnder
+
 	// Platform identity provider (RFC-022 revision 4); nil when not wired.
 	idps admin.PlatformIdPRepository
 	oidc OIDCProvider
@@ -616,6 +620,11 @@ func (s *Service) Logout(ctx context.Context, token string, client ClientInfo) e
 	}
 	if err := s.console.DeleteSession(ctx, sess.ID); err != nil {
 		return err
+	}
+	// A support session lives only as long as the console session that opened
+	// it: signing out ends it now, with the audit rows and the owners' notice.
+	if s.supportSessions != nil {
+		s.supportSessions.EndForConsoleSession(ctx, sess.ID)
 	}
 	if a, err := s.admins.GetByID(ctx, sess.AdminID); err == nil {
 		s.record(ctx, a, ActionLogout, client, "")
