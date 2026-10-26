@@ -51,6 +51,9 @@ type AddStepInput struct {
 	Condition         *scanworkflow.Condition `json:"condition"`
 	MaxRetries        int                     `json:"max_retries"`
 	RetryDelaySeconds int                     `json:"retry_delay_seconds"`
+	// RunPolicy is how the step runs at each depth and whether it waits
+	// for a tool; nil keeps a stored step's policy on update.
+	RunPolicy *scanworkflow.RunPolicy `json:"run_policy"`
 }
 
 // buildStep validates one step input (key format, tool and config) and
@@ -73,7 +76,7 @@ func (s *Service) buildStep(ctx context.Context, tenantID, templateID shared.ID,
 		return nil, err
 	}
 	if s.securityValidator != nil {
-		result := s.securityValidator.ValidateStepConfig(ctx, tenantID, input.Tool, capabilities, input.Config)
+		result := s.securityValidator.ValidateStepConfig(ctx, tenantID, input.Tool, validatedCapabilities(capabilities, input.RunPolicy), input.Config)
 		if !result.Valid {
 			// A refused step is the user's input, not a fault: debug level.
 			s.logger.Debug("step refused",
@@ -151,6 +154,9 @@ func constructStep(templateID shared.ID, input AddStepInput, capabilities []stri
 		step.SetRetry(input.MaxRetries, input.RetryDelaySeconds)
 	}
 	step.PreferTools = normalizeToolList(input.PreferTools)
+	if input.RunPolicy != nil {
+		step.RunPolicy = input.RunPolicy.Clone()
+	}
 	if err := checkStepSelection(step, declared); err != nil {
 		return nil, err
 	}
@@ -194,8 +200,14 @@ func checkStepSelection(step *scanworkflow.Step, declared map[string]*tool.Tool)
 	if step.Tool != "" && len(step.PreferTools) > 0 {
 		return fmt.Errorf("%w: a step pins a tool or lists tools to prefer, not both", shared.ErrValidation)
 	}
+	if err := step.RunPolicy.Validate(); err != nil {
+		return fmt.Errorf("step '%s': %w", step.StepKey, err)
+	}
 	st, ok := stage.ForStep(step.Tool, step.Capabilities)
 	if !ok {
+		if hasDepthParams(step.RunPolicy) {
+			return fmt.Errorf("%w: step '%s': depth params need a catalog capability", shared.ErrValidation, step.StepKey)
+		}
 		if len(step.PreferTools) > 0 {
 			return fmt.Errorf("%w: step '%s': tools to prefer need a catalog capability", shared.ErrValidation, step.StepKey)
 		}
@@ -210,7 +222,7 @@ func checkStepSelection(step *scanworkflow.Step, declared map[string]*tool.Tool)
 	if err := stage.ValidateParams(st, step.Config, step.Tool); err != nil {
 		return fmt.Errorf("%w: step '%s': %w", shared.ErrValidation, step.StepKey, err)
 	}
-	return nil
+	return checkRunPolicyParams(step, st)
 }
 
 // ValidateSteps validates step inputs without storing anything: each step
@@ -482,7 +494,11 @@ func (s *Service) UpdateStep(ctx context.Context, stepID string, input AddStepIn
 		return nil, err
 	}
 	if s.securityValidator != nil {
-		result := s.securityValidator.ValidateStepConfig(ctx, tenantID, input.Tool, input.Capabilities, input.Config)
+		policy := input.RunPolicy
+		if policy == nil {
+			policy = &step.RunPolicy
+		}
+		result := s.securityValidator.ValidateStepConfig(ctx, tenantID, input.Tool, validatedCapabilities(input.Capabilities, policy), input.Config)
 		if !result.Valid {
 			s.logger.Warn("step config validation failed",
 				"step_id", sid.String(),
@@ -565,6 +581,9 @@ func applyStepUpdate(step *scanworkflow.Step, input AddStepInput) error {
 	}
 	if input.PreferTools != nil {
 		step.PreferTools = normalizeToolList(input.PreferTools)
+	}
+	if input.RunPolicy != nil {
+		step.RunPolicy = input.RunPolicy.Clone()
 	}
 	return nil
 }
