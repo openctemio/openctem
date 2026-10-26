@@ -128,7 +128,7 @@ export function SuggestionPanel({
   }, [excluded, overrides])
 
   const ownerName = (v: OwnerValue) =>
-    [owners.user(v.userId), owners.group(v.groupId)].filter(Boolean).join(' · ') ||
+    [owners.user(v.userId), owners.group(v.groupId)].filter(Boolean).join(', ') ||
     (v.userId || v.groupId
       ? t('remediationHub.ownerPicker.unknown')
       : t('remediationHub.owner.defaultQueue'))
@@ -355,7 +355,7 @@ function AcceptPreviewSection({
                   >
                     <span>
                       {t('remediationHub.panel.taskN', undefined, { n: p.index + 1 })}
-                      {' · '}
+                      {', '}
                       {t('remediationHub.suggestions.findingsCount', undefined, { n: p.findings })}
                     </span>
                     {canEdit ? (

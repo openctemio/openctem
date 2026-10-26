@@ -25,6 +25,7 @@ import {
   updateOrgIdentityProvider,
   useOrgIdentityProviders,
 } from '../api/use-org-identity-providers'
+import { ProviderSetupGuide } from './provider-setup-guide'
 import { usePendingSSOChanges } from '@console/features/saml/api/use-saml-config'
 import {
   isPendingSSOChange,
@@ -63,7 +64,7 @@ export function IdentityProvidersPanel({
 }: IdentityProvidersPanelProps) {
   const { t } = useTranslation()
   // SSO Identity Providers state
-  const { data: identityProviders, mutate: mutateIdPs } = useOrgIdentityProviders(tenantId)
+  const { data: identityProviders, appUrl, mutate: mutateIdPs } = useOrgIdentityProviders(tenantId)
   const { mutate: mutatePending } = usePendingSSOChanges(tenantId)
   const [ssoExpandedProvider, setSsoExpandedProvider] = useState<SSOProviderType | null>(null)
   const [ssoForms, setSsoForms] = useState<
@@ -310,6 +311,7 @@ export function IdentityProvidersPanel({
 
                   <CollapsibleContent>
                     <div className="border-t px-4 pb-4 pt-3 space-y-4">
+                      <ProviderSetupGuide provider={providerDef.value} appUrl={appUrl} />
                       <div className="grid gap-4 sm:grid-cols-2">
                         <div className="space-y-2">
                           <Label>

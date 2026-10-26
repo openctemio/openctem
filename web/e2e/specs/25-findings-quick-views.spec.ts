@@ -21,7 +21,7 @@ test.describe('Findings quick views', () => {
       'My queue',
       'SLA breached',
       'Pending approval',
-      'Accepted · expiring',
+      'Accepted, expiring soon',
       'Closed',
     ]) {
       await expect(nav.getByRole('link', { name: new RegExp(`^${name}`) })).toBeVisible()

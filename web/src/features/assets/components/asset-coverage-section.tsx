@@ -76,11 +76,11 @@ export function AssetCoverageSection({ assetId }: { assetId: string }) {
                     t('assetCoverage.neverDone', 'Never done')
                   )}
                   {e.last_outcome === 'no_output' &&
-                    ` · ${t('assetCoverage.noOutput', 'found nothing')}`}
-                  {e.reason && ` · ${t(`assetCoverage.reason.${e.reason}`, e.reason)}`}
+                    `, ${t('assetCoverage.noOutput', 'found nothing')}`}
+                  {e.reason && `, ${t(`assetCoverage.reason.${e.reason}`, e.reason)}`}
                   {e.next_due_at && e.state !== 'not_applicable' && (
                     <>
-                      {' · '}
+                      {', '}
                       {t('assetCoverage.nextDue', 'next')}{' '}
                       <RelativeTime date={e.next_due_at} className="text-xs" />
                     </>

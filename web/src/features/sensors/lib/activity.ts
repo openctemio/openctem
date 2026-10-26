@@ -139,7 +139,7 @@ function jobDetails(t: Translate, d: SensorActivityDetails): string[] {
       })
     )
   }
-  const lines = parts.length ? [parts.join(' · ')] : []
+  const lines = parts.length ? [parts.join(', ')] : []
   if (d.error) lines.push(str(d.error))
   return lines
 }
@@ -250,7 +250,7 @@ export function describeSensorActivity(
         icon: d.direction === 'downgrade' ? ArrowDownCircle : ArrowUpCircle,
         tone: directionTone(d.direction),
         title,
-        details: [`${fromTo(from, to)} · ${directionWord(t, d.direction)}`],
+        details: [`${fromTo(from, to)}, ${directionWord(t, d.direction)}`],
       }
     }
     case 'sdk_version_changed': {
@@ -268,7 +268,7 @@ export function describeSensorActivity(
         title,
         details: [
           [d.name ? str(d.name) : '', fromTo(from, to)].filter(Boolean).join(' ') +
-            ` · ${directionWord(t, d.direction)}`,
+            `, ${directionWord(t, d.direction)}`,
         ],
       }
     }
@@ -428,7 +428,7 @@ export function describeSensorActivity(
           ? t('sensors.activity.bySystem', 'By the system')
           : t('sensors.activity.byActor', 'By {actor}', { actor: item.actor })
       lines.push(
-        item.result === 'failure' ? `${actor} · ${t('sensors.activity.failed', 'failed')}` : actor
+        item.result === 'failure' ? `${actor}, ${t('sensors.activity.failed', 'failed')}` : actor
       )
       for (const [field, change] of Object.entries(d.changes ?? {})) {
         lines.push(`${field}: ${auditValue(change?.old)} ${ARROW} ${auditValue(change?.new)}`)

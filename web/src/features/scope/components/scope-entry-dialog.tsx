@@ -243,7 +243,7 @@ export function ScopeEntryDialog({
     expiring
       ? t('scope.entry.expiresOn', 'expires on {date}', { date: expiresOn })
       : t('scope.entry.permanent', 'permanent'),
-  ].join(' · ')
+  ].join(', ')
 
   // Domain proof (RFC-054 §8.1): only when the platform requires it, for
   // platform sensors and for intrusive probes on any sensor.

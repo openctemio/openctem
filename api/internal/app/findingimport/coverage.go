@@ -131,6 +131,13 @@ func (s *Service) closeUncovered(ctx context.Context, req Request, results []Fil
 	if req.Mapping != nil {
 		return noteIncomplete, nil
 	}
+	// A recon directory is partial by nature: a host missing from it says
+	// nothing about whether it still exists.
+	for _, fr := range results {
+		if bundleFormat(fr.Format) {
+			return noteIncomplete, nil
+		}
+	}
 	repo, ok := s.repo.(coverageRepo)
 	rec, rok := s.receipts.(receiptRecorder)
 	if !ok || !rok {

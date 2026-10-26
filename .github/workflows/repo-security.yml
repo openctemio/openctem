@@ -32,8 +32,45 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
+  # Merge queue only: when the exact tree under test already passed every
+  # required check (a pull request's tested merge, or an earlier queue run), the
+  # two jobs below are skipped, which a required check reports as success
+  # (.github/scripts/tree-verified.sh). A push and the weekly run always scan:
+  # the full-history upload must stay current. Any error here runs the jobs.
+  tree:
+    name: Tree reuse
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      pull-requests: read # the PR named by the merge-queue branch
+      checks: read # the candidate commit's check runs and their annotations
+    outputs:
+      verified: ${{ steps.tree.outputs.verified }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - id: tree
+        env:
+          EVENT: ${{ github.event_name }}
+          SHA: ${{ github.sha }}
+          HEAD_REF: ${{ github.event.merge_group.head_ref }}
+          REPO: ${{ github.repository }}
+          GH_TOKEN: ${{ github.token }}
+          TREE_EVENTS: merge_group
+        run: bash .github/scripts/tree-verified.sh
+      - name: Verified tree
+        if: steps.tree.outputs.verified == 'true'
+        env:
+          NOTE: ${{ steps.tree.outputs.note }}
+        run: echo "$NOTE" | tee -a "$GITHUB_STEP_SUMMARY"
+
   secret-scan:
     name: Secret Scanning
+    needs: tree
+    if: ${{ !cancelled() && needs.tree.outputs.verified != 'true' }}
     permissions:
       contents: read
       security-events: write
@@ -174,6 +211,8 @@ jobs:
 
   actionlint:
     name: Workflow Lint
+    needs: tree
+    if: ${{ !cancelled() && needs.tree.outputs.verified != 'true' }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -214,6 +253,9 @@ jobs:
       # Which develop pushes skip the jobs the merge queue already ran.
       - name: Merge-queue reuse self-test
         run: bash .github/scripts/queue-verified.test.sh
+      # Which merge-queue groups reuse a tree that already passed.
+      - name: Tree reuse self-test
+        run: bash .github/scripts/tree-verified.test.sh
       # Which base images the CI image mirror copies for the other repositories.
       - name: CI image mirror base list self-test
         run: bash .github/scripts/ci-image-bases.test.sh

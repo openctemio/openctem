@@ -360,7 +360,7 @@ function ItemBody({ item }: { item: EvidenceItem }) {
         <p className="text-sm text-muted-foreground">
           {t('findings.evidenceItems.screenshot', 'Screenshot')}{' '}
           {item.artifact?.media_type ? `(${toDisplayText(item.artifact.media_type, 100)})` : ''}
-          {item.artifact?.sha256 ? ` · ${item.artifact.sha256.slice(0, 19)}…` : ''}
+          {item.artifact?.sha256 ? `, ${item.artifact.sha256.slice(0, 19)}…` : ''}
         </p>
       )
     default:

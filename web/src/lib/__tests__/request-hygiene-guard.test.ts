@@ -113,6 +113,9 @@ const POLLING_BASELINE: Record<string, number> = {
   'lib/api/security-hooks.ts': 1,
   'lib/api/sensor-hooks.ts': 6,
   'lib/api/sensor-pairing-hooks.ts': 1,
+  // Sensors waiting for approval: an enrollment token's sensor arrives with
+  // no event to the page; polled only while the Enrollment tokens tab is open.
+  'lib/api/sensor-enrollment-hooks.ts': 1,
 }
 
 function walk(dir: string, out: string[] = []): string[] {

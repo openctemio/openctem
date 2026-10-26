@@ -347,7 +347,7 @@ export function GroupExceptionDialog({
                 {t('findings.approvalDialog.characters', '{count}/2000 characters', {
                   count: note.length,
                 })}
-                {` · ${t('findingApprovals.evaluation.noteMin', 'at least {count}', {
+                {`, ${t('findingApprovals.evaluation.noteMin', 'at least {count}', {
                   count: minNote,
                 })}`}
               </p>

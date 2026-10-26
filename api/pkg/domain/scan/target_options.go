@@ -52,7 +52,7 @@ type TargetOptions struct {
 	// attribution was confirmed since then, or they were first seen since
 	// then without an attribution record (the dispatch gate still decides
 	// each). The first run takes every such asset. Never a typed host
-	// (RFC-071, continuous discovery).
+	// (continuous discovery).
 	NewSinceLastRun bool `json:"new_since_last_run,omitempty"`
 	// IncludeUnresolved hands an active scanner the names a selector or an
 	// asset group adds even without proof that they resolve. By default

@@ -52,8 +52,10 @@ jobs:
       contents: read
       pull-requests: read # the `ci:full` label (changed.sh reads it live)
       actions: read # queue-verified.sh reads the merge queue's runs of this commit
+      checks: read # green-base.sh and release-provenance.sh read a commit's check runs
     outputs:
-      images: ${{ (steps.f.outputs.api == 'true' || steps.f.outputs.web == 'true') && steps.queue.outputs.verified != 'true' }}
+      images: ${{ (steps.f.outputs.api == 'true' || steps.f.outputs.web == 'true') && steps.queue.outputs.verified != 'true' && steps.tree.outputs.verified != 'true' }}
+      tree_note: ${{ steps.tree.outputs.note }}
       verified: ${{ steps.queue.outputs.verified }}
       full: ${{ steps.f.outputs.full }}
     steps:
@@ -81,6 +83,18 @@ jobs:
           REPO: ${{ github.repository }}
           GH_TOKEN: ${{ github.token }}
         run: bash .github/scripts/queue-verified.sh
+
+      # The exact tree of this commit already passed every required check on a
+      # pull request or an earlier queue run: skip the jobs below
+      # (.github/scripts/tree-verified.sh). Also records the tree this run tested.
+      - id: tree
+        env:
+          EVENT: ${{ github.event_name }}
+          SHA: ${{ github.sha }}
+          HEAD_REF: ${{ github.event.merge_group.head_ref }}
+          REPO: ${{ github.repository }}
+          GH_TOKEN: ${{ github.token }}
+        run: bash .github/scripts/tree-verified.sh
 
   # The four images come from build-images.yml: built once per content key for
   # the whole pipeline, by digest (the all-in-one is assembled FROM the three
@@ -227,8 +241,10 @@ jobs:
           IMAGES: ${{ needs.changes.outputs.images }}
           FULL: ${{ needs.changes.outputs.full }}
           EVENT: ${{ github.event_name }}
+          TREE_NOTE: ${{ needs.changes.outputs.tree_note }}
         run: |
           echo "$NEEDS" | jq -r 'to_entries[] | "\(.key): \(.value.result)"'
+          if [ -n "$TREE_NOTE" ]; then echo "$TREE_NOTE"; fi
           if echo "$NEEDS" | jq -e 'to_entries | map(.value.result) | any(. == "failure" or . == "cancelled")' >/dev/null; then
             echo "::error::a job failed or was cancelled"; exit 1
           fi

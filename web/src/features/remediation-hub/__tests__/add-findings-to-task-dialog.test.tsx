@@ -143,7 +143,7 @@ describe('AddFindingsToTaskDialog', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Create task' }))
     const step = await screen.findByTestId('claim-conflict-step')
     expect(step).toHaveTextContent('2 findings are already in other open tasks.')
-    expect(step).toHaveTextContent('In Harden TLS · Sam')
+    expect(step).toHaveTextContent('In Harden TLS, Sam')
     expect(step).toHaveTextContent('In a task you cannot see')
     expect(step).not.toHaveTextContent('t-3')
     // Only the movable conflict offers "Move here".
