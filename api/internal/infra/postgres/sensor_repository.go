@@ -521,6 +521,10 @@ func (r *SensorRepository) UpdateHeartbeat(ctx context.Context, id shared.ID, hb
 	if err != nil {
 		return false, err
 	}
+	localStore, err := livenessJSON(hb.LocalStore)
+	if err != nil {
+		return false, fmt.Errorf("failed to marshal local store report: %w", err)
+	}
 
 	query := `
 		UPDATE sensors
@@ -579,6 +583,9 @@ func (r *SensorRepository) UpdateHeartbeat(ctx context.Context, id shared.ID, hb
 		    -- Local policy report: NULL ($37) leaves it as it is.
 		    reported_local_policy = COALESCE($37::jsonb, reported_local_policy),
 		    local_policy_reported_at = CASE WHEN $37::jsonb IS NULL THEN local_policy_reported_at ELSE NOW() END,
+		    -- Local store report: NULL ($41) leaves the stored one as it is.
+		    reported_local_store = COALESCE($41::jsonb, reported_local_store),
+		    local_store_reported_at = CASE WHEN $41::jsonb IS NULL THEN local_store_reported_at ELSE NOW() END,
 		    -- The config report digest this heartbeat echoed;
 		    -- NULL when it echoed none, so a stale stored report shows.
 		    config_heartbeat_digest = NULLIF($38, ''),
@@ -608,6 +615,7 @@ func (r *SensorRepository) UpdateHeartbeat(ctx context.Context, id shared.ID, hb
 		heartbeatIntervalSeconds(hb.Interval), control, localPolicy,
 		hb.ConfigReportDigest,
 		hb.Binding, hb.FallbackReason,
+		localStore,
 	)
 	if err != nil {
 		return false, fmt.Errorf("failed to update sensor heartbeat: %w", err)
@@ -871,6 +879,7 @@ func (r *SensorRepository) selectQuery() string {
 		       manifest_digest, manifest_at, manifest_source,
 		       heartbeat_interval_seconds, heartbeat_due_at, reported_control, control_reported_at,
 		       reported_local_policy, local_policy_reported_at,
+		       reported_local_store, local_store_reported_at,
 		       config_report_digest, config_health, config_heartbeat_digest,
 		       ` + sensorActiveKeySQL("sensors") + ` AS active_key, auth_kind,
 		       ` + sensorManifestPostureSQL("sensors") + ` AS manifest_posture
@@ -1037,6 +1046,8 @@ func (r *SensorRepository) scanSensorRow(row sensorRowScanner) (*sensor.Sensor, 
 		controlAt        sql.NullTime
 		localPolicy      []byte
 		localPolicyAt    sql.NullTime
+		localStore       []byte
+		localStoreAt     sql.NullTime
 		authKind         sql.NullString
 		configDigest     sql.NullString
 		configHealth     sql.NullString
@@ -1123,6 +1134,8 @@ func (r *SensorRepository) scanSensorRow(row sensorRowScanner) (*sensor.Sensor, 
 		&controlAt,
 		&localPolicy,
 		&localPolicyAt,
+		&localStore,
+		&localStoreAt,
 		&configDigest,
 		&configHealth,
 		&configHBDigest,
@@ -1260,6 +1273,7 @@ func (r *SensorRepository) scanSensorRow(row sensorRowScanner) (*sensor.Sensor, 
 		a.HeartbeatDueAt = &hbDueAt.Time
 	}
 	a.Control = scanControl(a.ID, control, controlAt)
+	a.LocalStore = scanLocalStore(a.ID, localStore, localStoreAt)
 	a.LocalPolicy, a.LocalPolicyReportedAt = scanLocalPolicy(a.ID, localPolicy, localPolicyAt)
 	a.Posture = scanManifestPosture(a.ID, manifestPosture)
 	a.AuthKind = sensor.AuthKindBearer

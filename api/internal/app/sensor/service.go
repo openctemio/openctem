@@ -744,6 +744,11 @@ type SensorHeartbeatData struct {
 	// LocalPolicy is the local policy report the heartbeat carried, untrusted; nil when it carried none.
 	LocalPolicy *sensordom.LocalPolicyReport
 
+	// LocalStore is the local store report the heartbeat carried, already
+	// read leniently and clamped (sensordom.ParseLocalStoreReport); nil when
+	// it carried none.
+	LocalStore *sensordom.LocalStoreReport
+
 	// ManifestDigest is the manifest digest the sensor echoes (RFC-033); ""
 	// from a sensor that registers no manifest, whose manifest is then
 	// derived from this heartbeat's report.
@@ -888,6 +893,7 @@ func (s *SensorService) UpdateHeartbeat(ctx context.Context, sensorID shared.ID,
 		Build:          build,
 		Interval:       sensordom.FollowedHeartbeatInterval(data.Control, data.AdvisedSeconds, data.DoorbellAware),
 		Control:        data.Control,
+		LocalStore:     data.LocalStore,
 		LocalPolicy:    localPolicy,
 		// The digest the sensor holds: "" (none) marks a stored report stale.
 		ConfigReportDigest: sensordom.HeartbeatConfigDigest(data.ConfigReport),

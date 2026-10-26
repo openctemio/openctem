@@ -341,6 +341,18 @@ type SensorResponse struct {
 	// "unknown" when the sensor never reported one.
 	LocalPolicy SensorLocalPolicyResponse `json:"local_policy"`
 
+	// LocalStore is the sensor's local data as its latest heartbeats report
+	// it: the watermark, whether it stopped claiming new jobs and why, bytes
+	// per class, the disk level and the cleanup sweeps. Null when the sensor
+	// never reported one (an SDK without a local store) or when the stored
+	// report no longer describes it. Self-reported, display only.
+	LocalStore *SensorLocalStoreResponse `json:"local_store"`
+
+	// AuthKind is how the sensor authenticates: "bearer" (an API key, whose
+	// display prefix is api_key_prefix) or "key_bound" (its own signing key,
+	// GET /sensors/{id}/keys). Never key material.
+	AuthKind string `json:"auth_kind" enums:"bearer,key_bound"`
+
 	// Posture is the sensor's security posture: its local policy, the
 	// platform TLS pin and the tool sandbox's network confinement as the
 	// sensor reports them, and the reasons it is unhardened. Always present.
@@ -377,6 +389,40 @@ type SensorPostureResponse struct {
 func postureResponse(a *sensor.Sensor) SensorPostureResponse {
 	p := a.PostureOf()
 	return SensorPostureResponse{LocalPolicy: p.LocalPolicy, PlatformPin: p.PlatformPin, NetworkEnforced: p.NetworkEnforced, Unhardened: p.Unhardened}
+}
+
+// SensorLocalStoreResponse is a sensor's local store report as the console
+// shows it.
+type SensorLocalStoreResponse struct {
+	Level            string           `json:"level" enums:",ok,high,critical"`
+	StopClaiming     bool             `json:"stop_claiming"`
+	Reason           string           `json:"reason,omitempty"`
+	BytesByClass     map[string]int64 `json:"bytes_by_class,omitempty"`
+	TotalBytes       int64            `json:"total_bytes"`
+	QuotaBytes       int64            `json:"quota_bytes,omitempty"`
+	DiskLevel        string           `json:"disk_level" enums:",ok,low,critical,unknown"`
+	Sweeps           int64            `json:"sweeps"`
+	LastSweepAt      *string          `json:"last_sweep_at,omitempty"`
+	LastSweepRemoved int64            `json:"last_sweep_removed,omitempty"`
+	BootReset        bool             `json:"boot_reset,omitempty"`
+	Tampered         int64            `json:"tampered,omitempty"`
+	ReportedAt       *string          `json:"reported_at"`
+}
+
+// localStoreResponse is the sensor's current local store report, nil when
+// it has none.
+func localStoreResponse(a *sensor.Sensor) *SensorLocalStoreResponse {
+	r := a.CurrentLocalStore()
+	if r == nil {
+		return nil
+	}
+	return &SensorLocalStoreResponse{
+		Level: r.Level, StopClaiming: r.StopClaiming, Reason: r.Reason,
+		BytesByClass: r.BytesByClass, TotalBytes: r.TotalBytes, QuotaBytes: r.QuotaBytes,
+		DiskLevel: r.DiskLevel, Sweeps: r.Sweeps, LastSweepAt: rfc3339Ptr(r.LastSweepAt),
+		LastSweepRemoved: r.LastSweepRemoved, BootReset: r.BootReset, Tampered: r.Tampered,
+		ReportedAt: rfc3339Ptr(r.ReportedAt),
+	}
 }
 
 // SensorLocalPolicyResponse is a sensor's local policy as the console shows
@@ -501,7 +547,7 @@ type SensorProtocolResponse struct {
 // stable (clients map it to their own wording and fix actions); message is a
 // plain-English fallback.
 type SensorHealthReasonResponse struct {
-	Code     string `json:"code" enums:"outbox_backlog,outbox_dead_letters,outbox_evicted,key_expired,key_expiring,identity_cloned,version_unsupported,sdk_advisory,no_tools,error_reported,content_stale,content_refresh_failed,heartbeat_late,control_slow"`
+	Code     string `json:"code" enums:"outbox_backlog,outbox_dead_letters,outbox_evicted,key_expired,key_expiring,identity_cloned,version_unsupported,sdk_advisory,no_tools,error_reported,content_stale,content_refresh_failed,heartbeat_late,control_slow,config_check_failed,config_check_warning,config_report_stale,stopped_claiming"`
 	Severity string `json:"severity" enums:"warning,critical"`
 	Message  string `json:"message"`
 }
@@ -1268,6 +1314,8 @@ func sensorResponseAt(a *sensor.Sensor, policy sensor.HealthPolicy, now time.Tim
 	resp.ManifestDigest, resp.ManifestSource = a.ManifestDigest, a.ManifestSource
 	resp.ManifestAt = rfc3339Ptr(a.ManifestAt)
 	resp.LocalPolicy = localPolicyResponse(a)
+	resp.LocalStore = localStoreResponse(a)
+	resp.AuthKind = string(a.AuthKind.OrBearer())
 	resp.Posture = postureResponse(a)
 	if a.ConfigHealth != "" {
 		h := a.ConfigHealth
