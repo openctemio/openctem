@@ -226,6 +226,8 @@ export interface DetailStatProps {
   unit?: React.ReactNode
   /** One short muted line under the value. */
   caption?: React.ReactNode
+  /** Let the caption wrap onto several lines instead of truncating it. */
+  wrapCaption?: boolean
   /** A thin bar under the value (value / max), e.g. slots in use. */
   meter?: { value: number; max: number; label: string }
   /** Colour the value: only for a problem (style contract: never a zero). */
@@ -243,6 +245,7 @@ export function DetailStat({
   meter,
   tone = 'default',
   title,
+  wrapCaption,
   className,
 }: DetailStatProps) {
   return (
@@ -267,7 +270,14 @@ export function DetailStat({
         </dd>
       )}
       {caption && (
-        <dd className="mt-1 truncate text-xs text-muted-foreground tabular-nums">{caption}</dd>
+        <dd
+          className={cn(
+            'mt-1 text-xs text-muted-foreground tabular-nums',
+            wrapCaption ? 'min-w-0 break-words' : 'truncate'
+          )}
+        >
+          {caption}
+        </dd>
       )}
     </div>
   )

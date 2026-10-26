@@ -282,6 +282,10 @@ type Sensor struct {
 	// Control is the control-channel report of its last heartbeat that
 	// carried one (control.go); nil when it never did.
 	Control *ControlReport
+	// LocalStore is the local store report of its last heartbeat that
+	// carried one (local_store.go), with ReportedAt set; nil when it never
+	// reported one. Read it through CurrentLocalStore.
+	LocalStore *LocalStoreReport
 
 	// Statistics
 	LastSeenAt    *time.Time // Last heartbeat timestamp - effectively "last online time"
