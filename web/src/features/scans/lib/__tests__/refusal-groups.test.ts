@@ -1,17 +1,24 @@
 import { describe, expect, it } from 'vitest'
-import { groupRefusals, internalAddressOf, ownSensorHelps, canVerify } from '../refusal-groups'
+import type { ApiScopeCheckResult } from '@/features/scope'
+import { groupRefusals, groupRemedy, internalAddressOf } from '../refusal-groups'
 
-const proof = (target: string, root: string) => ({
+const proof = (target: string, root: string): ApiScopeCheckResult => ({
   target,
   allowed: false,
   code: 'proof_required',
   fixes: [{ action: 'verify_domain', domain: root }, { action: 'use_tenant_sensor' }],
+  remedies: [
+    { action: 'run_on_tenant_sensor' },
+    { action: 'verify_domain', domain: root },
+    { action: 'remove' },
+  ],
 })
-const zone = (target: string, resolved?: string[]) => ({
+const zone = (target: string, resolved?: string[]): ApiScopeCheckResult => ({
   target,
   allowed: false,
   code: 'zone_none',
   resolved,
+  remedies: [{ action: 'remove' }],
 })
 
 describe('groupRefusals', () => {
@@ -29,9 +36,13 @@ describe('groupRefusals', () => {
       ['scope', 1],
     ])
     expect(groups[0].domains).toEqual(['example.com'])
-    expect(canVerify(groups[0])).toBe(true)
-    expect(ownSensorHelps(groups[0])).toBe(true)
-    expect(ownSensorHelps(groups[1])).toBe(false)
+    expect(groups[0].remedies.map((r) => r.action)).toEqual([
+      'run_on_tenant_sensor',
+      'verify_domain',
+      'remove',
+    ])
+    expect(groupRemedy(groups[0], 'verify_domain')?.domains).toEqual(['example.com'])
+    expect(groupRemedy(groups[1], 'run_on_tenant_sensor')).toBeUndefined()
   })
 
   it('groups entry refusals per covering entry, with its one-shot fix, first', () => {
@@ -65,16 +76,47 @@ describe('groupRefusals', () => {
     expect(groups.at(-1)?.kind).toBe('scope')
   })
 
-  it('does not offer the own sensor when the server did not (intrusive proof)', () => {
+  it('does not offer the own sensor when the server did not', () => {
     const [g] = groupRefusals([
       {
         target: 'x.io',
         allowed: false,
         code: 'proof_required',
-        fixes: [{ action: 'verify_domain', domain: 'x.io' }],
+        remedies: [{ action: 'verify_domain', domain: 'x.io' }, { action: 'remove' }],
       },
     ])
-    expect(ownSensorHelps(g)).toBe(false)
+    expect(groupRemedy(g, 'run_on_tenant_sensor')).toBeUndefined()
+  })
+
+  it('merges members in the server order, remove last, the lowest tier to lower to', () => {
+    const [g] = groupRefusals([
+      {
+        target: 'a.io',
+        allowed: false,
+        code: 'tier_exceeds',
+        remedies: [{ action: 'remove' }],
+      },
+      {
+        target: 'b.io',
+        allowed: false,
+        code: 'tier_exceeds',
+        remedies: [{ action: 'lower_intensity', tier: 1 }, { action: 'remove' }],
+      },
+      {
+        target: 'c.io',
+        allowed: false,
+        code: 'tier_exceeds',
+        remedies: [{ action: 'lower_intensity', tier: 0 }, { action: 'remove' }],
+      },
+      {
+        target: 'd.io',
+        allowed: false,
+        code: 'tier_exceeds',
+        remedies: [{ action: 'bogus' as never }],
+      },
+    ])
+    expect(g.remedies.map((r) => r.action)).toEqual(['lower_intensity', 'remove'])
+    expect(groupRemedy(g, 'lower_intensity')?.tier).toBe(0)
   })
 })
 

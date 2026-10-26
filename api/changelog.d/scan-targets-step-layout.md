@@ -1,0 +1,5 @@
+### Changed: New Scan and Edit Scan Targets step laid out for phones and desktops
+- The Targets step reads in working order: the targets field (chips inside, type or paste to add, assets and asset groups from a picker), then one readiness line (targets, ready, blocked), then the blocked targets grouped by reason with ranked fixes, and the options in a collapsed section with a one-line summary. Desktop shows two columns.
+- The footer is one row: Back on the left, Next on the right. Cancel is the header's close button, which asks before discarding changes. Phones show "Step N of M" with a progress bar; desktops label every step.
+- Next is disabled while no target can be scanned, with the reason under it; when some can, the Review step lists the ones that will be skipped.
+- `POST /scope/check` returns `remedies` for each refused target, best first: run on your own sensor (when one is online), verify the domain, lower the intensity (when the target is allowed at that tier) and remove. The scan form shows them in that order instead of guessing.
