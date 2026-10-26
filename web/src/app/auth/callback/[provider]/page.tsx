@@ -11,6 +11,7 @@ import {
   SIGNUP_NOT_AVAILABLE,
   SSO_REQUIRED,
 } from '@/features/auth/lib/signup-outcome'
+import { loginErrorCodeFor } from '@/features/auth/lib/auth-error-codes'
 import { loginErrorHref } from '@/features/auth/lib/login-error'
 import { cookies } from 'next/headers'
 
@@ -79,7 +80,7 @@ export default async function OAuthCallbackPage({ params, searchParams }: OAuthC
     if (result.code === SIGNUP_NOT_AVAILABLE) redirect(NOT_SET_UP_PATH)
     // The address's domain requires its organization's SSO.
     if (result.code === SSO_REQUIRED) redirect('/login')
-    redirect(loginErrorHref('callback_failed'))
+    redirect(loginErrorHref(loginErrorCodeFor(result.code)))
   }
 
   // Get the stored redirect destination

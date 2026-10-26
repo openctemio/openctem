@@ -182,7 +182,20 @@ type SSODomainChecker interface {
 
 // ErrSSOEnforceNeedsVerifiedDomain refuses turning SSO enforcement on for an
 // organization without a domain verified for SSO.
-var ErrSSOEnforceNeedsVerifiedDomain = fmt.Errorf("%w: cannot enforce SSO — verify at least one of the organization's domains for SSO first", shared.ErrValidation)
+var ErrSSOEnforceNeedsVerifiedDomain = fmt.Errorf("%w: cannot enforce SSO until at least one of the organization's domains is verified for SSO", shared.ErrValidation)
+
+// Invitation refusals. Each is a sentinel so the handler gives it a stable
+// code the console translates; the text is the English fallback for API
+// clients.
+var (
+	// ErrInvitationAlreadyMember: the invited person is already an active member.
+	ErrInvitationAlreadyMember = fmt.Errorf("%w: this person is already a member of this organization", shared.ErrValidation)
+	// ErrMembershipSuspendedReactivate: an administrator tried to add or invite
+	// someone whose membership is suspended; it is reactivated in Members.
+	ErrMembershipSuspendedReactivate = fmt.Errorf("%w: this person's membership is suspended; reactivate it in Members instead", shared.ErrValidation)
+	// ErrInvitationMembershipSuspended: the invitee's own membership is suspended.
+	ErrInvitationMembershipSuspended = fmt.Errorf("%w: your access to this organization is suspended; contact an administrator to be reactivated", shared.ErrValidation)
+)
 
 // SessionReader loads a sign-in session by id (the "SSO must prove
 // two-factor" lockout guard).
@@ -812,12 +825,9 @@ func (s *TenantService) addMember(ctx context.Context, tenantID string, input Ad
 	existing, err := s.repo.GetMembership(ctx, input.UserID, parsedTenantID)
 	if err == nil && !existing.IsOffboarded() {
 		if existing.IsSuspended() {
-			return nil, fmt.Errorf(
-				"%w: this user has a suspended membership in this tenant — reactivate them via the Members page instead",
-				shared.ErrValidation,
-			)
+			return nil, ErrMembershipSuspendedReactivate
 		}
-		return nil, fmt.Errorf("%w: user is already a member", shared.ErrValidation)
+		return nil, ErrInvitationAlreadyMember
 	}
 	if err != nil && !errors.Is(err, shared.ErrNotFound) {
 		return nil, fmt.Errorf("failed to check membership: %w", err)
@@ -1454,12 +1464,9 @@ func (s *TenantService) CreateInvitation(ctx context.Context, tenantID string, i
 	existingMember, err := s.repo.GetMemberByEmail(ctx, parsedID, input.Email)
 	if err == nil && existingMember != nil && existingMember.Status != string(tenantdom.MemberStatusOffboarded) {
 		if existingMember.Status == string(tenantdom.MemberStatusSuspended) {
-			return nil, fmt.Errorf(
-				"%w: this user has a suspended membership in this tenant — reactivate them via the Members page instead of sending a new invitation",
-				shared.ErrValidation,
-			)
+			return nil, ErrMembershipSuspendedReactivate
 		}
-		return nil, fmt.Errorf("%w: user with this email is already a member of this team", shared.ErrValidation)
+		return nil, ErrInvitationAlreadyMember
 	}
 	if err != nil && !errors.Is(err, shared.ErrNotFound) {
 		return nil, fmt.Errorf("failed to check existing member: %w", err)
@@ -1662,12 +1669,9 @@ func (s *TenantService) acceptInvitation(ctx context.Context, invitation *tenant
 	existingMembership, err := s.repo.GetMembership(ctx, userID, invitation.TenantID())
 	if err == nil && !existingMembership.IsOffboarded() {
 		if existingMembership.IsSuspended() {
-			return nil, fmt.Errorf(
-				"%w: your access to this team is suspended — please contact an administrator to be reactivated",
-				shared.ErrValidation,
-			)
+			return nil, ErrInvitationMembershipSuspended
 		}
-		return nil, fmt.Errorf("%w: you are already a member of this team", shared.ErrValidation)
+		return nil, ErrInvitationAlreadyMember
 	}
 	if err != nil && !errors.Is(err, shared.ErrNotFound) {
 		return nil, fmt.Errorf("failed to check membership: %w", err)
@@ -1832,7 +1836,7 @@ func (s *TenantService) ResendInvitation(ctx context.Context, tenantID, invitati
 		return fmt.Errorf("%w: invitation has already been accepted", shared.ErrValidation)
 	}
 	if inv.IsExpired() {
-		return fmt.Errorf("%w: invitation has expired — create a new one", shared.ErrValidation)
+		return fmt.Errorf("%w: invitation has expired; create a new one", shared.ErrValidation)
 	}
 
 	if s.emailEnqueuer == nil {
@@ -2193,7 +2197,7 @@ func (s *TenantService) UpdateSecuritySettings(ctx context.Context, tenantID str
 					return fmt.Errorf("failed to verify SSO configuration: %w", perr)
 				}
 				if !usable {
-					return fmt.Errorf("%w: cannot enforce SSO — configure an active SSO identity provider first", shared.ErrValidation)
+					return fmt.Errorf("%w: cannot enforce SSO until an active SSO identity provider is configured", shared.ErrValidation)
 				}
 			}
 		}

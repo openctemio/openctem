@@ -55,7 +55,9 @@ async function backendFetch<T>(endpoint: string, options: RequestInit = {}): Pro
 
   if (!response.ok) {
     const errorData = await response.json().catch(() => ({ message: response.statusText }))
-    throw new Error(errorData.message || errorData.error || `HTTP ${response.status}`)
+    const err = new Error(errorData.message || errorData.error || `HTTP ${response.status}`)
+    if (typeof errorData.code === 'string') (err as Error & { code?: string }).code = errorData.code
+    throw err
   }
 
   return response.json()
@@ -230,6 +232,7 @@ export async function handleSSOCallback(
     return {
       success: false,
       error: error instanceof Error ? error.message : 'SSO authentication failed',
+      code: (error as { code?: unknown } | null)?.code as string | undefined,
     }
   }
 }

@@ -319,6 +319,10 @@ func (s *OAuthService) HandleCallback(ctx context.Context, input CallbackInput) 
 	// Get user info from provider
 	userInfo, err := s.getUserInfo(ctx, input.Provider, tokens)
 	if err != nil {
+		if errors.Is(err, ErrEmailUnverifiedAtIDP) {
+			s.logger.Warn("social sign-in refused: email not verified by the provider", "provider", input.Provider)
+			return nil, ErrEmailUnverifiedAtIDP
+		}
 		s.logger.Error("failed to get user info", "provider", input.Provider, "error", err)
 		return nil, ErrOAuthUserInfoFailed
 	}
@@ -337,7 +341,7 @@ func (s *OAuthService) HandleCallback(ctx context.Context, input CallbackInput) 
 	// A platform administrator signs in on the admin console only; the answer
 	// is the generic provider failure.
 	if refusePlatformAdmin(ctx, s.platformAdmins, s.logger, u, "oauth") {
-		return nil, ErrOAuthExchangeFailed
+		return nil, ErrUseAdminConsole
 	}
 
 	// Create session
@@ -643,7 +647,7 @@ func (s *OAuthService) getGoogleUserInfo(ctx context.Context, tokens *oauthToken
 // must be verified by Google, and the account is keyed on (Google issuer, sub).
 func googleUserInfoFromClaims(claims *oidc.Claims) (*OAuthUserInfo, error) {
 	if !bool(claims.EmailVerified) {
-		return nil, fmt.Errorf("email not verified by Google")
+		return nil, fmt.Errorf("google: %w", ErrEmailUnverifiedAtIDP)
 	}
 	if strings.TrimSpace(claims.Email) == "" {
 		return nil, errors.New("google id_token has no email claim")
@@ -846,7 +850,7 @@ func (s *OAuthService) getMicrosoftUserInfo(ctx context.Context, idToken string)
 // by pkg/oidc), so it is a pure function to keep it unit-testable.
 func microsoftUserInfoFromClaims(claims *oidc.Claims) (*OAuthUserInfo, error) {
 	if !bool(claims.XMSEdov) {
-		return nil, errors.New("email not verified by Microsoft (email domain not owner-verified)")
+		return nil, fmt.Errorf("microsoft (email domain not owner-verified): %w", ErrEmailUnverifiedAtIDP)
 	}
 	if strings.TrimSpace(claims.Email) == "" {
 		return nil, errors.New("microsoft id_token has no email claim")
