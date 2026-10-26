@@ -71,7 +71,11 @@ failing closed, as in api#555).
      *unzoned* and dispatched as before zones (any tenant sensor);
    - private (RFC 1918, CGNAT, ULA) and in no range, a CIDR only partly inside
      a zone, an address in the deny list, a hostname resolving to such an
-     address, or a hostname that does not resolve → **uncovered**.
+     address, or a hostname that does not resolve → **uncovered**. For a
+     scan whose tool only looks names up (`dnsx`, `subfinder`) a hostname
+     that does not resolve is routed as a public target instead: finding out
+     whether it resolves is the job (`active-probe-gate.md`, "Lookup-only
+     jobs and names with no DNS answer").
 4. Targets of a zone are batched: `targets_per_job` per command for scanners
    that read a target list (nuclei, tenable, nessus), one per command for every
    other scanner. At most 1000 commands per run.

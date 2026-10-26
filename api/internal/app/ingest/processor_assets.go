@@ -419,6 +419,12 @@ func (p *AssetProcessor) processBatch(
 		}
 	}
 
+	// Junk names from passive sources (a domain that is not a host name, the
+	// remnant of a percent-encoded delimiter) never become assets.
+	if err := p.dropJunkHostnames(ctx, tenantID, report, output); err != nil {
+		return assetMap, err
+	}
+
 	// Step 1: Collect all asset names for batch lookup
 	// Names are normalized via NormalizeName inside getAssetName → NewAsset constructor
 	names := make([]string, 0, len(report.Assets))
