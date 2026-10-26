@@ -176,6 +176,22 @@ jobs:
     name: Workflow Lint
     runs-on: ubuntu-latest
     steps:
+      # Branch policy: main only takes release and hotfix branches (the release
+      # train opens them); everything else goes to develop. main is the default
+      # branch, so a pull request opened without choosing a base lands here first.
+      - name: Pull requests into main come from release or hotfix branches
+        if: github.event_name == 'pull_request' && github.base_ref == 'main'
+        env:
+          HEAD_REF: ${{ github.head_ref }}
+          HEAD_REPO: ${{ github.event.pull_request.head.repo.full_name }}
+          REPO: ${{ github.repository }}
+        run: |
+          if [ "$HEAD_REPO" = "$REPO" ] && printf '%s' "$HEAD_REF" | grep -Eq '^(release|hotfix)/v[0-9]+\.[0-9]+\.[0-9]+$'; then
+            echo "branch policy: $HEAD_REF -> main is allowed"
+            exit 0
+          fi
+          echo "::error::Pull requests into main come only from release/vX.Y.Z or hotfix/vX.Y.Z branches of this repository. Change the base branch to develop (Edit, next to the title)."
+          exit 1
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
