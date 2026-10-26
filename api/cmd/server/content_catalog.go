@@ -17,6 +17,7 @@ import (
 	"github.com/openctemio/openctem/api/internal/config"
 	"github.com/openctemio/openctem/api/internal/versions"
 	"github.com/openctemio/openctem/api/pkg/contentpkg"
+	cpsigstore "github.com/openctemio/openctem/api/pkg/contentpkg/sigstore"
 	"github.com/openctemio/openctem/api/pkg/domain/admin"
 	"github.com/openctemio/openctem/api/pkg/domain/contentcatalog"
 	contentpackdom "github.com/openctemio/openctem/api/pkg/domain/contentpack"
@@ -38,7 +39,7 @@ func initContentCatalog(cfg *config.Config, repo contentcatalog.Repository, audi
 	}
 	roots = append(roots, extra...)
 	path := cfg.Encryption.ContentSigstoreTrustedRoot
-	verifier, err := contentpkg.NewSigstoreVerifier(path)
+	verifier, err := cpsigstore.New(path)
 	if err != nil {
 		// Fail closed: without a verifier every package with a publisher
 		// signature is refused.
@@ -53,7 +54,7 @@ func initContentCatalog(cfg *config.Config, repo contentcatalog.Repository, audi
 	}
 	var pv contentpkg.PublisherVerifier
 	if verifier != nil {
-		pv = verifier
+		pv = contentpkg.PublisherVerifierFunc(verifier.Verify)
 	}
 	return catalogapp.NewService(repo, roots, pv, versions.PlatformRelease, audit, log)
 }
