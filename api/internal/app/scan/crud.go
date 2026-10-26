@@ -1,7 +1,9 @@
 package scan
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
 	"time"
 
@@ -300,6 +302,22 @@ func (s *Service) CreateScan(ctx context.Context, input CreateScanInput) (*scan.
 
 	s.logger.Info("scan created", "id", sc.ID.String(), "name", sc.Name)
 	return sc, nil
+}
+
+// changedScannerConfig returns the config an edit would store (masked
+// values restored to the stored secrets), or nil when it equals the stored
+// config or the edit sends none.
+func changedScannerConfig(incoming, stored map[string]any) map[string]any {
+	if incoming == nil {
+		return nil
+	}
+	cfg := scan.RestoreRedactedConfigSecrets(incoming, stored)
+	a, errA := json.Marshal(cfg)
+	b, errB := json.Marshal(stored)
+	if errA == nil && errB == nil && bytes.Equal(a, b) {
+		return nil
+	}
+	return cfg
 }
 
 // validateScanSecurityInputs validates tags, scanner config, and cron expression.
@@ -868,6 +886,19 @@ func (s *Service) UpdateScan(ctx context.Context, input UpdateScanInput) (*scan.
 	// Editing a scan is acting on its targets: the editor must be allowed
 	// to scan every direct target (D9). Group members are filtered per run.
 	if err := s.refuseOutOfActScope(ctx, sc.TenantID, nil, sc.Targets); err != nil {
+		return nil, err
+	}
+	// An edit passes the input checks a new scan passes (tags, scanner
+	// config keys and values, cron): without this a scan saved harmless
+	// could be edited into a config that create refuses. A value saved back
+	// masked is checked as the stored value it keeps; a config sent back
+	// unchanged is not checked again, so an older scan stays editable.
+	if err := s.validateScanSecurityInputs(ctx, sc.TenantID, CreateScanInput{
+		TenantID:      input.TenantID,
+		Tags:          input.Tags,
+		ScannerConfig: changedScannerConfig(input.ScannerConfig, sc.ScannerConfig),
+		ScheduleCron:  input.ScheduleCron,
+	}); err != nil {
 		return nil, err
 	}
 
