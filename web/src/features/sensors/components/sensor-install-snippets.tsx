@@ -176,6 +176,9 @@ export function Snippet({ text, label, file }: { text: string; label: string; fi
       <pre
         className="max-h-96 overflow-auto p-4 pe-28 font-mono text-xs leading-relaxed whitespace-pre"
         data-format={label}
+        tabIndex={0}
+        role="region"
+        aria-label={label}
       >
         {text}
       </pre>
