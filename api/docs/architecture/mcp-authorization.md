@@ -55,6 +55,8 @@ and is neither the public origin nor one of `CORS_ALLOWED_ORIGINS`
 | `mcp:compliance.read` | `compliance:frameworks:read` |
 | `mcp:pentest.read` | `pentest:campaigns:read`, `pentest:findings:read`, `pentest:retests:read`, `pentest:templates:read` |
 | `mcp:findings.comment` (write) | `findings:comment`; never offered up front, only through an `insufficient_scope` challenge, only when the organization policy lists it, and every call is confirmed by the person (below) |
+| `mcp:findings.propose` (write) | `findings:write`; obtained like the comment scope; its tools file requests another person decides (below) |
+| `mcp:pentest.draft` (write) | `pentest:findings:write`; obtained like the comment scope; saves pentest drafts another campaign member confirms (below) |
 
 A test fails when an MCP tool or prompt needs a permission no scope covers.
 
@@ -310,6 +312,24 @@ atomically (approved, unexpired, same connection, tool and argument
 digest), data scope is checked again, the action runs once. Any other case
 answers "not confirmed" and changes nothing. `oct_` keys never run write
 tools. Confirmations are purged a day after they expire.
+
+## Proposal tools (shipped)
+
+| Piece | Where |
+|---|---|
+| Scope | `mcp:findings.propose` → `findings:write`; challenge-only, policy-listed, OAuth connections only |
+| Tool | `propose_finding_status` (`handler/mcp_propose_tools.go`): `finding_id`, `status` `false_positive`/`accepted`, `closure_reason`, `justification` ≤ 2000 (hidden characters refused), `expires_at` (accepted only) |
+| Service | `VulnerabilityService.RequestApproval` with `RequestedVia` (implies `ByAutomation`) and `Source = mcp` |
+| Store | `finding_status_approvals.requested_via` (migration `approval_requested_via`): the AI application's name, set only with a person as requester |
+| Four-eyes | `Approval.Approve` refuses the requester; `SelfApproveSolo` refuses any request with `requested_via` |
+| Web | the approval inbox shows `AIProposalBadge` with the application's name |
+| Pentest drafts | `draft_pentest_finding` (`mcp:pentest.draft`): `PentestService.CreateUnifiedFinding` with `DraftedVia` (always a draft, `source_metadata.drafted_via`, kept on edits, activity `source = mcp`); `Finding.ApplyPentestTransition` refuses the creator confirming an AI draft (`ErrAIDraftSelfConfirm`); the finding sheet shows the badge and hides Confirm for the creator |
+
+Result: `status: proposed`, `approval_id`, `review_url` (the approval
+inbox). A pending request for the finding answers `conflict`; a refused
+move answers `invalid_argument` with the reason; an out-of-scope or
+unknown finding answers `not_found`. Nothing is filed in any of those
+cases.
 
 ## Planned
 

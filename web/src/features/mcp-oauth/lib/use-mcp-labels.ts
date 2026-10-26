@@ -31,6 +31,12 @@ export function normalizePublisherHost(input: string): string | null {
 /** The comment-adding scope: a write scope, confirmed per call by the person. */
 export const MCP_COMMENT_SCOPE = 'mcp:findings.comment'
 
+/** The proposal scope: requests the person files through an AI, decided by someone else. */
+export const MCP_PROPOSE_SCOPE = 'mcp:findings.propose'
+
+/** The pentest draft scope: drafts another campaign member confirms. */
+export const MCP_PENTEST_DRAFT_SCOPE = 'mcp:pentest.draft'
+
 /**
  * Words for MCP scopes, application identities and policy refusals, in the
  * person's language. Unknown scopes fall back to the server's title or the
@@ -53,6 +59,10 @@ export function useMcpLabels() {
           return t('mcp.scope.pentest.short', 'Pentest')
         case MCP_COMMENT_SCOPE:
           return t('mcp.scope.comment.short', 'Comments')
+        case MCP_PROPOSE_SCOPE:
+          return t('mcp.scope.propose.short', 'Proposals')
+        case MCP_PENTEST_DRAFT_SCOPE:
+          return t('mcp.scope.pentestDraft.short', 'Pentest drafts')
         default:
           return scope
       }
@@ -82,6 +92,16 @@ export function useMcpLabels() {
           return t(
             'mcp.scope.comment.title',
             'Add comments to findings, each one confirmed by you in {product}'
+          )
+        case MCP_PROPOSE_SCOPE:
+          return t(
+            'mcp.scope.propose.title',
+            'Propose false positives and accepted risks, each decided by another person'
+          )
+        case MCP_PENTEST_DRAFT_SCOPE:
+          return t(
+            'mcp.scope.pentestDraft.title',
+            'Save pentest findings as drafts, each confirmed by another campaign member'
           )
         default:
           return fallback || scope

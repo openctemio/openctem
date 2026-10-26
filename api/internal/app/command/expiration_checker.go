@@ -11,6 +11,7 @@ import (
 	"github.com/openctemio/openctem/api/internal/metrics"
 
 	commanddom "github.com/openctemio/openctem/api/pkg/domain/command"
+	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/logger"
 )
 
@@ -19,7 +20,7 @@ import (
 // interface so the notification can be asserted in a test — silently skipping
 // it is the failure mode this file exists to prevent.
 type stepFailer interface {
-	OnStepFailed(ctx context.Context, runID, stepKey, errorMessage, errorCode string) error
+	OnStepFailed(ctx context.Context, tenantID shared.ID, runID, stepKey, errorMessage, errorCode string) error
 }
 
 // ExpirationChecker periodically checks for expired commands and handles them.
@@ -237,7 +238,7 @@ func (c *ExpirationChecker) triggerScanRunExpired(ctx context.Context, cmd *comm
 	}
 
 	// Trigger step failure with timeout error
-	if err := c.scanRunService.OnStepFailed(ctx, payload.ScanRunID, payload.StepKey, reason.errorMessage, reason.code); err != nil {
+	if err := c.scanRunService.OnStepFailed(ctx, cmd.TenantID, payload.ScanRunID, payload.StepKey, reason.errorMessage, reason.code); err != nil {
 		c.logger.Error("failed to trigger pipeline expiration",
 			"scan_run_id", payload.ScanRunID,
 			"step_key", payload.StepKey,

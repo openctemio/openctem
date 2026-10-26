@@ -90,12 +90,14 @@ const (
 	coverageRejectedItems       = "report_rejected_items"
 	coveragePartial             = "partial_coverage"
 	coverageUndeclared          = "coverage_undeclared"
+	coverageTruncated           = "truncated_result"
 	coverageRepositoryScan      = "repository_scan"
 	coverageNotRepositoryScan   = "not_repository_scan"
 	coverageNotDefaultBranch    = "not_default_branch"
 	coverageToolMismatch        = "tool_ambiguous"
 	coverageReservedTool        = "reserved_tool"
 	coverageNoCoveredAssets     = "no_covered_assets"
+	coverageUncoveredTargets    = "uncovered_targets"
 )
 
 // coverageDecision is the pure verdict on one command's run.
@@ -137,6 +139,14 @@ func decideRunCoverage(c *ingestreport.CommandCoverage, repo bool) coverageDecis
 	}
 	if len(c.Result) > 0 && json.Unmarshal(c.Result, &result) == nil && result.ExitCode != nil && *result.ExitCode != 0 {
 		return coverageDecision{reason: coverageNonZeroExit}
+	}
+	if resultLeftTargetsUncovered(c.Result) {
+		return coverageDecision{reason: coverageUncoveredTargets}
+	}
+	// A result cut short (deadline, disk, cap) cannot prove that what it
+	// does not report is gone, whatever coverage_type its reports declare.
+	if command.ResultTruncated(c.Result) {
+		return coverageDecision{reason: coverageTruncated}
 	}
 	if len(c.Reports) == 0 {
 		return coverageDecision{reason: coverageNoReports}
@@ -222,6 +232,43 @@ func decideRunCoverage(c *ingestreport.CommandCoverage, repo bool) coverageDecis
 	}
 	q.TemplatesDigest = templates
 	return coverageDecision{reason: coverageEligible, query: q}
+}
+
+// resultLeftTargetsUncovered reports whether a command result says the
+// sensor did not fully cover every target it was given: hosts it gave up or
+// that blocked it (coverage_gaps), targets it could not reach
+// (unreached_targets) and targets its local policy refused
+// (refused_targets). A host with a gap is never read as "no findings": the
+// report header may still say coverage_type "full" and the host may still
+// count as touched (an asset record, some findings), so a finding the run
+// did not repeat there proves nothing. The run then closes nothing (fail
+// closed); a result that cannot be parsed is not trusted either.
+func resultLeftTargetsUncovered(raw json.RawMessage) bool {
+	if len(raw) == 0 {
+		return false
+	}
+	var r struct {
+		Metadata struct {
+			RefusedTargets      []json.RawMessage `json:"refused_targets"`
+			RefusedTargetsTotal int               `json:"refused_targets_total"`
+			CoverageGaps        []json.RawMessage `json:"coverage_gaps"`
+			CoverageGapsTotal   int               `json:"coverage_gaps_total"`
+			UnreachedTargets    []json.RawMessage `json:"unreached_targets"`
+			UnreachedTotal      int               `json:"unreached_targets_total"`
+		} `json:"metadata"`
+	}
+	if err := json.Unmarshal(raw, &r); err != nil {
+		var probe map[string]json.RawMessage
+		if json.Unmarshal(raw, &probe) != nil {
+			return false // not an object: no metadata to read (the exit code rule still applies)
+		}
+		_, has := probe["metadata"]
+		return has // a metadata block in an unexpected shape is not trusted
+	}
+	m := r.Metadata
+	return m.CoverageGapsTotal > 0 || len(m.CoverageGaps) > 0 ||
+		m.UnreachedTotal > 0 || len(m.UnreachedTargets) > 0 ||
+		m.RefusedTargetsTotal > 0 || len(m.RefusedTargets) > 0
 }
 
 // coverageReceiptIncomplete: the run's receipt is missing or past its

@@ -42,6 +42,8 @@ const cards = (canAdd: boolean) => ({
       names_count: 3,
       unknown_network_count: 1,
       shared_count: 1,
+      provider_count: 1,
+      providers: [{ provider: 'Cloudflare', class: 'edge', addresses: 1 }],
       addresses: [
         {
           asset_id: 'a1',
@@ -65,7 +67,7 @@ const cards = (canAdd: boolean) => ({
           asset_id: 'a3',
           address: '104.16.5.5',
           resolved_from: ['cdn.acme.example'],
-          network: { known: true, provider: 'Cloudflare' },
+          network: { known: true, provider: 'Cloudflare', class: 'edge' },
           shared: 'edge_range',
           ports: [80, 443, 8080, 8443],
         },
@@ -120,7 +122,7 @@ describe('EASMDecidePanel', () => {
     expect(screen.queryByText('CDN edge range (Cloudflare)')).not.toBeInTheDocument()
     const note = screen.getByTestId('decide-no-decision')
     expect(note).toHaveTextContent(
-      '1 address your names resolve to belongs to a CDN or hosting provider and needs no decision.'
+      '1 address your names resolve to belongs to Cloudflare and needs no decision.'
     )
     await user.click(within(note).getByRole('button', { name: 'View list' }))
     expect(within(note).getByText('CDN edge range (Cloudflare)')).toBeInTheDocument()
@@ -305,5 +307,35 @@ describe('EASMDecidePanel', () => {
     api.post.mockRejectedValueOnce(new Error('boom'))
     action.onClick()
     await waitFor(() => expect(toast.error).toHaveBeenCalled())
+  })
+})
+
+describe('EASMDecidePanel provider line', () => {
+  it('names several providers and counts the other shared addresses apart', async () => {
+    const c = cards(true)
+    const addr = c.cards[0]
+    api.get.mockImplementation(
+      byUrl({
+        ...c,
+        cards: [
+          {
+            ...addr,
+            shared_count: 5,
+            provider_count: 4,
+            providers: [
+              { provider: 'Cloudflare', class: 'edge', addresses: 3 },
+              { provider: 'Vercel', class: 'saas_hosting', addresses: 1 },
+            ],
+          },
+          c.cards[1],
+        ],
+      })
+    )
+    wrap(<EASMDecidePanel />)
+    const note = await screen.findByTestId('decide-no-decision')
+    expect(note).toHaveTextContent(
+      '4 addresses your names resolve to belong to CDN or hosting providers (Cloudflare, Vercel) and need no decision.'
+    )
+    expect(note).toHaveTextContent('1 more is shared with other organizations and is not offered.')
   })
 })

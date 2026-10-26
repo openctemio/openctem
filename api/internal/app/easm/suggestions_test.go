@@ -269,3 +269,42 @@ func TestSuggestionCards_UnclassifiedChecksAndTotal(t *testing.T) {
 		t.Fatalf("shared-only %+v", out)
 	}
 }
+
+// Provider addresses carry their class and provider, are grouped by
+// provider for the quiet line, and never carry ports (they are the
+// provider's); an offered address keeps its ports.
+func TestSuggestionCards_ProviderClassesAndNoPorts(t *testing.T) {
+	edgePorts := map[string]any{"ports": []any{map[string]any{"port": float64(443), "state": "open"}}}
+	store := &fakeSuggestionStore{addrs: []AddressBehindNames{
+		addr("104.16.7.7", edgePorts, "a.acme.example"),
+		addr("104.16.7.8", edgePorts, "b.acme.example"),
+		addr("198.51.100.30", map[string]any{"asn_org": "Vercel Inc"}, "c.acme.example"),
+		addr("198.51.100.31", map[string]any{"asn_org": "Hosting Elsewhere", "ports": edgePorts["ports"]}, "d.acme.example"),
+		addr("198.51.100.32", edgePorts, "e.acme.example"),
+	}}
+	cover := coverSet{"a.acme.example": true, "b.acme.example": true, "c.acme.example": true, "d.acme.example": true, "e.acme.example": true}
+	org := func(context.Context, shared.ID) (string, error) { return "Acme", nil }
+	out, err := NewSuggestionService(store, cover, nil, org, nil).Cards(context.Background(), shared.NewID(), true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	c := out.Cards[0]
+	if c.SharedCount != 4 || c.ProviderCount != 3 {
+		t.Fatalf("shared %d providers %d", c.SharedCount, c.ProviderCount)
+	}
+	if len(c.Providers) != 2 || c.Providers[0] != (SuggestionProvider{Provider: "Cloudflare", Class: "edge", Addresses: 2}) ||
+		c.Providers[1] != (SuggestionProvider{Provider: "Vercel", Class: "saas_hosting", Addresses: 1}) {
+		t.Fatalf("providers %+v", c.Providers)
+	}
+	for _, a := range c.SharedAddresses {
+		if len(a.Ports) != 0 {
+			t.Errorf("%s: shared address carries ports %v", a.Address, a.Ports)
+		}
+	}
+	if c.SharedAddresses[0].Network.Class != "edge" {
+		t.Errorf("class %+v", c.SharedAddresses[0].Network)
+	}
+	if c.Count != 1 || len(c.Addresses[0].Ports) != 1 || c.Addresses[0].Network.Class != "dedicated" {
+		t.Fatalf("offered %+v", c.Addresses)
+	}
+}

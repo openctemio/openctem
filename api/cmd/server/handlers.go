@@ -264,6 +264,9 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 	sensorHandler.SetContentPolicySource(svc.SensorContent)
 	sensorHandler.SetZoneLister(repos.ScanZone)
 	sensorHandler.SetGrantService(svc.SensorGrant)
+	if svc.JobSigner != nil {
+		sensorHandler.SetJobSigningRoot(svc.JobSigner.RootKeyID)
+	}
 	commandHandler.SetScanRunService(svc.ScanRun)
 	commandHandler.SetAuditService(svc.Audit)
 	commandHandler.SetScanCommandGate(svc.Scan)
@@ -503,6 +506,12 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		// Write tools run only after the person confirms the action in the
 		// web UI (RFC-062 §10).
 		mcpHandler.SetWriteTools(mcpOAuth, svc.Vulnerability)
+		// Proposal tools file requests another person decides; they need
+		// the person behind an OAuth connection.
+		mcpHandler.SetProposalTools(svc.Vulnerability, mcpDiscovery.Endpoints.Issuer)
+		if svc.Pentest != nil {
+			mcpHandler.SetPentestDraftTool(svc.Pentest, mcpDiscovery.Endpoints.Issuer)
+		}
 	}
 	if mcpAuth != nil && mcpPolicies != nil {
 		auth, gate := mcpAuth, middleware.MCPKeyPolicyGate(mcpPolicies, log)
