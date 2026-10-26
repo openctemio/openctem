@@ -184,8 +184,17 @@ func (s *Service) signJob(ctx context.Context, sensorID string, c *commanddom.Co
 func (s *Service) contentNotSigned(c *commanddom.Command, sensorID string, err error) error {
 	s.logger.Warn("job content not pinned; command not handed to the sensor",
 		"command_id", c.ID.String(), "sensor_id", sensorID, "refused", errors.Is(err, ErrContentRefused), "error", err)
-	return fmt.Errorf("%w: %w", ErrJobNotSigned, err)
+	return contentNotSignedError{cause: err}
 }
+
+// contentNotSignedError is ErrJobNotSigned with the pinning failure kept for
+// errors.Is and errors.As. Its text is the fixed sentence: the cause is logged,
+// never formatted into what a caller shows.
+type contentNotSignedError struct{ cause error }
+
+func (e contentNotSignedError) Error() string { return ErrJobNotSigned.Error() }
+
+func (e contentNotSignedError) Unwrap() []error { return []error{ErrJobNotSigned, e.cause} }
 
 // signClaimed signs each claimed command for sensorID. A command the signer
 // does not sign is taken back (pending again, pinned only if it was pinned
