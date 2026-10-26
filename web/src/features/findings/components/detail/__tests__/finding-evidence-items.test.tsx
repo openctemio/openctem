@@ -151,4 +151,57 @@ describe('FindingEvidenceItems', () => {
     expect(container.textContent).toContain('grpc_call')
     expect(screen.getByTestId('evidence-text').textContent).toContain('"service": "a.B"')
   })
+
+  it('folds the tool curl item into the HTTP exchange of the same capture', () => {
+    const at = '2026-10-20T10:00:00Z'
+    const exchange = record({ created_at: at })
+    const curl = record({
+      id: 'ev2',
+      kind: 'curl',
+      curl: undefined,
+      created_at: at,
+      item: { kind: 'curl', text: "curl -X 'GET' 'https://h.example/'" },
+    })
+    // Stored last, the curl item comes first from the API.
+    render(<FindingEvidenceItems findingId="f1" items={[curl, exchange]} />)
+    expect(screen.getAllByTestId('evidence-item')).toHaveLength(1)
+    expect(screen.getByText('Response')).toBeInTheDocument()
+    expect(screen.getByText(/200/)).toBeInTheDocument()
+  })
+
+  it('keeps a curl item that has no HTTP exchange beside it', () => {
+    render(
+      <FindingEvidenceItems
+        findingId="f1"
+        items={[
+          record({
+            kind: 'curl',
+            curl: undefined,
+            revealable: [],
+            item: { kind: 'curl', text: "curl 'https://h.example/'" },
+          }),
+        ]}
+      />
+    )
+    expect(screen.getAllByTestId('evidence-item')).toHaveLength(1)
+  })
+
+  it('folds headers away in the compact layout, keeping a matched header open', () => {
+    const { rerender } = render(<FindingEvidenceItems findingId="f1" items={[record()]} compact />)
+    const headers = screen.getAllByTestId('evidence-headers')
+    expect(headers[0]).not.toHaveAttribute('open')
+    const matched = record({
+      item: {
+        kind: 'http_exchange',
+        match: [{ location: 'response', part: 'header' }],
+        http: {
+          request: { method: 'GET', url: 'https://h.example/' },
+          response: { status: 200, headers: [{ name: 'Server', value: 'x' }] },
+        },
+      },
+    })
+    rerender(<FindingEvidenceItems findingId="f1" items={[matched]} compact />)
+    const after = screen.getAllByTestId('evidence-headers')
+    expect(after[after.length - 1]).toHaveAttribute('open')
+  })
 })
