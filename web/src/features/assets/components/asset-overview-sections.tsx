@@ -103,7 +103,7 @@ export function RiskSummarySection({ asset, onViewFindings }: RiskSummarySection
           <RiskScoreBadge score={asset.riskScore} state={state} size="md" />
           {asset.riskScoredAt && (
             <p className="flex items-baseline gap-1 text-xs text-muted-foreground">
-              {t('riskScore.updated', 'Score updated')}
+              {t('riskScore.updated', 'Score last changed')}
               <RelativeTime date={asset.riskScoredAt} className="text-xs" />
             </p>
           )}

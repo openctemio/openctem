@@ -443,6 +443,11 @@ more than 100) of the open findings for that tool on those assets is
 **held for review** (RFC-023 C-4 "blinding"). It is shown on the status
 resource as `auto_resolve: held`.
 
+A command whose result declares `truncated: true` (in `metadata`, or at the
+top level) was cut short by a deadline, disk or output cap: it never closes
+a finding by absence, whatever `coverage_type` its reports declare, and the
+coverage settlement reads none of its targets as covered.
+
 ### 5.5 Untrusted strings
 
 Everything a sensor sends is untrusted (C-6). Log fields go through the
