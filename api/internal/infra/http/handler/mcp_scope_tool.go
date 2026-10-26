@@ -210,7 +210,7 @@ func (h *MCPHandler) decideScope(ctx context.Context, tenantID shared.ID, target
 func (h *MCPHandler) callerInProgram(ctx context.Context, tenantID, program shared.ID) (bool, error) {
 	user, err := shared.IDFromString(middleware.GetUserID(ctx))
 	if err != nil {
-		return false, nil // no person behind the call: not a member
+		return false, err // no person behind the call: refused as a failed lookup
 	}
 	ids, err := h.scopePrograms.MemberProgramIDs(ctx, tenantID, user)
 	if err != nil {
