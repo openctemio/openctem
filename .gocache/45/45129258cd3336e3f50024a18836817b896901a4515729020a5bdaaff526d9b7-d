@@ -1,0 +1,3 @@
+./statfs_unix.go
+./status.go
+./watch.go

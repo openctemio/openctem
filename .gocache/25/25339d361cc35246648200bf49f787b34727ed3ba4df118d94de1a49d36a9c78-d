@@ -1,0 +1,12 @@
+./coverage.go
+./detection.go
+./dispatcher.go
+./evidence_ingest.go
+./evidence_store.go
+./executor.go
+./gate.go
+./nuclei_routing.go
+./proof_of_fix.go
+./retest_command.go
+./run.go
+./verdict.go

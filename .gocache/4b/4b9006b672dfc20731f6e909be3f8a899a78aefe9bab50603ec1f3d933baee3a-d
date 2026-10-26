@@ -1,0 +1,4 @@
+./aliases.go
+./chunked.go
+./importer.go
+./vulnids.go

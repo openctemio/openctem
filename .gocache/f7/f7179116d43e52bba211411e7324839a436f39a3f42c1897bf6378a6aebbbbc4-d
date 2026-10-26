@@ -1,0 +1,15 @@
+./campaign.go
+./campaign_external_ref.go
+./campaign_member.go
+./campaign_profile.go
+./campaign_rbac.go
+./campaign_secret.go
+./campaign_signoff.go
+./errors.go
+./file_store.go
+./report.go
+./report_template.go
+./repository.go
+./retest.go
+./template.go
+./types.go

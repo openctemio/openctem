@@ -1,0 +1,4 @@
+./archive.go
+./pack.go
+./platform.go
+./signing.go

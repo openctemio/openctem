@@ -1,0 +1,10 @@
+./alert.go
+./catalog.go
+./classify.go
+./fields.go
+./labels.go
+./observation.go
+./posture.go
+./repository.go
+./views.go
+./webendpoint.go

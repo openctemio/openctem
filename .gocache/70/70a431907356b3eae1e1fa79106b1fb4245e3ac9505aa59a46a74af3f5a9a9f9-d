@@ -1,0 +1,4 @@
+./errors.go
+./ifaces.go
+./options.go
+./pointer.go

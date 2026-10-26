@@ -1,0 +1,8 @@
+./adapter.go
+./doc.go
+./lexer.go
+./options.go
+./ordered_map.go
+./pool.go
+./register.go
+./writer.go

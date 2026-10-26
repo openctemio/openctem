@@ -1,0 +1,12 @@
+./attestations.go
+./certconstraint.go
+./envelope.go
+./hashlib.go
+./keylib.go
+./match.go
+./model.go
+./rulelib.go
+./runlib.go
+./util.go
+./util_unix.go
+./verifylib.go

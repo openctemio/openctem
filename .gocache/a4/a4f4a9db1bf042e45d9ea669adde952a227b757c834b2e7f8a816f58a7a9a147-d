@@ -1,0 +1,4 @@
+./checkpoint.go
+./fetch.go
+./sha.go
+./signed_note.go

@@ -1,0 +1,3 @@
+./index_client.go
+./search_index_parameters.go
+./search_index_responses.go

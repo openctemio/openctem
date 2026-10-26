@@ -1,0 +1,12 @@
+./campaign.go
+./campaign_ticket.go
+./claim.go
+./group.go
+./group_repository.go
+./move.go
+./owner_access.go
+./recompute_report.go
+./suggestion.go
+./task.go
+./task_query.go
+./task_repository.go

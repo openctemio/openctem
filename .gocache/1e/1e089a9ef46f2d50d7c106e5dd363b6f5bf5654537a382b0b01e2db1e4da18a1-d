@@ -1,0 +1,10 @@
+./context.go
+./digest.go
+./doc.go
+./keyversion.go
+./loadoptions.go
+./noop.go
+./rand.go
+./remoteverification.go
+./rpcauth.go
+./signeropts.go

@@ -1,0 +1,5 @@
+./declared.go
+./entity.go
+./names.go
+./repository.go
+./target_mapping.go

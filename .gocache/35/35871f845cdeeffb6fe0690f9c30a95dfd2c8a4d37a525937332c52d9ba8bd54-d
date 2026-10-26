@@ -1,0 +1,9 @@
+./bitreader.go
+./bitwriter.go
+./build_table.go
+./compress.go
+./decompress.go
+./decompress_amd64.go
+./decompress_asm.go
+./huff0.go
+./decompress_amd64.s

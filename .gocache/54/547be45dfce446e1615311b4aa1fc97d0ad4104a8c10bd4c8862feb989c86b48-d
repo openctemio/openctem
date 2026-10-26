@@ -1,0 +1,6 @@
+./alias.go
+./curated.go
+./observe.go
+./package.go
+./purl.go
+./repository.go

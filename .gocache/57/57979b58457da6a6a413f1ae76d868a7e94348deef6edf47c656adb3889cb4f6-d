@@ -1,0 +1,6 @@
+./disposition.go
+./entity.go
+./errors.go
+./repository.go
+./state_history.go
+./value_objects.go

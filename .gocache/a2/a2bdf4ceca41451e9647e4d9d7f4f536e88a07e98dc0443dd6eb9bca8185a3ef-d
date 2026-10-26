@@ -1,0 +1,8 @@
+./admin_only.go
+./permission.go
+./privileged.go
+./read_scope.go
+./role_mapping.go
+./summary.go
+./system_roles.go
+./templates.go

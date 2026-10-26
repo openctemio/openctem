@@ -1,0 +1,10 @@
+./duration.go
+./flate.go
+./identity_provider.go
+./metadata.go
+./saml.go
+./saml_gen.go
+./schema.go
+./service_provider.go
+./time.go
+./util.go

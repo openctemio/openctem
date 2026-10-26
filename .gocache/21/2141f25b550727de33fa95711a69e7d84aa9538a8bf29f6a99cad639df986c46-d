@@ -1,0 +1,4 @@
+./resource_descriptor.go
+./resource_descriptor.pb.go
+./statement.go
+./statement.pb.go

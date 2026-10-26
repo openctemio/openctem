@@ -1,0 +1,9 @@
+./check.go
+./digest.go
+./doc.go
+./errors.go
+./options.go
+./ref.go
+./registry.go
+./repository.go
+./tag.go

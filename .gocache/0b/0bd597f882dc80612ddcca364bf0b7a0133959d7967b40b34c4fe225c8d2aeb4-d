@@ -1,0 +1,6 @@
+./doc.go
+./errors.go
+./json.go
+./loading.go
+./options.go
+./yaml.go
