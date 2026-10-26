@@ -28,8 +28,11 @@ func NewSSOEnforcementRepository(db *DB) *SSOEnforcementRepository {
 // organization's own identity provider. Other roles are not stamped.
 func (r *SSOEnforcementRepository) RecordSSOSignIn(ctx context.Context, tenantID, userID shared.ID) error {
 	_, err := r.db.ExecContext(ctx, `
-		UPDATE tenant_members SET last_sso_signin_at = NOW()
-		WHERE tenant_id = $1 AND user_id = $2 AND status = 'active' AND role IN ('owner', 'admin')`,
+		UPDATE tenant_members m SET last_sso_signin_at = NOW()
+		FROM v_user_effective_role ver
+		WHERE m.tenant_id = $1 AND m.user_id = $2 AND m.status = 'active'
+		  AND ver.user_id = m.user_id AND ver.tenant_id = m.tenant_id
+		  AND ver.role IN ('owner', 'admin')`,
 		tenantID.String(), userID.String())
 	if err != nil {
 		return fmt.Errorf("record sso sign-in: %w", err)
@@ -43,9 +46,10 @@ func (r *SSOEnforcementRepository) HasAdminSSOSignIn(ctx context.Context, tenant
 	var ok bool
 	err := r.db.QueryRowContext(ctx, `
 		SELECT EXISTS (
-			SELECT 1 FROM tenant_members
-			WHERE tenant_id = $1 AND status = 'active' AND role IN ('owner', 'admin')
-			  AND last_sso_signin_at IS NOT NULL)`, tenantID.String()).Scan(&ok)
+			SELECT 1 FROM tenant_members m
+			JOIN v_user_effective_role ver ON ver.user_id = m.user_id AND ver.tenant_id = m.tenant_id
+			WHERE m.tenant_id = $1 AND m.status = 'active' AND ver.role IN ('owner', 'admin')
+			  AND m.last_sso_signin_at IS NOT NULL)`, tenantID.String()).Scan(&ok)
 	if err != nil {
 		return false, fmt.Errorf("check admin sso sign-in: %w", err)
 	}
@@ -59,8 +63,9 @@ func (r *SSOEnforcementRepository) HasOwnerWithSecondFactor(ctx context.Context,
 	err := r.db.QueryRowContext(ctx, `
 		SELECT EXISTS (
 			SELECT 1 FROM tenant_members m
+			JOIN v_user_effective_role ver ON ver.user_id = m.user_id AND ver.tenant_id = m.tenant_id
 			JOIN user_mfa f ON f.user_id = m.user_id AND f.enabled
-			WHERE m.tenant_id = $1 AND m.status = 'active' AND m.role = 'owner')`, tenantID.String()).Scan(&ok)
+			WHERE m.tenant_id = $1 AND m.status = 'active' AND ver.role = 'owner')`, tenantID.String()).Scan(&ok)
 	if err != nil {
 		return false, fmt.Errorf("check owner second factor: %w", err)
 	}
