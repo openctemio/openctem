@@ -109,11 +109,29 @@ type AdminChangePasswordRequest struct {
 	NewPassword     string `json:"new_password"`
 }
 
-// AdminProvisionResponse returns the new administrator; temporary_password is
-// set only when a user account had to be created, and is shown once.
+// AdminProvisionResponse returns the new administrator and how the invitation
+// was delivered. It never carries a password: the administrator chooses their
+// own with the emailed link. invitation_url is set only when the platform cannot
+// send mail and the role may be handed the link (a non-super role, or any role
+// while approvals are off); it is shown once and cannot be fetched again.
 type AdminProvisionResponse struct {
-	Admin             ValidateResponse `json:"admin"`
-	TemporaryPassword string           `json:"temporary_password,omitempty"`
+	Admin ValidateResponse `json:"admin"`
+	// InvitationEmailed: the set-password link was sent to the new address.
+	InvitationEmailed bool `json:"invitation_emailed"`
+	// InvitationFailed: mail is configured but the send failed; no link is
+	// returned. The administrator can use "forgot password" on the sign-in page.
+	InvitationFailed bool       `json:"invitation_failed,omitempty"`
+	InvitationURL    string     `json:"invitation_url,omitempty"`
+	ExpiresAt        *time.Time `json:"expires_at,omitempty"`
+}
+
+// CodeInvitationNeedsEmail refuses a new super admin while approvals are on and
+// the platform cannot send e-mail.
+const CodeInvitationNeedsEmail apierror.Code = "INVITATION_NEEDS_EMAIL"
+
+func writeInvitationNeedsEmail(w http.ResponseWriter) {
+	apierror.New(http.StatusConflict, CodeInvitationNeedsEmail,
+		"Approvals are on, so a new super admin is invited by e-mail, and the platform cannot send e-mail. Configure e-mail, or run `bootstrap-admin invite -email=<address> -role=super_admin` on the host.").WriteJSON(w)
 }
 
 func clientInfo(r *http.Request) adminconsole.ClientInfo {
@@ -209,14 +227,14 @@ func (h *AdminConsoleHandler) Login(w http.ResponseWriter, r *http.Request) {
 
 // Provision handles POST /api/v1/admin/administrators (super admin).
 // @Summary Make someone a platform administrator
-// @Description Links the user account with this email (it must not belong to any organization), or creates a local account and returns its temporary password once. The administrator signs in on the normal /login page.
+// @Description Creates a local account for the email (an email that already has an account is refused) with no password, and emails the new administrator a single-use set-password link valid for 24 hours. No password is ever returned. Without platform e-mail the link is returned once, only for a non-super role or while four-eyes approvals are off; a new super admin is refused while approvals are on.
 // @Tags Admin Users
 // @Accept json
 // @Produce json
 // @Param request body AdminProvisionRequest true "Administrator"
 // @Success 201 {object} AdminProvisionResponse
 // @Failure 400 {object} apierror.Error "Bad Request"
-// @Failure 409 {object} apierror.Error "Already an administrator, or the account belongs to an organization"
+// @Failure 409 {object} apierror.Error "Already an administrator, the email has an account, or a new super admin needs e-mail delivery while approvals are on"
 // @Security BearerAuth
 // @Router /admin/administrators [post]
 func (h *AdminConsoleHandler) Provision(w http.ResponseWriter, r *http.Request) {
@@ -234,6 +252,22 @@ func (h *AdminConsoleHandler) Provision(w http.ResponseWriter, r *http.Request) 
 		apierror.BadRequest("role must be super_admin, ops_admin or readonly").WriteJSON(w)
 		return
 	}
+	// While approvals are on, a new super admin is invited by e-mail only: with
+	// no e-mail the link would reach the person who asked, who could then sign
+	// in as the account the second administrator approves. Checked before an
+	// approval is spent, so none is consumed.
+	if role == admin.AdminRoleSuperAdmin && h.approvals != nil && !h.svc.CanSendInvitation(r.Context()) {
+		active, aerr := h.approvals.Active(r.Context(), actor)
+		if aerr != nil {
+			h.logger.Error("four-eyes status", "error", sanitizeLogField(aerr.Error()))
+			apierror.ServiceUnavailable("The approval check could not run, so the change was not made. Try again.").WriteJSON(w)
+			return
+		}
+		if active {
+			writeInvitationNeedsEmail(w)
+			return
+		}
+	}
 	// A new super admin needs a second super admin's approval.
 	var grant *adminapproval.Grant
 	if role == admin.AdminRoleSuperAdmin {
@@ -247,14 +281,18 @@ func (h *AdminConsoleHandler) Provision(w http.ResponseWriter, r *http.Request) 
 			return
 		}
 	}
-	a, temp, err := h.svc.Provision(r.Context(), actor, adminconsole.ProvisionInput{
+	res, err := h.svc.Provision(r.Context(), actor, adminconsole.ProvisionInput{
 		Email: req.Email, Name: req.Name, Role: role, BreakGlass: req.BreakGlass,
+		// A grant that is not the single-admin fallback means approvals are on.
+		ApprovalsActive: grant != nil && !grant.SingleAdmin,
 	}, clientInfo(r))
 	if err != nil {
 		releaseSecondApproval(r, h.approvals, actor, grant)
 		switch {
 		case errors.Is(err, admin.ErrAdminAlreadyExists), errors.Is(err, admin.ErrUserAlreadyAdmin):
 			apierror.Conflict("This person is already a platform administrator").WriteJSON(w)
+		case errors.Is(err, adminconsole.ErrInvitationNeedsEmail):
+			writeInvitationNeedsEmail(w)
 		case errors.Is(err, admin.ErrEmailHasAccount):
 			apierror.Conflict("An account with this email already exists. Platform administrators get a new, dedicated account: use another email.").WriteJSON(w)
 		case errors.Is(err, admin.ErrUserHasMemberships):
@@ -267,12 +305,19 @@ func (h *AdminConsoleHandler) Provision(w http.ResponseWriter, r *http.Request) 
 		}
 		return
 	}
+	a := res.Admin
+	expires := res.ExpiresAt
+	// The link is a credential for the new account: never cached.
+	w.Header().Set("Cache-Control", "no-store")
 	writeJSON(w, http.StatusCreated, AdminProvisionResponse{
 		Admin: ValidateResponse{
 			ID: a.ID().String(), Email: a.Email(), Name: a.Name(), Role: string(a.Role()),
 			IsBreakGlass: a.IsBreakGlass(), PasswordChangeRequired: a.PasswordChangeRequired(),
 		},
-		TemporaryPassword: temp,
+		InvitationEmailed: res.Emailed,
+		InvitationFailed:  res.EmailFailed,
+		InvitationURL:     res.SetupLink,
+		ExpiresAt:         &expires,
 	})
 }
 

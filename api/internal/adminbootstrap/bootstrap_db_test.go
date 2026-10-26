@@ -261,3 +261,50 @@ func TestBootstrapAccountability_DB(t *testing.T) {
 	}
 	verifyChain(t, db)
 }
+
+// `bootstrap-admin invite` adds an administrator with no password: the link is
+// printed once, the audit row is critical and chained, nothing in the output
+// is a password, and the other administrators are told.
+func TestInvite_DB(t *testing.T) {
+	db := testdb.PrivateDatabase(t, "adminbootstrap-invite", "../../migrations")
+	ctx := context.Background()
+	var out bytes.Buffer
+	if err := Run(ctx, db, Options{Email: "root@example.com", Role: "super_admin", NoBackup: true, Actor: Actor{OSUser: "ops", Hostname: "h1"}}, &out); err != nil {
+		t.Fatal(err)
+	}
+
+	n := &recordingNotifier{}
+	out.Reset()
+	if err := Invite(ctx, db, InviteOptions{Email: "Bob@Example.com", Role: "super_admin", Actor: Actor{OSUser: "ops", Hostname: "h1"},
+		UIBaseURL: "https://app.example.com", Notifier: n}, &out); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out.String(), "https://app.example.com/set-password#token=") || strings.Contains(strings.ToLower(out.String()), "password:") {
+		t.Fatalf("want a link and no password in the output:\n%s", out.String())
+	}
+	a := getAdmin(t, db, "bob@example.com")
+	if a == nil || a.Role != "super_admin" || a.UserID == "" || !a.Active {
+		t.Fatalf("administrator not created and linked: %+v", a)
+	}
+	var hasHash bool
+	var token sql.NullString
+	if err := db.QueryRow(`SELECT password_hash IS NOT NULL, password_reset_token FROM users WHERE id = $1`, a.UserID).Scan(&hasHash, &token); err != nil {
+		t.Fatal(err)
+	}
+	if hasHash || !token.Valid || strings.Contains(out.String(), token.String) {
+		t.Fatal("the account has no password, and only a hash of the token is stored")
+	}
+	rows := auditRows(t, db)
+	last := rows[len(rows)-1]
+	if last.Action != AuditActionAdminInvited || last.Severity != "critical" || last.ResourceName != "bob@example.com" {
+		t.Fatalf("want a critical admin.invited row: %+v", last)
+	}
+	verifyChain(t, db)
+	if len(n.got) != 1 || len(n.got[0].Recipients) != 1 || n.got[0].Recipients[0] != "root@example.com" {
+		t.Fatalf("the other administrators must be told: %+v", n.got)
+	}
+	// An address that already has an account is refused.
+	if err := Invite(ctx, db, InviteOptions{Email: "bob@example.com", Role: "readonly"}, &out); err == nil {
+		t.Fatal("an existing email must be refused")
+	}
+}
