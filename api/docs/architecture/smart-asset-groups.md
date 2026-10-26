@@ -118,6 +118,6 @@ matching", and offers "Save filter as group" which creates a group with the filt
 |---|---|
 | Domain | `pkg/domain/assetgroup/rule.go`, `paste.go`, `rule_repository.go` |
 | Service | `internal/app/asset/group_rule.go`, `group_rule_members.go`, `group_rule_scheduler.go` |
-| Store | `internal/infra/postgres/asset_group_rule_repository.go`, migration `003438_smart_asset_groups` |
+| Store | `internal/infra/postgres/asset_group_rule_repository.go`, migration `003440_smart_asset_groups` |
 | API | `internal/infra/http/handler/asset_group_rule_handler.go`, routes in `routes/assets.go` |
 | Safety net | `internal/infra/controller/asset_group_rules.go` |
