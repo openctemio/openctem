@@ -27,6 +27,8 @@ type Attempt struct {
 	Responded bool
 	// Status is the response status (0 without a response).
 	Status int
+	// Location is the response's redirect target ("" when none was recorded).
+	Location string
 	// Edge is what an edge protection (CDN or WAF) did with the request,
 	// read from the response's headers and body. Direct when no vendor
 	// marker is present: a bare 403 is the origin's own answer.
@@ -61,6 +63,12 @@ func attemptOf(it *evidence.Item, matches bool) Attempt {
 	if r := it.HTTP.Response; r != nil && r.Status > 0 {
 		a.Responded, a.Status = true, r.Status
 		a.Edge = classifyEdge(r)
+		for _, kv := range r.Headers {
+			if strings.EqualFold(kv.Name, "Location") {
+				a.Location = kv.Value
+				break
+			}
+		}
 	}
 	return a
 }
@@ -158,6 +166,10 @@ func decideNotMatched(a Attempt, matchedAt string, reached bool, unreachableDeta
 				"Allow the scanner at the edge, then retest"}
 	case a.Status == 401 || a.Status == 403:
 		return decideAccessDenied(a, shown, cls)
+	case a.Status >= 300 && a.Status < 400 && !cls.Exposure && !redirectsToSamePath(a):
+		return Verdict{Outcome: OutcomeInconclusive, Code: ReasonAuthChanged,
+			Reason: shown + " answered " + strconv.Itoa(a.Status) + ": it redirects elsewhere" + redirectNote(a.Location) +
+				" (a login or another page), so the check did not reach the tested page and proves nothing about the fix"}
 	case a.Status == 407:
 		return Verdict{Outcome: OutcomeInconclusive, Code: ReasonAuthChanged,
 			Reason: shown + " answered " + strconv.Itoa(a.Status) + ": authentication is required now, so the check could not see the issue"}
@@ -170,6 +182,29 @@ func decideNotMatched(a Attempt, matchedAt string, reached bool, unreachableDeta
 	}
 	return Verdict{Outcome: OutcomeConfirmedFixed, Code: ReasonNotMatched,
 		Reason: shown + " answered " + strconv.Itoa(a.Status) + " and the check did not match"}
+}
+
+// redirectsToSamePath: the redirect keeps the request's own path (a switch of
+// scheme or host, a trailing query). A redirect with no recorded target, or to
+// another path, is not the endpoint's own answer.
+func redirectsToSamePath(a Attempt) bool {
+	from, err := url.Parse(strings.TrimSpace(a.URL))
+	if err != nil || a.Location == "" {
+		return false
+	}
+	to, err := from.Parse(strings.TrimSpace(a.Location))
+	if err != nil {
+		return false
+	}
+	return strings.TrimRight(to.EscapedPath(), "/") == strings.TrimRight(from.EscapedPath(), "/")
+}
+
+// redirectNote names the redirect target for a reason, without query values.
+func redirectNote(loc string) string {
+	if loc = strings.TrimSpace(loc); loc == "" {
+		return ""
+	}
+	return " to " + DisplayURL(loc)
 }
 
 // edgeLabel names the edge that stopped a request.
