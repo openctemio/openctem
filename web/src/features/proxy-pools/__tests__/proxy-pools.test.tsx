@@ -52,6 +52,14 @@ vi.mock('../api/use-proxy-pools', () => ({
   setProxyAssignment: (...a: unknown[]) => setAssignment(...a),
 }))
 
+let fleet: unknown[] = []
+vi.mock('@/lib/api/sensor-hooks', () => ({
+  useAllSensors: (_cfg: unknown, enabled = true) => ({
+    data: enabled ? { items: fleet } : undefined,
+    isLoading: false,
+  }),
+}))
+
 let perms: string[] = []
 vi.mock('@/lib/permissions', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@/lib/permissions')>()),
@@ -147,6 +155,35 @@ beforeEach(() => {
   perms = ALL
   poolsError = undefined
   assignmentsPending = false
+  fleet = []
+})
+
+describe('Impact preview', () => {
+  const old = {
+    id: 'a',
+    name: 'legacy-sensor',
+    status: 'active',
+    type: 'sensor',
+    execution_mode: 'daemon',
+    reported: { capabilities: [] },
+  }
+  it('lists the sensors that would stop getting jobs before the default pool is turned on', () => {
+    pools = [pool({ enabled: false })]
+    fleet = [old]
+    perms = [...ALL, 'sensors:read']
+    renderPanel()
+    expect(screen.queryByTestId('proxy-impact-list')).toBeNull()
+    fireEvent.click(document.getElementById('proxy-default-enabled') as HTMLElement)
+    expect(screen.getByTestId('proxy-impact-unsupported')).toHaveTextContent('legacy-sensor')
+    expect(screen.getByText('Turning proxies on holds back 1 sensor')).toBeInTheDocument()
+  })
+  it('shows no preview without sensors:read', () => {
+    pools = [pool({ enabled: false })]
+    fleet = [old]
+    renderPanel()
+    fireEvent.click(document.getElementById('proxy-default-enabled') as HTMLElement)
+    expect(screen.queryByTestId('proxy-impact-list')).toBeNull()
+  })
 })
 
 describe('Proxies page', () => {
@@ -330,11 +367,12 @@ describe('New pool dialog', () => {
 })
 
 describe('Sensor network path', () => {
+  let capabilities: string[] | null = ['egress.upstream@1', 'net.confined@1', 'egress.validate@1']
   function renderSection() {
     pools = [pool(), pool({ id: 'p2', name: 'Segment A', is_default: false })]
     return render(
       <TooltipProvider>
-        <SensorNetworkPathSection sensorId="s1" />
+        <SensorNetworkPathSection sensorId="s1" capabilities={capabilities} />
       </TooltipProvider>
     )
   }
@@ -356,6 +394,20 @@ describe('Sensor network path', () => {
     await waitFor(() =>
       expect(setAssignment).toHaveBeenCalledWith('s1', { mode: 'pool', pool_id: 'p2' })
     )
+  })
+
+  it('asks first when the chosen pool would leave the sensor without jobs', async () => {
+    setAssignment.mockResolvedValue({})
+    capabilities = []
+    renderSection()
+    await choose('Segment A')
+    expect(await screen.findByText('This sensor would stop getting scan jobs')).toBeInTheDocument()
+    expect(setAssignment).not.toHaveBeenCalled()
+    fireEvent.click(screen.getByRole('button', { name: 'Use the pool anyway' }))
+    await waitFor(() =>
+      expect(setAssignment).toHaveBeenCalledWith('s1', { mode: 'pool', pool_id: 'p2' })
+    )
+    capabilities = ['egress.upstream@1', 'net.confined@1', 'egress.validate@1']
   })
 
   it('does not toast a saved network path', async () => {
