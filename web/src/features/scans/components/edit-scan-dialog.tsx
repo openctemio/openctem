@@ -41,6 +41,7 @@ import {
   scheduleError,
 } from '../lib/scan-form'
 import { getErrorMessage } from '@/lib/api/error-handler'
+import { apiTargetOptions } from '../lib/dynamic-targets'
 import { notifyScannerConfigWarnings } from '../lib/scanner-config-warnings'
 import { useUpdateScanConfig, invalidateScanConfigsCache } from '@/lib/api/scan-hooks'
 import type { ScanConfig } from '@/lib/api/scan-types'
@@ -75,6 +76,7 @@ export function EditScanDialog({ scanConfig, open, onOpenChange, onSuccess }: Ed
           scanner_name: formData.mode === 'single' ? formData.scannerName : undefined,
           scan_workflow_id: formData.mode === 'workflow' ? formData.workflowId : undefined,
           targets_per_job: formData.maxConcurrent || 10,
+          target_options: apiTargetOptions(formData.targets.targetOptions),
         },
         formData.scanZoneId
       ),
@@ -240,7 +242,7 @@ export function EditScanDialog({ scanConfig, open, onOpenChange, onSuccess }: Ed
         return (
           <>
             <ScheduleStep data={formData} onChange={handleDataChange} requireFutureRun={false} />
-            {canReadZones && zones.length > 0 && (
+            {canReadZones && (
               <ScanRoutingSection
                 zones={zones}
                 value={formData.scanZoneId}
