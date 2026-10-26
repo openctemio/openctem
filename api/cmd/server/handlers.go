@@ -888,6 +888,7 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		handlers.SSO.SetAuditService(svc.Audit)
 		// Admin-console identity-provider creates/updates wait for an owner.
 		handlers.SSO.SetChangeApproval(svc.SSOChange)
+		handlers.SSO.SetAppURL(cfg.SMTP.BaseURL)
 	}
 	if svc.SSOChange != nil {
 		handlers.SSOChange = handler.NewSSOChangeHandler(svc.SSOChange, svc.Audit, log)
