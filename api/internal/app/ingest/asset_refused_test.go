@@ -47,7 +47,7 @@ func TestProcessBatch_OverlongNameRefusedAlone(t *testing.T) {
 	if _, ok := m["a1"]; ok {
 		t.Fatalf("over-long asset was mapped")
 	}
-	if len(out.Errors) != 1 || !strings.Contains(out.Errors[0], "asset a1") || !strings.Contains(out.Errors[0], "maximum is 255") {
+	if len(out.Errors) != 1 || !strings.Contains(out.Errors[0], "asset a1") || !strings.Contains(out.Errors[0], "not a host name") {
 		t.Fatalf("errors = %v, want one item error for a1", out.Errors)
 	}
 	if strings.Contains(out.Errors[0], long) {

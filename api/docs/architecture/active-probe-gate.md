@@ -476,14 +476,37 @@ repository is dispatched by its asset name, which the validator refuses); an
 internal address still needs a scan zone. A target that now routes to
 another zone than the command's `scan_zone_id` (or into or out of every
 zone) is refused as `zone_changed`. The re-check never asks more than the
-dispatch did, so a job is refused only for a change.
+dispatch did, so a job is refused only for a change: a single-scanner run
+the trigger did not route over zones (a passive coverage run of public
+names) records `no_zone_routing`, so the claim does not route it either.
+
+**Lookup-only jobs and names with no DNS answer.** A job that only looks
+names up (`scopedom.JobShape.LookupOnly`: every stage of its tool, and the
+capability it names, is passive and reaches resolvers, third-party sources
+or a vendor API, never the target hosts; today `dnsx` for `resolve.dns` and
+`subfinder` for `discover.subdomains`) runs on a hostname that does not
+resolve: finding that out is its work (coverage S5 re-checks names that
+stopped resolving). Zone routing then places such a name as a public target
+(the default zone, else unzoned: `scanzone.Router.LookupOnly`) instead of
+refusing it as `unresolved`. It is one rule, applied wherever targets are
+routed: the dispatch gate (the claim passes the job; dispatch paths pass
+`Tool`/`Capability`), the scan trigger's own routing (`routeForScan`) and
+coverage. Every other check still applies: scope entries, exclusions,
+rejected names, the deny list, private or internal addresses, domain proof
+and the tier, and the sensor's egress guard still checks every address
+before it connects. A job of any other tool, an unknown tool, or a caller
+that names neither is refused `unresolved` as before (fail closed).
 
 **Outcome.** Refused targets are taken out of the job before it is handed
 out: out of `targets`, `target` and `context.targets`, in the response and in
 the stored payload (a conditional write on the pending command), so result
 binding narrows too. A job left with no target is not handed out: it is
 failed with `SCOPE_CHANGED: <target> (<code>); ...` (a conditional write on
-the pending command, so a second or concurrent claim records nothing), and
+the pending command, so a second or concurrent claim records nothing), or,
+when every refusal is `unresolved` (the names stopped resolving while the
+job was queued, nothing about the scope changed), with
+`NO_RESOLVING_TARGETS: ...` (failure class `target`, a fact about the
+targets, not retried), and
 what waits on it is settled as on a sensor's failure
 (`CommandHandler.OnCommandFailed`, the `command.FailureObserver`): its scan
 step fails with `SCOPE_CHANGED` (failure class `scope`, not retried), a

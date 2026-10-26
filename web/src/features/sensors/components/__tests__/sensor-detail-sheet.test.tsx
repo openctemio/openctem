@@ -164,6 +164,12 @@ function open(extra: Partial<React.ComponentProps<typeof SensorDetailSheet>> = {
   return handlers
 }
 
+/** The header's subline, as a screen reader and a copy read it. */
+function subline(): string {
+  const header = document.querySelector('[data-slot="detail-header"]') as HTMLElement
+  return (header.querySelector('[data-slot="meta-line"]') as HTMLElement).textContent ?? ''
+}
+
 describe('SensorDetailSheet', () => {
   beforeEach(() => {
     perms.granted.clear()
@@ -259,23 +265,18 @@ describe('SensorDetailSheet', () => {
   describe('header', () => {
     it('leaves the host name out of the subline when it is the sensor name', () => {
       open({ sensor: { ...healthy, name: 'sensor-docker-01', hostname: 'sensor-docker-01' } })
-      const sub = screen.getByText(/^Scanner · long-running/)
-      expect(sub.textContent).toBe('Scanner · long-running · 10.40.3.17')
+      expect(subline()).toBe('Scanner, Long-running, 10.40.3.17')
     })
 
     it('compares host and name trimmed and case-insensitively, everywhere', () => {
       open({ sensor: { ...healthy, name: 'Sensor-Docker-01', hostname: ' sensor-docker-01 ' } })
-      expect(screen.getByText(/^Scanner · long-running/).textContent).toBe(
-        'Scanner · long-running · 10.40.3.17'
-      )
+      expect(subline()).toBe('Scanner, Long-running, 10.40.3.17')
       expect(screen.queryByText('Host name')).toBeNull()
     })
 
     it('shows a host name that differs from the name, in the body without mono', () => {
       open({ sensor: healthy })
-      expect(screen.getByText(/^Scanner · long-running/).textContent).toBe(
-        'Scanner · long-running · sensor-7d9f-a · 10.40.3.17'
-      )
+      expect(subline()).toBe('Scanner, Long-running, sensor-7d9f-a, 10.40.3.17')
       const host = screen.getByText('Host name').nextElementSibling as HTMLElement
       expect(host.textContent).toBe('sensor-7d9f-a')
       expect(host.innerHTML).not.toContain('font-mono')
@@ -284,9 +285,10 @@ describe('SensorDetailSheet', () => {
     it('an admin gets Edit and Install command; Rotate key and the rest are in the menu', async () => {
       perms.granted.add('sensors:write').add('sensors:delete')
       const h = open({ sensor: healthy })
-      expect(screen.getByRole('button', { name: 'Edit' })).toBeInTheDocument()
-      expect(screen.getByRole('button', { name: 'Install command' })).toBeInTheDocument()
-      expect(screen.queryByRole('button', { name: 'Rotate key' })).toBeNull()
+      const header = document.querySelector('[data-slot="detail-header"]') as HTMLElement
+      expect(within(header).getByRole('button', { name: 'Edit' })).toBeInTheDocument()
+      expect(within(header).getByRole('button', { name: 'Install command' })).toBeInTheDocument()
+      expect(within(header).queryByRole('button', { name: 'Rotate key' })).toBeNull()
       await userEvent.click(screen.getByRole('button', { name: 'More actions' }))
       await userEvent.click(await screen.findByRole('menuitem', { name: /Rotate key/ }))
       expect(h.onRegenerateKey).toHaveBeenCalledWith(expect.objectContaining({ id: 's1' }))
@@ -496,9 +498,11 @@ describe('SensorDetailSheet', () => {
       },
     })
     const line = screen.getByTestId('sensor-transport')
-    expect(line).toHaveTextContent(
-      'Transport: HTTPS · Something on the network path speaks only HTTP/1.1.'
+    expect(line).toHaveTextContent('Transport: HTTPS')
+    expect(screen.getByTestId('sensor-transport-reason')).toHaveTextContent(
+      'Something on the network path speaks only HTTP/1.1.'
     )
+    expect(line.textContent).not.toMatch(/\u00b7/)
     expect(line).not.toHaveTextContent('fallback')
     expect(line).not.toHaveTextContent('http2_refused')
   })
@@ -573,6 +577,47 @@ describe('SensorDetailSheet', () => {
     expect(screen.getByText('SDK advisory')).toBeInTheDocument()
     expect(screen.getByText('recent activity')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Copy sensor ID' })).toBeInTheDocument()
+  })
+
+  it('keeps a pseudo-version SDK out of the Version field; More details has it whole', async () => {
+    const pseudo = 'v0.37.1-0.20261025003926-6373f2417870'
+    open({ sensor: { ...sensor, sdk_name: 'openctem-sdk-go', sdk_version: pseudo } })
+    // The Version field shows the release only: the 40-character string used
+    // to run over the next column.
+    const version = screen.getByText('Version').nextElementSibling as HTMLElement
+    expect(version.textContent).toContain('v0.4.2')
+    expect(version.textContent).not.toContain(pseudo)
+    await userEvent.click(screen.getByText('More details'))
+    const sdk = screen.getByText('SDK', { selector: 'dt' }).nextElementSibling as HTMLElement
+    expect(sdk).toHaveTextContent('v0.37.1 pre-release')
+    expect(sdk).toHaveTextContent(pseudo)
+  })
+
+  it('explains Unhardened: the tag is a button naming the gaps', () => {
+    open({
+      sensor: {
+        ...sensor,
+        posture: {
+          local_policy: 'absent_legacy',
+          platform_pin: 'none',
+          network_enforced: null,
+          unhardened: ['policy_none', 'pin_none'],
+        } as unknown as Sensor['posture'],
+      },
+    })
+    const tag = screen.getByTestId('sensor-posture-tag-button')
+    expect(tag).toHaveAccessibleName('Unhardened: 2 gaps. Show how to fix them')
+    // The posture section carries the fixes and the hardening guide.
+    expect(screen.getByRole('link', { name: 'How to harden a sensor' })).toHaveAttribute(
+      'href',
+      expect.stringContaining('/sensors/security/')
+    )
+  })
+
+  it('shows no bare ellipsis for a sensor without a key prefix', () => {
+    open({ sensor: { ...sensor, api_key_prefix: '' } })
+    const key = screen.getByText('API key').nextElementSibling as HTMLElement
+    expect(key.textContent?.startsWith('\u2026')).toBe(false)
   })
 
   it('there is no Activity tab: the overview summary opens the activity panel', async () => {
