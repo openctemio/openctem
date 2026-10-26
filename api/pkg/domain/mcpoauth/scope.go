@@ -30,6 +30,13 @@ const (
 	// Never offered up front: only through an insufficient_scope challenge,
 	// and only when the organization allows it.
 	ScopeFindingsComment Scope = "mcp:findings.comment"
+	// ScopeFindingsPropose lets a proposal tool file a false-positive or
+	// accepted-risk request in the person's name (findings:write, the
+	// permission of the REST request route). The request decides nothing:
+	// another person approves it, never the person it was filed for. Like
+	// every write scope it is only granted through an insufficient_scope
+	// challenge, and only when the organization allows it.
+	ScopeFindingsPropose Scope = "mcp:findings.propose"
 )
 
 // scopeInfo describes one scope.
@@ -58,6 +65,11 @@ var catalog = map[Scope]scopeInfo{ //nolint:gochecknoglobals // fixed scope tabl
 	ScopeFindingsComment: {
 		perms: []permission.Permission{permission.FindingsComment},
 		title: "Add comments to findings, each one confirmed by you in the platform",
+		write: true,
+	},
+	ScopeFindingsPropose: {
+		perms: []permission.Permission{permission.FindingsWrite},
+		title: "Propose false positives and accepted risks, each decided by another person",
 		write: true,
 	},
 	ScopePentestRead: {

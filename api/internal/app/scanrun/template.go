@@ -235,6 +235,11 @@ type UpdateTemplateInput struct {
 	IsActive        *bool                    `json:"is_active"`
 	UIStartPosition *scanworkflow.UIPosition `json:"ui_start_position"`
 	UIEndPosition   *scanworkflow.UIPosition `json:"ui_end_position"`
+	// DeltaGating and ContinueOnFailedDependency set the workflow's run
+	// rules; nil keeps the stored value (a client that does not know them
+	// never turns them off by saving its settings).
+	DeltaGating                *bool `json:"delta_gating"`
+	ContinueOnFailedDependency *bool `json:"continue_on_failed_dependency"`
 }
 
 // UpdateTemplate updates a template.
@@ -263,7 +268,15 @@ func (s *Service) UpdateTemplate(ctx context.Context, input UpdateTemplateInput)
 	}
 
 	if input.Settings != nil {
+		prev := t.Settings
 		t.Settings = *input.Settings
+		t.Settings.DeltaGating, t.Settings.ContinueOnFailedDependency = prev.DeltaGating, prev.ContinueOnFailedDependency
+	}
+	if input.DeltaGating != nil {
+		t.Settings.DeltaGating = *input.DeltaGating
+	}
+	if input.ContinueOnFailedDependency != nil {
+		t.Settings.ContinueOnFailedDependency = *input.ContinueOnFailedDependency
 	}
 
 	if len(input.Tags) > 0 {
@@ -458,6 +471,8 @@ func (s *Service) CloneTemplate(ctx context.Context, input CloneTemplateInput) (
 			_ = step.SetCondition(scanworkflow.AlwaysCondition())
 		}
 		step.SetRetry(originalStep.MaxRetries, originalStep.RetryDelaySeconds)
+		step.PreferTools = append([]string(nil), originalStep.PreferTools...)
+		step.RunPolicy = originalStep.RunPolicy.Clone()
 
 		if err := s.stepRepo.Create(ctx, step); err != nil {
 			return nil, err
