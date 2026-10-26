@@ -5,6 +5,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"strings"
@@ -18,6 +19,7 @@ import (
 	"github.com/openctemio/openctem/api/pkg/domain/integration"
 	outboxdom "github.com/openctemio/openctem/api/pkg/domain/outbox"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	emailpkg "github.com/openctemio/openctem/api/pkg/email"
 )
 
 // Status constants for notification results.
@@ -45,7 +47,20 @@ type Service struct {
 	// delivery decides where events about private program assets may go
 	// (bountyprogram.Delivery). Nil delivers every event as before.
 	delivery bountyprogram.DeliveryResolver
+
+	// relayRefused stops an e-mail channel whose relay the managed service
+	// rules refuse and tells the owners (nil: the failure is only recorded).
+	relayRefused RelayRefusedHandler
 }
+
+// RelayRefusedHandler is told when a delivery was refused because an
+// organization's e-mail relay does not meet the managed service rules.
+type RelayRefusedHandler interface {
+	EmailRelayRefused(ctx context.Context, tenantID, integrationID shared.ID, cause error)
+}
+
+// SetRelayRefusedHandler wires the stop-and-notify reaction.
+func (s *Service) SetRelayRefusedHandler(h RelayRefusedHandler) { s.relayRefused = h }
 
 // SetDeliveryResolver wires the private program routing rule: an event
 // about an asset only private programs list reaches only the integrations
@@ -500,6 +515,9 @@ func (s *Service) sendToIntegration(ctx context.Context, intg *integration.Integ
 	// Create client
 	client, err := s.newClient(config)
 	if err != nil {
+		if s.relayRefused != nil && errors.Is(err, emailpkg.ErrTenantRelayPolicy) {
+			s.relayRefused.EmailRelayRefused(ctx, intg.Integration.TenantID(), intg.Integration.ID(), err)
+		}
 		result.Status = notificationStatusFailed
 		result.Error = fmt.Sprintf("create client: %v", err)
 		return result
