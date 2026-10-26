@@ -46,7 +46,7 @@ FROM ${CONSOLE_IMAGE} AS console
 
 # golang-migrate, same version as CI (api-ci.yml). Built in the target
 # platform's own stage, so no arch-specific download URL to get wrong.
-FROM golang:1.27.2-alpine@sha256:f92b6ef800e499660581efdabdf25d9d817a9d124eaf900924f0504e7e27e12d AS migrate
+FROM golang:1.27.3-alpine@sha256:b8c9b82affbbb82a020bbcf998dad2ba9516944ac7e883524642a481a9505e9c AS migrate
 RUN CGO_ENABLED=0 go install -trimpath -ldflags="-s -w" -tags postgres \
       github.com/golang-migrate/migrate/v4/cmd/migrate@v4.18.1 \
  && cp "$(go env GOPATH)/bin/migrate" /usr/local/bin/migrate
@@ -58,7 +58,7 @@ RUN CGO_ENABLED=0 go install -trimpath -ldflags="-s -w" -tags postgres \
 # advisory since then with it. CADDY_DEPS raises dependencies that have
 # security fixes newer than the Caddy release; drop an entry once a Caddy
 # release requires that version itself.
-FROM golang:1.27.2-alpine@sha256:f92b6ef800e499660581efdabdf25d9d817a9d124eaf900924f0504e7e27e12d AS caddy
+FROM golang:1.27.3-alpine@sha256:b8c9b82affbbb82a020bbcf998dad2ba9516944ac7e883524642a481a9505e9c AS caddy
 ARG CADDY_VERSION=v2.11.4
 ARG CADDY_DEPS="golang.org/x/net@v0.60.0 google.golang.org/grpc@v1.83.2"
 WORKDIR /src
