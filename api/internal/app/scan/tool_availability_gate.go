@@ -84,6 +84,9 @@ func (s *Service) checkScanToolsDispatchable(ctx context.Context, sc *scan.Scan)
 		}
 		seen := map[string]bool{}
 		for _, step := range steps {
+			if stepNotRunBy(sc, step) {
+				continue
+			}
 			name := s.stepToolName(ctx, sc.TenantID, step)
 			if name == "" || seen[name] {
 				continue
