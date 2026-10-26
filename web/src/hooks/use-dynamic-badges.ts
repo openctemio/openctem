@@ -53,7 +53,7 @@ interface DashboardStats {
  * ownership review queue: shown whatever the sidebar-badges flag says, one
  * cached call, only for approvers.
  */
-function usePendingApprovalCount(shouldFetch: boolean): number | undefined {
+export function usePendingApprovalCount(shouldFetch: boolean): number | undefined {
   const { currentTenant } = useTenant()
   // The session bootstrap seeds this count; wait for it so the page load
   // does not ask a second time, and do not revalidate the seeded value.

@@ -276,11 +276,17 @@ const (
 	// FeatureKeyBind: a bearer-key sensor may bind its own Ed25519 signing
 	// key at POST /identity/bind (RFC-052 §4.8) and become key-bound.
 	FeatureKeyBind = "key_bind"
+	// FeatureLocalStore: heartbeats may carry "local_store", the state of the
+	// sensor's local data (watermark, whether it stopped claiming jobs and
+	// why, bytes per class, disk level, cleanup sweeps). The platform stores
+	// and shows it and names it when a queued job waits. Display and health
+	// data only: it never changes dispatch.
+	FeatureLocalStore = "local_store"
 )
 
 // ControlFeatures are the RFC-029 features, in hello order.
 func ControlFeatures() []string {
-	return []string{FeatureHeartbeat, FeatureCommands, FeatureSuppressions, FeatureFingerprints, FeatureKeys, FeatureLoad, FeatureRelease, FeatureManifest, FeatureLocalPolicy, FeatureCommandProgress, FeaturePosture, FeatureCapacity, FeatureRefusal, FeatureConfigReport, FeatureLogs}
+	return []string{FeatureHeartbeat, FeatureCommands, FeatureSuppressions, FeatureFingerprints, FeatureKeys, FeatureLoad, FeatureRelease, FeatureManifest, FeatureLocalPolicy, FeatureCommandProgress, FeatureLocalStore, FeaturePosture, FeatureCapacity, FeatureRefusal, FeatureConfigReport, FeatureLogs}
 }
 
 // Deprecation announces a deprecated protocol on hello.

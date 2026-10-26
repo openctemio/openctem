@@ -36,6 +36,10 @@ type DisplayInfo struct {
 	ID   shared.ID
 	Name string
 	Type AssetType
+	// CrownJewel and InternetFacing are the two asset facts a findings row
+	// shows beside the asset name.
+	CrownJewel     bool
+	InternetFacing bool
 }
 
 // Repository defines the interface for asset persistence.
