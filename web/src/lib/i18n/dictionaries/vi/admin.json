@@ -181,6 +181,7 @@
   "admin.approvals.action.console_mfa.disable": "Ngừng yêu cầu khóa bảo mật",
   "admin.approvals.action.organization.purge": "Xóa ngay một tổ chức",
   "admin.approvals.action.platform_ai.destination": "Đổi nơi AI nền tảng gửi dữ liệu (nhà cung cấp, địa chỉ máy chủ hoặc khóa API)",
+  "admin.approvals.action.platform_email.relay": "Đổi máy chủ thư mà e-mail nền tảng được gửi qua",
   "admin.approvals.action.platform_idp.change": "Thay đổi nhà cung cấp danh tính của quản trị viên hoặc yếu tố thứ hai được tin cậy từ đó",
   "admin.approvals.action.platform_idp.remove": "Gỡ hoặc nới lỏng nhà cung cấp danh tính của quản trị viên",
   "admin.approvals.action.signup.open": "Mở đăng ký",

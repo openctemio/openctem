@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/openctemio/openctem/api/internal/app/adminapproval"
 	"github.com/openctemio/openctem/api/internal/app/platformemail"
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
 	"github.com/openctemio/openctem/api/pkg/apierror"
@@ -19,10 +20,17 @@ const stepUpPurposeEmailSettings = "platform e-mail settings change"
 // AdminEmailHandler serves Console > Settings > E-mail: the platform's SMTP
 // server (RFC-079). The password is write-only.
 type AdminEmailHandler struct {
-	svc     *platformemail.Service
-	stepUp  StepUpVerifier
-	appName string
-	logger  *logger.Logger
+	svc       *platformemail.Service
+	stepUp    StepUpVerifier
+	approvals approvalGate
+	appName   string
+	logger    *logger.Logger
+}
+
+// WithApprovals wires the four-eyes gate of the platform relay.
+func (h *AdminEmailHandler) WithApprovals(g approvalGate) *AdminEmailHandler {
+	h.approvals = g
+	return h
 }
 
 // NewAdminEmailHandler creates the handler.
@@ -114,11 +122,25 @@ func (h *AdminEmailHandler) Update(w http.ResponseWriter, r *http.Request) {
 	if !h.verifyStepUp(w, r, actor, req.TOTPCode) {
 		return
 	}
-	s, err := h.svc.Update(r.Context(), actor, platformemail.Input{
+	in := platformemail.Input{
 		Enabled: req.Enabled, Host: req.Host, Port: req.Port, Username: req.Username, Password: req.Password,
 		From: req.From, FromName: req.FromName, StartTLS: req.StartTLS,
-	}, req.Version, middleware.ClientIP(r), r.UserAgent())
+	}
+	// SECURITY: the relay receives every set-password, reset and invitation
+	// link, so a new host, port or weaker connection security is set by one
+	// administrator and approved by another. A password rotation on the same
+	// relay, the sender and turning e-mail off stay one-person.
+	var grant *adminapproval.Grant
+	if target, needed := h.svc.ApprovalNeeded(r.Context(), in); needed {
+		g, ok := requireSecondApproval(w, r, h.approvals, actor, admin.ApprovalPlatformEmailRelay, target, h.logger)
+		if !ok {
+			return
+		}
+		grant = g
+	}
+	s, err := h.svc.Update(r.Context(), actor, in, req.Version, middleware.ClientIP(r), r.UserAgent())
 	if err != nil {
+		releaseSecondApproval(r, h.approvals, actor, grant)
 		switch {
 		case errors.Is(err, platformemail.ErrInvalid):
 			apierror.BadRequest(err.Error()).WriteJSON(w)
