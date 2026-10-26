@@ -371,6 +371,9 @@ func (p *AssetProcessor) processBatch(
 	if n := expandOpenPorts(report); n > 0 {
 		p.logger.Debug("expanded open ports into port assets", "count", n)
 	}
+	// The response header posture of an origin keeps its allow-listed keys
+	// only (names and flags, never a header or cookie value).
+	sanitizeHTTPPosture(report)
 	// One key per concept, and a key on the wrong asset (a port on a
 	// domain) moved to the asset it belongs on (RFC-042 §6.3.9).
 	if added, dropped, unknown := routeMisplacedProperties(report); added > 0 || dropped > 0 || len(unknown) > 0 {

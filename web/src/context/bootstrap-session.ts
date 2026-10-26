@@ -5,7 +5,7 @@
  * Every page of the app shell used to ask, on each load, for the caller's
  * profile (/users/me), their organizations (/users/me/tenants), the unread
  * notification count, the review-queue and approvals badges, the organization policy
- * (/auth/providers) and the platform announcements. The bootstrap now returns all of them in one response
+ * (/auth/providers), the platform announcements and the sidebar pins. The bootstrap now returns all of them in one response
  * (research/81). Seeding the cache keeps every existing consumer (`useProfile`,
  * `useMyTenants`, the bell, the sidebar badge) working unchanged: they read
  * the seeded value, and those hooks do not revalidate a cached value on mount
@@ -20,6 +20,7 @@ import { mutate } from 'swr'
 import { notificationEndpoints, userEndpoints } from '@/lib/api/endpoints'
 import type { TenantMembership } from '@/lib/api/user-tenant-types'
 import type { UserProfile } from '@/features/account/types/account.types'
+import type { NavPinsResponse } from '@/features/nav-pins/api/use-nav-pins'
 
 export interface BootstrapBadges {
   unread_notifications?: number
@@ -46,6 +47,8 @@ export interface BootstrapSessionData {
   announcements?: PlatformAnnouncement[]
   /** A limit or module deny applies to the organization (owners and admins). */
   limits_apply?: boolean
+  /** The caller's sidebar pins with their live counts (GET /me/pins). */
+  pins?: NavPinsResponse
 }
 
 /**
@@ -70,6 +73,9 @@ export const EASM_SUGGESTIONS_COUNT_URL = '/api/v1/easm/suggestions?view=count'
  */
 export const PENDING_APPROVALS_COUNT_URL = '/api/v1/approvals?status=pending&page=1&per_page=1'
 
+/** The caller's sidebar pins in the current organization. */
+export const NAV_PINS_URL = '/api/v1/me/pins'
+
 /** Writes the session parts into the SWR cache, without revalidating them. */
 export async function seedSessionCache(data: BootstrapSessionData): Promise<void> {
   const writes: Promise<unknown>[] = []
@@ -91,6 +97,7 @@ export async function seedSessionCache(data: BootstrapSessionData): Promise<void
       status_counts: { pending: data.badges.pending_approvals },
     })
   if (Array.isArray(data.announcements)) seed(ANNOUNCEMENTS_URL, { data: data.announcements })
+  if (Array.isArray(data.pins?.data)) seed(NAV_PINS_URL, data.pins)
   seed(LIMITS_APPLY_KEY, data.limits_apply === true)
 
   await Promise.all(writes)

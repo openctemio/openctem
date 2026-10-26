@@ -152,6 +152,9 @@ type BootstrapResponse struct {
 	// and admins only; the settings rail lists Usage & limits then). Absent
 	// otherwise.
 	LimitsApply bool `json:"limits_apply,omitempty"`
+	// Pins is the GET /me/pins body (the sidebar's Pinned section, with its
+	// live counts), so the sidebar sends no request of its own per page.
+	Pins *NavPinsResponse `json:"pins,omitempty"`
 }
 
 // BootstrapBadges are the counts the app shell shows on every page. A count
@@ -197,6 +200,9 @@ type BootstrapSession struct {
 	// LimitsApply reports whether a limit or deny applies to the
 	// organization (entitlement.Service.Applies; no usage is counted).
 	LimitsApply func(ctx context.Context, tenantID shared.ID) (bool, error)
+	// Pins is NavPinHandler.Response (the /me/pins body for the request's
+	// own caller, counts computed in the caller's data scope).
+	Pins func(r *http.Request) (*NavPinsResponse, error)
 }
 
 // BootstrapPermissions contains user permissions and version.
@@ -572,6 +578,18 @@ func (h *BootstrapHandler) addSession(r *http.Request, resp *BootstrapResponse, 
 			}
 			mu.Lock()
 			resp.Announcements = &list
+			mu.Unlock()
+		})
+	}
+	if h.session.Pins != nil {
+		run(func() {
+			pins, err := h.session.Pins(r)
+			if err != nil {
+				h.logger.Warn("bootstrap: pins unavailable", "error", logger.SanitizeError(err))
+				return
+			}
+			mu.Lock()
+			resp.Pins = pins
 			mu.Unlock()
 		})
 	}

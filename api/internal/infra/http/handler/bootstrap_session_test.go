@@ -301,3 +301,41 @@ func TestBootstrapSession_EmailDeliveryFalseIsSent(t *testing.T) {
 		t.Fatalf("body = %s, want no email_delivery when the source is not wired", body)
 	}
 }
+
+// The sidebar pins ride in the bootstrap, read for the bootstrap request's own
+// caller (the same request, so the same token, tenant and data scope).
+func TestBootstrapSession_PinsAreTheCallersOwn(t *testing.T) {
+	var seen *http.Request
+	n := int64(4)
+	h := (&BootstrapHandler{logger: logger.NewNop()}).WithSession(BootstrapSession{
+		Pins: func(r *http.Request) (*NavPinsResponse, error) {
+			seen = r
+			return &NavPinsResponse{Data: []NavPinResponse{{Kind: "quick_view", Ref: "needs_triage", Count: &n}}, Max: 12}, nil
+		},
+	})
+	req := bsRequest(t, bsUserEntity(t, bsUser), nil, false)
+	resp := withModules()
+	h.addSession(req, resp, bsTenant, bsUser)
+	if seen != req {
+		t.Fatal("pins were not read for the bootstrap request's own caller")
+	}
+	if resp.Pins == nil || len(resp.Pins.Data) != 1 || *resp.Pins.Data[0].Count != 4 {
+		t.Fatalf("pins = %+v", resp.Pins)
+	}
+}
+
+// A failed pins read is left out, so the client asks GET /me/pins itself.
+func TestBootstrapSession_FailingPinsAreLeftOut(t *testing.T) {
+	h := (&BootstrapHandler{logger: logger.NewNop()}).WithSession(BootstrapSession{
+		Pins: func(*http.Request) (*NavPinsResponse, error) { return nil, errors.New("down") },
+	})
+	resp := withModules()
+	h.addSession(bsRequest(t, bsUserEntity(t, bsUser), nil, false), resp, bsTenant, bsUser)
+	if resp.Pins != nil {
+		t.Fatalf("pins = %+v, want omitted after a failure", resp.Pins)
+	}
+	body, _ := json.Marshal(resp)
+	if strings.Contains(string(body), `"pins"`) {
+		t.Fatalf("body = %s, want no pins field", body)
+	}
+}
