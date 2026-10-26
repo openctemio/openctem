@@ -283,6 +283,20 @@ appears in a URL a server or proxy records (RFC-041 §3.2 P4):
   history with `history.replaceState`.
 - The API takes the token in the JSON body: `POST /api/v1/invitations/lookup`,
   `/accept`, `/accept-with-refresh` and `/decline`.
+- When the organization needs a second factor from the person (2FA by role
+  with effective privilege, `allowed_with_mfa` for a personal address, or a
+  privileged outside member), `/accept-with-refresh` accepts the invitation and
+  answers 403 `MFA_ENROLLMENT_REQUIRED`. The page then shows "You have joined
+  {org}" and runs the sign-in's second-factor step in place:
+  `POST /api/v1/auth/mfa/enroll/session` (authenticated by the refresh-token
+  session, refresh token not spent) returns an enrollment challenge, or a
+  verify challenge when a factor exists, with the names of the requiring
+  organizations; `/auth/mfa/enroll/{start,confirm}` or `/auth/mfa/verify`
+  complete it and sign the person in again with a session that proved the
+  factor. Sessions started through an identity provider get a clear refusal.
+  The same endpoint serves a refused token refresh (`/two-factor-setup`). The
+  sign-in offers enrollment under the same three policies
+  (`mfaRequiringOrganizations`), so it never loops.
 - Links sent before this change (`/invitations/{token}`) still work: the web
   page redirects them to the fragment form. The API aliases
   `/api/v1/invitations/{token}/...` answer with `Deprecation`/`Sunset`
