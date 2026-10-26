@@ -47,6 +47,7 @@ import {
 } from '@/features/config/api/finding-source-api'
 import { useSearchQuery } from '@/hooks/use-search-query'
 import { toDisplayText } from '@/lib/untrusted-text'
+import { useOpenForm } from '@/hooks/use-open-form'
 import type { ColumnDef, SortingState, VisibilityState } from '@tanstack/react-table'
 import { Main } from '@/components/layout'
 import {
@@ -739,6 +740,8 @@ function FindingsContent() {
     hasPermission('findings:write') &&
     hasPermission('assets:write') &&
     hasPermission('assets:import')
+  const openImportForm = useCallback(() => setImportDialogOpen(true), [])
+  useOpenForm('import', canImport, openImportForm)
   // Both are Phase-3 gated modules embedded in this (findings) page: the "Create
   // Jira Ticket" action hits the integrations module, and "Add to remediation"
   // hits the remediation module. Hide + skip-fetch when disabled (fail-open on

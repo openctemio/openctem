@@ -26,6 +26,7 @@ import Link from '@/components/link'
 import { useTranslation } from '@/context/i18n-provider'
 import { usePermissions } from '@/context/permission-provider'
 import { Permission } from '@/lib/permissions'
+import { useOpenForm } from '@/hooks/use-open-form'
 import { Button } from '@/components/ui/button'
 import { ConfirmDialog } from '@/components/confirm-dialog'
 import {
@@ -66,6 +67,8 @@ export function TasksView({ defaultView = 'open' }: { defaultView?: TaskView }) 
   // Creating a task from a query runs the query: findings read too.
   const canQueryCreate = canWrite && hasPermission(Permission.FindingsRead)
   const [queryOpen, setQueryOpen] = useState(false)
+  const openTaskForm = useCallback(() => setQueryOpen(true), [])
+  useOpenForm('task', canQueryCreate, openTaskForm)
   // A card dropped on On hold or back to work waits here for a confirmation.
   const [pendingHold, setPendingHold] = useState<{
     task: RemediationTask
