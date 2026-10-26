@@ -114,7 +114,7 @@ func NewAdminVersionCheckHandler(svc VersionCheckService, adminAudit admin.Audit
 
 // Status handles GET /api/v1/admin/version-check
 // @Summary      Version check status
-// @Description  What the signed release feed says about the running version: newer releases, the security advisories that affect it, where the feed came from and when, and the last check's outcome (RFC-105).
+// @Description  What the signed release feed says about the running version: newer releases, the security advisories that affect it, where the feed came from and when, and the last check's outcome.
 // @Tags         Admin
 // @Produce      json
 // @Success      200  {object}  versioncheck.View

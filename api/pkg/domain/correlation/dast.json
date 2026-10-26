@@ -1,5 +1,5 @@
 {
-  "comment": "DAST cross-rule correlation data (research/134 section 12). oast_hosts: out-of-band payload domains a template inserts; a path segment is stripped only when it equals a payload the detection's own evidence shows AND its host is listed here. injection_cwes: CWEs whose findings describe an injection point; only these may auto-merge. Broad CWEs never auto-merge.",
+  "comment": "DAST cross-rule correlation data. oast_hosts: out-of-band payload domains a template inserts; a path segment is stripped only when it equals a payload the detection's own evidence shows AND its host is listed here. injection_cwes: CWEs whose findings describe an injection point; only these may auto-merge. Broad CWEs never auto-merge.",
   "oast_hosts": ["oast.me", "oast.pro", "oast.fun", "oast.live", "oast.site", "oast.online", "interact.sh", "interactsh.com"],
   "injection_cwes": ["CWE-601", "CWE-79", "CWE-89", "CWE-22", "CWE-23", "CWE-918", "CWE-611", "CWE-78", "CWE-77", "CWE-94", "CWE-95", "CWE-917", "CWE-943", "CWE-90", "CWE-91", "CWE-113", "CWE-1336"],
   "broad_cwes": ["CWE-200", "CWE-16", "CWE-693", "CWE-1021", "CWE-284", "NVD-CWE-noinfo", "NVD-CWE-Other"]

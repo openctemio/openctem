@@ -66,7 +66,7 @@ func (r *FindingRepository) repoCoverageStale(ctx context.Context, tenantID shar
 			WHERE f.tenant_id = $1
 				AND f.asset_id = ANY($2)
 				-- Only the tool that saw the finding last may close it
-				-- (RFC-043 interim guard).
+				-- (interim guard).
 				AND COALESCE(f.last_seen_tool, f.tool_name) = $3
 				AND f.status IN `+autoResolveFromSQL+`
 				AND f.source NOT IN `+coverageProtectedSources+`

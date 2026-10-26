@@ -312,6 +312,11 @@ jobs:
       - name: Security Gates (sensor vocabulary guard)
         run: go test ./tools/lint/sensorvocab/... -count=1
 
+      # No RFC number, research note or decision id in text a user or
+      # operator reads (strings, API annotations, shipped schemas).
+      - name: Gates (internal references in user-facing text)
+        run: go test ./tools/lint/internalrefs/... -count=1
+
       # RFC-041: every route belongs to one plane and follows the API
       # conventions; today's violations are a shrink-only baseline.
       - name: Route Style (planes and conventions)
